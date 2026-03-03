@@ -335,21 +335,15 @@ function setupIPC() {
       return { ok: true, existed: true }
     }
 
-    // Настраиваем сессию ДО создания окна — Chrome UA чтобы сайты не блокировали
-    const loginSession = session.fromPartition(`persist:ai-login-${provider}`)
-    loginSession.setUserAgent(CHROME_UA)
-    loginSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(true))
-    loginSession.setPermissionCheckHandler(() => true)
-
     const loginWin = new BrowserWindow({
       width: 1100,
       height: 750,
       title: `Войти — ${providerLabel || provider}`,
-      // parent НЕ указываем — на Windows parent вызывает чёрный экран в дочерних окнах
-      show: false, // показываем только после загрузки
+      backgroundColor: '#ffffff',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        sandbox: false,          // КРИТИЧНО: без этого Electron 20+ блокирует внешние URL
         partition: `persist:ai-login-${provider}`,
       }
     })
@@ -357,8 +351,13 @@ function setupIPC() {
     loginWindows[provider] = loginWin
     loginWin.setMenu(null)
 
-    // Показываем окно только когда страница готова — избегаем белого/чёрного мерцания
-    loginWin.once('ready-to-show', () => loginWin.show())
+    // Устанавливаем Chrome UA напрямую на webContents
+    loginWin.webContents.setUserAgent(CHROME_UA)
+
+    // Обработка ошибок загрузки — выводим в консоль для диагностики
+    loginWin.webContents.on('did-fail-load', (event, code, desc, failedUrl) => {
+      console.error(`[LoginWindow] Ошибка загрузки ${failedUrl}: ${desc} (${code})`)
+    })
 
     loginWin.loadURL(url)
 
