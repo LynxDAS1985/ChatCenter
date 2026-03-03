@@ -21,7 +21,7 @@ const MODEL_HINTS = {
   gigachat:  ['GigaChat', 'GigaChat-Plus', 'GigaChat-Pro'],
 }
 
-export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle, width = 300 }) {
+export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle, width = 300, panelRef, chatHistory = [] }) {
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState([])
   const [loading, setLoading] = useState(false)
@@ -71,8 +71,16 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     if (!text.trim()) return
     setLoading(true); setError(''); setSuggestions([])
     try {
+      // Включаем историю последних 6 сообщений как контекст
+      const historyMessages = chatHistory.slice(-6).map(h => ({
+        role: 'user',
+        content: `[История] ${h.messengerId ? `(${h.messengerId}) ` : ''}${h.text}`
+      }))
       const res = await window.api.invoke('ai:generate', {
-        messages: [{ role: 'user', content: `Сообщение клиента: "${text.trim()}"` }],
+        messages: [
+          ...historyMessages,
+          { role: 'user', content: `Сообщение клиента: "${text.trim()}"` }
+        ],
         settings: aiCfg,
       })
       if (!res.ok) { setError(res.error || 'Ошибка ИИ'); return }
@@ -107,15 +115,17 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
 
   return (
     <div
-      className="flex flex-col shrink-0 transition-all duration-200"
+      ref={panelRef}
+      className="flex flex-col shrink-0"
       style={{
         width: visible ? `${width}px` : '0px',
         overflow: 'hidden',
         borderLeft: visible ? '1px solid var(--cc-border)' : 'none',
         backgroundColor: 'var(--cc-surface)',
+        transition: 'width 0.15s',
       }}
     >
-      <div style={{ width: `${width}px` }} className="flex flex-col h-full">
+      <div style={{ width: `${width}px`, minWidth: `${width}px` }} className="flex flex-col h-full">
 
         {/* ── Заголовок ── */}
         <div
@@ -126,6 +136,13 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
             <span className="text-base">🤖</span>
             <span className="text-sm font-semibold" style={{ color: 'var(--cc-text)' }}>ИИ-помощник</span>
             {configured && <span className="w-1.5 h-1.5 rounded-full bg-green-400" title="Настроен" />}
+            {chatHistory.length > 0 && (
+              <span
+                className="text-[9px] px-1 py-0.5 rounded-full leading-none"
+                style={{ backgroundColor: '#2AABEE22', color: '#2AABEE' }}
+                title={`История: ${chatHistory.length} сообщений`}
+              >📜{chatHistory.length}</span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             {suggestions.length > 0 && (
@@ -184,31 +201,34 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
             className="px-3 py-3 space-y-2.5 shrink-0"
             style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)' }}
           >
-            {/* Модель */}
+            {/* Модель — список кнопок с полными названиями */}
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>Модель</div>
-              <div className="flex gap-1 mb-1">
+              <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>Модель</div>
+              <div className="flex flex-col gap-1">
                 {(MODEL_HINTS[provider] || []).map(m => (
                   <button
                     key={m}
                     onClick={() => set('aiModel', m)}
-                    className="text-[10px] px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                    className="flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-colors"
                     style={{
                       backgroundColor: aiCfg.model === m ? '#2AABEE22' : 'var(--cc-hover)',
                       color: aiCfg.model === m ? '#2AABEE' : 'var(--cc-text-dim)',
                       border: `1px solid ${aiCfg.model === m ? '#2AABEE44' : 'transparent'}`,
                     }}
-                  >{m.split('-')[0] + (m.includes('-') ? '…' : '')}</button>
+                  >
+                    <span>{m}</span>
+                    {aiCfg.model === m && <span className="text-[10px]">✓</span>}
+                  </button>
                 ))}
+                <input
+                  type="text"
+                  value={!MODEL_HINTS[provider]?.includes(aiCfg.model) ? aiCfg.model : ''}
+                  onChange={e => set('aiModel', e.target.value)}
+                  placeholder="Другая модель..."
+                  className="w-full text-xs px-2 py-1 rounded-lg outline-none mt-0.5"
+                  style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text-dim)' }}
+                />
               </div>
-              <input
-                type="text"
-                value={aiCfg.model}
-                onChange={e => set('aiModel', e.target.value)}
-                placeholder={providerInfo.defaultModel}
-                className="w-full text-xs px-2 py-1.5 rounded-lg outline-none"
-                style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
-              />
             </div>
 
             {/* Авторизация: GigaChat — 2 поля, остальные — 1 */}

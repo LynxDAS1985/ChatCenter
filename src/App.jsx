@@ -1,9 +1,11 @@
-// v0.7 — Resizable AI panel, 4 ИИ-провайдера, улучшенный контраст
+// v0.8 — Fix resizer, Windows уведомления, шаблоны, авто-ответчик, история AI
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
 import SettingsPanel from './components/SettingsPanel.jsx'
 import AISidebar from './components/AISidebar.jsx'
+import TemplatesPanel from './components/TemplatesPanel.jsx'
+import AutoReplyPanel from './components/AutoReplyPanel.jsx'
 
 // ─── Звуковое уведомление (Web Audio API) ─────────────────────────────────
 
@@ -112,7 +114,10 @@ export default function App() {
   const [monitorPreloadUrl, setMonitorPreloadUrl] = useState(null)
   const [appReady, setAppReady] = useState(false)
   const [lastMessage, setLastMessage] = useState(null) // для AISidebar
-  const [aiWidth, setAiWidth] = useState(300)          // ширина AI-панели
+  const [aiWidth, setAiWidth] = useState(300)          // ширина AI-панели (state)
+  const [chatHistory, setChatHistory] = useState([])   // история сообщений для AI
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [showAutoReply, setShowAutoReply] = useState(false)
 
   const webviewRefs = useRef({})
   const retryTimers = useRef({})
@@ -124,6 +129,8 @@ export default function App() {
   const messengersRef = useRef(messengers)
   const isResizingRef = useRef(false)
   const resizeStartRef = useRef({ x: 0, w: 300 })
+  const aiWidthRef = useRef(300)   // для DOM-update во время drag (без React re-render)
+  const aiPanelRef = useRef(null)  // ref на DOM-узел AISidebar
 
   // Синхронизация рефов
   useEffect(() => { settingsRef.current = settings }, [settings])
@@ -149,7 +156,10 @@ export default function App() {
       }),
       window.api.invoke('settings:get').then(s => {
         setSettings(s)
-        if (s.aiSidebarWidth) setAiWidth(Math.max(240, Math.min(600, s.aiSidebarWidth)))
+        if (s.aiSidebarWidth) {
+          const w = Math.max(240, Math.min(600, s.aiSidebarWidth))
+          setAiWidth(w); aiWidthRef.current = w
+        }
       }).catch(() => {}),
       window.api.invoke('app:get-paths').then(({ monitorPreload }) => {
         if (monitorPreload) {
@@ -214,25 +224,34 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, []) // eslint-disable-line
 
-  // ── Resizer AI-панели ────────────────────────────────────────────────────
+  // ── Resizer AI-панели (DOM-update без React re-render — без фризов) ──────
   useEffect(() => {
     const onMove = (e) => {
       if (!isResizingRef.current) return
       const delta = resizeStartRef.current.x - e.clientX
       const newW = Math.max(240, Math.min(600, resizeStartRef.current.w + delta))
-      setAiWidth(newW)
+      aiWidthRef.current = newW
+      // Обновляем DOM напрямую — никаких React re-renders во время drag
+      if (aiPanelRef.current) {
+        aiPanelRef.current.style.width = `${newW}px`
+        // Обновляем и внутренний div (min-width: Xpx)
+        const inner = aiPanelRef.current.firstChild
+        if (inner) { inner.style.width = `${newW}px`; inner.style.minWidth = `${newW}px` }
+      }
     }
-    const onUp = (e) => {
+    const onUp = () => {
       if (!isResizingRef.current) return
       isResizingRef.current = false
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      const delta = resizeStartRef.current.x - e.clientX
-      const newW = Math.max(240, Math.min(600, resizeStartRef.current.w + delta))
-      // Сохраняем в настройки
+      // Теперь синхронизируем React state (один re-render при mouseup)
+      const newW = aiWidthRef.current
+      setAiWidth(newW)
       const updated = { ...settingsRef.current, aiSidebarWidth: newW }
       setSettings(updated)
       window.api.invoke('settings:save', updated).catch(() => {})
+      // Восстанавливаем transition
+      if (aiPanelRef.current) aiPanelRef.current.style.transition = ''
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -244,9 +263,11 @@ export default function App() {
 
   const startResize = (e) => {
     isResizingRef.current = true
-    resizeStartRef.current = { x: e.clientX, w: aiWidth }
+    resizeStartRef.current = { x: e.clientX, w: aiWidthRef.current }
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
+    // Отключаем transition во время drag
+    if (aiPanelRef.current) aiPanelRef.current.style.transition = 'none'
     e.preventDefault()
   }
 
@@ -380,11 +401,42 @@ export default function App() {
         if (e.channel === 'unread-count') {
           const count = Number(e.args[0]) || 0
           setUnreadCounts(prev => {
-            if (count > (prev[messengerId] || 0) && settingsRef.current.soundEnabled !== false) {
-              playNotificationSound()
+            const wasLess = count > (prev[messengerId] || 0)
+            if (wasLess) {
+              if (settingsRef.current.soundEnabled !== false) playNotificationSound()
+              // Windows-уведомление
+              if (settingsRef.current.notificationsEnabled !== false) {
+                const m = messengersRef.current.find(x => x.id === messengerId)
+                window.api.invoke('app:notify', {
+                  title: m?.name || 'ЦентрЧатов',
+                  body: 'Новое сообщение'
+                }).catch(() => {})
+              }
             }
             return { ...prev, [messengerId]: count }
           })
+        } else if (e.channel === 'new-message') {
+          // Текст нового сообщения от monitor.preload.js
+          const text = e.args[0]
+          if (!text) return
+          // Добавляем в историю AI (последние 20)
+          setChatHistory(prev => [...prev.slice(-19), { messengerId, text, ts: Date.now() }])
+          // Авто-ответчик по ключевым словам
+          const rules = settingsRef.current.autoReplyRules || []
+          for (const rule of rules) {
+            if (!rule.active) continue
+            const matched = rule.keywords.some(kw => text.toLowerCase().includes(kw.toLowerCase()))
+            if (matched) {
+              navigator.clipboard.writeText(rule.reply).catch(() => {})
+              window.api.invoke('app:notify', {
+                title: '🤖 Авто-ответ скопирован',
+                body: `Правило: "${rule.keywords[0]}" — ответ в буфере обмена`
+              }).catch(() => {})
+              break
+            }
+          }
+          // Обновляем lastMessage для AISidebar
+          setLastMessage(text)
         }
       })
     }
@@ -489,6 +541,32 @@ export default function App() {
             onMouseEnter={e => { if (!showAI) { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-icon-hover)' } }}
             onMouseLeave={e => { if (!showAI) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
           >🤖</button>
+
+          {/* Шаблоны */}
+          <button
+            onClick={() => setShowTemplates(!showTemplates)}
+            title="Шаблоны ответов"
+            className="flex items-center justify-center w-[30px] h-[30px] rounded-lg text-[15px] transition-all duration-150 cursor-pointer"
+            style={{
+              backgroundColor: showTemplates ? 'rgba(34,197,94,0.15)' : 'transparent',
+              color: showTemplates ? '#22c55e' : 'var(--cc-icon)',
+            }}
+            onMouseEnter={e => { if (!showTemplates) { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-icon-hover)' } }}
+            onMouseLeave={e => { if (!showTemplates) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
+          >📋</button>
+
+          {/* Авто-ответчик */}
+          <button
+            onClick={() => setShowAutoReply(!showAutoReply)}
+            title="Авто-ответчик"
+            className="flex items-center justify-center w-[30px] h-[30px] rounded-lg text-[15px] transition-all duration-150 cursor-pointer"
+            style={{
+              backgroundColor: showAutoReply ? 'rgba(168,85,247,0.15)' : 'transparent',
+              color: showAutoReply ? '#a855f7' : 'var(--cc-icon)',
+            }}
+            onMouseEnter={e => { if (!showAutoReply) { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-icon-hover)' } }}
+            onMouseLeave={e => { if (!showAutoReply) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
+          >⚡</button>
 
           {/* Тема */}
           <button
@@ -619,6 +697,8 @@ export default function App() {
           visible={showAI}
           width={aiWidth}
           onToggle={() => setShowAI(!showAI)}
+          panelRef={aiPanelRef}
+          chatHistory={chatHistory}
         />
       </div>
 
@@ -637,6 +717,22 @@ export default function App() {
           onMessengersChange={setMessengers}
           onSettingsChange={handleSettingsChange}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {showTemplates && (
+        <TemplatesPanel
+          settings={settings}
+          onSettingsChange={handleSettingsChange}
+          onClose={() => setShowTemplates(false)}
+        />
+      )}
+
+      {showAutoReply && (
+        <AutoReplyPanel
+          settings={settings}
+          onSettingsChange={handleSettingsChange}
+          onClose={() => setShowAutoReply(false)}
         />
       )}
     </div>
