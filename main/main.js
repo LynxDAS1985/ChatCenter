@@ -1,7 +1,9 @@
-// v0.6 — Tray, сохранение позиции окна, CRUD мессенджеров, ИИ-помощник, тема, ChatMonitor
+// v0.7 — DeepSeek + ГигаЧат, resizable AI panel
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import https from 'node:https'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -193,6 +195,59 @@ function createWindow() {
   })
 }
 
+// ─── ГигаЧат: HTTPS без проверки SSL-сертификата Сбербанка ───────────────────
+
+const GIGACHAT_AUTH_URL = 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth'
+const GIGACHAT_CHAT_URL = 'https://gigachat.devices.sberbank.ru/api/v1/chat/completions'
+const aiTokenCache = {}
+
+function httpsPostSkipSsl(url, bodyStr, headers) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url)
+    const agent = new https.Agent({ rejectUnauthorized: false })
+    const req = https.request({
+      hostname: u.hostname,
+      port: u.port || 443,
+      path: u.pathname + u.search,
+      method: 'POST',
+      headers: { ...headers, 'Content-Length': Buffer.byteLength(bodyStr) },
+      agent
+    }, res => {
+      let data = ''
+      res.on('data', chunk => { data += chunk })
+      res.on('end', () => {
+        try { resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, data: JSON.parse(data) }) }
+        catch { reject(new Error(`GigaChat parse error: ${data.slice(0, 200)}`)) }
+      })
+    })
+    req.on('error', reject)
+    req.write(bodyStr)
+    req.end()
+  })
+}
+
+async function getGigaChatToken(clientId, clientSecret) {
+  const cacheKey = `${clientId}:${clientSecret}`
+  const cached = aiTokenCache[cacheKey]
+  if (cached && cached.expires_at > Date.now() + 60000) return cached.access_token
+
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const result = await httpsPostSkipSsl(
+    GIGACHAT_AUTH_URL,
+    'scope=GIGACHAT_API_PERS',
+    {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'RqUID': crypto.randomUUID()
+    }
+  )
+  if (!result.ok || !result.data.access_token) {
+    throw new Error(`GigaChat auth failed: ${result.data?.message || 'нет токена'}`)
+  }
+  aiTokenCache[cacheKey] = result.data
+  return result.data.access_token
+}
+
 // ─── IPC Handlers ─────────────────────────────────────────────────────────────
 
 function setupIPC() {
@@ -285,13 +340,14 @@ function setupIPC() {
     return { ok: true }
   })
 
-  // ИИ-генерация ответов (OpenAI / Anthropic)
+  // ИИ-генерация ответов (OpenAI / Anthropic / DeepSeek / ГигаЧат)
   ipcMain.handle('ai:generate', async (event, { messages, settings: aiCfg }) => {
-    const { provider, apiKey, model, systemPrompt } = aiCfg || {}
-    if (!apiKey) return { ok: false, error: 'API-ключ не указан' }
+    const { provider, apiKey, clientSecret, model, systemPrompt } = aiCfg || {}
 
     try {
+      // ── Anthropic Claude ──
       if (provider === 'anthropic') {
+        if (!apiKey) return { ok: false, error: 'Укажите API-ключ Anthropic (sk-ant-...)' }
         const resp = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -310,8 +366,49 @@ function setupIPC() {
         if (data.error) return { ok: false, error: data.error.message || JSON.stringify(data.error) }
         return { ok: true, result: data.content?.[0]?.text || '' }
 
+      // ── DeepSeek (OpenAI-совместимый) ──
+      } else if (provider === 'deepseek') {
+        if (!apiKey) return { ok: false, error: 'Укажите API-ключ DeepSeek' }
+        const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: model || 'deepseek-chat',
+            messages: [
+              { role: 'system', content: systemPrompt || '' },
+              ...messages
+            ]
+          })
+        })
+        const data = await resp.json()
+        if (data.error) return { ok: false, error: data.error.message || JSON.stringify(data.error) }
+        return { ok: true, result: data.choices?.[0]?.message?.content || '' }
+
+      // ── ГигаЧат (Сбербанк) ──
+      } else if (provider === 'gigachat') {
+        if (!apiKey || !clientSecret) return { ok: false, error: 'Укажите Client ID и Client Secret ГигаЧат' }
+        const token = await getGigaChatToken(apiKey, clientSecret)
+        const sysMsg = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []
+        const result = await httpsPostSkipSsl(
+          GIGACHAT_CHAT_URL,
+          JSON.stringify({
+            model: model || 'GigaChat',
+            messages: [...sysMsg, ...messages]
+          }),
+          {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        )
+        if (!result.ok) return { ok: false, error: result.data?.error?.message || `HTTP ошибка ${result.data}` }
+        return { ok: true, result: result.data.choices?.[0]?.message?.content || '' }
+
+      // ── OpenAI (default) ──
       } else {
-        // OpenAI (default)
+        if (!apiKey) return { ok: false, error: 'Укажите API-ключ OpenAI (sk-...)' }
         const resp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {

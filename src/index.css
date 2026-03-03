@@ -36,25 +36,25 @@ webview { display: flex; width: 100%; height: 100%; }
   --cc-border: rgba(255,255,255,0.10);
   --cc-hover: rgba(255,255,255,0.08);
   --cc-text: #ffffff;                        /* основной текст — чисто белый */
-  --cc-text-dim: rgba(255,255,255,0.70);     /* вторичный текст */
-  --cc-text-dimmer: rgba(255,255,255,0.42);  /* подписи, хинты */
-  --cc-icon: rgba(255,255,255,0.75);         /* иконки в шапке */
+  --cc-text-dim: rgba(255,255,255,0.88);     /* вторичный текст — почти белый */
+  --cc-text-dimmer: rgba(255,255,255,0.60);  /* подписи, хинты */
+  --cc-icon: rgba(255,255,255,0.80);         /* иконки в шапке */
   --cc-icon-hover: #ffffff;                  /* иконки при наведении */
   --cc-overlay: rgba(0,0,0,0.55);
   color-scheme: dark;
 }
 
 [data-theme="light"] {
-  --cc-bg: #e8eef5;
-  --cc-surface: #f8fafc;
-  --cc-surface-alt: #dde5ef;
-  --cc-border: rgba(0,0,0,0.12);
-  --cc-hover: rgba(0,0,0,0.06);
-  --cc-text: #0f172a;                        /* основной текст — почти чёрный */
-  --cc-text-dim: rgba(15,23,42,0.75);        /* вторичный текст */
-  --cc-text-dimmer: rgba(15,23,42,0.52);     /* подписи, хинты */
-  --cc-icon: rgba(15,23,42,0.72);            /* иконки в шапке */
-  --cc-icon-hover: #0f172a;                  /* иконки при наведении */
+  --cc-bg: #d5dfe9;
+  --cc-surface: #ffffff;
+  --cc-surface-alt: #e4eaf2;
+  --cc-border: rgba(0,0,0,0.13);
+  --cc-hover: rgba(0,0,0,0.07);
+  --cc-text: #06091a;                        /* основной текст — почти чёрный */
+  --cc-text-dim: rgba(6,9,26,0.82);          /* вторичный текст */
+  --cc-text-dimmer: rgba(6,9,26,0.62);       /* подписи, хинты */
+  --cc-icon: rgba(6,9,26,0.78);              /* иконки в шапке */
+  --cc-icon-hover: #06091a;                  /* иконки при наведении */
   --cc-overlay: rgba(0,0,0,0.35);
   color-scheme: light;
 }

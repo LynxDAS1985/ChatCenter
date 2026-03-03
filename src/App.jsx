@@ -1,4 +1,4 @@
-// v0.6 — Тема, fix кнопок (WCO), DnD вкладок, горячие клавиши, ChatMonitor, ИИ-помощник
+// v0.7 — Resizable AI panel, 4 ИИ-провайдера, улучшенный контраст
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -112,6 +112,7 @@ export default function App() {
   const [monitorPreloadUrl, setMonitorPreloadUrl] = useState(null)
   const [appReady, setAppReady] = useState(false)
   const [lastMessage, setLastMessage] = useState(null) // для AISidebar
+  const [aiWidth, setAiWidth] = useState(300)          // ширина AI-панели
 
   const webviewRefs = useRef({})
   const retryTimers = useRef({})
@@ -121,6 +122,8 @@ export default function App() {
   const settingsRef = useRef(settings)
   const activeIdRef = useRef(activeId)
   const messengersRef = useRef(messengers)
+  const isResizingRef = useRef(false)
+  const resizeStartRef = useRef({ x: 0, w: 300 })
 
   // Синхронизация рефов
   useEffect(() => { settingsRef.current = settings }, [settings])
@@ -144,7 +147,10 @@ export default function App() {
         setMessengers(DEFAULT_MESSENGERS)
         setActiveId(DEFAULT_MESSENGERS[0].id)
       }),
-      window.api.invoke('settings:get').then(s => setSettings(s)).catch(() => {}),
+      window.api.invoke('settings:get').then(s => {
+        setSettings(s)
+        if (s.aiSidebarWidth) setAiWidth(Math.max(240, Math.min(600, s.aiSidebarWidth)))
+      }).catch(() => {}),
       window.api.invoke('app:get-paths').then(({ monitorPreload }) => {
         if (monitorPreload) {
           // Конвертируем путь ОС в file:// URL
@@ -207,6 +213,42 @@ export default function App() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, []) // eslint-disable-line
+
+  // ── Resizer AI-панели ────────────────────────────────────────────────────
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!isResizingRef.current) return
+      const delta = resizeStartRef.current.x - e.clientX
+      const newW = Math.max(240, Math.min(600, resizeStartRef.current.w + delta))
+      setAiWidth(newW)
+    }
+    const onUp = (e) => {
+      if (!isResizingRef.current) return
+      isResizingRef.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      const delta = resizeStartRef.current.x - e.clientX
+      const newW = Math.max(240, Math.min(600, resizeStartRef.current.w + delta))
+      // Сохраняем в настройки
+      const updated = { ...settingsRef.current, aiSidebarWidth: newW }
+      setSettings(updated)
+      window.api.invoke('settings:save', updated).catch(() => {})
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  const startResize = (e) => {
+    isResizingRef.current = true
+    resizeStartRef.current = { x: e.clientX, w: aiWidth }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    e.preventDefault()
+  }
 
   // ── Очистка ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -557,12 +599,25 @@ export default function App() {
           )}
         </div>
 
+        {/* ── Resizer: перетаскиваемый разделитель ── */}
+        {showAI && (
+          <div
+            onMouseDown={startResize}
+            className="w-1 shrink-0 cursor-col-resize transition-colors duration-150"
+            style={{ backgroundColor: 'var(--cc-border)' }}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#2AABEE66' }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--cc-border)' }}
+            title="Потяни для изменения ширины"
+          />
+        )}
+
         {/* ── ИИ-боковая панель ── */}
         <AISidebar
           settings={settings}
           onSettingsChange={handleSettingsChange}
           lastMessage={lastMessage}
           visible={showAI}
+          width={aiWidth}
           onToggle={() => setShowAI(!showAI)}
         />
       </div>

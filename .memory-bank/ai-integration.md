@@ -1,12 +1,21 @@
 # ИИ-интеграция — ChatCenter
 
-## Поддерживаемые провайдеры
+## Поддерживаемые провайдеры (v0.7.0)
 
-| Провайдер | Статус | Модели |
-|-----------|--------|--------|
-| OpenAI | 📋 Запланировано | gpt-4o, gpt-4o-mini |
-| Anthropic Claude | 📋 Запланировано | claude-sonnet-4-6, claude-haiku-4-5 |
-| Ollama (локальный) | 📋 Запланировано | llama3, mistral и др. |
+| Провайдер | Статус | Модели | Авторизация |
+|-----------|--------|--------|-------------|
+| OpenAI | ✅ Реализовано | gpt-4o-mini, gpt-4o | API Key (sk-...) |
+| Anthropic Claude | ✅ Реализовано | claude-haiku-4-5, claude-sonnet-4-6 | API Key (sk-ant-...) |
+| DeepSeek | ✅ Реализовано | deepseek-chat, deepseek-reasoner | API Key (sk-...) |
+| ГигаЧат | ✅ Реализовано | GigaChat, GigaChat-Plus | Client ID + Secret (OAuth2) |
+| Ollama (локальный) | 📋 Запланировано | llama3, mistral и др. | нет |
+
+### ГигаЧат — особенности
+- Auth URL: `https://ngw.devices.sberbank.ru:9443/api/v2/oauth`
+- Chat URL: `https://gigachat.devices.sberbank.ru/api/v1/chat/completions`
+- SSL-сертификат Сбербанка нестандартный → `rejectUnauthorized: false` в `httpsPostSkipSsl()`
+- Токены кэшируются в `aiTokenCache` с проверкой expires_at
+- Credentials в settings: `aiApiKey` = Client ID, `aiClientSecret` = Client Secret
 
 ---
 

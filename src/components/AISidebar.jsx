@@ -1,4 +1,4 @@
-// v0.6 — Панель ИИ-помощника (OpenAI / Anthropic)
+// v0.7 — 4 провайдера (OpenAI, Anthropic, DeepSeek, ГигаЧат), width prop, улучшенный UI
 import { useState, useRef, useEffect } from 'react'
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -7,39 +7,46 @@ const DEFAULT_SYSTEM_PROMPT =
   'Ответ ТОЛЬКО в формате JSON-массива: ["вариант1","вариант2","вариант3"]. ' +
   'Отвечай на том же языке что клиент.'
 
-function Toggle({ value, onChange, color = '#2AABEE' }) {
-  return (
-    <button
-      onClick={() => onChange(!value)}
-      className="relative w-9 h-5 rounded-full transition-all duration-200 cursor-pointer shrink-0"
-      style={{ backgroundColor: value ? color : 'var(--cc-hover)' }}
-    >
-      <span
-        className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-200"
-        style={{ left: value ? '16px' : '2px' }}
-      />
-    </button>
-  )
+const PROVIDERS = [
+  { id: 'openai',    label: 'OpenAI',    icon: '🌐', defaultModel: 'gpt-4o-mini',              free: false },
+  { id: 'anthropic', label: 'Claude',    icon: '🤖', defaultModel: 'claude-haiku-4-5-20251001', free: false },
+  { id: 'deepseek',  label: 'DeepSeek',  icon: '🔍', defaultModel: 'deepseek-chat',             free: true  },
+  { id: 'gigachat',  label: 'ГигаЧат',   icon: '💬', defaultModel: 'GigaChat',                  free: true  },
+]
+
+const MODEL_HINTS = {
+  openai:    ['gpt-4o-mini', 'gpt-4o'],
+  anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
+  deepseek:  ['deepseek-chat', 'deepseek-reasoner'],
+  gigachat:  ['GigaChat', 'GigaChat-Plus', 'GigaChat-Pro'],
 }
 
-export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle }) {
+export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle, width = 300 }) {
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showConfig, setShowConfig] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState(null)
+  const [showKey, setShowKey] = useState(false)
   const inputRef = useRef(null)
   const endRef = useRef(null)
 
+  const provider = settings.aiProvider || 'openai'
+  const providerInfo = PROVIDERS.find(p => p.id === provider) || PROVIDERS[0]
+
   const aiCfg = {
-    provider: settings.aiProvider || 'openai',
-    model: settings.aiModel || (settings.aiProvider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'),
+    provider,
+    model: settings.aiModel || providerInfo.defaultModel,
     apiKey: settings.aiApiKey || '',
+    clientSecret: settings.aiClientSecret || '',
     systemPrompt: settings.aiSystemPrompt || DEFAULT_SYSTEM_PROMPT,
   }
 
-  const configured = !!aiCfg.apiKey
+  const isGigaChat = provider === 'gigachat'
+  const configured = isGigaChat
+    ? (!!aiCfg.apiKey && !!aiCfg.clientSecret)
+    : !!aiCfg.apiKey
 
   // Авто-прокрутка
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [suggestions, error])
@@ -53,30 +60,28 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     }
   }, [lastMessage, visible])
 
+  // Сброс модели при смене провайдера
+  const setProvider = (p) => {
+    const defaultModel = PROVIDERS.find(x => x.id === p)?.defaultModel || ''
+    onSettingsChange({ ...settings, aiProvider: p, aiModel: defaultModel })
+  }
+
   const generate = async (text) => {
-    if (!configured) { setError('Добавьте API-ключ в настройках ИИ'); setShowConfig(true); return }
+    if (!configured) { setError('Настройте ИИ ниже'); setShowConfig(true); return }
     if (!text.trim()) return
-
-    setLoading(true)
-    setError('')
-    setSuggestions([])
-
+    setLoading(true); setError(''); setSuggestions([])
     try {
       const res = await window.api.invoke('ai:generate', {
         messages: [{ role: 'user', content: `Сообщение клиента: "${text.trim()}"` }],
         settings: aiCfg,
       })
-
       if (!res.ok) { setError(res.error || 'Ошибка ИИ'); return }
-
-      // Парсим JSON-массив из ответа
       let parsed = []
       try {
         const match = res.result.match(/\[[\s\S]*?\]/)
         if (match) parsed = JSON.parse(match[0])
         else parsed = [res.result]
       } catch { parsed = [res.result] }
-
       setSuggestions(parsed.slice(0, 3).filter(Boolean))
     } catch (e) {
       setError(e.message)
@@ -104,15 +109,15 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     <div
       className="flex flex-col shrink-0 transition-all duration-200"
       style={{
-        width: visible ? '300px' : '0px',
+        width: visible ? `${width}px` : '0px',
         overflow: 'hidden',
         borderLeft: visible ? '1px solid var(--cc-border)' : 'none',
         backgroundColor: 'var(--cc-surface)',
       }}
     >
-      <div style={{ width: '300px' }} className="flex flex-col h-full">
+      <div style={{ width: `${width}px` }} className="flex flex-col h-full">
 
-        {/* Заголовок */}
+        {/* ── Заголовок ── */}
         <div
           className="flex items-center justify-between px-3 py-2.5 shrink-0"
           style={{ borderBottom: '1px solid var(--cc-border)' }}
@@ -140,56 +145,128 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
           </div>
         </div>
 
-        {/* Конфиг-панель */}
+        {/* ── Переключатель провайдеров (всегда виден) ── */}
+        <div
+          className="px-2 pt-2 pb-1.5 shrink-0"
+          style={{ borderBottom: '1px solid var(--cc-border)' }}
+        >
+          <div className="grid grid-cols-4 gap-1">
+            {PROVIDERS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => setProvider(p.id)}
+                title={p.label + (p.free ? ' — бесплатный tier' : '')}
+                className="flex flex-col items-center justify-center py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer relative"
+                style={{
+                  backgroundColor: provider === p.id ? '#2AABEE22' : 'var(--cc-hover)',
+                  border: `1px solid ${provider === p.id ? '#2AABEE66' : 'transparent'}`,
+                }}
+              >
+                <span className="text-sm leading-none mb-0.5">{p.icon}</span>
+                <span
+                  className="text-[10px] font-medium leading-tight"
+                  style={{ color: provider === p.id ? '#2AABEE' : 'var(--cc-text-dim)' }}
+                >{p.label}</span>
+                {p.free && (
+                  <span
+                    className="absolute -top-1 -right-1 text-[8px] px-1 rounded-full leading-tight font-bold"
+                    style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}
+                  >free</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Конфиг-панель (по кнопке ⚙️) ── */}
         {showConfig && (
           <div
             className="px-3 py-3 space-y-2.5 shrink-0"
             style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)' }}
           >
-            {/* Провайдер */}
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>Провайдер</div>
-              <div className="flex gap-1">
-                {[['openai', 'OpenAI'], ['anthropic', 'Anthropic']].map(([p, label]) => (
-                  <button
-                    key={p}
-                    onClick={() => set('aiProvider', p)}
-                    className="flex-1 py-1 text-xs rounded-lg transition-colors cursor-pointer"
-                    style={{
-                      backgroundColor: aiCfg.provider === p ? '#2AABEE22' : 'var(--cc-hover)',
-                      color: aiCfg.provider === p ? '#2AABEE' : 'var(--cc-text-dim)',
-                      border: `1px solid ${aiCfg.provider === p ? '#2AABEE55' : 'transparent'}`
-                    }}
-                  >{label}</button>
-                ))}
-              </div>
-            </div>
-
             {/* Модель */}
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>Модель</div>
+              <div className="flex gap-1 mb-1">
+                {(MODEL_HINTS[provider] || []).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => set('aiModel', m)}
+                    className="text-[10px] px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                    style={{
+                      backgroundColor: aiCfg.model === m ? '#2AABEE22' : 'var(--cc-hover)',
+                      color: aiCfg.model === m ? '#2AABEE' : 'var(--cc-text-dim)',
+                      border: `1px solid ${aiCfg.model === m ? '#2AABEE44' : 'transparent'}`,
+                    }}
+                  >{m.split('-')[0] + (m.includes('-') ? '…' : '')}</button>
+                ))}
+              </div>
               <input
                 type="text"
                 value={aiCfg.model}
                 onChange={e => set('aiModel', e.target.value)}
-                placeholder={aiCfg.provider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'}
+                placeholder={providerInfo.defaultModel}
                 className="w-full text-xs px-2 py-1.5 rounded-lg outline-none"
                 style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
               />
             </div>
 
-            {/* API ключ */}
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>API Ключ</div>
-              <input
-                type="password"
-                value={aiCfg.apiKey}
-                onChange={e => set('aiApiKey', e.target.value)}
-                placeholder="sk-... или sk-ant-..."
-                className="w-full text-xs px-2 py-1.5 rounded-lg outline-none font-mono"
-                style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
-              />
-            </div>
+            {/* Авторизация: GigaChat — 2 поля, остальные — 1 */}
+            {isGigaChat ? (
+              <>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>Client ID</div>
+                  <input
+                    type="text"
+                    value={aiCfg.apiKey}
+                    onChange={e => set('aiApiKey', e.target.value)}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    className="w-full text-xs px-2 py-1.5 rounded-lg outline-none font-mono"
+                    style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+                  />
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>Client Secret</div>
+                  <div className="relative">
+                    <input
+                      type={showKey ? 'text' : 'password'}
+                      value={aiCfg.clientSecret}
+                      onChange={e => set('aiClientSecret', e.target.value)}
+                      placeholder="Секретный ключ"
+                      className="w-full text-xs px-2 py-1.5 pr-7 rounded-lg outline-none font-mono"
+                      style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+                    />
+                    <button
+                      onClick={() => setShowKey(!showKey)}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] cursor-pointer"
+                      style={{ color: 'var(--cc-text-dimmer)' }}
+                    >{showKey ? '🙈' : '👁️'}</button>
+                  </div>
+                  <p className="text-[10px] mt-1 leading-snug" style={{ color: 'var(--cc-text-dimmer)' }}>
+                    Получите в <span style={{ color: '#2AABEE' }}>developers.sber.ru/studio</span>
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>API Ключ</div>
+                <div className="relative">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={aiCfg.apiKey}
+                    onChange={e => set('aiApiKey', e.target.value)}
+                    placeholder={provider === 'anthropic' ? 'sk-ant-...' : provider === 'deepseek' ? 'sk-...' : 'sk-...'}
+                    className="w-full text-xs px-2 py-1.5 pr-7 rounded-lg outline-none font-mono"
+                    style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+                  />
+                  <button
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] cursor-pointer"
+                    style={{ color: 'var(--cc-text-dimmer)' }}
+                  >{showKey ? '🙈' : '👁️'}</button>
+                </div>
+              </div>
+            )}
 
             {/* Системный промпт */}
             <div>
@@ -205,21 +282,24 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
           </div>
         )}
 
-        {/* Тело */}
+        {/* ── Тело ── */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
 
           {!configured && !showConfig && (
             <div className="flex flex-col items-center justify-center h-full text-center py-8">
-              <div className="text-4xl mb-3">🤖</div>
-              <p className="text-sm font-medium mb-1" style={{ color: 'var(--cc-text-dim)' }}>ИИ не настроен</p>
+              <div className="text-4xl mb-3">{providerInfo.icon}</div>
+              <p className="text-sm font-medium mb-1" style={{ color: 'var(--cc-text-dim)' }}>{providerInfo.label} не настроен</p>
               <p className="text-xs mb-4 leading-relaxed" style={{ color: 'var(--cc-text-dimmer)' }}>
-                Добавьте API-ключ OpenAI<br />или Anthropic для работы
+                {isGigaChat
+                  ? 'Добавьте Client ID и Client Secret\nот Сбербанк developers.sber.ru'
+                  : `Добавьте API-ключ ${providerInfo.label}`
+                }
               </p>
               <button
                 onClick={() => setShowConfig(true)}
                 className="px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
                 style={{ backgroundColor: '#2AABEE22', color: '#2AABEE', border: '1px solid #2AABEE44' }}
-              >Настроить</button>
+              >Настроить ⚙️</button>
             </div>
           )}
 
@@ -233,14 +313,14 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
 
           {loading && (
             <div className="flex flex-col items-center justify-center py-8">
-              <div className="text-2xl mb-2 animate-pulse">🤖</div>
+              <div className="text-2xl mb-2 animate-pulse">{providerInfo.icon}</div>
               <p className="text-xs" style={{ color: 'var(--cc-text-dim)' }}>Генерирую варианты...</p>
             </div>
           )}
 
           {error && (
             <div className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#f87171' }}>
-              {error}
+              ⚠️ {error}
             </div>
           )}
 
@@ -269,7 +349,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
           <div ref={endRef} />
         </div>
 
-        {/* Ввод */}
+        {/* ── Ввод ── */}
         <div className="p-3 shrink-0" style={{ borderTop: '1px solid var(--cc-border)' }}>
           <div className="flex gap-2">
             <textarea
