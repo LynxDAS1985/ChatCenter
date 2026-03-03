@@ -1,4 +1,4 @@
-// v0.9.2 — Вход через браузер: открываем Electron-окно, перехватываем ключ из clipboard
+// v0.9.4 — Фикс ресайзера, перевод ошибок API на русский, npm start = dev
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -231,7 +231,7 @@ async function getGigaChatToken(clientId, clientSecret) {
   const cached = aiTokenCache[cacheKey]
   if (cached && cached.expires_at > Date.now() + 60000) return cached.access_token
 
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const credentials = Buffer.from(`${clientId.trim()}:${clientSecret.trim()}`).toString('base64')
   const result = await httpsPostSkipSsl(
     GIGACHAT_AUTH_URL,
     'scope=GIGACHAT_API_PERS',
@@ -246,6 +246,36 @@ async function getGigaChatToken(clientId, clientSecret) {
   }
   aiTokenCache[cacheKey] = result.data
   return result.data.access_token
+}
+
+// ─── Перевод API-ошибок на русский ───────────────────────────────────────────
+
+function ruError(msg) {
+  if (!msg) return 'Неизвестная ошибка'
+  const m = msg.toLowerCase()
+  if (m.includes('exceeded') && m.includes('quota') || m.includes('insufficient_quota') || m.includes('insufficient balance') || m.includes('insufficient_balance'))
+    return 'Недостаточно средств на балансе. Пополните счёт на сайте провайдера'
+  if (m.includes('invalid api key') || m.includes('incorrect api key') || m.includes('no api key'))
+    return 'Неверный API-ключ. Проверьте ключ в настройках'
+  if (m.includes('rate limit') || m.includes('too many requests'))
+    return 'Слишком много запросов. Подождите немного и попробуйте снова'
+  if (m.includes('model') && (m.includes('not exist') || m.includes('not found') || m.includes('does not exist')))
+    return 'Указанная модель не найдена. Проверьте название модели'
+  if (m.includes('context') && m.includes('length'))
+    return 'Сообщение слишком длинное для этой модели'
+  if (m.includes('can\'t decode') || m.includes('cannot decode') || m.includes('decode') && m.includes('header'))
+    return 'Неверный формат Client ID или Client Secret. Убедитесь что скопировали без пробелов'
+  if (m.includes('unauthorized') || m.includes('authentication') || m.includes('authorization'))
+    return 'Ошибка авторизации. Проверьте Client ID и Client Secret'
+  if (m.includes('billing') || m.includes('payment'))
+    return 'Проблема с оплатой. Проверьте платёжные данные у провайдера'
+  if (m.includes('overloaded') || m.includes('capacity') || m.includes('unavailable'))
+    return 'Сервер провайдера перегружен. Попробуйте позже'
+  if (m.includes('network') || m.includes('fetch') || m.includes('connect'))
+    return 'Нет соединения с сервером провайдера. Проверьте интернет'
+  if (m.includes('timeout'))
+    return 'Превышено время ожидания ответа от провайдера'
+  return msg // не переводим неизвестные — оставляем как есть
 }
 
 // ─── IPC Handlers ─────────────────────────────────────────────────────────────
@@ -329,68 +359,124 @@ function setupIPC() {
   // renderer перехватывает его из буфера обмена автоматически
   const loginWindows = {}
   ipcMain.handle('ai-login:open', (event, { url, provider, providerLabel }) => {
-    // Если окно уже открыто — фокусируем его
-    if (loginWindows[provider] && !loginWindows[provider].isDestroyed()) {
-      loginWindows[provider].focus()
-      return { ok: true, existed: true }
-    }
+    console.log(`[LoginWin] Запрос: provider=${provider} url=${url}`)
 
-    const loginWin = new BrowserWindow({
-      width: 1100,
-      height: 750,
-      title: `Войти — ${providerLabel || provider}`,
-      backgroundColor: '#ffffff',
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: false,          // КРИТИЧНО: без этого Electron 20+ блокирует внешние URL
-        partition: `persist:ai-login-${provider}`,
+    try {
+      // Если окно уже открыто — фокусируем его
+      if (loginWindows[provider] && !loginWindows[provider].isDestroyed()) {
+        loginWindows[provider].focus()
+        return { ok: true, existed: true }
       }
-    })
 
-    loginWindows[provider] = loginWin
-    loginWin.setMenu(null)
+      // Настраиваем сессию ДО создания окна — Chrome UA + разрешения
+      const partitionName = `persist:ai-login-${provider}`
+      try {
+        const loginSes = session.fromPartition(partitionName)
+        loginSes.setUserAgent(CHROME_UA)
+        loginSes.setPermissionRequestHandler((_wc, _perm, cb) => cb(true))
+        loginSes.setPermissionCheckHandler(() => true)
+        console.log(`[LoginWin] Сессия настроена: ${partitionName}`)
+      } catch (e) {
+        console.error(`[LoginWin] Ошибка настройки сессии:`, e.message)
+      }
 
-    // Устанавливаем Chrome UA напрямую на webContents
-    loginWin.webContents.setUserAgent(CHROME_UA)
-
-    // Обработка ошибок загрузки — выводим в консоль для диагностики
-    loginWin.webContents.on('did-fail-load', (event, code, desc, failedUrl) => {
-      console.error(`[LoginWindow] Ошибка загрузки ${failedUrl}: ${desc} (${code})`)
-    })
-
-    loginWin.loadURL(url)
-
-    // После загрузки — инжектируем плавающую подсказку
-    loginWin.webContents.on('did-finish-load', () => {
-      loginWin.webContents.executeJavaScript(`
-        if (!document.getElementById('__cc_hint')) {
-          const d = document.createElement('div')
-          d.id = '__cc_hint'
-          d.style.cssText = [
-            'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
-            'background:#1e293b', 'color:#fff', 'padding:14px 18px',
-            'border-radius:14px', 'font:14px/1.5 system-ui,sans-serif',
-            'box-shadow:0 8px 32px rgba(0,0,0,.5)', 'max-width:320px',
-            'border:1.5px solid #2AABEE55', 'pointer-events:none'
-          ].join(';')
-          d.innerHTML = '<b style="color:#2AABEE;display:block;margin-bottom:5px">📋 ЦентрЧатов ждёт ключ</b>' +
-            '<span style="color:#94a3b8">Войдите, создайте API-ключ и <b style="color:#fff">скопируйте его</b> — ' +
-            'он автоматически появится в приложении</span>'
-          document.body.appendChild(d)
+      const loginWin = new BrowserWindow({
+        width: 1100,
+        height: 750,
+        title: `Войти — ${providerLabel || provider}`,
+        backgroundColor: '#ffffff',
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: false,
+          partition: partitionName,
         }
-      `).catch(() => {})
-    })
+      })
 
-    // При закрытии — уведомляем renderer чтобы остановить polling
-    loginWin.on('closed', () => {
-      delete loginWindows[provider]
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ai-login:closed', { provider })
-      }
-    })
+      console.log(`[LoginWin] Окно создано ID=${loginWin.id}`)
+      loginWindows[provider] = loginWin
+      loginWin.setMenu(null)
 
-    return { ok: true }
+      // Автооткрытие DevTools для диагностики (отдельное окно)
+      loginWin.webContents.openDevTools({ mode: 'detach' })
+
+      // ── Детальное логирование всех событий ──
+      loginWin.webContents.on('did-start-loading', () => {
+        console.log(`[LoginWin:${provider}] ⏳ did-start-loading`)
+      })
+      loginWin.webContents.on('did-stop-loading', () => {
+        const cur = loginWin.isDestroyed() ? '?' : loginWin.webContents.getURL()
+        console.log(`[LoginWin:${provider}] ⏹ did-stop-loading url=${cur}`)
+      })
+      loginWin.webContents.on('did-navigate', (_ev, navUrl) => {
+        console.log(`[LoginWin:${provider}] 🔀 did-navigate: ${navUrl}`)
+      })
+      loginWin.webContents.on('did-finish-load', () => {
+        const wUrl = loginWin.isDestroyed() ? '?' : loginWin.webContents.getURL()
+        console.log(`[LoginWin:${provider}] ✅ did-finish-load: ${wUrl}`)
+        // Инжектируем плавающую подсказку после успешной загрузки
+        loginWin.webContents.executeJavaScript(`
+          if (!document.getElementById('__cc_hint')) {
+            const d = document.createElement('div')
+            d.id = '__cc_hint'
+            d.style.cssText = [
+              'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
+              'background:#1e293b', 'color:#fff', 'padding:14px 18px',
+              'border-radius:14px', 'font:14px/1.5 system-ui,sans-serif',
+              'box-shadow:0 8px 32px rgba(0,0,0,.5)', 'max-width:320px',
+              'border:1.5px solid #2AABEE55', 'pointer-events:none'
+            ].join(';')
+            d.innerHTML = '<b style="color:#2AABEE;display:block;margin-bottom:5px">📋 ЦентрЧатов ждёт ключ</b>' +
+              '<span style="color:#94a3b8">Войдите, создайте API-ключ и <b style="color:#fff">скопируйте его</b> — ' +
+              'он автоматически появится в приложении</span>'
+            document.body.appendChild(d)
+          }
+        `).catch(() => {})
+      })
+      loginWin.webContents.on('did-fail-load', (ev, code, desc, failedUrl, isMainFrame) => {
+        console.error(`[LoginWin:${provider}] ❌ did-fail-load: code=${code} desc="${desc}" url=${failedUrl} isMain=${isMainFrame}`)
+        // Показываем ошибку прямо в окне (только для главного фрейма, не data: URL)
+        if (isMainFrame && !loginWin.isDestroyed() && !failedUrl.startsWith('data:')) {
+          const errPage = `data:text/html;charset=utf-8,` + encodeURIComponent(
+            `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ошибка загрузки</title></head>` +
+            `<body style="font-family:system-ui,sans-serif;padding:40px;background:#0f172a;color:#e2e8f0;margin:0">` +
+            `<h2 style="color:#f87171;margin:0 0 20px">❌ Ошибка загрузки страницы</h2>` +
+            `<table style="font-size:14px;border-spacing:0 6px"><tbody>` +
+            `<tr><td style="color:#94a3b8;padding-right:16px">URL</td><td style="color:#fff;font-family:monospace;word-break:break-all">${failedUrl}</td></tr>` +
+            `<tr><td style="color:#94a3b8;padding-right:16px">Код</td><td style="color:#fcd34d">${code}</td></tr>` +
+            `<tr><td style="color:#94a3b8;padding-right:16px">Описание</td><td style="color:#fcd34d">${desc}</td></tr>` +
+            `</tbody></table>` +
+            `<div style="margin-top:28px;display:flex;gap:12px">` +
+            `<button onclick="location.href='${failedUrl.replace(/'/g, "\\'")}'" style="padding:10px 20px;background:#2AABEE;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px">Повторить</button>` +
+            `</div></body></html>`
+          )
+          loginWin.loadURL(errPage)
+        }
+      })
+      loginWin.webContents.on('render-process-gone', (_ev, details) => {
+        console.error(`[LoginWin:${provider}] 💀 render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`)
+      })
+      loginWin.webContents.on('unresponsive', () => {
+        console.warn(`[LoginWin:${provider}] ⚠️ unresponsive`)
+      })
+
+      console.log(`[LoginWin] loadURL → ${url}`)
+      loginWin.loadURL(url)
+
+      // При закрытии — уведомляем renderer чтобы остановить polling
+      loginWin.on('closed', () => {
+        console.log(`[LoginWin:${provider}] Закрыто`)
+        delete loginWindows[provider]
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('ai-login:closed', { provider })
+        }
+      })
+
+      return { ok: true }
+    } catch (err) {
+      console.error(`[LoginWin] КРИТИЧЕСКАЯ ОШИБКА:`, err.message, '\n', err.stack)
+      return { ok: false, error: err.message }
+    }
   })
 
   // Уведомление (системное)
@@ -443,7 +529,7 @@ function setupIPC() {
           })
         })
         const data = await resp.json()
-        if (data.error) return { ok: false, error: data.error.message || JSON.stringify(data.error) }
+        if (data.error) return { ok: false, error: ruError(data.error.message || JSON.stringify(data.error)) }
         return { ok: true, result: data.content?.[0]?.text || '' }
 
       // ── DeepSeek (OpenAI-совместимый) ──
@@ -464,13 +550,13 @@ function setupIPC() {
           })
         })
         const data = await resp.json()
-        if (data.error) return { ok: false, error: data.error.message || JSON.stringify(data.error) }
+        if (data.error) return { ok: false, error: ruError(data.error.message || JSON.stringify(data.error)) }
         return { ok: true, result: data.choices?.[0]?.message?.content || '' }
 
       // ── ГигаЧат (Сбербанк) ──
       } else if (provider === 'gigachat') {
         if (!apiKey || !clientSecret) return { ok: false, error: 'Укажите Client ID и Client Secret ГигаЧат' }
-        const token = await getGigaChatToken(apiKey, clientSecret)
+        const token = await getGigaChatToken(apiKey.trim(), clientSecret.trim())
         const sysMsg = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []
         const result = await httpsPostSkipSsl(
           GIGACHAT_CHAT_URL,
@@ -483,7 +569,7 @@ function setupIPC() {
             'Content-Type': 'application/json'
           }
         )
-        if (!result.ok) return { ok: false, error: result.data?.error?.message || `HTTP ошибка ${result.data}` }
+        if (!result.ok) return { ok: false, error: ruError(result.data?.error?.message || `HTTP ошибка`) }
         return { ok: true, result: result.data.choices?.[0]?.message?.content || '' }
 
       // ── OpenAI (default) ──
@@ -504,11 +590,11 @@ function setupIPC() {
           })
         })
         const data = await resp.json()
-        if (data.error) return { ok: false, error: data.error.message || JSON.stringify(data.error) }
+        if (data.error) return { ok: false, error: ruError(data.error.message || JSON.stringify(data.error)) }
         return { ok: true, result: data.choices?.[0]?.message?.content || '' }
       }
     } catch (e) {
-      return { ok: false, error: e.message }
+      return { ok: false, error: ruError(e.message) }
     }
   })
 }

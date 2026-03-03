@@ -1,4 +1,4 @@
-// v0.9 — Статистика сообщений, анимация новой вкладки (ping)
+// v0.9.4 — Фикс ресайзера: overlay поверх WebView во время drag
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -131,6 +131,7 @@ export default function App() {
   const [showAutoReply, setShowAutoReply] = useState(false)
   const [stats, setStats] = useState({ today: 0, autoToday: 0, total: 0, date: '' })
   const [newMessageIds, setNewMessageIds] = useState(new Set())
+  const [isResizing, setIsResizing] = useState(false)
 
   const webviewRefs = useRef({})
   const retryTimers = useRef({})
@@ -286,6 +287,7 @@ export default function App() {
     const onUp = () => {
       if (!isResizingRef.current) return
       isResizingRef.current = false
+      setIsResizing(false)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       const newW = aiWidthRef.current
@@ -305,6 +307,7 @@ export default function App() {
 
   const startResize = (e) => {
     isResizingRef.current = true
+    setIsResizing(true)
     resizeStartRef.current = { x: e.clientX, w: aiWidthRef.current }
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
@@ -679,7 +682,7 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Область WebView ── */}
-        <div className="flex-1 relative overflow-hidden" style={{ backgroundColor: 'var(--cc-bg)' }}>
+        <div className="flex-1 relative overflow-hidden" style={{ backgroundColor: 'var(--cc-bg)', cursor: isResizing ? 'col-resize' : undefined }}>
           {messengers.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center px-8">
@@ -719,17 +722,22 @@ export default function App() {
               <div className="text-2xl animate-pulse" style={{ color: 'var(--cc-text-dimmer)' }}>⏳</div>
             </div>
           )}
+
+          {/* Overlay во время resize — блокирует WebView от захвата mousemove/mouseup */}
+          {isResizing && (
+            <div className="absolute inset-0 z-50" style={{ cursor: 'col-resize' }} />
+          )}
         </div>
 
         {/* ── Resizer ── */}
         {showAI && (
           <div
             onMouseDown={startResize}
-            className="w-1 shrink-0 cursor-col-resize transition-colors duration-150"
-            style={{ backgroundColor: 'var(--cc-border)' }}
-            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#2AABEE66' }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--cc-border)' }}
-            title="Потяни для изменения ширины"
+            className="shrink-0 cursor-col-resize transition-colors duration-150"
+            style={{ width: '6px', backgroundColor: isResizing ? '#2AABEE88' : 'var(--cc-border)' }}
+            onMouseEnter={e => { if (!isResizing) e.currentTarget.style.backgroundColor = '#2AABEE66' }}
+            onMouseLeave={e => { if (!isResizing) e.currentTarget.style.backgroundColor = 'var(--cc-border)' }}
+            title="Потяни для изменения ширины панели ИИ"
           />
         )}
 
