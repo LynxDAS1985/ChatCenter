@@ -1,5 +1,5 @@
 // v0.7 — DeepSeek + ГигаЧат, resizable AI panel
-import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification } from 'electron'
+import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import https from 'node:https'
@@ -310,6 +310,14 @@ function setupIPC() {
   // Настройки — сохранение
   ipcMain.handle('settings:save', (event, settings) => {
     storage.set('settings', settings)
+    return { ok: true }
+  })
+
+  // Открыть URL в системном браузере (для получения API-ключей)
+  ipcMain.handle('shell:open-url', (_, url) => {
+    if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+      shell.openExternal(url)
+    }
     return { ok: true }
   })
 

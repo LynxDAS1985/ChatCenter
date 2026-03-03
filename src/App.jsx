@@ -1,4 +1,4 @@
-// v0.8 — Fix resizer, Windows уведомления, шаблоны, авто-ответчик, история AI
+// v0.9 — Статистика сообщений, анимация новой вкладки (ping)
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -27,7 +27,7 @@ function playNotificationSound() {
 // ─── Компонент вкладки мессенджера ────────────────────────────────────────
 
 function MessengerTab({
-  messenger: m, isActive, accountInfo, unreadCount,
+  messenger: m, isActive, accountInfo, unreadCount, isNew,
   onClick, onClose, isDragOver,
   onDragStart, onDragOver, onDrop, onDragEnd
 }) {
@@ -53,11 +53,19 @@ function MessengerTab({
         outlineOffset: '-2px',
       }}
     >
-      {/* Цветная точка */}
-      <span
-        className="w-2 h-2 rounded-full shrink-0 transition-all duration-150"
-        style={{ backgroundColor: isActive ? m.color : `${m.color}55` }}
-      />
+      {/* Цветная точка + ping-анимация при новом сообщении */}
+      <span className="relative inline-flex w-2 h-2 shrink-0">
+        {isNew && !isActive && (
+          <span
+            className="animate-ping absolute inset-0 rounded-full"
+            style={{ backgroundColor: m.color, opacity: 0.6 }}
+          />
+        )}
+        <span
+          className="relative w-2 h-2 rounded-full block transition-all duration-150"
+          style={{ backgroundColor: isActive ? m.color : `${m.color}55` }}
+        />
+      </span>
 
       {/* Название + аккаунт */}
       <span className="flex flex-col items-start leading-tight">
@@ -79,7 +87,10 @@ function MessengerTab({
 
       {/* Бейдж непрочитанных */}
       {unreadCount > 0 && !hovered && (
-        <span className="absolute top-1 right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+        <span
+          className="absolute top-1 right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none"
+          style={{ animation: isNew ? 'bounce 0.6s ease 3' : 'none' }}
+        >
           {unreadCount > 99 ? '99+' : unreadCount}
         </span>
       )}
@@ -113,11 +124,13 @@ export default function App() {
   const [dragOverId, setDragOverId] = useState(null)
   const [monitorPreloadUrl, setMonitorPreloadUrl] = useState(null)
   const [appReady, setAppReady] = useState(false)
-  const [lastMessage, setLastMessage] = useState(null) // для AISidebar
-  const [aiWidth, setAiWidth] = useState(300)          // ширина AI-панели (state)
-  const [chatHistory, setChatHistory] = useState([])   // история сообщений для AI
+  const [lastMessage, setLastMessage] = useState(null)
+  const [aiWidth, setAiWidth] = useState(300)
+  const [chatHistory, setChatHistory] = useState([])
   const [showTemplates, setShowTemplates] = useState(false)
   const [showAutoReply, setShowAutoReply] = useState(false)
+  const [stats, setStats] = useState({ today: 0, autoToday: 0, total: 0, date: '' })
+  const [newMessageIds, setNewMessageIds] = useState(new Set())
 
   const webviewRefs = useRef({})
   const retryTimers = useRef({})
@@ -129,13 +142,39 @@ export default function App() {
   const messengersRef = useRef(messengers)
   const isResizingRef = useRef(false)
   const resizeStartRef = useRef({ x: 0, w: 300 })
-  const aiWidthRef = useRef(300)   // для DOM-update во время drag (без React re-render)
-  const aiPanelRef = useRef(null)  // ref на DOM-узел AISidebar
+  const aiWidthRef = useRef(300)
+  const aiPanelRef = useRef(null)
+  const statsRef = useRef({ today: 0, autoToday: 0, total: 0, date: '' })
+  const statsSaveTimer = useRef(null)
+  const bumpStatsRef = useRef(null)
 
   // Синхронизация рефов
   useEffect(() => { settingsRef.current = settings }, [settings])
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   useEffect(() => { messengersRef.current = messengers }, [messengers])
+
+  // bumpStats обновляется каждый рендер — чтобы ipc-handler всегда звал актуальную версию
+  bumpStatsRef.current = (delta) => {
+    const todayDate = new Date().toISOString().slice(0, 10)
+    const cur = statsRef.current
+    const base = cur.date !== todayDate
+      ? { today: 0, autoToday: 0, total: cur.total || 0, date: todayDate }
+      : cur
+    const next = {
+      ...base,
+      today: (base.today || 0) + (delta.today || 0),
+      autoToday: (base.autoToday || 0) + (delta.autoToday || 0),
+      total: (base.total || 0) + (delta.total || 0),
+    }
+    statsRef.current = next
+    setStats(next)
+    clearTimeout(statsSaveTimer.current)
+    statsSaveTimer.current = setTimeout(() => {
+      const upd = { ...settingsRef.current, stats: statsRef.current }
+      settingsRef.current = upd
+      window.api.invoke('settings:save', upd).catch(() => {})
+    }, 2000)
+  }
 
   // ── Применение темы ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -160,10 +199,17 @@ export default function App() {
           const w = Math.max(240, Math.min(600, s.aiSidebarWidth))
           setAiWidth(w); aiWidthRef.current = w
         }
+        // Загружаем статистику с ежедневным сбросом
+        const todayDate = new Date().toISOString().slice(0, 10)
+        const savedStats = s.stats || {}
+        const loadedStats = savedStats.date !== todayDate
+          ? { today: 0, autoToday: 0, total: savedStats.total || 0, date: todayDate }
+          : { today: savedStats.today || 0, autoToday: savedStats.autoToday || 0, total: savedStats.total || 0, date: savedStats.date }
+        setStats(loadedStats)
+        statsRef.current = loadedStats
       }).catch(() => {}),
       window.api.invoke('app:get-paths').then(({ monitorPreload }) => {
         if (monitorPreload) {
-          // Конвертируем путь ОС в file:// URL
           const url = 'file:///' + monitorPreload.replace(/\\/g, '/').replace(/^\//, '')
           setMonitorPreloadUrl(url)
         }
@@ -180,7 +226,7 @@ export default function App() {
     }, 600)
   }, [messengers])
 
-  // ── Бейдж-события от ChatMonitor (через ipc-message в setWebviewRef) ────
+  // ── Бейдж-события от ChatMonitor ─────────────────────────────────────────
   useEffect(() => {
     return window.api.on('messenger:badge', ({ id, count }) => {
       setUnreadCounts(prev => {
@@ -224,17 +270,15 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, []) // eslint-disable-line
 
-  // ── Resizer AI-панели (DOM-update без React re-render — без фризов) ──────
+  // ── Resizer AI-панели ─────────────────────────────────────────────────────
   useEffect(() => {
     const onMove = (e) => {
       if (!isResizingRef.current) return
       const delta = resizeStartRef.current.x - e.clientX
       const newW = Math.max(240, Math.min(600, resizeStartRef.current.w + delta))
       aiWidthRef.current = newW
-      // Обновляем DOM напрямую — никаких React re-renders во время drag
       if (aiPanelRef.current) {
         aiPanelRef.current.style.width = `${newW}px`
-        // Обновляем и внутренний div (min-width: Xpx)
         const inner = aiPanelRef.current.firstChild
         if (inner) { inner.style.width = `${newW}px`; inner.style.minWidth = `${newW}px` }
       }
@@ -244,13 +288,11 @@ export default function App() {
       isResizingRef.current = false
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      // Теперь синхронизируем React state (один re-render при mouseup)
       const newW = aiWidthRef.current
       setAiWidth(newW)
       const updated = { ...settingsRef.current, aiSidebarWidth: newW }
       setSettings(updated)
       window.api.invoke('settings:save', updated).catch(() => {})
-      // Восстанавливаем transition
       if (aiPanelRef.current) aiPanelRef.current.style.transition = ''
     }
     window.addEventListener('mousemove', onMove)
@@ -266,7 +308,6 @@ export default function App() {
     resizeStartRef.current = { x: e.clientX, w: aiWidthRef.current }
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
-    // Отключаем transition во время drag
     if (aiPanelRef.current) aiPanelRef.current.style.transition = 'none'
     e.preventDefault()
   }
@@ -276,6 +317,7 @@ export default function App() {
     return () => {
       Object.values(retryTimers.current).forEach(t => clearTimeout(t))
       clearTimeout(saveTimer.current)
+      clearTimeout(statsSaveTimer.current)
     }
   }, [])
 
@@ -283,6 +325,8 @@ export default function App() {
   const handleTabClick = (id) => {
     setActiveId(id)
     setUnreadCounts(prev => ({ ...prev, [id]: 0 }))
+    // Убираем анимацию при клике на вкладку
+    setNewMessageIds(prev => { const n = new Set(prev); n.delete(id); return n })
     if (searchVisible && searchText) {
       setTimeout(() => { webviewRefs.current[id]?.findInPage(searchText) }, 200)
     }
@@ -311,9 +355,7 @@ export default function App() {
 
   // ── Drag-and-drop вкладок ────────────────────────────────────────────────
   const handleDragStart = (id) => { dragStartId.current = id }
-
   const handleDragOver = (id) => { setDragOverId(id) }
-
   const handleDrop = (id) => {
     const fromId = dragStartId.current
     if (!fromId || fromId === id) { setDragOverId(null); dragStartId.current = null; return }
@@ -329,7 +371,6 @@ export default function App() {
     setDragOverId(null)
     dragStartId.current = null
   }
-
   const handleDragEnd = () => { setDragOverId(null); dragStartId.current = null }
 
   // ── Поиск ─────────────────────────────────────────────────────────────────
@@ -396,7 +437,6 @@ export default function App() {
         )
       })
 
-      // Сообщения от ChatMonitor (monitor.preload.js через sendToHost)
       el.addEventListener('ipc-message', (e) => {
         if (e.channel === 'unread-count') {
           const count = Number(e.args[0]) || 0
@@ -404,7 +444,6 @@ export default function App() {
             const wasLess = count > (prev[messengerId] || 0)
             if (wasLess) {
               if (settingsRef.current.soundEnabled !== false) playNotificationSound()
-              // Windows-уведомление
               if (settingsRef.current.notificationsEnabled !== false) {
                 const m = messengersRef.current.find(x => x.id === messengerId)
                 window.api.invoke('app:notify', {
@@ -416,13 +455,15 @@ export default function App() {
             return { ...prev, [messengerId]: count }
           })
         } else if (e.channel === 'new-message') {
-          // Текст нового сообщения от monitor.preload.js
           const text = e.args[0]
           if (!text) return
-          // Добавляем в историю AI (последние 20)
+
+          // Добавляем в историю AI
           setChatHistory(prev => [...prev.slice(-19), { messengerId, text, ts: Date.now() }])
+
           // Авто-ответчик по ключевым словам
           const rules = settingsRef.current.autoReplyRules || []
+          let autoReplied = false
           for (const rule of rules) {
             if (!rule.active) continue
             const matched = rule.keywords.some(kw => text.toLowerCase().includes(kw.toLowerCase()))
@@ -432,10 +473,20 @@ export default function App() {
                 title: '🤖 Авто-ответ скопирован',
                 body: `Правило: "${rule.keywords[0]}" — ответ в буфере обмена`
               }).catch(() => {})
+              autoReplied = true
               break
             }
           }
-          // Обновляем lastMessage для AISidebar
+
+          // Статистика сообщений
+          bumpStatsRef.current?.({ today: 1, total: 1, ...(autoReplied ? { autoToday: 1 } : {}) })
+
+          // Анимация на вкладке (ping 3 секунды)
+          setNewMessageIds(prev => { const n = new Set(prev); n.add(messengerId); return n })
+          setTimeout(() => {
+            setNewMessageIds(prev => { const n = new Set(prev); n.delete(messengerId); return n })
+          }, 3000)
+
           setLastMessage(text)
         }
       })
@@ -490,6 +541,7 @@ export default function App() {
               isActive={activeId === m.id}
               accountInfo={accountInfo[m.id]}
               unreadCount={unreadCounts[m.id] || 0}
+              isNew={newMessageIds.has(m.id)}
               isDragOver={dragOverId === m.id}
               onClick={() => handleTabClick(m.id)}
               onClose={() => removeMessenger(m.id)}
@@ -516,7 +568,6 @@ export default function App() {
           className="flex items-center gap-0.5 px-2 shrink-0"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
-          {/* Поиск */}
           <button
             onClick={toggleSearch}
             title="Поиск (Ctrl+F)"
@@ -529,7 +580,6 @@ export default function App() {
             onMouseLeave={e => { if (!searchVisible) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
           >🔍</button>
 
-          {/* ИИ */}
           <button
             onClick={() => setShowAI(!showAI)}
             title="ИИ-помощник"
@@ -542,7 +592,6 @@ export default function App() {
             onMouseLeave={e => { if (!showAI) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
           >🤖</button>
 
-          {/* Шаблоны */}
           <button
             onClick={() => setShowTemplates(!showTemplates)}
             title="Шаблоны ответов"
@@ -555,7 +604,6 @@ export default function App() {
             onMouseLeave={e => { if (!showTemplates) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
           >📋</button>
 
-          {/* Авто-ответчик */}
           <button
             onClick={() => setShowAutoReply(!showAutoReply)}
             title="Авто-ответчик"
@@ -568,7 +616,6 @@ export default function App() {
             onMouseLeave={e => { if (!showAutoReply) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
           >⚡</button>
 
-          {/* Тема */}
           <button
             onClick={() => handleSettingsChange({ ...settings, theme: theme === 'dark' ? 'light' : 'dark' })}
             title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
@@ -578,7 +625,6 @@ export default function App() {
             onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' }}
           >{theme === 'dark' ? '☀️' : '🌙'}</button>
 
-          {/* Настройки */}
           <button
             onClick={() => setShowSettings(true)}
             title="Настройки (Ctrl+,)"
@@ -588,7 +634,6 @@ export default function App() {
             onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' }}
           >⚙️</button>
 
-          {/* Общий счётчик непрочитанных */}
           {totalUnread > 0 && (
             <span className="ml-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0">
               {totalUnread}
@@ -596,7 +641,6 @@ export default function App() {
           )}
         </div>
 
-        {/* ──  Спейсер для нативных кнопок Windows (WCO) ── */}
         <div className="wco-spacer" />
       </div>
 
@@ -677,7 +721,7 @@ export default function App() {
           )}
         </div>
 
-        {/* ── Resizer: перетаскиваемый разделитель ── */}
+        {/* ── Resizer ── */}
         {showAI && (
           <div
             onMouseDown={startResize}
@@ -700,6 +744,28 @@ export default function App() {
           panelRef={aiPanelRef}
           chatHistory={chatHistory}
         />
+      </div>
+
+      {/* ── Строка статистики ── */}
+      <div
+        className="flex items-center px-4 h-[26px] text-[11px] gap-3 shrink-0 select-none"
+        style={{
+          backgroundColor: 'var(--cc-surface)',
+          borderTop: '1px solid var(--cc-border)',
+          color: 'var(--cc-text-dimmer)',
+        }}
+      >
+        <span>💬 <span style={{ color: 'var(--cc-text-dim)', fontWeight: 600 }}>{stats.today}</span> сегодня</span>
+        <span style={{ opacity: 0.3 }}>·</span>
+        <span>⚡ <span style={{ color: stats.autoToday > 0 ? '#a855f7' : 'var(--cc-text-dim)', fontWeight: 600 }}>{stats.autoToday}</span> авто</span>
+        <span style={{ opacity: 0.3 }}>·</span>
+        <span>📊 <span style={{ color: 'var(--cc-text-dim)', fontWeight: 600 }}>{stats.total}</span> всего</span>
+        {totalUnread > 0 && (
+          <>
+            <span style={{ opacity: 0.3 }}>·</span>
+            <span>📥 <span style={{ color: '#f87171', fontWeight: 600 }}>{totalUnread}</span> непрочитано</span>
+          </>
+        )}
       </div>
 
       {/* ── Модальные окна ── */}

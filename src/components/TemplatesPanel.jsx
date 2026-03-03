@@ -1,17 +1,22 @@
-// v0.8 — Шаблоны ответов: библиотека готовых текстов с поиском и CRUD
+// v0.9 — Шаблоны ответов: CRUD + поиск + категории
 import { useState } from 'react'
 
 export default function TemplatesPanel({ settings, onSettingsChange, onClose }) {
   const templates = settings.templates || []
   const [search, setSearch] = useState('')
-  const [editing, setEditing] = useState(null) // { id, name, text } | null
+  const [activeCategory, setActiveCategory] = useState('all')
+  const [editing, setEditing] = useState(null) // { id, name, text, category } | null
   const [copiedId, setCopiedId] = useState(null)
 
-  const filtered = search
-    ? templates.filter(t =>
-        t.name?.toLowerCase().includes(search.toLowerCase()) ||
-        t.text?.toLowerCase().includes(search.toLowerCase()))
-    : templates
+  // Уникальные категории из всех шаблонов
+  const categories = [...new Set(templates.map(t => t.category).filter(Boolean))].sort()
+
+  // Фильтрация: по категории + по поиску
+  const filtered = templates
+    .filter(t => activeCategory === 'all' || t.category === activeCategory)
+    .filter(t => !search ||
+      t.name?.toLowerCase().includes(search.toLowerCase()) ||
+      t.text?.toLowerCase().includes(search.toLowerCase()))
 
   const save = (updated) => {
     onSettingsChange({ ...settings, templates: updated })
@@ -19,7 +24,7 @@ export default function TemplatesPanel({ settings, onSettingsChange, onClose }) 
   }
 
   const addTemplate = () => {
-    setEditing({ id: Date.now().toString(), name: '', text: '' })
+    setEditing({ id: Date.now().toString(), name: '', text: '', category: activeCategory !== 'all' ? activeCategory : '' })
   }
 
   const saveEditing = () => {
@@ -48,7 +53,7 @@ export default function TemplatesPanel({ settings, onSettingsChange, onClose }) 
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className="flex flex-col w-[520px] max-h-[80vh] rounded-2xl overflow-hidden shadow-2xl"
+        className="flex flex-col w-[540px] max-h-[82vh] rounded-2xl overflow-hidden shadow-2xl"
         style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)' }}
       >
         {/* Заголовок */}
@@ -95,20 +100,64 @@ export default function TemplatesPanel({ settings, onSettingsChange, onClose }) 
           >+ Добавить</button>
         </div>
 
+        {/* Фильтр по категориям */}
+        {categories.length > 0 && (
+          <div
+            className="flex items-center gap-1.5 px-4 py-2 flex-wrap shrink-0"
+            style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)' }}
+          >
+            <button
+              onClick={() => setActiveCategory('all')}
+              className="text-[10px] px-2 py-0.5 rounded-full cursor-pointer transition-all"
+              style={{
+                backgroundColor: activeCategory === 'all' ? '#2AABEE22' : 'var(--cc-hover)',
+                color: activeCategory === 'all' ? '#2AABEE' : 'var(--cc-text-dimmer)',
+                border: `1px solid ${activeCategory === 'all' ? '#2AABEE44' : 'transparent'}`,
+              }}
+            >Все ({templates.length})</button>
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className="text-[10px] px-2 py-0.5 rounded-full cursor-pointer transition-all"
+                style={{
+                  backgroundColor: activeCategory === cat ? '#2AABEE22' : 'var(--cc-hover)',
+                  color: activeCategory === cat ? '#2AABEE' : 'var(--cc-text-dimmer)',
+                  border: `1px solid ${activeCategory === cat ? '#2AABEE44' : 'transparent'}`,
+                }}
+              >{cat} ({templates.filter(t => t.category === cat).length})</button>
+            ))}
+          </div>
+        )}
+
         {/* Форма редактирования */}
         {editing && (
           <div
             className="px-4 py-3 space-y-2 shrink-0"
             style={{ backgroundColor: 'var(--cc-surface-alt)', borderBottom: '1px solid var(--cc-border)' }}
           >
-            <input
-              type="text"
-              value={editing.name}
-              onChange={e => setEditing({ ...editing, name: e.target.value })}
-              placeholder="Название шаблона (необязательно)"
-              className="w-full text-xs px-2.5 py-1.5 rounded-lg outline-none"
-              style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
-            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={editing.name}
+                onChange={e => setEditing({ ...editing, name: e.target.value })}
+                placeholder="Название (необязательно)"
+                className="text-xs px-2.5 py-1.5 rounded-lg outline-none"
+                style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+              />
+              <input
+                type="text"
+                value={editing.category || ''}
+                onChange={e => setEditing({ ...editing, category: e.target.value })}
+                placeholder="Категория (необязательно)"
+                list="template-categories-list"
+                className="text-xs px-2.5 py-1.5 rounded-lg outline-none"
+                style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+              />
+              <datalist id="template-categories-list">
+                {categories.map(cat => <option key={cat} value={cat} />)}
+              </datalist>
+            </div>
             <textarea
               value={editing.text}
               onChange={e => setEditing({ ...editing, text: e.target.value })}
@@ -162,9 +211,17 @@ export default function TemplatesPanel({ settings, onSettingsChange, onClose }) 
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  {t.name && (
-                    <p className="text-[11px] font-semibold mb-1 truncate" style={{ color: 'var(--cc-text-dimmer)' }}>{t.name}</p>
-                  )}
+                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                    {t.name && (
+                      <span className="text-[11px] font-semibold truncate" style={{ color: 'var(--cc-text-dimmer)' }}>{t.name}</span>
+                    )}
+                    {t.category && (
+                      <span
+                        className="text-[9px] px-1.5 py-0.5 rounded-full shrink-0"
+                        style={{ backgroundColor: '#2AABEE11', color: '#2AABEE88', border: '1px solid #2AABEE22' }}
+                      >{t.category}</span>
+                    )}
+                  </div>
                   <p className="text-xs leading-relaxed line-clamp-3" style={{ color: 'var(--cc-text)' }}>{t.text}</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -187,9 +244,7 @@ export default function TemplatesPanel({ settings, onSettingsChange, onClose }) 
                 </div>
               </div>
               <div className="flex items-center justify-between mt-1.5">
-                <span className="text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>
-                  {t.text.length} симв.
-                </span>
+                <span className="text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>{t.text.length} симв.</span>
                 <span className="text-[10px]" style={{ color: copiedId === t.id ? '#22c55e' : 'var(--cc-text-dimmer)' }}>
                   {copiedId === t.id ? '✓ скопировано' : '↓ нажми чтобы скопировать'}
                 </span>

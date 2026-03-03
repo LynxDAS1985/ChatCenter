@@ -1,4 +1,4 @@
-// v0.7 — 4 провайдера (OpenAI, Anthropic, DeepSeek, ГигаЧат), width prop, улучшенный UI
+// v0.9 — только подключённые провайдеры, кнопка "Добавить ИИ", веб-ссылка для получения ключей
 import { useState, useRef, useEffect } from 'react'
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -21,37 +21,63 @@ const MODEL_HINTS = {
   gigachat:  ['GigaChat', 'GigaChat-Plus', 'GigaChat-Pro'],
 }
 
+// Ссылки для получения ключей у каждого провайдера
+const PROVIDER_URLS = {
+  openai:    'https://platform.openai.com/api-keys',
+  anthropic: 'https://console.anthropic.com/settings/keys',
+  deepseek:  'https://platform.deepseek.com/api_keys',
+  gigachat:  'https://developers.sber.ru/studio',
+}
+
+// Читаем конфиг провайдера с учётом aiProviderKeys + активного провайдера
+function getProviderCfg(settings, pid) {
+  const pKeys = settings.aiProviderKeys || {}
+  const active = settings.aiProvider || 'openai'
+  if (pid === active) {
+    return {
+      apiKey: settings.aiApiKey || pKeys[pid]?.apiKey || '',
+      clientSecret: settings.aiClientSecret || pKeys[pid]?.clientSecret || '',
+      model: settings.aiModel || pKeys[pid]?.model || PROVIDERS.find(p => p.id === pid)?.defaultModel || '',
+    }
+  }
+  return {
+    apiKey: pKeys[pid]?.apiKey || '',
+    clientSecret: pKeys[pid]?.clientSecret || '',
+    model: pKeys[pid]?.model || PROVIDERS.find(p => p.id === pid)?.defaultModel || '',
+  }
+}
+
+function isProviderConnected(settings, pid) {
+  const cfg = getProviderCfg(settings, pid)
+  if (pid === 'gigachat') return !!(cfg.apiKey && cfg.clientSecret)
+  return !!cfg.apiKey
+}
+
 export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle, width = 300, panelRef, chatHistory = [] }) {
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showConfig, setShowConfig] = useState(false)
+  const [showAddProvider, setShowAddProvider] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState(null)
   const [showKey, setShowKey] = useState(false)
-  const inputRef = useRef(null)
+  const [showSecret, setShowSecret] = useState(false)
   const endRef = useRef(null)
 
   const provider = settings.aiProvider || 'openai'
   const providerInfo = PROVIDERS.find(p => p.id === provider) || PROVIDERS[0]
+  const connectedProviders = PROVIDERS.filter(p => isProviderConnected(settings, p.id))
+  const unconnectedProviders = PROVIDERS.filter(p => !isProviderConnected(settings, p.id))
 
-  const aiCfg = {
-    provider,
-    model: settings.aiModel || providerInfo.defaultModel,
-    apiKey: settings.aiApiKey || '',
-    clientSecret: settings.aiClientSecret || '',
-    systemPrompt: settings.aiSystemPrompt || DEFAULT_SYSTEM_PROMPT,
-  }
+  const providerCfg = getProviderCfg(settings, provider)
+  const aiCfg = { provider, systemPrompt: settings.aiSystemPrompt || DEFAULT_SYSTEM_PROMPT, ...providerCfg }
 
   const isGigaChat = provider === 'gigachat'
-  const configured = isGigaChat
-    ? (!!aiCfg.apiKey && !!aiCfg.clientSecret)
-    : !!aiCfg.apiKey
+  const configured = isProviderConnected(settings, provider)
 
-  // Авто-прокрутка
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [suggestions, error])
 
-  // Авто-подстановка нового входящего сообщения
   useEffect(() => {
     if (lastMessage && visible) {
       setInput(lastMessage)
@@ -60,27 +86,57 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     }
   }, [lastMessage, visible])
 
-  // Сброс модели при смене провайдера
-  const setProvider = (p) => {
-    const defaultModel = PROVIDERS.find(x => x.id === p)?.defaultModel || ''
-    onSettingsChange({ ...settings, aiProvider: p, aiModel: defaultModel })
+  // Переключить активный провайдер, сохранив конфиг текущего в aiProviderKeys
+  const switchProvider = (newPid) => {
+    const pKeys = { ...(settings.aiProviderKeys || {}) }
+    const currentPid = settings.aiProvider || 'openai'
+    pKeys[currentPid] = {
+      apiKey: settings.aiApiKey || '',
+      clientSecret: settings.aiClientSecret || '',
+      model: settings.aiModel || '',
+    }
+    const newPk = pKeys[newPid] || {}
+    const newModel = newPk.model || PROVIDERS.find(p => p.id === newPid)?.defaultModel || ''
+    const newIsConfigured = newPid === 'gigachat'
+      ? !!(newPk.apiKey && newPk.clientSecret)
+      : !!newPk.apiKey
+    onSettingsChange({
+      ...settings,
+      aiProvider: newPid,
+      aiApiKey: newPk.apiKey || '',
+      aiClientSecret: newPk.clientSecret || '',
+      aiModel: newModel,
+      aiProviderKeys: pKeys,
+    })
+    setShowAddProvider(false)
+    setShowConfig(!newIsConfigured) // открыть конфиг если новый провайдер ещё не настроен
+  }
+
+  // Обновить настройку + синхронизировать aiProviderKeys
+  const set = (key, val) => {
+    const updated = { ...settings, [key]: val }
+    const pid = updated.aiProvider || 'openai'
+    const pKeys = { ...(updated.aiProviderKeys || {}) }
+    pKeys[pid] = {
+      apiKey: key === 'aiApiKey' ? val : (updated.aiApiKey || ''),
+      clientSecret: key === 'aiClientSecret' ? val : (updated.aiClientSecret || ''),
+      model: key === 'aiModel' ? val : (updated.aiModel || ''),
+    }
+    updated.aiProviderKeys = pKeys
+    onSettingsChange(updated)
   }
 
   const generate = async (text) => {
-    if (!configured) { setError('Настройте ИИ ниже'); setShowConfig(true); return }
+    if (!configured) { setError('Настройте ИИ'); setShowConfig(true); return }
     if (!text.trim()) return
     setLoading(true); setError(''); setSuggestions([])
     try {
-      // Включаем историю последних 6 сообщений как контекст
       const historyMessages = chatHistory.slice(-6).map(h => ({
         role: 'user',
         content: `[История] ${h.messengerId ? `(${h.messengerId}) ` : ''}${h.text}`
       }))
       const res = await window.api.invoke('ai:generate', {
-        messages: [
-          ...historyMessages,
-          { role: 'user', content: `Сообщение клиента: "${text.trim()}"` }
-        ],
+        messages: [...historyMessages, { role: 'user', content: `Сообщение клиента: "${text.trim()}"` }],
         settings: aiCfg,
       })
       if (!res.ok) { setError(res.error || 'Ошибка ИИ'); return }
@@ -111,7 +167,10 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     setTimeout(() => setCopiedIdx(null), 2000)
   }
 
-  const set = (key, val) => onSettingsChange({ ...settings, [key]: val })
+  const openProviderUrl = () => {
+    const url = PROVIDER_URLS[provider]
+    if (url) window.api.invoke('shell:open-url', url).catch(() => {})
+  }
 
   return (
     <div
@@ -135,7 +194,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
           <div className="flex items-center gap-2">
             <span className="text-base">🤖</span>
             <span className="text-sm font-semibold" style={{ color: 'var(--cc-text)' }}>ИИ-помощник</span>
-            {configured && <span className="w-1.5 h-1.5 rounded-full bg-green-400" title="Настроен" />}
             {chatHistory.length > 0 && (
               <span
                 className="text-[9px] px-1 py-0.5 rounded-full leading-none"
@@ -149,59 +207,131 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
               <button
                 onClick={() => { setSuggestions([]); setError(''); setInput('') }}
                 title="Очистить"
-                className="text-xs w-6 h-6 rounded flex items-center justify-center transition-colors cursor-pointer"
+                className="text-xs w-6 h-6 rounded flex items-center justify-center cursor-pointer"
                 style={{ color: 'var(--cc-text-dimmer)' }}
               >↺</button>
             )}
-            <button
-              onClick={() => setShowConfig(!showConfig)}
-              title="Настройки ИИ"
-              className="text-sm w-6 h-6 rounded flex items-center justify-center transition-colors cursor-pointer"
-              style={{ color: showConfig ? '#2AABEE' : 'var(--cc-text-dimmer)' }}
-            >⚙️</button>
-          </div>
-        </div>
-
-        {/* ── Переключатель провайдеров (всегда виден) ── */}
-        <div
-          className="px-2 pt-2 pb-1.5 shrink-0"
-          style={{ borderBottom: '1px solid var(--cc-border)' }}
-        >
-          <div className="grid grid-cols-4 gap-1">
-            {PROVIDERS.map(p => (
+            {configured && (
               <button
-                key={p.id}
-                onClick={() => setProvider(p.id)}
-                title={p.label + (p.free ? ' — бесплатный tier' : '')}
-                className="flex flex-col items-center justify-center py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer relative"
-                style={{
-                  backgroundColor: provider === p.id ? '#2AABEE22' : 'var(--cc-hover)',
-                  border: `1px solid ${provider === p.id ? '#2AABEE66' : 'transparent'}`,
-                }}
-              >
-                <span className="text-sm leading-none mb-0.5">{p.icon}</span>
-                <span
-                  className="text-[10px] font-medium leading-tight"
-                  style={{ color: provider === p.id ? '#2AABEE' : 'var(--cc-text-dim)' }}
-                >{p.label}</span>
-                {p.free && (
-                  <span
-                    className="absolute -top-1 -right-1 text-[8px] px-1 rounded-full leading-tight font-bold"
-                    style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}
-                  >free</span>
-                )}
-              </button>
-            ))}
+                onClick={() => { setShowConfig(!showConfig); setShowAddProvider(false) }}
+                title="Настройки активного ИИ"
+                className="text-sm w-6 h-6 rounded flex items-center justify-center cursor-pointer"
+                style={{ color: showConfig ? '#2AABEE' : 'var(--cc-text-dimmer)' }}
+              >⚙️</button>
+            )}
           </div>
         </div>
 
-        {/* ── Конфиг-панель (по кнопке ⚙️) ── */}
+        {/* ── Панель провайдеров ── */}
+        <div className="px-2 pt-2 pb-1.5 shrink-0" style={{ borderBottom: '1px solid var(--cc-border)' }}>
+          {connectedProviders.length > 0 ? (
+            <div className="flex items-center gap-1 flex-wrap">
+              {connectedProviders.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => { switchProvider(p.id); setShowConfig(false) }}
+                  title={p.label}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all"
+                  style={{
+                    backgroundColor: provider === p.id ? '#2AABEE22' : 'var(--cc-hover)',
+                    border: `1px solid ${provider === p.id ? '#2AABEE66' : 'transparent'}`,
+                    color: provider === p.id ? '#2AABEE' : 'var(--cc-text-dim)',
+                  }}
+                >
+                  <span>{p.icon}</span>
+                  <span>{p.label}</span>
+                  {p.free && (
+                    <span className="text-[7px] leading-tight" style={{ color: '#22c55e' }}>free</span>
+                  )}
+                  {provider === p.id && <span className="opacity-70">✓</span>}
+                </button>
+              ))}
+
+              {/* Кнопка "Добавить ИИ" */}
+              <button
+                onClick={() => { setShowAddProvider(!showAddProvider); setShowConfig(false) }}
+                title="Подключить ещё одного ИИ-провайдера"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
+                style={{
+                  backgroundColor: showAddProvider ? '#22c55e22' : 'var(--cc-hover)',
+                  border: `1px solid ${showAddProvider ? '#22c55e44' : 'transparent'}`,
+                  color: showAddProvider ? '#22c55e' : 'var(--cc-text-dimmer)',
+                }}
+              >+ ИИ</button>
+            </div>
+          ) : (
+            /* Нет подключённых провайдеров */
+            <button
+              onClick={() => { setShowAddProvider(!showAddProvider); setShowConfig(false) }}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs cursor-pointer transition-all"
+              style={{
+                backgroundColor: '#2AABEE11',
+                border: '1px dashed #2AABEE55',
+                color: '#2AABEE',
+              }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#2AABEE22'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2AABEE11'}
+            >
+              <span className="text-base">+</span>
+              <span>Добавить ИИ-провайдер</span>
+            </button>
+          )}
+
+          {/* Picker: выбор провайдера для добавления */}
+          {showAddProvider && (
+            <div className="mt-2">
+              {unconnectedProviders.length > 0 ? (
+                <div className="grid grid-cols-2 gap-1">
+                  {unconnectedProviders.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => switchProvider(p.id)}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs cursor-pointer text-left transition-all"
+                      style={{
+                        backgroundColor: 'var(--cc-hover)',
+                        border: '1px solid var(--cc-border)',
+                        color: 'var(--cc-text-dim)',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = '#2AABEE55'; e.currentTarget.style.backgroundColor = '#2AABEE11' }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--cc-border)'; e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
+                    >
+                      <span className="text-base leading-none">{p.icon}</span>
+                      <div>
+                        <div className="font-medium leading-tight">{p.label}</div>
+                        {p.free && <div className="text-[9px] leading-tight" style={{ color: '#22c55e' }}>бесплатно</div>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-xs py-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>
+                  Все провайдеры подключены ✓
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Конфиг-панель ── */}
         {showConfig && (
           <div
-            className="px-3 py-3 space-y-2.5 shrink-0"
-            style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)' }}
+            className="px-3 py-3 space-y-2.5 shrink-0 overflow-y-auto"
+            style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)', maxHeight: '55%' }}
           >
-            {/* Модель — список кнопок с полными названиями */}
+            {/* Кнопка открыть сайт провайдера */}
+            <button
+              onClick={openProviderUrl}
+              className="flex items-center gap-1.5 text-[11px] cursor-pointer transition-opacity w-full text-left"
+              style={{ color: '#2AABEE' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+              title={`Открыть сайт ${providerInfo.label} для получения API-ключа`}
+            >
+              <span>🔗</span>
+              <span>Открыть {providerInfo.label} → получить ключ</span>
+            </button>
+
+            {/* Модель */}
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>Модель</div>
               <div className="flex flex-col gap-1">
@@ -231,7 +361,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
               </div>
             </div>
 
-            {/* Авторизация: GigaChat — 2 поля, остальные — 1 */}
+            {/* Авторизация */}
             {isGigaChat ? (
               <>
                 <div>
@@ -249,7 +379,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                   <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>Client Secret</div>
                   <div className="relative">
                     <input
-                      type={showKey ? 'text' : 'password'}
+                      type={showSecret ? 'text' : 'password'}
                       value={aiCfg.clientSecret}
                       onChange={e => set('aiClientSecret', e.target.value)}
                       placeholder="Секретный ключ"
@@ -257,14 +387,11 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                       style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
                     />
                     <button
-                      onClick={() => setShowKey(!showKey)}
+                      onClick={() => setShowSecret(!showSecret)}
                       className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] cursor-pointer"
                       style={{ color: 'var(--cc-text-dimmer)' }}
-                    >{showKey ? '🙈' : '👁️'}</button>
+                    >{showSecret ? '🙈' : '👁️'}</button>
                   </div>
-                  <p className="text-[10px] mt-1 leading-snug" style={{ color: 'var(--cc-text-dimmer)' }}>
-                    Получите в <span style={{ color: '#2AABEE' }}>developers.sber.ru/studio</span>
-                  </p>
                 </div>
               </>
             ) : (
@@ -275,7 +402,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     type={showKey ? 'text' : 'password'}
                     value={aiCfg.apiKey}
                     onChange={e => set('aiApiKey', e.target.value)}
-                    placeholder={provider === 'anthropic' ? 'sk-ant-...' : provider === 'deepseek' ? 'sk-...' : 'sk-...'}
+                    placeholder={provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
                     className="w-full text-xs px-2 py-1.5 pr-7 rounded-lg outline-none font-mono"
                     style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
                   />
@@ -308,12 +435,11 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
           {!configured && !showConfig && (
             <div className="flex flex-col items-center justify-center h-full text-center py-8">
               <div className="text-4xl mb-3">{providerInfo.icon}</div>
-              <p className="text-sm font-medium mb-1" style={{ color: 'var(--cc-text-dim)' }}>{providerInfo.label} не настроен</p>
+              <p className="text-sm font-medium mb-1" style={{ color: 'var(--cc-text-dim)' }}>
+                {connectedProviders.length === 0 ? 'Нет подключённых ИИ' : `${providerInfo.label} не настроен`}
+              </p>
               <p className="text-xs mb-4 leading-relaxed" style={{ color: 'var(--cc-text-dimmer)' }}>
-                {isGigaChat
-                  ? 'Добавьте Client ID и Client Secret\nот Сбербанк developers.sber.ru'
-                  : `Добавьте API-ключ ${providerInfo.label}`
-                }
+                {isGigaChat ? 'Нужен Client ID и Client Secret' : 'Нужен API-ключ для работы'}
               </p>
               <button
                 onClick={() => setShowConfig(true)}
@@ -373,7 +499,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         <div className="p-3 shrink-0" style={{ borderTop: '1px solid var(--cc-border)' }}>
           <div className="flex gap-2">
             <textarea
-              ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
