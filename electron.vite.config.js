@@ -18,7 +18,8 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'main/preloads/app.preload.js')
+          index: resolve(__dirname, 'main/preloads/app.preload.js'),
+          monitor: resolve(__dirname, 'main/preloads/monitor.preload.js')
         }
       }
     }

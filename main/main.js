@@ -1,4 +1,4 @@
-// v0.5 — Tray, сохранение позиции окна, CRUD мессенджеров, уведомления
+// v0.6 — Tray, сохранение позиции окна, CRUD мессенджеров, ИИ-помощник, тема, ChatMonitor
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -260,6 +260,75 @@ function setupIPC() {
       new Notification({ title, body, silent: true }).show()
     }
     return { ok: true }
+  })
+
+  // Пути к preload-файлам (для WebView-мониторинга)
+  ipcMain.handle('app:get-paths', () => ({
+    monitorPreload: isDev
+      ? path.join(__dirname, '../../main/preloads/monitor.preload.js')
+      : path.join(__dirname, '../preload/monitor.js')
+  }))
+
+  // Смена цвета нативного titlebar при переключении темы
+  ipcMain.handle('window:set-titlebar-theme', (event, theme) => {
+    if (mainWindow) {
+      mainWindow.setTitleBarOverlay({
+        color: theme === 'light' ? '#f0f4f8' : '#16213e',
+        symbolColor: theme === 'light' ? '#1e293b' : '#ffffff',
+        height: 48
+      })
+    }
+    return { ok: true }
+  })
+
+  // ИИ-генерация ответов (OpenAI / Anthropic)
+  ipcMain.handle('ai:generate', async (event, { messages, settings: aiCfg }) => {
+    const { provider, apiKey, model, systemPrompt } = aiCfg || {}
+    if (!apiKey) return { ok: false, error: 'API-ключ не указан' }
+
+    try {
+      if (provider === 'anthropic') {
+        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: model || 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            system: systemPrompt || '',
+            messages
+          })
+        })
+        const data = await resp.json()
+        if (data.error) return { ok: false, error: data.error.message || JSON.stringify(data.error) }
+        return { ok: true, result: data.content?.[0]?.text || '' }
+
+      } else {
+        // OpenAI (default)
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: model || 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt || '' },
+              ...messages
+            ]
+          })
+        })
+        const data = await resp.json()
+        if (data.error) return { ok: false, error: data.error.message || JSON.stringify(data.error) }
+        return { ok: true, result: data.choices?.[0]?.message?.content || '' }
+      }
+    } catch (e) {
+      return { ok: false, error: e.message }
+    }
   })
 }
 

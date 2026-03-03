@@ -2,56 +2,66 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Базовые стили ───────────────────────────────────────────── */
+/* ─── Reset ─────────────────────────────────────────────────────────────── */
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-html,
-body,
-#root {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-}
+html, body, #root { height: 100%; width: 100%; overflow: hidden; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: #1a1a2e;
-  color: #e2e8f0;
+  background-color: var(--cc-bg);
+  color: var(--cc-text);
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
 
-/* Разрешаем выделение текста там где нужно */
-input,
-textarea,
-[contenteditable] {
-  user-select: text;
+input, textarea, [contenteditable] { user-select: text; }
+
+webview { display: flex; width: 100%; height: 100%; }
+
+/* ─── Скроллбар ──────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+
+/* ─── CSS-переменные для тем ─────────────────────────────────────────────── */
+
+:root, [data-theme="dark"] {
+  --cc-bg: #1a1a2e;
+  --cc-surface: #16213e;
+  --cc-surface-alt: #0f172a;
+  --cc-border: rgba(255,255,255,0.08);
+  --cc-hover: rgba(255,255,255,0.06);
+  --cc-text: rgba(255,255,255,0.85);
+  --cc-text-dim: rgba(255,255,255,0.45);
+  --cc-text-dimmer: rgba(255,255,255,0.25);
+  --cc-overlay: rgba(0,0,0,0.55);
+  color-scheme: dark;
 }
 
-/* Скроллбар в стиле тёмной темы */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+[data-theme="light"] {
+  --cc-bg: #eef2f7;
+  --cc-surface: #ffffff;
+  --cc-surface-alt: #e4eaf2;
+  --cc-border: rgba(0,0,0,0.08);
+  --cc-hover: rgba(0,0,0,0.04);
+  --cc-text: rgba(15,23,42,0.88);
+  --cc-text-dim: rgba(15,23,42,0.55);
+  --cc-text-dimmer: rgba(15,23,42,0.30);
+  --cc-overlay: rgba(0,0,0,0.35);
+  color-scheme: light;
 }
 
-/* WebView должен занимать всё пространство */
-webview {
-  display: flex;
-  width: 100%;
-  height: 100%;
+/* ─── Пространство под нативные кнопки управления окном (WCO) ──────────── */
+/* Ширина точно равна ширине кнопок закрыть/свернуть/развернуть Windows    */
+
+.wco-spacer {
+  flex-shrink: 0;
+  width: calc(100vw - env(titlebar-area-width, 100vw));
+  min-width: 0;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
 }

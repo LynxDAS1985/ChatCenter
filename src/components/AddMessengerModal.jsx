@@ -1,6 +1,16 @@
-// v0.5 — Модальное окно добавления нового мессенджера
+// v0.6 — Модальное окно добавления: быстрый выбор из популярных + ручной ввод
 import { useState, useEffect } from 'react'
-import { PRESET_COLORS, PRESET_EMOJIS } from '../constants.js'
+import { PRESET_COLORS, PRESET_EMOJIS, POPULAR_MESSENGERS, DEFAULT_MESSENGERS } from '../constants.js'
+
+// accountScript для дефолтных мессенджеров, добавленных через Quick Add
+const DEFAULT_SCRIPTS = Object.fromEntries(
+  DEFAULT_MESSENGERS.map(m => [m.url, m.accountScript])
+)
+
+const BASE_SCRIPT = `(() => {
+  const t = document.title?.trim();
+  return (t && t.length < 60 && t !== 'Loading...' && t !== 'Загрузка...') ? t : null;
+})()`
 
 export default function AddMessengerModal({ onAdd, onClose }) {
   const [name, setName] = useState('')
@@ -15,6 +25,15 @@ export default function AddMessengerModal({ onAdd, onClose }) {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
+
+  // Выбор популярного пресета
+  const applyPreset = (preset) => {
+    setName(preset.name)
+    setUrl(preset.url)
+    setColor(preset.color)
+    setEmoji(preset.emoji)
+    setError('')
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -42,38 +61,77 @@ export default function AddMessengerModal({ onAdd, onClose }) {
       partition: `persist:custom_${ts}`,
       emoji,
       isDefault: false,
-      // Базовый скрипт для кастомных мессенджеров — пробуем title страницы
-      accountScript: `(() => {
-        const t = document.title?.trim();
-        return (t && t.length < 60 && t !== 'Loading...') ? t : null;
-      })()`
+      accountScript: DEFAULT_SCRIPTS[finalUrl] || BASE_SCRIPT,
     })
   }
 
   return (
     <div
-      className="fixed inset-0 bg-black/65 flex items-center justify-center z-50"
+      className="fixed inset-0 flex items-center justify-center z-50"
+      style={{ backgroundColor: 'var(--cc-overlay)' }}
       onClick={onClose}
     >
       <div
-        className="bg-[#16213e] border border-white/10 rounded-2xl p-6 w-[440px] shadow-2xl"
+        className="rounded-2xl p-6 w-[480px] shadow-2xl max-h-[90vh] overflow-y-auto"
+        style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)' }}
         onClick={e => e.stopPropagation()}
       >
+        {/* Шапка */}
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-white text-lg font-semibold">Добавить мессенджер</h2>
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--cc-text)' }}>Добавить мессенджер</h2>
           <button
             onClick={onClose}
-            className="text-white/30 hover:text-white/70 text-xl transition-colors cursor-pointer"
+            className="text-xl transition-colors cursor-pointer"
+            style={{ color: 'var(--cc-text-dimmer)' }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--cc-text)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--cc-text-dimmer)'}
+          >✕</button>
+        </div>
+
+        {/* Быстрый выбор */}
+        <div className="mb-5">
+          <div
+            className="text-[11px] font-semibold uppercase tracking-widest mb-3"
+            style={{ color: 'var(--cc-text-dimmer)' }}
           >
-            ✕
-          </button>
+            Популярные
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {POPULAR_MESSENGERS.map(preset => (
+              <button
+                key={preset.url}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                className="flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-center transition-all cursor-pointer"
+                style={{
+                  backgroundColor: (url === preset.url && name === preset.name) ? `${preset.color}18` : 'var(--cc-hover)',
+                  border: `1px solid ${(url === preset.url && name === preset.name) ? `${preset.color}55` : 'transparent'}`,
+                }}
+                onMouseEnter={e => { if (url !== preset.url) e.currentTarget.style.backgroundColor = 'var(--cc-border)' }}
+                onMouseLeave={e => { if (url !== preset.url) e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
+                title={preset.category}
+              >
+                <span className="text-xl leading-none">{preset.emoji}</span>
+                <span className="text-[11px] font-medium leading-tight" style={{ color: 'var(--cc-text-dim)' }}>
+                  {preset.name}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Разделитель */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex-1 h-px" style={{ backgroundColor: 'var(--cc-border)' }} />
+          <span className="text-xs" style={{ color: 'var(--cc-text-dimmer)' }}>или введите вручную</span>
+          <div className="flex-1 h-px" style={{ backgroundColor: 'var(--cc-border)' }} />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
 
           {/* Название */}
           <div>
-            <label className="text-white/55 text-xs font-medium mb-1.5 block uppercase tracking-wider">
+            <label className="text-xs font-semibold mb-1.5 block uppercase tracking-wider" style={{ color: 'var(--cc-text-dim)' }}>
               Название
             </label>
             <input
@@ -81,14 +139,17 @@ export default function AddMessengerModal({ onAdd, onClose }) {
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="Telegram, Авито, ВК..."
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm outline-none focus:border-white/30 transition-colors placeholder-white/25"
               autoFocus
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-colors"
+              style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+              onFocus={e => e.target.style.borderColor = 'rgba(255,255,255,0.25)'}
+              onBlur={e => e.target.style.borderColor = 'var(--cc-border)'}
             />
           </div>
 
           {/* URL */}
           <div>
-            <label className="text-white/55 text-xs font-medium mb-1.5 block uppercase tracking-wider">
+            <label className="text-xs font-semibold mb-1.5 block uppercase tracking-wider" style={{ color: 'var(--cc-text-dim)' }}>
               URL мессенджера
             </label>
             <input
@@ -96,13 +157,16 @@ export default function AddMessengerModal({ onAdd, onClose }) {
               value={url}
               onChange={e => setUrl(e.target.value)}
               placeholder="https://web.telegram.org/k/"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm outline-none focus:border-white/30 transition-colors placeholder-white/25"
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-colors"
+              style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+              onFocus={e => e.target.style.borderColor = 'rgba(255,255,255,0.25)'}
+              onBlur={e => e.target.style.borderColor = 'var(--cc-border)'}
             />
           </div>
 
-          {/* Цвет вкладки */}
+          {/* Цвет */}
           <div>
-            <label className="text-white/55 text-xs font-medium mb-2 block uppercase tracking-wider">
+            <label className="text-xs font-semibold mb-2 block uppercase tracking-wider" style={{ color: 'var(--cc-text-dim)' }}>
               Цвет вкладки
             </label>
             <div className="flex items-center gap-2 flex-wrap">
@@ -120,27 +184,24 @@ export default function AddMessengerModal({ onAdd, onClose }) {
                   }}
                 />
               ))}
-              {/* Выбор произвольного цвета */}
               <input
                 type="color"
                 value={color}
                 onChange={e => setColor(e.target.value)}
-                className="w-7 h-7 rounded-lg cursor-pointer border border-white/10 bg-white/5"
+                className="w-7 h-7 rounded-lg cursor-pointer border"
+                style={{ backgroundColor: 'var(--cc-hover)', borderColor: 'var(--cc-border)' }}
                 title="Свой цвет"
               />
-              {/* Превью активного цвета */}
               <span
                 className="text-xs px-2 py-1 rounded-md font-mono"
                 style={{ backgroundColor: `${color}25`, color }}
-              >
-                {color}
-              </span>
+              >{color}</span>
             </div>
           </div>
 
           {/* Иконка */}
           <div>
-            <label className="text-white/55 text-xs font-medium mb-2 block uppercase tracking-wider">
+            <label className="text-xs font-semibold mb-2 block uppercase tracking-wider" style={{ color: 'var(--cc-text-dim)' }}>
               Иконка
             </label>
             <div className="flex gap-1.5 flex-wrap">
@@ -151,28 +212,23 @@ export default function AddMessengerModal({ onAdd, onClose }) {
                   onClick={() => setEmoji(em)}
                   className="w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all duration-150 cursor-pointer"
                   style={{
-                    backgroundColor: emoji === em ? `${color}30` : 'rgba(255,255,255,0.06)',
+                    backgroundColor: emoji === em ? `${color}30` : 'var(--cc-hover)',
                     outline: emoji === em ? `1.5px solid ${color}` : '1.5px solid transparent'
                   }}
-                >
-                  {em}
-                </button>
+                >{em}</button>
               ))}
             </div>
           </div>
 
-          {/* Превью вкладки */}
+          {/* Превью */}
           <div>
-            <label className="text-white/55 text-xs font-medium mb-2 block uppercase tracking-wider">
+            <label className="text-xs font-semibold mb-2 block uppercase tracking-wider" style={{ color: 'var(--cc-text-dim)' }}>
               Превью вкладки
             </label>
-            <div className="bg-[#0f172a] rounded-lg p-3 flex items-center">
+            <div className="rounded-lg p-3 flex items-center" style={{ backgroundColor: 'var(--cc-surface-alt)' }}>
               <div
                 className="flex items-center gap-2 h-[36px] px-3 rounded-t-md"
-                style={{
-                  backgroundColor: `${color}1A`,
-                  borderBottom: `2px solid ${color}`,
-                }}
+                style={{ backgroundColor: `${color}1A`, borderBottom: `2px solid ${color}` }}
               >
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
                 <span className="text-sm font-medium" style={{ color }}>{name || 'Название'}</span>
@@ -181,7 +237,9 @@ export default function AddMessengerModal({ onAdd, onClose }) {
           </div>
 
           {error && (
-            <p className="text-red-400 text-sm bg-red-500/10 rounded-lg px-3 py-2">{error}</p>
+            <p className="text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#f87171' }}>
+              {error}
+            </p>
           )}
 
           {/* Кнопки */}
@@ -189,17 +247,18 @@ export default function AddMessengerModal({ onAdd, onClose }) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-lg bg-white/5 text-white/55 hover:bg-white/10 hover:text-white/75 text-sm transition-all cursor-pointer"
-            >
-              Отмена
-            </button>
+              className="flex-1 py-2.5 rounded-lg text-sm transition-all cursor-pointer"
+              style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)' }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--cc-border)'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
+            >Отмена</button>
             <button
               type="submit"
-              className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-all cursor-pointer hover:opacity-90"
+              className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-all cursor-pointer"
               style={{ backgroundColor: color }}
-            >
-              Добавить
-            </button>
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+            >Добавить</button>
           </div>
         </form>
       </div>
