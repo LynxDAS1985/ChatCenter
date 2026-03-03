@@ -15,6 +15,48 @@
 
 ---
 
+## Реализованные каналы (v0.5.0)
+
+### `app:ping` — проверка IPC
+- **Тип**: invoke → `{ ok: true, message: string }`
+
+### `app:info` — инфо о приложении
+- **Тип**: invoke → `{ ok, data: { version, name, platform } }`
+
+### `app:notify` — системное уведомление
+- **Тип**: invoke
+- **Запрос**: `{ title: string, body: string }`
+- **Ответ**: `{ ok }`
+
+### `messengers:load` — загрузить список из хранилища
+- **Тип**: invoke → `Messenger[]`
+
+### `messengers:save` — сохранить список в хранилище
+- **Тип**: invoke
+- **Запрос**: `Messenger[]`
+- **Ответ**: `{ ok }`
+
+### `settings:get` — получить настройки
+- **Тип**: invoke → `{ soundEnabled: boolean, minimizeToTray: boolean }`
+
+### `settings:save` — сохранить настройки
+- **Тип**: invoke → `{ ok }`
+
+### `window:hide` — свернуть в трей
+- **Тип**: invoke → `{ ok }`
+
+### `window:minimize` — свернуть
+- **Тип**: invoke → `{ ok }`
+
+### `messenger:badge` — событие: обновление бейджа (Main → Renderer)
+- **Тип**: send (событие от main к renderer)
+- **Данные**: `{ id: string, count: number }`
+- **Примечание**: будет использован ChatMonitor в Фазе 3
+
+---
+
+## Запланированные каналы (Фаза 2+)
+
 ## Мессенджеры (`messenger:*`)
 
 ### `messenger:list` — получить список мессенджеров
