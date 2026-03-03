@@ -1,0 +1,32 @@
+{
+  "name": "chat-center",
+  "version": "0.4.0",
+  "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
+  "main": "out/main/main.js",
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron-store": "^10.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.20",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "electron-vite": "^2.3.0",
+    "lucide-react": "^0.460.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "vite": "^5.4.0"
+  }
+}

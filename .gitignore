@@ -1,0 +1,31 @@
+# Зависимости
+node_modules/
+
+# Артефакты сборки
+out/
+dist/
+
+# Electron Cache
+.electron/
+
+# Логи
+*.log
+npm-debug.log*
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Переменные окружения (если появятся)
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Временные файлы
+*.tmp
+*.swp
