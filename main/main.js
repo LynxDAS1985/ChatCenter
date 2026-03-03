@@ -335,15 +335,21 @@ function setupIPC() {
       return { ok: true, existed: true }
     }
 
+    // Настраиваем сессию ДО создания окна — Chrome UA чтобы сайты не блокировали
+    const loginSession = session.fromPartition(`persist:ai-login-${provider}`)
+    loginSession.setUserAgent(CHROME_UA)
+    loginSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(true))
+    loginSession.setPermissionCheckHandler(() => true)
+
     const loginWin = new BrowserWindow({
       width: 1100,
       height: 750,
       title: `Войти — ${providerLabel || provider}`,
-      parent: mainWindow || undefined,
+      // parent НЕ указываем — на Windows parent вызывает чёрный экран в дочерних окнах
+      show: false, // показываем только после загрузки
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        // Отдельная персистентная сессия для каждого провайдера — остаётся залогиненным
         partition: `persist:ai-login-${provider}`,
       }
     })
@@ -351,8 +357,8 @@ function setupIPC() {
     loginWindows[provider] = loginWin
     loginWin.setMenu(null)
 
-    // Chrome UA + снятие X-Frame-Options (те же настройки что у мессенджеров)
-    setupSession(loginWin.webContents.session)
+    // Показываем окно только когда страница готова — избегаем белого/чёрного мерцания
+    loginWin.once('ready-to-show', () => loginWin.show())
 
     loginWin.loadURL(url)
 
