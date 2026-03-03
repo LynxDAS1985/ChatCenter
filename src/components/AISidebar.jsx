@@ -1,4 +1,4 @@
-// v0.9 — только подключённые провайдеры, кнопка "Добавить ИИ", веб-ссылка для получения ключей
+// v0.9.1 — кнопка "Сохранить и проверить", объяснение API-ключа, авто-индикатор сохранения
 import { useState, useRef, useEffect } from 'react'
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -63,7 +63,11 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const [copiedIdx, setCopiedIdx] = useState(null)
   const [showKey, setShowKey] = useState(false)
   const [showSecret, setShowSecret] = useState(false)
+  const [justSaved, setJustSaved] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testStatus, setTestStatus] = useState(null) // null | 'ok' | 'fail'
   const endRef = useRef(null)
+  const savedTimerRef = useRef(null)
 
   const provider = settings.aiProvider || 'openai'
   const providerInfo = PROVIDERS.find(p => p.id === provider) || PROVIDERS[0]
@@ -112,7 +116,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     setShowConfig(!newIsConfigured) // открыть конфиг если новый провайдер ещё не настроен
   }
 
-  // Обновить настройку + синхронизировать aiProviderKeys
+  // Обновить настройку + синхронизировать aiProviderKeys + показать индикатор сохранения
   const set = (key, val) => {
     const updated = { ...settings, [key]: val }
     const pid = updated.aiProvider || 'openai'
@@ -124,6 +128,32 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     }
     updated.aiProviderKeys = pKeys
     onSettingsChange(updated)
+    // Показать индикатор "сохранено" на 2.5 секунды
+    clearTimeout(savedTimerRef.current)
+    setJustSaved(true)
+    setTestStatus(null)
+    savedTimerRef.current = setTimeout(() => setJustSaved(false), 2500)
+  }
+
+  // Проверить соединение тестовым запросом
+  const testConnection = async () => {
+    if (!configured) return
+    setTesting(true)
+    setTestStatus(null)
+    setError('')
+    try {
+      const res = await window.api.invoke('ai:generate', {
+        messages: [{ role: 'user', content: 'Напиши только: ok' }],
+        settings: { ...aiCfg, systemPrompt: 'Ответь только словом: ok' },
+      })
+      setTestStatus(res.ok ? 'ok' : 'fail')
+      if (!res.ok) setError(res.error || 'Ошибка проверки')
+    } catch (e) {
+      setTestStatus('fail')
+      setError(e.message)
+    } finally {
+      setTesting(false)
+    }
   }
 
   const generate = async (text) => {
@@ -318,6 +348,18 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
             className="px-3 py-3 space-y-2.5 shrink-0 overflow-y-auto"
             style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)', maxHeight: '55%' }}
           >
+            {/* Объяснение: почему нельзя войти через логин/пароль */}
+            <div
+              className="text-[11px] px-2.5 py-2 rounded-lg leading-relaxed"
+              style={{ backgroundColor: '#2AABEE0D', border: '1px solid #2AABEE22', color: 'var(--cc-text-dim)' }}
+            >
+              <div className="font-semibold mb-0.5" style={{ color: '#2AABEE' }}>ℹ️ Как подключить ИИ?</div>
+              <div style={{ color: 'var(--cc-text-dimmer)' }}>
+                Войти через email/пароль невозможно — все AI-провайдеры работают только через <strong style={{ color: 'var(--cc-text-dim)' }}>API-ключ</strong>.
+                Зарегистрируйтесь на сайте провайдера, создайте ключ и вставьте его ниже.
+              </div>
+            </div>
+
             {/* Кнопка открыть сайт провайдера */}
             <button
               onClick={openProviderUrl}
@@ -328,7 +370,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
               title={`Открыть сайт ${providerInfo.label} для получения API-ключа`}
             >
               <span>🔗</span>
-              <span>Открыть {providerInfo.label} → получить ключ</span>
+              <span>1. Открыть {providerInfo.label} → зарегистрироваться → создать ключ</span>
             </button>
 
             {/* Модель */}
@@ -393,10 +435,28 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     >{showSecret ? '🙈' : '👁️'}</button>
                   </div>
                 </div>
+                {/* Индикатор сохранения + кнопка проверить для ГигаЧат */}
+                <div className="flex items-center justify-between mt-1.5 gap-2">
+                  <span className="text-[10px]" style={{ color: '#22c55e', opacity: justSaved ? 1 : 0 }}>✓ сохранено</span>
+                  <button
+                    onClick={testConnection}
+                    disabled={!aiCfg.apiKey || !aiCfg.clientSecret || testing}
+                    className="text-[10px] px-2.5 py-1 rounded-lg cursor-pointer transition-all disabled:opacity-40"
+                    style={{
+                      backgroundColor: testStatus === 'ok' ? '#22c55e22' : testStatus === 'fail' ? 'rgba(239,68,68,0.1)' : '#2AABEE22',
+                      color: testStatus === 'ok' ? '#22c55e' : testStatus === 'fail' ? '#f87171' : '#2AABEE',
+                      border: `1px solid ${testStatus === 'ok' ? '#22c55e44' : testStatus === 'fail' ? 'rgba(239,68,68,0.3)' : '#2AABEE44'}`,
+                    }}
+                  >
+                    {testing ? '⏳ Проверка...' : testStatus === 'ok' ? '✓ Работает!' : testStatus === 'fail' ? '✗ Ошибка' : 'Проверить соединение'}
+                  </button>
+                </div>
               </>
             ) : (
               <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>API Ключ</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>
+                  2. Вставить API Ключ
+                </div>
                 <div className="relative">
                   <input
                     type={showKey ? 'text' : 'password'}
@@ -404,13 +464,37 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     onChange={e => set('aiApiKey', e.target.value)}
                     placeholder={provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
                     className="w-full text-xs px-2 py-1.5 pr-7 rounded-lg outline-none font-mono"
-                    style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+                    style={{
+                      backgroundColor: 'var(--cc-hover)',
+                      border: `1px solid ${justSaved ? '#22c55e66' : 'var(--cc-border)'}`,
+                      color: 'var(--cc-text)',
+                      transition: 'border-color 0.3s',
+                    }}
                   />
                   <button
                     onClick={() => setShowKey(!showKey)}
                     className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] cursor-pointer"
                     style={{ color: 'var(--cc-text-dimmer)' }}
                   >{showKey ? '🙈' : '👁️'}</button>
+                </div>
+                {/* Индикатор сохранения + кнопка проверить */}
+                <div className="flex items-center justify-between mt-1.5 gap-2">
+                  <span
+                    className="text-[10px] transition-opacity"
+                    style={{ color: '#22c55e', opacity: justSaved ? 1 : 0 }}
+                  >✓ сохранено</span>
+                  <button
+                    onClick={testConnection}
+                    disabled={!aiCfg.apiKey || testing}
+                    className="text-[10px] px-2.5 py-1 rounded-lg cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{
+                      backgroundColor: testStatus === 'ok' ? '#22c55e22' : testStatus === 'fail' ? 'rgba(239,68,68,0.1)' : '#2AABEE22',
+                      color: testStatus === 'ok' ? '#22c55e' : testStatus === 'fail' ? '#f87171' : '#2AABEE',
+                      border: `1px solid ${testStatus === 'ok' ? '#22c55e44' : testStatus === 'fail' ? 'rgba(239,68,68,0.3)' : '#2AABEE44'}`,
+                    }}
+                  >
+                    {testing ? '⏳ Проверка...' : testStatus === 'ok' ? '✓ Ключ работает!' : testStatus === 'fail' ? '✗ Ошибка — проверьте ключ' : '3. Проверить соединение'}
+                  </button>
                 </div>
               </div>
             )}
