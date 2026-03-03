@@ -1,5 +1,5 @@
-// v0.7 — DeepSeek + ГигаЧат, resizable AI panel
-import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell } from 'electron'
+// v0.9.2 — Вход через браузер: открываем Electron-окно, перехватываем ключ из clipboard
+import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import https from 'node:https'
@@ -318,6 +318,73 @@ function setupIPC() {
     if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
       shell.openExternal(url)
     }
+    return { ok: true }
+  })
+
+  // Чтение буфера обмена через main process (работает независимо от фокуса окна)
+  ipcMain.handle('clipboard:read', () => clipboard.readText())
+
+  // Открыть Electron-окно для входа в ИИ-провайдера через браузер
+  // Пользователь входит email+паролем, создаёт API-ключ, копирует →
+  // renderer перехватывает его из буфера обмена автоматически
+  const loginWindows = {}
+  ipcMain.handle('ai-login:open', (event, { url, provider, providerLabel }) => {
+    // Если окно уже открыто — фокусируем его
+    if (loginWindows[provider] && !loginWindows[provider].isDestroyed()) {
+      loginWindows[provider].focus()
+      return { ok: true, existed: true }
+    }
+
+    const loginWin = new BrowserWindow({
+      width: 1100,
+      height: 750,
+      title: `Войти — ${providerLabel || provider}`,
+      parent: mainWindow || undefined,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        // Отдельная персистентная сессия для каждого провайдера — остаётся залогиненным
+        partition: `persist:ai-login-${provider}`,
+      }
+    })
+
+    loginWindows[provider] = loginWin
+    loginWin.setMenu(null)
+
+    // Chrome UA + снятие X-Frame-Options (те же настройки что у мессенджеров)
+    setupSession(loginWin.webContents.session)
+
+    loginWin.loadURL(url)
+
+    // После загрузки — инжектируем плавающую подсказку
+    loginWin.webContents.on('did-finish-load', () => {
+      loginWin.webContents.executeJavaScript(`
+        if (!document.getElementById('__cc_hint')) {
+          const d = document.createElement('div')
+          d.id = '__cc_hint'
+          d.style.cssText = [
+            'position:fixed', 'bottom:20px', 'right:20px', 'z-index:2147483647',
+            'background:#1e293b', 'color:#fff', 'padding:14px 18px',
+            'border-radius:14px', 'font:14px/1.5 system-ui,sans-serif',
+            'box-shadow:0 8px 32px rgba(0,0,0,.5)', 'max-width:320px',
+            'border:1.5px solid #2AABEE55', 'pointer-events:none'
+          ].join(';')
+          d.innerHTML = '<b style="color:#2AABEE;display:block;margin-bottom:5px">📋 ЦентрЧатов ждёт ключ</b>' +
+            '<span style="color:#94a3b8">Войдите, создайте API-ключ и <b style="color:#fff">скопируйте его</b> — ' +
+            'он автоматически появится в приложении</span>'
+          document.body.appendChild(d)
+        }
+      `).catch(() => {})
+    })
+
+    // При закрытии — уведомляем renderer чтобы остановить polling
+    loginWin.on('closed', () => {
+      delete loginWindows[provider]
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ai-login:closed', { provider })
+      }
+    })
+
     return { ok: true }
   })
 

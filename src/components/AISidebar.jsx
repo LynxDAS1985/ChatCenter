@@ -1,5 +1,17 @@
-// v0.9.1 — кнопка "Сохранить и проверить", объяснение API-ключа, авто-индикатор сохранения
+// v0.9.2 — Вход через браузер: Electron-окно + перехват ключа из буфера обмена
 import { useState, useRef, useEffect } from 'react'
+
+// Паттерны распознавания API-ключей в буфере обмена
+function looksLikeApiKey(provider, text) {
+  if (!text || text.length < 20) return false
+  const t = text.trim()
+  if (provider === 'openai')    return /^sk-[a-zA-Z0-9_\-]{20,}$/.test(t)
+  if (provider === 'anthropic') return /^sk-ant-[a-zA-Z0-9_\-]{20,}$/.test(t)
+  if (provider === 'deepseek')  return /^sk-[a-zA-Z0-9_\-]{20,}$/.test(t)
+  // GigaChat Client ID — UUID-формат
+  if (provider === 'gigachat')  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(t)
+  return t.startsWith('sk-') && t.length > 20
+}
 
 const DEFAULT_SYSTEM_PROMPT =
   'Ты — ИИ-помощник менеджера по продажам. Клиент написал сообщение. ' +
@@ -66,8 +78,12 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const [justSaved, setJustSaved] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testStatus, setTestStatus] = useState(null) // null | 'ok' | 'fail'
+  const [waitingForKey, setWaitingForKey] = useState(false)
+  const [keyFoundMsg, setKeyFoundMsg] = useState('')
   const endRef = useRef(null)
   const savedTimerRef = useRef(null)
+  const pollingRef = useRef(null)
+  const unsubLoginRef = useRef(null)
 
   const provider = settings.aiProvider || 'openai'
   const providerInfo = PROVIDERS.find(p => p.id === provider) || PROVIDERS[0]
@@ -154,6 +170,67 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     } finally {
       setTesting(false)
     }
+  }
+
+  // Очистка polling при размонтировании
+  useEffect(() => {
+    return () => {
+      clearInterval(pollingRef.current)
+      unsubLoginRef.current?.()
+    }
+  }, [])
+
+  // Открыть Electron-окно входа + начать мониторинг clipboard
+  const openLoginWindow = async () => {
+    // Повторное нажатие = отмена ожидания
+    if (waitingForKey) {
+      clearInterval(pollingRef.current)
+      unsubLoginRef.current?.()
+      setWaitingForKey(false)
+      return
+    }
+
+    const capturedProvider = provider
+    const capturedLabel = providerInfo.label
+
+    await window.api.invoke('ai-login:open', {
+      url: PROVIDER_URLS[capturedProvider],
+      provider: capturedProvider,
+      providerLabel: capturedLabel,
+    }).catch(() => {})
+
+    setWaitingForKey(true)
+    setKeyFoundMsg('')
+
+    // Подписываемся на событие закрытия login-окна
+    unsubLoginRef.current = window.api.on('ai-login:closed', ({ provider: closedProvider }) => {
+      if (closedProvider !== capturedProvider) return
+      clearInterval(pollingRef.current)
+      unsubLoginRef.current?.()
+      setWaitingForKey(false)
+    })
+
+    // Сохраняем текущее содержимое буфера чтобы не реагировать на старое значение
+    let previousClipboard = ''
+    try { previousClipboard = (await window.api.invoke('clipboard:read')) || '' } catch {}
+
+    // Polling каждые 800мс — читаем clipboard через main process
+    pollingRef.current = setInterval(async () => {
+      try {
+        const text = (await window.api.invoke('clipboard:read')) || ''
+        const trimmed = text.trim()
+        if (trimmed === previousClipboard) return
+        previousClipboard = trimmed
+        if (looksLikeApiKey(capturedProvider, trimmed)) {
+          clearInterval(pollingRef.current)
+          unsubLoginRef.current?.()
+          set('aiApiKey', trimmed)
+          setWaitingForKey(false)
+          setKeyFoundMsg('✓ API-ключ найден и сохранён автоматически!')
+          setTimeout(() => setKeyFoundMsg(''), 6000)
+        }
+      } catch {}
+    }, 800)
   }
 
   const generate = async (text) => {
@@ -360,17 +437,52 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
               </div>
             </div>
 
-            {/* Кнопка открыть сайт провайдера */}
+            {/* ── Кнопка "Войти через браузер" ── */}
+            <button
+              onClick={openLoginWindow}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-[12px] font-medium cursor-pointer transition-all"
+              style={{
+                backgroundColor: waitingForKey ? '#f59e0b22' : '#2AABEE22',
+                border: `1.5px solid ${waitingForKey ? '#f59e0b66' : '#2AABEE66'}`,
+                color: waitingForKey ? '#f59e0b' : '#2AABEE',
+              }}
+              onMouseEnter={e => { if (!waitingForKey) e.currentTarget.style.backgroundColor = '#2AABEE33' }}
+              onMouseLeave={e => { if (!waitingForKey) e.currentTarget.style.backgroundColor = '#2AABEE22' }}
+            >
+              {waitingForKey ? (
+                <>
+                  <span className="animate-pulse text-base">⏳</span>
+                  <span>Ожидаем ключ из буфера... (нажмите для отмены)</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-base">🔑</span>
+                  <span>Войти через браузер → ключ вставится сам</span>
+                </>
+              )}
+            </button>
+
+            {/* Сообщение об успешном нахождении ключа */}
+            {keyFoundMsg && (
+              <div
+                className="text-[11px] px-2.5 py-2 rounded-lg text-center font-medium"
+                style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}
+              >
+                {keyFoundMsg}
+              </div>
+            )}
+
+            {/* Или: открыть сайт вручную в системном браузере */}
             <button
               onClick={openProviderUrl}
-              className="flex items-center gap-1.5 text-[11px] cursor-pointer transition-opacity w-full text-left"
-              style={{ color: '#2AABEE' }}
-              onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
-              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-              title={`Открыть сайт ${providerInfo.label} для получения API-ключа`}
+              className="flex items-center gap-1.5 text-[10px] cursor-pointer transition-opacity w-full text-left"
+              style={{ color: 'var(--cc-text-dimmer)' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#2AABEE'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--cc-text-dimmer)'}
+              title={`Открыть сайт ${providerInfo.label} в системном браузере`}
             >
-              <span>🔗</span>
-              <span>1. Открыть {providerInfo.label} → зарегистрироваться → создать ключ</span>
+              <span>↗</span>
+              <span>Открыть {providerInfo.label} в системном браузере (вручную)</span>
             </button>
 
             {/* Модель */}
