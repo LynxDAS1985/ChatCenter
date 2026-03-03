@@ -33,24 +33,28 @@ webview { display: flex; width: 100%; height: 100%; }
   --cc-bg: #1a1a2e;
   --cc-surface: #16213e;
   --cc-surface-alt: #0f172a;
-  --cc-border: rgba(255,255,255,0.08);
-  --cc-hover: rgba(255,255,255,0.06);
-  --cc-text: rgba(255,255,255,0.85);
-  --cc-text-dim: rgba(255,255,255,0.45);
-  --cc-text-dimmer: rgba(255,255,255,0.25);
+  --cc-border: rgba(255,255,255,0.10);
+  --cc-hover: rgba(255,255,255,0.08);
+  --cc-text: #ffffff;                        /* основной текст — чисто белый */
+  --cc-text-dim: rgba(255,255,255,0.70);     /* вторичный текст */
+  --cc-text-dimmer: rgba(255,255,255,0.42);  /* подписи, хинты */
+  --cc-icon: rgba(255,255,255,0.75);         /* иконки в шапке */
+  --cc-icon-hover: #ffffff;                  /* иконки при наведении */
   --cc-overlay: rgba(0,0,0,0.55);
   color-scheme: dark;
 }
 
 [data-theme="light"] {
-  --cc-bg: #eef2f7;
-  --cc-surface: #ffffff;
-  --cc-surface-alt: #e4eaf2;
-  --cc-border: rgba(0,0,0,0.08);
-  --cc-hover: rgba(0,0,0,0.04);
-  --cc-text: rgba(15,23,42,0.88);
-  --cc-text-dim: rgba(15,23,42,0.55);
-  --cc-text-dimmer: rgba(15,23,42,0.30);
+  --cc-bg: #e8eef5;
+  --cc-surface: #f8fafc;
+  --cc-surface-alt: #dde5ef;
+  --cc-border: rgba(0,0,0,0.12);
+  --cc-hover: rgba(0,0,0,0.06);
+  --cc-text: #0f172a;                        /* основной текст — почти чёрный */
+  --cc-text-dim: rgba(15,23,42,0.75);        /* вторичный текст */
+  --cc-text-dimmer: rgba(15,23,42,0.52);     /* подписи, хинты */
+  --cc-icon: rgba(15,23,42,0.72);            /* иконки в шапке */
+  --cc-icon-hover: #0f172a;                  /* иконки при наведении */
   --cc-overlay: rgba(0,0,0,0.35);
   color-scheme: light;
 }

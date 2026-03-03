@@ -371,7 +371,7 @@ export default function App() {
         >
           <svg width="10" height="16" viewBox="0 0 10 16" fill="none">
             {[0, 6].map(x => [2, 6, 10].map(y => (
-              <circle key={`${x}-${y}`} cx={x + 2} cy={y} r={1.2} fill="var(--cc-text-dimmer)" />
+              <circle key={`${x}-${y}`} cx={x + 2} cy={y} r={1.2} fill="var(--cc-icon)" />
             )))}
           </svg>
         </div>
@@ -379,7 +379,7 @@ export default function App() {
         {/* Логотип */}
         <div
           className="pr-3 text-[13px] font-semibold whitespace-nowrap shrink-0"
-          style={{ color: 'var(--cc-text-dimmer)' }}
+          style={{ color: 'var(--cc-text-dim)' }}
         >
           ЦентрЧатов
         </div>
@@ -411,9 +411,9 @@ export default function App() {
             onClick={() => setShowAddModal(true)}
             title="Добавить мессенджер (Ctrl+T)"
             className="flex items-center justify-center h-[30px] w-[30px] rounded-lg ml-1 text-xl leading-none transition-all duration-150 cursor-pointer shrink-0"
-            style={{ color: 'var(--cc-text-dimmer)' }}
-            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-text-dim)' }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-text-dimmer)' }}
+            style={{ color: 'var(--cc-icon)' }}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-icon-hover)' }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' }}
           >+</button>
         </div>
 
@@ -428,11 +428,11 @@ export default function App() {
             title="Поиск (Ctrl+F)"
             className="flex items-center justify-center w-[30px] h-[30px] rounded-lg text-[15px] transition-all duration-150 cursor-pointer"
             style={{
-              backgroundColor: searchVisible ? 'rgba(255,255,255,0.12)' : 'transparent',
-              color: searchVisible ? 'var(--cc-text)' : 'var(--cc-text-dimmer)',
+              backgroundColor: searchVisible ? 'rgba(42,171,238,0.15)' : 'transparent',
+              color: searchVisible ? '#2AABEE' : 'var(--cc-icon)',
             }}
-            onMouseEnter={e => { if (!searchVisible) e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
-            onMouseLeave={e => { if (!searchVisible) e.currentTarget.style.backgroundColor = 'transparent' }}
+            onMouseEnter={e => { if (!searchVisible) { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-icon-hover)' } }}
+            onMouseLeave={e => { if (!searchVisible) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
           >🔍</button>
 
           {/* ИИ */}
@@ -441,11 +441,11 @@ export default function App() {
             title="ИИ-помощник"
             className="flex items-center justify-center w-[30px] h-[30px] rounded-lg text-[15px] transition-all duration-150 cursor-pointer"
             style={{
-              backgroundColor: showAI ? 'rgba(42,171,238,0.12)' : 'transparent',
-              color: showAI ? '#2AABEE' : 'var(--cc-text-dimmer)',
+              backgroundColor: showAI ? 'rgba(42,171,238,0.15)' : 'transparent',
+              color: showAI ? '#2AABEE' : 'var(--cc-icon)',
             }}
-            onMouseEnter={e => { if (!showAI) e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
-            onMouseLeave={e => { if (!showAI) e.currentTarget.style.backgroundColor = 'transparent' }}
+            onMouseEnter={e => { if (!showAI) { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-icon-hover)' } }}
+            onMouseLeave={e => { if (!showAI) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
           >🤖</button>
 
           {/* Тема */}
@@ -453,9 +453,9 @@ export default function App() {
             onClick={() => handleSettingsChange({ ...settings, theme: theme === 'dark' ? 'light' : 'dark' })}
             title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
             className="flex items-center justify-center w-[30px] h-[30px] rounded-lg text-[15px] transition-all duration-150 cursor-pointer"
-            style={{ color: 'var(--cc-text-dimmer)' }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            style={{ color: 'var(--cc-icon)' }}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-icon-hover)' }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' }}
           >{theme === 'dark' ? '☀️' : '🌙'}</button>
 
           {/* Настройки */}
@@ -463,9 +463,9 @@ export default function App() {
             onClick={() => setShowSettings(true)}
             title="Настройки (Ctrl+,)"
             className="flex items-center justify-center w-[30px] h-[30px] rounded-lg text-[15px] transition-all duration-150 cursor-pointer"
-            style={{ color: 'var(--cc-text-dimmer)' }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            style={{ color: 'var(--cc-icon)' }}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-icon-hover)' }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' }}
           >⚙️</button>
 
           {/* Общий счётчик непрочитанных */}
