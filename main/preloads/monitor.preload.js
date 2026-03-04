@@ -1,4 +1,4 @@
-// v0.17 — ChatMonitor: раздельный счётчик (личные vs каналы), умный фильтр уведомлений, превью
+// v0.19.5 — ChatMonitor: бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Фикс: cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
 
@@ -129,18 +129,22 @@ function isActiveChatChannel(type) {
   return false
 }
 
-// Возвращает { personal, channels, total } — раздельный подсчёт непрочитанных
+// Возвращает { personal, channels, total, mutedTotal } — раздельный подсчёт непрочитанных
+// mutedTotal — для бейджа вкладки (все непрочитанные), personal/channels — без muted (для уведомлений)
 function countUnread(type) {
   const sels = UNREAD_SELECTORS[type] || []
-  let personal = 0, channels = 0
+  let personal = 0, channels = 0, mutedTotal = 0
   for (const sel of sels) {
     try {
       document.querySelectorAll(sel).forEach(el => {
-        // Пропускаем бейджи приглушённых диалогов
-        if (isBadgeInMutedDialog(el, type)) return
         const n = parseInt(el.textContent?.trim(), 10)
         const count = (!isNaN(n) && n > 0) ? n : (el.offsetParent !== null ? 1 : 0)
         if (count === 0) return
+        const isMuted = isBadgeInMutedDialog(el, type)
+        // Общий счётчик — всегда считаем (включая muted)
+        mutedTotal += count
+        // Раздельный счётчик — без muted (для уведомлений)
+        if (isMuted) return
         // Для Telegram — определяем тип диалога
         if (type === 'telegram') {
           const dialog = el.closest('.chatlist-chat, .ListItem, [class*="chat-item"], li[class]')
@@ -151,10 +155,10 @@ function countUnread(type) {
           personal += count
         }
       })
-      if (personal + channels > 0) break
+      if (mutedTotal > 0) break
     } catch {}
   }
-  return { personal, channels, total: personal + channels }
+  return { personal, channels, total: personal + channels, allTotal: mutedTotal }
 }
 
 function getLastMessageText(type) {
@@ -182,16 +186,16 @@ let monitorReady = false
 setTimeout(() => { monitorReady = true }, 10000)
 
 function sendUpdate(type) {
-  const { personal, channels, total } = countUnread(type)
-  if (total !== lastCount) {
+  const { personal, channels, total, allTotal } = countUnread(type)
+  if (allTotal !== lastCount) {
     const increased = total > lastCount && lastCount >= 0 && monitorReady
-    lastCount = total
-    // Общий счётчик (для бейджа)
-    try { ipcRenderer.sendToHost('unread-count', total) } catch {}
-    // Раздельный счётчик (личные vs каналы/группы)
+    lastCount = allTotal
+    // Общий счётчик (для бейджа) — ВСЕ непрочитанные, включая muted
+    try { ipcRenderer.sendToHost('unread-count', allTotal) } catch {}
+    // Раздельный счётчик (личные vs каналы/группы) — без muted
     try { ipcRenderer.sendToHost('unread-split', { personal, channels }) } catch {}
 
-    // Умный фильтр: уведомляем только если открыт личный чат (не канал, не muted)
+    // Умный фильтр: уведомляем только если НЕ-muted чат с ростом (не канал, не muted)
     if (increased && !isActiveChatMuted(type) && !isActiveChatChannel(type)) {
       const text = getLastMessageText(type)
       if (text && text !== lastSentText) {
