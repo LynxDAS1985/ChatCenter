@@ -731,6 +731,11 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                             {testing ? '⏳ Проверка...' : testStatus === 'ok' ? '✓ Работает!' : testStatus === 'fail' ? '✗ Ошибка' : '5. Проверить соединение'}
                           </button>
                         </div>
+                        {testStatus === 'fail' && error && (
+                          <div className="mt-1.5 text-[10px] px-2 py-1.5 rounded-lg" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
+                            ⚠️ {error}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </>
@@ -761,9 +766,14 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                             color: testStatus === 'ok' ? '#22c55e' : testStatus === 'fail' ? '#f87171' : '#2AABEE',
                             border: `1px solid ${testStatus === 'ok' ? '#22c55e44' : testStatus === 'fail' ? 'rgba(239,68,68,0.3)' : '#2AABEE44'}`,
                           }}>
-                          {testing ? '⏳ Проверка...' : testStatus === 'ok' ? '✓ Ключ работает!' : testStatus === 'fail' ? '✗ Ошибка — проверьте ключ' : '4. Проверить соединение'}
+                          {testing ? '⏳ Проверка...' : testStatus === 'ok' ? '✓ Ключ работает!' : testStatus === 'fail' ? '✗ Ошибка' : '4. Проверить соединение'}
                         </button>
                       </div>
+                      {testStatus === 'fail' && error && (
+                        <div className="mt-1.5 text-[10px] px-2 py-1.5 rounded-lg" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
+                          ⚠️ {error}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
