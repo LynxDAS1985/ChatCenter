@@ -216,19 +216,17 @@ export default function App() {
   useEffect(() => {
     Promise.all([
       window.api.invoke('messengers:load').then(list => {
-        setMessengers(list)
-        setActiveId(list[0]?.id || null)
-        // Сбрасываем accountInfo для мессенджеров без accountScript (например, Telegram)
-        const noScript = list.filter(m => !m.accountScript &&
-          !DEFAULT_MESSENGERS.find(d => d.id === m.id)?.accountScript
-        ).map(m => m.id)
-        if (noScript.length > 0) {
-          setAccountInfo(prev => {
-            const n = { ...prev }
-            noScript.forEach(id => delete n[id])
-            return n
-          })
-        }
+        // Чистим устаревший accountScript из сохранённых данных дефолтных мессенджеров
+        const cleaned = list.map(m => {
+          const def = DEFAULT_MESSENGERS.find(d => d.id === m.id)
+          if (def && m.accountScript && !def.accountScript) {
+            const { accountScript, ...rest } = m
+            return rest
+          }
+          return m
+        })
+        setMessengers(cleaned)
+        setActiveId(cleaned[0]?.id || null)
       }).catch(() => {
         setMessengers(DEFAULT_MESSENGERS)
         setActiveId(DEFAULT_MESSENGERS[0].id)
@@ -481,11 +479,14 @@ export default function App() {
   const tryExtractAccount = (messengerId, attempt = 0) => {
     if (attempt > 12) return
     const wv = webviewRefs.current[messengerId]
-    const messenger = messengersRef.current.find(m => m.id === messengerId)
-      || DEFAULT_MESSENGERS.find(m => m.id === messengerId)
-    if (!wv || !messenger?.accountScript) return
+    // Для дефолтных мессенджеров — accountScript ТОЛЬКО из constants.js (не из сохранённых данных!)
+    const defaultM = DEFAULT_MESSENGERS.find(m => m.id === messengerId)
+    const script = defaultM !== undefined
+      ? defaultM.accountScript  // из constants.js (может быть undefined — значит не извлекаем)
+      : messengersRef.current.find(m => m.id === messengerId)?.accountScript
+    if (!wv || !script) return
 
-    wv.executeJavaScript(messenger.accountScript)
+    wv.executeJavaScript(script)
       .then(result => {
         if (result && result.length > 0 && result.length < 80) {
           setAccountInfo(prev => ({ ...prev, [messengerId]: result }))

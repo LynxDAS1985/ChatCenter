@@ -38,10 +38,25 @@ spawn('electron-vite', ['dev'], { env, shell: true })
 }
 ```
 
-**Дополнительно**: При старте приложения нужно принудительно очищать `accountInfo` для мессенджеров без `accountScript`, чтобы старое кэшированное значение не выжило в state после хот-релоада или dev-режима:
+**Дополнительно — ЛОВУШКА**: `messengers:save` пишет ВСЮ структуру мессенджера в electron-store, включая `accountScript`. Даже после удаления `accountScript` из `constants.js`, старый скрипт выживает в сохранённом `messengers.json`!
+
+**Решение (2 уровня)**:
+1. В `tryExtractAccount` — для дефолтных мессенджеров брать `accountScript` ТОЛЬКО из `DEFAULT_MESSENGERS`, не из сохранённых данных:
 ```js
-const noScript = list.filter(m => !m.accountScript && !DEFAULT_MESSENGERS.find(d => d.id === m.id)?.accountScript)
-setAccountInfo(prev => { const n = {...prev}; noScript.forEach(({id}) => delete n[id]); return n })
+const defaultM = DEFAULT_MESSENGERS.find(m => m.id === messengerId)
+const script = defaultM !== undefined
+  ? defaultM.accountScript  // из constants.js (undefined = не извлекаем)
+  : storedMessenger?.accountScript  // кастомные мессенджеры — из store
+```
+2. При загрузке — чистить устаревший `accountScript` из сохранённых данных:
+```js
+const cleaned = list.map(m => {
+  const def = DEFAULT_MESSENGERS.find(d => d.id === m.id)
+  if (def && m.accountScript && !def.accountScript) {
+    const { accountScript, ...rest } = m; return rest
+  }
+  return m
+})
 ```
 
 ---
