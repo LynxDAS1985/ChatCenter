@@ -416,12 +416,23 @@ function setupIPC() {
     return { ok: true }
   })
 
-  // Чтение лога ошибок (для отладки)
+  // Чтение лога ошибок
   ipcMain.handle('ai:get-error-log', () => {
     try {
       const logPath = path.join(app.getPath('userData'), 'ai-errors.log')
       const text = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : ''
       return { ok: true, text }
+    } catch (e) {
+      return { ok: false, error: e.message }
+    }
+  })
+
+  // Очистка лога ошибок
+  ipcMain.handle('ai:clear-error-log', () => {
+    try {
+      const logPath = path.join(app.getPath('userData'), 'ai-errors.log')
+      fs.writeFileSync(logPath, '', 'utf8')
+      return { ok: true }
     } catch (e) {
       return { ok: false, error: e.message }
     }

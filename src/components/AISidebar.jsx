@@ -126,6 +126,12 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const [keyFoundMsg, setKeyFoundMsg] = useState('')
   // Статус последнего запроса по каждому провайдеру: 'ok' | 'fail' | null
   const [providerStatuses, setProviderStatuses] = useState({})
+  // Время последней проверки: { pid: 'HH:MM' }
+  const [providerCheckTimes, setProviderCheckTimes] = useState({})
+  // Для кнопки 🔄 — идёт ли сейчас проверка всех провайдеров
+  const [refreshing, setRefreshing] = useState(false)
+  // pid провайдера над чьим ● кружком стоит курсор (для tooltip)
+  const [hoveredStatus, setHoveredStatus] = useState(null)
 
   // ── Состояния WebView-режима ──────────────────────────────────────────────
   const [contextSendStatus, setContextSendStatus] = useState(null)
@@ -138,6 +144,10 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const streamUnsubsRef = useRef([])
   const prevMessengerIdRef = useRef(null)
   const aiWebviewRef = useRef(null)
+  // Ref для актуальных settings в interval/timeout без stale closure
+  const settingsRef = useRef(settings)
+  // Ref на функцию runProviderChecks (стабильный, не устаревает)
+  const runChecksRef = useRef(null)
 
   // ── Настройки (shortcuts) ─────────────────────────────────────────────────
   const provider = settings.aiProvider || 'openai'
@@ -161,6 +171,41 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       setSuggestions([])
     }
   }, [lastMessage, visible])
+
+  // Синхронизируем ref с актуальными settings (для interval/timeout)
+  useEffect(() => { settingsRef.current = settings }, [settings])
+
+  // ── Проверка всех API-провайдеров (startup / hourly / manual) ─────────────
+  const runProviderChecks = async (source = 'manual') => {
+    const s = settingsRef.current
+    setRefreshing(true)
+    for (const p of PROVIDERS) {
+      const cfg = getProviderCfg(s, p.id)
+      if (cfg.mode !== 'api') continue
+      if (p.id === 'gigachat') {
+        if (!cfg.apiKey || !cfg.clientSecret) continue
+      } else {
+        if (!cfg.apiKey) continue
+      }
+      const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+      try {
+        const res = await window.api.invoke('ai:generate', {
+          messages: [{ role: 'user', content: 'ok' }],
+          settings: { provider: p.id, apiKey: cfg.apiKey, clientSecret: cfg.clientSecret, model: cfg.model, systemPrompt: 'ok' },
+        })
+        setProviderStatuses(prev => ({ ...prev, [p.id]: res.ok ? 'ok' : 'fail' }))
+        setProviderCheckTimes(prev => ({ ...prev, [p.id]: time }))
+        if (!res.ok) window.api.invoke('ai:log-error', { provider: p.id, errorText: `[${source}] ${res.error}` }).catch(() => {})
+      } catch (e) {
+        setProviderStatuses(prev => ({ ...prev, [p.id]: 'fail' }))
+        setProviderCheckTimes(prev => ({ ...prev, [p.id]: time }))
+        window.api.invoke('ai:log-error', { provider: p.id, errorText: `[${source}] ${e.message}` }).catch(() => {})
+      }
+    }
+    setRefreshing(false)
+  }
+  // Обновляем ref чтобы interval/timeout всегда звал актуальную версию
+  runChecksRef.current = runProviderChecks
 
   // ── Переключение провайдера ───────────────────────────────────────────────
   const switchProvider = (newPid) => {
@@ -227,15 +272,19 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         settings: { ...aiCfg, systemPrompt: 'Ответь только словом: ok' },
       })
       const st = res.ok ? 'ok' : 'fail'
+      const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
       setTestStatus(st)
       setProviderStatuses(s => ({ ...s, [provider]: st }))
+      setProviderCheckTimes(t => ({ ...t, [provider]: time }))
       if (!res.ok) {
         setError(res.error || 'Ошибка проверки')
         window.api.invoke('ai:log-error', { provider, errorText: `[test] ${res.error}` }).catch(() => {})
       }
     } catch (e) {
+      const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
       setTestStatus('fail')
       setProviderStatuses(s => ({ ...s, [provider]: 'fail' }))
+      setProviderCheckTimes(t => ({ ...t, [provider]: time }))
       setError(e.message)
       window.api.invoke('ai:log-error', { provider, errorText: `[test] ${e.message}` }).catch(() => {})
     } finally {
@@ -268,36 +317,16 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     return () => { clearInterval(pollingRef.current); unsubLoginRef.current?.() }
   }, [])
 
-  // ── Авто-проверка всех API-провайдеров при запуске ────────────────────────
-  // Тихо проверяем в фоне — только обновляем providerStatuses (● зелёный/красный)
+  // Авто-проверка при запуске (2 сек задержка)
   useEffect(() => {
-    const startupCheck = async () => {
-      for (const p of PROVIDERS) {
-        const cfg = getProviderCfg(settings, p.id)
-        if (cfg.mode !== 'api') continue
-        if (p.id === 'gigachat') {
-          if (!cfg.apiKey || !cfg.clientSecret) continue
-        } else {
-          if (!cfg.apiKey) continue
-        }
-        try {
-          const res = await window.api.invoke('ai:generate', {
-            messages: [{ role: 'user', content: 'ok' }],
-            settings: { provider: p.id, apiKey: cfg.apiKey, clientSecret: cfg.clientSecret, model: cfg.model, systemPrompt: 'ok' },
-          })
-          setProviderStatuses(s => ({ ...s, [p.id]: res.ok ? 'ok' : 'fail' }))
-          if (!res.ok) {
-            window.api.invoke('ai:log-error', { provider: p.id, errorText: `[startup] ${res.error}` }).catch(() => {})
-          }
-        } catch (e) {
-          setProviderStatuses(s => ({ ...s, [p.id]: 'fail' }))
-          window.api.invoke('ai:log-error', { provider: p.id, errorText: `[startup] ${e.message}` }).catch(() => {})
-        }
-      }
-    }
-    // Небольшая задержка — даём приложению полностью загрузиться
-    const timer = setTimeout(startupCheck, 2000)
+    const timer = setTimeout(() => runChecksRef.current?.('startup'), 2000)
     return () => clearTimeout(timer)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Фоновая проверка каждый час
+  useEffect(() => {
+    const interval = setInterval(() => runChecksRef.current?.('hourly'), 60 * 60 * 1000)
+    return () => clearInterval(interval)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openLoginWindow = async () => {
@@ -564,9 +593,36 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     <span>{p.label}</span>
                     {p.free && <span className="text-[7px] leading-tight" style={{ color: '#22c55e' }}>free</span>}
                     <span className="text-[9px] opacity-60">{pCfg.mode === 'webview' ? '🌐' : '🔧'}</span>
-                    {/* Статус последнего запроса */}
-                    {pSt === 'ok'   && <span style={{ color: '#22c55e', fontSize: '8px', lineHeight: 1 }}>●</span>}
-                    {pSt === 'fail' && <span style={{ color: '#f87171', fontSize: '8px', lineHeight: 1 }}>●</span>}
+                    {/* Статус последнего запроса с tooltip */}
+                    {pSt && (
+                      <span
+                        className="relative"
+                        style={{ fontSize: '8px', lineHeight: 1, color: pSt === 'ok' ? '#22c55e' : '#f87171' }}
+                        onMouseEnter={e => { e.stopPropagation(); setHoveredStatus(p.id) }}
+                        onMouseLeave={() => setHoveredStatus(null)}
+                      >
+                        ●
+                        {hoveredStatus === p.id && (
+                          <span
+                            className="absolute bottom-full left-1/2 mb-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-[10px] font-normal pointer-events-none"
+                            style={{
+                              transform: 'translateX(-50%)',
+                              backgroundColor: 'var(--cc-surface)',
+                              border: '1px solid var(--cc-border)',
+                              color: 'var(--cc-text-dim)',
+                              boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+                              zIndex: 100,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {pSt === 'ok' ? '✓ Работает' : '✗ Ошибка'}
+                            {providerCheckTimes[p.id] && (
+                              <span style={{ color: 'var(--cc-text-dimmer)' }}> · {providerCheckTimes[p.id]}</span>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    )}
                     {provider === p.id && <span className="opacity-70">✓</span>}
                   </button>
                 )
@@ -581,6 +637,16 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                   color: showAddProvider ? '#22c55e' : 'var(--cc-text-dimmer)',
                 }}
               >+ ИИ</button>
+              {/* Кнопка ручного обновления статуса всех провайдеров */}
+              <button
+                onClick={() => runProviderChecks('manual')}
+                disabled={refreshing}
+                title="Проверить соединение со всеми подключёнными провайдерами"
+                className="flex items-center justify-center w-7 h-7 rounded-lg cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid transparent', color: 'var(--cc-text-dimmer)', fontSize: '13px' }}
+                onMouseEnter={e => { if (!refreshing) { e.currentTarget.style.borderColor = '#2AABEE55'; e.currentTarget.style.color = '#2AABEE' } }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-text-dimmer)' }}
+              >{refreshing ? '⏳' : '🔄'}</button>
             </div>
           ) : (
             <button

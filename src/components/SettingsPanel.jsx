@@ -1,4 +1,4 @@
-// v0.6 — Панель настроек: тема, мессенджеры, уведомления, ИИ, о программе
+// v0.15.0 — Панель настроек: тема, мессенджеры, уведомления, ИИ, диагностика, о программе
 import { useEffect, useState } from 'react'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 
@@ -42,6 +42,30 @@ function SettingRow({ label, description, children }) {
 
 export default function SettingsPanel({ messengers, settings, onMessengersChange, onSettingsChange, onClose }) {
   const [aiKeyVisible, setAiKeyVisible] = useState(false)
+  const [errorLog, setErrorLog] = useState(null)        // null = не загружен, '' = пуст, 'текст' = есть записи
+  const [logLoading, setLogLoading] = useState(false)
+  const [logClearing, setLogClearing] = useState(false)
+
+  const loadLog = async () => {
+    setLogLoading(true)
+    try {
+      const res = await window.api.invoke('ai:get-error-log')
+      setErrorLog(res.ok ? (res.text || '') : `Ошибка: ${res.error}`)
+    } catch (e) {
+      setErrorLog(`Ошибка: ${e.message}`)
+    } finally {
+      setLogLoading(false)
+    }
+  }
+
+  const clearLog = async () => {
+    setLogClearing(true)
+    try {
+      await window.api.invoke('ai:clear-error-log')
+      setErrorLog('')
+    } catch {}
+    setLogClearing(false)
+  }
 
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -254,6 +278,70 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
 
               <p className="text-[11px] leading-relaxed" style={{ color: 'var(--cc-text-dimmer)' }}>
                 Ключ хранится локально. Настройте промпт в боковой панели ИИ-помощника (🤖).
+              </p>
+            </div>
+          </section>
+
+          <div className="mx-5" style={{ borderTop: '1px solid var(--cc-border)' }} />
+
+          {/* ── Диагностика ── */}
+          <section className="px-5 py-4">
+            <SectionTitle>Диагностика</SectionTitle>
+            <div className="space-y-2">
+
+              {/* Кнопки управления логом */}
+              <div className="flex gap-2">
+                <button
+                  onClick={loadLog}
+                  disabled={logLoading}
+                  className="flex-1 py-2 rounded-xl text-sm transition-all cursor-pointer disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)', border: '1px solid var(--cc-border)' }}
+                  onMouseEnter={e => { if (!logLoading) e.currentTarget.style.backgroundColor = 'var(--cc-border)' }}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
+                >
+                  {logLoading ? '⏳ Загрузка...' : '📋 Загрузить лог ошибок'}
+                </button>
+                {errorLog !== null && (
+                  <button
+                    onClick={clearLog}
+                    disabled={logClearing}
+                    className="px-3 py-2 rounded-xl text-sm transition-all cursor-pointer disabled:opacity-50"
+                    style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+                    onMouseEnter={e => { if (!logClearing) e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.18)' }}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.08)'}
+                    title="Очистить лог ошибок"
+                  >
+                    {logClearing ? '⏳' : '🗑 Очистить'}
+                  </button>
+                )}
+              </div>
+
+              {/* Содержимое лога */}
+              {errorLog !== null && (
+                <div
+                  className="rounded-xl p-3 text-[10px] font-mono overflow-y-auto"
+                  style={{
+                    backgroundColor: 'var(--cc-hover)',
+                    border: '1px solid var(--cc-border)',
+                    color: 'var(--cc-text-dim)',
+                    maxHeight: '180px',
+                    whiteSpace: 'pre',
+                    lineHeight: 1.7,
+                  }}
+                >
+                  {errorLog
+                    ? errorLog.trim().split('\n').slice(-30).map((line, i) => (
+                        <div key={i} style={{ color: line.includes('startup') || line.includes('hourly') ? 'var(--cc-text-dimmer)' : 'var(--cc-text-dim)' }}>
+                          {line}
+                        </div>
+                      ))
+                    : <span style={{ color: 'var(--cc-text-dimmer)' }}>— лог пуст —</span>
+                  }
+                </div>
+              )}
+
+              <p className="text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>
+                Файл: <code style={{ color: 'var(--cc-text-dim)' }}>userData/ai-errors.log</code> · Показаны последние 30 строк
               </p>
             </div>
           </section>

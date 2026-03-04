@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.14.0 (4 марта 2026)
+## Текущая версия: v0.15.0 (4 марта 2026)
 
 ---
 
@@ -88,6 +88,17 @@
 ---
 
 ## Changelog
+
+### v0.15.0 (4 марта 2026) — Tooltip провайдера, кнопка 🔄, часовая проверка, секция Диагностика
+- `src/components/AISidebar.jsx`:
+  - **Tooltip на ●**: при наведении на цветную точку статуса провайдера появляется всплывающая подсказка "✓ Работает · 14:32" или "✗ Ошибка · 14:32". State `providerCheckTimes {pid: 'HH:MM'}`. State `hoveredStatus` (pid | null).
+  - **Кнопка 🔄**: ручной запуск проверки всех провайдеров. Показывает ⏳ пока идёт проверка (`refreshing` state). Находится в ряду с "+ ИИ".
+  - **Часовая фоновая проверка**: `setInterval(() => runChecksRef.current('hourly'), 60*60*1000)` в отдельном useEffect. Работает тихо в фоне.
+  - **Рефакторинг**: вся логика проверки вынесена в `runProviderChecks(source)`. `settingsRef` + `runChecksRef` — решение stale closure. startup/hourly оба используют `runChecksRef.current()`.
+- `src/components/SettingsPanel.jsx`:
+  - **Секция Диагностика**: кнопка "📋 Загрузить лог ошибок" + кнопка "🗑 Очистить". Показывает последние 30 строк `ai-errors.log`. Цвет строк: startup/hourly — dimmer, прочие — обычные.
+- `main/main.js`:
+  - **`ai:clear-error-log`**: IPC хендлер — перезаписывает лог пустым файлом.
 
 ### v0.14.0 (4 марта 2026) — Кнопка пополнить счёт, лог ошибок API, авто-проверка при запуске
 - `src/components/AISidebar.jsx`:
