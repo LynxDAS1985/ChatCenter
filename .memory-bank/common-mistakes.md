@@ -24,16 +24,24 @@ spawn('electron-vite', ['dev'], { env, shell: true })
 
 ### ❌ accountScript показывает имя открытого чата вместо имени аккаунта ("Автолиберти")
 
-**Симптом**: Под вкладкой Telegram вместо имени пользователя (БНК) показывается название открытого в данный момент чата (Автолиберти).
+**Симптом**: Под вкладкой Telegram вместо имени пользователя показывается название открытого в данный момент чата (например "Автолиберти!!!!").
 
-**Причина**: В `accountScript` использовался `.chat-info .peer-title` — это DOM-элемент заголовка ОТКРЫТОГО ЧАТА, а не аккаунта. Скрипт перебирает селекторы по очереди и берёт первый успешный результат.
+**Причина**: В Telegram Web K НЕТ надёжного DOM-элемента с именем СВОЕГО аккаунта в обычном виде (список чатов). Имя пользователя видно только в открытых Настройках/Профиле. Любые селекторы в обычном режиме захватывают имя ОТКРЫТОГО собеседника.
 
-**Решение**: Удалить `.chat-info .peer-title` и `.sidebar-left-section .peer-title` из selectors для Telegram:
+**Решение**: Полностью удалить `accountScript` из Telegram в `constants.js`. Без скрипта `tryExtractAccount` выйдет на проверке `!messenger?.accountScript` и ничего не покажет под вкладкой.
 ```js
-// ПЛОХО — захватывает имя открытого чата:
-const sels = ['.sidebar-left-section .peer-title', '.chat-info .peer-title']
-// ХОРОШО — только профиль/настройки:
-const sels = ['.user-title', '.profile-title', '.sidebar-left-section-header .peer-title']
+// ПРАВИЛЬНО — не показывать ничего (пусто лучше, чем ложь):
+{
+  id: 'telegram',
+  name: 'Telegram',
+  // НЕТ accountScript!
+}
+```
+
+**Дополнительно**: При старте приложения нужно принудительно очищать `accountInfo` для мессенджеров без `accountScript`, чтобы старое кэшированное значение не выжило в state после хот-релоада или dev-режима:
+```js
+const noScript = list.filter(m => !m.accountScript && !DEFAULT_MESSENGERS.find(d => d.id === m.id)?.accountScript)
+setAccountInfo(prev => { const n = {...prev}; noScript.forEach(({id}) => delete n[id]); return n })
 ```
 
 ---
@@ -236,3 +244,20 @@ new BrowserView({ webPreferences: { nodeIntegration: true } })
 ### ❌ Хранить настройки в переменных — потеря при перезапуске
 
 **Решение**: использовать `electron-store`, сохранять сразу при изменении.
+
+---
+
+### ❌ Зум WebView не сохраняется между сессиями
+
+**Симптом**: Пользователь выставил 150% для Telegram, перезапустил приложение — зум сбросился в 100%.
+
+**Причина**: `zoomLevels` хранился только в React-state, который сбрасывается при каждом перезапуске.
+
+**Решение**: Сохранять `zoomLevels: { [messengerId]: number }` в settings через `settings:save`, загружать при старте:
+```js
+// Загрузка:
+if (s.zoomLevels) { setZoomLevels(s.zoomLevels); zoomLevelsRef.current = s.zoomLevels }
+// Сохранение (debounce 800ms в changeZoom):
+const updated = { ...settingsRef.current, zoomLevels: next }
+window.api.invoke('settings:save', updated).catch(() => {})
+```

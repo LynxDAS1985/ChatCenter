@@ -173,6 +173,7 @@ export default function App() {
   const zoomInputRef = useRef(null)
   const statsRef = useRef({ today: 0, autoToday: 0, total: 0, date: '' })
   const statsSaveTimer = useRef(null)
+  const zoomSaveTimer = useRef(null)
   const bumpStatsRef = useRef(null)
 
   // Синхронизация рефов
@@ -217,6 +218,17 @@ export default function App() {
       window.api.invoke('messengers:load').then(list => {
         setMessengers(list)
         setActiveId(list[0]?.id || null)
+        // Сбрасываем accountInfo для мессенджеров без accountScript (например, Telegram)
+        const noScript = list.filter(m => !m.accountScript &&
+          !DEFAULT_MESSENGERS.find(d => d.id === m.id)?.accountScript
+        ).map(m => m.id)
+        if (noScript.length > 0) {
+          setAccountInfo(prev => {
+            const n = { ...prev }
+            noScript.forEach(id => delete n[id])
+            return n
+          })
+        }
       }).catch(() => {
         setMessengers(DEFAULT_MESSENGERS)
         setActiveId(DEFAULT_MESSENGERS[0].id)
@@ -226,6 +238,11 @@ export default function App() {
         if (s.aiSidebarWidth) {
           const w = Math.max(240, Math.min(600, s.aiSidebarWidth))
           setAiWidth(w); aiWidthRef.current = w
+        }
+        // Загружаем зум вкладок
+        if (s.zoomLevels && typeof s.zoomLevels === 'object') {
+          setZoomLevels(s.zoomLevels)
+          zoomLevelsRef.current = s.zoomLevels
         }
         // Загружаем статистику с ежедневным сбросом
         const todayDate = new Date().toISOString().slice(0, 10)
@@ -350,7 +367,17 @@ export default function App() {
   const changeZoom = (pct) => {
     if (!activeId) return
     const clamped = Math.max(25, Math.min(200, Math.round(pct / 5) * 5))
-    setZoomLevels(prev => ({ ...prev, [activeId]: clamped }))
+    setZoomLevels(prev => {
+      const next = { ...prev, [activeId]: clamped }
+      // Сохраняем зум в настройки с дебаунсом 800мс
+      clearTimeout(zoomSaveTimer.current)
+      zoomSaveTimer.current = setTimeout(() => {
+        const updated = { ...settingsRef.current, zoomLevels: next }
+        settingsRef.current = updated
+        window.api.invoke('settings:save', updated).catch(() => {})
+      }, 800)
+      return next
+    })
     applyZoom(activeId, clamped)
   }
 
@@ -368,6 +395,7 @@ export default function App() {
       Object.values(retryTimers.current).forEach(t => clearTimeout(t))
       clearTimeout(saveTimer.current)
       clearTimeout(statsSaveTimer.current)
+      clearTimeout(zoomSaveTimer.current)
     }
   }, [])
 
