@@ -1,5 +1,15 @@
 # Типичные ошибки — ChatCenter
 
+## 🔴 КРИТИЧЕСКОЕ: Виртуализация DOM в Telegram Web K
+
+### ❌ querySelectorAll для подсчёта бейджей непрочитанных
+
+Telegram Web K рендерит только видимые диалоги в DOM (~20 штук). При скролле элементы создаются/удаляются. `document.querySelectorAll('.badge.badge-unread')` находит только текущие бейджи → число скачет (594 → 1435 → 2918).
+
+**Решение (v0.20.0)**: `countUnreadTelegram()` — persistent `Map<peerId, {count, isMuted, chatType}>`. Каждый диалог отслеживается по `data-peer-id`. Map только пополняется, не сбрасывается. Плюс debounce 300ms для MutationObserver.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: ELECTRON_RUN_AS_NODE=1
 
 ### ❌ Запуск electron-vite напрямую из VS Code / Claude Code терминала

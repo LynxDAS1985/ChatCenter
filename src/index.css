@@ -69,3 +69,12 @@ webview { display: flex; width: 100%; height: 100%; }
   pointer-events: none;
   -webkit-app-region: no-drag;
 }
+
+/* ─── Анимация бейджа при росте непрочитанных ───────────────────────────── */
+
+@keyframes badgePulse {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.35); }
+  60%  { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}

@@ -1,4 +1,4 @@
-// v0.10.0 — Стриминг AI (SSE), автосохранение черновика, бейдж трея
+// v0.20.0 — Фикс виртуализации счётчика Telegram, анимация бейджа, тултип детализации
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -33,6 +33,25 @@ function MessengerTab({
   onDragStart, onDragOver, onDrop, onDragEnd
 }) {
   const [hovered, setHovered] = useState(false)
+  const [badgePulse, setBadgePulse] = useState(false)
+  const prevCountRef = useRef(0)
+
+  // Анимация бейджа при росте счётчика непрочитанных
+  useEffect(() => {
+    if (unreadCount > prevCountRef.current && prevCountRef.current >= 0) {
+      setBadgePulse(true)
+      const t = setTimeout(() => setBadgePulse(false), 500)
+      return () => clearTimeout(t)
+    }
+    prevCountRef.current = unreadCount
+  }, [unreadCount])
+  // Обновляем ref и вне условия (когда count уменьшается)
+  useEffect(() => { prevCountRef.current = unreadCount }, [unreadCount])
+
+  // Формируем тултип бейджа с детализацией
+  const badgeTooltip = unreadSplit
+    ? `Непрочитанных: ${unreadCount}\n💬 Личные: ${unreadSplit.personal}\n📢 Каналы/группы: ${unreadSplit.channels}`
+    : `Непрочитанных: ${unreadCount}`
 
   return (
     <button
@@ -106,23 +125,22 @@ function MessengerTab({
       ) : unreadCount > 0 ? (
         unreadSplit && unreadSplit.personal > 0 && unreadSplit.channels > 0 ? (
           // Два бейджа: личные (цвет мессенджера) + каналы (серый)
-          <span className="ml-auto flex flex-col gap-0.5 items-end shrink-0">
+          <span className="ml-auto flex flex-col gap-0.5 items-end shrink-0" title={badgeTooltip}>
             <span
               className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
-              style={{ backgroundColor: m.color, animation: isNew ? 'bounce 0.6s ease 3' : 'none' }}
-              title="Личные сообщения"
+              style={{ backgroundColor: m.color, animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
             >💬{unreadSplit.personal > 99 ? '99+' : unreadSplit.personal}</span>
             <span
               className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
-              style={{ backgroundColor: '#6b7280' }}
-              title="Каналы и группы"
+              style={{ backgroundColor: '#6b7280', animation: badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
             >📢{unreadSplit.channels > 99 ? '99+' : unreadSplit.channels}</span>
           </span>
         ) : (
           // Один общий бейдж
           <span
             className="ml-auto min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none shrink-0"
-            style={{ animation: isNew ? 'bounce 0.6s ease 3' : 'none' }}
+            style={{ animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
+            title={badgeTooltip}
           >
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -653,10 +671,7 @@ export default function App() {
   const theme = settings.theme || 'dark'
   const currentZoom = zoomLevels[activeId] || 100
 
-  // ── Обновляем бейдж иконки трея при изменении непрочитанных ─────────────
-  useEffect(() => {
-    window.api.invoke('tray:set-badge', totalUnread).catch(() => {})
-  }, [totalUnread])
+  // Бейдж трея отключён (v0.20.0) — по запросу пользователя
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--cc-bg)' }}>

@@ -1,6 +1,17 @@
-// v0.19.5 — ChatMonitor: бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
-// Фикс: cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
+// v0.20.0 — ChatMonitor: persistent Map для Telegram (фикс виртуализации), debounce 300ms
+// Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
+// Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
+
+// ── Persistent Map: стабильный счётчик для виртуализированного списка Telegram ──
+// Telegram Web K рендерит только видимые диалоги в DOM.
+// querySelectorAll находит только текущие бейджи → число скачет при скролле.
+// Решение: отслеживаем каждый диалог по peerId — Map только пополняется.
+const knownDialogs = new Map() // peerId → { count, isMuted, chatType }
+
+// Debounce для MutationObserver (не пересчитывать на каждый пиксель скролла)
+let updateTimer = null
+const UPDATE_DEBOUNCE = 300 // ms
 
 // Селекторы счётчиков непрочитанных для каждого мессенджера
 const UNREAD_SELECTORS = {
@@ -129,9 +140,13 @@ function isActiveChatChannel(type) {
   return false
 }
 
-// Возвращает { personal, channels, total, mutedTotal } — раздельный подсчёт непрочитанных
-// mutedTotal — для бейджа вкладки (все непрочитанные), personal/channels — без muted (для уведомлений)
+// Возвращает { personal, channels, total, allTotal } — раздельный подсчёт непрочитанных
+// allTotal — для бейджа вкладки (все непрочитанные), personal/channels — без muted (для уведомлений)
 function countUnread(type) {
+  // Telegram — отдельная логика с persistent Map (виртуализация DOM)
+  if (type === 'telegram') return countUnreadTelegram()
+
+  // WhatsApp / VK — стандартный подсчёт по querySelectorAll
   const sels = UNREAD_SELECTORS[type] || []
   let personal = 0, channels = 0, mutedTotal = 0
   for (const sel of sels) {
@@ -140,24 +155,66 @@ function countUnread(type) {
         const n = parseInt(el.textContent?.trim(), 10)
         const count = (!isNaN(n) && n > 0) ? n : (el.offsetParent !== null ? 1 : 0)
         if (count === 0) return
-        const isMuted = isBadgeInMutedDialog(el, type)
-        // Общий счётчик — всегда считаем (включая muted)
         mutedTotal += count
-        // Раздельный счётчик — без muted (для уведомлений)
+        const isMuted = isBadgeInMutedDialog(el, type)
         if (isMuted) return
-        // Для Telegram — определяем тип диалога
-        if (type === 'telegram') {
-          const dialog = el.closest('.chatlist-chat, .ListItem, [class*="chat-item"], li[class]')
-          const chatType = getChatType(dialog)
-          if (chatType === 'channel' || chatType === 'group') channels += count
-          else personal += count
-        } else {
-          personal += count
-        }
+        personal += count
       })
       if (mutedTotal > 0) break
     } catch {}
   }
+  return { personal, channels, total: personal + channels, allTotal: mutedTotal }
+}
+
+// ── Telegram: persistent Map — стабильный подсчёт при виртуализации ──────────
+function countUnreadTelegram() {
+  const sels = UNREAD_SELECTORS.telegram || []
+
+  // Сканируем ВСЕ видимые диалоги в DOM
+  const dialogEls = document.querySelectorAll(
+    '.chatlist-chat, .ListItem, [class*="chat-item"]'
+  )
+
+  for (const dialog of dialogEls) {
+    const peerId = dialog.dataset?.peerId || dialog.getAttribute('data-peer-id')
+    if (!peerId) continue
+
+    // Ищем бейдж непрочитанных внутри этого диалога
+    let badgeCount = 0
+    for (const sel of sels) {
+      try {
+        const badge = dialog.querySelector(sel)
+        if (badge) {
+          const n = parseInt(badge.textContent?.trim(), 10)
+          badgeCount = (!isNaN(n) && n > 0) ? n : (badge.offsetParent !== null ? 1 : 0)
+          if (badgeCount > 0) break
+        }
+      } catch {}
+    }
+
+    // Проверяем muted-статус прямо на элементе диалога
+    let isMuted = false
+    try {
+      isMuted = dialog.classList.contains('is-muted') ||
+        !!dialog.querySelector('.icon-mute, .icon-muted, [class*="muted-icon"], [class*="silent"], [data-icon="mute"]')
+    } catch {}
+
+    const chatType = getChatType(dialog)
+
+    // Обновляем persistent Map (запоминаем навсегда до перезагрузки)
+    knownDialogs.set(peerId, { count: badgeCount, isMuted, chatType })
+  }
+
+  // Суммируем по ВСЕМ известным диалогам (не только текущим в DOM)
+  let personal = 0, channels = 0, mutedTotal = 0
+  for (const [, d] of knownDialogs) {
+    if (d.count === 0) continue
+    mutedTotal += d.count
+    if (d.isMuted) continue
+    if (d.chatType === 'channel' || d.chatType === 'group') channels += d.count
+    else personal += d.count
+  }
+
   return { personal, channels, total: personal + channels, allTotal: mutedTotal }
 }
 
@@ -213,7 +270,11 @@ function startMonitor() {
   sendUpdate(type)
 
   if (observer) return
-  observer = new MutationObserver(() => sendUpdate(type))
+  observer = new MutationObserver(() => {
+    // Debounce: при скролле Telegram DOM меняется сотни раз в секунду
+    clearTimeout(updateTimer)
+    updateTimer = setTimeout(() => sendUpdate(type), UPDATE_DEBOUNCE)
+  })
   observer.observe(document.body, {
     childList: true,
     subtree: true,
