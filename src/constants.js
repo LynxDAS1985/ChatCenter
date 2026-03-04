@@ -11,27 +11,49 @@ export const DEFAULT_MESSENGERS = [
     isDefault: true,
     accountScript: `(async () => {
       try {
-        var el = document.querySelector('.sidebar-header [data-peer-id]');
-        if (!el) return null;
-        var peerId = Number(el.dataset.peerId);
+        var peerId = 0;
+        var sels = ['.sidebar-header [data-peer-id]','.btn-menu-toggle [data-peer-id]','avatar-element.is-self[data-peer-id]','.sidebar-header avatar-element'];
+        for (var s = 0; s < sels.length; s++) {
+          var el = document.querySelector(sels[s]);
+          if (el) { var pid = el.dataset.peerId || el.getAttribute('data-peer-id'); if (pid) { peerId = Number(pid); if (peerId) break; } }
+        }
+        if (!peerId) {
+          try { var a = localStorage.getItem('user_auth'); if (a) { var p = JSON.parse(a); peerId = Number(p.id || 0); } } catch(e) {}
+        }
         if (!peerId) return null;
-        var dbs = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : [];
+        var dbs = [];
+        try { if (typeof indexedDB.databases === 'function') dbs = await indexedDB.databases(); } catch(e) {}
+        if (!dbs || !dbs.length) dbs = [{name:'tweb'},{name:'tweb-0'},{name:'tweb-1'}];
         for (var i = 0; i < dbs.length; i++) {
-          var db = await new Promise(function(r) {
-            var q = indexedDB.open(dbs[i].name, dbs[i].version);
-            q.onsuccess = function() { r(q.result) };
-            q.onerror = function() { r(null) };
-            q.onupgradeneeded = function() { q.transaction.abort(); r(null) };
-          });
+          var db;
+          try {
+            db = await new Promise(function(ok) {
+              var r = indexedDB.open(dbs[i].name);
+              r.onsuccess = function(){ok(r.result)};
+              r.onerror = function(){ok(null)};
+              r.onupgradeneeded = function(){r.transaction.abort();ok(null)};
+            });
+          } catch(e) { continue; }
           if (!db) continue;
           var stores = Array.from(db.objectStoreNames);
-          var us = stores.find(function(s) { return s === 'users' || s.includes('user') });
+          var us = stores.find(function(n){return n==='users'||n.includes('user')});
           if (!us) { db.close(); continue; }
-          var user = await new Promise(function(r) {
-            try { var tx = db.transaction(us, 'readonly'); var q = tx.objectStore(us).get(peerId); q.onsuccess = function() { r(q.result) }; q.onerror = function() { r(null) }; } catch(e) { r(null) }
-          });
-          db.close();
-          if (user && (user.first_name || user.name)) return user.first_name ? [user.first_name, user.last_name].filter(Boolean).join(' ') : user.name;
+          try {
+            var user = await new Promise(function(ok) {
+              var tx = db.transaction(us,'readonly');
+              var r = tx.objectStore(us).get(peerId);
+              r.onsuccess = function(){ok(r.result)};
+              r.onerror = function(){ok(null)};
+            });
+            db.close();
+            if (user) {
+              var fn = user.first_name || user.firstName || '';
+              var ln = user.last_name || user.lastName || '';
+              if (fn) return (fn + ' ' + ln).trim();
+              if (user.name) return user.name;
+              if (user.phone) return '+' + String(user.phone).replace(/^\\+/,'');
+            }
+          } catch(e) { try{db.close();}catch(e2){} }
         }
       } catch(e) {}
       return null;

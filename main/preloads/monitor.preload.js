@@ -224,3 +224,24 @@ if (document.readyState === 'loading') {
 } else {
   startMonitor()
 }
+
+// ── Зум WebView: Ctrl+колёсико и Ctrl+клавиши → IPC к хосту ──────────────
+document.addEventListener('wheel', function(e) {
+  if (!e.ctrlKey) return
+  e.preventDefault()
+  try { ipcRenderer.sendToHost('zoom-change', { delta: e.deltaY < 0 ? 5 : -5 }) } catch(ex) {}
+}, { passive: false })
+
+document.addEventListener('keydown', function(e) {
+  if (!e.ctrlKey) return
+  if (e.key === '=' || e.key === '+') {
+    e.preventDefault()
+    try { ipcRenderer.sendToHost('zoom-change', { delta: 10 }) } catch(ex) {}
+  } else if (e.key === '-' || e.key === '_') {
+    e.preventDefault()
+    try { ipcRenderer.sendToHost('zoom-change', { delta: -10 }) } catch(ex) {}
+  } else if (e.key === '0') {
+    e.preventDefault()
+    try { ipcRenderer.sendToHost('zoom-reset') } catch(ex) {}
+  }
+})

@@ -92,6 +92,30 @@ const increased = count > lastCount && lastCount >= 0 && monitorReady
 
 ---
 
+### ❌ Ctrl+колёсико / Ctrl+клавиши зума не работают в WebView
+
+**Симптом**: Обработчики `wheel` и `keydown` на элементе `<webview>` или `window` в renderer не срабатывают когда пользователь взаимодействует с содержимым WebView.
+
+**Причина**: WebView (`<webview>` tag в Electron) — это изолированный процесс. Все события мыши и клавиатуры ВНУТРИ WebView отправляются в его content, а не в родительский renderer. Элемент `<webview>` в DOM renderer-а не получает эти события.
+
+**Решение**: Обработчики зума (Ctrl+wheel, Ctrl+=/-/0) нужно добавлять в **preload WebView** (monitor.preload.js), и отправлять результат через `ipcRenderer.sendToHost('zoom-change', { delta })`. В App.jsx обрабатывать через `ipc-message` на webview-элементе:
+```js
+// monitor.preload.js:
+document.addEventListener('wheel', function(e) {
+  if (!e.ctrlKey) return
+  e.preventDefault()
+  ipcRenderer.sendToHost('zoom-change', { delta: e.deltaY < 0 ? 5 : -5 })
+}, { passive: false })
+
+// App.jsx (ipc-message handler):
+if (e.channel === 'zoom-change') {
+  const delta = e.args[0]?.delta || 0
+  // ... apply zoom
+}
+```
+
+---
+
 ### ❌ require('electron') в renderer или WebView preload
 
 ```js

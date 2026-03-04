@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.19.0 (4 марта 2026)
+## Текущая версия: v0.19.1 (4 марта 2026)
 
 ---
 
@@ -88,6 +88,15 @@
 ---
 
 ## Changelog
+
+### v0.19.1 (4 марта 2026) — Фикс зума WebView, фикс accountScript, плавная анимация
+- **ФИКС: Ctrl+колёсико и Ctrl+клавиши зума**: перенесены в `monitor.preload.js` (WebView захватывает все события мыши/клавиатуры, обработчики в renderer не работали)
+- **Новые IPC каналы**: `zoom-change` (delta:±5/±10) и `zoom-reset` из preload → App.jsx
+- **Плавная анимация зума**: `animateZoom()` — 6 кадров с ease-out квадратичным
+- **Более надёжный accountScript Telegram**: множественные DOM-селекторы + fallback на `user_auth` из localStorage + fallback DB-имена (`tweb`, `tweb-0`, `tweb-1`) + проверка `firstName`/`lastName` (camelCase) + fallback на номер телефона (`+user.phone`)
+- **Очистка accountScript при загрузке**: для дефолтных мессенджеров ВСЕГДА берём accountScript из `DEFAULT_MESSENGERS` (не из store) — гарантирует использование актуального скрипта
+- **Индикатор зума на вкладке**: ярче (9px, font-bold, цвет мессенджера)
+- **Рефакторинг**: `saveZoomLevels()` — вынесена общая логика сохранения зума с дебаунсом
 
 ### v0.19.0 (4 марта 2026) — Имя аккаунта Telegram (IndexedDB), индикатор зума, Ctrl+колёсико
 - **accountScript Telegram через IndexedDB**: читает peer ID из DOM → находит user record в IndexedDB → возвращает first_name + last_name. Работает надёжно, не зависит от открытого чата.

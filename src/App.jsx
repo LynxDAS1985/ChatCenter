@@ -79,8 +79,8 @@ function MessengerTab({
           </span>
           {zoomLevel && zoomLevel !== 100 && (
             <span
-              className="text-[8px] leading-none px-0.5 rounded"
-              style={{ color: '#2AABEE', backgroundColor: 'rgba(42,171,238,0.12)' }}
+              className="text-[9px] leading-none px-1 py-0.5 rounded font-bold"
+              style={{ color: m.color, backgroundColor: `${m.color}20` }}
               title={`Масштаб: ${zoomLevel}%`}
             >{zoomLevel}%</span>
           )}
@@ -225,12 +225,12 @@ export default function App() {
   useEffect(() => {
     Promise.all([
       window.api.invoke('messengers:load').then(list => {
-        // Чистим устаревший accountScript из сохранённых данных дефолтных мессенджеров
+        // Для дефолтных мессенджеров — всегда берём accountScript из constants.js
         const cleaned = list.map(m => {
           const def = DEFAULT_MESSENGERS.find(d => d.id === m.id)
-          if (def && m.accountScript && !def.accountScript) {
+          if (def) {
             const { accountScript, ...rest } = m
-            return rest
+            return def.accountScript ? { ...rest, accountScript: def.accountScript } : rest
           }
           return m
         })
@@ -321,47 +321,21 @@ export default function App() {
         e.preventDefault()
         const cur = zoomLevelsRef.current[aid] || 100
         const clamped = Math.min(200, Math.round((cur + 10) / 5) * 5)
-        setZoomLevels(prev => {
-          const next = { ...prev, [aid]: clamped }
-          clearTimeout(zoomSaveTimer.current)
-          zoomSaveTimer.current = setTimeout(() => {
-            const updated = { ...settingsRef.current, zoomLevels: next }
-            settingsRef.current = updated
-            window.api.invoke('settings:save', updated).catch(() => {})
-          }, 800)
-          return next
-        })
-        try { webviewRefs.current[aid]?.setZoomFactor(clamped / 100) } catch {}
+        setZoomLevels(prev => { const next = { ...prev, [aid]: clamped }; saveZoomLevels(next); return next })
+        animateZoom(aid, cur, clamped)
       } else if (e.key === '-' || e.key === '_') {
         // Ctrl+- → уменьшить зум
         e.preventDefault()
         const cur = zoomLevelsRef.current[aid] || 100
         const clamped = Math.max(25, Math.round((cur - 10) / 5) * 5)
-        setZoomLevels(prev => {
-          const next = { ...prev, [aid]: clamped }
-          clearTimeout(zoomSaveTimer.current)
-          zoomSaveTimer.current = setTimeout(() => {
-            const updated = { ...settingsRef.current, zoomLevels: next }
-            settingsRef.current = updated
-            window.api.invoke('settings:save', updated).catch(() => {})
-          }, 800)
-          return next
-        })
-        try { webviewRefs.current[aid]?.setZoomFactor(clamped / 100) } catch {}
+        setZoomLevels(prev => { const next = { ...prev, [aid]: clamped }; saveZoomLevels(next); return next })
+        animateZoom(aid, cur, clamped)
       } else if (e.key === '0') {
         // Ctrl+0 → сбросить зум
         e.preventDefault()
-        setZoomLevels(prev => {
-          const next = { ...prev, [aid]: 100 }
-          clearTimeout(zoomSaveTimer.current)
-          zoomSaveTimer.current = setTimeout(() => {
-            const updated = { ...settingsRef.current, zoomLevels: next }
-            settingsRef.current = updated
-            window.api.invoke('settings:save', updated).catch(() => {})
-          }, 800)
-          return next
-        })
-        try { webviewRefs.current[aid]?.setZoomFactor(1) } catch {}
+        const cur = zoomLevelsRef.current[aid] || 100
+        setZoomLevels(prev => { const next = { ...prev, [aid]: 100 }; saveZoomLevels(next); return next })
+        animateZoom(aid, cur, 100)
       }
     }
     window.addEventListener('keydown', handler)
@@ -417,21 +391,41 @@ export default function App() {
     try { webviewRefs.current[id]?.setZoomFactor(pct / 100) } catch {}
   }
 
+  // Плавная анимация зума (ease-out, ~6 кадров)
+  const animateZoom = (id, from, to) => {
+    if (from === to) { applyZoom(id, to); return }
+    const steps = 6
+    let step = 0
+    const tick = () => {
+      step++
+      const t = step / steps
+      const eased = 1 - Math.pow(1 - t, 2)
+      const val = from + (to - from) * eased
+      try { webviewRefs.current[id]?.setZoomFactor(val / 100) } catch {}
+      if (step < steps) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
+
+  const saveZoomLevels = (next) => {
+    clearTimeout(zoomSaveTimer.current)
+    zoomSaveTimer.current = setTimeout(() => {
+      const updated = { ...settingsRef.current, zoomLevels: next }
+      settingsRef.current = updated
+      window.api.invoke('settings:save', updated).catch(() => {})
+    }, 800)
+  }
+
   const changeZoom = (pct) => {
     if (!activeId) return
+    const from = zoomLevelsRef.current[activeId] || 100
     const clamped = Math.max(25, Math.min(200, Math.round(pct / 5) * 5))
     setZoomLevels(prev => {
       const next = { ...prev, [activeId]: clamped }
-      // Сохраняем зум в настройки с дебаунсом 800мс
-      clearTimeout(zoomSaveTimer.current)
-      zoomSaveTimer.current = setTimeout(() => {
-        const updated = { ...settingsRef.current, zoomLevels: next }
-        settingsRef.current = updated
-        window.api.invoke('settings:save', updated).catch(() => {})
-      }, 800)
+      saveZoomLevels(next)
       return next
     })
-    applyZoom(activeId, clamped)
+    animateZoom(activeId, from, clamped)
   }
 
   // Применяем сохранённый зум при переключении вкладки
@@ -564,26 +558,6 @@ export default function App() {
       el._chatcenterInit = true
       webviewRefs.current[messengerId] = el
 
-      // Ctrl+колёсико мыши → зум
-      el.addEventListener('wheel', (e) => {
-        if (!e.ctrlKey) return
-        e.preventDefault()
-        const cur = zoomLevelsRef.current[messengerId] || 100
-        const delta = e.deltaY < 0 ? 5 : -5
-        const clamped = Math.max(25, Math.min(200, Math.round((cur + delta) / 5) * 5))
-        setZoomLevels(prev => {
-          const next = { ...prev, [messengerId]: clamped }
-          clearTimeout(zoomSaveTimer.current)
-          zoomSaveTimer.current = setTimeout(() => {
-            const updated = { ...settingsRef.current, zoomLevels: next }
-            settingsRef.current = updated
-            window.api.invoke('settings:save', updated).catch(() => {})
-          }, 800)
-          return next
-        })
-        try { webviewRefs.current[messengerId]?.setZoomFactor(clamped / 100) } catch {}
-      }, { passive: false })
-
       el.addEventListener('dom-ready', () => {
         clearTimeout(retryTimers.current[messengerId])
         retryTimers.current[messengerId] = setTimeout(
@@ -599,7 +573,20 @@ export default function App() {
       })
 
       el.addEventListener('ipc-message', (e) => {
-        if (e.channel === 'unread-count') {
+        if (e.channel === 'zoom-change') {
+          const delta = e.args[0]?.delta || 0
+          const cur = zoomLevelsRef.current[messengerId] || 100
+          const clamped = Math.max(25, Math.min(200, Math.round((cur + delta) / 5) * 5))
+          if (clamped === cur) return
+          setZoomLevels(prev => { const next = { ...prev, [messengerId]: clamped }; saveZoomLevels(next); return next })
+          animateZoom(messengerId, cur, clamped)
+          return
+        } else if (e.channel === 'zoom-reset') {
+          const cur = zoomLevelsRef.current[messengerId] || 100
+          setZoomLevels(prev => { const next = { ...prev, [messengerId]: 100 }; saveZoomLevels(next); return next })
+          animateZoom(messengerId, cur, 100)
+          return
+        } else if (e.channel === 'unread-count') {
           // Только обновляем счётчик — звук и уведомление только при new-message (с текстом)
           const count = Number(e.args[0]) || 0
           setUnreadCounts(prev => ({ ...prev, [messengerId]: count }))

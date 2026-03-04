@@ -1,6 +1,6 @@
 # UI-компоненты — ChatCenter
 
-## Текущая версия UI: v0.18.0 (4 марта 2026)
+## Текущая версия UI: v0.19.1 (4 марта 2026)
 
 ---
 
@@ -100,7 +100,7 @@
 
 | Мессенджер | Пробуемые селекторы |
 |-----------|---------------------|
-| Telegram | **IndexedDB**: `data-peer-id` из `.sidebar-header` → `users` store → `first_name + last_name` |
+| Telegram | **IndexedDB (v0.19.1)**: множественные DOM-селекторы + localStorage `user_auth` fallback → peer ID → IndexedDB `users` store → `first_name + last_name` / phone fallback |
 | WhatsApp | `[data-testid="profile-details-header-name"]`, `[data-testid="user-preferred-name"]` |
 | ВКонтакте | `.TopNavBtn__title`, `.header__top--uname`, `.vkuiSimpleCell__content .vkuiTypography--weight-1` |
 
@@ -146,6 +146,17 @@
 Диапазон: 25–200%. Шаг: 5%. Каждая вкладка хранит свой зум.
 Зум сохраняется в settings (`zoomLevels: { [id]: number }`), загружается при старте.
 Применяется через `webview.setZoomFactor(pct / 100)`.
+
+### Зум из WebView (v0.19.1)
+Ctrl+колёсико и Ctrl+клавиши обрабатываются в `monitor.preload.js` → IPC `zoom-change`/`zoom-reset` → App.jsx.
+Причина: WebView захватывает события мыши/клавиатуры, renderer не получает их.
+
+### Плавная анимация зума (v0.19.1)
+`animateZoom(id, from, to)` — 6 кадров, ease-out квадратичный, `requestAnimationFrame`.
+
+### Индикатор зума на вкладке (v0.19.1)
+Бейдж `{zoomLevel}%` рядом с названием мессенджера. Показывается только при zoom ≠ 100%.
+Стиль: `text-[9px] font-bold`, цвет = цвет мессенджера, фон = `${color}20`.
 
 ---
 
