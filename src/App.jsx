@@ -28,6 +28,7 @@ function playNotificationSound() {
 
 function MessengerTab({
   messenger: m, isActive, accountInfo, unreadCount, isNew,
+  unreadSplit, messagePreview,
   onClick, onClose, isDragOver,
   onDragStart, onDragOver, onDrop, onDragEnd
 }) {
@@ -75,24 +76,41 @@ function MessengerTab({
         >
           {m.name}
         </span>
-        {accountInfo && (
+        {(messagePreview || accountInfo) && (
           <span
-            className="text-[10px] whitespace-nowrap max-w-[110px] overflow-hidden text-ellipsis leading-tight"
-            style={{ color: isActive ? `${m.color}AA` : 'var(--cc-text-dimmer)' }}
+            className="text-[10px] whitespace-nowrap max-w-[120px] overflow-hidden text-ellipsis leading-tight"
+            style={{ color: messagePreview ? m.color : (isActive ? `${m.color}AA` : 'var(--cc-text-dimmer)') }}
           >
-            {accountInfo}
+            {messagePreview ? `💬 ${messagePreview}` : accountInfo}
           </span>
         )}
       </span>
 
-      {/* Бейдж непрочитанных */}
+      {/* Бейдж непрочитанных — раздельный (личные 💬 / каналы 📢) или общий */}
       {unreadCount > 0 && !hovered && (
-        <span
-          className="absolute top-1 right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none"
-          style={{ animation: isNew ? 'bounce 0.6s ease 3' : 'none' }}
-        >
-          {unreadCount > 99 ? '99+' : unreadCount}
-        </span>
+        unreadSplit && unreadSplit.personal > 0 && unreadSplit.channels > 0 ? (
+          // Два бейджа: личные (цвет мессенджера) + каналы (серый)
+          <span className="absolute top-0.5 right-0.5 flex flex-col gap-0.5 items-end">
+            <span
+              className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
+              style={{ backgroundColor: m.color, animation: isNew ? 'bounce 0.6s ease 3' : 'none' }}
+              title="Личные сообщения"
+            >💬{unreadSplit.personal > 99 ? '99+' : unreadSplit.personal}</span>
+            <span
+              className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
+              style={{ backgroundColor: '#6b7280' }}
+              title="Каналы и группы"
+            >📢{unreadSplit.channels > 99 ? '99+' : unreadSplit.channels}</span>
+          </span>
+        ) : (
+          // Один общий бейдж
+          <span
+            className="absolute top-1 right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none"
+            style={{ animation: isNew ? 'bounce 0.6s ease 3' : 'none' }}
+          >
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )
       )}
 
       {/* Кнопка «закрыть» (при hover) */}
@@ -115,6 +133,8 @@ export default function App() {
   const [activeId, setActiveId] = useState(null)
   const [accountInfo, setAccountInfo] = useState({})
   const [unreadCounts, setUnreadCounts] = useState({})
+  const [unreadSplit, setUnreadSplit] = useState({})       // { [id]: { personal, channels } }
+  const [messagePreview, setMessagePreview] = useState({}) // { [id]: 'текст превью' }
   const [showAddModal, setShowAddModal] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showAI, setShowAI] = useState(true)
@@ -135,6 +155,7 @@ export default function App() {
 
   const webviewRefs = useRef({})
   const retryTimers = useRef({})
+  const previewTimers = useRef({})
   const saveTimer = useRef(null)
   const searchInputRef = useRef(null)
   const dragStartId = useRef(null)
@@ -445,6 +466,10 @@ export default function App() {
           // Только обновляем счётчик — звук и уведомление только при new-message (с текстом)
           const count = Number(e.args[0]) || 0
           setUnreadCounts(prev => ({ ...prev, [messengerId]: count }))
+        } else if (e.channel === 'unread-split') {
+          // Раздельный счётчик: личные vs каналы
+          const split = e.args[0]
+          if (split) setUnreadSplit(prev => ({ ...prev, [messengerId]: split }))
         } else if (e.channel === 'new-message') {
           const text = e.args[0]
           if (!text) return
@@ -458,6 +483,14 @@ export default function App() {
               body: text.length > 100 ? text.slice(0, 97) + '…' : text,
             }).catch(() => {})
           }
+
+          // Превью сообщения в бейдже вкладки (5 секунд)
+          const previewText = text.slice(0, 32) + (text.length > 32 ? '…' : '')
+          setMessagePreview(prev => ({ ...prev, [messengerId]: previewText }))
+          clearTimeout(previewTimers.current[messengerId])
+          previewTimers.current[messengerId] = setTimeout(() => {
+            setMessagePreview(prev => { const p = { ...prev }; delete p[messengerId]; return p })
+          }, 5000)
 
           // Добавляем в историю AI
           setChatHistory(prev => [...prev.slice(-19), { messengerId, text, ts: Date.now() }])
@@ -547,6 +580,8 @@ export default function App() {
               isActive={activeId === m.id}
               accountInfo={accountInfo[m.id]}
               unreadCount={unreadCounts[m.id] || 0}
+              unreadSplit={unreadSplit[m.id]}
+              messagePreview={messagePreview[m.id]}
               isNew={newMessageIds.has(m.id)}
               isDragOver={dragOverId === m.id}
               onClick={() => handleTabClick(m.id)}

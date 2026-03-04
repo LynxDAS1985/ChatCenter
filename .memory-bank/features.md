@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.16.1 (4 марта 2026)
+## Текущая версия: v0.17.0 (4 марта 2026)
 
 ---
 
@@ -88,6 +88,20 @@
 ---
 
 ## Changelog
+
+### v0.17.0 (4 марта 2026) — Раздельный счётчик, превью в вкладке, умный фильтр каналов
+- `src/constants.js`:
+  - **Фикс "Автолиберти"**: убран `.chat-info .peer-title` из accountScript Telegram — это название открытого чата, а не аккаунта. Теперь используются только `.user-title`, `.profile-title`, `.sidebar-left-section-header .peer-title`.
+- `main/preloads/monitor.preload.js`:
+  - **`getChatType(dialogEl)`**: определяет тип диалога (personal/channel/group) по `data-peer-type` атрибуту или DOM-иконкам.
+  - **`isActiveChatChannel(type)`**: возвращает true если открытый чат — канал или группа. Используется для умного фильтра.
+  - **`countUnread` теперь возвращает `{personal, channels, total}`**: раздельный подсчёт. Для Telegram каждый бейдж относится к personal/channel/group.
+  - **`unread-split` IPC**: новый канал, отправляет `{personal, channels}` в App.jsx.
+  - **Умный фильтр**: `new-message` не отправляется если открытый чат — канал или группа (только личные).
+- `src/App.jsx`:
+  - **`unreadSplit` state** + обработчик `unread-split` IPC.
+  - **`messagePreview` state** + `previewTimers` ref: при `new-message` бейдж вкладки показывает "💬 первые 32 символа..." 5 секунд, потом сбрасывается.
+  - **MessengerTab**: получает `unreadSplit` и `messagePreview`. Если личных И каналов > 0 → два бейджа (💬N цвет мессенджера + 📢N серый). Subtitle показывает превью (цвет мессенджера) вместо accountInfo пока есть превью.
 
 ### v0.16.1 (4 марта 2026) — Уведомления с текстом, фильтр muted-чатов
 - `src/App.jsx`:

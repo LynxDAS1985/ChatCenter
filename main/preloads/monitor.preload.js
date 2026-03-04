@@ -1,4 +1,4 @@
-// v0.16 — ChatMonitor: непрочитанные сообщения + текст нового сообщения для AI/авто-ответа
+// v0.17 — ChatMonitor: раздельный счётчик (личные vs каналы), умный фильтр уведомлений, превью
 // Фикс: cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
 
@@ -97,22 +97,64 @@ function isActiveChatMuted(type) {
   return false
 }
 
+// Определяет тип диалога: 'personal' | 'channel' | 'group'
+// Используется для раздельного счётчика и умного фильтра
+function getChatType(dialogEl) {
+  if (!dialogEl) return 'personal'
+  try {
+    // Telegram Web K: data-peer-type атрибут
+    const pt = dialogEl.dataset?.peerType || dialogEl.getAttribute('data-peer-type')
+    if (pt === 'channel') return 'channel'
+    if (pt === 'chat' || pt === 'megagroup' || pt === 'supergroup') return 'group'
+    if (pt === 'user') return 'personal'
+    // Иконки в DOM: канал имеет мегафон/broadcast
+    if (dialogEl.querySelector('.icon-channel, .icon-broadcast, [class*="channel-icon"]')) return 'channel'
+    if (dialogEl.querySelector('.icon-group')) return 'group'
+  } catch {}
+  return 'personal'
+}
+
+// Проверяет — является ли текущий ОТКРЫТЫЙ чат каналом/группой (умный фильтр)
+function isActiveChatChannel(type) {
+  if (type !== 'telegram') return false
+  try {
+    const activeDialog = document.querySelector([
+      '.chatlist-chat.active',
+      '.ListItem.active',
+      '[class*="chat-item"][class*="active"]',
+    ].join(','))
+    const chatType = getChatType(activeDialog)
+    return chatType === 'channel' || chatType === 'group'
+  } catch {}
+  return false
+}
+
+// Возвращает { personal, channels, total } — раздельный подсчёт непрочитанных
 function countUnread(type) {
   const sels = UNREAD_SELECTORS[type] || []
-  let total = 0
+  let personal = 0, channels = 0
   for (const sel of sels) {
     try {
       document.querySelectorAll(sel).forEach(el => {
         // Пропускаем бейджи приглушённых диалогов
         if (isBadgeInMutedDialog(el, type)) return
         const n = parseInt(el.textContent?.trim(), 10)
-        if (!isNaN(n) && n > 0) total += n
-        else if (el.offsetParent !== null) total += 1
+        const count = (!isNaN(n) && n > 0) ? n : (el.offsetParent !== null ? 1 : 0)
+        if (count === 0) return
+        // Для Telegram — определяем тип диалога
+        if (type === 'telegram') {
+          const dialog = el.closest('.chatlist-chat, .ListItem, [class*="chat-item"], li[class]')
+          const chatType = getChatType(dialog)
+          if (chatType === 'channel' || chatType === 'group') channels += count
+          else personal += count
+        } else {
+          personal += count
+        }
       })
-      if (total > 0) break
+      if (personal + channels > 0) break
     } catch {}
   }
-  return total
+  return { personal, channels, total: personal + channels }
 }
 
 function getLastMessageText(type) {
@@ -140,15 +182,17 @@ let monitorReady = false
 setTimeout(() => { monitorReady = true }, 10000)
 
 function sendUpdate(type) {
-  const count = countUnread(type)
-  if (count !== lastCount) {
-    const increased = count > lastCount && lastCount >= 0 && monitorReady
-    lastCount = count
-    try { ipcRenderer.sendToHost('unread-count', count) } catch {}
+  const { personal, channels, total } = countUnread(type)
+  if (total !== lastCount) {
+    const increased = total > lastCount && lastCount >= 0 && monitorReady
+    lastCount = total
+    // Общий счётчик (для бейджа)
+    try { ipcRenderer.sendToHost('unread-count', total) } catch {}
+    // Раздельный счётчик (личные vs каналы/группы)
+    try { ipcRenderer.sendToHost('unread-split', { personal, channels }) } catch {}
 
-    // Если количество непрочитанных выросло — пробуем извлечь текст последнего сообщения
-    // Не отправляем если открытый чат приглушён
-    if (increased && !isActiveChatMuted(type)) {
+    // Умный фильтр: уведомляем только если открыт личный чат (не канал, не muted)
+    if (increased && !isActiveChatMuted(type) && !isActiveChatChannel(type)) {
       const text = getLastMessageText(type)
       if (text && text !== lastSentText) {
         lastSentText = text

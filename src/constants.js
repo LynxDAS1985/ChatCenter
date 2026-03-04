@@ -10,8 +10,9 @@ export const DEFAULT_MESSENGERS = [
     emoji: '✈️',
     isDefault: true,
     accountScript: `(() => {
-      const sels = ['.sidebar-left-section .peer-title','.user-title','.profile-title','.chat-info .peer-title'];
-      for (const s of sels) { const t = document.querySelector(s)?.textContent?.trim(); if (t && t.length < 60) return t; }
+      // Только имя аккаунта из настроек/профиля — НЕ из шапки чата (.chat-info даёт название открытого чата!)
+      const sels = ['.user-title', '.profile-title', '.sidebar-left-section-header .peer-title'];
+      for (const s of sels) { const t = document.querySelector(s)?.textContent?.trim(); if (t && t.length < 60 && t.length > 1) return t; }
       return null;
     })()`
   },
