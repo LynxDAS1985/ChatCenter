@@ -45,7 +45,7 @@ function MessengerTab({
       onDrop={e => { e.preventDefault(); onDrop() }}
       onDragEnd={onDragEnd}
       title={accountInfo ? `${m.name} — ${accountInfo}` : m.name}
-      className="relative flex items-center gap-2 h-[40px] px-3 cursor-pointer shrink-0 transition-all duration-150"
+      className="relative flex items-center gap-2 h-[40px] pl-3 pr-6 min-w-[90px] cursor-pointer shrink-0 transition-all duration-150"
       style={{
         backgroundColor: isActive ? `${m.color}1A` : hovered ? 'rgba(255,255,255,0.06)' : 'transparent',
         borderBottom: isActive ? `2px solid ${m.color}` : '2px solid transparent',
