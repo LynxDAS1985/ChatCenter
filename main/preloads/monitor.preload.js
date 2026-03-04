@@ -1,13 +1,7 @@
-// v0.20.0 — ChatMonitor: persistent Map для Telegram (фикс виртуализации), debounce 300ms
+// v0.21.0 — ChatMonitor: читаем счётчик Telegram из document.title / folder tabs
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
-
-// ── Persistent Map: стабильный счётчик для виртуализированного списка Telegram ──
-// Telegram Web K рендерит только видимые диалоги в DOM.
-// querySelectorAll находит только текущие бейджи → число скачет при скролле.
-// Решение: отслеживаем каждый диалог по peerId — Map только пополняется.
-const knownDialogs = new Map() // peerId → { count, isMuted, chatType }
 
 // Debounce для MutationObserver (не пересчитывать на каждый пиксель скролла)
 let updateTimer = null
@@ -166,56 +160,62 @@ function countUnread(type) {
   return { personal, channels, total: personal + channels, allTotal: mutedTotal }
 }
 
-// ── Telegram: persistent Map — стабильный подсчёт при виртуализации ──────────
+// ── Telegram: читаем СВОЙ счётчик из title / folder tabs (не суммируем бейджи) ──
 function countUnreadTelegram() {
-  const sels = UNREAD_SELECTORS.telegram || []
+  let allTotal = 0
+  let personal = 0
 
-  // Сканируем ВСЕ видимые диалоги в DOM
-  const dialogEls = document.querySelectorAll(
-    '.chatlist-chat, .ListItem, [class*="chat-item"]'
-  )
+  // 1. Primary: document.title = "(26) Telegram Web" — самый надёжный источник
+  try {
+    const m = document.title.match(/\((\d+)\)/)
+    if (m) allTotal = parseInt(m[1], 10) || 0
+  } catch {}
 
-  for (const dialog of dialogEls) {
-    const peerId = dialog.dataset?.peerId || dialog.getAttribute('data-peer-id')
-    if (!peerId) continue
-
-    // Ищем бейдж непрочитанных внутри этого диалога
-    let badgeCount = 0
-    for (const sel of sels) {
-      try {
-        const badge = dialog.querySelector(sel)
+  // 2. Fallback: folder tab "Все чаты" badge
+  if (allTotal === 0) {
+    try {
+      const tabs = document.querySelectorAll('.tabs-tab')
+      if (tabs.length > 0) {
+        const badge = tabs[0].querySelector('.badge')
         if (badge) {
           const n = parseInt(badge.textContent?.trim(), 10)
-          badgeCount = (!isNaN(n) && n > 0) ? n : (badge.offsetParent !== null ? 1 : 0)
-          if (badgeCount > 0) break
+          if (!isNaN(n) && n > 0) allTotal = n
         }
-      } catch {}
-    }
-
-    // Проверяем muted-статус прямо на элементе диалога
-    let isMuted = false
-    try {
-      isMuted = dialog.classList.contains('is-muted') ||
-        !!dialog.querySelector('.icon-mute, .icon-muted, [class*="muted-icon"], [class*="silent"], [data-icon="mute"]')
+      }
     } catch {}
-
-    const chatType = getChatType(dialog)
-
-    // Обновляем persistent Map (запоминаем навсегда до перезагрузки)
-    knownDialogs.set(peerId, { count: badgeCount, isMuted, chatType })
   }
 
-  // Суммируем по ВСЕМ известным диалогам (не только текущим в DOM)
-  let personal = 0, channels = 0, mutedTotal = 0
-  for (const [, d] of knownDialogs) {
-    if (d.count === 0) continue
-    mutedTotal += d.count
-    if (d.isMuted) continue
-    if (d.chatType === 'channel' || d.chatType === 'group') channels += d.count
-    else personal += d.count
+  // 3. Last fallback: count visible badges in chatlist
+  if (allTotal === 0) {
+    try {
+      document.querySelectorAll('.badge.badge-unread').forEach(b => {
+        const n = parseInt(b.textContent?.trim(), 10)
+        if (!isNaN(n) && n > 0) allTotal += n
+        else if (b.offsetParent !== null) allTotal += 1
+      })
+    } catch {}
   }
 
-  return { personal, channels, total: personal + channels, allTotal: mutedTotal }
+  // Split: попробуем найти "Личные" folder tab для personal count
+  try {
+    const tabs = document.querySelectorAll('.tabs-tab')
+    for (const tab of tabs) {
+      const label = (tab.textContent || '').replace(/\d+/g, '').trim()
+      if (/личн/i.test(label) || /personal/i.test(label)) {
+        const badge = tab.querySelector('.badge')
+        if (badge) {
+          const n = parseInt(badge.textContent?.trim(), 10)
+          if (!isNaN(n) && n > 0) personal = n
+        }
+        break
+      }
+    }
+  } catch {}
+
+  if (personal === 0) personal = allTotal
+  const channels = Math.max(0, allTotal - personal)
+
+  return { personal, channels, total: allTotal, allTotal }
 }
 
 function getLastMessageText(type) {
