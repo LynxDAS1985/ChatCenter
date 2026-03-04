@@ -1,4 +1,4 @@
-// v0.12.0 — Per-provider режимы (API / WebView) в настройках каждого провайдера
+// v0.13.0 — Анимация настроек, нумерованные шаги, статус провайдера, кнопка "Готово"
 import { useState, useRef, useEffect } from 'react'
 
 // Паттерны распознавания API-ключей в буфере обмена
@@ -25,7 +25,6 @@ const PROVIDERS = [
   { id: 'gigachat',  label: 'ГигаЧат',   icon: '💬', defaultModel: 'GigaChat',                  free: true  },
 ]
 
-// URL по умолчанию для каждого провайдера в WebView-режиме
 const DEFAULT_WEBVIEW_URLS = {
   openai:    'https://chat.openai.com',
   anthropic: 'https://claude.ai',
@@ -77,6 +76,24 @@ function isProviderConnected(settings, pid) {
   return !!cfg.apiKey
 }
 
+// Вспомогательный компонент — заголовок шага
+function StepRow({ num, title, extra, numDone }) {
+  return (
+    <div className="flex items-center gap-2 px-2.5 py-2" style={{ backgroundColor: 'var(--cc-hover)' }}>
+      <span
+        className="text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+        style={{
+          backgroundColor: numDone ? '#22c55e22' : '#2AABEE22',
+          color: numDone ? '#22c55e' : '#2AABEE',
+          border: `1px solid ${numDone ? '#22c55e55' : '#2AABEE55'}`,
+        }}
+      >{numDone ? '✓' : num}</span>
+      <span className="text-[11px] font-semibold flex-1" style={{ color: 'var(--cc-text-dim)' }}>{title}</span>
+      {extra}
+    </div>
+  )
+}
+
 export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle, width = 300, panelRef, chatHistory = [], activeMessengerId = null }) {
 
   // ── Состояния API-режима ──────────────────────────────────────────────────
@@ -96,9 +113,11 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const [testStatus, setTestStatus] = useState(null)
   const [waitingForKey, setWaitingForKey] = useState(false)
   const [keyFoundMsg, setKeyFoundMsg] = useState('')
+  // Статус последнего запроса по каждому провайдеру: 'ok' | 'fail' | null
+  const [providerStatuses, setProviderStatuses] = useState({})
 
   // ── Состояния WebView-режима ──────────────────────────────────────────────
-  const [contextSendStatus, setContextSendStatus] = useState(null) // null | 'sent' | 'copied' | 'empty'
+  const [contextSendStatus, setContextSendStatus] = useState(null)
 
   const endRef = useRef(null)
   const savedTimerRef = useRef(null)
@@ -115,9 +134,9 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const connectedProviders = PROVIDERS.filter(p => isProviderConnected(settings, p.id))
   const unconnectedProviders = PROVIDERS.filter(p => !isProviderConnected(settings, p.id))
   const providerCfg = getProviderCfg(settings, provider)
-  const providerMode = providerCfg.mode       // 'api' | 'webview'
-  const webviewUrl  = providerCfg.webviewUrl  // URL для WebView
-  const contextMode = providerCfg.contextMode // 'none' | 'last' | 'full'
+  const providerMode = providerCfg.mode
+  const webviewUrl  = providerCfg.webviewUrl
+  const contextMode = providerCfg.contextMode
   const aiCfg = { provider, systemPrompt: settings.aiSystemPrompt || DEFAULT_SYSTEM_PROMPT, ...providerCfg }
   const isGigaChat = provider === 'gigachat'
   const configured = isProviderConnected(settings, provider)
@@ -136,7 +155,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const switchProvider = (newPid) => {
     const pKeys = { ...(settings.aiProviderKeys || {}) }
     const currentPid = settings.aiProvider || 'openai'
-    // Сохраняем все настройки текущего провайдера (включая mode/webviewUrl/contextMode)
     pKeys[currentPid] = {
       ...(pKeys[currentPid] || {}),
       apiKey:       settings.aiApiKey       || '',
@@ -162,7 +180,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     setShowConfig(!newIsConfigured)
   }
 
-  // Сохранение API-настроек (aiApiKey / aiModel / aiClientSecret / aiSystemPrompt)
   const set = (key, val) => {
     const updated = { ...settings, [key]: val }
     const pid = updated.aiProvider || 'openai'
@@ -181,7 +198,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     savedTimerRef.current = setTimeout(() => setJustSaved(false), 2500)
   }
 
-  // Сохранение per-provider свойств (mode / webviewUrl / contextMode)
   const setProviderProp = (key, val) => {
     const pid = settings.aiProvider || 'openai'
     const pKeys = { ...(settings.aiProviderKeys || {}) }
@@ -199,10 +215,13 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         messages: [{ role: 'user', content: 'Напиши только: ok' }],
         settings: { ...aiCfg, systemPrompt: 'Ответь только словом: ok' },
       })
-      setTestStatus(res.ok ? 'ok' : 'fail')
+      const st = res.ok ? 'ok' : 'fail'
+      setTestStatus(st)
+      setProviderStatuses(s => ({ ...s, [provider]: st }))
       if (!res.ok) setError(res.error || 'Ошибка проверки')
     } catch (e) {
       setTestStatus('fail')
+      setProviderStatuses(s => ({ ...s, [provider]: 'fail' }))
       setError(e.message)
     } finally {
       setTesting(false)
@@ -285,6 +304,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     setLoading(true); setIsStreaming(false); setError('')
     setSuggestions([]); setStreamBuffer(''); streamBufferRef.current = ''
     const requestId = `req-${Date.now()}`
+    const capturedProvider = provider
     const historyMessages = chatHistory.slice(-6).map(h => ({
       role: 'user',
       content: `[История] ${h.messengerId ? `(${h.messengerId}) ` : ''}${h.text}`
@@ -299,6 +319,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         else parsed = [streamBufferRef.current]
       } catch { parsed = [streamBufferRef.current] }
       setSuggestions(parsed.slice(0, 3).filter(Boolean))
+      setProviderStatuses(s => ({ ...s, [capturedProvider]: 'ok' }))
       setStreamBuffer(''); streamBufferRef.current = ''
       setIsStreaming(false); setLoading(false)
     }
@@ -315,6 +336,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     const unsubError = window.api.on('ai:stream-error', ({ requestId: rid, error }) => {
       if (rid !== requestId) return
       cleanup()
+      setProviderStatuses(s => ({ ...s, [capturedProvider]: 'fail' }))
       setError(error); setStreamBuffer(''); streamBufferRef.current = ''
       setIsStreaming(false); setLoading(false)
     })
@@ -326,7 +348,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     })
   }
 
-  // Оставляем для testConnection
   const generate = async (text) => {
     if (!configured) { setError('Настройте ИИ'); setShowConfig(true); return }
     if (!text.trim()) return
@@ -373,7 +394,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       setTimeout(() => setContextSendStatus(null), 2000)
       return
     }
-
     let contextText = ''
     if (contextMode === 'last') {
       if (lastMessage) contextText = `Сообщение клиента: "${lastMessage}"`
@@ -385,13 +405,11 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         contextText = `Сообщение клиента: "${lastMessage}"`
       }
     }
-
     if (!contextText) {
       setContextSendStatus('empty')
       setTimeout(() => setContextSendStatus(null), 2000)
       return
     }
-
     const wv = aiWebviewRef.current
     let inserted = false
     if (wv) {
@@ -417,7 +435,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         inserted = await wv.executeJavaScript(script)
       } catch {}
     }
-
     if (!inserted) {
       try { await navigator.clipboard.writeText(contextText) } catch {}
       setContextSendStatus('copied')
@@ -467,7 +484,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                 style={{ color: 'var(--cc-text-dimmer)' }}
               >↺</button>
             )}
-            {/* ⚙️ всегда видна */}
             <button
               onClick={() => { setShowConfig(!showConfig); setShowAddProvider(false) }}
               title="Настройки ИИ-помощника"
@@ -477,17 +493,18 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
           </div>
         </div>
 
-        {/* ── Панель провайдеров (всегда видна) ── */}
+        {/* ── Панель провайдеров ── */}
         <div className="px-2 pt-2 pb-1.5 shrink-0" style={{ borderBottom: '1px solid var(--cc-border)' }}>
           {connectedProviders.length > 0 ? (
             <div className="flex items-center gap-1 flex-wrap">
               {connectedProviders.map(p => {
                 const pCfg = getProviderCfg(settings, p.id)
+                const pSt = providerStatuses[p.id]
                 return (
                   <button
                     key={p.id}
                     onClick={() => { switchProvider(p.id); setShowConfig(false) }}
-                    title={`${p.label} (${pCfg.mode === 'webview' ? 'Веб-интерфейс' : 'API-ключ'})`}
+                    title={`${p.label} (${pCfg.mode === 'webview' ? 'Веб-интерфейс' : 'API-ключ'})${pSt === 'ok' ? ' — работает' : pSt === 'fail' ? ' — ошибка' : ''}`}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all"
                     style={{
                       backgroundColor: provider === p.id ? '#2AABEE22' : 'var(--cc-hover)',
@@ -499,6 +516,9 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     <span>{p.label}</span>
                     {p.free && <span className="text-[7px] leading-tight" style={{ color: '#22c55e' }}>free</span>}
                     <span className="text-[9px] opacity-60">{pCfg.mode === 'webview' ? '🌐' : '🔧'}</span>
+                    {/* Статус последнего запроса */}
+                    {pSt === 'ok'   && <span style={{ color: '#22c55e', fontSize: '8px', lineHeight: 1 }}>●</span>}
+                    {pSt === 'fail' && <span style={{ color: '#f87171', fontSize: '8px', lineHeight: 1 }}>●</span>}
                     {provider === p.id && <span className="opacity-70">✓</span>}
                   </button>
                 )
@@ -557,11 +577,18 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
           )}
         </div>
 
-        {/* ── Конфиг-панель (per-provider) ── */}
-        {showConfig && (
+        {/* ── Конфиг-панель (с анимацией slide-down) ── */}
+        <div
+          style={{
+            maxHeight: showConfig ? '520px' : '0px',
+            overflow: 'hidden',
+            transition: 'max-height 0.25s ease-in-out',
+            flexShrink: 0,
+          }}
+        >
           <div
-            className="px-3 py-3 space-y-2.5 shrink-0 overflow-y-auto"
-            style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)', maxHeight: '60%' }}
+            className="px-3 py-3 space-y-2 overflow-y-auto"
+            style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)', maxHeight: '520px' }}
           >
             {/* Переключатель режима провайдера */}
             <div>
@@ -578,8 +605,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     color: providerMode === 'api' ? '#2AABEE' : 'var(--cc-text-dimmer)',
                   }}
                 >
-                  <span>🔧</span>
-                  <span>API-ключ</span>
+                  <span>🔧</span><span>API-ключ</span>
                   {providerMode === 'api' && <span className="text-[10px]">✓</span>}
                 </button>
                 <button
@@ -591,71 +617,66 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     color: providerMode === 'webview' ? '#2AABEE' : 'var(--cc-text-dimmer)',
                   }}
                 >
-                  <span>🌐</span>
-                  <span>Веб-интерфейс</span>
+                  <span>🌐</span><span>Веб-интерфейс</span>
                   {providerMode === 'webview' && <span className="text-[10px]">✓</span>}
                 </button>
               </div>
             </div>
 
-            {/* ── API режим: ключ/модель/промпт ── */}
+            {/* ── API режим: нумерованные шаги ── */}
             {providerMode === 'api' && (
               <>
-                <div
-                  className="text-[11px] px-2.5 py-2 rounded-lg leading-relaxed"
-                  style={{ backgroundColor: '#2AABEE0D', border: '1px solid #2AABEE22', color: 'var(--cc-text-dim)' }}
-                >
-                  <div className="font-semibold mb-0.5" style={{ color: '#2AABEE' }}>🔧 Подключение через API-ключ</div>
-                  <div style={{ color: 'var(--cc-text-dimmer)' }}>
-                    Зарегистрируйтесь на сайте {providerInfo.label}, создайте API-ключ и вставьте его ниже.
-                    Если не хотите использовать API — переключитесь на <strong style={{ color: 'var(--cc-text-dim)' }}>Веб-интерфейс</strong> выше.
+                {/* Шаг 1: Регистрация + вход через браузер */}
+                <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
+                  <StepRow
+                    num="1"
+                    title={`Зарегистрируйтесь на ${providerInfo.label}`}
+                    extra={
+                      <button
+                        onClick={openProviderUrl}
+                        className="flex items-center gap-1 text-[9px] cursor-pointer px-1.5 py-0.5 rounded"
+                        style={{ color: '#2AABEE', backgroundColor: '#2AABEE11' }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#2AABEE22'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2AABEE11'}
+                      >↗ Открыть</button>
+                    }
+                  />
+                  <div className="px-2.5 py-2 space-y-1.5">
+                    <button
+                      onClick={openLoginWindow}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
+                      style={{
+                        backgroundColor: waitingForKey ? '#f59e0b22' : '#2AABEE22',
+                        border: `1px solid ${waitingForKey ? '#f59e0b66' : '#2AABEE66'}`,
+                        color: waitingForKey ? '#f59e0b' : '#2AABEE',
+                      }}
+                      onMouseEnter={e => { if (!waitingForKey) e.currentTarget.style.backgroundColor = '#2AABEE33' }}
+                      onMouseLeave={e => { if (!waitingForKey) e.currentTarget.style.backgroundColor = '#2AABEE22' }}
+                    >
+                      {waitingForKey ? (
+                        <><span className="animate-pulse">⏳</span><span>Ожидаем ключ... (нажмите для отмены)</span></>
+                      ) : (
+                        <><span>🔑</span><span>Войти через браузер → ключ вставится сам</span></>
+                      )}
+                    </button>
+                    {keyFoundMsg && (
+                      <div className="text-[10px] px-2 py-1.5 rounded-lg text-center font-medium"
+                        style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}>
+                        {keyFoundMsg}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <button
-                  onClick={openLoginWindow}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-[12px] font-medium cursor-pointer transition-all"
-                  style={{
-                    backgroundColor: waitingForKey ? '#f59e0b22' : '#2AABEE22',
-                    border: `1.5px solid ${waitingForKey ? '#f59e0b66' : '#2AABEE66'}`,
-                    color: waitingForKey ? '#f59e0b' : '#2AABEE',
-                  }}
-                  onMouseEnter={e => { if (!waitingForKey) e.currentTarget.style.backgroundColor = '#2AABEE33' }}
-                  onMouseLeave={e => { if (!waitingForKey) e.currentTarget.style.backgroundColor = '#2AABEE22' }}
-                >
-                  {waitingForKey ? (
-                    <><span className="animate-pulse text-base">⏳</span><span>Ожидаем ключ из буфера... (нажмите для отмены)</span></>
-                  ) : (
-                    <><span className="text-base">🔑</span><span>Войти через браузер → ключ вставится сам</span></>
-                  )}
-                </button>
-
-                {keyFoundMsg && (
-                  <div className="text-[11px] px-2.5 py-2 rounded-lg text-center font-medium"
-                    style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}>
-                    {keyFoundMsg}
-                  </div>
-                )}
-
-                <button
-                  onClick={openProviderUrl}
-                  className="flex items-center gap-1.5 text-[10px] cursor-pointer transition-opacity w-full text-left"
-                  style={{ color: 'var(--cc-text-dimmer)' }}
-                  onMouseEnter={e => e.currentTarget.style.color = '#2AABEE'}
-                  onMouseLeave={e => e.currentTarget.style.color = 'var(--cc-text-dimmer)'}
-                >
-                  <span>↗</span>
-                  <span>Открыть {providerInfo.label} в системном браузере (вручную)</span>
-                </button>
-
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>Модель</div>
-                  <div className="flex flex-col gap-1">
+                {/* Шаг 2: Модель */}
+                <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
+                  <StepRow num="2" title="Выберите модель" />
+                  <div className="px-2.5 py-2 flex flex-col gap-1">
                     {(MODEL_HINTS[provider] || []).map(m => (
                       <button key={m} onClick={() => set('aiModel', m)}
                         className="flex items-center justify-between text-left px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-colors"
                         style={{
-                          backgroundColor: aiCfg.model === m ? '#2AABEE22' : 'var(--cc-hover)',
+                          backgroundColor: aiCfg.model === m ? '#2AABEE22' : 'transparent',
                           color: aiCfg.model === m ? '#2AABEE' : 'var(--cc-text-dim)',
                           border: `1px solid ${aiCfg.model === m ? '#2AABEE44' : 'transparent'}`,
                         }}>
@@ -668,89 +689,101 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                       value={!MODEL_HINTS[provider]?.includes(aiCfg.model) ? aiCfg.model : ''}
                       onChange={e => set('aiModel', e.target.value)}
                       placeholder="Другая модель..."
-                      className="w-full text-xs px-2 py-1 rounded-lg outline-none mt-0.5"
-                      style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text-dim)' }}
+                      className="w-full text-xs px-2 py-1 rounded-lg outline-none"
+                      style={{ backgroundColor: 'transparent', border: '1px solid var(--cc-border)', color: 'var(--cc-text-dim)' }}
                     />
                   </div>
                 </div>
 
+                {/* Шаг 3 (и 4 для ГигаЧат): Ключ */}
                 {isGigaChat ? (
                   <>
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>Client ID</div>
-                      <input type="text" value={aiCfg.apiKey} onChange={e => set('aiApiKey', e.target.value)}
-                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                        className="w-full text-xs px-2 py-1.5 rounded-lg outline-none font-mono"
-                        style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }} />
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>Client Secret</div>
-                      <div className="relative">
-                        <input type={showSecret ? 'text' : 'password'} value={aiCfg.clientSecret} onChange={e => set('aiClientSecret', e.target.value)}
-                          placeholder="Секретный ключ"
-                          className="w-full text-xs px-2 py-1.5 pr-7 rounded-lg outline-none font-mono"
-                          style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }} />
-                        <button onClick={() => setShowSecret(!showSecret)}
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] cursor-pointer"
-                          style={{ color: 'var(--cc-text-dimmer)' }}>{showSecret ? '🙈' : '👁️'}</button>
+                    <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
+                      <StepRow num="3" title="Client ID" numDone={!!aiCfg.apiKey} />
+                      <div className="px-2.5 py-2">
+                        <input type="text" value={aiCfg.apiKey} onChange={e => set('aiApiKey', e.target.value)}
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          className="w-full text-xs px-2 py-1.5 rounded-lg outline-none font-mono"
+                          style={{ backgroundColor: 'var(--cc-hover)', border: `1px solid ${justSaved && aiCfg.apiKey ? '#22c55e66' : 'var(--cc-border)'}`, color: 'var(--cc-text)', transition: 'border-color 0.3s' }} />
                       </div>
                     </div>
-                    <div className="flex items-center justify-between mt-1.5 gap-2">
-                      <span className="text-[10px]" style={{ color: '#22c55e', opacity: justSaved ? 1 : 0 }}>✓ сохранено</span>
-                      <button onClick={testConnection} disabled={!aiCfg.apiKey || !aiCfg.clientSecret || testing}
-                        className="text-[10px] px-2.5 py-1 rounded-lg cursor-pointer transition-all disabled:opacity-40"
-                        style={{
-                          backgroundColor: testStatus === 'ok' ? '#22c55e22' : testStatus === 'fail' ? 'rgba(239,68,68,0.1)' : '#2AABEE22',
-                          color: testStatus === 'ok' ? '#22c55e' : testStatus === 'fail' ? '#f87171' : '#2AABEE',
-                          border: `1px solid ${testStatus === 'ok' ? '#22c55e44' : testStatus === 'fail' ? 'rgba(239,68,68,0.3)' : '#2AABEE44'}`,
-                        }}>
-                        {testing ? '⏳ Проверка...' : testStatus === 'ok' ? '✓ Работает!' : testStatus === 'fail' ? '✗ Ошибка' : 'Проверить соединение'}
-                      </button>
+                    <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
+                      <StepRow num="4" title="Client Secret" numDone={!!aiCfg.clientSecret} />
+                      <div className="px-2.5 py-2">
+                        <div className="relative">
+                          <input type={showSecret ? 'text' : 'password'} value={aiCfg.clientSecret} onChange={e => set('aiClientSecret', e.target.value)}
+                            placeholder="Секретный ключ"
+                            className="w-full text-xs px-2 py-1.5 pr-7 rounded-lg outline-none font-mono"
+                            style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }} />
+                          <button onClick={() => setShowSecret(!showSecret)}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] cursor-pointer"
+                            style={{ color: 'var(--cc-text-dimmer)' }}>{showSecret ? '🙈' : '👁️'}</button>
+                        </div>
+                        <div className="flex items-center justify-between mt-1.5 gap-2">
+                          <span className="text-[10px]" style={{ color: '#22c55e', opacity: justSaved ? 1 : 0 }}>✓ сохранено</span>
+                          <button onClick={testConnection} disabled={!aiCfg.apiKey || !aiCfg.clientSecret || testing}
+                            className="text-[10px] px-2.5 py-1 rounded-lg cursor-pointer transition-all disabled:opacity-40"
+                            style={{
+                              backgroundColor: testStatus === 'ok' ? '#22c55e22' : testStatus === 'fail' ? 'rgba(239,68,68,0.1)' : '#2AABEE22',
+                              color: testStatus === 'ok' ? '#22c55e' : testStatus === 'fail' ? '#f87171' : '#2AABEE',
+                              border: `1px solid ${testStatus === 'ok' ? '#22c55e44' : testStatus === 'fail' ? 'rgba(239,68,68,0.3)' : '#2AABEE44'}`,
+                            }}>
+                            {testing ? '⏳ Проверка...' : testStatus === 'ok' ? '✓ Работает!' : testStatus === 'fail' ? '✗ Ошибка' : '5. Проверить соединение'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </>
                 ) : (
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>
-                      2. Вставить API Ключ
-                    </div>
-                    <div className="relative">
-                      <input type={showKey ? 'text' : 'password'} value={aiCfg.apiKey} onChange={e => set('aiApiKey', e.target.value)}
-                        placeholder={provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
-                        className="w-full text-xs px-2 py-1.5 pr-7 rounded-lg outline-none font-mono"
-                        style={{
-                          backgroundColor: 'var(--cc-hover)',
-                          border: `1px solid ${justSaved ? '#22c55e66' : 'var(--cc-border)'}`,
-                          color: 'var(--cc-text)',
-                          transition: 'border-color 0.3s',
-                        }} />
-                      <button onClick={() => setShowKey(!showKey)}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] cursor-pointer"
-                        style={{ color: 'var(--cc-text-dimmer)' }}>{showKey ? '🙈' : '👁️'}</button>
-                    </div>
-                    <div className="flex items-center justify-between mt-1.5 gap-2">
-                      <span className="text-[10px] transition-opacity" style={{ color: '#22c55e', opacity: justSaved ? 1 : 0 }}>✓ сохранено</span>
-                      <button onClick={testConnection} disabled={!aiCfg.apiKey || testing}
-                        className="text-[10px] px-2.5 py-1 rounded-lg cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{
-                          backgroundColor: testStatus === 'ok' ? '#22c55e22' : testStatus === 'fail' ? 'rgba(239,68,68,0.1)' : '#2AABEE22',
-                          color: testStatus === 'ok' ? '#22c55e' : testStatus === 'fail' ? '#f87171' : '#2AABEE',
-                          border: `1px solid ${testStatus === 'ok' ? '#22c55e44' : testStatus === 'fail' ? 'rgba(239,68,68,0.3)' : '#2AABEE44'}`,
-                        }}>
-                        {testing ? '⏳ Проверка...' : testStatus === 'ok' ? '✓ Ключ работает!' : testStatus === 'fail' ? '✗ Ошибка — проверьте ключ' : '3. Проверить соединение'}
-                      </button>
+                  <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
+                    <StepRow num="3" title="Вставьте API-ключ" numDone={!!aiCfg.apiKey} />
+                    <div className="px-2.5 py-2">
+                      <div className="relative">
+                        <input type={showKey ? 'text' : 'password'} value={aiCfg.apiKey} onChange={e => set('aiApiKey', e.target.value)}
+                          placeholder={provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
+                          className="w-full text-xs px-2 py-1.5 pr-7 rounded-lg outline-none font-mono"
+                          style={{
+                            backgroundColor: 'var(--cc-hover)',
+                            border: `1px solid ${justSaved ? '#22c55e66' : 'var(--cc-border)'}`,
+                            color: 'var(--cc-text)',
+                            transition: 'border-color 0.3s',
+                          }} />
+                        <button onClick={() => setShowKey(!showKey)}
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] cursor-pointer"
+                          style={{ color: 'var(--cc-text-dimmer)' }}>{showKey ? '🙈' : '👁️'}</button>
+                      </div>
+                      <div className="flex items-center justify-between mt-1.5 gap-2">
+                        <span className="text-[10px] transition-opacity" style={{ color: '#22c55e', opacity: justSaved ? 1 : 0 }}>✓ сохранено</span>
+                        <button onClick={testConnection} disabled={!aiCfg.apiKey || testing}
+                          className="text-[10px] px-2.5 py-1 rounded-lg cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{
+                            backgroundColor: testStatus === 'ok' ? '#22c55e22' : testStatus === 'fail' ? 'rgba(239,68,68,0.1)' : '#2AABEE22',
+                            color: testStatus === 'ok' ? '#22c55e' : testStatus === 'fail' ? '#f87171' : '#2AABEE',
+                            border: `1px solid ${testStatus === 'ok' ? '#22c55e44' : testStatus === 'fail' ? 'rgba(239,68,68,0.3)' : '#2AABEE44'}`,
+                          }}>
+                          {testing ? '⏳ Проверка...' : testStatus === 'ok' ? '✓ Ключ работает!' : testStatus === 'fail' ? '✗ Ошибка — проверьте ключ' : '4. Проверить соединение'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>Системный промпт</div>
-                  <textarea
-                    value={aiCfg.systemPrompt}
-                    onChange={e => set('aiSystemPrompt', e.target.value)}
-                    rows={3}
-                    className="w-full text-[11px] px-2 py-1.5 rounded-lg outline-none resize-none leading-relaxed"
-                    style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+                {/* Шаг 4/5: Системный промпт */}
+                <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
+                  <StepRow
+                    num={isGigaChat ? '5' : '4'}
+                    title="Системный промпт"
+                    extra={<span className="text-[9px]" style={{ color: 'var(--cc-text-dimmer)' }}>(опционально)</span>}
                   />
+                  <div className="px-2.5 py-2">
+                    <textarea
+                      value={aiCfg.systemPrompt}
+                      onChange={e => set('aiSystemPrompt', e.target.value)}
+                      rows={3}
+                      className="w-full text-[11px] px-2 py-1.5 rounded-lg outline-none resize-none leading-relaxed"
+                      style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+                    />
+                  </div>
                 </div>
               </>
             )}
@@ -767,7 +800,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     Откроется сайт {providerInfo.label}. Войдите в свой аккаунт и пользуйтесь со своей подпиской — API-ключ не нужен.
                   </div>
                 </div>
-
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>URL сервиса</div>
                   <input
@@ -788,7 +820,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     >↺ Сбросить на стандартный</button>
                   )}
                 </div>
-
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>
                     Разрешения на чтение чата
@@ -818,15 +849,26 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                 </div>
               </>
             )}
+
+            {/* ── Кнопка "Готово — закрыть настройки" ── */}
+            <button
+              onClick={() => setShowConfig(false)}
+              className="w-full py-2 rounded-lg text-xs font-medium cursor-pointer transition-all"
+              style={{ backgroundColor: '#2AABEE22', border: '1px solid #2AABEE44', color: '#2AABEE' }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#2AABEE33'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2AABEE22'}
+            >
+              ✓ Готово — закрыть настройки
+            </button>
+
           </div>
-        )}
+        </div>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* ── РЕЖИМ WEBVIEW (основной контент) ── */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {providerMode === 'webview' && !showConfig && (
           <div className="flex flex-col flex-1 overflow-hidden">
-            {/* WebView с AI-сервисом */}
             <div className="flex-1 relative overflow-hidden">
               {webviewUrl ? (
                 <webview
@@ -847,13 +889,10 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                 </div>
               )}
             </div>
-
-            {/* ── Компактная панель отправки контекста ── */}
             <div
               className="flex items-center gap-2 px-2 py-1.5 shrink-0"
               style={{ borderTop: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)' }}
             >
-              {/* Текущий режим доступа — компактно */}
               <div
                 className="flex items-center gap-1 text-[9px] px-1.5 py-1 rounded-lg cursor-pointer"
                 style={{ color: 'var(--cc-text-dimmer)', backgroundColor: 'var(--cc-hover)' }}
@@ -863,7 +902,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                 <span>{contextMode === 'none' ? '🔇' : contextMode === 'full' ? '📖' : '💬'}</span>
                 <span>{contextMode === 'none' ? 'Выкл' : contextMode === 'full' ? 'История' : 'Посл.'}</span>
               </div>
-              {/* Кнопка отправки контекста */}
               <button
                 onClick={sendContextToAiWebview}
                 disabled={contextMode === 'none'}
@@ -900,10 +938,9 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         {/* ══════════════════════════════════════════════════════════════════ */}
         {providerMode === 'api' && !showConfig && (
           <>
-            {/* Тело API-режима */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
 
-              {!configured && !showConfig && (
+              {!configured && (
                 <div className="flex flex-col items-center justify-center h-full text-center py-8">
                   <div className="text-4xl mb-3">{providerInfo.icon}</div>
                   <p className="text-sm font-medium mb-1" style={{ color: 'var(--cc-text-dim)' }}>
@@ -986,7 +1023,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
               <div ref={endRef} />
             </div>
 
-            {/* Ввод для API-режима */}
             <div className="p-3 shrink-0" style={{ borderTop: '1px solid var(--cc-border)' }}>
               <div className="flex gap-2">
                 <textarea
