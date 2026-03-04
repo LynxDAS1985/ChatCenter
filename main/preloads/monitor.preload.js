@@ -51,12 +51,60 @@ function getMessengerType() {
   return null
 }
 
+// Проверяет, находится ли элемент-бейдж внутри приглушённого (muted) диалога
+// Поддерживает Telegram Web K и Web A
+function isBadgeInMutedDialog(el, type) {
+  if (type !== 'telegram') return false
+  try {
+    // Ищем ближайший контейнер диалога в боковой панели
+    const dialog = el.closest([
+      '.chatlist-chat',           // Telegram Web K
+      '.ListItem',                // Telegram Web A
+      '[class*="chat-item"]',
+      '[class*="dialog-row"]',
+      'li[class]',
+    ].join(','))
+    if (!dialog) return false
+    // Класс is-muted (Telegram Web K)
+    if (dialog.classList.contains('is-muted')) return true
+    // Иконки muted/silent внутри диалога
+    if (dialog.querySelector([
+      '.icon-mute',
+      '.icon-muted',
+      '[class*="muted-icon"]',
+      '[class*="silent"]',
+      '[data-icon="mute"]',
+    ].join(','))) return true
+  } catch {}
+  return false
+}
+
+// Проверяет — является ли текущий ОТКРЫТЫЙ чат приглушённым (Telegram)
+function isActiveChatMuted(type) {
+  if (type !== 'telegram') return false
+  try {
+    // Активный диалог в боковом списке
+    const activeDialog = document.querySelector([
+      '.chatlist-chat.active',
+      '.ListItem.active',
+      '[class*="chat-item"][class*="active"]',
+      '[class*="dialog-row"][class*="active"]',
+    ].join(','))
+    if (!activeDialog) return false
+    if (activeDialog.classList.contains('is-muted')) return true
+    if (activeDialog.querySelector('.icon-mute, .icon-muted, [class*="muted-icon"], [data-icon="mute"]')) return true
+  } catch {}
+  return false
+}
+
 function countUnread(type) {
   const sels = UNREAD_SELECTORS[type] || []
   let total = 0
   for (const sel of sels) {
     try {
       document.querySelectorAll(sel).forEach(el => {
+        // Пропускаем бейджи приглушённых диалогов
+        if (isBadgeInMutedDialog(el, type)) return
         const n = parseInt(el.textContent?.trim(), 10)
         if (!isNaN(n) && n > 0) total += n
         else if (el.offsetParent !== null) total += 1
@@ -99,7 +147,8 @@ function sendUpdate(type) {
     try { ipcRenderer.sendToHost('unread-count', count) } catch {}
 
     // Если количество непрочитанных выросло — пробуем извлечь текст последнего сообщения
-    if (increased) {
+    // Не отправляем если открытый чат приглушён
+    if (increased && !isActiveChatMuted(type)) {
       const text = getLastMessageText(type)
       if (text && text !== lastSentText) {
         lastSentText = text

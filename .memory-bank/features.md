@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.16.0 (4 марта 2026)
+## Текущая версия: v0.16.1 (4 марта 2026)
 
 ---
 
@@ -88,6 +88,14 @@
 ---
 
 ## Changelog
+
+### v0.16.1 (4 марта 2026) — Уведомления с текстом, фильтр muted-чатов
+- `src/App.jsx`:
+  - **Notify из new-message вместо unread-count**: уведомление и звук теперь срабатывают только при `new-message` (конкретный текст от монитора), а не при любом изменении счётчика. Тело уведомления = первые 100 символов сообщения. `unread-count` теперь только обновляет бейдж — без звука и notify.
+- `main/preloads/monitor.preload.js`:
+  - **`isBadgeInMutedDialog(el, type)`**: проверяет через `el.closest(...)` находится ли бейдж внутри приглушённого диалога (класс `.is-muted`, иконки `.icon-mute/.icon-muted/[data-icon="mute"]`). Поддерживает Telegram Web K и A.
+  - **`isActiveChatMuted(type)`**: проверяет является ли текущий открытый чат приглушённым — ищет `.chatlist-chat.active.is-muted` и иконки muted. Если да — `new-message` не отправляется.
+  - **`countUnread` с фильтром muted**: бейджи внутри muted-диалогов исключаются из суммы непрочитанных.
 
 ### v0.16.0 (4 марта 2026) — Чистый layout AI-панели, фикс монитора (cooldown)
 - `src/components/AISidebar.jsx`:

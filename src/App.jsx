@@ -442,24 +442,22 @@ export default function App() {
 
       el.addEventListener('ipc-message', (e) => {
         if (e.channel === 'unread-count') {
+          // Только обновляем счётчик — звук и уведомление только при new-message (с текстом)
           const count = Number(e.args[0]) || 0
-          setUnreadCounts(prev => {
-            const wasLess = count > (prev[messengerId] || 0)
-            if (wasLess) {
-              if (settingsRef.current.soundEnabled !== false) playNotificationSound()
-              if (settingsRef.current.notificationsEnabled !== false) {
-                const m = messengersRef.current.find(x => x.id === messengerId)
-                window.api.invoke('app:notify', {
-                  title: m?.name || 'ЦентрЧатов',
-                  body: 'Новое сообщение'
-                }).catch(() => {})
-              }
-            }
-            return { ...prev, [messengerId]: count }
-          })
+          setUnreadCounts(prev => ({ ...prev, [messengerId]: count }))
         } else if (e.channel === 'new-message') {
           const text = e.args[0]
           if (!text) return
+
+          // Звук и уведомление с текстом сообщения
+          if (settingsRef.current.soundEnabled !== false) playNotificationSound()
+          if (settingsRef.current.notificationsEnabled !== false) {
+            const m = messengersRef.current.find(x => x.id === messengerId)
+            window.api.invoke('app:notify', {
+              title: m?.name || 'ЦентрЧатов',
+              body: text.length > 100 ? text.slice(0, 97) + '…' : text,
+            }).catch(() => {})
+          }
 
           // Добавляем в историю AI
           setChatHistory(prev => [...prev.slice(-19), { messengerId, text, ts: Date.now() }])
