@@ -152,6 +152,9 @@ export default function App() {
   const [stats, setStats] = useState({ today: 0, autoToday: 0, total: 0, date: '' })
   const [newMessageIds, setNewMessageIds] = useState(new Set())
   const [isResizing, setIsResizing] = useState(false)
+  const [zoomLevels, setZoomLevels] = useState({})
+  const [zoomEditing, setZoomEditing] = useState(false)
+  const [zoomInputValue, setZoomInputValue] = useState('')
 
   const webviewRefs = useRef({})
   const retryTimers = useRef({})
@@ -166,6 +169,8 @@ export default function App() {
   const resizeStartRef = useRef({ x: 0, w: 300 })
   const aiWidthRef = useRef(300)
   const aiPanelRef = useRef(null)
+  const zoomLevelsRef = useRef({})
+  const zoomInputRef = useRef(null)
   const statsRef = useRef({ today: 0, autoToday: 0, total: 0, date: '' })
   const statsSaveTimer = useRef(null)
   const bumpStatsRef = useRef(null)
@@ -174,6 +179,7 @@ export default function App() {
   useEffect(() => { settingsRef.current = settings }, [settings])
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   useEffect(() => { messengersRef.current = messengers }, [messengers])
+  useEffect(() => { zoomLevelsRef.current = zoomLevels }, [zoomLevels])
 
   // bumpStats обновляется каждый рендер — чтобы ipc-handler всегда звал актуальную версию
   bumpStatsRef.current = (delta) => {
@@ -336,6 +342,26 @@ export default function App() {
     e.preventDefault()
   }
 
+  // ── Зум WebView ──────────────────────────────────────────────────────────
+  const applyZoom = (id, pct) => {
+    try { webviewRefs.current[id]?.setZoomFactor(pct / 100) } catch {}
+  }
+
+  const changeZoom = (pct) => {
+    if (!activeId) return
+    const clamped = Math.max(25, Math.min(200, Math.round(pct / 5) * 5))
+    setZoomLevels(prev => ({ ...prev, [activeId]: clamped }))
+    applyZoom(activeId, clamped)
+  }
+
+  // Применяем сохранённый зум при переключении вкладки
+  useEffect(() => {
+    if (!activeId) return
+    const zoom = zoomLevelsRef.current[activeId] || 100
+    const t = setTimeout(() => applyZoom(activeId, zoom), 60)
+    return () => clearTimeout(t)
+  }, [activeId]) // eslint-disable-line
+
   // ── Очистка ───────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -459,6 +485,13 @@ export default function App() {
         retryTimers.current[messengerId] = setTimeout(
           () => tryExtractAccount(messengerId, 0), 3500
         )
+        // Применяем зум если он не стандартный
+        setTimeout(() => {
+          const zoom = zoomLevelsRef.current[messengerId] || 100
+          if (zoom !== 100) {
+            try { webviewRefs.current[messengerId]?.setZoomFactor(zoom / 100) } catch {}
+          }
+        }, 600)
       })
 
       el.addEventListener('ipc-message', (e) => {
@@ -530,6 +563,7 @@ export default function App() {
   // ─────────────────────────────────────────────────────────────────────────
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
   const theme = settings.theme || 'dark'
+  const currentZoom = zoomLevels[activeId] || 100
 
   // ── Обновляем бейдж иконки трея при изменении непрочитанных ─────────────
   useEffect(() => {
@@ -795,23 +829,91 @@ export default function App() {
 
       {/* ── Строка статистики ── */}
       <div
-        className="flex items-center px-4 h-[26px] text-[11px] gap-3 shrink-0 select-none"
+        className="flex items-center px-3 h-[26px] text-[11px] gap-3 shrink-0 select-none"
         style={{
           backgroundColor: 'var(--cc-surface)',
           borderTop: '1px solid var(--cc-border)',
           color: 'var(--cc-text-dimmer)',
         }}
       >
-        <span>💬 <span style={{ color: 'var(--cc-text-dim)', fontWeight: 600 }}>{stats.today}</span> сегодня</span>
+        <span title="Входящих сообщений сегодня">💬 <span style={{ color: 'var(--cc-text-dim)', fontWeight: 600 }}>{stats.today}</span> сегодня</span>
         <span style={{ opacity: 0.3 }}>·</span>
-        <span>⚡ <span style={{ color: stats.autoToday > 0 ? '#a855f7' : 'var(--cc-text-dim)', fontWeight: 600 }}>{stats.autoToday}</span> авто</span>
+        <span title="Авто-ответов отправлено сегодня">⚡ <span style={{ color: stats.autoToday > 0 ? '#a855f7' : 'var(--cc-text-dim)', fontWeight: 600 }}>{stats.autoToday}</span> авто</span>
         <span style={{ opacity: 0.3 }}>·</span>
-        <span>📊 <span style={{ color: 'var(--cc-text-dim)', fontWeight: 600 }}>{stats.total}</span> всего</span>
+        <span title="Всего сообщений за всё время">📊 <span style={{ color: 'var(--cc-text-dim)', fontWeight: 600 }}>{stats.total}</span> всего</span>
         {totalUnread > 0 && (
           <>
             <span style={{ opacity: 0.3 }}>·</span>
-            <span>📥 <span style={{ color: '#f87171', fontWeight: 600 }}>{totalUnread}</span> непрочитано</span>
+            <span title="Непрочитанных сообщений во всех вкладках">📥 <span style={{ color: '#f87171', fontWeight: 600 }}>{totalUnread}</span> непрочитано</span>
           </>
+        )}
+
+        {/* ── Зум текущей вкладки ── */}
+        {activeId && (
+          <div className="ml-auto flex items-center gap-0.5" title={`Масштаб окна чата: ${currentZoom}%`}>
+            <button
+              onClick={() => changeZoom(currentZoom - 5)}
+              disabled={currentZoom <= 25}
+              className="w-[16px] h-[16px] flex items-center justify-center rounded cursor-pointer leading-none"
+              style={{ color: 'var(--cc-text-dim)', opacity: currentZoom <= 25 ? 0.3 : 1, fontSize: 14 }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+              title="Уменьшить (−5%)"
+            >−</button>
+
+            {zoomEditing ? (
+              <input
+                ref={zoomInputRef}
+                type="number"
+                min={25}
+                max={200}
+                value={zoomInputValue}
+                onChange={e => setZoomInputValue(e.target.value)}
+                onBlur={() => {
+                  const v = parseInt(zoomInputValue)
+                  if (!isNaN(v)) changeZoom(v)
+                  setZoomEditing(false)
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { const v = parseInt(zoomInputValue); if (!isNaN(v)) changeZoom(v); setZoomEditing(false) }
+                  else if (e.key === 'Escape') setZoomEditing(false)
+                }}
+                className="w-[38px] text-center bg-transparent outline-none border-b"
+                style={{ color: 'var(--cc-text)', borderColor: 'var(--cc-border)', fontSize: 10 }}
+                autoFocus
+              />
+            ) : (
+              <span
+                onClick={() => { setZoomEditing(true); setZoomInputValue(String(currentZoom)) }}
+                className="w-[34px] text-center cursor-pointer rounded px-0.5"
+                style={{ color: currentZoom !== 100 ? '#2AABEE' : 'var(--cc-text-dim)', fontSize: 10 }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                title="Нажмите для ввода точного значения"
+              >{currentZoom}%</span>
+            )}
+
+            <button
+              onClick={() => changeZoom(currentZoom + 5)}
+              disabled={currentZoom >= 200}
+              className="w-[16px] h-[16px] flex items-center justify-center rounded cursor-pointer leading-none"
+              style={{ color: 'var(--cc-text-dim)', opacity: currentZoom >= 200 ? 0.3 : 1, fontSize: 14 }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+              title="Увеличить (+5%)"
+            >+</button>
+
+            {currentZoom !== 100 && (
+              <button
+                onClick={() => changeZoom(100)}
+                className="text-[9px] px-0.5 rounded cursor-pointer ml-0.5"
+                style={{ color: 'var(--cc-text-dimmer)' }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--cc-text)'; e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--cc-text-dimmer)'; e.currentTarget.style.backgroundColor = 'transparent' }}
+                title="Сбросить масштаб к 100%"
+              >↺</button>
+            )}
+          </div>
         )}
       </div>
 

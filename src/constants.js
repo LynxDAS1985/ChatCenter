@@ -9,12 +9,6 @@ export const DEFAULT_MESSENGERS = [
     partition: 'persist:telegram',
     emoji: '✈️',
     isDefault: true,
-    accountScript: `(() => {
-      // Только имя аккаунта из настроек/профиля — НЕ из шапки чата (.chat-info даёт название открытого чата!)
-      const sels = ['.user-title', '.profile-title', '.sidebar-left-section-header .peer-title'];
-      for (const s of sels) { const t = document.querySelector(s)?.textContent?.trim(); if (t && t.length < 60 && t.length > 1) return t; }
-      return null;
-    })()`
   },
   {
     id: 'whatsapp',
