@@ -1,6 +1,6 @@
 # ИИ-интеграция — ChatCenter
 
-## Поддерживаемые провайдеры (v0.11.0)
+## Поддерживаемые провайдеры (v0.12.0)
 
 | Провайдер | Статус | Модели | Авторизация |
 |-----------|--------|--------|-------------|
@@ -200,20 +200,50 @@ class AnthropicAdapter {
 
 ---
 
-## Режим WebView AI (v0.11.0)
+## Per-Provider режимы API/WebView (v0.12.0)
 
-### Назначение
-Позволяет использовать веб-интерфейс AI-сервисов (с личной подпиской) вместо API-ключа.
-Пресеты: ГигаЧат (`giga.chat`), ChatGPT (`chat.openai.com`), Claude (`claude.ai`), DeepSeek (`chat.deepseek.com`).
+### Архитектура
+Каждый провайдер теперь настраивается независимо. В `⚙️` каждого провайдера выбирается режим:
+- `🔧 API-ключ` — запросы через API (ключ, модель, системный промпт)
+- `🌐 Веб-интерфейс` — открывается сайт провайдера (своя подписка, без ключа)
 
-### Настройки
+### Хранение настроек
 ```js
-settings.aiMode        // 'api' (по умолчанию) | 'webview'
-settings.aiWebviewUrl  // URL AI-сервиса, по умолчанию 'https://gigachat.ru'
-settings.aiContextMode // 'none' | 'last' (по умолчанию) | 'full'
+settings.aiProviderKeys[pid] = {
+  mode:         'api' | 'webview',     // режим провайдера (по умолчанию 'api')
+  webviewUrl:   'https://...',          // URL для WebView (по умолчанию из DEFAULT_WEBVIEW_URLS)
+  contextMode:  'none' | 'last' | 'full', // разрешения на чтение чата
+  apiKey:       '...',
+  clientSecret: '...',
+  model:        '...',
+}
 ```
 
-### Разрешения на чтение чата (aiContextMode)
+### URL по умолчанию (DEFAULT_WEBVIEW_URLS)
+```js
+{
+  openai:    'https://chat.openai.com',
+  anthropic: 'https://claude.ai',
+  deepseek:  'https://chat.deepseek.com',
+  gigachat:  'https://giga.chat',
+}
+```
+
+### Ключевые функции
+```js
+// Получить конфиг провайдера (с mode/webviewUrl/contextMode)
+getProviderCfg(settings, pid) → { mode, webviewUrl, contextMode, apiKey, clientSecret, model }
+
+// Проверить "подключён" ли провайдер (webview = всегда да)
+isProviderConnected(settings, pid) → bool
+
+// Сохранить mode/webviewUrl/contextMode для текущего провайдера
+setProviderProp('mode', 'webview')
+setProviderProp('webviewUrl', 'https://...')
+setProviderProp('contextMode', 'last')
+```
+
+### Разрешения на чтение чата (contextMode, per-provider)
 | Значение | Описание |
 |----------|----------|
 | `'none'` | Не передавать историю. Только ручной ввод в AI |
@@ -221,18 +251,21 @@ settings.aiContextMode // 'none' | 'last' (по умолчанию) | 'full'
 | `'full'` | Передать последние 10 сообщений из `chatHistory` |
 
 ### Вставка контекста в WebView AI (sendContextToAiWebview)
-1. Формируем текст контекста согласно `aiContextMode`
-2. Пробуем `webviewRef.executeJavaScript()` с несколькими CSS-селекторами:
-   - `textarea`
-   - `[contenteditable="true"]`
-   - `#prompt-textarea` (ChatGPT)
-   - `.chat-input textarea`
-   - `[data-testid="message-input"]`
-3. Если вставка удалась — показываем `✓ Вставлено в поле AI!`
-4. Если не удалась — копируем в буфер через `navigator.clipboard.writeText()` → показываем `📋 Скопировано — вставьте Ctrl+V`
+1. Формируем текст контекста согласно `providerCfg.contextMode`
+2. Пробуем `webviewRef.executeJavaScript()` с несколькими CSS-селекторами
+3. Если вставка удалась — показываем `✓ Вставлено!`
+4. Если не удалась — копируем в буфер → показываем `📋 Ctrl+V`
 
 ### WebView partition
 `partition="persist:ai-webview"` — отдельная сессия от мессенджеров. Позволяет оставаться залогиненным в AI-сервисе между запусками.
+
+### Глобальные settings (устаревшие, не используются с v0.12.0)
+```js
+// УСТАРЕЛО с v0.12.0 — настройки режима теперь per-provider:
+// settings.aiMode        → settings.aiProviderKeys[pid].mode
+// settings.aiWebviewUrl  → settings.aiProviderKeys[pid].webviewUrl
+// settings.aiContextMode → settings.aiProviderKeys[pid].contextMode
+```
 
 ---
 

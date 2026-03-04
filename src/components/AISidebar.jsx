@@ -1,4 +1,4 @@
-// v0.11.0 — Режим WebView AI (API или веб-интерфейс), разрешения на чтение чата
+// v0.12.0 — Per-provider режимы (API / WebView) в настройках каждого провайдера
 import { useState, useRef, useEffect } from 'react'
 
 // Паттерны распознавания API-ключей в буфере обмена
@@ -25,13 +25,13 @@ const PROVIDERS = [
   { id: 'gigachat',  label: 'ГигаЧат',   icon: '💬', defaultModel: 'GigaChat',                  free: true  },
 ]
 
-// Пресеты веб-AI (режим WebView)
-const AI_WEBVIEW_PRESETS = [
-  { id: 'gigachat', name: 'ГигаЧат',  icon: '💬', url: 'https://giga.chat' },
-  { id: 'chatgpt',  name: 'ChatGPT',  icon: '🌐', url: 'https://chat.openai.com' },
-  { id: 'claude',   name: 'Claude',   icon: '🤖', url: 'https://claude.ai' },
-  { id: 'deepseek', name: 'DeepSeek', icon: '🔍', url: 'https://chat.deepseek.com' },
-]
+// URL по умолчанию для каждого провайдера в WebView-режиме
+const DEFAULT_WEBVIEW_URLS = {
+  openai:    'https://chat.openai.com',
+  anthropic: 'https://claude.ai',
+  deepseek:  'https://chat.deepseek.com',
+  gigachat:  'https://giga.chat',
+}
 
 const MODEL_HINTS = {
   openai:    ['gpt-4o-mini', 'gpt-4o'],
@@ -49,23 +49,30 @@ const PROVIDER_URLS = {
 
 function getProviderCfg(settings, pid) {
   const pKeys = settings.aiProviderKeys || {}
+  const pData = pKeys[pid] || {}
   const active = settings.aiProvider || 'openai'
+  const base = {
+    mode:         pData.mode         || 'api',
+    webviewUrl:   pData.webviewUrl   || DEFAULT_WEBVIEW_URLS[pid] || '',
+    contextMode:  pData.contextMode  || 'last',
+    model:        pData.model        || PROVIDERS.find(p => p.id === pid)?.defaultModel || '',
+    apiKey:       pData.apiKey       || '',
+    clientSecret: pData.clientSecret || '',
+  }
   if (pid === active) {
     return {
-      apiKey: settings.aiApiKey || pKeys[pid]?.apiKey || '',
-      clientSecret: settings.aiClientSecret || pKeys[pid]?.clientSecret || '',
-      model: settings.aiModel || pKeys[pid]?.model || PROVIDERS.find(p => p.id === pid)?.defaultModel || '',
+      ...base,
+      apiKey:       settings.aiApiKey       || base.apiKey,
+      clientSecret: settings.aiClientSecret || base.clientSecret,
+      model:        settings.aiModel        || base.model,
     }
   }
-  return {
-    apiKey: pKeys[pid]?.apiKey || '',
-    clientSecret: pKeys[pid]?.clientSecret || '',
-    model: pKeys[pid]?.model || PROVIDERS.find(p => p.id === pid)?.defaultModel || '',
-  }
+  return base
 }
 
 function isProviderConnected(settings, pid) {
   const cfg = getProviderCfg(settings, pid)
+  if (cfg.mode === 'webview') return true
   if (pid === 'gigachat') return !!(cfg.apiKey && cfg.clientSecret)
   return !!cfg.apiKey
 }
@@ -92,8 +99,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
 
   // ── Состояния WebView-режима ──────────────────────────────────────────────
   const [contextSendStatus, setContextSendStatus] = useState(null) // null | 'sent' | 'copied' | 'empty'
-  const [showUrlEdit, setShowUrlEdit] = useState(false)
-  const [urlEditValue, setUrlEditValue] = useState('')
 
   const endRef = useRef(null)
   const savedTimerRef = useRef(null)
@@ -105,15 +110,14 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const aiWebviewRef = useRef(null)
 
   // ── Настройки (shortcuts) ─────────────────────────────────────────────────
-  const aiMode = settings.aiMode || 'api'           // 'api' | 'webview'
-  const aiWebviewUrl = settings.aiWebviewUrl || 'https://gigachat.ru'
-  const aiContextMode = settings.aiContextMode || 'last'  // 'full' | 'last' | 'none'
-
   const provider = settings.aiProvider || 'openai'
   const providerInfo = PROVIDERS.find(p => p.id === provider) || PROVIDERS[0]
   const connectedProviders = PROVIDERS.filter(p => isProviderConnected(settings, p.id))
   const unconnectedProviders = PROVIDERS.filter(p => !isProviderConnected(settings, p.id))
   const providerCfg = getProviderCfg(settings, provider)
+  const providerMode = providerCfg.mode       // 'api' | 'webview'
+  const webviewUrl  = providerCfg.webviewUrl  // URL для WebView
+  const contextMode = providerCfg.contextMode // 'none' | 'last' | 'full'
   const aiCfg = { provider, systemPrompt: settings.aiSystemPrompt || DEFAULT_SYSTEM_PROMPT, ...providerCfg }
   const isGigaChat = provider === 'gigachat'
   const configured = isProviderConnected(settings, provider)
@@ -128,40 +132,46 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     }
   }, [lastMessage, visible])
 
-  // ── Переключение провайдера API ───────────────────────────────────────────
+  // ── Переключение провайдера ───────────────────────────────────────────────
   const switchProvider = (newPid) => {
     const pKeys = { ...(settings.aiProviderKeys || {}) }
     const currentPid = settings.aiProvider || 'openai'
+    // Сохраняем все настройки текущего провайдера (включая mode/webviewUrl/contextMode)
     pKeys[currentPid] = {
-      apiKey: settings.aiApiKey || '',
+      ...(pKeys[currentPid] || {}),
+      apiKey:       settings.aiApiKey       || '',
       clientSecret: settings.aiClientSecret || '',
-      model: settings.aiModel || '',
+      model:        settings.aiModel        || '',
     }
     const newPk = pKeys[newPid] || {}
     const newModel = newPk.model || PROVIDERS.find(p => p.id === newPid)?.defaultModel || ''
-    const newIsConfigured = newPid === 'gigachat'
-      ? !!(newPk.apiKey && newPk.clientSecret)
-      : !!newPk.apiKey
+    const newIsConfigured = newPk.mode === 'webview'
+      ? true
+      : newPid === 'gigachat'
+        ? !!(newPk.apiKey && newPk.clientSecret)
+        : !!newPk.apiKey
     onSettingsChange({
       ...settings,
-      aiProvider: newPid,
-      aiApiKey: newPk.apiKey || '',
+      aiProvider:     newPid,
+      aiApiKey:       newPk.apiKey       || '',
       aiClientSecret: newPk.clientSecret || '',
-      aiModel: newModel,
+      aiModel:        newModel,
       aiProviderKeys: pKeys,
     })
     setShowAddProvider(false)
     setShowConfig(!newIsConfigured)
   }
 
+  // Сохранение API-настроек (aiApiKey / aiModel / aiClientSecret / aiSystemPrompt)
   const set = (key, val) => {
     const updated = { ...settings, [key]: val }
     const pid = updated.aiProvider || 'openai'
     const pKeys = { ...(updated.aiProviderKeys || {}) }
     pKeys[pid] = {
-      apiKey: key === 'aiApiKey' ? val : (updated.aiApiKey || ''),
+      ...(pKeys[pid] || {}),
+      apiKey:       key === 'aiApiKey'       ? val : (updated.aiApiKey       || ''),
       clientSecret: key === 'aiClientSecret' ? val : (updated.aiClientSecret || ''),
-      model: key === 'aiModel' ? val : (updated.aiModel || ''),
+      model:        key === 'aiModel'        ? val : (updated.aiModel        || ''),
     }
     updated.aiProviderKeys = pKeys
     onSettingsChange(updated)
@@ -169,6 +179,14 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     setJustSaved(true)
     setTestStatus(null)
     savedTimerRef.current = setTimeout(() => setJustSaved(false), 2500)
+  }
+
+  // Сохранение per-provider свойств (mode / webviewUrl / contextMode)
+  const setProviderProp = (key, val) => {
+    const pid = settings.aiProvider || 'openai'
+    const pKeys = { ...(settings.aiProviderKeys || {}) }
+    pKeys[pid] = { ...(pKeys[pid] || {}), [key]: val }
+    onSettingsChange({ ...settings, aiProviderKeys: pKeys })
   }
 
   const testConnection = async () => {
@@ -308,7 +326,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     })
   }
 
-  // Оставляем старый generate для testConnection
+  // Оставляем для testConnection
   const generate = async (text) => {
     if (!configured) { setError('Настройте ИИ'); setShowConfig(true); return }
     if (!text.trim()) return
@@ -350,16 +368,16 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
 
   // ── Отправка контекста чата в WebView AI ─────────────────────────────────
   const sendContextToAiWebview = async () => {
-    if (aiContextMode === 'none') {
+    if (contextMode === 'none') {
       setContextSendStatus('empty')
       setTimeout(() => setContextSendStatus(null), 2000)
       return
     }
 
     let contextText = ''
-    if (aiContextMode === 'last') {
+    if (contextMode === 'last') {
       if (lastMessage) contextText = `Сообщение клиента: "${lastMessage}"`
-    } else if (aiContextMode === 'full') {
+    } else if (contextMode === 'full') {
       if (chatHistory.length > 0) {
         contextText = 'История переписки с клиентом:\n' +
           chatHistory.slice(-10).map((h, i) => `${i + 1}. ${h.text}`).join('\n')
@@ -374,7 +392,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       return
     }
 
-    // Пробуем вставить через executeJavaScript в WebView AI
     const wv = aiWebviewRef.current
     let inserted = false
     if (wv) {
@@ -401,7 +418,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       } catch {}
     }
 
-    // Fallback — копируем в буфер обмена
     if (!inserted) {
       try { await navigator.clipboard.writeText(contextText) } catch {}
       setContextSendStatus('copied')
@@ -409,12 +425,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       setContextSendStatus('sent')
     }
     setTimeout(() => setContextSendStatus(null), 3000)
-  }
-
-  const applyWebviewUrl = (url) => {
-    if (!url) return
-    onSettingsChange({ ...settings, aiWebviewUrl: url })
-    setShowUrlEdit(false)
   }
 
   // ── Рендер ────────────────────────────────────────────────────────────────
@@ -432,7 +442,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     >
       <div style={{ width: `${width}px`, minWidth: `${width}px` }} className="flex flex-col h-full">
 
-        {/* ── Заголовок с переключателем режима ── */}
+        {/* ── Заголовок ── */}
         <div
           className="flex items-center justify-between px-3 py-2.5 shrink-0"
           style={{ borderBottom: '1px solid var(--cc-border)' }}
@@ -440,7 +450,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
           <div className="flex items-center gap-2">
             <span className="text-base">🤖</span>
             <span className="text-sm font-semibold" style={{ color: 'var(--cc-text)' }}>ИИ-помощник</span>
-            {chatHistory.length > 0 && aiMode === 'api' && (
+            {chatHistory.length > 0 && providerMode === 'api' && (
               <span
                 className="text-[9px] px-1 py-0.5 rounded-full leading-none"
                 style={{ backgroundColor: '#2AABEE22', color: '#2AABEE' }}
@@ -449,31 +459,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
             )}
           </div>
           <div className="flex items-center gap-1">
-            {/* Переключатель API / WebView */}
-            <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
-              <button
-                onClick={() => onSettingsChange({ ...settings, aiMode: 'api' })}
-                title="Режим API — запросы через API-ключ"
-                className="text-[10px] px-2 py-1 cursor-pointer transition-all"
-                style={{
-                  backgroundColor: aiMode === 'api' ? '#2AABEE22' : 'transparent',
-                  color: aiMode === 'api' ? '#2AABEE' : 'var(--cc-text-dimmer)',
-                  fontWeight: aiMode === 'api' ? 600 : 400,
-                }}
-              >🔧 API</button>
-              <button
-                onClick={() => onSettingsChange({ ...settings, aiMode: 'webview' })}
-                title="Режим WebView — открыть AI-сайт (своя подписка)"
-                className="text-[10px] px-2 py-1 cursor-pointer transition-all"
-                style={{
-                  backgroundColor: aiMode === 'webview' ? '#2AABEE22' : 'transparent',
-                  color: aiMode === 'webview' ? '#2AABEE' : 'var(--cc-text-dimmer)',
-                  fontWeight: aiMode === 'webview' ? 600 : 400,
-                }}
-              >🌐 Веб</button>
-            </div>
-
-            {aiMode === 'api' && suggestions.length > 0 && (
+            {providerMode === 'api' && suggestions.length > 0 && (
               <button
                 onClick={() => { setSuggestions([]); setError(''); setInput('') }}
                 title="Очистить"
@@ -481,256 +467,140 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                 style={{ color: 'var(--cc-text-dimmer)' }}
               >↺</button>
             )}
-            {aiMode === 'api' && configured && (
-              <button
-                onClick={() => { setShowConfig(!showConfig); setShowAddProvider(false) }}
-                title="Настройки активного ИИ"
-                className="text-sm w-6 h-6 rounded flex items-center justify-center cursor-pointer"
-                style={{ color: showConfig ? '#2AABEE' : 'var(--cc-text-dimmer)' }}
-              >⚙️</button>
-            )}
+            {/* ⚙️ всегда видна */}
+            <button
+              onClick={() => { setShowConfig(!showConfig); setShowAddProvider(false) }}
+              title="Настройки ИИ-помощника"
+              className="text-sm w-6 h-6 rounded flex items-center justify-center cursor-pointer"
+              style={{ color: showConfig ? '#2AABEE' : 'var(--cc-text-dimmer)' }}
+            >⚙️</button>
           </div>
         </div>
 
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        {/* ── РЕЖИМ WEBVIEW ── */}
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        {aiMode === 'webview' && (
-          <div className="flex flex-col flex-1 overflow-hidden">
-
-            {/* Выбор AI-сервиса */}
-            <div className="px-2 py-2 shrink-0" style={{ borderBottom: '1px solid var(--cc-border)' }}>
-              <div className="flex items-center gap-1 flex-wrap">
-                {AI_WEBVIEW_PRESETS.map(p => {
-                  const isActive = aiWebviewUrl === p.url
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => onSettingsChange({ ...settings, aiWebviewUrl: p.url })}
-                      title={p.url}
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs cursor-pointer transition-all"
-                      style={{
-                        backgroundColor: isActive ? '#2AABEE22' : 'var(--cc-hover)',
-                        border: `1px solid ${isActive ? '#2AABEE55' : 'transparent'}`,
-                        color: isActive ? '#2AABEE' : 'var(--cc-text-dim)',
-                      }}
-                    >
-                      <span>{p.icon}</span>
-                      <span>{p.name}</span>
-                      {isActive && <span className="opacity-70 text-[10px]">✓</span>}
-                    </button>
-                  )
-                })}
-                <button
-                  onClick={() => { setShowUrlEdit(!showUrlEdit); setUrlEditValue(aiWebviewUrl) }}
-                  title="Свой URL"
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs cursor-pointer transition-all"
-                  style={{
-                    backgroundColor: showUrlEdit ? '#f59e0b22' : 'var(--cc-hover)',
-                    border: `1px solid ${showUrlEdit ? '#f59e0b55' : 'transparent'}`,
-                    color: showUrlEdit ? '#f59e0b' : 'var(--cc-text-dimmer)',
-                  }}
-                >✏️ Свой</button>
-              </div>
-
-              {/* Поле для своего URL */}
-              {showUrlEdit && (
-                <div className="mt-1.5 flex gap-1">
-                  <input
-                    type="text"
-                    value={urlEditValue}
-                    onChange={e => setUrlEditValue(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') applyWebviewUrl(urlEditValue)
-                      if (e.key === 'Escape') setShowUrlEdit(false)
-                    }}
-                    placeholder="https://..."
-                    className="flex-1 text-xs px-2 py-1 rounded-lg outline-none"
-                    style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
-                    autoFocus
-                  />
+        {/* ── Панель провайдеров (всегда видна) ── */}
+        <div className="px-2 pt-2 pb-1.5 shrink-0" style={{ borderBottom: '1px solid var(--cc-border)' }}>
+          {connectedProviders.length > 0 ? (
+            <div className="flex items-center gap-1 flex-wrap">
+              {connectedProviders.map(p => {
+                const pCfg = getProviderCfg(settings, p.id)
+                return (
                   <button
-                    onClick={() => applyWebviewUrl(urlEditValue)}
-                    className="px-2 py-1 rounded-lg text-xs cursor-pointer"
-                    style={{ backgroundColor: '#2AABEE', color: '#fff' }}
-                  >✓</button>
-                </div>
-              )}
-            </div>
-
-            {/* WebView с AI-сервисом */}
-            <div className="flex-1 relative overflow-hidden">
-              {aiWebviewUrl ? (
-                <webview
-                  ref={aiWebviewRef}
-                  src={aiWebviewUrl}
-                  partition="persist:ai-webview"
-                  style={{ width: '100%', height: '100%' }}
-                  allowpopups="true"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-center px-4">
-                  <div>
-                    <div className="text-3xl mb-2">🌐</div>
-                    <p className="text-xs" style={{ color: 'var(--cc-text-dimmer)' }}>Выберите AI-сервис выше</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* ── Панель разрешений + отправка контекста ── */}
-            <div
-              className="px-2 py-2 shrink-0"
-              style={{ borderTop: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)' }}
-            >
-              <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>
-                Разрешения на чтение чата
-              </div>
-
-              {/* Кнопки выбора режима доступа к чату */}
-              <div className="flex gap-1 mb-2">
-                {[
-                  { id: 'none', icon: '🔇', label: 'Ничего',   desc: 'Не передавать историю чата в AI' },
-                  { id: 'last', icon: '💬', label: 'Последнее', desc: 'Только последнее сообщение клиента' },
-                  { id: 'full', icon: '📖', label: 'История',   desc: 'Последние 10 сообщений из чата' },
-                ].map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => onSettingsChange({ ...settings, aiContextMode: m.id })}
-                    title={m.desc}
-                    className="flex-1 flex flex-col items-center py-1.5 rounded-lg text-[9px] cursor-pointer transition-all leading-tight"
+                    key={p.id}
+                    onClick={() => { switchProvider(p.id); setShowConfig(false) }}
+                    title={`${p.label} (${pCfg.mode === 'webview' ? 'Веб-интерфейс' : 'API-ключ'})`}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all"
                     style={{
-                      backgroundColor: aiContextMode === m.id ? '#2AABEE22' : 'var(--cc-hover)',
-                      border: `1px solid ${aiContextMode === m.id ? '#2AABEE55' : 'transparent'}`,
-                      color: aiContextMode === m.id ? '#2AABEE' : 'var(--cc-text-dimmer)',
+                      backgroundColor: provider === p.id ? '#2AABEE22' : 'var(--cc-hover)',
+                      border: `1px solid ${provider === p.id ? '#2AABEE66' : 'transparent'}`,
+                      color: provider === p.id ? '#2AABEE' : 'var(--cc-text-dim)',
                     }}
                   >
-                    <span className="text-sm mb-0.5">{m.icon}</span>
-                    <span className="font-medium">{m.label}</span>
+                    <span>{p.icon}</span>
+                    <span>{p.label}</span>
+                    {p.free && <span className="text-[7px] leading-tight" style={{ color: '#22c55e' }}>free</span>}
+                    <span className="text-[9px] opacity-60">{pCfg.mode === 'webview' ? '🌐' : '🔧'}</span>
+                    {provider === p.id && <span className="opacity-70">✓</span>}
                   </button>
-                ))}
-              </div>
-
-              {/* Кнопка отправки контекста в AI */}
+                )
+              })}
               <button
-                onClick={sendContextToAiWebview}
-                disabled={aiContextMode === 'none'}
-                className="w-full py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => { setShowAddProvider(!showAddProvider); setShowConfig(false) }}
+                title="Подключить ещё одного ИИ-провайдера"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
                 style={{
-                  backgroundColor:
-                    contextSendStatus === 'sent'   ? '#22c55e22' :
-                    contextSendStatus === 'copied' ? '#f59e0b22' :
-                    contextSendStatus === 'empty'  ? 'rgba(239,68,68,0.1)' :
-                    '#2AABEE22',
-                  color:
-                    contextSendStatus === 'sent'   ? '#22c55e' :
-                    contextSendStatus === 'copied' ? '#f59e0b' :
-                    contextSendStatus === 'empty'  ? '#f87171' :
-                    '#2AABEE',
-                  border: `1px solid ${
-                    contextSendStatus === 'sent'   ? '#22c55e44' :
-                    contextSendStatus === 'copied' ? '#f59e0b44' :
-                    contextSendStatus === 'empty'  ? 'rgba(239,68,68,0.3)' :
-                    '#2AABEE44'}`,
+                  backgroundColor: showAddProvider ? '#22c55e22' : 'var(--cc-hover)',
+                  border: `1px solid ${showAddProvider ? '#22c55e44' : 'transparent'}`,
+                  color: showAddProvider ? '#22c55e' : 'var(--cc-text-dimmer)',
                 }}
-              >
-                {contextSendStatus === 'sent'   ? '✓ Вставлено в поле AI!' :
-                 contextSendStatus === 'copied' ? '📋 Скопировано — вставьте Ctrl+V в AI' :
-                 contextSendStatus === 'empty'  ? '⚠️ Нет новых сообщений' :
-                 aiContextMode === 'none'       ? '🔇 Разрешения отключены' :
-                 '📤 Отправить контекст в AI'}
-              </button>
+              >+ ИИ</button>
             </div>
-          </div>
-        )}
+          ) : (
+            <button
+              onClick={() => { setShowAddProvider(!showAddProvider); setShowConfig(false) }}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs cursor-pointer transition-all"
+              style={{ backgroundColor: '#2AABEE11', border: '1px dashed #2AABEE55', color: '#2AABEE' }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#2AABEE22'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2AABEE11'}
+            >
+              <span className="text-base">+</span>
+              <span>Добавить ИИ-провайдер</span>
+            </button>
+          )}
 
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        {/* ── РЕЖИМ API ── */}
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        {aiMode === 'api' && (
-          <>
-            {/* Панель провайдеров */}
-            <div className="px-2 pt-2 pb-1.5 shrink-0" style={{ borderBottom: '1px solid var(--cc-border)' }}>
-              {connectedProviders.length > 0 ? (
-                <div className="flex items-center gap-1 flex-wrap">
-                  {connectedProviders.map(p => (
+          {showAddProvider && (
+            <div className="mt-2">
+              {unconnectedProviders.length > 0 ? (
+                <div className="grid grid-cols-2 gap-1">
+                  {unconnectedProviders.map(p => (
                     <button
                       key={p.id}
-                      onClick={() => { switchProvider(p.id); setShowConfig(false) }}
-                      title={p.label}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all"
-                      style={{
-                        backgroundColor: provider === p.id ? '#2AABEE22' : 'var(--cc-hover)',
-                        border: `1px solid ${provider === p.id ? '#2AABEE66' : 'transparent'}`,
-                        color: provider === p.id ? '#2AABEE' : 'var(--cc-text-dim)',
-                      }}
+                      onClick={() => switchProvider(p.id)}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs cursor-pointer text-left transition-all"
+                      style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text-dim)' }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = '#2AABEE55'; e.currentTarget.style.backgroundColor = '#2AABEE11' }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--cc-border)'; e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
                     >
-                      <span>{p.icon}</span>
-                      <span>{p.label}</span>
-                      {p.free && <span className="text-[7px] leading-tight" style={{ color: '#22c55e' }}>free</span>}
-                      {provider === p.id && <span className="opacity-70">✓</span>}
+                      <span className="text-base leading-none">{p.icon}</span>
+                      <div>
+                        <div className="font-medium leading-tight">{p.label}</div>
+                        {p.free && <div className="text-[9px] leading-tight" style={{ color: '#22c55e' }}>бесплатно</div>}
+                      </div>
                     </button>
                   ))}
-                  <button
-                    onClick={() => { setShowAddProvider(!showAddProvider); setShowConfig(false) }}
-                    title="Подключить ещё одного ИИ-провайдера"
-                    className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
-                    style={{
-                      backgroundColor: showAddProvider ? '#22c55e22' : 'var(--cc-hover)',
-                      border: `1px solid ${showAddProvider ? '#22c55e44' : 'transparent'}`,
-                      color: showAddProvider ? '#22c55e' : 'var(--cc-text-dimmer)',
-                    }}
-                  >+ ИИ</button>
                 </div>
               ) : (
-                <button
-                  onClick={() => { setShowAddProvider(!showAddProvider); setShowConfig(false) }}
-                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs cursor-pointer transition-all"
-                  style={{ backgroundColor: '#2AABEE11', border: '1px dashed #2AABEE55', color: '#2AABEE' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#2AABEE22'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2AABEE11'}
-                >
-                  <span className="text-base">+</span>
-                  <span>Добавить ИИ-провайдер</span>
-                </button>
-              )}
-
-              {showAddProvider && (
-                <div className="mt-2">
-                  {unconnectedProviders.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-1">
-                      {unconnectedProviders.map(p => (
-                        <button
-                          key={p.id}
-                          onClick={() => switchProvider(p.id)}
-                          className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs cursor-pointer text-left transition-all"
-                          style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text-dim)' }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = '#2AABEE55'; e.currentTarget.style.backgroundColor = '#2AABEE11' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--cc-border)'; e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
-                        >
-                          <span className="text-base leading-none">{p.icon}</span>
-                          <div>
-                            <div className="font-medium leading-tight">{p.label}</div>
-                            {p.free && <div className="text-[9px] leading-tight" style={{ color: '#22c55e' }}>бесплатно</div>}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center text-xs py-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>
-                      Все провайдеры подключены ✓
-                    </div>
-                  )}
+                <div className="text-center text-xs py-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>
+                  Все провайдеры подключены ✓
                 </div>
               )}
             </div>
+          )}
+        </div>
 
-            {/* Конфиг-панель API */}
-            {showConfig && (
-              <div
-                className="px-3 py-3 space-y-2.5 shrink-0 overflow-y-auto"
-                style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)', maxHeight: '55%' }}
-              >
+        {/* ── Конфиг-панель (per-provider) ── */}
+        {showConfig && (
+          <div
+            className="px-3 py-3 space-y-2.5 shrink-0 overflow-y-auto"
+            style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)', maxHeight: '60%' }}
+          >
+            {/* Переключатель режима провайдера */}
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>
+                Режим {providerInfo.label}
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setProviderProp('mode', 'api')}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all"
+                  style={{
+                    backgroundColor: providerMode === 'api' ? '#2AABEE22' : 'var(--cc-hover)',
+                    border: `1.5px solid ${providerMode === 'api' ? '#2AABEE66' : 'transparent'}`,
+                    color: providerMode === 'api' ? '#2AABEE' : 'var(--cc-text-dimmer)',
+                  }}
+                >
+                  <span>🔧</span>
+                  <span>API-ключ</span>
+                  {providerMode === 'api' && <span className="text-[10px]">✓</span>}
+                </button>
+                <button
+                  onClick={() => setProviderProp('mode', 'webview')}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all"
+                  style={{
+                    backgroundColor: providerMode === 'webview' ? '#2AABEE22' : 'var(--cc-hover)',
+                    border: `1.5px solid ${providerMode === 'webview' ? '#2AABEE66' : 'transparent'}`,
+                    color: providerMode === 'webview' ? '#2AABEE' : 'var(--cc-text-dimmer)',
+                  }}
+                >
+                  <span>🌐</span>
+                  <span>Веб-интерфейс</span>
+                  {providerMode === 'webview' && <span className="text-[10px]">✓</span>}
+                </button>
+              </div>
+            </div>
+
+            {/* ── API режим: ключ/модель/промпт ── */}
+            {providerMode === 'api' && (
+              <>
                 <div
                   className="text-[11px] px-2.5 py-2 rounded-lg leading-relaxed"
                   style={{ backgroundColor: '#2AABEE0D', border: '1px solid #2AABEE22', color: 'var(--cc-text-dim)' }}
@@ -882,9 +752,154 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
                   />
                 </div>
-              </div>
+              </>
             )}
 
+            {/* ── WebView режим: URL + разрешения ── */}
+            {providerMode === 'webview' && (
+              <>
+                <div
+                  className="text-[11px] px-2.5 py-2 rounded-lg leading-relaxed"
+                  style={{ backgroundColor: '#2AABEE0D', border: '1px solid #2AABEE22', color: 'var(--cc-text-dim)' }}
+                >
+                  <div className="font-semibold mb-0.5" style={{ color: '#2AABEE' }}>🌐 Веб-интерфейс</div>
+                  <div style={{ color: 'var(--cc-text-dimmer)' }}>
+                    Откроется сайт {providerInfo.label}. Войдите в свой аккаунт и пользуйтесь со своей подпиской — API-ключ не нужен.
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--cc-text-dimmer)' }}>URL сервиса</div>
+                  <input
+                    type="text"
+                    value={webviewUrl}
+                    onChange={e => setProviderProp('webviewUrl', e.target.value)}
+                    placeholder="https://..."
+                    className="w-full text-xs px-2 py-1.5 rounded-lg outline-none font-mono"
+                    style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+                  />
+                  {webviewUrl !== (DEFAULT_WEBVIEW_URLS[provider] || '') && (
+                    <button
+                      onClick={() => setProviderProp('webviewUrl', DEFAULT_WEBVIEW_URLS[provider] || '')}
+                      className="text-[9px] mt-1 cursor-pointer"
+                      style={{ color: 'var(--cc-text-dimmer)' }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#2AABEE'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--cc-text-dimmer)'}
+                    >↺ Сбросить на стандартный</button>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>
+                    Разрешения на чтение чата
+                  </div>
+                  <div className="flex gap-1">
+                    {[
+                      { id: 'none', icon: '🔇', label: 'Ничего',    desc: 'Не передавать историю чата в AI' },
+                      { id: 'last', icon: '💬', label: 'Последнее', desc: 'Только последнее сообщение клиента' },
+                      { id: 'full', icon: '📖', label: 'История',   desc: 'Последние 10 сообщений из чата' },
+                    ].map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => setProviderProp('contextMode', m.id)}
+                        title={m.desc}
+                        className="flex-1 flex flex-col items-center py-1.5 rounded-lg text-[9px] cursor-pointer transition-all leading-tight"
+                        style={{
+                          backgroundColor: contextMode === m.id ? '#2AABEE22' : 'var(--cc-hover)',
+                          border: `1px solid ${contextMode === m.id ? '#2AABEE55' : 'transparent'}`,
+                          color: contextMode === m.id ? '#2AABEE' : 'var(--cc-text-dimmer)',
+                        }}
+                      >
+                        <span className="text-sm mb-0.5">{m.icon}</span>
+                        <span className="font-medium">{m.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* ── РЕЖИМ WEBVIEW (основной контент) ── */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {providerMode === 'webview' && (
+          <div className="flex flex-col flex-1 overflow-hidden">
+            {/* WebView с AI-сервисом */}
+            <div className="flex-1 relative overflow-hidden">
+              {webviewUrl ? (
+                <webview
+                  ref={aiWebviewRef}
+                  src={webviewUrl}
+                  partition="persist:ai-webview"
+                  style={{ width: '100%', height: '100%' }}
+                  allowpopups="true"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-center px-4">
+                  <div>
+                    <div className="text-3xl mb-2">🌐</div>
+                    <p className="text-xs" style={{ color: 'var(--cc-text-dimmer)' }}>
+                      Нажмите ⚙️ и укажите URL сервиса
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Компактная панель отправки контекста ── */}
+            <div
+              className="flex items-center gap-2 px-2 py-1.5 shrink-0"
+              style={{ borderTop: '1px solid var(--cc-border)', backgroundColor: 'var(--cc-surface-alt)' }}
+            >
+              {/* Текущий режим доступа — компактно */}
+              <div
+                className="flex items-center gap-1 text-[9px] px-1.5 py-1 rounded-lg cursor-pointer"
+                style={{ color: 'var(--cc-text-dimmer)', backgroundColor: 'var(--cc-hover)' }}
+                onClick={() => { setShowConfig(true); setShowAddProvider(false) }}
+                title="Нажмите чтобы изменить разрешения"
+              >
+                <span>{contextMode === 'none' ? '🔇' : contextMode === 'full' ? '📖' : '💬'}</span>
+                <span>{contextMode === 'none' ? 'Выкл' : contextMode === 'full' ? 'История' : 'Посл.'}</span>
+              </div>
+              {/* Кнопка отправки контекста */}
+              <button
+                onClick={sendContextToAiWebview}
+                disabled={contextMode === 'none'}
+                className="flex-1 py-1 rounded-lg text-xs font-medium cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor:
+                    contextSendStatus === 'sent'   ? '#22c55e22' :
+                    contextSendStatus === 'copied' ? '#f59e0b22' :
+                    contextSendStatus === 'empty'  ? 'rgba(239,68,68,0.1)' :
+                    '#2AABEE22',
+                  color:
+                    contextSendStatus === 'sent'   ? '#22c55e' :
+                    contextSendStatus === 'copied' ? '#f59e0b' :
+                    contextSendStatus === 'empty'  ? '#f87171' :
+                    '#2AABEE',
+                  border: `1px solid ${
+                    contextSendStatus === 'sent'   ? '#22c55e44' :
+                    contextSendStatus === 'copied' ? '#f59e0b44' :
+                    contextSendStatus === 'empty'  ? 'rgba(239,68,68,0.3)' :
+                    '#2AABEE44'}`,
+                }}
+              >
+                {contextSendStatus === 'sent'   ? '✓ Вставлено!' :
+                 contextSendStatus === 'copied' ? '📋 Ctrl+V' :
+                 contextSendStatus === 'empty'  ? '⚠️ Нет сообщений' :
+                 '📤 Отправить в AI'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* ── РЕЖИМ API (основной контент) ── */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {providerMode === 'api' && (
+          <>
             {/* Тело API-режима */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
 
