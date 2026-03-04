@@ -204,7 +204,7 @@ class AnthropicAdapter {
 
 ### Назначение
 Позволяет использовать веб-интерфейс AI-сервисов (с личной подпиской) вместо API-ключа.
-Пресеты: ГигаЧат (`gigachat.ru`), ChatGPT (`chat.openai.com`), Claude (`claude.ai`), DeepSeek (`chat.deepseek.com`).
+Пресеты: ГигаЧат (`giga.chat`), ChatGPT (`chat.openai.com`), Claude (`claude.ai`), DeepSeek (`chat.deepseek.com`).
 
 ### Настройки
 ```js

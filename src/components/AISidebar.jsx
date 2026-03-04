@@ -27,7 +27,7 @@ const PROVIDERS = [
 
 // Пресеты веб-AI (режим WebView)
 const AI_WEBVIEW_PRESETS = [
-  { id: 'gigachat', name: 'ГигаЧат',  icon: '💬', url: 'https://gigachat.ru' },
+  { id: 'gigachat', name: 'ГигаЧат',  icon: '💬', url: 'https://giga.chat' },
   { id: 'chatgpt',  name: 'ChatGPT',  icon: '🌐', url: 'https://chat.openai.com' },
   { id: 'claude',   name: 'Claude',   icon: '🤖', url: 'https://claude.ai' },
   { id: 'deepseek', name: 'DeepSeek', icon: '🔍', url: 'https://chat.deepseek.com' },
