@@ -100,12 +100,12 @@
 
 | Мессенджер | Пробуемые селекторы |
 |-----------|---------------------|
-| Telegram | ❌ **Удалён** — нет надёжного DOM-элемента в обычном виде чата |
+| Telegram | **IndexedDB**: `data-peer-id` из `.sidebar-header` → `users` store → `first_name + last_name` |
 | WhatsApp | `[data-testid="profile-details-header-name"]`, `[data-testid="user-preferred-name"]` |
 | ВКонтакте | `.TopNavBtn__title`, `.header__top--uname`, `.vkuiSimpleCell__content .vkuiTypography--weight-1` |
 
 ⚠️ **Важно**: Селекторы могут устареть при обновлении мессенджеров. Нужно периодически проверять.
-⚠️ **Telegram**: в Telegram Web K имя своего аккаунта НЕ отображается в DOM при обычном просмотре. Не пытаться добавить `accountScript` — будет показывать имя открытого чата.
+⚠️ **Telegram**: НЕ использовать DOM-селекторы для имени аккаунта — все они возвращают имя открытого чата. Использовать только IndexedDB-подход (v0.19.0).
 
 ---
 

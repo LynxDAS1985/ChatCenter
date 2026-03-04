@@ -9,6 +9,33 @@ export const DEFAULT_MESSENGERS = [
     partition: 'persist:telegram',
     emoji: '✈️',
     isDefault: true,
+    accountScript: `(async () => {
+      try {
+        var el = document.querySelector('.sidebar-header [data-peer-id]');
+        if (!el) return null;
+        var peerId = Number(el.dataset.peerId);
+        if (!peerId) return null;
+        var dbs = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : [];
+        for (var i = 0; i < dbs.length; i++) {
+          var db = await new Promise(function(r) {
+            var q = indexedDB.open(dbs[i].name, dbs[i].version);
+            q.onsuccess = function() { r(q.result) };
+            q.onerror = function() { r(null) };
+            q.onupgradeneeded = function() { q.transaction.abort(); r(null) };
+          });
+          if (!db) continue;
+          var stores = Array.from(db.objectStoreNames);
+          var us = stores.find(function(s) { return s === 'users' || s.includes('user') });
+          if (!us) { db.close(); continue; }
+          var user = await new Promise(function(r) {
+            try { var tx = db.transaction(us, 'readonly'); var q = tx.objectStore(us).get(peerId); q.onsuccess = function() { r(q.result) }; q.onerror = function() { r(null) }; } catch(e) { r(null) }
+          });
+          db.close();
+          if (user && (user.first_name || user.name)) return user.first_name ? [user.first_name, user.last_name].filter(Boolean).join(' ') : user.name;
+        }
+      } catch(e) {}
+      return null;
+    })()`
   },
   {
     id: 'whatsapp',

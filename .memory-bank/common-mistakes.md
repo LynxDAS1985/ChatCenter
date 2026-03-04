@@ -28,14 +28,14 @@ spawn('electron-vite', ['dev'], { env, shell: true })
 
 **Причина**: В Telegram Web K НЕТ надёжного DOM-элемента с именем СВОЕГО аккаунта в обычном виде (список чатов). Имя пользователя видно только в открытых Настройках/Профиле. Любые селекторы в обычном режиме захватывают имя ОТКРЫТОГО собеседника.
 
-**Решение**: Полностью удалить `accountScript` из Telegram в `constants.js`. Без скрипта `tryExtractAccount` выйдет на проверке `!messenger?.accountScript` и ничего не покажет под вкладкой.
+**Решение v0.18**: Удалить accountScript. Но пользователь хочет видеть имя → нужно извлекать по-другому.
+
+**Решение v0.19 (окончательное)**: Использовать IndexedDB Telegram Web K. Скрипт читает `data-peer-id` из `.sidebar-header` (это собственный ID пользователя), затем ищет запись в IndexedDB (store `users`). Возвращает `first_name + last_name`. НЕ зависит от открытого чата.
 ```js
-// ПРАВИЛЬНО — не показывать ничего (пусто лучше, чем ложь):
-{
-  id: 'telegram',
-  name: 'Telegram',
-  // НЕТ accountScript!
-}
+// Подход: peer ID из DOM → запись из IndexedDB → имя
+const el = document.querySelector('.sidebar-header [data-peer-id]');
+const peerId = Number(el.dataset.peerId);
+// ... открываем IndexedDB, ищем user с peerId, возвращаем имя
 ```
 
 **Дополнительно — ЛОВУШКА**: `messengers:save` пишет ВСЮ структуру мессенджера в electron-store, включая `accountScript`. Даже после удаления `accountScript` из `constants.js`, старый скрипт выживает в сохранённом `messengers.json`!
