@@ -100,7 +100,7 @@
 
 | Мессенджер | Пробуемые селекторы |
 |-----------|---------------------|
-| Telegram | **IndexedDB (v0.19.1)**: множественные DOM-селекторы + localStorage `user_auth` fallback → peer ID → IndexedDB `users` store → `first_name + last_name` / phone fallback |
+| Telegram | **IndexedDB cursor (v0.19.2)**: без DOM! Cursor по `users` store → `pFlags.self === true` → `first_name + last_name` / `+phone` fallback |
 | WhatsApp | `[data-testid="profile-details-header-name"]`, `[data-testid="user-preferred-name"]` |
 | ВКонтакте | `.TopNavBtn__title`, `.header__top--uname`, `.vkuiSimpleCell__content .vkuiTypography--weight-1` |
 

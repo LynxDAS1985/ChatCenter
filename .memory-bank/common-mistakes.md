@@ -30,12 +30,17 @@ spawn('electron-vite', ['dev'], { env, shell: true })
 
 **Решение v0.18**: Удалить accountScript. Но пользователь хочет видеть имя → нужно извлекать по-другому.
 
-**Решение v0.19 (окончательное)**: Использовать IndexedDB Telegram Web K. Скрипт читает `data-peer-id` из `.sidebar-header` (это собственный ID пользователя), затем ищет запись в IndexedDB (store `users`). Возвращает `first_name + last_name`. НЕ зависит от открытого чата.
+**Решение v0.19.0 (НЕ РАБОТАЛО)**: `data-peer-id` из `.sidebar-header` → IndexedDB → имя. ПРОБЛЕМА: в обычном виде TG Web K в sidebar-header НЕТ `data-peer-id` — он появляется ТОЛЬКО на странице Настроек.
+
+**Решение v0.19.2 (окончательное)**: Полностью БЕЗ DOM. Перебираем IndexedDB cursor → `users` store → ищем `pFlags.self === true` → имя/телефон.
 ```js
-// Подход: peer ID из DOM → запись из IndexedDB → имя
-const el = document.querySelector('.sidebar-header [data-peer-id]');
-const peerId = Number(el.dataset.peerId);
-// ... открываем IndexedDB, ищем user с peerId, возвращаем имя
+// Подход: IndexedDB cursor → pFlags.self → имя/телефон
+var cur = tx.objectStore('users').openCursor();
+cur.onsuccess = function() {
+  var u = cur.result.value;
+  if (u && u.pFlags && u.pFlags.self) { /* найден! */ }
+  cur.result.continue();
+};
 ```
 
 **Дополнительно — ЛОВУШКА**: `messengers:save` пишет ВСЮ структуру мессенджера в electron-store, включая `accountScript`. Даже после удаления `accountScript` из `constants.js`, старый скрипт выживает в сохранённом `messengers.json`!
