@@ -813,11 +813,7 @@ export default function App() {
             onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' }}
           >⚙️</button>
 
-          {totalUnread > 0 && (
-            <span className="ml-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0">
-              {totalUnread}
-            </span>
-          )}
+          {/* Общий бейдж непрочитанных убран (v0.20.0) — по запросу пользователя */}
         </div>
 
         <div className="wco-spacer" />
