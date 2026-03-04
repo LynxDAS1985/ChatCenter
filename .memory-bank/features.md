@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.10.0 (4 марта 2026)
+## Текущая версия: v0.11.0 (4 марта 2026)
 
 ---
 
@@ -51,6 +51,9 @@
 | SSE-стриминг ответов (токены по мере генерации) | ✅ Сделано | v0.10.0 |
 | Автосохранение черновика ввода по вкладке | ✅ Сделано | v0.10.0 |
 | Бейдж трея с числом непрочитанных | ✅ Сделано | v0.10.0 |
+| Режим WebView AI (GigaChat/ChatGPT/Claude/DeepSeek/свой URL) | ✅ Сделано | v0.11.0 |
+| Разрешения на чтение чата (нет/последнее/история) | ✅ Сделано | v0.11.0 |
+| Вставка контекста чата в AI WebView (executeJavaScript + clipboard) | ✅ Сделано | v0.11.0 |
 
 ### Шаблоны
 | Функция | Статус | Версия |
@@ -82,6 +85,10 @@
 ---
 
 ## Changelog
+
+### v0.11.0 (4 марта 2026) — AI WebView режим + разрешения на чтение чата
+- `src/components/AISidebar.jsx` — переключатель режима `🔧 API` / `🌐 Веб` в шапке панели; в режиме WebView: пресеты AI-сервисов (ГигаЧат/ChatGPT/Claude/DeepSeek) + поле для своего URL; `<webview partition="persist:ai-webview">` с выбранным AI; панель разрешений на чтение чата (🔇Ничего / 💬Последнее / 📖История); кнопка "Отправить контекст в AI" — пробует `executeJavaScript` с несколькими CSS-селекторами, fallback — копирует в буфер (`Ctrl+V`)
+- Новые settings: `aiMode` ('api'|'webview'), `aiWebviewUrl` (URL AI-сайта), `aiContextMode` ('none'|'last'|'full')
 
 ### v0.10.0 (4 марта 2026) — SSE-стриминг AI, черновик по вкладке, бейдж трея
 - `main/main.js` — пиксельный 3×5 шрифт (`PIXEL_FONT`), `createTrayBadgeIcon(count)`: рисует 32×32 иконку с красным бейджем-счётчиком; `tray:set-badge` IPC-хендлер; `ai:generate-stream` IPC-listener (SSE для OpenAI/Anthropic/DeepSeek, fallback для ГигаЧат); `pipeSSE()` — парсер SSE-потока

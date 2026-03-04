@@ -1,6 +1,6 @@
 # ИИ-интеграция — ChatCenter
 
-## Поддерживаемые провайдеры (v0.7.0)
+## Поддерживаемые провайдеры (v0.11.0)
 
 | Провайдер | Статус | Модели | Авторизация |
 |-----------|--------|--------|-------------|
@@ -195,6 +195,44 @@ class AnthropicAdapter {
 | Сложный анализ | claude-sonnet-4-6 / gpt-4o | Качество важнее скорости |
 | Авто-ответ | claude-haiku-4-5 / gpt-4o-mini | Скорость критична |
 | Локально (без интернета) | Ollama + llama3 | Приватность |
+
+---
+
+---
+
+## Режим WebView AI (v0.11.0)
+
+### Назначение
+Позволяет использовать веб-интерфейс AI-сервисов (с личной подпиской) вместо API-ключа.
+Пресеты: ГигаЧат (`gigachat.ru`), ChatGPT (`chat.openai.com`), Claude (`claude.ai`), DeepSeek (`chat.deepseek.com`).
+
+### Настройки
+```js
+settings.aiMode        // 'api' (по умолчанию) | 'webview'
+settings.aiWebviewUrl  // URL AI-сервиса, по умолчанию 'https://gigachat.ru'
+settings.aiContextMode // 'none' | 'last' (по умолчанию) | 'full'
+```
+
+### Разрешения на чтение чата (aiContextMode)
+| Значение | Описание |
+|----------|----------|
+| `'none'` | Не передавать историю. Только ручной ввод в AI |
+| `'last'` | Передать только последнее сообщение клиента (`lastMessage`) |
+| `'full'` | Передать последние 10 сообщений из `chatHistory` |
+
+### Вставка контекста в WebView AI (sendContextToAiWebview)
+1. Формируем текст контекста согласно `aiContextMode`
+2. Пробуем `webviewRef.executeJavaScript()` с несколькими CSS-селекторами:
+   - `textarea`
+   - `[contenteditable="true"]`
+   - `#prompt-textarea` (ChatGPT)
+   - `.chat-input textarea`
+   - `[data-testid="message-input"]`
+3. Если вставка удалась — показываем `✓ Вставлено в поле AI!`
+4. Если не удалась — копируем в буфер через `navigator.clipboard.writeText()` → показываем `📋 Скопировано — вставьте Ctrl+V`
+
+### WebView partition
+`partition="persist:ai-webview"` — отдельная сессия от мессенджеров. Позволяет оставаться залогиненным в AI-сервисе между запусками.
 
 ---
 
