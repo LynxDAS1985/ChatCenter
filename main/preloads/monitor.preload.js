@@ -1,4 +1,5 @@
-// v0.8 — ChatMonitor: непрочитанные сообщения + текст нового сообщения для AI/авто-ответа
+// v0.16 — ChatMonitor: непрочитанные сообщения + текст нового сообщения для AI/авто-ответа
+// Фикс: cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
 
 // Селекторы счётчиков непрочитанных для каждого мессенджера
@@ -85,10 +86,15 @@ let lastCount = -1
 let lastSentText = null
 let observer = null
 
+// Защита от ложных срабатываний при загрузке страницы:
+// первые 10 секунд не сообщаем о "новых" сообщениях — страница ещё грузится
+let monitorReady = false
+setTimeout(() => { monitorReady = true }, 10000)
+
 function sendUpdate(type) {
   const count = countUnread(type)
   if (count !== lastCount) {
-    const increased = count > lastCount && lastCount >= 0
+    const increased = count > lastCount && lastCount >= 0 && monitorReady
     lastCount = count
     try { ipcRenderer.sendToHost('unread-count', count) } catch {}
 

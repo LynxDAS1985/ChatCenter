@@ -562,6 +562,13 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
               >↺</button>
             )}
             <button
+              onClick={() => runProviderChecks('manual')}
+              disabled={refreshing}
+              title="Проверить соединение со всеми подключёнными провайдерами"
+              className="text-sm w-6 h-6 rounded flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ color: 'var(--cc-text-dimmer)' }}
+            >{refreshing ? '⏳' : '🔄'}</button>
+            <button
               onClick={() => { setShowConfig(!showConfig); setShowAddProvider(false) }}
               title="Настройки ИИ-помощника"
               className="text-sm w-6 h-6 rounded flex items-center justify-center cursor-pointer"
@@ -592,7 +599,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                     <span>{p.icon}</span>
                     <span>{p.label}</span>
                     {p.free && <span className="text-[7px] leading-tight" style={{ color: '#22c55e' }}>free</span>}
-                    <span className="text-[9px] opacity-60">{pCfg.mode === 'webview' ? '🌐' : '🔧'}</span>
                     {/* Статус последнего запроса с tooltip */}
                     {pSt && (
                       <span
@@ -637,16 +643,6 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                   color: showAddProvider ? '#22c55e' : 'var(--cc-text-dimmer)',
                 }}
               >+ ИИ</button>
-              {/* Кнопка ручного обновления статуса всех провайдеров */}
-              <button
-                onClick={() => runProviderChecks('manual')}
-                disabled={refreshing}
-                title="Проверить соединение со всеми подключёнными провайдерами"
-                className="flex items-center justify-center w-7 h-7 rounded-lg cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid transparent', color: 'var(--cc-text-dimmer)', fontSize: '13px' }}
-                onMouseEnter={e => { if (!refreshing) { e.currentTarget.style.borderColor = '#2AABEE55'; e.currentTarget.style.color = '#2AABEE' } }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-text-dimmer)' }}
-              >{refreshing ? '⏳' : '🔄'}</button>
             </div>
           ) : (
             <button

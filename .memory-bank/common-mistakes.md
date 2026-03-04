@@ -22,6 +22,23 @@ spawn('electron-vite', ['dev'], { env, shell: true })
 
 ## WebView
 
+### ❌ MutationObserver сообщает о старых сообщениях как о новых при загрузке страницы
+
+**Симптом**: При подключении мессенджера (Telegram и др.) приложение показывает уведомление о "новом" сообщении, хотя оно было отправлено до подключения к системе.
+
+**Причина**: MutationObserver запускается сразу, а мессенджер грузит DOM динамически — `lastCount` начинается с -1 → 0, потом Telegram добавляет чаты → счётчик растёт → `increased = true` → срабатывает `new-message` на старые сообщения.
+
+**Решение**: `monitorReady = false`, устанавливается `true` через 10 секунд. `new-message` отправляется только когда `monitorReady === true`:
+```js
+let monitorReady = false
+setTimeout(() => { monitorReady = true }, 10000)
+
+// В sendUpdate:
+const increased = count > lastCount && lastCount >= 0 && monitorReady
+```
+
+---
+
 ### ❌ require('electron') в renderer или WebView preload
 
 ```js
