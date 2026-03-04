@@ -1,4 +1,4 @@
-// v0.9.4 — Фикс ресайзера: overlay поверх WebView во время drag
+// v0.10.0 — Стриминг AI (SSE), автосохранение черновика, бейдж трея
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -500,6 +500,11 @@ export default function App() {
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
   const theme = settings.theme || 'dark'
 
+  // ── Обновляем бейдж иконки трея при изменении непрочитанных ─────────────
+  useEffect(() => {
+    window.api.invoke('tray:set-badge', totalUnread).catch(() => {})
+  }, [totalUnread])
+
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--cc-bg)' }}>
 
@@ -751,6 +756,7 @@ export default function App() {
           onToggle={() => setShowAI(!showAI)}
           panelRef={aiPanelRef}
           chatHistory={chatHistory}
+          activeMessengerId={activeId}
         />
       </div>
 

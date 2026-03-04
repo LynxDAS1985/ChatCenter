@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.9.4 (3 марта 2026)
+## Текущая версия: v0.10.0 (4 марта 2026)
 
 ---
 
@@ -48,6 +48,9 @@
 | Настройки ИИ (провайдер, модель, ключ) | ✅ Сделано | v0.6.0 |
 | Resizable AI-панель (drag + запоминание) | ✅ Сделано | v0.7.0 |
 | Кнопки показать/скрыть ключ | ✅ Сделано | v0.7.0 |
+| SSE-стриминг ответов (токены по мере генерации) | ✅ Сделано | v0.10.0 |
+| Автосохранение черновика ввода по вкладке | ✅ Сделано | v0.10.0 |
+| Бейдж трея с числом непрочитанных | ✅ Сделано | v0.10.0 |
 
 ### Шаблоны
 | Функция | Статус | Версия |
@@ -79,6 +82,11 @@
 ---
 
 ## Changelog
+
+### v0.10.0 (4 марта 2026) — SSE-стриминг AI, черновик по вкладке, бейдж трея
+- `main/main.js` — пиксельный 3×5 шрифт (`PIXEL_FONT`), `createTrayBadgeIcon(count)`: рисует 32×32 иконку с красным бейджем-счётчиком; `tray:set-badge` IPC-хендлер; `ai:generate-stream` IPC-listener (SSE для OpenAI/Anthropic/DeepSeek, fallback для ГигаЧат); `pipeSSE()` — парсер SSE-потока
+- `src/components/AISidebar.jsx` — `generateStreaming()` через `ipcMain.on`/`window.api.send`; `isStreaming`/`streamBuffer` state; анимация нарастающего текста с курсором ▌; автосохранение черновика в `localStorage` по ключу `ai-draft:{messengerId}`; загрузка черновика при смене вкладки; cleanup стрим-подписок при unmount
+- `src/App.jsx` — `activeMessengerId={activeId}` в AISidebar; `useEffect` для `totalUnread → tray:set-badge`
 
 ### v0.9.4 (3 марта 2026) — Фикс ресайзера, перевод ошибок API, npm start
 - `src/App.jsx` — фикс ресайзера AI-панели: `isResizing` state + прозрачный overlay поверх WebView во время drag (WebView поглощал mousemove events); ресайзер стал шире (6px вместо 4px); подсветка синим во время drag

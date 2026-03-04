@@ -1,4 +1,4 @@
-// v0.9.2 — Вход через браузер: Electron-окно + перехват ключа из буфера обмена
+// v0.10.0 — Стриминг AI (SSE), автосохранение черновика по вкладке
 import { useState, useRef, useEffect } from 'react'
 
 // Паттерны распознавания API-ключей в буфере обмена
@@ -65,10 +65,12 @@ function isProviderConnected(settings, pid) {
   return !!cfg.apiKey
 }
 
-export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle, width = 300, panelRef, chatHistory = [] }) {
+export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle, width = 300, panelRef, chatHistory = [], activeMessengerId = null }) {
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState([])
   const [loading, setLoading] = useState(false)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [streamBuffer, setStreamBuffer] = useState('')
   const [error, setError] = useState('')
   const [showConfig, setShowConfig] = useState(false)
   const [showAddProvider, setShowAddProvider] = useState(false)
@@ -84,6 +86,9 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const savedTimerRef = useRef(null)
   const pollingRef = useRef(null)
   const unsubLoginRef = useRef(null)
+  const streamBufferRef = useRef('')       // накапливаем без лишних ре-рендеров
+  const streamUnsubsRef = useRef([])      // для cleanup при unmount / новом запросе
+  const prevMessengerIdRef = useRef(null) // для отслеживания смены вкладки
 
   const provider = settings.aiProvider || 'openai'
   const providerInfo = PROVIDERS.find(p => p.id === provider) || PROVIDERS[0]
@@ -172,7 +177,36 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     }
   }
 
-  // Очистка polling при размонтировании
+  // ── Автосохранение черновика в localStorage ───────────────────────────────
+  useEffect(() => {
+    if (!activeMessengerId) return
+    const key = `ai-draft:${activeMessengerId}`
+    if (input) {
+      localStorage.setItem(key, input)
+    } else {
+      localStorage.removeItem(key)
+    }
+  }, [input, activeMessengerId])
+
+  // ── Загрузка черновика при смене активной вкладки ─────────────────────────
+  useEffect(() => {
+    if (prevMessengerIdRef.current === activeMessengerId) return
+    prevMessengerIdRef.current = activeMessengerId
+    if (activeMessengerId) {
+      const draft = localStorage.getItem(`ai-draft:${activeMessengerId}`) || ''
+      setInput(draft)
+    }
+  }, [activeMessengerId])
+
+  // ── Очистка стриминга при размонтировании ────────────────────────────────
+  useEffect(() => {
+    return () => {
+      streamUnsubsRef.current.forEach(fn => fn?.())
+      streamUnsubsRef.current = []
+    }
+  }, [])
+
+  // ── Очистка polling при размонтировании ──────────────────────────────────
   useEffect(() => {
     return () => {
       clearInterval(pollingRef.current)
@@ -233,17 +267,78 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     }, 800)
   }
 
+  // ── Стриминг-генерация через SSE (ipcMain.on / ipcRenderer.send) ───────────
+  const generateStreaming = (text) => {
+    if (!configured) { setError('Настройте ИИ'); setShowConfig(true); return }
+    if (!text.trim()) return
+
+    // Отписываемся от предыдущего запроса (если был)
+    streamUnsubsRef.current.forEach(fn => fn?.())
+    streamUnsubsRef.current = []
+
+    setLoading(true); setIsStreaming(false); setError('')
+    setSuggestions([]); setStreamBuffer(''); streamBufferRef.current = ''
+
+    const requestId = `req-${Date.now()}`
+    const historyMessages = chatHistory.slice(-6).map(h => ({
+      role: 'user',
+      content: `[История] ${h.messengerId ? `(${h.messengerId}) ` : ''}${h.text}`
+    }))
+
+    const cleanup = () => {
+      streamUnsubsRef.current.forEach(fn => fn?.())
+      streamUnsubsRef.current = []
+    }
+
+    const finalize = () => {
+      cleanup()
+      let parsed = []
+      try {
+        const match = streamBufferRef.current.match(/\[[\s\S]*?\]/)
+        if (match) parsed = JSON.parse(match[0])
+        else parsed = [streamBufferRef.current]
+      } catch { parsed = [streamBufferRef.current] }
+      setSuggestions(parsed.slice(0, 3).filter(Boolean))
+      setStreamBuffer(''); streamBufferRef.current = ''
+      setIsStreaming(false); setLoading(false)
+    }
+
+    const unsubChunk = window.api.on('ai:stream-chunk', ({ requestId: rid, chunk }) => {
+      if (rid !== requestId) return
+      streamBufferRef.current += chunk
+      setStreamBuffer(streamBufferRef.current)
+      setIsStreaming(true) // первый чанк — включаем режим стриминга
+    })
+
+    const unsubDone = window.api.on('ai:stream-done', ({ requestId: rid }) => {
+      if (rid !== requestId) return
+      finalize()
+    })
+
+    const unsubError = window.api.on('ai:stream-error', ({ requestId: rid, error }) => {
+      if (rid !== requestId) return
+      cleanup()
+      setError(error); setStreamBuffer(''); streamBufferRef.current = ''
+      setIsStreaming(false); setLoading(false)
+    })
+
+    streamUnsubsRef.current = [unsubChunk, unsubDone, unsubError]
+
+    window.api.send('ai:generate-stream', {
+      messages: [...historyMessages, { role: 'user', content: `Сообщение клиента: "${text.trim()}"` }],
+      settings: aiCfg,
+      requestId,
+    })
+  }
+
+  // Оставляем старый generate для testConnection
   const generate = async (text) => {
     if (!configured) { setError('Настройте ИИ'); setShowConfig(true); return }
     if (!text.trim()) return
     setLoading(true); setError(''); setSuggestions([])
     try {
-      const historyMessages = chatHistory.slice(-6).map(h => ({
-        role: 'user',
-        content: `[История] ${h.messengerId ? `(${h.messengerId}) ` : ''}${h.text}`
-      }))
       const res = await window.api.invoke('ai:generate', {
-        messages: [...historyMessages, { role: 'user', content: `Сообщение клиента: "${text.trim()}"` }],
+        messages: [{ role: 'user', content: `Сообщение клиента: "${text.trim()}"` }],
         settings: aiCfg,
       })
       if (!res.ok) { setError(res.error || 'Ошибка ИИ'); return }
@@ -254,18 +349,15 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         else parsed = [res.result]
       } catch { parsed = [res.result] }
       setSuggestions(parsed.slice(0, 3).filter(Boolean))
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
+    } catch (e) { setError(e.message) }
+    finally { setLoading(false) }
   }
 
   const handleSend = () => {
     const text = input.trim()
-    if (!text || loading) return
+    if (!text || loading || isStreaming) return
     setInput('')
-    generate(text)
+    generateStreaming(text)
   }
 
   const copySuggestion = async (text, idx) => {
@@ -653,10 +745,40 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
             </div>
           )}
 
-          {loading && (
+          {loading && !isStreaming && (
             <div className="flex flex-col items-center justify-center py-8">
               <div className="text-2xl mb-2 animate-pulse">{providerInfo.icon}</div>
-              <p className="text-xs" style={{ color: 'var(--cc-text-dim)' }}>Генерирую варианты...</p>
+              <p className="text-xs" style={{ color: 'var(--cc-text-dim)' }}>Подключаюсь...</p>
+            </div>
+          )}
+
+          {/* Стриминг: текст нарастает по мере генерации */}
+          {isStreaming && (
+            <div
+              className="rounded-xl p-3"
+              style={{ backgroundColor: 'var(--cc-surface-alt)', border: '1px solid #2AABEE33' }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[11px] font-medium" style={{ color: '#2AABEE' }}>
+                  {providerInfo.icon} Генерирую...
+                </span>
+                <span className="flex gap-0.5">
+                  {[0, 1, 2].map(i => (
+                    <span
+                      key={i}
+                      className="inline-block w-1.5 h-1.5 rounded-full animate-bounce"
+                      style={{ backgroundColor: '#2AABEE', animationDelay: `${i * 0.15}s` }}
+                    />
+                  ))}
+                </span>
+              </div>
+              <p
+                className="text-xs leading-relaxed whitespace-pre-wrap"
+                style={{ color: 'var(--cc-text-dim)', fontFamily: 'monospace', opacity: 0.85 }}
+              >
+                {streamBuffer}
+                <span className="animate-pulse" style={{ color: '#2AABEE' }}>▌</span>
+              </p>
             </div>
           )}
 
@@ -705,10 +827,10 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
             />
             <button
               onClick={handleSend}
-              disabled={!input.trim() || loading}
+              disabled={!input.trim() || loading || isStreaming}
               className="px-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer self-end py-2 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ backgroundColor: '#2AABEE', color: '#fff' }}
-            >→</button>
+              style={{ backgroundColor: isStreaming ? '#2AABEE88' : '#2AABEE', color: '#fff' }}
+            >{isStreaming ? '⏳' : '→'}</button>
           </div>
           <p className="text-[10px] mt-1.5 text-center" style={{ color: 'var(--cc-text-dimmer)' }}>
             Enter — отправить · Shift+Enter — перенос

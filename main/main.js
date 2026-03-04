@@ -1,4 +1,4 @@
-// v0.9.4 — Фикс ресайзера, перевод ошибок API на русский, npm start = dev
+// v0.10.0 — Стриминг AI (SSE), автосохранение черновика, бейдж трея
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -44,31 +44,85 @@ const DEFAULT_MESSENGERS = [
 let tray = null
 let forceQuit = false
 
-function createTrayIcon() {
-  // Рисуем синий круг 16x16 в формате BGRA
-  const size = 16
-  const buf = Buffer.alloc(size * size * 4)
-  const cx = (size - 1) / 2
-  const cy = (size - 1) / 2
-  const r = size / 2 - 1.5
+// ── Пиксельный 3×5 шрифт для цифр в бейдже трея ──────────────────────────
+
+const PIXEL_FONT = {
+  '0': [0b111,0b101,0b101,0b101,0b111],
+  '1': [0b010,0b110,0b010,0b010,0b111],
+  '2': [0b111,0b001,0b111,0b100,0b111],
+  '3': [0b111,0b001,0b011,0b001,0b111],
+  '4': [0b101,0b101,0b111,0b001,0b001],
+  '5': [0b111,0b100,0b111,0b001,0b111],
+  '6': [0b111,0b100,0b111,0b101,0b111],
+  '7': [0b111,0b001,0b011,0b010,0b010],
+  '8': [0b111,0b101,0b111,0b101,0b111],
+  '9': [0b111,0b101,0b111,0b001,0b111],
+  '+': [0b000,0b010,0b111,0b010,0b000],
+}
+
+function setPixelBGRA(buf, bufSize, x, y, R, G, B) {
+  if (x < 0 || x >= bufSize || y < 0 || y >= bufSize) return
+  const i = (y * bufSize + x) * 4
+  buf[i] = B; buf[i+1] = G; buf[i+2] = R; buf[i+3] = 255
+}
+
+function drawPixelText(buf, bufSize, text, cx, cy, R, G, B) {
+  const charW = 3, gap = 1
+  const totalW = text.length * charW + (text.length - 1) * gap
+  let x = Math.round(cx - totalW / 2)
+  const y = Math.round(cy) - 2
+  for (const ch of text) {
+    const rows = PIXEL_FONT[ch]
+    if (rows) {
+      for (let row = 0; row < 5; row++) {
+        for (let col = 0; col < 3; col++) {
+          if (rows[row] & (0b100 >> col)) setPixelBGRA(buf, bufSize, x + col, y + row, R, G, B)
+        }
+      }
+    }
+    x += charW + gap
+  }
+}
+
+// Создаёт иконку трея 32×32 с опциональным красным бейджем-счётчиком
+function createTrayBadgeIcon(count) {
+  const size = 32
+  const buf = Buffer.alloc(size * size * 4) // BGRA, всё прозрачное по умолчанию
+
+  // Основной синий круг (#2AABEE = R:42, G:171, B:238)
+  const hasBadge = count > 0
+  const cx = hasBadge ? 13.5 : 15.5
+  const cy = hasBadge ? 19.5 : 15.5
+  const r  = 11
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4
-      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-      if (d <= r) {
-        buf[i] = 238     // B
-        buf[i + 1] = 171 // G
-        buf[i + 2] = 42  // R
-        buf[i + 3] = 255 // A
+      if (Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) <= r) {
+        setPixelBGRA(buf, size, x, y, 42, 171, 238)
       }
     }
   }
+
+  if (hasBadge) {
+    // Красный кружок-бейдж (#EF4447 = R:239, G:68, B:71) в правом верхнем углу
+    const bcx = 25, bcy = 7, br = 7
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (Math.sqrt((x - bcx) ** 2 + (y - bcy) ** 2) <= br) {
+          setPixelBGRA(buf, size, x, y, 239, 68, 71)
+        }
+      }
+    }
+    // Белая цифра внутри бейджа
+    const text = count > 9 ? '9+' : String(count)
+    drawPixelText(buf, size, text, bcx, bcy, 255, 255, 255)
+  }
+
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 
 function createTray() {
-  tray = new Tray(createTrayIcon())
+  tray = new Tray(createTrayBadgeIcon(0))
   tray.setToolTip('ЦентрЧатов')
 
   const menu = Menu.buildFromTemplate([
@@ -504,6 +558,102 @@ function setupIPC() {
       })
     }
     return { ok: true }
+  })
+
+  // Обновление бейджа трея (вызывается из renderer когда меняется totalUnread)
+  ipcMain.handle('tray:set-badge', (_, count) => {
+    if (tray && !tray.isDestroyed()) {
+      tray.setImage(createTrayBadgeIcon(count || 0))
+      tray.setToolTip(count > 0 ? `ЦентрЧатов — ${count} непрочитанных` : 'ЦентрЧатов')
+    }
+    return { ok: true }
+  })
+
+  // ─── SSE-стриминг AI (OpenAI / Anthropic / DeepSeek / ГигаЧат-fallback) ──
+  // Используем ipcMain.on (не handle) — renderer шлёт send(), получает события через on()
+  ipcMain.on('ai:generate-stream', async (event, { messages, settings: aiCfg, requestId }) => {
+    const { provider, apiKey, clientSecret, model, systemPrompt } = aiCfg || {}
+
+    const send = (ch, payload) => {
+      if (!event.sender.isDestroyed()) event.sender.send(ch, payload)
+    }
+    const chunk  = (c) => send('ai:stream-chunk', { requestId, chunk: c })
+    const done   = ()  => send('ai:stream-done',  { requestId })
+    const errOut = (e) => send('ai:stream-error', { requestId, error: ruError(e) })
+
+    // SSE-парсер: читает ReadableStream и вызывает onChunk для каждого фрагмента
+    const pipeSSE = async (reader, extractFn) => {
+      const dec = new TextDecoder()
+      let buf = ''
+      while (true) {
+        const { done: d, value } = await reader.read()
+        if (d) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const raw = line.slice(6).trim()
+          if (raw === '[DONE]') continue
+          try { const c = extractFn(JSON.parse(raw)); if (c) chunk(c) } catch {}
+        }
+      }
+    }
+
+    try {
+      // ── Anthropic (SSE stream: true) ──────────────────────────────────────
+      if (provider === 'anthropic') {
+        if (!apiKey) { errOut('Укажите API-ключ Anthropic (sk-ant-...)'); return }
+        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({ model: model || 'claude-haiku-4-5-20251001', max_tokens: 1024, stream: true, system: systemPrompt || '', messages })
+        })
+        if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
+        await pipeSSE(resp.body.getReader(), p => p.delta?.text || '')
+        done()
+
+      // ── DeepSeek (OpenAI-compatible SSE) ─────────────────────────────────
+      } else if (provider === 'deepseek') {
+        if (!apiKey) { errOut('Укажите API-ключ DeepSeek'); return }
+        const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify({ model: model || 'deepseek-chat', stream: true, messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] })
+        })
+        if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
+        await pipeSSE(resp.body.getReader(), p => p.choices?.[0]?.delta?.content || '')
+        done()
+
+      // ── ГигаЧат — без стриминга (SSL-bypass не поддерживает ReadableStream) ─
+      } else if (provider === 'gigachat') {
+        if (!apiKey || !clientSecret) { errOut('Укажите Client ID и Client Secret ГигаЧат'); return }
+        const token = await getGigaChatToken(apiKey.trim(), clientSecret.trim())
+        const sysMsg = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []
+        const result = await httpsPostSkipSsl(GIGACHAT_CHAT_URL,
+          JSON.stringify({ model: model || 'GigaChat', messages: [...sysMsg, ...messages] }),
+          { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        )
+        if (!result.ok) { errOut(result.data?.error?.message || 'HTTP ошибка'); return }
+        const text = result.data.choices?.[0]?.message?.content || ''
+        if (text) chunk(text)
+        done()
+
+      // ── OpenAI (SSE stream: true, default) ───────────────────────────────
+      } else {
+        if (!apiKey) { errOut('Укажите API-ключ OpenAI (sk-...)'); return }
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify({ model: model || 'gpt-4o-mini', stream: true, messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] })
+        })
+        if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
+        await pipeSSE(resp.body.getReader(), p => p.choices?.[0]?.delta?.content || '')
+        done()
+      }
+    } catch (e) {
+      errOut(e.message)
+    }
   })
 
   // ИИ-генерация ответов (OpenAI / Anthropic / DeepSeek / ГигаЧат)
