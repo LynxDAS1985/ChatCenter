@@ -405,6 +405,28 @@ function setupIPC() {
     return { ok: true }
   })
 
+  // Лог ошибок API — дописывает строку в ai-errors.log в userData
+  ipcMain.handle('ai:log-error', (_, { provider, errorText }) => {
+    try {
+      const logPath = path.join(app.getPath('userData'), 'ai-errors.log')
+      const now = new Date().toLocaleString('ru-RU', { hour12: false }).replace(',', '')
+      const line = `${now}  ${(provider || 'unknown').padEnd(10)}  ${errorText || ''}\n`
+      fs.appendFileSync(logPath, line, 'utf8')
+    } catch {}
+    return { ok: true }
+  })
+
+  // Чтение лога ошибок (для отладки)
+  ipcMain.handle('ai:get-error-log', () => {
+    try {
+      const logPath = path.join(app.getPath('userData'), 'ai-errors.log')
+      const text = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : ''
+      return { ok: true, text }
+    } catch (e) {
+      return { ok: false, error: e.message }
+    }
+  })
+
   // Чтение буфера обмена через main process (работает независимо от фокуса окна)
   ipcMain.handle('clipboard:read', () => clipboard.readText())
 

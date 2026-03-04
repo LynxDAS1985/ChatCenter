@@ -46,6 +46,17 @@ const PROVIDER_URLS = {
   gigachat:  'https://developers.sber.ru/studio',
 }
 
+const BILLING_URLS = {
+  openai:    'https://platform.openai.com/account/billing/overview',
+  anthropic: 'https://console.anthropic.com/settings/billing',
+  deepseek:  'https://platform.deepseek.com/account/billing',
+  gigachat:  'https://developers.sber.ru/portal/tools/gigachat',
+}
+
+// Определяет: является ли ошибка проблемой баланса/средств
+const isBillingError = (err) =>
+  !!err && (err.includes('средств') || err.includes('баланс') || err.includes('balance') || err.includes('insufficient'))
+
 function getProviderCfg(settings, pid) {
   const pKeys = settings.aiProviderKeys || {}
   const pData = pKeys[pid] || {}
@@ -218,11 +229,15 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       const st = res.ok ? 'ok' : 'fail'
       setTestStatus(st)
       setProviderStatuses(s => ({ ...s, [provider]: st }))
-      if (!res.ok) setError(res.error || 'Ошибка проверки')
+      if (!res.ok) {
+        setError(res.error || 'Ошибка проверки')
+        window.api.invoke('ai:log-error', { provider, errorText: `[test] ${res.error}` }).catch(() => {})
+      }
     } catch (e) {
       setTestStatus('fail')
       setProviderStatuses(s => ({ ...s, [provider]: 'fail' }))
       setError(e.message)
+      window.api.invoke('ai:log-error', { provider, errorText: `[test] ${e.message}` }).catch(() => {})
     } finally {
       setTesting(false)
     }
@@ -252,6 +267,38 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   useEffect(() => {
     return () => { clearInterval(pollingRef.current); unsubLoginRef.current?.() }
   }, [])
+
+  // ── Авто-проверка всех API-провайдеров при запуске ────────────────────────
+  // Тихо проверяем в фоне — только обновляем providerStatuses (● зелёный/красный)
+  useEffect(() => {
+    const startupCheck = async () => {
+      for (const p of PROVIDERS) {
+        const cfg = getProviderCfg(settings, p.id)
+        if (cfg.mode !== 'api') continue
+        if (p.id === 'gigachat') {
+          if (!cfg.apiKey || !cfg.clientSecret) continue
+        } else {
+          if (!cfg.apiKey) continue
+        }
+        try {
+          const res = await window.api.invoke('ai:generate', {
+            messages: [{ role: 'user', content: 'ok' }],
+            settings: { provider: p.id, apiKey: cfg.apiKey, clientSecret: cfg.clientSecret, model: cfg.model, systemPrompt: 'ok' },
+          })
+          setProviderStatuses(s => ({ ...s, [p.id]: res.ok ? 'ok' : 'fail' }))
+          if (!res.ok) {
+            window.api.invoke('ai:log-error', { provider: p.id, errorText: `[startup] ${res.error}` }).catch(() => {})
+          }
+        } catch (e) {
+          setProviderStatuses(s => ({ ...s, [p.id]: 'fail' }))
+          window.api.invoke('ai:log-error', { provider: p.id, errorText: `[startup] ${e.message}` }).catch(() => {})
+        }
+      }
+    }
+    // Небольшая задержка — даём приложению полностью загрузиться
+    const timer = setTimeout(startupCheck, 2000)
+    return () => clearTimeout(timer)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openLoginWindow = async () => {
     if (waitingForKey) {
@@ -339,6 +386,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       setProviderStatuses(s => ({ ...s, [capturedProvider]: 'fail' }))
       setError(error); setStreamBuffer(''); streamBufferRef.current = ''
       setIsStreaming(false); setLoading(false)
+      window.api.invoke('ai:log-error', { provider: capturedProvider, errorText: `[stream] ${error}` }).catch(() => {})
     })
     streamUnsubsRef.current = [unsubChunk, unsubDone, unsubError]
     window.api.send('ai:generate-stream', {
@@ -734,6 +782,17 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                         {testStatus === 'fail' && error && (
                           <div className="mt-1.5 text-[10px] px-2 py-1.5 rounded-lg" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
                             ⚠️ {error}
+                            {isBillingError(error) && BILLING_URLS[provider] && (
+                              <button
+                                onClick={() => window.api.invoke('shell:open-url', BILLING_URLS[provider]).catch(() => {})}
+                                className="mt-1.5 w-full text-center py-1 rounded cursor-pointer text-[10px] font-medium"
+                                style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.25)'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.15)'}
+                              >
+                                💳 Пополнить счёт на сайте провайдера →
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -772,6 +831,17 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                       {testStatus === 'fail' && error && (
                         <div className="mt-1.5 text-[10px] px-2 py-1.5 rounded-lg" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
                           ⚠️ {error}
+                          {isBillingError(error) && BILLING_URLS[provider] && (
+                            <button
+                              onClick={() => window.api.invoke('shell:open-url', BILLING_URLS[provider]).catch(() => {})}
+                              className="mt-1.5 w-full text-center py-1 rounded cursor-pointer text-[10px] font-medium"
+                              style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' }}
+                              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.25)'}
+                              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.15)'}
+                            >
+                              💳 Пополнить счёт на сайте провайдера →
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
