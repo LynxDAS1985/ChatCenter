@@ -68,8 +68,8 @@ function MessengerTab({
         />
       </span>
 
-      {/* Название + аккаунт */}
-      <span className="flex flex-col items-start leading-tight">
+      {/* Название + зум + аккаунт */}
+      <span className="flex flex-col items-center leading-tight">
         <span className="flex items-center gap-1">
           <span
             className="text-sm font-medium whitespace-nowrap transition-colors duration-150"
