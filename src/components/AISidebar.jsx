@@ -605,10 +605,10 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
                   className="text-[11px] px-2.5 py-2 rounded-lg leading-relaxed"
                   style={{ backgroundColor: '#2AABEE0D', border: '1px solid #2AABEE22', color: 'var(--cc-text-dim)' }}
                 >
-                  <div className="font-semibold mb-0.5" style={{ color: '#2AABEE' }}>ℹ️ Как подключить ИИ?</div>
+                  <div className="font-semibold mb-0.5" style={{ color: '#2AABEE' }}>🔧 Подключение через API-ключ</div>
                   <div style={{ color: 'var(--cc-text-dimmer)' }}>
-                    Войти через email/пароль невозможно — все AI-провайдеры работают только через <strong style={{ color: 'var(--cc-text-dim)' }}>API-ключ</strong>.
-                    Зарегистрируйтесь на сайте провайдера, создайте ключ и вставьте его ниже.
+                    Зарегистрируйтесь на сайте {providerInfo.label}, создайте API-ключ и вставьте его ниже.
+                    Если не хотите использовать API — переключитесь на <strong style={{ color: 'var(--cc-text-dim)' }}>Веб-интерфейс</strong> выше.
                   </div>
                 </div>
 
@@ -824,7 +824,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* ── РЕЖИМ WEBVIEW (основной контент) ── */}
         {/* ══════════════════════════════════════════════════════════════════ */}
-        {providerMode === 'webview' && (
+        {providerMode === 'webview' && !showConfig && (
           <div className="flex flex-col flex-1 overflow-hidden">
             {/* WebView с AI-сервисом */}
             <div className="flex-1 relative overflow-hidden">
@@ -898,7 +898,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* ── РЕЖИМ API (основной контент) ── */}
         {/* ══════════════════════════════════════════════════════════════════ */}
-        {providerMode === 'api' && (
+        {providerMode === 'api' && !showConfig && (
           <>
             {/* Тело API-режима */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
