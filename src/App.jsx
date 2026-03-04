@@ -45,7 +45,7 @@ function MessengerTab({
       onDrop={e => { e.preventDefault(); onDrop() }}
       onDragEnd={onDragEnd}
       title={accountInfo ? `${m.name} — ${accountInfo}` : m.name}
-      className="relative flex items-center gap-2 h-[40px] pl-3 pr-6 min-w-[90px] cursor-pointer shrink-0 transition-all duration-150"
+      className="relative flex items-center gap-1.5 h-[40px] px-3 cursor-pointer shrink-0 transition-all duration-150"
       style={{
         backgroundColor: isActive ? `${m.color}1A` : hovered ? 'rgba(255,255,255,0.06)' : 'transparent',
         borderBottom: isActive ? `2px solid ${m.color}` : '2px solid transparent',
@@ -95,11 +95,18 @@ function MessengerTab({
         )}
       </span>
 
-      {/* Бейдж непрочитанных — раздельный (личные 💬 / каналы 📢) или общий */}
-      {unreadCount > 0 && !hovered && (
+      {/* Бейдж непрочитанных (в потоке flex) или кнопка закрыть (hover) */}
+      {hovered ? (
+        <span
+          onClick={e => { e.stopPropagation(); onClose() }}
+          className="ml-auto w-[16px] h-[16px] rounded-full flex items-center justify-center text-[10px] leading-none cursor-pointer transition-all shrink-0"
+          style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}
+          title="Закрыть вкладку"
+        >✕</span>
+      ) : unreadCount > 0 ? (
         unreadSplit && unreadSplit.personal > 0 && unreadSplit.channels > 0 ? (
           // Два бейджа: личные (цвет мессенджера) + каналы (серый)
-          <span className="absolute top-0.5 right-0.5 flex flex-col gap-0.5 items-end">
+          <span className="ml-auto flex flex-col gap-0.5 items-end shrink-0">
             <span
               className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
               style={{ backgroundColor: m.color, animation: isNew ? 'bounce 0.6s ease 3' : 'none' }}
@@ -114,23 +121,13 @@ function MessengerTab({
         ) : (
           // Один общий бейдж
           <span
-            className="absolute top-1 right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none"
+            className="ml-auto min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none shrink-0"
             style={{ animation: isNew ? 'bounce 0.6s ease 3' : 'none' }}
           >
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )
-      )}
-
-      {/* Кнопка «закрыть» (при hover) */}
-      {hovered && (
-        <span
-          onClick={e => { e.stopPropagation(); onClose() }}
-          className="absolute top-1 right-1 w-[16px] h-[16px] rounded-full flex items-center justify-center text-[10px] leading-none cursor-pointer transition-all"
-          style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}
-          title="Закрыть вкладку"
-        >✕</span>
-      )}
+      ) : null}
     </button>
   )
 }
