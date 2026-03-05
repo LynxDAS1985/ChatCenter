@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.34.0 (5 марта 2026)
+## Текущая версия: v0.35.0 (5 марта 2026)
 
 ---
 
@@ -91,6 +91,14 @@
 ---
 
 ## Changelog
+
+### v0.35.0 (5 марта 2026) — Уведомления при свёрнутом окне (backgroundThrottling)
+- **Проблема**: Когда окно свёрнуто в трей (`mainWindow.hide()`), Electron замораживает JS в renderer и WebView. MutationObserver, Notification hooks, IPC — всё останавливается. Уведомления не приходят, пока окно не развернуть.
+- **Решение**: `backgroundThrottling: false` в трёх местах:
+  1. `webPreferences` BrowserWindow (main.js) — предотвращает throttling renderer process
+  2. `mainWindow.webContents.backgroundThrottling = false` (runtime) — дополнительная гарантия
+  3. `webpreferences="backgroundThrottling=no"` на каждом `<webview>` (App.jsx) — предотвращает throttling WebView мессенджеров
+- Теперь уведомления приходят независимо от того, свёрнуто окно или нет.
 
 ### v0.34.0 (5 марта 2026) — Фикс счётчика MAX, ложные уведомления, диагностика DOM
 - **Счётчик MAX**: Переписан `countUnreadMAX()` — 3-уровневый подход: title `(N)` → навигационный бейдж "Все" → отдельные бейджи чатов. Исключены ложные дубли из nav-элементов.

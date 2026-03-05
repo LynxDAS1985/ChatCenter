@@ -375,6 +375,35 @@ ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
 
 ---
 
+### ❌ Уведомления не приходят при свёрнутом окне (v0.35.0)
+
+**Симптом**: Приложение свёрнуто в трей → приходит сообщение в мессенджер → уведомление НЕ появляется. При развороте окна — уведомление появляется мгновенно.
+
+**Причина**: Electron по умолчанию включает `backgroundThrottling` для renderer process и WebView. Когда окно скрыто (`mainWindow.hide()`):
+- JS в renderer замедляется/приостанавливается
+- MutationObserver в WebView не срабатывает
+- Notification hooks не ловят события
+- IPC сообщения от WebView не отправляются
+- При развороте — всё "просыпается" и уведомления приходят разом
+
+**Решение (v0.35.0)**: Отключить `backgroundThrottling` в трёх местах:
+```js
+// 1. main.js — webPreferences BrowserWindow
+webPreferences: { backgroundThrottling: false, ... }
+
+// 2. main.js — runtime override
+mainWindow.webContents.backgroundThrottling = false
+
+// 3. App.jsx — каждый <webview>
+<webview webpreferences="backgroundThrottling=no" ... />
+```
+
+**Минус**: Немного выше потребление CPU в фоне (WebView продолжают работать). Но для мессенджер-приложения это обязательно — уведомления важнее экономии CPU.
+
+**Ключевой урок**: Для приложений с уведомлениями/мониторингом `backgroundThrottling: false` — обязательная настройка. Без неё WebView замораживаются при скрытии окна.
+
+---
+
 ### ❌ Закрытие вкладки мессенджера без подтверждения
 
 ```js

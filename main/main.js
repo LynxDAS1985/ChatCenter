@@ -1,4 +1,4 @@
-// v0.10.0 — Стриминг AI (SSE), автосохранение черновика, бейдж трея
+// v0.35.0 — backgroundThrottling=false: уведомления при свёрнутом окне
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -234,9 +234,14 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: false
     }
   })
+
+  // Отключаем throttling JS при свёрнутом/скрытом окне —
+  // без этого MutationObserver, Notification hooks и IPC в WebView замораживаются
+  mainWindow.webContents.backgroundThrottling = false
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')

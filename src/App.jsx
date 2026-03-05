@@ -1,4 +1,4 @@
-// v0.34.0 — Фикс счётчика MAX, ложные уведомления, диагностика DOM через IPC
+// v0.35.0 — backgroundThrottling=no на WebView: уведомления при свёрнутом окне
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -1171,6 +1171,7 @@ export default function App() {
                   preload={monitorPreloadUrl || undefined}
                   style={{ width: '100%', height: '100%' }}
                   allowpopups="true"
+                  webpreferences="backgroundThrottling=no"
                 />
               </div>
             ))
