@@ -145,10 +145,12 @@ function isActiveChatChannel(type) {
 // Возвращает { personal, channels, total, allTotal } — раздельный подсчёт непрочитанных
 // allTotal — для бейджа вкладки (все непрочитанные), personal/channels — без muted (для уведомлений)
 function countUnread(type) {
-  // Telegram — отдельная логика с persistent Map (виртуализация DOM)
+  // Telegram — отдельная логика
   if (type === 'telegram') return countUnreadTelegram()
+  // VK — отдельная логика (VKUI часто меняет классы)
+  if (type === 'vk') return countUnreadVK()
 
-  // WhatsApp / VK — стандартный подсчёт по querySelectorAll
+  // WhatsApp и другие — стандартный подсчёт по querySelectorAll
   const sels = UNREAD_SELECTORS[type] || []
   let personal = 0, channels = 0, mutedTotal = 0
   for (const sel of sels) {
@@ -166,7 +168,7 @@ function countUnread(type) {
     } catch {}
   }
 
-  // Fallback: VK/WhatsApp могут ставить "(N)" в title
+  // Fallback: WhatsApp может ставить "(N)" в title
   if (mutedTotal === 0) {
     try {
       const m = document.title.match(/\((\d+)\)/)
@@ -175,6 +177,80 @@ function countUnread(type) {
   }
 
   return { personal, channels, total: personal + channels, allTotal: mutedTotal }
+}
+
+// ── VK: поиск непрочитанных в боковом меню + fallback'и ──────────────────
+function countUnreadVK() {
+  let allTotal = 0
+  let source = 'none'
+
+  // 1. Title: VK иногда ставит "(N)" в title
+  try {
+    const m = document.title.match(/\((\d+)\)/)
+    if (m) { allTotal = parseInt(m[1], 10) || 0; if (allTotal > 0) source = 'title' }
+  } catch {}
+
+  // 2. Найти пункт "Мессенджер" в боковом меню VK — число в бейдже рядом
+  if (allTotal === 0) {
+    try {
+      // Перебираем все ссылки/элементы бокового меню
+      const candidates = document.querySelectorAll('a[href*="/im"], a[href*="im"], [class*="LeftMenu"] a, nav a, [role="navigation"] a, aside a')
+      for (const el of candidates) {
+        const text = (el.textContent || '').trim()
+        if (/мессенджер/i.test(text) || /messenger/i.test(text)) {
+          // Ищем число внутри этого элемента
+          const nums = text.match(/(\d+)/)
+          if (nums) { allTotal = parseInt(nums[1], 10) || 0; source = 'nav-messenger'; break }
+          // Или ищем дочерний элемент-бейдж
+          const badge = el.querySelector('[class*="ounter"], [class*="badge"], [class*="Badge"]')
+          if (badge) {
+            const n = parseInt(badge.textContent?.trim(), 10)
+            if (!isNaN(n) && n > 0) { allTotal = n; source = 'nav-badge'; break }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Широкий поиск: любые элементы с числом-бейджом в навигации
+  if (allTotal === 0) {
+    try {
+      // Ищем все счётчики рядом со ссылками на /im
+      const imLinks = document.querySelectorAll('a[href*="/im"]')
+      for (const link of imLinks) {
+        const parent = link.closest('li, div, [class*="Item"], [class*="item"]') || link
+        const counters = parent.querySelectorAll('[class*="ounter"], [class*="badge"], [class*="Badge"], [class*="counter"]')
+        for (const c of counters) {
+          const n = parseInt(c.textContent?.trim(), 10)
+          if (!isNaN(n) && n > 0) { allTotal = n; source = 'im-link-counter'; break }
+        }
+        if (allTotal > 0) break
+        // Или число прямо в тексте ссылки
+        const nums = (link.textContent || '').match(/(\d+)/)
+        if (nums) {
+          const n = parseInt(nums[1], 10)
+          if (n > 0 && n < 10000) { allTotal = n; source = 'im-link-text'; break }
+        }
+      }
+    } catch {}
+  }
+
+  // 4. CSS-селекторы (старые и новые VK)
+  if (allTotal === 0) {
+    const sels = UNREAD_SELECTORS.vk
+    for (const sel of sels) {
+      try {
+        document.querySelectorAll(sel).forEach(el => {
+          const n = parseInt(el.textContent?.trim(), 10)
+          if (!isNaN(n) && n > 0) allTotal += n
+        })
+        if (allTotal > 0) { source = 'css:' + sel; break }
+      } catch {}
+    }
+  }
+
+  countUnreadVK._lastSource = source
+  return { personal: allTotal, channels: 0, total: allTotal, allTotal }
 }
 
 // ── Telegram: адаптивный поиск — title → folder tabs → badges вне chatlist ──
@@ -313,9 +389,27 @@ function runDiagnostics(type) {
       document.querySelectorAll('[class*="counter"], [class*="unread"], [class*="badge"], [class*="Counter"]').forEach(el => {
         if (idx++ > 30) return
         const text = el.textContent?.trim() || ''
-        if (text.length > 10) return // пропускаем длинные тексты
+        if (text.length > 10) return
         diag.genericCounters.push({ text, cls: (el.className || '').substring(0, 80) })
       })
+
+      // VK-специфика: источник счётчика, generic текст сообщения, классы чат-области
+      if (type === 'vk') {
+        diag.countSource = countUnreadVK._lastSource || 'unknown'
+        diag.genericLastMsg = getVKLastIncomingText()
+        // Элементы с "mes"/"msg" в классах (показать какие вообще есть)
+        diag.chatElements = []
+        let ci = 0
+        document.querySelectorAll('[class*="im-mes"], [class*="im_msg"], [class*="Message"], [class*="ChatBody"], [class*="im-page"]').forEach(el => {
+          if (ci++ > 20) return
+          diag.chatElements.push((el.className || '').substring(0, 100))
+        })
+        // Nav links с /im
+        diag.imLinks = []
+        document.querySelectorAll('a[href*="/im"]').forEach(a => {
+          diag.imLinks.push({ href: (a.getAttribute('href') || '').substring(0, 40), text: (a.textContent || '').trim().substring(0, 40) })
+        })
+      }
     }
 
     ipcRenderer.sendToHost('monitor-diag', diag)
@@ -325,6 +419,7 @@ function runDiagnostics(type) {
 }
 
 function getLastMessageText(type) {
+  // Сначала пробуем CSS-селекторы
   const sels = LAST_MESSAGE_SELECTORS[type] || []
   for (const sel of sels) {
     try {
@@ -336,6 +431,61 @@ function getLastMessageText(type) {
       }
     } catch {}
   }
+  // VK fallback: generic поиск по DOM чата
+  if (type === 'vk') return getVKLastIncomingText()
+  return null
+}
+
+// ── VK: generic поиск последнего входящего сообщения ──────────────────────
+// VK часто меняет CSS-классы, поэтому ищем по структуре DOM:
+// - Сообщения находятся в скроллируемой области чата
+// - Входящие обычно выровнены влево, исходящие — вправо
+// - Ищем последний текстовый элемент, который НЕ от текущего пользователя
+function getVKLastIncomingText() {
+  try {
+    // Стратегия 1: найти область чата с сообщениями
+    // VK chat container: обычно содержит элементы с временными метками
+    const chatContainers = document.querySelectorAll(
+      '[class*="im-page--chat-body"], [class*="im_msg_list"], [class*="ChatBody"], ' +
+      '[class*="im-history"], [class*="ConversationBody"], [class*="chat-body"]'
+    )
+    for (const container of chatContainers) {
+      // Берём последние элементы с текстом
+      const textEls = container.querySelectorAll('[class*="text"], [class*="Text"], p, span')
+      for (let i = textEls.length - 1; i >= Math.max(0, textEls.length - 20); i--) {
+        const t = textEls[i].textContent?.trim()
+        if (t && t.length > 1 && t.length < 500) {
+          // Пропускаем служебные тексты
+          if (/^\d{1,2}:\d{2}$/.test(t)) continue // время "12:08"
+          if (/^сегодня$/i.test(t)) continue
+          if (/^вчера$/i.test(t)) continue
+          if (/^новые сообщения$/i.test(t)) continue
+          if (/^сообщение$/i.test(t)) continue // placeholder поля ввода
+          return t
+        }
+      }
+    }
+
+    // Стратегия 2: ищем любой элемент, содержащий текст сообщения
+    // В VK чат-сообщения обычно внутри элементов с class содержащим "mes" или "msg"
+    const msgEls = document.querySelectorAll(
+      '[class*="im-mess"], [class*="im_msg"], [class*="im-mes"], ' +
+      '[class*="Message"], [class*="message"]'
+    )
+    for (let i = msgEls.length - 1; i >= Math.max(0, msgEls.length - 10); i--) {
+      const el = msgEls[i]
+      // Пропускаем исходящие (обычно содержат "--out" или "--own" в классе)
+      const cls = el.className || ''
+      if (/out|own|self|sent/i.test(cls)) continue
+      // Ищем текстовый контент
+      const textEl = el.querySelector('[class*="text"], [class*="Text"], p') || el
+      const t = textEl.textContent?.trim()
+      if (t && t.length > 1 && t.length < 500) {
+        if (/^\d{1,2}:\d{2}$/.test(t)) continue
+        return t
+      }
+    }
+  } catch {}
   return null
 }
 
@@ -349,42 +499,6 @@ let observer = null
 // первые 10 секунд не сообщаем о "новых" сообщениях — страница ещё грузится
 let monitorReady = false
 setTimeout(() => { monitorReady = true }, 10000)
-
-// Получить текст последнего сообщения в активном чате (любого, не только входящего)
-// Используется для детекции новых сообщений когда чат открыт
-function getAnyLastMessageText(type) {
-  const selsMap = {
-    telegram: [
-      '.bubble:last-of-type .message',
-      '.message:last-of-type .text-content',
-    ],
-    whatsapp: [
-      '.message-in:last-of-type .selectable-text span[dir]',
-      '.message-out:last-of-type .selectable-text span[dir]',
-    ],
-    vk: [
-      // Текущий VK (2024–2026): последний пузырь в чате
-      '.im-mess:last-child .im-mess--text',
-      '.im_msg_text:last-of-type',
-      // Legacy
-      '.im-mes:last-child .im-mes__text',
-      '.im-mes-stack:last-child .im-mes__text',
-      '.MessagesMes:last-child .MessagesMes__text',
-    ],
-  }
-  const sels = selsMap[type] || []
-  for (const sel of sels) {
-    try {
-      const els = document.querySelectorAll(sel)
-      if (els.length > 0) {
-        const last = els[els.length - 1]
-        const text = last.textContent?.trim()
-        if (text && text.length > 0 && text.length < 2000) return text
-      }
-    } catch {}
-  }
-  return null
-}
 
 function sendUpdate(type) {
   const { personal, channels, total, allTotal } = countUnread(type)
