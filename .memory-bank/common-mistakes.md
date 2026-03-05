@@ -247,6 +247,18 @@ webContents.executeJavaScript(`fillInput(${JSON.stringify(userText)})`)
 
 ---
 
+## Настройки (SettingsPanel)
+
+### ❌ Дублирование настроек ИИ в SettingsPanel и AISidebar
+
+**Симптом**: Пользователь видит настройки ИИ-провайдера/модели/ключа в двух местах: в SettingsPanel (⚙️ в шапке) и в AISidebar (⚙️ на панели ИИ). Путаница — какие настройки актуальны.
+
+**Причина**: Секция "ИИ-помощник" в SettingsPanel была добавлена в v0.6.0, а расширенные per-provider настройки — в AISidebar позже (v0.9-v0.12). SettingsPanel перестала быть нужна для ИИ.
+
+**Решение (v0.25.0)**: Убрать секцию "ИИ-помощник" из SettingsPanel. Настройки ИИ — только в AISidebar.
+
+---
+
 ## AI-панель (AISidebar)
 
 ### ❌ Тело чата/WebView видно одновременно с конфиг-панелью

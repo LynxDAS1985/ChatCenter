@@ -1,4 +1,4 @@
-// v0.24.0 — Улучшенный звук уведомления, автопереключение на вкладку с новым сообщением
+// v0.25.0 — Per-messenger звук, убрана секция ИИ из настроек, тест звука
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -678,9 +678,10 @@ export default function App() {
             setActiveId(messengerId)
           }
 
-          // Звук и уведомление с текстом сообщения
-          if (settingsRef.current.soundEnabled !== false) playNotificationSound()
-          if (settingsRef.current.notificationsEnabled !== false) {
+          // Звук и уведомление — проверяем глобальный + per-messenger mute
+          const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[messengerId]
+          if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound()
+          if (settingsRef.current.notificationsEnabled !== false && !messengerMuted) {
             const m = messengersRef.current.find(x => x.id === messengerId)
             window.api.invoke('app:notify', {
               title: m?.name || 'ЦентрЧатов',

@@ -1,4 +1,4 @@
-// v0.15.0 — Панель настроек: тема, мессенджеры, уведомления, ИИ, диагностика, о программе
+// v0.25.0 — Панель настроек: тема, мессенджеры (звук per-messenger + тест), уведомления, диагностика, о программе
 import { useEffect, useState } from 'react'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 
@@ -40,8 +40,36 @@ function SettingRow({ label, description, children }) {
   )
 }
 
+// Звук уведомления (копия из App.jsx для теста)
+function playTestSound() {
+  try {
+    const ctx = new AudioContext()
+    const t = ctx.currentTime
+    const osc1 = ctx.createOscillator()
+    const gain1 = ctx.createGain()
+    osc1.type = 'sine'
+    osc1.frequency.value = 1047
+    osc1.connect(gain1)
+    gain1.connect(ctx.destination)
+    gain1.gain.setValueAtTime(0.15, t)
+    gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.12)
+    osc1.start(t)
+    osc1.stop(t + 0.12)
+    const osc2 = ctx.createOscillator()
+    const gain2 = ctx.createGain()
+    osc2.type = 'sine'
+    osc2.frequency.value = 1319
+    osc2.connect(gain2)
+    gain2.connect(ctx.destination)
+    gain2.gain.setValueAtTime(0, t)
+    gain2.gain.setValueAtTime(0.12, t + 0.08)
+    gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.23)
+    osc2.start(t + 0.08)
+    osc2.stop(t + 0.23)
+  } catch {}
+}
+
 export default function SettingsPanel({ messengers, settings, onMessengersChange, onSettingsChange, onClose }) {
-  const [aiKeyVisible, setAiKeyVisible] = useState(false)
   const [errorLog, setErrorLog] = useState(null)        // null = не загружен, '' = пуст, 'текст' = есть записи
   const [logLoading, setLogLoading] = useState(false)
   const [logClearing, setLogClearing] = useState(false)
@@ -86,9 +114,6 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
   }
 
   const theme = settings.theme || 'dark'
-  const aiProvider = settings.aiProvider || 'openai'
-  const aiModel = settings.aiModel || (aiProvider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini')
-  const aiApiKey = settings.aiApiKey || ''
 
   return (
     <div
@@ -157,35 +182,64 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <p className="text-sm" style={{ color: 'var(--cc-text-dimmer)' }}>Нет мессенджеров</p>
             ) : (
               <div className="space-y-1.5">
-                {messengers.map(m => (
-                  <div
-                    key={m.id}
-                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors group"
-                    style={{ backgroundColor: 'var(--cc-hover)' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--cc-border)'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate" style={{ color: 'var(--cc-text)' }}>{m.name}</div>
-                      <div className="text-[11px] truncate" style={{ color: 'var(--cc-text-dimmer)' }}>
-                        {(() => { try { return new URL(m.url).hostname } catch { return m.url } })()}
+                {messengers.map(m => {
+                  const mutedMap = settings.mutedMessengers || {}
+                  const isMuted = !!mutedMap[m.id]
+                  return (
+                    <div
+                      key={m.id}
+                      className="rounded-xl px-3 py-2.5 transition-colors group"
+                      style={{ backgroundColor: 'var(--cc-hover)' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--cc-border)'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate" style={{ color: 'var(--cc-text)' }}>{m.name}</div>
+                          <div className="text-[11px] truncate" style={{ color: 'var(--cc-text-dimmer)' }}>
+                            {(() => { try { return new URL(m.url).hostname } catch { return m.url } })()}
+                          </div>
+                        </div>
+                        {!m.isDefault ? (
+                          <button
+                            onClick={() => removeMessenger(m.id)}
+                            className="text-sm transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded"
+                            style={{ color: 'var(--cc-text-dimmer)' }}
+                            onMouseEnter={e => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.1)' }}
+                            onMouseLeave={e => { e.currentTarget.style.color = 'var(--cc-text-dimmer)'; e.currentTarget.style.backgroundColor = 'transparent' }}
+                            title="Удалить"
+                          >🗑</button>
+                        ) : (
+                          <span className="text-[10px] shrink-0" style={{ color: 'var(--cc-text-dimmer)' }}>по умолч.</span>
+                        )}
+                      </div>
+                      {/* Звук уведомления для этого мессенджера */}
+                      <div className="flex items-center gap-2 mt-1.5 pl-5">
+                        <span className="text-[11px]" style={{ color: isMuted ? 'var(--cc-text-dimmer)' : 'var(--cc-text-dim)' }}>
+                          {isMuted ? '🔇 Звук выкл' : '🔔 Звук вкл'}
+                        </span>
+                        <Toggle
+                          value={!isMuted}
+                          onChange={v => {
+                            const next = { ...mutedMap }
+                            if (v) { delete next[m.id] } else { next[m.id] = true }
+                            set('mutedMessengers', next)
+                          }}
+                          color={m.color}
+                        />
+                        <button
+                          onClick={playTestSound}
+                          className="text-[10px] px-2 py-0.5 rounded-lg transition-all cursor-pointer"
+                          style={{ backgroundColor: `${m.color}15`, color: m.color, border: `1px solid ${m.color}33` }}
+                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${m.color}30` }}
+                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${m.color}15` }}
+                          title="Воспроизвести тестовый звук"
+                        >🔊 Тест</button>
                       </div>
                     </div>
-                    {!m.isDefault ? (
-                      <button
-                        onClick={() => removeMessenger(m.id)}
-                        className="text-sm transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded"
-                        style={{ color: 'var(--cc-text-dimmer)' }}
-                        onMouseEnter={e => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.1)' }}
-                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--cc-text-dimmer)'; e.currentTarget.style.backgroundColor = 'transparent' }}
-                        title="Удалить"
-                      >🗑</button>
-                    ) : (
-                      <span className="text-[10px] shrink-0" style={{ color: 'var(--cc-text-dimmer)' }}>по умолч.</span>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 
@@ -213,75 +267,6 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="Сворачивать в трей" description="Закрытие скрывает в трей">
                 <Toggle value={settings.minimizeToTray !== false} onChange={v => set('minimizeToTray', v)} />
               </SettingRow>
-            </div>
-          </section>
-
-          <div className="mx-5" style={{ borderTop: '1px solid var(--cc-border)' }} />
-
-          {/* ── ИИ-помощник ── */}
-          <section className="px-5 py-4">
-            <SectionTitle>ИИ-помощник</SectionTitle>
-            <div className="space-y-3">
-
-              {/* Провайдер */}
-              <div>
-                <div className="text-xs mb-2" style={{ color: 'var(--cc-text-dimmer)' }}>Провайдер</div>
-                <div className="flex gap-2">
-                  {[['openai', 'OpenAI'], ['anthropic', 'Anthropic']].map(([p, label]) => (
-                    <button
-                      key={p}
-                      onClick={() => set('aiProvider', p)}
-                      className="flex-1 py-1.5 rounded-lg text-xs transition-all cursor-pointer"
-                      style={{
-                        backgroundColor: aiProvider === p ? '#2AABEE22' : 'var(--cc-hover)',
-                        color: aiProvider === p ? '#2AABEE' : 'var(--cc-text-dim)',
-                        border: `1px solid ${aiProvider === p ? '#2AABEE55' : 'transparent'}`
-                      }}
-                    >{label}</button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Модель */}
-              <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--cc-text-dimmer)' }}>Модель</label>
-                <input
-                  type="text"
-                  value={aiModel}
-                  onChange={e => set('aiModel', e.target.value)}
-                  placeholder={aiProvider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'}
-                  className="w-full text-sm px-3 py-2 rounded-lg outline-none"
-                  style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
-                />
-              </div>
-
-              {/* API Ключ */}
-              <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--cc-text-dimmer)' }}>API Ключ</label>
-                <div className="relative">
-                  <input
-                    type={aiKeyVisible ? 'text' : 'password'}
-                    value={aiApiKey}
-                    onChange={e => set('aiApiKey', e.target.value)}
-                    placeholder={aiProvider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
-                    className="w-full text-sm px-3 py-2 pr-9 rounded-lg outline-none font-mono"
-                    style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setAiKeyVisible(!aiKeyVisible)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs cursor-pointer"
-                    style={{ color: 'var(--cc-text-dimmer)' }}
-                  >{aiKeyVisible ? '🙈' : '👁'}</button>
-                </div>
-                {aiApiKey && (
-                  <p className="text-[10px] mt-1" style={{ color: '#22c55e' }}>✓ Ключ введён</p>
-                )}
-              </div>
-
-              <p className="text-[11px] leading-relaxed" style={{ color: 'var(--cc-text-dimmer)' }}>
-                Ключ хранится локально. Настройте промпт в боковой панели ИИ-помощника (🤖).
-              </p>
             </div>
           </section>
 
@@ -357,7 +342,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
               {[
                 ['Название', 'ЦентрЧатов / ChatCenter'],
-                ['Версия', 'v0.6.0'],
+                ['Версия', 'v0.25.0'],
                 ['Платформа', window.navigator.platform || 'Windows'],
                 ['Стек', 'Electron + React + Tailwind'],
               ].map(([label, value], i, arr) => (
