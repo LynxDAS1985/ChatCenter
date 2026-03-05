@@ -254,6 +254,45 @@ window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
 
 ---
 
+### ❌ executeJavaScript запускается ПОСЛЕ нативного Notification (race condition)
+
+**Симптом**: Несмотря на перехват `window.Notification` через `executeJavaScript` в `dom-ready`, нативные уведомления с заголовком "electron.app.Electron" всё равно показываются. Мессенджер успевает вызвать `new Notification()` ДО выполнения нашего скрипта.
+
+**Причина**: `dom-ready` не гарантирует, что наш `executeJavaScript` выполнится раньше скриптов мессенджера. VK может вызвать `new Notification()` во время загрузки или сразу после `DOMContentLoaded`.
+
+**Решение (v0.29.0)**: Заблокировать permission `notifications` на уровне Electron session:
+```js
+ses.setPermissionRequestHandler((_wc, permission, cb) => {
+  if (permission === 'notifications') return cb(false)
+  cb(true)
+})
+ses.setPermissionCheckHandler((_wc, permission) => {
+  if (permission === 'notifications') return false
+  return true
+})
+```
+Нативные `new Notification()` из мессенджера молча игнорируются Electron. Наш перехват через `executeJavaScript` + `console-message` всё равно ловит данные и показывает уведомление через `Notification` из main-процесса.
+
+---
+
+### ❌ Фантомные/старые уведомления при первом запуске мессенджера
+
+**Симптом**: При открытии VK появляется уведомление о старом сообщении, которое было прочитано давно (например "Как ты Новый год встретил?"). Никто не писал новое сообщение.
+
+**Причина**: VK и другие мессенджеры при загрузке страницы воспроизводят закешированные/старые уведомления через `new Notification()`. Наш `executeJavaScript` перехватывает их и вызывает `handleNewMessage()` как будто это новые сообщения.
+
+**Решение (v0.29.0)**: Warm-up задержка 10 секунд — после `dom-ready` игнорируем `__CC_NOTIF__` сообщения:
+```js
+// В dom-ready:
+notifReadyRef.current[messengerId] = false
+setTimeout(() => { notifReadyRef.current[messengerId] = true }, 10000)
+
+// В console-message:
+if (!notifReadyRef.current[messengerId]) return
+```
+
+---
+
 ### ❌ require('electron') в renderer или WebView preload
 
 ```js

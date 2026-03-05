@@ -1,4 +1,4 @@
-// v0.28.1 — Фикс сброса счётчика непрочитанных при переключении вкладок
+// v0.29.0 — Блокировка нативных уведомлений + warm-up задержка против фантомных сообщений
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -230,6 +230,7 @@ export default function App() {
   const [zoomInputValue, setZoomInputValue] = useState('')
 
   const webviewRefs = useRef({})
+  const notifReadyRef = useRef({})   // { [id]: true } — warm-up: игнорируем __CC_NOTIF__ первые 10 сек
   const retryTimers = useRef({})
   const previewTimers = useRef({})
   const saveTimer = useRef(null)
@@ -711,6 +712,10 @@ export default function App() {
         retryTimers.current[messengerId] = setTimeout(
           () => tryExtractAccount(messengerId, 0), 3500
         )
+        // Warm-up: игнорируем __CC_NOTIF__ первые 10 сек после загрузки
+        // VK и другие мессенджеры при загрузке воспроизводят старые/кешированные уведомления
+        notifReadyRef.current[messengerId] = false
+        setTimeout(() => { notifReadyRef.current[messengerId] = true }, 10000)
         // Через 20 сек если монитор не ответил — помечаем как error
         setTimeout(() => {
           setMonitorStatus(prev => {
@@ -849,6 +854,8 @@ export default function App() {
       el.addEventListener('console-message', (e) => {
         const msg = e.message
         if (!msg || !msg.startsWith('__CC_NOTIF__')) return
+        // Warm-up: игнорируем уведомления до готовности (10 сек после dom-ready)
+        if (!notifReadyRef.current[messengerId]) return
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = data.b || data.t || ''

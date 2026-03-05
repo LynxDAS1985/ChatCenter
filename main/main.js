@@ -173,8 +173,16 @@ const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 
 function setupSession(ses) {
   ses.setUserAgent(CHROME_UA)
-  ses.setPermissionRequestHandler((_wc, _perm, cb) => cb(true))
-  ses.setPermissionCheckHandler(() => true)
+  // Блокируем нативные Notification из WebView — мы перехватываем их через executeJavaScript
+  // Без этого VK/WhatsApp показывают "electron.app.Electron" как заголовок
+  ses.setPermissionRequestHandler((_wc, permission, cb) => {
+    if (permission === 'notifications') return cb(false)
+    cb(true)
+  })
+  ses.setPermissionCheckHandler((_wc, permission) => {
+    if (permission === 'notifications') return false
+    return true
+  })
 
   ses.webRequest.onHeadersReceived((details, callback) => {
     const headers = { ...details.responseHeaders }
