@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.26.2 (5 марта 2026)
+## Текущая версия: v0.27.0 (5 марта 2026)
 
 ---
 
@@ -89,6 +89,11 @@
 ---
 
 ## Changelog
+
+### v0.27.0 (5 марта 2026) — Перехват Notification/Audio через executeJavaScript + console-message
+- **Фикс "electron.app.Electron" в уведомлениях**: window.Notification перехватывается через `webview.executeJavaScript()` (main world) → `console.log('__CC_NOTIF__...')` → `console-message` event на `<webview>`. Решает проблему context isolation — preload world и main world изолированы.
+- **Убран двойной звук уведомлений**: `window.Audio` конструктор перехвачен в main world — `volume = 0` для всех программных звуков мессенджера. Остаётся только наш звук через Web Audio API.
+- **Рефакторинг handleNewMessage**: логика обработки нового сообщения вынесена из inline ipc-message handler в отдельную функцию `handleNewMessage(messengerId, text)`. Используется и для `ipc-message`, и для `console-message`.
 
 ### v0.25.0 (5 марта 2026) — Per-messenger звук, убрана дублирующая секция ИИ из настроек
 - **Per-messenger звук**: каждый мессенджер имеет свой переключатель звука 🔔/🔇 в Настройки → Мессенджеры. Хранится в `settings.mutedMessengers: {[id]: true}`. Если замьючен — нет звука И нет Windows-уведомления от этого мессенджера.

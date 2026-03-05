@@ -196,6 +196,64 @@ if (e.channel === 'zoom-change') {
 
 ---
 
+### ❌ Перехват window.Notification/CustomEvent из preload WebView (context isolation)
+
+**Симптом**: Уведомления мессенджера показывают "electron.app.Electron" вместо нашего заголовка. Переопределение `window.Notification` в preload не работает.
+
+**Причина**: Electron WebView с context isolation изолирует JavaScript worlds:
+- Preload world: свой `window`, свои объекты → `window.Notification` override видно ТОЛЬКО в preload
+- Main world (страница мессенджера): свой `window` → `new Notification()` вызывается тут → override из preload НЕ виден
+
+**Что НЕ работает**:
+1. `window.Notification = ...` в preload → override виден только в preload world
+2. `<script>` tag injection из preload → скрипт выполняется в main world, НО `CustomEvent` / `dispatchEvent` НЕ пересекают границу миров (JS events изолированы!)
+3. `window.addEventListener('__cc_notification', ...)` в preload → НЕ ловит events из main world
+
+**Решение (v0.27.0)**: Использовать `webview.executeJavaScript()` из renderer (App.jsx):
+```js
+// В dom-ready handler:
+el.executeJavaScript(`(function(){
+  if(window.__cc_notif_hooked)return;
+  window.__cc_notif_hooked=true;
+  window.Notification=function(title,opts){
+    console.log('__CC_NOTIF__'+JSON.stringify({t:title,b:opts?.body||''}));
+  };
+  window.Notification.permission='granted';
+  window.Notification.requestPermission=function(cb){if(cb)cb('granted');return Promise.resolve('granted')};
+})()`)
+
+// Ловим через console-message event (ПЕРЕСЕКАЕТ context isolation!):
+el.addEventListener('console-message', (e) => {
+  if (e.message?.startsWith('__CC_NOTIF__')) {
+    const data = JSON.parse(e.message.slice(12))
+    handleNewMessage(messengerId, data.b || data.t)
+  }
+})
+```
+
+**Ключевой урок**: В Electron WebView с context isolation:
+- DOM — общий (MutationObserver работает из preload)
+- JS objects — изолированы (window.X в preload ≠ window.X на странице)
+- JS events (CustomEvent, addEventListener) — изолированы (НЕ пересекают миры!)
+- console.log → console-message event — ПЕРЕСЕКАЕТ границу (единственный надёжный канал из main world в renderer)
+
+---
+
+### ❌ Двойной звук уведомлений (мессенджер + наш)
+
+**Симптом**: При новом сообщении в VK/WhatsApp играют два звука — один от мессенджера (`new Audio()`), второй наш (Web Audio API).
+
+**Причина**: Мессенджеры используют `new Audio('notification.mp3')` для звука. Наш `playNotificationSound()` добавляет ещё один звук сверху.
+
+**Решение (v0.27.0)**: Перехватить `Audio` конструктор в main world через `executeJavaScript()`, поставить `volume = 0`:
+```js
+var _A = window.Audio;
+window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
+```
+Это глушит программные звуки мессенджера, оставляя только наш Web Audio API звук.
+
+---
+
 ### ❌ require('electron') в renderer или WebView preload
 
 ```js

@@ -1,4 +1,4 @@
-// v0.26.2 — Фикс перехвата Notification (main world injection)
+// v0.27.0 — Перехват Notification/Audio через executeJavaScript + console-message, рефакторинг handleNewMessage
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -623,6 +623,73 @@ export default function App() {
       })
   }
 
+  // ── Обработка входящего сообщения (общая для ipc-message и console-message) ──
+  const handleNewMessage = (messengerId, text) => {
+    if (!text) return
+
+    // Автопереключение на вкладку с новым сообщением (если включено)
+    if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {
+      setActiveId(messengerId)
+    }
+
+    // Звук и уведомление — проверяем глобальный + per-messenger mute
+    const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[messengerId]
+    const mInfo = messengersRef.current.find(x => x.id === messengerId)
+    if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound(mInfo?.color)
+    if (settingsRef.current.notificationsEnabled !== false && !messengerMuted) {
+      window.api.invoke('app:notify', {
+        title: mInfo?.name || 'ЦентрЧатов',
+        body: text.length > 100 ? text.slice(0, 97) + '…' : text,
+      }).catch(() => {})
+    }
+
+    // Превью сообщения в бейдже вкладки (5 секунд)
+    const previewText = text.slice(0, 32) + (text.length > 32 ? '…' : '')
+    setMessagePreview(prev => ({ ...prev, [messengerId]: previewText }))
+    clearTimeout(previewTimers.current[messengerId])
+    previewTimers.current[messengerId] = setTimeout(() => {
+      setMessagePreview(prev => { const p = { ...prev }; delete p[messengerId]; return p })
+    }, 5000)
+
+    // Добавляем в историю AI
+    setChatHistory(prev => [...prev.slice(-19), { messengerId, text, ts: Date.now() }])
+
+    // Авто-ответчик по ключевым словам
+    const rules = settingsRef.current.autoReplyRules || []
+    let autoReplied = false
+    for (const rule of rules) {
+      if (!rule.active) continue
+      const matched = rule.keywords.some(kw => text.toLowerCase().includes(kw.toLowerCase()))
+      if (matched) {
+        navigator.clipboard.writeText(rule.reply).catch(() => {})
+        window.api.invoke('app:notify', {
+          title: '🤖 Авто-ответ скопирован',
+          body: `Правило: "${rule.keywords[0]}" — ответ в буфере обмена`
+        }).catch(() => {})
+        autoReplied = true
+        break
+      }
+    }
+
+    // Статистика сообщений
+    bumpStatsRef.current?.({ today: 1, total: 1, ...(autoReplied ? { autoToday: 1 } : {}) })
+
+    // Анимация на вкладке (ping 3 секунды)
+    setNewMessageIds(prev => { const n = new Set(prev); n.add(messengerId); return n })
+    setTimeout(() => {
+      setNewMessageIds(prev => { const n = new Set(prev); n.delete(messengerId); return n })
+    }, 3000)
+
+    setLastMessage(text)
+
+    // Последнее сообщение в статусбар (исчезает через 8 сек)
+    const mName = messengersRef.current.find(x => x.id === messengerId)?.name || ''
+    const shortText = text.slice(0, 40) + (text.length > 40 ? '…' : '')
+    setStatusBarMsg(`${mName}: ${shortText}`)
+    clearTimeout(statusBarMsgTimer.current)
+    statusBarMsgTimer.current = setTimeout(() => setStatusBarMsg(null), 8000)
+  }
+
   // ── Инициализация WebView ─────────────────────────────────────────────────
   const setWebviewRef = (el, messengerId) => {
     if (el && !el._chatcenterInit) {
@@ -678,6 +745,27 @@ export default function App() {
               setTimeout(remove, 8000)
             })()
           `).catch(() => {})
+          // ── Перехват Notification + Audio в main world (v0.27.0) ──────────────
+          // window.Notification в main world → console.log('__CC_NOTIF__...')
+          // → слушаем console-message на <webview> элементе (пересекает context isolation)
+          // Также глушим new Audio() чтобы убрать двойной звук уведомлений
+          el.executeJavaScript(`(function(){
+            if(window.__cc_notif_hooked)return;
+            window.__cc_notif_hooked=true;
+            // Перехват Notification — вместо показа системного уведомления шлём в console
+            var _N=window.Notification;
+            window.Notification=function(title,opts){
+              try{console.log('__CC_NOTIF__'+JSON.stringify({t:title||'',b:(opts&&opts.body)||'',i:(opts&&opts.icon)||''}))}catch(e){}
+            };
+            window.Notification.permission='granted';
+            window.Notification.requestPermission=function(cb){if(cb)cb('granted');return Promise.resolve('granted')};
+            Object.defineProperty(window.Notification,'permission',{get:function(){return'granted'},set:function(){}});
+            // Перехват Audio — глушим звуки уведомлений мессенджера
+            var _A=window.Audio;
+            var OrigAudio=function(src){var a=new _A(src);a.volume=0;return a};
+            OrigAudio.prototype=_A.prototype;
+            window.Audio=OrigAudio;
+          })()`).catch(() => {})
         } catch {}
       })
 
@@ -745,72 +833,20 @@ export default function App() {
           console.log(`[ChatCenter] 🔍 Диагностика DOM (${messengerId}):`, diag)
           setMonitorDiag(prev => ({ ...prev, [messengerId]: diag }))
         } else if (e.channel === 'new-message') {
-          const text = e.args[0]
-          if (!text) return
-
-          // Автопереключение на вкладку с новым сообщением (если включено)
-          if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {
-            setActiveId(messengerId)
-          }
-
-          // Звук и уведомление — проверяем глобальный + per-messenger mute
-          const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[messengerId]
-          const mInfo = messengersRef.current.find(x => x.id === messengerId)
-          if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound(mInfo?.color)
-          if (settingsRef.current.notificationsEnabled !== false && !messengerMuted) {
-            const m = mInfo
-            window.api.invoke('app:notify', {
-              title: m?.name || 'ЦентрЧатов',
-              body: text.length > 100 ? text.slice(0, 97) + '…' : text,
-            }).catch(() => {})
-          }
-
-          // Превью сообщения в бейдже вкладки (5 секунд)
-          const previewText = text.slice(0, 32) + (text.length > 32 ? '…' : '')
-          setMessagePreview(prev => ({ ...prev, [messengerId]: previewText }))
-          clearTimeout(previewTimers.current[messengerId])
-          previewTimers.current[messengerId] = setTimeout(() => {
-            setMessagePreview(prev => { const p = { ...prev }; delete p[messengerId]; return p })
-          }, 5000)
-
-          // Добавляем в историю AI
-          setChatHistory(prev => [...prev.slice(-19), { messengerId, text, ts: Date.now() }])
-
-          // Авто-ответчик по ключевым словам
-          const rules = settingsRef.current.autoReplyRules || []
-          let autoReplied = false
-          for (const rule of rules) {
-            if (!rule.active) continue
-            const matched = rule.keywords.some(kw => text.toLowerCase().includes(kw.toLowerCase()))
-            if (matched) {
-              navigator.clipboard.writeText(rule.reply).catch(() => {})
-              window.api.invoke('app:notify', {
-                title: '🤖 Авто-ответ скопирован',
-                body: `Правило: "${rule.keywords[0]}" — ответ в буфере обмена`
-              }).catch(() => {})
-              autoReplied = true
-              break
-            }
-          }
-
-          // Статистика сообщений
-          bumpStatsRef.current?.({ today: 1, total: 1, ...(autoReplied ? { autoToday: 1 } : {}) })
-
-          // Анимация на вкладке (ping 3 секунды)
-          setNewMessageIds(prev => { const n = new Set(prev); n.add(messengerId); return n })
-          setTimeout(() => {
-            setNewMessageIds(prev => { const n = new Set(prev); n.delete(messengerId); return n })
-          }, 3000)
-
-          setLastMessage(text)
-
-          // Последнее сообщение в статусбар (исчезает через 8 сек)
-          const mName = messengersRef.current.find(x => x.id === messengerId)?.name || ''
-          const shortText = text.slice(0, 40) + (text.length > 40 ? '…' : '')
-          setStatusBarMsg(`${mName}: ${shortText}`)
-          clearTimeout(statusBarMsgTimer.current)
-          statusBarMsgTimer.current = setTimeout(() => setStatusBarMsg(null), 8000)
+          handleNewMessage(messengerId, e.args[0])
         }
+      })
+
+      // ── console-message: перехват Notification из main world (v0.27.0) ───
+      // executeJavaScript делает console.log('__CC_NOTIF__...') → ловим здесь
+      el.addEventListener('console-message', (e) => {
+        const msg = e.message
+        if (!msg || !msg.startsWith('__CC_NOTIF__')) return
+        try {
+          const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
+          const text = data.b || data.t || ''
+          if (text) handleNewMessage(messengerId, text)
+        } catch {}
       })
     }
   }
