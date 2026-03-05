@@ -210,6 +210,8 @@ function countUnread(type) {
   if (type === 'telegram') return countUnreadTelegram()
   // VK — отдельная логика (VKUI часто меняет классы)
   if (type === 'vk') return countUnreadVK()
+  // MAX — только title parsing (generic селекторы считают лишние бейджи: меню, иконки)
+  if (type === 'max') return countUnreadMAX()
 
   // WhatsApp и другие — стандартный подсчёт по querySelectorAll
   const sels = UNREAD_SELECTORS[type] || []
@@ -311,6 +313,33 @@ function countUnreadVK() {
   }
 
   countUnreadVK._lastSource = source
+  return { personal: allTotal, channels: 0, total: allTotal, allTotal }
+}
+
+// ── MAX: title parsing (generic DOM-селекторы ловят лишние бейджи меню) ─────
+function countUnreadMAX() {
+  let allTotal = 0
+
+  // 1. Title: MAX ставит "(N)" в title
+  try {
+    const m = document.title.match(/\((\d+)\)/)
+    if (m) allTotal = parseInt(m[1], 10) || 0
+  } catch {}
+
+  // 2. Fallback: ищем бейджи ТОЛЬКО внутри списка чатов (не в навигации/меню)
+  if (allTotal === 0) {
+    try {
+      // Ищем контейнер списка чатов
+      const chatList = document.querySelector('[class*="ChatList"], [class*="chat-list"], [class*="dialogs"], [role="list"]')
+      if (chatList) {
+        chatList.querySelectorAll('[class*="badge"], [class*="counter"], [class*="unread"]').forEach(el => {
+          const n = parseInt(el.textContent?.trim(), 10)
+          if (!isNaN(n) && n > 0) allTotal += n
+        })
+      }
+    } catch {}
+  }
+
   return { personal: allTotal, channels: 0, total: allTotal, allTotal }
 }
 
