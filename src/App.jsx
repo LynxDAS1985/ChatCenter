@@ -1,4 +1,4 @@
-// v0.25.1 — Уникальная тональность звука для каждого мессенджера
+// v0.25.2 — Фикс: звук при увеличении счётчика через page-title-updated и unread-count
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -661,6 +661,15 @@ export default function App() {
           const count = parseInt(match[1], 10) || 0
           setUnreadCounts(prev => {
             if (prev[messengerId] === count) return prev
+            // Звук при увеличении счётчика
+            if (count > (prev[messengerId] || 0)) {
+              const s = settingsRef.current
+              const muted = !!(s.mutedMessengers || {})[messengerId]
+              if (s.soundEnabled !== false && !muted) {
+                const mi = messengersRef.current.find(x => x.id === messengerId)
+                playNotificationSound(mi?.color)
+              }
+            }
             return { ...prev, [messengerId]: count }
           })
           // Обновляем статус мониторинга — title работает
@@ -683,9 +692,19 @@ export default function App() {
           animateZoom(messengerId, cur, 100)
           return
         } else if (e.channel === 'unread-count') {
-          // Только обновляем счётчик — звук и уведомление только при new-message (с текстом)
           const count = Number(e.args[0]) || 0
-          setUnreadCounts(prev => ({ ...prev, [messengerId]: count }))
+          setUnreadCounts(prev => {
+            // Звук при увеличении счётчика
+            if (count > (prev[messengerId] || 0)) {
+              const s = settingsRef.current
+              const muted = !!(s.mutedMessengers || {})[messengerId]
+              if (s.soundEnabled !== false && !muted) {
+                const mi = messengersRef.current.find(x => x.id === messengerId)
+                playNotificationSound(mi?.color)
+              }
+            }
+            return { ...prev, [messengerId]: count }
+          })
           // Монитор прислал данные — значит работает
           setMonitorStatus(prev => ({ ...prev, [messengerId]: 'active' }))
         } else if (e.channel === 'unread-split') {
