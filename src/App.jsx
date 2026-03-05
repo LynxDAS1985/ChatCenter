@@ -1,4 +1,4 @@
-// v0.32.0 — Закрепление вкладок (pin/lock) + диалог подтверждения
+// v0.33.0 — Фикс уведомлений MAX, иконка закрепа, ширина вкладок
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -105,8 +105,9 @@ function MessengerTab({
       onDrop={e => { e.preventDefault(); onDrop() }}
       onDragEnd={onDragEnd}
       title={accountInfo ? `${m.name} — ${accountInfo}` : m.name}
-      className="relative flex items-center gap-1.5 h-[40px] px-3 cursor-pointer shrink-0 transition-all duration-150"
+      className="relative flex items-center justify-center gap-1.5 h-[40px] px-3 cursor-pointer transition-all duration-150"
       style={{
+        minWidth: 130,
         backgroundColor: isActive ? `${m.color}1A` : hovered ? 'rgba(255,255,255,0.06)' : 'transparent',
         borderBottom: isActive ? `2px solid ${m.color}` : '2px solid transparent',
         borderRadius: '6px 6px 0 0',
@@ -138,9 +139,10 @@ function MessengerTab({
       <span className="flex flex-col items-center leading-tight">
         <span className="flex items-center gap-1">
           <span
-            className="text-sm font-medium whitespace-nowrap transition-colors duration-150"
+            className="text-sm font-medium whitespace-nowrap transition-colors duration-150 flex items-center gap-0.5"
             style={{ color: isActive ? m.color : 'var(--cc-text-dim)' }}
           >
+            {isPinned && <span className="text-[9px] opacity-50" title="Закреплена">📌</span>}
             {m.name}
           </span>
           {zoomLevel && zoomLevel !== 100 && (
@@ -169,12 +171,6 @@ function MessengerTab({
           style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}
           title="Закрыть вкладку"
         >✕</span>
-      ) : hovered && isPinned ? (
-        <span
-          className="ml-auto w-[16px] h-[16px] flex items-center justify-center text-[10px] leading-none shrink-0"
-          style={{ color: `${m.color}88` }}
-          title="Вкладка закреплена"
-        >🔒</span>
       ) : unreadCount > 0 ? (
         unreadSplit && unreadSplit.personal > 0 && unreadSplit.channels > 0 ? (
           // Два бейджа: личные (цвет мессенджера) + каналы (серый)

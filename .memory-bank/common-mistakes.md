@@ -319,6 +319,25 @@ if (process.platform === 'win32') {
 
 ---
 
+### ❌ Уведомления MAX без текста и аватарки
+
+**Симптом**: Уведомления от мессенджера MAX показывают только "Макс 15:05" без текста сообщения и без аватарки отправителя.
+
+**Причина**: MAX (web.max.ru) — SvelteKit-приложение, использует `ServiceWorkerRegistration.prototype.showNotification()` вместо `new Notification()`. Наш перехват ловил только `new Notification()` через `window.Notification = function(...)`.
+
+**Решение (v0.33.0)**: Добавлен перехват `ServiceWorkerRegistration.prototype.showNotification` в monitor.preload.js injection:
+```js
+var _show = ServiceWorkerRegistration.prototype.showNotification
+ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
+  console.log('__CC_NOTIF__' + JSON.stringify({
+    t: title, b: opts?.body, i: opts?.icon || opts?.badge
+  }))
+  return Promise.resolve()
+}
+```
+
+---
+
 ### ❌ Закрытие вкладки мессенджера без подтверждения
 
 ```js

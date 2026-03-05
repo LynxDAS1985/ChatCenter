@@ -154,6 +154,7 @@ const input = document.querySelector('.im-chat-input--text [contenteditable]')
 - Авторизация через QR-код (основной метод в 2026)
 - Поддерживает аудио/видеозвонки в веб-версии
 - DOM-селекторы пока generic — при необходимости можно уточнить после анализа реального DOM
+- **Уведомления через ServiceWorker** (v0.33.0): MAX использует `ServiceWorkerRegistration.showNotification()` вместо `new Notification()`. Нужен перехват обоих API в monitor.preload.js
 
 ### DOM-селекторы (generic, требуют уточнения)
 

@@ -1,4 +1,4 @@
-// v0.29.1 — ChatMonitor: ранняя <script> injection для перехвата Notification/Audio
+// v0.33.0 — ChatMonitor: перехват Notification + ServiceWorker showNotification + Audio
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
@@ -30,6 +30,18 @@ const { ipcRenderer } = require('electron')
       Object.defineProperty(window.Notification, 'permission', {
         get: function() { return 'granted' }, set: function() {}
       })
+      // Перехват ServiceWorker showNotification (MAX и другие SvelteKit-приложения)
+      try {
+        var _show = ServiceWorkerRegistration.prototype.showNotification
+        ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
+          try {
+            console.log('__CC_NOTIF__' + JSON.stringify({
+              t: title || '', b: (opts && opts.body) || '', i: (opts && opts.icon) || (opts && opts.badge) || ''
+            }))
+          } catch(e) {}
+          return Promise.resolve()
+        }
+      } catch(e) {}
       // Перехват Audio → volume=0 (глушим звуки мессенджера)
       var _A = window.Audio
       window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a }
