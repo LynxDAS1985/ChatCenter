@@ -1,4 +1,4 @@
-// v0.25.0 — Per-messenger звук, убрана секция ИИ из настроек, тест звука
+// v0.25.1 — Уникальная тональность звука для каждого мессенджера
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -8,27 +8,51 @@ import TemplatesPanel from './components/TemplatesPanel.jsx'
 import AutoReplyPanel from './components/AutoReplyPanel.jsx'
 
 // ─── Звуковое уведомление (Web Audio API) ─────────────────────────────────
+// Уникальная тональность для каждого мессенджера по цвету
 
-function playNotificationSound() {
+const MESSENGER_SOUNDS = {
+  '#2AABEE': { f1: 1047, f2: 1319, type: 'sine' },       // Telegram — C6 + E6 (яркий, восходящий)
+  '#25D366': { f1: 784,  f2: 1175, type: 'sine' },       // WhatsApp — G5 + D6 (тёплый, мягкий)
+  '#4C75A3': { f1: 659,  f2: 880,  type: 'triangle' },   // VK — E5 + A5 (мягкий, классический)
+  '#E1306C': { f1: 988,  f2: 1397, type: 'sine' },       // Instagram — B5 + F6 (энергичный)
+  '#5865F2': { f1: 740,  f2: 1109, type: 'triangle' },   // Discord — F#5 + C#6 (глубокий)
+  '#7360F2': { f1: 831,  f2: 1245, type: 'sine' },       // Viber — G#5 + D#6
+  '#00AAFF': { f1: 880,  f2: 1320, type: 'sine' },       // Авито — A5 + E6
+  '#A855F7': { f1: 932,  f2: 1175, type: 'triangle' },   // Wildberries — A#5 + D6
+  '#005BFF': { f1: 698,  f2: 1047, type: 'sine' },       // Ozon — F5 + C6
+}
+
+function getSoundForColor(color) {
+  if (color && MESSENGER_SOUNDS[color]) return MESSENGER_SOUNDS[color]
+  // Для незнакомого цвета — генерируем частоты из хэша цвета
+  let hash = 0
+  for (let i = 0; i < (color || '').length; i++) hash = ((hash << 5) - hash + color.charCodeAt(i)) | 0
+  const f1 = 600 + Math.abs(hash % 500)         // 600–1100 Hz
+  const f2 = f1 + 200 + Math.abs((hash >> 8) % 300) // f1+200..f1+500 Hz
+  return { f1, f2, type: Math.abs(hash) % 2 === 0 ? 'sine' : 'triangle' }
+}
+
+function playNotificationSound(color) {
   try {
+    const { f1, f2, type } = getSoundForColor(color)
     const ctx = new AudioContext()
     const t = ctx.currentTime
-    // Нота 1: C6 (1047 Hz) — 0.12 сек
+    // Нота 1
     const osc1 = ctx.createOscillator()
     const gain1 = ctx.createGain()
-    osc1.type = 'sine'
-    osc1.frequency.value = 1047
+    osc1.type = type
+    osc1.frequency.value = f1
     osc1.connect(gain1)
     gain1.connect(ctx.destination)
     gain1.gain.setValueAtTime(0.15, t)
     gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.12)
     osc1.start(t)
     osc1.stop(t + 0.12)
-    // Нота 2: E6 (1319 Hz) — 0.15 сек, с задержкой 0.08 сек
+    // Нота 2 (с задержкой)
     const osc2 = ctx.createOscillator()
     const gain2 = ctx.createGain()
-    osc2.type = 'sine'
-    osc2.frequency.value = 1319
+    osc2.type = type
+    osc2.frequency.value = f2
     osc2.connect(gain2)
     gain2.connect(ctx.destination)
     gain2.gain.setValueAtTime(0, t)
@@ -327,7 +351,11 @@ export default function App() {
       setUnreadCounts(prev => {
         const prev_count = prev[id] || 0
         if (count > prev_count && settingsRef.current.soundEnabled !== false) {
-          playNotificationSound()
+          const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[id]
+          if (!messengerMuted) {
+            const m = messengersRef.current.find(x => x.id === id)
+            playNotificationSound(m?.color)
+          }
         }
         return { ...prev, [id]: count }
       })
@@ -680,9 +708,10 @@ export default function App() {
 
           // Звук и уведомление — проверяем глобальный + per-messenger mute
           const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[messengerId]
-          if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound()
+          const mInfo = messengersRef.current.find(x => x.id === messengerId)
+          if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound(mInfo?.color)
           if (settingsRef.current.notificationsEnabled !== false && !messengerMuted) {
-            const m = messengersRef.current.find(x => x.id === messengerId)
+            const m = mInfo
             window.api.invoke('app:notify', {
               title: m?.name || 'ЦентрЧатов',
               body: text.length > 100 ? text.slice(0, 97) + '…' : text,

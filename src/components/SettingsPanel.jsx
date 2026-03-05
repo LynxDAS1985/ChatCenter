@@ -1,4 +1,4 @@
-// v0.25.0 — Панель настроек: тема, мессенджеры (звук per-messenger + тест), уведомления, диагностика, о программе
+// v0.25.1 — Панель настроек: уникальный звук каждого мессенджера, тест звука с тональностью
 import { useEffect, useState } from 'react'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 
@@ -40,15 +40,37 @@ function SettingRow({ label, description, children }) {
   )
 }
 
-// Звук уведомления (копия из App.jsx для теста)
-function playTestSound() {
+// Звук уведомления — уникальная тональность по цвету мессенджера (идентично App.jsx)
+const MESSENGER_SOUNDS = {
+  '#2AABEE': { f1: 1047, f2: 1319, type: 'sine' },       // Telegram
+  '#25D366': { f1: 784,  f2: 1175, type: 'sine' },       // WhatsApp
+  '#4C75A3': { f1: 659,  f2: 880,  type: 'triangle' },   // VK
+  '#E1306C': { f1: 988,  f2: 1397, type: 'sine' },       // Instagram
+  '#5865F2': { f1: 740,  f2: 1109, type: 'triangle' },   // Discord
+  '#7360F2': { f1: 831,  f2: 1245, type: 'sine' },       // Viber
+  '#00AAFF': { f1: 880,  f2: 1320, type: 'sine' },       // Авито
+  '#A855F7': { f1: 932,  f2: 1175, type: 'triangle' },   // Wildberries
+  '#005BFF': { f1: 698,  f2: 1047, type: 'sine' },       // Ozon
+}
+
+function getSoundForColor(color) {
+  if (color && MESSENGER_SOUNDS[color]) return MESSENGER_SOUNDS[color]
+  let hash = 0
+  for (let i = 0; i < (color || '').length; i++) hash = ((hash << 5) - hash + color.charCodeAt(i)) | 0
+  const f1 = 600 + Math.abs(hash % 500)
+  const f2 = f1 + 200 + Math.abs((hash >> 8) % 300)
+  return { f1, f2, type: Math.abs(hash) % 2 === 0 ? 'sine' : 'triangle' }
+}
+
+function playTestSound(color) {
   try {
+    const { f1, f2, type } = getSoundForColor(color)
     const ctx = new AudioContext()
     const t = ctx.currentTime
     const osc1 = ctx.createOscillator()
     const gain1 = ctx.createGain()
-    osc1.type = 'sine'
-    osc1.frequency.value = 1047
+    osc1.type = type
+    osc1.frequency.value = f1
     osc1.connect(gain1)
     gain1.connect(ctx.destination)
     gain1.gain.setValueAtTime(0.15, t)
@@ -57,8 +79,8 @@ function playTestSound() {
     osc1.stop(t + 0.12)
     const osc2 = ctx.createOscillator()
     const gain2 = ctx.createGain()
-    osc2.type = 'sine'
-    osc2.frequency.value = 1319
+    osc2.type = type
+    osc2.frequency.value = f2
     osc2.connect(gain2)
     gain2.connect(ctx.destination)
     gain2.gain.setValueAtTime(0, t)
@@ -229,7 +251,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                           color={m.color}
                         />
                         <button
-                          onClick={playTestSound}
+                          onClick={() => playTestSound(m.color)}
                           className="text-[10px] px-2 py-0.5 rounded-lg transition-all cursor-pointer"
                           style={{ backgroundColor: `${m.color}15`, color: m.color, border: `1px solid ${m.color}33` }}
                           onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${m.color}30` }}
@@ -342,7 +364,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
               {[
                 ['Название', 'ЦентрЧатов / ChatCenter'],
-                ['Версия', 'v0.25.0'],
+                ['Версия', 'v0.25.1'],
                 ['Платформа', window.navigator.platform || 'Windows'],
                 ['Стек', 'Electron + React + Tailwind'],
               ].map(([label, value], i, arr) => (
