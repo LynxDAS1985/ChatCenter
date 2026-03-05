@@ -155,6 +155,7 @@ const input = document.querySelector('.im-chat-input--text [contenteditable]')
 - Поддерживает аудио/видеозвонки в веб-версии
 - DOM-селекторы пока generic — при необходимости можно уточнить после анализа реального DOM
 - **Уведомления через ServiceWorker** (v0.33.0): MAX использует `ServiceWorkerRegistration.showNotification()` вместо `new Notification()`. Нужен перехват обоих API в monitor.preload.js
+- **Имя профиля** (v0.36.0): accountScript ищет имя через localStorage → IndexedDB → DOM-селекторы профиля. Профиль MAX: имя в поле "Автолиберти" на странице /profile
 
 ### DOM-селекторы (generic, требуют уточнения)
 

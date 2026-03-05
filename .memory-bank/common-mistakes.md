@@ -290,15 +290,17 @@ window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
 
 **Причина**: `handleNewMessage` безусловно показывал уведомление и играл звук для ЛЮБОГО нового сообщения, не проверяя активна ли вкладка и в фокусе ли окно.
 
-**Решение (v0.30.0)**: Проверка `document.hasFocus() && activeIdRef.current === messengerId` перед звуком и уведомлением:
-```js
-const isViewingThisChat = document.hasFocus() && activeIdRef.current === messengerId
-if (!messengerMuted && !isViewingThisChat) playNotificationSound(...)
-if (!messengerMuted && !isViewingThisChat) window.api.invoke('app:notify', ...)
-```
-Проверка добавлена в 3 местах: `handleNewMessage`, `page-title-updated` handler, `ipc-message unread-count` handler.
+**Решение (v0.30.0)**: Проверка `document.hasFocus() && activeIdRef.current === messengerId` перед звуком и уведомлением.
 
-**Ключевой урок**: Уведомления нужны только когда пользователь НЕ видит сообщение. Всегда проверяй фокус окна + активную вкладку.
+**Проблема (v0.36.0)**: `document.hasFocus()` возвращает `false` когда фокус внутри WebView! В Electron, клик внутри `<webview>` передаёт фокус guest process — renderer `document` теряет фокус. Результат: уведомление показывается даже когда пользователь смотрит на чат.
+
+**Решение (v0.36.0)**: Заменить `document.hasFocus()` на `!document.hidden` (Page Visibility API):
+```js
+const isViewingThisChat = !document.hidden && activeIdRef.current === messengerId
+```
+`document.hidden` = `false` когда окно видимо (не зависит от фокуса WebView). `true` только когда окно скрыто/минимизировано.
+
+**Ключевой урок**: В Electron с WebView НЕ использовать `document.hasFocus()` — он ненадёжен. Использовать `!document.hidden` (Page Visibility API).
 
 ---
 

@@ -1,4 +1,4 @@
-// v0.35.0 — backgroundThrottling=no на WebView: уведомления при свёрнутом окне
+// v0.36.0 — Фикс ложных уведомлений (!document.hidden), имя профиля MAX, аватарка
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -648,7 +648,7 @@ export default function App() {
 
     // Звук и уведомление — проверяем глобальный + per-messenger mute
     // Если окно в фокусе И пользователь смотрит на этот мессенджер — не показывать
-    const isViewingThisChat = document.hasFocus() && activeIdRef.current === messengerId
+    const isViewingThisChat = !document.hidden && activeIdRef.current === messengerId
     const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[messengerId]
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
     if (settingsRef.current.soundEnabled !== false && !messengerMuted && !isViewingThisChat) playNotificationSound(mInfo?.color)
@@ -792,7 +792,7 @@ export default function App() {
           setUnreadCounts(prev => {
             if (prev[messengerId] === count) return prev
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
-            if (count > (prev[messengerId] || 0) && !(document.hasFocus() && activeIdRef.current === messengerId)) {
+            if (count > (prev[messengerId] || 0) && !(!document.hidden && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
               const muted = !!(s.mutedMessengers || {})[messengerId]
               if (s.soundEnabled !== false && !muted) {
@@ -825,7 +825,7 @@ export default function App() {
           const count = Number(e.args[0]) || 0
           setUnreadCounts(prev => {
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
-            if (count > (prev[messengerId] || 0) && !(document.hasFocus() && activeIdRef.current === messengerId)) {
+            if (count > (prev[messengerId] || 0) && !(!document.hidden && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
               const muted = !!(s.mutedMessengers || {})[messengerId]
               if (s.soundEnabled !== false && !muted) {
@@ -862,7 +862,7 @@ export default function App() {
         if (!notifReadyRef.current[messengerId]) return
         // Если пользователь смотрит на этот мессенджер — не обрабатывать уведомление
         // (пометка "непрочитанное" вызывает Notification, но это не новое сообщение)
-        if (document.hasFocus() && activeIdRef.current === messengerId) return
+        if (!document.hidden && activeIdRef.current === messengerId) return
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = data.b || data.t || ''
@@ -870,7 +870,15 @@ export default function App() {
             // data.t = title (имя отправителя), data.i = icon URL (аватарка)
             const extra = {}
             if (data.t && data.b) extra.senderName = data.t // title = имя, body = текст
-            if (data.i) extra.iconUrl = data.i
+            if (data.i) {
+              // Конвертируем относительный URL в абсолютный (MAX может передать /path/to/avatar)
+              if (data.i.startsWith('http')) {
+                extra.iconUrl = data.i
+              } else if (data.i.startsWith('/')) {
+                const mi = messengersRef.current.find(x => x.id === messengerId)
+                if (mi?.url) { try { extra.iconUrl = new URL(data.i, mi.url).href } catch {} }
+              }
+            }
             handleNewMessage(messengerId, text, Object.keys(extra).length ? extra : undefined)
           }
         } catch {}

@@ -19,7 +19,8 @@ const { ipcRenderer } = require('electron')
       window.Notification = function(title, opts) {
         try {
           console.log('__CC_NOTIF__' + JSON.stringify({
-            t: title || '', b: (opts && opts.body) || '', i: (opts && opts.icon) || ''
+            t: title || '', b: (opts && opts.body) || '',
+            i: (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
           }))
         } catch(e) {}
       }
@@ -36,7 +37,8 @@ const { ipcRenderer } = require('electron')
         ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
           try {
             console.log('__CC_NOTIF__' + JSON.stringify({
-              t: title || '', b: (opts && opts.body) || '', i: (opts && opts.icon) || (opts && opts.badge) || ''
+              t: title || '', b: (opts && opts.body) || '',
+              i: (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
             }))
           } catch(e) {}
           return Promise.resolve()
