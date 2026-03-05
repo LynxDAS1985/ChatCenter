@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.27.0 (5 марта 2026)
+## Текущая версия: v0.28.0 (5 марта 2026)
 
 ---
 
@@ -89,6 +89,11 @@
 ---
 
 ## Changelog
+
+### v0.28.0 (5 марта 2026) — Имя отправителя и аватарка в уведомлениях
+- **Имя отправителя**: из `Notification.title` (VK передаёт имя контакта). Показывается в уведомлении как `"ВКонтакте — Елена Дугина"` и в статусбаре.
+- **Аватарка контакта**: из `Notification.icon` (URL). Скачивается в main-процессе через `downloadIcon()` с кешем (до 50 записей). Передаётся в `Notification.icon` как `nativeImage`.
+- **Расширение handleNewMessage**: принимает `extra: { senderName, iconUrl }` из перехваченного Notification.
 
 ### v0.27.0 (5 марта 2026) — Перехват Notification/Audio через executeJavaScript + console-message
 - **Фикс "electron.app.Electron" в уведомлениях**: window.Notification перехватывается через `webview.executeJavaScript()` (main world) → `console.log('__CC_NOTIF__...')` → `console-message` event на `<webview>`. Решает проблему context isolation — preload world и main world изолированы.

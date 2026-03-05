@@ -1,4 +1,4 @@
-// v0.27.0 — Перехват Notification/Audio через executeJavaScript + console-message, рефакторинг handleNewMessage
+// v0.28.0 — Имя отправителя и аватарка в уведомлениях (из перехваченного Notification)
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -624,7 +624,8 @@ export default function App() {
   }
 
   // ── Обработка входящего сообщения (общая для ipc-message и console-message) ──
-  const handleNewMessage = (messengerId, text) => {
+  // extra = { senderName, iconUrl } — опционально, из перехваченного Notification
+  const handleNewMessage = (messengerId, text, extra) => {
     if (!text) return
 
     // Автопереключение на вкладку с новым сообщением (если включено)
@@ -637,9 +638,14 @@ export default function App() {
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
     if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound(mInfo?.color)
     if (settingsRef.current.notificationsEnabled !== false && !messengerMuted) {
+      const senderName = extra?.senderName
+      const notifTitle = senderName
+        ? `${mInfo?.name || 'ЦентрЧатов'} — ${senderName}`
+        : (mInfo?.name || 'ЦентрЧатов')
       window.api.invoke('app:notify', {
-        title: mInfo?.name || 'ЦентрЧатов',
+        title: notifTitle,
         body: text.length > 100 ? text.slice(0, 97) + '…' : text,
+        iconUrl: extra?.iconUrl || undefined,
       }).catch(() => {})
     }
 
@@ -684,8 +690,9 @@ export default function App() {
 
     // Последнее сообщение в статусбар (исчезает через 8 сек)
     const mName = messengersRef.current.find(x => x.id === messengerId)?.name || ''
+    const displayName = extra?.senderName ? `${mName} — ${extra.senderName}` : mName
     const shortText = text.slice(0, 40) + (text.length > 40 ? '…' : '')
-    setStatusBarMsg(`${mName}: ${shortText}`)
+    setStatusBarMsg(`${displayName}: ${shortText}`)
     clearTimeout(statusBarMsgTimer.current)
     statusBarMsgTimer.current = setTimeout(() => setStatusBarMsg(null), 8000)
   }
@@ -845,7 +852,13 @@ export default function App() {
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = data.b || data.t || ''
-          if (text) handleNewMessage(messengerId, text)
+          if (text) {
+            // data.t = title (имя отправителя), data.i = icon URL (аватарка)
+            const extra = {}
+            if (data.t && data.b) extra.senderName = data.t // title = имя, body = текст
+            if (data.i) extra.iconUrl = data.i
+            handleNewMessage(messengerId, text, Object.keys(extra).length ? extra : undefined)
+          }
         } catch {}
       })
     }

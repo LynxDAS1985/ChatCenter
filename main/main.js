@@ -302,6 +302,44 @@ async function getGigaChatToken(clientId, clientSecret) {
   return result.data.access_token
 }
 
+// ─── Скачивание иконки для уведомления (кеш в памяти, до 50 записей) ─────────
+
+const iconCache = new Map()
+
+function downloadIcon(url) {
+  if (iconCache.has(url)) return Promise.resolve(iconCache.get(url))
+  return new Promise((resolve) => {
+    const proto = url.startsWith('https') ? https : require('http')
+    const req = proto.get(url, { timeout: 4000 }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        // Redirect
+        return downloadIcon(res.headers.location).then(resolve)
+      }
+      if (res.statusCode !== 200) { res.resume(); return resolve(null) }
+      const chunks = []
+      res.on('data', c => chunks.push(c))
+      res.on('end', () => {
+        try {
+          const buf = Buffer.concat(chunks)
+          const icon = nativeImage.createFromBuffer(buf)
+          if (!icon.isEmpty()) {
+            // Кеш до 50 записей
+            if (iconCache.size > 50) {
+              const first = iconCache.keys().next().value
+              iconCache.delete(first)
+            }
+            iconCache.set(url, icon)
+            resolve(icon)
+          } else resolve(null)
+        } catch { resolve(null) }
+      })
+      res.on('error', () => resolve(null))
+    })
+    req.on('error', () => resolve(null))
+    req.on('timeout', () => { req.destroy(); resolve(null) })
+  })
+}
+
 // ─── Перевод API-ошибок на русский ───────────────────────────────────────────
 
 function ruError(msg) {
@@ -567,10 +605,17 @@ function setupIPC() {
   })
 
   // Уведомление (системное)
-  ipcMain.handle('app:notify', (event, { title, body }) => {
-    if (Notification.isSupported()) {
-      new Notification({ title, body, silent: true }).show()
+  ipcMain.handle('app:notify', async (event, { title, body, iconUrl }) => {
+    if (!Notification.isSupported()) return { ok: false }
+    const opts = { title, body, silent: true }
+    // Скачиваем аватарку по URL если передан
+    if (iconUrl && (iconUrl.startsWith('https://') || iconUrl.startsWith('http://'))) {
+      try {
+        const icon = await downloadIcon(iconUrl)
+        if (icon) opts.icon = icon
+      } catch {}
     }
+    new Notification(opts).show()
     return { ok: true }
   })
 
