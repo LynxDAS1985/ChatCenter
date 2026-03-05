@@ -1,4 +1,4 @@
-// v0.33.1 — Убраны подписи под вкладками + фикс баннера VK
+// v0.34.0 — Фикс счётчика MAX, ложные уведомления, диагностика DOM через IPC
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -860,6 +860,9 @@ export default function App() {
         if (!msg || !msg.startsWith('__CC_NOTIF__')) return
         // Warm-up: игнорируем уведомления до готовности (10 сек после dom-ready)
         if (!notifReadyRef.current[messengerId]) return
+        // Если пользователь смотрит на этот мессенджер — не обрабатывать уведомление
+        // (пометка "непрочитанное" вызывает Notification, но это не новое сообщение)
+        if (document.hasFocus() && activeIdRef.current === messengerId) return
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = data.b || data.t || ''
@@ -885,7 +888,7 @@ export default function App() {
       if (wv) { try { wv.reload() } catch {} }
       setMonitorStatus(prev => ({ ...prev, [id]: 'loading' }))
     } else if (action === 'diag') {
-      if (wv) { try { wv.executeJavaScript('typeof runDiagnostics === "function" && (diagSent = false, runDiagnostics())') } catch {} }
+      if (wv) { try { wv.send('run-diagnostics') } catch {} }
     } else if (action === 'copyUrl') {
       const m = messengers.find(x => x.id === id)
       if (m?.url) navigator.clipboard.writeText(m.url).catch(() => {})

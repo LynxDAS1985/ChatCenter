@@ -1,4 +1,4 @@
-// v0.33.0 — ChatMonitor: перехват Notification + ServiceWorker showNotification + Audio
+// v0.34.0 — ChatMonitor: перехват Notification + ServiceWorker + диагностика через IPC
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
@@ -316,30 +316,61 @@ function countUnreadVK() {
   return { personal: allTotal, channels: 0, total: allTotal, allTotal }
 }
 
-// ── MAX: title parsing (generic DOM-селекторы ловят лишние бейджи меню) ─────
+// ── MAX: бейдж вкладки "Все" в навигации (generic селекторы ловят лишние) ──
 function countUnreadMAX() {
   let allTotal = 0
+  let source = 'none'
 
-  // 1. Title: MAX ставит "(N)" в title
+  // 1. Title: MAX может ставить "(N)" в title
   try {
     const m = document.title.match(/\((\d+)\)/)
-    if (m) allTotal = parseInt(m[1], 10) || 0
+    if (m) { allTotal = parseInt(m[1], 10) || 0; if (allTotal > 0) source = 'title' }
   } catch {}
 
-  // 2. Fallback: ищем бейджи ТОЛЬКО внутри списка чатов (не в навигации/меню)
+  // 2. Навигационная вкладка "Все" / "Чаты" — бейдж на ней = общее число непрочитанных
   if (allTotal === 0) {
     try {
-      // Ищем контейнер списка чатов
-      const chatList = document.querySelector('[class*="ChatList"], [class*="chat-list"], [class*="dialogs"], [role="list"]')
-      if (chatList) {
-        chatList.querySelectorAll('[class*="badge"], [class*="counter"], [class*="unread"]').forEach(el => {
-          const n = parseInt(el.textContent?.trim(), 10)
-          if (!isNaN(n) && n > 0) allTotal += n
-        })
+      // Ищем все кнопки/ссылки в навигации
+      const navItems = document.querySelectorAll('nav a, nav button, aside a, aside button, [role="tablist"] [role="tab"], [class*="nav"] a, [class*="Nav"] a, [class*="sidebar"] a, [class*="Sidebar"] a, [class*="tab"]')
+      for (const el of navItems) {
+        const text = (el.textContent || '').trim()
+        // Ищем "Все" или "Чаты" в навигации — бейдж рядом
+        if (/^все$/i.test(text.replace(/\d+/g, '').trim()) || /^чаты$/i.test(text.replace(/\d+/g, '').trim())) {
+          const badge = el.querySelector('[class*="badge"], [class*="counter"], [class*="Badge"], [class*="Counter"]')
+          if (badge) {
+            const n = parseInt(badge.textContent?.trim(), 10)
+            if (!isNaN(n) && n > 0) { allTotal = n; source = 'nav-all-badge'; break }
+          }
+          // Число в тексте самого элемента: "Все 1"
+          const nums = text.match(/(\d+)/)
+          if (nums) {
+            const n = parseInt(nums[1], 10)
+            if (n > 0 && n < 10000) { allTotal = n; source = 'nav-all-text'; break }
+          }
+        }
       }
     } catch {}
   }
 
+  // 3. Поиск бейджей на отдельных чатах (не суммировать навигацию)
+  // Каждый чат — контейнер с аватаркой, именем и бейджем
+  if (allTotal === 0) {
+    try {
+      // MAX чаты обычно в контейнерах с аватаркой + бейджем
+      const chatItems = document.querySelectorAll('[class*="ChatItem"], [class*="chat-item"], [class*="Dialog"], [class*="dialog"], [class*="Conversation"], [class*="conversation"]')
+      for (const item of chatItems) {
+        const badge = item.querySelector('[class*="badge"], [class*="counter"], [class*="unread"]')
+        if (badge) {
+          const n = parseInt(badge.textContent?.trim(), 10)
+          if (!isNaN(n) && n > 0) allTotal += n
+          else if (badge.offsetParent !== null && badge.offsetWidth > 0) allTotal += 1
+        }
+      }
+      if (allTotal > 0) source = 'chat-items'
+    } catch {}
+  }
+
+  countUnreadMAX._lastSource = source
   return { personal: allTotal, channels: 0, total: allTotal, allTotal }
 }
 
@@ -671,6 +702,13 @@ if (document.readyState === 'loading') {
 } else {
   startMonitor()
 }
+
+// ── IPC: ручной запуск диагностики из App.jsx (через webview.send) ────────
+ipcRenderer.on('run-diagnostics', () => {
+  diagSent = false
+  const type = getMessengerType()
+  if (type) runDiagnostics(type)
+})
 
 // ── Перехват Notification API ─────────────────────────────────────────────
 // УДАЛЁН из preload (v0.27.0): <script> injection + CustomEvent НЕ работает —
