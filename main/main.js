@@ -168,8 +168,8 @@ function getPreloadPath() {
 
 // ─── Настройка сессий для WebView ─────────────────────────────────────────────
 
-// User-Agent без слова "Electron" — WhatsApp и другие сайты блокируют Electron-браузеры
-const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+// User-Agent без слова "Electron" — WhatsApp/VK и другие сайты блокируют Electron-браузеры
+const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 function setupSession(ses) {
   ses.setUserAgent(CHROME_UA)

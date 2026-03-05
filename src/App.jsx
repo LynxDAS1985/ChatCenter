@@ -1,4 +1,4 @@
-// v0.26.0 — Фикс VK-уведомлений, звук при всех путях обновления счётчика
+// v0.26.1 — Скрытие баннера "браузер устарел" VK, обновление User-Agent
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -651,6 +651,34 @@ export default function App() {
             try { webviewRefs.current[messengerId]?.setZoomFactor(zoom / 100) } catch {}
           }
         }, 600)
+        // Скрываем баннеры "браузер устарел" (VK и др.)
+        try {
+          el.insertCSS(`
+            .BrowserUpdateLayer, .browser_update, .BrowserUpdate,
+            [class*="BrowserUpdate"], [class*="browser_update"],
+            [class*="browserUpdate"], [class*="unsupported-browser"],
+            .UnsupportedBrowser, .stl__banner,
+            .Popup--browserUpdate, .vkuiBanner--browser-update {
+              display: none !important;
+            }
+          `)
+          // Дополнительно: JS-удаление баннеров по тексту (VK может использовать inline стили)
+          el.executeJavaScript(`
+            (function hideBrowserBanners() {
+              function remove() {
+                document.querySelectorAll('div, span, section, aside').forEach(el => {
+                  const t = el.textContent || ''
+                  if ((t.includes('браузер устарел') || t.includes('Обновите') && t.includes('браузер')) && el.offsetHeight < 200) {
+                    el.style.display = 'none'
+                  }
+                })
+              }
+              remove()
+              setTimeout(remove, 3000)
+              setTimeout(remove, 8000)
+            })()
+          `).catch(() => {})
+        } catch {}
       })
 
       // page-title-updated — мгновенное обновление счётчика из title WebView
