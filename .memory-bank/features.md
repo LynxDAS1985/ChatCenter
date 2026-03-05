@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.29.2 (5 марта 2026)
+## Текущая версия: v0.30.0 (5 марта 2026)
 
 ---
 
@@ -89,6 +89,10 @@
 ---
 
 ## Changelog
+
+### v0.30.0 (5 марта 2026) — Подавление уведомлений при активном чате + мессенджер Макс
+- **Фикс ложных уведомлений**: Если окно в фокусе И пользователь смотрит на вкладку мессенджера — звук и Windows-уведомление НЕ показываются. `document.hasFocus() && activeIdRef.current === messengerId`. Проверка добавлена в 3 местах: `handleNewMessage`, `page-title-updated`, `ipc-message unread-count`.
+- **Мессенджер Макс**: Добавлен в DEFAULT_MESSENGERS (url: `https://web.max.ru/`, partition: `persist:max`, color: `#2688EB`, emoji: 💎). Добавлен в POPULAR_MESSENGERS. Уникальный звук уведомления (G5+C6 triangle). Generic DOM-селекторы в monitor.preload.js + title fallback.
 
 ### v0.29.2 (5 марта 2026) — Фикс заголовка уведомлений Windows (AppUserModelId)
 - **Корень проблемы**: на Windows заголовок тостовых уведомлений берётся из `AppUserModelId`, а НЕ из `app.setName()`. По умолчанию Electron ставит `"electron.app.Electron"`.

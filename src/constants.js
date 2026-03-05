@@ -82,6 +82,15 @@ export const DEFAULT_MESSENGERS = [
       for (const s of sels) { const t = document.querySelector(s)?.textContent?.trim(); if (t && t.length < 60) return t; }
       return null;
     })()`
+  },
+  {
+    id: 'max',
+    name: 'Макс',
+    url: 'https://web.max.ru/',
+    color: '#2688EB',
+    partition: 'persist:max',
+    emoji: '💎',
+    isDefault: true,
   }
 ]
 
@@ -90,6 +99,7 @@ export const POPULAR_MESSENGERS = [
   { name: 'Telegram',      url: 'https://web.telegram.org/k/',        color: '#2AABEE', emoji: '✈️', category: 'Мессенджер' },
   { name: 'WhatsApp',      url: 'https://web.whatsapp.com/',           color: '#25D366', emoji: '💬', category: 'Мессенджер' },
   { name: 'ВКонтакте',     url: 'https://vk.com/im',                   color: '#4C75A3', emoji: '🔵', category: 'Соцсеть' },
+  { name: 'Макс',          url: 'https://web.max.ru/',                    color: '#2688EB', emoji: '💎', category: 'Мессенджер' },
   { name: 'Авито',         url: 'https://www.avito.ru/im/list',         color: '#00AAFF', emoji: '🛒', category: 'Маркетплейс' },
   { name: 'Wildberries',   url: 'https://seller.wildberries.ru/',       color: '#A855F7', emoji: '📦', category: 'Маркетплейс' },
   { name: 'Ozon',          url: 'https://seller.ozon.ru/',              color: '#005BFF', emoji: '🛍️', category: 'Маркетплейс' },

@@ -8,9 +8,10 @@
 
 | Мессенджер | URL | Статус | Сложность |
 |-----------|-----|--------|-----------|
-| Telegram Web | web.telegram.org | 📋 Запланировано | Средняя |
-| WhatsApp Web | web.whatsapp.com | 📋 Запланировано | Средняя |
-| ВКонтакте | vk.com/im | 📋 Запланировано | Средняя |
+| Telegram Web | web.telegram.org | ✅ Базово | Средняя |
+| WhatsApp Web | web.whatsapp.com | ✅ Базово | Средняя |
+| ВКонтакте | vk.com/im | ✅ Базово | Средняя |
+| Макс | web.max.ru | ✅ Базово (v0.30.0) | Средняя |
 | Viber Web | web.viber.com | 📋 Запланировано | Высокая |
 | Авито | avito.ru/messenger | 📋 Запланировано | Высокая |
 
@@ -137,6 +138,36 @@ const input = document.querySelector('.im-chat-input--text [contenteditable]')
 
 - VK обновляет интерфейс часто — селекторы могут устареть
 - Авторизация через логин/пароль или VK ID
+
+---
+
+## Макс (web.max.ru) — добавлен v0.30.0
+
+**URL**: `https://web.max.ru/`
+**Partition**: `persist:max`
+**Цвет бренда**: `#2688EB`
+
+### Особенности
+
+- Бывший VK Мессенджер, переименован в "Макс" (MAX) в 2025
+- Веб-версия на SvelteKit — DOM-структура отличается от VK
+- Авторизация через QR-код (основной метод в 2026)
+- Поддерживает аудио/видеозвонки в веб-версии
+- DOM-селекторы пока generic — при необходимости можно уточнить после анализа реального DOM
+
+### DOM-селекторы (generic, требуют уточнения)
+
+```js
+// Счётчик непрочитанных
+const unread = document.querySelectorAll('[class*="unread"], [class*="badge"], [class*="counter"]')
+
+// Текст последнего сообщения
+const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]')
+```
+
+### Подсчёт непрочитанных
+
+Используется стандартная логика `countUnread` с generic селекторами + title fallback `(N)`.
 
 ---
 

@@ -1,4 +1,4 @@
-// v0.29.1 — Ранняя инъекция перехвата Notification через <script> в preload + фикс фантомных сообщений
+// v0.30.0 — Не показывать уведомление при активном чате + мессенджер Макс
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -20,6 +20,7 @@ const MESSENGER_SOUNDS = {
   '#00AAFF': { f1: 880,  f2: 1320, type: 'sine' },       // Авито — A5 + E6
   '#A855F7': { f1: 932,  f2: 1175, type: 'triangle' },   // Wildberries — A#5 + D6
   '#005BFF': { f1: 698,  f2: 1047, type: 'sine' },       // Ozon — F5 + C6
+  '#2688EB': { f1: 784,  f2: 1047, type: 'triangle' },   // Макс — G5 + C6 (мягкий, свежий)
 }
 
 function getSoundForColor(color) {
@@ -635,10 +636,12 @@ export default function App() {
     }
 
     // Звук и уведомление — проверяем глобальный + per-messenger mute
+    // Если окно в фокусе И пользователь смотрит на этот мессенджер — не показывать
+    const isViewingThisChat = document.hasFocus() && activeIdRef.current === messengerId
     const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[messengerId]
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
-    if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound(mInfo?.color)
-    if (settingsRef.current.notificationsEnabled !== false && !messengerMuted) {
+    if (settingsRef.current.soundEnabled !== false && !messengerMuted && !isViewingThisChat) playNotificationSound(mInfo?.color)
+    if (settingsRef.current.notificationsEnabled !== false && !messengerMuted && !isViewingThisChat) {
       const senderName = extra?.senderName
       const notifTitle = senderName
         ? `${mInfo?.name || 'ЦентрЧатов'} — ${senderName}`
@@ -770,8 +773,8 @@ export default function App() {
           const count = parseInt(match[1], 10) || 0
           setUnreadCounts(prev => {
             if (prev[messengerId] === count) return prev
-            // Звук при увеличении счётчика
-            if (count > (prev[messengerId] || 0)) {
+            // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
+            if (count > (prev[messengerId] || 0) && !(document.hasFocus() && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
               const muted = !!(s.mutedMessengers || {})[messengerId]
               if (s.soundEnabled !== false && !muted) {
@@ -803,8 +806,8 @@ export default function App() {
         } else if (e.channel === 'unread-count') {
           const count = Number(e.args[0]) || 0
           setUnreadCounts(prev => {
-            // Звук при увеличении счётчика
-            if (count > (prev[messengerId] || 0)) {
+            // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
+            if (count > (prev[messengerId] || 0) && !(document.hasFocus() && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
               const muted = !!(s.mutedMessengers || {})[messengerId]
               if (s.soundEnabled !== false && !muted) {

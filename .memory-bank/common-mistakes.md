@@ -283,6 +283,24 @@ window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
 
 ---
 
+### ❌ Уведомление/звук при чтении сообщения в активном чате
+
+**Симптом**: Пользователь открывает непрочитанный чат в Telegram — приложение показывает Windows-уведомление и играет звук, хотя пользователь УЖЕ смотрит на этот чат.
+
+**Причина**: `handleNewMessage` безусловно показывал уведомление и играл звук для ЛЮБОГО нового сообщения, не проверяя активна ли вкладка и в фокусе ли окно.
+
+**Решение (v0.30.0)**: Проверка `document.hasFocus() && activeIdRef.current === messengerId` перед звуком и уведомлением:
+```js
+const isViewingThisChat = document.hasFocus() && activeIdRef.current === messengerId
+if (!messengerMuted && !isViewingThisChat) playNotificationSound(...)
+if (!messengerMuted && !isViewingThisChat) window.api.invoke('app:notify', ...)
+```
+Проверка добавлена в 3 местах: `handleNewMessage`, `page-title-updated` handler, `ipc-message unread-count` handler.
+
+**Ключевой урок**: Уведомления нужны только когда пользователь НЕ видит сообщение. Всегда проверяй фокус окна + активную вкладку.
+
+---
+
 ### ❌ app.setName() не меняет заголовок уведомлений на Windows
 
 **Симптом**: Нативные Windows-уведомления показывают "electron.app.Electron" вместо "ЦентрЧатов", несмотря на `app.setName('ЦентрЧатов')`.

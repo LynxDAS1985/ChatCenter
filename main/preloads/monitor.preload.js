@@ -66,6 +66,12 @@ const UNREAD_SELECTORS = {
     '.MessagesNavItem--unread .MessagesNavItem__unreadCounter',
     '.vkuiBadge',
   ],
+  max: [
+    // MAX (бывший VK Мессенджер) — generic селекторы
+    '[class*="unread"]',
+    '[class*="badge"]',
+    '[class*="counter"]',
+  ],
 }
 
 // Селекторы для извлечения текста последнего входящего сообщения
@@ -91,6 +97,11 @@ const LAST_MESSAGE_SELECTORS = {
     '.im-mes-stack--in:last-child .im-mes__text',
     '.MessagesMes--in:last-child .MessagesMes__text',
   ],
+  max: [
+    // MAX (бывший VK Мессенджер) — generic селекторы
+    '[class*="message-in"] [class*="text"]',
+    '[class*="message"]:last-child [class*="text"]',
+  ],
 }
 
 function getMessengerType() {
@@ -98,6 +109,7 @@ function getMessengerType() {
   if (h.includes('telegram')) return 'telegram'
   if (h.includes('whatsapp')) return 'whatsapp'
   if (h.includes('vk.com')) return 'vk'
+  if (h.includes('max.ru')) return 'max'
   return null
 }
 
