@@ -94,21 +94,12 @@ export const DEFAULT_MESSENGERS = [
   }
 ]
 
-// Популярные мессенджеры для быстрого добавления
+// Мессенджеры для быстрого добавления — только те, для которых настроен мониторинг
 export const POPULAR_MESSENGERS = [
-  { name: 'Telegram',      url: 'https://web.telegram.org/k/',        color: '#2AABEE', emoji: '✈️', category: 'Мессенджер' },
-  { name: 'WhatsApp',      url: 'https://web.whatsapp.com/',           color: '#25D366', emoji: '💬', category: 'Мессенджер' },
-  { name: 'ВКонтакте',     url: 'https://vk.com/im',                   color: '#4C75A3', emoji: '🔵', category: 'Соцсеть' },
-  { name: 'Макс',          url: 'https://web.max.ru/',                    color: '#2688EB', emoji: '💎', category: 'Мессенджер' },
-  { name: 'Авито',         url: 'https://www.avito.ru/im/list',         color: '#00AAFF', emoji: '🛒', category: 'Маркетплейс' },
-  { name: 'Wildberries',   url: 'https://seller.wildberries.ru/',       color: '#A855F7', emoji: '📦', category: 'Маркетплейс' },
-  { name: 'Ozon',          url: 'https://seller.ozon.ru/',              color: '#005BFF', emoji: '🛍️', category: 'Маркетплейс' },
-  { name: 'Instagram',     url: 'https://www.instagram.com/direct/',    color: '#E1306C', emoji: '📸', category: 'Соцсеть' },
-  { name: 'Discord',       url: 'https://discord.com/channels/@me',     color: '#5865F2', emoji: '🎮', category: 'Геймерский' },
-  { name: 'Viber',         url: 'https://web.viber.com/',               color: '#7360F2', emoji: '📳', category: 'Мессенджер' },
-  { name: 'Одноклассники', url: 'https://ok.ru/messages',               color: '#F7921E', emoji: '🌟', category: 'Соцсеть' },
-  { name: 'Slack',         url: 'https://app.slack.com/',               color: '#4A154B', emoji: '💼', category: 'Работа' },
-  { name: 'Zoom',          url: 'https://app.zoom.us/wc',               color: '#2D8CFF', emoji: '📹', category: 'Видео' },
+  { name: 'Telegram',  url: 'https://web.telegram.org/k/', color: '#2AABEE', emoji: '✈️' },
+  { name: 'WhatsApp',  url: 'https://web.whatsapp.com/',    color: '#25D366', emoji: '💬' },
+  { name: 'ВКонтакте', url: 'https://vk.com/im',           color: '#4C75A3', emoji: '🔵' },
+  { name: 'Макс',      url: 'https://web.max.ru/',          color: '#2688EB', emoji: '💎' },
 ]
 
 export const PRESET_COLORS = [

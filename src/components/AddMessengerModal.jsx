@@ -1,6 +1,6 @@
-// v0.6 — Модальное окно добавления: быстрый выбор из популярных + ручной ввод
+// v0.30.1 — Только настроенные мессенджеры, убрана секция иконок
 import { useState, useEffect } from 'react'
-import { PRESET_COLORS, PRESET_EMOJIS, POPULAR_MESSENGERS, DEFAULT_MESSENGERS } from '../constants.js'
+import { PRESET_COLORS, POPULAR_MESSENGERS, DEFAULT_MESSENGERS } from '../constants.js'
 
 // accountScript для дефолтных мессенджеров, добавленных через Quick Add
 const DEFAULT_SCRIPTS = Object.fromEntries(
@@ -196,27 +196,6 @@ export default function AddMessengerModal({ onAdd, onClose }) {
                 className="text-xs px-2 py-1 rounded-md font-mono"
                 style={{ backgroundColor: `${color}25`, color }}
               >{color}</span>
-            </div>
-          </div>
-
-          {/* Иконка */}
-          <div>
-            <label className="text-xs font-semibold mb-2 block uppercase tracking-wider" style={{ color: 'var(--cc-text-dim)' }}>
-              Иконка
-            </label>
-            <div className="flex gap-1.5 flex-wrap">
-              {PRESET_EMOJIS.map(em => (
-                <button
-                  key={em}
-                  type="button"
-                  onClick={() => setEmoji(em)}
-                  className="w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all duration-150 cursor-pointer"
-                  style={{
-                    backgroundColor: emoji === em ? `${color}30` : 'var(--cc-hover)',
-                    outline: emoji === em ? `1.5px solid ${color}` : '1.5px solid transparent'
-                  }}
-                >{em}</button>
-              ))}
             </div>
           </div>
 
