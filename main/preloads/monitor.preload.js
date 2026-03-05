@@ -1,7 +1,44 @@
-// v0.27.0 — ChatMonitor: удалён нерабочий перехват Notification (перенесён в App.jsx)
+// v0.29.1 — ChatMonitor: ранняя <script> injection для перехвата Notification/Audio
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
+
+// ── САМОЕ ПЕРВОЕ: перехват Notification + Audio в main world ────────────────
+// <script> tag из preload выполняется в main world (DOM общий между мирами).
+// Это происходит ДО скриптов мессенджера → VK/WhatsApp не смогут вызвать
+// нативный new Notification() (он заменён на console.log → console-message).
+// console.log пересекает context isolation через event 'console-message' на <webview>.
+;(function injectNotifHook() {
+  try {
+    const s = document.createElement('script')
+    s.textContent = '(' + function() {
+      if (window.__cc_notif_hooked) return
+      window.__cc_notif_hooked = true
+      // Перехват Notification → console.log('__CC_NOTIF__...')
+      var _N = window.Notification
+      window.Notification = function(title, opts) {
+        try {
+          console.log('__CC_NOTIF__' + JSON.stringify({
+            t: title || '', b: (opts && opts.body) || '', i: (opts && opts.icon) || ''
+          }))
+        } catch(e) {}
+      }
+      window.Notification.permission = 'granted'
+      window.Notification.requestPermission = function(cb) {
+        if (cb) cb('granted'); return Promise.resolve('granted')
+      }
+      Object.defineProperty(window.Notification, 'permission', {
+        get: function() { return 'granted' }, set: function() {}
+      })
+      // Перехват Audio → volume=0 (глушим звуки мессенджера)
+      var _A = window.Audio
+      window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a }
+      window.Audio.prototype = _A.prototype
+    } + ')()'
+    ;(document.head || document.documentElement).appendChild(s)
+    s.remove()
+  } catch(e) {}
+})()
 
 // Debounce для MutationObserver (не пересчитывать на каждый пиксель скролла)
 let updateTimer = null
@@ -498,7 +535,18 @@ let observer = null
 // Защита от ложных срабатываний при загрузке страницы:
 // первые 10 секунд не сообщаем о "новых" сообщениях — страница ещё грузится
 let monitorReady = false
-setTimeout(() => { monitorReady = true }, 10000)
+setTimeout(() => {
+  monitorReady = true
+  // Инициализируем lastActiveMessageText текущим текстом в DOM
+  // чтобы первое обнаруженное сообщение (старое!) не считалось "новым"
+  const type = getMessengerType()
+  if (type) {
+    try {
+      const text = getLastMessageText(type)
+      if (text) { lastActiveMessageText = text; lastSentText = text }
+    } catch {}
+  }
+}, 10000)
 
 function sendUpdate(type) {
   const { personal, channels, total, allTotal } = countUnread(type)

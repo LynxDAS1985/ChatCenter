@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.29.0 (5 марта 2026)
+## Текущая версия: v0.29.1 (5 марта 2026)
 
 ---
 
@@ -89,6 +89,11 @@
 ---
 
 ## Changelog
+
+### v0.29.1 (5 марта 2026) — Ранняя script injection + фикс фантомных сообщений
+- **Фикс "electron.app.Electron" (ОКОНЧАТЕЛЬНЫЙ)**: Перехват `window.Notification` перенесён из `executeJavaScript` в dom-ready → в `monitor.preload.js` через ранний `<script>` tag injection при document_start. Скрипт выполняется в main world ДО скриптов мессенджера — VK не может вызвать нативный `new Notification()`.
+- **app.setName('ЦентрЧатов')**: fallback — если уведомление всё же просочится, заголовок будет "ЦентрЧатов" а не "electron.app.Electron".
+- **Фикс фантомных сообщений (ОКОНЧАТЕЛЬНЫЙ)**: `lastActiveMessageText` инициализируется текущим текстом DOM при `monitorReady = true`. Плюс warm-up для `ipc-message` `new-message` (не только `__CC_NOTIF__`).
 
 ### v0.29.0 (5 марта 2026) — Блокировка нативных уведомлений + warm-up
 - **Фикс "electron.app.Electron"**: заблокирован permission `notifications` на уровне Electron session (`setPermissionRequestHandler`). Нативные `new Notification()` из мессенджеров больше не показываются — все уведомления идут через наш перехват `executeJavaScript` → `console-message` → `app:notify`.

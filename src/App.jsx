@@ -1,4 +1,4 @@
-// v0.29.0 — Блокировка нативных уведомлений + warm-up задержка против фантомных сообщений
+// v0.29.1 — Ранняя инъекция перехвата Notification через <script> в preload + фикс фантомных сообщений
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -757,27 +757,8 @@ export default function App() {
               setTimeout(remove, 8000)
             })()
           `).catch(() => {})
-          // ── Перехват Notification + Audio в main world (v0.27.0) ──────────────
-          // window.Notification в main world → console.log('__CC_NOTIF__...')
-          // → слушаем console-message на <webview> элементе (пересекает context isolation)
-          // Также глушим new Audio() чтобы убрать двойной звук уведомлений
-          el.executeJavaScript(`(function(){
-            if(window.__cc_notif_hooked)return;
-            window.__cc_notif_hooked=true;
-            // Перехват Notification — вместо показа системного уведомления шлём в console
-            var _N=window.Notification;
-            window.Notification=function(title,opts){
-              try{console.log('__CC_NOTIF__'+JSON.stringify({t:title||'',b:(opts&&opts.body)||'',i:(opts&&opts.icon)||''}))}catch(e){}
-            };
-            window.Notification.permission='granted';
-            window.Notification.requestPermission=function(cb){if(cb)cb('granted');return Promise.resolve('granted')};
-            Object.defineProperty(window.Notification,'permission',{get:function(){return'granted'},set:function(){}});
-            // Перехват Audio — глушим звуки уведомлений мессенджера
-            var _A=window.Audio;
-            var OrigAudio=function(src){var a=new _A(src);a.volume=0;return a};
-            OrigAudio.prototype=_A.prototype;
-            window.Audio=OrigAudio;
-          })()`).catch(() => {})
+          // Перехват Notification + Audio перенесён в monitor.preload.js (v0.29.1)
+          // — ранняя <script> injection при document_start, ДО скриптов мессенджера
         } catch {}
       })
 
@@ -845,6 +826,8 @@ export default function App() {
           console.log(`[ChatCenter] 🔍 Диагностика DOM (${messengerId}):`, diag)
           setMonitorDiag(prev => ({ ...prev, [messengerId]: diag }))
         } else if (e.channel === 'new-message') {
+          // Warm-up: игнорируем сообщения от MutationObserver первые 10 сек после dom-ready
+          if (!notifReadyRef.current[messengerId]) return
           handleNewMessage(messengerId, e.args[0])
         }
       })

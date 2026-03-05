@@ -209,33 +209,33 @@ if (e.channel === 'zoom-change') {
 2. `<script>` tag injection из preload → скрипт выполняется в main world, НО `CustomEvent` / `dispatchEvent` НЕ пересекают границу миров (JS events изолированы!)
 3. `window.addEventListener('__cc_notification', ...)` в preload → НЕ ловит events из main world
 
-**Решение (v0.27.0)**: Использовать `webview.executeJavaScript()` из renderer (App.jsx):
-```js
-// В dom-ready handler:
-el.executeJavaScript(`(function(){
-  if(window.__cc_notif_hooked)return;
-  window.__cc_notif_hooked=true;
-  window.Notification=function(title,opts){
-    console.log('__CC_NOTIF__'+JSON.stringify({t:title,b:opts?.body||''}));
-  };
-  window.Notification.permission='granted';
-  window.Notification.requestPermission=function(cb){if(cb)cb('granted');return Promise.resolve('granted')};
-})()`)
+**Решение v0.27.0 (ЧАСТИЧНОЕ — executeJavaScript в dom-ready)**: `webview.executeJavaScript()` в dom-ready handler + console-message. Проблема: VK может вызвать `new Notification()` ДО dom-ready → нативное уведомление просочится.
 
-// Ловим через console-message event (ПЕРЕСЕКАЕТ context isolation!):
-el.addEventListener('console-message', (e) => {
-  if (e.message?.startsWith('__CC_NOTIF__')) {
-    const data = JSON.parse(e.message.slice(12))
-    handleNewMessage(messengerId, data.b || data.t)
+**Решение v0.29.1 (ОКОНЧАТЕЛЬНОЕ — <script> injection в preload)**: `<script>` tag создаётся в `monitor.preload.js` при document_start:
+```js
+// В monitor.preload.js (самое начало файла):
+const s = document.createElement('script')
+s.textContent = '(' + function() {
+  window.Notification = function(title, opts) {
+    console.log('__CC_NOTIF__' + JSON.stringify({t:title,b:opts?.body||'',i:opts?.icon||''}))
   }
-})
+  // + Audio.volume = 0
+} + ')()'
+;(document.head || document.documentElement).appendChild(s)
+s.remove()
 ```
+Этот `<script>` выполняется в main world при document_start — ДО скриптов VK/WhatsApp. console.log → console-message event ловит данные в App.jsx.
+
+**Дополнительно**: `app.setName('ЦентрЧатов')` в main.js как fallback.
 
 **Ключевой урок**: В Electron WebView с context isolation:
-- DOM — общий (MutationObserver работает из preload)
+- DOM — общий (MutationObserver работает из preload, `<script>` тоже)
+- `<script>` tag из preload → выполняется в main world при document_start (ДО скриптов страницы!)
 - JS objects — изолированы (window.X в preload ≠ window.X на странице)
 - JS events (CustomEvent, addEventListener) — изолированы (НЕ пересекают миры!)
 - console.log → console-message event — ПЕРЕСЕКАЕТ границу (единственный надёжный канал из main world в renderer)
+- `setPermissionRequestHandler` НЕ блокирует HTML5 Notification API в WebView (только запросы через requestPermission)
+- `executeJavaScript` в dom-ready — СЛИШКОМ ПОЗДНО, мессенджер может вызвать Notification раньше
 
 ---
 
@@ -260,18 +260,9 @@ window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
 
 **Причина**: `dom-ready` не гарантирует, что наш `executeJavaScript` выполнится раньше скриптов мессенджера. VK может вызвать `new Notification()` во время загрузки или сразу после `DOMContentLoaded`.
 
-**Решение (v0.29.0)**: Заблокировать permission `notifications` на уровне Electron session:
-```js
-ses.setPermissionRequestHandler((_wc, permission, cb) => {
-  if (permission === 'notifications') return cb(false)
-  cb(true)
-})
-ses.setPermissionCheckHandler((_wc, permission) => {
-  if (permission === 'notifications') return false
-  return true
-})
-```
-Нативные `new Notification()` из мессенджера молча игнорируются Electron. Наш перехват через `executeJavaScript` + `console-message` всё равно ловит данные и показывает уведомление через `Notification` из main-процесса.
+**Решение v0.29.0 (НЕ ПОМОГЛО)**: `setPermissionRequestHandler` + `setPermissionCheckHandler` НЕ блокирует HTML5 `new Notification()` в WebView. Permissions проверяются только при `requestPermission()`, но VK создаёт `new Notification()` напрямую.
+
+**Решение (v0.29.1)**: Ранняя `<script>` tag injection в `monitor.preload.js` при document_start — перехват `window.Notification` ДО скриптов мессенджера. Плюс `app.setName('ЦентрЧатов')` как fallback.
 
 ---
 
@@ -279,17 +270,14 @@ ses.setPermissionCheckHandler((_wc, permission) => {
 
 **Симптом**: При открытии VK появляется уведомление о старом сообщении, которое было прочитано давно (например "Как ты Новый год встретил?"). Никто не писал новое сообщение.
 
-**Причина**: VK и другие мессенджеры при загрузке страницы воспроизводят закешированные/старые уведомления через `new Notification()`. Наш `executeJavaScript` перехватывает их и вызывает `handleNewMessage()` как будто это новые сообщения.
+**Причина (v0.29.0 НЕ помогло полностью)**: Два канала `handleNewMessage`:
+1. `console-message` `__CC_NOTIF__` — заблокирован warm-up ✅
+2. `ipc-message` `new-message` от MutationObserver — НЕ заблокирован! `lastActiveMessageText = null` при старте → первое найденное сообщение (даже старое) считается "новым" в Path 2 `sendUpdate`.
 
-**Решение (v0.29.0)**: Warm-up задержка 10 секунд — после `dom-ready` игнорируем `__CC_NOTIF__` сообщения:
-```js
-// В dom-ready:
-notifReadyRef.current[messengerId] = false
-setTimeout(() => { notifReadyRef.current[messengerId] = true }, 10000)
-
-// В console-message:
-if (!notifReadyRef.current[messengerId]) return
-```
+**Решение (v0.29.1)**: Тройная защита:
+1. Warm-up `notifReadyRef` для ОБОИХ каналов (и `__CC_NOTIF__`, и `ipc-message new-message`) в App.jsx
+2. Инициализация `lastActiveMessageText` текущим текстом DOM при `monitorReady = true` в monitor.preload.js
+3. `monitorReady` 10 сек в monitor.preload.js (было и раньше)
 
 ---
 

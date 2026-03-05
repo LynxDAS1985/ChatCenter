@@ -9,6 +9,10 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
 
+// Устанавливаем имя приложения — без этого Electron в dev показывает "electron.app.Electron"
+// как заголовок нативных уведомлений, если какое-то уведомление просочится
+app.setName('ЦентрЧатов')
+
 // ─── Простое хранилище (JSON-файл, без ESM-зависимостей) ────────────────────
 
 let storage = null
