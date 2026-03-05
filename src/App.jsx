@@ -1,4 +1,4 @@
-// v0.20.0 — Фикс виртуализации счётчика Telegram, анимация бейджа, тултип детализации
+// v0.24.0 — Улучшенный звук уведомления, автопереключение на вкладку с новым сообщением
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -12,15 +12,30 @@ import AutoReplyPanel from './components/AutoReplyPanel.jsx'
 function playNotificationSound() {
   try {
     const ctx = new AudioContext()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.frequency.value = 880
-    gain.gain.setValueAtTime(0.18, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2)
-    osc.start()
-    osc.stop(ctx.currentTime + 0.2)
+    const t = ctx.currentTime
+    // Нота 1: C6 (1047 Hz) — 0.12 сек
+    const osc1 = ctx.createOscillator()
+    const gain1 = ctx.createGain()
+    osc1.type = 'sine'
+    osc1.frequency.value = 1047
+    osc1.connect(gain1)
+    gain1.connect(ctx.destination)
+    gain1.gain.setValueAtTime(0.15, t)
+    gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.12)
+    osc1.start(t)
+    osc1.stop(t + 0.12)
+    // Нота 2: E6 (1319 Hz) — 0.15 сек, с задержкой 0.08 сек
+    const osc2 = ctx.createOscillator()
+    const gain2 = ctx.createGain()
+    osc2.type = 'sine'
+    osc2.frequency.value = 1319
+    osc2.connect(gain2)
+    gain2.connect(ctx.destination)
+    gain2.gain.setValueAtTime(0, t)
+    gain2.gain.setValueAtTime(0.12, t + 0.08)
+    gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.23)
+    osc2.start(t + 0.08)
+    osc2.stop(t + 0.23)
   } catch {}
 }
 
@@ -657,6 +672,11 @@ export default function App() {
         } else if (e.channel === 'new-message') {
           const text = e.args[0]
           if (!text) return
+
+          // Автопереключение на вкладку с новым сообщением (если включено)
+          if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {
+            setActiveId(messengerId)
+          }
 
           // Звук и уведомление с текстом сообщения
           if (settingsRef.current.soundEnabled !== false) playNotificationSound()

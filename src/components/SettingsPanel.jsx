@@ -207,6 +207,9 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="Звук при новом сообщении" description="Короткий сигнал при получении">
                 <Toggle value={settings.soundEnabled !== false} onChange={v => set('soundEnabled', v)} />
               </SettingRow>
+              <SettingRow label="Автопереключение на новое сообщение" description="Переключать вкладку при входящем">
+                <Toggle value={!!settings.autoSwitchOnMessage} onChange={v => set('autoSwitchOnMessage', v)} />
+              </SettingRow>
               <SettingRow label="Сворачивать в трей" description="Закрытие скрывает в трей">
                 <Toggle value={settings.minimizeToTray !== false} onChange={v => set('minimizeToTray', v)} />
               </SettingRow>
