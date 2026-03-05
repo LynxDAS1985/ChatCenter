@@ -355,6 +355,34 @@ ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
 
 ---
 
+### ❌ accountScript MAX не находит имя профиля (v0.37.0)
+
+**Симптом**: Вкладка "Макс" без имени профиля. accountScript возвращает null.
+
+**Причина**: MAX (SvelteKit) может хранить данные не в localStorage и не в IndexedDB. Первая версия скрипта искала только в этих двух местах + 4 DOM-селектора.
+
+**Решение (v0.37.0)**: Расширенный accountScript:
+1. localStorage + sessionStorage (с глубоким сканированием вложенных объектов)
+2. Cookies (ключи с user/name/profile/nick)
+3. fetch к API: `/api/me`, `/api/profile`, `/api/user`, `/api/v1/me`, `/api/v1/account`
+4. DOM: aria-label, title на ссылках профиля, sidebar элементы
+
+**Урок**: Для SvelteKit/React/Vue приложений данные могут быть в sessionStorage, cookies или только на сервере (fetch API). Всегда пробовать ВСЕ источники.
+
+---
+
+### ❌ Уведомления без аватарки (icon не передан в showNotification)
+
+**Симптом**: Уведомления от MAX/VK приходят без аватарки отправителя.
+
+**Причина**: Мессенджер не передаёт `icon`/`image`/`badge` URL в `Notification()` или `showNotification()`.
+
+**Решение (v0.37.0)**: DOM fallback `findAvatar(name)` — ищет img-аватарку в списке чатов по имени отправителя. Работает в main world injection script.
+
+**Урок**: Не все мессенджеры передают icon в Notification API. Нужен fallback: поиск аватарки в DOM по имени.
+
+---
+
 ### ❌ Ложное уведомление при "пометить непрочитанным" (v0.34.0)
 
 **Симптом**: Пользователь помечает чат в MAX как непрочитанный → появляется уведомление "новое сообщение", хотя это старое сообщение.

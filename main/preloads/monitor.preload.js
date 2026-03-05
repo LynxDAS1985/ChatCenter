@@ -14,13 +14,29 @@ const { ipcRenderer } = require('electron')
     s.textContent = '(' + function() {
       if (window.__cc_notif_hooked) return
       window.__cc_notif_hooked = true
+      // Поиск аватарки по имени отправителя в DOM (fallback когда icon не передан)
+      function findAvatar(name) {
+        if (!name) return ''
+        try {
+          var items = document.querySelectorAll('[class*="chat" i], [class*="dialog" i], [class*="conversation" i], [class*="item" i]')
+          for (var j = 0; j < items.length && j < 100; j++) {
+            var txt = items[j].textContent || ''
+            if (txt.indexOf(name) !== -1 || (name.length > 5 && txt.indexOf(name.substring(0, 5)) !== -1)) {
+              var img = items[j].querySelector('img[src*="http"]')
+              if (img && img.src && img.src.startsWith('http') && !img.src.includes('emoji')) return img.src
+            }
+          }
+        } catch(e) {}
+        return ''
+      }
       // Перехват Notification → console.log('__CC_NOTIF__...')
       var _N = window.Notification
       window.Notification = function(title, opts) {
         try {
+          var icon = (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
+          if (!icon) icon = findAvatar(title)
           console.log('__CC_NOTIF__' + JSON.stringify({
-            t: title || '', b: (opts && opts.body) || '',
-            i: (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
+            t: title || '', b: (opts && opts.body) || '', i: icon
           }))
         } catch(e) {}
       }
@@ -36,9 +52,10 @@ const { ipcRenderer } = require('electron')
         var _show = ServiceWorkerRegistration.prototype.showNotification
         ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
           try {
+            var icon = (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
+            if (!icon) icon = findAvatar(title)
             console.log('__CC_NOTIF__' + JSON.stringify({
-              t: title || '', b: (opts && opts.body) || '',
-              i: (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
+              t: title || '', b: (opts && opts.body) || '', i: icon
             }))
           } catch(e) {}
           return Promise.resolve()

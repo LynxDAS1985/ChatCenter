@@ -92,71 +92,71 @@ export const DEFAULT_MESSENGERS = [
     emoji: '💎',
     isDefault: true,
     accountScript: `(async () => {
-      try {
-        // 1. localStorage — MAX может хранить profile data
-        for (var i = 0; i < localStorage.length; i++) {
-          var key = localStorage.key(i);
-          var val = localStorage.getItem(key);
-          if (!val || val.length > 5000) continue;
+      function tryName(o) {
+        if (!o || typeof o !== 'object') return null;
+        var n = o.name || o.displayName || o.first_name || o.firstName || o.nick || o.nickname || o.login;
+        if (n && typeof n === 'string' && n.length > 1 && n.length < 60) return n;
+        return null;
+      }
+      function scanStorage(st) {
+        for (var i = 0; i < st.length; i++) {
+          var key = st.key(i); var val = st.getItem(key);
+          if (!val || val.length > 10000) continue;
           try {
             var obj = JSON.parse(val);
-            // Ищем объект с именем пользователя
+            var n = tryName(obj); if (n) return n;
             if (obj && typeof obj === 'object') {
-              var name = obj.name || obj.displayName || obj.first_name || obj.firstName;
-              if (name && typeof name === 'string' && name.length > 1 && name.length < 60) return name;
-              // Вложенный объект user/profile
-              var inner = obj.user || obj.profile || obj.me || obj.account;
-              if (inner) {
-                name = inner.name || inner.displayName || inner.first_name || inner.firstName;
-                if (name && typeof name === 'string' && name.length > 1 && name.length < 60) return name;
-              }
+              var keys = ['user','profile','me','account','self','data','info','currentUser'];
+              for (var k = 0; k < keys.length; k++) { n = tryName(obj[keys[k]]); if (n) return n; }
             }
           } catch(e) {}
         }
-        // 2. IndexedDB — перебираем все БД
-        var dbs = [];
-        try { if (typeof indexedDB.databases === 'function') dbs = await indexedDB.databases(); } catch(e) {}
-        for (var d = 0; d < dbs.length; d++) {
-          var db;
-          try {
-            db = await new Promise(function(ok) {
-              var r = indexedDB.open(dbs[d].name);
-              r.onsuccess = function(){ok(r.result)};
-              r.onerror = function(){ok(null)};
-              r.onupgradeneeded = function(){r.transaction.abort();ok(null)};
-            });
-          } catch(e) { continue; }
-          if (!db) continue;
-          var stores = Array.from(db.objectStoreNames);
-          var us = stores.find(function(n){return /user|profile|account|me/i.test(n)});
-          if (!us) { db.close(); continue; }
-          try {
-            var self = await new Promise(function(ok) {
-              var tx = db.transaction(us,'readonly');
-              var cur = tx.objectStore(us).openCursor();
-              cur.onsuccess = function() {
-                var c = cur.result;
-                if (!c) { ok(null); return; }
-                var u = c.value;
-                if (u && (u.self || (u.pFlags && u.pFlags.self))) { ok(u); return; }
-                c.continue();
-              };
-              cur.onerror = function(){ok(null)};
-            });
-            db.close();
-            if (self) {
-              var fn = self.first_name || self.firstName || self.name || self.displayName || '';
-              var ln = self.last_name || self.lastName || '';
-              if (fn) return (fn + ' ' + ln).trim();
+        return null;
+      }
+      try {
+        // 1. localStorage
+        var r = scanStorage(localStorage); if (r) return r;
+        // 2. sessionStorage
+        r = scanStorage(sessionStorage); if (r) return r;
+        // 3. Cookies — ищем имя в cookie
+        try {
+          var cookies = document.cookie.split(';');
+          for (var c = 0; c < cookies.length; c++) {
+            var parts = cookies[c].trim().split('=');
+            if (/user|name|profile|nick/i.test(parts[0])) {
+              var cv = decodeURIComponent(parts.slice(1).join('='));
+              if (cv.startsWith('{')) { var n = tryName(JSON.parse(cv)); if (n) return n; }
+              else if (cv.length > 1 && cv.length < 60 && !/^[0-9a-f-]+$/i.test(cv)) return cv;
             }
-          } catch(e) { try{db.close();}catch(e2){} }
+          }
+        } catch(e) {}
+        // 4. fetch API — пробуем типовые endpoints (выполняется с cookies сессии MAX)
+        var endpoints = ['/api/me','/api/profile','/api/user','/api/v1/me','/api/v1/account'];
+        for (var ep = 0; ep < endpoints.length; ep++) {
+          try {
+            var resp = await fetch(endpoints[ep], {credentials:'include'});
+            if (resp.ok) {
+              var data = await resp.json();
+              var n = tryName(data); if (n) return n;
+              if (data.result) { n = tryName(data.result); if (n) return n; }
+              if (data.data) { n = tryName(data.data); if (n) return n; }
+            }
+          } catch(e) {}
         }
-        // 3. DOM — ищем имя на странице профиля (если открыта)
-        var sels = ['[class*="profile"] [class*="name"]','[class*="Profile"] [class*="Name"]','input[name="name"]','input[placeholder*="Имя"]'];
-        for (var s = 0; s < sels.length; s++) {
-          var el = document.querySelector(sels[s]);
-          var t = el ? (el.value || el.textContent || '').trim() : '';
-          if (t && t.length > 1 && t.length < 60) return t;
+        // 5. DOM — навигация профиля (кнопка "Профиль" может иметь aria-label/title)
+        var navSels = [
+          'a[href*="profile"]','a[href*="settings"]','button[aria-label*="рофил"]',
+          '[class*="profile"] [class*="name"]','[class*="Profile"] [class*="Name"]',
+          'nav [class*="avatar"] + *','aside [class*="avatar"] + *',
+          '[class*="sidebar"] [class*="user"]','[class*="Sidebar"] [class*="User"]'
+        ];
+        for (var s = 0; s < navSels.length; s++) {
+          try {
+            var el = document.querySelector(navSels[s]);
+            if (!el) continue;
+            var t = (el.getAttribute('aria-label') || el.title || el.textContent || '').trim();
+            if (t && t.length > 1 && t.length < 60 && !/профил|настрой|setting/i.test(t)) return t;
+          } catch(e) {}
         }
       } catch(e) {}
       return null;
