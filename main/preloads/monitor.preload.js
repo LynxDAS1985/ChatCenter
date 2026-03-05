@@ -571,6 +571,44 @@ if (document.readyState === 'loading') {
   startMonitor()
 }
 
+// ── Перехват Notification API мессенджера ─────────────────────────────────
+// Когда Telegram/VK/WhatsApp сами отправляют new Notification() — мы:
+// 1. Подавляем нативное уведомление (оно показывает "electron.app.Electron")
+// 2. Отправляем 'new-message' IPC → App.jsx покажет уведомление с правильным заголовком + звук
+;(function interceptNotifications() {
+  try {
+    const OrigNotification = window.Notification
+    if (!OrigNotification) return
+
+    function FakeNotification(title, opts) {
+      // Отправляем наш IPC
+      const text = (opts && opts.body) || title || ''
+      if (text && monitorReady) {
+        // Не дублируем если уже отправляли этот текст
+        if (text !== lastSentText) {
+          lastSentText = text
+          lastActiveMessageText = text
+          lastActiveMessageTime = Date.now()
+          try { ipcRenderer.sendToHost('new-message', text) } catch (ex) {}
+        }
+      }
+      // НЕ создаём реальное уведомление — наш App.jsx покажет своё
+      // с правильным названием мессенджера
+    }
+
+    // Копируем статические свойства чтобы мессенджер не ломался
+    FakeNotification.permission = 'granted'
+    FakeNotification.requestPermission = function() { return Promise.resolve('granted') }
+    FakeNotification.prototype = OrigNotification.prototype
+
+    Object.defineProperty(window, 'Notification', {
+      value: FakeNotification,
+      writable: true,
+      configurable: true,
+    })
+  } catch (ex) {}
+})()
+
 // ── Зум WebView: Ctrl+колёсико и Ctrl+клавиши → IPC к хосту ──────────────
 document.addEventListener('wheel', function(e) {
   if (!e.ctrlKey) return
