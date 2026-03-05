@@ -158,6 +158,7 @@ export default function App() {
   const [accountInfo, setAccountInfo] = useState({})
   const [unreadCounts, setUnreadCounts] = useState({})
   const [unreadSplit, setUnreadSplit] = useState({})       // { [id]: { personal, channels } }
+  const [monitorDiag, setMonitorDiag] = useState(null)     // диагностика DOM от monitor.preload
   const [messagePreview, setMessagePreview] = useState({}) // { [id]: 'текст превью' }
   const [showAddModal, setShowAddModal] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -609,6 +610,11 @@ export default function App() {
           // Раздельный счётчик: личные vs каналы
           const split = e.args[0]
           if (split) setUnreadSplit(prev => ({ ...prev, [messengerId]: split }))
+        } else if (e.channel === 'monitor-diag') {
+          // Диагностика DOM от monitor.preload — для отладки селекторов
+          const diag = e.args[0]
+          console.log(`[ChatCenter] 🔍 Диагностика DOM (${messengerId}):`, diag)
+          setMonitorDiag(prev => ({ ...prev, [messengerId]: diag }))
         } else if (e.channel === 'new-message') {
           const text = e.args[0]
           if (!text) return
@@ -947,6 +953,22 @@ export default function App() {
             <span title="Непрочитанных сообщений во всех вкладках">📥 <span style={{ color: '#f87171', fontWeight: 600 }}>{totalUnread}</span> непрочитано</span>
           </>
         )}
+
+        {/* ── Диагностика DOM (показывается когда есть данные от monitor.preload) ── */}
+        {monitorDiag && activeId && monitorDiag[activeId] && (() => {
+          const d = monitorDiag[activeId]
+          const folderNums = (d.folderBadges || []).map(b => b.text).join(',')
+          const diagText = `title="${(d.title || '').substring(0, 40)}" | title#=${d.titleMatch || '∅'} | source=${d.countSource || '?'} | tabs=${d.tabsTabCount} menu=${d.menuHorizCount} sideBtn=${d.sidebarBtnCount} | folder=[${folderNums}] | total_badges=${(d.allBadges || []).length}`
+          return (
+            <>
+              <span style={{ opacity: 0.3 }}>·</span>
+              <span title={`Диагностика DOM:\n${diagText}\n\nFolder badges:\n${(d.folderBadges || []).map(b => `  ${b.text} cls="${b.cls}" parent="${b.parentCls}"`).join('\n')}`}
+                style={{ color: '#60a5fa', cursor: 'help' }}>
+                🔍 {d.countSource || '?'}:{d.titleMatch || '∅'} folder={folderNums || '∅'}
+              </span>
+            </>
+          )
+        })()}
 
         {/* ── Зум текущей вкладки ── */}
         {activeId && (

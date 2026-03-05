@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.21.0 (4 марта 2026)
+## Текущая версия: v0.22.0 (5 марта 2026)
 
 ---
 
@@ -88,6 +88,17 @@
 ---
 
 ## Changelog
+
+### v0.22.0 (5 марта 2026) — Диагностика DOM + адаптивный поиск folder-tab badges
+- **ПРОБЛЕМА**: v0.21.0 использовал жёсткие селекторы (`.tabs-tab`), которые не находят folder tabs в вертикальном layout'е Telegram Web K → бейдж = 0.
+- **Диагностический IPC `monitor-diag`**: через 15 сек после загрузки WebView отправляет в renderer полный отчёт о DOM:
+  - `document.title` и результат regex `\((\d+)\)`
+  - Кол-во элементов по каждому селектору (`.tabs-tab`, `.menu-horizontal-div-item`, `.sidebar-tools-button`)
+  - ВСЕ `.badge` элементы с их классами и родителями, разделённые на `inChatlist` и `folderBadges`
+- **Адаптивный поиск (шаг 3)**: `.badge` элементы НЕ внутри `.chatlist-chat` = folder tab badges. Первый = "Все чаты".
+- **4 уровня fallback**: title → tab selectors → adaptive badges → chatlist sum
+- **Отображение в статусбаре**: 🔍-блок с source, title#, folder badges. Полная информация в tooltip.
+- **countSource**: каждый вызов `countUnreadTelegram()` запоминает откуда взял число (для диагностики).
 
 ### v0.21.0 (4 марта 2026) — Фикс счётчика: читаем Telegram's own counter (title/folder tabs)
 - **КОРНЕВАЯ ПРИЧИНА**: persistent Map суммировала бейджи КАЖДОГО чата (включая каналы с 9.4K, 3.4K) → выдавала 1796 вместо правильных 26. Telegram показывает "26" в "Все чаты" — это верная цифра.

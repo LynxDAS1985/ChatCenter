@@ -1,6 +1,6 @@
 # UI-компоненты — ChatCenter
 
-## Текущая версия UI: v0.20.0 (4 марта 2026)
+## Текущая версия UI: v0.22.0 (5 марта 2026)
 
 ---
 
@@ -147,6 +147,15 @@
 Диапазон: 25–200%. Шаг: 5%. Каждая вкладка хранит свой зум.
 Зум сохраняется в settings (`zoomLevels: { [id]: number }`), загружается при старте.
 Применяется через `webview.setZoomFactor(pct / 100)`.
+
+### Диагностика DOM (v0.22.0)
+
+В статусбаре показывается 🔍-блок с данными диагностики DOM от `monitor.preload.js`:
+- `source` — откуда взяли число (title, tab:selector, adaptive, chatlist-sum, none)
+- `title#` — число из document.title
+- `folder` — числа из folder tab badges (НЕ в chatlist)
+
+Полная информация в тултипе при наведении. Появляется через 15 сек после загрузки WebView.
 
 ### Зум из WebView (v0.19.1)
 Ctrl+колёсико и Ctrl+клавиши обрабатываются в `monitor.preload.js` → IPC `zoom-change`/`zoom-reset` → App.jsx.

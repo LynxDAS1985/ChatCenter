@@ -1,4 +1,4 @@
-// v0.21.0 — ChatMonitor: читаем счётчик Telegram из document.title / folder tabs
+// v0.22.0 — ChatMonitor: диагностика DOM + адаптивный поиск folder-tab badges
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
@@ -160,32 +160,52 @@ function countUnread(type) {
   return { personal, channels, total: personal + channels, allTotal: mutedTotal }
 }
 
-// ── Telegram: читаем СВОЙ счётчик из title / folder tabs (не суммируем бейджи) ──
+// ── Telegram: адаптивный поиск — title → folder tabs → badges вне chatlist ──
 function countUnreadTelegram() {
   let allTotal = 0
   let personal = 0
+  let source = 'none' // для диагностики: откуда взяли число
 
-  // 1. Primary: document.title = "(26) Telegram Web" — самый надёжный источник
+  // 1. document.title = "(26) Telegram Web"
   try {
     const m = document.title.match(/\((\d+)\)/)
-    if (m) allTotal = parseInt(m[1], 10) || 0
+    if (m) { allTotal = parseInt(m[1], 10) || 0; if (allTotal > 0) source = 'title' }
   } catch {}
 
-  // 2. Fallback: folder tab "Все чаты" badge
+  // 2. Folder tab badges — пробуем разные селекторы layout'ов TG Web K
+  if (allTotal === 0) {
+    const tabSelectors = [
+      '.tabs-tab',                     // горизонтальные табы (стандарт)
+      '.menu-horizontal-div-item',     // альт. горизонтальные
+      '.sidebar-tools-button',         // вертикальные кнопки сбоку
+    ]
+    for (const sel of tabSelectors) {
+      try {
+        const tabs = document.querySelectorAll(sel)
+        if (tabs.length > 1) {
+          const badge = tabs[0].querySelector('.badge, [class*="badge"]')
+          if (badge) {
+            const n = parseInt(badge.textContent?.trim(), 10)
+            if (!isNaN(n) && n > 0) { allTotal = n; source = 'tab:' + sel; break }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 3. АДАПТИВНЫЙ: .badge элементы НЕ внутри chatlist = folder tab badges
+  //    Первый такой бейдж = "Все чаты" = общее кол-во непрочитанных
   if (allTotal === 0) {
     try {
-      const tabs = document.querySelectorAll('.tabs-tab')
-      if (tabs.length > 0) {
-        const badge = tabs[0].querySelector('.badge')
-        if (badge) {
-          const n = parseInt(badge.textContent?.trim(), 10)
-          if (!isNaN(n) && n > 0) allTotal = n
-        }
+      for (const b of document.querySelectorAll('.badge')) {
+        if (b.closest('.chatlist-chat, .chatlist, .ListItem, [class*="chat-item"]')) continue
+        const n = parseInt(b.textContent?.trim(), 10)
+        if (!isNaN(n) && n > 0) { allTotal = n; source = 'adaptive'; break }
       }
     } catch {}
   }
 
-  // 3. Last fallback: count visible badges in chatlist
+  // 4. Last fallback: сумма видимых chatlist badges (не точно, но лучше чем 0)
   if (allTotal === 0) {
     try {
       document.querySelectorAll('.badge.badge-unread').forEach(b => {
@@ -193,29 +213,86 @@ function countUnreadTelegram() {
         if (!isNaN(n) && n > 0) allTotal += n
         else if (b.offsetParent !== null) allTotal += 1
       })
+      if (allTotal > 0) source = 'chatlist-sum'
     } catch {}
   }
 
-  // Split: попробуем найти "Личные" folder tab для personal count
+  // Split: personal из folder tab "Личные"
   try {
-    const tabs = document.querySelectorAll('.tabs-tab')
-    for (const tab of tabs) {
-      const label = (tab.textContent || '').replace(/\d+/g, '').trim()
-      if (/личн/i.test(label) || /personal/i.test(label)) {
-        const badge = tab.querySelector('.badge')
-        if (badge) {
-          const n = parseInt(badge.textContent?.trim(), 10)
-          if (!isNaN(n) && n > 0) personal = n
+    const tryTabs = (sel) => {
+      for (const tab of document.querySelectorAll(sel)) {
+        const label = (tab.textContent || '').replace(/\d+/g, '').trim()
+        if (/личн/i.test(label) || /personal/i.test(label)) {
+          const badge = tab.querySelector('.badge, [class*="badge"]')
+          if (badge) {
+            const n = parseInt(badge.textContent?.trim(), 10)
+            if (!isNaN(n) && n > 0) personal = n
+          }
+          return true
         }
-        break
       }
+      return false
     }
+    tryTabs('.tabs-tab') || tryTabs('.menu-horizontal-div-item') || tryTabs('.sidebar-tools-button')
   } catch {}
 
   if (personal === 0) personal = allTotal
   const channels = Math.max(0, allTotal - personal)
 
+  // Сохраняем source для диагностики
+  countUnreadTelegram._lastSource = source
+
   return { personal, channels, total: allTotal, allTotal }
+}
+
+// ── Диагностика DOM: сбор информации о бейджах и folder tabs ──────────────
+let diagSent = false
+function runDiagnostics() {
+  if (diagSent) return
+  diagSent = true
+  try {
+    const diag = {
+      title: document.title,
+      titleMatch: document.title.match(/\((\d+)\)/)?.[1] || null,
+      url: location.href,
+      tabsTabCount: document.querySelectorAll('.tabs-tab').length,
+      menuHorizCount: document.querySelectorAll('.menu-horizontal-div-item').length,
+      sidebarBtnCount: document.querySelectorAll('.sidebar-tools-button').length,
+      countSource: countUnreadTelegram._lastSource || 'unknown',
+      allBadges: [],
+      folderBadges: [],
+    }
+
+    // Собираем ВСЕ .badge элементы с контекстом (до 50 шт.)
+    let badgeIdx = 0
+    document.querySelectorAll('.badge').forEach(b => {
+      if (badgeIdx++ > 50) return
+      const text = b.textContent?.trim() || ''
+      const inChatlist = !!b.closest('.chatlist-chat, .chatlist, .ListItem, [class*="chat-item"]')
+      const p = b.parentElement
+      const gp = p?.parentElement
+      const entry = {
+        text,
+        cls: (b.className || '').substring(0, 60),
+        parentTag: p?.tagName || '?',
+        parentCls: (p?.className || '').substring(0, 60),
+        gpCls: (gp?.className || '').substring(0, 60),
+        inChatlist,
+      }
+      diag.allBadges.push(entry)
+      if (!inChatlist) diag.folderBadges.push(entry)
+    })
+
+    // Sidebar контейнер
+    const sb = document.querySelector('#column-left, .sidebar-left, [class*="sidebar"]')
+    if (sb) {
+      diag.sidebarCls = (sb.className || '').substring(0, 80)
+    }
+
+    ipcRenderer.sendToHost('monitor-diag', diag)
+  } catch (e) {
+    try { ipcRenderer.sendToHost('monitor-diag', { error: e.message }) } catch {}
+  }
 }
 
 function getLastMessageText(type) {
@@ -268,6 +345,11 @@ function startMonitor() {
   if (!type) return
 
   sendUpdate(type)
+
+  // Диагностика DOM — отправляем через 15 сек (страница полностью загрузится)
+  if (type === 'telegram') {
+    setTimeout(() => { sendUpdate(type); runDiagnostics() }, 15000)
+  }
 
   if (observer) return
   observer = new MutationObserver(() => {
