@@ -1,4 +1,4 @@
-// v0.30.0 — Не показывать уведомление при активном чате + мессенджер Макс
+// v0.31.0 — Диалог подтверждения перед закрытием вкладки мессенджера
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -229,6 +229,7 @@ export default function App() {
   const [zoomLevels, setZoomLevels] = useState({})
   const [zoomEditing, setZoomEditing] = useState(false)
   const [zoomInputValue, setZoomInputValue] = useState('')
+  const [confirmClose, setConfirmClose] = useState(null) // { id, name, color }
 
   const webviewRefs = useRef({})
   const notifReadyRef = useRef({})   // { [id]: true } — warm-up: игнорируем __CC_NOTIF__ первые 10 сек
@@ -377,7 +378,7 @@ export default function App() {
       } else if ((e.key === 't' || e.key === 'T') && !e.shiftKey) {
         setShowAddModal(true); e.preventDefault()
       } else if (e.key === 'w' || e.key === 'W') {
-        if (aid) { removeMessenger(aid); e.preventDefault() }
+        if (aid) { askRemoveMessenger(aid); e.preventDefault() }
       } else if (e.key === 'f' || e.key === 'F') {
         toggleSearch(); e.preventDefault()
       } else if (e.key === ',') {
@@ -542,6 +543,14 @@ export default function App() {
     delete retryTimers.current[id]
     setAccountInfo(prev => { const n = { ...prev }; delete n[id]; return n })
     setUnreadCounts(prev => { const n = { ...prev }; delete n[id]; return n })
+    setConfirmClose(null)
+  }, [])
+
+  // Запрос подтверждения перед закрытием
+  const askRemoveMessenger = useCallback((id) => {
+    const m = messengersRef.current.find(x => x.id === id)
+    if (!m) return
+    setConfirmClose({ id: m.id, name: m.name, color: m.color, emoji: m.emoji })
   }, [])
 
   // ── Добавление мессенджера ────────────────────────────────────────────────
@@ -872,7 +881,7 @@ export default function App() {
       const m = messengers.find(x => x.id === id)
       if (m?.url) navigator.clipboard.writeText(m.url).catch(() => {})
     } else if (action === 'close') {
-      removeMessenger(id)
+      askRemoveMessenger(id)
     }
   }
 
@@ -934,7 +943,7 @@ export default function App() {
               isNew={newMessageIds.has(m.id)}
               isDragOver={dragOverId === m.id}
               onClick={() => handleTabClick(m.id)}
-              onClose={() => removeMessenger(m.id)}
+              onClose={() => askRemoveMessenger(m.id)}
               onContextMenu={(e) => { e.preventDefault(); setContextMenuTab({ id: m.id, x: e.clientX, y: e.clientY }) }}
               onDragStart={() => handleDragStart(m.id)}
               onDragOver={() => handleDragOver(m.id)}
@@ -1306,6 +1315,61 @@ export default function App() {
           onSettingsChange={handleSettingsChange}
           onClose={() => setShowAutoReply(false)}
         />
+      )}
+
+      {/* ── Диалог подтверждения закрытия вкладки ── */}
+      {confirmClose && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50"
+          style={{ backgroundColor: 'var(--cc-overlay)' }}
+          onClick={() => setConfirmClose(null)}
+          onKeyDown={e => { if (e.key === 'Escape') setConfirmClose(null) }}
+        >
+          <div
+            className="rounded-2xl p-6 w-[380px] shadow-2xl"
+            style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center gap-4">
+              {/* Иконка предупреждения */}
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
+                style={{ backgroundColor: `${confirmClose.color}20` }}
+              >
+                {confirmClose.emoji || '💬'}
+              </div>
+
+              <div>
+                <h3 className="text-base font-semibold mb-1" style={{ color: 'var(--cc-text)' }}>
+                  Закрыть вкладку?
+                </h3>
+                <p className="text-sm" style={{ color: 'var(--cc-text-dim)' }}>
+                  Вкладка <span style={{ color: confirmClose.color, fontWeight: 600 }}>{confirmClose.name}</span> будет удалена.
+                  <br />Сессия авторизации может сброситься.
+                </p>
+              </div>
+
+              {/* Кнопки */}
+              <div className="flex gap-3 w-full mt-1">
+                <button
+                  onClick={() => setConfirmClose(null)}
+                  autoFocus
+                  className="flex-1 py-2.5 rounded-lg text-sm transition-all cursor-pointer"
+                  style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)' }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--cc-border)'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
+                >Отмена</button>
+                <button
+                  onClick={() => removeMessenger(confirmClose.id)}
+                  className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-all cursor-pointer"
+                  style={{ backgroundColor: '#ef4444' }}
+                  onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+                  onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                >Закрыть</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
