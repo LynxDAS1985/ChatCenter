@@ -1,4 +1,4 @@
-// v0.26.0 — ChatMonitor: фикс VK-уведомлений, детекция сообщений в активном чате
+// v0.26.2 — ChatMonitor: фикс перехвата Notification (main world injection)
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
@@ -572,41 +572,53 @@ if (document.readyState === 'loading') {
 }
 
 // ── Перехват Notification API мессенджера ─────────────────────────────────
-// Когда Telegram/VK/WhatsApp сами отправляют new Notification() — мы:
-// 1. Подавляем нативное уведомление (оно показывает "electron.app.Electron")
-// 2. Отправляем 'new-message' IPC → App.jsx покажет уведомление с правильным заголовком + звук
-;(function interceptNotifications() {
+// ПРОБЛЕМА: preload работает в изолированном контексте (context isolation).
+// VK/TG/WhatsApp вызывают new Notification() в ОСНОВНОМ мире страницы —
+// наш override из preload-мира его не затрагивает.
+// РЕШЕНИЕ: инжектим <script> тег в DOM — он выполняется в основном мире.
+// Скрипт подменяет Notification и шлёт CustomEvent, preload слушает его.
+
+// 1. Слушаем CustomEvent от инжектированного скрипта (main world → preload world)
+window.addEventListener('__cc_notification', (e) => {
   try {
-    const OrigNotification = window.Notification
-    if (!OrigNotification) return
-
-    function FakeNotification(title, opts) {
-      // Отправляем наш IPC
-      const text = (opts && opts.body) || title || ''
-      if (text && monitorReady) {
-        // Не дублируем если уже отправляли этот текст
-        if (text !== lastSentText) {
-          lastSentText = text
-          lastActiveMessageText = text
-          lastActiveMessageTime = Date.now()
-          try { ipcRenderer.sendToHost('new-message', text) } catch (ex) {}
-        }
-      }
-      // НЕ создаём реальное уведомление — наш App.jsx покажет своё
-      // с правильным названием мессенджера
+    const { text } = e.detail || {}
+    if (text && monitorReady && text !== lastSentText) {
+      lastSentText = text
+      lastActiveMessageText = text
+      lastActiveMessageTime = Date.now()
+      try { ipcRenderer.sendToHost('new-message', text) } catch {}
     }
+  } catch {}
+})
 
-    // Копируем статические свойства чтобы мессенджер не ломался
-    FakeNotification.permission = 'granted'
-    FakeNotification.requestPermission = function() { return Promise.resolve('granted') }
-    FakeNotification.prototype = OrigNotification.prototype
-
-    Object.defineProperty(window, 'Notification', {
-      value: FakeNotification,
-      writable: true,
-      configurable: true,
-    })
-  } catch (ex) {}
+// 2. Инжектируем Notification-перехват в ОСНОВНОЙ мир страницы через <script>
+// Должен выполниться ДО скриптов мессенджера, чтобы они не закэшировали оригинальный Notification
+;(function injectNotificationInterceptor() {
+  try {
+    const s = document.createElement('script')
+    s.textContent = '(' + function() {
+      try {
+        var _Orig = window.Notification
+        function _Fake(title, opts) {
+          var text = (opts && opts.body) || title || ''
+          if (text) {
+            window.dispatchEvent(new CustomEvent('__cc_notification', {
+              detail: { title: title || '', text: text }
+            }))
+          }
+          // НЕ создаём реальное уведомление → подавляем "electron.app.Electron"
+        }
+        _Fake.permission = 'granted'
+        _Fake.requestPermission = function() { return Promise.resolve('granted') }
+        if (_Orig) _Fake.prototype = _Orig.prototype
+        Object.defineProperty(window, 'Notification', {
+          value: _Fake, writable: true, configurable: true
+        })
+      } catch(e) {}
+    } + ')()'
+    ;(document.head || document.documentElement).appendChild(s)
+    s.remove()
+  } catch {}
 })()
 
 // ── Зум WebView: Ctrl+колёсико и Ctrl+клавиши → IPC к хосту ──────────────

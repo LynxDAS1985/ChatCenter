@@ -1,4 +1,4 @@
-// v0.26.1 — Скрытие баннера "браузер устарел" VK, обновление User-Agent
+// v0.26.2 — Фикс перехвата Notification (main world injection)
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
