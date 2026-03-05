@@ -1,4 +1,4 @@
-// v0.28.0 — Имя отправителя и аватарка в уведомлениях (из перехваченного Notification)
+// v0.28.1 — Фикс сброса счётчика непрочитанных при переключении вкладок
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -520,7 +520,7 @@ export default function App() {
   // ── Переключение вкладки ──────────────────────────────────────────────────
   const handleTabClick = (id) => {
     setActiveId(id)
-    setUnreadCounts(prev => ({ ...prev, [id]: 0 }))
+    // НЕ обнуляем unreadCounts — реальный счётчик придёт от page-title-updated / unread-count IPC
     // Убираем анимацию при клике на вкладку
     setNewMessageIds(prev => { const n = new Set(prev); n.delete(id); return n })
     if (searchVisible && searchText) {
