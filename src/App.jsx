@@ -1,4 +1,4 @@
-// v0.31.0 — Диалог подтверждения перед закрытием вкладки мессенджера
+// v0.32.0 — Закрепление вкладок (pin/lock) + диалог подтверждения
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -68,7 +68,7 @@ function playNotificationSound(color) {
 
 function MessengerTab({
   messenger: m, isActive, accountInfo, unreadCount, isNew,
-  unreadSplit, messagePreview, zoomLevel, monitorStatus,
+  unreadSplit, messagePreview, zoomLevel, monitorStatus, isPinned,
   onClick, onClose, onContextMenu, isDragOver,
   onDragStart, onDragOver, onDrop, onDragEnd
 }) {
@@ -161,14 +161,20 @@ function MessengerTab({
         )}
       </span>
 
-      {/* Бейдж непрочитанных (в потоке flex) или кнопка закрыть (hover) */}
-      {hovered ? (
+      {/* Бейдж непрочитанных / кнопка закрыть (hover) / замок (pinned) */}
+      {hovered && !isPinned ? (
         <span
           onClick={e => { e.stopPropagation(); onClose() }}
           className="ml-auto w-[16px] h-[16px] rounded-full flex items-center justify-center text-[10px] leading-none cursor-pointer transition-all shrink-0"
           style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}
           title="Закрыть вкладку"
         >✕</span>
+      ) : hovered && isPinned ? (
+        <span
+          className="ml-auto w-[16px] h-[16px] flex items-center justify-center text-[10px] leading-none shrink-0"
+          style={{ color: `${m.color}88` }}
+          title="Вкладка закреплена"
+        >🔒</span>
       ) : unreadCount > 0 ? (
         unreadSplit && unreadSplit.personal > 0 && unreadSplit.channels > 0 ? (
           // Два бейджа: личные (цвет мессенджера) + каналы (серый)
@@ -378,7 +384,7 @@ export default function App() {
       } else if ((e.key === 't' || e.key === 'T') && !e.shiftKey) {
         setShowAddModal(true); e.preventDefault()
       } else if (e.key === 'w' || e.key === 'W') {
-        if (aid) { askRemoveMessenger(aid); e.preventDefault() }
+        if (aid && !(settingsRef.current.pinnedTabs || {})[aid]) { askRemoveMessenger(aid); e.preventDefault() }
       } else if (e.key === 'f' || e.key === 'F') {
         toggleSearch(); e.preventDefault()
       } else if (e.key === ',') {
@@ -880,10 +886,24 @@ export default function App() {
     } else if (action === 'copyUrl') {
       const m = messengers.find(x => x.id === id)
       if (m?.url) navigator.clipboard.writeText(m.url).catch(() => {})
+    } else if (action === 'pin') {
+      togglePinTab(id)
     } else if (action === 'close') {
       askRemoveMessenger(id)
     }
   }
+
+  // ── Pin/unpin вкладки ────────────────────────────────────────────────────
+  const pinnedTabs = settings.pinnedTabs || {}
+  const togglePinTab = useCallback((id) => {
+    const cur = settingsRef.current.pinnedTabs || {}
+    const next = { ...cur }
+    if (next[id]) { delete next[id] } else { next[id] = true }
+    const updated = { ...settingsRef.current, pinnedTabs: next }
+    settingsRef.current = updated
+    setSettings(updated)
+    window.api.invoke('settings:save', updated).catch(() => {})
+  }, [])
 
   // ─────────────────────────────────────────────────────────────────────────
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
@@ -941,9 +961,10 @@ export default function App() {
               zoomLevel={zoomLevels[m.id]}
               monitorStatus={monitorStatus[m.id]}
               isNew={newMessageIds.has(m.id)}
+              isPinned={!!pinnedTabs[m.id]}
               isDragOver={dragOverId === m.id}
               onClick={() => handleTabClick(m.id)}
-              onClose={() => askRemoveMessenger(m.id)}
+              onClose={() => { if (!pinnedTabs[m.id]) askRemoveMessenger(m.id) }}
               onContextMenu={(e) => { e.preventDefault(); setContextMenuTab({ id: m.id, x: e.clientX, y: e.clientY }) }}
               onDragStart={() => handleDragStart(m.id)}
               onDragOver={() => handleDragOver(m.id)}
@@ -1083,24 +1104,28 @@ export default function App() {
             className="rounded-lg py-1 shadow-xl text-[12px] min-w-[180px]"
             style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
           >
-            {[
-              { action: 'reload', icon: '🔄', label: 'Перезагрузить', desc: 'Перезагрузка WebView + монитор' },
-              { action: 'diag', icon: '🔍', label: 'Диагностика DOM', desc: 'Повторно собрать данные о бейджах' },
-              { action: 'copyUrl', icon: '📋', label: 'Копировать URL' },
-              { action: 'close', icon: '✕', label: 'Закрыть вкладку', color: '#f87171' },
-            ].map(item => (
-              <button
-                key={item.action}
-                onClick={() => handleTabContextAction(item.action)}
-                className="w-full px-3 py-1.5 text-left flex items-center gap-2 transition-colors cursor-pointer"
-                style={{ color: item.color || 'inherit' }}
-                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
-                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
-              >
-                <span className="w-[16px] text-center">{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            ))}
+            {(() => {
+              const tabPinned = !!(settings.pinnedTabs || {})[contextMenuTab?.id]
+              return [
+                { action: 'reload', icon: '🔄', label: 'Перезагрузить' },
+                { action: 'diag', icon: '🔍', label: 'Диагностика DOM' },
+                { action: 'copyUrl', icon: '📋', label: 'Копировать URL' },
+                { action: 'pin', icon: tabPinned ? '📌' : '🔒', label: tabPinned ? 'Открепить вкладку' : 'Закрепить вкладку' },
+                ...(!tabPinned ? [{ action: 'close', icon: '✕', label: 'Закрыть вкладку', color: '#f87171' }] : []),
+              ].map(item => (
+                <button
+                  key={item.action}
+                  onClick={() => handleTabContextAction(item.action)}
+                  className="w-full px-3 py-1.5 text-left flex items-center gap-2 transition-colors cursor-pointer"
+                  style={{ color: item.color || 'inherit' }}
+                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
+                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                >
+                  <span className="w-[16px] text-center">{item.icon}</span>
+                  <span>{item.label}</span>
+                </button>
+              ))
+            })()}
           </div>
         </div>
       )}
