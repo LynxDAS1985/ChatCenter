@@ -61,16 +61,20 @@ window.__chatcenter_send = async function(text) {
 }
 ```
 
-### Подсчёт непрочитанных (v0.22.0)
+### Подсчёт непрочитанных (v0.23.0)
 
-**НЕ СУММИРОВАТЬ бейджи чатов!** Telegram показывает кол-во ЧАТОВ с непрочитанными, а не сумму сообщений. Правильный подход — читать ГОТОВЫЙ счётчик:
+**НЕ СУММИРОВАТЬ бейджи чатов!** Правильные подходы:
 
-1. `document.title` → `(26) Telegram Web` (может не работать в WebView)
-2. Folder tab "Все чаты" badge → первый `.tabs-tab .badge` и др.
-3. Адаптивный: `.badge` элементы НЕ внутри `.chatlist-chat`
-4. Диагностика: IPC `monitor-diag` отправляет DOM-структуру для отладки селекторов
+**Из renderer (App.jsx):**
+- `page-title-updated` event — `(26) Telegram Web` → парсим число мгновенно
 
-**Folder tabs layout'ы**: горизонтальный (`.tabs-tab`), вертикальный (другой класс — требует диагностики).
+**Из preload (monitor.preload.js), 4 уровня fallback:**
+1. `document.title` → `(26) Telegram Web`
+2. Folder tab badges (`.tabs-tab .badge` и др.)
+3. Адаптивный: `.badge` НЕ внутри `.chatlist-chat`
+4. Сумма chatlist badges (крайний случай)
+
+**Folder tabs layout'ы**: горизонтальный (`.tabs-tab`), вертикальный (другой класс).
 
 ### Особенности
 

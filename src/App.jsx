@@ -28,8 +28,8 @@ function playNotificationSound() {
 
 function MessengerTab({
   messenger: m, isActive, accountInfo, unreadCount, isNew,
-  unreadSplit, messagePreview, zoomLevel,
-  onClick, onClose, isDragOver,
+  unreadSplit, messagePreview, zoomLevel, monitorStatus,
+  onClick, onClose, onContextMenu, isDragOver,
   onDragStart, onDragOver, onDrop, onDragEnd
 }) {
   const [hovered, setHovered] = useState(false)
@@ -59,6 +59,7 @@ function MessengerTab({
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onContextMenu={onContextMenu}
       onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart() }}
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver() }}
       onDrop={e => { e.preventDefault(); onDrop() }}
@@ -73,8 +74,10 @@ function MessengerTab({
         outlineOffset: '-2px',
       }}
     >
-      {/* Цветная точка + ping-анимация при новом сообщении */}
-      <span className="relative inline-flex w-2 h-2 shrink-0">
+      {/* Цветная точка: 🟢=активен 🟡=загрузка 🔴=ошибка + ping при новом сообщении */}
+      <span className="relative inline-flex w-2 h-2 shrink-0"
+        title={monitorStatus === 'active' ? 'Мониторинг активен' : monitorStatus === 'loading' ? 'Загрузка монитора...' : monitorStatus === 'error' ? 'Монитор не отвечает' : ''}
+      >
         {isNew && !isActive && (
           <span
             className="animate-ping absolute inset-0 rounded-full"
@@ -83,7 +86,11 @@ function MessengerTab({
         )}
         <span
           className="relative w-2 h-2 rounded-full block transition-all duration-150"
-          style={{ backgroundColor: isActive ? m.color : `${m.color}55` }}
+          style={{
+            backgroundColor: monitorStatus === 'error' ? '#ef4444'
+              : monitorStatus === 'loading' ? '#eab308'
+              : isActive ? m.color : `${m.color}55`
+          }}
         />
       </span>
 
@@ -159,6 +166,8 @@ export default function App() {
   const [unreadCounts, setUnreadCounts] = useState({})
   const [unreadSplit, setUnreadSplit] = useState({})       // { [id]: { personal, channels } }
   const [monitorDiag, setMonitorDiag] = useState(null)     // диагностика DOM от monitor.preload
+  const [monitorStatus, setMonitorStatus] = useState({})   // { [id]: 'loading'|'active'|'error' }
+  const [statusBarMsg, setStatusBarMsg] = useState(null)   // последнее сообщение для статусбара
   const [messagePreview, setMessagePreview] = useState({}) // { [id]: 'текст превью' }
   const [showAddModal, setShowAddModal] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -196,6 +205,9 @@ export default function App() {
   const aiPanelRef = useRef(null)
   const zoomLevelsRef = useRef({})
   const zoomInputRef = useRef(null)
+  const statusBarMsgTimer = useRef(null)
+  const tabContextMenu = useRef({ id: null, x: 0, y: 0 })
+  const [contextMenuTab, setContextMenuTab] = useState(null) // { id, x, y }
   const statsRef = useRef({ today: 0, autoToday: 0, total: 0, date: '' })
   const statsSaveTimer = useRef(null)
   const zoomSaveTimer = useRef(null)
@@ -574,11 +586,21 @@ export default function App() {
       el._chatcenterInit = true
       webviewRefs.current[messengerId] = el
 
+      // Статус мониторинга: loading при инициализации
+      setMonitorStatus(prev => ({ ...prev, [messengerId]: 'loading' }))
+
       el.addEventListener('dom-ready', () => {
         clearTimeout(retryTimers.current[messengerId])
         retryTimers.current[messengerId] = setTimeout(
           () => tryExtractAccount(messengerId, 0), 3500
         )
+        // Через 20 сек если монитор не ответил — помечаем как error
+        setTimeout(() => {
+          setMonitorStatus(prev => {
+            if (prev[messengerId] === 'loading') return { ...prev, [messengerId]: 'error' }
+            return prev
+          })
+        }, 20000)
         // Применяем зум если он не стандартный
         setTimeout(() => {
           const zoom = zoomLevelsRef.current[messengerId] || 100
@@ -586,6 +608,21 @@ export default function App() {
             try { webviewRefs.current[messengerId]?.setZoomFactor(zoom / 100) } catch {}
           }
         }, 600)
+      })
+
+      // page-title-updated — мгновенное обновление счётчика из title WebView
+      // Telegram ставит "(26) Telegram Web" — парсим число без задержки MutationObserver
+      el.addEventListener('page-title-updated', (e) => {
+        const match = e.title?.match(/\((\d+)\)/)
+        if (match) {
+          const count = parseInt(match[1], 10) || 0
+          setUnreadCounts(prev => {
+            if (prev[messengerId] === count) return prev
+            return { ...prev, [messengerId]: count }
+          })
+          // Обновляем статус мониторинга — title работает
+          setMonitorStatus(prev => ({ ...prev, [messengerId]: 'active' }))
+        }
       })
 
       el.addEventListener('ipc-message', (e) => {
@@ -606,6 +643,8 @@ export default function App() {
           // Только обновляем счётчик — звук и уведомление только при new-message (с текстом)
           const count = Number(e.args[0]) || 0
           setUnreadCounts(prev => ({ ...prev, [messengerId]: count }))
+          // Монитор прислал данные — значит работает
+          setMonitorStatus(prev => ({ ...prev, [messengerId]: 'active' }))
         } else if (e.channel === 'unread-split') {
           // Раздельный счётчик: личные vs каналы
           const split = e.args[0]
@@ -667,8 +706,34 @@ export default function App() {
           }, 3000)
 
           setLastMessage(text)
+
+          // Последнее сообщение в статусбар (исчезает через 8 сек)
+          const mName = messengersRef.current.find(x => x.id === messengerId)?.name || ''
+          const shortText = text.slice(0, 40) + (text.length > 40 ? '…' : '')
+          setStatusBarMsg(`${mName}: ${shortText}`)
+          clearTimeout(statusBarMsgTimer.current)
+          statusBarMsgTimer.current = setTimeout(() => setStatusBarMsg(null), 8000)
         }
       })
+    }
+  }
+
+  // ── Контекстное меню вкладки ────────────────────────────────────────────
+  const handleTabContextAction = (action) => {
+    const id = contextMenuTab?.id
+    setContextMenuTab(null)
+    if (!id) return
+    const wv = webviewRefs.current[id]
+    if (action === 'reload') {
+      if (wv) { try { wv.reload() } catch {} }
+      setMonitorStatus(prev => ({ ...prev, [id]: 'loading' }))
+    } else if (action === 'diag') {
+      if (wv) { try { wv.executeJavaScript('typeof runDiagnostics === "function" && (diagSent = false, runDiagnostics())') } catch {} }
+    } else if (action === 'copyUrl') {
+      const m = messengers.find(x => x.id === id)
+      if (m?.url) navigator.clipboard.writeText(m.url).catch(() => {})
+    } else if (action === 'close') {
+      removeMessenger(id)
     }
   }
 
@@ -680,7 +745,7 @@ export default function App() {
   // Бейдж трея отключён (v0.20.0) — по запросу пользователя
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--cc-bg)' }}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--cc-bg)' }} onClick={() => contextMenuTab && setContextMenuTab(null)}>
 
       {/* ── Шапка ── */}
       <div
@@ -726,10 +791,12 @@ export default function App() {
               unreadSplit={unreadSplit[m.id]}
               messagePreview={messagePreview[m.id]}
               zoomLevel={zoomLevels[m.id]}
+              monitorStatus={monitorStatus[m.id]}
               isNew={newMessageIds.has(m.id)}
               isDragOver={dragOverId === m.id}
               onClick={() => handleTabClick(m.id)}
               onClose={() => removeMessenger(m.id)}
+              onContextMenu={(e) => { e.preventDefault(); setContextMenuTab({ id: m.id, x: e.clientX, y: e.clientY }) }}
               onDragStart={() => handleDragStart(m.id)}
               onDragOver={() => handleDragOver(m.id)}
               onDrop={() => handleDrop(m.id)}
@@ -857,6 +924,39 @@ export default function App() {
       )}
 
       {/* ── Основной layout ── */}
+      {/* ── Контекстное меню вкладки ── */}
+      {contextMenuTab && (
+        <div
+          className="fixed z-[100]"
+          style={{ left: contextMenuTab.x, top: contextMenuTab.y }}
+          onMouseLeave={() => setContextMenuTab(null)}
+        >
+          <div
+            className="rounded-lg py-1 shadow-xl text-[12px] min-w-[180px]"
+            style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
+          >
+            {[
+              { action: 'reload', icon: '🔄', label: 'Перезагрузить', desc: 'Перезагрузка WebView + монитор' },
+              { action: 'diag', icon: '🔍', label: 'Диагностика DOM', desc: 'Повторно собрать данные о бейджах' },
+              { action: 'copyUrl', icon: '📋', label: 'Копировать URL' },
+              { action: 'close', icon: '✕', label: 'Закрыть вкладку', color: '#f87171' },
+            ].map(item => (
+              <button
+                key={item.action}
+                onClick={() => handleTabContextAction(item.action)}
+                className="w-full px-3 py-1.5 text-left flex items-center gap-2 transition-colors cursor-pointer"
+                style={{ color: item.color || 'inherit' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+              >
+                <span className="w-[16px] text-center">{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Область WebView ── */}
@@ -954,21 +1054,17 @@ export default function App() {
           </>
         )}
 
-        {/* ── Диагностика DOM (показывается когда есть данные от monitor.preload) ── */}
-        {monitorDiag && activeId && monitorDiag[activeId] && (() => {
-          const d = monitorDiag[activeId]
-          const folderNums = (d.folderBadges || []).map(b => b.text).join(',')
-          const diagText = `title="${(d.title || '').substring(0, 40)}" | title#=${d.titleMatch || '∅'} | source=${d.countSource || '?'} | tabs=${d.tabsTabCount} menu=${d.menuHorizCount} sideBtn=${d.sidebarBtnCount} | folder=[${folderNums}] | total_badges=${(d.allBadges || []).length}`
-          return (
-            <>
-              <span style={{ opacity: 0.3 }}>·</span>
-              <span title={`Диагностика DOM:\n${diagText}\n\nFolder badges:\n${(d.folderBadges || []).map(b => `  ${b.text} cls="${b.cls}" parent="${b.parentCls}"`).join('\n')}`}
-                style={{ color: '#60a5fa', cursor: 'help' }}>
-                🔍 {d.countSource || '?'}:{d.titleMatch || '∅'} folder={folderNums || '∅'}
-              </span>
-            </>
-          )
-        })()}
+        {/* ── Последнее сообщение (бегущая строка, 8 сек) ── */}
+        {statusBarMsg && (
+          <>
+            <span style={{ opacity: 0.3 }}>·</span>
+            <span
+              className="overflow-hidden text-ellipsis whitespace-nowrap max-w-[300px]"
+              style={{ color: 'var(--cc-text-dim)' }}
+              title={statusBarMsg}
+            >💬 {statusBarMsg}</span>
+          </>
+        )}
 
         {/* ── Зум текущей вкладки ── */}
         {activeId && (
