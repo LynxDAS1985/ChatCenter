@@ -643,3 +643,22 @@ if (s.zoomLevels) { setZoomLevels(s.zoomLevels); zoomLevelsRef.current = s.zoomL
 const updated = { ...settingsRef.current, zoomLevels: next }
 window.api.invoke('settings:save', updated).catch(() => {})
 ```
+
+---
+
+### ❌ Удаление отображения accountInfo из вкладки → пользователь теряет имя профиля (v0.38.0)
+
+**Симптом**: Имя аккаунта Telegram/MAX/VK пропало из вкладки. Пользователь не видит какой профиль активен.
+
+**Причина (v0.33.1)**: По запросу убрали accountInfo из видимого текста вкладки, оставив только в tooltip. Но accountInfo = единственный способ отличить аккаунты, поэтому пользователь вернул запрос.
+
+**Решение (v0.38.0)**: accountInfo отображается под названием мессенджера всегда. messagePreview временно заменяет его на 5 сек при новом сообщении:
+```jsx
+{messagePreview ? (
+  <span style={{ color: m.color }}>💬 {messagePreview}</span>
+) : accountInfo ? (
+  <span style={{ color: 'var(--cc-text-dimmer)' }} className="opacity-60">{accountInfo}</span>
+) : null}
+```
+
+**Урок**: Информация о профиле — критически важна. Не удалять без чёткой замены.

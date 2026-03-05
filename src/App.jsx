@@ -1,4 +1,4 @@
-// v0.36.0 — Фикс ложных уведомлений (!document.hidden), имя профиля MAX, аватарка
+// v0.38.0 — Имя профиля под вкладкой, полная диагностика, кэш аватарок с TTL
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -153,14 +153,21 @@ function MessengerTab({
             >{zoomLevel}%</span>
           )}
         </span>
-        {messagePreview && (
+        {messagePreview ? (
           <span
             className="text-[10px] whitespace-nowrap max-w-[120px] overflow-hidden text-ellipsis leading-tight"
             style={{ color: m.color }}
           >
             💬 {messagePreview}
           </span>
-        )}
+        ) : accountInfo ? (
+          <span
+            className="text-[10px] whitespace-nowrap max-w-[120px] overflow-hidden text-ellipsis leading-tight opacity-60"
+            style={{ color: 'var(--cc-text-dimmer)' }}
+          >
+            {accountInfo}
+          </span>
+        ) : null}
       </span>
 
       {/* Бейдж непрочитанных / кнопка закрыть (hover) / замок (pinned) */}
@@ -897,6 +904,64 @@ export default function App() {
       setMonitorStatus(prev => ({ ...prev, [id]: 'loading' }))
     } else if (action === 'diag') {
       if (wv) { try { wv.send('run-diagnostics') } catch {} }
+    } else if (action === 'diagFull') {
+      // Расширенная диагностика: localStorage, sessionStorage, IndexedDB, cookies, DOM avatars
+      if (wv) {
+        wv.executeJavaScript(`(async () => {
+          var r = { url: location.href, title: document.title }
+          r.localStorage = {}
+          try { for (var i = 0; i < Math.min(localStorage.length, 50); i++) {
+            var k = localStorage.key(i); r.localStorage[k] = (localStorage.getItem(k) || '').substring(0, 200)
+          }} catch(e) { r.localStorageError = e.message }
+          r.sessionStorage = {}
+          try { for (var i = 0; i < Math.min(sessionStorage.length, 50); i++) {
+            var k = sessionStorage.key(i); r.sessionStorage[k] = (sessionStorage.getItem(k) || '').substring(0, 200)
+          }} catch(e) { r.sessionStorageError = e.message }
+          try { r.cookies = document.cookie.split(';').slice(0, 30).map(function(c){ return c.trim().split('=')[0] }) } catch(e) {}
+          r.indexedDB = []
+          try {
+            var dbs = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : []
+            for (var d = 0; d < dbs.length; d++) {
+              var info = { name: dbs[d].name, version: dbs[d].version, stores: [] }
+              try {
+                var db = await new Promise(function(ok) {
+                  var req = indexedDB.open(dbs[d].name)
+                  req.onsuccess = function(){ok(req.result)}
+                  req.onerror = function(){ok(null)}
+                  req.onupgradeneeded = function(){req.transaction.abort();ok(null)}
+                })
+                if (db) { info.stores = Array.from(db.objectStoreNames); db.close() }
+              } catch(e) { info.error = e.message }
+              r.indexedDB.push(info)
+            }
+          } catch(e) { r.indexedDBError = e.message }
+          r.avatarImages = []
+          try {
+            var imgs = document.querySelectorAll('img')
+            for (var i = 0; i < imgs.length && i < 30; i++) {
+              if (imgs[i].width >= 20 && imgs[i].width <= 80 && imgs[i].height >= 20)
+                r.avatarImages.push({ src: (imgs[i].src||'').substring(0,200), size: imgs[i].width+'x'+imgs[i].height, cls: (imgs[i].className||'').substring(0,60), parentCls: (imgs[i].parentElement?.className||'').substring(0,80) })
+            }
+          } catch(e) {}
+          r.avatarElements = []
+          try {
+            var avs = document.querySelectorAll('[class*="avatar" i], [class*="Avatar"], [class*="photo" i], [class*="Photo"]')
+            for (var i = 0; i < avs.length && i < 20; i++) {
+              var bg = ''; try { bg = getComputedStyle(avs[i]).backgroundImage; if (bg==='none') bg='' } catch(e){}
+              var ch = avs[i].querySelector('img')
+              r.avatarElements.push({ tag: avs[i].tagName, cls: (avs[i].className||'').substring(0,80), bg: bg?bg.substring(0,200):'', childImg: ch?(ch.src||'').substring(0,200):'' })
+            }
+          } catch(e) {}
+          r.notifHooked = !!window.__cc_notif_hooked
+          return JSON.stringify(r, null, 2)
+        })()`)
+          .then(json => {
+            console.log('[ChatCenter] 🧪 Полная диагностика (' + id + '):', json)
+            navigator.clipboard.writeText(json).catch(() => {})
+            window.api.invoke('app:notify', { title: 'Диагностика скопирована', body: 'Полная диагностика ' + id + ' → буфер обмена' }).catch(() => {})
+          })
+          .catch(err => console.error('[ChatCenter] Ошибка диагностики:', err))
+      }
     } else if (action === 'copyUrl') {
       const m = messengers.find(x => x.id === id)
       if (m?.url) navigator.clipboard.writeText(m.url).catch(() => {})
@@ -1123,6 +1188,7 @@ export default function App() {
               return [
                 { action: 'reload', icon: '🔄', label: 'Перезагрузить' },
                 { action: 'diag', icon: '🔍', label: 'Диагностика DOM' },
+                { action: 'diagFull', icon: '🧪', label: 'Полная диагностика (→ буфер)' },
                 { action: 'copyUrl', icon: '📋', label: 'Копировать URL' },
                 { action: 'pin', icon: tabPinned ? '📌' : '🔒', label: tabPinned ? 'Открепить вкладку' : 'Закрепить вкладку' },
                 ...(!tabPinned ? [{ action: 'close', icon: '✕', label: 'Закрыть вкладку', color: '#f87171' }] : []),

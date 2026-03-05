@@ -1,4 +1,4 @@
-// v0.35.0 — backgroundThrottling=false: уведомления при свёрнутом окне
+// v0.38.0 — Кэш аватарок с TTL (30 мин, авто-очистка)
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -324,12 +324,25 @@ async function getGigaChatToken(clientId, clientSecret) {
   return result.data.access_token
 }
 
-// ─── Скачивание иконки для уведомления (кеш в памяти, до 50 записей) ─────────
+// ─── Скачивание иконки для уведомления (кеш с TTL 30 мин, до 50 записей) ────
 
-const iconCache = new Map()
+const iconCache = new Map() // url → { icon, ts }
+const ICON_CACHE_TTL = 30 * 60 * 1000 // 30 минут
+
+// Периодическая очистка устаревших записей кэша аватарок
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, val] of iconCache) {
+    if (now - val.ts > ICON_CACHE_TTL) iconCache.delete(key)
+  }
+}, 10 * 60 * 1000) // каждые 10 минут
 
 function downloadIcon(url) {
-  if (iconCache.has(url)) return Promise.resolve(iconCache.get(url))
+  const cached = iconCache.get(url)
+  if (cached && Date.now() - cached.ts < ICON_CACHE_TTL) return Promise.resolve(cached.icon)
+  // Если TTL истёк — удаляем
+  if (cached) iconCache.delete(url)
+
   return new Promise((resolve) => {
     const proto = url.startsWith('https') ? https : require('http')
     const req = proto.get(url, { timeout: 4000 }, (res) => {
@@ -345,12 +358,12 @@ function downloadIcon(url) {
           const buf = Buffer.concat(chunks)
           const icon = nativeImage.createFromBuffer(buf)
           if (!icon.isEmpty()) {
-            // Кеш до 50 записей
-            if (iconCache.size > 50) {
+            // Кеш до 50 записей (LRU eviction) + TTL
+            if (iconCache.size >= 50) {
               const first = iconCache.keys().next().value
               iconCache.delete(first)
             }
-            iconCache.set(url, icon)
+            iconCache.set(url, { icon, ts: Date.now() })
             resolve(icon)
           } else resolve(null)
         } catch { resolve(null) }

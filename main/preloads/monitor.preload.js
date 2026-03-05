@@ -1,4 +1,4 @@
-// v0.34.0 — ChatMonitor: перехват Notification + ServiceWorker + диагностика через IPC
+// v0.38.0 — ChatMonitor: улучшенный поиск аватарок (MAX), перехват Notification + ServiceWorker
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
@@ -18,13 +18,30 @@ const { ipcRenderer } = require('electron')
       function findAvatar(name) {
         if (!name) return ''
         try {
-          var items = document.querySelectorAll('[class*="chat" i], [class*="dialog" i], [class*="conversation" i], [class*="item" i]')
-          for (var j = 0; j < items.length && j < 100; j++) {
+          // 1. Ищем чат-элемент содержащий имя отправителя
+          var items = document.querySelectorAll('[class*="chat" i], [class*="dialog" i], [class*="conversation" i], [class*="item" i], [class*="peer" i], [class*="contact" i], li')
+          for (var j = 0; j < items.length && j < 150; j++) {
             var txt = items[j].textContent || ''
-            if (txt.indexOf(name) !== -1 || (name.length > 5 && txt.indexOf(name.substring(0, 5)) !== -1)) {
-              var img = items[j].querySelector('img[src*="http"]')
-              if (img && img.src && img.src.startsWith('http') && !img.src.includes('emoji')) return img.src
+            if (txt.indexOf(name) === -1 && !(name.length > 4 && txt.indexOf(name.substring(0, Math.min(name.length, 8))) !== -1)) continue
+            // a) img внутри элемента (любой http src, не emoji/sticker)
+            var img = items[j].querySelector('img[src^="http"]')
+            if (img && img.src && !img.src.includes('emoji') && !img.src.includes('sticker')) return img.src
+            // b) элемент с class*="avatar" — img внутри или background-image
+            var avEl = items[j].querySelector('[class*="avatar" i], [class*="photo" i]')
+            if (avEl) {
+              var aImg = avEl.querySelector('img[src^="http"]') || (avEl.tagName === 'IMG' && avEl.src && avEl.src.startsWith('http') ? avEl : null)
+              if (aImg && aImg.src) return aImg.src
+              try {
+                var bg = getComputedStyle(avEl).backgroundImage
+                if (bg && bg !== 'none') { var m = bg.match(/url\(["']?(https?:\/\/[^"')]+)/); if (m) return m[1] }
+              } catch(e2) {}
             }
+          }
+          // 2. Fallback: ищем все img с class*="avatar" на странице — берём из ближайшего к тексту
+          var allAvatars = document.querySelectorAll('[class*="avatar" i] img[src^="http"], img[class*="avatar" i][src^="http"]')
+          for (var k = 0; k < allAvatars.length && k < 50; k++) {
+            var parent = allAvatars[k].closest('[class*="chat" i], [class*="dialog" i], [class*="item" i], [class*="peer" i], li')
+            if (parent && parent.textContent && parent.textContent.indexOf(name) !== -1) return allAvatars[k].src
           }
         } catch(e) {}
         return ''
