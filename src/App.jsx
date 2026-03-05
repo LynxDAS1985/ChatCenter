@@ -1,4 +1,4 @@
-// v0.33.0 — Фикс уведомлений MAX, иконка закрепа, ширина вкладок
+// v0.33.1 — Убраны подписи под вкладками + фикс баннера VK
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -153,12 +153,12 @@ function MessengerTab({
             >{zoomLevel}%</span>
           )}
         </span>
-        {(messagePreview || accountInfo) && (
+        {messagePreview && (
           <span
             className="text-[10px] whitespace-nowrap max-w-[120px] overflow-hidden text-ellipsis leading-tight"
-            style={{ color: messagePreview ? m.color : (isActive ? `${m.color}AA` : 'var(--cc-text-dimmer)') }}
+            style={{ color: m.color }}
           >
-            {messagePreview ? `💬 ${messagePreview}` : accountInfo}
+            💬 {messagePreview}
           </span>
         )}
       </span>
@@ -751,24 +751,31 @@ export default function App() {
             [class*="BrowserUpdate"], [class*="browser_update"],
             [class*="browserUpdate"], [class*="unsupported-browser"],
             .UnsupportedBrowser, .stl__banner,
-            .Popup--browserUpdate, .vkuiBanner--browser-update {
+            .Popup--browserUpdate, .vkuiBanner--browser-update,
+            .TopBrowserUpdateLayer, .BrowserUpdateOffer,
+            [class*="browser-update"], [class*="BrowserOffer"] {
               display: none !important;
             }
           `)
-          // Дополнительно: JS-удаление баннеров по тексту (VK может использовать inline стили)
+          // JS-удаление баннеров "браузер устарел" по тексту (VK, MAX и др.)
           el.executeJavaScript(`
             (function hideBrowserBanners() {
               function remove() {
-                document.querySelectorAll('div, span, section, aside').forEach(el => {
-                  const t = el.textContent || ''
-                  if ((t.includes('браузер устарел') || t.includes('Обновите') && t.includes('браузер')) && el.offsetHeight < 200) {
+                document.querySelectorAll('div, span, section, aside, footer, [role="banner"], [role="alert"]').forEach(el => {
+                  var t = (el.textContent || '').toLowerCase()
+                  if ((t.includes('браузер устарел') || t.includes('browser is outdated') ||
+                       (t.includes('обновите') && t.includes('браузер')) ||
+                       (t.includes('update') && t.includes('browser'))) &&
+                      el.children.length < 20) {
                     el.style.display = 'none'
                   }
                 })
               }
               remove()
-              setTimeout(remove, 3000)
-              setTimeout(remove, 8000)
+              setTimeout(remove, 2000)
+              setTimeout(remove, 5000)
+              setTimeout(remove, 10000)
+              new MutationObserver(function() { remove() }).observe(document.body || document.documentElement, { childList: true, subtree: true })
             })()
           `).catch(() => {})
           // Перехват Notification + Audio перенесён в monitor.preload.js (v0.29.1)
