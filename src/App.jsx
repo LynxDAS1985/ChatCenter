@@ -1,4 +1,4 @@
-// v0.25.2 — Фикс: звук при увеличении счётчика через page-title-updated и unread-count
+// v0.26.0 — Фикс VK-уведомлений, звук при всех путях обновления счётчика
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'

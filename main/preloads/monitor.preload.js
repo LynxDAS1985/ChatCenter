@@ -1,4 +1,4 @@
-// v0.22.0 — ChatMonitor: диагностика DOM + адаптивный поиск folder-tab badges
+// v0.26.0 — ChatMonitor: фикс VK-уведомлений, детекция сообщений в активном чате
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
@@ -20,6 +20,11 @@ const UNREAD_SELECTORS = {
     'span[aria-label*="unread"]',
   ],
   vk: [
+    // VK VKUI (2024–2026)
+    '.vkuiCounter',
+    '.ConversationItem__unread',
+    '.im_nav_badge',
+    // VK legacy
     '.im-page--chat-unread-count',
     '.MessagesNavItem--unread .MessagesNavItem__unreadCounter',
     '.vkuiBadge',
@@ -42,7 +47,10 @@ const LAST_MESSAGE_SELECTORS = {
     '.message-in:last-of-type .copyable-text span',
   ],
   vk: [
-    // VK Web
+    // VK VKUI (2024–2026) — входящие пузыри
+    '.im-mess--in:last-child .im-mess--text',
+    '.im_msg_stack--in:last-child .im-mess_text',
+    // VK legacy
     '.im-mes-stack--in:last-child .im-mes__text',
     '.MessagesMes--in:last-child .MessagesMes__text',
   ],
@@ -157,6 +165,15 @@ function countUnread(type) {
       if (mutedTotal > 0) break
     } catch {}
   }
+
+  // Fallback: VK/WhatsApp могут ставить "(N)" в title
+  if (mutedTotal === 0) {
+    try {
+      const m = document.title.match(/\((\d+)\)/)
+      if (m) { mutedTotal = parseInt(m[1], 10) || 0; personal = mutedTotal }
+    } catch {}
+  }
+
   return { personal, channels, total: personal + channels, allTotal: mutedTotal }
 }
 
@@ -245,48 +262,60 @@ function countUnreadTelegram() {
   return { personal, channels, total: allTotal, allTotal }
 }
 
-// ── Диагностика DOM: сбор информации о бейджах и folder tabs ──────────────
+// ── Диагностика DOM: сбор информации о бейджах и селекторах ──────────────
 let diagSent = false
-function runDiagnostics() {
+function runDiagnostics(type) {
   if (diagSent) return
   diagSent = true
   try {
     const diag = {
+      type,
       title: document.title,
       titleMatch: document.title.match(/\((\d+)\)/)?.[1] || null,
       url: location.href,
-      tabsTabCount: document.querySelectorAll('.tabs-tab').length,
-      menuHorizCount: document.querySelectorAll('.menu-horizontal-div-item').length,
-      sidebarBtnCount: document.querySelectorAll('.sidebar-tools-button').length,
-      countSource: countUnreadTelegram._lastSource || 'unknown',
-      allBadges: [],
-      folderBadges: [],
     }
 
-    // Собираем ВСЕ .badge элементы с контекстом (до 50 шт.)
-    let badgeIdx = 0
-    document.querySelectorAll('.badge').forEach(b => {
-      if (badgeIdx++ > 50) return
-      const text = b.textContent?.trim() || ''
-      const inChatlist = !!b.closest('.chatlist-chat, .chatlist, .ListItem, [class*="chat-item"]')
-      const p = b.parentElement
-      const gp = p?.parentElement
-      const entry = {
-        text,
-        cls: (b.className || '').substring(0, 60),
-        parentTag: p?.tagName || '?',
-        parentCls: (p?.className || '').substring(0, 60),
-        gpCls: (gp?.className || '').substring(0, 60),
-        inChatlist,
+    if (type === 'telegram') {
+      diag.tabsTabCount = document.querySelectorAll('.tabs-tab').length
+      diag.menuHorizCount = document.querySelectorAll('.menu-horizontal-div-item').length
+      diag.sidebarBtnCount = document.querySelectorAll('.sidebar-tools-button').length
+      diag.countSource = countUnreadTelegram._lastSource || 'unknown'
+      diag.allBadges = []
+      diag.folderBadges = []
+      let badgeIdx = 0
+      document.querySelectorAll('.badge').forEach(b => {
+        if (badgeIdx++ > 50) return
+        const text = b.textContent?.trim() || ''
+        const inChatlist = !!b.closest('.chatlist-chat, .chatlist, .ListItem, [class*="chat-item"]')
+        const p = b.parentElement
+        const entry = { text, cls: (b.className || '').substring(0, 60), parentCls: (p?.className || '').substring(0, 60), inChatlist }
+        diag.allBadges.push(entry)
+        if (!inChatlist) diag.folderBadges.push(entry)
+      })
+    } else {
+      // Диагностика для VK / WhatsApp / других
+      const unreadSels = UNREAD_SELECTORS[type] || []
+      const msgSels = LAST_MESSAGE_SELECTORS[type] || []
+      diag.unreadSelectors = {}
+      for (const sel of unreadSels) {
+        try { diag.unreadSelectors[sel] = document.querySelectorAll(sel).length } catch { diag.unreadSelectors[sel] = -1 }
       }
-      diag.allBadges.push(entry)
-      if (!inChatlist) diag.folderBadges.push(entry)
-    })
-
-    // Sidebar контейнер
-    const sb = document.querySelector('#column-left, .sidebar-left, [class*="sidebar"]')
-    if (sb) {
-      diag.sidebarCls = (sb.className || '').substring(0, 80)
+      diag.messageSelectors = {}
+      for (const sel of msgSels) {
+        try {
+          const els = document.querySelectorAll(sel)
+          diag.messageSelectors[sel] = { count: els.length, lastText: els.length > 0 ? (els[els.length - 1].textContent?.trim() || '').substring(0, 60) : null }
+        } catch { diag.messageSelectors[sel] = { count: -1, lastText: null } }
+      }
+      // Пробуем найти хоть какие-то бейджи-счётчики на странице
+      diag.genericCounters = []
+      let idx = 0
+      document.querySelectorAll('[class*="counter"], [class*="unread"], [class*="badge"], [class*="Counter"]').forEach(el => {
+        if (idx++ > 30) return
+        const text = el.textContent?.trim() || ''
+        if (text.length > 10) return // пропускаем длинные тексты
+        diag.genericCounters.push({ text, cls: (el.className || '').substring(0, 80) })
+      })
     }
 
     ipcRenderer.sendToHost('monitor-diag', diag)
@@ -312,12 +341,50 @@ function getLastMessageText(type) {
 
 let lastCount = -1
 let lastSentText = null
+let lastActiveMessageText = null  // для детекции сообщений в активном чате
+let lastActiveMessageTime = 0     // cooldown: не спамить уведомлениями
 let observer = null
 
 // Защита от ложных срабатываний при загрузке страницы:
 // первые 10 секунд не сообщаем о "новых" сообщениях — страница ещё грузится
 let monitorReady = false
 setTimeout(() => { monitorReady = true }, 10000)
+
+// Получить текст последнего сообщения в активном чате (любого, не только входящего)
+// Используется для детекции новых сообщений когда чат открыт
+function getAnyLastMessageText(type) {
+  const selsMap = {
+    telegram: [
+      '.bubble:last-of-type .message',
+      '.message:last-of-type .text-content',
+    ],
+    whatsapp: [
+      '.message-in:last-of-type .selectable-text span[dir]',
+      '.message-out:last-of-type .selectable-text span[dir]',
+    ],
+    vk: [
+      // Текущий VK (2024–2026): последний пузырь в чате
+      '.im-mess:last-child .im-mess--text',
+      '.im_msg_text:last-of-type',
+      // Legacy
+      '.im-mes:last-child .im-mes__text',
+      '.im-mes-stack:last-child .im-mes__text',
+      '.MessagesMes:last-child .MessagesMes__text',
+    ],
+  }
+  const sels = selsMap[type] || []
+  for (const sel of sels) {
+    try {
+      const els = document.querySelectorAll(sel)
+      if (els.length > 0) {
+        const last = els[els.length - 1]
+        const text = last.textContent?.trim()
+        if (text && text.length > 0 && text.length < 2000) return text
+      }
+    } catch {}
+  }
+  return null
+}
 
 function sendUpdate(type) {
   const { personal, channels, total, allTotal } = countUnread(type)
@@ -334,9 +401,29 @@ function sendUpdate(type) {
       const text = getLastMessageText(type)
       if (text && text !== lastSentText) {
         lastSentText = text
+        lastActiveMessageText = text  // синхронизируем
         try { ipcRenderer.sendToHost('new-message', text) } catch {}
       }
     }
+  }
+
+  // Path 2: Детекция новых входящих сообщений в АКТИВНОМ чате
+  // Когда чат открыт — VK/WhatsApp не считают сообщение непрочитанным, счётчик не растёт
+  // Поэтому проверяем текст последнего входящего сообщения отдельно
+  if (monitorReady) {
+    const inText = getLastMessageText(type)
+    if (inText && inText !== lastSentText && inText !== lastActiveMessageText) {
+      const now = Date.now()
+      // Cooldown 3 сек — не спамить при прокрутке
+      if (now - lastActiveMessageTime > 3000) {
+        lastSentText = inText
+        lastActiveMessageText = inText
+        lastActiveMessageTime = now
+        try { ipcRenderer.sendToHost('new-message', inText) } catch {}
+      }
+    }
+    // Обновляем lastActiveMessageText даже без отправки — чтобы не уведомлять повторно
+    if (inText) lastActiveMessageText = inText
   }
 }
 
@@ -347,9 +434,7 @@ function startMonitor() {
   sendUpdate(type)
 
   // Диагностика DOM — отправляем через 15 сек (страница полностью загрузится)
-  if (type === 'telegram') {
-    setTimeout(() => { sendUpdate(type); runDiagnostics() }, 15000)
-  }
+  setTimeout(() => { sendUpdate(type); runDiagnostics(type) }, 15000)
 
   if (observer) return
   observer = new MutationObserver(() => {

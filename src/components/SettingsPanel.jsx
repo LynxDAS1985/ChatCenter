@@ -1,4 +1,4 @@
-// v0.25.2 — Панель настроек: уникальный звук каждого мессенджера, тест звука с тональностью
+// v0.26.0 — Панель настроек: уникальный звук каждого мессенджера, тест звука с тональностью
 import { useEffect, useState } from 'react'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 
@@ -364,7 +364,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
               {[
                 ['Название', 'ЦентрЧатов / ChatCenter'],
-                ['Версия', 'v0.25.2'],
+                ['Версия', 'v0.26.0'],
                 ['Платформа', window.navigator.platform || 'Windows'],
                 ['Стек', 'Electron + React + Tailwind'],
               ].map(([label, value], i, arr) => (
