@@ -226,7 +226,7 @@ s.remove()
 ```
 Этот `<script>` выполняется в main world при document_start — ДО скриптов VK/WhatsApp. console.log → console-message event ловит данные в App.jsx.
 
-**Дополнительно**: `app.setName('ЦентрЧатов')` в main.js как fallback.
+**Дополнительно**: `app.setName('ЦентрЧатов')` в main.js как fallback — но на Windows это НЕ влияет на заголовок тостов! Нужен `app.setAppUserModelId()` (см. ниже).
 
 **Ключевой урок**: В Electron WebView с context isolation:
 - DOM — общий (MutationObserver работает из preload, `<script>` тоже)
@@ -262,7 +262,9 @@ window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
 
 **Решение v0.29.0 (НЕ ПОМОГЛО)**: `setPermissionRequestHandler` + `setPermissionCheckHandler` НЕ блокирует HTML5 `new Notification()` в WebView. Permissions проверяются только при `requestPermission()`, но VK создаёт `new Notification()` напрямую.
 
-**Решение (v0.29.1)**: Ранняя `<script>` tag injection в `monitor.preload.js` при document_start — перехват `window.Notification` ДО скриптов мессенджера. Плюс `app.setName('ЦентрЧатов')` как fallback.
+**Решение (v0.29.1)**: Ранняя `<script>` tag injection в `monitor.preload.js` при document_start — перехват `window.Notification` ДО скриптов мессенджера.
+
+**Решение (v0.29.2)**: `app.setAppUserModelId('ЦентрЧатов')` — Windows берёт заголовок тостовых уведомлений из AppUserModelId, а НЕ из `app.setName()`. По умолчанию Electron ставит `"electron.app.Electron"` — именно это показывалось.
 
 ---
 
@@ -278,6 +280,24 @@ window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
 1. Warm-up `notifReadyRef` для ОБОИХ каналов (и `__CC_NOTIF__`, и `ipc-message new-message`) в App.jsx
 2. Инициализация `lastActiveMessageText` текущим текстом DOM при `monitorReady = true` в monitor.preload.js
 3. `monitorReady` 10 сек в monitor.preload.js (было и раньше)
+
+---
+
+### ❌ app.setName() не меняет заголовок уведомлений на Windows
+
+**Симптом**: Нативные Windows-уведомления показывают "electron.app.Electron" вместо "ЦентрЧатов", несмотря на `app.setName('ЦентрЧатов')`.
+
+**Причина**: На Windows заголовок тостовых уведомлений (Toast Notification) берётся из **AppUserModelId**, а не из `app.name`. По умолчанию Electron устанавливает AppUserModelId = `"electron.app.Electron"`.
+
+**Решение (v0.29.2)**: Вызвать `app.setAppUserModelId('ЦентрЧатов')` в самом начале main.js:
+```js
+app.setName('ЦентрЧатов')
+if (process.platform === 'win32') {
+  app.setAppUserModelId('ЦентрЧатов')
+}
+```
+
+**Ключевой урок**: На Windows для уведомлений недостаточно `app.setName()` — обязательно нужен `app.setAppUserModelId()`.
 
 ---
 

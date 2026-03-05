@@ -9,9 +9,13 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
 
-// Устанавливаем имя приложения — без этого Electron в dev показывает "electron.app.Electron"
-// как заголовок нативных уведомлений, если какое-то уведомление просочится
+// Устанавливаем имя приложения для уведомлений Windows
+// app.setName() НЕ влияет на заголовок тостов Windows — Windows берёт его из AppUserModelId
+// По умолчанию Electron ставит "electron.app.Electron" — именно это показывалось в уведомлениях
 app.setName('ЦентрЧатов')
+if (process.platform === 'win32') {
+  app.setAppUserModelId('ЦентрЧатов')
+}
 
 // ─── Простое хранилище (JSON-файл, без ESM-зависимостей) ────────────────────
 

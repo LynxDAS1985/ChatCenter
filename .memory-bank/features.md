@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.29.1 (5 марта 2026)
+## Текущая версия: v0.29.2 (5 марта 2026)
 
 ---
 
@@ -89,6 +89,10 @@
 ---
 
 ## Changelog
+
+### v0.29.2 (5 марта 2026) — Фикс заголовка уведомлений Windows (AppUserModelId)
+- **Корень проблемы**: на Windows заголовок тостовых уведомлений берётся из `AppUserModelId`, а НЕ из `app.setName()`. По умолчанию Electron ставит `"electron.app.Electron"`.
+- **Решение**: добавлен `app.setAppUserModelId('ЦентрЧатов')` в самом начале `main.js` — теперь все нативные уведомления показывают "ЦентрЧатов".
 
 ### v0.29.1 (5 марта 2026) — Ранняя script injection + фикс фантомных сообщений
 - **Фикс "electron.app.Electron" (ОКОНЧАТЕЛЬНЫЙ)**: Перехват `window.Notification` перенесён из `executeJavaScript` в dom-ready → в `monitor.preload.js` через ранний `<script>` tag injection при document_start. Скрипт выполняется в main world ДО скриптов мессенджера — VK не может вызвать нативный `new Notification()`.
