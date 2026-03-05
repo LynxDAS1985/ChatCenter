@@ -92,10 +92,17 @@ export const DEFAULT_MESSENGERS = [
     emoji: '💎',
     isDefault: true,
     accountScript: `(async () => {
+      // Blacklist: названия приложения/служебные слова — НЕ считаем именем профиля
+      var BL = /^(max|макс|мессенджер|messenger|vk|app|undefined|null|true|false|test|user|admin|guest|default)$/i;
       function tryName(o) {
         if (!o || typeof o !== 'object') return null;
-        var n = o.name || o.displayName || o.first_name || o.firstName || o.nick || o.nickname || o.login;
-        if (n && typeof n === 'string' && n.length > 1 && n.length < 60) return n;
+        var n = o.displayName || o.first_name || o.firstName || o.nick || o.nickname;
+        if (!n) n = o.name;
+        if (!n) n = o.login;
+        if (n && typeof n === 'string' && n.length > 1 && n.length < 60 && !BL.test(n.trim())) return n.trim();
+        // Телефон как fallback
+        var ph = o.phone || o.phoneNumber || o.phone_number || o.msisdn;
+        if (ph) { ph = String(ph).replace(/[^0-9+]/g, ''); if (ph.length >= 10) return ph.startsWith('+') ? ph : '+' + ph; }
         return null;
       }
       function scanStorage(st) {
@@ -123,10 +130,10 @@ export const DEFAULT_MESSENGERS = [
           var cookies = document.cookie.split(';');
           for (var c = 0; c < cookies.length; c++) {
             var parts = cookies[c].trim().split('=');
-            if (/user|name|profile|nick/i.test(parts[0])) {
+            if (/user|name|profile|nick|phone/i.test(parts[0])) {
               var cv = decodeURIComponent(parts.slice(1).join('='));
               if (cv.startsWith('{')) { var n = tryName(JSON.parse(cv)); if (n) return n; }
-              else if (cv.length > 1 && cv.length < 60 && !/^[0-9a-f-]+$/i.test(cv)) return cv;
+              else if (cv.length > 1 && cv.length < 60 && !/^[0-9a-f-]+$/i.test(cv) && !BL.test(cv.trim())) return cv.trim();
             }
           }
         } catch(e) {}
@@ -143,7 +150,7 @@ export const DEFAULT_MESSENGERS = [
             }
           } catch(e) {}
         }
-        // 5. DOM — навигация профиля (кнопка "Профиль" может иметь aria-label/title)
+        // 5. DOM — навигация профиля, имя рядом с аватаркой
         var navSels = [
           'a[href*="profile"]','a[href*="settings"]','button[aria-label*="рофил"]',
           '[class*="profile"] [class*="name"]','[class*="Profile"] [class*="Name"]',
@@ -155,7 +162,7 @@ export const DEFAULT_MESSENGERS = [
             var el = document.querySelector(navSels[s]);
             if (!el) continue;
             var t = (el.getAttribute('aria-label') || el.title || el.textContent || '').trim();
-            if (t && t.length > 1 && t.length < 60 && !/профил|настрой|setting/i.test(t)) return t;
+            if (t && t.length > 1 && t.length < 60 && !/профил|настрой|setting/i.test(t) && !BL.test(t)) return t;
           } catch(e) {}
         }
       } catch(e) {}
