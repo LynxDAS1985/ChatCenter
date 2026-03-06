@@ -485,6 +485,37 @@ mainWindow.webContents.backgroundThrottling = false
 
 **Ключевой урок**: Для приложений с уведомлениями/мониторингом `backgroundThrottling: false` — обязательная настройка. Без неё WebView замораживаются при скрытии окна.
 
+### ❌ Ribbon не появляется при свёрнутом (minimized) окне (v0.39.3→v0.39.4)
+
+**Симптом**: Сообщения приходят в мессенджер при свёрнутом окне, но ribbon-уведомление НЕ появляется.
+
+**Причина**: `backgroundThrottling: false` спасает от throttling при `hide()`, но при `minimize()` на Windows ОС может замораживать renderer-процесс на уровне ОС. В результате:
+- WebView получает сообщение от сервера
+- `console-message` DOM event на `<webview>` НЕ dispatched в renderer
+- IPC `app:custom-notify` никогда не отправляется в main
+- Main process не знает о сообщении → ribbon не создаётся
+
+**Решение (v0.39.4)**: Backup notification path в main process:
+```js
+// main.js — app.on('web-contents-created')
+// Слушаем console-message НАПРЯМУЮ на webContents webview гостей
+// Main process никогда не throttled!
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() !== 'webview') return
+  contents.setBackgroundThrottling(false) // belt & suspenders
+  contents.on('console-message', (_e, _level, msg) => {
+    if (!msg.startsWith('__CC_NOTIF__')) return
+    // Только при свёрнутом mainWindow
+    if (mainWindow.isVisible() && !mainWindow.isMinimized()) return
+    // Показываем уведомление напрямую
+    showCustomNotification(...)
+  })
+})
+```
++ Дедупликация в `showCustomNotification` — защита от двойных уведомлений.
+
+**Ключевой урок**: `backgroundThrottling: false` недостаточно на Windows при minimize. Для критичных событий нужен backup path через main process (`contents.on('console-message')` на webContents).
+
 ---
 
 ### ❌ Закрытие вкладки мессенджера без подтверждения

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.39.3 (6 марта 2026)
+## Текущая версия: v0.39.4 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,13 @@
 ---
 
 ## Changelog
+
+### v0.39.4 (6 марта 2026) — Backup notification path при свёрнутом окне
+- **Проблема**: Ribbon-уведомления не появлялись, когда mainWindow свёрнуто (minimized). Windows замораживает renderer-процесс, несмотря на `backgroundThrottling: false` — IPC от renderer до main не доходит.
+- **Решение**: `app.on('web-contents-created')` — main process напрямую слушает `console-message` на webview webContents. Когда mainWindow свёрнуто/скрыто, main process сам вызывает `showCustomNotification()`, минуя renderer.
+- **Принудительное `setBackgroundThrottling(false)`** на каждом webview webContents через `contents.setBackgroundThrottling(false)` (belt & suspenders к HTML-атрибуту).
+- **Дедупликация в main process**: `notifDedupMap` в `showCustomNotification()` — один текст от одного мессенджера за 8 сек → skip. Защита от двойных уведомлений (renderer + main backup).
+- **URL→messenger mapping**: `findMessengerByUrl()` — определяет мессенджер по hostname webContents URL.
 
 ### v0.39.3 (6 марта 2026) — Увеличенный ribbon, дедупликация, фикс фантомных VK
 - **Размер ribbon увеличен**: ширина 310→370px, высота элемента 62→76px, аватарка 36→44px, шрифт sender 12→14px, body 11→13px.

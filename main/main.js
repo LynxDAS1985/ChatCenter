@@ -1,4 +1,4 @@
-// v0.39.3 — Увеличенный ribbon, дедупликация, фикс фантомных VK
+// v0.39.4 — Backup notification path в main process при свёрнутом окне
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -410,6 +410,8 @@ function ruError(msg) {
 let notifWin = null
 let notifItems = [] // [{id, messengerId, ...}]
 let notifIdCounter = 0
+const notifDedupMap = new Map() // messengerId:text → timestamp (дедупликация main+renderer)
+const webviewReadySet = new Set() // webContents ids прошедшие warm-up
 
 function getNotifPreloadPath() {
   if (isDev) {
@@ -484,6 +486,18 @@ function repositionNotifWin() {
 }
 
 async function showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId }) {
+  // Дедупликация: один и тот же текст от того же мессенджера за 8 сек → skip
+  const dedupKey = messengerId + ':' + (body || '').slice(0, 60)
+  const now = Date.now()
+  if (notifDedupMap.has(dedupKey) && now - notifDedupMap.get(dedupKey) < 8000) {
+    console.log('[NotifManager] Dedup skip:', messengerName, body?.slice(0, 30))
+    return null
+  }
+  notifDedupMap.set(dedupKey, now)
+  if (notifDedupMap.size > 50) {
+    for (const [k, ts] of notifDedupMap) { if (now - ts > 30000) notifDedupMap.delete(k) }
+  }
+
   try {
     if (!notifWin || notifWin.isDestroyed()) {
       createNotifWindow()
@@ -1019,6 +1033,72 @@ function setupIPC() {
     }
   })
 }
+
+// ─── Backup notification path: main-process перехват __CC_NOTIF__ ─────────────
+// Когда mainWindow свёрнуто, renderer может быть заморожен Windows'ом.
+// Слушаем console-message напрямую на webContents webview гостей — main process не throttled.
+
+function findMessengerByUrl(pageUrl) {
+  if (!storage) return null
+  const messengers = storage.get('messengers') || []
+  try {
+    const pageHost = new URL(pageUrl).hostname
+    return messengers.find(m => {
+      try { return new URL(m.url).hostname === pageHost } catch { return false }
+    })
+  } catch { return null }
+}
+
+app.on('web-contents-created', (_event, contents) => {
+  // Только webview гости (не mainWindow, не notification window)
+  if (contents.getType() !== 'webview') return
+
+  // Принудительно отключаем background throttling (belt & suspenders к webpreferences attr)
+  contents.setBackgroundThrottling(false)
+
+  // Warm-up: игнорируем первые 12 сек после загрузки (кешированные/старые уведомления)
+  contents.on('did-finish-load', () => {
+    webviewReadySet.delete(contents.id)
+    setTimeout(() => webviewReadySet.add(contents.id), 12000)
+  })
+
+  // Backup: перехватываем __CC_NOTIF__ напрямую в main process
+  contents.on('console-message', (_e, _level, msg) => {
+    if (!msg || !msg.startsWith('__CC_NOTIF__')) return
+    if (!webviewReadySet.has(contents.id)) return
+
+    // Только когда mainWindow свёрнуто/скрыто — иначе renderer сам обработает
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()) return
+
+    const mInfo = findMessengerByUrl(contents.getURL())
+    if (!mInfo) return
+
+    try {
+      const data = JSON.parse(msg.slice(12))
+      const text = (data.b || '').trim()
+      if (!text) return
+
+      let iconUrl
+      if (data.i) {
+        if (data.i.startsWith('http')) iconUrl = data.i
+        else if (data.i.startsWith('/')) {
+          try { iconUrl = new URL(data.i, mInfo.url).href } catch {}
+        }
+      }
+
+      console.log('[NotifManager] Backup path (minimized):', mInfo.name, data.t, text.slice(0, 30))
+      showCustomNotification({
+        title: data.t || '',
+        body: text.length > 100 ? text.slice(0, 97) + '…' : text,
+        iconUrl,
+        color: mInfo.color || '#2AABEE',
+        emoji: mInfo.emoji || '💬',
+        messengerName: mInfo.name || 'ЦентрЧатов',
+        messengerId: mInfo.id,
+      })
+    } catch {}
+  })
+})
 
 // ─── Запуск ───────────────────────────────────────────────────────────────────
 
