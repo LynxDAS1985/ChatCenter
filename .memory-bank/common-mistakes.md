@@ -812,3 +812,26 @@ const text = (data.b || '').trim()   // пустой body → пустой text 
 ```
 
 **Ключевой урок**: Notification API используется мессенджерами не только для сообщений, но и для push-sync, status, reconnect. Фильтровать по непустому body — обязательное условие. Title без body = системное уведомление, не сообщение.
+
+---
+
+## 🔴 Фантомные уведомления VK при переключении чатов (v0.39.1 — v0.39.2)
+
+### ❌ MutationObserver + убранный isViewingThisChat = ложные срабатывания
+
+**Симптом**: При переключении чатов в VK появляется ribbon-уведомление с текстом последнего сообщения из нового чата. Никто не писал.
+
+**Причина**: В v0.39.1 убрали `isViewingThisChat` из `handleNewMessage` чтобы ribbon показывался всегда. Но MutationObserver (Path 2 в monitor.preload.js) при ЛЮБОМ изменении DOM (смена чата, прокрутка) вызывает `getLastMessageText()`. Если текст отличается от предыдущего → `new-message` IPC → `handleNewMessage` без подавления → ложное уведомление.
+
+**Решение (v0.39.3)**: Разделить поведение по источнику:
+- **Notification API path** (`__CC_NOTIF__`, extra !== undefined): всегда показывать — это реальное уведомление от мессенджера
+- **MutationObserver path** (`new-message`, extra === undefined): подавлять если `!document.hidden && activeIdRef === messengerId`
+- **Дедупликация**: Map `text+messengerId → timestamp`, одинаковый текст за 10 сек → skip
+
+```js
+const isFromMutationObserver = !extra
+const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
+if (isFromMutationObserver && isViewingThisTab) return
+```
+
+**Ключевой урок**: Два канала уведомлений (Notification API vs MutationObserver) требуют РАЗНЫХ правил подавления. MutationObserver ненадёжен для активного чата — подавлять. Notification API надёжен — показывать всегда.

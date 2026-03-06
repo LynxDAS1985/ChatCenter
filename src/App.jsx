@@ -656,10 +656,31 @@ export default function App() {
       })
   }
 
+  // ── Дедупликация уведомлений (text+messengerId → timestamp) ────────────────
+  const recentNotifsRef = useRef(new Map()) // key → timestamp
+
   // ── Обработка входящего сообщения (общая для ipc-message и console-message) ──
   // extra = { senderName, iconUrl } — опционально, из перехваченного Notification
+  // Если extra есть → из __CC_NOTIF__ (Notification API) — надёжный источник
+  // Если extra нет → из MutationObserver (new-message IPC) — может быть ложным
   const handleNewMessage = (messengerId, text, extra) => {
     if (!text) return
+
+    // Дедупликация: одинаковый текст от того же мессенджера за 10 сек → skip
+    const dedupKey = messengerId + ':' + text.slice(0, 60)
+    const now = Date.now()
+    if (recentNotifsRef.current.has(dedupKey) && now - recentNotifsRef.current.get(dedupKey) < 10000) return
+    recentNotifsRef.current.set(dedupKey, now)
+    // Чистим старые записи (>30 сек)
+    if (recentNotifsRef.current.size > 50) {
+      for (const [k, ts] of recentNotifsRef.current) { if (now - ts > 30000) recentNotifsRef.current.delete(k) }
+    }
+
+    // MutationObserver path (без extra) — подавляем если пользователь смотрит на эту вкладку
+    // Причина: DOM чата меняется при прокрутке/переключении чатов → ложные срабатывания
+    const isFromMutationObserver = !extra
+    const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
+    if (isFromMutationObserver && isViewingThisTab) return
 
     // Автопереключение на вкладку с новым сообщением (если включено)
     if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {
@@ -667,7 +688,6 @@ export default function App() {
     }
 
     // Звук и уведомление — проверяем глобальный + per-messenger mute
-    // НЕ подавляем при активной вкладке — messengerId это вкладка, а не конкретный чат
     const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[messengerId]
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
     if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound(mInfo?.color)

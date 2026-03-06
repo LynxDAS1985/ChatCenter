@@ -1,4 +1,4 @@
-// v0.39.2 — Фикс фантомных уведомлений MAX, ribbon внизу справа
+// v0.39.3 — Увеличенный ribbon, дедупликация, фикс фантомных VK
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -432,10 +432,10 @@ function createNotifWindow() {
   const { workArea } = screen.getPrimaryDisplay()
 
   notifWin = new BrowserWindow({
-    width: 310,
-    height: 64,
-    x: workArea.x + workArea.width - 318,
-    y: workArea.y + workArea.height - 72,
+    width: 370,
+    height: 76,
+    x: workArea.x + workArea.width - 380,
+    y: workArea.y + workArea.height - 84,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -470,14 +470,14 @@ function repositionNotifWin() {
     return
   }
   const { workArea } = screen.getPrimaryDisplay()
-  // 62px item + 3px gap + 8px padding
-  const height = count * 62 + (count - 1) * 3 + 8
-  // Позиция: внизу справа, с отступом 8px от края
-  const y = workArea.y + workArea.height - height - 8
+  // 76px item + 4px gap + 8px padding
+  const height = count * 76 + (count - 1) * 4 + 8
+  // Позиция: внизу справа, с отступом 10px от края
+  const y = workArea.y + workArea.height - height - 10
   notifWin.setBounds({
-    x: workArea.x + workArea.width - 318,
+    x: workArea.x + workArea.width - 380,
     y,
-    width: 310,
+    width: 370,
     height
   })
   if (!notifWin.isVisible()) notifWin.showInactive()
@@ -554,12 +554,12 @@ function setupNotifIPC() {
       return
     }
     const { workArea } = screen.getPrimaryDisplay()
-    // Внизу справа с отступом 8px
-    const y = workArea.y + workArea.height - height - 8
+    // Внизу справа с отступом 10px
+    const y = workArea.y + workArea.height - height - 10
     notifWin.setBounds({
-      x: workArea.x + workArea.width - 318,
+      x: workArea.x + workArea.width - 380,
       y,
-      width: 310,
+      width: 370,
       height
     })
     if (!notifWin.isVisible()) notifWin.showInactive()
