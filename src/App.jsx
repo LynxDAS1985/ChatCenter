@@ -667,12 +667,11 @@ export default function App() {
     }
 
     // Звук и уведомление — проверяем глобальный + per-messenger mute
-    // Если окно в фокусе И пользователь смотрит на этот мессенджер — не показывать
-    const isViewingThisChat = !document.hidden && activeIdRef.current === messengerId
+    // НЕ подавляем при активной вкладке — messengerId это вкладка, а не конкретный чат
     const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[messengerId]
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
-    if (settingsRef.current.soundEnabled !== false && !messengerMuted && !isViewingThisChat) playNotificationSound(mInfo?.color)
-    if (settingsRef.current.notificationsEnabled !== false && !messengerMuted && !isViewingThisChat) {
+    if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound(mInfo?.color)
+    if (settingsRef.current.notificationsEnabled !== false && !messengerMuted) {
       const senderName = extra?.senderName
       const notifTitle = senderName
         ? `${mInfo?.name || 'ЦентрЧатов'} — ${senderName}`

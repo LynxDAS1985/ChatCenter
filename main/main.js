@@ -1,4 +1,4 @@
-// v0.39.0 — Кастомные уведомления Messenger Ribbon (замена нативных Windows)
+// v0.39.1 — Фикс ribbon: убрано подавление isViewingThisChat, backgroundColor, fallback
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -427,6 +427,7 @@ function getNotifHtmlPath() {
 
 function createNotifWindow() {
   if (notifWin && !notifWin.isDestroyed()) return
+  console.log('[NotifManager] Creating notification window...')
 
   const { workArea } = screen.getPrimaryDisplay()
 
@@ -437,6 +438,7 @@ function createNotifWindow() {
     y: workArea.y + Math.round(workArea.height / 2),
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
@@ -450,7 +452,9 @@ function createNotifWindow() {
     }
   })
 
-  notifWin.loadFile(getNotifHtmlPath())
+  notifWin.loadFile(getNotifHtmlPath()).catch(err => {
+    console.error('[NotifManager] Failed to load notification.html:', err)
+  })
 
   notifWin.on('closed', () => {
     notifWin = null
@@ -479,12 +483,20 @@ function repositionNotifWin() {
 }
 
 async function showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId }) {
-  if (!notifWin || notifWin.isDestroyed()) {
-    createNotifWindow()
-    // Ждём загрузку HTML
-    await new Promise(resolve => {
-      notifWin.webContents.once('did-finish-load', resolve)
-    })
+  try {
+    if (!notifWin || notifWin.isDestroyed()) {
+      createNotifWindow()
+      // Ждём загрузку HTML с таймаутом 5 сек
+      await Promise.race([
+        new Promise(resolve => notifWin.webContents.once('did-finish-load', resolve)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Notification HTML load timeout')), 5000))
+      ])
+    }
+  } catch (err) {
+    console.error('[NotifManager] Window init error:', err.message)
+    // Fallback — нативное уведомление
+    try { new Notification({ title: messengerName || 'ЦентрЧатов', body: body || '' }).show() } catch {}
+    return null
   }
 
   const id = String(++notifIdCounter)
@@ -499,6 +511,7 @@ async function showCustomNotification({ title, body, iconUrl, color, emoji, mess
   }
 
   const data = { id, title, body, iconDataUrl, color, emoji, messengerName, messengerId }
+  console.log('[NotifManager] Showing notification:', id, messengerName, title, body?.slice(0, 30))
 
   // FIFO — удаляем старые из трекинга
   if (notifItems.length >= 6) {
@@ -787,6 +800,7 @@ function setupIPC() {
 
   // Кастомное уведомление (Messenger Ribbon — v0.39.0)
   ipcMain.handle('app:custom-notify', async (event, { title, body, iconUrl, color, emoji, messengerName, messengerId }) => {
+    console.log('[NotifManager] IPC app:custom-notify received:', messengerName, title, body?.slice(0, 30))
     try {
       await showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId })
       return { ok: true }

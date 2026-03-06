@@ -746,3 +746,48 @@ window.api.invoke('settings:save', updated).catch(() => {})
 - `setBounds()` с `animate: true` работает ТОЛЬКО на macOS
 - На Windows: мгновенное изменение, может мелькать
 - Решение: использовать CSS-анимацию ВНУТРИ окна, а `setBounds` вызывать по IPC `notif:resize` когда HTML сообщает нужную высоту
+
+---
+
+## 🔴 isViewingThisChat подавляет ВСЕ уведомления на активной вкладке (v0.39.0)
+
+### ❌ messengerId ≠ конкретный чат
+
+**Симптом (v0.39.0)**: Пользователь на вкладке VK, приходит сообщение от другого чата VK — ни звука, ни ribbon. `messagePreview` появляется, но sound и notification пропущены.
+
+**Причина**: `isViewingThisChat = !document.hidden && activeIdRef.current === messengerId` подавляло и звук, и ribbon. Но `messengerId` — это ID вкладки (например `"vk"`), а НЕ ID конкретного чата. Оператор на VK-вкладке мог быть в совершенно другом чате.
+
+**Решение (v0.39.1)**: Убрать `!isViewingThisChat` из условий звука и уведомления. Подавление остаётся только по `messengerMuted` и глобальным настройкам.
+
+```js
+// БЫЛО (v0.39.0):
+if (soundEnabled && !messengerMuted && !isViewingThisChat) playNotificationSound()
+if (notificationsEnabled && !messengerMuted && !isViewingThisChat) { ... }
+
+// СТАЛО (v0.39.1):
+if (soundEnabled && !messengerMuted) playNotificationSound()
+if (notificationsEnabled && !messengerMuted) { ... }
+```
+
+**Ключевой урок**: В ChatCenter `messengerId` — это ID WebView-вкладки, а не конкретного чата внутри мессенджера. Нельзя использовать его для определения "пользователь смотрит на этот чат".
+
+---
+
+## 🟡 Прозрачность BrowserWindow на Windows (v0.39.0 → v0.39.1)
+
+### ❌ transparent: true недостаточно без backgroundColor
+
+**Симптом**: Notification window с `transparent: true` показывает чёрный фон вместо прозрачного на Windows.
+
+**Причина**: На Windows `transparent: true` НЕ гарантирует прозрачность без явного `backgroundColor: '#00000000'`.
+
+**Решение**: Всегда добавлять `backgroundColor: '#00000000'` к `transparent: true`:
+```js
+new BrowserWindow({
+  transparent: true,
+  backgroundColor: '#00000000',
+  // ...
+})
+```
+
+**Ключевой урок**: На Windows для прозрачного BrowserWindow ОБЯЗАТЕЛЬНО `transparent: true` + `backgroundColor: '#00000000'`.
