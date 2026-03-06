@@ -1,4 +1,4 @@
-// v0.41.2 — Фикс звука при свёрнутом окне + фильтр timestamp body
+// v0.41.3 — Фикс ложных ribbon Telegram при чтении старых сообщений
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'

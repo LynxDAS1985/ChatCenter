@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.41.2 (6 марта 2026)
+## Текущая версия: v0.41.3 (6 марта 2026)
 
 ---
 
@@ -92,8 +92,11 @@
 
 ## Changelog
 
-### v0.41.2 (6 марта 2026) — Фикс звука при свёрнутом окне + фильтр timestamp body
-- **Баг-фикс звука**: При свёрнутом окне на вкладке MAX звук не играл. Причина: `document.hidden` с `backgroundThrottling:false` остаётся `false` при свёрнутом окне → `isViewingThisTab = true` → handleNewMessage подавлялся. Исправлено: `document.hasFocus()` вместо `!document.hidden`.
+### v0.41.3 (6 марта 2026) — Фикс ложных ribbon Telegram при чтении старых
+- **Баг-фикс**: При чтении старых непрочитанных в Telegram появлялся ложный ribbon. Причина: `document.hasFocus()` возвращает `false` когда фокус внутри WebView (отдельный browsing context) → isViewingThisTab = false → ribbon не подавлялся. Исправлено: `!document.hidden` вместо `hasFocus()` — корректно отражает видимость окна (true при видимом, false при свёрнутом), не зависит от фокуса в webview.
+
+### v0.41.2 (6 марта 2026) — Фильтр timestamp body
+- **Баг-фикс**: MAX шлёт Notification с body = "12:40" (только timestamp). Добавлен фильтр `/^\d{1,2}:\d{2}(:\d{2})?$/` в showCustomNotification и __CC_NOTIF__ handler.
 - **Баг-фикс пустого ribbon**: MAX вызывает Notification с body = "12:40" (только timestamp). Добавлен фильтр `/^\d{1,2}:\d{2}(:\d{2})?$/` в showCustomNotification (main.js) и в __CC_NOTIF__ handler (App.jsx).
 - **Файлы**: `src/App.jsx` (hasFocus + timestamp filter), `main/main.js` (timestamp filter)
 

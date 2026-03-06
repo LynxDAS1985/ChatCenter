@@ -925,23 +925,33 @@ if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized() && main
 
 ---
 
-## 🔴 document.hidden vs document.hasFocus() при backgroundThrottling:false (v0.41.2)
+## 🔴 document.hasFocus() vs !document.hidden при WebView (v0.41.2 → v0.41.3)
 
-### ❌ document.hidden не обновляется при свёрнутом окне
+### ❌ document.hasFocus() = false когда фокус в WebView
 
-**Симптом**: Звук уведомления не играет когда окно свёрнуто и активная вкладка = мессенджер-отправитель.
+**Симптом**: Ribbon-уведомление появляется при ЧТЕНИИ старых сообщений в Telegram — пользователь смотрит на мессенджер, но ribbon не подавляется.
 
-**Причина**: `backgroundThrottling: false` в BrowserWindow может сохранять `document.hidden = false` даже при свёрнутом окне. Тогда `isViewingThisTab = !document.hidden && activeId === messengerId` = true → handleNewMessage подавляется → звук и ribbon пропадают.
+**Причина**: `document.hasFocus()` возвращает `false` когда пользователь кликнул внутри `<webview>` — это отдельный browsing context, фокус ушёл из main renderer document. Тогда `isViewingThisTab = false` → handleNewMessage не подавляет → ложный ribbon.
 
-**Решение**: Использовать `document.hasFocus()` вместо `!document.hidden`:
+**v0.41.2 ошибка**: Заменили `!document.hidden` на `document.hasFocus()` чтобы fix звука при свёрнутом. Но `hasFocus()` создало новую проблему — ложные ribbon при работе в мессенджере.
+
+**Решение (v0.41.3)**: Вернули `!document.hidden`:
 ```js
-// БЫЛО (не работает с backgroundThrottling:false):
 const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
-// СТАЛО:
-const isViewingThisTab = document.hasFocus() && activeIdRef.current === messengerId
 ```
 
-**Ключевой урок**: `document.hidden` ненадёжен в Electron с `backgroundThrottling: false`. `document.hasFocus()` — надёжная альтернатива: false при свёрнутом/неактивном окне, true при фокусе.
+**Почему `!document.hidden` корректен**:
+- Окно видимо → `document.hidden = false` → `!hidden = true` (правильно, пользователь видит)
+- Окно свёрнуто → `document.hidden = true` → `!hidden = false` (правильно, нужно уведомление)
+- Фокус в WebView → `document.hidden = false` → `!hidden = true` (правильно, всё ещё видит)
+- `backgroundThrottling: false` НЕ влияет на Page Visibility API
+
+**Почему предыдущая проблема звука (v0.41.1) была не из-за document.hidden**: Звук пропадал из-за backup path в main.js, который дублировал обработку. Backup path уже пофикшен в v0.41.1.
+
+**Ключевой урок**: В Electron с `<webview>`:
+- `document.hasFocus()` — false при фокусе в webview (НЕНАДЁЖНО для видимости)
+- `!document.hidden` — корректно отражает видимость окна (НАДЁЖНО)
+- `backgroundThrottling: false` НЕ ломает Page Visibility API
 
 ---
 

@@ -677,9 +677,9 @@ export default function App() {
     }
 
     // Подавляем уведомления если пользователь смотрит на эту вкладку
-    // ВАЖНО: document.hasFocus() вместо !document.hidden —
-    // при backgroundThrottling:false document.hidden может быть false даже при свёрнутом окне
-    const isViewingThisTab = document.hasFocus() && activeIdRef.current === messengerId
+    // ВАЖНО: !document.hidden (не hasFocus!) — hasFocus()=false когда фокус внутри WebView,
+    // а document.hidden корректно отражает видимость окна (true при minimize)
+    const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
     if (isViewingThisTab) return
 
     // Автопереключение на вкладку с новым сообщением (если включено)
