@@ -878,7 +878,7 @@ export default function App() {
                 })();
               }
             `).then(() => {
-              console.log(\`[NotifHook] executeJavaScript fallback applied (\${messengerId})\`)
+              console.log('[NotifHook] executeJavaScript fallback applied (' + messengerId + ')')
             }).catch(() => {})
           }, 1500)
         } catch {}
