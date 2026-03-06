@@ -685,6 +685,8 @@ function sendUpdate(type) {
         lastSentText = text
         lastActiveMessageText = text  // синхронизируем
         try { ipcRenderer.sendToHost('new-message', text) } catch {}
+        // Backup: дублируем через console.log для main-process перехвата (v0.39.5)
+        try { console.log('__CC_MSG__' + text) } catch {}
       }
     }
   }
@@ -702,6 +704,8 @@ function sendUpdate(type) {
         lastActiveMessageText = inText
         lastActiveMessageTime = now
         try { ipcRenderer.sendToHost('new-message', inText) } catch {}
+        // Backup: дублируем через console.log для main-process перехвата (v0.39.5)
+        try { console.log('__CC_MSG__' + inText) } catch {}
       }
     }
     // Обновляем lastActiveMessageText даже без отправки — чтобы не уведомлять повторно

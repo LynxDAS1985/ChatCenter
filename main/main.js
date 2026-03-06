@@ -1,4 +1,4 @@
-// v0.39.4 — Backup notification path в main process при свёрнутом окне
+// v0.39.5 — Диагностика + фикс уведомлений MAX, backup __CC_MSG__
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -1034,9 +1034,10 @@ function setupIPC() {
   })
 }
 
-// ─── Backup notification path: main-process перехват __CC_NOTIF__ ─────────────
-// Когда mainWindow свёрнуто, renderer может быть заморожен Windows'ом.
-// Слушаем console-message напрямую на webContents webview гостей — main process не throttled.
+// ─── Backup notification path: main-process перехват (v0.39.5) ────────────────
+// Main process слушает console-message на webview webContents напрямую.
+// Перехватывает: __CC_NOTIF__ (Notification API) и __CC_MSG__ (MutationObserver backup).
+// Работает всегда — дедупликация в showCustomNotification предотвращает дубли.
 
 function findMessengerByUrl(pageUrl) {
   if (!storage) return null
@@ -1062,41 +1063,58 @@ app.on('web-contents-created', (_event, contents) => {
     setTimeout(() => webviewReadySet.add(contents.id), 12000)
   })
 
-  // Backup: перехватываем __CC_NOTIF__ напрямую в main process
+  // Backup: перехватываем __CC_NOTIF__ и __CC_MSG__ напрямую в main process
   contents.on('console-message', (_e, _level, msg) => {
-    if (!msg || !msg.startsWith('__CC_NOTIF__')) return
+    if (!msg) return
     if (!webviewReadySet.has(contents.id)) return
-
-    // Только когда mainWindow свёрнуто/скрыто — иначе renderer сам обработает
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()) return
 
     const mInfo = findMessengerByUrl(contents.getURL())
     if (!mInfo) return
 
-    try {
-      const data = JSON.parse(msg.slice(12))
-      const text = (data.b || '').trim()
-      if (!text) return
+    // ── __CC_NOTIF__: перехват Notification API ──
+    if (msg.startsWith('__CC_NOTIF__')) {
+      try {
+        const data = JSON.parse(msg.slice(12))
+        const text = (data.b || '').trim()
+        console.log(`[NotifManager] Backup __CC_NOTIF__ (${mInfo.name}): t="${data.t}", b="${(data.b||'').slice(0,30)}", minimized=${mainWindow?.isMinimized()}`)
+        if (!text) return
 
-      let iconUrl
-      if (data.i) {
-        if (data.i.startsWith('http')) iconUrl = data.i
-        else if (data.i.startsWith('/')) {
-          try { iconUrl = new URL(data.i, mInfo.url).href } catch {}
+        let iconUrl
+        if (data.i) {
+          if (data.i.startsWith('http')) iconUrl = data.i
+          else if (data.i.startsWith('/')) {
+            try { iconUrl = new URL(data.i, mInfo.url).href } catch {}
+          }
         }
-      }
 
-      console.log('[NotifManager] Backup path (minimized):', mInfo.name, data.t, text.slice(0, 30))
+        showCustomNotification({
+          title: data.t || '',
+          body: text.length > 100 ? text.slice(0, 97) + '…' : text,
+          iconUrl,
+          color: mInfo.color || '#2AABEE',
+          emoji: mInfo.emoji || '💬',
+          messengerName: mInfo.name || 'ЦентрЧатов',
+          messengerId: mInfo.id,
+        })
+      } catch {}
+      return
+    }
+
+    // ── __CC_MSG__: backup MutationObserver (v0.39.5) ──
+    if (msg.startsWith('__CC_MSG__')) {
+      const text = msg.slice(10).trim()
+      if (!text) return
+      console.log(`[NotifManager] Backup __CC_MSG__ (${mInfo.name}): "${text.slice(0, 30)}", minimized=${mainWindow?.isMinimized()}`)
       showCustomNotification({
-        title: data.t || '',
+        title: '',
         body: text.length > 100 ? text.slice(0, 97) + '…' : text,
-        iconUrl,
         color: mInfo.color || '#2AABEE',
         emoji: mInfo.emoji || '💬',
         messengerName: mInfo.name || 'ЦентрЧатов',
         messengerId: mInfo.id,
       })
-    } catch {}
+      return
+    }
   })
 })
 

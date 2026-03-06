@@ -518,6 +518,25 @@ app.on('web-contents-created', (_event, contents) => {
 
 ---
 
+### ❌ Уведомления от MAX не приходят вообще (v0.39.4→v0.39.5)
+
+**Симптом**: Сообщения приходят в MAX, но ribbon-уведомления не показываются ни при свёрнутом, ни при развёрнутом окне.
+
+**Причины** (3 точки отказа одновременно):
+1. **`isViewingThisTab` подавлял `__CC_NOTIF__`** — когда вкладка MAX активна, `if (!document.hidden && activeIdRef.current === messengerId) return` блокировал все Notification API уведомления. А MAX может не вызывать Notification API когда вкладка неактивна.
+2. **MutationObserver `new-message` не доходил до main process** — `ipcRenderer.sendToHost()` создаёт событие только в renderer process. При свёрнутом окне renderer throttled → событие не dispatched.
+3. **Backup path работал только при свёрнутом** — `if (mainWindow.isVisible() && !mainWindow.isMinimized()) return` отсекал все уведомления при развёрнутом окне.
+
+**Решение (v0.39.5)**:
+- Убрано `isViewingThisTab` для `__CC_NOTIF__` path — если Notification API вызван, это подтверждённое уведомление
+- Добавлен `__CC_MSG__` канал: `console.log('__CC_MSG__' + text)` в monitor.preload.js параллельно с `sendToHost('new-message')` — main process может перехватить через `contents.on('console-message')`
+- Backup path расширен для `__CC_MSG__` и работает всегда (дедупликация предотвращает дубли)
+- Renderer также обрабатывает `__CC_MSG__` из console-message
+
+**Ключевой урок**: Для надёжных уведомлений нужно НЕСКОЛЬКО параллельных путей доставки. Один путь (`sendToHost`) зависит от renderer, второй (`console.log`) доступен main process напрямую. Дедупликация в `showCustomNotification` предотвращает дубли.
+
+---
+
 ### ❌ Закрытие вкладки мессенджера без подтверждения
 
 ```js

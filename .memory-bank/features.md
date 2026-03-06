@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.39.4 (6 марта 2026)
+## Текущая версия: v0.39.5 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,16 @@
 ---
 
 ## Changelog
+
+### v0.39.5 (6 марта 2026) — Фикс уведомлений MAX + диагностика + __CC_MSG__ backup
+- **Проблема**: Уведомления от Макса не приходили ВООБЩЕ — ни при свёрнутом, ни при развёрнутом окне.
+- **Причины**: (1) `isViewingThisTab` подавлял `__CC_NOTIF__` при активной вкладке, (2) MutationObserver `new-message` IPC не достигал main process, (3) backup path работал только при свёрнутом окне.
+- **Исправления**:
+  - Убрано подавление `isViewingThisTab` для `__CC_NOTIF__` path (если Notification API вызван — это подтверждённое уведомление)
+  - Добавлен `__CC_MSG__` канал: MutationObserver дублирует `new-message` через `console.log('__CC_MSG__...')` — доступен main process
+  - Backup path в main.js расширен: перехватывает и `__CC_NOTIF__`, и `__CC_MSG__` (работает всегда, не только при свёрнутом)
+  - Renderer App.jsx обрабатывает `__CC_MSG__` из console-message (параллельно с ipc-message)
+- **Диагностика**: Подробное логирование на каждом этапе цепочки (`[Notif]` prefix в renderer, `[NotifManager]` в main)
 
 ### v0.39.4 (6 марта 2026) — Backup notification path при свёрнутом окне
 - **Проблема**: Ribbon-уведомления не появлялись, когда mainWindow свёрнуто (minimized). Windows замораживает renderer-процесс, несмотря на `backgroundThrottling: false` — IPC от renderer до main не доходит.

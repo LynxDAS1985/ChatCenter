@@ -900,8 +900,7 @@ export default function App() {
         }
       })
 
-      // ── console-message: перехват Notification из main world (v0.27.0) ───
-      // executeJavaScript делает console.log('__CC_NOTIF__...') → ловим здесь
+      // ── console-message: перехват Notification + MutationObserver backup (v0.39.5) ──
       el.addEventListener('console-message', (e) => {
         const msg = e.message
         if (!msg) return
@@ -913,22 +912,28 @@ export default function App() {
           }
           return
         }
+        // ── __CC_MSG__: backup MutationObserver через console.log (v0.39.5) ──
+        if (msg.startsWith('__CC_MSG__')) {
+          if (!notifReadyRef.current[messengerId]) return
+          const text = msg.slice(10).trim()
+          if (text) handleNewMessage(messengerId, text)
+          return
+        }
         if (!msg.startsWith('__CC_NOTIF__')) return
         // Warm-up: игнорируем уведомления до готовности (10 сек после dom-ready)
-        if (!notifReadyRef.current[messengerId]) return
-        // Если пользователь смотрит на этот мессенджер — не обрабатывать уведомление
-        // (пометка "непрочитанное" вызывает Notification, но это не новое сообщение)
-        if (!document.hidden && activeIdRef.current === messengerId) return
+        if (!notifReadyRef.current[messengerId]) {
+          console.log(`[Notif] SKIP warm-up (${messengerId}):`, msg.slice(12, 60))
+          return
+        }
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
-          // Требуем непустой body — уведомление без body это push-sync/status, не сообщение
+          console.log(`[Notif] __CC_NOTIF__ (${messengerId}): t="${data.t}", b="${(data.b||'').slice(0,30)}", active=${activeIdRef.current === messengerId}, hidden=${document.hidden}`)
           const text = (data.b || '').trim()
           if (text) {
             // data.t = title (имя отправителя), data.i = icon URL (аватарка)
             const extra = {}
-            if (data.t) extra.senderName = data.t // title = имя отправителя
+            if (data.t) extra.senderName = data.t
             if (data.i) {
-              // Конвертируем относительный URL в абсолютный (MAX может передать /path/to/avatar)
               if (data.i.startsWith('http')) {
                 extra.iconUrl = data.i
               } else if (data.i.startsWith('/')) {
