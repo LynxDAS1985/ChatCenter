@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.46.1 (6 марта 2026)
+## Текущая версия: v0.46.2 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.46.2 (6 марта 2026) — Fallback ribbon для повторных сообщений
+- **Fallback ribbon**: Когда мессенджер (MAX и др.) не вызывает `new Notification()` для каждого нового сообщения, ribbon показывался только для первого. Теперь `page-title-updated` и `unread-count` хендлеры создают fallback ribbon, если `handleNewMessage` не показал ribbon за последние 3 секунды (`lastRibbonTsRef`).
+- **lastRibbonTsRef**: Новый ref `{ [messengerId]: timestamp }` — отслеживает момент последнего показа ribbon для каждого мессенджера. Используется для dedup fallback ribbon.
 
 ### v0.46.1 (6 марта 2026) — Фикс ribbon expandedByDefault, плавная анимация, кэш аватарок по tag
 - **КРИТИЧЕСКИЙ ФИКС: ribbon не показывается при "Кнопки действий сразу"**: При включённой настройке `ribbonExpandedByDefault` уведомления пропадали. Три причины: 1) `overflow: hidden` на `.notif-item` обрезал expanded-контент; 2) таймер запускался даже при expandedByDefault → авто-dismiss; 3) авто-раскрытие происходило ДО настройки таймера → inconsistent state. Решение: убран overflow:hidden, таймер приостанавливается при expandedByDefault, код авто-раскрытия перенесён ПОСЛЕ настройки таймера, начальная высота окна увеличена с 76 до 300px.

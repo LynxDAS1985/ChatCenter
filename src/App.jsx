@@ -792,6 +792,7 @@ export default function App() {
 
   // ── Дедупликация уведомлений (text+messengerId → timestamp) ────────────────
   const recentNotifsRef = useRef(new Map()) // key → timestamp
+  const lastRibbonTsRef = useRef({}) // { [messengerId]: timestamp } — когда последний раз показали ribbon
 
   // ── Обработка входящего сообщения (общая для ipc-message и console-message) ──
   // extra = { senderName, iconUrl } — опционально, из перехваченного Notification
@@ -826,6 +827,7 @@ export default function App() {
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
     if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound(mInfo?.color)
     if (settingsRef.current.notificationsEnabled !== false && !messengerMuted) {
+      lastRibbonTsRef.current[messengerId] = Date.now()
       const senderName = extra?.senderName
       const notifTitle = senderName
         ? `${mInfo?.name || 'ЦентрЧатов'} — ${senderName}`
@@ -1072,6 +1074,22 @@ export default function App() {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
               }
+              // Fallback ribbon: если handleNewMessage не показал ribbon за 3 сек — показываем generic
+              if (s.notificationsEnabled !== false && !muted) {
+                const lastTs = lastRibbonTsRef.current[messengerId] || 0
+                if (Date.now() - lastTs > 3000) {
+                  lastRibbonTsRef.current[messengerId] = Date.now()
+                  const mi = messengersRef.current.find(x => x.id === messengerId)
+                  window.api.invoke('app:custom-notify', {
+                    title: '',
+                    body: count > 1 ? `${count} непрочитанных сообщений` : 'Новое сообщение',
+                    color: mi?.color || '#2AABEE',
+                    emoji: mi?.emoji || '💬',
+                    messengerName: mi?.name || 'ЦентрЧатов',
+                    messengerId: messengerId,
+                  }).catch(() => {})
+                }
+              }
             }
             return { ...prev, [messengerId]: count }
           })
@@ -1104,6 +1122,22 @@ export default function App() {
               if (s.soundEnabled !== false && !muted) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
+              }
+              // Fallback ribbon: если handleNewMessage не показал ribbon за 3 сек — показываем generic
+              if (s.notificationsEnabled !== false && !muted) {
+                const lastTs = lastRibbonTsRef.current[messengerId] || 0
+                if (Date.now() - lastTs > 3000) {
+                  lastRibbonTsRef.current[messengerId] = Date.now()
+                  const mi = messengersRef.current.find(x => x.id === messengerId)
+                  window.api.invoke('app:custom-notify', {
+                    title: '',
+                    body: count > 1 ? `${count} непрочитанных сообщений` : 'Новое сообщение',
+                    color: mi?.color || '#2AABEE',
+                    emoji: mi?.emoji || '💬',
+                    messengerName: mi?.name || 'ЦентрЧатов',
+                    messengerId: messengerId,
+                  }).catch(() => {})
+                }
               }
             }
             return { ...prev, [messengerId]: count }

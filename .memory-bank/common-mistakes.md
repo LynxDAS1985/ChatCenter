@@ -1,5 +1,28 @@
 # Типичные ошибки — ChatCenter
 
+## 🔴 КРИТИЧЕСКОЕ: Ribbon только для первого сообщения (повторные — только звук)
+
+### ❌ Мессенджеры не вызывают `new Notification()` для каждого нового сообщения
+
+**Симптом**: При получении нескольких сообщений подряд (в MAX и др.) ribbon показывается только для первого, остальные — только звук.
+
+**Причина**: Ribbon создаётся ТОЛЬКО через `handleNewMessage()`, который вызывается из `__CC_NOTIF__` (перехват Notification API) и `new-message` (MutationObserver IPC). Многие мессенджеры (MAX, VK, WhatsApp) группируют уведомления и не вызывают `new Notification()` для каждого отдельного сообщения. При этом `page-title-updated` и `unread-count` хендлеры играют звук при росте счётчика, но НЕ создают ribbon.
+
+**4 пути уведомлений**:
+1. `__CC_NOTIF__` → `handleNewMessage()` → ribbon + звук ✅
+2. `new-message` IPC → `handleNewMessage()` → ribbon + звук ✅
+3. `page-title-updated` → звук ⚠️ (ribbon НЕ создавался)
+4. `unread-count` IPC → звук ⚠️ (ribbon НЕ создавался)
+
+**Решение (v0.46.2)**:
+1. Добавить `lastRibbonTsRef = useRef({})` — `{ [messengerId]: timestamp }` последнего показа ribbon
+2. В `handleNewMessage` перед `app:custom-notify` записывать `lastRibbonTsRef.current[messengerId] = Date.now()`
+3. В `page-title-updated` и `unread-count` хендлерах: если `Date.now() - lastRibbonTs > 3000` → создавать fallback ribbon с generic текстом ("N непрочитанных сообщений")
+
+**Ключевой урок**: Нельзя полагаться на `new Notification()` мессенджера для КАЖДОГО сообщения. Нужен fallback через `page-title-updated`/`unread-count` с dedup окном 3 секунды.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: ribbonExpandedByDefault ломает показ ribbon-уведомлений
 
 ### ❌ overflow:hidden на .notif-item + таймер при expandedByDefault + порядок авто-раскрытия
