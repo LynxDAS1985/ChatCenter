@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.45.2 (6 марта 2026)
+## Текущая версия: v0.46.0 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.46.0 (6 марта 2026) — Аватарки в ribbon + настройка "Кнопки сразу"
+- **Аватарки**: Улучшен `findAvatar` — теперь ищет `<img>` с любым src (не только http), `<canvas>` (Telegram K), `background-image`. Поддержка `data:` URL из canvas, `blob:` URL. Аватарка из canvas конвертируется в data URL прямо в WebView.
+- **Настройка "Кнопки действий сразу"**: `ribbonExpandedByDefault` в settings → ribbon сразу раскрыт с кнопками. Toggle в разделе "Уведомления".
+- **data URL pipeline**: Если `findAvatar` возвращает `data:` URL → передаётся в main как `iconDataUrl` (без скачивания через `downloadIcon`).
+- **Файлы**: `src/App.jsx` (findAvatar, iconDataUrl), `main/main.js` (preDataUrl, expandedByDefault), `main/notification.html` (auto-expand), `src/components/SettingsPanel.jsx` (toggle)
 
 ### v0.45.2 (6 марта 2026) — Кнопки действий для ВСЕХ ribbon-уведомлений
 - **Фикс**: Кнопки "Перейти к чату" и "Прочитано" были доступны ТОЛЬКО для длинных сообщений (>100 символов) через expand. Для коротких — только маленькая галочка ✓.

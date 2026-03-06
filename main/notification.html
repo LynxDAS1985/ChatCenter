@@ -428,6 +428,17 @@
 
     container.appendChild(el)
 
+    // Автораскрытие если включена настройка "Кнопки действий сразу"
+    if (data.expandedByDefault) {
+      el.classList.add('expanded')
+      if (hasFullBody) {
+        const bText = el.querySelector('.body-text')
+        if (bText) bText.textContent = bText.dataset.full
+      }
+      const hintEl = el.querySelector('.expand-hint')
+      if (hintEl) hintEl.textContent = '\u25B2 свернуть'
+    }
+
     const thisDismissMs = data.dismissMs
     let timer = null
     let remainingMs = thisDismissMs
@@ -462,7 +473,7 @@
       progress.style.display = 'none'
     }
 
-    items.set(data.id, { el, timer, expanded: false, remainingMs, startTs })
+    items.set(data.id, { el, timer, expanded: !!data.expandedByDefault, remainingMs, startTs })
     reportHeight()
   }
 

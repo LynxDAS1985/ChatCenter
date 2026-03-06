@@ -835,6 +835,7 @@ export default function App() {
         body: text.length > 100 ? text.slice(0, 97) + '…' : text,
         fullBody: text.length > 100 ? text : '', // полный текст если обрезан
         iconUrl: extra?.iconUrl || undefined,
+        iconDataUrl: extra?.iconDataUrl || undefined,
         color: mInfo?.color || '#2AABEE',
         emoji: mInfo?.emoji || '💬',
         messengerName: mInfo?.name || 'ЦентрЧатов',
@@ -985,12 +986,19 @@ export default function App() {
                       for (var j = 0; j < items.length && j < 150; j++) {
                         var txt = items[j].textContent || '';
                         if (txt.indexOf(name) === -1) continue;
-                        var img = items[j].querySelector('img[src^="http"]');
-                        if (img && img.src && !img.src.includes('emoji')) return img.src;
+                        var img = items[j].querySelector('img[src]');
+                        if (img && img.src && !img.src.includes('emoji') && img.naturalWidth > 10) return img.src;
                         var avEl = items[j].querySelector('[class*="avatar" i], [class*="photo" i]');
                         if (avEl) {
-                          var aImg = avEl.querySelector('img[src^="http"]');
-                          if (aImg && aImg.src) return aImg.src;
+                          var aImg = avEl.querySelector('img[src]');
+                          if (aImg && aImg.src && aImg.naturalWidth > 10) return aImg.src;
+                          var cvs = avEl.querySelector('canvas');
+                          if (cvs && cvs.width > 10) { try { return cvs.toDataURL('image/png'); } catch(e2) {} }
+                          var bg = getComputedStyle(avEl).backgroundImage;
+                          if (bg && bg !== 'none') {
+                            var m = bg.match(/url\(["']?(.+?)["']?\)/);
+                            if (m && m[1] && !m[1].includes('emoji')) return m[1];
+                          }
                         }
                       }
                     } catch(e) {}
@@ -1149,7 +1157,10 @@ export default function App() {
             if (data.t) extra.senderName = data.t
             if (data.g) extra.chatTag = data.g
             if (data.i) {
-              if (data.i.startsWith('http')) {
+              if (data.i.startsWith('data:')) {
+                // data URL аватарки — передаём напрямую как dataUrl (не нужно скачивать)
+                extra.iconDataUrl = data.i
+              } else if (data.i.startsWith('http') || data.i.startsWith('blob:')) {
                 extra.iconUrl = data.i
               } else if (data.i.startsWith('/')) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
