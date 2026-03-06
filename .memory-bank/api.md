@@ -91,6 +91,15 @@
 - **Запрос**: `{ messengerId: string, text: string }`
 - **Ответ**: `{ ok, error? }`
 
+### Notification IPC (v0.39.0 → v0.44.0)
+- `app:custom-notify` — Renderer→Main: показать ribbon `{title, body, fullBody, iconUrl, color, emoji, messengerName, messengerId, senderName, chatTag, dismissMs}`
+- `notif:show` — Main→NotifWin: отобразить уведомление
+- `notif:click` — NotifWin→Main: клик → перейти к чату
+- `notif:mark-read` — NotifWin→Main: "прочитано" → скрыть без перехода (v0.44.0)
+- `notif:dismiss` — NotifWin→Main: закрыто (таймер/крестик)
+- `notif:resize` — NotifWin→Main: новая высота окна
+- `notify:clicked` — Main→Renderer: `{messengerId, senderName, chatTag}` → переключить вкладку + навигация к чату
+
 ### `window-state` — событие: состояние окна (Main → Renderer, v0.42.0)
 - **Тип**: send (событие)
 - **Данные**: `{ focused: boolean }`

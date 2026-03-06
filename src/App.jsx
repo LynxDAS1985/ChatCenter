@@ -816,6 +816,7 @@ export default function App() {
       window.api.invoke('app:custom-notify', {
         title: extra?.senderName || '',
         body: text.length > 100 ? text.slice(0, 97) + '…' : text,
+        fullBody: text.length > 100 ? text : '', // полный текст если обрезан
         iconUrl: extra?.iconUrl || undefined,
         color: mInfo?.color || '#2AABEE',
         emoji: mInfo?.emoji || '💬',

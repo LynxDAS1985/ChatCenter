@@ -20,7 +20,7 @@
   .notif-item {
     display: flex;
     align-items: center;
-    height: 76px;
+    min-height: 76px;
     background: #1a1a2e;
     border-radius: 10px;
     cursor: pointer;
@@ -31,6 +31,10 @@
     animation: slideIn 250ms ease-out forwards;
     border: 1px solid rgba(255,255,255,0.08);
     box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  .notif-item.expanded {
+    align-items: flex-start;
+    cursor: default;
   }
   .notif-item.removing {
     animation: slideOut 200ms ease-in forwards;
@@ -45,7 +49,7 @@
   }
   .color-bar {
     width: 5px;
-    height: 100%;
+    align-self: stretch;
     flex-shrink: 0;
     border-radius: 10px 0 0 10px;
   }
@@ -62,6 +66,9 @@
     font-size: 20px;
     color: #fff;
   }
+  .notif-item.expanded .avatar-wrap {
+    margin-top: 16px;
+  }
   .avatar-wrap img {
     width: 100%;
     height: 100%;
@@ -70,7 +77,7 @@
   .text-wrap {
     flex: 1;
     min-width: 0;
-    padding-right: 10px;
+    padding: 10px 10px 10px 0;
   }
   .sender {
     font-size: 14px;
@@ -80,6 +87,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.4;
+    padding-right: 50px;
   }
   .messenger-name {
     font-size: 11px;
@@ -94,6 +102,63 @@
     text-overflow: ellipsis;
     line-height: 1.4;
     margin-top: 2px;
+  }
+  .notif-item.expanded .body-text {
+    white-space: pre-wrap;
+    overflow: visible;
+    text-overflow: unset;
+    max-height: 300px;
+    overflow-y: auto;
+    color: rgba(255,255,255,0.8);
+  }
+  /* Кнопки действий */
+  .action-row {
+    display: none;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .notif-item.expanded .action-row {
+    display: flex;
+  }
+  .action-btn {
+    padding: 4px 12px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.7);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .action-btn:hover {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+  }
+  .action-btn.go-chat {
+    background: rgba(42,171,238,0.15);
+    border-color: rgba(42,171,238,0.3);
+    color: #5bc0f8;
+  }
+  .action-btn.go-chat:hover {
+    background: rgba(42,171,238,0.25);
+  }
+  .action-btn.mark-read {
+    background: rgba(34,197,94,0.12);
+    border-color: rgba(34,197,94,0.25);
+    color: #4ade80;
+  }
+  .action-btn.mark-read:hover {
+    background: rgba(34,197,94,0.22);
+  }
+  /* Кнопка развернуть */
+  .expand-hint {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    margin-top: 3px;
+    display: none;
+  }
+  .expand-hint.visible {
+    display: block;
   }
   .progress-bar {
     position: absolute;
@@ -126,13 +191,39 @@
     line-height: 1;
     opacity: 0;
     transition: opacity 0.15s;
+    z-index: 2;
   }
-  .notif-item:hover .close-btn {
+  .read-btn {
+    position: absolute;
+    top: 4px;
+    right: 28px;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    color: rgba(34,197,94,0.5);
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 2;
+  }
+  .notif-item:hover .close-btn,
+  .notif-item:hover .read-btn {
     opacity: 1;
   }
   .close-btn:hover {
     background: rgba(255,255,255,0.1);
     color: rgba(255,255,255,0.7);
+  }
+  .read-btn:hover {
+    background: rgba(34,197,94,0.15);
+    color: #4ade80;
   }
 </style>
 </head>
@@ -142,16 +233,21 @@
   const MAX_ITEMS = 6
   const DEFAULT_DISMISS_MS = 5000
   const container = document.getElementById('container')
-  const items = new Map() // id → { el, timer }
+  const items = new Map() // id → { el, timer, expanded }
 
   function calcHeight() {
-    const count = container.children.length
-    // 76px item + 4px gap + 8px container padding
-    return count > 0 ? count * 76 + (count - 1) * 4 + 8 : 0
+    let h = 0
+    for (const child of container.children) {
+      h += child.offsetHeight + 4
+    }
+    return h > 0 ? h + 4 : 0
   }
 
   function reportHeight() {
-    window.notifApi.resize(calcHeight())
+    // Небольшая задержка чтобы DOM обновился
+    requestAnimationFrame(() => {
+      window.notifApi.resize(calcHeight())
+    })
   }
 
   function dismissItem(id, fromMain) {
@@ -167,9 +263,31 @@
     }, 210)
   }
 
+  function toggleExpand(data, el) {
+    const item = items.get(data.id)
+    if (!item) return
+    const isExpanded = el.classList.toggle('expanded')
+    item.expanded = isExpanded
+
+    // Приостановить/возобновить таймер при раскрытии
+    if (isExpanded && item.timer) {
+      item.remainingMs -= (Date.now() - item.startTs)
+      if (item.remainingMs < 0) item.remainingMs = 0
+      clearTimeout(item.timer)
+      const progress = el.querySelector('.progress-bar')
+      if (progress) progress.style.animationPlayState = 'paused'
+    } else if (!isExpanded && data.dismissMs > 0) {
+      const progress = el.querySelector('.progress-bar')
+      if (progress) progress.style.animationPlayState = 'running'
+      item.startTs = Date.now()
+      item.timer = setTimeout(() => dismissItem(data.id, false), item.remainingMs || 3000)
+    }
+
+    reportHeight()
+  }
+
   function addNotification(data) {
-    // { id, title, body, iconDataUrl, color, emoji, messengerName, messengerId }
-    // Если уже есть — удалить старый мгновенно
+    // { id, title, body, fullBody, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs }
     if (items.has(data.id)) {
       const old = items.get(data.id)
       clearTimeout(old.timer)
@@ -177,11 +295,12 @@
       items.delete(data.id)
     }
 
-    // FIFO при переполнении
     while (items.size >= MAX_ITEMS) {
       const firstKey = items.keys().next().value
       dismissItem(firstKey, false)
     }
+
+    const hasFullBody = data.fullBody && data.fullBody.length > (data.body || '').length
 
     const el = document.createElement('div')
     el.className = 'notif-item'
@@ -200,10 +319,10 @@
     if (data.iconDataUrl) {
       const img = document.createElement('img')
       img.src = data.iconDataUrl
-      img.onerror = () => { img.remove(); avWrap.textContent = data.emoji || '💬' }
+      img.onerror = () => { img.remove(); avWrap.textContent = data.emoji || '\u{1F4AC}' }
       avWrap.appendChild(img)
     } else {
-      avWrap.textContent = data.emoji || '💬'
+      avWrap.textContent = data.emoji || '\u{1F4AC}'
     }
     el.appendChild(avWrap)
 
@@ -218,11 +337,60 @@
       ? senderName + ' <span class="messenger-name">' + mName + '</span>'
       : mName
     textWrap.appendChild(sender)
+
     const bodyText = document.createElement('div')
     bodyText.className = 'body-text'
     bodyText.textContent = data.body || ''
+    bodyText.dataset.short = data.body || ''
+    bodyText.dataset.full = data.fullBody || data.body || ''
     textWrap.appendChild(bodyText)
+
+    // Подсказка "развернуть" если есть полный текст
+    if (hasFullBody) {
+      const hint = document.createElement('div')
+      hint.className = 'expand-hint visible'
+      hint.textContent = '\u25BC ещё...'
+      textWrap.appendChild(hint)
+    }
+
+    // Кнопки действий (видны только в expanded)
+    const actionRow = document.createElement('div')
+    actionRow.className = 'action-row'
+
+    const goBtn = document.createElement('button')
+    goBtn.className = 'action-btn go-chat'
+    goBtn.textContent = '\u2192 Перейти к чату'
+    goBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      window.notifApi.click(data.id)
+      dismissItem(data.id, false)
+    })
+    actionRow.appendChild(goBtn)
+
+    const readBtn2 = document.createElement('button')
+    readBtn2.className = 'action-btn mark-read'
+    readBtn2.textContent = '\u2713 Прочитано'
+    readBtn2.addEventListener('click', (e) => {
+      e.stopPropagation()
+      window.notifApi.markRead(data.id)
+      dismissItem(data.id, false)
+    })
+    actionRow.appendChild(readBtn2)
+
+    textWrap.appendChild(actionRow)
     el.appendChild(textWrap)
+
+    // Кнопка "Прочитано" (✓) — всегда видна при hover, рядом с крестиком
+    const readBtn = document.createElement('button')
+    readBtn.className = 'read-btn'
+    readBtn.textContent = '\u2713'
+    readBtn.title = '\u041F\u0440\u043E\u0447\u0438\u0442\u0430\u043D\u043E'
+    readBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      window.notifApi.markRead(data.id)
+      dismissItem(data.id, false)
+    })
+    el.appendChild(readBtn)
 
     // Close button
     const closeBtn = document.createElement('button')
@@ -240,25 +408,39 @@
     progress.style.background = data.color || '#2AABEE'
     el.appendChild(progress)
 
-    // Click → activate
-    el.addEventListener('click', () => {
-      window.notifApi.click(data.id)
-      dismissItem(data.id, false)
+    // Клик на body текст — развернуть/свернуть если есть fullBody
+    // Клик на всё уведомление — перейти к чату (если не expanded)
+    el.addEventListener('click', (e) => {
+      if (hasFullBody || el.classList.contains('expanded')) {
+        // Развернуть/свернуть
+        toggleExpand(data, el)
+        const bText = el.querySelector('.body-text')
+        const hintEl = el.querySelector('.expand-hint')
+        if (el.classList.contains('expanded')) {
+          bText.textContent = bText.dataset.full
+          if (hintEl) hintEl.textContent = '\u25B2 свернуть'
+        } else {
+          bText.textContent = bText.dataset.short
+          if (hintEl) hintEl.textContent = '\u25BC ещё...'
+        }
+      } else {
+        // Обычный клик — перейти к чату
+        window.notifApi.click(data.id)
+        dismissItem(data.id, false)
+      }
     })
 
     container.appendChild(el)
 
     const thisDismissMs = data.dismissMs
     let timer = null
+    let remainingMs = thisDismissMs
+    let startTs = Date.now()
 
     if (thisDismissMs > 0) {
-      // Конечный режим: progress bar + auto-dismiss
       requestAnimationFrame(() => {
         progress.style.animation = 'shrink ' + (thisDismissMs / 1000) + 's linear forwards'
       })
-
-      let remainingMs = thisDismissMs
-      let startTs = Date.now()
 
       const startTimer = () => {
         startTs = Date.now()
@@ -275,15 +457,16 @@
       })
 
       el.addEventListener('mouseleave', () => {
-        progress.style.animationPlayState = 'running'
-        timer = startTimer()
+        if (!el.classList.contains('expanded')) {
+          progress.style.animationPlayState = 'running'
+          timer = startTimer()
+        }
       })
     } else {
-      // Бесконечный режим (dismissMs === 0): без progress bar, без auto-dismiss
       progress.style.display = 'none'
     }
 
-    items.set(data.id, { el, timer })
+    items.set(data.id, { el, timer, expanded: false, remainingMs, startTs })
     reportHeight()
   }
 

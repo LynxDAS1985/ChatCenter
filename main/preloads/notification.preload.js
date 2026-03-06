@@ -10,8 +10,10 @@ contextBridge.exposeInMainWorld('notifApi', {
   onDismiss: (callback) => {
     ipcRenderer.on('notif:remove', (_event, id) => callback(id))
   },
-  // Notification window → Main: пользователь кликнул
+  // Notification window → Main: пользователь кликнул (перейти к чату)
   click: (id) => ipcRenderer.send('notif:click', id),
+  // Notification window → Main: пометить как прочитанное (скрыть без перехода)
+  markRead: (id) => ipcRenderer.send('notif:mark-read', id),
   // Notification window → Main: уведомление закрыто (таймер или крестик)
   dismiss: (id) => ipcRenderer.send('notif:dismiss', id),
   // Notification window → Main: сообщить новую высоту

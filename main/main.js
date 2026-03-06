@@ -1,4 +1,4 @@
-// v0.43.1 — Фикс дублирования ribbon (Notification + ServiceWorker)
+// v0.44.0 — Кнопка "Прочитано" + превью полного сообщения в ribbon
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -498,7 +498,7 @@ function repositionNotifWin() {
   if (!notifWin.isVisible()) notifWin.showInactive()
 }
 
-async function showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs, senderName, chatTag }) {
+async function showCustomNotification({ title, body, fullBody, iconUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs, senderName, chatTag }) {
   // Защита: пустой, невидимый или timestamp-only body → не показываем ribbon
   let cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
   // Убираем trailing timestamps (Telegram ServiceWorker приклеивает "15:57" или "15:5715:57" к body)
@@ -560,7 +560,7 @@ async function showCustomNotification({ title, body, iconUrl, color, emoji, mess
     dismissMs = notifSec === 0 ? 0 : (notifSec || 5) * 1000
   }
 
-  const data = { id, title, body, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, senderName: senderName || title || '', chatTag: chatTag || '' }
+  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, senderName: senderName || title || '', chatTag: chatTag || '' }
   console.log('[NotifManager] Showing notification:', id, messengerName, title, body?.slice(0, 30))
 
   // FIFO — удаляем старые из трекинга
@@ -591,6 +591,12 @@ function setupNotifIPC() {
         })
       }
     }
+    repositionNotifWin()
+  })
+
+  // "Прочитано" — скрыть ribbon без перехода к чату
+  ipcMain.on('notif:mark-read', (_event, id) => {
+    notifItems = notifItems.filter(n => n.id !== id)
     repositionNotifWin()
   })
 
@@ -854,10 +860,10 @@ function setupIPC() {
   })
 
   // Кастомное уведомление (Messenger Ribbon — v0.39.0)
-  ipcMain.handle('app:custom-notify', async (event, { title, body, iconUrl, color, emoji, messengerName, messengerId, dismissMs, senderName, chatTag }) => {
+  ipcMain.handle('app:custom-notify', async (event, { title, body, fullBody, iconUrl, color, emoji, messengerName, messengerId, dismissMs, senderName, chatTag }) => {
     console.log('[NotifManager] IPC app:custom-notify received:', messengerName, title, body?.slice(0, 30))
     try {
-      await showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId, dismissMs, senderName, chatTag })
+      await showCustomNotification({ title, body, fullBody, iconUrl, color, emoji, messengerName, messengerId, dismissMs, senderName, chatTag })
       return { ok: true }
     } catch (e) {
       console.error('[NotifManager] Ошибка:', e.message)

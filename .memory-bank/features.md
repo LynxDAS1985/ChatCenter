@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.43.1 (6 марта 2026)
+## Текущая версия: v0.44.0 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,14 @@
 ---
 
 ## Changelog
+
+### v0.44.0 (6 марта 2026) — Кнопка "Прочитано" + превью полного сообщения в ribbon
+- **Кнопка "Прочитано"** (✓): Появляется при hover рядом с крестиком. Скрывает ribbon без перехода в чат. IPC: `notif:mark-read`.
+- **Раскрытие полного текста**: Клик на ribbon с длинным сообщением (>100 символов) — разворачивает текст полностью. Подсказка "ещё..." показывается когда есть fullBody. При развороте — таймер приостанавливается.
+- **Кнопки действий в expanded**: "Перейти к чату" и "Прочитано" — видны в развёрнутом виде.
+- **fullBody IPC**: Полный текст сообщения передаётся отдельным полем (body обрезается до 100, fullBody — полный).
+- **Динамическая высота**: Окно notification автоматически меняет высоту при expand/collapse через `notif:resize`.
+- **Файлы**: `main/notification.html` (UI), `main/preloads/notification.preload.js` (markRead IPC), `main/main.js` (fullBody + mark-read handler), `src/App.jsx` (fullBody в notify)
 
 ### v0.43.1 (6 марта 2026) — Фикс дублирования ribbon (Notification + ServiceWorker)
 - **Баг-фикс**: Telegram шлёт Notification + ServiceWorker.showNotification на одно сообщение → 2-4 ribbon. Добавлена дедупликация в renderer (`notifDedupRef` с нормализацией body — убираем timestamps перед сравнением).
