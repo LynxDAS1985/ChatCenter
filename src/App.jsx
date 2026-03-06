@@ -339,6 +339,7 @@ export default function App() {
 
   const webviewRefs = useRef({})
   const notifReadyRef = useRef({})   // { [id]: true } — warm-up: игнорируем __CC_NOTIF__ первые 10 сек
+  const notifDedupRef = useRef(new Map()) // дедупликация __CC_NOTIF__ — messengerId:normalizedBody → timestamp
   const retryTimers = useRef({})
   const previewTimers = useRef({})
   const saveTimer = useRef(null)
@@ -1102,6 +1103,20 @@ export default function App() {
           console.log(`[Notif] __CC_NOTIF__ (${messengerId}): t="${data.t}", b="${(data.b||'').slice(0,30)}", active=${activeIdRef.current === messengerId}, focused=${windowFocusedRef.current}`)
           const text = (data.b || '').trim()
           if (text && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) {
+            // Дедупликация: Telegram шлёт Notification + ServiceWorker.showNotification → 2 __CC_NOTIF__
+            // Нормализуем body: убираем trailing timestamps (вида "15:57" или "15:5715:57")
+            const normalizedText = text.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()
+            const dedupKey = messengerId + ':' + (normalizedText || text).slice(0, 40)
+            const now = Date.now()
+            if (notifDedupRef.current.has(dedupKey) && now - notifDedupRef.current.get(dedupKey) < 5000) {
+              console.log(`[Notif] Dedup skip (renderer): ${dedupKey}`)
+              return
+            }
+            notifDedupRef.current.set(dedupKey, now)
+            // Очистка старых записей
+            if (notifDedupRef.current.size > 30) {
+              for (const [k, ts] of notifDedupRef.current) { if (now - ts > 15000) notifDedupRef.current.delete(k) }
+            }
             // data.t = title (имя отправителя), data.i = icon URL (аватарка)
             const extra = {}
             if (data.t) extra.senderName = data.t

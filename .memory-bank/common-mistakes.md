@@ -973,3 +973,33 @@ if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) return null
 Добавлено в: `showCustomNotification` (main.js) и `__CC_NOTIF__` handler (App.jsx).
 
 **Ключевой урок**: Мессенджеры могут передавать в Notification.body нетекстовые данные: timestamps, пустые строки, zero-width символы. Фильтр body должен проверять не только непустоту, но и осмысленность содержимого.
+
+---
+
+## 🔴 Дублирование ribbon: Notification + ServiceWorker + backup path (v0.43.0 → v0.43.1)
+
+### ❌ 4 ribbon-уведомления на 1 сообщение в Telegram
+
+**Симптом**: Одно сообщение "Хорошо" создаёт 4 ribbon-уведомления. Первые 2 с именем отправителя, нижние 2 без имени и с body "Хорошо15:5715:57".
+
+**Причина**: Telegram вызывает ОБА:
+1. `new Notification(title, opts)` — перехватывается нашим override
+2. `ServiceWorkerRegistration.showNotification(title, opts)` — тоже перехватывается
+
+Каждый генерирует `__CC_NOTIF__` → 2 уведомления из renderer (App.jsx). Если окно не в фокусе, backup path в main.js тоже обрабатывает эти же 2 `console-message` → ещё 2 ribbon. Итого 4.
+
+ServiceWorker Notification body отличается от обычного — содержит приклеенный timestamp ("Хорошо15:5715:57"), из-за чего дедупликация по `body.slice(0,60)` НЕ срабатывала.
+
+**Решение (v0.43.1)**:
+1. **Дедупликация в renderer** (App.jsx): `notifDedupRef` — Map с ключом `messengerId:normalizedBody`, окно 5 сек. Нормализация: убрать все timestamps из body перед сравнением.
+2. **Нормализация body в main.js**: Деduп-ключ строится из нормализованного body (без timestamps).
+3. **Очистка trailing timestamps**: `showCustomNotification` убирает trailing timestamps из body перед отображением ("Хорошо15:5715:57" → "Хорошо").
+
+```js
+// Нормализация для дедуп-ключа:
+const normalizedText = text.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()
+// Очистка trailing timestamps для отображения:
+cleanBody = cleanBody.replace(/(\d{1,2}:\d{2}(:\d{2})?)+\s*$/g, '').trim()
+```
+
+**Ключевой урок**: Мессенджеры могут вызывать `Notification` И `ServiceWorker.showNotification` для одного сообщения. ServiceWorker body может отличаться (приклеенные timestamps). Дедупликация ОБЯЗАТЕЛЬНА в обоих path (renderer + main), с нормализацией body (убрать timestamps, zero-width chars) перед построением ключа.

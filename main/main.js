@@ -1,4 +1,4 @@
-// v0.43.0 — Клик на ribbon → навигация к конкретному чату
+// v0.43.1 — Фикс дублирования ribbon (Notification + ServiceWorker)
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -500,13 +500,19 @@ function repositionNotifWin() {
 
 async function showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs, senderName, chatTag }) {
   // Защита: пустой, невидимый или timestamp-only body → не показываем ribbon
-  const cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
+  let cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
+  // Убираем trailing timestamps (Telegram ServiceWorker приклеивает "15:57" или "15:5715:57" к body)
+  cleanBody = cleanBody.replace(/(\d{1,2}:\d{2}(:\d{2})?)+\s*$/g, '').trim()
   if (!cleanBody) return null
   // MAX и другие мессенджеры могут слать Notification с body = "12:40" (только время)
   if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) return null
+  // Используем очищенный body для отображения
+  body = cleanBody
 
   // Дедупликация: один и тот же текст от того же мессенджера за 8 сек → skip
-  const dedupKey = messengerId + ':' + (body || '').slice(0, 60)
+  // Нормализуем body: убираем timestamps (Telegram/SW шлют body с приклеенным временем)
+  const normalizedBody = (body || '').replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()
+  const dedupKey = messengerId + ':' + (normalizedBody || (body || '')).slice(0, 60)
   const now = Date.now()
   if (notifDedupMap.has(dedupKey) && now - notifDedupMap.get(dedupKey) < 8000) {
     console.log('[NotifManager] Dedup skip:', messengerName, body?.slice(0, 30))
