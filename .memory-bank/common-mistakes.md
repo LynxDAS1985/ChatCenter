@@ -1047,3 +1047,27 @@ style={{
 Все webview рендерятся и загружаются с первой секунды. Неактивные просто перекрыты активным.
 
 **Ключевой урок**: В Electron `<webview>` — НЕ используй `display: none` или `visibility: hidden`. Для переключения вкладок: все webview visible + `absolute inset-0` + `zIndex` для активного. `pointer-events: none` для неактивных чтобы клики не проходили.
+
+---
+
+## 🔴 Дёргание первого ribbon-уведомления — двойной setBounds (v0.45.0 → v0.45.1)
+
+### ❌ Первое ribbon дёргается, последующие — нет
+
+**Симптом**: При первом ribbon-уведомлении окно "подпрыгивает" / дёргается при появлении. Второе и далее — плавно.
+
+**Причина**: Двойной `setBounds` за ~16ms:
+1. `repositionNotifWin()` в `showCustomNotification()` — вычисляет высоту по формуле (76px * count + gap + padding) → `setBounds` + `showInactive`
+2. `notif:resize` из HTML (через `requestAnimationFrame`) — вычисляет высоту по `offsetHeight` → `setBounds`
+
+Два `setBounds` с потенциально разной высотой за 16ms = видимый дёрг на Windows.
+
+Для второго уведомления окно уже видимо, setBounds менее заметен.
+
+**Решение (v0.45.1)**:
+1. Убрали `repositionNotifWin()` из `showCustomNotification()` и из IPC handlers
+2. Единственный источник позиционирования — `notif:resize` от HTML
+3. Кэш bounds: не вызывать setBounds если координаты и высота не изменились
+4. Двойной rAF в `reportHeight()` для стабильного layout
+
+**Ключевой урок**: Для прозрачных popup-окон на Windows — ОДИН источник setBounds. Не дублировать позиционирование из main-процесса и из HTML renderer. HTML знает свою высоту точнее (offsetHeight vs расчёт по формуле).

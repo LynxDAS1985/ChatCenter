@@ -570,7 +570,8 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, color, e
   notifItems.push(data)
 
   notifWin.webContents.send('notif:show', data)
-  repositionNotifWin()
+  // НЕ вызываем repositionNotifWin() — HTML сам пришлёт notif:resize с точной высотой.
+  // Двойной setBounds (reposition + resize) вызывал дёрг первого уведомления на Windows.
 
   return id
 }
@@ -591,36 +592,40 @@ function setupNotifIPC() {
         })
       }
     }
-    repositionNotifWin()
+    // Не вызываем repositionNotifWin() — HTML сам пришлёт notif:resize
   })
 
   // "Прочитано" — скрыть ribbon без перехода к чату
   ipcMain.on('notif:mark-read', (_event, id) => {
     notifItems = notifItems.filter(n => n.id !== id)
-    repositionNotifWin()
+    // HTML пришлёт notif:resize после анимации удаления
   })
 
   ipcMain.on('notif:dismiss', (_event, id) => {
     notifItems = notifItems.filter(n => n.id !== id)
-    repositionNotifWin()
+    // HTML пришлёт notif:resize после анимации удаления
   })
 
+  let lastNotifBounds = null // Кэш bounds — не дёргать окно если не изменились
   ipcMain.on('notif:resize', (_event, height) => {
-    // HTML сообщает нужную высоту — используем для точного позиционирования
+    // HTML сообщает нужную высоту — единственный источник позиционирования
     if (!notifWin || notifWin.isDestroyed()) return
+    height = Math.round(height)
     if (height <= 0) {
       notifWin.hide()
+      lastNotifBounds = null
       return
     }
     const { workArea } = screen.getPrimaryDisplay()
-    // Внизу справа с отступом 10px
+    const x = workArea.x + workArea.width - 380
     const y = workArea.y + workArea.height - height - 10
-    notifWin.setBounds({
-      x: workArea.x + workArea.width - 380,
-      y,
-      width: 370,
-      height
-    })
+    // Не вызывать setBounds если bounds не изменились — убирает дёрг
+    if (lastNotifBounds && lastNotifBounds.x === x && lastNotifBounds.y === y && lastNotifBounds.h === height) {
+      if (!notifWin.isVisible()) notifWin.showInactive()
+      return
+    }
+    lastNotifBounds = { x, y, h: height }
+    notifWin.setBounds({ x, y, width: 370, height })
     if (!notifWin.isVisible()) notifWin.showInactive()
   })
 }

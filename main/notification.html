@@ -245,9 +245,12 @@
   }
 
   function reportHeight() {
-    // Небольшая задержка чтобы DOM обновился
+    // Двойной rAF — ждём стабильный layout (1 кадр: paint, 2 кадр: composite)
+    // Убирает дёрг при первом уведомлении
     requestAnimationFrame(() => {
-      window.notifApi.resize(calcHeight())
+      requestAnimationFrame(() => {
+        window.notifApi.resize(calcHeight())
+      })
     })
   }
 
