@@ -906,15 +906,14 @@ const text = (data.b || '').trim()   // пустой body → пустой text 
 
 **Причина**: В v0.39.1 убрали `isViewingThisChat` из `handleNewMessage` чтобы ribbon показывался всегда. Но MutationObserver (Path 2 в monitor.preload.js) при ЛЮБОМ изменении DOM (смена чата, прокрутка) вызывает `getLastMessageText()`. Если текст отличается от предыдущего → `new-message` IPC → `handleNewMessage` без подавления → ложное уведомление.
 
-**Решение (v0.39.3)**: Разделить поведение по источнику:
-- **Notification API path** (`__CC_NOTIF__`, extra !== undefined): всегда показывать — это реальное уведомление от мессенджера
-- **MutationObserver path** (`new-message`, extra === undefined): подавлять если `!document.hidden && activeIdRef === messengerId`
-- **Дедупликация**: Map `text+messengerId → timestamp`, одинаковый текст за 10 сек → skip
+**Решение (v0.39.3 → v0.41.0)**: Подавлять ВСЕ уведомления когда пользователь смотрит на эту вкладку:
 
 ```js
-const isFromMutationObserver = !extra
 const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
-if (isFromMutationObserver && isViewingThisTab) return
+if (isViewingThisTab) return
 ```
 
-**Ключевой урок**: Два канала уведомлений (Notification API vs MutationObserver) требуют РАЗНЫХ правил подавления. MutationObserver ненадёжен для активного чата — подавлять. Notification API надёжен — показывать всегда.
+**v0.39.3**: Разделяли по источнику (MutationObserver подавлять, Notification API — нет). Но MAX при ОТКРЫТИИ старого чата вызывает Notification API → ложное ribbon.
+**v0.41.0**: Подавляем ВСЕ источники при активной вкладке. Если пользователь и так смотрит на мессенджер — ribbon не нужен.
+
+**Ключевой урок**: Notification API НЕ всегда означает "новое сообщение". MAX вызывает Notification при открытии чата (кэшированные уведомления). Подавлять ВСЕ ribbon когда пользователь смотрит на вкладку — безопасный подход.

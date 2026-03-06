@@ -1,4 +1,4 @@
-// v0.40.0 — Диагностика + фикс уведомлений MAX, backup __CC_MSG__
+// v0.41.0 — Фикс ложных ribbon MAX, preview ribbon, бесконечный режим
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -485,7 +485,11 @@ function repositionNotifWin() {
   if (!notifWin.isVisible()) notifWin.showInactive()
 }
 
-async function showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId }) {
+async function showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs }) {
+  // Защита: пустой или невидимый body → не показываем ribbon
+  const cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
+  if (!cleanBody) return null
+
   // Дедупликация: один и тот же текст от того же мессенджера за 8 сек → skip
   const dedupKey = messengerId + ':' + (body || '').slice(0, 60)
   const now = Date.now()
@@ -525,9 +529,15 @@ async function showCustomNotification({ title, body, iconUrl, color, emoji, mess
     } catch {}
   }
 
-  // Время показа уведомления из настроек (по умолчанию 5 сек)
-  const settings = storage.get('settings', {})
-  const dismissMs = (settings.notifDismissSec || 5) * 1000
+  // Время показа уведомления из настроек (по умолчанию 5 сек, 0 = бесконечно)
+  let dismissMs
+  if (overrideDismissMs != null) {
+    dismissMs = overrideDismissMs
+  } else {
+    const settings = storage.get('settings', {})
+    const notifSec = settings.notifDismissSec
+    dismissMs = notifSec === 0 ? 0 : (notifSec || 5) * 1000
+  }
 
   const data = { id, title, body, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs }
   console.log('[NotifManager] Showing notification:', id, messengerName, title, body?.slice(0, 30))
@@ -819,10 +829,10 @@ function setupIPC() {
   })
 
   // Кастомное уведомление (Messenger Ribbon — v0.39.0)
-  ipcMain.handle('app:custom-notify', async (event, { title, body, iconUrl, color, emoji, messengerName, messengerId }) => {
+  ipcMain.handle('app:custom-notify', async (event, { title, body, iconUrl, color, emoji, messengerName, messengerId, dismissMs }) => {
     console.log('[NotifManager] IPC app:custom-notify received:', messengerName, title, body?.slice(0, 30))
     try {
-      await showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId })
+      await showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId, dismissMs })
       return { ok: true }
     } catch (e) {
       console.error('[NotifManager] Ошибка:', e.message)

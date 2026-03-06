@@ -1,5 +1,5 @@
-// v0.40.0 — Панель настроек: уникальный звук каждого мессенджера, тест звука с тональностью
-import { useEffect, useState } from 'react'
+// v0.41.0 — Панель настроек: preview ribbon при изменении ползунка, бесконечный режим
+import { useEffect, useRef, useState } from 'react'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 
 function Toggle({ value, onChange, color = '#2AABEE' }) {
@@ -95,6 +95,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
   const [errorLog, setErrorLog] = useState(null)        // null = не загружен, '' = пуст, 'текст' = есть записи
   const [logLoading, setLogLoading] = useState(false)
   const [logClearing, setLogClearing] = useState(false)
+  const previewTimerRef = useRef(null)
 
   const loadLog = async () => {
     setLogLoading(true)
@@ -283,20 +284,36 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="Звук при новом сообщении" description="Короткий сигнал при получении">
                 <Toggle value={settings.soundEnabled !== false} onChange={v => set('soundEnabled', v)} />
               </SettingRow>
-              <SettingRow label="Время показа уведомления" description={'Ribbon исчезает через ' + (settings.notifDismissSec || 5) + ' сек'}>
+              <SettingRow label="Время показа уведомления" description={settings.notifDismissSec === 0 ? 'Ribbon не исчезает — закройте вручную' : 'Ribbon исчезает через ' + (settings.notifDismissSec || 5) + ' сек'}>
                 <div className="flex items-center gap-2">
                   <input
                     type="range"
-                    min={3}
+                    min={0}
                     max={30}
                     step={1}
-                    value={settings.notifDismissSec || 5}
-                    onChange={e => set('notifDismissSec', parseInt(e.target.value, 10))}
+                    value={settings.notifDismissSec == null ? 5 : settings.notifDismissSec}
+                    onChange={e => {
+                      const val = parseInt(e.target.value, 10)
+                      set('notifDismissSec', val < 3 ? 0 : val)
+                      clearTimeout(previewTimerRef.current)
+                      previewTimerRef.current = setTimeout(() => {
+                        const sec = val < 3 ? 0 : val
+                        window.api.invoke('app:custom-notify', {
+                          title: 'Предпросмотр',
+                          body: sec === 0 ? 'Не исчезает — закройте вручную' : 'Исчезнет через ' + sec + ' сек',
+                          color: '#2AABEE',
+                          emoji: '🔔',
+                          messengerName: 'ЦентрЧатов',
+                          messengerId: '__preview__',
+                          dismissMs: sec === 0 ? 0 : sec * 1000,
+                        }).catch(() => {})
+                      }, 400)
+                    }}
                     className="w-24 accent-blue-500"
                     style={{ height: '4px' }}
                   />
                   <span className="text-xs font-mono w-7 text-right" style={{ color: 'var(--cc-text-dim)' }}>
-                    {settings.notifDismissSec || 5}с
+                    {(settings.notifDismissSec == null ? 5 : settings.notifDismissSec) === 0 ? '∞' : (settings.notifDismissSec || 5) + 'с'}
                   </span>
                 </div>
               </SettingRow>

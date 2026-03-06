@@ -676,11 +676,11 @@ export default function App() {
       for (const [k, ts] of recentNotifsRef.current) { if (now - ts > 30000) recentNotifsRef.current.delete(k) }
     }
 
-    // MutationObserver path (без extra) — подавляем если пользователь смотрит на эту вкладку
-    // Причина: DOM чата меняется при прокрутке/переключении чатов → ложные срабатывания
-    const isFromMutationObserver = !extra
+    // Подавляем уведомления если пользователь смотрит на эту вкладку
+    // Причина: при открытии/переключении чатов мессенджер может вызывать
+    // Notification API или менять DOM → ложные срабатывания (ribbon без смысла)
     const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
-    if (isFromMutationObserver && isViewingThisTab) return
+    if (isViewingThisTab) return
 
     // Автопереключение на вкладку с новым сообщением (если включено)
     if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {

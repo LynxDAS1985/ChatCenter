@@ -248,34 +248,40 @@
 
     container.appendChild(el)
 
-    // Start progress animation after element is in DOM
-    const thisDismissMs = data.dismissMs || DEFAULT_DISMISS_MS
-    requestAnimationFrame(() => {
-      progress.style.animation = 'shrink ' + (thisDismissMs / 1000) + 's linear forwards'
-    })
+    const thisDismissMs = data.dismissMs
+    let timer = null
 
-    // Pause timer on hover
-    let remainingMs = thisDismissMs
-    let startTs = Date.now()
+    if (thisDismissMs > 0) {
+      // Конечный режим: progress bar + auto-dismiss
+      requestAnimationFrame(() => {
+        progress.style.animation = 'shrink ' + (thisDismissMs / 1000) + 's linear forwards'
+      })
 
-    const startTimer = () => {
-      startTs = Date.now()
-      return setTimeout(() => dismissItem(data.id, false), remainingMs)
-    }
+      let remainingMs = thisDismissMs
+      let startTs = Date.now()
 
-    let timer = startTimer()
+      const startTimer = () => {
+        startTs = Date.now()
+        return setTimeout(() => dismissItem(data.id, false), remainingMs)
+      }
 
-    el.addEventListener('mouseenter', () => {
-      remainingMs -= (Date.now() - startTs)
-      if (remainingMs < 0) remainingMs = 0
-      clearTimeout(timer)
-      progress.style.animationPlayState = 'paused'
-    })
-
-    el.addEventListener('mouseleave', () => {
-      progress.style.animationPlayState = 'running'
       timer = startTimer()
-    })
+
+      el.addEventListener('mouseenter', () => {
+        remainingMs -= (Date.now() - startTs)
+        if (remainingMs < 0) remainingMs = 0
+        clearTimeout(timer)
+        progress.style.animationPlayState = 'paused'
+      })
+
+      el.addEventListener('mouseleave', () => {
+        progress.style.animationPlayState = 'running'
+        timer = startTimer()
+      })
+    } else {
+      // Бесконечный режим (dismissMs === 0): без progress bar, без auto-dismiss
+      progress.style.display = 'none'
+    }
 
     items.set(data.id, { el, timer })
     reportHeight()
