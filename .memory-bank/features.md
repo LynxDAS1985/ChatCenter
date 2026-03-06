@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.39.5 (6 марта 2026)
+## Текущая версия: v0.39.6 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.39.6 (6 марта 2026) — Обход CSP для notification hook (MAX/SvelteKit)
+- **Проблема**: `notifHooked: false` — MAX (SvelteKit) блокирует inline `<script>` injection через Content Security Policy (CSP). Перехват `window.Notification` из monitor.preload.js не срабатывал.
+- **Исправление**: Добавлен `executeJavaScript()` fallback в App.jsx dom-ready handler. `executeJavaScript` работает через DevTools protocol и обходит CSP. Запускается через 1.5 сек после dom-ready, повторно инжектит notification hook + Audio mute + findAvatar.
+- **Файлы**: `src/App.jsx` (executeJavaScript fallback), `main/main.js` (version bump)
+- **Ключевой урок**: CSP блокирует `<script>` tag injection, но `executeJavaScript()` обходит CSP через DevTools protocol
 
 ### v0.39.5 (6 марта 2026) — Фикс уведомлений MAX + диагностика + __CC_MSG__ backup
 - **Проблема**: Уведомления от Макса не приходили ВООБЩЕ — ни при свёрнутом, ни при развёрнутом окне.

@@ -518,6 +518,39 @@ app.on('web-contents-created', (_event, contents) => {
 
 ---
 
+### ❌ CSP блокирует `<script>` tag injection в MAX/SvelteKit (v0.39.5→v0.39.6)
+
+**Симптом**: Диагностика показывает `"notifHooked": false` — перехват `window.Notification` не работает в MAX. Уведомления не приходят.
+
+**Причина**: MAX (web.max.ru) — SvelteKit-приложение с Content Security Policy (CSP), которая запрещает inline `<script>` теги. Наш monitor.preload.js создаёт `<script>` тег с `textContent` и добавляет в DOM — CSP блокирует выполнение этого скрипта в main world.
+
+**Что НЕ работает**:
+- `document.createElement('script')` + `s.textContent = '...'` + `document.head.appendChild(s)` — CSP блокирует inline scripts
+- CSP `nonce` — мы не знаем nonce страницы
+- `<script src="...">` — нужен внешний файл, CSP может блокировать неизвестные src
+
+**Решение (v0.39.6)**: `executeJavaScript()` fallback в App.jsx dom-ready handler:
+```js
+// executeJavaScript работает через DevTools protocol — обходит CSP!
+setTimeout(() => {
+  el.executeJavaScript(`
+    if (!window.__cc_notif_hooked) {
+      window.__cc_notif_hooked = true;
+      // ... notification hook + Audio mute + findAvatar
+      console.log('__CC_NOTIF_HOOK_OK__');
+    }
+  `).then(() => { ... }).catch(() => {})
+}, 1500)
+```
+
+**Ключевые уроки**:
+- `<script>` tag injection работает для большинства мессенджеров, но CSP может заблокировать — нужен fallback
+- `executeJavaScript()` обходит CSP через DevTools protocol (V8 evaluate, не DOM)
+- Диагностика `notifHooked` (`window.__cc_notif_hooked`) — ключевой индикатор проблемы
+- Для надёжности: сначала `<script>` в preload (document_start, максимально рано), потом `executeJavaScript` fallback (1.5 сек после dom-ready)
+
+---
+
 ### ❌ Уведомления от MAX не приходят вообще (v0.39.4→v0.39.5)
 
 **Симптом**: Сообщения приходят в MAX, но ribbon-уведомления не показываются ни при свёрнутом, ни при развёрнутом окне.

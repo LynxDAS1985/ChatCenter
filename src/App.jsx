@@ -825,8 +825,62 @@ export default function App() {
               new MutationObserver(function() { remove() }).observe(document.body || document.documentElement, { childList: true, subtree: true })
             })()
           `).catch(() => {})
-          // Перехват Notification + Audio перенесён в monitor.preload.js (v0.29.1)
-          // — ранняя <script> injection при document_start, ДО скриптов мессенджера
+          // Fallback: если CSP заблокировал <script> injection в preload (MAX/Svelte),
+          // инжектим notification hook через executeJavaScript (обходит CSP через DevTools protocol)
+          setTimeout(() => {
+            el.executeJavaScript(`
+              if (!window.__cc_notif_hooked) {
+                window.__cc_notif_hooked = true;
+                (function() {
+                  function findAvatar(name) {
+                    if (!name) return '';
+                    try {
+                      var items = document.querySelectorAll('[class*="chat" i], [class*="dialog" i], [class*="conversation" i], [class*="item" i], [class*="peer" i], [class*="contact" i], li');
+                      for (var j = 0; j < items.length && j < 150; j++) {
+                        var txt = items[j].textContent || '';
+                        if (txt.indexOf(name) === -1) continue;
+                        var img = items[j].querySelector('img[src^="http"]');
+                        if (img && img.src && !img.src.includes('emoji')) return img.src;
+                        var avEl = items[j].querySelector('[class*="avatar" i], [class*="photo" i]');
+                        if (avEl) {
+                          var aImg = avEl.querySelector('img[src^="http"]');
+                          if (aImg && aImg.src) return aImg.src;
+                        }
+                      }
+                    } catch(e) {}
+                    return '';
+                  }
+                  var _N = window.Notification;
+                  window.Notification = function(title, opts) {
+                    try {
+                      var icon = (opts && opts.icon) || (opts && opts.image) || '';
+                      if (!icon) icon = findAvatar(title);
+                      console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon }));
+                    } catch(e) {}
+                  };
+                  window.Notification.permission = 'granted';
+                  window.Notification.requestPermission = function(cb) { if (cb) cb('granted'); return Promise.resolve('granted'); };
+                  Object.defineProperty(window.Notification, 'permission', { get: function() { return 'granted'; }, set: function() {} });
+                  try {
+                    ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
+                      try {
+                        var icon = (opts && opts.icon) || (opts && opts.image) || '';
+                        if (!icon) icon = findAvatar(title);
+                        console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon }));
+                      } catch(e) {}
+                      return Promise.resolve();
+                    };
+                  } catch(e) {}
+                  var _A = window.Audio;
+                  window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
+                  window.Audio.prototype = _A.prototype;
+                  console.log('__CC_NOTIF_HOOK_OK__');
+                })();
+              }
+            `).then(() => {
+              console.log(\`[NotifHook] executeJavaScript fallback applied (\${messengerId})\`)
+            }).catch(() => {})
+          }, 1500)
         } catch {}
       })
 
