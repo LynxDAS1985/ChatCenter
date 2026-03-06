@@ -1,4 +1,4 @@
-// v0.44.0 — Кнопка "Прочитано" + превью полного сообщения в ribbon
+// v0.44.1 — Фикс дубля ribbon при 2+ аккаунтах + видимая кнопка Прочитано
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -1109,14 +1109,15 @@ app.on('web-contents-created', (_event, contents) => {
   })
 
   // Backup: перехватываем __CC_NOTIF__ и __CC_MSG__ напрямую в main process
-  // ВАЖНО: показываем ТОЛЬКО когда окно свёрнуто/скрыто — иначе renderer сам обработает
-  // через handleNewMessage (с проверкой isViewingThisTab и дедупликацией)
+  // ВАЖНО: backup нужен ТОЛЬКО когда renderer не может обработать (webContents destroyed/crashed)
+  // При backgroundThrottling:false renderer работает ВСЕГДА — даже при свёрнутом окне
+  // findMessengerByUrl некорректен при 2+ аккаунтах одного мессенджера (возвращает первый)
   contents.on('console-message', (_e, _level, msg) => {
     if (!msg) return
     if (!webviewReadySet.has(contents.id)) return
 
-    // Если окно в фокусе — renderer обработает, backup не нужен
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) return
+    // Если renderer жив — он сам обработает (backgroundThrottling: false)
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) return
 
     const mInfo = findMessengerByUrl(contents.getURL())
     if (!mInfo) return

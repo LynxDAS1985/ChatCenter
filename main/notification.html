@@ -197,24 +197,23 @@
     position: absolute;
     top: 4px;
     right: 28px;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     border: none;
-    background: transparent;
-    color: rgba(34,197,94,0.5);
-    font-size: 13px;
+    background: rgba(34,197,94,0.12);
+    color: rgba(34,197,94,0.7);
+    font-size: 14px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 50%;
     line-height: 1;
-    opacity: 0;
-    transition: opacity 0.15s;
+    opacity: 1;
+    transition: all 0.15s;
     z-index: 2;
   }
-  .notif-item:hover .close-btn,
-  .notif-item:hover .read-btn {
+  .notif-item:hover .close-btn {
     opacity: 1;
   }
   .close-btn:hover {
@@ -222,8 +221,9 @@
     color: rgba(255,255,255,0.7);
   }
   .read-btn:hover {
-    background: rgba(34,197,94,0.15);
+    background: rgba(34,197,94,0.25);
     color: #4ade80;
+    transform: scale(1.1);
   }
 </style>
 </head>
