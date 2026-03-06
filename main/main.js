@@ -1,4 +1,4 @@
-// v0.41.0 — Фикс ложных ribbon MAX, preview ribbon, бесконечный режим
+// v0.41.1 — Фикс backup path: ribbon только при свёрнутом окне
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -1078,9 +1078,14 @@ app.on('web-contents-created', (_event, contents) => {
   })
 
   // Backup: перехватываем __CC_NOTIF__ и __CC_MSG__ напрямую в main process
+  // ВАЖНО: показываем ТОЛЬКО когда окно свёрнуто/скрыто — иначе renderer сам обработает
+  // через handleNewMessage (с проверкой isViewingThisTab и дедупликацией)
   contents.on('console-message', (_e, _level, msg) => {
     if (!msg) return
     if (!webviewReadySet.has(contents.id)) return
+
+    // Если окно видимо — renderer обработает, backup не нужен
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized() && mainWindow.isVisible()) return
 
     const mInfo = findMessengerByUrl(contents.getURL())
     if (!mInfo) return

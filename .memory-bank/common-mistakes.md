@@ -906,14 +906,19 @@ const text = (data.b || '').trim()   // пустой body → пустой text 
 
 **Причина**: В v0.39.1 убрали `isViewingThisChat` из `handleNewMessage` чтобы ribbon показывался всегда. Но MutationObserver (Path 2 в monitor.preload.js) при ЛЮБОМ изменении DOM (смена чата, прокрутка) вызывает `getLastMessageText()`. Если текст отличается от предыдущего → `new-message` IPC → `handleNewMessage` без подавления → ложное уведомление.
 
-**Решение (v0.39.3 → v0.41.0)**: Подавлять ВСЕ уведомления когда пользователь смотрит на эту вкладку:
+**Решение (v0.39.3 → v0.41.0 → v0.41.1)**: Двойная защита:
 
+**1. App.jsx (renderer)**: Подавлять ВСЕ уведомления когда пользователь смотрит на эту вкладку:
 ```js
 const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
 if (isViewingThisTab) return
 ```
 
-**v0.39.3**: Разделяли по источнику (MutationObserver подавлять, Notification API — нет). Но MAX при ОТКРЫТИИ старого чата вызывает Notification API → ложное ribbon.
-**v0.41.0**: Подавляем ВСЕ источники при активной вкладке. Если пользователь и так смотрит на мессенджер — ribbon не нужен.
+**2. main.js (backup path)**: Backup path работает ТОЛЬКО при свёрнутом/скрытом окне:
+```js
+if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized() && mainWindow.isVisible()) return
+```
 
-**Ключевой урок**: Notification API НЕ всегда означает "новое сообщение". MAX вызывает Notification при открытии чата (кэшированные уведомления). Подавлять ВСЕ ribbon когда пользователь смотрит на вкладку — безопасный подход.
+**Почему v0.41.0 не помог**: Исправление в App.jsx подавляло `handleNewMessage`, но тот же `console-message` event ловил **backup path в main.js** напрямую → вызывал `showCustomNotification` минуя `handleNewMessage`. Два listener на один event!
+
+**Ключевой урок**: `console-message` от WebView обрабатывается в ДВУХ местах (renderer + main process). Подавление в одном месте бесполезно если другое место дублирует. Backup path должен работать ТОЛЬКО когда renderer не может обработать (окно свёрнуто/скрыто).
