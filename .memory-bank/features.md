@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.46.0 (6 марта 2026)
+## Текущая версия: v0.46.1 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.46.1 (6 марта 2026) — Фикс ribbon expandedByDefault, плавная анимация, кэш аватарок по tag
+- **КРИТИЧЕСКИЙ ФИКС: ribbon не показывается при "Кнопки действий сразу"**: При включённой настройке `ribbonExpandedByDefault` уведомления пропадали. Три причины: 1) `overflow: hidden` на `.notif-item` обрезал expanded-контент; 2) таймер запускался даже при expandedByDefault → авто-dismiss; 3) авто-раскрытие происходило ДО настройки таймера → inconsistent state. Решение: убран overflow:hidden, таймер приостанавливается при expandedByDefault, код авто-раскрытия перенесён ПОСЛЕ настройки таймера, начальная высота окна увеличена с 76 до 300px.
+- **Плавная анимация expand/collapse ribbon**: `display:none/flex` заменён на CSS transition `max-height 200ms + opacity 200ms` для `.action-row`. При `toggleExpand` добавлен `setTimeout(reportHeight, 220)` для пересчёта высоты после завершения transition.
+- **Кэш аватарок по tag (peer ID)**: `findAvatarCached(name, tag)` — кэширует URL аватарки по Notification.tag (peer ID) вместо имени контакта. TTL 30 минут. Работает для всех мессенджеров.
 
 ### v0.46.0 (6 марта 2026) — Аватарки в ribbon + настройка "Кнопки сразу"
 - **Аватарки**: Улучшен `findAvatar` — теперь ищет `<img>` с любым src (не только http), `<canvas>` (Telegram K), `background-image`. Поддержка `data:` URL из canvas, `blob:` URL. Аватарка из canvas конвертируется в data URL прямо в WebView.

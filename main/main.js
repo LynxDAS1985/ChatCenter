@@ -448,9 +448,9 @@ function createNotifWindow() {
 
   notifWin = new BrowserWindow({
     width: 370,
-    height: 76,
+    height: 300,
     x: workArea.x + workArea.width - 380,
-    y: workArea.y + workArea.height - 84,
+    y: workArea.y + workArea.height - 310,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',

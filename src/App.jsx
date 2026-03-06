@@ -979,7 +979,14 @@ export default function App() {
               if (!window.__cc_notif_hooked) {
                 window.__cc_notif_hooked = true;
                 (function() {
-                  function findAvatar(name) {
+                  var _avatarCache = {}; // кэш аватарок: tag/name → URL (TTL 30 мин)
+                  var _avatarCacheTs = {};
+                  function findAvatar(name, tag) {
+                    // Проверяем кэш по tag (peer ID) или по имени
+                    var cacheKey = tag || name;
+                    if (cacheKey && _avatarCache[cacheKey] && (Date.now() - (_avatarCacheTs[cacheKey] || 0)) < 1800000) {
+                      return _avatarCache[cacheKey];
+                    }
                     if (!name) return '';
                     try {
                       var items = document.querySelectorAll('[class*="chat" i], [class*="dialog" i], [class*="conversation" i], [class*="item" i], [class*="peer" i], [class*="contact" i], li');
@@ -1004,12 +1011,22 @@ export default function App() {
                     } catch(e) {}
                     return '';
                   }
+                  function findAvatarCached(name, tag) {
+                    var result = findAvatar(name, tag);
+                    if (result && (tag || name)) {
+                      var ck = tag || name;
+                      _avatarCache[ck] = result;
+                      _avatarCacheTs[ck] = Date.now();
+                    }
+                    return result;
+                  }
                   var _N = window.Notification;
                   window.Notification = function(title, opts) {
                     try {
+                      var tag = (opts && opts.tag) || '';
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
-                      if (!icon) icon = findAvatar(title);
-                      console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon, g: (opts && opts.tag) || '' }));
+                      if (!icon) icon = findAvatarCached(title, tag);
+                      console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon, g: tag }));
                     } catch(e) {}
                   };
                   window.Notification.permission = 'granted';
@@ -1018,9 +1035,10 @@ export default function App() {
                   try {
                     ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
                       try {
+                        var tag = (opts && opts.tag) || '';
                         var icon = (opts && opts.icon) || (opts && opts.image) || '';
-                        if (!icon) icon = findAvatar(title);
-                        console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon, g: (opts && opts.tag) || '' }));
+                        if (!icon) icon = findAvatarCached(title, tag);
+                        console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon, g: tag }));
                       } catch(e) {}
                       return Promise.resolve();
                     };

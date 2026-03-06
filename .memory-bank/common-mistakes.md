@@ -1,5 +1,39 @@
 # Типичные ошибки — ChatCenter
 
+## 🔴 КРИТИЧЕСКОЕ: ribbonExpandedByDefault ломает показ ribbon-уведомлений
+
+### ❌ overflow:hidden на .notif-item + таймер при expandedByDefault + порядок авто-раскрытия
+
+**Симптом**: При включении настройки "Кнопки действий сразу" (ribbonExpandedByDefault) ribbon-уведомления перестают показываться полностью.
+
+**Причина 1**: `overflow: hidden` на `.notif-item` обрезал expanded-контент, который выходил за min-height (76px).
+
+**Причина 2**: Таймер dismiss запускался ДАЖЕ при `expandedByDefault` → уведомление авто-удалялось через dismissMs.
+
+**Причина 3**: Авто-раскрытие (`el.classList.add('expanded')`) происходило ДО настройки таймера → `items.set()` записывал `expanded: false`, хотя уведомление уже было раскрыто.
+
+**Причина 4**: Начальная высота окна 76px — слишком мала для expanded ribbon (~120px+). `notif:resize` IPC не успевал увеличить окно.
+
+**Решение (v0.46.1)**:
+1. Убрать `overflow: hidden` с `.notif-item`
+2. При `expandedByDefault` — НЕ запускать таймер, поставить `progress.style.animationPlayState = 'paused'`
+3. Код авто-раскрытия (`if (data.expandedByDefault)`) перенести ПОСЛЕ настройки таймера и mouseenter/mouseleave
+4. Начальная высота окна 300px (а не 76px)
+
+**Ключевой урок**: При expandedByDefault нужно пауза таймера С ПЕРВОЙ секунды, и авто-раскрытие ПОСЛЕ полной настройки таймера.
+
+### ❌ CSS `display: none/flex` не анимируется
+
+**Симптом**: `.action-row { display: none }` → `.expanded .action-row { display: flex }` — переключение мгновенное, без анимации.
+
+**Причина**: CSS свойство `display` не поддерживает transition.
+
+**Решение**: Заменить на `max-height: 0` + `overflow: hidden` + `opacity: 0` → `max-height: 60px` + `opacity: 1` с `transition: max-height 200ms, opacity 200ms`.
+
+**Ключевой урок**: Для анимации показа/скрытия блока использовать max-height transition, НЕ display toggle.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: Подсчёт непрочитанных в Telegram Web K
 
 ### ❌ Суммирование бейджей отдельных чатов (querySelectorAll + persistent Map)

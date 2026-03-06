@@ -25,7 +25,6 @@
     border-radius: 10px;
     cursor: pointer;
     position: relative;
-    overflow: hidden;
     transform: translateX(380px);
     opacity: 0;
     animation: slideIn 250ms ease-out forwards;
@@ -35,6 +34,21 @@
   .notif-item.expanded {
     align-items: flex-start;
     cursor: default;
+  }
+  /* Плавная анимация action-row при expand/collapse */
+  .action-row {
+    display: flex;
+    gap: 6px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 200ms ease-out, margin-top 200ms ease-out, opacity 200ms ease-out;
+    opacity: 0;
+    margin-top: 0;
+  }
+  .notif-item.expanded .action-row {
+    max-height: 60px;
+    opacity: 1;
+    margin-top: 8px;
   }
   .notif-item.removing {
     animation: slideOut 200ms ease-in forwards;
@@ -112,14 +126,7 @@
     color: rgba(255,255,255,0.8);
   }
   /* Кнопки действий */
-  .action-row {
-    display: none;
-    gap: 6px;
-    margin-top: 8px;
-  }
-  .notif-item.expanded .action-row {
-    display: flex;
-  }
+  /* action-row transition определён выше при .notif-item.expanded */
   .action-btn {
     padding: 4px 12px;
     border: 1px solid rgba(255,255,255,0.15);
@@ -287,7 +294,9 @@
       item.timer = setTimeout(() => dismissItem(data.id, false), item.remainingMs || 3000)
     }
 
+    // Вызываем reportHeight сразу + после transition (200ms) для точной высоты
     reportHeight()
+    setTimeout(reportHeight, 220)
   }
 
   function addNotification(data) {
@@ -428,17 +437,6 @@
 
     container.appendChild(el)
 
-    // Автораскрытие если включена настройка "Кнопки действий сразу"
-    if (data.expandedByDefault) {
-      el.classList.add('expanded')
-      if (hasFullBody) {
-        const bText = el.querySelector('.body-text')
-        if (bText) bText.textContent = bText.dataset.full
-      }
-      const hintEl = el.querySelector('.expand-hint')
-      if (hintEl) hintEl.textContent = '\u25B2 свернуть'
-    }
-
     const thisDismissMs = data.dismissMs
     let timer = null
     let remainingMs = thisDismissMs
@@ -454,7 +452,12 @@
         return setTimeout(() => dismissItem(data.id, false), remainingMs)
       }
 
-      timer = startTimer()
+      // При expandedByDefault — не запускаем таймер (пауза с первой секунды)
+      if (!data.expandedByDefault) {
+        timer = startTimer()
+      } else {
+        progress.style.animationPlayState = 'paused'
+      }
 
       el.addEventListener('mouseenter', () => {
         remainingMs -= (Date.now() - startTs)
@@ -471,6 +474,17 @@
       })
     } else {
       progress.style.display = 'none'
+    }
+
+    // Автораскрытие ПОСЛЕ настройки таймера
+    if (data.expandedByDefault) {
+      el.classList.add('expanded')
+      if (hasFullBody) {
+        const bText = el.querySelector('.body-text')
+        if (bText) bText.textContent = bText.dataset.full
+      }
+      const hintEl = el.querySelector('.expand-hint')
+      if (hintEl) hintEl.textContent = '\u25B2 свернуть'
     }
 
     items.set(data.id, { el, timer, expanded: !!data.expandedByDefault, remainingMs, startTs })
