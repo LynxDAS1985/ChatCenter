@@ -104,9 +104,6 @@
     border-radius: 0 0 10px 0;
     transform-origin: right;
   }
-  .progress-bar.active {
-    animation: shrink 5s linear forwards;
-  }
   @keyframes shrink {
     from { transform: scaleX(1); }
     to   { transform: scaleX(0); }
@@ -143,7 +140,7 @@
 <div id="container"></div>
 <script>
   const MAX_ITEMS = 6
-  const DISMISS_MS = 5000
+  const DEFAULT_DISMISS_MS = 5000
   const container = document.getElementById('container')
   const items = new Map() // id → { el, timer }
 
@@ -252,12 +249,13 @@
     container.appendChild(el)
 
     // Start progress animation after element is in DOM
+    const thisDismissMs = data.dismissMs || DEFAULT_DISMISS_MS
     requestAnimationFrame(() => {
-      progress.classList.add('active')
+      progress.style.animation = 'shrink ' + (thisDismissMs / 1000) + 's linear forwards'
     })
 
     // Pause timer on hover
-    let remainingMs = DISMISS_MS
+    let remainingMs = thisDismissMs
     let startTs = Date.now()
 
     const startTimer = () => {

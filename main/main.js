@@ -1,4 +1,4 @@
-// v0.39.5 — Диагностика + фикс уведомлений MAX, backup __CC_MSG__
+// v0.40.0 — Диагностика + фикс уведомлений MAX, backup __CC_MSG__
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -525,7 +525,11 @@ async function showCustomNotification({ title, body, iconUrl, color, emoji, mess
     } catch {}
   }
 
-  const data = { id, title, body, iconDataUrl, color, emoji, messengerName, messengerId }
+  // Время показа уведомления из настроек (по умолчанию 5 сек)
+  const settings = storage.get('settings', {})
+  const dismissMs = (settings.notifDismissSec || 5) * 1000
+
+  const data = { id, title, body, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs }
   console.log('[NotifManager] Showing notification:', id, messengerName, title, body?.slice(0, 30))
 
   // FIFO — удаляем старые из трекинга

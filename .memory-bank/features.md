@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.39.6 (6 марта 2026)
+## Текущая версия: v0.40.0 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.40.0 (6 марта 2026) — Настраиваемое время показа ribbon-уведомления
+- **Новая настройка**: ползунок "Время показа уведомления" в Настройки → Уведомления (3–30 сек, по умолчанию 5 сек)
+- **Реализация**: `settings.notifDismissSec` → main.js читает из storage → передаёт `dismissMs` в каждом `notif:show` → notification.html использует динамическую длительность для таймера dismiss и CSS progress-bar анимации
+- **Файлы**: `src/components/SettingsPanel.jsx` (ползунок), `main/main.js` (чтение настройки), `main/notification.html` (динамический dismiss)
 
 ### v0.39.6 (6 марта 2026) — Обход CSP для notification hook (MAX/SvelteKit)
 - **Проблема**: `notifHooked: false` — MAX (SvelteKit) блокирует inline `<script>` injection через Content Security Policy (CSP). Перехват `window.Notification` из monitor.preload.js не срабатывал.

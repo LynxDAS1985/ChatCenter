@@ -1,4 +1,4 @@
-// v0.39.6 — Панель настроек: уникальный звук каждого мессенджера, тест звука с тональностью
+// v0.40.0 — Панель настроек: уникальный звук каждого мессенджера, тест звука с тональностью
 import { useEffect, useState } from 'react'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 
@@ -282,6 +282,23 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
             <div className="space-y-2">
               <SettingRow label="Звук при новом сообщении" description="Короткий сигнал при получении">
                 <Toggle value={settings.soundEnabled !== false} onChange={v => set('soundEnabled', v)} />
+              </SettingRow>
+              <SettingRow label="Время показа уведомления" description={'Ribbon исчезает через ' + (settings.notifDismissSec || 5) + ' сек'}>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={3}
+                    max={30}
+                    step={1}
+                    value={settings.notifDismissSec || 5}
+                    onChange={e => set('notifDismissSec', parseInt(e.target.value, 10))}
+                    className="w-24 accent-blue-500"
+                    style={{ height: '4px' }}
+                  />
+                  <span className="text-xs font-mono w-7 text-right" style={{ color: 'var(--cc-text-dim)' }}>
+                    {settings.notifDismissSec || 5}с
+                  </span>
+                </div>
               </SettingRow>
               <SettingRow label="Автопереключение на новое сообщение" description="Переключать вкладку при входящем">
                 <Toggle value={!!settings.autoSwitchOnMessage} onChange={v => set('autoSwitchOnMessage', v)} />
