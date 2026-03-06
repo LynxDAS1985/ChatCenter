@@ -1,4 +1,4 @@
-// v0.41.1 — Фикс backup path: ribbon только при свёрнутом окне
+// v0.41.2 — Фикс звука при свёрнутом окне + фильтр timestamp body
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -486,9 +486,11 @@ function repositionNotifWin() {
 }
 
 async function showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs }) {
-  // Защита: пустой или невидимый body → не показываем ribbon
+  // Защита: пустой, невидимый или timestamp-only body → не показываем ribbon
   const cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
   if (!cleanBody) return null
+  // MAX и другие мессенджеры могут слать Notification с body = "12:40" (только время)
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) return null
 
   // Дедупликация: один и тот же текст от того же мессенджера за 8 сек → skip
   const dedupKey = messengerId + ':' + (body || '').slice(0, 60)

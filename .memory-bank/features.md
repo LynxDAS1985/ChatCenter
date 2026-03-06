@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.41.1 (6 марта 2026)
+## Текущая версия: v0.41.2 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.41.2 (6 марта 2026) — Фикс звука при свёрнутом окне + фильтр timestamp body
+- **Баг-фикс звука**: При свёрнутом окне на вкладке MAX звук не играл. Причина: `document.hidden` с `backgroundThrottling:false` остаётся `false` при свёрнутом окне → `isViewingThisTab = true` → handleNewMessage подавлялся. Исправлено: `document.hasFocus()` вместо `!document.hidden`.
+- **Баг-фикс пустого ribbon**: MAX вызывает Notification с body = "12:40" (только timestamp). Добавлен фильтр `/^\d{1,2}:\d{2}(:\d{2})?$/` в showCustomNotification (main.js) и в __CC_NOTIF__ handler (App.jsx).
+- **Файлы**: `src/App.jsx` (hasFocus + timestamp filter), `main/main.js` (timestamp filter)
 
 ### v0.41.1 (6 марта 2026) — Фикс backup path: ribbon только при свёрнутом окне
 - **Баг-фикс**: v0.41.0 не полностью решил ложные ribbon — backup path в main.js дублировал обработку `console-message` и вызывал `showCustomNotification` напрямую, минуя подавление в renderer.

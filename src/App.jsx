@@ -677,9 +677,9 @@ export default function App() {
     }
 
     // Подавляем уведомления если пользователь смотрит на эту вкладку
-    // Причина: при открытии/переключении чатов мессенджер может вызывать
-    // Notification API или менять DOM → ложные срабатывания (ribbon без смысла)
-    const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
+    // ВАЖНО: document.hasFocus() вместо !document.hidden —
+    // при backgroundThrottling:false document.hidden может быть false даже при свёрнутом окне
+    const isViewingThisTab = document.hasFocus() && activeIdRef.current === messengerId
     if (isViewingThisTab) return
 
     // Автопереключение на вкладку с новым сообщением (если включено)
@@ -983,7 +983,7 @@ export default function App() {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           console.log(`[Notif] __CC_NOTIF__ (${messengerId}): t="${data.t}", b="${(data.b||'').slice(0,30)}", active=${activeIdRef.current === messengerId}, hidden=${document.hidden}`)
           const text = (data.b || '').trim()
-          if (text) {
+          if (text && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) {
             // data.t = title (имя отправителя), data.i = icon URL (аватарка)
             const extra = {}
             if (data.t) extra.senderName = data.t

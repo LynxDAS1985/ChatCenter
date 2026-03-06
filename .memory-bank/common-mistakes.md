@@ -922,3 +922,42 @@ if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized() && main
 **Почему v0.41.0 не помог**: Исправление в App.jsx подавляло `handleNewMessage`, но тот же `console-message` event ловил **backup path в main.js** напрямую → вызывал `showCustomNotification` минуя `handleNewMessage`. Два listener на один event!
 
 **Ключевой урок**: `console-message` от WebView обрабатывается в ДВУХ местах (renderer + main process). Подавление в одном месте бесполезно если другое место дублирует. Backup path должен работать ТОЛЬКО когда renderer не может обработать (окно свёрнуто/скрыто).
+
+---
+
+## 🔴 document.hidden vs document.hasFocus() при backgroundThrottling:false (v0.41.2)
+
+### ❌ document.hidden не обновляется при свёрнутом окне
+
+**Симптом**: Звук уведомления не играет когда окно свёрнуто и активная вкладка = мессенджер-отправитель.
+
+**Причина**: `backgroundThrottling: false` в BrowserWindow может сохранять `document.hidden = false` даже при свёрнутом окне. Тогда `isViewingThisTab = !document.hidden && activeId === messengerId` = true → handleNewMessage подавляется → звук и ribbon пропадают.
+
+**Решение**: Использовать `document.hasFocus()` вместо `!document.hidden`:
+```js
+// БЫЛО (не работает с backgroundThrottling:false):
+const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
+// СТАЛО:
+const isViewingThisTab = document.hasFocus() && activeIdRef.current === messengerId
+```
+
+**Ключевой урок**: `document.hidden` ненадёжен в Electron с `backgroundThrottling: false`. `document.hasFocus()` — надёжная альтернатива: false при свёрнутом/неактивном окне, true при фокусе.
+
+---
+
+## 🔴 Timestamp-only body в Notification API (v0.41.2)
+
+### ❌ MAX шлёт Notification с body = "12:40" (только время)
+
+**Симптом**: Пустое ribbon-уведомление с текстом "12:40" вместо текста сообщения.
+
+**Причина**: MAX при открытии чата / получении уведомления может вызвать `new Notification("", { body: "12:40" })` — body содержит только timestamp. Наши фильтры (`if (!text) return`) пропускают это, т.к. "12:40" непустая строка.
+
+**Решение**: Фильтровать timestamp-only body:
+```js
+if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) return null
+```
+
+Добавлено в: `showCustomNotification` (main.js) и `__CC_NOTIF__` handler (App.jsx).
+
+**Ключевой урок**: Мессенджеры могут передавать в Notification.body нетекстовые данные: timestamps, пустые строки, zero-width символы. Фильтр body должен проверять не только непустоту, но и осмысленность содержимого.
