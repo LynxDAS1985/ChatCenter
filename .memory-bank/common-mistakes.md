@@ -1020,3 +1020,28 @@ if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWi
 ```
 
 **Ключевой урок**: `findMessengerByUrl` ненадёжен при нескольких аккаунтах одного мессенджера. Renderer определяет messengerId правильно через closure. При `backgroundThrottling: false` backup path избыточен.
+
+---
+
+## 🔴 WebView не загружается при `display: none` (v0.44.1 → v0.44.2)
+
+### ❌ Мессенджеры не загружаются до перехода на вкладку
+
+**Симптом**: При запуске приложения WebView не загружают страницы. Пользователь должен кликнуть на каждую вкладку чтобы мессенджер начал работать.
+
+**Причина**: Неактивные вкладки скрывались через `display: none`:
+```jsx
+style={{ display: activeId === m.id ? 'block' : 'none' }}
+```
+В Electron `<webview>` с `display: none` **не начинает загрузку** — это поведение браузера для всех embedded content элементов.
+
+**Решение (v0.44.2)**: Заменить `display` на `visibility` + `zIndex`:
+```jsx
+style={{
+  visibility: activeId === m.id ? 'visible' : 'hidden',
+  zIndex: activeId === m.id ? 1 : 0,
+}}
+```
+WebView остаётся в DOM, занимает layout space (уже `absolute inset-0`), загружается сразу, но не виден пользователю.
+
+**Ключевой урок**: В Electron `<webview>` с `display: none` НЕ загружается. Для скрытия неактивных WebView использовать `visibility: hidden`, а не `display: none`.

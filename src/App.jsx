@@ -1548,7 +1548,10 @@ export default function App() {
               <div
                 key={m.id}
                 className="absolute inset-0"
-                style={{ display: activeId === m.id ? 'block' : 'none' }}
+                style={{
+                  visibility: activeId === m.id ? 'visible' : 'hidden',
+                  zIndex: activeId === m.id ? 1 : 0,
+                }}
               >
                 <webview
                   ref={el => setWebviewRef(el, m.id)}
