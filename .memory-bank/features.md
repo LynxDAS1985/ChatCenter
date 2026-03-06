@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.41.3 (6 марта 2026)
+## Текущая версия: v0.42.0 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.42.0 (6 марта 2026) — IPC window-state + фикс ложных ribbon при чтении старых
+- **IPC window-state**: Main process отправляет `window-state {focused}` по событиям BrowserWindow (focus/blur/minimize/restore/show). Renderer подписывается через `window.api.on('window-state')` и хранит в `windowFocusedRef`. Это 100% надёжный источник состояния окна — не зависит от `document.hidden` (ненадёжен с backgroundThrottling:false) или `document.hasFocus()` (false когда фокус в WebView).
+- **Все проверки видимости**: `document.hidden` заменён на `windowFocusedRef.current` в handleNewMessage, page-title-updated sound, unread-count sound, __CC_NOTIF__ log.
+- **Backup path**: `!isMinimized() && isVisible()` заменён на `isFocused()` — backup срабатывает только когда окно не в фокусе.
+- **Файлы**: `main/main.js` (IPC events + backup path), `src/App.jsx` (windowFocusedRef + все проверки)
 
 ### v0.41.3 (6 марта 2026) — Фикс ложных ribbon Telegram при чтении старых
 - **Баг-фикс**: При чтении старых непрочитанных в Telegram появлялся ложный ribbon. Причина: `document.hasFocus()` возвращает `false` когда фокус внутри WebView (отдельный browsing context) → isViewingThisTab = false → ribbon не подавлялся. Исправлено: `!document.hidden` вместо `hasFocus()` — корректно отражает видимость окна (true при видимом, false при свёрнутом), не зависит от фокуса в webview.

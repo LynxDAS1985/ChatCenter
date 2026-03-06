@@ -925,33 +925,35 @@ if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized() && main
 
 ---
 
-## 🔴 document.hasFocus() vs !document.hidden при WebView (v0.41.2 → v0.41.3)
+## 🔴 Browser API для видимости окна НЕНАДЁЖНЫ в Electron (v0.41.2 → v0.42.0)
 
-### ❌ document.hasFocus() = false когда фокус в WebView
+### ❌ document.hasFocus() и document.hidden оба ненадёжны
 
-**Симптом**: Ribbon-уведомление появляется при ЧТЕНИИ старых сообщений в Telegram — пользователь смотрит на мессенджер, но ribbon не подавляется.
+**Симптом**: Ribbon-уведомление появляется при ЧТЕНИИ старых сообщений в Telegram/MAX — пользователь смотрит на мессенджер, но ribbon не подавляется.
 
-**Причина**: `document.hasFocus()` возвращает `false` когда пользователь кликнул внутри `<webview>` — это отдельный browsing context, фокус ушёл из main renderer document. Тогда `isViewingThisTab = false` → handleNewMessage не подавляет → ложный ribbon.
+**Причина**: Оба browser API ненадёжны в Electron с `<webview>`:
+- `document.hasFocus()` → `false` когда фокус внутри WebView (отдельный browsing context)
+- `document.hidden` → может быть ненадёжен с `backgroundThrottling: false`
 
-**v0.41.2 ошибка**: Заменили `!document.hidden` на `document.hasFocus()` чтобы fix звука при свёрнутом. Но `hasFocus()` создало новую проблему — ложные ribbon при работе в мессенджере.
+**v0.41.2**: Заменили `!document.hidden` на `hasFocus()` → ложные ribbon при фокусе в webview.
+**v0.41.3**: Вернули `!document.hidden` → всё ещё проблемы с Telegram.
 
-**Решение (v0.41.3)**: Вернули `!document.hidden`:
+**Решение (v0.42.0)**: IPC window-state из main process:
 ```js
-const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
+// main.js — BrowserWindow events → IPC
+mainWindow.on('focus', () => webContents.send('window-state', { focused: true }))
+mainWindow.on('blur', () => webContents.send('window-state', { focused: false }))
+// + minimize, restore, show
+
+// App.jsx — ref для хранения состояния
+const windowFocusedRef = useRef(true)
+useEffect(() => window.api.on('window-state', (s) => { windowFocusedRef.current = s.focused }), [])
+
+// Проверка видимости
+const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
 ```
 
-**Почему `!document.hidden` корректен**:
-- Окно видимо → `document.hidden = false` → `!hidden = true` (правильно, пользователь видит)
-- Окно свёрнуто → `document.hidden = true` → `!hidden = false` (правильно, нужно уведомление)
-- Фокус в WebView → `document.hidden = false` → `!hidden = true` (правильно, всё ещё видит)
-- `backgroundThrottling: false` НЕ влияет на Page Visibility API
-
-**Почему предыдущая проблема звука (v0.41.1) была не из-за document.hidden**: Звук пропадал из-за backup path в main.js, который дублировал обработку. Backup path уже пофикшен в v0.41.1.
-
-**Ключевой урок**: В Electron с `<webview>`:
-- `document.hasFocus()` — false при фокусе в webview (НЕНАДЁЖНО для видимости)
-- `!document.hidden` — корректно отражает видимость окна (НАДЁЖНО)
-- `backgroundThrottling: false` НЕ ломает Page Visibility API
+**Ключевой урок**: В Electron НИКОГДА не полагайся на browser API (document.hidden, hasFocus) для определения видимости окна. Используй IPC из main process — BrowserWindow events (focus/blur/minimize/restore) 100% надёжны.
 
 ---
 

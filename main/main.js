@@ -1,4 +1,4 @@
-// v0.41.3 — Фикс ложных ribbon Telegram при чтении старых сообщений
+// v0.42.0 — IPC window-state + фикс ложных ribbon при чтении старых
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -269,6 +269,19 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+
+  // IPC window-state: renderer точно знает состояние окна (focus/blur/minimize/restore)
+  // Надёжнее чем document.hidden или document.hasFocus() в renderer
+  const sendWindowState = (focused) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try { mainWindow.webContents.send('window-state', { focused }) } catch {}
+    }
+  }
+  mainWindow.on('focus', () => sendWindowState(true))
+  mainWindow.on('blur', () => sendWindowState(false))
+  mainWindow.on('minimize', () => sendWindowState(false))
+  mainWindow.on('restore', () => sendWindowState(true))
+  mainWindow.on('show', () => sendWindowState(mainWindow.isFocused()))
 }
 
 // ─── ГигаЧат: HTTPS без проверки SSL-сертификата Сбербанка ───────────────────
@@ -1086,8 +1099,8 @@ app.on('web-contents-created', (_event, contents) => {
     if (!msg) return
     if (!webviewReadySet.has(contents.id)) return
 
-    // Если окно видимо — renderer обработает, backup не нужен
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized() && mainWindow.isVisible()) return
+    // Если окно в фокусе — renderer обработает, backup не нужен
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) return
 
     const mInfo = findMessengerByUrl(contents.getURL())
     if (!mInfo) return

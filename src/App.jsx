@@ -252,6 +252,7 @@ export default function App() {
   const messengersRef = useRef(messengers)
   const isResizingRef = useRef(false)
   const resizeStartRef = useRef({ x: 0, w: 300 })
+  const windowFocusedRef = useRef(true) // IPC window-state: main process сообщает о focus/blur
   const aiWidthRef = useRef(300)
   const aiPanelRef = useRef(null)
   const zoomLevelsRef = useRef({})
@@ -356,6 +357,13 @@ export default function App() {
       window.api.invoke('messengers:save', messengers).catch(() => {})
     }, 600)
   }, [messengers])
+
+  // ── IPC window-state: main process сообщает о focus/blur/minimize/restore ──
+  useEffect(() => {
+    return window.api.on('window-state', (state) => {
+      windowFocusedRef.current = state.focused
+    })
+  }, [])
 
   // ── Бейдж-события от ChatMonitor ─────────────────────────────────────────
   useEffect(() => {
@@ -677,9 +685,9 @@ export default function App() {
     }
 
     // Подавляем уведомления если пользователь смотрит на эту вкладку
-    // ВАЖНО: !document.hidden (не hasFocus!) — hasFocus()=false когда фокус внутри WebView,
-    // а document.hidden корректно отражает видимость окна (true при minimize)
-    const isViewingThisTab = !document.hidden && activeIdRef.current === messengerId
+    // windowFocusedRef обновляется через IPC window-state из main process —
+    // надёжнее чем document.hidden или document.hasFocus()
+    const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
     if (isViewingThisTab) return
 
     // Автопереключение на вкладку с новым сообщением (если включено)
@@ -893,7 +901,7 @@ export default function App() {
           setUnreadCounts(prev => {
             if (prev[messengerId] === count) return prev
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
-            if (count > (prev[messengerId] || 0) && !(!document.hidden && activeIdRef.current === messengerId)) {
+            if (count > (prev[messengerId] || 0) && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
               const muted = !!(s.mutedMessengers || {})[messengerId]
               if (s.soundEnabled !== false && !muted) {
@@ -926,7 +934,7 @@ export default function App() {
           const count = Number(e.args[0]) || 0
           setUnreadCounts(prev => {
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
-            if (count > (prev[messengerId] || 0) && !(!document.hidden && activeIdRef.current === messengerId)) {
+            if (count > (prev[messengerId] || 0) && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
               const muted = !!(s.mutedMessengers || {})[messengerId]
               if (s.soundEnabled !== false && !muted) {
@@ -981,7 +989,7 @@ export default function App() {
         }
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
-          console.log(`[Notif] __CC_NOTIF__ (${messengerId}): t="${data.t}", b="${(data.b||'').slice(0,30)}", active=${activeIdRef.current === messengerId}, hidden=${document.hidden}`)
+          console.log(`[Notif] __CC_NOTIF__ (${messengerId}): t="${data.t}", b="${(data.b||'').slice(0,30)}", active=${activeIdRef.current === messengerId}, focused=${windowFocusedRef.current}`)
           const text = (data.b || '').trim()
           if (text && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) {
             // data.t = title (имя отправителя), data.i = icon URL (аватарка)

@@ -91,6 +91,12 @@
 - **Запрос**: `{ messengerId: string, text: string }`
 - **Ответ**: `{ ok, error? }`
 
+### `window-state` — событие: состояние окна (Main → Renderer, v0.42.0)
+- **Тип**: send (событие)
+- **Данные**: `{ focused: boolean }`
+- **Когда**: BrowserWindow events: focus/blur/minimize/restore/show
+- **Назначение**: Надёжное определение видимости окна (вместо document.hidden/hasFocus)
+
 ### `messenger:new-message` — событие: новое сообщение (Main → Renderer)
 - **Тип**: send (событие)
 - **Данные**: `Message`
