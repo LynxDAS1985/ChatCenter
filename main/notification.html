@@ -349,13 +349,11 @@
     bodyText.dataset.full = data.fullBody || data.body || ''
     textWrap.appendChild(bodyText)
 
-    // Подсказка "развернуть" если есть полный текст
-    if (hasFullBody) {
-      const hint = document.createElement('div')
-      hint.className = 'expand-hint visible'
-      hint.textContent = '\u25BC ещё...'
-      textWrap.appendChild(hint)
-    }
+    // Подсказка: "ещё..." для длинных, "▼ действия" для всех
+    const hint = document.createElement('div')
+    hint.className = 'expand-hint visible'
+    hint.textContent = hasFullBody ? '\u25BC ещё...' : '\u25BC действия'
+    textWrap.appendChild(hint)
 
     // Кнопки действий (видны только в expanded)
     const actionRow = document.createElement('div')
@@ -412,25 +410,19 @@
     progress.style.background = data.color || '#2AABEE'
     el.appendChild(progress)
 
-    // Клик на body текст — развернуть/свернуть если есть fullBody
-    // Клик на всё уведомление — перейти к чату (если не expanded)
+    // Клик на уведомление — ВСЕГДА раскрывает (кнопки действий видны)
+    // Если есть fullBody — показывает полный текст
+    // Повторный клик — сворачивает
     el.addEventListener('click', (e) => {
-      if (hasFullBody || el.classList.contains('expanded')) {
-        // Развернуть/свернуть
-        toggleExpand(data, el)
-        const bText = el.querySelector('.body-text')
-        const hintEl = el.querySelector('.expand-hint')
-        if (el.classList.contains('expanded')) {
-          bText.textContent = bText.dataset.full
-          if (hintEl) hintEl.textContent = '\u25B2 свернуть'
-        } else {
-          bText.textContent = bText.dataset.short
-          if (hintEl) hintEl.textContent = '\u25BC ещё...'
-        }
+      toggleExpand(data, el)
+      const bText = el.querySelector('.body-text')
+      const hintEl = el.querySelector('.expand-hint')
+      if (el.classList.contains('expanded')) {
+        if (hasFullBody && bText) bText.textContent = bText.dataset.full
+        if (hintEl) hintEl.textContent = '\u25B2 свернуть'
       } else {
-        // Обычный клик — перейти к чату
-        window.notifApi.click(data.id)
-        dismissItem(data.id, false)
+        if (hasFullBody && bText) bText.textContent = bText.dataset.short
+        if (hintEl) hintEl.textContent = hasFullBody ? '\u25BC ещё...' : '\u25BC действия'
       }
     })
 
