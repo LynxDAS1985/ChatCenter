@@ -206,6 +206,103 @@ function MessengerTab({
   )
 }
 
+// ─── Навигация к чату в WebView по клику на ribbon ───────────────────────
+
+function buildChatNavigateScript(url, senderName, chatTag) {
+  const nameJson = JSON.stringify(senderName || '')
+
+  // Telegram Web K
+  if (url.includes('telegram.org')) {
+    return `(function() {
+      try {
+        ${chatTag ? `
+        var tag = ${JSON.stringify(chatTag)};
+        var peerId = tag.replace(/[^0-9-]/g, '');
+        if (peerId) {
+          var el = document.querySelector('.chatlist-chat[data-peer-id="' + peerId + '"]');
+          if (!el) el = document.querySelector('.chatlist-chat[data-peer-id="-' + peerId + '"]');
+          if (el) { el.click(); return; }
+        }` : ''}
+        var name = ${nameJson};
+        if (!name) return;
+        var titles = document.querySelectorAll('.chatlist-chat .peer-title');
+        for (var i = 0; i < titles.length; i++) {
+          if (titles[i].textContent.trim() === name) {
+            var chat = titles[i].closest('.chatlist-chat');
+            if (chat) { chat.click(); return; }
+          }
+        }
+      } catch(e) {}
+    })();`
+  }
+
+  // MAX (web.max.ru)
+  if (url.includes('max.ru')) {
+    return `(function() {
+      try {
+        var name = ${nameJson};
+        if (!name) return;
+        var els = document.querySelectorAll('[class*="chatlist"] [class*="title"], [class*="dialog"] [class*="name"], [class*="peer"] [class*="title"]');
+        for (var i = 0; i < els.length; i++) {
+          if (els[i].textContent.trim() === name) {
+            var row = els[i].closest('[class*="chat"], [class*="dialog"], a, li');
+            if (row) { row.click(); return; }
+          }
+        }
+      } catch(e) {}
+    })();`
+  }
+
+  // WhatsApp Web
+  if (url.includes('whatsapp.com')) {
+    return `(function() {
+      try {
+        var name = ${nameJson};
+        if (!name) return;
+        var spans = document.querySelectorAll('span[title]');
+        for (var i = 0; i < spans.length; i++) {
+          if (spans[i].getAttribute('title') === name) {
+            var row = spans[i].closest('[data-testid="cell-frame-container"]') || spans[i].closest('[tabindex]') || spans[i].closest('[role="listitem"]');
+            if (row) { row.click(); return; }
+          }
+        }
+      } catch(e) {}
+    })();`
+  }
+
+  // VK
+  if (url.includes('vk.com')) {
+    return `(function() {
+      try {
+        var name = ${nameJson};
+        if (!name) return;
+        var els = document.querySelectorAll('.im_dialog_peer, [class*="ConversationHeader__name"], [class*="PeerName"]');
+        for (var i = 0; i < els.length; i++) {
+          if (els[i].textContent.trim() === name) {
+            var row = els[i].closest('a, li, [role="listitem"], [class*="dialog"]');
+            if (row) { row.click(); return; }
+          }
+        }
+      } catch(e) {}
+    })();`
+  }
+
+  // Generic fallback — поиск по имени
+  if (!senderName) return null
+  return `(function() {
+    try {
+      var name = ${nameJson};
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        if (walker.currentNode.textContent.trim() === name) {
+          var el = walker.currentNode.parentElement.closest('a, li, [role="listitem"], [tabindex]');
+          if (el) { el.click(); return; }
+        }
+      }
+    } catch(e) {}
+  })();`
+}
+
 // ─── Главный компонент ────────────────────────────────────────────────────
 
 export default function App() {
@@ -384,8 +481,19 @@ export default function App() {
 
   // ── Клик по кастомному уведомлению (Messenger Ribbon) ────────────────────
   useEffect(() => {
-    return window.api.on('notify:clicked', ({ messengerId }) => {
-      if (messengerId) setActiveId(messengerId)
+    return window.api.on('notify:clicked', ({ messengerId, senderName, chatTag }) => {
+      if (!messengerId) return
+      setActiveId(messengerId)
+      // Навигация к конкретному чату внутри WebView
+      if (senderName || chatTag) {
+        setTimeout(() => {
+          const el = webviewRefs.current[messengerId]
+          if (!el) return
+          const url = el.getURL?.() || ''
+          const script = buildChatNavigateScript(url, senderName, chatTag)
+          if (script) el.executeJavaScript(script).catch(() => {})
+        }, 350)
+      }
     })
   }, [])
 
@@ -712,6 +820,8 @@ export default function App() {
         emoji: mInfo?.emoji || '💬',
         messengerName: mInfo?.name || 'ЦентрЧатов',
         messengerId: messengerId,
+        senderName: extra?.senderName || '',
+        chatTag: extra?.chatTag || '',
       }).catch(() => {})
     }
 
@@ -863,7 +973,7 @@ export default function App() {
                     try {
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
                       if (!icon) icon = findAvatar(title);
-                      console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon }));
+                      console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon, g: (opts && opts.tag) || '' }));
                     } catch(e) {}
                   };
                   window.Notification.permission = 'granted';
@@ -874,7 +984,7 @@ export default function App() {
                       try {
                         var icon = (opts && opts.icon) || (opts && opts.image) || '';
                         if (!icon) icon = findAvatar(title);
-                        console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon }));
+                        console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon, g: (opts && opts.tag) || '' }));
                       } catch(e) {}
                       return Promise.resolve();
                     };
@@ -995,6 +1105,7 @@ export default function App() {
             // data.t = title (имя отправителя), data.i = icon URL (аватарка)
             const extra = {}
             if (data.t) extra.senderName = data.t
+            if (data.g) extra.chatTag = data.g
             if (data.i) {
               if (data.i.startsWith('http')) {
                 extra.iconUrl = data.i

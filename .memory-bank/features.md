@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.42.0 (6 марта 2026)
+## Текущая версия: v0.43.0 (6 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.43.0 (6 марта 2026) — Клик на ribbon → навигация к конкретному чату
+- **Навигация к чату**: При клике на ribbon-уведомление — не только переключение на вкладку мессенджера, но и автоматическое открытие конкретного чата с отправителем.
+- **Notification.tag**: Захват `opts.tag` из Notification API (Telegram использует peer ID). Передаётся через всю IPC-цепочку: `__CC_NOTIF__` → `handleNewMessage` → `app:custom-notify` → `notifItems` → `notify:clicked`.
+- **Per-messenger навигация**: `buildChatNavigateScript()` — генерирует JS для клика по чату в DOM. Telegram: `data-peer-id` + fallback по имени. WhatsApp: `span[title]`. VK: `.im_dialog_peer`. MAX: generic class search. Fallback: TreeWalker по тексту.
+- **Файлы**: `src/App.jsx` (injection, parser, notify:clicked, buildChatNavigateScript), `main/main.js` (IPC relay senderName/chatTag)
 
 ### v0.42.0 (6 марта 2026) — IPC window-state + фикс ложных ribbon при чтении старых
 - **IPC window-state**: Main process отправляет `window-state {focused}` по событиям BrowserWindow (focus/blur/minimize/restore/show). Renderer подписывается через `window.api.on('window-state')` и хранит в `windowFocusedRef`. Это 100% надёжный источник состояния окна — не зависит от `document.hidden` (ненадёжен с backgroundThrottling:false) или `document.hasFocus()` (false когда фокус в WebView).
