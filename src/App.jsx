@@ -68,7 +68,7 @@ function playNotificationSound(color) {
 
 function MessengerTab({
   messenger: m, isActive, accountInfo, unreadCount, isNew,
-  unreadSplit, messagePreview, zoomLevel, monitorStatus, isPinned,
+  unreadSplit, messagePreview, zoomLevel, monitorStatus, isPageLoading, isPinned,
   onClick, onClose, onContextMenu, isDragOver,
   onDragStart, onDragOver, onDrop, onDragEnd
 }) {
@@ -202,6 +202,22 @@ function MessengerTab({
           </span>
         )
       ) : null}
+
+      {/* Прогресс-бар загрузки страницы */}
+      {isPageLoading && (
+        <span
+          className="absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden"
+          style={{ borderRadius: '0 0 0 0' }}
+        >
+          <span
+            className="block h-full"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${m.color}, transparent)`,
+              animation: 'tabLoading 1.2s ease-in-out infinite',
+            }}
+          />
+        </span>
+      )}
     </button>
   )
 }
@@ -336,6 +352,7 @@ export default function App() {
   const [zoomEditing, setZoomEditing] = useState(false)
   const [zoomInputValue, setZoomInputValue] = useState('')
   const [confirmClose, setConfirmClose] = useState(null) // { id, name, color }
+  const [webviewLoading, setWebviewLoading] = useState({}) // { [id]: true/false } — загружается ли страница WebView
 
   const webviewRefs = useRef({})
   const notifReadyRef = useRef({})   // { [id]: true } — warm-up: игнорируем __CC_NOTIF__ первые 10 сек
@@ -888,6 +905,15 @@ export default function App() {
       // Статус мониторинга: loading при инициализации
       setMonitorStatus(prev => ({ ...prev, [messengerId]: 'loading' }))
 
+      // Индикатор загрузки страницы WebView
+      setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
+      el.addEventListener('did-start-loading', () => {
+        setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
+      })
+      el.addEventListener('did-stop-loading', () => {
+        setWebviewLoading(prev => ({ ...prev, [messengerId]: false }))
+      })
+
       el.addEventListener('dom-ready', () => {
         clearTimeout(retryTimers.current[messengerId])
         retryTimers.current[messengerId] = setTimeout(
@@ -1350,6 +1376,7 @@ export default function App() {
               messagePreview={messagePreview[m.id]}
               zoomLevel={zoomLevels[m.id]}
               monitorStatus={monitorStatus[m.id]}
+              isPageLoading={!!webviewLoading[m.id]}
               isNew={newMessageIds.has(m.id)}
               isPinned={!!pinnedTabs[m.id]}
               isDragOver={dragOverId === m.id}
@@ -1549,8 +1576,8 @@ export default function App() {
                 key={m.id}
                 className="absolute inset-0"
                 style={{
-                  visibility: activeId === m.id ? 'visible' : 'hidden',
-                  zIndex: activeId === m.id ? 1 : 0,
+                  zIndex: activeId === m.id ? 2 : 0,
+                  pointerEvents: activeId === m.id ? 'auto' : 'none',
                 }}
               >
                 <webview

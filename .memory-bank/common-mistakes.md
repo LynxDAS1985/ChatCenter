@@ -1023,25 +1023,27 @@ if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWi
 
 ---
 
-## 🔴 WebView не загружается при `display: none` (v0.44.1 → v0.44.2)
+## 🔴 WebView не загружается при `display: none` и `visibility: hidden` (v0.44.1 → v0.45.0)
 
 ### ❌ Мессенджеры не загружаются до перехода на вкладку
 
 **Симптом**: При запуске приложения WebView не загружают страницы. Пользователь должен кликнуть на каждую вкладку чтобы мессенджер начал работать.
 
-**Причина**: Неактивные вкладки скрывались через `display: none`:
+**Причина 1 (v0.44.1)**: Неактивные вкладки скрывались через `display: none`:
 ```jsx
 style={{ display: activeId === m.id ? 'block' : 'none' }}
 ```
-В Electron `<webview>` с `display: none` **не начинает загрузку** — это поведение браузера для всех embedded content элементов.
+В Electron `<webview>` с `display: none` **не начинает загрузку**.
 
-**Решение (v0.44.2)**: Заменить `display` на `visibility` + `zIndex`:
+**Причина 2 (v0.44.2)**: `visibility: hidden` тоже может блокировать загрузку webview в Electron — это НЕ гарантированный fix.
+
+**Решение (v0.45.0)**: Все webview остаются `visibility: visible` (по умолчанию), стакаются через `zIndex`. Активный сверху, неактивные перекрыты + `pointer-events: none`:
 ```jsx
 style={{
-  visibility: activeId === m.id ? 'visible' : 'hidden',
-  zIndex: activeId === m.id ? 1 : 0,
+  zIndex: activeId === m.id ? 2 : 0,
+  pointerEvents: activeId === m.id ? 'auto' : 'none',
 }}
 ```
-WebView остаётся в DOM, занимает layout space (уже `absolute inset-0`), загружается сразу, но не виден пользователю.
+Все webview рендерятся и загружаются с первой секунды. Неактивные просто перекрыты активным.
 
-**Ключевой урок**: В Electron `<webview>` с `display: none` НЕ загружается. Для скрытия неактивных WebView использовать `visibility: hidden`, а не `display: none`.
+**Ключевой урок**: В Electron `<webview>` — НЕ используй `display: none` или `visibility: hidden`. Для переключения вкладок: все webview visible + `absolute inset-0` + `zIndex` для активного. `pointer-events: none` для неактивных чтобы клики не проходили.
