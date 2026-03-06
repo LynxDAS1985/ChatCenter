@@ -554,9 +554,10 @@ function setupNotifIPC() {
       return
     }
     const { workArea } = screen.getPrimaryDisplay()
-    const y = workArea.y + Math.round((workArea.height - height) / 2)
+    // Внизу справа с отступом 8px
+    const y = workArea.y + workArea.height - height - 8
     notifWin.setBounds({
-      x: workArea.x + workArea.width - 310,
+      x: workArea.x + workArea.width - 318,
       y,
       width: 310,
       height
