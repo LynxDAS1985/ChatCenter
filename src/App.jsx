@@ -901,11 +901,12 @@ export default function App() {
         if (!document.hidden && activeIdRef.current === messengerId) return
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
-          const text = data.b || data.t || ''
+          // Требуем непустой body — уведомление без body это push-sync/status, не сообщение
+          const text = (data.b || '').trim()
           if (text) {
             // data.t = title (имя отправителя), data.i = icon URL (аватарка)
             const extra = {}
-            if (data.t && data.b) extra.senderName = data.t // title = имя, body = текст
+            if (data.t) extra.senderName = data.t // title = имя отправителя
             if (data.i) {
               // Конвертируем относительный URL в абсолютный (MAX может передать /path/to/avatar)
               if (data.i.startsWith('http')) {

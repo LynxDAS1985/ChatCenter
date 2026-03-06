@@ -1,4 +1,4 @@
-// v0.39.1 — Фикс ribbon: убрано подавление isViewingThisChat, backgroundColor, fallback
+// v0.39.2 — Фикс фантомных уведомлений MAX, ribbon внизу справа
 import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -434,8 +434,8 @@ function createNotifWindow() {
   notifWin = new BrowserWindow({
     width: 310,
     height: 64,
-    x: workArea.x + workArea.width - 310,
-    y: workArea.y + Math.round(workArea.height / 2),
+    x: workArea.x + workArea.width - 318,
+    y: workArea.y + workArea.height - 72,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -470,11 +470,12 @@ function repositionNotifWin() {
     return
   }
   const { workArea } = screen.getPrimaryDisplay()
-  // 62px item + 3px gap + 4px container padding
-  const height = count * 62 + (count - 1) * 3 + 4
-  const y = workArea.y + Math.round((workArea.height - height) / 2)
+  // 62px item + 3px gap + 8px padding
+  const height = count * 62 + (count - 1) * 3 + 8
+  // Позиция: внизу справа, с отступом 8px от края
+  const y = workArea.y + workArea.height - height - 8
   notifWin.setBounds({
-    x: workArea.x + workArea.width - 310,
+    x: workArea.x + workArea.width - 318,
     y,
     width: 310,
     height
