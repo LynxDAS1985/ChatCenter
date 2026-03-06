@@ -1,5 +1,5 @@
-// v0.38.0 — Кэш аватарок с TTL (30 мин, авто-очистка)
-import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard } from 'electron'
+// v0.39.0 — Кастомные уведомления Messenger Ribbon (замена нативных Windows)
+import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import https from 'node:https'
@@ -405,6 +405,152 @@ function ruError(msg) {
   return msg // не переводим неизвестные — оставляем как есть
 }
 
+// ─── Notification Manager (Messenger Ribbon) ──────────────────────────────────
+
+let notifWin = null
+let notifItems = [] // [{id, messengerId, ...}]
+let notifIdCounter = 0
+
+function getNotifPreloadPath() {
+  if (isDev) {
+    return path.join(__dirname, '../../main/preloads/notification.preload.js')
+  }
+  return path.join(__dirname, '../preload/notification.js')
+}
+
+function getNotifHtmlPath() {
+  if (isDev) {
+    return path.join(__dirname, '../../main/notification.html')
+  }
+  return path.join(__dirname, '../main/notification.html')
+}
+
+function createNotifWindow() {
+  if (notifWin && !notifWin.isDestroyed()) return
+
+  const { workArea } = screen.getPrimaryDisplay()
+
+  notifWin = new BrowserWindow({
+    width: 310,
+    height: 64,
+    x: workArea.x + workArea.width - 310,
+    y: workArea.y + Math.round(workArea.height / 2),
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    focusable: false,
+    show: false,
+    webPreferences: {
+      preload: getNotifPreloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    }
+  })
+
+  notifWin.loadFile(getNotifHtmlPath())
+
+  notifWin.on('closed', () => {
+    notifWin = null
+    notifItems = []
+  })
+}
+
+function repositionNotifWin() {
+  if (!notifWin || notifWin.isDestroyed()) return
+  const count = notifItems.length
+  if (count === 0) {
+    notifWin.hide()
+    return
+  }
+  const { workArea } = screen.getPrimaryDisplay()
+  // 62px item + 3px gap + 4px container padding
+  const height = count * 62 + (count - 1) * 3 + 4
+  const y = workArea.y + Math.round((workArea.height - height) / 2)
+  notifWin.setBounds({
+    x: workArea.x + workArea.width - 310,
+    y,
+    width: 310,
+    height
+  })
+  if (!notifWin.isVisible()) notifWin.showInactive()
+}
+
+async function showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId }) {
+  if (!notifWin || notifWin.isDestroyed()) {
+    createNotifWindow()
+    // Ждём загрузку HTML
+    await new Promise(resolve => {
+      notifWin.webContents.once('did-finish-load', resolve)
+    })
+  }
+
+  const id = String(++notifIdCounter)
+
+  // Скачиваем аватарку, конвертируем в dataURL для передачи в HTML
+  let iconDataUrl = null
+  if (iconUrl && (iconUrl.startsWith('https://') || iconUrl.startsWith('http://'))) {
+    try {
+      const icon = await downloadIcon(iconUrl)
+      if (icon) iconDataUrl = icon.toDataURL()
+    } catch {}
+  }
+
+  const data = { id, title, body, iconDataUrl, color, emoji, messengerName, messengerId }
+
+  // FIFO — удаляем старые из трекинга
+  if (notifItems.length >= 6) {
+    notifItems.shift()
+  }
+  notifItems.push(data)
+
+  notifWin.webContents.send('notif:show', data)
+  repositionNotifWin()
+
+  return id
+}
+
+function setupNotifIPC() {
+  ipcMain.on('notif:click', (_event, id) => {
+    const item = notifItems.find(n => n.id === id)
+    notifItems = notifItems.filter(n => n.id !== id)
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      mainWindow.focus()
+      if (item?.messengerId) {
+        mainWindow.webContents.send('notify:clicked', { messengerId: item.messengerId })
+      }
+    }
+    repositionNotifWin()
+  })
+
+  ipcMain.on('notif:dismiss', (_event, id) => {
+    notifItems = notifItems.filter(n => n.id !== id)
+    repositionNotifWin()
+  })
+
+  ipcMain.on('notif:resize', (_event, height) => {
+    // HTML сообщает нужную высоту — используем для точного позиционирования
+    if (!notifWin || notifWin.isDestroyed()) return
+    if (height <= 0) {
+      notifWin.hide()
+      return
+    }
+    const { workArea } = screen.getPrimaryDisplay()
+    const y = workArea.y + Math.round((workArea.height - height) / 2)
+    notifWin.setBounds({
+      x: workArea.x + workArea.width - 310,
+      y,
+      width: 310,
+      height
+    })
+    if (!notifWin.isVisible()) notifWin.showInactive()
+  })
+}
+
 // ─── IPC Handlers ─────────────────────────────────────────────────────────────
 
 function setupIPC() {
@@ -639,19 +785,15 @@ function setupIPC() {
     }
   })
 
-  // Уведомление (системное)
-  ipcMain.handle('app:notify', async (event, { title, body, iconUrl }) => {
-    if (!Notification.isSupported()) return { ok: false }
-    const opts = { title, body, silent: true }
-    // Скачиваем аватарку по URL если передан
-    if (iconUrl && (iconUrl.startsWith('https://') || iconUrl.startsWith('http://'))) {
-      try {
-        const icon = await downloadIcon(iconUrl)
-        if (icon) opts.icon = icon
-      } catch {}
+  // Кастомное уведомление (Messenger Ribbon — v0.39.0)
+  ipcMain.handle('app:custom-notify', async (event, { title, body, iconUrl, color, emoji, messengerName, messengerId }) => {
+    try {
+      await showCustomNotification({ title, body, iconUrl, color, emoji, messengerName, messengerId })
+      return { ok: true }
+    } catch (e) {
+      console.error('[NotifManager] Ошибка:', e.message)
+      return { ok: false, error: e.message }
     }
-    new Notification(opts).show()
-    return { ok: true }
   })
 
   // Пути к preload-файлам (для WebView-мониторинга)
@@ -878,6 +1020,7 @@ app.whenReady().then(() => {
   })
 
   setupIPC()
+  setupNotifIPC()
   createTray()
   createWindow()
 

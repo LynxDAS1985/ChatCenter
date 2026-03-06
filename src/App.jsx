@@ -1,4 +1,4 @@
-// v0.38.0 — Имя профиля под вкладкой, полная диагностика, кэш аватарок с TTL
+// v0.39.0 — Кастомные уведомления Messenger Ribbon
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -374,6 +374,13 @@ export default function App() {
     })
   }, [])
 
+  // ── Клик по кастомному уведомлению (Messenger Ribbon) ────────────────────
+  useEffect(() => {
+    return window.api.on('notify:clicked', ({ messengerId }) => {
+      if (messengerId) setActiveId(messengerId)
+    })
+  }, [])
+
   // ── Горячие клавиши ──────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
@@ -620,15 +627,21 @@ export default function App() {
     if (attempt > 12) return
     const wv = webviewRefs.current[messengerId]
     // Для дефолтных мессенджеров — accountScript ТОЛЬКО из constants.js (не из сохранённых данных!)
+    // Матчим по ID или по URL (custom-мессенджер с URL дефолтного → используем дефолтный скрипт)
+    const messenger = messengersRef.current.find(m => m.id === messengerId)
     const defaultM = DEFAULT_MESSENGERS.find(m => m.id === messengerId)
-    const script = defaultM !== undefined
-      ? defaultM.accountScript  // из constants.js (может быть undefined — значит не извлекаем)
-      : messengersRef.current.find(m => m.id === messengerId)?.accountScript
+      || (messenger?.url && DEFAULT_MESSENGERS.find(m => m.url && messenger.url.startsWith(m.url)))
+    const script = defaultM?.accountScript
+      ? defaultM.accountScript
+      : messenger?.accountScript
     if (!wv || !script) return
 
     wv.executeJavaScript(script)
       .then(result => {
-        if (result && result.length > 0 && result.length < 80) {
+        console.log(`[tryExtractAccount] ${messengerId} attempt=${attempt} result=`, JSON.stringify(result), typeof result)
+        // Фильтр: отклоняем title страницы и служебные слова как имя аккаунта
+        const BL_ACCOUNT = /^(max|макс|telegram|whatsapp|vk|вконтакте|viber|messenger|undefined|null)$/i
+        if (result && typeof result === 'string' && result.length > 0 && result.length < 80 && !BL_ACCOUNT.test(result.trim())) {
           setAccountInfo(prev => ({ ...prev, [messengerId]: result }))
         } else {
           retryTimers.current[messengerId] = setTimeout(
@@ -664,10 +677,14 @@ export default function App() {
       const notifTitle = senderName
         ? `${mInfo?.name || 'ЦентрЧатов'} — ${senderName}`
         : (mInfo?.name || 'ЦентрЧатов')
-      window.api.invoke('app:notify', {
-        title: notifTitle,
+      window.api.invoke('app:custom-notify', {
+        title: extra?.senderName || '',
         body: text.length > 100 ? text.slice(0, 97) + '…' : text,
         iconUrl: extra?.iconUrl || undefined,
+        color: mInfo?.color || '#2AABEE',
+        emoji: mInfo?.emoji || '💬',
+        messengerName: mInfo?.name || 'ЦентрЧатов',
+        messengerId: messengerId,
       }).catch(() => {})
     }
 
@@ -690,9 +707,13 @@ export default function App() {
       const matched = rule.keywords.some(kw => text.toLowerCase().includes(kw.toLowerCase()))
       if (matched) {
         navigator.clipboard.writeText(rule.reply).catch(() => {})
-        window.api.invoke('app:notify', {
-          title: '🤖 Авто-ответ скопирован',
-          body: `Правило: "${rule.keywords[0]}" — ответ в буфере обмена`
+        window.api.invoke('app:custom-notify', {
+          title: '🤖 Авто-ответ',
+          body: `Правило: "${rule.keywords[0]}" — ответ в буфере`,
+          color: mInfo?.color || '#2AABEE',
+          emoji: mInfo?.emoji || '🤖',
+          messengerName: mInfo?.name || 'ЦентрЧатов',
+          messengerId: messengerId,
         }).catch(() => {})
         autoReplied = true
         break
@@ -864,7 +885,16 @@ export default function App() {
       // executeJavaScript делает console.log('__CC_NOTIF__...') → ловим здесь
       el.addEventListener('console-message', (e) => {
         const msg = e.message
-        if (!msg || !msg.startsWith('__CC_NOTIF__')) return
+        if (!msg) return
+        // ── __CC_ACCOUNT__: имя профиля из accountScript ──
+        if (msg.startsWith('__CC_ACCOUNT__')) {
+          const name = msg.slice(14).trim()
+          if (name && name.length > 1 && name.length < 80) {
+            setAccountInfo(prev => ({ ...prev, [messengerId]: name }))
+          }
+          return
+        }
+        if (!msg.startsWith('__CC_NOTIF__')) return
         // Warm-up: игнорируем уведомления до готовности (10 сек после dom-ready)
         if (!notifReadyRef.current[messengerId]) return
         // Если пользователь смотрит на этот мессенджер — не обрабатывать уведомление
@@ -958,9 +988,76 @@ export default function App() {
           .then(json => {
             console.log('[ChatCenter] 🧪 Полная диагностика (' + id + '):', json)
             navigator.clipboard.writeText(json).catch(() => {})
-            window.api.invoke('app:notify', { title: 'Диагностика скопирована', body: 'Полная диагностика ' + id + ' → буфер обмена' }).catch(() => {})
+            window.api.invoke('app:custom-notify', { title: 'Диагностика', body: 'Полная диагностика ' + id + ' → буфер обмена', color: '#2AABEE', emoji: '🔍', messengerName: 'ЦентрЧатов', messengerId: id }).catch(() => {})
           })
           .catch(err => console.error('[ChatCenter] Ошибка диагностики:', err))
+      }
+    } else if (action === 'diagAccount') {
+      // Пошаговый тест accountScript — выполняет ТОТ ЖЕ код и показывает результат каждого шага
+      if (wv) {
+        wv.executeJavaScript(`(async () => {
+          var r = { steps: [] }
+          var BL = /^(max|макс|мессенджер|messenger|vk|app|undefined|null|true|false|test|user|admin|guest|default|профиль|profile)$/i
+          var CK = '__cc_account_name'
+          function valid(n) {
+            if (!n || typeof n !== 'string') return null
+            n = n.trim()
+            return (n.length > 1 && n.length < 60 && !BL.test(n)) ? n : null
+          }
+          // Step 0: cache
+          var cached = localStorage.getItem(CK)
+          r.steps.push({ step: '0_cache', cached: cached, valid: !!valid(cached) })
+          // Step 1: direct selectors on current page
+          var ni = document.querySelector('input[placeholder="Имя"]')
+          r.steps.push({ step: '1_inputИмя', found: !!ni, value: ni ? ni.value : null })
+          var pe = document.querySelector('.phone')
+          r.steps.push({ step: '1_phone', found: !!pe, text: pe ? pe.textContent.substring(0,30) : null })
+          var pc = document.querySelector('button.profile')
+          r.steps.push({ step: '1_buttonProfile', found: !!pc, text: pc ? pc.textContent.trim().substring(0,60) : null })
+          // Step 2: find profile button
+          var btn = document.querySelector('.item.settings button')
+          r.steps.push({ step: '2_profileBtn', found: !!btn, tag: btn ? btn.tagName : null, cls: btn ? (btn.className||'').substring(0,60) : null })
+          if (!btn) {
+            r.steps.push({ step: '2_ABORT', reason: 'profile button not found' })
+            return JSON.stringify(r, null, 2)
+          }
+          // Step 3: click
+          try { btn.click(); r.steps.push({ step: '3_click', ok: true }) } catch(e) { r.steps.push({ step: '3_click', error: e.message }) }
+          // Step 4: wait 3s
+          await new Promise(function(ok) { setTimeout(ok, 3000) })
+          r.steps.push({ step: '4_waited', url: location.href })
+          // Step 5: read after navigation
+          ni = document.querySelector('input[placeholder="Имя"]')
+          r.steps.push({ step: '5_inputИмя_after', found: !!ni, value: ni ? ni.value : null, valid: ni ? !!valid(ni.value) : false })
+          pe = document.querySelector('.phone')
+          r.steps.push({ step: '5_phone_after', found: !!pe, text: pe ? pe.textContent.substring(0,30) : null })
+          pc = document.querySelector('button.profile')
+          r.steps.push({ step: '5_buttonProfile_after', found: !!pc, text: pc ? pc.textContent.trim().substring(0,60) : null })
+          // Step 6: what would accountScript return?
+          var result = null
+          if (ni && valid(ni.value)) { result = ni.value.trim() }
+          else if (pc) {
+            var t2 = pc.textContent.trim()
+            var pm2 = t2.match(/\\+7\\d{10}/)
+            if (pm2) { var nm = t2.split(pm2[0])[0].trim(); result = valid(nm) || pm2[0] }
+          }
+          else if (pe) { var ph2 = pe.textContent.match(/\\+7\\d{10}/); if (ph2) result = ph2[0] }
+          r.steps.push({ step: '6_result', wouldReturn: result })
+          // Step 7: go back
+          history.back()
+          return JSON.stringify(r, null, 2)
+        })()`)
+          .then(json => {
+            console.log('[ChatCenter] 👤 Тест accountScript (' + id + '):', json)
+            navigator.clipboard.writeText(json).catch(() => {})
+            window.api.invoke('app:custom-notify', { title: 'Тест accountScript', body: 'Результат в буфере обмена', color: '#2AABEE', emoji: '👤', messengerName: 'ЦентрЧатов', messengerId: id }).catch(() => {})
+          })
+          .catch(err => {
+            var errMsg = JSON.stringify({ error: err.message || String(err) })
+            console.error('[ChatCenter] ОШИБКА теста accountScript:', err)
+            navigator.clipboard.writeText(errMsg).catch(() => {})
+            window.api.invoke('app:custom-notify', { title: 'ОШИБКА accountScript', body: err.message || String(err), color: '#EF4444', emoji: '⚠️', messengerName: 'ЦентрЧатов', messengerId: id }).catch(() => {})
+          })
       }
     } else if (action === 'copyUrl') {
       const m = messengers.find(x => x.id === id)
@@ -1189,6 +1286,7 @@ export default function App() {
                 { action: 'reload', icon: '🔄', label: 'Перезагрузить' },
                 { action: 'diag', icon: '🔍', label: 'Диагностика DOM' },
                 { action: 'diagFull', icon: '🧪', label: 'Полная диагностика (→ буфер)' },
+                { action: 'diagAccount', icon: '👤', label: 'Диагностика accountScript (→ буфер)' },
                 { action: 'copyUrl', icon: '📋', label: 'Копировать URL' },
                 { action: 'pin', icon: tabPinned ? '📌' : '🔒', label: tabPinned ? 'Открепить вкладку' : 'Закрепить вкладку' },
                 ...(!tabPinned ? [{ action: 'close', icon: '✕', label: 'Закрыть вкладку', color: '#f87171' }] : []),

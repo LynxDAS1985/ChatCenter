@@ -91,81 +91,29 @@ export const DEFAULT_MESSENGERS = [
     partition: 'persist:max',
     emoji: '💎',
     isDefault: true,
-    accountScript: `(async () => {
-      // Blacklist: названия приложения/служебные слова — НЕ считаем именем профиля
-      var BL = /^(max|макс|мессенджер|messenger|vk|app|undefined|null|true|false|test|user|admin|guest|default)$/i;
-      function tryName(o) {
-        if (!o || typeof o !== 'object') return null;
-        var n = o.displayName || o.first_name || o.firstName || o.nick || o.nickname;
-        if (!n) n = o.name;
-        if (!n) n = o.login;
-        if (n && typeof n === 'string' && n.length > 1 && n.length < 60 && !BL.test(n.trim())) return n.trim();
-        // Телефон как fallback
-        var ph = o.phone || o.phoneNumber || o.phone_number || o.msisdn;
-        if (ph) { ph = String(ph).replace(/[^0-9+]/g, ''); if (ph.length >= 10) return ph.startsWith('+') ? ph : '+' + ph; }
-        return null;
+    accountScript: `(function() {
+      var CK = '__cc_account_name';
+      function send(n) { console.log('__CC_ACCOUNT__' + n); localStorage.setItem(CK, n); }
+      var cached = localStorage.getItem(CK);
+      if (cached && cached.length > 1 && cached.length < 60) return cached;
+      if (!window.__cc_extracting) {
+        window.__cc_extracting = true;
+        setTimeout(function() {
+          var btn = document.querySelector('.item.settings button');
+          if (!btn) { window.__cc_extracting = false; return; }
+          btn.click();
+          setTimeout(function() {
+            var ni = document.querySelector('input[placeholder="Имя"]');
+            if (ni && ni.value.trim().length > 1) { send(ni.value.trim()); }
+            else {
+              var pc = document.querySelector('button.profile');
+              if (pc) { var t = pc.textContent.trim(); var m = t.match(/\\+7\\d{10}/); if(m){ var nm=t.split(m[0])[0].trim(); send(nm.length>1?nm:m[0]); } }
+            }
+            history.back();
+            window.__cc_extracting = false;
+          }, 3000);
+        }, 500);
       }
-      function scanStorage(st) {
-        for (var i = 0; i < st.length; i++) {
-          var key = st.key(i); var val = st.getItem(key);
-          if (!val || val.length > 10000) continue;
-          try {
-            var obj = JSON.parse(val);
-            var n = tryName(obj); if (n) return n;
-            if (obj && typeof obj === 'object') {
-              var keys = ['user','profile','me','account','self','data','info','currentUser'];
-              for (var k = 0; k < keys.length; k++) { n = tryName(obj[keys[k]]); if (n) return n; }
-            }
-          } catch(e) {}
-        }
-        return null;
-      }
-      try {
-        // 1. localStorage
-        var r = scanStorage(localStorage); if (r) return r;
-        // 2. sessionStorage
-        r = scanStorage(sessionStorage); if (r) return r;
-        // 3. Cookies — ищем имя в cookie
-        try {
-          var cookies = document.cookie.split(';');
-          for (var c = 0; c < cookies.length; c++) {
-            var parts = cookies[c].trim().split('=');
-            if (/user|name|profile|nick|phone/i.test(parts[0])) {
-              var cv = decodeURIComponent(parts.slice(1).join('='));
-              if (cv.startsWith('{')) { var n = tryName(JSON.parse(cv)); if (n) return n; }
-              else if (cv.length > 1 && cv.length < 60 && !/^[0-9a-f-]+$/i.test(cv) && !BL.test(cv.trim())) return cv.trim();
-            }
-          }
-        } catch(e) {}
-        // 4. fetch API — пробуем типовые endpoints (выполняется с cookies сессии MAX)
-        var endpoints = ['/api/me','/api/profile','/api/user','/api/v1/me','/api/v1/account'];
-        for (var ep = 0; ep < endpoints.length; ep++) {
-          try {
-            var resp = await fetch(endpoints[ep], {credentials:'include'});
-            if (resp.ok) {
-              var data = await resp.json();
-              var n = tryName(data); if (n) return n;
-              if (data.result) { n = tryName(data.result); if (n) return n; }
-              if (data.data) { n = tryName(data.data); if (n) return n; }
-            }
-          } catch(e) {}
-        }
-        // 5. DOM — навигация профиля, имя рядом с аватаркой
-        var navSels = [
-          'a[href*="profile"]','a[href*="settings"]','button[aria-label*="рофил"]',
-          '[class*="profile"] [class*="name"]','[class*="Profile"] [class*="Name"]',
-          'nav [class*="avatar"] + *','aside [class*="avatar"] + *',
-          '[class*="sidebar"] [class*="user"]','[class*="Sidebar"] [class*="User"]'
-        ];
-        for (var s = 0; s < navSels.length; s++) {
-          try {
-            var el = document.querySelector(navSels[s]);
-            if (!el) continue;
-            var t = (el.getAttribute('aria-label') || el.title || el.textContent || '').trim();
-            if (t && t.length > 1 && t.length < 60 && !/профил|настрой|setting/i.test(t) && !BL.test(t)) return t;
-          } catch(e) {}
-        }
-      } catch(e) {}
       return null;
     })()`
   }

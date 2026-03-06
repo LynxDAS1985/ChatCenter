@@ -355,19 +355,72 @@ ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
 
 ---
 
-### ❌ accountScript MAX не находит имя профиля (v0.37.0)
+### ❌ accountScript MAX не находит имя профиля (v0.37.0 — v0.38.2)
 
-**Симптом**: Вкладка "Макс" без имени профиля. accountScript возвращает null.
+**Симптом**: Вкладка "Макс" показывает "MAX" (document.title) вместо имени профиля "Автолиберти".
 
-**Причина**: MAX (SvelteKit) может хранить данные не в localStorage и не в IndexedDB. Первая версия скрипта искала только в этих двух местах + 4 DOM-селектора.
+**Цепочка проблем и решений (5 итераций)**:
 
-**Решение (v0.37.0)**: Расширенный accountScript:
-1. localStorage + sessionStorage (с глубоким сканированием вложенных объектов)
-2. Cookies (ключи с user/name/profile/nick)
-3. fetch к API: `/api/me`, `/api/profile`, `/api/user`, `/api/v1/me`, `/api/v1/account`
-4. DOM: aria-label, title на ссылках профиля, sidebar элементы
+**Проблема 1 — Данных нет в localStorage/IndexedDB/cookies:**
+MAX (SvelteKit SPA) НЕ хранит имя/телефон профиля в localStorage. Ключи `__oneme_*` содержат только auth token, theme, device_id. IndexedDB пуст. Cookies пусты.
 
-**Урок**: Для SvelteKit/React/Vue приложений данные могут быть в sessionStorage, cookies или только на сервере (fetch API). Всегда пробовать ВСЕ источники.
+**Проблема 2 — Generic API endpoints не работают:**
+`/api/me`, `/api/profile`, `/api/v1/me` — ВСЕ возвращают HTML-shell SPA (status 200, но body = `<!doctype html>...`). SvelteKit `__data.json` endpoints тоже возвращают HTML. MAX не использует server-side data loading.
+
+**Проблема 3 — DOM-селекторы слишком generic:**
+Имя/телефон видны ТОЛЬКО на странице Профиля, не на странице чатов. Generic CSS-селекторы (`[class*="profile"]`, `nav [class*="avatar"] + *`) не матчат Svelte-компоненты.
+
+**Проблема 4 — Клик на "Профиль" через TreeWalker кликает SPAN, не BUTTON:**
+Svelte-кнопка имеет структуру `<BUTTON class="button svelte-xwrwgf"><SPAN class="title">Профиль</SPAN></BUTTON>`. TreeWalker находит текст "Профиль" → parent = `<SPAN>` → `span.click()` НЕ триггерит Svelte `on:click|self` обработчик на BUTTON.
+
+**Проблема 5 — async IIFE не резолвится в executeJavaScript:**
+`executeJavaScript('(async () => { await ...; return "name" })()')` — промис НЕ резолвится с возвращённым значением. `result` приходит как `null`/`undefined`. Диагностический тест с тем же кодом работает, но accountScript — нет.
+
+**Проблема 6 — Custom ID мессенджера:**
+MAX добавлен пользователем как custom мессенджер (ID `custom_1772704264107`), а не как дефолтный (`id: 'max'`). `DEFAULT_MESSENGERS.find(m => m.id === messengerId)` → `undefined` → используется старый сохранённый accountScript (generic, возвращает `document.title` = "MAX"), а не новый из constants.js.
+
+**Окончательное решение (v0.38.2)**:
+
+1. **Матчинг по URL**: `tryExtractAccount` ищет дефолтный мессенджер не только по ID, но и по URL:
+```js
+const defaultM = DEFAULT_MESSENGERS.find(m => m.id === messengerId)
+  || (messenger?.url && DEFAULT_MESSENGERS.find(m => m.url && messenger.url.startsWith(m.url)))
+```
+
+2. **Синхронный скрипт + console.log**: accountScript — sync IIFE (НЕ async). Фоновая задача через setTimeout кликает кнопку, читает DOM, отправляет через `console.log('__CC_ACCOUNT__'+name)`:
+```js
+(function() {
+  var cached = localStorage.getItem('__cc_account_name');
+  if (cached) return cached;  // sync return — для retry
+  // Фоновая задача: click → wait → read → console.log
+  setTimeout(() => {
+    document.querySelector('.item.settings button').click();
+    setTimeout(() => {
+      var ni = document.querySelector('input[placeholder="Имя"]');
+      if (ni) console.log('__CC_ACCOUNT__' + ni.value.trim());
+      history.back();
+    }, 3000);
+  }, 500);
+  return null;
+})()
+```
+
+3. **console-message listener**: В App.jsx `console-message` handler ловит `__CC_ACCOUNT__` prefix и вызывает `setAccountInfo`.
+
+4. **Blacklist в tryExtractAccount**: Фильтр `BL_ACCOUNT = /^(max|макс|telegram|whatsapp|...)$/i` отклоняет `document.title` как имя аккаунта.
+
+5. **Реальные CSS-селекторы MAX** (из диагностики):
+   - Кнопка профиля: `.item.settings button`
+   - Имя: `input[placeholder="Имя"]` (value = "Автолиберти")
+   - Телефон: `SPAN.phone` (+79126370333)
+   - Карточка: `button.profile` (text = "Автолиберти +79126370333")
+
+**Ключевые уроки:**
+- `executeJavaScript` с async IIFE в Electron WebView НЕНАДЁЖЕН для return values — использовать `console.log` + `console-message` event
+- Custom мессенджеры с URL дефолтного ДОЛЖНЫ получать дефолтный accountScript — матчить по URL, не только по ID
+- Добавить blacklist для `document.title` в tryExtractAccount
+- Для SvelteKit SPA: данные профиля только в DOM при навигации на страницу профиля, НЕ в storage/API
+- Svelte `on:click` может не работать при клике на child element — кликать на САМИ BUTTON, не на span внутри
 
 ---
 
@@ -662,3 +715,34 @@ window.api.invoke('settings:save', updated).catch(() => {})
 ```
 
 **Урок**: Информация о профиле — критически важна. Не удалять без чёткой замены.
+
+---
+
+## Кастомные уведомления (v0.39.0)
+
+### Потенциальные ошибки при работе с Notification BrowserWindow
+
+**1. `transparent: true` на Windows требует осторожности:**
+- Windows 11 поддерживает transparent BrowserWindow, но `backgroundColor` должен быть `#00000000`
+- Без `frame: false` прозрачность НЕ работает
+- HTML body тоже должен иметь `background: transparent`
+
+**2. `focusable: false` + клики:**
+- `focusable: false` предотвращает кражу фокуса при `showInactive()`
+- НО окно всё равно кликабельно — `setIgnoreMouseEvents(false)` по умолчанию
+- Если поставить `setIgnoreMouseEvents(true)` — клики будут проходить СКВОЗЬ окно
+
+**3. Путь к notification.html в production:**
+- В dev: `path.join(__dirname, '../../main/notification.html')` (от out/main/)
+- В prod: зависит от структуры сборки — `notification.html` должен быть включён в `build.files` в package.json или скопирован при сборке
+- Если файл не найден — `loadFile()` молча покажет пустое окно
+
+**4. `screen` API доступен ТОЛЬКО после `app.whenReady()`:**
+- `const { screen } = require('electron')` — OK на уровне модуля
+- НО `screen.getPrimaryDisplay()` вернёт ошибку если вызван до `app.whenReady()`
+- NotificationManager создаёт окно лениво (при первом уведомлении) — к тому моменту app уже ready
+
+**5. Resize BrowserWindow на Windows — не плавный:**
+- `setBounds()` с `animate: true` работает ТОЛЬКО на macOS
+- На Windows: мгновенное изменение, может мелькать
+- Решение: использовать CSS-анимацию ВНУТРИ окна, а `setBounds` вызывать по IPC `notif:resize` когда HTML сообщает нужную высоту
