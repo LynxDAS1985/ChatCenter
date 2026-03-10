@@ -458,6 +458,7 @@ export default function App() {
   const tabContextMenu = useRef({ id: null, x: 0, y: 0 })
   const [contextMenuTab, setContextMenuTab] = useState(null) // { id, x, y }
   const [notifLogModal, setNotifLogModal] = useState(null) // { messengerId, name, log: [] } | null
+  const [cellTooltip, setCellTooltip] = useState(null) // { text, x, y } | null
   const statsRef = useRef({ today: 0, autoToday: 0, total: 0, date: '' })
   const statsSaveTimer = useRef(null)
   const zoomSaveTimer = useRef(null)
@@ -607,9 +608,14 @@ export default function App() {
           }
           el.executeJavaScript(script).then(result => {
             const ok = result === true || (result && result.ok)
-            console.log(`[GoChat] attempt=${attempt} ok=${ok}`, typeof result === 'object' ? result : { result }, `url=${url.slice(0,50)}`)
-            // Retry только если НЕ нашли и пользователь всё ещё на вкладке
-            if (!ok && attempt < 2 && activeIdRef.current === messengerId) {
+            const method = result?.method || ''
+            console.log(`[GoChat] attempt=${attempt} ok=${ok} method=${method}`, result)
+            if (ok) {
+              setStatusBarMsg(`>> "${senderName}" (${method})`)
+            } else if (attempt >= 2 || activeIdRef.current !== messengerId) {
+              // Все попытки исчерпаны — показать что чат не найден
+              setStatusBarMsg(`>> "${senderName}" - не найден в sidebar`)
+            } else {
               setTimeout(() => tryNavigate(attempt + 1), 1500)
             }
           }).catch(err => { console.log('[GoChat] executeJS error:', err.message) })
@@ -2226,13 +2232,22 @@ export default function App() {
                             </span>
                           </td>
                           <td className="px-2 py-1.5 overflow-hidden">
-                            <div className="truncate cc-notif-cell" data-full={entry.title || ''}>{entry.title || '—'}</div>
+                            <div className="truncate cursor-default"
+                              onMouseEnter={e => { if (entry.title) setCellTooltip({ text: entry.title, x: e.clientX, y: e.clientY }) }}
+                              onMouseLeave={() => setCellTooltip(null)}
+                            >{entry.title || '—'}</div>
                           </td>
                           <td className="px-2 py-1.5 overflow-hidden">
-                            <div className="truncate cc-notif-cell" data-full={entry.body || ''}>{entry.body || '—'}</div>
+                            <div className="truncate cursor-default"
+                              onMouseEnter={e => { if (entry.body) setCellTooltip({ text: entry.body, x: e.clientX, y: e.clientY }) }}
+                              onMouseLeave={() => setCellTooltip(null)}
+                            >{entry.body || '—'}</div>
                           </td>
                           <td className="px-2 py-1.5 overflow-hidden" style={{ color: enriched ? '#60a5fa' : 'inherit' }}>
-                            <div className="truncate cc-notif-cell" data-full={enriched}>{enriched || '—'}</div>
+                            <div className="truncate cursor-default"
+                              onMouseEnter={e => { if (enriched) setCellTooltip({ text: enriched, x: e.clientX, y: e.clientY }) }}
+                              onMouseLeave={() => setCellTooltip(null)}
+                            >{enriched || '—'}</div>
                           </td>
                           <td className="px-2 py-1.5 overflow-hidden" style={{ color: '#f87171' }}>
                             <span className="truncate block">{reasonLabels[entry.reason] || entry.reason || ''}</span>
@@ -2276,6 +2291,13 @@ export default function App() {
               <span>Хранится до 100 записей · Окно можно растянуть за угол ↘</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Тултип для ячеек таблицы лога ── */}
+      {cellTooltip && (
+        <div className="cc-notif-tooltip" style={{ left: Math.min(cellTooltip.x + 8, window.innerWidth - 460), top: cellTooltip.y + 16 }}>
+          {cellTooltip.text}
         </div>
       )}
     </div>

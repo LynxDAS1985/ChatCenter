@@ -1303,7 +1303,7 @@ style={{
 2. `::after` pseudo-element с `content: attr(data-full)` вместо изменения самого элемента. Оригинальный `<div>` с `truncate` остаётся в потоке, `::after` показывается поверх как отдельный слой.
 3. Селектор `[data-full]:not([data-full=""])` — не показывать пустой тултип.
 
-**Ключевой урок**: Для hover-тултипов в таблицах НИКОГДА не менять `position` самого элемента. Использовать `::after` / дополнительный абсолютно-позиционированный слой, чтобы оригинальный контент оставался в потоке и ширина столбцов не менялась. `table-layout: fixed` обязателен для стабильного layout.
+**Ключевой урок**: CSS `::after` с `content: attr(data-full)` обрезается `overflow: hidden` на `<td>`. Решение: JS-тултип с `position: fixed` через React state (`onMouseEnter`/`onMouseLeave` → `setCellTooltip`). `position: fixed` не зависит от overflow родителей.
 
 ---
 
