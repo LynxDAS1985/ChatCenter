@@ -2071,7 +2071,7 @@ export default function App() {
                   onClick={() => {
                     navigator.clipboard.writeText(JSON.stringify(notifLogModal.log, null, 2)).catch(() => {})
                   }}
-                >Копировать JSON</button>
+                >Скопировать лог</button>
                 <button
                   className="px-2 py-1 rounded text-xs cursor-pointer"
                   style={{ color: 'var(--cc-text-dimmer)' }}
@@ -2091,10 +2091,10 @@ export default function App() {
                     <tr style={{ borderBottom: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
                       <th className="text-left px-2 py-1.5 font-medium">Время</th>
                       <th className="text-left px-2 py-1.5 font-medium">Статус</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Title (оригинал)</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Body</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Обогащено</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Причина</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Заголовок</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Текст сообщения</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Найдено имя</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Причина блока</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2116,7 +2116,7 @@ export default function App() {
                               backgroundColor: isPassed ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
                               color: isPassed ? '#4ade80' : '#f87171',
                             }}>
-                              {isPassed ? 'RIBBON' : 'БЛОК'}
+                              {isPassed ? 'ПОКАЗАНО' : 'ЗАБЛОК.'}
                             </span>
                           </td>
                           <td className="px-2 py-1.5 max-w-[120px] truncate" title={entry.title}>{entry.title || '—'}</td>
@@ -2134,10 +2134,10 @@ export default function App() {
             </div>
             {/* Легенда */}
             <div className="flex items-center gap-4 px-4 py-2 text-[11px]" style={{ borderTop: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
-              <span><span style={{ color: '#4ade80' }}>RIBBON</span> = показан</span>
-              <span><span style={{ color: '#f87171' }}>БЛОК</span> = заблокирован</span>
-              <span><span style={{ color: '#60a5fa' }}>Синий</span> = enriched (имя найдено в DOM)</span>
-              <span>Макс. 100 записей</span>
+              <span><span style={{ color: '#4ade80' }}>ПОКАЗАНО</span> — уведомление отправлено в ribbon</span>
+              <span><span style={{ color: '#f87171' }}>ЗАБЛОК.</span> — отфильтровано (спам/исходящее)</span>
+              <span><span style={{ color: '#60a5fa' }}>Синий</span> — имя найдено в списке чатов</span>
+              <span>Хранится до 100 записей</span>
             </div>
           </div>
         </div>
