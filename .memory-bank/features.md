@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.57.0 (10 марта 2026)
+## Текущая версия: v0.57.1 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.57.1 (10 марта 2026) — Warm-up 30→5 сек + trace warm-up блокировок
+- **Warm-up снижен с 30 до 5 сек**: 30-секундный warm-up блокировал реальные сообщения — Pipeline debug показал `ready=false` на `__CC_NOTIF__` пришедший через 7 сек после загрузки. Burst кешированных нотификаций проходит за 1-3 сек → 5 сек достаточно.
+- **Warm-up trace**: При блокировке warm-up в Pipeline записывается `warmup | block` с причиной.
+- **main.js warm-up тоже 30→5 сек**: Backup path синхронизирован.
 
 ### v0.57.0 (10 марта 2026) — Фикс: toDataUrl зависание → уведомления MAX теперь работают
 - **CRITICAL FIX — toDataUrl зависание**: В `executeJavaScript` injection, `console.log('__CC_NOTIF__'+...)` был внутри callback `toDataUrl()` (конвертация аватарки в data URL через `new Image()` + canvas). Если загрузка аватарки зависала (CORS/сеть) → callback НЕ вызывался → `console.log` НЕ срабатывал → `console-message` НЕ приходил → Pipeline пуст, нет звука/ribbon. Исправлено: `console.log` вызывается напрямую (как в preload версии), без `toDataUrl` обёртки.

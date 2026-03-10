@@ -1091,11 +1091,11 @@ export default function App() {
         retryTimers.current[messengerId] = setTimeout(
           () => tryExtractAccount(messengerId, 0), 3500
         )
-        // Warm-up: игнорируем ВСЕ уведомления первые 30 сек после загрузки WebView
-        // Мессенджеры (WhatsApp, Telegram, MAX) при загрузке кидают Notification для старых
-        // непрочитанных + unread count идёт 0→N. 10 сек недостаточно — WhatsApp грузится дольше.
+        // Warm-up: игнорируем ВСЕ уведомления первые 5 сек после загрузки WebView
+        // Мессенджеры при загрузке кидают Notification для старых непрочитанных (burst 1-3 сек).
+        // v0.57.0: снижено с 30 до 5 сек — 30 сек блокировало реальные сообщения в MAX.
         notifReadyRef.current[messengerId] = false
-        setTimeout(() => { notifReadyRef.current[messengerId] = true }, 30000)
+        setTimeout(() => { notifReadyRef.current[messengerId] = true }, 5000)
         // Через 20 сек если монитор не ответил — помечаем как error
         setTimeout(() => {
           setMonitorStatus(prev => {
@@ -1413,8 +1413,11 @@ export default function App() {
           console.log(`[ChatCenter] 🔍 Диагностика DOM (${messengerId}):`, diag)
           setMonitorDiag(prev => ({ ...prev, [messengerId]: diag }))
         } else if (e.channel === 'new-message') {
-          // Warm-up: игнорируем сообщения от MutationObserver первые 10 сек после dom-ready
-          if (!notifReadyRef.current[messengerId]) return
+          // Warm-up: игнорируем сообщения от MutationObserver первые 5 сек после dom-ready
+          if (!notifReadyRef.current[messengerId]) {
+            traceNotif('warmup', 'block', messengerId, (e.args[0] || '').slice(0, 50), 'warm-up 5с: IPC new-message заблокирован')
+            return
+          }
           const msgText = (e.args[0] || '').trim()
           if (!msgText) return
           // Спам-фильтр для IPC new-message (v0.56.1: timestamps и системные тексты проходили без фильтра!)
@@ -1470,7 +1473,10 @@ export default function App() {
         // ── __CC_MSG__: backup MutationObserver через console.log (v0.39.5) ──
         // Обогащаем данными отправителя из DOM активного чата (v0.47.0)
         if (msg.startsWith('__CC_MSG__')) {
-          if (!notifReadyRef.current[messengerId]) return
+          if (!notifReadyRef.current[messengerId]) {
+            traceNotif('warmup', 'block', messengerId, msg.slice(10, 50), 'warm-up 5с: __CC_MSG__ заблокирован')
+            return
+          }
           const text = msg.slice(10).trim()
           if (!text) return
           // Спам-фильтр для __CC_MSG__ (timestamp, системные тексты MAX)
@@ -1624,8 +1630,14 @@ export default function App() {
           return
         }
         if (!msg.startsWith('__CC_NOTIF__')) return
-        // Warm-up: игнорируем уведомления до готовности (10 сек после dom-ready)
-        if (!notifReadyRef.current[messengerId]) return
+        // Warm-up: игнорируем уведомления до готовности (5 сек после dom-ready)
+        if (!notifReadyRef.current[messengerId]) {
+          try {
+            const d = JSON.parse(msg.slice(12))
+            traceNotif('warmup', 'block', messengerId, (d.b || '').slice(0, 50), `warm-up 5с: __CC_NOTIF__ заблокирован | t="${(d.t||'').slice(0,20)}"`)
+          } catch { traceNotif('warmup', 'block', messengerId, msg.slice(12, 50), 'warm-up 5с: __CC_NOTIF__ заблокирован') }
+          return
+        }
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = (data.b || '').trim()

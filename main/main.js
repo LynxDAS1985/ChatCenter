@@ -1111,11 +1111,11 @@ app.on('web-contents-created', (_event, contents) => {
   // Принудительно отключаем background throttling (belt & suspenders к webpreferences attr)
   contents.setBackgroundThrottling(false)
 
-  // Warm-up: игнорируем первые 30 сек после загрузки (кешированные/старые уведомления)
-  // WhatsApp и другие мессенджеры кидают Notification при загрузке для непрочитанных
+  // Warm-up: игнорируем первые 5 сек после загрузки (кешированные/старые уведомления)
+  // v0.57.0: снижено с 30 до 5 сек — 30 сек блокировало реальные сообщения
   contents.on('did-finish-load', () => {
     webviewReadySet.delete(contents.id)
-    setTimeout(() => webviewReadySet.add(contents.id), 30000)
+    setTimeout(() => webviewReadySet.add(contents.id), 5000)
   })
 
   // Backup: перехватываем __CC_NOTIF__ и __CC_MSG__ напрямую в main process
