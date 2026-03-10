@@ -1083,33 +1083,75 @@ export default function App() {
                     img.src = url;
                   }
                   // Поиск имени отправителя и аватарки в chatlist по preview-тексту сообщения
-                  // MAX/Telegram Web K: .chatlist-chat → .peer-title (имя) + subtitle (превью)
+                  // MAX/Telegram Web K: .chatlist-chat → .peer-title + subtitle
+                  // VK: [class*="dialog"], [class*="im_dialog"], [class*="conversation"] → title/name элемент
+                  // WhatsApp: [data-testid="cell-frame-container"] → span[title]
                   function findSenderInChatlist(body) {
                     if (!body || body.length < 2) return null;
+                    var bodySlice = body.slice(0, 30);
                     try {
+                      // 1. Telegram/MAX: .chatlist-chat + .peer-title
                       var chats = document.querySelectorAll('.chatlist-chat');
                       for (var i = 0; i < chats.length && i < 50; i++) {
-                        var inner = chats[i].textContent || '';
-                        if (inner.indexOf(body.slice(0, 30)) === -1) continue;
-                        // Ищем .peer-title для имени
+                        if ((chats[i].textContent || '').indexOf(bodySlice) === -1) continue;
                         var pt = chats[i].querySelector('.peer-title');
-                        var senderName = pt ? (pt.textContent || '').trim() : '';
-                        if (!senderName) continue;
-                        // Ищем аватарку
-                        var avatarUrl = '';
-                        var avEl = chats[i].querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo');
-                        if (avEl && avEl.tagName === 'IMG' && avEl.src) {
-                          avatarUrl = avEl.src;
-                        } else if (avEl && avEl.tagName === 'CANVAS' && avEl.width > 10) {
-                          try { avatarUrl = avEl.toDataURL('image/png'); } catch(e) {}
-                        }
-                        return { name: senderName, avatar: avatarUrl };
+                        var nm = pt ? (pt.textContent || '').trim() : '';
+                        if (!nm) continue;
+                        var av = _findAvatarInEl(chats[i]);
+                        return { name: nm, avatar: av };
+                      }
+                      // 2. VK/Generic: элементы chat/dialog/conversation в sidebar
+                      var generic = document.querySelectorAll('[class*="dialog" i], [class*="im_dialog" i], [class*="conversation" i], [class*="chat-item" i], [class*="chatlist" i]');
+                      for (var j = 0; j < generic.length && j < 80; j++) {
+                        var el = generic[j];
+                        if ((el.textContent || '').indexOf(bodySlice) === -1) continue;
+                        // Ищем имя: title attr, [class*="name"], [class*="title"], первый жирный текст
+                        var nameEl = el.querySelector('[class*="title" i], [class*="name" i], [class*="peer" i], b, strong');
+                        var sn = nameEl ? (nameEl.textContent || '').trim() : '';
+                        if (!sn || sn.length < 2 || sn.length > 60) continue;
+                        // Проверяем что это не body text (имя ≠ preview сообщения)
+                        if (sn === body.trim() || body.indexOf(sn) === 0) continue;
+                        var av2 = _findAvatarInEl(el);
+                        return { name: sn, avatar: av2 };
                       }
                     } catch(e) {}
                     return null;
                   }
+                  // Вспомогательная: найти аватарку внутри элемента чата
+                  function _findAvatarInEl(el) {
+                    try {
+                      var avEl = el.querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo, img[class*="photo" i]');
+                      if (avEl && avEl.tagName === 'IMG' && avEl.src && avEl.naturalWidth > 10) return avEl.src;
+                      if (avEl && avEl.tagName === 'CANVAS' && avEl.width > 10) {
+                        try { return avEl.toDataURL('image/png'); } catch(e) {}
+                      }
+                      // VK: background-image на avatar div
+                      var avDiv = el.querySelector('[class*="avatar" i], [class*="photo" i]');
+                      if (avDiv) {
+                        var bg = getComputedStyle(avDiv).backgroundImage;
+                        if (bg && bg !== 'none') {
+                          var m = bg.match(/url\(["']?(.+?)["']?\)/);
+                          if (m && m[1] && m[1].startsWith('http')) return m[1];
+                        }
+                        var img2 = avDiv.querySelector('img[src]');
+                        if (img2 && img2.src && img2.naturalWidth > 10) return img2.src;
+                      }
+                    } catch(e) {}
+                    return '';
+                  }
                   // Проверка: title — это название мессенджера, а не имя отправителя
                   var _appTitles = /^(ma[xк][cс]?|telegram|whatsapp|vk|viber|вконтакте|вк)/i;
+                  // Фильтр: системные/спам-тексты — не настоящие сообщения от собеседников
+                  // VK шлёт Notification для: статусов online, своих исходящих, пустых текстов
+                  var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i;
+                  // VK: исходящие начинаются с "Вы: " или "You: "
+                  var _outgoing = /^(вы:\s|you:\s)/i;
+                  function isSpamNotif(body) {
+                    if (!body || body.length < 2) return true;
+                    if (_spamBody.test(body.trim())) return true;
+                    if (_outgoing.test(body.trim())) return true;
+                    return false;
+                  }
                   function enrichNotif(title, body, tag, icon) {
                     var realTitle = title;
                     var realIcon = icon;
@@ -1127,11 +1169,13 @@ export default function App() {
                   var _N = window.Notification;
                   window.Notification = function(title, opts) {
                     try {
+                      var body = (opts && opts.body) || '';
+                      if (isSpamNotif(body)) return;
                       var tag = (opts && opts.tag) || '';
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
-                      var enriched = enrichNotif(title, (opts && opts.body) || '', tag, icon);
+                      var enriched = enrichNotif(title, body, tag, icon);
                       toDataUrl(enriched.icon, function(dataIcon) {
-                        console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: (opts && opts.body) || '', i: dataIcon, g: tag }));
+                        console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: dataIcon, g: tag }));
                       });
                     } catch(e) {}
                   };
@@ -1141,11 +1185,13 @@ export default function App() {
                   try {
                     ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
                       try {
+                        var body = (opts && opts.body) || '';
+                        if (isSpamNotif(body)) return Promise.resolve();
                         var tag = (opts && opts.tag) || '';
                         var icon = (opts && opts.icon) || (opts && opts.image) || '';
-                        var enriched = enrichNotif(title, (opts && opts.body) || '', tag, icon);
+                        var enriched = enrichNotif(title, body, tag, icon);
                         toDataUrl(enriched.icon, function(dataIcon) {
-                          console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: (opts && opts.body) || '', i: dataIcon, g: tag }));
+                          console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: dataIcon, g: tag }));
                         });
                       } catch(e) {}
                       return Promise.resolve();
@@ -1184,22 +1230,10 @@ export default function App() {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
               }
-              // Fallback ribbon: если handleNewMessage не показал ribbon за 3 сек — показываем generic
-              if (s.notificationsEnabled !== false && ribOn) {
-                const lastTs = lastRibbonTsRef.current[messengerId] || 0
-                if (Date.now() - lastTs > 3000) {
-                  lastRibbonTsRef.current[messengerId] = Date.now()
-                  const mi = messengersRef.current.find(x => x.id === messengerId)
-                  window.api.invoke('app:custom-notify', {
-                    title: '',
-                    body: count > 1 ? `${count} непрочитанных сообщений` : 'Новое сообщение',
-                    color: mi?.color || '#2AABEE',
-                    emoji: mi?.emoji || '💬',
-                    messengerName: mi?.name || 'ЦентрЧатов',
-                    messengerId: messengerId,
-                  }).catch(() => {})
-                }
-              }
+              // Fallback ribbon "N непрочитанных" ОТКЛЮЧЁН (v0.51.0):
+              // Показывал бесполезный текст без имени отправителя.
+              // __CC_NOTIF__ — основной путь для ribbon с именем, аватаркой и текстом.
+              // Звук выше остаётся — он полезен как быстрый сигнал.
             }
             return { ...prev, [messengerId]: count }
           })
@@ -1232,27 +1266,11 @@ export default function App() {
               const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
               const sndOn = mn.sound !== undefined ? mn.sound : !muted
-              const ribOn = mn.ribbon !== undefined ? mn.ribbon : true
               if (s.soundEnabled !== false && sndOn) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
               }
-              // Fallback ribbon: если handleNewMessage не показал ribbon за 3 сек — показываем generic
-              if (s.notificationsEnabled !== false && ribOn) {
-                const lastTs = lastRibbonTsRef.current[messengerId] || 0
-                if (Date.now() - lastTs > 3000) {
-                  lastRibbonTsRef.current[messengerId] = Date.now()
-                  const mi = messengersRef.current.find(x => x.id === messengerId)
-                  window.api.invoke('app:custom-notify', {
-                    title: '',
-                    body: count > 1 ? `${count} непрочитанных сообщений` : 'Новое сообщение',
-                    color: mi?.color || '#2AABEE',
-                    emoji: mi?.emoji || '💬',
-                    messengerName: mi?.name || 'ЦентрЧатов',
-                    messengerId: messengerId,
-                  }).catch(() => {})
-                }
-              }
+              // Fallback ribbon "N непрочитанных" ОТКЛЮЧЁН (v0.51.0) — аналогично page-title-updated
             }
             return { ...prev, [messengerId]: count }
           })
@@ -1299,7 +1317,11 @@ export default function App() {
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = (data.b || '').trim()
-          if (text && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) {
+          // Фильтр: только timestamp / системный текст / исходящее ("Вы: ...") — не показывать ribbon
+          const isSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
+            || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i.test(text)
+            || /^(вы:\s|you:\s)/i.test(text)
+          if (text && !isSpam) {
             // Дедупликация: Telegram шлёт Notification + ServiceWorker.showNotification → 2 __CC_NOTIF__
             // Нормализуем body: убираем trailing timestamps (вида "15:57" или "15:5715:57")
             const normalizedText = text.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()

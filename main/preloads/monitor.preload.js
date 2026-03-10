@@ -47,31 +47,64 @@ const { ipcRenderer } = require('electron')
         return ''
       }
       // Поиск имени отправителя и аватарки в chatlist по preview-тексту сообщения
-      // MAX/Telegram Web K: .chatlist-chat → .peer-title (имя) + subtitle (превью)
       function findSenderInChatlist(body) {
         if (!body || body.length < 2) return null
+        var bodySlice = body.slice(0, 30)
         try {
+          // 1. Telegram/MAX: .chatlist-chat + .peer-title
           var chats = document.querySelectorAll('.chatlist-chat')
           for (var i = 0; i < chats.length && i < 50; i++) {
-            var inner = chats[i].textContent || ''
-            if (inner.indexOf(body.slice(0, 30)) === -1) continue
+            if ((chats[i].textContent || '').indexOf(bodySlice) === -1) continue
             var pt = chats[i].querySelector('.peer-title')
-            var senderName = pt ? (pt.textContent || '').trim() : ''
-            if (!senderName) continue
-            var avatarUrl = ''
-            var avEl = chats[i].querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo')
-            if (avEl && avEl.tagName === 'IMG' && avEl.src) {
-              avatarUrl = avEl.src
-            } else if (avEl && avEl.tagName === 'CANVAS' && avEl.width > 10) {
-              try { avatarUrl = avEl.toDataURL('image/png') } catch(e) {}
-            }
-            return { name: senderName, avatar: avatarUrl }
+            var nm = pt ? (pt.textContent || '').trim() : ''
+            if (!nm) continue
+            return { name: nm, avatar: _findAvatarInEl(chats[i]) }
+          }
+          // 2. VK/Generic: dialog/conversation/chat-item элементы
+          var generic = document.querySelectorAll('[class*="dialog" i], [class*="im_dialog" i], [class*="conversation" i], [class*="chat-item" i], [class*="chatlist" i]')
+          for (var j = 0; j < generic.length && j < 80; j++) {
+            var el = generic[j]
+            if ((el.textContent || '').indexOf(bodySlice) === -1) continue
+            var nameEl = el.querySelector('[class*="title" i], [class*="name" i], [class*="peer" i], b, strong')
+            var sn = nameEl ? (nameEl.textContent || '').trim() : ''
+            if (!sn || sn.length < 2 || sn.length > 60) continue
+            if (sn === body.trim() || body.indexOf(sn) === 0) continue
+            return { name: sn, avatar: _findAvatarInEl(el) }
           }
         } catch(e) {}
         return null
       }
+      function _findAvatarInEl(el) {
+        try {
+          var avEl = el.querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo, img[class*="photo" i]')
+          if (avEl && avEl.tagName === 'IMG' && avEl.src && avEl.naturalWidth > 10) return avEl.src
+          if (avEl && avEl.tagName === 'CANVAS' && avEl.width > 10) {
+            try { return avEl.toDataURL('image/png') } catch(e) {}
+          }
+          var avDiv = el.querySelector('[class*="avatar" i], [class*="photo" i]')
+          if (avDiv) {
+            var bg = getComputedStyle(avDiv).backgroundImage
+            if (bg && bg !== 'none') {
+              var m = bg.match(/url\(["']?(.+?)["']?\)/)
+              if (m && m[1] && m[1].startsWith('http')) return m[1]
+            }
+            var img2 = avDiv.querySelector('img[src]')
+            if (img2 && img2.src && img2.naturalWidth > 10) return img2.src
+          }
+        } catch(e) {}
+        return ''
+      }
       // Проверка: title — это название мессенджера, а не имя отправителя
       var _appTitles = /^(ma[xк][cс]?|telegram|whatsapp|vk|viber|вконтакте|вк)/i
+      // Фильтр спам-текстов: статусы online, исходящие ("Вы: ..."), системные
+      var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i
+      var _outgoing = /^(вы:\s|you:\s)/i
+      function isSpamNotif(body) {
+        if (!body || body.length < 2) return true
+        if (_spamBody.test(body.trim())) return true
+        if (_outgoing.test(body.trim())) return true
+        return false
+      }
       function enrichNotif(title, body, tag, icon) {
         var realTitle = title
         var realIcon = icon
@@ -89,11 +122,13 @@ const { ipcRenderer } = require('electron')
       var _N = window.Notification
       window.Notification = function(title, opts) {
         try {
+          var body = (opts && opts.body) || ''
+          if (isSpamNotif(body)) return
           var tag = (opts && opts.tag) || ''
           var icon = (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
-          var enriched = enrichNotif(title, (opts && opts.body) || '', tag, icon)
+          var enriched = enrichNotif(title, body, tag, icon)
           console.log('__CC_NOTIF__' + JSON.stringify({
-            t: enriched.title || '', b: (opts && opts.body) || '', i: enriched.icon, g: tag
+            t: enriched.title || '', b: body, i: enriched.icon, g: tag
           }))
         } catch(e) {}
       }
@@ -109,11 +144,13 @@ const { ipcRenderer } = require('electron')
         var _show = ServiceWorkerRegistration.prototype.showNotification
         ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
           try {
+            var body = (opts && opts.body) || ''
+            if (isSpamNotif(body)) return Promise.resolve()
             var tag = (opts && opts.tag) || ''
             var icon = (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
-            var enriched = enrichNotif(title, (opts && opts.body) || '', tag, icon)
+            var enriched = enrichNotif(title, body, tag, icon)
             console.log('__CC_NOTIF__' + JSON.stringify({
-              t: enriched.title || '', b: (opts && opts.body) || '', i: enriched.icon, g: tag
+              t: enriched.title || '', b: body, i: enriched.icon, g: tag
             }))
           } catch(e) {}
           return Promise.resolve()

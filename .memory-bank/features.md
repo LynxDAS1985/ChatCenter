@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.50.0 (10 марта 2026)
+## Текущая версия: v0.51.0 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,13 @@
 ---
 
 ## Changelog
+
+### v0.51.0 (10 марта 2026) — Фильтрация спам-ribbon VK + universal findSenderInChatlist
+- **FIX: VK — ribbon для своих исходящих сообщений**: VK шлёт `new Notification()` для СВОИХ сообщений. `isSpamNotif()` + `_outgoing` regex фильтруют "Вы: ..." в body.
+- **FIX: VK — ribbon для статусов online**: "минуту назад", "только что", "был в сети", "печатает" — всё фильтруется `_spamBody` regex.
+- **FIX: Fallback ribbon "N непрочитанных" ОТКЛЮЧЁН**: Бесполезный текст без имени отправителя. Звук остаётся. `__CC_NOTIF__` — основной путь для ribbon.
+- **Universal findSenderInChatlist**: Расширен для VK generic селекторов (`[class*="dialog"]`, `[class*="conversation"]`, `[class*="title"]`, `[class*="name"]`). `_findAvatarInEl` — вспомогательная функция (img, canvas, background-image).
+- **Фильтры в 3 местах**: injection script (App.jsx + monitor.preload.js), `__CC_NOTIF__` handler (App.jsx), backup path (main.js).
 
 ### v0.50.0 (10 марта 2026) — enrichNotif: имя отправителя и аватарка из DOM для MAX
 - **FIX: MAX — ribbon показывал "Макс" вместо имени отправителя**: MAX вызывает `showNotification("Макс", {body: "текст"})` — title = название приложения, а не имя. `enrichNotif()` обнаруживает это через regex `_appTitles` и ищет реальное имя в DOM chatlist по preview сообщения (`findSenderInChatlist(body)`).

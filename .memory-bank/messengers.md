@@ -138,6 +138,10 @@ const input = document.querySelector('.im-chat-input--text [contenteditable]')
 
 - VK обновляет интерфейс часто — селекторы могут устареть
 - Авторизация через логин/пароль или VK ID
+- **VK шлёт Notification для СВОИХ исходящих** — body начинается с "Вы: " → фильтруем
+- **VK шлёт Notification для статусов online** — "минуту назад", "только что", "был в сети" → фильтруем
+- **VK title = "ВКонтакте"** (не имя отправителя) → `enrichNotif` → `findSenderInChatlist` по body text
+- DOM-селекторы для chatlist: `[class*="dialog"]`, `[class*="conversation"]`, `[class*="title"]`, `[class*="name"]`
 
 ---
 

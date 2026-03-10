@@ -1139,6 +1139,9 @@ app.on('web-contents-created', (_event, contents) => {
         const text = (data.b || '').trim()
         console.log(`[NotifManager] Backup __CC_NOTIF__ (${mInfo.name}): t="${data.t}", b="${(data.b||'').slice(0,30)}", minimized=${mainWindow?.isMinimized()}`)
         if (!text) return
+        // Фильтр спам-текстов: статусы, исходящие, системные (v0.51.0)
+        if (/^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i.test(text)) return
+        if (/^(вы:\s|you:\s)/i.test(text)) return
 
         let iconUrl
         if (data.i) {
