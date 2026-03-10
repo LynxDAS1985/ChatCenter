@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.48.0 (10 марта 2026)
+## Текущая версия: v0.48.1 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.48.1 (10 марта 2026) — Фикс startup notifications (ложные ribbon при запуске)
+- **FIX: ribbon при запуске для старых сообщений**: При запуске приложения счётчик непрочитанных шёл 0→N, что вызывало fallback ribbon и звук для КАЖДОГО мессенджера с непрочитанными. Причина: `page-title-updated` и `unread-count` хендлеры не проверяли `notifReadyRef` (10 сек warm-up). Добавлена проверка `notifReadyRef.current[messengerId]` в оба хендлера.
+- **Все 5 путей уведомлений теперь проверяют warm-up**: `page-title-updated`, `unread-count`, `handleNewMessage`, `__CC_NOTIF__`, `new-message` IPC.
 
 ### v0.48.0 (10 марта 2026) — Аватарки в ribbon (data URL) + очистка диагностических логов
 - **Аватарки отправителя в ribbon**: Иконки из Notification API конвертируются в `data:` URL прямо внутри WebView через `Image` + `canvas.toDataURL()`. Это позволяет передать аватарку с cookies сессии (Telegram требует авторизацию для скачивания аватарок). Ранее `downloadIcon` в main.js делал plain HTTP GET без cookies → 403 → аватарка не загружалась.

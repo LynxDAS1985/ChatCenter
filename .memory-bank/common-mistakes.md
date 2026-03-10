@@ -1,5 +1,19 @@
 # Типичные ошибки — ChatCenter
 
+## 🔴 КРИТИЧЕСКОЕ: Startup ribbon — уведомления при запуске для старых сообщений
+
+### ❌ page-title-updated и unread-count не проверяют warm-up
+
+**Симптом**: При запуске приложения показываются ribbon уведомления для старых непрочитанных сообщений из всех мессенджеров.
+
+**Причина**: `page-title-updated` и `unread-count` хендлеры создают fallback ribbon когда счётчик растёт. При запуске приложения счётчик идёт 0→N (первичная загрузка) → условие `count > prev` всегда true → ribbon для каждого мессенджера с непрочитанными. Эти хендлеры НЕ проверяли `notifReadyRef` (10 сек warm-up), в отличие от `handleNewMessage` и `__CC_NOTIF__`.
+
+**Решение (v0.48.1)**: Добавлена проверка `notifReadyRef.current[messengerId]` в оба хендлера. Теперь все 5 путей уведомлений проверяют warm-up: `page-title-updated`, `unread-count`, `handleNewMessage`, `__CC_NOTIF__`, `new-message` IPC.
+
+**Ключевой урок**: При добавлении новых путей уведомлений (звук, ribbon) — ВСЕГДА проверять `notifReadyRef` warm-up. Без этого при запуске ЛЮБОЙ рост счётчика (0→N) вызовет ложные уведомления.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: requestAnimationFrame НЕ работает в hidden BrowserWindow
 
 ### ❌ Использование rAF в notification window

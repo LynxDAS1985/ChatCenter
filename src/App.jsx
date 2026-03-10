@@ -1098,7 +1098,8 @@ export default function App() {
           setUnreadCounts(prev => {
             if (prev[messengerId] === count) return prev
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
-            if (count > (prev[messengerId] || 0) && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
+            // Warm-up: при запуске счётчик идёт 0→N — не шуметь пока WebView не прогрелся
+            if (count > (prev[messengerId] || 0) && notifReadyRef.current[messengerId] && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
               const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
@@ -1150,7 +1151,8 @@ export default function App() {
           const count = Number(e.args[0]) || 0
           setUnreadCounts(prev => {
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
-            if (count > (prev[messengerId] || 0) && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
+            // Warm-up: при запуске счётчик идёт 0→N — не шуметь пока WebView не прогрелся
+            if (count > (prev[messengerId] || 0) && notifReadyRef.current[messengerId] && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
               const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
