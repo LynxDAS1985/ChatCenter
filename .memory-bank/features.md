@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.55.0 (10 марта 2026)
+## Текущая версия: v0.55.1 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,14 @@
 ---
 
 ## Changelog
+
+### v0.55.1 (10 марта 2026) — Фикс enrichment для MAX: расширенные селекторы + задержка + спам-фильтр
+- **Спам-фильтр "Ожидание сети..."**: Добавлены MAX системные тексты (ожидание сети, connecting, загрузка, обновление и др.) во ВСЕ 4 спам-фильтра (injection, `__CC_NOTIF__`, `__CC_MSG__`, monitor.preload.js).
+- **Спам-фильтр `__CC_MSG__`**: Добавлен полный спам-фильтр к `__CC_MSG__` handler — timestamps и системные тексты больше не проходят.
+- **Фикс dedup race condition**: `quickNewMsgCheck` эмиттит `__CC_MSG__` (не `__CC_NOTIF__`) — enriched версия из showNotification override больше не дедуплицируется пустой версией из preload.
+- **Расширенные header-селекторы**: 8 вариантов для chat header (`.peer-title`, `[class*="title"]`, `[class*="name"]`, `header [class*="title"]` и др.).
+- **Active chat fallback**: Новый fallback — поиск активного/выделенного чата в sidebar (`.chatlist-chat.active`, `[class*="chat"][class*="active"]` и др.) вместо поиска по тексту.
+- **Задержка enrichment 150мс**: `__CC_MSG__` enrichment запускается с задержкой — chatlist успевает обновить preview текст.
 
 ### v0.55.0 (10 марта 2026) — Pipeline Trace Logger: полная трассировка уведомлений
 - **Pipeline Trace**: Новая вкладка "Pipeline" в логе уведомлений — записывает КАЖДЫЙ шаг прохождения уведомления через pipeline.

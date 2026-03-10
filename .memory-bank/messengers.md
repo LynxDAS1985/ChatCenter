@@ -181,7 +181,7 @@ const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]
 
 **Решение**: `quickNewMsgCheck()` в monitor.preload.js — прямой мониторинг `addedNodes` в MutationObserver. Не зависит от unread count или Notification API.
 
-### enrichNotif — имя отправителя и аватарка (v0.50.0)
+### enrichNotif — имя отправителя и аватарка (v0.50.0, обновлено v0.55.1)
 
 **Проблема**: MAX вызывает `showNotification("Макс", {body: "текст"})` — title = название мессенджера, не имя отправителя. Аватарка не передаётся. Ribbon показывает "Макс" + эмодзи.
 
@@ -189,6 +189,29 @@ const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]
 1. Regex `_appTitles` проверяет: title = "Макс" → это не имя отправителя
 2. `findSenderInChatlist(body)` — ищет `.chatlist-chat` с текстом `body.slice(0,30)` → извлекает `.peer-title` (имя) и `img.avatar-photo`/`canvas.avatar-photo` (аватарка)
 3. DOM MAX аналогичен Telegram Web K (`.chatlist-chat`, `.peer-title`, `.avatar-photo`)
+
+### Header-селекторы активного чата (v0.55.1)
+
+**Проблема**: `getActiveChatSender()` в preload не находила header в MAX — `.chat-info .peer-title` не матчит.
+
+**Расширенные селекторы** (8 вариантов):
+```js
+'.chat-info .peer-title', '.topbar .peer-title',
+'[class*="chat-header" i] [class*="title" i]',
+'[class*="top-bar" i] [class*="title" i]',
+'[class*="topbar" i] [class*="name" i]',
+'[class*="chat-header" i] [class*="name" i]',
+'header [class*="title" i]', 'header [class*="name" i]'
+```
+
+**Active chat fallback** (sidebar):
+```js
+'.chatlist-chat.active', '.chatlist-chat.selected',
+'[class*="chat"][class*="active" i]',
+'[class*="dialog"][class*="active" i]'
+```
+
+**Enrichment задержка**: 150мс — chatlist preview обновляется ПОСЛЕ addedNodes detection
 
 ---
 

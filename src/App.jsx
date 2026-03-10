@@ -1280,7 +1280,7 @@ export default function App() {
                   var _appTitles = /^(ma[xк][cс]?|telegram|whatsapp|vk|viber|вконтакте|вк)/i;
                   // Фильтр: системные/спам-тексты — не настоящие сообщения от собеседников
                   // VK шлёт Notification для: статусов online, своих исходящих, пустых текстов
-                  var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i;
+                  var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i;
                   // VK: исходящие начинаются с "Вы: " или "You: "
                   var _outgoing = /^(вы:\s|you:\s)/i;
                   // isSpamNotif возвращает причину блокировки или '' если ОК
@@ -1468,20 +1468,60 @@ export default function App() {
           if (!notifReadyRef.current[messengerId]) return
           const text = msg.slice(10).trim()
           if (!text) return
+          // Спам-фильтр для __CC_MSG__ (timestamp, системные тексты MAX)
+          const isMsgSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
+            || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(text)
+            || /^(вы:\s|you:\s)/i.test(text)
+          if (isMsgSpam) {
+            traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_MSG__')
+            return
+          }
           traceNotif('source', 'info', messengerId, text, '__CC_MSG__ | запуск обогащения через DOM')
           // Пробуем извлечь имя отправителя и аватарку из WebView DOM
+          // Задержка 150мс — chatlist preview обновляется ПОСЛЕ addedNodes в чате
           const safeBody = JSON.stringify(text)
           const safeSlice = JSON.stringify(text.slice(0, 30))
+          setTimeout(() => {
           el.executeJavaScript(`(function() {
             try {
               var name = '', avatar = '';
-              var h = document.querySelector('.chat-info .peer-title, .topbar .peer-title, [class*="chat-header" i] [class*="title" i]');
-              if (h) name = (h.textContent || '').trim();
-              if (name && (name.length < 2 || name.length > 80)) name = '';
+              // 1. Header активного чата — расширенные селекторы (TG/MAX/Generic)
+              var headerSels = [
+                '.chat-info .peer-title', '.topbar .peer-title',
+                '[class*="chat-header" i] [class*="title" i]',
+                '[class*="top-bar" i] [class*="title" i]',
+                '[class*="topbar" i] [class*="name" i]',
+                '[class*="chat-header" i] [class*="name" i]',
+                'header [class*="title" i]', 'header [class*="name" i]'
+              ];
+              for (var si = 0; si < headerSels.length; si++) {
+                var h = document.querySelector(headerSels[si]);
+                if (h) {
+                  var hn = (h.textContent || '').trim();
+                  if (hn && hn.length >= 2 && hn.length <= 80) { name = hn; break; }
+                }
+              }
               if (name) {
-                var av = document.querySelector('.chat-info img.avatar-photo, .topbar img.avatar-photo, .chat-info [class*="avatar" i] img');
+                var av = document.querySelector('.chat-info img.avatar-photo, .topbar img.avatar-photo, .chat-info [class*="avatar" i] img, header img[class*="avatar" i], header [class*="avatar" i] img');
                 if (av && av.src && av.src.startsWith('http')) avatar = av.src;
               }
+              // 2. Активный/выделенный чат в sidebar (не зависит от обновления preview)
+              if (!name) {
+                var activeSels = ['.chatlist-chat.active', '.chatlist-chat.selected', '[class*="chat"][class*="active" i]', '[class*="dialog"][class*="active" i]', '[class*="conversation"][class*="active" i]'];
+                for (var ai = 0; ai < activeSels.length; ai++) {
+                  var act = document.querySelector(activeSels[ai]);
+                  if (!act) continue;
+                  var pt0 = act.querySelector('.peer-title, [class*="title" i], [class*="name" i]');
+                  var nm0 = pt0 ? (pt0.textContent || '').trim() : '';
+                  if (nm0 && nm0.length >= 2 && nm0.length <= 80) {
+                    name = nm0;
+                    var avAct = act.querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo');
+                    if (avAct && avAct.tagName === 'IMG' && avAct.src && avAct.src.startsWith('http')) avatar = avAct.src;
+                    break;
+                  }
+                }
+              }
+              // 3. Поиск по тексту в chatlist (fallback)
               if (!name) {
                 var bodySlice = ${safeSlice};
                 var chats = document.querySelectorAll('.chatlist-chat');
@@ -1522,6 +1562,7 @@ export default function App() {
               traceNotif('enrich', 'warn', messengerId, text, '__CC_MSG__ enrichment failed')
               handleNewMessage(messengerId, text)
             })
+          }, 150) // задержка 150мс — chatlist preview обновляется ПОСЛЕ addedNodes
           return
         }
         if (!msg.startsWith('__CC_NOTIF__')) return
@@ -1531,10 +1572,11 @@ export default function App() {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = (data.b || '').trim()
           traceNotif('source', 'info', messengerId, text, `__CC_NOTIF__ | t="${(data.t||'').slice(0,20)}" icon=${!!data.i} tag=${!!data.g}`)
-          // Фильтр: только timestamp / системный текст / исходящее ("Вы: ...") — не показывать ribbon
+          // Фильтр: timestamp / системный текст / исходящее ("Вы: ...") / MAX системные
           const isSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
             || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i.test(text)
             || /^(вы:\s|you:\s)/i.test(text)
+            || /^(ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(text)
           if (isSpam) {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_NOTIF__')
             return
