@@ -233,18 +233,35 @@ function buildChatNavigateScript(url, senderName, chatTag) {
       try {
         ${chatTag ? `
         var tag = ${JSON.stringify(chatTag)};
-        var peerId = tag.replace(/[^0-9-]/g, '');
+        // Telegram tag format: "peer5_1234567890" or "1234567890" or "-1234567890"
+        var peerId = tag.replace(/^peer\\d+_/, '').replace(/[^0-9-]/g, '');
         if (peerId) {
-          var el = document.querySelector('.chatlist-chat[data-peer-id="' + peerId + '"]');
-          if (!el) el = document.querySelector('.chatlist-chat[data-peer-id="-' + peerId + '"]');
-          if (el) { el.click(); return true; }
+          var el = document.querySelector('[data-peer-id="' + peerId + '"]');
+          if (!el) el = document.querySelector('[data-peer-id="-' + peerId + '"]');
+          if (el) {
+            var chat = el.closest('.chatlist-chat') || el;
+            chat.click(); return true;
+          }
         }` : ''}
         var name = ${nameJson};
         if (!name) return false;
-        var titles = document.querySelectorAll('.chatlist-chat .peer-title');
-        for (var i = 0; i < titles.length; i++) {
-          if (titles[i].textContent.trim() === name) {
-            var chat = titles[i].closest('.chatlist-chat');
+        // 1) Точный поиск по .peer-title в списке чатов
+        var selectors = ['.chatlist-chat .peer-title', '[class*="chatlist"] [class*="title"]', '.dialog-title', '.user-title'];
+        for (var s = 0; s < selectors.length; s++) {
+          var titles = document.querySelectorAll(selectors[s]);
+          for (var i = 0; i < titles.length; i++) {
+            if (titles[i].textContent.trim() === name) {
+              var chat = titles[i].closest('.chatlist-chat') || titles[i].closest('a') || titles[i].closest('li') || titles[i].closest('[data-peer-id]');
+              if (chat) { chat.click(); return true; }
+            }
+          }
+        }
+        // 2) Partial match (имя может быть обрезано)
+        var allTitles = document.querySelectorAll('.chatlist-chat .peer-title');
+        for (var i = 0; i < allTitles.length; i++) {
+          var t = allTitles[i].textContent.trim();
+          if (t && name.length > 3 && (t.startsWith(name) || name.startsWith(t))) {
+            var chat = allTitles[i].closest('.chatlist-chat');
             if (chat) { chat.click(); return true; }
           }
         }
@@ -548,6 +565,25 @@ export default function App() {
       }
     })
   }, [])
+
+  // ── Автообновление лога уведомлений (каждые 3 сек пока окно открыто) ────
+  useEffect(() => {
+    if (!notifLogModal) return
+    const mid = notifLogModal.messengerId
+    const interval = setInterval(() => {
+      const wv = webviewRefs.current[mid]
+      if (!wv) return
+      wv.executeJavaScript(`(function() { return JSON.stringify(window.__cc_notif_log || []); })()`)
+        .then(json => {
+          try {
+            const log = JSON.parse(json)
+            setNotifLogModal(prev => prev && prev.messengerId === mid ? { ...prev, log } : prev)
+          } catch {}
+        })
+        .catch(() => {})
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [notifLogModal?.messengerId])
 
   // ── Горячие клавиши ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -2065,7 +2101,7 @@ export default function App() {
                 <span>📊</span>
                 <span className="font-semibold text-sm">Лог уведомлений — {notifLogModal.name}</span>
                 <span className="text-xs" style={{ color: 'var(--cc-text-dimmer)' }}>
-                  ({notifLogModal.log.length} записей)
+                  ({notifLogModal.log.length} записей) <span style={{ color: '#4ade80' }}>&#9679; авто</span>
                 </span>
               </div>
               <div className="flex gap-2">
