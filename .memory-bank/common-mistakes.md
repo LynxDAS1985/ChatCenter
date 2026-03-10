@@ -1318,3 +1318,22 @@ style={{
 **Решение (v0.53.0)**: `tag.replace(/^peer\\d+_/, '').replace(/[^0-9-]/g, '')` — сначала убрать `peerN_`, потом оставить только цифры.
 
 **Ключевой урок**: Notification.tag формат зависит от мессенджера. Telegram: `peer{type}_{id}`. Парсить надо с учётом формата, не слепым regex.
+
+---
+
+## 🟡 Виртуальный скроллинг Telegram Web K ломает DOM-поиск чата (v0.53.1)
+
+### ❌ querySelectorAll('.chatlist-chat .peer-title') не находит чат если он не в viewport
+
+**Симптом**: Клик "Перейти к чату" на ribbon → вкладка переключается, но чат НЕ открывается. `buildChatNavigateScript` возвращает `{ok:false, method:'notFound'}`.
+
+**Причина**: Telegram Web K использует **виртуальный скроллинг** для списка чатов. В DOM рендерятся только ~20-30 видимых чатов. Если нужный чат прокручен — его `.peer-title` элемента НЕТ в DOM.
+
+**Решение (v0.53.1)**:
+1. Основной метод: `[data-peer-id]` selector по chatTag (peerId) — если элемент в DOM.
+2. Fallback: `location.hash = peerId` — Telegram Web K слушает hashchange и навигирует к чату.
+3. Case-insensitive match: `toLowerCase()` сравнение.
+4. Partial/contains match: `indexOf` для длинных имён.
+5. Увеличено попыток с 2 до 4 (интервал 1.5 сек).
+
+**Ключевой урок**: SPA-мессенджеры используют виртуальный скроллинг. `querySelectorAll` находит только ВИДИМЫЕ элементы. Для навигации к невидимому чату нужен альтернативный метод: hash navigation, internal API, или UI-поиск.

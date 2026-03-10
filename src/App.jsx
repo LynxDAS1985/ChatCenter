@@ -231,42 +231,88 @@ function buildChatNavigateScript(url, senderName, chatTag) {
   if (url.includes('telegram.org')) {
     return `(function() {
       try {
+        var log = [];
         ${chatTag ? `
         var tag = ${JSON.stringify(chatTag)};
-        // Telegram tag format: "peer5_1234567890" or "1234567890" or "-1234567890"
+        log.push('tag=' + tag);
         var peerId = tag.replace(/^peer\\d+_/, '').replace(/[^0-9-]/g, '');
+        log.push('peerId=' + peerId);
         if (peerId) {
+          // Метод 1: data-peer-id в DOM (если чат видим в виртуальном списке)
           var el = document.querySelector('[data-peer-id="' + peerId + '"]');
           if (!el) el = document.querySelector('[data-peer-id="-' + peerId + '"]');
+          log.push('domFound=' + !!el);
           if (el) {
             var chat = el.closest('.chatlist-chat') || el;
-            chat.click(); return true;
+            chat.click();
+            return {ok:true, method:'tag-dom', log:log.join(', ')};
           }
+          // Метод 2: Навигация через хэш (Telegram Web K слушает hashchange)
+          try {
+            var hash = '#' + peerId;
+            if (window.location.hash !== hash) {
+              window.location.hash = hash;
+              log.push('hashNav=' + hash);
+              return {ok:true, method:'tag-hash', log:log.join(', ')};
+            }
+          } catch(he) { log.push('hashErr=' + he.message); }
         }` : ''}
         var name = ${nameJson};
-        if (!name) return false;
-        // 1) Точный поиск по .peer-title в списке чатов
-        var selectors = ['.chatlist-chat .peer-title', '[class*="chatlist"] [class*="title"]', '.dialog-title', '.user-title'];
-        for (var s = 0; s < selectors.length; s++) {
-          var titles = document.querySelectorAll(selectors[s]);
-          for (var i = 0; i < titles.length; i++) {
-            if (titles[i].textContent.trim() === name) {
-              var chat = titles[i].closest('.chatlist-chat') || titles[i].closest('a') || titles[i].closest('li') || titles[i].closest('[data-peer-id]');
-              if (chat) { chat.click(); return true; }
-            }
+        log.push('name=' + JSON.stringify(name));
+        if (!name) return {ok:false, method:'noName', log:log.join(', ')};
+        var all = document.querySelectorAll('.chatlist-chat .peer-title');
+        log.push('count=' + all.length);
+        var samples = [];
+        for (var i = 0; i < Math.min(all.length, 8); i++) samples.push(all[i].textContent.trim().slice(0,40));
+        log.push('samples=' + JSON.stringify(samples));
+        // 1) Exact match
+        for (var i = 0; i < all.length; i++) {
+          if (all[i].textContent.trim() === name) {
+            var chat = all[i].closest('.chatlist-chat');
+            if (chat) { chat.click(); return {ok:true, method:'exact', idx:i, log:log.join(', ')}; }
           }
         }
-        // 2) Partial match (имя может быть обрезано)
-        var allTitles = document.querySelectorAll('.chatlist-chat .peer-title');
-        for (var i = 0; i < allTitles.length; i++) {
-          var t = allTitles[i].textContent.trim();
-          if (t && name.length > 3 && (t.startsWith(name) || name.startsWith(t))) {
-            var chat = allTitles[i].closest('.chatlist-chat');
-            if (chat) { chat.click(); return true; }
+        // 2) Case-insensitive
+        var nameLow = name.toLowerCase();
+        for (var i = 0; i < all.length; i++) {
+          if (all[i].textContent.trim().toLowerCase() === nameLow) {
+            var chat = all[i].closest('.chatlist-chat');
+            if (chat) { chat.click(); return {ok:true, method:'icase', idx:i, log:log.join(', ')}; }
           }
         }
-        return false;
-      } catch(e) { return false; }
+        // 3) Partial/contains match
+        for (var i = 0; i < all.length; i++) {
+          var t = all[i].textContent.trim();
+          if (t && name.length > 3 && (t.indexOf(name) >= 0 || name.indexOf(t) >= 0)) {
+            var chat = all[i].closest('.chatlist-chat');
+            if (chat) { chat.click(); return {ok:true, method:'partial', matched:t.slice(0,40), log:log.join(', ')}; }
+          }
+        }
+        // 4) Extra selectors fallback
+        var extra = document.querySelectorAll('[class*="chatlist"] [class*="title"], .dialog-title, .user-title, [class*="peer-title"]');
+        log.push('extra=' + extra.length);
+        for (var i = 0; i < extra.length; i++) {
+          var t = extra[i].textContent.trim();
+          if (t === name || (t && name.length > 3 && (t.indexOf(name) >= 0 || name.indexOf(t) >= 0))) {
+            var chat = extra[i].closest('.chatlist-chat') || extra[i].closest('a') || extra[i].closest('li') || extra[i].closest('[data-peer-id]');
+            if (chat) { chat.click(); return {ok:true, method:'extra', log:log.join(', ')}; }
+          }
+        }
+        // 5) Telegram search: кликнуть поиск и ввести имя
+        var searchBtn = document.querySelector('.btn-icon.btn-menu-toggle.rp') || document.querySelector('[class*="search"][class*="btn"]') || document.querySelector('.sidebar-header .btn-icon');
+        if (!searchBtn) {
+          // Попробуем найти поле поиска напрямую
+          var searchInput = document.querySelector('.input-search input') || document.querySelector('input[type="search"]') || document.querySelector('[class*="search"] input');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.value = name;
+            searchInput.dispatchEvent(new Event('input', {bubbles: true}));
+            log.push('searchInput=direct');
+            return {ok:'search', method:'searchInput', log:log.join(', ')};
+          }
+        }
+        return {ok:false, method:'notFound', log:log.join(', ')};
+      } catch(e) { return {ok:false, method:'error', err:e.message}; }
     })();`
   }
 
@@ -547,21 +593,26 @@ export default function App() {
       if (senderName || chatTag) {
         const tryNavigate = (attempt) => {
           const el = webviewRefs.current[messengerId]
-          if (!el) return
+          if (!el) {
+            console.log(`[GoChat] attempt=${attempt} — webview ref NOT FOUND for ${messengerId}`)
+            return
+          }
           const url = el.getURL?.() || ''
           const script = buildChatNavigateScript(url, senderName, chatTag)
-          if (script) {
-            el.executeJavaScript(script).then(result => {
-              console.log(`[GoChat] attempt=${attempt} result=${result} url=${url.slice(0,40)}`)
-              // Повторная попытка если первая не нашла элемент (WebView мог не успеть загрузить sidebar)
-              if (!result && attempt < 2) {
-                setTimeout(() => tryNavigate(attempt + 1), 1200)
-              }
-            }).catch(err => { console.log('[GoChat] executeJS error:', err.message) })
+          if (!script) {
+            console.log(`[GoChat] attempt=${attempt} — no script for url=${url.slice(0,50)}`)
+            return
           }
+          el.executeJavaScript(script).then(result => {
+            const ok = result === true || (result && result.ok)
+            console.log(`[GoChat] attempt=${attempt} ok=${ok}`, typeof result === 'object' ? result : { result }, `url=${url.slice(0,50)}`)
+            if (!ok && attempt < 3) {
+              setTimeout(() => tryNavigate(attempt + 1), 1500)
+            }
+          }).catch(err => { console.log('[GoChat] executeJS error:', err.message) })
         }
-        // Задержка 600ms — WebView нужно время на отрисовку после setActiveId
-        setTimeout(() => tryNavigate(0), 600)
+        // Задержка 800ms — WebView нужно время на отрисовку после setActiveId
+        setTimeout(() => tryNavigate(0), 800)
       }
     })
   }, [])
@@ -2128,12 +2179,13 @@ export default function App() {
               ) : (
                 <table className="w-full" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                   <colgroup>
-                    <col style={{ width: '72px' }} />
+                    <col style={{ width: '68px' }} />
+                    <col style={{ width: '76px' }} />
+                    <col style={{ width: '20%' }} />
+                    <col style={{ width: '30%' }} />
+                    <col style={{ width: '15%' }} />
                     <col style={{ width: '80px' }} />
-                    <col style={{ width: '22%' }} />
-                    <col style={{ width: '35%' }} />
-                    <col style={{ width: '18%' }} />
-                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '44px' }} />
                   </colgroup>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
@@ -2142,7 +2194,8 @@ export default function App() {
                       <th className="text-left px-2 py-1.5 font-medium">Заголовок</th>
                       <th className="text-left px-2 py-1.5 font-medium">Текст сообщения</th>
                       <th className="text-left px-2 py-1.5 font-medium">Отправитель</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Причина блока</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Блок</th>
+                      <th className="text-center px-1 py-1.5 font-medium"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2180,6 +2233,30 @@ export default function App() {
                           </td>
                           <td className="px-2 py-1.5 overflow-hidden" style={{ color: '#f87171' }}>
                             <span className="truncate block">{reasonLabels[entry.reason] || entry.reason || ''}</span>
+                          </td>
+                          <td className="px-1 py-1.5 text-center">
+                            {isPassed && (entry.title || enriched) && (
+                              <button
+                                className="px-1 py-0.5 rounded text-[10px] cursor-pointer"
+                                style={{ backgroundColor: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: 'none' }}
+                                title={'Перейти к чату: ' + (enriched || entry.title)}
+                                onClick={() => {
+                                  const mid = notifLogModal.messengerId
+                                  const wv = webviewRefs.current[mid]
+                                  if (!wv) return
+                                  const url = wv.getURL?.() || ''
+                                  const name = enriched || entry.title
+                                  const script = buildChatNavigateScript(url, name, entry.tag || '')
+                                  if (script) {
+                                    wv.executeJavaScript(script).then(r => {
+                                      const ok = r === true || (r && r.ok)
+                                      console.log('[GoChat:log]', ok ? 'OK' : 'FAIL', r)
+                                    }).catch(e => console.log('[GoChat:log] err', e.message))
+                                  }
+                                  setNotifLogModal(null) // закрыть модалку
+                                }}
+                              >&#8594;</button>
+                            )}
                           </td>
                         </tr>
                       )
