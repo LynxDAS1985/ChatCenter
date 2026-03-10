@@ -2090,7 +2090,15 @@ export default function App() {
                   Нет записей. Уведомления появятся после получения сообщений.
                 </div>
               ) : (
-                <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                <table className="w-full" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '72px' }} />
+                    <col style={{ width: '80px' }} />
+                    <col style={{ width: '22%' }} />
+                    <col style={{ width: '35%' }} />
+                    <col style={{ width: '18%' }} />
+                    <col style={{ width: '100px' }} />
+                  </colgroup>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
                       <th className="text-left px-2 py-1.5 font-medium">Время</th>
@@ -2106,6 +2114,7 @@ export default function App() {
                       const time = new Date(entry.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                       const isPassed = entry.status === 'passed'
                       const reasonLabels = { empty: 'Пустое', system: 'Системное', outgoing: 'Исходящее' }
+                      const enriched = entry.enrichedTitle && entry.enrichedTitle !== entry.title ? entry.enrichedTitle : ''
                       return (
                         <tr
                           key={idx}
@@ -2124,18 +2133,18 @@ export default function App() {
                               {isPassed ? 'ПОКАЗАНО' : 'ЗАБЛОК.'}
                             </span>
                           </td>
-                          <td className="px-2 py-1.5 max-w-[140px]" style={{ position: 'relative' }}>
-                            <div className="truncate cc-notif-cell" title={entry.title}>{entry.title || '—'}</div>
+                          <td className="px-2 py-1.5 overflow-hidden">
+                            <div className="truncate cc-notif-cell" data-full={entry.title || ''}>{entry.title || '—'}</div>
                           </td>
-                          <td className="px-2 py-1.5 max-w-[220px]" style={{ position: 'relative' }}>
-                            <div className="truncate cc-notif-cell" title={entry.body}>{entry.body || '—'}</div>
+                          <td className="px-2 py-1.5 overflow-hidden">
+                            <div className="truncate cc-notif-cell" data-full={entry.body || ''}>{entry.body || '—'}</div>
                           </td>
-                          <td className="px-2 py-1.5 max-w-[140px]" style={{ position: 'relative', color: entry.enrichedTitle && entry.enrichedTitle !== entry.title ? '#60a5fa' : 'inherit' }}>
-                            <div className="truncate cc-notif-cell" title={entry.enrichedTitle && entry.enrichedTitle !== entry.title ? entry.enrichedTitle : ''}>
-                              {entry.enrichedTitle && entry.enrichedTitle !== entry.title ? entry.enrichedTitle : '—'}
-                            </div>
+                          <td className="px-2 py-1.5 overflow-hidden" style={{ color: enriched ? '#60a5fa' : 'inherit' }}>
+                            <div className="truncate cc-notif-cell" data-full={enriched}>{enriched || '—'}</div>
                           </td>
-                          <td className="px-2 py-1.5" style={{ color: '#f87171' }}>{reasonLabels[entry.reason] || entry.reason || ''}</td>
+                          <td className="px-2 py-1.5 overflow-hidden" style={{ color: '#f87171' }}>
+                            <span className="truncate block">{reasonLabels[entry.reason] || entry.reason || ''}</span>
+                          </td>
                         </tr>
                       )
                     })}
