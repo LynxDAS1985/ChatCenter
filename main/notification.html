@@ -254,13 +254,11 @@
   }
 
   function reportHeight() {
-    // Двойной rAF — ждём стабильный layout (1 кадр: paint, 2 кадр: composite)
-    // Убирает дёрг при первом уведомлении
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.notifApi.resize(calcHeight())
-      })
-    })
+    // setTimeout вместо rAF — rAF НЕ работает в hidden BrowserWindow!
+    // 60ms достаточно для стабильного layout без дёрга
+    setTimeout(() => {
+      window.notifApi.resize(calcHeight())
+    }, 60)
   }
 
   function dismissItem(id, fromMain) {

@@ -579,9 +579,16 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   }
   notifItems.push(data)
 
+  // Показываем окно ДО отправки данных — иначе rAF/setTimeout может не сработать в hidden window
+  if (!notifWin.isVisible()) {
+    // Временно показываем с минимальной высотой, HTML скорректирует через notif:resize
+    const { workArea } = screen.getPrimaryDisplay()
+    notifWin.setBounds({ x: workArea.x + workArea.width - 380, y: workArea.y + workArea.height - 100, width: 370, height: 90 })
+    notifWin.showInactive()
+  }
   console.log('[NotifManager] Sending notif:show to notifWin, id:', id, 'body:', body?.slice(0, 30))
   notifWin.webContents.send('notif:show', data)
-  // НЕ вызываем repositionNotifWin() — HTML сам пришлёт notif:resize с точной высотой.
+  // HTML пришлёт notif:resize с точной высотой и окно скорректируется.
   // Двойной setBounds (reposition + resize) вызывал дёрг первого уведомления на Windows.
 
   return id
