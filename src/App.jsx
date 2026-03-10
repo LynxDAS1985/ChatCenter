@@ -2052,7 +2052,11 @@ export default function App() {
         <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={() => setNotifLogModal(null)}>
           <div
             className="rounded-xl shadow-2xl flex flex-col"
-            style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)', width: '720px', maxWidth: '90vw', maxHeight: '80vh' }}
+            style={{
+              backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)',
+              width: '860px', minWidth: '400px', minHeight: '300px', maxWidth: '95vw', maxHeight: '90vh',
+              resize: 'both', overflow: 'hidden',
+            }}
             onClick={e => e.stopPropagation()}
           >
             {/* Заголовок */}
@@ -2093,7 +2097,7 @@ export default function App() {
                       <th className="text-left px-2 py-1.5 font-medium">Статус</th>
                       <th className="text-left px-2 py-1.5 font-medium">Заголовок</th>
                       <th className="text-left px-2 py-1.5 font-medium">Текст сообщения</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Найдено имя</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Отправитель</th>
                       <th className="text-left px-2 py-1.5 font-medium">Причина блока</th>
                     </tr>
                   </thead>
@@ -2105,6 +2109,7 @@ export default function App() {
                       return (
                         <tr
                           key={idx}
+                          className="cc-notif-row"
                           style={{
                             borderBottom: '1px solid var(--cc-border)',
                             backgroundColor: isPassed ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)',
@@ -2119,10 +2124,16 @@ export default function App() {
                               {isPassed ? 'ПОКАЗАНО' : 'ЗАБЛОК.'}
                             </span>
                           </td>
-                          <td className="px-2 py-1.5 max-w-[120px] truncate" title={entry.title}>{entry.title || '—'}</td>
-                          <td className="px-2 py-1.5 max-w-[180px] truncate" title={entry.body}>{entry.body || '—'}</td>
-                          <td className="px-2 py-1.5 max-w-[120px] truncate" style={{ color: entry.enrichedTitle && entry.enrichedTitle !== entry.title ? '#60a5fa' : 'inherit' }} title={entry.enrichedTitle}>
-                            {entry.enrichedTitle && entry.enrichedTitle !== entry.title ? entry.enrichedTitle : '—'}
+                          <td className="px-2 py-1.5 max-w-[140px]" style={{ position: 'relative' }}>
+                            <div className="truncate cc-notif-cell" title={entry.title}>{entry.title || '—'}</div>
+                          </td>
+                          <td className="px-2 py-1.5 max-w-[220px]" style={{ position: 'relative' }}>
+                            <div className="truncate cc-notif-cell" title={entry.body}>{entry.body || '—'}</div>
+                          </td>
+                          <td className="px-2 py-1.5 max-w-[140px]" style={{ position: 'relative', color: entry.enrichedTitle && entry.enrichedTitle !== entry.title ? '#60a5fa' : 'inherit' }}>
+                            <div className="truncate cc-notif-cell" title={entry.enrichedTitle && entry.enrichedTitle !== entry.title ? entry.enrichedTitle : ''}>
+                              {entry.enrichedTitle && entry.enrichedTitle !== entry.title ? entry.enrichedTitle : '—'}
+                            </div>
                           </td>
                           <td className="px-2 py-1.5" style={{ color: '#f87171' }}>{reasonLabels[entry.reason] || entry.reason || ''}</td>
                         </tr>
@@ -2133,11 +2144,11 @@ export default function App() {
               )}
             </div>
             {/* Легенда */}
-            <div className="flex items-center gap-4 px-4 py-2 text-[11px]" style={{ borderTop: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[11px]" style={{ borderTop: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
               <span><span style={{ color: '#4ade80' }}>ПОКАЗАНО</span> — уведомление отправлено в ribbon</span>
               <span><span style={{ color: '#f87171' }}>ЗАБЛОК.</span> — отфильтровано (спам/исходящее)</span>
-              <span><span style={{ color: '#60a5fa' }}>Синий</span> — имя найдено в списке чатов</span>
-              <span>Хранится до 100 записей</span>
+              <span><span style={{ color: '#60a5fa' }}>Отправитель</span> — имя найдено в чате (если заголовок = название мессенджера)</span>
+              <span>Хранится до 100 записей · Окно можно растянуть за угол ↘</span>
             </div>
           </div>
         </div>
