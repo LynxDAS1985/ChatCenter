@@ -273,6 +273,24 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                             {ribbonOn ? '🏷️' : '🚫'} Ribbon
                           </span>
                           <Toggle value={ribbonOn} onChange={v => setMNotif('ribbon', v)} color={m.color} />
+                          <button
+                            onClick={() => {
+                              console.log(`[Notif] TEST ribbon for ${m.id} (${m.name})`)
+                              window.api.invoke('app:custom-notify', {
+                                title: 'Тест',
+                                body: `Тестовое уведомление от ${m.name}`,
+                                color: m.color || '#2AABEE',
+                                emoji: m.emoji || '💬',
+                                messengerName: m.name || 'ЦентрЧатов',
+                                messengerId: m.id,
+                              }).then(r => console.log('[Notif] TEST result:', r)).catch(e => console.error('[Notif] TEST error:', e))
+                            }}
+                            className="text-[10px] px-1.5 py-0.5 rounded-lg transition-all cursor-pointer"
+                            style={{ backgroundColor: `${m.color}15`, color: m.color, border: `1px solid ${m.color}33` }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${m.color}30` }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${m.color}15` }}
+                            title="Тест ribbon"
+                          >🔔</button>
                         </div>
                       </div>
                     </div>

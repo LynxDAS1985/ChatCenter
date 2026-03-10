@@ -503,9 +503,9 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   let cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
   // Убираем trailing timestamps (Telegram ServiceWorker приклеивает "15:57" или "15:5715:57" к body)
   cleanBody = cleanBody.replace(/(\d{1,2}:\d{2}(:\d{2})?)+\s*$/g, '').trim()
-  if (!cleanBody) return null
+  if (!cleanBody) { console.log('[NotifManager] SKIP: empty cleanBody, original:', (body || '').slice(0, 40)); return null }
   // MAX и другие мессенджеры могут слать Notification с body = "12:40" (только время)
-  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) return null
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) { console.log('[NotifManager] SKIP: timestamp-only body:', cleanBody); return null }
   // Используем очищенный body для отображения
   body = cleanBody
 

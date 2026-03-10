@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.47.0 (10 марта 2026)
+## Текущая версия: v0.47.1 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.47.1 (10 марта 2026) — Диагностика ribbon + кнопка «Тест ribbon»
+- **Диагностическое логирование**: Подробные console.log на каждом шаге пути уведомлений: handleNewMessage (empty/dedup/viewing/pass/ribbon skip), new-message IPC (warm-up), showCustomNotification (empty body/timestamp/dedup). Каждый log с префиксом `[Notif]` или `[NotifManager]`.
+- **Кнопка «Тест ribbon»**: В настройках рядом с toggle Ribbon для каждого мессенджера — кнопка 🔔 которая напрямую вызывает `app:custom-notify` с тестовым текстом. Позволяет проверить что notification window работает независимо от перехвата сообщений.
+- **Файлы**: `src/App.jsx` (логирование), `src/components/SettingsPanel.jsx` (кнопка тест), `main/main.js` (логирование showCustomNotification).
 
 ### v0.47.0 (10 марта 2026) — Per-messenger настройки уведомлений
 - **Per-messenger звук + ribbon**: Каждый мессенджер теперь имеет отдельные toggles "Звук" и "Ribbon" в настройках. Структура: `messengerNotifs: { [id]: { sound: bool, ribbon: bool } }`. Backwards compatible с `mutedMessengers`.

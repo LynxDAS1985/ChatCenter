@@ -799,12 +799,15 @@ export default function App() {
   // Если extra есть → из __CC_NOTIF__ (Notification API) — надёжный источник
   // Если extra нет → из MutationObserver (new-message IPC) — может быть ложным
   const handleNewMessage = (messengerId, text, extra) => {
-    if (!text) return
+    if (!text) { console.log(`[Notif] handleNewMessage SKIP: empty text (${messengerId})`); return }
 
     // Дедупликация: одинаковый текст от того же мессенджера за 10 сек → skip
     const dedupKey = messengerId + ':' + text.slice(0, 60)
     const now = Date.now()
-    if (recentNotifsRef.current.has(dedupKey) && now - recentNotifsRef.current.get(dedupKey) < 10000) return
+    if (recentNotifsRef.current.has(dedupKey) && now - recentNotifsRef.current.get(dedupKey) < 10000) {
+      console.log(`[Notif] handleNewMessage DEDUP skip (${messengerId}): "${text.slice(0, 30)}"`)
+      return
+    }
     recentNotifsRef.current.set(dedupKey, now)
     // Чистим старые записи (>30 сек)
     if (recentNotifsRef.current.size > 50) {
@@ -815,7 +818,7 @@ export default function App() {
     // windowFocusedRef обновляется через IPC window-state из main process —
     // надёжнее чем document.hidden или document.hasFocus()
     const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
-    if (isViewingThisTab) return
+    if (isViewingThisTab) { console.log(`[Notif] handleNewMessage SKIP: viewing tab (${messengerId}), focused=${windowFocusedRef.current}, active=${activeIdRef.current}`); return }
 
     // Автопереключение на вкладку с новым сообщением (если включено)
     if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {
@@ -830,6 +833,7 @@ export default function App() {
     // Per-messenger ribbon: messengerNotifs[id].ribbon > notificationsEnabled (глобальный)
     const ribbonOn = mNotifs.ribbon !== undefined ? mNotifs.ribbon : true
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
+    console.log(`[Notif] handleNewMessage PASS (${messengerId}): "${text.slice(0, 30)}", soundOn=${soundOn}, ribbonOn=${ribbonOn}, globalSound=${settingsRef.current.soundEnabled}, globalNotif=${settingsRef.current.notificationsEnabled}`)
     if (settingsRef.current.soundEnabled !== false && soundOn) playNotificationSound(mInfo?.color)
     if (settingsRef.current.notificationsEnabled !== false && ribbonOn) {
       lastRibbonTsRef.current[messengerId] = Date.now()
@@ -849,7 +853,9 @@ export default function App() {
         messengerId: messengerId,
         senderName: extra?.senderName || '',
         chatTag: extra?.chatTag || '',
-      }).catch(() => {})
+      }).then(r => console.log(`[Notif] app:custom-notify result (${messengerId}):`, r)).catch(e => console.error(`[Notif] app:custom-notify ERROR (${messengerId}):`, e))
+    } else {
+      console.log(`[Notif] handleNewMessage SKIP ribbon: globalNotif=${settingsRef.current.notificationsEnabled}, ribbonOn=${ribbonOn}`)
     }
 
     // Превью сообщения в бейдже вкладки (5 секунд)
@@ -1166,7 +1172,8 @@ export default function App() {
           setMonitorDiag(prev => ({ ...prev, [messengerId]: diag }))
         } else if (e.channel === 'new-message') {
           // Warm-up: игнорируем сообщения от MutationObserver первые 10 сек после dom-ready
-          if (!notifReadyRef.current[messengerId]) return
+          if (!notifReadyRef.current[messengerId]) { console.log(`[Notif] new-message SKIP warm-up (${messengerId}):`, (e.args[0] || '').slice(0, 30)); return }
+          console.log(`[Notif] new-message IPC (${messengerId}):`, (e.args[0] || '').slice(0, 40))
           handleNewMessage(messengerId, e.args[0])
         }
       })
