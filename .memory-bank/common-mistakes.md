@@ -44,19 +44,23 @@
 
 ## 🟡 ВАЖНОЕ: MAX — ribbon без имени отправителя и аватарки
 
-### ❌ MAX вызывает showNotification("Макс", {body: "Ацыв"}) — title = название мессенджера
+### ❌ MAX НЕ вызывает showNotification для каждого сообщения (особенно в фоне)
 
-**Симптом**: Ribbon уведомление от MAX показывает "Макс" вместо имени отправителя (например, "Дугин Алексей Сергеевич"). Нет аватарки — только эмодзи.
+**Симптом**: Ribbon уведомление от MAX показывает "Макс" вместо имени отправителя. Нет аватарки. Лог уведомлений пуст. Работает только когда пользователь переключился на вкладку MAX.
 
-**Причина**: MAX (бывший VK Мессенджер) в `ServiceWorkerRegistration.showNotification()` передаёт название приложения "Макс" как title, а не имя отправителя. Имя отправителя — только в DOM chatlist. Аватарка не передаётся в opts.icon.
+**Причина 1**: MAX не всегда вызывает `ServiceWorkerRegistration.showNotification()`. Уведомления приходят через `quickNewMsgCheck` (MutationObserver addedNodes → `__CC_MSG__`), который передаёт только текст без sender/avatar.
 
-**Решение (v0.50.0)**:
-- `enrichNotif(title, body, tag, icon)` — проверяет, если title совпадает с regex `_appTitles` (макс, telegram, whatsapp, vk, viber) → title — это название мессенджера, а не имя.
-- `findSenderInChatlist(body)` — ищет в `.chatlist-chat` элемент, содержащий preview сообщения (body.slice(0,30)) → извлекает `.peer-title` (имя) и `img.avatar-photo` / `canvas.avatar-photo` (аватарка).
-- Оба override (Notification + showNotification) вызывают `enrichNotif` перед отправкой `__CC_NOTIF__`.
-- Добавлено в оба места: App.jsx (executeJavaScript fallback) и monitor.preload.js (<script> injection).
+**Причина 2**: `enrichNotif()` + `findSenderInChatlist(body)` работают только внутри override showNotification в main world. Путь `__CC_MSG__` эти функции не вызывает. Лог `__cc_notif_log` тоже заполняется только из override.
 
-**Ключевой урок**: Нельзя полагаться на `Notification.title` как имя отправителя. Некоторые мессенджеры (MAX) передают название приложения. Нужен fallback через DOM-поиск в chatlist.
+**Причина 3**: Когда title = "Макс" (совпадает с `_appTitles`), `enrichNotif` ищет sender в chatlist по body.slice(0,30). Но chatlist preview может не содержать текст нового сообщения (если DOM ещё не обновился).
+
+**Решение (v0.54.0)**:
+- `getActiveChatSender()` + `getActiveChatAvatar()` в monitor.preload.js — извлекают имя и аватарку из заголовка АКТИВНОГО чата (`.chat-info .peer-title`, `.topbar img.avatar-photo`).
+- `quickNewMsgCheck` эмиттит `__CC_NOTIF__` с enriched данными вместо голого `__CC_MSG__`.
+- Backup: App.jsx `__CC_MSG__` handler обогащает через `executeJavaScript` и пишет в `__cc_notif_log`.
+- `new-message` IPC ждёт 500мс — приоритет enriched `__CC_NOTIF__`.
+
+**Ключевой урок**: Нельзя полагаться на `showNotification` override как единственный источник уведомлений. Некоторые мессенджеры (MAX) не вызывают Notification API вообще. `addedNodes` detection — необходимый fallback, который тоже должен обогащать данные отправителя.
 
 ---
 

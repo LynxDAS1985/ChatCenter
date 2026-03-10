@@ -1,4 +1,4 @@
-// v0.46.3 — ChatMonitor: addedNodes detection для мессенджеров без Notification API (MAX и др.)
+// v0.47.0 — ChatMonitor: enriched addedNodes — имя отправителя + аватарка из DOM активного чата
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
@@ -756,6 +756,34 @@ let observer = null
 let lastQuickMsgText = ''
 let lastQuickMsgTime = 0
 
+// Извлечь имя отправителя из заголовка активного чата (preload world имеет доступ к DOM)
+function getActiveChatSender() {
+  try {
+    // MAX/Telegram: заголовок открытого чата — .peer-title внутри chat-info/topbar
+    const header = document.querySelector('.chat-info .peer-title, .topbar .peer-title, [class*="chat-header" i] [class*="title" i], [class*="top-bar" i] [class*="title" i]')
+    if (header) {
+      const name = (header.textContent || '').trim()
+      if (name && name.length >= 2 && name.length <= 80) return name
+    }
+  } catch (e) {}
+  return ''
+}
+
+// Извлечь аватарку из заголовка активного чата
+function getActiveChatAvatar() {
+  try {
+    // MAX/Telegram: аватарка в chat-info/topbar
+    const avImg = document.querySelector('.chat-info img.avatar-photo, .topbar img.avatar-photo, .chat-info [class*="avatar" i] img, [class*="chat-header" i] img[class*="avatar" i]')
+    if (avImg && avImg.src && avImg.src.startsWith('http') && !avImg.src.includes('emoji')) return avImg.src
+    // Canvas avatar
+    const avCanvas = document.querySelector('.chat-info canvas.avatar-photo, .topbar canvas.avatar-photo')
+    if (avCanvas && avCanvas.width > 10) {
+      try { return avCanvas.toDataURL('image/png') } catch (e) {}
+    }
+  } catch (e) {}
+  return ''
+}
+
 function quickNewMsgCheck(mutations, type) {
   const now = Date.now()
   if (now - lastQuickMsgTime < 3000) return // cooldown 3 сек — не спамить
@@ -787,8 +815,12 @@ function quickNewMsgCheck(mutations, type) {
       lastSentText = text
       lastActiveMessageText = text
       lastActiveMessageTime = now
+      // Обогащаем: имя отправителя + аватарка из заголовка активного чата (v0.47.0)
+      const sender = getActiveChatSender()
+      const avatar = getActiveChatAvatar()
       try { ipcRenderer.sendToHost('new-message', text) } catch {}
-      try { console.log('__CC_MSG__' + text) } catch {}
+      // Эмиттим __CC_NOTIF__ с данными отправителя (вместо голого __CC_MSG__)
+      try { console.log('__CC_NOTIF__' + JSON.stringify({ t: sender, b: text, i: avatar, g: '' })) } catch {}
       return // одно сообщение за callback — не спамить
     }
   }

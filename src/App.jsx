@@ -1403,7 +1403,18 @@ export default function App() {
         } else if (e.channel === 'new-message') {
           // Warm-up: игнорируем сообщения от MutationObserver первые 10 сек после dom-ready
           if (!notifReadyRef.current[messengerId]) return
-          handleNewMessage(messengerId, e.args[0])
+          // Не обрабатываем — enriched __CC_NOTIF__ из того же события придёт через console-message
+          // и будет обработан с данными отправителя. IPC new-message без extra → ribbon без имени.
+          // Оставляем только как запасной путь если __CC_NOTIF__ не придёт (таймаут 500мс).
+          const msgText = (e.args[0] || '').trim()
+          if (!msgText) return
+          setTimeout(() => {
+            // Если за 500мс __CC_NOTIF__ не пришёл — обработаем как есть
+            const dedupKey = messengerId + ':' + msgText.slice(0, 60)
+            if (!recentNotifsRef.current.has(dedupKey)) {
+              handleNewMessage(messengerId, msgText)
+            }
+          }, 500)
         }
       })
 
@@ -1420,10 +1431,60 @@ export default function App() {
           return
         }
         // ── __CC_MSG__: backup MutationObserver через console.log (v0.39.5) ──
+        // Обогащаем данными отправителя из DOM активного чата (v0.47.0)
         if (msg.startsWith('__CC_MSG__')) {
           if (!notifReadyRef.current[messengerId]) return
           const text = msg.slice(10).trim()
-          if (text) handleNewMessage(messengerId, text)
+          if (!text) return
+          // Пробуем извлечь имя отправителя и аватарку из WebView DOM
+          const safeBody = JSON.stringify(text)
+          const safeSlice = JSON.stringify(text.slice(0, 30))
+          el.executeJavaScript(`(function() {
+            try {
+              var name = '', avatar = '';
+              var h = document.querySelector('.chat-info .peer-title, .topbar .peer-title, [class*="chat-header" i] [class*="title" i]');
+              if (h) name = (h.textContent || '').trim();
+              if (name && (name.length < 2 || name.length > 80)) name = '';
+              if (name) {
+                var av = document.querySelector('.chat-info img.avatar-photo, .topbar img.avatar-photo, .chat-info [class*="avatar" i] img');
+                if (av && av.src && av.src.startsWith('http')) avatar = av.src;
+              }
+              if (!name) {
+                var bodySlice = ${safeSlice};
+                var chats = document.querySelectorAll('.chatlist-chat');
+                for (var i = 0; i < chats.length && i < 50; i++) {
+                  if ((chats[i].textContent || '').indexOf(bodySlice) === -1) continue;
+                  var pt = chats[i].querySelector('.peer-title');
+                  var nm = pt ? (pt.textContent || '').trim() : '';
+                  if (!nm) continue;
+                  name = nm;
+                  var avEl = chats[i].querySelector('img.avatar-photo, [class*="avatar"] img');
+                  if (avEl && avEl.src && avEl.src.startsWith('http')) avatar = avEl.src;
+                  break;
+                }
+              }
+              if (window.__cc_notif_log) {
+                window.__cc_notif_log.push({ ts: Date.now(), status: 'passed', title: name || '', body: (${safeBody}).slice(0, 200), tag: '', reason: 'addedNodes', enrichedTitle: name || '' });
+                if (window.__cc_notif_log.length > 100) window.__cc_notif_log.shift();
+              }
+              return JSON.stringify({ n: name, a: avatar });
+            } catch(e) { return ''; }
+          })()`)
+            .then(result => {
+              const extra = {}
+              if (result) {
+                try {
+                  const info = JSON.parse(result)
+                  if (info.n) extra.senderName = info.n
+                  if (info.a) {
+                    if (info.a.startsWith('data:')) extra.iconDataUrl = info.a
+                    else if (info.a.startsWith('http')) extra.iconUrl = info.a
+                  }
+                } catch {}
+              }
+              handleNewMessage(messengerId, text, Object.keys(extra).length ? extra : undefined)
+            })
+            .catch(() => handleNewMessage(messengerId, text))
           return
         }
         if (!msg.startsWith('__CC_NOTIF__')) return

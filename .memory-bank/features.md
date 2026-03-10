@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.53.3 (10 марта 2026)
+## Текущая версия: v0.54.0 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,13 @@
 ---
 
 ## Changelog
+
+### v0.54.0 (10 марта 2026) — Enriched addedNodes: имя отправителя и аватарка для MAX и др.
+- **Проблема**: MAX (и другие мессенджеры без Notification API) показывали ribbon без имени отправителя и аватарки. Лог уведомлений был пуст.
+- **Причина**: `quickNewMsgCheck` (MutationObserver addedNodes) эмиттил `__CC_MSG__` — только текст, без данных отправителя. `showNotification` override не вызывался.
+- **Фикс monitor.preload.js**: `getActiveChatSender()` + `getActiveChatAvatar()` извлекают имя и аватарку из заголовка активного чата (`.chat-info .peer-title`, `.topbar img.avatar-photo`). `quickNewMsgCheck` теперь эмиттит `__CC_NOTIF__` с enriched данными.
+- **Фикс App.jsx `__CC_MSG__` handler**: Backup обогащение через `executeJavaScript` — ищет sender в DOM чатлиста + пишет в `__cc_notif_log`.
+- **Фикс App.jsx `new-message` IPC**: Задержка 500мс для приоритета enriched `__CC_NOTIF__` — если за 500мс `__CC_NOTIF__` не пришёл, обрабатывает как есть.
 
 ### v0.53.3 (10 марта 2026) — Фикс hover-тултипа + statusbar диагностика навигации
 - **JS-тултип вместо CSS ::after**: `position: fixed` тултип при hover на ячейку таблицы — не обрезается `overflow: hidden` родителя.
