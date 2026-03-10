@@ -107,10 +107,16 @@ const { ipcRenderer } = require('electron')
       // Фильтр спам-текстов: статусы online, исходящие ("Вы: ..."), системные
       var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i
       var _outgoing = /^(вы:\s|you:\s)/i
+      // v0.58.0: статусы "Имя В сети", системные "Сообщение", "Пропущенный вызов"
+      var _statusEnd = /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i
+      var _sysText = /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i
       function isSpamNotif(body) {
         if (!body || body.length < 2) return 'empty'
-        if (_spamBody.test(body.trim())) return 'system'
-        if (_outgoing.test(body.trim())) return 'outgoing'
+        var t = body.trim()
+        if (_spamBody.test(t)) return 'system'
+        if (_outgoing.test(t)) return 'outgoing'
+        if (_statusEnd.test(t)) return 'status'
+        if (_sysText.test(t)) return 'sysText'
         return ''
       }
       function enrichNotif(title, body, tag, icon) {

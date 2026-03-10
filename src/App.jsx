@@ -966,12 +966,18 @@ export default function App() {
     // Подавляем уведомления если пользователь смотрит на эту вкладку
     // windowFocusedRef обновляется через IPC window-state из main process —
     // надёжнее чем document.hidden или document.hasFocus()
+    // v0.58.0: НЕ блокируем __CC_NOTIF__ (fromNotifAPI) — если мессенджер сам вызвал
+    // showNotification, значит текущий чат ≠ чат сообщения → пользователь НЕ видит его
     const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
-    if (isViewingThisTab) {
+    if (isViewingThisTab && !extra?.fromNotifAPI) {
       traceNotif('viewing', 'block', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
       return
     }
-    traceNotif('viewing', 'pass', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
+    if (isViewingThisTab && extra?.fromNotifAPI) {
+      traceNotif('viewing', 'pass', messengerId, text, `focused=true НО fromNotifAPI=true → мессенджер считает чат не открыт`)
+    } else {
+      traceNotif('viewing', 'pass', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
+    }
 
     // Автопереключение на вкладку с новым сообщением (если включено)
     if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {
@@ -1262,13 +1268,16 @@ export default function App() {
                   // Фильтр: системные/спам-тексты — не настоящие сообщения от собеседников
                   // VK шлёт Notification для: статусов online, своих исходящих, пустых текстов
                   var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i;
-                  // VK: исходящие начинаются с "Вы: " или "You: "
                   var _outgoing = /^(вы:\s|you:\s)/i;
-                  // isSpamNotif возвращает причину блокировки или '' если ОК
+                  var _statusEnd = /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i;
+                  var _sysText = /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i;
                   function isSpamNotif(body) {
                     if (!body || body.length < 2) return 'empty';
-                    if (_spamBody.test(body.trim())) return 'system';
-                    if (_outgoing.test(body.trim())) return 'outgoing';
+                    var t = body.trim();
+                    if (_spamBody.test(t)) return 'system';
+                    if (_outgoing.test(t)) return 'outgoing';
+                    if (_statusEnd.test(t)) return 'status';
+                    if (_sysText.test(t)) return 'sysText';
                     return '';
                   }
                   function enrichNotif(title, body, tag, icon) {
@@ -1420,10 +1429,12 @@ export default function App() {
           }
           const msgText = (e.args[0] || '').trim()
           if (!msgText) return
-          // Спам-фильтр для IPC new-message (v0.56.1: timestamps и системные тексты проходили без фильтра!)
+          // Спам-фильтр для IPC new-message (v0.56.1+v0.58.0: статусы, системные тексты)
           const isIpcSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(msgText)
             || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(msgText)
             || /^(вы:\s|you:\s)/i.test(msgText)
+            || /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i.test(msgText)
+            || /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i.test(msgText)
           if (isIpcSpam) {
             traceNotif('spam', 'block', messengerId, msgText, 'спам-фильтр IPC new-message')
             return
@@ -1479,10 +1490,13 @@ export default function App() {
           }
           const text = msg.slice(10).trim()
           if (!text) return
-          // Спам-фильтр для __CC_MSG__ (timestamp, системные тексты MAX)
+          // Спам-фильтр для __CC_MSG__ (timestamp, системные тексты MAX, статусы)
           const isMsgSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
             || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(text)
             || /^(вы:\s|you:\s)/i.test(text)
+            // v0.58.0: MAX статусы и системные тексты из addedNodes
+            || /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i.test(text)
+            || /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i.test(text)
           if (isMsgSpam) {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_MSG__')
             return
@@ -1642,11 +1656,13 @@ export default function App() {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = (data.b || '').trim()
           traceNotif('source', 'info', messengerId, text, `__CC_NOTIF__ | t="${(data.t||'').slice(0,20)}" icon=${!!data.i} tag=${!!data.g}`)
-          // Фильтр: timestamp / системный текст / исходящее ("Вы: ...") / MAX системные
+          // Фильтр: timestamp / системный текст / исходящее ("Вы: ...") / MAX системные / статусы
           const isSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
             || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i.test(text)
             || /^(вы:\s|you:\s)/i.test(text)
             || /^(ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(text)
+            || /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i.test(text)
+            || /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i.test(text)
           if (isSpam) {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_NOTIF__')
             return
@@ -1697,7 +1713,10 @@ export default function App() {
             if (extra.senderName) {
               senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }
             }
-            handleNewMessage(messengerId, text, Object.keys(extra).length ? extra : undefined)
+            // v0.58.0: fromNotifAPI=true → пропускаем viewing-блок
+            // Если мессенджер сам вызвал showNotification — пользователь НЕ видит этот чат
+            extra.fromNotifAPI = true
+            handleNewMessage(messengerId, text, extra)
           }
         } catch {}
       })
