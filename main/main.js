@@ -467,6 +467,11 @@ function createNotifWindow() {
     }
   })
 
+  // Перехват console.log из notification.html → main process terminal
+  notifWin.webContents.on('console-message', (_e, _level, msg) => {
+    console.log('[NotifHTML]', msg)
+  })
+
   notifWin.loadFile(getNotifHtmlPath()).catch(err => {
     console.error('[NotifManager] Failed to load notification.html:', err)
   })
@@ -875,8 +880,9 @@ function setupIPC() {
   ipcMain.handle('app:custom-notify', async (event, { title, body, fullBody, iconUrl, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, senderName, chatTag }) => {
     console.log('[NotifManager] IPC app:custom-notify received:', messengerName, title, body?.slice(0, 30))
     try {
-      await showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, senderName, chatTag })
-      return { ok: true }
+      const result = await showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, senderName, chatTag })
+      console.log('[NotifManager] showCustomNotification returned:', result)
+      return { ok: !!result, id: result }
     } catch (e) {
       console.error('[NotifManager] Ошибка:', e.message)
       return { ok: false, error: e.message }

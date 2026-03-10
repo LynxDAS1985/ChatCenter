@@ -248,7 +248,9 @@
     for (const child of container.children) {
       h += child.offsetHeight + 4
     }
-    return h > 0 ? h + 4 : 0
+    const result = h > 0 ? h + 4 : 0
+    console.log('[NotifHTML] calcHeight:', result, 'children:', container.children.length)
+    return result
   }
 
   function reportHeight() {
@@ -492,7 +494,11 @@
   }
 
   // IPC listeners
-  window.notifApi.onNotification((data) => addNotification(data))
+  console.log('[NotifHTML] Script loaded, registering listeners...')
+  window.notifApi.onNotification((data) => {
+    console.log('[NotifHTML] notif:show received:', data.id, data.messengerName, (data.body || '').slice(0, 30))
+    addNotification(data)
+  })
   window.notifApi.onDismiss((id) => dismissItem(id, true))
 </script>
 </body>
