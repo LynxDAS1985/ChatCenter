@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.51.0 (10 марта 2026)
+## Текущая версия: v0.52.0 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.52.0 (10 марта 2026) — Лог уведомлений (все мессенджеры) через контекстное меню
+- **Лог всех Notification**: `window.__cc_notif_log` — массив до 100 записей. Каждый `new Notification()` и `showNotification()` записывает: timestamp, title, body, tag, status (passed/blocked), reason (empty/system/outgoing), enrichedTitle.
+- **Пункт контекстного меню**: ПКМ на вкладке → "Лог уведомлений" → модальное окно с таблицей.
+- **Модальное окно**: Таблица с цветной маркировкой — зелёный RIBBON = пропущен, красный БЛОК = заблокирован. Синий = enriched (имя найдено в DOM). Копирование JSON в буфер.
+- **Работает для ВСЕХ мессенджеров**: injection script в App.jsx (executeJavaScript) и monitor.preload.js (<script>).
 
 ### v0.51.0 (10 марта 2026) — Фильтрация спам-ribbon VK + universal findSenderInChatlist
 - **FIX: VK — ribbon для своих исходящих сообщений**: VK шлёт `new Notification()` для СВОИХ сообщений. `isSpamNotif()` + `_outgoing` regex фильтруют "Вы: ..." в body.

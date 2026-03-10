@@ -162,8 +162,22 @@
 |-------|----------|
 | 🔄 Перезагрузить | `webview.reload()` + сброс monitorStatus в 'loading' |
 | 🔍 Диагностика DOM | Повторный вызов `runDiagnostics()` через executeJavaScript |
+| 🧪 Полная диагностика | localStorage, IndexedDB, cookies, avatars → буфер обмена |
+| 👤 Диагностика accountScript | Пошаговый тест извлечения имени аккаунта → буфер |
+| 📊 Лог уведомлений | Модальное окно с таблицей всех Notification (v0.52.0) |
 | 📋 Копировать URL | URL мессенджера в буфер обмена |
+| 🔒/📌 Закрепить/Открепить | Pin/unpin вкладки |
 | ✕ Закрыть вкладку | Удаление мессенджера |
+
+### Лог уведомлений (v0.52.0)
+
+Модальное окно `notifLogModal` — таблица всех перехваченных Notification для конкретного мессенджера.
+- `window.__cc_notif_log` — массив до 100 записей в main world WebView
+- Каждая запись: `{ts, status, title, body, tag, reason, enrichedTitle, hasIcon}`
+- `status: 'passed'` — ribbon показан (зелёная строка)
+- `status: 'blocked'` — заблокирован (красная строка), `reason: 'empty'|'system'|'outgoing'`
+- `enrichedTitle` — имя найдено через `enrichNotif` в DOM (синий текст)
+- Кнопка "Копировать JSON" — полный лог в буфер обмена для отладки
 
 ### Последнее сообщение в статусбаре (v0.23.0)
 

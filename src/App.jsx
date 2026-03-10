@@ -397,6 +397,7 @@ export default function App() {
   const statusBarMsgTimer = useRef(null)
   const tabContextMenu = useRef({ id: null, x: 0, y: 0 })
   const [contextMenuTab, setContextMenuTab] = useState(null) // { id, x, y }
+  const [notifLogModal, setNotifLogModal] = useState(null) // { messengerId, name, log: [] } | null
   const statsRef = useRef({ today: 0, autoToday: 0, total: 0, date: '' })
   const statsSaveTimer = useRef(null)
   const zoomSaveTimer = useRef(null)
@@ -1020,6 +1021,14 @@ export default function App() {
               if (!window.__cc_notif_hooked) {
                 window.__cc_notif_hooked = true;
                 (function() {
+                  // Лог всех Notification для отладки (доступен через контекстное меню вкладки)
+                  window.__cc_notif_log = window.__cc_notif_log || [];
+                  function _logNotif(status, title, body, tag, icon, reason, enrichedTitle) {
+                    var entry = { ts: Date.now(), status: status, title: title || '', body: (body || '').slice(0, 200), tag: tag || '', reason: reason || '', enrichedTitle: enrichedTitle || '' };
+                    if (icon) entry.hasIcon = true;
+                    window.__cc_notif_log.push(entry);
+                    if (window.__cc_notif_log.length > 100) window.__cc_notif_log.shift();
+                  }
                   var _avatarCache = {}; // кэш аватарок: tag/name → URL (TTL 30 мин)
                   var _avatarCacheTs = {};
                   function findAvatar(name, tag) {
@@ -1146,16 +1155,16 @@ export default function App() {
                   var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i;
                   // VK: исходящие начинаются с "Вы: " или "You: "
                   var _outgoing = /^(вы:\s|you:\s)/i;
+                  // isSpamNotif возвращает причину блокировки или '' если ОК
                   function isSpamNotif(body) {
-                    if (!body || body.length < 2) return true;
-                    if (_spamBody.test(body.trim())) return true;
-                    if (_outgoing.test(body.trim())) return true;
-                    return false;
+                    if (!body || body.length < 2) return 'empty';
+                    if (_spamBody.test(body.trim())) return 'system';
+                    if (_outgoing.test(body.trim())) return 'outgoing';
+                    return '';
                   }
                   function enrichNotif(title, body, tag, icon) {
                     var realTitle = title;
                     var realIcon = icon;
-                    // Если title — название мессенджера или пустой → ищем имя отправителя в chatlist
                     if (!title || _appTitles.test(title.trim())) {
                       var sender = findSenderInChatlist(body);
                       if (sender) {
@@ -1170,10 +1179,15 @@ export default function App() {
                   window.Notification = function(title, opts) {
                     try {
                       var body = (opts && opts.body) || '';
-                      if (isSpamNotif(body)) return;
                       var tag = (opts && opts.tag) || '';
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
+                      var spam = isSpamNotif(body);
+                      if (spam) {
+                        _logNotif('blocked', title, body, tag, icon, spam, '');
+                        return;
+                      }
                       var enriched = enrichNotif(title, body, tag, icon);
+                      _logNotif('passed', title, body, tag, icon, '', enriched.title);
                       toDataUrl(enriched.icon, function(dataIcon) {
                         console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: dataIcon, g: tag }));
                       });
@@ -1186,10 +1200,15 @@ export default function App() {
                     ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
                       try {
                         var body = (opts && opts.body) || '';
-                        if (isSpamNotif(body)) return Promise.resolve();
                         var tag = (opts && opts.tag) || '';
                         var icon = (opts && opts.icon) || (opts && opts.image) || '';
+                        var spam = isSpamNotif(body);
+                        if (spam) {
+                          _logNotif('blocked', title, body, tag, icon, spam, '');
+                          return Promise.resolve();
+                        }
                         var enriched = enrichNotif(title, body, tag, icon);
+                        _logNotif('passed', title, body, tag, icon, '', enriched.title);
                         toDataUrl(enriched.icon, function(dataIcon) {
                           console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: dataIcon, g: tag }));
                         });
@@ -1491,6 +1510,21 @@ export default function App() {
             window.api.invoke('app:custom-notify', { title: 'ОШИБКА accountScript', body: err.message || String(err), color: '#EF4444', emoji: '⚠️', messengerName: 'ЦентрЧатов', messengerId: id }).catch(() => {})
           })
       }
+    } else if (action === 'notifLog') {
+      // Лог уведомлений — извлекаем массив из WebView main world
+      if (wv) {
+        wv.executeJavaScript(`(function() { return JSON.stringify(window.__cc_notif_log || []); })()`)
+          .then(json => {
+            try {
+              const log = JSON.parse(json)
+              const mInfo = messengers.find(x => x.id === id)
+              setNotifLogModal({ messengerId: id, name: mInfo?.name || id, log })
+            } catch {}
+          })
+          .catch(() => {
+            setNotifLogModal({ messengerId: id, name: id, log: [] })
+          })
+      }
     } else if (action === 'copyUrl') {
       const m = messengers.find(x => x.id === id)
       if (m?.url) navigator.clipboard.writeText(m.url).catch(() => {})
@@ -1720,6 +1754,7 @@ export default function App() {
                 { action: 'diag', icon: '🔍', label: 'Диагностика DOM' },
                 { action: 'diagFull', icon: '🧪', label: 'Полная диагностика (→ буфер)' },
                 { action: 'diagAccount', icon: '👤', label: 'Диагностика accountScript (→ буфер)' },
+                { action: 'notifLog', icon: '📊', label: 'Лог уведомлений' },
                 { action: 'copyUrl', icon: '📋', label: 'Копировать URL' },
                 { action: 'pin', icon: tabPinned ? '📌' : '🔒', label: tabPinned ? 'Открепить вкладку' : 'Закрепить вкладку' },
                 ...(!tabPinned ? [{ action: 'close', icon: '✕', label: 'Закрыть вкладку', color: '#f87171' }] : []),
@@ -2007,6 +2042,102 @@ export default function App() {
                   onMouseLeave={e => e.currentTarget.style.opacity = '1'}
                 >Закрыть</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Модальное окно: Лог уведомлений ── */}
+      {notifLogModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={() => setNotifLogModal(null)}>
+          <div
+            className="rounded-xl shadow-2xl flex flex-col"
+            style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)', width: '720px', maxWidth: '90vw', maxHeight: '80vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Заголовок */}
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--cc-border)' }}>
+              <div className="flex items-center gap-2">
+                <span>📊</span>
+                <span className="font-semibold text-sm">Лог уведомлений — {notifLogModal.name}</span>
+                <span className="text-xs" style={{ color: 'var(--cc-text-dimmer)' }}>
+                  ({notifLogModal.log.length} записей)
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="px-2 py-1 rounded text-xs cursor-pointer"
+                  style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)' }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(JSON.stringify(notifLogModal.log, null, 2)).catch(() => {})
+                  }}
+                >Копировать JSON</button>
+                <button
+                  className="px-2 py-1 rounded text-xs cursor-pointer"
+                  style={{ color: 'var(--cc-text-dimmer)' }}
+                  onClick={() => setNotifLogModal(null)}
+                >✕</button>
+              </div>
+            </div>
+            {/* Таблица */}
+            <div className="flex-1 overflow-auto px-2 py-1" style={{ fontSize: '12px' }}>
+              {notifLogModal.log.length === 0 ? (
+                <div className="flex items-center justify-center h-32" style={{ color: 'var(--cc-text-dimmer)' }}>
+                  Нет записей. Уведомления появятся после получения сообщений.
+                </div>
+              ) : (
+                <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
+                      <th className="text-left px-2 py-1.5 font-medium">Время</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Статус</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Title (оригинал)</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Body</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Обогащено</th>
+                      <th className="text-left px-2 py-1.5 font-medium">Причина</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...notifLogModal.log].reverse().map((entry, idx) => {
+                      const time = new Date(entry.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                      const isPassed = entry.status === 'passed'
+                      const reasonLabels = { empty: 'Пустое', system: 'Системное', outgoing: 'Исходящее' }
+                      return (
+                        <tr
+                          key={idx}
+                          style={{
+                            borderBottom: '1px solid var(--cc-border)',
+                            backgroundColor: isPassed ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)',
+                          }}
+                        >
+                          <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--cc-text-dimmer)' }}>{time}</td>
+                          <td className="px-2 py-1.5">
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium" style={{
+                              backgroundColor: isPassed ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                              color: isPassed ? '#4ade80' : '#f87171',
+                            }}>
+                              {isPassed ? 'RIBBON' : 'БЛОК'}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 max-w-[120px] truncate" title={entry.title}>{entry.title || '—'}</td>
+                          <td className="px-2 py-1.5 max-w-[180px] truncate" title={entry.body}>{entry.body || '—'}</td>
+                          <td className="px-2 py-1.5 max-w-[120px] truncate" style={{ color: entry.enrichedTitle && entry.enrichedTitle !== entry.title ? '#60a5fa' : 'inherit' }} title={entry.enrichedTitle}>
+                            {entry.enrichedTitle && entry.enrichedTitle !== entry.title ? entry.enrichedTitle : '—'}
+                          </td>
+                          <td className="px-2 py-1.5" style={{ color: '#f87171' }}>{reasonLabels[entry.reason] || entry.reason || ''}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {/* Легенда */}
+            <div className="flex items-center gap-4 px-4 py-2 text-[11px]" style={{ borderTop: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
+              <span><span style={{ color: '#4ade80' }}>RIBBON</span> = показан</span>
+              <span><span style={{ color: '#f87171' }}>БЛОК</span> = заблокирован</span>
+              <span><span style={{ color: '#60a5fa' }}>Синий</span> = enriched (имя найдено в DOM)</span>
+              <span>Макс. 100 записей</span>
             </div>
           </div>
         </div>

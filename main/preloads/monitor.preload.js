@@ -14,6 +14,14 @@ const { ipcRenderer } = require('electron')
     s.textContent = '(' + function() {
       if (window.__cc_notif_hooked) return
       window.__cc_notif_hooked = true
+      // Лог всех Notification для отладки (доступен через контекстное меню вкладки)
+      window.__cc_notif_log = window.__cc_notif_log || []
+      function _logNotif(status, title, body, tag, icon, reason, enrichedTitle) {
+        var entry = { ts: Date.now(), status: status, title: title || '', body: (body || '').slice(0, 200), tag: tag || '', reason: reason || '', enrichedTitle: enrichedTitle || '' }
+        if (icon) entry.hasIcon = true
+        window.__cc_notif_log.push(entry)
+        if (window.__cc_notif_log.length > 100) window.__cc_notif_log.shift()
+      }
       // Поиск аватарки по имени отправителя в DOM (fallback когда icon не передан)
       function findAvatar(name) {
         if (!name) return ''
@@ -100,10 +108,10 @@ const { ipcRenderer } = require('electron')
       var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i
       var _outgoing = /^(вы:\s|you:\s)/i
       function isSpamNotif(body) {
-        if (!body || body.length < 2) return true
-        if (_spamBody.test(body.trim())) return true
-        if (_outgoing.test(body.trim())) return true
-        return false
+        if (!body || body.length < 2) return 'empty'
+        if (_spamBody.test(body.trim())) return 'system'
+        if (_outgoing.test(body.trim())) return 'outgoing'
+        return ''
       }
       function enrichNotif(title, body, tag, icon) {
         var realTitle = title
@@ -123,10 +131,15 @@ const { ipcRenderer } = require('electron')
       window.Notification = function(title, opts) {
         try {
           var body = (opts && opts.body) || ''
-          if (isSpamNotif(body)) return
           var tag = (opts && opts.tag) || ''
           var icon = (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
+          var spam = isSpamNotif(body)
+          if (spam) {
+            _logNotif('blocked', title, body, tag, icon, spam, '')
+            return
+          }
           var enriched = enrichNotif(title, body, tag, icon)
+          _logNotif('passed', title, body, tag, icon, '', enriched.title)
           console.log('__CC_NOTIF__' + JSON.stringify({
             t: enriched.title || '', b: body, i: enriched.icon, g: tag
           }))
@@ -145,10 +158,15 @@ const { ipcRenderer } = require('electron')
         ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
           try {
             var body = (opts && opts.body) || ''
-            if (isSpamNotif(body)) return Promise.resolve()
             var tag = (opts && opts.tag) || ''
             var icon = (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
+            var spam = isSpamNotif(body)
+            if (spam) {
+              _logNotif('blocked', title, body, tag, icon, spam, '')
+              return Promise.resolve()
+            }
             var enriched = enrichNotif(title, body, tag, icon)
+            _logNotif('passed', title, body, tag, icon, '', enriched.title)
             console.log('__CC_NOTIF__' + JSON.stringify({
               t: enriched.title || '', b: body, i: enriched.icon, g: tag
             }))
