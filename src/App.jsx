@@ -247,15 +247,25 @@ function buildChatNavigateScript(url, senderName, chatTag) {
             chat.click();
             return {ok:true, method:'tag-dom', log:log.join(', ')};
           }
-          // Метод 2: Навигация через хэш (Telegram Web K слушает hashchange)
+          // Метод 2: Telegram Web K внутренняя навигация через appImManager
+          // Telegram peer types: 1=user, 2=chat, 4/5=channel
           try {
-            var hash = '#' + peerId;
-            if (window.location.hash !== hash) {
-              window.location.hash = hash;
-              log.push('hashNav=' + hash);
-              return {ok:true, method:'tag-hash', log:log.join(', ')};
+            var peerType = 0;
+            var m = tag.match(/^peer(\\d+)_/);
+            if (m) peerType = parseInt(m[1]);
+            // Для каналов (type 4/5): peerId в Web K = -100XXXX (supergroup/channel формат)
+            var navId = peerId;
+            if (peerType >= 4 && navId.charAt(0) !== '-') navId = '-100' + navId;
+            else if (peerType === 2 && navId.charAt(0) !== '-') navId = '-' + navId;
+            log.push('peerType=' + peerType + ',navId=' + navId);
+            // Попробуем через DOM с navId
+            var el2 = document.querySelector('[data-peer-id="' + navId + '"]');
+            if (el2) {
+              var chat2 = el2.closest('.chatlist-chat') || el2;
+              chat2.click();
+              return {ok:true, method:'tag-navId', log:log.join(', ')};
             }
-          } catch(he) { log.push('hashErr=' + he.message); }
+          } catch(pe) { log.push('peerErr=' + pe.message); }
         }` : ''}
         var name = ${nameJson};
         log.push('name=' + JSON.stringify(name));
@@ -296,19 +306,6 @@ function buildChatNavigateScript(url, senderName, chatTag) {
           if (t === name || (t && name.length > 3 && (t.indexOf(name) >= 0 || name.indexOf(t) >= 0))) {
             var chat = extra[i].closest('.chatlist-chat') || extra[i].closest('a') || extra[i].closest('li') || extra[i].closest('[data-peer-id]');
             if (chat) { chat.click(); return {ok:true, method:'extra', log:log.join(', ')}; }
-          }
-        }
-        // 5) Telegram search: кликнуть поиск и ввести имя
-        var searchBtn = document.querySelector('.btn-icon.btn-menu-toggle.rp') || document.querySelector('[class*="search"][class*="btn"]') || document.querySelector('.sidebar-header .btn-icon');
-        if (!searchBtn) {
-          // Попробуем найти поле поиска напрямую
-          var searchInput = document.querySelector('.input-search input') || document.querySelector('input[type="search"]') || document.querySelector('[class*="search"] input');
-          if (searchInput) {
-            searchInput.focus();
-            searchInput.value = name;
-            searchInput.dispatchEvent(new Event('input', {bubbles: true}));
-            log.push('searchInput=direct');
-            return {ok:'search', method:'searchInput', log:log.join(', ')};
           }
         }
         return {ok:false, method:'notFound', log:log.join(', ')};
@@ -592,6 +589,11 @@ export default function App() {
       // Навигация к конкретному чату внутри WebView
       if (senderName || chatTag) {
         const tryNavigate = (attempt) => {
+          // Проверяем что пользователь всё ещё на этой вкладке
+          if (activeIdRef.current !== messengerId) {
+            console.log(`[GoChat] attempt=${attempt} — CANCELLED (user switched to ${activeIdRef.current})`)
+            return
+          }
           const el = webviewRefs.current[messengerId]
           if (!el) {
             console.log(`[GoChat] attempt=${attempt} — webview ref NOT FOUND for ${messengerId}`)
@@ -606,12 +608,13 @@ export default function App() {
           el.executeJavaScript(script).then(result => {
             const ok = result === true || (result && result.ok)
             console.log(`[GoChat] attempt=${attempt} ok=${ok}`, typeof result === 'object' ? result : { result }, `url=${url.slice(0,50)}`)
-            if (!ok && attempt < 3) {
+            // Retry только если НЕ нашли и пользователь всё ещё на вкладке
+            if (!ok && attempt < 2 && activeIdRef.current === messengerId) {
               setTimeout(() => tryNavigate(attempt + 1), 1500)
             }
           }).catch(err => { console.log('[GoChat] executeJS error:', err.message) })
         }
-        // Задержка 800ms — WebView нужно время на отрисовку после setActiveId
+        // Одна попытка через 800ms — без агрессивных retry
         setTimeout(() => tryNavigate(0), 800)
       }
     })
