@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.47.1 (10 марта 2026)
+## Текущая версия: v0.47.2 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.47.2 (10 марта 2026) — Фикс ложных ribbon при навигации между чатами + rAF fix
+- **FIX: ложные ribbon при навигации**: При переключении чата в Telegram, `getLastMessageText` находил последнее сообщение в НОВОМ чате, которое отличалось от `lastActiveMessageText` → считал его "новым" → показывал ribbon для СТАРОГО сообщения. Исправлено: Path 2 (детекция по тексту) теперь отключён для Telegram (`type !== 'telegram'`). Telegram хорошо работает через `__CC_NOTIF__` + unread count.
+- **FIX: ribbon не показывался после первого dismiss**: `reportHeight()` использовал `requestAnimationFrame`, который НЕ вызывается в hidden BrowserWindow. После dismiss → `notifWin.hide()` → rAF больше не выполняется → ribbon навсегда скрыт. Заменён на `setTimeout(60ms)`. Также main.js показывает `showInactive()` ДО отправки `notif:show`.
+- **Кнопка «Тест ribbon»**: В настройках — кнопка «Тест» для каждого мессенджера, напрямую вызывает `app:custom-notify`.
+- **Диагностическое логирование**: `[Notif]` и `[NotifManager]` логи на каждом шаге пути уведомлений. Console.log из notification.html перенаправляется в терминал main process через `[NotifHTML]`.
 
 ### v0.47.1 (10 марта 2026) — Диагностика ribbon + кнопка «Тест ribbon»
 - **Диагностическое логирование**: Подробные console.log на каждом шаге пути уведомлений: handleNewMessage (empty/dedup/viewing/pass/ribbon skip), new-message IPC (warm-up), showCustomNotification (empty body/timestamp/dedup). Каждый log с префиксом `[Notif]` или `[NotifManager]`.

@@ -738,9 +738,11 @@ function sendUpdate(type) {
   }
 
   // Path 2: Детекция новых входящих сообщений в АКТИВНОМ чате
-  // Когда чат открыт — VK/WhatsApp не считают сообщение непрочитанным, счётчик не растёт
+  // Когда чат открыт — VK/WhatsApp/MAX не считают сообщение непрочитанным, счётчик не растёт
   // Поэтому проверяем текст последнего входящего сообщения отдельно
-  if (monitorReady) {
+  // ВАЖНО: НЕ для Telegram — у TG работает __CC_NOTIF__ + unread count,
+  // а Path 2 ловит "новые" тексты при навигации между чатами (ложные срабатывания)
+  if (monitorReady && type !== 'telegram') {
     const inText = getLastMessageText(type)
     if (inText && inText !== lastSentText && inText !== lastActiveMessageText) {
       const now = Date.now()
@@ -755,6 +757,10 @@ function sendUpdate(type) {
       }
     }
     // Обновляем lastActiveMessageText даже без отправки — чтобы не уведомлять повторно
+    if (inText) lastActiveMessageText = inText
+  } else if (monitorReady && type === 'telegram') {
+    // Для Telegram: только обновляем lastActiveMessageText для dedup, без уведомлений
+    const inText = getLastMessageText(type)
     if (inText) lastActiveMessageText = inText
   }
 }
