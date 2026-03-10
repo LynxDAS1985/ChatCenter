@@ -237,35 +237,46 @@ function buildChatNavigateScript(url, senderName, chatTag) {
         if (peerId) {
           var el = document.querySelector('.chatlist-chat[data-peer-id="' + peerId + '"]');
           if (!el) el = document.querySelector('.chatlist-chat[data-peer-id="-' + peerId + '"]');
-          if (el) { el.click(); return; }
+          if (el) { el.click(); return true; }
         }` : ''}
         var name = ${nameJson};
-        if (!name) return;
+        if (!name) return false;
         var titles = document.querySelectorAll('.chatlist-chat .peer-title');
         for (var i = 0; i < titles.length; i++) {
           if (titles[i].textContent.trim() === name) {
             var chat = titles[i].closest('.chatlist-chat');
-            if (chat) { chat.click(); return; }
+            if (chat) { chat.click(); return true; }
           }
         }
-      } catch(e) {}
+        return false;
+      } catch(e) { return false; }
     })();`
   }
 
-  // MAX (web.max.ru)
+  // MAX (web.max.ru) — Telegram fork, аналогичные селекторы
   if (url.includes('max.ru')) {
     return `(function() {
       try {
         var name = ${nameJson};
-        if (!name) return;
+        if (!name) return false;
+        // MAX использует те же классы что Telegram Web K
+        var titles = document.querySelectorAll('.chatlist-chat .peer-title');
+        for (var i = 0; i < titles.length; i++) {
+          if (titles[i].textContent.trim() === name) {
+            var chat = titles[i].closest('.chatlist-chat');
+            if (chat) { chat.click(); return true; }
+          }
+        }
+        // Fallback: generic селекторы
         var els = document.querySelectorAll('[class*="chatlist"] [class*="title"], [class*="dialog"] [class*="name"], [class*="peer"] [class*="title"]');
         for (var i = 0; i < els.length; i++) {
           if (els[i].textContent.trim() === name) {
             var row = els[i].closest('[class*="chat"], [class*="dialog"], a, li');
-            if (row) { row.click(); return; }
+            if (row) { row.click(); return true; }
           }
         }
-      } catch(e) {}
+        return false;
+      } catch(e) { return false; }
     })();`
   }
 
@@ -274,15 +285,24 @@ function buildChatNavigateScript(url, senderName, chatTag) {
     return `(function() {
       try {
         var name = ${nameJson};
-        if (!name) return;
+        if (!name) return false;
         var spans = document.querySelectorAll('span[title]');
         for (var i = 0; i < spans.length; i++) {
           if (spans[i].getAttribute('title') === name) {
             var row = spans[i].closest('[data-testid="cell-frame-container"]') || spans[i].closest('[tabindex]') || spans[i].closest('[role="listitem"]');
-            if (row) { row.click(); return; }
+            if (row) { row.click(); return true; }
           }
         }
-      } catch(e) {}
+        // Fuzzy: проверяем partial match (имя может быть обрезано в Notification)
+        for (var i = 0; i < spans.length; i++) {
+          var t = spans[i].getAttribute('title') || '';
+          if (t && name.length > 3 && (t.startsWith(name) || name.startsWith(t))) {
+            var row = spans[i].closest('[data-testid="cell-frame-container"]') || spans[i].closest('[tabindex]') || spans[i].closest('[role="listitem"]');
+            if (row) { row.click(); return true; }
+          }
+        }
+        return false;
+      } catch(e) { return false; }
     })();`
   }
 
@@ -291,15 +311,16 @@ function buildChatNavigateScript(url, senderName, chatTag) {
     return `(function() {
       try {
         var name = ${nameJson};
-        if (!name) return;
+        if (!name) return false;
         var els = document.querySelectorAll('.im_dialog_peer, [class*="ConversationHeader__name"], [class*="PeerName"]');
         for (var i = 0; i < els.length; i++) {
           if (els[i].textContent.trim() === name) {
             var row = els[i].closest('a, li, [role="listitem"], [class*="dialog"]');
-            if (row) { row.click(); return; }
+            if (row) { row.click(); return true; }
           }
         }
-      } catch(e) {}
+        return false;
+      } catch(e) { return false; }
     })();`
   }
 
@@ -312,10 +333,11 @@ function buildChatNavigateScript(url, senderName, chatTag) {
       while (walker.nextNode()) {
         if (walker.currentNode.textContent.trim() === name) {
           var el = walker.currentNode.parentElement.closest('a, li, [role="listitem"], [tabindex]');
-          if (el) { el.click(); return; }
+          if (el) { el.click(); return true; }
         }
       }
-    } catch(e) {}
+      return false;
+    } catch(e) { return false; }
   })();`
 }
 
@@ -355,7 +377,7 @@ export default function App() {
   const [webviewLoading, setWebviewLoading] = useState({}) // { [id]: true/false } — загружается ли страница WebView
 
   const webviewRefs = useRef({})
-  const notifReadyRef = useRef({})   // { [id]: true } — warm-up: игнорируем __CC_NOTIF__ первые 10 сек
+  const notifReadyRef = useRef({})   // { [id]: true } — warm-up: игнорируем ВСЕ уведомления первые 30 сек
   const notifDedupRef = useRef(new Map()) // дедупликация __CC_NOTIF__ — messengerId:normalizedBody → timestamp
   const retryTimers = useRef({})
   const previewTimers = useRef({})
@@ -500,17 +522,28 @@ export default function App() {
   // ── Клик по кастомному уведомлению (Messenger Ribbon) ────────────────────
   useEffect(() => {
     return window.api.on('notify:clicked', ({ messengerId, senderName, chatTag }) => {
+      console.log('[GoChat] notify:clicked', { messengerId, senderName, chatTag })
       if (!messengerId) return
       setActiveId(messengerId)
       // Навигация к конкретному чату внутри WebView
       if (senderName || chatTag) {
-        setTimeout(() => {
+        const tryNavigate = (attempt) => {
           const el = webviewRefs.current[messengerId]
           if (!el) return
           const url = el.getURL?.() || ''
           const script = buildChatNavigateScript(url, senderName, chatTag)
-          if (script) el.executeJavaScript(script).catch(() => {})
-        }, 350)
+          if (script) {
+            el.executeJavaScript(script).then(result => {
+              console.log(`[GoChat] attempt=${attempt} result=${result} url=${url.slice(0,40)}`)
+              // Повторная попытка если первая не нашла элемент (WebView мог не успеть загрузить sidebar)
+              if (!result && attempt < 2) {
+                setTimeout(() => tryNavigate(attempt + 1), 1200)
+              }
+            }).catch(err => { console.log('[GoChat] executeJS error:', err.message) })
+          }
+        }
+        // Задержка 600ms — WebView нужно время на отрисовку после setActiveId
+        setTimeout(() => tryNavigate(0), 600)
       }
     })
   }, [])
@@ -927,10 +960,11 @@ export default function App() {
         retryTimers.current[messengerId] = setTimeout(
           () => tryExtractAccount(messengerId, 0), 3500
         )
-        // Warm-up: игнорируем __CC_NOTIF__ первые 10 сек после загрузки
-        // VK и другие мессенджеры при загрузке воспроизводят старые/кешированные уведомления
+        // Warm-up: игнорируем ВСЕ уведомления первые 30 сек после загрузки WebView
+        // Мессенджеры (WhatsApp, Telegram, MAX) при загрузке кидают Notification для старых
+        // непрочитанных + unread count идёт 0→N. 10 сек недостаточно — WhatsApp грузится дольше.
         notifReadyRef.current[messengerId] = false
-        setTimeout(() => { notifReadyRef.current[messengerId] = true }, 10000)
+        setTimeout(() => { notifReadyRef.current[messengerId] = true }, 30000)
         // Через 20 сек если монитор не ответил — помечаем как error
         setTimeout(() => {
           setMonitorStatus(prev => {

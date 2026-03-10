@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.48.1 (10 марта 2026)
+## Текущая версия: v0.49.0 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.49.0 (10 марта 2026) — Фикс startup ribbon (warm-up 30 сек) + навигация к чату
+- **FIX: startup ribbon — warm-up 30 сек**: 10 секунд недостаточно — WhatsApp загружается 15-30 сек и кидает `new Notification()` для старых непрочитанных. Warm-up увеличен до 30 сек в App.jsx (`notifReadyRef`) и в main.js backup path (`webviewReadySet`).
+- **FIX: "Перейти к чату"**: `buildChatNavigateScript` теперь возвращает `true/false`. Retry до 3 попыток (задержка 1.2 сек). Первая попытка через 600ms (вместо 350ms). MAX: добавлены Telegram-like селекторы (`.chatlist-chat .peer-title`). WhatsApp: fuzzy match по `startsWith`.
+- **Логирование навигации**: `[GoChat]` логи для отладки кнопки "Перейти к чату".
 
 ### v0.48.1 (10 марта 2026) — Фикс startup notifications (ложные ribbon при запуске)
 - **FIX: ribbon при запуске для старых сообщений**: При запуске приложения счётчик непрочитанных шёл 0→N, что вызывало fallback ribbon и звук для КАЖДОГО мессенджера с непрочитанными. Причина: `page-title-updated` и `unread-count` хендлеры не проверяли `notifReadyRef` (10 сек warm-up). Добавлена проверка `notifReadyRef.current[messengerId]` в оба хендлера.
