@@ -525,12 +525,16 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
 
   try {
     if (!notifWin || notifWin.isDestroyed()) {
+      console.log('[NotifManager] Creating new notifWin...')
       createNotifWindow()
       // Ждём загрузку HTML с таймаутом 5 сек
       await Promise.race([
         new Promise(resolve => notifWin.webContents.once('did-finish-load', resolve)),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Notification HTML load timeout')), 5000))
       ])
+      console.log('[NotifManager] notifWin loaded OK')
+    } else {
+      console.log('[NotifManager] notifWin already exists, reusing')
     }
   } catch (err) {
     console.error('[NotifManager] Window init error:', err.message)
@@ -570,6 +574,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   }
   notifItems.push(data)
 
+  console.log('[NotifManager] Sending notif:show to notifWin, id:', id, 'body:', body?.slice(0, 30))
   notifWin.webContents.send('notif:show', data)
   // НЕ вызываем repositionNotifWin() — HTML сам пришлёт notif:resize с точной высотой.
   // Двойной setBounds (reposition + resize) вызывал дёрг первого уведомления на Windows.
@@ -609,6 +614,7 @@ function setupNotifIPC() {
 
   let lastNotifBounds = null // Кэш bounds — не дёргать окно если не изменились
   ipcMain.on('notif:resize', (_event, height) => {
+    console.log('[NotifManager] notif:resize received, height:', height)
     // HTML сообщает нужную высоту — единственный источник позиционирования
     if (!notifWin || notifWin.isDestroyed()) return
     height = Math.round(height)

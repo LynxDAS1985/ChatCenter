@@ -274,23 +274,28 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                           </span>
                           <Toggle value={ribbonOn} onChange={v => setMNotif('ribbon', v)} color={m.color} />
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation()
                               console.log(`[Notif] TEST ribbon for ${m.id} (${m.name})`)
-                              window.api.invoke('app:custom-notify', {
-                                title: 'Тест',
-                                body: `Тестовое уведомление от ${m.name}`,
-                                color: m.color || '#2AABEE',
-                                emoji: m.emoji || '💬',
-                                messengerName: m.name || 'ЦентрЧатов',
-                                messengerId: m.id,
-                              }).then(r => console.log('[Notif] TEST result:', r)).catch(e => console.error('[Notif] TEST error:', e))
+                              try {
+                                window.api.invoke('app:custom-notify', {
+                                  title: 'Тест',
+                                  body: `Тестовое уведомление от ${m.name}`,
+                                  color: m.color || '#2AABEE',
+                                  emoji: m.emoji || '💬',
+                                  messengerName: m.name || 'ЦентрЧатов',
+                                  messengerId: m.id,
+                                }).then(r => console.log('[Notif] TEST result:', r)).catch(err => console.error('[Notif] TEST error:', err))
+                              } catch (err) {
+                                console.error('[Notif] TEST invoke crash:', err)
+                              }
                             }}
-                            className="text-[10px] px-1.5 py-0.5 rounded-lg transition-all cursor-pointer"
-                            style={{ backgroundColor: `${m.color}15`, color: m.color, border: `1px solid ${m.color}33` }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${m.color}30` }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${m.color}15` }}
+                            className="text-[10px] px-2 py-1 rounded-lg transition-all cursor-pointer font-medium"
+                            style={{ backgroundColor: `${m.color}22`, color: m.color, border: `1px solid ${m.color}55` }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${m.color}44` }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${m.color}22` }}
                             title="Тест ribbon"
-                          >🔔</button>
+                          >Тест</button>
                         </div>
                       </div>
                     </div>
