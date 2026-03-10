@@ -206,8 +206,23 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
             ) : (
               <div className="space-y-1.5">
                 {messengers.map(m => {
+                  const mNotifs = (settings.messengerNotifs || {})[m.id] || {}
+                  // Backwards compat: если messengerNotifs не задан — используем старый mutedMessengers
                   const mutedMap = settings.mutedMessengers || {}
-                  const isMuted = !!mutedMap[m.id]
+                  const legacyMuted = !!mutedMap[m.id]
+                  const soundOn = mNotifs.sound !== undefined ? mNotifs.sound : !legacyMuted
+                  const ribbonOn = mNotifs.ribbon !== undefined ? mNotifs.ribbon : true
+                  const setMNotif = (key, val) => {
+                    const all = { ...(settings.messengerNotifs || {}) }
+                    all[m.id] = { ...(all[m.id] || {}), [key]: val }
+                    // Синхронизация с mutedMessengers для backwards compat
+                    if (key === 'sound') {
+                      const mm = { ...mutedMap }
+                      if (val) { delete mm[m.id] } else { mm[m.id] = true }
+                      set('mutedMessengers', mm)
+                    }
+                    set('messengerNotifs', all)
+                  }
                   return (
                     <div
                       key={m.id}
@@ -237,28 +252,28 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                           <span className="text-[10px] shrink-0" style={{ color: 'var(--cc-text-dimmer)' }}>по умолч.</span>
                         )}
                       </div>
-                      {/* Звук уведомления для этого мессенджера */}
-                      <div className="flex items-center gap-2 mt-1.5 pl-5">
-                        <span className="text-[11px]" style={{ color: isMuted ? 'var(--cc-text-dimmer)' : 'var(--cc-text-dim)' }}>
-                          {isMuted ? '🔇 Звук выкл' : '🔔 Звук вкл'}
-                        </span>
-                        <Toggle
-                          value={!isMuted}
-                          onChange={v => {
-                            const next = { ...mutedMap }
-                            if (v) { delete next[m.id] } else { next[m.id] = true }
-                            set('mutedMessengers', next)
-                          }}
-                          color={m.color}
-                        />
-                        <button
-                          onClick={() => playTestSound(m.color)}
-                          className="text-[10px] px-2 py-0.5 rounded-lg transition-all cursor-pointer"
-                          style={{ backgroundColor: `${m.color}15`, color: m.color, border: `1px solid ${m.color}33` }}
-                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${m.color}30` }}
-                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${m.color}15` }}
-                          title="Воспроизвести тестовый звук"
-                        >🔊 Тест</button>
+                      {/* Per-messenger настройки: звук + ribbon */}
+                      <div className="flex items-center gap-3 mt-1.5 pl-5 flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px]" style={{ color: soundOn ? 'var(--cc-text-dim)' : 'var(--cc-text-dimmer)' }}>
+                            {soundOn ? '🔔' : '🔇'} Звук
+                          </span>
+                          <Toggle value={soundOn} onChange={v => setMNotif('sound', v)} color={m.color} />
+                          <button
+                            onClick={() => playTestSound(m.color)}
+                            className="text-[10px] px-1.5 py-0.5 rounded-lg transition-all cursor-pointer"
+                            style={{ backgroundColor: `${m.color}15`, color: m.color, border: `1px solid ${m.color}33` }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${m.color}30` }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = `${m.color}15` }}
+                            title="Тест звука"
+                          >🔊</button>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px]" style={{ color: ribbonOn ? 'var(--cc-text-dim)' : 'var(--cc-text-dimmer)' }}>
+                            {ribbonOn ? '🏷️' : '🚫'} Ribbon
+                          </span>
+                          <Toggle value={ribbonOn} onChange={v => setMNotif('ribbon', v)} color={m.color} />
+                        </div>
                       </div>
                     </div>
                   )

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.46.3 (10 марта 2026)
+## Текущая версия: v0.47.0 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.47.0 (10 марта 2026) — Per-messenger настройки уведомлений
+- **Per-messenger звук + ribbon**: Каждый мессенджер теперь имеет отдельные toggles "Звук" и "Ribbon" в настройках. Структура: `messengerNotifs: { [id]: { sound: bool, ribbon: bool } }`. Backwards compatible с `mutedMessengers`.
+- **3 уровня контроля**: Глобальные настройки (soundEnabled, notificationsEnabled) → per-messenger (messengerNotifs) → mutedMessengers (legacy). Per-messenger переопределяет глобальные.
+- **UI**: В секции "Мессенджеры" SettingsPanel — два toggle на каждый мессенджер: 🔔 Звук + 🏷️ Ribbon.
+- **Файлы**: `src/components/SettingsPanel.jsx` (UI), `src/App.jsx` (handleNewMessage, page-title-updated, unread-count — все используют per-messenger настройки).
 
 ### v0.46.3 (10 марта 2026) — addedNodes detection для ribbon в MAX
 - **addedNodes detection**: v0.46.2 fallback ribbon не работал для MAX — unread count не растёт когда чат открыт в WebView. Новый подход: `quickNewMsgCheck()` в MutationObserver напрямую анализирует `addedNodes` — при появлении нового DOM-элемента с текстом (2-500 символов, не timestamp, не UI-элемент) → `new-message` IPC → ribbon. Cooldown 3 сек, dedup по тексту.

@@ -822,11 +822,16 @@ export default function App() {
       setActiveId(messengerId)
     }
 
-    // Звук и уведомление — проверяем глобальный + per-messenger mute
+    // Звук и уведомление — per-messenger настройки (v0.47.0)
+    const mNotifs = (settingsRef.current.messengerNotifs || {})[messengerId] || {}
     const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[messengerId]
+    // Per-messenger sound: messengerNotifs[id].sound > mutedMessengers > глобальный soundEnabled
+    const soundOn = mNotifs.sound !== undefined ? mNotifs.sound : !messengerMuted
+    // Per-messenger ribbon: messengerNotifs[id].ribbon > notificationsEnabled (глобальный)
+    const ribbonOn = mNotifs.ribbon !== undefined ? mNotifs.ribbon : true
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
-    if (settingsRef.current.soundEnabled !== false && !messengerMuted) playNotificationSound(mInfo?.color)
-    if (settingsRef.current.notificationsEnabled !== false && !messengerMuted) {
+    if (settingsRef.current.soundEnabled !== false && soundOn) playNotificationSound(mInfo?.color)
+    if (settingsRef.current.notificationsEnabled !== false && ribbonOn) {
       lastRibbonTsRef.current[messengerId] = Date.now()
       const senderName = extra?.senderName
       const notifTitle = senderName
@@ -1069,13 +1074,16 @@ export default function App() {
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
             if (count > (prev[messengerId] || 0) && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
+              const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
-              if (s.soundEnabled !== false && !muted) {
+              const sndOn = mn.sound !== undefined ? mn.sound : !muted
+              const ribOn = mn.ribbon !== undefined ? mn.ribbon : true
+              if (s.soundEnabled !== false && sndOn) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
               }
               // Fallback ribbon: если handleNewMessage не показал ribbon за 3 сек — показываем generic
-              if (s.notificationsEnabled !== false && !muted) {
+              if (s.notificationsEnabled !== false && ribOn) {
                 const lastTs = lastRibbonTsRef.current[messengerId] || 0
                 if (Date.now() - lastTs > 3000) {
                   lastRibbonTsRef.current[messengerId] = Date.now()
@@ -1118,13 +1126,16 @@ export default function App() {
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
             if (count > (prev[messengerId] || 0) && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
+              const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
-              if (s.soundEnabled !== false && !muted) {
+              const sndOn = mn.sound !== undefined ? mn.sound : !muted
+              const ribOn = mn.ribbon !== undefined ? mn.ribbon : true
+              if (s.soundEnabled !== false && sndOn) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
               }
               // Fallback ribbon: если handleNewMessage не показал ribbon за 3 сек — показываем generic
-              if (s.notificationsEnabled !== false && !muted) {
+              if (s.notificationsEnabled !== false && ribOn) {
                 const lastTs = lastRibbonTsRef.current[messengerId] || 0
                 if (Date.now() - lastTs > 3000) {
                   lastRibbonTsRef.current[messengerId] = Date.now()
