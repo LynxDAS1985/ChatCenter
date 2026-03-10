@@ -1,4 +1,4 @@
-// v0.38.0 — ChatMonitor: улучшенный поиск аватарок (MAX), перехват Notification + ServiceWorker
+// v0.46.3 — ChatMonitor: addedNodes detection для мессенджеров без Notification API (MAX и др.)
 // Бейдж считает ВСЕ непрочитанные (включая muted), уведомления — только не-muted
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
@@ -652,6 +652,52 @@ let lastActiveMessageText = null  // для детекции сообщений 
 let lastActiveMessageTime = 0     // cooldown: не спамить уведомлениями
 let observer = null
 
+// ── Quick addedNodes detection (v0.46.3) ─────────────────────────────────────
+// MAX и другие мессенджеры НЕ вызывают Notification для каждого сообщения,
+// И unread count НЕ растёт когда чат открыт в WebView.
+// Решение: наблюдаем addedNodes в MutationObserver — при появлении нового
+// DOM-элемента с текстом → считаем как новое сообщение → new-message IPC.
+let lastQuickMsgText = ''
+let lastQuickMsgTime = 0
+
+function quickNewMsgCheck(mutations, type) {
+  const now = Date.now()
+  if (now - lastQuickMsgTime < 3000) return // cooldown 3 сек — не спамить
+
+  for (let mi = mutations.length - 1; mi >= 0; mi--) {
+    const m = mutations[mi]
+    if (m.type !== 'childList' || !m.addedNodes.length) continue
+    for (const node of m.addedNodes) {
+      if (node.nodeType !== 1) continue
+      // Пропускаем UI-элементы: кнопки, инпуты, иконки, стили, скрипты
+      const tag = node.tagName
+      if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' ||
+          tag === 'SVG' || tag === 'IMG' || tag === 'STYLE' || tag === 'SCRIPT' || tag === 'LINK') continue
+      // Пропускаем сложные контейнеры (модалки, dropdown-меню, целые секции UI)
+      try { if (node.querySelectorAll('*').length > 40) continue } catch { continue }
+      // Проверяем текстовое содержимое
+      const text = (node.textContent || '').trim()
+      if (text.length < 2 || text.length > 500) continue
+      // Пропускаем чистые timestamp'ы
+      if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) continue
+      // Пропускаем служебные тексты мессенджеров
+      if (/^(typing|печатает|был[а]? в сети|online|в сети|оффлайн|offline|не в сети)$/i.test(text)) continue
+      // Dedup: не повторяем тот же текст
+      if (text === lastQuickMsgText || text === lastSentText || text === lastActiveMessageText) continue
+
+      // Это новый DOM-элемент с текстом → вероятно новое сообщение
+      lastQuickMsgText = text
+      lastQuickMsgTime = now
+      lastSentText = text
+      lastActiveMessageText = text
+      lastActiveMessageTime = now
+      try { ipcRenderer.sendToHost('new-message', text) } catch {}
+      try { console.log('__CC_MSG__' + text) } catch {}
+      return // одно сообщение за callback — не спамить
+    }
+  }
+}
+
 // Защита от ложных срабатываний при загрузке страницы:
 // первые 10 секунд не сообщаем о "новых" сообщениях — страница ещё грузится
 let monitorReady = false
@@ -723,10 +769,16 @@ function startMonitor() {
   setTimeout(() => { sendUpdate(type); runDiagnostics(type) }, 15000)
 
   if (observer) return
-  observer = new MutationObserver(() => {
+  observer = new MutationObserver((mutations) => {
     // Debounce: при скролле Telegram DOM меняется сотни раз в секунду
     clearTimeout(updateTimer)
     updateTimer = setTimeout(() => sendUpdate(type), UPDATE_DEBOUNCE)
+
+    // Quick addedNodes detection: для мессенджеров без Notification для каждого сообщения
+    // Telegram хорошо работает через __CC_NOTIF__ → не нужно дублировать
+    if (monitorReady && type !== 'telegram') {
+      quickNewMsgCheck(mutations, type)
+    }
   })
   observer.observe(document.body, {
     childList: true,

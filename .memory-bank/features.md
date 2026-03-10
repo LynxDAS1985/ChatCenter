@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.46.2 (6 марта 2026)
+## Текущая версия: v0.46.3 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.46.3 (10 марта 2026) — addedNodes detection для ribbon в MAX
+- **addedNodes detection**: v0.46.2 fallback ribbon не работал для MAX — unread count не растёт когда чат открыт в WebView. Новый подход: `quickNewMsgCheck()` в MutationObserver напрямую анализирует `addedNodes` — при появлении нового DOM-элемента с текстом (2-500 символов, не timestamp, не UI-элемент) → `new-message` IPC → ribbon. Cooldown 3 сек, dedup по тексту.
+- **Фильтрация ложных срабатываний**: Пропускаются BUTTON/INPUT/SVG/IMG/STYLE/SCRIPT, элементы с >40 дочерних (модалки/dropdown), timestamps, служебные тексты (typing/печатает/online). `isViewingThisTab` в App.jsx дополнительно блокирует ribbon когда пользователь смотрит на вкладку.
+- **Scope**: Работает для MAX, WhatsApp, VK и unknown мессенджеров. Telegram исключён (хорошо работает через `__CC_NOTIF__`).
 
 ### v0.46.2 (6 марта 2026) — Fallback ribbon для повторных сообщений
 - **Fallback ribbon**: Когда мессенджер (MAX и др.) не вызывает `new Notification()` для каждого нового сообщения, ribbon показывался только для первого. Теперь `page-title-updated` и `unread-count` хендлеры создают fallback ribbon, если `handleNewMessage` не показал ribbon за последние 3 секунды (`lastRibbonTsRef`).

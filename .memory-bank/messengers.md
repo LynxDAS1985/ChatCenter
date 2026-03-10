@@ -171,6 +171,12 @@ const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]
 
 Используется стандартная логика `countUnread` с generic селекторами + title fallback `(N)`.
 
+### Детекция новых сообщений (v0.46.3)
+
+**Проблема**: MAX не вызывает `Notification`/`showNotification` для каждого нового сообщения (только первое). Когда чат открыт → unread count = 0 → не растёт → fallback ribbon через `page-title-updated`/`unread-count` не работает. MAX играет звук через AudioContext (не `new Audio()`).
+
+**Решение**: `quickNewMsgCheck()` в monitor.preload.js — прямой мониторинг `addedNodes` в MutationObserver. Не зависит от unread count или Notification API.
+
 ---
 
 ## Общий шаблон monitor.preload.js

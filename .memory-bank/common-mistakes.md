@@ -14,12 +14,21 @@
 3. `page-title-updated` → звук ⚠️ (ribbon НЕ создавался)
 4. `unread-count` IPC → звук ⚠️ (ribbon НЕ создавался)
 
-**Решение (v0.46.2)**:
+**Решение (v0.46.2)** — НЕПОЛНОЕ, не работает для MAX:
 1. Добавить `lastRibbonTsRef = useRef({})` — `{ [messengerId]: timestamp }` последнего показа ribbon
 2. В `handleNewMessage` перед `app:custom-notify` записывать `lastRibbonTsRef.current[messengerId] = Date.now()`
-3. В `page-title-updated` и `unread-count` хендлерах: если `Date.now() - lastRibbonTs > 3000` → создавать fallback ribbon с generic текстом ("N непрочитанных сообщений")
+3. В `page-title-updated` и `unread-count` хендлерах: если `Date.now() - lastRibbonTs > 3000` → создавать fallback ribbon
 
-**Ключевой урок**: Нельзя полагаться на `new Notification()` мессенджера для КАЖДОГО сообщения. Нужен fallback через `page-title-updated`/`unread-count` с dedup окном 3 секунды.
+**Почему v0.46.2 НЕ помогло для MAX**: Когда чат ОТКРЫТ в WebView → MAX считает сообщения прочитанными → unread count = 0 → НЕ растёт → `page-title-updated` не имеет `(N)` в title → `unread-count` IPC = 0 → fallback ribbon никогда не срабатывает. Звук шёл от самого MAX (AudioContext, не `new Audio()`).
+
+**Решение (v0.46.3)** — addedNodes detection:
+1. `quickNewMsgCheck()` в MutationObserver — анализирует `mutation.addedNodes` напрямую
+2. При появлении нового DOM-элемента с текстом (2-500 символов) → `new-message` IPC
+3. Фильтрация: пропускаются BUTTON/INPUT/SVG/IMG, элементы >40 children, timestamps, служебные тексты
+4. Cooldown 3 сек + dedup по тексту + `isViewingThisTab` в App.jsx
+5. Работает для MAX, WhatsApp, VK. Telegram исключён (работает через `__CC_NOTIF__`)
+
+**Ключевой урок**: Нельзя полагаться на unread count для ribbon — когда чат открыт в WebView, count не растёт. Нужен прямой мониторинг DOM mutations (addedNodes).
 
 ---
 
