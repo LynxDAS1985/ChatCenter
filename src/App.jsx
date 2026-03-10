@@ -439,6 +439,7 @@ export default function App() {
   const webviewRefs = useRef({})
   const notifReadyRef = useRef({})   // { [id]: true } — warm-up: игнорируем ВСЕ уведомления первые 30 сек
   const notifDedupRef = useRef(new Map()) // дедупликация __CC_NOTIF__ — messengerId:normalizedBody → timestamp
+  const pipelineTraceRef = useRef([]) // Pipeline Trace Logger — трассировка ВСЕХ шагов уведомлений
   const retryTimers = useRef({})
   const previewTimers = useRef({})
   const saveTimer = useRef(null)
@@ -457,7 +458,9 @@ export default function App() {
   const statusBarMsgTimer = useRef(null)
   const tabContextMenu = useRef({ id: null, x: 0, y: 0 })
   const [contextMenuTab, setContextMenuTab] = useState(null) // { id, x, y }
-  const [notifLogModal, setNotifLogModal] = useState(null) // { messengerId, name, log: [] } | null
+  const [notifLogModal, setNotifLogModal] = useState(null) // { messengerId, name, log: [], trace: [] } | null
+  const [notifLogTab, setNotifLogTab] = useState('log') // 'log' | 'trace'
+  const [traceFilter, setTraceFilter] = useState('all') // 'all' | 'block' | 'source' | 'decision'
   const [cellTooltip, setCellTooltip] = useState(null) // { text, x, y } | null
   const statsRef = useRef({ today: 0, autoToday: 0, total: 0, date: '' })
   const statsSaveTimer = useRef(null)
@@ -637,7 +640,9 @@ export default function App() {
         .then(json => {
           try {
             const log = JSON.parse(json)
-            setNotifLogModal(prev => prev && prev.messengerId === mid ? { ...prev, log } : prev)
+            // Обновляем и лог, и trace (trace из ref, фильтруем по messengerId)
+            const trace = pipelineTraceRef.current.filter(e => !e.mid || e.mid === mid)
+            setNotifLogModal(prev => prev && prev.messengerId === mid ? { ...prev, log, trace } : prev)
           } catch {}
         })
         .catch(() => {})
@@ -924,17 +929,32 @@ export default function App() {
   const recentNotifsRef = useRef(new Map()) // key → timestamp
   const lastRibbonTsRef = useRef({}) // { [messengerId]: timestamp } — когда последний раз показали ribbon
 
+  // ── Pipeline Trace Logger (v0.55.0) ──────────────────────────────────────────
+  // Записывает КАЖДЫЙ шаг pipeline уведомлений для диагностики
+  // step: source|spam|dedup|handle|viewing|sound|ribbon|enrich|error
+  // type: info|pass|block|warn
+  const traceNotif = (step, type, messengerId, text, detail) => {
+    pipelineTraceRef.current.push({
+      ts: Date.now(), step, type, mid: messengerId || '', text: (text || '').slice(0, 60), detail: detail || '',
+    })
+    if (pipelineTraceRef.current.length > 300) pipelineTraceRef.current.splice(0, 100)
+  }
+
   // ── Обработка входящего сообщения (общая для ipc-message и console-message) ──
   // extra = { senderName, iconUrl } — опционально, из перехваченного Notification
   // Если extra есть → из __CC_NOTIF__ (Notification API) — надёжный источник
   // Если extra нет → из MutationObserver (new-message IPC) — может быть ложным
   const handleNewMessage = (messengerId, text, extra) => {
     if (!text) return
+    traceNotif('handle', 'info', messengerId, text, `extra=${extra ? `{s:"${(extra.senderName||'').slice(0,20)}",icon:${!!(extra.iconUrl||extra.iconDataUrl)}}` : 'нет'}`)
 
     // Дедупликация: одинаковый текст от того же мессенджера за 10 сек → skip
     const dedupKey = messengerId + ':' + text.slice(0, 60)
     const now = Date.now()
-    if (recentNotifsRef.current.has(dedupKey) && now - recentNotifsRef.current.get(dedupKey) < 10000) return
+    if (recentNotifsRef.current.has(dedupKey) && now - recentNotifsRef.current.get(dedupKey) < 10000) {
+      traceNotif('dedup', 'block', messengerId, text, `recentNotifs | age=${now - recentNotifsRef.current.get(dedupKey)}мс`)
+      return
+    }
     recentNotifsRef.current.set(dedupKey, now)
     // Чистим старые записи (>30 сек)
     if (recentNotifsRef.current.size > 50) {
@@ -945,7 +965,11 @@ export default function App() {
     // windowFocusedRef обновляется через IPC window-state из main process —
     // надёжнее чем document.hidden или document.hasFocus()
     const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
-    if (isViewingThisTab) return
+    if (isViewingThisTab) {
+      traceNotif('viewing', 'block', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
+      return
+    }
+    traceNotif('viewing', 'pass', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
 
     // Автопереключение на вкладку с новым сообщением (если включено)
     if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {
@@ -960,7 +984,12 @@ export default function App() {
     // Per-messenger ribbon: messengerNotifs[id].ribbon > notificationsEnabled (глобальный)
     const ribbonOn = mNotifs.ribbon !== undefined ? mNotifs.ribbon : true
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
-    if (settingsRef.current.soundEnabled !== false && soundOn) playNotificationSound(mInfo?.color)
+    if (settingsRef.current.soundEnabled !== false && soundOn) {
+      playNotificationSound(mInfo?.color)
+      traceNotif('sound', 'pass', messengerId, text, 'звук воспроизведён')
+    } else {
+      traceNotif('sound', 'block', messengerId, text, `global=${settingsRef.current.soundEnabled !== false} muted=${messengerMuted} perMsg=${mNotifs.sound}`)
+    }
     if (settingsRef.current.notificationsEnabled !== false && ribbonOn) {
       lastRibbonTsRef.current[messengerId] = Date.now()
       const senderName = extra?.senderName
@@ -980,6 +1009,9 @@ export default function App() {
         senderName: extra?.senderName || '',
         chatTag: extra?.chatTag || '',
       }).catch(() => {})
+      traceNotif('ribbon', 'pass', messengerId, text, `отправлен | sender="${(extra?.senderName||'').slice(0,20)}" icon=${!!(extra?.iconUrl||extra?.iconDataUrl)}`)
+    } else {
+      traceNotif('ribbon', 'block', messengerId, text, `выключен | global=${settingsRef.current.notificationsEnabled !== false} perMsg=${ribbonOn}`)
     }
 
     // Превью сообщения в бейдже вкладки (5 секунд)
@@ -1403,16 +1435,16 @@ export default function App() {
         } else if (e.channel === 'new-message') {
           // Warm-up: игнорируем сообщения от MutationObserver первые 10 сек после dom-ready
           if (!notifReadyRef.current[messengerId]) return
-          // Не обрабатываем — enriched __CC_NOTIF__ из того же события придёт через console-message
-          // и будет обработан с данными отправителя. IPC new-message без extra → ribbon без имени.
-          // Оставляем только как запасной путь если __CC_NOTIF__ не придёт (таймаут 500мс).
           const msgText = (e.args[0] || '').trim()
           if (!msgText) return
+          traceNotif('source', 'info', messengerId, msgText, 'IPC new-message | ожидание 500мс для __CC_NOTIF__')
           setTimeout(() => {
-            // Если за 500мс __CC_NOTIF__ не пришёл — обработаем как есть
             const dedupKey = messengerId + ':' + msgText.slice(0, 60)
             if (!recentNotifsRef.current.has(dedupKey)) {
+              traceNotif('source', 'warn', messengerId, msgText, 'IPC fallback | __CC_NOTIF__ не пришёл за 500мс')
               handleNewMessage(messengerId, msgText)
+            } else {
+              traceNotif('source', 'info', messengerId, msgText, 'IPC skip | уже обработан через __CC_NOTIF__')
             }
           }, 500)
         }
@@ -1436,6 +1468,7 @@ export default function App() {
           if (!notifReadyRef.current[messengerId]) return
           const text = msg.slice(10).trim()
           if (!text) return
+          traceNotif('source', 'info', messengerId, text, '__CC_MSG__ | запуск обогащения через DOM')
           // Пробуем извлечь имя отправителя и аватарку из WebView DOM
           const safeBody = JSON.stringify(text)
           const safeSlice = JSON.stringify(text.slice(0, 30))
@@ -1482,9 +1515,13 @@ export default function App() {
                   }
                 } catch {}
               }
+              traceNotif('enrich', extra.senderName ? 'pass' : 'warn', messengerId, text, `__CC_MSG__ enriched | sender="${(extra.senderName||'нет').slice(0,20)}" icon=${!!(extra.iconUrl||extra.iconDataUrl)}`)
               handleNewMessage(messengerId, text, Object.keys(extra).length ? extra : undefined)
             })
-            .catch(() => handleNewMessage(messengerId, text))
+            .catch(() => {
+              traceNotif('enrich', 'warn', messengerId, text, '__CC_MSG__ enrichment failed')
+              handleNewMessage(messengerId, text)
+            })
           return
         }
         if (!msg.startsWith('__CC_NOTIF__')) return
@@ -1493,17 +1530,25 @@ export default function App() {
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = (data.b || '').trim()
+          traceNotif('source', 'info', messengerId, text, `__CC_NOTIF__ | t="${(data.t||'').slice(0,20)}" icon=${!!data.i} tag=${!!data.g}`)
           // Фильтр: только timestamp / системный текст / исходящее ("Вы: ...") — не показывать ribbon
           const isSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
             || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i.test(text)
             || /^(вы:\s|you:\s)/i.test(text)
+          if (isSpam) {
+            traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_NOTIF__')
+            return
+          }
           if (text && !isSpam) {
             // Дедупликация: Telegram шлёт Notification + ServiceWorker.showNotification → 2 __CC_NOTIF__
             // Нормализуем body: убираем trailing timestamps (вида "15:57" или "15:5715:57")
             const normalizedText = text.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()
             const dedupKey = messengerId + ':' + (normalizedText || text).slice(0, 40)
             const now = Date.now()
-            if (notifDedupRef.current.has(dedupKey) && now - notifDedupRef.current.get(dedupKey) < 5000) return
+            if (notifDedupRef.current.has(dedupKey) && now - notifDedupRef.current.get(dedupKey) < 5000) {
+              traceNotif('dedup', 'block', messengerId, text, `notifDedup | age=${now - notifDedupRef.current.get(dedupKey)}мс`)
+              return
+            }
             notifDedupRef.current.set(dedupKey, now)
             // Очистка старых записей
             if (notifDedupRef.current.size > 30) {
@@ -1668,18 +1713,21 @@ export default function App() {
           })
       }
     } else if (action === 'notifLog') {
-      // Лог уведомлений — извлекаем массив из WebView main world
+      // Лог уведомлений — извлекаем массив из WebView main world + pipeline trace
       if (wv) {
+        const trace = pipelineTraceRef.current.filter(e => !e.mid || e.mid === id)
         wv.executeJavaScript(`(function() { return JSON.stringify(window.__cc_notif_log || []); })()`)
           .then(json => {
             try {
               const log = JSON.parse(json)
               const mInfo = messengers.find(x => x.id === id)
-              setNotifLogModal({ messengerId: id, name: mInfo?.name || id, log })
+              setNotifLogModal({ messengerId: id, name: mInfo?.name || id, log, trace })
+              setNotifLogTab('log')
             } catch {}
           })
           .catch(() => {
-            setNotifLogModal({ messengerId: id, name: id, log: [] })
+            setNotifLogModal({ messengerId: id, name: id, log: [], trace })
+            setNotifLogTab('log')
           })
       }
     } else if (action === 'copyUrl') {
@@ -2205,155 +2253,259 @@ export default function App() {
       )}
 
       {/* ── Модальное окно: Лог уведомлений ── */}
-      {notifLogModal && (
+      {notifLogModal && (() => {
+        const traceStepLabels = { source: 'Источник', spam: 'Спам', dedup: 'Дедуп', handle: 'Обработка', viewing: 'Видимость', sound: 'Звук', ribbon: 'Ribbon', enrich: 'Обогащение', error: 'Ошибка' }
+        const traceTypeColors = { pass: '#4ade80', block: '#f87171', warn: '#fbbf24', info: '#94a3b8' }
+        const traceTypeLabels = { pass: 'ПРОПУЩЕН', block: 'БЛОК', warn: 'ВНИМАНИЕ', info: 'ИНФО' }
+        const traceData = (notifLogModal.trace || []).filter(e => {
+          if (traceFilter === 'all') return true
+          if (traceFilter === 'block') return e.type === 'block' || e.type === 'warn'
+          if (traceFilter === 'source') return e.step === 'source' || e.step === 'enrich'
+          if (traceFilter === 'decision') return e.step === 'viewing' || e.step === 'sound' || e.step === 'ribbon' || e.step === 'dedup'
+          return true
+        })
+        return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={() => setNotifLogModal(null)}>
           <div
             className="rounded-xl shadow-2xl flex flex-col"
             style={{
               backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)',
-              width: '860px', minWidth: '400px', minHeight: '300px', maxWidth: '95vw', maxHeight: '90vh',
+              width: '920px', minWidth: '400px', minHeight: '300px', maxWidth: '95vw', maxHeight: '90vh',
               resize: 'both', overflow: 'hidden',
             }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Заголовок */}
-            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--cc-border)' }}>
-              <div className="flex items-center gap-2">
+            {/* Заголовок + вкладки */}
+            <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--cc-border)' }}>
+              <div className="flex items-center gap-3">
                 <span>📊</span>
-                <span className="font-semibold text-sm">Лог уведомлений — {notifLogModal.name}</span>
-                <span className="text-xs" style={{ color: 'var(--cc-text-dimmer)' }}>
-                  ({notifLogModal.log.length} записей) <span style={{ color: '#4ade80' }}>&#9679; авто</span>
-                </span>
+                <span className="font-semibold text-sm">{notifLogModal.name}</span>
+                {/* Вкладки */}
+                <div className="flex gap-1 ml-2">
+                  {[['log', `Лог (${notifLogModal.log.length})`], ['trace', `Pipeline (${(notifLogModal.trace||[]).length})`]].map(([tab, label]) => (
+                    <button key={tab} className="px-2 py-1 rounded text-xs cursor-pointer" style={{
+                      backgroundColor: notifLogTab === tab ? 'rgba(96,165,250,0.2)' : 'transparent',
+                      color: notifLogTab === tab ? '#60a5fa' : 'var(--cc-text-dimmer)',
+                      border: notifLogTab === tab ? '1px solid rgba(96,165,250,0.3)' : '1px solid transparent',
+                    }} onClick={() => setNotifLogTab(tab)}>{label}</button>
+                  ))}
+                </div>
+                <span className="text-[10px]" style={{ color: '#4ade80' }}>&#9679; авто</span>
               </div>
               <div className="flex gap-2">
-                <button
-                  className="px-2 py-1 rounded text-xs cursor-pointer"
-                  style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)' }}
+                <button className="px-2 py-1 rounded text-xs cursor-pointer" style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)' }}
                   onClick={() => {
-                    navigator.clipboard.writeText(JSON.stringify(notifLogModal.log, null, 2)).catch(() => {})
+                    const data = notifLogTab === 'log' ? notifLogModal.log : (notifLogModal.trace || [])
+                    navigator.clipboard.writeText(JSON.stringify(data, null, 2)).catch(() => {})
                   }}
-                >Скопировать лог</button>
-                <button
-                  className="px-2 py-1 rounded text-xs cursor-pointer"
-                  style={{ color: 'var(--cc-text-dimmer)' }}
+                >Скопировать</button>
+                {notifLogTab === 'trace' && (
+                  <button className="px-2 py-1 rounded text-xs cursor-pointer" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#f87171' }}
+                    onClick={() => { pipelineTraceRef.current = []; setNotifLogModal(prev => prev ? { ...prev, trace: [] } : prev) }}
+                  >Очистить</button>
+                )}
+                <button className="px-2 py-1 rounded text-xs cursor-pointer" style={{ color: 'var(--cc-text-dimmer)' }}
                   onClick={() => setNotifLogModal(null)}
                 >✕</button>
               </div>
             </div>
-            {/* Таблица */}
+
+            {/* Фильтры для Pipeline вкладки */}
+            {notifLogTab === 'trace' && (
+              <div className="flex items-center gap-1 px-4 py-1.5" style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'rgba(0,0,0,0.15)' }}>
+                <span className="text-[10px] mr-1" style={{ color: 'var(--cc-text-dimmer)' }}>Фильтр:</span>
+                {[['all', 'Все'], ['block', 'Блокировки'], ['source', 'Источники'], ['decision', 'Решения']].map(([f, label]) => (
+                  <button key={f} className="px-2 py-0.5 rounded text-[10px] cursor-pointer" style={{
+                    backgroundColor: traceFilter === f ? 'rgba(96,165,250,0.2)' : 'transparent',
+                    color: traceFilter === f ? '#60a5fa' : 'var(--cc-text-dimmer)',
+                    border: traceFilter === f ? '1px solid rgba(96,165,250,0.3)' : '1px solid transparent',
+                  }} onClick={() => setTraceFilter(f)}>{label}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Контент: Лог или Pipeline */}
             <div className="flex-1 overflow-auto px-2 py-1" style={{ fontSize: '12px' }}>
-              {notifLogModal.log.length === 0 ? (
-                <div className="flex items-center justify-center h-32" style={{ color: 'var(--cc-text-dimmer)' }}>
-                  Нет записей. Уведомления появятся после получения сообщений.
-                </div>
-              ) : (
-                <table className="w-full" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                  <colgroup>
-                    <col style={{ width: '68px' }} />
-                    <col style={{ width: '76px' }} />
-                    <col style={{ width: '20%' }} />
-                    <col style={{ width: '30%' }} />
-                    <col style={{ width: '15%' }} />
-                    <col style={{ width: '80px' }} />
-                    <col style={{ width: '44px' }} />
-                  </colgroup>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
-                      <th className="text-left px-2 py-1.5 font-medium">Время</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Статус</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Заголовок</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Текст сообщения</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Отправитель</th>
-                      <th className="text-left px-2 py-1.5 font-medium">Блок</th>
-                      <th className="text-center px-1 py-1.5 font-medium"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...notifLogModal.log].reverse().map((entry, idx) => {
-                      const time = new Date(entry.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                      const isPassed = entry.status === 'passed'
-                      const reasonLabels = { empty: 'Пустое', system: 'Системное', outgoing: 'Исходящее' }
-                      const enriched = entry.enrichedTitle && entry.enrichedTitle !== entry.title ? entry.enrichedTitle : ''
-                      return (
-                        <tr
-                          key={idx}
-                          className="cc-notif-row"
-                          style={{
+              {notifLogTab === 'log' ? (
+                /* ── Вкладка: Лог уведомлений (как было) ── */
+                notifLogModal.log.length === 0 ? (
+                  <div className="flex items-center justify-center h-32" style={{ color: 'var(--cc-text-dimmer)' }}>
+                    Нет записей. Уведомления появятся после получения сообщений.
+                  </div>
+                ) : (
+                  <table className="w-full" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                    <colgroup>
+                      <col style={{ width: '68px' }} />
+                      <col style={{ width: '76px' }} />
+                      <col style={{ width: '20%' }} />
+                      <col style={{ width: '30%' }} />
+                      <col style={{ width: '15%' }} />
+                      <col style={{ width: '80px' }} />
+                      <col style={{ width: '44px' }} />
+                    </colgroup>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
+                        <th className="text-left px-2 py-1.5 font-medium">Время</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Статус</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Заголовок</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Текст сообщения</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Отправитель</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Блок</th>
+                        <th className="text-center px-1 py-1.5 font-medium"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...notifLogModal.log].reverse().map((entry, idx) => {
+                        const time = new Date(entry.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                        const isPassed = entry.status === 'passed'
+                        const reasonLabels = { empty: 'Пустое', system: 'Системное', outgoing: 'Исходящее' }
+                        const enriched = entry.enrichedTitle && entry.enrichedTitle !== entry.title ? entry.enrichedTitle : ''
+                        return (
+                          <tr key={idx} className="cc-notif-row" style={{
                             borderBottom: '1px solid var(--cc-border)',
                             backgroundColor: isPassed ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)',
-                          }}
-                        >
-                          <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--cc-text-dimmer)' }}>{time}</td>
-                          <td className="px-2 py-1.5">
-                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium" style={{
-                              backgroundColor: isPassed ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-                              color: isPassed ? '#4ade80' : '#f87171',
-                            }}>
-                              {isPassed ? 'ПОКАЗАНО' : 'ЗАБЛОК.'}
-                            </span>
-                          </td>
-                          <td className="px-2 py-1.5 overflow-hidden">
-                            <div className="truncate cursor-default"
-                              onMouseEnter={e => { if (entry.title) setCellTooltip({ text: entry.title, x: e.clientX, y: e.clientY }) }}
-                              onMouseLeave={() => setCellTooltip(null)}
-                            >{entry.title || '—'}</div>
-                          </td>
-                          <td className="px-2 py-1.5 overflow-hidden">
-                            <div className="truncate cursor-default"
-                              onMouseEnter={e => { if (entry.body) setCellTooltip({ text: entry.body, x: e.clientX, y: e.clientY }) }}
-                              onMouseLeave={() => setCellTooltip(null)}
-                            >{entry.body || '—'}</div>
-                          </td>
-                          <td className="px-2 py-1.5 overflow-hidden" style={{ color: enriched ? '#60a5fa' : 'inherit' }}>
-                            <div className="truncate cursor-default"
-                              onMouseEnter={e => { if (enriched) setCellTooltip({ text: enriched, x: e.clientX, y: e.clientY }) }}
-                              onMouseLeave={() => setCellTooltip(null)}
-                            >{enriched || '—'}</div>
-                          </td>
-                          <td className="px-2 py-1.5 overflow-hidden" style={{ color: '#f87171' }}>
-                            <span className="truncate block">{reasonLabels[entry.reason] || entry.reason || ''}</span>
-                          </td>
-                          <td className="px-1 py-1.5 text-center">
-                            {isPassed && (entry.title || enriched) && (
-                              <button
-                                className="px-1 py-0.5 rounded text-[10px] cursor-pointer"
-                                style={{ backgroundColor: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: 'none' }}
-                                title={'Перейти к чату: ' + (enriched || entry.title)}
-                                onClick={() => {
-                                  const mid = notifLogModal.messengerId
-                                  const wv = webviewRefs.current[mid]
-                                  if (!wv) return
-                                  const url = wv.getURL?.() || ''
-                                  const name = enriched || entry.title
-                                  const script = buildChatNavigateScript(url, name, entry.tag || '')
-                                  if (script) {
-                                    wv.executeJavaScript(script).then(r => {
-                                      const ok = r === true || (r && r.ok)
-                                      console.log('[GoChat:log]', ok ? 'OK' : 'FAIL', r)
-                                    }).catch(e => console.log('[GoChat:log] err', e.message))
-                                  }
-                                  setNotifLogModal(null) // закрыть модалку
-                                }}
-                              >&#8594;</button>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                          }}>
+                            <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--cc-text-dimmer)' }}>{time}</td>
+                            <td className="px-2 py-1.5">
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium" style={{
+                                backgroundColor: isPassed ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                                color: isPassed ? '#4ade80' : '#f87171',
+                              }}>{isPassed ? 'ПОКАЗАНО' : 'ЗАБЛОК.'}</span>
+                            </td>
+                            <td className="px-2 py-1.5 overflow-hidden">
+                              <div className="truncate cursor-default"
+                                onMouseEnter={e => { if (entry.title) setCellTooltip({ text: entry.title, x: e.clientX, y: e.clientY }) }}
+                                onMouseLeave={() => setCellTooltip(null)}
+                              >{entry.title || '—'}</div>
+                            </td>
+                            <td className="px-2 py-1.5 overflow-hidden">
+                              <div className="truncate cursor-default"
+                                onMouseEnter={e => { if (entry.body) setCellTooltip({ text: entry.body, x: e.clientX, y: e.clientY }) }}
+                                onMouseLeave={() => setCellTooltip(null)}
+                              >{entry.body || '—'}</div>
+                            </td>
+                            <td className="px-2 py-1.5 overflow-hidden" style={{ color: enriched ? '#60a5fa' : 'inherit' }}>
+                              <div className="truncate cursor-default"
+                                onMouseEnter={e => { if (enriched) setCellTooltip({ text: enriched, x: e.clientX, y: e.clientY }) }}
+                                onMouseLeave={() => setCellTooltip(null)}
+                              >{enriched || '—'}</div>
+                            </td>
+                            <td className="px-2 py-1.5 overflow-hidden" style={{ color: '#f87171' }}>
+                              <span className="truncate block">{reasonLabels[entry.reason] || entry.reason || ''}</span>
+                            </td>
+                            <td className="px-1 py-1.5 text-center">
+                              {isPassed && (entry.title || enriched) && (
+                                <button className="px-1 py-0.5 rounded text-[10px] cursor-pointer"
+                                  style={{ backgroundColor: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: 'none' }}
+                                  title={'Перейти к чату: ' + (enriched || entry.title)}
+                                  onClick={() => {
+                                    const mid = notifLogModal.messengerId
+                                    const wv = webviewRefs.current[mid]
+                                    if (!wv) return
+                                    const url = wv.getURL?.() || ''
+                                    const name = enriched || entry.title
+                                    const script = buildChatNavigateScript(url, name, entry.tag || '')
+                                    if (script) {
+                                      wv.executeJavaScript(script).then(r => {
+                                        const ok = r === true || (r && r.ok)
+                                        console.log('[GoChat:log]', ok ? 'OK' : 'FAIL', r)
+                                      }).catch(e => console.log('[GoChat:log] err', e.message))
+                                    }
+                                    setNotifLogModal(null)
+                                  }}
+                                >&#8594;</button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )
+              ) : (
+                /* ── Вкладка: Pipeline Trace ── */
+                traceData.length === 0 ? (
+                  <div className="flex items-center justify-center h-32" style={{ color: 'var(--cc-text-dimmer)' }}>
+                    Нет трассировок. Отправьте сообщение в мессенджер и смотрите как оно проходит через pipeline.
+                  </div>
+                ) : (
+                  <table className="w-full" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                    <colgroup>
+                      <col style={{ width: '80px' }} />
+                      <col style={{ width: '90px' }} />
+                      <col style={{ width: '72px' }} />
+                      <col style={{ width: '25%' }} />
+                      <col />
+                    </colgroup>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
+                        <th className="text-left px-2 py-1.5 font-medium">Время</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Шаг</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Статус</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Текст</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Детали</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...traceData].reverse().map((entry, idx) => {
+                        const time = new Date(entry.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 })
+                        const color = traceTypeColors[entry.type] || '#94a3b8'
+                        return (
+                          <tr key={idx} style={{
+                            borderBottom: '1px solid var(--cc-border)',
+                            backgroundColor: entry.type === 'block' ? 'rgba(239,68,68,0.06)' : entry.type === 'pass' ? 'rgba(34,197,94,0.04)' : 'transparent',
+                          }}>
+                            <td className="px-2 py-1 whitespace-nowrap font-mono text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>{time}</td>
+                            <td className="px-2 py-1">
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium" style={{
+                                backgroundColor: 'rgba(148,163,184,0.1)', color: 'var(--cc-text-dim)',
+                              }}>{traceStepLabels[entry.step] || entry.step}</span>
+                            </td>
+                            <td className="px-2 py-1">
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold" style={{
+                                backgroundColor: `${color}20`, color,
+                              }}>{traceTypeLabels[entry.type] || entry.type}</span>
+                            </td>
+                            <td className="px-2 py-1 overflow-hidden">
+                              <div className="truncate cursor-default text-[11px]"
+                                onMouseEnter={e => { if (entry.text) setCellTooltip({ text: entry.text, x: e.clientX, y: e.clientY }) }}
+                                onMouseLeave={() => setCellTooltip(null)}
+                              >{entry.text || '—'}</div>
+                            </td>
+                            <td className="px-2 py-1 overflow-hidden">
+                              <div className="truncate cursor-default text-[11px]" style={{ color: 'var(--cc-text-dim)' }}
+                                onMouseEnter={e => { if (entry.detail) setCellTooltip({ text: entry.detail, x: e.clientX, y: e.clientY }) }}
+                                onMouseLeave={() => setCellTooltip(null)}
+                              >{entry.detail || ''}</div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )
               )}
             </div>
+
             {/* Легенда */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[11px]" style={{ borderTop: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
-              <span><span style={{ color: '#4ade80' }}>ПОКАЗАНО</span> — уведомление отправлено в ribbon</span>
-              <span><span style={{ color: '#f87171' }}>ЗАБЛОК.</span> — отфильтровано (спам/исходящее)</span>
-              <span><span style={{ color: '#60a5fa' }}>Отправитель</span> — имя найдено в чате (если заголовок = название мессенджера)</span>
-              <span>Хранится до 100 записей · Окно можно растянуть за угол ↘</span>
+              {notifLogTab === 'log' ? (<>
+                <span><span style={{ color: '#4ade80' }}>ПОКАЗАНО</span> — отправлено в ribbon</span>
+                <span><span style={{ color: '#f87171' }}>ЗАБЛОК.</span> — спам/исходящее</span>
+                <span><span style={{ color: '#60a5fa' }}>Отправитель</span> — имя из DOM чата</span>
+                <span>До 100 записей · Растянуть ↘</span>
+              </>) : (<>
+                <span><span style={{ color: '#4ade80' }}>ПРОПУЩЕН</span> — шаг пройден</span>
+                <span><span style={{ color: '#f87171' }}>БЛОК</span> — уведомление остановлено</span>
+                <span><span style={{ color: '#fbbf24' }}>ВНИМАНИЕ</span> — проблема обогащения</span>
+                <span><span style={{ color: '#94a3b8' }}>ИНФО</span> — этап pipeline</span>
+                <span>До 300 записей · Растянуть ↘</span>
+              </>)}
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ── Тултип для ячеек таблицы лога ── */}
       {cellTooltip && (
