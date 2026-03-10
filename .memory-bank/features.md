@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.56.0 (10 марта 2026)
+## Текущая версия: v0.56.1 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.56.1 (10 марта 2026) — Фикс: timestamp через IPC + deep scan для MAX + DOM-селекторы из Inspector
+- **Спам-фильтр IPC `new-message`**: Timestamps "18:22" проходили через IPC `new-message` handler БЕЗ фильтра → ложный ribbon. Добавлен полный спам-фильтр + per-messenger regex + senderCache fallback.
+- **Timestamp-фильтр Path 2**: `sendUpdate` → `getLastMessageText` для MAX возвращал timestamp → добавлен фильтр в Path 2 + в `getLastMessageText`.
+- **Deep scan quickNewMsgCheck**: MAX (SvelteKit) обновляет DOM большими контейнерами (>40 children) → `quickNewMsgCheck` пропускал сообщения. Добавлен deep scan: для nodes 40-200 children ищет текстовые leaf-элементы внутри. `extractMsgText` — отдельная функция с очисткой embedded timestamps.
+- **MAX DOM-селекторы из Inspector**: `.topbar.svelte-*` существует но без `.peer-title`. Добавлен fallback: ищет первый child div с коротким текстом (имя чата) внутри `.topbar`.
 
 ### v0.56.0 (10 марта 2026) — 5 улучшений Pipeline: Inspector, приоритет enriched, кэш, спам-фильтр, тест
 - **DOM Inspector**: Кнопка "DOM" в Pipeline Trace — выгружает реальную DOM-структуру header/sidebar WebView в буфер обмена + запись в trace. Показывает классы, теги, текст элементов.

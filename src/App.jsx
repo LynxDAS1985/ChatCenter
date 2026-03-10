@@ -1439,12 +1439,31 @@ export default function App() {
           if (!notifReadyRef.current[messengerId]) return
           const msgText = (e.args[0] || '').trim()
           if (!msgText) return
+          // Спам-фильтр для IPC new-message (v0.56.1: timestamps и системные тексты проходили без фильтра!)
+          const isIpcSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(msgText)
+            || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(msgText)
+            || /^(вы:\s|you:\s)/i.test(msgText)
+          if (isIpcSpam) {
+            traceNotif('spam', 'block', messengerId, msgText, 'спам-фильтр IPC new-message')
+            return
+          }
+          // Per-messenger спам-фильтр
+          const customSpamIpc = ((settingsRef.current.messengerNotifs || {})[messengerId] || {}).spamFilter
+          if (customSpamIpc) {
+            try { if (new RegExp(customSpamIpc, 'i').test(msgText)) { traceNotif('spam', 'block', messengerId, msgText, 'пользовательский спам-фильтр IPC'); return } } catch {}
+          }
           traceNotif('source', 'info', messengerId, msgText, 'IPC new-message | ожидание 500мс для __CC_NOTIF__')
           setTimeout(() => {
             const dedupKey = messengerId + ':' + msgText.slice(0, 60)
             if (!recentNotifsRef.current.has(dedupKey)) {
               traceNotif('source', 'warn', messengerId, msgText, 'IPC fallback | __CC_NOTIF__ не пришёл за 500мс')
-              handleNewMessage(messengerId, msgText)
+              // Кэш sender fallback для IPC path
+              const cached = senderCacheRef.current[messengerId]
+              const extra = cached && Date.now() - cached.ts < 300000
+                ? { senderName: cached.name, ...(cached.avatar ? (cached.avatar.startsWith('data:') ? { iconDataUrl: cached.avatar } : { iconUrl: cached.avatar }) : {}) }
+                : undefined
+              if (extra) traceNotif('enrich', 'info', messengerId, msgText, `senderCache fallback IPC | "${cached.name.slice(0,20)}"`)
+              handleNewMessage(messengerId, msgText, extra)
             } else {
               traceNotif('source', 'info', messengerId, msgText, 'IPC skip | уже обработан через __CC_NOTIF__')
             }
@@ -1498,8 +1517,11 @@ export default function App() {
             try {
               var name = '', avatar = '';
               // 1. Header активного чата — расширенные селекторы (TG/MAX/Generic)
+              // MAX (SvelteKit): .topbar.svelte-* → первый child div содержит имя
               var headerSels = [
                 '.chat-info .peer-title', '.topbar .peer-title',
+                '.topbar [class*="info" i] [class*="title" i]',
+                '.topbar [class*="info" i] [class*="name" i]',
                 '[class*="chat-header" i] [class*="title" i]',
                 '[class*="top-bar" i] [class*="title" i]',
                 '[class*="topbar" i] [class*="name" i]',
@@ -1511,6 +1533,23 @@ export default function App() {
                 if (h) {
                   var hn = (h.textContent || '').trim();
                   if (hn && hn.length >= 2 && hn.length <= 80) { name = hn; break; }
+                }
+              }
+              // MAX fallback: .topbar содержит "Окно чата с ИмяФамилия" — извлекаем имя из первого div > div
+              if (!name) {
+                var tb = document.querySelector('.topbar');
+                if (tb) {
+                  // Ищем первый элемент с коротким текстом (имя чата) среди children
+                  var tbKids = tb.querySelectorAll('div, span, h1, h2, h3');
+                  for (var ti = 0; ti < tbKids.length && ti < 20; ti++) {
+                    var tbText = (tbKids[ti].textContent || '').trim();
+                    // Пропускаем длинные тексты (весь .topbar textContent), статусы, пустые
+                    if (tbText.length < 2 || tbText.length > 60) continue;
+                    if (/^(был|была|в сети|online|offline|печатает|typing|окно чата)/i.test(tbText)) continue;
+                    // Первый подходящий — имя чата
+                    name = tbText;
+                    break;
+                  }
                 }
               }
               if (name) {

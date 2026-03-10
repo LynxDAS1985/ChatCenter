@@ -190,19 +190,27 @@ const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]
 2. `findSenderInChatlist(body)` — ищет `.chatlist-chat` с текстом `body.slice(0,30)` → извлекает `.peer-title` (имя) и `img.avatar-photo`/`canvas.avatar-photo` (аватарка)
 3. DOM MAX аналогичен Telegram Web K (`.chatlist-chat`, `.peer-title`, `.avatar-photo`)
 
-### Header-селекторы активного чата (v0.55.1)
+### Header-селекторы активного чата (v0.55.1, обновлено v0.56.1)
 
-**Проблема**: `getActiveChatSender()` в preload не находила header в MAX — `.chat-info .peer-title` не матчит.
+**DOM Inspector данные** (v0.56.1):
+- `.topbar` существует: `topbar svelte-1rr87da`
+- `.peer-title` внутри `.topbar` **НЕ существует** в MAX
+- textContent `.topbar`: "Окно чата с Дугин Алексей Сергеевич Дугин Алексей Сергее..."
+- Kids: child DIV содержит имя чата
 
-**Расширенные селекторы** (8 вариантов):
+**Расширенные селекторы** (10 вариантов):
 ```js
 '.chat-info .peer-title', '.topbar .peer-title',
+'.topbar [class*="info" i] [class*="title" i]',
+'.topbar [class*="info" i] [class*="name" i]',
 '[class*="chat-header" i] [class*="title" i]',
 '[class*="top-bar" i] [class*="title" i]',
 '[class*="topbar" i] [class*="name" i]',
 '[class*="chat-header" i] [class*="name" i]',
 'header [class*="title" i]', 'header [class*="name" i]'
 ```
+
+**MAX .topbar fallback**: Ищет первый child div/span с коротким текстом (2-60 символов), пропуская "был(а) в сети", "online", "typing", "окно чата". Первый подходящий = имя чата.
 
 **Active chat fallback** (sidebar):
 ```js
@@ -211,7 +219,7 @@ const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]
 '[class*="dialog"][class*="active" i]'
 ```
 
-**Enrichment задержка**: 150мс — chatlist preview обновляется ПОСЛЕ addedNodes detection
+**quickNewMsgCheck deep scan** (v0.56.1): MAX (SvelteKit) обновляет DOM блоками >40 children. Порог увеличен до 200. Для nodes 40-200 children — deep scan: ищет `[class*="message"] [class*="text"]`, `span`, `p`, `div` с коротким текстом. `extractMsgText()` — очистка embedded timestamps ("Ааа18:22" → "Ааа").
 
 ---
 

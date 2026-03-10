@@ -680,7 +680,11 @@ function getLastMessageText(type) {
       if (els.length > 0) {
         const last = els[els.length - 1]
         const text = last.textContent?.trim()
-        if (text && text.length > 0 && text.length < 2000) return text
+        if (text && text.length > 0 && text.length < 2000) {
+          // Пропускаем чистые timestamps (v0.56.1: MAX selector возвращал "18:22")
+          if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) continue
+          return text
+        }
       }
     } catch {}
   }
@@ -762,6 +766,8 @@ function getActiveChatSender() {
     // 1. Header активного чата — расширенные селекторы (TG/MAX/Generic)
     const headerSels = [
       '.chat-info .peer-title', '.topbar .peer-title',
+      '.topbar [class*="info" i] [class*="title" i]',
+      '.topbar [class*="info" i] [class*="name" i]',
       '[class*="chat-header" i] [class*="title" i]',
       '[class*="top-bar" i] [class*="title" i]',
       '[class*="topbar" i] [class*="name" i]',
@@ -773,6 +779,17 @@ function getActiveChatSender() {
       if (h) {
         const name = (h.textContent || '').trim()
         if (name && name.length >= 2 && name.length <= 80) return name
+      }
+    }
+    // MAX fallback: .topbar содержит имя чата — ищем первый child div с коротким текстом
+    const tb = document.querySelector('.topbar')
+    if (tb) {
+      const tbKids = tb.querySelectorAll('div, span, h1, h2, h3')
+      for (let i = 0; i < tbKids.length && i < 20; i++) {
+        const t = (tbKids[i].textContent || '').trim()
+        if (t.length < 2 || t.length > 60) continue
+        if (/^(был|была|в сети|online|offline|печатает|typing|окно чата)/i.test(t)) continue
+        return t
       }
     }
     // 2. Активный/выделенный чат в sidebar
@@ -812,6 +829,20 @@ function getActiveChatAvatar() {
   return ''
 }
 
+// Извлечь чистый текст сообщения из DOM-ноды (убрать timestamps, служебные тексты)
+function extractMsgText(node) {
+  const raw = (node.textContent || '').trim()
+  if (raw.length < 2 || raw.length > 500) return ''
+  // Убираем встроенные timestamps из текста (MAX: "Ааа18:22" → "Ааа")
+  const clean = raw.replace(/\s*\d{1,2}:\d{2}(:\d{2})?\s*/g, '').trim()
+  if (clean.length < 2) return ''
+  // Пропускаем чистые timestamp'ы
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(clean)) return ''
+  // Пропускаем служебные тексты
+  if (/^(typing|печатает|был[а]? в сети|online|в сети|оффлайн|offline|не в сети|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])$/i.test(clean)) return ''
+  return clean
+}
+
 function quickNewMsgCheck(mutations, type) {
   const now = Date.now()
   if (now - lastQuickMsgTime < 3000) return // cooldown 3 сек — не спамить
@@ -825,15 +856,44 @@ function quickNewMsgCheck(mutations, type) {
       const tag = node.tagName
       if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' ||
           tag === 'SVG' || tag === 'IMG' || tag === 'STYLE' || tag === 'SCRIPT' || tag === 'LINK') continue
-      // Пропускаем сложные контейнеры (модалки, dropdown-меню, целые секции UI)
-      try { if (node.querySelectorAll('*').length > 40) continue } catch { continue }
-      // Проверяем текстовое содержимое
-      const text = (node.textContent || '').trim()
-      if (text.length < 2 || text.length > 500) continue
-      // Пропускаем чистые timestamp'ы
-      if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) continue
-      // Пропускаем служебные тексты мессенджеров (v0.55.1: добавлены MAX системные)
-      if (/^(typing|печатает|был[а]? в сети|online|в сети|оффлайн|offline|не в сети|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])$/i.test(text)) continue
+
+      let text = ''
+      const childCount = node.querySelectorAll ? node.querySelectorAll('*').length : 0
+
+      if (childCount <= 40) {
+        // Простой node — берём textContent напрямую
+        text = extractMsgText(node)
+      } else if (childCount <= 200) {
+        // Deep scan для SvelteKit/MAX: addedNode — контейнер с >40 children
+        // Ищем внутри маленькие текстовые элементы (пузыри сообщений)
+        const candidates = node.querySelectorAll('[class*="message" i] [class*="text" i], [class*="bubble" i], [class*="msg" i] span, p, [class*="content" i]')
+        // Берём последний подходящий текст (новое сообщение = внизу)
+        for (let ci = candidates.length - 1; ci >= Math.max(0, candidates.length - 10); ci--) {
+          const t = extractMsgText(candidates[ci])
+          if (t && t !== lastQuickMsgText && t !== lastSentText && t !== lastActiveMessageText) {
+            text = t
+            break
+          }
+        }
+        // Fallback: ищем любой короткий текстовый node внизу DOM
+        if (!text) {
+          const allText = node.querySelectorAll('span, p, div')
+          for (let ti = allText.length - 1; ti >= Math.max(0, allText.length - 20); ti--) {
+            const el = allText[ti]
+            // Пропускаем элементы с children (не leaf nodes)
+            if (el.children && el.children.length > 2) continue
+            const t = extractMsgText(el)
+            if (t && t.length >= 2 && t.length <= 200 && t !== lastQuickMsgText && t !== lastSentText && t !== lastActiveMessageText) {
+              text = t
+              break
+            }
+          }
+        }
+      } else {
+        continue // >200 children — слишком сложный контейнер (модалки, целые страницы)
+      }
+
+      if (!text) continue
       // Dedup: не повторяем тот же текст
       if (text === lastQuickMsgText || text === lastSentText || text === lastActiveMessageText) continue
 
@@ -898,7 +958,13 @@ function sendUpdate(type) {
   // а Path 2 ловит "новые" тексты при навигации между чатами (ложные срабатывания)
   if (monitorReady && type !== 'telegram') {
     const inText = getLastMessageText(type)
-    if (inText && inText !== lastSentText && inText !== lastActiveMessageText) {
+    // Фильтр timestamps и системных текстов (v0.56.1: "18:22" проходил как сообщение)
+    const isPath2Spam = inText && (
+      /^\d{1,2}:\d{2}(:\d{2})?$/.test(inText)
+      || /^(typing|печатает|был[а]? в сети|online|в сети|оффлайн|offline|не в сети|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])$/i.test(inText)
+      || /^(вы:\s|you:\s)/i.test(inText)
+    )
+    if (inText && !isPath2Spam && inText !== lastSentText && inText !== lastActiveMessageText) {
       const now = Date.now()
       // Cooldown 3 сек — не спамить при прокрутке
       if (now - lastActiveMessageTime > 3000) {
@@ -911,7 +977,7 @@ function sendUpdate(type) {
       }
     }
     // Обновляем lastActiveMessageText даже без отправки — чтобы не уведомлять повторно
-    if (inText) lastActiveMessageText = inText
+    if (inText && !isPath2Spam) lastActiveMessageText = inText
   } else if (monitorReady && type === 'telegram') {
     // Для Telegram: только обновляем lastActiveMessageText для dedup, без уведомлений
     const inText = getLastMessageText(type)
