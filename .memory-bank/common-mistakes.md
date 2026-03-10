@@ -42,6 +42,24 @@
 
 ---
 
+## 🟡 ВАЖНОЕ: MAX — ribbon без имени отправителя и аватарки
+
+### ❌ MAX вызывает showNotification("Макс", {body: "Ацыв"}) — title = название мессенджера
+
+**Симптом**: Ribbon уведомление от MAX показывает "Макс" вместо имени отправителя (например, "Дугин Алексей Сергеевич"). Нет аватарки — только эмодзи.
+
+**Причина**: MAX (бывший VK Мессенджер) в `ServiceWorkerRegistration.showNotification()` передаёт название приложения "Макс" как title, а не имя отправителя. Имя отправителя — только в DOM chatlist. Аватарка не передаётся в opts.icon.
+
+**Решение (v0.50.0)**:
+- `enrichNotif(title, body, tag, icon)` — проверяет, если title совпадает с regex `_appTitles` (макс, telegram, whatsapp, vk, viber) → title — это название мессенджера, а не имя.
+- `findSenderInChatlist(body)` — ищет в `.chatlist-chat` элемент, содержащий preview сообщения (body.slice(0,30)) → извлекает `.peer-title` (имя) и `img.avatar-photo` / `canvas.avatar-photo` (аватарка).
+- Оба override (Notification + showNotification) вызывают `enrichNotif` перед отправкой `__CC_NOTIF__`.
+- Добавлено в оба места: App.jsx (executeJavaScript fallback) и monitor.preload.js (<script> injection).
+
+**Ключевой урок**: Нельзя полагаться на `Notification.title` как имя отправителя. Некоторые мессенджеры (MAX) передают название приложения. Нужен fallback через DOM-поиск в chatlist.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: requestAnimationFrame НЕ работает в hidden BrowserWindow
 
 ### ❌ Использование rAF в notification window

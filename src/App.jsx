@@ -1082,15 +1082,56 @@ export default function App() {
                     img.onerror = function() { cb(url); };
                     img.src = url;
                   }
+                  // Поиск имени отправителя и аватарки в chatlist по preview-тексту сообщения
+                  // MAX/Telegram Web K: .chatlist-chat → .peer-title (имя) + subtitle (превью)
+                  function findSenderInChatlist(body) {
+                    if (!body || body.length < 2) return null;
+                    try {
+                      var chats = document.querySelectorAll('.chatlist-chat');
+                      for (var i = 0; i < chats.length && i < 50; i++) {
+                        var inner = chats[i].textContent || '';
+                        if (inner.indexOf(body.slice(0, 30)) === -1) continue;
+                        // Ищем .peer-title для имени
+                        var pt = chats[i].querySelector('.peer-title');
+                        var senderName = pt ? (pt.textContent || '').trim() : '';
+                        if (!senderName) continue;
+                        // Ищем аватарку
+                        var avatarUrl = '';
+                        var avEl = chats[i].querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo');
+                        if (avEl && avEl.tagName === 'IMG' && avEl.src) {
+                          avatarUrl = avEl.src;
+                        } else if (avEl && avEl.tagName === 'CANVAS' && avEl.width > 10) {
+                          try { avatarUrl = avEl.toDataURL('image/png'); } catch(e) {}
+                        }
+                        return { name: senderName, avatar: avatarUrl };
+                      }
+                    } catch(e) {}
+                    return null;
+                  }
+                  // Проверка: title — это название мессенджера, а не имя отправителя
+                  var _appTitles = /^(ma[xк][cс]?|telegram|whatsapp|vk|viber|вконтакте|вк)/i;
+                  function enrichNotif(title, body, tag, icon) {
+                    var realTitle = title;
+                    var realIcon = icon;
+                    // Если title — название мессенджера или пустой → ищем имя отправителя в chatlist
+                    if (!title || _appTitles.test(title.trim())) {
+                      var sender = findSenderInChatlist(body);
+                      if (sender) {
+                        realTitle = sender.name;
+                        if (!realIcon && sender.avatar) realIcon = sender.avatar;
+                      }
+                    }
+                    if (!realIcon) realIcon = findAvatarCached(realTitle, tag);
+                    return { title: realTitle, icon: realIcon };
+                  }
                   var _N = window.Notification;
                   window.Notification = function(title, opts) {
                     try {
                       var tag = (opts && opts.tag) || '';
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
-                      if (!icon) icon = findAvatarCached(title, tag);
-                      // Конвертируем в data URL для передачи в main process
-                      toDataUrl(icon, function(dataIcon) {
-                        console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: dataIcon, g: tag }));
+                      var enriched = enrichNotif(title, (opts && opts.body) || '', tag, icon);
+                      toDataUrl(enriched.icon, function(dataIcon) {
+                        console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: (opts && opts.body) || '', i: dataIcon, g: tag }));
                       });
                     } catch(e) {}
                   };
@@ -1102,9 +1143,9 @@ export default function App() {
                       try {
                         var tag = (opts && opts.tag) || '';
                         var icon = (opts && opts.icon) || (opts && opts.image) || '';
-                        if (!icon) icon = findAvatarCached(title, tag);
-                        toDataUrl(icon, function(dataIcon) {
-                          console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: dataIcon, g: tag }));
+                        var enriched = enrichNotif(title, (opts && opts.body) || '', tag, icon);
+                        toDataUrl(enriched.icon, function(dataIcon) {
+                          console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: (opts && opts.body) || '', i: dataIcon, g: tag }));
                         });
                       } catch(e) {}
                       return Promise.resolve();

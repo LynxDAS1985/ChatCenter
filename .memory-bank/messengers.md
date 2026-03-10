@@ -177,6 +177,15 @@ const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]
 
 **Решение**: `quickNewMsgCheck()` в monitor.preload.js — прямой мониторинг `addedNodes` в MutationObserver. Не зависит от unread count или Notification API.
 
+### enrichNotif — имя отправителя и аватарка (v0.50.0)
+
+**Проблема**: MAX вызывает `showNotification("Макс", {body: "текст"})` — title = название мессенджера, не имя отправителя. Аватарка не передаётся. Ribbon показывает "Макс" + эмодзи.
+
+**Решение**: `enrichNotif(title, body, tag, icon)` в injection script:
+1. Regex `_appTitles` проверяет: title = "Макс" → это не имя отправителя
+2. `findSenderInChatlist(body)` — ищет `.chatlist-chat` с текстом `body.slice(0,30)` → извлекает `.peer-title` (имя) и `img.avatar-photo`/`canvas.avatar-photo` (аватарка)
+3. DOM MAX аналогичен Telegram Web K (`.chatlist-chat`, `.peer-title`, `.avatar-photo`)
+
 ---
 
 ## Общий шаблон monitor.preload.js

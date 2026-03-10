@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.49.0 (10 марта 2026)
+## Текущая версия: v0.50.0 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.50.0 (10 марта 2026) — enrichNotif: имя отправителя и аватарка из DOM для MAX
+- **FIX: MAX — ribbon показывал "Макс" вместо имени отправителя**: MAX вызывает `showNotification("Макс", {body: "текст"})` — title = название приложения, а не имя. `enrichNotif()` обнаруживает это через regex `_appTitles` и ищет реальное имя в DOM chatlist по preview сообщения (`findSenderInChatlist(body)`).
+- **FIX: MAX — аватарка в ribbon**: `findSenderInChatlist` извлекает `img.avatar-photo` или `canvas.avatar-photo` из `.chatlist-chat` элемента. Аватарка конвертируется в data URL через `toDataUrl()`.
+- **enrichNotif в обоих путях**: Добавлено в App.jsx (`executeJavaScript` fallback) и в monitor.preload.js (`<script>` injection).
+- **tag в __CC_NOTIF__**: Теперь `tag` передаётся из Notification opts для обоих путей (monitor.preload.js ранее не передавал `g`).
 
 ### v0.49.0 (10 марта 2026) — Фикс startup ribbon (warm-up 30 сек) + навигация к чату
 - **FIX: startup ribbon — warm-up 30 сек**: 10 секунд недостаточно — WhatsApp загружается 15-30 сек и кидает `new Notification()` для старых непрочитанных. Warm-up увеличен до 30 сек в App.jsx (`notifReadyRef`) и в main.js backup path (`webviewReadySet`).
