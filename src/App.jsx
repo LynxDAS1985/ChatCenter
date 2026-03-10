@@ -1200,27 +1200,6 @@ export default function App() {
                     }
                     return result;
                   }
-                  // Конвертируем URL аватарки в data URL (с cookies WebView)
-                  function toDataUrl(url, cb) {
-                    if (!url || url.startsWith('data:')) { cb(url || ''); return; }
-                    var ck = '__av_' + url;
-                    if (_avatarCache[ck] && (Date.now() - (_avatarCacheTs[ck] || 0)) < 1800000) { cb(_avatarCache[ck]); return; }
-                    var img = new Image();
-                    img.crossOrigin = 'anonymous';
-                    img.onload = function() {
-                      try {
-                        var c = document.createElement('canvas');
-                        c.width = img.naturalWidth || 64;
-                        c.height = img.naturalHeight || 64;
-                        c.getContext('2d').drawImage(img, 0, 0);
-                        var d = c.toDataURL('image/png');
-                        _avatarCache[ck] = d; _avatarCacheTs[ck] = Date.now();
-                        cb(d);
-                      } catch(e) { cb(url); }
-                    };
-                    img.onerror = function() { cb(url); };
-                    img.src = url;
-                  }
                   // Поиск имени отправителя и аватарки в chatlist по preview-тексту сообщения
                   // MAX/Telegram Web K: .chatlist-chat → .peer-title + subtitle
                   // VK: [class*="dialog"], [class*="im_dialog"], [class*="conversation"] → title/name элемент
@@ -1318,9 +1297,9 @@ export default function App() {
                       }
                       var enriched = enrichNotif(title, body, tag, icon);
                       _logNotif('passed', title, body, tag, icon, '', enriched.title);
-                      toDataUrl(enriched.icon, function(dataIcon) {
-                        console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: dataIcon, g: tag }));
-                      });
+                      // v0.57.0: отправляем console.log НАПРЯМУЮ (без toDataUrl)
+                      // toDataUrl мог зависать на CORS/сети → callback не вызывался → console.log не срабатывал
+                      console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon || '', g: tag }));
                     } catch(e) {}
                   };
                   window.Notification.permission = 'granted';
@@ -1339,9 +1318,8 @@ export default function App() {
                         }
                         var enriched = enrichNotif(title, body, tag, icon);
                         _logNotif('passed', title, body, tag, icon, '', enriched.title);
-                        toDataUrl(enriched.icon, function(dataIcon) {
-                          console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: dataIcon, g: tag }));
-                        });
+                        // v0.57.0: отправляем console.log НАПРЯМУЮ (без toDataUrl)
+                        console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon || '', g: tag }));
                       } catch(e) {}
                       return Promise.resolve();
                     };
@@ -1475,6 +1453,12 @@ export default function App() {
       el.addEventListener('console-message', (e) => {
         const msg = e.message
         if (!msg) return
+        // v0.57.0: debug трассировка ВСЕХ __CC_ сообщений — для диагностики проблем с уведомлениями
+        if (msg.startsWith('__CC_')) {
+          const ready = !!notifReadyRef.current[messengerId]
+          const tag = msg.slice(0, msg.indexOf('{') > 0 ? Math.min(msg.indexOf('{'), 30) : 30)
+          traceNotif('debug', 'info', messengerId, msg.slice(tag.length, tag.length + 60), `${tag.trim()} | ready=${ready}`)
+        }
         // ── __CC_ACCOUNT__: имя профиля из accountScript ──
         if (msg.startsWith('__CC_ACCOUNT__')) {
           const name = msg.slice(14).trim()

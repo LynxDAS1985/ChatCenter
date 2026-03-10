@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.56.1 (10 марта 2026)
+## Текущая версия: v0.57.0 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.57.0 (10 марта 2026) — Фикс: toDataUrl зависание → уведомления MAX теперь работают
+- **CRITICAL FIX — toDataUrl зависание**: В `executeJavaScript` injection, `console.log('__CC_NOTIF__'+...)` был внутри callback `toDataUrl()` (конвертация аватарки в data URL через `new Image()` + canvas). Если загрузка аватарки зависала (CORS/сеть) → callback НЕ вызывался → `console.log` НЕ срабатывал → `console-message` НЕ приходил → Pipeline пуст, нет звука/ribbon. Исправлено: `console.log` вызывается напрямую (как в preload версии), без `toDataUrl` обёртки.
+- **Debug трассировка console-message**: Все `__CC_` сообщения теперь логируются в Pipeline trace при получении — видно, дошло ли сообщение и в каком состоянии `notifReadyRef`.
+- **Удалён неиспользуемый `toDataUrl`** из executeJavaScript injection — функция больше не нужна.
 
 ### v0.56.1 (10 марта 2026) — Фикс: timestamp через IPC + deep scan для MAX + DOM-селекторы из Inspector
 - **Спам-фильтр IPC `new-message`**: Timestamps "18:22" проходили через IPC `new-message` handler БЕЗ фильтра → ложный ribbon. Добавлен полный спам-фильтр + per-messenger regex + senderCache fallback.

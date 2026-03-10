@@ -181,6 +181,12 @@ const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]
 
 **Решение**: `quickNewMsgCheck()` в monitor.preload.js — прямой мониторинг `addedNodes` в MutationObserver. Не зависит от unread count или Notification API.
 
+### КРИТИЧЕСКИЙ БАГ: toDataUrl зависание (v0.57.0)
+
+**Проблема**: `executeJavaScript` injection (fallback для CSP) оборачивал `console.log('__CC_NOTIF__'+...)` в `toDataUrl()` callback. `toDataUrl` создавала `new Image()` с `crossOrigin='anonymous'` для конвертации HTTP URL аватарки в data URL. Если загрузка зависала → callback не вызывался → уведомления не работали. В Логе "ПОКАЗАНО", в Pipeline — пусто.
+
+**Решение (v0.57.0)**: Удалён `toDataUrl` из injection. `console.log` вызывается синхронно с `enriched.icon` (как в preload версии). App.jsx принимает и HTTP URL, и data URL.
+
 ### enrichNotif — имя отправителя и аватарка (v0.50.0, обновлено v0.55.1)
 
 **Проблема**: MAX вызывает `showNotification("Макс", {body: "текст"})` — title = название мессенджера, не имя отправителя. Аватарка не передаётся. Ribbon показывает "Макс" + эмодзи.
