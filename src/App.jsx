@@ -440,6 +440,8 @@ export default function App() {
   const notifReadyRef = useRef({})   // { [id]: true } — warm-up: игнорируем ВСЕ уведомления первые 30 сек
   const notifDedupRef = useRef(new Map()) // дедупликация __CC_NOTIF__ — messengerId:normalizedBody → timestamp
   const pipelineTraceRef = useRef([]) // Pipeline Trace Logger — трассировка ВСЕХ шагов уведомлений
+  const pendingMsgRef = useRef(new Map()) // { messengerId:text → { timer, messengerId, text } } — ожидание enriched __CC_NOTIF__ 200мс
+  const senderCacheRef = useRef({}) // { [messengerId]: { name, avatar, ts } } — кэш sender при неудачном enrichment (до 5 мин)
   const retryTimers = useRef({})
   const previewTimers = useRef({})
   const saveTimer = useRef(null)
@@ -1476,13 +1478,23 @@ export default function App() {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_MSG__')
             return
           }
-          traceNotif('source', 'info', messengerId, text, '__CC_MSG__ | запуск обогащения через DOM')
-          // Пробуем извлечь имя отправителя и аватарку из WebView DOM
-          // Задержка 150мс — chatlist preview обновляется ПОСЛЕ addedNodes в чате
+          // Per-messenger спам-фильтр (v0.56.0)
+          const customSpam = ((settingsRef.current.messengerNotifs || {})[messengerId] || {}).spamFilter
+          if (customSpam) {
+            try { if (new RegExp(customSpam, 'i').test(text)) { traceNotif('spam', 'block', messengerId, text, 'пользовательский спам-фильтр'); return } } catch {}
+          }
+          traceNotif('source', 'info', messengerId, text, '__CC_MSG__ | ожидание enriched __CC_NOTIF__ 200мс')
+          // Приоритет enriched: ждём 200мс — если __CC_NOTIF__ придёт с enriched данными, он отменит этот таймер
+          // Если не придёт — запускаем собственное enrichment через DOM
+          const pendingKey = messengerId + ':' + text.slice(0, 40)
+          // Отменяем предыдущий pending для того же текста
+          if (pendingMsgRef.current.has(pendingKey)) clearTimeout(pendingMsgRef.current.get(pendingKey).timer)
           const safeBody = JSON.stringify(text)
           const safeSlice = JSON.stringify(text.slice(0, 30))
-          setTimeout(() => {
-          el.executeJavaScript(`(function() {
+          const pendingTimer = setTimeout(() => {
+            pendingMsgRef.current.delete(pendingKey)
+            traceNotif('enrich', 'info', messengerId, text, '__CC_MSG__ | enriched NOTIF не пришёл → DOM enrichment')
+            el.executeJavaScript(`(function() {
             try {
               var name = '', avatar = '';
               // 1. Header активного чата — расширенные селекторы (TG/MAX/Generic)
@@ -1555,14 +1567,37 @@ export default function App() {
                   }
                 } catch {}
               }
+              // Кэш sender (улучшение #3) — сохраняем при успехе, используем при неудаче
+              if (extra.senderName) {
+                senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }
+              } else {
+                const cached = senderCacheRef.current[messengerId]
+                if (cached && Date.now() - cached.ts < 300000) { // 5 мин
+                  extra.senderName = cached.name
+                  if (cached.avatar && !extra.iconUrl && !extra.iconDataUrl) {
+                    if (cached.avatar.startsWith('data:')) extra.iconDataUrl = cached.avatar
+                    else extra.iconUrl = cached.avatar
+                  }
+                  traceNotif('enrich', 'info', messengerId, text, `senderCache fallback | "${cached.name.slice(0,20)}" age=${Math.round((Date.now()-cached.ts)/1000)}с`)
+                }
+              }
               traceNotif('enrich', extra.senderName ? 'pass' : 'warn', messengerId, text, `__CC_MSG__ enriched | sender="${(extra.senderName||'нет').slice(0,20)}" icon=${!!(extra.iconUrl||extra.iconDataUrl)}`)
               handleNewMessage(messengerId, text, Object.keys(extra).length ? extra : undefined)
             })
             .catch(() => {
               traceNotif('enrich', 'warn', messengerId, text, '__CC_MSG__ enrichment failed')
-              handleNewMessage(messengerId, text)
+              // Кэш sender fallback
+              const cached = senderCacheRef.current[messengerId]
+              if (cached && Date.now() - cached.ts < 300000) {
+                const extra = { senderName: cached.name }
+                if (cached.avatar) { if (cached.avatar.startsWith('data:')) extra.iconDataUrl = cached.avatar; else extra.iconUrl = cached.avatar }
+                handleNewMessage(messengerId, text, extra)
+              } else {
+                handleNewMessage(messengerId, text)
+              }
             })
-          }, 150) // задержка 150мс — chatlist preview обновляется ПОСЛЕ addedNodes
+          }, 200) // 200мс ожидание enriched __CC_NOTIF__
+          pendingMsgRef.current.set(pendingKey, { timer: pendingTimer, messengerId, text })
           return
         }
         if (!msg.startsWith('__CC_NOTIF__')) return
@@ -1581,6 +1616,11 @@ export default function App() {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_NOTIF__')
             return
           }
+          // Per-messenger спам-фильтр (v0.56.0)
+          const customSpamN = ((settingsRef.current.messengerNotifs || {})[messengerId] || {}).spamFilter
+          if (customSpamN && text) {
+            try { if (new RegExp(customSpamN, 'i').test(text)) { traceNotif('spam', 'block', messengerId, text, 'пользовательский спам-фильтр'); return } } catch {}
+          }
           if (text && !isSpam) {
             // Дедупликация: Telegram шлёт Notification + ServiceWorker.showNotification → 2 __CC_NOTIF__
             // Нормализуем body: убираем trailing timestamps (вида "15:57" или "15:5715:57")
@@ -1596,13 +1636,20 @@ export default function App() {
             if (notifDedupRef.current.size > 30) {
               for (const [k, ts] of notifDedupRef.current) { if (now - ts > 15000) notifDedupRef.current.delete(k) }
             }
+            // Приоритет enriched: если есть pending __CC_MSG__ для того же текста — отменить его
+            const pendingKey = messengerId + ':' + text.slice(0, 40)
+            const pending = pendingMsgRef.current.get(pendingKey)
+            if (pending) {
+              clearTimeout(pending.timer)
+              pendingMsgRef.current.delete(pendingKey)
+              traceNotif('enrich', 'pass', messengerId, text, '__CC_NOTIF__ отменил pending __CC_MSG__ — enriched приоритет')
+            }
             // data.t = title (имя отправителя), data.i = icon URL (аватарка)
             const extra = {}
             if (data.t) extra.senderName = data.t
             if (data.g) extra.chatTag = data.g
             if (data.i) {
               if (data.i.startsWith('data:')) {
-                // data URL аватарки — передаём напрямую как dataUrl (не нужно скачивать)
                 extra.iconDataUrl = data.i
               } else if (data.i.startsWith('http') || data.i.startsWith('blob:')) {
                 extra.iconUrl = data.i
@@ -1610,6 +1657,10 @@ export default function App() {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 if (mi?.url) { try { extra.iconUrl = new URL(data.i, mi.url).href } catch {} }
               }
+            }
+            // Кэш sender (улучшение #3)
+            if (extra.senderName) {
+              senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }
             }
             handleNewMessage(messengerId, text, Object.keys(extra).length ? extra : undefined)
           }
@@ -2296,7 +2347,7 @@ export default function App() {
 
       {/* ── Модальное окно: Лог уведомлений ── */}
       {notifLogModal && (() => {
-        const traceStepLabels = { source: 'Источник', spam: 'Спам', dedup: 'Дедуп', handle: 'Обработка', viewing: 'Видимость', sound: 'Звук', ribbon: 'Ribbon', enrich: 'Обогащение', error: 'Ошибка' }
+        const traceStepLabels = { source: 'Источник', spam: 'Спам', dedup: 'Дедуп', handle: 'Обработка', viewing: 'Видимость', sound: 'Звук', ribbon: 'Ribbon', enrich: 'Обогащение', inspect: 'Инспектор', error: 'Ошибка' }
         const traceTypeColors = { pass: '#4ade80', block: '#f87171', warn: '#fbbf24', info: '#94a3b8' }
         const traceTypeLabels = { pass: 'ПРОПУЩЕН', block: 'БЛОК', warn: 'ВНИМАНИЕ', info: 'ИНФО' }
         const traceData = (notifLogModal.trace || []).filter(e => {
@@ -2341,11 +2392,71 @@ export default function App() {
                     navigator.clipboard.writeText(JSON.stringify(data, null, 2)).catch(() => {})
                   }}
                 >Скопировать</button>
-                {notifLogTab === 'trace' && (
+                {notifLogTab === 'trace' && (<>
+                  {/* DOM Inspector — выгрузка реальных селекторов из WebView */}
+                  <button className="px-2 py-1 rounded text-xs cursor-pointer" style={{ backgroundColor: 'rgba(168,85,247,0.15)', color: '#a855f7' }}
+                    onClick={() => {
+                      const mid = notifLogModal.messengerId
+                      const wv = webviewRefs.current[mid]
+                      if (!wv) return
+                      wv.executeJavaScript(`(function() {
+                        try {
+                          var r = { url: location.href, header: [], activeChat: [], chatlist: [] };
+                          // Header area
+                          var hSels = ['.chat-info', '.topbar', '[class*="chat-header" i]', '[class*="top-bar" i]', 'header'];
+                          for (var i = 0; i < hSels.length; i++) {
+                            var el = document.querySelector(hSels[i]);
+                            if (!el) continue;
+                            var cls = el.className || ''; if (typeof cls !== 'string') cls = cls.baseVal || '';
+                            var kids = [];
+                            for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
+                              var cc = c.className || ''; if (typeof cc !== 'string') cc = cc.baseVal || '';
+                              kids.push({ tag: c.tagName, cls: cc.slice(0,80), text: (c.textContent||'').slice(0,40) });
+                            }
+                            r.header.push({ sel: hSels[i], tag: el.tagName, cls: cls.slice(0,120), text: (el.textContent||'').slice(0,60), kids: kids.slice(0,8) });
+                          }
+                          // Active chat in sidebar
+                          var aSels = ['.chatlist-chat.active', '.chatlist-chat.selected', '[class*="chat"][class*="active" i]'];
+                          for (var j = 0; j < aSels.length; j++) {
+                            var a = document.querySelector(aSels[j]);
+                            if (!a) continue;
+                            var ac = a.className || ''; if (typeof ac !== 'string') ac = ac.baseVal || '';
+                            r.activeChat.push({ sel: aSels[j], tag: a.tagName, cls: ac.slice(0,120), text: (a.textContent||'').slice(0,80) });
+                          }
+                          // Chatlist sample
+                          var chats = document.querySelectorAll('.chatlist-chat');
+                          r.chatlist.push({ count: chats.length, firstCls: chats[0] ? (chats[0].className||'').slice(0,120) : '' });
+                          if (!chats.length) {
+                            var generic = document.querySelectorAll('[class*="chat" i], [class*="dialog" i]');
+                            r.chatlist.push({ generic: generic.length, firstTag: generic[0] ? generic[0].tagName : '', firstCls: generic[0] ? (generic[0].className||'').slice(0,120) : '' });
+                          }
+                          return JSON.stringify(r);
+                        } catch(e) { return JSON.stringify({ error: e.message }); }
+                      })()`)
+                        .then(res => {
+                          try {
+                            const data = JSON.parse(res)
+                            traceNotif('inspect', 'info', mid, '', 'DOM Inspector: ' + JSON.stringify(data).slice(0, 200))
+                            navigator.clipboard.writeText(JSON.stringify(data, null, 2)).catch(() => {})
+                            setNotifLogModal(prev => prev ? { ...prev, trace: [...(prev.trace || []), { ts: Date.now(), step: 'inspect', type: 'info', mid, text: 'DOM Inspector', detail: JSON.stringify(data, null, 2) }] } : prev)
+                          } catch {}
+                        })
+                        .catch(e => traceNotif('inspect', 'warn', mid, '', 'DOM Inspector error: ' + e.message))
+                    }}
+                  >DOM</button>
+                  {/* Тест-кнопка — тестовое уведомление через pipeline */}
+                  <button className="px-2 py-1 rounded text-xs cursor-pointer" style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: '#4ade80' }}
+                    onClick={() => {
+                      const mid = notifLogModal.messengerId
+                      const testText = 'Тест от ChatCenter ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                      traceNotif('source', 'info', mid, testText, 'ТЕСТ — ручной запуск через кнопку')
+                      handleNewMessage(mid, testText, { senderName: 'ChatCenter Тест' })
+                    }}
+                  >Тест</button>
                   <button className="px-2 py-1 rounded text-xs cursor-pointer" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#f87171' }}
                     onClick={() => { pipelineTraceRef.current = []; setNotifLogModal(prev => prev ? { ...prev, trace: [] } : prev) }}
                   >Очистить</button>
-                )}
+                </>)}
                 <button className="px-2 py-1 rounded text-xs cursor-pointer" style={{ color: 'var(--cc-text-dimmer)' }}
                   onClick={() => setNotifLogModal(null)}
                 >✕</button>
@@ -2529,6 +2640,35 @@ export default function App() {
               )}
             </div>
 
+            {/* Per-messenger спам-фильтр (v0.56.0) */}
+            {notifLogTab === 'trace' && (() => {
+              const mid = notifLogModal.messengerId
+              const mn = (settings.messengerNotifs || {})[mid] || {}
+              return (
+                <div className="flex items-center gap-2 px-4 py-1.5 text-[11px]" style={{ borderTop: '1px solid var(--cc-border)', backgroundColor: 'rgba(0,0,0,0.1)' }}>
+                  <span style={{ color: 'var(--cc-text-dimmer)', whiteSpace: 'nowrap' }}>Доп. спам-фильтр (regex):</span>
+                  <input
+                    className="flex-1 px-2 py-0.5 rounded text-[11px]"
+                    style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text)', border: '1px solid var(--cc-border)', outline: 'none', fontFamily: 'monospace' }}
+                    placeholder="напр: ^(привет|тест)$"
+                    defaultValue={mn.spamFilter || ''}
+                    onBlur={e => {
+                      const val = e.target.value.trim()
+                      // Проверяем что regex валиден
+                      if (val) { try { new RegExp(val, 'i') } catch { e.target.style.borderColor = '#f87171'; return } }
+                      e.target.style.borderColor = 'var(--cc-border)'
+                      setSettings(prev => ({
+                        ...prev,
+                        messengerNotifs: { ...(prev.messengerNotifs || {}), [mid]: { ...((prev.messengerNotifs || {})[mid] || {}), spamFilter: val } }
+                      }))
+                      window.api.invoke('settings:save', { messengerNotifs: { ...(settings.messengerNotifs || {}), [mid]: { ...((settings.messengerNotifs || {})[mid] || {}), spamFilter: val } } })
+                    }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                  />
+                  <span style={{ color: 'var(--cc-text-dimmer)', whiteSpace: 'nowrap' }}>{mn.spamFilter ? '✓ активен' : 'не задан'}</span>
+                </div>
+              )
+            })()}
             {/* Легенда */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[11px]" style={{ borderTop: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
               {notifLogTab === 'log' ? (<>
