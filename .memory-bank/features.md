@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.47.2 (10 марта 2026)
+## Текущая версия: v0.48.0 (10 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.48.0 (10 марта 2026) — Аватарки в ribbon (data URL) + очистка диагностических логов
+- **Аватарки отправителя в ribbon**: Иконки из Notification API конвертируются в `data:` URL прямо внутри WebView через `Image` + `canvas.toDataURL()`. Это позволяет передать аватарку с cookies сессии (Telegram требует авторизацию для скачивания аватарок). Ранее `downloadIcon` в main.js делал plain HTTP GET без cookies → 403 → аватарка не загружалась.
+- **toDataUrl()**: Новая функция в injection script. Кэширует конвертированные data URL (TTL 30 мин). Работает async через `Image.onload` → canvas → dataURL. Fallback на исходный URL при ошибке.
+- **Очистка диагностических логов**: Удалены все `[Notif]`, `[NotifManager]`, `[NotifHTML]` console.log из App.jsx, main.js, notification.html. Оставлены только error-логи и backup path логи.
+- **Кнопка «Тест ribbon» очищена**: Убраны console.log/error из onClick, оставлена только функциональность.
 
 ### v0.47.2 (10 марта 2026) — Фикс ложных ribbon при навигации между чатами + rAF fix
 - **FIX: ложные ribbon при навигации**: При переключении чата в Telegram, `getLastMessageText` находил последнее сообщение в НОВОМ чате, которое отличалось от `lastActiveMessageText` → считал его "новым" → показывал ribbon для СТАРОГО сообщения. Исправлено: Path 2 (детекция по тексту) теперь отключён для Telegram (`type !== 'telegram'`). Telegram хорошо работает через `__CC_NOTIF__` + unread count.

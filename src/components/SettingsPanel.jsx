@@ -276,19 +276,14 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              console.log(`[Notif] TEST ribbon for ${m.id} (${m.name})`)
-                              try {
-                                window.api.invoke('app:custom-notify', {
-                                  title: 'Тест',
-                                  body: `Тестовое уведомление от ${m.name}`,
-                                  color: m.color || '#2AABEE',
-                                  emoji: m.emoji || '💬',
-                                  messengerName: m.name || 'ЦентрЧатов',
-                                  messengerId: m.id,
-                                }).then(r => console.log('[Notif] TEST result:', r)).catch(err => console.error('[Notif] TEST error:', err))
-                              } catch (err) {
-                                console.error('[Notif] TEST invoke crash:', err)
-                              }
+                              window.api.invoke('app:custom-notify', {
+                                title: 'Тест',
+                                body: `Тестовое уведомление от ${m.name}`,
+                                color: m.color || '#2AABEE',
+                                emoji: m.emoji || '💬',
+                                messengerName: m.name || 'ЦентрЧатов',
+                                messengerId: m.id,
+                              }).catch(() => {})
                             }}
                             className="text-[10px] px-2 py-1 rounded-lg transition-all cursor-pointer font-medium"
                             style={{ backgroundColor: `${m.color}22`, color: m.color, border: `1px solid ${m.color}55` }}

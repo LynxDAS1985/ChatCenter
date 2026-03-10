@@ -442,7 +442,6 @@ function getNotifHtmlPath() {
 
 function createNotifWindow() {
   if (notifWin && !notifWin.isDestroyed()) return
-  console.log('[NotifManager] Creating notification window...')
 
   const { workArea } = screen.getPrimaryDisplay()
 
@@ -465,11 +464,6 @@ function createNotifWindow() {
       nodeIntegration: false,
       sandbox: false,
     }
-  })
-
-  // Перехват console.log из notification.html → main process terminal
-  notifWin.webContents.on('console-message', (_e, _level, msg) => {
-    console.log('[NotifHTML]', msg)
   })
 
   notifWin.loadFile(getNotifHtmlPath()).catch(err => {
@@ -508,9 +502,9 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   let cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
   // Убираем trailing timestamps (Telegram ServiceWorker приклеивает "15:57" или "15:5715:57" к body)
   cleanBody = cleanBody.replace(/(\d{1,2}:\d{2}(:\d{2})?)+\s*$/g, '').trim()
-  if (!cleanBody) { console.log('[NotifManager] SKIP: empty cleanBody, original:', (body || '').slice(0, 40)); return null }
+  if (!cleanBody) return null
   // MAX и другие мессенджеры могут слать Notification с body = "12:40" (только время)
-  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) { console.log('[NotifManager] SKIP: timestamp-only body:', cleanBody); return null }
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) return null
   // Используем очищенный body для отображения
   body = cleanBody
 
@@ -520,7 +514,6 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   const dedupKey = messengerId + ':' + (normalizedBody || (body || '')).slice(0, 60)
   const now = Date.now()
   if (notifDedupMap.has(dedupKey) && now - notifDedupMap.get(dedupKey) < 8000) {
-    console.log('[NotifManager] Dedup skip:', messengerName, body?.slice(0, 30))
     return null
   }
   notifDedupMap.set(dedupKey, now)
@@ -530,16 +523,12 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
 
   try {
     if (!notifWin || notifWin.isDestroyed()) {
-      console.log('[NotifManager] Creating new notifWin...')
       createNotifWindow()
       // Ждём загрузку HTML с таймаутом 5 сек
       await Promise.race([
         new Promise(resolve => notifWin.webContents.once('did-finish-load', resolve)),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Notification HTML load timeout')), 5000))
       ])
-      console.log('[NotifManager] notifWin loaded OK')
-    } else {
-      console.log('[NotifManager] notifWin already exists, reusing')
     }
   } catch (err) {
     console.error('[NotifManager] Window init error:', err.message)
@@ -571,7 +560,6 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
 
   const expandedByDefault = !!settings.ribbonExpandedByDefault
   const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, senderName: senderName || title || '', chatTag: chatTag || '' }
-  console.log('[NotifManager] Showing notification:', id, messengerName, title, body?.slice(0, 30))
 
   // FIFO — удаляем старые из трекинга
   if (notifItems.length >= 6) {
@@ -586,7 +574,6 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
     notifWin.setBounds({ x: workArea.x + workArea.width - 380, y: workArea.y + workArea.height - 100, width: 370, height: 90 })
     notifWin.showInactive()
   }
-  console.log('[NotifManager] Sending notif:show to notifWin, id:', id, 'body:', body?.slice(0, 30))
   notifWin.webContents.send('notif:show', data)
   // HTML пришлёт notif:resize с точной высотой и окно скорректируется.
   // Двойной setBounds (reposition + resize) вызывал дёрг первого уведомления на Windows.
@@ -626,7 +613,6 @@ function setupNotifIPC() {
 
   let lastNotifBounds = null // Кэш bounds — не дёргать окно если не изменились
   ipcMain.on('notif:resize', (_event, height) => {
-    console.log('[NotifManager] notif:resize received, height:', height)
     // HTML сообщает нужную высоту — единственный источник позиционирования
     if (!notifWin || notifWin.isDestroyed()) return
     height = Math.round(height)
@@ -885,10 +871,8 @@ function setupIPC() {
 
   // Кастомное уведомление (Messenger Ribbon — v0.39.0)
   ipcMain.handle('app:custom-notify', async (event, { title, body, fullBody, iconUrl, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, senderName, chatTag }) => {
-    console.log('[NotifManager] IPC app:custom-notify received:', messengerName, title, body?.slice(0, 30))
     try {
       const result = await showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, senderName, chatTag })
-      console.log('[NotifManager] showCustomNotification returned:', result)
       return { ok: !!result, id: result }
     } catch (e) {
       console.error('[NotifManager] Ошибка:', e.message)

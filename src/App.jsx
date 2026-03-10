@@ -799,15 +799,12 @@ export default function App() {
   // Если extra есть → из __CC_NOTIF__ (Notification API) — надёжный источник
   // Если extra нет → из MutationObserver (new-message IPC) — может быть ложным
   const handleNewMessage = (messengerId, text, extra) => {
-    if (!text) { console.log(`[Notif] handleNewMessage SKIP: empty text (${messengerId})`); return }
+    if (!text) return
 
     // Дедупликация: одинаковый текст от того же мессенджера за 10 сек → skip
     const dedupKey = messengerId + ':' + text.slice(0, 60)
     const now = Date.now()
-    if (recentNotifsRef.current.has(dedupKey) && now - recentNotifsRef.current.get(dedupKey) < 10000) {
-      console.log(`[Notif] handleNewMessage DEDUP skip (${messengerId}): "${text.slice(0, 30)}"`)
-      return
-    }
+    if (recentNotifsRef.current.has(dedupKey) && now - recentNotifsRef.current.get(dedupKey) < 10000) return
     recentNotifsRef.current.set(dedupKey, now)
     // Чистим старые записи (>30 сек)
     if (recentNotifsRef.current.size > 50) {
@@ -818,7 +815,7 @@ export default function App() {
     // windowFocusedRef обновляется через IPC window-state из main process —
     // надёжнее чем document.hidden или document.hasFocus()
     const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
-    if (isViewingThisTab) { console.log(`[Notif] handleNewMessage SKIP: viewing tab (${messengerId}), focused=${windowFocusedRef.current}, active=${activeIdRef.current}`); return }
+    if (isViewingThisTab) return
 
     // Автопереключение на вкладку с новым сообщением (если включено)
     if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {
@@ -833,7 +830,6 @@ export default function App() {
     // Per-messenger ribbon: messengerNotifs[id].ribbon > notificationsEnabled (глобальный)
     const ribbonOn = mNotifs.ribbon !== undefined ? mNotifs.ribbon : true
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
-    console.log(`[Notif] handleNewMessage PASS (${messengerId}): "${text.slice(0, 30)}", soundOn=${soundOn}, ribbonOn=${ribbonOn}, globalSound=${settingsRef.current.soundEnabled}, globalNotif=${settingsRef.current.notificationsEnabled}`)
     if (settingsRef.current.soundEnabled !== false && soundOn) playNotificationSound(mInfo?.color)
     if (settingsRef.current.notificationsEnabled !== false && ribbonOn) {
       lastRibbonTsRef.current[messengerId] = Date.now()
@@ -853,9 +849,7 @@ export default function App() {
         messengerId: messengerId,
         senderName: extra?.senderName || '',
         chatTag: extra?.chatTag || '',
-      }).then(r => console.log(`[Notif] app:custom-notify result (${messengerId}):`, r)).catch(e => console.error(`[Notif] app:custom-notify ERROR (${messengerId}):`, e))
-    } else {
-      console.log(`[Notif] handleNewMessage SKIP ribbon: globalNotif=${settingsRef.current.notificationsEnabled}, ribbonOn=${ribbonOn}`)
+      }).catch(() => {})
     }
 
     // Превью сообщения в бейдже вкладки (5 секунд)
@@ -1033,13 +1027,37 @@ export default function App() {
                     }
                     return result;
                   }
+                  // Конвертируем URL аватарки в data URL (с cookies WebView)
+                  function toDataUrl(url, cb) {
+                    if (!url || url.startsWith('data:')) { cb(url || ''); return; }
+                    var ck = '__av_' + url;
+                    if (_avatarCache[ck] && (Date.now() - (_avatarCacheTs[ck] || 0)) < 1800000) { cb(_avatarCache[ck]); return; }
+                    var img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = function() {
+                      try {
+                        var c = document.createElement('canvas');
+                        c.width = img.naturalWidth || 64;
+                        c.height = img.naturalHeight || 64;
+                        c.getContext('2d').drawImage(img, 0, 0);
+                        var d = c.toDataURL('image/png');
+                        _avatarCache[ck] = d; _avatarCacheTs[ck] = Date.now();
+                        cb(d);
+                      } catch(e) { cb(url); }
+                    };
+                    img.onerror = function() { cb(url); };
+                    img.src = url;
+                  }
                   var _N = window.Notification;
                   window.Notification = function(title, opts) {
                     try {
                       var tag = (opts && opts.tag) || '';
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
                       if (!icon) icon = findAvatarCached(title, tag);
-                      console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon, g: tag }));
+                      // Конвертируем в data URL для передачи в main process
+                      toDataUrl(icon, function(dataIcon) {
+                        console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: dataIcon, g: tag }));
+                      });
                     } catch(e) {}
                   };
                   window.Notification.permission = 'granted';
@@ -1051,7 +1069,9 @@ export default function App() {
                         var tag = (opts && opts.tag) || '';
                         var icon = (opts && opts.icon) || (opts && opts.image) || '';
                         if (!icon) icon = findAvatarCached(title, tag);
-                        console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: icon, g: tag }));
+                        toDataUrl(icon, function(dataIcon) {
+                          console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: (opts && opts.body) || '', i: dataIcon, g: tag }));
+                        });
                       } catch(e) {}
                       return Promise.resolve();
                     };
@@ -1172,8 +1192,7 @@ export default function App() {
           setMonitorDiag(prev => ({ ...prev, [messengerId]: diag }))
         } else if (e.channel === 'new-message') {
           // Warm-up: игнорируем сообщения от MutationObserver первые 10 сек после dom-ready
-          if (!notifReadyRef.current[messengerId]) { console.log(`[Notif] new-message SKIP warm-up (${messengerId}):`, (e.args[0] || '').slice(0, 30)); return }
-          console.log(`[Notif] new-message IPC (${messengerId}):`, (e.args[0] || '').slice(0, 40))
+          if (!notifReadyRef.current[messengerId]) return
           handleNewMessage(messengerId, e.args[0])
         }
       })
@@ -1199,13 +1218,9 @@ export default function App() {
         }
         if (!msg.startsWith('__CC_NOTIF__')) return
         // Warm-up: игнорируем уведомления до готовности (10 сек после dom-ready)
-        if (!notifReadyRef.current[messengerId]) {
-          console.log(`[Notif] SKIP warm-up (${messengerId}):`, msg.slice(12, 60))
-          return
-        }
+        if (!notifReadyRef.current[messengerId]) return
         try {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
-          console.log(`[Notif] __CC_NOTIF__ (${messengerId}): t="${data.t}", b="${(data.b||'').slice(0,30)}", active=${activeIdRef.current === messengerId}, focused=${windowFocusedRef.current}`)
           const text = (data.b || '').trim()
           if (text && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) {
             // Дедупликация: Telegram шлёт Notification + ServiceWorker.showNotification → 2 __CC_NOTIF__
@@ -1213,10 +1228,7 @@ export default function App() {
             const normalizedText = text.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()
             const dedupKey = messengerId + ':' + (normalizedText || text).slice(0, 40)
             const now = Date.now()
-            if (notifDedupRef.current.has(dedupKey) && now - notifDedupRef.current.get(dedupKey) < 5000) {
-              console.log(`[Notif] Dedup skip (renderer): ${dedupKey}`)
-              return
-            }
+            if (notifDedupRef.current.has(dedupKey) && now - notifDedupRef.current.get(dedupKey) < 5000) return
             notifDedupRef.current.set(dedupKey, now)
             // Очистка старых записей
             if (notifDedupRef.current.size > 30) {
