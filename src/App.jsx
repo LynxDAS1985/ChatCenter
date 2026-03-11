@@ -930,6 +930,9 @@ export default function App() {
   // ── Дедупликация уведомлений (text+messengerId → timestamp) ────────────────
   const recentNotifsRef = useRef(new Map()) // key → timestamp
   const lastRibbonTsRef = useRef({}) // { [messengerId]: timestamp } — когда последний раз показали ribbon
+  // v0.60.0 Решение #2: sender-based dedup — если __CC_NOTIF__ уже прошёл для sender,
+  // блокируем __CC_MSG__ от того же sender в течение 3 сек (даже если текст другой)
+  const notifSenderTsRef = useRef({}) // { [messengerId + ':' + senderName]: timestamp }
 
   // ── Pipeline Trace Logger (v0.55.0) ──────────────────────────────────────────
   // Записывает КАЖДЫЙ шаг pipeline уведомлений для диагностики
@@ -1454,7 +1457,16 @@ export default function App() {
               const extra = cached && Date.now() - cached.ts < 300000
                 ? { senderName: cached.name, ...(cached.avatar ? (cached.avatar.startsWith('data:') ? { iconDataUrl: cached.avatar } : { iconUrl: cached.avatar }) : {}) }
                 : undefined
-              if (extra) traceNotif('enrich', 'info', messengerId, msgText, `senderCache fallback IPC | "${cached.name.slice(0,20)}"`)
+              if (extra) {
+                traceNotif('enrich', 'info', messengerId, msgText, `senderCache fallback IPC | "${cached.name.slice(0,20)}"`)
+                // v0.60.0 Решение #2: sender-based dedup
+                const senderKey = messengerId + ':' + cached.name.slice(0, 30).toLowerCase()
+                const senderTs = notifSenderTsRef.current[senderKey]
+                if (senderTs && Date.now() - senderTs < 3000) {
+                  traceNotif('dedup', 'block', messengerId, msgText, `sender-dedup IPC | "${cached.name.slice(0,20)}" ${Date.now()-senderTs}мс назад`)
+                  return
+                }
+              }
               handleNewMessage(messengerId, msgText, extra)
             } else {
               traceNotif('source', 'info', messengerId, msgText, 'IPC skip | уже обработан через __CC_NOTIF__')
@@ -1490,13 +1502,15 @@ export default function App() {
           }
           const text = msg.slice(10).trim()
           if (!text) return
-          // v0.59.0: Спам-фильтр — только базовые паттерны (timestamps, статусы, исходящие)
-          // VK UI мусор больше не нужно фильтровать — chatObserver привязан к контейнеру чата
+          // v0.60.0: Спам-фильтр — базовые паттерны + VK UI элементы (контекстное меню, placeholder)
           const isMsgSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
             || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating)/i.test(text)
             || /^(вы:\s|you:\s)/i.test(text)
             || /\s+(в\s+сети|online|offline)\s*$/i.test(text)
             || /\s+назад\s*$/i.test(text)
+            // v0.60.0: VK UI — контекстное меню, placeholder "Сообщение", системные кнопки
+            || /^(переслать|отметить|скопировать|удалить|выбрать|ответить|пожаловаться|закрепить|редактировать|сообщение)$/i.test(text)
+            || (/(переслать|отметить как новое|скопировать текст|удалить|выбрать)/i.test(text) && text.length < 100)
           if (isMsgSpam) {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_MSG__')
             return
@@ -1629,6 +1643,15 @@ export default function App() {
                 }
               }
               traceNotif('enrich', extra.senderName ? 'pass' : 'warn', messengerId, text, `__CC_MSG__ enriched | sender="${(extra.senderName||'нет').slice(0,20)}" icon=${!!(extra.iconUrl||extra.iconDataUrl)}`)
+              // v0.60.0 Решение #2: sender-based dedup — если __CC_NOTIF__ уже обработан для этого sender
+              if (extra.senderName) {
+                const senderKey = messengerId + ':' + extra.senderName.slice(0, 30).toLowerCase()
+                const senderTs = notifSenderTsRef.current[senderKey]
+                if (senderTs && Date.now() - senderTs < 3000) {
+                  traceNotif('dedup', 'block', messengerId, text, `sender-dedup | __CC_NOTIF__ от "${extra.senderName.slice(0,20)}" был ${Date.now()-senderTs}мс назад`)
+                  return
+                }
+              }
               // v0.58.1: Если текст = имя отправителя → медиа без текста (стикер, фото, GIF)
               let finalText = text
               if (extra.senderName && text.trim().toLowerCase() === extra.senderName.trim().toLowerCase()) {
@@ -1729,6 +1752,10 @@ export default function App() {
             // v0.58.0: fromNotifAPI=true → пропускаем viewing-блок
             // Если мессенджер сам вызвал showNotification — пользователь НЕ видит этот чат
             extra.fromNotifAPI = true
+            // v0.60.0 Решение #2: записываем sender+timestamp — блокируем __CC_MSG__ от того же sender
+            if (extra.senderName) {
+              notifSenderTsRef.current[messengerId + ':' + extra.senderName.slice(0, 30).toLowerCase()] = Date.now()
+            }
             handleNewMessage(messengerId, text, extra)
           }
         } catch {}

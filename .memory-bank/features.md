@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.59.2 (11 марта 2026)
+## Текущая версия: v0.60.0 (11 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.60.0 (11 марта 2026) — 3 решения: re-attach навигация + sender-dedup + структурный DOM-фильтр
+- **Решение #1 — Re-attach chatObserver при навигации**: Перехват pushState/replaceState/popstate в WebView. При переходе VK на `/im/convo/...` chatObserver переподключается к `ConvoMain__history` вместо body. При уходе из чата — fallback обратно. Решает корневую причину мусора.
+- **Решение #2 — Sender-based dedup**: Если `__CC_NOTIF__` от sender X прошёл pipeline, все `__CC_MSG__` от того же sender блокируются 3 сек (даже с другим текстом). Убирает дубли когда VK шлёт несколько Notification + MutationObserver ловит тот же текст.
+- **Решение #3 — Структурный DOM-фильтр**: В `quickNewMsgCheck` при body-fallback проверяем `_chatContainerEl.contains(node)`. Ноды ВНЕ контейнера чата (кнопки "Это не я", контекстное меню "Переслать/Удалить", sidebar) отсеиваются по DOM-позиции, не по тексту.
+- **Спам-фильтр VK UI**: "Переслать", "Отметить как новое", "Скопировать текст", "Удалить", "Сообщение" (placeholder) — блокируются в `__CC_MSG__`.
 
 ### v0.59.2 (11 марта 2026) — Реальные VK DOM-селекторы из DOM Inspector
 - **`ConvoMain__history`** — реальный класс контейнера чата VK (784 children). Добавлен первым в `CHAT_CONTAINER_SELECTORS.vk` и в `getVKLastIncomingText()`. chatObserver теперь найдёт контейнер без fallback.

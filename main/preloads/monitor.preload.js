@@ -897,6 +897,11 @@ function quickNewMsgCheck(mutations, type) {
   const now = Date.now()
   if (now - lastQuickMsgTime < 3000) return // cooldown 3 сек — не спамить
 
+  // v0.60.0 Решение #3: Обновить кэш контейнера чата если он потерялся (SPA навигация)
+  if (!_chatContainerEl || !_chatContainerEl.isConnected) {
+    _chatContainerEl = findChatContainer(type)
+  }
+
   for (let mi = mutations.length - 1; mi >= 0; mi--) {
     const m = mutations[mi]
     if (m.type !== 'childList' || !m.addedNodes.length) continue
@@ -906,6 +911,10 @@ function quickNewMsgCheck(mutations, type) {
       const tag = node.tagName
       if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' ||
           tag === 'SVG' || tag === 'IMG' || tag === 'STYLE' || tag === 'SCRIPT' || tag === 'LINK') continue
+      // v0.60.0 Решение #3: структурный DOM-фильтр
+      // Если chatObserver на body fallback И контейнер чата известен —
+      // пропускаем ноды ВНЕ контейнера (UI кнопки "Это не я", контекстное меню, sidebar)
+      if (chatObserverTarget === 'body-fallback' && _chatContainerEl && !_chatContainerEl.contains(node)) continue
 
       let text = ''
       const childCount = node.querySelectorAll ? node.querySelectorAll('*').length : 0
@@ -1049,6 +1058,9 @@ function isSidebarNode(node) {
   return false
 }
 
+// v0.60.0: Кэш найденного контейнера чата — для структурного DOM-фильтра (решение #3)
+let _chatContainerEl = null
+
 function startChatObserver(type) {
   if (chatObserver) { chatObserver.disconnect(); chatObserver = null }
   if (type === 'telegram') return // TG работает через __CC_NOTIF__
@@ -1057,6 +1069,7 @@ function startChatObserver(type) {
   chatObserverRetries++
 
   if (container) {
+    _chatContainerEl = container // кэшируем для структурного фильтра
     // Нашли контейнер чата — наблюдаем только его
     chatObserverTarget = 'container:' + (container.className || container.tagName).slice(0, 60)
     chatObserver = new MutationObserver((mutations) => {
@@ -1077,6 +1090,7 @@ function startChatObserver(type) {
 
   // Fallback: контейнер не найден после N попыток → наблюдаем document.body с sidebar-фильтром
   chatObserverTarget = 'body-fallback'
+  _chatContainerEl = null
   try { console.log('__CC_DIAG__chatObserver: FALLBACK на document.body (контейнер не найден за ' + (chatObserverRetries * 3) + ' сек) | фильтрация sidebar включена') } catch {}
   chatObserver = new MutationObserver((mutations) => {
     if (!monitorReady) return
@@ -1085,11 +1099,44 @@ function startChatObserver(type) {
     for (let i = 0; i < mutations.length; i++) {
       const m = mutations[i]
       if (m.type !== 'childList' || !m.addedNodes.length) continue
+      // v0.60.0 Решение #3: структурный DOM-фильтр — если контейнер чата известен,
+      // пропускаем мутации ВНЕ контейнера (UI кнопки, контекстное меню, sidebar)
+      if (_chatContainerEl && !_chatContainerEl.contains(m.target)) continue
       if (!isSidebarNode(m.target)) filtered.push(m)
     }
     if (filtered.length > 0) quickNewMsgCheck(filtered, type)
   })
   chatObserver.observe(document.body, { childList: true, subtree: true })
+}
+
+// v0.60.0 Решение #1: Re-attach chatObserver при навигации (SPA)
+// VK/MAX — SPA, URL меняется через pushState без перезагрузки страницы.
+// При переходе в чат (/im/convo/...) появляется ConvoMain__history — нужно переподключить observer.
+// ВАЖНО: context isolation — preload world не может перехватить history.pushState из main world.
+// Используем polling location.href (каждые 2 сек) — SPA навигации редкие, нагрузка минимальна.
+function setupNavigationWatcher(type) {
+  if (type === 'telegram') return
+  let lastUrl = location.href
+
+  setInterval(() => {
+    const newUrl = location.href
+    if (newUrl === lastUrl) return
+    try { console.log('__CC_DIAG__navigation: ' + lastUrl.slice(-30) + ' → ' + newUrl.slice(-30)) } catch {}
+    lastUrl = newUrl
+
+    // Сбрасываем retries и пробуем найти контейнер заново (с задержкой для рендера)
+    chatObserverRetries = 0
+    _chatContainerEl = null
+    // Даём VK/MAX время отрисовать новую страницу
+    setTimeout(() => startChatObserver(type), 1500)
+    // Повторная попытка через 4 сек (если DOM ещё не готов)
+    setTimeout(() => {
+      if (chatObserverTarget === 'body-fallback' || !_chatContainerEl) {
+        chatObserverRetries = 0
+        startChatObserver(type)
+      }
+    }, 4000)
+  }, 2000)
 }
 
 function startMonitor() {
@@ -1118,6 +1165,9 @@ function startMonitor() {
   // v0.59.0: Отдельный observer ТОЛЬКО для контейнера чата
   // quickNewMsgCheck теперь НЕ ловит sidebar/chatlist мутации
   setTimeout(() => startChatObserver(type), 5000) // ждём загрузку DOM
+
+  // v0.60.0 Решение #1: Слежение за навигацией (SPA) для переподключения chatObserver
+  setupNavigationWatcher(type)
 }
 
 if (document.readyState === 'loading') {
