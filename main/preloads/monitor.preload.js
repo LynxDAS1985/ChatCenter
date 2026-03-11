@@ -846,7 +846,27 @@ function extractMsgText(node) {
   if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(clean)) return ''
   // Пропускаем служебные тексты
   if (/^(typing|печатает|был[а]? в сети|online|в сети|оффлайн|offline|не в сети|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])$/i.test(clean)) return ''
+  // v0.58.1: "три минуты назад", "час назад" — VK пишет время словами
+  if (/\s+назад\s*$/i.test(clean) || /^(час|минуту?|секунду?)\s+назад$/i.test(clean)) return ''
+  // v0.58.1: VK UI — секции, даты, навигация
+  if (/^(недавние|избранные|все (диалоги|чаты|сообщения)|непрочитанные|архив|чаты)$/i.test(clean)) return ''
+  if (/^(сегодня|вчера|позавчера)\s*(в\s*)?$/i.test(clean)) return ''
   return clean
+}
+
+// v0.58.1: Проверяем что mutation НЕ из chatlist/sidebar (preview обновления — не сообщения)
+var _sidebarClasses = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts/i
+function isSidebarMutation(target) {
+  // Проверяем до 5 родителей — если мутация внутри sidebar, пропускаем
+  var el = target
+  for (var i = 0; i < 5 && el; i++) {
+    var cls = el.className
+    if (typeof cls === 'string' && _sidebarClasses.test(cls)) return true
+    // Проверяем role="navigation" и aria-label
+    if (el.getAttribute && (el.getAttribute('role') === 'navigation' || el.getAttribute('role') === 'complementary')) return true
+    el = el.parentElement
+  }
+  return false
 }
 
 function quickNewMsgCheck(mutations, type) {
@@ -856,6 +876,8 @@ function quickNewMsgCheck(mutations, type) {
   for (let mi = mutations.length - 1; mi >= 0; mi--) {
     const m = mutations[mi]
     if (m.type !== 'childList' || !m.addedNodes.length) continue
+    // v0.58.1: Пропускаем мутации из sidebar/chatlist (preview обновления)
+    if (isSidebarMutation(m.target)) continue
     for (const node of m.addedNodes) {
       if (node.nodeType !== 1) continue
       // Пропускаем UI-элементы: кнопки, инпуты, иконки, стили, скрипты

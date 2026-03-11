@@ -1429,12 +1429,17 @@ export default function App() {
           }
           const msgText = (e.args[0] || '').trim()
           if (!msgText) return
-          // Спам-фильтр для IPC new-message (v0.56.1+v0.58.0: статусы, системные тексты)
+          // Спам-фильтр для IPC new-message (v0.56.1+v0.58.1: статусы, системные тексты, VK UI)
           const isIpcSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(msgText)
             || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(msgText)
             || /^(вы:\s|you:\s)/i.test(msgText)
             || /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i.test(msgText)
             || /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i.test(msgText)
+            || /^(недавние|избранные|все (диалоги|чаты|сообщения)|контакты|группы|каналы|важные|непрочитанные|архив|spam|чаты)$/i.test(msgText)
+            || /^(сегодня|вчера|позавчера)\s*(в\s*)?$/i.test(msgText)
+            || /^(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/i.test(msgText)
+            || /^\d{1,2}\s+(янв|фев|мар|апр|мая|июн|июл|авг|сен|окт|ноя|дек)/i.test(msgText)
+            || /\s+назад\s*$/i.test(msgText) || /^(час|минуту?|секунду?)\s+назад$/i.test(msgText)
           if (isIpcSpam) {
             traceNotif('spam', 'block', messengerId, msgText, 'спам-фильтр IPC new-message')
             return
@@ -1490,13 +1495,20 @@ export default function App() {
           }
           const text = msg.slice(10).trim()
           if (!text) return
-          // Спам-фильтр для __CC_MSG__ (timestamp, системные тексты MAX, статусы)
+          // Спам-фильтр для __CC_MSG__ (timestamp, системные тексты, статусы, VK UI)
           const isMsgSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
             || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(text)
             || /^(вы:\s|you:\s)/i.test(text)
             // v0.58.0: MAX статусы и системные тексты из addedNodes
             || /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i.test(text)
             || /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i.test(text)
+            // v0.58.1: VK UI элементы из DOM — секции, даты, навигация
+            || /^(недавние|избранные|все (диалоги|чаты|сообщения)|контакты|группы|каналы|важные|непрочитанные|архив|spam|чаты)$/i.test(text)
+            || /^(сегодня|вчера|позавчера)\s*(в\s*)?$/i.test(text)
+            || /^(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/i.test(text)
+            || /^\d{1,2}\s+(янв|фев|мар|апр|мая|июн|июл|авг|сен|окт|ноя|дек)/i.test(text)
+            // v0.58.1: "три минуты назад", "час назад" и т.д. — VK пишет словами
+            || /\s+назад\s*$/i.test(text) || /^(час|минуту?|секунду?)\s+назад$/i.test(text)
           if (isMsgSpam) {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_MSG__')
             return
@@ -1625,7 +1637,13 @@ export default function App() {
                 }
               }
               traceNotif('enrich', extra.senderName ? 'pass' : 'warn', messengerId, text, `__CC_MSG__ enriched | sender="${(extra.senderName||'нет').slice(0,20)}" icon=${!!(extra.iconUrl||extra.iconDataUrl)}`)
-              handleNewMessage(messengerId, text, Object.keys(extra).length ? extra : undefined)
+              // v0.58.1: Если текст = имя отправителя → медиа без текста (стикер, фото, GIF)
+              let finalText = text
+              if (extra.senderName && text.trim().toLowerCase() === extra.senderName.trim().toLowerCase()) {
+                finalText = '📎 Медиа'
+                traceNotif('enrich', 'info', messengerId, text, `текст = sender "${extra.senderName.slice(0,20)}" → заменён на "📎 Медиа"`)
+              }
+              handleNewMessage(messengerId, finalText, Object.keys(extra).length ? extra : undefined)
             })
             .catch(() => {
               traceNotif('enrich', 'warn', messengerId, text, '__CC_MSG__ enrichment failed')
@@ -1634,7 +1652,9 @@ export default function App() {
               if (cached && Date.now() - cached.ts < 300000) {
                 const extra = { senderName: cached.name }
                 if (cached.avatar) { if (cached.avatar.startsWith('data:')) extra.iconDataUrl = cached.avatar; else extra.iconUrl = cached.avatar }
-                handleNewMessage(messengerId, text, extra)
+                // v0.58.1: текст = sender → медиа
+                const ft = (text.trim().toLowerCase() === cached.name.trim().toLowerCase()) ? '📎 Медиа' : text
+                handleNewMessage(messengerId, ft, extra)
               } else {
                 handleNewMessage(messengerId, text)
               }
@@ -1663,6 +1683,7 @@ export default function App() {
             || /^(ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(text)
             || /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i.test(text)
             || /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i.test(text)
+            || /\s+назад\s*$/i.test(text) || /^(час|минуту?|секунду?)\s+назад$/i.test(text)
           if (isSpam) {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_NOTIF__')
             return
