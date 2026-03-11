@@ -854,19 +854,34 @@ function extractMsgText(node) {
   return clean
 }
 
-// v0.58.1: Проверяем что mutation НЕ из chatlist/sidebar (preview обновления — не сообщения)
-var _sidebarClasses = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts/i
-function isSidebarMutation(target) {
-  // Проверяем до 5 родителей — если мутация внутри sidebar, пропускаем
-  var el = target
-  for (var i = 0; i < 5 && el; i++) {
-    var cls = el.className
-    if (typeof cls === 'string' && _sidebarClasses.test(cls)) return true
-    // Проверяем role="navigation" и aria-label
-    if (el.getAttribute && (el.getAttribute('role') === 'navigation' || el.getAttribute('role') === 'complementary')) return true
-    el = el.parentElement
+// v0.59.0: Селекторы КОНТЕЙНЕРА ЧАТА (область с пузырями сообщений)
+// quickNewMsgCheck наблюдает ТОЛЬКО за этим контейнером, а не за всем document.body
+const CHAT_CONTAINER_SELECTORS = {
+  vk: [
+    '[class*="im-page--chat-body"]', '[class*="im_msg_list"]', '[class*="ChatBody"]',
+    '[class*="im-history"]', '[class*="ConversationBody"]', '[class*="chat-body"]',
+    '[class*="im-page--chat"]', '[class*="HistoryMessages"]'
+  ],
+  max: [
+    '[class*="messages-container"]', '[class*="chat-body"]', '[class*="message-list"]',
+    '[class*="bubbles"]', '[class*="history"]', 'main [class*="scroll"]'
+  ],
+  whatsapp: [
+    '[role="application"]', '#main [class*="message-list"]',
+    'div[data-testid="conversation-panel-messages"]'
+  ],
+  telegram: []
+}
+
+function findChatContainer(type) {
+  const sels = CHAT_CONTAINER_SELECTORS[type] || []
+  for (const sel of sels) {
+    try {
+      const el = document.querySelector(sel)
+      if (el) return el
+    } catch {}
   }
-  return false
+  return null
 }
 
 function quickNewMsgCheck(mutations, type) {
@@ -876,8 +891,6 @@ function quickNewMsgCheck(mutations, type) {
   for (let mi = mutations.length - 1; mi >= 0; mi--) {
     const m = mutations[mi]
     if (m.type !== 'childList' || !m.addedNodes.length) continue
-    // v0.58.1: Пропускаем мутации из sidebar/chatlist (preview обновления)
-    if (isSidebarMutation(m.target)) continue
     for (const node of m.addedNodes) {
       if (node.nodeType !== 1) continue
       // Пропускаем UI-элементы: кнопки, инпуты, иконки, стили, скрипты
@@ -979,38 +992,33 @@ function sendUpdate(type) {
     }
   }
 
-  // Path 2: Детекция новых входящих сообщений в АКТИВНОМ чате
-  // Когда чат открыт — VK/WhatsApp/MAX не считают сообщение непрочитанным, счётчик не растёт
-  // Поэтому проверяем текст последнего входящего сообщения отдельно
-  // ВАЖНО: НЕ для Telegram — у TG работает __CC_NOTIF__ + unread count,
-  // а Path 2 ловит "новые" тексты при навигации между чатами (ложные срабатывания)
-  if (monitorReady && type !== 'telegram') {
-    const inText = getLastMessageText(type)
-    // Фильтр timestamps и системных текстов (v0.56.1: "18:22" проходил как сообщение)
-    const isPath2Spam = inText && (
-      /^\d{1,2}:\d{2}(:\d{2})?$/.test(inText)
-      || /^(typing|печатает|был[а]? в сети|online|в сети|оффлайн|offline|не в сети|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])$/i.test(inText)
-      || /^(вы:\s|you:\s)/i.test(inText)
-    )
-    if (inText && !isPath2Spam && inText !== lastSentText && inText !== lastActiveMessageText) {
-      const now = Date.now()
-      // Cooldown 3 сек — не спамить при прокрутке
-      if (now - lastActiveMessageTime > 3000) {
-        lastSentText = inText
-        lastActiveMessageText = inText
-        lastActiveMessageTime = now
-        try { ipcRenderer.sendToHost('new-message', inText) } catch {}
-        // Backup: дублируем через console.log для main-process перехвата (v0.39.5)
-        try { console.log('__CC_MSG__' + inText) } catch {}
-      }
-    }
-    // Обновляем lastActiveMessageText даже без отправки — чтобы не уведомлять повторно
-    if (inText && !isPath2Spam) lastActiveMessageText = inText
-  } else if (monitorReady && type === 'telegram') {
-    // Для Telegram: только обновляем lastActiveMessageText для dedup, без уведомлений
+  // Path 2 УДАЛЁН (v0.59.0) — раньше сканировал getLastMessageText() при каждом sendUpdate,
+  // но ловил мусор из sidebar (preview чатов, статусы "три минуты назад", имена контактов).
+  // Теперь детекция новых сообщений — ТОЛЬКО через chatObserver (quickNewMsgCheck)
+  // привязанный к контейнеру чата, а не к document.body.
+  // Для dedup: обновляем lastActiveMessageText
+  if (monitorReady) {
     const inText = getLastMessageText(type)
     if (inText) lastActiveMessageText = inText
   }
+}
+
+// v0.59.0: Отдельный observer для области чата (пузыри сообщений)
+// Привязывается к контейнеру чата, а не к document.body → нет мусора из sidebar
+let chatObserver = null
+function startChatObserver(type) {
+  if (chatObserver) { chatObserver.disconnect(); chatObserver = null }
+  if (type === 'telegram') return // TG работает через __CC_NOTIF__
+  const container = findChatContainer(type)
+  if (!container) {
+    // Контейнер ещё не появился — повторим через 3 сек
+    setTimeout(() => startChatObserver(type), 3000)
+    return
+  }
+  chatObserver = new MutationObserver((mutations) => {
+    if (monitorReady) quickNewMsgCheck(mutations, type)
+  })
+  chatObserver.observe(container, { childList: true, subtree: true })
 }
 
 function startMonitor() {
@@ -1023,16 +1031,10 @@ function startMonitor() {
   setTimeout(() => { sendUpdate(type); runDiagnostics(type) }, 15000)
 
   if (observer) return
+  // Основной observer — для sendUpdate (unread count). Наблюдает document.body
   observer = new MutationObserver((mutations) => {
-    // Debounce: при скролле Telegram DOM меняется сотни раз в секунду
     clearTimeout(updateTimer)
     updateTimer = setTimeout(() => sendUpdate(type), UPDATE_DEBOUNCE)
-
-    // Quick addedNodes detection: для мессенджеров без Notification для каждого сообщения
-    // Telegram хорошо работает через __CC_NOTIF__ → не нужно дублировать
-    if (monitorReady && type !== 'telegram') {
-      quickNewMsgCheck(mutations, type)
-    }
   })
   observer.observe(document.body, {
     childList: true,
@@ -1041,6 +1043,10 @@ function startMonitor() {
     attributes: true,
     attributeFilter: ['class', 'aria-label']
   })
+
+  // v0.59.0: Отдельный observer ТОЛЬКО для контейнера чата
+  // quickNewMsgCheck теперь НЕ ловит sidebar/chatlist мутации
+  setTimeout(() => startChatObserver(type), 5000) // ждём загрузку DOM
 }
 
 if (document.readyState === 'loading') {
