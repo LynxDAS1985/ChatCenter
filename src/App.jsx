@@ -2493,6 +2493,37 @@ export default function App() {
                             var generic = document.querySelectorAll('[class*="chat" i], [class*="dialog" i]');
                             r.chatlist.push({ generic: generic.length, firstTag: generic[0] ? generic[0].tagName : '', firstCls: generic[0] ? (generic[0].className||'').slice(0,120) : '' });
                           }
+                          // v0.59.1: chatContainer — ищем контейнер чата (для chatObserver)
+                          r.chatContainer = [];
+                          var ccSels = [
+                            '[class*="im-page--chat-body"]', '[class*="im_msg_list"]', '[class*="ChatBody"]',
+                            '[class*="im-history"]', '[class*="ConversationBody"]', '[class*="chat-body"]',
+                            '[class*="im-page--chat"]', '[class*="HistoryMessages"]',
+                            '[class*="messages-container"]', '[class*="message-list"]',
+                            '[class*="bubbles"]', '[class*="history"]',
+                            '[class*="im-page"]', '[class*="im_"]', '[class*="Chat"]',
+                            '[class*="Message"]', '[class*="message"]'
+                          ];
+                          for (var ci = 0; ci < ccSels.length; ci++) {
+                            try {
+                              var cEl = document.querySelector(ccSels[ci]);
+                              if (!cEl) continue;
+                              var ccls = cEl.className || ''; if (typeof ccls !== 'string') ccls = ccls.baseVal || '';
+                              var kidCount = cEl.querySelectorAll('*').length;
+                              r.chatContainer.push({ sel: ccSels[ci], tag: cEl.tagName, cls: ccls.slice(0,120), childCount: kidCount });
+                            } catch {}
+                          }
+                          // Ищем scrollable-контейнеры (обычно тут пузыри сообщений)
+                          r.scrollContainers = [];
+                          var scrollEls = document.querySelectorAll('[style*="overflow"], [class*="scroll" i]');
+                          for (var si = 0; si < scrollEls.length && si < 10; si++) {
+                            var sEl = scrollEls[si];
+                            var scls = sEl.className || ''; if (typeof scls !== 'string') scls = scls.baseVal || '';
+                            if (scls.length < 3) continue;
+                            var sKids = sEl.querySelectorAll('*').length;
+                            if (sKids < 5) continue;
+                            r.scrollContainers.push({ tag: sEl.tagName, cls: scls.slice(0,120), childCount: sKids, h: sEl.scrollHeight });
+                          }
                           return JSON.stringify(r);
                         } catch(e) { return JSON.stringify({ error: e.message }); }
                       })()`)

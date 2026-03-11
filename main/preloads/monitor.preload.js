@@ -992,33 +992,94 @@ function sendUpdate(type) {
     }
   }
 
-  // Path 2 УДАЛЁН (v0.59.0) — раньше сканировал getLastMessageText() при каждом sendUpdate,
-  // но ловил мусор из sidebar (preview чатов, статусы "три минуты назад", имена контактов).
-  // Теперь детекция новых сообщений — ТОЛЬКО через chatObserver (quickNewMsgCheck)
-  // привязанный к контейнеру чата, а не к document.body.
-  // Для dedup: обновляем lastActiveMessageText
-  if (monitorReady) {
+  // v0.59.1: Path 2 — детекция НОВОГО сообщения в АКТИВНОМ чате (когда unread count не растёт)
+  // Корень проблемы: если пользователь на вкладке мессенджера и чат открыт → VK/WhatsApp
+  // НЕ считают сообщение непрочитанным → count не растёт → Path 1 не работает.
+  // Path 2 вызывает getLastMessageText() при каждом debounced sendUpdate и сравнивает с lastActiveMessageText.
+  // Защита от мусора: текст берётся из CSS-селекторов СООБЩЕНИЙ (не sidebar), cooldown 3 сек.
+  if (monitorReady && type !== 'telegram') {
+    const inText = getLastMessageText(type)
+    if (inText && inText !== lastActiveMessageText && inText !== lastSentText) {
+      const now = Date.now()
+      if (now - lastActiveMessageTime > 3000) {
+        lastSentText = inText
+        lastActiveMessageText = inText
+        lastActiveMessageTime = now
+        try { ipcRenderer.sendToHost('new-message', inText) } catch {}
+        try { console.log('__CC_MSG__' + inText) } catch {}
+      }
+    }
+    // Обновляем lastActiveMessageText для dedup (даже если не отправили)
+    if (inText) lastActiveMessageText = inText
+  } else if (monitorReady && type === 'telegram') {
     const inText = getLastMessageText(type)
     if (inText) lastActiveMessageText = inText
   }
 }
 
-// v0.59.0: Отдельный observer для области чата (пузыри сообщений)
-// Привязывается к контейнеру чата, а не к document.body → нет мусора из sidebar
+// v0.59.1: Отдельный observer для области чата (пузыри сообщений)
+// Привязывается к контейнеру чата. Если не найден — fallback на document.body с фильтрацией sidebar
 let chatObserver = null
+let chatObserverTarget = null // 'container' | 'body' — для диагностики
+let chatObserverRetries = 0
+const CHAT_OBSERVER_MAX_RETRIES = 5 // 5 попыток × 3 сек = 15 сек
+// Фильтр sidebar-мутаций (для fallback на document.body)
+const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar/i
+function isSidebarNode(node) {
+  let el = node
+  for (let i = 0; i < 8 && el && el !== document.body; i++) {
+    const cls = el.className
+    if (typeof cls === 'string' && _sidebarRe.test(cls)) return true
+    if (el.getAttribute) {
+      const role = el.getAttribute('role')
+      if (role === 'navigation' || role === 'complementary') return true
+    }
+    el = el.parentElement
+  }
+  return false
+}
+
 function startChatObserver(type) {
   if (chatObserver) { chatObserver.disconnect(); chatObserver = null }
   if (type === 'telegram') return // TG работает через __CC_NOTIF__
+
   const container = findChatContainer(type)
-  if (!container) {
-    // Контейнер ещё не появился — повторим через 3 сек
+  chatObserverRetries++
+
+  if (container) {
+    // Нашли контейнер чата — наблюдаем только его
+    chatObserverTarget = 'container:' + (container.className || container.tagName).slice(0, 60)
+    chatObserver = new MutationObserver((mutations) => {
+      if (monitorReady) quickNewMsgCheck(mutations, type)
+    })
+    chatObserver.observe(container, { childList: true, subtree: true })
+    // Логируем в Pipeline
+    try { console.log('__CC_DIAG__chatObserver: привязан к контейнеру | ' + chatObserverTarget + ' | попытка ' + chatObserverRetries) } catch {}
+    return
+  }
+
+  if (chatObserverRetries < CHAT_OBSERVER_MAX_RETRIES) {
+    // Контейнер не найден — retry через 3 сек
+    try { console.log('__CC_DIAG__chatObserver: контейнер не найден, retry ' + chatObserverRetries + '/' + CHAT_OBSERVER_MAX_RETRIES) } catch {}
     setTimeout(() => startChatObserver(type), 3000)
     return
   }
+
+  // Fallback: контейнер не найден после N попыток → наблюдаем document.body с sidebar-фильтром
+  chatObserverTarget = 'body-fallback'
+  try { console.log('__CC_DIAG__chatObserver: FALLBACK на document.body (контейнер не найден за ' + (chatObserverRetries * 3) + ' сек) | фильтрация sidebar включена') } catch {}
   chatObserver = new MutationObserver((mutations) => {
-    if (monitorReady) quickNewMsgCheck(mutations, type)
+    if (!monitorReady) return
+    // Фильтруем мутации — пропускаем sidebar/chatlist
+    const filtered = []
+    for (let i = 0; i < mutations.length; i++) {
+      const m = mutations[i]
+      if (m.type !== 'childList' || !m.addedNodes.length) continue
+      if (!isSidebarNode(m.target)) filtered.push(m)
+    }
+    if (filtered.length > 0) quickNewMsgCheck(filtered, type)
   })
-  chatObserver.observe(container, { childList: true, subtree: true })
+  chatObserver.observe(document.body, { childList: true, subtree: true })
 }
 
 function startMonitor() {

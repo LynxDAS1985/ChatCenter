@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.59.0 (11 марта 2026)
+## Текущая версия: v0.59.1 (11 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.59.1 (11 марта 2026) — chatObserver fallback + Path 2 возврат + DOM диагностика
+- **chatObserver fallback**: Если контейнер чата не найден за 15 сек (5 попыток) → fallback на document.body с `isSidebarNode()` фильтром (8 уровней, regex по классам + role). Логирование в Pipeline через `__CC_DIAG__`.
+- **Path 2 возвращён для активного чата**: VK/WhatsApp не считают сообщение непрочитанным когда чат открыт → unread не растёт → Path 1 не работает. Path 2 вызывает `getLastMessageText()` при каждом debounced `sendUpdate` и ищет НОВЫЙ текст (≠ lastActiveMessageText), cooldown 3 сек.
+- **DOM Inspector расширен**: Добавлены `chatContainer` (поиск по 16 селекторам) и `scrollContainers` (overflow/scroll элементы). Это покажет реальные классы VK DOM для настройки селекторов.
+- **Диагностические логи**: `__CC_DIAG__` из preload → Pipeline debug trace (привязка chatObserver, retry статус, fallback).
 
 ### v0.59.0 (11 марта 2026) — Архитектура MutationObserver: chatObserver на контейнер чата
 - **КОРНЕВАЯ ПРИЧИНА**: MutationObserver наблюдал за ВСЕМ document.body. Любое изменение DOM (sidebar preview, статусы, навигация) порождало ложные "сообщения": "три минуты назад", "Недавние", "Привет понял принял" (старый preview из chatlist), имена контактов как текст стикеров.
