@@ -774,6 +774,8 @@ function getActiveChatSender() {
     const headerSels = [
       // v0.59.2: VK реальные классы — ConvoHeader__info содержит "Имя\nonline"
       '.ConvoHeader__info',
+      // v0.60.0: MAX — .topbar .headerWrapper содержит "Окно чата с ИмяФамилия"
+      '.topbar .headerWrapper',
       '.chat-info .peer-title', '.topbar .peer-title',
       '.topbar [class*="info" i] [class*="title" i]',
       '.topbar [class*="info" i] [class*="name" i]',
@@ -789,6 +791,8 @@ function getActiveChatSender() {
         let name = (h.textContent || '').trim()
         // v0.59.2: VK ConvoHeader__info содержит "Имяonline"/"Имябыл(а) в сети" — чистим
         name = name.replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|печатает|typing)\s*$/i, '').trim()
+        // v0.60.0: MAX "Окно чата с ИмяФамилия" → убираем префикс
+        name = name.replace(/^окно\s+чата\s+с\s+/i, '').trim()
         if (name && name.length >= 2 && name.length <= 80) return name
       }
     }
@@ -872,9 +876,14 @@ const CHAT_CONTAINER_SELECTORS = {
     '[class*="im-page--chat"]', '[class*="HistoryMessages"]'
   ],
   max: [
-    // v0.60.0: ВНИМАНИЕ — scrollListContent это SIDEBAR (521 чатов), НЕ область сообщений!
-    // Поиск через parent .message элементов — см. findChatContainer() fallback
-    // Generic селекторы:
+    // v0.60.0: Реальные MAX классы из DOM Inspector (март 2026)
+    // .history (870 children) — контейнер сообщений, .openedChat (914) — parent
+    // ВНИМАНИЕ: scrollListContent это SIDEBAR (510 чатов), НЕ область сообщений!
+    '.history',                                 // ← 870 children, контейнер сообщений (SvelteKit)
+    '[class*="history"][class*="svelte"]',      // fallback с svelte hash
+    '.openedChat',                              // parent контейнер чата
+    '[class*="openedChat"]',                    // fallback
+    // Generic
     '[class*="messages-container"]', '[class*="chat-body"]', '[class*="message-list"]',
     '[class*="bubbles"]'
   ],

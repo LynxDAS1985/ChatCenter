@@ -1547,6 +1547,8 @@ export default function App() {
               var headerSels = [
                 // v0.59.2: VK реальные классы
                 '.ConvoHeader__info',
+                // v0.60.0: MAX реальные классы — .topbar .headerWrapper содержит "Окно чата с ИмяФамилия"
+                '.topbar .headerWrapper',
                 '.chat-info .peer-title', '.topbar .peer-title',
                 '.topbar [class*="info" i] [class*="title" i]',
                 '.topbar [class*="info" i] [class*="name" i]',
@@ -1562,6 +1564,8 @@ export default function App() {
                   var hn = (h.textContent || '').trim();
                   // v0.59.2: VK "Елена Дугинаonline" → чистим статус
                   hn = hn.replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|печатает|typing)\s*$/i, '').trim();
+                  // v0.60.0: MAX "Окно чата с ИмяФамилия" → убираем префикс
+                  hn = hn.replace(/^окно\s+чата\s+с\s+/i, '').trim();
                   if (hn && hn.length >= 2 && hn.length <= 80) { name = hn; break; }
                 }
               }
