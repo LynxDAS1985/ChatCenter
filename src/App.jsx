@@ -171,37 +171,40 @@ function MessengerTab({
       </span>
 
       {/* Бейдж непрочитанных / кнопка закрыть (hover) / замок (pinned) */}
-      {hovered && !isPinned ? (
-        <span
-          onClick={e => { e.stopPropagation(); onClose() }}
-          className="ml-auto w-[16px] h-[16px] rounded-full flex items-center justify-center text-[10px] leading-none cursor-pointer transition-all shrink-0"
-          style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}
-          title="Закрыть вкладку"
-        >✕</span>
-      ) : unreadCount > 0 ? (
-        unreadSplit && unreadSplit.personal > 0 && unreadSplit.channels > 0 ? (
-          // Два бейджа: личные (цвет мессенджера) + каналы (серый)
-          <span className="ml-auto flex flex-col gap-0.5 items-end shrink-0" title={badgeTooltip}>
-            <span
-              className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
-              style={{ backgroundColor: m.color, animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
-            >💬{unreadSplit.personal > 99 ? '99+' : unreadSplit.personal}</span>
-            <span
-              className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
-              style={{ backgroundColor: '#6b7280', animation: badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
-            >📢{unreadSplit.channels > 99 ? '99+' : unreadSplit.channels}</span>
-          </span>
-        ) : (
-          // Один общий бейдж
+      {/* v0.60.0: фиксированная ширина области — название не дёргается при hover */}
+      <span className="ml-auto min-w-[20px] flex items-center justify-end shrink-0">
+        {hovered && !isPinned ? (
           <span
-            className="ml-auto min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none shrink-0"
-            style={{ animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
-            title={badgeTooltip}
-          >
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )
-      ) : null}
+            onClick={e => { e.stopPropagation(); onClose() }}
+            className="w-[16px] h-[16px] rounded-full flex items-center justify-center text-[10px] leading-none cursor-pointer transition-all shrink-0"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}
+            title="Закрыть вкладку"
+          >✕</span>
+        ) : unreadCount > 0 ? (
+          unreadSplit && unreadSplit.personal > 0 && unreadSplit.channels > 0 ? (
+            // Два бейджа: личные (цвет мессенджера) + каналы (серый)
+            <span className="flex flex-col gap-0.5 items-end shrink-0" title={badgeTooltip}>
+              <span
+                className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
+                style={{ backgroundColor: m.color, animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
+              >💬{unreadSplit.personal > 99 ? '99+' : unreadSplit.personal}</span>
+              <span
+                className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
+                style={{ backgroundColor: '#6b7280', animation: badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
+              >📢{unreadSplit.channels > 99 ? '99+' : unreadSplit.channels}</span>
+            </span>
+          ) : (
+            // Один общий бейдж
+            <span
+              className="min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none shrink-0"
+              style={{ animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
+              title={badgeTooltip}
+            >
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )
+        ) : null}
+      </span>
 
       {/* Прогресс-бар загрузки страницы */}
       {isPageLoading && (
