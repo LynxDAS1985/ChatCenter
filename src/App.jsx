@@ -936,6 +936,9 @@ export default function App() {
   // v0.60.0 Решение #2: sender-based dedup — если __CC_NOTIF__ уже прошёл для sender,
   // блокируем __CC_MSG__ от того же sender в течение 3 сек (даже если текст другой)
   const notifSenderTsRef = useRef({}) // { [messengerId + ':' + senderName]: timestamp }
+  // v0.60.2: per-messengerId dedup — если __CC_NOTIF__ от этого messengerId был <3 сек назад,
+  // блокируем __CC_MSG__ целиком (sender name может отличаться из-за разного enrichment)
+  const notifMidTsRef = useRef({}) // { [messengerId]: timestamp }
 
   // ── Pipeline Trace Logger (v0.55.0) ──────────────────────────────────────────
   // Записывает КАЖДЫЙ шаг pipeline уведомлений для диагностики
@@ -1466,6 +1469,12 @@ export default function App() {
           if (customSpamIpc) {
             try { if (new RegExp(customSpamIpc, 'i').test(msgText)) { traceNotif('spam', 'block', messengerId, msgText, 'пользовательский спам-фильтр IPC'); return } } catch {}
           }
+          // v0.60.2: per-messengerId dedup
+          const midTsIpc = notifMidTsRef.current[messengerId]
+          if (midTsIpc && Date.now() - midTsIpc < 3000) {
+            traceNotif('dedup', 'block', messengerId, msgText, `mid-dedup IPC | __CC_NOTIF__ от ${messengerId} был ${Date.now()-midTsIpc}мс назад`)
+            return
+          }
           traceNotif('source', 'info', messengerId, msgText, 'IPC new-message | ожидание 500мс для __CC_NOTIF__')
           setTimeout(() => {
             const dedupKey = messengerId + ':' + msgText.slice(0, 60)
@@ -1542,6 +1551,12 @@ export default function App() {
           if (customSpam) {
             try { if (new RegExp(customSpam, 'i').test(text)) { traceNotif('spam', 'block', messengerId, text, 'пользовательский спам-фильтр'); return } } catch {}
           }
+          // v0.60.2: per-messengerId dedup — если __CC_NOTIF__ от этого мессенджера был <3 сек назад
+          const midTs = notifMidTsRef.current[messengerId]
+          if (midTs && Date.now() - midTs < 3000) {
+            traceNotif('dedup', 'block', messengerId, text, `mid-dedup __CC_MSG__ | __CC_NOTIF__ от ${messengerId} был ${Date.now()-midTs}мс назад`)
+            return
+          }
           traceNotif('source', 'info', messengerId, text, '__CC_MSG__ | ожидание enriched __CC_NOTIF__ 200мс')
           // Приоритет enriched: ждём 200мс — если __CC_NOTIF__ придёт с enriched данными, он отменит этот таймер
           // Если не придёт — запускаем собственное enrichment через DOM
@@ -1580,6 +1595,13 @@ export default function App() {
                   hn = hn.replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|печатает|typing)\s*$/i, '').trim();
                   // v0.60.0: MAX "Окно чата с ИмяФамилия" → убираем префикс
                   hn = hn.replace(/^окно\s+чата\s+с\s+/i, '').trim();
+                  // v0.60.2: MAX textContent дублирует имя ("Иванов Иван     Иванов Иван") → дедупликация
+                  if (hn.length > 10) {
+                    var halfN = Math.ceil(hn.length / 2);
+                    var p1N = hn.slice(0, halfN).trim();
+                    var p2N = hn.slice(halfN).trim();
+                    if (p1N === p2N) hn = p1N;
+                  }
                   if (hn && hn.length >= 2 && hn.length <= 80) { name = hn; break; }
                 }
               }
@@ -1647,7 +1669,20 @@ export default function App() {
               if (result) {
                 try {
                   const info = JSON.parse(result)
-                  if (info.n) extra.senderName = info.n
+                  if (info.n) {
+                    // v0.60.2: belt-and-suspenders strip после executeJavaScript
+                    let sn = info.n.trim()
+                    sn = sn.replace(/^окно\s+чата\s+с\s+/i, '').trim()
+                    sn = sn.replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|печатает|typing)\s*$/i, '').trim()
+                    // Убираем дубль имени: "Иванов Иван     Иванов Иван" → "Иванов Иван"
+                    if (sn.length > 10) {
+                      const half = Math.ceil(sn.length / 2)
+                      const p1 = sn.slice(0, half).trim()
+                      const p2 = sn.slice(half).trim()
+                      if (p1 === p2) sn = p1
+                    }
+                    extra.senderName = sn
+                  }
                   if (info.a) {
                     if (info.a.startsWith('data:')) extra.iconDataUrl = info.a
                     else if (info.a.startsWith('http')) extra.iconUrl = info.a
@@ -1782,6 +1817,8 @@ export default function App() {
             if (extra.senderName) {
               notifSenderTsRef.current[messengerId + ':' + extra.senderName.slice(0, 30).toLowerCase()] = Date.now()
             }
+            // v0.60.2: per-messengerId dedup — блокируем __CC_MSG__ от этого мессенджера на 3 сек
+            notifMidTsRef.current[messengerId] = Date.now()
             handleNewMessage(messengerId, text, extra)
           }
         } catch {}

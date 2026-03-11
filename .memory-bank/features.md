@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.60.1 (11 марта 2026)
+## Текущая версия: v0.60.2 (11 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.60.2 (11 марта 2026) — Per-messengerId dedup + enrichment fix "Окно чата с"
+- **Per-messengerId dedup**: Если `__CC_NOTIF__` от messengerId прошёл <3 сек назад, `__CC_MSG__` и IPC блокируются целиком (без сравнения sender name). Решает проблему когда enrichment выдаёт другое имя.
+- **Enrichment name cleanup**: Strip "Окно чата с" + "В сети" + дедупликация имени ("Иванов Иван     Иванов Иван" → "Иванов Иван") — в executeJavaScript И после возврата результата.
+- **Причина дубля**: `.topbar .headerWrapper` textContent содержал "Окно чата с Name     Name  В сети" (дубль имени + статус). После strip длина >80 → отклонялся check → fallback ловил "Окно чата с..." без strip → sender-dedup не совпадал.
 
 ### v0.60.1 (11 марта 2026) — Полный перехват звуков мессенджера (Audio + createElement + AudioContext)
 - **Audio override расширен**: Помимо `new Audio(src)`, теперь глушим `document.createElement('audio')` (volume=0, muted=true) и `AudioContext.createGain()` (gain.value=0). MAX использовал не `new Audio()` — первое сообщение давало двойной звук (наш + родной MAX).
