@@ -872,14 +872,11 @@ const CHAT_CONTAINER_SELECTORS = {
     '[class*="im-page--chat"]', '[class*="HistoryMessages"]'
   ],
   max: [
-    // v0.60.0: Реальные MAX классы из DOM Inspector (март 2026)
-    '.scrollListContent',                      // ← 521 children, основной контейнер сообщений (SvelteKit)
-    '[class*="scrollListContent"]',            // fallback с prefix (svelte hash)
-    '.scrollable.scrollListScrollable',        // parent scroll (522 children)
-    '[class*="scrollListScrollable"]',         // fallback
-    // Legacy/generic
+    // v0.60.0: ВНИМАНИЕ — scrollListContent это SIDEBAR (521 чатов), НЕ область сообщений!
+    // Поиск через parent .message элементов — см. findChatContainer() fallback
+    // Generic селекторы:
     '[class*="messages-container"]', '[class*="chat-body"]', '[class*="message-list"]',
-    '[class*="bubbles"]', '[class*="history"]', 'main [class*="scroll"]'
+    '[class*="bubbles"]'
   ],
   whatsapp: [
     '[role="application"]', '#main [class*="message-list"]',
@@ -894,6 +891,23 @@ function findChatContainer(type) {
     try {
       const el = document.querySelector(sel)
       if (el) return el
+    } catch {}
+  }
+  // v0.60.0: Fallback для SvelteKit (MAX) — ищем parent элементов .message
+  // DOM Inspector показал: .message.svelte-fxkkld — отдельное сообщение.
+  // Его parent = контейнер сообщений (то что нам нужно).
+  // Проверяем: parent должен содержать ≥3 .message (чтобы не поймать случайный .message из sidebar)
+  if (type === 'max' || type === 'generic') {
+    try {
+      const msgEl = document.querySelector('.message[class*="svelte"]')
+      if (msgEl && msgEl.parentElement) {
+        const parent = msgEl.parentElement
+        const msgCount = parent.querySelectorAll('.message[class*="svelte"]').length
+        if (msgCount >= 3) {
+          try { console.log('__CC_DIAG__findChatContainer: MAX parent of .message | class=' + (parent.className || '').slice(0, 80) + ' | msgs=' + msgCount) } catch {}
+          return parent
+        }
+      }
     } catch {}
   }
   return null
@@ -1049,7 +1063,8 @@ let chatObserverRetries = 0
 const CHAT_OBSERVER_MAX_RETRIES = 5 // 5 попыток × 3 сек = 15 сек
 // Фильтр sidebar-мутаций (для fallback на document.body)
 // v0.59.1: реальные VK классы из DOM Inspector: ConvoList, ConvoListItem, MessagePreview
-const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar|ConvoList|LeftAds|LeftMenu|ConvoListItem|MessagePreview/i
+// v0.60.0: + scrollListContent/scrollListScrollable — MAX sidebar (521 чатов, НЕ область сообщений)
+const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar|ConvoList|LeftAds|LeftMenu|ConvoListItem|MessagePreview|scrollListContent|scrollListScrollable|chatListItem/i
 function isSidebarNode(node) {
   let el = node
   for (let i = 0; i < 8 && el && el !== document.body; i++) {
