@@ -1520,3 +1520,31 @@ style={{
 **Решение (v0.60.0)**: Sender-based dedup — `notifSenderTsRef` хранит `{messengerId:senderName → timestamp}`. Если `__CC_NOTIF__` уже обработал сообщение от sender X, то `__CC_MSG__` и IPC от того же sender'а блокируются на 3 секунды.
 
 **Ключевой урок**: При 3 независимых путях перехвата НЕОБХОДИМ cross-path dedup. Приоритет: `__CC_NOTIF__` (самый точный — прямо из Notification API мессенджера) → `__CC_MSG__` → IPC `new-message`.
+
+---
+
+## 🟡 ВАЖНОЕ: Sender-dedup по имени ненадёжен — разное enrichment даёт разные имена (v0.60.0 → v0.60.2)
+
+### ❌ `__CC_NOTIF__` записывает "Дугин Алексей Сергеевич", а `__CC_MSG__` получает "Окно чата с Дугин Ал..."
+
+**Симптом**: Дубль ribbon — два уведомления на одно сообщение. Sender-dedup не срабатывает.
+
+**Причина**: `__CC_NOTIF__` получает sender name прямо из Notification API мессенджера ("Дугин Алексей Сергеевич"). `__CC_MSG__` делает DOM enrichment через `.topbar .headerWrapper` и получает "Окно чата с Дугин Алексей Сергеевич     Дугин Алексей Сергеевич  В сети" (дубль имени + статус + prefix). Strip "Окно чата с" работает, но результат > 80 символов → отклоняется length check → fallback получает НЕ-stripped имя → dedup ключи не совпадают.
+
+**Решение (v0.60.2)**: Per-messengerId dedup — если `__CC_NOTIF__` от messengerId был <3 сек назад, блокировать `__CC_MSG__` целиком (без сравнения sender name). Плюс дедупликация дублирующегося имени ("Иванов Иван     Иванов Иван" → "Иванов Иван") и strip после executeJavaScript.
+
+**Ключевой урок**: Sender-based dedup по имени — НЕНАДЁЖЕН, разные пути enrichment дают разные имена. Надёжнее — per-messengerId dedup с коротким окном (3 сек).
+
+---
+
+## 🟡 ВАЖНОЕ: mouseenter/mouseleave ненадёжны в transparent focusable:false BrowserWindow на Windows (v0.60.3)
+
+### ❌ Hover на одном ribbon ставит на паузу ВСЕ уведомления
+
+**Симптом**: При наведении курсора на одно уведомление — progress bar останавливается у ВСЕХ ribbon.
+
+**Причина**: Windows обрабатывает transparent + focusable:false BrowserWindow как единую hit-target. `mouseenter`/`mouseleave` события на отдельных DOM-элементах внутри такого окна работают некорректно — могут срабатывать одновременно для нескольких элементов.
+
+**Решение (v0.60.3)**: Единый `mousemove` handler на контейнере + `e.target.closest('.notif-item')` для определения какой конкретно элемент под курсором. Трекинг `hoveredItemId` — пауза/возобновление только для конкретного item.
+
+**Ключевой урок**: В transparent BrowserWindow на Windows НЕЛЬЗЯ полагаться на per-element `mouseenter`/`mouseleave`. Используй `mousemove` на контейнере + `closest()` для определения элемента под курсором.

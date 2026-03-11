@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.60.2 (11 марта 2026)
+## Текущая версия: v0.60.3 (11 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.60.3 (11 марта 2026) — Плавная анимация ribbon + per-item hover pause
+- **Плавная анимация закрытия**: Новая `dismissOut` анимация — fade + scale(0.9) + сдвиг 120px за 350мс (вместо жёсткого slideOut 200мс). Входящая анимация `slideIn` с bounce-эффектом (cubic-bezier).
+- **Per-item hover pause**: Hover ставит на паузу ТОЛЬКО то уведомление, на которое навёл курсор (не все сразу). Реализовано через единый `mousemove` на контейнере с трекингом `hoveredItemId`, а не per-item `mouseenter`/`mouseleave` (Windows transparent+focusable:false шлёт mouseenter на все элементы).
+- **Визуальный индикатор hover**: Класс `.hovered` — подсветка border + тень при наведении.
+- **Состояние в Map**: Все timer/remaining/paused хранятся в `items` Map (не в closure) — избегаем рассинхрона.
 
 ### v0.60.2 (11 марта 2026) — Per-messengerId dedup + enrichment fix "Окно чата с"
 - **Per-messengerId dedup**: Если `__CC_NOTIF__` от messengerId прошёл <3 сек назад, `__CC_MSG__` и IPC блокируются целиком (без сравнения sender name). Решает проблему когда enrichment выдаёт другое имя.

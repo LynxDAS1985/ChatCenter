@@ -179,6 +179,22 @@
 - `enrichedTitle` — имя найдено через `enrichNotif` в DOM (синий текст)
 - Кнопка "Копировать JSON" — полный лог в буфер обмена для отладки
 
+### Messenger Ribbon — кастомные уведомления (v0.39.0 → v0.60.3)
+
+Frameless BrowserWindow справа экрана. Файл: `main/notification.html`.
+
+**Анимации (v0.60.3)**:
+| Анимация | Эффект | Длительность | Easing |
+|----------|--------|--------------|--------|
+| `slideIn` | translateX(380→-8→0) + scale(0.95→1) + opacity(0→1) | 300мс | cubic-bezier(0.22, 1, 0.36, 1) |
+| `dismissOut` | translateX(0→120) + scale(1→0.9) + opacity(1→0) | 350мс | cubic-bezier(0.4, 0, 1, 1) |
+| `shrink` | scaleX(1→0) прогресс-бар | dismissMs | linear |
+| action-row | max-height + opacity + margin-top | 200мс | ease-out |
+
+**Hover (v0.60.3)**: Единый `mousemove` на контейнере → `e.target.closest('.notif-item')` → пауза только для hovered item. Класс `.hovered` — подсветка border.
+
+**Кнопки**: ✓ (Прочитано), × (закрыть), → Перейти к чату (в expanded).
+
 ### Последнее сообщение в статусбаре (v0.23.0)
 
 Вместо диагностики — `💬 Telegram: текст сообщения...` (исчезает через 8 сек).
