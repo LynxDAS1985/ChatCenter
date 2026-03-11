@@ -97,6 +97,8 @@
 - **Решение #2 — Sender-based dedup**: Если `__CC_NOTIF__` от sender X прошёл pipeline, все `__CC_MSG__` от того же sender блокируются 3 сек (даже с другим текстом). Убирает дубли когда VK шлёт несколько Notification + MutationObserver ловит тот же текст.
 - **Решение #3 — Структурный DOM-фильтр**: В `quickNewMsgCheck` при body-fallback проверяем `_chatContainerEl.contains(node)`. Ноды ВНЕ контейнера чата (кнопки "Это не я", контекстное меню "Переслать/Удалить", sidebar) отсеиваются по DOM-позиции, не по тексту.
 - **Спам-фильтр VK UI**: "Переслать", "Отметить как новое", "Скопировать текст", "Удалить", "Сообщение" (placeholder) — блокируются в `__CC_MSG__`.
+- **MAX реальные селекторы**: `.scrollListContent` (521 children), `.scrollListScrollable` из DOM Inspector. chatObserver теперь находит контейнер MAX.
+- **Имя мессенджера в Pipeline**: Новая колонка "Мессенджер" в таблице Pipeline + поле `mName` в JSON-экспорте. Нет путаницы между VK/MAX/TG.
 
 ### v0.59.2 (11 марта 2026) — Реальные VK DOM-селекторы из DOM Inspector
 - **`ConvoMain__history`** — реальный класс контейнера чата VK (784 children). Добавлен первым в `CHAT_CONTAINER_SELECTORS.vk` и в `getVKLastIncomingText()`. chatObserver теперь найдёт контейнер без fallback.

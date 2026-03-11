@@ -939,8 +939,10 @@ export default function App() {
   // step: source|spam|dedup|handle|viewing|sound|ribbon|enrich|error
   // type: info|pass|block|warn
   const traceNotif = (step, type, messengerId, text, detail) => {
+    // v0.60.0: добавляем имя мессенджера для идентификации в логах
+    const mName = messengerId ? (messengersRef.current.find(x => x.id === messengerId)?.name || '') : ''
     pipelineTraceRef.current.push({
-      ts: Date.now(), step, type, mid: messengerId || '', text: (text || '').slice(0, 60), detail: detail || '',
+      ts: Date.now(), step, type, mid: messengerId || '', mName, text: (text || '').slice(0, 60), detail: detail || '',
     })
     if (pipelineTraceRef.current.length > 300) pipelineTraceRef.current.splice(0, 100)
   }
@@ -2441,7 +2443,7 @@ export default function App() {
 
       {/* ── Модальное окно: Лог уведомлений ── */}
       {notifLogModal && (() => {
-        const traceStepLabels = { source: 'Источник', spam: 'Спам', dedup: 'Дедуп', handle: 'Обработка', viewing: 'Видимость', sound: 'Звук', ribbon: 'Ribbon', enrich: 'Обогащение', inspect: 'Инспектор', error: 'Ошибка' }
+        const traceStepLabels = { source: 'Источник', spam: 'Спам', dedup: 'Дедуп', handle: 'Обработка', viewing: 'Видимость', sound: 'Звук', ribbon: 'Ribbon', enrich: 'Обогащение', inspect: 'Инспектор', error: 'Ошибка', debug: 'Отладка', warmup: 'Разогрев' }
         const traceTypeColors = { pass: '#4ade80', block: '#f87171', warn: '#fbbf24', info: '#94a3b8' }
         const traceTypeLabels = { pass: 'ПРОПУЩЕН', block: 'БЛОК', warn: 'ВНИМАНИЕ', info: 'ИНФО' }
         const traceData = (notifLogModal.trace || []).filter(e => {
@@ -2710,14 +2712,16 @@ export default function App() {
                   <table className="w-full" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                     <colgroup>
                       <col style={{ width: '80px' }} />
+                      <col style={{ width: '70px' }} />
                       <col style={{ width: '90px' }} />
                       <col style={{ width: '72px' }} />
-                      <col style={{ width: '25%' }} />
+                      <col style={{ width: '22%' }} />
                       <col />
                     </colgroup>
                     <thead>
                       <tr style={{ borderBottom: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
                         <th className="text-left px-2 py-1.5 font-medium">Время</th>
+                        <th className="text-left px-2 py-1.5 font-medium">Мессенджер</th>
                         <th className="text-left px-2 py-1.5 font-medium">Шаг</th>
                         <th className="text-left px-2 py-1.5 font-medium">Статус</th>
                         <th className="text-left px-2 py-1.5 font-medium">Текст</th>
@@ -2734,6 +2738,9 @@ export default function App() {
                             backgroundColor: entry.type === 'block' ? 'rgba(239,68,68,0.06)' : entry.type === 'pass' ? 'rgba(34,197,94,0.04)' : 'transparent',
                           }}>
                             <td className="px-2 py-1 whitespace-nowrap font-mono text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>{time}</td>
+                            <td className="px-2 py-1 overflow-hidden">
+                              <span className="truncate block text-[10px] font-medium" style={{ color: '#60a5fa' }}>{entry.mName || '—'}</span>
+                            </td>
                             <td className="px-2 py-1">
                               <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium" style={{
                                 backgroundColor: 'rgba(148,163,184,0.1)', color: 'var(--cc-text-dim)',

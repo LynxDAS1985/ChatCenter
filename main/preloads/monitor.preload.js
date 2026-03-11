@@ -872,6 +872,12 @@ const CHAT_CONTAINER_SELECTORS = {
     '[class*="im-page--chat"]', '[class*="HistoryMessages"]'
   ],
   max: [
+    // v0.60.0: Реальные MAX классы из DOM Inspector (март 2026)
+    '.scrollListContent',                      // ← 521 children, основной контейнер сообщений (SvelteKit)
+    '[class*="scrollListContent"]',            // fallback с prefix (svelte hash)
+    '.scrollable.scrollListScrollable',        // parent scroll (522 children)
+    '[class*="scrollListScrollable"]',         // fallback
+    // Legacy/generic
     '[class*="messages-container"]', '[class*="chat-body"]', '[class*="message-list"]',
     '[class*="bubbles"]', '[class*="history"]', 'main [class*="scroll"]'
   ],
