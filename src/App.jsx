@@ -942,7 +942,7 @@ export default function App() {
     // v0.60.0: добавляем имя мессенджера для идентификации в логах
     const mName = messengerId ? (messengersRef.current.find(x => x.id === messengerId)?.name || '') : ''
     pipelineTraceRef.current.push({
-      ts: Date.now(), step, type, mid: messengerId || '', mName, text: (text || '').slice(0, 60), detail: detail || '',
+      ts: Date.now(), step, type, mid: messengerId || '', mName, text: (text || '').slice(0, 200), detail: detail || '',
     })
     if (pipelineTraceRef.current.length > 300) pipelineTraceRef.current.splice(0, 100)
   }
@@ -1484,8 +1484,11 @@ export default function App() {
         // v0.57.0: debug трассировка ВСЕХ __CC_ сообщений — для диагностики проблем с уведомлениями
         if (msg.startsWith('__CC_')) {
           const ready = !!notifReadyRef.current[messengerId]
-          const tag = msg.slice(0, msg.indexOf('{') > 0 ? Math.min(msg.indexOf('{'), 30) : 30)
-          traceNotif('debug', 'info', messengerId, msg.slice(tag.length, tag.length + 60), `${tag.trim()} | ready=${ready}`)
+          // v0.60.0: полный текст сообщения без обрезки — убираем префикс __CC_XXX__
+          const prefixEnd = msg.indexOf('__', 4)
+          const prefix = prefixEnd > 0 ? msg.slice(0, prefixEnd + 2) : msg.slice(0, 12)
+          const body = msg.slice(prefix.length).trim()
+          traceNotif('debug', 'info', messengerId, body.slice(0, 200), `${prefix.trim()} | ready=${ready}`)
         }
         // ── __CC_ACCOUNT__: имя профиля из accountScript ──
         if (msg.startsWith('__CC_ACCOUNT__')) {
