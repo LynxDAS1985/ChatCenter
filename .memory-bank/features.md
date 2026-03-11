@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.60.0 (11 марта 2026)
+## Текущая версия: v0.60.1 (11 марта 2026)
 
 ---
 
@@ -92,12 +92,16 @@
 
 ## Changelog
 
+### v0.60.1 (11 марта 2026) — Полный перехват звуков мессенджера (Audio + createElement + AudioContext)
+- **Audio override расширен**: Помимо `new Audio(src)`, теперь глушим `document.createElement('audio')` (volume=0, muted=true) и `AudioContext.createGain()` (gain.value=0). MAX использовал не `new Audio()` — первое сообщение давало двойной звук (наш + родной MAX).
+- **Проблема common-mistakes.md**: Записаны 7 проблем v0.59.2–v0.60.0 (scrollListContent=sidebar, messageWrapper≠message, pushState isolation, truncation, enrichment header, sender dedup).
+
 ### v0.60.0 (11 марта 2026) — 3 решения: re-attach навигация + sender-dedup + структурный DOM-фильтр
 - **Решение #1 — Re-attach chatObserver при навигации**: Перехват pushState/replaceState/popstate в WebView. При переходе VK на `/im/convo/...` chatObserver переподключается к `ConvoMain__history` вместо body. При уходе из чата — fallback обратно. Решает корневую причину мусора.
 - **Решение #2 — Sender-based dedup**: Если `__CC_NOTIF__` от sender X прошёл pipeline, все `__CC_MSG__` от того же sender блокируются 3 сек (даже с другим текстом). Убирает дубли когда VK шлёт несколько Notification + MutationObserver ловит тот же текст.
 - **Решение #3 — Структурный DOM-фильтр**: В `quickNewMsgCheck` при body-fallback проверяем `_chatContainerEl.contains(node)`. Ноды ВНЕ контейнера чата (кнопки "Это не я", контекстное меню "Переслать/Удалить", sidebar) отсеиваются по DOM-позиции, не по тексту.
 - **Спам-фильтр VK UI**: "Переслать", "Отметить как новое", "Скопировать текст", "Удалить", "Сообщение" (placeholder) — блокируются в `__CC_MSG__`.
-- **MAX реальные селекторы**: `.scrollListContent` (521 children), `.scrollListScrollable` из DOM Inspector. chatObserver теперь находит контейнер MAX.
+- **MAX реальные селекторы**: `.history` (870 children) — контейнер сообщений. `.scrollListContent` (521 children) оказался SIDEBAR — перемещён в `_sidebarRe`.
 - **Имя мессенджера в Pipeline**: Новая колонка "Мессенджер" в таблице Pipeline + поле `mName` в JSON-экспорте. Нет путаницы между VK/MAX/TG.
 
 ### v0.59.2 (11 марта 2026) — Реальные VK DOM-селекторы из DOM Inspector

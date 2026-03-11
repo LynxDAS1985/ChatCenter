@@ -1425,3 +1425,98 @@ style={{
 4. **Правильный формат peerId**: user=ID, chat=`-ID`, channel=`-100ID` — через DOM selector вместо hash.
 
 **Ключевой урок**: НИКОГДА не менять `location.hash` / `location.href` в чужом WebView — это навигационный hijack. Навигация к чату должна быть через DOM click или API, и ВСЕГДА проверять что пользователь не переключил вкладку. Агрессивные retry опасны — пользователь мог уже начать работать в другом месте.
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: scrollListContent — это SIDEBAR, а не чат (MAX) (v0.59.2 → v0.60.0)
+
+### ❌ chatObserver привязался к сайдбару → ribbon с именами контактов вместо текста сообщений
+
+**Симптом**: При получении 1 реального сообщения ("Авч") — показывается ribbon "Толстиков Юрий Павлович Теперь в MAX!" (имя контакта из сайдбара). До 9 спам-нотификаций за 1 сообщение.
+
+**Причина**: DOM Inspector показал `.scrollListContent` с 521 children. Я предположил что это контейнер сообщений и добавил в `CHAT_CONTAINER_SELECTORS.max`. На самом деле 521 children = 521 чат-диалогов в сайдбаре. chatObserver ловил мутации сайдбара (обновление preview последнего сообщения, статусы "Теперь в MAX!") и передавал их как новые сообщения.
+
+**Как диагностировать**: 521 children ≠ количество сообщений в чате (обычно 20-100). Реальный контейнер сообщений MAX — `.history` (870 children — bubble wrappers, date separators и т.д.).
+
+**Решение (v0.60.0)**:
+1. Убран `.scrollListContent` из `CHAT_CONTAINER_SELECTORS.max`
+2. Добавлен `.scrollListContent|scrollListScrollable|chatListItem` в `_sidebarRe` для фильтрации
+3. Реальные селекторы MAX: `.history`, `[class*="history"][class*="svelte"]`, `.openedChat`
+
+**Ключевой урок**: ВСЕГДА проверяй DOM Inspector данные перед добавлением селекторов. Большое число children (500+) скорее сайдбар/список чатов, чем контейнер сообщений. Сверяй с реальным количеством сообщений в чате.
+
+---
+
+## 🟡 ВАЖНОЕ: messageWrapper ≠ message (SvelteKit MAX) (v0.60.0)
+
+### ❌ Fallback findChatContainer искал `.message[class*="svelte"]` — не существует в MAX
+
+**Симптом**: `findChatContainer` не мог найти контейнер через fallback-метод (поиск parent'а 3+ элементов `.message[class*="svelte"]`).
+
+**Причина**: MAX использует SvelteKit, DOM-элементы имеют класс `messageWrapper svelte-1kh0oxy`, НЕ `message svelte-...`. Fallback искал `.message[class*="svelte"]` — 0 результатов.
+
+**Решение**: Использовать реальный селектор `.history` вместо fallback. Если fallback нужен, искать `.messageWrapper[class*="svelte"]`.
+
+**Ключевой урок**: SvelteKit-приложения (MAX) используют хешированные классы (`svelte-xxxxx`). Имена классов могут отличаться от ожидаемых (`messageWrapper` вместо `message`). ВСЕГДА проверяй реальные классы через DOM Inspector.
+
+---
+
+## 🟡 ВАЖНОЕ: history.pushState override НЕ работает из preload (context isolation) (v0.60.0)
+
+### ❌ Переопределение history.pushState в preload не ловит навигацию SPA
+
+**Симптом**: VK и MAX — SPA-приложения, навигация через `history.pushState()` без перезагрузки страницы. Попытка перехватить `pushState` из preload не работает.
+
+**Причина**: Context isolation в WebView: preload выполняется в изолированном мире (isolated world). `window.history` в preload — это копия, НЕ тот же объект что в main world. Переопределение `history.pushState` в preload не влияет на main world скрипты мессенджера.
+
+**Каналы main world → preload**: Единственный надёжный канал — `console.log()` в main world → `console-message` event на `<webview>` в renderer.
+
+**Решение (v0.60.0)**: Вместо override `pushState` — polling `location.href` каждые 2 секунды (`setupNavigationWatcher`). При изменении URL → re-attach chatObserver к новому контейнеру.
+
+**Ключевой урок**: В WebView с context isolation НЕЛЬЗЯ переопределить глобальные объекты main world из preload. `window`, `document`, `history`, `Notification` — все изолированы. Для перехвата используй: (1) `executeJavaScript` (выполняется в main world), (2) polling, (3) `console.log` канал.
+
+---
+
+## 🟡 ВАЖНОЕ: Pipeline text truncation — 60 символов + неправильный парсинг __CC_DIAG__ (v0.60.0)
+
+### ❌ В Pipeline Trace текст обрезан до "йнер" вместо полного слова
+
+**Симптом**: В таблице Pipeline Trace текст сообщений обрезан до нечитаемых фрагментов ("йнер" вместо "контейнер").
+
+**Причина 1**: `traceNotif()` обрезал текст `.slice(0, 60)` — слишком мало для диагностических сообщений.
+
+**Причина 2**: `__CC_DIAG__` парсер в App.jsx резал тег на 30 символов (`msg.slice(0, 30)`) вместо поиска реального конца тега. Это могло резать посередине слова.
+
+**Решение (v0.60.0)**:
+1. Лимит текста в `traceNotif` увеличен 60→200 символов
+2. `__CC_DIAG__` парсер: находит конец тега через `msg.indexOf('__', 4)` вместо фиксированного среза
+
+**Ключевой урок**: Диагностические логи должны быть достаточно длинными для отладки. 60 символов — слишком мало. Парсинг тегов — по разделителям, не по фиксированной позиции.
+
+---
+
+## 🟡 ВАЖНОЕ: Enrichment header — неправильный селектор для MAX (v0.60.0)
+
+### ❌ Enrichment показывал "Еременко Вячеслав Борисович" вместо реального отправителя
+
+**Симптом**: При получении сообщения в MAX, enrichment определял отправителя как контакт из сайдбара, а не из заголовка открытого чата.
+
+**Причина**: Header-селекторы enrichment не включали MAX-специфичный `.topbar .headerWrapper`. Fallback шёл в сайдбар-селекторы и подхватывал первое имя.
+
+**Решение**: Добавлен селектор `.topbar .headerWrapper` + strip префикса "Окно чата с" (MAX добавляет этот текст в `aria-label` или `title`).
+
+**Ключевой урок**: Каждый мессенджер имеет свою структуру header'а с именем чата. ОБЯЗАТЕЛЬНО добавлять мессенджер-специфичные header-селекторы при интеграции нового мессенджера. Проверять через DOM Inspector.
+
+---
+
+## 🟡 ВАЖНОЕ: Sender-based dedup — один источник генерирует дубли через 3 пути (v0.60.0)
+
+### ❌ 9 уведомлений за 1 реальное сообщение
+
+**Симптом**: Одно сообщение в MAX генерирует до 9 ribbon-уведомлений.
+
+**Причина**: Три независимых пути перехвата (`__CC_NOTIF__`, `__CC_MSG__`, IPC `new-message`) могут сработать на одно и то же сообщение. Каждый путь проходит свой спам-фильтр и dedup независимо.
+
+**Решение (v0.60.0)**: Sender-based dedup — `notifSenderTsRef` хранит `{messengerId:senderName → timestamp}`. Если `__CC_NOTIF__` уже обработал сообщение от sender X, то `__CC_MSG__` и IPC от того же sender'а блокируются на 3 секунды.
+
+**Ключевой урок**: При 3 независимых путях перехвата НЕОБХОДИМ cross-path dedup. Приоритет: `__CC_NOTIF__` (самый точный — прямо из Notification API мессенджера) → `__CC_MSG__` → IPC `new-message`.

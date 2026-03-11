@@ -1344,6 +1344,20 @@ export default function App() {
                   var _A = window.Audio;
                   window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
                   window.Audio.prototype = _A.prototype;
+                  var _ce = document.createElement.bind(document);
+                  document.createElement = function(tag) {
+                    var el = _ce.apply(document, arguments);
+                    if (tag && tag.toLowerCase() === 'audio') { el.volume = 0; el.muted = true; }
+                    return el;
+                  };
+                  ['AudioContext','webkitAudioContext'].forEach(function(name) {
+                    var _Ctx = window[name];
+                    if (!_Ctx) return;
+                    var _createGain = _Ctx.prototype.createGain;
+                    _Ctx.prototype.createGain = function() {
+                      var g = _createGain.call(this); g.gain.value = 0; return g;
+                    };
+                  });
                   console.log('__CC_NOTIF_HOOK_OK__');
                 })();
               }

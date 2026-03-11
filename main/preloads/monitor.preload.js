@@ -181,9 +181,26 @@ const { ipcRenderer } = require('electron')
         }
       } catch(e) {}
       // Перехват Audio → volume=0 (глушим звуки мессенджера)
+      // 1) new Audio(src)
       var _A = window.Audio
       window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a }
       window.Audio.prototype = _A.prototype
+      // 2) document.createElement('audio')
+      var _ce = document.createElement.bind(document)
+      document.createElement = function(tag) {
+        var el = _ce.apply(document, arguments)
+        if (tag && tag.toLowerCase() === 'audio') { el.volume = 0; el.muted = true }
+        return el
+      }
+      // 3) AudioContext / webkitAudioContext → createGain().gain.value = 0
+      ;['AudioContext','webkitAudioContext'].forEach(function(name) {
+        var _Ctx = window[name]
+        if (!_Ctx) return
+        var _createGain = _Ctx.prototype.createGain
+        _Ctx.prototype.createGain = function() {
+          var g = _createGain.call(this); g.gain.value = 0; return g
+        }
+      })
     } + ')()'
     ;(document.head || document.documentElement).appendChild(s)
     s.remove()
