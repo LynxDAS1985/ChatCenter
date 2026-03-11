@@ -353,6 +353,9 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="Кнопки действий сразу" description="Показывать кнопки на ribbon без клика">
                 <Toggle value={!!settings.ribbonExpandedByDefault} onChange={v => set('ribbonExpandedByDefault', v)} />
               </SettingRow>
+              <SettingRow label="Группировка уведомлений" description="Объединять ribbon от одного мессенджера">
+                <Toggle value={!!settings.ribbonGrouping} onChange={v => set('ribbonGrouping', v)} />
+              </SettingRow>
               <SettingRow label="Автопереключение на новое сообщение" description="Переключать вкладку при входящем">
                 <Toggle value={!!settings.autoSwitchOnMessage} onChange={v => set('autoSwitchOnMessage', v)} />
               </SettingRow>

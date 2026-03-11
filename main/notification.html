@@ -25,6 +25,7 @@
     border-radius: 10px;
     cursor: pointer;
     position: relative;
+    overflow: hidden;
     transform: translateX(380px);
     opacity: 0;
     animation: slideIn 300ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
@@ -32,7 +33,6 @@
     box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     transition: box-shadow 0.2s, border-color 0.2s;
   }
-  /* v0.60.3: подсветка при hover — визуальный индикатор "таймер на паузе" */
   .notif-item.hovered {
     border-color: rgba(255,255,255,0.18);
     box-shadow: 0 4px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
@@ -56,9 +56,20 @@
     opacity: 1;
     margin-top: 8px;
   }
-  /* v0.60.3: плавная анимация закрытия — fade + scale + slide */
-  .notif-item.removing {
-    animation: dismissOut 350ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  /* v0.60.4: dismiss — два этапа: fade → collapse */
+  .notif-item.fade-out {
+    animation: fadeSlide 250ms ease-out forwards;
+    pointer-events: none;
+  }
+  .notif-item.collapsing {
+    min-height: 0 !important;
+    height: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: -4px !important;
+    padding: 0 !important;
+    border-width: 0 !important;
+    opacity: 0;
+    transition: height 200ms ease-in-out, margin-bottom 200ms ease-in-out, min-height 200ms ease-in-out;
     pointer-events: none;
   }
   @keyframes slideIn {
@@ -66,12 +77,95 @@
     70%  { transform: translateX(-8px) scale(1); opacity: 1; }
     100% { transform: translateX(0) scale(1); opacity: 1; }
   }
-  /* v0.60.3: красивый dismiss — сдвиг вправо + уменьшение + затухание */
-  @keyframes dismissOut {
+  @keyframes fadeSlide {
     0%   { transform: translateX(0) scale(1); opacity: 1; }
-    40%  { transform: translateX(20px) scale(0.97); opacity: 0.7; }
-    100% { transform: translateX(120px) scale(0.9); opacity: 0; max-height: 0; margin-bottom: -4px; }
+    100% { transform: translateX(80px) scale(0.95); opacity: 0; }
   }
+  /* ── Группировка (v0.60.4) ── */
+  .group-item {
+    display: flex;
+    align-items: center;
+    min-height: 60px;
+    background: #1a1a2e;
+    border-radius: 10px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transform: translateX(380px);
+    opacity: 0;
+    animation: slideIn 300ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+  .group-item.hovered {
+    border-color: rgba(255,255,255,0.18);
+  }
+  .group-item.fade-out {
+    animation: fadeSlide 250ms ease-out forwards;
+    pointer-events: none;
+  }
+  .group-item.collapsing {
+    min-height: 0 !important;
+    height: 0 !important;
+    margin-bottom: -4px !important;
+    opacity: 0;
+    transition: height 200ms ease-in-out, margin-bottom 200ms ease-in-out, min-height 200ms ease-in-out;
+    pointer-events: none;
+  }
+  .group-counter {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    margin: 0 10px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .group-text {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px 8px 0;
+  }
+  .group-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e2e8f0;
+  }
+  .group-preview {
+    font-size: 12px;
+    color: rgba(255,255,255,0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+  .group-close {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.3);
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 2;
+  }
+  .group-item:hover .group-close { opacity: 1; }
+  .group-close:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
+  /* ── Остальные стили ── */
   .color-bar {
     width: 5px;
     align-self: stretch;
@@ -136,7 +230,6 @@
     overflow-y: auto;
     color: rgba(255,255,255,0.8);
   }
-  /* Кнопки действий */
   .action-btn {
     padding: 4px 12px;
     border: 1px solid rgba(255,255,255,0.15);
@@ -167,7 +260,6 @@
   .action-btn.mark-read:hover {
     background: rgba(34,197,94,0.22);
   }
-  /* Кнопка развернуть */
   .expand-hint {
     font-size: 11px;
     color: rgba(255,255,255,0.3);
@@ -250,18 +342,18 @@
 <div id="container"></div>
 <script>
   const MAX_ITEMS = 6
-  const DEFAULT_DISMISS_MS = 5000
   const container = document.getElementById('container')
   const items = new Map() // id → { el, timer, expanded, remainingMs, startTs, dismissMs, paused }
+  // v0.60.4: группировка — { messengerId → { el, ids: [id,...], count, lastBody, color } }
+  const groups = new Map()
+  let groupingEnabled = false
 
-  // v0.60.3: Отслеживание hover на уровне контейнера — решает проблему
-  // когда Windows с transparent+focusable:false окном шлёт mouseenter на ВСЕ элементы
   let hoveredItemId = null
 
   function calcHeight() {
     let h = 0
     for (const child of container.children) {
-      if (!child.classList.contains('removing')) {
+      if (!child.classList.contains('collapsing') && !child.classList.contains('fade-out')) {
         h += child.offsetHeight + 4
       }
     }
@@ -269,17 +361,14 @@
   }
 
   function reportHeight() {
-    // setTimeout вместо rAF — rAF НЕ работает в hidden BrowserWindow!
-    // 60ms достаточно для стабильного layout без дёрга
     setTimeout(() => {
       window.notifApi.resize(calcHeight())
     }, 60)
   }
 
-  // v0.60.3: Пауза таймера конкретного уведомления
+  // ── Per-item hover (v0.60.3) ──
   function pauseItem(item) {
     if (item.paused || !item.dismissMs || item.dismissMs <= 0) return
-    if (item.expanded) return // expanded уже на паузе
     item.remainingMs -= (Date.now() - item.startTs)
     if (item.remainingMs < 0) item.remainingMs = 0
     clearTimeout(item.timer)
@@ -290,10 +379,8 @@
     item.el.classList.add('hovered')
   }
 
-  // v0.60.3: Возобновление таймера конкретного уведомления
   function resumeItem(item) {
     if (!item.paused || !item.dismissMs || item.dismissMs <= 0) return
-    if (item.expanded) return // expanded остаётся на паузе
     item.paused = false
     item.startTs = Date.now()
     const progress = item.el.querySelector('.progress-bar')
@@ -303,47 +390,65 @@
     item.el.classList.remove('hovered')
   }
 
-  // v0.60.3: Единый mousemove на контейнере — определяем какой item под курсором
   container.addEventListener('mousemove', (e) => {
-    const target = e.target.closest('.notif-item')
+    const target = e.target.closest('.notif-item, .group-item')
     const newId = target ? target.dataset.id : null
-
-    if (newId === hoveredItemId) return // курсор на том же элементе
-    // Снимаем паузу со старого
+    if (newId === hoveredItemId) return
     if (hoveredItemId) {
       const oldItem = items.get(hoveredItemId)
       if (oldItem) resumeItem(oldItem)
+      // Группы: снять подсветку
+      const oldGrp = target ? null : document.querySelector('.group-item.hovered')
+      if (oldGrp) oldGrp.classList.remove('hovered')
     }
-    // Ставим паузу на новый
     hoveredItemId = newId
     if (newId) {
       const newItem = items.get(newId)
       if (newItem) pauseItem(newItem)
+      // Группы: подсветка
+      if (target && target.classList.contains('group-item')) target.classList.add('hovered')
     }
   })
 
-  // v0.60.3: Курсор ушёл с окна — снимаем все паузы
   container.addEventListener('mouseleave', () => {
     if (hoveredItemId) {
       const item = items.get(hoveredItemId)
       if (item) resumeItem(item)
       hoveredItemId = null
     }
+    // Снять hover со всех групп
+    container.querySelectorAll('.group-item.hovered').forEach(g => g.classList.remove('hovered'))
   })
 
+  // ── v0.60.4: Двухэтапный dismiss — fade → collapse → remove ──
   function dismissItem(id, fromMain) {
     const item = items.get(id)
     if (!item) return
     clearTimeout(item.timer)
-    item.el.classList.add('removing')
     if (hoveredItemId === id) hoveredItemId = null
     if (!fromMain) window.notifApi.dismiss(id)
-    // v0.60.3: увеличенная задержка под новую анимацию (350ms)
+
+    const el = item.el
+    // Запоминаем текущую высоту для плавного коллапса
+    const h = el.offsetHeight
+    el.style.height = h + 'px'
+
+    // Этап 1: fade + slide (250мс)
+    el.classList.add('fade-out')
+
     setTimeout(() => {
-      item.el.remove()
-      items.delete(id)
-      reportHeight()
-    }, 360)
+      // Этап 2: коллапс высоты (200мс)
+      el.classList.remove('fade-out')
+      el.classList.add('collapsing')
+
+      setTimeout(() => {
+        el.remove()
+        items.delete(id)
+        // Обновить группу если группировка включена
+        if (groupingEnabled) updateGroup(item.messengerId)
+        reportHeight()
+      }, 210)
+    }, 260)
   }
 
   function toggleExpand(data, el) {
@@ -352,7 +457,6 @@
     const isExpanded = el.classList.toggle('expanded')
     item.expanded = isExpanded
 
-    // Приостановить/возобновить таймер при раскрытии
     if (isExpanded && item.dismissMs > 0) {
       item.remainingMs -= (Date.now() - item.startTs)
       if (item.remainingMs < 0) item.remainingMs = 0
@@ -363,19 +467,148 @@
       if (progress) progress.style.animationPlayState = 'paused'
     } else if (!isExpanded && item.dismissMs > 0) {
       item.paused = false
+      item.startTs = Date.now()
       const progress = el.querySelector('.progress-bar')
       if (progress) progress.style.animationPlayState = 'running'
-      item.startTs = Date.now()
       item.timer = setTimeout(() => dismissItem(data.id, false), item.remainingMs || 3000)
     }
 
-    // Вызываем reportHeight сразу + после transition (200ms) для точной высоты
     reportHeight()
     setTimeout(reportHeight, 220)
   }
 
+  // ── v0.60.4: Группировка уведомлений ──
+  function updateGroup(messengerId) {
+    if (!messengerId) return
+    // Считаем активные items от этого мессенджера
+    const mItems = []
+    items.forEach((item, id) => {
+      if (item.messengerId === messengerId) mItems.push({ id, item })
+    })
+
+    const grp = groups.get(messengerId)
+    if (mItems.length < 2) {
+      // Менее 2 — убираем группу
+      if (grp) {
+        removeGroupEl(grp)
+        groups.delete(messengerId)
+      }
+      return
+    }
+
+    if (!grp) {
+      // Создаём группу
+      createGroup(messengerId, mItems)
+    } else {
+      // Обновляем счётчик
+      grp.count = mItems.length
+      grp.ids = mItems.map(m => m.id)
+      const counter = grp.el.querySelector('.group-counter')
+      if (counter) counter.textContent = mItems.length
+      const preview = grp.el.querySelector('.group-preview')
+      if (preview) {
+        const lastItem = mItems[mItems.length - 1].item
+        preview.textContent = (lastItem.senderName || '') + ': ' + (lastItem.bodyText || '')
+      }
+    }
+  }
+
+  function createGroup(messengerId, mItems) {
+    const first = mItems[0].item
+    const last = mItems[mItems.length - 1].item
+    const color = first.color || '#2AABEE'
+
+    const el = document.createElement('div')
+    el.className = 'group-item'
+    el.dataset.id = 'group_' + messengerId
+    el.dataset.messengerId = messengerId
+
+    const bar = document.createElement('div')
+    bar.className = 'color-bar'
+    bar.style.background = color
+    el.appendChild(bar)
+
+    const counter = document.createElement('div')
+    counter.className = 'group-counter'
+    counter.style.background = color + '44'
+    counter.textContent = mItems.length
+    el.appendChild(counter)
+
+    const textWrap = document.createElement('div')
+    textWrap.className = 'group-text'
+
+    const title = document.createElement('div')
+    title.className = 'group-title'
+    title.textContent = (first.messengerName || 'Мессенджер') + ': ' + mItems.length + ' новых'
+    textWrap.appendChild(title)
+
+    const preview = document.createElement('div')
+    preview.className = 'group-preview'
+    preview.textContent = (last.senderName || '') + ': ' + (last.bodyText || '')
+    textWrap.appendChild(preview)
+
+    el.appendChild(textWrap)
+
+    const closeBtn = document.createElement('button')
+    closeBtn.className = 'group-close'
+    closeBtn.textContent = '\u00d7'
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      // Dismiss all items in group
+      const grp = groups.get(messengerId)
+      if (grp) {
+        grp.ids.forEach(id => dismissItem(id, false))
+      }
+    })
+    el.appendChild(closeBtn)
+
+    // Клик на группу → развернуть все items
+    el.addEventListener('click', () => {
+      const grp = groups.get(messengerId)
+      if (grp) {
+        removeGroupEl(grp)
+        groups.delete(messengerId)
+        // Показать все скрытые items
+        grp.ids.forEach(id => {
+          const item = items.get(id)
+          if (item && item.el) item.el.style.display = ''
+        })
+        reportHeight()
+        setTimeout(reportHeight, 100)
+      }
+    })
+
+    // Вставляем группу ПЕРЕД первым item этого мессенджера
+    const firstEl = first.el
+    container.insertBefore(el, firstEl)
+
+    // Скрываем индивидуальные items
+    mItems.forEach(m => { m.item.el.style.display = 'none' })
+
+    groups.set(messengerId, {
+      el,
+      ids: mItems.map(m => m.id),
+      count: mItems.length,
+      messengerId,
+      color
+    })
+
+    reportHeight()
+  }
+
+  function removeGroupEl(grp) {
+    const el = grp.el
+    const h = el.offsetHeight
+    el.style.height = h + 'px'
+    el.classList.add('fade-out')
+    setTimeout(() => {
+      el.classList.remove('fade-out')
+      el.classList.add('collapsing')
+      setTimeout(() => { el.remove(); reportHeight() }, 210)
+    }, 260)
+  }
+
   function addNotification(data) {
-    // { id, title, body, fullBody, iconDataUrl, color, emoji, messengerName, messengerId, dismissMs }
     if (items.has(data.id)) {
       const old = items.get(data.id)
       clearTimeout(old.timer)
@@ -388,19 +621,20 @@
       dismissItem(firstKey, false)
     }
 
+    // v0.60.4: сохраняем флаг группировки
+    if (data.grouping !== undefined) groupingEnabled = !!data.grouping
+
     const hasFullBody = data.fullBody && data.fullBody.length > (data.body || '').length
 
     const el = document.createElement('div')
     el.className = 'notif-item'
     el.dataset.id = data.id
 
-    // Color bar
     const bar = document.createElement('div')
     bar.className = 'color-bar'
     bar.style.background = data.color || '#2AABEE'
     el.appendChild(bar)
 
-    // Avatar
     const avWrap = document.createElement('div')
     avWrap.className = 'avatar-wrap'
     avWrap.style.background = (data.color || '#2AABEE') + '33'
@@ -414,7 +648,6 @@
     }
     el.appendChild(avWrap)
 
-    // Text
     const textWrap = document.createElement('div')
     textWrap.className = 'text-wrap'
     const sender = document.createElement('div')
@@ -433,13 +666,11 @@
     bodyText.dataset.full = data.fullBody || data.body || ''
     textWrap.appendChild(bodyText)
 
-    // Подсказка: "ещё..." для длинных, "▼ действия" для всех
     const hint = document.createElement('div')
     hint.className = 'expand-hint visible'
     hint.textContent = hasFullBody ? '\u25BC ещё...' : '\u25BC действия'
     textWrap.appendChild(hint)
 
-    // Кнопки действий (видны только в expanded)
     const actionRow = document.createElement('div')
     actionRow.className = 'action-row'
 
@@ -466,7 +697,6 @@
     textWrap.appendChild(actionRow)
     el.appendChild(textWrap)
 
-    // Кнопка "Прочитано" (✓) — всегда видна при hover, рядом с крестиком
     const readBtn = document.createElement('button')
     readBtn.className = 'read-btn'
     readBtn.textContent = '\u2713'
@@ -478,7 +708,6 @@
     })
     el.appendChild(readBtn)
 
-    // Close button
     const closeBtn = document.createElement('button')
     closeBtn.className = 'close-btn'
     closeBtn.textContent = '\u00d7'
@@ -488,15 +717,11 @@
     })
     el.appendChild(closeBtn)
 
-    // Progress bar
     const progress = document.createElement('div')
     progress.className = 'progress-bar'
     progress.style.background = data.color || '#2AABEE'
     el.appendChild(progress)
 
-    // Клик на уведомление — ВСЕГДА раскрывает (кнопки действий видны)
-    // Если есть fullBody — показывает полный текст
-    // Повторный клик — сворачивает
     el.addEventListener('click', (e) => {
       toggleExpand(data, el)
       const bText = el.querySelector('.body-text')
@@ -520,18 +745,13 @@
       requestAnimationFrame(() => {
         progress.style.animation = 'shrink ' + (thisDismissMs / 1000) + 's linear forwards'
       })
-
-      // При expandedByDefault — не запускаем таймер (пауза с первой секунды)
-      if (!data.expandedByDefault) {
-        timer = setTimeout(() => dismissItem(data.id, false), thisDismissMs)
-      } else {
-        progress.style.animationPlayState = 'paused'
-      }
+      // v0.60.4: ВСЕГДА запускаем таймер, даже при expandedByDefault
+      timer = setTimeout(() => dismissItem(data.id, false), thisDismissMs)
     } else {
       progress.style.display = 'none'
     }
 
-    // Автораскрытие ПОСЛЕ настройки таймера
+    // Автораскрытие (визуально) — таймер УЖЕ запущен
     if (data.expandedByDefault) {
       el.classList.add('expanded')
       if (hasFullBody) {
@@ -542,16 +762,29 @@
       if (hintEl) hintEl.textContent = '\u25B2 свернуть'
     }
 
-    // v0.60.3: Всё состояние хранится в Map — не в closure
     items.set(data.id, {
       el, timer,
       expanded: !!data.expandedByDefault,
       remainingMs: thisDismissMs,
       startTs,
       dismissMs: thisDismissMs,
-      paused: !!data.expandedByDefault
+      paused: false,
+      messengerId: data.messengerId || '',
+      messengerName: data.messengerName || '',
+      senderName: data.title || '',
+      bodyText: data.body || '',
+      color: data.color || '#2AABEE'
     })
+
     reportHeight()
+
+    // v0.60.4: проверяем группировку
+    if (groupingEnabled && data.messengerId) {
+      // Считаем сколько items от этого мессенджера
+      let mCount = 0
+      items.forEach(item => { if (item.messengerId === data.messengerId) mCount++ })
+      if (mCount >= 2) updateGroup(data.messengerId)
+    }
   }
 
   // IPC listeners

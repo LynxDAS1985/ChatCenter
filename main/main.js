@@ -559,7 +559,8 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   }
 
   const expandedByDefault = !!settings.ribbonExpandedByDefault
-  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, senderName: senderName || title || '', chatTag: chatTag || '' }
+  const grouping = !!settings.ribbonGrouping
+  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, grouping, senderName: senderName || title || '', chatTag: chatTag || '' }
 
   // FIFO — удаляем старые из трекинга
   if (notifItems.length >= 6) {
