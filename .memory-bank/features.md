@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.59.1 (11 марта 2026)
+## Текущая версия: v0.59.2 (11 марта 2026)
 
 ---
 
@@ -91,6 +91,13 @@
 ---
 
 ## Changelog
+
+### v0.59.2 (11 марта 2026) — Реальные VK DOM-селекторы из DOM Inspector
+- **`ConvoMain__history`** — реальный класс контейнера чата VK (784 children). Добавлен первым в `CHAT_CONTAINER_SELECTORS.vk` и в `getVKLastIncomingText()`. chatObserver теперь найдёт контейнер без fallback.
+- **`.ConvoHeader__info`** — реальный селектор имени отправителя VK. Добавлен в `getActiveChatSender()` (preload) и в headerSels enrichment (App.jsx).
+- **Status stripping**: VK приклеивает "online"/"offline" к имени без пробела ("Елена Дугинаonline"). Regex strip в обоих местах: preload и enrichment.
+- **`_sidebarRe` обновлён**: Реальные VK классы sidebar — `ConvoList`, `ConvoListItem`, `MessagePreview`, `LeftAds`, `LeftMenu`.
+- **`extractMsgText()`**: Добавлен фильтр "назад" (VK пишет "три минуты назад"), секции VK UI.
 
 ### v0.59.1 (11 марта 2026) — chatObserver fallback + Path 2 возврат + DOM диагностика
 - **chatObserver fallback**: Если контейнер чата не найден за 15 сек (5 попыток) → fallback на document.body с `isSidebarNode()` фильтром (8 уровней, regex по классам + role). Логирование в Pipeline через `__CC_DIAG__`.

@@ -1523,6 +1523,8 @@ export default function App() {
               // 1. Header активного чата — расширенные селекторы (TG/MAX/Generic)
               // MAX (SvelteKit): .topbar.svelte-* → первый child div содержит имя
               var headerSels = [
+                // v0.59.2: VK реальные классы
+                '.ConvoHeader__info',
                 '.chat-info .peer-title', '.topbar .peer-title',
                 '.topbar [class*="info" i] [class*="title" i]',
                 '.topbar [class*="info" i] [class*="name" i]',
@@ -1536,6 +1538,8 @@ export default function App() {
                 var h = document.querySelector(headerSels[si]);
                 if (h) {
                   var hn = (h.textContent || '').trim();
+                  // v0.59.2: VK "Елена Дугинаonline" → чистим статус
+                  hn = hn.replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|печатает|typing)\s*$/i, '').trim();
                   if (hn && hn.length >= 2 && hn.length <= 80) { name = hn; break; }
                 }
               }
