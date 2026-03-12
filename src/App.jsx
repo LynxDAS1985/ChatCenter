@@ -316,7 +316,7 @@ function buildChatNavigateScript(url, senderName, chatTag) {
     })();`
   }
 
-  // MAX (web.max.ru) — Telegram fork, но DOM-классы могут отличаться
+  // MAX (web.max.ru) — SvelteKit, sidebar = <nav class="navigation svelte-xxx">
   if (url.includes('max.ru')) {
     return `(function() {
       try {
@@ -332,78 +332,74 @@ function buildChatNavigateScript(url, senderName, chatTag) {
           }, 300);
         }
 
-        function tryClick(el, method) {
-          var row = el.closest('.chatlist-chat') || el.closest('[class*="chatlist"]') || el.closest('a[href]') || el.closest('li') || el.closest('[data-peer-id]');
-          if (!row) row = el.parentElement && el.parentElement.closest('a, li, [class*="chat"]');
-          if (row) { row.click(); scrollDown(); return {ok:true, method:method, log:log.join(', ')}; }
-          return null;
-        }
-
         var nameLow = name.toLowerCase();
 
-        // Широкий набор селекторов для sidebar MAX
-        var selectors = [
-          '.chatlist-chat .peer-title',
-          '.peer-title',
-          '[class*="chatlist"] [class*="title"]',
-          '[class*="chatlist"] [class*="name"]',
-          '[class*="dialog"] [class*="title"]',
-          '[class*="dialog"] [class*="name"]',
-          '[class*="row"] [class*="title"]',
-          '[class*="row"] [class*="name"]',
-          '[class*="chat-item"] [class*="title"]',
-          '[class*="chat-item"] [class*="name"]',
-          'a[class*="chat"] [class*="title"]',
-          'a[class*="chat"] [class*="name"]'
-        ];
+        // Метод A: nav + a[href] — ищем ссылку в sidebar содержащую имя отправителя
+        var nav = document.querySelector('nav') || document.querySelector('[class*="navigation"]');
+        if (nav) {
+          log.push('nav=' + nav.className.slice(0,40));
+          var links = nav.querySelectorAll('a[href]');
+          log.push('links=' + links.length);
+          // samples первых 5 ссылок для диагностики
+          var samples = [];
+          for (var j = 0; j < Math.min(links.length, 5); j++) {
+            samples.push({t: links[j].textContent.trim().slice(0,30), h: links[j].getAttribute('href')});
+          }
+          log.push('samples=' + JSON.stringify(samples));
 
-        for (var s = 0; s < selectors.length; s++) {
-          var els = document.querySelectorAll(selectors[s]);
-          if (els.length === 0) continue;
-          log.push(selectors[s] + '=' + els.length);
-          // Собираем samples из первого найденного селектора
-          if (s === 0 || log.length < 5) {
-            var samples = [];
-            for (var j = 0; j < Math.min(els.length, 5); j++) samples.push(els[j].textContent.trim().slice(0,40));
-            log.push('s=' + JSON.stringify(samples));
+          // Exact match
+          for (var i = 0; i < links.length; i++) {
+            var t = links[i].textContent.trim();
+            if (t === name) { links[i].click(); scrollDown(); return {ok:true, method:'nav-link-exact', log:log.join(', ')}; }
           }
-          // Exact → icase → partial
-          for (var i = 0; i < els.length; i++) {
-            if (els[i].textContent.trim() === name) { var r = tryClick(els[i], 'exact@' + selectors[s]); if (r) return r; }
+          // Case-insensitive match
+          for (var i = 0; i < links.length; i++) {
+            var t = links[i].textContent.trim().toLowerCase();
+            if (t === nameLow) { links[i].click(); scrollDown(); return {ok:true, method:'nav-link-icase', log:log.join(', ')}; }
           }
-          for (var i = 0; i < els.length; i++) {
-            if (els[i].textContent.trim().toLowerCase() === nameLow) { var r = tryClick(els[i], 'icase@' + selectors[s]); if (r) return r; }
+          // Partial: имя содержится в тексте ссылки
+          for (var i = 0; i < links.length; i++) {
+            var t = links[i].textContent.trim();
+            if (t && name.length > 2 && t.toLowerCase().indexOf(nameLow) >= 0) {
+              links[i].click(); scrollDown();
+              return {ok:true, method:'nav-link-partial', log:log.join(', ')};
+            }
           }
-          for (var i = 0; i < els.length; i++) {
-            var t = els[i].textContent.trim();
-            if (t && name.length > 3 && (t.indexOf(name) >= 0 || name.indexOf(t) >= 0)) { var r = tryClick(els[i], 'partial@' + selectors[s]); if (r) return r; }
-          }
+        } else {
+          log.push('nav=null');
         }
 
-        // TreeWalker fallback — ищем текстовые ноды с именем
-        log.push('tree');
-        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-        var node;
-        while (node = walker.nextNode()) {
-          var txt = node.textContent.trim();
-          if (txt === name || (txt.length > 3 && txt.length < 80 && (txt.indexOf(name) >= 0 || name.indexOf(txt) >= 0) && txt.toLowerCase().indexOf(nameLow) >= 0)) {
-            var parent = node.parentElement;
-            if (parent && parent.offsetHeight > 0 && parent.offsetHeight < 80) {
-              var r = tryClick(parent, 'tree');
-              if (r) return r;
+        // Метод B: все a[href] на странице (вне nav)
+        var allLinks = document.querySelectorAll('a[href]');
+        log.push('allLinks=' + allLinks.length);
+        for (var i = 0; i < allLinks.length; i++) {
+          var t = allLinks[i].textContent.trim();
+          if (t && t.length < 80 && name.length > 2 && t.toLowerCase().indexOf(nameLow) >= 0) {
+            var href = allLinks[i].getAttribute('href') || '';
+            if (href && href !== '#' && !href.startsWith('javascript')) {
+              allLinks[i].click(); scrollDown();
+              return {ok:true, method:'any-link', log:log.join(', ')};
             }
           }
         }
 
-        // DOM диагностика для отладки
-        var sidebar = document.querySelector('[class*="chatlist"]') || document.querySelector('[class*="sidebar"]') || document.querySelector('nav');
-        log.push('sidebar=' + (sidebar ? sidebar.className.slice(0,50) : 'null'));
-        if (sidebar) {
-          var kids = sidebar.querySelectorAll('*');
-          log.push('sidebarKids=' + kids.length);
+        // Метод C: TreeWalker — ищем любой кликабельный элемент с именем
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+        var node;
+        while (node = walker.nextNode()) {
+          var txt = node.textContent.trim();
+          if (txt && txt.length > 2 && txt.length < 80 && txt.toLowerCase().indexOf(nameLow) >= 0) {
+            var el = node.parentElement;
+            if (el && el.offsetHeight > 0 && el.offsetHeight < 80) {
+              var clickTarget = el.closest('a[href]') || el.closest('li') || el.closest('[role="listitem"]') || el;
+              clickTarget.click(); scrollDown();
+              return {ok:true, method:'tree-click', log:log.join(', ')};
+            }
+          }
         }
-        log.push('bodyKids=' + document.body.children.length);
 
+        // Метод D: scroll fallback — если чат уже открыт, прокрутить вниз
+        log.push('url=' + window.location.href.slice(0,60));
         scrollDown();
         return {ok:false, method:'notFound', log:log.join(', ')};
       } catch(e) { return {ok:false, method:'error', err:e.message}; }

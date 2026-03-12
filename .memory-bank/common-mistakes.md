@@ -38,6 +38,20 @@
 
 ---
 
+## 🟡 ВАЖНОЕ: MAX sidebar DOM ≠ Telegram — нет .chatlist-chat, нет .peer-title
+
+**Симптом**: `mark-read` для MAX всегда возвращает `ok=false method=notFound titles=0`. Все 12 CSS-селекторов + TreeWalker не находят чаты в sidebar.
+
+**Причина**: MAX (SvelteKit) использует `<nav class="navigation svelte-xxx">` с 51 child-элементами. Нет `.chatlist-chat`, нет `.peer-title`, нет `[class*="chatlist"]`. Все generic-селекторы от Telegram возвращают 0.
+
+**Почему enrichment работал**: `__CC_NOTIF__` берёт имя из Notification API `data.t` (DOM не нужен). `__CC_MSG__` DOM enrichment использует **topbar** (`.topbar .headerWrapper`), не sidebar.
+
+**ПРАВИЛО**: Для MAX mark-read использовать `<nav>` + `a[href]` ссылки внутри навигации. Каждый чат = ссылка. Поиск по textContent.indexOf(senderName). НЕ использовать `.chatlist-chat`, `.peer-title` и generic Telegram-селекторы.
+
+**Решение (v0.62.4)**: Полностью переписан MAX-блок в `buildChatNavigateScript`: nav→a[href] exact/icase/partial → all a[href] → TreeWalker → scroll fallback.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: Startup ribbon — уведомления при запуске для старых сообщений
 
 ### ❌ page-title-updated и unread-count не проверяют warm-up + 10 сек недостаточно

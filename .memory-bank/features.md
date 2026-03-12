@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.62.3 (12 марта 2026)
+## Текущая версия: v0.62.4 (12 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.62.4 (12 марта 2026) — Полная переработка mark-read для MAX (nav + a[href])
+- **Новая стратегия mark-read для MAX**: Полностью переписан `buildChatNavigateScript` для MAX. Старые 12 CSS-селекторов (`.chatlist-chat`, `.peer-title` и т.д.) заменены на работу с реальной DOM-структурой MAX: `<nav>` + `a[href]` ссылки.
+- **4 метода поиска**: A) nav + a[href] exact/icase/partial → B) все a[href] на странице → C) TreeWalker + click → D) scroll fallback.
+- **Подробная диагностика**: Логирует nav.className, количество ссылок, samples первых 5 ссылок (текст + href), текущий URL.
+- **Корень проблемы**: MAX (SvelteKit) использует `<nav class="navigation svelte-xxx">` с 51 child, без `.chatlist-chat`, без `.peer-title`. Старые селекторы возвращали 0 элементов.
 
 ### v0.62.3 (12 марта 2026) — Подпись мессенджера над аватаркой + расширенная DOM-диагностика mark-read
 - **Подпись над аватаркой**: "МАКС" перенесён из text-wrap снизу → position:absolute над аватаркой слева (top:4px, left:10px). Не занимает место в потоке.
