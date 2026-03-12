@@ -1311,6 +1311,11 @@ export default function App() {
                       var tag = (opts && opts.tag) || '';
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
                       var spam = isSpamNotif(body);
+                      // v0.60.9: пустой body + реальный sender = стикер/медиа (MAX multi-emoji)
+                      if (spam === 'empty' && title && !_appTitles.test(title.trim())) {
+                        body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440';
+                        spam = '';
+                      }
                       if (spam) {
                         _logNotif('blocked', title, body, tag, icon, spam, '');
                         return;
@@ -1332,6 +1337,11 @@ export default function App() {
                         var tag = (opts && opts.tag) || '';
                         var icon = (opts && opts.icon) || (opts && opts.image) || '';
                         var spam = isSpamNotif(body);
+                        // v0.60.9: пустой body + реальный sender = стикер/медиа (MAX multi-emoji)
+                        if (spam === 'empty' && title && !_appTitles.test(title.trim())) {
+                          body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440';
+                          spam = '';
+                        }
                         if (spam) {
                           _logNotif('blocked', title, body, tag, icon, spam, '');
                           return Promise.resolve();
