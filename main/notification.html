@@ -608,17 +608,24 @@
     }, 330)
   }
 
+  // v0.60.7: мгновенное удаление для FIFO (без анимации)
+  function forceRemoveItem(id) {
+    const item = items.get(id)
+    if (!item) return
+    clearTimeout(item.timer)
+    item.el.remove()
+    items.delete(id)
+    window.notifApi.dismiss(id)
+  }
+
   function addNotification(data) {
     if (items.has(data.id)) {
-      const old = items.get(data.id)
-      clearTimeout(old.timer)
-      old.el.remove()
-      items.delete(data.id)
+      forceRemoveItem(data.id)
     }
 
     while (items.size >= MAX_ITEMS) {
       const firstKey = items.keys().next().value
-      dismissItem(firstKey, false)
+      forceRemoveItem(firstKey)
     }
 
     // v0.60.4: сохраняем флаг группировки
@@ -735,15 +742,15 @@
       }
     })
 
-    // v0.60.6: каскадное появление — задержка slideIn 120мс на каждый следующий
-    const cascadeDelay = cascadeQueue * 120
+    // v0.60.7: каскад — макс 5 слотов × 100мс, потом без задержки
+    const cascadeDelay = Math.min(cascadeQueue, 5) * 100
     if (cascadeDelay > 0) {
       el.style.animationDelay = cascadeDelay + 'ms'
-      el.style.animationFillMode = 'backwards' // держать начальное состояние до запуска
+      el.style.animationFillMode = 'backwards'
     }
     cascadeQueue++
     clearTimeout(cascadeTimer)
-    cascadeTimer = setTimeout(() => { cascadeQueue = 0 }, 800) // сброс очереди через 800мс
+    cascadeTimer = setTimeout(() => { cascadeQueue = 0 }, 600)
 
     container.appendChild(el)
 
