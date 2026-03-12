@@ -1304,6 +1304,7 @@ export default function App() {
                     if (!realIcon) realIcon = findAvatarCached(realTitle, tag);
                     return { title: realTitle, icon: realIcon };
                   }
+                  var _stickerSeq = 0;
                   var _N = window.Notification;
                   window.Notification = function(title, opts) {
                     try {
@@ -1312,8 +1313,9 @@ export default function App() {
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
                       var spam = isSpamNotif(body);
                       // v0.60.9: пустой body + реальный sender = стикер/медиа (MAX multi-emoji)
+                      // v0.61.0: уникальный суффикс (#N) чтобы дедуп не считал разные стикеры одинаковыми
                       if (spam === 'empty' && title && !_appTitles.test(title.trim())) {
-                        body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440';
+                        body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440 #' + (++_stickerSeq);
                         spam = '';
                       }
                       if (spam) {
@@ -1338,8 +1340,9 @@ export default function App() {
                         var icon = (opts && opts.icon) || (opts && opts.image) || '';
                         var spam = isSpamNotif(body);
                         // v0.60.9: пустой body + реальный sender = стикер/медиа (MAX multi-emoji)
+                        // v0.61.0: уникальный суффикс (#N) чтобы дедуп не считал разные стикеры одинаковыми
                         if (spam === 'empty' && title && !_appTitles.test(title.trim())) {
-                          body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440';
+                          body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440 #' + (++_stickerSeq);
                           spam = '';
                         }
                         if (spam) {

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.60.9 (12 марта 2026)
+## Текущая версия: v0.61.0 (12 марта 2026)
 
 ---
 
@@ -91,6 +91,9 @@
 ---
 
 ## Changelog
+
+### v0.61.0 (12 марта 2026) — Фикс dedup для стикеров: уникальный placeholder
+- **Фикс dedup стикеров**: Все стикеры получали одинаковый body `"📎 Стикер"` → дедупликация (notifDedup 5с + recentNotifs 10с) блокировала 2-й и последующие. Теперь: `"📎 Стикер #1"`, `"📎 Стикер #2"` и т.д. — уникальный счётчик `_stickerSeq` в injection коде WebView.
 
 ### v0.60.9 (12 марта 2026) — Фикс пустого body для стикеров/медиа (MAX multi-emoji)
 - **Фикс empty body sticker**: MAX отправляет `new Notification(sender, {body: ""})` для мульти-эмодзи стикеров (😇😉👍, 👋❤️‍🔥😉). `isSpamNotif()` блокировал их как "empty". Теперь: если body пустой, но title — реальный sender (не app-title), подставляется placeholder "📎 Стикер". Применяется в обоих override: `window.Notification` и `ServiceWorkerRegistration.showNotification`.
