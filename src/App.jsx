@@ -1383,10 +1383,7 @@ export default function App() {
                       var body = (opts && opts.body) || '';
                       var tag = (opts && opts.tag) || '';
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
-                      // v0.61.1: разведка — логируем все поля opts для стикеров (при пустом body)
-                      if (!body && opts) {
-                        try { console.log('__CC_NOTIF_OPTS__' + JSON.stringify({ keys: Object.keys(opts), image: opts.image || '', data: (typeof opts.data === 'string' ? opts.data : JSON.stringify(opts.data)) || '', badge: opts.badge || '', actions: opts.actions || [] })); } catch(e2) {}
-                      }
+                      // v0.61.2: разведка завершена — MAX opts: {icon, badge, body, silent}. image/data нет.
                       var spam = isSpamNotif(body);
                       // v0.61.1: пустой body → извлекаем стикер/эмодзи из DOM
                       if (spam === 'empty' && title && !_appTitles.test(title.trim())) {
