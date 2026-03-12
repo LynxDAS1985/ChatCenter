@@ -674,19 +674,24 @@ export default function App() {
   // ── "Прочитано" из ribbon — клик по чату в WebView чтобы мессенджер пометил прочитанным (v0.62.0) ──
   useEffect(() => {
     return window.api.on('notify:mark-read', ({ messengerId, senderName, chatTag }) => {
-      console.log('[MarkRead] notify:mark-read', { messengerId, senderName, chatTag })
+      traceNotif('mark-read', 'info', messengerId, senderName || '', `sender="${(senderName||'').slice(0,30)}" tag=${!!chatTag}`)
       if (!messengerId) return
       const el = webviewRefs.current[messengerId]
-      if (!el) return
+      if (!el) {
+        traceNotif('mark-read', 'warn', messengerId, senderName || '', 'webview ref не найден')
+        return
+      }
       const url = el.getURL?.() || ''
       const script = buildChatNavigateScript(url, senderName, chatTag)
       if (script) {
         el.executeJavaScript(script).then(result => {
           const ok = result === true || (result && result.ok)
-          console.log(`[MarkRead] ok=${ok} method=${result?.method || ''} log=${result?.log || ''}`)
-        }).catch(err => { console.log('[MarkRead] error:', err.message) })
+          traceNotif('mark-read', ok ? 'pass' : 'warn', messengerId, senderName || '', `ok=${ok} method=${result?.method || ''} ${result?.log || ''}`)
+        }).catch(err => {
+          traceNotif('mark-read', 'warn', messengerId, senderName || '', `ошибка: ${err.message}`)
+        })
       } else {
-        console.log(`[MarkRead] no script for url=${url.slice(0,50)}`)
+        traceNotif('mark-read', 'warn', messengerId, senderName || '', `нет скрипта для url=${url.slice(0,50)}`)
       }
     })
   }, [])
