@@ -60,11 +60,13 @@
 
 **Симптом**: Нажал "Прочитано" в ribbon при свёрнутом окне — не помечает. Открыл окно — помечает.
 
-**Причина**: Chromium throttles WebView в свёрнутом окне. `executeJavaScript()` выполняется, но DOM-операции (клик, scroll) не обрабатываются до восстановления окна. `document.hidden = true` в renderer.
+**Причина**: Chromium throttles WebView в свёрнутом окне. `executeJavaScript()` выполняется и возвращает `ok=true`, но DOM-клик НЕ обрабатывается мессенджером до восстановления окна.
 
-**ПРАВИЛО**: Перед `executeJavaScript` для mark-read проверять `document.hidden`. Если hidden → сохранить в очередь `pendingMarkReadsRef`. При `visibilitychange` (visible) → выполнить из очереди с задержкой 500мс.
+**ЛОВУШКА**: `document.hidden` в Electron renderer = `false` даже при минимизированном окне! Нельзя использовать `document.hidden` для определения свёрнутого окна.
 
-**Решение (v0.62.6)**: `pendingMarkReadsRef` очередь + `visibilitychange` listener.
+**ПРАВИЛО**: Проверять `mainWindow.isMinimized()` в main.js (не в renderer). Если свёрнуто → невидимо восстановить (`setOpacity(0)` + `restore()`), выполнить mark-read, через 1.2сек свернуть обратно (`minimize()` + `setOpacity(1)`).
+
+**Решение (v0.62.7)**: main.js `notif:mark-read` handler → `isMinimized()` check → invisible restore/minimize cycle.
 
 ---
 

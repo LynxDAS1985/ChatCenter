@@ -606,13 +606,27 @@ function setupNotifIPC() {
   ipcMain.on('notif:mark-read', (_event, id) => {
     const item = notifItems.find(n => n.id === id)
     notifItems = notifItems.filter(n => n.id !== id)
-    // Отправляем в renderer чтобы он мог пометить чат прочитанным в WebView
-    if (mainWindow && !mainWindow.isDestroyed() && item?.messengerId) {
-      mainWindow.webContents.send('notify:mark-read', {
-        messengerId: item.messengerId,
-        senderName: item.senderName || item.title || '',
-        chatTag: item.chatTag || '',
-      })
+    if (!mainWindow || mainWindow.isDestroyed() || !item?.messengerId) return
+    const payload = {
+      messengerId: item.messengerId,
+      senderName: item.senderName || item.title || '',
+      chatTag: item.chatTag || '',
+    }
+    // v0.62.7: если окно свёрнуто — невидимо восстановить, выполнить mark-read, свернуть обратно
+    if (mainWindow.isMinimized()) {
+      mainWindow.setOpacity(0)
+      mainWindow.restore()
+      setTimeout(() => {
+        mainWindow.webContents.send('notify:mark-read', payload)
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.minimize()
+            mainWindow.setOpacity(1)
+          }
+        }, 1200)
+      }, 400)
+    } else {
+      mainWindow.webContents.send('notify:mark-read', payload)
     }
   })
 

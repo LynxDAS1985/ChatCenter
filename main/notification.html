@@ -670,8 +670,8 @@
     textWrap.appendChild(bodyText)
 
     const hint = document.createElement('div')
-    hint.className = 'expand-hint visible'
-    hint.textContent = hasFullBody ? '\u25BC ещё...' : '\u25BC действия'
+    hint.className = 'expand-hint'
+    hint.style.display = 'none'
     textWrap.appendChild(hint)
 
     const actionRow = document.createElement('div')
@@ -728,10 +728,8 @@
       const hintEl = el.querySelector('.expand-hint')
       if (el.classList.contains('expanded')) {
         if (hasFullBody && bText) bText.textContent = bText.dataset.full
-        if (hintEl) hintEl.textContent = '\u25B2 свернуть'
       } else {
         if (hasFullBody && bText) bText.textContent = bText.dataset.short
-        if (hintEl) hintEl.textContent = hasFullBody ? '\u25BC ещё...' : '\u25BC действия'
       }
     })
 
