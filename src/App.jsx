@@ -320,26 +320,63 @@ function buildChatNavigateScript(url, senderName, chatTag) {
   if (url.includes('max.ru')) {
     return `(function() {
       try {
+        var log = [];
         var name = ${nameJson};
-        if (!name) return false;
+        log.push('name=' + JSON.stringify(name));
+        if (!name) return {ok:false, method:'noName', log:log.join(', ')};
+
+        // Функция: после клика по чату — скроллить историю вниз чтобы сбросить unread
+        function scrollDown() {
+          setTimeout(function() {
+            var h = document.querySelector('.history') || document.querySelector('[class*="history"]') || document.querySelector('[class*="messages-container"]');
+            if (h) { h.scrollTop = h.scrollHeight; log.push('scrolled'); }
+          }, 300);
+        }
+
         // MAX использует те же классы что Telegram Web K
         var titles = document.querySelectorAll('.chatlist-chat .peer-title');
+        log.push('titles=' + titles.length);
+        var samples = [];
+        for (var i = 0; i < Math.min(titles.length, 5); i++) samples.push(titles[i].textContent.trim().slice(0,40));
+        log.push('samples=' + JSON.stringify(samples));
+
+        // 1) Exact match
         for (var i = 0; i < titles.length; i++) {
           if (titles[i].textContent.trim() === name) {
             var chat = titles[i].closest('.chatlist-chat');
-            if (chat) { chat.click(); return true; }
+            if (chat) { chat.click(); scrollDown(); return {ok:true, method:'exact', log:log.join(', ')}; }
           }
         }
-        // Fallback: generic селекторы
+        // 2) Case-insensitive
+        var nameLow = name.toLowerCase();
+        for (var i = 0; i < titles.length; i++) {
+          if (titles[i].textContent.trim().toLowerCase() === nameLow) {
+            var chat = titles[i].closest('.chatlist-chat');
+            if (chat) { chat.click(); scrollDown(); return {ok:true, method:'icase', log:log.join(', ')}; }
+          }
+        }
+        // 3) Partial/startsWith match (для длинных имён)
+        for (var i = 0; i < titles.length; i++) {
+          var t = titles[i].textContent.trim();
+          if (t && name.length > 3 && (t.indexOf(name) >= 0 || name.indexOf(t) >= 0 || t.toLowerCase().startsWith(nameLow) || nameLow.startsWith(t.toLowerCase()))) {
+            var chat = titles[i].closest('.chatlist-chat');
+            if (chat) { chat.click(); scrollDown(); return {ok:true, method:'partial', matched:t.slice(0,40), log:log.join(', ')}; }
+          }
+        }
+        // 4) Fallback: generic селекторы
         var els = document.querySelectorAll('[class*="chatlist"] [class*="title"], [class*="dialog"] [class*="name"], [class*="peer"] [class*="title"]');
+        log.push('fallback=' + els.length);
         for (var i = 0; i < els.length; i++) {
-          if (els[i].textContent.trim() === name) {
-            var row = els[i].closest('[class*="chat"], [class*="dialog"], a, li');
-            if (row) { row.click(); return true; }
+          var t = els[i].textContent.trim();
+          if (t === name || (t && name.length > 3 && (t.indexOf(name) >= 0 || name.indexOf(t) >= 0))) {
+            var row = els[i].closest('.chatlist-chat') || els[i].closest('[class*="chat"], [class*="dialog"], a, li');
+            if (row) { row.click(); scrollDown(); return {ok:true, method:'generic', log:log.join(', ')}; }
           }
         }
-        return false;
-      } catch(e) { return false; }
+        // 5) Если ничего не нашли — попробуем скроллить вниз текущий чат (может он уже открыт)
+        scrollDown();
+        return {ok:false, method:'notFound', log:log.join(', ')};
+      } catch(e) { return {ok:false, method:'error', err:e.message}; }
     })();`
   }
 
@@ -646,8 +683,10 @@ export default function App() {
       if (script) {
         el.executeJavaScript(script).then(result => {
           const ok = result === true || (result && result.ok)
-          console.log(`[MarkRead] ok=${ok} method=${result?.method || ''}`)
+          console.log(`[MarkRead] ok=${ok} method=${result?.method || ''} log=${result?.log || ''}`)
         }).catch(err => { console.log('[MarkRead] error:', err.message) })
+      } else {
+        console.log(`[MarkRead] no script for url=${url.slice(0,50)}`)
       }
     })
   }, [])
