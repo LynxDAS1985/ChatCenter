@@ -1283,7 +1283,7 @@ export default function App() {
                   var _statusEnd = /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i;
                   var _sysText = /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i;
                   function isSpamNotif(body) {
-                    if (!body || body.length < 2) return 'empty';
+                    if (!body || !body.trim()) return 'empty';
                     var t = body.trim();
                     if (_spamBody.test(t)) return 'system';
                     if (_outgoing.test(t)) return 'outgoing';
