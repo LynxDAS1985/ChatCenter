@@ -318,8 +318,10 @@
   // v0.60.4: группировка — { messengerId → { el, ids: [id,...], count, lastBody, color } }
   const groups = new Map()
   let groupingEnabled = false
-
   let hoveredItemId = null
+  // v0.60.6: каскадное появление — очередь задержки
+  let cascadeQueue = 0
+  let cascadeTimer = null
 
   function calcHeight() {
     let h = 0
@@ -421,9 +423,9 @@
     el.style.opacity = '0'
     el.style.transform = 'translateX(80px) scale(0.95)'
 
-    // Этап 2: коллапс высоты (200мс) — opacity уже 0, мигания нет
+    // Этап 2: пауза 80мс → коллапс высоты 180мс (v0.60.6: естественная задержка)
     setTimeout(() => {
-      el.style.transition = 'height 200ms ease-in-out, min-height 200ms ease-in-out, margin-bottom 200ms ease-in-out'
+      el.style.transition = 'height 180ms ease-in-out, min-height 180ms ease-in-out, margin-bottom 180ms ease-in-out'
       el.style.height = '0'
       el.style.minHeight = '0'
       el.style.marginBottom = '-4px'
@@ -435,8 +437,8 @@
         items.delete(id)
         if (groupingEnabled) updateGroup(item.messengerId)
         reportHeight()
-      }, 210)
-    }, 260)
+      }, 190)
+    }, 330)
   }
 
   function toggleExpand(data, el) {
@@ -598,12 +600,12 @@
     el.style.opacity = '0'
     el.style.transform = 'translateX(80px) scale(0.95)'
     setTimeout(() => {
-      el.style.transition = 'height 200ms ease-in-out, min-height 200ms ease-in-out, margin-bottom 200ms ease-in-out'
+      el.style.transition = 'height 180ms ease-in-out, min-height 180ms ease-in-out, margin-bottom 180ms ease-in-out'
       el.style.height = '0'
       el.style.minHeight = '0'
       el.style.marginBottom = '-4px'
-      setTimeout(() => { el.remove(); reportHeight() }, 210)
-    }, 260)
+      setTimeout(() => { el.remove(); reportHeight() }, 190)
+    }, 330)
   }
 
   function addNotification(data) {
@@ -732,6 +734,16 @@
         if (hintEl) hintEl.textContent = hasFullBody ? '\u25BC ещё...' : '\u25BC действия'
       }
     })
+
+    // v0.60.6: каскадное появление — задержка slideIn 120мс на каждый следующий
+    const cascadeDelay = cascadeQueue * 120
+    if (cascadeDelay > 0) {
+      el.style.animationDelay = cascadeDelay + 'ms'
+      el.style.animationFillMode = 'backwards' // держать начальное состояние до запуска
+    }
+    cascadeQueue++
+    clearTimeout(cascadeTimer)
+    cascadeTimer = setTimeout(() => { cascadeQueue = 0 }, 800) // сброс очереди через 800мс
 
     container.appendChild(el)
 
