@@ -1308,26 +1308,34 @@ export default function App() {
                     return { title: realTitle, icon: realIcon };
                   }
                   var _stickerSeq = 0;
-                  // v0.61.1: извлечение содержимого стикера/медиа из DOM
+                  // v0.61.2: извлечение содержимого стикера/медиа из DOM + диагностика
+                  // Ищет эмодзи или img в последних сообщениях контейнера чата
                   function _extractStickerFromDOM() {
                     try {
-                      // Ищем последнее сообщение в чате (MAX/Telegram/generic)
-                      var containers = document.querySelectorAll('[class*="history" i], [class*="messages-container" i], [class*="chat-messages" i], [class*="message-list" i], #message-list');
+                      // Ищем контейнер чата: MAX = .history, TG = messages-container и т.д.
+                      var containers = document.querySelectorAll('.history, [class*="history" i], [class*="messages-container" i], [class*="chat-messages" i], [class*="message-list" i], #message-list');
                       var container = null;
                       for (var ci = 0; ci < containers.length; ci++) {
                         if (containers[ci].children.length > 3) { container = containers[ci]; break; }
                       }
-                      if (!container) return null;
-                      // Берём последние 3 элемента (стикер мог быть не самым последним)
+                      if (!container) {
+                        console.log('__CC_STICKER_DBG__' + JSON.stringify({ err: 'no container', tried: containers.length }));
+                        return null;
+                      }
+                      // Берём последние 5 элементов (DOM может быть не полностью синхронизирован)
                       var msgs = container.children;
-                      for (var mi = msgs.length - 1; mi >= Math.max(0, msgs.length - 3); mi--) {
+                      var lastMsgInfo = [];
+                      for (var mi = msgs.length - 1; mi >= Math.max(0, msgs.length - 5); mi--) {
                         var msg = msgs[mi];
-                        // 1. Ищем крупные эмодзи (emoji-стикер): элементы с большим шрифтом
+                        var msgClasses = msg.className || '';
+                        var msgHTML = msg.innerHTML || '';
+                        // Собираем диагностику для отладки
+                        lastMsgInfo.push({ cls: msgClasses.slice(0, 60), len: msgHTML.length, tag: msg.tagName });
+                        // 1. Ищем крупные эмодзи: элементы с emoji/sticker классами
                         var emojiEls = msg.querySelectorAll('[class*="emoji" i], [class*="sticker" i], [class*="big" i]');
                         for (var ei = 0; ei < emojiEls.length; ei++) {
                           var eTxt = (emojiEls[ei].textContent || '').trim();
-                          // Проверяем что текст состоит ТОЛЬКО из эмодзи (Unicode ranges)
-                          if (eTxt && eTxt.length <= 20 && /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\s]+$/u.test(eTxt)) {
+                          if (eTxt && eTxt.length <= 30 && !/[a-zA-Zа-яА-Я0-9]/.test(eTxt)) {
                             return { type: 'emoji', content: eTxt };
                           }
                         }
@@ -1335,29 +1343,38 @@ export default function App() {
                         var imgs = msg.querySelectorAll('img[src]');
                         for (var ii = imgs.length - 1; ii >= 0; ii--) {
                           var imgSrc = imgs[ii].src || '';
-                          var imgW = imgs[ii].naturalWidth || imgs[ii].width || 0;
-                          // Стикер обычно > 50px и не аватарка (< 50px)
-                          if (imgW > 50 && (imgSrc.includes('sticker') || imgSrc.includes('animation') || imgSrc.includes('image'))) {
-                            return { type: 'image', content: imgSrc };
-                          }
-                          // Fallback: любая картинка > 80px (не аватар)
-                          if (imgW > 80 && !imgSrc.includes('avatar') && !imgSrc.includes('photo') && !imgSrc.includes('sqr_')) {
+                          var imgW = imgs[ii].naturalWidth || imgs[ii].width || parseInt(imgs[ii].style.width) || 0;
+                          var imgH = imgs[ii].naturalHeight || imgs[ii].height || parseInt(imgs[ii].style.height) || 0;
+                          // Стикер: > 50px, не аватарка sender'а (sqr_ = аватарка MAX)
+                          if ((imgW > 50 || imgH > 50) && !imgSrc.includes('sqr_') && !imgSrc.includes('avatar')) {
                             return { type: 'image', content: imgSrc };
                           }
                         }
-                        // 3. Lottie/видео стикеры (tgs, webm)
-                        var videos = msg.querySelectorAll('video[src], canvas');
-                        if (videos.length > 0) return { type: 'animated', content: null };
-                        // 4. Fallback: текст последнего сообщения (может быть эмодзи без спец-класса)
-                        var textEls = msg.querySelectorAll('[class*="text" i], [class*="content" i], p, span');
+                        // 3. Lottie/видео стикеры (tgs, webm, canvas-анимация)
+                        var videos = msg.querySelectorAll('video, canvas, [class*="lottie" i], [class*="anim" i]');
+                        if (videos.length > 0) {
+                          // Проверяем canvas > 40px (не мелкие UI-элементы)
+                          for (var vi = 0; vi < videos.length; vi++) {
+                            var vW = videos[vi].width || videos[vi].clientWidth || 0;
+                            if (videos[vi].tagName === 'CANVAS' && vW < 40) continue;
+                            return { type: 'animated', content: null };
+                          }
+                        }
+                        // 4. Fallback: текст без букв/цифр = эмодзи (широкий regex)
+                        var textEls = msg.querySelectorAll('[class*="text" i], [class*="content" i], [class*="body" i], p, span');
                         for (var ti = textEls.length - 1; ti >= 0; ti--) {
                           var t = (textEls[ti].textContent || '').trim();
-                          if (t && t.length <= 20 && /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\s]+$/u.test(t)) {
+                          // Текст <= 30 символов, без букв и цифр = чистые эмодзи
+                          if (t && t.length >= 1 && t.length <= 30 && !/[a-zA-Zа-яА-Я0-9]/.test(t)) {
                             return { type: 'emoji', content: t };
                           }
                         }
                       }
-                    } catch(e) {}
+                      // Диагностика: контейнер найден, но стикер не извлечён
+                      console.log('__CC_STICKER_DBG__' + JSON.stringify({ container: container.className.slice(0, 40), children: msgs.length, last: lastMsgInfo }));
+                    } catch(e) {
+                      console.log('__CC_STICKER_DBG__' + JSON.stringify({ err: String(e).slice(0, 100) }));
+                    }
                     return null;
                   }
                   var _N = window.Notification;
