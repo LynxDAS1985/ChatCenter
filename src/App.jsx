@@ -1015,10 +1015,13 @@ export default function App() {
       const notifTitle = senderName
         ? `${mInfo?.name || 'ЦентрЧатов'} — ${senderName}`
         : (mInfo?.name || 'ЦентрЧатов')
+      // v0.61.1: убираем суффикс #N для отображения (dedup уже прошёл)
+      // Покрывает: "📎 Стикер #3", "🖼 Картинка #2", "🎬 Анимация #1", "😇😉👍 #4"
+      const displayText = text.replace(/ #\d+$/, '')
       window.api.invoke('app:custom-notify', {
         title: extra?.senderName || '',
-        body: text.length > 100 ? text.slice(0, 97) + '…' : text,
-        fullBody: text.length > 100 ? text : '', // полный текст если обрезан
+        body: displayText.length > 100 ? displayText.slice(0, 97) + '…' : displayText,
+        fullBody: displayText.length > 100 ? displayText : '', // полный текст если обрезан
         iconUrl: extra?.iconUrl || undefined,
         iconDataUrl: extra?.iconDataUrl || undefined,
         color: mInfo?.color || '#2AABEE',
@@ -1034,7 +1037,7 @@ export default function App() {
     }
 
     // Превью сообщения в бейдже вкладки (5 секунд)
-    const previewText = text.slice(0, 32) + (text.length > 32 ? '…' : '')
+    const previewText = displayText.slice(0, 32) + (displayText.length > 32 ? '…' : '')
     setMessagePreview(prev => ({ ...prev, [messengerId]: previewText }))
     clearTimeout(previewTimers.current[messengerId])
     previewTimers.current[messengerId] = setTimeout(() => {
@@ -1305,17 +1308,81 @@ export default function App() {
                     return { title: realTitle, icon: realIcon };
                   }
                   var _stickerSeq = 0;
+                  // v0.61.1: извлечение содержимого стикера/медиа из DOM
+                  function _extractStickerFromDOM() {
+                    try {
+                      // Ищем последнее сообщение в чате (MAX/Telegram/generic)
+                      var containers = document.querySelectorAll('[class*="history" i], [class*="messages-container" i], [class*="chat-messages" i], [class*="message-list" i], #message-list');
+                      var container = null;
+                      for (var ci = 0; ci < containers.length; ci++) {
+                        if (containers[ci].children.length > 3) { container = containers[ci]; break; }
+                      }
+                      if (!container) return null;
+                      // Берём последние 3 элемента (стикер мог быть не самым последним)
+                      var msgs = container.children;
+                      for (var mi = msgs.length - 1; mi >= Math.max(0, msgs.length - 3); mi--) {
+                        var msg = msgs[mi];
+                        // 1. Ищем крупные эмодзи (emoji-стикер): элементы с большим шрифтом
+                        var emojiEls = msg.querySelectorAll('[class*="emoji" i], [class*="sticker" i], [class*="big" i]');
+                        for (var ei = 0; ei < emojiEls.length; ei++) {
+                          var eTxt = (emojiEls[ei].textContent || '').trim();
+                          // Проверяем что текст состоит ТОЛЬКО из эмодзи (Unicode ranges)
+                          if (eTxt && eTxt.length <= 20 && /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\s]+$/u.test(eTxt)) {
+                            return { type: 'emoji', content: eTxt };
+                          }
+                        }
+                        // 2. Ищем стикер-картинку
+                        var imgs = msg.querySelectorAll('img[src]');
+                        for (var ii = imgs.length - 1; ii >= 0; ii--) {
+                          var imgSrc = imgs[ii].src || '';
+                          var imgW = imgs[ii].naturalWidth || imgs[ii].width || 0;
+                          // Стикер обычно > 50px и не аватарка (< 50px)
+                          if (imgW > 50 && (imgSrc.includes('sticker') || imgSrc.includes('animation') || imgSrc.includes('image'))) {
+                            return { type: 'image', content: imgSrc };
+                          }
+                          // Fallback: любая картинка > 80px (не аватар)
+                          if (imgW > 80 && !imgSrc.includes('avatar') && !imgSrc.includes('photo') && !imgSrc.includes('sqr_')) {
+                            return { type: 'image', content: imgSrc };
+                          }
+                        }
+                        // 3. Lottie/видео стикеры (tgs, webm)
+                        var videos = msg.querySelectorAll('video[src], canvas');
+                        if (videos.length > 0) return { type: 'animated', content: null };
+                        // 4. Fallback: текст последнего сообщения (может быть эмодзи без спец-класса)
+                        var textEls = msg.querySelectorAll('[class*="text" i], [class*="content" i], p, span');
+                        for (var ti = textEls.length - 1; ti >= 0; ti--) {
+                          var t = (textEls[ti].textContent || '').trim();
+                          if (t && t.length <= 20 && /^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\s]+$/u.test(t)) {
+                            return { type: 'emoji', content: t };
+                          }
+                        }
+                      }
+                    } catch(e) {}
+                    return null;
+                  }
                   var _N = window.Notification;
                   window.Notification = function(title, opts) {
                     try {
                       var body = (opts && opts.body) || '';
                       var tag = (opts && opts.tag) || '';
                       var icon = (opts && opts.icon) || (opts && opts.image) || '';
+                      // v0.61.1: разведка — логируем все поля opts для стикеров (при пустом body)
+                      if (!body && opts) {
+                        try { console.log('__CC_NOTIF_OPTS__' + JSON.stringify({ keys: Object.keys(opts), image: opts.image || '', data: (typeof opts.data === 'string' ? opts.data : JSON.stringify(opts.data)) || '', badge: opts.badge || '', actions: opts.actions || [] })); } catch(e2) {}
+                      }
                       var spam = isSpamNotif(body);
-                      // v0.60.9: пустой body + реальный sender = стикер/медиа (MAX multi-emoji)
-                      // v0.61.0: уникальный суффикс (#N) чтобы дедуп не считал разные стикеры одинаковыми
+                      // v0.61.1: пустой body → извлекаем стикер/эмодзи из DOM
                       if (spam === 'empty' && title && !_appTitles.test(title.trim())) {
-                        body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440 #' + (++_stickerSeq);
+                        var sticker = _extractStickerFromDOM();
+                        if (sticker && sticker.type === 'emoji' && sticker.content) {
+                          body = sticker.content + ' #' + (++_stickerSeq);
+                        } else if (sticker && sticker.type === 'image' && sticker.content) {
+                          body = '\u{0001F5BC} \u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0430 #' + (++_stickerSeq);
+                        } else if (sticker && sticker.type === 'animated') {
+                          body = '\u{0001F3AC} \u0410\u043D\u0438\u043C\u0430\u0446\u0438\u044F #' + (++_stickerSeq);
+                        } else {
+                          body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440 #' + (++_stickerSeq);
+                        }
                         spam = '';
                       }
                       if (spam) {
@@ -1338,11 +1405,23 @@ export default function App() {
                         var body = (opts && opts.body) || '';
                         var tag = (opts && opts.tag) || '';
                         var icon = (opts && opts.icon) || (opts && opts.image) || '';
+                        // v0.61.1: разведка — логируем все поля opts для стикеров (при пустом body)
+                        if (!body && opts) {
+                          try { console.log('__CC_NOTIF_OPTS__' + JSON.stringify({ keys: Object.keys(opts), image: opts.image || '', data: (typeof opts.data === 'string' ? opts.data : JSON.stringify(opts.data)) || '', badge: opts.badge || '', actions: opts.actions || [] })); } catch(e2) {}
+                        }
                         var spam = isSpamNotif(body);
-                        // v0.60.9: пустой body + реальный sender = стикер/медиа (MAX multi-emoji)
-                        // v0.61.0: уникальный суффикс (#N) чтобы дедуп не считал разные стикеры одинаковыми
+                        // v0.61.1: пустой body → извлекаем стикер/эмодзи из DOM
                         if (spam === 'empty' && title && !_appTitles.test(title.trim())) {
-                          body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440 #' + (++_stickerSeq);
+                          var sticker = _extractStickerFromDOM();
+                          if (sticker && sticker.type === 'emoji' && sticker.content) {
+                            body = sticker.content + ' #' + (++_stickerSeq);
+                          } else if (sticker && sticker.type === 'image' && sticker.content) {
+                            body = '\u{0001F5BC} \u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0430 #' + (++_stickerSeq);
+                          } else if (sticker && sticker.type === 'animated') {
+                            body = '\u{0001F3AC} \u0410\u043D\u0438\u043C\u0430\u0446\u0438\u044F #' + (++_stickerSeq);
+                          } else {
+                            body = '\u{0001F4CE} \u0421\u0442\u0438\u043A\u0435\u0440 #' + (++_stickerSeq);
+                          }
                           spam = '';
                         }
                         if (spam) {
