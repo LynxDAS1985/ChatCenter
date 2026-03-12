@@ -642,9 +642,12 @@ export default function App() {
         const prev_count = prev[id] || 0
         if (count > prev_count && settingsRef.current.soundEnabled !== false) {
           const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[id]
-          if (!messengerMuted) {
+          // v0.62.5: дедупликация звука — если __CC_NOTIF__ уже сыграл звук <3сек назад, пропускаем
+          const lastSnd = lastSoundTsRef.current[id] || 0
+          if (!messengerMuted && Date.now() - lastSnd > 3000) {
             const m = messengersRef.current.find(x => x.id === id)
             playNotificationSound(m?.color)
+            lastSoundTsRef.current[id] = Date.now()
           }
         }
         return { ...prev, [id]: count }
@@ -1021,6 +1024,7 @@ export default function App() {
   // ── Дедупликация уведомлений (text+messengerId → timestamp) ────────────────
   const recentNotifsRef = useRef(new Map()) // key → timestamp
   const lastRibbonTsRef = useRef({}) // { [messengerId]: timestamp } — когда последний раз показали ribbon
+  const lastSoundTsRef = useRef({}) // { [messengerId]: timestamp } — дедупликация звука между __CC_NOTIF__ и unread-count paths
   // v0.60.0 Решение #2: sender-based dedup — если __CC_NOTIF__ уже прошёл для sender,
   // блокируем __CC_MSG__ от того же sender в течение 3 сек (даже если текст другой)
   const notifSenderTsRef = useRef({}) // { [messengerId + ':' + senderName]: timestamp }
@@ -1093,6 +1097,7 @@ export default function App() {
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
     if (settingsRef.current.soundEnabled !== false && soundOn) {
       playNotificationSound(mInfo?.color)
+      lastSoundTsRef.current[messengerId] = Date.now()
       traceNotif('sound', 'pass', messengerId, text, 'звук воспроизведён')
     } else {
       traceNotif('sound', 'block', messengerId, text, `global=${settingsRef.current.soundEnabled !== false} muted=${messengerMuted} perMsg=${mNotifs.sound}`)
@@ -1581,14 +1586,13 @@ export default function App() {
               const muted = !!(s.mutedMessengers || {})[messengerId]
               const sndOn = mn.sound !== undefined ? mn.sound : !muted
               const ribOn = mn.ribbon !== undefined ? mn.ribbon : true
-              if (s.soundEnabled !== false && sndOn) {
+              // v0.62.5: дедупликация звука — если __CC_NOTIF__ уже сыграл звук <3сек назад, пропускаем
+              const lastSnd = lastSoundTsRef.current[messengerId] || 0
+              if (s.soundEnabled !== false && sndOn && Date.now() - lastSnd > 3000) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
+                lastSoundTsRef.current[messengerId] = Date.now()
               }
-              // Fallback ribbon "N непрочитанных" ОТКЛЮЧЁН (v0.51.0):
-              // Показывал бесполезный текст без имени отправителя.
-              // __CC_NOTIF__ — основной путь для ribbon с именем, аватаркой и текстом.
-              // Звук выше остаётся — он полезен как быстрый сигнал.
             }
             return { ...prev, [messengerId]: count }
           })
@@ -1621,11 +1625,13 @@ export default function App() {
               const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
               const sndOn = mn.sound !== undefined ? mn.sound : !muted
-              if (s.soundEnabled !== false && sndOn) {
+              // v0.62.5: дедупликация звука — если __CC_NOTIF__ уже сыграл звук <3сек назад, пропускаем
+              const lastSnd2 = lastSoundTsRef.current[messengerId] || 0
+              if (s.soundEnabled !== false && sndOn && Date.now() - lastSnd2 > 3000) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
+                lastSoundTsRef.current[messengerId] = Date.now()
               }
-              // Fallback ribbon "N непрочитанных" ОТКЛЮЧЁН (v0.51.0) — аналогично page-title-updated
             }
             return { ...prev, [messengerId]: count }
           })

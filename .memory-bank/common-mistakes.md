@@ -1,5 +1,23 @@
 # Типичные ошибки — ChatCenter
 
+## 🟡 ВАЖНОЕ: Двойной звук — 4 пути воспроизведения без дедупликации
+
+**Симптом**: При получении сообщения играются два звука с разницей ~1 секунда. Оба от нашей программы (не от мессенджера — его Audio подавлен).
+
+**Причина**: В App.jsx есть **4 независимых места** вызова `playNotificationSound()`:
+1. `__CC_NOTIF__` handler (основной, через Notification API перехват)
+2. `messenger:badge` IPC (от ChatMonitor badge update)
+3. `page-title-updated` event (unread count в заголовке WebView)
+4. `unread-count` IPC (от monitor preload)
+
+Когда приходит сообщение, `__CC_NOTIF__` срабатывает первым (синхронно из console-message). Через ~0.5-1сек WebView обновляет title/badge → срабатывает второй path → второй звук.
+
+**ПРАВИЛО**: Все пути воспроизведения звука ДОЛЖНЫ проверять `lastSoundTsRef` — если для этого мессенджера звук уже играл <3сек назад → пропускать.
+
+**Решение (v0.62.5)**: `lastSoundTsRef = useRef({})` — `{[messengerId]: timestamp}`. Все 4 места проверяют `Date.now() - lastSoundTsRef.current[id] > 3000` перед воспроизведением.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: toDataUrl зависание в executeJavaScript injection
 
 ### ❌ console.log внутри toDataUrl callback → Pipeline пуст, нет звука/ribbon
