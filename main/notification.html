@@ -47,7 +47,7 @@
     display: flex;
     justify-content: flex-start;
     gap: 6px;
-    margin-left: -54px;
+    margin-left: 0;
     max-height: 0;
     overflow: hidden;
     transition: max-height 200ms ease-out, margin-top 200ms ease-out, opacity 200ms ease-out;
@@ -238,6 +238,22 @@
   }
   .action-btn.go-chat:hover {
     background: rgba(42,171,238,0.25);
+  }
+  /* v0.62.8: эффект перехода в чат */
+  @keyframes goChatPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(42,171,238,0.5); }
+    50%  { box-shadow: 0 0 12px 4px rgba(42,171,238,0.3); }
+    100% { box-shadow: 0 0 0 0 rgba(42,171,238,0); }
+  }
+  @keyframes goChatFlash {
+    0%   { background: rgba(42,171,238,0.15); }
+    40%  { background: rgba(42,171,238,0.5); color: #fff; }
+    100% { background: rgba(42,171,238,0.5); color: #fff; }
+  }
+  /* v0.62.8: плавный slide-left dismiss после "Перейти к чату" */
+  @keyframes goSlideLeft {
+    0%   { transform: translateX(0); opacity: 1; }
+    100% { transform: translateX(-120px); opacity: 0; }
   }
   .action-btn.mark-read {
     background: rgba(34,197,94,0.12);
@@ -683,7 +699,47 @@
     goBtn.addEventListener('click', (e) => {
       e.stopPropagation()
       window.notifApi.click(data.id)
-      dismissItem(data.id, false)
+      // v0.62.8: красивый эффект перехода — пульс + flash + slide
+      goBtn.style.pointerEvents = 'none'
+      goBtn.textContent = '✓ Переход...'
+      goBtn.style.animation = 'goChatPulse 400ms ease-out, goChatFlash 400ms ease-out forwards'
+      goBtn.style.background = 'rgba(42,171,238,0.5)'
+      goBtn.style.color = '#fff'
+      goBtn.style.borderColor = 'rgba(42,171,238,0.6)'
+      // Через 500мс — slide-left dismiss всей карточки
+      setTimeout(() => {
+        const item = items.get(data.id)
+        if (!item) return
+        const el = item.el
+        const h = el.offsetHeight
+        el.style.animation = 'none'
+        el.style.opacity = '1'
+        el.style.transform = 'translateX(0) scale(1)'
+        el.style.height = h + 'px'
+        el.style.overflow = 'hidden'
+        el.style.pointerEvents = 'none'
+        void el.offsetHeight
+        // Slide влево (в сторону чата) вместо обычного slide вправо
+        el.style.transition = 'opacity 300ms ease-in, transform 300ms ease-in'
+        el.style.opacity = '0'
+        el.style.transform = 'translateX(-120px) scale(0.95)'
+        setTimeout(() => {
+          el.style.transition = 'height 180ms ease-in-out, min-height 180ms ease-in-out, margin-bottom 180ms ease-in-out'
+          el.style.height = '0'
+          el.style.minHeight = '0'
+          el.style.marginBottom = '-4px'
+          reportHeight()
+          setTimeout(() => {
+            el.remove()
+            items.delete(data.id)
+            if (groupingEnabled) updateGroup(item.messengerId)
+            reportHeight()
+          }, 190)
+        }, 320)
+      }, 500)
+      // Отменяем стандартный таймер
+      const item = items.get(data.id)
+      if (item) { clearTimeout(item.timer); item.timer = null; item.dismissing = true }
     })
     actionRow.appendChild(goBtn)
 
