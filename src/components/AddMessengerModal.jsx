@@ -12,12 +12,13 @@ const BASE_SCRIPT = `(() => {
   return (t && t.length < 60 && t !== 'Loading...' && t !== 'Загрузка...') ? t : null;
 })()`
 
-export default function AddMessengerModal({ onAdd, onClose }) {
-  const [name, setName] = useState('')
-  const [url, setUrl] = useState('')
-  const [color, setColor] = useState('#2AABEE')
-  const [emoji, setEmoji] = useState('💬')
+export default function AddMessengerModal({ onAdd, onClose, editing, onSave }) {
+  const [name, setName] = useState(editing?.name || '')
+  const [url, setUrl] = useState(editing?.url || '')
+  const [color, setColor] = useState(editing?.color || '#2AABEE')
+  const [emoji, setEmoji] = useState(editing?.emoji || '💬')
   const [error, setError] = useState('')
+  const isEdit = !!editing
 
   // Закрыть по Escape
   useEffect(() => {
@@ -52,17 +53,28 @@ export default function AddMessengerModal({ onAdd, onClose }) {
       return
     }
 
-    const ts = Date.now()
-    onAdd({
-      id: `custom_${ts}`,
-      name: name.trim(),
-      url: finalUrl,
-      color,
-      partition: `persist:custom_${ts}`,
-      emoji,
-      isDefault: false,
-      accountScript: DEFAULT_SCRIPTS[finalUrl] || BASE_SCRIPT,
-    })
+    if (isEdit && onSave) {
+      onSave({
+        ...editing,
+        name: name.trim(),
+        url: finalUrl,
+        color,
+        emoji,
+        accountScript: DEFAULT_SCRIPTS[finalUrl] || editing.accountScript || BASE_SCRIPT,
+      })
+    } else {
+      const ts = Date.now()
+      onAdd({
+        id: `custom_${ts}`,
+        name: name.trim(),
+        url: finalUrl,
+        color,
+        partition: `persist:custom_${ts}`,
+        emoji,
+        isDefault: false,
+        accountScript: DEFAULT_SCRIPTS[finalUrl] || BASE_SCRIPT,
+      })
+    }
   }
 
   return (
@@ -78,7 +90,7 @@ export default function AddMessengerModal({ onAdd, onClose }) {
       >
         {/* Шапка */}
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold" style={{ color: 'var(--cc-text)' }}>Добавить мессенджер</h2>
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--cc-text)' }}>{isEdit ? 'Изменить вкладку' : 'Добавить мессенджер'}</h2>
           <button
             onClick={onClose}
             className="text-xl transition-colors cursor-pointer"
@@ -88,8 +100,8 @@ export default function AddMessengerModal({ onAdd, onClose }) {
           >✕</button>
         </div>
 
-        {/* Быстрый выбор */}
-        <div className="mb-5">
+        {/* Быстрый выбор — только при добавлении */}
+        {!isEdit && <div className="mb-5">
           <div
             className="text-[11px] font-semibold uppercase tracking-widest mb-3"
             style={{ color: 'var(--cc-text-dimmer)' }}
@@ -118,14 +130,14 @@ export default function AddMessengerModal({ onAdd, onClose }) {
               </button>
             ))}
           </div>
-        </div>
+        </div>}
 
-        {/* Разделитель */}
-        <div className="flex items-center gap-3 mb-4">
+        {/* Разделитель — только при добавлении */}
+        {!isEdit && <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 h-px" style={{ backgroundColor: 'var(--cc-border)' }} />
           <span className="text-xs" style={{ color: 'var(--cc-text-dimmer)' }}>или введите вручную</span>
           <div className="flex-1 h-px" style={{ backgroundColor: 'var(--cc-border)' }} />
-        </div>
+        </div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
 
@@ -237,7 +249,7 @@ export default function AddMessengerModal({ onAdd, onClose }) {
               style={{ backgroundColor: color }}
               onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
               onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-            >Добавить</button>
+            >{isEdit ? 'Сохранить' : 'Добавить'}</button>
           </div>
         </form>
       </div>

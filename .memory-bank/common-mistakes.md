@@ -56,6 +56,18 @@
 
 ---
 
+## 🟡 ВАЖНОЕ: mark-read не работает при свёрнутом окне (Chromium background throttling)
+
+**Симптом**: Нажал "Прочитано" в ribbon при свёрнутом окне — не помечает. Открыл окно — помечает.
+
+**Причина**: Chromium throttles WebView в свёрнутом окне. `executeJavaScript()` выполняется, но DOM-операции (клик, scroll) не обрабатываются до восстановления окна. `document.hidden = true` в renderer.
+
+**ПРАВИЛО**: Перед `executeJavaScript` для mark-read проверять `document.hidden`. Если hidden → сохранить в очередь `pendingMarkReadsRef`. При `visibilitychange` (visible) → выполнить из очереди с задержкой 500мс.
+
+**Решение (v0.62.6)**: `pendingMarkReadsRef` очередь + `visibilitychange` listener.
+
+---
+
 ## 🟡 ВАЖНОЕ: MAX sidebar DOM ≠ Telegram — нет .chatlist-chat, нет .peer-title
 
 **Симптом**: `mark-read` для MAX всегда возвращает `ok=false method=notFound titles=0`. Все 12 CSS-селекторов + TreeWalker не находят чаты в sidebar.

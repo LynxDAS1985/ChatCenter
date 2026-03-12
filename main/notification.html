@@ -21,6 +21,7 @@
     display: flex;
     align-items: center;
     min-height: 82px;
+    padding-left: 5px;
     background: #1a1a2e;
     border-radius: 10px;
     cursor: pointer;
@@ -46,6 +47,7 @@
     display: flex;
     justify-content: flex-start;
     gap: 6px;
+    margin-left: -54px;
     max-height: 0;
     overflow: hidden;
     transition: max-height 200ms ease-out, margin-top 200ms ease-out, opacity 200ms ease-out;
@@ -139,10 +141,13 @@
   .group-close:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
   /* ── Остальные стили ── */
   .color-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
     width: 5px;
-    align-self: stretch;
-    flex-shrink: 0;
     border-radius: 10px 0 0 10px;
+    z-index: 1;
   }
   .avatar-wrap {
     width: 44px;

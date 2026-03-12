@@ -480,6 +480,7 @@ export default function App() {
   const [statusBarMsg, setStatusBarMsg] = useState(null)   // последнее сообщение для статусбара
   const [messagePreview, setMessagePreview] = useState({}) // { [id]: 'текст превью' }
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editingMessenger, setEditingMessenger] = useState(null) // v0.62.6: редактирование вкладки
   const [showSettings, setShowSettings] = useState(false)
   const [showAI, setShowAI] = useState(true)
   const [searchVisible, setSearchVisible] = useState(false)
@@ -642,12 +643,16 @@ export default function App() {
         const prev_count = prev[id] || 0
         if (count > prev_count && settingsRef.current.soundEnabled !== false) {
           const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[id]
-          // v0.62.5: дедупликация звука — если __CC_NOTIF__ уже сыграл звук <3сек назад, пропускаем
+          // v0.62.6: дедупликация звука + логирование
           const lastSnd = lastSoundTsRef.current[id] || 0
-          if (!messengerMuted && Date.now() - lastSnd > 3000) {
+          const sinceLast = Date.now() - lastSnd
+          if (!messengerMuted && sinceLast > 3000) {
             const m = messengersRef.current.find(x => x.id === id)
             playNotificationSound(m?.color)
             lastSoundTsRef.current[id] = Date.now()
+            traceNotif('sound', 'pass', id, `badge +${count - prev_count}`, 'звук badge')
+          } else if (!messengerMuted) {
+            traceNotif('sound', 'block', id, `badge +${count - prev_count}`, `dedup badge ${sinceLast}мс назад`)
           }
         }
         return { ...prev, [id]: count }
@@ -701,29 +706,56 @@ export default function App() {
   }, [])
 
   // ── "Прочитано" из ribbon — клик по чату в WebView чтобы мессенджер пометил прочитанным (v0.62.0) ──
+  // v0.62.6: выполнение mark-read скрипта (вынесено для вызова из очереди)
+  const executeMarkRead = useCallback(({ messengerId, senderName, chatTag }) => {
+    const el = webviewRefs.current[messengerId]
+    if (!el) {
+      traceNotif('mark-read', 'warn', messengerId, senderName || '', 'webview ref не найден')
+      return
+    }
+    const url = el.getURL?.() || ''
+    const script = buildChatNavigateScript(url, senderName, chatTag)
+    if (script) {
+      el.executeJavaScript(script).then(result => {
+        const ok = result === true || (result && result.ok)
+        traceNotif('mark-read', ok ? 'pass' : 'warn', messengerId, senderName || '', `ok=${ok} method=${result?.method || ''} ${result?.log || ''}`)
+      }).catch(err => {
+        traceNotif('mark-read', 'warn', messengerId, senderName || '', `ошибка: ${err.message}`)
+      })
+    } else {
+      traceNotif('mark-read', 'warn', messengerId, senderName || '', `нет скрипта для url=${url.slice(0,50)}`)
+    }
+  }, [])
+
   useEffect(() => {
     return window.api.on('notify:mark-read', ({ messengerId, senderName, chatTag }) => {
-      traceNotif('mark-read', 'info', messengerId, senderName || '', `sender="${(senderName||'').slice(0,30)}" tag=${!!chatTag}`)
+      traceNotif('mark-read', 'info', messengerId, senderName || '', `sender="${(senderName||'').slice(0,30)}" tag=${!!chatTag} hidden=${document.hidden}`)
       if (!messengerId) return
-      const el = webviewRefs.current[messengerId]
-      if (!el) {
-        traceNotif('mark-read', 'warn', messengerId, senderName || '', 'webview ref не найден')
+      // v0.62.6: если окно свёрнуто/скрыто — отложить до visibilitychange
+      if (document.hidden) {
+        pendingMarkReadsRef.current.push({ messengerId, senderName, chatTag })
+        traceNotif('mark-read', 'info', messengerId, senderName || '', 'отложено — окно скрыто')
         return
       }
-      const url = el.getURL?.() || ''
-      const script = buildChatNavigateScript(url, senderName, chatTag)
-      if (script) {
-        el.executeJavaScript(script).then(result => {
-          const ok = result === true || (result && result.ok)
-          traceNotif('mark-read', ok ? 'pass' : 'warn', messengerId, senderName || '', `ok=${ok} method=${result?.method || ''} ${result?.log || ''}`)
-        }).catch(err => {
-          traceNotif('mark-read', 'warn', messengerId, senderName || '', `ошибка: ${err.message}`)
-        })
-      } else {
-        traceNotif('mark-read', 'warn', messengerId, senderName || '', `нет скрипта для url=${url.slice(0,50)}`)
-      }
+      executeMarkRead({ messengerId, senderName, chatTag })
     })
-  }, [])
+  }, [executeMarkRead])
+
+  // v0.62.6: обработка отложенных mark-read при появлении окна
+  useEffect(() => {
+    const handler = () => {
+      if (!document.hidden && pendingMarkReadsRef.current.length > 0) {
+        const pending = [...pendingMarkReadsRef.current]
+        pendingMarkReadsRef.current = []
+        traceNotif('mark-read', 'info', '', '', `обработка ${pending.length} отложенных mark-read`)
+        pending.forEach(item => {
+          setTimeout(() => executeMarkRead(item), 500)
+        })
+      }
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [executeMarkRead])
 
   // ── Автообновление лога уведомлений (каждые 3 сек пока окно открыто) ────
   useEffect(() => {
@@ -941,6 +973,12 @@ export default function App() {
     setShowAddModal(false)
   }, [])
 
+  // v0.62.6: сохранение изменений вкладки
+  const saveMessenger = useCallback((updated) => {
+    setMessengers(prev => prev.map(m => m.id === updated.id ? { ...m, ...updated } : m))
+    setEditingMessenger(null)
+  }, [])
+
   // ── Drag-and-drop вкладок ────────────────────────────────────────────────
   const handleDragStart = (id) => { dragStartId.current = id }
   const handleDragOver = (id) => { setDragOverId(id) }
@@ -1025,6 +1063,7 @@ export default function App() {
   const recentNotifsRef = useRef(new Map()) // key → timestamp
   const lastRibbonTsRef = useRef({}) // { [messengerId]: timestamp } — когда последний раз показали ribbon
   const lastSoundTsRef = useRef({}) // { [messengerId]: timestamp } — дедупликация звука между __CC_NOTIF__ и unread-count paths
+  const pendingMarkReadsRef = useRef([]) // v0.62.6: очередь mark-read при свёрнутом окне
   // v0.60.0 Решение #2: sender-based dedup — если __CC_NOTIF__ уже прошёл для sender,
   // блокируем __CC_MSG__ от того же sender в течение 3 сек (даже если текст другой)
   const notifSenderTsRef = useRef({}) // { [messengerId + ':' + senderName]: timestamp }
@@ -1586,12 +1625,16 @@ export default function App() {
               const muted = !!(s.mutedMessengers || {})[messengerId]
               const sndOn = mn.sound !== undefined ? mn.sound : !muted
               const ribOn = mn.ribbon !== undefined ? mn.ribbon : true
-              // v0.62.5: дедупликация звука — если __CC_NOTIF__ уже сыграл звук <3сек назад, пропускаем
+              // v0.62.6: дедупликация звука + логирование
               const lastSnd = lastSoundTsRef.current[messengerId] || 0
-              if (s.soundEnabled !== false && sndOn && Date.now() - lastSnd > 3000) {
+              const sinceLast = Date.now() - lastSnd
+              if (s.soundEnabled !== false && sndOn && sinceLast > 3000) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
                 lastSoundTsRef.current[messengerId] = Date.now()
+                traceNotif('sound', 'pass', messengerId, `title +${count - (prev[messengerId] || 0)}`, 'звук title-update')
+              } else if (s.soundEnabled !== false && sndOn) {
+                traceNotif('sound', 'block', messengerId, `title +${count - (prev[messengerId] || 0)}`, `dedup title ${sinceLast}мс назад`)
               }
             }
             return { ...prev, [messengerId]: count }
@@ -1625,12 +1668,16 @@ export default function App() {
               const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
               const sndOn = mn.sound !== undefined ? mn.sound : !muted
-              // v0.62.5: дедупликация звука — если __CC_NOTIF__ уже сыграл звук <3сек назад, пропускаем
+              // v0.62.6: дедупликация звука + логирование
               const lastSnd2 = lastSoundTsRef.current[messengerId] || 0
-              if (s.soundEnabled !== false && sndOn && Date.now() - lastSnd2 > 3000) {
+              const sinceLast2 = Date.now() - lastSnd2
+              if (s.soundEnabled !== false && sndOn && sinceLast2 > 3000) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
                 lastSoundTsRef.current[messengerId] = Date.now()
+                traceNotif('sound', 'pass', messengerId, `ipc +${count - (prev[messengerId] || 0)}`, 'звук unread-count IPC')
+              } else if (s.soundEnabled !== false && sndOn) {
+                traceNotif('sound', 'block', messengerId, `ipc +${count - (prev[messengerId] || 0)}`, `dedup ipc ${sinceLast2}мс назад`)
               }
             }
             return { ...prev, [messengerId]: count }
@@ -2183,6 +2230,9 @@ export default function App() {
     } else if (action === 'copyUrl') {
       const m = messengers.find(x => x.id === id)
       if (m?.url) navigator.clipboard.writeText(m.url).catch(() => {})
+    } else if (action === 'edit') {
+      const m = messengersRef.current.find(x => x.id === id)
+      if (m) setEditingMessenger({ ...m })
     } else if (action === 'pin') {
       togglePinTab(id)
     } else if (action === 'close') {
@@ -2411,6 +2461,7 @@ export default function App() {
                 { action: 'diagAccount', icon: '👤', label: 'Диагностика accountScript (→ буфер)' },
                 { action: 'notifLog', icon: '📊', label: 'Лог уведомлений' },
                 { action: 'copyUrl', icon: '📋', label: 'Копировать URL' },
+                { action: 'edit', icon: '✏️', label: 'Изменить вкладку' },
                 { action: 'pin', icon: tabPinned ? '📌' : '🔒', label: tabPinned ? 'Открепить вкладку' : 'Закрепить вкладку' },
                 ...(!tabPinned ? [{ action: 'close', icon: '✕', label: 'Закрыть вкладку', color: '#f87171' }] : []),
               ].map(item => (
@@ -2618,6 +2669,15 @@ export default function App() {
         <AddMessengerModal
           onAdd={addMessenger}
           onClose={() => setShowAddModal(false)}
+        />
+      )}
+
+      {editingMessenger && (
+        <AddMessengerModal
+          editing={editingMessenger}
+          onSave={saveMessenger}
+          onAdd={() => {}}
+          onClose={() => setEditingMessenger(null)}
         />
       )}
 
