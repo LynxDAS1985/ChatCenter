@@ -66,79 +66,35 @@
     100% { transform: translateX(0) scale(1); opacity: 1; }
   }
   /* fadeSlide убран — dismiss через inline transitions */
-  /* ── Группировка (v0.60.4) ── */
-  .group-item {
-    display: flex;
-    align-items: center;
-    min-height: 60px;
-    background: #1a1a2e;
-    border-radius: 10px;
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-    transform: translateX(380px);
-    opacity: 0;
-    animation: slideIn 300ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    transition: box-shadow 0.2s, border-color 0.2s;
+  /* ── v0.63.0: Стэк сообщений внутри карточки ── */
+  .stacked-msg {
+    border-top: 1px solid rgba(255,255,255,0.08);
+    margin-top: 6px;
+    padding-top: 6px;
+    animation: stackFadeIn 200ms ease-out;
   }
-  .group-item.hovered {
-    border-color: rgba(255,255,255,0.18);
-  }
-  /* group dismiss — через inline-стили, аналогично notif-item */
-  .group-counter {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    margin: 0 10px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    font-weight: 700;
-    color: #fff;
-  }
-  .group-text {
-    flex: 1;
-    min-width: 0;
-    padding: 8px 10px 8px 0;
-  }
-  .group-title {
+  .stacked-msg .stacked-sender {
     font-size: 13px;
     font-weight: 600;
     color: #e2e8f0;
-  }
-  .group-preview {
-    font-size: 12px;
-    color: rgba(255,255,255,0.5);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 2px;
+    line-height: 1.4;
   }
-  .group-close {
-    position: absolute;
-    top: 4px;
-    right: 6px;
-    width: 20px;
-    height: 20px;
-    border: none;
-    background: transparent;
-    color: rgba(255,255,255,0.3);
-    font-size: 14px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 2;
+  .stacked-msg .stacked-body {
+    font-size: 12px;
+    color: rgba(255,255,255,0.55);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.4;
+    margin-top: 1px;
   }
-  .group-item:hover .group-close { opacity: 1; }
-  .group-close:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
+  @keyframes stackFadeIn {
+    0%   { opacity: 0; transform: translateY(-4px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
   /* ── Остальные стили ── */
   .color-bar {
     position: absolute;
@@ -320,8 +276,8 @@
   const MAX_ITEMS = 6
   const container = document.getElementById('container')
   const items = new Map() // id → { el, timer, expanded, remainingMs, startTs, dismissMs, paused }
-  // v0.60.4: группировка — { messengerId → { el, ids: [id,...], count, lastBody, color } }
-  const groups = new Map()
+  // v0.63.0: стэк — messengerId → hostItemId (id карточки, в которую складываются сообщения)
+  const stacks = new Map() // messengerId → { hostId, childIds: [id,...] }
   let groupingEnabled = false
   let hoveredItemId = null
   // v0.60.6: каскадное появление — очередь задержки
@@ -370,33 +326,26 @@
   }
 
   container.addEventListener('mousemove', (e) => {
-    const target = e.target.closest('.notif-item, .group-item')
+    const target = e.target.closest('.notif-item')
     const newId = target ? target.dataset.id : null
     if (newId === hoveredItemId) return
     if (hoveredItemId) {
       const oldItem = items.get(hoveredItemId)
-      if (oldItem) resumeItem(oldItem)
-      // Группы: снять подсветку
-      const oldGrp = target ? null : document.querySelector('.group-item.hovered')
-      if (oldGrp) oldGrp.classList.remove('hovered')
+      if (oldItem && !oldItem.isStackChild) resumeItem(oldItem)
     }
     hoveredItemId = newId
     if (newId) {
       const newItem = items.get(newId)
-      if (newItem) pauseItem(newItem)
-      // Группы: подсветка
-      if (target && target.classList.contains('group-item')) target.classList.add('hovered')
+      if (newItem && !newItem.isStackChild) pauseItem(newItem)
     }
   })
 
   container.addEventListener('mouseleave', () => {
     if (hoveredItemId) {
       const item = items.get(hoveredItemId)
-      if (item) resumeItem(item)
+      if (item && !item.isStackChild) resumeItem(item)
       hoveredItemId = null
     }
-    // Снять hover со всех групп
-    container.querySelectorAll('.group-item.hovered').forEach(g => g.classList.remove('hovered'))
   })
 
   // ── v0.60.5: Dismiss через inline transitions — БЕЗ мигания ──
@@ -408,6 +357,20 @@
     clearTimeout(item.timer)
     if (hoveredItemId === id) hoveredItemId = null
     if (!fromMain) window.notifApi.dismiss(id)
+
+    // v0.63.0: ghost-item (child стэка) — просто удаляем из Map
+    if (item.isStackChild) {
+      items.delete(id)
+      return
+    }
+
+    // v0.63.0: если это хост стэка — очистить дочерние
+    if (item.messengerId) {
+      const stack = stacks.get(item.messengerId)
+      if (stack && stack.hostId === id) {
+        cleanupStack(item.messengerId)
+      }
+    }
 
     const el = item.el
     const h = el.offsetHeight
@@ -440,7 +403,7 @@
       setTimeout(() => {
         el.remove()
         items.delete(id)
-        if (groupingEnabled) updateGroup(item.messengerId)
+        if (groupingEnabled && item.messengerId) cleanupStack(item.messengerId)
         reportHeight()
       }, 190)
     }, 330)
@@ -472,145 +435,77 @@
     setTimeout(reportHeight, 220)
   }
 
-  // ── v0.60.4: Группировка уведомлений ──
-  function updateGroup(messengerId) {
-    if (!messengerId) return
-    // Считаем активные items от этого мессенджера
-    const mItems = []
-    items.forEach((item, id) => {
-      if (item.messengerId === messengerId) mItems.push({ id, item })
-    })
+  // ── v0.63.0: Стэк сообщений в одной карточке ──
+  // Добавляет сообщение как строку внутри существующей карточки (host)
+  function stackMessageIntoHost(hostId, data) {
+    const host = items.get(hostId)
+    if (!host) return false
+    const textWrap = host.el.querySelector('.text-wrap')
+    if (!textWrap) return false
+    const actionRow = textWrap.querySelector('.action-row')
 
-    const grp = groups.get(messengerId)
-    if (mItems.length < 2) {
-      // Менее 2 — убираем группу
-      if (grp) {
-        removeGroupEl(grp)
-        groups.delete(messengerId)
-      }
-      return
-    }
+    // Создаём блок с новым сообщением
+    const msgDiv = document.createElement('div')
+    msgDiv.className = 'stacked-msg'
+    msgDiv.dataset.stackedId = data.id
 
-    if (!grp) {
-      // Создаём группу
-      createGroup(messengerId, mItems)
+    const senderDiv = document.createElement('div')
+    senderDiv.className = 'stacked-sender'
+    senderDiv.textContent = data.title || data.messengerName || ''
+    msgDiv.appendChild(senderDiv)
+
+    const bodyDiv = document.createElement('div')
+    bodyDiv.className = 'stacked-body'
+    bodyDiv.textContent = data.body || ''
+    msgDiv.appendChild(bodyDiv)
+
+    // Вставляем перед action-row (кнопки всегда внизу)
+    if (actionRow) {
+      textWrap.insertBefore(msgDiv, actionRow)
     } else {
-      // Обновляем счётчик
-      grp.count = mItems.length
-      grp.ids = mItems.map(m => m.id)
-      const counter = grp.el.querySelector('.group-counter')
-      if (counter) counter.textContent = mItems.length
-      const preview = grp.el.querySelector('.group-preview')
-      if (preview) {
-        const lastItem = mItems[mItems.length - 1].item
-        preview.textContent = (lastItem.senderName || '') + ': ' + (lastItem.bodyText || '')
+      textWrap.appendChild(msgDiv)
+    }
+
+    // Обновляем стэк
+    const stack = stacks.get(data.messengerId)
+    if (stack) {
+      stack.childIds.push(data.id)
+    }
+
+    // Сбрасываем таймер хоста — обновляем время
+    if (host.dismissMs > 0) {
+      clearTimeout(host.timer)
+      host.remainingMs = host.dismissMs
+      host.startTs = Date.now()
+      host.timer = setTimeout(() => dismissItem(hostId, false), host.dismissMs)
+      const progress = host.el.querySelector('.progress-bar')
+      if (progress) {
+        progress.style.animation = 'none'
+        void progress.offsetHeight
+        progress.style.animation = 'shrink ' + (host.dismissMs / 1000) + 's linear forwards'
       }
     }
-  }
-
-  function createGroup(messengerId, mItems) {
-    const first = mItems[0].item
-    const last = mItems[mItems.length - 1].item
-    const color = first.color || '#2AABEE'
-
-    const el = document.createElement('div')
-    el.className = 'group-item'
-    el.dataset.id = 'group_' + messengerId
-    el.dataset.messengerId = messengerId
-
-    const bar = document.createElement('div')
-    bar.className = 'color-bar'
-    bar.style.background = color
-    el.appendChild(bar)
-
-    const counter = document.createElement('div')
-    counter.className = 'group-counter'
-    counter.style.background = color + '44'
-    counter.textContent = mItems.length
-    el.appendChild(counter)
-
-    const textWrap = document.createElement('div')
-    textWrap.className = 'group-text'
-
-    const title = document.createElement('div')
-    title.className = 'group-title'
-    title.textContent = (first.messengerName || 'Мессенджер') + ': ' + mItems.length + ' новых'
-    textWrap.appendChild(title)
-
-    const preview = document.createElement('div')
-    preview.className = 'group-preview'
-    preview.textContent = (last.senderName || '') + ': ' + (last.bodyText || '')
-    textWrap.appendChild(preview)
-
-    el.appendChild(textWrap)
-
-    const closeBtn = document.createElement('button')
-    closeBtn.className = 'group-close'
-    closeBtn.textContent = '\u00d7'
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      // Dismiss all items in group
-      const grp = groups.get(messengerId)
-      if (grp) {
-        grp.ids.forEach(id => dismissItem(id, false))
-      }
-    })
-    el.appendChild(closeBtn)
-
-    // Клик на группу → развернуть все items
-    el.addEventListener('click', () => {
-      const grp = groups.get(messengerId)
-      if (grp) {
-        removeGroupEl(grp)
-        groups.delete(messengerId)
-        // Показать все скрытые items
-        grp.ids.forEach(id => {
-          const item = items.get(id)
-          if (item && item.el) item.el.style.display = ''
-        })
-        reportHeight()
-        setTimeout(reportHeight, 100)
-      }
-    })
-
-    // Вставляем группу ПЕРЕД первым item этого мессенджера
-    const firstEl = first.el
-    container.insertBefore(el, firstEl)
-
-    // Скрываем индивидуальные items
-    mItems.forEach(m => { m.item.el.style.display = 'none' })
-
-    groups.set(messengerId, {
-      el,
-      ids: mItems.map(m => m.id),
-      count: mItems.length,
-      messengerId,
-      color
-    })
 
     reportHeight()
+    setTimeout(reportHeight, 220)
+    return true
   }
 
-  function removeGroupEl(grp) {
-    const el = grp.el
-    const h = el.offsetHeight
-    el.style.animation = 'none'
-    el.style.opacity = '1'
-    el.style.transform = 'translateX(0) scale(1)'
-    el.style.height = h + 'px'
-    el.style.overflow = 'hidden'
-    el.style.pointerEvents = 'none'
-    void el.offsetHeight
-    el.style.transition = 'opacity 250ms ease-out, transform 250ms ease-out'
-    el.style.opacity = '0'
-    el.style.transform = 'translateX(80px) scale(0.95)'
-    setTimeout(() => {
-      el.style.transition = 'height 180ms ease-in-out, min-height 180ms ease-in-out, margin-bottom 180ms ease-in-out'
-      el.style.height = '0'
-      el.style.minHeight = '0'
-      el.style.marginBottom = '-4px'
-      setTimeout(() => { el.remove(); reportHeight() }, 190)
-    }, 330)
+  // Очистка стэка при dismiss хоста
+  function cleanupStack(messengerId) {
+    const stack = stacks.get(messengerId)
+    if (!stack) return
+    // Dismiss все child items (скрытые, без DOM)
+    stack.childIds.forEach(id => {
+      const child = items.get(id)
+      if (child && !child.dismissing) {
+        child.dismissing = true
+        clearTimeout(child.timer)
+        window.notifApi.dismiss(id)
+        items.delete(id)
+      }
+    })
+    stacks.delete(messengerId)
   }
 
   // v0.60.7: мгновенное удаление для FIFO (без анимации)
@@ -618,6 +513,12 @@
     const item = items.get(id)
     if (!item) return
     clearTimeout(item.timer)
+    // v0.63.0: ghost-item (child стэка) — только удаляем из Map
+    if (item.isStackChild) {
+      items.delete(id)
+      window.notifApi.dismiss(id)
+      return
+    }
     item.el.remove()
     items.delete(id)
     window.notifApi.dismiss(id)
@@ -628,13 +529,42 @@
       forceRemoveItem(data.id)
     }
 
+    // v0.60.4: сохраняем флаг группировки
+    if (data.grouping !== undefined) groupingEnabled = !!data.grouping
+
+    // v0.63.0: стэковая группировка — складываем в существующую карточку
+    if (groupingEnabled && data.messengerId) {
+      const stack = stacks.get(data.messengerId)
+      if (stack && items.has(stack.hostId) && !items.get(stack.hostId).dismissing) {
+        // Складываем в хост-карточку как дополнительную строку
+        const stacked = stackMessageIntoHost(stack.hostId, data)
+        if (stacked) {
+          // Создаём ghost-item (без DOM) для отслеживания id
+          items.set(data.id, {
+            el: items.get(stack.hostId).el, // ссылка на хост-элемент
+            timer: null,
+            expanded: false,
+            remainingMs: 0,
+            startTs: Date.now(),
+            dismissMs: 0,
+            paused: false,
+            messengerId: data.messengerId,
+            messengerName: data.messengerName || '',
+            senderName: data.title || '',
+            bodyText: data.body || '',
+            color: data.color || '#2AABEE',
+            isStackChild: true,
+            stackHostId: stack.hostId,
+          })
+          return // не создаём отдельную карточку
+        }
+      }
+    }
+
     while (items.size >= MAX_ITEMS) {
       const firstKey = items.keys().next().value
       forceRemoveItem(firstKey)
     }
-
-    // v0.60.4: сохраняем флаг группировки
-    if (data.grouping !== undefined) groupingEnabled = !!data.grouping
 
     const hasFullBody = data.fullBody && data.fullBody.length > (data.body || '').length
 
@@ -732,7 +662,7 @@
           setTimeout(() => {
             el.remove()
             items.delete(data.id)
-            if (groupingEnabled) updateGroup(item.messengerId)
+            if (groupingEnabled && item.messengerId) cleanupStack(item.messengerId)
             reportHeight()
           }, 190)
         }, 320)
@@ -842,12 +772,9 @@
 
     reportHeight()
 
-    // v0.60.4: проверяем группировку
-    if (groupingEnabled && data.messengerId) {
-      // Считаем сколько items от этого мессенджера
-      let mCount = 0
-      items.forEach(item => { if (item.messengerId === data.messengerId) mCount++ })
-      if (mCount >= 2) updateGroup(data.messengerId)
+    // v0.63.0: обновляем стэк — запоминаем эту карточку как хост для мессенджера
+    if (groupingEnabled && data.messengerId && !stacks.has(data.messengerId)) {
+      stacks.set(data.messengerId, { hostId: data.id, childIds: [] })
     }
   }
 

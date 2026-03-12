@@ -252,8 +252,8 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                           <span className="text-[10px] shrink-0" style={{ color: 'var(--cc-text-dimmer)' }}>по умолч.</span>
                         )}
                       </div>
-                      {/* Per-messenger настройки: звук + ribbon */}
-                      <div className="flex items-center gap-3 mt-1.5 pl-5 flex-wrap">
+                      {/* Per-messenger настройки: звук + ribbon — одна строка */}
+                      <div className="flex items-center gap-4 mt-1.5 pl-5">
                         <div className="flex items-center gap-1.5">
                           <span className="text-[11px]" style={{ color: soundOn ? 'var(--cc-text-dim)' : 'var(--cc-text-dimmer)' }}>
                             {soundOn ? '🔔' : '🔇'} Звук
