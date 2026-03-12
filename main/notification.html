@@ -73,15 +73,6 @@
     padding-top: 6px;
     animation: stackFadeIn 200ms ease-out;
   }
-  .stacked-msg .stacked-sender {
-    font-size: 13px;
-    font-weight: 600;
-    color: #e2e8f0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 1.4;
-  }
   .stacked-msg .stacked-body {
     font-size: 12px;
     color: rgba(255,255,255,0.55);
@@ -444,15 +435,10 @@
     if (!textWrap) return false
     const actionRow = textWrap.querySelector('.action-row')
 
-    // Создаём блок с новым сообщением
+    // Создаём блок с новым сообщением — только текст, без дублирования имени
     const msgDiv = document.createElement('div')
     msgDiv.className = 'stacked-msg'
     msgDiv.dataset.stackedId = data.id
-
-    const senderDiv = document.createElement('div')
-    senderDiv.className = 'stacked-sender'
-    senderDiv.textContent = data.title || data.messengerName || ''
-    msgDiv.appendChild(senderDiv)
 
     const bodyDiv = document.createElement('div')
     bodyDiv.className = 'stacked-body'
