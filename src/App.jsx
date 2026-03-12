@@ -316,7 +316,7 @@ function buildChatNavigateScript(url, senderName, chatTag) {
     })();`
   }
 
-  // MAX (web.max.ru) — Telegram fork, аналогичные селекторы
+  // MAX (web.max.ru) — Telegram fork, но DOM-классы могут отличаться
   if (url.includes('max.ru')) {
     return `(function() {
       try {
@@ -325,55 +325,85 @@ function buildChatNavigateScript(url, senderName, chatTag) {
         log.push('name=' + JSON.stringify(name));
         if (!name) return {ok:false, method:'noName', log:log.join(', ')};
 
-        // Функция: после клика по чату — скроллить историю вниз чтобы сбросить unread
         function scrollDown() {
           setTimeout(function() {
             var h = document.querySelector('.history') || document.querySelector('[class*="history"]') || document.querySelector('[class*="messages-container"]');
-            if (h) { h.scrollTop = h.scrollHeight; log.push('scrolled'); }
+            if (h) { h.scrollTop = h.scrollHeight; }
           }, 300);
         }
 
-        // MAX использует те же классы что Telegram Web K
-        var titles = document.querySelectorAll('.chatlist-chat .peer-title');
-        log.push('titles=' + titles.length);
-        var samples = [];
-        for (var i = 0; i < Math.min(titles.length, 5); i++) samples.push(titles[i].textContent.trim().slice(0,40));
-        log.push('samples=' + JSON.stringify(samples));
+        function tryClick(el, method) {
+          var row = el.closest('.chatlist-chat') || el.closest('[class*="chatlist"]') || el.closest('a[href]') || el.closest('li') || el.closest('[data-peer-id]');
+          if (!row) row = el.parentElement && el.parentElement.closest('a, li, [class*="chat"]');
+          if (row) { row.click(); scrollDown(); return {ok:true, method:method, log:log.join(', ')}; }
+          return null;
+        }
 
-        // 1) Exact match
-        for (var i = 0; i < titles.length; i++) {
-          if (titles[i].textContent.trim() === name) {
-            var chat = titles[i].closest('.chatlist-chat');
-            if (chat) { chat.click(); scrollDown(); return {ok:true, method:'exact', log:log.join(', ')}; }
-          }
-        }
-        // 2) Case-insensitive
         var nameLow = name.toLowerCase();
-        for (var i = 0; i < titles.length; i++) {
-          if (titles[i].textContent.trim().toLowerCase() === nameLow) {
-            var chat = titles[i].closest('.chatlist-chat');
-            if (chat) { chat.click(); scrollDown(); return {ok:true, method:'icase', log:log.join(', ')}; }
+
+        // Широкий набор селекторов для sidebar MAX
+        var selectors = [
+          '.chatlist-chat .peer-title',
+          '.peer-title',
+          '[class*="chatlist"] [class*="title"]',
+          '[class*="chatlist"] [class*="name"]',
+          '[class*="dialog"] [class*="title"]',
+          '[class*="dialog"] [class*="name"]',
+          '[class*="row"] [class*="title"]',
+          '[class*="row"] [class*="name"]',
+          '[class*="chat-item"] [class*="title"]',
+          '[class*="chat-item"] [class*="name"]',
+          'a[class*="chat"] [class*="title"]',
+          'a[class*="chat"] [class*="name"]'
+        ];
+
+        for (var s = 0; s < selectors.length; s++) {
+          var els = document.querySelectorAll(selectors[s]);
+          if (els.length === 0) continue;
+          log.push(selectors[s] + '=' + els.length);
+          // Собираем samples из первого найденного селектора
+          if (s === 0 || log.length < 5) {
+            var samples = [];
+            for (var j = 0; j < Math.min(els.length, 5); j++) samples.push(els[j].textContent.trim().slice(0,40));
+            log.push('s=' + JSON.stringify(samples));
+          }
+          // Exact → icase → partial
+          for (var i = 0; i < els.length; i++) {
+            if (els[i].textContent.trim() === name) { var r = tryClick(els[i], 'exact@' + selectors[s]); if (r) return r; }
+          }
+          for (var i = 0; i < els.length; i++) {
+            if (els[i].textContent.trim().toLowerCase() === nameLow) { var r = tryClick(els[i], 'icase@' + selectors[s]); if (r) return r; }
+          }
+          for (var i = 0; i < els.length; i++) {
+            var t = els[i].textContent.trim();
+            if (t && name.length > 3 && (t.indexOf(name) >= 0 || name.indexOf(t) >= 0)) { var r = tryClick(els[i], 'partial@' + selectors[s]); if (r) return r; }
           }
         }
-        // 3) Partial/startsWith match (для длинных имён)
-        for (var i = 0; i < titles.length; i++) {
-          var t = titles[i].textContent.trim();
-          if (t && name.length > 3 && (t.indexOf(name) >= 0 || name.indexOf(t) >= 0 || t.toLowerCase().startsWith(nameLow) || nameLow.startsWith(t.toLowerCase()))) {
-            var chat = titles[i].closest('.chatlist-chat');
-            if (chat) { chat.click(); scrollDown(); return {ok:true, method:'partial', matched:t.slice(0,40), log:log.join(', ')}; }
+
+        // TreeWalker fallback — ищем текстовые ноды с именем
+        log.push('tree');
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+        var node;
+        while (node = walker.nextNode()) {
+          var txt = node.textContent.trim();
+          if (txt === name || (txt.length > 3 && txt.length < 80 && (txt.indexOf(name) >= 0 || name.indexOf(txt) >= 0) && txt.toLowerCase().indexOf(nameLow) >= 0)) {
+            var parent = node.parentElement;
+            if (parent && parent.offsetHeight > 0 && parent.offsetHeight < 80) {
+              var r = tryClick(parent, 'tree');
+              if (r) return r;
+            }
           }
         }
-        // 4) Fallback: generic селекторы
-        var els = document.querySelectorAll('[class*="chatlist"] [class*="title"], [class*="dialog"] [class*="name"], [class*="peer"] [class*="title"]');
-        log.push('fallback=' + els.length);
-        for (var i = 0; i < els.length; i++) {
-          var t = els[i].textContent.trim();
-          if (t === name || (t && name.length > 3 && (t.indexOf(name) >= 0 || name.indexOf(t) >= 0))) {
-            var row = els[i].closest('.chatlist-chat') || els[i].closest('[class*="chat"], [class*="dialog"], a, li');
-            if (row) { row.click(); scrollDown(); return {ok:true, method:'generic', log:log.join(', ')}; }
-          }
+
+        // DOM диагностика для отладки
+        var sidebar = document.querySelector('[class*="chatlist"]') || document.querySelector('[class*="sidebar"]') || document.querySelector('nav');
+        log.push('sidebar=' + (sidebar ? sidebar.className.slice(0,50) : 'null'));
+        if (sidebar) {
+          var kids = sidebar.querySelectorAll('*');
+          log.push('sidebarKids=' + kids.length);
         }
-        // 5) Если ничего не нашли — попробуем скроллить вниз текущий чат (может он уже открыт)
+        log.push('bodyKids=' + document.body.children.length);
+
         scrollDown();
         return {ok:false, method:'notFound', log:log.join(', ')};
       } catch(e) { return {ok:false, method:'error', err:e.message}; }

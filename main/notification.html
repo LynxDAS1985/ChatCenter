@@ -179,14 +179,17 @@
     line-height: 1.4;
     padding-right: 50px;
   }
-  /* v0.62.0: messenger-name снизу слева — отдельная строка перед кнопками */
+  /* v0.62.3: messenger-name над аватаркой слева */
   .messenger-name {
-    font-size: 11px;
-    font-weight: 500;
-    color: rgba(255,255,255,0.45);
-    margin-top: 2px;
-    letter-spacing: 0.3px;
+    position: absolute;
+    top: 4px;
+    left: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 0.5px;
     text-transform: uppercase;
+    z-index: 1;
   }
   .body-text {
     font-size: 13px;
@@ -614,6 +617,15 @@
     el.className = 'notif-item'
     el.dataset.id = data.id
 
+    // v0.62.3: название мессенджера над аватаркой слева
+    const mName = data.messengerName || ''
+    if (mName) {
+      const mNameEl = document.createElement('div')
+      mNameEl.className = 'messenger-name'
+      mNameEl.textContent = mName
+      el.appendChild(mNameEl)
+    }
+
     const bar = document.createElement('div')
     bar.className = 'color-bar'
     bar.style.background = data.color || '#2AABEE'
@@ -637,8 +649,6 @@
     const sender = document.createElement('div')
     sender.className = 'sender'
     const senderName = data.title || ''
-    const mName = data.messengerName || ''
-    // v0.62.0: messenger-name убран из заголовка — будет снизу слева
     sender.textContent = senderName || mName
     textWrap.appendChild(sender)
 
@@ -653,14 +663,6 @@
     hint.className = 'expand-hint visible'
     hint.textContent = hasFullBody ? '\u25BC ещё...' : '\u25BC действия'
     textWrap.appendChild(hint)
-
-    // v0.62.0: название мессенджера снизу слева
-    if (mName) {
-      const mNameEl = document.createElement('div')
-      mNameEl.className = 'messenger-name'
-      mNameEl.textContent = mName
-      textWrap.appendChild(mNameEl)
-    }
 
     const actionRow = document.createElement('div')
     actionRow.className = 'action-row'

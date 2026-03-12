@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.62.2 (12 марта 2026)
+## Текущая версия: v0.62.3 (12 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.62.3 (12 марта 2026) — Подпись мессенджера над аватаркой + расширенная DOM-диагностика mark-read
+- **Подпись над аватаркой**: "МАКС" перенесён из text-wrap снизу → position:absolute над аватаркой слева (top:4px, left:10px). Не занимает место в потоке.
+- **Mark-read расширенный поиск**: 12 CSS-селекторов + TreeWalker fallback + DOM-диагностика (sidebar class, children count). Предыдущий скрипт не находил чаты (`titles=0`) — у MAX другие классы.
+- **DOM-диагностика**: Если чат не найден → логирует sidebar className, кол-во элементов внутри, body.children.length.
 
 ### v0.62.2 (12 марта 2026) — Mark-read логирование в Pipeline trace
 - **Лог mark-read в Pipeline**: `console.log('[MarkRead]')` заменён на `traceNotif('mark-read', ...)`. Результат (ok/method/log) виден в "Лог уведомлений" приложения, а не в DevTools.
