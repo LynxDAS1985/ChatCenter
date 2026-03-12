@@ -602,9 +602,18 @@ function setupNotifIPC() {
   })
 
   // "Прочитано" — скрыть ribbon без перехода к чату
+  // v0.62.0: "Прочитано" — отправить mark-read в renderer для WebView мессенджера
   ipcMain.on('notif:mark-read', (_event, id) => {
+    const item = notifItems.find(n => n.id === id)
     notifItems = notifItems.filter(n => n.id !== id)
-    // HTML пришлёт notif:resize после анимации удаления
+    // Отправляем в renderer чтобы он мог пометить чат прочитанным в WebView
+    if (mainWindow && !mainWindow.isDestroyed() && item?.messengerId) {
+      mainWindow.webContents.send('notify:mark-read', {
+        messengerId: item.messengerId,
+        senderName: item.senderName || item.title || '',
+        chatTag: item.chatTag || '',
+      })
+    }
   })
 
   ipcMain.on('notif:dismiss', (_event, id) => {

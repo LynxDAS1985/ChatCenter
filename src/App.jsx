@@ -634,6 +634,24 @@ export default function App() {
     })
   }, [])
 
+  // ── "Прочитано" из ribbon — клик по чату в WebView чтобы мессенджер пометил прочитанным (v0.62.0) ──
+  useEffect(() => {
+    return window.api.on('notify:mark-read', ({ messengerId, senderName, chatTag }) => {
+      console.log('[MarkRead] notify:mark-read', { messengerId, senderName, chatTag })
+      if (!messengerId) return
+      const el = webviewRefs.current[messengerId]
+      if (!el) return
+      const url = el.getURL?.() || ''
+      const script = buildChatNavigateScript(url, senderName, chatTag)
+      if (script) {
+        el.executeJavaScript(script).then(result => {
+          const ok = result === true || (result && result.ok)
+          console.log(`[MarkRead] ok=${ok} method=${result?.method || ''}`)
+        }).catch(err => { console.log('[MarkRead] error:', err.message) })
+      }
+    })
+  }, [])
+
   // ── Автообновление лога уведомлений (каждые 3 сек пока окно открыто) ────
   useEffect(() => {
     if (!notifLogModal) return
