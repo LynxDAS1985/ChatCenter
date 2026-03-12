@@ -1576,3 +1576,23 @@ style={{
 **Решение (v0.60.4)**: Двухэтапный dismiss: (1) `fadeSlide` 250мс — визуальное затухание, (2) `collapsing` class — `height: 0, min-height: 0` через CSS transition 200мс — плавный коллапс пространства. DOM-элемент удаляется только после полного коллапса.
 
 **Ключевой урок**: При удалении элемента из flex-контейнера НЕЛЬЗЯ просто `element.remove()` — это вызывает мгновенный layout shift. Нужно сначала анимировать высоту к 0, потом удалять.
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: CSS-анимация `.fade-out` вызывает мигание при смене классов (v0.60.4 → v0.60.5)
+
+### ❌ При dismiss ribbon мигает (показывается на 1 кадр перед исчезновением)
+
+**Симптом**: Нажатие "Прочитано" или закрытие → ribbon исчезает → мигает обратно → исчезает снова.
+
+**Причина**: CSS `animation: fadeSlide 250ms forwards` держит opacity=0 через `forwards` fill mode. Но `el.classList.remove('fade-out')` УБИРАЕТ анимацию → opacity МГНОВЕННО возвращается к исходному значению (1) на 1 кадр → затем `classList.add('collapsing')` ставит opacity:0 снова.
+
+**Решение (v0.60.5)**: Полностью отказаться от CSS-анимаций для dismiss. Вместо этого:
+1. `el.style.animation = 'none'` — отменить slideIn
+2. `el.style.opacity = '1'` — зафиксировать текущее состояние
+3. `void el.offsetHeight` — force reflow
+4. `el.style.transition = 'opacity 250ms...'` + `el.style.opacity = '0'` — fade
+5. `setTimeout(260)` → `el.style.height = '0'` — collapse
+6. `setTimeout(210)` → `el.remove()` — удалить
+
+**Ключевой урок**: НИКОГДА не используй `classList.remove()` для CSS-анимации с `forwards` fill mode, если после этого нужно продолжить анимацию. `forwards` держит конечное состояние ТОЛЬКО пока класс присутствует. При удалении класса — мгновенный откат. Используй inline `style.transition` + inline `style.opacity` для многоэтапных dismiss-анимаций.

@@ -56,31 +56,13 @@
     opacity: 1;
     margin-top: 8px;
   }
-  /* v0.60.4: dismiss — два этапа: fade → collapse */
-  .notif-item.fade-out {
-    animation: fadeSlide 250ms ease-out forwards;
-    pointer-events: none;
-  }
-  .notif-item.collapsing {
-    min-height: 0 !important;
-    height: 0 !important;
-    margin-top: 0 !important;
-    margin-bottom: -4px !important;
-    padding: 0 !important;
-    border-width: 0 !important;
-    opacity: 0;
-    transition: height 200ms ease-in-out, margin-bottom 200ms ease-in-out, min-height 200ms ease-in-out;
-    pointer-events: none;
-  }
+  /* v0.60.5: dismiss полностью через inline-стили — без мигания */
   @keyframes slideIn {
     0%   { transform: translateX(380px) scale(0.95); opacity: 0; }
     70%  { transform: translateX(-8px) scale(1); opacity: 1; }
     100% { transform: translateX(0) scale(1); opacity: 1; }
   }
-  @keyframes fadeSlide {
-    0%   { transform: translateX(0) scale(1); opacity: 1; }
-    100% { transform: translateX(80px) scale(0.95); opacity: 0; }
-  }
+  /* fadeSlide убран — dismiss через inline transitions */
   /* ── Группировка (v0.60.4) ── */
   .group-item {
     display: flex;
@@ -101,18 +83,7 @@
   .group-item.hovered {
     border-color: rgba(255,255,255,0.18);
   }
-  .group-item.fade-out {
-    animation: fadeSlide 250ms ease-out forwards;
-    pointer-events: none;
-  }
-  .group-item.collapsing {
-    min-height: 0 !important;
-    height: 0 !important;
-    margin-bottom: -4px !important;
-    opacity: 0;
-    transition: height 200ms ease-in-out, margin-bottom 200ms ease-in-out, min-height 200ms ease-in-out;
-    pointer-events: none;
-  }
+  /* group dismiss — через inline-стили, аналогично notif-item */
   .group-counter {
     width: 32px;
     height: 32px;
@@ -353,9 +324,10 @@
   function calcHeight() {
     let h = 0
     for (const child of container.children) {
-      if (!child.classList.contains('collapsing') && !child.classList.contains('fade-out')) {
-        h += child.offsetHeight + 4
-      }
+      // Пропускаем элементы в процессе dismiss (opacity=0 или height=0)
+      if (child.style.pointerEvents === 'none') continue
+      const ch = child.offsetHeight
+      if (ch > 0) h += ch + 4
     }
     return h > 0 ? h + 4 : 0
   }
@@ -420,31 +392,47 @@
     container.querySelectorAll('.group-item.hovered').forEach(g => g.classList.remove('hovered'))
   })
 
-  // ── v0.60.4: Двухэтапный dismiss — fade → collapse → remove ──
+  // ── v0.60.5: Dismiss через inline transitions — БЕЗ мигания ──
   function dismissItem(id, fromMain) {
     const item = items.get(id)
     if (!item) return
+    if (item.dismissing) return
+    item.dismissing = true
     clearTimeout(item.timer)
     if (hoveredItemId === id) hoveredItemId = null
     if (!fromMain) window.notifApi.dismiss(id)
 
     const el = item.el
-    // Запоминаем текущую высоту для плавного коллапса
     const h = el.offsetHeight
+
+    // Замораживаем текущее состояние — отменяем slideIn, ставим конечные значения
+    el.style.animation = 'none'
+    el.style.opacity = '1'
+    el.style.transform = 'translateX(0) scale(1)'
     el.style.height = h + 'px'
+    el.style.overflow = 'hidden'
+    el.style.pointerEvents = 'none'
 
-    // Этап 1: fade + slide (250мс)
-    el.classList.add('fade-out')
+    // Force reflow — чтобы браузер применил стили выше ДО начала transition
+    void el.offsetHeight
 
+    // Этап 1: fade + slide вправо (250мс)
+    el.style.transition = 'opacity 250ms ease-out, transform 250ms ease-out'
+    el.style.opacity = '0'
+    el.style.transform = 'translateX(80px) scale(0.95)'
+
+    // Этап 2: коллапс высоты (200мс) — opacity уже 0, мигания нет
     setTimeout(() => {
-      // Этап 2: коллапс высоты (200мс)
-      el.classList.remove('fade-out')
-      el.classList.add('collapsing')
+      el.style.transition = 'height 200ms ease-in-out, min-height 200ms ease-in-out, margin-bottom 200ms ease-in-out'
+      el.style.height = '0'
+      el.style.minHeight = '0'
+      el.style.marginBottom = '-4px'
+      reportHeight()
 
+      // Этап 3: удаление из DOM
       setTimeout(() => {
         el.remove()
         items.delete(id)
-        // Обновить группу если группировка включена
         if (groupingEnabled) updateGroup(item.messengerId)
         reportHeight()
       }, 210)
@@ -599,11 +587,21 @@
   function removeGroupEl(grp) {
     const el = grp.el
     const h = el.offsetHeight
+    el.style.animation = 'none'
+    el.style.opacity = '1'
+    el.style.transform = 'translateX(0) scale(1)'
     el.style.height = h + 'px'
-    el.classList.add('fade-out')
+    el.style.overflow = 'hidden'
+    el.style.pointerEvents = 'none'
+    void el.offsetHeight
+    el.style.transition = 'opacity 250ms ease-out, transform 250ms ease-out'
+    el.style.opacity = '0'
+    el.style.transform = 'translateX(80px) scale(0.95)'
     setTimeout(() => {
-      el.classList.remove('fade-out')
-      el.classList.add('collapsing')
+      el.style.transition = 'height 200ms ease-in-out, min-height 200ms ease-in-out, margin-bottom 200ms ease-in-out'
+      el.style.height = '0'
+      el.style.minHeight = '0'
+      el.style.marginBottom = '-4px'
       setTimeout(() => { el.remove(); reportHeight() }, 210)
     }, 260)
   }
