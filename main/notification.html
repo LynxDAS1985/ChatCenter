@@ -75,7 +75,7 @@
   }
   .stacked-msg .stacked-body {
     font-size: 12px;
-    color: rgba(255,255,255,0.55);
+    color: rgba(255,255,255,0.6);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -178,9 +178,9 @@
     display: block !important;
   }
   .notif-item.expanded .body-text .msg-text-content {
-    white-space: pre-wrap;
-    overflow: visible;
-    text-overflow: unset;
+    white-space: pre-wrap !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
   }
   .action-btn {
     padding: 4px 12px;
@@ -851,16 +851,7 @@
     progress.style.background = data.color || '#2AABEE'
     el.appendChild(progress)
 
-    el.addEventListener('click', (e) => {
-      toggleExpand(data, el)
-      const bText = el.querySelector('.body-text')
-      const hintEl = el.querySelector('.expand-hint')
-      if (el.classList.contains('expanded')) {
-        if (hasFullBody && bText) bText.textContent = bText.dataset.full
-      } else {
-        if (hasFullBody && bText) bText.textContent = bText.dataset.short
-      }
-    })
+    // v0.64.0: убран toggleExpand по клику — кнопки управляются настройкой "Кнопки действий сразу"
 
     // v0.60.7: каскад — макс 5 слотов × 100мс, потом без задержки
     const cascadeDelay = Math.min(cascadeQueue, 5) * 100
@@ -929,14 +920,20 @@
   let tooltipExtraHeight = 0 // v0.63.9: дополнительная высота окна для тултипа
 
   function showTooltip(target) {
-    // v0.63.9: проверяем обрезку — для flex-контейнера проверяем дочерний текстовый span
-    const textChild = target.querySelector('.msg-text-content') || target.querySelector('span:not(.msg-time)')
-    const checkEl = textChild || target
-    if (checkEl.scrollWidth <= checkEl.clientWidth) return
+    // v0.64.0: проверяем что текст обрезан
+    // Для body-text с data-full — показываем если fullBody длиннее short
+    const hasFull = target.dataset.full && target.dataset.full.length > (target.dataset.short || '').length
+    if (!hasFull) {
+      // Для остальных — проверяем scrollWidth (обычная обрезка ellipsis)
+      const textChild = target.querySelector('.msg-text-content') || target.querySelector('span:not(.msg-time)')
+      const checkEl = textChild || target
+      if (checkEl.scrollWidth <= checkEl.clientWidth) return
+    }
     if (tooltipEl) hideTooltipImmediate()
 
     tooltipTarget = target
-    // v0.63.9: берём полный текст — из data-full или из текстового span (без времени)
+    // v0.64.0: берём полный текст — из data-full или из текстового span (без времени)
+    const textChild = target.querySelector('.msg-text-content') || target.querySelector('span:not(.msg-time)')
     const fullText = target.dataset.full || (textChild ? textChild.textContent : target.textContent)
     tooltipEl = document.createElement('div')
     tooltipEl.className = 'cc-tooltip'

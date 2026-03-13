@@ -110,7 +110,9 @@
 
 **Ловушка 12 (v0.63.9)**: Тултип обрезается окном notification (position:fixed, window ограничен по высоте). **ПРАВИЛО**: После рендера тултипа проверять `neededTop < 0`. Если не помещается — увеличить окно через `notifApi.resize(calcHeight() + extraHeight)`. Хранить `tooltipExtraHeight` и восстанавливать в `hideTooltip*()` через `reportHeight()`.
 
-**Ловушка 13 (v0.63.9)**: `scrollWidth > clientWidth` не работает для flex-контейнера body-text (с `.msg-time` span). Flex распределяет ширину между children, и `scrollWidth === clientWidth` даже если текст обрезан. **ПРАВИЛО**: Искать дочерний `.msg-text-content` (или `span:not(.msg-time)`) и проверять scrollWidth на НЁМ.
+**Ловушка 13 (v0.63.9→v0.64.0)**: `scrollWidth > clientWidth` не работает для `.msg-text-content` span с inline `overflow:hidden` — scrollWidth === clientWidth потому что overflow скрыт. **ПРАВИЛО**: Для `.body-text` с `data-full` — НЕ проверять scrollWidth. Сравнивать `data-full.length > data-short.length`. Для остальных — проверять scrollWidth на видимом span.
+
+**Ловушка 14 (v0.64.0)**: Inline стили (из JS `el.style.cssText = '...'`) имеют приоритет над CSS-классами. В expanded mode `.msg-text-content` имеет inline `white-space:nowrap; overflow:hidden` → CSS `.notif-item.expanded .body-text .msg-text-content { white-space: pre-wrap }` НЕ работает. **ПРАВИЛО**: Использовать `!important` в CSS expanded для перебития inline стилей.
 
 **Ловушка 10 (v0.63.8)**: Тултип закрывается при попытке навести на иконку копирования. Причина: mouseout из текстового элемента → `hideTooltipFade()` срабатывает ДО того как мышь дойдёт до тултипа. **ПРАВИЛО**: НЕ скрывать тултип мгновенно при mouseout. Использовать `scheduleHide()` с задержкой 100мс + `cancelHide()` при mouseover на `.cc-tooltip`. Проверять `:hover` перед скрытием.
 
