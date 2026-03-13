@@ -168,10 +168,11 @@
   }
   .notif-item.expanded .body-text {
     white-space: pre-wrap;
-    overflow: visible;
+    word-break: break-word;
+    overflow-x: hidden;
+    overflow-y: auto;
     text-overflow: unset;
     max-height: 300px;
-    overflow-y: auto;
     color: rgba(255,255,255,0.8);
   }
   .action-btn {
@@ -293,6 +294,12 @@
   .cc-tooltip.fading {
     opacity: 0;
     pointer-events: none;
+  }
+  .cc-tooltip .tooltip-time {
+    display: block;
+    font-size: 10px;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 3px;
   }
   .cc-tooltip .copy-hint {
     display: block;
@@ -508,6 +515,8 @@
     const bodyDiv = document.createElement('div')
     bodyDiv.className = 'stacked-body'
     bodyDiv.textContent = data.body || ''
+    // v0.63.5: время получения для тултипа
+    bodyDiv.dataset.ts = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
     msgDiv.appendChild(bodyDiv)
 
     stackContainer.appendChild(msgDiv)
@@ -661,6 +670,8 @@
     bodyText.textContent = data.body || ''
     bodyText.dataset.short = data.body || ''
     bodyText.dataset.full = data.fullBody || data.body || ''
+    // v0.63.5: сохраняем время получения для тултипа
+    bodyText.dataset.ts = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
     textWrap.appendChild(bodyText)
 
     const hint = document.createElement('div')
@@ -841,6 +852,15 @@
     const fullText = target.dataset.full || target.textContent
     tooltipEl = document.createElement('div')
     tooltipEl.className = 'cc-tooltip'
+
+    // v0.63.5: время получения
+    const ts = target.dataset.ts
+    if (ts) {
+      const timeEl = document.createElement('span')
+      timeEl.className = 'tooltip-time'
+      timeEl.textContent = ts
+      tooltipEl.appendChild(timeEl)
+    }
 
     // Текст сообщения
     const textSpan = document.createElement('span')
