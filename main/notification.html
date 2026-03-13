@@ -82,6 +82,16 @@
     line-height: 1.4;
     margin-top: 1px;
   }
+  /* v0.63.2: контейнер стэка с ограничением высоты */
+  .stack-container {
+    max-height: 120px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+  .stack-container::-webkit-scrollbar { width: 3px; }
+  .stack-container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+  .stack-container::-webkit-scrollbar-track { background: transparent; }
   @keyframes stackFadeIn {
     0%   { opacity: 0; transform: translateY(-4px); }
     100% { opacity: 1; transform: translateY(0); }
@@ -435,6 +445,18 @@
     if (!textWrap) return false
     const actionRow = textWrap.querySelector('.action-row')
 
+    // v0.63.2: используем stack-container для ограничения высоты
+    let stackContainer = textWrap.querySelector('.stack-container')
+    if (!stackContainer) {
+      stackContainer = document.createElement('div')
+      stackContainer.className = 'stack-container'
+      if (actionRow) {
+        textWrap.insertBefore(stackContainer, actionRow)
+      } else {
+        textWrap.appendChild(stackContainer)
+      }
+    }
+
     // Создаём блок с новым сообщением — только текст, без дублирования имени
     const msgDiv = document.createElement('div')
     msgDiv.className = 'stacked-msg'
@@ -445,12 +467,9 @@
     bodyDiv.textContent = data.body || ''
     msgDiv.appendChild(bodyDiv)
 
-    // Вставляем перед action-row (кнопки всегда внизу)
-    if (actionRow) {
-      textWrap.insertBefore(msgDiv, actionRow)
-    } else {
-      textWrap.appendChild(msgDiv)
-    }
+    stackContainer.appendChild(msgDiv)
+    // Автоскролл вниз к новому сообщению
+    stackContainer.scrollTop = stackContainer.scrollHeight
 
     // Обновляем стэк
     const stack = stacks.get(data.messengerId)

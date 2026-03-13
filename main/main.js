@@ -562,8 +562,8 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   const grouping = !!settings.ribbonGrouping
   const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, grouping, senderName: senderName || title || '', chatTag: chatTag || '' }
 
-  // FIFO — удаляем старые из трекинга
-  if (notifItems.length >= 6) {
+  // FIFO — удаляем старые из трекинга (v0.63.2: увеличен до 30, стэк может иметь 10+ сообщений)
+  if (notifItems.length >= 30) {
     notifItems.shift()
   }
   notifItems.push(data)
