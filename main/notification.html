@@ -926,14 +926,18 @@
   let tooltipTarget = null
   let tooltipDebounce = null  // v0.63.4: задержка перед показом
   let tooltipFadeTimer = null // v0.63.4: таймер fade-out
+  let tooltipExtraHeight = 0 // v0.63.9: дополнительная высота окна для тултипа
 
   function showTooltip(target) {
-    // Проверяем что текст реально обрезан
-    if (target.scrollWidth <= target.clientWidth) return
+    // v0.63.9: проверяем обрезку — для flex-контейнера проверяем дочерний текстовый span
+    const textChild = target.querySelector('.msg-text-content') || target.querySelector('span:not(.msg-time)')
+    const checkEl = textChild || target
+    if (checkEl.scrollWidth <= checkEl.clientWidth) return
     if (tooltipEl) hideTooltipImmediate()
 
     tooltipTarget = target
-    const fullText = target.dataset.full || target.textContent
+    // v0.63.9: берём полный текст — из data-full или из текстового span (без времени)
+    const fullText = target.dataset.full || (textChild ? textChild.textContent : target.textContent)
     tooltipEl = document.createElement('div')
     tooltipEl.className = 'cc-tooltip'
     tooltipEl.style.paddingRight = '28px' // место для иконки
@@ -963,24 +967,38 @@
 
     document.body.appendChild(tooltipEl)
 
-    // Позиционирование: над элементом
+    // v0.63.9: позиционирование над элементом + resize окна если не помещается
     const rect = target.getBoundingClientRect()
     const tW = tooltipEl.offsetWidth
+    const tH = tooltipEl.offsetHeight
     let left = rect.left
     if (left + tW > window.innerWidth - 8) left = window.innerWidth - tW - 8
     if (left < 4) left = 4
     tooltipEl.style.left = left + 'px'
-    tooltipEl.style.bottom = (window.innerHeight - rect.top + 4) + 'px'
 
-    // Если тултип выходит за верх экрана — показать снизу
-    requestAnimationFrame(() => {
-      if (!tooltipEl) return
-      const tRect = tooltipEl.getBoundingClientRect()
-      if (tRect.top < 0) {
-        tooltipEl.style.bottom = 'auto'
-        tooltipEl.style.top = (rect.bottom + 4) + 'px'
-      }
-    })
+    // Нужная позиция: над элементом
+    const neededTop = rect.top - tH - 4
+    if (neededTop < 0) {
+      // Тултип не помещается — увеличиваем окно вверх
+      const extraHeight = Math.abs(neededTop) + 8
+      tooltipEl.style.top = '4px' // прижимаем к верху
+      // Resize окна — добавляем место сверху
+      const totalH = calcHeight() + extraHeight
+      window.notifApi.resize(totalH)
+      tooltipExtraHeight = extraHeight
+      // После resize пересчитываем позицию (окно выросло вверх)
+      requestAnimationFrame(() => {
+        if (!tooltipEl) return
+        const newRect = target.getBoundingClientRect()
+        const newTop = newRect.top - tH - 4
+        if (newTop >= 4) {
+          tooltipEl.style.top = newTop + 'px'
+        }
+      })
+    } else {
+      tooltipEl.style.top = neededTop + 'px'
+      tooltipExtraHeight = 0
+    }
   }
 
   // v0.63.4: плавное исчезновение
@@ -992,6 +1010,8 @@
     tooltipFadeTimer = setTimeout(() => {
       if (el && el.parentNode) el.remove()
       if (tooltipEl === el) { tooltipEl = null; tooltipTarget = null }
+      // v0.63.9: восстановить высоту окна
+      if (tooltipExtraHeight > 0) { tooltipExtraHeight = 0; reportHeight() }
     }, 150)
   }
 
@@ -1002,6 +1022,8 @@
     tooltipDebounce = null
     if (tooltipEl) { tooltipEl.remove(); tooltipEl = null }
     tooltipTarget = null
+    // v0.63.9: восстановить высоту окна
+    if (tooltipExtraHeight > 0) { tooltipExtraHeight = 0; reportHeight() }
   }
 
   // ── v0.63.6: Мини-превью всего стэка при hover на .stack-container ──
@@ -1110,20 +1132,11 @@
     })
   }
 
-  // v0.63.4→v0.63.6: debounce 300мс + делегирование на container
+  // v0.63.9: каждый элемент показывает свой тултип (убран приоритет стэк-контейнера)
   container.addEventListener('mouseover', (e) => {
-    // v0.63.6: приоритет — стэк-контейнер (мини-превью всех сообщений)
-    const stackTarget = e.target.closest('.stack-container')
-    if (stackTarget && stackTarget !== tooltipTarget) {
-      hideTooltipImmediate()
-      tooltipDebounce = setTimeout(() => showStackPreview(stackTarget), 300)
-      return
-    }
-    // Обычный тултип для одиночных текстовых элементов (не внутри стэка)
-    const target = e.target.closest('.body-text, .sender')
+    // Тултип для конкретного текстового элемента — body-text, stacked-body, sender
+    const target = e.target.closest('.body-text, .stacked-body, .sender')
     if (!target || target === tooltipTarget) return
-    // Не показываем одиночный тултип если мы внутри stack-container (он покажет превью)
-    if (target.closest('.stack-container')) return
     hideTooltipImmediate()
     tooltipDebounce = setTimeout(() => showTooltip(target), 300)
   })
@@ -1143,15 +1156,13 @@
   }
 
   container.addEventListener('mouseout', (e) => {
-    const target = e.target.closest('.body-text, .stacked-body, .sender, .stack-container')
+    const target = e.target.closest('.body-text, .stacked-body, .sender')
     if (!target) return
     const related = e.relatedTarget
     // Ушли на тултип — не скрываем
     if (related && related.closest('.cc-tooltip')) { cancelHide(); return }
-    // Ушли на дочерний элемент внутри того же stack-container — не скрываем
-    if (related && target.closest('.stack-container') && related.closest('.stack-container') === target.closest('.stack-container')) return
     // Ушли на другой текстовый элемент — debounce обработает
-    if (related && related.closest('.body-text, .stacked-body, .sender, .stack-container')) {
+    if (related && related.closest('.body-text, .stacked-body, .sender')) {
       clearTimeout(tooltipDebounce)
       tooltipDebounce = null
       if (tooltipEl) hideTooltipFade()
@@ -1171,7 +1182,7 @@
     const from = e.target
     const to = e.relatedTarget
     if (from && from.closest('.cc-tooltip') && !(to && to.closest('.cc-tooltip'))) {
-      if (to && to.closest('.body-text, .stacked-body, .sender, .stack-container')) return
+      if (to && to.closest('.body-text, .stacked-body, .sender')) return
       scheduleHide()
     }
   })
