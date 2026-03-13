@@ -337,6 +337,46 @@
     border-color: rgba(34,197,94,0.4);
     box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(34,197,94,0.2);
   }
+  /* v0.64.1: закреплённый тултип (pin by click) */
+  .cc-tooltip.pinned {
+    user-select: text;
+    cursor: auto;
+    border-color: rgba(99,102,241,0.4);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.2);
+  }
+  .cc-tooltip .pin-icon {
+    position: absolute;
+    top: 4px;
+    left: 6px;
+    font-size: 10px;
+    color: rgba(99,102,241,0.7);
+    display: none;
+  }
+  .cc-tooltip.pinned .pin-icon {
+    display: block;
+  }
+  .cc-tooltip .close-tooltip {
+    position: absolute;
+    top: 2px;
+    right: 26px;
+    width: 18px;
+    height: 18px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: rgba(255,255,255,0.35);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .cc-tooltip.pinned .close-tooltip {
+    display: flex;
+  }
+  .cc-tooltip .close-tooltip:hover {
+    color: #f87171;
+    background: rgba(239,68,68,0.15);
+  }
   /* v0.63.6: мини-превью стэка */
   .cc-tooltip .stack-preview-row {
     display: flex;
@@ -918,6 +958,7 @@
   let tooltipDebounce = null  // v0.63.4: задержка перед показом
   let tooltipFadeTimer = null // v0.63.4: таймер fade-out
   let tooltipExtraHeight = 0 // v0.63.9: дополнительная высота окна для тултипа
+  let tooltipPinned = false   // v0.64.1: тултип закреплён кликом
 
   function showTooltip(target) {
     // v0.64.0: проверяем что текст обрезан
@@ -939,27 +980,51 @@
     tooltipEl.className = 'cc-tooltip'
     tooltipEl.style.paddingRight = '28px' // место для иконки
 
+    // v0.64.1: иконка пина (видна только в pinned состоянии)
+    const pinIcon = document.createElement('span')
+    pinIcon.className = 'pin-icon'
+    pinIcon.textContent = '\u{1F4CC}'
+    tooltipEl.appendChild(pinIcon)
+
     // v0.63.8: только полный текст — без времени, без имени
     const textSpan = document.createElement('span')
     textSpan.textContent = fullText
     tooltipEl.appendChild(textSpan)
 
+    // v0.64.1: кнопка закрытия (✕) — видна только в pinned
+    const closeTooltipBtn = document.createElement('span')
+    closeTooltipBtn.className = 'close-tooltip'
+    closeTooltipBtn.textContent = '\u00d7'
+    closeTooltipBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      tooltipPinned = false
+      hideTooltipImmediate()
+    })
+    tooltipEl.appendChild(closeTooltipBtn)
+
     // Иконка копирования справа вверху
     const copyIcon = document.createElement('span')
     copyIcon.className = 'copy-icon'
     copyIcon.textContent = '\u{1F4CB}'
-    tooltipEl.appendChild(copyIcon)
-
-    // Копирование кликом по всему тултипу
-    tooltipEl.addEventListener('click', (e) => {
+    copyIcon.addEventListener('click', (e) => {
       e.stopPropagation()
       if (navigator.clipboard) {
         navigator.clipboard.writeText(fullText).then(() => {
           tooltipEl.classList.add('copied')
           copyIcon.textContent = '\u2713'
-          setTimeout(() => hideTooltipFade(), 800)
+          if (!tooltipPinned) setTimeout(() => hideTooltipFade(), 800)
+          else setTimeout(() => { tooltipEl.classList.remove('copied'); copyIcon.textContent = '\u{1F4CB}' }, 1200)
         })
       }
+    })
+    tooltipEl.appendChild(copyIcon)
+
+    // v0.64.1: клик по тултипу — pin (закрепить)
+    tooltipEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (tooltipPinned) return // уже закреплён — клик ничего не делает (выделение текста)
+      tooltipPinned = true
+      tooltipEl.classList.add('pinned')
     })
 
     document.body.appendChild(tooltipEl)
@@ -1001,6 +1066,7 @@
   // v0.63.4: плавное исчезновение
   function hideTooltipFade() {
     if (!tooltipEl) return
+    if (tooltipPinned) return // v0.64.1: закреплённый тултип не скрывается
     clearTimeout(tooltipFadeTimer)
     tooltipEl.classList.add('fading')
     const el = tooltipEl
@@ -1017,6 +1083,7 @@
     clearTimeout(tooltipFadeTimer)
     clearTimeout(tooltipDebounce)
     tooltipDebounce = null
+    tooltipPinned = false // v0.64.1: сброс pin
     if (tooltipEl) { tooltipEl.remove(); tooltipEl = null }
     tooltipTarget = null
     // v0.63.9: восстановить высоту окна
@@ -1134,12 +1201,15 @@
     // Тултип для конкретного текстового элемента — body-text, stacked-body, sender
     const target = e.target.closest('.body-text, .stacked-body, .sender')
     if (!target || target === tooltipTarget) return
+    // v0.64.1: если тултип закреплён — не переключаем на другой элемент
+    if (tooltipPinned) return
     hideTooltipImmediate()
     tooltipDebounce = setTimeout(() => showTooltip(target), 300)
   })
   // v0.63.8: задержка перед скрытием тултипа — даёт время навести на иконку копирования
   let tooltipHideDelay = null
   function scheduleHide() {
+    if (tooltipPinned) return // v0.64.1: закреплённый — не скрываем
     clearTimeout(tooltipHideDelay)
     tooltipHideDelay = setTimeout(() => {
       // Проверяем: мышь НЕ на тултипе?
