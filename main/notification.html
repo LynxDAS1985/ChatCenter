@@ -301,19 +301,53 @@
     color: rgba(255,255,255,0.35);
     margin-bottom: 3px;
   }
-  .cc-tooltip .copy-hint {
-    display: block;
-    font-size: 10px;
-    color: rgba(255,255,255,0.35);
-    margin-top: 4px;
-    text-align: right;
+  /* v0.63.6: компактная иконка копирования в правом верхнем углу */
+  .cc-tooltip .copy-icon {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: rgba(255,255,255,0.3);
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+  .cc-tooltip:hover .copy-icon {
+    color: rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.08);
+  }
+  .cc-tooltip.copied .copy-icon {
+    color: #4ade80;
+    background: rgba(34,197,94,0.15);
   }
   .cc-tooltip.copied {
     border-color: rgba(34,197,94,0.4);
     box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(34,197,94,0.2);
   }
-  .cc-tooltip.copied .copy-hint {
-    color: #4ade80;
+  /* v0.63.6: мини-превью стэка */
+  .cc-tooltip .stack-preview-row {
+    display: flex;
+    gap: 6px;
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .cc-tooltip .stack-preview-row:last-child {
+    border-bottom: none;
+  }
+  .cc-tooltip .sp-time {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: rgba(255,255,255,0.35);
+    min-width: 32px;
+  }
+  .cc-tooltip .sp-text {
+    font-size: 12px;
+    color: rgba(255,255,255,0.8);
+    word-break: break-word;
   }
   @keyframes tooltipFadeIn {
     0%   { opacity: 0; transform: translateY(4px); }
@@ -867,11 +901,12 @@
     textSpan.textContent = fullText
     tooltipEl.appendChild(textSpan)
 
-    // v0.63.4: подсказка "клик = копировать"
-    const copyHint = document.createElement('span')
-    copyHint.className = 'copy-hint'
-    copyHint.textContent = '\u{1F4CB} клик — скопировать'
-    tooltipEl.appendChild(copyHint)
+    // v0.63.6: компактная иконка копирования справа вверху
+    const copyIcon = document.createElement('span')
+    copyIcon.className = 'copy-icon'
+    copyIcon.textContent = '\u{1F4CB}'
+    tooltipEl.appendChild(copyIcon)
+    tooltipEl.style.paddingRight = '28px' // место для иконки
 
     // v0.63.4: копирование кликом
     tooltipEl.addEventListener('click', (e) => {
@@ -879,7 +914,7 @@
       if (navigator.clipboard) {
         navigator.clipboard.writeText(fullText).then(() => {
           tooltipEl.classList.add('copied')
-          copyHint.textContent = '\u2713 Скопировано!'
+          copyIcon.textContent = '\u2713'
           setTimeout(() => hideTooltipFade(), 800)
         })
       }
@@ -928,23 +963,131 @@
     tooltipTarget = null
   }
 
-  // v0.63.4: debounce 300мс + делегирование на container
+  // ── v0.63.6: Мини-превью всего стэка при hover на .stack-container ──
+  function showStackPreview(stackContainer) {
+    if (tooltipEl) hideTooltipImmediate()
+    tooltipTarget = stackContainer
+
+    // Собираем все сообщения стэка: host body-text + stacked-body элементы
+    const notifItem = stackContainer.closest('.notif-item')
+    const hostBody = notifItem ? notifItem.querySelector('.body-text') : null
+    const stackedBodies = stackContainer.querySelectorAll('.stacked-body')
+
+    // Собираем все тексты для копирования
+    const allTexts = []
+
+    tooltipEl = document.createElement('div')
+    tooltipEl.className = 'cc-tooltip'
+    tooltipEl.style.paddingRight = '28px'
+
+    // Имя отправителя вверху
+    const senderEl = notifItem ? notifItem.querySelector('.sender') : null
+    if (senderEl) {
+      const nameEl = document.createElement('div')
+      nameEl.style.cssText = 'font-weight:600;color:#e2e8f0;margin-bottom:4px;font-size:12px'
+      nameEl.textContent = senderEl.textContent
+      tooltipEl.appendChild(nameEl)
+    }
+
+    // Первое (host) сообщение
+    if (hostBody) {
+      const row = document.createElement('div')
+      row.className = 'stack-preview-row'
+      const time = document.createElement('span')
+      time.className = 'sp-time'
+      time.textContent = hostBody.dataset.ts || ''
+      const text = document.createElement('span')
+      text.className = 'sp-text'
+      const fullHostText = hostBody.dataset.full || hostBody.textContent
+      text.textContent = fullHostText
+      row.appendChild(time)
+      row.appendChild(text)
+      tooltipEl.appendChild(row)
+      allTexts.push((hostBody.dataset.ts || '') + '  ' + fullHostText)
+    }
+
+    // Стэкнутые сообщения
+    stackedBodies.forEach(body => {
+      const row = document.createElement('div')
+      row.className = 'stack-preview-row'
+      const time = document.createElement('span')
+      time.className = 'sp-time'
+      time.textContent = body.dataset.ts || ''
+      const text = document.createElement('span')
+      text.className = 'sp-text'
+      text.textContent = body.textContent
+      row.appendChild(time)
+      row.appendChild(text)
+      tooltipEl.appendChild(row)
+      allTexts.push((body.dataset.ts || '') + '  ' + body.textContent)
+    })
+
+    // Иконка копирования
+    const copyIcon = document.createElement('span')
+    copyIcon.className = 'copy-icon'
+    copyIcon.textContent = '\u{1F4CB}'
+    tooltipEl.appendChild(copyIcon)
+
+    const allText = allTexts.join('\n')
+    tooltipEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(allText).then(() => {
+          tooltipEl.classList.add('copied')
+          copyIcon.textContent = '\u2713'
+          setTimeout(() => hideTooltipFade(), 800)
+        })
+      }
+    })
+
+    document.body.appendChild(tooltipEl)
+
+    // Позиционирование
+    const rect = stackContainer.getBoundingClientRect()
+    const tW = tooltipEl.offsetWidth
+    let left = rect.left
+    if (left + tW > window.innerWidth - 8) left = window.innerWidth - tW - 8
+    if (left < 4) left = 4
+    tooltipEl.style.left = left + 'px'
+    tooltipEl.style.bottom = (window.innerHeight - rect.top + 4) + 'px'
+
+    requestAnimationFrame(() => {
+      if (!tooltipEl) return
+      const tRect = tooltipEl.getBoundingClientRect()
+      if (tRect.top < 0) {
+        tooltipEl.style.bottom = 'auto'
+        tooltipEl.style.top = (rect.bottom + 4) + 'px'
+      }
+    })
+  }
+
+  // v0.63.4→v0.63.6: debounce 300мс + делегирование на container
   container.addEventListener('mouseover', (e) => {
-    const target = e.target.closest('.body-text, .stacked-body, .sender')
+    // v0.63.6: приоритет — стэк-контейнер (мини-превью всех сообщений)
+    const stackTarget = e.target.closest('.stack-container')
+    if (stackTarget && stackTarget !== tooltipTarget) {
+      hideTooltipImmediate()
+      tooltipDebounce = setTimeout(() => showStackPreview(stackTarget), 300)
+      return
+    }
+    // Обычный тултип для одиночных текстовых элементов (не внутри стэка)
+    const target = e.target.closest('.body-text, .sender')
     if (!target || target === tooltipTarget) return
-    // Новый элемент — очищаем старый тултип и ставим задержку
+    // Не показываем одиночный тултип если мы внутри stack-container (он покажет превью)
+    if (target.closest('.stack-container')) return
     hideTooltipImmediate()
     tooltipDebounce = setTimeout(() => showTooltip(target), 300)
   })
   container.addEventListener('mouseout', (e) => {
-    const target = e.target.closest('.body-text, .stacked-body, .sender')
+    const target = e.target.closest('.body-text, .stacked-body, .sender, .stack-container')
     if (!target) return
     const related = e.relatedTarget
     // Ушли на тултип — не скрываем
     if (related && related.closest('.cc-tooltip')) return
+    // Ушли на дочерний элемент внутри того же stack-container — не скрываем
+    if (related && target.closest('.stack-container') && related.closest('.stack-container') === target.closest('.stack-container')) return
     // Ушли на другой текстовый элемент — debounce обработает
-    if (related && related.closest('.body-text, .stacked-body, .sender')) {
-      // Отменяем только debounce текущего, новый mouseover поставит свой
+    if (related && related.closest('.body-text, .stacked-body, .sender, .stack-container')) {
       clearTimeout(tooltipDebounce)
       tooltipDebounce = null
       if (tooltipEl) hideTooltipFade()
@@ -960,8 +1103,7 @@
     const from = e.target
     const to = e.relatedTarget
     if (from && from.closest('.cc-tooltip') && !(to && to.closest('.cc-tooltip'))) {
-      // Если вернулись на текстовый элемент — не скрываем
-      if (to && to.closest('.body-text, .stacked-body, .sender')) return
+      if (to && to.closest('.body-text, .stacked-body, .sender, .stack-container')) return
       hideTooltipFade()
     }
   })
