@@ -334,6 +334,10 @@
     gap: 6px;
     padding: 2px 0;
     border-bottom: 1px solid rgba(255,255,255,0.05);
+    /* v0.63.7: staggered анимация строк стэка */
+    opacity: 0;
+    transform: translateY(-6px);
+    animation: stackRowSlideIn 200ms ease-out forwards;
   }
   .cc-tooltip .stack-preview-row:last-child {
     border-bottom: none;
@@ -348,6 +352,11 @@
     font-size: 12px;
     color: rgba(255,255,255,0.8);
     word-break: break-word;
+  }
+  /* v0.63.7: staggered появление строк стэка */
+  @keyframes stackRowSlideIn {
+    0%   { opacity: 0; transform: translateY(-6px); }
+    100% { opacity: 1; transform: translateY(0); }
   }
   @keyframes tooltipFadeIn {
     0%   { opacity: 0; transform: translateY(4px); }
@@ -975,6 +984,8 @@
 
     // Собираем все тексты для копирования
     const allTexts = []
+    // v0.63.7: счётчик строк для staggered анимации
+    let rowIndex = 0
 
     tooltipEl = document.createElement('div')
     tooltipEl.className = 'cc-tooltip'
@@ -993,6 +1004,9 @@
     if (hostBody) {
       const row = document.createElement('div')
       row.className = 'stack-preview-row'
+      // v0.63.7: staggered задержка
+      row.style.animationDelay = (rowIndex * 30) + 'ms'
+      rowIndex++
       const time = document.createElement('span')
       time.className = 'sp-time'
       time.textContent = hostBody.dataset.ts || ''
@@ -1010,6 +1024,9 @@
     stackedBodies.forEach(body => {
       const row = document.createElement('div')
       row.className = 'stack-preview-row'
+      // v0.63.7: staggered задержка
+      row.style.animationDelay = (rowIndex * 30) + 'ms'
+      rowIndex++
       const time = document.createElement('span')
       time.className = 'sp-time'
       time.textContent = body.dataset.ts || ''
