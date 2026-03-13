@@ -182,9 +182,9 @@
     overflow: visible !important;
     text-overflow: unset !important;
   }
-  /* v0.64.2: единый цвет стэкированных сообщений в expanded-карточке */
+  /* v0.64.2→v0.64.3: единый цвет текста в expanded, НЕ трогаем .msg-time */
   .notif-item.expanded .stacked-body,
-  .notif-item.expanded .stacked-body span {
+  .notif-item.expanded .stacked-body span:not(.msg-time) {
     color: rgba(255,255,255,0.8);
   }
   .action-btn {

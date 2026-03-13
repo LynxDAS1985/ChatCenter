@@ -112,6 +112,8 @@
 
 **Ловушка 13 (v0.63.9→v0.64.0)**: `scrollWidth > clientWidth` не работает для `.msg-text-content` span с inline `overflow:hidden` — scrollWidth === clientWidth потому что overflow скрыт. **ПРАВИЛО**: Для `.body-text` с `data-full` — НЕ проверять scrollWidth. Сравнивать `data-full.length > data-short.length`. Для остальных — проверять scrollWidth на видимом span.
 
+**Ловушка 16 (v0.64.3)**: CSS-правило `.stacked-body span` перебивает `.msg-time` по specificity (0,3,1 > 0,1,0). Стэковые `.msg-time` становятся яркими 0.8, а host `.msg-time` остаётся 0.3. **ПРАВИЛО**: При стилизации `span`-потомков ВСЕГДА исключать `.msg-time` через `:not(.msg-time)`, чтобы время оставалось единообразным.
+
 **Ловушка 15 (v0.64.2)**: Цвет `.stacked-body` не обновляется при expanded. CSS `.notif-item.expanded .body-text` повышает `color` до `0.8`, но `.stacked-body` — отдельный класс, не потомок `.body-text`. **ПРАВИЛО**: При изменении стилей expanded для host-сообщения — ВСЕГДА проверить что аналогичные стили применяются и к `.stacked-body` и его `span`-потомкам.
 
 **Ловушка 14 (v0.64.0)**: Inline стили (из JS `el.style.cssText = '...'`) имеют приоритет над CSS-классами. В expanded mode `.msg-text-content` имеет inline `white-space:nowrap; overflow:hidden` → CSS `.notif-item.expanded .body-text .msg-text-content { white-space: pre-wrap }` НЕ работает. **ПРАВИЛО**: Использовать `!important` в CSS expanded для перебития inline стилей.
