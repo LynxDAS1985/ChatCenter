@@ -269,6 +269,28 @@
     color: #f87171;
     transform: scale(1.1);
   }
+  /* v0.63.3: кастомный тултип для обрезанного текста */
+  .cc-tooltip {
+    position: fixed;
+    max-width: 320px;
+    padding: 8px 12px;
+    background: #2d2d4a;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    color: rgba(255,255,255,0.9);
+    font-size: 12px;
+    line-height: 1.4;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    z-index: 100;
+    pointer-events: none;
+    animation: tooltipFadeIn 150ms ease-out;
+  }
+  @keyframes tooltipFadeIn {
+    0%   { opacity: 0; transform: translateY(4px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
 </style>
 </head>
 <body>
@@ -782,6 +804,58 @@
       stacks.set(data.messengerId, { hostId: data.id, childIds: [] })
     }
   }
+
+  // ── v0.63.3: Кастомный тултип для обрезанного текста ──
+  let tooltipEl = null
+  let tooltipTarget = null
+
+  function showTooltip(target) {
+    // Проверяем что текст реально обрезан
+    if (target.scrollWidth <= target.clientWidth) return
+    if (tooltipEl) hideTooltip()
+
+    tooltipTarget = target
+    const fullText = target.dataset.full || target.textContent
+    tooltipEl = document.createElement('div')
+    tooltipEl.className = 'cc-tooltip'
+    tooltipEl.textContent = fullText
+    document.body.appendChild(tooltipEl)
+
+    // Позиционирование: над элементом
+    const rect = target.getBoundingClientRect()
+    const tW = tooltipEl.offsetWidth
+    // По левому краю текста, но не выходя за экран
+    let left = rect.left
+    if (left + tW > window.innerWidth - 8) left = window.innerWidth - tW - 8
+    if (left < 4) left = 4
+    tooltipEl.style.left = left + 'px'
+    tooltipEl.style.bottom = (window.innerHeight - rect.top + 4) + 'px'
+
+    // Если тултип выходит за верх экрана — показать снизу
+    requestAnimationFrame(() => {
+      if (!tooltipEl) return
+      const tRect = tooltipEl.getBoundingClientRect()
+      if (tRect.top < 0) {
+        tooltipEl.style.bottom = 'auto'
+        tooltipEl.style.top = (rect.bottom + 4) + 'px'
+      }
+    })
+  }
+
+  function hideTooltip() {
+    if (tooltipEl) { tooltipEl.remove(); tooltipEl = null }
+    tooltipTarget = null
+  }
+
+  container.addEventListener('mouseover', (e) => {
+    const target = e.target.closest('.body-text, .stacked-body, .sender')
+    if (target && target !== tooltipTarget) showTooltip(target)
+  })
+  container.addEventListener('mouseout', (e) => {
+    const related = e.relatedTarget
+    if (related && (related.closest('.body-text, .stacked-body, .sender') === tooltipTarget)) return
+    hideTooltip()
+  })
 
   // IPC listeners
   window.notifApi.onNotification((data) => addNotification(data))

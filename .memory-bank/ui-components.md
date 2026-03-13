@@ -195,6 +195,8 @@ Frameless BrowserWindow справа экрана. Файл: `main/notification.
 
 **Кнопки**: ✓ (Прочитано), × (закрыть), → Перейти к чату (в expanded).
 
+**Тултип обрезанного текста (v0.63.3)**: При наведении на `.body-text`, `.stacked-body`, `.sender` с обрезанным текстом — кастомный `.cc-tooltip` (`position: fixed`, `#2d2d4a` фон, `max-width: 320px`). Показывается только если `scrollWidth > clientWidth`. Анимация `tooltipFadeIn` 150мс.
+
 ### Последнее сообщение в статусбаре (v0.23.0)
 
 Вместо диагностики — `💬 Telegram: текст сообщения...` (исчезает через 8 сек).
