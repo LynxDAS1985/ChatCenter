@@ -182,6 +182,11 @@
     overflow: visible !important;
     text-overflow: unset !important;
   }
+  /* v0.64.2: единый цвет стэкированных сообщений в expanded-карточке */
+  .notif-item.expanded .stacked-body,
+  .notif-item.expanded .stacked-body span {
+    color: rgba(255,255,255,0.8);
+  }
   .action-btn {
     padding: 4px 12px;
     border: 1px solid rgba(255,255,255,0.15);
