@@ -108,6 +108,10 @@
 
 **Ловушка 9 (v0.63.6)**: Тултип стэка и одиночный тултип — конфликт приоритетов. При hover на `.stacked-body` внутри `.stack-container` — срабатывают оба `closest()`. **ПРАВИЛО**: если target внутри `.stack-container` → показывать превью стэка, НЕ одиночный тултип. Проверять `target.closest('.stack-container')` и пропускать одиночный.
 
+**Ловушка 10 (v0.63.8)**: Тултип закрывается при попытке навести на иконку копирования. Причина: mouseout из текстового элемента → `hideTooltipFade()` срабатывает ДО того как мышь дойдёт до тултипа. **ПРАВИЛО**: НЕ скрывать тултип мгновенно при mouseout. Использовать `scheduleHide()` с задержкой 100мс + `cancelHide()` при mouseover на `.cc-tooltip`. Проверять `:hover` перед скрытием.
+
+**Ловушка 11 (v0.63.8)**: `body-text` с flex (время + текст) ломает expanded mode. При expand `white-space: pre-wrap` не работает с `display: flex`. **ПРАВИЛО**: `.notif-item.expanded .body-text` должен иметь `display: block !important`, а `.msg-text-content` внутри — `white-space: pre-wrap; overflow: visible`.
+
 ---
 
 ## 🔴 КРИТИЧЕСКОЕ: Startup ribbon — уведомления при запуске для старых сообщений

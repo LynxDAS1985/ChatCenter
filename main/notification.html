@@ -174,6 +174,13 @@
     text-overflow: unset;
     max-height: 300px;
     color: rgba(255,255,255,0.8);
+    /* v0.63.8: при expand убираем flex, время остаётся inline */
+    display: block !important;
+  }
+  .notif-item.expanded .body-text .msg-text-content {
+    white-space: pre-wrap;
+    overflow: visible;
+    text-overflow: unset;
   }
   .action-btn {
     padding: 4px 12px;
@@ -273,7 +280,7 @@
   /* v0.63.3→v0.63.4: кастомный тултип для обрезанного текста */
   .cc-tooltip {
     position: fixed;
-    max-width: 320px;
+    max-width: 360px;
     padding: 8px 12px;
     background: #2d2d4a;
     border: 1px solid rgba(255,255,255,0.15);
@@ -285,6 +292,7 @@
     white-space: pre-wrap;
     box-shadow: 0 8px 24px rgba(0,0,0,0.5);
     z-index: 100;
+    pointer-events: auto;
     cursor: pointer;
     user-select: none;
     opacity: 1;
@@ -295,11 +303,12 @@
     opacity: 0;
     pointer-events: none;
   }
-  .cc-tooltip .tooltip-time {
-    display: block;
+  /* v0.63.8: время отправки перед текстом в карточке */
+  .msg-time {
     font-size: 10px;
-    color: rgba(255,255,255,0.35);
-    margin-bottom: 3px;
+    color: rgba(255,255,255,0.3);
+    margin-right: 4px;
+    flex-shrink: 0;
   }
   /* v0.63.6: компактная иконка копирования в правом верхнем углу */
   .cc-tooltip .copy-icon {
@@ -373,6 +382,7 @@
   // v0.63.0: стэк — messengerId → hostItemId (id карточки, в которую складываются сообщения)
   const stacks = new Map() // messengerId → { hostId, childIds: [id,...] }
   let groupingEnabled = false
+  let showTimeEnabled = true // v0.63.8: показ времени перед текстом (настройка из settings)
   let hoveredItemId = null
   // v0.60.6: каскадное появление — очередь задержки
   let cascadeQueue = 0
@@ -557,9 +567,23 @@
 
     const bodyDiv = document.createElement('div')
     bodyDiv.className = 'stacked-body'
-    bodyDiv.textContent = data.body || ''
-    // v0.63.5: время получения для тултипа
-    bodyDiv.dataset.ts = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    const stackTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    bodyDiv.dataset.ts = stackTime
+    // v0.63.8: время перед текстом в стэке
+    if (showTimeEnabled) {
+      const timeSpan = document.createElement('span')
+      timeSpan.className = 'msg-time'
+      timeSpan.textContent = stackTime
+      bodyDiv.appendChild(timeSpan)
+      bodyDiv.style.display = 'flex'
+      bodyDiv.style.alignItems = 'baseline'
+      const textNode = document.createElement('span')
+      textNode.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0'
+      textNode.textContent = data.body || ''
+      bodyDiv.appendChild(textNode)
+    } else {
+      bodyDiv.textContent = data.body || ''
+    }
     msgDiv.appendChild(bodyDiv)
 
     stackContainer.appendChild(msgDiv)
@@ -631,6 +655,8 @@
 
     // v0.60.4: сохраняем флаг группировки
     if (data.grouping !== undefined) groupingEnabled = !!data.grouping
+    // v0.63.8: сохраняем флаг показа времени
+    if (data.showMessageTime !== undefined) showTimeEnabled = !!data.showMessageTime
 
     // v0.63.0: стэковая группировка — складываем в существующую карточку
     if (groupingEnabled && data.messengerId) {
@@ -710,11 +736,26 @@
 
     const bodyText = document.createElement('div')
     bodyText.className = 'body-text'
-    bodyText.textContent = data.body || ''
     bodyText.dataset.short = data.body || ''
     bodyText.dataset.full = data.fullBody || data.body || ''
-    // v0.63.5: сохраняем время получения для тултипа
-    bodyText.dataset.ts = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    const nowTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    bodyText.dataset.ts = nowTime
+    // v0.63.8: время перед текстом (управляется настройкой showMessageTime)
+    if (showTimeEnabled) {
+      const timeSpan = document.createElement('span')
+      timeSpan.className = 'msg-time'
+      timeSpan.textContent = nowTime
+      bodyText.appendChild(timeSpan)
+      bodyText.style.display = 'flex'
+      bodyText.style.alignItems = 'baseline'
+      const textNode = document.createElement('span')
+      textNode.className = 'msg-text-content'
+      textNode.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0'
+      textNode.textContent = data.body || ''
+      bodyText.appendChild(textNode)
+    } else {
+      bodyText.textContent = data.body || ''
+    }
     textWrap.appendChild(bodyText)
 
     const hint = document.createElement('div')
@@ -895,29 +936,20 @@
     const fullText = target.dataset.full || target.textContent
     tooltipEl = document.createElement('div')
     tooltipEl.className = 'cc-tooltip'
+    tooltipEl.style.paddingRight = '28px' // место для иконки
 
-    // v0.63.5: время получения
-    const ts = target.dataset.ts
-    if (ts) {
-      const timeEl = document.createElement('span')
-      timeEl.className = 'tooltip-time'
-      timeEl.textContent = ts
-      tooltipEl.appendChild(timeEl)
-    }
-
-    // Текст сообщения
+    // v0.63.8: только полный текст — без времени, без имени
     const textSpan = document.createElement('span')
     textSpan.textContent = fullText
     tooltipEl.appendChild(textSpan)
 
-    // v0.63.6: компактная иконка копирования справа вверху
+    // Иконка копирования справа вверху
     const copyIcon = document.createElement('span')
     copyIcon.className = 'copy-icon'
     copyIcon.textContent = '\u{1F4CB}'
     tooltipEl.appendChild(copyIcon)
-    tooltipEl.style.paddingRight = '28px' // место для иконки
 
-    // v0.63.4: копирование кликом
+    // Копирование кликом по всему тултипу
     tooltipEl.addEventListener('click', (e) => {
       e.stopPropagation()
       if (navigator.clipboard) {
@@ -1095,12 +1127,27 @@
     hideTooltipImmediate()
     tooltipDebounce = setTimeout(() => showTooltip(target), 300)
   })
+  // v0.63.8: задержка перед скрытием тултипа — даёт время навести на иконку копирования
+  let tooltipHideDelay = null
+  function scheduleHide() {
+    clearTimeout(tooltipHideDelay)
+    tooltipHideDelay = setTimeout(() => {
+      // Проверяем: мышь НЕ на тултипе?
+      if (tooltipEl && !tooltipEl.matches(':hover')) {
+        hideTooltipFade()
+      }
+    }, 100)
+  }
+  function cancelHide() {
+    clearTimeout(tooltipHideDelay)
+  }
+
   container.addEventListener('mouseout', (e) => {
     const target = e.target.closest('.body-text, .stacked-body, .sender, .stack-container')
     if (!target) return
     const related = e.relatedTarget
     // Ушли на тултип — не скрываем
-    if (related && related.closest('.cc-tooltip')) return
+    if (related && related.closest('.cc-tooltip')) { cancelHide(); return }
     // Ушли на дочерний элемент внутри того же stack-container — не скрываем
     if (related && target.closest('.stack-container') && related.closest('.stack-container') === target.closest('.stack-container')) return
     // Ушли на другой текстовый элемент — debounce обработает
@@ -1112,16 +1159,20 @@
     }
     clearTimeout(tooltipDebounce)
     tooltipDebounce = null
-    hideTooltipFade()
+    // v0.63.8: задержка — вдруг мышь идёт на тултип
+    scheduleHide()
   })
-  // Скрытие при уходе мыши с тултипа
+  // Тултип: при наведении — отменяем скрытие, при уходе — скрываем
+  document.body.addEventListener('mouseover', (e) => {
+    if (tooltipEl && e.target.closest('.cc-tooltip')) cancelHide()
+  })
   document.body.addEventListener('mouseout', (e) => {
     if (!tooltipEl) return
     const from = e.target
     const to = e.relatedTarget
     if (from && from.closest('.cc-tooltip') && !(to && to.closest('.cc-tooltip'))) {
       if (to && to.closest('.body-text, .stacked-body, .sender, .stack-container')) return
-      hideTooltipFade()
+      scheduleHide()
     }
   })
 

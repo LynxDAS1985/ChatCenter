@@ -560,7 +560,8 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
 
   const expandedByDefault = !!settings.ribbonExpandedByDefault
   const grouping = !!settings.ribbonGrouping
-  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, grouping, senderName: senderName || title || '', chatTag: chatTag || '' }
+  const showMessageTime = settings.showMessageTime !== false // v0.63.8: по умолчанию включено
+  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '' }
 
   // FIFO — удаляем старые из трекинга (v0.63.2: увеличен до 30, стэк может иметь 10+ сообщений)
   if (notifItems.length >= 30) {

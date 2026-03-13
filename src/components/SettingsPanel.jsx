@@ -356,6 +356,9 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="Группировка уведомлений" description="Объединять ribbon от одного мессенджера">
                 <Toggle value={!!settings.ribbonGrouping} onChange={v => set('ribbonGrouping', v)} />
               </SettingRow>
+              <SettingRow label="Время в уведомлениях" description="Показывать время перед текстом в ribbon">
+                <Toggle value={settings.showMessageTime !== false} onChange={v => set('showMessageTime', v)} />
+              </SettingRow>
               <SettingRow label="Автопереключение на новое сообщение" description="Переключать вкладку при входящем">
                 <Toggle value={!!settings.autoSwitchOnMessage} onChange={v => set('autoSwitchOnMessage', v)} />
               </SettingRow>
