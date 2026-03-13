@@ -269,7 +269,7 @@
     color: #f87171;
     transform: scale(1.1);
   }
-  /* v0.63.3: кастомный тултип для обрезанного текста */
+  /* v0.63.3→v0.63.4: кастомный тултип для обрезанного текста */
   .cc-tooltip {
     position: fixed;
     max-width: 320px;
@@ -284,8 +284,29 @@
     white-space: pre-wrap;
     box-shadow: 0 8px 24px rgba(0,0,0,0.5);
     z-index: 100;
-    pointer-events: none;
+    cursor: pointer;
+    user-select: none;
+    opacity: 1;
+    transition: opacity 150ms ease-out;
     animation: tooltipFadeIn 150ms ease-out;
+  }
+  .cc-tooltip.fading {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .cc-tooltip .copy-hint {
+    display: block;
+    font-size: 10px;
+    color: rgba(255,255,255,0.35);
+    margin-top: 4px;
+    text-align: right;
+  }
+  .cc-tooltip.copied {
+    border-color: rgba(34,197,94,0.4);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(34,197,94,0.2);
+  }
+  .cc-tooltip.copied .copy-hint {
+    color: #4ade80;
   }
   @keyframes tooltipFadeIn {
     0%   { opacity: 0; transform: translateY(4px); }
@@ -805,26 +826,50 @@
     }
   }
 
-  // ── v0.63.3: Кастомный тултип для обрезанного текста ──
+  // ── v0.63.3→v0.63.4: Кастомный тултип — debounce 300мс, fade-out, копирование кликом ──
   let tooltipEl = null
   let tooltipTarget = null
+  let tooltipDebounce = null  // v0.63.4: задержка перед показом
+  let tooltipFadeTimer = null // v0.63.4: таймер fade-out
 
   function showTooltip(target) {
     // Проверяем что текст реально обрезан
     if (target.scrollWidth <= target.clientWidth) return
-    if (tooltipEl) hideTooltip()
+    if (tooltipEl) hideTooltipImmediate()
 
     tooltipTarget = target
     const fullText = target.dataset.full || target.textContent
     tooltipEl = document.createElement('div')
     tooltipEl.className = 'cc-tooltip'
-    tooltipEl.textContent = fullText
+
+    // Текст сообщения
+    const textSpan = document.createElement('span')
+    textSpan.textContent = fullText
+    tooltipEl.appendChild(textSpan)
+
+    // v0.63.4: подсказка "клик = копировать"
+    const copyHint = document.createElement('span')
+    copyHint.className = 'copy-hint'
+    copyHint.textContent = '\u{1F4CB} клик — скопировать'
+    tooltipEl.appendChild(copyHint)
+
+    // v0.63.4: копирование кликом
+    tooltipEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(fullText).then(() => {
+          tooltipEl.classList.add('copied')
+          copyHint.textContent = '\u2713 Скопировано!'
+          setTimeout(() => hideTooltipFade(), 800)
+        })
+      }
+    })
+
     document.body.appendChild(tooltipEl)
 
     // Позиционирование: над элементом
     const rect = target.getBoundingClientRect()
     const tW = tooltipEl.offsetWidth
-    // По левому краю текста, но не выходя за экран
     let left = rect.left
     if (left + tW > window.innerWidth - 8) left = window.innerWidth - tW - 8
     if (left < 4) left = 4
@@ -842,19 +887,63 @@
     })
   }
 
-  function hideTooltip() {
+  // v0.63.4: плавное исчезновение
+  function hideTooltipFade() {
+    if (!tooltipEl) return
+    clearTimeout(tooltipFadeTimer)
+    tooltipEl.classList.add('fading')
+    const el = tooltipEl
+    tooltipFadeTimer = setTimeout(() => {
+      if (el && el.parentNode) el.remove()
+      if (tooltipEl === el) { tooltipEl = null; tooltipTarget = null }
+    }, 150)
+  }
+
+  // Мгновенное скрытие (для смены тултипа между элементами)
+  function hideTooltipImmediate() {
+    clearTimeout(tooltipFadeTimer)
+    clearTimeout(tooltipDebounce)
+    tooltipDebounce = null
     if (tooltipEl) { tooltipEl.remove(); tooltipEl = null }
     tooltipTarget = null
   }
 
+  // v0.63.4: debounce 300мс + делегирование на container
   container.addEventListener('mouseover', (e) => {
     const target = e.target.closest('.body-text, .stacked-body, .sender')
-    if (target && target !== tooltipTarget) showTooltip(target)
+    if (!target || target === tooltipTarget) return
+    // Новый элемент — очищаем старый тултип и ставим задержку
+    hideTooltipImmediate()
+    tooltipDebounce = setTimeout(() => showTooltip(target), 300)
   })
   container.addEventListener('mouseout', (e) => {
+    const target = e.target.closest('.body-text, .stacked-body, .sender')
+    if (!target) return
     const related = e.relatedTarget
-    if (related && (related.closest('.body-text, .stacked-body, .sender') === tooltipTarget)) return
-    hideTooltip()
+    // Ушли на тултип — не скрываем
+    if (related && related.closest('.cc-tooltip')) return
+    // Ушли на другой текстовый элемент — debounce обработает
+    if (related && related.closest('.body-text, .stacked-body, .sender')) {
+      // Отменяем только debounce текущего, новый mouseover поставит свой
+      clearTimeout(tooltipDebounce)
+      tooltipDebounce = null
+      if (tooltipEl) hideTooltipFade()
+      return
+    }
+    clearTimeout(tooltipDebounce)
+    tooltipDebounce = null
+    hideTooltipFade()
+  })
+  // Скрытие при уходе мыши с тултипа
+  document.body.addEventListener('mouseout', (e) => {
+    if (!tooltipEl) return
+    const from = e.target
+    const to = e.relatedTarget
+    if (from && from.closest('.cc-tooltip') && !(to && to.closest('.cc-tooltip'))) {
+      // Если вернулись на текстовый элемент — не скрываем
+      if (to && to.closest('.body-text, .stacked-body, .sender')) return
+      hideTooltipFade()
+    }
   })
 
   // IPC listeners

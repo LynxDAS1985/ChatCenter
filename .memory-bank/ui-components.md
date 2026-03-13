@@ -195,7 +195,7 @@ Frameless BrowserWindow справа экрана. Файл: `main/notification.
 
 **Кнопки**: ✓ (Прочитано), × (закрыть), → Перейти к чату (в expanded).
 
-**Тултип обрезанного текста (v0.63.3)**: При наведении на `.body-text`, `.stacked-body`, `.sender` с обрезанным текстом — кастомный `.cc-tooltip` (`position: fixed`, `#2d2d4a` фон, `max-width: 320px`). Показывается только если `scrollWidth > clientWidth`. Анимация `tooltipFadeIn` 150мс.
+**Тултип обрезанного текста (v0.63.3→v0.63.4)**: При наведении на `.body-text`, `.stacked-body`, `.sender` с обрезанным текстом — кастомный `.cc-tooltip` (`position: fixed`, `#2d2d4a` фон, `max-width: 320px`). Показывается только если `scrollWidth > clientWidth`. Debounce 300мс. Fade-out 150мс. Клик по тултипу — копирует текст в буфер (подсказка + зелёная рамка "Скопировано!").
 
 ### Последнее сообщение в статусбаре (v0.23.0)
 
