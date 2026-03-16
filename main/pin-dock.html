@@ -55,11 +55,19 @@
     gap: 6px; padding: 4px 8px;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 6px; cursor: pointer;
+    border-radius: 6px; cursor: grab;
     flex-shrink: 0; max-width: 180px;
     transition: all 0.15s;
     animation: tabAppear 200ms ease-out;
     position: relative;
+  }
+  .dock-tab.dragging {
+    opacity: 0.4;
+    cursor: grabbing;
+  }
+  .dock-tab.drag-over {
+    border-color: rgba(99,102,241,0.6);
+    background: rgba(99,102,241,0.12);
   }
   @keyframes tabAppear {
     0%   { opacity: 0; transform: translateY(8px) scale(0.9); }
@@ -165,6 +173,7 @@
   const tabs = new Map() // pinId → { el, timerInterval, data }
   let previewEl = null
   let previewTimeout = null
+  let dragSrcTab = null
 
   function updateCount() {
     const n = tabs.size
@@ -212,6 +221,44 @@
     tab.addEventListener('click', () => {
       hidePreview()
       window.dockApi.showPin(data.pinId)
+    })
+
+    // Drag & Drop для сортировки
+    tab.draggable = true
+    tab.addEventListener('dragstart', (e) => {
+      dragSrcTab = tab
+      tab.classList.add('dragging')
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', data.pinId)
+    })
+    tab.addEventListener('dragend', () => {
+      tab.classList.remove('dragging')
+      dragSrcTab = null
+      document.querySelectorAll('.dock-tab.drag-over').forEach(t => t.classList.remove('drag-over'))
+    })
+    tab.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      if (dragSrcTab && dragSrcTab !== tab) {
+        tab.classList.add('drag-over')
+      }
+    })
+    tab.addEventListener('dragleave', () => {
+      tab.classList.remove('drag-over')
+    })
+    tab.addEventListener('drop', (e) => {
+      e.preventDefault()
+      tab.classList.remove('drag-over')
+      if (!dragSrcTab || dragSrcTab === tab) return
+      // Определить позицию: вставить перед или после
+      const rect = tab.getBoundingClientRect()
+      const midX = rect.left + rect.width / 2
+      if (e.clientX < midX) {
+        dock.insertBefore(dragSrcTab, tab)
+      } else {
+        dock.insertBefore(dragSrcTab, tab.nextSibling)
+      }
+      reportSize()
     })
 
     dock.insertBefore(tab, dockCloseBtn)

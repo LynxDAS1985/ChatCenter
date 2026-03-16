@@ -200,6 +200,14 @@
     background: rgba(239,68,68,0.15);
     color: #f87171;
   }
+  .pin-action.chat {
+    border-color: rgba(56,189,248,0.25);
+    color: rgba(56,189,248,0.7);
+  }
+  .pin-action.chat:hover {
+    background: rgba(56,189,248,0.15);
+    color: rgba(56,189,248,1);
+  }
   .pin-action.copy {
     border-color: rgba(34,197,94,0.2);
     color: rgba(34,197,94,0.6);
@@ -234,6 +242,7 @@
     </div>
   </div>
   <div class="pin-footer">
+    <button class="pin-action chat" id="chatBtn" style="display:none">→ В чат</button>
     <button class="pin-action copy" id="copyBtn">📋 Копировать</button>
     <button class="pin-action dock" id="dockBtn">⬇ В задачи</button>
     <button class="pin-action unpin" id="unpinBtn">⊘ Открепить</button>
@@ -246,6 +255,7 @@
   const timeEl = document.getElementById('time')
   const bodyEl = document.getElementById('body')
   const closeBtn = document.getElementById('closeBtn')
+  const chatBtn = document.getElementById('chatBtn')
   const copyBtn = document.getElementById('copyBtn')
   const dockBtn = document.getElementById('dockBtn')
   const unpinBtn = document.getElementById('unpinBtn')
@@ -255,6 +265,7 @@
   const timerCancel = document.getElementById('timerCancel')
 
   let messageText = ''
+  let pinMessengerId = ''
   let timerInterval = null
 
   window.pinApi.onData((data) => {
@@ -263,6 +274,9 @@
     bodyEl.textContent = data.text || ''
     messageText = data.text || ''
     colorBar.style.background = data.color || '#2AABEE'
+    pinMessengerId = data.messengerId || ''
+    // Показать кнопку "В чат" если есть messengerId
+    if (pinMessengerId) chatBtn.style.display = ''
 
     requestAnimationFrame(() => {
       window.pinApi.resize(card.offsetHeight)
@@ -272,6 +286,9 @@
   closeBtn.addEventListener('click', () => window.pinApi.unpin())
   unpinBtn.addEventListener('click', () => window.pinApi.unpin())
   dockBtn.addEventListener('click', () => window.pinApi.minimizeToDock())
+  chatBtn.addEventListener('click', () => {
+    if (pinMessengerId) window.pinApi.goToChat(pinMessengerId)
+  })
 
   copyBtn.addEventListener('click', () => {
     if (navigator.clipboard && messageText) {

@@ -539,7 +539,7 @@
     msgDiv.appendChild(bodyDiv)
 
     // v0.65.0: кнопка 📌 для закрепления стэкированного сообщения
-    msgDiv.appendChild(createPinBtn(host.senderName || host.messengerName || '', data.body || '', stackTime, host.color || '#2AABEE'))
+    msgDiv.appendChild(createPinBtn(host.senderName || host.messengerName || '', data.body || '', stackTime, host.color || '#2AABEE', data.messengerId))
 
     stackContainer.appendChild(msgDiv)
     // Автоскролл вниз к новому сообщению
@@ -715,7 +715,7 @@
 
     // v0.65.0: кнопка 📌 для закрепления host-сообщения
     const hostFullText = data.fullBody || data.body || ''
-    textWrap.appendChild(createPinBtn(senderName || mName, hostFullText, nowTime, data.color || '#2AABEE'))
+    textWrap.appendChild(createPinBtn(senderName || mName, hostFullText, nowTime, data.color || '#2AABEE', data.messengerId))
 
     const hint = document.createElement('div')
     hint.className = 'expand-hint'
@@ -877,14 +877,14 @@
   }
 
   // ── v0.65.0: Создание кнопки 📌 для закрепления сообщения ──
-  function createPinBtn(senderName, fullText, time, color) {
+  function createPinBtn(senderName, fullText, time, color, messengerId) {
     const btn = document.createElement('button')
     btn.className = 'pin-msg-btn'
     btn.textContent = '\u{1F4CC}'
     btn.title = '\u0417\u0430\u043A\u0440\u0435\u043F\u0438\u0442\u044C'
     btn.addEventListener('click', (e) => {
       e.stopPropagation()
-      window.notifApi.pinMessage({ sender: senderName, text: fullText, time: time, color: color })
+      window.notifApi.pinMessage({ sender: senderName, text: fullText, time: time, color: color, messengerId: messengerId || '' })
       btn.textContent = '\u2713'
       btn.style.color = '#4ade80'
       btn.style.background = 'rgba(34,197,94,0.2)'

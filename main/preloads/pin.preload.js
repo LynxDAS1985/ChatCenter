@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld('pinApi', {
   onTimerStarted: (cb) => ipcRenderer.on('pin:timer-started', (_e, timerEnd) => cb(timerEnd)),
   // v0.66.0: Main → Pin window: таймер истёк
   onTimerAlert: (cb) => ipcRenderer.on('pin:timer-alert', (_e) => cb()),
+  // v0.69.0: Pin window → Main: перейти в чат мессенджера
+  goToChat: (messengerId) => ipcRenderer.send('pin:go-to-chat', messengerId),
 })

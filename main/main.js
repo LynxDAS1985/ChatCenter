@@ -889,6 +889,14 @@ function setupNotifIPC() {
     if (!win.isVisible()) win.show()
   })
 
+  // ── Pin → Main: перейти в чат мессенджера ──
+  ipcMain.on('pin:go-to-chat', (_event, messengerId) => {
+    if (!messengerId || !mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('notify:clicked', { messengerId })
+    if (!mainWindow.isVisible()) mainWindow.show()
+    mainWindow.focus()
+  })
+
   // ── Pin → Dock: свернуть в задачи ──
   ipcMain.on('pin:minimize-to-dock', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
