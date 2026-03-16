@@ -423,6 +423,14 @@
     requestAnimationFrame(() => window.pinApi.resize(card.offsetHeight))
   })
 
+  // v0.71.0: Обновление категории из dock контекстного меню
+  window.pinApi.onCategoryUpdated((cat) => {
+    currentCategory = cat
+    categorySection.querySelectorAll('.cat-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.cat === cat)
+    })
+  })
+
   // Звук напоминания — два коротких бипа
   function playTimerSound() {
     try {

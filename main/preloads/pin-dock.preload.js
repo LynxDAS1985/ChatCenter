@@ -26,4 +26,10 @@ contextBridge.exposeInMainWorld('dockApi', {
   requestPreviewSpace: (extraH) => ipcRenderer.send('dock:preview-space', extraH),
   // Dock → Main: сохранить порядок табов
   saveTabOrder: (order) => ipcRenderer.send('dock:save-tab-order', order),
+  // v0.71.0: Dock → Main: перейти в чат из dock
+  goToChat: (id) => ipcRenderer.send('dock:go-to-chat', id),
+  // v0.71.0: Dock → Main: установить категорию из dock
+  setCategory: (id, cat) => ipcRenderer.send('dock:set-category', id, cat),
+  // v0.71.0: Dock → Main: установить таймер из dock
+  startTimer: (id, minutes) => ipcRenderer.send('dock:start-timer', id, minutes),
 })

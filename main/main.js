@@ -774,7 +774,7 @@ function setupNotifIPC() {
     const dock = ensureDockWindow()
     const item = pinItems.get(pinId)
     const sendAdd = () => {
-      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '' })
+      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '' })
       if (!dock.isVisible()) dock.showInactive()
       // Передать текущий таймер если есть
       if (item && item.timerEnd) {
@@ -898,9 +898,19 @@ function setupNotifIPC() {
   })
 
   // ── Pin → Main: перейти в чат мессенджера ──
-  ipcMain.on('pin:go-to-chat', (_event, messengerId) => {
+  ipcMain.on('pin:go-to-chat', (event, messengerId) => {
     if (!messengerId || !mainWindow || mainWindow.isDestroyed()) return
-    mainWindow.webContents.send('notify:clicked', { messengerId })
+    // Найти pin по окну и передать senderName для навигации к конкретному чату
+    const win = BrowserWindow.fromWebContents(event.sender)
+    let senderName = ''
+    if (win) {
+      const pinId = findPinIdByWin(win)
+      if (pinId !== null) {
+        const item = pinItems.get(pinId)
+        if (item && item.data) senderName = item.data.sender || ''
+      }
+    }
+    mainWindow.webContents.send('notify:clicked', { messengerId, senderName })
     if (!mainWindow.isVisible()) mainWindow.show()
     mainWindow.focus()
   })
@@ -990,6 +1000,61 @@ function setupNotifIPC() {
   // ── Dock → Main: открепить полностью ──
   ipcMain.on('dock:unpin', (_event, pinId) => {
     removePin(pinId)
+  })
+
+  // ── Dock → Main: перейти в чат из dock-таба ──
+  ipcMain.on('dock:go-to-chat', (_event, pinId) => {
+    const item = pinItems.get(pinId)
+    if (!item || !item.data || !item.data.messengerId) return
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const senderName = item.data.sender || ''
+    mainWindow.webContents.send('notify:clicked', { messengerId: item.data.messengerId, senderName })
+    if (!mainWindow.isVisible()) mainWindow.show()
+    mainWindow.focus()
+  })
+
+  // ── Dock → Main: установить категорию из dock ──
+  ipcMain.on('dock:set-category', (_event, pinId, category) => {
+    const item = pinItems.get(pinId)
+    if (!item) return
+    item.category = category || ''
+    // Обновить dock UI
+    if (dockWin && !dockWin.isDestroyed()) {
+      dockWin.webContents.send('dock:update-category', pinId, item.category)
+    }
+    // Обновить pin-окно если открыто
+    if (item.win && !item.win.isDestroyed()) {
+      item.win.webContents.send('pin:category-updated', item.category)
+    }
+  })
+
+  // ── Dock → Main: установить таймер из dock ──
+  ipcMain.on('dock:start-timer', (_event, pinId, minutes) => {
+    const item = pinItems.get(pinId)
+    if (!item) return
+    if (item.timerTimeout) clearTimeout(item.timerTimeout)
+    const timerEnd = Date.now() + minutes * 60000
+    item.timerEnd = timerEnd
+    // Сообщить pin-окну
+    if (item.win && !item.win.isDestroyed()) {
+      item.win.webContents.send('pin:timer-started', timerEnd)
+    }
+    // Сообщить dock
+    if (dockWin && !dockWin.isDestroyed()) {
+      dockWin.webContents.send('dock:update-timer', pinId, timerEnd)
+    }
+    // Таймер истёк
+    item.timerTimeout = setTimeout(() => {
+      item.timerTimeout = null
+      item.timerEnd = null
+      if (item.win && !item.win.isDestroyed()) {
+        if (!item.win.isVisible()) item.win.show()
+        item.win.webContents.send('pin:timer-alert')
+      }
+      if (dockWin && !dockWin.isDestroyed()) {
+        dockWin.webContents.send('dock:timer-alert', pinId)
+      }
+    }, minutes * 60000)
   })
 
   // Базовая высота dock (сохраняем при resize)

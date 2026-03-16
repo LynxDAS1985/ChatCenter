@@ -24,4 +24,6 @@ contextBridge.exposeInMainWorld('pinApi', {
   goToChat: (messengerId) => ipcRenderer.send('pin:go-to-chat', messengerId),
   // v0.70.0: Pin window → Main: установить категорию
   setCategory: (category) => ipcRenderer.send('pin:set-category', category),
+  // v0.71.0: Main → Pin window: категория обновлена из dock
+  onCategoryUpdated: (cb) => ipcRenderer.on('pin:category-updated', (_e, cat) => cb(cat)),
 })

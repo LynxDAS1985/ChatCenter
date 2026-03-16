@@ -182,6 +182,56 @@
   .cat-badge.urgent { color: #f87171; background: rgba(239,68,68,0.15); }
   .cat-badge.work { color: #fbbf24; background: rgba(245,158,11,0.15); }
   .cat-badge.later { color: #4ade80; background: rgba(34,197,94,0.15); }
+
+  /* Контекстное меню */
+  .ctx-menu {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    min-width: 160px;
+    background: #1e1e38;
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    padding: 4px 0;
+    z-index: 20;
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+    animation: ctxIn 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  @keyframes ctxIn {
+    0%   { opacity: 0; transform: translateY(6px) scale(0.96); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    transition: background 0.1s;
+    white-space: nowrap;
+  }
+  .ctx-item:hover {
+    background: rgba(99,102,241,0.15);
+    color: #fff;
+  }
+  .ctx-item.danger:hover {
+    background: rgba(239,68,68,0.15);
+    color: #f87171;
+  }
+  .ctx-sep {
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+    margin: 3px 0;
+  }
+  .ctx-icon { width: 16px; text-align: center; font-size: 12px; flex-shrink: 0; }
+  .ctx-item.cat-active {
+    color: #fff;
+    font-weight: 600;
+  }
 </style>
 </head>
 <body>
@@ -308,7 +358,16 @@
 
     tab.addEventListener('click', () => {
       hidePreview()
+      hideCtxMenu()
       window.dockApi.showPin(data.pinId)
+    })
+
+    // Контекстное меню (правый клик)
+    tab.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      hidePreview()
+      showCtxMenu(data.pinId, tab, e.clientX, e.clientY)
     })
 
     // Drag & Drop для сортировки
@@ -504,6 +563,110 @@
 
   window.dockApi.onAddItem((data) => addTab(data))
   window.dockApi.onRemoveItem((id) => removeTab(id))
+
+  // ── v0.71.0: Контекстное меню на табах dock ──
+  let ctxMenuEl = null
+  let ctxPinId = null
+
+  function hideCtxMenu() {
+    if (ctxMenuEl) { ctxMenuEl.remove(); ctxMenuEl = null; ctxPinId = null }
+  }
+
+  function showCtxMenu(pinId, tabEl, x, y) {
+    hideCtxMenu()
+    const entry = tabs.get(pinId)
+    if (!entry) return
+    ctxPinId = pinId
+    const currentCat = entry.data.category || ''
+    const hasMessenger = !!(entry.data && entry.data.messengerId)
+
+    ctxMenuEl = document.createElement('div')
+    ctxMenuEl.className = 'ctx-menu'
+
+    // Пункт: Показать карточку
+    addCtxItem('👁', 'Показать карточку', () => {
+      window.dockApi.showPin(pinId)
+    })
+
+    // Пункт: В чат (если есть мессенджер)
+    if (hasMessenger) {
+      addCtxItem('→', 'В чат', () => {
+        window.dockApi.goToChat(pinId)
+      })
+    }
+
+    // Разделитель
+    const sep1 = document.createElement('div')
+    sep1.className = 'ctx-sep'
+    ctxMenuEl.appendChild(sep1)
+
+    // Категории
+    addCtxItem('🔴', 'Срочно', () => {
+      const newCat = currentCat === 'urgent' ? '' : 'urgent'
+      window.dockApi.setCategory(pinId, newCat)
+    }, currentCat === 'urgent')
+
+    addCtxItem('🟡', 'В работе', () => {
+      const newCat = currentCat === 'work' ? '' : 'work'
+      window.dockApi.setCategory(pinId, newCat)
+    }, currentCat === 'work')
+
+    addCtxItem('🟢', 'На потом', () => {
+      const newCat = currentCat === 'later' ? '' : 'later'
+      window.dockApi.setCategory(pinId, newCat)
+    }, currentCat === 'later')
+
+    // Разделитель
+    const sep2 = document.createElement('div')
+    sep2.className = 'ctx-sep'
+    ctxMenuEl.appendChild(sep2)
+
+    // Таймеры
+    addCtxItem('⏰', 'Таймер 5м', () => { window.dockApi.startTimer(pinId, 5) })
+    addCtxItem('⏰', 'Таймер 15м', () => { window.dockApi.startTimer(pinId, 15) })
+    addCtxItem('⏰', 'Таймер 1ч', () => { window.dockApi.startTimer(pinId, 60) })
+
+    // Разделитель
+    const sep3 = document.createElement('div')
+    sep3.className = 'ctx-sep'
+    ctxMenuEl.appendChild(sep3)
+
+    // Открепить
+    const unpinItem = addCtxItem('✕', 'Открепить', () => {
+      window.dockApi.unpinFromDock(pinId)
+    })
+    unpinItem.classList.add('danger')
+
+    tabEl.appendChild(ctxMenuEl)
+  }
+
+  function addCtxItem(icon, label, onClick, isActive) {
+    const item = document.createElement('div')
+    item.className = 'ctx-item' + (isActive ? ' cat-active' : '')
+    const iconSpan = document.createElement('span')
+    iconSpan.className = 'ctx-icon'
+    iconSpan.textContent = icon
+    item.appendChild(iconSpan)
+    const labelSpan = document.createElement('span')
+    labelSpan.textContent = label
+    item.appendChild(labelSpan)
+    item.addEventListener('click', (e) => {
+      e.stopPropagation()
+      hideCtxMenu()
+      onClick()
+    })
+    ctxMenuEl.appendChild(item)
+    return item
+  }
+
+  // Закрыть меню при клике вне
+  document.addEventListener('click', (e) => {
+    if (ctxMenuEl && !ctxMenuEl.contains(e.target)) hideCtxMenu()
+  })
+  document.addEventListener('contextmenu', (e) => {
+    // Если клик не на табе — закрыть меню
+    if (ctxMenuEl && !e.target.closest('.dock-tab')) hideCtxMenu()
+  })
 
   reportSize()
 </script>
