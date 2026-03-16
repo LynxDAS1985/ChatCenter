@@ -732,9 +732,8 @@ function setupNotifIPC() {
 
     // Поверх ВСЕХ окон — уровень screen-saver + relativeLevel 1 для Windows
     dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
-
-    // Прозрачная зона click-through — клики проходят к Windows таскбару и другим окнам
-    dockWin.setIgnoreMouseEvents(true, { forward: true })
+    // Click-through: прозрачные пиксели (transparent: true) автоматически пропускают клики
+    // НЕ используем setIgnoreMouseEvents — оно ломает -webkit-app-region: drag
 
     dockWin.loadFile(getDockHtmlPath()).catch(err => {
       console.error('[Dock] Failed to load pin-dock.html:', err)
@@ -751,11 +750,8 @@ function setupNotifIPC() {
     // Периодически поднимать dock наверх (Windows таскбар агрессивно перекрывает)
     const dockTopInterval = setInterval(() => {
       if (!dockWin || dockWin.isDestroyed()) { clearInterval(dockTopInterval); return }
-      if (dockWin.isVisible()) {
-        dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
-        dockWin.moveTop()
-      }
-    }, 1000)
+      if (dockWin.isVisible()) dockWin.moveTop()
+    }, 2000)
     dockWin.on('closed', () => clearInterval(dockTopInterval))
 
     // Snap к краям + сохранение позиции при перемещении
@@ -808,7 +804,7 @@ function setupNotifIPC() {
     const item = pinItems.get(pinId)
     const sendAdd = () => {
       dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '' })
-      if (!dock.isVisible()) { dock.showInactive(); dock.setAlwaysOnTop(true, 'screen-saver', 1); dock.moveTop() }
+      if (!dock.isVisible()) dock.showInactive()
       // Передать текущий таймер если есть
       if (item && item.timerEnd) {
         dock.webContents.send('dock:update-timer', pinId, item.timerEnd)
@@ -1136,19 +1132,7 @@ function setupNotifIPC() {
       }
       if (hasDocked || getShowDockEmpty()) {
         dockWin.showInactive()
-        dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
-        dockWin.moveTop()
       }
-    }
-  })
-
-  // ── Dock: toggle mouse events (click-through для прозрачной зоны) ──
-  ipcMain.on('dock:set-ignore-mouse', (_event, ignore) => {
-    if (!dockWin || dockWin.isDestroyed()) return
-    if (ignore) {
-      dockWin.setIgnoreMouseEvents(true, { forward: true })
-    } else {
-      dockWin.setIgnoreMouseEvents(false)
     }
   })
 
@@ -1283,7 +1267,7 @@ function setupIPC() {
         if (!hasDocked) dockWin.hide()
       } else {
         // Показать dock если его сейчас нет
-        if (!dockWin.isVisible()) { dockWin.showInactive(); dockWin.setAlwaysOnTop(true, 'screen-saver', 1); dockWin.moveTop() }
+        if (!dockWin.isVisible()) dockWin.showInactive()
       }
     }
     return { ok: true }

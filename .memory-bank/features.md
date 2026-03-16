@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.71.6 (16 марта 2026)
+## Текущая версия: v0.71.7 (16 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.71.7 (16 марта 2026) — Фикс drag dock + убрано дёрганье (Ловушка 27)
+- **Фикс: dock не двигался**: `setIgnoreMouseEvents(true, {forward:true})` блокировал `-webkit-app-region: drag`. Полностью убран `setIgnoreMouseEvents`. Вместо этого: CSS `position: fixed; bottom: 0` на dock-wrapper + убран `min-height: 100vh` — прозрачные пиксели автоматически пропускают клики в Electron transparent окнах.
+- **Фикс дёрганья**: Убраны лишние `setAlwaysOnTop + moveTop` при `showInactive` и resize. Оставлен только `moveTop()` каждые 2 секунды и при blur.
 
 ### v0.71.6 (16 марта 2026) — Фильтр MAX фантомов + dock поверх всех окон
 - **Фильтр MAX фантомов**: Системные onboarding-сообщения MAX ("Сообщений пока нет", "Напишите сообщение", "Теперь в MAX!" и т.д.) фильтруются в 3 местах: `isSpamNotif()`, `extractMsgText()`, `getLastMessageText()`. Regex `_maxPhantom` отсекает приветственные и системные тексты.
