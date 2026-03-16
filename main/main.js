@@ -658,6 +658,81 @@ function setupNotifIPC() {
     notifWin.setBounds({ x, y, width: 370, height })
     if (!notifWin.isVisible()) notifWin.showInactive()
   })
+
+  // ── v0.65.0: Pin Message — закрепление сообщения в отдельном окне ──
+  const pinWindows = [] // массив { win, data }
+
+  function getPinPreloadPath() {
+    if (isDev) {
+      return path.join(__dirname, '../../main/preloads/pin.preload.js')
+    }
+    return path.join(__dirname, '../preload/pin.js')
+  }
+
+  function getPinHtmlPath() {
+    if (isDev) {
+      return path.join(__dirname, '../../main/pin-notification.html')
+    }
+    return path.join(__dirname, '../main/pin-notification.html')
+  }
+
+  ipcMain.on('notif:pin-message', (_event, data) => {
+    const { workArea } = screen.getPrimaryDisplay()
+    // Смещаем каждое новое pin-окно чтобы не накладывались
+    const offset = pinWindows.length * 30
+
+    const pinWin = new BrowserWindow({
+      width: 300,
+      height: 150,
+      x: Math.round(workArea.x + workArea.width / 2 - 150 + offset),
+      y: Math.round(workArea.y + workArea.height / 2 - 75 + offset),
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      alwaysOnTop: true,
+      skipTaskbar: false,
+      resizable: false,
+      focusable: true,
+      show: false,
+      webPreferences: {
+        preload: getPinPreloadPath(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      }
+    })
+
+    pinWin.loadFile(getPinHtmlPath()).catch(err => {
+      console.error('[PinWindow] Failed to load pin-notification.html:', err)
+    })
+
+    pinWin.webContents.once('did-finish-load', () => {
+      pinWin.webContents.send('pin:data', data)
+    })
+
+    pinWin.on('closed', () => {
+      const idx = pinWindows.findIndex(p => p.win === pinWin)
+      if (idx !== -1) pinWindows.splice(idx, 1)
+    })
+
+    pinWindows.push({ win: pinWin, data })
+  })
+
+  ipcMain.on('pin:unpin', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win && !win.isDestroyed()) {
+      win.close()
+    }
+  })
+
+  ipcMain.on('pin:resize', (event, height) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    height = Math.round(height) + 2 // +2 для рамки
+    const bounds = win.getBounds()
+    win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height })
+    if (!win.isVisible()) win.show()
+  })
 }
 
 // ─── IPC Handlers ─────────────────────────────────────────────────────────────

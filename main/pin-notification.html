@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+  }
+  .pin-card {
+    background: #1a1a2e;
+    border-radius: 10px;
+    border: 1px solid rgba(99,102,241,0.3);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.15);
+    overflow: hidden;
+    position: relative;
+    animation: pinAppear 250ms ease-out;
+  }
+  @keyframes pinAppear {
+    0%   { opacity: 0; transform: scale(0.92); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  .color-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    border-radius: 10px 0 0 10px;
+  }
+  .pin-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px 6px 14px;
+    -webkit-app-region: drag;
+    cursor: grab;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .pin-indicator {
+    font-size: 10px;
+    margin-right: 6px;
+    color: rgba(99,102,241,0.7);
+  }
+  .pin-sender {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: #e2e8f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pin-time {
+    font-size: 10px;
+    color: rgba(255,255,255,0.3);
+    margin-left: 8px;
+    flex-shrink: 0;
+  }
+  .pin-close {
+    -webkit-app-region: no-drag;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.4);
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    margin-left: 6px;
+    transition: all 0.15s;
+  }
+  .pin-close:hover {
+    background: rgba(239,68,68,0.2);
+    color: #f87171;
+  }
+  .pin-body {
+    padding: 8px 14px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.85);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+    user-select: text;
+    -webkit-app-region: no-drag;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+  .pin-body::-webkit-scrollbar { width: 3px; }
+  .pin-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+  .pin-body::-webkit-scrollbar-track { background: transparent; }
+  .pin-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 6px 10px 8px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    -webkit-app-region: no-drag;
+  }
+  .pin-action {
+    padding: 3px 10px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 5px;
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.6);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .pin-action:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+  }
+  .pin-action.unpin {
+    border-color: rgba(239,68,68,0.25);
+    color: rgba(239,68,68,0.7);
+  }
+  .pin-action.unpin:hover {
+    background: rgba(239,68,68,0.15);
+    color: #f87171;
+  }
+  .pin-action.copy {
+    border-color: rgba(34,197,94,0.2);
+    color: rgba(34,197,94,0.6);
+  }
+  .pin-action.copy:hover {
+    background: rgba(34,197,94,0.12);
+    color: #4ade80;
+  }
+</style>
+</head>
+<body>
+<div class="pin-card" id="card">
+  <div class="color-bar" id="colorBar"></div>
+  <div class="pin-header">
+    <span class="pin-indicator">\u{1F4CC}</span>
+    <span class="pin-sender" id="sender"></span>
+    <span class="pin-time" id="time"></span>
+    <button class="pin-close" id="closeBtn" title="\u041E\u0442\u043A\u0440\u0435\u043F\u0438\u0442\u044C">\u00d7</button>
+  </div>
+  <div class="pin-body" id="body"></div>
+  <div class="pin-footer">
+    <button class="pin-action copy" id="copyBtn">\u{1F4CB} \u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>
+    <button class="pin-action unpin" id="unpinBtn">\u2298 \u041E\u0442\u043A\u0440\u0435\u043F\u0438\u0442\u044C</button>
+  </div>
+</div>
+<script>
+  const card = document.getElementById('card')
+  const colorBar = document.getElementById('colorBar')
+  const senderEl = document.getElementById('sender')
+  const timeEl = document.getElementById('time')
+  const bodyEl = document.getElementById('body')
+  const closeBtn = document.getElementById('closeBtn')
+  const copyBtn = document.getElementById('copyBtn')
+  const unpinBtn = document.getElementById('unpinBtn')
+
+  let messageText = ''
+
+  window.pinApi.onData((data) => {
+    senderEl.textContent = data.sender || ''
+    timeEl.textContent = data.time || ''
+    bodyEl.textContent = data.text || ''
+    messageText = data.text || ''
+    colorBar.style.background = data.color || '#2AABEE'
+
+    // Resize окна под контент
+    requestAnimationFrame(() => {
+      const h = card.offsetHeight
+      window.pinApi.resize(h)
+    })
+  })
+
+  closeBtn.addEventListener('click', () => window.pinApi.unpin())
+  unpinBtn.addEventListener('click', () => window.pinApi.unpin())
+
+  copyBtn.addEventListener('click', () => {
+    if (navigator.clipboard && messageText) {
+      navigator.clipboard.writeText(messageText).then(() => {
+        copyBtn.textContent = '\u2713 \u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u043E'
+        copyBtn.style.color = '#4ade80'
+        copyBtn.style.borderColor = 'rgba(34,197,94,0.5)'
+        setTimeout(() => {
+          copyBtn.textContent = '\u{1F4CB} \u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C'
+          copyBtn.style.color = ''
+          copyBtn.style.borderColor = ''
+        }, 1500)
+      })
+    }
+  })
+</script>
+</body>
+</html>

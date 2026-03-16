@@ -282,32 +282,6 @@
     color: #f87171;
     transform: scale(1.1);
   }
-  /* v0.63.3→v0.63.4: кастомный тултип для обрезанного текста */
-  .cc-tooltip {
-    position: fixed;
-    max-width: 360px;
-    padding: 8px 12px;
-    background: #2d2d4a;
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 8px;
-    color: rgba(255,255,255,0.9);
-    font-size: 12px;
-    line-height: 1.4;
-    word-wrap: break-word;
-    white-space: pre-wrap;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-    z-index: 100;
-    pointer-events: auto;
-    cursor: pointer;
-    user-select: none;
-    opacity: 1;
-    transition: opacity 150ms ease-out;
-    animation: tooltipFadeIn 150ms ease-out;
-  }
-  .cc-tooltip.fading {
-    opacity: 0;
-    pointer-events: none;
-  }
   /* v0.63.8: время отправки перед текстом в карточке */
   .msg-time {
     font-size: 10px;
@@ -315,106 +289,39 @@
     margin-right: 4px;
     flex-shrink: 0;
   }
-  /* v0.63.6: компактная иконка копирования в правом верхнем углу */
-  .cc-tooltip .copy-icon {
+  /* v0.65.0: кнопка закрепления сообщения (📌) */
+  .text-wrap { position: relative; }
+  .stacked-msg { position: relative; }
+  .pin-msg-btn {
     position: absolute;
-    top: 4px;
-    right: 6px;
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
+    right: 2px;
+    top: 24px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: rgba(30,30,60,0.9);
     color: rgba(255,255,255,0.3);
-    border-radius: 4px;
-    transition: all 0.15s;
-  }
-  .cc-tooltip:hover .copy-icon {
-    color: rgba(255,255,255,0.6);
-    background: rgba(255,255,255,0.08);
-  }
-  .cc-tooltip.copied .copy-icon {
-    color: #4ade80;
-    background: rgba(34,197,94,0.15);
-  }
-  .cc-tooltip.copied {
-    border-color: rgba(34,197,94,0.4);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(34,197,94,0.2);
-  }
-  /* v0.64.1: закреплённый тултип (pin by click) */
-  .cc-tooltip.pinned {
-    user-select: text;
-    cursor: auto;
-    border-color: rgba(99,102,241,0.4);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.2);
-  }
-  .cc-tooltip .pin-icon {
-    position: absolute;
-    top: 4px;
-    left: 6px;
-    font-size: 10px;
-    color: rgba(99,102,241,0.7);
-    display: none;
-  }
-  .cc-tooltip.pinned .pin-icon {
-    display: block;
-  }
-  .cc-tooltip .close-tooltip {
-    position: absolute;
-    top: 2px;
-    right: 26px;
-    width: 18px;
-    height: 18px;
+    font-size: 12px;
+    cursor: pointer;
     display: none;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
-    color: rgba(255,255,255,0.35);
     border-radius: 4px;
-    cursor: pointer;
+    z-index: 5;
     transition: all 0.15s;
   }
-  .cc-tooltip.pinned .close-tooltip {
+  .stacked-msg > .pin-msg-btn {
+    right: 0;
+    top: 6px;
+  }
+  .text-wrap:hover > .pin-msg-btn,
+  .stacked-msg:hover > .pin-msg-btn {
     display: flex;
   }
-  .cc-tooltip .close-tooltip:hover {
-    color: #f87171;
-    background: rgba(239,68,68,0.15);
-  }
-  /* v0.63.6: мини-превью стэка */
-  .cc-tooltip .stack-preview-row {
-    display: flex;
-    gap: 6px;
-    padding: 2px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-    /* v0.63.7: staggered анимация строк стэка */
-    opacity: 0;
-    transform: translateY(-6px);
-    animation: stackRowSlideIn 200ms ease-out forwards;
-  }
-  .cc-tooltip .stack-preview-row:last-child {
-    border-bottom: none;
-  }
-  .cc-tooltip .sp-time {
-    flex-shrink: 0;
-    font-size: 10px;
-    color: rgba(255,255,255,0.35);
-    min-width: 32px;
-  }
-  .cc-tooltip .sp-text {
-    font-size: 12px;
-    color: rgba(255,255,255,0.8);
-    word-break: break-word;
-  }
-  /* v0.63.7: staggered появление строк стэка */
-  @keyframes stackRowSlideIn {
-    0%   { opacity: 0; transform: translateY(-6px); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes tooltipFadeIn {
-    0%   { opacity: 0; transform: translateY(4px); }
-    100% { opacity: 1; transform: translateY(0); }
+  .pin-msg-btn:hover {
+    color: rgba(99,102,241,0.9);
+    background: rgba(99,102,241,0.2);
+    transform: scale(1.1);
   }
 </style>
 </head>
@@ -631,6 +538,9 @@
     }
     msgDiv.appendChild(bodyDiv)
 
+    // v0.65.0: кнопка 📌 для закрепления стэкированного сообщения
+    msgDiv.appendChild(createPinBtn(host.senderName || host.messengerName || '', data.body || '', stackTime, host.color || '#2AABEE'))
+
     stackContainer.appendChild(msgDiv)
     // Автоскролл вниз к новому сообщению
     stackContainer.scrollTop = stackContainer.scrollHeight
@@ -803,6 +713,10 @@
     }
     textWrap.appendChild(bodyText)
 
+    // v0.65.0: кнопка 📌 для закрепления host-сообщения
+    const hostFullText = data.fullBody || data.body || ''
+    textWrap.appendChild(createPinBtn(senderName || mName, hostFullText, nowTime, data.color || '#2AABEE'))
+
     const hint = document.createElement('div')
     hint.className = 'expand-hint'
     hint.style.display = 'none'
@@ -929,7 +843,12 @@
       el.classList.add('expanded')
       if (hasFullBody) {
         const bText = el.querySelector('.body-text')
-        if (bText) bText.textContent = bText.dataset.full
+        if (bText) {
+          // v0.65.0: обновляем span вместо textContent (сохраняем .msg-time и .pin-msg-btn)
+          const textSpan = bText.querySelector('.msg-text-content')
+          if (textSpan) textSpan.textContent = bText.dataset.full
+          else bText.textContent = bText.dataset.full
+        }
       }
       const hintEl = el.querySelector('.expand-hint')
       if (hintEl) hintEl.textContent = '\u25B2 свернуть'
@@ -957,307 +876,22 @@
     }
   }
 
-  // ── v0.63.3→v0.63.4: Кастомный тултип — debounce 300мс, fade-out, копирование кликом ──
-  let tooltipEl = null
-  let tooltipTarget = null
-  let tooltipDebounce = null  // v0.63.4: задержка перед показом
-  let tooltipFadeTimer = null // v0.63.4: таймер fade-out
-  let tooltipExtraHeight = 0 // v0.63.9: дополнительная высота окна для тултипа
-  let tooltipPinned = false   // v0.64.1: тултип закреплён кликом
-
-  function showTooltip(target) {
-    // v0.64.0: проверяем что текст обрезан
-    // Для body-text с data-full — показываем если fullBody длиннее short
-    const hasFull = target.dataset.full && target.dataset.full.length > (target.dataset.short || '').length
-    if (!hasFull) {
-      // Для остальных — проверяем scrollWidth (обычная обрезка ellipsis)
-      const textChild = target.querySelector('.msg-text-content') || target.querySelector('span:not(.msg-time)')
-      const checkEl = textChild || target
-      if (checkEl.scrollWidth <= checkEl.clientWidth) return
-    }
-    if (tooltipEl) hideTooltipImmediate()
-
-    tooltipTarget = target
-    // v0.64.0: берём полный текст — из data-full или из текстового span (без времени)
-    const textChild = target.querySelector('.msg-text-content') || target.querySelector('span:not(.msg-time)')
-    const fullText = target.dataset.full || (textChild ? textChild.textContent : target.textContent)
-    tooltipEl = document.createElement('div')
-    tooltipEl.className = 'cc-tooltip'
-    tooltipEl.style.paddingRight = '28px' // место для иконки
-
-    // v0.64.1: иконка пина (видна только в pinned состоянии)
-    const pinIcon = document.createElement('span')
-    pinIcon.className = 'pin-icon'
-    pinIcon.textContent = '\u{1F4CC}'
-    tooltipEl.appendChild(pinIcon)
-
-    // v0.63.8: только полный текст — без времени, без имени
-    const textSpan = document.createElement('span')
-    textSpan.textContent = fullText
-    tooltipEl.appendChild(textSpan)
-
-    // v0.64.1: кнопка закрытия (✕) — видна только в pinned
-    const closeTooltipBtn = document.createElement('span')
-    closeTooltipBtn.className = 'close-tooltip'
-    closeTooltipBtn.textContent = '\u00d7'
-    closeTooltipBtn.addEventListener('click', (e) => {
+  // ── v0.65.0: Создание кнопки 📌 для закрепления сообщения ──
+  function createPinBtn(senderName, fullText, time, color) {
+    const btn = document.createElement('button')
+    btn.className = 'pin-msg-btn'
+    btn.textContent = '\u{1F4CC}'
+    btn.title = '\u0417\u0430\u043A\u0440\u0435\u043F\u0438\u0442\u044C'
+    btn.addEventListener('click', (e) => {
       e.stopPropagation()
-      tooltipPinned = false
-      hideTooltipImmediate()
+      window.notifApi.pinMessage({ sender: senderName, text: fullText, time: time, color: color })
+      btn.textContent = '\u2713'
+      btn.style.color = '#4ade80'
+      btn.style.background = 'rgba(34,197,94,0.2)'
+      setTimeout(() => { btn.textContent = '\u{1F4CC}'; btn.style.color = ''; btn.style.background = '' }, 1000)
     })
-    tooltipEl.appendChild(closeTooltipBtn)
-
-    // Иконка копирования справа вверху
-    const copyIcon = document.createElement('span')
-    copyIcon.className = 'copy-icon'
-    copyIcon.textContent = '\u{1F4CB}'
-    copyIcon.addEventListener('click', (e) => {
-      e.stopPropagation()
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(fullText).then(() => {
-          tooltipEl.classList.add('copied')
-          copyIcon.textContent = '\u2713'
-          if (!tooltipPinned) setTimeout(() => hideTooltipFade(), 800)
-          else setTimeout(() => { tooltipEl.classList.remove('copied'); copyIcon.textContent = '\u{1F4CB}' }, 1200)
-        })
-      }
-    })
-    tooltipEl.appendChild(copyIcon)
-
-    // v0.64.1: клик по тултипу — pin (закрепить)
-    tooltipEl.addEventListener('click', (e) => {
-      e.stopPropagation()
-      if (tooltipPinned) return // уже закреплён — клик ничего не делает (выделение текста)
-      tooltipPinned = true
-      tooltipEl.classList.add('pinned')
-    })
-
-    document.body.appendChild(tooltipEl)
-
-    // v0.63.9: позиционирование над элементом + resize окна если не помещается
-    const rect = target.getBoundingClientRect()
-    const tW = tooltipEl.offsetWidth
-    const tH = tooltipEl.offsetHeight
-    let left = rect.left
-    if (left + tW > window.innerWidth - 8) left = window.innerWidth - tW - 8
-    if (left < 4) left = 4
-    tooltipEl.style.left = left + 'px'
-
-    // Нужная позиция: над элементом
-    const neededTop = rect.top - tH - 4
-    if (neededTop < 0) {
-      // Тултип не помещается — увеличиваем окно вверх
-      const extraHeight = Math.abs(neededTop) + 8
-      tooltipEl.style.top = '4px' // прижимаем к верху
-      // Resize окна — добавляем место сверху
-      const totalH = calcHeight() + extraHeight
-      window.notifApi.resize(totalH)
-      tooltipExtraHeight = extraHeight
-      // После resize пересчитываем позицию (окно выросло вверх)
-      requestAnimationFrame(() => {
-        if (!tooltipEl) return
-        const newRect = target.getBoundingClientRect()
-        const newTop = newRect.top - tH - 4
-        if (newTop >= 4) {
-          tooltipEl.style.top = newTop + 'px'
-        }
-      })
-    } else {
-      tooltipEl.style.top = neededTop + 'px'
-      tooltipExtraHeight = 0
-    }
+    return btn
   }
-
-  // v0.63.4: плавное исчезновение
-  function hideTooltipFade() {
-    if (!tooltipEl) return
-    if (tooltipPinned) return // v0.64.1: закреплённый тултип не скрывается
-    clearTimeout(tooltipFadeTimer)
-    tooltipEl.classList.add('fading')
-    const el = tooltipEl
-    tooltipFadeTimer = setTimeout(() => {
-      if (el && el.parentNode) el.remove()
-      if (tooltipEl === el) { tooltipEl = null; tooltipTarget = null }
-      // v0.63.9: восстановить высоту окна
-      if (tooltipExtraHeight > 0) { tooltipExtraHeight = 0; reportHeight() }
-    }, 150)
-  }
-
-  // Мгновенное скрытие (для смены тултипа между элементами)
-  function hideTooltipImmediate() {
-    clearTimeout(tooltipFadeTimer)
-    clearTimeout(tooltipDebounce)
-    tooltipDebounce = null
-    tooltipPinned = false // v0.64.1: сброс pin
-    if (tooltipEl) { tooltipEl.remove(); tooltipEl = null }
-    tooltipTarget = null
-    // v0.63.9: восстановить высоту окна
-    if (tooltipExtraHeight > 0) { tooltipExtraHeight = 0; reportHeight() }
-  }
-
-  // ── v0.63.6: Мини-превью всего стэка при hover на .stack-container ──
-  function showStackPreview(stackContainer) {
-    if (tooltipEl) hideTooltipImmediate()
-    tooltipTarget = stackContainer
-
-    // Собираем все сообщения стэка: host body-text + stacked-body элементы
-    const notifItem = stackContainer.closest('.notif-item')
-    const hostBody = notifItem ? notifItem.querySelector('.body-text') : null
-    const stackedBodies = stackContainer.querySelectorAll('.stacked-body')
-
-    // Собираем все тексты для копирования
-    const allTexts = []
-    // v0.63.7: счётчик строк для staggered анимации
-    let rowIndex = 0
-
-    tooltipEl = document.createElement('div')
-    tooltipEl.className = 'cc-tooltip'
-    tooltipEl.style.paddingRight = '28px'
-
-    // Имя отправителя вверху
-    const senderEl = notifItem ? notifItem.querySelector('.sender') : null
-    if (senderEl) {
-      const nameEl = document.createElement('div')
-      nameEl.style.cssText = 'font-weight:600;color:#e2e8f0;margin-bottom:4px;font-size:12px'
-      nameEl.textContent = senderEl.textContent
-      tooltipEl.appendChild(nameEl)
-    }
-
-    // Первое (host) сообщение
-    if (hostBody) {
-      const row = document.createElement('div')
-      row.className = 'stack-preview-row'
-      // v0.63.7: staggered задержка
-      row.style.animationDelay = (rowIndex * 30) + 'ms'
-      rowIndex++
-      const time = document.createElement('span')
-      time.className = 'sp-time'
-      time.textContent = hostBody.dataset.ts || ''
-      const text = document.createElement('span')
-      text.className = 'sp-text'
-      const fullHostText = hostBody.dataset.full || hostBody.textContent
-      text.textContent = fullHostText
-      row.appendChild(time)
-      row.appendChild(text)
-      tooltipEl.appendChild(row)
-      allTexts.push((hostBody.dataset.ts || '') + '  ' + fullHostText)
-    }
-
-    // Стэкнутые сообщения
-    stackedBodies.forEach(body => {
-      const row = document.createElement('div')
-      row.className = 'stack-preview-row'
-      // v0.63.7: staggered задержка
-      row.style.animationDelay = (rowIndex * 30) + 'ms'
-      rowIndex++
-      const time = document.createElement('span')
-      time.className = 'sp-time'
-      time.textContent = body.dataset.ts || ''
-      const text = document.createElement('span')
-      text.className = 'sp-text'
-      text.textContent = body.textContent
-      row.appendChild(time)
-      row.appendChild(text)
-      tooltipEl.appendChild(row)
-      allTexts.push((body.dataset.ts || '') + '  ' + body.textContent)
-    })
-
-    // Иконка копирования
-    const copyIcon = document.createElement('span')
-    copyIcon.className = 'copy-icon'
-    copyIcon.textContent = '\u{1F4CB}'
-    tooltipEl.appendChild(copyIcon)
-
-    const allText = allTexts.join('\n')
-    tooltipEl.addEventListener('click', (e) => {
-      e.stopPropagation()
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(allText).then(() => {
-          tooltipEl.classList.add('copied')
-          copyIcon.textContent = '\u2713'
-          setTimeout(() => hideTooltipFade(), 800)
-        })
-      }
-    })
-
-    document.body.appendChild(tooltipEl)
-
-    // Позиционирование
-    const rect = stackContainer.getBoundingClientRect()
-    const tW = tooltipEl.offsetWidth
-    let left = rect.left
-    if (left + tW > window.innerWidth - 8) left = window.innerWidth - tW - 8
-    if (left < 4) left = 4
-    tooltipEl.style.left = left + 'px'
-    tooltipEl.style.bottom = (window.innerHeight - rect.top + 4) + 'px'
-
-    requestAnimationFrame(() => {
-      if (!tooltipEl) return
-      const tRect = tooltipEl.getBoundingClientRect()
-      if (tRect.top < 0) {
-        tooltipEl.style.bottom = 'auto'
-        tooltipEl.style.top = (rect.bottom + 4) + 'px'
-      }
-    })
-  }
-
-  // v0.63.9: каждый элемент показывает свой тултип (убран приоритет стэк-контейнера)
-  container.addEventListener('mouseover', (e) => {
-    // Тултип для конкретного текстового элемента — body-text, stacked-body, sender
-    const target = e.target.closest('.body-text, .stacked-body, .sender')
-    if (!target || target === tooltipTarget) return
-    // v0.64.1: если тултип закреплён — не переключаем на другой элемент
-    if (tooltipPinned) return
-    hideTooltipImmediate()
-    tooltipDebounce = setTimeout(() => showTooltip(target), 300)
-  })
-  // v0.63.8: задержка перед скрытием тултипа — даёт время навести на иконку копирования
-  let tooltipHideDelay = null
-  function scheduleHide() {
-    if (tooltipPinned) return // v0.64.1: закреплённый — не скрываем
-    clearTimeout(tooltipHideDelay)
-    tooltipHideDelay = setTimeout(() => {
-      // Проверяем: мышь НЕ на тултипе?
-      if (tooltipEl && !tooltipEl.matches(':hover')) {
-        hideTooltipFade()
-      }
-    }, 100)
-  }
-  function cancelHide() {
-    clearTimeout(tooltipHideDelay)
-  }
-
-  container.addEventListener('mouseout', (e) => {
-    const target = e.target.closest('.body-text, .stacked-body, .sender')
-    if (!target) return
-    const related = e.relatedTarget
-    // Ушли на тултип — не скрываем
-    if (related && related.closest('.cc-tooltip')) { cancelHide(); return }
-    // Ушли на другой текстовый элемент — debounce обработает
-    if (related && related.closest('.body-text, .stacked-body, .sender')) {
-      clearTimeout(tooltipDebounce)
-      tooltipDebounce = null
-      if (tooltipEl) hideTooltipFade()
-      return
-    }
-    clearTimeout(tooltipDebounce)
-    tooltipDebounce = null
-    // v0.63.8: задержка — вдруг мышь идёт на тултип
-    scheduleHide()
-  })
-  // Тултип: при наведении — отменяем скрытие, при уходе — скрываем
-  document.body.addEventListener('mouseover', (e) => {
-    if (tooltipEl && e.target.closest('.cc-tooltip')) cancelHide()
-  })
-  document.body.addEventListener('mouseout', (e) => {
-    if (!tooltipEl) return
-    const from = e.target
-    const to = e.relatedTarget
-    if (from && from.closest('.cc-tooltip') && !(to && to.closest('.cc-tooltip'))) {
-      if (to && to.closest('.body-text, .stacked-body, .sender')) return
-      scheduleHide()
-    }
-  })
 
   // IPC listeners
   window.notifApi.onNotification((data) => addNotification(data))

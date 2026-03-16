@@ -18,4 +18,6 @@ contextBridge.exposeInMainWorld('notifApi', {
   dismiss: (id) => ipcRenderer.send('notif:dismiss', id),
   // Notification window → Main: сообщить новую высоту
   resize: (height) => ipcRenderer.send('notif:resize', height),
+  // Notification window → Main: закрепить сообщение в отдельном окне
+  pinMessage: (data) => ipcRenderer.send('notif:pin-message', data),
 })

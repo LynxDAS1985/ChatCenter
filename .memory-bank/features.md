@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.64.3 (13 марта 2026)
+## Текущая версия: v0.65.0 (16 марта 2026)
 
 ---
 
@@ -91,6 +91,14 @@
 ---
 
 ## Changelog
+
+### v0.65.0 (16 марта 2026) — Закрепление сообщений (Pin Window)
+- **Новая функция: Pin Message**: Кнопка 📌 на каждом сообщении в ribbon (host + стэкированные). По клику создаёт отдельное независимое окно с отправителем и полным текстом.
+- **Pin-окно**: Frameless BrowserWindow, draggable за заголовок, always-on-top, с кнопками "Копировать" и "Открепить". Живёт независимо от ribbon.
+- **Новые файлы**: `main/pin-notification.html` (UI карточки), `main/preloads/pin.preload.js` (preload).
+- **IPC**: `notif:pin-message` (ribbon→main), `pin:data` (main→pin), `pin:unpin` / `pin:resize` (pin→main).
+- **Удалён hover-тултип**: Весь код tooltip (showTooltip, hideTooltipFade, scheduleHide и т.д.) удалён — заменён на pin buttons.
+- **Фикс expandedByDefault**: `bText.textContent = full` заменён на обновление `.msg-text-content` span — сохраняет `.msg-time` и `.pin-msg-btn`.
 
 ### v0.64.3 (13 марта 2026) — Фикс цвета времени в стэке
 - **Фикс `.msg-time` в стэке**: Правило v0.64.2 `.stacked-body span` перебивало `.msg-time` (specificity 0,3,1 > 0,1,0) — стэковые времена становились яркими 0.8, а host `.msg-time` оставался 0.3. Исправлено: `span:not(.msg-time)` — теперь все `.msg-time` одинаково тусклые (0.3).
