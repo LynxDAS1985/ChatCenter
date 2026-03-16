@@ -659,27 +659,121 @@ function setupNotifIPC() {
     if (!notifWin.isVisible()) notifWin.showInactive()
   })
 
-  // ── v0.65.0: Pin Message — закрепление сообщения в отдельном окне ──
-  const pinWindows = [] // массив { win, data }
+  // ── v0.66.0: Pin + Dock + Timer ──────────────────────────────────────────────
+  const pinItems = new Map() // pinId → { win, data, timerEnd, timerTimeout }
+  let pinIdCounter = 0
+  let dockWin = null
 
   function getPinPreloadPath() {
-    if (isDev) {
-      return path.join(__dirname, '../../main/preloads/pin.preload.js')
-    }
+    if (isDev) return path.join(__dirname, '../../main/preloads/pin.preload.js')
     return path.join(__dirname, '../preload/pin.js')
   }
 
   function getPinHtmlPath() {
-    if (isDev) {
-      return path.join(__dirname, '../../main/pin-notification.html')
-    }
+    if (isDev) return path.join(__dirname, '../../main/pin-notification.html')
     return path.join(__dirname, '../main/pin-notification.html')
   }
 
+  function getDockPreloadPath() {
+    if (isDev) return path.join(__dirname, '../../main/preloads/pin-dock.preload.js')
+    return path.join(__dirname, '../preload/pin-dock.js')
+  }
+
+  function getDockHtmlPath() {
+    if (isDev) return path.join(__dirname, '../../main/pin-dock.html')
+    return path.join(__dirname, '../main/pin-dock.html')
+  }
+
+  // Найти pinId по BrowserWindow
+  function findPinIdByWin(win) {
+    for (const [pinId, item] of pinItems) {
+      if (item.win === win) return pinId
+    }
+    return null
+  }
+
+  // Создать / показать dock-окно
+  function ensureDockWindow() {
+    if (dockWin && !dockWin.isDestroyed()) return dockWin
+
+    const { workArea } = screen.getPrimaryDisplay()
+    dockWin = new BrowserWindow({
+      width: workArea.width - 200,
+      height: 48,
+      x: workArea.x + 100,
+      y: workArea.y + workArea.height - 48,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      focusable: false,
+      show: false,
+      webPreferences: {
+        preload: getDockPreloadPath(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      }
+    })
+
+    dockWin.loadFile(getDockHtmlPath()).catch(err => {
+      console.error('[Dock] Failed to load pin-dock.html:', err)
+    })
+
+    dockWin.on('closed', () => { dockWin = null })
+    return dockWin
+  }
+
+  // Добавить таб в dock
+  function addToDock(pinId, data) {
+    const dock = ensureDockWindow()
+    const sendAdd = () => {
+      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color })
+      if (!dock.isVisible()) dock.showInactive()
+      // Передать текущий таймер если есть
+      const item = pinItems.get(pinId)
+      if (item && item.timerEnd) {
+        dock.webContents.send('dock:update-timer', pinId, item.timerEnd)
+      }
+    }
+    if (dock.webContents.isLoading()) {
+      dock.webContents.once('did-finish-load', sendAdd)
+    } else {
+      sendAdd()
+    }
+  }
+
+  // Удалить таб из dock
+  function removeFromDock(pinId) {
+    if (!dockWin || dockWin.isDestroyed()) return
+    dockWin.webContents.send('dock:remove', pinId)
+    // Скрыть dock если пустой (проверяем через количество pinItems в dock)
+    let hasDocked = false
+    for (const [id, item] of pinItems) {
+      if (id !== pinId && item.inDock) { hasDocked = true; break }
+    }
+    if (!hasDocked && dockWin && !dockWin.isDestroyed()) {
+      dockWin.hide()
+    }
+  }
+
+  // Полное удаление pin
+  function removePin(pinId) {
+    const item = pinItems.get(pinId)
+    if (!item) return
+    if (item.timerTimeout) clearTimeout(item.timerTimeout)
+    if (item.win && !item.win.isDestroyed()) item.win.close()
+    if (item.inDock) removeFromDock(pinId)
+    pinItems.delete(pinId)
+  }
+
+  // ── Создание pin-окна ──
   ipcMain.on('notif:pin-message', (_event, data) => {
     const { workArea } = screen.getPrimaryDisplay()
-    // Смещаем каждое новое pin-окно чтобы не накладывались
-    const offset = pinWindows.length * 30
+    const pinId = ++pinIdCounter
+    const offset = (pinItems.size % 10) * 30
 
     const pinWin = new BrowserWindow({
       width: 300,
@@ -702,6 +796,9 @@ function setupNotifIPC() {
       }
     })
 
+    const item = { win: pinWin, data, timerEnd: null, timerTimeout: null, inDock: false }
+    pinItems.set(pinId, item)
+
     pinWin.loadFile(getPinHtmlPath()).catch(err => {
       console.error('[PinWindow] Failed to load pin-notification.html:', err)
     })
@@ -711,27 +808,131 @@ function setupNotifIPC() {
     })
 
     pinWin.on('closed', () => {
-      const idx = pinWindows.findIndex(p => p.win === pinWin)
-      if (idx !== -1) pinWindows.splice(idx, 1)
+      const item = pinItems.get(pinId)
+      if (item) {
+        if (item.timerTimeout) clearTimeout(item.timerTimeout)
+        if (item.inDock) removeFromDock(pinId)
+        pinItems.delete(pinId)
+      }
     })
-
-    pinWindows.push({ win: pinWin, data })
   })
 
+  // ── Pin: открепить ──
   ipcMain.on('pin:unpin', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (win && !win.isDestroyed()) {
-      win.close()
-    }
+    if (!win || win.isDestroyed()) return
+    const pinId = findPinIdByWin(win)
+    if (pinId !== null) removePin(pinId)
+    else win.close()
   })
 
+  // ── Pin: resize ──
   ipcMain.on('pin:resize', (event, height) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return
-    height = Math.round(height) + 2 // +2 для рамки
+    height = Math.round(height) + 2
     const bounds = win.getBounds()
     win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height })
     if (!win.isVisible()) win.show()
+  })
+
+  // ── Pin → Dock: свернуть в задачи ──
+  ipcMain.on('pin:minimize-to-dock', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    const pinId = findPinIdByWin(win)
+    if (pinId === null) return
+    const item = pinItems.get(pinId)
+    if (!item) return
+    item.inDock = true
+    win.hide()
+    addToDock(pinId, item.data)
+  })
+
+  // ── Pin: запустить таймер ──
+  ipcMain.on('pin:start-timer', (event, minutes) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    const pinId = findPinIdByWin(win)
+    if (pinId === null) return
+    const item = pinItems.get(pinId)
+    if (!item) return
+
+    // Очистить предыдущий таймер
+    if (item.timerTimeout) clearTimeout(item.timerTimeout)
+
+    const timerEnd = Date.now() + minutes * 60000
+    item.timerEnd = timerEnd
+
+    // Сообщить pin-окну
+    if (!win.isDestroyed()) win.webContents.send('pin:timer-started', timerEnd)
+    // Сообщить dock
+    if (item.inDock && dockWin && !dockWin.isDestroyed()) {
+      dockWin.webContents.send('dock:update-timer', pinId, timerEnd)
+    }
+
+    // Таймер истёк
+    item.timerTimeout = setTimeout(() => {
+      item.timerTimeout = null
+      item.timerEnd = null
+      // Показать pin-окно если скрыто
+      if (item.win && !item.win.isDestroyed()) {
+        if (!item.win.isVisible()) item.win.show()
+        item.win.webContents.send('pin:timer-alert')
+      }
+      // Мигнуть в dock
+      if (item.inDock && dockWin && !dockWin.isDestroyed()) {
+        dockWin.webContents.send('dock:timer-alert', pinId)
+      }
+    }, minutes * 60000)
+  })
+
+  // ── Pin: отменить таймер ──
+  ipcMain.on('pin:cancel-timer', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    const pinId = findPinIdByWin(win)
+    if (pinId === null) return
+    const item = pinItems.get(pinId)
+    if (!item) return
+    if (item.timerTimeout) { clearTimeout(item.timerTimeout); item.timerTimeout = null }
+    item.timerEnd = null
+    // Сообщить dock
+    if (item.inDock && dockWin && !dockWin.isDestroyed()) {
+      dockWin.webContents.send('dock:update-timer', pinId, null)
+    }
+  })
+
+  // ── Dock → Main: показать pin-окно ──
+  ipcMain.on('dock:show-pin', (_event, pinId) => {
+    const item = pinItems.get(pinId)
+    if (!item || !item.win || item.win.isDestroyed()) return
+    if (item.win.isVisible()) {
+      item.win.focus()
+    } else {
+      item.win.show()
+      item.win.focus()
+    }
+  })
+
+  // ── Dock → Main: открепить полностью ──
+  ipcMain.on('dock:unpin', (_event, pinId) => {
+    removePin(pinId)
+  })
+
+  // ── Dock: resize ──
+  ipcMain.on('dock:resize', (_event, height) => {
+    if (!dockWin || dockWin.isDestroyed()) return
+    height = Math.round(height) + 2
+    const { workArea } = screen.getPrimaryDisplay()
+    const bounds = dockWin.getBounds()
+    dockWin.setBounds({
+      x: bounds.x,
+      y: workArea.y + workArea.height - height,
+      width: bounds.width,
+      height
+    })
+    if (!dockWin.isVisible()) dockWin.showInactive()
   })
 }
 

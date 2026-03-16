@@ -10,4 +10,14 @@ contextBridge.exposeInMainWorld('pinApi', {
   unpin: () => ipcRenderer.send('pin:unpin'),
   // Pin window → Main: сообщить высоту для resize
   resize: (height) => ipcRenderer.send('pin:resize', height),
+  // v0.66.0: Pin window → Main: свернуть в dock
+  minimizeToDock: () => ipcRenderer.send('pin:minimize-to-dock'),
+  // v0.66.0: Pin window → Main: запустить таймер (минуты)
+  startTimer: (minutes) => ipcRenderer.send('pin:start-timer', minutes),
+  // v0.66.0: Pin window → Main: отменить таймер
+  cancelTimer: () => ipcRenderer.send('pin:cancel-timer'),
+  // v0.66.0: Main → Pin window: таймер запущен (timerEnd timestamp)
+  onTimerStarted: (cb) => ipcRenderer.on('pin:timer-started', (_e, timerEnd) => cb(timerEnd)),
+  // v0.66.0: Main → Pin window: таймер истёк
+  onTimerAlert: (cb) => ipcRenderer.on('pin:timer-alert', (_e) => cb()),
 })

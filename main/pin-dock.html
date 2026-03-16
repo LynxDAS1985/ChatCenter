@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+  }
+  #dock {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: #1a1a2e;
+    border-radius: 10px;
+    border: 1px solid rgba(99,102,241,0.2);
+    box-shadow: 0 -2px 16px rgba(0,0,0,0.4);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #dock::-webkit-scrollbar { display: none; }
+  .dock-label {
+    font-size: 10px;
+    color: rgba(99,102,241,0.6);
+    margin-right: 2px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .dock-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+    max-width: 180px;
+    transition: all 0.15s;
+    animation: tabAppear 200ms ease-out;
+  }
+  @keyframes tabAppear {
+    0%   { opacity: 0; transform: translateY(8px) scale(0.9); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .dock-tab:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.15);
+  }
+  .dock-tab.alert {
+    animation: tabFlash 600ms ease-in-out infinite;
+    border-color: rgba(239,68,68,0.5);
+  }
+  @keyframes tabFlash {
+    0%, 100% { background: rgba(239,68,68,0.1); }
+    50%      { background: rgba(239,68,68,0.3); }
+  }
+  .tab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tab-name {
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90px;
+  }
+  .tab-timer {
+    font-size: 9px;
+    color: rgba(99,102,241,0.8);
+    flex-shrink: 0;
+    display: none;
+  }
+  .tab-timer.active { display: inline; }
+  .tab-timer.expired { color: #f87171; }
+  .tab-close {
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.25);
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .tab-close:hover {
+    color: #f87171;
+    background: rgba(239,68,68,0.15);
+  }
+</style>
+</head>
+<body>
+<div id="dock">
+  <span class="dock-label">\u{1F4CC}</span>
+</div>
+<script>
+  const dock = document.getElementById('dock')
+  const tabs = new Map() // pinId → { el, timerInterval }
+
+  function addTab(data) {
+    if (tabs.has(data.pinId)) return
+
+    const tab = document.createElement('div')
+    tab.className = 'dock-tab'
+    tab.dataset.pinId = data.pinId
+
+    const dot = document.createElement('span')
+    dot.className = 'tab-dot'
+    dot.style.background = data.color || '#2AABEE'
+    tab.appendChild(dot)
+
+    const name = document.createElement('span')
+    name.className = 'tab-name'
+    name.textContent = data.sender || ''
+    tab.appendChild(name)
+
+    const timer = document.createElement('span')
+    timer.className = 'tab-timer'
+    timer.id = 'timer-' + data.pinId
+    tab.appendChild(timer)
+
+    const close = document.createElement('button')
+    close.className = 'tab-close'
+    close.textContent = '\u00d7'
+    close.title = '\u041E\u0442\u043A\u0440\u0435\u043F\u0438\u0442\u044C'
+    close.addEventListener('click', (e) => {
+      e.stopPropagation()
+      window.dockApi.unpinFromDock(data.pinId)
+    })
+    tab.appendChild(close)
+
+    tab.addEventListener('click', () => {
+      window.dockApi.showPin(data.pinId)
+    })
+
+    dock.appendChild(tab)
+    tabs.set(data.pinId, { el: tab, timerInterval: null })
+    reportHeight()
+  }
+
+  function removeTab(pinId) {
+    const entry = tabs.get(pinId)
+    if (!entry) return
+    if (entry.timerInterval) clearInterval(entry.timerInterval)
+    entry.el.remove()
+    tabs.delete(pinId)
+    reportHeight()
+  }
+
+  function reportHeight() {
+    requestAnimationFrame(() => {
+      const h = dock.offsetHeight
+      window.dockApi.resize(h)
+    })
+  }
+
+  // Таймер: получаем timerEnd timestamp, запускаем локальный countdown
+  window.dockApi.onUpdateTimer((pinId, timerEnd) => {
+    const entry = tabs.get(pinId)
+    if (!entry) return
+    const timerEl = entry.el.querySelector('.tab-timer')
+    if (!timerEl) return
+
+    // Очищаем предыдущий interval
+    if (entry.timerInterval) clearInterval(entry.timerInterval)
+
+    if (!timerEnd) {
+      // Таймер отменён
+      timerEl.className = 'tab-timer'
+      timerEl.textContent = ''
+      entry.timerInterval = null
+      return
+    }
+
+    timerEl.className = 'tab-timer active'
+    entry.timerInterval = setInterval(() => {
+      const remaining = timerEnd - Date.now()
+      if (remaining <= 0) {
+        timerEl.textContent = '\u23F0 0:00'
+        timerEl.className = 'tab-timer active expired'
+        clearInterval(entry.timerInterval)
+        entry.timerInterval = null
+        return
+      }
+      const min = Math.floor(remaining / 60000)
+      const sec = Math.floor((remaining % 60000) / 1000)
+      timerEl.textContent = '\u23F0 ' + min + ':' + String(sec).padStart(2, '0')
+    }, 1000)
+  })
+
+  // Таймер истёк — мигать
+  window.dockApi.onTimerAlert((pinId) => {
+    const entry = tabs.get(pinId)
+    if (!entry) return
+    entry.el.classList.add('alert')
+    // Убрать мигание через 10 сек
+    setTimeout(() => {
+      if (entry.el) entry.el.classList.remove('alert')
+    }, 10000)
+  })
+
+  window.dockApi.onAddItem((data) => addTab(data))
+  window.dockApi.onRemoveItem((id) => removeTab(id))
+</script>
+</body>
+</html>
