@@ -34,4 +34,6 @@ contextBridge.exposeInMainWorld('dockApi', {
   startTimer: (id, minutes) => ipcRenderer.send('dock:start-timer', id, minutes),
   // v0.71.3: Dock → Main: запросить место для контекстного меню (расширить окно вверх)
   requestCtxMenuSpace: (extraH) => ipcRenderer.send('dock:ctx-menu-space', extraH),
+  // v0.71.4: Dock → Main: toggle click-through (прозрачная зона)
+  setIgnoreMouse: (ignore) => ipcRenderer.send('dock:set-ignore-mouse', ignore),
 })

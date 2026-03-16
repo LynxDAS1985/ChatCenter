@@ -208,6 +208,22 @@
   const countLabel = document.getElementById('countLabel')
   const dockCloseBtn = document.getElementById('dockCloseBtn')
   const tabs = new Map()
+
+  // ── Click-through: прозрачная зона пропускает клики ──
+  // При входе мыши на видимый элемент — перехватывать клики
+  // При выходе — пропускать клики насквозь к Windows
+  document.addEventListener('mouseenter', () => {
+    // forward: true уже включен, mouseenter срабатывает только на видимых пикселях
+  })
+  dock.addEventListener('mouseenter', () => window.dockApi.setIgnoreMouse(false))
+  dock.addEventListener('mouseleave', () => {
+    // Не включать click-through если открыто контекстное меню
+    if (ctxMenuEl) return
+    // Небольшая задержка — мышь может переходить на тултип/меню
+    setTimeout(() => {
+      if (!ctxMenuEl) window.dockApi.setIgnoreMouse(true)
+    }, 50)
+  })
   const catUrgentEl = document.getElementById('catUrgent')
   const catWorkEl = document.getElementById('catWork')
   const catLaterEl = document.getElementById('catLater')
@@ -263,7 +279,7 @@
     if (!ctxMenuEl) return
     // Убираем подсветку таба
     if (ctxActiveTab) { ctxActiveTab.classList.remove('ctx-active'); ctxActiveTab = null }
-    // Восстанавливаем размер окна
+    // Восстанавливаем размер окна и click-through
     window.dockApi.requestCtxMenuSpace(0)
     if (instant) {
       ctxMenuEl.remove(); ctxMenuEl = null; ctxPinId = null
@@ -292,6 +308,15 @@
 
     ctxMenuEl = document.createElement('div')
     ctxMenuEl.className = 'ctx-menu'
+    // Click-through: меню перехватывает мышь
+    ctxMenuEl.addEventListener('mouseenter', () => window.dockApi.setIgnoreMouse(false))
+    ctxMenuEl.addEventListener('mouseleave', () => {
+      // Если мышь ушла с меню но не на dock — включить click-through
+      // (dock.mouseenter сам выключит если мышь на dock)
+      setTimeout(() => {
+        if (!ctxMenuEl) window.dockApi.setIgnoreMouse(true)
+      }, 50)
+    })
 
     addCtxItem('👁', 'Показать карточку', () => window.dockApi.showPin(pinId))
     if (hasMessenger) {
@@ -359,9 +384,11 @@
     ctxMenuEl.appendChild(sep)
   }
 
-  // Закрыть меню: по клику вне или по правому клику вне
+  // Закрыть меню: по клику вне
   document.addEventListener('mousedown', (e) => {
-    if (ctxMenuEl && !ctxMenuEl.contains(e.target)) hideCtxMenu()
+    if (ctxMenuEl && !ctxMenuEl.contains(e.target)) {
+      hideCtxMenu()
+    }
   })
 
   // Закрыть меню по Escape

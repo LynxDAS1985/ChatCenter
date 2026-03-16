@@ -732,6 +732,9 @@ function setupNotifIPC() {
     // Поверх ВСЕХ окон — уровень screen-saver
     dockWin.setAlwaysOnTop(true, 'screen-saver')
 
+    // Прозрачная зона click-through — клики проходят к Windows таскбару и другим окнам
+    dockWin.setIgnoreMouseEvents(true, { forward: true })
+
     dockWin.loadFile(getDockHtmlPath()).catch(err => {
       console.error('[Dock] Failed to load pin-dock.html:', err)
     })
@@ -1109,6 +1112,16 @@ function setupNotifIPC() {
       if (hasDocked || getShowDockEmpty()) {
         dockWin.showInactive()
       }
+    }
+  })
+
+  // ── Dock: toggle mouse events (click-through для прозрачной зоны) ──
+  ipcMain.on('dock:set-ignore-mouse', (_event, ignore) => {
+    if (!dockWin || dockWin.isDestroyed()) return
+    if (ignore) {
+      dockWin.setIgnoreMouseEvents(true, { forward: true })
+    } else {
+      dockWin.setIgnoreMouseEvents(false)
     }
   })
 
