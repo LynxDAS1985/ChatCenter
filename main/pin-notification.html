@@ -216,6 +216,40 @@
     background: rgba(34,197,94,0.12);
     color: #4ade80;
   }
+  /* v0.70.0: категории */
+  .category-section {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-top: 1px solid rgba(255,255,255,0.04);
+    -webkit-app-region: no-drag;
+  }
+  .cat-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.3);
+    margin-right: 2px;
+  }
+  .cat-btn {
+    padding: 2px 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 4px;
+    background: transparent;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .cat-btn:hover { opacity: 1; }
+  .cat-btn.active {
+    border-width: 2px;
+    font-weight: 600;
+  }
+  .cat-btn.urgent { color: #f87171; border-color: rgba(239,68,68,0.3); }
+  .cat-btn.urgent:hover, .cat-btn.urgent.active { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.6); }
+  .cat-btn.work { color: #fbbf24; border-color: rgba(245,158,11,0.3); }
+  .cat-btn.work:hover, .cat-btn.work.active { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.6); }
+  .cat-btn.later { color: #4ade80; border-color: rgba(34,197,94,0.3); }
+  .cat-btn.later:hover, .cat-btn.later.active { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.6); }
 </style>
 </head>
 <body>
@@ -228,6 +262,13 @@
     <button class="pin-close" id="closeBtn" title="Открепить">×</button>
   </div>
   <div class="pin-body" id="body"></div>
+  <!-- v0.70.0: секция категорий -->
+  <div class="category-section" id="categorySection">
+    <span class="cat-label">🏷</span>
+    <button class="cat-btn urgent" data-cat="urgent">🔴 Срочно</button>
+    <button class="cat-btn work" data-cat="work">🟡 В работе</button>
+    <button class="cat-btn later" data-cat="later">🟢 На потом</button>
+  </div>
   <!-- v0.66.0: секция таймера -->
   <div class="timer-section" id="timerSection">
     <span class="timer-label">⏰</span>
@@ -244,7 +285,7 @@
   <div class="pin-footer">
     <button class="pin-action chat" id="chatBtn" style="display:none">→ В чат</button>
     <button class="pin-action copy" id="copyBtn">📋 Копировать</button>
-    <button class="pin-action dock" id="dockBtn">⬇ В задачи</button>
+    <button class="pin-action dock" id="dockBtn">⬇ Свернуть</button>
     <button class="pin-action unpin" id="unpinBtn">⊘ Открепить</button>
   </div>
 </div>
@@ -359,6 +400,26 @@
     card.classList.remove('timer-alert')
     requestAnimationFrame(() => window.pinApi.resize(card.offsetHeight))
   }
+
+  // v0.70.0: категории
+  const categorySection = document.getElementById('categorySection')
+  let currentCategory = ''
+  categorySection.addEventListener('click', (e) => {
+    const btn = e.target.closest('.cat-btn')
+    if (!btn) return
+    const cat = btn.dataset.cat
+    // Toggle: если уже выбрана — снять
+    if (currentCategory === cat) {
+      currentCategory = ''
+      categorySection.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'))
+    } else {
+      currentCategory = cat
+      categorySection.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+    }
+    window.pinApi.setCategory(currentCategory)
+    requestAnimationFrame(() => window.pinApi.resize(card.offsetHeight))
+  })
 
   // Звук напоминания — два коротких бипа
   function playTimerSound() {

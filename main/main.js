@@ -660,9 +660,10 @@ function setupNotifIPC() {
   })
 
   // ── v0.66.0: Pin + Dock + Timer ──────────────────────────────────────────────
-  const pinItems = new Map() // pinId → { win, data, timerEnd, timerTimeout }
+  const pinItems = new Map() // pinId → { win, data, timerEnd, timerTimeout, inDock, category }
   let pinIdCounter = 0
   let dockWin = null
+  const DOCK_PREVIEW_RESERVE = 150 // предвыделенное пространство для тултипа
 
   function getPinPreloadPath() {
     if (isDev) return path.join(__dirname, '../../main/preloads/pin.preload.js')
@@ -698,14 +699,18 @@ function setupNotifIPC() {
 
     const { workArea } = screen.getPrimaryDisplay()
     const initW = 120
-    // Восстановить позицию из storage
+    const dockH = 48
+    const totalH = dockH + DOCK_PREVIEW_RESERVE // предвыделенное место для тултипа
+    // Восстановить позицию из storage (y — нижняя граница dock)
     const saved = storage.get('dockPosition', null)
     const startX = saved ? saved.x : Math.round(workArea.x + (workArea.width - initW) / 2)
-    const startY = saved ? saved.y : workArea.y + workArea.height - 48
+    // y хранит позицию нижнего края dock, окно выше на DOCK_PREVIEW_RESERVE
+    const baseY = saved ? saved.y : workArea.y + workArea.height - dockH
+    const startY = baseY - DOCK_PREVIEW_RESERVE
 
     dockWin = new BrowserWindow({
       width: initW,
-      height: 48,
+      height: totalH,
       x: startX,
       y: startY,
       frame: false,
@@ -724,6 +729,9 @@ function setupNotifIPC() {
       }
     })
 
+    // Поверх ВСЕХ окон — уровень screen-saver
+    dockWin.setAlwaysOnTop(true, 'screen-saver')
+
     dockWin.loadFile(getDockHtmlPath()).catch(err => {
       console.error('[Dock] Failed to load pin-dock.html:', err)
     })
@@ -733,23 +741,22 @@ function setupNotifIPC() {
       if (!dockWin || dockWin.isDestroyed()) return
       const bounds = dockWin.getBounds()
       const { workArea: wa } = screen.getPrimaryDisplay()
-      const SNAP = 20 // порог snap в пикселях
+      const SNAP = 20
       let snapped = false
-      let sx = bounds.x, sy = bounds.y
+      // Позиция dock (нижняя часть окна)
+      const dockY = bounds.y + DOCK_PREVIEW_RESERVE
+      let sx = bounds.x, sy = dockY
 
-      // Snap к левому краю
       if (Math.abs(bounds.x - wa.x) < SNAP) { sx = wa.x; snapped = true }
-      // Snap к правому краю
       if (Math.abs((bounds.x + bounds.width) - (wa.x + wa.width)) < SNAP) { sx = wa.x + wa.width - bounds.width; snapped = true }
-      // Snap к верхнему краю
-      if (Math.abs(bounds.y - wa.y) < SNAP) { sy = wa.y; snapped = true }
-      // Snap к нижнему краю
-      if (Math.abs((bounds.y + bounds.height) - (wa.y + wa.height)) < SNAP) { sy = wa.y + wa.height - bounds.height; snapped = true }
+      if (Math.abs(dockY - wa.y) < SNAP) { sy = wa.y; snapped = true }
+      if (Math.abs((dockY + dockBaseHeight) - (wa.y + wa.height)) < SNAP) { sy = wa.y + wa.height - dockBaseHeight; snapped = true }
 
-      if (snapped) dockWin.setPosition(sx, sy)
-      // Сохранить позицию
-      const pos = snapped ? { x: sx, y: sy } : { x: bounds.x, y: bounds.y }
-      storage.set('dockPosition', pos)
+      const finalX = snapped ? sx : bounds.x
+      const finalDockY = snapped ? sy : dockY
+      const finalWinY = finalDockY - DOCK_PREVIEW_RESERVE
+      if (snapped) dockWin.setPosition(finalX, finalWinY)
+      storage.set('dockPosition', { x: finalX, y: finalDockY })
     })
 
     dockWin.on('closed', () => { dockWin = null })
@@ -765,11 +772,11 @@ function setupNotifIPC() {
   // Добавить таб в dock
   function addToDock(pinId, data) {
     const dock = ensureDockWindow()
+    const item = pinItems.get(pinId)
     const sendAdd = () => {
-      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time })
+      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '' })
       if (!dock.isVisible()) dock.showInactive()
       // Передать текущий таймер если есть
-      const item = pinItems.get(pinId)
       if (item && item.timerEnd) {
         dock.webContents.send('dock:update-timer', pinId, item.timerEnd)
       }
@@ -781,20 +788,10 @@ function setupNotifIPC() {
     }
   }
 
-  // Удалить таб из dock
+  // Удалить таб из dock (только UI)
   function removeFromDock(pinId) {
     if (!dockWin || dockWin.isDestroyed()) return
     dockWin.webContents.send('dock:remove', pinId)
-    // Проверяем: остались ли задачи в dock?
-    let hasDocked = false
-    for (const [id, item] of pinItems) {
-      if (id !== pinId && item.inDock) { hasDocked = true; break }
-    }
-    if (!hasDocked && dockWin && !dockWin.isDestroyed()) {
-      if (!getShowDockEmpty()) {
-        dockWin.hide()
-      }
-    }
   }
 
   // Полное удаление pin
@@ -802,10 +799,12 @@ function setupNotifIPC() {
     const item = pinItems.get(pinId)
     if (!item) return
     if (item.timerTimeout) clearTimeout(item.timerTimeout)
-    if (item.win && !item.win.isDestroyed()) item.win.close()
+    const win = item.win
+    item.win = null // Предотвратить повторный close из 'closed' handler
+    if (win && !win.isDestroyed()) win.close()
     if (item.inDock) removeFromDock(pinId)
     pinItems.delete(pinId)
-    // После удаления — проверить, нужно ли скрыть dock
+    // После удаления — ВСЕГДА проверить, нужно ли скрыть dock
     checkDockVisibility()
   }
 
@@ -816,8 +815,13 @@ function setupNotifIPC() {
     for (const [, item] of pinItems) {
       if (item.inDock) { hasDocked = true; break }
     }
-    if (!hasDocked && !getShowDockEmpty()) {
-      dockWin.hide()
+    if (!hasDocked) {
+      if (!getShowDockEmpty()) {
+        dockWin.hide()
+      } else {
+        // Показать "нет задач" — dock видим но пуст
+        dockWin.webContents.send('dock:show-empty', true)
+      }
     }
   }
 
@@ -848,7 +852,7 @@ function setupNotifIPC() {
       }
     })
 
-    const item = { win: pinWin, data, timerEnd: null, timerTimeout: null, inDock: false }
+    const item = { win: pinWin, data, timerEnd: null, timerTimeout: null, inDock: true, category: '' }
     pinItems.set(pinId, item)
 
     pinWin.loadFile(getPinHtmlPath()).catch(err => {
@@ -859,11 +863,15 @@ function setupNotifIPC() {
       pinWin.webContents.send('pin:data', data)
     })
 
+    // v0.70.0: Автоматическое закрепление в dock
+    addToDock(pinId, data)
+
     pinWin.on('closed', () => {
-      const item = pinItems.get(pinId)
-      if (item) {
-        if (item.timerTimeout) clearTimeout(item.timerTimeout)
-        if (item.inDock) removeFromDock(pinId)
+      const closedItem = pinItems.get(pinId)
+      if (closedItem) {
+        if (closedItem.timerTimeout) clearTimeout(closedItem.timerTimeout)
+        if (closedItem.inDock) removeFromDock(pinId)
+        closedItem.win = null // Предотвратить двойной close
         pinItems.delete(pinId)
         checkDockVisibility()
       }
@@ -905,9 +913,12 @@ function setupNotifIPC() {
     if (pinId === null) return
     const item = pinItems.get(pinId)
     if (!item) return
-    item.inDock = true
+    // Уже в dock (авто-закрепление), просто скрываем окно
+    if (!item.inDock) {
+      item.inDock = true
+      addToDock(pinId, item.data)
+    }
     win.hide()
-    addToDock(pinId, item.data)
   })
 
   // ── Pin: запустить таймер ──
@@ -990,6 +1001,7 @@ function setupNotifIPC() {
     width = Math.round(width) + 4
     height = Math.round(height) + 2
     dockBaseHeight = height
+    const totalH = height + DOCK_PREVIEW_RESERVE
     const { workArea } = screen.getPrimaryDisplay()
     const maxW = workArea.width - 40
     if (width > maxW) width = maxW
@@ -998,28 +1010,53 @@ function setupNotifIPC() {
     if (x + width > workArea.x + workArea.width) {
       x = workArea.x + workArea.width - width
     }
-    dockWin.setBounds({ x, y: bounds.y, width, height })
-    if (!dockWin.isVisible()) dockWin.showInactive()
+    // Нижняя граница dock остаётся на месте, окно растёт вверх
+    const dockBottomY = bounds.y + bounds.height
+    const newY = dockBottomY - totalH
+    dockWin.setBounds({ x, y: newY, width, height: totalH })
+    // Показать dock только если есть задачи ИЛИ настройка showDockEmpty
+    if (!dockWin.isVisible()) {
+      let hasDocked = false
+      for (const [, item] of pinItems) {
+        if (item.inDock) { hasDocked = true; break }
+      }
+      if (hasDocked || getShowDockEmpty()) {
+        dockWin.showInactive()
+      }
+    }
   })
 
-  // ── Dock: запросить место для тултипа-превью ──
-  ipcMain.on('dock:preview-space', (_event, extraH) => {
-    if (!dockWin || dockWin.isDestroyed()) return
-    const bounds = dockWin.getBounds()
-    if (extraH > 0) {
-      const totalH = dockBaseHeight + extraH
-      dockWin.setBounds({ x: bounds.x, y: bounds.y - extraH, width: bounds.width, height: totalH })
-    } else {
-      // Вернуть к базовому размеру
-      const diff = bounds.height - dockBaseHeight
-      dockWin.setBounds({ x: bounds.x, y: bounds.y + diff, width: bounds.width, height: dockBaseHeight })
-    }
+  // ── Dock: preview-space — теперь no-op (пространство предвыделено) ──
+  ipcMain.on('dock:preview-space', () => {
+    // v0.70.0: пространство для тултипа предвыделено, ресайз не нужен
   })
 
   // ── Dock: закрыть/скрыть панель ──
   ipcMain.on('dock:close', () => {
     if (dockWin && !dockWin.isDestroyed()) {
       dockWin.hide()
+    }
+  })
+
+  // ── Dock: сохранить порядок табов ──
+  ipcMain.on('dock:save-tab-order', (_event, order) => {
+    if (Array.isArray(order)) {
+      storage.set('dockTabOrder', order)
+    }
+  })
+
+  // ── Pin: установить категорию ──
+  ipcMain.on('pin:set-category', (event, category) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    const pinId = findPinIdByWin(win)
+    if (pinId === null) return
+    const item = pinItems.get(pinId)
+    if (!item) return
+    item.category = category || ''
+    // Обновить dock
+    if (item.inDock && dockWin && !dockWin.isDestroyed()) {
+      dockWin.webContents.send('dock:update-category', pinId, item.category)
     }
   })
 

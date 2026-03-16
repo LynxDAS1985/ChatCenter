@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('dockApi', {
   onTimerAlert: (cb) => ipcRenderer.on('dock:timer-alert', (_e, id) => cb(id)),
   // Main → Dock: показать/скрыть empty label
   onShowEmpty: (cb) => ipcRenderer.on('dock:show-empty', (_e, show) => cb(show)),
+  // Main → Dock: обновить категорию таба
+  onUpdateCategory: (cb) => ipcRenderer.on('dock:update-category', (_e, id, cat) => cb(id, cat)),
   // Dock → Main: показать pin-окно
   showPin: (id) => ipcRenderer.send('dock:show-pin', id),
   // Dock → Main: открепить полностью
@@ -22,4 +24,6 @@ contextBridge.exposeInMainWorld('dockApi', {
   closeDock: () => ipcRenderer.send('dock:close'),
   // Dock → Main: запросить место для превью тултипа
   requestPreviewSpace: (extraH) => ipcRenderer.send('dock:preview-space', extraH),
+  // Dock → Main: сохранить порядок табов
+  saveTabOrder: (order) => ipcRenderer.send('dock:save-tab-order', order),
 })

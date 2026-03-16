@@ -22,4 +22,6 @@ contextBridge.exposeInMainWorld('pinApi', {
   onTimerAlert: (cb) => ipcRenderer.on('pin:timer-alert', (_e) => cb()),
   // v0.69.0: Pin window → Main: перейти в чат мессенджера
   goToChat: (messengerId) => ipcRenderer.send('pin:go-to-chat', messengerId),
+  // v0.70.0: Pin window → Main: установить категорию
+  setCategory: (category) => ipcRenderer.send('pin:set-category', category),
 })

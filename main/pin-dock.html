@@ -9,7 +9,7 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow: visible;
     -webkit-app-region: no-drag;
-    /* Окно большое, dock внизу, тултип выше */
+    /* Dock внизу, превью выше — всё в предвыделенном пространстве */
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -115,10 +115,10 @@
   .dock-close:hover { color: #f87171; background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.3); }
   .dock-empty { font-size: 10px; color: rgba(255,255,255,0.2); user-select: none; padding: 0 4px; }
 
-  /* Мини-превью тултип */
+  /* Мини-превью тултип — плавная анимация как ribbon */
   .dock-preview {
     position: absolute;
-    bottom: calc(100% + 6px);
+    bottom: calc(100% + 8px);
     left: 0;
     max-width: 260px;
     min-width: 140px;
@@ -128,12 +128,14 @@
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.5);
     pointer-events: none;
-    animation: previewIn 120ms ease-out;
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+    animation: previewSlideIn 300ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
     z-index: 10;
   }
-  @keyframes previewIn {
-    0% { opacity: 0; transform: translateY(4px); }
-    100% { opacity: 1; transform: translateY(0); }
+  @keyframes previewSlideIn {
+    0%   { opacity: 0; transform: translateY(8px) scale(0.96); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
   }
   .preview-sender {
     font-size: 11px; font-weight: 600;
@@ -150,6 +152,15 @@
   .preview-time {
     font-size: 9px; color: rgba(255,255,255,0.3);
     margin-top: 3px;
+  }
+  /* Цветовая метка категории на табе */
+  .tab-category {
+    font-size: 8px;
+    line-height: 12px;
+    padding: 0 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    font-weight: 600;
   }
 </style>
 </head>
@@ -175,11 +186,30 @@
   let previewTimeout = null
   let dragSrcTab = null
 
+  // Категории цветов
+  const CATEGORIES = {
+    urgent: { label: '!!!', bg: 'rgba(239,68,68,0.2)', color: '#f87171' },
+    work:   { label: 'РАБ', bg: 'rgba(245,158,11,0.2)', color: '#fbbf24' },
+    later:  { label: 'ПЗЖ', bg: 'rgba(34,197,94,0.2)', color: '#4ade80' },
+  }
+
   function updateCount() {
     const n = tabs.size
     countLabel.textContent = n
     countLabel.className = n > 0 ? 'dock-count' : 'dock-count zero'
     emptyLabel.style.display = n > 0 ? 'none' : ''
+  }
+
+  function getTabOrder() {
+    const order = []
+    dock.querySelectorAll('.dock-tab').forEach(t => {
+      order.push(parseInt(t.dataset.pinId, 10))
+    })
+    return order
+  }
+
+  function saveTabOrder() {
+    window.dockApi.saveTabOrder(getTabOrder())
   }
 
   function addTab(data) {
@@ -199,6 +229,19 @@
     name.textContent = data.sender || ''
     tab.appendChild(name)
 
+    // Категория (если есть)
+    const catEl = document.createElement('span')
+    catEl.className = 'tab-category'
+    catEl.style.display = 'none'
+    tab.appendChild(catEl)
+    if (data.category && CATEGORIES[data.category]) {
+      const cat = CATEGORIES[data.category]
+      catEl.textContent = cat.label
+      catEl.style.background = cat.bg
+      catEl.style.color = cat.color
+      catEl.style.display = ''
+    }
+
     const timer = document.createElement('span')
     timer.className = 'tab-timer'
     timer.id = 'timer-' + data.pinId
@@ -207,14 +250,14 @@
     const close = document.createElement('button')
     close.className = 'tab-close'
     close.textContent = '\u00d7'
-    close.title = '\u041E\u0442\u043A\u0440\u0435\u043F\u0438\u0442\u044C'
+    close.title = 'Открепить'
     close.addEventListener('click', (e) => {
       e.stopPropagation()
       window.dockApi.unpinFromDock(data.pinId)
     })
     tab.appendChild(close)
 
-    // Hover — превью
+    // Hover — превью (плавное, без ресайза окна)
     tab.addEventListener('mouseenter', () => showPreview(data.pinId, tab))
     tab.addEventListener('mouseleave', () => hidePreview())
 
@@ -235,6 +278,7 @@
       tab.classList.remove('dragging')
       dragSrcTab = null
       document.querySelectorAll('.dock-tab.drag-over').forEach(t => t.classList.remove('drag-over'))
+      saveTabOrder()
     })
     tab.addEventListener('dragover', (e) => {
       e.preventDefault()
@@ -250,7 +294,6 @@
       e.preventDefault()
       tab.classList.remove('drag-over')
       if (!dragSrcTab || dragSrcTab === tab) return
-      // Определить позицию: вставить перед или после
       const rect = tab.getBoundingClientRect()
       const midX = rect.left + rect.width / 2
       if (e.clientX < midX) {
@@ -259,12 +302,14 @@
         dock.insertBefore(dragSrcTab, tab.nextSibling)
       }
       reportSize()
+      saveTabOrder()
     })
 
     dock.insertBefore(tab, dockCloseBtn)
     tabs.set(data.pinId, { el: tab, timerInterval: null, data })
     updateCount()
     reportSize()
+    saveTabOrder()
   }
 
   function showPreview(pinId, tabEl) {
@@ -296,10 +341,19 @@
         previewEl.appendChild(time)
       }
 
+      // Категория в превью
+      if (entry.data.category && CATEGORIES[entry.data.category]) {
+        const cat = CATEGORIES[entry.data.category]
+        const catDiv = document.createElement('div')
+        catDiv.style.cssText = 'font-size:9px;margin-top:3px;color:' + cat.color
+        catDiv.textContent = entry.data.category === 'urgent' ? '🔴 Срочно' : entry.data.category === 'work' ? '🟡 В работе' : '🟢 На потом'
+        previewEl.appendChild(catDiv)
+      }
+
       tabEl.appendChild(previewEl)
-      // Запросить увеличение окна для тултипа
-      window.dockApi.requestPreviewSpace(previewEl.offsetHeight + 10)
-    }, 300)
+      // Плавная анимация — окно НЕ ресайзим, используем предвыделенное пространство
+      window.dockApi.requestPreviewSpace(previewEl.offsetHeight + 12)
+    }, 250)
   }
 
   function hidePreview() {
@@ -320,6 +374,7 @@
     hidePreview()
     updateCount()
     reportSize()
+    saveTabOrder()
   }
 
   function reportSize() {
@@ -380,6 +435,24 @@
       emptyLabel.style.display = show ? '' : 'none'
     }
     reportSize()
+  })
+
+  // v0.70.0: обновить категорию таба
+  window.dockApi.onUpdateCategory((pinId, category) => {
+    const entry = tabs.get(pinId)
+    if (!entry) return
+    entry.data.category = category
+    const catEl = entry.el.querySelector('.tab-category')
+    if (!catEl) return
+    if (category && CATEGORIES[category]) {
+      const cat = CATEGORIES[category]
+      catEl.textContent = cat.label
+      catEl.style.background = cat.bg
+      catEl.style.color = cat.color
+      catEl.style.display = ''
+    } else {
+      catEl.style.display = 'none'
+    }
   })
 
   window.dockApi.onAddItem((data) => addTab(data))
