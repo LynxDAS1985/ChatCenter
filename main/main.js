@@ -697,15 +697,16 @@ function setupNotifIPC() {
   function ensureDockWindow() {
     if (dockWin && !dockWin.isDestroyed()) return dockWin
 
-    const { workArea } = screen.getPrimaryDisplay()
+    const display = screen.getPrimaryDisplay()
+    const fullBounds = display.bounds
     const initW = 120
     const dockH = 48
     const totalH = dockH + DOCK_PREVIEW_RESERVE // предвыделенное место для тултипа
     // Восстановить позицию из storage (y — нижняя граница dock)
     const saved = storage.get('dockPosition', null)
-    const startX = saved ? saved.x : Math.round(workArea.x + (workArea.width - initW) / 2)
-    // y хранит позицию нижнего края dock, окно выше на DOCK_PREVIEW_RESERVE
-    const baseY = saved ? saved.y : workArea.y + workArea.height - dockH
+    const startX = saved ? saved.x : Math.round(fullBounds.x + (fullBounds.width - initW) / 2)
+    // y хранит позицию нижнего края dock — по умолчанию внизу экрана (поверх таскбара)
+    const baseY = saved ? saved.y : fullBounds.y + fullBounds.height - dockH
     const startY = baseY - DOCK_PREVIEW_RESERVE
 
     dockWin = new BrowserWindow({
@@ -729,8 +730,8 @@ function setupNotifIPC() {
       }
     })
 
-    // Поверх ВСЕХ окон — уровень screen-saver
-    dockWin.setAlwaysOnTop(true, 'screen-saver')
+    // Поверх ВСЕХ окон — уровень screen-saver + relativeLevel 1 для Windows
+    dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
 
     // Прозрачная зона click-through — клики проходят к Windows таскбару и другим окнам
     dockWin.setIgnoreMouseEvents(true, { forward: true })
@@ -739,11 +740,20 @@ function setupNotifIPC() {
       console.error('[Dock] Failed to load pin-dock.html:', err)
     })
 
+    // Реассерт alwaysOnTop при потере фокуса (Windows таскбар может перекрыть)
+    dockWin.on('blur', () => {
+      if (dockWin && !dockWin.isDestroyed()) {
+        dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
+      }
+    })
+
     // Snap к краям + сохранение позиции при перемещении
     dockWin.on('moved', () => {
       if (!dockWin || dockWin.isDestroyed()) return
       const bounds = dockWin.getBounds()
-      const { workArea: wa } = screen.getPrimaryDisplay()
+      const display = screen.getPrimaryDisplay()
+      const wa = display.workArea
+      const fullBounds = display.bounds
       const SNAP = 20
       let snapped = false
       // Позиция dock (нижняя часть окна)
@@ -753,6 +763,9 @@ function setupNotifIPC() {
       if (Math.abs(bounds.x - wa.x) < SNAP) { sx = wa.x; snapped = true }
       if (Math.abs((bounds.x + bounds.width) - (wa.x + wa.width)) < SNAP) { sx = wa.x + wa.width - bounds.width; snapped = true }
       if (Math.abs(dockY - wa.y) < SNAP) { sy = wa.y; snapped = true }
+      // Snap к нижнему краю ЭКРАНА (не workArea) — dock поверх таскбара Windows
+      if (Math.abs((dockY + dockBaseHeight) - (fullBounds.y + fullBounds.height)) < SNAP) { sy = fullBounds.y + fullBounds.height - dockBaseHeight; snapped = true }
+      // Также snap к нижнему краю workArea (над таскбаром)
       if (Math.abs((dockY + dockBaseHeight) - (wa.y + wa.height)) < SNAP) { sy = wa.y + wa.height - dockBaseHeight; snapped = true }
 
       const finalX = snapped ? sx : bounds.x
@@ -784,7 +797,7 @@ function setupNotifIPC() {
     const item = pinItems.get(pinId)
     const sendAdd = () => {
       dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '' })
-      if (!dock.isVisible()) dock.showInactive()
+      if (!dock.isVisible()) { dock.showInactive(); dock.setAlwaysOnTop(true, 'screen-saver', 1) }
       // Передать текущий таймер если есть
       if (item && item.timerEnd) {
         dock.webContents.send('dock:update-timer', pinId, item.timerEnd)
@@ -1083,8 +1096,9 @@ function setupNotifIPC() {
     height = Math.round(height) + 2
     dockBaseHeight = height
     const totalH = height + DOCK_PREVIEW_RESERVE
-    const { workArea } = screen.getPrimaryDisplay()
-    const maxW = workArea.width - 40
+    const display = screen.getPrimaryDisplay()
+    const fullBounds = display.bounds
+    const maxW = fullBounds.width - 40
     if (width > maxW) width = maxW
     const bounds = dockWin.getBounds()
     let x = bounds.x
@@ -1094,11 +1108,11 @@ function setupNotifIPC() {
       x = Math.round(centerX - width / 2)
     }
     // Не выходить за правый край
-    if (x + width > workArea.x + workArea.width) {
-      x = workArea.x + workArea.width - width
+    if (x + width > fullBounds.x + fullBounds.width) {
+      x = fullBounds.x + fullBounds.width - width
     }
     // Не выходить за левый край
-    if (x < workArea.x) x = workArea.x
+    if (x < fullBounds.x) x = fullBounds.x
     // Нижняя граница dock остаётся на месте, окно растёт вверх
     const dockBottomY = bounds.y + bounds.height
     const newY = dockBottomY - totalH
@@ -1111,6 +1125,7 @@ function setupNotifIPC() {
       }
       if (hasDocked || getShowDockEmpty()) {
         dockWin.showInactive()
+        dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
       }
     }
   })
@@ -1256,7 +1271,7 @@ function setupIPC() {
         if (!hasDocked) dockWin.hide()
       } else {
         // Показать dock если его сейчас нет
-        if (!dockWin.isVisible()) dockWin.showInactive()
+        if (!dockWin.isVisible()) { dockWin.showInactive(); dockWin.setAlwaysOnTop(true, 'screen-saver', 1) }
       }
     }
     return { ok: true }

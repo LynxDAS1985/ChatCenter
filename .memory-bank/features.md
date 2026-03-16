@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.71.4 (16 марта 2026)
+## Текущая версия: v0.71.5 (16 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.71.5 (16 марта 2026) — Dock поверх Windows таскбара
+- **Агрессивный alwaysOnTop**: `setAlwaysOnTop(true, 'screen-saver', 1)` с relativeLevel=1 + реассерт при blur и showInactive. Windows таскбар больше не перекрывает dock.
+- **Позиционирование по полному экрану**: Начальная позиция и snap используют `display.bounds` (не `workArea`) — dock может сидеть поверх Windows таскбара.
 
 ### v0.71.4 (16 марта 2026) — Click-through прозрачной зоны dock (Ловушка 25)
 - **Фикс: dock блокировал клики на таскбар Windows**: Окно dock имеет прозрачную зону 150px+ выше видимой панели (для тултипов/меню). Эта невидимая область перехватывала клики к Windows таскбару и другим окнам. Решение: `setIgnoreMouseEvents(true, { forward: true })` — прозрачная зона click-through. IPC `dock:set-ignore-mouse` переключает при mouseenter/mouseleave на dock и контекстном меню.
