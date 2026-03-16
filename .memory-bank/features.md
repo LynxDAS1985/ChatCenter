@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.71.5 (16 марта 2026)
+## Текущая версия: v0.71.6 (16 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.71.6 (16 марта 2026) — Фильтр MAX фантомов + dock поверх всех окон
+- **Фильтр MAX фантомов**: Системные onboarding-сообщения MAX ("Сообщений пока нет", "Напишите сообщение", "Теперь в MAX!" и т.д.) фильтруются в 3 местах: `isSpamNotif()`, `extractMsgText()`, `getLastMessageText()`. Regex `_maxPhantom` отсекает приветственные и системные тексты.
+- **Dock агрессивно поверх всех окон**: `setInterval(1000ms)` периодически вызывает `setAlwaysOnTop(true, 'screen-saver', 1)` + `moveTop()`. Плюс `moveTop()` при blur и каждом showInactive. Windows 11 таскбар больше не перекрывает dock.
 
 ### v0.71.5 (16 марта 2026) — Dock поверх Windows таскбара
 - **Агрессивный alwaysOnTop**: `setAlwaysOnTop(true, 'screen-saver', 1)` с relativeLevel=1 + реассерт при blur и showInactive. Windows таскбар больше не перекрывает dock.

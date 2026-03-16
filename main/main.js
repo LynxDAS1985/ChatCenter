@@ -744,8 +744,19 @@ function setupNotifIPC() {
     dockWin.on('blur', () => {
       if (dockWin && !dockWin.isDestroyed()) {
         dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
+        dockWin.moveTop()
       }
     })
+
+    // Периодически поднимать dock наверх (Windows таскбар агрессивно перекрывает)
+    const dockTopInterval = setInterval(() => {
+      if (!dockWin || dockWin.isDestroyed()) { clearInterval(dockTopInterval); return }
+      if (dockWin.isVisible()) {
+        dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
+        dockWin.moveTop()
+      }
+    }, 1000)
+    dockWin.on('closed', () => clearInterval(dockTopInterval))
 
     // Snap к краям + сохранение позиции при перемещении
     dockWin.on('moved', () => {
@@ -797,7 +808,7 @@ function setupNotifIPC() {
     const item = pinItems.get(pinId)
     const sendAdd = () => {
       dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '' })
-      if (!dock.isVisible()) { dock.showInactive(); dock.setAlwaysOnTop(true, 'screen-saver', 1) }
+      if (!dock.isVisible()) { dock.showInactive(); dock.setAlwaysOnTop(true, 'screen-saver', 1); dock.moveTop() }
       // Передать текущий таймер если есть
       if (item && item.timerEnd) {
         dock.webContents.send('dock:update-timer', pinId, item.timerEnd)
@@ -1126,6 +1137,7 @@ function setupNotifIPC() {
       if (hasDocked || getShowDockEmpty()) {
         dockWin.showInactive()
         dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
+        dockWin.moveTop()
       }
     }
   })
@@ -1271,7 +1283,7 @@ function setupIPC() {
         if (!hasDocked) dockWin.hide()
       } else {
         // Показать dock если его сейчас нет
-        if (!dockWin.isVisible()) { dockWin.showInactive(); dockWin.setAlwaysOnTop(true, 'screen-saver', 1) }
+        if (!dockWin.isVisible()) { dockWin.showInactive(); dockWin.setAlwaysOnTop(true, 'screen-saver', 1); dockWin.moveTop() }
       }
     }
     return { ok: true }

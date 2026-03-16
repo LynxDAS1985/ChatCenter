@@ -227,6 +227,8 @@ const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]
 
 **quickNewMsgCheck deep scan** (v0.56.1): MAX (SvelteKit) обновляет DOM блоками >40 children. Порог увеличен до 200. Для nodes 40-200 children — deep scan: ищет `[class*="message"] [class*="text"]`, `span`, `p`, `div` с коротким текстом. `extractMsgText()` — очистка embedded timestamps ("Ааа18:22" → "Ааа").
 
+**MAX onboarding/системные фантомы** (v0.71.6): MAX шлёт Notification с текстом "Сообщений пока нет Напишите сообщение или отправьте этот стикер Новые сообщения Сегодня Теперь в MAX! 👉 Напишите что-нибудь!" — НЕ от собеседника, а системный текст. Фильтруется regex `_maxPhantom` в `isSpamNotif()`, `extractMsgText()`, `getLastMessageText()`. Ключевые фразы: "сообщений пока нет", "напишите сообщение/что-нибудь", "отправьте стикер", "теперь в max", "начните общение", "добро пожаловать".
+
 ---
 
 ## Общий шаблон monitor.preload.js
