@@ -769,6 +769,12 @@ function setupNotifIPC() {
     return s.showDockEmpty === true
   }
 
+  // Проверяем настройку "расширение dock по центру"
+  function getDockCenterExpand() {
+    const s = storage.get('settings', {})
+    return s.dockCenterExpand === true
+  }
+
   // Добавить таб в dock
   function addToDock(pinId, data) {
     const dock = ensureDockWindow()
@@ -1072,9 +1078,17 @@ function setupNotifIPC() {
     if (width > maxW) width = maxW
     const bounds = dockWin.getBounds()
     let x = bounds.x
+    if (getDockCenterExpand()) {
+      // Расширение по центру: сохраняем центральную точку
+      const centerX = bounds.x + bounds.width / 2
+      x = Math.round(centerX - width / 2)
+    }
+    // Не выходить за правый край
     if (x + width > workArea.x + workArea.width) {
       x = workArea.x + workArea.width - width
     }
+    // Не выходить за левый край
+    if (x < workArea.x) x = workArea.x
     // Нижняя граница dock остаётся на месте, окно растёт вверх
     const dockBottomY = bounds.y + bounds.height
     const newY = dockBottomY - totalH

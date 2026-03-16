@@ -368,6 +368,9 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="Панель задач без задач" description="Показывать dock-панель даже когда нет закреплённых">
                 <Toggle value={!!settings.showDockEmpty} onChange={v => set('showDockEmpty', v)} />
               </SettingRow>
+              <SettingRow label="Расширение по центру" description="Панель задач растёт от центра при добавлении">
+                <Toggle value={!!settings.dockCenterExpand} onChange={v => set('dockCenterExpand', v)} />
+              </SettingRow>
             </div>
           </section>
 
