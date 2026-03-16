@@ -972,6 +972,10 @@ function setupNotifIPC() {
       if (item.inDock && dockWin && !dockWin.isDestroyed()) {
         dockWin.webContents.send('dock:timer-alert', pinId)
       }
+      // Мигнуть окном в таскбаре
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.flashFrame(true)
+      }
     }, minutes * 60000)
   })
 
@@ -1060,6 +1064,9 @@ function setupNotifIPC() {
       if (dockWin && !dockWin.isDestroyed()) {
         dockWin.webContents.send('dock:timer-alert', pinId)
       }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.flashFrame(true)
+      }
     }, minutes * 60000)
   })
 
@@ -1108,6 +1115,26 @@ function setupNotifIPC() {
   // ── Dock: preview-space — теперь no-op (пространство предвыделено) ──
   ipcMain.on('dock:preview-space', () => {
     // v0.70.0: пространство для тултипа предвыделено, ресайз не нужен
+  })
+
+  // ── Dock: ctx-menu-space — временно расширить окно вверх для контекстного меню ──
+  ipcMain.on('dock:ctx-menu-space', (_event, extraH) => {
+    if (!dockWin || dockWin.isDestroyed()) return
+    const bounds = dockWin.getBounds()
+    const dockBottomY = bounds.y + bounds.height
+    if (extraH <= 0) {
+      // Восстановить нормальную высоту
+      const normalH = dockBaseHeight + DOCK_PREVIEW_RESERVE
+      if (bounds.height !== normalH) {
+        const newY = dockBottomY - normalH
+        dockWin.setBounds({ x: bounds.x, y: newY, width: bounds.width, height: normalH })
+      }
+      return
+    }
+    const neededH = dockBaseHeight + Math.max(DOCK_PREVIEW_RESERVE, extraH)
+    if (neededH <= bounds.height) return // уже достаточно места
+    const newY = dockBottomY - neededH
+    dockWin.setBounds({ x: bounds.x, y: newY, width: bounds.width, height: neededH })
   })
 
   // ── Dock: закрыть/скрыть панель ──

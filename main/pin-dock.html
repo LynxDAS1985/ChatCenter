@@ -263,6 +263,8 @@
     if (!ctxMenuEl) return
     // Убираем подсветку таба
     if (ctxActiveTab) { ctxActiveTab.classList.remove('ctx-active'); ctxActiveTab = null }
+    // Восстанавливаем размер окна
+    window.dockApi.requestCtxMenuSpace(0)
     if (instant) {
       ctxMenuEl.remove(); ctxMenuEl = null; ctxPinId = null
       return
@@ -309,20 +311,26 @@
     // Позиционируем в body — НЕ внутри таба (чтобы не обрезалось)
     document.body.appendChild(ctxMenuEl)
 
-    // Позиция: над табом, выравнивание по левому краю таба
+    // Запросить место для меню (расширить окно вверх)
     const tabRect = tabEl.getBoundingClientRect()
     requestAnimationFrame(() => {
       const menuH = ctxMenuEl.offsetHeight
       const menuW = ctxMenuEl.offsetWidth
-      let x = tabRect.left
-      let y = tabRect.top - menuH - 4
-      // Если выходит за верх — показать снизу
-      if (y < 0) y = tabRect.bottom + 4
-      // Если выходит за правый край
-      if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 4
-      if (x < 0) x = 4
-      ctxMenuEl.style.left = x + 'px'
-      ctxMenuEl.style.top = y + 'px'
+      // Запросить расширение окна вверх — меню + отступ
+      window.dockApi.requestCtxMenuSpace(menuH + 12)
+
+      // Позиционируем после расширения окна
+      setTimeout(() => {
+        if (!ctxMenuEl) return
+        const newTabRect = tabEl.getBoundingClientRect()
+        let x = newTabRect.left
+        let y = newTabRect.top - menuH - 4
+        if (y < 4) y = 4
+        if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 4
+        if (x < 4) x = 4
+        ctxMenuEl.style.left = x + 'px'
+        ctxMenuEl.style.top = y + 'px'
+      }, 30)
     })
   }
 
@@ -412,10 +420,18 @@
     })
     tab.addEventListener('mouseleave', () => hidePreview())
 
+    // Одинарный клик — показать карточку, двойной — перейти в чат
+    let clickTimer = null
     tab.addEventListener('click', () => {
       hidePreview()
       hideCtxMenu()
-      window.dockApi.showPin(data.pinId)
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; return }
+      clickTimer = setTimeout(() => { clickTimer = null; window.dockApi.showPin(data.pinId) }, 250)
+    })
+    tab.addEventListener('dblclick', () => {
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
+      if (data.messengerId) window.dockApi.goToChat(data.pinId)
+      else window.dockApi.showPin(data.pinId)
     })
 
     // Контекстное меню (ПКМ)
@@ -548,7 +564,25 @@
     if (!entry) return
     entry.el.classList.add('alert')
     setTimeout(() => { if (entry.el) entry.el.classList.remove('alert') }, 10000)
+    // Звук уведомления — три коротких бипа
+    playTimerSound()
   })
+
+  function playTimerSound() {
+    try {
+      const ctx = new AudioContext()
+      for (let i = 0; i < 3; i++) {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = 880
+        gain.gain.value = 0.25
+        osc.start(ctx.currentTime + i * 0.25)
+        osc.stop(ctx.currentTime + i * 0.25 + 0.1)
+      }
+      setTimeout(() => ctx.close(), 1500)
+    } catch {}
+  }
 
   window.dockApi.onShowEmpty((show) => {
     if (tabs.size === 0) emptyLabel.style.display = show ? '' : 'none'

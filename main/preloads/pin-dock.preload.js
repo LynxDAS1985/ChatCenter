@@ -32,4 +32,6 @@ contextBridge.exposeInMainWorld('dockApi', {
   setCategory: (id, cat) => ipcRenderer.send('dock:set-category', id, cat),
   // v0.71.0: Dock → Main: установить таймер из dock
   startTimer: (id, minutes) => ipcRenderer.send('dock:start-timer', id, minutes),
+  // v0.71.3: Dock → Main: запросить место для контекстного меню (расширить окно вверх)
+  requestCtxMenuSpace: (extraH) => ipcRenderer.send('dock:ctx-menu-space', extraH),
 })
