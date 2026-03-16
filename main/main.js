@@ -697,12 +697,17 @@ function setupNotifIPC() {
     if (dockWin && !dockWin.isDestroyed()) return dockWin
 
     const { workArea } = screen.getPrimaryDisplay()
-    const initW = 120 // начальная ширина (📌 + "нет задач" + ×)
+    const initW = 120
+    // Восстановить позицию из storage
+    const saved = storage.get('dockPosition', null)
+    const startX = saved ? saved.x : Math.round(workArea.x + (workArea.width - initW) / 2)
+    const startY = saved ? saved.y : workArea.y + workArea.height - 48
+
     dockWin = new BrowserWindow({
       width: initW,
       height: 48,
-      x: Math.round(workArea.x + (workArea.width - initW) / 2),
-      y: workArea.y + workArea.height - 48,
+      x: startX,
+      y: startY,
       frame: false,
       transparent: true,
       backgroundColor: '#00000000',
@@ -723,6 +728,30 @@ function setupNotifIPC() {
       console.error('[Dock] Failed to load pin-dock.html:', err)
     })
 
+    // Snap к краям + сохранение позиции при перемещении
+    dockWin.on('moved', () => {
+      if (!dockWin || dockWin.isDestroyed()) return
+      const bounds = dockWin.getBounds()
+      const { workArea: wa } = screen.getPrimaryDisplay()
+      const SNAP = 20 // порог snap в пикселях
+      let snapped = false
+      let sx = bounds.x, sy = bounds.y
+
+      // Snap к левому краю
+      if (Math.abs(bounds.x - wa.x) < SNAP) { sx = wa.x; snapped = true }
+      // Snap к правому краю
+      if (Math.abs((bounds.x + bounds.width) - (wa.x + wa.width)) < SNAP) { sx = wa.x + wa.width - bounds.width; snapped = true }
+      // Snap к верхнему краю
+      if (Math.abs(bounds.y - wa.y) < SNAP) { sy = wa.y; snapped = true }
+      // Snap к нижнему краю
+      if (Math.abs((bounds.y + bounds.height) - (wa.y + wa.height)) < SNAP) { sy = wa.y + wa.height - bounds.height; snapped = true }
+
+      if (snapped) dockWin.setPosition(sx, sy)
+      // Сохранить позицию
+      const pos = snapped ? { x: sx, y: sy } : { x: bounds.x, y: bounds.y }
+      storage.set('dockPosition', pos)
+    })
+
     dockWin.on('closed', () => { dockWin = null })
     return dockWin
   }
@@ -737,7 +766,7 @@ function setupNotifIPC() {
   function addToDock(pinId, data) {
     const dock = ensureDockWindow()
     const sendAdd = () => {
-      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color })
+      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time })
       if (!dock.isVisible()) dock.showInactive()
       // Передать текущий таймер если есть
       const item = pinItems.get(pinId)
@@ -776,6 +805,20 @@ function setupNotifIPC() {
     if (item.win && !item.win.isDestroyed()) item.win.close()
     if (item.inDock) removeFromDock(pinId)
     pinItems.delete(pinId)
+    // После удаления — проверить, нужно ли скрыть dock
+    checkDockVisibility()
+  }
+
+  // Проверить видимость dock: скрыть если пуст и showDockEmpty=false
+  function checkDockVisibility() {
+    if (!dockWin || dockWin.isDestroyed()) return
+    let hasDocked = false
+    for (const [, item] of pinItems) {
+      if (item.inDock) { hasDocked = true; break }
+    }
+    if (!hasDocked && !getShowDockEmpty()) {
+      dockWin.hide()
+    }
   }
 
   // ── Создание pin-окна ──
@@ -822,6 +865,7 @@ function setupNotifIPC() {
         if (item.timerTimeout) clearTimeout(item.timerTimeout)
         if (item.inDock) removeFromDock(pinId)
         pinItems.delete(pinId)
+        checkDockVisibility()
       }
     })
   })
@@ -929,23 +973,39 @@ function setupNotifIPC() {
     removePin(pinId)
   })
 
+  // Базовая высота dock (сохраняем при resize)
+  let dockBaseHeight = 48
+
   // ── Dock: resize (ширина + высота) ──
   ipcMain.on('dock:resize', (_event, width, height) => {
     if (!dockWin || dockWin.isDestroyed()) return
-    width = Math.round(width) + 4 // +4 для тени/рамки
+    width = Math.round(width) + 4
     height = Math.round(height) + 2
+    dockBaseHeight = height
     const { workArea } = screen.getPrimaryDisplay()
     const maxW = workArea.width - 40
     if (width > maxW) width = maxW
     const bounds = dockWin.getBounds()
-    // Сохраняем позицию пользователя, только обновляем размер
     let x = bounds.x
-    // Если окно выходит за правый край — подвинуть
     if (x + width > workArea.x + workArea.width) {
       x = workArea.x + workArea.width - width
     }
     dockWin.setBounds({ x, y: bounds.y, width, height })
     if (!dockWin.isVisible()) dockWin.showInactive()
+  })
+
+  // ── Dock: запросить место для тултипа-превью ──
+  ipcMain.on('dock:preview-space', (_event, extraH) => {
+    if (!dockWin || dockWin.isDestroyed()) return
+    const bounds = dockWin.getBounds()
+    if (extraH > 0) {
+      const totalH = dockBaseHeight + extraH
+      dockWin.setBounds({ x: bounds.x, y: bounds.y - extraH, width: bounds.width, height: totalH })
+    } else {
+      // Вернуть к базовому размеру
+      const diff = bounds.height - dockBaseHeight
+      dockWin.setBounds({ x: bounds.x, y: bounds.y + diff, width: bounds.width, height: dockBaseHeight })
+    }
   })
 
   // ── Dock: закрыть/скрыть панель ──

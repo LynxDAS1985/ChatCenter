@@ -7,8 +7,16 @@
   body {
     background: transparent;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    overflow: hidden;
+    overflow: visible;
     -webkit-app-region: no-drag;
+    /* Окно большое, dock внизу, тултип выше */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 100vh;
+  }
+  #dock-wrapper {
+    position: relative;
   }
   #dock {
     display: inline-flex;
@@ -21,7 +29,6 @@
     box-shadow: 0 -2px 16px rgba(0,0,0,0.4);
     white-space: nowrap;
   }
-  /* Зона перетаскивания — label + счётчик */
   .dock-drag {
     display: flex;
     align-items: center;
@@ -32,36 +39,27 @@
     flex-shrink: 0;
     padding: 0 2px;
   }
-  .dock-label {
-    font-size: 10px;
-    color: rgba(99,102,241,0.6);
-  }
+  .dock-label { font-size: 10px; color: rgba(99,102,241,0.6); }
   .dock-count {
-    font-size: 9px;
-    font-weight: 700;
+    font-size: 9px; font-weight: 700;
     color: rgba(99,102,241,0.8);
     background: rgba(99,102,241,0.12);
-    border-radius: 8px;
-    padding: 0 5px;
-    min-width: 16px;
-    text-align: center;
-    line-height: 16px;
-    height: 16px;
+    border-radius: 8px; padding: 0 5px;
+    min-width: 16px; text-align: center;
+    line-height: 16px; height: 16px;
   }
   .dock-count.zero { display: none; }
   .dock-tab {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    gap: 6px; padding: 4px 8px;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 6px;
-    cursor: pointer;
-    flex-shrink: 0;
-    max-width: 180px;
+    border-radius: 6px; cursor: pointer;
+    flex-shrink: 0; max-width: 180px;
     transition: all 0.15s;
     animation: tabAppear 200ms ease-out;
+    position: relative;
   }
   @keyframes tabAppear {
     0%   { opacity: 0; transform: translateY(8px) scale(0.9); }
@@ -79,91 +77,94 @@
     0%, 100% { background: rgba(239,68,68,0.1); }
     50%      { background: rgba(239,68,68,0.3); }
   }
-  .tab-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
+  .tab-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
   .tab-name {
-    font-size: 11px;
-    color: rgba(255,255,255,0.7);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 90px;
+    font-size: 11px; color: rgba(255,255,255,0.7);
+    white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; max-width: 90px;
   }
-  .tab-timer {
-    font-size: 9px;
-    color: rgba(99,102,241,0.8);
-    flex-shrink: 0;
-    display: none;
-  }
+  .tab-timer { font-size: 9px; color: rgba(99,102,241,0.8); flex-shrink: 0; display: none; }
   .tab-timer.active { display: inline; }
   .tab-timer.expired { color: #f87171; }
   .tab-close {
-    width: 16px;
-    height: 16px;
-    border: none;
-    background: transparent;
-    color: rgba(255,255,255,0.25);
-    font-size: 12px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    flex-shrink: 0;
-    transition: all 0.15s;
+    width: 16px; height: 16px; border: none;
+    background: transparent; color: rgba(255,255,255,0.25);
+    font-size: 12px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 3px; flex-shrink: 0; transition: all 0.15s;
   }
-  .tab-close:hover {
-    color: #f87171;
-    background: rgba(239,68,68,0.15);
-  }
+  .tab-close:hover { color: #f87171; background: rgba(239,68,68,0.15); }
   .dock-close {
-    width: 18px;
-    height: 18px;
+    width: 18px; height: 18px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.04);
-    color: rgba(255,255,255,0.25);
-    font-size: 11px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    flex-shrink: 0;
-    margin-left: 2px;
-    transition: all 0.15s;
+    color: rgba(255,255,255,0.25); font-size: 11px;
+    cursor: pointer; display: flex;
+    align-items: center; justify-content: center;
+    border-radius: 4px; flex-shrink: 0;
+    margin-left: 2px; transition: all 0.15s;
   }
-  .dock-close:hover {
-    color: #f87171;
-    background: rgba(239,68,68,0.15);
-    border-color: rgba(239,68,68,0.3);
+  .dock-close:hover { color: #f87171; background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.3); }
+  .dock-empty { font-size: 10px; color: rgba(255,255,255,0.2); user-select: none; padding: 0 4px; }
+
+  /* Мини-превью тултип */
+  .dock-preview {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    max-width: 260px;
+    min-width: 140px;
+    padding: 8px 10px;
+    background: #1e1e38;
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    pointer-events: none;
+    animation: previewIn 120ms ease-out;
+    z-index: 10;
   }
-  .dock-empty {
-    font-size: 10px;
-    color: rgba(255,255,255,0.2);
-    user-select: none;
-    padding: 0 4px;
+  @keyframes previewIn {
+    0% { opacity: 0; transform: translateY(4px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .preview-sender {
+    font-size: 11px; font-weight: 600;
+    color: #e2e8f0;
+    margin-bottom: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .preview-text {
+    font-size: 11px; color: rgba(255,255,255,0.7);
+    line-height: 1.4;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 80px; overflow: hidden;
+  }
+  .preview-time {
+    font-size: 9px; color: rgba(255,255,255,0.3);
+    margin-top: 3px;
   }
 </style>
 </head>
 <body>
-<div id="dock">
-  <div class="dock-drag">
-    <span class="dock-label">📌</span>
-    <span class="dock-count zero" id="countLabel">0</span>
+<div id="dock-wrapper">
+  <div id="dock">
+    <div class="dock-drag">
+      <span class="dock-label">📌</span>
+      <span class="dock-count zero" id="countLabel">0</span>
+    </div>
+    <span class="dock-empty" id="emptyLabel">нет задач</span>
+    <button class="dock-close" id="dockCloseBtn" title="Скрыть панель">×</button>
   </div>
-  <span class="dock-empty" id="emptyLabel">нет задач</span>
-  <button class="dock-close" id="dockCloseBtn" title="Скрыть панель">×</button>
 </div>
 <script>
+  const dockWrapper = document.getElementById('dock-wrapper')
   const dock = document.getElementById('dock')
   const emptyLabel = document.getElementById('emptyLabel')
   const countLabel = document.getElementById('countLabel')
   const dockCloseBtn = document.getElementById('dockCloseBtn')
-  const tabs = new Map()
+  const tabs = new Map() // pinId → { el, timerInterval, data }
+  let previewEl = null
+  let previewTimeout = null
 
   function updateCount() {
     const n = tabs.size
@@ -204,14 +205,63 @@
     })
     tab.appendChild(close)
 
+    // Hover — превью
+    tab.addEventListener('mouseenter', () => showPreview(data.pinId, tab))
+    tab.addEventListener('mouseleave', () => hidePreview())
+
     tab.addEventListener('click', () => {
+      hidePreview()
       window.dockApi.showPin(data.pinId)
     })
 
     dock.insertBefore(tab, dockCloseBtn)
-    tabs.set(data.pinId, { el: tab, timerInterval: null })
+    tabs.set(data.pinId, { el: tab, timerInterval: null, data })
     updateCount()
     reportSize()
+  }
+
+  function showPreview(pinId, tabEl) {
+    if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null }
+    hidePreview()
+    const entry = tabs.get(pinId)
+    if (!entry || !entry.data) return
+
+    previewTimeout = setTimeout(() => {
+      previewEl = document.createElement('div')
+      previewEl.className = 'dock-preview'
+
+      const sender = document.createElement('div')
+      sender.className = 'preview-sender'
+      sender.textContent = entry.data.sender || ''
+      previewEl.appendChild(sender)
+
+      if (entry.data.text) {
+        const text = document.createElement('div')
+        text.className = 'preview-text'
+        text.textContent = entry.data.text
+        previewEl.appendChild(text)
+      }
+
+      if (entry.data.time) {
+        const time = document.createElement('div')
+        time.className = 'preview-time'
+        time.textContent = entry.data.time
+        previewEl.appendChild(time)
+      }
+
+      tabEl.appendChild(previewEl)
+      // Запросить увеличение окна для тултипа
+      window.dockApi.requestPreviewSpace(previewEl.offsetHeight + 10)
+    }, 300)
+  }
+
+  function hidePreview() {
+    if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null }
+    if (previewEl) {
+      previewEl.remove()
+      previewEl = null
+      window.dockApi.requestPreviewSpace(0)
+    }
   }
 
   function removeTab(pinId) {
@@ -220,6 +270,7 @@
     if (entry.timerInterval) clearInterval(entry.timerInterval)
     entry.el.remove()
     tabs.delete(pinId)
+    hidePreview()
     updateCount()
     reportSize()
   }
@@ -231,6 +282,7 @@
   }
 
   dockCloseBtn.addEventListener('click', () => {
+    hidePreview()
     window.dockApi.closeDock()
   })
 
