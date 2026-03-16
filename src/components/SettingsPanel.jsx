@@ -365,6 +365,9 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="Сворачивать в трей" description="Закрытие скрывает в трей">
                 <Toggle value={settings.minimizeToTray !== false} onChange={v => set('minimizeToTray', v)} />
               </SettingRow>
+              <SettingRow label="Панель задач без задач" description="Показывать dock-панель даже когда нет закреплённых">
+                <Toggle value={!!settings.showDockEmpty} onChange={v => set('showDockEmpty', v)} />
+              </SettingRow>
             </div>
           </section>
 

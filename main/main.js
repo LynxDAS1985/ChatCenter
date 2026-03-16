@@ -697,10 +697,11 @@ function setupNotifIPC() {
     if (dockWin && !dockWin.isDestroyed()) return dockWin
 
     const { workArea } = screen.getPrimaryDisplay()
+    const initW = 120 // начальная ширина (📌 + "нет задач" + ×)
     dockWin = new BrowserWindow({
-      width: workArea.width - 200,
+      width: initW,
       height: 48,
-      x: workArea.x + 100,
+      x: Math.round(workArea.x + (workArea.width - initW) / 2),
       y: workArea.y + workArea.height - 48,
       frame: false,
       transparent: true,
@@ -726,6 +727,12 @@ function setupNotifIPC() {
     return dockWin
   }
 
+  // Проверяем настройку "показывать dock без задач"
+  function getShowDockEmpty() {
+    const s = storage.get('settings', {})
+    return s.showDockEmpty === true
+  }
+
   // Добавить таб в dock
   function addToDock(pinId, data) {
     const dock = ensureDockWindow()
@@ -749,13 +756,15 @@ function setupNotifIPC() {
   function removeFromDock(pinId) {
     if (!dockWin || dockWin.isDestroyed()) return
     dockWin.webContents.send('dock:remove', pinId)
-    // Скрыть dock если пустой (проверяем через количество pinItems в dock)
+    // Проверяем: остались ли задачи в dock?
     let hasDocked = false
     for (const [id, item] of pinItems) {
       if (id !== pinId && item.inDock) { hasDocked = true; break }
     }
     if (!hasDocked && dockWin && !dockWin.isDestroyed()) {
-      dockWin.hide()
+      if (!getShowDockEmpty()) {
+        dockWin.hide()
+      }
     }
   }
 
@@ -920,20 +929,28 @@ function setupNotifIPC() {
     removePin(pinId)
   })
 
-  // ── Dock: resize ──
-  ipcMain.on('dock:resize', (_event, height) => {
+  // ── Dock: resize (ширина + высота, центрирование) ──
+  ipcMain.on('dock:resize', (_event, width, height) => {
     if (!dockWin || dockWin.isDestroyed()) return
+    width = Math.round(width) + 4 // +4 для тени/рамки
     height = Math.round(height) + 2
     const { workArea } = screen.getPrimaryDisplay()
-    const bounds = dockWin.getBounds()
-    dockWin.setBounds({
-      x: bounds.x,
-      y: workArea.y + workArea.height - height,
-      width: bounds.width,
-      height
-    })
+    // Ограничить ширину максимумом экрана - 40px
+    const maxW = workArea.width - 40
+    if (width > maxW) width = maxW
+    const x = Math.round(workArea.x + (workArea.width - width) / 2)
+    const y = workArea.y + workArea.height - height
+    dockWin.setBounds({ x, y, width, height })
     if (!dockWin.isVisible()) dockWin.showInactive()
   })
+
+  // ── Dock: закрыть/скрыть панель ──
+  ipcMain.on('dock:close', () => {
+    if (dockWin && !dockWin.isDestroyed()) {
+      dockWin.hide()
+    }
+  })
+
 }
 
 // ─── IPC Handlers ─────────────────────────────────────────────────────────────
@@ -997,7 +1014,23 @@ function setupIPC() {
 
   // Настройки — сохранение
   ipcMain.handle('settings:save', (event, settings) => {
+    const prev = storage.get('settings', {})
     storage.set('settings', settings)
+    // v0.67.0: уведомить dock при изменении showDockEmpty
+    if (prev.showDockEmpty !== settings.showDockEmpty && dockWin && !dockWin.isDestroyed()) {
+      dockWin.webContents.send('dock:show-empty', !!settings.showDockEmpty)
+      if (!settings.showDockEmpty) {
+        // Проверить есть ли задачи — если нет, скрыть dock
+        let hasDocked = false
+        for (const [, item] of pinItems) {
+          if (item.inDock) { hasDocked = true; break }
+        }
+        if (!hasDocked) dockWin.hide()
+      } else {
+        // Показать dock если его сейчас нет
+        if (!dockWin.isVisible()) dockWin.showInactive()
+      }
+    }
     return { ok: true }
   })
 

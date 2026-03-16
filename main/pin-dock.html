@@ -11,7 +11,7 @@
     -webkit-app-region: no-drag;
   }
   #dock {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 4px 6px;
@@ -19,10 +19,8 @@
     border-radius: 10px;
     border: 1px solid rgba(99,102,241,0.2);
     box-shadow: 0 -2px 16px rgba(0,0,0,0.4);
-    overflow-x: auto;
-    scrollbar-width: none;
+    white-space: nowrap;
   }
-  #dock::-webkit-scrollbar { display: none; }
   .dock-label {
     font-size: 10px;
     color: rgba(99,102,241,0.6);
@@ -31,7 +29,7 @@
     user-select: none;
   }
   .dock-tab {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
@@ -101,18 +99,54 @@
     color: #f87171;
     background: rgba(239,68,68,0.15);
   }
+  /* Кнопка закрытия dock-панели */
+  .dock-close {
+    width: 18px;
+    height: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: rgba(255,255,255,0.25);
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-left: 2px;
+    transition: all 0.15s;
+  }
+  .dock-close:hover {
+    color: #f87171;
+    background: rgba(239,68,68,0.15);
+    border-color: rgba(239,68,68,0.3);
+  }
+  /* Пустое состояние */
+  .dock-empty {
+    font-size: 10px;
+    color: rgba(255,255,255,0.2);
+    user-select: none;
+    padding: 0 4px;
+  }
 </style>
 </head>
 <body>
 <div id="dock">
   <span class="dock-label">📌</span>
+  <span class="dock-empty" id="emptyLabel">нет задач</span>
+  <button class="dock-close" id="dockCloseBtn" title="Скрыть панель">×</button>
 </div>
 <script>
   const dock = document.getElementById('dock')
+  const emptyLabel = document.getElementById('emptyLabel')
+  const dockCloseBtn = document.getElementById('dockCloseBtn')
   const tabs = new Map() // pinId → { el, timerInterval }
 
   function addTab(data) {
     if (tabs.has(data.pinId)) return
+
+    // Скрыть "нет задач" при добавлении первого таба
+    emptyLabel.style.display = 'none'
 
     const tab = document.createElement('div')
     tab.className = 'dock-tab'
@@ -147,9 +181,10 @@
       window.dockApi.showPin(data.pinId)
     })
 
-    dock.appendChild(tab)
+    // Вставить перед кнопкой закрытия dock
+    dock.insertBefore(tab, dockCloseBtn)
     tabs.set(data.pinId, { el: tab, timerInterval: null })
-    reportHeight()
+    reportSize()
   }
 
   function removeTab(pinId) {
@@ -158,15 +193,23 @@
     if (entry.timerInterval) clearInterval(entry.timerInterval)
     entry.el.remove()
     tabs.delete(pinId)
-    reportHeight()
+    // Показать "нет задач" если пусто
+    if (tabs.size === 0) emptyLabel.style.display = ''
+    reportSize()
   }
 
-  function reportHeight() {
+  function reportSize() {
     requestAnimationFrame(() => {
+      const w = dock.offsetWidth
       const h = dock.offsetHeight
-      window.dockApi.resize(h)
+      window.dockApi.resize(w, h)
     })
   }
+
+  // Кнопка закрытия dock-панели
+  dockCloseBtn.addEventListener('click', () => {
+    window.dockApi.closeDock()
+  })
 
   // Таймер: получаем timerEnd timestamp, запускаем локальный countdown
   window.dockApi.onUpdateTimer((pinId, timerEnd) => {
@@ -175,11 +218,9 @@
     const timerEl = entry.el.querySelector('.tab-timer')
     if (!timerEl) return
 
-    // Очищаем предыдущий interval
     if (entry.timerInterval) clearInterval(entry.timerInterval)
 
     if (!timerEnd) {
-      // Таймер отменён
       timerEl.className = 'tab-timer'
       timerEl.textContent = ''
       entry.timerInterval = null
@@ -200,6 +241,7 @@
       const sec = Math.floor((remaining % 60000) / 1000)
       timerEl.textContent = '\u23F0 ' + min + ':' + String(sec).padStart(2, '0')
     }, 1000)
+    reportSize()
   })
 
   // Таймер истёк — мигать
@@ -207,14 +249,24 @@
     const entry = tabs.get(pinId)
     if (!entry) return
     entry.el.classList.add('alert')
-    // Убрать мигание через 10 сек
     setTimeout(() => {
       if (entry.el) entry.el.classList.remove('alert')
     }, 10000)
   })
 
+  // Показать/скрыть "нет задач" label
+  window.dockApi.onShowEmpty((show) => {
+    if (tabs.size === 0) {
+      emptyLabel.style.display = show ? '' : 'none'
+    }
+    reportSize()
+  })
+
   window.dockApi.onAddItem((data) => addTab(data))
   window.dockApi.onRemoveItem((id) => removeTab(id))
+
+  // При загрузке — сообщить размер
+  reportSize()
 </script>
 </body>
 </html>
