@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
+  html, body {
     background: transparent;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow: hidden;
@@ -241,15 +241,17 @@
   }
   .cat-btn:hover { opacity: 1; }
   .cat-btn.active {
-    border-width: 2px;
     font-weight: 600;
   }
   .cat-btn.urgent { color: #f87171; border-color: rgba(239,68,68,0.3); }
-  .cat-btn.urgent:hover, .cat-btn.urgent.active { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.6); }
+  .cat-btn.urgent:hover { background: rgba(239,68,68,0.15); }
+  .cat-btn.urgent.active { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.6); box-shadow: inset 0 0 0 1px rgba(239,68,68,0.4); }
   .cat-btn.work { color: #fbbf24; border-color: rgba(245,158,11,0.3); }
-  .cat-btn.work:hover, .cat-btn.work.active { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.6); }
+  .cat-btn.work:hover { background: rgba(245,158,11,0.15); }
+  .cat-btn.work.active { background: rgba(245,158,11,0.2); border-color: rgba(245,158,11,0.6); box-shadow: inset 0 0 0 1px rgba(245,158,11,0.4); }
   .cat-btn.later { color: #4ade80; border-color: rgba(34,197,94,0.3); }
-  .cat-btn.later:hover, .cat-btn.later.active { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.6); }
+  .cat-btn.later:hover { background: rgba(34,197,94,0.15); }
+  .cat-btn.later.active { background: rgba(34,197,94,0.2); border-color: rgba(34,197,94,0.6); box-shadow: inset 0 0 0 1px rgba(34,197,94,0.4); }
 </style>
 </head>
 <body>

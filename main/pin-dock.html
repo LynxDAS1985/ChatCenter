@@ -162,6 +162,26 @@
     flex-shrink: 0;
     font-weight: 600;
   }
+  /* Счётчик по категориям */
+  .cat-counts {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 1px;
+  }
+  .cat-badge {
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 14px;
+    padding: 0 3px;
+    border-radius: 4px;
+    min-width: 14px;
+    text-align: center;
+  }
+  .cat-badge.hidden { display: none; }
+  .cat-badge.urgent { color: #f87171; background: rgba(239,68,68,0.15); }
+  .cat-badge.work { color: #fbbf24; background: rgba(245,158,11,0.15); }
+  .cat-badge.later { color: #4ade80; background: rgba(34,197,94,0.15); }
 </style>
 </head>
 <body>
@@ -170,6 +190,11 @@
     <div class="dock-drag">
       <span class="dock-label">📌</span>
       <span class="dock-count zero" id="countLabel">0</span>
+      <span class="cat-counts" id="catCounts">
+        <span class="cat-badge urgent hidden" id="catUrgent">0</span>
+        <span class="cat-badge work hidden" id="catWork">0</span>
+        <span class="cat-badge later hidden" id="catLater">0</span>
+      </span>
     </div>
     <span class="dock-empty" id="emptyLabel">нет задач</span>
     <button class="dock-close" id="dockCloseBtn" title="Скрыть панель">×</button>
@@ -182,6 +207,9 @@
   const countLabel = document.getElementById('countLabel')
   const dockCloseBtn = document.getElementById('dockCloseBtn')
   const tabs = new Map() // pinId → { el, timerInterval, data }
+  const catUrgentEl = document.getElementById('catUrgent')
+  const catWorkEl = document.getElementById('catWork')
+  const catLaterEl = document.getElementById('catLater')
   let previewEl = null
   let previewTimeout = null
   let dragSrcTab = null
@@ -198,6 +226,23 @@
     countLabel.textContent = n
     countLabel.className = n > 0 ? 'dock-count' : 'dock-count zero'
     emptyLabel.style.display = n > 0 ? 'none' : ''
+    updateCatCounts()
+  }
+
+  // Счётчик задач по категориям
+  function updateCatCounts() {
+    let urgent = 0, work = 0, later = 0
+    for (const [, entry] of tabs) {
+      if (entry.data.category === 'urgent') urgent++
+      else if (entry.data.category === 'work') work++
+      else if (entry.data.category === 'later') later++
+    }
+    catUrgentEl.textContent = urgent
+    catUrgentEl.className = urgent > 0 ? 'cat-badge urgent' : 'cat-badge urgent hidden'
+    catWorkEl.textContent = work
+    catWorkEl.className = work > 0 ? 'cat-badge work' : 'cat-badge work hidden'
+    catLaterEl.textContent = later
+    catLaterEl.className = later > 0 ? 'cat-badge later' : 'cat-badge later hidden'
   }
 
   function getTabOrder() {
@@ -453,6 +498,8 @@
     } else {
       catEl.style.display = 'none'
     }
+    updateCatCounts()
+    reportSize()
   })
 
   window.dockApi.onAddItem((data) => addTab(data))

@@ -112,6 +112,8 @@
 
 **Ловушка 13 (v0.63.9→v0.64.0)**: `scrollWidth > clientWidth` не работает для `.msg-text-content` span с inline `overflow:hidden` — scrollWidth === clientWidth потому что overflow скрыт. **ПРАВИЛО**: Для `.body-text` с `data-full` — НЕ проверять scrollWidth. Сравнивать `data-full.length > data-short.length`. Для остальных — проверять scrollWidth на видимом span.
 
+**Ловушка 21 (v0.70.0)**: Изменение `border-width` при `.active` состоянии (`1px → 2px`) вызывает layout shift — кнопка становится на 2px больше, карточка растёт, окно BrowserWindow не успевает подстроиться → появляются скроллбары. **ПРАВИЛО**: Для визуального выделения `.active` состояния НИКОГДА не менять `border-width`, `padding`, `margin` — они влияют на layout. Использовать `box-shadow: inset 0 0 0 1px ...` или `outline` — они НЕ влияют на размеры элемента. Также ВСЕГДА добавлять `overflow: hidden` на `html` и `body` во frameless окнах.
+
 **Ловушка 20 (v0.68.0)**: Dock остаётся видимым после удаления всех задач. `removePin()` вызывает `removeFromDock()` только если `item.inDock=true`, но dock мог быть показан ранее (через showDockEmpty). **ПРАВИЛО**: После КАЖДОГО удаления pin (removePin, pinWin.on('closed')) — вызывать `checkDockVisibility()` которая проверяет: есть ли хоть один `item.inDock=true` в `pinItems`? Если нет и `showDockEmpty=false` → `dockWin.hide()`.
 
 **Ловушка 19 (v0.67.1)**: Дубль иконки при наличии HTML-label + JS-текста. Если в HTML уже есть `<span class="timer-label">⏰</span>`, не добавлять ⏰ в JS при `timerRemaining.textContent = '\u23F0 ' + min + ':'...`. **ПРАВИЛО**: Декоративные иконки (⏰, 📌 и т.д.) размещать ТОЛЬКО в одном месте — либо в HTML label, либо в JS текст. Не дублировать.
