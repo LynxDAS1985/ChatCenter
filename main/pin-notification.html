@@ -312,7 +312,7 @@
     timerInterval = setInterval(() => {
       const remaining = timerEnd - Date.now()
       if (remaining <= 0) {
-        timerRemaining.textContent = '\u23F0 0:00'
+        timerRemaining.textContent = '0:00'
         timerRemaining.classList.add('expired')
         clearInterval(timerInterval)
         timerInterval = null
@@ -320,7 +320,7 @@
       }
       const min = Math.floor(remaining / 60000)
       const sec = Math.floor((remaining % 60000) / 1000)
-      timerRemaining.textContent = '\u23F0 ' + min + ':' + String(sec).padStart(2, '0')
+      timerRemaining.textContent = min + ':' + String(sec).padStart(2, '0')
     }, 1000)
 
     requestAnimationFrame(() => window.pinApi.resize(card.offsetHeight))

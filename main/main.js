@@ -709,7 +709,7 @@ function setupNotifIPC() {
       alwaysOnTop: true,
       skipTaskbar: true,
       resizable: false,
-      focusable: false,
+      focusable: true,
       show: false,
       webPreferences: {
         preload: getDockPreloadPath(),
@@ -929,18 +929,22 @@ function setupNotifIPC() {
     removePin(pinId)
   })
 
-  // ── Dock: resize (ширина + высота, центрирование) ──
+  // ── Dock: resize (ширина + высота) ──
   ipcMain.on('dock:resize', (_event, width, height) => {
     if (!dockWin || dockWin.isDestroyed()) return
     width = Math.round(width) + 4 // +4 для тени/рамки
     height = Math.round(height) + 2
     const { workArea } = screen.getPrimaryDisplay()
-    // Ограничить ширину максимумом экрана - 40px
     const maxW = workArea.width - 40
     if (width > maxW) width = maxW
-    const x = Math.round(workArea.x + (workArea.width - width) / 2)
-    const y = workArea.y + workArea.height - height
-    dockWin.setBounds({ x, y, width, height })
+    const bounds = dockWin.getBounds()
+    // Сохраняем позицию пользователя, только обновляем размер
+    let x = bounds.x
+    // Если окно выходит за правый край — подвинуть
+    if (x + width > workArea.x + workArea.width) {
+      x = workArea.x + workArea.width - width
+    }
+    dockWin.setBounds({ x, y: bounds.y, width, height })
     if (!dockWin.isVisible()) dockWin.showInactive()
   })
 

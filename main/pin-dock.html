@@ -21,13 +21,34 @@
     box-shadow: 0 -2px 16px rgba(0,0,0,0.4);
     white-space: nowrap;
   }
+  /* Зона перетаскивания — label + счётчик */
+  .dock-drag {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    -webkit-app-region: drag;
+    cursor: grab;
+    user-select: none;
+    flex-shrink: 0;
+    padding: 0 2px;
+  }
   .dock-label {
     font-size: 10px;
     color: rgba(99,102,241,0.6);
-    margin-right: 2px;
-    flex-shrink: 0;
-    user-select: none;
   }
+  .dock-count {
+    font-size: 9px;
+    font-weight: 700;
+    color: rgba(99,102,241,0.8);
+    background: rgba(99,102,241,0.12);
+    border-radius: 8px;
+    padding: 0 5px;
+    min-width: 16px;
+    text-align: center;
+    line-height: 16px;
+    height: 16px;
+  }
+  .dock-count.zero { display: none; }
   .dock-tab {
     display: inline-flex;
     align-items: center;
@@ -99,7 +120,6 @@
     color: #f87171;
     background: rgba(239,68,68,0.15);
   }
-  /* Кнопка закрытия dock-панели */
   .dock-close {
     width: 18px;
     height: 18px;
@@ -121,7 +141,6 @@
     background: rgba(239,68,68,0.15);
     border-color: rgba(239,68,68,0.3);
   }
-  /* Пустое состояние */
   .dock-empty {
     font-size: 10px;
     color: rgba(255,255,255,0.2);
@@ -132,21 +151,29 @@
 </head>
 <body>
 <div id="dock">
-  <span class="dock-label">📌</span>
+  <div class="dock-drag">
+    <span class="dock-label">📌</span>
+    <span class="dock-count zero" id="countLabel">0</span>
+  </div>
   <span class="dock-empty" id="emptyLabel">нет задач</span>
   <button class="dock-close" id="dockCloseBtn" title="Скрыть панель">×</button>
 </div>
 <script>
   const dock = document.getElementById('dock')
   const emptyLabel = document.getElementById('emptyLabel')
+  const countLabel = document.getElementById('countLabel')
   const dockCloseBtn = document.getElementById('dockCloseBtn')
-  const tabs = new Map() // pinId → { el, timerInterval }
+  const tabs = new Map()
+
+  function updateCount() {
+    const n = tabs.size
+    countLabel.textContent = n
+    countLabel.className = n > 0 ? 'dock-count' : 'dock-count zero'
+    emptyLabel.style.display = n > 0 ? 'none' : ''
+  }
 
   function addTab(data) {
     if (tabs.has(data.pinId)) return
-
-    // Скрыть "нет задач" при добавлении первого таба
-    emptyLabel.style.display = 'none'
 
     const tab = document.createElement('div')
     tab.className = 'dock-tab'
@@ -181,9 +208,9 @@
       window.dockApi.showPin(data.pinId)
     })
 
-    // Вставить перед кнопкой закрытия dock
     dock.insertBefore(tab, dockCloseBtn)
     tabs.set(data.pinId, { el: tab, timerInterval: null })
+    updateCount()
     reportSize()
   }
 
@@ -193,25 +220,20 @@
     if (entry.timerInterval) clearInterval(entry.timerInterval)
     entry.el.remove()
     tabs.delete(pinId)
-    // Показать "нет задач" если пусто
-    if (tabs.size === 0) emptyLabel.style.display = ''
+    updateCount()
     reportSize()
   }
 
   function reportSize() {
     requestAnimationFrame(() => {
-      const w = dock.offsetWidth
-      const h = dock.offsetHeight
-      window.dockApi.resize(w, h)
+      window.dockApi.resize(dock.offsetWidth, dock.offsetHeight)
     })
   }
 
-  // Кнопка закрытия dock-панели
   dockCloseBtn.addEventListener('click', () => {
     window.dockApi.closeDock()
   })
 
-  // Таймер: получаем timerEnd timestamp, запускаем локальный countdown
   window.dockApi.onUpdateTimer((pinId, timerEnd) => {
     const entry = tabs.get(pinId)
     if (!entry) return
@@ -224,6 +246,7 @@
       timerEl.className = 'tab-timer'
       timerEl.textContent = ''
       entry.timerInterval = null
+      reportSize()
       return
     }
 
@@ -231,7 +254,7 @@
     entry.timerInterval = setInterval(() => {
       const remaining = timerEnd - Date.now()
       if (remaining <= 0) {
-        timerEl.textContent = '\u23F0 0:00'
+        timerEl.textContent = '0:00'
         timerEl.className = 'tab-timer active expired'
         clearInterval(entry.timerInterval)
         entry.timerInterval = null
@@ -239,12 +262,11 @@
       }
       const min = Math.floor(remaining / 60000)
       const sec = Math.floor((remaining % 60000) / 1000)
-      timerEl.textContent = '\u23F0 ' + min + ':' + String(sec).padStart(2, '0')
+      timerEl.textContent = min + ':' + String(sec).padStart(2, '0')
     }, 1000)
     reportSize()
   })
 
-  // Таймер истёк — мигать
   window.dockApi.onTimerAlert((pinId) => {
     const entry = tabs.get(pinId)
     if (!entry) return
@@ -254,7 +276,6 @@
     }, 10000)
   })
 
-  // Показать/скрыть "нет задач" label
   window.dockApi.onShowEmpty((show) => {
     if (tabs.size === 0) {
       emptyLabel.style.display = show ? '' : 'none'
@@ -265,7 +286,6 @@
   window.dockApi.onAddItem((data) => addTab(data))
   window.dockApi.onRemoveItem((id) => removeTab(id))
 
-  // При загрузке — сообщить размер
   reportSize()
 </script>
 </body>

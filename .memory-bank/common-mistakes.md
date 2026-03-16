@@ -112,6 +112,8 @@
 
 **Ловушка 13 (v0.63.9→v0.64.0)**: `scrollWidth > clientWidth` не работает для `.msg-text-content` span с inline `overflow:hidden` — scrollWidth === clientWidth потому что overflow скрыт. **ПРАВИЛО**: Для `.body-text` с `data-full` — НЕ проверять scrollWidth. Сравнивать `data-full.length > data-short.length`. Для остальных — проверять scrollWidth на видимом span.
 
+**Ловушка 19 (v0.67.1)**: Дубль иконки при наличии HTML-label + JS-текста. Если в HTML уже есть `<span class="timer-label">⏰</span>`, не добавлять ⏰ в JS при `timerRemaining.textContent = '\u23F0 ' + min + ':'...`. **ПРАВИЛО**: Декоративные иконки (⏰, 📌 и т.д.) размещать ТОЛЬКО в одном месте — либо в HTML label, либо в JS текст. Не дублировать.
+
 **Ловушка 18 (v0.66.1)**: `\uXXXX` и `\u{XXXXX}` — это **JavaScript** Unicode escape-последовательности. Они НЕ работают в HTML text content и атрибутах. HTML показывает их буквально как текст. **ПРАВИЛО**: В HTML-разметке (вне `<script>`) использовать ТОЛЬКО реальные UTF-8 символы (📌, ⏰, ×) или HTML entities (`&#x1F4CC;`). JS Unicode escapes допустимы ТОЛЬКО внутри `<script>` блоков.
 
 **Ловушка 17 (v0.65.0)**: `bText.textContent = fullText` в expandedByDefault удаляет ВСЕ дочерние элементы (`.msg-time`, `.pin-msg-btn`) и заменяет текстовым узлом. **ПРАВИЛО**: Вместо `el.textContent = text` обновлять конкретный span: `el.querySelector('.msg-text-content').textContent = text`. Если span не найден — fallback на textContent.
