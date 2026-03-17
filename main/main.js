@@ -130,13 +130,39 @@ function createTrayBadgeIcon(count) {
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 
-// Создаёт overlay-иконку 16×16 для бейджа на иконке приложения в таскбаре Windows
+// Рисует пиксельный текст с масштабом (каждый пиксель → scale×scale блок) для чёткости
+function drawPixelTextScaled(buf, bufSize, text, cx, cy, R, G, B, scale) {
+  const charW = 3, gap = 1
+  const totalW = (text.length * charW + (text.length - 1) * gap) * scale
+  let x0 = Math.round(cx - totalW / 2)
+  const y0 = Math.round(cy) - Math.round(2.5 * scale)
+  for (const ch of text) {
+    const rows = PIXEL_FONT[ch]
+    if (rows) {
+      for (let row = 0; row < 5; row++) {
+        for (let col = 0; col < 3; col++) {
+          if (rows[row] & (0b100 >> col)) {
+            for (let dy = 0; dy < scale; dy++) {
+              for (let dx = 0; dx < scale; dx++) {
+                setPixelBGRA(buf, bufSize, x0 + col * scale + dx, y0 + row * scale + dy, R, G, B)
+              }
+            }
+          }
+        }
+      }
+    }
+    x0 += (charW + gap) * scale
+  }
+}
+
+// Создаёт overlay-иконку 32×32 для бейджа на иконке приложения в таскбаре Windows
+// Красный круг + крупные белые цифры (2× масштаб пиксельного шрифта)
 function createOverlayBadgeIcon(count) {
-  const size = 16
+  const size = 32
   const buf = Buffer.alloc(size * size * 4)
 
   // Красный круг на всю иконку
-  const cx = 7.5, cy = 7.5, r = 7.5
+  const cx = 15.5, cy = 15.5, r = 15
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       if (Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) <= r) {
@@ -145,9 +171,9 @@ function createOverlayBadgeIcon(count) {
     }
   }
 
-  // Белая цифра
-  const text = count > 9 ? '9+' : String(count)
-  drawPixelText(buf, size, text, cx, cy, 255, 255, 255)
+  // Белые цифры с 2× масштабом — чёткие и читаемые
+  const text = count > 99 ? '99' : String(count)
+  drawPixelTextScaled(buf, size, text, cx, cy + 1, 255, 255, 255, 2)
 
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
@@ -1647,13 +1673,13 @@ function setupIPC() {
     return { ok: true }
   })
 
-  // Обновление бейджа трея + overlay badge на иконке в таскбаре Windows
+  // Обновление overlay badge на иконке приложения в таскбаре Windows
+  // Трей: только тултип с количеством, иконка БЕЗ бейджа
   ipcMain.handle('tray:set-badge', (_, count) => {
     if (tray && !tray.isDestroyed()) {
-      tray.setImage(createTrayBadgeIcon(count || 0))
       tray.setToolTip(count > 0 ? `ЦентрЧатов — ${count} непрочитанных` : 'ЦентрЧатов')
     }
-    // v0.72.2: Overlay badge на иконке приложения в таскбаре Windows
+    // v0.72.3: Overlay badge 32×32 с крупными цифрами
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
       if (count > 0) {
         const overlayIcon = createOverlayBadgeIcon(count)
