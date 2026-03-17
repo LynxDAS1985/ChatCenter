@@ -740,19 +740,12 @@ function setupNotifIPC() {
     })
 
     // Реассерт alwaysOnTop при потере фокуса (Windows таскбар может перекрыть)
+    // НЕ используем moveTop() — вызывает моргание окна (Ловушка 28)
     dockWin.on('blur', () => {
       if (dockWin && !dockWin.isDestroyed()) {
         dockWin.setAlwaysOnTop(true, 'screen-saver', 1)
-        dockWin.moveTop()
       }
     })
-
-    // Периодически поднимать dock наверх (Windows таскбар агрессивно перекрывает)
-    const dockTopInterval = setInterval(() => {
-      if (!dockWin || dockWin.isDestroyed()) { clearInterval(dockTopInterval); return }
-      if (dockWin.isVisible()) dockWin.moveTop()
-    }, 2000)
-    dockWin.on('closed', () => clearInterval(dockTopInterval))
 
     // Snap к краям + сохранение позиции при перемещении
     dockWin.on('moved', () => {

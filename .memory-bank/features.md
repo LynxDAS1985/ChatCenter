@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.71.7 (16 марта 2026)
+## Текущая версия: v0.71.8 (17 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.71.8 (17 марта 2026) — Фикс drag dock + убрано моргание + выделение ФИО
+- **Фикс: dock не двигался (Ловушка 28)**: `position: fixed; bottom: 0` без `min-height: 100vh` ломает `-webkit-app-region: drag` hit-testing. Возвращён рабочий layout: `min-height: 100vh` + `display: flex; justify-content: flex-end`.
+- **Фикс: dock моргал (Ловушка 28)**: `moveTop()` каждые 2с вызывал мерцание окна при перерисовке z-order. Убран periodic `moveTop()`. Оставлен только `setAlwaysOnTop` при blur.
+- **Выделение ФИО в pin-карточке**: `.pin-sender` получил `user-select: text` + `-webkit-app-region: no-drag` + `cursor: text`. Теперь ФИО можно выделить и скопировать.
 
 ### v0.71.7 (16 марта 2026) — Фикс drag dock + убрано дёрганье (Ловушка 27)
 - **Фикс: dock не двигался**: `setIgnoreMouseEvents(true, {forward:true})` блокировал `-webkit-app-region: drag`. Полностью убран `setIgnoreMouseEvents`. Вместо этого: CSS `position: fixed; bottom: 0` на dock-wrapper + убран `min-height: 100vh` — прозрачные пиксели автоматически пропускают клики в Electron transparent окнах.
