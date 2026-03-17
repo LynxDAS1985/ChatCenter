@@ -142,6 +142,8 @@
   .cat-badge.later { color: #4ade80; background: rgba(34,197,94,0.15); }
 
   /* Контекстное меню — fixed в body, НЕ внутри таба */
+  /* НЕ используем keyframe animation — она начинается ДО позиционирования → моргание (Ловушка 30) */
+  /* Вместо этого: opacity:0 → позиционирование → добавляем .visible → CSS transition */
   .ctx-menu {
     position: fixed;
     min-width: 170px;
@@ -151,12 +153,13 @@
     box-shadow: 0 8px 24px rgba(0,0,0,0.6);
     padding: 4px 0;
     z-index: 100;
-    opacity: 0; transform: translateY(6px) scale(0.96);
-    animation: ctxIn 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    opacity: 0; transform: translateY(4px) scale(0.97);
+    transition: opacity 150ms ease-out, transform 150ms ease-out;
+    pointer-events: none;
   }
-  @keyframes ctxIn {
-    0%   { opacity: 0; transform: translateY(6px) scale(0.96); }
-    100% { opacity: 1; transform: translateY(0) scale(1); }
+  .ctx-menu.visible {
+    opacity: 1; transform: translateY(0) scale(1);
+    pointer-events: auto;
   }
   .ctx-item {
     display: flex; align-items: center; gap: 8px;
@@ -178,14 +181,7 @@
     box-shadow: 0 0 8px rgba(99,102,241,0.2);
   }
 
-  /* Анимация закрытия меню */
-  @keyframes ctxOut {
-    0%   { opacity: 1; transform: translateY(0) scale(1); }
-    100% { opacity: 0; transform: translateY(4px) scale(0.96); }
-  }
-  .ctx-menu.closing {
-    animation: ctxOut 150ms ease-in forwards;
-  }
+  /* Анимации ctxIn/ctxOut удалены — используем CSS transition на .ctx-menu/.visible (Ловушка 30) */
 </style>
 </head>
 <body>
@@ -276,13 +272,12 @@
       ctxMenuEl.remove(); ctxMenuEl = null; ctxPinId = null
       return
     }
-    // Fade-out анимация
+    // Fade-out через CSS transition (убираем .visible → opacity:0)
     const el = ctxMenuEl
-    el.classList.add('closing')
     ctxMenuEl = null; ctxPinId = null
-    el.addEventListener('animationend', () => el.remove(), { once: true })
-    // Fallback на случай если анимация не сработает
-    setTimeout(() => { if (el.parentNode) el.remove() }, 200)
+    el.classList.remove('visible')
+    // Удалить из DOM после завершения transition
+    setTimeout(() => { if (el.parentNode) el.remove() }, 160)
   }
 
   function showCtxMenu(pinId, tabEl) {
@@ -331,7 +326,7 @@
       // Запросить расширение окна вверх — меню + отступ
       window.dockApi.requestCtxMenuSpace(menuH + 12)
 
-      // Позиционируем после расширения окна
+      // Позиционируем после расширения окна, ПОТОМ показываем (без моргания)
       setTimeout(() => {
         if (!ctxMenuEl) return
         const newTabRect = tabEl.getBoundingClientRect()
@@ -342,6 +337,8 @@
         if (x < 4) x = 4
         ctxMenuEl.style.left = x + 'px'
         ctxMenuEl.style.top = y + 'px'
+        // Показать ПОСЛЕ позиционирования — плавный fade-in через CSS transition
+        requestAnimationFrame(() => { if (ctxMenuEl) ctxMenuEl.classList.add('visible') })
       }, 30)
     })
   }
@@ -511,6 +508,12 @@
       sender.className = 'preview-sender'
       sender.textContent = entry.data.sender || ''
       previewEl.appendChild(sender)
+      if (entry.data.messengerName) {
+        const mName = document.createElement('div')
+        mName.style.cssText = 'font-size:9px;color:rgba(99,102,241,0.6);margin-bottom:3px;'
+        mName.textContent = entry.data.messengerName
+        previewEl.appendChild(mName)
+      }
 
       if (entry.data.text) {
         const text = document.createElement('div')

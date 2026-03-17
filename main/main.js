@@ -130,6 +130,28 @@ function createTrayBadgeIcon(count) {
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 
+// Создаёт overlay-иконку 16×16 для бейджа на иконке приложения в таскбаре Windows
+function createOverlayBadgeIcon(count) {
+  const size = 16
+  const buf = Buffer.alloc(size * size * 4)
+
+  // Красный круг на всю иконку
+  const cx = 7.5, cy = 7.5, r = 7.5
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) <= r) {
+        setPixelBGRA(buf, size, x, y, 239, 68, 71)
+      }
+    }
+  }
+
+  // Белая цифра
+  const text = count > 9 ? '9+' : String(count)
+  drawPixelText(buf, size, text, cx, cy, 255, 255, 255)
+
+  return nativeImage.createFromBuffer(buf, { width: size, height: size })
+}
+
 function createTray() {
   tray = new Tray(createTrayBadgeIcon(0))
   tray.setToolTip('ЦентрЧатов')
@@ -903,7 +925,7 @@ function setupNotifIPC() {
     const dock = ensureDockWindow()
     const item = pinItems.get(pinId)
     const sendAdd = () => {
-      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '', note: item ? item.note || '' : '' })
+      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '', note: item ? item.note || '' : '', messengerName: data.messengerName || '' })
       if (!dock.isVisible()) dock.showInactive()
       // Передать текущий таймер если есть
       if (item && item.timerEnd) {
@@ -957,6 +979,12 @@ function setupNotifIPC() {
 
   // ── Создание pin-окна ──
   ipcMain.on('notif:pin-message', (_event, data) => {
+    // Определить название мессенджера по messengerId
+    if (data.messengerId && !data.messengerName) {
+      const messengers = storage.get('messengers', DEFAULT_MESSENGERS)
+      const found = messengers.find(m => m.id === data.messengerId)
+      if (found) data.messengerName = found.name
+    }
     const { workArea } = screen.getPrimaryDisplay()
     const pinId = ++pinIdCounter
     const offset = (pinItems.size % 10) * 30
@@ -1619,11 +1647,20 @@ function setupIPC() {
     return { ok: true }
   })
 
-  // Обновление бейджа трея (вызывается из renderer когда меняется totalUnread)
+  // Обновление бейджа трея + overlay badge на иконке в таскбаре Windows
   ipcMain.handle('tray:set-badge', (_, count) => {
     if (tray && !tray.isDestroyed()) {
       tray.setImage(createTrayBadgeIcon(count || 0))
       tray.setToolTip(count > 0 ? `ЦентрЧатов — ${count} непрочитанных` : 'ЦентрЧатов')
+    }
+    // v0.72.2: Overlay badge на иконке приложения в таскбаре Windows
+    if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
+      if (count > 0) {
+        const overlayIcon = createOverlayBadgeIcon(count)
+        mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
+      } else {
+        mainWindow.setOverlayIcon(null, '')
+      }
     }
     return { ok: true }
   })

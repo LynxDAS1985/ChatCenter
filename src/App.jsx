@@ -2257,7 +2257,10 @@ export default function App() {
   const theme = settings.theme || 'dark'
   const currentZoom = zoomLevels[activeId] || 100
 
-  // Бейдж трея отключён (v0.20.0) — по запросу пользователя
+  // v0.72.2: Бейдж трея + overlay badge на иконке в таскбаре Windows
+  useEffect(() => {
+    window.api.invoke('tray:set-badge', totalUnread)
+  }, [totalUnread])
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--cc-bg)' }} onClick={() => contextMenuTab && setContextMenuTab(null)}>

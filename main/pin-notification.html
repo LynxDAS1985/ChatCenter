@@ -78,10 +78,17 @@
   .pin-header:hover .pin-copy-name { opacity: 1; }
   .pin-copy-name:hover { color: rgba(99,102,241,0.8); background: rgba(99,102,241,0.1); }
   .pin-copy-name.copied { color: #4ade80; }
+  .pin-messenger {
+    font-size: 9px;
+    color: rgba(99,102,241,0.6);
+    margin-left: 6px;
+    flex-shrink: 0;
+    font-weight: 500;
+  }
   .pin-time {
     font-size: 10px;
     color: rgba(255,255,255,0.3);
-    margin-left: 8px;
+    margin-left: 6px;
     flex-shrink: 0;
   }
   .pin-close {
@@ -309,6 +316,7 @@
     <span class="pin-indicator">📌</span>
     <span class="pin-sender" id="sender"></span>
     <button class="pin-copy-name" id="copyNameBtn" title="Копировать ФИО">📋</button>
+    <span class="pin-messenger" id="messengerName"></span>
     <span class="pin-time" id="time"></span>
     <button class="pin-close" id="closeBtn" title="Открепить">×</button>
   </div>
@@ -351,6 +359,7 @@
   const colorBar = document.getElementById('colorBar')
   const senderEl = document.getElementById('sender')
   const timeEl = document.getElementById('time')
+  const messengerNameEl = document.getElementById('messengerName')
   const bodyEl = document.getElementById('body')
   const closeBtn = document.getElementById('closeBtn')
   const chatBtn = document.getElementById('chatBtn')
@@ -445,6 +454,7 @@
 
   window.pinApi.onData((data) => {
     senderEl.textContent = data.sender || ''
+    messengerNameEl.textContent = data.messengerName || ''
     timeEl.textContent = data.time || ''
     bodyEl.textContent = data.text || ''
     messageText = data.text || ''
