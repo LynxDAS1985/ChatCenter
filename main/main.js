@@ -228,14 +228,7 @@ function createOverlayIcon(count) {
   }
 
   console.log(`[OVERLAY] createOverlayIcon: text="${text}" size=${size}x${size}`)
-  const img = nativeImage.createFromBuffer(buf, { width: size, height: size })
-  // ДИАГНОСТИКА: сохраняем PNG для визуальной проверки
-  try {
-    const debugPath = path.join(app.getPath('userData'), `overlay-debug-${text}.png`)
-    fs.writeFileSync(debugPath, img.toPNG())
-    console.log(`[OVERLAY] DEBUG PNG saved: ${debugPath}`)
-  } catch (e) { console.error('[OVERLAY] DEBUG PNG error:', e.message) }
-  return img
+  return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 
 function createTray() {
@@ -1761,12 +1754,14 @@ function setupIPC() {
       }
     }
 
-    // v0.73.3: Overlay badge — BGRA buffer 32×32 в main (Canvas удалён)
+    // v0.73.4: Overlay badge — сброс на null перед установкой нового (Windows кеширует overlay)
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
       if (count > 0) {
         const overlayIcon = createOverlayIcon(count)
+        // ОБЯЗАТЕЛЬНО: сначала null, потом новый — иначе Windows не обновляет
+        mainWindow.setOverlayIcon(null, '')
         mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
-        console.log(`[OVERLAY] setOverlayIcon(${count}) — OK`)
+        console.log(`[OVERLAY] setOverlayIcon(null→${count}) — OK`)
       } else {
         mainWindow.setOverlayIcon(null, '')
         console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)

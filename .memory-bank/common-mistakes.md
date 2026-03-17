@@ -162,7 +162,7 @@
 
 **Ловушка 11 (v0.63.8)**: `body-text` с flex (время + текст) ломает expanded mode. При expand `white-space: pre-wrap` не работает с `display: flex`. **ПРАВИЛО**: `.notif-item.expanded .body-text` должен иметь `display: block !important`, а `.msg-text-content` внутри — `white-space: pre-wrap; overflow: visible`.
 
-**Ловушка 18 (v0.73.0→v0.73.3)**: `navigator.setAppBadge(N)` — Web Badging API. Telegram Web и другие мессенджеры вызывают его для установки бейджа. Electron транслирует этот вызов как `setOverlayIcon()` на главном окне, **перезаписывая** любой кастомный overlay. Все попытки починить Canvas/BGRA/размер были бессмысленны — overlay перебивался мессенджером. **ПРАВИЛО**: ВСЕГДА блокировать `navigator.setAppBadge` и `navigator.clearAppBadge` в WebView injection (preload + executeJavaScript). Без блокировки любой мессенджер может перезаписать overlay.
+**Ловушка 18 (v0.73.0→v0.73.4)**: Windows кеширует overlay icon — повторный `setOverlayIcon(newIcon)` НЕ обновляет визуально. **ПРАВИЛО**: ВСЕГДА вызывать `setOverlayIcon(null, '')` ПЕРЕД `setOverlayIcon(icon, desc)` — это сбрасывает кеш Windows. Также блокировать `navigator.setAppBadge` в WebView (мессенджеры могут перезаписывать overlay).
 
 ---
 
