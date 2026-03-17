@@ -1625,9 +1625,10 @@ export default function App() {
       })
 
       // page-title-updated — мгновенное обновление счётчика из title WebView
-      // Telegram ставит "(26) Telegram Web" — парсим число без задержки MutationObserver
+      // Telegram: "(26) Telegram Web", WhatsApp: "(5) WhatsApp", VK: "(3) ВКонтакте"
+      // MAX: "1 непрочитанный чат" / "5 непрочитанных чатов" (БЕЗ скобок!)
       el.addEventListener('page-title-updated', (e) => {
-        const match = e.title?.match(/\((\d+)\)/)
+        const match = e.title?.match(/\((\d+)\)/) || e.title?.match(/^(\d+)\s+непрочитанн/)
         if (match) {
           const count = parseInt(match[1], 10) || 0
           setUnreadCounts(prev => {
@@ -1675,12 +1676,10 @@ export default function App() {
           return
         } else if (e.channel === 'unread-count') {
           const domCount = Number(e.args[0]) || 0
-          // v0.72.5: Fallback — если DOM-парсинг = 0 но есть notifCount → использовать notifCount
-          // Если DOM-парсинг > 0 → он достоверный, обнулить notifCount
-          if (domCount > 0) {
-            notifCountRef.current[messengerId] = 0 // DOM-парсинг работает — notifCount не нужен
-          }
-          const count = domCount > 0 ? domCount : (notifCountRef.current[messengerId] || 0)
+          // v0.72.6: Fallback — берём МАКСИМУМ из DOM-парсинга и notifCount
+          // НЕ обнуляем notifCountRef при domCount>0 — иначе при следующем тике (domCount=0)
+          // fallback тоже будет 0, и счётчик моргнёт 1→0. Обнуление — только в handleTabClick.
+          const count = Math.max(domCount, notifCountRef.current[messengerId] || 0)
           setUnreadCounts(prev => {
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
             // Warm-up: при запуске счётчик идёт 0→N — не шуметь пока WebView не прогрелся
@@ -2278,9 +2277,18 @@ export default function App() {
   const theme = settings.theme || 'dark'
   const currentZoom = zoomLevels[activeId] || 100
 
-  // v0.72.2: Бейдж трея + overlay badge на иконке в таскбаре Windows
+  // v0.72.6: Overlay badge — debounce 500мс чтобы собрать счётчики со ВСЕХ вкладок
+  // Без debounce: Telegram шлёт page-title-updated первым → overlay=33, потом другие вкладки
+  // обновляют → overlay=39. Windows Shell API не успевает обработать rapid fire setOverlayIcon
+  // → overlay застревает на промежуточном значении (33 вместо 39).
+  // С debounce: ждём 500мс пока ВСЕ вкладки отправят свои счётчики → один вызов с правильной суммой.
+  const overlayTimerRef = useRef(null)
   useEffect(() => {
-    window.api.invoke('tray:set-badge', totalUnread)
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current)
+    overlayTimerRef.current = setTimeout(() => {
+      window.api.invoke('tray:set-badge', totalUnread)
+    }, 500)
+    return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
   }, [totalUnread])
 
   return (

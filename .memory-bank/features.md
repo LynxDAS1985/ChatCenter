@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.72.5 (17 марта 2026)
+## Текущая версия: v0.72.6 (17 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.72.6 (17 марта 2026) — Фикс overlay badge: debounce + MAX title + notifCount
+- **Debounce 500мс для overlay badge (ГЛАВНЫЙ ФИКС)**: useEffect `tray:set-badge` заменён на debounced вариант. Без debounce: Telegram шлёт page-title-updated первым → overlay=33, другие вкладки обновляются позже → overlay=39, но Windows Shell API не успевает обработать rapid fire setOverlayIcon → overlay застревает на промежуточном значении. С debounce: ждём 500мс пока ВСЕ вкладки отправят счётчики → один вызов с правильной суммой.
+- **Парсинг MAX title в page-title-updated**: Добавлен regex `/^(\d+)\s+непрочитанн/` для формата MAX "1 непрочитанный чат" / "5 непрочитанных чатов". Раньше парсился только формат Telegram `(N)`.
+- **Фикс notifCountRef fallback**: Убрано обнуление notifCountRef при domCount>0. Теперь используется `Math.max(domCount, notifCountRef)`. Обнуление — только при клике на вкладку (handleTabClick). Это предотвращает моргание счётчика MAX 1→0→1.
+- **Логирование overlay badge**: `console.log('[OVERLAY] tray:set-badge count=N')` в main.js — видно в терминале `npm run dev` какое число приходит в overlay.
 
 ### v0.72.5 (17 марта 2026) — Чёткий overlay 64×64 + fallback notif count + диагностика
 - **Overlay 64×64 с белой обводкой**: Иконка увеличена с 32×32 до 64×64, шрифт 4× масштаб. Белая обводка вокруг красного круга. Чёткость при любом Windows DPI (100%-200%).

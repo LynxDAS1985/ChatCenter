@@ -1679,16 +1679,21 @@ function setupIPC() {
   // Обновление overlay badge на иконке приложения в таскбаре Windows
   // Трей: только тултип с количеством, иконка БЕЗ бейджа
   ipcMain.handle('tray:set-badge', (_, count) => {
+    // v0.72.6: Логирование — видно в DevTools main-процесса (Ctrl+Shift+I → Console в main window)
+    // или в терминале npm run dev
+    console.log(`[OVERLAY] tray:set-badge count=${count}`)
     if (tray && !tray.isDestroyed()) {
       tray.setToolTip(count > 0 ? `ЦентрЧатов — ${count} непрочитанных` : 'ЦентрЧатов')
     }
-    // v0.72.3: Overlay badge 32×32 с крупными цифрами
+    // v0.72.6: Overlay badge 64×64 с крупными цифрами
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
       if (count > 0) {
         const overlayIcon = createOverlayBadgeIcon(count)
         mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
+        console.log(`[OVERLAY] setOverlayIcon(${count}) — OK`)
       } else {
         mainWindow.setOverlayIcon(null, '')
+        console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
       }
     }
     return { ok: true }
