@@ -162,7 +162,7 @@
 
 **Ловушка 11 (v0.63.8)**: `body-text` с flex (время + текст) ломает expanded mode. При expand `white-space: pre-wrap` не работает с `display: flex`. **ПРАВИЛО**: `.notif-item.expanded .body-text` должен иметь `display: block !important`, а `.msg-text-content` внутри — `white-space: pre-wrap; overflow: visible`.
 
-**Ловушка 18 (v0.73.0)**: `offscreen: true` в скрытом BrowserWindow ломает Canvas `toDataURL()` — возвращает пустые/битые PNG. Из-за этого overlay badge всегда падал в pixel-font fallback, где цифры 3/5/9 неотличимы после даунскейла Windows. **ПРАВИЛО**: НЕ использовать `offscreen: true` для скрытых окон, если нужен Canvas рендеринг. Также ждать `did-finish-load` перед первым `executeJavaScript`.
+**Ловушка 18 (v0.73.0→v0.73.1)**: Overlay badge через Canvas в скрытом BrowserWindow (main-процесс) — НЕ РАБОТАЕТ надёжно. `offscreen: true` ломает `toDataURL()`. Без offscreen — Canvas 64×64 генерирует корректный PNG, но Windows даунскейлит до ~16×16 и "5"/"3" сливаются. **ПРАВИЛО**: Рендерить overlay-иконку в **renderer-процессе** (App.jsx), где Canvas API работает гарантированно. Размер 256×256 (больше данных для даунскейла). DataURL передавать в main через IPC. НЕ создавать скрытые BrowserWindow для Canvas-рендеринга.
 
 ---
 

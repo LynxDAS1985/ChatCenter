@@ -2283,12 +2283,11 @@ export default function App() {
   const theme = settings.theme || 'dark'
   const currentZoom = zoomLevels[activeId] || 100
 
-  // v0.72.8: Overlay badge — debounce 500мс + подробное логирование
-  // unread-count IPC может только УВЕЛИЧИВАТЬ счётчик (DOM-парсинг нестабилен)
-  // page-title-updated может и увеличивать, и уменьшать (надёжный источник)
+  // v0.73.1: Overlay badge — Canvas рендер В RENDERER (гарантированно работает)
+  // Canvas 256×256 → dataURL → main → nativeImage → setOverlayIcon
   const overlayTimerRef = useRef(null)
+  const overlayCanvasRef = useRef(null)
   useEffect(() => {
-    // v0.72.8: Логирование каждого изменения totalUnread — видно в DevTools (F12 → Console)
     const details = Object.entries(unreadCounts).filter(([,v]) => v > 0).map(([id, v]) => {
       const m = messengers.find(x => x.id === id)
       return `${(m?.name || id).slice(0, 8)}:${v}`
@@ -2303,8 +2302,46 @@ export default function App() {
           const m = messengers.find(x => x.id === id)
           return { name: m?.name || id, count: v }
         })
+
+      // Рендер overlay-иконки на Canvas прямо здесь (renderer = полноценный Chromium)
+      let overlayDataURL = null
+      if (totalUnread > 0) {
+        try {
+          if (!overlayCanvasRef.current) {
+            overlayCanvasRef.current = document.createElement('canvas')
+            overlayCanvasRef.current.width = 256
+            overlayCanvasRef.current.height = 256
+          }
+          const c = overlayCanvasRef.current
+          const ctx = c.getContext('2d')
+          const size = 256
+          ctx.clearRect(0, 0, size, size)
+
+          const text = totalUnread > 99 ? '99+' : String(totalUnread)
+          const fontSize = text.length > 2 ? 100 : 140
+          ctx.font = `bold ${fontSize}px Arial, sans-serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+
+          // Тёмная обводка для контраста на любом фоне таскбара
+          ctx.strokeStyle = 'rgba(0,0,0,0.95)'
+          ctx.lineWidth = 24
+          ctx.lineJoin = 'round'
+          ctx.strokeText(text, size / 2, size / 2 + 4)
+
+          // Белые цифры
+          ctx.fillStyle = '#ffffff'
+          ctx.fillText(text, size / 2, size / 2 + 4)
+
+          overlayDataURL = c.toDataURL('image/png')
+          console.log(`[BADGE] Canvas overlay: text="${text}" dataURL len=${overlayDataURL.length}`)
+        } catch (err) {
+          console.error('[BADGE] Canvas error:', err)
+        }
+      }
+
       console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread}`)
-      window.api.invoke('tray:set-badge', { count: totalUnread, breakdown })
+      window.api.invoke('tray:set-badge', { count: totalUnread, breakdown, overlayDataURL })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
   }, [totalUnread])

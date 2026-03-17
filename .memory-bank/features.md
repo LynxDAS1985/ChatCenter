@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.73.0 (17 марта 2026)
+## Текущая версия: v0.73.1 (17 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.73.1 (17 марта 2026) — Overlay badge: рендер в renderer вместо скрытого BrowserWindow
+- **Корневая причина v0.72.x-v0.73.0**: Canvas в скрытом BrowserWindow (main-процесс) генерировал корректный PNG, но при даунскейле Windows 64×64→16×16 цифры "5" и "3" становились неотличимы.
+- **Новый механизм**: Canvas 256×256 рендерится в renderer-процессе (App.jsx), где Chromium Canvas API гарантированно работает. DataURL отправляется в main через IPC `tray:set-badge`. Main просто делает `nativeImage.createFromDataURL()` → `setOverlayIcon()`.
+- **Удалено из main.js**: `badgeWin`, `createBadgeWindow()`, `createOverlayBadgeIcon()` — весь скрытый BrowserWindow механизм.
+- **Размер 256×256**: даёт Windows максимум данных для качественного даунскейла. Шрифт 140px Bold Arial с обводкой 24px.
 
 ### v0.73.0 (17 марта 2026) — Фикс overlay badge: убран offscreen, ожидание did-finish-load
 - **Корневая причина**: `offscreen: true` в скрытом BrowserWindow ломал Canvas `toDataURL()` — возвращал пустые/битые PNG. Из-за этого `setOverlayIcon` всегда падал в pixel-font fallback, где "35" выглядит как "33" после даунскейла Windows.

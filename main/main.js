@@ -155,70 +155,7 @@ function drawPixelTextScaled(buf, bufSize, text, cx, cy, R, G, B, scale) {
   }
 }
 
-// ── Overlay badge через Canvas (нормальный шрифт с антиалиасингом) ────────────
-// v0.73.0: Скрытый BrowserWindow БЕЗ offscreen (offscreen ломал Canvas toDataURL)
-// Ждём did-finish-load перед первым рендером
-let badgeWin = null
-let badgeWinReady = false
-
-function createBadgeWindow() {
-  badgeWin = new BrowserWindow({
-    width: 64, height: 64,
-    show: false,
-    skipTaskbar: true,
-    webPreferences: { contextIsolation: false }
-  })
-  badgeWin.loadURL('about:blank')
-  badgeWin.webContents.on('did-finish-load', () => {
-    badgeWinReady = true
-    console.log('[OVERLAY] badgeWin ready')
-  })
-}
-
-// v0.73.0: Белые цифры с тёмной обводкой на прозрачном фоне, Canvas с нормальным шрифтом
-async function createOverlayBadgeIcon(count) {
-  const text = count > 99 ? '99+' : String(count)
-
-  if (!badgeWin || badgeWin.isDestroyed() || !badgeWinReady) {
-    console.warn('[OVERLAY] badgeWin not ready, using pixel fallback')
-    const size = 64
-    const buf = Buffer.alloc(size * size * 4)
-    drawPixelTextScaled(buf, size, text, 31.5, 33.5, 255, 255, 255, 4)
-    return nativeImage.createFromBuffer(buf, { width: size, height: size })
-  }
-
-  try {
-    const dataURL = await badgeWin.webContents.executeJavaScript(`
-      (function() {
-        var size = 64;
-        var c = document.createElement('canvas');
-        c.width = size; c.height = size;
-        var ctx = c.getContext('2d');
-        ctx.clearRect(0, 0, size, size);
-        var text = '${text}';
-        var fontSize = text.length > 2 ? 28 : 36;
-        ctx.font = 'bold ' + fontSize + 'px Arial, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.strokeStyle = 'rgba(0,0,0,0.95)';
-        ctx.lineWidth = 6;
-        ctx.lineJoin = 'round';
-        ctx.strokeText(text, size/2, size/2 + 1);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(text, size/2, size/2 + 1);
-        return c.toDataURL('image/png');
-      })()
-    `)
-    console.log('[OVERLAY] Canvas dataURL length:', dataURL.length, 'for text:', text)
-    return nativeImage.createFromDataURL(dataURL)
-  } catch (err) {
-    console.error('[OVERLAY] Canvas error:', err.message)
-    const size = 64
-    const buf = Buffer.alloc(size * size * 4)
-    drawPixelTextScaled(buf, size, text, 31.5, 33.5, 255, 255, 255, 4)
-    return nativeImage.createFromBuffer(buf, { width: size, height: size })
-  }
-}
+// v0.73.1: Overlay badge — рендер Canvas в renderer-процессе (App.jsx), сюда приходит готовый dataURL
 
 function createTray() {
   tray = new Tray(createTrayBadgeIcon(0))
@@ -1733,15 +1670,18 @@ function setupIPC() {
       }
     }
 
-    // Overlay badge — просто цифры без кружка (Canvas с нормальным шрифтом)
+    // v0.73.1: Overlay badge — готовый dataURL из renderer (Canvas в App.jsx)
+    const overlayDataURL = (typeof data === 'object' && data.overlayDataURL) || null
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
-      if (count > 0) {
-        const overlayIcon = await createOverlayBadgeIcon(count)
-        if (overlayIcon) {
+      if (count > 0 && overlayDataURL) {
+        try {
+          const overlayIcon = nativeImage.createFromDataURL(overlayDataURL)
           mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
-          console.log(`[OVERLAY] setOverlayIcon(${count}) — OK`)
+          console.log(`[OVERLAY] setOverlayIcon(${count}) — OK, dataURL len=${overlayDataURL.length}`)
+        } catch (err) {
+          console.error(`[OVERLAY] setOverlayIcon error:`, err.message)
         }
-      } else {
+      } else if (count === 0) {
         mainWindow.setOverlayIcon(null, '')
         console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
       }
@@ -2042,7 +1982,7 @@ app.whenReady().then(() => {
 
   setupIPC()
   setupNotifIPC()
-  createBadgeWindow() // Скрытое окно для Canvas-рендеринга overlay badge
+  // v0.73.1: badgeWin удалён — overlay рендерится в renderer (App.jsx)
   createTray()
   createWindow()
 
