@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.72.8 (17 марта 2026)
+## Текущая версия: v0.73.0 (17 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.73.0 (17 марта 2026) — Фикс overlay badge: убран offscreen, ожидание did-finish-load
+- **Корневая причина**: `offscreen: true` в скрытом BrowserWindow ломал Canvas `toDataURL()` — возвращал пустые/битые PNG. Из-за этого `setOverlayIcon` всегда падал в pixel-font fallback, где "35" выглядит как "33" после даунскейла Windows.
+- **Исправление**: убран `offscreen: true`, добавлен флаг `badgeWinReady` (ждём `did-finish-load`), размер Canvas уменьшен до 64×64 (меньше даунскейл = чётче цифры).
+- **Диагностика**: лог `[OVERLAY] Canvas dataURL length: N for text: X` — если length > 100, Canvas работает корректно.
 
 ### v0.72.8 (17 марта 2026) — Фикс мигания overlay: unread-count только вверх
 - **unread-count IPC только увеличивает**: `Math.max(ipcCount, prevCount)` — DOM-парсинг нестабилен (countUnread* возвращает 0 при ре-рендере DOM мессенджера). Это вызывало мигание overlay 35→33→35. Теперь IPC может только УВЕЛИЧИВАТЬ счётчик. Уменьшение — только через page-title-updated (надёжный, от самого мессенджера) или handleTabClick.

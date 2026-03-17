@@ -162,6 +162,8 @@
 
 **Ловушка 11 (v0.63.8)**: `body-text` с flex (время + текст) ломает expanded mode. При expand `white-space: pre-wrap` не работает с `display: flex`. **ПРАВИЛО**: `.notif-item.expanded .body-text` должен иметь `display: block !important`, а `.msg-text-content` внутри — `white-space: pre-wrap; overflow: visible`.
 
+**Ловушка 18 (v0.73.0)**: `offscreen: true` в скрытом BrowserWindow ломает Canvas `toDataURL()` — возвращает пустые/битые PNG. Из-за этого overlay badge всегда падал в pixel-font fallback, где цифры 3/5/9 неотличимы после даунскейла Windows. **ПРАВИЛО**: НЕ использовать `offscreen: true` для скрытых окон, если нужен Canvas рендеринг. Также ждать `did-finish-load` перед первым `executeJavaScript`.
+
 ---
 
 ## 🔴 КРИТИЧЕСКОЕ: Startup ribbon — уведомления при запуске для старых сообщений
