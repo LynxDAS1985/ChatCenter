@@ -285,6 +285,8 @@ function setupSession(ses) {
   ses.setUserAgent(CHROME_UA)
   // Блокируем нативные Notification из WebView — мы перехватываем их через executeJavaScript
   // Без этого VK/WhatsApp показывают "electron.app.Electron" как заголовок
+  // v0.73.3: Также блокируем 'badging' — Telegram Web вызывает navigator.setAppBadge(33),
+  // Electron транслирует как overlay icon, перезаписывая наш кастомный overlay с суммой
   ses.setPermissionRequestHandler((_wc, permission, cb) => {
     if (permission === 'notifications') return cb(false)
     cb(true)

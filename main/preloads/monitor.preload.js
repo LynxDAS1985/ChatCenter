@@ -186,6 +186,10 @@ const { ipcRenderer } = require('electron')
           return Promise.resolve()
         }
       } catch(e) {}
+      // v0.73.3: Блокируем Web Badging API — мессенджеры вызывают navigator.setAppBadge(N),
+      // Electron транслирует это как overlay icon, перезаписывая наш кастомный с суммой
+      if (navigator.setAppBadge) navigator.setAppBadge = function() { return Promise.resolve() }
+      if (navigator.clearAppBadge) navigator.clearAppBadge = function() { return Promise.resolve() }
       // Перехват Audio → volume=0 (глушим звуки мессенджера)
       // 1) new Audio(src)
       var _A = window.Audio

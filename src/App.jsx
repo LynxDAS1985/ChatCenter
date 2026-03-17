@@ -1597,6 +1597,11 @@ export default function App() {
                       return Promise.resolve();
                     };
                   } catch(e) {}
+                  // v0.73.3: Блокируем Web Badging API — Telegram/WhatsApp вызывают
+                  // navigator.setAppBadge(N), Electron транслирует как overlay icon
+                  // на главном окне, перезаписывая наш кастомный overlay с суммой
+                  if (navigator.setAppBadge) navigator.setAppBadge = function() { return Promise.resolve(); };
+                  if (navigator.clearAppBadge) navigator.clearAppBadge = function() { return Promise.resolve(); };
                   var _A = window.Audio;
                   window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
                   window.Audio.prototype = _A.prototype;
