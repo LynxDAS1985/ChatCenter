@@ -127,6 +127,9 @@
   .preview-sender { font-size: 11px; font-weight: 600; color: #e2e8f0; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .preview-text { font-size: 11px; color: rgba(255,255,255,0.7); line-height: 1.4; white-space: pre-wrap; word-break: break-word; max-height: 80px; overflow: hidden; }
   .preview-time { font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 3px; }
+  .preview-note { font-size: 10px; color: rgba(99,102,241,0.7); line-height: 1.3; margin-top: 3px; font-style: italic; white-space: pre-wrap; word-break: break-word; max-height: 40px; overflow: hidden; }
+  .tab-note-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(99,102,241,0.6); flex-shrink: 0; display: none; }
+  .tab-note-dot.visible { display: inline-block; }
 
   .tab-category { font-size: 8px; line-height: 12px; padding: 0 4px; border-radius: 3px; flex-shrink: 0; font-weight: 600; }
 
@@ -302,6 +305,9 @@
       addCtxItem('→', 'В чат', () => window.dockApi.goToChat(pinId))
     }
     addCtxSep()
+    const currentNote = entry.data.note || ''
+    addCtxItem('📝', currentNote ? 'Ред. заметку' : 'Добавить заметку', () => promptNote(pinId, currentNote))
+    addCtxSep()
     addCtxItem('🔴', 'Срочно', () => window.dockApi.setCategory(pinId, currentCat === 'urgent' ? '' : 'urgent'), currentCat === 'urgent')
     addCtxItem('🟡', 'В работе', () => window.dockApi.setCategory(pinId, currentCat === 'work' ? '' : 'work'), currentCat === 'work')
     addCtxItem('🟢', 'На потом', () => window.dockApi.setCategory(pinId, currentCat === 'later' ? '' : 'later'), currentCat === 'later')
@@ -404,6 +410,11 @@
       catEl.style.color = cat.color
       catEl.style.display = ''
     }
+
+    const noteDot = document.createElement('span')
+    noteDot.className = 'tab-note-dot' + (data.note ? ' visible' : '')
+    noteDot.title = data.note || ''
+    tab.appendChild(noteDot)
 
     const timer = document.createElement('span')
     timer.className = 'tab-timer'
@@ -508,6 +519,12 @@
         time.textContent = entry.data.time
         previewEl.appendChild(time)
       }
+      if (entry.data.note) {
+        const noteDiv = document.createElement('div')
+        noteDiv.className = 'preview-note'
+        noteDiv.textContent = '📝 ' + entry.data.note
+        previewEl.appendChild(noteDiv)
+      }
       if (entry.data.category && CATEGORIES[entry.data.category]) {
         const cat = CATEGORIES[entry.data.category]
         const catDiv = document.createElement('div')
@@ -607,6 +624,87 @@
     } else { catEl.style.display = 'none' }
     updateCatCounts()
     reportSize()
+  })
+
+  // v0.72.0: Inline prompt для заметки
+  function promptNote(pinId, currentText) {
+    hideCtxMenu(true)
+    const entry = tabs.get(pinId)
+    if (!entry) return
+
+    // Создаём мини-форму прямо над табом
+    const form = document.createElement('div')
+    form.className = 'ctx-menu'
+    form.style.cssText = 'padding:8px;min-width:200px;'
+    const input = document.createElement('textarea')
+    input.style.cssText = 'width:100%;border:1px solid rgba(99,102,241,0.3);border-radius:4px;background:rgba(0,0,0,0.3);color:rgba(255,255,255,0.85);font-size:11px;font-family:inherit;padding:4px 6px;resize:none;outline:none;'
+    input.rows = 2
+    input.maxLength = 200
+    input.placeholder = 'Заметка к задаче...'
+    input.value = currentText
+    form.appendChild(input)
+
+    const btns = document.createElement('div')
+    btns.style.cssText = 'display:flex;gap:4px;margin-top:4px;justify-content:flex-end;'
+    const saveBtn = document.createElement('button')
+    saveBtn.style.cssText = 'padding:2px 10px;border:1px solid rgba(99,102,241,0.3);border-radius:4px;background:rgba(99,102,241,0.15);color:rgba(99,102,241,0.9);font-size:10px;cursor:pointer;'
+    saveBtn.textContent = '✓ Сохранить'
+    const cancelBtn = document.createElement('button')
+    cancelBtn.style.cssText = 'padding:2px 8px;border:1px solid rgba(255,255,255,0.1);border-radius:4px;background:transparent;color:rgba(255,255,255,0.4);font-size:10px;cursor:pointer;'
+    cancelBtn.textContent = 'Отмена'
+    btns.appendChild(saveBtn)
+    btns.appendChild(cancelBtn)
+    form.appendChild(btns)
+
+    document.body.appendChild(form)
+
+    // Позиционирование
+    const tabRect = entry.el.getBoundingClientRect()
+    window.dockApi.requestCtxMenuSpace(form.offsetHeight + 12)
+    setTimeout(() => {
+      const newRect = entry.el.getBoundingClientRect()
+      let x = newRect.left
+      let y = newRect.top - form.offsetHeight - 4
+      if (y < 4) y = 4
+      if (x + form.offsetWidth > window.innerWidth) x = window.innerWidth - form.offsetWidth - 4
+      form.style.left = x + 'px'
+      form.style.top = y + 'px'
+      input.focus()
+    }, 30)
+
+    function closeForm() {
+      form.remove()
+      window.dockApi.requestCtxMenuSpace(0)
+    }
+
+    saveBtn.addEventListener('click', () => {
+      window.dockApi.setNote(pinId, input.value.trim())
+      closeForm()
+    })
+    cancelBtn.addEventListener('click', closeForm)
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveBtn.click() }
+      if (e.key === 'Escape') closeForm()
+    })
+
+    // Закрыть по клику вне
+    setTimeout(() => {
+      document.addEventListener('mousedown', function handler(e) {
+        if (!form.contains(e.target)) { closeForm(); document.removeEventListener('mousedown', handler) }
+      })
+    }, 50)
+  }
+
+  // v0.72.0: Обновление заметки
+  window.dockApi.onUpdateNote((pinId, text) => {
+    const entry = tabs.get(pinId)
+    if (!entry) return
+    entry.data.note = text || ''
+    const noteDot = entry.el.querySelector('.tab-note-dot')
+    if (noteDot) {
+      noteDot.className = 'tab-note-dot' + (text ? ' visible' : '')
+      noteDot.title = text || ''
+    }
   })
 
   window.dockApi.onAddItem((data) => addTab(data))

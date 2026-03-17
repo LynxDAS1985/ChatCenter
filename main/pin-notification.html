@@ -65,6 +65,19 @@
     -webkit-app-region: no-drag;
     cursor: text;
   }
+  .pin-copy-name {
+    -webkit-app-region: no-drag;
+    width: 18px; height: 18px;
+    border: none; background: transparent;
+    color: rgba(255,255,255,0.2);
+    font-size: 10px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 3px; flex-shrink: 0;
+    transition: all 0.15s; opacity: 0;
+  }
+  .pin-header:hover .pin-copy-name { opacity: 1; }
+  .pin-copy-name:hover { color: rgba(99,102,241,0.8); background: rgba(99,102,241,0.1); }
+  .pin-copy-name.copied { color: #4ade80; }
   .pin-time {
     font-size: 10px;
     color: rgba(255,255,255,0.3);
@@ -219,6 +232,38 @@
     background: rgba(34,197,94,0.12);
     color: #4ade80;
   }
+  /* v0.72.0: мини-заметка */
+  .note-section {
+    padding: 4px 10px;
+    border-top: 1px solid rgba(255,255,255,0.04);
+    -webkit-app-region: no-drag;
+  }
+  .note-toggle {
+    display: flex; align-items: center; gap: 4px;
+    border: none; background: transparent;
+    color: rgba(255,255,255,0.3); font-size: 10px;
+    cursor: pointer; padding: 2px 0; transition: color 0.15s;
+  }
+  .note-toggle:hover { color: rgba(255,255,255,0.6); }
+  .note-toggle.has-note { color: rgba(99,102,241,0.7); }
+  .note-input {
+    display: none; width: 100%; margin-top: 4px;
+    padding: 4px 8px; border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 5px; background: rgba(0,0,0,0.3);
+    color: rgba(255,255,255,0.85); font-size: 11px;
+    font-family: inherit; line-height: 1.4; resize: none;
+    outline: none; transition: border-color 0.15s;
+  }
+  .note-input:focus { border-color: rgba(99,102,241,0.5); }
+  .note-input.visible { display: block; }
+  .note-display {
+    display: none; margin-top: 3px;
+    font-size: 11px; color: rgba(255,255,255,0.5);
+    line-height: 1.4; white-space: pre-wrap; word-break: break-word;
+    max-height: 60px; overflow: hidden;
+    font-style: italic;
+  }
+  .note-display.visible { display: block; }
   /* v0.70.0: категории */
   .category-section {
     display: flex;
@@ -263,6 +308,7 @@
   <div class="pin-header">
     <span class="pin-indicator">📌</span>
     <span class="pin-sender" id="sender"></span>
+    <button class="pin-copy-name" id="copyNameBtn" title="Копировать ФИО">📋</button>
     <span class="pin-time" id="time"></span>
     <button class="pin-close" id="closeBtn" title="Открепить">×</button>
   </div>
@@ -273,6 +319,12 @@
     <button class="cat-btn urgent" data-cat="urgent">🔴 Срочно</button>
     <button class="cat-btn work" data-cat="work">🟡 В работе</button>
     <button class="cat-btn later" data-cat="later">🟢 На потом</button>
+  </div>
+  <!-- v0.72.0: мини-заметка -->
+  <div class="note-section" id="noteSection">
+    <button class="note-toggle" id="noteToggle">📝 <span id="noteToggleLabel">Заметка</span></button>
+    <div class="note-display" id="noteDisplay"></div>
+    <textarea class="note-input" id="noteInput" rows="2" maxlength="200" placeholder="Краткая заметка к задаче..."></textarea>
   </div>
   <!-- v0.66.0: секция таймера -->
   <div class="timer-section" id="timerSection">
@@ -309,6 +361,83 @@
   const timerCountdown = document.getElementById('timerCountdown')
   const timerRemaining = document.getElementById('timerRemaining')
   const timerCancel = document.getElementById('timerCancel')
+  const copyNameBtn = document.getElementById('copyNameBtn')
+
+  // Кнопка копирования ФИО
+  copyNameBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    const name = senderEl.textContent.trim()
+    if (!name) return
+    navigator.clipboard.writeText(name).then(() => {
+      copyNameBtn.textContent = '✓'
+      copyNameBtn.classList.add('copied')
+      setTimeout(() => { copyNameBtn.textContent = '📋'; copyNameBtn.classList.remove('copied') }, 1500)
+    }).catch(() => {})
+  })
+
+  const noteToggle = document.getElementById('noteToggle')
+  const noteToggleLabel = document.getElementById('noteToggleLabel')
+  const noteDisplay = document.getElementById('noteDisplay')
+  const noteInput = document.getElementById('noteInput')
+  let currentNote = ''
+  let noteEditing = false
+
+  // Переключение заметки: клик → показать/скрыть ввод
+  noteToggle.addEventListener('click', () => {
+    if (noteEditing) {
+      // Сохранить и закрыть
+      saveNote()
+    } else {
+      // Показать ввод
+      noteDisplay.classList.remove('visible')
+      noteInput.classList.add('visible')
+      noteInput.value = currentNote
+      noteInput.focus()
+      noteEditing = true
+      noteToggleLabel.textContent = 'Сохранить'
+      requestAnimationFrame(() => window.pinApi.resize(card.offsetHeight))
+    }
+  })
+
+  // Blur — сохранить при потере фокуса
+  noteInput.addEventListener('blur', () => {
+    // Небольшая задержка чтобы клик по кнопке "Сохранить" успел обработаться
+    setTimeout(() => { if (noteEditing) saveNote() }, 150)
+  })
+
+  // Enter (без Shift) — сохранить
+  noteInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNote() }
+    if (e.key === 'Escape') { cancelNote() }
+  })
+
+  function saveNote() {
+    const text = noteInput.value.trim()
+    currentNote = text
+    noteEditing = false
+    noteInput.classList.remove('visible')
+    noteToggleLabel.textContent = 'Заметка'
+    if (text) {
+      noteDisplay.textContent = text
+      noteDisplay.classList.add('visible')
+      noteToggle.classList.add('has-note')
+    } else {
+      noteDisplay.classList.remove('visible')
+      noteToggle.classList.remove('has-note')
+    }
+    window.pinApi.setNote(text)
+    requestAnimationFrame(() => window.pinApi.resize(card.offsetHeight))
+  }
+
+  function cancelNote() {
+    noteEditing = false
+    noteInput.classList.remove('visible')
+    noteToggleLabel.textContent = 'Заметка'
+    if (currentNote) {
+      noteDisplay.classList.add('visible')
+    }
+    requestAnimationFrame(() => window.pinApi.resize(card.offsetHeight))
+  }
 
   let messageText = ''
   let pinMessengerId = ''
@@ -323,6 +452,13 @@
     pinMessengerId = data.messengerId || ''
     // Показать кнопку "В чат" если есть messengerId
     if (pinMessengerId) chatBtn.style.display = ''
+    // Загрузить заметку если есть
+    if (data.note) {
+      currentNote = data.note
+      noteDisplay.textContent = currentNote
+      noteDisplay.classList.add('visible')
+      noteToggle.classList.add('has-note')
+    }
 
     requestAnimationFrame(() => {
       window.pinApi.resize(card.offsetHeight)
@@ -423,6 +559,20 @@
       btn.classList.add('active')
     }
     window.pinApi.setCategory(currentCategory)
+    requestAnimationFrame(() => window.pinApi.resize(card.offsetHeight))
+  })
+
+  // v0.72.0: Обновление заметки из dock контекстного меню
+  window.pinApi.onNoteUpdated((text) => {
+    currentNote = text || ''
+    if (currentNote) {
+      noteDisplay.textContent = currentNote
+      noteDisplay.classList.add('visible')
+      noteToggle.classList.add('has-note')
+    } else {
+      noteDisplay.classList.remove('visible')
+      noteToggle.classList.remove('has-note')
+    }
     requestAnimationFrame(() => window.pinApi.resize(card.offsetHeight))
   })
 

@@ -26,4 +26,8 @@ contextBridge.exposeInMainWorld('pinApi', {
   setCategory: (category) => ipcRenderer.send('pin:set-category', category),
   // v0.71.0: Main → Pin window: категория обновлена из dock
   onCategoryUpdated: (cb) => ipcRenderer.on('pin:category-updated', (_e, cat) => cb(cat)),
+  // v0.72.0: Pin window → Main: установить заметку
+  setNote: (text) => ipcRenderer.send('pin:set-note', text),
+  // v0.72.0: Main → Pin window: заметка обновлена из dock
+  onNoteUpdated: (cb) => ipcRenderer.on('pin:note-updated', (_e, text) => cb(text)),
 })

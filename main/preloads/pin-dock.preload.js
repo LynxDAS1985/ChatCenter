@@ -36,4 +36,8 @@ contextBridge.exposeInMainWorld('dockApi', {
   requestCtxMenuSpace: (extraH) => ipcRenderer.send('dock:ctx-menu-space', extraH),
   // v0.71.4: Dock → Main: toggle click-through (прозрачная зона)
   setIgnoreMouse: (ignore) => ipcRenderer.send('dock:set-ignore-mouse', ignore),
+  // v0.72.0: Dock → Main: установить заметку из dock
+  setNote: (id, text) => ipcRenderer.send('dock:set-note', id, text),
+  // v0.72.0: Main → Dock: обновить заметку на табе
+  onUpdateNote: (cb) => ipcRenderer.on('dock:update-note', (_e, id, text) => cb(id, text)),
 })

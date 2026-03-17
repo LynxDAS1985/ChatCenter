@@ -108,6 +108,8 @@ const { ipcRenderer } = require('electron')
       var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i
       // v0.71.6: MAX системные/onboarding сообщения (фантомы)
       var _maxPhantom = /сообщений\s+пока\s+нет|напишите\s+(сообщение|что[- ]нибудь)|отправьте\s+(этот\s+)?стикер|теперь\s+в\s+max|новые\s+сообщения\s+сегодня|начните\s+общени[ея]|добро\s+пожаловать/i
+      // v0.72.0: "ред." / "edited" — пометка редактирования сообщения (не новое сообщение)
+      var _editedMark = /^(\d{1,2}:\d{2}\s*)?ред\.?\s*$/i
       var _outgoing = /^(вы:\s|you:\s)/i
       // v0.58.0: статусы "Имя В сети", системные "Сообщение", "Пропущенный вызов"
       var _statusEnd = /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i
@@ -117,6 +119,7 @@ const { ipcRenderer } = require('electron')
         var t = body.trim()
         if (_spamBody.test(t)) return 'system'
         if (_maxPhantom.test(t)) return 'maxPhantom'
+        if (_editedMark.test(t)) return 'edited'
         if (_outgoing.test(t)) return 'outgoing'
         if (_statusEnd.test(t)) return 'status'
         if (_sysText.test(t)) return 'sysText'
@@ -711,6 +714,8 @@ function getLastMessageText(type) {
           if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) continue
           // v0.71.6: Пропускаем MAX onboarding/системные фантомы
           if (/сообщений\s+пока\s+нет|напишите\s+(сообщение|что[- ]нибудь)|отправьте\s+(этот\s+)?стикер|теперь\s+в\s+max/i.test(text)) continue
+          // v0.72.0: Пропускаем "ред." (отредактированное сообщение)
+          if (/^(\d{1,2}:\d{2}\s*)?ред\.?\s*$/i.test(text)) continue
           return text
         }
       }
@@ -884,6 +889,8 @@ function extractMsgText(node) {
   if (/^(сегодня|вчера|позавчера)\s*(в\s*)?$/i.test(clean)) return ''
   // v0.71.6: MAX onboarding/системные фантомы
   if (/сообщений\s+пока\s+нет|напишите\s+(сообщение|что[- ]нибудь)|отправьте\s+(этот\s+)?стикер|теперь\s+в\s+max|начните\s+общени[ея]|добро\s+пожаловать/i.test(clean)) return ''
+  // v0.72.0: "ред." / "edited" — пометка редактирования (не новый текст)
+  if (/^ред\.?\s*$/i.test(clean) || /^edited\.?\s*$/i.test(clean)) return ''
   return clean
 }
 

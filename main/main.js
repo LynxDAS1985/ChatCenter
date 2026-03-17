@@ -660,7 +660,7 @@ function setupNotifIPC() {
   })
 
   // ── v0.66.0: Pin + Dock + Timer ──────────────────────────────────────────────
-  const pinItems = new Map() // pinId → { win, data, timerEnd, timerTimeout, inDock, category }
+  const pinItems = new Map() // pinId → { win, data, timerEnd, timerTimeout, inDock, category, note }
   let pinIdCounter = 0
   let dockWin = null
   const DOCK_PREVIEW_RESERVE = 150 // предвыделенное пространство для тултипа
@@ -796,7 +796,7 @@ function setupNotifIPC() {
     const dock = ensureDockWindow()
     const item = pinItems.get(pinId)
     const sendAdd = () => {
-      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '' })
+      dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '', note: item ? item.note || '' : '' })
       if (!dock.isVisible()) dock.showInactive()
       // Передать текущий таймер если есть
       if (item && item.timerEnd) {
@@ -874,7 +874,7 @@ function setupNotifIPC() {
       }
     })
 
-    const item = { win: pinWin, data, timerEnd: null, timerTimeout: null, inDock: true, category: '' }
+    const item = { win: pinWin, data, timerEnd: null, timerTimeout: null, inDock: true, category: '', note: '' }
     pinItems.set(pinId, item)
 
     pinWin.loadFile(getPinHtmlPath()).catch(err => {
@@ -882,7 +882,7 @@ function setupNotifIPC() {
     })
 
     pinWin.webContents.once('did-finish-load', () => {
-      pinWin.webContents.send('pin:data', data)
+      pinWin.webContents.send('pin:data', { ...data, note: item.note })
     })
 
     // v0.70.0: Автоматическое закрепление в dock
@@ -1180,6 +1180,36 @@ function setupNotifIPC() {
     // Обновить dock
     if (item.inDock && dockWin && !dockWin.isDestroyed()) {
       dockWin.webContents.send('dock:update-category', pinId, item.category)
+    }
+  })
+
+  // ── Pin: установить заметку ──
+  ipcMain.on('pin:set-note', (event, text) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    const pinId = findPinIdByWin(win)
+    if (pinId === null) return
+    const item = pinItems.get(pinId)
+    if (!item) return
+    item.note = (text || '').slice(0, 200)
+    // Обновить dock
+    if (item.inDock && dockWin && !dockWin.isDestroyed()) {
+      dockWin.webContents.send('dock:update-note', pinId, item.note)
+    }
+  })
+
+  // ── Dock → Main: установить заметку из dock ──
+  ipcMain.on('dock:set-note', (_event, pinId, text) => {
+    const item = pinItems.get(pinId)
+    if (!item) return
+    item.note = (text || '').slice(0, 200)
+    // Обновить dock UI
+    if (dockWin && !dockWin.isDestroyed()) {
+      dockWin.webContents.send('dock:update-note', pinId, item.note)
+    }
+    // Обновить pin-окно если открыто
+    if (item.win && !item.win.isDestroyed()) {
+      item.win.webContents.send('pin:note-updated', item.note)
     }
   })
 
