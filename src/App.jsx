@@ -2286,7 +2286,14 @@ export default function App() {
   useEffect(() => {
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current)
     overlayTimerRef.current = setTimeout(() => {
-      window.api.invoke('tray:set-badge', totalUnread)
+      // v0.72.7: Передаём breakdown для тултипа трея с разбивкой по мессенджерам
+      const breakdown = Object.entries(unreadCounts)
+        .filter(([, v]) => v > 0)
+        .map(([id, v]) => {
+          const m = messengers.find(x => x.id === id)
+          return { name: m?.name || id, count: v }
+        })
+      window.api.invoke('tray:set-badge', { count: totalUnread, breakdown })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
   }, [totalUnread])

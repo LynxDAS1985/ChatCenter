@@ -155,31 +155,66 @@ function drawPixelTextScaled(buf, bufSize, text, cx, cy, R, G, B, scale) {
   }
 }
 
-// Создаёт overlay-иконку 64×64 для бейджа на иконке приложения в таскбаре Windows
-// 64×64 = чёткость при любом Windows DPI (100%, 125%, 150%, 200%)
-// Красный круг + крупные белые цифры (4× масштаб пиксельного шрифта)
-function createOverlayBadgeIcon(count) {
-  const size = 64
-  const buf = Buffer.alloc(size * size * 4)
+// ── Overlay badge через Canvas (нормальный шрифт с антиалиасингом) ────────────
+// Скрытый BrowserWindow для доступа к Canvas API (Node.js не имеет Canvas)
+let badgeWin = null
 
-  // Красный круг на всю иконку с белой обводкой для контраста
-  const cx = 31.5, cy = 31.5, rOuter = 31, rInner = 28
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-      if (d <= rInner) {
-        setPixelBGRA(buf, size, x, y, 239, 68, 71) // красный
-      } else if (d <= rOuter) {
-        setPixelBGRA(buf, size, x, y, 255, 255, 255) // белая обводка
-      }
-    }
+function createBadgeWindow() {
+  badgeWin = new BrowserWindow({
+    width: 128, height: 128,
+    show: false,
+    skipTaskbar: true,
+    webPreferences: { offscreen: true, contextIsolation: false }
+  })
+  badgeWin.loadURL('about:blank')
+}
+
+// v0.72.7: Просто белые цифры с тёмной обводкой на прозрачном фоне — без кружка
+// Canvas рендерит нормальный шрифт Arial Bold с антиалиасингом → чёткие цифры при любом DPI
+async function createOverlayBadgeIcon(count) {
+  if (!badgeWin || badgeWin.isDestroyed()) {
+    // Fallback на старый пиксельный метод если badgeWin не готов
+    const size = 64
+    const buf = Buffer.alloc(size * size * 4)
+    const text = count > 99 ? '99+' : String(count)
+    drawPixelTextScaled(buf, size, text, 31.5, 33.5, 255, 255, 255, 4)
+    return nativeImage.createFromBuffer(buf, { width: size, height: size })
   }
 
-  // Белые цифры с 4× масштабом — чёткие и читаемые на любом DPI
-  const text = count > 99 ? '99' : String(count)
-  drawPixelTextScaled(buf, size, text, cx, cy + 2, 255, 255, 255, 4)
-
-  return nativeImage.createFromBuffer(buf, { width: size, height: size })
+  const text = count > 99 ? '99+' : String(count)
+  try {
+    const dataURL = await badgeWin.webContents.executeJavaScript(`
+      (function() {
+        var size = 128;
+        var c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        var ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, size, size);
+        var text = '${text}';
+        var fontSize = text.length > 2 ? 52 : 64;
+        ctx.font = 'bold ' + fontSize + 'px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Тёмная обводка для контраста на любом фоне
+        ctx.strokeStyle = 'rgba(0,0,0,0.95)';
+        ctx.lineWidth = 10;
+        ctx.lineJoin = 'round';
+        ctx.strokeText(text, size/2, size/2 + 2);
+        // Белые цифры
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(text, size/2, size/2 + 2);
+        return c.toDataURL('image/png');
+      })()
+    `)
+    return nativeImage.createFromDataURL(dataURL)
+  } catch (err) {
+    console.error('[OVERLAY] Canvas error:', err.message)
+    // Fallback
+    const size = 64
+    const buf = Buffer.alloc(size * size * 4)
+    drawPixelTextScaled(buf, size, text, 31.5, 33.5, 255, 255, 255, 4)
+    return nativeImage.createFromBuffer(buf, { width: size, height: size })
+  }
 }
 
 function createTray() {
@@ -1676,21 +1711,33 @@ function setupIPC() {
     return { ok: true }
   })
 
-  // Обновление overlay badge на иконке приложения в таскбаре Windows
-  // Трей: только тултип с количеством, иконка БЕЗ бейджа
-  ipcMain.handle('tray:set-badge', (_, count) => {
-    // v0.72.6: Логирование — видно в DevTools main-процесса (Ctrl+Shift+I → Console в main window)
-    // или в терминале npm run dev
-    console.log(`[OVERLAY] tray:set-badge count=${count}`)
+  // v0.72.7: Overlay badge + тултип трея с разбивкой по мессенджерам
+  // Принимает { count, breakdown: [{ name, count }] } или число (обратная совместимость)
+  ipcMain.handle('tray:set-badge', async (_, data) => {
+    const count = typeof data === 'number' ? data : (data.count || 0)
+    const breakdown = (typeof data === 'object' && data.breakdown) || []
+    console.log(`[OVERLAY] tray:set-badge count=${count} breakdown=${JSON.stringify(breakdown)}`)
+
+    // Тултип трея с разбивкой по мессенджерам
     if (tray && !tray.isDestroyed()) {
-      tray.setToolTip(count > 0 ? `ЦентрЧатов — ${count} непрочитанных` : 'ЦентрЧатов')
+      if (count > 0 && breakdown.length > 0) {
+        const lines = breakdown.map(b => `${b.name}: ${b.count}`)
+        tray.setToolTip(`ЦентрЧатов\n${lines.join('\n')}\nВсего: ${count}`)
+      } else if (count > 0) {
+        tray.setToolTip(`ЦентрЧатов — ${count} непрочитанных`)
+      } else {
+        tray.setToolTip('ЦентрЧатов')
+      }
     }
-    // v0.72.6: Overlay badge 64×64 с крупными цифрами
+
+    // Overlay badge — просто цифры без кружка (Canvas с нормальным шрифтом)
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
       if (count > 0) {
-        const overlayIcon = createOverlayBadgeIcon(count)
-        mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
-        console.log(`[OVERLAY] setOverlayIcon(${count}) — OK`)
+        const overlayIcon = await createOverlayBadgeIcon(count)
+        if (overlayIcon) {
+          mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
+          console.log(`[OVERLAY] setOverlayIcon(${count}) — OK`)
+        }
       } else {
         mainWindow.setOverlayIcon(null, '')
         console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
@@ -1992,6 +2039,7 @@ app.whenReady().then(() => {
 
   setupIPC()
   setupNotifIPC()
+  createBadgeWindow() // Скрытое окно для Canvas-рендеринга overlay badge
   createTray()
   createWindow()
 

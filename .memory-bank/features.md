@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.72.6 (17 марта 2026)
+## Текущая версия: v0.72.7 (17 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.72.7 (17 марта 2026) — Canvas overlay badge + тултип трея с разбивкой
+- **Canvas overlay badge**: Заменён пиксельный шрифт 3×5 на Canvas-рендеринг через скрытый BrowserWindow. Нормальный шрифт Arial Bold с антиалиасингом. Просто белые цифры с тёмной обводкой на прозрачном фоне — без красного кружка. Чёткие при любом DPI.
+- **Тултип трея с разбивкой по мессенджерам**: При наведении на иконку в трее показывает `ЦентрЧатов\nTelegram: 33\nTelegram: 1\nВсего: 34` — видно откуда сообщения.
+- **breakdown в IPC**: `tray:set-badge` теперь принимает `{ count, breakdown: [{ name, count }] }` с обратной совместимостью для числа.
 
 ### v0.72.6 (17 марта 2026) — Фикс overlay badge: debounce + MAX title + notifCount
 - **Debounce 500мс для overlay badge (ГЛАВНЫЙ ФИКС)**: useEffect `tray:set-badge` заменён на debounced вариант. Без debounce: Telegram шлёт page-title-updated первым → overlay=33, другие вкладки обновляются позже → overlay=39, но Windows Shell API не успевает обработать rapid fire setOverlayIcon → overlay застревает на промежуточном значении. С debounce: ждём 500мс пока ВСЕ вкладки отправят счётчики → один вызов с правильной суммой.
