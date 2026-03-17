@@ -228,7 +228,14 @@ function createOverlayIcon(count) {
   }
 
   console.log(`[OVERLAY] createOverlayIcon: text="${text}" size=${size}x${size}`)
-  return nativeImage.createFromBuffer(buf, { width: size, height: size })
+  const img = nativeImage.createFromBuffer(buf, { width: size, height: size })
+  // ДИАГНОСТИКА: сохраняем PNG для визуальной проверки
+  try {
+    const debugPath = path.join(app.getPath('userData'), `overlay-debug-${text}.png`)
+    fs.writeFileSync(debugPath, img.toPNG())
+    console.log(`[OVERLAY] DEBUG PNG saved: ${debugPath}`)
+  } catch (e) { console.error('[OVERLAY] DEBUG PNG error:', e.message) }
+  return img
 }
 
 function createTray() {
