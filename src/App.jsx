@@ -1675,15 +1675,21 @@ export default function App() {
           animateZoom(messengerId, cur, 100)
           return
         } else if (e.channel === 'unread-count') {
+          // v0.72.8: unread-count IPC может ТОЛЬКО УВЕЛИЧИВАТЬ счётчик
+          // DOM-парсинг нестабилен — countUnread*() иногда возвращает 0 при ре-рендере DOM
+          // Это вызывает мигание overlay: 35→33→35 (VK/Tel2 моргнули в 0)
+          // Уменьшение счётчика — ТОЛЬКО через page-title-updated (надёжный, от самого мессенджера)
+          // или handleTabClick (пользователь просмотрел вкладку)
           const domCount = Number(e.args[0]) || 0
-          // v0.72.6: Fallback — берём МАКСИМУМ из DOM-парсинга и notifCount
-          // НЕ обнуляем notifCountRef при domCount>0 — иначе при следующем тике (domCount=0)
-          // fallback тоже будет 0, и счётчик моргнёт 1→0. Обнуление — только в handleTabClick.
-          const count = Math.max(domCount, notifCountRef.current[messengerId] || 0)
+          const ipcCount = Math.max(domCount, notifCountRef.current[messengerId] || 0)
           setUnreadCounts(prev => {
+            const prevCount = prev[messengerId] || 0
+            // НЕ уменьшаем — только увеличиваем или сохраняем
+            const count = Math.max(ipcCount, prevCount)
+            if (count === prevCount) return prev
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
             // Warm-up: при запуске счётчик идёт 0→N — не шуметь пока WebView не прогрелся
-            if (count > (prev[messengerId] || 0) && notifReadyRef.current[messengerId] && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
+            if (count > prevCount && notifReadyRef.current[messengerId] && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
               const s = settingsRef.current
               const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
@@ -1695,9 +1701,9 @@ export default function App() {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
                 lastSoundTsRef.current[messengerId] = Date.now()
-                traceNotif('sound', 'pass', messengerId, `ipc +${count - (prev[messengerId] || 0)}`, 'звук unread-count IPC')
+                traceNotif('sound', 'pass', messengerId, `ipc +${count - prevCount}`, 'звук unread-count IPC')
               } else if (s.soundEnabled !== false && sndOn) {
-                traceNotif('sound', 'block', messengerId, `ipc +${count - (prev[messengerId] || 0)}`, `dedup ipc ${sinceLast2}мс назад`)
+                traceNotif('sound', 'block', messengerId, `ipc +${count - prevCount}`, `dedup ipc ${sinceLast2}мс назад`)
               }
             }
             return { ...prev, [messengerId]: count }
@@ -2277,22 +2283,27 @@ export default function App() {
   const theme = settings.theme || 'dark'
   const currentZoom = zoomLevels[activeId] || 100
 
-  // v0.72.6: Overlay badge — debounce 500мс чтобы собрать счётчики со ВСЕХ вкладок
-  // Без debounce: Telegram шлёт page-title-updated первым → overlay=33, потом другие вкладки
-  // обновляют → overlay=39. Windows Shell API не успевает обработать rapid fire setOverlayIcon
-  // → overlay застревает на промежуточном значении (33 вместо 39).
-  // С debounce: ждём 500мс пока ВСЕ вкладки отправят свои счётчики → один вызов с правильной суммой.
+  // v0.72.8: Overlay badge — debounce 500мс + подробное логирование
+  // unread-count IPC может только УВЕЛИЧИВАТЬ счётчик (DOM-парсинг нестабилен)
+  // page-title-updated может и увеличивать, и уменьшать (надёжный источник)
   const overlayTimerRef = useRef(null)
   useEffect(() => {
+    // v0.72.8: Логирование каждого изменения totalUnread — видно в DevTools (F12 → Console)
+    const details = Object.entries(unreadCounts).filter(([,v]) => v > 0).map(([id, v]) => {
+      const m = messengers.find(x => x.id === id)
+      return `${(m?.name || id).slice(0, 8)}:${v}`
+    }).join(' ')
+    console.log(`[BADGE] totalUnread=${totalUnread} [${details}]`)
+
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current)
     overlayTimerRef.current = setTimeout(() => {
-      // v0.72.7: Передаём breakdown для тултипа трея с разбивкой по мессенджерам
       const breakdown = Object.entries(unreadCounts)
         .filter(([, v]) => v > 0)
         .map(([id, v]) => {
           const m = messengers.find(x => x.id === id)
           return { name: m?.name || id, count: v }
         })
+      console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread}`)
       window.api.invoke('tray:set-badge', { count: totalUnread, breakdown })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
