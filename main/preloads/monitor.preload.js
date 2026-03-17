@@ -539,7 +539,12 @@ function countUnreadMAX() {
     } catch {}
   }
 
+  // v0.72.5: Логирование source для диагностики
+  if (source !== countUnreadMAX._lastSource || allTotal !== countUnreadMAX._lastCount) {
+    try { console.log('__CC_DIAG__unread_max source=' + source + ' count=' + allTotal + ' title="' + document.title.slice(0, 30) + '"') } catch {}
+  }
   countUnreadMAX._lastSource = source
+  countUnreadMAX._lastCount = allTotal
   return { personal: allTotal, channels: 0, total: allTotal, allTotal }
 }
 

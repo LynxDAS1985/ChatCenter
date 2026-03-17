@@ -155,25 +155,29 @@ function drawPixelTextScaled(buf, bufSize, text, cx, cy, R, G, B, scale) {
   }
 }
 
-// Создаёт overlay-иконку 32×32 для бейджа на иконке приложения в таскбаре Windows
-// Красный круг + крупные белые цифры (2× масштаб пиксельного шрифта)
+// Создаёт overlay-иконку 64×64 для бейджа на иконке приложения в таскбаре Windows
+// 64×64 = чёткость при любом Windows DPI (100%, 125%, 150%, 200%)
+// Красный круг + крупные белые цифры (4× масштаб пиксельного шрифта)
 function createOverlayBadgeIcon(count) {
-  const size = 32
+  const size = 64
   const buf = Buffer.alloc(size * size * 4)
 
-  // Красный круг на всю иконку
-  const cx = 15.5, cy = 15.5, r = 15
+  // Красный круг на всю иконку с белой обводкой для контраста
+  const cx = 31.5, cy = 31.5, rOuter = 31, rInner = 28
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      if (Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) <= r) {
-        setPixelBGRA(buf, size, x, y, 239, 68, 71)
+      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+      if (d <= rInner) {
+        setPixelBGRA(buf, size, x, y, 239, 68, 71) // красный
+      } else if (d <= rOuter) {
+        setPixelBGRA(buf, size, x, y, 255, 255, 255) // белая обводка
       }
     }
   }
 
-  // Белые цифры с 2× масштабом — чёткие и читаемые
+  // Белые цифры с 4× масштабом — чёткие и читаемые на любом DPI
   const text = count > 99 ? '99' : String(count)
-  drawPixelTextScaled(buf, size, text, cx, cy + 1, 255, 255, 255, 2)
+  drawPixelTextScaled(buf, size, text, cx, cy + 2, 255, 255, 255, 4)
 
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }

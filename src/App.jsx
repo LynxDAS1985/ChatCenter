@@ -936,6 +936,8 @@ export default function App() {
   // ── Переключение вкладки ──────────────────────────────────────────────────
   const handleTabClick = (id) => {
     setActiveId(id)
+    // v0.72.5: Обнуляем fallback Notification count при просмотре вкладки
+    notifCountRef.current[id] = 0
     // НЕ обнуляем unreadCounts — реальный счётчик придёт от page-title-updated / unread-count IPC
     // Убираем анимацию при клике на вкладку
     setNewMessageIds(prev => { const n = new Set(prev); n.delete(id); return n })
@@ -1063,6 +1065,9 @@ export default function App() {
   const recentNotifsRef = useRef(new Map()) // key → timestamp
   const lastRibbonTsRef = useRef({}) // { [messengerId]: timestamp } — когда последний раз показали ribbon
   const lastSoundTsRef = useRef({}) // { [messengerId]: timestamp } — дедупликация звука между __CC_NOTIF__ и unread-count paths
+  // v0.72.5: Fallback Notification count — если DOM-парсинг (unread-count IPC) = 0,
+  // считаем непрочитанные по количеству __CC_NOTIF__ с момента последнего просмотра вкладки
+  const notifCountRef = useRef({}) // { [messengerId]: number }
   const pendingMarkReadsRef = useRef([]) // v0.62.6: очередь mark-read при свёрнутом окне
   // v0.60.0 Решение #2: sender-based dedup — если __CC_NOTIF__ уже прошёл для sender,
   // блокируем __CC_MSG__ от того же sender в течение 3 сек (даже если текст другой)
@@ -1167,6 +1172,16 @@ export default function App() {
     } else {
       traceNotif('ribbon', 'block', messengerId, text, `выключен | global=${settingsRef.current.notificationsEnabled !== false} perMsg=${ribbonOn}`)
     }
+
+    // v0.72.5: Fallback Notification count — увеличиваем при каждом __CC_NOTIF__
+    notifCountRef.current[messengerId] = (notifCountRef.current[messengerId] || 0) + 1
+    // Если DOM-парсинг (unreadCounts) = 0, используем notifCount как fallback
+    setUnreadCounts(prev => {
+      if ((prev[messengerId] || 0) === 0 && notifCountRef.current[messengerId] > 0) {
+        return { ...prev, [messengerId]: notifCountRef.current[messengerId] }
+      }
+      return prev
+    })
 
     // Превью сообщения в бейдже вкладки (5 секунд)
     const previewText = displayText.slice(0, 32) + (displayText.length > 32 ? '…' : '')
@@ -1659,7 +1674,13 @@ export default function App() {
           animateZoom(messengerId, cur, 100)
           return
         } else if (e.channel === 'unread-count') {
-          const count = Number(e.args[0]) || 0
+          const domCount = Number(e.args[0]) || 0
+          // v0.72.5: Fallback — если DOM-парсинг = 0 но есть notifCount → использовать notifCount
+          // Если DOM-парсинг > 0 → он достоверный, обнулить notifCount
+          if (domCount > 0) {
+            notifCountRef.current[messengerId] = 0 // DOM-парсинг работает — notifCount не нужен
+          }
+          const count = domCount > 0 ? domCount : (notifCountRef.current[messengerId] || 0)
           setUnreadCounts(prev => {
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
             // Warm-up: при запуске счётчик идёт 0→N — не шуметь пока WebView не прогрелся
@@ -2582,7 +2603,16 @@ export default function App() {
         {totalUnread > 0 && (
           <>
             <span style={{ opacity: 0.3 }}>·</span>
-            <span title="Непрочитанных сообщений во всех вкладках">📥 <span style={{ color: '#f87171', fontWeight: 600 }}>{totalUnread}</span> непрочитано</span>
+            <span title={Object.entries(unreadCounts).filter(([,v]) => v > 0).map(([id, v]) => {
+              const m = messengers.find(x => x.id === id)
+              return `${m?.name || id}: ${v}`
+            }).join(', ')}>📥 <span style={{ color: '#f87171', fontWeight: 600 }}>{totalUnread}</span> непрочитано{' '}
+              <span style={{ color: 'var(--cc-text-dim)', fontSize: '10px' }}>[{Object.entries(unreadCounts).filter(([,v]) => v > 0).map(([id, v]) => {
+                const m = messengers.find(x => x.id === id)
+                const short = (m?.name || '?').slice(0, 3)
+                return `${short}:${v}`
+              }).join(' ')}]</span>
+            </span>
           </>
         )}
 

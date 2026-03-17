@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.72.4 (17 марта 2026)
+## Текущая версия: v0.72.5 (17 марта 2026)
 
 ---
 
@@ -91,6 +91,13 @@
 ---
 
 ## Changelog
+
+### v0.72.5 (17 марта 2026) — Чёткий overlay 64×64 + fallback notif count + диагностика
+- **Overlay 64×64 с белой обводкой**: Иконка увеличена с 32×32 до 64×64, шрифт 4× масштаб. Белая обводка вокруг красного круга. Чёткость при любом Windows DPI (100%-200%).
+- **Убрано шевеление dock**: requestCtxMenuSpace полностью убран из pin-dock.html — DOCK_PREVIEW_RESERVE=420 хватает для любого меню. Нет IPC resize = нет шевеления.
+- **Fallback Notification count для MAX**: Если DOM-парсинг (countUnreadMAX) = 0, считаем непрочитанные по __CC_NOTIF__ уведомлениям (notifCountRef). При переключении на вкладку — обнуляем. При DOM count > 0 — notifCount сбрасывается.
+- **Диагностика unread source в статусбаре**: `📥 35 непрочитано [Tel:33 Мак:2]` — разбивка по мессенджерам прямо в статусбаре.
+- **Логирование countUnreadMAX source**: `console.log('__CC_DIAG__unread_max source=... count=...')` — видно в trace какая стратегия сработала.
 
 ### v0.72.4 (17 марта 2026) — Убран авто-DevTools + фикс dock дёрганья + MAX unread
 - **DevTools не открывается автоматически**: Убран `openDevTools()` из mainWindow и loginWindow. Пользователь может открыть вручную через Ctrl+Shift+I.

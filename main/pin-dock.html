@@ -266,8 +266,6 @@
     if (!ctxMenuEl) return
     // Убираем подсветку таба
     if (ctxActiveTab) { ctxActiveTab.classList.remove('ctx-active'); ctxActiveTab = null }
-    // Восстанавливаем размер окна и click-through
-    window.dockApi.requestCtxMenuSpace(0)
     if (instant) {
       ctxMenuEl.remove(); ctxMenuEl = null; ctxPinId = null
       return
@@ -318,28 +316,22 @@
     // Позиционируем в body — НЕ внутри таба (чтобы не обрезалось)
     document.body.appendChild(ctxMenuEl)
 
-    // Запросить место для меню (расширить окно вверх)
-    const tabRect = tabEl.getBoundingClientRect()
+    // DOCK_PREVIEW_RESERVE=420 — меню всегда помещается БЕЗ resize окна (нет дёрганья)
+    // Позиционируем сразу, без IPC resize
     requestAnimationFrame(() => {
+      if (!ctxMenuEl) return
       const menuH = ctxMenuEl.offsetHeight
       const menuW = ctxMenuEl.offsetWidth
-      // Запросить расширение окна вверх — меню + отступ
-      window.dockApi.requestCtxMenuSpace(menuH + 12)
-
-      // Позиционируем после расширения окна, ПОТОМ показываем (без моргания)
-      setTimeout(() => {
-        if (!ctxMenuEl) return
-        const newTabRect = tabEl.getBoundingClientRect()
-        let x = newTabRect.left
-        let y = newTabRect.top - menuH - 4
-        if (y < 4) y = 4
-        if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 4
-        if (x < 4) x = 4
-        ctxMenuEl.style.left = x + 'px'
-        ctxMenuEl.style.top = y + 'px'
-        // Показать ПОСЛЕ позиционирования — плавный fade-in через CSS transition
-        requestAnimationFrame(() => { if (ctxMenuEl) ctxMenuEl.classList.add('visible') })
-      }, 30)
+      const tabRect2 = tabEl.getBoundingClientRect()
+      let x = tabRect2.left
+      let y = tabRect2.top - menuH - 4
+      if (y < 4) y = 4
+      if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 4
+      if (x < 4) x = 4
+      ctxMenuEl.style.left = x + 'px'
+      ctxMenuEl.style.top = y + 'px'
+      // Показать ПОСЛЕ позиционирования — плавный fade-in через CSS transition
+      requestAnimationFrame(() => { if (ctxMenuEl) ctxMenuEl.classList.add('visible') })
     })
   }
 
