@@ -155,7 +155,81 @@ function drawPixelTextScaled(buf, bufSize, text, cx, cy, R, G, B, scale) {
   }
 }
 
-// v0.73.1: Overlay badge — рендер Canvas в renderer-процессе (App.jsx), сюда приходит готовый dataURL
+// v0.73.3: Overlay badge — BGRA buffer 32×32 с 5×7 шрифтом (Canvas удалён — не работал)
+// Шрифт 5×7 — цифры чётко различимы даже при 16×16 overlay
+const OVERLAY_FONT = {
+  '0': [0b01110,0b10001,0b10011,0b10101,0b11001,0b10001,0b01110],
+  '1': [0b00100,0b01100,0b00100,0b00100,0b00100,0b00100,0b01110],
+  '2': [0b01110,0b10001,0b00001,0b00110,0b01000,0b10000,0b11111],
+  '3': [0b01110,0b10001,0b00001,0b00110,0b00001,0b10001,0b01110],
+  '4': [0b00010,0b00110,0b01010,0b10010,0b11111,0b00010,0b00010],
+  '5': [0b11111,0b10000,0b11110,0b00001,0b00001,0b10001,0b01110],
+  '6': [0b01110,0b10000,0b10000,0b11110,0b10001,0b10001,0b01110],
+  '7': [0b11111,0b00001,0b00010,0b00100,0b01000,0b01000,0b01000],
+  '8': [0b01110,0b10001,0b10001,0b01110,0b10001,0b10001,0b01110],
+  '9': [0b01110,0b10001,0b10001,0b01111,0b00001,0b00001,0b01110],
+  '+': [0b00000,0b00100,0b00100,0b11111,0b00100,0b00100,0b00000],
+}
+
+function createOverlayIcon(count) {
+  const size = 32
+  const buf = Buffer.alloc(size * size * 4) // BGRA, прозрачный
+
+  const text = count > 99 ? '99+' : String(count)
+  const charW = 5, charH = 7, gap = 1
+  // scale: 1 цифра→масштаб 4, 2 цифры→2, 3 символа→2
+  const scale = text.length === 1 ? 4 : 2
+  const totalW = (text.length * charW + (text.length - 1) * gap) * scale
+  const x0 = Math.round((size - totalW) / 2)
+  const y0 = Math.round((size - charH * scale) / 2)
+
+  // Рисуем каждый символ
+  let cx = x0
+  for (const ch of text) {
+    const rows = OVERLAY_FONT[ch]
+    if (!rows) { cx += (charW + gap) * scale; continue }
+    for (let row = 0; row < charH; row++) {
+      for (let col = 0; col < charW; col++) {
+        if (rows[row] & (0b10000 >> col)) {
+          // Белый пиксель + чёрная обводка 1px для контраста
+          for (let dy = 0; dy < scale; dy++) {
+            for (let dx = 0; dx < scale; dx++) {
+              const px = cx + col * scale + dx
+              const py = y0 + row * scale + dy
+              setPixelBGRA(buf, size, px, py, 255, 255, 255)
+            }
+          }
+        }
+      }
+    }
+    cx += (charW + gap) * scale
+  }
+
+  // Чёрная обводка — проходим по всем белым пикселям и рисуем чёрные вокруг
+  const copy = Buffer.from(buf)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4
+      if (copy[i + 2] === 255 && copy[i + 1] === 255 && copy[i] === 255 && copy[i + 3] === 255) {
+        // Белый пиксель — рисуем чёрную обводку вокруг
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue
+            const nx = x + dx, ny = y + dy
+            if (nx < 0 || nx >= size || ny < 0 || ny >= size) continue
+            const ni = (ny * size + nx) * 4
+            if (copy[ni + 3] === 0) { // Только если пиксель прозрачный
+              buf[ni] = 0; buf[ni + 1] = 0; buf[ni + 2] = 0; buf[ni + 3] = 255
+            }
+          }
+        }
+      }
+    }
+  }
+
+  console.log(`[OVERLAY] createOverlayIcon: text="${text}" size=${size}x${size}`)
+  return nativeImage.createFromBuffer(buf, { width: size, height: size })
+}
 
 function createTray() {
   tray = new Tray(createTrayBadgeIcon(0))
@@ -1670,18 +1744,13 @@ function setupIPC() {
       }
     }
 
-    // v0.73.1: Overlay badge — готовый dataURL из renderer (Canvas в App.jsx)
-    const overlayDataURL = (typeof data === 'object' && data.overlayDataURL) || null
+    // v0.73.3: Overlay badge — BGRA buffer 32×32 в main (Canvas удалён)
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
-      if (count > 0 && overlayDataURL) {
-        try {
-          const overlayIcon = nativeImage.createFromDataURL(overlayDataURL)
-          mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
-          console.log(`[OVERLAY] setOverlayIcon(${count}) — OK, dataURL len=${overlayDataURL.length}`)
-        } catch (err) {
-          console.error(`[OVERLAY] setOverlayIcon error:`, err.message)
-        }
-      } else if (count === 0) {
+      if (count > 0) {
+        const overlayIcon = createOverlayIcon(count)
+        mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
+        console.log(`[OVERLAY] setOverlayIcon(${count}) — OK`)
+      } else {
         mainWindow.setOverlayIcon(null, '')
         console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
       }
@@ -1982,7 +2051,7 @@ app.whenReady().then(() => {
 
   setupIPC()
   setupNotifIPC()
-  // v0.73.1: badgeWin удалён — overlay рендерится в renderer (App.jsx)
+  // v0.73.3: overlay рендерится BGRA buffer в main (Canvas удалён)
   createTray()
   createWindow()
 

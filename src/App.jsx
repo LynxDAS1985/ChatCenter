@@ -2283,10 +2283,8 @@ export default function App() {
   const theme = settings.theme || 'dark'
   const currentZoom = zoomLevels[activeId] || 100
 
-  // v0.73.1: Overlay badge — Canvas рендер В RENDERER (гарантированно работает)
-  // Canvas 256×256 → dataURL → main → nativeImage → setOverlayIcon
+  // v0.73.3: Overlay badge — рендер в main.js через BGRA buffer (Canvas удалён)
   const overlayTimerRef = useRef(null)
-  const overlayCanvasRef = useRef(null)
   useEffect(() => {
     const details = Object.entries(unreadCounts).filter(([,v]) => v > 0).map(([id, v]) => {
       const m = messengers.find(x => x.id === id)
@@ -2302,47 +2300,8 @@ export default function App() {
           const m = messengers.find(x => x.id === id)
           return { name: m?.name || id, count: v }
         })
-
-      // v0.73.2: Overlay-иконка — Canvas 32×32 (нативный размер Windows overlay)
-      // 256×256 не работал — Windows кропал вместо масштабирования
-      let overlayDataURL = null
-      if (totalUnread > 0) {
-        try {
-          if (!overlayCanvasRef.current) {
-            overlayCanvasRef.current = document.createElement('canvas')
-          }
-          const c = overlayCanvasRef.current
-          const size = 32
-          c.width = size
-          c.height = size
-          const ctx = c.getContext('2d')
-          ctx.clearRect(0, 0, size, size)
-
-          const text = totalUnread > 99 ? '99+' : String(totalUnread)
-          const fontSize = text.length > 2 ? 12 : 18
-          ctx.font = `bold ${fontSize}px Arial, sans-serif`
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-
-          // Тёмная обводка для читаемости на любом фоне таскбара
-          ctx.strokeStyle = 'rgba(0,0,0,0.95)'
-          ctx.lineWidth = 4
-          ctx.lineJoin = 'round'
-          ctx.strokeText(text, size / 2, size / 2 + 1)
-
-          // Белые цифры
-          ctx.fillStyle = '#ffffff'
-          ctx.fillText(text, size / 2, size / 2 + 1)
-
-          overlayDataURL = c.toDataURL('image/png')
-          console.log(`[BADGE] Canvas overlay 32x32: text="${text}" dataURL len=${overlayDataURL.length}`)
-        } catch (err) {
-          console.error('[BADGE] Canvas error:', err)
-        }
-      }
-
       console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread}`)
-      window.api.invoke('tray:set-badge', { count: totalUnread, breakdown, overlayDataURL })
+      window.api.invoke('tray:set-badge', { count: totalUnread, breakdown })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
   }, [totalUnread])

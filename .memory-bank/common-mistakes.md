@@ -162,7 +162,7 @@
 
 **Ловушка 11 (v0.63.8)**: `body-text` с flex (время + текст) ломает expanded mode. При expand `white-space: pre-wrap` не работает с `display: flex`. **ПРАВИЛО**: `.notif-item.expanded .body-text` должен иметь `display: block !important`, а `.msg-text-content` внутри — `white-space: pre-wrap; overflow: visible`.
 
-**Ловушка 18 (v0.73.0→v0.73.2)**: Windows overlay icon — СТРОГО 16×16 или 32×32. Большие размеры (64, 128, 256) Windows обрабатывает некорректно: кропает вместо масштабирования, показывая мусор или часть изображения. **ПРАВИЛО**: Canvas для overlay СТРОГО 32×32. Рендерить в renderer-процессе (App.jsx). DataURL передавать в main через IPC. НЕ использовать скрытые BrowserWindow для Canvas. НЕ делать Canvas больше 32×32 для overlay.
+**Ловушка 18 (v0.73.0→v0.73.3)**: Canvas для overlay badge НЕ РАБОТАЕТ в Electron — ни в скрытом BrowserWindow (offscreen ломает toDataURL, без offscreen даёт "33" вместо "35"), ни в renderer (256×256 показывало "1", 32×32 тоже не работало). **ПРАВИЛО**: Overlay icon делать ТОЛЬКО через BGRA buffer + `nativeImage.createFromBuffer()`. Размер 32×32. Шрифт 5×7 bitmap (не 3×5 — "3"/"5" неразличимы). НЕ использовать Canvas, НЕ использовать dataURL, НЕ создавать скрытые BrowserWindow.
 
 ---
 
