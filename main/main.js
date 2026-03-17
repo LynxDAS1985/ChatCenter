@@ -342,14 +342,6 @@ function createWindow() {
     }
   })
 
-  // v0.73.3 ДИАГНОСТИКА: перехват setOverlayIcon — логирование КАЖДОГО вызова с трассировкой
-  const _origSetOverlay = mainWindow.setOverlayIcon.bind(mainWindow)
-  mainWindow.setOverlayIcon = function(icon, desc) {
-    const stack = new Error().stack.split('\n').slice(1, 4).map(s => s.trim()).join(' | ')
-    console.log(`[OVERLAY-TRAP] setOverlayIcon called: desc="${desc}" icon=${icon ? 'NativeImage' : 'null'} from: ${stack}`)
-    return _origSetOverlay(icon, desc)
-  }
-
   // Отключаем throttling JS при свёрнутом/скрытом окне —
   // без этого MutationObserver, Notification hooks и IPC в WebView замораживаются
   mainWindow.webContents.backgroundThrottling = false
@@ -2047,6 +2039,14 @@ app.on('web-contents-created', (_event, contents) => {
 })
 
 // ─── Запуск ───────────────────────────────────────────────────────────────────
+
+// v0.73.4: Блокируем app.setBadgeCount — Chromium/Electron вызывает его из
+// navigator.setAppBadge() WebView (Telegram), минуя JS setOverlayIcon.
+// Это ставит overlay с числом одного мессенджера вместо суммы.
+app.setBadgeCount = function(count) {
+  console.log(`[OVERLAY] app.setBadgeCount(${count}) — ЗАБЛОКИРОВАН (мессенджер пытался перезаписать overlay)`)
+  return false
+}
 
 app.whenReady().then(() => {
   // Инициализируем хранилище
