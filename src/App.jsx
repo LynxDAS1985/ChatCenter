@@ -1597,11 +1597,24 @@ export default function App() {
                       return Promise.resolve();
                     };
                   } catch(e) {}
-                  // v0.73.3: Блокируем Web Badging API — Telegram/WhatsApp вызывают
-                  // navigator.setAppBadge(N), Electron транслирует как overlay icon
-                  // на главном окне, перезаписывая наш кастомный overlay с суммой
-                  if (navigator.setAppBadge) navigator.setAppBadge = function() { return Promise.resolve(); };
-                  if (navigator.clearAppBadge) navigator.clearAppBadge = function() { return Promise.resolve(); };
+                  // v0.73.5: Блокируем Service Worker — из SW мессенджеры вызывают
+                  // navigator.setAppBadge(N), Chromium через C++ ставит overlay icon
+                  // на Windows taskbar, перезаписывая наш кастомный overlay с суммой.
+                  // JS override не помогает (SW изолирован). Единственный способ — убить SW.
+                  // Telegram/WhatsApp SPA работают без SW.
+                  if (navigator.serviceWorker) {
+                    // Блокируем будущие регистрации SW
+                    var _origSWReg = navigator.serviceWorker.register;
+                    navigator.serviceWorker.register = function() {
+                      console.log('__CC_SW_BLOCKED__');
+                      return Promise.reject(new Error('blocked by ChatCenter'));
+                    };
+                    // Удаляем уже зарегистрированные SW
+                    navigator.serviceWorker.getRegistrations().then(function(regs) {
+                      regs.forEach(function(r) { r.unregister(); });
+                      if (regs.length) console.log('__CC_SW_UNREGISTERED__:' + regs.length);
+                    }).catch(function() {});
+                  }
                   var _A = window.Audio;
                   window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
                   window.Audio.prototype = _A.prototype;

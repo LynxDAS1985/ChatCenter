@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.73.5 (17 марта 2026)
+## Текущая версия: v0.73.6 (17 марта 2026)
 
 ---
 
@@ -91,6 +91,13 @@
 ---
 
 ## Changelog
+
+### v0.73.6 (17 марта 2026) — Overlay: блокировка Service Worker в WebView (убивает Badge API)
+- **Корневая причина найдена**: Chromium Badge API работает через C++ Mojo IPC: `NavigatorBadge::SetAppBadgeHelper()` → `blink::mojom::BadgeService::SetBadge` → `BadgeManager::SetBadge()` → `Browser::SetBadgeCount()` → `ITaskbarList3::SetOverlayIcon`. Полностью минует JS. Feature flags для отключения НЕ СУЩЕСТВУЮТ.
+- **Вызов из Service Worker**: `navigator.setAppBadge(32)` вызывается из Service Worker Telegram Web, который работает в изолированном scope (JS override не действует).
+- **Решение**: убиваем Service Worker в WebView — `navigator.serviceWorker.register` заменён на reject, существующие SW удаляются через `getRegistrations().forEach(r => r.unregister())`. Без SW нет badge API. Telegram/WhatsApp — SPA, работают без SW.
+- **Где заблокировано**: monitor.preload.js (до скриптов мессенджера) + App.jsx executeJavaScript fallback.
+- **Удалено**: setInterval refresh (мерцание), app.setBadgeCount override (бесполезно), disable-features/disable-blink-features (не существуют).
 
 ### v0.73.5 (17 марта 2026) — Overlay: периодический refresh каждые 2 сек
 - **Проблема**: Chromium Badge API (из Service Worker Telegram) устанавливает overlay через C++ (`ITaskbarList3::SetOverlayIcon`) напрямую, минуя весь JS. `disable-features=Badging`, `disable-blink-features=Badging`, `app.setBadgeCount` override, JS `navigator.setAppBadge` override — НИЧЕГО не помогает.

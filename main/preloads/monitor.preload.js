@@ -186,10 +186,19 @@ const { ipcRenderer } = require('electron')
           return Promise.resolve()
         }
       } catch(e) {}
-      // v0.73.3: Блокируем Web Badging API — мессенджеры вызывают navigator.setAppBadge(N),
-      // Electron транслирует это как overlay icon, перезаписывая наш кастомный с суммой
-      if (navigator.setAppBadge) navigator.setAppBadge = function() { return Promise.resolve() }
-      if (navigator.clearAppBadge) navigator.clearAppBadge = function() { return Promise.resolve() }
+      // v0.73.5: Блокируем Service Worker — из SW мессенджеры вызывают
+      // navigator.setAppBadge(N), Chromium через C++ ставит overlay напрямую.
+      // JS override бесполезен (SW изолирован). Убиваем SW полностью.
+      if (navigator.serviceWorker) {
+        var _origReg = navigator.serviceWorker.register
+        navigator.serviceWorker.register = function() {
+          console.log('__CC_SW_BLOCKED__')
+          return Promise.reject(new Error('blocked'))
+        }
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          regs.forEach(function(r) { r.unregister() })
+        }).catch(function() {})
+      }
       // Перехват Audio → volume=0 (глушим звуки мессенджера)
       // 1) new Audio(src)
       var _A = window.Audio

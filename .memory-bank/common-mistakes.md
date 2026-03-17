@@ -162,7 +162,7 @@
 
 **Ловушка 11 (v0.63.8)**: `body-text` с flex (время + текст) ломает expanded mode. При expand `white-space: pre-wrap` не работает с `display: flex`. **ПРАВИЛО**: `.notif-item.expanded .body-text` должен иметь `display: block !important`, а `.msg-text-content` внутри — `white-space: pre-wrap; overflow: visible`.
 
-**Ловушка 18 (v0.73.0→v0.73.4)**: Windows кеширует overlay icon — повторный `setOverlayIcon(newIcon)` НЕ обновляет визуально. **ПРАВИЛО**: ВСЕГДА вызывать `setOverlayIcon(null, '')` ПЕРЕД `setOverlayIcon(icon, desc)` — это сбрасывает кеш Windows. Также блокировать `navigator.setAppBadge` в WebView (мессенджеры могут перезаписывать overlay).
+**Ловушка 18 (v0.73.0→v0.73.6)**: Chromium Badge API (`navigator.setAppBadge`) вызывается из **Service Worker** мессенджеров. Chromium обрабатывает через C++ Mojo IPC: `BadgeManager::SetBadge()` → `Browser::SetBadgeCount()` → `ITaskbarList3::SetOverlayIcon` — **полностью минуя JS**. Никакие JS override, feature flags, `app.setBadgeCount` override, setInterval refresh **НЕ ПОМОГАЮТ**. **ПРАВИЛО**: Блокировать **Service Worker** в WebView: `navigator.serviceWorker.register = reject` + `getRegistrations().forEach(r.unregister())`. Без SW нет badge. Мессенджеры (Telegram, WhatsApp) — SPA, работают без SW. Блокировать в ДВУХ местах: monitor.preload.js (script tag injection, до скриптов мессенджера) и App.jsx executeJavaScript fallback.
 
 ---
 
