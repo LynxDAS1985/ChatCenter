@@ -287,6 +287,8 @@
 
   function showCtxMenu(pinId, tabEl) {
     hideCtxMenu(true)
+    // Удалить ВСЕ остатки контекстных меню (включая closing-анимации от предыдущих)
+    document.querySelectorAll('.ctx-menu').forEach(el => el.remove())
     hidePreview()
     const entry = tabs.get(pinId)
     if (!entry) return
@@ -370,8 +372,11 @@
   }
 
   // Закрыть меню: по клику вне
+  // ВАЖНО: при ПКМ (button=2) на табе НЕ закрываем — contextmenu handler сам переоткроет
+  // Иначе: mousedown закрывает с fade-out → contextmenu создаёт новое → моргание (Ловушка 30)
   document.addEventListener('mousedown', (e) => {
     if (ctxMenuEl && !ctxMenuEl.contains(e.target)) {
+      if (e.button === 2 && e.target.closest('.dock-tab')) return
       hideCtxMenu()
     }
   })

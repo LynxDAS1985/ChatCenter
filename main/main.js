@@ -665,6 +665,113 @@ function setupNotifIPC() {
   let dockWin = null
   const DOCK_PREVIEW_RESERVE = 150 // предвыделенное пространство для тултипа
 
+  // v0.72.1: Персистентность задач — сохранение/загрузка из storage
+  function savePinItems() {
+    const arr = []
+    for (const [pinId, item] of pinItems) {
+      if (!item.inDock) continue // сохраняем только задачи в dock
+      arr.push({
+        pinId,
+        data: item.data,
+        category: item.category || '',
+        note: item.note || '',
+        timerEnd: item.timerEnd || null,
+      })
+    }
+    storage.set('pinItems', arr)
+  }
+
+  function loadPinItems() {
+    const saved = storage.get('pinItems', [])
+    if (!Array.isArray(saved) || saved.length === 0) return
+    for (const s of saved) {
+      if (!s.data || !s.pinId) continue
+      const pinId = s.pinId
+      if (pinId >= pinIdCounter) pinIdCounter = pinId // следующий будет +1
+      restorePin(pinId, s.data, s.category || '', s.note || '', s.timerEnd || null)
+    }
+  }
+
+  function restorePin(pinId, data, category, note, timerEnd) {
+    const { workArea } = screen.getPrimaryDisplay()
+    const offset = (pinItems.size % 10) * 30
+
+    const pinWin = new BrowserWindow({
+      width: 300,
+      height: 150,
+      x: Math.round(workArea.x + workArea.width / 2 - 150 + offset),
+      y: Math.round(workArea.y + workArea.height / 2 - 75 + offset),
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      alwaysOnTop: true,
+      skipTaskbar: false,
+      resizable: false,
+      focusable: true,
+      show: false, // не показывать — задача в dock
+      webPreferences: {
+        preload: getPinPreloadPath(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      }
+    })
+
+    const item = { win: pinWin, data, timerEnd: null, timerTimeout: null, inDock: true, category, note }
+    pinItems.set(pinId, item)
+
+    pinWin.loadFile(getPinHtmlPath()).catch(err => {
+      console.error('[PinWindow] Failed to load pin-notification.html:', err)
+    })
+
+    pinWin.webContents.once('did-finish-load', () => {
+      pinWin.webContents.send('pin:data', { ...data, note })
+      // Восстановить категорию в pin-окне
+      if (category) pinWin.webContents.send('pin:category-updated', category)
+      // Восстановить таймер в pin-окне
+      if (item.timerEnd && item.timerEnd > Date.now()) {
+        pinWin.webContents.send('pin:timer-started', item.timerEnd)
+      }
+    })
+
+    // Добавить в dock
+    addToDock(pinId, data)
+
+    // Восстановить таймер если ещё не истёк
+    if (timerEnd && timerEnd > Date.now()) {
+      item.timerEnd = timerEnd
+      const remaining = timerEnd - Date.now()
+      // Таймер истёк
+      item.timerTimeout = setTimeout(() => {
+        item.timerTimeout = null
+        item.timerEnd = null
+        if (item.win && !item.win.isDestroyed()) {
+          if (!item.win.isVisible()) item.win.show()
+          item.win.webContents.send('pin:timer-alert')
+        }
+        if (item.inDock && dockWin && !dockWin.isDestroyed()) {
+          dockWin.webContents.send('dock:timer-alert', pinId)
+        }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.flashFrame(true)
+        }
+        savePinItems()
+      }, remaining)
+    }
+
+    pinWin.on('closed', () => {
+      const closedItem = pinItems.get(pinId)
+      if (closedItem) {
+        if (closedItem.timerTimeout) clearTimeout(closedItem.timerTimeout)
+        if (closedItem.inDock) removeFromDock(pinId)
+        closedItem.win = null
+        pinItems.delete(pinId)
+        savePinItems()
+        checkDockVisibility()
+      }
+    })
+  }
+
   function getPinPreloadPath() {
     if (isDev) return path.join(__dirname, '../../main/preloads/pin.preload.js')
     return path.join(__dirname, '../preload/pin.js')
@@ -826,6 +933,7 @@ function setupNotifIPC() {
     if (win && !win.isDestroyed()) win.close()
     if (item.inDock) removeFromDock(pinId)
     pinItems.delete(pinId)
+    savePinItems()
     // После удаления — ВСЕГДА проверить, нужно ли скрыть dock
     checkDockVisibility()
   }
@@ -887,6 +995,7 @@ function setupNotifIPC() {
 
     // v0.70.0: Автоматическое закрепление в dock
     addToDock(pinId, data)
+    savePinItems()
 
     pinWin.on('closed', () => {
       const closedItem = pinItems.get(pinId)
@@ -895,6 +1004,7 @@ function setupNotifIPC() {
         if (closedItem.inDock) removeFromDock(pinId)
         closedItem.win = null // Предотвратить двойной close
         pinItems.delete(pinId)
+        savePinItems()
         checkDockVisibility()
       }
     })
@@ -949,6 +1059,7 @@ function setupNotifIPC() {
     if (!item.inDock) {
       item.inDock = true
       addToDock(pinId, item.data)
+      savePinItems()
     }
     win.hide()
   })
@@ -975,6 +1086,8 @@ function setupNotifIPC() {
       dockWin.webContents.send('dock:update-timer', pinId, timerEnd)
     }
 
+    savePinItems()
+
     // Таймер истёк
     item.timerTimeout = setTimeout(() => {
       item.timerTimeout = null
@@ -992,6 +1105,7 @@ function setupNotifIPC() {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.flashFrame(true)
       }
+      savePinItems()
     }, minutes * 60000)
   })
 
@@ -1009,6 +1123,7 @@ function setupNotifIPC() {
     if (item.inDock && dockWin && !dockWin.isDestroyed()) {
       dockWin.webContents.send('dock:update-timer', pinId, null)
     }
+    savePinItems()
   })
 
   // ── Dock → Main: показать pin-окно ──
@@ -1052,6 +1167,7 @@ function setupNotifIPC() {
     if (item.win && !item.win.isDestroyed()) {
       item.win.webContents.send('pin:category-updated', item.category)
     }
+    savePinItems()
   })
 
   // ── Dock → Main: установить таймер из dock ──
@@ -1069,6 +1185,7 @@ function setupNotifIPC() {
     if (dockWin && !dockWin.isDestroyed()) {
       dockWin.webContents.send('dock:update-timer', pinId, timerEnd)
     }
+    savePinItems()
     // Таймер истёк
     item.timerTimeout = setTimeout(() => {
       item.timerTimeout = null
@@ -1083,6 +1200,7 @@ function setupNotifIPC() {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.flashFrame(true)
       }
+      savePinItems()
     }, minutes * 60000)
   })
 
@@ -1181,6 +1299,7 @@ function setupNotifIPC() {
     if (item.inDock && dockWin && !dockWin.isDestroyed()) {
       dockWin.webContents.send('dock:update-category', pinId, item.category)
     }
+    savePinItems()
   })
 
   // ── Pin: установить заметку ──
@@ -1196,6 +1315,7 @@ function setupNotifIPC() {
     if (item.inDock && dockWin && !dockWin.isDestroyed()) {
       dockWin.webContents.send('dock:update-note', pinId, item.note)
     }
+    savePinItems()
   })
 
   // ── Dock → Main: установить заметку из dock ──
@@ -1211,7 +1331,11 @@ function setupNotifIPC() {
     if (item.win && !item.win.isDestroyed()) {
       item.win.webContents.send('pin:note-updated', item.note)
     }
+    savePinItems()
   })
+
+  // v0.72.1: Восстановить задачи из storage при запуске
+  loadPinItems()
 
 }
 
