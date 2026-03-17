@@ -9,6 +9,11 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
 
+// v0.73.4: Отключаем Chromium Badge API — Telegram Web из Service Worker вызывает
+// navigator.setAppBadge(N), Chromium ставит overlay icon через C++ (минуя весь JS),
+// перезаписывая наш кастомный overlay с суммой. JS override не помогает — SW изолирован.
+app.commandLine.appendSwitch('disable-features', 'Badging')
+
 // Устанавливаем имя приложения для уведомлений Windows
 // app.setName() НЕ влияет на заголовок тостов Windows — Windows берёт его из AppUserModelId
 // По умолчанию Electron ставит "electron.app.Electron" — именно это показывалось в уведомлениях
