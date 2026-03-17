@@ -2303,38 +2303,39 @@ export default function App() {
           return { name: m?.name || id, count: v }
         })
 
-      // Рендер overlay-иконки на Canvas прямо здесь (renderer = полноценный Chromium)
+      // v0.73.2: Overlay-иконка — Canvas 32×32 (нативный размер Windows overlay)
+      // 256×256 не работал — Windows кропал вместо масштабирования
       let overlayDataURL = null
       if (totalUnread > 0) {
         try {
           if (!overlayCanvasRef.current) {
             overlayCanvasRef.current = document.createElement('canvas')
-            overlayCanvasRef.current.width = 256
-            overlayCanvasRef.current.height = 256
           }
           const c = overlayCanvasRef.current
+          const size = 32
+          c.width = size
+          c.height = size
           const ctx = c.getContext('2d')
-          const size = 256
           ctx.clearRect(0, 0, size, size)
 
           const text = totalUnread > 99 ? '99+' : String(totalUnread)
-          const fontSize = text.length > 2 ? 100 : 140
+          const fontSize = text.length > 2 ? 12 : 18
           ctx.font = `bold ${fontSize}px Arial, sans-serif`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
 
-          // Тёмная обводка для контраста на любом фоне таскбара
+          // Тёмная обводка для читаемости на любом фоне таскбара
           ctx.strokeStyle = 'rgba(0,0,0,0.95)'
-          ctx.lineWidth = 24
+          ctx.lineWidth = 4
           ctx.lineJoin = 'round'
-          ctx.strokeText(text, size / 2, size / 2 + 4)
+          ctx.strokeText(text, size / 2, size / 2 + 1)
 
           // Белые цифры
           ctx.fillStyle = '#ffffff'
-          ctx.fillText(text, size / 2, size / 2 + 4)
+          ctx.fillText(text, size / 2, size / 2 + 1)
 
           overlayDataURL = c.toDataURL('image/png')
-          console.log(`[BADGE] Canvas overlay: text="${text}" dataURL len=${overlayDataURL.length}`)
+          console.log(`[BADGE] Canvas overlay 32x32: text="${text}" dataURL len=${overlayDataURL.length}`)
         } catch (err) {
           console.error('[BADGE] Canvas error:', err)
         }
