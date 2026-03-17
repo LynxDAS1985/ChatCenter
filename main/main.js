@@ -293,7 +293,7 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+    // DevTools: не открывать автоматически, пользователь откроет Ctrl+Shift+I вручную
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
@@ -711,7 +711,7 @@ function setupNotifIPC() {
   const pinItems = new Map() // pinId → { win, data, timerEnd, timerTimeout, inDock, category, note }
   let pinIdCounter = 0
   let dockWin = null
-  const DOCK_PREVIEW_RESERVE = 150 // предвыделенное пространство для тултипа
+  const DOCK_PREVIEW_RESERVE = 420 // пространство для тултипа + контекстного меню (без resize = без дёрганья)
 
   // v0.72.1: Персистентность задач — сохранение/загрузка из storage
   function savePinItems() {
@@ -1561,8 +1561,7 @@ function setupIPC() {
       loginWindows[provider] = loginWin
       loginWin.setMenu(null)
 
-      // Автооткрытие DevTools для диагностики (отдельное окно)
-      loginWin.webContents.openDevTools({ mode: 'detach' })
+      // DevTools: не открывать автоматически (Ctrl+Shift+I для ручного)
 
       // ── Детальное логирование всех событий ──
       loginWin.webContents.on('did-start-loading', () => {

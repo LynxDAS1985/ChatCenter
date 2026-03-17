@@ -477,7 +477,7 @@ function countUnreadVK() {
   return { personal: allTotal, channels: 0, total: allTotal, allTotal }
 }
 
-// ── MAX: бейдж вкладки "Все" в навигации (generic селекторы ловят лишние) ──
+// ── MAX (web.max.ru): Svelte SPA — классы типа svelte-xxx, нельзя искать по class*="badge" ──
 function countUnreadMAX() {
   let allTotal = 0
   let source = 'none'
@@ -488,22 +488,26 @@ function countUnreadMAX() {
     if (m) { allTotal = parseInt(m[1], 10) || 0; if (allTotal > 0) source = 'title' }
   } catch {}
 
-  // 2. Навигационная вкладка "Все" / "Чаты" — бейдж на ней = общее число непрочитанных
+  // 2. Навигация: вкладка "Все" / "Чаты" — ищем дочерние span/div с числом (Svelte-safe)
   if (allTotal === 0) {
     try {
-      // Ищем все кнопки/ссылки в навигации
-      const navItems = document.querySelectorAll('nav a, nav button, aside a, aside button, [role="tablist"] [role="tab"], [class*="nav"] a, [class*="Nav"] a, [class*="sidebar"] a, [class*="Sidebar"] a, [class*="tab"]')
+      const navItems = document.querySelectorAll('nav a, nav button, aside a, aside button, [role="tablist"] [role="tab"], [class*="nav"] a, [class*="Nav"] a')
       for (const el of navItems) {
-        const text = (el.textContent || '').trim()
-        // Ищем "Все" или "Чаты" в навигации — бейдж рядом
-        if (/^все$/i.test(text.replace(/\d+/g, '').trim()) || /^чаты$/i.test(text.replace(/\d+/g, '').trim())) {
-          const badge = el.querySelector('[class*="badge"], [class*="counter"], [class*="Badge"], [class*="Counter"]')
-          if (badge) {
-            const n = parseInt(badge.textContent?.trim(), 10)
-            if (!isNaN(n) && n > 0) { allTotal = n; source = 'nav-all-badge'; break }
+        const fullText = (el.textContent || '').trim()
+        const cleanText = fullText.replace(/\d+/g, '').trim()
+        if (/^все$/i.test(cleanText) || /^чаты$/i.test(cleanText)) {
+          // Svelte-safe: ищем числовые дочерние элементы (не по классу, а по содержимому)
+          const children = el.querySelectorAll('span, div')
+          for (const ch of children) {
+            const ct = ch.textContent.trim()
+            if (/^\d+$/.test(ct)) {
+              const n = parseInt(ct, 10)
+              if (n > 0 && n < 10000) { allTotal = n; source = 'nav-child-num'; break }
+            }
           }
+          if (allTotal > 0) break
           // Число в тексте самого элемента: "Все 1"
-          const nums = text.match(/(\d+)/)
+          const nums = fullText.match(/(\d+)/)
           if (nums) {
             const n = parseInt(nums[1], 10)
             if (n > 0 && n < 10000) { allTotal = n; source = 'nav-all-text'; break }
@@ -513,21 +517,25 @@ function countUnreadMAX() {
     } catch {}
   }
 
-  // 3. Поиск бейджей на отдельных чатах (не суммировать навигацию)
-  // Каждый чат — контейнер с аватаркой, именем и бейджем
+  // 3. Sidebar: суммируем числовые бейджи на чатах в левой части экрана
+  // MAX Svelte: нет стабильных class-имён → ищем маленькие элементы с числом
   if (allTotal === 0) {
     try {
-      // MAX чаты обычно в контейнерах с аватаркой + бейджем
-      const chatItems = document.querySelectorAll('[class*="ChatItem"], [class*="chat-item"], [class*="Dialog"], [class*="dialog"], [class*="Conversation"], [class*="conversation"]')
-      for (const item of chatItems) {
-        const badge = item.querySelector('[class*="badge"], [class*="counter"], [class*="unread"]')
-        if (badge) {
-          const n = parseInt(badge.textContent?.trim(), 10)
-          if (!isNaN(n) && n > 0) allTotal += n
-          else if (badge.offsetParent !== null && badge.offsetWidth > 0) allTotal += 1
-        }
+      const halfW = window.innerWidth * 0.5
+      const spans = document.querySelectorAll('a span, li span, a div, li div')
+      for (const span of spans) {
+        const text = span.textContent.trim()
+        if (!/^\d+$/.test(text)) continue
+        const n = parseInt(text, 10)
+        if (n <= 0 || n >= 10000) continue
+        // Фильтр: маленький элемент в sidebar (левая часть экрана)
+        const rect = span.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) continue
+        if (rect.width > 45 || rect.height > 28) continue
+        if (rect.left > halfW) continue
+        allTotal += n
       }
-      if (allTotal > 0) source = 'chat-items'
+      if (allTotal > 0) source = 'sidebar-spans'
     } catch {}
   }
 
