@@ -342,6 +342,14 @@ function createWindow() {
     }
   })
 
+  // v0.73.3 ДИАГНОСТИКА: перехват setOverlayIcon — логирование КАЖДОГО вызова с трассировкой
+  const _origSetOverlay = mainWindow.setOverlayIcon.bind(mainWindow)
+  mainWindow.setOverlayIcon = function(icon, desc) {
+    const stack = new Error().stack.split('\n').slice(1, 4).map(s => s.trim()).join(' | ')
+    console.log(`[OVERLAY-TRAP] setOverlayIcon called: desc="${desc}" icon=${icon ? 'NativeImage' : 'null'} from: ${stack}`)
+    return _origSetOverlay(icon, desc)
+  }
+
   // Отключаем throttling JS при свёрнутом/скрытом окне —
   // без этого MutationObserver, Notification hooks и IPC в WebView замораживаются
   mainWindow.webContents.backgroundThrottling = false
