@@ -9,10 +9,11 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
 
-// v0.73.4: Отключаем Chromium Badge API — Telegram Web из Service Worker вызывает
-// navigator.setAppBadge(N), Chromium ставит overlay icon через C++ (минуя весь JS),
-// перезаписывая наш кастомный overlay с суммой. JS override не помогает — SW изолирован.
-app.commandLine.appendSwitch('disable-features', 'Badging')
+// v0.73.5: Отключаем Chromium Badge API на ВСЕХ уровнях
+// Telegram Web из Service Worker вызывает navigator.setAppBadge(N),
+// Chromium ставит overlay icon через C++ (минуя весь JS)
+app.commandLine.appendSwitch('disable-features', 'Badging,WebAppManifestBadging')
+app.commandLine.appendSwitch('disable-blink-features', 'Badging')
 
 // Устанавливаем имя приложения для уведомлений Windows
 // app.setName() НЕ влияет на заголовок тостов Windows — Windows берёт его из AppUserModelId
@@ -234,6 +235,28 @@ function createOverlayIcon(count) {
 
   console.log(`[OVERLAY] createOverlayIcon: text="${text}" size=${size}x${size}`)
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
+}
+
+// v0.73.5: Периодический refresh overlay — Chromium Badge API перебивает наш overlay через C++
+let lastOverlayIcon = null
+let lastOverlayDesc = ''
+let overlayRefreshTimer = null
+
+function startOverlayRefresh() {
+  if (overlayRefreshTimer) return // уже запущен
+  overlayRefreshTimer = setInterval(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && lastOverlayIcon) {
+      mainWindow.setOverlayIcon(null, '')
+      mainWindow.setOverlayIcon(lastOverlayIcon, lastOverlayDesc)
+    }
+  }, 2000)
+}
+
+function stopOverlayRefresh() {
+  if (overlayRefreshTimer) {
+    clearInterval(overlayRefreshTimer)
+    overlayRefreshTimer = null
+  }
 }
 
 function createTray() {
@@ -1751,16 +1774,22 @@ function setupIPC() {
       }
     }
 
-    // v0.73.4: Overlay badge — сброс на null перед установкой нового (Windows кеширует overlay)
+    // v0.73.5: Overlay badge — сохраняем иконку и ставим + запускаем refresh interval
+    // Telegram Web через Chromium C++ перебивает overlay своим числом (32 вместо суммы 34).
+    // Периодический refresh каждые 2 сек гарантирует что наше число остаётся.
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
       if (count > 0) {
-        const overlayIcon = createOverlayIcon(count)
-        // ОБЯЗАТЕЛЬНО: сначала null, потом новый — иначе Windows не обновляет
+        lastOverlayIcon = createOverlayIcon(count)
+        lastOverlayDesc = `${count} непрочитанных`
         mainWindow.setOverlayIcon(null, '')
-        mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
+        mainWindow.setOverlayIcon(lastOverlayIcon, lastOverlayDesc)
         console.log(`[OVERLAY] setOverlayIcon(null→${count}) — OK`)
+        startOverlayRefresh()
       } else {
+        lastOverlayIcon = null
+        lastOverlayDesc = ''
         mainWindow.setOverlayIcon(null, '')
+        stopOverlayRefresh()
         console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
       }
     }

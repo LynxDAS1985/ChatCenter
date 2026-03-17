@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.73.4 (17 марта 2026)
+## Текущая версия: v0.73.5 (17 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.73.5 (17 марта 2026) — Overlay: периодический refresh каждые 2 сек
+- **Проблема**: Chromium Badge API (из Service Worker Telegram) устанавливает overlay через C++ (`ITaskbarList3::SetOverlayIcon`) напрямую, минуя весь JS. `disable-features=Badging`, `disable-blink-features=Badging`, `app.setBadgeCount` override, JS `navigator.setAppBadge` override — НИЧЕГО не помогает.
+- **Решение**: setInterval каждые 2 сек переставляет наш overlay (null→icon). Telegram перебивает → через ≤2 сек наш refresh восстанавливает правильное число.
+- **При count=0**: interval останавливается, overlay очищается.
 
 ### v0.73.4 (17 марта 2026) — Overlay: сброс на null перед обновлением (Windows кеш)
 - **Проблема**: Windows кеширует overlay icon — при повторном `setOverlayIcon()` с другим NativeImage визуально не обновляет. Первый вызов (count=33) устанавливал overlay, последующие (34, 35, 36) не перерисовывали.
