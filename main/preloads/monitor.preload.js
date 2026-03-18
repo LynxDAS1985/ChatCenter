@@ -643,7 +643,6 @@ function countUnreadTelegram() {
       if (chatlistSum > 0) { allTotal = chatlistSum; source = 'chatlist-sum' }
     } catch {}
   }
-  }
 
   // Split: personal из folder tab "Личные"
   // v0.74.2: Отслеживаем НАШЛИ ли вкладку "Личные". Если нашли но бейджа нет —
