@@ -1655,6 +1655,8 @@ export default function App() {
         const match = e.title?.match(/\((\d+)\)/) || e.title?.match(/^(\d+)\s+непрочитанн/)
         if (match) {
           const count = parseInt(match[1], 10) || 0
+          // v0.74.0: Сбрасываем notifCountRef когда title показывает реальное число
+          notifCountRef.current[messengerId] = Math.min(notifCountRef.current[messengerId] || 0, count)
           setUnreadCounts(prev => {
             if (prev[messengerId] === count) return prev
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
@@ -1681,6 +1683,13 @@ export default function App() {
           })
           // Обновляем статус мониторинга — title работает
           setMonitorStatus(prev => ({ ...prev, [messengerId]: 'active' }))
+        } else if (activeIdRef.current === messengerId && windowFocusedRef.current) {
+          // v0.74.0: Title без числа (например "MAX") — пользователь смотрит и всё прочитал
+          notifCountRef.current[messengerId] = 0
+          setUnreadCounts(prev => {
+            if ((prev[messengerId] || 0) === 0) return prev
+            return { ...prev, [messengerId]: 0 }
+          })
         }
       })
 
@@ -1699,17 +1708,21 @@ export default function App() {
           animateZoom(messengerId, cur, 100)
           return
         } else if (e.channel === 'unread-count') {
-          // v0.72.8: unread-count IPC может ТОЛЬКО УВЕЛИЧИВАТЬ счётчик
+          // v0.72.8: unread-count IPC может ТОЛЬКО УВЕЛИЧИВАТЬ счётчик (для фоновых вкладок)
           // DOM-парсинг нестабилен — countUnread*() иногда возвращает 0 при ре-рендере DOM
-          // Это вызывает мигание overlay: 35→33→35 (VK/Tel2 моргнули в 0)
-          // Уменьшение счётчика — ТОЛЬКО через page-title-updated (надёжный, от самого мессенджера)
-          // или handleTabClick (пользователь просмотрел вкладку)
+          // v0.74.0: НО если пользователь СМОТРИТ на эту вкладку и DOM=0 — сброс (прочитал)
           const domCount = Number(e.args[0]) || 0
+          const isViewing = activeIdRef.current === messengerId && windowFocusedRef.current
+          // Сброс notifCountRef при просмотре — пользователь прочитал сообщения внутри мессенджера
+          if (isViewing && domCount < (notifCountRef.current[messengerId] || 0)) {
+            notifCountRef.current[messengerId] = domCount
+          }
           const ipcCount = Math.max(domCount, notifCountRef.current[messengerId] || 0)
           setUnreadCounts(prev => {
             const prevCount = prev[messengerId] || 0
-            // НЕ уменьшаем — только увеличиваем или сохраняем
-            const count = Math.max(ipcCount, prevCount)
+            // При просмотре — разрешаем уменьшение (пользователь видит реальный DOM)
+            // В фоне — только увеличиваем (DOM может моргнуть в 0 при ре-рендере)
+            const count = isViewing ? ipcCount : Math.max(ipcCount, prevCount)
             if (count === prevCount) return prev
             // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
             // Warm-up: при запуске счётчик идёт 0→N — не шуметь пока WebView не прогрелся

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.73.9 (18 марта 2026)
+## Текущая версия: v0.74.0 (18 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.74.0 (18 марта 2026) — Сброс notifCountRef при чтении сообщений внутри WebView
+- **Проблема**: После чтения сообщений в MAX (открыл чат внутри WebView), бейдж продолжал показывать 2 непрочитанных. `notifCountRef` не сбрасывался, а `Math.max(domCount=0, notifCountRef=2) = 2`.
+- **Причина**: `notifCountRef` обнулялся ТОЛЬКО при клике на вкладку мессенджера в ChatCenter (`handleTabClick`). Если пользователь уже на вкладке и читает сообщения внутри WebView — notifCountRef оставался.
+- **Решение**: (1) `page-title-updated` без числа + пользователь на вкладке → сброс notifCountRef и unreadCounts. (2) `unread-count` IPC: если пользователь смотрит вкладку и domCount < notifCountRef → сброс. (3) При просмотре разрешено уменьшение счётчика (не только увеличение).
 
 ### v0.73.9 (18 марта 2026) — Overlay: блокировка navigator.setAppBadge в page context
 - **Корень проблемы v0.73.8**: `clearStorageData` убил SW, но Telegram Web вызывает `navigator.setAppBadge(32)` напрямую из **page context** (не только из SW). Chromium транслирует этот вызов в `ITaskbarList3::SetOverlayIcon`, перебивая наш overlay.
