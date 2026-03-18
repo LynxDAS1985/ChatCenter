@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.75.4 (18 марта 2026)
+## Текущая версия: v0.75.5 (18 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.75.5 (18 марта 2026) — Автосброс notifCountRef при переключении вкладки
+- **useEffect на activeId + windowFocused**: Через 1.5с после переключения на вкладку — автосброс `notifCountRef` и `unreadCounts`. Покрывает ВСЕ способы переключения: handleTabClick, notify:clicked, Ctrl+Tab, Ctrl+1-9, автопереключение.
+- **Ловушка 29**: `notify:clicked` вызывает `setActiveId` но НЕ `handleTabClick`. Для мессенджеров без числа в title (MAX, WhatsApp) бейдж залипал навсегда — `page-title-updated` не срабатывал.
 
 ### v0.75.4 (18 марта 2026) — Фикс подсчёта: вертикальные папки Telegram + title первый
 - **Вертикальные папки**: Telegram Web K с `has-vertical-folders` — папки внутри `folders-sidebar__scrollable-position`, а НЕ `sidebar-tools-button[0]` (это кнопка меню!). Добавлен отдельный шаг 2b для поиска бейджа в вертикальном layout.

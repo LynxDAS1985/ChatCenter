@@ -965,6 +965,25 @@ export default function App() {
     }
   }, [])
 
+  // v0.75.5: Автосброс notifCountRef при переключении на вкладку (ЛЮБЫМ способом)
+  // Покрывает: handleTabClick, notify:clicked, Ctrl+Tab, Ctrl+1-9, автопереключение
+  useEffect(() => {
+    if (!activeId || !windowFocused) return
+    // Задержка 1.5с — даём DOM-подсчёту время отработать
+    const timer = setTimeout(() => {
+      if (notifCountRef.current[activeId] > 0) {
+        console.log(`[BADGE] auto-reset notifCountRef[${activeId}] = ${notifCountRef.current[activeId]} → 0 (viewing)`)
+        notifCountRef.current[activeId] = 0
+        // Принудительно пересчитать бейдж
+        setUnreadCounts(prev => {
+          if (prev[activeId] > 0) return { ...prev, [activeId]: 0 }
+          return prev
+        })
+      }
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [activeId, windowFocused])
+
   // ── Переключение вкладки ──────────────────────────────────────────────────
   const handleTabClick = (id) => {
     setActiveId(id)
