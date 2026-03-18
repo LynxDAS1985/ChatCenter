@@ -96,120 +96,19 @@ function drawPixelText(buf, bufSize, text, cx, cy, R, G, B) {
   }
 }
 
-// v0.74.5: Иконка трея 32×32 — два числа: личные (слева) | группы (справа)
-// Принимает { personal, channels } или число (legacy fallback)
-function createTrayBadgeIcon(data) {
+// v0.74.6: Иконка трея 32×32 — чистая синяя иконка БЕЗ бейджа
+// Бейджи показываются только на overlay (иконка в панели задач Windows)
+function createTrayBadgeIcon() {
   const size = 32
   const buf = Buffer.alloc(size * size * 4) // BGRA, всё прозрачное по умолчанию
 
-  // Разбираем данные
-  let personal = 0, channels = 0, total = 0
-  if (typeof data === 'number') {
-    total = data
-  } else if (data) {
-    personal = data.personal || 0
-    channels = data.channels || 0
-    total = data.total || (personal + channels)
-  }
-  const hasBadge = total > 0
-
-  // Основной синий круг (#2AABEE = R:42, G:171, B:238)
-  const cx = hasBadge ? 13.5 : 15.5
-  const cy = hasBadge ? 19.5 : 15.5
-  const r  = 11
-
+  // Основной синий круг (#2AABEE = R:42, G:171, B:238) — по центру
+  const cx = 15.5, cy = 15.5, r = 11
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       if (Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) <= r) {
         setPixelBGRA(buf, size, x, y, 42, 171, 238)
       }
-    }
-  }
-
-  if (hasBadge) {
-    const pText = personal > 99 ? '99' : String(personal)
-    const cText = channels > 99 ? '99' : String(channels)
-
-    // v0.74.5: Если есть split (personal + channels) — рисуем два числа с разделителем
-    if (personal > 0 || channels > 0) {
-      // Считаем ширину каждого текста (PIXEL_FONT 3×5, scale=1)
-      const charW = 3, gap = 1
-      const pW = pText.length * charW + (pText.length - 1) * gap // ширина личных
-      const cW = cText.length * charW + (cText.length - 1) * gap // ширина групп
-      const sepW = 1  // разделитель — 1px вертикальная линия
-      const pad = 1   // отступ от разделителя
-      const totalW = pW + pad + sepW + pad + cW
-
-      // Прямоугольный бейдж: тёмно-серый фон с закруглением
-      const badgeH = 9  // высота бейджа (5px шрифт + 2px padding сверху/снизу)
-      const badgeW = totalW + 4 // +2px padding слева/справа
-      const bx0 = Math.round((size - badgeW) / 2) + 3 // сдвигаем вправо (иконка слева)
-      const by0 = 0  // верхний край
-
-      // Рисуем фон бейджа (тёмно-серый с закруглением)
-      for (let y = by0; y < by0 + badgeH; y++) {
-        for (let x = bx0; x < bx0 + badgeW; x++) {
-          if (x >= 0 && x < size && y >= 0 && y < size) {
-            // Закруглённые углы (r=2)
-            const cornerR = 2
-            const inCorner =
-              (x < bx0 + cornerR && y < by0 + cornerR && Math.sqrt((x - bx0 - cornerR) ** 2 + (y - by0 - cornerR) ** 2) > cornerR) ||
-              (x >= bx0 + badgeW - cornerR && y < by0 + cornerR && Math.sqrt((x - bx0 - badgeW + cornerR) ** 2 + (y - by0 - cornerR) ** 2) > cornerR) ||
-              (x < bx0 + cornerR && y >= by0 + badgeH - cornerR && Math.sqrt((x - bx0 - cornerR) ** 2 + (y - by0 - badgeH + cornerR) ** 2) > cornerR) ||
-              (x >= bx0 + badgeW - cornerR && y >= by0 + badgeH - cornerR && Math.sqrt((x - bx0 - badgeW + cornerR) ** 2 + (y - by0 - badgeH + cornerR) ** 2) > cornerR)
-            if (!inCorner) {
-              setPixelBGRA(buf, size, x, y, 40, 40, 40)
-            }
-          }
-        }
-      }
-
-      // Рисуем текст личных (слева) — белым
-      const textY = by0 + 2 // 2px padding сверху
-      let textX = bx0 + 2  // 2px padding слева
-      for (const ch of pText) {
-        const rows = PIXEL_FONT[ch]
-        if (rows) {
-          for (let row = 0; row < 5; row++) {
-            for (let col = 0; col < 3; col++) {
-              if (rows[row] & (0b100 >> col)) setPixelBGRA(buf, size, textX + col, textY + row, 255, 255, 255)
-            }
-          }
-        }
-        textX += charW + gap
-      }
-
-      // Вертикальный разделитель (серая линия)
-      const sepX = bx0 + 2 + pW + pad
-      for (let y = by0 + 1; y < by0 + badgeH - 1; y++) {
-        setPixelBGRA(buf, size, sepX, y, 120, 120, 120)
-      }
-
-      // Рисуем текст групп (справа) — белым
-      textX = sepX + sepW + pad
-      for (const ch of cText) {
-        const rows = PIXEL_FONT[ch]
-        if (rows) {
-          for (let row = 0; row < 5; row++) {
-            for (let col = 0; col < 3; col++) {
-              if (rows[row] & (0b100 >> col)) setPixelBGRA(buf, size, textX + col, textY + row, 255, 255, 255)
-            }
-          }
-        }
-        textX += charW + gap
-      }
-    } else {
-      // Legacy: одно число (нет split данных) — красный кружок
-      const bcx = 25, bcy = 7, br = 7
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          if (Math.sqrt((x - bcx) ** 2 + (y - bcy) ** 2) <= br) {
-            setPixelBGRA(buf, size, x, y, 239, 68, 71)
-          }
-        }
-      }
-      const text = total > 9 ? '9+' : String(total)
-      drawPixelText(buf, size, text, bcx, bcy, 255, 255, 255)
     }
   }
 
@@ -257,52 +156,150 @@ const OVERLAY_FONT = {
   '+': [0b00000,0b00100,0b00100,0b11111,0b00100,0b00100,0b00000],
 }
 
-// v0.73.8: Белые цифры на чёрном фоне (тёмный круг) с тёмной обводкой для читаемости
-function createOverlayIcon(count) {
+// v0.74.6: Overlay badge — два числа (личные | группы) с цветовым различием
+// Принимает { personal, channels } или число (legacy fallback)
+function createOverlayIcon(data) {
   const size = 32
   const buf = Buffer.alloc(size * size * 4) // BGRA, прозрачный
 
-  // Чёрный круг-фон с лёгкой обводкой для контраста на любом фоне
-  const cx = 15.5, cy = 15.5, r = 14, rOuter = 15.5
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-      if (dist <= r) {
-        setPixelBGRA(buf, size, x, y, 20, 20, 20) // Чёрный фон
-      } else if (dist <= rOuter) {
-        setPixelBGRA(buf, size, x, y, 60, 60, 60) // Тёмно-серая обводка
-      }
-    }
+  let personal = 0, channels = 0, total = 0
+  if (typeof data === 'number') {
+    total = data
+  } else if (data) {
+    personal = data.personal || 0
+    channels = data.channels || 0
+    total = data.total || (personal + channels)
   }
 
-  // Белые цифры по центру
-  const text = count > 99 ? '99+' : String(count)
-  const charW = 5, charH = 7, gap = 1
-  const scale = text.length === 1 ? 3 : 2
-  const totalW = (text.length * charW + (text.length - 1) * gap) * scale
-  const x0 = Math.round((size - totalW) / 2)
-  const y0 = Math.round((size - charH * scale) / 2)
+  const hasSplit = personal > 0 || channels > 0
 
-  let px0 = x0
+  if (hasSplit) {
+    // ── Режим: два числа с разделителем ──
+    const pText = personal > 99 ? '99' : String(personal)
+    const cText = channels > 99 ? '99' : String(channels)
+    const charW = 5, charH = 7, gap = 1, sepW = 1, pad = 2
+
+    // Выбираем scale для максимальной читаемости
+    // Проверяем поместится ли scale=2
+    const pW2 = (pText.length * charW + (pText.length - 1) * gap) * 2
+    const cW2 = (cText.length * charW + (cText.length - 1) * gap) * 2
+    const totalW2 = pW2 + pad + sepW + pad + cW2 + 4 // +4 padding
+    const canScale2 = totalW2 <= size
+
+    const scale = canScale2 ? 2 : 1
+    const pW = (pText.length * charW + (pText.length - 1) * gap) * scale
+    const cW = (cText.length * charW + (cText.length - 1) * gap) * scale
+    const totalW = pW + pad + sepW + pad + cW
+
+    // Прямоугольный фон — на всю ширину overlay, по высоте шрифта + padding
+    const badgePadX = 2
+    const badgeH = charH * scale + 4 // +4 padding (2 сверху + 2 снизу)
+    const badgeW = totalW + badgePadX * 2
+    const bx0 = Math.round((size - badgeW) / 2)
+    const by0 = Math.round((size - badgeH) / 2)
+
+    // Рисуем тёмный прямоугольный фон с закруглением
+    const cornerR = scale === 2 ? 3 : 2
+    for (let y = by0; y < by0 + badgeH && y < size; y++) {
+      for (let x = bx0; x < bx0 + badgeW && x < size; x++) {
+        if (x < 0 || y < 0) continue
+        // Проверяем закруглённые углы
+        const dx0 = x - bx0, dy0 = y - by0
+        const inCorner =
+          (dx0 < cornerR && dy0 < cornerR && Math.sqrt((dx0 - cornerR) ** 2 + (dy0 - cornerR) ** 2) > cornerR) ||
+          (dx0 >= badgeW - cornerR && dy0 < cornerR && Math.sqrt((dx0 - badgeW + cornerR + 1) ** 2 + (dy0 - cornerR) ** 2) > cornerR) ||
+          (dx0 < cornerR && dy0 >= badgeH - cornerR && Math.sqrt((dx0 - cornerR) ** 2 + (dy0 - badgeH + cornerR + 1) ** 2) > cornerR) ||
+          (dx0 >= badgeW - cornerR && dy0 >= badgeH - cornerR && Math.sqrt((dx0 - badgeW + cornerR + 1) ** 2 + (dy0 - badgeH + cornerR + 1) ** 2) > cornerR)
+        if (!inCorner) {
+          setPixelBGRA(buf, size, x, y, 20, 20, 20) // Чёрный фон
+        }
+      }
+    }
+
+    // Обводка (1px тёмно-серая) для контраста на светлом таскбаре
+    for (let y = by0 - 1; y <= by0 + badgeH; y++) {
+      for (let x = bx0 - 1; x <= bx0 + badgeW; x++) {
+        if (x < 0 || y < 0 || x >= size || y >= size) continue
+        const i = (y * size + x) * 4
+        if (buf[i + 3] === 0) { // Только прозрачные пиксели (не перезаписываем фон)
+          // Проверяем есть ли соседний непрозрачный пиксель
+          let hasNeighbor = false
+          for (let ny = y - 1; ny <= y + 1 && !hasNeighbor; ny++) {
+            for (let nx = x - 1; nx <= x + 1 && !hasNeighbor; nx++) {
+              if (nx >= 0 && ny >= 0 && nx < size && ny < size) {
+                const ni = (ny * size + nx) * 4
+                if (buf[ni + 3] === 255) hasNeighbor = true
+              }
+            }
+          }
+          if (hasNeighbor) setPixelBGRA(buf, size, x, y, 60, 60, 60)
+        }
+      }
+    }
+
+    const textY = by0 + 2 // padding сверху
+    let textX = bx0 + badgePadX
+
+    // Рисуем личные (СЛЕВА) — БЕЛЫЕ (яркие, приоритет)
+    drawOverlayText(buf, size, pText, textX, textY, 255, 255, 255, scale)
+    textX += pW
+
+    // Вертикальный разделитель — серая линия
+    const sepX = textX + Math.floor(pad / 2)
+    for (let y = by0 + 2; y < by0 + badgeH - 2; y++) {
+      if (sepX >= 0 && sepX < size && y >= 0 && y < size) {
+        setPixelBGRA(buf, size, sepX, y, 100, 100, 100)
+      }
+    }
+    textX += pad + sepW
+
+    // Рисуем группы (СПРАВА) — СЕРЫЕ (тусклые, менее важные)
+    drawOverlayText(buf, size, cText, textX, textY, 160, 160, 160, scale)
+
+    console.log(`[OVERLAY] createOverlayIcon: split personal=${personal} channels=${channels} scale=${scale}`)
+  } else {
+    // ── Legacy: одно число (нет split данных) ──
+    const cx = 15.5, cy = 15.5, r = 14, rOuter = 15.5
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+        if (dist <= r) setPixelBGRA(buf, size, x, y, 20, 20, 20)
+        else if (dist <= rOuter) setPixelBGRA(buf, size, x, y, 60, 60, 60)
+      }
+    }
+    const text = total > 99 ? '99+' : String(total)
+    const charW = 5, charH = 7, gap = 1
+    const scale = text.length === 1 ? 3 : 2
+    const totalW = (text.length * charW + (text.length - 1) * gap) * scale
+    const x0 = Math.round((size - totalW) / 2)
+    const y0 = Math.round((size - charH * scale) / 2)
+    drawOverlayText(buf, size, text, x0, y0, 255, 255, 255, scale)
+    console.log(`[OVERLAY] createOverlayIcon: legacy total=${total} scale=${scale}`)
+  }
+
+  return nativeImage.createFromBuffer(buf, { width: size, height: size })
+}
+
+// Вспомогательная: рисует текст OVERLAY_FONT с масштабом
+function drawOverlayText(buf, bufSize, text, x0, y0, R, G, B, scale) {
+  const charW = 5, charH = 7, gap = 1
+  let px = x0
   for (const ch of text) {
     const rows = OVERLAY_FONT[ch]
-    if (!rows) { px0 += (charW + gap) * scale; continue }
+    if (!rows) { px += (charW + gap) * scale; continue }
     for (let row = 0; row < charH; row++) {
       for (let col = 0; col < charW; col++) {
         if (rows[row] & (0b10000 >> col)) {
           for (let dy = 0; dy < scale; dy++) {
             for (let dx = 0; dx < scale; dx++) {
-              setPixelBGRA(buf, size, px0 + col * scale + dx, y0 + row * scale + dy, 255, 255, 255)
+              setPixelBGRA(buf, bufSize, px + col * scale + dx, y0 + row * scale + dy, R, G, B)
             }
           }
         }
       }
     }
-    px0 += (charW + gap) * scale
+    px += (charW + gap) * scale
   }
-
-  console.log(`[OVERLAY] createOverlayIcon: text="${text}" size=${size}x${size}`)
-  return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 
 function createTray() {
@@ -1839,14 +1836,8 @@ function setupIPC() {
     const overlayMode = (typeof data === 'object' && data.overlayMode) || 'personal'
     console.log(`[OVERLAY] tray:set-badge count=${count} personal=${personal} channels=${channels} mode=${overlayMode}`)
 
-    // v0.74.5: Иконка трея — два числа (личные | группы)
+    // v0.74.6: Трей — чистая иконка без бейджа (бейдж только на overlay)
     if (tray && !tray.isDestroyed()) {
-      if (count > 0) {
-        tray.setImage(createTrayBadgeIcon({ personal, channels, total: count }))
-      } else {
-        tray.setImage(createTrayBadgeIcon(0))
-      }
-
       // Тултип трея с разбивкой по мессенджерам
       if (count > 0 && breakdown.length > 0) {
         const lines = breakdown.map(b => {
@@ -1863,24 +1854,20 @@ function setupIPC() {
       }
     }
 
-    // v0.74.2: Overlay badge — режим из настроек: personal / all / off
+    // v0.74.6: Overlay badge — split (личные | группы) + режим из настроек
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
       if (overlayMode === 'off') {
         mainWindow.setOverlayIcon(null, '')
         console.log(`[OVERLAY] overlay отключён (mode=off)`)
+      } else if (count > 0) {
+        // Всегда передаём split в overlay (два числа: личные | группы)
+        const overlayIcon = createOverlayIcon({ personal, channels, total: count })
+        const desc = `${personal} личных, ${channels} каналов (${count} всего)`
+        mainWindow.setOverlayIcon(overlayIcon, desc)
+        console.log(`[OVERLAY] setOverlayIcon split: personal=${personal} channels=${channels} total=${count}`)
       } else {
-        const overlayCount = overlayMode === 'personal' && personal < count ? personal : count
-        if (overlayCount > 0) {
-          const overlayIcon = createOverlayIcon(overlayCount)
-          const desc = overlayMode === 'personal' && personal < count
-            ? `${personal} личных (${count} всего)`
-            : `${count} непрочитанных`
-          mainWindow.setOverlayIcon(overlayIcon, desc)
-          console.log(`[OVERLAY] setOverlayIcon(${overlayCount}) — OK (mode=${overlayMode} personal=${personal} total=${count})`)
-        } else {
-          mainWindow.setOverlayIcon(null, '')
-          console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
-        }
+        mainWindow.setOverlayIcon(null, '')
+        console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
       }
     }
     return { ok: true }
