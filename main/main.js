@@ -174,60 +174,48 @@ const OVERLAY_FONT = {
   '+': [0b00000,0b00100,0b00100,0b11111,0b00100,0b00100,0b00000],
 }
 
+// v0.73.7: Красный кружок-фон + белые цифры (как у мессенджеров)
 function createOverlayIcon(count) {
   const size = 32
   const buf = Buffer.alloc(size * size * 4) // BGRA, прозрачный
 
+  // Красный круг-фон (#EF4444) с тёмной обводкой
+  const cx = 15.5, cy = 15.5, r = 14, rOuter = 15.5
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+      if (dist <= r) {
+        setPixelBGRA(buf, size, x, y, 239, 68, 68) // Красный фон
+      } else if (dist <= rOuter) {
+        setPixelBGRA(buf, size, x, y, 153, 27, 27) // Тёмно-красная обводка
+      }
+    }
+  }
+
+  // Белые цифры по центру
   const text = count > 99 ? '99+' : String(count)
   const charW = 5, charH = 7, gap = 1
-  // scale: 1 цифра→масштаб 4, 2 цифры→2, 3 символа→2
-  const scale = text.length === 1 ? 4 : 2
+  const scale = text.length === 1 ? 3 : 2
   const totalW = (text.length * charW + (text.length - 1) * gap) * scale
   const x0 = Math.round((size - totalW) / 2)
   const y0 = Math.round((size - charH * scale) / 2)
 
-  // Рисуем каждый символ
-  let cx = x0
+  let px0 = x0
   for (const ch of text) {
     const rows = OVERLAY_FONT[ch]
-    if (!rows) { cx += (charW + gap) * scale; continue }
+    if (!rows) { px0 += (charW + gap) * scale; continue }
     for (let row = 0; row < charH; row++) {
       for (let col = 0; col < charW; col++) {
         if (rows[row] & (0b10000 >> col)) {
-          // Белый пиксель + чёрная обводка 1px для контраста
           for (let dy = 0; dy < scale; dy++) {
             for (let dx = 0; dx < scale; dx++) {
-              const px = cx + col * scale + dx
-              const py = y0 + row * scale + dy
-              setPixelBGRA(buf, size, px, py, 255, 255, 255)
+              setPixelBGRA(buf, size, px0 + col * scale + dx, y0 + row * scale + dy, 255, 255, 255)
             }
           }
         }
       }
     }
-    cx += (charW + gap) * scale
-  }
-
-  // Чёрная обводка — проходим по всем белым пикселям и рисуем чёрные вокруг
-  const copy = Buffer.from(buf)
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4
-      if (copy[i + 2] === 255 && copy[i + 1] === 255 && copy[i] === 255 && copy[i + 3] === 255) {
-        // Белый пиксель — рисуем чёрную обводку вокруг
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (dx === 0 && dy === 0) continue
-            const nx = x + dx, ny = y + dy
-            if (nx < 0 || nx >= size || ny < 0 || ny >= size) continue
-            const ni = (ny * size + nx) * 4
-            if (copy[ni + 3] === 0) { // Только если пиксель прозрачный
-              buf[ni] = 0; buf[ni + 1] = 0; buf[ni + 2] = 0; buf[ni + 3] = 255
-            }
-          }
-        }
-      }
-    }
+    px0 += (charW + gap) * scale
   }
 
   console.log(`[OVERLAY] createOverlayIcon: text="${text}" size=${size}x${size}`)

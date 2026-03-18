@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.73.6 (17 марта 2026)
+## Текущая версия: v0.73.7 (18 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.73.7 (18 марта 2026) — Overlay badge: красный кружок-фон + белые цифры
+- **Визуал**: красный круг (#EF4444) с тёмно-красной обводкой, белые цифры по центру (как у мессенджеров).
+- **Масштаб**: 1 цифра ×3, 2+ цифры ×2 для оптимального заполнения круга.
 
 ### v0.73.6 (17 марта 2026) — Overlay: блокировка Service Worker в WebView (убивает Badge API)
 - **Корневая причина найдена**: Chromium Badge API работает через C++ Mojo IPC: `NavigatorBadge::SetAppBadgeHelper()` → `blink::mojom::BadgeService::SetBadge` → `BadgeManager::SetBadge()` → `Browser::SetBadgeCount()` → `ITaskbarList3::SetOverlayIcon`. Полностью минует JS. Feature flags для отключения НЕ СУЩЕСТВУЮТ.
