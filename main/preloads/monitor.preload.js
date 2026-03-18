@@ -578,70 +578,71 @@ function countUnreadTelegram() {
   let source = 'none' // для диагностики: откуда взяли число
   let domTotal = 0    // v0.75.3: DOM-подсчёт (приоритетнее title)
 
-  // 1. Folder tab badges — ПРИОРИТЕТ (точнее title, т.к. title содержит фантомы из архива/скрытых папок)
-  const tabSelectors = [
-    '.tabs-tab',                     // горизонтальные табы (стандарт)
-    '.menu-horizontal-div-item',     // альт. горизонтальные
-    '.sidebar-tools-button',         // вертикальные кнопки сбоку
-  ]
-  for (const sel of tabSelectors) {
-    try {
-      const tabs = document.querySelectorAll(sel)
-      if (tabs.length > 1) {
-        const badge = tabs[0].querySelector('.badge, [class*="badge"]')
-        if (badge) {
-          const n = parseInt(badge.textContent?.trim(), 10)
-          if (!isNaN(n) && n > 0) { domTotal = n; allTotal = n; source = 'tab:' + sel; break }
+  // 1. document.title = "(26) Telegram Web" — быстрый и надёжный источник
+  try {
+    const m = document.title.match(/\((\d+)\)/)
+    if (m) { allTotal = parseInt(m[1], 10) || 0; if (allTotal > 0) source = 'title' }
+  } catch {}
+
+  // 2. Folder tab badges — горизонтальные и вертикальные папки
+  if (allTotal === 0) {
+    // 2a. Горизонтальные табы
+    const tabSelectors = ['.tabs-tab', '.menu-horizontal-div-item']
+    for (const sel of tabSelectors) {
+      try {
+        const tabs = document.querySelectorAll(sel)
+        if (tabs.length > 1) {
+          const badge = tabs[0].querySelector('.badge, [class*="badge"]')
+          if (badge) {
+            const n = parseInt(badge.textContent?.trim(), 10)
+            if (!isNaN(n) && n > 0) { allTotal = n; source = 'tab:' + sel; break }
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
+
+    // 2b. Вертикальные папки (#folders-sidebar) — бейджи внутри scrollable-position
+    if (allTotal === 0) {
+      try {
+        const scrollable = document.querySelector('.folders-sidebar__scrollable-position, #folders-sidebar .scrollable')
+        if (scrollable) {
+          // Первая папка = "Все чаты" — её бейдж = общее число непрочитанных
+          const firstFolder = scrollable.querySelector('.folders-sidebar__folder-item, .sidebar-tools-button')
+          if (firstFolder) {
+            const badge = firstFolder.querySelector('.badge, [class*="badge"]')
+            if (badge) {
+              const n = parseInt(badge.textContent?.trim(), 10)
+              if (!isNaN(n) && n > 0) { allTotal = n; source = 'vertical-folder' }
+            }
+          }
+        }
+      } catch {}
+    }
   }
 
-  // 2. АДАПТИВНЫЙ: .badge элементы НЕ внутри chatlist = folder tab badges
+  // 3. АДАПТИВНЫЙ: .badge элементы НЕ внутри chatlist = folder tab badges
   if (allTotal === 0) {
     try {
       for (const b of document.querySelectorAll('.badge')) {
         if (b.closest('.chatlist-chat, .chatlist, .ListItem, [class*="chat-item"]')) continue
         const n = parseInt(b.textContent?.trim(), 10)
-        if (!isNaN(n) && n > 0) { domTotal = n; allTotal = n; source = 'adaptive'; break }
+        if (!isNaN(n) && n > 0) { allTotal = n; source = 'adaptive'; break }
       }
     } catch {}
   }
 
-  // 3. Сумма видимых chatlist badges
+  // 4. Сумма видимых chatlist badges
   if (allTotal === 0) {
     try {
-      document.querySelectorAll('.badge.badge-unread').forEach(b => {
+      let chatlistSum = 0
+      document.querySelectorAll('.badge.badge-unread, .badge-unread').forEach(b => {
         const n = parseInt(b.textContent?.trim(), 10)
-        if (!isNaN(n) && n > 0) domTotal += n
-        else if (b.offsetParent !== null) domTotal += 1
+        if (!isNaN(n) && n > 0) chatlistSum += n
+        else if (b.offsetParent !== null) chatlistSum += 1
       })
-      if (domTotal > 0) { allTotal = domTotal; source = 'chatlist-sum' }
+      if (chatlistSum > 0) { allTotal = chatlistSum; source = 'chatlist-sum' }
     } catch {}
   }
-
-  // 4. Fallback: document.title = "(26) Telegram Web"
-  // ТОЛЬКО если DOM вообще не имеет структуры (нет tabs, нет chatlist — ранняя загрузка)
-  // v0.75.3: Если DOM структура есть (tabs/chatlist найдены) но badges=0 → верим DOM, НЕ title
-  // Title содержит фантомы из архива/скрытых папок/ботов
-  if (allTotal === 0) {
-    // Проверяем есть ли DOM-структура Telegram (если есть — DOM достоверен, title игнорируем)
-    const hasDomStructure =
-      document.querySelectorAll('.tabs-tab').length > 0 ||
-      document.querySelectorAll('.menu-horizontal-div-item').length > 0 ||
-      document.querySelectorAll('.sidebar-tools-button').length > 0 ||
-      document.querySelectorAll('.chatlist-chat, .chatlist, .ListItem').length > 0 ||
-      document.querySelectorAll('.badge').length > 0
-    if (!hasDomStructure) {
-      // DOM ещё не загружен — берём из title как fallback
-      try {
-        const m = document.title.match(/\((\d+)\)/)
-        if (m) { allTotal = parseInt(m[1], 10) || 0; if (allTotal > 0) source = 'title' }
-      } catch {}
-    } else {
-      // DOM загружен но badges=0 → реально 0 непрочитанных (title фантомит)
-      source = 'dom-zero'
-    }
   }
 
   // Split: personal из folder tab "Личные"
