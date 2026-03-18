@@ -2460,6 +2460,11 @@ export default function App() {
     if (split) return sum + (split.personal || 0)
     return sum + count // нет split → всё считаем личным
   }, 0)
+  // v0.74.5: Суммарный счётчик каналов (из unreadSplit)
+  const totalChannels = Object.entries(unreadSplit).reduce((sum, [id, split]) => {
+    if (split && split.channels > 0) return sum + split.channels
+    return sum
+  }, 0)
   useEffect(() => {
     const details = Object.entries(unreadCounts).filter(([,v]) => v > 0).map(([id, v]) => {
       const m = messengers.find(x => x.id === id)
@@ -2467,7 +2472,7 @@ export default function App() {
       const extra = split ? ` (💬${split.personal} 📢${split.channels})` : ''
       return `${(m?.name || id).slice(0, 8)}:${v}${extra}`
     }).join(' ')
-    console.log(`[BADGE] total=${totalUnread} personal=${totalPersonalWithFallback} [${details}]`)
+    console.log(`[BADGE] total=${totalUnread} personal=${totalPersonalWithFallback} channels=${totalChannels} [${details}]`)
 
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current)
     overlayTimerRef.current = setTimeout(() => {
@@ -2479,11 +2484,11 @@ export default function App() {
           return { name: m?.name || id, count: v, personal: split?.personal, channels: split?.channels }
         })
       const overlayMode = settingsRef.current.overlayMode || 'personal'
-      console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread} personal=${totalPersonalWithFallback} mode=${overlayMode}`)
-      window.api.invoke('tray:set-badge', { count: totalUnread, personal: totalPersonalWithFallback, breakdown, overlayMode })
+      console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread} personal=${totalPersonalWithFallback} channels=${totalChannels} mode=${overlayMode}`)
+      window.api.invoke('tray:set-badge', { count: totalUnread, personal: totalPersonalWithFallback, channels: totalChannels, breakdown, overlayMode })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
-  }, [totalUnread, totalPersonalWithFallback, settings.overlayMode])
+  }, [totalUnread, totalPersonalWithFallback, totalChannels, settings.overlayMode])
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--cc-bg)' }} onClick={() => contextMenuTab && setContextMenuTab(null)}>
