@@ -156,12 +156,12 @@ const OVERLAY_FONT = {
   '+': [0b00000,0b00100,0b00100,0b11111,0b00100,0b00100,0b00000],
 }
 
-// v0.74.7: Overlay — два числа (личные | группы), КРУПНЫЕ цифры
-// PIXEL_FONT 3×5 + auto-scale (3 для однозначных, 2 для двузначных)
-// Принимает { personal, channels } или число (legacy)
+// v0.74.8: Overlay 64×64 — КРУПНЫЕ цифры (личные | группы)
+// Буфер 64×64 (Windows масштабирует → ~32×32 на экране = вдвое крупнее)
+// OVERLAY_FONT 5×7, scale=3 (однозначные) / scale=2 (двузначные)
 function createOverlayIcon(data) {
-  const size = 32
-  const buf = Buffer.alloc(size * size * 4) // BGRA, прозрачный
+  const size = 64
+  const buf = Buffer.alloc(size * size * 4)
 
   let personal = 0, channels = 0, total = 0
   if (typeof data === 'number') {
@@ -171,97 +171,74 @@ function createOverlayIcon(data) {
     channels = data.channels || 0
     total = data.total || (personal + channels)
   }
-
-  // Ограничиваем до 99
   if (personal > 99) personal = 99
   if (channels > 99) channels = 99
   if (total > 99) total = 99
 
   const hasSplit = personal > 0 || channels > 0
+  const charW = 5, charH = 7, gap = 1
 
   if (hasSplit) {
-    // ── Режим: два числа слева|справа ──
     const pText = String(personal)
     const cText = String(channels)
-    const charW = 3, charH = 5, charGap = 1
 
-    // Auto-scale: 3 если оба ≤ 9 (однозначные), 2 если двузначные
+    // Auto-scale: 3 для однозначных, 2 для двузначных
+    // scale=3: "9|9" = 15+4+15 = 34 ≤ 64 ✓
+    // scale=2: "99|99" = 22+4+22 = 48 ≤ 64 ✓
     const scale = (personal <= 9 && channels <= 9) ? 3 : 2
-    const sepW = scale // разделитель толщиной scale px
+    const sepW = 2 * (scale > 2 ? 2 : 1) // разделитель: 4px при scale=3, 2px при scale=2
 
-    // Ширина каждого текста (PIXEL_FONT 3×5)
-    const pW = (pText.length * charW + (pText.length - 1) * charGap) * scale
-    const cW = (cText.length * charW + (cText.length - 1) * charGap) * scale
-    const totalW = pW + sepW + cW
+    const pW = (pText.length * charW + (pText.length - 1) * gap) * scale
+    const cW = (cText.length * charW + (cText.length - 1) * gap) * scale
+    const contentW = pW + sepW + cW
 
-    // Фон: тёмный прямоугольник на всю ширину
-    const padX = Math.max(1, Math.floor((size - totalW) / 2))
-    const badgeW = size // на всю ширину
-    const badgeH = charH * scale + 4 // +2px padding сверху и снизу
-    const bx0 = 0
+    // Фон: на всю ширину 64px
+    const badgeH = charH * scale + 8 // +4px padding сверху и снизу
     const by0 = Math.round((size - badgeH) / 2)
 
-    // Рисуем тёмный прямоугольный фон (скруглённые углы r=3)
-    const cornerR = 3
+    // Рисуем тёмный прямоугольный фон (скруглённые углы r=5)
+    const cornerR = 5
     for (let y = by0; y < by0 + badgeH && y < size; y++) {
       for (let x = 0; x < size; x++) {
         if (y < 0) continue
         const dx0 = x, dy0 = y - by0
+        const bw = size
+        const bh = badgeH
         const inCorner =
           (dx0 < cornerR && dy0 < cornerR && Math.sqrt((dx0 - cornerR) ** 2 + (dy0 - cornerR) ** 2) > cornerR) ||
-          (dx0 >= badgeW - cornerR && dy0 < cornerR && Math.sqrt((dx0 - badgeW + cornerR + 1) ** 2 + (dy0 - cornerR) ** 2) > cornerR) ||
-          (dx0 < cornerR && dy0 >= badgeH - cornerR && Math.sqrt((dx0 - cornerR) ** 2 + (dy0 - badgeH + cornerR + 1) ** 2) > cornerR) ||
-          (dx0 >= badgeW - cornerR && dy0 >= badgeH - cornerR && Math.sqrt((dx0 - badgeW + cornerR + 1) ** 2 + (dy0 - badgeH + cornerR + 1) ** 2) > cornerR)
+          (dx0 >= bw - cornerR && dy0 < cornerR && Math.sqrt((dx0 - bw + cornerR + 1) ** 2 + (dy0 - cornerR) ** 2) > cornerR) ||
+          (dx0 < cornerR && dy0 >= bh - cornerR && Math.sqrt((dx0 - cornerR) ** 2 + (dy0 - bh + cornerR + 1) ** 2) > cornerR) ||
+          (dx0 >= bw - cornerR && dy0 >= bh - cornerR && Math.sqrt((dx0 - bw + cornerR + 1) ** 2 + (dy0 - bh + cornerR + 1) ** 2) > cornerR)
         if (!inCorner) {
-          setPixelBGRA(buf, size, x, y, 20, 20, 20) // Чёрный фон
+          setPixelBGRA(buf, size, x, y, 20, 20, 20)
         }
       }
     }
 
-    // Обводка (1px серая) для контраста на светлом таскбаре
-    for (let y = by0 - 1; y <= by0 + badgeH; y++) {
-      for (let x = -1; x <= size; x++) {
-        if (x < 0 || y < 0 || x >= size || y >= size) continue
-        const i = (y * size + x) * 4
-        if (buf[i + 3] === 0) {
-          let hasNeighbor = false
-          for (let ny = y - 1; ny <= y + 1 && !hasNeighbor; ny++) {
-            for (let nx = x - 1; nx <= x + 1 && !hasNeighbor; nx++) {
-              if (nx >= 0 && ny >= 0 && nx < size && ny < size) {
-                const ni = (ny * size + nx) * 4
-                if (buf[ni + 3] === 255) hasNeighbor = true
-              }
-            }
-          }
-          if (hasNeighbor) setPixelBGRA(buf, size, x, y, 60, 60, 60)
-        }
+    // Обводка 1px для контраста
+    addOutline(buf, size, by0, badgeH)
+
+    const textY = by0 + 4
+    const textStartX = Math.round((size - contentW) / 2)
+
+    // Личные СЛЕВА — БЕЛЫЕ
+    drawFontScaled(buf, size, OVERLAY_FONT, charW, charH, gap, pText, textStartX, textY, 255, 255, 255, scale)
+
+    // Разделитель — серая вертикальная линия
+    const sepX = textStartX + pW + Math.floor((sepW - 2) / 2)
+    for (let sw = 0; sw < 2; sw++) {
+      for (let y = by0 + 3; y < by0 + badgeH - 3; y++) {
+        setPixelBGRA(buf, size, sepX + sw, y, 100, 100, 100)
       }
     }
 
-    const textY = by0 + 2
-    // Центрируем текст
-    const textStartX = Math.round((size - totalW) / 2)
+    // Группы СПРАВА — СЕРЫЕ (тусклые, но читаемые)
+    drawFontScaled(buf, size, OVERLAY_FONT, charW, charH, gap, cText, textStartX + pW + sepW, textY, 170, 170, 170, scale)
 
-    // Личные СЛЕВА — БЕЛЫЕ (яркие)
-    drawPixelFontText(buf, size, pText, textStartX, textY, 255, 255, 255, scale)
-
-    // Вертикальный разделитель — серая линия (толщина = scale)
-    const sepX = textStartX + pW
-    for (let sy = 0; sy < sepW; sy++) {
-      for (let y = by0 + 2; y < by0 + badgeH - 2; y++) {
-        if (sepX + sy >= 0 && sepX + sy < size) {
-          setPixelBGRA(buf, size, sepX + sy, y, 100, 100, 100)
-        }
-      }
-    }
-
-    // Группы СПРАВА — СЕРЫЕ (тусклые)
-    drawPixelFontText(buf, size, cText, textStartX + pW + sepW, textY, 160, 160, 160, scale)
-
-    console.log(`[OVERLAY] createOverlayIcon: split personal=${personal} channels=${channels} scale=${scale} totalW=${totalW}`)
+    console.log(`[OVERLAY] split: personal=${personal} channels=${channels} scale=${scale} size=${size}`)
   } else {
-    // ── Legacy: одно число ──
-    const cx = 15.5, cy = 15.5, r = 14, rOuter = 15.5
+    // Legacy: одно число — круг + крупный OVERLAY_FONT
+    const cx = size / 2 - 0.5, cy = size / 2 - 0.5, r = 28, rOuter = 31
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
@@ -270,28 +247,27 @@ function createOverlayIcon(data) {
       }
     }
     const text = total > 99 ? '99' : String(total)
-    const charW = 5, charH = 7, gap = 1
-    const scale = text.length === 1 ? 3 : 2
+    const scale = text.length === 1 ? 5 : 3
     const tw = (text.length * charW + (text.length - 1) * gap) * scale
     const x0 = Math.round((size - tw) / 2)
     const y0 = Math.round((size - charH * scale) / 2)
-    drawOverlayFontText(buf, size, text, x0, y0, 255, 255, 255, scale)
-    console.log(`[OVERLAY] createOverlayIcon: legacy total=${total} scale=${scale}`)
+    drawFontScaled(buf, size, OVERLAY_FONT, charW, charH, gap, text, x0, y0, 255, 255, 255, scale)
+    console.log(`[OVERLAY] legacy: total=${total} scale=${scale} size=${size}`)
   }
 
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 
-// Рисует текст PIXEL_FONT (3×5) с масштабом — для split overlay
-function drawPixelFontText(buf, bufSize, text, x0, y0, R, G, B, scale) {
-  const charW = 3, charH = 5, gap = 1
+// Рисует текст любым шрифтом с масштабом (универсальная функция)
+function drawFontScaled(buf, bufSize, font, charW, charH, gap, text, x0, y0, R, G, B, scale) {
+  const topBit = 1 << (charW - 1) // 0b10000 для 5-wide, 0b100 для 3-wide
   let px = x0
   for (const ch of text) {
-    const rows = PIXEL_FONT[ch]
+    const rows = font[ch]
     if (!rows) { px += (charW + gap) * scale; continue }
     for (let row = 0; row < charH; row++) {
       for (let col = 0; col < charW; col++) {
-        if (rows[row] & (0b100 >> col)) {
+        if (rows[row] & (topBit >> col)) {
           for (let dy = 0; dy < scale; dy++) {
             for (let dx = 0; dx < scale; dx++) {
               const px2 = px + col * scale + dx
@@ -308,25 +284,23 @@ function drawPixelFontText(buf, bufSize, text, x0, y0, R, G, B, scale) {
   }
 }
 
-// Рисует текст OVERLAY_FONT (5×7) с масштабом — для legacy single number
-function drawOverlayFontText(buf, bufSize, text, x0, y0, R, G, B, scale) {
-  const charW = 5, charH = 7, gap = 1
-  let px = x0
-  for (const ch of text) {
-    const rows = OVERLAY_FONT[ch]
-    if (!rows) { px += (charW + gap) * scale; continue }
-    for (let row = 0; row < charH; row++) {
-      for (let col = 0; col < charW; col++) {
-        if (rows[row] & (0b10000 >> col)) {
-          for (let dy = 0; dy < scale; dy++) {
-            for (let dx = 0; dx < scale; dx++) {
-              setPixelBGRA(buf, bufSize, px + col * scale + dx, y0 + row * scale + dy, R, G, B)
+// Обводка 1px серая вокруг непрозрачных пикселей (для контраста на светлом таскбаре)
+function addOutline(buf, size, by0, badgeH) {
+  for (let y = Math.max(0, by0 - 1); y <= Math.min(size - 1, by0 + badgeH); y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4
+      if (buf[i + 3] === 0) {
+        let hasNeighbor = false
+        for (let ny = y - 1; ny <= y + 1 && !hasNeighbor; ny++) {
+          for (let nx = x - 1; nx <= x + 1 && !hasNeighbor; nx++) {
+            if (nx >= 0 && ny >= 0 && nx < size && ny < size) {
+              if (buf[(ny * size + nx) * 4 + 3] === 255) hasNeighbor = true
             }
           }
         }
+        if (hasNeighbor) setPixelBGRA(buf, size, x, y, 60, 60, 60)
       }
     }
-    px += (charW + gap) * scale
   }
 }
 
