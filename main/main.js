@@ -174,20 +174,20 @@ const OVERLAY_FONT = {
   '+': [0b00000,0b00100,0b00100,0b11111,0b00100,0b00100,0b00000],
 }
 
-// v0.73.7: Красный кружок-фон + белые цифры (как у мессенджеров)
+// v0.73.8: Белые цифры на чёрном фоне (тёмный круг) с тёмной обводкой для читаемости
 function createOverlayIcon(count) {
   const size = 32
   const buf = Buffer.alloc(size * size * 4) // BGRA, прозрачный
 
-  // Красный круг-фон (#EF4444) с тёмной обводкой
+  // Чёрный круг-фон с лёгкой обводкой для контраста на любом фоне
   const cx = 15.5, cy = 15.5, r = 14, rOuter = 15.5
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
       if (dist <= r) {
-        setPixelBGRA(buf, size, x, y, 239, 68, 68) // Красный фон
+        setPixelBGRA(buf, size, x, y, 20, 20, 20) // Чёрный фон
       } else if (dist <= rOuter) {
-        setPixelBGRA(buf, size, x, y, 153, 27, 27) // Тёмно-красная обводка
+        setPixelBGRA(buf, size, x, y, 60, 60, 60) // Тёмно-серая обводка
       }
     }
   }
@@ -275,9 +275,6 @@ const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 function setupSession(ses) {
   ses.setUserAgent(CHROME_UA)
   // Блокируем нативные Notification из WebView — мы перехватываем их через executeJavaScript
-  // Без этого VK/WhatsApp показывают "electron.app.Electron" как заголовок
-  // v0.73.3: Также блокируем 'badging' — Telegram Web вызывает navigator.setAppBadge(33),
-  // Electron транслирует как overlay icon, перезаписывая наш кастомный overlay с суммой
   ses.setPermissionRequestHandler((_wc, permission, cb) => {
     if (permission === 'notifications') return cb(false)
     cb(true)
@@ -286,6 +283,29 @@ function setupSession(ses) {
     if (permission === 'notifications') return false
     return true
   })
+
+  // v0.73.8: Убиваем Service Worker на уровне Electron session.
+  // ПРИЧИНА: Telegram Web из SW вызывает navigator.setAppBadge(N) → Chromium C++
+  // ставит overlay icon напрямую (Mojo IPC → ITaskbarList3::SetOverlayIcon),
+  // перебивая наш кастомный overlay с суммой всех мессенджеров.
+  // JS override (navigator.serviceWorker.register) НЕ ПОМОГАЕТ — SW уже закеширован
+  // в partition storage от предыдущих сессий и активируется ДО нашего JS-кода.
+  // clearStorageData удаляет закешированные SW ДО загрузки страницы.
+  ses.clearStorageData({ storages: ['serviceworkers', 'cachestorage'] })
+    .then(() => console.log('[SW] Service Worker storage очищен для сессии'))
+    .catch(e => console.error('[SW] Ошибка очистки SW storage:', e.message))
+
+  // Мониторинг: если SW всё-таки запустится — логируем для отладки
+  if (ses.serviceWorkers) {
+    ses.serviceWorkers.on('running-status-changed', (e) => {
+      console.log(`[SW] running-status-changed: versionId=${e.versionId} runningStatus=${e.runningStatus}`)
+      // Если SW запустился — немедленно очищаем повторно
+      if (e.runningStatus === 'starting' || e.runningStatus === 'running') {
+        console.log('[SW] Обнаружен запущенный SW — повторная очистка')
+        ses.clearStorageData({ storages: ['serviceworkers'] }).catch(() => {})
+      }
+    })
+  }
 
   ses.webRequest.onHeadersReceived((details, callback) => {
     const headers = { ...details.responseHeaders }
