@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.75.5 (18 марта 2026)
+## Текущая версия: v0.75.6 (18 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.75.6 (18 марта 2026) — Badge API как авторитетный источник для сброса бейджа
+- **`__CC_BADGE_BLOCKED__:0`**: Когда Telegram вызывает `navigator.setAppBadge(0)` и пользователь смотрит на вкладку → мгновенный сброс бейджа. Telegram сам знает что непрочитанных нет.
+- **Race condition fix**: Ранее useEffect сбрасывал бейдж, но следующий цикл `unread-count` (DOM badge ещё не обновился) ставил его обратно. Теперь Badge API = финальный арбитр.
+- **Ловушка 30**: `countUnreadTelegram` DOM-подсчёт обновляется с задержкой. Telegram Badge API (`setAppBadge`) обновляется мгновенно. При viewing + badge=0 → доверять badge, не DOM.
 
 ### v0.75.5 (18 марта 2026) — Автосброс notifCountRef при переключении вкладки
 - **useEffect на activeId + windowFocused**: Через 1.5с после переключения на вкладку — автосброс `notifCountRef` и `unreadCounts`. Покрывает ВСЕ способы переключения: handleTabClick, notify:clicked, Ctrl+Tab, Ctrl+1-9, автопереключение.

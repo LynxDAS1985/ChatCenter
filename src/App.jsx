@@ -1877,6 +1877,22 @@ export default function App() {
           const body = msg.slice(prefix.length).trim()
           traceNotif('debug', 'info', messengerId, body.slice(0, 200), `${prefix.trim()} | ready=${ready}`)
         }
+        // ── __CC_BADGE_BLOCKED__: Telegram Badge API → точное число непрочитанных ──
+        // v0.75.6: Используем как авторитетный источник — Telegram сам знает сколько непрочитанных
+        if (msg.startsWith('__CC_BADGE_BLOCKED__:')) {
+          const badgeVal = parseInt(msg.split(':')[1], 10)
+          if (!isNaN(badgeVal)) {
+            // Если Telegram сказал 0 и пользователь смотрит на эту вкладку → обнулить бейдж
+            if (badgeVal === 0 && activeIdRef.current === messengerId && windowFocusedRef.current) {
+              if (notifCountRef.current[messengerId] > 0) {
+                console.log(`[BADGE] __CC_BADGE_BLOCKED__:0 + viewing → reset notifCountRef[${messengerId}]`)
+                notifCountRef.current[messengerId] = 0
+              }
+              setUnreadCounts(prev => prev[messengerId] > 0 ? { ...prev, [messengerId]: 0 } : prev)
+            }
+          }
+          return
+        }
         // ── __CC_ACCOUNT__: имя профиля из accountScript ──
         if (msg.startsWith('__CC_ACCOUNT__')) {
           const name = msg.slice(14).trim()
