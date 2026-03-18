@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.74.3 (18 марта 2026)
+## Текущая версия: v0.74.4 (18 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.74.4 (18 марта 2026) — Фикс overlay mode: переключение не обновляло overlay
+- **Фикс overlay mode**: useEffect overlay зависел от `[totalUnread, totalPersonalWithFallback]`, но НЕ от `settings.overlayMode`. Смена режима "Личные"→"Все" не обновляла overlay. Добавлен `settings.overlayMode` в deps.
+- **Откат агрессивного сброса unreadCounts**: v0.74.3 добавил `setUnreadCounts({id: 0})` в `handleTabClick` — это обнуляло бейдж Telegram при переключении вкладки, overlay мигал в 0 на 500мс. Откачено. Для WhatsApp сброс работает через `unread-count` IPC (domCount=0, isViewing=true).
 
 ### v0.74.3 (18 марта 2026) — Фикс фантомного сообщения WhatsApp + DOM-скан диагностика
 - **Фикс фантомного сообщения WhatsApp**: chatObserver использовал устаревшие селекторы (`[role="application"]`, `data-testid`) → fallback на `document.body` → ловил начальный рендер sidebar как новое сообщение. Исправлено:

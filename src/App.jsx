@@ -970,12 +970,8 @@ export default function App() {
     setActiveId(id)
     // v0.72.5: Обнуляем fallback Notification count при просмотре вкладки
     notifCountRef.current[id] = 0
-    // v0.74.3: Принудительно сбрасываем unreadCounts до 0 если notifCountRef обнулён
-    // Для WhatsApp title не содержит число — page-title-updated не сбросит счётчик
-    setUnreadCounts(prev => {
-      if ((prev[id] || 0) === 0) return prev
-      return { ...prev, [id]: 0 }
-    })
+    // v0.74.4: НЕ обнуляем unreadCounts принудительно — это ломает overlay для мессенджеров с title-числом.
+    // Для WhatsApp (title без числа) сброс произойдёт через unread-count IPC (domCount=0, isViewing=true).
     // Убираем анимацию при клике на вкладку
     setNewMessageIds(prev => { const n = new Set(prev); n.delete(id); return n })
     if (searchVisible && searchText) {
@@ -2487,7 +2483,7 @@ export default function App() {
       window.api.invoke('tray:set-badge', { count: totalUnread, personal: totalPersonalWithFallback, breakdown, overlayMode })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
-  }, [totalUnread, totalPersonalWithFallback])
+  }, [totalUnread, totalPersonalWithFallback, settings.overlayMode])
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--cc-bg)' }} onClick={() => contextMenuTab && setContextMenuTab(null)}>
