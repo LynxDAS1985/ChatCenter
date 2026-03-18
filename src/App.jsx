@@ -74,6 +74,7 @@ function MessengerTab({
 }) {
   const [hovered, setHovered] = useState(false)
   const [badgePulse, setBadgePulse] = useState(false)
+  const [showReadCheck, setShowReadCheck] = useState(false)
   const prevCountRef = useRef(0)
 
   // Анимация бейджа при росте счётчика непрочитанных
@@ -81,6 +82,12 @@ function MessengerTab({
     if (unreadCount > prevCountRef.current && prevCountRef.current >= 0) {
       setBadgePulse(true)
       const t = setTimeout(() => setBadgePulse(false), 500)
+      return () => clearTimeout(t)
+    }
+    // v0.74.1: Зелёная галочка при прочтении — count упал с >0 до 0
+    if (unreadCount === 0 && prevCountRef.current > 0) {
+      setShowReadCheck(true)
+      const t = setTimeout(() => setShowReadCheck(false), 2000)
       return () => clearTimeout(t)
     }
     prevCountRef.current = unreadCount
@@ -203,6 +210,17 @@ function MessengerTab({
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )
+        ) : showReadCheck ? (
+          // v0.74.1: Зелёная галочка — подтверждение что сообщения прочитаны (2 сек)
+          <span
+            className="w-[16px] h-[16px] rounded-full flex items-center justify-center text-[10px] leading-none shrink-0"
+            style={{
+              backgroundColor: '#22c55e22',
+              color: '#22c55e',
+              animation: 'badgePulse 0.4s ease',
+            }}
+            title="Все сообщения прочитаны"
+          >✓</span>
         ) : null}
       </span>
 
@@ -2320,14 +2338,28 @@ export default function App() {
   const theme = settings.theme || 'dark'
   const currentZoom = zoomLevels[activeId] || 100
 
-  // v0.73.3: Overlay badge — рендер в main.js через BGRA buffer (Canvas удалён)
+  // v0.74.1: Overlay badge с раздельным счётчиком личные/каналы
   const overlayTimerRef = useRef(null)
+  // Суммарный счётчик личных сообщений (из unreadSplit)
+  const totalPersonal = Object.entries(unreadSplit).reduce((sum, [id, split]) => {
+    if (split && split.personal > 0) return sum + split.personal
+    return sum
+  }, 0)
+  // Для мессенджеров без split (MAX, VK, WhatsApp) — весь unreadCount считаем личным
+  const totalPersonalWithFallback = Object.entries(unreadCounts).reduce((sum, [id, count]) => {
+    if (count <= 0) return sum
+    const split = unreadSplit[id]
+    if (split) return sum + (split.personal || 0)
+    return sum + count // нет split → всё считаем личным
+  }, 0)
   useEffect(() => {
     const details = Object.entries(unreadCounts).filter(([,v]) => v > 0).map(([id, v]) => {
       const m = messengers.find(x => x.id === id)
-      return `${(m?.name || id).slice(0, 8)}:${v}`
+      const split = unreadSplit[id]
+      const extra = split ? ` (💬${split.personal} 📢${split.channels})` : ''
+      return `${(m?.name || id).slice(0, 8)}:${v}${extra}`
     }).join(' ')
-    console.log(`[BADGE] totalUnread=${totalUnread} [${details}]`)
+    console.log(`[BADGE] total=${totalUnread} personal=${totalPersonalWithFallback} [${details}]`)
 
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current)
     overlayTimerRef.current = setTimeout(() => {
@@ -2335,13 +2367,14 @@ export default function App() {
         .filter(([, v]) => v > 0)
         .map(([id, v]) => {
           const m = messengers.find(x => x.id === id)
-          return { name: m?.name || id, count: v }
+          const split = unreadSplit[id]
+          return { name: m?.name || id, count: v, personal: split?.personal, channels: split?.channels }
         })
-      console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread}`)
-      window.api.invoke('tray:set-badge', { count: totalUnread, breakdown })
+      console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread} personal=${totalPersonalWithFallback}`)
+      window.api.invoke('tray:set-badge', { count: totalUnread, personal: totalPersonalWithFallback, breakdown })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
-  }, [totalUnread])
+  }, [totalUnread, totalPersonalWithFallback])
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--cc-bg)' }} onClick={() => contextMenuTab && setContextMenuTab(null)}>

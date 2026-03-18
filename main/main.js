@@ -1746,18 +1746,24 @@ function setupIPC() {
     return { ok: true }
   })
 
-  // v0.72.7: Overlay badge + тултип трея с разбивкой по мессенджерам
-  // Принимает { count, breakdown: [{ name, count }] } или число (обратная совместимость)
+  // v0.74.1: Overlay badge + тултип трея + раздельный счётчик личные/каналы
+  // Принимает { count, personal, breakdown: [{ name, count, personal, channels }] }
   ipcMain.handle('tray:set-badge', async (_, data) => {
     const count = typeof data === 'number' ? data : (data.count || 0)
+    const personal = (typeof data === 'object' && data.personal) || 0
     const breakdown = (typeof data === 'object' && data.breakdown) || []
-    console.log(`[OVERLAY] tray:set-badge count=${count} breakdown=${JSON.stringify(breakdown)}`)
+    console.log(`[OVERLAY] tray:set-badge count=${count} personal=${personal} breakdown=${JSON.stringify(breakdown)}`)
 
-    // Тултип трея с разбивкой по мессенджерам
+    // Тултип трея с разбивкой по мессенджерам (личные/каналы)
     if (tray && !tray.isDestroyed()) {
       if (count > 0 && breakdown.length > 0) {
-        const lines = breakdown.map(b => `${b.name}: ${b.count}`)
-        tray.setToolTip(`ЦентрЧатов\n${lines.join('\n')}\nВсего: ${count}`)
+        const lines = breakdown.map(b => {
+          if (b.personal != null && b.channels != null && (b.personal > 0 || b.channels > 0)) {
+            return `${b.name}: ${b.count} (${b.personal} личных, ${b.channels} каналов)`
+          }
+          return `${b.name}: ${b.count}`
+        })
+        tray.setToolTip(`ЦентрЧатов\n${lines.join('\n')}\nВсего: ${count} (${personal} личных)`)
       } else if (count > 0) {
         tray.setToolTip(`ЦентрЧатов — ${count} непрочитанных`)
       } else {
@@ -1765,12 +1771,16 @@ function setupIPC() {
       }
     }
 
-    // v0.73.5: Overlay badge — SW заблокирован, setOverlayIcon без null (атомарная замена)
+    // v0.74.1: Overlay badge — показываем personal (личные) если есть split, иначе total
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
-      if (count > 0) {
-        const overlayIcon = createOverlayIcon(count)
-        mainWindow.setOverlayIcon(overlayIcon, `${count} непрочитанных`)
-        console.log(`[OVERLAY] setOverlayIcon(${count}) — OK`)
+      const overlayCount = personal > 0 && personal < count ? personal : count
+      if (overlayCount > 0) {
+        const overlayIcon = createOverlayIcon(overlayCount)
+        const desc = personal > 0 && personal < count
+          ? `${personal} личных (${count} всего)`
+          : `${count} непрочитанных`
+        mainWindow.setOverlayIcon(overlayIcon, desc)
+        console.log(`[OVERLAY] setOverlayIcon(${overlayCount}) — OK (personal=${personal} total=${count})`)
       } else {
         mainWindow.setOverlayIcon(null, '')
         console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
