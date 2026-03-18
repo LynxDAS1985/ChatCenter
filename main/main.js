@@ -172,10 +172,11 @@ function createOverlayIcon(count) {
     }
   }
 
-  // Белые цифры по центру (OVERLAY_FONT 5×7)
+  // Белые цифры по центру (OVERLAY_FONT 5×7, всегда scale=3)
   const text = String(count)
-  const charW = 5, charH = 7, gap = 1
-  const scale = text.length === 1 ? 3 : 2
+  const charW = 5, charH = 7
+  const scale = 3
+  const gap = text.length === 1 ? 1 : 0 // gap=0 для двузначных (чтобы влезло: 10*3=30 ≤ 32)
   const totalW = (text.length * charW + (text.length - 1) * gap) * scale
   const x0 = Math.round((size - totalW) / 2)
   const y0 = Math.round((size - charH * scale) / 2)
