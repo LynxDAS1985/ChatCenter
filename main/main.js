@@ -156,16 +156,14 @@ const OVERLAY_FONT = {
   '+': [0b00000,0b00100,0b00100,0b11111,0b00100,0b00100,0b00000],
 }
 
-// v0.75.0: Overlay 64×64 — ОДНО крупное число, белые цифры на чёрном круге
-// Буфер 64×64 → Windows масштабирует в ~32×32 на экране
-// OVERLAY_FONT 5×7, scale=5 (1 цифра) / scale=3 (2 цифры)
+// v0.73.8→v0.75.1: Белые цифры на чёрном круге 32×32 (overlay на иконке в панели задач)
 function createOverlayIcon(count) {
-  const size = 64
+  const size = 32
   const buf = Buffer.alloc(size * size * 4)
   if (count > 99) count = 99
 
-  // Чёрный круг-фон с обводкой
-  const cx = size / 2 - 0.5, cy = size / 2 - 0.5, r = 28, rOuter = 31
+  // Чёрный круг-фон с тёмно-серой обводкой
+  const cx = 15.5, cy = 15.5, r = 14, rOuter = 15.5
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
@@ -174,12 +172,12 @@ function createOverlayIcon(count) {
     }
   }
 
-  // Белые цифры по центру
+  // Белые цифры по центру (OVERLAY_FONT 5×7)
   const text = String(count)
   const charW = 5, charH = 7, gap = 1
-  const scale = text.length === 1 ? 5 : 3
-  const tw = (text.length * charW + (text.length - 1) * gap) * scale
-  const x0 = Math.round((size - tw) / 2)
+  const scale = text.length === 1 ? 3 : 2
+  const totalW = (text.length * charW + (text.length - 1) * gap) * scale
+  const x0 = Math.round((size - totalW) / 2)
   const y0 = Math.round((size - charH * scale) / 2)
 
   let px = x0
@@ -191,11 +189,7 @@ function createOverlayIcon(count) {
         if (rows[row] & (0b10000 >> col)) {
           for (let dy = 0; dy < scale; dy++) {
             for (let dx = 0; dx < scale; dx++) {
-              const px2 = px + col * scale + dx
-              const py2 = y0 + row * scale + dy
-              if (px2 >= 0 && px2 < size && py2 >= 0 && py2 < size) {
-                setPixelBGRA(buf, size, px2, py2, 255, 255, 255)
-              }
+              setPixelBGRA(buf, size, px + col * scale + dx, y0 + row * scale + dy, 255, 255, 255)
             }
           }
         }
@@ -204,7 +198,7 @@ function createOverlayIcon(count) {
     px += (charW + gap) * scale
   }
 
-  console.log(`[OVERLAY] createOverlayIcon(${count}) scale=${scale} size=${size}`)
+  console.log(`[OVERLAY] createOverlayIcon(${count}) scale=${scale}`)
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 
