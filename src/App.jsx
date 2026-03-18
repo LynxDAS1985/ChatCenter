@@ -970,7 +970,12 @@ export default function App() {
     setActiveId(id)
     // v0.72.5: Обнуляем fallback Notification count при просмотре вкладки
     notifCountRef.current[id] = 0
-    // НЕ обнуляем unreadCounts — реальный счётчик придёт от page-title-updated / unread-count IPC
+    // v0.74.3: Принудительно сбрасываем unreadCounts до 0 если notifCountRef обнулён
+    // Для WhatsApp title не содержит число — page-title-updated не сбросит счётчик
+    setUnreadCounts(prev => {
+      if ((prev[id] || 0) === 0) return prev
+      return { ...prev, [id]: 0 }
+    })
     // Убираем анимацию при клике на вкладку
     setNewMessageIds(prev => { const n = new Set(prev); n.delete(id); return n })
     if (searchVisible && searchText) {
@@ -2237,6 +2242,99 @@ export default function App() {
           })
           .catch(err => console.error('[ChatCenter] Ошибка диагностики:', err))
       }
+    } else if (action === 'diagDOM') {
+      // v0.74.3: Скан DOM-структуры WhatsApp для поиска актуальных селекторов
+      if (wv) {
+        wv.executeJavaScript(`(() => {
+          var r = { url: location.href, title: document.title, ts: Date.now() }
+          // 1. Проверяем известные селекторы контейнеров
+          var containerSels = [
+            '[role="application"]', '#app', '#main', '#side',
+            '[data-testid="chat-list"]', '[data-testid="conversation-panel-messages"]',
+            '[data-testid="chatlist-header"]', '[data-testid="default-user"]',
+            '#main [class*="message-list"]', '[role="main"]', '[role="grid"]',
+            '[role="listbox"]', '[role="list"]', '[data-tab]',
+            '[aria-label*="chat" i]', '[aria-label*="Chat" i]',
+            '[aria-label*="message" i]', '[aria-label*="Message" i]',
+            'div[tabindex="-1"]'
+          ]
+          r.selectors = {}
+          for (var s of containerSels) {
+            try {
+              var els = document.querySelectorAll(s)
+              if (els.length > 0) {
+                r.selectors[s] = []
+                for (var i = 0; i < Math.min(els.length, 3); i++) {
+                  var el = els[i]
+                  r.selectors[s].push({
+                    tag: el.tagName,
+                    id: el.id || '',
+                    cls: (el.className || '').substring(0, 120),
+                    role: el.getAttribute('role') || '',
+                    testid: el.getAttribute('data-testid') || '',
+                    childCount: el.children ? el.children.length : 0,
+                    rect: { w: el.offsetWidth, h: el.offsetHeight }
+                  })
+                }
+              }
+            } catch(e) {}
+          }
+          // 2. DOM-дерево от body на 4 уровня — tag, id, class, role, data-testid, childCount
+          function scanTree(el, depth) {
+            if (!el || depth > 4) return null
+            var info = {
+              tag: el.tagName,
+              id: el.id || undefined,
+              cls: (el.className && typeof el.className === 'string') ? el.className.substring(0, 100) : undefined,
+              role: el.getAttribute ? (el.getAttribute('role') || undefined) : undefined,
+              testid: el.getAttribute ? (el.getAttribute('data-testid') || undefined) : undefined,
+              kids: el.children ? el.children.length : 0
+            }
+            if (depth < 4 && el.children && el.children.length <= 20) {
+              info.ch = []
+              for (var c = 0; c < el.children.length; c++) {
+                info.ch.push(scanTree(el.children[c], depth + 1))
+              }
+            }
+            return info
+          }
+          r.domTree = scanTree(document.body, 0)
+          // 3. Все элементы с data-testid
+          r.testids = []
+          try {
+            var tels = document.querySelectorAll('[data-testid]')
+            for (var i = 0; i < Math.min(tels.length, 50); i++) {
+              r.testids.push({
+                testid: tels[i].getAttribute('data-testid'),
+                tag: tels[i].tagName,
+                cls: (tels[i].className || '').substring(0, 60),
+                kids: tels[i].children ? tels[i].children.length : 0
+              })
+            }
+          } catch(e) {}
+          // 4. Все элементы с role
+          r.roles = []
+          try {
+            var rels = document.querySelectorAll('[role]')
+            for (var i = 0; i < Math.min(rels.length, 50); i++) {
+              r.roles.push({
+                role: rels[i].getAttribute('role'),
+                tag: rels[i].tagName,
+                id: rels[i].id || '',
+                cls: (rels[i].className || '').substring(0, 60),
+                kids: rels[i].children ? rels[i].children.length : 0
+              })
+            }
+          } catch(e) {}
+          return JSON.stringify(r, null, 2)
+        })()`)
+          .then(json => {
+            console.log('[ChatCenter] 🏗️ DOM-скан (' + id + '):', json)
+            navigator.clipboard.writeText(json).catch(() => {})
+            window.api.invoke('app:custom-notify', { title: 'DOM-скан', body: 'DOM-структура ' + id + ' → буфер обмена (Ctrl+V чтобы вставить)', color: '#2AABEE', emoji: '🏗️', messengerName: 'ЦентрЧатов', messengerId: id }).catch(() => {})
+          })
+          .catch(err => console.error('[ChatCenter] Ошибка DOM-скана:', err))
+      }
     } else if (action === 'diagAccount') {
       // Пошаговый тест accountScript — выполняет ТОТ ЖЕ код и показывает результат каждого шага
       if (wv) {
@@ -2589,6 +2687,7 @@ export default function App() {
               return [
                 { action: 'reload', icon: '🔄', label: 'Перезагрузить' },
                 { action: 'diag', icon: '🔍', label: 'Диагностика DOM' },
+                { action: 'diagDOM', icon: '🏗️', label: 'DOM-скан (→ буфер)' },
                 { action: 'diagFull', icon: '🧪', label: 'Полная диагностика (→ буфер)' },
                 { action: 'diagAccount', icon: '👤', label: 'Диагностика accountScript (→ буфер)' },
                 { action: 'notifLog', icon: '📊', label: 'Лог уведомлений' },

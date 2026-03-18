@@ -170,6 +170,8 @@
 
 **Ловушка 18 (v0.73.0→v0.73.6)**: Chromium Badge API (`navigator.setAppBadge`) вызывается из **Service Worker** мессенджеров. Chromium обрабатывает через C++ Mojo IPC: `BadgeManager::SetBadge()` → `Browser::SetBadgeCount()` → `ITaskbarList3::SetOverlayIcon` — **полностью минуя JS**. Никакие JS override, feature flags, `app.setBadgeCount` override, setInterval refresh **НЕ ПОМОГАЮТ**. **ПРАВИЛО**: Блокировать **Service Worker** в WebView: `navigator.serviceWorker.register = reject` + `getRegistrations().forEach(r.unregister())`. Без SW нет badge. Мессенджеры (Telegram, WhatsApp) — SPA, работают без SW. Блокировать в ДВУХ местах: monitor.preload.js (script tag injection, до скриптов мессенджера) и App.jsx executeJavaScript fallback.
 
+**Ловушка 19 (v0.74.3)**: WhatsApp Business Web — `CHAT_CONTAINER_SELECTORS` устарели: `[role="application"]` НЕТ, `data-testid` убраны. `#main` появляется ТОЛЬКО при открытом чате. Без открытого чата → fallback на `document.body` → MutationObserver ловит начальный рендер sidebar (role="grid", 68 rows) как новое сообщение. Текст содержит `status-dblcheckic-image...` — alt иконки статуса доставки. **ПРАВИЛО**: (1) `#side` + role="grid" в sidebar-фильтре, (2) grace period 5с после fallback, (3) `status-dblcheck/check/time` → пропускать в extractMsgText, (4) `handleTabClick` принудительно сбрасывает unreadCounts (WhatsApp title без числа → page-title-updated не сбросит).
+
 ---
 
 ## 🔴 КРИТИЧЕСКОЕ: Startup ribbon — уведомления при запуске для старых сообщений

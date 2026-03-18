@@ -932,6 +932,9 @@ function extractMsgText(node) {
   if (/сообщений\s+пока\s+нет|напишите\s+(сообщение|что[- ]нибудь)|отправьте\s+(этот\s+)?стикер|теперь\s+в\s+max|начните\s+общени[ея]|добро\s+пожаловать/i.test(clean)) return ''
   // v0.72.0: "ред." / "edited" — пометка редактирования (не новый текст)
   if (/^ред\.?\s*$/i.test(clean) || /^edited\.?\s*$/i.test(clean)) return ''
+  // v0.74.3: WhatsApp артефакты иконок (alt-текст) — status-dblcheck, status-check, status-time и т.д.
+  // Пример: "status-dblcheckic-imageНаш график..." — текст начинается с alt иконки статуса доставки
+  if (/^status-(dblcheck|check|time|read|delivered|seen|pending)/i.test(clean)) return ''
   return clean
 }
 
@@ -960,7 +963,10 @@ const CHAT_CONTAINER_SELECTORS = {
     '[class*="bubbles"]'
   ],
   whatsapp: [
-    '[role="application"]', '#main [class*="message-list"]',
+    // v0.74.3: Актуальные селекторы WhatsApp Business Web (март 2026)
+    // #main появляется ТОЛЬКО при открытом чате. Без открытого чата — fallback на body.
+    '#main',
+    '[role="application"]',
     'div[data-testid="conversation-panel-messages"]'
   ],
   telegram: []
@@ -1145,15 +1151,19 @@ const CHAT_OBSERVER_MAX_RETRIES = 5 // 5 попыток × 3 сек = 15 сек
 // Фильтр sidebar-мутаций (для fallback на document.body)
 // v0.59.1: реальные VK классы из DOM Inspector: ConvoList, ConvoListItem, MessagePreview
 // v0.60.0: + scrollListContent/scrollListScrollable — MAX sidebar (521 чатов, НЕ область сообщений)
-const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar|ConvoList|LeftAds|LeftMenu|ConvoListItem|MessagePreview|scrollListContent|scrollListScrollable|chatListItem/i
+const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar|ConvoList|LeftAds|LeftMenu|ConvoListItem|MessagePreview|scrollListContent|scrollListScrollable|chatListItem|_ak9p|_ak8q/i
 function isSidebarNode(node) {
   let el = node
   for (let i = 0; i < 8 && el && el !== document.body; i++) {
+    // v0.74.3: WhatsApp #side — sidebar списка чатов
+    if (el.id === 'side') return true
     const cls = el.className
     if (typeof cls === 'string' && _sidebarRe.test(cls)) return true
     if (el.getAttribute) {
       const role = el.getAttribute('role')
       if (role === 'navigation' || role === 'complementary') return true
+      // v0.74.3: WhatsApp role="grid" внутри #side — список чатов (68 rows)
+      if (role === 'grid' && el.closest && el.closest('#side')) return true
     }
     el = el.parentElement
   }
@@ -1193,9 +1203,13 @@ function startChatObserver(type) {
   // Fallback: контейнер не найден после N попыток → наблюдаем document.body с sidebar-фильтром
   chatObserverTarget = 'body-fallback'
   _chatContainerEl = null
-  try { console.log('__CC_DIAG__chatObserver: FALLBACK на document.body (контейнер не найден за ' + (chatObserverRetries * 3) + ' сек) | фильтрация sidebar включена') } catch {}
+  // v0.74.3: Grace period — игнорируем мутации 5 сек после fallback (начальный рендер)
+  let _fallbackGraceUntil = Date.now() + 5000
+  try { console.log('__CC_DIAG__chatObserver: FALLBACK на document.body (контейнер не найден за ' + (chatObserverRetries * 3) + ' сек) | фильтрация sidebar включена | grace 5с') } catch {}
   chatObserver = new MutationObserver((mutations) => {
     if (!monitorReady) return
+    // v0.74.3: Grace period — пропускаем мутации начального рендера
+    if (Date.now() < _fallbackGraceUntil) return
     // Фильтруем мутации — пропускаем sidebar/chatlist
     const filtered = []
     for (let i = 0; i < mutations.length; i++) {
