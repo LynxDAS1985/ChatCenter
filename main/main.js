@@ -322,6 +322,14 @@ function setupSession(ses) {
   })
 }
 
+// v0.73.9: Перехват app.setBadgeCount — Chromium вызывает его при получении
+// Badge API от WebView, что транслируется в setOverlayIcon, перебивая наш overlay.
+const _origSetBadgeCount = app.setBadgeCount.bind(app)
+app.setBadgeCount = function(count) {
+  console.log(`[BADGE] app.setBadgeCount(${count}) — ЗАБЛОКИРОВАНО`)
+  return false
+}
+
 // ─── Главное окно ─────────────────────────────────────────────────────────────
 
 let mainWindow = null

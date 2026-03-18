@@ -1597,11 +1597,17 @@ export default function App() {
                       return Promise.resolve();
                     };
                   } catch(e) {}
-                  // v0.73.5: Блокируем Service Worker — из SW мессенджеры вызывают
-                  // navigator.setAppBadge(N), Chromium через C++ ставит overlay icon
-                  // на Windows taskbar, перезаписывая наш кастомный overlay с суммой.
-                  // JS override не помогает (SW изолирован). Единственный способ — убить SW.
-                  // Telegram/WhatsApp SPA работают без SW.
+                  // v0.73.9: Блокируем Badge API из page context
+                  if (navigator.setAppBadge) {
+                    navigator.setAppBadge = function(n) {
+                      console.log('__CC_BADGE_BLOCKED__:' + n);
+                      return Promise.resolve();
+                    };
+                  }
+                  if (navigator.clearAppBadge) {
+                    navigator.clearAppBadge = function() { return Promise.resolve(); };
+                  }
+                  // Блокируем Service Worker
                   if (navigator.serviceWorker) {
                     // Блокируем будущие регистрации SW
                     var _origSWReg = navigator.serviceWorker.register;

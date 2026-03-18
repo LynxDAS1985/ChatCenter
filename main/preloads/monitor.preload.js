@@ -186,9 +186,19 @@ const { ipcRenderer } = require('electron')
           return Promise.resolve()
         }
       } catch(e) {}
-      // v0.73.5: Блокируем Service Worker — из SW мессенджеры вызывают
-      // navigator.setAppBadge(N), Chromium через C++ ставит overlay напрямую.
-      // JS override бесполезен (SW изолирован). Убиваем SW полностью.
+      // v0.73.9: Блокируем Badge API из page context.
+      // Telegram Web вызывает navigator.setAppBadge(N) напрямую из page —
+      // Chromium транслирует в ITaskbarList3::SetOverlayIcon, перебивая наш overlay.
+      if (navigator.setAppBadge) {
+        navigator.setAppBadge = function(n) {
+          console.log('__CC_BADGE_BLOCKED__:' + n)
+          return Promise.resolve()
+        }
+      }
+      if (navigator.clearAppBadge) {
+        navigator.clearAppBadge = function() { return Promise.resolve() }
+      }
+      // Блокируем Service Worker — страховка от SW-вызовов setAppBadge
       if (navigator.serviceWorker) {
         var _origReg = navigator.serviceWorker.register
         navigator.serviceWorker.register = function() {

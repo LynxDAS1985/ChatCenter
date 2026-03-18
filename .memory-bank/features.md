@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.73.8 (18 марта 2026)
+## Текущая версия: v0.73.9 (18 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.73.9 (18 марта 2026) — Overlay: блокировка navigator.setAppBadge в page context
+- **Корень проблемы v0.73.8**: `clearStorageData` убил SW, но Telegram Web вызывает `navigator.setAppBadge(32)` напрямую из **page context** (не только из SW). Chromium транслирует этот вызов в `ITaskbarList3::SetOverlayIcon`, перебивая наш overlay.
+- **Решение**: Override `navigator.setAppBadge` и `navigator.clearAppBadge` в обеих инъекциях (monitor.preload.js + App.jsx executeJavaScript). Вызовы перехватываются и логируются как `__CC_BADGE_BLOCKED__`.
+- **Дополнительно**: `app.setBadgeCount` в main.js заблокирован — Chromium может вызывать его при получении Badge API.
 
 ### v0.73.8 (18 марта 2026) — Overlay: очистка SW на уровне Electron session + чёрный фон
 - **Корень проблемы v0.73.6-7**: JS-блокировка SW (`navigator.serviceWorker.register` override + `getRegistrations().unregister()`) не помогала — SW закеширован в partition storage от предыдущих сессий. Chromium активирует закешированный SW ДО выполнения нашего JS-кода → `setAppBadge()` успевает перебить наш overlay.
