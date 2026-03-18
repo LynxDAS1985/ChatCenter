@@ -175,10 +175,14 @@ function createOverlayIcon(data) {
   if (channels > 99) channels = 99
   if (total > 99) total = 99
 
-  const hasSplit = personal > 0 || channels > 0
   const charW = 5, charH = 7, gap = 1
 
-  if (hasSplit) {
+  // Определяем режим отображения:
+  // - Есть данные split (personal или channels > 0): два числа
+  // - Только total (legacy, нет split): одно число крупно
+  const showSplit = personal > 0 || channels > 0
+
+  if (showSplit) {
     const pText = String(personal)
     const cText = String(channels)
 
@@ -237,7 +241,14 @@ function createOverlayIcon(data) {
 
     console.log(`[OVERLAY] split: personal=${personal} channels=${channels} scale=${scale} size=${size}`)
   } else {
-    // Legacy: одно число — круг + крупный OVERLAY_FONT
+    // Одно число — круг + крупный OVERLAY_FONT
+    // Определяем число и цвет: личные (белые), каналы (серые), total (белые)
+    const singleVal = personal > 0 ? personal : (channels > 0 ? channels : total)
+    const isChannelsOnly = personal === 0 && channels > 0
+    const R = isChannelsOnly ? 170 : 255
+    const G = isChannelsOnly ? 170 : 255
+    const B = isChannelsOnly ? 170 : 255
+
     const cx = size / 2 - 0.5, cy = size / 2 - 0.5, r = 28, rOuter = 31
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
@@ -246,13 +257,13 @@ function createOverlayIcon(data) {
         else if (dist <= rOuter) setPixelBGRA(buf, size, x, y, 60, 60, 60)
       }
     }
-    const text = total > 99 ? '99' : String(total)
+    const text = singleVal > 99 ? '99' : String(singleVal)
     const scale = text.length === 1 ? 5 : 3
     const tw = (text.length * charW + (text.length - 1) * gap) * scale
     const x0 = Math.round((size - tw) / 2)
     const y0 = Math.round((size - charH * scale) / 2)
-    drawFontScaled(buf, size, OVERLAY_FONT, charW, charH, gap, text, x0, y0, 255, 255, 255, scale)
-    console.log(`[OVERLAY] legacy: total=${total} scale=${scale} size=${size}`)
+    drawFontScaled(buf, size, OVERLAY_FONT, charW, charH, gap, text, x0, y0, R, G, B, scale)
+    console.log(`[OVERLAY] single: val=${singleVal} channelsOnly=${isChannelsOnly} scale=${scale} size=${size}`)
   }
 
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
