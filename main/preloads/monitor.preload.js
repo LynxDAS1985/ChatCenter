@@ -629,11 +629,15 @@ function countUnreadTelegram() {
   }
 
   // Split: personal из folder tab "Личные"
+  // v0.74.2: Отслеживаем НАШЛИ ли вкладку "Личные". Если нашли но бейджа нет —
+  // personal=0 КОРРЕКТНО (нет личных). Fallback personal=allTotal только если вкладка НЕ найдена.
+  let personalTabFound = false
   try {
     const tryTabs = (sel) => {
       for (const tab of document.querySelectorAll(sel)) {
         const label = (tab.textContent || '').replace(/\d+/g, '').trim()
         if (/личн/i.test(label) || /personal/i.test(label)) {
+          personalTabFound = true
           const badge = tab.querySelector('.badge, [class*="badge"]')
           if (badge) {
             const n = parseInt(badge.textContent?.trim(), 10)
@@ -647,7 +651,8 @@ function countUnreadTelegram() {
     tryTabs('.tabs-tab') || tryTabs('.menu-horizontal-div-item') || tryTabs('.sidebar-tools-button')
   } catch {}
 
-  if (personal === 0) personal = allTotal
+  // Fallback: если вкладка "Личные" НЕ найдена — считаем всё личным (старый Telegram / нет папок)
+  if (personal === 0 && !personalTabFound) personal = allTotal
   const channels = Math.max(0, allTotal - personal)
 
   // Сохраняем source для диагностики

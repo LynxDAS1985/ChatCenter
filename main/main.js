@@ -1752,7 +1752,8 @@ function setupIPC() {
     const count = typeof data === 'number' ? data : (data.count || 0)
     const personal = (typeof data === 'object' && data.personal) || 0
     const breakdown = (typeof data === 'object' && data.breakdown) || []
-    console.log(`[OVERLAY] tray:set-badge count=${count} personal=${personal} breakdown=${JSON.stringify(breakdown)}`)
+    const overlayMode = (typeof data === 'object' && data.overlayMode) || 'personal'
+    console.log(`[OVERLAY] tray:set-badge count=${count} personal=${personal} mode=${overlayMode}`)
 
     // Тултип трея с разбивкой по мессенджерам (личные/каналы)
     if (tray && !tray.isDestroyed()) {
@@ -1771,19 +1772,24 @@ function setupIPC() {
       }
     }
 
-    // v0.74.1: Overlay badge — показываем personal (личные) если есть split, иначе total
+    // v0.74.2: Overlay badge — режим из настроек: personal / all / off
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'win32') {
-      const overlayCount = personal > 0 && personal < count ? personal : count
-      if (overlayCount > 0) {
-        const overlayIcon = createOverlayIcon(overlayCount)
-        const desc = personal > 0 && personal < count
-          ? `${personal} личных (${count} всего)`
-          : `${count} непрочитанных`
-        mainWindow.setOverlayIcon(overlayIcon, desc)
-        console.log(`[OVERLAY] setOverlayIcon(${overlayCount}) — OK (personal=${personal} total=${count})`)
-      } else {
+      if (overlayMode === 'off') {
         mainWindow.setOverlayIcon(null, '')
-        console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
+        console.log(`[OVERLAY] overlay отключён (mode=off)`)
+      } else {
+        const overlayCount = overlayMode === 'personal' && personal < count ? personal : count
+        if (overlayCount > 0) {
+          const overlayIcon = createOverlayIcon(overlayCount)
+          const desc = overlayMode === 'personal' && personal < count
+            ? `${personal} личных (${count} всего)`
+            : `${count} непрочитанных`
+          mainWindow.setOverlayIcon(overlayIcon, desc)
+          console.log(`[OVERLAY] setOverlayIcon(${overlayCount}) — OK (mode=${overlayMode} personal=${personal} total=${count})`)
+        } else {
+          mainWindow.setOverlayIcon(null, '')
+          console.log(`[OVERLAY] setOverlayIcon(null) — очищен`)
+        }
       }
     }
     return { ok: true }

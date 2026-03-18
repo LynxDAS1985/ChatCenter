@@ -365,6 +365,23 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="Сворачивать в трей" description="Закрытие скрывает в трей">
                 <Toggle value={settings.minimizeToTray !== false} onChange={v => set('minimizeToTray', v)} />
               </SettingRow>
+              <SettingRow label="Бейдж на иконке (overlay)" description="Что показывать на иконке в панели задач Windows">
+                <select
+                  value={settings.overlayMode || 'personal'}
+                  onChange={e => set('overlayMode', e.target.value)}
+                  className="px-2 py-1 rounded-lg text-sm cursor-pointer"
+                  style={{
+                    backgroundColor: 'var(--cc-bg)',
+                    color: 'var(--cc-text-dim)',
+                    border: '1px solid var(--cc-border)',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="personal">Только личные</option>
+                  <option value="all">Все сообщения</option>
+                  <option value="off">Отключить</option>
+                </select>
+              </SettingRow>
               <SettingRow label="Панель задач без задач" description="Показывать dock-панель даже когда нет закреплённых">
                 <Toggle value={!!settings.showDockEmpty} onChange={v => set('showDockEmpty', v)} />
               </SettingRow>

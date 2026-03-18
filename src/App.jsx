@@ -75,19 +75,28 @@ function MessengerTab({
   const [hovered, setHovered] = useState(false)
   const [badgePulse, setBadgePulse] = useState(false)
   const [showReadCheck, setShowReadCheck] = useState(false)
+  const [flipAnim, setFlipAnim] = useState(false) // v0.74.2: flip при изменении числа
   const prevCountRef = useRef(0)
 
-  // Анимация бейджа при росте счётчика непрочитанных
+  // Анимация бейджа при изменении счётчика непрочитанных
   useEffect(() => {
     if (unreadCount > prevCountRef.current && prevCountRef.current >= 0) {
       setBadgePulse(true)
-      const t = setTimeout(() => setBadgePulse(false), 500)
-      return () => clearTimeout(t)
+      setFlipAnim(true)
+      const t1 = setTimeout(() => setBadgePulse(false), 500)
+      const t2 = setTimeout(() => setFlipAnim(false), 300)
+      return () => { clearTimeout(t1); clearTimeout(t2) }
     }
     // v0.74.1: Зелёная галочка при прочтении — count упал с >0 до 0
     if (unreadCount === 0 && prevCountRef.current > 0) {
       setShowReadCheck(true)
       const t = setTimeout(() => setShowReadCheck(false), 2000)
+      return () => clearTimeout(t)
+    }
+    // v0.74.2: Flip при уменьшении числа (но не до 0)
+    if (unreadCount > 0 && unreadCount < prevCountRef.current) {
+      setFlipAnim(true)
+      const t = setTimeout(() => setFlipAnim(false), 300)
       return () => clearTimeout(t)
     }
     prevCountRef.current = unreadCount
@@ -193,21 +202,26 @@ function MessengerTab({
             <span className="flex flex-col gap-0.5 items-end shrink-0" title={badgeTooltip}>
               <span
                 className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
-                style={{ backgroundColor: m.color, animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
-              >💬{unreadSplit.personal > 99 ? '99+' : unreadSplit.personal}</span>
+                style={{ backgroundColor: m.color, overflow: 'hidden', animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
+              ><span style={{ animation: flipAnim ? 'flipIn 0.3s ease' : 'none', display: 'inline-block' }}>💬{unreadSplit.personal > 99 ? '99+' : unreadSplit.personal}</span></span>
               <span
                 className="min-w-[15px] h-[14px] px-1 rounded-full text-white text-[9px] font-bold flex items-center justify-center leading-none"
-                style={{ backgroundColor: '#6b7280', animation: badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
-              >📢{unreadSplit.channels > 99 ? '99+' : unreadSplit.channels}</span>
+                style={{ backgroundColor: '#6b7280', overflow: 'hidden', animation: badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
+              ><span style={{ animation: flipAnim ? 'flipIn 0.3s ease' : 'none', display: 'inline-block' }}>📢{unreadSplit.channels > 99 ? '99+' : unreadSplit.channels}</span></span>
             </span>
           ) : (
-            // Один общий бейдж
+            // Один общий бейдж с flip-анимацией
             <span
               className="min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none shrink-0"
-              style={{ animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none' }}
+              style={{
+                animation: isNew ? 'bounce 0.6s ease 3' : badgePulse ? 'badgePulse 0.4s ease' : 'none',
+                overflow: 'hidden',
+              }}
               title={badgeTooltip}
             >
-              {unreadCount > 99 ? '99+' : unreadCount}
+              <span style={{ animation: flipAnim ? 'flipIn 0.3s ease' : 'none', display: 'inline-block' }}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
             </span>
           )
         ) : showReadCheck ? (
@@ -2370,8 +2384,9 @@ export default function App() {
           const split = unreadSplit[id]
           return { name: m?.name || id, count: v, personal: split?.personal, channels: split?.channels }
         })
-      console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread} personal=${totalPersonalWithFallback}`)
-      window.api.invoke('tray:set-badge', { count: totalUnread, personal: totalPersonalWithFallback, breakdown })
+      const overlayMode = settingsRef.current.overlayMode || 'personal'
+      console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread} personal=${totalPersonalWithFallback} mode=${overlayMode}`)
+      window.api.invoke('tray:set-badge', { count: totalUnread, personal: totalPersonalWithFallback, breakdown, overlayMode })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
   }, [totalUnread, totalPersonalWithFallback])
