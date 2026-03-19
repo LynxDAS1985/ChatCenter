@@ -695,6 +695,20 @@ function runDiagnostics(type) {
       diag.menuHorizCount = document.querySelectorAll('.menu-horizontal-div-item').length
       diag.sidebarBtnCount = document.querySelectorAll('.sidebar-tools-button').length
       diag.countSource = countUnreadTelegram._lastSource || 'unknown'
+      // v0.76.1: Диагностика data-peer-type на чатах с бейджами
+      diag.chatPeerTypes = []
+      let ptIdx = 0
+      document.querySelectorAll('.chatlist-chat').forEach((chat) => {
+        if (ptIdx >= 15) return
+        const badge = chat.querySelector('.badge, [class*="badge"]')
+        const badgeText = badge ? badge.textContent?.trim() : null
+        const peerType = chat.dataset?.peerType || chat.getAttribute('data-peer-type') || 'none'
+        const name = (chat.querySelector('.peer-title')?.textContent || '').slice(0, 20)
+        if (badgeText || ptIdx < 5) {
+          diag.chatPeerTypes.push({ name, peerType, badge: badgeText })
+        }
+        ptIdx++
+      })
       diag.allBadges = []
       diag.folderBadges = []
       let badgeIdx = 0
