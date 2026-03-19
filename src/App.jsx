@@ -3128,18 +3128,37 @@ export default function App() {
                             var generic = document.querySelectorAll('[class*="chat" i], [class*="dialog" i]');
                             r.chatlist.push({ generic: generic.length, firstTag: generic[0] ? generic[0].tagName : '', firstCls: generic[0] ? (generic[0].className||'').slice(0,120) : '' });
                           }
-                          // v0.76.1: chatPeerTypes — data-peer-type для чатов с бейджами
+                          // v0.76.1: chatPeerTypes — детальная диагностика типов чатов
                           r.chatPeerTypes = [];
                           var ptIdx2 = 0;
                           chats.forEach(function(chat) {
-                            if (ptIdx2 >= 15) return;
-                            var b = chat.querySelector('.badge, [class*="badge"]');
-                            var bt = b ? (b.textContent||'').trim() : null;
-                            var pt = chat.dataset ? (chat.dataset.peerType || 'none') : (chat.getAttribute('data-peer-type') || 'none');
+                            if (ptIdx2 >= 10) return;
+                            // Ищем бейдж-число (маленький элемент с числом)
+                            var badges = chat.querySelectorAll('.badge, .unread-count, [class*="badge"]');
+                            var badgeNum = null;
+                            for (var bi = 0; bi < badges.length; bi++) {
+                              var bTxt = (badges[bi].textContent||'').trim();
+                              if (/^\d+$/.test(bTxt)) { badgeNum = bTxt; break; }
+                            }
+                            // peer-type: dataset, attribute, или вложенный элемент
+                            var pt = chat.dataset ? (chat.dataset.peerType || '') : '';
+                            if (!pt) pt = chat.getAttribute('data-peer-type') || '';
+                            // Ищем data-peer-type на вложенных элементах
+                            if (!pt) { var pEl = chat.querySelector('[data-peer-type]'); if (pEl) pt = pEl.getAttribute('data-peer-type'); }
+                            // Иконки каналов/групп
+                            var hasChannelIcon = !!chat.querySelector('.icon-channel, .icon-broadcast, [class*="channel-icon"], .verified-icon');
+                            var hasGroupIcon = !!chat.querySelector('.icon-group, [class*="group-icon"]');
+                            var hasMuteIcon = !!chat.querySelector('.icon-muted, [class*="mute"]');
+                            // Все атрибуты чата
+                            var attrs = {};
+                            for (var ai = 0; ai < chat.attributes.length; ai++) {
+                              var at = chat.attributes[ai];
+                              if (at.name !== 'class' && at.name !== 'style') attrs[at.name] = (at.value||'').slice(0,60);
+                            }
                             var nm = '';
                             var pTitle = chat.querySelector('.peer-title');
                             if (pTitle) nm = (pTitle.textContent||'').slice(0,25);
-                            if (bt || ptIdx2 < 5) r.chatPeerTypes.push({ name: nm, peerType: pt, badge: bt });
+                            r.chatPeerTypes.push({ name: nm, peerType: pt || 'none', badge: badgeNum, channelIcon: hasChannelIcon, groupIcon: hasGroupIcon, muteIcon: hasMuteIcon, attrs: attrs });
                             ptIdx2++;
                           });
                           // v0.59.1: chatContainer — ищем контейнер чата (для chatObserver)
