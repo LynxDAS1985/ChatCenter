@@ -576,6 +576,22 @@ function countUnreadMAX() {
   return { personal: allTotal, channels: 0, total: allTotal, allTotal }
 }
 
+// v0.76.4: Извлекает число непрочитанных из chatlist-chat элемента
+// В TG Web K число бейджа = последний текстовый leaf с числом внутри чата
+function _extractUnreadFromChat(chat) {
+  try {
+    // Метод 1: textContent чата заканчивается на число (после имени/превью)
+    const fullText = (chat.textContent || '').trim()
+    const match = fullText.match(/(\d+)\s*$/)
+    if (match) {
+      const n = parseInt(match[1], 10)
+      // Исключаем даты (2025, 2026) и время (1145, 1200)
+      if (n > 0 && n < 10000 && !/\d{2}[.:]\d{2}/.test(fullText.slice(-10))) return n
+    }
+  } catch {}
+  return 0
+}
+
 // ── Telegram: адаптивный поиск — title → folder tabs → badges вне chatlist ──
 function countUnreadTelegram() {
   let allTotal = 0
@@ -675,71 +691,30 @@ function countUnreadTelegram() {
     }
   } catch {}
 
-  // Метод 2: Если папки "Личные" нет — подсчёт по chatlist + data-peer-id
-  // Положительный peer-id = user/bot (личное), отрицательный = group/channel (сообщество)
+  // v0.76.4: Метод 2 — подсчёт по chatlist + data-peer-id
+  // Парсим число непрочитанных из КОНЦА textContent каждого чата
+  // (в TG Web K число всегда в конце: "Текст сообщения...24")
   if (!personalTabFound) {
     try {
-      let chatlistPersonal = 0
       const chats = document.querySelectorAll('.chatlist-chat')
       if (chats.length > 0) {
+        let chatlistPersonal = 0
         chats.forEach(chat => {
+          const unread = _extractUnreadFromChat(chat)
+          if (unread <= 0) return
           const peerId = chat.dataset?.peerId || chat.getAttribute('data-peer-id')
-          if (!peerId || peerId.startsWith('-')) return // группа/канал — пропускаем
-          // Это личный чат — ищем бейдж непрочитанных
-          // Пробуем разные селекторы для числа
-          const badgeEl = chat.querySelector('.badge')
-          if (badgeEl) {
-            const n = parseInt(badgeEl.textContent?.trim(), 10)
-            if (!isNaN(n) && n > 0) { chatlistPersonal += n; return }
-          }
-          // Fallback: ищем элемент с классом содержащим "unread" или "count"
-          const unreadEl = chat.querySelector('[class*="unread-count"], [class*="badge-"] span')
-          if (unreadEl) {
-            const n = parseInt(unreadEl.textContent?.trim(), 10)
-            if (!isNaN(n) && n > 0) chatlistPersonal += n
+          if (peerId && !peerId.startsWith('-')) {
+            chatlistPersonal += unread // положительный peer-id = personal
           }
         })
         personal = chatlistPersonal
-        // chatlist найден — НЕ делаем fallback personal=allTotal
-        personalTabFound = true // предотвращает fallback
+        personalTabFound = true
       }
     } catch {}
   }
 
   // Fallback: если НИ папки НИ chatlist нет — считаем всё личным (ранняя загрузка)
   if (personal === 0 && !personalTabFound) personal = allTotal
-
-  // v0.76.3: Антифантом — если chatlist загружен и allTotal > 0,
-  // проверяем есть ли РЕАЛЬНО видимые бейджи-числа в chatlist.
-  // Folder badge/title могут содержать фантомы (архив, скрытые боты).
-  if (allTotal > 0) {
-    try {
-      const chats = document.querySelectorAll('.chatlist-chat')
-      if (chats.length >= 5) { // chatlist загружен (минимум 5 чатов = не пустой DOM)
-        let hasVisibleBadge = false
-        chats.forEach(chat => {
-          if (hasVisibleBadge) return
-          // Ищем элемент .badge внутри чата, у которого текст = число
-          chat.querySelectorAll('.badge').forEach(b => {
-            const t = (b.textContent || '').trim()
-            if (/^\d+$/.test(t)) hasVisibleBadge = true
-          })
-          // Также: .badge-unread, .unread-count
-          if (!hasVisibleBadge) {
-            chat.querySelectorAll('.badge-unread, [class*="unread-count"]').forEach(b => {
-              if (b.offsetParent !== null) hasVisibleBadge = true
-            })
-          }
-        })
-        if (!hasVisibleBadge) {
-          // Chatlist есть но бейджей нет → allTotal фантомный (из folder/title/badge API)
-          allTotal = 0
-          personal = 0
-          source += '+antiphantom'
-        }
-      }
-    } catch {}
-  }
 
   const channels = Math.max(0, allTotal - personal)
 
