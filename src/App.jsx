@@ -2007,7 +2007,7 @@ export default function App() {
               }
               if (name) {
                 var av = document.querySelector('.chat-info img.avatar-photo, .topbar img.avatar-photo, .chat-info [class*="avatar" i] img, header img[class*="avatar" i], header [class*="avatar" i] img');
-                if (av && av.src && av.src.startsWith('http')) avatar = av.src;
+                if (av && av.src && (av.src.startsWith('http') || av.src.startsWith('blob:'))) avatar = av.src;
               }
               // 2. Активный/выделенный чат в sidebar (не зависит от обновления preview)
               if (!name) {
@@ -2020,7 +2020,7 @@ export default function App() {
                   if (nm0 && nm0.length >= 2 && nm0.length <= 80) {
                     name = nm0;
                     var avAct = act.querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo');
-                    if (avAct && avAct.tagName === 'IMG' && avAct.src && avAct.src.startsWith('http')) avatar = avAct.src;
+                    if (avAct && avAct.tagName === 'IMG' && avAct.src && (avAct.src.startsWith('http') || avAct.src.startsWith('blob:'))) avatar = avAct.src;
                     break;
                   }
                 }
@@ -2036,7 +2036,7 @@ export default function App() {
                   if (!nm) continue;
                   name = nm;
                   var avEl = chats[i].querySelector('img.avatar-photo, [class*="avatar"] img');
-                  if (avEl && avEl.src && avEl.src.startsWith('http')) avatar = avEl.src;
+                  if (avEl && avEl.src && (avEl.src.startsWith('http') || avEl.src.startsWith('blob:'))) avatar = avEl.src;
                   break;
                 }
               }
@@ -2068,7 +2068,7 @@ export default function App() {
                   }
                   if (info.a) {
                     if (info.a.startsWith('data:')) extra.iconDataUrl = info.a
-                    else if (info.a.startsWith('http')) extra.iconUrl = info.a
+                    else if (info.a.startsWith('http') || info.a.startsWith('blob:')) extra.iconUrl = info.a
                   }
                 } catch {}
               }

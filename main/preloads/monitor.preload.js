@@ -86,7 +86,7 @@ const { ipcRenderer } = require('electron')
       function _findAvatarInEl(el) {
         try {
           var avEl = el.querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo, img[class*="photo" i]')
-          if (avEl && avEl.tagName === 'IMG' && avEl.src && avEl.naturalWidth > 10) return avEl.src
+          if (avEl && avEl.tagName === 'IMG' && avEl.src && (avEl.src.startsWith('http') || avEl.src.startsWith('blob:')) && avEl.naturalWidth > 10) return avEl.src
           if (avEl && avEl.tagName === 'CANVAS' && avEl.width > 10) {
             try { return avEl.toDataURL('image/png') } catch(e) {}
           }
