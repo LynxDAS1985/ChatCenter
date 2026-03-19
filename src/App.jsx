@@ -1919,6 +1919,9 @@ export default function App() {
             // v0.60.0: VK UI — контекстное меню, placeholder "Сообщение", системные кнопки
             || /^(переслать|отметить|скопировать|удалить|выбрать|ответить|пожаловаться|закрепить|редактировать|сообщение)$/i.test(text)
             || (/(переслать|отметить как новое|скопировать текст|удалить|выбрать)/i.test(text) && text.length < 100)
+            // v0.75.8: WhatsApp UI-артефакты — alt-тексты иконок (только латиница через дефис, без пробелов)
+            // Примеры: "default-contact-refreshed", "status-dblcheckic-image...", "status-time", "default-user"
+            || /^[a-z]+-[a-z-]+(ic-image)?.*$/i.test(text.split(/\s/)[0]) && !/\s/.test(text.trim()) && text.length < 60
           if (isMsgSpam) {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_MSG__')
             return
