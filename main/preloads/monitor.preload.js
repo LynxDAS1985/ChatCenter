@@ -979,15 +979,13 @@ const CHAT_CONTAINER_SELECTORS = {
     '[class*="bubbles"]'
   ],
   whatsapp: [
-    // v0.75.9: WhatsApp Web / Business (март 2026)
+    // v0.76.0: WhatsApp Web / Business (март 2026)
     // #main появляется ТОЛЬКО при открытом чате
     '#main',
-    // Контейнер пузырей внутри #main
     'div[data-testid="conversation-panel-messages"]',
     '[role="application"]',
-    // v0.75.9: Если чат не открыт — НЕ наблюдаем body!
-    // Используем #app как минимальный контейнер (всё приложение, но не body)
-    '#app',
+    // НЕ используем #app — слишком широкий, sidebar-фильтр не применяется для "container" режима
+    // Если #main не найден → body-fallback + sidebar-фильтр (role=grid/row/gridcell, #side, _ak8o/_ak8i)
   ],
   telegram: []
 }

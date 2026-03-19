@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.75.9 (19 марта 2026)
+## Текущая версия: v0.76.0 (19 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.76.0 (19 марта 2026) — Фикс WhatsApp: убран #app, добавлен фильтр дат
+- **Убран `#app`**: Слишком широкий контейнер — sidebar-фильтр НЕ применяется в "container" режиме. Теперь если `#main` не найден → body-fallback + sidebar-фильтр (role=grid/row/gridcell, #side).
+- **Спам-фильтр дат**: `29.12.2025`, `DD.MM.YYYY`, `DD/MM/YYYY`, "вчера", "сегодня", дни недели — блокируются.
+- **Ловушка 33**: `#app` как container → sidebar-фильтр (`isSidebarNode`) НЕ применяется (только для body-fallback). body-fallback + расширенный sidebar-фильтр надёжнее.
 
 ### v0.75.9 (19 марта 2026) — Обновлённый chatObserver для WhatsApp
 - **Селекторы**: `#main` → `conversation-panel-messages` → `[role="application"]` → `#app` (fallback). Больше НЕ падает на body при отсутствии открытого чата — используется `#app`.

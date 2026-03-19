@@ -1912,6 +1912,9 @@ export default function App() {
           if (!text) return
           // v0.60.0: Спам-фильтр — базовые паттерны + VK UI элементы (контекстное меню, placeholder)
           const isMsgSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
+            // v0.76.0: Дата-разделители WhatsApp (DD.MM.YYYY, DD/MM/YYYY, "вчера", "сегодня", дни недели)
+            || /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(text)
+            || /^(вчера|сегодня|yesterday|today|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(text)
             || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating)/i.test(text)
             || /^(вы:\s|you:\s)/i.test(text)
             || /\s+(в\s+сети|online|offline)\s*$/i.test(text)
