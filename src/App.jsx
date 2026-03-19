@@ -2195,22 +2195,36 @@ export default function App() {
             const extra = {}
             if (data.t) extra.senderName = data.t
             if (data.g) extra.chatTag = data.g
+            // v0.77.2: blob icon → конвертируем ПЕРЕД handleNewMessage
+            if (data.i && data.i.startsWith('blob:')) {
+              const wv = webviewRefs.current[messengerId]
+              if (wv) {
+                wv.executeJavaScript(`(function(){try{var img=new Image();img.crossOrigin='anonymous';return new Promise(function(ok){img.onload=function(){var c=document.createElement('canvas');c.width=Math.min(img.width,80);c.height=Math.min(img.height,80);c.getContext('2d').drawImage(img,0,0,c.width,c.height);ok(c.toDataURL('image/jpeg',0.7))};img.onerror=function(){ok('')};img.src=${JSON.stringify(data.i)}})}catch(e){return Promise.resolve('')}})()`)
+                  .then(dataUrl => {
+                    if (dataUrl) extra.iconDataUrl = dataUrl
+                    else {
+                      // Кэш fallback
+                      const cached = senderCacheRef.current[messengerId]
+                      if (cached?.avatar) {
+                        if (cached.avatar.startsWith('data:')) extra.iconDataUrl = cached.avatar
+                        else extra.iconUrl = cached.avatar
+                      }
+                    }
+                    if (extra.senderName) senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconDataUrl || '', ts: Date.now() }
+                    extra.fromNotifAPI = true
+                    senderNotifTsRef.current[extra.senderName] = Date.now()
+                    notifMidTsRef.current[messengerId] = Date.now()
+                    handleNewMessage(messengerId, text, extra)
+                  }).catch(() => {
+                    extra.fromNotifAPI = true
+                    handleNewMessage(messengerId, text, extra)
+                  })
+                return // НЕ вызываем handleNewMessage синхронно — ждём конвертации
+              }
+            }
             if (data.i) {
               if (data.i.startsWith('data:')) {
                 extra.iconDataUrl = data.i
-              } else if (data.i.startsWith('blob:')) {
-                // v0.77.1: blob URL → конвертируем в data:URL через WebView canvas
-                try {
-                  const wv = webviewRefs.current[messengerId]
-                  if (wv) {
-                    wv.executeJavaScript(`(function(){try{var img=new Image();img.crossOrigin='anonymous';return new Promise(function(ok){img.onload=function(){var c=document.createElement('canvas');c.width=Math.min(img.width,80);c.height=Math.min(img.height,80);c.getContext('2d').drawImage(img,0,0,c.width,c.height);ok(c.toDataURL('image/jpeg',0.7))};img.onerror=function(){ok('')};img.src=${JSON.stringify(data.i)}})}catch(e){return Promise.resolve('')}})()`)
-                      .then(dataUrl => {
-                        if (dataUrl) senderCacheRef.current[messengerId] = { ...senderCacheRef.current[messengerId], avatar: dataUrl, ts: Date.now() }
-                      }).catch(() => {})
-                  }
-                } catch {}
-                // Fallback: попробуем http URL (иногда blob резолвится в http через redirect)
-                extra.iconUrl = data.i
               } else if (data.i.startsWith('http')) {
                 extra.iconUrl = data.i
               } else if (data.i.startsWith('/')) {
@@ -2218,7 +2232,7 @@ export default function App() {
                 if (mi?.url) { try { extra.iconUrl = new URL(data.i, mi.url).href } catch {} }
               }
             }
-            // Кэш sender (улучшение #3)
+            // Кэш sender
             if (extra.senderName) {
               senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }
             }
