@@ -69,11 +69,12 @@ const { ipcRenderer } = require('electron')
             return { name: nm, avatar: _findAvatarInEl(chats[i]) }
           }
           // 2. VK/Generic: dialog/conversation/chat-item элементы
-          var generic = document.querySelectorAll('[class*="dialog" i], [class*="im_dialog" i], [class*="conversation" i], [class*="chat-item" i], [class*="chatlist" i]')
+          // v0.76.9: Добавлен ConvoListItem для VK (март 2026)
+          var generic = document.querySelectorAll('[class*="ConvoListItem" i], [class*="dialog" i], [class*="im_dialog" i], [class*="conversation" i], [class*="chat-item" i], [class*="chatlist" i]')
           for (var j = 0; j < generic.length && j < 80; j++) {
             var el = generic[j]
             if ((el.textContent || '').indexOf(bodySlice) === -1) continue
-            var nameEl = el.querySelector('[class*="title" i], [class*="name" i], [class*="peer" i], b, strong')
+            var nameEl = el.querySelector('[class*="peer" i] [class*="title" i], [class*="ConvoListItem__peer" i], [class*="title" i], [class*="name" i], [class*="peer" i], b, strong')
             var sn = nameEl ? (nameEl.textContent || '').trim() : ''
             if (!sn || sn.length < 2 || sn.length > 60) continue
             if (sn === body.trim() || body.indexOf(sn) === 0) continue

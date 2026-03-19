@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.76.8 (19 марта 2026)
+## Текущая версия: v0.76.9 (19 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.76.9 (19 марта 2026) — VK: имя отправителя + убран спам-фильтр числа
+- **Убран спам-фильтр `^\d{1,4}$`**: Блокировал реальные сообщения-числа от людей. Фантом "11" решён через isSidebarNode.
+- **VK sender enrichment**: `ConvoListItem` добавлен в findSenderInChatlist. Имя из `.ConvoListItem__peer`.
+- **Навигация VK**: Уже работала (startChatObserver перепривязывается при navigation detection).
 
 ### v0.76.8 (19 марта 2026) — Фикс ВК: sidebar-фильтр + дедуп + спам-фильтр числа
 - **isSidebarNode в quickNewMsgCheck**: КРИТИЧЕСКИЙ БАГ — `isSidebarNode` НИКОГДА не вызывался при body-fallback. Проверка `_chatContainerEl && ...` = false (null) → пропуск не работал. Теперь `isSidebarNode` вызывается ВСЕГДА при body-fallback.
