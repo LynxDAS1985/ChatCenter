@@ -270,7 +270,7 @@ function buildChatNavigateScript(url, senderName, chatTag) {
         ${chatTag ? `
         var tag = ${JSON.stringify(chatTag)};
         log.push('tag=' + tag);
-        var peerId = tag.replace(/^peer\\d+_/, '').replace(/[^0-9-]/g, '');
+        var peerId = tag.split('_')[0].replace(/[^0-9-]/g, '');
         log.push('peerId=' + peerId);
         if (peerId) {
           // Метод 1: data-peer-id в DOM (если чат видим в виртуальном списке)

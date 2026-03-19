@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.77.2 (19 марта 2026)
+## Текущая версия: v0.77.3 (19 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.77.3 (19 марта 2026) — Фикс "Перейти к чату": парсинг tag формата u{id}_{msgid}
+- **Парсинг peerId из tag**: Telegram tag = `u611696632_7545915126561356173`. Regex `^peer\d+_` не матчил формат `u{id}_`. Заменено на `tag.split('_')[0].replace(/[^0-9-]/g, '')` → peerId = `611696632`.
+- **Ловушка 41**: Telegram Web K tag формат: `u{userId}_{messageId}` (не `peer{type}_{id}`). Универсальный парсинг: `split('_')[0]` берёт первую часть до `_`.
 
 ### v0.77.2 (19 марта 2026) — Аватарки в ribbon: blob→data:URL ПЕРЕД отправкой
 - **Blob→data:URL**: executeJavaScript Image→canvas→toDataURL **ДО** handleNewMessage. Ribbon получает data:URL, не blob.
