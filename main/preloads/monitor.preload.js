@@ -708,6 +708,39 @@ function countUnreadTelegram() {
 
   // Fallback: если НИ папки НИ chatlist нет — считаем всё личным (ранняя загрузка)
   if (personal === 0 && !personalTabFound) personal = allTotal
+
+  // v0.76.3: Антифантом — если chatlist загружен и allTotal > 0,
+  // проверяем есть ли РЕАЛЬНО видимые бейджи-числа в chatlist.
+  // Folder badge/title могут содержать фантомы (архив, скрытые боты).
+  if (allTotal > 0) {
+    try {
+      const chats = document.querySelectorAll('.chatlist-chat')
+      if (chats.length >= 5) { // chatlist загружен (минимум 5 чатов = не пустой DOM)
+        let hasVisibleBadge = false
+        chats.forEach(chat => {
+          if (hasVisibleBadge) return
+          // Ищем элемент .badge внутри чата, у которого текст = число
+          chat.querySelectorAll('.badge').forEach(b => {
+            const t = (b.textContent || '').trim()
+            if (/^\d+$/.test(t)) hasVisibleBadge = true
+          })
+          // Также: .badge-unread, .unread-count
+          if (!hasVisibleBadge) {
+            chat.querySelectorAll('.badge-unread, [class*="unread-count"]').forEach(b => {
+              if (b.offsetParent !== null) hasVisibleBadge = true
+            })
+          }
+        })
+        if (!hasVisibleBadge) {
+          // Chatlist есть но бейджей нет → allTotal фантомный (из folder/title/badge API)
+          allTotal = 0
+          personal = 0
+          source += '+antiphantom'
+        }
+      }
+    } catch {}
+  }
+
   const channels = Math.max(0, allTotal - personal)
 
   // Сохраняем source для диагностики

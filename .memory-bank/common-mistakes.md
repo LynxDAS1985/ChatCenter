@@ -170,6 +170,8 @@
 
 **Ловушка 18 (v0.73.0→v0.73.6)**: Chromium Badge API (`navigator.setAppBadge`) вызывается из **Service Worker** мессенджеров. Chromium обрабатывает через C++ Mojo IPC: `BadgeManager::SetBadge()` → `Browser::SetBadgeCount()` → `ITaskbarList3::SetOverlayIcon` — **полностью минуя JS**. Никакие JS override, feature flags, `app.setBadgeCount` override, setInterval refresh **НЕ ПОМОГАЮТ**. **ПРАВИЛО**: Блокировать **Service Worker** в WebView: `navigator.serviceWorker.register = reject` + `getRegistrations().forEach(r.unregister())`. Без SW нет badge. Мессенджеры (Telegram, WhatsApp) — SPA, работают без SW. Блокировать в ДВУХ местах: monitor.preload.js (script tag injection, до скриптов мессенджера) и App.jsx executeJavaScript fallback.
 
+**Ловушка 35 (v0.76.3)**: Folder badge/title/Badge API Telegram содержат фантомные непрочитанные из архива, скрытых ботов, других папок. Видимый chatlist (`.chatlist-chat .badge` с числом) — единственный достоверный источник. **ПРАВИЛО**: Если chatlist загружен (≥5 чатов) но ни один `.badge` не содержит числа → allTotal = 0 (антифантом).
+
 **Ловушка 34 (v0.76.2)**: `data-peer-type` атрибут ОТСУТСТВУЕТ в некоторых версиях Telegram Web K (вертикальные папки). Но `data-peer-id` ВСЕГДА есть. Положительный = user/bot, отрицательный = group/channel. **ПРАВИЛО**: В `getChatType` и split-подсчёте использовать `data-peer-id` как fallback.
 
 **Ловушка 33 (v0.76.0)**: `#app` как chatObserver container → `isSidebarNode` фильтр НЕ применяется! Sidebar-фильтр работает только при `chatObserverTarget === 'body-fallback'`. Если observer на `#app` → ВСЕ мутации внутри (sidebar, даты, аватары) считаются сообщениями. **ПРАВИЛО**: Для WhatsApp лучше body-fallback + sidebar-фильтр, чем `#app` как container.
