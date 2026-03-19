@@ -2512,7 +2512,12 @@ export default function App() {
       const extra = split ? ` (💬${split.personal} 📢${split.channels})` : ''
       return `${(m?.name || id).slice(0, 8)}:${v}${extra}`
     }).join(' ')
-    console.log(`[BADGE] total=${totalUnread} personal=${totalPersonalWithFallback} channels=${totalChannels} [${details}]`)
+    // v0.76.7: Детальный лог split для каждого мессенджера
+    const splitDetails = Object.entries(unreadCounts).filter(([,v]) => v > 0).map(([id, v]) => {
+      const split = unreadSplit[id]
+      return `${id.slice(0,12)}:count=${v},split=${split ? `p${split.personal}c${split.channels}` : 'NONE'}`
+    }).join(' | ')
+    console.log(`[BADGE] total=${totalUnread} personal=${totalPersonalWithFallback} channels=${totalChannels} mode=${settingsRef.current.overlayMode} [${splitDetails}]`)
 
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current)
     overlayTimerRef.current = setTimeout(() => {
