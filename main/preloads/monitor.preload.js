@@ -979,11 +979,15 @@ const CHAT_CONTAINER_SELECTORS = {
     '[class*="bubbles"]'
   ],
   whatsapp: [
-    // v0.74.3: Актуальные селекторы WhatsApp Business Web (март 2026)
-    // #main появляется ТОЛЬКО при открытом чате. Без открытого чата — fallback на body.
+    // v0.75.9: WhatsApp Web / Business (март 2026)
+    // #main появляется ТОЛЬКО при открытом чате
     '#main',
+    // Контейнер пузырей внутри #main
+    'div[data-testid="conversation-panel-messages"]',
     '[role="application"]',
-    'div[data-testid="conversation-panel-messages"]'
+    // v0.75.9: Если чат не открыт — НЕ наблюдаем body!
+    // Используем #app как минимальный контейнер (всё приложение, но не body)
+    '#app',
   ],
   telegram: []
 }
@@ -1167,7 +1171,7 @@ const CHAT_OBSERVER_MAX_RETRIES = 5 // 5 попыток × 3 сек = 15 сек
 // Фильтр sidebar-мутаций (для fallback на document.body)
 // v0.59.1: реальные VK классы из DOM Inspector: ConvoList, ConvoListItem, MessagePreview
 // v0.60.0: + scrollListContent/scrollListScrollable — MAX sidebar (521 чатов, НЕ область сообщений)
-const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar|ConvoList|LeftAds|LeftMenu|ConvoListItem|MessagePreview|scrollListContent|scrollListScrollable|chatListItem|_ak9p|_ak8q/i
+const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar|ConvoList|LeftAds|LeftMenu|ConvoListItem|MessagePreview|scrollListContent|scrollListScrollable|chatListItem|_ak9p|_ak8q|_ak8o|_ak8i/i
 function isSidebarNode(node) {
   let el = node
   for (let i = 0; i < 8 && el && el !== document.body; i++) {
@@ -1177,7 +1181,7 @@ function isSidebarNode(node) {
     if (typeof cls === 'string' && _sidebarRe.test(cls)) return true
     if (el.getAttribute) {
       const role = el.getAttribute('role')
-      if (role === 'navigation' || role === 'complementary') return true
+      if (role === 'navigation' || role === 'complementary' || role === 'grid' || role === 'row' || role === 'gridcell') return true
       // v0.74.3: WhatsApp role="grid" внутри #side — список чатов (68 rows)
       if (role === 'grid' && el.closest && el.closest('#side')) return true
     }

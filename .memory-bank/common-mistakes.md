@@ -170,6 +170,8 @@
 
 **Ловушка 18 (v0.73.0→v0.73.6)**: Chromium Badge API (`navigator.setAppBadge`) вызывается из **Service Worker** мессенджеров. Chromium обрабатывает через C++ Mojo IPC: `BadgeManager::SetBadge()` → `Browser::SetBadgeCount()` → `ITaskbarList3::SetOverlayIcon` — **полностью минуя JS**. Никакие JS override, feature flags, `app.setBadgeCount` override, setInterval refresh **НЕ ПОМОГАЮТ**. **ПРАВИЛО**: Блокировать **Service Worker** в WebView: `navigator.serviceWorker.register = reject` + `getRegistrations().forEach(r.unregister())`. Без SW нет badge. Мессенджеры (Telegram, WhatsApp) — SPA, работают без SW. Блокировать в ДВУХ местах: monitor.preload.js (script tag injection, до скриптов мессенджера) и App.jsx executeJavaScript fallback.
 
+**Ловушка 32 (v0.75.9)**: WhatsApp `#main` появляется ТОЛЬКО при открытом чате. Без чата → контейнер не найден → body fallback. `#app` как fallback безопаснее body — содержит только UI приложения, а не весь DOM. ARIA roles `grid`/`row`/`gridcell` = список чатов WhatsApp (sidebar), мутации в них — НЕ сообщения.
+
 **Ловушка 31 (v0.75.8)**: WhatsApp chatObserver fallback на body → `addedNodes` с alt-текстами иконок (`default-contact-refreshed`, `status-dblcheckic-image`) проходят как "сообщения". **ПРАВИЛО**: Фильтровать в спам-фильтре: текст без пробелов, только латиница через дефис, <60 символов = UI-артефакт, не сообщение.
 
 **Ловушка 30 (v0.75.6)**: Race condition: useEffect сбрасывает бейдж → следующий `unread-count` IPC (DOM badge ещё не обновился) → ставит бейдж обратно. **ПРАВИЛО**: Telegram `navigator.setAppBadge(N)` — авторитетный источник. Если badge=0 и пользователь смотрит → принудительно 0, не ждать DOM. Обрабатывать `__CC_BADGE_BLOCKED__` в console-message handler.

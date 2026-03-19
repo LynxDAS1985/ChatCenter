@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.75.8 (19 марта 2026)
+## Текущая версия: v0.75.9 (19 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.75.9 (19 марта 2026) — Обновлённый chatObserver для WhatsApp
+- **Селекторы**: `#main` → `conversation-panel-messages` → `[role="application"]` → `#app` (fallback). Больше НЕ падает на body при отсутствии открытого чата — используется `#app`.
+- **Sidebar-фильтр расширен**: `_ak8o`, `_ak8i` (WhatsApp gridcell классы) + ARIA roles `grid`, `row`, `gridcell` — мутации в списке чатов фильтруются.
+- **Ловушка 32**: WhatsApp `#main` появляется ТОЛЬКО при открытом чате. Если чат не открыт → fallback на `#app` (всё приложение, но НЕ body). body слишком широкий — ловит SVG, service workers, meta-элементы.
 
 ### v0.75.8 (19 марта 2026) — Спам-фильтр WhatsApp UI-артефактов
 - **Фильтр alt-текстов иконок**: `default-contact-refreshed`, `status-dblcheckic-image`, `status-time`, `default-user` — блокируются как спам. Regex: текст без пробелов, латиница через дефис, <60 символов.
