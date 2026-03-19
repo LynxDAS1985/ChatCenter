@@ -365,6 +365,11 @@ function getChatType(dialogEl) {
     if (pt === 'channel') return 'channel'
     if (pt === 'chat' || pt === 'megagroup' || pt === 'supergroup') return 'group'
     if (pt === 'user') return 'personal'
+    // v0.76.2: Fallback на data-peer-id — положительный = user/bot, отрицательный = group/channel
+    const peerId = dialogEl.dataset?.peerId || dialogEl.getAttribute('data-peer-id')
+    if (peerId) {
+      return peerId.startsWith('-') ? 'channel' : 'personal'
+    }
     // Иконки в DOM: канал имеет мегафон/broadcast
     if (dialogEl.querySelector('.icon-channel, .icon-broadcast, [class*="channel-icon"]')) return 'channel'
     if (dialogEl.querySelector('.icon-group')) return 'group'
@@ -644,9 +649,8 @@ function countUnreadTelegram() {
     } catch {}
   }
 
-  // Split: personal из folder tab "Личные"
-  // v0.74.2: Отслеживаем НАШЛИ ли вкладку "Личные". Если нашли но бейджа нет —
-  // personal=0 КОРРЕКТНО (нет личных). Fallback personal=allTotal только если вкладка НЕ найдена.
+  // v0.76.2: Split personal/channels — ДВА метода:
+  // Метод 1: Папка "Личные" (если есть) — точный бейдж
   let personalTabFound = false
   try {
     const tryTabs = (sel) => {
@@ -665,9 +669,44 @@ function countUnreadTelegram() {
       return false
     }
     tryTabs('.tabs-tab') || tryTabs('.menu-horizontal-div-item') || tryTabs('.sidebar-tools-button')
+    // v0.76.2: Также ищем в вертикальных папках
+    if (!personalTabFound) {
+      tryTabs('.folders-sidebar__scrollable-position .folders-sidebar__folder-item')
+    }
   } catch {}
 
-  // Fallback: если вкладка "Личные" НЕ найдена — считаем всё личным (старый Telegram / нет папок)
+  // Метод 2: Если папки "Личные" нет — подсчёт по chatlist + data-peer-id
+  // Положительный peer-id = user/bot (личное), отрицательный = group/channel (сообщество)
+  if (!personalTabFound) {
+    try {
+      let chatlistPersonal = 0
+      const chats = document.querySelectorAll('.chatlist-chat')
+      if (chats.length > 0) {
+        chats.forEach(chat => {
+          const peerId = chat.dataset?.peerId || chat.getAttribute('data-peer-id')
+          if (!peerId || peerId.startsWith('-')) return // группа/канал — пропускаем
+          // Это личный чат — ищем бейдж непрочитанных
+          // Пробуем разные селекторы для числа
+          const badgeEl = chat.querySelector('.badge')
+          if (badgeEl) {
+            const n = parseInt(badgeEl.textContent?.trim(), 10)
+            if (!isNaN(n) && n > 0) { chatlistPersonal += n; return }
+          }
+          // Fallback: ищем элемент с классом содержащим "unread" или "count"
+          const unreadEl = chat.querySelector('[class*="unread-count"], [class*="badge-"] span')
+          if (unreadEl) {
+            const n = parseInt(unreadEl.textContent?.trim(), 10)
+            if (!isNaN(n) && n > 0) chatlistPersonal += n
+          }
+        })
+        personal = chatlistPersonal
+        // chatlist найден — НЕ делаем fallback personal=allTotal
+        personalTabFound = true // предотвращает fallback
+      }
+    } catch {}
+  }
+
+  // Fallback: если НИ папки НИ chatlist нет — считаем всё личным (ранняя загрузка)
   if (personal === 0 && !personalTabFound) personal = allTotal
   const channels = Math.max(0, allTotal - personal)
 

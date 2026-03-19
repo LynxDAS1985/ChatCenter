@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.76.0 (19 марта 2026)
+## Текущая версия: v0.76.2 (19 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.76.2 (19 марта 2026) — Split personal/channels по data-peer-id
+- **data-peer-id**: Telegram Web K хранит ID чата на каждом `.chatlist-chat`. Положительный = user/bot (личное), отрицательный = group/channel (сообщество).
+- **getChatType fallback**: Если `data-peer-type` нет → проверяет `data-peer-id` знак.
+- **countUnreadTelegram**: Два метода split — (1) папка "Личные" если есть, (2) chatlist + peer-id если нет.
+- **Вертикальные папки**: Добавлен поиск "Личные" в `folders-sidebar__folder-item`.
 
 ### v0.76.0 (19 марта 2026) — Фикс WhatsApp: убран #app, добавлен фильтр дат
 - **Убран `#app`**: Слишком широкий контейнер — sidebar-фильтр НЕ применяется в "container" режиме. Теперь если `#main` не найден → body-fallback + sidebar-фильтр (role=grid/row/gridcell, #side).
