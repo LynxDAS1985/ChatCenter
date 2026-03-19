@@ -641,8 +641,11 @@ function countUnreadTelegram() {
     }
   }
 
-  // 3. АДАПТИВНЫЙ: .badge элементы НЕ внутри chatlist = folder tab badges
-  if (allTotal === 0) {
+  // 3. АДАПТИВНЫЙ: .badge НЕ внутри chatlist = folder tab badges
+  // v0.76.5: Только если chatlist НЕ загружен (нет .chatlist-chat)
+  // Если chatlist есть — adaptive ненадёжен (ловит folder badges как фантомы)
+  const chatlistLoaded = document.querySelectorAll('.chatlist-chat').length > 0
+  if (allTotal === 0 && !chatlistLoaded) {
     try {
       for (const b of document.querySelectorAll('.badge')) {
         if (b.closest('.chatlist-chat, .chatlist, .ListItem, [class*="chat-item"]')) continue
