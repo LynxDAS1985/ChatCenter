@@ -1106,9 +1106,13 @@ function quickNewMsgCheck(mutations, type) {
       if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' ||
           tag === 'SVG' || tag === 'IMG' || tag === 'STYLE' || tag === 'SCRIPT' || tag === 'LINK') continue
       // v0.60.0 Решение #3: структурный DOM-фильтр
-      // Если chatObserver на body fallback И контейнер чата известен —
-      // пропускаем ноды ВНЕ контейнера (UI кнопки "Это не я", контекстное меню, sidebar)
-      if (chatObserverTarget === 'body-fallback' && _chatContainerEl && !_chatContainerEl.contains(node)) continue
+      // Если chatObserver на body fallback — фильтруем sidebar и внешние ноды
+      if (chatObserverTarget === 'body-fallback') {
+        // v0.76.8: ВСЕГДА проверяем isSidebarNode при body-fallback
+        if (isSidebarNode(node)) continue
+        // Если контейнер чата известен — пропускаем ноды вне него
+        if (_chatContainerEl && !_chatContainerEl.contains(node)) continue
+      }
 
       let text = ''
       const childCount = node.querySelectorAll ? node.querySelectorAll('*').length : 0
@@ -1149,6 +1153,8 @@ function quickNewMsgCheck(mutations, type) {
       if (!text) continue
       // Dedup: не повторяем тот же текст
       if (text === lastQuickMsgText || text === lastSentText || text === lastActiveMessageText) continue
+      // v0.76.8: Дедуп по подстроке — VK parent содержит "ИмяТекст", child содержит "Текст"
+      if (lastQuickMsgText && (lastQuickMsgText.includes(text) || text.includes(lastQuickMsgText))) continue
 
       // Это новый DOM-элемент с текстом → вероятно новое сообщение
       lastQuickMsgText = text
@@ -1238,7 +1244,7 @@ const CHAT_OBSERVER_MAX_RETRIES = 5 // 5 попыток × 3 сек = 15 сек
 // Фильтр sidebar-мутаций (для fallback на document.body)
 // v0.59.1: реальные VK классы из DOM Inspector: ConvoList, ConvoListItem, MessagePreview
 // v0.60.0: + scrollListContent/scrollListScrollable — MAX sidebar (521 чатов, НЕ область сообщений)
-const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar|ConvoList|LeftAds|LeftMenu|ConvoListItem|MessagePreview|scrollListContent|scrollListScrollable|chatListItem|_ak9p|_ak8q|_ak8o|_ak8i/i
+const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar|ConvoList|LeftAds|LeftMenu|ConvoListItem|MessagePreview|scrollListContent|scrollListScrollable|chatListItem|_ak9p|_ak8q|_ak8o|_ak8i|left_nav|_page_sidebar|page_block|leftMenu|counts_module|HeaderNav/i
 function isSidebarNode(node) {
   let el = node
   for (let i = 0; i < 8 && el && el !== document.body; i++) {

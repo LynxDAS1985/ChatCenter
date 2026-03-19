@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.76.7 (19 марта 2026)
+## Текущая версия: v0.76.8 (19 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.76.8 (19 марта 2026) — Фикс ВК: sidebar-фильтр + дедуп + спам-фильтр числа
+- **isSidebarNode в quickNewMsgCheck**: КРИТИЧЕСКИЙ БАГ — `isSidebarNode` НИКОГДА не вызывался при body-fallback. Проверка `_chatContainerEl && ...` = false (null) → пропуск не работал. Теперь `isSidebarNode` вызывается ВСЕГДА при body-fallback.
+- **Дедуп по подстроке**: VK parent="ИмяТекст", child="Текст" — разные тексты, дедуп не ловил. Теперь: `lastText.includes(newText)` → дубль.
+- **Спам-фильтр числа**: `^\d{1,4}$` = UI бейдж/счётчик (VK Фото 27, Игры 1).
+- **Sidebar-фильтр расширен**: `left_nav`, `_page_sidebar`, `counts_module`, `HeaderNav`.
 
 ### v0.76.7 (19 марта 2026) — Фикс: поиск .badge с числом через querySelectorAll
 - **_extractUnreadFromChat**: `querySelectorAll('.badge')` + `textContent = число`. Не `querySelector` (первый `.badge` = обёртка с текстом чата).
