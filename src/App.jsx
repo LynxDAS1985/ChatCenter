@@ -3128,6 +3128,20 @@ export default function App() {
                             var generic = document.querySelectorAll('[class*="chat" i], [class*="dialog" i]');
                             r.chatlist.push({ generic: generic.length, firstTag: generic[0] ? generic[0].tagName : '', firstCls: generic[0] ? (generic[0].className||'').slice(0,120) : '' });
                           }
+                          // v0.76.1: chatPeerTypes — data-peer-type для чатов с бейджами
+                          r.chatPeerTypes = [];
+                          var ptIdx2 = 0;
+                          chats.forEach(function(chat) {
+                            if (ptIdx2 >= 15) return;
+                            var b = chat.querySelector('.badge, [class*="badge"]');
+                            var bt = b ? (b.textContent||'').trim() : null;
+                            var pt = chat.dataset ? (chat.dataset.peerType || 'none') : (chat.getAttribute('data-peer-type') || 'none');
+                            var nm = '';
+                            var pTitle = chat.querySelector('.peer-title');
+                            if (pTitle) nm = (pTitle.textContent||'').slice(0,25);
+                            if (bt || ptIdx2 < 5) r.chatPeerTypes.push({ name: nm, peerType: pt, badge: bt });
+                            ptIdx2++;
+                          });
                           // v0.59.1: chatContainer — ищем контейнер чата (для chatObserver)
                           r.chatContainer = [];
                           var ccSels = [
