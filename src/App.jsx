@@ -1219,7 +1219,7 @@ export default function App() {
         senderName: extra?.senderName || '',
         chatTag: extra?.chatTag || '',
       }).catch(() => {})
-      traceNotif('ribbon', 'pass', messengerId, text, `отправлен | sender="${(extra?.senderName||'').slice(0,20)}" icon=${!!(extra?.iconUrl||extra?.iconDataUrl)}`)
+      traceNotif('ribbon', 'pass', messengerId, text, `отправлен | sender="${(extra?.senderName||'').slice(0,20)}" iconUrl=${(extra?.iconUrl||'нет').slice(0,30)} iconData=${(extra?.iconDataUrl||'нет').slice(0,30)}`)
     } else {
       traceNotif('ribbon', 'block', messengerId, text, `выключен | global=${settingsRef.current.notificationsEnabled !== false} perMsg=${ribbonOn}`)
     }
