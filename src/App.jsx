@@ -2573,7 +2573,12 @@ export default function App() {
               messenger={m}
               isActive={activeId === m.id}
               accountInfo={accountInfo[m.id]}
-              unreadCount={unreadCounts[m.id] || 0}
+              unreadCount={
+                // v0.76.6: При "Только личные" — бейдж вкладки показывает personal (не allTotal)
+                settings.overlayMode === 'personal' && unreadSplit[m.id]
+                  ? (unreadSplit[m.id].personal || 0)
+                  : (unreadCounts[m.id] || 0)
+              }
               unreadSplit={unreadSplit[m.id]}
               messagePreview={messagePreview[m.id]}
               zoomLevel={zoomLevels[m.id]}
