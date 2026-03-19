@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.77.0 (19 марта 2026)
+## Текущая версия: v0.77.1 (19 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.77.1 (19 марта 2026) — Аватарки: blob→data:URL через canvas
+- **_imgToDataUrl helper**: Конвертирует img (blob/http/data) → data:URL через canvas. Для blob: URL — единственный способ передать в ribbon window.
+- **DOM enrichment**: Все 3 места поиска аватарки → `_imgToDataUrl(av)` вместо `av.src`.
+- **__CC_NOTIF__ blob icon**: При получении blob icon → executeJavaScript в WebView для конвертации Image→canvas→data:URL. Кэшируется в senderCache.
+- **Ловушка 40**: blob: URL привязан к origin WebView. notification.html = другой BrowserWindow → blob не загрузится. Решение: canvas.toDataURL() внутри WebView.
 
 ### v0.77.0 (19 марта 2026) — Аватарки Telegram в ribbon: поддержка blob: URL
 - **blob: URL**: Telegram Web K использует `blob:https://...` для аватарок. Проверка `startsWith('http')` не ловила blob → аватарка не показывалась в ribbon. Добавлено `|| startsWith('blob:')` во все 5 мест.

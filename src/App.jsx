@@ -1954,6 +1954,22 @@ export default function App() {
             el.executeJavaScript(`(function() {
             try {
               var name = '', avatar = '';
+              // v0.77.1: Конвертация img→data:URL (blob URL не работает вне WebView)
+              function _imgToDataUrl(img) {
+                try {
+                  if (!img || !img.src) return '';
+                  if (img.src.startsWith('data:')) return img.src;
+                  if (img.src.startsWith('http') && !img.src.startsWith('blob:')) return img.src;
+                  // blob: URL → canvas → data:URL
+                  var c = document.createElement('canvas');
+                  var w = img.naturalWidth || img.width || 40;
+                  var h = img.naturalHeight || img.height || 40;
+                  if (w < 5 || h < 5) return '';
+                  c.width = Math.min(w, 80); c.height = Math.min(h, 80);
+                  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                  return c.toDataURL('image/jpeg', 0.7);
+                } catch(e) { return ''; }
+              }
               // 1. Header активного чата — расширенные селекторы (TG/MAX/Generic)
               // MAX (SvelteKit): .topbar.svelte-* → первый child div содержит имя
               var headerSels = [
@@ -2007,7 +2023,7 @@ export default function App() {
               }
               if (name) {
                 var av = document.querySelector('.chat-info img.avatar-photo, .topbar img.avatar-photo, .chat-info [class*="avatar" i] img, header img[class*="avatar" i], header [class*="avatar" i] img');
-                if (av && av.src && (av.src.startsWith('http') || av.src.startsWith('blob:'))) avatar = av.src;
+                if (av) avatar = _imgToDataUrl(av);
               }
               // 2. Активный/выделенный чат в sidebar (не зависит от обновления preview)
               if (!name) {
@@ -2020,7 +2036,7 @@ export default function App() {
                   if (nm0 && nm0.length >= 2 && nm0.length <= 80) {
                     name = nm0;
                     var avAct = act.querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo');
-                    if (avAct && avAct.tagName === 'IMG' && avAct.src && (avAct.src.startsWith('http') || avAct.src.startsWith('blob:'))) avatar = avAct.src;
+                    if (avAct && avAct.tagName === 'IMG') avatar = _imgToDataUrl(avAct);
                     break;
                   }
                 }
@@ -2036,7 +2052,7 @@ export default function App() {
                   if (!nm) continue;
                   name = nm;
                   var avEl = chats[i].querySelector('img.avatar-photo, [class*="avatar"] img');
-                  if (avEl && avEl.src && (avEl.src.startsWith('http') || avEl.src.startsWith('blob:'))) avatar = avEl.src;
+                  if (avEl) avatar = _imgToDataUrl(avEl);
                   break;
                 }
               }
@@ -2182,7 +2198,20 @@ export default function App() {
             if (data.i) {
               if (data.i.startsWith('data:')) {
                 extra.iconDataUrl = data.i
-              } else if (data.i.startsWith('http') || data.i.startsWith('blob:')) {
+              } else if (data.i.startsWith('blob:')) {
+                // v0.77.1: blob URL → конвертируем в data:URL через WebView canvas
+                try {
+                  const wv = webviewRefs.current[messengerId]
+                  if (wv) {
+                    wv.executeJavaScript(`(function(){try{var img=new Image();img.crossOrigin='anonymous';return new Promise(function(ok){img.onload=function(){var c=document.createElement('canvas');c.width=Math.min(img.width,80);c.height=Math.min(img.height,80);c.getContext('2d').drawImage(img,0,0,c.width,c.height);ok(c.toDataURL('image/jpeg',0.7))};img.onerror=function(){ok('')};img.src=${JSON.stringify(data.i)}})}catch(e){return Promise.resolve('')}})()`)
+                      .then(dataUrl => {
+                        if (dataUrl) senderCacheRef.current[messengerId] = { ...senderCacheRef.current[messengerId], avatar: dataUrl, ts: Date.now() }
+                      }).catch(() => {})
+                  }
+                } catch {}
+                // Fallback: попробуем http URL (иногда blob резолвится в http через redirect)
+                extra.iconUrl = data.i
+              } else if (data.i.startsWith('http')) {
                 extra.iconUrl = data.i
               } else if (data.i.startsWith('/')) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
