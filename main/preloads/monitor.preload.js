@@ -721,6 +721,13 @@ function countUnreadTelegram() {
   // Сохраняем source для диагностики
   countUnreadTelegram._lastSource = source
 
+  // v0.76.4: Лог для отладки — виден в Pipeline через __CC_DIAG__
+  if (allTotal !== countUnreadTelegram._prevTotal || personal !== countUnreadTelegram._prevPersonal) {
+    try { console.log(`__CC_DIAG__unread_tg source=${source} all=${allTotal} personal=${personal} ch=${channels} tabFound=${personalTabFound}`) } catch {}
+    countUnreadTelegram._prevTotal = allTotal
+    countUnreadTelegram._prevPersonal = personal
+  }
+
   return { personal, channels, total: allTotal, allTotal }
 }
 
