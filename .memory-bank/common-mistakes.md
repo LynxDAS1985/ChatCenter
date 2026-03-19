@@ -170,6 +170,8 @@
 
 **Ловушка 18 (v0.73.0→v0.73.6)**: Chromium Badge API (`navigator.setAppBadge`) вызывается из **Service Worker** мессенджеров. Chromium обрабатывает через C++ Mojo IPC: `BadgeManager::SetBadge()` → `Browser::SetBadgeCount()` → `ITaskbarList3::SetOverlayIcon` — **полностью минуя JS**. Никакие JS override, feature flags, `app.setBadgeCount` override, setInterval refresh **НЕ ПОМОГАЮТ**. **ПРАВИЛО**: Блокировать **Service Worker** в WebView: `navigator.serviceWorker.register = reject` + `getRegistrations().forEach(r.unregister())`. Без SW нет badge. Мессенджеры (Telegram, WhatsApp) — SPA, работают без SW. Блокировать в ДВУХ местах: monitor.preload.js (script tag injection, до скриптов мессенджера) и App.jsx executeJavaScript fallback.
 
+**Ловушка 40 (v0.77.2)**: blob: URL привязан к origin WebView. notification.html = другой BrowserWindow → blob не загрузится. **ПРАВИЛО**: Конвертировать blob→data:URL через canvas.toDataURL() ВНУТРИ WebView executeJavaScript, ПЕРЕД отправкой в handleNewMessage/ribbon.
+
 **Ловушка 38 (v0.76.8)**: `isSidebarNode` НИКОГДА не вызывался в `quickNewMsgCheck`! Условие `if (chatObserverTarget === 'body-fallback' && _chatContainerEl && ...)` → `_chatContainerEl = null` → весь if = false → sidebar-фильтр не работал. **ПРАВИЛО**: При body-fallback ВСЕГДА вызывать `isSidebarNode(node)` ПЕРЕД проверкой `_chatContainerEl`.
 
 **Ловушка 37 (v0.76.7)**: `querySelector('.badge')` внутри `.chatlist-chat` находит ОБЁРТОЧНЫЙ `.badge` (весь текст чата), не числовой бейдж. **ПРАВИЛО**: `querySelectorAll('.badge')` + проверка `/^\d+$/.test(textContent.trim())` → находит только числовой бейдж.

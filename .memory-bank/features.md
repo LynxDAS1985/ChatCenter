@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.77.1 (19 марта 2026)
+## Текущая версия: v0.77.2 (19 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.77.2 (19 марта 2026) — Аватарки в ribbon: blob→data:URL ПЕРЕД отправкой
+- **Blob→data:URL**: executeJavaScript Image→canvas→toDataURL **ДО** handleNewMessage. Ribbon получает data:URL, не blob.
+- **_imgToDataUrl helper**: DOM enrichment: img→canvas→data:URL для blob/http аватарок.
+- **Подтверждено**: Лог `iconData=data:image/jpeg;base64,...` — аватарки работают!
+- **Ловушка 40**: blob: URL привязан к origin WebView → не загружается в notification.html.
 
 ### v0.77.1 (19 марта 2026) — Аватарки: blob→data:URL через canvas
 - **_imgToDataUrl helper**: Конвертирует img (blob/http/data) → data:URL через canvas. Для blob: URL — единственный способ передать в ribbon window.
