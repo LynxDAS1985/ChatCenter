@@ -576,17 +576,15 @@ function countUnreadMAX() {
   return { personal: allTotal, channels: 0, total: allTotal, allTotal }
 }
 
-// v0.76.4: Извлекает число непрочитанных из chatlist-chat элемента
-// В TG Web K число бейджа = последний текстовый leaf с числом внутри чата
+// v0.76.7: Извлекает число непрочитанных из chatlist-chat элемента
+// Ищем .badge с textContent = ТОЛЬКО число (не обёрточный .badge с текстом чата)
 function _extractUnreadFromChat(chat) {
   try {
-    // Метод 1: textContent чата заканчивается на число (после имени/превью)
-    const fullText = (chat.textContent || '').trim()
-    const match = fullText.match(/(\d+)\s*$/)
-    if (match) {
-      const n = parseInt(match[1], 10)
-      // Исключаем даты (2025, 2026) и время (1145, 1200)
-      if (n > 0 && n < 10000 && !/\d{2}[.:]\d{2}/.test(fullText.slice(-10))) return n
+    // Перебираем ВСЕ .badge внутри чата — ищем тот у которого текст = число
+    const badges = chat.querySelectorAll('.badge')
+    for (let i = 0; i < badges.length; i++) {
+      const t = (badges[i].textContent || '').trim()
+      if (/^\d+$/.test(t)) return parseInt(t, 10)
     }
   } catch {}
   return 0

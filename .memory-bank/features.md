@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.76.6 (19 марта 2026)
+## Текущая версия: v0.76.7 (19 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.76.7 (19 марта 2026) — Фикс: поиск .badge с числом через querySelectorAll
+- **_extractUnreadFromChat**: `querySelectorAll('.badge')` + `textContent = число`. Не `querySelector` (первый `.badge` = обёртка с текстом чата).
+- **Ловушка 37**: В TG Web K `.chatlist-chat` содержит несколько `.badge` — первый = обёрточный (весь текст), маленький = числовой бейдж. `querySelector` находит обёрточный. `querySelectorAll` + проверка `^\d+$` = правильный.
 
 ### v0.76.4 (19 марта 2026) — Split по chatlist textContent + peer-id
 - **_extractUnreadFromChat**: Парсит число непрочитанных из конца textContent чата (regex `(\d+)\s*$`). В TG Web K число бейджа всегда в конце текста: "Текст...24".
