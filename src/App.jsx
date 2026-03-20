@@ -2288,6 +2288,34 @@ export default function App() {
         for (var s of containerSels) { try { var els = document.querySelectorAll(s); if (els.length > 0) { r.selectors[s] = []; for (var i = 0; i < Math.min(els.length, 3); i++) { var el = els[i]; r.selectors[s].push({ tag: el.tagName, id: el.id||'', cls: (el.className||'').substring(0,120), role: el.getAttribute('role')||'', childCount: el.children?el.children.length:0, rect: {w:el.offsetWidth,h:el.offsetHeight} }) } } } catch{} }
         r.testids = []; try { var tels = document.querySelectorAll('[data-testid]'); for (var i = 0; i < Math.min(tels.length, 50); i++) { r.testids.push({ testid: tels[i].getAttribute('data-testid'), tag: tels[i].tagName, cls: (tels[i].className||'').substring(0,60) }) } } catch{}
         r.roles = []; try { var rels = document.querySelectorAll('[role]'); for (var i = 0; i < Math.min(rels.length, 50); i++) { r.roles.push({ role: rels[i].getAttribute('role'), tag: rels[i].tagName, cls: (rels[i].className||'').substring(0,60) }) } } catch{}
+        // v0.77.9: Поиск имени профиля (VK, MAX, любой мессенджер)
+        r.profileSearch = {};
+        try {
+          // 1. VK: кнопка профиля в шапке
+          var pb = document.querySelector('[data-testid="header-profile-menu-button"]');
+          if (pb) { r.profileSearch.vkProfileBtn = { href: (pb.href||pb.getAttribute('href')||'').slice(0,60), title: (pb.title||pb.getAttribute('title')||'').slice(0,40), ariaLabel: (pb.getAttribute('aria-label')||'').slice(0,40), text: (pb.textContent||'').trim().slice(0,40) }; var pi = pb.querySelector('img'); if (pi) r.profileSearch.vkProfileImg = (pi.alt||pi.title||'').slice(0,40) }
+          // 2. VK: ссылка /idXXX в меню
+          var nav = document.querySelector('[data-testid="leftmenu"]');
+          if (nav) { var links = nav.querySelectorAll('a'); for (var li = 0; li < links.length; li++) { var h = links[li].getAttribute('href')||''; if (/\/id\d+/.test(h)) { r.profileSearch.vkProfileLink = h.slice(0,30); r.profileSearch.vkProfileLinkText = (links[li].textContent||'').trim().slice(0,40); break } } }
+          // 3. window.vk объект
+          if (typeof vk !== 'undefined') { r.profileSearch.vkObj = { id: vk.id||'', name: vk.name||'', first_name: vk.first_name||'', last_name: vk.last_name||'' } }
+          // 4. Мета-теги
+          var mt = document.querySelector('meta[property="og:title"]'); if (mt) r.profileSearch.ogTitle = (mt.content||'').slice(0,40);
+          mt = document.querySelector('meta[name="author"]'); if (mt) r.profileSearch.metaAuthor = (mt.content||'').slice(0,40);
+          // 5. Telegram: .peer-title, .sidebar-tools-button
+          var pt = document.querySelector('.peer-title'); if (pt) r.profileSearch.tgPeerTitle = (pt.textContent||'').trim().slice(0,40);
+          // 6. MAX: profile button
+          var mp = document.querySelector('button.profile, [class*="profile" i] [class*="name" i]'); if (mp) r.profileSearch.maxProfile = (mp.textContent||'').trim().slice(0,40);
+          // 7. Title страницы
+          r.profileSearch.pageTitle = document.title.slice(0,60);
+          // 8. Все img с alt (могут содержать имя)
+          r.profileSearch.imgsWithAlt = [];
+          var ais = document.querySelectorAll('img[alt]');
+          for (var ai2 = 0; ai2 < Math.min(ais.length, 10); ai2++) {
+            var alt2 = (ais[ai2].alt||'').trim();
+            if (alt2.length > 2 && alt2.length < 40) r.profileSearch.imgsWithAlt.push(alt2);
+          }
+        } catch(e) { r.profileSearch.error = e.message }
         return JSON.stringify(r)
       })()`)
         .then(res => {
