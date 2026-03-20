@@ -3232,7 +3232,13 @@ export default function App() {
               <div className="flex gap-2">
                 <button className="px-2 py-1 rounded text-xs cursor-pointer" style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)' }}
                   onClick={() => {
-                    const data = notifLogTab === 'log' ? notifLogModal.log : (notifLogModal.trace || [])
+                    let data
+                    if (notifLogTab === 'log') data = notifLogModal.log
+                    else if (notifLogTab === 'trace') data = notifLogModal.trace || []
+                    else if (notifLogTab === 'domScan') data = notifLogModal.domScanData || {}
+                    else if (notifLogTab === 'diagFull') data = notifLogModal.diagFullData || {}
+                    else if (notifLogTab === 'diagAccount') data = notifLogModal.diagAccountData || {}
+                    else data = {}
                     navigator.clipboard.writeText(JSON.stringify(data, null, 2)).catch(() => {})
                   }}
                 >Скопировать</button>
