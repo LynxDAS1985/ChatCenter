@@ -2285,9 +2285,9 @@ export default function App() {
         var r = { url: location.href, title: document.title, ts: Date.now() }
         var containerSels = ['[role="application"]','#app','#main','#side','[data-testid="chat-list"]','[role="grid"]','[role="list"]','[data-tab]','[aria-label*="chat" i]','div[tabindex="-1"]']
         r.selectors = {}
-        for (var s of containerSels) { try { var els = document.querySelectorAll(s); if (els.length > 0) { r.selectors[s] = []; for (var i = 0; i < Math.min(els.length, 3); i++) { var el = els[i]; r.selectors[s].push({ tag: el.tagName, id: el.id||'', cls: (el.className||'').substring(0,120), role: el.getAttribute('role')||'', childCount: el.children?el.children.length:0, rect: {w:el.offsetWidth,h:el.offsetHeight} }) } } } catch{} }
-        r.testids = []; try { var tels = document.querySelectorAll('[data-testid]'); for (var i = 0; i < Math.min(tels.length, 50); i++) { r.testids.push({ testid: tels[i].getAttribute('data-testid'), tag: tels[i].tagName, cls: (tels[i].className||'').substring(0,60) }) } } catch{}
-        r.roles = []; try { var rels = document.querySelectorAll('[role]'); for (var i = 0; i < Math.min(rels.length, 50); i++) { r.roles.push({ role: rels[i].getAttribute('role'), tag: rels[i].tagName, cls: (rels[i].className||'').substring(0,60) }) } } catch{}
+        for (var s of containerSels) { try { var els = document.querySelectorAll(s); if (els.length > 0) { r.selectors[s] = []; for (var i = 0; i < Math.min(els.length, 3); i++) { var el = els[i]; r.selectors[s].push({ tag: el.tagName, id: el.id||'', cls: (el.className||'').substring(0,120), role: el.getAttribute('role')||'', childCount: el.children?el.children.length:0, rect: {w:el.offsetWidth,h:el.offsetHeight} }) } } } catch(e){} }
+        r.testids = []; try { var tels = document.querySelectorAll('[data-testid]'); for (var i = 0; i < Math.min(tels.length, 50); i++) { r.testids.push({ testid: tels[i].getAttribute('data-testid'), tag: tels[i].tagName, cls: (tels[i].className||'').substring(0,60) }) } } catch(e){}
+        r.roles = []; try { var rels = document.querySelectorAll('[role]'); for (var i = 0; i < Math.min(rels.length, 50); i++) { r.roles.push({ role: rels[i].getAttribute('role'), tag: rels[i].tagName, cls: (rels[i].className||'').substring(0,60) }) } } catch(e){}
         // v0.77.9: Поиск имени профиля (VK, MAX, любой мессенджер)
         r.profileSearch = {};
         try {
@@ -2332,8 +2332,8 @@ export default function App() {
       wv.executeJavaScript(`(async () => {
         var r = { url: location.href, title: document.title }
         r.localStorage = {}; try { for (var i = 0; i < Math.min(localStorage.length, 50); i++) { var k = localStorage.key(i); r.localStorage[k] = (localStorage.getItem(k)||'').substring(0,200) } } catch(e) { r.error = e.message }
-        r.cookies = []; try { r.cookies = document.cookie.split(';').slice(0,30).map(c => c.trim().split('=')[0]) } catch{}
-        r.avatarImages = []; try { var imgs = document.querySelectorAll('img'); for (var i = 0; i < imgs.length && i < 20; i++) { if (imgs[i].width >= 20 && imgs[i].width <= 80) r.avatarImages.push({ src: (imgs[i].src||'').substring(0,200), size: imgs[i].width+'x'+imgs[i].height, cls: (imgs[i].className||'').substring(0,60) }) } } catch{}
+        r.cookies = []; try { r.cookies = document.cookie.split(';').slice(0,30).map(c => c.trim().split('=')[0]) } catch(e){}
+        r.avatarImages = []; try { var imgs = document.querySelectorAll('img'); for (var i = 0; i < imgs.length && i < 20; i++) { if (imgs[i].width >= 20 && imgs[i].width <= 80) r.avatarImages.push({ src: (imgs[i].src||'').substring(0,200), size: imgs[i].width+'x'+imgs[i].height, cls: (imgs[i].className||'').substring(0,60) }) } } catch(e){}
         return JSON.stringify(r, null, 2)
       })()`)
         .then(json => {
@@ -3565,7 +3565,7 @@ export default function App() {
                     </tbody>
                   </table>
                 )
-              ) : (
+              ) : notifLogTab === 'trace' ? (
                 /* ── Вкладка: Pipeline Trace ── */
                 traceData.length === 0 ? (
                   <div className="flex items-center justify-center h-32" style={{ color: 'var(--cc-text-dimmer)' }}>
@@ -3632,7 +3632,7 @@ export default function App() {
                     </tbody>
                   </table>
                 )
-              )}
+              ) : null}
             </div>
 
             {/* Per-messenger спам-фильтр (v0.56.0) */}
