@@ -2298,7 +2298,7 @@ export default function App() {
           var nav = document.querySelector('[data-testid="leftmenu"]');
           if (nav) { var links = nav.querySelectorAll('a'); for (var li = 0; li < links.length; li++) { var h = links[li].getAttribute('href')||''; if (/\/id\d+/.test(h)) { r.profileSearch.vkProfileLink = h.slice(0,30); r.profileSearch.vkProfileLinkText = (links[li].textContent||'').trim().slice(0,40); break } } }
           // 3. window.vk объект
-          if (typeof vk !== 'undefined') { r.profileSearch.vkObj = { id: vk.id||'', name: vk.name||'', first_name: vk.first_name||'', last_name: vk.last_name||'' } }
+          try { if (window.vk) { r.profileSearch.vkObj = { id: window.vk.id||'', name: window.vk.name||'', first_name: window.vk.first_name||'', last_name: window.vk.last_name||'' } } } catch(e2) {}
           // 4. Мета-теги
           var mt = document.querySelector('meta[property="og:title"]'); if (mt) r.profileSearch.ogTitle = (mt.content||'').slice(0,40);
           mt = document.querySelector('meta[name="author"]'); if (mt) r.profileSearch.metaAuthor = (mt.content||'').slice(0,40);
@@ -2324,7 +2324,10 @@ export default function App() {
             setNotifLogModal(prev => prev ? { ...prev, domScanData: data } : prev)
             navigator.clipboard.writeText(JSON.stringify(data, null, 2)).catch(() => {})
           } catch {}
-        }).catch(() => {})
+        }).catch(err => {
+          console.error('[DOM-скан] ошибка:', err)
+          setNotifLogModal(prev => prev ? { ...prev, domScanData: { error: err.message || String(err) } } : prev)
+        })
     } else if (action === 'diagFull') {
       wv.executeJavaScript(`(async () => {
         var r = { url: location.href, title: document.title }
