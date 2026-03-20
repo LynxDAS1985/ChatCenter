@@ -172,6 +172,8 @@
 
 **Ловушка 40 (v0.77.2)**: blob: URL привязан к origin WebView. notification.html = другой BrowserWindow → blob не загрузится. **ПРАВИЛО**: Конвертировать blob→data:URL через canvas.toDataURL() ВНУТРИ WebView executeJavaScript, ПЕРЕД отправкой в handleNewMessage/ribbon.
 
+**Ловушка 41 (v0.77.4)**: VK MutationObserver ловит parent node ("Елена ДугинаТекст") И child node ("Текст") как ДВА сообщения. Тексты РАЗНЫЕ → точный дедуп не ловит. **ПРАВИЛО**: Дедуп по ПОДСТРОКЕ: `prevText.includes(newText) || newText.includes(prevText)` в пределах 5 сек. Также VK не использует Notification API — только MutationObserver.
+
 **Ловушка 38 (v0.76.8)**: `isSidebarNode` НИКОГДА не вызывался в `quickNewMsgCheck`! Условие `if (chatObserverTarget === 'body-fallback' && _chatContainerEl && ...)` → `_chatContainerEl = null` → весь if = false → sidebar-фильтр не работал. **ПРАВИЛО**: При body-fallback ВСЕГДА вызывать `isSidebarNode(node)` ПЕРЕД проверкой `_chatContainerEl`.
 
 **Ловушка 37 (v0.76.7)**: `querySelector('.badge')` внутри `.chatlist-chat` находит ОБЁРТОЧНЫЙ `.badge` (весь текст чата), не числовой бейдж. **ПРАВИЛО**: `querySelectorAll('.badge')` + проверка `/^\d+$/.test(textContent.trim())` → находит только числовой бейдж.

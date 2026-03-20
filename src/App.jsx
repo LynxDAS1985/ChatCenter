@@ -1155,6 +1155,16 @@ export default function App() {
       traceNotif('dedup', 'block', messengerId, text, `recentNotifs | age=${now - recentNotifsRef.current.get(dedupKey)}мс`)
       return
     }
+    // v0.77.4: Дедуп по подстроке — VK шлёт parent ("Елена ДугинаТекст") + child ("Текст")
+    const textShort = text.slice(0, 80)
+    for (const [k, ts] of recentNotifsRef.current) {
+      if (now - ts > 5000 || !k.startsWith(messengerId + ':')) continue
+      const prevText = k.slice(messengerId.length + 1)
+      if (prevText.length > 5 && textShort.length > 5 && (prevText.includes(textShort) || textShort.includes(prevText))) {
+        traceNotif('dedup', 'block', messengerId, text, `substring-dedup | prevLen=${prevText.length} age=${now - ts}мс`)
+        return
+      }
+    }
     recentNotifsRef.current.set(dedupKey, now)
     // Чистим старые записи (>30 сек)
     if (recentNotifsRef.current.size > 50) {
