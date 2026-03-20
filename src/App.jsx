@@ -1171,6 +1171,20 @@ export default function App() {
       for (const [k, ts] of recentNotifsRef.current) { if (now - ts > 30000) recentNotifsRef.current.delete(k) }
     }
 
+    // v0.77.7: VK — убираем имя sender из текста + фильтр своих сообщений
+    // MutationObserver VK шлёт textContent как "Елена ДугинаТекст" (имя+текст склеены)
+    const senderName = extra?.senderName || ''
+    if (senderName.length >= 3 && text.startsWith(senderName)) {
+      // Чужое сообщение — убираем имя из начала текста
+      text = text.slice(senderName.length).trim()
+      if (!text) return // Пустой текст после удаления имени (было только имя)
+      traceNotif('handle', 'info', messengerId, text, `sender-strip: убрано "${senderName}" из начала`)
+    } else if (senderName.length >= 3 && !extra?.fromNotifAPI && /^[А-ЯA-Z][а-яa-z]+\s[А-ЯA-Z][а-яa-z]/.test(text)) {
+      // Текст начинается с "Имя Фамилия" но НЕ с sender → скорее всего СВОЁ сообщение
+      traceNotif('dedup', 'block', messengerId, text, `own-msg | sender="${senderName}" textStart="${text.slice(0,20)}"`)
+      return
+    }
+
     // Подавляем уведомления если пользователь смотрит на эту вкладку
     // windowFocusedRef обновляется через IPC window-state из main process —
     // надёжнее чем document.hidden или document.hasFocus()
