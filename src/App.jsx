@@ -2263,6 +2263,63 @@ export default function App() {
   }
 
   // ── Контекстное меню вкладки ────────────────────────────────────────────
+  // v0.77.6: Диагностики → вызов из модального окна (вкладки)
+  const handleTabContextAction_diag = (action, mid, wv) => {
+    if (!wv || !mid) return
+    if (action === 'diagDOM') {
+      wv.executeJavaScript(`(() => {
+        var r = { url: location.href, title: document.title, ts: Date.now() }
+        var containerSels = ['[role="application"]','#app','#main','#side','[data-testid="chat-list"]','[role="grid"]','[role="list"]','[data-tab]','[aria-label*="chat" i]','div[tabindex="-1"]']
+        r.selectors = {}
+        for (var s of containerSels) { try { var els = document.querySelectorAll(s); if (els.length > 0) { r.selectors[s] = []; for (var i = 0; i < Math.min(els.length, 3); i++) { var el = els[i]; r.selectors[s].push({ tag: el.tagName, id: el.id||'', cls: (el.className||'').substring(0,120), role: el.getAttribute('role')||'', childCount: el.children?el.children.length:0, rect: {w:el.offsetWidth,h:el.offsetHeight} }) } } } catch{} }
+        r.testids = []; try { var tels = document.querySelectorAll('[data-testid]'); for (var i = 0; i < Math.min(tels.length, 50); i++) { r.testids.push({ testid: tels[i].getAttribute('data-testid'), tag: tels[i].tagName, cls: (tels[i].className||'').substring(0,60) }) } } catch{}
+        r.roles = []; try { var rels = document.querySelectorAll('[role]'); for (var i = 0; i < Math.min(rels.length, 50); i++) { r.roles.push({ role: rels[i].getAttribute('role'), tag: rels[i].tagName, cls: (rels[i].className||'').substring(0,60) }) } } catch{}
+        return JSON.stringify(r)
+      })()`)
+        .then(res => {
+          try {
+            const data = JSON.parse(res)
+            setNotifLogModal(prev => prev ? { ...prev, domScanData: data } : prev)
+            navigator.clipboard.writeText(JSON.stringify(data, null, 2)).catch(() => {})
+          } catch {}
+        }).catch(() => {})
+    } else if (action === 'diagFull') {
+      wv.executeJavaScript(`(async () => {
+        var r = { url: location.href, title: document.title }
+        r.localStorage = {}; try { for (var i = 0; i < Math.min(localStorage.length, 50); i++) { var k = localStorage.key(i); r.localStorage[k] = (localStorage.getItem(k)||'').substring(0,200) } } catch(e) { r.error = e.message }
+        r.cookies = []; try { r.cookies = document.cookie.split(';').slice(0,30).map(c => c.trim().split('=')[0]) } catch{}
+        r.avatarImages = []; try { var imgs = document.querySelectorAll('img'); for (var i = 0; i < imgs.length && i < 20; i++) { if (imgs[i].width >= 20 && imgs[i].width <= 80) r.avatarImages.push({ src: (imgs[i].src||'').substring(0,200), size: imgs[i].width+'x'+imgs[i].height, cls: (imgs[i].className||'').substring(0,60) }) } } catch{}
+        return JSON.stringify(r, null, 2)
+      })()`)
+        .then(json => {
+          try {
+            const data = JSON.parse(json)
+            setNotifLogModal(prev => prev ? { ...prev, diagFullData: data } : prev)
+            navigator.clipboard.writeText(json).catch(() => {})
+          } catch {}
+        }).catch(() => {})
+    } else if (action === 'diagAccount') {
+      wv.executeJavaScript(`(async () => {
+        var r = { steps: [] }
+        var CK = '__cc_account_name'
+        var cached = localStorage.getItem(CK)
+        r.steps.push({ step: 'Кэш', value: cached || 'нет' })
+        var ni = document.querySelector('input[placeholder="Имя"]')
+        r.steps.push({ step: 'Поле "Имя"', found: !!ni, value: ni ? ni.value : 'нет' })
+        var pc = document.querySelector('button.profile')
+        r.steps.push({ step: 'Кнопка профиля', found: !!pc, text: pc ? pc.textContent.trim().substring(0,60) : 'нет' })
+        return JSON.stringify(r, null, 2)
+      })()`)
+        .then(json => {
+          try {
+            const data = JSON.parse(json)
+            setNotifLogModal(prev => prev ? { ...prev, diagAccountData: data } : prev)
+            navigator.clipboard.writeText(json).catch(() => {})
+          } catch {}
+        }).catch(() => {})
+    }
+  }
+
   const handleTabContextAction = (action) => {
     const id = contextMenuTab?.id
     setContextMenuTab(null)
@@ -2790,11 +2847,7 @@ export default function App() {
               const tabPinned = !!(settings.pinnedTabs || {})[contextMenuTab?.id]
               return [
                 { action: 'reload', icon: '🔄', label: 'Перезагрузить' },
-                { action: 'diag', icon: '🔍', label: 'Диагностика DOM' },
-                { action: 'diagDOM', icon: '🏗️', label: 'DOM-скан (→ буфер)' },
-                { action: 'diagFull', icon: '🧪', label: 'Полная диагностика (→ буфер)' },
-                { action: 'diagAccount', icon: '👤', label: 'Диагностика accountScript (→ буфер)' },
-                { action: 'notifLog', icon: '📊', label: 'Лог уведомлений' },
+                { action: 'notifLog', icon: '📊', label: 'Диагностика и логи' },
                 { action: 'copyUrl', icon: '📋', label: 'Копировать URL' },
                 { action: 'edit', icon: '✏️', label: 'Изменить вкладку' },
                 { action: 'pin', icon: tabPinned ? '📌' : '🔒', label: tabPinned ? 'Открепить вкладку' : 'Закрепить вкладку' },
@@ -3135,13 +3188,29 @@ export default function App() {
                 <span>📊</span>
                 <span className="font-semibold text-sm">{notifLogModal.name}</span>
                 {/* Вкладки */}
-                <div className="flex gap-1 ml-2">
-                  {[['log', `Лог (${notifLogModal.log.length})`], ['trace', `Pipeline (${(notifLogModal.trace||[]).length})`]].map(([tab, label]) => (
+                <div className="flex gap-1 ml-2 flex-wrap">
+                  {[
+                    ['log', `Лог (${notifLogModal.log.length})`, 'Входящие сообщения — что пришло и от кого'],
+                    ['trace', `Pipeline (${(notifLogModal.trace||[]).length})`, 'Путь сообщения через фильтры, дедуп и обогащение'],
+                    ['domScan', 'DOM', 'Структура страницы — селекторы, контейнеры, бейджи'],
+                    ['diagFull', 'Хранилище', 'Cookies, localStorage, IndexedDB, аватарки'],
+                    ['diagAccount', 'Аккаунт', 'Имя аккаунта — тест скрипта извлечения имени'],
+                  ].map(([tab, label, tooltip]) => (
                     <button key={tab} className="px-2 py-1 rounded text-xs cursor-pointer" style={{
                       backgroundColor: notifLogTab === tab ? 'rgba(96,165,250,0.2)' : 'transparent',
                       color: notifLogTab === tab ? '#60a5fa' : 'var(--cc-text-dimmer)',
                       border: notifLogTab === tab ? '1px solid rgba(96,165,250,0.3)' : '1px solid transparent',
-                    }} onClick={() => setNotifLogTab(tab)}>{label}</button>
+                    }} onClick={() => {
+                      setNotifLogTab(tab)
+                      // Автозапуск диагностики при переключении на вкладку
+                      if ((tab === 'domScan' || tab === 'diagFull' || tab === 'diagAccount') && !notifLogModal[tab + 'Data']) {
+                        const wv = webviewRefs.current[notifLogModal.messengerId]
+                        if (wv) {
+                          const action = tab === 'domScan' ? 'diagDOM' : tab === 'diagFull' ? 'diagFull' : 'diagAccount'
+                          handleTabContextAction_diag(action, notifLogModal.messengerId, wv)
+                        }
+                      }
+                    }} title={tooltip}>{label}</button>
                   ))}
                 </div>
                 <span className="text-[10px]" style={{ color: '#4ade80' }}>&#9679; авто</span>
@@ -3246,6 +3315,60 @@ export default function App() {
                             if (sKids < 5) continue;
                             r.scrollContainers.push({ tag: sEl.tagName, cls: scls.slice(0,120), childCount: sKids, h: sEl.scrollHeight });
                           }
+                          // v0.77.6: VK профиль + CSS-классы сообщений (улучшенный поиск)
+                          r.vkProfile = {};
+                          try {
+                            // 1. Кнопка профиля в шапке (testid)
+                            var profBtn = document.querySelector('[data-testid="header-profile-menu-button"]');
+                            if (profBtn) {
+                              var profImg = profBtn.querySelector('img');
+                              if (profImg) r.vkProfile.avatarSrc = (profImg.src||'').slice(0,80);
+                              r.vkProfile.profBtnText = (profBtn.textContent||'').trim().slice(0,40);
+                              r.vkProfile.profBtnTitle = (profBtn.title||profBtn.getAttribute('aria-label')||'').slice(0,40);
+                            }
+                            // 2. Левое меню — ссылка "Профиль" с href /idXXX
+                            var leftNav = document.querySelector('[data-testid="leftmenu"]');
+                            if (leftNav) {
+                              var links = leftNav.querySelectorAll('a[href*="/id"]');
+                              links.forEach(function(lnk) {
+                                var href = lnk.getAttribute('href')||'';
+                                if (/\/id\d+/.test(href)) {
+                                  r.vkProfile.profileHref = href;
+                                  r.vkProfile.profileLinkText = (lnk.textContent||'').trim().slice(0,40);
+                                }
+                              });
+                            }
+                            // 3. Мета-теги и глобальные переменные
+                            var metaName = document.querySelector('meta[property="og:title"], meta[name="author"]');
+                            if (metaName) r.vkProfile.metaName = (metaName.content||'').slice(0,40);
+                          } catch {}
+                          // Последние сообщения в чате — ищем в ConvoHistory__flow
+                          r.vkMessages = [];
+                          try {
+                            var flow = document.querySelector('.ConvoHistory__flow, .ConvoMain__history');
+                            if (flow) {
+                              // Ищем прямых детей flow (группы сообщений)
+                              var groups = flow.children;
+                              var startG = groups.length > 3 ? groups.length - 3 : 0;
+                              for (var gi = startG; gi < groups.length; gi++) {
+                                var grp = groups[gi];
+                                var gc = grp.className||''; if (typeof gc !== 'string') gc = gc.baseVal||'';
+                                var isOut2 = gc.includes('out') || gc.includes('Out') || gc.includes('own') || gc.includes('right') || gc.includes('self');
+                                var dataOut = grp.getAttribute('data-out') || grp.getAttribute('data-peer-id') || '';
+                                var authorEl2 = grp.querySelector('[class*="author" i], [class*="name" i], [class*="sender" i], [class*="Avatar" i]');
+                                var author2 = authorEl2 ? (authorEl2.textContent||'').trim().slice(0,30) : '';
+                                var bodyText = (grp.textContent||'').trim().slice(0,80);
+                                r.vkMessages.push({ cls: gc.slice(0,120), isOut: isOut2, dataOut: dataOut, author: author2, text: bodyText, tag: grp.tagName, kids: grp.children.length });
+                              }
+                            }
+                          } catch {}
+                          // HTML последнего сообщения (для анализа структуры)
+                          try {
+                            var flow2 = document.querySelector('.ConvoHistory__flow');
+                            if (flow2 && flow2.lastElementChild) {
+                              r.vkLastMsgHtml = flow2.lastElementChild.outerHTML.slice(0,500);
+                            }
+                          } catch {}
                           return JSON.stringify(r);
                         } catch(e) { return JSON.stringify({ error: e.message }); }
                       })()`)
@@ -3490,6 +3613,56 @@ export default function App() {
                 </div>
               )
             })()}
+            {/* v0.77.6: Вкладки диагностик */}
+            {notifLogTab === 'domScan' && (
+              <div className="flex-1 overflow-auto px-4 py-2" style={{ fontSize: '12px' }}>
+                {notifLogModal.domScanData ? (
+                  <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--cc-text-dim)', lineHeight: '1.5' }}>
+                    {JSON.stringify(notifLogModal.domScanData, null, 2)}
+                  </pre>
+                ) : (
+                  <div className="flex items-center justify-center h-32" style={{ color: 'var(--cc-text-dimmer)' }}>
+                    Загрузка DOM-структуры...
+                  </div>
+                )}
+              </div>
+            )}
+            {notifLogTab === 'diagFull' && (
+              <div className="flex-1 overflow-auto px-4 py-2" style={{ fontSize: '12px' }}>
+                {notifLogModal.diagFullData ? (
+                  <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--cc-text-dim)', lineHeight: '1.5' }}>
+                    {JSON.stringify(notifLogModal.diagFullData, null, 2)}
+                  </pre>
+                ) : (
+                  <div className="flex items-center justify-center h-32" style={{ color: 'var(--cc-text-dimmer)' }}>
+                    Загрузка данных хранилища...
+                  </div>
+                )}
+              </div>
+            )}
+            {notifLogTab === 'diagAccount' && (
+              <div className="flex-1 overflow-auto px-4 py-2" style={{ fontSize: '12px' }}>
+                {notifLogModal.diagAccountData ? (
+                  <div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead><tr>
+                        <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--cc-border)' }}>Шаг</th>
+                        <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--cc-border)' }}>Значение</th>
+                      </tr></thead>
+                      <tbody>
+                        {(notifLogModal.diagAccountData.steps || []).map((s, i) => (
+                          <tr key={i}><td style={{ padding: '4px 8px', borderBottom: '1px solid var(--cc-border)', color: '#60a5fa' }}>{s.step}</td><td style={{ padding: '4px 8px', borderBottom: '1px solid var(--cc-border)' }}>{s.value || s.text || (s.found ? '✅' : '❌')}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-32" style={{ color: 'var(--cc-text-dimmer)' }}>
+                    Загрузка данных аккаунта...
+                  </div>
+                )}
+              </div>
+            )}
             {/* Легенда */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[11px]" style={{ borderTop: '1px solid var(--cc-border)', color: 'var(--cc-text-dimmer)' }}>
               {notifLogTab === 'log' ? (<>
@@ -3497,12 +3670,14 @@ export default function App() {
                 <span><span style={{ color: '#f87171' }}>ЗАБЛОК.</span> — спам/исходящее</span>
                 <span><span style={{ color: '#60a5fa' }}>Отправитель</span> — имя из DOM чата</span>
                 <span>До 100 записей · Растянуть ↘</span>
-              </>) : (<>
+              </>) : notifLogTab === 'trace' ? (<>
                 <span><span style={{ color: '#4ade80' }}>ПРОПУЩЕН</span> — шаг пройден</span>
                 <span><span style={{ color: '#f87171' }}>БЛОК</span> — уведомление остановлено</span>
                 <span><span style={{ color: '#fbbf24' }}>ВНИМАНИЕ</span> — проблема обогащения</span>
                 <span><span style={{ color: '#94a3b8' }}>ИНФО</span> — этап pipeline</span>
                 <span>До 300 записей · Растянуть ↘</span>
+              </>) : (<>
+                <span>Данные скопированы в буфер обмена · Ctrl+V чтобы вставить</span>
               </>)}
             </div>
           </div>
