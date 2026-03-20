@@ -6,6 +6,7 @@ import SettingsPanel from './components/SettingsPanel.jsx'
 import AISidebar from './components/AISidebar.jsx'
 import TemplatesPanel from './components/TemplatesPanel.jsx'
 import AutoReplyPanel from './components/AutoReplyPanel.jsx'
+import { detectMessengerType, ACCOUNT_SCRIPTS, DOM_SCAN_SCRIPTS, DIAG_FULL_SCRIPTS } from './utils/messengerConfigs.js'
 
 // ─── Звуковое уведомление (Web Audio API) ─────────────────────────────────
 // Уникальная тональность для каждого мессенджера по цвету
@@ -2277,47 +2278,16 @@ export default function App() {
   }
 
   // ── Контекстное меню вкладки ────────────────────────────────────────────
-  // v0.77.6: Диагностики → вызов из модального окна (вкладки)
+  // v0.78.2: Диагностики → мессенджер-специфичные скрипты из messengerConfigs.js
   const handleTabContextAction_diag = (action, mid, wv) => {
     if (!wv || !mid) return
+    // Определяем тип мессенджера по URL
+    const mInfo = messengersRef.current.find(x => x.id === mid)
+    const mType = detectMessengerType(mInfo?.url || '')
+
     if (action === 'diagDOM') {
-      wv.executeJavaScript(`(() => {
-        var r = { url: location.href, title: document.title, ts: Date.now() }
-        var containerSels = ['[role="application"]','#app','#main','#side','[data-testid="chat-list"]','[role="grid"]','[role="list"]','[data-tab]','[aria-label*="chat" i]','div[tabindex="-1"]']
-        r.selectors = {}
-        for (var s of containerSels) { try { var els = document.querySelectorAll(s); if (els.length > 0) { r.selectors[s] = []; for (var i = 0; i < Math.min(els.length, 3); i++) { var el = els[i]; r.selectors[s].push({ tag: el.tagName, id: el.id||'', cls: (el.className||'').substring(0,120), role: el.getAttribute('role')||'', childCount: el.children?el.children.length:0, rect: {w:el.offsetWidth,h:el.offsetHeight} }) } } } catch(e){} }
-        r.testids = []; try { var tels = document.querySelectorAll('[data-testid]'); for (var i = 0; i < Math.min(tels.length, 50); i++) { r.testids.push({ testid: tels[i].getAttribute('data-testid'), tag: tels[i].tagName, cls: (tels[i].className||'').substring(0,60) }) } } catch(e){}
-        r.roles = []; try { var rels = document.querySelectorAll('[role]'); for (var i = 0; i < Math.min(rels.length, 50); i++) { r.roles.push({ role: rels[i].getAttribute('role'), tag: rels[i].tagName, cls: (rels[i].className||'').substring(0,60) }) } } catch(e){}
-        // v0.77.9: Поиск имени профиля (VK, MAX, любой мессенджер)
-        r.profileSearch = {};
-        try {
-          // 1. VK: кнопка профиля в шапке
-          var pb = document.querySelector('[data-testid="header-profile-menu-button"]');
-          if (pb) { r.profileSearch.vkProfileBtn = { href: (pb.href||pb.getAttribute('href')||'').slice(0,60), title: (pb.title||pb.getAttribute('title')||'').slice(0,40), ariaLabel: (pb.getAttribute('aria-label')||'').slice(0,40), text: (pb.textContent||'').trim().slice(0,40) }; var pi = pb.querySelector('img'); if (pi) r.profileSearch.vkProfileImg = (pi.alt||pi.title||'').slice(0,40) }
-          // 2. VK: ссылка /idXXX в меню
-          var nav = document.querySelector('[data-testid="leftmenu"]');
-          if (nav) { var links = nav.querySelectorAll('a'); for (var li = 0; li < links.length; li++) { var h = links[li].getAttribute('href')||''; if (/\/id\d+/.test(h)) { r.profileSearch.vkProfileLink = h.slice(0,30); r.profileSearch.vkProfileLinkText = (links[li].textContent||'').trim().slice(0,40); break } } }
-          // 3. window.vk объект
-          try { if (window.vk) { r.profileSearch.vkObj = { id: window.vk.id||'', name: window.vk.name||'', first_name: window.vk.first_name||'', last_name: window.vk.last_name||'' } } } catch(e2) {}
-          // 4. Мета-теги
-          var mt = document.querySelector('meta[property="og:title"]'); if (mt) r.profileSearch.ogTitle = (mt.content||'').slice(0,40);
-          mt = document.querySelector('meta[name="author"]'); if (mt) r.profileSearch.metaAuthor = (mt.content||'').slice(0,40);
-          // 5. Telegram: .peer-title, .sidebar-tools-button
-          var pt = document.querySelector('.peer-title'); if (pt) r.profileSearch.tgPeerTitle = (pt.textContent||'').trim().slice(0,40);
-          // 6. MAX: profile button
-          var mp = document.querySelector('button.profile, [class*="profile" i] [class*="name" i]'); if (mp) r.profileSearch.maxProfile = (mp.textContent||'').trim().slice(0,40);
-          // 7. Title страницы
-          r.profileSearch.pageTitle = document.title.slice(0,60);
-          // 8. Все img с alt (могут содержать имя)
-          r.profileSearch.imgsWithAlt = [];
-          var ais = document.querySelectorAll('img[alt]');
-          for (var ai2 = 0; ai2 < Math.min(ais.length, 10); ai2++) {
-            var alt2 = (ais[ai2].alt||'').trim();
-            if (alt2.length > 2 && alt2.length < 40) r.profileSearch.imgsWithAlt.push(alt2);
-          }
-        } catch(e) { r.profileSearch.error = e.message }
-        return JSON.stringify(r)
-      })()`)
+      const script = DOM_SCAN_SCRIPTS[mType] || DOM_SCAN_SCRIPTS.unknown
+      wv.executeJavaScript(script)
         .then(res => {
           try {
             const data = JSON.parse(res)
@@ -2326,42 +2296,29 @@ export default function App() {
           } catch {}
         }).catch(err => {
           console.error('[DOM-скан] ошибка:', err)
-          setNotifLogModal(prev => prev ? { ...prev, domScanData: { error: err.message || String(err) } } : prev)
+          setNotifLogModal(prev => prev ? { ...prev, domScanData: { error: err.message || String(err), type: mType } } : prev)
         })
     } else if (action === 'diagFull') {
-      wv.executeJavaScript(`(async () => {
-        var r = { url: location.href, title: document.title }
-        r.localStorage = {}; try { for (var i = 0; i < Math.min(localStorage.length, 50); i++) { var k = localStorage.key(i); r.localStorage[k] = (localStorage.getItem(k)||'').substring(0,200) } } catch(e) { r.error = e.message }
-        r.cookies = []; try { r.cookies = document.cookie.split(';').slice(0,30).map(c => c.trim().split('=')[0]) } catch(e){}
-        r.avatarImages = []; try { var imgs = document.querySelectorAll('img'); for (var i = 0; i < imgs.length && i < 20; i++) { if (imgs[i].width >= 20 && imgs[i].width <= 80) r.avatarImages.push({ src: (imgs[i].src||'').substring(0,200), size: imgs[i].width+'x'+imgs[i].height, cls: (imgs[i].className||'').substring(0,60) }) } } catch(e){}
-        return JSON.stringify(r, null, 2)
-      })()`)
+      wv.executeJavaScript(DIAG_FULL_SCRIPTS.common)
         .then(json => {
           try {
             const data = JSON.parse(json)
             setNotifLogModal(prev => prev ? { ...prev, diagFullData: data } : prev)
             navigator.clipboard.writeText(json).catch(() => {})
           } catch {}
-        }).catch(() => {})
+        }).catch(err => {
+          setNotifLogModal(prev => prev ? { ...prev, diagFullData: { error: err.message || String(err) } } : prev)
+        })
     } else if (action === 'diagAccount') {
-      wv.executeJavaScript(`(async () => {
-        var r = { steps: [] }
-        var CK = '__cc_account_name'
-        var cached = localStorage.getItem(CK)
-        r.steps.push({ step: 'Кэш', value: cached || 'нет' })
-        var ni = document.querySelector('input[placeholder="Имя"]')
-        r.steps.push({ step: 'Поле "Имя"', found: !!ni, value: ni ? ni.value : 'нет' })
-        var pc = document.querySelector('button.profile')
-        r.steps.push({ step: 'Кнопка профиля', found: !!pc, text: pc ? pc.textContent.trim().substring(0,60) : 'нет' })
-        return JSON.stringify(r, null, 2)
-      })()`)
-        .then(json => {
-          try {
-            const data = JSON.parse(json)
-            setNotifLogModal(prev => prev ? { ...prev, diagAccountData: data } : prev)
-            navigator.clipboard.writeText(json).catch(() => {})
-          } catch {}
-        }).catch(() => {})
+      const script = ACCOUNT_SCRIPTS[mType] || ACCOUNT_SCRIPTS.telegram
+      wv.executeJavaScript(script)
+        .then(name => {
+          const data = { type: mType, name: name || 'не найдено', script: mType }
+          setNotifLogModal(prev => prev ? { ...prev, diagAccountData: data } : prev)
+          navigator.clipboard.writeText(JSON.stringify(data, null, 2)).catch(() => {})
+        }).catch(err => {
+          setNotifLogModal(prev => prev ? { ...prev, diagAccountData: { error: err.message || String(err), type: mType } } : prev)
+        })
     }
   }
 
@@ -2375,10 +2332,10 @@ export default function App() {
       setMonitorStatus(prev => ({ ...prev, [id]: 'loading' }))
     } else if (action === 'diag') {
       if (wv) { try { wv.send('run-diagnostics') } catch {} }
-    } else if (action === 'diagFull') {
-      // Расширенная диагностика: localStorage, sessionStorage, IndexedDB, cookies, DOM avatars
-      if (wv) {
-        wv.executeJavaScript(`(async () => {
+    } else if (action === 'notifLog') {
+      // v0.78.2: Лог уведомлений — старый diagFull/diagDOM/diagAccount УДАЛЁН
+      // Теперь в handleTabContextAction_diag (вкладки модального окна)
+      if (false) { /* МЁРТВЫЙ КОД НИЖЕ — будет удалён */ var wv_dead = null; wv_dead.executeJavaScript(`(async () => {
           var r = { url: location.href, title: document.title }
           r.localStorage = {}
           try { for (var i = 0; i < Math.min(localStorage.length, 50); i++) {
