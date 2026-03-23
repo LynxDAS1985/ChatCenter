@@ -7,6 +7,7 @@ import AISidebar from './components/AISidebar.jsx'
 import TemplatesPanel from './components/TemplatesPanel.jsx'
 import AutoReplyPanel from './components/AutoReplyPanel.jsx'
 import { detectMessengerType, isSpamText, ACCOUNT_SCRIPTS, DOM_SCAN_SCRIPTS, DIAG_FULL_SCRIPTS } from './utils/messengerConfigs.js'
+import { isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap } from './utils/messageProcessing.js'
 import { playNotificationSound } from './utils/sound.js'
 import { buildChatNavigateScript } from './utils/navigateToChat.js'
 import MessengerTab from './components/MessengerTab.jsx'
@@ -670,39 +671,28 @@ export default function App() {
     if (!text) return
     traceNotif('handle', 'info', messengerId, text, `extra=${extra ? `{s:"${(extra.senderName||'').slice(0,20)}",icon:${!!(extra.iconUrl||extra.iconDataUrl)}}` : 'нет'}`)
 
-    // Дедупликация: одинаковый текст от того же мессенджера за 10 сек → skip
-    const dedupKey = messengerId + ':' + text.slice(0, 60)
-    const now = Date.now()
-    if (recentNotifsRef.current.has(dedupKey) && now - recentNotifsRef.current.get(dedupKey) < 10000) {
-      traceNotif('dedup', 'block', messengerId, text, `recentNotifs | age=${now - recentNotifsRef.current.get(dedupKey)}мс`)
+    // v0.79.2: Дедупликация из messageProcessing.js
+    const exactDedup = isDuplicateExact(messengerId, text, recentNotifsRef.current)
+    if (exactDedup.blocked) {
+      traceNotif('dedup', 'block', messengerId, text, `recentNotifs | age=${exactDedup.age}мс`)
       return
     }
-    // v0.77.4: Дедуп по подстроке — VK шлёт parent ("Елена ДугинаТекст") + child ("Текст")
-    const textShort = text.slice(0, 80)
-    for (const [k, ts] of recentNotifsRef.current) {
-      if (now - ts > 5000 || !k.startsWith(messengerId + ':')) continue
-      const prevText = k.slice(messengerId.length + 1)
-      if (prevText.length > 5 && textShort.length > 5 && (prevText.includes(textShort) || textShort.includes(prevText))) {
-        traceNotif('dedup', 'block', messengerId, text, `substring-dedup | prevLen=${prevText.length} age=${now - ts}мс`)
-        return
-      }
+    const subDedup = isDuplicateSubstring(messengerId, text, recentNotifsRef.current)
+    if (subDedup.blocked) {
+      traceNotif('dedup', 'block', messengerId, text, `substring-dedup | prevLen=${subDedup.prevLen} age=${subDedup.age}мс`)
+      return
     }
-    recentNotifsRef.current.set(dedupKey, now)
-    // Чистим старые записи (>30 сек)
-    if (recentNotifsRef.current.size > 50) {
-      for (const [k, ts] of recentNotifsRef.current) { if (now - ts > 30000) recentNotifsRef.current.delete(k) }
-    }
+    recentNotifsRef.current.set(exactDedup.key, exactDedup.now)
+    cleanupRecentMap(recentNotifsRef.current)
 
-    // v0.77.7: VK — убираем имя sender из текста + фильтр своих сообщений
-    // MutationObserver VK шлёт textContent как "Елена ДугинаТекст" (имя+текст склеены)
+    // v0.79.2: Sender-strip + own-msg из messageProcessing.js
     const senderName = extra?.senderName || ''
-    if (senderName.length >= 3 && text.startsWith(senderName)) {
-      // Чужое сообщение — убираем имя из начала текста
-      text = text.slice(senderName.length).trim()
-      if (!text) return // Пустой текст после удаления имени (было только имя)
+    const stripped = stripSenderFromText(text, senderName)
+    if (stripped.stripped) {
+      text = stripped.text
+      if (!text) return
       traceNotif('handle', 'info', messengerId, text, `sender-strip: убрано "${senderName}" из начала`)
-    } else if (senderName.length >= 3 && !extra?.fromNotifAPI && /^[А-ЯA-Z][а-яa-z]+\s[А-ЯA-Z][а-яa-z]/.test(text)) {
-      // Текст начинается с "Имя Фамилия" но НЕ с sender → скорее всего СВОЁ сообщение
+    } else if (isOwnMessage(text, senderName, extra?.fromNotifAPI)) {
       traceNotif('dedup', 'block', messengerId, text, `own-msg | sender="${senderName}" textStart="${text.slice(0,20)}"`)
       return
     }
