@@ -32,7 +32,9 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'index.html')
-        }
+        },
+        // Исключаем тесты из production bundle
+        external: [/src\/__tests__/]
       }
     }
   }
