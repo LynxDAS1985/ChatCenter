@@ -6,7 +6,7 @@ import SettingsPanel from './components/SettingsPanel.jsx'
 import AISidebar from './components/AISidebar.jsx'
 import TemplatesPanel from './components/TemplatesPanel.jsx'
 import AutoReplyPanel from './components/AutoReplyPanel.jsx'
-import { detectMessengerType, ACCOUNT_SCRIPTS, DOM_SCAN_SCRIPTS, DIAG_FULL_SCRIPTS } from './utils/messengerConfigs.js'
+import { detectMessengerType, isSpamText, ACCOUNT_SCRIPTS, DOM_SCAN_SCRIPTS, DIAG_FULL_SCRIPTS } from './utils/messengerConfigs.js'
 import { playNotificationSound } from './utils/sound.js'
 import { buildChatNavigateScript } from './utils/navigateToChat.js'
 import MessengerTab from './components/MessengerTab.jsx'
@@ -1360,13 +1360,8 @@ export default function App() {
           }
           const msgText = (e.args[0] || '').trim()
           if (!msgText) return
-          // v0.59.0: Спам-фильтр IPC — базовые паттерны (Path 2 удалён, sidebar мусор не приходит)
-          const isIpcSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(msgText)
-            || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating)/i.test(msgText)
-            || /^(вы:\s|you:\s)/i.test(msgText)
-            || /\s+(в\s+сети|online|offline)\s*$/i.test(msgText)
-            || /\s+назад\s*$/i.test(msgText)
-          if (isIpcSpam) {
+          // v0.78.5: Спам-фильтр из messengerConfigs.js
+          if (isSpamText(msgText, 'ipc')) {
             traceNotif('spam', 'block', messengerId, msgText, 'спам-фильтр IPC new-message')
             return
           }
@@ -1455,22 +1450,8 @@ export default function App() {
           }
           const text = msg.slice(10).trim()
           if (!text) return
-          // v0.60.0: Спам-фильтр — базовые паттерны + VK UI элементы (контекстное меню, placeholder)
-          const isMsgSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
-            // v0.76.0: Дата-разделители WhatsApp (DD.MM.YYYY, DD/MM/YYYY, "вчера", "сегодня", дни недели)
-            || /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(text)
-            || /^(вчера|сегодня|yesterday|today|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(text)
-            || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating)/i.test(text)
-            || /^(вы:\s|you:\s)/i.test(text)
-            || /\s+(в\s+сети|online|offline)\s*$/i.test(text)
-            || /\s+назад\s*$/i.test(text)
-            // v0.60.0: VK UI — контекстное меню, placeholder "Сообщение", системные кнопки
-            || /^(переслать|отметить|скопировать|удалить|выбрать|ответить|пожаловаться|закрепить|редактировать|сообщение)$/i.test(text)
-            || (/(переслать|отметить как новое|скопировать текст|удалить|выбрать)/i.test(text) && text.length < 100)
-            // v0.75.8: WhatsApp UI-артефакты — alt-тексты иконок (только латиница через дефис, без пробелов)
-            // Примеры: "default-contact-refreshed", "status-dblcheckic-image...", "status-time", "default-user"
-            || /^[a-z]+-[a-z-]+(ic-image)?.*$/i.test(text.split(/\s/)[0]) && !/\s/.test(text.trim()) && text.length < 60
-          if (isMsgSpam) {
+          // v0.78.5: Спам-фильтр из messengerConfigs.js
+          if (isSpamText(text, 'msg')) {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_MSG__')
             return
           }

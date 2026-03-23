@@ -18,28 +18,34 @@ export function detectMessengerType(url) {
   return 'unknown'
 }
 
-// ── Спам-паттерны по мессенджерам ────────────────────────────────────────
-// Тексты которые НЕ являются сообщениями (UI элементы, статусы)
-export const SPAM_PATTERNS = {
-  // Общие для всех
-  common: [
-    /^(typing|печатает|набирает|записывает голосовое|recording|online|в сети|был\(а\)|was online|last seen)$/i,
-    /^\d{1,2}:\d{2}(:\d{2})?$/,     // время HH:MM
-    /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/, // дата
-    /^(вчера|сегодня|yesterday|today|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье)$/i,
-  ],
-  // WhatsApp-специфичные (alt-тексты иконок)
-  whatsapp: [
-    /^[a-z]+-[a-z-]+(ic-image)?.*$/i, // default-contact-refreshed, status-dblcheck и т.д.
-  ],
-  // VK-специфичные
-  vk: [
-    // VK UI элементы обрабатываются через isSidebarNode, не спам-фильтр
-  ],
-  // Telegram-специфичные
-  telegram: [],
-  // MAX-специфичные
-  max: [],
+// ── Спам-фильтр сообщений ────────────────────────────────────────────────
+// Проверяет является ли текст UI-мусором а не реальным сообщением
+// Используется для IPC new-message и __CC_MSG__ (MutationObserver)
+export function isSpamText(text, source) {
+  if (!text) return true
+  // Время HH:MM(:SS)
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) return true
+  // Дата DD.MM.YYYY
+  if (/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(text)) return true
+  // Дни недели
+  if (/^(вчера|сегодня|yesterday|today|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(text)) return true
+  // Статусы мессенджеров
+  if (/^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating)/i.test(text)) return true
+  // Исходящие маркеры
+  if (/^(вы:\s|you:\s)/i.test(text)) return true
+  // Статус в конце текста
+  if (/\s+(в\s+сети|online|offline)\s*$/i.test(text)) return true
+  if (/\s+назад\s*$/i.test(text)) return true
+
+  // Только для __CC_MSG__ (MutationObserver) — дополнительные фильтры
+  if (source === 'msg') {
+    // VK UI — контекстное меню
+    if (/^(переслать|отметить|скопировать|удалить|выбрать|ответить|пожаловаться|закрепить|редактировать|сообщение)$/i.test(text)) return true
+    if (/(переслать|отметить как новое|скопировать текст|удалить|выбрать)/i.test(text) && text.length < 100) return true
+    // WhatsApp UI-артефакты — alt-тексты иконок (латиница через дефис, без пробелов)
+    if (/^[a-z]+-[a-z-]+(ic-image)?.*$/i.test(text.split(/\s/)[0]) && !/\s/.test(text.trim()) && text.length < 60) return true
+  }
+  return false
 }
 
 // ── Скрипты accountScript (получение имени профиля) ─────────────────────
