@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "0.79.0",
+  "version": "0.79.1",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",
@@ -11,7 +11,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "node scripts/dev.js",
-    "test": "node src/__tests__/isSpamText.test.js && node src/__tests__/navigateToChat.test.js && node src/__tests__/messengerConfigs.test.js"
+    "test": "node src/__tests__/isSpamText.test.js && node src/__tests__/navigateToChat.test.js && node src/__tests__/messengerConfigs.test.js && node src/__tests__/monitorPreload.test.js && node src/__tests__/overlayIcon.test.js && node src/__tests__/handleNewMessage.test.js"
   },
   "dependencies": {
     "electron-store": "^10.0.0",
