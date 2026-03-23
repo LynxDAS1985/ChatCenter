@@ -1678,15 +1678,8 @@ export default function App() {
           const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
           const text = (data.b || '').trim()
           traceNotif('source', 'info', messengerId, text, `__CC_NOTIF__ | t="${(data.t||'').slice(0,20)}" icon=${!!data.i} tag=${!!data.g}`)
-          // Фильтр: timestamp / системный текст / исходящее ("Вы: ...") / MAX системные / статусы
-          const isSpam = /^\d{1,2}:\d{2}(:\d{2})?$/.test(text)
-            || /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing)/i.test(text)
-            || /^(вы:\s|you:\s)/i.test(text)
-            || /^(ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(text)
-            || /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i.test(text)
-            || /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i.test(text)
-            || /\s+назад\s*$/i.test(text) || /^(час|минуту?|секунду?)\s+назад$/i.test(text)
-          if (isSpam) {
+          // v0.79.0: Спам-фильтр из messengerConfigs.js (единый для всех путей)
+          if (isSpamText(text, 'notif')) {
             traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_NOTIF__')
             return
           }

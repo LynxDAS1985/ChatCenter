@@ -36,6 +36,11 @@ export function isSpamText(text, source) {
   // Статус в конце текста
   if (/\s+(в\s+сети|online|offline)\s*$/i.test(text)) return true
   if (/\s+назад\s*$/i.test(text)) return true
+  if (/^(час|минуту?|секунду?)\s+назад$/i.test(text)) return true
+  // Пропущенные звонки, системные
+  if (/^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i.test(text)) return true
+  // Системные статусы
+  if (/^(ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(text)) return true
 
   // Только для __CC_MSG__ (MutationObserver) — дополнительные фильтры
   if (source === 'msg') {
