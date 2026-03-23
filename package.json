@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "0.79.4",
+  "version": "0.79.5",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",
@@ -11,18 +11,15 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "node scripts/dev.js",
-    "test": "node src/__tests__/isSpamText.test.js && node src/__tests__/navigateToChat.test.js && node src/__tests__/messengerConfigs.test.js && node src/__tests__/monitorPreload.test.js && node src/__tests__/overlayIcon.test.js && node src/__tests__/handleNewMessage.test.js && node src/__tests__/messageProcessing.test.js && node src/__tests__/mainProcess.test.js && node src/__tests__/appStructure.test.js"
+    "test": "node src/__tests__/isSpamText.test.js && node src/__tests__/navigateToChat.test.js && node src/__tests__/messengerConfigs.test.js && node src/__tests__/monitorPreload.test.js && node src/__tests__/overlayIcon.test.js && node src/__tests__/handleNewMessage.test.js && node src/__tests__/messageProcessing.test.js && node src/__tests__/mainProcess.test.js && node src/__tests__/appStructure.test.js && node src/__tests__/projectHealth.test.js"
   },
   "dependencies": {
-    "electron-store": "^10.0.0",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0",
-    "zustand": "^5.0.0"
+    "react-dom": "^18.3.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.20",
-    "cross-env": "^7.0.3",
     "electron": "^33.2.0",
     "electron-vite": "^2.3.0",
     "lucide-react": "^0.460.0",

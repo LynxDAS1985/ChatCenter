@@ -17,10 +17,7 @@ import NotifLogModal from './components/NotifLogModal.jsx'
 
 // v0.78.4: MessengerTab вынесен в src/components/MessengerTab.jsx
 
-// v0.78.3: Навигация к чату вынесена в src/utils/navigateToChat.js
-// v0.78.4: Мёртвый код _DEAD_buildChatNavigateScript УДАЛЁН (240 строк)
-
-// v0.78.4: buildChatNavigateScript удалён (вынесен в src/utils/navigateToChat.js)
+// Навигация → src/utils/navigateToChat.js | Звук → src/utils/sound.js | Вкладка → components/MessengerTab.jsx
 
 // ─── Главный компонент ────────────────────────────────────────────────────
 
