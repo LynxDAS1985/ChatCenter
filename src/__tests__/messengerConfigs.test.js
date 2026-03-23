@@ -47,11 +47,11 @@ test('Unknown fallback скан', () => assert(code.includes("type: 'unknown'"))
 // ── isSpamText ──
 console.log('\\n── isSpamText: ──')
 test('Экспортирует isSpamText', () => assert(code.includes('export function isSpamText')))
-test('Фильтрует время', () => assert(code.includes('\\d{1,2}:\\d{2}')))
-test('Фильтрует дату', () => assert(code.includes('[./-]')))
-test('Фильтрует статусы', () => assert(code.includes('печата') && code.includes('typing')))
-test('VK UI фильтр (msg)', () => assert(code.includes('переслать') && code.includes("source === 'msg'")))
-test('WhatsApp артефакты (msg)', () => assert(code.includes('ic-image')))
+test('Читает из shared/spamPatterns.json', () => assert(code.includes('spamPatterns.json')))
+test('Использует SP.time', () => assert(code.includes('SP.time')))
+test('Использует SP.statuses', () => assert(code.includes('SP.statuses')))
+test('Использует SP.vkMenu для msg', () => assert(code.includes('SP.vkMenu') && code.includes("source === 'msg'")))
+test('Использует SP.whatsappAlt', () => assert(code.includes('SP.whatsappAlt')))
 
 // ── ENRICHMENT_SELECTORS ──
 console.log('\\n── ENRICHMENT_SELECTORS: ──')
@@ -59,6 +59,19 @@ test('Экспортирует ENRICHMENT_SELECTORS', () => assert(code.includes
 test('TG: .peer-title', () => assert(code.includes("title: '.peer-title'")))
 test('VK: ConvoListItem__title', () => assert(code.includes('ConvoListItem__title')))
 test('WA: span[title]', () => assert(code.includes('span[title]')))
+
+// ── spamPatterns.json ──
+console.log('\\n── spamPatterns.json: ──')
+var spJson = require('../../shared/spamPatterns.json')
+test('JSON загружается', function() { assert(spJson && typeof spJson === 'object') })
+test('Паттерн time', function() { assert(new RegExp(spJson.time, 'i').test('12:30')) })
+test('Паттерн statuses', function() { assert(new RegExp(spJson.statuses, 'i').test('печатает')) })
+test('Паттерн vkMenu', function() { assert(new RegExp(spJson.vkMenu, 'i').test('переслать')) })
+test('Все regex валидны', function() {
+  var keys = Object.keys(spJson).filter(function(k) { return !k.startsWith('_') })
+  for (var i = 0; i < keys.length; i++) { new RegExp(spJson[keys[i]], 'i') }
+  assert(keys.length >= 10, 'нужно >= 10, есть ' + keys.length)
+})
 
 // ── Безопасность скриптов ──
 console.log('\\n── Безопасность: ──')

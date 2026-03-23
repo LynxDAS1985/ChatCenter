@@ -831,6 +831,7 @@ export default function App() {
       // Статус мониторинга: loading при инициализации
       setMonitorStatus(prev => ({ ...prev, [messengerId]: 'loading' }))
 
+      // ── СЕКЦИЯ: События загрузки страницы ──
       // Индикатор загрузки страницы WebView
       setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       el.addEventListener('did-start-loading', () => {
@@ -840,6 +841,7 @@ export default function App() {
         setWebviewLoading(prev => ({ ...prev, [messengerId]: false }))
       })
 
+      // ── СЕКЦИЯ: DOM-ready — инициализация монитора ──
       el.addEventListener('dom-ready', () => {
         clearTimeout(retryTimers.current[messengerId])
         retryTimers.current[messengerId] = setTimeout(
@@ -1235,6 +1237,7 @@ export default function App() {
         } catch {}
       })
 
+      // ── СЕКЦИЯ: Page events — title, favicon, navigate ──
       // page-title-updated — мгновенное обновление счётчика из title WebView
       // Telegram: "(26) Telegram Web", WhatsApp: "(5) WhatsApp", VK: "(3) ВКонтакте"
       // MAX: "1 непрочитанный чат" / "5 непрочитанных чатов" (БЕЗ скобок!)
@@ -1280,6 +1283,7 @@ export default function App() {
         }
       })
 
+      // ── СЕКЦИЯ: IPC-message — обработка сообщений от WebView ──
       el.addEventListener('ipc-message', (e) => {
         if (e.channel === 'zoom-change') {
           const delta = e.args[0]?.delta || 0
@@ -1395,7 +1399,8 @@ export default function App() {
         }
       })
 
-      // ── console-message: перехват Notification + MutationObserver backup (v0.39.5) ──
+      // ── СЕКЦИЯ: Console-message — перехват Notification/Badge/MutationObserver ──
+      // console-message: перехват Notification + MutationObserver backup (v0.39.5)
       el.addEventListener('console-message', (e) => {
         const msg = e.message
         if (!msg) return

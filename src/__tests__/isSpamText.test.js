@@ -5,20 +5,30 @@
  * Запуск: node src/__tests__/isSpamText.test.js
  */
 
-// Копия функции (для автономного запуска без сборщика)
+// v0.79.4: Читаем паттерны из shared/spamPatterns.json (единый источник)
+var patternsRaw = require('../../shared/spamPatterns.json')
+var SP = {}
+for (var k in patternsRaw) {
+  if (k.startsWith('_')) continue
+  try { SP[k] = new RegExp(patternsRaw[k], 'i') } catch(e) {}
+}
+
 function isSpamText(text, source) {
   if (!text) return true
-  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) return true
-  if (/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(text)) return true
-  if (/^(вчера|сегодня|yesterday|today|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(text)) return true
-  if (/^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating)/i.test(text)) return true
-  if (/^(вы:\s|you:\s)/i.test(text)) return true
-  if (/\s+(в\s+сети|online|offline)\s*$/i.test(text)) return true
-  if (/\s+назад\s*$/i.test(text)) return true
+  if (SP.time && SP.time.test(text)) return true
+  if (SP.date && SP.date.test(text)) return true
+  if (SP.weekdays && SP.weekdays.test(text)) return true
+  if (SP.statuses && SP.statuses.test(text)) return true
+  if (SP.outgoing && SP.outgoing.test(text)) return true
+  if (SP.statusSuffix && SP.statusSuffix.test(text)) return true
+  if (SP.agoSuffix && SP.agoSuffix.test(text)) return true
+  if (SP.agoExact && SP.agoExact.test(text)) return true
+  if (SP.calls && SP.calls.test(text)) return true
+  if (SP.system && SP.system.test(text)) return true
   if (source === 'msg') {
-    if (/^(переслать|отметить|скопировать|удалить|выбрать|ответить|пожаловаться|закрепить|редактировать|сообщение)$/i.test(text)) return true
-    if (/(переслать|отметить как новое|скопировать текст|удалить|выбрать)/i.test(text) && text.length < 100) return true
-    if (/^[a-z]+-[a-z-]+(ic-image)?.*$/i.test(text.split(/\s/)[0]) && !/\s/.test(text.trim()) && text.length < 60) return true
+    if (SP.vkMenu && SP.vkMenu.test(text)) return true
+    if (SP.vkMenuPartial && SP.vkMenuPartial.test(text) && text.length < 100) return true
+    if (SP.whatsappAlt && SP.whatsappAlt.test(text.split(/\s/)[0]) && !/\s/.test(text.trim()) && text.length < 60) return true
   }
   return false
 }
@@ -26,6 +36,14 @@ function isSpamText(text, source) {
 // ── Тесты ──────────────────────────────────────────────────────────────────
 
 let passed = 0, failed = 0
+
+// Проверка JSON
+;(function() {
+  var keys = Object.keys(SP)
+  if (keys.length < 10) { console.log('  ❌ JSON: только ' + keys.length + ' паттернов (нужно >= 10)'); process.exit(1) }
+  console.log('  ✅ JSON: ' + keys.length + ' паттернов загружено из shared/spamPatterns.json')
+  passed++
+})()
 
 function test(name, fn) {
   try {

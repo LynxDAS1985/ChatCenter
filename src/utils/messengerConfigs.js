@@ -19,36 +19,33 @@ export function detectMessengerType(url) {
 }
 
 // ── Спам-фильтр сообщений ────────────────────────────────────────────────
-// Проверяет является ли текст UI-мусором а не реальным сообщением
-// Используется для IPC new-message и __CC_MSG__ (MutationObserver)
+// v0.79.4: Паттерны из shared/spamPatterns.json (общие для preload + renderer)
+import spamPatternsRaw from '../../shared/spamPatterns.json'
+
+// Компилируем regex один раз при загрузке модуля
+const SP = {}
+for (const [k, v] of Object.entries(spamPatternsRaw)) {
+  if (k.startsWith('_')) continue // пропускаем _comment
+  try { SP[k] = new RegExp(v, 'i') } catch (e) { console.warn(`[spamPatterns] bad regex ${k}:`, e) }
+}
+
 export function isSpamText(text, source) {
   if (!text) return true
-  // Время HH:MM(:SS)
-  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) return true
-  // Дата DD.MM.YYYY
-  if (/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(text)) return true
-  // Дни недели
-  if (/^(вчера|сегодня|yesterday|today|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(text)) return true
-  // Статусы мессенджеров
-  if (/^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating)/i.test(text)) return true
-  // Исходящие маркеры
-  if (/^(вы:\s|you:\s)/i.test(text)) return true
-  // Статус в конце текста
-  if (/\s+(в\s+сети|online|offline)\s*$/i.test(text)) return true
-  if (/\s+назад\s*$/i.test(text)) return true
-  if (/^(час|минуту?|секунду?)\s+назад$/i.test(text)) return true
-  // Пропущенные звонки, системные
-  if (/^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i.test(text)) return true
-  // Системные статусы
-  if (/^(ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i.test(text)) return true
-
-  // Только для __CC_MSG__ (MutationObserver) — дополнительные фильтры
+  if (SP.time && SP.time.test(text)) return true
+  if (SP.date && SP.date.test(text)) return true
+  if (SP.weekdays && SP.weekdays.test(text)) return true
+  if (SP.statuses && SP.statuses.test(text)) return true
+  if (SP.outgoing && SP.outgoing.test(text)) return true
+  if (SP.statusSuffix && SP.statusSuffix.test(text)) return true
+  if (SP.agoSuffix && SP.agoSuffix.test(text)) return true
+  if (SP.agoExact && SP.agoExact.test(text)) return true
+  if (SP.calls && SP.calls.test(text)) return true
+  if (SP.system && SP.system.test(text)) return true
+  // Только для __CC_MSG__ (MutationObserver)
   if (source === 'msg') {
-    // VK UI — контекстное меню
-    if (/^(переслать|отметить|скопировать|удалить|выбрать|ответить|пожаловаться|закрепить|редактировать|сообщение)$/i.test(text)) return true
-    if (/(переслать|отметить как новое|скопировать текст|удалить|выбрать)/i.test(text) && text.length < 100) return true
-    // WhatsApp UI-артефакты — alt-тексты иконок (латиница через дефис, без пробелов)
-    if (/^[a-z]+-[a-z-]+(ic-image)?.*$/i.test(text.split(/\s/)[0]) && !/\s/.test(text.trim()) && text.length < 60) return true
+    if (SP.vkMenu && SP.vkMenu.test(text)) return true
+    if (SP.vkMenuPartial && SP.vkMenuPartial.test(text) && text.length < 100) return true
+    if (SP.whatsappAlt && SP.whatsappAlt.test(text.split(/\s/)[0]) && !/\s/.test(text.trim()) && text.length < 60) return true
   }
   return false
 }
