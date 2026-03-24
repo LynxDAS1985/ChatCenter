@@ -20,6 +20,8 @@ console.log('\\n🧪 Тесты App.jsx структуры\\n')
 console.log('── Импорты: ──')
 test('React', () => assert(code.includes("from 'react'")))
 test('messengerConfigs', () => assert(code.includes("from './utils/messengerConfigs.js'")))
+test('consoleMessageParser', () => assert(code.includes("from './utils/consoleMessageParser.js'")))
+test('devLog', () => assert(code.includes("from './utils/devLog.js'")))
 test('messageProcessing', () => assert(code.includes("from './utils/messageProcessing.js'")))
 test('sound', () => assert(code.includes("from './utils/sound.js'")))
 test('navigateToChat', () => assert(code.includes("from './utils/navigateToChat.js'")))
@@ -67,7 +69,12 @@ test('detectMessengerType() из конфига', () => assert(code.includes('de
 // ── Размер файла ──
 console.log('\\n── Размер: ──')
 var lines = code.split('\n').length
-test('App.jsx < 2600 строк', () => assert(lines < 2600, 'lines=' + lines))
+test('App.jsx < 2500 строк', () => assert(lines < 2500, 'lines=' + lines))
+test('Минимум console.log (< 5 в renderer)', () => {
+  // Считаем console.log НЕ внутри executeJavaScript строк
+  var logLines = code.split('\n').filter(l => /^\s*console\.log/.test(l) && !l.includes("console.log('__CC_"))
+  assert(logLines.length < 5, 'found ' + logLines.length + ' console.log lines')
+})
 test('App.jsx > 500 строк (не пустой)', () => assert(lines > 500, 'lines=' + lines))
 
 // ── Компоненты ──

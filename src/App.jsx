@@ -8,6 +8,8 @@ import TemplatesPanel from './components/TemplatesPanel.jsx'
 import AutoReplyPanel from './components/AutoReplyPanel.jsx'
 import { detectMessengerType, isSpamText, ACCOUNT_SCRIPTS, DOM_SCAN_SCRIPTS, DIAG_FULL_SCRIPTS } from './utils/messengerConfigs.js'
 import { isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap } from './utils/messageProcessing.js'
+import { parseConsoleMessage } from './utils/consoleMessageParser.js'
+import { devLog, devError } from './utils/devLog.js'
 import { playNotificationSound } from './utils/sound.js'
 import { buildChatNavigateScript } from './utils/navigateToChat.js'
 import MessengerTab from './components/MessengerTab.jsx'
@@ -27,7 +29,7 @@ export default function App() {
   const [accountInfo, setAccountInfo] = useState({})
   const [unreadCounts, setUnreadCounts] = useState({})
   const [unreadSplit, setUnreadSplit] = useState({})       // { [id]: { personal, channels } }
-  const [monitorDiag, setMonitorDiag] = useState(null)     // диагностика DOM от monitor.preload
+  // v0.79.8: monitorDiag удалён (не использовался)
   const [monitorStatus, setMonitorStatus] = useState({})   // { [id]: 'loading'|'active'|'error' }
   const [statusBarMsg, setStatusBarMsg] = useState(null)   // последнее сообщение для статусбара
   const [messagePreview, setMessagePreview] = useState({}) // { [id]: 'текст превью' }
@@ -215,7 +217,7 @@ export default function App() {
   // ── Клик по кастомному уведомлению (Messenger Ribbon) ────────────────────
   useEffect(() => {
     return window.api.on('notify:clicked', ({ messengerId, senderName, chatTag }) => {
-      console.log('[GoChat] notify:clicked', { messengerId, senderName, chatTag })
+      devLog('[GoChat] notify:clicked', { messengerId, senderName, chatTag })
       if (!messengerId) return
       setActiveId(messengerId)
       // Навигация к конкретному чату внутри WebView
@@ -223,24 +225,24 @@ export default function App() {
         const tryNavigate = (attempt) => {
           // Проверяем что пользователь всё ещё на этой вкладке
           if (activeIdRef.current !== messengerId) {
-            console.log(`[GoChat] attempt=${attempt} — CANCELLED (user switched to ${activeIdRef.current})`)
+            devLog(`[GoChat] attempt=${attempt} — CANCELLED (user switched to ${activeIdRef.current})`)
             return
           }
           const el = webviewRefs.current[messengerId]
           if (!el) {
-            console.log(`[GoChat] attempt=${attempt} — webview ref NOT FOUND for ${messengerId}`)
+            devLog(`[GoChat] attempt=${attempt} — webview ref NOT FOUND for ${messengerId}`)
             return
           }
           const url = el.getURL?.() || ''
           const script = buildChatNavigateScript(url, senderName, chatTag)
           if (!script) {
-            console.log(`[GoChat] attempt=${attempt} — no script for url=${url.slice(0,50)}`)
+            devLog(`[GoChat] attempt=${attempt} — no script for url=${url.slice(0,50)}`)
             return
           }
           el.executeJavaScript(script).then(result => {
             const ok = result === true || (result && result.ok)
             const method = result?.method || ''
-            console.log(`[GoChat] attempt=${attempt} ok=${ok} method=${method}`, result)
+            devLog(`[GoChat] attempt=${attempt} ok=${ok} method=${method}`, result)
             if (ok) {
               setStatusBarMsg(`>> "${senderName}" (${method})`)
             } else if (attempt >= 2 || activeIdRef.current !== messengerId) {
@@ -249,7 +251,7 @@ export default function App() {
             } else {
               setTimeout(() => tryNavigate(attempt + 1), 1500)
             }
-          }).catch(err => { console.log('[GoChat] executeJS error:', err.message) })
+          }).catch(err => { devError('[GoChat] executeJS error:', err.message) })
         }
         // Одна попытка через 800ms — без агрессивных retry
         setTimeout(() => tryNavigate(0), 800)
@@ -492,7 +494,7 @@ export default function App() {
     // Задержка 1.5с — даём DOM-подсчёту время отработать
     const timer = setTimeout(() => {
       if (notifCountRef.current[activeId] > 0 && windowFocusedRef.current) {
-        console.log(`[BADGE] auto-reset notifCountRef[${activeId}] = ${notifCountRef.current[activeId]} → 0 (viewing)`)
+        devLog(`[BADGE] auto-reset notifCountRef[${activeId}] = ${notifCountRef.current[activeId]} → 0 (viewing)`)
         notifCountRef.current[activeId] = 0
         setUnreadCounts(prev => {
           if (prev[activeId] > 0) return { ...prev, [activeId]: 0 }
@@ -614,7 +616,7 @@ export default function App() {
 
     wv.executeJavaScript(script)
       .then(result => {
-        console.log(`[tryExtractAccount] ${messengerId} attempt=${attempt} result=`, JSON.stringify(result), typeof result)
+        devLog(`[tryExtractAccount] ${messengerId} attempt=${attempt} result=`, JSON.stringify(result), typeof result)
         // Фильтр: отклоняем title страницы и служебные слова как имя аккаунта
         const BL_ACCOUNT = /^(max|макс|telegram|whatsapp|vk|вконтакте|viber|messenger|undefined|null)$/i
         if (result && typeof result === 'string' && result.length > 0 && result.length < 80 && !BL_ACCOUNT.test(result.trim())) {
@@ -1340,10 +1342,9 @@ export default function App() {
           const split = e.args[0]
           if (split) setUnreadSplit(prev => ({ ...prev, [messengerId]: split }))
         } else if (e.channel === 'monitor-diag') {
-          // Диагностика DOM от monitor.preload — для отладки селекторов
+          // v0.79.8: Диагностика DOM — трассировка в pipeline вместо state
           const diag = e.args[0]
-          console.log(`[ChatCenter] 🔍 Диагностика DOM (${messengerId}):`, diag)
-          setMonitorDiag(prev => ({ ...prev, [messengerId]: diag }))
+          traceNotif('debug', 'info', messengerId, JSON.stringify(diag).slice(0, 200), 'monitor-diag')
         } else if (e.channel === 'new-message') {
           // Warm-up: игнорируем сообщения от MutationObserver первые 5 сек после dom-ready
           if (!notifReadyRef.current[messengerId]) {
@@ -1401,36 +1402,26 @@ export default function App() {
       el.addEventListener('console-message', (e) => {
         const msg = e.message
         if (!msg) return
-        // v0.57.0: debug трассировка ВСЕХ __CC_ сообщений — для диагностики проблем с уведомлениями
-        if (msg.startsWith('__CC_')) {
+        // v0.79.8: Парсинг через consoleMessageParser.js
+        const parsed = parseConsoleMessage(msg)
+        if (parsed) {
           const ready = !!notifReadyRef.current[messengerId]
-          // v0.60.0: полный текст сообщения без обрезки — убираем префикс __CC_XXX__
-          const prefixEnd = msg.indexOf('__', 4)
-          const prefix = prefixEnd > 0 ? msg.slice(0, prefixEnd + 2) : msg.slice(0, 12)
-          const body = msg.slice(prefix.length).trim()
-          traceNotif('debug', 'info', messengerId, body.slice(0, 200), `${prefix.trim()} | ready=${ready}`)
+          traceNotif('debug', 'info', messengerId, (parsed.body || parsed.value || '').toString().slice(0, 200), `${parsed.prefix || parsed.type} | ready=${ready}`)
         }
-        // ── __CC_BADGE_BLOCKED__: Telegram Badge API → точное число непрочитанных ──
-        // v0.75.6: Используем как авторитетный источник — Telegram сам знает сколько непрочитанных
-        if (msg.startsWith('__CC_BADGE_BLOCKED__:')) {
-          const badgeVal = parseInt(msg.split(':')[1], 10)
-          if (!isNaN(badgeVal)) {
-            // Если Telegram сказал 0 и пользователь смотрит на эту вкладку → обнулить бейдж
-            if (badgeVal === 0 && activeIdRef.current === messengerId && windowFocusedRef.current) {
-              if (notifCountRef.current[messengerId] > 0) {
-                console.log(`[BADGE] __CC_BADGE_BLOCKED__:0 + viewing → reset notifCountRef[${messengerId}]`)
-                notifCountRef.current[messengerId] = 0
-              }
-              setUnreadCounts(prev => prev[messengerId] > 0 ? { ...prev, [messengerId]: 0 } : prev)
+        // ── __CC_BADGE_BLOCKED__: Telegram Badge API ──
+        if (parsed && parsed.type === 'badge_blocked') {
+          if (parsed.value === 0 && activeIdRef.current === messengerId && windowFocusedRef.current) {
+            if (notifCountRef.current[messengerId] > 0) {
+              notifCountRef.current[messengerId] = 0
             }
+            setUnreadCounts(prev => prev[messengerId] > 0 ? { ...prev, [messengerId]: 0 } : prev)
           }
           return
         }
-        // ── __CC_ACCOUNT__: имя профиля из accountScript ──
-        if (msg.startsWith('__CC_ACCOUNT__')) {
-          const name = msg.slice(14).trim()
-          if (name && name.length > 1 && name.length < 80) {
-            setAccountInfo(prev => ({ ...prev, [messengerId]: name }))
+        // ── __CC_ACCOUNT__: имя профиля ──
+        if (parsed && parsed.type === 'account') {
+          if (parsed.name && parsed.name.length > 1 && parsed.name.length < 80) {
+            setAccountInfo(prev => ({ ...prev, [messengerId]: parsed.name }))
           }
           return
         }
@@ -1782,7 +1773,7 @@ export default function App() {
             navigator.clipboard.writeText(JSON.stringify(data, null, 2)).catch(() => {})
           } catch {}
         }).catch(err => {
-          console.error('[DOM-скан] ошибка:', err)
+          devError('[DOM-скан] ошибка:', err)
           setNotifLogModal(prev => prev ? { ...prev, domScanData: { error: err.message || String(err), type: mType } } : prev)
         })
     } else if (action === 'diagFull') {
@@ -1898,7 +1889,7 @@ export default function App() {
       const split = unreadSplit[id]
       return `${id.slice(0,12)}:count=${v},split=${split ? `p${split.personal}c${split.channels}` : 'NONE'}`
     }).join(' | ')
-    console.log(`[BADGE] total=${totalUnread} personal=${totalPersonalWithFallback} channels=${totalChannels} mode=${settingsRef.current.overlayMode} [${splitDetails}]`)
+    devLog(`[BADGE] total=${totalUnread} personal=${totalPersonalWithFallback} channels=${totalChannels} mode=${settingsRef.current.overlayMode} [${splitDetails}]`)
 
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current)
     overlayTimerRef.current = setTimeout(() => {
@@ -1910,7 +1901,7 @@ export default function App() {
           return { name: m?.name || id, count: v, personal: split?.personal, channels: split?.channels }
         })
       const overlayMode = settingsRef.current.overlayMode || 'personal'
-      console.log(`[BADGE] FIRE tray:set-badge count=${totalUnread} personal=${totalPersonalWithFallback} channels=${totalChannels} mode=${overlayMode}`)
+      devLog(`[BADGE] FIRE tray:set-badge count=${totalUnread} personal=${totalPersonalWithFallback} channels=${totalChannels} mode=${overlayMode}`)
       window.api.invoke('tray:set-badge', { count: totalUnread, personal: totalPersonalWithFallback, channels: totalChannels, breakdown, overlayMode })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
