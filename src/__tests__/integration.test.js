@@ -75,9 +75,18 @@ function isOwnMessage(text, senderName, fromNotifAPI) {
   return /^[А-ЯA-Z][а-яa-z]+\s[А-ЯA-Z][а-яa-z]/.test(text)
 }
 
-// Полная имитация pipeline
-function processMessage(mid, text, extra) {
+// Полная имитация pipeline (v0.80.3: viewing check)
+function processMessage(mid, text, extra, ctx) {
   var result = { steps: [], finalText: null, action: null }
+  ctx = ctx || {}
+
+  // 0. Viewing check (v0.80.3)
+  var isViewingThisTab = ctx.focused && ctx.activeId === mid
+  if (isViewingThisTab && !extra) {
+    result.action = 'viewing-block'; result.steps.push('viewing-block'); return result
+  }
+  if (isViewingThisTab && extra) result.steps.push('viewing-pass')
+  else result.steps.push('viewing-na')
 
   // 1. Spam check
   if (isSpamText(text, extra ? 'notif' : 'msg')) { result.action = 'spam'; result.steps.push('spam'); return result }
@@ -170,6 +179,39 @@ test('VK: "Вы: текст" → spam (исходящее)', function() {
 })
 
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// ЦЕПОЧКА 1.5: Viewing logic (v0.80.3)
+// ═══════════════════════════════════════════════════════════════════════
+console.log('\\n── Цепочка: viewing logic: ──')
+
+test('VK: на вкладке + extra (MutationObserver) → НЕ блокируем (не знаем чат)', function() {
+  var r = processMessage('vk', 'Привет', { senderName: 'Сергей' }, { focused: true, activeId: 'vk' })
+  assert(r.action === 'pass', 'action=' + r.action)
+  assert(r.steps.includes('viewing-pass'))
+})
+
+test('VK: на вкладке + NO extra (мусор) → блокируем', function() {
+  var r = processMessage('vk', 'мусор', null, { focused: true, activeId: 'vk' })
+  assert(r.action === 'viewing-block')
+})
+
+test('VK: на другой вкладке → показываем', function() {
+  var r = processMessage('vk', 'Привет', { senderName: 'Сергей' }, { focused: true, activeId: 'telegram' })
+  assert(r.action === 'pass')
+  assert(r.steps.includes('viewing-na'))
+})
+
+test('Telegram: на вкладке + fromNotifAPI → показываем (мессенджер знает)', function() {
+  var r = processMessage('tg', 'Привет', { senderName: 'Иван', fromNotifAPI: true }, { focused: true, activeId: 'tg' })
+  assert(r.action === 'pass')
+  assert(r.steps.includes('viewing-pass'))
+})
+
+test('Окно не в фокусе → показываем всегда', function() {
+  var r = processMessage('vk', 'Привет', { senderName: 'Сергей' }, { focused: false, activeId: 'vk' })
+  assert(r.action === 'pass')
+})
+
 // ЦЕПОЧКА 2: parseConsoleMessage → тип → обработка
 // ═══════════════════════════════════════════════════════════════════════
 console.log('\\n── Цепочка: console-message → parser → handler: ──')

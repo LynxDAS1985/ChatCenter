@@ -704,18 +704,21 @@ export default function App() {
       return
     }
 
-    // Подавляем уведомления если пользователь смотрит на эту вкладку
-    // windowFocusedRef обновляется через IPC window-state из main process —
-    // надёжнее чем document.hidden или document.hasFocus()
-    // v0.58.0: НЕ блокируем __CC_NOTIF__ (fromNotifAPI) — если мессенджер сам вызвал
-    // showNotification, значит текущий чат ≠ чат сообщения → пользователь НЕ видит его
+    // v0.80.3: Подавляем ribbon только если:
+    // 1. fromNotifAPI=false (MutationObserver) — НЕ блокируем (VK не шлёт Notification API,
+    //    мы не знаем открыт ли конкретный чат — лучше показать лишний раз чем пропустить)
+    // 2. fromNotifAPI=true (Notification API) — мессенджер САМ решил показать уведомление,
+    //    значит текущий чат ≠ чат сообщения → ПРОПУСКАЕМ (не блокируем)
+    // Итого: viewing блокирует ТОЛЬКО если НЕТ extra (нет sender, нет source — мусор)
     const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
-    if (isViewingThisTab && !extra?.fromNotifAPI) {
+    if (isViewingThisTab && !extra) {
       traceNotif('viewing', 'block', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
       return
     }
     if (isViewingThisTab && extra?.fromNotifAPI) {
       traceNotif('viewing', 'pass', messengerId, text, `focused=true НО fromNotifAPI=true → мессенджер считает чат не открыт`)
+    } else if (isViewingThisTab && extra && !extra.fromNotifAPI) {
+      traceNotif('viewing', 'pass', messengerId, text, `focused=true НО MutationObserver → не знаем открыт ли чат → показываем`)
     } else {
       traceNotif('viewing', 'pass', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
     }
