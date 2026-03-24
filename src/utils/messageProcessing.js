@@ -38,6 +38,18 @@ export function isDuplicateSubstring(messengerId, text, recentMap, ttlMs = 5000)
  * Убирает имя sender из начала текста (VK склеивает имя+текст).
  * @returns {{ text: string, stripped: boolean }}
  */
+/**
+ * Убирает статус VK из имени sender.
+ * "Елена Дугиназаходила 6 минут назад" → "Елена Дугина"
+ * "Елена Дугинаonline" → "Елена Дугина"
+ */
+export function cleanSenderStatus(name) {
+  if (!name) return name
+  return name
+    .replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|заходил[аи]?\s+.*назад|печатает|typing|записывает голосовое)\s*$/i, '')
+    .trim()
+}
+
 export function stripSenderFromText(text, senderName) {
   if (!senderName || senderName.length < 3) return { text, stripped: false }
   if (text.startsWith(senderName)) {

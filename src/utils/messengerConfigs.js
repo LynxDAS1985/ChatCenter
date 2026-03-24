@@ -66,19 +66,29 @@ export const ACCOUNT_SCRIPTS = {
   })()`,
 
   vk: `(function() {
-    // VK: кнопка профиля в шапке → href /idXXX → alt аватарки
+    // v0.80.2: VK accountScript — полное имя профиля
     try {
-      var btn = document.querySelector('[data-testid="header-profile-menu-button"]');
-      if (btn) {
-        // 1. Проверяем title/aria-label
-        var title = btn.title || btn.getAttribute('aria-label') || '';
-        if (title && title.length > 2 && title.length < 40) return title;
-        // 2. Ищем img с alt
-        var img = btn.querySelector('img');
-        if (img && img.alt && img.alt.length > 2) return img.alt.trim();
-      }
-      // 3. window.vk объект
+      // 1. window.vk — самый надёжный (если есть)
+      if (window.vk && window.vk.first_name && window.vk.last_name) return (window.vk.first_name + ' ' + window.vk.last_name).trim();
       if (window.vk && window.vk.name) return window.vk.name;
+      // 2. Кнопка профиля → img alt (только имя)
+      var btn = document.querySelector('[data-testid="header-profile-menu-button"]');
+      var firstName = '';
+      if (btn) {
+        var title = btn.title || btn.getAttribute('aria-label') || '';
+        if (title && title.length > 2 && title.length < 40) firstName = title;
+        if (!firstName) { var img = btn.querySelector('img'); if (img && img.alt && img.alt.length > 2) firstName = img.alt.trim(); }
+      }
+      // 3. Ищем полное имя в chatlist (VK показывает "Совершён вход в аккаунт Имя Фамилия")
+      if (firstName) {
+        var items = document.querySelectorAll('.ConvoListItem__message, [class*="ConvoListItem__message"]');
+        for (var i = 0; i < items.length; i++) {
+          var t = (items[i].textContent || '').trim();
+          var m = t.match(new RegExp(firstName + '\\\\s+([А-ЯЁA-Z][а-яёa-z]+)'));
+          if (m && m[1]) return firstName + ' ' + m[1];
+        }
+        return firstName;
+      }
       // 4. Мета-теги
       var meta = document.querySelector('meta[property="og:title"]');
       if (meta && meta.content) return meta.content.trim().substring(0, 40);

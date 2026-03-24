@@ -7,7 +7,7 @@ import AISidebar from './components/AISidebar.jsx'
 import TemplatesPanel from './components/TemplatesPanel.jsx'
 import AutoReplyPanel from './components/AutoReplyPanel.jsx'
 import { detectMessengerType, isSpamText, ACCOUNT_SCRIPTS, DOM_SCAN_SCRIPTS, DIAG_FULL_SCRIPTS } from './utils/messengerConfigs.js'
-import { isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap } from './utils/messageProcessing.js'
+import { isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './utils/messageProcessing.js'
 import { parseConsoleMessage } from './utils/consoleMessageParser.js'
 import { devLog, devError } from './utils/devLog.js'
 import { playNotificationSound } from './utils/sound.js'
@@ -692,8 +692,8 @@ export default function App() {
     recentNotifsRef.current.set(exactDedup.key, exactDedup.now)
     cleanupRecentMap(recentNotifsRef.current)
 
-    // v0.79.2: Sender-strip + own-msg из messageProcessing.js
-    const senderName = extra?.senderName || ''
+    // v0.80.2: Sender clean + strip + own-msg
+    const senderName = cleanSenderStatus(extra?.senderName || '')
     const stripped = stripSenderFromText(text, senderName)
     if (stripped.stripped) {
       text = stripped.text
