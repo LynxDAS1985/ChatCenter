@@ -209,7 +209,7 @@ console.log('\\n── cleanSenderStatus: ──')
 
 function cleanSenderStatus(name) {
   if (!name) return name
-  return name.replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|заходил[аи]?\s+.*назад|печатает|typing|записывает голосовое)\s*$/i, '').trim()
+  return name.replace(/(заходил[аи]?\s*.*)/i, '').replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|печатает|typing|записывает голосовое)\s*$/i, '').trim()
 }
 
 test('Убирает "заходила 6 минут назад"', function() { assert(cleanSenderStatus('Елена Дугиназаходила 6 минут назад') === 'Елена Дугина') })
@@ -218,6 +218,8 @@ test('Убирает "заходил три минуты назад"', function(
 test('Убирает "online"', function() { assert(cleanSenderStatus('Елена Дугинаonline') === 'Елена Дугина') })
 test('Убирает "в сети"', function() { assert(cleanSenderStatus('Иван Иванов в сети') === 'Иван Иванов') })
 test('Убирает "печатает"', function() { assert(cleanSenderStatus('Елена Дугинапечатает') === 'Елена Дугина') })
+test('Обрезанный enrichment "заходила"', function() { assert(cleanSenderStatus('Елена Дугиназаходила') === 'Елена Дугина') })
+test('Обрезанный "заходил 7"', function() { assert(cleanSenderStatus('Artem Artemзаходил 7') === 'Artem Artem') })
 test('Не трогает чистое имя', function() { assert(cleanSenderStatus('Елена Дугина') === 'Елена Дугина') })
 test('Null → null', function() { assert(cleanSenderStatus(null) === null) })
 test('Пустое → пустое', function() { assert(cleanSenderStatus('') === '') })

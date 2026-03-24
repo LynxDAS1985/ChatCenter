@@ -499,17 +499,26 @@ export default function NotifLogModal({ ctx }) {
           <div className="flex-1 overflow-auto px-4 py-2" style={{ fontSize: '12px' }}>
             {notifLogModal.diagAccountData ? (
               <div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr>
-                    <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--cc-border)' }}>Шаг</th>
-                    <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--cc-border)' }}>Значение</th>
-                  </tr></thead>
-                  <tbody>
-                    {(notifLogModal.diagAccountData.steps || []).map((s, i) => (
-                      <tr key={i}><td style={{ padding: '4px 8px', borderBottom: '1px solid var(--cc-border)', color: '#60a5fa' }}>{s.step}</td><td style={{ padding: '4px 8px', borderBottom: '1px solid var(--cc-border)' }}>{s.value || s.text || (s.found ? '✅' : '❌')}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
+                {/* v0.80.4: Поддержка двух форматов — steps (старый) и name (новый) */}
+                {notifLogModal.diagAccountData.name ? (
+                  <div className="px-4 py-3">
+                    <div className="text-lg font-semibold" style={{ color: '#60a5fa' }}>{notifLogModal.diagAccountData.name}</div>
+                    <div className="text-xs mt-1" style={{ color: 'var(--cc-text-dimmer)' }}>Тип: {notifLogModal.diagAccountData.type || 'unknown'} | Скрипт: {notifLogModal.diagAccountData.script || '—'}</div>
+                    {notifLogModal.diagAccountData.error && <div className="text-xs mt-1" style={{ color: '#f87171' }}>Ошибка: {notifLogModal.diagAccountData.error}</div>}
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr>
+                      <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--cc-border)' }}>Шаг</th>
+                      <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--cc-border)' }}>Значение</th>
+                    </tr></thead>
+                    <tbody>
+                      {(notifLogModal.diagAccountData.steps || []).map((s, i) => (
+                        <tr key={i}><td style={{ padding: '4px 8px', borderBottom: '1px solid var(--cc-border)', color: '#60a5fa' }}>{s.step}</td><td style={{ padding: '4px 8px', borderBottom: '1px solid var(--cc-border)' }}>{s.value || s.text || (s.found ? '✅' : '❌')}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             ) : (
               <div className="flex items-center justify-center h-32" style={{ color: 'var(--cc-text-dimmer)' }}>

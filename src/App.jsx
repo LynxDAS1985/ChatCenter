@@ -752,20 +752,21 @@ export default function App() {
       // v0.61.1: убираем суффикс #N для отображения (dedup уже прошёл)
       // Покрывает: "📎 Стикер #3", "🖼 Картинка #2", "🎬 Анимация #1", "😇😉👍 #4"
       const displayText = text.replace(/ #\d+$/, '')
+      // v0.80.4: ribbon использует очищенный senderName (без "заходила X назад")
       window.api.invoke('app:custom-notify', {
-        title: extra?.senderName || '',
+        title: senderName || '',
         body: displayText.length > 100 ? displayText.slice(0, 97) + '…' : displayText,
-        fullBody: displayText.length > 100 ? displayText : '', // полный текст если обрезан
+        fullBody: displayText.length > 100 ? displayText : '',
         iconUrl: extra?.iconUrl || undefined,
         iconDataUrl: extra?.iconDataUrl || undefined,
         color: mInfo?.color || '#2AABEE',
         emoji: mInfo?.emoji || '💬',
         messengerName: mInfo?.name || 'ЦентрЧатов',
         messengerId: messengerId,
-        senderName: extra?.senderName || '',
+        senderName: senderName || '',
         chatTag: extra?.chatTag || '',
       }).catch(() => {})
-      traceNotif('ribbon', 'pass', messengerId, text, `отправлен | sender="${(extra?.senderName||'').slice(0,20)}" iconUrl=${(extra?.iconUrl||'нет').slice(0,30)} iconData=${(extra?.iconDataUrl||'нет').slice(0,30)}`)
+      traceNotif('ribbon', 'pass', messengerId, text, `отправлен | sender="${senderName.slice(0,20)}" iconUrl=${(extra?.iconUrl||'нет').slice(0,30)} iconData=${(extra?.iconDataUrl||'нет').slice(0,30)}`)
     } else {
       traceNotif('ribbon', 'block', messengerId, text, `выключен | global=${settingsRef.current.notificationsEnabled !== false} perMsg=${ribbonOn}`)
     }

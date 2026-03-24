@@ -46,7 +46,9 @@ export function isDuplicateSubstring(messengerId, text, recentMap, ttlMs = 5000)
 export function cleanSenderStatus(name) {
   if (!name) return name
   return name
-    .replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|заходил[аи]?\s+.*назад|печатает|typing|записывает голосовое)\s*$/i, '')
+    // v0.80.4: "заходил/а" с или без "назад" (enrichment может обрезать)
+    .replace(/(заходил[аи]?\s*.*)/i, '')
+    .replace(/\s*(online|offline|был[аи]?\s*(в\s+сети)?|в\s+сети|печатает|typing|записывает голосовое)\s*$/i, '')
     .trim()
 }
 
