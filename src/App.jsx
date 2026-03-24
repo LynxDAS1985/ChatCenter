@@ -693,7 +693,10 @@ export default function App() {
     cleanupRecentMap(recentNotifsRef.current)
 
     // v0.80.2: Sender clean + strip + own-msg
-    const senderName = cleanSenderStatus(extra?.senderName || '')
+    const rawSender = extra?.senderName || ''
+    const senderName = cleanSenderStatus(rawSender)
+    if (rawSender !== senderName) traceNotif('handle', 'info', messengerId, text, `cleanSender: "${rawSender.slice(0,30)}" → "${senderName.slice(0,30)}"`)
+
     const stripped = stripSenderFromText(text, senderName)
     if (stripped.stripped) {
       text = stripped.text
