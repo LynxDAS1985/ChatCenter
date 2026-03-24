@@ -1334,6 +1334,11 @@ function setupNavigationWatcher(type) {
     try { console.log('__CC_DIAG__navigation: ' + lastUrl.slice(-30) + ' → ' + newUrl.slice(-30)) } catch {}
     lastUrl = newUrl
 
+    // v0.80.5: Grace period при навигации — игнорируем мутации 5 сек
+    // Без этого при открытии чата MutationObserver ловит рендер истории как "новые сообщения"
+    monitorReady = false
+    setTimeout(function() { monitorReady = true }, 5000)
+
     // Сбрасываем retries и пробуем найти контейнер заново (с задержкой для рендера)
     chatObserverRetries = 0
     _chatContainerEl = null
