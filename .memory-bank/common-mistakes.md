@@ -174,6 +174,14 @@
 
 **Ловушка 41 (v0.77.4)**: VK MutationObserver ловит parent node ("Елена ДугинаТекст") И child node ("Текст") как ДВА сообщения. Тексты РАЗНЫЕ → точный дедуп не ловит. **ПРАВИЛО**: Дедуп по ПОДСТРОКЕ: `prevText.includes(newText) || newText.includes(prevText)` в пределах 5 сек. Также VK не использует Notification API — только MutationObserver.
 
+**Ловушка 42 (v0.80.2)**: VK enrichment берёт sender из ConvoListItem/ConvoHeader который содержит статус: "Елена Дугиназаходила 6 минут назад". **ПРАВИЛО**: `cleanSenderStatus()` в messageProcessing.js — вызывать ПЕРЕД sender-strip и ribbon. Regex: `/(заходил[аи]?\s*.*)/i` + `/(online|offline|печатает|typing|в\s+сети)/i`. Проверять что ribbon использует ОЧИЩЕННЫЙ `senderName`, НЕ `extra.senderName`.
+
+**Ловушка 43 (v0.80.3)**: VK `viewing: block` блокировал ribbon даже если пользователь на вкладке VK но чат НЕ открыт (список чатов). VK не использует Notification API → все через MutationObserver → нет `fromNotifAPI`. **ПРАВИЛО**: Блокировать viewing ТОЛЬКО если `!extra` (мусор без sender). Если `extra` есть (MutationObserver нашёл sender) → пропускать (не знаем открыт ли конкретный чат).
+
+**Ловушка 44 (v0.80.5)**: При навигации внутри MAX/VK (открытие чата) MutationObserver ловит рендер истории сообщений как "новые". Также ловит СВОИ сообщения. Grace period от первого body-fallback (5 сек) уже истёк. **ПРАВИЛО**: При URL change в `setupNavigationWatcher` → `monitorReady = false` на 5 сек. Без этого: фантомы при каждом открытии чата + свои сообщения в ribbon.
+
+**Ловушка 45 (v0.80.4)**: electron-vite dev server КЭШИРУЕТ код. Изменения в App.jsx/utils могут НЕ подхватиться без полного перезапуска `npm run dev`. HMR (Hot Module Reload) не всегда работает для глубоких зависимостей (utils → App.jsx). **ПРАВИЛО**: После изменения кода → ПОЛНЫЙ перезапуск: `Ctrl+C` → `npm run dev`. Не полагаться на HMR.
+
 **Ловушка 38 (v0.76.8)**: `isSidebarNode` НИКОГДА не вызывался в `quickNewMsgCheck`! Условие `if (chatObserverTarget === 'body-fallback' && _chatContainerEl && ...)` → `_chatContainerEl = null` → весь if = false → sidebar-фильтр не работал. **ПРАВИЛО**: При body-fallback ВСЕГДА вызывать `isSidebarNode(node)` ПЕРЕД проверкой `_chatContainerEl`.
 
 **Ловушка 37 (v0.76.7)**: `querySelector('.badge')` внутри `.chatlist-chat` находит ОБЁРТОЧНЫЙ `.badge` (весь текст чата), не числовой бейдж. **ПРАВИЛО**: `querySelectorAll('.badge')` + проверка `/^\d+$/.test(textContent.trim())` → находит только числовой бейдж.
