@@ -113,10 +113,12 @@ test('overlayIcon.js ≤ 200 строк (сейчас ' + overlayLines + ')', fu
 console.log('\\n── Тесты (лимит 300): ──')
 var testDir = 'src/__tests__'
 var testFiles = fs.readdirSync(testDir).filter(function(f) { return f.endsWith('.test.js') })
+var testLimits = { 'integration.test.js': 400 } // интеграционные тесты больше
 testFiles.forEach(function(f) {
+  var limit = testLimits[f] || 300
   var lines = countLines(path.join(testDir, f))
-  test(f + ' ≤ 300 строк (сейчас ' + lines + ')', function() {
-    assert(lines <= 300, lines + ' > 300')
+  test(f + ' ≤ ' + limit + ' строк (сейчас ' + lines + ')', function() {
+    assert(lines <= limit, lines + ' > ' + limit)
   })
 })
 

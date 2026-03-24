@@ -1,0 +1,326 @@
+/**
+ * Интеграционные тесты — проверяет границы между модулями.
+ * Тестирует полные цепочки: вход → обработка → выход.
+ *
+ * Запуск: node src/__tests__/integration.test.js
+ */
+
+var fs = require('fs')
+
+var passed = 0, failed = 0
+function test(name, fn) {
+  try { fn(); passed++; console.log('  ✅ ' + name) }
+  catch (e) { failed++; console.log('  ❌ ' + name + ': ' + e.message) }
+}
+function assert(cond, msg) { if (!cond) throw new Error(msg || 'fail') }
+
+console.log('\\n🧪 Интеграционные тесты\\n')
+
+// ═══════════════════════════════════════════════════════════════════════
+// ЦЕПОЧКА 1: spamPatterns.json → isSpamText → handleNewMessage
+// ═══════════════════════════════════════════════════════════════════════
+console.log('── Цепочка: JSON → isSpamText → message pipeline: ──')
+
+// Загружаем JSON как это делает messengerConfigs.js
+var patternsRaw = require('../../shared/spamPatterns.json')
+var SP = {}
+for (var k in patternsRaw) {
+  if (k.startsWith('_')) continue
+  try { SP[k] = new RegExp(patternsRaw[k], 'i') } catch(e) {}
+}
+
+function isSpamText(text, source) {
+  if (!text) return true
+  if (SP.time && SP.time.test(text)) return true
+  if (SP.date && SP.date.test(text)) return true
+  if (SP.weekdays && SP.weekdays.test(text)) return true
+  if (SP.statuses && SP.statuses.test(text)) return true
+  if (SP.outgoing && SP.outgoing.test(text)) return true
+  if (SP.statusSuffix && SP.statusSuffix.test(text)) return true
+  if (SP.agoSuffix && SP.agoSuffix.test(text)) return true
+  if (SP.agoExact && SP.agoExact.test(text)) return true
+  if (SP.calls && SP.calls.test(text)) return true
+  if (SP.system && SP.system.test(text)) return true
+  if (source === 'msg') {
+    if (SP.vkMenu && SP.vkMenu.test(text)) return true
+    if (SP.vkMenuPartial && SP.vkMenuPartial.test(text) && text.length < 100) return true
+    if (SP.whatsappAlt && SP.whatsappAlt.test(text.split(/\s/)[0]) && !/\s/.test(text.trim()) && text.length < 60) return true
+  }
+  return false
+}
+
+// Копии из messageProcessing.js
+function isDuplicateExact(mid, text, map) {
+  var key = mid + ':' + text.slice(0, 60); var now = Date.now()
+  var prev = map.get(key); if (prev && now - prev < 10000) return { blocked: true, age: now - prev }
+  return { blocked: false, key: key, now: now }
+}
+function isDuplicateSubstring(mid, text, map) {
+  var textShort = text.slice(0, 80); var now = Date.now(); var prefix = mid + ':'
+  for (var entry of map) { var k = entry[0]; var ts = entry[1]
+    if (now - ts > 5000 || !k.startsWith(prefix)) continue
+    var prevText = k.slice(prefix.length)
+    if (prevText.length > 5 && textShort.length > 5 && (prevText.includes(textShort) || textShort.includes(prevText))) return { blocked: true }
+  }
+  return { blocked: false }
+}
+function stripSenderFromText(text, senderName) {
+  if (!senderName || senderName.length < 3) return { text: text, stripped: false }
+  if (text.startsWith(senderName)) return { text: text.slice(senderName.length).trim(), stripped: true }
+  return { text: text, stripped: false }
+}
+function isOwnMessage(text, senderName, fromNotifAPI) {
+  if (!senderName || senderName.length < 3 || fromNotifAPI) return false
+  if (text.startsWith(senderName)) return false
+  return /^[А-ЯA-Z][а-яa-z]+\s[А-ЯA-Z][а-яa-z]/.test(text)
+}
+
+// Полная имитация pipeline
+function processMessage(mid, text, extra) {
+  var result = { steps: [], finalText: null, action: null }
+
+  // 1. Spam check
+  if (isSpamText(text, extra ? 'notif' : 'msg')) { result.action = 'spam'; result.steps.push('spam'); return result }
+  result.steps.push('spam-pass')
+
+  // 2. Sender strip ПЕРЕД дедупом (как в реальном App.jsx v0.79.2+)
+  var sender = extra && extra.senderName || ''
+  var stripped = stripSenderFromText(text, sender)
+  if (stripped.stripped) {
+    text = stripped.text
+    if (!text) { result.action = 'empty-after-strip'; result.steps.push('strip-empty'); return result }
+    result.steps.push('strip:' + sender)
+  } else if (isOwnMessage(text, sender, extra && extra.fromNotifAPI)) {
+    result.action = 'own-msg'; result.steps.push('own-msg'); return result
+  } else {
+    result.steps.push('strip-skip')
+  }
+
+  // 3. Dedup exact + substring (порядок как в App.jsx: check both → потом set)
+  var recentMap = (extra && extra._recentMap) ? extra._recentMap : new Map()
+  var dup = isDuplicateExact(mid, text, recentMap)
+  if (dup.blocked) { result.action = 'dedup-exact'; result.steps.push('dedup-exact'); return result }
+  result.steps.push('dedup-exact-pass')
+  var subDup = isDuplicateSubstring(mid, text, recentMap)
+  if (subDup.blocked) { result.action = 'dedup-sub'; result.steps.push('dedup-sub'); return result }
+  result.steps.push('dedup-sub-pass')
+  // Set в Map ПОСЛЕ обоих проверок (как в App.jsx)
+  recentMap.set(dup.key, dup.now)
+
+  result.action = 'pass'
+  result.finalText = text
+  return result
+}
+
+// Тест: полная цепочка для реального VK сообщения
+test('VK: чужое сообщение → strip sender → pass', function() {
+  var r = processMessage('vk', 'Елена ДугинаЗавтра в 12 к нотариусу', { senderName: 'Елена Дугина' })
+  assert(r.action === 'pass', 'action=' + r.action)
+  assert(r.finalText === 'Завтра в 12 к нотариусу', 'text=' + r.finalText)
+  assert(r.steps.includes('strip:Елена Дугина'))
+})
+
+test('VK: своё сообщение → own-msg block', function() {
+  var r = processMessage('vk', 'Алексей Дугинхорошо любимка', { senderName: 'Елена Дугина' })
+  assert(r.action === 'own-msg')
+})
+
+test('VK: спам "печатает" → spam block', function() {
+  var r = processMessage('vk', 'печатает', null)
+  assert(r.action === 'spam')
+})
+
+test('VK: дубль parent+child → dedup-sub block', function() {
+  var map = new Map()
+  map.set('vk:Елена ДугинаЗавтра в 12 к нотариусу записалась', Date.now())
+  var r = processMessage('vk', 'Завтра в 12 к нотариусу записалась', { senderName: 'Елена Дугина', _recentMap: map })
+  assert(r.action === 'dedup-sub', 'action=' + r.action)
+})
+
+test('Telegram: сообщение от __CC_NOTIF__ → pass (fromNotifAPI)', function() {
+  var r = processMessage('tg', 'Привет', { senderName: 'Иван', fromNotifAPI: true })
+  assert(r.action === 'pass')
+  assert(r.finalText === 'Привет')
+})
+
+test('WhatsApp: alt-текст "default-contact-refreshed" (msg) → spam', function() {
+  var r = processMessage('wa', 'default-contact-refreshed', null)
+  assert(r.action === 'spam')
+})
+
+test('WhatsApp: дата "29.12.2025" → spam', function() {
+  var r = processMessage('wa', '29.12.2025', null)
+  assert(r.action === 'spam')
+})
+
+test('Реальное сообщение "Добрый день" → pass', function() {
+  var r = processMessage('tg', 'Добрый день, да, конечно заказываем!', { senderName: 'Насонова Ольга', fromNotifAPI: true })
+  assert(r.action === 'pass')
+  assert(r.finalText === 'Добрый день, да, конечно заказываем!')
+})
+
+test('Число "1220" → pass (не спам)', function() {
+  var r = processMessage('tg', '1220', null)
+  assert(r.action === 'pass')
+})
+
+test('VK: "Вы: текст" → spam (исходящее)', function() {
+  var r = processMessage('vk', 'Вы: привет', null)
+  assert(r.action === 'spam')
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// ЦЕПОЧКА 2: parseConsoleMessage → тип → обработка
+// ═══════════════════════════════════════════════════════════════════════
+console.log('\\n── Цепочка: console-message → parser → handler: ──')
+
+function parseConsoleMessage(msg) {
+  if (!msg || !msg.startsWith('__CC_')) return null
+  if (msg.startsWith('__CC_BADGE_BLOCKED__:')) { var val = parseInt(msg.split(':')[1], 10); return { type: 'badge_blocked', value: isNaN(val) ? null : val } }
+  if (msg.startsWith('__CC_ACCOUNT__:')) return { type: 'account', name: msg.slice(15).trim() }
+  if (msg.startsWith('__CC_NOTIF__')) { try { var d = JSON.parse(msg.slice(12)); return { type: 'notification', title: d.t||'', body: d.b||'', icon: d.i||'', tag: d.g||'' } } catch(e) { return { type: 'notification_error' } } }
+  if (msg.startsWith('__CC_MSG__')) return { type: 'message', text: msg.slice(10).trim() }
+  return { type: 'debug' }
+}
+
+test('__CC_NOTIF__ → parse → spam check → pass', function() {
+  var msg = '__CC_NOTIF__{"t":"Елена","b":"Привет как дела","i":"blob:...","g":"tag1"}'
+  var parsed = parseConsoleMessage(msg)
+  assert(parsed.type === 'notification')
+  assert(parsed.body === 'Привет как дела')
+  var spam = isSpamText(parsed.body, 'notif')
+  assert(spam === false, 'не должен быть спамом')
+})
+
+test('__CC_NOTIF__ → parse → spam body "печатает" → block', function() {
+  var msg = '__CC_NOTIF__{"t":"Елена","b":"печатает","i":"","g":""}'
+  var parsed = parseConsoleMessage(msg)
+  assert(parsed.body === 'печатает')
+  assert(isSpamText(parsed.body, 'notif') === true)
+})
+
+test('__CC_MSG__ → parse → isSpamText → pipeline', function() {
+  var msg = '__CC_MSG__Добрый день'
+  var parsed = parseConsoleMessage(msg)
+  assert(parsed.type === 'message')
+  assert(parsed.text === 'Добрый день')
+  assert(isSpamText(parsed.text, 'msg') === false)
+  var r = processMessage('vk', parsed.text, null)
+  assert(r.action === 'pass')
+})
+
+test('__CC_BADGE_BLOCKED__:0 → reset badge', function() {
+  var parsed = parseConsoleMessage('__CC_BADGE_BLOCKED__:0')
+  assert(parsed.type === 'badge_blocked')
+  assert(parsed.value === 0)
+})
+
+test('__CC_ACCOUNT__:Алексей Дугин → set account name', function() {
+  var parsed = parseConsoleMessage('__CC_ACCOUNT__:Алексей Дугин')
+  assert(parsed.type === 'account')
+  assert(parsed.name === 'Алексей Дугин')
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// ЦЕПОЧКА 3: messengerConfigs → detectType → правильный скрипт
+// ═══════════════════════════════════════════════════════════════════════
+console.log('\\n── Цепочка: URL → detectType → config: ──')
+
+var configCode = fs.readFileSync('src/utils/messengerConfigs.js', 'utf8')
+var navCode = fs.readFileSync('src/utils/navigateToChat.js', 'utf8')
+
+test('Telegram URL → telegram type → TG DOM-скан', function() {
+  assert(configCode.includes("'telegram'"))
+  assert(configCode.includes("type: 'telegram'"))
+})
+
+test('VK URL → vk type → VK DOM-скан + ConvoListItem', function() {
+  assert(configCode.includes("'vk'"))
+  assert(configCode.includes("type: 'vk'"))
+  assert(configCode.includes('ConvoListItem'))
+})
+
+test('navigateToChat: TG URL → TG скрипт с .chatlist-chat', function() {
+  assert(navCode.includes('telegram.org'))
+  assert(navCode.includes('.chatlist-chat'))
+})
+
+test('navigateToChat: VK URL → VK скрипт с ConvoListItem', function() {
+  assert(navCode.includes('vk.com'))
+  assert(navCode.includes('ConvoListItem'))
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// ЦЕПОЧКА 4: App.jsx imports → все модули связаны
+// ═══════════════════════════════════════════════════════════════════════
+console.log('\\n── Цепочка: App.jsx ↔ модули: ──')
+
+var appCode = fs.readFileSync('src/App.jsx', 'utf8')
+
+test('App.jsx → isSpamText → spamPatterns.json', function() {
+  assert(appCode.includes('isSpamText('))
+  assert(configCode.includes('spamPatterns.json'))
+})
+
+test('App.jsx → isDuplicateExact/Substring → messageProcessing', function() {
+  assert(appCode.includes('isDuplicateExact('))
+  assert(appCode.includes('isDuplicateSubstring('))
+})
+
+test('App.jsx → parseConsoleMessage → consoleMessageParser', function() {
+  assert(appCode.includes('parseConsoleMessage('))
+  assert(appCode.includes("from './utils/consoleMessageParser.js'"))
+})
+
+test('App.jsx → playNotificationSound → sound.js', function() {
+  assert(appCode.includes('playNotificationSound('))
+  assert(appCode.includes("from './utils/sound.js'"))
+})
+
+test('App.jsx → buildChatNavigateScript → navigateToChat.js', function() {
+  assert(appCode.includes('buildChatNavigateScript('))
+  assert(appCode.includes("from './utils/navigateToChat.js'"))
+})
+
+test('App.jsx → devLog/devError → devLog.js', function() {
+  assert(appCode.includes('devLog('))
+  assert(appCode.includes('devError('))
+})
+
+test('App.jsx → MessengerTab → components', function() {
+  assert(appCode.includes('<MessengerTab'))
+  assert(appCode.includes("from './components/MessengerTab.jsx'"))
+})
+
+test('App.jsx → NotifLogModal → components', function() {
+  assert(appCode.includes('<NotifLogModal'))
+  assert(appCode.includes("from './components/NotifLogModal.jsx'"))
+})
+
+test('main.js → overlayIcon → main/utils', function() {
+  var mainCode = fs.readFileSync('main/main.js', 'utf8')
+  assert(mainCode.includes('createOverlayIcon('))
+  assert(mainCode.includes("from './utils/overlayIcon.js'"))
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// ЦЕПОЧКА 5: addListener → removeEventListener (lifecycle)
+// ═══════════════════════════════════════════════════════════════════════
+console.log('\\n── Цепочка: listener lifecycle: ──')
+
+test('addListener создаёт массив → removeEventListener при delete', function() {
+  assert(appCode.includes('_chatcenterListeners = []'))
+  assert(appCode.includes('_chatcenterListeners.push'))
+  assert(appCode.includes('wv._chatcenterListeners'))
+  assert(appCode.includes('removeEventListener'))
+})
+
+test('will-quit: clearInterval + iconCache + window destroy', function() {
+  var mainCode = fs.readFileSync('main/main.js', 'utf8')
+  assert(mainCode.includes("app.on('will-quit'"))
+  assert(mainCode.includes('clearInterval(iconCacheInterval)'))
+  assert(mainCode.includes('notifWin') && mainCode.includes('.destroy()'))
+})
+
+console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
+if (failed > 0) process.exit(1)
