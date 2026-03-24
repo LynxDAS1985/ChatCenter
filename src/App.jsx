@@ -526,6 +526,14 @@ export default function App() {
       setActiveId(curr => curr === id ? (next[0]?.id || null) : curr)
       return next
     })
+    // v0.80.0: Cleanup WebView event listeners перед удалением
+    const wv = webviewRefs.current[id]
+    if (wv && wv._chatcenterListeners) {
+      for (const [event, fn] of wv._chatcenterListeners) {
+        try { wv.removeEventListener(event, fn) } catch {}
+      }
+      wv._chatcenterListeners = null
+    }
     delete webviewRefs.current[id]
     clearTimeout(retryTimers.current[id])
     delete retryTimers.current[id]
@@ -825,23 +833,26 @@ export default function App() {
   const setWebviewRef = (el, messengerId) => {
     if (el && !el._chatcenterInit) {
       el._chatcenterInit = true
+      el._chatcenterListeners = [] // v0.80.0: сохраняем ссылки для cleanup
       webviewRefs.current[messengerId] = el
+
+      // v0.80.0: helper — addEventListener с сохранением для cleanup
+      const addListener = (event, fn) => { el.addEventListener(event, fn); el._chatcenterListeners.push([event, fn]) }
 
       // Статус мониторинга: loading при инициализации
       setMonitorStatus(prev => ({ ...prev, [messengerId]: 'loading' }))
 
       // ── СЕКЦИЯ: События загрузки страницы ──
-      // Индикатор загрузки страницы WebView
       setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
-      el.addEventListener('did-start-loading', () => {
+      addListener('did-start-loading', () => {
         setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       })
-      el.addEventListener('did-stop-loading', () => {
+      addListener('did-stop-loading', () => {
         setWebviewLoading(prev => ({ ...prev, [messengerId]: false }))
       })
 
       // ── СЕКЦИЯ: DOM-ready — инициализация монитора ──
-      el.addEventListener('dom-ready', () => {
+      addListener('dom-ready', () => {
         clearTimeout(retryTimers.current[messengerId])
         retryTimers.current[messengerId] = setTimeout(
           () => tryExtractAccount(messengerId, 0), 3500
@@ -1240,7 +1251,7 @@ export default function App() {
       // page-title-updated — мгновенное обновление счётчика из title WebView
       // Telegram: "(26) Telegram Web", WhatsApp: "(5) WhatsApp", VK: "(3) ВКонтакте"
       // MAX: "1 непрочитанный чат" / "5 непрочитанных чатов" (БЕЗ скобок!)
-      el.addEventListener('page-title-updated', (e) => {
+      addListener('page-title-updated', (e) => {
         const match = e.title?.match(/\((\d+)\)/) || e.title?.match(/^(\d+)\s+непрочитанн/)
         if (match) {
           const count = parseInt(match[1], 10) || 0
@@ -1283,7 +1294,7 @@ export default function App() {
       })
 
       // ── СЕКЦИЯ: IPC-message — обработка сообщений от WebView ──
-      el.addEventListener('ipc-message', (e) => {
+      addListener('ipc-message', (e) => {
         if (e.channel === 'zoom-change') {
           const delta = e.args[0]?.delta || 0
           const cur = zoomLevelsRef.current[messengerId] || 100
@@ -1361,7 +1372,7 @@ export default function App() {
           // Per-messenger спам-фильтр
           const customSpamIpc = ((settingsRef.current.messengerNotifs || {})[messengerId] || {}).spamFilter
           if (customSpamIpc) {
-            try { if (new RegExp(customSpamIpc, 'i').test(msgText)) { traceNotif('spam', 'block', messengerId, msgText, 'пользовательский спам-фильтр IPC'); return } } catch {}
+            try { if (new RegExp(customSpamIpc, 'i').test(msgText)) { traceNotif('spam', 'block', messengerId, msgText, 'пользовательский спам-фильтр IPC'); return } } catch (e) { devError('[spam-regex]', e.message) }
           }
           // v0.60.2: per-messengerId dedup
           const midTsIpc = notifMidTsRef.current[messengerId]
@@ -1399,7 +1410,7 @@ export default function App() {
 
       // ── СЕКЦИЯ: Console-message — перехват Notification/Badge/MutationObserver ──
       // console-message: перехват Notification + MutationObserver backup (v0.39.5)
-      el.addEventListener('console-message', (e) => {
+      addListener('console-message', (e) => {
         const msg = e.message
         if (!msg) return
         // v0.79.8: Парсинг через consoleMessageParser.js
@@ -1442,7 +1453,7 @@ export default function App() {
           // Per-messenger спам-фильтр (v0.56.0)
           const customSpam = ((settingsRef.current.messengerNotifs || {})[messengerId] || {}).spamFilter
           if (customSpam) {
-            try { if (new RegExp(customSpam, 'i').test(text)) { traceNotif('spam', 'block', messengerId, text, 'пользовательский спам-фильтр'); return } } catch {}
+            try { if (new RegExp(customSpam, 'i').test(text)) { traceNotif('spam', 'block', messengerId, text, 'пользовательский спам-фильтр'); return } } catch (e) { devError('[spam-regex]', e.message) }
           }
           // v0.60.2: per-messengerId dedup — если __CC_NOTIF__ от этого мессенджера был <3 сек назад
           const midTs = notifMidTsRef.current[messengerId]
@@ -1669,7 +1680,7 @@ export default function App() {
           // Per-messenger спам-фильтр (v0.56.0)
           const customSpamN = ((settingsRef.current.messengerNotifs || {})[messengerId] || {}).spamFilter
           if (customSpamN && text) {
-            try { if (new RegExp(customSpamN, 'i').test(text)) { traceNotif('spam', 'block', messengerId, text, 'пользовательский спам-фильтр'); return } } catch {}
+            try { if (new RegExp(customSpamN, 'i').test(text)) { traceNotif('spam', 'block', messengerId, text, 'пользовательский спам-фильтр'); return } } catch (e) { devError('[spam-regex]', e.message) }
           }
           if (text && !isSpam) {
             // Дедупликация: Telegram шлёт Notification + ServiceWorker.showNotification → 2 __CC_NOTIF__

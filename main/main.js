@@ -302,13 +302,19 @@ async function getGigaChatToken(clientId, clientSecret) {
 const iconCache = new Map() // url → { icon, ts }
 const ICON_CACHE_TTL = 30 * 60 * 1000 // 30 минут
 
-// Периодическая очистка устаревших записей кэша аватарок
-setInterval(() => {
+// v0.80.0: Периодическая очистка кэша — с cleanup при quit
+const iconCacheInterval = setInterval(() => {
   const now = Date.now()
   for (const [key, val] of iconCache) {
     if (now - val.ts > ICON_CACHE_TTL) iconCache.delete(key)
   }
-}, 10 * 60 * 1000) // каждые 10 минут
+}, 10 * 60 * 1000)
+app.on('will-quit', () => {
+  clearInterval(iconCacheInterval); iconCache.clear()
+  // v0.80.0: Cleanup всех дочерних окон
+  try { if (notifWin && !notifWin.isDestroyed()) notifWin.destroy() } catch {}
+  try { if (tray && !tray.isDestroyed()) tray.destroy() } catch {}
+})
 
 function downloadIcon(url) {
   const cached = iconCache.get(url)
@@ -1501,9 +1507,9 @@ function setupIPC() {
               'box-shadow:0 8px 32px rgba(0,0,0,.5)', 'max-width:320px',
               'border:1.5px solid #2AABEE55', 'pointer-events:none'
             ].join(';')
-            d.innerHTML = '<b style="color:#2AABEE;display:block;margin-bottom:5px">📋 ЦентрЧатов ждёт ключ</b>' +
-              '<span style="color:#94a3b8">Войдите, создайте API-ключ и <b style="color:#fff">скопируйте его</b> — ' +
-              'он автоматически появится в приложении</span>'
+            // v0.80.0: textContent вместо innerHTML (безопасность)
+            var b = document.createElement('b'); b.style.cssText = 'color:#2AABEE;display:block;margin-bottom:5px'; b.textContent = '📋 ЦентрЧатов ждёт ключ'; d.appendChild(b);
+            var s = document.createElement('span'); s.style.color = '#94a3b8'; s.textContent = 'Войдите, создайте API-ключ и '; var sb = document.createElement('b'); sb.style.color = '#fff'; sb.textContent = 'скопируйте его'; s.appendChild(sb); s.appendChild(document.createTextNode(' — он автоматически появится в приложении')); d.appendChild(s);
             document.body.appendChild(d)
           }
         `).catch(() => {})
