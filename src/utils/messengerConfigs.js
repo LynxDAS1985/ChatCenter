@@ -184,7 +184,27 @@ export const DOM_SCAN_SCRIPTS = {
       var header = document.querySelector('.ConvoHeader');
       if (header) { r.chat.header = (header.textContent||'').trim().slice(0,40); }
       var hist = document.querySelector('.ConvoMain__history, .ConvoHistory__flow');
-      if (hist) { r.chat.historyChildren = hist.children.length; }
+      if (hist) {
+        r.chat.historyChildren = hist.children.length;
+        // v0.80.7: Диагностика CSS-классов пузырей
+        r.chat.bubbles = [];
+        var allEls = hist.querySelectorAll('*');
+        var seen = {};
+        for (var bi = 0; bi < allEls.length && r.chat.bubbles.length < 10; bi++) {
+          var bel = allEls[bi];
+          var bcls = (typeof bel.className === 'string' ? bel.className : '').trim();
+          if (!bcls || bcls.length < 3) continue;
+          var key = bcls.split(' ')[0];
+          if (seen[key]) continue;
+          seen[key] = true;
+          var hasOut = /out|Out|own|Own|self|Self|right|Right/i.test(bcls);
+          var hasIn = /in\b|In\b|peer|Peer|left|Left/i.test(bcls);
+          var txt = (bel.textContent || '').trim().slice(0, 40);
+          if (txt.length > 2) {
+            r.chat.bubbles.push({ cls: bcls.slice(0, 100), out: hasOut, inp: hasIn, text: txt });
+          }
+        }
+      }
     } catch(e) { r.error = e.message; }
     return JSON.stringify(r);
   })()`,
