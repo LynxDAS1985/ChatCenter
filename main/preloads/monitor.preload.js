@@ -1294,6 +1294,16 @@ function startChatObserver(type) {
     return
   }
 
+  // v0.80.6: VK и MAX — НЕ fallback'ать на body (слишком много мусора).
+  // Ждём навигацию → setupNavigationWatcher перепривяжет к контейнеру.
+  // Уведомления через page-title-updated (VK title = "(1) Мессенджер").
+  var noBodyFallbackTypes = ['vk', 'max']
+  if (noBodyFallbackTypes.indexOf(type) !== -1) {
+    chatObserverTarget = 'none'
+    try { console.log('__CC_DIAG__chatObserver: ' + type + ' — body-fallback ОТКЛЮЧЁН (фантомы). Ждём навигацию в чат.') } catch(e) {}
+    return
+  }
+
   // Fallback: контейнер не найден после N попыток → наблюдаем document.body с sidebar-фильтром
   chatObserverTarget = 'body-fallback'
   _chatContainerEl = null
@@ -1346,7 +1356,7 @@ function setupNavigationWatcher(type) {
     setTimeout(() => startChatObserver(type), 1500)
     // Повторная попытка через 4 сек (если DOM ещё не готов)
     setTimeout(() => {
-      if (chatObserverTarget === 'body-fallback' || !_chatContainerEl) {
+      if (chatObserverTarget === 'body-fallback' || chatObserverTarget === 'none' || !_chatContainerEl) {
         chatObserverRetries = 0
         startChatObserver(type)
       }
