@@ -178,6 +178,10 @@
 
 **Ловушка 43 (v0.80.3)**: VK `viewing: block` блокировал ribbon даже если пользователь на вкладке VK но чат НЕ открыт (список чатов). VK не использует Notification API → все через MutationObserver → нет `fromNotifAPI`. **ПРАВИЛО**: Блокировать viewing ТОЛЬКО если `!extra` (мусор без sender). Если `extra` есть (MutationObserver нашёл sender) → пропускать (не знаем открыт ли конкретный чат).
 
+**Ловушка 44 (v0.80.5)**: Vite кэш `node_modules/.vite/` может быть НЕДЕЛЬНОЙ давности → новые модули (messageProcessing.js, messengerConfigs.js) НЕ попадают в runtime. Код правильный, import есть, функция вызывается, лог показывает очистку — но ribbon берёт старую версию из кэша. **ПРАВИЛО**: После добавления НОВЫХ файлов в src/utils/ — ОБЯЗАТЕЛЬНО `rm -rf node_modules/.vite/` перед `npm run dev`. Или добавить в scripts/dev.js автоочистку кэша.
+
+**Ловушка 45 (v0.80.5)**: MAX chatObserver body-fallback + навигация внутри мессенджера. При открытии чата MutationObserver ловит рендер ИСТОРИИ сообщений как "новые". Через 15 минут дедуп истёк → старые сообщения проходят. Также свои сообщения ловятся как чужие. **ПРАВИЛО**: Grace period 5 сек при навигации (URL change) ВНУТРИ WebView — аналогично grace при dom-ready.
+
 **Ловушка 44 (v0.80.5)**: При навигации внутри MAX/VK (открытие чата) MutationObserver ловит рендер истории сообщений как "новые". Также ловит СВОИ сообщения. Grace period от первого body-fallback (5 сек) уже истёк. **ПРАВИЛО**: При URL change в `setupNavigationWatcher` → `monitorReady = false` на 5 сек. Без этого: фантомы при каждом открытии чата + свои сообщения в ribbon.
 
 **Ловушка 45 (v0.80.4)**: electron-vite dev server КЭШИРУЕТ код. Изменения в App.jsx/utils могут НЕ подхватиться без полного перезапуска `npm run dev`. HMR (Hot Module Reload) не всегда работает для глубоких зависимостей (utils → App.jsx). **ПРАВИЛО**: После изменения кода → ПОЛНЫЙ перезапуск: `Ctrl+C` → `npm run dev`. Не полагаться на HMR.

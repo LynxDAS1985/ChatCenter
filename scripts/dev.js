@@ -4,6 +4,15 @@
 const { spawn } = require('child_process')
 const path = require('path')
 
+const fs = require('fs')
+
+// v0.80.5: Очистка vite-кэша при запуске (ловушка 44)
+const viteCache = path.join(__dirname, '..', 'node_modules', '.vite')
+if (fs.existsSync(viteCache)) {
+  fs.rmSync(viteCache, { recursive: true, force: true })
+  console.log('[dev] Vite cache cleared')
+}
+
 const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
 
