@@ -114,6 +114,18 @@ test('chatObserverTarget = none для VK/MAX', () => {
 test('Навигация retry проверяет target=none', () => {
   assert(code.includes("chatObserverTarget === 'none'"), 'retry должен учитывать none')
 })
+test('Snapshot при привязке chatObserver (v0.80.7)', () => {
+  assert(code.includes('_snapshotTexts') && code.includes('new Set'), 'snapshot Set должен создаваться')
+})
+test('Snapshot фильтрует старые пузыри', () => {
+  assert(code.includes('snapshot-skip'), 'должен логировать snapshot-skip')
+})
+test('Grace period = 15 сек при навигации (v0.80.7)', () => {
+  assert(code.includes('15000'), 'grace должен быть 15000мс')
+})
+test('Диагностика мутаций с timestamp', () => {
+  assert(code.includes('mutation +') && code.includes('elapsed'), 'диагностика мутаций')
+})
 test('WhatsApp НЕ в noBodyFallbackTypes (пока использует body)', () => {
   // WhatsApp использует body-fallback с sidebar-фильтром
   const match = code.match(/noBodyFallbackTypes\s*=\s*\[([^\]]+)\]/)

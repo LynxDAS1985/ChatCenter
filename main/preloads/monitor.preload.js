@@ -1278,12 +1278,56 @@ function startChatObserver(type) {
     _chatContainerEl = container // кэшируем для структурного фильтра
     // Нашли контейнер чата — наблюдаем только его
     chatObserverTarget = 'container:' + (container.className || container.tagName).slice(0, 60)
+    // v0.80.7: Snapshot — запоминаем текст последнего пузыря при привязке
+    var _snapshotTexts = new Set()
+    try {
+      var lastChildren = container.querySelectorAll('*')
+      for (var si = 0; si < lastChildren.length; si++) {
+        var stxt = (lastChildren[si].textContent || '').trim()
+        if (stxt.length > 5 && stxt.length < 500) _snapshotTexts.add(stxt)
+      }
+    } catch(e) {}
+    var _bindTs = Date.now()
+
     chatObserver = new MutationObserver((mutations) => {
-      if (monitorReady) quickNewMsgCheck(mutations, type)
+      // v0.80.7: Диагностика — логируем мутации с timestamp (секунды после привязки)
+      var elapsed = ((Date.now() - _bindTs) / 1000).toFixed(1)
+      if (elapsed < 30) {
+        var addedCount = 0
+        for (var mi = 0; mi < mutations.length; mi++) { addedCount += mutations[mi].addedNodes ? mutations[mi].addedNodes.length : 0 }
+        if (addedCount > 0) {
+          try { console.log('__CC_DIAG__chatObserver: mutation +' + elapsed + 'с | added=' + addedCount + ' | ready=' + monitorReady) } catch(e) {}
+        }
+      }
+
+      if (!monitorReady) return
+
+      // v0.80.7: Snapshot фильтр — пропускаем мутации чей текст был при привязке
+      if (_snapshotTexts.size > 0) {
+        var filtered = []
+        for (var fi = 0; fi < mutations.length; fi++) {
+          var m = mutations[fi]
+          if (m.type !== 'childList' || !m.addedNodes.length) continue
+          var isOld = false
+          for (var ni = 0; ni < m.addedNodes.length; ni++) {
+            var ntxt = (m.addedNodes[ni].textContent || '').trim()
+            if (ntxt.length > 5 && _snapshotTexts.has(ntxt)) { isOld = true; break }
+          }
+          if (!isOld) filtered.push(m)
+        }
+        if (filtered.length === 0) {
+          try { console.log('__CC_DIAG__chatObserver: snapshot-skip | все мутации = старые пузыри') } catch(e) {}
+          return
+        }
+        quickNewMsgCheck(filtered, type)
+        return
+      }
+
+      quickNewMsgCheck(mutations, type)
     })
     chatObserver.observe(container, { childList: true, subtree: true })
     // Логируем в Pipeline
-    try { console.log('__CC_DIAG__chatObserver: привязан к контейнеру | ' + chatObserverTarget + ' | попытка ' + chatObserverRetries) } catch {}
+    try { console.log('__CC_DIAG__chatObserver: привязан к контейнеру | ' + chatObserverTarget + ' | попытка ' + chatObserverRetries + ' | snapshot=' + _snapshotTexts.size) } catch(e) {}
     return
   }
 
@@ -1344,10 +1388,10 @@ function setupNavigationWatcher(type) {
     try { console.log('__CC_DIAG__navigation: ' + lastUrl.slice(-30) + ' → ' + newUrl.slice(-30)) } catch {}
     lastUrl = newUrl
 
-    // v0.80.5: Grace period при навигации — игнорируем мутации 5 сек
-    // Без этого при открытии чата MutationObserver ловит рендер истории как "новые сообщения"
+    // v0.80.7: Grace period при навигации — 15 сек (VK Virtual Scroll медленный)
+    // + snapshot фильтр как основная защита от фантомов
     monitorReady = false
-    setTimeout(function() { monitorReady = true }, 5000)
+    setTimeout(function() { monitorReady = true }, 15000)
 
     // Сбрасываем retries и пробуем найти контейнер заново (с задержкой для рендера)
     chatObserverRetries = 0
