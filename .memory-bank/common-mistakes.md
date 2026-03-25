@@ -182,6 +182,8 @@
 
 **Ловушка 45 (v0.80.5)**: MAX chatObserver body-fallback + навигация внутри мессенджера. При открытии чата MutationObserver ловит рендер ИСТОРИИ сообщений как "новые". Через 15 минут дедуп истёк → старые сообщения проходят. Также свои сообщения ловятся как чужие. **ПРАВИЛО**: Grace period 5 сек при навигации (URL change) ВНУТРИ WebView — аналогично grace при dom-ready.
 
+**Ловушка 46 (v0.80.6)**: body-fallback для VK/MAX = ГАРАНТИРОВАННЫЕ фантомы. VK рендерит chatlist, навигацию, бейджи при загрузке → MutationObserver на body ловит ВСЁ. isSidebarNode не покрывает все VK-элементы. Ловушка 43 (viewing pass для MutationObserver) усилила проблему — теперь фантомы проходят viewing. **ПРАВИЛО**: `noBodyFallbackTypes = ['vk', 'max']` — НЕ fallback'ать на body. `chatObserverTarget = 'none'` → ждать навигацию → `setupNavigationWatcher` перепривяжет к контейнеру. Уведомления без открытого чата через `page-title-updated`.
+
 **Ловушка 44 (v0.80.5)**: При навигации внутри MAX/VK (открытие чата) MutationObserver ловит рендер истории сообщений как "новые". Также ловит СВОИ сообщения. Grace period от первого body-fallback (5 сек) уже истёк. **ПРАВИЛО**: При URL change в `setupNavigationWatcher` → `monitorReady = false` на 5 сек. Без этого: фантомы при каждом открытии чата + свои сообщения в ribbon.
 
 **Ловушка 45 (v0.80.4)**: electron-vite dev server КЭШИРУЕТ код. Изменения в App.jsx/utils могут НЕ подхватиться без полного перезапуска `npm run dev`. HMR (Hot Module Reload) не всегда работает для глубоких зависимостей (utils → App.jsx). **ПРАВИЛО**: После изменения кода → ПОЛНЫЙ перезапуск: `Ctrl+C` → `npm run dev`. Не полагаться на HMR.

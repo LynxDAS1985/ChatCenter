@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.80.4 (24 марта 2026)
+## Текущая версия: v0.80.6 (24 марта 2026)
 
 ---
 
@@ -91,6 +91,14 @@
 ---
 
 ## Changelog
+
+### v0.80.6 (25 марта 2026) — VK/MAX: отключён body-fallback + автоочистка vite-кэша
+- **VK/MAX body-fallback ОТКЛЮЧЁН** — `noBodyFallbackTypes = ['vk', 'max']`. Если контейнер чата не найден → НЕ наблюдаем body. Ждём навигацию → привязка к `ConvoMain__history`.
+- **Автоочистка vite-кэша** — `scripts/dev.js` удаляет `node_modules/.vite/` при каждом запуске (ловушка 44).
+- **Grace period при навигации** — 5 сек после URL change внутри WebView (ловушка 45).
+- **cleanSenderStatus** — убирает "заходила X назад" из sender VK.
+- **Viewing для MutationObserver** — НЕ блокирует ribbon если нет `fromNotifAPI` (VK не использует Notification API).
+- Ловушки 44-46 записаны в common-mistakes.md
 
 ### v0.79.5 (23 марта 2026) — Аудит + оптимизация проекта
 - Удалены неиспользуемые зависимости: zustand, electron-store, cross-env

@@ -99,6 +99,32 @@ test('MAX селекторы определены', () => assert(code.includes("
 test('WhatsApp селекторы определены', () => assert(code.includes("'#main'")))
 test('Telegram — пустой (работает через __CC_NOTIF__)', () => assert(code.includes("telegram: []")))
 
+// ── Body-fallback отключение (v0.80.6) ──
+console.log('\\n── Body-fallback: ──')
+
+test('VK body-fallback отключён (noBodyFallbackTypes содержит vk)', () => {
+  assert(code.includes("noBodyFallbackTypes") && code.includes("'vk'"), 'vk должен быть в noBodyFallbackTypes')
+})
+test('MAX body-fallback отключён (noBodyFallbackTypes содержит max)', () => {
+  assert(code.includes("noBodyFallbackTypes") && code.includes("'max'"), 'max должен быть в noBodyFallbackTypes')
+})
+test('chatObserverTarget = none для VK/MAX', () => {
+  assert(code.includes("chatObserverTarget = 'none'"), 'должен устанавливать none')
+})
+test('Навигация retry проверяет target=none', () => {
+  assert(code.includes("chatObserverTarget === 'none'"), 'retry должен учитывать none')
+})
+test('WhatsApp НЕ в noBodyFallbackTypes (пока использует body)', () => {
+  // WhatsApp использует body-fallback с sidebar-фильтром
+  const match = code.match(/noBodyFallbackTypes\s*=\s*\[([^\]]+)\]/)
+  assert(match, 'noBodyFallbackTypes должен существовать')
+  assert(!match[1].includes("'whatsapp'"), 'whatsapp НЕ должен быть в списке')
+})
+test('Telegram НЕ в noBodyFallbackTypes', () => {
+  const match = code.match(/noBodyFallbackTypes\s*=\s*\[([^\]]+)\]/)
+  assert(match && !match[1].includes("'telegram'"), 'telegram НЕ должен быть в списке')
+})
+
 // ── Структура файла ──
 console.log('\\n── Структура файла: ──')
 
