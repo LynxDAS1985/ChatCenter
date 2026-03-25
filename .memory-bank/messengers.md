@@ -225,6 +225,12 @@ const lastMsg = document.querySelectorAll('[class*="message-in"] [class*="text"]
 '[class*="dialog"][class*="active" i]'
 ```
 
+**Навигация к чату (v0.81.7, РАБОТАЕТ)**:
+- Selector: `[class*="wrapper--withActions"]` — реальный Svelte-класс sidebar MAX (март 2026)
+- Поиск: textContent.indexOf(senderName) — partial match
+- Клик: НЕ `.click()` на wrapper (Svelte не триггерит). Нужно кликать child `<a>`/`<button>` или parent `<a>`, или `MouseEvent({bubbles:true})`
+- НЕ работают: `<nav> a[href]` (нет ссылок), `[role="listitem"]` (нет role), `.chatlist-chat` (нет такого класса)
+
 **quickNewMsgCheck deep scan** (v0.56.1): MAX (SvelteKit) обновляет DOM блоками >40 children. Порог увеличен до 200. Для nodes 40-200 children — deep scan: ищет `[class*="message"] [class*="text"]`, `span`, `p`, `div` с коротким текстом. `extractMsgText()` — очистка embedded timestamps ("Ааа18:22" → "Ааа").
 
 **MAX фантом «ред.»** (v0.72.0): При редактировании сообщения MAX шлёт `showNotification("Макс", {body: "09:26 ред."})` — время + слово "ред." Это маркер редактирования, НЕ новое сообщение. Фильтруется regex `_editedMark = /^(\d{1,2}:\d{2}\s*)?ред\.?\s*$/i` в `isSpamNotif()`, и `/^ред\.?\s*$/i` + `/^edited\.?\s*$/i` в `extractMsgText()` и `getLastMessageText()`.

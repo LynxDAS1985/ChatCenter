@@ -799,7 +799,7 @@ function runDiagnostics(type) {
         if (idx++ > 30) return
         const text = el.textContent?.trim() || ''
         if (text.length > 10) return
-        diag.genericCounters.push({ text, cls: (el.className || '').substring(0, 80) })
+        diag.genericCounters.push({ text, cls: (typeof el.className === 'string' ? el.className : '').substring(0, 80) })
       })
 
       // VK-специфика: источник счётчика, generic текст сообщения, классы чат-области
@@ -811,7 +811,7 @@ function runDiagnostics(type) {
         let ci = 0
         document.querySelectorAll('[class*="im-mes"], [class*="im_msg"], [class*="Message"], [class*="ChatBody"], [class*="im-page"]').forEach(el => {
           if (ci++ > 20) return
-          diag.chatElements.push((el.className || '').substring(0, 100))
+          diag.chatElements.push((typeof el.className === 'string' ? el.className : '').substring(0, 100))
         })
         // Nav links с /im
         diag.imLinks = []
@@ -853,11 +853,7 @@ function getLastMessageText(type) {
   return null
 }
 
-// ── VK: generic поиск последнего входящего сообщения ──────────────────────
-// VK часто меняет CSS-классы, поэтому ищем по структуре DOM:
-// - Сообщения находятся в скроллируемой области чата
-// - Входящие обычно выровнены влево, исходящие — вправо
-// - Ищем последний текстовый элемент, который НЕ от текущего пользователя
+// v0.81.1: VK поиск последнего ВХОДЯЩЕГО сообщения (пропускает out/own/self/sent)
 function getVKLastIncomingText() {
   try {
     // Стратегия 1: найти область чата с сообщениями
@@ -868,34 +864,30 @@ function getVKLastIncomingText() {
       '[class*="im-history"], [class*="ConversationBody"], [class*="chat-body"]'
     )
     for (const container of chatContainers) {
-      // Берём последние элементы с текстом
-      const textEls = container.querySelectorAll('[class*="text"], [class*="Text"], p, span')
-      for (let i = textEls.length - 1; i >= Math.max(0, textEls.length - 20); i--) {
-        const t = textEls[i].textContent?.trim()
+      // v0.81.1: Ищем пузыри сообщений, пропускаем исходящие (out)
+      const bubbles = container.querySelectorAll('[class*="ConvoMessage"], [class*="im-mess"], [class*="im_msg"], [class*="message"]')
+      for (let i = bubbles.length - 1; i >= Math.max(0, bubbles.length - 10); i--) {
+        const bcls = typeof bubbles[i].className === 'string' ? bubbles[i].className : ''
+        // v0.81.1: Пропускаем исходящие — VK помечает их классами out/own/self/sent
+        if (/out|own|self|sent/i.test(bcls)) continue
+        const textEl = bubbles[i].querySelector('[class*="text"], [class*="Text"], p, span')
+        if (!textEl) continue
+        const t = textEl.textContent?.trim()
         if (t && t.length > 1 && t.length < 500) {
-          // Пропускаем служебные тексты
-          if (/^\d{1,2}:\d{2}$/.test(t)) continue // время "12:08"
-          if (/^сегодня$/i.test(t)) continue
-          if (/^вчера$/i.test(t)) continue
-          if (/^новые сообщения$/i.test(t)) continue
-          if (/^сообщение$/i.test(t)) continue // placeholder поля ввода
+          if (/^\d{1,2}:\d{2}$/.test(t)) continue
+          if (/^сегодня$/i.test(t) || /^вчера$/i.test(t)) continue
+          if (/^новые сообщения$/i.test(t) || /^сообщение$/i.test(t)) continue
           return t
         }
       }
     }
 
-    // Стратегия 2: ищем любой элемент, содержащий текст сообщения
-    // В VK чат-сообщения обычно внутри элементов с class содержащим "mes" или "msg"
-    const msgEls = document.querySelectorAll(
-      '[class*="im-mess"], [class*="im_msg"], [class*="im-mes"], ' +
-      '[class*="Message"], [class*="message"]'
-    )
+    // Стратегия 2: fallback — ищем элементы с "mes"/"msg" в классе, пропускаем исходящие
+    const msgEls = document.querySelectorAll('[class*="im-mess"], [class*="im_msg"], [class*="im-mes"], [class*="Message"], [class*="message"]')
     for (let i = msgEls.length - 1; i >= Math.max(0, msgEls.length - 10); i--) {
       const el = msgEls[i]
-      // Пропускаем исходящие (обычно содержат "--out" или "--own" в классе)
-      const cls = el.className || ''
+      const cls = typeof el.className === 'string' ? el.className : ''
       if (/out|own|self|sent/i.test(cls)) continue
-      // Ищем текстовый контент
       const textEl = el.querySelector('[class*="text"], [class*="Text"], p') || el
       const t = textEl.textContent?.trim()
       if (t && t.length > 1 && t.length < 500) {
@@ -1000,7 +992,19 @@ function getActiveChatAvatar() {
 
 // Извлечь чистый текст сообщения из DOM-ноды (убрать timestamps, служебные тексты)
 function extractMsgText(node) {
-  const raw = (node.textContent || '').trim()
+  // v0.81.1: Если node содержит вложенные элементы с текстом — берём ТОЛЬКО leaf-текст
+  // Это предотвращает склейку "Елена ДугинаА13:52" (имя+текст+время из wrapper)
+  let raw = ''
+  if (node.children && node.children.length > 2) {
+    // Node-обёртка (>2 children) — ищем самый глубокий текстовый элемент
+    const leaves = node.querySelectorAll ? node.querySelectorAll('span, p, [class*="text" i]') : []
+    for (let li = leaves.length - 1; li >= Math.max(0, leaves.length - 5); li--) {
+      if (leaves[li].children && leaves[li].children.length > 1) continue // не leaf
+      const lt = (leaves[li].textContent || '').trim()
+      if (lt.length >= 2 && lt.length <= 300 && !/^\d{1,2}:\d{2}$/.test(lt)) { raw = lt; break }
+    }
+  }
+  if (!raw) raw = (node.textContent || '').trim()
   if (raw.length < 2 || raw.length > 500) return ''
   // Убираем встроенные timestamps из текста (MAX: "Ааа18:22" → "Ааа")
   const clean = raw.replace(/\s*\d{1,2}:\d{2}(:\d{2})?\s*/g, '').trim()
@@ -1166,6 +1170,7 @@ function quickNewMsgCheck(mutations, type) {
       try { ipcRenderer.sendToHost('new-message', text) } catch {}
       // Эмиттим __CC_MSG__ — App.jsx обогатит через executeJavaScript (v0.55.1)
       // НЕ эмиттим __CC_NOTIF__ — чтобы не задедупить enriched версию из showNotification override
+      try { console.log('__CC_DIAG__msg-src: CO | "' + text.slice(0,30) + '"') } catch {}
       try { console.log('__CC_MSG__' + text) } catch {}
       return // одно сообщение за callback — не спамить
     }
@@ -1206,6 +1211,7 @@ function sendUpdate(type) {
         lastActiveMessageText = text  // синхронизируем
         try { ipcRenderer.sendToHost('new-message', text) } catch {}
         // Backup: дублируем через console.log для main-process перехвата (v0.39.5)
+        try { console.log('__CC_DIAG__msg-src: UC | "' + text.slice(0,30) + '"') } catch {}
         try { console.log('__CC_MSG__' + text) } catch {}
       }
     }
@@ -1216,7 +1222,8 @@ function sendUpdate(type) {
   // НЕ считают сообщение непрочитанным → count не растёт → Path 1 не работает.
   // Path 2 вызывает getLastMessageText() при каждом debounced sendUpdate и сравнивает с lastActiveMessageText.
   // Защита от мусора: текст берётся из CSS-селекторов СООБЩЕНИЙ (не sidebar), cooldown 3 сек.
-  if (monitorReady && type !== 'telegram') {
+  // v0.81.1: Path 2 отключён для VK (v0.81.0) и MAX — getLastMessageText ненадёжен (фантомы при смене чата)
+  if (monitorReady && type !== 'telegram' && type !== 'vk' && type !== 'max') {
     const inText = getLastMessageText(type)
     if (inText && inText !== lastActiveMessageText && inText !== lastSentText) {
       const now = Date.now()
@@ -1225,10 +1232,12 @@ function sendUpdate(type) {
         lastActiveMessageText = inText
         lastActiveMessageTime = now
         try { ipcRenderer.sendToHost('new-message', inText) } catch {}
+        try { console.log('__CC_DIAG__msg-src: P2 | "' + inText.slice(0,30) + '"') } catch {}
         try { console.log('__CC_MSG__' + inText) } catch {}
       }
     }
     // Обновляем lastActiveMessageText для dedup (даже если не отправили)
+    if (inText && inText !== lastActiveMessageText) { try { console.log('__CC_DIAG__lastActive-chg: "' + (lastActiveMessageText||'').slice(0,25) + '" → "' + inText.slice(0,25) + '"') } catch(e) {} }
     if (inText) lastActiveMessageText = inText
   } else if (monitorReady && type === 'telegram') {
     const inText = getLastMessageText(type)
@@ -1270,6 +1279,7 @@ let _chatContainerEl = null
 function startChatObserver(type) {
   if (chatObserver) { chatObserver.disconnect(); chatObserver = null }
   if (type === 'telegram') return // TG работает через __CC_NOTIF__
+  if (type === 'vk') return // v0.81.2: VK работает через unread-count (UC), chatObserver создаёт фантомы
 
   const container = findChatContainer(type)
   chatObserverRetries++
@@ -1327,7 +1337,7 @@ function startChatObserver(type) {
     })
     chatObserver.observe(container, { childList: true, subtree: true })
     // Логируем в Pipeline
-    try { console.log('__CC_DIAG__chatObserver: привязан к контейнеру | ' + chatObserverTarget + ' | попытка ' + chatObserverRetries + ' | snapshot=' + _snapshotTexts.size) } catch(e) {}
+    try { console.log('__CC_DIAG__chatObserver: привязан к контейнеру | ' + chatObserverTarget + ' | попытка ' + chatObserverRetries + ' | snapshot=' + _snapshotTexts.size + ' | ts=' + _bindTs) } catch(e) {}
     return
   }
 
@@ -1385,26 +1395,33 @@ function setupNavigationWatcher(type) {
   setInterval(() => {
     const newUrl = location.href
     if (newUrl === lastUrl) return
-    try { console.log('__CC_DIAG__navigation: ' + lastUrl.slice(-30) + ' → ' + newUrl.slice(-30)) } catch {}
+    try { console.log('__CC_DIAG__nav: ' + lastUrl.slice(-30) + ' → ' + newUrl.slice(-30) + ' | a="' + (lastActiveMessageText||'').slice(0,25) + '" q="' + (lastQuickMsgText||'').slice(0,25) + '"') } catch {}
     lastUrl = newUrl
 
-    // v0.80.7: Grace period при навигации — 15 сек (VK Virtual Scroll медленный)
-    // + snapshot фильтр как основная защита от фантомов
-    monitorReady = false
-    setTimeout(function() { monitorReady = true }, 15000)
+    // v0.80.9: Сброс dedup при навигации — текст предыдущего чата не должен влиять
+    lastActiveMessageText = null
+    lastQuickMsgText = ''
+    lastSentText = null
+    lastActiveMessageTime = Date.now()
+    lastQuickMsgTime = Date.now()
 
-    // Сбрасываем retries и пробуем найти контейнер заново (с задержкой для рендера)
+    // v0.80.7: Grace period при навигации — 15 сек (VK Virtual Scroll медленный)
+    monitorReady = false
+    setTimeout(function() {
+      // v0.80.9: Инициализируем dedup из текущего DOM ПЕРЕД включением мониторинга
+      try {
+        var curText = getLastMessageText(type)
+        if (curText) { lastActiveMessageText = curText; lastSentText = curText; lastQuickMsgText = curText }
+      } catch(e) {}
+      monitorReady = true
+      try { console.log('__CC_DIAG__grace-end | a="' + (lastActiveMessageText||'').slice(0,25) + '"') } catch(e) {}
+    }, 15000)
+
+    // Сбрасываем retries и пробуем найти контейнер заново
     chatObserverRetries = 0
     _chatContainerEl = null
-    // Даём VK/MAX время отрисовать новую страницу
-    setTimeout(() => startChatObserver(type), 1500)
-    // Повторная попытка через 4 сек (если DOM ещё не готов)
-    setTimeout(() => {
-      if (chatObserverTarget === 'body-fallback' || chatObserverTarget === 'none' || !_chatContainerEl) {
-        chatObserverRetries = 0
-        startChatObserver(type)
-      }
-    }, 4000)
+    // v0.80.9: Snapshot через 13 сек (VK грузит чат долго, snapshot должен быть полным)
+    setTimeout(() => startChatObserver(type), 13000)
   }, 2000)
 }
 

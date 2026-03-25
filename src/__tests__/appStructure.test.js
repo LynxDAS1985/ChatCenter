@@ -66,6 +66,12 @@ test('playNotificationSound() из sound', () => assert(code.includes('playNotif
 test('buildChatNavigateScript() из navigateToChat', () => assert(code.includes('buildChatNavigateScript(')))
 test('detectMessengerType() из конфига', () => assert(code.includes('detectMessengerType(')))
 
+// ── Безопасность __CC_NOTIF__ (v0.81.3) ──
+console.log('\\n── __CC_NOTIF__ pipeline: ──')
+test('Нет undefined isSpam в __CC_NOTIF__ handler (v0.81.3)', () => {
+  assert(!code.includes('!isSpam'), 'isSpam переменная не определена в App.jsx — использование вызовет ReferenceError')
+})
+
 // ── Размер файла ──
 console.log('\\n── Размер: ──')
 var lines = code.split('\n').length

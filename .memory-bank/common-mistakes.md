@@ -78,7 +78,7 @@
 
 **Почему enrichment работал**: `__CC_NOTIF__` берёт имя из Notification API `data.t` (DOM не нужен). `__CC_MSG__` DOM enrichment использует **topbar** (`.topbar .headerWrapper`), не sidebar.
 
-**ПРАВИЛО**: Для MAX mark-read использовать `<nav>` + `a[href]` ссылки внутри навигации. Каждый чат = ссылка. Поиск по textContent.indexOf(senderName). НЕ использовать `.chatlist-chat`, `.peer-title` и generic Telegram-селекторы.
+**ПРАВИЛО**: Для MAX навигация к чату — `[class*="wrapper--withActions"]` (реальный Svelte-класс sidebar, март 2026). Поиск по textContent.indexOf(senderName). **ВАЖНО**: простой `.click()` на wrapper НЕ работает (Svelte event delegation). Нужно: (1) искать `<a>` или `<button>` child внутри wrapper, (2) проверить parent на `<a>`, (3) если нет — `MouseEvent({bubbles:true})`. НЕ использовать `<nav> a[href]`, `.chatlist-chat`, `.peer-title`.
 
 **Решение (v0.62.4)**: Полностью переписан MAX-блок в `buildChatNavigateScript`: nav→a[href] exact/icase/partial → all a[href] → TreeWalker → scroll fallback.
 
@@ -173,6 +173,10 @@
 **Ловушка 40 (v0.77.2)**: blob: URL привязан к origin WebView. notification.html = другой BrowserWindow → blob не загрузится. **ПРАВИЛО**: Конвертировать blob→data:URL через canvas.toDataURL() ВНУТРИ WebView executeJavaScript, ПЕРЕД отправкой в handleNewMessage/ribbon.
 
 **Ловушка 41 (v0.77.4)**: VK MutationObserver ловит parent node ("Елена ДугинаТекст") И child node ("Текст") как ДВА сообщения. Тексты РАЗНЫЕ → точный дедуп не ловит. **ПРАВИЛО**: Дедуп по ПОДСТРОКЕ: `prevText.includes(newText) || newText.includes(prevText)` в пределах 5 сек. Также VK не использует Notification API — только MutationObserver.
+
+**Ловушка 48 (v0.81.3, ПОДТВЕРЖДЕНО)**: `isSpam` ReferenceError в App.jsx __CC_NOTIF__ handler. **После фикса уведомления MAX заработали** — ribbon показывается при новых сообщениях. **Симптом**: MAX (и любой мессенджер с Notification API) — `__CC_NOTIF__` получен, `source` записан в Pipeline Trace, но нет `handle`/`ribbon`. Уведомление не показывается. **Причина**: строка 1692 `if (text && !isSpam)` — переменная `isSpam` НЕ ОПРЕДЕЛЕНА. ES module = strict mode → ReferenceError → catch {} на строке 1771 молча глотает. `handleNewMessage` не вызывается. Баг появился при рефакторинге v0.79.0: `isSpamText()` перенесён на строку 1683 как inline проверка, но строка 1692 с `!isSpam` осталась. **ПРИЗНАКИ**: Pipeline Trace показывает `source: __CC_NOTIF__` но НЕТ `handle`/`ribbon` после. **Как проверить**: `grep "!isSpam" src/App.jsx` должен возвращать 0 результатов. **Фикс**: `if (text && !isSpam)` → `if (text)`.
+
+**Ловушка 47 (v0.80.8→v0.81.2)**: VK фантомные уведомления + свои сообщения как чужие. **Три проблемы**: (1) Path 2 при смене чата возвращал текст другого чата → фантом. Фикс v0.81.0: `type !== 'vk'`. (2) chatObserver не различает входящие/исходящие — своё "любимка" показывалось как от "Елена Дугина" (enrichment берёт sender из header, не из пузыря). Склеивал sender+text ("Елена ДугинаПокушал ?"). Фикс v0.81.2: `if (type === 'vk') return` в `startChatObserver`. (3) unread-count (UC) — единственный надёжный для VK, давал чистый текст. **Ошибочные гипотезы**: сброс dedup, задержка snapshot, фильтр исходящих CSS, extractMsgText leaf-scan. **ПРИЗНАКИ**: `msg-src: CO` + свой текст от чужого имени. **Проверка**: Pipeline Trace только `msg-src: UC`, нет `msg-src: CO`.
 
 **Ловушка 42 (v0.80.2)**: VK enrichment берёт sender из ConvoListItem/ConvoHeader который содержит статус: "Елена Дугиназаходила 6 минут назад". **ПРАВИЛО**: `cleanSenderStatus()` в messageProcessing.js — вызывать ПЕРЕД sender-strip и ribbon. Regex: `/(заходил[аи]?\s*.*)/i` + `/(online|offline|печатает|typing|в\s+сети)/i`. Проверять что ribbon использует ОЧИЩЕННЫЙ `senderName`, НЕ `extra.senderName`.
 

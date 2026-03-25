@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.80.6 (24 марта 2026)
+## Текущая версия: v0.81.5 (25 марта 2026)
 
 ---
 
@@ -91,6 +91,40 @@
 ---
 
 ## Changelog
+
+### v0.81.7 (25 марта 2026) — MAX навигация к чату (РАБОТАЕТ)
+- **"Перейти к чату" для MAX** — ПОЧИНЕНО. DOM sidebar MAX: `div.wrapper--withActions`. Простой `.click()` НЕ триггерит Svelte обработчик. Решение: проверить children wrapper'а — если есть `<a>` или `<button>` кликнуть на них, если parent = `<a>` кликнуть на parent, иначе `MouseEvent({bubbles:true})`. Добавлена диагностика children/parent в log.
+- v0.81.6: MouseEvent на wrapper — не помогло
+- v0.81.5: wrapper--withActions найден, .click() — не помогло
+- v0.81.4: [role="listitem"] — MAX не ставит role, не помогло
+
+### v0.81.3 (25 марта 2026) — Фикс isSpam ReferenceError (__CC_NOTIF__ сломан)
+- **КРИТИЧЕСКИЙ ФИКС**: `isSpam` переменная на строке 1692 App.jsx НЕ БЫЛА ОПРЕДЕЛЕНА → `ReferenceError` → `catch {}` глотал ошибку → `handleNewMessage` не вызывался → **ВСЕ `__CC_NOTIF__` уведомления сломаны** (MAX, Telegram, WhatsApp). Уведомления работали только через backup-пути (__CC_MSG__, IPC, unread-count). Фикс: `if (text && !isSpam)` → `if (text)` — спам-фильтр уже вызван выше.
+
+### v0.81.2 (25 марта 2026) — chatObserver отключён для VK
+- **chatObserver (Path 1 CO) отключён для VK** — `if (type === 'vk') return` в `startChatObserver`. chatObserver не различает входящие/исходящие, ловит свои сообщения ("любимка") как от собеседника, склеивает sender+text ("Елена ДугинаПокушал ?"). VK теперь работает ТОЛЬКО через unread-count (UC) — проверено логами: UC выдаёт чистый текст ("Покушал ?", "Хорошо") без фантомов.
+
+### v0.81.1 (25 марта 2026) — Path 2 off MAX + фильтр исходящих + extractMsgText + className
+- **Path 2 отключён для MAX** — `type !== 'max'` в условии Path 2 (аналогично VK v0.81.0)
+- **getVKLastIncomingText фильтрует исходящие** — ищет пузыри `[class*="ConvoMessage"]`, пропускает `out/own/self/sent` в className. Не возвращает свои сообщения ("Любимка")
+- **extractMsgText не склеивает** — для node-обёрток (>2 children) ищет leaf-элемент (span/p) вместо textContent всей обёртки. "Елена ДугинаА13:52" → "А"
+- **className SVG fix** — `typeof el.className === 'string'` перед `.substring()` — SVG элементы имеют SVGAnimatedString, не String
+
+### v0.81.0 (25 марта 2026) — Отключён Path 2 для VK
+- **Path 2 отключён для VK** — `sendUpdate` Path 2 (`getLastMessageText` сравнение) отключён для `type === 'vk'`. Причина: `getLastMessageText()` читает DOM текущего чата, но при переключении чатов возвращает текст ДРУГОГО чата → фантомные уведомления. VK использует chatObserver (Path 1 addedNodes) для детекции новых сообщений. Аналогично Telegram (отключён с v0.47.2).
+
+### v0.80.9 (25 марта 2026) — Фикс фантомных VK уведомлений + парсер диагностики
+- **ФИКС: сброс dedup при SPA-навигации** — `lastActiveMessageText`, `lastQuickMsgText`, `lastSentText` обнуляются при смене URL в VK/MAX. Текст предыдущего чата больше не влияет на dedup нового чата.
+- **ФИКС: реинициализация dedup после grace period** — при окончании 15-секундного grace period `getLastMessageText()` записывается в dedup ДО включения мониторинга. Старые сообщения текущего чата не проходят как "новые".
+- **ФИКС: парсер диагностики** — App.jsx теперь читает `parsed.text` (не только `parsed.body`) → маркеры `msg-src`, `nav`, `grace-end`, `lastActive-chg` видны в Pipeline Trace.
+- **Задержка snapshot** — `startChatObserver` вызывается через 13 сек (не 1.5 сек) после навигации, чтобы VK успел отрисовать чат.
+
+### v0.80.8 (25 марта 2026) — Диагностика фантомных VK уведомлений
+- **msg-src маркер** — `__CC_DIAG__msg-src: CO|UC|P2` перед каждым `__CC_MSG__` для точного определения источника уведомления (chatObserver / unread count / path 2 text change)
+- **nav dedup-dump** — при навигации VK SPA логирует `lastActiveMessageText` и `lastQuickMsgText` для отладки stale dedup
+- **snapshot ts** — timestamp привязки chatObserver + размер snapshot для диагностики пустых snapshot'ов
+- **grace-end лог** — состояние `lastActiveMessageText` при окончании 15-секундного grace period
+- **lastActive-chg** — логирование тихой перезаписи `lastActiveMessageText` в Path 2 (без отправки уведомления)
 
 ### v0.80.6 (25 марта 2026) — VK/MAX: отключён body-fallback + автоочистка vite-кэша
 - **VK/MAX body-fallback ОТКЛЮЧЁН** — `noBodyFallbackTypes = ['vk', 'max']`. Если контейнер чата не найден → НЕ наблюдаем body. Ждём навигацию → привязка к `ConvoMain__history`.

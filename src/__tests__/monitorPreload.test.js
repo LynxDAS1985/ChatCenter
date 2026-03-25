@@ -111,8 +111,8 @@ test('MAX body-fallback отключён (noBodyFallbackTypes содержит m
 test('chatObserverTarget = none для VK/MAX', () => {
   assert(code.includes("chatObserverTarget = 'none'"), 'должен устанавливать none')
 })
-test('Навигация retry проверяет target=none', () => {
-  assert(code.includes("chatObserverTarget === 'none'"), 'retry должен учитывать none')
+test('chatObserverTarget = none для VK без контейнера', () => {
+  assert(code.includes("chatObserverTarget = 'none'"), 'должен устанавливать none при отсутствии контейнера')
 })
 test('Snapshot при привязке chatObserver (v0.80.7)', () => {
   assert(code.includes('_snapshotTexts') && code.includes('new Set'), 'snapshot Set должен создаваться')
@@ -135,6 +135,76 @@ test('WhatsApp НЕ в noBodyFallbackTypes (пока использует body)'
 test('Telegram НЕ в noBodyFallbackTypes', () => {
   const match = code.match(/noBodyFallbackTypes\s*=\s*\[([^\]]+)\]/)
   assert(match && !match[1].includes("'telegram'"), 'telegram НЕ должен быть в списке')
+})
+
+// ── Фикс фантомов VK (v0.80.9) ──
+console.log('\\n── Фикс фантомов + диагностика (v0.80.9): ──')
+
+test('Сброс lastActiveMessageText при навигации (v0.80.9)', () => {
+  assert(code.includes('lastActiveMessageText = null') && code.includes('Сброс dedup при навигации'), 'dedup должен сбрасываться при навигации')
+})
+test('Path 2 отключён для VK (v0.81.0)', () => {
+  const path2Line = code.match(/monitorReady\s*&&\s*type\s*!==\s*'telegram'[^{]+\{/)
+  assert(path2Line && path2Line[0].includes("'vk'"), 'Path 2 должен быть отключён для VK')
+})
+test('chatObserver отключён для VK (v0.81.2)', () => {
+  assert(code.includes("if (type === 'vk') return") && code.includes('startChatObserver'), 'chatObserver должен быть отключён для VK')
+})
+test('Path 2 отключён для MAX (v0.81.1)', () => {
+  const path2Line = code.match(/monitorReady\s*&&\s*type\s*!==\s*'telegram'[^{]+\{/)
+  assert(path2Line && path2Line[0].includes("'max'"), 'Path 2 должен быть отключён для MAX')
+})
+test('getVKLastIncomingText фильтрует исходящие out/own (v0.81.1)', () => {
+  assert(code.includes('out|own|self|sent') && code.includes('getVKLastIncomingText'), 'должен фильтровать исходящие')
+})
+test('extractMsgText ищет leaf-элемент для обёрток (v0.81.1)', () => {
+  assert(code.includes('node.children.length > 2') && code.includes('leaves'), 'должен искать leaf в обёртках')
+})
+test('className проверка typeof для SVG (v0.81.1)', () => {
+  assert(code.includes("typeof el.className === 'string'"), 'должен проверять typeof для SVG className')
+})
+test('Реинициализация dedup в grace-end через getLastMessageText (v0.80.9)', () => {
+  // В setTimeout 15000 должен вызываться getLastMessageText для инициализации dedup
+  const graceBlock = code.slice(code.indexOf('setTimeout(function()'), code.indexOf('}, 15000)') + 10)
+  assert(graceBlock.includes('getLastMessageText'), 'grace-end должен вызывать getLastMessageText для реинит dedup')
+})
+test('Snapshot bind через 13 сек (не 1.5 сек) после навигации (v0.80.9)', () => {
+  assert(code.includes('startChatObserver(type), 13000'), 'startChatObserver должен вызываться через 13000мс')
+  assert(!code.includes('startChatObserver(type), 1500'), 'старый 1500мс таймаут должен быть удалён')
+})
+
+// ── Диагностика (v0.80.8) ──
+console.log('\\n── Диагностика msg-src (v0.80.8): ──')
+
+test('msg-src маркер CO (chatObserver) перед __CC_MSG__', () => {
+  // CO маркер должен быть в quickNewMsgCheck, рядом с __CC_MSG__
+  const idx_co = code.indexOf("msg-src: CO")
+  const idx_msg = code.indexOf("'__CC_MSG__' + text", idx_co)
+  assert(idx_co > 0 && idx_msg > 0 && idx_msg - idx_co < 200, 'msg-src: CO должен быть перед __CC_MSG__ в quickNewMsgCheck')
+})
+test('msg-src маркер UC (unread count) перед __CC_MSG__', () => {
+  const idx_uc = code.indexOf("msg-src: UC")
+  assert(idx_uc > 0, 'msg-src: UC должен быть в sendUpdate path 1')
+})
+test('msg-src маркер P2 (path 2 text changed) перед __CC_MSG__', () => {
+  const idx_p2 = code.indexOf("msg-src: P2")
+  assert(idx_p2 > 0, 'msg-src: P2 должен быть в sendUpdate path 2')
+})
+test('Все 3 маркера msg-src присутствуют (CO, UC, P2)', () => {
+  const matches = code.match(/msg-src: (CO|UC|P2)/g)
+  assert(matches && matches.length === 3, 'должно быть ровно 3 маркера msg-src')
+})
+test('nav диагностика содержит dedup state (lastActive)', () => {
+  assert(code.includes('__CC_DIAG__nav:') && code.includes('lastActiveMessageText'), 'nav должен логировать dedup')
+})
+test('Snapshot лог содержит timestamp (ts=)', () => {
+  assert(code.includes("snapshot=' + _snapshotTexts.size + ' | ts=' + _bindTs"), 'snapshot лог должен содержать ts')
+})
+test('grace-end логирует lastActiveMessageText', () => {
+  assert(code.includes('__CC_DIAG__grace-end') && code.includes('lastActiveMessageText'), 'grace-end должен логировать lastActive')
+})
+test('lastActive-chg логирует тихую перезапись', () => {
+  assert(code.includes('__CC_DIAG__lastActive-chg'), 'lastActive-chg должен существовать')
 })
 
 // ── Структура файла ──

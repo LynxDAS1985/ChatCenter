@@ -748,7 +748,7 @@ export default function App() {
     }
     if (settingsRef.current.notificationsEnabled !== false && ribbonOn) {
       lastRibbonTsRef.current[messengerId] = Date.now()
-      const senderName = extra?.senderName
+      // v0.80.6: НЕ переопределяем senderName — используем очищенный из cleanSenderStatus (строка 697)
       const notifTitle = senderName
         ? `${mInfo?.name || 'ЦентрЧатов'} — ${senderName}`
         : (mInfo?.name || 'ЦентрЧатов')
@@ -1424,7 +1424,7 @@ export default function App() {
         const parsed = parseConsoleMessage(msg)
         if (parsed) {
           const ready = !!notifReadyRef.current[messengerId]
-          traceNotif('debug', 'info', messengerId, (parsed.body || parsed.value || '').toString().slice(0, 200), `${parsed.prefix || parsed.type} | ready=${ready}`)
+          traceNotif('debug', 'info', messengerId, (parsed.text || parsed.body || parsed.value || '').toString().slice(0, 200), `${parsed.prefix || parsed.type} | ready=${ready}`)
         }
         // ── __CC_BADGE_BLOCKED__: Telegram Badge API ──
         if (parsed && parsed.type === 'badge_blocked') {
@@ -1689,7 +1689,7 @@ export default function App() {
           if (customSpamN && text) {
             try { if (new RegExp(customSpamN, 'i').test(text)) { traceNotif('spam', 'block', messengerId, text, 'пользовательский спам-фильтр'); return } } catch (e) { devError('[spam-regex]', e.message) }
           }
-          if (text && !isSpam) {
+          if (text) {
             // Дедупликация: Telegram шлёт Notification + ServiceWorker.showNotification → 2 __CC_NOTIF__
             // Нормализуем body: убираем trailing timestamps (вида "15:57" или "15:5715:57")
             const normalizedText = text.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()

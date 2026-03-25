@@ -74,6 +74,9 @@ try {
   console.log('\\n── MAX: ──')
   test('MAX: ищет nav', () => assert(code.includes("querySelector('nav')")))
   test('MAX: scrollDown', () => assert(code.includes('scrollDown')))
+  test('MAX: wrapper--withActions (v0.81.5)', () => assert(code.includes('wrapper--withActions')))
+  test('MAX: Svelte click — ищет child a/button (v0.81.7)', () => assert(code.includes("ch2.tagName === 'A'") || code.includes("ch2.tagName === 'BUTTON'")))
+  test('MAX: MouseEvent bubbles fallback', () => assert(code.includes("MouseEvent('click'") && code.includes('bubbles:true')))
 
   console.log('\\n── Безопасность: ──')
   test('Все скрипты в try-catch', () => {

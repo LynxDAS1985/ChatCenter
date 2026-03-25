@@ -71,6 +71,12 @@ test('Пустой текст', function() { var r = parseConsoleMessage('__CC_M
 // ── DIAG ──
 console.log('\\n── DIAG: ──')
 test('Диагностика', function() { var r = parseConsoleMessage('__CC_DIAG__chatObserver ready'); assert(r.type === 'diagnostic' && r.text === 'chatObserver ready') })
+test('Диагностика msg-src маркер (v0.80.8)', function() { var r = parseConsoleMessage('__CC_DIAG__msg-src: CO | "текст"'); assert(r.type === 'diagnostic' && r.text === 'msg-src: CO | "текст"') })
+test('Диагностика nav маркер (v0.80.8)', function() { var r = parseConsoleMessage('__CC_DIAG__nav: /im → /im/convo | a="текст"'); assert(r.type === 'diagnostic' && r.text.startsWith('nav:')) })
+test('App.jsx traceNotif читает parsed.text (v0.80.9)', function() {
+  var appCode = fs.readFileSync('src/App.jsx', 'utf8')
+  assert(appCode.includes('parsed.text || parsed.body'), 'App.jsx должен читать parsed.text для диагностики')
+})
 
 // ── Специальные ──
 console.log('\\n── Специальные: ──')
