@@ -158,4 +158,11 @@
 - Имеет 20+ зависимостей от App scope (refs, state setters, imported utils)
 - Custom hook `useNotificationPipeline` — ПОПЫТКА СДЕЛАНА (v0.82.6), откачена: refs дублируются, ренейминг ломает console-message handler
 - Альтернатива: перенос ВСЕХ notification refs в Zustand store (полный рефакторинг state management)
-- **ВЫВОД**: App.jsx 2137 строк — это МИНИМУМ для текущей архитектуры. Дальнейшее уменьшение требует смены подхода к state management
+- **ПЛАН (Вариант 4 — AppShell + WebviewManager)**:
+  - Граница разреза: строки 611-1453 (~842 строки) → `src/components/WebviewManager.jsx`
+  - Включает: account extraction, notification pipeline (handleNewMessage, traceNotif, refs), setWebviewRef, ALL event listeners
+  - App.jsx после: ~1295 строк (UI + state + effects + render)
+  - WebviewManager: ~900 строк (WebView init + events + notification pipeline)
+  - Props: messengers, activeId, settings, webviewRefs, notifReadyRef, + все state setters
+  - **setWebviewRef** вызывается как `ref={el => setWebviewRef(el, m.id)}` — передаётся как callback от WebviewManager
+  - **ТРЕБУЕТ ОТДЕЛЬНУЮ СЕССИЮ** — 614 строк перемещения + обновление imports + проброска 20+ props
