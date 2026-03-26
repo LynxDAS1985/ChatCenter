@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.82.0 (26 марта 2026)
+## Текущая версия: v0.82.1 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.82.1 (26 марта 2026) — extractMsgText/quickNewMsgCheck per-messenger + диагностика проекта
+- **extractMsgText per-messenger** — спам-паттерны вынесены в `EXTRACT_SPAM` конфиг (MAX: _maxPhantom+_editedMark, WhatsApp: status-dblcheck, VK: UI-секции). Функция принимает `type`.
+- **quickNewMsgCheck per-messenger** — deep scan селекторы вынесены в `QUICK_MSG_SELECTORS` конфиг (разные для каждого мессенджера).
+- **Полная диагностика проекта**: все файлы в лимитах, нет мёртвого кода, нет битых связей, 583 теста проходят.
 
 ### v0.82.0 (26 марта 2026) — Per-messenger notification hooks (полное разделение)
 - **АРХИТЕКТУРНЫЙ РЕФАКТОРИНГ**: Notification hooks разделены на per-messenger файлы: `main/preloads/hooks/{telegram|max|whatsapp|vk}.hook.js`

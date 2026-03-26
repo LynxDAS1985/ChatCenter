@@ -168,6 +168,18 @@ test('Реинициализация dedup в grace-end через getLastMessag
   const graceBlock = code.slice(code.indexOf('setTimeout(function()'), code.indexOf('}, 15000)') + 10)
   assert(graceBlock.includes('getLastMessageText'), 'grace-end должен вызывать getLastMessageText для реинит dedup')
 })
+test('EXTRACT_SPAM per-messenger конфиг (v0.82.1)', () => {
+  assert(code.includes('EXTRACT_SPAM') && code.includes("max:"), 'EXTRACT_SPAM должен содержать per-messenger паттерны')
+})
+test('QUICK_MSG_SELECTORS per-messenger конфиг (v0.82.1)', () => {
+  assert(code.includes('QUICK_MSG_SELECTORS') && code.includes("whatsapp:"), 'QUICK_MSG_SELECTORS должен содержать per-messenger селекторы')
+})
+test('extractMsgText принимает type (v0.82.1)', () => {
+  assert(code.includes('function extractMsgText(node, type)'), 'extractMsgText должен принимать type')
+})
+test('quickNewMsgCheck передаёт type в extractMsgText (v0.82.1)', () => {
+  assert(code.includes('extractMsgText(node, type)') && code.includes('extractMsgText(candidates[ci], type)'), 'все вызовы extractMsgText должны передавать type')
+})
 test('Snapshot bind через 13 сек (не 1.5 сек) после навигации (v0.80.9)', () => {
   assert(code.includes('startChatObserver(type), 13000'), 'startChatObserver должен вызываться через 13000мс')
   assert(!code.includes('startChatObserver(type), 1500'), 'старый 1500мс таймаут должен быть удалён')
