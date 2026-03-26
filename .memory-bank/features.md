@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.83.2 (26 марта 2026)
+## Текущая версия: v0.83.3 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.83.3 (26 марта 2026) — 69 runtime unit тестов + bugfixes
+- **69 новых runtime unit тестов** в `unitRuntime.test.js`: cleanupSenderCache (4), getSoundForColor (5), hook _isSpam regex (28), AI PROVIDERS config (22), PIXEL_FONT + setPixelBGRA (6)
+- **Bugfix: dockPinHandlers.js** — лишняя `}` вызывала build error
+- **Bugfix: AIConfigPanel.jsx** — импорт несуществующих PROVIDER_LIST/PROVIDER_DEFAULTS
+- Всего тестов: 660
 
 ### v0.83.2 (26 марта 2026) — AISidebar дробление
 - **AIConfigPanel.jsx** (328 строк) — конфиг-панель провайдера вынесена из AISidebar.jsx

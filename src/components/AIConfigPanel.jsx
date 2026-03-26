@@ -1,6 +1,6 @@
 // v0.83.2: AI конфиг-панель — вынесена из AISidebar.jsx для уменьшения файла
 // Содержит: настройки провайдера, API-ключ, модель, системный промпт
-import { PROVIDER_LIST, PROVIDER_DEFAULTS } from '../utils/aiProviders.js'
+// v0.83.3: Все данные приходят через props от AISidebar
 
 export default function AIConfigPanel({ showConfig, setShowConfig, providerMode, aiCfg, aiApiKey, aiClientSecret, aiModel, aiSystemPrompt, setProviderProp, showKey, setShowKey, showSecret, setShowSecret, testing, testStatus, justSaved, waitingForKey, keyFoundMsg, providerInfo }) {
   return (

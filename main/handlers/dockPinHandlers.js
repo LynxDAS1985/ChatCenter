@@ -690,4 +690,3 @@ ipcMain.on('dock:set-note', (_event, pinId, text) => {
 loadPinItems()
 
 }
-}
