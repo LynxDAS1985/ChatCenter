@@ -133,3 +133,27 @@
 - Один общий файл (Вариант 3) — изменение MAX ломает Telegram
 - Конфиг + движок (Вариант 2) — MAX enrichment слишком отличается от Telegram
 - Inline код в preload + дубль в App.jsx (было до v0.82.0) — причина многих багов
+
+---
+
+## ADR-010 — Рефакторинг до <1000 строк: план (26 марта 2026)
+
+**Статус**: 🟡 В процессе
+
+**Текущие размеры**: App.jsx 2137, main.js 1719, monitor.preload.js 825
+
+**Что уже вынесено** (v0.82.0-v0.82.4):
+- ✅ Notification hooks → `hooks/{type}.hook.js` (monitor.preload.js -220, App.jsx -338)
+- ✅ AI handlers → `handlers/aiHandlers.js` (main.js -177)
+- ✅ Notification handlers → `handlers/notifHandlers.js` (main.js -66)
+- ✅ Unread counters → `utils/unreadCounters.js` (monitor.preload.js -491)
+
+**Что нужно для main.js → <1000** (осталось 1719):
+- DockManager класс (~683 строк dock/pin) → `main/models/dockManager.js`
+- ВЫСОКИЙ РИСК: circular зависимости, mutable state (pinItems Map), таймеры
+- Нужна отдельная сессия с полным контекстом
+
+**Что нужно для App.jsx → <1000** (осталось 2137):
+- `useNotificationPipeline` custom hook (~654 строк handleNewMessage) → `src/hooks/useNotificationPipeline.js`
+- ВЫСОКИЙ РИСК: 15+ useRef из App scope, closure captures
+- Нужна отдельная сессия с полным контекстом

@@ -8,7 +8,8 @@ const fs = require('fs')
 const code = fs.readFileSync('main/main.js', 'utf8')
 // v0.82.2: AI handlers вынесены в отдельный файл
 const aiCode = fs.existsSync('main/handlers/aiHandlers.js') ? fs.readFileSync('main/handlers/aiHandlers.js', 'utf8') : ''
-const allCode = code + '\n' + aiCode
+const notifCode = fs.existsSync('main/handlers/notifHandlers.js') ? fs.readFileSync('main/handlers/notifHandlers.js', 'utf8') : ''
+const allCode = code + '\n' + aiCode + '\n' + notifCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -41,9 +42,10 @@ test('app:custom-notify', () => assert(code.includes("'app:custom-notify'")))
 test('tray:set-badge', () => assert(code.includes("'tray:set-badge'")))
 test('ai:generate', () => assert(allCode.includes("'ai:generate'")))
 test('app:get-paths', () => assert(code.includes("'app:get-paths'")))
-test('notif:click', () => assert(code.includes("'notif:click'")))
-test('notif:dismiss', () => assert(code.includes("'notif:dismiss'")))
-test('notif:resize', () => assert(code.includes("'notif:resize'")))
+test('notif:click', () => assert(allCode.includes("'notif:click'")))
+test('notif:dismiss', () => assert(allCode.includes("'notif:dismiss'")))
+test('notif:resize', () => assert(allCode.includes("'notif:resize'")))
+test('Notif handlers в отдельном файле (v0.82.4)', () => assert(notifCode.length > 50 && code.includes('initNotifHandlers'), 'notif handlers должны быть в notifHandlers.js'))
 
 // ── AI провайдеры ──
 console.log('\\n── AI провайдеры: ──')

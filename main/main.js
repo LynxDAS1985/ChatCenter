@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 
 import { createTrayBadgeIcon, createOverlayIcon } from './utils/overlayIcon.js'
 import { initAIHandlers } from './handlers/aiHandlers.js'
+import { initNotifHandlers } from './handlers/notifHandlers.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
@@ -549,79 +550,12 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
 }
 
 function setupNotifIPC() {
-  ipcMain.on('notif:click', (_event, id) => {
-    const item = notifItems.find(n => n.id === id)
-    notifItems = notifItems.filter(n => n.id !== id)
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show()
-      mainWindow.focus()
-      if (item?.messengerId) {
-        mainWindow.webContents.send('notify:clicked', {
-          messengerId: item.messengerId,
-          senderName: item.senderName || item.title || '',
-          chatTag: item.chatTag || '',
-        })
-      }
-    }
-    // Не вызываем repositionNotifWin() — HTML сам пришлёт notif:resize
-  })
-
-  // "Прочитано" — скрыть ribbon без перехода к чату
-  // v0.62.0: "Прочитано" — отправить mark-read в renderer для WebView мессенджера
-  ipcMain.on('notif:mark-read', (_event, id) => {
-    const item = notifItems.find(n => n.id === id)
-    notifItems = notifItems.filter(n => n.id !== id)
-    if (!mainWindow || mainWindow.isDestroyed() || !item?.messengerId) return
-    const payload = {
-      messengerId: item.messengerId,
-      senderName: item.senderName || item.title || '',
-      chatTag: item.chatTag || '',
-    }
-    // v0.62.7: если окно свёрнуто — невидимо восстановить, выполнить mark-read, свернуть обратно
-    if (mainWindow.isMinimized()) {
-      mainWindow.setOpacity(0)
-      mainWindow.restore()
-      setTimeout(() => {
-        mainWindow.webContents.send('notify:mark-read', payload)
-        setTimeout(() => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.minimize()
-            mainWindow.setOpacity(1)
-          }
-        }, 1200)
-      }, 400)
-    } else {
-      mainWindow.webContents.send('notify:mark-read', payload)
-    }
-  })
-
-  ipcMain.on('notif:dismiss', (_event, id) => {
-    notifItems = notifItems.filter(n => n.id !== id)
-    // HTML пришлёт notif:resize после анимации удаления
-  })
-
-  let lastNotifBounds = null // Кэш bounds — не дёргать окно если не изменились
-  ipcMain.on('notif:resize', (_event, height) => {
-    // HTML сообщает нужную высоту — единственный источник позиционирования
-    if (!notifWin || notifWin.isDestroyed()) return
-    height = Math.round(height)
-    if (height <= 0) {
-      notifWin.hide()
-      lastNotifBounds = null
-      return
-    }
-    const { workArea } = screen.getPrimaryDisplay()
-    const x = workArea.x + workArea.width - 380
-    const y = workArea.y + workArea.height - height - 10
-    // Не вызывать setBounds если bounds не изменились — убирает дёрг
-    if (lastNotifBounds && lastNotifBounds.x === x && lastNotifBounds.y === y && lastNotifBounds.h === height) {
-      if (!notifWin.isVisible()) notifWin.showInactive()
-      return
-    }
-    lastNotifBounds = { x, y, h: height }
-    notifWin.setBounds({ x, y, width: 370, height })
-    if (!notifWin.isVisible()) notifWin.showInactive()
+  // v0.82.4: Notification handlers вынесены в main/handlers/notifHandlers.js
+  initNotifHandlers({
+    getNotifItems: () => notifItems,
+    setNotifItems: (items) => { notifItems = items },
+    getNotifWin: () => notifWin,
+    getMainWindow: () => mainWindow,
   })
 
   // ── v0.66.0: Pin + Dock + Timer ──────────────────────────────────────────────

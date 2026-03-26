@@ -6,6 +6,11 @@
 
 var fs = require('fs')
 var mainCode = fs.readFileSync('main/main.js', 'utf8')
+// v0.82.4: handlers вынесены в отдельные файлы
+var handlersDir = 'main/handlers/'
+;['aiHandlers.js', 'notifHandlers.js'].forEach(function(f) {
+  try { mainCode += '\n' + fs.readFileSync(handlersDir + f, 'utf8') } catch(e) {}
+})
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
 var preloadCode = fs.readFileSync('main/preloads/app.preload.js', 'utf8')
 

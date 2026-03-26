@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.82.3 (26 марта 2026)
+## Текущая версия: v0.82.4 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.82.4 (26 марта 2026) — Notification handlers вынесены из main.js
+- **Notif handlers** (75 строк) вынесены в `main/handlers/notifHandlers.js`: notif:click, notif:mark-read, notif:dismiss, notif:resize
+- **main.js**: 1785 → 1719 строк
+- Используют getter/setter для мутабельных данных (notifItems, notifWin, mainWindow)
 
 ### v0.82.3 (26 марта 2026) — Unread counters вынесены из monitor.preload.js
 - **Unread counters** (491 строк) вынесены в `main/preloads/utils/unreadCounters.js`: UNREAD_SELECTORS, LAST_MESSAGE_SELECTORS, getMessengerType, countUnread, countUnreadVK, countUnreadMAX, countUnreadTelegram, isBadgeInMutedDialog, isActiveChatMuted, isActiveChatChannel, getChatType, _extractUnreadFromChat
