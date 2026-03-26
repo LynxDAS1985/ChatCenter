@@ -154,6 +154,8 @@
 - Нужна отдельная сессия с полным контекстом
 
 **Что нужно для App.jsx → <1000** (осталось 2137):
-- `useNotificationPipeline` custom hook (~654 строк handleNewMessage) → `src/hooks/useNotificationPipeline.js`
-- ВЫСОКИЙ РИСК: 15+ useRef из App scope, closure captures
-- Нужна отдельная сессия с полным контекстом
+- `handleNewMessage` (160 строк) + console-message handler (354 строк) = 514 строк notification pipeline
+- Имеет 20+ зависимостей от App scope (refs, state setters, imported utils)
+- Custom hook `useNotificationPipeline` — ПОПЫТКА СДЕЛАНА (v0.82.6), откачена: refs дублируются, ренейминг ломает console-message handler
+- Альтернатива: перенос ВСЕХ notification refs в Zustand store (полный рефакторинг state management)
+- **ВЫВОД**: App.jsx 2137 строк — это МИНИМУМ для текущей архитектуры. Дальнейшее уменьшение требует смены подхода к state management
