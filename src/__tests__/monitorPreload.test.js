@@ -7,6 +7,9 @@
 
 const fs = require('fs')
 const code = fs.readFileSync('main/preloads/monitor.preload.js', 'utf8')
+// v0.82.3: unread counters вынесены в отдельный файл
+const unreadCode = fs.existsSync('main/preloads/utils/unreadCounters.js') ? fs.readFileSync('main/preloads/utils/unreadCounters.js', 'utf8') : ''
+const allPreloadCode = code + '\n' + unreadCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -222,11 +225,12 @@ test('lastActive-chg логирует тихую перезапись', () => {
 // ── Структура файла ──
 console.log('\\n── Структура файла: ──')
 
-test('getMessengerType определена', () => assert(code.includes('function getMessengerType()')))
-test('countUnread определена', () => assert(code.includes('function countUnread(type)')))
-test('countUnreadTelegram определена', () => assert(code.includes('function countUnreadTelegram()')))
-test('countUnreadVK определена', () => assert(code.includes('function countUnreadVK()')))
-test('countUnreadMAX определена', () => assert(code.includes('function countUnreadMAX()')))
+test('getMessengerType определена', () => assert(allPreloadCode.includes('function getMessengerType()')))
+test('countUnread определена', () => assert(allPreloadCode.includes('function countUnread(type)')))
+test('countUnreadTelegram определена', () => assert(allPreloadCode.includes('function countUnreadTelegram()')))
+test('countUnreadVK определена', () => assert(allPreloadCode.includes('function countUnreadVK()')))
+test('countUnreadMAX определена', () => assert(allPreloadCode.includes('function countUnreadMAX()')))
+test('Unread counters в отдельном файле (v0.82.3)', () => assert(unreadCode.length > 100 && code.includes("require('./utils/unreadCounters')"), 'counters должны быть в unreadCounters.js'))
 test('quickNewMsgCheck определена', () => assert(code.includes('function quickNewMsgCheck(')))
 test('isSidebarNode определена', () => assert(code.includes('function isSidebarNode(')))
 test('startChatObserver определена', () => assert(code.includes('function startChatObserver(')))

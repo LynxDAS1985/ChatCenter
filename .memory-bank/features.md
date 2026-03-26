@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.82.2 (26 марта 2026)
+## Текущая версия: v0.82.3 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,10 @@
 ---
 
 ## Changelog
+
+### v0.82.3 (26 марта 2026) — Unread counters вынесены из monitor.preload.js
+- **Unread counters** (491 строк) вынесены в `main/preloads/utils/unreadCounters.js`: UNREAD_SELECTORS, LAST_MESSAGE_SELECTORS, getMessengerType, countUnread, countUnreadVK, countUnreadMAX, countUnreadTelegram, isBadgeInMutedDialog, isActiveChatMuted, isActiveChatChannel, getChatType, _extractUnreadFromChat
+- **monitor.preload.js**: 1312 → 825 строк (цель <1000 достигнута)
 
 ### v0.82.2 (26 марта 2026) — Очистка + AI handlers вынесены
 - **AI handlers вынесены** из main.js в `main/handlers/aiHandlers.js` — main.js: 1962 → 1785 (-177 строк)
