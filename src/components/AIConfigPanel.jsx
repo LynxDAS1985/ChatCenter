@@ -2,7 +2,12 @@
 // Содержит: настройки провайдера, API-ключ, модель, системный промпт
 // v0.83.3: Все данные приходят через props от AISidebar
 
-export default function AIConfigPanel({ showConfig, setShowConfig, providerMode, aiCfg, aiApiKey, aiClientSecret, aiModel, aiSystemPrompt, setProviderProp, showKey, setShowKey, showSecret, setShowSecret, testing, testStatus, justSaved, waitingForKey, keyFoundMsg, providerInfo }) {
+export default function AIConfigPanel({ showConfig, setShowConfig, providerMode, aiCfg, setProviderProp, showKey, setShowKey, showSecret, setShowSecret, testing, testStatus, justSaved, waitingForKey, keyFoundMsg, providerInfo }) {
+  // Вычисляем из aiCfg (раньше были в scope AISidebar)
+  const aiApiKey = aiCfg?.apiKey || ''
+  const aiClientSecret = aiCfg?.clientSecret || ''
+  const aiModel = aiCfg?.model || ''
+  const aiSystemPrompt = aiCfg?.systemPrompt || ''
   return (
   <>
   {/* ── Конфиг-панель (с анимацией slide-down) ── */}
