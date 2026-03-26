@@ -34,8 +34,7 @@ contextBridge.exposeInMainWorld('dockApi', {
   startTimer: (id, minutes) => ipcRenderer.send('dock:start-timer', id, minutes),
   // v0.71.3: Dock → Main: запросить место для контекстного меню (расширить окно вверх)
   requestCtxMenuSpace: (extraH) => ipcRenderer.send('dock:ctx-menu-space', extraH),
-  // v0.71.4: Dock → Main: toggle click-through (прозрачная зона)
-  setIgnoreMouse: (ignore) => ipcRenderer.send('dock:set-ignore-mouse', ignore),
+  // v0.71.4: УДАЛЕНО — setIgnoreMouseEvents ломает -webkit-app-region: drag (ловушка 27)
   // v0.72.0: Dock → Main: установить заметку из dock
   setNote: (id, text) => ipcRenderer.send('dock:set-note', id, text),
   // v0.72.0: Main → Dock: обновить заметку на табе

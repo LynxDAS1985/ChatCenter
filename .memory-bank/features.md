@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.82.1 (26 марта 2026)
+## Текущая версия: v0.82.2 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.82.2 (26 марта 2026) — Очистка + AI handlers вынесены
+- **AI handlers вынесены** из main.js в `main/handlers/aiHandlers.js` — main.js: 1962 → 1785 (-177 строк)
+- **Удалён placeholder** `(function() { /* placeholder */ })()` из monitor.preload.js
+- **Удалён мёртвый setIgnoreMouse** из pin-dock.preload.js (ловушка 27: ломает drag)
+- **Удалён неиспользуемый `_origSetBadgeCount`** из main.js
 
 ### v0.82.1 (26 марта 2026) — extractMsgText/quickNewMsgCheck per-messenger + диагностика проекта
 - **extractMsgText per-messenger** — спам-паттерны вынесены в `EXTRACT_SPAM` конфиг (MAX: _maxPhantom+_editedMark, WhatsApp: status-dblcheck, VK: UI-секции). Функция принимает `type`.

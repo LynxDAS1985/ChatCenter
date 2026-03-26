@@ -36,7 +36,7 @@ const { ipcRenderer } = require('electron')
 // isSpamNotif, Notification override, showNotification override, Badge/SW/Audio block.
 // Теперь каждый мессенджер имеет свой файл с собственными селекторами и фильтрами.
 // Изменение hook для MAX не затрагивает Telegram, и наоборот.
-;(function() { /* placeholder */ })()
+
 // Debounce для MutationObserver (не пересчитывать на каждый пиксель скролла)
 let updateTimer = null
 const UPDATE_DEBOUNCE = 300 // ms

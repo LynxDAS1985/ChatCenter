@@ -7,6 +7,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'url'
 
 import { createTrayBadgeIcon, createOverlayIcon } from './utils/overlayIcon.js'
+import { initAIHandlers } from './handlers/aiHandlers.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
@@ -160,9 +161,7 @@ function setupSession(ses) {
   })
 }
 
-// v0.73.9: Перехват app.setBadgeCount — Chromium вызывает его при получении
-// Badge API от WebView, что транслируется в setOverlayIcon, перебивая наш overlay.
-const _origSetBadgeCount = app.setBadgeCount.bind(app)
+// v0.73.9: Блокируем app.setBadgeCount — Chromium вызывает при Badge API из WebView
 app.setBadgeCount = function(count) {
   console.log(`[BADGE] app.setBadgeCount(${count}) — ЗАБЛОКИРОВАНО`)
   return false
@@ -1652,184 +1651,8 @@ function setupIPC() {
     return { ok: true }
   })
 
-  // ─── SSE-стриминг AI (OpenAI / Anthropic / DeepSeek / ГигаЧат-fallback) ──
-  // Используем ipcMain.on (не handle) — renderer шлёт send(), получает события через on()
-  ipcMain.on('ai:generate-stream', async (event, { messages, settings: aiCfg, requestId }) => {
-    const { provider, apiKey, clientSecret, model, systemPrompt } = aiCfg || {}
-
-    const send = (ch, payload) => {
-      if (!event.sender.isDestroyed()) event.sender.send(ch, payload)
-    }
-    const chunk  = (c) => send('ai:stream-chunk', { requestId, chunk: c })
-    const done   = ()  => send('ai:stream-done',  { requestId })
-    const errOut = (e) => send('ai:stream-error', { requestId, error: ruError(e) })
-
-    // SSE-парсер: читает ReadableStream и вызывает onChunk для каждого фрагмента
-    const pipeSSE = async (reader, extractFn) => {
-      const dec = new TextDecoder()
-      let buf = ''
-      while (true) {
-        const { done: d, value } = await reader.read()
-        if (d) break
-        buf += dec.decode(value, { stream: true })
-        const lines = buf.split('\n')
-        buf = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const raw = line.slice(6).trim()
-          if (raw === '[DONE]') continue
-          try { const c = extractFn(JSON.parse(raw)); if (c) chunk(c) } catch {}
-        }
-      }
-    }
-
-    try {
-      // ── Anthropic (SSE stream: true) ──────────────────────────────────────
-      if (provider === 'anthropic') {
-        if (!apiKey) { errOut('Укажите API-ключ Anthropic (sk-ant-...)'); return }
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: model || 'claude-haiku-4-5-20251001', max_tokens: 1024, stream: true, system: systemPrompt || '', messages })
-        })
-        if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
-        await pipeSSE(resp.body.getReader(), p => p.delta?.text || '')
-        done()
-
-      // ── DeepSeek (OpenAI-compatible SSE) ─────────────────────────────────
-      } else if (provider === 'deepseek') {
-        if (!apiKey) { errOut('Укажите API-ключ DeepSeek'); return }
-        const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: model || 'deepseek-chat', stream: true, messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] })
-        })
-        if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
-        await pipeSSE(resp.body.getReader(), p => p.choices?.[0]?.delta?.content || '')
-        done()
-
-      // ── ГигаЧат — без стриминга (SSL-bypass не поддерживает ReadableStream) ─
-      } else if (provider === 'gigachat') {
-        if (!apiKey || !clientSecret) { errOut('Укажите Client ID и Client Secret ГигаЧат'); return }
-        const token = await getGigaChatToken(apiKey.trim(), clientSecret.trim())
-        const sysMsg = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []
-        const result = await httpsPostSkipSsl(GIGACHAT_CHAT_URL,
-          JSON.stringify({ model: model || 'GigaChat', messages: [...sysMsg, ...messages] }),
-          { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-        )
-        if (!result.ok) { errOut(result.data?.error?.message || 'HTTP ошибка'); return }
-        const text = result.data.choices?.[0]?.message?.content || ''
-        if (text) chunk(text)
-        done()
-
-      // ── OpenAI (SSE stream: true, default) ───────────────────────────────
-      } else {
-        if (!apiKey) { errOut('Укажите API-ключ OpenAI (sk-...)'); return }
-        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: model || 'gpt-4o-mini', stream: true, messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] })
-        })
-        if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
-        await pipeSSE(resp.body.getReader(), p => p.choices?.[0]?.delta?.content || '')
-        done()
-      }
-    } catch (e) {
-      errOut(e.message)
-    }
-  })
-
-  // ИИ-генерация ответов (OpenAI / Anthropic / DeepSeek / ГигаЧат)
-  ipcMain.handle('ai:generate', async (event, { messages, settings: aiCfg }) => {
-    const { provider, apiKey, clientSecret, model, systemPrompt } = aiCfg || {}
-
-    try {
-      // ── Anthropic Claude ──
-      if (provider === 'anthropic') {
-        if (!apiKey) return { ok: false, error: 'Укажите API-ключ Anthropic (sk-ant-...)' }
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: model || 'claude-haiku-4-5-20251001',
-            max_tokens: 1024,
-            system: systemPrompt || '',
-            messages
-          })
-        })
-        const data = await resp.json()
-        if (data.error) return { ok: false, error: ruError(data.error.message || JSON.stringify(data.error)) }
-        return { ok: true, result: data.content?.[0]?.text || '' }
-
-      // ── DeepSeek (OpenAI-совместимый) ──
-      } else if (provider === 'deepseek') {
-        if (!apiKey) return { ok: false, error: 'Укажите API-ключ DeepSeek' }
-        const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: model || 'deepseek-chat',
-            messages: [
-              { role: 'system', content: systemPrompt || '' },
-              ...messages
-            ]
-          })
-        })
-        const data = await resp.json()
-        if (data.error) return { ok: false, error: ruError(data.error.message || JSON.stringify(data.error)) }
-        return { ok: true, result: data.choices?.[0]?.message?.content || '' }
-
-      // ── ГигаЧат (Сбербанк) ──
-      } else if (provider === 'gigachat') {
-        if (!apiKey || !clientSecret) return { ok: false, error: 'Укажите Client ID и Client Secret ГигаЧат' }
-        const token = await getGigaChatToken(apiKey.trim(), clientSecret.trim())
-        const sysMsg = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []
-        const result = await httpsPostSkipSsl(
-          GIGACHAT_CHAT_URL,
-          JSON.stringify({
-            model: model || 'GigaChat',
-            messages: [...sysMsg, ...messages]
-          }),
-          {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        )
-        if (!result.ok) return { ok: false, error: ruError(result.data?.error?.message || `HTTP ошибка`) }
-        return { ok: true, result: result.data.choices?.[0]?.message?.content || '' }
-
-      // ── OpenAI (default) ──
-      } else {
-        if (!apiKey) return { ok: false, error: 'Укажите API-ключ OpenAI (sk-...)' }
-        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: model || 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt || '' },
-              ...messages
-            ]
-          })
-        })
-        const data = await resp.json()
-        if (data.error) return { ok: false, error: ruError(data.error.message || JSON.stringify(data.error)) }
-        return { ok: true, result: data.choices?.[0]?.message?.content || '' }
-      }
-    } catch (e) {
-      return { ok: false, error: ruError(e.message) }
-    }
-  })
+  // v0.82.2: AI handlers вынесены в main/handlers/aiHandlers.js
+  initAIHandlers({ httpsPostSkipSsl, getGigaChatToken, ruError, GIGACHAT_CHAT_URL })
 }
 
 // ─── Backup notification path: main-process перехват (v0.39.5) ────────────────

@@ -6,6 +6,9 @@
 
 const fs = require('fs')
 const code = fs.readFileSync('main/main.js', 'utf8')
+// v0.82.2: AI handlers вынесены в отдельный файл
+const aiCode = fs.existsSync('main/handlers/aiHandlers.js') ? fs.readFileSync('main/handlers/aiHandlers.js', 'utf8') : ''
+const allCode = code + '\n' + aiCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -36,7 +39,7 @@ test('settings:save', () => assert(code.includes("'settings:save'")))
 test('settings:get', () => assert(code.includes("'settings:get'")))
 test('app:custom-notify', () => assert(code.includes("'app:custom-notify'")))
 test('tray:set-badge', () => assert(code.includes("'tray:set-badge'")))
-test('ai:generate', () => assert(code.includes("'ai:generate'")))
+test('ai:generate', () => assert(allCode.includes("'ai:generate'")))
 test('app:get-paths', () => assert(code.includes("'app:get-paths'")))
 test('notif:click', () => assert(code.includes("'notif:click'")))
 test('notif:dismiss', () => assert(code.includes("'notif:dismiss'")))
@@ -44,9 +47,10 @@ test('notif:resize', () => assert(code.includes("'notif:resize'")))
 
 // ── AI провайдеры ──
 console.log('\\n── AI провайдеры: ──')
-test('OpenAI', () => assert(code.includes('openai')))
-test('Anthropic', () => assert(code.includes('anthropic')))
-test('DeepSeek', () => assert(code.includes('deepseek')))
+test('OpenAI', () => assert(allCode.includes('openai')))
+test('Anthropic', () => assert(allCode.includes('anthropic')))
+test('DeepSeek', () => assert(allCode.includes('deepseek')))
+test('AI handlers в отдельном файле (v0.82.2)', () => assert(aiCode.length > 100 && code.includes('initAIHandlers'), 'AI handlers должны быть в aiHandlers.js'))
 test('GigaChat', () => assert(code.includes('gigachat')))
 
 // ── Overlay ──
