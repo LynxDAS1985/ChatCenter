@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.82.6 (26 марта 2026)
+## Текущая версия: v0.83.0 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.83.0 (26 марта 2026) — Исправления из аудита: утечка памяти + magic numbers
+- **ФИКС: setInterval утечка** — `setupNavigationWatcher` сохраняет ID интервала в `_navWatcherInterval`, очищает при повторном вызове
+- **Timing constants** — magic numbers заменены на константы: `GRACE_PERIOD=15000`, `RETRY_SHORT=3000`, `SNAPSHOT_DELAY=13000`, `COOLDOWN_MSG=3000`, `WARMUP_DELAY=10000`, `NAV_POLL_INTERVAL=2000`
+- Все executeJavaScript вызовы в App.jsx уже имели .catch() — аудит подтвердил
 
 ### v0.82.6 (26 марта 2026) — WebView setup вынесен из App.jsx
 - **WebView setup** (842 строки) вынесен в `src/utils/webviewSetup.js`: tryExtractAccount, notification refs, traceNotif, handleNewMessage, setWebviewRef (с ВСЕМИ event listeners)

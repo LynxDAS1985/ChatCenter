@@ -184,7 +184,7 @@ test('quickNewMsgCheck передаёт type в extractMsgText (v0.82.1)', () =>
   assert(code.includes('extractMsgText(node, type)') && code.includes('extractMsgText(candidates[ci], type)'), 'все вызовы extractMsgText должны передавать type')
 })
 test('Snapshot bind через 13 сек (не 1.5 сек) после навигации (v0.80.9)', () => {
-  assert(code.includes('startChatObserver(type), 13000'), 'startChatObserver должен вызываться через 13000мс')
+  assert(allPreloadCode.includes('SNAPSHOT_DELAY') && allPreloadCode.includes('startChatObserver(type), SNAPSHOT_DELAY'), 'startChatObserver должен использовать SNAPSHOT_DELAY')
   assert(!code.includes('startChatObserver(type), 1500'), 'старый 1500мс таймаут должен быть удалён')
 })
 

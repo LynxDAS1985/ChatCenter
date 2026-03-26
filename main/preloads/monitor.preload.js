@@ -40,6 +40,14 @@ const { ipcRenderer } = require('electron')
 // v0.82.3: Unread counters вынесены в отдельный файл
 const { UNREAD_SELECTORS, LAST_MESSAGE_SELECTORS, getMessengerType, isBadgeInMutedDialog, isActiveChatMuted, isActiveChatChannel, getChatType, countUnread, countUnreadVK, countUnreadMAX, countUnreadTelegram, _extractUnreadFromChat } = require('./utils/unreadCounters')
 
+// v0.83.0: Timing constants (вместо magic numbers)
+const GRACE_PERIOD = 15000        // Grace period после навигации (VK Virtual Scroll медленный)
+const RETRY_SHORT = 3000          // Retry chatObserver если контейнер не найден
+const SNAPSHOT_DELAY = 13000      // Задержка создания snapshot после навигации
+const COOLDOWN_MSG = 3000         // Cooldown между уведомлениями
+const WARMUP_DELAY = 10000        // Начальный warmup (не слать старые сообщения)
+const NAV_POLL_INTERVAL = 2000    // Polling навигации SPA
+
 // Debounce для MutationObserver
 let updateTimer = null
 const UPDATE_DEBOUNCE = 300 // ms
@@ -422,7 +430,7 @@ function findChatContainer(type) {
 
 function quickNewMsgCheck(mutations, type) {
   const now = Date.now()
-  if (now - lastQuickMsgTime < 3000) return // cooldown 3 сек — не спамить
+  if (now - lastQuickMsgTime < COOLDOWN_MSG) return // cooldown — не спамить
 
   // v0.60.0 Решение #3: Обновить кэш контейнера чата если он потерялся (SPA навигация)
   if (!_chatContainerEl || !_chatContainerEl.isConnected) {
@@ -518,7 +526,7 @@ setTimeout(() => {
       if (text) { lastActiveMessageText = text; lastSentText = text }
     } catch {}
   }
-}, 10000)
+}, WARMUP_DELAY)
 
 function sendUpdate(type) {
   const { personal, channels, total, allTotal } = countUnread(type)
@@ -554,7 +562,7 @@ function sendUpdate(type) {
     const inText = getLastMessageText(type)
     if (inText && inText !== lastActiveMessageText && inText !== lastSentText) {
       const now = Date.now()
-      if (now - lastActiveMessageTime > 3000) {
+      if (now - lastActiveMessageTime > COOLDOWN_MSG) {
         lastSentText = inText
         lastActiveMessageText = inText
         lastActiveMessageTime = now
@@ -671,7 +679,7 @@ function startChatObserver(type) {
   if (chatObserverRetries < CHAT_OBSERVER_MAX_RETRIES) {
     // Контейнер не найден — retry через 3 сек
     try { console.log('__CC_DIAG__chatObserver: контейнер не найден, retry ' + chatObserverRetries + '/' + CHAT_OBSERVER_MAX_RETRIES) } catch {}
-    setTimeout(() => startChatObserver(type), 3000)
+    setTimeout(() => startChatObserver(type), RETRY_SHORT)
     return
   }
 
@@ -715,11 +723,16 @@ function startChatObserver(type) {
 // При переходе в чат (/im/convo/...) появляется ConvoMain__history — нужно переподключить observer.
 // ВАЖНО: context isolation — preload world не может перехватить history.pushState из main world.
 // Используем polling location.href (каждые 2 сек) — SPA навигации редкие, нагрузка минимальна.
+// v0.83.0: Храним ID интервала для cleanup
+let _navWatcherInterval = null
+
 function setupNavigationWatcher(type) {
   if (type === 'telegram') return
   let lastUrl = location.href
 
-  setInterval(() => {
+  // v0.83.0: Сохраняем ID для возможности clearInterval
+  if (_navWatcherInterval) clearInterval(_navWatcherInterval)
+  _navWatcherInterval = setInterval(() => {
     const newUrl = location.href
     if (newUrl === lastUrl) return
     try { console.log('__CC_DIAG__nav: ' + lastUrl.slice(-30) + ' → ' + newUrl.slice(-30) + ' | a="' + (lastActiveMessageText||'').slice(0,25) + '" q="' + (lastQuickMsgText||'').slice(0,25) + '"') } catch {}
@@ -742,14 +755,13 @@ function setupNavigationWatcher(type) {
       } catch(e) {}
       monitorReady = true
       try { console.log('__CC_DIAG__grace-end | a="' + (lastActiveMessageText||'').slice(0,25) + '"') } catch(e) {}
-    }, 15000)
+    }, GRACE_PERIOD)
 
     // Сбрасываем retries и пробуем найти контейнер заново
     chatObserverRetries = 0
     _chatContainerEl = null
-    // v0.80.9: Snapshot через 13 сек (VK грузит чат долго, snapshot должен быть полным)
-    setTimeout(() => startChatObserver(type), 13000)
-  }, 2000)
+    setTimeout(() => startChatObserver(type), SNAPSHOT_DELAY)
+  }, NAV_POLL_INTERVAL)
 }
 
 function startMonitor() {
