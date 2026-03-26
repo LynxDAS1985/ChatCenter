@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.82.4 (26 марта 2026)
+## Текущая версия: v0.82.5 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.82.5 (26 марта 2026) — Dock/Pin система вынесена из main.js
+- **Dock/Pin/Timer** (684 строк) вынесены в `main/handlers/dockPinHandlers.js`
+- **main.js**: 1719 → 1045 строк (цель ~1000 почти достигнута!)
+- Все pin:* и dock:* IPC handlers, helper функции, ensureDockWindow, pinItems Map, таймеры
+- Зависимости передаются через deps: getMainWindow, storage, isDev, __dirname, path, DEFAULT_MESSENGERS
 
 ### v0.82.4 (26 марта 2026) — Notification handlers вынесены из main.js
 - **Notif handlers** (75 строк) вынесены в `main/handlers/notifHandlers.js`: notif:click, notif:mark-read, notif:dismiss, notif:resize
