@@ -298,6 +298,8 @@ test('navigateToChat: VK URL → VK скрипт с ConvoListItem', function() {
 console.log('\\n── Цепочка: App.jsx ↔ модули: ──')
 
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
+// v0.82.6: WebView setup вынесен
+try { appCode += '\n' + fs.readFileSync('src/utils/webviewSetup.js', 'utf8') } catch(e) {}
 
 test('App.jsx → isSpamText → spamPatterns.json', function() {
   assert(appCode.includes('isSpamText('))

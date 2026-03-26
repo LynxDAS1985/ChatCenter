@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.82.5 (26 марта 2026)
+## Текущая версия: v0.82.6 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.82.6 (26 марта 2026) — WebView setup вынесен из App.jsx
+- **WebView setup** (842 строки) вынесен в `src/utils/webviewSetup.js`: tryExtractAccount, notification refs, traceNotif, handleNewMessage, setWebviewRef (с ВСЕМИ event listeners)
+- **App.jsx**: 2137 → 1305 строк (-832!)
+- `createWebviewSetup(deps)` — фабричная функция, принимает 25 зависимостей из App scope
+- Closure сохраняется — handleNewMessage имеет доступ ко всем refs через deps
 
 ### v0.82.5 (26 марта 2026) — Dock/Pin система вынесена из main.js
 - **Dock/Pin/Timer** (684 строк) вынесены в `main/handlers/dockPinHandlers.js`

@@ -6,6 +6,9 @@
 
 const fs = require('fs')
 const code = fs.readFileSync('src/App.jsx', 'utf8')
+// v0.82.6: WebView setup вынесен
+const webviewCode = fs.existsSync('src/utils/webviewSetup.js') ? fs.readFileSync('src/utils/webviewSetup.js', 'utf8') : ''
+const allAppCode = code + '\n' + webviewCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -57,11 +60,12 @@ test('traceNotif определена', () => assert(code.includes('traceNotif')
 
 // ── Использует модульные функции ──
 console.log('\\n── Использует модульные функции: ──')
-test('isSpamText() из конфига', () => assert(code.includes('isSpamText(')))
-test('isDuplicateExact() из messageProcessing', () => assert(code.includes('isDuplicateExact(')))
-test('isDuplicateSubstring() из messageProcessing', () => assert(code.includes('isDuplicateSubstring(')))
-test('stripSenderFromText() из messageProcessing', () => assert(code.includes('stripSenderFromText(')))
-test('isOwnMessage() из messageProcessing', () => assert(code.includes('isOwnMessage(')))
+test('isSpamText() из конфига', () => assert(allAppCode.includes('isSpamText(')))
+test('isDuplicateExact() из messageProcessing', () => assert(allAppCode.includes('isDuplicateExact(')))
+test('isDuplicateSubstring() из messageProcessing', () => assert(allAppCode.includes('isDuplicateSubstring(')))
+test('stripSenderFromText() из messageProcessing', () => assert(allAppCode.includes('stripSenderFromText(')))
+test('isOwnMessage() из messageProcessing', () => assert(allAppCode.includes('isOwnMessage(')))
+test('WebView setup в отдельном файле (v0.82.6)', () => assert(webviewCode.length > 100 && code.includes('createWebviewSetup'), 'webviewSetup.js должен существовать'))
 test('playNotificationSound() из sound', () => assert(code.includes('playNotificationSound(')))
 test('buildChatNavigateScript() из navigateToChat', () => assert(code.includes('buildChatNavigateScript(')))
 test('detectMessengerType() из конфига', () => assert(code.includes('detectMessengerType(')))

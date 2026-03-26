@@ -6,7 +6,10 @@
 
 var fs = require('fs')
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
+// v0.82.6: WebView setup вынесен
+try { appCode += '\n' + fs.readFileSync('src/utils/webviewSetup.js', 'utf8') } catch(e) {}
 var mainCode = fs.readFileSync('main/main.js', 'utf8')
+try { mainCode += '\n' + fs.readFileSync('main/handlers/dockPinHandlers.js', 'utf8') } catch(e) {}
 
 var passed = 0, failed = 0
 function test(name, fn) {
