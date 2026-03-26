@@ -1317,6 +1317,17 @@ function setupIPC() {
   // Ping
   ipcMain.handle('app:ping', () => ({ ok: true, message: 'ChatCenter работает' }))
 
+  // v0.82.0: Загрузка per-messenger notification hook
+  ipcMain.handle('app:read-hook', (event, hookType) => {
+    try {
+      const safe = String(hookType).replace(/[^a-z]/gi, '')
+      const hooksDir = isDev
+        ? path.join(__dirname, '../../main/preloads/hooks')
+        : path.join(__dirname, '../preloads/hooks')
+      return fs.readFileSync(path.join(hooksDir, safe + '.hook.js'), 'utf8')
+    } catch(e) { return '' }
+  })
+
   // Информация о приложении
   ipcMain.handle('app:info', () => ({
     ok: true,

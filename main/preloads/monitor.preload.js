@@ -3,240 +3,40 @@
 // Cooldown 10 сек при запуске, чтобы не слать старые сообщения как новые
 const { ipcRenderer } = require('electron')
 
-// ── САМОЕ ПЕРВОЕ: перехват Notification + Audio в main world ────────────────
-// <script> tag из preload выполняется в main world (DOM общий между мирами).
-// Это происходит ДО скриптов мессенджера → VK/WhatsApp не смогут вызвать
-// нативный new Notification() (он заменён на console.log → console-message).
-// console.log пересекает context isolation через event 'console-message' на <webview>.
+// ── v0.82.0: Per-messenger notification hooks ────────────────────────────────
+// Каждый мессенджер имеет СВОЙ hook файл: main/preloads/hooks/{type}.hook.js
+// Preload загружает файл через fs.readFileSync и инжектит как <script> tag в main world
+// Если CSP мессенджера блокирует <script> — App.jsx использует тот же файл через executeJavaScript
 ;(function injectNotifHook() {
   try {
-    const s = document.createElement('script')
-    s.textContent = '(' + function() {
-      if (window.__cc_notif_hooked) return
-      window.__cc_notif_hooked = true
-      // Лог всех Notification для отладки (доступен через контекстное меню вкладки)
-      window.__cc_notif_log = window.__cc_notif_log || []
-      function _logNotif(status, title, body, tag, icon, reason, enrichedTitle) {
-        var entry = { ts: Date.now(), status: status, title: title || '', body: (body || '').slice(0, 200), tag: tag || '', reason: reason || '', enrichedTitle: enrichedTitle || '' }
-        if (icon) entry.hasIcon = true
-        window.__cc_notif_log.push(entry)
-        if (window.__cc_notif_log.length > 100) window.__cc_notif_log.shift()
-      }
-      // Поиск аватарки по имени отправителя в DOM (fallback когда icon не передан)
-      function findAvatar(name) {
-        if (!name) return ''
-        try {
-          // 1. Ищем чат-элемент содержащий имя отправителя
-          var items = document.querySelectorAll('[class*="chat" i], [class*="dialog" i], [class*="conversation" i], [class*="item" i], [class*="peer" i], [class*="contact" i], li')
-          for (var j = 0; j < items.length && j < 150; j++) {
-            var txt = items[j].textContent || ''
-            if (txt.indexOf(name) === -1 && !(name.length > 4 && txt.indexOf(name.substring(0, Math.min(name.length, 8))) !== -1)) continue
-            // a) img внутри элемента (любой http src, не emoji/sticker)
-            var img = items[j].querySelector('img[src^="http"]')
-            if (img && img.src && !img.src.includes('emoji') && !img.src.includes('sticker')) return img.src
-            // b) элемент с class*="avatar" — img внутри или background-image
-            var avEl = items[j].querySelector('[class*="avatar" i], [class*="photo" i]')
-            if (avEl) {
-              var aImg = avEl.querySelector('img[src^="http"]') || (avEl.tagName === 'IMG' && avEl.src && avEl.src.startsWith('http') ? avEl : null)
-              if (aImg && aImg.src) return aImg.src
-              try {
-                var bg = getComputedStyle(avEl).backgroundImage
-                if (bg && bg !== 'none') { var m = bg.match(/url\(["']?(https?:\/\/[^"')]+)/); if (m) return m[1] }
-              } catch(e2) {}
-            }
-          }
-          // 2. Fallback: ищем все img с class*="avatar" на странице — берём из ближайшего к тексту
-          var allAvatars = document.querySelectorAll('[class*="avatar" i] img[src^="http"], img[class*="avatar" i][src^="http"]')
-          for (var k = 0; k < allAvatars.length && k < 50; k++) {
-            var parent = allAvatars[k].closest('[class*="chat" i], [class*="dialog" i], [class*="item" i], [class*="peer" i], li')
-            if (parent && parent.textContent && parent.textContent.indexOf(name) !== -1) return allAvatars[k].src
-          }
-        } catch(e) {}
-        return ''
-      }
-      // Поиск имени отправителя и аватарки в chatlist по preview-тексту сообщения
-      function findSenderInChatlist(body) {
-        if (!body || body.length < 2) return null
-        var bodySlice = body.slice(0, 30)
-        try {
-          // 1. Telegram/MAX: .chatlist-chat + .peer-title
-          var chats = document.querySelectorAll('.chatlist-chat')
-          for (var i = 0; i < chats.length && i < 50; i++) {
-            if ((chats[i].textContent || '').indexOf(bodySlice) === -1) continue
-            var pt = chats[i].querySelector('.peer-title')
-            var nm = pt ? (pt.textContent || '').trim() : ''
-            if (!nm) continue
-            return { name: nm, avatar: _findAvatarInEl(chats[i]) }
-          }
-          // 2. VK/Generic: dialog/conversation/chat-item элементы
-          // v0.76.9: Добавлен ConvoListItem для VK (март 2026)
-          var generic = document.querySelectorAll('[class*="ConvoListItem" i], [class*="dialog" i], [class*="im_dialog" i], [class*="conversation" i], [class*="chat-item" i], [class*="chatlist" i]')
-          for (var j = 0; j < generic.length && j < 80; j++) {
-            var el = generic[j]
-            if ((el.textContent || '').indexOf(bodySlice) === -1) continue
-            var nameEl = el.querySelector('[class*="peer" i] [class*="title" i], [class*="ConvoListItem__peer" i], [class*="title" i], [class*="name" i], [class*="peer" i], b, strong')
-            var sn = nameEl ? (nameEl.textContent || '').trim() : ''
-            if (!sn || sn.length < 2 || sn.length > 60) continue
-            if (sn === body.trim() || body.indexOf(sn) === 0) continue
-            return { name: sn, avatar: _findAvatarInEl(el) }
-          }
-        } catch(e) {}
-        return null
-      }
-      function _findAvatarInEl(el) {
-        try {
-          var avEl = el.querySelector('img.avatar-photo, [class*="avatar"] img, canvas.avatar-photo, img[class*="photo" i]')
-          if (avEl && avEl.tagName === 'IMG' && avEl.src && (avEl.src.startsWith('http') || avEl.src.startsWith('blob:')) && avEl.naturalWidth > 10) return avEl.src
-          if (avEl && avEl.tagName === 'CANVAS' && avEl.width > 10) {
-            try { return avEl.toDataURL('image/png') } catch(e) {}
-          }
-          var avDiv = el.querySelector('[class*="avatar" i], [class*="photo" i]')
-          if (avDiv) {
-            var bg = getComputedStyle(avDiv).backgroundImage
-            if (bg && bg !== 'none') {
-              var m = bg.match(/url\(["']?(.+?)["']?\)/)
-              if (m && m[1] && m[1].startsWith('http')) return m[1]
-            }
-            var img2 = avDiv.querySelector('img[src]')
-            if (img2 && img2.src && img2.naturalWidth > 10) return img2.src
-          }
-        } catch(e) {}
-        return ''
-      }
-      // Проверка: title — это название мессенджера, а не имя отправителя
-      var _appTitles = /^(ma[xк][cс]?|telegram|whatsapp|vk|viber|вконтакте|вк)/i
-      // Фильтр спам-текстов: статусы online, исходящие ("Вы: ..."), системные
-      var _spamBody = /^(\d+\s*(непрочитанн|новы[хе]?\s*сообщ)|минуту?\s+назад|секунд\w*\s+назад|час\w*\s+назад|только\s+что|online|в\s+сети|был[аи]?\s+(в\s+сети|online)|печата|записыва|набира|пишет|typing|ожидани[ея]\s+сети|connecting|reconnecting|updating|загрузк[аи]|обновлени[ея]|подключени[ея])/i
-      // v0.71.6: MAX системные/onboarding сообщения (фантомы)
-      var _maxPhantom = /сообщений\s+пока\s+нет|напишите\s+(сообщение|что[- ]нибудь)|отправьте\s+(этот\s+)?стикер|теперь\s+в\s+max|новые\s+сообщения\s+сегодня|начните\s+общени[ея]|добро\s+пожаловать/i
-      // v0.72.0: "ред." / "edited" — пометка редактирования сообщения (не новое сообщение)
-      var _editedMark = /^(\d{1,2}:\d{2}\s*)?ред\.?\s*$/i
-      var _outgoing = /^(вы:\s|you:\s)/i
-      // v0.58.0: статусы "Имя В сети", системные "Сообщение", "Пропущенный вызов"
-      var _statusEnd = /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i
-      var _sysText = /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i
-      function isSpamNotif(body) {
-        if (!body || body.length < 2) return 'empty'
-        var t = body.trim()
-        if (_spamBody.test(t)) return 'system'
-        if (_maxPhantom.test(t)) return 'maxPhantom'
-        if (_editedMark.test(t)) return 'edited'
-        if (_outgoing.test(t)) return 'outgoing'
-        if (_statusEnd.test(t)) return 'status'
-        if (_sysText.test(t)) return 'sysText'
-        return ''
-      }
-      function enrichNotif(title, body, tag, icon) {
-        var realTitle = title
-        var realIcon = icon
-        if (!title || _appTitles.test(title.trim())) {
-          var sender = findSenderInChatlist(body)
-          if (sender) {
-            realTitle = sender.name
-            if (!realIcon && sender.avatar) realIcon = sender.avatar
-          }
-        }
-        if (!realIcon) realIcon = findAvatar(realTitle)
-        return { title: realTitle, icon: realIcon }
-      }
-      // Перехват Notification → console.log('__CC_NOTIF__...')
-      var _N = window.Notification
-      window.Notification = function(title, opts) {
-        try {
-          var body = (opts && opts.body) || ''
-          var tag = (opts && opts.tag) || ''
-          var icon = (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
-          var spam = isSpamNotif(body)
-          if (spam) {
-            _logNotif('blocked', title, body, tag, icon, spam, '')
-            return
-          }
-          var enriched = enrichNotif(title, body, tag, icon)
-          _logNotif('passed', title, body, tag, icon, '', enriched.title)
-          console.log('__CC_NOTIF__' + JSON.stringify({
-            t: enriched.title || '', b: body, i: enriched.icon, g: tag
-          }))
-        } catch(e) {}
-      }
-      window.Notification.permission = 'granted'
-      window.Notification.requestPermission = function(cb) {
-        if (cb) cb('granted'); return Promise.resolve('granted')
-      }
-      Object.defineProperty(window.Notification, 'permission', {
-        get: function() { return 'granted' }, set: function() {}
-      })
-      // Перехват ServiceWorker showNotification (MAX и другие SvelteKit-приложения)
-      try {
-        var _show = ServiceWorkerRegistration.prototype.showNotification
-        ServiceWorkerRegistration.prototype.showNotification = function(title, opts) {
-          try {
-            var body = (opts && opts.body) || ''
-            var tag = (opts && opts.tag) || ''
-            var icon = (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || ''
-            var spam = isSpamNotif(body)
-            if (spam) {
-              _logNotif('blocked', title, body, tag, icon, spam, '')
-              return Promise.resolve()
-            }
-            var enriched = enrichNotif(title, body, tag, icon)
-            _logNotif('passed', title, body, tag, icon, '', enriched.title)
-            console.log('__CC_NOTIF__' + JSON.stringify({
-              t: enriched.title || '', b: body, i: enriched.icon, g: tag
-            }))
-          } catch(e) {}
-          return Promise.resolve()
-        }
-      } catch(e) {}
-      // v0.73.9: Блокируем Badge API из page context.
-      // Telegram Web вызывает navigator.setAppBadge(N) напрямую из page —
-      // Chromium транслирует в ITaskbarList3::SetOverlayIcon, перебивая наш overlay.
-      if (navigator.setAppBadge) {
-        navigator.setAppBadge = function(n) {
-          console.log('__CC_BADGE_BLOCKED__:' + n)
-          return Promise.resolve()
-        }
-      }
-      if (navigator.clearAppBadge) {
-        navigator.clearAppBadge = function() { return Promise.resolve() }
-      }
-      // Блокируем Service Worker — страховка от SW-вызовов setAppBadge
-      if (navigator.serviceWorker) {
-        var _origReg = navigator.serviceWorker.register
-        navigator.serviceWorker.register = function() {
-          console.log('__CC_SW_BLOCKED__')
-          return Promise.reject(new Error('blocked'))
-        }
-        navigator.serviceWorker.getRegistrations().then(function(regs) {
-          regs.forEach(function(r) { r.unregister() })
-        }).catch(function() {})
-      }
-      // Перехват Audio → volume=0 (глушим звуки мессенджера)
-      // 1) new Audio(src)
-      var _A = window.Audio
-      window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a }
-      window.Audio.prototype = _A.prototype
-      // 2) document.createElement('audio')
-      var _ce = document.createElement.bind(document)
-      document.createElement = function(tag) {
-        var el = _ce.apply(document, arguments)
-        if (tag && tag.toLowerCase() === 'audio') { el.volume = 0; el.muted = true }
-        return el
-      }
-      // 3) AudioContext / webkitAudioContext → createGain().gain.value = 0
-      ;['AudioContext','webkitAudioContext'].forEach(function(name) {
-        var _Ctx = window[name]
-        if (!_Ctx) return
-        var _createGain = _Ctx.prototype.createGain
-        _Ctx.prototype.createGain = function() {
-          var g = _createGain.call(this); g.gain.value = 0; return g
-        }
-      })
-    } + ')()'
-    ;(document.head || document.documentElement).appendChild(s)
-    s.remove()
+    var path = require('path')
+    var fs = require('fs')
+    var host = location.hostname
+    var hookType = 'telegram' // default
+    if (host.includes('whatsapp')) hookType = 'whatsapp'
+    else if (host.includes('vk.com')) hookType = 'vk'
+    else if (host.includes('max.ru')) hookType = 'max'
+    else if (host.includes('telegram')) hookType = 'telegram'
+    var hookPath = path.join(__dirname, 'hooks', hookType + '.hook.js')
+    var hookCode = ''
+    try { hookCode = fs.readFileSync(hookPath, 'utf8') } catch(e) {
+      try { hookCode = fs.readFileSync(path.join(__dirname, 'hooks', 'telegram.hook.js'), 'utf8') } catch(e2) {}
+    }
+    if (hookCode) {
+      var s = document.createElement('script')
+      s.textContent = hookCode
+      ;(document.head || document.documentElement).appendChild(s)
+      s.remove()
+    }
   } catch(e) {}
 })()
 
+// v0.82.0: inline hook УДАЛЁН — код перенесён в hooks/{telegram|max|whatsapp|vk}.hook.js
+// Ниже был inline код (230 строк): findAvatar, findSenderInChatlist, enrichNotif,
+// isSpamNotif, Notification override, showNotification override, Badge/SW/Audio block.
+// Теперь каждый мессенджер имеет свой файл с собственными селекторами и фильтрами.
+// Изменение hook для MAX не затрагивает Telegram, и наоборот.
+;(function() { /* placeholder */ })()
 // Debounce для MutationObserver (не пересчитывать на каждый пиксель скролла)
 let updateTimer = null
 const UPDATE_DEBOUNCE = 300 // ms

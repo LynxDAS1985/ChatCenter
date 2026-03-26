@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.81.5 (25 марта 2026)
+## Текущая версия: v0.82.0 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,16 @@
 ---
 
 ## Changelog
+
+### v0.82.0 (26 марта 2026) — Per-messenger notification hooks (полное разделение)
+- **АРХИТЕКТУРНЫЙ РЕФАКТОРИНГ**: Notification hooks разделены на per-messenger файлы: `main/preloads/hooks/{telegram|max|whatsapp|vk}.hook.js`
+- Каждый мессенджер имеет СВОЙ: спам-фильтр, enrichment, Notification/showNotification override, Badge/SW/Audio block
+- Изменение hook для MAX НЕ затрагивает Telegram/WhatsApp/VK — полная изоляция
+- **Удалён дублированный код**: 330 строк inline injection из App.jsx, 220 строк из monitor.preload.js
+- monitor.preload.js загружает hook через `fs.readFileSync` из per-messenger файла
+- App.jsx загружает hook через IPC `app:read-hook` → executeJavaScript (fallback для CSP)
+- IPC handler `app:read-hook` в main.js читает hook файл с защитой от path traversal
+- 56 новых тестов в `notifHooks.test.js` — проверка структуры каждого hook файла
 
 ### v0.81.7 (25 марта 2026) — MAX навигация к чату (РАБОТАЕТ)
 - **"Перейти к чату" для MAX** — ПОЧИНЕНО. DOM sidebar MAX: `div.wrapper--withActions`. Простой `.click()` НЕ триггерит Svelte обработчик. Решение: проверить children wrapper'а — если есть `<a>` или `<button>` кликнуть на них, если parent = `<a>` кликнуть на parent, иначе `MouseEvent({bubbles:true})`. Добавлена диагностика children/parent в log.

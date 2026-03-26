@@ -112,3 +112,24 @@
 **Контекст**: Мгновенные ответы выглядят как бот, могут вызвать бан аккаунта.
 
 **Решение**: Случайная задержка 2–8 секунд (настраиваемая). Имитация "набора текста" если мессенджер поддерживает.
+
+---
+
+## ADR-009 — Per-messenger notification hooks (26 марта 2026)
+
+**Статус**: ✅ Принято
+
+**Контекст**: Notification hooks (override window.Notification, showNotification, спам-фильтры, enrichment) были общими для всех мессенджеров и ДУБЛИРОВАНЫ в 2 файлах (monitor.preload.js + App.jsx). Изменение hook для MAX ломало Telegram. Диагностика добавлялась не в тот файл.
+
+**Решение**: Каждый мессенджер имеет СВОЙ hook файл: `main/preloads/hooks/{type}.hook.js`
+- `telegram.hook.js` — без enrichment (title уже содержит имя), `.chatlist-chat` для аватарки
+- `max.hook.js` — enrichNotif (title="Макс"), `wrapper--withActions`, _maxPhantom, _editedMark, sticker extraction
+- `whatsapp.hook.js` — без enrichment, `span[title]` для аватарки
+- `vk.hook.js` — enrichNotif (title="ВКонтакте"), ConvoListItem
+
+**Загрузка**: monitor.preload.js → `fs.readFileSync` → `<script>` tag. App.jsx → IPC `app:read-hook` → `executeJavaScript` (CSP fallback).
+
+**Альтернативы отвергнутые**:
+- Один общий файл (Вариант 3) — изменение MAX ломает Telegram
+- Конфиг + движок (Вариант 2) — MAX enrichment слишком отличается от Telegram
+- Inline код в preload + дубль в App.jsx (было до v0.82.0) — причина многих багов
