@@ -1,7 +1,8 @@
 // v0.82.6: WebView setup — вынесено из App.jsx для уменьшения файла
 // Содержит: tryExtractAccount, notification refs, traceNotif, handleNewMessage, setWebviewRef
 // Все event listeners для WebView (dom-ready, page-title-updated, ipc-message, console-message)
-import { useRef } from 'react'
+// v0.83.3: НЕ используем useRef — createWebviewSetup это обычная функция, не React hook
+// Вместо useRef используем plain objects { current: ... } — работает аналогично в closure scope
 import { detectMessengerType, isSpamText, ACCOUNT_SCRIPTS, DOM_SCAN_SCRIPTS } from './messengerConfigs.js'
 import { isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './messageProcessing.js'
 import { parseConsoleMessage } from './consoleMessageParser.js'
@@ -70,19 +71,19 @@ export function createWebviewSetup(deps) {
   }
 
   // ── Дедупликация уведомлений (text+messengerId → timestamp) ────────────────
-  const recentNotifsRef = useRef(new Map()) // key → timestamp
-  const lastRibbonTsRef = useRef({}) // { [messengerId]: timestamp } — когда последний раз показали ribbon
-  const lastSoundTsRef = useRef({}) // { [messengerId]: timestamp } — дедупликация звука между __CC_NOTIF__ и unread-count paths
+  const recentNotifsRef = { current: new Map() } // key → timestamp
+  const lastRibbonTsRef = { current: {} } // { [messengerId]: timestamp } — когда последний раз показали ribbon
+  const lastSoundTsRef = { current: {} } // { [messengerId]: timestamp } — дедупликация звука между __CC_NOTIF__ и unread-count paths
   // v0.72.5: Fallback Notification count — если DOM-парсинг (unread-count IPC) = 0,
   // считаем непрочитанные по количеству __CC_NOTIF__ с момента последнего просмотра вкладки
-  const notifCountRef = useRef({}) // { [messengerId]: number }
-  const pendingMarkReadsRef = useRef([]) // v0.62.6: очередь mark-read при свёрнутом окне
+  const notifCountRef = { current: {} } // { [messengerId]: number }
+  const pendingMarkReadsRef = { current: [] } // v0.62.6: очередь mark-read при свёрнутом окне
   // v0.60.0 Решение #2: sender-based dedup — если __CC_NOTIF__ уже прошёл для sender,
   // блокируем __CC_MSG__ от того же sender в течение 3 сек (даже если текст другой)
-  const notifSenderTsRef = useRef({}) // { [messengerId + ':' + senderName]: timestamp }
+  const notifSenderTsRef = { current: {} } // { [messengerId + ':' + senderName]: timestamp }
   // v0.60.2: per-messengerId dedup — если __CC_NOTIF__ от этого messengerId был <3 сек назад,
   // блокируем __CC_MSG__ целиком (sender name может отличаться из-за разного enrichment)
-  const notifMidTsRef = useRef({}) // { [messengerId]: timestamp }
+  const notifMidTsRef = { current: {} } // { [messengerId]: timestamp }
 
   // ── Pipeline Trace Logger (v0.55.0) ──────────────────────────────────────────
   // Записывает КАЖДЫЙ шаг pipeline уведомлений для диагностики
