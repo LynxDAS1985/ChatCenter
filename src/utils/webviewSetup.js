@@ -10,6 +10,21 @@ import { playNotificationSound } from './sound.js'
 import { buildChatNavigateScript } from './navigateToChat.js'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 
+// v0.83.1: Sender cache cleanup — удаляем записи старше 5 мин, лимит 50 записей
+function cleanupSenderCache(cache) {
+  const now = Date.now()
+  const keys = Object.keys(cache)
+  for (const k of keys) {
+    if (now - (cache[k]?.ts || 0) > 300000) delete cache[k] // 5 мин TTL
+  }
+  // LRU: если >50 записей, удаляем старейшие
+  const remaining = Object.keys(cache)
+  if (remaining.length > 50) {
+    remaining.sort((a, b) => (cache[a]?.ts || 0) - (cache[b]?.ts || 0))
+    for (let i = 0; i < remaining.length - 50; i++) delete cache[remaining[i]]
+  }
+}
+
 export function createWebviewSetup(deps) {
   const {
     webviewRefs, notifReadyRef, notifDedupRef, pipelineTraceRef, pendingMsgRef, senderCacheRef,
@@ -708,7 +723,7 @@ export function createWebviewSetup(deps) {
               }
               // Кэш sender (улучшение #3) — сохраняем при успехе, используем при неудаче
               if (extra.senderName) {
-                senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }
+                senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }; cleanupSenderCache(senderCacheRef.current)
               } else {
                 const cached = senderCacheRef.current[messengerId]
                 if (cached && Date.now() - cached.ts < 300000) { // 5 мин
@@ -821,7 +836,7 @@ export function createWebviewSetup(deps) {
                         else extra.iconUrl = cached.avatar
                       }
                     }
-                    if (extra.senderName) senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconDataUrl || '', ts: Date.now() }
+                    if (extra.senderName) senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconDataUrl || '', ts: Date.now() }; cleanupSenderCache(senderCacheRef.current)
                     extra.fromNotifAPI = true
                     senderNotifTsRef.current[extra.senderName] = Date.now()
                     notifMidTsRef.current[messengerId] = Date.now()
@@ -845,7 +860,7 @@ export function createWebviewSetup(deps) {
             }
             // Кэш sender
             if (extra.senderName) {
-              senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }
+              senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }; cleanupSenderCache(senderCacheRef.current)
             }
             // v0.58.0: fromNotifAPI=true → пропускаем viewing-блок
             // Если мессенджер сам вызвал showNotification — пользователь НЕ видит этот чат

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.83.0 (26 марта 2026)
+## Текущая версия: v0.83.1 (26 марта 2026)
 
 ---
 
@@ -91,6 +91,11 @@
 ---
 
 ## Changelog
+
+### v0.83.1 (26 марта 2026) — AI refactor + sender cache + MAX own-msg fix
+- **AI handlers refactored** — PROVIDERS конфиг вместо дублирования. 4 провайдера определены как объекты с url/headers/body/extract. Streaming и обычная генерация используют один конфиг.
+- **Sender cache cleanup** — TTL 5 мин + LRU лимит 50 записей. `cleanupSenderCache()` вызывается при каждой записи.
+- **MAX own messages (ловушка 49)** — ИСПРАВЛЕНО. В max.hook.js: если enriched sender = имя в topbar (header активного чата) И документ видим → блокируем как own-chat. Своё сообщение не показывается как от собеседника.
 
 ### v0.83.0 (26 марта 2026) — Исправления из аудита: утечка памяти + magic numbers
 - **ФИКС: setInterval утечка** — `setupNavigationWatcher` сохраняет ID интервала в `_navWatcherInterval`, очищает при повторном вызове

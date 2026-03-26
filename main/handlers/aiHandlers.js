@@ -1,9 +1,57 @@
-// v0.82.2: AI IPC handlers — вынесены из main.js для уменьшения размера файла
-// Стриминг (SSE) + обычная генерация для 4 провайдеров: OpenAI, Anthropic, DeepSeek, ГигаЧат
+// v0.83.1: AI IPC handlers — refactored: провайдеры через конфиг, без дублирования
 import { ipcMain } from 'electron'
 
-// Зависимости передаются через init() из main.js
 let _httpsPostSkipSsl, _getGigaChatToken, _ruError, _GIGACHAT_CHAT_URL
+
+// Конфигурация провайдеров — один раз, для streaming и обычной генерации
+const PROVIDERS = {
+  anthropic: {
+    url: 'https://api.anthropic.com/v1/messages',
+    defaultModel: 'claude-haiku-4-5-20251001',
+    keyError: 'Укажите API-ключ Anthropic (sk-ant-...)',
+    headers: (apiKey) => ({ 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }),
+    body: (model, messages, systemPrompt, stream) => ({ model, max_tokens: 1024, ...(stream ? { stream: true } : {}), system: systemPrompt || '', messages }),
+    extractStream: (p) => p.delta?.text || '',
+    extractResult: (data) => data.content?.[0]?.text || '',
+  },
+  deepseek: {
+    url: 'https://api.deepseek.com/v1/chat/completions',
+    defaultModel: 'deepseek-chat',
+    keyError: 'Укажите API-ключ DeepSeek',
+    headers: (apiKey) => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }),
+    body: (model, messages, systemPrompt, stream) => ({ model, ...(stream ? { stream: true } : {}), messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] }),
+    extractStream: (p) => p.choices?.[0]?.delta?.content || '',
+    extractResult: (data) => data.choices?.[0]?.message?.content || '',
+  },
+  openai: {
+    url: 'https://api.openai.com/v1/chat/completions',
+    defaultModel: 'gpt-4o-mini',
+    keyError: 'Укажите API-ключ OpenAI (sk-...)',
+    headers: (apiKey) => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }),
+    body: (model, messages, systemPrompt, stream) => ({ model, ...(stream ? { stream: true } : {}), messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] }),
+    extractStream: (p) => p.choices?.[0]?.delta?.content || '',
+    extractResult: (data) => data.choices?.[0]?.message?.content || '',
+  },
+}
+
+// SSE-парсер: читает ReadableStream и вызывает onChunk для каждого фрагмента
+async function pipeSSE(reader, extractFn, chunk) {
+  const dec = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop() || ''
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      const raw = line.slice(6).trim()
+      if (raw === '[DONE]') continue
+      try { const c = extractFn(JSON.parse(raw)); if (c) chunk(c) } catch {}
+    }
+  }
+}
 
 export function initAIHandlers({ httpsPostSkipSsl, getGigaChatToken, ruError, GIGACHAT_CHAT_URL }) {
   _httpsPostSkipSsl = httpsPostSkipSsl
@@ -11,26 +59,7 @@ export function initAIHandlers({ httpsPostSkipSsl, getGigaChatToken, ruError, GI
   _ruError = ruError
   _GIGACHAT_CHAT_URL = GIGACHAT_CHAT_URL
 
-  // SSE-парсер: читает ReadableStream и вызывает onChunk для каждого фрагмента
-  const pipeSSE = async (reader, extractFn, chunk) => {
-    const dec = new TextDecoder()
-    let buf = ''
-    while (true) {
-      const { done: d, value } = await reader.read()
-      if (d) break
-      buf += dec.decode(value, { stream: true })
-      const lines = buf.split('\n')
-      buf = lines.pop() || ''
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        const raw = line.slice(6).trim()
-        if (raw === '[DONE]') continue
-        try { const c = extractFn(JSON.parse(raw)); if (c) chunk(c) } catch {}
-      }
-    }
-  }
-
-  // ── Стриминг (SSE) ──────────────────────────────────────────────────────────
+  // ── Стриминг (SSE) ──
   ipcMain.on('ai:generate-stream', async (event, { messages, settings: aiCfg, requestId }) => {
     const { provider, apiKey, clientSecret, model, systemPrompt } = aiCfg || {}
     const send = (ch, payload) => { if (!event.sender.isDestroyed()) event.sender.send(ch, payload) }
@@ -39,27 +68,8 @@ export function initAIHandlers({ httpsPostSkipSsl, getGigaChatToken, ruError, GI
     const errOut = (e) => send('ai:stream-error', { requestId, error: _ruError(e) })
 
     try {
-      if (provider === 'anthropic') {
-        if (!apiKey) { errOut('Укажите API-ключ Anthropic (sk-ant-...)'); return }
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: model || 'claude-haiku-4-5-20251001', max_tokens: 1024, stream: true, system: systemPrompt || '', messages })
-        })
-        if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
-        await pipeSSE(resp.body.getReader(), p => p.delta?.text || '', chunk)
-        done()
-      } else if (provider === 'deepseek') {
-        if (!apiKey) { errOut('Укажите API-ключ DeepSeek'); return }
-        const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: model || 'deepseek-chat', stream: true, messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] })
-        })
-        if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
-        await pipeSSE(resp.body.getReader(), p => p.choices?.[0]?.delta?.content || '', chunk)
-        done()
-      } else if (provider === 'gigachat') {
+      // ГигаЧат — без стриминга (SSL-bypass не поддерживает ReadableStream)
+      if (provider === 'gigachat') {
         if (!apiKey || !clientSecret) { errOut('Укажите Client ID и Client Secret ГигаЧат'); return }
         const token = await _getGigaChatToken(apiKey.trim(), clientSecret.trim())
         const sysMsg = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []
@@ -71,45 +81,26 @@ export function initAIHandlers({ httpsPostSkipSsl, getGigaChatToken, ruError, GI
         const text = result.data.choices?.[0]?.message?.content || ''
         if (text) chunk(text)
         done()
-      } else {
-        if (!apiKey) { errOut('Укажите API-ключ OpenAI (sk-...)'); return }
-        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: model || 'gpt-4o-mini', stream: true, messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] })
-        })
-        if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
-        await pipeSSE(resp.body.getReader(), p => p.choices?.[0]?.delta?.content || '', chunk)
-        done()
+        return
       }
+      // OpenAI / Anthropic / DeepSeek — через SSE
+      const cfg = PROVIDERS[provider] || PROVIDERS.openai
+      if (!apiKey) { errOut(cfg.keyError); return }
+      const resp = await fetch(cfg.url, {
+        method: 'POST', headers: cfg.headers(apiKey),
+        body: JSON.stringify(cfg.body(model || cfg.defaultModel, messages, systemPrompt, true))
+      })
+      if (!resp.ok) { const d = await resp.json(); errOut(d.error?.message || `HTTP ${resp.status}`); return }
+      await pipeSSE(resp.body.getReader(), cfg.extractStream, chunk)
+      done()
     } catch (e) { errOut(e.message) }
   })
 
-  // ── Обычная генерация (без стриминга) ───────────────────────────────────────
+  // ── Обычная генерация ──
   ipcMain.handle('ai:generate', async (event, { messages, settings: aiCfg }) => {
     const { provider, apiKey, clientSecret, model, systemPrompt } = aiCfg || {}
     try {
-      if (provider === 'anthropic') {
-        if (!apiKey) return { ok: false, error: 'Укажите API-ключ Anthropic (sk-ant-...)' }
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: model || 'claude-haiku-4-5-20251001', max_tokens: 1024, system: systemPrompt || '', messages })
-        })
-        const data = await resp.json()
-        if (data.error) return { ok: false, error: _ruError(data.error.message || JSON.stringify(data.error)) }
-        return { ok: true, result: data.content?.[0]?.text || '' }
-      } else if (provider === 'deepseek') {
-        if (!apiKey) return { ok: false, error: 'Укажите API-ключ DeepSeek' }
-        const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: model || 'deepseek-chat', messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] })
-        })
-        const data = await resp.json()
-        if (data.error) return { ok: false, error: _ruError(data.error.message || JSON.stringify(data.error)) }
-        return { ok: true, result: data.choices?.[0]?.message?.content || '' }
-      } else if (provider === 'gigachat') {
+      if (provider === 'gigachat') {
         if (!apiKey || !clientSecret) return { ok: false, error: 'Укажите Client ID и Client Secret ГигаЧат' }
         const token = await _getGigaChatToken(apiKey.trim(), clientSecret.trim())
         const sysMsg = systemPrompt ? [{ role: 'system', content: systemPrompt }] : []
@@ -119,17 +110,16 @@ export function initAIHandlers({ httpsPostSkipSsl, getGigaChatToken, ruError, GI
         )
         if (!result.ok) return { ok: false, error: _ruError(result.data?.error?.message || 'HTTP ошибка') }
         return { ok: true, result: result.data.choices?.[0]?.message?.content || '' }
-      } else {
-        if (!apiKey) return { ok: false, error: 'Укажите API-ключ OpenAI (sk-...)' }
-        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: model || 'gpt-4o-mini', messages: [{ role: 'system', content: systemPrompt || '' }, ...messages] })
-        })
-        const data = await resp.json()
-        if (data.error) return { ok: false, error: _ruError(data.error.message || JSON.stringify(data.error)) }
-        return { ok: true, result: data.choices?.[0]?.message?.content || '' }
       }
+      const cfg = PROVIDERS[provider] || PROVIDERS.openai
+      if (!apiKey) return { ok: false, error: cfg.keyError }
+      const resp = await fetch(cfg.url, {
+        method: 'POST', headers: cfg.headers(apiKey),
+        body: JSON.stringify(cfg.body(model || cfg.defaultModel, messages, systemPrompt, false))
+      })
+      const data = await resp.json()
+      if (data.error) return { ok: false, error: _ruError(data.error.message || JSON.stringify(data.error)) }
+      return { ok: true, result: cfg.extractResult(data) }
     } catch (e) { return { ok: false, error: _ruError(e.message) } }
   })
 }
