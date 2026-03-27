@@ -21,6 +21,7 @@ export default function AIConfigPanel({ showConfig, setShowConfig, providerMode,
   const isGigaChat = provider === 'gigachat'
   const error = testStatus?.error || ''
   const webviewUrl = aiCfg?.webviewUrl || ''
+  const contextMode = aiCfg?.contextMode || 'none'
   return (
   <>
   {/* ── Конфиг-панель (с анимацией slide-down) ── */}
