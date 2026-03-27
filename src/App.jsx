@@ -15,6 +15,7 @@ import { buildChatNavigateScript } from './utils/navigateToChat.js'
 import { createWebviewSetup } from './utils/webviewSetup.js'
 import MessengerTab from './components/MessengerTab.jsx'
 import NotifLogModal from './components/NotifLogModal.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 // v0.78.3: Звук вынесен в src/utils/sound.js
 
@@ -1063,7 +1064,7 @@ export default function App() {
         )}
 
         {/* ── ИИ-боковая панель ── */}
-        <AISidebar
+        <ErrorBoundary name="AISidebar"><AISidebar
           settings={settings}
           onSettingsChange={handleSettingsChange}
           lastMessage={lastMessage}
@@ -1073,7 +1074,7 @@ export default function App() {
           panelRef={aiPanelRef}
           chatHistory={chatHistory}
           activeMessengerId={activeId}
-        />
+        /></ErrorBoundary>
       </div>
 
       {/* ── Строка статистики ── */}
@@ -1205,29 +1206,29 @@ export default function App() {
       )}
 
       {showSettings && (
-        <SettingsPanel
+        <ErrorBoundary name="Settings"><SettingsPanel
           messengers={messengers}
           settings={settings}
           onMessengersChange={setMessengers}
           onSettingsChange={handleSettingsChange}
           onClose={() => setShowSettings(false)}
-        />
+        /></ErrorBoundary>
       )}
 
       {showTemplates && (
-        <TemplatesPanel
+        <ErrorBoundary name="Templates"><TemplatesPanel
           settings={settings}
           onSettingsChange={handleSettingsChange}
           onClose={() => setShowTemplates(false)}
-        />
+        /></ErrorBoundary>
       )}
 
       {showAutoReply && (
-        <AutoReplyPanel
+        <ErrorBoundary name="AutoReply"><AutoReplyPanel
           settings={settings}
           onSettingsChange={handleSettingsChange}
           onClose={() => setShowAutoReply(false)}
-        />
+        /></ErrorBoundary>
       )}
 
       {/* ── Диалог подтверждения закрытия вкладки ── */}

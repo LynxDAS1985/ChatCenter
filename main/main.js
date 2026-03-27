@@ -26,6 +26,48 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('ЦентрЧатов')
 }
 
+// ─── Логирование в файл (v0.84.1) ──────────────────────────────────────────
+const LOG_MAX_SIZE = 500 * 1024 // 500KB — ротация
+let logFilePath = null
+
+function initLogger() {
+  logFilePath = path.join(app.getPath('userData'), 'chatcenter.log')
+  // Ротация — если лог > 500KB, обрезаем первую половину
+  try {
+    if (fs.existsSync(logFilePath) && fs.statSync(logFilePath).size > LOG_MAX_SIZE) {
+      const content = fs.readFileSync(logFilePath, 'utf8')
+      fs.writeFileSync(logFilePath, content.slice(content.length / 2))
+    }
+  } catch {}
+  // Перехватываем console.log/warn/error
+  const origLog = console.log.bind(console)
+  const origWarn = console.warn.bind(console)
+  const origError = console.error.bind(console)
+  function writeLog(level, args) {
+    const ts = new Date().toISOString().slice(0, 19).replace('T', ' ')
+    const msg = `[${ts}] [${level}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`
+    try { fs.appendFileSync(logFilePath, msg) } catch {}
+  }
+  console.log = (...args) => { origLog(...args); writeLog('INFO', args) }
+  console.warn = (...args) => { origWarn(...args); writeLog('WARN', args) }
+  console.error = (...args) => { origError(...args); writeLog('ERROR', args) }
+}
+
+// ─── Версионирование settings (v0.84.1) ────────────────────────────────────
+const SETTINGS_VERSION = 2
+
+function migrateSettings(settings) {
+  if (!settings || typeof settings !== 'object') return { _version: SETTINGS_VERSION, soundEnabled: true, minimizeToTray: true }
+  const v = settings._version || 1
+  // Миграция v1 → v2: добавлены поля notificationsEnabled, overlayMode
+  if (v < 2) {
+    if (settings.notificationsEnabled === undefined) settings.notificationsEnabled = true
+    if (settings.overlayMode === undefined) settings.overlayMode = 'all'
+  }
+  settings._version = SETTINGS_VERSION
+  return settings
+}
+
 // ─── Простое хранилище (JSON-файл, без ESM-зависимостей) ────────────────────
 
 let storage = null
@@ -72,19 +114,24 @@ function createTray() {
     {
       label: 'Открыть ЦентрЧатов',
       click: () => {
-        if (mainWindow) {
-          mainWindow.show()
-          mainWindow.focus()
-        }
+        if (mainWindow) { mainWindow.show(); mainWindow.focus() }
       }
     },
     { type: 'separator' },
     {
-      label: 'Выход',
+      label: '📋 Открыть лог',
       click: () => {
-        forceQuit = true
-        app.quit()
+        if (logFilePath) shell.openPath(logFilePath)
       }
+    },
+    {
+      label: '📁 Папка данных',
+      click: () => { shell.openPath(app.getPath('userData')) }
+    },
+    { type: 'separator' },
+    {
+      label: 'Выход',
+      click: () => { forceQuit = true; app.quit() }
     }
   ])
 
@@ -1033,8 +1080,20 @@ app.on('web-contents-created', (_event, contents) => {
 // ─── Запуск ───────────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  // v0.84.1: Инициализируем логгер ДО всего остального
+  initLogger()
+  console.log('=== ChatCenter v0.84.1 start ===')
+
   // Инициализируем хранилище
   storage = initStorage()
+
+  // v0.84.1: Миграция settings
+  const settings = storage.get('settings', {})
+  const migrated = migrateSettings(settings)
+  if (migrated._version !== settings._version) {
+    storage.set('settings', migrated)
+    console.log('[Settings] Migrated to version', migrated._version)
+  }
 
   // Настраиваем сессии
   setupSession(session.defaultSession)
