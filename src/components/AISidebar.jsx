@@ -608,7 +608,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         </div>
 
         {/* v0.83.2: Конфиг-панель вынесена в AIConfigPanel.jsx */}
-        <AIConfigPanel showConfig={showConfig} setShowConfig={setShowConfig} providerMode={providerMode} aiCfg={aiCfg} setProviderProp={setProviderProp} showKey={showKey} setShowKey={setShowKey} showSecret={showSecret} setShowSecret={setShowSecret} testing={testing} testStatus={testStatus} justSaved={justSaved} waitingForKey={waitingForKey} keyFoundMsg={keyFoundMsg} providerInfo={providerInfo} />
+        <AIConfigPanel showConfig={showConfig} setShowConfig={setShowConfig} providerMode={providerMode} aiCfg={aiCfg} set={set} showKey={showKey} setShowKey={setShowKey} showSecret={showSecret} setShowSecret={setShowSecret} testing={testing} testStatus={testStatus} justSaved={justSaved} waitingForKey={waitingForKey} keyFoundMsg={keyFoundMsg} providerInfo={providerInfo} />
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* ── РЕЖИМ WEBVIEW (основной контент) ── */}

@@ -1,13 +1,21 @@
 // v0.83.2: AI конфиг-панель — вынесена из AISidebar.jsx для уменьшения файла
 // Содержит: настройки провайдера, API-ключ, модель, системный промпт
-// v0.83.3: Все данные приходят через props от AISidebar
+import { PROVIDERS, DEFAULT_WEBVIEW_URLS, MODEL_HINTS, BILLING_URLS } from '../utils/aiProviders.js'
 
-export default function AIConfigPanel({ showConfig, setShowConfig, providerMode, aiCfg, setProviderProp, showKey, setShowKey, showSecret, setShowSecret, testing, testStatus, justSaved, waitingForKey, keyFoundMsg, providerInfo }) {
-  // Вычисляем из aiCfg (раньше были в scope AISidebar)
-  const aiApiKey = aiCfg?.apiKey || ''
-  const aiClientSecret = aiCfg?.clientSecret || ''
-  const aiModel = aiCfg?.model || ''
-  const aiSystemPrompt = aiCfg?.systemPrompt || ''
+// StepRow — компонент нумерованного шага настройки (был в AISidebar.jsx)
+function StepRow({ num, title, extra, numDone }) {
+  return (
+    <div className="flex items-center gap-2 px-2.5 py-2" style={{ backgroundColor: 'var(--cc-hover)' }}>
+      <span className="text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+        style={{ backgroundColor: numDone ? '#22c55e22' : '#2AABEE22', color: numDone ? '#22c55e' : '#2AABEE', border: `1px solid ${numDone ? '#22c55e55' : '#2AABEE55'}` }}
+      >{numDone ? '✓' : num}</span>
+      <span className="text-[11px] font-semibold flex-1" style={{ color: 'var(--cc-text-dim)' }}>{title}</span>
+      {extra}
+    </div>
+  )
+}
+
+export default function AIConfigPanel({ showConfig, setShowConfig, providerMode, aiCfg, set, showKey, setShowKey, showSecret, setShowSecret, testing, testStatus, justSaved, waitingForKey, keyFoundMsg, providerInfo }) {
   return (
   <>
   {/* ── Конфиг-панель (с анимацией slide-down) ── */}
