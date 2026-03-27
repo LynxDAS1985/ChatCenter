@@ -109,17 +109,17 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       }
       const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
       try {
-        const res = await window.api.invoke('ai:generate', {
+        const res = await window.api?.invoke('ai:generate', {
           messages: [{ role: 'user', content: 'ok' }],
           settings: { provider: p.id, apiKey: cfg.apiKey, clientSecret: cfg.clientSecret, model: cfg.model, systemPrompt: 'ok' },
         })
         setProviderStatuses(prev => ({ ...prev, [p.id]: res.ok ? 'ok' : 'fail' }))
         setProviderCheckTimes(prev => ({ ...prev, [p.id]: time }))
-        if (!res.ok) window.api.invoke('ai:log-error', { provider: p.id, errorText: `[${source}] ${res.error}` }).catch(() => {})
+        if (!res.ok) window.api?.invoke('ai:log-error', { provider: p.id, errorText: `[${source}] ${res.error}` }).catch(() => {})
       } catch (e) {
         setProviderStatuses(prev => ({ ...prev, [p.id]: 'fail' }))
         setProviderCheckTimes(prev => ({ ...prev, [p.id]: time }))
-        window.api.invoke('ai:log-error', { provider: p.id, errorText: `[${source}] ${e.message}` }).catch(() => {})
+        window.api?.invoke('ai:log-error', { provider: p.id, errorText: `[${source}] ${e.message}` }).catch(() => {})
       }
     }
     setRefreshing(false)
@@ -187,7 +187,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     setTestStatus(null)
     setError('')
     try {
-      const res = await window.api.invoke('ai:generate', {
+      const res = await window.api?.invoke('ai:generate', {
         messages: [{ role: 'user', content: 'Напиши только: ok' }],
         settings: { ...aiCfg, systemPrompt: 'Ответь только словом: ok' },
       })
@@ -198,7 +198,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       setProviderCheckTimes(t => ({ ...t, [provider]: time }))
       if (!res.ok) {
         setError(res.error || 'Ошибка проверки')
-        window.api.invoke('ai:log-error', { provider, errorText: `[test] ${res.error}` }).catch(() => {})
+        window.api?.invoke('ai:log-error', { provider, errorText: `[test] ${res.error}` }).catch(() => {})
       }
     } catch (e) {
       const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
@@ -206,7 +206,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       setProviderStatuses(s => ({ ...s, [provider]: 'fail' }))
       setProviderCheckTimes(t => ({ ...t, [provider]: time }))
       setError(e.message)
-      window.api.invoke('ai:log-error', { provider, errorText: `[test] ${e.message}` }).catch(() => {})
+      window.api?.invoke('ai:log-error', { provider, errorText: `[test] ${e.message}` }).catch(() => {})
     } finally {
       setTesting(false)
     }
@@ -258,24 +258,24 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     }
     const capturedProvider = provider
     const capturedLabel = providerInfo.label
-    await window.api.invoke('ai-login:open', {
+    await window.api?.invoke('ai-login:open', {
       url: PROVIDER_URLS[capturedProvider],
       provider: capturedProvider,
       providerLabel: capturedLabel,
     }).catch(() => {})
     setWaitingForKey(true)
     setKeyFoundMsg('')
-    unsubLoginRef.current = window.api.on('ai-login:closed', ({ provider: closedProvider }) => {
+    unsubLoginRef.current = window.api?.on('ai-login:closed', ({ provider: closedProvider }) => {
       if (closedProvider !== capturedProvider) return
       clearInterval(pollingRef.current)
       unsubLoginRef.current?.()
       setWaitingForKey(false)
     })
     let previousClipboard = ''
-    try { previousClipboard = (await window.api.invoke('clipboard:read')) || '' } catch {}
+    try { previousClipboard = (await window.api?.invoke('clipboard:read')) || '' } catch {}
     pollingRef.current = setInterval(async () => {
       try {
-        const text = (await window.api.invoke('clipboard:read')) || ''
+        const text = (await window.api?.invoke('clipboard:read')) || ''
         const trimmed = text.trim()
         if (trimmed === previousClipboard) return
         previousClipboard = trimmed
@@ -319,26 +319,26 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       setStreamBuffer(''); streamBufferRef.current = ''
       setIsStreaming(false); setLoading(false)
     }
-    const unsubChunk = window.api.on('ai:stream-chunk', ({ requestId: rid, chunk }) => {
+    const unsubChunk = window.api?.on('ai:stream-chunk', ({ requestId: rid, chunk }) => {
       if (rid !== requestId) return
       streamBufferRef.current += chunk
       setStreamBuffer(streamBufferRef.current)
       setIsStreaming(true)
     })
-    const unsubDone = window.api.on('ai:stream-done', ({ requestId: rid }) => {
+    const unsubDone = window.api?.on('ai:stream-done', ({ requestId: rid }) => {
       if (rid !== requestId) return
       finalize()
     })
-    const unsubError = window.api.on('ai:stream-error', ({ requestId: rid, error }) => {
+    const unsubError = window.api?.on('ai:stream-error', ({ requestId: rid, error }) => {
       if (rid !== requestId) return
       cleanup()
       setProviderStatuses(s => ({ ...s, [capturedProvider]: 'fail' }))
       setError(error); setStreamBuffer(''); streamBufferRef.current = ''
       setIsStreaming(false); setLoading(false)
-      window.api.invoke('ai:log-error', { provider: capturedProvider, errorText: `[stream] ${error}` }).catch(() => {})
+      window.api?.invoke('ai:log-error', { provider: capturedProvider, errorText: `[stream] ${error}` }).catch(() => {})
     })
     streamUnsubsRef.current = [unsubChunk, unsubDone, unsubError]
-    window.api.send('ai:generate-stream', {
+    window.api?.send('ai:generate-stream', {
       messages: [...historyMessages, { role: 'user', content: `Сообщение клиента: "${text.trim()}"` }],
       settings: aiCfg,
       requestId,
@@ -350,7 +350,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     if (!text.trim()) return
     setLoading(true); setError(''); setSuggestions([])
     try {
-      const res = await window.api.invoke('ai:generate', {
+      const res = await window.api?.invoke('ai:generate', {
         messages: [{ role: 'user', content: `Сообщение клиента: "${text.trim()}"` }],
         settings: aiCfg,
       })
@@ -381,7 +381,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
 
   const openProviderUrl = () => {
     const url = PROVIDER_URLS[provider]
-    if (url) window.api.invoke('shell:open-url', url).catch(() => {})
+    if (url) window.api?.invoke('shell:open-url', url).catch(() => {})
   }
 
   // ── Отправка контекста чата в WebView AI ─────────────────────────────────

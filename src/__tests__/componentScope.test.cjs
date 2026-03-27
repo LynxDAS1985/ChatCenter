@@ -138,5 +138,33 @@ for (var fi = 0; fi < jsxFiles.length; fi++) {
   })
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Тест: НЕТ require() в ESM файлах (Electron 41 + Vite 7)
+// ═══════════════════════════════════════════════════════════════
+console.log('\n── ESM/CJS совместимость: ──')
+var esmFiles = ['main/main.js', 'main/handlers/aiHandlers.js', 'main/handlers/notifHandlers.js', 'main/handlers/dockPinHandlers.js']
+for (var ei = 0; ei < esmFiles.length; ei++) {
+  var ef = esmFiles[ei]
+  if (!fs.existsSync(ef)) continue
+  var esmCode = fs.readFileSync(ef, 'utf8')
+  var requireCalls = esmCode.match(/\brequire\s*\(/g) || []
+  test(path.basename(ef) + ': нет require() в ESM файле', function() {
+    assert(requireCalls.length === 0, 'require() в ESM: ' + requireCalls.length + ' вызовов')
+  })
+}
+
+// Тест: ВСЕ компоненты используют window.api?.
+console.log('\n── window.api optional chaining (ВСЕ файлы): ──')
+var allJsxFiles = ['src/App.jsx', 'src/utils/webviewSetup.js', 'src/components/AISidebar.jsx', 'src/components/AIConfigPanel.jsx', 'src/components/SettingsPanel.jsx', 'src/components/NotifLogModal.jsx', 'src/components/TemplatesPanel.jsx', 'src/components/AutoReplyPanel.jsx']
+for (var ai = 0; ai < allJsxFiles.length; ai++) {
+  var af = allJsxFiles[ai]
+  if (!fs.existsSync(af)) continue
+  var afCode = fs.readFileSync(af, 'utf8')
+  var unsafeApi = afCode.match(/window\.api\.(invoke|send|on)\b/g) || []
+  test(path.basename(af) + ': window.api?.', function() {
+    assert(unsafeApi.length === 0, unsafeApi.length + ' вызовов без ?.')
+  })
+}
+
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

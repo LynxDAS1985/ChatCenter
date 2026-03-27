@@ -100,7 +100,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
   const loadLog = async () => {
     setLogLoading(true)
     try {
-      const res = await window.api.invoke('ai:get-error-log')
+      const res = await window.api?.invoke('ai:get-error-log')
       setErrorLog(res.ok ? (res.text || '') : `Ошибка: ${res.error}`)
     } catch (e) {
       setErrorLog(`Ошибка: ${e.message}`)
@@ -112,7 +112,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
   const clearLog = async () => {
     setLogClearing(true)
     try {
-      await window.api.invoke('ai:clear-error-log')
+      await window.api?.invoke('ai:clear-error-log')
       setErrorLog('')
     } catch {}
     setLogClearing(false)
@@ -276,7 +276,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              window.api.invoke('app:custom-notify', {
+                              window.api?.invoke('app:custom-notify', {
                                 title: 'Тест',
                                 body: `Тестовое уведомление от ${m.name}`,
                                 color: m.color || '#2AABEE',
@@ -331,7 +331,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                       clearTimeout(previewTimerRef.current)
                       previewTimerRef.current = setTimeout(() => {
                         const sec = val < 3 ? 0 : val
-                        window.api.invoke('app:custom-notify', {
+                        window.api?.invoke('app:custom-notify', {
                           title: 'Предпросмотр',
                           body: sec === 0 ? 'Не исчезает — закройте вручную' : 'Исчезнет через ' + sec + ' сек',
                           color: '#2AABEE',

@@ -183,7 +183,7 @@ export default function AIConfigPanel({ showConfig, setShowConfig, providerMode,
                       ⚠️ {error}
                       {isBillingError(error) && BILLING_URLS[provider] && (
                         <button
-                          onClick={() => window.api.invoke('shell:open-url', BILLING_URLS[provider]).catch(() => {})}
+                          onClick={() => window.api?.invoke('shell:open-url', BILLING_URLS[provider]).catch(() => {})}
                           className="mt-1.5 w-full text-center py-1 rounded cursor-pointer text-[10px] font-medium"
                           style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' }}
                           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.25)'}
@@ -232,7 +232,7 @@ export default function AIConfigPanel({ showConfig, setShowConfig, providerMode,
                     ⚠️ {error}
                     {isBillingError(error) && BILLING_URLS[provider] && (
                       <button
-                        onClick={() => window.api.invoke('shell:open-url', BILLING_URLS[provider]).catch(() => {})}
+                        onClick={() => window.api?.invoke('shell:open-url', BILLING_URLS[provider]).catch(() => {})}
                         className="mt-1.5 w-full text-center py-1 rounded cursor-pointer text-[10px] font-medium"
                         style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' }}
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.25)'}

@@ -3,6 +3,7 @@ import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, Notifica
 import fs from 'node:fs'
 import path from 'node:path'
 import https from 'node:https'
+import http from 'node:http'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'url'
 
@@ -324,7 +325,7 @@ function downloadIcon(url) {
   if (cached) iconCache.delete(url)
 
   return new Promise((resolve) => {
-    const proto = url.startsWith('https') ? https : require('http')
+    const proto = url.startsWith('https') ? https : http
     const req = proto.get(url, { timeout: 4000 }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         // Redirect

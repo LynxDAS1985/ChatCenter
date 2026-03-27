@@ -8,7 +8,7 @@ export default function AutoReplyPanel({ settings, onSettingsChange, onClose }) 
 
   const save = (updated) => {
     onSettingsChange({ ...settings, autoReplyRules: updated })
-    window.api.invoke('settings:save', { ...settings, autoReplyRules: updated }).catch(() => {})
+    window.api?.invoke('settings:save', { ...settings, autoReplyRules: updated }).catch(() => {})
   }
 
   const addRule = () => {

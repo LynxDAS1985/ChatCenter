@@ -20,7 +20,7 @@ export default function TemplatesPanel({ settings, onSettingsChange, onClose }) 
 
   const save = (updated) => {
     onSettingsChange({ ...settings, templates: updated })
-    window.api.invoke('settings:save', { ...settings, templates: updated }).catch(() => {})
+    window.api?.invoke('settings:save', { ...settings, templates: updated }).catch(() => {})
   }
 
   const addTemplate = () => {

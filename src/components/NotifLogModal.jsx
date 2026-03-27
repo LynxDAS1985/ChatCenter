@@ -460,7 +460,7 @@ export default function NotifLogModal({ ctx }) {
                     ...prev,
                     messengerNotifs: { ...(prev.messengerNotifs || {}), [mid]: { ...((prev.messengerNotifs || {})[mid] || {}), spamFilter: val } }
                   }))
-                  window.api.invoke('settings:save', { messengerNotifs: { ...(settings.messengerNotifs || {}), [mid]: { ...((settings.messengerNotifs || {})[mid] || {}), spamFilter: val } } })
+                  window.api?.invoke('settings:save', { messengerNotifs: { ...(settings.messengerNotifs || {}), [mid]: { ...((settings.messengerNotifs || {})[mid] || {}), spamFilter: val } } })
                 }}
                 onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
               />
