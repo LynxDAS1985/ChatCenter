@@ -1,11 +1,16 @@
-name: Tests
+name: Tests + Build
 on: [push, pull_request]
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  test-and-build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+      - run: npm ci
       - run: npm test
+      - run: npx electron-vite build

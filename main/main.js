@@ -843,6 +843,11 @@ function setupIPC() {
     }
   })
 
+  // v0.84.0: Регистрация webContentsId → messengerId (для multi-account)
+  ipcMain.handle('app:register-webview', (event, { webContentsId, messengerId }) => {
+    if (webContentsId && messengerId) registerWebContentMessenger(webContentsId, messengerId)
+  })
+
   // Пути к preload-файлам (для WebView-мониторинга)
   ipcMain.handle('app:get-paths', () => ({
     monitorPreload: isDev
@@ -922,9 +927,22 @@ function setupIPC() {
 // Перехватывает: __CC_NOTIF__ (Notification API) и __CC_MSG__ (MutationObserver backup).
 // Работает всегда — дедупликация в showCustomNotification предотвращает дубли.
 
-function findMessengerByUrl(pageUrl) {
+// v0.84.0: Multi-account safe — кэш webContentsId → messengerId
+const _webContentsMessengerMap = new Map()
+
+function registerWebContentMessenger(webContentsId, messengerId) {
+  _webContentsMessengerMap.set(webContentsId, messengerId)
+}
+
+function findMessengerByUrl(pageUrl, webContentsId) {
   if (!storage) return null
   const messengers = storage.get('messengers') || []
+  // 1. Точный матч по webContentsId (multi-account safe)
+  if (webContentsId && _webContentsMessengerMap.has(webContentsId)) {
+    const mid = _webContentsMessengerMap.get(webContentsId)
+    return messengers.find(m => m.id === mid) || null
+  }
+  // 2. Fallback: по hostname (для первого запуска до регистрации)
   try {
     const pageHost = new URL(pageUrl).hostname
     return messengers.find(m => {
@@ -949,8 +967,7 @@ app.on('web-contents-created', (_event, contents) => {
 
   // Backup: перехватываем __CC_NOTIF__ и __CC_MSG__ напрямую в main process
   // ВАЖНО: backup нужен ТОЛЬКО когда renderer не может обработать (webContents destroyed/crashed)
-  // При backgroundThrottling:false renderer работает ВСЕГДА — даже при свёрнутом окне
-  // findMessengerByUrl некорректен при 2+ аккаунтах одного мессенджера (возвращает первый)
+  // v0.84.0: findMessengerByUrl теперь multi-account safe через webContentsId
   contents.on('console-message', (_e, _level, msg) => {
     if (!msg) return
     if (!webviewReadySet.has(contents.id)) return
