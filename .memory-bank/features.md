@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.83.3 (26 марта 2026)
+## Текущая версия: v0.83.4 (27 марта 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.83.4 (27 марта 2026) — Все undefined vars + componentScope тест + ErrorBoundary
+- **12 undefined переменных исправлены** в AIConfigPanel.jsx (ловушка 50)
+- **componentScope.test.js** — автоматически проверяет ВСЕ 9 компонентов на undefined переменные
+- **ErrorBoundary** в main.jsx — показывает ошибку вместо белого экрана
+- **Правило 5 в CLAUDE.md** — запрет git откатов без разрешения
 
 ### v0.83.3 (26 марта 2026) — 69 runtime unit тестов + bugfixes
 - **69 новых runtime unit тестов** в `unitRuntime.test.js`: cleanupSenderCache (4), getSoundForColor (5), hook _isSpam regex (28), AI PROVIDERS config (22), PIXEL_FONT + setPixelBGRA (6)
