@@ -116,7 +116,7 @@ export default function App() {
     statsSaveTimer.current = setTimeout(() => {
       const upd = { ...settingsRef.current, stats: statsRef.current }
       settingsRef.current = upd
-      window.api.invoke('settings:save', upd).catch(() => {})
+      window.api?.invoke('settings:save', upd).catch(() => {})
     }, 2000)
   }
 
@@ -130,7 +130,7 @@ export default function App() {
   // ── Загрузка при старте ──────────────────────────────────────────────────
   useEffect(() => {
     Promise.all([
-      window.api.invoke('messengers:load').then(list => {
+      window.api?.invoke('messengers:load').then(list => {
         // Для дефолтных мессенджеров — всегда берём accountScript из constants.js
         const cleaned = list.map(m => {
           const def = DEFAULT_MESSENGERS.find(d => d.id === m.id)
@@ -146,7 +146,7 @@ export default function App() {
         setMessengers(DEFAULT_MESSENGERS)
         setActiveId(DEFAULT_MESSENGERS[0].id)
       }),
-      window.api.invoke('settings:get').then(s => {
+      window.api?.invoke('settings:get').then(s => {
         setSettings(s)
         if (s.aiSidebarWidth) {
           const w = Math.max(240, Math.min(600, s.aiSidebarWidth))
@@ -166,7 +166,7 @@ export default function App() {
         setStats(loadedStats)
         statsRef.current = loadedStats
       }).catch(() => {}),
-      window.api.invoke('app:get-paths').then(({ monitorPreload }) => {
+      window.api?.invoke('app:get-paths').then(({ monitorPreload }) => {
         if (monitorPreload) {
           const url = 'file:///' + monitorPreload.replace(/\\/g, '/').replace(/^\//, '')
           setMonitorPreloadUrl(url)
@@ -180,20 +180,20 @@ export default function App() {
     if (messengers.length === 0) return
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
-      window.api.invoke('messengers:save', messengers).catch(() => {})
+      window.api?.invoke('messengers:save', messengers).catch(() => {})
     }, 600)
   }, [messengers])
 
   // ── IPC window-state: main process сообщает о focus/blur/minimize/restore ──
   useEffect(() => {
-    return window.api.on('window-state', (state) => {
+    return window.api?.on('window-state', (state) => {
       windowFocusedRef.current = state.focused
     })
   }, [])
 
   // ── Бейдж-события от ChatMonitor ─────────────────────────────────────────
   useEffect(() => {
-    return window.api.on('messenger:badge', ({ id, count }) => {
+    return window.api?.on('messenger:badge', ({ id, count }) => {
       setUnreadCounts(prev => {
         const prev_count = prev[id] || 0
         if (count > prev_count && settingsRef.current.soundEnabled !== false) {
@@ -217,7 +217,7 @@ export default function App() {
 
   // ── Клик по кастомному уведомлению (Messenger Ribbon) ────────────────────
   useEffect(() => {
-    return window.api.on('notify:clicked', ({ messengerId, senderName, chatTag }) => {
+    return window.api?.on('notify:clicked', ({ messengerId, senderName, chatTag }) => {
       devLog('[GoChat] notify:clicked', { messengerId, senderName, chatTag })
       if (!messengerId) return
       setActiveId(messengerId)
@@ -283,7 +283,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    return window.api.on('notify:mark-read', ({ messengerId, senderName, chatTag }) => {
+    return window.api?.on('notify:mark-read', ({ messengerId, senderName, chatTag }) => {
       traceNotif('mark-read', 'info', messengerId, senderName || '', `sender="${(senderName||'').slice(0,30)}" tag=${!!chatTag} hidden=${document.hidden}`)
       if (!messengerId) return
       // v0.62.6: если окно свёрнуто/скрыто — отложить до visibilitychange
@@ -407,7 +407,7 @@ export default function App() {
       setAiWidth(newW)
       const updated = { ...settingsRef.current, aiSidebarWidth: newW }
       setSettings(updated)
-      window.api.invoke('settings:save', updated).catch(() => {})
+      window.api?.invoke('settings:save', updated).catch(() => {})
       if (aiPanelRef.current) aiPanelRef.current.style.transition = ''
     }
     window.addEventListener('mousemove', onMove)
@@ -454,7 +454,7 @@ export default function App() {
     zoomSaveTimer.current = setTimeout(() => {
       const updated = { ...settingsRef.current, zoomLevels: next }
       settingsRef.current = updated
-      window.api.invoke('settings:save', updated).catch(() => {})
+      window.api?.invoke('settings:save', updated).catch(() => {})
     }, 800)
   }
 
@@ -606,7 +606,7 @@ export default function App() {
   // ── Настройки ─────────────────────────────────────────────────────────────
   const handleSettingsChange = useCallback((newSettings) => {
     setSettings(newSettings)
-    window.api.invoke('settings:save', newSettings).catch(() => {})
+    window.api?.invoke('settings:save', newSettings).catch(() => {})
   }, [])
 
   // v0.82.6: WebView setup вынесен в src/utils/webviewSetup.js (~842 строки)
@@ -714,7 +714,7 @@ export default function App() {
     const updated = { ...settingsRef.current, pinnedTabs: next }
     settingsRef.current = updated
     setSettings(updated)
-    window.api.invoke('settings:save', updated).catch(() => {})
+    window.api?.invoke('settings:save', updated).catch(() => {})
   }, [])
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -766,7 +766,7 @@ export default function App() {
         })
       const overlayMode = settingsRef.current.overlayMode || 'personal'
       devLog(`[BADGE] FIRE tray:set-badge count=${totalUnread} personal=${totalPersonalWithFallback} channels=${totalChannels} mode=${overlayMode}`)
-      window.api.invoke('tray:set-badge', { count: totalUnread, personal: totalPersonalWithFallback, channels: totalChannels, breakdown, overlayMode })
+      window.api?.invoke('tray:set-badge', { count: totalUnread, personal: totalPersonalWithFallback, channels: totalChannels, breakdown, overlayMode })
     }, 500)
     return () => { if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current) }
   }, [totalUnread, totalPersonalWithFallback, totalChannels, settings.overlayMode])

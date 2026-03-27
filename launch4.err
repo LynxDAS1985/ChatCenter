@@ -1,0 +1,27 @@
+[29940:0327/143042.594:ERROR:components\os_crypt\sync\os_crypt_win.cc:105] Failed to decrypt: Ключ не может быть использован в указанном состоянии. (0x8009000B)
+[29940:0327/143042.628:FATAL:mojo\public\cpp\platform\platform_channel.cc:108] Check failed: . : Отказано в доступе. (0x5)
+[29940:0327/143042.644:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143042.656:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143042.658:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143042.662:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143042.663:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143042.667:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143043.846:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: Отказано в доступе. (0x5)
+[29940:0327/143043.846:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: Отказано в доступе. (0x5)
+[29940:0327/143043.846:ERROR:net\disk_cache\cache_util_win.cc:25] Unable to move the cache: Отказано в доступе. (0x5)
+[29940:0327/143043.846:ERROR:net\disk_cache\disk_cache.cc:284] Unable to create cache
+[29940:0327/143043.847:ERROR:gpu\ipc\host\gpu_disk_cache.cc:725] Gpu Cache Creation failed: -2
+[29940:0327/143043.847:ERROR:net\disk_cache\disk_cache.cc:284] Unable to create cache
+[29940:0327/143043.847:ERROR:gpu\ipc\host\gpu_disk_cache.cc:725] Gpu Cache Creation failed: -2
+[29940:0327/143043.847:ERROR:net\disk_cache\disk_cache.cc:284] Unable to create cache
+[29940:0327/143043.848:ERROR:gpu\ipc\host\gpu_disk_cache.cc:725] Gpu Cache Creation failed: -2
+[29940:0327/143045.574:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143045.604:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143045.620:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143045.620:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143045.620:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143045.622:ERROR:storage\browser\quota\quota_database.cc:988] Could not open the quota database, resetting.
+[29940:0327/143045.675:ERROR:components\services\storage\service_worker\service_worker_storage.cc:1814] Failed to delete the database: Database IO error
+[29940:0327/143045.675:ERROR:components\services\storage\service_worker\service_worker_storage.cc:1814] Failed to delete the database: Database IO error
+[29940:0327/143045.676:ERROR:components\services\storage\service_worker\service_worker_storage.cc:1814] Failed to delete the database: Database IO error
+[29940:0327/143045.676:ERROR:components\services\storage\service_worker\service_worker_storage.cc:1814] Failed to delete the database: Database IO error

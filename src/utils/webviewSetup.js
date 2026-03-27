@@ -184,7 +184,7 @@ export function createWebviewSetup(deps) {
       // Покрывает: "📎 Стикер #3", "🖼 Картинка #2", "🎬 Анимация #1", "😇😉👍 #4"
       const displayText = text.replace(/ #\d+$/, '')
       // v0.80.4: ribbon использует очищенный senderName (без "заходила X назад")
-      window.api.invoke('app:custom-notify', {
+      window.api?.invoke('app:custom-notify', {
         title: senderName || '',
         body: displayText.length > 100 ? displayText.slice(0, 97) + '…' : displayText,
         fullBody: displayText.length > 100 ? displayText : '',
@@ -231,7 +231,7 @@ export function createWebviewSetup(deps) {
       const matched = rule.keywords.some(kw => text.toLowerCase().includes(kw.toLowerCase()))
       if (matched) {
         navigator.clipboard.writeText(rule.reply).catch(() => {})
-        window.api.invoke('app:custom-notify', {
+        window.api?.invoke('app:custom-notify', {
           title: '🤖 Авто-ответ',
           body: `Правило: "${rule.keywords[0]}" — ответ в буфере`,
           color: mInfo?.color || '#2AABEE',
@@ -349,7 +349,7 @@ export function createWebviewSetup(deps) {
           // Если preload <script> не сработал (CSP блокировал) — инжектим через executeJavaScript
           setTimeout(() => {
             const hookType = detectMessengerType(el.getURL?.() || '')
-            window.api.invoke('app:read-hook', hookType || 'telegram').then(hookCode => {
+            window.api?.invoke('app:read-hook', hookType || 'telegram').then(hookCode => {
               if (!hookCode) return
               el.executeJavaScript(hookCode).then(() => {
                 console.log('[NotifHook] executeJS hook applied (' + messengerId + ', type=' + hookType + ')')

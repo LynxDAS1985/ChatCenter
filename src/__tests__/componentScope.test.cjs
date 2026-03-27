@@ -123,5 +123,20 @@ for (const comp of components) {
   })
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Тест: window.api ВСЕГДА с optional chaining (React 19 compat)
+// ═══════════════════════════════════════════════════════════════
+console.log('\n── window.api optional chaining: ──')
+var jsxFiles = ['src/App.jsx', 'src/utils/webviewSetup.js']
+for (var fi = 0; fi < jsxFiles.length; fi++) {
+  var f = jsxFiles[fi]
+  if (!fs.existsSync(f)) continue
+  var fCode = fs.readFileSync(f, 'utf8')
+  var unsafeMatches = fCode.match(/window\.api\.(invoke|send|on)\b/g) || []
+  test(path.basename(f) + ': нет window.api. без ?. (React 19)', function() {
+    assert(unsafeMatches.length === 0, 'window.api. без optional chaining: ' + unsafeMatches.length)
+  })
+}
+
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)
