@@ -29,8 +29,8 @@ var onChannels = (mainCode.match(/ipcMain\.on\(\s*'([^']+)'/g) || []).map(functi
 var allMainChannels = handleChannels.concat(onChannels)
 
 // Извлекаем invoke/send из App.jsx
-var invokeChannels = (appCode.match(/window\.api\.invoke\(\s*'([^']+)'/g) || []).map(function(m) { return m.match(/'([^']+)'/)[1] })
-var sendChannels = (appCode.match(/window\.api\.send\(\s*'([^']+)'/g) || []).map(function(m) { return m.match(/'([^']+)'/)[1] })
+var invokeChannels = (appCode.match(/window\.api\??\.invoke\(\s*'([^']+)'/g) || []).map(function(m) { return m.match(/'([^']+)'/)[1] })
+var sendChannels = (appCode.match(/window\.api\??\.send\(\s*'([^']+)'/g) || []).map(function(m) { return m.match(/'([^']+)'/)[1] })
 
 console.log('── Main process: ──')
 test('handle каналов > 10', function() { assert(handleChannels.length > 10, 'count=' + handleChannels.length) })
