@@ -120,7 +120,7 @@ function restorePin(pinId, data, category, note, timerEnd) {
 
 function getPinPreloadPath() {
   if (isDev) return path.join(__dirname, '../../main/preloads/pin.preload.js')
-  return path.join(__dirname, '../preload/pin.js')
+  return path.join(__dirname, '../preload/pin.mjs')
 }
 
 function getPinHtmlPath() {
@@ -130,7 +130,7 @@ function getPinHtmlPath() {
 
 function getDockPreloadPath() {
   if (isDev) return path.join(__dirname, '../../main/preloads/pin-dock.preload.js')
-  return path.join(__dirname, '../preload/pin-dock.js')
+  return path.join(__dirname, '../preload/pin-dock.mjs')
 }
 
 function getDockHtmlPath() {

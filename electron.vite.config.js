@@ -2,10 +2,43 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
+import fs from 'fs'
+
+// v0.84.0: Copy static files to out/ for production build
+function copyStaticPlugin() {
+  return {
+    name: 'copy-static',
+    closeBundle() {
+      const copies = [
+        // HTML files
+        { from: 'main/notification.html', to: 'out/main/notification.html' },
+        { from: 'main/pin-notification.html', to: 'out/main/pin-notification.html' },
+        { from: 'main/pin-dock.html', to: 'out/main/pin-dock.html' },
+      ]
+      // Hooks directory
+      const hooksDir = 'main/preloads/hooks'
+      if (fs.existsSync(hooksDir)) {
+        const outHooksDir = 'out/preloads/hooks'
+        fs.mkdirSync(outHooksDir, { recursive: true })
+        for (const f of fs.readdirSync(hooksDir)) {
+          if (f.endsWith('.hook.js')) {
+            copies.push({ from: `${hooksDir}/${f}`, to: `${outHooksDir}/${f}` })
+          }
+        }
+      }
+      for (const { from, to } of copies) {
+        if (fs.existsSync(from)) {
+          fs.mkdirSync(resolve(to, '..'), { recursive: true })
+          fs.copyFileSync(from, to)
+        }
+      }
+    }
+  }
+}
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin(), copyStaticPlugin()],
     build: {
       rollupOptions: {
         input: {
@@ -21,7 +54,13 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'main/preloads/app.preload.js'),
           monitor: resolve(__dirname, 'main/preloads/monitor.preload.js'),
-          notification: resolve(__dirname, 'main/preloads/notification.preload.js')
+          notification: resolve(__dirname, 'main/preloads/notification.preload.js'),
+          pin: resolve(__dirname, 'main/preloads/pin.preload.js'),
+          'pin-dock': resolve(__dirname, 'main/preloads/pin-dock.preload.js'),
+        },
+        output: {
+          // Production paths expect .js not .mjs
+          entryFileNames: '[name].js',
         }
       }
     }
@@ -34,7 +73,6 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'index.html')
         },
-        // Исключаем тесты из production bundle
         external: [/src\/__tests__/]
       }
     }

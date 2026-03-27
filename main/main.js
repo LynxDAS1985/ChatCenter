@@ -106,7 +106,8 @@ function getPreloadPath() {
   if (isDev) {
     return path.join(__dirname, '../../main/preloads/app.preload.js')
   }
-  return path.join(__dirname, '../preload/index.js')
+  // electron-vite 5 собирает preload как .mjs
+  return path.join(__dirname, '../preload/index.mjs')
 }
 
 // ─── Настройка сессий для WebView ─────────────────────────────────────────────
@@ -398,7 +399,7 @@ function getNotifPreloadPath() {
   if (isDev) {
     return path.join(__dirname, '../../main/preloads/notification.preload.js')
   }
-  return path.join(__dirname, '../preload/notification.js')
+  return path.join(__dirname, '../preload/notification.mjs')
 }
 
 function getNotifHtmlPath() {
@@ -846,7 +847,7 @@ function setupIPC() {
   ipcMain.handle('app:get-paths', () => ({
     monitorPreload: isDev
       ? path.join(__dirname, '../../main/preloads/monitor.preload.js')
-      : path.join(__dirname, '../preload/monitor.js')
+      : path.join(__dirname, '../preload/monitor.mjs')
   }))
 
   // Смена цвета нативного titlebar при переключении темы
