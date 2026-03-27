@@ -1,6 +1,6 @@
 // v0.83.2: AI конфиг-панель — вынесена из AISidebar.jsx для уменьшения файла
 // Содержит: настройки провайдера, API-ключ, модель, системный промпт
-import { PROVIDERS, DEFAULT_WEBVIEW_URLS, MODEL_HINTS, BILLING_URLS } from '../utils/aiProviders.js'
+import { PROVIDERS, DEFAULT_WEBVIEW_URLS, MODEL_HINTS, BILLING_URLS, isBillingError } from '../utils/aiProviders.js'
 
 // StepRow — компонент нумерованного шага настройки (был в AISidebar.jsx)
 function StepRow({ num, title, extra, numDone }) {
@@ -15,7 +15,10 @@ function StepRow({ num, title, extra, numDone }) {
   )
 }
 
-export default function AIConfigPanel({ showConfig, setShowConfig, providerMode, aiCfg, set, showKey, setShowKey, showSecret, setShowSecret, testing, testStatus, justSaved, waitingForKey, keyFoundMsg, providerInfo }) {
+export default function AIConfigPanel({ showConfig, setShowConfig, providerMode, aiCfg, set, showKey, setShowKey, showSecret, setShowSecret, testing, testStatus, justSaved, waitingForKey, keyFoundMsg, providerInfo, openProviderUrl, openLoginWindow, testConnection }) {
+  // Вычисляем из aiCfg
+  const provider = aiCfg?.provider || 'openai'
+  const error = testStatus?.error || ''
   return (
   <>
   {/* ── Конфиг-панель (с анимацией slide-down) ── */}
@@ -38,7 +41,7 @@ export default function AIConfigPanel({ showConfig, setShowConfig, providerMode,
         </div>
         <div className="flex gap-1">
           <button
-            onClick={() => setProviderProp('mode', 'api')}
+            onClick={() => set('mode', 'api')}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all"
             style={{
               backgroundColor: providerMode === 'api' ? '#2AABEE22' : 'var(--cc-hover)',
@@ -50,7 +53,7 @@ export default function AIConfigPanel({ showConfig, setShowConfig, providerMode,
             {providerMode === 'api' && <span className="text-[10px]">✓</span>}
           </button>
           <button
-            onClick={() => setProviderProp('mode', 'webview')}
+            onClick={() => set('mode', 'webview')}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all"
             style={{
               backgroundColor: providerMode === 'webview' ? '#2AABEE22' : 'var(--cc-hover)',
@@ -278,14 +281,14 @@ export default function AIConfigPanel({ showConfig, setShowConfig, providerMode,
             <input
               type="text"
               value={webviewUrl}
-              onChange={e => setProviderProp('webviewUrl', e.target.value)}
+              onChange={e => set('webviewUrl', e.target.value)}
               placeholder="https://..."
               className="w-full text-xs px-2 py-1.5 rounded-lg outline-none font-mono"
               style={{ backgroundColor: 'var(--cc-hover)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
             />
             {webviewUrl !== (DEFAULT_WEBVIEW_URLS[provider] || '') && (
               <button
-                onClick={() => setProviderProp('webviewUrl', DEFAULT_WEBVIEW_URLS[provider] || '')}
+                onClick={() => set('webviewUrl', DEFAULT_WEBVIEW_URLS[provider] || '')}
                 className="text-[9px] mt-1 cursor-pointer"
                 style={{ color: 'var(--cc-text-dimmer)' }}
                 onMouseEnter={e => e.currentTarget.style.color = '#2AABEE'}
@@ -305,7 +308,7 @@ export default function AIConfigPanel({ showConfig, setShowConfig, providerMode,
               ].map(m => (
                 <button
                   key={m.id}
-                  onClick={() => setProviderProp('contextMode', m.id)}
+                  onClick={() => set('contextMode', m.id)}
                   title={m.desc}
                   className="flex-1 flex flex-col items-center py-1.5 rounded-lg text-[9px] cursor-pointer transition-all leading-tight"
                   style={{
