@@ -18,7 +18,9 @@ function StepRow({ num, title, extra, numDone }) {
 export default function AIConfigPanel({ showConfig, setShowConfig, providerMode, aiCfg, set, showKey, setShowKey, showSecret, setShowSecret, testing, testStatus, justSaved, waitingForKey, keyFoundMsg, providerInfo, openProviderUrl, openLoginWindow, testConnection }) {
   // Вычисляем из aiCfg
   const provider = aiCfg?.provider || 'openai'
+  const isGigaChat = provider === 'gigachat'
   const error = testStatus?.error || ''
+  const webviewUrl = aiCfg?.webviewUrl || ''
   return (
   <>
   {/* ── Конфиг-панель (с анимацией slide-down) ── */}
