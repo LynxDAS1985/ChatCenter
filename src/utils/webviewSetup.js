@@ -288,6 +288,11 @@ export function createWebviewSetup(deps) {
 
       // ── СЕКЦИЯ: DOM-ready — инициализация монитора ──
       addListener('dom-ready', () => {
+        // v0.84.0: Регистрация webContentsId для multi-account routing
+        try {
+          const wcId = el.getWebContentsId?.()
+          if (wcId) window.api?.invoke('app:register-webview', { webContentsId: wcId, messengerId })
+        } catch(e) {}
         clearTimeout(retryTimers.current[messengerId])
         retryTimers.current[messengerId] = setTimeout(
           () => tryExtractAccount(messengerId, 0), 3500
