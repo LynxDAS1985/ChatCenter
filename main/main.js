@@ -51,13 +51,28 @@ function initLogger() {
   console.log = (...args) => { origLog(...args); writeLog('INFO', args) }
   console.warn = (...args) => { origWarn(...args); writeLog('WARN', args) }
   console.error = (...args) => { origError(...args); writeLog('ERROR', args) }
+  console.debug = (...args) => { origLog(...args); writeLog('DEBUG', args) }
+}
+
+// v0.84.2: Чтение лога для отображения в модальном окне
+function readLogFile(maxLines = 500) {
+  if (!logFilePath || !fs.existsSync(logFilePath)) return ''
+  try {
+    const content = fs.readFileSync(logFilePath, 'utf8')
+    const lines = content.split('\n')
+    return lines.slice(-maxLines).join('\n')
+  } catch { return '' }
 }
 
 // ─── Версионирование settings (v0.84.1) ────────────────────────────────────
 const SETTINGS_VERSION = 2
 
-function migrateSettings(settings) {
+function migrateSettings(settings, storagePath) {
   if (!settings || typeof settings !== 'object') return { _version: SETTINGS_VERSION, soundEnabled: true, minimizeToTray: true }
+  // Backup перед миграцией
+  if ((settings._version || 1) < SETTINGS_VERSION && storagePath) {
+    try { fs.copyFileSync(storagePath, storagePath + '.bak'); console.log('[Settings] Backup created') } catch {}
+  }
   const v = settings._version || 1
   // Миграция v1 → v2: добавлены поля notificationsEnabled, overlayMode
   if (v < 2) {
@@ -119,10 +134,18 @@ function createTray() {
     },
     { type: 'separator' },
     {
-      label: '📋 Открыть лог',
+      label: '📋 Показать лог',
       click: () => {
-        if (logFilePath) shell.openPath(logFilePath)
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show()
+          mainWindow.focus()
+          mainWindow.webContents.send('show-log-modal')
+        }
       }
+    },
+    {
+      label: '📄 Открыть файл лога',
+      click: () => { if (logFilePath) shell.openPath(logFilePath) }
     },
     {
       label: '📁 Папка данных',
@@ -625,6 +648,16 @@ function setupIPC() {
   // Ping
   ipcMain.handle('app:ping', () => ({ ok: true, message: 'ChatCenter работает' }))
 
+  // v0.84.2: Чтение лога для модального окна
+  ipcMain.handle('app:read-log', () => readLogFile(500))
+
+  // v0.84.2: Renderer логирование — пишет в тот же файл лога
+  ipcMain.on('app:log', (event, { level, message }) => {
+    const ts = new Date().toISOString().slice(0, 19).replace('T', ' ')
+    const line = `[${ts}] [R:${level || 'INFO'}] ${message}\n`
+    if (logFilePath) try { fs.appendFileSync(logFilePath, line) } catch {}
+  })
+
   // v0.82.0: Загрузка per-messenger notification hook
   ipcMain.handle('app:read-hook', (event, hookType) => {
     try {
@@ -1089,7 +1122,8 @@ app.whenReady().then(() => {
 
   // v0.84.1: Миграция settings
   const settings = storage.get('settings', {})
-  const migrated = migrateSettings(settings)
+  const storagePath = path.join(app.getPath('userData'), 'chatcenter.json')
+  const migrated = migrateSettings(settings, storagePath)
   if (migrated._version !== settings._version) {
     storage.set('settings', migrated)
     console.log('[Settings] Migrated to version', migrated._version)

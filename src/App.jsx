@@ -16,6 +16,7 @@ import { createWebviewSetup } from './utils/webviewSetup.js'
 import MessengerTab from './components/MessengerTab.jsx'
 import NotifLogModal from './components/NotifLogModal.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import LogModal from './components/LogModal.jsx'
 
 // v0.78.3: Звук вынесен в src/utils/sound.js
 
@@ -87,6 +88,8 @@ export default function App() {
   const [notifLogTab, setNotifLogTab] = useState('log') // 'log' | 'trace'
   const [traceFilter, setTraceFilter] = useState('all') // 'all' | 'block' | 'source' | 'decision'
   const [cellTooltip, setCellTooltip] = useState(null) // { text, x, y } | null
+  const [showLogModal, setShowLogModal] = useState(false) // v0.84.2: модальное окно лога
+  const [logContent, setLogContent] = useState('')
   const statsRef = useRef({ today: 0, autoToday: 0, total: 0, date: '' })
   const statsSaveTimer = useRef(null)
   const zoomSaveTimer = useRef(null)
@@ -120,6 +123,22 @@ export default function App() {
       window.api?.invoke('settings:save', upd).catch(() => {})
     }, 2000)
   }
+
+  // ── v0.84.2: Renderer логирование в main process лог ──────────────────────
+  useEffect(() => {
+    const origError = console.error.bind(console)
+    console.error = (...args) => {
+      origError(...args)
+      try { window.api?.send('app:log', { level: 'ERROR', message: args.map(a => typeof a === 'string' ? a : String(a)).join(' ') }) } catch {}
+    }
+    // IPC: main process просит показать лог
+    return window.api?.on('show-log-modal', () => {
+      window.api?.invoke('app:read-log').then(content => {
+        setLogContent(content || 'Лог пуст')
+        setShowLogModal(true)
+      })
+    })
+  }, [])
 
   // ── Применение темы ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1287,13 +1306,20 @@ export default function App() {
       )}
 
       {/* ── Модальное окно: Лог уведомлений ── */}
-      {notifLogModal && <NotifLogModal ctx={{
+      {notifLogModal && <ErrorBoundary name="NotifLog"><NotifLogModal ctx={{
         notifLogModal, setNotifLogModal, notifLogTab, setNotifLogTab,
         traceFilter, setTraceFilter, setCellTooltip,
         settings, setSettings, webviewRefs,
         handleTabContextAction_diag,
         traceNotif, handleNewMessage, pipelineTraceRef
-      }} />}
+      }} /></ErrorBoundary>}
+
+      {/* ── v0.84.2: Модальное окно системного лога ── */}
+      {showLogModal && <LogModal
+        content={logContent}
+        onClose={() => setShowLogModal(false)}
+        onRefresh={() => window.api?.invoke('app:read-log').then(c => setLogContent(c || 'Лог пуст'))}
+      />}
 
       {/* ── Тултип для ячеек таблицы лога ── */}
       {cellTooltip && (
