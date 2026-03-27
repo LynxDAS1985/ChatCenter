@@ -1,6 +1,6 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
+// Tailwind 3 — через postcss.config.js (не vite plugin)
 import { resolve } from 'path'
 import fs from 'fs'
 
@@ -66,7 +66,7 @@ export default defineConfig({
     }
   },
   renderer: {
-    plugins: [react(), tailwindcss()],
+    plugins: [react()],
     root: '.',
     build: {
       rollupOptions: {

@@ -1,6 +1,6 @@
-@import "tailwindcss";
-@source "../index.html";
-@source "../src/**/*.{js,jsx}";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* ─── Reset ─────────────────────────────────────────────────────────────── */
 
