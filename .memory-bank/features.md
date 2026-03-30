@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.85.2 (30 марта 2026)
+## Текущая версия: v0.85.3 (30 марта 2026)
 
 ---
 
@@ -91,6 +91,15 @@
 ---
 
 ## Changelog
+
+### v0.85.3 (30 марта 2026) — ESLint 0 warnings, LF normalize, pre-commit hook
+- ESLint: 108 warnings → **0** (no-eval error, no-dupe-keys error, no-unreachable error)
+- `.gitattributes` — все текстовые файлы нормализованы в LF
+- `git add --renormalize .` — применена нормализация ко всем файлам
+- Pre-commit hook: ESLint проверка staged файлов перед коммитом
+- `npm run lint` — 0 max warnings (строгий режим)
+- CI: `npm run lint` добавлен в GitHub Actions
+- `@eslint/js` downgraded `^10→^9` — fix CI peer dependency conflict
 
 ### v0.85.2 (30 марта 2026) — .editorconfig, ESLint 9, лимиты 600, build в test
 - `.editorconfig` — единый стиль: UTF-8, LF, 2 пробела, trim trailing

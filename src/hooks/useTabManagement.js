@@ -31,9 +31,9 @@ export default function useTabManagement({
     if (searchVisible && searchText) {
       setTimeout(() => { webviewRefs.current[id]?.findInPage(searchText) }, 200)
     }
-  }, [searchVisible, searchText]) // eslint-disable-line
+  }, [searchVisible, searchText])  
 
-  const handleDragStart = useCallback((id) => { dragStartId.current = id }, []) // eslint-disable-line
+  const handleDragStart = useCallback((id) => { dragStartId.current = id }, [])  
   const handleDragOver = useCallback((id) => { setDragOverId(id) }, [])
   const handleDrop = useCallback((id) => {
     const fromId = dragStartId.current
@@ -49,8 +49,8 @@ export default function useTabManagement({
     })
     setDragOverId(null)
     dragStartId.current = null
-  }, []) // eslint-disable-line
-  const handleDragEnd = useCallback(() => { setDragOverId(null); dragStartId.current = null }, []) // eslint-disable-line
+  }, [])  
+  const handleDragEnd = useCallback(() => { setDragOverId(null); dragStartId.current = null }, [])  
 
   return { handleDragStart, handleDragOver, handleDrop, handleDragEnd, handleTabClick, dragOverId }
 }

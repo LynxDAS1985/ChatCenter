@@ -16,7 +16,7 @@ export default function useSearch({ webviewRefs, activeIdRef, searchInputRef }) 
     const wv = webviewRefs.current[activeIdRef.current]
     if (!wv) return
     text ? wv.findInPage(text, { findNext: false }) : wv.stopFindInPage('clearSelection')
-  }, []) // eslint-disable-line
+  }, [])  
 
   const toggleSearch = useCallback(() => {
     setSearchVisible(prev => {
@@ -28,7 +28,7 @@ export default function useSearch({ webviewRefs, activeIdRef, searchInputRef }) 
       setTimeout(() => searchInputRef.current?.focus(), 80)
       return true
     })
-  }, []) // eslint-disable-line
+  }, [])  
 
   return { handleSearch, toggleSearch, searchText, searchVisible, setSearchText, setSearchVisible }
 }

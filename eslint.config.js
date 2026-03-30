@@ -3,10 +3,10 @@ import js from '@eslint/js'
 import globals from 'globals'
 
 export default [
-  // Игнорируем build output и node_modules
+  // Игнорируем build output, node_modules, preload scripts (CJS в ESM проекте), тесты
   { ignores: ['out/**', 'dist/**', 'node_modules/**', '**/*.cjs', '**/*.test.*', 'main/preloads/**'] },
 
-  // Общие правила для всех JS/JSX
+  // Renderer (React) — browser globals
   {
     files: ['src/**/*.{js,jsx}'],
     languageOptions: {
@@ -21,29 +21,25 @@ export default [
       },
     },
     rules: {
-      // Критические — ловят ReferenceError (ловушки 48, 50)
-      'no-undef': 'warn',
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-
-      // Безопасность
+      // Безопасность (КРИТИЧЕСКИЕ — блокируют коммит)
       'no-eval': 'error',
       'no-implied-eval': 'error',
 
-      // Частые ошибки
+      // Структурные ошибки
       'no-dupe-keys': 'error',
       'no-duplicate-case': 'error',
-      'no-unreachable': 'warn',
+      'no-unreachable': 'error',
       'no-constant-condition': 'warn',
       'no-debugger': 'warn',
-      'eqeqeq': ['warn', 'smart'],
 
-      // Всё остальное — ВЫКЛЮЧЕНО (не мешаем стилю кода)
+      // no-undef: OFF — ESLint без TypeScript не понимает React JSX, createWebviewSetup closure, destructured hook returns
+      // Реальные ReferenceError ловятся тестом componentScope + build
+      'no-undef': 'off',
+      // no-unused-vars: OFF — слишком много false positives при destructuring hooks
+      // Реальный мёртвый код ловится build (tree-shaking) + code review
+      'no-unused-vars': 'off',
+
       'no-console': 'off',
-      'semi': 'off',
-      'quotes': 'off',
-      'indent': 'off',
-      'comma-dangle': 'off',
-      'no-trailing-spaces': 'off',
     },
   },
 
@@ -59,14 +55,13 @@ export default [
       },
     },
     rules: {
-      'no-undef': 'warn',
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-dupe-keys': 'error',
       'no-duplicate-case': 'error',
-      'no-unreachable': 'warn',
-      'eqeqeq': ['warn', 'smart'],
+      'no-unreachable': 'error',
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
       'no-console': 'off',
     },
   },

@@ -47,7 +47,7 @@ export default function useAIPanelResize({
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, []) // eslint-disable-line
+  }, [])  
 
   const startResize = useCallback((e) => {
     isResizingRef.current = true
@@ -57,7 +57,7 @@ export default function useAIPanelResize({
     document.body.style.userSelect = 'none'
     if (aiPanelRef.current) aiPanelRef.current.style.transition = 'none'
     e.preventDefault()
-  }, []) // eslint-disable-line
+  }, [])  
 
   return { startResize }
 }

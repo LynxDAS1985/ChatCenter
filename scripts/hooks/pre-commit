@@ -1,0 +1,24 @@
+#!/bin/sh
+# Pre-commit hook: ESLint проверка на критические ошибки (no-eval, no-dupe-keys)
+# Установлен v0.85.3
+
+# Проверяем только staged .js/.jsx файлы
+STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(js|jsx)$' | grep -v '\.cjs$' | grep -v '\.test\.' | grep -v 'node_modules' | grep -v 'out/' | grep -v 'main/preloads/')
+
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+echo "🔍 ESLint: проверяю $(echo "$STAGED" | wc -l | tr -d ' ') файлов..."
+
+# Запускаем ESLint только на staged файлах
+echo "$STAGED" | xargs npx eslint --max-warnings 0 2>/dev/null
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ ESLint нашёл ошибки! Коммит отменён."
+  echo "   Исправь ошибки и попробуй снова."
+  exit 1
+fi
+
+echo "✅ ESLint: OK"

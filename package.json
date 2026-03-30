@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "0.85.2",
+  "version": "0.85.3",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",
@@ -9,7 +9,8 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.cjs",
-    "lint": "eslint src/ main/ --max-warnings 120",
+    "lint": "eslint src/ main/ --max-warnings 0",
+    "setup-hooks": "cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test:e2e": "node e2e/app.e2e.cjs && node e2e/ui.e2e.cjs",
@@ -21,7 +22,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.58.2",
     "@vitejs/plugin-react": "^5.2.0",
     "autoprefixer": "^10.4.27",

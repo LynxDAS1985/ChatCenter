@@ -17,7 +17,7 @@ export default function useWebViewZoom({
 }) {
   const applyZoom = useCallback((id, pct) => {
     try { webviewRefs.current[id]?.setZoomFactor(pct / 100) } catch {}
-  }, []) // eslint-disable-line
+  }, [])  
 
   // Smooth zoom animation (ease-out, ~6 frames)
   const animateZoom = useCallback((id, from, to) => {
@@ -33,7 +33,7 @@ export default function useWebViewZoom({
       if (step < steps) requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
-  }, []) // eslint-disable-line
+  }, [])  
 
   const saveZoomLevels = useCallback((next) => {
     clearTimeout(zoomSaveTimer.current)
@@ -42,7 +42,7 @@ export default function useWebViewZoom({
       settingsRef.current = updated
       window.api?.invoke('settings:save', updated).catch(() => {})
     }, 800)
-  }, []) // eslint-disable-line
+  }, [])  
 
   const changeZoom = useCallback((pct) => {
     if (!activeId) return
@@ -54,7 +54,7 @@ export default function useWebViewZoom({
       return next
     })
     animateZoom(activeId, from, clamped)
-  }, [activeId]) // eslint-disable-line
+  }, [activeId])  
 
   // Apply saved zoom when switching tabs
   useEffect(() => {
@@ -62,7 +62,7 @@ export default function useWebViewZoom({
     const zoom = zoomLevelsRef.current[activeId] || 100
     const t = setTimeout(() => applyZoom(activeId, zoom), 60)
     return () => clearTimeout(t)
-  }, [activeId]) // eslint-disable-line
+  }, [activeId])  
 
   return { changeZoom, applyZoom, animateZoom, saveZoomLevels, zoomLevels, setZoomLevels }
 }

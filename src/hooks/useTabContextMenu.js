@@ -69,7 +69,7 @@ export default function useTabContextMenu({
           setNotifLogModal(prev => prev ? { ...prev, diagAccountData: { error: err.message || String(err), type: mType } } : prev)
         })
     }
-  }, []) // eslint-disable-line
+  }, [])  
 
   // Pin/unpin tab
   const togglePinTab = useCallback((id) => {
@@ -80,7 +80,7 @@ export default function useTabContextMenu({
     settingsRef.current = updated
     setSettings(updated)
     window.api?.invoke('settings:save', updated).catch(() => {})
-  }, []) // eslint-disable-line
+  }, [])  
 
   const handleTabContextAction = useCallback((action) => {
     const id = contextMenuTab?.id
@@ -120,7 +120,7 @@ export default function useTabContextMenu({
     } else if (action === 'close') {
       askRemoveMessenger(id)
     }
-  }, [contextMenuTab, messengers]) // eslint-disable-line
+  }, [contextMenuTab, messengers])  
 
   return { handleTabContextAction, handleTabContextAction_diag, contextMenuTab, setContextMenuTab, togglePinTab }
 }
