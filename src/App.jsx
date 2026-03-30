@@ -231,7 +231,7 @@ export default function App() {
 
   // ── Загрузка при старте ────────────────────────────────────────────────
   useEffect(() => {
-    // Защита: window.api может быть undefined при HMR или быстром mount (React 19)
+    // Защита: window.api может быть undefined при HMR (React 19)
     if (!window.api?.invoke) {
       console.error('[App] window.api не инициализирован — загружаем DEFAULT_MESSENGERS')
       setMessengers(DEFAULT_MESSENGERS)
@@ -240,7 +240,7 @@ export default function App() {
       return
     }
     Promise.all([
-      window.api.invoke('messengers:load').then(list => {
+      window.api?.invoke('messengers:load').then(list => {
         const cleaned = list.map(m => {
           const def = DEFAULT_MESSENGERS.find(d => d.id === m.id)
           if (def) {
@@ -255,7 +255,7 @@ export default function App() {
         setMessengers(DEFAULT_MESSENGERS)
         setActiveId(DEFAULT_MESSENGERS[0].id)
       }),
-      window.api.invoke('settings:get').then(s => {
+      window.api?.invoke('settings:get').then(s => {
         setSettings(s)
         if (s.aiSidebarWidth) {
           const w = Math.max(240, Math.min(600, s.aiSidebarWidth))
@@ -273,7 +273,7 @@ export default function App() {
         setStats(loadedStats)
         statsRef.current = loadedStats
       }).catch(() => {}),
-      window.api.invoke('app:get-paths').then(({ monitorPreload }) => {
+      window.api?.invoke('app:get-paths').then(({ monitorPreload }) => {
         if (monitorPreload) {
           const url = 'file:///' + monitorPreload.replace(/\\/g, '/').replace(/^\//, '')
           setMonitorPreloadUrl(url)
