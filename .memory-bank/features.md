@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.83.5 (27 марта 2026)
+## Текущая версия: v0.85.0 (30 марта 2026)
 
 ---
 
@@ -91,6 +91,24 @@
 ---
 
 ## Changelog
+
+### v0.85.0 (30 марта 2026) — Масштабный рефакторинг: все файлы ≤660 строк
+- **main.js**: 1086 → 569 строк. Вынесено 5 модулей:
+  - `handlers/notificationManager.js` (244) — окно уведомлений, иконки, дедупликация
+  - `handlers/aiLoginHandler.js` (143) — окно логина AI-провайдеров
+  - `handlers/backupNotifHandler.js` (121) — backup notification path, multi-account
+  - `utils/windowManager.js` (103) — createWindow, getPreloadPath
+  - `utils/trayManager.js` (89) — createTray, openLogViewer
+- **App.jsx**: 1344 → 660 строк. Вынесено 8 модулей:
+  - 7 custom hooks в `src/hooks/`: useKeyboardShortcuts, useAIPanelResize, useWebViewZoom, useBadgeSync, useTabManagement, useSearch, useTabContextMenu
+  - `components/TabBar.jsx` (311) — полная панель вкладок
+- **webviewSetup.js**: 888 → 545. Вынесен `consoleMessageHandler.js` (377)
+- **monitor.preload.js**: 837 → 465. Вынесено 5 утилит:
+  - `utils/chatMetadata.js`, `messageExtractor.js`, `domSelectors.js`, `diagnostics.js`, `messageRetrieval.js`
+- **AISidebar.jsx**: 800 → 643. Вынесено 4 утилиты:
+  - `aiStreamingHandler.js`, `aiProviderChecker.js`, `aiLoginHandler.js`, `aiWebviewContext.js`
+- **dockPinHandlers.js**: 692 → 571. Вынесен `dockPinUtils.js` (100)
+- Все 23 тестовых файла обновлены, 700+ тестов проходят
 
 ### v0.83.5 (27 марта 2026) — Electron 41 + electron-vite 5
 - **Electron**: 33.4.11 → **41.1.0** (8 мажорных версий, актуальная стабильная)

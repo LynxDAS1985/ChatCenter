@@ -1,6 +1,7 @@
 // v0.82.5: Dock/Pin/Timer система — вынесена из main.js
 // Все IPC handlers для dock:*, pin:*, таймеры, pin-окна, dock-окно
 import { ipcMain, BrowserWindow, screen } from 'electron'
+import { getPinPreloadPath, getPinHtmlPath, getDockPreloadPath, getDockHtmlPath, createPinBrowserWindow, startTimerForItem } from './dockPinUtils.js'
 
 export function initDockPinSystem(deps) {
 const { getMainWindow, storage, isDev, __dirname, path, DEFAULT_MESSENGERS } = deps
@@ -39,70 +40,30 @@ function loadPinItems() {
 }
 
 function restorePin(pinId, data, category, note, timerEnd) {
-  const { workArea } = screen.getPrimaryDisplay()
   const offset = (pinItems.size % 10) * 30
-
-  const pinWin = new BrowserWindow({
-    width: 300,
-    height: 150,
-    x: Math.round(workArea.x + workArea.width / 2 - 150 + offset),
-    y: Math.round(workArea.y + workArea.height / 2 - 75 + offset),
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    alwaysOnTop: true,
-    skipTaskbar: false,
-    resizable: false,
-    focusable: true,
-    show: false, // не показывать — задача в dock
-    webPreferences: {
-      preload: getPinPreloadPath(),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    }
-  })
+  const pinWin = createPinBrowserWindow({ isDev, path, __dirname }, offset)
 
   const item = { win: pinWin, data, timerEnd: null, timerTimeout: null, inDock: true, category, note }
   pinItems.set(pinId, item)
 
-  pinWin.loadFile(getPinHtmlPath()).catch(err => {
+  pinWin.loadFile(getPinHtmlPath(isDev, path, __dirname)).catch(err => {
     console.error('[PinWindow] Failed to load pin-notification.html:', err)
   })
 
   pinWin.webContents.once('did-finish-load', () => {
     pinWin.webContents.send('pin:data', { ...data, note })
-    // Восстановить категорию в pin-окне
     if (category) pinWin.webContents.send('pin:category-updated', category)
-    // Восстановить таймер в pin-окне
     if (item.timerEnd && item.timerEnd > Date.now()) {
       pinWin.webContents.send('pin:timer-started', item.timerEnd)
     }
   })
 
-  // Добавить в dock
   addToDock(pinId, data)
 
   // Восстановить таймер если ещё не истёк
   if (timerEnd && timerEnd > Date.now()) {
-    item.timerEnd = timerEnd
     const remaining = timerEnd - Date.now()
-    // Таймер истёк
-    item.timerTimeout = setTimeout(() => {
-      item.timerTimeout = null
-      item.timerEnd = null
-      if (item.win && !item.win.isDestroyed()) {
-        if (!item.win.isVisible()) item.win.show()
-        item.win.webContents.send('pin:timer-alert')
-      }
-      if (item.inDock && dockWin && !dockWin.isDestroyed()) {
-        dockWin.webContents.send('dock:timer-alert', pinId)
-      }
-      if (getMainWindow() && !getMainWindow().isDestroyed()) {
-        getMainWindow().flashFrame(true)
-      }
-      savePinItems()
-    }, remaining)
+    startTimerForItem(item, pinId, remaining, { dockWin: () => dockWin, getMainWindow, savePinItems })
   }
 
   pinWin.on('closed', () => {
@@ -116,26 +77,6 @@ function restorePin(pinId, data, category, note, timerEnd) {
       checkDockVisibility()
     }
   })
-}
-
-function getPinPreloadPath() {
-  if (isDev) return path.join(__dirname, '../../main/preloads/pin.preload.js')
-  return path.join(__dirname, '../preload/pin.mjs')
-}
-
-function getPinHtmlPath() {
-  if (isDev) return path.join(__dirname, '../../main/pin-notification.html')
-  return path.join(__dirname, '../main/pin-notification.html')
-}
-
-function getDockPreloadPath() {
-  if (isDev) return path.join(__dirname, '../../main/preloads/pin-dock.preload.js')
-  return path.join(__dirname, '../preload/pin-dock.mjs')
-}
-
-function getDockHtmlPath() {
-  if (isDev) return path.join(__dirname, '../../main/pin-dock.html')
-  return path.join(__dirname, '../main/pin-dock.html')
 }
 
 // Найти pinId по BrowserWindow
@@ -176,7 +117,7 @@ function ensureDockWindow() {
     focusable: true,
     show: false,
     webPreferences: {
-      preload: getDockPreloadPath(),
+      preload: getDockPreloadPath(isDev, path, __dirname),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -188,7 +129,7 @@ function ensureDockWindow() {
   // Click-through: прозрачные пиксели (transparent: true) автоматически пропускают клики
   // НЕ используем setIgnoreMouseEvents — оно ломает -webkit-app-region: drag
 
-  dockWin.loadFile(getDockHtmlPath()).catch(err => {
+  dockWin.loadFile(getDockHtmlPath(isDev, path, __dirname)).catch(err => {
     console.error('[Dock] Failed to load pin-dock.html:', err)
   })
 
@@ -303,41 +244,19 @@ function checkDockVisibility() {
 
 // ── Создание pin-окна ──
 ipcMain.on('notif:pin-message', (_event, data) => {
-  // Определить название мессенджера по messengerId
   if (data.messengerId && !data.messengerName) {
     const messengers = storage.get('messengers', DEFAULT_MESSENGERS)
     const found = messengers.find(m => m.id === data.messengerId)
     if (found) data.messengerName = found.name
   }
-  const { workArea } = screen.getPrimaryDisplay()
   const pinId = ++pinIdCounter
   const offset = (pinItems.size % 10) * 30
-
-  const pinWin = new BrowserWindow({
-    width: 300,
-    height: 150,
-    x: Math.round(workArea.x + workArea.width / 2 - 150 + offset),
-    y: Math.round(workArea.y + workArea.height / 2 - 75 + offset),
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    alwaysOnTop: true,
-    skipTaskbar: false,
-    resizable: false,
-    focusable: true,
-    show: false,
-    webPreferences: {
-      preload: getPinPreloadPath(),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    }
-  })
+  const pinWin = createPinBrowserWindow({ isDev, path, __dirname }, offset)
 
   const item = { win: pinWin, data, timerEnd: null, timerTimeout: null, inDock: true, category: '', note: '' }
   pinItems.set(pinId, item)
 
-  pinWin.loadFile(getPinHtmlPath()).catch(err => {
+  pinWin.loadFile(getPinHtmlPath(isDev, path, __dirname)).catch(err => {
     console.error('[PinWindow] Failed to load pin-notification.html:', err)
   })
 
@@ -345,7 +264,6 @@ ipcMain.on('notif:pin-message', (_event, data) => {
     pinWin.webContents.send('pin:data', { ...data, note: item.note })
   })
 
-  // v0.70.0: Автоматическое закрепление в dock
   addToDock(pinId, data)
   savePinItems()
 
@@ -354,7 +272,7 @@ ipcMain.on('notif:pin-message', (_event, data) => {
     if (closedItem) {
       if (closedItem.timerTimeout) clearTimeout(closedItem.timerTimeout)
       if (closedItem.inDock) removeFromDock(pinId)
-      closedItem.win = null // Предотвратить двойной close
+      closedItem.win = null
       pinItems.delete(pinId)
       savePinItems()
       checkDockVisibility()
@@ -425,40 +343,16 @@ ipcMain.on('pin:start-timer', (event, minutes) => {
   const item = pinItems.get(pinId)
   if (!item) return
 
-  // Очистить предыдущий таймер
-  if (item.timerTimeout) clearTimeout(item.timerTimeout)
-
-  const timerEnd = Date.now() + minutes * 60000
-  item.timerEnd = timerEnd
+  const ms = minutes * 60000
+  startTimerForItem(item, pinId, ms, { dockWin: () => dockWin, getMainWindow, savePinItems })
 
   // Сообщить pin-окну
-  if (!win.isDestroyed()) win.webContents.send('pin:timer-started', timerEnd)
+  if (!win.isDestroyed()) win.webContents.send('pin:timer-started', item.timerEnd)
   // Сообщить dock
   if (item.inDock && dockWin && !dockWin.isDestroyed()) {
-    dockWin.webContents.send('dock:update-timer', pinId, timerEnd)
+    dockWin.webContents.send('dock:update-timer', pinId, item.timerEnd)
   }
-
   savePinItems()
-
-  // Таймер истёк
-  item.timerTimeout = setTimeout(() => {
-    item.timerTimeout = null
-    item.timerEnd = null
-    // Показать pin-окно если скрыто
-    if (item.win && !item.win.isDestroyed()) {
-      if (!item.win.isVisible()) item.win.show()
-      item.win.webContents.send('pin:timer-alert')
-    }
-    // Мигнуть в dock
-    if (item.inDock && dockWin && !dockWin.isDestroyed()) {
-      dockWin.webContents.send('dock:timer-alert', pinId)
-    }
-    // Мигнуть окном в таскбаре
-    if (getMainWindow() && !getMainWindow().isDestroyed()) {
-      getMainWindow().flashFrame(true)
-    }
-    savePinItems()
-  }, minutes * 60000)
 })
 
 // ── Pin: отменить таймер ──
@@ -526,34 +420,19 @@ ipcMain.on('dock:set-category', (_event, pinId, category) => {
 ipcMain.on('dock:start-timer', (_event, pinId, minutes) => {
   const item = pinItems.get(pinId)
   if (!item) return
-  if (item.timerTimeout) clearTimeout(item.timerTimeout)
-  const timerEnd = Date.now() + minutes * 60000
-  item.timerEnd = timerEnd
+
+  const ms = minutes * 60000
+  startTimerForItem(item, pinId, ms, { dockWin: () => dockWin, getMainWindow, savePinItems })
+
   // Сообщить pin-окну
   if (item.win && !item.win.isDestroyed()) {
-    item.win.webContents.send('pin:timer-started', timerEnd)
+    item.win.webContents.send('pin:timer-started', item.timerEnd)
   }
   // Сообщить dock
   if (dockWin && !dockWin.isDestroyed()) {
-    dockWin.webContents.send('dock:update-timer', pinId, timerEnd)
+    dockWin.webContents.send('dock:update-timer', pinId, item.timerEnd)
   }
   savePinItems()
-  // Таймер истёк
-  item.timerTimeout = setTimeout(() => {
-    item.timerTimeout = null
-    item.timerEnd = null
-    if (item.win && !item.win.isDestroyed()) {
-      if (!item.win.isVisible()) item.win.show()
-      item.win.webContents.send('pin:timer-alert')
-    }
-    if (dockWin && !dockWin.isDestroyed()) {
-      dockWin.webContents.send('dock:timer-alert', pinId)
-    }
-    if (getMainWindow() && !getMainWindow().isDestroyed()) {
-      getMainWindow().flashFrame(true)
-    }
-    savePinItems()
-  }, minutes * 60000)
 })
 
 // Базовая высота dock (сохраняем при resize)

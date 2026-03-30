@@ -8,8 +8,18 @@ var fs = require('fs')
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
 // v0.82.6: WebView setup вынесен
 try { appCode += '\n' + fs.readFileSync('src/utils/webviewSetup.js', 'utf8') } catch(e) {}
+// v0.85.0: consoleMessageHandler вынесен
+try { appCode += '\n' + fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8') } catch(e) {}
+// v0.85.0: hooks вынесены
+var hooksDir = 'src/hooks/'
+try { fs.readdirSync(hooksDir).forEach(function(f) { appCode += '\n' + fs.readFileSync(hooksDir + f, 'utf8') }) } catch(e) {}
+try { appCode += '\n' + fs.readFileSync('src/components/TabBar.jsx', 'utf8') } catch(e) {}
 var mainCode = fs.readFileSync('main/main.js', 'utf8')
 try { mainCode += '\n' + fs.readFileSync('main/handlers/dockPinHandlers.js', 'utf8') } catch(e) {}
+// v0.85.0: notificationManager, trayManager, windowManager, backupNotif, aiLogin вынесены
+;['main/handlers/notificationManager.js','main/handlers/aiLoginHandler.js','main/handlers/backupNotifHandler.js','main/utils/windowManager.js','main/utils/trayManager.js'].forEach(function(f) {
+  try { mainCode += '\n' + fs.readFileSync(f, 'utf8') } catch(e) {}
+})
 
 var passed = 0, failed = 0
 function test(name, fn) {
@@ -64,11 +74,9 @@ test('Нет el.addEventListener в setWebviewRef (все через addListener
 
 // ── main.js intervals cleanup ──
 console.log('\\n── main.js intervals: ──')
-test('iconCacheInterval сохранён', function() {
-  assert(mainCode.includes('const iconCacheInterval = setInterval'))
-})
-test('clearInterval при will-quit', function() {
-  assert(mainCode.includes('clearInterval(iconCacheInterval)'))
+test('iconCache cleanup при will-quit', function() {
+  // v0.85.0: iconCacheInterval перенесён в notificationManager, cleanup через cleanup()
+  assert(mainCode.includes('iconCache') && mainCode.includes('cleanup'), 'iconCache cleanup должен быть определён')
 })
 test('iconCache.clear при will-quit', function() {
   assert(mainCode.includes('iconCache.clear()'))

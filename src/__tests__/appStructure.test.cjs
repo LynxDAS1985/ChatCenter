@@ -5,10 +5,15 @@
  */
 
 const fs = require('fs')
+const path = require('path')
 const code = fs.readFileSync('src/App.jsx', 'utf8')
 // v0.82.6: WebView setup вынесен
 const webviewCode = fs.existsSync('src/utils/webviewSetup.js') ? fs.readFileSync('src/utils/webviewSetup.js', 'utf8') : ''
-const allAppCode = code + '\n' + webviewCode
+// v0.84.3: Hooks and components extracted from App.jsx
+const hooksDir = 'src/hooks'
+const hooksCode = fs.existsSync(hooksDir) ? fs.readdirSync(hooksDir).map(f => fs.readFileSync(path.join(hooksDir, f), 'utf8')).join('\n') : ''
+const tabBarCode = fs.existsSync('src/components/TabBar.jsx') ? fs.readFileSync('src/components/TabBar.jsx', 'utf8') : ''
+const allAppCode = code + '\n' + webviewCode + '\n' + hooksCode + '\n' + tabBarCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -22,13 +27,13 @@ console.log('\\n🧪 Тесты App.jsx структуры\\n')
 // ── Импорты модулей ──
 console.log('── Импорты: ──')
 test('React', () => assert(code.includes("from 'react'")))
-test('messengerConfigs', () => assert(code.includes("from './utils/messengerConfigs.js'")))
-test('consoleMessageParser', () => assert(code.includes("from './utils/consoleMessageParser.js'")))
-test('devLog', () => assert(code.includes("from './utils/devLog.js'")))
-test('messageProcessing', () => assert(code.includes("from './utils/messageProcessing.js'")))
-test('sound', () => assert(code.includes("from './utils/sound.js'")))
-test('navigateToChat', () => assert(code.includes("from './utils/navigateToChat.js'")))
-test('MessengerTab', () => assert(code.includes("from './components/MessengerTab.jsx'")))
+test('messengerConfigs', () => assert(allAppCode.includes('messengerConfigs.js')))
+test('consoleMessageParser', () => assert(allAppCode.includes('consoleMessageParser.js')))
+test('devLog', () => assert(allAppCode.includes('devLog.js')))
+test('messageProcessing', () => assert(allAppCode.includes('messageProcessing.js')))
+test('sound', () => assert(allAppCode.includes('sound.js')))
+test('navigateToChat', () => assert(allAppCode.includes('navigateToChat.js')))
+test('MessengerTab', () => assert(allAppCode.includes('MessengerTab.jsx')))
 test('NotifLogModal', () => assert(code.includes("from './components/NotifLogModal.jsx'")))
 test('SettingsPanel', () => assert(code.includes("from './components/SettingsPanel.jsx'")))
 test('AISidebar', () => assert(code.includes("from './components/AISidebar.jsx'")))
@@ -68,7 +73,7 @@ test('isOwnMessage() из messageProcessing', () => assert(allAppCode.includes('
 test('WebView setup в отдельном файле (v0.82.6)', () => assert(webviewCode.length > 100 && code.includes('createWebviewSetup'), 'webviewSetup.js должен существовать'))
 test('playNotificationSound() из sound', () => assert(code.includes('playNotificationSound(')))
 test('buildChatNavigateScript() из navigateToChat', () => assert(code.includes('buildChatNavigateScript(')))
-test('detectMessengerType() из конфига', () => assert(code.includes('detectMessengerType(')))
+test('detectMessengerType() из конфига', () => assert(allAppCode.includes('detectMessengerType(')))
 
 // ── Безопасность __CC_NOTIF__ (v0.81.3) ──
 console.log('\\n── __CC_NOTIF__ pipeline: ──')
@@ -90,7 +95,7 @@ test('App.jsx > 500 строк (не пустой)', () => assert(lines > 500, '
 // ── Компоненты ──
 console.log('\\n── Компоненты: ──')
 test('NotifLogModal используется', () => assert(code.includes('<NotifLogModal')))
-test('MessengerTab используется', () => assert(code.includes('<MessengerTab')))
+test('MessengerTab используется', () => assert(allAppCode.includes('<MessengerTab')))
 test('SettingsPanel используется', () => assert(code.includes('<SettingsPanel')))
 test('AISidebar используется', () => assert(code.includes('<AISidebar')))
 

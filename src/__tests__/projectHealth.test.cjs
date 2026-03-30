@@ -71,8 +71,11 @@ test('monitor.preload.js < 1500 строк', function() { assert(monLines < 1500
 console.log('\\n── Безопасность: ──')
 test('Нет eval() в App.jsx', function() { assert(!appCode.includes('eval(')) })
 var mainCode = fs.readFileSync('main/main.js', 'utf8')
-test('contextIsolation: true в main.js', function() { assert(mainCode.includes('contextIsolation: true')) })
-test('nodeIntegration: false в main.js', function() { assert(mainCode.includes('nodeIntegration: false')) })
+// v0.84.4: windowManager extracted — security checks across all main modules
+var windowMgrCode = fs.existsSync('main/utils/windowManager.js') ? fs.readFileSync('main/utils/windowManager.js', 'utf8') : ''
+var allMainCode = mainCode + '\n' + windowMgrCode
+test('contextIsolation: true в main.js', function() { assert(allMainCode.includes('contextIsolation: true')) })
+test('nodeIntegration: false в main.js', function() { assert(allMainCode.includes('nodeIntegration: false')) })
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

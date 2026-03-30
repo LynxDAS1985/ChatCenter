@@ -59,7 +59,7 @@ function checkComponent(filePath, componentName) {
 
   // Imports
   const imports = []
-  for (const m of code.matchAll(/import\s*\{([^}]+)\}\s*from/g)) imports.push(...m[1].split(',').map(s => s.trim()))
+  for (const m of code.matchAll(/import\s*\{([^}]+)\}\s*from/g)) imports.push(...m[1].split(',').map(s => { const parts = s.trim().split(/\s+as\s+/); return parts[parts.length - 1].trim() }))
   for (const m of code.matchAll(/import\s+(\w+)\s+from/g)) imports.push(m[1])
 
   // Local definitions
@@ -109,7 +109,9 @@ const components = [
 // Допустимые переменные (приходят через ctx prop, destructuring, или createWebviewSetup)
 const ALLOWED = {
   NotifLogModal: ['setNotifLogModal','setNotifLogTab','handleTabContextAction_diag','traceNotif','handleNewMessage','setTraceFilter','setCellTooltip','setSettings','notifLogModal','webviewRefs','pipelineTraceRef'],
-  App: ['traceNotif','setWebviewRef','handleNewMessage','notifCountRef','recentNotifsRef','lastRibbonTsRef','lastSoundTsRef','notifSenderTsRef','notifMidTsRef','pendingMarkReadsRef','senderCacheRef','pendingMsgRef','pipelineTraceRef','notifDedupRef'],
+  App: ['traceNotif','setWebviewRef','handleNewMessage','notifCountRef','recentNotifsRef','lastRibbonTsRef','lastSoundTsRef','notifSenderTsRef','notifMidTsRef','pendingMarkReadsRef','senderCacheRef','pendingMsgRef','pipelineTraceRef','notifDedupRef',
+    // v0.85.0: из custom hooks (destructured returns)
+    'setContextMenuTab','dragOverId','contextMenuTab','handleTabClick','handleDragStart','handleDragOver','handleDrop','handleDragEnd','handleSearch','handleTabContextAction','changeZoom','totalUnread','startResize','toggleSearch','searchText','searchVisible','animateZoom','saveZoomLevels','applyZoom','handleTabContextAction_diag','togglePinTab','totalPersonalWithFallback','totalChannels'],
 }
 
 for (const comp of components) {

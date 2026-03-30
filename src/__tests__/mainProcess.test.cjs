@@ -12,7 +12,13 @@ const notifCode = fs.existsSync('main/handlers/notifHandlers.js') ? fs.readFileS
 // v0.84.4: logger и sessionSetup вынесены в отдельные файлы
 const loggerCode = fs.existsSync('main/utils/logger.js') ? fs.readFileSync('main/utils/logger.js', 'utf8') : ''
 const sessionCode = fs.existsSync('main/utils/sessionSetup.js') ? fs.readFileSync('main/utils/sessionSetup.js', 'utf8') : ''
-const allCode = code + '\n' + aiCode + '\n' + notifCode + '\n' + loggerCode + '\n' + sessionCode
+// v0.84.4: Extracted modules — notifManager, aiLogin, backupNotif, windowManager, trayManager
+const notifMgrCode = fs.existsSync('main/handlers/notificationManager.js') ? fs.readFileSync('main/handlers/notificationManager.js', 'utf8') : ''
+const aiLoginCode = fs.existsSync('main/handlers/aiLoginHandler.js') ? fs.readFileSync('main/handlers/aiLoginHandler.js', 'utf8') : ''
+const backupNotifCode = fs.existsSync('main/handlers/backupNotifHandler.js') ? fs.readFileSync('main/handlers/backupNotifHandler.js', 'utf8') : ''
+const windowMgrCode = fs.existsSync('main/utils/windowManager.js') ? fs.readFileSync('main/utils/windowManager.js', 'utf8') : ''
+const trayMgrCode = fs.existsSync('main/utils/trayManager.js') ? fs.readFileSync('main/utils/trayManager.js', 'utf8') : ''
+const allCode = code + '\n' + aiCode + '\n' + notifCode + '\n' + loggerCode + '\n' + sessionCode + '\n' + notifMgrCode + '\n' + aiLoginCode + '\n' + backupNotifCode + '\n' + windowMgrCode + '\n' + trayMgrCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -32,8 +38,8 @@ test('Импорт path', () => assert(code.includes("import path from")))
 
 // ── Ключевые функции ──
 console.log('\\n── Ключевые функции: ──')
-test('createWindow определена', () => assert(code.includes('function createWindow')))
-test('createTray определена', () => assert(code.includes('function createTray')))
+test('createWindow определена', () => assert(allCode.includes('function createWindow')))
+test('createTray определена', () => assert(allCode.includes('function createTray')))
 test('setupSession определена', () => assert(allCode.includes('function setupSession')))
 test('ruError определена', () => assert(code.includes('function ruError')))
 
@@ -61,14 +67,14 @@ test('GigaChat', () => assert(code.includes('gigachat')))
 // ── Overlay ──
 console.log('\\n── Overlay: ──')
 test('createOverlayIcon используется', () => assert(code.includes('createOverlayIcon(')))
-test('createTrayBadgeIcon используется', () => assert(code.includes('createTrayBadgeIcon(')))
+test('createTrayBadgeIcon используется', () => assert(allCode.includes('createTrayBadgeIcon(')))
 test('setOverlayIcon используется', () => assert(code.includes('setOverlayIcon(')))
 test('overlayMode обрабатывается', () => assert(code.includes('overlayMode')))
 
 // ── Безопасность ──
 console.log('\\n── Безопасность: ──')
-test('contextIsolation: true', () => assert(code.includes('contextIsolation: true')))
-test('nodeIntegration: false для main window', () => assert(code.includes('nodeIntegration: false')))
+test('contextIsolation: true', () => assert(allCode.includes('contextIsolation: true')))
+test('nodeIntegration: false для main window', () => assert(allCode.includes('nodeIntegration: false')))
 test('Нет eval', () => assert(!code.includes('eval(')))
 test('setupSession блокирует SW', () => assert(allCode.includes('serviceworkers') || allCode.includes('ServiceWorker')))
 test('app.setBadgeCount заблокирован', () => assert(code.includes('setBadgeCount')))
@@ -81,8 +87,8 @@ test('Permission request handler', () => assert(allCode.includes('setPermissionR
 
 // ── Notification ribbon ──
 console.log('\\n── Notification ribbon: ──')
-test('notification.html', () => assert(code.includes('notification.html')))
-test('Frameless window', () => assert(code.includes('frame: false') || code.includes('frame:false')))
+test('notification.html', () => assert(allCode.includes('notification.html')))
+test('Frameless window', () => assert(allCode.includes('frame: false') || allCode.includes('frame:false')))
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

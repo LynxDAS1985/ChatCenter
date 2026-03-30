@@ -74,9 +74,11 @@ test('Диагностика', function() { var r = parseConsoleMessage('__CC_DI
 test('Диагностика msg-src маркер (v0.80.8)', function() { var r = parseConsoleMessage('__CC_DIAG__msg-src: CO | "текст"'); assert(r.type === 'diagnostic' && r.text === 'msg-src: CO | "текст"') })
 test('Диагностика nav маркер (v0.80.8)', function() { var r = parseConsoleMessage('__CC_DIAG__nav: /im → /im/convo | a="текст"'); assert(r.type === 'diagnostic' && r.text.startsWith('nav:')) })
 test('traceNotif читает parsed.text (v0.80.9)', function() {
-  // v0.82.6: код перемещён в webviewSetup.js
-  var wsCode = fs.existsSync('src/utils/webviewSetup.js') ? fs.readFileSync('src/utils/webviewSetup.js', 'utf8') : fs.readFileSync('src/App.jsx', 'utf8')
-  assert(wsCode.includes('parsed.text || parsed.body'), 'должен читать parsed.text для диагностики')
+  // v0.85.0: код перемещён в consoleMessageHandler.js
+  var cmhCode = fs.existsSync('src/utils/consoleMessageHandler.js') ? fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8') : ''
+  var wsCode = fs.existsSync('src/utils/webviewSetup.js') ? fs.readFileSync('src/utils/webviewSetup.js', 'utf8') : ''
+  var allWsCode = wsCode + '\n' + cmhCode
+  assert(allWsCode.includes('parsed.text || parsed.body'), 'должен читать parsed.text для диагностики')
 })
 
 // ── Специальные ──

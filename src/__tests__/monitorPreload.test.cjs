@@ -6,10 +6,18 @@
  */
 
 const fs = require('fs')
+const path = require('path')
 const code = fs.readFileSync('main/preloads/monitor.preload.js', 'utf8')
 // v0.82.3: unread counters вынесены в отдельный файл
 const unreadCode = fs.existsSync('main/preloads/utils/unreadCounters.js') ? fs.readFileSync('main/preloads/utils/unreadCounters.js', 'utf8') : ''
-const allPreloadCode = code + '\n' + unreadCode
+// v0.84.3: Extracted utility modules
+const utilsDir = 'main/preloads/utils'
+const chatMetadataCode = fs.existsSync(path.join(utilsDir, 'chatMetadata.js')) ? fs.readFileSync(path.join(utilsDir, 'chatMetadata.js'), 'utf8') : ''
+const messageExtractorCode = fs.existsSync(path.join(utilsDir, 'messageExtractor.js')) ? fs.readFileSync(path.join(utilsDir, 'messageExtractor.js'), 'utf8') : ''
+const domSelectorsCode = fs.existsSync(path.join(utilsDir, 'domSelectors.js')) ? fs.readFileSync(path.join(utilsDir, 'domSelectors.js'), 'utf8') : ''
+const diagnosticsCode = fs.existsSync(path.join(utilsDir, 'diagnostics.js')) ? fs.readFileSync(path.join(utilsDir, 'diagnostics.js'), 'utf8') : ''
+const messageRetrievalCode = fs.existsSync(path.join(utilsDir, 'messageRetrieval.js')) ? fs.readFileSync(path.join(utilsDir, 'messageRetrieval.js'), 'utf8') : ''
+const allPreloadCode = code + '\n' + unreadCode + '\n' + chatMetadataCode + '\n' + messageExtractorCode + '\n' + domSelectorsCode + '\n' + diagnosticsCode + '\n' + messageRetrievalCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -97,10 +105,10 @@ test('ConvoHeader → НЕ sidebar', () => assert(!_sidebarRe.test('ConvoHeader'
 // ── CHAT_CONTAINER_SELECTORS ──
 console.log('\\n── CHAT_CONTAINER_SELECTORS: ──')
 
-test('VK селекторы определены', () => assert(code.includes("'.ConvoMain__history'")))
-test('MAX селекторы определены', () => assert(code.includes("'.history'")))
-test('WhatsApp селекторы определены', () => assert(code.includes("'#main'")))
-test('Telegram — пустой (работает через __CC_NOTIF__)', () => assert(code.includes("telegram: []")))
+test('VK селекторы определены', () => assert(allPreloadCode.includes("'.ConvoMain__history'")))
+test('MAX селекторы определены', () => assert(allPreloadCode.includes("'.history'")))
+test('WhatsApp селекторы определены', () => assert(allPreloadCode.includes("'#main'")))
+test('Telegram — пустой (работает через __CC_NOTIF__)', () => assert(allPreloadCode.includes("telegram: []")))
 
 // ── Body-fallback отключение (v0.80.6) ──
 console.log('\\n── Body-fallback: ──')
@@ -158,27 +166,31 @@ test('Path 2 отключён для MAX (v0.81.1)', () => {
   assert(path2Line && path2Line[0].includes("'max'"), 'Path 2 должен быть отключён для MAX')
 })
 test('getVKLastIncomingText фильтрует исходящие out/own (v0.81.1)', () => {
-  assert(code.includes('out|own|self|sent') && code.includes('getVKLastIncomingText'), 'должен фильтровать исходящие')
+  assert(allPreloadCode.includes('out|own|self|sent') && allPreloadCode.includes('getVKLastIncomingText'), 'должен фильтровать исходящие')
 })
 test('extractMsgText ищет leaf-элемент для обёрток (v0.81.1)', () => {
-  assert(code.includes('node.children.length > 2') && code.includes('leaves'), 'должен искать leaf в обёртках')
+  assert(allPreloadCode.includes('node.children.length > 2') && allPreloadCode.includes('leaves'), 'должен искать leaf в обёртках')
 })
 test('className проверка typeof для SVG (v0.81.1)', () => {
-  assert(code.includes("typeof el.className === 'string'"), 'должен проверять typeof для SVG className')
+  assert(allPreloadCode.includes("typeof el.className === 'string'"), 'должен проверять typeof для SVG className')
 })
 test('Реинициализация dedup в grace-end через getLastMessageText (v0.80.9)', () => {
-  // В setTimeout 15000 должен вызываться getLastMessageText для инициализации dedup
-  const graceBlock = code.slice(code.indexOf('setTimeout(function()'), code.indexOf('}, 15000)') + 10)
+  // В setTimeout GRACE_PERIOD должен вызываться getLastMessageText для инициализации dedup
+  const graceStart = code.indexOf('setTimeout(function()')
+  const graceEnd = code.indexOf('}, GRACE_PERIOD)')
+  // fallback: старый формат }, 15000)
+  const graceEndAlt = graceEnd >= 0 ? graceEnd : code.indexOf('}, 15000)')
+  const graceBlock = code.slice(graceStart, (graceEndAlt >= 0 ? graceEndAlt : graceStart) + 20)
   assert(graceBlock.includes('getLastMessageText'), 'grace-end должен вызывать getLastMessageText для реинит dedup')
 })
 test('EXTRACT_SPAM per-messenger конфиг (v0.82.1)', () => {
-  assert(code.includes('EXTRACT_SPAM') && code.includes("max:"), 'EXTRACT_SPAM должен содержать per-messenger паттерны')
+  assert(allPreloadCode.includes('EXTRACT_SPAM') && allPreloadCode.includes("max:"), 'EXTRACT_SPAM должен содержать per-messenger паттерны')
 })
 test('QUICK_MSG_SELECTORS per-messenger конфиг (v0.82.1)', () => {
-  assert(code.includes('QUICK_MSG_SELECTORS') && code.includes("whatsapp:"), 'QUICK_MSG_SELECTORS должен содержать per-messenger селекторы')
+  assert(allPreloadCode.includes('QUICK_MSG_SELECTORS') && allPreloadCode.includes("whatsapp:"), 'QUICK_MSG_SELECTORS должен содержать per-messenger селекторы')
 })
 test('extractMsgText принимает type (v0.82.1)', () => {
-  assert(code.includes('function extractMsgText(node, type)'), 'extractMsgText должен принимать type')
+  assert(allPreloadCode.includes('function extractMsgText(node, type)'), 'extractMsgText должен принимать type')
 })
 test('quickNewMsgCheck передаёт type в extractMsgText (v0.82.1)', () => {
   assert(code.includes('extractMsgText(node, type)') && code.includes('extractMsgText(candidates[ci], type)'), 'все вызовы extractMsgText должны передавать type')
@@ -232,12 +244,12 @@ test('countUnreadVK определена', () => assert(allPreloadCode.includes(
 test('countUnreadMAX определена', () => assert(allPreloadCode.includes('function countUnreadMAX()')))
 test('Unread counters в отдельном файле (v0.82.3)', () => assert(unreadCode.length > 100 && code.includes("require('./utils/unreadCounters')"), 'counters должны быть в unreadCounters.js'))
 test('quickNewMsgCheck определена', () => assert(code.includes('function quickNewMsgCheck(')))
-test('isSidebarNode определена', () => assert(code.includes('function isSidebarNode(')))
+test('isSidebarNode определена', () => assert(allPreloadCode.includes('function isSidebarNode(')))
 test('startChatObserver определена', () => assert(code.includes('function startChatObserver(')))
 test('startMonitor определена', () => assert(code.includes('function startMonitor()')))
 test('sendUpdate определена', () => assert(code.includes('function sendUpdate(')))
-test('extractMsgText определена', () => assert(code.includes('function extractMsgText(')))
-test('runDiagnostics определена', () => assert(code.includes('function runDiagnostics(')))
+test('extractMsgText определена', () => assert(allPreloadCode.includes('function extractMsgText(')))
+test('runDiagnostics определена', () => assert(allPreloadCode.includes('function runDiagnostics(')))
 
 console.log(`\\n📊 Результат: ${passed} ✅ / ${failed} ❌ из ${passed + failed}`)
 if (failed > 0) process.exit(1)

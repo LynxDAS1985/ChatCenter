@@ -1,4 +1,4 @@
-// v0.79.6: AI утилиты вынесены в src/utils/aiProviders.js
+// v0.84.4: AI утилиты вынесены в src/utils/aiProviders.js + streaming/checker/login/webview
 import { useState, useRef, useEffect } from 'react'
 import AIConfigPanel from './AIConfigPanel.jsx'
 import {
@@ -6,6 +6,10 @@ import {
   MODEL_HINTS, PROVIDER_URLS, BILLING_URLS, isBillingError,
   getProviderCfg, isProviderConnected
 } from '../utils/aiProviders.js'
+import { createStreamingHandler } from '../utils/aiStreamingHandler.js'
+import { runProviderChecks as runProviderChecksUtil } from '../utils/aiProviderChecker.js'
+import { createLoginHandler } from '../utils/aiLoginHandler.js'
+import { sendContextToAiWebview as sendContextToAiWebviewUtil } from '../utils/aiWebviewContext.js'
 
 // Вспомогательный компонент — заголовок шага
 function StepRow({ num, title, extra, numDone }) {
@@ -96,34 +100,9 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   useEffect(() => { settingsRef.current = settings }, [settings])
 
   // ── Проверка всех API-провайдеров (startup / hourly / manual) ─────────────
-  const runProviderChecks = async (source = 'manual') => {
-    const s = settingsRef.current
-    setRefreshing(true)
-    for (const p of PROVIDERS) {
-      const cfg = getProviderCfg(s, p.id)
-      if (cfg.mode !== 'api') continue
-      if (p.id === 'gigachat') {
-        if (!cfg.apiKey || !cfg.clientSecret) continue
-      } else {
-        if (!cfg.apiKey) continue
-      }
-      const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-      try {
-        const res = await window.api?.invoke('ai:generate', {
-          messages: [{ role: 'user', content: 'ok' }],
-          settings: { provider: p.id, apiKey: cfg.apiKey, clientSecret: cfg.clientSecret, model: cfg.model, systemPrompt: 'ok' },
-        })
-        setProviderStatuses(prev => ({ ...prev, [p.id]: res.ok ? 'ok' : 'fail' }))
-        setProviderCheckTimes(prev => ({ ...prev, [p.id]: time }))
-        if (!res.ok) window.api?.invoke('ai:log-error', { provider: p.id, errorText: `[${source}] ${res.error}` }).catch(() => {})
-      } catch (e) {
-        setProviderStatuses(prev => ({ ...prev, [p.id]: 'fail' }))
-        setProviderCheckTimes(prev => ({ ...prev, [p.id]: time }))
-        window.api?.invoke('ai:log-error', { provider: p.id, errorText: `[${source}] ${e.message}` }).catch(() => {})
-      }
-    }
-    setRefreshing(false)
-  }
+  const runProviderChecks = (source = 'manual') => runProviderChecksUtil({
+    settingsRef, setRefreshing, setProviderStatuses, setProviderCheckTimes, windowApi: window.api,
+  }, source)
   // Обновляем ref чтобы interval/timeout всегда звал актуальную версию
   runChecksRef.current = runProviderChecks
 
@@ -249,101 +228,17 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     return () => clearInterval(interval)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openLoginWindow = async () => {
-    if (waitingForKey) {
-      clearInterval(pollingRef.current)
-      unsubLoginRef.current?.()
-      setWaitingForKey(false)
-      return
-    }
-    const capturedProvider = provider
-    const capturedLabel = providerInfo.label
-    await window.api?.invoke('ai-login:open', {
-      url: PROVIDER_URLS[capturedProvider],
-      provider: capturedProvider,
-      providerLabel: capturedLabel,
-    }).catch(() => {})
-    setWaitingForKey(true)
-    setKeyFoundMsg('')
-    unsubLoginRef.current = window.api?.on('ai-login:closed', ({ provider: closedProvider }) => {
-      if (closedProvider !== capturedProvider) return
-      clearInterval(pollingRef.current)
-      unsubLoginRef.current?.()
-      setWaitingForKey(false)
-    })
-    let previousClipboard = ''
-    try { previousClipboard = (await window.api?.invoke('clipboard:read')) || '' } catch {}
-    pollingRef.current = setInterval(async () => {
-      try {
-        const text = (await window.api?.invoke('clipboard:read')) || ''
-        const trimmed = text.trim()
-        if (trimmed === previousClipboard) return
-        previousClipboard = trimmed
-        if (looksLikeApiKey(capturedProvider, trimmed)) {
-          clearInterval(pollingRef.current)
-          unsubLoginRef.current?.()
-          set('aiApiKey', trimmed)
-          setWaitingForKey(false)
-          setKeyFoundMsg('✓ API-ключ найден и сохранён автоматически!')
-          setTimeout(() => setKeyFoundMsg(''), 6000)
-        }
-      } catch {}
-    }, 800)
-  }
+  const openLoginWindow = createLoginHandler({
+    waitingForKey, pollingRef, unsubLoginRef, setWaitingForKey,
+    provider, providerInfo, setKeyFoundMsg, set, windowApi: window.api,
+  })
 
   // ── Стриминг AI (SSE) ─────────────────────────────────────────────────────
-  const generateStreaming = (text) => {
-    if (!configured) { setError('Настройте ИИ'); setShowConfig(true); return }
-    if (!text.trim()) return
-    streamUnsubsRef.current.forEach(fn => fn?.())
-    streamUnsubsRef.current = []
-    setLoading(true); setIsStreaming(false); setError('')
-    setSuggestions([]); setStreamBuffer(''); streamBufferRef.current = ''
-    const requestId = `req-${Date.now()}`
-    const capturedProvider = provider
-    const historyMessages = chatHistory.slice(-6).map(h => ({
-      role: 'user',
-      content: `[История] ${h.messengerId ? `(${h.messengerId}) ` : ''}${h.text}`
-    }))
-    const cleanup = () => { streamUnsubsRef.current.forEach(fn => fn?.()); streamUnsubsRef.current = [] }
-    const finalize = () => {
-      cleanup()
-      let parsed = []
-      try {
-        const match = streamBufferRef.current.match(/\[[\s\S]*?\]/)
-        if (match) parsed = JSON.parse(match[0])
-        else parsed = [streamBufferRef.current]
-      } catch { parsed = [streamBufferRef.current] }
-      setSuggestions(parsed.slice(0, 3).filter(Boolean))
-      setProviderStatuses(s => ({ ...s, [capturedProvider]: 'ok' }))
-      setStreamBuffer(''); streamBufferRef.current = ''
-      setIsStreaming(false); setLoading(false)
-    }
-    const unsubChunk = window.api?.on('ai:stream-chunk', ({ requestId: rid, chunk }) => {
-      if (rid !== requestId) return
-      streamBufferRef.current += chunk
-      setStreamBuffer(streamBufferRef.current)
-      setIsStreaming(true)
-    })
-    const unsubDone = window.api?.on('ai:stream-done', ({ requestId: rid }) => {
-      if (rid !== requestId) return
-      finalize()
-    })
-    const unsubError = window.api?.on('ai:stream-error', ({ requestId: rid, error }) => {
-      if (rid !== requestId) return
-      cleanup()
-      setProviderStatuses(s => ({ ...s, [capturedProvider]: 'fail' }))
-      setError(error); setStreamBuffer(''); streamBufferRef.current = ''
-      setIsStreaming(false); setLoading(false)
-      window.api?.invoke('ai:log-error', { provider: capturedProvider, errorText: `[stream] ${error}` }).catch(() => {})
-    })
-    streamUnsubsRef.current = [unsubChunk, unsubDone, unsubError]
-    window.api?.send('ai:generate-stream', {
-      messages: [...historyMessages, { role: 'user', content: `Сообщение клиента: "${text.trim()}"` }],
-      settings: aiCfg,
-      requestId,
-    })
-  }
+  const generateStreaming = createStreamingHandler({
+    configured, setError, setShowConfig, streamUnsubsRef, setLoading,
+    setIsStreaming, setSuggestions, setStreamBuffer, streamBufferRef,
+    setProviderStatuses, provider, chatHistory, aiCfg, windowApi: window.api,
+  })
 
   const generate = async (text) => {
     if (!configured) { setError('Настройте ИИ'); setShowConfig(true); return }
@@ -385,61 +280,9 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   }
 
   // ── Отправка контекста чата в WebView AI ─────────────────────────────────
-  const sendContextToAiWebview = async () => {
-    if (contextMode === 'none') {
-      setContextSendStatus('empty')
-      setTimeout(() => setContextSendStatus(null), 2000)
-      return
-    }
-    let contextText = ''
-    if (contextMode === 'last') {
-      if (lastMessage) contextText = `Сообщение клиента: "${lastMessage}"`
-    } else if (contextMode === 'full') {
-      if (chatHistory.length > 0) {
-        contextText = 'История переписки с клиентом:\n' +
-          chatHistory.slice(-10).map((h, i) => `${i + 1}. ${h.text}`).join('\n')
-      } else if (lastMessage) {
-        contextText = `Сообщение клиента: "${lastMessage}"`
-      }
-    }
-    if (!contextText) {
-      setContextSendStatus('empty')
-      setTimeout(() => setContextSendStatus(null), 2000)
-      return
-    }
-    const wv = aiWebviewRef.current
-    let inserted = false
-    if (wv) {
-      try {
-        const escaped = JSON.stringify(contextText)
-        const script = `(function(){
-          const t=${escaped};
-          const sels=['textarea','[contenteditable="true"]','#prompt-textarea','.chat-input textarea','[data-testid="message-input"]'];
-          for(const s of sels){
-            const el=document.querySelector(s);
-            if(el){
-              el.focus();
-              if(document.execCommand('insertText',false,t))return true;
-              try{
-                const s2=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')?.set;
-                if(s2){s2.call(el,t);el.dispatchEvent(new Event('input',{bubbles:true}));return true;}
-              }catch(e2){}
-              return true;
-            }
-          }
-          return false;
-        })()`
-        inserted = await wv.executeJavaScript(script)
-      } catch {}
-    }
-    if (!inserted) {
-      try { await navigator.clipboard.writeText(contextText) } catch {}
-      setContextSendStatus('copied')
-    } else {
-      setContextSendStatus('sent')
-    }
-    setTimeout(() => setContextSendStatus(null), 3000)
-  }
+  const sendContextToAiWebview = () => sendContextToAiWebviewUtil({
+    aiWebviewRef, contextMode, lastMessage, chatHistory, setContextSendStatus,
+  })
 
   // ── Рендер ────────────────────────────────────────────────────────────────
   return (

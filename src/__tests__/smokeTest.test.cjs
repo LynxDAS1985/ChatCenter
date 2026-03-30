@@ -47,6 +47,10 @@ test('app.preload использует contextBridge', function() { assert(prelo
 // ═══════════════════════════════════════
 console.log('\n── Main process imports: ──')
 var mainCode = fs.readFileSync('main/main.js', 'utf8')
+// v0.85.0: extracted modules
+;['main/handlers/notificationManager.js','main/handlers/aiLoginHandler.js','main/handlers/backupNotifHandler.js','main/utils/windowManager.js','main/utils/trayManager.js'].forEach(function(f) {
+  try { mainCode += '\n' + fs.readFileSync(f, 'utf8') } catch(e) {}
+})
 test('main.js импортирует electron', function() { assert(mainCode.includes("from 'electron'")) })
 test('main.js импортирует aiHandlers', function() { assert(mainCode.includes('initAIHandlers')) })
 test('main.js импортирует notifHandlers', function() { assert(mainCode.includes('initNotifHandlers')) })
