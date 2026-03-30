@@ -33,33 +33,74 @@ if (!fs.existsSync('out/main/main.js')) {
 
 // Запускаем Electron с маленьким тестовым скриптом
 var testScript = `
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 app.whenReady().then(async () => {
   const results = {};
   try {
-    // Создаём окно
-    const win = new BrowserWindow({ width: 800, height: 600, show: false, webPreferences: { contextIsolation: true } });
+    // Preload path — production build
+    const preloadPath = require('path').join(__dirname, 'out/preload/index.mjs');
+
+    // Создаём окно С preload (как в реальном приложении)
+    const win = new BrowserWindow({
+      width: 800, height: 600, show: false,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: preloadPath,
+        sandbox: false,
+      }
+    });
+
+    // Регистрируем тестовые IPC handlers (как main.js)
+    ipcMain.handle('messengers:load', () => [
+      { id: 'test', name: 'Test', url: 'https://test.com', partition: 'persist:test' }
+    ]);
+    ipcMain.handle('settings:get', () => ({ soundEnabled: true, theme: 'dark' }));
+    ipcMain.handle('app:get-paths', () => ({ monitorPreload: '' }));
+    ipcMain.handle('messengers:save', () => ({ ok: true }));
+    ipcMain.handle('settings:save', () => ({ ok: true }));
+    ipcMain.handle('window:set-titlebar-theme', () => {});
 
     // Загружаем renderer
-    const isDev = false;
     const rendererUrl = require('path').join(__dirname, 'out/renderer/index.html');
     await win.loadFile(rendererUrl);
 
     // Ждём React render
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
 
-    // Проверяем что React отрисовал
+    // 1. React отрисовал
     const hasRoot = await win.webContents.executeJavaScript("!!document.getElementById('root')");
     results.hasRoot = hasRoot;
 
     const rootChildren = await win.webContents.executeJavaScript("document.getElementById('root')?.children?.length || 0");
     results.rootChildren = rootChildren;
 
-    const bodyText = await win.webContents.executeJavaScript("document.body?.innerText?.slice(0, 100) || ''");
+    // 2. КРИТИЧЕСКОЕ: window.api существует (preload загрузился!)
+    const hasWindowApi = await win.webContents.executeJavaScript("typeof window.api === 'object' && typeof window.api.invoke === 'function'");
+    results.hasWindowApi = hasWindowApi;
+
+    // 3. window.api.invoke работает (IPC цепочка renderer → main)
+    const ipcWorks = await win.webContents.executeJavaScript("window.api.invoke('settings:get').then(s => !!s).catch(() => false)");
+    results.ipcWorks = ipcWorks;
+
+    // 4. Нет ошибок на экране
+    const bodyText = await win.webContents.executeJavaScript("document.body?.innerText?.slice(0, 200) || ''");
     results.bodyText = bodyText;
 
-    const hasError = await win.webContents.executeJavaScript("document.body?.innerText?.includes('ОШИБКА') || document.body?.innerText?.includes('Error') || false");
+    const hasError = await win.webContents.executeJavaScript("document.body?.innerText?.includes('ОШИБКА') || document.body?.innerText?.includes('require is not defined') || false");
     results.hasError = hasError;
+
+    // 5. Мессенджеры загрузились (не "Нет мессенджеров")
+    const hasNoMessengers = await win.webContents.executeJavaScript("document.body?.innerText?.includes('Нет мессенджеров') || false");
+    results.hasNoMessengers = hasNoMessengers;
+
+    // 6. Консольные ошибки renderer
+    const consoleErrors = [];
+    win.webContents.on('console-message', (e, level, msg) => {
+      if (level >= 2) consoleErrors.push(msg);
+    });
+    await new Promise(r => setTimeout(r, 500));
+    results.consoleErrors = consoleErrors;
 
     results.ok = true;
   } catch(e) {
@@ -110,8 +151,23 @@ child.on('close', function(code) {
       test('Electron запустился', results.ok)
       test('Root элемент найден', results.hasRoot)
       test('React отрисовал children (>' + results.rootChildren + ')', results.rootChildren > 0)
+      test('window.api существует (preload загрузился!)', results.hasWindowApi)
+      test('IPC работает (settings:get ответил)', results.ipcWorks)
+      test('Нет "Нет мессенджеров" (messengers:load работает)', !results.hasNoMessengers)
       test('Нет ошибок на экране', !results.hasError)
       test('Body содержит текст', (results.bodyText || '').length > 0)
+      if (results.consoleErrors && results.consoleErrors.length > 0) {
+        test('Нет console.error в renderer', false)
+        console.log('    Ошибки:', results.consoleErrors.slice(0, 3).join('\n    '))
+      } else {
+        test('Нет console.error в renderer', true)
+      }
+      if (!results.hasWindowApi) {
+        console.log('\n  ⚠️  КРИТИЧЕСКОЕ: window.api не создан!')
+        console.log('  Это значит preload НЕ загрузился.')
+        console.log('  Проверь: preload файлы должны быть .cjs (не .js)')
+        console.log('  Ловушка 53: package.json "type":"module" → .js = ESM → require() не работает')
+      }
     } catch(e) {
       console.log('  ❌ Parse error: ' + e.message)
       failed++
