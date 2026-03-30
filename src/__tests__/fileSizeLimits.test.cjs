@@ -26,9 +26,12 @@ console.log('\\n🧪 Тесты лимитов размеров файлов\\n'
 console.log('── Ключевые файлы: ──')
 
 var keyFiles = [
-  { path: 'src/App.jsx',                          limit: 2500, name: 'App.jsx' },
-  { path: 'main/main.js',                         limit: 2000, name: 'main.js' },
-  { path: 'main/preloads/monitor.preload.js',      limit: 1500, name: 'monitor.preload.js' },
+  // v0.85.2: лимиты снижены после рефакторинга (все файлы ≤571)
+  { path: 'src/App.jsx',                          limit: 600, name: 'App.jsx' },
+  { path: 'main/main.js',                         limit: 600, name: 'main.js' },
+  { path: 'main/preloads/monitor.preload.js',      limit: 600, name: 'monitor.preload.js' },
+  { path: 'src/utils/webviewSetup.js',             limit: 600, name: 'webviewSetup.js' },
+  { path: 'main/handlers/dockPinHandlers.js',      limit: 600, name: 'dockPinHandlers.js' },
 ]
 
 keyFiles.forEach(function(f) {
@@ -63,7 +66,7 @@ components.forEach(function(f) {
 console.log('\\n── Исключения (> 700, разрешены): ──')
 
 var exceptions = [
-  { path: 'src/components/AISidebar.jsx',     limit: 1200, name: 'AISidebar.jsx' },
+  { path: 'src/components/AISidebar.jsx',     limit: 600, name: 'AISidebar.jsx' },
   { path: 'src/components/NotifLogModal.jsx',  limit: 600,  name: 'NotifLogModal.jsx' },
 ]
 

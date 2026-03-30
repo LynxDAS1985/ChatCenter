@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.85.1 (30 марта 2026)
+## Текущая версия: v0.85.2 (30 марта 2026)
 
 ---
 
@@ -91,6 +91,13 @@
 ---
 
 ## Changelog
+
+### v0.85.2 (30 марта 2026) — .editorconfig, ESLint 9, лимиты 600, build в test
+- `.editorconfig` — единый стиль: UTF-8, LF, 2 пробела, trim trailing
+- ESLint 9 (flat config) — минимальный конфиг, ловит no-undef, no-eval, no-unused-vars
+- `npm run lint` — команда проверки (120 max warnings)
+- Лимиты файлов снижены: App.jsx/main.js/monitor/AISidebar/webviewSetup/dockPin — все ≤600
+- `electron-vite build` добавлен в `npm test` — каждый тест = тесты + сборка
 
 ### v0.85.1 (30 марта 2026) — App.jsx ≤556, runtime-тесты, все файлы ≤600
 - **App.jsx**: 660 → 556 строк. Вынесено:

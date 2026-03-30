@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "0.85.1",
+  "version": "0.85.2",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",
@@ -9,22 +9,26 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.cjs",
+    "lint": "eslint src/ main/ --max-warnings 120",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test:e2e": "node e2e/app.e2e.cjs && node e2e/ui.e2e.cjs",
     "start": "node scripts/dev.cjs",
-    "test": "node src/__tests__/isSpamText.test.cjs && node src/__tests__/navigateToChat.test.cjs && node src/__tests__/messengerConfigs.test.cjs && node src/__tests__/monitorPreload.test.cjs && node src/__tests__/overlayIcon.test.cjs && node src/__tests__/handleNewMessage.test.cjs && node src/__tests__/messageProcessing.test.cjs && node src/__tests__/mainProcess.test.cjs && node src/__tests__/appStructure.test.cjs && node src/__tests__/projectHealth.test.cjs && node src/__tests__/aiProviders.test.cjs && node src/__tests__/consoleMessageParser.test.cjs && node src/__tests__/ipcChannels.test.cjs && node src/__tests__/fileSizeLimits.test.cjs && node src/__tests__/memoryLeaks.test.cjs && node src/__tests__/notifHooks.test.cjs && node src/__tests__/componentScope.test.cjs && node src/__tests__/unitRuntime.test.cjs && node src/__tests__/buildContract.test.cjs && node src/__tests__/storageErrors.test.cjs && node src/__tests__/aiErrors.test.cjs && node src/__tests__/extractedModules.test.cjs && node src/__tests__/smokeTest.test.cjs && node src/__tests__/integration.test.cjs"
+    "test": "node src/__tests__/isSpamText.test.cjs && node src/__tests__/navigateToChat.test.cjs && node src/__tests__/messengerConfigs.test.cjs && node src/__tests__/monitorPreload.test.cjs && node src/__tests__/overlayIcon.test.cjs && node src/__tests__/handleNewMessage.test.cjs && node src/__tests__/messageProcessing.test.cjs && node src/__tests__/mainProcess.test.cjs && node src/__tests__/appStructure.test.cjs && node src/__tests__/projectHealth.test.cjs && node src/__tests__/aiProviders.test.cjs && node src/__tests__/consoleMessageParser.test.cjs && node src/__tests__/ipcChannels.test.cjs && node src/__tests__/fileSizeLimits.test.cjs && node src/__tests__/memoryLeaks.test.cjs && node src/__tests__/notifHooks.test.cjs && node src/__tests__/componentScope.test.cjs && node src/__tests__/unitRuntime.test.cjs && node src/__tests__/buildContract.test.cjs && node src/__tests__/storageErrors.test.cjs && node src/__tests__/aiErrors.test.cjs && node src/__tests__/extractedModules.test.cjs && node src/__tests__/smokeTest.test.cjs && node src/__tests__/integration.test.cjs && electron-vite build"
   },
   "dependencies": {
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.58.2",
     "@vitejs/plugin-react": "^5.2.0",
     "autoprefixer": "^10.4.27",
     "electron": "^41.1.0",
     "electron-vite": "^5.0.0",
+    "eslint": "^9.39.4",
+    "globals": "^17.4.0",
     "lucide-react": "^1.7.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.19",
