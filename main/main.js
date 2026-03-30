@@ -121,6 +121,34 @@ let forceQuit = false
 
 // v0.78.9: Overlay и шрифты вынесены в main/utils/overlayIcon.js
 
+// v0.84.3: Отдельное окно для просмотра логов
+let logViewerWin = null
+function openLogViewer() {
+  if (logViewerWin && !logViewerWin.isDestroyed()) { logViewerWin.focus(); return }
+  logViewerWin = new BrowserWindow({
+    width: 900, height: 600, title: 'Логи ChatCenter',
+    backgroundColor: '#1a1b2e',
+    webPreferences: { contextIsolation: false, nodeIntegration: false },
+  })
+  const htmlPath = isDev
+    ? path.join(__dirname, '../../main/log-viewer.html')
+    : path.join(__dirname, '../main/log-viewer.html')
+  logViewerWin.loadFile(htmlPath)
+  logViewerWin.webContents.once('did-finish-load', () => {
+    const logContent = readLogFile(1000)
+    logViewerWin.webContents.executeJavaScript(`window.__logContent = ${JSON.stringify(logContent)}; loadLog()`)
+  })
+  // Auto refresh: обновляем лог каждые 3 сек пока окно открыто
+  const logRefreshInterval = setInterval(() => {
+    if (!logViewerWin || logViewerWin.isDestroyed()) { clearInterval(logRefreshInterval); return }
+    try {
+      const content = readLogFile(1000)
+      logViewerWin.webContents.executeJavaScript(`window.__logContent = ${JSON.stringify(content)}; if(autoMode) loadLog()`)
+    } catch {}
+  }, 3000)
+  logViewerWin.on('closed', () => { logViewerWin = null; clearInterval(logRefreshInterval) })
+}
+
 function createTray() {
   tray = new Tray(createTrayBadgeIcon(0))
   tray.setToolTip('ЦентрЧатов')
@@ -135,13 +163,7 @@ function createTray() {
     { type: 'separator' },
     {
       label: '📋 Показать лог',
-      click: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show()
-          mainWindow.focus()
-          mainWindow.webContents.send('show-log-modal')
-        }
-      }
+      click: () => { openLogViewer() }
     },
     {
       label: '📄 Открыть файл лога',

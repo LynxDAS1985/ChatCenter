@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Логи ChatCenter</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#1a1b2e; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; height:100vh; display:flex; flex-direction:column; }
+.header { padding:12px 16px; display:flex; align-items:center; gap:12px; border-bottom:1px solid #2a2b3e; }
+.header h1 { font-size:14px; font-weight:600; flex:1; }
+.header button { padding:4px 12px; font-size:12px; border-radius:6px; cursor:pointer; border:1px solid #333; background:#2a2b3e; color:#888; }
+.header button:hover { background:#333; }
+.header button.active { background:#22c55e22; color:#22c55e; border-color:#22c55e55; }
+.header .close { width:28px; height:28px; font-size:16px; color:#ff4444; border:none; }
+.filters { padding:8px 16px; display:flex; gap:8px; border-bottom:1px solid #2a2b3e; }
+.filters button { padding:3px 10px; font-size:11px; border-radius:12px; cursor:pointer; border:1px solid #333; background:transparent; color:#666; }
+.filters button.active { border-color:currentColor; }
+.logs { flex:1; overflow:auto; padding:8px 16px; font-family:'Cascadia Code','Fira Code',monospace; font-size:11px; line-height:1.7; }
+.log-line { white-space:pre-wrap; word-break:break-all; }
+.log-line .ts { opacity:0.5; }
+.log-line .level { font-weight:600; }
+.empty { text-align:center; padding:60px; color:#555; font-size:13px; }
+.footer { padding:6px 16px; border-top:1px solid #2a2b3e; font-size:11px; color:#555; display:flex; justify-content:space-between; }
+.lvl-error { color:#ff4444; } .lvl-warn { color:#f59e0b; } .lvl-info { color:#22c55e; } .lvl-debug { color:#6b7280; } .lvl-rerror { color:#ff6b6b; } .lvl-rinfo { color:#2AABEE; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📋 Логи ChatCenter</h1>
+  <button id="btnAuto" onclick="toggleAuto()">○ Auto</button>
+  <button onclick="copyAll()">📋 Копировать</button>
+  <button class="close" onclick="window.close()">✕</button>
+</div>
+<div class="filters" id="filters">
+  <button class="active" data-f="all" onclick="setFilter('all',this)">Все</button>
+  <button data-f="error" onclick="setFilter('error',this)" style="color:#ff4444">● Ошибки</button>
+  <button data-f="warn" onclick="setFilter('warn',this)" style="color:#f59e0b">● Предупр.</button>
+  <button data-f="info" onclick="setFilter('info',this)" style="color:#22c55e">● Инфо</button>
+  <button data-f="debug" onclick="setFilter('debug',this)" style="color:#6b7280">● Debug</button>
+</div>
+<div class="logs" id="logs"><div class="empty">Загрузка...</div></div>
+<div class="footer"><span id="count">0 / 0 записей</span><span id="time"></span></div>
+
+<script>
+let filter = 'all', autoMode = false, autoIv = null, allLines = []
+
+function parseLine(line) {
+  const m = line.match(/^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)$/)
+  return m ? { ts:m[1], level:m[2], text:m[3] } : null
+}
+
+function levelClass(lv) {
+  if (lv.includes('ERROR')) return 'lvl-error'
+  if (lv.includes('WARN')) return 'lvl-warn'
+  if (lv === 'INFO' || lv === 'R:INFO') return 'lvl-info'
+  if (lv === 'DEBUG') return 'lvl-debug'
+  return ''
+}
+
+function render() {
+  const filtered = filter === 'all' ? allLines
+    : filter === 'error' ? allLines.filter(l => l.level.includes('ERROR'))
+    : filter === 'warn' ? allLines.filter(l => l.level.includes('WARN'))
+    : filter === 'info' ? allLines.filter(l => l.level === 'INFO' || l.level === 'R:INFO')
+    : filter === 'debug' ? allLines.filter(l => l.level === 'DEBUG')
+    : allLines
+
+  const el = document.getElementById('logs')
+  if (filtered.length === 0) { el.innerHTML = '<div class="empty">Лог пуст</div>'; }
+  else {
+    el.innerHTML = filtered.map(l =>
+      `<div class="log-line ${levelClass(l.level)}"><span class="ts">[${l.ts}]</span> <span class="level">[${l.level}]</span> ${l.text.replace(/</g,'&lt;')}</div>`
+    ).join('')
+    el.scrollTop = el.scrollHeight
+  }
+  document.getElementById('count').textContent = filtered.length + ' / ' + allLines.length + ' записей'
+  document.getElementById('time').textContent = new Date().toLocaleTimeString()
+}
+
+function setFilter(f, btn) {
+  filter = f
+  document.querySelectorAll('.filters button').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  render()
+}
+
+function toggleAuto() {
+  autoMode = !autoMode
+  const btn = document.getElementById('btnAuto')
+  btn.textContent = autoMode ? '● Auto' : '○ Auto'
+  btn.classList.toggle('active', autoMode)
+  if (autoMode) { loadLog(); autoIv = setInterval(loadLog, 3000) }
+  else if (autoIv) { clearInterval(autoIv); autoIv = null }
+}
+
+function copyAll() {
+  const text = allLines.map(l => `[${l.ts}] [${l.level}] ${l.text}`).join('\n')
+  navigator.clipboard.writeText(text)
+}
+
+function loadLog() {
+  // Получаем лог через IPC (если доступен) или через глобальную переменную
+  if (window.__logContent) {
+    allLines = window.__logContent.split('\n').map(parseLine).filter(Boolean)
+    render()
+  }
+}
+
+// Получаем лог при загрузке
+window.addEventListener('DOMContentLoaded', () => { setTimeout(loadLog, 100) })
+</script>
+</body>
+</html>

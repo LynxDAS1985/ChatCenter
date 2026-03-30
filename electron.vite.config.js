@@ -14,6 +14,7 @@ function copyStaticPlugin() {
         { from: 'main/notification.html', to: 'out/main/notification.html' },
         { from: 'main/pin-notification.html', to: 'out/main/pin-notification.html' },
         { from: 'main/pin-dock.html', to: 'out/main/pin-dock.html' },
+        { from: 'main/log-viewer.html', to: 'out/main/log-viewer.html' },
       ]
       // Hooks directory
       const hooksDir = 'main/preloads/hooks'
