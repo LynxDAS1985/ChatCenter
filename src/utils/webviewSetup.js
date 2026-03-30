@@ -175,15 +175,14 @@ export function createWebviewSetup(deps) {
     } else {
       traceNotif('sound', 'block', messengerId, text, `global=${settingsRef.current.soundEnabled !== false} muted=${messengerMuted} perMsg=${mNotifs.sound}`)
     }
+    // v0.61.1: убираем суффикс #N для отображения (dedup уже прошёл)
+    const displayText = text.replace(/ #\d+$/, '')
+
     if (settingsRef.current.notificationsEnabled !== false && ribbonOn) {
       lastRibbonTsRef.current[messengerId] = Date.now()
-      // v0.80.6: НЕ переопределяем senderName — используем очищенный из cleanSenderStatus (строка 697)
       const notifTitle = senderName
         ? `${mInfo?.name || 'ЦентрЧатов'} — ${senderName}`
         : (mInfo?.name || 'ЦентрЧатов')
-      // v0.61.1: убираем суффикс #N для отображения (dedup уже прошёл)
-      // Покрывает: "📎 Стикер #3", "🖼 Картинка #2", "🎬 Анимация #1", "😇😉👍 #4"
-      const displayText = text.replace(/ #\d+$/, '')
       // v0.80.4: ribbon использует очищенный senderName (без "заходила X назад")
       window.api?.invoke('app:custom-notify', {
         title: senderName || '',
