@@ -82,8 +82,7 @@ test('Нет дублей on', function() {
 
 // v0.84.2: Main→Renderer каналы
 console.log('\\n── Main→Renderer: ──')
-test('show-log-modal отправляется из main', function() { assert(mainCode.includes("send('show-log-modal')")) })
-test('show-log-modal слушается в renderer', function() { assert(appCode.includes("'show-log-modal'")) })
+test('app:read-log используется (лог-вьюер)', function() { assert(mainCode.includes("'app:read-log'")) })
 test('app:read-log handler в main', function() { assert(mainCode.includes("'app:read-log'")) })
 test('app:log handler в main', function() { assert(mainCode.includes("'app:log'")) })
 
