@@ -138,7 +138,7 @@ export default function App() {
     let unsub
     const setup = () => {
       if (!window.api?.on) return
-      unsub = window.api.on('show-log-modal', () => {
+      unsub = window.api?.on('show-log-modal', () => {
         window.api?.invoke('app:read-log').then(content => {
           setLogContent(content || 'Лог пуст')
           setShowLogModal(true)

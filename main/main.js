@@ -50,8 +50,18 @@ function initLogger() {
   }
   console.log = (...args) => { origLog(...args); writeLog('INFO', args) }
   console.warn = (...args) => { origWarn(...args); writeLog('WARN', args) }
-  console.error = (...args) => { origError(...args); writeLog('ERROR', args) }
+  console.error = (...args) => { origError(...args); writeLog('ERROR', args); autoOpenLogOnError() }
   console.debug = (...args) => { origLog(...args); writeLog('DEBUG', args) }
+}
+
+// v0.84.4: Авто-открытие окна лога при первом ERROR (не чаще 30 сек)
+let _lastAutoLogOpen = 0
+function autoOpenLogOnError() {
+  const now = Date.now()
+  if (now - _lastAutoLogOpen < 30000) return // не чаще 30 сек
+  _lastAutoLogOpen = now
+  // Открываем лог-вьюер с задержкой (чтобы не мешать инициализации)
+  setTimeout(() => { try { openLogViewer() } catch {} }, 500)
 }
 
 // v0.84.2: Чтение лога для отображения в модальном окне
@@ -164,14 +174,6 @@ function createTray() {
     {
       label: '📋 Показать лог',
       click: () => { openLogViewer() }
-    },
-    {
-      label: '📄 Открыть файл лога',
-      click: () => { if (logFilePath) shell.openPath(logFilePath) }
-    },
-    {
-      label: '📁 Папка данных',
-      click: () => { shell.openPath(app.getPath('userData')) }
     },
     { type: 'separator' },
     {
