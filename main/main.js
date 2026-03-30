@@ -61,7 +61,7 @@ let storage = null
 function initStorage() {
   const filePath = path.join(app.getPath('userData'), 'chatcenter.json')
   let data = {}
-  try { data = JSON.parse(fs.readFileSync(filePath, 'utf8')) } catch {}
+  try { data = JSON.parse(fs.readFileSync(filePath, 'utf8')) } catch (e) { console.warn('[Storage] Не удалось прочитать chatcenter.json:', e.message) }
 
   const save = () => {
     try { fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8') } catch (e) {
@@ -272,7 +272,7 @@ function setupIPC() {
     // Инициализируем сессии для всех мессенджеров
     list.forEach(m => {
       if (m.partition) {
-        try { setupSession(session.fromPartition(m.partition)) } catch {}
+        try { setupSession(session.fromPartition(m.partition)) } catch (e) { console.warn(`[Session] Ошибка для ${m.id}:`, e.message) }
       }
     })
 
@@ -285,7 +285,7 @@ function setupIPC() {
     // Настраиваем сессии для новых мессенджеров
     messengers.forEach(m => {
       if (m.partition) {
-        try { setupSession(session.fromPartition(m.partition)) } catch {}
+        try { setupSession(session.fromPartition(m.partition)) } catch (e) { console.warn(`[Session] Ошибка для ${m.id}:`, e.message) }
       }
     })
     return { ok: true }
@@ -491,7 +491,7 @@ app.whenReady().then(() => {
   const storedMessengers = storage.get('messengers', DEFAULT_MESSENGERS)
   storedMessengers.forEach(m => {
     if (m.partition) {
-      try { setupSession(session.fromPartition(m.partition)) } catch {}
+      try { setupSession(session.fromPartition(m.partition)) } catch (e) { console.warn(`[Session] Ошибка для ${m.id}:`, e.message) }
     }
   })
 

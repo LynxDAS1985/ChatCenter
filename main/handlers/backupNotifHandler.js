@@ -54,7 +54,9 @@ export function initBackupNotifHandler(deps) {
     // Backup: перехватываем __CC_NOTIF__ и __CC_MSG__ напрямую в main process
     // ВАЖНО: backup нужен ТОЛЬКО когда renderer не может обработать (webContents destroyed/crashed)
     // v0.84.0: findMessengerByUrl теперь multi-account safe через webContentsId
-    contents.on('console-message', (_e, _level, msg) => {
+    // v0.85.5: Electron 41 — Event API
+    contents.on('console-message', (e) => {
+      const msg = e.message
       if (!msg) return
       if (!webviewReadySet.has(contents.id)) return
 
@@ -95,7 +97,7 @@ export function initBackupNotifHandler(deps) {
             senderName: data.t || '',
             chatTag: data.g || '',
           })
-        } catch {}
+        } catch (e) { console.warn('[Backup] __CC_NOTIF__ parse error:', e.message) }
         return
       }
 

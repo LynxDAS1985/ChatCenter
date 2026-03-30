@@ -1,7 +1,15 @@
 // v0.84.4: Session setup — вынесен из main.js
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
+// Трекинг уже настроенных сессий — не добавлять listeners повторно
+const _setupDone = new Set()
+
 export function setupSession(ses) {
+  // v0.85.5: Защита от повторного setupSession — предотвращает MaxListenersExceededWarning
+  const partitionKey = ses.storagePath || 'default'
+  if (_setupDone.has(partitionKey)) return
+  _setupDone.add(partitionKey)
+
   ses.setUserAgent(CHROME_UA)
   ses.setPermissionRequestHandler((_wc, permission, cb) => {
     if (permission === 'notifications') return cb(false)
@@ -16,10 +24,9 @@ export function setupSession(ses) {
     .catch(e => console.error('[SW] Ошибка очистки SW storage:', e.message))
   if (ses.serviceWorkers) {
     ses.serviceWorkers.on('running-status-changed', (e) => {
-      console.log(`[SW] running-status-changed: versionId=${e.versionId} runningStatus=${e.runningStatus}`)
       if (e.runningStatus === 'starting' || e.runningStatus === 'running') {
-        console.log('[SW] Обнаружен запущенный SW — повторная очистка')
-        ses.clearStorageData({ storages: ['serviceworkers'] }).catch(() => {})
+        console.log(`[SW] Обнаружен запущенный SW (versionId=${e.versionId}) — очистка`)
+        ses.clearStorageData({ storages: ['serviceworkers'] }).catch(err => console.warn('[SW] Ошибка повторной очистки:', err.message))
       }
     })
   }

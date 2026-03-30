@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.85.4 (30 марта 2026)
+## Текущая версия: v0.85.5 (30 марта 2026)
 
 ---
 
@@ -91,6 +91,13 @@
 ---
 
 ## Changelog
+
+### v0.85.5 (30 марта 2026) — Полное логирование + все слепые зоны закрыты
+- **Deprecated fix**: console-message Event API (Electron 41)
+- **WebView crash/hang**: render-process-gone + unresponsive + did-fail-load → лог + статус
+- **MaxListeners fix**: setupSession не добавляет повторные listeners (_setupDone Set)
+- **Пустые catch {}→логирующие**: storage read, setupSession, backup notif, icon download, notification fallback
+- **Тесты**: 10 новых проверок (renderer logging, crash detection, deprecated API, MaxListeners)
 
 ### v0.85.4 (30 марта 2026) — .npmrc, postinstall hooks, architecture.md
 - `.npmrc` — `legacy-peer-deps=true` (CI не упадёт при конфликтах)

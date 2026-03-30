@@ -164,7 +164,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   } catch (err) {
     console.error('[NotifManager] Window init error:', err.message)
     // Fallback — нативное уведомление
-    try { new Notification({ title: messengerName || 'ЦентрЧатов', body: body || '' }).show() } catch {}
+    try { new Notification({ title: messengerName || 'ЦентрЧатов', body: body || '' }).show() } catch (e2) { console.warn('[NotifManager] Fallback notification failed:', e2.message) }
     return null
   }
 
@@ -176,7 +176,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
     try {
       const icon = await downloadIcon(iconUrl)
       if (icon) iconDataUrl = icon.toDataURL()
-    } catch {}
+    } catch (e) { console.warn('[NotifManager] Icon download error:', e.message) }
   }
 
   // Время показа уведомления из настроек (по умолчанию 5 сек, 0 = бесконечно)

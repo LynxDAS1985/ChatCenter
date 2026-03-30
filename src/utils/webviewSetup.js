@@ -286,13 +286,32 @@ export function createWebviewSetup(deps) {
         setWebviewLoading(prev => ({ ...prev, [messengerId]: false }))
       })
 
+      // v0.85.5: WebView crash/unresponsive → логируем + статус error
+      addListener('render-process-gone', (e) => {
+        const reason = e?.details?.reason || e?.reason || 'unknown'
+        devError(`[WebView CRASH] ${messengerId}: reason=${reason}`)
+        traceNotif('crash', 'error', messengerId, '', `WebView crashed: ${reason}`)
+        setMonitorStatus(prev => ({ ...prev, [messengerId]: 'error' }))
+      })
+      addListener('unresponsive', () => {
+        devError(`[WebView HANG] ${messengerId}: unresponsive`)
+        traceNotif('hang', 'error', messengerId, '', 'WebView unresponsive')
+      })
+      addListener('did-fail-load', (e) => {
+        const code = e?.errorCode || 'unknown'
+        const desc = e?.errorDescription || ''
+        if (code === -3) return // -3 = aborted (normal navigation)
+        devError(`[WebView FAIL] ${messengerId}: code=${code} ${desc}`)
+        traceNotif('load-fail', 'error', messengerId, '', `code=${code} ${desc}`)
+      })
+
       // ── СЕКЦИЯ: DOM-ready — инициализация монитора ──
       addListener('dom-ready', () => {
         // v0.84.0: Регистрация webContentsId для multi-account routing
         try {
           const wcId = el.getWebContentsId?.()
           if (wcId) window.api?.invoke('app:register-webview', { webContentsId: wcId, messengerId })
-        } catch(e) {}
+        } catch(e) { devError('[WebView] register-webview error:', e.message) }
         clearTimeout(retryTimers.current[messengerId])
         retryTimers.current[messengerId] = setTimeout(
           () => tryExtractAccount(messengerId, 0), 3500
@@ -313,7 +332,7 @@ export function createWebviewSetup(deps) {
         setTimeout(() => {
           const zoom = zoomLevelsRef.current[messengerId] || 100
           if (zoom !== 100) {
-            try { webviewRefs.current[messengerId]?.setZoomFactor(zoom / 100) } catch {}
+            try { webviewRefs.current[messengerId]?.setZoomFactor(zoom / 100) } catch (e) { devError('[Zoom]', e.message) }
           }
         }, 600)
         // Скрываем баннеры "браузер устарел" (VK и др.)

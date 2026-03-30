@@ -110,5 +110,52 @@ test('Regex catch с devError', function() {
   assert(regexCatches >= 3, 'только ' + regexCatches + ' catch с devError (нужно >= 3)')
 })
 
+// ═══════════════════════════════════════════════════════════════════════
+// v0.85.5: Логирование и обработка ошибок
+// ═══════════════════════════════════════════════════════════════════════
+console.log('\\n── Полнота логирования (v0.85.5): ──')
+
+// 1. Renderer error logging
+var wmCode = ''
+try { wmCode = fs.readFileSync('main/utils/windowManager.js', 'utf8') } catch(e) {}
+test('Renderer console.error → chatcenter.log', function() {
+  assert(wmCode.includes('console-message'), 'windowManager должен слушать console-message')
+})
+test('Preload ошибки → chatcenter.log', function() {
+  assert(wmCode.includes('preload-error'), 'windowManager должен слушать preload-error')
+})
+
+// 2. WebView crash/unresponsive detection
+test('WebView crash detection (render-process-gone)', function() {
+  assert(appCode.includes('render-process-gone'), 'webviewSetup должен слушать render-process-gone')
+})
+test('WebView hang detection (unresponsive)', function() {
+  assert(appCode.includes("'unresponsive'"), 'webviewSetup должен слушать unresponsive')
+})
+test('WebView load failure (did-fail-load)', function() {
+  assert(appCode.includes('did-fail-load'), 'webviewSetup должен слушать did-fail-load')
+})
+
+// 3. Deprecated API fix
+test('console-message использует Event API (не args)', function() {
+  // Electron 41: console-message(event) вместо (_e, level, msg, line, source)
+  assert(!wmCode.includes('(_e, level, msg, line, source)'), 'Deprecated: используй e.level, e.message вместо позиционных args')
+})
+
+// 4. Пустые catch {} в критических местах
+var sessionCode = ''
+try { sessionCode = fs.readFileSync('main/utils/sessionSetup.js', 'utf8') } catch(e) {}
+test('setupSession: нет повторных listeners (MaxListeners fix)', function() {
+  assert(sessionCode.includes('_setupDone'), 'setupSession должен трекать уже настроенные сессии')
+})
+
+// 5. Критические catch {} заменены на логирующие
+test('main.js: storage read ошибка логируется', function() {
+  assert(mainCode.includes("'[Storage]"), 'storage read должен логировать ошибку')
+})
+test('main.js: setupSession ошибка логируется', function() {
+  assert(mainCode.includes('[Session]'), 'setupSession catch должен логировать')
+})
+
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

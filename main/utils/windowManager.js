@@ -59,9 +59,10 @@ export function createWindow(deps) {
 
   // v0.85.3: Логируем ВСЕ ошибки renderer в main process (chatcenter.log)
   // Без этого ошибки preload (require is not defined) видны ТОЛЬКО в DevTools
-  mainWindow.webContents.on('console-message', (_e, level, msg, line, source) => {
-    if (level >= 2) { // 2 = error
-      console.error(`[Renderer] ${msg} (${source}:${line})`)
+  // v0.85.5: Electron 41 — новый Event API для console-message
+  mainWindow.webContents.on('console-message', (e) => {
+    if (e.level >= 2) { // 2 = error
+      console.error(`[Renderer] ${e.message} (${e.sourceId}:${e.lineNumber})`)
     }
   })
   mainWindow.webContents.on('preload-error', (_e, preloadPath, err) => {
