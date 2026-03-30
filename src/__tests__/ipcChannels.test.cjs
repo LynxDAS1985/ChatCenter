@@ -12,7 +12,7 @@ var handlersDir = 'main/handlers/'
   try { mainCode += '\n' + fs.readFileSync(handlersDir + f, 'utf8') } catch(e) {}
 })
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
-var preloadCode = fs.readFileSync('main/preloads/app.preload.js', 'utf8')
+var preloadCode = fs.readFileSync('main/preloads/app.preload.cjs', 'utf8')
 
 var passed = 0, failed = 0
 function test(name, fn) {

@@ -97,7 +97,7 @@
 | Любой React hook | **130 строк** | — | Разбить на несколько хуков |
 | `src/App.jsx` | **600 строк** | 556 | Вынести в `src/hooks/` или `src/components/` |
 | `main/main.js` | **600 строк** | 569 | Вынести в `main/handlers/` или `main/utils/` |
-| `monitor.preload.js` | **600 строк** | 465 | Вынести в `main/preloads/utils/` |
+| `monitor.preload.cjs` | **600 строк** | 465 | Вынести в `main/preloads/utils/` |
 | `webviewSetup.js` | **600 строк** | 545 | Вынести в `src/utils/` |
 | `AISidebar.jsx` | **600 строк** | 542 | Вынести в `src/utils/ai*.js` |
 | `dockPinHandlers.js` | **600 строк** | 571 | Вынести в `main/handlers/dockPinUtils.js` |

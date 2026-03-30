@@ -16,7 +16,7 @@ let _deps = null
 function getNotifPreloadPath() {
   const { isDev, __dirname, path } = _deps
   if (isDev) {
-    return path.join(__dirname, '../../main/preloads/notification.preload.js')
+    return path.join(__dirname, '../../main/preloads/notification.preload.cjs')
   }
   return path.join(__dirname, '../preload/notification.mjs')
 }

@@ -53,11 +53,11 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'main/preloads/app.preload.js'),
-          monitor: resolve(__dirname, 'main/preloads/monitor.preload.js'),
-          notification: resolve(__dirname, 'main/preloads/notification.preload.js'),
-          pin: resolve(__dirname, 'main/preloads/pin.preload.js'),
-          'pin-dock': resolve(__dirname, 'main/preloads/pin-dock.preload.js'),
+          index: resolve(__dirname, 'main/preloads/app.preload.cjs'),
+          monitor: resolve(__dirname, 'main/preloads/monitor.preload.cjs'),
+          notification: resolve(__dirname, 'main/preloads/notification.preload.cjs'),
+          pin: resolve(__dirname, 'main/preloads/pin.preload.cjs'),
+          'pin-dock': resolve(__dirname, 'main/preloads/pin-dock.preload.cjs'),
         },
         output: {
           // Production paths expect .js not .mjs

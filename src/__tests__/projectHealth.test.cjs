@@ -64,8 +64,8 @@ var appLines = appCode.split('\n').length
 test('App.jsx < 2500 строк', function() { assert(appLines < 2500, 'lines=' + appLines) })
 var mainLines = fs.readFileSync('main/main.js', 'utf8').split('\n').length
 test('main.js < 2000 строк', function() { assert(mainLines < 2000, 'lines=' + mainLines) })
-var monLines = fs.readFileSync('main/preloads/monitor.preload.js', 'utf8').split('\n').length
-test('monitor.preload.js < 1500 строк', function() { assert(monLines < 1500, 'lines=' + monLines) })
+var monLines = fs.readFileSync('main/preloads/monitor.preload.cjs', 'utf8').split('\n').length
+test('monitor.preload.cjs < 1500 строк', function() { assert(monLines < 1500, 'lines=' + monLines) })
 
 // ── Безопасность ──
 console.log('\\n── Безопасность: ──')

@@ -36,7 +36,18 @@ test('out/main/main.js существует и > 10KB', function() {
 // 2. Preload bridge contract
 // ═══════════════════════════════════════
 console.log('\n── Preload bridge: ──')
-var preloadCode = fs.readFileSync('main/preloads/app.preload.js', 'utf8')
+
+// v0.85.3: Ловушка 53 — preload файлы ДОЛЖНЫ быть .cjs (не .js)
+// package.json "type":"module" → .js = ESM → require() не работает → window.api не создаётся
+var preloadFiles = ['app.preload.cjs', 'monitor.preload.cjs', 'notification.preload.cjs', 'pin.preload.cjs', 'pin-dock.preload.cjs']
+preloadFiles.forEach(function(f) {
+  test(f + ' существует (НЕ .js!)', function() {
+    assert(fs.existsSync('main/preloads/' + f), f + ' не найден — preload ДОЛЖЕН быть .cjs!')
+    assert(!fs.existsSync('main/preloads/' + f.replace('.cjs', '.js')), f.replace('.cjs', '.js') + ' НЕ должен существовать — переименуй в .cjs!')
+  })
+})
+
+var preloadCode = fs.readFileSync('main/preloads/app.preload.cjs', 'utf8')
 test('app.preload экспортирует invoke', function() { assert(preloadCode.includes('invoke:')) })
 test('app.preload экспортирует send', function() { assert(preloadCode.includes('send:')) })
 test('app.preload экспортирует on', function() { assert(preloadCode.includes('on:')) })

@@ -1,5 +1,5 @@
 /**
- * Тесты monitor.preload.js — извлечённые чистые функции.
+ * Тесты monitor.preload.cjs — извлечённые чистые функции.
  * Проверяет extractMsgText, isSidebarNode regex, CHAT_CONTAINER_SELECTORS.
  *
  * Запуск: node src/__tests__/monitorPreload.test.js
@@ -7,7 +7,7 @@
 
 const fs = require('fs')
 const path = require('path')
-const code = fs.readFileSync('main/preloads/monitor.preload.js', 'utf8')
+const code = fs.readFileSync('main/preloads/monitor.preload.cjs', 'utf8')
 // v0.82.3: unread counters вынесены в отдельный файл
 const unreadCode = fs.existsSync('main/preloads/utils/unreadCounters.js') ? fs.readFileSync('main/preloads/utils/unreadCounters.js', 'utf8') : ''
 // v0.84.3: Extracted utility modules
@@ -30,7 +30,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || 'fail') }
 // Создаём mock node с textContent
 function mockNode(text) { return { textContent: text } }
 
-// Копия extractMsgText из monitor.preload.js
+// Копия extractMsgText из monitor.preload.cjs
 function extractMsgText(node) {
   const raw = (node.textContent || '').trim()
   if (raw.length < 2 || raw.length > 500) return ''
@@ -50,7 +50,7 @@ function extractMsgText(node) {
 // Копия _sidebarRe
 const _sidebarRe = /dialog|chat-?list|sidebar|peer-?list|conv-?list|left-?col|nav-?panel|im-page--dialogs|contacts|im-page--nav|ChatList|Sidebar|ConvoList|LeftAds|LeftMenu|ConvoListItem|MessagePreview|scrollListContent|scrollListScrollable|chatListItem|_ak9p|_ak8q|_ak8o|_ak8i|left_nav|_page_sidebar|page_block|leftMenu|counts_module|HeaderNav/i
 
-console.log('\\n🧪 Тесты monitor.preload.js\\n')
+console.log('\\n🧪 Тесты monitor.preload.cjs\\n')
 
 // ── extractMsgText ──
 console.log('── extractMsgText: ──')

@@ -68,10 +68,10 @@ test('WA: НЕ содержит _maxPhantom', () => assert(!waCode.includes('_ma
 
 // ── Нет дублирования в основных файлах ──
 console.log('\n── Нет дублирования: ──')
-const monitorCode = fs.readFileSync(path.join(__dirname, '../../main/preloads/monitor.preload.js'), 'utf8')
-test('monitor.preload.js: нет inline enrichNotif', () => assert(!monitorCode.includes('function enrichNotif('), 'inline enrichNotif должен быть удалён'))
-test('monitor.preload.js: нет inline isSpamNotif', () => assert(!monitorCode.includes('function isSpamNotif('), 'inline isSpamNotif должен быть удалён'))
-test('monitor.preload.js: загрузка hook через fs.readFileSync', () => assert(monitorCode.includes('hooks') && monitorCode.includes('readFileSync'), 'должен загружать hook из файла'))
+const monitorCode = fs.readFileSync(path.join(__dirname, '../../main/preloads/monitor.preload.cjs'), 'utf8')
+test('monitor.preload.cjs: нет inline enrichNotif', () => assert(!monitorCode.includes('function enrichNotif('), 'inline enrichNotif должен быть удалён'))
+test('monitor.preload.cjs: нет inline isSpamNotif', () => assert(!monitorCode.includes('function isSpamNotif('), 'inline isSpamNotif должен быть удалён'))
+test('monitor.preload.cjs: загрузка hook через fs.readFileSync', () => assert(monitorCode.includes('hooks') && monitorCode.includes('readFileSync'), 'должен загружать hook из файла'))
 
 // ── IPC handler в main.js ──
 console.log('\n── IPC: ──')

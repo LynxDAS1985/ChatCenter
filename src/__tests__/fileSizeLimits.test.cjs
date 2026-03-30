@@ -29,7 +29,7 @@ var keyFiles = [
   // v0.85.2: лимиты снижены после рефакторинга (все файлы ≤571)
   { path: 'src/App.jsx',                          limit: 600, name: 'App.jsx' },
   { path: 'main/main.js',                         limit: 600, name: 'main.js' },
-  { path: 'main/preloads/monitor.preload.js',      limit: 600, name: 'monitor.preload.js' },
+  { path: 'main/preloads/monitor.preload.cjs',      limit: 600, name: 'monitor.preload.cjs' },
   { path: 'src/utils/webviewSetup.js',             limit: 600, name: 'webviewSetup.js' },
   { path: 'main/handlers/dockPinHandlers.js',      limit: 600, name: 'dockPinHandlers.js' },
 ]

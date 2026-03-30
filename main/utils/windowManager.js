@@ -5,7 +5,7 @@ let _deps = null
 function getPreloadPath() {
   const { isDev, __dirname, path } = _deps
   if (isDev) {
-    return path.join(__dirname, '../../main/preloads/app.preload.js')
+    return path.join(__dirname, '../../main/preloads/app.preload.cjs')
   }
   // electron-vite 5 собирает preload как .mjs
   return path.join(__dirname, '../preload/index.mjs')

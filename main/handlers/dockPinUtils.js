@@ -5,7 +5,7 @@ import { BrowserWindow, screen } from 'electron'
  * Получить путь к preload pin-окна
  */
 export function getPinPreloadPath(isDev, path, __dirname) {
-  if (isDev) return path.join(__dirname, '../../main/preloads/pin.preload.js')
+  if (isDev) return path.join(__dirname, '../../main/preloads/pin.preload.cjs')
   return path.join(__dirname, '../preload/pin.mjs')
 }
 
@@ -21,7 +21,7 @@ export function getPinHtmlPath(isDev, path, __dirname) {
  * Получить путь к preload dock-окна
  */
 export function getDockPreloadPath(isDev, path, __dirname) {
-  if (isDev) return path.join(__dirname, '../../main/preloads/pin-dock.preload.js')
+  if (isDev) return path.join(__dirname, '../../main/preloads/pin-dock.preload.cjs')
   return path.join(__dirname, '../preload/pin-dock.mjs')
 }
 

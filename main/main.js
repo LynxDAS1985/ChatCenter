@@ -391,7 +391,7 @@ function setupIPC() {
   // Пути к preload-файлам (для WebView-мониторинга)
   ipcMain.handle('app:get-paths', () => ({
     monitorPreload: isDev
-      ? path.join(__dirname, '../../main/preloads/monitor.preload.js')
+      ? path.join(__dirname, '../../main/preloads/monitor.preload.cjs')
       : path.join(__dirname, '../preload/monitor.mjs')
   }))
 
