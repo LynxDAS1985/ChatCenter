@@ -72,7 +72,7 @@ test('stripSenderFromText() из messageProcessing', () => assert(allAppCode.inc
 test('isOwnMessage() из messageProcessing', () => assert(allAppCode.includes('isOwnMessage(')))
 test('WebView setup в отдельном файле (v0.82.6)', () => assert(webviewCode.length > 100 && code.includes('createWebviewSetup'), 'webviewSetup.js должен существовать'))
 test('playNotificationSound() из sound', () => assert(code.includes('playNotificationSound(')))
-test('buildChatNavigateScript() из navigateToChat', () => assert(code.includes('buildChatNavigateScript(')))
+test('buildChatNavigateScript() из navigateToChat', () => assert(allAppCode.includes('buildChatNavigateScript(')))
 test('detectMessengerType() из конфига', () => assert(allAppCode.includes('detectMessengerType(')))
 
 // ── Безопасность __CC_NOTIF__ (v0.81.3) ──

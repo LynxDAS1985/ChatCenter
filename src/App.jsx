@@ -14,6 +14,7 @@ import TabBar from './components/TabBar.jsx'
 import NotifLogModal from './components/NotifLogModal.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import LogModal from './components/LogModal.jsx'
+import ConfirmCloseModal from './components/ConfirmCloseModal.jsx'
 
 // Hooks
 import useKeyboardShortcuts from './hooks/useKeyboardShortcuts.js'
@@ -23,6 +24,7 @@ import useBadgeSync from './hooks/useBadgeSync.js'
 import useTabManagement from './hooks/useTabManagement.js'
 import useSearch from './hooks/useSearch.js'
 import useTabContextMenu from './hooks/useTabContextMenu.js'
+import useNotifyNavigation from './hooks/useNotifyNavigation.js'
 
 // Навигация → src/utils/navigateToChat.js | Звук → src/utils/sound.js | Вкладка → components/MessengerTab.jsx
 
@@ -311,81 +313,14 @@ export default function App() {
     })
   }, [])
 
-  // ── Клик по кастомному уведомлению (Messenger Ribbon) ──────────────────
-  useEffect(() => {
-    return window.api?.on('notify:clicked', ({ messengerId, senderName, chatTag }) => {
-      devLog('[GoChat] notify:clicked', { messengerId, senderName, chatTag })
-      if (!messengerId) return
-      setActiveId(messengerId)
-      if (senderName || chatTag) {
-        const tryNavigate = (attempt) => {
-          if (activeIdRef.current !== messengerId) return
-          const el = webviewRefs.current[messengerId]
-          if (!el) return
-          const url = el.getURL?.() || ''
-          const script = buildChatNavigateScript(url, senderName, chatTag)
-          if (!script) return
-          el.executeJavaScript(script).then(result => {
-            const ok = result === true || (result && result.ok)
-            const method = result?.method || ''
-            devLog(`[GoChat] attempt=${attempt} ok=${ok} method=${method}`, result)
-            if (ok) {
-              setStatusBarMsg(`>> "${senderName}" (${method})`)
-            } else if (attempt >= 2 || activeIdRef.current !== messengerId) {
-              setStatusBarMsg(`>> "${senderName}" - не найден в sidebar`)
-            } else {
-              setTimeout(() => tryNavigate(attempt + 1), 1500)
-            }
-          }).catch(err => { devError('[GoChat] executeJS error:', err.message) })
-        }
-        setTimeout(() => tryNavigate(0), 800)
-      }
-    })
-  }, [])
-
-  // ── "Прочитано" из ribbon ──────────────────────────────────────────────
-  const executeMarkRead = useCallback(({ messengerId, senderName, chatTag }) => {
-    const el = webviewRefs.current[messengerId]
-    if (!el) { traceNotif('mark-read', 'warn', messengerId, senderName || '', 'webview ref не найден'); return }
-    const url = el.getURL?.() || ''
-    const script = buildChatNavigateScript(url, senderName, chatTag)
-    if (script) {
-      el.executeJavaScript(script).then(result => {
-        const ok = result === true || (result && result.ok)
-        traceNotif('mark-read', ok ? 'pass' : 'warn', messengerId, senderName || '', `ok=${ok} method=${result?.method || ''} ${result?.log || ''}`)
-      }).catch(err => {
-        traceNotif('mark-read', 'warn', messengerId, senderName || '', `ошибка: ${err.message}`)
-      })
-    } else {
-      traceNotif('mark-read', 'warn', messengerId, senderName || '', `нет скрипта для url=${url.slice(0,50)}`)
-    }
-  }, [])
-
-  useEffect(() => {
-    return window.api?.on('notify:mark-read', ({ messengerId, senderName, chatTag }) => {
-      traceNotif('mark-read', 'info', messengerId, senderName || '', `sender="${(senderName||'').slice(0,30)}" tag=${!!chatTag} hidden=${document.hidden}`)
-      if (!messengerId) return
-      if (document.hidden) {
-        pendingMarkReadsRef.current.push({ messengerId, senderName, chatTag })
-        traceNotif('mark-read', 'info', messengerId, senderName || '', 'отложено — окно скрыто')
-        return
-      }
-      executeMarkRead({ messengerId, senderName, chatTag })
-    })
-  }, [executeMarkRead])
-
-  useEffect(() => {
-    const handler = () => {
-      if (!document.hidden && pendingMarkReadsRef.current.length > 0) {
-        const pending = [...pendingMarkReadsRef.current]
-        pendingMarkReadsRef.current = []
-        traceNotif('mark-read', 'info', '', '', `обработка ${pending.length} отложенных mark-read`)
-        pending.forEach(item => { setTimeout(() => executeMarkRead(item), 500) })
-      }
-    }
-    document.addEventListener('visibilitychange', handler)
-    return () => document.removeEventListener('visibilitychange', handler)
-  }, [executeMarkRead])
+  useNotifyNavigation({
+    webviewRefs, activeIdRef, windowFocusedRef, pendingMarkReadsRef,
+    settingsRef, messengersRef, lastSoundTsRef,
+    setActiveId, setStatusBarMsg, setUnreadCounts,
+    buildChatNavigateScript, playNotificationSound,
+    traceNotif, devLog, devError,
+    notifCountRef, lastRibbonTsRef, notifSenderTsRef,
+  })
 
   // ── Автообновление лога уведомлений ────────────────────────────────────
   useEffect(() => {
@@ -588,50 +523,11 @@ export default function App() {
         /></ErrorBoundary>
       )}
 
-      {/* ── Диалог подтверждения закрытия вкладки ── */}
-      {confirmClose && (
-        <div
-          className="fixed inset-0 flex items-center justify-center z-50"
-          style={{ backgroundColor: 'var(--cc-overlay)' }}
-          onClick={() => setConfirmClose(null)}
-          onKeyDown={e => { if (e.key === 'Escape') setConfirmClose(null) }}
-        >
-          <div
-            className="rounded-2xl p-6 w-[380px] shadow-2xl"
-            style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex flex-col items-center text-center gap-4">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl" style={{ backgroundColor: `${confirmClose.color}20` }}>
-                {confirmClose.emoji || '💬'}
-              </div>
-              <div>
-                <h3 className="text-base font-semibold mb-1" style={{ color: 'var(--cc-text)' }}>Закрыть вкладку?</h3>
-                <p className="text-sm" style={{ color: 'var(--cc-text-dim)' }}>
-                  Вкладка <span style={{ color: confirmClose.color, fontWeight: 600 }}>{confirmClose.name}</span> будет удалена.
-                  <br />Сессия авторизации может сброситься.
-                </p>
-              </div>
-              <div className="flex gap-3 w-full mt-1">
-                <button
-                  onClick={() => setConfirmClose(null)} autoFocus
-                  className="flex-1 py-2.5 rounded-lg text-sm transition-all cursor-pointer"
-                  style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--cc-border)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
-                >Отмена</button>
-                <button
-                  onClick={() => removeMessenger(confirmClose.id)}
-                  className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-all cursor-pointer"
-                  style={{ backgroundColor: '#ef4444' }}
-                  onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
-                  onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                >Закрыть</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmClose && <ConfirmCloseModal
+        confirmClose={confirmClose}
+        onCancel={() => setConfirmClose(null)}
+        onConfirm={() => removeMessenger(confirmClose.id)}
+      />}
 
       {/* ── Модальное окно: Лог уведомлений ── */}
       {notifLogModal && <ErrorBoundary name="NotifLog"><NotifLogModal ctx={{
