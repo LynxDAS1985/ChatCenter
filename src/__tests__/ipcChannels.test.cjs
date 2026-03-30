@@ -80,6 +80,13 @@ test('Нет дублей on', function() {
   assert(dupes.length < 3, 'дубли: ' + dupes.join(', '))
 })
 
+// v0.84.2: Main→Renderer каналы
+console.log('\\n── Main→Renderer: ──')
+test('show-log-modal отправляется из main', function() { assert(mainCode.includes("send('show-log-modal')")) })
+test('show-log-modal слушается в renderer', function() { assert(appCode.includes("'show-log-modal'")) })
+test('app:read-log handler в main', function() { assert(mainCode.includes("'app:read-log'")) })
+test('app:log handler в main', function() { assert(mainCode.includes("'app:log'")) })
+
 // Preload bridge
 console.log('\\n── Preload bridge: ──')
 test('contextBridge определён', function() { assert(preloadCode.includes('contextBridge')) })

@@ -124,20 +124,32 @@ export default function App() {
     }, 2000)
   }
 
-  // ── v0.84.2: Renderer логирование в main process лог ──────────────────────
+  // ── v0.84.2: Renderer логирование + show-log-modal IPC ───────────────────
   useEffect(() => {
+    // Renderer errors → main process log file
     const origError = console.error.bind(console)
-    console.error = (...args) => {
+    const patchedError = (...args) => {
       origError(...args)
       try { window.api?.send('app:log', { level: 'ERROR', message: args.map(a => typeof a === 'string' ? a : String(a)).join(' ') }) } catch {}
     }
-    // IPC: main process просит показать лог
-    return window.api?.on('show-log-modal', () => {
-      window.api?.invoke('app:read-log').then(content => {
-        setLogContent(content || 'Лог пуст')
-        setShowLogModal(true)
+    console.error = patchedError
+
+    // IPC: main process просит показать лог (кнопка в трее)
+    let unsub
+    const setup = () => {
+      if (!window.api?.on) return
+      unsub = window.api.on('show-log-modal', () => {
+        window.api?.invoke('app:read-log').then(content => {
+          setLogContent(content || 'Лог пуст')
+          setShowLogModal(true)
+        })
       })
-    })
+    }
+    // Если api ещё не готов — retry через 1 сек
+    if (window.api?.on) setup()
+    else setTimeout(setup, 1000)
+
+    return () => { if (unsub) unsub(); console.error = origError }
   }, [])
 
   // ── Применение темы ──────────────────────────────────────────────────────
