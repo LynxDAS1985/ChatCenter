@@ -92,6 +92,16 @@
 
 ## Changelog
 
+### v0.85.3+ (30 марта 2026) — Защита сессий + ловушка 51
+- **Тесты защиты сессий**: 12 проверок в storageErrors.test.cjs
+  - Все 4+custom мессенджера имеют `persist:` partition
+  - `clearStorageData` НЕ чистит cookies/localStorage/indexedDB
+  - Нет `clearStorageData()` без фильтра (удаляет ВСЁ)
+  - Нет partition без `persist:` (временная сессия)
+- **Ловушка 51**: незакоммиченные файлы при рефакторинге агентами
+  - AIProviderTabs.jsx + useIPCListeners.js забыты в git add
+  - CI падал: `Could not resolve "./AIProviderTabs.jsx"`
+
 ### v0.85.3 (30 марта 2026) — ESLint 0 warnings, LF normalize, pre-commit hook
 - ESLint: 108 warnings → **0** (no-eval error, no-dupe-keys error, no-unreachable error)
 - `.gitattributes` — все текстовые файлы нормализованы в LF
