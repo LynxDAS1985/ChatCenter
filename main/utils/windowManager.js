@@ -57,9 +57,19 @@ export function createWindow(deps) {
   // без этого MutationObserver, Notification hooks и IPC в WebView замораживаются
   mainWindow.webContents.backgroundThrottling = false
 
+  // v0.85.3: Логируем ВСЕ ошибки renderer в main process (chatcenter.log)
+  // Без этого ошибки preload (require is not defined) видны ТОЛЬКО в DevTools
+  mainWindow.webContents.on('console-message', (_e, level, msg, line, source) => {
+    if (level >= 2) { // 2 = error
+      console.error(`[Renderer] ${msg} (${source}:${line})`)
+    }
+  })
+  mainWindow.webContents.on('preload-error', (_e, preloadPath, err) => {
+    console.error(`[PRELOAD ERROR] ${preloadPath}: ${err.message}`)
+  })
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
-    // DevTools: не открывать автоматически, пользователь откроет Ctrl+Shift+I вручную
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
