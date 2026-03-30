@@ -9,7 +9,10 @@ const code = fs.readFileSync('main/main.js', 'utf8')
 // v0.82.2: AI handlers вынесены в отдельный файл
 const aiCode = fs.existsSync('main/handlers/aiHandlers.js') ? fs.readFileSync('main/handlers/aiHandlers.js', 'utf8') : ''
 const notifCode = fs.existsSync('main/handlers/notifHandlers.js') ? fs.readFileSync('main/handlers/notifHandlers.js', 'utf8') : ''
-const allCode = code + '\n' + aiCode + '\n' + notifCode
+// v0.84.4: logger и sessionSetup вынесены в отдельные файлы
+const loggerCode = fs.existsSync('main/utils/logger.js') ? fs.readFileSync('main/utils/logger.js', 'utf8') : ''
+const sessionCode = fs.existsSync('main/utils/sessionSetup.js') ? fs.readFileSync('main/utils/sessionSetup.js', 'utf8') : ''
+const allCode = code + '\n' + aiCode + '\n' + notifCode + '\n' + loggerCode + '\n' + sessionCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -31,7 +34,7 @@ test('Импорт path', () => assert(code.includes("import path from")))
 console.log('\\n── Ключевые функции: ──')
 test('createWindow определена', () => assert(code.includes('function createWindow')))
 test('createTray определена', () => assert(code.includes('function createTray')))
-test('setupSession определена', () => assert(code.includes('function setupSession')))
+test('setupSession определена', () => assert(allCode.includes('function setupSession')))
 test('ruError определена', () => assert(code.includes('function ruError')))
 
 // ── IPC handlers ──
@@ -67,14 +70,14 @@ console.log('\\n── Безопасность: ──')
 test('contextIsolation: true', () => assert(code.includes('contextIsolation: true')))
 test('nodeIntegration: false для main window', () => assert(code.includes('nodeIntegration: false')))
 test('Нет eval', () => assert(!code.includes('eval(')))
-test('setupSession блокирует SW', () => assert(code.includes('serviceworkers') || code.includes('ServiceWorker')))
+test('setupSession блокирует SW', () => assert(allCode.includes('serviceworkers') || allCode.includes('ServiceWorker')))
 test('app.setBadgeCount заблокирован', () => assert(code.includes('setBadgeCount')))
-test('SSL skip только для GigaChat', () => assert(code.includes('rejectUnauthorized: false')))
+test('SSL skip только для GigaChat', () => assert(allCode.includes('rejectUnauthorized: false')))
 
 // ── Session ──
 console.log('\\n── Session: ──')
-test('setupSession создаёт partition', () => assert(code.includes('partition')))
-test('Permission request handler', () => assert(code.includes('setPermissionRequestHandler')))
+test('setupSession создаёт partition', () => assert(allCode.includes('partition')))
+test('Permission request handler', () => assert(allCode.includes('setPermissionRequestHandler')))
 
 // ── Notification ribbon ──
 console.log('\\n── Notification ribbon: ──')
