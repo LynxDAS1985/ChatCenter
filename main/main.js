@@ -8,6 +8,8 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'url'
 
 import { createTrayBadgeIcon, createOverlayIcon } from './utils/overlayIcon.js'
+import { initLogger, readLogFile, setLogViewerOpener, getLogFilePath } from './utils/logger.js'
+import { setupSession } from './utils/sessionSetup.js'
 import { initAIHandlers } from './handlers/aiHandlers.js'
 import { initNotifHandlers } from './handlers/notifHandlers.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
@@ -26,53 +28,7 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('ЦентрЧатов')
 }
 
-// ─── Логирование в файл (v0.84.1) ──────────────────────────────────────────
-const LOG_MAX_SIZE = 500 * 1024 // 500KB — ротация
-let logFilePath = null
-
-function initLogger() {
-  logFilePath = path.join(app.getPath('userData'), 'chatcenter.log')
-  // Ротация — если лог > 500KB, обрезаем первую половину
-  try {
-    if (fs.existsSync(logFilePath) && fs.statSync(logFilePath).size > LOG_MAX_SIZE) {
-      const content = fs.readFileSync(logFilePath, 'utf8')
-      fs.writeFileSync(logFilePath, content.slice(content.length / 2))
-    }
-  } catch {}
-  // Перехватываем console.log/warn/error
-  const origLog = console.log.bind(console)
-  const origWarn = console.warn.bind(console)
-  const origError = console.error.bind(console)
-  function writeLog(level, args) {
-    const ts = new Date().toISOString().slice(0, 19).replace('T', ' ')
-    const msg = `[${ts}] [${level}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`
-    try { fs.appendFileSync(logFilePath, msg) } catch {}
-  }
-  console.log = (...args) => { origLog(...args); writeLog('INFO', args) }
-  console.warn = (...args) => { origWarn(...args); writeLog('WARN', args) }
-  console.error = (...args) => { origError(...args); writeLog('ERROR', args); autoOpenLogOnError() }
-  console.debug = (...args) => { origLog(...args); writeLog('DEBUG', args) }
-}
-
-// v0.84.4: Авто-открытие окна лога при первом ERROR (не чаще 30 сек)
-let _lastAutoLogOpen = 0
-function autoOpenLogOnError() {
-  const now = Date.now()
-  if (now - _lastAutoLogOpen < 30000) return // не чаще 30 сек
-  _lastAutoLogOpen = now
-  // Открываем лог-вьюер с задержкой (чтобы не мешать инициализации)
-  setTimeout(() => { try { openLogViewer() } catch {} }, 500)
-}
-
-// v0.84.2: Чтение лога для отображения в модальном окне
-function readLogFile(maxLines = 500) {
-  if (!logFilePath || !fs.existsSync(logFilePath)) return ''
-  try {
-    const content = fs.readFileSync(logFilePath, 'utf8')
-    const lines = content.split('\n')
-    return lines.slice(-maxLines).join('\n')
-  } catch { return '' }
-}
+// v0.84.4: Logger, session — вынесены в main/utils/logger.js, main/utils/sessionSetup.js
 
 // ─── Версионирование settings (v0.84.1) ────────────────────────────────────
 const SETTINGS_VERSION = 2
@@ -204,60 +160,7 @@ function getPreloadPath() {
   return path.join(__dirname, '../preload/index.mjs')
 }
 
-// ─── Настройка сессий для WebView ─────────────────────────────────────────────
-
-// User-Agent без слова "Electron" — WhatsApp/VK и другие сайты блокируют Electron-браузеры
-const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-
-function setupSession(ses) {
-  ses.setUserAgent(CHROME_UA)
-  // Блокируем нативные Notification из WebView — мы перехватываем их через executeJavaScript
-  ses.setPermissionRequestHandler((_wc, permission, cb) => {
-    if (permission === 'notifications') return cb(false)
-    cb(true)
-  })
-  ses.setPermissionCheckHandler((_wc, permission) => {
-    if (permission === 'notifications') return false
-    return true
-  })
-
-  // v0.73.8: Убиваем Service Worker на уровне Electron session.
-  // ПРИЧИНА: Telegram Web из SW вызывает navigator.setAppBadge(N) → Chromium C++
-  // ставит overlay icon напрямую (Mojo IPC → ITaskbarList3::SetOverlayIcon),
-  // перебивая наш кастомный overlay с суммой всех мессенджеров.
-  // JS override (navigator.serviceWorker.register) НЕ ПОМОГАЕТ — SW уже закеширован
-  // в partition storage от предыдущих сессий и активируется ДО нашего JS-кода.
-  // clearStorageData удаляет закешированные SW ДО загрузки страницы.
-  ses.clearStorageData({ storages: ['serviceworkers', 'cachestorage'] })
-    .then(() => console.log('[SW] Service Worker storage очищен для сессии'))
-    .catch(e => console.error('[SW] Ошибка очистки SW storage:', e.message))
-
-  // Мониторинг: если SW всё-таки запустится — логируем для отладки
-  if (ses.serviceWorkers) {
-    ses.serviceWorkers.on('running-status-changed', (e) => {
-      console.log(`[SW] running-status-changed: versionId=${e.versionId} runningStatus=${e.runningStatus}`)
-      // Если SW запустился — немедленно очищаем повторно
-      if (e.runningStatus === 'starting' || e.runningStatus === 'running') {
-        console.log('[SW] Обнаружен запущенный SW — повторная очистка')
-        ses.clearStorageData({ storages: ['serviceworkers'] }).catch(() => {})
-      }
-    })
-  }
-
-  ses.webRequest.onHeadersReceived((details, callback) => {
-    const headers = { ...details.responseHeaders }
-    delete headers['x-frame-options']
-    delete headers['X-Frame-Options']
-
-    const csp = headers['content-security-policy'] || headers['Content-Security-Policy']
-    if (csp) {
-      const fixed = (Array.isArray(csp) ? csp : [csp])
-        .map(v => v.replace(/frame-ancestors[^;]*(;|$)/gi, ''))
-      headers['content-security-policy'] = fixed
-    }
-    callback({ responseHeaders: headers })
-  })
-}
+// v0.84.4: setupSession вынесен в main/utils/sessionSetup.js
 
 // v0.73.9: Блокируем app.setBadgeCount — Chromium вызывает при Badge API из WebView
 app.setBadgeCount = function(count) {
@@ -679,7 +582,8 @@ function setupIPC() {
   ipcMain.on('app:log', (event, { level, message }) => {
     const ts = new Date().toISOString().slice(0, 19).replace('T', ' ')
     const line = `[${ts}] [R:${level || 'INFO'}] ${message}\n`
-    if (logFilePath) try { fs.appendFileSync(logFilePath, line) } catch {}
+    const lp = getLogFilePath()
+    if (lp) try { fs.appendFileSync(lp, line) } catch {}
   })
 
   // v0.82.0: Загрузка per-messenger notification hook
@@ -1138,7 +1042,8 @@ app.on('web-contents-created', (_event, contents) => {
 
 app.whenReady().then(() => {
   // v0.84.1: Инициализируем логгер ДО всего остального
-  initLogger()
+  initLogger(app.getPath('userData'))
+  setLogViewerOpener(openLogViewer)
   console.log('=== ChatCenter v0.84.1 start ===')
 
   // Инициализируем хранилище
