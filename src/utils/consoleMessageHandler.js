@@ -29,6 +29,8 @@ export function createConsoleMessageHandler(deps) {
     if (parsed) {
       const ready = !!notifReadyRef.current[messengerId]
       traceNotif('debug', 'info', messengerId, (parsed.text || parsed.body || parsed.value || '').toString().slice(0, 200), `${parsed.prefix || parsed.type} | ready=${ready}`)
+      // v0.85.5: Любой __CC_ ответ от монитора → статус active (fix красных кругляшков)
+      setMonitorStatus(prev => prev[messengerId] === 'active' ? prev : { ...prev, [messengerId]: 'active' })
     }
     // ── __CC_BADGE_BLOCKED__: Telegram Badge API ──
     if (parsed && parsed.type === 'badge_blocked') {

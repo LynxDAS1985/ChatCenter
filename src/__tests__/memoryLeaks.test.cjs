@@ -157,5 +157,15 @@ test('main.js: setupSession ошибка логируется', function() {
   assert(mainCode.includes('[Session]'), 'setupSession catch должен логировать')
 })
 
+// 6. Monitor status: active при __CC_ ответе
+var cmhCode = ''
+try { cmhCode = fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8') } catch(e) {}
+test('__CC_ → setMonitorStatus active (fix красных кругляшков)', function() {
+  assert(cmhCode.includes("setMonitorStatus") && cmhCode.includes("'active'"), 'consoleMessageHandler должен ставить active при __CC_ ответе')
+})
+test('WebView timeout → error логируется', function() {
+  assert(appCode.includes('[Monitor]') && appCode.includes('не ответил'), 'таймаут монитора должен логироваться')
+})
+
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

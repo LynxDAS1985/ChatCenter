@@ -321,13 +321,17 @@ export function createWebviewSetup(deps) {
         // v0.57.0: снижено с 30 до 5 сек — 30 сек блокировало реальные сообщения в MAX.
         notifReadyRef.current[messengerId] = false
         setTimeout(() => { notifReadyRef.current[messengerId] = true }, 5000)
-        // Через 20 сек если монитор не ответил — помечаем как error
+        // v0.85.5: Через 10 сек если монитор не ответил — помечаем как error
+        // Монитор шлёт __CC_DIAG__, __CC_NOTIF_HOOK_OK__, unread-count — любой из них → active
         setTimeout(() => {
           setMonitorStatus(prev => {
-            if (prev[messengerId] === 'loading') return { ...prev, [messengerId]: 'error' }
+            if (prev[messengerId] === 'loading') {
+              devError(`[Monitor] ${messengerId}: не ответил за 10 сек → error`)
+              return { ...prev, [messengerId]: 'error' }
+            }
             return prev
           })
-        }, 20000)
+        }, 10000)
         // Применяем зум если он не стандартный
         setTimeout(() => {
           const zoom = zoomLevelsRef.current[messengerId] || 100
