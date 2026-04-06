@@ -15,10 +15,12 @@ export default function NotifLogModal({ ctx }) {
   const traceData = (notifLogModal.trace || []).filter(e => {
     if (traceFilter === 'all') return true
     if (traceFilter === 'block') return e.type === 'block' || e.type === 'warn'
+    if (traceFilter === 'hook-blocked') return (e.detail || '').includes('hook-blocked')
     if (traceFilter === 'source') return e.step === 'source' || e.step === 'enrich'
     if (traceFilter === 'decision') return e.step === 'viewing' || e.step === 'sound' || e.step === 'ribbon' || e.step === 'dedup'
     return true
   })
+  const hookBlockedCount = (notifLogModal.trace || []).filter(e => (e.detail || '').includes('hook-blocked')).length
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={() => setNotifLogModal(null)}>
@@ -261,7 +263,7 @@ export default function NotifLogModal({ ctx }) {
         {notifLogTab === 'trace' && (
           <div className="flex items-center gap-1 px-4 py-1.5" style={{ borderBottom: '1px solid var(--cc-border)', backgroundColor: 'rgba(0,0,0,0.15)' }}>
             <span className="text-[10px] mr-1" style={{ color: 'var(--cc-text-dimmer)' }}>Фильтр:</span>
-            {[['all', 'Все'], ['block', 'Блокировки'], ['source', 'Источники'], ['decision', 'Решения']].map(([f, label]) => (
+            {[['all', 'Все'], ['block', 'Блокировки'], ['hook-blocked', `Hook-блок${hookBlockedCount ? ' (' + hookBlockedCount + ')' : ''}`], ['source', 'Источники'], ['decision', 'Решения']].map(([f, label]) => (
               <button key={f} className="px-2 py-0.5 rounded text-[10px] cursor-pointer" style={{
                 backgroundColor: traceFilter === f ? 'rgba(96,165,250,0.2)' : 'transparent',
                 color: traceFilter === f ? '#60a5fa' : 'var(--cc-text-dimmer)',
