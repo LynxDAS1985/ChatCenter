@@ -25,8 +25,18 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
           if (!el) el = document.querySelector('[data-peer-id="-' + peerId + '"]');
           log.push('domFound=' + !!el);
           if (el) {
-            var chat = el.closest('.chatlist-chat') || el;
+            log.push('elTag=' + el.tagName + ',elCls=' + (el.className||'').slice(0,60));
+            var chat = el.closest('.chatlist-chat');
+            log.push('closestChat=' + !!chat);
+            if (!chat) chat = el.closest('a') || el.closest('li') || el.closest('[class*="ListItem"]') || el.closest('[class*="chat-item"]') || el;
+            log.push('clickTarget=' + chat.tagName + ',cls=' + (chat.className||'').slice(0,60));
+            // Пробуем разные стратегии клика
             chat.click();
+            // Если chat = el (нет parent container) — пробуем MouseEvent с bubbles
+            if (chat === el) {
+              try { chat.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); } catch(ce) {}
+              log.push('mouseEvent=dispatched');
+            }
             return {ok:true, method:'tag-dom', log:log.join(', ')};
           }
           // DOM не нашёл — hash навигация (работает из любой папки)
