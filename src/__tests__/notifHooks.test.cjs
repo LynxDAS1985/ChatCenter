@@ -66,6 +66,20 @@ const waCode = fs.readFileSync(path.join(hooksDir, 'whatsapp.hook.js'), 'utf8')
 test('WA: span[title] для аватарки', () => assert(waCode.includes('span[title]'), 'WhatsApp ищет аватарку по span[title]'))
 test('WA: НЕ содержит _maxPhantom', () => assert(!waCode.includes('_maxPhantom'), 'WhatsApp НЕ должен иметь MAX-фильтры'))
 
+// ── v0.85.7: _isSpam НЕ блокирует 1-символьные сообщения ──
+console.log('\n── _isSpam: 1-символьные сообщения (ловушка 56): ──')
+const allHookCodes = { telegram: tgCode, whatsapp: waCode, vk: vkCode, max: maxCode }
+for (const [name, code] of Object.entries(allHookCodes)) {
+  // Проверяем ТОЛЬКО _isSpam функцию (не enrichNotif — там DOM-контекст, порог ОК)
+  const isSpamBlock = code.slice(code.indexOf('function _isSpam'), code.indexOf('function _isSpam') + 200)
+  test(`${name}: _isSpam НЕ содержит body.length < 2`, () => {
+    assert(!isSpamBlock.includes('body.length < 2'), `${name}.hook.js _isSpam содержит body.length < 2 — блокирует 1-символьные ("С", "+")!`)
+  })
+  test(`${name}: _isSpam использует !body.trim()`, () => {
+    assert(isSpamBlock.includes('!body.trim()'), `${name}.hook.js _isSpam должен использовать !body.trim()`)
+  })
+}
+
 // ── Нет дублирования в основных файлах ──
 console.log('\n── Нет дублирования: ──')
 const monitorCode = fs.readFileSync(path.join(__dirname, '../../main/preloads/monitor.preload.cjs'), 'utf8')

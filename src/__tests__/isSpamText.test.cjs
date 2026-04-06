@@ -113,6 +113,13 @@ test('Ок 👍', () => assert(isSpamText('Ок 👍') === false))
 test('VK: Переслать (ipc, не msg)', () => assert(isSpamText('переслать', 'ipc') === false))
 test('Длинный текст с переслать', () => assert(isSpamText('Можете переслать мне документы? Мне нужны скан паспорта и заявление на получение доверенности для регистрации автомобиля', 'msg') === false))
 
+// v0.85.7: 1-символьные сообщения НЕ должны блокироваться (ловушка 56)
+test('1-символ: "С" (сейчас)', () => assert(isSpamText('С') === false))
+test('1-символ: "+" (согласие)', () => assert(isSpamText('+') === false))
+test('1-символ: "1" (выбор)', () => assert(isSpamText('1') === false))
+test('1-символ: "Д" (да)', () => assert(isSpamText('Д') === false))
+test('1-символ: "-" (отказ)', () => assert(isSpamText('-') === false))
+
 // Итог
 console.log(`\\n📊 Результат: ${passed} ✅ / ${failed} ❌ из ${passed + failed}`)
 if (failed > 0) process.exit(1)
