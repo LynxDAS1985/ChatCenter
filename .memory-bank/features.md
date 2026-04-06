@@ -92,6 +92,10 @@
 
 ## Changelog
 
+### v0.85.5+ (30 марта 2026) — FIX красные кругляшки + displayText
+- **Ловушка 54**: monitorStatus active при любом `__CC_` ответе (не только unread-count)
+- **displayText fix**: переменная вынесена до if(ribbonOn) — ReferenceError при выключенном ribbon
+
 ### v0.85.5 (30 марта 2026) — Полное логирование + все слепые зоны закрыты
 - **Deprecated fix**: console-message Event API (Electron 41)
 - **WebView crash/hang**: render-process-gone + unresponsive + did-fail-load → лог + статус
