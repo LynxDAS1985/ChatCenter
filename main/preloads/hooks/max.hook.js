@@ -140,7 +140,7 @@
         else if (sticker) body = '\u{0001F4CE} Стикер #' + (++_stickerSeq);
         spam = '';
       }
-      if (spam) { _log('blocked', title, body, tag, icon, spam, ''); return; }
+      if (spam) { _log('blocked', title, body, tag, icon, spam, ''); console.log('__CC_DIAG__hook-blocked: ' + spam + ' | "' + (body||'').slice(0,30) + '" t="' + (title||'').slice(0,20) + '"'); return; }
       var enriched = _enrichNotif(title, body, tag, icon);
       // v0.83.1: Фильтр своих сообщений — если enriched sender = имя в header активного чата
       // и документ видим (пользователь на вкладке MAX) → вероятно своё сообщение
@@ -148,6 +148,7 @@
       var _tbText = _tb ? (_tb.textContent || '').trim() : '';
       if (enriched.title && _tbText && _tbText.indexOf(enriched.title) >= 0 && !document.hidden) {
         _log('blocked', title, body, tag, icon, 'own-chat', enriched.title);
+        console.log('__CC_DIAG__hook-blocked: own-chat | "' + (body||'').slice(0,30) + '" sender="' + (enriched.title||'').slice(0,20) + '"');
         return;
       }
       _log('passed', title, body, tag, icon, '', enriched.title);
@@ -171,13 +172,14 @@
           else if (sticker) body = '\u{0001F4CE} Стикер #' + (++_stickerSeq);
           spam = '';
         }
-        if (spam) { _log('blocked', title, body, tag, icon, spam, ''); return Promise.resolve(); }
+        if (spam) { _log('blocked', title, body, tag, icon, spam, ''); console.log('__CC_DIAG__hook-blocked: ' + spam + ' | "' + (body||'').slice(0,30) + '" t="' + (title||'').slice(0,20) + '"'); return Promise.resolve(); }
         var enriched = _enrichNotif(title, body, tag, icon);
         // v0.83.1: Фильтр своих сообщений (аналогично new Notification выше)
         var _tb2 = document.querySelector('.topbar');
         var _tb2Text = _tb2 ? (_tb2.textContent || '').trim() : '';
         if (enriched.title && _tb2Text && _tb2Text.indexOf(enriched.title) >= 0 && !document.hidden) {
           _log('blocked', title, body, tag, icon, 'own-chat', enriched.title);
+          console.log('__CC_DIAG__hook-blocked: own-chat | "' + (body||'').slice(0,30) + '" sender="' + (enriched.title||'').slice(0,20) + '"');
           return Promise.resolve();
         }
         _log('passed', title, body, tag, icon, '', enriched.title);

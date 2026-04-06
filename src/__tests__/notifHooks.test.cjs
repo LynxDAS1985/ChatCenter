@@ -80,6 +80,14 @@ for (const [name, code] of Object.entries(allHookCodes)) {
   })
 }
 
+// ── v0.85.7: Заблокированные → Pipeline Trace через __CC_DIAG__ ──
+console.log('\n── hook-blocked → Pipeline Trace: ──')
+for (const [name, code] of Object.entries(allHookCodes)) {
+  test(`${name}: заблокированные логируются в __CC_DIAG__`, () => {
+    assert(code.includes('__CC_DIAG__hook-blocked'), `${name}.hook.js должен логировать блокировки через __CC_DIAG__`)
+  })
+}
+
 // ── Нет дублирования в основных файлах ──
 console.log('\n── Нет дублирования: ──')
 const monitorCode = fs.readFileSync(path.join(__dirname, '../../main/preloads/monitor.preload.cjs'), 'utf8')

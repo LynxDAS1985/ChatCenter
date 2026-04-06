@@ -92,12 +92,14 @@
 
 ## Changelog
 
-### v0.85.7 (6 апреля 2026) — FIX 1-символьные сообщения блокировались (ловушка 56)
+### v0.85.7 (6 апреля 2026) — FIX 1-символьные + заблокированные → Pipeline Trace
 - **_isSpam**: `body.length < 2` → `!body.trim()` во всех 4 hooks (telegram/whatsapp/vk/max)
 - Сообщения "С", "+", "1", "Д", "-" теперь проходят через Notification API
 - enrichNotif (VK/MAX) не тронут — там DOM-контекст, порог оправдан
 - 13 новых тестов: 5 в isSpamText (1-символьные), 8 в notifHooks (body.length check)
 - Ловушка 56 задокументирована
+- **Заблокированные → Pipeline Trace**: все hooks шлют `__CC_DIAG__hook-blocked: reason` при блокировке
+- Теперь видно В ТРЕЙСЕ почему уведомление не пришло (empty/system/outgoing/own-chat)
 
 ### v0.85.6 (6 апреля 2026) — FIX badge_blocked спам + чёрный экран WebView
 - **badge_blocked спам**: 130+ записей за 30 мин → 0 (не логируется, не обновляет статус)

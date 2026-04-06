@@ -50,7 +50,7 @@
       var tag = (opts && opts.tag) || '';
       var icon = (opts && opts.icon) || (opts && opts.image) || (opts && opts.badge) || '';
       var spam = _isSpam(body);
-      if (spam) { _log('blocked', title, body, tag, icon, spam, ''); return; }
+      if (spam) { _log('blocked', title, body, tag, icon, spam, ''); console.log('__CC_DIAG__hook-blocked: ' + spam + ' | "' + (body||'').slice(0,30) + '" t="' + (title||'').slice(0,20) + '"'); return; }
       if (!icon) icon = _findAvatar(title);
       _log('passed', title, body, tag, icon, '', title);
       console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: body, i: icon, g: tag }));
@@ -66,7 +66,7 @@
         var tag = (opts && opts.tag) || '';
         var icon = (opts && opts.icon) || (opts && opts.image) || '';
         var spam = _isSpam(body);
-        if (spam) { _log('blocked', title, body, tag, icon, spam, ''); return Promise.resolve(); }
+        if (spam) { _log('blocked', title, body, tag, icon, spam, ''); console.log('__CC_DIAG__hook-blocked: ' + spam + ' | "' + (body||'').slice(0,30) + '" t="' + (title||'').slice(0,20) + '"'); return Promise.resolve(); }
         if (!icon) icon = _findAvatar(title);
         _log('passed', title, body, tag, icon, '', title);
         console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: body, i: icon, g: tag }));
