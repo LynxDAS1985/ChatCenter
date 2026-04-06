@@ -11,6 +11,13 @@ export const DEFAULT_MESSENGERS = [
     isDefault: true,
     accountScript: `(async () => {
       try {
+        // v0.85.8: Сначала берём ID текущего аккаунта из localStorage (надёжно)
+        var selfId = null;
+        try {
+          var auth = JSON.parse(localStorage.getItem('user_auth') || '{}');
+          if (auth.id) selfId = auth.id;
+        } catch(e) {}
+        console.log('__CC_DIAG__account: selfId=' + selfId);
         var dbs = [];
         try { if (typeof indexedDB.databases === 'function') dbs = await indexedDB.databases(); } catch(e) {}
         if (!dbs || !dbs.length) dbs = [{name:'tweb'},{name:'tweb-0'},{name:'tweb-1'}];
@@ -36,7 +43,9 @@ export const DEFAULT_MESSENGERS = [
                 var c = cur.result;
                 if (!c) { ok(null); return; }
                 var u = c.value;
-                if (u && ((u.pFlags && u.pFlags.self) || u.self === true)) { ok(u); return; }
+                // v0.85.8: Ищем по selfId (точный ID) ИЛИ pFlags.self (fallback)
+                if (selfId && u && (u.id === selfId || u.id === String(selfId))) { ok(u); return; }
+                if (!selfId && u && ((u.pFlags && u.pFlags.self) || u.self === true)) { ok(u); return; }
                 c.continue();
               };
               cur.onerror = function(){ok(null)};
@@ -45,6 +54,7 @@ export const DEFAULT_MESSENGERS = [
             if (self) {
               var fn = self.first_name || self.firstName || '';
               var ln = self.last_name || self.lastName || '';
+              console.log('__CC_DIAG__account: found id=' + self.id + ' name=' + (fn + ' ' + ln).trim());
               if (fn) return (fn + ' ' + ln).trim();
               if (self.name) return self.name;
               if (self.phone) return '+' + String(self.phone).replace(/^\\+/,'');

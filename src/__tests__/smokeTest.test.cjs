@@ -94,6 +94,22 @@ test('app:log IPC handler (renderer → chatcenter.log)', function() {
   assert(allMainCode.includes("'app:log'"), 'main.js должен иметь app:log handler для логирования из renderer')
 })
 
+// v0.85.8: Telegram accountScript использует user_auth.id (не pFlags.self)
+console.log('\n── AccountScript: ──')
+var constantsCode = fs.readFileSync('src/constants.js', 'utf8')
+test('TG accountScript: читает user_auth из localStorage', function() {
+  assert(constantsCode.includes('user_auth'), 'accountScript должен читать user_auth для точного ID аккаунта')
+})
+test('TG accountScript: ищет по selfId (не только pFlags.self)', function() {
+  assert(constantsCode.includes('selfId') && constantsCode.includes('u.id === selfId'), 'accountScript должен искать по selfId из user_auth')
+})
+test('TG accountScript: pFlags.self как fallback (если нет user_auth)', function() {
+  assert(constantsCode.includes('pFlags') && constantsCode.includes('pFlags.self'), 'pFlags.self должен быть fallback')
+})
+test('TG accountScript: диагностика __CC_DIAG__account', function() {
+  assert(constantsCode.includes('__CC_DIAG__account'), 'должен логировать selfId и найденное имя')
+})
+
 // ═══════════════════════════════════════
 // 3. Main process imports
 // ═══════════════════════════════════════
