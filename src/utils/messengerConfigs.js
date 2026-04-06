@@ -54,12 +54,12 @@ export function isSpamText(text, source) {
 // Каждый мессенджер — свой способ найти имя аккаунта
 export const ACCOUNT_SCRIPTS = {
   telegram: `(function() {
-    // Telegram: IndexedDB → user_auth → first_name + last_name
-    // Или из кнопки "Избранное" / профиля
+    // v0.85.8: Telegram: user_auth.id → localStorage кэш → peer-title fallback
     var CK = '__cc_account_name';
+    // 1. Проверяем кэш (если уже нашли ранее через IndexedDB)
     var cached = localStorage.getItem(CK);
     if (cached && cached.length > 1 && cached.length < 60) return cached;
-    // Попробовать peer-title в sidebar
+    // 2. peer-title fallback (быстрый, но может быть неточный)
     var pt = document.querySelector('.peer-title');
     if (pt) return pt.textContent.trim().substring(0, 40);
     return '';

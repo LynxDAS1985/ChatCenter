@@ -26,23 +26,13 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
           log.push('domFound=' + !!el);
           if (el) {
             log.push('elTag=' + el.tagName + ',elCls=' + (el.className||'').slice(0,60));
-            var chat = el.closest('.chatlist-chat') || el.closest('a[data-peer-id]') || el.closest('a') || el.closest('li') || el;
-            var href = chat.getAttribute ? (chat.getAttribute('href') || '') : '';
-            log.push('chatTag=' + chat.tagName + ',href=' + href.slice(0,30) + ',cls=' + (chat.className||'').slice(0,40));
-            // Стратегия 1: Если <a> с href — используем location.hash (надёжнее .click())
-            if (href && href.startsWith('#')) {
-              location.hash = href;
-              log.push('strategy=href-hash');
-              return {ok:true, method:'tag-href', log:log.join(', ')};
-            }
-            // Стратегия 2: MouseEvent с bubbles (Telegram SPA — .click() не всегда работает)
-            try {
-              chat.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window}));
-              chat.dispatchEvent(new MouseEvent('mouseup', {bubbles:true, cancelable:true, view:window}));
-              chat.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
-              log.push('strategy=mouseEvent');
-            } catch(ce) { log.push('mouseErr=' + ce.message); }
-            return {ok:true, method:'tag-dom', log:log.join(', ')};
+            // v0.85.8: НЕ используем href от closest('a') — может быть от другого чата!
+            // Строим hash из peerId напрямую (надёжнее чем DOM parent traversal)
+            var hashId = peerId;
+            if (prefix === 'c') hashId = '-100' + peerId;
+            location.hash = '#' + hashId;
+            log.push('strategy=direct-hash,hash=#' + hashId);
+            return {ok:true, method:'tag-hash', log:log.join(', ')};
           }
           // DOM не нашёл — hash навигация (работает из любой папки)
           try {

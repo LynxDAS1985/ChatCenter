@@ -54,8 +54,11 @@ export const DEFAULT_MESSENGERS = [
             if (self) {
               var fn = self.first_name || self.firstName || '';
               var ln = self.last_name || self.lastName || '';
-              console.log('__CC_DIAG__account: found id=' + self.id + ' name=' + (fn + ' ' + ln).trim());
-              if (fn) return (fn + ' ' + ln).trim();
+              var fullName = (fn + ' ' + ln).trim();
+              console.log('__CC_DIAG__account: found id=' + self.id + ' name=' + fullName);
+              // Сохраняем в localStorage для diagAccount (messengerConfigs.js)
+              if (fullName) try { localStorage.setItem('__cc_account_name', fullName); } catch(e) {}
+              if (fn) return fullName;
               if (self.name) return self.name;
               if (self.phone) return '+' + String(self.phone).replace(/^\\+/,'');
             }

@@ -65,11 +65,10 @@ try {
   // v0.85.8: location.hash с форматом канал/пользователь
   test('TG: location.hash навигация (fallback)', () => assert(code.includes("location.hash = '#' + hashId")))
   test('TG: hash метод в результате', () => assert(code.includes("method:'hash'")))
-  // v0.85.8: DOM-клик ПЕРВЫЙ (для пользователей), hash как fallback (для каналов не в chatlist)
-  test('TG: DOM-клик ДО hash (приоритет)', () => {
-    var domIdx = code.indexOf("method:'tag-dom'")
-    var hashIdx = code.indexOf("method:'hash'")
-    assert(domIdx > 0 && hashIdx > 0 && domIdx < hashIdx, 'tag-dom должен быть ПЕРЕД hash')
+  // v0.85.8: DOM-находка → direct hash (не .click(), не href от parent)
+  test('TG: DOM → direct hash (не href от parent)', () => {
+    assert(code.includes("method:'tag-hash'"), 'должен быть метод tag-hash (DOM найден → hash из peerId)')
+    assert(code.includes('strategy=direct-hash'), 'стратегия direct-hash')
   })
   // v0.85.8: канал c → -100 prefix
   test('TG: канал (c prefix) → -100 hash', () => assert(code.includes("hashId = '-100' + peerId")))
