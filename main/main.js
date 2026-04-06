@@ -466,6 +466,11 @@ function setupIPC() {
 
 let backupNotif = null
 
+// ─── GPU стабильность (v0.85.5: fix чёрный экран WebView) ─────────────────────
+// Без этих флагов WebView может потерять GPU контекст при переключении вкладок
+app.commandLine.appendSwitch('disable-gpu-compositing') // предотвращает потерю GPU контекста
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer') // нужен Telegram Web
+
 // ─── Запуск ───────────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {

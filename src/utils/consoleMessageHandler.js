@@ -27,21 +27,21 @@ export function createConsoleMessageHandler(deps) {
     // v0.79.8: Парсинг через consoleMessageParser.js
     const parsed = parseConsoleMessage(msg)
     if (parsed) {
+      // v0.85.5: badge_blocked спамит 4 раза/сек — НЕ логируем, НЕ обновляем статус
+      if (parsed.type === 'badge_blocked') {
+        // Только сброс счётчика если пользователь смотрит и badge=0
+        if (parsed.value === 0 && activeIdRef.current === messengerId && windowFocusedRef.current) {
+          if (notifCountRef.current[messengerId] > 0) notifCountRef.current[messengerId] = 0
+          setUnreadCounts(prev => prev[messengerId] > 0 ? { ...prev, [messengerId]: 0 } : prev)
+        }
+        return
+      }
       const ready = !!notifReadyRef.current[messengerId]
       traceNotif('debug', 'info', messengerId, (parsed.text || parsed.body || parsed.value || '').toString().slice(0, 200), `${parsed.prefix || parsed.type} | ready=${ready}`)
-      // v0.85.5: Любой __CC_ ответ от монитора → статус active (fix красных кругляшков)
+      // v0.85.5: Любой __CC_ ответ (кроме badge_blocked) → статус active
       setMonitorStatus(prev => prev[messengerId] === 'active' ? prev : { ...prev, [messengerId]: 'active' })
     }
-    // ── __CC_BADGE_BLOCKED__: Telegram Badge API ──
-    if (parsed && parsed.type === 'badge_blocked') {
-      if (parsed.value === 0 && activeIdRef.current === messengerId && windowFocusedRef.current) {
-        if (notifCountRef.current[messengerId] > 0) {
-          notifCountRef.current[messengerId] = 0
-        }
-        setUnreadCounts(prev => prev[messengerId] > 0 ? { ...prev, [messengerId]: 0 } : prev)
-      }
-      return
-    }
+    // badge_blocked уже обработан выше
     // ── __CC_ACCOUNT__: имя профиля ──
     if (parsed && parsed.type === 'account') {
       if (parsed.name && parsed.name.length > 1 && parsed.name.length < 80) {

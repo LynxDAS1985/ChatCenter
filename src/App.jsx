@@ -452,6 +452,8 @@ export default function App() {
                 style={{
                   zIndex: activeId === m.id ? 2 : 0,
                   pointerEvents: activeId === m.id ? 'auto' : 'none',
+                  // v0.85.5: visibility hidden для неактивных → экономит GPU, предотвращает чёрный экран
+                  visibility: activeId === m.id ? 'visible' : 'hidden',
                 }}
               >
                 <webview

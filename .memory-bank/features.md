@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.85.5 (30 марта 2026)
+## Текущая версия: v0.85.6 (6 апреля 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.85.6 (6 апреля 2026) — FIX badge_blocked спам + чёрный экран WebView
+- **badge_blocked спам**: 130+ записей за 30 мин → 0 (не логируется, не обновляет статус)
+- **Чёрный экран Telegram**: visibility:hidden для неактивных WebView + disable-gpu-compositing
+- **SharedArrayBuffer**: включён для Telegram Web (требует feature flag)
+- Ловушка 55 задокументирована
 
 ### v0.85.5+ (30 марта 2026) — FIX красные кругляшки + displayText
 - **Ловушка 54**: monitorStatus active при любом `__CC_` ответе (не только unread-count)
