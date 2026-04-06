@@ -26,17 +26,22 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
           log.push('domFound=' + !!el);
           if (el) {
             log.push('elTag=' + el.tagName + ',elCls=' + (el.className||'').slice(0,60));
-            var chat = el.closest('.chatlist-chat');
-            log.push('closestChat=' + !!chat);
-            if (!chat) chat = el.closest('a') || el.closest('li') || el.closest('[class*="ListItem"]') || el.closest('[class*="chat-item"]') || el;
-            log.push('clickTarget=' + chat.tagName + ',cls=' + (chat.className||'').slice(0,60));
-            // Пробуем разные стратегии клика
-            chat.click();
-            // Если chat = el (нет parent container) — пробуем MouseEvent с bubbles
-            if (chat === el) {
-              try { chat.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); } catch(ce) {}
-              log.push('mouseEvent=dispatched');
+            var chat = el.closest('.chatlist-chat') || el.closest('a[data-peer-id]') || el.closest('a') || el.closest('li') || el;
+            var href = chat.getAttribute ? (chat.getAttribute('href') || '') : '';
+            log.push('chatTag=' + chat.tagName + ',href=' + href.slice(0,30) + ',cls=' + (chat.className||'').slice(0,40));
+            // Стратегия 1: Если <a> с href — используем location.hash (надёжнее .click())
+            if (href && href.startsWith('#')) {
+              location.hash = href;
+              log.push('strategy=href-hash');
+              return {ok:true, method:'tag-href', log:log.join(', ')};
             }
+            // Стратегия 2: MouseEvent с bubbles (Telegram SPA — .click() не всегда работает)
+            try {
+              chat.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window}));
+              chat.dispatchEvent(new MouseEvent('mouseup', {bubbles:true, cancelable:true, view:window}));
+              chat.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+              log.push('strategy=mouseEvent');
+            } catch(ce) { log.push('mouseErr=' + ce.message); }
             return {ok:true, method:'tag-dom', log:log.join(', ')};
           }
           // DOM не нашёл — hash навигация (работает из любой папки)
