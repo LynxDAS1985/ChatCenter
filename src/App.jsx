@@ -452,8 +452,8 @@ export default function App() {
                 style={{
                   zIndex: activeId === m.id ? 2 : 0,
                   pointerEvents: activeId === m.id ? 'auto' : 'none',
-                  // v0.85.5: visibility hidden для неактивных → экономит GPU, предотвращает чёрный экран
-                  visibility: activeId === m.id ? 'visible' : 'hidden',
+                  // НЕ используем visibility:hidden — Chromium останавливает загрузку hidden WebView
+                  // Чёрный экран решён через disable-gpu-compositing в main.js
                 }}
               >
                 <webview
