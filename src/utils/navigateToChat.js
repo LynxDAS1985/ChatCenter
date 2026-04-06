@@ -17,10 +17,24 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
         var peerId = tag.split('_')[0].replace(/[^0-9-]/g, '');
         log.push('peerId=' + peerId);
         if (peerId) {
-          // v0.85.7: ПЕРВЫЙ метод — location.hash навигация (работает из любой папки)
+          // v0.85.8: location.hash с правильным форматом для каналов/групп/пользователей
+          // chatTag: c2650004765_... → канал → hash #-1002650004765
+          // chatTag: u611696632_...  → пользователь → hash #611696632
+          // chatTag: peer4_... или без префикса → fallback
           try {
-            location.hash = '#' + peerId;
-            log.push('hash=#' + peerId);
+            var prefix = tag.charAt(0);
+            var hashId = peerId;
+            if (prefix === 'c') hashId = '-100' + peerId;
+            else if (prefix !== 'u' && peerId.charAt(0) !== '-') {
+              // Неизвестный формат — пробуем как есть, DOM fallback ниже
+              var peerType0 = 0;
+              var m0 = tag.match(/^peer(\\d+)_/);
+              if (m0) peerType0 = parseInt(m0[1]);
+              if (peerType0 >= 4) hashId = '-100' + peerId;
+              else if (peerType0 === 2) hashId = '-' + peerId;
+            }
+            location.hash = '#' + hashId;
+            log.push('hash=#' + hashId + ',prefix=' + prefix);
             return {ok:true, method:'hash', log:log.join(', ')};
           } catch(he) { log.push('hashErr=' + he.message); }
           // Fallback: DOM-поиск (если hash не сработал)

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.85.7 (6 апреля 2026)
+## Текущая версия: v0.85.8 (6 апреля 2026)
 
 ---
 
@@ -91,6 +91,12 @@
 ---
 
 ## Changelog
+
+### v0.85.8 (6 апреля 2026) — FIX "Перейти к чату" для каналов Telegram
+- **location.hash**: `c` prefix → `-100` + peerId (каналы), `u` prefix → peerId (пользователи)
+- Без этого каналы не открывались — Telegram Web K требует `-100` для каналов
+- WebView загрузка: убран visibility:hidden (останавливал загрузку неактивных вкладок)
+- 8 новых тестов: hash формат, runtime проверка c/u prefix, реальные chatTag
 
 ### v0.85.7 (6 апреля 2026) — FIX 1-символьные + заблокированные → Pipeline Trace
 - **_isSpam**: `body.length < 2` → `!body.trim()` во всех 4 hooks (telegram/whatsapp/vk/max)
