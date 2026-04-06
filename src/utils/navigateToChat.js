@@ -17,6 +17,13 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
         var peerId = tag.split('_')[0].replace(/[^0-9-]/g, '');
         log.push('peerId=' + peerId);
         if (peerId) {
+          // v0.85.7: ПЕРВЫЙ метод — location.hash навигация (работает из любой папки)
+          try {
+            location.hash = '#' + peerId;
+            log.push('hash=#' + peerId);
+            return {ok:true, method:'hash', log:log.join(', ')};
+          } catch(he) { log.push('hashErr=' + he.message); }
+          // Fallback: DOM-поиск (если hash не сработал)
           var el = document.querySelector('[data-peer-id="' + peerId + '"]');
           if (!el) el = document.querySelector('[data-peer-id="-' + peerId + '"]');
           log.push('domFound=' + !!el);

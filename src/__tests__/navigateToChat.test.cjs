@@ -62,6 +62,15 @@ try {
   test('TG: метод exact match', () => assert(code.includes("method:'exact'")))
   test('TG: метод partial match', () => assert(code.includes("method:'partial'")))
   test('TG: chatTag навигация', () => assert(code.includes('tag-dom')))
+  // v0.85.7: location.hash — первый метод навигации (работает из любой папки)
+  test('TG: location.hash навигация (первый метод)', () => assert(code.includes("location.hash = '#' + peerId")))
+  test('TG: hash метод в результате', () => assert(code.includes("method:'hash'")))
+  // Проверяем что hash ПЕРЕД tag-dom (первый метод)
+  test('TG: hash ДО tag-dom (приоритет)', () => {
+    var hashIdx = code.indexOf("location.hash = '#' + peerId")
+    var tagDomIdx = code.indexOf("method:'tag-dom'")
+    assert(hashIdx > 0 && tagDomIdx > 0 && hashIdx < tagDomIdx, 'hash должен быть ПЕРЕД tag-dom')
+  })
 
   console.log('\\n── VK: ──')
   test('VK: ищет ConvoListItem__title', () => assert(code.includes('ConvoListItem__title')))
