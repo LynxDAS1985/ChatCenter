@@ -63,12 +63,13 @@ try {
   test('TG: метод partial match', () => assert(code.includes("method:'partial'")))
   test('TG: chatTag навигация', () => assert(code.includes('tag-dom')))
   // v0.85.8: location.hash с форматом канал/пользователь
-  test('TG: location.hash навигация', () => assert(code.includes("location.hash = '#' + hashId")))
+  test('TG: location.hash навигация (fallback)', () => assert(code.includes("location.hash = '#' + hashId")))
   test('TG: hash метод в результате', () => assert(code.includes("method:'hash'")))
-  test('TG: hash ДО tag-dom (приоритет)', () => {
-    var hashIdx = code.indexOf("location.hash = '#' + hashId")
-    var tagDomIdx = code.indexOf("method:'tag-dom'")
-    assert(hashIdx > 0 && tagDomIdx > 0 && hashIdx < tagDomIdx, 'hash должен быть ПЕРЕД tag-dom')
+  // v0.85.8: DOM-клик ПЕРВЫЙ (для пользователей), hash как fallback (для каналов не в chatlist)
+  test('TG: DOM-клик ДО hash (приоритет)', () => {
+    var domIdx = code.indexOf("method:'tag-dom'")
+    var hashIdx = code.indexOf("method:'hash'")
+    assert(domIdx > 0 && hashIdx > 0 && domIdx < hashIdx, 'tag-dom должен быть ПЕРЕД hash')
   })
   // v0.85.8: канал c → -100 prefix
   test('TG: канал (c prefix) → -100 hash', () => assert(code.includes("hashId = '-100' + peerId")))

@@ -17,16 +17,23 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
         var peerId = tag.split('_')[0].replace(/[^0-9-]/g, '');
         log.push('peerId=' + peerId);
         if (peerId) {
-          // v0.85.8: location.hash с правильным форматом для каналов/групп/пользователей
-          // chatTag: c2650004765_... → канал → hash #-1002650004765
-          // chatTag: u611696632_...  → пользователь → hash #611696632
-          // chatTag: peer4_... или без префикса → fallback
+          var prefix = tag.charAt(0);
+          log.push('prefix=' + prefix);
+          // v0.85.8: Для пользователей (u) — сначала DOM-клик (надёжнее)
+          // Для каналов (c) — hash первый (канала может не быть в chatlist текущей папки)
+          var el = document.querySelector('[data-peer-id="' + peerId + '"]');
+          if (!el) el = document.querySelector('[data-peer-id="-' + peerId + '"]');
+          log.push('domFound=' + !!el);
+          if (el) {
+            var chat = el.closest('.chatlist-chat') || el;
+            chat.click();
+            return {ok:true, method:'tag-dom', log:log.join(', ')};
+          }
+          // DOM не нашёл — hash навигация (работает из любой папки)
           try {
-            var prefix = tag.charAt(0);
             var hashId = peerId;
             if (prefix === 'c') hashId = '-100' + peerId;
             else if (prefix !== 'u' && peerId.charAt(0) !== '-') {
-              // Неизвестный формат — пробуем как есть, DOM fallback ниже
               var peerType0 = 0;
               var m0 = tag.match(/^peer(\\d+)_/);
               if (m0) peerType0 = parseInt(m0[1]);
@@ -34,11 +41,9 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
               else if (peerType0 === 2) hashId = '-' + peerId;
             }
             location.hash = '#' + hashId;
-            log.push('hash=#' + hashId + ',prefix=' + prefix);
+            log.push('hash=#' + hashId);
             return {ok:true, method:'hash', log:log.join(', ')};
           } catch(he) { log.push('hashErr=' + he.message); }
-          // Fallback: DOM-поиск (если hash не сработал)
-          var el = document.querySelector('[data-peer-id="' + peerId + '"]');
           if (!el) el = document.querySelector('[data-peer-id="-' + peerId + '"]');
           log.push('domFound=' + !!el);
           if (el) {
