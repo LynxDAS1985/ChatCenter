@@ -9,7 +9,7 @@ export default function NotifLogModal({ ctx }) {
     traceNotif, handleNewMessage, pipelineTraceRef
   } = ctx
 
-  const traceStepLabels = { source: 'Источник', spam: 'Спам', dedup: 'Дедуп', handle: 'Обработка', viewing: 'Видимость', sound: 'Звук', ribbon: 'Ribbon', enrich: 'Обогащение', inspect: 'Инспектор', error: 'Ошибка', debug: 'Отладка', warmup: 'Разогрев' }
+  const traceStepLabels = { source: 'Источник', spam: 'Спам', dedup: 'Дедуп', handle: 'Обработка', viewing: 'Видимость', sound: 'Звук', ribbon: 'Ribbon', enrich: 'Обогащение', inspect: 'Инспектор', error: 'Ошибка', debug: 'Отладка', warmup: 'Разогрев', 'go-chat': 'Переход', 'mark-read': 'Прочитано', crash: 'Краш', hang: 'Зависание', 'load-fail': 'Загрузка' }
   const traceTypeColors = { pass: '#4ade80', block: '#f87171', warn: '#fbbf24', info: '#94a3b8' }
   const traceTypeLabels = { pass: 'ПРОПУЩЕН', block: 'БЛОК', warn: 'ВНИМАНИЕ', info: 'ИНФО' }
   const traceData = (notifLogModal.trace || []).filter(e => {

@@ -92,9 +92,10 @@
 
 ## Changelog
 
-### v0.85.8 (6 апреля 2026) — FIX "Перейти к чату" для каналов Telegram
-- **location.hash**: `c` prefix → `-100` + peerId (каналы), `u` prefix → peerId (пользователи)
-- Без этого каналы не открывались — Telegram Web K требует `-100` для каналов
+### v0.85.8 (6 апреля 2026) — FIX навигация + go-chat в trace + полный memory-bank
+- **Telegram hash навигация**: `c` prefix → `#-100peerId` (каналы), `u` → `#peerId` (пользователи)
+- **go-chat → Pipeline Trace**: method, log, attempts — видно в UI диагностики
+- **traceStepLabels**: добавлены go-chat, mark-read, crash, hang, load-fail
 - WebView загрузка: убран visibility:hidden (останавливал загрузку неактивных вкладок)
 - 8 новых тестов: hash формат, runtime проверка c/u prefix, реальные chatTag
 

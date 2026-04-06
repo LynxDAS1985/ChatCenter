@@ -166,3 +166,51 @@
   - Props: messengers, activeId, settings, webviewRefs, notifReadyRef, + все state setters
   - **setWebviewRef** вызывается как `ref={el => setWebviewRef(el, m.id)}` — передаётся как callback от WebviewManager
   - **ТРЕБУЕТ ОТДЕЛЬНУЮ СЕССИЮ** — 614 строк перемещения + обновление imports + проброска 20+ props
+
+---
+
+## ADR-010 — Preload файлы .cjs (6 апреля 2026)
+
+**Статус**: ✅ Принято
+
+**Контекст**: package.json `"type": "module"` → Node.js считает .js файлы ESM → `require()` в preload не работает → `window.api` не создаётся → ВСЁ IPC сломано.
+
+**Решение**: Все preload файлы переименованы в .cjs. Тест smokeTest проверяет что .js вариантов НЕ существует.
+
+**Ловушка 53**: Electron 41 + Node 22 строго следуют "type":"module".
+
+---
+
+## ADR-011 — Telegram hash навигация с c/u prefix (6 апреля 2026)
+
+**Статус**: ✅ Принято
+
+**Контекст**: "Перейти к чату" не работало для каналов Telegram. DOM-поиск не находит чат если он в другой папке. location.hash без -100 prefix не открывает каналы.
+
+**Решение**: Парсить chatTag prefix: `c` → `-100` + peerId (канал), `u` → peerId (пользователь). Hash навигация как первый метод, DOM-поиск как fallback.
+
+**Ловушка 57**: Telegram Web K требует -100 для каналов в hash.
+
+---
+
+## ADR-012 — Notification hooks: !body.trim() вместо body.length < 2 (6 апреля 2026)
+
+**Статус**: ✅ Принято
+
+**Контекст**: 1-символьные сообщения ("С", "+", "1") блокировались спам-фильтром _isSpam в hooks. Клиент ответил "С" → уведомление не показалось.
+
+**Решение**: В _isSpam() всех 4 hooks: `body.length < 2` → `!body.trim()`. Мессенджер сам фильтрует мусор — если Notification API вызван, это реальное сообщение. enrichNotif (DOM-контекст) не тронут.
+
+**Ловушка 56**: Порог был скопирован из extractMsgText (DOM-сканирование) при создании per-messenger hooks.
+
+---
+
+## ADR-013 — НЕ использовать visibility:hidden для WebView (6 апреля 2026)
+
+**Статус**: ✅ Принято
+
+**Контекст**: visibility:hidden было добавлено для экономии GPU. Но Chromium ПОЛНОСТЬЮ останавливает загрузку hidden WebView — страница не рендерится пока не станет visible.
+
+**Решение**: Скрытие через zIndex + pointerEvents. Чёрный экран решён через disable-gpu-compositing в main.js.
+
+**Ловушка**: Вторая вкладка Telegram и все остальные не загружались при старте.

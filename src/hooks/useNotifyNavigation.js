@@ -43,15 +43,21 @@ export default function useNotifyNavigation({
           el.executeJavaScript(script).then(result => {
             const ok = result === true || (result && result.ok)
             const method = result?.method || ''
+            const log = result?.log || ''
             devLog(`[GoChat] attempt=${attempt} ok=${ok} method=${method}`, result)
             if (ok) {
               setStatusBarMsg(`>> "${senderName}" (${method})`)
+              traceNotif('go-chat', 'pass', messengerId, senderName || '', `method=${method} ${log}`)
             } else if (attempt >= 2 || activeIdRef.current !== messengerId) {
               setStatusBarMsg(`>> "${senderName}" - не найден в sidebar`)
+              traceNotif('go-chat', 'warn', messengerId, senderName || '', `notFound after ${attempt + 1} attempts | ${log}`)
             } else {
               setTimeout(() => tryNavigate(attempt + 1), 1500)
             }
-          }).catch(err => { devError('[GoChat] executeJS error:', err.message) })
+          }).catch(err => {
+            devError('[GoChat] executeJS error:', err.message)
+            traceNotif('go-chat', 'error', messengerId, senderName || '', `error: ${err.message}`)
+          })
         }
         setTimeout(() => tryNavigate(0), 800)
       }
