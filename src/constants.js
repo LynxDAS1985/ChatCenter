@@ -109,6 +109,15 @@ export const DEFAULT_MESSENGERS = [
           return t;
         }
       }
+      // 3. Сканируем header на предмет имени/аватарки
+      try {
+        var headerImgs = document.querySelectorAll('header img');
+        var headerInfo = [];
+        for (var hi = 0; hi < Math.min(headerImgs.length, 5); hi++) {
+          headerInfo.push('alt="' + (headerImgs[hi].alt||'') + '" src=' + (headerImgs[hi].src||'').slice(0,30));
+        }
+        console.log('__CC_DIAG__account: headerImgs=' + headerInfo.join(' | '));
+      } catch(e) {}
       console.log('__CC_DIAG__account: not found, title=' + (document.title||''));
       return null;
     })()`

@@ -233,13 +233,18 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
         // Exact match
         for (var i = 0; i < spans.length; i++) {
           if (spans[i].getAttribute('title') === name) {
-            var row = findRow(spans[i]);
             // Полная диагностика DOM-пути
             var path = [];
             var pp = spans[i];
-            for (var dd = 0; dd < 6 && pp; dd++) { path.push(pp.tagName + (pp.getAttribute('role')?'[role='+pp.getAttribute('role')+']':'') + (pp.getAttribute('data-testid')?'['+pp.getAttribute('data-testid')+']':'')); pp = pp.parentElement; }
-            log.push('found=exact,path=' + path.join('>') + ',clickTag=' + (row?row.tagName:'null') + ',clickRole=' + (row?row.getAttribute('role'):'') + ',clickTestid=' + (row?(row.getAttribute('data-testid')||''):''));
-            if (row) { waClick(row); return {ok:true, method:'exact', log:log.join(', ')}; }
+            for (var dd = 0; dd < 8 && pp; dd++) { path.push(pp.tagName + (pp.getAttribute('role')?'[role='+pp.getAttribute('role')+']':'') + (pp.getAttribute('data-testid')?'['+pp.getAttribute('data-testid')+']':'')); pp = pp.parentElement; }
+            log.push('found=exact,path=' + path.join('>'));
+            // Стратегия: кликаем на НЕСКОЛЬКО уровней — span, gridcell, row
+            var gridcell = spans[i].closest('[role="gridcell"]');
+            var row = spans[i].closest('[role="row"]');
+            var listitem = spans[i].closest('[role="listitem"]');
+            var target = listitem || gridcell || row || findRow(spans[i]);
+            log.push('target=' + (target?target.tagName+'[role='+(target.getAttribute('role')||'')+']':'null'));
+            if (target) { waClick(target); return {ok:true, method:'exact', log:log.join(', ')}; }
           }
         }
         // Partial match
@@ -259,7 +264,6 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
       } catch(e) { return {ok:false, method:'error', err:e.message}; }
     })();`
   }
-
   // VK
   if (url.includes('vk.com')) {
     return `(function() {
@@ -277,7 +281,6 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
       } catch(e) { return false; }
     })();`
   }
-
   // Generic fallback
   if (!senderName) return null
   return `(function() {
