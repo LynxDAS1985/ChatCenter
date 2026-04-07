@@ -400,6 +400,7 @@ function setupNavigationWatcher(type) {
 
 function startMonitor() {
   const type = getMessengerType()
+  try { console.log('__CC_DIAG__monitor-start: type=' + type + ' host=' + location.hostname) } catch(e) {}
   if (!type) return
 
   sendUpdate(type)
