@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.85.9 (7 апреля 2026)
+## Текущая версия: v0.86.0 (7 апреля 2026)
 
 ---
 
@@ -91,6 +91,14 @@
 ---
 
 ## Changelog
+
+### v0.86.0 (7 апреля 2026) — WhatsApp навигация с логами + accountScript
+- **WhatsApp "Перейти к чату"**: полная диагностика (spans, samples, method, matched)
+  - Ищет `#side span[title]` (только sidebar, не внутри чата)
+  - exact match → partial match (startsWith, indexOf) → samples для диагностики
+- **WhatsApp accountScript**: DOM + pushName из localStorage + кэш __cc_account_name
+  - Диагностика: __CC_DIAG__account: cached/dom/pushname/not found
+- **messengerConfigs.js**: WhatsApp diagAccount читает кэш
 
 ### v0.85.9 (7 апреля 2026) — Pipeline Trace в файл + навигация + логи
 - **Pipeline Trace → chatcenter.log**: traceNotif → app:log IPC → файл

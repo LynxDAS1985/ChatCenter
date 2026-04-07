@@ -97,8 +97,10 @@ export const ACCOUNT_SCRIPTS = {
   })()`,
 
   whatsapp: `(function() {
-    // WhatsApp: header-кнопка профиля → нет стандартного API
-    // Используем title страницы или drawer профиля
+    // v0.85.9: WhatsApp — кэш + DOM + img.alt
+    var CK = '__cc_account_name';
+    var cached = localStorage.getItem(CK);
+    if (cached && cached.length > 1 && cached.length < 60) return cached;
     try {
       var header = document.querySelector('header [data-testid="chatlist-header-profile-btn"]');
       if (header) {

@@ -77,8 +77,44 @@ export const DEFAULT_MESSENGERS = [
     emoji: '💬',
     isDefault: true,
     accountScript: `(() => {
-      const sels = ['[data-testid="profile-details-header-name"]','[data-testid="user-preferred-name"]'];
-      for (const s of sels) { const t = document.querySelector(s)?.textContent?.trim(); if (t && t.length < 60) return t; }
+      // v0.85.9: WhatsApp account — DOM селекторы + pushName из localStorage + кэш
+      var CK = '__cc_account_name';
+      // 1. Кэш
+      var cached = localStorage.getItem(CK);
+      if (cached && cached.length > 1 && cached.length < 60) {
+        console.log('__CC_DIAG__account: cached=' + cached);
+        return cached;
+      }
+      // 2. DOM селекторы (видны только когда профиль открыт)
+      var sels = ['[data-testid="profile-details-header-name"]','[data-testid="user-preferred-name"]','.drawer-header [role="textbox"]'];
+      for (var si = 0; si < sels.length; si++) {
+        var el = document.querySelector(sels[si]);
+        var t = el ? (el.textContent || '').trim() : '';
+        if (t && t.length > 1 && t.length < 60) {
+          console.log('__CC_DIAG__account: dom=' + t + ' sel=' + sels[si]);
+          try { localStorage.setItem(CK, t); } catch(e) {}
+          return t;
+        }
+      }
+      // 3. WhatsApp хранит pushName в localStorage
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          var v = localStorage.getItem(k);
+          if (v && v.includes('pushname') && v.length < 500) {
+            try {
+              var obj = JSON.parse(v);
+              var pn = obj.pushname || obj.push_name || '';
+              if (pn && pn.length > 1) {
+                console.log('__CC_DIAG__account: pushname=' + pn + ' key=' + k);
+                try { localStorage.setItem(CK, pn); } catch(e) {}
+                return pn;
+              }
+            } catch(e) {}
+          }
+        }
+      } catch(e) {}
+      console.log('__CC_DIAG__account: not found');
       return null;
     })()`
   },

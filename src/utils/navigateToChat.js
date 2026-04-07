@@ -204,24 +204,36 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
   if (url.includes('whatsapp.com')) {
     return `(function() {
       try {
+        var log = [];
         var name = ${nameJson};
-        if (!name) return false;
-        var spans = document.querySelectorAll('span[title]');
+        log.push('name=' + JSON.stringify(name));
+        if (!name) return {ok:false, method:'noName', log:log.join(', ')};
+        // WhatsApp: span[title] в sidebar = имя чата
+        var spans = document.querySelectorAll('#side span[title], [data-testid="chat-list"] span[title]');
+        log.push('spans=' + spans.length);
+        // Exact match
         for (var i = 0; i < spans.length; i++) {
           if (spans[i].getAttribute('title') === name) {
             var row = spans[i].closest('[data-testid="cell-frame-container"]') || spans[i].closest('[tabindex]') || spans[i].closest('[role="listitem"]');
-            if (row) { row.click(); return true; }
+            log.push('found=exact,row=' + (row?row.tagName:'null'));
+            if (row) { row.click(); return {ok:true, method:'exact', log:log.join(', ')}; }
           }
         }
+        // Partial match
         for (var i = 0; i < spans.length; i++) {
           var t = spans[i].getAttribute('title') || '';
-          if (t && name.length > 3 && (t.startsWith(name) || name.startsWith(t))) {
+          if (t && name.length > 3 && (t.startsWith(name) || name.startsWith(t) || t.toLowerCase().indexOf(name.toLowerCase()) >= 0)) {
             var row = spans[i].closest('[data-testid="cell-frame-container"]') || spans[i].closest('[tabindex]') || spans[i].closest('[role="listitem"]');
-            if (row) { row.click(); return true; }
+            log.push('found=partial,matched=' + t.slice(0,30) + ',row=' + (row?row.tagName:'null'));
+            if (row) { row.click(); return {ok:true, method:'partial', matched:t.slice(0,40), log:log.join(', ')}; }
           }
         }
-        return false;
-      } catch(e) { return false; }
+        // Samples для диагностики
+        var samples = [];
+        for (var i = 0; i < Math.min(spans.length, 8); i++) samples.push((spans[i].getAttribute('title')||'').slice(0,30));
+        log.push('samples=' + JSON.stringify(samples));
+        return {ok:false, method:'notFound', log:log.join(', ')};
+      } catch(e) { return {ok:false, method:'error', err:e.message}; }
     })();`
   }
 
