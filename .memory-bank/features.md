@@ -92,13 +92,21 @@
 
 ## Changelog
 
-### v0.85.9 (7 апреля 2026) — Pipeline Trace → chatcenter.log + ротация 2MB
-- **Pipeline Trace в файл**: traceNotif пишет через app:log IPC в chatcenter.log
+### v0.85.9 (7 апреля 2026) — Pipeline Trace в файл + навигация + логи
+- **Pipeline Trace → chatcenter.log**: traceNotif → app:log IPC → файл
 - Формат: `[TRACE] ✓ [Telegram] Источник: текст | detail`
-- Шаги: Источник, Обработка, Видимость, Звук, Ribbon, Переход, Прочитано, Дедуп, Спам, Разогрев
-- НЕ пишет debug (badge_blocked спам)
-- Ротация увеличена 500KB → 2MB (~8-12 часов работы)
-- AI может читать логи через `cat chatcenter.log | grep TRACE`
+- НЕ пишет debug (badge_blocked спам). Ротация 500KB → 2MB
+- Путь лога: `%APPDATA%/ЦентрЧатов/chatcenter.log` (НЕ chat-center!)
+- **Log Viewer**: кнопка TRACE (фиолетовый фильтр) + кнопка Очистить
+- **Logger диагностика**: тестовая запись при init, catch с логированием
+- **Telegram навигация ИСПРАВЛЕНА** (ловушка 58):
+  - `.chatlist-chat[data-peer-id]` — ищет ТОЛЬКО в chatlist
+  - querySelector без фильтра находил аватарку в группе → открывал группу
+  - location.hash не работает для навигации в Telegram Web K
+  - mousedown + click с bubbles на правильном элементе
+- **AccountScript Telegram**: user_auth.id из localStorage → правильное имя
+  - Сохраняет в localStorage для diagAccount (кэш)
+- Лог-файл: `ЦентрЧатов` (app.name), НЕ `chat-center` (package.json name)
 
 ### v0.85.8 (6 апреля 2026) — FIX навигация + go-chat в trace + полный memory-bank
 - **Telegram hash навигация**: `c` prefix → `#-100peerId` (каналы), `u` → `#peerId` (пользователи)

@@ -214,3 +214,30 @@
 **Решение**: Скрытие через zIndex + pointerEvents. Чёрный экран решён через disable-gpu-compositing в main.js.
 
 **Ловушка**: Вторая вкладка Telegram и все остальные не загружались при старте.
+
+---
+
+## ADR-014 — Telegram навигация: .chatlist-chat[data-peer-id] (7 апреля 2026)
+
+**Статус**: ✅ Принято
+
+**Контекст**: "Перейти к чату" в Telegram открывал группу вместо личного чата. `data-peer-id` пользователя присутствует на многих элементах DOM: аватарка в chatlist, аватарка внутри группового чата, профиль, пересланные сообщения.
+
+**Решение**: Искать `.chatlist-chat[data-peer-id="X"]` — только в списке чатов. НЕ использовать `querySelector('[data-peer-id="X"]')` без фильтра.
+
+**Неудачные попытки**:
+- `.closest('a').href` — href принадлежал другому чату
+- `location.hash = '#peerId'` — Telegram Web K не реагирует на hash
+- `closest('[data-peer-id]')` — возвращал тот же неправильный элемент
+
+**Ловушка 58**: `data-peer-id` = user ID, он есть на аватарках участников внутри групповых чатов.
+
+---
+
+## ADR-015 — Лог-файл: путь ЦентрЧатов, не chat-center (7 апреля 2026)
+
+**Статус**: Информация
+
+**Контекст**: app.getPath('userData') = %APPDATA%/ЦентрЧатов/ (кириллица). package.json name = chat-center, но Electron использует productName. Данные мессенджеров (Partitions) в %APPDATA%/chat-center/, а лог — в ЦентрЧатов.
+
+**Важно для AI**: При чтении лога: os.homedir()/AppData/Roaming/ЦентрЧатов/chatcenter.log
