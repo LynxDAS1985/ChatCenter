@@ -61,6 +61,7 @@ let updateTimer = null
 const UPDATE_DEBOUNCE = 300 // ms
 
 let lastCount = -1
+let _waUnreadDiagCount = 0 // v0.86.0: диагностика WhatsApp unread (первые 3 вызова)
 let lastSentText = null
 let lastActiveMessageText = null  // для детекции сообщений в активном чате
 let lastActiveMessageTime = 0     // cooldown: не спамить уведомлениями
@@ -178,8 +179,16 @@ setTimeout(() => {
 
 function sendUpdate(type) {
   const { personal, channels, total, allTotal } = countUnread(type)
+  // v0.86.0: диагностика WhatsApp unread count
+  if (type === 'whatsapp' && _waUnreadDiagCount < 3) {
+    _waUnreadDiagCount++
+    try { console.log('__CC_DIAG__wa-unread: allTotal=' + allTotal + ' personal=' + personal + ' lastCount=' + lastCount + ' title="' + document.title + '"') } catch(e) {}
+  }
   if (allTotal !== lastCount) {
     const increased = total > lastCount && lastCount >= 0 && monitorReady
+    if (type === 'whatsapp') {
+      try { console.log('__CC_DIAG__wa-count-change: ' + lastCount + '→' + allTotal + ' increased=' + increased + ' ready=' + monitorReady + ' title="' + document.title + '"') } catch(e) {}
+    }
     lastCount = allTotal
     // Общий счётчик (для бейджа) — ВСЕ непрочитанные, включая muted
     try { ipcRenderer.sendToHost('unread-count', allTotal) } catch {}
