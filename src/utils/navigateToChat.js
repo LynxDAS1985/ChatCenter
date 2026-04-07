@@ -211,21 +211,29 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
         // WhatsApp: span[title] в sidebar = имя чата
         var spans = document.querySelectorAll('#side span[title], [data-testid="chat-list"] span[title]');
         log.push('spans=' + spans.length);
+        // Клик-хелпер: mousedown + click с bubbles (WhatsApp SPA)
+        function waClick(el) {
+          el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window}));
+          el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+        }
+        function findRow(span) {
+          return span.closest('[role="listitem"]') || span.closest('[data-testid="cell-frame-container"]') || span.closest('[tabindex]') || span.closest('div[role="row"]');
+        }
         // Exact match
         for (var i = 0; i < spans.length; i++) {
           if (spans[i].getAttribute('title') === name) {
-            var row = spans[i].closest('[data-testid="cell-frame-container"]') || spans[i].closest('[tabindex]') || spans[i].closest('[role="listitem"]');
-            log.push('found=exact,row=' + (row?row.tagName:'null'));
-            if (row) { row.click(); return {ok:true, method:'exact', log:log.join(', ')}; }
+            var row = findRow(spans[i]);
+            log.push('found=exact,rowTag=' + (row?row.tagName:'null') + ',rowRole=' + (row?row.getAttribute('role'):''));
+            if (row) { waClick(row); return {ok:true, method:'exact', log:log.join(', ')}; }
           }
         }
         // Partial match
         for (var i = 0; i < spans.length; i++) {
           var t = spans[i].getAttribute('title') || '';
           if (t && name.length > 3 && (t.startsWith(name) || name.startsWith(t) || t.toLowerCase().indexOf(name.toLowerCase()) >= 0)) {
-            var row = spans[i].closest('[data-testid="cell-frame-container"]') || spans[i].closest('[tabindex]') || spans[i].closest('[role="listitem"]');
-            log.push('found=partial,matched=' + t.slice(0,30) + ',row=' + (row?row.tagName:'null'));
-            if (row) { row.click(); return {ok:true, method:'partial', matched:t.slice(0,40), log:log.join(', ')}; }
+            var row = findRow(spans[i]);
+            log.push('found=partial,matched=' + t.slice(0,30) + ',rowTag=' + (row?row.tagName:'null'));
+            if (row) { waClick(row); return {ok:true, method:'partial', matched:t.slice(0,40), log:log.join(', ')}; }
           }
         }
         // Samples для диагностики

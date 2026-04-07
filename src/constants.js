@@ -77,44 +77,44 @@ export const DEFAULT_MESSENGERS = [
     emoji: '💬',
     isDefault: true,
     accountScript: `(() => {
-      // v0.85.9: WhatsApp account — DOM селекторы + pushName из localStorage + кэш
+      // v0.86.0: WhatsApp account — кэш + header img alt + profile drawer + IndexedDB
       var CK = '__cc_account_name';
-      // 1. Кэш
       var cached = localStorage.getItem(CK);
       if (cached && cached.length > 1 && cached.length < 60) {
         console.log('__CC_DIAG__account: cached=' + cached);
         return cached;
       }
-      // 2. DOM селекторы (видны только когда профиль открыт)
+      // 1. Header profile button → img alt (WhatsApp Business показывает имя)
+      try {
+        var btn = document.querySelector('header [data-testid="chatlist-header-profile-btn"], header [data-icon="default-user"], header img[draggable="false"]');
+        if (btn) {
+          var img = btn.tagName === 'IMG' ? btn : btn.querySelector('img');
+          if (img && img.alt && img.alt.length > 1 && img.alt.length < 60) {
+            console.log('__CC_DIAG__account: header-img=' + img.alt);
+            try { localStorage.setItem(CK, img.alt); } catch(e) {}
+            return img.alt;
+          }
+        }
+      } catch(e) {}
+      // 2. Profile drawer (если открыт)
       var sels = ['[data-testid="profile-details-header-name"]','[data-testid="user-preferred-name"]','.drawer-header [role="textbox"]'];
       for (var si = 0; si < sels.length; si++) {
         var el = document.querySelector(sels[si]);
         var t = el ? (el.textContent || '').trim() : '';
         if (t && t.length > 1 && t.length < 60) {
-          console.log('__CC_DIAG__account: dom=' + t + ' sel=' + sels[si]);
+          console.log('__CC_DIAG__account: dom=' + t);
           try { localStorage.setItem(CK, t); } catch(e) {}
           return t;
         }
       }
-      // 3. WhatsApp хранит pushName в localStorage
-      try {
-        for (var i = 0; i < localStorage.length; i++) {
-          var k = localStorage.key(i);
-          var v = localStorage.getItem(k);
-          if (v && v.includes('pushname') && v.length < 500) {
-            try {
-              var obj = JSON.parse(v);
-              var pn = obj.pushname || obj.push_name || '';
-              if (pn && pn.length > 1) {
-                console.log('__CC_DIAG__account: pushname=' + pn + ' key=' + k);
-                try { localStorage.setItem(CK, pn); } catch(e) {}
-                return pn;
-              }
-            } catch(e) {}
-          }
-        }
-      } catch(e) {}
-      console.log('__CC_DIAG__account: not found');
+      // 3. Заголовок страницы (WhatsApp Business: "WhatsApp" или имя бизнеса)
+      var title = document.title || '';
+      if (title && title !== 'WhatsApp' && title.length > 1 && title.length < 60) {
+        console.log('__CC_DIAG__account: title=' + title);
+        try { localStorage.setItem(CK, title); } catch(e) {}
+        return title;
+      }
+      console.log('__CC_DIAG__account: not found, title=' + title);
       return null;
     })()`
   },
