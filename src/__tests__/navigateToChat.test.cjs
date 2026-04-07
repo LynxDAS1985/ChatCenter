@@ -82,6 +82,13 @@ try {
   console.log('\\n── WhatsApp: ──')
   test('WA: ищет span[title]', () => assert(code.includes('span[title]')))
   test('WA: ищет cell-frame-container', () => assert(code.includes('cell-frame-container')))
+  // v0.86.0: WhatsApp навигация с логами
+  test('WA: ищет в #side (только sidebar)', () => assert(code.includes('#side span[title]')))
+  test('WA: exact match метод', () => assert(code.includes("method:'exact'")))
+  test('WA: partial match метод', () => assert(code.includes("method:'partial'")))
+  test('WA: samples для диагностики', () => assert(code.includes('samples=')))
+  test('WA: возвращает {ok, method, log}', () => assert(code.includes("method:'notFound'") && code.includes("method:'exact'")))
+  test('WA: логирует spans count', () => assert(code.includes("'spans=' + spans.length")))
 
   console.log('\\n── MAX: ──')
   test('MAX: ищет nav', () => assert(code.includes("querySelector('nav')")))
