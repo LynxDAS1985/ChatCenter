@@ -21,18 +21,18 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
           log.push('prefix=' + prefix);
           // v0.85.8: Для пользователей (u) — сначала DOM-клик (надёжнее)
           // Для каналов (c) — hash первый (канала может не быть в chatlist текущей папки)
-          var el = document.querySelector('[data-peer-id="' + peerId + '"]');
-          if (!el) el = document.querySelector('[data-peer-id="-' + peerId + '"]');
+          // Ищем ТОЛЬКО в chatlist (не внутри открытого чата/группы!)
+          var el = document.querySelector('.chatlist-chat[data-peer-id="' + peerId + '"]');
+          if (!el) el = document.querySelector('a[data-peer-id="' + peerId + '"]');
+          if (!el) el = document.querySelector('.chatlist-chat[data-peer-id="-' + peerId + '"]');
+          if (!el) el = document.querySelector('a[data-peer-id="-' + peerId + '"]');
           log.push('domFound=' + !!el);
           if (el) {
-            log.push('elTag=' + el.tagName + ',elCls=' + (el.className||'').slice(0,60));
-            // Ищем кликабельный parent: элемент с data-peer-id ИЛИ .chatlist-chat ИЛИ a[href]
-            var clickEl = el.closest('[data-peer-id]') || el.closest('.chatlist-chat') || el.closest('a[href^="#"]') || el;
-            log.push('clickEl=' + clickEl.tagName + ',cls=' + (clickEl.className||'').slice(0,40));
-            // Полный клик: mousedown + click (Telegram SPA)
+            log.push('elTag=' + el.tagName + ',cls=' + (el.className||'').slice(0,50) + ',pid=' + (el.getAttribute('data-peer-id')||''));
+            // Клик на найденный элемент (это сам <a> chatlist-chat, не child span)
             try {
-              clickEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window}));
-              clickEl.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+              el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window}));
+              el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
             } catch(ce) { log.push('clickErr=' + ce.message); }
             return {ok:true, method:'tag-click', log:log.join(', ')};
           }

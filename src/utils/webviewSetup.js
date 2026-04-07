@@ -107,7 +107,7 @@ export function createWebviewSetup(deps) {
       const icon = _traceTypeLabels[type] || '·'
       const label = _traceLabels[step] || step
       const shortText = (text || '').slice(0, 60)
-      const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, 120) : ''}`
+      const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, 250) : ''}`
       try { window.api?.send('app:log', { level: 'TRACE', message: msg }) } catch {}
     }
   }
