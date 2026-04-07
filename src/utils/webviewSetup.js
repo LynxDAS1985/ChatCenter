@@ -91,7 +91,8 @@ export function createWebviewSetup(deps) {
   // step: source|spam|dedup|handle|viewing|sound|ribbon|enrich|error
   // type: info|pass|block|warn
   // Шаги которые НЕ пишем в файл (спам)
-  const _traceSkipFile = { debug: true }
+  // НЕ пишем в файл только если step=debug И текст содержит badge_blocked или notif_hook_ok (спам)
+  const _traceSkipFile = {}
   // Человекочитаемые названия шагов для лога
   const _traceLabels = { source: 'Источник', spam: 'Спам', dedup: 'Дедуп', handle: 'Обработка', viewing: 'Видимость', sound: 'Звук', ribbon: 'Ribbon', enrich: 'Обогащение', 'go-chat': 'Переход', 'mark-read': 'Прочитано', crash: 'КРАШ', hang: 'ЗАВИСАНИЕ', 'load-fail': 'ОШИБКА ЗАГРУЗКИ', warmup: 'Разогрев', error: 'ОШИБКА' }
   const _traceTypeLabels = { pass: '✓', block: '✗', warn: '⚠', info: '·' }
@@ -102,8 +103,9 @@ export function createWebviewSetup(deps) {
       ts: Date.now(), step, type, mid: messengerId || '', mName, text: (text || '').slice(0, 200), detail: detail || '',
     })
     if (pipelineTraceRef.current.length > 300) pipelineTraceRef.current.splice(0, 100)
-    // v0.85.9: Пишем в chatcenter.log через app:log (кроме debug/badge_blocked)
-    if (!_traceSkipFile[step]) {
+    // v0.86.0: Пишем в chatcenter.log (кроме badge_blocked и notif_hook_ok спама)
+    const _skipDetail = detail && (detail.includes('badge_blocked') || detail.includes('notif_hook_ok'))
+    if (!_skipDetail) {
       const icon = _traceTypeLabels[type] || '·'
       const label = _traceLabels[step] || step
       const shortText = (text || '').slice(0, 60)
