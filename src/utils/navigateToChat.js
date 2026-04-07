@@ -26,13 +26,15 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
           log.push('domFound=' + !!el);
           if (el) {
             log.push('elTag=' + el.tagName + ',elCls=' + (el.className||'').slice(0,60));
-            // v0.85.8: НЕ используем href от closest('a') — может быть от другого чата!
-            // Строим hash из peerId напрямую (надёжнее чем DOM parent traversal)
-            var hashId = peerId;
-            if (prefix === 'c') hashId = '-100' + peerId;
-            location.hash = '#' + hashId;
-            log.push('strategy=direct-hash,hash=#' + hashId);
-            return {ok:true, method:'tag-hash', log:log.join(', ')};
+            // Ищем кликабельный parent: элемент с data-peer-id ИЛИ .chatlist-chat ИЛИ a[href]
+            var clickEl = el.closest('[data-peer-id]') || el.closest('.chatlist-chat') || el.closest('a[href^="#"]') || el;
+            log.push('clickEl=' + clickEl.tagName + ',cls=' + (clickEl.className||'').slice(0,40));
+            // Полный клик: mousedown + click (Telegram SPA)
+            try {
+              clickEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window}));
+              clickEl.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+            } catch(ce) { log.push('clickErr=' + ce.message); }
+            return {ok:true, method:'tag-click', log:log.join(', ')};
           }
           // DOM не нашёл — hash навигация (работает из любой папки)
           try {

@@ -65,10 +65,10 @@ try {
   // v0.85.8: location.hash с форматом канал/пользователь
   test('TG: location.hash навигация (fallback)', () => assert(code.includes("location.hash = '#' + hashId")))
   test('TG: hash метод в результате', () => assert(code.includes("method:'hash'")))
-  // v0.85.8: DOM-находка → direct hash (не .click(), не href от parent)
-  test('TG: DOM → direct hash (не href от parent)', () => {
-    assert(code.includes("method:'tag-hash'"), 'должен быть метод tag-hash (DOM найден → hash из peerId)')
-    assert(code.includes('strategy=direct-hash'), 'стратегия direct-hash')
+  // v0.85.9: DOM-находка → клик на closest [data-peer-id]
+  test('TG: DOM → click на data-peer-id parent', () => {
+    assert(code.includes("method:'tag-click'"), 'должен быть метод tag-click')
+    assert(code.includes("closest('[data-peer-id]')"), 'ищет parent с data-peer-id')
   })
   // v0.85.8: канал c → -100 prefix
   test('TG: канал (c prefix) → -100 hash', () => assert(code.includes("hashId = '-100' + peerId")))
