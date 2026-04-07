@@ -2,7 +2,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const LOG_MAX_SIZE = 500 * 1024
+// v0.85.9: увеличено 500KB → 2MB (Pipeline Trace пишется в лог)
+const LOG_MAX_SIZE = 2 * 1024 * 1024
 
 let logFilePath = null
 let _openLogViewer = null // будет установлена из main.js

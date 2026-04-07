@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.85.8 (6 апреля 2026)
+## Текущая версия: v0.85.9 (7 апреля 2026)
 
 ---
 
@@ -91,6 +91,14 @@
 ---
 
 ## Changelog
+
+### v0.85.9 (7 апреля 2026) — Pipeline Trace → chatcenter.log + ротация 2MB
+- **Pipeline Trace в файл**: traceNotif пишет через app:log IPC в chatcenter.log
+- Формат: `[TRACE] ✓ [Telegram] Источник: текст | detail`
+- Шаги: Источник, Обработка, Видимость, Звук, Ribbon, Переход, Прочитано, Дедуп, Спам, Разогрев
+- НЕ пишет debug (badge_blocked спам)
+- Ротация увеличена 500KB → 2MB (~8-12 часов работы)
+- AI может читать логи через `cat chatcenter.log | grep TRACE`
 
 ### v0.85.8 (6 апреля 2026) — FIX навигация + go-chat в trace + полный memory-bank
 - **Telegram hash навигация**: `c` prefix → `#-100peerId` (каналы), `u` → `#peerId` (пользователи)

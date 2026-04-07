@@ -90,13 +90,26 @@ export function createWebviewSetup(deps) {
   // Записывает КАЖДЫЙ шаг pipeline уведомлений для диагностики
   // step: source|spam|dedup|handle|viewing|sound|ribbon|enrich|error
   // type: info|pass|block|warn
+  // Шаги которые НЕ пишем в файл (спам)
+  const _traceSkipFile = { debug: true }
+  // Человекочитаемые названия шагов для лога
+  const _traceLabels = { source: 'Источник', spam: 'Спам', dedup: 'Дедуп', handle: 'Обработка', viewing: 'Видимость', sound: 'Звук', ribbon: 'Ribbon', enrich: 'Обогащение', 'go-chat': 'Переход', 'mark-read': 'Прочитано', crash: 'КРАШ', hang: 'ЗАВИСАНИЕ', 'load-fail': 'ОШИБКА ЗАГРУЗКИ', warmup: 'Разогрев', error: 'ОШИБКА' }
+  const _traceTypeLabels = { pass: '✓', block: '✗', warn: '⚠', info: '·' }
+
   const traceNotif = (step, type, messengerId, text, detail) => {
-    // v0.60.0: добавляем имя мессенджера для идентификации в логах
     const mName = messengerId ? (messengersRef.current.find(x => x.id === messengerId)?.name || '') : ''
     pipelineTraceRef.current.push({
       ts: Date.now(), step, type, mid: messengerId || '', mName, text: (text || '').slice(0, 200), detail: detail || '',
     })
     if (pipelineTraceRef.current.length > 300) pipelineTraceRef.current.splice(0, 100)
+    // v0.85.9: Пишем в chatcenter.log через app:log (кроме debug/badge_blocked)
+    if (!_traceSkipFile[step]) {
+      const icon = _traceTypeLabels[type] || '·'
+      const label = _traceLabels[step] || step
+      const shortText = (text || '').slice(0, 60)
+      const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, 120) : ''}`
+      try { window.api?.send('app:log', { level: 'TRACE', message: msg }) } catch {}
+    }
   }
 
   // ── Обработка входящего сообщения (общая для ipc-message и console-message) ──
