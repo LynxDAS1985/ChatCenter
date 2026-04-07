@@ -81,7 +81,7 @@ try {
 
   console.log('\\n── WhatsApp: ──')
   test('WA: ищет span[title]', () => assert(code.includes('span[title]')))
-  test('WA: ищет cell-frame-container', () => assert(code.includes('cell-frame-container')))
+  test('WA: ищет cell-frame', () => assert(code.includes('cell-frame')))
   // v0.86.0: WhatsApp навигация с логами
   test('WA: ищет в #side (только sidebar)', () => assert(code.includes('#side span[title]')))
   test('WA: exact match метод', () => assert(code.includes("method:'exact'")))

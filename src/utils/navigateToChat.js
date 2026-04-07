@@ -217,13 +217,28 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
           el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
         }
         function findRow(span) {
-          return span.closest('[role="listitem"]') || span.closest('[data-testid="cell-frame-container"]') || span.closest('[tabindex]') || span.closest('div[role="row"]');
+          // Поднимаемся по DOM и ищем кликабельный parent
+          var p = span;
+          for (var d = 0; d < 10 && p && p !== document.body; d++) {
+            p = p.parentElement;
+            if (!p) break;
+            var r = p.getAttribute('role');
+            var tid = p.getAttribute('data-testid') || '';
+            // WhatsApp использует role=listitem, role=row, data-testid с list-item
+            if (r === 'listitem' || r === 'row' || r === 'option' || tid.includes('list-item') || tid.includes('cell-frame')) return p;
+          }
+          // Fallback: ближайший с tabindex или onclick
+          return span.closest('[tabindex]') || span.closest('[data-testid]') || span;
         }
         // Exact match
         for (var i = 0; i < spans.length; i++) {
           if (spans[i].getAttribute('title') === name) {
             var row = findRow(spans[i]);
-            log.push('found=exact,rowTag=' + (row?row.tagName:'null') + ',rowRole=' + (row?row.getAttribute('role'):''));
+            // Полная диагностика DOM-пути
+            var path = [];
+            var pp = spans[i];
+            for (var dd = 0; dd < 6 && pp; dd++) { path.push(pp.tagName + (pp.getAttribute('role')?'[role='+pp.getAttribute('role')+']':'') + (pp.getAttribute('data-testid')?'['+pp.getAttribute('data-testid')+']':'')); pp = pp.parentElement; }
+            log.push('found=exact,path=' + path.join('>') + ',clickTag=' + (row?row.tagName:'null') + ',clickRole=' + (row?row.getAttribute('role'):'') + ',clickTestid=' + (row?(row.getAttribute('data-testid')||''):''));
             if (row) { waClick(row); return {ok:true, method:'exact', log:log.join(', ')}; }
           }
         }

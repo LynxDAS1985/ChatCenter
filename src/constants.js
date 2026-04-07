@@ -80,10 +80,12 @@ export const DEFAULT_MESSENGERS = [
       // v0.86.0: WhatsApp account — кэш + header img alt + profile drawer + IndexedDB
       var CK = '__cc_account_name';
       var cached = localStorage.getItem(CK);
-      if (cached && cached.length > 1 && cached.length < 60) {
+      // Не кэшировать "WhatsApp" / "WhatsApp Business" — это title страницы, не имя
+      if (cached && cached.length > 1 && cached.length < 60 && !/^whatsapp/i.test(cached)) {
         console.log('__CC_DIAG__account: cached=' + cached);
         return cached;
       }
+      if (cached && /^whatsapp/i.test(cached)) { try { localStorage.removeItem(CK); } catch(e) {} }
       // 1. Header profile button → img alt (WhatsApp Business показывает имя)
       try {
         var btn = document.querySelector('header [data-testid="chatlist-header-profile-btn"], header [data-icon="default-user"], header img[draggable="false"]');
@@ -107,14 +109,7 @@ export const DEFAULT_MESSENGERS = [
           return t;
         }
       }
-      // 3. Заголовок страницы (WhatsApp Business: "WhatsApp" или имя бизнеса)
-      var title = document.title || '';
-      if (title && title !== 'WhatsApp' && title.length > 1 && title.length < 60) {
-        console.log('__CC_DIAG__account: title=' + title);
-        try { localStorage.setItem(CK, title); } catch(e) {}
-        return title;
-      }
-      console.log('__CC_DIAG__account: not found, title=' + title);
+      console.log('__CC_DIAG__account: not found, title=' + (document.title||''));
       return null;
     })()`
   },
