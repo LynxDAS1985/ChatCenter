@@ -8,7 +8,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'url'
 
 import { createTrayBadgeIcon, createOverlayIcon } from './utils/overlayIcon.js'
-import { initLogger, readLogFile, setLogViewerOpener, getLogFilePath } from './utils/logger.js'
+import { initLogger, readLogFile, clearLogFile, setLogViewerOpener, getLogFilePath } from './utils/logger.js'
 import { setupSession } from './utils/sessionSetup.js'
 import { initAIHandlers } from './handlers/aiHandlers.js'
 import { initNotifHandlers } from './handlers/notifHandlers.js'
@@ -223,6 +223,7 @@ function setupIPC() {
 
   // v0.84.2: Чтение лога для модального окна
   ipcMain.handle('app:read-log', () => readLogFile(500))
+  ipcMain.handle('app:clear-log', () => { clearLogFile(); return 'ok' })
 
   // v0.84.2: Renderer логирование — пишет в тот же файл лога
   ipcMain.on('app:log', (event, { level, message }) => {

@@ -45,6 +45,11 @@ export function initLogger(userDataPath) {
   console.debug = (...args) => { origLog(...args); writeLog('DEBUG', args) }
 }
 
+export function clearLogFile() {
+  if (!logFilePath) return
+  try { fs.writeFileSync(logFilePath, '') } catch {}
+}
+
 export function readLogFile(maxLines = 500) {
   if (!logFilePath || !fs.existsSync(logFilePath)) return ''
   try {

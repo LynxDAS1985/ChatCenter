@@ -28,6 +28,7 @@ body { background:#1a1b2e; color:#e0e0e0; font-family:-apple-system,BlinkMacSyst
 <div class="header">
   <h1>📋 Логи ChatCenter</h1>
   <button id="btnAuto" onclick="toggleAuto()">○ Auto</button>
+  <button onclick="clearLog()">🗑 Очистить</button>
   <button onclick="copyAll()">📋 Копировать</button>
   <button class="close" onclick="window.close()">✕</button>
 </div>
@@ -99,6 +100,15 @@ function toggleAuto() {
 function copyAll() {
   const text = allLines.map(l => `[${l.ts}] [${l.level}] ${l.text}`).join('\n')
   navigator.clipboard.writeText(text)
+}
+
+function clearLog() {
+  try {
+    require('electron').ipcRenderer.invoke('app:clear-log').then(() => {
+      allLines = []
+      render()
+    })
+  } catch(e) { allLines = []; render() }
 }
 
 function loadLog() {

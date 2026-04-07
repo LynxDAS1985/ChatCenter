@@ -13,7 +13,7 @@ function openLogViewer() {
   logViewerWin = new BrowserWindow({
     width: 900, height: 600, title: 'Логи ChatCenter',
     backgroundColor: '#1a1b2e',
-    webPreferences: { contextIsolation: false, nodeIntegration: false },
+    webPreferences: { contextIsolation: false, nodeIntegration: true },
   })
   const htmlPath = isDev
     ? path.join(__dirname, '../../main/log-viewer.html')
