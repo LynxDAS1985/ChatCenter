@@ -26,7 +26,7 @@ export function initLogger(userDataPath) {
   function writeLog(level, args) {
     const ts = new Date().toISOString().slice(0, 19).replace('T', ' ')
     const msg = `[${ts}] [${level}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`
-    try { fs.appendFileSync(logFilePath, msg) } catch {}
+    try { fs.appendFileSync(logFilePath, msg) } catch (e) { origError('[Logger] Write failed:', e.code, logFilePath) }
   }
   function autoOpenLogOnError() {
     const now = Date.now()
@@ -34,6 +34,11 @@ export function initLogger(userDataPath) {
     _lastAutoLogOpen = now
     setTimeout(() => { try { if (_openLogViewer) _openLogViewer() } catch {} }, 500)
   }
+  // Тестовая запись при инициализации — если файл создаётся, логгер работает
+  try {
+    fs.appendFileSync(logFilePath, `[${new Date().toISOString().slice(0,19).replace('T',' ')}] [INFO] === Logger init: ${logFilePath} ===\n`)
+    origLog('[Logger] Writing to:', logFilePath)
+  } catch(e) { origError('[Logger] CANNOT WRITE:', logFilePath, e.code, e.message) }
   console.log = (...args) => { origLog(...args); writeLog('INFO', args) }
   console.warn = (...args) => { origWarn(...args); writeLog('WARN', args) }
   console.error = (...args) => { origError(...args); writeLog('ERROR', args); autoOpenLogOnError() }
