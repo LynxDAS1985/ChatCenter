@@ -179,15 +179,15 @@ setTimeout(() => {
 
 function sendUpdate(type) {
   const { personal, channels, total, allTotal } = countUnread(type)
-  // v0.86.0: диагностика WhatsApp unread count
-  if (type === 'whatsapp' && _waUnreadDiagCount < 3) {
+  // v0.86.0: диагностика WhatsApp unread count через IPC (console.log не работает в Electron 41 preload)
+  if (type === 'whatsapp' && _waUnreadDiagCount < 5) {
     _waUnreadDiagCount++
-    try { console.log('__CC_DIAG__wa-unread: allTotal=' + allTotal + ' personal=' + personal + ' lastCount=' + lastCount + ' title="' + document.title + '"') } catch(e) {}
+    try { ipcRenderer.sendToHost('monitor-diag', { msg: 'wa-unread', allTotal: allTotal, personal: personal, lastCount: lastCount, title: document.title }) } catch(e) {}
   }
   if (allTotal !== lastCount) {
     const increased = total > lastCount && lastCount >= 0 && monitorReady
     if (type === 'whatsapp') {
-      try { console.log('__CC_DIAG__wa-count-change: ' + lastCount + '→' + allTotal + ' increased=' + increased + ' ready=' + monitorReady + ' title="' + document.title + '"') } catch(e) {}
+      try { ipcRenderer.sendToHost('monitor-diag', { msg: 'wa-count-change', from: lastCount, to: allTotal, increased: increased, ready: monitorReady, title: document.title }) } catch(e) {}
     }
     lastCount = allTotal
     // Общий счётчик (для бейджа) — ВСЕ непрочитанные, включая muted
@@ -400,7 +400,9 @@ function setupNavigationWatcher(type) {
 
 function startMonitor() {
   const type = getMessengerType()
-  try { console.log('__CC_DIAG__monitor-start: type=' + type + ' host=' + location.hostname) } catch(e) {}
+  // v0.86.0: preload console.log НЕ попадает в console-message (Electron 41 isolated world)
+  // Используем ipcRenderer.sendToHost для диагностики
+  try { ipcRenderer.sendToHost('monitor-diag', { msg: 'monitor-start', type: type, host: location.hostname }) } catch(e) {}
   if (!type) return
 
   sendUpdate(type)
