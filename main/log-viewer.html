@@ -21,7 +21,7 @@ body { background:#1a1b2e; color:#e0e0e0; font-family:-apple-system,BlinkMacSyst
 .log-line .level { font-weight:600; }
 .empty { text-align:center; padding:60px; color:#555; font-size:13px; }
 .footer { padding:6px 16px; border-top:1px solid #2a2b3e; font-size:11px; color:#555; display:flex; justify-content:space-between; }
-.lvl-error { color:#ff4444; } .lvl-warn { color:#f59e0b; } .lvl-info { color:#22c55e; } .lvl-debug { color:#6b7280; } .lvl-rerror { color:#ff6b6b; } .lvl-rinfo { color:#2AABEE; }
+.lvl-error { color:#ff4444; } .lvl-warn { color:#f59e0b; } .lvl-info { color:#22c55e; } .lvl-debug { color:#6b7280; } .lvl-rerror { color:#ff6b6b; } .lvl-rinfo { color:#2AABEE; } .lvl-trace { color:#c084fc; }
 </style>
 </head>
 <body>
@@ -36,6 +36,7 @@ body { background:#1a1b2e; color:#e0e0e0; font-family:-apple-system,BlinkMacSyst
   <button data-f="error" onclick="setFilter('error',this)" style="color:#ff4444">● Ошибки</button>
   <button data-f="warn" onclick="setFilter('warn',this)" style="color:#f59e0b">● Предупр.</button>
   <button data-f="info" onclick="setFilter('info',this)" style="color:#22c55e">● Инфо</button>
+  <button data-f="trace" onclick="setFilter('trace',this)" style="color:#c084fc">● Trace</button>
   <button data-f="debug" onclick="setFilter('debug',this)" style="color:#6b7280">● Debug</button>
 </div>
 <div class="logs" id="logs"><div class="empty">Загрузка...</div></div>
@@ -52,6 +53,7 @@ function parseLine(line) {
 function levelClass(lv) {
   if (lv.includes('ERROR')) return 'lvl-error'
   if (lv.includes('WARN')) return 'lvl-warn'
+  if (lv.includes('TRACE')) return 'lvl-trace'
   if (lv === 'INFO' || lv === 'R:INFO') return 'lvl-info'
   if (lv === 'DEBUG') return 'lvl-debug'
   return ''
@@ -62,6 +64,7 @@ function render() {
     : filter === 'error' ? allLines.filter(l => l.level.includes('ERROR'))
     : filter === 'warn' ? allLines.filter(l => l.level.includes('WARN'))
     : filter === 'info' ? allLines.filter(l => l.level === 'INFO' || l.level === 'R:INFO')
+    : filter === 'trace' ? allLines.filter(l => l.level.includes('TRACE'))
     : filter === 'debug' ? allLines.filter(l => l.level === 'DEBUG')
     : allLines
 
