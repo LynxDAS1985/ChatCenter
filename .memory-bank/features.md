@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.86.0 (7 апреля 2026)
+## Текущая версия: v0.86.1 (8 апреля 2026)
 
 ---
 
@@ -91,6 +91,16 @@
 ---
 
 ## Changelog
+
+### v0.86.1 (8 апреля 2026) — WhatsApp sidebar watcher (уведомления при активной вкладке)
+- **Sidebar MutationObserver** в whatsapp.hook.js (main world, не preload!)
+  - Следит за #side: когда текст последнего сообщения меняется + badge есть = новое сообщение
+  - Шлёт `__CC_NOTIF__` с именем чата и текстом (как обычное уведомление)
+  - Snapshot при старте (8 сек) — не считает старые сообщения новыми
+  - Debounce 2 сек — не спамит
+  - Диагностика: `__CC_DIAG__wa-sidebar: observer attached` / `new msg`
+- **Ловушка 60**: ribbon из title-update перехватывал __CC_NOTIF__ — убран
+- **Звук title-update**: разблокирован при activeId=whatsapp
 
 ### v0.86.0 (7 апреля 2026) — WhatsApp навигация с логами + accountScript
 - **WhatsApp "Перейти к чату"**: полная диагностика (spans, samples, method, matched)

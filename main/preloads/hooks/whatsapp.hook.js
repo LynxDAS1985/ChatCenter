@@ -88,5 +88,69 @@
   var _ce = document.createElement.bind(document);
   document.createElement = function(tag) { var el = _ce.apply(document, arguments); if (tag && tag.toLowerCase() === 'audio') { el.volume = 0; el.muted = true; } return el; };
   ['AudioContext','webkitAudioContext'].forEach(function(n) { var _C = window[n]; if (!_C) return; var _g = _C.prototype.createGain; _C.prototype.createGain = function() { var g = _g.call(this); g.gain.value = 0; return g; }; });
+  // === SIDEBAR WATCHER (v0.86.0) ===
+  // WhatsApp не шлёт Notification когда вкладка активна.
+  // Следим за sidebar: когда текст последнего сообщения в чате меняется = новое сообщение.
+  var _lastSidebarTexts = {};
+  var _sidebarReady = false;
+  setTimeout(function() {
+    _sidebarReady = true;
+    // Снимаем snapshot текущего состояния sidebar
+    try {
+      var rows = document.querySelectorAll('#side [role="row"], #side [role="listitem"], #side [data-testid="cell-frame-container"]');
+      for (var i = 0; i < rows.length && i < 30; i++) {
+        var nameEl = rows[i].querySelector('span[title]');
+        var msgEl = rows[i].querySelector('[data-testid="last-msg-status"] + span, span[title] ~ div span');
+        var name = nameEl ? nameEl.getAttribute('title') : '';
+        var msg = msgEl ? (msgEl.textContent || '').trim().slice(0, 60) : '';
+        if (name) _lastSidebarTexts[name] = msg;
+      }
+    } catch(e) {}
+  }, 8000);
+
+  var _sidebarObserver = null;
+  setTimeout(function() {
+    var side = document.getElementById('side') || document.querySelector('[data-testid="chat-list"]');
+    if (!side) return;
+    var _lastEmitTs = 0;
+    _sidebarObserver = new MutationObserver(function() {
+      if (!_sidebarReady) return;
+      var now = Date.now();
+      if (now - _lastEmitTs < 2000) return; // debounce 2 сек
+      try {
+        var rows = side.querySelectorAll('[role="row"], [role="listitem"], [data-testid="cell-frame-container"]');
+        for (var i = 0; i < Math.min(rows.length, 15); i++) {
+          var nameEl = rows[i].querySelector('span[title]');
+          if (!nameEl) continue;
+          var chatName = nameEl.getAttribute('title') || '';
+          if (!chatName) continue;
+          // Ищем badge (зелёный кружок с числом)
+          var badge = rows[i].querySelector('[data-testid="icon-unread-count"], [aria-label*="unread"], .unread-count');
+          if (!badge) continue; // нет badge = нет непрочитанных
+          // Ищем текст последнего сообщения
+          var msgSpans = rows[i].querySelectorAll('span[dir], span[class]');
+          var lastMsg = '';
+          for (var j = msgSpans.length - 1; j >= 0; j--) {
+            var t = (msgSpans[j].textContent || '').trim();
+            if (t.length >= 2 && t.length <= 200 && t !== chatName) { lastMsg = t; break; }
+          }
+          if (!lastMsg) continue;
+          var prev = _lastSidebarTexts[chatName] || '';
+          if (lastMsg !== prev) {
+            _lastSidebarTexts[chatName] = lastMsg;
+            if (prev) { // prev пустой = первый скан, не новое сообщение
+              _lastEmitTs = now;
+              console.log('__CC_NOTIF__' + JSON.stringify({ t: chatName, b: lastMsg, i: '', g: '' }));
+              console.log('__CC_DIAG__wa-sidebar: new msg from "' + chatName.slice(0,25) + '" text="' + lastMsg.slice(0,30) + '"');
+              return; // одно сообщение за цикл
+            }
+          }
+        }
+      } catch(e) {}
+    });
+    _sidebarObserver.observe(side, { childList: true, subtree: true, characterData: true });
+    console.log('__CC_DIAG__wa-sidebar: observer attached to #side');
+  }, 10000);
+
   console.log('__CC_NOTIF_HOOK_OK__');
 })()
