@@ -124,9 +124,9 @@
           if (!nameEl) continue;
           var chatName = nameEl.getAttribute('title') || '';
           if (!chatName) continue;
-          // Ищем badge (зелёный кружок с числом)
+          // Badge: зелёный кружок. Если есть — точно непрочитанное.
+          // Если нет — может быть открытый чат (badge не показывается)
           var badge = rows[i].querySelector('[data-testid="icon-unread-count"], [aria-label*="unread"], .unread-count');
-          if (!badge) continue; // нет badge = нет непрочитанных
           // Ищем текст последнего сообщения
           var msgSpans = rows[i].querySelectorAll('span[dir], span[class]');
           var lastMsg = '';
@@ -140,9 +140,11 @@
             _lastSidebarTexts[chatName] = lastMsg;
             if (prev) { // prev пустой = первый скан, не новое сообщение
               _lastEmitTs = now;
-              console.log('__CC_NOTIF__' + JSON.stringify({ t: chatName, b: lastMsg, i: '', g: '' }));
-              console.log('__CC_DIAG__wa-sidebar: new msg from "' + chatName.slice(0,25) + '" text="' + lastMsg.slice(0,30) + '"');
-              return; // одно сообщение за цикл
+              var icon = '';
+              try { var img = rows[i].querySelector('img[src^="blob:"], img[draggable="false"]'); if (img) icon = img.src; } catch(e) {}
+              console.log('__CC_NOTIF__' + JSON.stringify({ t: chatName, b: lastMsg, i: icon, g: '' }));
+              console.log('__CC_DIAG__wa-sidebar: new from "' + chatName.slice(0,20) + '" text="' + lastMsg.slice(0,30) + '" badge=' + !!badge);
+              return;
             }
           }
         }
