@@ -167,5 +167,15 @@ test('WebView timeout → error логируется', function() {
   assert(appCode.includes('[Monitor]') && appCode.includes('не ответил'), 'таймаут монитора должен логироваться')
 })
 
+// v0.86.0: title-update ribbon для WhatsApp
+test('page-title-updated: ribbon при увеличении count', function() {
+  assert(appCode.includes('ribbon title-update'), 'page-title-updated должен отправлять ribbon при увеличении count')
+})
+test('page-title-updated: звук при activeId=messengerId (WhatsApp fix)', function() {
+  // НЕ должен блокировать звук когда пользователь на вкладке мессенджера
+  assert(!appCode.includes('!(windowFocusedRef.current && activeIdRef.current === messengerId)') || appCode.includes('ribbon title-update'),
+    'title-update должен разрешать звук даже при activeId=messengerId')
+})
+
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

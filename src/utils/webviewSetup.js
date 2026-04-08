@@ -283,15 +283,10 @@ export function createWebviewSetup(deps) {
   const setWebviewRef = (el, messengerId) => {
     if (el && !el._chatcenterInit) {
       el._chatcenterInit = true
-      el._chatcenterListeners = [] // v0.80.0: сохраняем ссылки для cleanup
+      el._chatcenterListeners = []
       webviewRefs.current[messengerId] = el
-
-      // v0.80.0: helper — addEventListener с сохранением для cleanup
       const addListener = (event, fn) => { el.addEventListener(event, fn); el._chatcenterListeners.push([event, fn]) }
-
-      // Статус мониторинга: loading при инициализации
       setMonitorStatus(prev => ({ ...prev, [messengerId]: 'loading' }))
-
       // ── СЕКЦИЯ: События загрузки страницы ──
       setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       addListener('did-start-loading', () => {
@@ -415,24 +410,39 @@ export function createWebviewSetup(deps) {
           notifCountRef.current[messengerId] = Math.min(notifCountRef.current[messengerId] || 0, count)
           setUnreadCounts(prev => {
             if (prev[messengerId] === count) return prev
-            // Звук при увеличении счётчика (только если пользователь НЕ смотрит на этот чат)
-            // Warm-up: при запуске счётчик идёт 0→N — не шуметь пока WebView не прогрелся
-            if (count > (prev[messengerId] || 0) && notifReadyRef.current[messengerId] && !(windowFocusedRef.current && activeIdRef.current === messengerId)) {
+            // Звук + ribbon при увеличении счётчика
+            // v0.86.0: WhatsApp не шлёт Notification при активной вкладке — title-update единственный канал
+            // Разрешаем звук+ribbon даже при activeId=messengerId (пользователь на вкладке но в другом чате)
+            const prevCount = prev[messengerId] || 0
+            const increased = count > prevCount && notifReadyRef.current[messengerId]
+            if (increased) {
               const s = settingsRef.current
               const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
               const sndOn = mn.sound !== undefined ? mn.sound : !muted
               const ribOn = mn.ribbon !== undefined ? mn.ribbon : true
-              // v0.62.6: дедупликация звука + логирование
+              const mi = messengersRef.current.find(x => x.id === messengerId)
               const lastSnd = lastSoundTsRef.current[messengerId] || 0
               const sinceLast = Date.now() - lastSnd
               if (s.soundEnabled !== false && sndOn && sinceLast > 3000) {
-                const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
                 lastSoundTsRef.current[messengerId] = Date.now()
-                traceNotif('sound', 'pass', messengerId, `title +${count - (prev[messengerId] || 0)}`, 'звук title-update')
+                traceNotif('sound', 'pass', messengerId, `title +${count - prevCount}`, 'звук title-update')
               } else if (s.soundEnabled !== false && sndOn) {
-                traceNotif('sound', 'block', messengerId, `title +${count - (prev[messengerId] || 0)}`, `dedup title ${sinceLast}мс назад`)
+                traceNotif('sound', 'block', messengerId, `title +${count - prevCount}`, `dedup title ${sinceLast}мс назад`)
+              }
+              // v0.86.0: Ribbon при title-update (WhatsApp не шлёт __CC_NOTIF__ при активной вкладке)
+              if (s.notificationsEnabled !== false && ribOn && lastRibbonTsRef.current[messengerId] !== count) {
+                lastRibbonTsRef.current[messengerId] = count
+                window.api?.invoke('app:custom-notify', {
+                  title: '',
+                  body: `+${count - prevCount} новое сообщение`,
+                  color: mi?.color || '#25D366',
+                  emoji: mi?.emoji || '💬',
+                  messengerName: mi?.name || 'WhatsApp',
+                  messengerId: messengerId,
+                }).catch(() => {})
+                traceNotif('ribbon', 'pass', messengerId, `title +${count - prevCount}`, 'ribbon title-update')
               }
             }
             return { ...prev, [messengerId]: count }
@@ -570,8 +580,6 @@ export function createWebviewSetup(deps) {
           }, 500)
         }
       })
-
-
       // ── СЕКЦИЯ: Console-message — перехват Notification/Badge/MutationObserver ──
       // v0.84.3: Вынесено в consoleMessageHandler.js
       const consoleHandler = createConsoleMessageHandler({
