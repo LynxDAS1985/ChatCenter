@@ -27,7 +27,7 @@ body { background:#1a1b2e; color:#e0e0e0; font-family:-apple-system,BlinkMacSyst
 <body>
 <div class="header">
   <h1>📋 Логи ChatCenter</h1>
-  <button id="btnAuto" onclick="toggleAuto()">○ Auto</button>
+  <button id="btnAuto" class="active" onclick="toggleAuto()">● Auto</button>
   <button onclick="clearLog()">🗑 Очистить</button>
   <button onclick="copyAll()">📋 Копировать</button>
   <button class="close" onclick="window.close()">✕</button>
@@ -44,7 +44,7 @@ body { background:#1a1b2e; color:#e0e0e0; font-family:-apple-system,BlinkMacSyst
 <div class="footer"><span id="count">0 / 0 записей</span><span id="time"></span></div>
 
 <script>
-let filter = 'all', autoMode = false, autoIv = null, allLines = []
+let filter = 'all', autoMode = true, autoIv = null, allLines = []
 
 function parseLine(line) {
   const m = line.match(/^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)$/)
@@ -119,8 +119,12 @@ function loadLog() {
   }
 }
 
-// Получаем лог при загрузке
-window.addEventListener('DOMContentLoaded', () => { setTimeout(loadLog, 100) })
+// Получаем лог при загрузке + Auto по умолчанию
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(loadLog, 100)
+  // Auto включён по умолчанию
+  autoIv = setInterval(loadLog, 3000)
+})
 </script>
 </body>
 </html>
