@@ -179,15 +179,12 @@ setTimeout(() => {
 
 function sendUpdate(type) {
   const { personal, channels, total, allTotal } = countUnread(type)
-  // v0.86.0: диагностика WhatsApp unread count через IPC (console.log не работает в Electron 41 preload)
-  if (type === 'whatsapp' && _waUnreadDiagCount < 5) {
-    _waUnreadDiagCount++
-    try { ipcRenderer.sendToHost('monitor-diag', 'wa-unread: allTotal=' + allTotal + ' personal=' + personal + ' lastCount=' + lastCount + ' title=' + document.title) } catch(e) {}
-  }
+  // v0.86.0: диагностика WhatsApp — при КАЖДОМ изменении count (не первые 5)
   if (allTotal !== lastCount) {
     const increased = total > lastCount && lastCount >= 0 && monitorReady
+    // v0.86.0: WhatsApp — логируем КАЖДОЕ изменение count
     if (type === 'whatsapp') {
-      try { ipcRenderer.sendToHost('monitor-diag', 'wa-count-change: ' + lastCount + '→' + allTotal + ' increased=' + increased + ' ready=' + monitorReady + ' title=' + document.title) } catch(e) {}
+      try { ipcRenderer.sendToHost('monitor-diag', 'wa-count: ' + lastCount + '→' + allTotal + ' inc=' + increased + ' rdy=' + monitorReady) } catch(e) {}
     }
     lastCount = allTotal
     // Общий счётчик (для бейджа) — ВСЕ непрочитанные, включая muted
