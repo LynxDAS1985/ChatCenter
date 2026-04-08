@@ -397,55 +397,30 @@ export function createWebviewSetup(deps) {
         } catch {}
       })
 
-      // ── Page events: title-update → unread count + звук + ribbon ──
-      let _prevTitle = ''
+      // ── Page events: title-update → unread count + звук (НЕ ribbon) ──
       addListener('page-title-updated', (e) => {
-        const title = e.title || ''
-        const match = title.match(/\((\d+)\)/) || title.match(/^(\d+)\s+непрочитанн/)
-        // v0.86.0: Детекция мигания title — WhatsApp мигает "(1) WA" → "WA" → "(1) WA" при новом сообщении
-        const prevHadCount = /\(\d+\)/.test(_prevTitle)
-        const nowHasCount = !!match
-        const titleFlash = !prevHadCount && nowHasCount // переход от без-скобок к со-скобками = новое сообщение
-        _prevTitle = title
+        const match = e.title?.match(/\((\d+)\)/) || e.title?.match(/^(\d+)\s+непрочитанн/)
         if (match) {
           const count = parseInt(match[1], 10) || 0
           notifCountRef.current[messengerId] = Math.min(notifCountRef.current[messengerId] || 0, count)
           setUnreadCounts(prev => {
-            const countChanged = prev[messengerId] !== count
-            // Звук + ribbon при увеличении счётчика
-            // v0.86.0: WhatsApp не шлёт Notification при активной вкладке — title-update единственный канал
-            // Разрешаем звук+ribbon даже при activeId=messengerId (пользователь на вкладке но в другом чате)
-            if (!countChanged && !titleFlash) return prev
+            if (prev[messengerId] === count) return prev
             const prevCount = prev[messengerId] || 0
-            const increased = (count > prevCount || titleFlash) && notifReadyRef.current[messengerId]
-            if (increased) {
+            // v0.86.0: Звук при увеличении — разрешаем даже при activeId=messengerId
+            // WhatsApp не шлёт __CC_NOTIF__ при активной вкладке, title-update = единственный канал для звука
+            // Ribbon НЕ отправляем здесь — он приходит через __CC_NOTIF__ с именем и текстом
+            if (count > prevCount && notifReadyRef.current[messengerId]) {
               const s = settingsRef.current
               const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
               const sndOn = mn.sound !== undefined ? mn.sound : !muted
-              const ribOn = mn.ribbon !== undefined ? mn.ribbon : true
-              const mi = messengersRef.current.find(x => x.id === messengerId)
               const lastSnd = lastSoundTsRef.current[messengerId] || 0
               const sinceLast = Date.now() - lastSnd
               if (s.soundEnabled !== false && sndOn && sinceLast > 3000) {
+                const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
                 lastSoundTsRef.current[messengerId] = Date.now()
                 traceNotif('sound', 'pass', messengerId, `title +${count - prevCount}`, 'звук title-update')
-              } else if (s.soundEnabled !== false && sndOn) {
-                traceNotif('sound', 'block', messengerId, `title +${count - prevCount}`, `dedup title ${sinceLast}мс назад`)
-              }
-              // v0.86.0: Ribbon при title-update (WhatsApp не шлёт __CC_NOTIF__ при активной вкладке)
-              if (s.notificationsEnabled !== false && ribOn && lastRibbonTsRef.current[messengerId] !== count) {
-                lastRibbonTsRef.current[messengerId] = count
-                window.api?.invoke('app:custom-notify', {
-                  title: '',
-                  body: `+${count - prevCount} новое сообщение`,
-                  color: mi?.color || '#25D366',
-                  emoji: mi?.emoji || '💬',
-                  messengerName: mi?.name || 'WhatsApp',
-                  messengerId: messengerId,
-                }).catch(() => {})
-                traceNotif('ribbon', 'pass', messengerId, `title +${count - prevCount}`, 'ribbon title-update')
               }
             }
             return { ...prev, [messengerId]: count }
