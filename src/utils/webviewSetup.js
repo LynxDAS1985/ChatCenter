@@ -451,6 +451,10 @@ export function createWebviewSetup(deps) {
 
       // ── СЕКЦИЯ: IPC-message — обработка сообщений от WebView ──
       addListener('ipc-message', (e) => {
+        // v0.86.0: Временный лог ВСЕХ IPC каналов от WhatsApp для диагностики
+        if (messengerId === 'whatsapp' && e.channel !== 'unread-count' && e.channel !== 'unread-split') {
+          try { window.api?.send('app:log', { level: 'TRACE', message: '[IPC-WA] channel=' + e.channel + ' args=' + JSON.stringify(e.args).slice(0,100) }) } catch {}
+        }
         if (e.channel === 'zoom-change') {
           const delta = e.args[0]?.delta || 0
           const cur = zoomLevelsRef.current[messengerId] || 100
@@ -511,7 +515,10 @@ export function createWebviewSetup(deps) {
         } else if (e.channel === 'monitor-diag') {
           // v0.79.8: Диагностика DOM — трассировка в pipeline вместо state
           const diag = e.args[0]
-          traceNotif('debug', 'info', messengerId, JSON.stringify(diag).slice(0, 200), 'monitor-diag')
+          const diagStr = typeof diag === 'string' ? diag : JSON.stringify(diag).slice(0, 200)
+          traceNotif('debug', 'info', messengerId, diagStr, 'monitor-diag')
+          // v0.86.0: Прямой лог в файл для диагностики monitor
+          try { window.api?.send('app:log', { level: 'TRACE', message: '[MONITOR] [' + (messengersRef.current.find(x=>x.id===messengerId)?.name||messengerId) + '] ' + diagStr }) } catch {}
         } else if (e.channel === 'new-message') {
           // Warm-up: игнорируем сообщения от MutationObserver первые 5 сек после dom-ready
           if (!notifReadyRef.current[messengerId]) {
