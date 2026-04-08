@@ -36,7 +36,6 @@ export function createWebviewSetup(deps) {
     setMonitorStatus, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
     setWebviewLoading, setZoomLevels, monitorPreloadUrl,
   } = deps
-
   // ── Извлечение аккаунта из WebView ───────────────────────────────────────
   const tryExtractAccount = (messengerId, attempt = 0) => {
     if (attempt > 12) return
@@ -398,23 +397,27 @@ export function createWebviewSetup(deps) {
         } catch {}
       })
 
-      // ── СЕКЦИЯ: Page events — title, favicon, navigate ──
-      // page-title-updated — мгновенное обновление счётчика из title WebView
-      // Telegram: "(26) Telegram Web", WhatsApp: "(5) WhatsApp", VK: "(3) ВКонтакте"
-      // MAX: "1 непрочитанный чат" / "5 непрочитанных чатов" (БЕЗ скобок!)
+      // ── Page events: title-update → unread count + звук + ribbon ──
+      let _prevTitle = ''
       addListener('page-title-updated', (e) => {
-        const match = e.title?.match(/\((\d+)\)/) || e.title?.match(/^(\d+)\s+непрочитанн/)
+        const title = e.title || ''
+        const match = title.match(/\((\d+)\)/) || title.match(/^(\d+)\s+непрочитанн/)
+        // v0.86.0: Детекция мигания title — WhatsApp мигает "(1) WA" → "WA" → "(1) WA" при новом сообщении
+        const prevHadCount = /\(\d+\)/.test(_prevTitle)
+        const nowHasCount = !!match
+        const titleFlash = !prevHadCount && nowHasCount // переход от без-скобок к со-скобками = новое сообщение
+        _prevTitle = title
         if (match) {
           const count = parseInt(match[1], 10) || 0
-          // v0.74.0: Сбрасываем notifCountRef когда title показывает реальное число
           notifCountRef.current[messengerId] = Math.min(notifCountRef.current[messengerId] || 0, count)
           setUnreadCounts(prev => {
-            if (prev[messengerId] === count) return prev
+            const countChanged = prev[messengerId] !== count
             // Звук + ribbon при увеличении счётчика
             // v0.86.0: WhatsApp не шлёт Notification при активной вкладке — title-update единственный канал
             // Разрешаем звук+ribbon даже при activeId=messengerId (пользователь на вкладке но в другом чате)
+            if (!countChanged && !titleFlash) return prev
             const prevCount = prev[messengerId] || 0
-            const increased = count > prevCount && notifReadyRef.current[messengerId]
+            const increased = (count > prevCount || titleFlash) && notifReadyRef.current[messengerId]
             if (increased) {
               const s = settingsRef.current
               const mn = (s.messengerNotifs || {})[messengerId] || {}
@@ -592,6 +595,5 @@ export function createWebviewSetup(deps) {
       addListener('console-message', consoleHandler(el, messengerId))
     }
   }
-
   return { setWebviewRef, handleNewMessage, traceNotif, recentNotifsRef, lastRibbonTsRef, lastSoundTsRef, notifSenderTsRef, notifMidTsRef, notifCountRef, pendingMarkReadsRef }
 }
