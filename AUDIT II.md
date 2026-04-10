@@ -284,7 +284,106 @@
 2. **Baseline drift значительный** — main.js -75 строк, App.jsx -48 строк — проект активно рефакторится
 3. **Renderer бандл 920 KB** — большой, но в пределах нормы для React 19 + Tailwind. Мониторить рост
 
-### Notes For Next AI
+### DOCS Compliance Review (Stage 3)
+
+Проверка соответствия кода локальной документации в `DOCS/` (15 папок, все существуют).
+
+#### Electron docs (v41.1.0) — СООТВЕТСТВУЕТ частично
+
+| Область | Статус | Комментарий |
+|---------|--------|-------------|
+| `contextIsolation: true` (главное окно) | ✅ OK | Соответствует Electron v41 |
+| `nodeIntegration: false` (главное окно) | ✅ OK | Соответствует |
+| `sandbox: false` (все окна) | ⚠️ Отклонение | Electron v41 рекомендует `sandbox: true` |
+| `webviewTag: true` | ⚠️ Deprecated | WebView tag deprecated в Electron |
+| `contextBridge` в preload | ✅ OK | Корректное использование |
+| `session.setPermissionRequestHandler` | ✅ OK | Настроен корректно |
+| `shell.openExternal` с валидацией | ✅ OK | Проверяет http/https схемы |
+| `webRequest.onHeadersReceived` | ⚠️ Deprecated | Будет удалён в будущих версиях |
+| `@electron/remote` | ✅ OK | Не используется |
+| **Log Viewer `trayManager.js`** | 🔴 **КРИТИЧЕСКАЯ** | `contextIsolation: false` + `nodeIntegration: true` |
+
+#### React docs (v19.2.4) — СООТВЕТСТВУЕТ частично
+
+| Область | Статус | Комментарий |
+|---------|--------|-------------|
+| `ReactDOM.createRoot()` | ✅ OK | React 19 стиль |
+| useEffect cleanup | ⚠️ Частично | logging useEffect — возможная утечка при быстром размонтировании |
+| Правила hooks | ✅ OK | Все хуки на верхнем уровне |
+| Зависимости useEffect | ✅ OK | Указаны корректно |
+| **Дублирование IPC обработчиков** | 🔴 **ВЫСОКАЯ** | `useIPCListeners` и `useNotifyNavigation` оба слушают `notify:clicked`, `notify:mark-read` — срабатывают дважды |
+| `bumpStatsRef: { current: null }` | ⚠️ Баг | Новый объект на каждый рендер, не связан с реальным ref |
+| `console.error` мутация | ⚠️ Низкая | Глобальная мутация без защиты от двойного вызова |
+| Прямой DOM (resize) | ✅ OK | Обосновано для drag-resize |
+
+#### Node.js docs (v24.14.0) — СООТВЕТСТВУЕТ
+
+| Область | Статус | Комментарий |
+|---------|--------|-------------|
+| `node:fs` (синхронные API) | ✅ OK | Стабильные API, приемлемо для настроек |
+| `node:path` + ESM `__dirname` | ✅ OK | Стандартный паттерн |
+| `node:https` | ✅ OK | Корректное использование |
+| `crypto.randomUUID()` | ✅ OK | Доступен с Node 14+ |
+| `process.env`, `process.platform` | ✅ OK | Стабильные API |
+
+#### Vite/electron-vite docs — СООТВЕТСТВУЕТ
+
+| Область | Статус | Комментарий |
+|---------|--------|-------------|
+| electron-vite config структура | ✅ OK | main/preload/renderer секции корректны |
+| Entry points существуют | ✅ OK | Все 6 entry files найдены |
+| `externalizeDepsPlugin()` | ✅ OK | Стандартный плагин |
+| React plugin для renderer | ✅ OK | `@vitejs/plugin-react` |
+| Build output paths | ✅ OK | `out/main/main.js` совпадает с package.json |
+| `copyStaticPlugin` | ✅ OK | Копирует HTML и hooks в out/ |
+
+#### Tailwind CSS 3 docs — СООТВЕТСТВУЕТ
+
+| Область | Статус | Комментарий |
+|---------|--------|-------------|
+| `content` пути | ✅ OK | `./index.html`, `./src/**/*.{js,jsx}` |
+| `@tailwind` директивы | ✅ OK | base, components, utilities в правильном порядке |
+| ESM синтаксис | ✅ OK | `export default` поддерживается |
+
+#### PostCSS docs — СООТВЕТСТВУЕТ
+
+| Область | Статус | Комментарий |
+|---------|--------|-------------|
+| Pipeline порядок | ✅ OK | tailwindcss → autoprefixer (правильный порядок) |
+| ESM синтаксис | ✅ OK | PostCSS 8 поддерживает |
+
+#### ESLint 9 docs — СООТВЕТСТВУЕТ
+
+| Область | Статус | Комментарий |
+|---------|--------|-------------|
+| Flat config формат | ✅ OK | ESLint 9 массив объектов |
+| Global ignores | ✅ OK | `ignores` без других свойств |
+| `no-eval: error` | ✅ OK | Критические правила включены |
+| Неиспользуемый импорт `js` | ⚠️ Косметика | `import js from '@eslint/js'` не используется |
+
+### Обновлённые Validation Results
+- Lint: pass (0 warnings, 0 errors)
+- Build: pass (main 75.64 kB, preload 61.12 kB, renderer 920.11 kB)
+- Smoke: not-run
+- E2E App: not-run
+- E2E UI: not-run
+- Typecheck: not-applicable
+- Docs Compliance: **reviewed** (15 папок DOCS проверено по 7 стекам)
+- Coverage: not-revalidated
+
+### Обновлённые Final Sanity
+- safe validation checks pass? yes
+- critical runtime files exist? yes
+- docs compliance reviewed across active stack? **yes** (было partial)
+- remote-content surface fully mapped? no
+- legacy registry mismatches handled? yes
+- runtime-only verification complete? environment-limited
+
+### Обновлённые Notes For Next AI
+- 🔴 **КРИТИЧЕСКИЙ**: Исправить `trayManager.js` Log Viewer — `contextIsolation: false` + `nodeIntegration: true`. Добавить preload, включить contextIsolation
+- 🔴 **ВЫСОКИЙ**: Убрать дублирование IPC обработчиков — `useIPCListeners` и `useNotifyNavigation` слушают одни и те же события
+- ⚠️ `webRequest.onHeadersReceived` deprecated — мигрировать на Declarative Net Request при обновлении Electron
+- ⚠️ `bumpStatsRef: { current: null }` — баг, создаёт новый объект на каждый рендер
 - Перепроверить line count для `webviewSetup.js`, `monitor.preload.cjs`, `dockPinHandlers.js`, `AISidebar.jsx`
 - Обновить baseline числа в `AUDIT-REGISTRY.md` актуальными значениями
 - Выяснить что за новый e2e файл и работает ли он
