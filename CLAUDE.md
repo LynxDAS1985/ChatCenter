@@ -5,9 +5,6 @@
 У проекта есть **"Memory Bank"** — папка `.memory-bank/` в корне репозитория.
 Это **ЕДИНСТВЕННЫЙ источник истины** для правил, архитектуры и решений.
 
-Локальная документация по стеку и инструментам проекта лежит в папке `DOCS/` в корне репозитория.
-Если нужно сверяться с документацией по Electron, Node.js, Vite, React и другим используемым пакетам, сначала ищи её там.
-
 ---
 
 ## ⛔ КРИТИЧЕСКИЕ ПРАВИЛА
@@ -52,7 +49,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber и др.).
 
-**Текущая версия**: v0.86.2 (30 марта 2026)
+**Текущая версия**: v0.86.1 (30 марта 2026)
 
 ---
 
@@ -174,30 +171,6 @@ npm test  # 410+ тестов, включая проверку лимитов р
 
 ---
 
-**Версия проекта**: v0.86.2 (30 марта 2026)
+**Версия проекта**: v0.86.1 (30 марта 2026)
 **Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
 **Последнее обновление**: 25 марта 2026 — v0.81.4: MAX навигация к чату — Svelte listitem fallback
----
-
-## DOCS / Документация
-
-Вся локальная документация по стеку проекта лежит в папке `DOCS/`.
-
-- `DOCS/Electron docs` — Electron API, `BrowserWindow`, `ipcMain`, `contextBridge`, `preload`, `session`, `webview`, security
-- `DOCS/Node.js docs` — `fs`, `path`, `process`, `child_process`, `https` и другие Node.js API
-- `DOCS/electron-vite docs` и `DOCS/Vite docs` — сборка, конфиги, dev/build pipeline
-- `DOCS/MDN docs` — DOM, CSS, HTML, Web API для renderer и WebView
-- `DOCS/React docs` — React и `react-dom`
-- `DOCS/Tailwind CSS docs`, `DOCS/PostCSS docs`, `DOCS/Autoprefixer docs` — стили и CSS pipeline
-- `DOCS/ESLint docs` и `DOCS/ESLint JS docs` — линтинг и конфиги
-- `DOCS/Playwright docs` — тесты и browser automation
-- `DOCS/Vite Plugin React docs`, `DOCS/lucide-react docs`, `DOCS/globals docs` — документация по вспомогательным пакетам
-
-Правила:
-- сначала ищи ответ в `DOCS/`
-- в каждой папке смотри `SOURCE.md` для источника и версии
-- `DOCS/` — локальная папка и не должна попадать в GitHub
-
-Покрытие документации:
-- `Electron`, `electron-vite`, `Vite`, `Node.js`, `MDN`, `React`, `Tailwind CSS`, `PostCSS`, `ESLint`, `Playwright`, `lucide-react` — лежат как полные или расширенные официальные docs bundles
-- `Autoprefixer`, `Vite Plugin React`, `ESLint JS`, `globals` — лежат как максимально полный официальный repo/package docs набор, потому что отдельного большого docs-site у них нет
