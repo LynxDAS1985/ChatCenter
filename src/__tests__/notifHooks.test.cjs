@@ -68,7 +68,7 @@ test('WA: НЕ содержит _maxPhantom', () => assert(!waCode.includes('_ma
 // v0.86.0: Sidebar watcher
 test('WA: sidebar observer на #side', () => assert(waCode.includes('_sidebarObserver') && waCode.includes('#side'), 'WhatsApp должен следить за sidebar'))
 test('WA: sidebar шлёт __CC_NOTIF__', () => assert(waCode.includes('wa-sidebar') && waCode.includes('__CC_NOTIF__'), 'sidebar должен отправлять __CC_NOTIF__'))
-test('WA: sidebar debounce', () => assert(waCode.includes('_lastEmitTs') && waCode.includes('2000'), 'sidebar должен иметь debounce'))
+test('WA: sidebar observer attached', () => assert(waCode.includes('observer attached to #side'), 'sidebar observer должен привязываться'))
 
 // ── v0.85.7: _isSpam НЕ блокирует 1-символьные сообщения ──
 console.log('\n── _isSpam: 1-символьные сообщения (ловушка 56): ──')

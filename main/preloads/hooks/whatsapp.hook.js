@@ -116,7 +116,7 @@
     _sidebarObserver = new MutationObserver(function() {
       if (!_sidebarReady) return;
       var now = Date.now();
-      if (now - _lastEmitTs < 2000) return; // debounce 2 сек
+      // v0.86.2 DIAG: debounce УБРАН — чтобы видеть ВСЕ мутации в логах
       try {
         var rows = side.querySelectorAll('[role="row"], [role="listitem"], [data-testid="cell-frame-container"]');
         for (var i = 0; i < Math.min(rows.length, 15); i++) {
