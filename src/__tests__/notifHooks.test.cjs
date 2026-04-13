@@ -65,10 +65,9 @@ test('VK: _appTitles с vk/вконтакте', () => assert(vkCode.includes('в
 const waCode = fs.readFileSync(path.join(hooksDir, 'whatsapp.hook.js'), 'utf8')
 test('WA: span[title] для аватарки', () => assert(waCode.includes('span[title]'), 'WhatsApp ищет аватарку по span[title]'))
 test('WA: НЕ содержит _maxPhantom', () => assert(!waCode.includes('_maxPhantom'), 'WhatsApp НЕ должен иметь MAX-фильтры'))
-// v0.86.0: Sidebar watcher
-test('WA: sidebar observer на #side', () => assert(waCode.includes('_sidebarObserver') && waCode.includes('#side'), 'WhatsApp должен следить за sidebar'))
-test('WA: sidebar шлёт __CC_NOTIF__', () => assert(waCode.includes('wa-sidebar') && waCode.includes('__CC_NOTIF__'), 'sidebar должен отправлять __CC_NOTIF__'))
-test('WA: sidebar debounce', () => assert(waCode.includes('_lastEmitTs') && waCode.includes('2000'), 'sidebar должен иметь debounce'))
+// v0.86.2: Sidebar watcher УБРАН (давал фантомы, реальные сообщения через Notification API)
+test('WA: НЕТ sidebar watcher (фантомы CSS)', () => assert(!waCode.includes('_sidebarObserver'), 'sidebar watcher должен быть удалён — фантомы из CSS'))
+test('WA: НЕТ wa-sidebar logging', () => assert(!waCode.includes('wa-sidebar:'), 'wa-sidebar диагностика убрана'))
 
 // ── v0.85.7: _isSpam НЕ блокирует 1-символьные сообщения ──
 console.log('\n── _isSpam: 1-символьные сообщения (ловушка 56): ──')
