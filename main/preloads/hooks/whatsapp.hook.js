@@ -127,23 +127,36 @@
           // Badge: зелёный кружок. Если есть — точно непрочитанное.
           // Если нет — может быть открытый чат (badge не показывается)
           var badge = rows[i].querySelector('[data-testid="icon-unread-count"], [aria-label*="unread"], .unread-count');
-          // Ищем текст последнего сообщения + ДИАГНОСТИКА
+          // Ищем текст + ПОЛНАЯ ДИАГНОСТИКА всех spans
           var msgSpans = rows[i].querySelectorAll('span[dir], span[class]');
           var lastMsg = '';
-          var diagSpans = []; // первые 5 span для диагностики
+          var allSpans = []; // ВСЕ span с атрибутами
           for (var j = msgSpans.length - 1; j >= 0; j--) {
-            var t = (msgSpans[j].textContent || '').trim();
-            var hasDir = msgSpans[j].hasAttribute('dir');
-            var inIcon = !!msgSpans[j].closest('[data-icon]');
-            if (diagSpans.length < 5) diagSpans.push({i:j, len:t.length, dir:hasDir, icon:inIcon, text:t.slice(0,25)});
+            var sp = msgSpans[j];
+            var t = (sp.textContent || '').trim();
+            var attrs = {
+              idx: j,
+              tag: sp.tagName,
+              dir: sp.getAttribute('dir') || '',
+              cls: (sp.className || '').slice(0, 40),
+              dataIcon: sp.getAttribute('data-icon') || (sp.closest('[data-icon]') ? sp.closest('[data-icon]').getAttribute('data-icon') : ''),
+              ariaLabel: (sp.getAttribute('aria-label') || '').slice(0, 20),
+              textLen: t.length,
+              text: t.slice(0, 30)
+            };
+            allSpans.push(attrs);
             if (t.length >= 2 && t.length <= 200 && t !== chatName) {
               if (!lastMsg) lastMsg = t;
             }
           }
-          // Диагностика для конкретного чата (Дугин или любой с новым текстом)
+          // Логируем ТОЛЬКО если текст новый (не при каждой мутации)
           if (lastMsg && lastMsg !== (_lastSidebarTexts[chatName] || '')) {
             try {
-              console.log('__CC_DIAG__wa-spans: chat="' + chatName.slice(0,15) + '" totalSpans=' + msgSpans.length + ' picked="' + lastMsg.slice(0,20) + '" spans=' + JSON.stringify(diagSpans));
+              // Разбиваем на несколько лог-записей чтобы не обрезалось
+              console.log('__CC_DIAG__wa-full: chat="' + chatName.slice(0,20) + '" picked="' + lastMsg.slice(0,25) + '" total=' + msgSpans.length);
+              for (var k = 0; k < allSpans.length; k++) {
+                console.log('__CC_DIAG__wa-span[' + k + ']: ' + JSON.stringify(allSpans[k]));
+              }
             } catch(e) {}
           }
           if (!lastMsg) continue;
