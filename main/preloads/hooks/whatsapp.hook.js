@@ -127,18 +127,30 @@
           // Badge: зелёный кружок. Если есть — точно непрочитанное.
           // Если нет — может быть открытый чат (badge не показывается)
           var badge = rows[i].querySelector('[data-testid="icon-unread-count"], [aria-label*="unread"], .unread-count');
-          // Ищем текст последнего сообщения
+          // Ищем текст последнего сообщения + ДИАГНОСТИКА
           var msgSpans = rows[i].querySelectorAll('span[dir], span[class]');
           var lastMsg = '';
+          var diagSpans = []; // первые 5 span для диагностики
           for (var j = msgSpans.length - 1; j >= 0; j--) {
             var t = (msgSpans[j].textContent || '').trim();
-            if (t.length >= 2 && t.length <= 200 && t !== chatName) { lastMsg = t; break; }
+            var hasDir = msgSpans[j].hasAttribute('dir');
+            var inIcon = !!msgSpans[j].closest('[data-icon]');
+            if (diagSpans.length < 5) diagSpans.push({i:j, len:t.length, dir:hasDir, icon:inIcon, text:t.slice(0,25)});
+            if (t.length >= 2 && t.length <= 200 && t !== chatName) {
+              if (!lastMsg) lastMsg = t;
+            }
+          }
+          // Диагностика для конкретного чата (Дугин или любой с новым текстом)
+          if (lastMsg && lastMsg !== (_lastSidebarTexts[chatName] || '')) {
+            try {
+              console.log('__CC_DIAG__wa-spans: chat="' + chatName.slice(0,15) + '" totalSpans=' + msgSpans.length + ' picked="' + lastMsg.slice(0,20) + '" spans=' + JSON.stringify(diagSpans));
+            } catch(e) {}
           }
           if (!lastMsg) continue;
           var prev = _lastSidebarTexts[chatName] || '';
           if (lastMsg !== prev) {
             _lastSidebarTexts[chatName] = lastMsg;
-            if (prev) { // prev пустой = первый скан, не новое сообщение
+            if (prev) {
               _lastEmitTs = now;
               var icon = '';
               try { var img = rows[i].querySelector('img[src^="blob:"], img[draggable="false"]'); if (img) icon = img.src; } catch(e) {}
