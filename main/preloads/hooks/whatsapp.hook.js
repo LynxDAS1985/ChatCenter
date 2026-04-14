@@ -127,35 +127,49 @@
           // Badge: зелёный кружок. Если есть — точно непрочитанное.
           // Если нет — может быть открытый чат (badge не показывается)
           var badge = rows[i].querySelector('[data-testid="icon-unread-count"], [aria-label*="unread"], .unread-count');
-          // Ищем текст + ПОЛНАЯ ДИАГНОСТИКА всех spans
+          // v0.86.3: откат к широкому селектору (Ловушка 62 — dir="auto" не сработал для открытого чата).
+          // Широкий селектор возвращает уведомления, но даёт фантомы — пока оставляем до следующей итерации.
           var msgSpans = rows[i].querySelectorAll('span[dir], span[class]');
           var lastMsg = '';
-          var allSpans = []; // ВСЕ span с атрибутами
+          // v0.86.3 DIAG: детектируем открытый чат — нужно понять DOM активной строки sidebar
+          var isOpen = false;
+          try {
+            isOpen = rows[i].getAttribute('aria-selected') === 'true' ||
+                     (rows[i].querySelector('[aria-selected="true"]') !== null) ||
+                     (rows[i].className || '').toLowerCase().indexOf('selected') !== -1;
+          } catch(e) {}
+          var allSpansDiag = isOpen ? [] : null;
           for (var j = msgSpans.length - 1; j >= 0; j--) {
             var sp = msgSpans[j];
             var t = (sp.textContent || '').trim();
-            var attrs = {
-              idx: j,
-              tag: sp.tagName,
-              dir: sp.getAttribute('dir') || '',
-              cls: (sp.className || '').slice(0, 40),
-              dataIcon: sp.getAttribute('data-icon') || (sp.closest('[data-icon]') ? sp.closest('[data-icon]').getAttribute('data-icon') : ''),
-              ariaLabel: (sp.getAttribute('aria-label') || '').slice(0, 20),
-              textLen: t.length,
-              text: t.slice(0, 30)
-            };
-            allSpans.push(attrs);
+            if (isOpen) {
+              allSpansDiag.push({
+                idx: j,
+                dir: sp.getAttribute('dir') || '',
+                cls: (sp.className || '').slice(0, 40),
+                dataIcon: sp.getAttribute('data-icon') || (sp.closest('[data-icon]') ? sp.closest('[data-icon]').getAttribute('data-icon') : ''),
+                inDataIcon: !!sp.closest('[data-icon]'),
+                textLen: t.length,
+                text: t.slice(0, 40)
+              });
+            }
+            // v0.86.4 ШАГ 1: отсекаем SVG-title фантомы (status-dblcheck, ic-expand-more, default-user).
+            // WhatsApp рендерит иконку как <span data-icon="NAME"><svg><title>NAME</title></svg></span>.
+            // span.textContent внутри SVG возвращает содержимое <title> = имя иконки. Если textContent
+            // буквально равен значению data-icon (собственного или ближайшего родителя) — это SVG-title,
+            // НЕ пользовательский текст. Отсекаем.
+            var iconParent = sp.closest('[data-icon]');
+            var iconName = iconParent ? iconParent.getAttribute('data-icon') : '';
+            if (iconName && t === iconName) continue;
             if (t.length >= 2 && t.length <= 200 && t !== chatName) {
               if (!lastMsg) lastMsg = t;
             }
           }
-          // Логируем ТОЛЬКО если текст новый (не при каждой мутации)
-          if (lastMsg && lastMsg !== (_lastSidebarTexts[chatName] || '')) {
+          if (isOpen && lastMsg && lastMsg !== (_lastSidebarTexts[chatName] || '')) {
             try {
-              // Разбиваем на несколько лог-записей чтобы не обрезалось
-              console.log('__CC_DIAG__wa-full: chat="' + chatName.slice(0,20) + '" picked="' + lastMsg.slice(0,25) + '" total=' + msgSpans.length);
-              for (var k = 0; k < allSpans.length; k++) {
-                console.log('__CC_DIAG__wa-span[' + k + ']: ' + JSON.stringify(allSpans[k]));
+              console.log('__CC_DIAG__wa-open: chat="' + chatName.slice(0,20) + '" picked="' + lastMsg.slice(0,25) + '" total=' + msgSpans.length + ' rowCls="' + (rows[i].className||'').slice(0,40) + '" ariaSel=' + rows[i].getAttribute('aria-selected'));
+              for (var k = 0; k < allSpansDiag.length; k++) {
+                console.log('__CC_DIAG__wa-open-span[' + k + ']: ' + JSON.stringify(allSpansDiag[k]));
               }
             } catch(e) {}
           }

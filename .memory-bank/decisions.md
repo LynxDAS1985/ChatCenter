@@ -205,15 +205,23 @@
 
 ---
 
-## ADR-013 — НЕ использовать visibility:hidden для WebView (6 апреля 2026)
+## ADR-013 — НЕ использовать visibility:hidden для WebView + принудительный resize при активации (6 апреля 2026, дополнено 14 апреля 2026 v0.86.5)
 
-**Статус**: ✅ Принято
+**Статус**: ✅ Принято (расширено)
 
-**Контекст**: visibility:hidden было добавлено для экономии GPU. Но Chromium ПОЛНОСТЬЮ останавливает загрузку hidden WebView — страница не рендерится пока не станет visible.
+**Контекст (v0.85.6)**: visibility:hidden было добавлено для экономии GPU. Но Chromium ПОЛНОСТЬЮ останавливает загрузку hidden WebView — страница не рендерится пока не станет visible.
 
-**Решение**: Скрытие через zIndex + pointerEvents. Чёрный экран решён через disable-gpu-compositing в main.js.
+**Решение (v0.85.6)**: Скрытие через zIndex + pointerEvents. Чёрный экран решён через `disable-gpu-compositing` в main.js.
 
-**Ловушка**: Вторая вкладка Telegram и все остальные не загружались при старте.
+**Ловушка-1**: Вторая вкладка Telegram и все остальные не загружались при старте.
+
+**Дополнение (v0.86.5, Ловушка 64)**: Даже при правильном `zIndex+pointerEvents` у адаптивных SPA (Telegram Web K) возможен **layout lock-in**: при инициализации в неактивной вкладке Telegram фиксирует mobile-layout и column-center = 0×0. После активации resize event не приходит → остаётся пустая чёрная правая колонка.
+
+**Решение (v0.86.5)**: в App.jsx — `useEffect` на `activeId`. При смене активной вкладки принудительно шлём `window.dispatchEvent(new Event('resize'))` в WebView через `executeJavaScript`. Три повтора: 0ms, 150ms, 500ms — чтобы гарантированно поймать момент когда Telegram готов пересчитать layout.
+
+**Ловушка-2**: без resize event кастомные Telegram-вкладки (добавленные пользователем после стандартной) показывали чёрный экран при клике на чат.
+
+**Диагностика оставлена включённой**: `__CC_DIAG__probe[...]` через executeJavaScript (12 полей: doc/url/body/html/tg-selectors/column-center/bubbles/canvas/img/webgl/err). Помогает быстро находить похожие проблемы layout lock-in для других мессенджеров.
 
 ---
 

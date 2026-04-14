@@ -375,6 +375,24 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [activeId])
 
+  // ── v0.86.5 FIX: принудительный resize WebView при активации вкладки ───
+  // Ловушка 64: Telegram Web K при инициализации "в фоне" (zIndex:0, pointerEvents:none)
+  // читает window.innerWidth/Height через ResizeObserver и фиксирует mobile-layout с
+  // column-center 0x0. При активации вкладки размер окна не меняется → resize не
+  // срабатывает → чат остаётся чёрный. Принудительно шлём resize event всем WebView
+  // при смене activeId чтобы Telegram пересчитал layout. Безопасно для всех мессенджеров.
+  useEffect(() => {
+    if (!activeId) return
+    const el = webviewRefs.current[activeId]
+    if (!el || !el.executeJavaScript) return
+    const script = `(function(){try{window.dispatchEvent(new Event('resize'));if(document.body){document.body.style.minHeight='100vh';}}catch(e){}})();`
+    const run = () => { try { el.executeJavaScript(script).catch(() => {}) } catch(_) {} }
+    run()
+    const t1 = setTimeout(run, 150)
+    const t2 = setTimeout(run, 500)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [activeId])
+
   // ── Добавление / сохранение мессенджера ────────────────────────────────
   const addMessenger = useCallback((m) => {
     setMessengers(prev => [...prev, m])

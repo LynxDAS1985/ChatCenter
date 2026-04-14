@@ -69,6 +69,11 @@ test('WA: НЕ содержит _maxPhantom', () => assert(!waCode.includes('_ma
 test('WA: sidebar observer на #side', () => assert(waCode.includes('_sidebarObserver') && waCode.includes('#side'), 'WhatsApp должен следить за sidebar'))
 test('WA: sidebar шлёт __CC_NOTIF__', () => assert(waCode.includes('wa-sidebar') && waCode.includes('__CC_NOTIF__'), 'sidebar должен отправлять __CC_NOTIF__'))
 test('WA: sidebar observer attached', () => assert(waCode.includes('observer attached to #side'), 'sidebar observer должен привязываться'))
+// v0.86.3: Ловушка 62 — подход dir="auto" НЕ работает (для открытого чата WhatsApp не кладёт preview в dir="auto" span).
+// Sidebar DIAG должен логировать DOM открытого чата для анализа.
+test('WA: sidebar DIAG логирует открытый чат', () => assert(waCode.includes('__CC_DIAG__wa-open'), 'WhatsApp sidebar должен логировать DOM активной строки через __CC_DIAG__wa-open'))
+// v0.86.4 ШАГ 1: SVG-title фантомы (status-dblcheck, ic-expand-more) — textContent === data-icon значит это SVG <title>.
+test('WA: sidebar отсекает SVG-title фантомы (textContent === data-icon)', () => assert(waCode.includes('t === iconName'), 'WhatsApp sidebar должен отсекать span где textContent совпадает с data-icon родителя (Ловушка 62, Шаг 1)'))
 
 // ── v0.85.7: _isSpam НЕ блокирует 1-символьные сообщения ──
 console.log('\n── _isSpam: 1-символьные сообщения (ловушка 56): ──')

@@ -24,6 +24,16 @@ export function createConsoleMessageHandler(deps) {
   return (el, messengerId) => (e) => {
     const msg = e.message
     if (!msg) return
+    // v0.86.5 DIAG: логируем ERROR+WARNING из WebView консоли (CSP, attachment, media, Telegram runtime).
+    // level: 0=info 1=warning 2=error 3=debug (Electron console-message Event)
+    try {
+      const lvl = (typeof e.level === 'number') ? e.level : -1
+      if ((lvl === 1 || lvl === 2) && !msg.startsWith('__CC_') && !msg.includes('DevTools') && !msg.includes('Electron Security Warning')) {
+        const src = (e.sourceId || '').split('/').slice(-1)[0] || ''
+        const tag = lvl === 2 ? 'wv-err' : 'wv-warn'
+        traceNotif(tag, lvl === 2 ? 'error' : 'warn', messengerId, msg.slice(0, 300), `line=${e.lineNumber || '?'} src=${src.slice(0, 60)}`)
+      }
+    } catch(_) {}
     // v0.79.8: Парсинг через consoleMessageParser.js
     const parsed = parseConsoleMessage(msg)
     if (parsed) {

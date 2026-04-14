@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.86.1 (8 апреля 2026)
+## Текущая версия: v0.86.5 (14 апреля 2026)
 
 ---
 
@@ -91,6 +91,41 @@
 ---
 
 ## Changelog
+
+### v0.86.5 (14 апреля 2026) — FIX Telegram чёрный экран + полная DIAG WebView
+- **Проблема**: в кастомной вкладке Telega Avtoliberty (partition `custom_1772779915564`) при клике на любой чат вся правая область становилась чёрной. Стандартный Telegram БНК работал нормально. Пересоздание partition (удаление `Partitions/custom_1772779915564/`) не помогло — значит, проблема в коде, а не в данных.
+- **Диагностика**: добавлены логи `wv-err`/`wv-warn` (консоль WebView), `geom` (размер+видимость+z-index WebView и родителя + `elementFromPoint` в центре), `dom-probe` через `executeJavaScript` (12 полей: DOM size, body/html bg, Telegram-селекторы, column-center/bubbles размеры, canvas, WebGL, runtime error). Runtime error catcher через `window.addEventListener('error'+'unhandledrejection')` инжектится после `did-finish-load`.
+- **Результат диагностики**: `probe[column-center]: size=0x0 disp=flex vis=visible op=1` + `probe[bubbles]: size=0x0 disp=none n=28`. DOM построен (1554 элементов, 28 пузырьков), `background=rgb(24,24,24)`, WebGL работает, ошибок нет. **Правая колонка Telegram схлопнута в 0×0**.
+- **Причина**: Telegram Web K адаптивный. При ширине ≤ ~600px уходит в mobile-layout. Когда WebView инициализируется «в фоне» (неактивная вкладка = `zIndex:0, pointerEvents:none`) — Telegram через `ResizeObserver` читает некорректный первоначальный размер и фиксирует mobile-layout с закрытым chat view. При активации вкладки **размер окна не меняется** → resize event не приходит → Telegram продолжает считать себя mobile-скрытым → column-center 0×0.
+- **Почему БНК работает**: стандартная Telegram-вкладка активируется **первой** при старте приложения → Telegram успевает получить корректный размер сразу. Кастомная Telega добавлена второй → стартовала «невидимой».
+- **Фикс** [src/App.jsx](src/App.jsx): `useEffect` на `activeId` — при смене активной вкладки отправляем `window.dispatchEvent(new Event('resize'))` в WebView через `executeJavaScript`. Три повтора (0ms, 150ms, 500ms) чтобы поймать момент когда Telegram готов пересчитать layout. Безопасно для всех мессенджеров — они игнорируют лишний resize.
+- **Связь**: расширение Ловушки 55 / ADR-013. Прошлый фикс (`disable-gpu-compositing` + отказ от `visibility:hidden`) решил один сценарий чёрного экрана (GPU-compositing loss), но НЕ решил сценарий mobile-layout lock-in в адаптивных SPA.
+- Ловушка 64 задокументирована в common-mistakes.md.
+
+### v0.86.4 (13 апреля 2026) — WhatsApp: Шаг 1 — отсечение SVG-title фантомов (частичный успех)
+- **Проблема**: в ribbon прилетали фантомы `status-dblcheck`, `ic-expand-more`, `default-user` — имена SVG-иконок. WhatsApp рендерит иконку как `<span data-icon="NAME"><svg><title>NAME</title></svg></span>`; `span.textContent` возвращает содержимое `<title>` = имя иконки.
+- **Фикс** (`whatsapp.hook.js` sidebar watcher): для каждого span проверяем `const iconName = sp.closest('[data-icon]')?.getAttribute('data-icon'); if (iconName && text === iconName) skip`.
+- **ИТОГ ТЕСТА (лог 14:58)**:
+  - ✅ Реальные сообщения проходят: `Свы`, `Дда` → ribbon.
+  - ✅ `status-dblcheck` — больше **не** показан в ribbon.
+  - ❌ `ic-expand-more` — **всё ещё проходит** как ribbon (3 раза в логе 14:58:47–57).
+  - ✅ `Фото` — проходит (как и требовалось).
+  - ✅ `печатает...` — глушится `_isSpam` regex.
+- **Почему `ic-expand-more` не отсёкся**: у этого SVG нет атрибута `data-icon` на предке. Структура: `<span><svg><title>ic-expand-more</title></svg></span>` — без `data-icon`. Проверка `closest('[data-icon]')` возвращает `null` → условие не срабатывает.
+- **Следующий шаг (Шаг 1b) — запланирован**: добавить вторую проверку `if (sp.querySelector('svg')) continue` — любой span с SVG-потомком игнорировать. Это покрывает остаток SVG-фантомов независимо от наличия `data-icon`.
+- Тесты: 73/73 ✅. Ловушка 62 — обновлено.
+
+### v0.86.3 (13 апреля 2026) — WhatsApp: откат фильтра `dir="auto"` + DIAG открытого чата
+- **Откат v0.86.2**: селектор `span[dir="auto"]` → обратно `span[dir], span[class]`. После v0.86.2 sidebar watcher перестал шлать уведомления в открытом чате (0 записей `wa-sidebar: new from` после рестарта). Причина: для текущего открытого чата WhatsApp не рендерит preview-текст в `span[dir="auto"]` строки sidebar.
+- **DIAG**: добавлено логирование `__CC_DIAG__wa-open` — при мутации строки с `aria-selected="true"` или CSS-классом `selected` дампится весь набор spans (dir, class, data-icon, inDataIcon, text). Цель — снять реальную структуру DOM открытого чата и выбрать надёжный признак для фильтрации фантомов.
+- Ловушка 62 дополнена: подход `dir="auto"` помечен как **проваленный** — больше не предлагать.
+
+### v0.86.2 (13 апреля 2026) — WhatsApp: фильтр фантомов по `dir="auto"`
+- **Проблема**: sidebar watcher (v0.86.1) без debounce показал что в ribbon прилетают фантомные "сообщения" с текстом `status-dblcheck`, `ic-expand-more`, `Фото`, `печатает...` — это CSS-классы/статусы, не реальный текст пользователя.
+- **Диагностика**: добавлено логирование всех spans row через `__CC_DIAG__wa-span`. Выявлено: реальный текст всегда в `span[dir="auto"]` (WhatsApp авто-детектит язык), фантомы — в `span[dir=""]` и внутри `[data-icon]`.
+- **Фикс** (`whatsapp.hook.js`): селектор sidebar watcher сужен до `span[dir="auto"], span[dir="rtl"]` + exclude `[data-icon]` родителя. Начальный snapshot использует тот же фильтр.
+- **Принцип**: фантомы отсекаются по **DOM-атрибуту**, НЕ по тексту → любой язык работает, текст пользователя не блокируется.
+- Ловушка 62.
 
 ### v0.86.1 (8 апреля 2026) — WhatsApp sidebar watcher (уведомления при активной вкладке)
 - **Sidebar MutationObserver** в whatsapp.hook.js (main world, не preload!)
