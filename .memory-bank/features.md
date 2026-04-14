@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.86.7 (14 апреля 2026)
+## Текущая версия: v0.86.8 (14 апреля 2026)
 
 ---
 
@@ -91,6 +91,15 @@
 ---
 
 ## Changelog
+
+### v0.86.8 (14 апреля 2026) — Ловушка 64: физический resize + авто-reload (v0.86.5 подход НЕ сработал)
+- **Проблема v0.86.5 resize не помог**: после коммита v0.86.5 снова сделали диагностику — `probe[column-center]: size=0x0` всё ещё присутствует. Telegram Web K **игнорирует** `window.dispatchEvent(new Event('resize'))`.
+- **Причина**: Telegram Web K использует **ResizeObserver** на реальном DOM-элементе, а он реагирует **только на реальное изменение размера**, не на синтетические события. `dispatchEvent` — фейковое событие без изменения метрик.
+- **Новый фикс (v0.86.8)**:
+  - **Физический resize**: меняем `parent.style.width = (clientWidth - 1) + 'px'`, через 2× `requestAnimationFrame` возвращаем исходное значение. ResizeObserver реально видит изменение → Telegram пересчитывает layout.
+  - **Авто-recovery**: через 2 сек после активации вкладки опрашиваем `column-center.getBoundingClientRect()`. Если 0×0 — однократный `reloadIgnoringCache()`. Флаг `reloadedRef` чтобы не зациклить.
+  - **Health-check расширен**: добавлен `health[tg-col]` — размер `#column-center` отдельно от общего `main`. Если 0×0 — сразу видно в логах.
+- Ловушка 64 обновлена: что НЕ работает добавлено явно.
 
 ### v0.86.7 (14 апреля 2026) — FIX CI + warm-up вкладок + health-check + рефакторинг
 - **CI fail на v0.86.5**: тест `fileSizeLimits` упал — `webviewSetup.js` вырос до 667 строк из-за DIAG-кода. Ubuntu-runner зафейлил → Windows отменён.
