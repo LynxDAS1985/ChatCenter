@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.86.10 (14 апреля 2026)
+## Текущая версия: v0.87.0 (14 апреля 2026)
 
 ---
 
@@ -91,6 +91,20 @@
 ---
 
 ## Changelog
+
+### v0.87.0 (14 апреля 2026) — Запуск нативного режима «ЦентрЧатов» (шаг 1)
+- **Что это**: новая вкладка в TabBar «ЦентрЧатов» (id=`native_cc`) — собственный UI для Telegram (+ потом WA/VK/MAX) через нативные API, минуя WebView. Альтернатива WebView-вкладкам, не заменяет их (старые остаются рабочими).
+- **Мотивация**: Ловушка 64 — WebView Telegram чёрный экран на чатах с файлами. Решение — уйти от WebView к GramJS (MTProto клиент).
+- **Структура** (шаг 1 — скелет без реального GramJS, ждёт `npm install telegram`):
+  - `src/native/NativeApp.jsx` — корневой компонент с header + sidebar аккаунтов + модусы
+  - `src/native/styles.css` — AMOLED тема (#000 фон, #2AABEE акцент), изолирована через `.native-mode`
+  - `src/native/config.js` — api_id=8392940, api_hash вшит (ChatCenter app на my.telegram.org)
+  - `src/native/store/nativeStore.js` — React hook-store для accounts/chats/messages + IPC подписки
+  - `src/native/components/LoginModal.jsx` — 3 экрана: phone → code → 2FA
+  - `main/native/telegramHandler.js` — IPC handlers (пока STUB: tg:login-start/code/password/cancel, tg:get-chats, tg:get-messages, tg:send-message, tg:remove-account)
+- **Интеграция**: в App.jsx добавлен `NATIVE_CC_TAB` который добавляется к списку мессенджеров при старте; в цикле рендера — если `m.isNative` → `<NativeApp />` вместо `<webview>`.
+- **Режимы UI** (в разработке): Inbox / Contacts / Kanban — переключаются в header. Сейчас только скелет с empty-state.
+- **Дальше**: `npm install telegram better-sqlite3` → подключение GramJS → реальный login → загрузка чатов → Inbox UI.
 
 ### v0.86.10 (14 апреля 2026) — Ловушка 64 ОТКАТ: проблема в Telegram, не в нашем коде
 - **Все попытки v0.86.5–v0.86.9 не помогли**. После реального теста пользователя: чат с файлом БЕЗ текстового сообщения (чистое вложение) → чёрный экран остаётся даже после `loadURL` без hash.

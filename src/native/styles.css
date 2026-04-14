@@ -1,0 +1,272 @@
+/* v0.87.0: AMOLED тема для Native режима — чистый #000 + синий акцент */
+.native-mode {
+  --amoled-bg: #000000;
+  --amoled-surface: #0a0a0a;
+  --amoled-surface-hover: #131313;
+  --amoled-border: #1a1a1a;
+  --amoled-text: #ffffff;
+  --amoled-text-dim: #a0a0a0;
+  --amoled-text-muted: #606060;
+  --amoled-accent: #2AABEE;
+  --amoled-accent-hover: #1e8fc7;
+  --amoled-danger: #ff3b30;
+  --amoled-success: #34c759;
+  --amoled-warning: #ff9500;
+
+  /* Цвета мессенджеров (для значков) */
+  --mess-tg: #2AABEE;
+  --mess-wa: #25D366;
+  --mess-vk: #0077FF;
+  --mess-max: #7B3FE4;
+
+  background-color: var(--amoled-bg);
+  color: var(--amoled-text);
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+}
+
+.native-mode * {
+  box-sizing: border-box;
+}
+
+.native-mode button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+.native-mode input,
+.native-mode textarea {
+  font-family: inherit;
+  outline: none;
+  background-color: var(--amoled-surface);
+  color: var(--amoled-text);
+  border: 1px solid var(--amoled-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  transition: border-color 0.15s;
+}
+
+.native-mode input:focus,
+.native-mode textarea:focus {
+  border-color: var(--amoled-accent);
+}
+
+/* Header */
+.native-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--amoled-border);
+  background-color: var(--amoled-surface);
+  flex-shrink: 0;
+}
+
+.native-header__brand {
+  font-weight: 600;
+  font-size: 15px;
+  margin-right: 32px;
+}
+
+.native-mode-switcher {
+  display: flex;
+  gap: 4px;
+}
+
+.native-mode-switcher__btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--amoled-text-dim);
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.native-mode-switcher__btn:hover {
+  background-color: var(--amoled-surface-hover);
+  color: var(--amoled-text);
+}
+
+.native-mode-switcher__btn--active {
+  background-color: var(--amoled-accent);
+  color: #fff;
+}
+
+/* Content */
+.native-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.native-sidebar {
+  width: 72px;
+  background-color: var(--amoled-surface);
+  border-right: 1px solid var(--amoled-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.native-account {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background-color: var(--amoled-surface-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--amoled-text);
+  font-size: 12px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s;
+}
+
+.native-account:hover {
+  background-color: var(--amoled-border);
+}
+
+.native-account--active {
+  background-color: var(--amoled-accent);
+}
+
+.native-account__dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--amoled-surface);
+}
+
+.native-account__dot--ok { background-color: var(--amoled-success); }
+.native-account__dot--off { background-color: var(--amoled-text-muted); }
+.native-account__dot--err { background-color: var(--amoled-danger); }
+
+.native-account__add {
+  border: 2px dashed var(--amoled-border);
+  color: var(--amoled-text-muted);
+  font-size: 24px;
+}
+
+.native-account__add:hover {
+  border-color: var(--amoled-accent);
+  color: var(--amoled-accent);
+}
+
+/* Main area */
+.native-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Empty state */
+.native-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px;
+  gap: 16px;
+}
+
+.native-empty__icon {
+  font-size: 64px;
+  margin-bottom: 8px;
+}
+
+.native-empty__title {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.native-empty__text {
+  color: var(--amoled-text-dim);
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+.native-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  background-color: var(--amoled-accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.15s;
+}
+
+.native-btn:hover {
+  background-color: var(--amoled-accent-hover);
+}
+
+.native-btn--ghost {
+  background-color: transparent;
+  border: 1px solid var(--amoled-border);
+  color: var(--amoled-text);
+}
+
+.native-btn--ghost:hover {
+  background-color: var(--amoled-surface-hover);
+  border-color: var(--amoled-accent);
+}
+
+.native-btn--danger {
+  background-color: var(--amoled-danger);
+}
+
+/* Login screen */
+.native-login {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.native-login__card {
+  max-width: 400px;
+  width: 100%;
+  padding: 32px;
+  background-color: var(--amoled-surface);
+  border-radius: 16px;
+  border: 1px solid var(--amoled-border);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.native-login__title {
+  font-size: 24px;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.native-login__subtitle {
+  font-size: 13px;
+  color: var(--amoled-text-dim);
+  text-align: center;
+}
+
+.native-login__error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background-color: rgba(255, 59, 48, 0.1);
+  color: var(--amoled-danger);
+  font-size: 13px;
+  border: 1px solid rgba(255, 59, 48, 0.3);
+}

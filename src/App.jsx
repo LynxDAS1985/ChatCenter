@@ -26,6 +26,20 @@ import useSearch from './hooks/useSearch.js'
 import useTabContextMenu from './hooks/useTabContextMenu.js'
 import useNotifyNavigation from './hooks/useNotifyNavigation.js'
 import useWebViewLifecycle from './hooks/useWebViewLifecycle.js'
+import NativeApp from './native/NativeApp.jsx'
+
+// v0.87.0: специальный "виртуальный" мессенджер — рендерит NativeApp вместо <webview>
+const NATIVE_CC_ID = 'native_cc'
+const NATIVE_CC_TAB = {
+  id: NATIVE_CC_ID,
+  name: 'ЦентрЧатов',
+  url: 'about:blank',
+  color: '#2AABEE',
+  partition: 'persist:native-cc',
+  emoji: '💬',
+  isDefault: true,
+  isNative: true,
+}
 
 // Навигация → src/utils/navigateToChat.js | Звук → src/utils/sound.js | Вкладка → components/MessengerTab.jsx
 
@@ -235,7 +249,7 @@ export default function App() {
     // Защита: window.api может быть undefined при HMR (React 19)
     if (!window.api?.invoke) {
       console.error('[App] window.api не инициализирован — загружаем DEFAULT_MESSENGERS')
-      setMessengers(DEFAULT_MESSENGERS)
+      setMessengers([...DEFAULT_MESSENGERS, NATIVE_CC_TAB])
       setActiveId(DEFAULT_MESSENGERS[0].id)
       setAppReady(true)
       return
@@ -250,10 +264,14 @@ export default function App() {
           }
           return m
         })
-        setMessengers(cleaned)
-        setActiveId(cleaned[0]?.id || null)
+        // v0.87.0: добавляем вкладку «ЦентрЧатов» (нативный Telegram) если её нет
+        const withNative = cleaned.some(m => m.id === NATIVE_CC_ID)
+          ? cleaned
+          : [...cleaned, NATIVE_CC_TAB]
+        setMessengers(withNative)
+        setActiveId(withNative[0]?.id || null)
       }).catch(() => {
-        setMessengers(DEFAULT_MESSENGERS)
+        setMessengers([...DEFAULT_MESSENGERS, NATIVE_CC_TAB])
         setActiveId(DEFAULT_MESSENGERS[0].id)
       }),
       window.api?.invoke('settings:get').then(s => {
@@ -461,15 +479,19 @@ export default function App() {
                   // Чёрный экран решён через disable-gpu-compositing в main.js
                 }}
               >
-                <webview
-                  ref={el => setWebviewRef(el, m.id)}
-                  src={m.url}
-                  partition={m.partition}
-                  preload={monitorPreloadUrl || undefined}
-                  style={{ width: '100%', height: '100%' }}
-                  allowpopups="true"
-                  webpreferences="backgroundThrottling=no"
-                />
+                {m.isNative || m.id === NATIVE_CC_ID ? (
+                  <NativeApp />
+                ) : (
+                  <webview
+                    ref={el => setWebviewRef(el, m.id)}
+                    src={m.url}
+                    partition={m.partition}
+                    preload={monitorPreloadUrl || undefined}
+                    style={{ width: '100%', height: '100%' }}
+                    allowpopups="true"
+                    webpreferences="backgroundThrottling=no"
+                  />
+                )}
               </div>
             ))
           ) : (

@@ -11,6 +11,7 @@ import { createTrayBadgeIcon, createOverlayIcon } from './utils/overlayIcon.js'
 import { initLogger, readLogFile, clearLogFile, setLogViewerOpener, getLogFilePath } from './utils/logger.js'
 import { setupSession } from './utils/sessionSetup.js'
 import { initAIHandlers } from './handlers/aiHandlers.js'
+import { initTelegramHandler } from './native/telegramHandler.js'
 import { initNotifHandlers } from './handlers/notifHandlers.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
 import { initNotificationManager } from './handlers/notificationManager.js'
@@ -461,6 +462,11 @@ function setupIPC() {
 
   // v0.82.2: AI handlers вынесены в main/handlers/aiHandlers.js
   initAIHandlers({ httpsPostSkipSsl, getGigaChatToken, ruError, GIGACHAT_CHAT_URL })
+
+  // v0.87.0: Нативный Telegram через GramJS (пока STUB, реальный GramJS после npm install)
+  try {
+    initTelegramHandler({ mainWindow, userDataPath: app.getPath('userData') })
+  } catch (e) { console.error('[main] initTelegramHandler error:', e.message) }
 }
 
 // ─── Backup notification handler (v0.84.4: extracted) ────────────────────────
