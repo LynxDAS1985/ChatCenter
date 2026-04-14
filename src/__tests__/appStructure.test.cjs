@@ -99,10 +99,10 @@ test('MessengerTab используется', () => assert(allAppCode.includes('
 test('SettingsPanel используется', () => assert(code.includes('<SettingsPanel')))
 test('AISidebar используется', () => assert(code.includes('<AISidebar')))
 
-// v0.86.8 Ловушка 64: физический resize + auto-recovery reload в useWebViewLifecycle hook
+// v0.86.10 Ловушка 64: resize/reload откачены, hook содержит health-check + warm-up
 test('useWebViewLifecycle hook подключён (Ловушка 64)', () =>
-  assert(code.includes('useWebViewLifecycle') && allAppCode.includes('physicalResize') && allAppCode.includes('reloadIgnoringCache'),
-    'App.jsx должен использовать useWebViewLifecycle — физический resize + auto-reload если column-center=0x0 (dispatchEvent не работает для Telegram ResizeObserver)'))
+  assert(code.includes('useWebViewLifecycle') && allAppCode.includes('__CC_DIAG__health'),
+    'App.jsx должен использовать useWebViewLifecycle — health-check + warm-up (resize/reload откачены, не работают для peer-changed race)'))
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

@@ -378,7 +378,7 @@ export default function App() {
 
   // ── v0.86.5-6: WebView lifecycle (вынесено в useWebViewLifecycle.js для лимита 600 строк)
   // Ловушка 64: forced resize + warm-up + health-check
-  useWebViewLifecycle({ activeId, messengers, appReady, webviewRefs, setActiveId, traceNotif })
+  useWebViewLifecycle({ activeId, messengers, appReady, webviewRefs, setActiveId })
 
   // ── Добавление / сохранение мессенджера ────────────────────────────────
   const addMessenger = useCallback((m) => {

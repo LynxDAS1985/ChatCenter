@@ -174,7 +174,29 @@
 
 **Ловушка 41 (v0.77.4)**: VK MutationObserver ловит parent node ("Елена ДугинаТекст") И child node ("Текст") как ДВА сообщения. Тексты РАЗНЫЕ → точный дедуп не ловит. **ПРАВИЛО**: Дедуп по ПОДСТРОКЕ: `prevText.includes(newText) || newText.includes(prevText)` в пределах 5 сек. Также VK не использует Notification API — только MutationObserver.
 
-**Ловушка 64 ФИНАЛ (v0.86.9) — найдена РЕАЛЬНАЯ причина**: ✅ **`peer-changed` race в Telegram Web K при URL с hash**.
+**Ловушка 64 АБСОЛЮТНЫЙ ФИНАЛ (v0.86.10) — проблема НЕ в нашем коде, проблема в Telegram Web K**:
+
+После 5 итераций (v0.86.5–v0.86.9) и всех попыток пользователь установил: **чёрный экран возникает для чата, содержащего только файл без текстового сообщения** (чистое вложение). Это **внутренний баг Telegram Web K**, не наш. Код клиентского рендеринга не может восстановиться после rejection `peer changed` именно при таких чатах.
+
+**Что НИКАК не работает — полный список v0.86.5–v0.86.9 (все отмечены ❌, все удалены из кода)**:
+
+1. ❌ `window.dispatchEvent(new Event('resize'))` (v0.86.5) — Telegram использует `ResizeObserver`, а не `window.onresize`
+2. ❌ `document.body.style.minHeight='100vh'` (v0.86.5) — body уже такого размера
+3. ❌ Warm-up с `dispatchEvent(resize)` (v0.86.7) — тот же бесполезный синтетический event
+4. ❌ Удаление `Partitions/custom_*/` с пересозданием сессии через QR — проблема не в данных IndexedDB
+5. ❌ Переключение URL `/k/` ↔ `/a/` — у обеих Telegram вкладок URL одинаковый
+6. ❌ `reloadIgnoringCache()` (v0.86.8) — URL с hash остаётся → гонка повторяется
+7. ❌ Физический resize родителя WebView `parent.style.width = (clientWidth-1)+'px'` + `requestAnimationFrame` (v0.86.8) — сам Telegram прерывает рендер из-за rejection, никакой resize не лечит
+8. ❌ `el.loadURL(currentUrl.split('#')[0])` — загрузка без hash (v0.86.9) — не помогло для чатов с чистыми файлами
+9. ❌ Отключение `disable-gpu-compositing` — не пробовали системно, но не имеет отношения к race
+
+**Что работает из всего этого**: НИЧЕГО из клиентских JS-трюков. Проблема на уровне внутренней логики Telegram K, доступа к которой у нас нет.
+
+**РЕАЛЬНОЕ РЕШЕНИЕ (на будущее)**: подключить Telegram через нативный MTProto клиент (gramjs или telegram-client для Node.js) параллельно WebView — читать чаты и отправлять сообщения через API Telegram, минуя Web K. Аналог предложенного для WhatsApp Baileys. См. features.md v0.86.10.
+
+**ПРАВИЛО**: если симптом чёрного экрана в чате с вложением без текста — это Telegram Web bug, не трогать клиентский код. Документировать и искать другой канал данных.
+
+**Историческая справка — v0.86.9 попытка**: ✅ **`peer-changed` race в Telegram Web K при URL с hash**.
 
 **Доказательство** (лог v0.86.8 после auto-reload): `probe[err]: rej|peer changed` + `column-center=0x0`. Ошибка идёт **изнутри самого Telegram Web K** как unhandled promise rejection.
 

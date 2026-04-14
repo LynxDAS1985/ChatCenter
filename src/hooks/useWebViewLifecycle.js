@@ -1,10 +1,6 @@
-// v0.86.8: Lifecycle для WebView (Ловушка 64 обновлено).
-// Стратегия: трюк с реальным изменением размера родителя WebView (+1px → -1px через RAF).
-// Это заставляет Telegram ResizeObserver реально сработать (dispatchEvent не работает в v0.86.5).
-// Если через 2 сек всё равно column-center=0x0 — делаем reloadIgnoringCache один раз.
-// 1. Physical resize при смене активной вкладки
-// 2. Прогрев всех вкладок при старте
-// 3. Health-check раз в 30 сек + авто-reload если 0×0
+// v0.86.10: Lifecycle для WebView — ОТКАЧЕНО (resize/reload не работают для Telegram K peer-changed race).
+// Оставлены только: health-check раз в 30 сек (для диагностики) + warm-up вкладок (безопасен, не мешает).
+// Смотри .memory-bank/common-mistakes.md Ловушка 64 — перечень всего что пробовали и почему не помогло.
 import { useEffect, useRef } from 'react'
 
 const HEALTH_SCRIPT = `(function(){
@@ -24,62 +20,8 @@ const HEALTH_SCRIPT = `(function(){
   } catch(e) { try{console.log('__CC_DIAG__health: fail='+e.message)}catch(_){} }
 })();`
 
-// Трюк с физическим изменением размера родителя WebView — заставляет ResizeObserver сработать.
-function physicalResize(el) {
-  try {
-    const parent = el?.parentElement
-    if (!parent) return
-    const orig = parent.style.width
-    // Меняем ширину на 1px меньше, через requestAnimationFrame возвращаем
-    parent.style.width = (parent.clientWidth - 1) + 'px'
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        parent.style.width = orig
-      })
-    })
-  } catch(_) {}
-}
-
-// v0.86.9: Проверяет Telegram column-center. Если 0×0 → loadURL БЕЗ hash (без чата).
-// Причина: hash вида #@LynxDAS вызывает race condition в Telegram K → unhandled rejection
-// "peer changed" → column-center не рендерится. Reload с тем же hash повторяет проблему.
-// loadURL без hash = чистая загрузка без попытки открыть чат.
-function checkAndRecoverTelegram(el, messengerId, traceNotif, reloadedRef) {
-  if (!el?.executeJavaScript) return
-  const check = `(function(){try{var cc=document.querySelector('#column-center');if(!cc)return 'no-col';var r=cc.getBoundingClientRect();return r.width+'x'+r.height+'|'+location.href;}catch(e){return 'err:'+e.message}})()`
-  el.executeJavaScript(check).then(res => {
-    if (typeof res !== 'string' || !res.startsWith('0x0')) return
-    if (reloadedRef.current[messengerId]) {
-      if (traceNotif) traceNotif('recover', 'error', messengerId, '', 'column-center 0x0 даже после loadURL без hash — сдаёмся')
-      return
-    }
-    reloadedRef.current[messengerId] = true
-    // Извлекаем URL без hash из ответа probe
-    const fullUrl = res.split('|')[1] || ''
-    const cleanUrl = fullUrl.split('#')[0] || ''
-    if (traceNotif) traceNotif('recover', 'warn', messengerId, '', `column-center=0x0 (peer-changed race) → loadURL без hash: ${cleanUrl}`)
-    try {
-      if (cleanUrl && el.loadURL) el.loadURL(cleanUrl)
-      else if (el.reloadIgnoringCache) el.reloadIgnoringCache()
-    } catch(_) { try { el.reload() } catch(_) {} }
-  }).catch(() => {})
-}
-
-export default function useWebViewLifecycle({ activeId, messengers, appReady, webviewRefs, setActiveId, traceNotif }) {
-  const reloadedRef = useRef({}) // { [messengerId]: true } — чтобы не зациклить reload
-
-  // ── v0.86.8 FIX: физический resize родителя при смене активной вкладки ──
-  useEffect(() => {
-    if (!activeId) return
-    const el = webviewRefs.current[activeId]
-    if (!el) return
-    physicalResize(el)
-    const t1 = setTimeout(() => physicalResize(el), 300)
-    const t2 = setTimeout(() => checkAndRecoverTelegram(el, activeId, traceNotif, reloadedRef), 2000)
-    return () => { clearTimeout(t1); clearTimeout(t2) }
-  }, [activeId, webviewRefs, traceNotif])
-
-  // ── v0.86.6: Прогрев всех вкладок при старте ──
+export default function useWebViewLifecycle({ activeId, messengers, appReady, webviewRefs, setActiveId }) {
+  // Warm-up: прогрев вкладок при старте — безопасен, помогает первой загрузке других мессенджеров
   const warmupDoneRef = useRef(false)
   useEffect(() => {
     if (warmupDoneRef.current) return
@@ -89,16 +31,12 @@ export default function useWebViewLifecycle({ activeId, messengers, appReady, we
     const ids = messengers.map(m => m.id)
     const warmupDelay = 1500
     ids.forEach((id, idx) => {
-      setTimeout(() => {
-        const el = webviewRefs.current[id]
-        if (el) physicalResize(el)
-        setActiveId(id)
-      }, idx * warmupDelay)
+      setTimeout(() => { setActiveId(id) }, idx * warmupDelay)
     })
     setTimeout(() => { if (savedActiveId) setActiveId(savedActiveId) }, ids.length * warmupDelay + 500)
-  }, [appReady, messengers, activeId, webviewRefs, setActiveId])
+  }, [appReady, messengers, activeId, setActiveId])
 
-  // ── v0.86.6: Health-check раз в 30 сек ──
+  // Health-check: периодический probe активной вкладки для диагностики
   useEffect(() => {
     if (!activeId) return
     const runProbe = () => {
