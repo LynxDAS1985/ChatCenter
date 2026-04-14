@@ -256,7 +256,9 @@ export default function App() {
     }
     Promise.all([
       window.api?.invoke('messengers:load').then(list => {
-        const cleaned = list.map(m => {
+        // v0.87.1: фильтруем native_cc из сохранённых (мог попасть в файл из старой версии)
+        const noNative = (list || []).filter(m => m.id !== NATIVE_CC_ID && !m.isNative)
+        const cleaned = noNative.map(m => {
           const def = DEFAULT_MESSENGERS.find(d => d.id === m.id)
           if (def) {
             const { accountScript, ...rest } = m
@@ -264,10 +266,8 @@ export default function App() {
           }
           return m
         })
-        // v0.87.0: добавляем вкладку «ЦентрЧатов» (нативный Telegram) если её нет
-        const withNative = cleaned.some(m => m.id === NATIVE_CC_ID)
-          ? cleaned
-          : [...cleaned, NATIVE_CC_TAB]
+        // v0.87.0: добавляем вкладку «ЦентрЧатов» (нативный Telegram) ВСЕГДА в конец
+        const withNative = [...cleaned, NATIVE_CC_TAB]
         setMessengers(withNative)
         setActiveId(withNative[0]?.id || null)
       }).catch(() => {

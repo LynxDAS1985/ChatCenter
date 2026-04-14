@@ -283,9 +283,11 @@ function setupIPC() {
 
   // Мессенджеры — сохранение
   ipcMain.handle('messengers:save', (event, messengers) => {
-    storage.set('messengers', messengers)
+    // v0.87.1: native_cc — виртуальная вкладка, добавляется программно при старте, не сохранять
+    const filtered = (messengers || []).filter(m => !m.isNative && m.id !== 'native_cc')
+    storage.set('messengers', filtered)
     // Настраиваем сессии для новых мессенджеров
-    messengers.forEach(m => {
+    filtered.forEach(m => {
       if (m.partition) {
         try { setupSession(session.fromPartition(m.partition)) } catch (e) { console.warn(`[Session] Ошибка для ${m.id}:`, e.message) }
       }

@@ -21,20 +21,13 @@ const HEALTH_SCRIPT = `(function(){
 })();`
 
 export default function useWebViewLifecycle({ activeId, messengers, appReady, webviewRefs, setActiveId }) {
-  // Warm-up: прогрев вкладок при старте — безопасен, помогает первой загрузке других мессенджеров
-  const warmupDoneRef = useRef(false)
-  useEffect(() => {
-    if (warmupDoneRef.current) return
-    if (!appReady || messengers.length === 0) return
-    warmupDoneRef.current = true
-    const savedActiveId = activeId
-    const ids = messengers.map(m => m.id)
-    const warmupDelay = 1500
-    ids.forEach((id, idx) => {
-      setTimeout(() => { setActiveId(id) }, idx * warmupDelay)
-    })
-    setTimeout(() => { if (savedActiveId) setActiveId(savedActiveId) }, ids.length * warmupDelay + 500)
-  }, [appReady, messengers, activeId, setActiveId])
+  // v0.87.1 FIX: warm-up ОТКЛЮЧЁН — он перебирал ВСЕ вкладки по 1.5 сек при старте,
+  // что давало "пустой экран" на первые 7-15 секунд (для 5+ вкладок).
+  // Прогрев решал проблему "первого открытия" для ОДНОЙ кастомной вкладки (Telega Avtoliberty),
+  // но цена — стартовая задержка для всех — слишком высокая. Чёрный экран Telega решён через
+  // другие механизмы (см. Ловушка 64). Если warm-up снова потребуется — делать опционально
+  // через настройку, не по умолчанию.
+  // ОСТАВЛЕНО: health-check (диагностика, не мешает UI).
 
   // Health-check: периодический probe активной вкладки для диагностики
   useEffect(() => {
