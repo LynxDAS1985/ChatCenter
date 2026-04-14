@@ -17,13 +17,11 @@ export function initTelegramHandler({ mainWindow, userDataPath }) {
   sessionPath = path.join(userDataPath, 'tg-session.txt')
 
   ipcMain.handle('tg:login-start', async (_, { phone }) => {
-    try {
-      // TODO: здесь будет client.start с промисифицированными колбеками
-      emit('tg:login-step', { step: 'code', phone })
-      // STUB: возвращаем success, реальная отправка кода будет после npm install
-      return { ok: true, stub: true, message: 'GramJS ещё не установлен. Выполните: npm install telegram input' }
-    } catch (e) {
-      return { ok: false, error: e.message }
+    console.log('[tg-stub] login-start phone=' + phone)
+    return {
+      ok: false,
+      stub: true,
+      error: 'GramJS не установлен. Выполните: npm install telegram input better-sqlite3 — затем перезапустите программу.'
     }
   })
 

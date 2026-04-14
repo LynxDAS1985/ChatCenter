@@ -113,7 +113,9 @@ const ALLOWED = {
     // v0.85.0: из custom hooks (destructured returns)
     'setContextMenuTab','dragOverId','contextMenuTab','handleTabClick','handleDragStart','handleDragOver','handleDrop','handleDragEnd','handleSearch','handleTabContextAction','changeZoom','totalUnread','startResize','toggleSearch','searchText','searchVisible','animateZoom','saveZoomLevels','applyZoom','handleTabContextAction_diag','togglePinTab','totalPersonalWithFallback','totalChannels',
     // v0.86.7: useWebViewLifecycle hook
-    'lifecycle'],
+    'lifecycle',
+    // v0.87.2: arrow params в useEffect
+    'loadedList'],
 }
 
 for (const comp of components) {

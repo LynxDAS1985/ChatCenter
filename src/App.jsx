@@ -246,6 +246,9 @@ export default function App() {
 
   // ── Загрузка при старте ────────────────────────────────────────────────
   useEffect(() => {
+    const t0 = performance.now()
+    const log = (l) => { try { window.api?.send('app:log', `[startup] +${Math.round(performance.now()-t0)}ms ${l}`) } catch(_) {} }
+    log('useEffect start')
     // Защита: window.api может быть undefined при HMR (React 19)
     if (!window.api?.invoke) {
       console.error('[App] window.api не инициализирован — загружаем DEFAULT_MESSENGERS')
@@ -255,9 +258,10 @@ export default function App() {
       return
     }
     Promise.all([
-      window.api?.invoke('messengers:load').then(list => {
+      window.api?.invoke('messengers:load').then(loadedList => {
+        log(`messengers:load ok (${loadedList?.length || 0} items)`)
         // v0.87.1: фильтруем native_cc из сохранённых (мог попасть в файл из старой версии)
-        const noNative = (list || []).filter(m => m.id !== NATIVE_CC_ID && !m.isNative)
+        const noNative = (loadedList || []).filter(m => m.id !== NATIVE_CC_ID && !m.isNative)
         const cleaned = noNative.map(m => {
           const def = DEFAULT_MESSENGERS.find(d => d.id === m.id)
           if (def) {
@@ -275,6 +279,7 @@ export default function App() {
         setActiveId(DEFAULT_MESSENGERS[0].id)
       }),
       window.api?.invoke('settings:get').then(s => {
+        log('settings:get ok')
         setSettings(s)
         if (s.aiSidebarWidth) {
           const w = Math.max(240, Math.min(600, s.aiSidebarWidth))
@@ -293,12 +298,13 @@ export default function App() {
         statsRef.current = loadedStats
       }).catch(() => {}),
       window.api?.invoke('app:get-paths').then(({ monitorPreload }) => {
+        log('app:get-paths ok')
         if (monitorPreload) {
           const url = 'file:///' + monitorPreload.replace(/\\/g, '/').replace(/^\//, '')
           setMonitorPreloadUrl(url)
         }
       }).catch(() => {})
-    ]).finally(() => setAppReady(true))
+    ]).finally(() => { log('Promise.all done → appReady=true'); setAppReady(true) })
   }, [])
 
   // ── Автосохранение мессенджеров ────────────────────────────────────────

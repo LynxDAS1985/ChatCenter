@@ -482,11 +482,16 @@ app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer') // нуже
 
 // ─── Запуск ───────────────────────────────────────────────────────────────────
 
+const __mainStart = Date.now()
+const __slog = (label) => console.log(`[startup-main] +${Date.now() - __mainStart}ms ${label}`)
+
 app.whenReady().then(() => {
+  __slog('app.whenReady')
   // v0.84.1: Инициализируем логгер ДО всего остального
   initLogger(app.getPath('userData'))
   setLogViewerOpener(openLogViewer)
-  console.log('=== ChatCenter v0.84.4 start ===')
+  __slog('logger init')
+  console.log('=== ChatCenter v0.87.2 start ===')
 
   // Инициализируем хранилище
   storage = initStorage()
@@ -546,6 +551,7 @@ app.whenReady().then(() => {
     setForceQuit: (v) => { forceQuit = v },
   })
 
+  __slog('createWindowFromManager start')
   createWindowFromManager({
     BrowserWindow,
     path,
@@ -554,9 +560,13 @@ app.whenReady().then(() => {
     storage,
     getForceQuit: () => forceQuit,
     getTray: () => tray,
-    setMainWindow: (w) => { mainWindow = w },
+    setMainWindow: (w) => { mainWindow = w; __slog('mainWindow created') },
     getMainWindow: () => mainWindow,
   })
+  if (mainWindow) {
+    mainWindow.webContents.once('did-finish-load', () => __slog('did-finish-load'))
+    mainWindow.webContents.once('dom-ready', () => __slog('dom-ready'))
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
