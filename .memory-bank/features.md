@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.86.8 (14 апреля 2026)
+## Текущая версия: v0.86.9 (14 апреля 2026)
 
 ---
 
@@ -91,6 +91,15 @@
 ---
 
 ## Changelog
+
+### v0.86.9 (14 апреля 2026) — Ловушка 64 РЕАЛЬНАЯ ПРИЧИНА: peer-changed race в Telegram K
+- **Открытие из логов v0.86.8**: после reload снова `column-center=0x0`. В probe нашли: `probe[err]: rej|peer changed`. Это **unhandled promise rejection ВНУТРИ Telegram Web K** при загрузке URL с hash вида `#@LynxDAS`.
+- **Реальная причина**: hash в URL заставляет Telegram при загрузке сразу попытаться открыть конкретный чат → внутренний race condition (сетевой запрос ещё не завершился, а peer уже меняется) → его собственный Promise отклоняется с `peer changed` → column-center не успевает отрендериться → 0×0.
+- **Почему `reloadIgnoringCache()` не помог**: после reload URL остаётся с тем же hash → та же гонка повторяется.
+- **Почему стандартный Telegram БНК работает**: при первом запуске Telegram грузится без hash (чистый `web.telegram.org/k/`) → нет попытки открыть чат → нет race condition.
+- **Фикс v0.86.9**: при auto-recovery вместо `reloadIgnoringCache()` вызываем `el.loadURL(cleanUrl)` где `cleanUrl = currentUrl.split('#')[0]`. Telegram грузится без hash → нет race → column-center рендерится. Пользователь сам кликает чат после восстановления.
+- Также убран шум `WebGL UNMASKED_RENDERER` в probe (вызывал `wv-err: WebGL: INVALID_ENUM`).
+- Ловушка 64 ОБНОВЛЕНА — добавлена реальная причина и реальное решение.
 
 ### v0.86.8 (14 апреля 2026) — Ловушка 64: физический resize + авто-reload (v0.86.5 подход НЕ сработал)
 - **Проблема v0.86.5 resize не помог**: после коммита v0.86.5 снова сделали диагностику — `probe[column-center]: size=0x0` всё ещё присутствует. Telegram Web K **игнорирует** `window.dispatchEvent(new Event('resize'))`.

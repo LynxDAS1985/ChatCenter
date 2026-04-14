@@ -40,20 +40,28 @@ function physicalResize(el) {
   } catch(_) {}
 }
 
-// Проверяет Telegram column-center и делает reload если 0×0.
+// v0.86.9: Проверяет Telegram column-center. Если 0×0 → loadURL БЕЗ hash (без чата).
+// Причина: hash вида #@LynxDAS вызывает race condition в Telegram K → unhandled rejection
+// "peer changed" → column-center не рендерится. Reload с тем же hash повторяет проблему.
+// loadURL без hash = чистая загрузка без попытки открыть чат.
 function checkAndRecoverTelegram(el, messengerId, traceNotif, reloadedRef) {
   if (!el?.executeJavaScript) return
-  const check = `(function(){try{var cc=document.querySelector('#column-center');if(!cc)return 'no-col';var r=cc.getBoundingClientRect();return r.width+'x'+r.height;}catch(e){return 'err:'+e.message}})()`
+  const check = `(function(){try{var cc=document.querySelector('#column-center');if(!cc)return 'no-col';var r=cc.getBoundingClientRect();return r.width+'x'+r.height+'|'+location.href;}catch(e){return 'err:'+e.message}})()`
   el.executeJavaScript(check).then(res => {
-    if (typeof res === 'string' && res.startsWith('0x0')) {
-      if (reloadedRef.current[messengerId]) {
-        if (traceNotif) traceNotif('recover', 'error', messengerId, '', 'column-center 0x0 даже после reload — Telegram не восстановлен')
-        return
-      }
-      reloadedRef.current[messengerId] = true
-      if (traceNotif) traceNotif('recover', 'warn', messengerId, '', 'column-center=0x0 → reloadIgnoringCache')
-      try { el.reloadIgnoringCache() } catch(_) { try { el.reload() } catch(_) {} }
+    if (typeof res !== 'string' || !res.startsWith('0x0')) return
+    if (reloadedRef.current[messengerId]) {
+      if (traceNotif) traceNotif('recover', 'error', messengerId, '', 'column-center 0x0 даже после loadURL без hash — сдаёмся')
+      return
     }
+    reloadedRef.current[messengerId] = true
+    // Извлекаем URL без hash из ответа probe
+    const fullUrl = res.split('|')[1] || ''
+    const cleanUrl = fullUrl.split('#')[0] || ''
+    if (traceNotif) traceNotif('recover', 'warn', messengerId, '', `column-center=0x0 (peer-changed race) → loadURL без hash: ${cleanUrl}`)
+    try {
+      if (cleanUrl && el.loadURL) el.loadURL(cleanUrl)
+      else if (el.reloadIgnoringCache) el.reloadIgnoringCache()
+    } catch(_) { try { el.reload() } catch(_) {} }
   }).catch(() => {})
 }
 

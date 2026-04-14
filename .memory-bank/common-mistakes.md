@@ -174,13 +174,25 @@
 
 **Ловушка 41 (v0.77.4)**: VK MutationObserver ловит parent node ("Елена ДугинаТекст") И child node ("Текст") как ДВА сообщения. Тексты РАЗНЫЕ → точный дедуп не ловит. **ПРАВИЛО**: Дедуп по ПОДСТРОКЕ: `prevText.includes(newText) || newText.includes(prevText)` в пределах 5 сек. Также VK не использует Notification API — только MutationObserver.
 
-**Ловушка 64 ОБНОВЛЕНО (v0.86.8)**: ⛔ **Что НЕ сработало для Telegram Web K layout lock-in**:
+**Ловушка 64 ФИНАЛ (v0.86.9) — найдена РЕАЛЬНАЯ причина**: ✅ **`peer-changed` race в Telegram Web K при URL с hash**.
+
+**Доказательство** (лог v0.86.8 после auto-reload): `probe[err]: rej|peer changed` + `column-center=0x0`. Ошибка идёт **изнутри самого Telegram Web K** как unhandled promise rejection.
+
+**Механика**: WebView сохраняет URL с hash вида `#@LynxDAS`. При каждой загрузке/reload Telegram парсит hash → пытается открыть этот peer → отправляет сетевой запрос → но peer-state ещё инициализируется → гонка → его внутренний Promise отклоняется с reason `peer changed` → код рендера column-center прерывается → остаётся 0×0.
+
+**Почему стандартная Telegram БНК работает**: первая загрузка идёт по чистому URL `web.telegram.org/k/` без hash → нет попытки открыть peer → нет race → column-center нормально рендерится. Hash появляется ТОЛЬКО после первого клика на чат, и к этому моменту Telegram уже в desktop-layout.
+
+**Фикс**: при auto-recovery `loadURL(currentUrl.split('#')[0])` — грузим без hash. Telegram открывается «голым», пользователь сам кликает нужный чат после восстановления.
+
+⛔ **Что НЕ сработало для Telegram Web K layout lock-in**:
 
 1. ❌ **`window.dispatchEvent(new Event('resize'))`** (v0.86.5) — Telegram Web K игнорирует синтетические resize-события, потому что использует `ResizeObserver` на реальных DOM-элементах, а не `window.onresize`. ResizeObserver реагирует только на **реальное** изменение размера. Доказательство в логе v0.86.7: после активации probe ещё раз показал `column-center=0x0`.
 2. ❌ **`document.body.style.minHeight='100vh'`** (v0.86.5) — не помогло, потому что body размер и так 100vh.
 3. ❌ **Warm-up перебор вкладок при старте** (v0.86.7) — не помогает для кастомных Telega, потому что прогрев использовал тот же бесполезный `dispatchEvent(resize)`.
 4. ❌ **Удаление partition `custom_*`** — не помогло, проблема не в данных IndexedDB.
 5. ❌ **Переключение URL `/k/` ↔ `/a/`** — у стандартной и кастомной Telega URL одинаковый.
+6. ❌ **`reloadIgnoringCache()`** (v0.86.8) — после reload URL остаётся с тем же hash → та же `peer-changed` гонка → 0×0 повторяется. Доказательство: `recover: column-center 0x0 даже после reload`.
+7. ❌ **Физический resize родителя WebView** (v0.86.8) — сам по себе не лечит peer-changed race, потому что проблема не в layout, а в том что Telegram прервал рендер из-за rejection.
 
 ✅ **Что сработало (v0.86.8)**:
 
