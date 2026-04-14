@@ -111,7 +111,9 @@ const ALLOWED = {
   NotifLogModal: ['setNotifLogModal','setNotifLogTab','handleTabContextAction_diag','traceNotif','handleNewMessage','setTraceFilter','setCellTooltip','setSettings','notifLogModal','webviewRefs','pipelineTraceRef'],
   App: ['traceNotif','setWebviewRef','handleNewMessage','notifCountRef','recentNotifsRef','lastRibbonTsRef','lastSoundTsRef','notifSenderTsRef','notifMidTsRef','pendingMarkReadsRef','senderCacheRef','pendingMsgRef','pipelineTraceRef','notifDedupRef',
     // v0.85.0: из custom hooks (destructured returns)
-    'setContextMenuTab','dragOverId','contextMenuTab','handleTabClick','handleDragStart','handleDragOver','handleDrop','handleDragEnd','handleSearch','handleTabContextAction','changeZoom','totalUnread','startResize','toggleSearch','searchText','searchVisible','animateZoom','saveZoomLevels','applyZoom','handleTabContextAction_diag','togglePinTab','totalPersonalWithFallback','totalChannels'],
+    'setContextMenuTab','dragOverId','contextMenuTab','handleTabClick','handleDragStart','handleDragOver','handleDrop','handleDragEnd','handleSearch','handleTabContextAction','changeZoom','totalUnread','startResize','toggleSearch','searchText','searchVisible','animateZoom','saveZoomLevels','applyZoom','handleTabContextAction_diag','togglePinTab','totalPersonalWithFallback','totalChannels',
+    // v0.86.7: useWebViewLifecycle hook
+    'lifecycle'],
 }
 
 for (const comp of components) {

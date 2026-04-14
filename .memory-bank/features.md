@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.86.5 (14 апреля 2026)
+## Текущая версия: v0.86.7 (14 апреля 2026)
 
 ---
 
@@ -91,6 +91,15 @@
 ---
 
 ## Changelog
+
+### v0.86.7 (14 апреля 2026) — FIX CI + warm-up вкладок + health-check + рефакторинг
+- **CI fail на v0.86.5**: тест `fileSizeLimits` упал — `webviewSetup.js` вырос до 667 строк из-за DIAG-кода. Ubuntu-runner зафейлил → Windows отменён.
+- **Рефакторинг**:
+  - Вынесен DIAG-код из webviewSetup.js в новый модуль [src/utils/webviewDiagnostics.js](src/utils/webviewDiagnostics.js) — 96 строк (`logGeometry`, `runDomProbe`, `attachRuntimeErrorCatcher`). webviewSetup.js теперь 589 строк.
+  - Вынесены 3 useEffect (forced resize + warm-up + health-check) из App.jsx в новый hook [src/hooks/useWebViewLifecycle.js](src/hooks/useWebViewLifecycle.js) — 70 строк. App.jsx теперь 571 строка.
+- **Новая фича (Совет 3 — прогрев вкладок)**: при старте приложения автоматически перебираем все вкладки по 1.5 сек каждую → каждый WebView получает шанс инициализировать layout. Пользователь возвращается на исходную вкладку. Решает «первое открытие = чёрный экран» для всех будущих кастомных мессенджеров.
+- **Новая фича (Совет 1 — постоянная диагностика)**: health-check раз в 30 сек шлёт короткий DOM-probe в активную вкладку (`__CC_DIAG__health[doc/body/main/err]`). В логах будет видно если вкладка схлопнулась — можно найти причину за минуту вместо часов.
+- Все тесты 21/21 fileSizeLimits ✅. 73/73 notifHooks ✅. 40/40 appStructure ✅.
 
 ### v0.86.5 (14 апреля 2026) — FIX Telegram чёрный экран + полная DIAG WebView
 - **Проблема**: в кастомной вкладке Telega Avtoliberty (partition `custom_1772779915564`) при клике на любой чат вся правая область становилась чёрной. Стандартный Telegram БНК работал нормально. Пересоздание partition (удаление `Partitions/custom_1772779915564/`) не помогло — значит, проблема в коде, а не в данных.

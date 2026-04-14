@@ -25,6 +25,7 @@ import useTabManagement from './hooks/useTabManagement.js'
 import useSearch from './hooks/useSearch.js'
 import useTabContextMenu from './hooks/useTabContextMenu.js'
 import useNotifyNavigation from './hooks/useNotifyNavigation.js'
+import useWebViewLifecycle from './hooks/useWebViewLifecycle.js'
 
 // Навигация → src/utils/navigateToChat.js | Звук → src/utils/sound.js | Вкладка → components/MessengerTab.jsx
 
@@ -375,23 +376,9 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [activeId])
 
-  // ── v0.86.5 FIX: принудительный resize WebView при активации вкладки ───
-  // Ловушка 64: Telegram Web K при инициализации "в фоне" (zIndex:0, pointerEvents:none)
-  // читает window.innerWidth/Height через ResizeObserver и фиксирует mobile-layout с
-  // column-center 0x0. При активации вкладки размер окна не меняется → resize не
-  // срабатывает → чат остаётся чёрный. Принудительно шлём resize event всем WebView
-  // при смене activeId чтобы Telegram пересчитал layout. Безопасно для всех мессенджеров.
-  useEffect(() => {
-    if (!activeId) return
-    const el = webviewRefs.current[activeId]
-    if (!el || !el.executeJavaScript) return
-    const script = `(function(){try{window.dispatchEvent(new Event('resize'));if(document.body){document.body.style.minHeight='100vh';}}catch(e){}})();`
-    const run = () => { try { el.executeJavaScript(script).catch(() => {}) } catch(_) {} }
-    run()
-    const t1 = setTimeout(run, 150)
-    const t2 = setTimeout(run, 500)
-    return () => { clearTimeout(t1); clearTimeout(t2) }
-  }, [activeId])
+  // ── v0.86.5-6: WebView lifecycle (вынесено в useWebViewLifecycle.js для лимита 600 строк)
+  // Ловушка 64: forced resize + warm-up + health-check
+  useWebViewLifecycle({ activeId, messengers, appReady, webviewRefs, setActiveId })
 
   // ── Добавление / сохранение мессенджера ────────────────────────────────
   const addMessenger = useCallback((m) => {

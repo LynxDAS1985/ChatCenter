@@ -99,10 +99,10 @@ test('MessengerTab используется', () => assert(allAppCode.includes('
 test('SettingsPanel используется', () => assert(code.includes('<SettingsPanel')))
 test('AISidebar используется', () => assert(code.includes('<AISidebar')))
 
-// v0.86.5 Ловушка 64: forced resize при активации вкладки (Telegram layout lock-in)
-test('Принудительный resize WebView при смене activeId (Ловушка 64)', () =>
-  assert(code.includes("dispatchEvent(new Event('resize'))") && code.includes('Ловушка 64'),
-    'App.jsx должен слать resize event в активный WebView при смене activeId — иначе Telegram layout lock-in'))
+// v0.86.5-6 Ловушка 64: forced resize + warm-up + health-check в useWebViewLifecycle hook
+test('useWebViewLifecycle hook подключён (Ловушка 64)', () =>
+  assert(code.includes('useWebViewLifecycle') && allAppCode.includes("dispatchEvent(new Event('resize'))"),
+    'App.jsx должен использовать useWebViewLifecycle — forced resize при смене activeId + warm-up + health-check'))
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)
