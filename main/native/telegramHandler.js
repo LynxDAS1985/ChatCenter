@@ -227,15 +227,29 @@ async function startLogin(phone) {
     },
     onError: (err) => {
       log('client onError: ' + err.message)
-      const msg = translateTelegramError(err.message)
+      const errMsg = err.message || String(err)
+
+      // v0.87.9 КРИТИЧНО: SESSION_PASSWORD_NEEDED и PHONE_CODE_INVALID и PASSWORD_HASH_INVALID —
+      // это НЕ ошибки которые надо обрабатывать, GramJS сам вызовет наш password/phoneCode callback.
+      // Трогать их НЕЛЬЗЯ — иначе разрушим recovery flow.
+      if (/SESSION_PASSWORD_NEEDED|PHONE_CODE_INVALID|PASSWORD_HASH_INVALID|PHONE_CODE_EMPTY/i.test(errMsg)) {
+        log('recoverable error — GramJS сам продолжит flow, НЕ останавливаем client')
+        // Показываем ошибку в UI, но НЕ дестроим client
+        if (/PHONE_CODE_INVALID|PHONE_CODE_EMPTY/i.test(errMsg)) {
+          emit('tg:login-step', { step: 'code', phone, error: translateTelegramError(errMsg) })
+        } else if (/PASSWORD_HASH_INVALID/i.test(errMsg)) {
+          emit('tg:login-step', { step: 'password', phone, error: translateTelegramError(errMsg) })
+        }
+        return
+      }
+
+      // Фатальные ошибки — стоп client (FLOOD_WAIT, PHONE_NUMBER_INVALID, BANNED, NETWORK)
+      const msg = translateTelegramError(errMsg)
       const currentStep = pendingLogin?.passwordResolve ? 'password' : (pendingLogin?.codeResolve ? 'code' : 'phone')
-      // v0.87.8: КРИТИЧНО — останавливаем client при FLOOD_WAIT/любой серьёзной ошибке.
-      // Иначе GramJS внутри client.start() повторяет auth.SendCode каждую секунду → flood увеличивается.
-      // Извлекаем секунды для countdown в UI
-      const waitMatch = err.message?.match(/(?:A wait of |wait of |FLOOD_WAIT_)(\d+)/i)
+      const waitMatch = errMsg.match(/(?:A wait of |wait of |FLOOD_WAIT_)(\d+)/i)
       const waitSeconds = waitMatch ? parseInt(waitMatch[1]) : 0
-      emit('tg:login-step', { step: 'phone', phone, error: msg, waitUntil: waitSeconds > 0 ? Date.now() + waitSeconds * 1000 : null })
-      // Останавливаем GramJS retry-цикл
+      emit('tg:login-step', { step: currentStep, phone, error: msg, waitUntil: waitSeconds > 0 ? Date.now() + waitSeconds * 1000 : null })
+      // Останавливаем GramJS retry-цикл ТОЛЬКО при фатальных
       try { client?.disconnect() } catch(_) {}
       try { client?.destroy() } catch(_) {}
       client = null
@@ -264,14 +278,20 @@ async function startLogin(phone) {
     pendingLogin = null
     attachMessageListener()
   }).catch(err => {
-    log('login failed: ' + err.message)
-    const msg = translateTelegramError(err.message)
-    // v0.87.5: сохраняем текущий шаг (не сбрасываем на phone) чтобы ошибка показалась на том же экране
+    const errMsg = err.message || String(err)
+    log('login failed: ' + errMsg)
+    // v0.87.9: recoverable ошибки — показываем на текущем шаге, НЕ рушим client
+    if (/SESSION_PASSWORD_NEEDED/i.test(errMsg)) {
+      // GramJS бросает это как exception в некоторых версиях — эмулируем переход на экран пароля
+      log('SESSION_PASSWORD_NEEDED → emit step=password (не ошибка)')
+      emit('tg:login-step', { step: 'password', phone })
+      return
+    }
+    const msg = translateTelegramError(errMsg)
     const currentStep = pendingLogin?.passwordResolve ? 'password' : (pendingLogin?.codeResolve ? 'code' : 'phone')
     emit('tg:login-step', { step: currentStep, phone, error: msg })
-    // pendingLogin оставляем — пользователь может повторить ввод кода/пароля
-    // только на фатальных ошибках сбрасываем client
-    if (/phone.*invalid|banned|deactivated/i.test(err.message || '')) {
+    // Фатальные — сбрасываем client
+    if (/phone.*invalid|banned|deactivated|wait of|FLOOD_WAIT/i.test(errMsg)) {
       pendingLogin = null
       try { client?.disconnect() } catch(_) {}
       client = null

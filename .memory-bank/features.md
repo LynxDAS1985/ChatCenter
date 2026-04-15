@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.8 (15 апреля 2026)
+## Текущая версия: v0.87.9 (15 апреля 2026)
 
 ---
 
@@ -91,6 +91,16 @@
 ---
 
 ## Changelog
+
+### v0.87.9 (15 апреля 2026) — FIX: зависание после ввода кода (recoverable ≠ fatal)
+- **Симптом**: пользователь ввёл код, нажал «Проверка» → висит «Проверка...» бесконечно.
+- **Логи**: `14:27:02 SESSION_PASSWORD_NEEDED` + `Error while trying to reconnect`. То есть пришёл сигнал «нужен 2FA», GramJS начал переподключение.
+- **Причина**: в v0.87.8 я добавил `client.disconnect() + destroy()` на ЛЮБУЮ ошибку. SESSION_PASSWORD_NEEDED — это НЕ ошибка, это штатный сигнал от Telegram «нужен облачный пароль». GramJS в ответ должен был вызвать наш callback `password: async () => askPassword()`. Но я убил client — callback не вызвался — UI завис.
+- **Фикс**: разделение ошибок на **recoverable** (не рушить client) и **fatal** (остановить).
+  - **Recoverable** (не трогаем client): `SESSION_PASSWORD_NEEDED`, `PHONE_CODE_INVALID`, `PASSWORD_HASH_INVALID`, `PHONE_CODE_EMPTY` — GramJS сам попросит callback снова.
+  - **Fatal** (рушим client): `FLOOD_WAIT`, `PHONE_NUMBER_INVALID`, `PHONE_NUMBER_BANNED`, `USER_DEACTIVATED`, network errors.
+- **Дополнительно**: в `.catch()` блока `client.start().then().catch()` — если приходит `SESSION_PASSWORD_NEEDED` как exception (некоторые версии GramJS так делают), эмулируем `emit step=password` вручную → UI переключается на экран пароля, клиент остаётся живым.
+- Теперь: ввод кода → при необходимости 2FA → UI автоматически переключается на экран пароля.
 
 ### v0.87.8 (15 апреля 2026) — КРИТИЧНО: остановка GramJS retry + live countdown
 - **Катастрофа в логах v0.87.7**: после первого FLOOD_WAIT GramJS `client.start()` **автоматически повторял** `auth.SendCode` по несколько раз в секунду. Каждый повтор = новый запрос = **мы САМИ флудили Telegram**. За 4 секунды — 20+ попыток, FLOOD_WAIT раскручивался до 5 минут и больше.
