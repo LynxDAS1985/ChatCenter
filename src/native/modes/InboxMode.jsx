@@ -39,8 +39,8 @@ export default function InboxMode({ store }) {
     if (!store.messages[store.activeChatId]) {
       store.loadMessages(store.activeChatId, 50)
     }
-    // v0.87.14: автоматически помечаем прочитанным при открытии
-    store.markRead?.(store.activeChatId)
+    // v0.87.16: НЕ помечаем всё прочитанным автоматически при открытии.
+    // Счётчик уменьшается по мере показа сообщений (IntersectionObserver) или при скролле в низ.
   }, [store.activeChatId])
 
   // Измеряем высоту контейнера для List
@@ -104,6 +104,54 @@ export default function InboxMode({ store }) {
 
   const getMessage = (chatId, msgId) => (store.messages[chatId] || []).find(m => m.id === String(msgId))
 
+  // v0.87.16: прочитывание по видимости — отмечаем до maxId по мере скролла
+  const lastReadRef = useRef(0)
+  const readByVisibility = (msg) => {
+    if (msg.isOutgoing) return
+    const id = Number(msg.id)
+    if (id <= lastReadRef.current) return
+    lastReadRef.current = id
+    // Debounce: отправляем mark-read не чаще раз в 2 сек
+    if (!readByVisibility._timer) {
+      readByVisibility._timer = setTimeout(() => {
+        readByVisibility._timer = null
+        if (store.activeChatId) store.markRead(store.activeChatId, lastReadRef.current, 1)
+      }, 2000)
+    }
+  }
+
+  // v0.87.16: drag-n-drop файлов в окно чата
+  const [dragOver, setDragOver] = useState(false)
+  const handleDragOver = (e) => { e.preventDefault(); setDragOver(true) }
+  const handleDragLeave = () => setDragOver(false)
+  const handleDrop = async (e) => {
+    e.preventDefault(); setDragOver(false)
+    if (!store.activeChatId) return
+    for (const f of e.dataTransfer.files) {
+      await store.sendFile(store.activeChatId, f.path, '')
+    }
+  }
+
+  // v0.87.16: вставка из буфера (скриншот Ctrl+V)
+  const handlePaste = async (e) => {
+    if (!store.activeChatId) return
+    for (const item of e.clipboardData?.items || []) {
+      if (item.type.startsWith('image/')) {
+        const blob = item.getAsFile()
+        if (!blob) continue
+        const arrayBuffer = await blob.arrayBuffer()
+        // Сохраняем во временный файл + отправляем
+        const r = await window.api?.invoke('tg:send-clipboard-image', {
+          chatId: store.activeChatId,
+          data: Array.from(new Uint8Array(arrayBuffer)),
+          ext: blob.type.split('/')[1] || 'png',
+        })
+        if (!r?.ok) console.error('paste send failed', r?.error)
+        e.preventDefault()
+      }
+    }
+  }
+
   const handleScroll = async (e) => {
     if (loadingOlderRef.current) return
     if (e.target.scrollTop < 100 && activeMessages.length > 0) {
@@ -123,6 +171,21 @@ export default function InboxMode({ store }) {
   const handleDelete = async (m) => {
     if (!confirm('Удалить сообщение у всех?')) return
     await store.deleteMessage(store.activeChatId, m.id, true)
+  }
+
+  // v0.87.16: forward — простой prompt с выбором чата по названию
+  const handleForward = async (m) => {
+    const target = prompt('Название чата куда переслать:')
+    if (!target) return
+    const chat = store.chats.find(c => (c.title || '').toLowerCase().includes(target.toLowerCase()))
+    if (!chat) { alert('Чат не найден'); return }
+    const r = await store.forwardMessage(store.activeChatId, chat.id, m.id)
+    alert(r?.ok ? `Переслано в «${chat.title}»` : 'Ошибка: ' + (r?.error || 'неизвестно'))
+  }
+
+  const handlePin = async (m) => {
+    const r = await store.pinMessage(store.activeChatId, m.id, false)
+    alert(r?.ok ? 'Закреплено' : 'Ошибка: ' + (r?.error || 'нет прав?'))
   }
 
   const handleReplySend = async () => {
@@ -220,7 +283,21 @@ export default function InboxMode({ store }) {
               </div>
             )}
             <div ref={msgsScrollRef} onScroll={handleScroll}
-              style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+              style={{
+                flex: 1, overflowY: 'auto', padding: 16,
+                display: 'flex', flexDirection: 'column', gap: 6,
+                position: 'relative',
+                outline: dragOver ? '2px dashed var(--amoled-accent)' : 'none',
+                background: dragOver ? 'rgba(42,171,238,0.08)' : 'transparent',
+              }}>
+              {dragOver && (
+                <div style={{
+                  position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--amoled-accent)', fontSize: 18, fontWeight: 600, pointerEvents: 'none',
+                  background: 'rgba(0,0,0,0.4)', zIndex: 2,
+                }}>📎 Отпустите файл для отправки</div>
+              )}
               {visibleMessages.length === 0 ? (
                 <div style={{ color: 'var(--amoled-text-dim)', textAlign: 'center', padding: 20 }}>
                   {msgSearch ? 'Ничего не найдено' : 'Нет сообщений'}
@@ -231,8 +308,11 @@ export default function InboxMode({ store }) {
                   onReply={setReplyTo}
                   onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
                   onDelete={handleDelete}
+                  onForward={handleForward}
+                  onPin={handlePin}
                   downloadMedia={store.downloadMedia}
                   getMessage={getMessage}
+                  onVisible={readByVisibility}
                 />
               ))}
             </div>
@@ -252,7 +332,8 @@ export default function InboxMode({ store }) {
                 value={input}
                 onChange={e => handleInputChange(e.target.value)}
                 onKeyDown={e => { if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim()) handleReplySend() }}
-                placeholder={editTarget ? 'Отредактируйте сообщение...' : replyTo ? 'Ответ...' : 'Введите сообщение...'}
+                onPaste={handlePaste}
+                placeholder={editTarget ? 'Отредактируйте сообщение...' : replyTo ? 'Ответ...' : 'Введите сообщение... (перетащите файл / Ctrl+V фото)'}
                 disabled={sending}
                 style={{ flex: 1 }}
               />

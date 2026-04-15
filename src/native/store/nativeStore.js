@@ -204,13 +204,32 @@ export default function useNativeStore() {
     return r
   }, [])
 
-  const markRead = useCallback(async (chatId) => {
-    // v0.87.15: сразу сбрасываем локально (optimistic) — не ждём сеть
+  // v0.87.16: markRead принимает maxId (до какого сообщения прочитано) и localRead (сколько прочитано в UI)
+  const markRead = useCallback(async (chatId, maxId, localRead = 0) => {
     setState(s => ({
       ...s,
-      chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount: 0 } : c)
+      chats: s.chats.map(c => {
+        if (c.id !== chatId) return c
+        // Если localRead передан — уменьшаем на это число, иначе — сбрасываем полностью
+        const newUnread = localRead > 0
+          ? Math.max(0, (c.unreadCount || 0) - localRead)
+          : 0
+        return { ...c, unreadCount: newUnread }
+      })
     }))
-    return window.api?.invoke('tg:mark-read', { chatId })
+    return window.api?.invoke('tg:mark-read', { chatId, maxId })
+  }, [])
+
+  const sendFile = useCallback(async (chatId, filePath, caption) => {
+    return window.api?.invoke('tg:send-file', { chatId, filePath, caption })
+  }, [])
+
+  const forwardMessage = useCallback(async (fromChatId, toChatId, messageId) => {
+    return window.api?.invoke('tg:forward', { fromChatId, toChatId, messageId })
+  }, [])
+
+  const pinMessage = useCallback(async (chatId, messageId, unpin = false) => {
+    return window.api?.invoke('tg:pin', { chatId, messageId, unpin })
   }, [])
 
   const setTyping = useCallback(async (chatId) => {
@@ -275,7 +294,7 @@ export default function useNativeStore() {
     setMode, setActiveAccount, setActiveChat,
     startLogin, submitCode, submitPassword, cancelLogin,
     loadChats, loadCachedChats, loadMessages, loadOlderMessages,
-    sendMessage, deleteMessage, editMessage, downloadMedia, removeAccount,
-    markRead, setTyping,
+    sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
+    downloadMedia, removeAccount, markRead, setTyping,
   }
 }

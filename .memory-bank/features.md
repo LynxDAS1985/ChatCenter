@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.15 (15 апреля 2026)
+## Текущая версия: v0.87.16 (15 апреля 2026)
 
 ---
 
@@ -91,6 +91,24 @@
 ---
 
 ## Changelog
+
+### v0.87.16 (15 апреля 2026) — Read-by-scroll + аватарки в кэше + 5 фич (drag-n-drop, paste, forward, pin)
+- **Проблема 1 — счётчик сбрасывается сразу при открытии чата**:
+  - v0.87.15 делал optimistic `unreadCount=0` сразу.
+  - **Фикс**: убран авто-markRead при открытии чата. Счётчик уменьшается **по мере видимости** через IntersectionObserver: когда сообщение попадает в viewport (threshold 0.5) → `lastReadRef = id`, debounced markRead каждые 2 сек до текущего maxId. В UI `unreadCount -= 1` за каждое видимое сообщение.
+- **Проблема 2 — аватарки из кэша не подхватывались**:
+  - tg-cache.json сохранялся ДО загрузки аватарок → `chat.avatar` был undefined. При старте программы чаты из кэша без аватарок.
+  - **Фикс**: при сохранении кэша (`saveChatsCache`) проверяем есть ли файл в `tg-avatars/{rawId}.jpg` и подставляем `file://` URL. При чтении (`tg:get-cached-chats`) тоже проверяем. Теперь аватарки **мгновенно** видны после перезапуска.
+- **Проблема 3 — плохая подсветка активного чата на тёмной теме**:
+  - Было: `background: var(--amoled-surface-hover)` — едва заметно на AMOLED.
+  - **Фикс**: яркий синий фон `rgba(42, 171, 238, 0.2)` + **левая полоса-индикатор** 3px сплошного синего `var(--amoled-accent)`. Hover уменьшен до `rgba(255,255,255,0.04)`.
+- **Drag-n-drop файлов**: перетаскиваешь файл в окно чата → `sendFile`. Подсветка drop-зоны синей рамкой «📎 Отпустите файл для отправки».
+- **Paste (Ctrl+V)**: в поле ввода → копируется скриншот → `tg:send-clipboard-image` → временный файл → `client.sendFile`.
+- **Forward (пересылка)**: кнопка ➥ в контекст-меню баббла → prompt «название чата» → fuzzy search по store.chats → `client.forwardMessages`.
+- **Pin (закрепление)**: кнопка 📌 → `client.pinMessage`. Для каналов/групп где нет прав вернёт ошибку в alert.
+- **IntersectionObserver в MessageBubble**: `threshold: 0.5`, onVisible callback для UI-прочитывания.
+- **Новые IPC**: `tg:send-file`, `tg:send-clipboard-image`, `tg:forward`, `tg:pin`.
+- Ловушка 73 — markRead должен быть управляемый (по видимости), не автоматический.
 
 ### v0.87.15 (15 апреля 2026) — Медиа + Scroll-up + Reply/Edit/Delete + Search в чате + FIX markRead
 - **Проблема — mark-read не сбрасывал счётчик 49**:

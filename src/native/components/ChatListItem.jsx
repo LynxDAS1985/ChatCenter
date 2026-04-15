@@ -29,7 +29,8 @@ export default function ChatListItem({ chat, active, onClick }) {
         padding: '10px 12px',
         cursor: 'pointer',
         borderBottom: '1px solid var(--amoled-border)',
-        background: active ? 'var(--amoled-surface-hover)' : 'transparent',
+        background: active ? 'rgba(42, 171, 238, 0.2)' : 'transparent',
+        borderLeft: active ? '3px solid var(--amoled-accent)' : '3px solid transparent',
         transition: 'background 0.1s',
         display: 'flex',
         gap: 10,
@@ -37,7 +38,7 @@ export default function ChatListItem({ chat, active, onClick }) {
         height: 64,
         boxSizing: 'border-box',
       }}
-      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--amoled-surface-hover)' }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
     >
       {/* Аватарка */}

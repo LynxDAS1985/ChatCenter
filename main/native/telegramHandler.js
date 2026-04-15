@@ -135,27 +135,101 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     return { ok: true }
   })
 
-  // v0.87.14: мгновенная отдача кэша чатов из JSON (до ответа GramJS)
   ipcMain.handle('tg:get-cached-chats', async () => {
     try {
       if (!cachePath || !fs.existsSync(cachePath)) return { ok: true, chats: [] }
       const raw = fs.readFileSync(cachePath, 'utf8')
       const data = JSON.parse(raw)
-      return { ok: true, chats: data.chats || [] }
+      // v0.87.16: подставляем avatar из файлов если в кэше был undefined
+      const chats = (data.chats || []).map(c => {
+        if (c.avatar) return c
+        const rawId = c.rawId || String(c.id).split(':').pop()
+        const avatarFile = path.join(avatarsDir, `${rawId}.jpg`)
+        if (fs.existsSync(avatarFile)) {
+          return { ...c, avatar: 'file:///' + encodeURI(avatarFile.replace(/\\/g, '/')) }
+        }
+        return c
+      })
+      log(`tg:get-cached-chats: ${chats.length} чатов, с аватарками: ${chats.filter(c => c.avatar).length}`)
+      return { ok: true, chats }
     } catch (e) { return { ok: false, error: e.message, chats: [] } }
   })
 
   // v0.87.14: пометить чат прочитанным
-  ipcMain.handle('tg:mark-read', async (_, { chatId }) => {
+  ipcMain.handle('tg:mark-read', async (_, { chatId, maxId }) => {
     try {
       if (!client) return { ok: false, error: 'Не подключён' }
       const entity = chatEntityMap.get(chatId)
       if (!entity) return { ok: false, error: 'Чат не найден в кэше' }
-      await client.markAsRead(entity)
-      log(`mark-read: ${chatId}`)
+      // v0.87.16: поддержка maxId — пометить прочитанными только до этого ID
+      if (maxId) {
+        await client.invoke(new Api.messages.ReadHistory({ peer: entity, maxId: Number(maxId) }))
+        log(`mark-read до maxId=${maxId} в ${chatId}`)
+      } else {
+        await client.markAsRead(entity)
+        log(`mark-read ВСЕ: ${chatId}`)
+      }
       return { ok: true }
     } catch (e) {
       log('mark-read error: ' + e.message)
+      return { ok: false, error: e.message }
+    }
+  })
+
+  // v0.87.16: отправка картинки из буфера обмена (Ctrl+V)
+  ipcMain.handle('tg:send-clipboard-image', async (_, { chatId, data, ext }) => {
+    try {
+      if (!client) return { ok: false }
+      const tmpDir = path.join(path.dirname(cachePath), 'tg-tmp')
+      try { fs.mkdirSync(tmpDir, { recursive: true }) } catch(_) {}
+      const tmpFile = path.join(tmpDir, `clip_${Date.now()}.${ext}`)
+      fs.writeFileSync(tmpFile, Buffer.from(data))
+      const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      await client.sendFile(entity, { file: tmpFile })
+      try { fs.unlinkSync(tmpFile) } catch(_) {}
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  ipcMain.handle('tg:send-file', async (_, { chatId, filePath, caption }) => {
+    try {
+      if (!client) return { ok: false }
+      const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      const result = await client.sendFile(entity, { file: filePath, caption: caption || '' })
+      return { ok: true, messageId: String(result.id) }
+    } catch (e) {
+      log('send-file err: ' + e.message)
+      return { ok: false, error: e.message }
+    }
+  })
+
+  // v0.87.16: пересылка сообщения
+  ipcMain.handle('tg:forward', async (_, { fromChatId, toChatId, messageId }) => {
+    try {
+      if (!client) return { ok: false }
+      const fromEntity = chatEntityMap.get(fromChatId) || String(fromChatId).split(':').pop()
+      const toEntity = chatEntityMap.get(toChatId) || String(toChatId).split(':').pop()
+      await client.forwardMessages(toEntity, { messages: [Number(messageId)], fromPeer: fromEntity })
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // v0.87.16: закрепить / открепить сообщение
+  ipcMain.handle('tg:pin', async (_, { chatId, messageId, unpin = false }) => {
+    try {
+      if (!client) return { ok: false }
+      const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      await client.pinMessage(entity, Number(messageId), { notify: false, pmOneside: false })
+      return { ok: true }
+    } catch (e) {
+      // Для unpin используется unpinMessage
+      if (unpin) {
+        try {
+          const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+          await client.unpinMessage(entity, Number(messageId))
+          return { ok: true }
+        } catch(e2) { return { ok: false, error: e2.message } }
+      }
       return { ok: false, error: e.message }
     }
   })
@@ -494,10 +568,20 @@ function mapDialog(d) {
 }
 
 // v0.87.14: сохранить кэш чатов на диск — мгновенный старт следующего запуска
+// v0.87.16: добавляем avatar пути из существующих файлов — чтобы сразу отображались из кэша
 function saveChatsCache(chats) {
   try {
     if (!cachePath) return
-    fs.writeFileSync(cachePath, JSON.stringify({ accountId: currentAccount?.id, chats, updatedAt: Date.now() }), 'utf8')
+    const enriched = chats.map(c => {
+      if (c.avatar) return c
+      const rawId = c.rawId || String(c.id).split(':').pop()
+      const avatarFile = path.join(avatarsDir, `${rawId}.jpg`)
+      if (fs.existsSync(avatarFile)) {
+        return { ...c, avatar: 'file:///' + encodeURI(avatarFile.replace(/\\/g, '/')) }
+      }
+      return c
+    })
+    fs.writeFileSync(cachePath, JSON.stringify({ accountId: currentAccount?.id, chats: enriched, updatedAt: Date.now() }), 'utf8')
   } catch (e) { log('saveChatsCache err: ' + e.message) }
 }
 

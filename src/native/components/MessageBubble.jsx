@@ -1,10 +1,21 @@
 // v0.87.15: пузырёк сообщения — текст, медиа, reply, edit, меню действий
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
-export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, downloadMedia, getMessage }) {
+export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible, downloadMedia, getMessage }) {
   const [menu, setMenu] = useState(false)
   const [mediaUrl, setMediaUrl] = useState(null)
   const [mediaLoading, setMediaLoading] = useState(false)
+  const ref = useRef(null)
+
+  // v0.87.16: IntersectionObserver — onVisible срабатывает когда сообщение в viewport
+  useEffect(() => {
+    if (!onVisible || !ref.current) return
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) onVisible(m)
+    }, { threshold: 0.5 })
+    obs.observe(ref.current)
+    return () => obs.disconnect()
+  }, [m.id])
 
   const handleDownload = async () => {
     if (mediaUrl || mediaLoading) return
@@ -23,7 +34,7 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, do
   const replyToMsg = m.replyToId && getMessage ? getMessage(chatId, m.replyToId) : null
 
   return (
-    <div style={{
+    <div ref={ref} style={{
       alignSelf: m.isOutgoing ? 'flex-end' : 'flex-start',
       maxWidth: '65%',
       position: 'relative',
@@ -94,6 +105,8 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, do
           borderRadius: 6, padding: 2,
         }}>
           <button onClick={() => onReply?.(m)} title="Ответить" style={miniBtn}>↪</button>
+          {onForward && <button onClick={() => onForward(m)} title="Переслать" style={miniBtn}>➥</button>}
+          {onPin && <button onClick={() => onPin(m)} title="Закрепить" style={miniBtn}>📌</button>}
           {m.isOutgoing && onEdit && <button onClick={() => onEdit(m)} title="Редактировать" style={miniBtn}>✏️</button>}
           {m.isOutgoing && onDelete && <button onClick={() => onDelete(m)} title="Удалить" style={{...miniBtn, color: 'var(--amoled-danger)'}}>🗑</button>}
         </div>
