@@ -5,6 +5,17 @@ import ChatListItem from '../components/ChatListItem.jsx'
 
 const ITEM_HEIGHT = 64
 
+// v0.87.13: отдельный компонент вне InboxMode — react-window передаст свежие props каждый рендер
+function ChatRow({ index, style, chats, activeChatId, setActiveChat }) {
+  const c = chats[index]
+  if (!c) return null
+  return (
+    <div style={style}>
+      <ChatListItem chat={c} active={activeChatId === c.id} onClick={() => setActiveChat(c.id)} />
+    </div>
+  )
+}
+
 export default function InboxMode({ store }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -91,19 +102,12 @@ export default function InboxMode({ store }) {
               listRef={listRef}
               rowCount={activeAccountChats.length}
               rowHeight={ITEM_HEIGHT}
-              rowComponent={({ index, style }) => {
-                const c = activeAccountChats[index]
-                return (
-                  <div style={style}>
-                    <ChatListItem
-                      chat={c}
-                      active={store.activeChatId === c.id}
-                      onClick={() => store.setActiveChat(c.id)}
-                    />
-                  </div>
-                )
+              rowComponent={ChatRow}
+              rowProps={{
+                chats: activeAccountChats,
+                activeChatId: store.activeChatId,
+                setActiveChat: store.setActiveChat,
               }}
-              rowProps={{}}
               style={{ height: listHeight, width: '100%' }}
             />
           )}

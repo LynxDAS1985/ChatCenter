@@ -39,6 +39,7 @@ body { background:#1a1b2e; color:#e0e0e0; font-family:-apple-system,BlinkMacSyst
   <button data-f="info" onclick="setFilter('info',this)" style="color:#22c55e">● Инфо</button>
   <button data-f="trace" onclick="setFilter('trace',this)" style="color:#c084fc">● Trace</button>
   <button data-f="debug" onclick="setFilter('debug',this)" style="color:#6b7280">● Debug</button>
+  <button data-f="native" onclick="setFilter('native',this)" style="color:#2AABEE">⚡ Native</button>
 </div>
 <div class="logs" id="logs"><div class="empty">Загрузка...</div></div>
 <div class="footer"><span id="count">0 / 0 записей</span><span id="time"></span></div>
@@ -67,6 +68,7 @@ function render() {
     : filter === 'info' ? allLines.filter(l => l.level === 'INFO' || l.level === 'R:INFO')
     : filter === 'trace' ? allLines.filter(l => l.level.includes('TRACE'))
     : filter === 'debug' ? allLines.filter(l => l.level === 'DEBUG')
+    : filter === 'native' ? allLines.filter(l => /\[tg\]|\[startup|\[native\]/.test(l.text))
     : allLines
 
   const el = document.getElementById('logs')

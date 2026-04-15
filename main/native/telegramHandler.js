@@ -143,11 +143,11 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       emit('tg:chats', { accountId: currentAccount?.id, chats: firstChats, append: false })
       loadAvatarsAsync(firstPage.slice(0, 50))
 
-      // Фоновая загрузка остальных (если > PAGE)
-      if (firstPage.length >= PAGE) {
+      // v0.87.13: ВСЕГДА пробуем подгрузить ещё страницу (GramJS часто возвращает меньше limit)
+      if (firstPage.length > 50) {
         loadRestPagesAsync(firstPage)
       }
-      return { ok: true, chats: firstChats, hasMore: firstPage.length >= PAGE }
+      return { ok: true, chats: firstChats, hasMore: firstPage.length > 50 }
     } catch (e) {
       log('get-chats error: ' + e.message)
       return { ok: false, error: e.message, chats: [] }
@@ -380,13 +380,13 @@ async function loadRestPagesAsync(firstPage) {
     let offsetDate = last.message?.date || 0
     let offsetId = last.message?.id || 0
     let offsetPeer = last.inputEntity || last.entity
-    for (let i = 0; i < 19; i++) {
+    // v0.87.13: стоп ТОЛЬКО когда пустая страница (не по < PAGE — GramJS часто возвращает меньше)
+    for (let i = 0; i < 30; i++) {
       const page = await client.getDialogs({ limit: PAGE, offsetDate, offsetId, offsetPeer })
-      if (!page.length) break
+      if (!page.length) { log(`пустая страница на итерации ${i+1}, стоп`); break }
       const chats = page.map(mapDialog)
       emit('tg:chats', { accountId: currentAccount?.id, chats, append: true })
       loadAvatarsAsync(page.slice(0, 50))
-      if (page.length < PAGE) break
       last = page[page.length - 1]
       offsetDate = last.message?.date || 0
       offsetId = last.message?.id || 0
