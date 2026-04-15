@@ -6,6 +6,7 @@ import { useState } from 'react'
 import './styles.css'
 import useNativeStore from './store/nativeStore.js'
 import LoginModal from './components/LoginModal.jsx'
+import InboxMode from './modes/InboxMode.jsx'
 
 const MODES = [
   { id: 'inbox', label: 'Чаты' },
@@ -82,13 +83,15 @@ export default function NativeApp() {
                 + Подключить Telegram
               </button>
             </div>
+          ) : store.mode === 'inbox' ? (
+            <InboxMode store={store} />
           ) : (
             <div className="native-empty">
               <div className="native-empty__icon">🚧</div>
               <div className="native-empty__title">Режим «{MODES.find(m => m.id === store.mode)?.label}»</div>
               <div className="native-empty__text">
-                UI в разработке. Аккаунт подключён, чаты загружаются.<br />
-                Скоро здесь появится: список чатов, окно переписки, AI-панель.
+                UI в разработке.<br />
+                Пока доступен только режим «Чаты».
               </div>
             </div>
           )}

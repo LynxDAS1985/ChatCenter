@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.2 (14 апреля 2026)
+## Текущая версия: v0.87.3 (15 апреля 2026)
 
 ---
 
@@ -91,6 +91,28 @@
 ---
 
 ## Changelog
+
+### v0.87.3 (15 апреля 2026) — Реальный GramJS — авторизация + чаты + отправка
+- **Установлено**: `npm install telegram input` (GramJS v2.26.22 + input). `better-sqlite3` пока не ставим — session храним в обычном файле, база SQLite отложена до Шага 3.
+- **telegramHandler.js полностью переписан** с STUB на реальный GramJS:
+  - api_id=8392940, api_hash вшит в коде
+  - `startLogin(phone)` → создаёт `TelegramClient` с `StringSession('')` → вызывает `client.start({ phoneNumber, phoneCode, password, onError })`
+  - `phoneCode` и `password` — промисифицированные колбеки, которые ждут ввод от UI через IPC
+  - После успеха: `client.session.save()` в `%APPDATA%/ЦентрЧатов/tg-session.txt`
+  - `client.getMe()` → заполняет `currentAccount { id, name, phone, username, status: 'connected' }` → emit `tg:account-update`
+  - `attachMessageListener()` — подписка на `NewMessage` event GramJS → emit `tg:new-message`
+- **autoRestoreSession()** — при старте main-процесса читает `tg-session.txt`, если есть — автоподключение без повторного логина
+- **IPC реализация**:
+  - `tg:get-chats` → `client.getDialogs({ limit: 100 })` → маппинг в единый формат → emit `tg:chats`
+  - `tg:get-messages` → `client.getMessages(chatId, { limit: 50 })` → emit `tg:messages`
+  - `tg:send-message` → `client.sendMessage(chatId, { message: text })`
+  - `tg:remove-account` → `client.disconnect()` + удаление session-файла
+- **UI**: создан `src/native/modes/InboxMode.jsx` (205 строк) — полный 2-колоночный layout:
+  - Слева: список чатов (320px), сортировка по lastMessageTs desc, бейджи непрочитанных, hover-эффект
+  - Справа: шапка чата + лента сообщений (бубл вправо/влево) + поле ввода + кнопка отправки
+  - Отправка по Enter, Ctrl+Enter, или кликом
+  - Автозагрузка чатов при появлении аккаунта, автозагрузка сообщений при выборе чата
+- **NativeApp.jsx** — подключён InboxMode для режима `inbox` (другие режимы пока заглушки)
 
 ### v0.87.2 (14 апреля 2026) — Логи запуска для диагностики долгой загрузки
 - **Симптом**: после v0.87.1 (warm-up удалён, native_cc фильтр) пользователь сообщает что всё ещё долго стартует.
