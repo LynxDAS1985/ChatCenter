@@ -85,24 +85,24 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     }
   })
 
+  // v0.87.10: упрощённый IPC — сразу { ok: true } после передачи в pending.
+  // Результат (success / 2FA / error) приходит через tg:login-step events.
   ipcMain.handle('tg:login-code', async (_, { code }) => {
-    if (!pendingLogin?.codeResolve) {
-      return { ok: false, error: 'Нет активного шага ввода кода' }
-    }
-    return await new Promise((resolve) => {
-      pendingLogin._codeReply = resolve
-      pendingLogin.codeResolve(code)
-    })
+    log('IPC tg:login-code')
+    if (!pendingLogin?.codeResolve) return { ok: false, error: 'Нет активного шага ввода кода' }
+    const resolve = pendingLogin.codeResolve
+    pendingLogin.codeResolve = null
+    resolve(code)
+    return { ok: true }
   })
 
   ipcMain.handle('tg:login-password', async (_, { password }) => {
-    if (!pendingLogin?.passwordResolve) {
-      return { ok: false, error: 'Нет активного шага 2FA' }
-    }
-    return await new Promise((resolve) => {
-      pendingLogin._pwdReply = resolve
-      pendingLogin.passwordResolve(password)
-    })
+    log('IPC tg:login-password')
+    if (!pendingLogin?.passwordResolve) return { ok: false, error: 'Нет активного шага 2FA' }
+    const resolve = pendingLogin.passwordResolve
+    pendingLogin.passwordResolve = null
+    resolve(password)
+    return { ok: true }
   })
 
   ipcMain.handle('tg:login-cancel', async () => {
@@ -215,15 +215,11 @@ async function startLogin(phone) {
     phoneNumber: async () => { log('client asked phoneNumber'); return phone },
     phoneCode: async () => {
       log('client asked phoneCode')
-      const code = await askCode()
-      try { pendingLogin._codeReply?.({ ok: true }) } catch(_) {}
-      return code
+      return await askCode()
     },
     password: async () => {
       log('client asked password')
-      const pwd = await askPassword()
-      try { pendingLogin._pwdReply?.({ ok: true }) } catch(_) {}
-      return pwd
+      return await askPassword()
     },
     onError: (err) => {
       log('client onError: ' + err.message)
@@ -274,7 +270,8 @@ async function startLogin(phone) {
       status: 'connected',
     }
     emit('tg:account-update', currentAccount)
-    emit('tg:login-step', null)
+    emit('tg:login-step', { step: 'success', phone })  // v0.87.10: явный success — UI закроет модалку
+    setTimeout(() => emit('tg:login-step', null), 200)
     pendingLogin = null
     attachMessageListener()
   }).catch(err => {

@@ -12,8 +12,13 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
   const [optimisticStep, setOptimisticStep] = useState(null)
   const [countdown, setCountdown] = useState(0)
 
-  // v0.87.5: optimisticStep имеет приоритет — UI мгновенно переключается
-  const step = optimisticStep || loginFlow?.step || 'phone'
+  // v0.87.10: server step имеет приоритет когда он "продвинутее" optimistic
+  // (server: phone → code → password → success). Optimistic нужен только для phone→code.
+  const SERVER_PRIORITY = ['phone', 'code', 'password', 'success']
+  const serverStep = loginFlow?.step
+  const step = (serverStep && SERVER_PRIORITY.indexOf(serverStep) >= SERVER_PRIORITY.indexOf(optimisticStep || 'phone'))
+    ? serverStep
+    : (optimisticStep || serverStep || 'phone')
   const serverError = loginFlow?.error || ''
   // Sticky error: ошибка НЕ исчезает автоматически, только когда пользователь меняет ввод или кликает действие
   useEffect(() => {
@@ -23,6 +28,13 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
       setOptimisticStep(null)  // v0.87.8: снимаем waitingForCode при ошибке
     }
   }, [localError, serverError])
+
+  // v0.87.10: успех → закрываем модалку
+  useEffect(() => {
+    if (loginFlow?.step === 'success') {
+      setTimeout(() => onClose?.(), 300)
+    }
+  }, [loginFlow?.step])
 
   // v0.87.8: live countdown при FLOOD_WAIT — показываем сколько секунд осталось
   useEffect(() => {
@@ -130,7 +142,7 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
             <div className="native-login__title">Введите код</div>
             <div className="native-login__subtitle">
               {waitingForCode
-                ? '⏳ Отправляем код в Telegram...'
+                ? <><span className="native-spinner" />Отправляем код в Telegram...</>
                 : `Код отправлен в Telegram на номер ${loginFlow?.phone || phone}`}
             </div>
             <input
@@ -145,8 +157,13 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
               style={{ fontSize: '24px', textAlign: 'center', letterSpacing: '0.4em', opacity: waitingForCode ? 0.5 : 1 }}
             />
             {error && <div className="native-login__error">{error}</div>}
+            {!waitingForCode && !error && (
+              <div className="native-hint">
+                💡 Если у вас включена двухфакторная защита (облачный пароль) — после кода появится экран ввода пароля.
+              </div>
+            )}
             <button className="native-btn" onClick={handleCode} disabled={busy || waitingForCode || !code.trim()}>
-              {busy ? 'Проверка…' : waitingForCode ? 'Ожидание...' : 'Подтвердить'}
+              {busy ? <><span className="native-spinner" />Проверка…</> : waitingForCode ? 'Ожидание...' : 'Подтвердить'}
             </button>
             <button className="native-btn native-btn--ghost" onClick={handleCancel} disabled={busy}>
               Отмена

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.9 (15 апреля 2026)
+## Текущая версия: v0.87.10 (15 апреля 2026)
 
 ---
 
@@ -91,6 +91,19 @@
 ---
 
 ## Changelog
+
+### v0.87.10 (15 апреля 2026) — FIX зависания + спиннеры + Native фильтр в логах + AuthFlow тесты
+- **Симптом**: ввёл код → "Проверка..." висит. В логах: `emit step=password`, `askPassword + emit step=password` — server переключил на пароль, а UI не показал.
+- **Причина 1 — двойной Promise в IPC**: `tg:login-code` создавал второй Promise (`_codeReply`) который ждал когда GramJS подтвердит. Если ANY часть зависала — handler никогда не резолвился → UI висел.
+  - **Фикс**: упрощён IPC — `tg:login-code` сразу возвращает `{ ok: true }` после передачи кода в `pendingLogin.codeResolve`. Реальный результат (success / 2FA / error) приходит через `tg:login-step` events.
+- **Причина 2 — `optimisticStep` блокировал серверный step**: при handlePhone я ставил `optimisticStep='code'`, и `step = optimisticStep || serverStep` всегда давал 'code', даже когда server emit'ил `step=password`.
+  - **Фикс**: новая логика приоритета — `SERVER_PRIORITY = ['phone', 'code', 'password', 'success']`. Если серверный step **продвинутее** optimistic — берём server. Если меньше — optimistic.
+- **Новое — emit step=success**: после `client.start().then()` явный сигнал в UI, потом `null` через 200мс. LoginModal автоматически закрывается через `onClose()` на step=success.
+- **Спиннеры (5 совет)**: CSS `.native-spinner` 12×12px анимация rotate 0.7s linear infinite. Используется в «Отправляем код в Telegram...» и «Проверка...».
+- **Подсказка про 2FA (4 совет)**: на экране code если нет ошибки и не waiting — показывается `.native-hint` синяя плашка «💡 Если у вас включена двухфакторная защита — после кода появится экран ввода пароля».
+- **Native фильтр в LogModal (5 совет про лог)**: добавлена кнопка «⚡ Native» — фильтрует строки с `[tg]`, `[startup`, `[native]` — видно только нашу разработку.
+- **AuthFlow тесты (1 совет)**: новый `AuthFlow.vitest.jsx` — 6 сценариев с mock IPC: phone→code, 2FA, FLOOD_WAIT, неверный код, success, server step перебивает optimistic.
+- Ловушка 68 в common-mistakes.md: правило про optimisticStep ↔ serverStep.
 
 ### v0.87.9 (15 апреля 2026) — FIX: зависание после ввода кода (recoverable ≠ fatal)
 - **Симптом**: пользователь ввёл код, нажал «Проверка» → висит «Проверка...» бесконечно.

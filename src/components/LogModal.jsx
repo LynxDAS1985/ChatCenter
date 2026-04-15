@@ -30,6 +30,7 @@ export default function LogModal({ content, onClose, onRefresh }) {
     : filter === 'warn' ? lines.filter(l => l.level.includes('WARN'))
     : filter === 'info' ? lines.filter(l => l.level === 'INFO' || l.level === 'R:INFO')
     : filter === 'debug' ? lines.filter(l => l.level === 'DEBUG')
+    : filter === 'native' ? lines.filter(l => /\[tg\]|\[startup|\[native\]/.test(l.text))  // v0.87.10: фильтр по нативной разработке
     : lines
 
   useEffect(() => {
@@ -107,6 +108,7 @@ export default function LogModal({ content, onClose, onRefresh }) {
             { id: 'warn', label: '● Предупр.', color: '#f59e0b' },
             { id: 'info', label: '● Инфо', color: '#22c55e' },
             { id: 'debug', label: '● Debug', color: '#6b7280' },
+            { id: 'native', label: '⚡ Native', color: '#2AABEE' },
           ].map(f => (
             <button key={f.id} onClick={() => setFilter(f.id)} style={{
               padding: '3px 10px', fontSize: 11, borderRadius: 12, cursor: 'pointer',

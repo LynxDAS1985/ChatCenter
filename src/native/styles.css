@@ -335,6 +335,30 @@
   line-height: 1.3;
 }
 
+/* v0.87.10: спиннер ожидания */
+.native-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: native-spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+@keyframes native-spin { to { transform: rotate(360deg); } }
+
+.native-hint {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(42, 171, 238, 0.08);
+  color: #8ec5e8;
+  font-size: 12px;
+  border: 1px solid rgba(42, 171, 238, 0.25);
+  line-height: 1.4;
+}
+
 @keyframes native-shake {
   0%, 100% { transform: translateX(0); }
   20% { transform: translateX(-6px); }
