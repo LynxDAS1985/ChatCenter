@@ -229,7 +229,17 @@ async function startLogin(phone) {
       log('client onError: ' + err.message)
       const msg = translateTelegramError(err.message)
       const currentStep = pendingLogin?.passwordResolve ? 'password' : (pendingLogin?.codeResolve ? 'code' : 'phone')
-      emit('tg:login-step', { step: currentStep, phone, error: msg })
+      // v0.87.8: КРИТИЧНО — останавливаем client при FLOOD_WAIT/любой серьёзной ошибке.
+      // Иначе GramJS внутри client.start() повторяет auth.SendCode каждую секунду → flood увеличивается.
+      // Извлекаем секунды для countdown в UI
+      const waitMatch = err.message?.match(/(?:A wait of |wait of |FLOOD_WAIT_)(\d+)/i)
+      const waitSeconds = waitMatch ? parseInt(waitMatch[1]) : 0
+      emit('tg:login-step', { step: 'phone', phone, error: msg, waitUntil: waitSeconds > 0 ? Date.now() + waitSeconds * 1000 : null })
+      // Останавливаем GramJS retry-цикл
+      try { client?.disconnect() } catch(_) {}
+      try { client?.destroy() } catch(_) {}
+      client = null
+      pendingLogin = null
     },
   }).then(async () => {
     log('client.start() SUCCESS')

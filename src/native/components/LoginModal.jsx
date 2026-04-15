@@ -10,6 +10,7 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
   const [localError, setLocalError] = useState('')
   const [stickyError, setStickyError] = useState('')
   const [optimisticStep, setOptimisticStep] = useState(null)
+  const [countdown, setCountdown] = useState(0)
 
   // v0.87.5: optimisticStep имеет приоритет — UI мгновенно переключается
   const step = optimisticStep || loginFlow?.step || 'phone'
@@ -17,8 +18,29 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
   // Sticky error: ошибка НЕ исчезает автоматически, только когда пользователь меняет ввод или кликает действие
   useEffect(() => {
     const merged = localError || serverError
-    if (merged) setStickyError(merged)
+    if (merged) {
+      setStickyError(merged)
+      setOptimisticStep(null)  // v0.87.8: снимаем waitingForCode при ошибке
+    }
   }, [localError, serverError])
+
+  // v0.87.8: live countdown при FLOOD_WAIT — показываем сколько секунд осталось
+  useEffect(() => {
+    if (!loginFlow?.waitUntil) { setCountdown(0); return }
+    const tick = () => {
+      const left = Math.max(0, Math.round((loginFlow.waitUntil - Date.now()) / 1000))
+      setCountdown(left)
+    }
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [loginFlow?.waitUntil])
+
+  const formatCountdown = (sec) => {
+    if (sec < 60) return `${sec} сек`
+    const m = Math.floor(sec / 60), s = sec % 60
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
   const error = stickyError
   const waitingForCode = optimisticStep === 'code' && loginFlow?.step !== 'code' && loginFlow?.step !== 'password'
 
@@ -82,9 +104,20 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
               autoFocus
               onKeyDown={e => e.key === 'Enter' && !busy && phone.trim() && handlePhone()}
             />
-            {error && <div className="native-login__error">{error}</div>}
-            <button className="native-btn" onClick={handlePhone} disabled={busy || !phone.trim()}>
-              {busy ? 'Отправка…' : 'Получить код'}
+            {error && (
+              <div className="native-login__error">
+                <div>
+                  {error}
+                  {countdown > 0 && (
+                    <div style={{ marginTop: 8, fontWeight: 600, fontSize: 15 }}>
+                      ⏱ Осталось: {formatCountdown(countdown)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            <button className="native-btn" onClick={handlePhone} disabled={busy || !phone.trim() || countdown > 0}>
+              {busy ? 'Отправка…' : countdown > 0 ? `Подождите ${formatCountdown(countdown)}` : 'Получить код'}
             </button>
             <button className="native-btn native-btn--ghost" onClick={handleCancel} disabled={busy}>
               Отмена
