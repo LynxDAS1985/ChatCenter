@@ -66,8 +66,14 @@ export default function useNativeStore() {
       setState(s => ({ ...s, loginFlow: step }))
     })
 
-    addHandler('tg:chats', ({ accountId, chats }) => {
+    addHandler('tg:chats', ({ accountId, chats, append }) => {
       setState(s => {
+        if (append) {
+          // v0.87.12: фоновая страница — добавляем к существующим, убираем дубли по id
+          const existing = new Set(s.chats.map(c => c.id))
+          const newOnes = chats.filter(c => !existing.has(c.id))
+          return { ...s, chats: [...s.chats, ...newOnes] }
+        }
         const others = s.chats.filter(c => c.accountId !== accountId)
         return { ...s, chats: [...others, ...chats] }
       })

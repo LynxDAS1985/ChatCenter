@@ -71,8 +71,22 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
   try { fs.mkdirSync(avatarsDir, { recursive: true }) } catch(_) {}
   log(`init, session=${sessionPath}, avatars=${avatarsDir}`)
 
-  // Попытка восстановить сессию при старте
-  autoRestoreSession().catch(e => log('autoRestore error: ' + e.message))
+  // v0.87.12: дожидаемся когда renderer точно готов принять events
+  const startRestore = () => {
+    const win = getMainWindowFn?.()
+    if (!win || win.isDestroyed()) {
+      setTimeout(startRestore, 500)
+      return
+    }
+    if (win.webContents.isLoading()) {
+      win.webContents.once('did-finish-load', () => {
+        setTimeout(() => autoRestoreSession().catch(e => log('autoRestore error: ' + e.message)), 500)
+      })
+    } else {
+      autoRestoreSession().catch(e => log('autoRestore error: ' + e.message))
+    }
+  }
+  setTimeout(startRestore, 1000)
 
   ipcMain.handle('tg:login-start', async (_, { phone }) => {
     try {
@@ -120,38 +134,20 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
   ipcMain.handle('tg:get-chats', async () => {
     try {
       if (!client) return { ok: false, error: 'Не подключён', chats: [] }
-      // v0.87.11: загружаем ВСЕ чаты пачками по 200 (GramJS лимит), пока есть ещё
-      const allDialogs = []
-      let offsetDate = 0, offsetId = 0, offsetPeer
+      log('get-chats: старт')
+      // v0.87.12: ПЕРВАЯ страница сразу → UI не висит; остальные фоном через emit
       const PAGE = 200
-      for (let i = 0; i < 20; i++) {  // максимум 20 × 200 = 4000 чатов
-        const page = await client.getDialogs({ limit: PAGE, offsetDate, offsetId, offsetPeer })
-        if (!page.length) break
-        allDialogs.push(...page)
-        if (page.length < PAGE) break
-        const last = page[page.length - 1]
-        offsetDate = last.message?.date || 0
-        offsetId = last.message?.id || 0
-        offsetPeer = last.inputEntity || last.entity
+      const firstPage = await client.getDialogs({ limit: PAGE })
+      log(`первая страница: ${firstPage.length} чатов`)
+      const firstChats = firstPage.map(mapDialog)
+      emit('tg:chats', { accountId: currentAccount?.id, chats: firstChats, append: false })
+      loadAvatarsAsync(firstPage.slice(0, 50))
+
+      // Фоновая загрузка остальных (если > PAGE)
+      if (firstPage.length >= PAGE) {
+        loadRestPagesAsync(firstPage)
       }
-      log(`getDialogs загружено ${allDialogs.length} чатов`)
-
-      const chats = allDialogs.map(d => ({
-        id: `${currentAccount?.id}:${String(d.id)}`,
-        accountId: currentAccount?.id,
-        title: d.title || d.name || 'Без названия',
-        type: d.isUser ? 'user' : d.isGroup ? 'group' : d.isChannel ? 'channel' : 'user',
-        lastMessage: d.message?.message || '',
-        lastMessageTs: d.message?.date ? d.message.date * 1000 : 0,
-        unreadCount: d.unreadCount || 0,
-        rawId: String(d.id),
-        hasPhoto: !!(d.entity?.photo && !d.entity.photo.photoEmpty),
-      }))
-      emit('tg:chats', { accountId: currentAccount?.id, chats })
-
-      // Асинхронно качаем аватарки для первых 100 чатов — не блокируем UI
-      loadAvatarsAsync(allDialogs.slice(0, 100))
-      return { ok: true, chats }
+      return { ok: true, chats: firstChats, hasMore: firstPage.length >= PAGE }
     } catch (e) {
       log('get-chats error: ' + e.message)
       return { ok: false, error: e.message, chats: [] }
@@ -353,6 +349,51 @@ async function autoRestoreSession() {
     try { client?.disconnect() } catch(_) {}
     client = null
   }
+}
+
+// v0.87.12: единый маппер dialog → наш формат
+function mapDialog(d) {
+  const entity = d.entity || {}
+  const type = d.isUser ? 'user' : d.isGroup ? 'group' : d.isChannel ? 'channel' : 'user'
+  return {
+    id: `${currentAccount?.id}:${String(d.id)}`,
+    accountId: currentAccount?.id,
+    title: d.title || d.name || 'Без названия',
+    type,
+    lastMessage: d.message?.message || '',
+    lastMessageTs: d.message?.date ? d.message.date * 1000 : 0,
+    unreadCount: d.unreadCount || 0,
+    rawId: String(d.id),
+    hasPhoto: !!(entity.photo && !entity.photo.photoEmpty),
+    // Онлайн-статус только для users
+    isOnline: type === 'user' && entity.status?.className === 'UserStatusOnline',
+    isBot: !!entity.bot,
+    verified: !!entity.verified,
+  }
+}
+
+// v0.87.12: фоновая загрузка остальных страниц — emit с append: true
+async function loadRestPagesAsync(firstPage) {
+  try {
+    const PAGE = 200
+    let last = firstPage[firstPage.length - 1]
+    let offsetDate = last.message?.date || 0
+    let offsetId = last.message?.id || 0
+    let offsetPeer = last.inputEntity || last.entity
+    for (let i = 0; i < 19; i++) {
+      const page = await client.getDialogs({ limit: PAGE, offsetDate, offsetId, offsetPeer })
+      if (!page.length) break
+      const chats = page.map(mapDialog)
+      emit('tg:chats', { accountId: currentAccount?.id, chats, append: true })
+      loadAvatarsAsync(page.slice(0, 50))
+      if (page.length < PAGE) break
+      last = page[page.length - 1]
+      offsetDate = last.message?.date || 0
+      offsetId = last.message?.id || 0
+      offsetPeer = last.inputEntity || last.entity
+    }
+    log('все страницы загружены')
+  } catch (e) { log('loadRestPages err: ' + e.message) }
 }
 
 // v0.87.11: асинхронная загрузка аватарок для чатов — не блокирует UI.
