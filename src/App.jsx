@@ -247,7 +247,7 @@ export default function App() {
   // ── Загрузка при старте ────────────────────────────────────────────────
   useEffect(() => {
     const t0 = performance.now()
-    const log = (l) => { try { window.api?.send('app:log', `[startup] +${Math.round(performance.now()-t0)}ms ${l}`) } catch(_) {} }
+    const log = (l) => { try { window.api?.send('app:log', { level: 'INFO', message: `[startup] +${Math.round(performance.now()-t0)}ms ${l}` }) } catch(_) {} }
     log('useEffect start')
     // Защита: window.api может быть undefined при HMR (React 19)
     if (!window.api?.invoke) {
