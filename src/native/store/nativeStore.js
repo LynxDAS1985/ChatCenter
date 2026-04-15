@@ -90,6 +90,14 @@ export default function useNativeStore() {
       }))
     })
 
+    // v0.87.11: аватарки приходят асинхронно — обновляем chat.avatar
+    addHandler('tg:chat-avatar', ({ chatId, avatarPath }) => {
+      setState(s => ({
+        ...s,
+        chats: s.chats.map(c => c.id === chatId ? { ...c, avatar: avatarPath } : c)
+      }))
+    })
+
     return () => { for (const u of unsubs) try { u() } catch(_) {} }
   }, [])
 

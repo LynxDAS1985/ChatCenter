@@ -45,46 +45,79 @@ export default function InboxMode({ store }) {
       {/* Список чатов */}
       <div style={{
         width: 320, borderRight: '1px solid var(--amoled-border)',
-        overflowY: 'auto', background: 'var(--amoled-surface)'
+        overflowY: 'auto', background: 'var(--amoled-surface)',
+        display: 'flex', flexDirection: 'column'
       }}>
+        <div style={{
+          padding: '10px 14px',
+          fontSize: 12,
+          color: 'var(--amoled-text-dim)',
+          borderBottom: '1px solid var(--amoled-border)',
+          background: 'var(--amoled-bg)',
+          flexShrink: 0,
+        }}>
+          💬 Чатов: {activeAccountChats.length}
+        </div>
         {activeAccountChats.length === 0 ? (
           <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>
             {store.accounts.length === 0 ? 'Нет аккаунтов' : 'Загрузка чатов...'}
           </div>
         ) : (
-          activeAccountChats.map(c => (
+          activeAccountChats.map(c => {
+            // v0.87.11: цвет аватарки-заглушки на основе имени (стабильный hash)
+            const bgColors = ['#e17076', '#eda86c', '#a695e7', '#7bc862', '#65aadd', '#ee7aae', '#6ec9cb']
+            const bgHash = (c.title || '?').split('').reduce((h, ch) => h + ch.charCodeAt(0), 0)
+            const bgColor = bgColors[bgHash % bgColors.length]
+            const initials = (c.title || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('')
+            return (
             <div
               key={c.id}
               onClick={() => store.setActiveChat(c.id)}
               style={{
-                padding: '12px 14px',
+                padding: '10px 12px',
                 cursor: 'pointer',
                 borderBottom: '1px solid var(--amoled-border)',
                 background: store.activeChatId === c.id ? 'var(--amoled-surface-hover)' : 'transparent',
                 transition: 'background 0.1s',
+                display: 'flex',
+                gap: 10,
+                alignItems: 'center',
               }}
               onMouseEnter={e => { if (store.activeChatId !== c.id) e.currentTarget.style.background = 'var(--amoled-surface-hover)' }}
               onMouseLeave={e => { if (store.activeChatId !== c.id) e.currentTarget.style.background = 'transparent' }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {c.title}
-                </div>
-                {c.unreadCount > 0 && (
-                  <div style={{
-                    background: 'var(--amoled-accent)', color: '#fff',
-                    fontSize: 11, padding: '1px 7px', borderRadius: 10, minWidth: 20, textAlign: 'center'
-                  }}>{c.unreadCount}</div>
-                )}
-              </div>
+              {/* Аватарка */}
               <div style={{
-                fontSize: 12, color: 'var(--amoled-text-dim)',
-                marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
+                background: c.avatar ? `url("${c.avatar}") center/cover no-repeat` : bgColor,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontSize: 16, fontWeight: 600
               }}>
-                {c.lastMessage || '—'}
+                {!c.avatar && (initials || '?')}
+              </div>
+              {/* Текст */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {c.title}
+                  </div>
+                  {c.unreadCount > 0 && (
+                    <div style={{
+                      background: 'var(--amoled-accent)', color: '#fff',
+                      fontSize: 11, padding: '1px 7px', borderRadius: 10, minWidth: 20, textAlign: 'center'
+                    }}>{c.unreadCount > 999 ? '999+' : c.unreadCount}</div>
+                  )}
+                </div>
+                <div style={{
+                  fontSize: 12, color: 'var(--amoled-text-dim)',
+                  marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                }}>
+                  {c.lastMessage || '—'}
+                </div>
               </div>
             </div>
-          ))
+            )
+          })
         )}
       </div>
 

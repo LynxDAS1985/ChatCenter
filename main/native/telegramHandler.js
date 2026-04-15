@@ -18,6 +18,7 @@ const API_HASH = '33a9605b6f86a176e240cc141e864bf5'
 let client = null
 let getMainWindowFn = null   // v0.87.4: функция вместо прямой ссылки — mainWindow может быть null в момент init
 let sessionPath = null
+let avatarsDir = null     // v0.87.11: папка для кэша аватарок
 let pendingLogin = null   // { phoneResolve, codeResolve, passwordResolve, reject }
 let currentAccount = null
 
@@ -66,7 +67,9 @@ function formatSeconds(sec) {
 export function initTelegramHandler({ getMainWindow, userDataPath }) {
   getMainWindowFn = getMainWindow
   sessionPath = path.join(userDataPath, 'tg-session.txt')
-  log(`init, session=${sessionPath}`)
+  avatarsDir = path.join(userDataPath, 'tg-avatars')
+  try { fs.mkdirSync(avatarsDir, { recursive: true }) } catch(_) {}
+  log(`init, session=${sessionPath}, avatars=${avatarsDir}`)
 
   // Попытка восстановить сессию при старте
   autoRestoreSession().catch(e => log('autoRestore error: ' + e.message))
@@ -114,11 +117,26 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     return { ok: true }
   })
 
-  ipcMain.handle('tg:get-chats', async (_, { limit = 100 } = {}) => {
+  ipcMain.handle('tg:get-chats', async () => {
     try {
       if (!client) return { ok: false, error: 'Не подключён', chats: [] }
-      const dialogs = await client.getDialogs({ limit })
-      const chats = dialogs.map(d => ({
+      // v0.87.11: загружаем ВСЕ чаты пачками по 200 (GramJS лимит), пока есть ещё
+      const allDialogs = []
+      let offsetDate = 0, offsetId = 0, offsetPeer
+      const PAGE = 200
+      for (let i = 0; i < 20; i++) {  // максимум 20 × 200 = 4000 чатов
+        const page = await client.getDialogs({ limit: PAGE, offsetDate, offsetId, offsetPeer })
+        if (!page.length) break
+        allDialogs.push(...page)
+        if (page.length < PAGE) break
+        const last = page[page.length - 1]
+        offsetDate = last.message?.date || 0
+        offsetId = last.message?.id || 0
+        offsetPeer = last.inputEntity || last.entity
+      }
+      log(`getDialogs загружено ${allDialogs.length} чатов`)
+
+      const chats = allDialogs.map(d => ({
         id: `${currentAccount?.id}:${String(d.id)}`,
         accountId: currentAccount?.id,
         title: d.title || d.name || 'Без названия',
@@ -127,10 +145,15 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
         lastMessageTs: d.message?.date ? d.message.date * 1000 : 0,
         unreadCount: d.unreadCount || 0,
         rawId: String(d.id),
+        hasPhoto: !!(d.entity?.photo && !d.entity.photo.photoEmpty),
       }))
       emit('tg:chats', { accountId: currentAccount?.id, chats })
+
+      // Асинхронно качаем аватарки для первых 100 чатов — не блокируем UI
+      loadAvatarsAsync(allDialogs.slice(0, 100))
       return { ok: true, chats }
     } catch (e) {
+      log('get-chats error: ' + e.message)
       return { ok: false, error: e.message, chats: [] }
     }
   })
@@ -330,6 +353,32 @@ async function autoRestoreSession() {
     try { client?.disconnect() } catch(_) {}
     client = null
   }
+}
+
+// v0.87.11: асинхронная загрузка аватарок для чатов — не блокирует UI.
+// Аватарки кешируются в %APPDATA%/ЦентрЧатов/tg-avatars/{chatId}.jpg.
+// По готовности emit tg:chat-avatar { chatId, avatarPath } — renderer обновит.
+async function loadAvatarsAsync(dialogs) {
+  if (!client || !avatarsDir) return
+  for (const d of dialogs) {
+    try {
+      const entity = d.entity
+      if (!entity?.photo || entity.photo.photoEmpty) continue
+      const chatId = `${currentAccount?.id}:${String(d.id)}`
+      const avatarPath = path.join(avatarsDir, `${String(d.id)}.jpg`)
+      // Если уже есть — сразу шлём в UI
+      if (fs.existsSync(avatarPath)) {
+        emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + avatarPath.replace(/\\/g, '/') })
+        continue
+      }
+      // Скачиваем
+      const buffer = await client.downloadProfilePhoto(entity, { isBig: false })
+      if (!buffer) continue
+      fs.writeFileSync(avatarPath, buffer)
+      emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + avatarPath.replace(/\\/g, '/') })
+    } catch (e) { /* молча — одна аватарка не критична */ }
+  }
+  log(`аватарки загружены`)
 }
 
 function attachMessageListener() {
