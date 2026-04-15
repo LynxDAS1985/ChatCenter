@@ -2,17 +2,19 @@
 import { useState, useEffect } from 'react'
 
 export default function LoginModal({ onClose, startLogin, submitCode, submitPassword, cancelLogin, loginFlow }) {
+  // v0.87.6: ВСЕ useState строго сверху в одном порядке (React правило)
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState('')
+  const [stickyError, setStickyError] = useState('')
+  const [optimisticStep, setOptimisticStep] = useState(null)
 
   // v0.87.5: optimisticStep имеет приоритет — UI мгновенно переключается
   const step = optimisticStep || loginFlow?.step || 'phone'
   const serverError = loginFlow?.error || ''
   // Sticky error: ошибка НЕ исчезает автоматически, только когда пользователь меняет ввод или кликает действие
-  const [stickyError, setStickyError] = useState('')
   useEffect(() => {
     const merged = localError || serverError
     if (merged) setStickyError(merged)
@@ -20,7 +22,6 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
   const error = stickyError
   const waitingForCode = optimisticStep === 'code' && loginFlow?.step !== 'code' && loginFlow?.step !== 'password'
 
-  const [optimisticStep, setOptimisticStep] = useState(null)
   const handlePhone = async () => {
     setBusy(true); setLocalError(''); setStickyError('')
     // v0.87.5: мгновенно переключаем UI на экран кода (не ждём GramJS 5-15 сек)
