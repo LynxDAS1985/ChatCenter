@@ -80,11 +80,17 @@ export default function useNativeStore() {
       })
     })
 
-    addHandler('tg:messages', ({ chatId, messages }) => {
-      setState(s => ({
-        ...s,
-        messages: { ...s.messages, [chatId]: messages }
-      }))
+    addHandler('tg:messages', ({ chatId, messages, append }) => {
+      setState(s => {
+        const existing = s.messages[chatId] || []
+        if (append) {
+          // v0.87.15: дозагрузка старых — добавляем в начало, убираем дубли
+          const existingIds = new Set(existing.map(m => m.id))
+          const newOld = messages.filter(m => !existingIds.has(m.id))
+          return { ...s, messages: { ...s.messages, [chatId]: [...newOld, ...existing] } }
+        }
+        return { ...s, messages: { ...s.messages, [chatId]: messages } }
+      })
     })
 
     addHandler('tg:new-message', ({ chatId, message }) => {
@@ -199,6 +205,11 @@ export default function useNativeStore() {
   }, [])
 
   const markRead = useCallback(async (chatId) => {
+    // v0.87.15: сразу сбрасываем локально (optimistic) — не ждём сеть
+    setState(s => ({
+      ...s,
+      chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount: 0 } : c)
+    }))
     return window.api?.invoke('tg:mark-read', { chatId })
   }, [])
 
@@ -210,8 +221,41 @@ export default function useNativeStore() {
     return window.api?.invoke('tg:get-messages', { chatId, limit })
   }, [])
 
-  const sendMessage = useCallback(async (chatId, text) => {
-    return window.api?.invoke('tg:send-message', { chatId, text })
+  const sendMessage = useCallback(async (chatId, text, replyTo) => {
+    return window.api?.invoke('tg:send-message', { chatId, text, replyTo })
+  }, [])
+
+  // v0.87.15: загрузка более старых сообщений (infinite scroll вверх)
+  const loadOlderMessages = useCallback(async (chatId, beforeId, limit = 50) => {
+    return window.api?.invoke('tg:get-messages', { chatId, limit, offsetId: Number(beforeId) })
+  }, [])
+
+  const deleteMessage = useCallback(async (chatId, messageId, forAll = true) => {
+    const r = await window.api?.invoke('tg:delete-message', { chatId, messageId, forAll })
+    if (r?.ok) {
+      setState(s => ({
+        ...s,
+        messages: { ...s.messages, [chatId]: (s.messages[chatId] || []).filter(m => m.id !== String(messageId)) }
+      }))
+    }
+    return r
+  }, [])
+
+  const editMessage = useCallback(async (chatId, messageId, text) => {
+    const r = await window.api?.invoke('tg:edit-message', { chatId, messageId, text })
+    if (r?.ok) {
+      setState(s => ({
+        ...s,
+        messages: { ...s.messages, [chatId]: (s.messages[chatId] || []).map(m =>
+          m.id === String(messageId) ? { ...m, text, isEdited: true } : m
+        )}
+      }))
+    }
+    return r
+  }, [])
+
+  const downloadMedia = useCallback(async (chatId, messageId) => {
+    return window.api?.invoke('tg:download-media', { chatId, messageId })
   }, [])
 
   const removeAccount = useCallback(async (accountId) => {
@@ -230,7 +274,8 @@ export default function useNativeStore() {
     ...state,
     setMode, setActiveAccount, setActiveChat,
     startLogin, submitCode, submitPassword, cancelLogin,
-    loadChats, loadCachedChats, loadMessages, sendMessage, removeAccount,
+    loadChats, loadCachedChats, loadMessages, loadOlderMessages,
+    sendMessage, deleteMessage, editMessage, downloadMedia, removeAccount,
     markRead, setTyping,
   }
 }

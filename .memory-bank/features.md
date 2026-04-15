@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.14 (15 апреля 2026)
+## Текущая версия: v0.87.15 (15 апреля 2026)
 
 ---
 
@@ -91,6 +91,42 @@
 ---
 
 ## Changelog
+
+### v0.87.15 (15 апреля 2026) — Медиа + Scroll-up + Reply/Edit/Delete + Search в чате + FIX markRead
+- **Проблема — mark-read не сбрасывал счётчик 49**:
+  - IPC звал `client.markAsRead()` но UI ждал emit `tg:read` от GramJS, который приходил задержанный или не приходил.
+  - **Фикс**: сразу optimistic-обновление `chat.unreadCount = 0` в store при клике, не ждём сеть.
+- **Проблема — аватарки у некоторых чатов нет**:
+  - Добавлена детальная статистика в лог `loadAvatarsAsync`: `total=200 hasPhoto=180 noPhoto=20 downloaded=150 cached=30 failed=0`. Теперь в логе сразу видно сколько без фото (это нормально — у некоторых аккаунтов/каналов реально нет аватарки).
+- **Медиа в сообщениях** (`MessageBubble.jsx`):
+  - Маппер `mapMessage` определяет тип: photo / video / audio / file / link / location / contact / poll
+  - IPC `tg:download-media` скачивает медиа через `client.downloadMedia`, кэш в `%APPDATA%/ЦентрЧатов/tg-media/`
+  - Фото автоматически грузятся и показываются inline (картинка в бабле)
+  - Видео/аудио/файлы — клик для скачивания, иконка + имя
+  - Link/location/contact/poll — иконка-заглушка
+- **Scroll-up (infinite scroll вверх)**:
+  - При `scrollTop < 100px` и есть сообщения → `store.loadOlderMessages(chatId, oldestId, 50)`
+  - IPC `tg:get-messages { offsetId }` → emit `tg:messages { append: true }`
+  - Store добавляет старые в начало массива без дублей (Set по id)
+  - Сохраняется позиция скролла — чтобы не прыгало к верху
+- **Reply (ответ на сообщение)**:
+  - Hover на баббл → появляется ↪ кнопка
+  - Клик → панель «↪ Ответ на: ...» над полем ввода
+  - Send с `replyTo: Number(messageId)`
+- **Edit (редактирование своего)**:
+  - Hover на свой баббл → ✏️ кнопка
+  - Клик → текст подставляется в поле, панель «✏️ Редактирование»
+  - Send → `client.editMessage(entity, { message, text })`
+  - Баббл показывает «ред.» метку
+- **Delete (удаление своего)**:
+  - Hover на свой баббл → 🗑 кнопка
+  - Confirm → `client.deleteMessages(entity, [id], { revoke: true })`
+  - Сообщение пропадает из массива
+- **Поиск по сообщениям в открытом чате**:
+  - Кнопка 🔍 в шапке чата → появляется поле
+  - Фильтр `text.toLowerCase().includes(q)` — без API, локально
+  - Счётчик «Найдено: N»
+- **Вынесен MessageBubble.jsx** (109 строк) — чтобы InboxMode не вырос выше лимита.
 
 ### v0.87.14 (15 апреля 2026) — Кэш + Mark as read + Toast + Typing + FIX аватарок
 - **FIX аватарки не видны**: путь содержит кириллицу (`C:/Users/Директор/AppData/.../ЦентрЧатов/`). Chromium рендер не принимает `file://` без URL-кодирования. Фикс — `encodeURI(avatarPath)` перед `file:///`. Теперь видны 44+ реальных аватарок.

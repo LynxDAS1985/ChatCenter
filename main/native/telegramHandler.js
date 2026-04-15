@@ -198,34 +198,73 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     }
   })
 
-  ipcMain.handle('tg:get-messages', async (_, { chatId, limit = 50 }) => {
+  // v0.87.15: messages с типом медиа и возможностью дозагрузки вверх (offsetId)
+  ipcMain.handle('tg:get-messages', async (_, { chatId, limit = 50, offsetId = 0 }) => {
     try {
       if (!client) return { ok: false, error: 'Не подключён', messages: [] }
-      const rawId = String(chatId).split(':').pop()
-      const msgs = await client.getMessages(rawId, { limit })
-      const messages = msgs.map(m => ({
-        id: String(m.id),
-        chatId,
-        senderId: String(m.senderId || ''),
-        senderName: m.sender?.firstName || m.sender?.title || '',
-        text: m.message || '',
-        timestamp: (m.date || 0) * 1000,
-        isOutgoing: !!m.out,
-      })).reverse()  // старые сверху
-      emit('tg:messages', { chatId, messages })
-      return { ok: true, messages }
+      const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      const msgs = await client.getMessages(entity, { limit, offsetId })
+      const messages = msgs.map(m => mapMessage(m, chatId)).reverse()
+      emit('tg:messages', { chatId, messages, append: offsetId > 0 })
+      return { ok: true, messages, hasMore: msgs.length >= limit }
     } catch (e) {
+      log('get-messages err: ' + e.message)
       return { ok: false, error: e.message, messages: [] }
     }
   })
 
-  ipcMain.handle('tg:send-message', async (_, { chatId, text }) => {
+  // v0.87.15: sendMessage с поддержкой reply
+  ipcMain.handle('tg:send-message', async (_, { chatId, text, replyTo }) => {
     try {
       if (!client) return { ok: false, error: 'Не подключён' }
-      const rawId = String(chatId).split(':').pop()
-      const result = await client.sendMessage(rawId, { message: text })
+      const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      const params = { message: text }
+      if (replyTo) params.replyTo = Number(replyTo)
+      const result = await client.sendMessage(entity, params)
       return { ok: true, messageId: String(result.id) }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // v0.87.15: удаление сообщения
+  ipcMain.handle('tg:delete-message', async (_, { chatId, messageId, forAll = true }) => {
+    try {
+      if (!client) return { ok: false }
+      const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      await client.deleteMessages(entity, [Number(messageId)], { revoke: forAll })
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // v0.87.15: редактирование сообщения
+  ipcMain.handle('tg:edit-message', async (_, { chatId, messageId, text }) => {
+    try {
+      if (!client) return { ok: false }
+      const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      await client.editMessage(entity, { message: Number(messageId), text })
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // v0.87.15: скачать медиа сообщения и вернуть file:// путь (кэш в %APPDATA%/ЦентрЧатов/tg-media/)
+  ipcMain.handle('tg:download-media', async (_, { chatId, messageId }) => {
+    try {
+      if (!client) return { ok: false }
+      const mediaDir = path.join(path.dirname(cachePath), 'tg-media')
+      try { fs.mkdirSync(mediaDir, { recursive: true }) } catch(_) {}
+      const rawChat = String(chatId).split(':').pop()
+      const filePath = path.join(mediaDir, `${rawChat}_${messageId}.bin`)
+      if (fs.existsSync(filePath)) {
+        return { ok: true, path: 'file:///' + encodeURI(filePath.replace(/\\/g, '/')) }
+      }
+      const entity = chatEntityMap.get(chatId) || rawChat
+      const msgs = await client.getMessages(entity, { ids: [Number(messageId)] })
+      if (!msgs[0]) return { ok: false, error: 'Сообщение не найдено' }
+      const buf = await client.downloadMedia(msgs[0])
+      if (!buf) return { ok: false, error: 'Нет медиа' }
+      fs.writeFileSync(filePath, buf)
+      return { ok: true, path: 'file:///' + encodeURI(filePath.replace(/\\/g, '/')) }
     } catch (e) {
+      log('download-media err: ' + e.message)
       return { ok: false, error: e.message }
     }
   })
@@ -395,6 +434,42 @@ async function autoRestoreSession() {
   }
 }
 
+// v0.87.15: маппер message → наш формат с поддержкой медиа + reply
+function mapMessage(m, chatId) {
+  const media = m.media
+  let mediaType = null, mediaPreview = null
+  if (media) {
+    const cn = media.className
+    if (cn === 'MessageMediaPhoto') { mediaType = 'photo' }
+    else if (cn === 'MessageMediaDocument') {
+      const mime = media.document?.mimeType || ''
+      if (mime.startsWith('video/')) mediaType = 'video'
+      else if (mime.startsWith('audio/')) mediaType = 'audio'
+      else if (mime.startsWith('image/')) mediaType = 'photo'
+      else mediaType = 'file'
+      mediaPreview = media.document?.attributes?.find(a => a.fileName)?.fileName || 'файл'
+    }
+    else if (cn === 'MessageMediaWebPage') { mediaType = 'link' }
+    else if (cn === 'MessageMediaGeo') { mediaType = 'location' }
+    else if (cn === 'MessageMediaContact') { mediaType = 'contact' }
+    else if (cn === 'MessageMediaPoll') { mediaType = 'poll' }
+    else mediaType = 'other'
+  }
+  return {
+    id: String(m.id),
+    chatId,
+    senderId: String(m.senderId || ''),
+    senderName: m.sender?.firstName || m.sender?.title || '',
+    text: m.message || '',
+    timestamp: (m.date || 0) * 1000,
+    isOutgoing: !!m.out,
+    isEdited: !!m.editDate,
+    mediaType,
+    mediaPreview,
+    replyToId: m.replyTo?.replyToMsgId ? String(m.replyTo.replyToMsgId) : null,
+  }
+}
+
 // v0.87.12: единый маппер dialog → наш формат
 function mapDialog(d) {
   const entity = d.entity || {}
@@ -455,25 +530,27 @@ async function loadRestPagesAsync(firstPage) {
 // По готовности emit tg:chat-avatar { chatId, avatarPath } — renderer обновит.
 async function loadAvatarsAsync(dialogs) {
   if (!client || !avatarsDir) return
+  const stats = { total: dialogs.length, hasPhoto: 0, noPhoto: 0, downloaded: 0, cached: 0, failed: 0 }
   for (const d of dialogs) {
     try {
       const entity = d.entity
-      if (!entity?.photo || entity.photo.photoEmpty) continue
+      if (!entity?.photo || entity.photo.photoEmpty) { stats.noPhoto++; continue }
+      stats.hasPhoto++
       const chatId = `${currentAccount?.id}:${String(d.id)}`
       const avatarPath = path.join(avatarsDir, `${String(d.id)}.jpg`)
-      // Если уже есть — сразу шлём в UI
       if (fs.existsSync(avatarPath)) {
+        stats.cached++
         emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
         continue
       }
-      // Скачиваем
       const buffer = await client.downloadProfilePhoto(entity, { isBig: false })
-      if (!buffer) continue
+      if (!buffer) { stats.failed++; continue }
       fs.writeFileSync(avatarPath, buffer)
+      stats.downloaded++
       emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
-    } catch (e) { /* молча — одна аватарка не критична */ }
+    } catch (e) { stats.failed++; log(`avatar err для ${d.title}: ${e.message}`) }
   }
-  log(`аватарки загружены`)
+  log(`аватарки: total=${stats.total} hasPhoto=${stats.hasPhoto} noPhoto=${stats.noPhoto} downloaded=${stats.downloaded} cached=${stats.cached} failed=${stats.failed}`)
 }
 
 function attachMessageListener() {
@@ -485,18 +562,7 @@ function attachMessageListener() {
         if (!m) return
         const chatIdRaw = String(m.chatId || m.peerId?.userId || m.peerId?.chatId || m.peerId?.channelId || '')
         const chatId = `${currentAccount?.id}:${chatIdRaw}`
-        emit('tg:new-message', {
-          chatId,
-          message: {
-            id: String(m.id),
-            chatId,
-            senderId: String(m.senderId || ''),
-            senderName: m.sender?.firstName || m.sender?.title || '',
-            text: m.message || '',
-            timestamp: (m.date || 0) * 1000,
-            isOutgoing: !!m.out,
-          }
-        })
+        emit('tg:new-message', { chatId, message: mapMessage(m, chatId) })
       } catch (e) { log('new-message handler err: ' + e.message) }
     }, new NewMessage({}))
 

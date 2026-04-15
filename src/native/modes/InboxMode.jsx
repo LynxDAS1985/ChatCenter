@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { List } from 'react-window'
 import ChatListItem from '../components/ChatListItem.jsx'
+import MessageBubble from '../components/MessageBubble.jsx'
 
 const ITEM_HEIGHT = 64
 
@@ -87,6 +88,59 @@ export default function InboxMode({ store }) {
   // v0.87.14: typing индикатор от собеседника
   const isTyping = store.typing?.[store.activeChatId]
 
+  // v0.87.15: reply / edit / search / scroll-up
+  const [replyTo, setReplyTo] = useState(null)
+  const [editTarget, setEditTarget] = useState(null)
+  const [msgSearch, setMsgSearch] = useState('')
+  const [showMsgSearch, setShowMsgSearch] = useState(false)
+  const msgsScrollRef = useRef(null)
+  const loadingOlderRef = useRef(false)
+
+  const visibleMessages = useMemo(() => {
+    if (!msgSearch.trim()) return activeMessages
+    const q = msgSearch.toLowerCase()
+    return activeMessages.filter(m => (m.text || '').toLowerCase().includes(q))
+  }, [activeMessages, msgSearch])
+
+  const getMessage = (chatId, msgId) => (store.messages[chatId] || []).find(m => m.id === String(msgId))
+
+  const handleScroll = async (e) => {
+    if (loadingOlderRef.current) return
+    if (e.target.scrollTop < 100 && activeMessages.length > 0) {
+      loadingOlderRef.current = true
+      const oldest = activeMessages[0]
+      const prevHeight = e.target.scrollHeight
+      await store.loadOlderMessages(store.activeChatId, oldest.id, 50)
+      setTimeout(() => {
+        if (msgsScrollRef.current) {
+          msgsScrollRef.current.scrollTop = msgsScrollRef.current.scrollHeight - prevHeight
+        }
+        loadingOlderRef.current = false
+      }, 100)
+    }
+  }
+
+  const handleDelete = async (m) => {
+    if (!confirm('Удалить сообщение у всех?')) return
+    await store.deleteMessage(store.activeChatId, m.id, true)
+  }
+
+  const handleReplySend = async () => {
+    if (!input.trim() || sending) return
+    setSending(true)
+    const text = input.trim()
+    setInput('')
+    try {
+      if (editTarget) {
+        await store.editMessage(store.activeChatId, editTarget.id, text)
+        setEditTarget(null)
+      } else {
+        await store.sendMessage(store.activeChatId, text, replyTo?.id)
+        setReplyTo(null)
+      }
+    } finally { setSending(false) }
+  }
+
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
       {/* Список чатов */}
@@ -144,45 +198,66 @@ export default function InboxMode({ store }) {
           </div>
         ) : (
           <>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-surface)', fontWeight: 600 }}>
-              {activeChat.title}
-              {isTyping
-                ? <span style={{ color: 'var(--amoled-accent)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>✍️ печатает...</span>
-                : activeChat.isOnline && <span style={{ color: 'var(--amoled-success)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>● онлайн</span>
-              }
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-surface)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+              <div style={{ flex: 1 }}>
+                {activeChat.title}
+                {isTyping
+                  ? <span style={{ color: 'var(--amoled-accent)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>✍️ печатает...</span>
+                  : activeChat.isOnline && <span style={{ color: 'var(--amoled-success)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>● онлайн</span>
+                }
+              </div>
+              <button
+                onClick={() => { setShowMsgSearch(v => !v); if (showMsgSearch) setMsgSearch('') }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)', cursor: 'pointer', fontSize: 16, padding: '4px 8px' }}
+                title="Поиск в чате (Ctrl+F)"
+              >🔍</button>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {activeMessages.length === 0 ? (
-                <div style={{ color: 'var(--amoled-text-dim)', textAlign: 'center', padding: 20 }}>Нет сообщений</div>
-              ) : activeMessages.map(m => (
-                <div key={m.id} style={{
-                  alignSelf: m.isOutgoing ? 'flex-end' : 'flex-start',
-                  maxWidth: '65%', padding: '8px 12px', borderRadius: 12,
-                  background: m.isOutgoing ? 'var(--amoled-accent)' : 'var(--amoled-surface-hover)',
-                  color: m.isOutgoing ? '#fff' : 'var(--amoled-text)',
-                  fontSize: 14, wordBreak: 'break-word',
-                }}>
-                  {!m.isOutgoing && m.senderName && (
-                    <div style={{ fontSize: 11, color: 'var(--amoled-text-dim)', marginBottom: 2 }}>{m.senderName}</div>
-                  )}
-                  <div>{m.text || '[медиа]'}</div>
-                  <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2, textAlign: 'right' }}>
-                    {new Date(m.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
+            {showMsgSearch && (
+              <div style={{ padding: 8, borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-surface)' }}>
+                <input type="text" placeholder="Поиск в этом чате..." value={msgSearch}
+                  onChange={e => setMsgSearch(e.target.value)} autoFocus style={{ width: '100%', fontSize: 13 }} />
+                {msgSearch && <div style={{ marginTop: 4, fontSize: 11, color: 'var(--amoled-text-dim)' }}>Найдено: {visibleMessages.length}</div>}
+              </div>
+            )}
+            <div ref={msgsScrollRef} onScroll={handleScroll}
+              style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {visibleMessages.length === 0 ? (
+                <div style={{ color: 'var(--amoled-text-dim)', textAlign: 'center', padding: 20 }}>
+                  {msgSearch ? 'Ничего не найдено' : 'Нет сообщений'}
                 </div>
+              ) : visibleMessages.map(m => (
+                <MessageBubble
+                  key={m.id} m={m} chatId={store.activeChatId}
+                  onReply={setReplyTo}
+                  onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
+                  onDelete={handleDelete}
+                  downloadMedia={store.downloadMedia}
+                  getMessage={getMessage}
+                />
               ))}
             </div>
+            {/* Reply / Edit панель */}
+            {(replyTo || editTarget) && (
+              <div style={{ padding: '6px 12px', background: 'var(--amoled-surface-hover)', borderTop: '1px solid var(--amoled-border)', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                <span style={{ color: 'var(--amoled-accent)' }}>{editTarget ? '✏️ Редактирование' : '↪ Ответ на'}:</span>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.7 }}>
+                  {(editTarget || replyTo).text?.slice(0, 80) || '[медиа]'}
+                </span>
+                <button onClick={() => { setReplyTo(null); setEditTarget(null); setInput('') }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)', cursor: 'pointer' }}>✕</button>
+              </div>
+            )}
             <div style={{ padding: 12, borderTop: '1px solid var(--amoled-border)', background: 'var(--amoled-surface)', display: 'flex', gap: 8 }}>
               <input
                 value={input}
                 onChange={e => handleInputChange(e.target.value)}
-                onKeyDown={e => { if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim()) handleSend() }}
-                placeholder="Введите сообщение..."
+                onKeyDown={e => { if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim()) handleReplySend() }}
+                placeholder={editTarget ? 'Отредактируйте сообщение...' : replyTo ? 'Ответ...' : 'Введите сообщение...'}
                 disabled={sending}
                 style={{ flex: 1 }}
               />
-              <button className="native-btn" onClick={handleSend} disabled={sending || !input.trim()}>
-                {sending ? '...' : 'Отпр.'}
+              <button className="native-btn" onClick={handleReplySend} disabled={sending || !input.trim()}>
+                {sending ? '...' : editTarget ? '✓' : 'Отпр.'}
               </button>
             </div>
           </>
