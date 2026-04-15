@@ -155,9 +155,20 @@ export default function useNativeStore() {
       }
     })
 
-    // v0.87.14: read receipts — сбрасываем unread для чата
-    addHandler('tg:read', ({ chatId, outgoing, stillUnread }) => {
-      if (outgoing) return  // пока не отмечаем отдельно исходящие прочитанными
+    addHandler('tg:read', ({ chatId, outgoing, stillUnread, maxId }) => {
+      if (outgoing) {
+        // v0.87.17: собеседник прочитал наши сообщения до maxId → ставим isRead=true
+        setState(s => ({
+          ...s,
+          messages: {
+            ...s.messages,
+            [chatId]: (s.messages[chatId] || []).map(m =>
+              m.isOutgoing && Number(m.id) <= maxId ? { ...m, isRead: true } : m
+            )
+          }
+        }))
+        return
+      }
       setState(s => ({
         ...s,
         chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount: stillUnread || 0 } : c)
@@ -232,6 +243,14 @@ export default function useNativeStore() {
     return window.api?.invoke('tg:pin', { chatId, messageId, unpin })
   }, [])
 
+  const getPinnedMessage = useCallback(async (chatId) => {
+    return window.api?.invoke('tg:get-pinned', { chatId })
+  }, [])
+
+  const refreshAvatar = useCallback(async (chatId) => {
+    return window.api?.invoke('tg:refresh-avatar', { chatId })
+  }, [])
+
   const setTyping = useCallback(async (chatId) => {
     return window.api?.invoke('tg:set-typing', { chatId })
   }, [])
@@ -295,6 +314,7 @@ export default function useNativeStore() {
     startLogin, submitCode, submitPassword, cancelLogin,
     loadChats, loadCachedChats, loadMessages, loadOlderMessages,
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
+    getPinnedMessage, refreshAvatar,
     downloadMedia, removeAccount, markRead, setTyping,
   }
 }

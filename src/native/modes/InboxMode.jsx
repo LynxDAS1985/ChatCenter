@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useRef } from 'react'
 import { List } from 'react-window'
 import ChatListItem from '../components/ChatListItem.jsx'
 import MessageBubble from '../components/MessageBubble.jsx'
+import ForwardPicker from '../components/ForwardPicker.jsx'
 
 const ITEM_HEIGHT = 64
 
@@ -96,6 +97,34 @@ export default function InboxMode({ store }) {
   const msgsScrollRef = useRef(null)
   const loadingOlderRef = useRef(false)
 
+  // v0.87.17: модалка forward + тост + закреплённое сообщение
+  const [forwardTarget, setForwardTarget] = useState(null)
+  const [toast, setToast] = useState(null)
+  const [pinnedMsg, setPinnedMsg] = useState(null)
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  // Загрузка закреплённого при смене чата
+  useEffect(() => {
+    setPinnedMsg(null)
+    if (!store.activeChatId) return
+    store.getPinnedMessage?.(store.activeChatId).then(r => {
+      if (r?.ok && r.message) setPinnedMsg(r.message)
+    })
+  }, [store.activeChatId])
+
+  // v0.87.17: догружаем аватарки для активных чатов без photo (для каналов)
+  useEffect(() => {
+    if (!store.activeChatId) return
+    const chat = store.chats.find(c => c.id === store.activeChatId)
+    if (chat && !chat.avatar && chat.hasPhoto !== false) {
+      store.refreshAvatar?.(store.activeChatId)
+    }
+  }, [store.activeChatId])
+
   const visibleMessages = useMemo(() => {
     if (!msgSearch.trim()) return activeMessages
     const q = msgSearch.toLowerCase()
@@ -132,23 +161,26 @@ export default function InboxMode({ store }) {
     }
   }
 
-  // v0.87.16: вставка из буфера (скриншот Ctrl+V)
+  // v0.87.17: Ctrl+V вставка картинки (только если есть изображение в буфере)
   const handlePaste = async (e) => {
     if (!store.activeChatId) return
-    for (const item of e.clipboardData?.items || []) {
-      if (item.type.startsWith('image/')) {
-        const blob = item.getAsFile()
-        if (!blob) continue
-        const arrayBuffer = await blob.arrayBuffer()
-        // Сохраняем во временный файл + отправляем
-        const r = await window.api?.invoke('tg:send-clipboard-image', {
-          chatId: store.activeChatId,
-          data: Array.from(new Uint8Array(arrayBuffer)),
-          ext: blob.type.split('/')[1] || 'png',
-        })
-        if (!r?.ok) console.error('paste send failed', r?.error)
-        e.preventDefault()
-      }
+    const items = Array.from(e.clipboardData?.items || [])
+    const imgItem = items.find(i => i.type.startsWith('image/'))
+    if (!imgItem) return  // не картинка — обычная вставка текста, не трогаем
+    e.preventDefault()
+    const blob = imgItem.getAsFile()
+    if (!blob) { showToast('Не удалось получить картинку из буфера', 'error'); return }
+    try {
+      const arrayBuffer = await blob.arrayBuffer()
+      const r = await window.api?.invoke('tg:send-clipboard-image', {
+        chatId: store.activeChatId,
+        data: Array.from(new Uint8Array(arrayBuffer)),
+        ext: blob.type.split('/')[1] || 'png',
+      })
+      if (r?.ok) showToast('📎 Картинка отправлена', 'success')
+      else showToast('✗ Ошибка: ' + (r?.error || 'неизвестно'), 'error')
+    } catch (err) {
+      showToast('✗ Ошибка: ' + err.message, 'error')
     }
   }
 
@@ -173,19 +205,22 @@ export default function InboxMode({ store }) {
     await store.deleteMessage(store.activeChatId, m.id, true)
   }
 
-  // v0.87.16: forward — простой prompt с выбором чата по названию
-  const handleForward = async (m) => {
-    const target = prompt('Название чата куда переслать:')
-    if (!target) return
-    const chat = store.chats.find(c => (c.title || '').toLowerCase().includes(target.toLowerCase()))
-    if (!chat) { alert('Чат не найден'); return }
-    const r = await store.forwardMessage(store.activeChatId, chat.id, m.id)
-    alert(r?.ok ? `Переслано в «${chat.title}»` : 'Ошибка: ' + (r?.error || 'неизвестно'))
+  // v0.87.17: forward через модалку с аватарками
+  const handleForward = (m) => setForwardTarget(m)
+
+  const handleForwardSelect = async (targetChat) => {
+    const m = forwardTarget
+    setForwardTarget(null)
+    const r = await store.forwardMessage(store.activeChatId, targetChat.id, m.id)
+    showToast(r?.ok ? `✓ Переслано в «${targetChat.title}»` : '✗ ' + (r?.error || 'Ошибка'),
+      r?.ok ? 'success' : 'error')
   }
 
   const handlePin = async (m) => {
     const r = await store.pinMessage(store.activeChatId, m.id, false)
-    alert(r?.ok ? 'Закреплено' : 'Ошибка: ' + (r?.error || 'нет прав?'))
+    showToast(r?.ok ? '📌 Закреплено' : '✗ ' + (r?.error || 'Ошибка'),
+      r?.ok ? 'success' : 'error')
+    if (r?.ok) setPinnedMsg(m)
   }
 
   const handleReplySend = async () => {
@@ -275,6 +310,23 @@ export default function InboxMode({ store }) {
                 title="Поиск в чате (Ctrl+F)"
               >🔍</button>
             </div>
+            {/* v0.87.17: закреплённое сообщение сверху */}
+            {pinnedMsg && (
+              <div style={{
+                padding: '8px 16px', borderBottom: '1px solid var(--amoled-border)',
+                background: 'rgba(42,171,238,0.08)', display: 'flex', gap: 10, alignItems: 'center'
+              }}>
+                <span style={{ fontSize: 14 }}>📌</span>
+                <div style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ color: 'var(--amoled-accent)', fontWeight: 600 }}>Закреплённое</div>
+                  <div style={{ color: 'var(--amoled-text-dim)' }}>{pinnedMsg.text?.slice(0, 100) || '[медиа]'}</div>
+                </div>
+                <button onClick={() => setPinnedMsg(null)} style={{
+                  background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)',
+                  cursor: 'pointer', fontSize: 14,
+                }} title="Скрыть">✕</button>
+              </div>
+            )}
             {showMsgSearch && (
               <div style={{ padding: 8, borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-surface)' }}>
                 <input type="text" placeholder="Поиск в этом чате..." value={msgSearch}
@@ -344,6 +396,18 @@ export default function InboxMode({ store }) {
           </>
         )}
       </div>
+      {/* v0.87.17: модалка forward */}
+      {forwardTarget && (
+        <ForwardPicker
+          chats={store.chats.filter(c => c.id !== store.activeChatId)}
+          onSelect={handleForwardSelect}
+          onClose={() => setForwardTarget(null)}
+        />
+      )}
+      {/* v0.87.17: toast */}
+      {toast && (
+        <div className={`native-toast native-toast--${toast.type}`}>{toast.message}</div>
+      )}
     </div>
   )
 }

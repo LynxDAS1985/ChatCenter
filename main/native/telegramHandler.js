@@ -178,17 +178,20 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
 
   // v0.87.16: отправка картинки из буфера обмена (Ctrl+V)
   ipcMain.handle('tg:send-clipboard-image', async (_, { chatId, data, ext }) => {
+    log(`send-clipboard-image: chat=${chatId} bytes=${data?.length} ext=${ext}`)
     try {
-      if (!client) return { ok: false }
+      if (!client) { log('send-clipboard: client null'); return { ok: false, error: 'Не подключён' } }
       const tmpDir = path.join(path.dirname(cachePath), 'tg-tmp')
       try { fs.mkdirSync(tmpDir, { recursive: true }) } catch(_) {}
       const tmpFile = path.join(tmpDir, `clip_${Date.now()}.${ext}`)
       fs.writeFileSync(tmpFile, Buffer.from(data))
+      log(`send-clipboard: saved tmp ${tmpFile}`)
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
       await client.sendFile(entity, { file: tmpFile })
+      log(`send-clipboard: sent OK`)
       try { fs.unlinkSync(tmpFile) } catch(_) {}
       return { ok: true }
-    } catch (e) { return { ok: false, error: e.message } }
+    } catch (e) { log('send-clipboard err: ' + e.message); return { ok: false, error: e.message } }
   })
 
   ipcMain.handle('tg:send-file', async (_, { chatId, filePath, caption }) => {
@@ -203,35 +206,77 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     }
   })
 
-  // v0.87.16: пересылка сообщения
   ipcMain.handle('tg:forward', async (_, { fromChatId, toChatId, messageId }) => {
+    log(`forward: ${fromChatId} → ${toChatId} msgId=${messageId}`)
     try {
-      if (!client) return { ok: false }
+      if (!client) return { ok: false, error: 'Не подключён' }
       const fromEntity = chatEntityMap.get(fromChatId) || String(fromChatId).split(':').pop()
       const toEntity = chatEntityMap.get(toChatId) || String(toChatId).split(':').pop()
       await client.forwardMessages(toEntity, { messages: [Number(messageId)], fromPeer: fromEntity })
+      log(`forward: OK`)
       return { ok: true }
-    } catch (e) { return { ok: false, error: e.message } }
+    } catch (e) { log('forward err: ' + e.message); return { ok: false, error: e.message } }
   })
 
-  // v0.87.16: закрепить / открепить сообщение
   ipcMain.handle('tg:pin', async (_, { chatId, messageId, unpin = false }) => {
+    log(`pin: chat=${chatId} msg=${messageId} unpin=${unpin}`)
     try {
-      if (!client) return { ok: false }
+      if (!client) return { ok: false, error: 'Не подключён' }
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
-      await client.pinMessage(entity, Number(messageId), { notify: false, pmOneside: false })
+      if (unpin) {
+        await client.unpinMessage(entity, Number(messageId))
+        log('pin: unpin OK')
+      } else {
+        await client.pinMessage(entity, Number(messageId), { notify: false, pmOneside: false })
+        log('pin: OK')
+      }
       return { ok: true }
     } catch (e) {
-      // Для unpin используется unpinMessage
-      if (unpin) {
-        try {
-          const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
-          await client.unpinMessage(entity, Number(messageId))
-          return { ok: true }
-        } catch(e2) { return { ok: false, error: e2.message } }
+      log('pin err: ' + e.message)
+      // CHAT_ADMIN_REQUIRED — в канале нужны права админа
+      if (/CHAT_ADMIN_REQUIRED/i.test(e.message)) {
+        return { ok: false, error: 'Нет прав админа для закрепления в этом чате' }
       }
       return { ok: false, error: e.message }
     }
+  })
+
+  // v0.87.17: получить закреплённое сообщение
+  ipcMain.handle('tg:get-pinned', async (_, { chatId }) => {
+    try {
+      if (!client) return { ok: false, message: null }
+      const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      const res = await client.invoke(new Api.messages.Search({
+        peer: entity,
+        q: '',
+        filter: new Api.InputMessagesFilterPinned(),
+        minDate: 0, maxDate: 0, offsetId: 0, addOffset: 0, limit: 1, maxId: 0, minId: 0, hash: 0,
+      }))
+      const msgs = (res.messages || []).filter(m => m.className !== 'MessageEmpty')
+      if (!msgs[0]) return { ok: true, message: null }
+      return { ok: true, message: mapMessage(msgs[0], chatId) }
+    } catch (e) { return { ok: false, error: e.message, message: null } }
+  })
+
+  // v0.87.17: дозагрузка photo для конкретной entity (для каналов без photo в getDialogs)
+  ipcMain.handle('tg:refresh-avatar', async (_, { chatId }) => {
+    try {
+      if (!client) return { ok: false }
+      const entity = chatEntityMap.get(chatId)
+      if (!entity) return { ok: false, error: 'нет entity' }
+      const rawId = String(chatId).split(':').pop()
+      const avatarPath = path.join(avatarsDir, `${rawId}.jpg`)
+      if (fs.existsSync(avatarPath)) {
+        emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
+        return { ok: true }
+      }
+      const buffer = await client.downloadProfilePhoto(entity, { isBig: false })
+      if (!buffer) { log(`refresh-avatar ${chatId}: нет photo`); return { ok: false, error: 'нет фото' } }
+      fs.writeFileSync(avatarPath, buffer)
+      emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
+      log(`refresh-avatar ${chatId}: скачано`)
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 
   // v0.87.14: отправка "печатает..." индикатора
@@ -278,8 +323,23 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       if (!client) return { ok: false, error: 'Не подключён', messages: [] }
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
       const msgs = await client.getMessages(entity, { limit, offsetId })
-      const messages = msgs.map(m => mapMessage(m, chatId)).reverse()
-      emit('tg:messages', { chatId, messages, append: offsetId > 0 })
+      // v0.87.17: пытаемся узнать max outgoing read через getFullEntity (для галочек)
+      try {
+        const full = await client.invoke(
+          entity.className === 'InputPeerUser' || entity.userId
+            ? new Api.users.GetFullUser({ id: entity })
+            : new Api.channels.GetFullChannel({ channel: entity })
+        )
+        const readOutboxMaxId = Number(full.fullUser?.pFlags?.readOutboxMaxId || full.fullChat?.readOutboxMaxId || 0)
+        if (readOutboxMaxId) maxOutgoingRead.set(chatId, readOutboxMaxId)
+      } catch(_) {}
+      const readUpTo = maxOutgoingRead.get(chatId) || 0
+      const messages = msgs.map(m => {
+        const mapped = mapMessage(m, chatId)
+        if (mapped.isOutgoing) mapped.isRead = Number(mapped.id) <= readUpTo
+        return mapped
+      }).reverse()
+      emit('tg:messages', { chatId, messages, append: offsetId > 0, readUpTo })
       return { ok: true, messages, hasMore: msgs.length >= limit }
     } catch (e) {
       log('get-messages err: ' + e.message)
@@ -508,6 +568,9 @@ async function autoRestoreSession() {
   }
 }
 
+// v0.87.17: maxOutgoingReadId по чатам — чтобы определять статус прочитанности наших сообщений
+const maxOutgoingRead = new Map()  // chatId → maxId
+
 // v0.87.15: маппер message → наш формат с поддержкой медиа + reply
 function mapMessage(m, chatId) {
   const media = m.media
@@ -662,12 +725,14 @@ function attachMessageListener() {
           const isTyping = update.action?.className === 'SendMessageTypingAction'
           emit('tg:typing', { chatId, userId: userIdRaw, typing: isTyping })
         }
-        // Read receipts (собеседник прочитал наши сообщения)
+        // Read receipts (собеседник прочитал наши сообщения) — для галочек ✓✓
         if (cn === 'UpdateReadHistoryOutbox' || cn === 'UpdateReadChannelOutbox') {
           const chatIdRaw = String(update.peer?.userId || update.peer?.chatId || update.channelId || '')
           const chatId = `${currentAccount?.id}:${chatIdRaw}`
           const maxId = Number(update.maxId || 0)
+          maxOutgoingRead.set(chatId, Math.max(maxOutgoingRead.get(chatId) || 0, maxId))
           emit('tg:read', { chatId, maxId, outgoing: true })
+          log(`outgoing read: chat=${chatId} maxId=${maxId} (собеседник прочитал наши до этого id)`)
         }
         // Read inbox (мы прочитали)
         if (cn === 'UpdateReadHistoryInbox' || cn === 'UpdateReadChannelInbox') {

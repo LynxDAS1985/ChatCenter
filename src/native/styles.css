@@ -359,6 +359,29 @@
   line-height: 1.4;
 }
 
+/* v0.87.17: toast уведомления */
+.native-toast {
+  position: fixed;
+  bottom: 20px; right: 20px;
+  padding: 12px 18px;
+  background: var(--amoled-surface);
+  border: 1px solid var(--amoled-border);
+  border-left: 4px solid var(--amoled-accent);
+  border-radius: 8px;
+  color: var(--amoled-text);
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  z-index: 10000;
+  animation: native-toast-in 0.3s ease;
+  max-width: 400px;
+}
+.native-toast--error { border-left-color: var(--amoled-danger); }
+.native-toast--success { border-left-color: var(--amoled-success); }
+@keyframes native-toast-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 @keyframes native-shake {
   0%, 100% { transform: translateX(0); }
   20% { transform: translateX(-6px); }

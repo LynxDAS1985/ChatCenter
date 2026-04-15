@@ -92,6 +92,12 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
         <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2, textAlign: 'right' }}>
           {m.isEdited && <span style={{ marginRight: 4 }}>ред.</span>}
           {new Date(m.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
+          {/* v0.87.17: галочки прочитанности (только для исходящих) */}
+          {m.isOutgoing && (
+            <span style={{ marginLeft: 4, fontSize: 11 }} title={m.isRead ? 'Прочитано' : 'Отправлено'}>
+              {m.isRead ? '✓✓' : '✓'}
+            </span>
+          )}
         </div>
       </div>
       {/* Контекст-меню (при hover) */}
