@@ -199,29 +199,79 @@
   line-height: 1.5;
 }
 
+/* v0.87.5: плавные красивые кнопки с ripple + hover + press */
 .native-btn {
-  padding: 10px 20px;
-  border-radius: 8px;
+  position: relative;
+  padding: 11px 20px;
+  border-radius: 10px;
   background-color: var(--amoled-accent);
   color: #fff;
   font-size: 14px;
   font-weight: 500;
-  transition: background-color 0.15s;
+  letter-spacing: 0.02em;
+  transition: background-color 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.native-btn:hover {
+.native-btn:hover:not(:disabled) {
   background-color: var(--amoled-accent-hover);
+  box-shadow: 0 4px 12px rgba(42, 171, 238, 0.25);
+  transform: translateY(-1px);
+}
+
+.native-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  transition-duration: 0.05s;
+}
+
+.native-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.native-btn:focus-visible {
+  outline: 2px solid var(--amoled-accent);
+  outline-offset: 2px;
+}
+
+/* Ripple-эффект при клике */
+.native-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 0; height: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.35);
+  transform: translate(-50%, -50%);
+  transition: width 0.5s ease, height 0.5s ease, opacity 0.5s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.native-btn:active::after {
+  width: 220%;
+  height: 220%;
+  opacity: 0;
+  transition: width 0s, height 0s, opacity 0s;
 }
 
 .native-btn--ghost {
   background-color: transparent;
   border: 1px solid var(--amoled-border);
   color: var(--amoled-text);
+  box-shadow: none;
 }
 
-.native-btn--ghost:hover {
+.native-btn--ghost:hover:not(:disabled) {
   background-color: var(--amoled-surface-hover);
   border-color: var(--amoled-accent);
+  box-shadow: 0 2px 8px rgba(42, 171, 238, 0.15);
 }
 
 .native-btn--danger {
@@ -262,11 +312,33 @@
   text-align: center;
 }
 
+/* v0.87.5: sticky ошибка — не обрезается, с иконкой, плавное появление */
 .native-login__error {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background-color: rgba(255, 59, 48, 0.1);
-  color: var(--amoled-danger);
+  padding: 12px 14px;
+  border-radius: 10px;
+  background-color: rgba(255, 59, 48, 0.12);
+  color: #ff6b6b;
   font-size: 13px;
-  border: 1px solid rgba(255, 59, 48, 0.3);
+  line-height: 1.45;
+  border: 1px solid rgba(255, 59, 48, 0.35);
+  word-wrap: break-word;
+  animation: native-shake 0.4s ease;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.native-login__error::before {
+  content: '⚠️';
+  font-size: 16px;
+  flex-shrink: 0;
+  line-height: 1.3;
+}
+
+@keyframes native-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
 }

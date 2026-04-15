@@ -1,5 +1,5 @@
 // v0.87.0: Экран авторизации Telegram (phone → code → 2FA)
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function LoginModal({ onClose, startLogin, submitCode, submitPassword, cancelLogin, loginFlow }) {
   const [phone, setPhone] = useState('')
@@ -8,21 +8,38 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState('')
 
-  const step = loginFlow?.step || 'phone'
+  // v0.87.5: optimisticStep имеет приоритет — UI мгновенно переключается
+  const step = optimisticStep || loginFlow?.step || 'phone'
   const serverError = loginFlow?.error || ''
-  const error = localError || serverError
+  // Sticky error: ошибка НЕ исчезает автоматически, только когда пользователь меняет ввод или кликает действие
+  const [stickyError, setStickyError] = useState('')
+  useEffect(() => {
+    const merged = localError || serverError
+    if (merged) setStickyError(merged)
+  }, [localError, serverError])
+  const error = stickyError
+  const waitingForCode = optimisticStep === 'code' && loginFlow?.step !== 'code' && loginFlow?.step !== 'password'
 
+  const [optimisticStep, setOptimisticStep] = useState(null)
   const handlePhone = async () => {
-    setBusy(true); setLocalError('')
+    setBusy(true); setLocalError(''); setStickyError('')
+    // v0.87.5: мгновенно переключаем UI на экран кода (не ждём GramJS 5-15 сек)
+    setOptimisticStep('code')
     try {
       const r = await startLogin(phone.trim())
-      if (!r?.ok) setLocalError(r?.error || 'Ошибка отправки кода')
-    } catch (e) { setLocalError(e.message) }
+      if (!r?.ok) {
+        setOptimisticStep(null)
+        setLocalError(r?.error || 'Ошибка отправки кода')
+      }
+    } catch (e) {
+      setOptimisticStep(null)
+      setLocalError(e.message)
+    }
     finally { setBusy(false) }
   }
 
   const handleCode = async () => {
-    setBusy(true); setLocalError('')
+    setBusy(true); setLocalError(''); setStickyError('')
     try {
       const r = await submitCode(code.trim())
       if (!r?.ok) setLocalError(r?.error || 'Неверный код')
@@ -32,7 +49,7 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
   }
 
   const handlePassword = async () => {
-    setBusy(true); setLocalError('')
+    setBusy(true); setLocalError(''); setStickyError('')
     try {
       const r = await submitPassword(password)
       if (!r?.ok) setLocalError(r?.error || 'Неверный пароль')
@@ -78,22 +95,24 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
           <>
             <div className="native-login__title">Введите код</div>
             <div className="native-login__subtitle">
-              Код отправлен в Telegram на номер {loginFlow?.phone || phone}
+              {waitingForCode
+                ? '⏳ Отправляем код в Telegram...'
+                : `Код отправлен в Telegram на номер ${loginFlow?.phone || phone}`}
             </div>
             <input
               type="text"
-              placeholder="12345"
+              placeholder={waitingForCode ? 'Ждите...' : '12345'}
               value={code}
               onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
               maxLength={6}
-              disabled={busy}
+              disabled={busy || waitingForCode}
               autoFocus
-              onKeyDown={e => e.key === 'Enter' && !busy && code.trim() && handleCode()}
-              style={{ fontSize: '24px', textAlign: 'center', letterSpacing: '0.4em' }}
+              onKeyDown={e => e.key === 'Enter' && !busy && !waitingForCode && code.trim() && handleCode()}
+              style={{ fontSize: '24px', textAlign: 'center', letterSpacing: '0.4em', opacity: waitingForCode ? 0.5 : 1 }}
             />
             {error && <div className="native-login__error">{error}</div>}
-            <button className="native-btn" onClick={handleCode} disabled={busy || !code.trim()}>
-              {busy ? 'Проверка…' : 'Подтвердить'}
+            <button className="native-btn" onClick={handleCode} disabled={busy || waitingForCode || !code.trim()}>
+              {busy ? 'Проверка…' : waitingForCode ? 'Ожидание...' : 'Подтвердить'}
             </button>
             <button className="native-btn native-btn--ghost" onClick={handleCancel} disabled={busy}>
               Отмена
