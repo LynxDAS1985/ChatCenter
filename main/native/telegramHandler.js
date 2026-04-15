@@ -16,15 +16,15 @@ const API_ID = 8392940
 const API_HASH = '33a9605b6f86a176e240cc141e864bf5'
 
 let client = null
-let mainWindowRef = null
+let getMainWindowFn = null   // v0.87.4: функция вместо прямой ссылки — mainWindow может быть null в момент init
 let sessionPath = null
 let pendingLogin = null   // { phoneResolve, codeResolve, passwordResolve, reject }
 let currentAccount = null
 
 const log = (msg) => { try { console.log('[tg]', msg) } catch(_) {} }
 
-export function initTelegramHandler({ mainWindow, userDataPath }) {
-  mainWindowRef = mainWindow
+export function initTelegramHandler({ getMainWindow, userDataPath }) {
+  getMainWindowFn = getMainWindow
   sessionPath = path.join(userDataPath, 'tg-session.txt')
   log(`init, session=${sessionPath}`)
 
@@ -141,20 +141,21 @@ export function initTelegramHandler({ mainWindow, userDataPath }) {
 }
 
 async function startLogin(phone) {
-  emit('tg:login-step', { step: 'phone', phone })
+  log(`startLogin phone=${phone}`)
   const stringSession = new StringSession('')
   client = new TelegramClient(stringSession, API_ID, API_HASH, {
     connectionRetries: 5,
     deviceModel: 'ChatCenter Desktop',
     systemVersion: 'Windows 10',
-    appVersion: '0.87.3',
+    appVersion: '0.87.4',
     langCode: 'ru',
   })
 
   pendingLogin = {}
 
-  // Промисифицированный callback для ввода кода
+  // Промисифицированный callback для ввода кода (UI получает tg:login-step step=code)
   const askCode = () => new Promise((resolve, reject) => {
+    log('askCode → emit step=code')
     pendingLogin.codeResolve = resolve
     pendingLogin.reject = reject
     emit('tg:login-step', { step: 'code', phone })
@@ -162,29 +163,34 @@ async function startLogin(phone) {
 
   // Для пароля 2FA
   const askPassword = () => new Promise((resolve, reject) => {
+    log('askPassword → emit step=password')
     pendingLogin.passwordResolve = resolve
     pendingLogin.reject = reject
     emit('tg:login-step', { step: 'password', phone })
   })
 
   // Запускаем авторизацию в фоне (не блокирует IPC handler)
+  log('client.start() calling...')
   client.start({
-    phoneNumber: async () => phone,
+    phoneNumber: async () => { log('client asked phoneNumber'); return phone },
     phoneCode: async () => {
+      log('client asked phoneCode')
       const code = await askCode()
       try { pendingLogin._codeReply?.({ ok: true }) } catch(_) {}
       return code
     },
     password: async () => {
+      log('client asked password')
       const pwd = await askPassword()
       try { pendingLogin._pwdReply?.({ ok: true }) } catch(_) {}
       return pwd
     },
     onError: (err) => {
-      log('login error: ' + err.message)
+      log('client onError: ' + err.message)
       emit('tg:login-step', { step: 'phone', error: err.message })
     },
   }).then(async () => {
+    log('client.start() SUCCESS')
     // Успех — сохраняем сессию
     const sessionStr = client.session.save()
     try {
@@ -278,7 +284,11 @@ function attachMessageListener() {
 }
 
 function emit(channel, data) {
-  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-    mainWindowRef.webContents.send(channel, data)
+  const win = getMainWindowFn?.()
+  if (win && !win.isDestroyed()) {
+    log(`emit ${channel} ` + (data?.step || (data?.status) || ''))
+    win.webContents.send(channel, data)
+  } else {
+    log(`emit ${channel} SKIPPED — no mainWindow`)
   }
 }

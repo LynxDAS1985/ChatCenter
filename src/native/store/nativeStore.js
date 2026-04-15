@@ -44,11 +44,12 @@ export default function useNativeStore() {
   // Слушаем IPC события от main-процесса
   useEffect(() => {
     if (!window.api?.on) return
-    const handlers = []
+    const unsubs = []
 
+    // v0.87.4: window.api.on() возвращает функцию отписки — используем её
     const addHandler = (channel, handler) => {
-      window.api.on(channel, handler)
-      handlers.push([channel, handler])
+      const unsub = window.api.on(channel, handler)
+      if (typeof unsub === 'function') unsubs.push(unsub)
     }
 
     addHandler('tg:account-update', (acc) => {
@@ -89,11 +90,7 @@ export default function useNativeStore() {
       }))
     })
 
-    return () => {
-      for (const [ch] of handlers) {
-        if (window.api?.off) window.api.off(ch)
-      }
-    }
+    return () => { for (const u of unsubs) try { u() } catch(_) {} }
   }, [])
 
   const setMode = useCallback((mode) => setState(s => ({ ...s, mode })), [])

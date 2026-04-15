@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.3 (15 апреля 2026)
+## Текущая версия: v0.87.4 (15 апреля 2026)
 
 ---
 
@@ -91,6 +91,15 @@
 ---
 
 ## Changelog
+
+### v0.87.4 (15 апреля 2026) — Критический FIX авторизации Telegram (3 бага)
+- **Симптом v0.87.3**: кнопка «Получить код» → ничего не происходит, второй клик → «Авторизация уже в процессе».
+- **Баг 1 (главный)**: `initTelegramHandler` вызывался ВНУТРИ app.whenReady ДО `createWindowFromManager`. В этот момент `mainWindow = null` → handler сохранял в `mainWindowRef = null` → все `emit()` шли в никуда → UI никогда не получал `tg:login-step { step: 'code' }`.
+  - **Фикс**: перенесён вызов `initTelegramHandler` ПОСЛЕ `createWindowFromManager`. Плюс перешли с прямой ссылки на функцию `getMainWindow: () => mainWindow` — даёт актуальный mainWindow в момент emit.
+- **Баг 2**: `startLogin()` в начале делал `emit('tg:login-step', { step: 'phone' })` — перезаписывал шаг в store на `phone` (и так уже шаг phone → UI оставался на вводе номера). Убран этот первый emit — step меняется только по вызову askCode/askPassword.
+- **Баг 3**: в `nativeStore.js` cleanup функция вызывала `window.api.off(channel)` без callback → не работало (preload требует callback). Перешли на возвращаемую `on()` функцию отписки (preload её возвращает).
+- **Добавлены детальные логи** в telegramHandler: emit channel, askCode, askPassword, client.start() calling, client asked phoneNumber/phoneCode/password, client.start SUCCESS — чтобы в будущем моментально находить где встал flow.
+- Документация: Ловушка 65 в common-mistakes.md — «init handlers, использующие mainWindow, ДО создания окна → emit в никуда».
 
 ### v0.87.3 (15 апреля 2026) — Реальный GramJS — авторизация + чаты + отправка
 - **Установлено**: `npm install telegram input` (GramJS v2.26.22 + input). `better-sqlite3` пока не ставим — session храним в обычном файле, база SQLite отложена до Шага 3.

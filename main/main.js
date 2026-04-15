@@ -465,10 +465,8 @@ function setupIPC() {
   // v0.82.2: AI handlers вынесены в main/handlers/aiHandlers.js
   initAIHandlers({ httpsPostSkipSsl, getGigaChatToken, ruError, GIGACHAT_CHAT_URL })
 
-  // v0.87.0: Нативный Telegram через GramJS (пока STUB, реальный GramJS после npm install)
-  try {
-    initTelegramHandler({ mainWindow, userDataPath: app.getPath('userData') })
-  } catch (e) { console.error('[main] initTelegramHandler error:', e.message) }
+  // v0.87.4 FIX: initTelegramHandler ПЕРЕНЕСЁН — вызывается после создания mainWindow
+  // (раньше был тут — mainWindow ещё null → emit в никуда → UI не получал login-step)
 }
 
 // ─── Backup notification handler (v0.84.4: extracted) ────────────────────────
@@ -567,6 +565,12 @@ app.whenReady().then(() => {
     mainWindow.webContents.once('did-finish-load', () => __slog('did-finish-load'))
     mainWindow.webContents.once('dom-ready', () => __slog('dom-ready'))
   }
+
+  // v0.87.4: инициализация Telegram handler после создания окна (mainWindow ready)
+  try {
+    initTelegramHandler({ getMainWindow: () => mainWindow, userDataPath: app.getPath('userData') })
+    __slog('initTelegramHandler done')
+  } catch (e) { console.error('[main] initTelegramHandler error:', e.message) }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
