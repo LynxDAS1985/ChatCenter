@@ -13,4 +13,7 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run lint
-      - run: npm test
+      - name: Vitest (React components via happy-dom)
+        run: npx vitest run
+      - name: Full test suite + build + e2e
+        run: npm test

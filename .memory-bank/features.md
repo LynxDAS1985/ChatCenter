@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.6 (15 апреля 2026)
+## Текущая версия: v0.87.7 (15 апреля 2026)
 
 ---
 
@@ -91,6 +91,21 @@
 ---
 
 ## Changelog
+
+### v0.87.7 (15 апреля 2026) — FLOOD_WAIT перевод + React Testing Library + pre-commit + CI
+- **Проблема 1**: ошибка `A wait of 297 seconds is required (caused by auth.SendCode)` показывалась на английском.
+  - **Причина**: мой regex искал формат `FLOOD_WAIT_NNN`, а GramJS сейчас возвращает в формате `A wait of NNN seconds is required`.
+  - **Фикс**: добавлены 2 новых regex в `translateTelegramError` — `/A wait of (\d+) seconds is required/i` и `/wait of (\d+) seconds/i`. Перевод теперь: «⏱ Слишком много попыток. Подождите 5 минут и попробуйте снова. Telegram временно блокирует новые коды с этого номера, чтобы защитить аккаунт.»
+- **Проблема 2**: тесты не ловили React runtime ошибки (как v0.87.5 «Cannot access before init»).
+  - **Фикс**: установлены `@testing-library/react`, `@testing-library/dom`, `@testing-library/jest-dom`, `happy-dom`, `vitest`, `@vitest/ui`.
+  - Создан `vitest.config.mjs` с environment=happy-dom. Включает файлы `*.vitest.jsx` / `*.vitest.js`.
+  - Написан первый runtime-тест `src/native/components/LoginModal.vitest.jsx` — 5 тестов: рендер phone/code/password, sticky error, клик «Получить код» вызывает startLogin.
+  - Добавлены npm-скрипты: `npm run test:vitest` (одиночный запуск), `test:vitest-watch` (dev mode).
+  - Vitest подключён в основной `npm test` pipeline перед `electron-vite build`.
+- **Проблема 3**: pre-commit hook только ESLint — тесты не запускались, коммиты с багами проходили.
+  - **Фикс**: hook `scripts/hooks/pre-commit` расширен — после ESLint запускает быстрые тесты (hookOrder, componentScope, fileSizeLimits, appStructure). При падении — блокирует коммит. `--no-verify` для обхода (не рекомендуется).
+- **Проблема 4**: CI (GitHub Actions) запускал только `npm test` (последовательно, долго).
+  - **Фикс**: `.github/workflows/test.yml` — добавлен отдельный шаг «Vitest (React components)» перед `npm test`. Если упадёт React — CI упадёт раньше с понятной причиной, не запуская все 24+ статические тесты и e2e.
 
 ### v0.87.6 (15 апреля 2026) — FIX React hook order + новый тест hookOrder
 - **Симптом**: «Ошибка рендера: Cannot access 'optimisticStep' before initialization» в LoginModal.

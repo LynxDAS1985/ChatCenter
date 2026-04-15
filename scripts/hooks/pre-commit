@@ -1,24 +1,37 @@
 #!/bin/sh
-# Pre-commit hook: ESLint проверка на критические ошибки (no-eval, no-dupe-keys)
-# Установлен v0.85.3
+# Pre-commit hook: ESLint + быстрые статические тесты (v0.87.7)
+# Не запускает electron-vite build и e2e — они идут в CI (GitHub Actions).
 
-# Проверяем только staged .js/.jsx файлы
 STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(js|jsx)$' | grep -v '\.cjs$' | grep -v '\.test\.' | grep -v 'node_modules' | grep -v 'out/' | grep -v 'main/preloads/')
 
-if [ -z "$STAGED" ]; then
-  exit 0
+if [ -n "$STAGED" ]; then
+  echo "🔍 ESLint: проверяю $(echo "$STAGED" | wc -l | tr -d ' ') файлов..."
+  echo "$STAGED" | xargs npx eslint --max-warnings 0 2>/dev/null
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ ESLint нашёл ошибки! Коммит отменён."
+    exit 1
+  fi
+  echo "✅ ESLint: OK"
 fi
 
-echo "🔍 ESLint: проверяю $(echo "$STAGED" | wc -l | tr -d ' ') файлов..."
+echo "🧪 Быстрые тесты (hook order, size, scope, structure)..."
+FAIL=0
+for t in hookOrder.test.cjs componentScope.test.cjs fileSizeLimits.test.cjs appStructure.test.cjs; do
+  if [ -f "src/__tests__/$t" ]; then
+    node "src/__tests__/$t" > /tmp/pre-commit.log 2>&1
+    if [ $? -ne 0 ]; then
+      echo ""
+      echo "❌ $t упал:"
+      tail -10 /tmp/pre-commit.log
+      FAIL=1
+    fi
+  fi
+done
 
-# Запускаем ESLint только на staged файлах
-echo "$STAGED" | xargs npx eslint --max-warnings 0 2>/dev/null
-
-if [ $? -ne 0 ]; then
+if [ $FAIL -eq 1 ]; then
   echo ""
-  echo "❌ ESLint нашёл ошибки! Коммит отменён."
-  echo "   Исправь ошибки и попробуй снова."
+  echo "❌ Тесты упали! --no-verify для обхода (не рекомендуется)."
   exit 1
 fi
-
-echo "✅ ESLint: OK"
+echo "✅ Быстрые тесты: OK"

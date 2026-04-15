@@ -37,7 +37,10 @@ function translateTelegramError(raw) {
     [/PHONE_CODE_EMPTY/i, 'Код не введён'],
     [/PASSWORD_HASH_INVALID/i, 'Неверный облачный пароль. Проверьте раскладку и Caps Lock'],
     [/SESSION_PASSWORD_NEEDED/i, 'Требуется облачный пароль Telegram (2FA)'],
-    [/FLOOD_WAIT_(\d+)/i, (m) => `Слишком много запросов. Подождите ${formatSeconds(parseInt(m[1]))}`],
+    // FLOOD_WAIT может приходить в разных форматах от GramJS
+    [/FLOOD_WAIT_(\d+)/i, (m) => `⏱ Слишком много попыток. Подождите ${formatSeconds(parseInt(m[1]))} и попробуйте снова.\n\nTelegram временно блокирует новые коды с этого номера, чтобы защитить аккаунт.`],
+    [/A wait of (\d+) seconds is required/i, (m) => `⏱ Слишком много попыток. Подождите ${formatSeconds(parseInt(m[1]))} и попробуйте снова.\n\nTelegram временно блокирует новые коды с этого номера, чтобы защитить аккаунт.`],
+    [/wait of (\d+) seconds/i, (m) => `⏱ Подождите ${formatSeconds(parseInt(m[1]))} перед следующей попыткой.`],
     [/API_ID_INVALID/i, 'Ошибка приложения ChatCenter. Свяжитесь с разработчиком'],
     [/AUTH_KEY_UNREGISTERED/i, 'Сессия устарела. Нажмите «Отмена» и войдите заново'],
     [/AUTH_KEY_DUPLICATED/i, 'Этот аккаунт используется в другой копии программы'],
