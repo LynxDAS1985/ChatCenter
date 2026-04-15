@@ -27,13 +27,14 @@ import { useState, useEffect, useCallback, useRef } from 'react'
  */
 
 const DEFAULT_STATE = {
-  mode: 'inbox',        // 'inbox' | 'contacts' | 'kanban'
+  mode: 'inbox',
   accounts: [],
   activeAccountId: null,
   chats: [],
   activeChatId: null,
-  messages: {},          // { [chatId]: Message[] }
-  loginFlow: null,        // null | { step, phone?, error? }
+  messages: {},
+  loginFlow: null,
+  typing: {},             // v0.87.14: { [chatId]: { userId, at } } — таймер через 5 сек истекает
 }
 
 export default function useNativeStore() {
@@ -89,11 +90,37 @@ export default function useNativeStore() {
     addHandler('tg:new-message', ({ chatId, message }) => {
       setState(s => ({
         ...s,
-        messages: {
-          ...s.messages,
-          [chatId]: [...(s.messages[chatId] || []), message]
-        }
+        messages: { ...s.messages, [chatId]: [...(s.messages[chatId] || []), message] },
+        // v0.87.14: обновляем lastMessage/unread в чате
+        chats: s.chats.map(c => c.id === chatId
+          ? {
+              ...c,
+              lastMessage: message.text || '[медиа]',
+              lastMessageTs: message.timestamp,
+              unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
+            }
+          : c)
       }))
+      // v0.87.14: Toast через MessengerRibbon (только входящие, не для активного чата)
+      if (!message.isOutgoing && stateRef.current.activeChatId !== chatId) {
+        const chat = stateRef.current.chats.find(c => c.id === chatId)
+        try {
+          window.api?.invoke('app:custom-notify', {
+            title: chat?.title || 'Telegram',
+            body: message.text || '[медиа]',
+            fullBody: message.text || '[медиа]',
+            iconUrl: chat?.avatar || '',
+            iconDataUrl: '',
+            color: '#2AABEE',
+            emoji: '✈️',
+            messengerName: 'Telegram',
+            messengerId: 'native_cc',
+            dismissMs: 7000,
+            senderName: message.senderName || chat?.title || '',
+            chatTag: chatId,
+          })
+        } catch(_) {}
+      }
     })
 
     // v0.87.11: аватарки приходят асинхронно — обновляем chat.avatar
@@ -101,6 +128,33 @@ export default function useNativeStore() {
       setState(s => ({
         ...s,
         chats: s.chats.map(c => c.id === chatId ? { ...c, avatar: avatarPath } : c)
+      }))
+    })
+
+    // v0.87.14: typing-индикатор
+    addHandler('tg:typing', ({ chatId, userId, typing }) => {
+      setState(s => ({
+        ...s,
+        typing: typing
+          ? { ...s.typing, [chatId]: { userId, at: Date.now() } }
+          : (() => { const t = { ...s.typing }; delete t[chatId]; return t })()
+      }))
+      // Автоматически истекает через 6 сек
+      if (typing) {
+        setTimeout(() => setState(s => {
+          const t = { ...s.typing }
+          if (t[chatId]?.userId === userId) delete t[chatId]
+          return { ...s, typing: t }
+        }), 6000)
+      }
+    })
+
+    // v0.87.14: read receipts — сбрасываем unread для чата
+    addHandler('tg:read', ({ chatId, outgoing, stillUnread }) => {
+      if (outgoing) return  // пока не отмечаем отдельно исходящие прочитанными
+      setState(s => ({
+        ...s,
+        chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount: stillUnread || 0 } : c)
       }))
     })
 
@@ -135,6 +189,23 @@ export default function useNativeStore() {
     return window.api?.invoke('tg:get-chats', { accountId })
   }, [])
 
+  // v0.87.14: мгновенная загрузка кэша
+  const loadCachedChats = useCallback(async () => {
+    const r = await window.api?.invoke('tg:get-cached-chats', {})
+    if (r?.ok && r.chats?.length) {
+      setState(s => ({ ...s, chats: [...s.chats.filter(c => !r.chats.find(nc => nc.id === c.id)), ...r.chats] }))
+    }
+    return r
+  }, [])
+
+  const markRead = useCallback(async (chatId) => {
+    return window.api?.invoke('tg:mark-read', { chatId })
+  }, [])
+
+  const setTyping = useCallback(async (chatId) => {
+    return window.api?.invoke('tg:set-typing', { chatId })
+  }, [])
+
   const loadMessages = useCallback(async (chatId, limit = 50) => {
     return window.api?.invoke('tg:get-messages', { chatId, limit })
   }, [])
@@ -159,6 +230,7 @@ export default function useNativeStore() {
     ...state,
     setMode, setActiveAccount, setActiveChat,
     startLogin, submitCode, submitPassword, cancelLogin,
-    loadChats, loadMessages, sendMessage, removeAccount,
+    loadChats, loadCachedChats, loadMessages, sendMessage, removeAccount,
+    markRead, setTyping,
   }
 }

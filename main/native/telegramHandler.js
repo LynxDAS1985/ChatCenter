@@ -10,17 +10,20 @@ import path from 'node:path'
 import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
 import { NewMessage } from 'telegram/events/index.js'
+import { Api } from 'telegram'
 
 // api_id / api_hash зашиты — ChatCenter (Demo33) app на my.telegram.org
 const API_ID = 8392940
 const API_HASH = '33a9605b6f86a176e240cc141e864bf5'
 
 let client = null
-let getMainWindowFn = null   // v0.87.4: функция вместо прямой ссылки — mainWindow может быть null в момент init
+let getMainWindowFn = null
 let sessionPath = null
-let avatarsDir = null     // v0.87.11: папка для кэша аватарок
-let pendingLogin = null   // { phoneResolve, codeResolve, passwordResolve, reject }
+let avatarsDir = null
+let cachePath = null      // v0.87.14: JSON-кэш чатов для мгновенного старта
+let pendingLogin = null
 let currentAccount = null
+const chatEntityMap = new Map()  // v0.87.14: chatId → entity (для markAsRead / sendMessage)
 
 const log = (msg) => { try { console.log('[tg]', msg) } catch(_) {} }
 
@@ -68,8 +71,9 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
   getMainWindowFn = getMainWindow
   sessionPath = path.join(userDataPath, 'tg-session.txt')
   avatarsDir = path.join(userDataPath, 'tg-avatars')
+  cachePath = path.join(userDataPath, 'tg-cache.json')
   try { fs.mkdirSync(avatarsDir, { recursive: true }) } catch(_) {}
-  log(`init, session=${sessionPath}, avatars=${avatarsDir}`)
+  log(`init, session=${sessionPath}, avatars=${avatarsDir}, cache=${cachePath}`)
 
   // v0.87.12: дожидаемся когда renderer точно готов принять events
   const startRestore = () => {
@@ -131,6 +135,45 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     return { ok: true }
   })
 
+  // v0.87.14: мгновенная отдача кэша чатов из JSON (до ответа GramJS)
+  ipcMain.handle('tg:get-cached-chats', async () => {
+    try {
+      if (!cachePath || !fs.existsSync(cachePath)) return { ok: true, chats: [] }
+      const raw = fs.readFileSync(cachePath, 'utf8')
+      const data = JSON.parse(raw)
+      return { ok: true, chats: data.chats || [] }
+    } catch (e) { return { ok: false, error: e.message, chats: [] } }
+  })
+
+  // v0.87.14: пометить чат прочитанным
+  ipcMain.handle('tg:mark-read', async (_, { chatId }) => {
+    try {
+      if (!client) return { ok: false, error: 'Не подключён' }
+      const entity = chatEntityMap.get(chatId)
+      if (!entity) return { ok: false, error: 'Чат не найден в кэше' }
+      await client.markAsRead(entity)
+      log(`mark-read: ${chatId}`)
+      return { ok: true }
+    } catch (e) {
+      log('mark-read error: ' + e.message)
+      return { ok: false, error: e.message }
+    }
+  })
+
+  // v0.87.14: отправка "печатает..." индикатора
+  ipcMain.handle('tg:set-typing', async (_, { chatId }) => {
+    try {
+      if (!client) return { ok: false }
+      const entity = chatEntityMap.get(chatId)
+      if (!entity) return { ok: false }
+      await client.invoke(new Api.messages.SetTyping({
+        peer: entity,
+        action: new Api.SendMessageTypingAction(),
+      }))
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
   ipcMain.handle('tg:get-chats', async () => {
     try {
       if (!client) return { ok: false, error: 'Не подключён', chats: [] }
@@ -141,6 +184,7 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       log(`первая страница: ${firstPage.length} чатов`)
       const firstChats = firstPage.map(mapDialog)
       emit('tg:chats', { accountId: currentAccount?.id, chats: firstChats, append: false })
+      saveChatsCache(firstChats)  // v0.87.14: кэш для мгновенного старта
       loadAvatarsAsync(firstPage.slice(0, 50))
 
       // v0.87.13: ВСЕГДА пробуем подгрузить ещё страницу (GramJS часто возвращает меньше limit)
@@ -355,8 +399,11 @@ async function autoRestoreSession() {
 function mapDialog(d) {
   const entity = d.entity || {}
   const type = d.isUser ? 'user' : d.isGroup ? 'group' : d.isChannel ? 'channel' : 'user'
+  const id = `${currentAccount?.id}:${String(d.id)}`
+  // v0.87.14: сохраняем entity для markAsRead / sendMessage — без entity GramJS не знает куда слать
+  chatEntityMap.set(id, d.inputEntity || d.entity || d.id)
   return {
-    id: `${currentAccount?.id}:${String(d.id)}`,
+    id,
     accountId: currentAccount?.id,
     title: d.title || d.name || 'Без названия',
     type,
@@ -365,11 +412,18 @@ function mapDialog(d) {
     unreadCount: d.unreadCount || 0,
     rawId: String(d.id),
     hasPhoto: !!(entity.photo && !entity.photo.photoEmpty),
-    // Онлайн-статус только для users
     isOnline: type === 'user' && entity.status?.className === 'UserStatusOnline',
     isBot: !!entity.bot,
     verified: !!entity.verified,
   }
+}
+
+// v0.87.14: сохранить кэш чатов на диск — мгновенный старт следующего запуска
+function saveChatsCache(chats) {
+  try {
+    if (!cachePath) return
+    fs.writeFileSync(cachePath, JSON.stringify({ accountId: currentAccount?.id, chats, updatedAt: Date.now() }), 'utf8')
+  } catch (e) { log('saveChatsCache err: ' + e.message) }
 }
 
 // v0.87.12: фоновая загрузка остальных страниц — emit с append: true
@@ -409,14 +463,14 @@ async function loadAvatarsAsync(dialogs) {
       const avatarPath = path.join(avatarsDir, `${String(d.id)}.jpg`)
       // Если уже есть — сразу шлём в UI
       if (fs.existsSync(avatarPath)) {
-        emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + avatarPath.replace(/\\/g, '/') })
+        emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
         continue
       }
       // Скачиваем
       const buffer = await client.downloadProfilePhoto(entity, { isBig: false })
       if (!buffer) continue
       fs.writeFileSync(avatarPath, buffer)
-      emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + avatarPath.replace(/\\/g, '/') })
+      emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
     } catch (e) { /* молча — одна аватарка не критична */ }
   }
   log(`аватарки загружены`)
@@ -445,7 +499,35 @@ function attachMessageListener() {
         })
       } catch (e) { log('new-message handler err: ' + e.message) }
     }, new NewMessage({}))
-    log('event handler attached')
+
+    // v0.87.14: raw updates — typing + read receipts
+    client.addEventHandler((update) => {
+      try {
+        const cn = update?.className
+        // Typing: UpdateUserTyping / UpdateChatUserTyping / UpdateChannelUserTyping
+        if (cn === 'UpdateUserTyping' || cn === 'UpdateChatUserTyping' || cn === 'UpdateChannelUserTyping') {
+          const userIdRaw = String(update.userId || update.fromId?.userId || '')
+          const chatIdRaw = String(update.chatId || update.channelId || update.userId || '')
+          const chatId = `${currentAccount?.id}:${chatIdRaw}`
+          const isTyping = update.action?.className === 'SendMessageTypingAction'
+          emit('tg:typing', { chatId, userId: userIdRaw, typing: isTyping })
+        }
+        // Read receipts (собеседник прочитал наши сообщения)
+        if (cn === 'UpdateReadHistoryOutbox' || cn === 'UpdateReadChannelOutbox') {
+          const chatIdRaw = String(update.peer?.userId || update.peer?.chatId || update.channelId || '')
+          const chatId = `${currentAccount?.id}:${chatIdRaw}`
+          const maxId = Number(update.maxId || 0)
+          emit('tg:read', { chatId, maxId, outgoing: true })
+        }
+        // Read inbox (мы прочитали)
+        if (cn === 'UpdateReadHistoryInbox' || cn === 'UpdateReadChannelInbox') {
+          const chatIdRaw = String(update.peer?.userId || update.peer?.chatId || update.channelId || '')
+          const chatId = `${currentAccount?.id}:${chatIdRaw}`
+          emit('tg:read', { chatId, maxId: Number(update.maxId || 0), outgoing: false, stillUnread: Number(update.stillUnreadCount || 0) })
+        }
+      } catch (e) { /* silent */ }
+    })
+    log('event handler + raw updates attached')
   } catch (e) { log('attach listener err: ' + e.message) }
 }
 

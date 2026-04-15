@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.13 (15 апреля 2026)
+## Текущая версия: v0.87.14 (15 апреля 2026)
 
 ---
 
@@ -91,6 +91,34 @@
 ---
 
 ## Changelog
+
+### v0.87.14 (15 апреля 2026) — Кэш + Mark as read + Toast + Typing + FIX аватарок
+- **FIX аватарки не видны**: путь содержит кириллицу (`C:/Users/Директор/AppData/.../ЦентрЧатов/`). Chromium рендер не принимает `file://` без URL-кодирования. Фикс — `encodeURI(avatarPath)` перед `file:///`. Теперь видны 44+ реальных аватарок.
+- **Ловушка 72**: `file://` URL с кириллицей должен быть закодирован через `encodeURI()` для работы в Electron рендере.
+- **JSON-кэш чатов** (без БД, без установки):
+  - Сохраняется в `%APPDATA%/ЦентрЧатов/tg-cache.json` после первой страницы
+  - При старте: `store.loadCachedChats()` → UI показывает список **мгновенно** из файла
+  - Параллельно GramJS грузит свежие и перезаписывает
+  - Новый IPC `tg:get-cached-chats`
+- **Mark as read**:
+  - При выборе чата автоматически `store.markRead(chatId)` → IPC `tg:mark-read` → `client.markAsRead(entity)`
+  - Telegram отмечает сообщения прочитанными, бейдж на телефоне сбрасывается
+  - `chatEntityMap` хранит entity по chatId для быстрого доступа
+- **Toast-уведомления через MessengerRibbon**:
+  - При `tg:new-message` (не своё + не активный чат) → `window.api.invoke('app:custom-notify', { ... })`
+  - Используется существующая модалка ribbon: title = chat.title, body = message.text, icon = chat.avatar, color #2AABEE, emoji ✈️
+  - dismissMs 7 сек
+  - Звук уже играет встроенный в MessengerRibbon (настраивается в Настройках приложения)
+- **Typing-индикатор**:
+  - Подписка на raw updates GramJS: `UpdateUserTyping`, `UpdateChatUserTyping`, `UpdateChannelUserTyping`
+  - Emit `tg:typing { chatId, userId, typing }` → store обновляет `typing` map
+  - В шапке чата `✍️ печатает...` вместо `● онлайн` если typing активен
+  - Авто-истечение через 6 сек (если не пришло обновление)
+  - Отправка своего typing: `client.invoke(SetTyping)` при вводе с debounce 3 сек
+- **Read receipts** (собеседник прочитал / мы прочитали):
+  - Raw updates `UpdateReadHistoryInbox` / `UpdateReadChannelInbox` → emit `tg:read`
+  - Store сбрасывает `unreadCount` до реального `stillUnreadCount`
+  - Чаты в списке имеют правильные счётчики после прочтения на телефоне
 
 ### v0.87.13 (15 апреля 2026) — FIX три бага: пагинация + аватарки не видны + Native фильтр в log-viewer
 - **Баг 1 — 194 чата вместо всех**:

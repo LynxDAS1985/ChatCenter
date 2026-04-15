@@ -24,14 +24,22 @@ export default function InboxMode({ store }) {
   const [listHeight, setListHeight] = useState(600)
   const containerRef = useRef(null)
 
+  // v0.87.14: сразу грузим кэш (мгновенный UI), потом реальные чаты
+  useEffect(() => {
+    store.loadCachedChats?.()
+  }, [])
+
   useEffect(() => {
     if (store.activeAccountId) store.loadChats(store.activeAccountId)
   }, [store.activeAccountId])
 
   useEffect(() => {
-    if (store.activeChatId && !store.messages[store.activeChatId]) {
+    if (!store.activeChatId) return
+    if (!store.messages[store.activeChatId]) {
       store.loadMessages(store.activeChatId, 50)
     }
+    // v0.87.14: автоматически помечаем прочитанным при открытии
+    store.markRead?.(store.activeChatId)
   }, [store.activeChatId])
 
   // Измеряем высоту контейнера для List
@@ -64,6 +72,20 @@ export default function InboxMode({ store }) {
     try { await store.sendMessage(store.activeChatId, text) } catch (e) { console.error(e) }
     finally { setSending(false) }
   }
+
+  // v0.87.14: отправка typing-индикатора при наборе (debounce 3 сек)
+  const typingTimerRef = useRef(0)
+  const handleInputChange = (v) => {
+    setInput(v)
+    if (!store.activeChatId) return
+    if (Date.now() - typingTimerRef.current > 3000) {
+      typingTimerRef.current = Date.now()
+      store.setTyping?.(store.activeChatId)
+    }
+  }
+
+  // v0.87.14: typing индикатор от собеседника
+  const isTyping = store.typing?.[store.activeChatId]
 
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -124,7 +146,10 @@ export default function InboxMode({ store }) {
           <>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-surface)', fontWeight: 600 }}>
               {activeChat.title}
-              {activeChat.isOnline && <span style={{ color: 'var(--amoled-success)', fontSize: 11, marginLeft: 10 }}>● онлайн</span>}
+              {isTyping
+                ? <span style={{ color: 'var(--amoled-accent)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>✍️ печатает...</span>
+                : activeChat.isOnline && <span style={{ color: 'var(--amoled-success)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>● онлайн</span>
+              }
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {activeMessages.length === 0 ? (
@@ -150,7 +175,7 @@ export default function InboxMode({ store }) {
             <div style={{ padding: 12, borderTop: '1px solid var(--amoled-border)', background: 'var(--amoled-surface)', display: 'flex', gap: 8 }}>
               <input
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={e => handleInputChange(e.target.value)}
                 onKeyDown={e => { if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim()) handleSend() }}
                 placeholder="Введите сообщение..."
                 disabled={sending}
