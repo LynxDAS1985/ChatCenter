@@ -177,10 +177,13 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
           const dialog = await client.invoke(new Api.messages.GetPeerDialogs({ peers: [new Api.InputDialogPeer({ peer: entity })] }))
           const d = dialog.dialogs?.[0]
           if (d) {
-            emit('tg:chat-unread-sync', { chatId, unreadCount: d.unreadCount || 0 })
-            log(`unread-sync: ${chatId} → ${d.unreadCount || 0}`)
+            const telegramUnread = d.unreadCount || 0
+            emit('tg:chat-unread-sync', { chatId, unreadCount: telegramUnread })
+            log(`═══ UNREAD SYNC ═══ chat=${chatId} Telegram сервер=${telegramUnread} unreadMentions=${d.unreadMentionsCount || 0} unreadReactions=${d.unreadReactionsCount || 0}`)
+          } else {
+            log(`unread-sync: диалог не найден в ответе для ${chatId}`)
           }
-        } catch (e) { /* silent */ }
+        } catch (e) { log('unread-sync err: ' + e.message) }
       }, 800)
       return { ok: true }
     } catch (e) {
@@ -311,9 +314,15 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       if (!client) return { ok: false, error: 'Не подключён', chats: [] }
       log('get-chats: старт')
       const PAGE = 200
-      // v0.87.22: загружаем и активные (folderId=0) и архивные (folderId=1)
       const firstPage = await client.getDialogs({ limit: PAGE, folder: 0 })
-      log(`первая страница активных: ${firstPage.length} чатов`)
+      // v0.87.23: подробный лог количества
+      const unreadCount = firstPage.reduce((sum, d) => sum + (d.unreadCount || 0), 0)
+      const withUnread = firstPage.filter(d => d.unreadCount > 0).length
+      log(`═══ ДИАЛОГИ АКТИВНЫЕ ═══`)
+      log(`загружено: ${firstPage.length} чатов`)
+      log(`непрочитанных чатов: ${withUnread}`)
+      log(`всего непрочитанных сообщений: ${unreadCount}`)
+      log(`═══════════════════════════`)
       // Параллельно асинхронно запросим архив (folderId=1)
       ;(async () => {
         try {
@@ -321,8 +330,11 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
           if (archived.length) {
             const archivedChats = archived.map(d => ({ ...mapDialog(d), archived: true }))
             emit('tg:chats', { accountId: currentAccount?.id, chats: archivedChats, append: true })
-            log(`архивных чатов: ${archived.length}`)
+            const archUnread = archived.reduce((sum, d) => sum + (d.unreadCount || 0), 0)
+            log(`═══ АРХИВНЫЕ ═══ загружено=${archived.length}, непрочитанных=${archUnread}`)
             loadAvatarsAsync(archived)
+          } else {
+            log(`архивных чатов: 0`)
           }
         } catch (e) { log('archived err: ' + e.message) }
       })()
@@ -602,7 +614,22 @@ async function autoRestoreSession() {
 // v0.87.17: maxOutgoingReadId по чатам — чтобы определять статус прочитанности наших сообщений
 const maxOutgoingRead = new Map()  // chatId → maxId
 
-// v0.87.15: маппер message → наш формат с поддержкой медиа + reply
+// v0.87.23: маппер entities MTProto → наш формат. Telegram шлёт entities
+// отдельным массивом от text. Типы: Bold, Italic, Code, Pre, Url, TextUrl,
+// Mention, Hashtag, BotCommand, Email, Phone, Strike, Underline, Spoiler.
+function mapEntities(entities) {
+  if (!Array.isArray(entities)) return []
+  return entities.map(e => ({
+    type: (e.className || '').replace(/^MessageEntity/, '').toLowerCase(),
+    offset: e.offset || 0,
+    length: e.length || 0,
+    url: e.url || null,       // для textUrl
+    userId: e.userId ? String(e.userId) : null,  // для mentionName
+    language: e.language || null,                 // для pre
+  }))
+}
+
+// v0.87.15: маппер message → наш формат с поддержкой медиа + reply + entities
 function mapMessage(m, chatId) {
   const media = m.media
   let mediaType = null, mediaPreview = null
@@ -629,6 +656,7 @@ function mapMessage(m, chatId) {
     senderId: String(m.senderId || ''),
     senderName: m.sender?.firstName || m.sender?.title || '',
     text: m.message || '',
+    entities: mapEntities(m.entities),  // v0.87.23: форматирование (bold, italic, links, hashtags)
     timestamp: (m.date || 0) * 1000,
     isOutgoing: !!m.out,
     isEdited: !!m.editDate,

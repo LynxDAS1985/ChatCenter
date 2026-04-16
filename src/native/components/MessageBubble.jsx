@@ -1,5 +1,6 @@
 // v0.87.15: пузырёк сообщения — текст, медиа, reply, edit, меню действий
 import { useState, useEffect, useRef } from 'react'
+import FormattedText from './FormattedText.jsx'
 
 export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible, downloadMedia, getMessage }) {
   const [menu, setMenu] = useState(false)
@@ -17,19 +18,18 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
     return () => obs.disconnect()
   }, [m.id])
 
-  // v0.87.22: thumb/full режимы — thumb быстрый превью, full по клику на картинку
-  const handleDownload = async (fullSize = false) => {
-    if (mediaLoading) return
+  // v0.87.23: ВОЗВРАТ — полное фото (не thumb). Как было до v0.87.22.
+  const handleDownload = async () => {
+    if (mediaUrl || mediaLoading) return
     setMediaLoading(true)
     try {
-      const r = await downloadMedia(chatId, m.id, !fullSize)
+      const r = await downloadMedia(chatId, m.id, false)  // thumb=false = полное
       if (r?.ok) setMediaUrl(r.path)
     } finally { setMediaLoading(false) }
   }
 
-  // Автозагрузка THUMB для photo — мгновенное превью
   useEffect(() => {
-    if (m.mediaType === 'photo' && !mediaUrl) handleDownload(false)
+    if (m.mediaType === 'photo' && !mediaUrl) handleDownload()
   }, [m.id])
 
   const replyToMsg = m.replyToId && getMessage ? getMessage(chatId, m.replyToId) : null
@@ -89,7 +89,7 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
         {m.mediaType === 'contact' && <div style={{ fontSize: 12, opacity: 0.7 }}>👤 контакт</div>}
         {m.mediaType === 'poll' && <div style={{ fontSize: 12, opacity: 0.7 }}>📊 опрос</div>}
 
-        {m.text && <div>{m.text}</div>}
+        {m.text && <div style={{ whiteSpace: 'pre-wrap' }}><FormattedText text={m.text} entities={m.entities} /></div>}
         <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2, textAlign: 'right' }}>
           {m.isEdited && <span style={{ marginRight: 4 }}>ред.</span>}
           {new Date(m.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
