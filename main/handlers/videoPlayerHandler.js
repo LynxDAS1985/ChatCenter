@@ -26,11 +26,14 @@ function getHtmlPath() {
 }
 
 export function registerVideoPlayerHandler() {
-  ipcMain.handle('video:open', async (_, { src, title }) => {
+  // v0.87.35: сохраняем bounds перед PiP чтобы потом восстановить
+  let prevBounds = null
+
+  ipcMain.handle('video:open', async (_, { src, title, startTime, pip }) => {
     try {
       if (!src) return { ok: false, error: 'no src' }
       if (videoWindow && !videoWindow.isDestroyed()) {
-        videoWindow.webContents.send('video:set-src', { src, title })
+        videoWindow.webContents.send('video:set-src', { src, title, startTime, pip })
         videoWindow.focus()
         return { ok: true, reused: true }
       }
@@ -53,7 +56,19 @@ export function registerVideoPlayerHandler() {
       })
       videoWindow.once('ready-to-show', () => {
         videoWindow?.show()
-        videoWindow?.webContents.send('video:set-src', { src, title })
+        videoWindow?.webContents.send('video:set-src', { src, title, startTime, pip })
+        // v0.87.36: если запрошен PiP сразу — активируем его
+        if (pip) {
+          try {
+            prevBounds = videoWindow.getBounds()
+            const primaryDisp = screen.getPrimaryDisplay()
+            const w = 480, h = 270
+            const x = primaryDisp.workAreaSize.width - w - 20
+            const y = primaryDisp.workAreaSize.height - h - 20
+            videoWindow.setBounds({ x, y, width: w, height: h })
+            videoWindow.setAlwaysOnTop(true, 'floating')
+          } catch(_) {}
+        }
       })
       videoWindow.on('closed', () => { videoWindow = null })
       await videoWindow.loadFile(getHtmlPath())
@@ -82,7 +97,6 @@ export function registerVideoPlayerHandler() {
   })
 
   // v0.87.35: PiP режим — компактное окно в углу, alwaysOnTop, resizable
-  let prevBounds = null
   ipcMain.handle('video:toggle-pip', (_, { on }) => {
     try {
       if (!videoWindow) return { ok: false }

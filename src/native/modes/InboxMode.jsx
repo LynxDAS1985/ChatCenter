@@ -7,10 +7,12 @@ import ChatListItem from '../components/ChatListItem.jsx'
 import MessageBubble from '../components/MessageBubble.jsx'
 import ForwardPicker from '../components/ForwardPicker.jsx'
 import { AlbumBubble } from '../components/MediaAlbum.jsx'
+import MessageSkeleton, { MessageListOverlay } from '../components/MessageSkeleton.jsx'
 import { groupMessages, formatDayLabel, findFirstUnreadId } from '../utils/messageGrouping.js'
 import { useInitialScroll } from '../hooks/useInitialScroll.js'
 import { useForceReadAtBottom } from '../hooks/useForceReadAtBottom.js'
 import { useDropAndPaste } from '../hooks/useDropAndPaste.js'
+import { useMessageActions } from '../hooks/useMessageActions.js'
 
 const ITEM_HEIGHT = 64
 
@@ -297,28 +299,10 @@ export default function InboxMode({ store }) {
     setTimeout(() => el.classList.remove('native-msg-flash'), 1500)
   }
 
-  const handleDelete = async (m) => {
-    if (!confirm('Удалить сообщение у всех?')) return
-    await store.deleteMessage(store.activeChatId, m.id, true)
-  }
-
-  // v0.87.17: forward через модалку с аватарками
-  const handleForward = (m) => setForwardTarget(m)
-
-  const handleForwardSelect = async (targetChat) => {
-    const m = forwardTarget
-    setForwardTarget(null)
-    const r = await store.forwardMessage(store.activeChatId, targetChat.id, m.id)
-    showToast(r?.ok ? `✓ Переслано в «${targetChat.title}»` : '✗ ' + (r?.error || 'Ошибка'),
-      r?.ok ? 'success' : 'error')
-  }
-
-  const handlePin = async (m) => {
-    const r = await store.pinMessage(store.activeChatId, m.id, false)
-    showToast(r?.ok ? '📌 Закреплено' : '✗ ' + (r?.error || 'Ошибка'),
-      r?.ok ? 'success' : 'error')
-    if (r?.ok) setPinnedMsg(m)
-  }
+  // v0.87.36: action-handlers (delete/forward/pin/forward-select) — вынесено в хук
+  const { handleDelete, handleForward, handleForwardSelect, handlePin } = useMessageActions({
+    store, setForwardTarget, setPinnedMsg, showToast, forwardTarget,
+  })
 
   const handleReplySend = async () => {
     if (!input.trim() || sending) return
@@ -431,12 +415,16 @@ export default function InboxMode({ store }) {
                 {msgSearch && <div style={{ marginTop: 4, fontSize: 11, color: 'var(--amoled-text-dim)' }}>Найдено: {visibleMessages.length}</div>}
               </div>
             )}
+            {/* v0.87.36: wrapper relative — чтобы кнопка ↓ была ВНЕ scroll-контейнера
+                (раньше внутри → при скролле уезжала вместе с контентом → не видна).
+                Также здесь рендерим overlay-shimmer поверх кэшированных сообщений. */}
+            <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <MessageListOverlay show={store.loadingMessages?.[store.activeChatId] && visibleMessages.length > 0} />
             <div ref={msgsScrollRef} onScroll={handleScroll}
               onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
               style={{
                 flex: 1, overflowY: 'auto', padding: 16,
                 display: 'flex', flexDirection: 'column', gap: 6,
-                position: 'relative',
                 outline: dragOver ? '2px dashed var(--amoled-accent)' : 'none',
                 background: dragOver ? 'rgba(42,171,238,0.08)' : 'transparent',
               }}>
@@ -448,9 +436,14 @@ export default function InboxMode({ store }) {
                 }}>📎 Отпустите файл для отправки</div>
               )}
               {visibleMessages.length === 0 ? (
-                <div style={{ color: 'var(--amoled-text-dim)', textAlign: 'center', padding: 20 }}>
-                  {msgSearch ? 'Ничего не найдено' : 'Нет сообщений'}
-                </div>
+                // v0.87.36: пока идёт первая загрузка — shimmer-скелетон вместо «Нет сообщений»
+                store.loadingMessages?.[store.activeChatId] ? (
+                  <MessageSkeleton count={5} />
+                ) : (
+                  <div style={{ color: 'var(--amoled-text-dim)', textAlign: 'center', padding: 20 }}>
+                    {msgSearch ? 'Ничего не найдено' : 'Нет сообщений'}
+                  </div>
+                )
               ) : renderItems.map(item => {
                 if (item.type === 'day') {
                   return (
@@ -525,8 +518,8 @@ export default function InboxMode({ store }) {
                   </div>
                 )
               })}
-              {/* v0.87.35: кнопка ↓ — показывается когда НЕ внизу или есть непрочитанные.
-                  Клик → если есть firstUnread — прыгаем к нему, иначе в низ. */}
+            </div>
+              {/* v0.87.35/36: кнопка ↓ ВНЕ scroll-контейнера → не скроллится */}
               {(!atBottom || activeUnread > 0) && (
                 <button
                   onClick={scrollToBottom}

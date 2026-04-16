@@ -58,16 +58,52 @@ describe('VideoTile render (Variant A — poster + streaming)', () => {
     cleanup()
   })
 
-  it('клик → вызывает tg:download-video + video:open', async () => {
+  it('клик → вызывает tg:download-video и играет INLINE (не сразу video:open)', async () => {
     const { container } = render(<VideoTile m={baseVideo} chatId="c1" />)
     fireEvent.click(container.firstChild)
     await waitFor(() => {
       const hasVideo = invokeMock.mock.calls.some(c => c[0] === 'tg:download-video')
       expect(hasVideo).toBe(true)
     })
+    // v0.87.36: НЕ вызывает video:open автоматически — играет inline
+    await new Promise(r => setTimeout(r, 20))
+    const autoOpen = invokeMock.mock.calls.some(c => c[0] === 'video:open')
+    expect(autoOpen).toBe(false)
+    // Должен появиться inline <video> элемент
     await waitFor(() => {
-      const hasOpen = invokeMock.mock.calls.some(c => c[0] === 'video:open')
-      expect(hasOpen).toBe(true)
+      expect(container.querySelector('video')).toBeTruthy()
+    })
+    cleanup()
+  })
+
+  it('v0.87.36: после inline play → кнопка ⛶ вызывает video:open с startTime', async () => {
+    const { container } = render(<VideoTile m={baseVideo} chatId="c1" />)
+    fireEvent.click(container.firstChild)
+    await waitFor(() => expect(container.querySelector('video')).toBeTruthy())
+    // Находим кнопку expand ⛶ и кликаем
+    const btns = container.querySelectorAll('button')
+    const expandBtn = Array.from(btns).find(b => b.textContent === '⛶')
+    expect(expandBtn).toBeTruthy()
+    fireEvent.click(expandBtn)
+    await waitFor(() => {
+      const openCall = invokeMock.mock.calls.find(c => c[0] === 'video:open')
+      expect(openCall).toBeTruthy()
+      expect(typeof openCall[1].startTime).toBe('number')
+    })
+    cleanup()
+  })
+
+  it('v0.87.36: кнопка 📌 открывает video:open с pip=true', async () => {
+    const { container } = render(<VideoTile m={baseVideo} chatId="c1" />)
+    fireEvent.click(container.firstChild)
+    await waitFor(() => expect(container.querySelector('video')).toBeTruthy())
+    const btns = container.querySelectorAll('button')
+    const pipBtn = Array.from(btns).find(b => b.textContent === '📌')
+    expect(pipBtn).toBeTruthy()
+    fireEvent.click(pipBtn)
+    await waitFor(() => {
+      const openCall = invokeMock.mock.calls.find(c => c[0] === 'video:open' && c[1].pip === true)
+      expect(openCall).toBeTruthy()
     })
     cleanup()
   })

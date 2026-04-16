@@ -35,6 +35,27 @@ const DEFAULT_STATE = {
   messages: {},
   loginFlow: null,
   typing: {},             // v0.87.14: { [chatId]: { userId, at } } — таймер через 5 сек истекает
+  loadingMessages: {},    // v0.87.36: { [chatId]: true } — флаг идущей загрузки (для shimmer overlay)
+}
+
+// v0.87.36: кэш последних N сообщений каждого чата в localStorage.
+// При открытии чата показываем сразу (мгновенно), свежие догружаются поверх shimmer.
+const CACHE_KEY_PREFIX = 'chat-messages:'
+const CACHE_MAX_MSG = 50
+function saveChatCache(chatId, messages) {
+  try {
+    if (!chatId || !Array.isArray(messages)) return
+    const keep = messages.slice(-CACHE_MAX_MSG)
+    localStorage.setItem(CACHE_KEY_PREFIX + chatId, JSON.stringify(keep))
+  } catch(_) { /* quota / disabled / etc — silent */ }
+}
+function loadChatCache(chatId) {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY_PREFIX + chatId)
+    if (!raw) return null
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr : null
+  } catch(_) { return null }
 }
 
 export default function useNativeStore() {
@@ -83,13 +104,20 @@ export default function useNativeStore() {
     addHandler('tg:messages', ({ chatId, messages, append }) => {
       setState(s => {
         const existing = s.messages[chatId] || []
+        let next
         if (append) {
           // v0.87.15: дозагрузка старых — добавляем в начало, убираем дубли
           const existingIds = new Set(existing.map(m => m.id))
           const newOld = messages.filter(m => !existingIds.has(m.id))
-          return { ...s, messages: { ...s.messages, [chatId]: [...newOld, ...existing] } }
+          next = [...newOld, ...existing]
+        } else {
+          next = messages
         }
-        return { ...s, messages: { ...s.messages, [chatId]: messages } }
+        // v0.87.36: сохраняем в localStorage для мгновенного показа при следующем открытии
+        saveChatCache(chatId, next)
+        const loadingCopy = { ...s.loadingMessages }
+        delete loadingCopy[chatId]
+        return { ...s, messages: { ...s.messages, [chatId]: next }, loadingMessages: loadingCopy }
       })
     })
 
@@ -289,6 +317,13 @@ export default function useNativeStore() {
   }, [])
 
   const loadMessages = useCallback(async (chatId, limit = 50) => {
+    // v0.87.36: поднимаем флаг загрузки (для shimmer overlay) + пытаемся мгновенно
+    // подставить кэш из localStorage
+    setState(s => {
+      const cached = !s.messages[chatId] && loadChatCache(chatId)
+      const nextMessages = cached ? { ...s.messages, [chatId]: cached } : s.messages
+      return { ...s, messages: nextMessages, loadingMessages: { ...s.loadingMessages, [chatId]: true } }
+    })
     return window.api?.invoke('tg:get-messages', { chatId, limit })
   }, [])
 

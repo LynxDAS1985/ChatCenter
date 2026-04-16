@@ -195,9 +195,17 @@
   })
 
   if (window.video?.onSetSrc) {
-    window.video.onSetSrc(({ src, title }) => {
+    window.video.onSetSrc(({ src, title, startTime, pip }) => {
       video.src = src
       if (title) titleEl.textContent = title
+      // v0.87.36: продолжить с указанной секунды (из inline-плеера в чате)
+      if (typeof startTime === 'number' && startTime > 0) {
+        const applyStart = () => { video.currentTime = startTime }
+        if (video.readyState >= 1) applyStart()
+        else video.addEventListener('loadedmetadata', applyStart, { once: true })
+      }
+      // v0.87.36: если открылось сразу в PiP режиме — синхронизируем состояние кнопки
+      if (pip) { pipActive = true; pipBtn.classList.add('pin-active') }
       video.play().catch(() => {})
     })
   }

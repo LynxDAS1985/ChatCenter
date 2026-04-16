@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.35 (16 апреля 2026)
+## Текущая версия: v0.87.36 (16 апреля 2026)
 
 ## 🔴 СТАТУС ФИЧЕЙ v0.87.27–29 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
 
@@ -115,6 +115,68 @@
 ---
 
 ## Changelog
+
+### v0.87.36 (16 апреля 2026) — Inline видео + ⛶/📌 + Кэш сообщений + Shimmer + Fix стрелки ↓
+
+**Выбор пользователя**:
+- ✅ **Видео — Вариант 1** (inline в чате + кнопка ⛶ для окна + 📌 для PiP)
+- ✅ **Загрузка — Вариант 5** (кэшированные сообщения + shimmer поверх)
+- ✅ Fix стрелки ↓ (вынести из scroll-контейнера)
+
+**1. Inline видео-плеер в bubble**:
+Переделал [VideoTile.jsx](src/native/components/VideoTile.jsx):
+- До клика: постер (thumb) + ▶ + duration/size в углу (как было)
+- Клик ▶: скачивает видео с прогресс-баром
+- После скачивания: **заменяет постер на `<video controls autoplay playsInline>`** в той же bubble
+- **В углу overlay-кнопок**: `⛶` (раскрыть в отдельное окно) + `📌` (PiP — мини поверх всех окон)
+- При клике ⛶/📌: inline-видео ставится на паузу, открывается отдельное окно с **той же секунды** через `currentTime`
+- **IntersectionObserver**: если bubble уехал из viewport → авто-пауза (не играет невидимое)
+- cc-media:// уже поддерживает Range → стриминг и перемотка работают
+
+**Исправление videoPlayerHandler.js**:
+- `let prevBounds = null` перенесён в начало функции (раньше был после `video:open` → ReferenceError при PiP-старте)
+- `video:open` принимает `startTime` + `pip` → передаётся в окно через `photo:set-srcs` event
+- Если `pip: true` при открытии → окно сразу становится мини (480×270, alwaysOnTop)
+
+**video-player.html** — применяет `startTime` в `onSetSrc` (через `loadedmetadata` event если не готово), синхронизирует состояние `pipBtn` если открылось в PiP.
+
+**2. Кэш сообщений + shimmer-загрузка**:
+- `localStorage` ключ `chat-messages:{chatId}` — хранит последние 50 сообщений
+- При `loadMessages(chatId)` в [nativeStore.js](src/native/store/nativeStore.js):
+  - Если для чата нет в `s.messages` → подставляем из кэша **мгновенно**
+  - Поднимаем флаг `loadingMessages[chatId] = true`
+- Когда `tg:messages` event пришёл → кэш обновляется свежими данными + флаг снимается
+- Новый компонент [MessageSkeleton.jsx](src/native/components/MessageSkeleton.jsx):
+  - `<MessageSkeleton count={5}>` — 5 серых плейсхолдеров с shimmer-анимацией (для пустого чата в момент первой загрузки)
+  - `<MessageListOverlay show>` — синяя полоска сверху + тост «⏳ Обновляю сообщения» (когда кэш уже показан, грузим свежее)
+- CSS: `@keyframes native-shimmer` — translateX slide-анимация 1.6с
+
+**3. Fix стрелки ↓**:
+Раньше кнопка `.native-scroll-bottom-btn` была **внутри** `msgsScrollRef` div (с `overflow-y: auto`). `position: absolute` в scroll-контейнере позиционируется относительно **начала** контента, не окна → при скролле уезжала вместе с сообщениями.
+
+**Фикс**: обернул scroll-div в **relative wrapper** `<div style={{position:'relative', display:'flex', flexDirection:'column', minHeight:0}}>`. Scroll-div стал без position:relative, кнопка ↓ вынесена в wrapper → позиционируется относительно wrapper (не scroll) → **остаётся на месте при скролле**.
+
+**4. Рефакторинг** (InboxMode 605 → 588):
+- Новый хук [useMessageActions.js](src/native/hooks/useMessageActions.js) — handleDelete/handleForward/handleForwardSelect/handlePin
+
+**5. Тесты**: **76 vitest** (было 68)
+- [MessageSkeleton.vitest.jsx](src/native/components/MessageSkeleton.vitest.jsx) — 6 тестов (render count / shimmer / overlay / чередование сторон)
+- [VideoTile.vitest.jsx](src/native/components/VideoTile.vitest.jsx) — 3 новых:
+  - `клик → inline play (без video:open)`
+  - `v0.87.36: кнопка ⛶ → video:open с startTime`
+  - `v0.87.36: кнопка 📌 → video:open с pip=true`
+
+**Что проверить**:
+- [ ] Клик по видео в чате → постер сменяется на играющее `<video>` **в той же bubble** (не в отдельном окне)
+- [ ] В углу играющего видео две кнопки: ⛶ и 📌
+- [ ] ⛶ → отдельное окно плеера, видео продолжает **с той же секунды**
+- [ ] 📌 → мини-окно 480×270 в углу, alwaysOnTop, resizable
+- [ ] Прокрути видео вниз (за viewport) → автоматически ставит на паузу
+- [ ] Открой чат с которым раньше общался → сразу видишь старые сообщения (из кэша), сверху синяя полоска «Обновляю»
+- [ ] Открой чат первый раз → видишь **shimmer-скелетон** 5 плейсхолдеров (не «Нет сообщений»)
+- [ ] Через 1-3 сек скелетон исчезает, появляются реальные сообщения
+- [ ] Стрелка ↓ в правом-нижнем углу чата **видна** при скролле, не уезжает с контентом
+- [ ] Клик ↓ скроллит к первому непрочитанному (как раньше)
 
 ### v0.87.35 (16 апреля 2026) — Unread в списке точный + стрелка к непрочитанному + PiP + LRU квота + subs/audio tracks
 

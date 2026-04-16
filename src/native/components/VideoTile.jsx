@@ -1,8 +1,9 @@
-// v0.87.34: плитка видео для ленты (Variant A — poster + streaming).
-// Показывает: постер (thumb) + ▶ кнопка + продолжительность + размер файла.
-// При клике: скачивается полный файл с прогресс-баром, потом открывается
-// отдельное окно плеера (video:open IPC) со streaming через cc-media://.
-// До клика НЕ качает полный видео-файл, экономит трафик.
+// v0.87.36: Inline video plays с кнопками ⛶ (отдельное окно) + 📌 (PiP).
+// Flow:
+//   1. Монтируется → грузим только thumb (постер), ~20-80 КБ
+//   2. Клик ▶ → tg:download-video (прогресс-бар), после окончания → <video controls autoplay inline>
+//   3. Кнопки ⛶ / 📌 поверх playing video → переводят в отдельное окно с той же секунды
+//   4. IntersectionObserver — auto-pause если видео уехало из viewport
 import { useEffect, useState, useRef } from 'react'
 
 function formatDuration(sec) {
@@ -23,26 +24,28 @@ function formatSize(bytes) {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' ГБ'
 }
 
-export default function VideoTile({ m, chatId, onPosterLoaded }) {
+export default function VideoTile({ m, chatId }) {
   const [posterUrl, setPosterUrl] = useState(null)
-  const [loadingPoster, setLoadingPoster] = useState(false)
+  const [videoSrc, setVideoSrc] = useState(null)
+  const [playing, setPlaying] = useState(false)
   const [downloading, setDownloading] = useState(false)
-  const [progress, setProgress] = useState(0)  // 0..1
+  const [progress, setProgress] = useState(0)
   const [error, setError] = useState(null)
+  const videoRef = useRef(null)
+  const containerRef = useRef(null)
   const unsubRef = useRef(null)
 
-  // Загружаем постер (thumb) сразу при монтировании — лёгкий, 20-80 КБ
+  // Загружаем постер (thumb) сразу — лёгкий, ~20-80 КБ
   useEffect(() => {
     let cancelled = false
-    setLoadingPoster(true)
     window.api?.invoke('tg:download-media', { chatId, messageId: m.id, thumb: true }).then(r => {
       if (cancelled) return
-      if (r?.ok) { setPosterUrl(r.path); onPosterLoaded?.(r.path) }
-    }).finally(() => { if (!cancelled) setLoadingPoster(false) })
+      if (r?.ok) setPosterUrl(r.path)
+    })
     return () => { cancelled = true }
   }, [m.id])
 
-  // Подписка на progress events main-процесса
+  // Прогресс скачивания
   useEffect(() => {
     if (!downloading) return
     const sub = window.api?.on?.('tg:media-progress', (data) => {
@@ -53,20 +56,30 @@ export default function VideoTile({ m, chatId, onPosterLoaded }) {
     return () => { try { unsubRef.current?.() } catch(_) {} }
   }, [downloading, m.id, chatId])
 
+  // Auto-pause при уходе из viewport
+  useEffect(() => {
+    if (!playing || !containerRef.current) return
+    const obs = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting && videoRef.current && !videoRef.current.paused) {
+        videoRef.current.pause()
+      }
+    }, { threshold: 0.1 })
+    obs.observe(containerRef.current)
+    return () => obs.disconnect()
+  }, [playing])
+
   const handlePlay = async (e) => {
-    e.stopPropagation()
+    e?.stopPropagation?.()
     if (downloading) return
+    if (videoSrc) { setPlaying(true); return }
     setError(null)
     setDownloading(true)
     setProgress(0)
     try {
       const r = await window.api?.invoke('tg:download-video', { chatId, messageId: m.id })
       if (!r?.ok) { setError(r?.error || 'Не удалось скачать'); return }
-      // Открываем отдельное окно плеера
-      await window.api?.invoke('video:open', {
-        src: r.path,
-        title: m.mediaPreview || 'Видео',
-      })
+      setVideoSrc(r.path)
+      setPlaying(true)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -75,10 +88,88 @@ export default function VideoTile({ m, chatId, onPosterLoaded }) {
     }
   }
 
+  // Открыть в отдельном окне с той же секунды
+  const handleExpand = async (e) => {
+    e.stopPropagation()
+    const time = videoRef.current?.currentTime || 0
+    videoRef.current?.pause()
+    try {
+      await window.api?.invoke('video:open', {
+        src: videoSrc, title: m.mediaPreview || 'Видео', startTime: time,
+      })
+    } catch(_) {}
+  }
+
+  // PiP через main-процесс (отдельное frameless окно 480×270 alwaysOnTop)
+  const handlePip = async (e) => {
+    e.stopPropagation()
+    const time = videoRef.current?.currentTime || 0
+    videoRef.current?.pause()
+    try {
+      await window.api?.invoke('video:open', {
+        src: videoSrc, title: m.mediaPreview || 'Видео', startTime: time, pip: true,
+      })
+    } catch(_) {}
+  }
+
   const aspect = m.mediaWidth && m.mediaHeight ? `${m.mediaWidth} / ${m.mediaHeight}` : '16 / 9'
 
+  // Если играет inline — показываем <video>
+  if (playing && videoSrc) {
+    return (
+      <div
+        ref={containerRef}
+        style={{
+          position: 'relative',
+          width: '100%',
+          aspectRatio: aspect,
+          minHeight: 180,
+          maxHeight: 420,
+          borderRadius: 8,
+          overflow: 'hidden',
+          background: '#000',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <video
+          ref={videoRef}
+          src={videoSrc}
+          controls
+          autoPlay
+          playsInline
+          preload="auto"
+          style={{
+            width: '100%', height: '100%',
+            objectFit: 'contain',
+            background: '#000',
+          }}
+        />
+        {/* Overlay кнопки: expand + PiP */}
+        <div style={{
+          position: 'absolute', top: 8, right: 8,
+          display: 'flex', gap: 4,
+          zIndex: 10,
+          pointerEvents: 'none',
+        }}>
+          <button
+            onClick={handleExpand}
+            title="Открыть в отдельном окне"
+            style={videoBtnStyle}
+          >⛶</button>
+          <button
+            onClick={handlePip}
+            title="Мини-плеер поверх всех окон"
+            style={videoBtnStyle}
+          >📌</button>
+        </div>
+      </div>
+    )
+  }
+
+  // Постер с ▶ (до клика)
   return (
     <div
+      ref={containerRef}
       onClick={handlePlay}
       style={{
         position: 'relative',
@@ -99,7 +190,6 @@ export default function VideoTile({ m, chatId, onPosterLoaded }) {
         }} />
       )}
 
-      {/* Центральная кнопка ▶ */}
       {!downloading && (
         <div style={{
           position: 'absolute', inset: 0,
@@ -112,14 +202,11 @@ export default function VideoTile({ m, chatId, onPosterLoaded }) {
             backdropFilter: 'blur(6px)',
             border: '2px solid rgba(255,255,255,0.9)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontSize: 28,
-            paddingLeft: 4,  // оптически центрируем треугольник ▶
-            transition: 'transform 0.15s, background 0.15s',
+            color: '#fff', fontSize: 28, paddingLeft: 4,
           }}>▶</div>
         </div>
       )}
 
-      {/* Прогресс-бар скачивания */}
       {downloading && (
         <>
           <div style={{
@@ -139,7 +226,6 @@ export default function VideoTile({ m, chatId, onPosterLoaded }) {
               {formatSize(Math.round(progress * m.fileSize))} / {formatSize(m.fileSize)}
             </div>}
           </div>
-          {/* Нижняя полоска */}
           <div style={{
             position: 'absolute', left: 0, right: 0, bottom: 0,
             height: 3, background: 'rgba(0,0,0,0.4)',
@@ -152,7 +238,6 @@ export default function VideoTile({ m, chatId, onPosterLoaded }) {
         </>
       )}
 
-      {/* Duration / размер overlay в углу */}
       {!downloading && (m.duration || m.fileSize) && (
         <div style={{
           position: 'absolute', top: 8, right: 8,
@@ -167,7 +252,6 @@ export default function VideoTile({ m, chatId, onPosterLoaded }) {
         </div>
       )}
 
-      {/* Ошибка */}
       {error && (
         <div style={{
           position: 'absolute', inset: 0,
@@ -178,4 +262,18 @@ export default function VideoTile({ m, chatId, onPosterLoaded }) {
       )}
     </div>
   )
+}
+
+const videoBtnStyle = {
+  width: 32, height: 32,
+  border: 'none',
+  borderRadius: 6,
+  background: 'rgba(0,0,0,0.6)',
+  backdropFilter: 'blur(8px)',
+  color: '#fff',
+  fontSize: 16,
+  cursor: 'pointer',
+  pointerEvents: 'auto',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  transition: 'background 0.15s',
 }
