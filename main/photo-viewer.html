@@ -8,8 +8,29 @@
   html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; color: #fff; }
   body { display: flex; align-items: center; justify-content: center; user-select: none; -webkit-app-region: drag; }
   .wrap { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-  img { max-width: 100%; max-height: 100%; transform-origin: center; will-change: transform; cursor: grab; -webkit-app-region: no-drag; transition: transform 0.1s ease-out; }
+  .stage {
+    position: relative; width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  img {
+    max-width: calc(100vw - 100px); max-height: 100vh;
+    transform-origin: center; will-change: transform, opacity;
+    cursor: grab; -webkit-app-region: no-drag;
+    transition: transform 0.12s ease-out;
+  }
   img.dragging { cursor: grabbing; transition: none; }
+  img.slide-in-right { animation: slide-from-right 0.25s ease-out; }
+  img.slide-in-left { animation: slide-from-left 0.25s ease-out; }
+  @keyframes slide-from-right {
+    from { transform: translateX(60px) scale(0.95); opacity: 0; }
+    to { transform: translateX(0) scale(1); opacity: 1; }
+  }
+  @keyframes slide-from-left {
+    from { transform: translateX(-60px) scale(0.95); opacity: 0; }
+    to { transform: translateX(0) scale(1); opacity: 1; }
+  }
+
+  /* Тулбар */
   .toolbar {
     position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
     display: flex; gap: 4px; align-items: center;
@@ -29,30 +50,91 @@
   }
   .toolbar button:hover, .toolbar a:hover { background: rgba(255,255,255,0.12); }
   .toolbar span.pct { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; }
+  .toolbar span.counter { min-width: 56px; text-align: center; opacity: 0.85; border-left: 1px solid rgba(255,255,255,0.15); border-right: 1px solid rgba(255,255,255,0.15); padding: 0 10px; margin: 0 4px; }
   .pin-active { color: #2AABEE !important; }
+
+  /* Стрелки навигации — плавные */
+  .nav-arrow {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 48px; height: 72px;
+    background: rgba(20,20,20,0.45);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #fff;
+    font-size: 26px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    z-index: 5;
+    transition: background 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+    opacity: 0.6;
+  }
+  .nav-arrow:hover {
+    background: rgba(42,171,238,0.8);
+    opacity: 1;
+    transform: translateY(-50%) scale(1.08);
+  }
+  .nav-arrow:active {
+    transform: translateY(-50%) scale(0.96);
+  }
+  .nav-arrow.left { left: 12px; border-radius: 0 12px 12px 0; }
+  .nav-arrow.right { right: 12px; border-radius: 12px 0 0 12px; }
+  .nav-arrow:disabled { opacity: 0.2; cursor: default; background: rgba(20,20,20,0.2); }
+  .nav-arrow:disabled:hover { transform: translateY(-50%); background: rgba(20,20,20,0.2); }
+
   .hint { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 11px; opacity: 0.5; -webkit-app-region: no-drag; }
+
+  /* Dots-индикатор позиции (если > 1 фото) */
+  .dots {
+    position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 6px; -webkit-app-region: no-drag;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+    cursor: pointer;
+    transition: background 0.15s, transform 0.15s;
+  }
+  .dot.active { background: #2AABEE; transform: scale(1.25); }
+  .dot:hover { background: rgba(255,255,255,0.6); }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <img id="photo" draggable="false" alt="photo" />
+  <div class="stage">
+    <img id="photo" draggable="false" alt="photo" />
+  </div>
+
+  <button id="btn-prev" class="nav-arrow left" title="Предыдущее (←)" aria-label="Предыдущее">‹</button>
+  <button id="btn-next" class="nav-arrow right" title="Следующее (→)" aria-label="Следующее">›</button>
+
   <div class="toolbar">
     <button id="btn-minus" title="Уменьшить (−)">−</button>
     <span class="pct" id="pct">100%</span>
     <button id="btn-plus" title="Увеличить (+)">+</button>
     <button id="btn-reset" title="Сброс (двойной клик по фото)">⟲</button>
+    <span class="counter" id="counter">1/1</span>
     <button id="btn-pin" title="Закрепить окно поверх всех">📌</button>
     <a id="btn-download" download title="Скачать">⬇</a>
     <button id="btn-min" title="Свернуть">_</button>
     <button id="btn-max" title="Развернуть">▢</button>
     <button id="btn-close" title="Закрыть (Esc)">✕</button>
   </div>
-  <div class="hint">Колёсико — зум • Перетащите — сдвинуть • Двойной клик — сброс</div>
+
+  <div id="dots" class="dots"></div>
+  <div class="hint">← → — между фото • Колёсико — зум • Перетащите — сдвинуть • Двойной клик — сброс</div>
 </div>
 <script>
   const img = document.getElementById('photo')
   const pctEl = document.getElementById('pct')
+  const counterEl = document.getElementById('counter')
+  const prevBtn = document.getElementById('btn-prev')
+  const nextBtn = document.getElementById('btn-next')
+  const dotsEl = document.getElementById('dots')
+  const downloadBtn = document.getElementById('btn-download')
+
   let scale = 1, offX = 0, offY = 0, drag = null
+  let srcs = [], index = 0
 
   function apply() {
     img.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`
@@ -60,6 +142,48 @@
   }
   function reset() { scale = 1; offX = 0; offY = 0; apply() }
 
+  function renderIndex(dir) {
+    const src = srcs[index]
+    if (!src) return
+    img.classList.remove('slide-in-left', 'slide-in-right')
+    // принудительный reflow чтобы повторно сыграла анимация
+    void img.offsetWidth
+    img.src = src
+    downloadBtn.href = src
+    if (dir === 'next') img.classList.add('slide-in-right')
+    else if (dir === 'prev') img.classList.add('slide-in-left')
+    reset()
+    renderDots()
+    counterEl.textContent = (index + 1) + '/' + srcs.length
+    prevBtn.disabled = index === 0
+    nextBtn.disabled = index >= srcs.length - 1
+    // Видимость стрелок и счётчика — только если > 1
+    const multi = srcs.length > 1
+    prevBtn.style.display = multi ? '' : 'none'
+    nextBtn.style.display = multi ? '' : 'none'
+    counterEl.style.display = multi ? '' : 'none'
+    dotsEl.style.display = multi ? 'flex' : 'none'
+  }
+
+  function renderDots() {
+    dotsEl.innerHTML = ''
+    if (srcs.length <= 1 || srcs.length > 20) return
+    for (let i = 0; i < srcs.length; i++) {
+      const d = document.createElement('div')
+      d.className = 'dot' + (i === index ? ' active' : '')
+      d.onclick = () => { const dir = i > index ? 'next' : 'prev'; index = i; renderIndex(dir) }
+      dotsEl.appendChild(d)
+    }
+  }
+
+  function next() {
+    if (index < srcs.length - 1) { index++; renderIndex('next') }
+  }
+  function prev() {
+    if (index > 0) { index--; renderIndex('prev') }
+  }
+
+  // Мышь — зум/пан
   img.addEventListener('wheel', (e) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -0.15 : 0.15
@@ -80,12 +204,15 @@
   window.addEventListener('mouseup', () => { drag = null; img.classList.remove('dragging') })
   img.addEventListener('dblclick', reset)
 
+  // Кнопки
   document.getElementById('btn-plus').onclick = () => { scale = Math.min(8, scale + 0.25); apply() }
   document.getElementById('btn-minus').onclick = () => { scale = Math.max(0.2, scale - 0.25); apply() }
   document.getElementById('btn-reset').onclick = reset
   document.getElementById('btn-close').onclick = () => window.photo?.close()
   document.getElementById('btn-min').onclick = () => window.photo?.minimize()
   document.getElementById('btn-max').onclick = () => window.photo?.maximize()
+  prevBtn.onclick = prev
+  nextBtn.onclick = next
 
   let pinned = false
   const pinBtn = document.getElementById('btn-pin')
@@ -95,19 +222,25 @@
     try { await window.photo?.togglePin(pinned) } catch(_) {}
   }
 
+  // Клавиатура
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') window.photo?.close()
+    if (e.key === 'ArrowRight') next()
+    if (e.key === 'ArrowLeft') prev()
     if (e.key === '+' || e.key === '=') { scale = Math.min(8, scale + 0.25); apply() }
     if (e.key === '-') { scale = Math.max(0.2, scale - 0.25); apply() }
     if (e.key === '0') reset()
+    if (e.key === 'Home') { index = 0; renderIndex('prev') }
+    if (e.key === 'End') { index = srcs.length - 1; renderIndex('next') }
   })
 
-  // Приём src от main
-  if (window.photo?.onSetSrc) {
-    window.photo.onSetSrc(({ src }) => {
-      img.src = src
-      document.getElementById('btn-download').href = src
-      reset()
+  // Приём src от main (массив или один)
+  if (window.photo?.onSetSrcs) {
+    window.photo.onSetSrcs((data) => {
+      srcs = Array.isArray(data.srcs) ? data.srcs : [data.src || '']
+      srcs = srcs.filter(Boolean)
+      index = Math.max(0, Math.min(srcs.length - 1, data.index || 0))
+      renderIndex()
     })
   }
 </script>

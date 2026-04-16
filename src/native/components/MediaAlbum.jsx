@@ -1,10 +1,11 @@
-// v0.87.29: альбом из нескольких медиа-сообщений с одним groupedId.
-// Показывает сетку до 4 превью, если больше — «+N ещё» на последнем.
-// Клик по любому превью → открывает PhotoViewer окно (photo:open IPC).
+// v0.87.31: альбом из нескольких медиа-сообщений с одним groupedId.
+// Показывает ВСЕ фото сеткой (без «+N» ограничения) — каждое кликабельно.
+// Layout: 1→full, 2→2x1, 3→L-форма, 4→2x2, 5+→3 колонки.
+// Клик → PhotoViewer window с массивом srcs и индексом нажатого.
 import { useEffect, useState } from 'react'
 import FormattedText from './FormattedText.jsx'
 
-function PhotoTile({ m, chatId, downloadMedia, onOpen, extraLabel }) {
+function PhotoTile({ m, chatId, downloadMedia, onClick, registerSrc, idx }) {
   const [url, setUrl] = useState(null)
   const [loading, setLoading] = useState(false)
   useEffect(() => {
@@ -13,14 +14,17 @@ function PhotoTile({ m, chatId, downloadMedia, onOpen, extraLabel }) {
     setLoading(true)
     downloadMedia(chatId, m.id, false).then(r => {
       if (cancelled) return
-      if (r?.ok) setUrl(r.path)
+      if (r?.ok) {
+        setUrl(r.path)
+        registerSrc?.(idx, r.path)
+      }
     }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [m.id])
 
   return (
     <div
-      onClick={() => url && onOpen?.(url)}
+      onClick={() => url && onClick?.(idx, url)}
       style={{
         position: 'relative',
         width: '100%', height: '100%',
@@ -50,59 +54,85 @@ function PhotoTile({ m, chatId, downloadMedia, onOpen, extraLabel }) {
           padding: '2px 6px', borderRadius: 4, fontSize: 10,
         }}>📹</div>
       )}
-      {extraLabel && (
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'rgba(0,0,0,0.55)', color: '#fff',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 20, fontWeight: 700,
-        }}>+{extraLabel}</div>
-      )}
     </div>
   )
 }
 
-export default function MediaAlbum({ album, chatId, downloadMedia, onPhotoOpen, isOutgoing }) {
-  // Берём первые 4 для сетки, если больше — на 4м показываем «+N»
-  const all = album.msgs.filter(m => m.mediaType === 'photo' || m.mediaType === 'video')
-  const visible = all.slice(0, 4)
-  const rest = all.length - visible.length
-  const n = visible.length
+// Собираем srcs массив для PhotoViewer по мере загрузки.
+function useAlbumSrcs(count) {
+  const [srcs, setSrcs] = useState(() => new Array(count).fill(null))
+  const register = (idx, src) => {
+    setSrcs(prev => {
+      if (prev[idx] === src) return prev
+      const next = prev.slice()
+      next[idx] = src
+      return next
+    })
+  }
+  return [srcs, register]
+}
 
-  // Простая сетка: 1→1x1, 2→2x1, 3→2x2 (с 1-шириной первого), 4+→2x2
-  let cols = 2
-  let gridTemplate = null
-  if (n === 1) { cols = 1 }
-  else if (n === 2) { cols = 2 }
-  else if (n === 3) { gridTemplate = `
-    "a a" 1fr
-    "b c" 1fr / 1fr 1fr
-  `}
-  else { cols = 2 }
+export default function MediaAlbum({ album, chatId, downloadMedia, onPhotoOpen }) {
+  const all = album.msgs.filter(m => m.mediaType === 'photo' || m.mediaType === 'video')
+  const n = all.length
+  const [srcs, registerSrc] = useAlbumSrcs(n)
+
+  // Layout стратегия
+  let gridStyle
+  if (n === 1) {
+    gridStyle = { gridTemplateColumns: '1fr', gridAutoRows: '1fr' }
+  } else if (n === 2) {
+    gridStyle = { gridTemplateColumns: 'repeat(2, 1fr)', gridAutoRows: '1fr' }
+  } else if (n === 3) {
+    gridStyle = {
+      gridTemplate: `"a a" 1fr "b c" 1fr / 1fr 1fr`,
+    }
+  } else if (n === 4) {
+    gridStyle = { gridTemplateColumns: 'repeat(2, 1fr)', gridAutoRows: '1fr' }
+  } else {
+    // 5+ — 3 колонки, строк столько сколько нужно
+    gridStyle = { gridTemplateColumns: 'repeat(3, 1fr)', gridAutoRows: '1fr' }
+  }
+
+  // Высота блока — пропорционально числу фото, но с потолком
+  const rows = n <= 1 ? 1 : n === 2 ? 1 : n === 3 ? 2 : n === 4 ? 2 : Math.ceil(n / 3)
+  const minHeight = Math.min(520, rows * 160)
 
   const textMsg = album.msgs.find(m => m.text) || album.msgs[0]
+
+  const handleTileClick = (idx, url) => {
+    // Собираем массив src'ов: для не загруженных — передаём strippedThumb как placeholder
+    const allSrcs = all.map((m, i) => srcs[i] || m.strippedThumb || null).filter(Boolean)
+    // Индекс нажатого — относительно отфильтрованного всё-что-есть, но ищем по точному URL
+    const realIdx = Math.max(0, allSrcs.indexOf(url))
+    onPhotoOpen?.({ srcs: allSrcs, index: realIdx })
+  }
 
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: gridTemplate ? undefined : `repeat(${cols}, 1fr)`,
-      gridTemplate: gridTemplate || undefined,
+      ...gridStyle,
       gap: 3,
-      aspectRatio: n === 1 ? '4 / 3' : '1 / 1',
       width: '100%',
-      minHeight: 220,
-      maxHeight: 500,
+      minHeight,
+      maxHeight: 700,
       borderRadius: 8,
       overflow: 'hidden',
       marginBottom: textMsg?.text ? 6 : 0,
     }}>
-      {visible.map((m, i) => (
-        <div key={m.id} style={n === 3 && i === 0 ? { gridArea: 'a' } : n === 3 && i === 1 ? { gridArea: 'b' } : n === 3 && i === 2 ? { gridArea: 'c' } : undefined}>
+      {all.map((m, i) => (
+        <div key={m.id} style={
+          n === 3 && i === 0 ? { gridArea: 'a' }
+          : n === 3 && i === 1 ? { gridArea: 'b' }
+          : n === 3 && i === 2 ? { gridArea: 'c' }
+          : undefined
+        }>
           <PhotoTile
             m={m} chatId={chatId}
             downloadMedia={downloadMedia}
-            onOpen={onPhotoOpen}
-            extraLabel={i === visible.length - 1 && rest > 0 ? rest : null}
+            onClick={handleTileClick}
+            registerSrc={registerSrc}
+            idx={i}
           />
         </div>
       ))}
@@ -118,7 +148,6 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
   const isOutgoing = album.isOutgoing
   const replyToMsg = album.replyToId && getMessage ? getMessage(chatId, album.replyToId) : null
 
-  // Visibility — сообщаем о первом в альбоме (для read-receipt)
   useEffect(() => {
     if (!onVisible) return
     onVisible(firstMsg)
@@ -129,7 +158,7 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
       data-msg-id={firstMsg.id}
       style={{
         alignSelf: isOutgoing ? 'flex-end' : 'flex-start',
-        maxWidth: 'min(480px, 75%)',
+        maxWidth: 'min(520px, 80%)',
         minWidth: 280,
         position: 'relative',
       }}
@@ -159,7 +188,7 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
             ↪ {replyToMsg.text?.slice(0, 80) || '[медиа]'}
           </div>
         )}
-        <MediaAlbum album={album} chatId={chatId} downloadMedia={downloadMedia} onPhotoOpen={onPhotoOpen} isOutgoing={isOutgoing} />
+        <MediaAlbum album={album} chatId={chatId} downloadMedia={downloadMedia} onPhotoOpen={onPhotoOpen} />
         {text && (
           <div style={{ whiteSpace: 'pre-wrap', padding: '4px 8px 0' }}>
             <FormattedText text={text} entities={firstMsg.entities} />
@@ -177,7 +206,6 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
           )}
         </div>
       </div>
-      {/* Мини-меню — оперируем первым сообщением альбома */}
       {menu && (onReply || onForward) && (
         <div style={{
           position: 'absolute', top: -4,

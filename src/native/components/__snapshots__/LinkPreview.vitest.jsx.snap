@@ -1,0 +1,3 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`LinkPreview render > snapshot: типичная карточка 1`] = `"<a href="https://example.com" style="display: block; margin-top: 6px; padding: 6px 10px; background: rgba(42, 171, 238, 0.08); border-radius: 6px; text-decoration: none; color: inherit; font-size: 12px; border-left-width: var(--amoled-accent); border-left-style: var(--amoled-accent); border-left-color: var(--amoled-accent);"><div style="font-weight: 600; opacity: 0.8; font-size: 11px;">example.com</div><div style="font-weight: 600; margin-top: 2px;">Example</div><div style="opacity: 0.8; margin-top: 2px; overflow: hidden;">Desc</div></a>"`;

@@ -1,6 +1,7 @@
 #!/bin/sh
-# Pre-commit hook: ESLint + быстрые статические тесты (v0.87.7)
-# Не запускает electron-vite build и e2e — они идут в CI (GitHub Actions).
+# Pre-commit hook v0.87.31: ESLint + быстрые статические тесты + vitest render-тесты.
+# НЕ запускает electron-vite build и e2e — они идут в CI (GitHub Actions).
+# Цель — ловить ДО коммита: eslint, hook order, размер файлов, scope, TDZ/hook ошибки.
 
 STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(js|jsx)$' | grep -v '\.cjs$' | grep -v '\.test\.' | grep -v 'node_modules' | grep -v 'out/' | grep -v 'main/preloads/')
 
@@ -15,15 +16,15 @@ if [ -n "$STAGED" ]; then
   echo "✅ ESLint: OK"
 fi
 
-echo "🧪 Быстрые тесты (hook order, size, scope, structure)..."
+echo "🧪 Быстрые статические тесты (hook order, size, scope, structure, mainImports)..."
 FAIL=0
-for t in hookOrder.test.cjs componentScope.test.cjs fileSizeLimits.test.cjs appStructure.test.cjs; do
+for t in hookOrder.test.cjs componentScope.test.cjs fileSizeLimits.test.cjs appStructure.test.cjs mainImports.test.cjs mainRuntime.test.cjs; do
   if [ -f "src/__tests__/$t" ]; then
     node "src/__tests__/$t" > /tmp/pre-commit.log 2>&1
     if [ $? -ne 0 ]; then
       echo ""
       echo "❌ $t упал:"
-      tail -10 /tmp/pre-commit.log
+      tail -15 /tmp/pre-commit.log
       FAIL=1
     fi
   fi
@@ -31,7 +32,26 @@ done
 
 if [ $FAIL -eq 1 ]; then
   echo ""
-  echo "❌ Тесты упали! --no-verify для обхода (не рекомендуется)."
+  echo "❌ Статические тесты упали! --no-verify для обхода (НЕ рекомендуется)."
   exit 1
 fi
-echo "✅ Быстрые тесты: OK"
+echo "✅ Статические тесты: OK"
+
+# v0.87.31: Vitest render-тесты — ловят TDZ, hook-order, битые импорты
+# Запускаем только если в staged есть .jsx / .vitest файлы (экономим время)
+VITEST_CANDIDATES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(jsx|vitest\.(jsx|js))$' | grep -v 'node_modules')
+if [ -n "$VITEST_CANDIDATES" ]; then
+  echo "🎨 Vitest render-тесты (компоненты)..."
+  npx vitest run --reporter=dot > /tmp/vitest-precommit.log 2>&1
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Vitest render-тесты упали:"
+    tail -40 /tmp/vitest-precommit.log
+    echo ""
+    echo "❌ Используйте --no-verify для обхода (НЕ рекомендуется)."
+    exit 1
+  fi
+  echo "✅ Vitest: OK"
+fi
+
+echo "✅ Все быстрые проверки прошли — продолжаем коммит"

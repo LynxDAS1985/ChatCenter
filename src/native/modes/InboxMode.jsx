@@ -127,8 +127,11 @@ export default function InboxMode({ store }) {
     firstUnreadIdRef,
   })
 
-  const openPhotoWindow = (src) => {
-    try { window.api?.invoke('photo:open', { src }) } catch(_) {}
+  // v0.87.31: принимаем либо string src (одиночное фото из MessageBubble),
+  // либо { srcs, index } (альбом из MediaAlbum с навигацией ← →)
+  const openPhotoWindow = (payload) => {
+    const arg = typeof payload === 'string' ? { src: payload } : payload
+    try { window.api?.invoke('photo:open', arg) } catch(_) {}
   }
 
   const showToast = (message, type = 'info') => {

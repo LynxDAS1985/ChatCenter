@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.30 (16 апреля 2026)
+## Текущая версия: v0.87.31 (16 апреля 2026)
 
 ## 🔴 СТАТУС ФИЧЕЙ v0.87.27–29 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
 
@@ -115,6 +115,60 @@
 ---
 
 ## Changelog
+
+### v0.87.31 (16 апреля 2026) — Альбом: все фото видно + Стрелки в PhotoViewer + Pre-commit vitest + 4 новых snapshot-теста
+
+**Пользовательский feedback по v0.87.30 + новые требования**:
+- «Надо компоновку сделать так чтобы видно были все фото, чтобы на любое мог нажать» — альбом ограничивал 4 тайлами с «+N»
+- «Надо сделать стрелочки в модальном окне что бы мог переключать фото в сообщений, сбоку или стрелочками на клавиатуре, слитные с эффектом» — навигация между фото альбома
+- «Pre-commit хук с npm test надо сделать»
+- «Snapshot-тесты для визуальной регрессии надо сделать»
+- «Vitest render-тесты на остальные крупные компоненты надо сделать»
+
+**1. Альбом: компоновка «видно все фото»** — убран slice(0, 4) и «+N» overlay:
+- 1 фото → full 1x1
+- 2 фото → 2x1 horizontal
+- 3 фото → L-форма (grid-template `"a a" / "b c"`)
+- 4 фото → 2x2
+- **5 и больше** → 3 колонки × N строк, `gridAutoRows: 1fr`, `minHeight` пропорциональна `rows * 160`, потолок 700px
+- Каждый тайл клик → `onPhotoOpen({ srcs, index })`
+
+**2. PhotoViewer с навигацией между фото альбома**:
+- `photoViewerHandler.js` теперь принимает либо `{ src }` (одно фото), либо `{ srcs, index }` (массив)
+- IPC канал переименован в `photo:set-srcs` (обратная совместимость — преобразует single → array)
+- [main/photo-viewer.html](main/photo-viewer.html) — круглые полупрозрачные кнопки ← → по бокам, клавиши `ArrowLeft/ArrowRight/Home/End`, dots-индикатор позиции внизу (до 20 фото), счётчик `X/N` в тулбаре
+- **Плавные эффекты**: slide-from-right / slide-from-left анимация 0.25с при смене + hover-scale 1.08 на стрелках + цвет фона меняется на акцент при hover
+- Стрелки автоматически `disabled` на краях диапазона и скрыты если фото одно
+
+**3. Pre-commit hook с npm-test** ([scripts/hooks/pre-commit](scripts/hooks/pre-commit)):
+- Ранее: только ESLint + 4 статических теста (.test.cjs)
+- Теперь дополнительно: **mainImports**, **mainRuntime** (runtime-парсинг main/**), **vitest run** (если в staged есть `.jsx` / `.vitest.*` файлы)
+- Автоустановка hook через `npm run setup-hooks` или через `postinstall` — также сам установил в `.git/hooks/pre-commit`
+- Время: ~5-10 сек при наличии JSX, ~1-2 сек без изменений JSX
+
+**4. Snapshot-тесты для визуальной регрессии** (6 snapshot'ов в `__snapshots__/`):
+- `MessageBubble.vitest.jsx`: снап текстового сообщения + снап исходящего медиа-фото с подписью
+- `MediaAlbum.vitest.jsx`: снап альбома 4 фото (2x2)
+- `ChatListItem.vitest.jsx`: снап обычного чата с unread + снап канала с счётчиком
+- `LinkPreview.vitest.jsx`: снап типичной карточки ссылки
+- Любое случайное изменение вёрстки (шрифт, padding, класс) → snapshot упадёт → надо явно подтвердить `vitest run -u`
+
+**5. Vitest render-тесты на компоненты** — 4 новых файла, в сумме **57 тестов** (было 11):
+- [MessageBubble.vitest.jsx](src/native/components/MessageBubble.vitest.jsx): 7 тестов (текст/outgoing/✓✓/медиа/link-preview + 2 snapshot)
+- [MediaAlbum.vitest.jsx](src/native/components/MediaAlbum.vitest.jsx): 6 тестов (1/2/3 фото / 7 all-visible / caption / snapshot)
+- [ChatListItem.vitest.jsx](src/native/components/ChatListItem.vitest.jsx): 12 тестов (user/channel/group/bot/online/avatar/инициалы/active + 2 snapshot)
+- [LinkPreview.vitest.jsx](src/native/components/LinkPreview.vitest.jsx): 7 тестов (полная/только title/null/photoUrl/outgoing/snapshot)
+- [FormattedText.vitest.jsx](src/native/components/FormattedText.vitest.jsx): 8 тестов (empty/bold/italic+code/url/autolink/hashtag/mention)
+
+**Что проверить**:
+- [ ] Альбом из канала «Автопоток» — видны ВСЕ фото, каждое кликабельно (не только 4)
+- [ ] Клик по любому фото альбома → окно открывается именно на НАЖАТОМ фото
+- [ ] В окне просмотра: стрелки ← → слева/справа, плавно листают с анимацией slide
+- [ ] Клавиши ← → тоже листают; `Home`/`End` — на первое/последнее
+- [ ] Внизу точки показывают позицию (если фото <20)
+- [ ] В тулбаре счётчик `3/7` показывает где ты сейчас
+- [ ] Если в окне одно фото — стрелок, счётчика и точек нет
+- [ ] Попытайся сделать коммит — pre-commit запускает vitest (если меняешь .jsx) и блокирует при падении
 
 ### v0.87.30 (16 апреля 2026) — Vitest render-тест InboxMode — ловит TDZ/порядок hooks
 

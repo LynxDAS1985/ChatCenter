@@ -31,12 +31,16 @@ function getPhotoHtmlPath() {
 }
 
 export function registerPhotoViewerHandler() {
-  ipcMain.handle('photo:open', async (_, { src }) => {
+  ipcMain.handle('photo:open', async (_, payload) => {
     try {
-      if (!src) return { ok: false, error: 'no src' }
+      // v0.87.31: принимаем либо одиночный { src }, либо массив { srcs, index }
+      const srcs = Array.isArray(payload?.srcs) && payload.srcs.length
+        ? payload.srcs.filter(Boolean)
+        : payload?.src ? [payload.src] : []
+      if (!srcs.length) return { ok: false, error: 'no src' }
+      const index = Math.max(0, Math.min(srcs.length - 1, Number(payload?.index) || 0))
       if (photoWindow && !photoWindow.isDestroyed()) {
-        // Переиспользуем существующее окно — просто меняем картинку
-        photoWindow.webContents.send('photo:set-src', { src })
+        photoWindow.webContents.send('photo:set-srcs', { srcs, index })
         photoWindow.focus()
         return { ok: true, reused: true }
       }
@@ -63,7 +67,7 @@ export function registerPhotoViewerHandler() {
       })
       photoWindow.once('ready-to-show', () => {
         photoWindow?.show()
-        photoWindow?.webContents.send('photo:set-src', { src })
+        photoWindow?.webContents.send('photo:set-srcs', { srcs, index })
       })
       photoWindow.on('closed', () => { photoWindow = null })
       await photoWindow.loadFile(getPhotoHtmlPath())
