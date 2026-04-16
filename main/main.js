@@ -1,5 +1,5 @@
 // v0.84.4 — Refactored: notification, login, backup, window, tray extracted
-import { app, BrowserWindow, ipcMain, session, nativeImage, Notification, shell, clipboard, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, session, nativeImage, Notification, shell, clipboard, screen, protocol } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import https from 'node:https'
@@ -483,6 +483,14 @@ app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer') // нуже
 const __mainStart = Date.now()
 const __slog = (label) => console.log(`[startup-main] +${Date.now() - __mainStart}ms ${label}`)
 
+// v0.87.20: custom protocol для доступа к tg-avatars/tg-media из renderer
+// обходит webSecurity блокировку file:// в http:// контексте
+try {
+  protocol.registerSchemesAsPrivileged([
+    { scheme: 'cc-media', privileges: { standard: true, secure: true, supportFetchAPI: true, bypassCSP: false } }
+  ])
+} catch(_) {}
+
 app.whenReady().then(() => {
   __slog('app.whenReady')
   // v0.84.1: Инициализируем логгер ДО всего остального
@@ -490,6 +498,31 @@ app.whenReady().then(() => {
   setLogViewerOpener(openLogViewer)
   __slog('logger init')
   console.log('=== ChatCenter v0.87.2 start ===')
+
+  // v0.87.20: регистрация cc-media:// — отдаёт файлы из tg-avatars/tg-media напрямую
+  try {
+    const userData = app.getPath('userData')
+    protocol.handle('cc-media', async (req) => {
+      try {
+        // cc-media://avatars/12345.jpg → %APPDATA%/ЦентрЧатов/tg-avatars/12345.jpg
+        // cc-media://media/chatid_msgid.jpg
+        const u = new URL(req.url)
+        const kind = u.hostname  // 'avatars' | 'media'
+        const filename = decodeURIComponent(u.pathname.slice(1))
+        const dir = kind === 'avatars' ? path.join(userData, 'tg-avatars')
+                  : kind === 'media' ? path.join(userData, 'tg-media') : null
+        if (!dir) return new Response('not-found', { status: 404 })
+        const filePath = path.join(dir, filename)
+        if (!fs.existsSync(filePath)) return new Response('not-found', { status: 404 })
+        const data = fs.readFileSync(filePath)
+        return new Response(data, { headers: { 'Content-Type': 'image/jpeg' } })
+      } catch (e) {
+        console.error('[cc-media] error:', e.message)
+        return new Response('error', { status: 500 })
+      }
+    })
+    console.log('[cc-media] protocol registered')
+  } catch (e) { console.error('[cc-media] register failed:', e.message) }
 
   // Инициализируем хранилище
   storage = initStorage()

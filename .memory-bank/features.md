@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.19 (16 апреля 2026)
+## Текущая версия: v0.87.20 (16 апреля 2026)
 
 ---
 
@@ -91,6 +91,17 @@
 ---
 
 ## Changelog
+
+### v0.87.20 (16 апреля 2026) — НАСТОЯЩАЯ причина почему фото не видны: custom protocol
+- **Проблема**: в логах `download-media: OK, size=278553` — сотни успешных загрузок. CSP расширен. Но UI всё равно **пустой**.
+- **Настоящая причина**: dev-сервер Vite грузит UI по `http://localhost:5173`. Electron с `webSecurity=true` (по умолчанию) **блокирует смешанные протоколы** — `<img src="file://...">` в HTTP-контексте не загружается. Это не CSP, это политика Chromium «no file in http».
+- **Правильное решение** (по [Electron docs](https://www.electronjs.org/docs/latest/api/protocol)): custom protocol `cc-media://`. Регистрируем через `protocol.handle('cc-media', ...)` в main.js, отдаёт файлы из `tg-avatars/` и `tg-media/` по URL типа `cc-media://avatars/12345.jpg`.
+- **Фикс**:
+  - main.js: `protocol.registerSchemesAsPrivileged([{ scheme: 'cc-media', privileges: { standard: true, secure: true, supportFetchAPI: true }}])` до whenReady
+  - В whenReady: `protocol.handle('cc-media', ...)` — парсит URL, читает файл из `tg-avatars` или `tg-media`, возвращает `Response(data, { headers: { 'Content-Type': 'image/jpeg' }})`
+  - telegramHandler.js: все `file:///...` заменены на `cc-media://avatars/...` и `cc-media://media/...`
+  - index.html CSP: `cc-media:` вместо `file:` в `img-src`, `media-src`, `connect-src`, `default-src`
+- **Ловушка 78**: в Electron dev-режиме (http://localhost) file:// URL НЕ работают в `<img>` из-за Chromium mixed-content policy. Единственное правильное решение — custom protocol через `protocol.handle()`. `webSecurity: false` — **не рекомендуется**, ломает безопасность.
 
 ### v0.87.19 (16 апреля 2026) — 3 корневых ИСТИННЫХ причины: CSP, channels.ReadHistory, GetFullChannel
 **По сверке с документацией и логами — настоящие причины всех проблем:**

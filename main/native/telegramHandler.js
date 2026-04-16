@@ -273,13 +273,13 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       const rawId = String(chatId).split(':').pop()
       const avatarPath = path.join(avatarsDir, `${rawId}.jpg`)
       if (fs.existsSync(avatarPath)) {
-        emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
+        emit('tg:chat-avatar', { chatId, avatarPath: `cc-media://avatars/${encodeURIComponent(path.basename(avatarPath))}` })
         return { ok: true }
       }
       const buffer = await client.downloadProfilePhoto(entity, { isBig: false })
       if (!buffer) { log(`refresh-avatar ${chatId}: нет photo`); return { ok: false, error: 'нет фото' } }
       fs.writeFileSync(avatarPath, buffer)
-      emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
+      emit('tg:chat-avatar', { chatId, avatarPath: `cc-media://avatars/${encodeURIComponent(path.basename(avatarPath))}` })
       log(`refresh-avatar ${chatId}: скачано`)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
@@ -395,7 +395,7 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       const filePath = path.join(mediaDir, `${rawChat}_${messageId}.jpg`)  // v0.87.18: .jpg чтобы <img> подхватывал
       if (fs.existsSync(filePath)) {
         log(`download-media: cached ${filePath}`)
-        return { ok: true, path: 'file:///' + encodeURI(filePath.replace(/\\/g, '/')) }
+        return { ok: true, path: `cc-media://media/${encodeURIComponent(path.basename(filePath))}` }
       }
       const entity = chatEntityMap.get(chatId) || rawChat
       const msgs = await client.getMessages(entity, { ids: [Number(messageId)] })
@@ -406,7 +406,7 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       if (!buf) { log('download-media: downloadMedia вернул null'); return { ok: false, error: 'Telegram вернул пустой файл' } }
       fs.writeFileSync(filePath, buf)
       log(`download-media: OK, size=${buf.length}`)
-      return { ok: true, path: 'file:///' + encodeURI(filePath.replace(/\\/g, '/')) }
+      return { ok: true, path: `cc-media://media/${encodeURIComponent(path.basename(filePath))}` }
     } catch (e) {
       log('download-media err: ' + e.message)
       return { ok: false, error: e.message }
@@ -697,7 +697,7 @@ async function loadAvatarsAsync(dialogs) {
       const avatarPath = path.join(avatarsDir, `${String(d.id)}.jpg`)
       if (fs.existsSync(avatarPath)) {
         stats.cached++
-        emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
+        emit('tg:chat-avatar', { chatId, avatarPath: `cc-media://avatars/${encodeURIComponent(path.basename(avatarPath))}` })
         continue
       }
       // v0.87.19: если у entity нет photo — догружаем через GetFull*
@@ -725,7 +725,7 @@ async function loadAvatarsAsync(dialogs) {
       if (!buffer) { stats.failed++; continue }
       fs.writeFileSync(avatarPath, buffer)
       stats.downloaded++
-      emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
+      emit('tg:chat-avatar', { chatId, avatarPath: `cc-media://avatars/${encodeURIComponent(path.basename(avatarPath))}` })
     } catch (e) { stats.failed++; log(`avatar err для ${d.title}: ${e.message}`) }
   }
   log(`аватарки: total=${stats.total} hasPhoto=${stats.hasPhoto} noPhoto=${stats.noPhoto} fetched=${stats.fetched} downloaded=${stats.downloaded} cached=${stats.cached} failed=${stats.failed}`)
