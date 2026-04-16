@@ -36,6 +36,24 @@
   .toolbar button:hover { background: rgba(255,255,255,0.12); }
   .title { font-size: 12px; opacity: 0.85; padding: 0 8px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 1px solid rgba(255,255,255,0.15); border-right: 1px solid rgba(255,255,255,0.15); }
   .pin-active { color: #2AABEE !important; }
+  .track-menu {
+    position: absolute; top: 48px; right: 10px;
+    background: rgba(20,20,20,0.95); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px; padding: 6px;
+    color: #fff; font-size: 12px;
+    min-width: 180px;
+    -webkit-app-region: no-drag;
+    z-index: 20;
+  }
+  .track-menu button {
+    display: block; width: 100%; text-align: left;
+    padding: 6px 10px; background: transparent; color: #fff;
+    border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
+  }
+  .track-menu button:hover { background: rgba(255,255,255,0.1); }
+  .track-menu button.active { background: rgba(42,171,238,0.3); color: #2AABEE; }
+  .track-menu h4 { margin: 4px 8px; font-size: 11px; opacity: 0.6; text-transform: uppercase; }
   .error {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
     padding: 16px 24px; background: rgba(20,20,20,0.95); border-radius: 12px;
@@ -51,11 +69,16 @@
   <div id="err" class="error"></div>
   <div class="toolbar">
     <button id="pin" title="Закрепить поверх всех окон">📌</button>
+    <button id="pip" title="Мини-плеер в углу (поверх всех окон)">◰</button>
+    <button id="audio-btn" title="Аудио-дорожка" style="display:none">🎧</button>
+    <button id="sub-btn" title="Субтитры" style="display:none">CC</button>
     <span class="title" id="title">Видео</span>
     <button id="min" title="Свернуть">_</button>
     <button id="max" title="Развернуть">▢</button>
     <button id="close" title="Закрыть (Esc)">✕</button>
   </div>
+  <!-- Меню выбора audio track / subtitles -->
+  <div id="track-menu" class="track-menu" style="display:none"></div>
 </div>
 <script>
   const video = document.getElementById('v')
@@ -75,6 +98,89 @@
     pinBtn.classList.toggle('pin-active', pinned)
     try { await window.video?.togglePin(pinned) } catch(_) {}
   }
+
+  // v0.87.35: PiP — компактное окно в углу (через main IPC, не Chromium PiP)
+  // Это даёт resize, move, alwaysOnTop — стандартное Chromium PiP API не даёт resize.
+  let pipActive = false
+  const pipBtn = document.getElementById('pip')
+  pipBtn.onclick = async () => {
+    pipActive = !pipActive
+    pipBtn.classList.toggle('pin-active', pipActive)
+    try { await window.video?.togglePip(pipActive) } catch(_) {}
+  }
+
+  // v0.87.35: выбор audio tracks / subtitles. Если в video есть несколько —
+  // кнопки 🎧 / CC показываются, клик открывает меню выбора.
+  const audioBtn = document.getElementById('audio-btn')
+  const subBtn = document.getElementById('sub-btn')
+  const menu = document.getElementById('track-menu')
+
+  function renderMenu(kind) {
+    menu.innerHTML = ''
+    const h = document.createElement('h4')
+    h.textContent = kind === 'audio' ? 'Аудио-дорожка' : 'Субтитры'
+    menu.appendChild(h)
+    if (kind === 'audio' && video.audioTracks) {
+      const tracks = video.audioTracks
+      for (let i = 0; i < tracks.length; i++) {
+        const t = tracks[i]
+        const b = document.createElement('button')
+        b.textContent = t.label || t.language || ('Дорожка ' + (i + 1))
+        if (t.enabled) b.classList.add('active')
+        b.onclick = () => {
+          for (let j = 0; j < tracks.length; j++) tracks[j].enabled = j === i
+          menu.style.display = 'none'
+        }
+        menu.appendChild(b)
+      }
+    } else if (kind === 'sub') {
+      const tracks = video.textTracks
+      const off = document.createElement('button')
+      off.textContent = 'Отключить'
+      if (Array.from(tracks).every(t => t.mode !== 'showing')) off.classList.add('active')
+      off.onclick = () => {
+        for (const t of tracks) t.mode = 'hidden'
+        menu.style.display = 'none'
+      }
+      menu.appendChild(off)
+      for (let i = 0; i < tracks.length; i++) {
+        const t = tracks[i]
+        const b = document.createElement('button')
+        b.textContent = t.label || t.language || ('Субтитры ' + (i + 1))
+        if (t.mode === 'showing') b.classList.add('active')
+        b.onclick = () => {
+          for (const other of tracks) other.mode = 'hidden'
+          t.mode = 'showing'
+          menu.style.display = 'none'
+        }
+        menu.appendChild(b)
+      }
+    }
+    menu.style.display = 'block'
+  }
+  audioBtn.onclick = () => {
+    menu.style.display = (menu.style.display === 'none' && menu.dataset.kind !== 'audio') ? 'block' : 'none'
+    menu.dataset.kind = 'audio'
+    renderMenu('audio')
+  }
+  subBtn.onclick = () => {
+    menu.style.display = (menu.style.display === 'none' && menu.dataset.kind !== 'sub') ? 'block' : 'none'
+    menu.dataset.kind = 'sub'
+    renderMenu('sub')
+  }
+  document.addEventListener('click', (e) => {
+    if (!menu.contains(e.target) && e.target !== audioBtn && e.target !== subBtn) {
+      menu.style.display = 'none'
+    }
+  })
+
+  // После загрузки метаданных показать кнопки если есть tracks
+  video.addEventListener('loadedmetadata', () => {
+    const hasAudio = video.audioTracks && video.audioTracks.length > 1
+    const hasSub = video.textTracks && video.textTracks.length > 0
+    audioBtn.style.display = hasAudio ? '' : 'none'
+    subBtn.style.display = hasSub ? '' : 'none'
+  })
   document.getElementById('close').onclick = () => window.video?.close()
   document.getElementById('min').onclick = () => window.video?.minimize()
   document.getElementById('max').onclick = () => window.video?.maximize()

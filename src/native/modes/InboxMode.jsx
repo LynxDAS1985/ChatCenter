@@ -266,10 +266,26 @@ export default function InboxMode({ store }) {
     markRead: store.markRead,
   })
 
-  // Скролл-вниз-одной-кнопкой
+  // v0.87.35: Стрелочка «к последнему непрочитанному» (как в Telegram).
+  // Если есть firstUnreadId → скроллим к нему + жёлтая вспышка
+  // Если всё прочитано → скроллим в самый низ
   const scrollToBottom = () => {
     const el = msgsScrollRef.current
-    if (el) { el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); setNewBelow(0) }
+    if (!el) return
+    const firstUnread = firstUnreadIdRef.current
+    if (firstUnread) {
+      const target = el.querySelector(`[data-msg-id="${firstUnread}"]`)
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        target.classList.add('native-msg-last-read-highlight')
+        setTimeout(() => target.classList.remove('native-msg-last-read-highlight'), 2500)
+        setNewBelow(0)
+        return
+      }
+    }
+    // Нет непрочитанных или элемент не в DOM — просто в самый низ
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    setNewBelow(0)
   }
 
   // v0.87.27: клик по reply-цитате — скроллим к оригиналу + 1.5с жёлтое мерцание
@@ -509,16 +525,19 @@ export default function InboxMode({ store }) {
                   </div>
                 )
               })}
-              {/* v0.87.27: индикатор «есть новые снизу» */}
-              {!atBottom && (
+              {/* v0.87.35: кнопка ↓ — показывается когда НЕ внизу или есть непрочитанные.
+                  Клик → если есть firstUnread — прыгаем к нему, иначе в низ. */}
+              {(!atBottom || activeUnread > 0) && (
                 <button
                   onClick={scrollToBottom}
                   className="native-scroll-bottom-btn"
-                  title="К последнему сообщению"
+                  title={activeUnread > 0 ? `К первому непрочитанному (${activeUnread})` : 'К последнему сообщению'}
                 >
                   ↓
-                  {newBelow > 0 && (
-                    <span className="native-scroll-bottom-badge">{newBelow > 99 ? '99+' : newBelow}</span>
+                  {(activeUnread > 0 || newBelow > 0) && (
+                    <span className="native-scroll-bottom-badge">
+                      {(activeUnread > 0 ? activeUnread : newBelow) > 99 ? '99+' : (activeUnread > 0 ? activeUnread : newBelow)}
+                    </span>
                   )}
                 </button>
               )}

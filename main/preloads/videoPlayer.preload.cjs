@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld('video', {
   minimize: () => ipcRenderer.invoke('video:minimize'),
   maximize: () => ipcRenderer.invoke('video:maximize'),
   togglePin: (on) => ipcRenderer.invoke('video:toggle-pin', { on }),
+  // v0.87.35: PiP режим — компактное окно в углу поверх всех
+  togglePip: (on) => ipcRenderer.invoke('video:toggle-pip', { on }),
   onSetSrc: (cb) => ipcRenderer.on('video:set-src', (_, data) => cb(data)),
 })

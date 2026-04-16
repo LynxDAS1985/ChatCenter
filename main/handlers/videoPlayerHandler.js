@@ -80,4 +80,25 @@ export function registerVideoPlayerHandler() {
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
+
+  // v0.87.35: PiP режим — компактное окно в углу, alwaysOnTop, resizable
+  let prevBounds = null
+  ipcMain.handle('video:toggle-pip', (_, { on }) => {
+    try {
+      if (!videoWindow) return { ok: false }
+      if (on) {
+        prevBounds = videoWindow.getBounds()
+        const primary = screen.getPrimaryDisplay()
+        const w = 480, h = 270
+        const x = primary.workAreaSize.width - w - 20
+        const y = primary.workAreaSize.height - h - 20
+        videoWindow.setBounds({ x, y, width: w, height: h })
+        videoWindow.setAlwaysOnTop(true, 'floating')
+      } else {
+        if (prevBounds) videoWindow.setBounds(prevBounds)
+        videoWindow.setAlwaysOnTop(false)
+      }
+      return { ok: true, on: !!on }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
 }

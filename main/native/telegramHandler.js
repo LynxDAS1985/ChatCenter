@@ -76,20 +76,36 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
   try { fs.mkdirSync(avatarsDir, { recursive: true }) } catch(_) {}
   log(`init, session=${sessionPath}, avatars=${avatarsDir}, cache=${cachePath}`)
 
-  // v0.87.27: авто-очистка старых медиа при старте — файлы старше 30 дней
+  // v0.87.27 / v0.87.35: авто-очистка старых медиа при старте — по возрасту + LRU-квоте (2 ГБ)
   try {
     const mediaDir = path.join(userDataPath, 'tg-media')
     if (fs.existsSync(mediaDir)) {
-      const cutoff = Date.now() - 30 * 86400000
-      let removed = 0, freed = 0
+      const MAX_AGE = 30 * 86400000  // 30 дней
+      const MAX_BYTES = 2 * 1024 * 1024 * 1024  // 2 ГБ квота
+      const cutoff = Date.now() - MAX_AGE
+      const entries = []
       for (const f of fs.readdirSync(mediaDir)) {
         const fp = path.join(mediaDir, f)
         try {
           const st = fs.statSync(fp)
-          if (st.mtimeMs < cutoff) { freed += st.size; fs.unlinkSync(fp); removed++ }
+          entries.push({ fp, size: st.size, mtime: st.mtimeMs })
         } catch(_) {}
       }
-      if (removed > 0) log(`auto cleanup: removed=${removed} freed=${(freed/1024/1024).toFixed(1)}MB`)
+      let removed = 0, freed = 0
+      // По возрасту
+      for (const e of entries) {
+        if (e.mtime < cutoff) {
+          try { fs.unlinkSync(e.fp); freed += e.size; removed++; e.deleted = true } catch(_) {}
+        }
+      }
+      // LRU квота
+      const rem = entries.filter(e => !e.deleted).sort((a, b) => a.mtime - b.mtime)
+      let total = rem.reduce((s, e) => s + e.size, 0)
+      for (const e of rem) {
+        if (total <= MAX_BYTES) break
+        try { fs.unlinkSync(e.fp); total -= e.size; freed += e.size; removed++ } catch(_) {}
+      }
+      if (removed > 0) log(`auto cleanup: removed=${removed} freed=${(freed/1024/1024).toFixed(1)}MB keep=${(total/1024/1024).toFixed(1)}MB`)
     }
   } catch(_) {}
 
@@ -552,24 +568,52 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     }
   })
 
-  // v0.87.27: очистка старых медиа — вызывается по таймеру или вручную
-  // Удаляет файлы в tg-media старше maxDays (по умолчанию 30)
-  ipcMain.handle('tg:cleanup-media', async (_, { maxDays = 30 } = {}) => {
+  // v0.87.27 / v0.87.35: очистка tg-media по возрасту (maxDays) + LRU-квоте (maxBytes).
+  // LRU удаляет самые старые (по mtime) когда общий размер превышает квоту.
+  ipcMain.handle('tg:cleanup-media', async (_, { maxDays = 30, maxBytes = 2 * 1024 * 1024 * 1024 } = {}) => {
     try {
       if (!cachePath) return { ok: false, error: 'нет cache path' }
       const mediaDir = path.join(path.dirname(cachePath), 'tg-media')
       if (!fs.existsSync(mediaDir)) return { ok: true, removed: 0 }
-      const cutoff = Date.now() - maxDays * 86400000
-      let removed = 0, bytesFree = 0
+      const entries = []
       for (const f of fs.readdirSync(mediaDir)) {
         const fp = path.join(mediaDir, f)
         try {
           const st = fs.statSync(fp)
-          if (st.mtimeMs < cutoff) { bytesFree += st.size; fs.unlinkSync(fp); removed++ }
+          entries.push({ fp, size: st.size, mtime: st.mtimeMs })
         } catch(_) {}
       }
-      log(`cleanup-media: removed=${removed} freed=${(bytesFree/1024/1024).toFixed(1)}MB`)
-      return { ok: true, removed, bytesFree }
+      const cutoff = Date.now() - maxDays * 86400000
+      let removed = 0, bytesFree = 0
+      // 1) По возрасту — удаляем всё старее maxDays
+      for (const e of entries) {
+        if (e.mtime < cutoff) {
+          try { fs.unlinkSync(e.fp); bytesFree += e.size; removed++; e.deleted = true } catch(_) {}
+        }
+      }
+      // 2) LRU квота — если всё ещё > maxBytes, удаляем самые старые до квоты
+      const remaining = entries.filter(e => !e.deleted).sort((a, b) => a.mtime - b.mtime)
+      let totalSize = remaining.reduce((s, e) => s + e.size, 0)
+      for (const e of remaining) {
+        if (totalSize <= maxBytes) break
+        try { fs.unlinkSync(e.fp); totalSize -= e.size; bytesFree += e.size; removed++ } catch(_) {}
+      }
+      log(`cleanup-media: removed=${removed} freed=${(bytesFree/1024/1024).toFixed(1)}MB totalKeep=${(totalSize/1024/1024).toFixed(1)}MB`)
+      return { ok: true, removed, bytesFree, totalSize }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // v0.87.35: получить размер кэша медиа (для UI настроек / админ панели)
+  ipcMain.handle('tg:media-cache-size', async () => {
+    try {
+      if (!cachePath) return { ok: false, size: 0, count: 0 }
+      const mediaDir = path.join(path.dirname(cachePath), 'tg-media')
+      if (!fs.existsSync(mediaDir)) return { ok: true, size: 0, count: 0 }
+      let size = 0, count = 0
+      for (const f of fs.readdirSync(mediaDir)) {
+        try { const st = fs.statSync(path.join(mediaDir, f)); size += st.size; count++ } catch(_) {}
+      }
+      return { ok: true, size, count }
     } catch (e) { return { ok: false, error: e.message } }
   })
 }
@@ -1026,16 +1070,35 @@ async function fetchAllUnreadUpdates(maxPages = 5, pageSize = 100) {
 
 function startUnreadRescan() {
   if (unreadRescanTimer) clearInterval(unreadRescanTimer)
-  unreadRescanTimer = setInterval(async () => {
+  // v0.87.35: immediate rescan при старте чтобы списочные счётчики сразу были точными
+  // (раньше ждали первые 30 сек → устаревшие цифры в списке)
+  const doRescan = async () => {
     if (!client || !currentAccount) return
     try {
       const updates = await fetchAllUnreadUpdates()
       emit('tg:unread-bulk-sync', { accountId: currentAccount.id, updates })
       const withUnread = updates.filter(u => u.unreadCount > 0).length
-      log(`periodic unread rescan: ${updates.length} чатов (${withUnread} с непрочитанным)`)
-    } catch (e) { log('periodic rescan err: ' + e.message) }
-  }, 30000)  // каждые 30 сек
-  log('periodic unread rescan запущен (30 сек, до 500 чатов)')
+      log(`unread rescan: ${updates.length} чатов (${withUnread} с непрочитанным)`)
+    } catch (e) { log('rescan err: ' + e.message) }
+  }
+  setTimeout(doRescan, 1500)  // immediate sync через 1.5 сек после старта
+  unreadRescanTimer = setInterval(doRescan, 15000)  // v0.87.35: 15 сек (было 30)
+  log('periodic unread rescan запущен (15 сек + immediate)')
+}
+
+// v0.87.35: debounce-map для per-chat unread sync при новом сообщении
+const lastPerChatSync = new Map()
+async function syncPerChatUnread(chatId) {
+  try {
+    const last = lastPerChatSync.get(chatId) || 0
+    if (Date.now() - last < 3000) return  // не чаще раз в 3 сек на чат
+    lastPerChatSync.set(chatId, Date.now())
+    const entity = chatEntityMap.get(chatId)
+    if (!entity || !client) return
+    const dialog = await client.invoke(new Api.messages.GetPeerDialogs({ peers: [new Api.InputDialogPeer({ peer: entity })] }))
+    const d = dialog.dialogs?.[0]
+    if (d) emit('tg:chat-unread-sync', { chatId, unreadCount: d.unreadCount || 0 })
+  } catch (e) { /* silent */ }
 }
 
 function attachMessageListener() {
@@ -1048,6 +1111,9 @@ function attachMessageListener() {
         const chatIdRaw = String(m.chatId || m.peerId?.userId || m.peerId?.chatId || m.peerId?.channelId || '')
         const chatId = `${currentAccount?.id}:${chatIdRaw}`
         emit('tg:new-message', { chatId, message: mapMessage(m, chatId) })
+        // v0.87.35: точный sync unreadCount для этого чата через GetPeerDialogs
+        // (чтобы UI показывал реальное число сразу, не ждал mark-read / periodic rescan)
+        setTimeout(() => syncPerChatUnread(chatId), 600)
       } catch (e) { log('new-message handler err: ' + e.message) }
     }, new NewMessage({}))
 

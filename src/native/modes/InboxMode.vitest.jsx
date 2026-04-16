@@ -123,6 +123,28 @@ describe('InboxMode render smoke', () => {
     cleanup()
   })
 
+  it('RF 0.87.35: кнопка ↓ показывается если unreadCount > 0 даже при atBottom', async () => {
+    const chatId = 'tg_self:9'
+    const messages = Array.from({ length: 5 }, (_, i) => ({
+      id: String(i + 1), chatId, senderId: 's', text: 'msg' + i,
+      timestamp: 1712000000000 + i * 1000, isOutgoing: false,
+    }))
+    const store = buildStore({
+      activeAccountId: 'tg_self',
+      chats: [{ id: chatId, accountId: 'tg_self', title: 'C', unreadCount: 5, type: 'user' }],
+      activeChatId: chatId,
+      messages: { [chatId]: messages },
+    })
+    const { container } = render(<InboxMode store={store} />)
+    // Кнопка scroll-bottom должна рендериться (есть unread=5)
+    await new Promise(r => setTimeout(r, 50))
+    const btn = container.querySelector('.native-scroll-bottom-btn')
+    expect(btn).toBeTruthy()
+    // Бейдж с числом 5
+    expect(container.textContent).toContain('5')
+    cleanup()
+  })
+
   it('рендерится со ссылкой (link preview)', () => {
     const chatId = 'tg_self:3'
     const messages = [{
