@@ -17,18 +17,19 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
     return () => obs.disconnect()
   }, [m.id])
 
-  const handleDownload = async () => {
-    if (mediaUrl || mediaLoading) return
+  // v0.87.22: thumb/full режимы — thumb быстрый превью, full по клику на картинку
+  const handleDownload = async (fullSize = false) => {
+    if (mediaLoading) return
     setMediaLoading(true)
     try {
-      const r = await downloadMedia(chatId, m.id)
+      const r = await downloadMedia(chatId, m.id, !fullSize)
       if (r?.ok) setMediaUrl(r.path)
     } finally { setMediaLoading(false) }
   }
 
-  // Автоматически грузим превью для photo (маленькие файлы)
+  // Автозагрузка THUMB для photo — мгновенное превью
   useEffect(() => {
-    if (m.mediaType === 'photo' && !mediaUrl) handleDownload()
+    if (m.mediaType === 'photo' && !mediaUrl) handleDownload(false)
   }, [m.id])
 
   const replyToMsg = m.replyToId && getMessage ? getMessage(chatId, m.replyToId) : null

@@ -155,6 +155,14 @@ export default function useNativeStore() {
       }
     })
 
+    // v0.87.22: точная синхронизация unread с серверным значением Telegram
+    addHandler('tg:chat-unread-sync', ({ chatId, unreadCount }) => {
+      setState(s => ({
+        ...s,
+        chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount } : c)
+      }))
+    })
+
     addHandler('tg:read', ({ chatId, outgoing, stillUnread, maxId }) => {
       if (outgoing) {
         // v0.87.17: собеседник прочитал наши сообщения до maxId → ставим isRead=true
@@ -292,8 +300,9 @@ export default function useNativeStore() {
     return r
   }, [])
 
-  const downloadMedia = useCallback(async (chatId, messageId) => {
-    return window.api?.invoke('tg:download-media', { chatId, messageId })
+  // v0.87.22: thumb=true — быстрый превью ~10-50КБ, false — полный файл
+  const downloadMedia = useCallback(async (chatId, messageId, thumb = true) => {
+    return window.api?.invoke('tg:download-media', { chatId, messageId, thumb })
   }, [])
 
   const removeAccount = useCallback(async (accountId) => {

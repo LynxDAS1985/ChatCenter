@@ -161,20 +161,27 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       if (!client) return { ok: false, error: 'Не подключён' }
       const entity = chatEntityMap.get(chatId)
       if (!entity) return { ok: false, error: 'Чат не найден в кэше' }
-      // v0.87.19: для КАНАЛОВ использовать channels.ReadHistory, для остального messages.ReadHistory
-      // markAsRead() GramJS сам разруливает — используем его. Без maxId — всё прочитано.
       try {
         await client.markAsRead(entity, maxId ? Number(maxId) : undefined)
         log(`mark-read OK: ${chatId} maxId=${maxId || 'all'}`)
       } catch (e1) {
-        // Fallback: явно через channels.ReadHistory если это channel
         if (entity.className === 'InputPeerChannel' || entity.channelId) {
           await client.invoke(new Api.channels.ReadHistory({ channel: entity, maxId: Number(maxId) || 0 }))
           log(`mark-read через channels.ReadHistory: ${chatId}`)
-        } else {
-          throw e1
-        }
+        } else throw e1
       }
+      // v0.87.22: запрашиваем РЕАЛЬНЫЙ unreadCount через getDialogs с нашим peer и emit
+      // чтобы UI синхронизировался с тем что реально в Telegram
+      setTimeout(async () => {
+        try {
+          const dialog = await client.invoke(new Api.messages.GetPeerDialogs({ peers: [new Api.InputDialogPeer({ peer: entity })] }))
+          const d = dialog.dialogs?.[0]
+          if (d) {
+            emit('tg:chat-unread-sync', { chatId, unreadCount: d.unreadCount || 0 })
+            log(`unread-sync: ${chatId} → ${d.unreadCount || 0}`)
+          }
+        } catch (e) { /* silent */ }
+      }, 800)
       return { ok: true }
     } catch (e) {
       log('mark-read error: ' + e.message)
@@ -303,10 +310,22 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     try {
       if (!client) return { ok: false, error: 'Не подключён', chats: [] }
       log('get-chats: старт')
-      // v0.87.12: ПЕРВАЯ страница сразу → UI не висит; остальные фоном через emit
       const PAGE = 200
-      const firstPage = await client.getDialogs({ limit: PAGE })
-      log(`первая страница: ${firstPage.length} чатов`)
+      // v0.87.22: загружаем и активные (folderId=0) и архивные (folderId=1)
+      const firstPage = await client.getDialogs({ limit: PAGE, folder: 0 })
+      log(`первая страница активных: ${firstPage.length} чатов`)
+      // Параллельно асинхронно запросим архив (folderId=1)
+      ;(async () => {
+        try {
+          const archived = await client.getDialogs({ limit: PAGE, folder: 1 })
+          if (archived.length) {
+            const archivedChats = archived.map(d => ({ ...mapDialog(d), archived: true }))
+            emit('tg:chats', { accountId: currentAccount?.id, chats: archivedChats, append: true })
+            log(`архивных чатов: ${archived.length}`)
+            loadAvatarsAsync(archived)
+          }
+        } catch (e) { log('archived err: ' + e.message) }
+      })()
       const firstChats = firstPage.map(mapDialog)
       emit('tg:chats', { accountId: currentAccount?.id, chats: firstChats, append: false })
       saveChatsCache(firstChats)  // v0.87.14: кэш для мгновенного старта
@@ -385,27 +404,29 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
-  ipcMain.handle('tg:download-media', async (_, { chatId, messageId }) => {
-    log(`download-media: chat=${chatId} msg=${messageId}`)
+  // v0.87.22: поддержка thumb-режима — быстрое превью ~20КБ вместо полного фото ~300КБ
+  ipcMain.handle('tg:download-media', async (_, { chatId, messageId, thumb = true }) => {
+    log(`download-media: chat=${chatId} msg=${messageId} thumb=${thumb}`)
     try {
       if (!client) return { ok: false, error: 'Не подключён' }
       const mediaDir = path.join(path.dirname(cachePath), 'tg-media')
       try { fs.mkdirSync(mediaDir, { recursive: true }) } catch(_) {}
       const rawChat = String(chatId).split(':').pop()
-      const filePath = path.join(mediaDir, `${rawChat}_${messageId}.jpg`)  // v0.87.18: .jpg чтобы <img> подхватывал
+      const suffix = thumb ? '_thumb' : ''
+      const filePath = path.join(mediaDir, `${rawChat}_${messageId}${suffix}.jpg`)
       if (fs.existsSync(filePath)) {
-        log(`download-media: cached ${filePath}`)
         return { ok: true, path: `cc-media://media/${encodeURIComponent(path.basename(filePath))}` }
       }
       const entity = chatEntityMap.get(chatId) || rawChat
       const msgs = await client.getMessages(entity, { ids: [Number(messageId)] })
-      if (!msgs[0]) { log('download-media: сообщение не найдено'); return { ok: false, error: 'Сообщение не найдено' } }
-      if (!msgs[0].media) { log('download-media: у сообщения НЕТ media'); return { ok: false, error: 'Нет медиа в сообщении' } }
-      log(`download-media: скачиваем, media.className=${msgs[0].media.className}`)
-      const buf = await client.downloadMedia(msgs[0], { progressCallback: () => {} })
-      if (!buf) { log('download-media: downloadMedia вернул null'); return { ok: false, error: 'Telegram вернул пустой файл' } }
+      if (!msgs[0]) return { ok: false, error: 'Сообщение не найдено' }
+      if (!msgs[0].media) return { ok: false, error: 'Нет медиа в сообщении' }
+      // thumb=true → GramJS скачает наименьший thumbnail (быстро, ~10-50 КБ)
+      // thumb=false → полное фото (для просмотра в полный размер)
+      const buf = await client.downloadMedia(msgs[0], thumb ? { thumb: 0 } : {})
+      if (!buf) return { ok: false, error: 'Telegram вернул пустой файл' }
       fs.writeFileSync(filePath, buf)
-      log(`download-media: OK, size=${buf.length}`)
+      log(`download-media: OK size=${buf.length} thumb=${thumb}`)
       return { ok: true, path: `cc-media://media/${encodeURIComponent(path.basename(filePath))}` }
     } catch (e) {
       log('download-media err: ' + e.message)
