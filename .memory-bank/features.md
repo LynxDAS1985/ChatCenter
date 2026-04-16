@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.18 (16 апреля 2026)
+## Текущая версия: v0.87.19 (16 апреля 2026)
 
 ---
 
@@ -91,6 +91,28 @@
 ---
 
 ## Changelog
+
+### v0.87.19 (16 апреля 2026) — 3 корневых ИСТИННЫХ причины: CSP, channels.ReadHistory, GetFullChannel
+**По сверке с документацией и логами — настоящие причины всех проблем:**
+
+- **Фото в сообщениях не видны** (хотя download-media ok):
+  - Лог: `download-media: OK, size=249531` (сотни успешных загрузок).
+  - Но `<img src="file://...">` НЕ рендерится.
+  - **Причина**: CSP в `index.html` = `default-src 'self'` → блокирует file:, blob:, data:. Chromium молча отказывается загружать image.
+  - **Фикс**: расширен CSP: `img-src 'self' file: blob: data: https: http:; media-src 'self' file: blob:; default-src 'self' file: blob: data:`.
+
+- **Счётчик не синхронизируется с Telegram**:
+  - Лог: `mark-read error: 400 PEER_ID_INVALID (caused by messages.ReadHistory)`.
+  - **Причина**: я использовал `messages.ReadHistory` для ВСЕХ чатов. Но по документации MTProto для **каналов** нужен `channels.ReadHistory` — это **разные методы**!
+  - **Фикс**: используем `client.markAsRead(entity, maxId)` — GramJS сам разруливает. Плюс явный fallback через `channels.ReadHistory` для `InputPeerChannel`. Теперь счётчики синхронизируются с телефоном.
+
+- **Аватарки у 82 чатов нет** (hasPhoto=112 noPhoto=82 из 194):
+  - **Причина**: `getDialogs` MTProto **не всегда возвращает `entity.photo` для каналов/групп**. Особенно для мало-активных или каналов куда недавно вступили. По документации для полной инфы нужен `channels.GetFullChannel`.
+  - **Фикс**: для чатов без `entity.photo` — batch `client.invoke(channels.GetFullChannel)` / `users.GetFullUser`, берём photo из response, скачиваем. Новое поле `fetched` в логе покажет сколько реально догрузили.
+
+- **Ловушки 76-77**:
+  - **76**: CSP `default-src 'self'` блокирует file:// для `<img>` — нужен `img-src file:` явно.
+  - **77**: `messages.ReadHistory` ≠ `channels.ReadHistory` в MTProto. Для каналов используется отдельный метод. Всегда использовать GramJS высокоуровневый `client.markAsRead(entity)` который сам выбирает нужный RPC.
 
 ### v0.87.18 (16 апреля 2026) — 3 критичных FIX: аватарки ВСЕХ, счётчик прочитанных, media
 - **Главный баг — аватарки только у 50 чатов из 194**:

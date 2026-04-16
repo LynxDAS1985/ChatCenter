@@ -161,13 +161,19 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       if (!client) return { ok: false, error: 'Не подключён' }
       const entity = chatEntityMap.get(chatId)
       if (!entity) return { ok: false, error: 'Чат не найден в кэше' }
-      // v0.87.16: поддержка maxId — пометить прочитанными только до этого ID
-      if (maxId) {
-        await client.invoke(new Api.messages.ReadHistory({ peer: entity, maxId: Number(maxId) }))
-        log(`mark-read до maxId=${maxId} в ${chatId}`)
-      } else {
-        await client.markAsRead(entity)
-        log(`mark-read ВСЕ: ${chatId}`)
+      // v0.87.19: для КАНАЛОВ использовать channels.ReadHistory, для остального messages.ReadHistory
+      // markAsRead() GramJS сам разруливает — используем его. Без maxId — всё прочитано.
+      try {
+        await client.markAsRead(entity, maxId ? Number(maxId) : undefined)
+        log(`mark-read OK: ${chatId} maxId=${maxId || 'all'}`)
+      } catch (e1) {
+        // Fallback: явно через channels.ReadHistory если это channel
+        if (entity.className === 'InputPeerChannel' || entity.channelId) {
+          await client.invoke(new Api.channels.ReadHistory({ channel: entity, maxId: Number(maxId) || 0 }))
+          log(`mark-read через channels.ReadHistory: ${chatId}`)
+        } else {
+          throw e1
+        }
       }
       return { ok: true }
     } catch (e) {
@@ -681,12 +687,12 @@ async function loadRestPagesAsync(firstPage) {
 // По готовности emit tg:chat-avatar { chatId, avatarPath } — renderer обновит.
 async function loadAvatarsAsync(dialogs) {
   if (!client || !avatarsDir) return
-  const stats = { total: dialogs.length, hasPhoto: 0, noPhoto: 0, downloaded: 0, cached: 0, failed: 0 }
+  const stats = { total: dialogs.length, hasPhoto: 0, noPhoto: 0, downloaded: 0, cached: 0, failed: 0, fetched: 0 }
+  // v0.87.19: для чатов БЕЗ photo в entity — запрашиваем GetFullChannel/GetFullChat/GetFullUser
+  // многие каналы в getDialogs возвращаются без photo, только через Full-запросы
   for (const d of dialogs) {
     try {
-      const entity = d.entity
-      if (!entity?.photo || entity.photo.photoEmpty) { stats.noPhoto++; continue }
-      stats.hasPhoto++
+      let entity = d.entity
       const chatId = `${currentAccount?.id}:${String(d.id)}`
       const avatarPath = path.join(avatarsDir, `${String(d.id)}.jpg`)
       if (fs.existsSync(avatarPath)) {
@@ -694,6 +700,27 @@ async function loadAvatarsAsync(dialogs) {
         emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
         continue
       }
+      // v0.87.19: если у entity нет photo — догружаем через GetFull*
+      if (!entity?.photo || entity.photo.photoEmpty) {
+        try {
+          if (d.isChannel || d.isGroup) {
+            const full = await client.invoke(new Api.channels.GetFullChannel({ channel: entity || d.inputEntity }))
+            const chatWithPhoto = full.chats?.find(c => c.id?.toString() === entity?.id?.toString()) || full.chats?.[0]
+            if (chatWithPhoto?.photo && !chatWithPhoto.photo.photoEmpty) {
+              entity = chatWithPhoto
+              stats.fetched++
+            } else { stats.noPhoto++; continue }
+          } else if (d.isUser) {
+            const full = await client.invoke(new Api.users.GetFullUser({ id: entity || d.inputEntity }))
+            const userWithPhoto = full.users?.find(u => u.id?.toString() === entity?.id?.toString()) || full.users?.[0]
+            if (userWithPhoto?.photo && !userWithPhoto.photo.photoEmpty) {
+              entity = userWithPhoto
+              stats.fetched++
+            } else { stats.noPhoto++; continue }
+          } else { stats.noPhoto++; continue }
+        } catch(fetchErr) { stats.noPhoto++; continue }
+      }
+      stats.hasPhoto++
       const buffer = await client.downloadProfilePhoto(entity, { isBig: false })
       if (!buffer) { stats.failed++; continue }
       fs.writeFileSync(avatarPath, buffer)
@@ -701,7 +728,7 @@ async function loadAvatarsAsync(dialogs) {
       emit('tg:chat-avatar', { chatId, avatarPath: 'file:///' + encodeURI(avatarPath.replace(/\\/g, '/')) })
     } catch (e) { stats.failed++; log(`avatar err для ${d.title}: ${e.message}`) }
   }
-  log(`аватарки: total=${stats.total} hasPhoto=${stats.hasPhoto} noPhoto=${stats.noPhoto} downloaded=${stats.downloaded} cached=${stats.cached} failed=${stats.failed}`)
+  log(`аватарки: total=${stats.total} hasPhoto=${stats.hasPhoto} noPhoto=${stats.noPhoto} fetched=${stats.fetched} downloaded=${stats.downloaded} cached=${stats.cached} failed=${stats.failed}`)
 }
 
 function attachMessageListener() {
