@@ -185,31 +185,40 @@ export default function InboxMode({ store }) {
   const getMessage = (chatId, msgId) => (store.messages[chatId] || []).find(m => m.id === String(msgId))
 
   // v0.87.18: read-by-visibility с уникальными id (Set) чтобы счётчик не дёргался
-  const readSeenRef = useRef(new Set())  // уникальные прочитанные id в текущем чате
+  // v0.87.26: ФИКС — таймер через useRef (раньше был property на функции, пересоздавался
+  // при каждом рендере → накапливались параллельные таймеры → markRead вызывался с count=0
+  // → локально unreadCount сбрасывался в 0 раньше чем должно).
+  const readSeenRef = useRef(new Set())
+  const readBatchRef = useRef(new Set())  // batch для текущего debounce-окна
   const lastReadMaxRef = useRef(0)
+  const readTimerRef = useRef(null)
 
-  // Сброс при смене чата
+  // Сброс при смене чата + отмена pending таймера
   useEffect(() => {
     readSeenRef.current = new Set()
+    readBatchRef.current = new Set()
     lastReadMaxRef.current = 0
+    if (readTimerRef.current) { clearTimeout(readTimerRef.current); readTimerRef.current = null }
   }, [store.activeChatId])
 
   const readByVisibility = (msg) => {
     if (msg.isOutgoing) return
     const id = Number(msg.id)
-    if (readSeenRef.current.has(id)) return  // уже считали
+    if (readSeenRef.current.has(id)) return  // уже считали в этой сессии чата
     readSeenRef.current.add(id)
+    readBatchRef.current.add(id)
     if (id > lastReadMaxRef.current) lastReadMaxRef.current = id
-    // Debounce: отправляем batch раз в 1.5 сек
-    if (!readByVisibility._timer) {
-      readByVisibility._timer = setTimeout(() => {
-        readByVisibility._timer = null
-        if (!store.activeChatId) return
-        const count = readSeenRef.current.size
-        store.markRead(store.activeChatId, lastReadMaxRef.current, count)
-        readSeenRef.current = new Set()  // сбрасываем batch
-      }, 1500)
-    }
+    // Debounce 1.5с: один таймер на всё окно
+    if (readTimerRef.current) return
+    const chatAtStart = store.activeChatId
+    readTimerRef.current = setTimeout(() => {
+      readTimerRef.current = null
+      if (!chatAtStart || chatAtStart !== store.activeChatId) { readBatchRef.current = new Set(); return }
+      const count = readBatchRef.current.size
+      if (count === 0) return  // пустой batch — не дёргаем (фикс сброса в 0)
+      readBatchRef.current = new Set()
+      store.markRead(chatAtStart, lastReadMaxRef.current, count)
+    }, 1500)
   }
 
   // v0.87.16: drag-n-drop файлов в окно чата
@@ -419,7 +428,11 @@ export default function InboxMode({ store }) {
                 </div>
               ) : renderItems.map(item => {
                 if (item.type === 'day') {
-                  return <div key={item.id} className="native-msg-divider" style={{ fontWeight: 600 }}>{formatDayLabel(item.day)}</div>
+                  return (
+                    <div key={item.id} className="native-msg-day-row">
+                      <span className="native-msg-divider native-msg-divider--day">{formatDayLabel(item.day)}</span>
+                    </div>
+                  )
                 }
                 if (item.type === 'time') {
                   return <div key={item.id} className="native-msg-divider">{new Date(item.time).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}</div>

@@ -362,16 +362,46 @@
 /* v0.87.24: fade-in для фото когда полное загружено поверх stripped thumb */
 @keyframes native-fadein { from { opacity: 0; } to { opacity: 1; } }
 
-/* v0.87.24: группировка сообщений — таймстамп-разделитель между группами */
+/* v0.87.26: разделители дат/времени — контрастнее + линии по бокам как в Telegram */
 .native-msg-divider {
   align-self: center;
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 14px;
   font-size: 11px;
-  color: var(--amoled-text-muted);
-  background: rgba(255,255,255,0.04);
-  border-radius: 10px;
-  margin: 10px 0;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--amoled-text-dim);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  margin: 14px 0 6px;
   user-select: none;
+  backdrop-filter: blur(8px);
+  text-transform: uppercase;
+}
+.native-msg-divider--day {
+  color: var(--amoled-accent);
+  background: rgba(42,171,238,0.12);
+  border-color: rgba(42,171,238,0.28);
+  font-weight: 600;
+  font-size: 11px;
+}
+/* декоративные линии по бокам для day-разделителя */
+.native-msg-day-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 6px;
+  padding: 0 8px;
+}
+.native-msg-day-row::before,
+.native-msg-day-row::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
 }
 
 .native-msg-group {

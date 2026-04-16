@@ -259,16 +259,14 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
   })
 
   // v0.87.24: manual sync unread (вызывается из renderer при window.focus)
+  // v0.87.26: используем fetchAllUnreadUpdates с пагинацией — раньше было 100 чатов
   ipcMain.handle('tg:rescan-unread', async () => {
     try {
       if (!client) return { ok: false }
-      const page = await client.getDialogs({ limit: 100 })
-      const updates = page.map(d => ({
-        id: `${currentAccount?.id}:${String(d.id)}`,
-        unreadCount: d.unreadCount || 0,
-      }))
+      const updates = await fetchAllUnreadUpdates()
       emit('tg:unread-bulk-sync', { accountId: currentAccount?.id, updates })
-      log(`manual rescan: ${updates.length} чатов`)
+      const withUnread = updates.filter(u => u.unreadCount > 0).length
+      log(`manual rescan: ${updates.length} чатов (${withUnread} с непрочитанным)`)
       return { ok: true, count: updates.length }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -823,22 +821,45 @@ async function loadAvatarsAsync(dialogs) {
 }
 
 // v0.87.24: периодический rescan unread (часть Комбо D вариант A)
+// v0.87.26: ФИКС — пагинация до 500 чатов вместо фикса 50. Иначе чаты вне первых
+// 50 никогда не синхронизировались (у активных юзеров сотни чатов).
 let unreadRescanTimer = null
+async function fetchAllUnreadUpdates(maxPages = 5, pageSize = 100) {
+  if (!client || !currentAccount) return []
+  const updates = []
+  let offsetDate, offsetId, offsetPeer
+  for (let i = 0; i < maxPages; i++) {
+    try {
+      const page = await client.getDialogs({ limit: pageSize, offsetDate, offsetId, offsetPeer })
+      if (!page.length) break
+      for (const d of page) {
+        updates.push({
+          id: `${currentAccount.id}:${String(d.id)}`,
+          unreadCount: d.unreadCount || 0,
+        })
+      }
+      if (page.length < pageSize) break
+      const last = page[page.length - 1]
+      offsetDate = last.date
+      offsetId = last.message?.id
+      offsetPeer = last.inputEntity
+    } catch (e) { log('rescan page err: ' + e.message); break }
+  }
+  return updates
+}
+
 function startUnreadRescan() {
   if (unreadRescanTimer) clearInterval(unreadRescanTimer)
   unreadRescanTimer = setInterval(async () => {
     if (!client || !currentAccount) return
     try {
-      const page = await client.getDialogs({ limit: 50 })
-      const updates = page.map(d => ({
-        id: `${currentAccount.id}:${String(d.id)}`,
-        unreadCount: d.unreadCount || 0,
-      })).filter(u => u.unreadCount >= 0)
+      const updates = await fetchAllUnreadUpdates()
       emit('tg:unread-bulk-sync', { accountId: currentAccount.id, updates })
-      log(`periodic unread rescan: ${updates.length} чатов`)
+      const withUnread = updates.filter(u => u.unreadCount > 0).length
+      log(`periodic unread rescan: ${updates.length} чатов (${withUnread} с непрочитанным)`)
     } catch (e) { log('periodic rescan err: ' + e.message) }
   }, 30000)  // каждые 30 сек
-  log('periodic unread rescan запущен (30 сек)')
+  log('periodic unread rescan запущен (30 сек, до 500 чатов)')
 }
 
 function attachMessageListener() {

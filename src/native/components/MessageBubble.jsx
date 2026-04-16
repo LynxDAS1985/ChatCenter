@@ -34,17 +34,23 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
 
   const replyToMsg = m.replyToId && getMessage ? getMessage(chatId, m.replyToId) : null
 
+  // v0.87.26: для сообщений с одиночным фото/видео без/с коротким текстом — фиксированная
+  // минимальная ширина чтобы bubble не схлопывался до крохотного размера.
+  const hasMedia = m.mediaType === 'photo' || m.mediaType === 'video'
+  const bubbleMinWidth = hasMedia ? 280 : 'auto'
+
   return (
     <div ref={ref} style={{
       alignSelf: m.isOutgoing ? 'flex-end' : 'flex-start',
-      maxWidth: '65%',
+      maxWidth: hasMedia ? 'min(420px, 65%)' : '65%',
+      minWidth: bubbleMinWidth,
       position: 'relative',
     }}
       onMouseEnter={() => setMenu(true)}
       onMouseLeave={() => setMenu(false)}
     >
       <div style={{
-        padding: '8px 12px', borderRadius: 12,
+        padding: hasMedia ? 4 : '8px 12px', borderRadius: 12,
         background: m.isOutgoing ? 'var(--amoled-accent)' : 'var(--amoled-surface-hover)',
         color: m.isOutgoing ? '#fff' : 'var(--amoled-text)',
         fontSize: 14, wordBreak: 'break-word',
@@ -57,20 +63,25 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
         {replyToMsg && (
           <div style={{
             borderLeft: '3px solid rgba(255,255,255,0.4)',
-            paddingLeft: 8, marginBottom: 4,
+            paddingLeft: 8,
+            marginBottom: 4,
+            marginLeft: hasMedia ? 8 : 0,
+            marginRight: hasMedia ? 8 : 0,
+            marginTop: hasMedia ? 6 : 0,
             fontSize: 12, opacity: 0.7,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
           }}>
             ↪ {replyToMsg.text?.slice(0, 80) || '[медиа]'}
           </div>
         )}
-        {/* v0.87.24: Медиа с stripped thumb как placeholder */}
+        {/* v0.87.26: Медиа с stripped thumb — достаточный размер + правильный aspect */}
         {m.mediaType === 'photo' && (
           <div style={{
             position: 'relative',
             width: '100%',
             aspectRatio: m.mediaWidth && m.mediaHeight ? `${m.mediaWidth} / ${m.mediaHeight}` : '4 / 3',
-            maxHeight: 400,
+            minHeight: 180,
+            maxHeight: 420,
             borderRadius: 8,
             marginBottom: m.text ? 6 : 0,
             overflow: 'hidden',
@@ -114,8 +125,14 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
         {m.mediaType === 'contact' && <div style={{ fontSize: 12, opacity: 0.7 }}>👤 контакт</div>}
         {m.mediaType === 'poll' && <div style={{ fontSize: 12, opacity: 0.7 }}>📊 опрос</div>}
 
-        {m.text && <div style={{ whiteSpace: 'pre-wrap' }}><FormattedText text={m.text} entities={m.entities} /></div>}
-        <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2, textAlign: 'right' }}>
+        {m.text && <div style={{
+          whiteSpace: 'pre-wrap',
+          padding: hasMedia ? '4px 8px 0' : 0,
+        }}><FormattedText text={m.text} entities={m.entities} /></div>}
+        <div style={{
+          fontSize: 10, opacity: 0.75, marginTop: 2, textAlign: 'right',
+          padding: hasMedia ? '2px 8px 4px' : 0,
+        }}>
           {m.isEdited && <span style={{ marginRight: 4 }}>ред.</span>}
           {new Date(m.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
           {/* v0.87.17: галочки прочитанности (только для исходящих) */}
