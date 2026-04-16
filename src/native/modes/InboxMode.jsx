@@ -6,7 +6,9 @@ import { List } from 'react-window'
 import ChatListItem from '../components/ChatListItem.jsx'
 import MessageBubble from '../components/MessageBubble.jsx'
 import ForwardPicker from '../components/ForwardPicker.jsx'
+import { AlbumBubble } from '../components/MediaAlbum.jsx'
 import { groupMessages, formatDayLabel, findFirstUnreadId } from '../utils/messageGrouping.js'
+import { useInitialScroll } from '../hooks/useInitialScroll.js'
 
 const ITEM_HEIGHT = 64
 
@@ -116,6 +118,14 @@ export default function InboxMode({ store }) {
   const [atBottom, setAtBottom] = useState(true)
   const [newBelow, setNewBelow] = useState(0)
   const firstUnreadIdRef = useRef(null)
+
+  // v0.87.29 Вариант A: начальный скролл чата (в низ / на first-unread) + жёлтая подсветка
+  useInitialScroll({
+    activeChatId: store.activeChatId,
+    messagesCount: activeMessages.length,
+    scrollRef: msgsScrollRef,
+    firstUnreadIdRef,
+  })
 
   const openPhotoWindow = (src) => {
     try { window.api?.invoke('photo:open', { src }) } catch(_) {}
@@ -480,19 +490,35 @@ export default function InboxMode({ store }) {
                         <div className="native-msg-author">{item.senderName}</div>
                       )}
                       {item.msgs.map(m => (
-                        <MessageBubble
-                          key={m.id} m={m} chatId={store.activeChatId}
-                          onReply={setReplyTo}
-                          onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
-                          onDelete={handleDelete}
-                          onForward={handleForward}
-                          onPin={handlePin}
-                          downloadMedia={store.downloadMedia}
-                          getMessage={getMessage}
-                          onVisible={readByVisibility}
-                          onPhotoOpen={openPhotoWindow}
-                          onReplyClick={scrollToMessage}
-                        />
+                        m.type === 'album' ? (
+                          <AlbumBubble
+                            key={m.id} album={m} chatId={store.activeChatId}
+                            downloadMedia={store.downloadMedia}
+                            onPhotoOpen={openPhotoWindow}
+                            onReply={setReplyTo}
+                            onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
+                            onDelete={handleDelete}
+                            onForward={handleForward}
+                            onPin={handlePin}
+                            getMessage={getMessage}
+                            onVisible={readByVisibility}
+                            onReplyClick={scrollToMessage}
+                          />
+                        ) : (
+                          <MessageBubble
+                            key={m.id} m={m} chatId={store.activeChatId}
+                            onReply={setReplyTo}
+                            onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
+                            onDelete={handleDelete}
+                            onForward={handleForward}
+                            onPin={handlePin}
+                            downloadMedia={store.downloadMedia}
+                            getMessage={getMessage}
+                            onVisible={readByVisibility}
+                            onPhotoOpen={openPhotoWindow}
+                            onReplyClick={scrollToMessage}
+                          />
+                        )
                       ))}
                     </div>
                   </div>

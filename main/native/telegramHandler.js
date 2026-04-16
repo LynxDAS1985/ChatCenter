@@ -776,6 +776,8 @@ function mapMessage(m, chatId) {
     strippedThumb,  // v0.87.24: мгновенное размытое превью (data:URL)
     mediaWidth, mediaHeight,  // для правильного aspect ratio placeholder
     webPage,  // v0.87.27: превью ссылки (title/description/siteName)
+    // v0.87.29: groupedId — несколько медиа в одном сообщении (альбом)
+    groupedId: m.groupedId ? String(m.groupedId) : null,
     replyToId: m.replyTo?.replyToMsgId ? String(m.replyTo.replyToMsgId) : null,
   }
 }

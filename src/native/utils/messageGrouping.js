@@ -1,5 +1,32 @@
 // v0.87.27: Группировка сообщений по автору + day/time/unread разделители.
-// Вынесено из InboxMode.jsx для соблюдения лимита 600 строк.
+// v0.87.29: + склейка последовательных msgs с одинаковым groupedId в альбомы
+// (как в Telegram: несколько фото в одном посте → 2x2 / 3x3 сетка).
+
+// Свёртка последовательных сообщений с одним groupedId в один «album»-объект.
+// На выходе msgs — массив из смесей: { ...msg } или { type: 'album', msgs: [...], ...atrrsОтPervogo }
+function collapseAlbums(msgs) {
+  const out = []
+  let current = null
+  for (const m of msgs) {
+    if (!m.groupedId) { current = null; out.push(m); continue }
+    if (current && current.groupedId === m.groupedId) {
+      current.msgs.push(m)
+      continue
+    }
+    current = {
+      type: 'album',
+      id: `album-${m.groupedId}`,
+      groupedId: m.groupedId,
+      msgs: [m],
+      // атрибуты наследуем от первого (для reply/edit/forward мы используем именно его id)
+      senderId: m.senderId, senderName: m.senderName, isOutgoing: m.isOutgoing,
+      timestamp: m.timestamp, isRead: m.isRead, isEdited: m.isEdited,
+      replyToId: m.replyToId, text: m.text, entities: m.entities,
+    }
+    out.push(current)
+  }
+  return out
+}
 
 export function groupMessages(visibleMessages, firstUnreadId) {
   const items = []
@@ -37,6 +64,10 @@ export function groupMessages(visibleMessages, firstUnreadId) {
       items.push(currentGroup)
     }
     currentGroup.msgs.push(m)
+  }
+  // Пост-обработка: внутри каждой группы склеиваем альбомы
+  for (const it of items) {
+    if (it.type === 'group') it.msgs = collapseAlbums(it.msgs)
   }
   return items
 }
