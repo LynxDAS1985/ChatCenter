@@ -10,7 +10,8 @@ import path from 'node:path'
 import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
 import { NewMessage } from 'telegram/events/index.js'
-import { Api, Helpers } from 'telegram'
+import { Api } from 'telegram'
+import { strippedPhotoToJpg } from 'telegram/Utils.js'
 
 // api_id / api_hash зашиты — ChatCenter (Demo33) app на my.telegram.org
 const API_ID = 8392940
@@ -655,7 +656,7 @@ function extractStrippedThumb(media) {
     const sizes = photo.sizes || photo.thumbs || []
     const stripped = sizes.find(s => s.className === 'PhotoStrippedSize')
     if (!stripped?.bytes) return null
-    const jpegBuffer = Helpers.strippedPhotoToJpg(stripped.bytes)
+    const jpegBuffer = strippedPhotoToJpg(stripped.bytes)
     return 'data:image/jpeg;base64,' + Buffer.from(jpegBuffer).toString('base64')
   } catch (_) { return null }
 }

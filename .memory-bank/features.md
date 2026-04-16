@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.24 (16 апреля 2026)
+## Текущая версия: v0.87.25 (16 апреля 2026)
 
 ---
 
@@ -91,6 +91,22 @@
 ---
 
 ## Changelog
+
+### v0.87.25 (16 апреля 2026) — FIX Named export Helpers + новый тест mainImports
+- **Ошибка запуска v0.87.24**: `SyntaxError: Named export 'Helpers' not found. The requested module 'telegram' is a CommonJS module`.
+- **Причина**: в v0.87.24 добавил `import { Helpers } from 'telegram'` — но `telegram` npm пакет НЕ экспортирует `Helpers` напрямую. Функция `strippedPhotoToJpg` лежит в `telegram/Utils.js`.
+- **Фикс**: `import { strippedPhotoToJpg } from 'telegram/Utils.js'`.
+- **Почему тесты не поймали**:
+  - Статические тесты (grep-based) только читают файлы как текст, не импортируют модули
+  - `electron-vite build` **компилирует** ESM→CJS синтаксически, но не проверяет что named export реально есть
+  - `vitest` не импортирует main-процесс модули
+- **Новый тест** `src/__tests__/mainImports.test.cjs`:
+  - Парсит ВСЕ `main/**/*.js` файлы на `import { X, Y } from 'pkg'`
+  - Для CommonJS пакетов (telegram, baileys, vk-io, input) делает `require(pkg)` и проверяет что каждый named import **реально** существует в export'ах
+  - Electron исключён (работает через спец. runtime Electron'а)
+  - Подключён в `npm test` pipeline
+  - Ловит ошибки «Named export X not found» **ДО запуска** программы
+- Ловушка 79 — CommonJS пакеты в ESM-проекте требуют осторожности с named imports. Нужен runtime-проверяющий тест.
 
 ### v0.87.24 (16 апреля 2026) — Stripped thumbs + группировка + Kombo D unread-sync
 - **Stripped photo (Вариант A)**:
