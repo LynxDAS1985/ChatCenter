@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' cc-media: blob: data: https:; media-src 'self' cc-media: blob:; img-src 'self' cc-media: blob: data: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
+<title>Видео</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; color: #fff; }
+  body { display: flex; align-items: center; justify-content: center; user-select: none; -webkit-app-region: drag; }
+  .wrap { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  video {
+    max-width: 100vw; max-height: 100vh;
+    background: #000;
+    outline: none;
+    -webkit-app-region: no-drag;
+  }
+  .toolbar {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 4px; align-items: center;
+    background: rgba(20,20,20,0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 6px 10px; color: #fff; font-size: 13px;
+    -webkit-app-region: no-drag;
+    z-index: 10;
+    opacity: 0.3; transition: opacity 0.2s;
+  }
+  .toolbar:hover { opacity: 1; }
+  .toolbar button {
+    border: none; background: transparent; color: #fff;
+    padding: 4px 10px; font-size: 14px; cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.15s;
+  }
+  .toolbar button:hover { background: rgba(255,255,255,0.12); }
+  .title { font-size: 12px; opacity: 0.85; padding: 0 8px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 1px solid rgba(255,255,255,0.15); border-right: 1px solid rgba(255,255,255,0.15); }
+  .pin-active { color: #2AABEE !important; }
+  .error {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    padding: 16px 24px; background: rgba(20,20,20,0.95); border-radius: 12px;
+    border: 1px solid rgba(255,60,60,0.3); color: #ff6b6b; font-size: 14px;
+    max-width: 420px; text-align: center;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <video id="v" controls preload="auto" playsinline></video>
+  <div id="err" class="error"></div>
+  <div class="toolbar">
+    <button id="pin" title="Закрепить поверх всех окон">📌</button>
+    <span class="title" id="title">Видео</span>
+    <button id="min" title="Свернуть">_</button>
+    <button id="max" title="Развернуть">▢</button>
+    <button id="close" title="Закрыть (Esc)">✕</button>
+  </div>
+</div>
+<script>
+  const video = document.getElementById('v')
+  const errEl = document.getElementById('err')
+  const titleEl = document.getElementById('title')
+
+  video.addEventListener('error', () => {
+    errEl.textContent = '⚠️ Не удалось проиграть видео. Возможно, повреждён файл или неподдерживаемый формат.'
+    errEl.style.display = 'block'
+  })
+  video.addEventListener('loadedmetadata', () => { errEl.style.display = 'none' })
+
+  let pinned = false
+  const pinBtn = document.getElementById('pin')
+  pinBtn.onclick = async () => {
+    pinned = !pinned
+    pinBtn.classList.toggle('pin-active', pinned)
+    try { await window.video?.togglePin(pinned) } catch(_) {}
+  }
+  document.getElementById('close').onclick = () => window.video?.close()
+  document.getElementById('min').onclick = () => window.video?.minimize()
+  document.getElementById('max').onclick = () => window.video?.maximize()
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') window.video?.close()
+    if (e.key === ' ' || e.key === 'k') { e.preventDefault(); video.paused ? video.play() : video.pause() }
+    if (e.key === 'ArrowRight') { video.currentTime = Math.min(video.duration || 0, video.currentTime + 5) }
+    if (e.key === 'ArrowLeft') { video.currentTime = Math.max(0, video.currentTime - 5) }
+    if (e.key === 'm') { video.muted = !video.muted }
+    if (e.key === 'f') { if (document.fullscreenElement) document.exitFullscreen(); else video.requestFullscreen() }
+  })
+
+  if (window.video?.onSetSrc) {
+    window.video.onSetSrc(({ src, title }) => {
+      video.src = src
+      if (title) titleEl.textContent = title
+      video.play().catch(() => {})
+    })
+  }
+</script>
+</body>
+</html>

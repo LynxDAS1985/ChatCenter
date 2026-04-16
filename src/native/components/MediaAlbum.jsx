@@ -4,20 +4,28 @@
 // Клик → PhotoViewer window с массивом srcs и индексом нажатого.
 import { useEffect, useRef, useState } from 'react'
 import FormattedText from './FormattedText.jsx'
+import VideoTile from './VideoTile.jsx'
 
 function PhotoTile({ m, chatId, downloadMedia, onClick, registerSrc, idx }) {
   const [url, setUrl] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
+
+  // v0.87.34: video — используем VideoTile (с ▶, прогрессом, отдельным player окном)
+  if (m.mediaType === 'video') {
+    return (
+      <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+        <VideoTile m={m} chatId={chatId} />
+      </div>
+    )
+  }
+
   useEffect(() => {
     let cancelled = false
-    if (m.mediaType !== 'photo' && m.mediaType !== 'video') return
+    if (m.mediaType !== 'photo') return
     setLoading(true)
     setError(false)
-    // v0.87.33: для video ВСЕГДА thumb=true (полное видео ~100МБ качать нельзя для превью)
-    // для photo — полное (300-700 КБ)
-    const useThumb = m.mediaType === 'video'
-    downloadMedia(chatId, m.id, useThumb).then(r => {
+    downloadMedia(chatId, m.id, false).then(r => {
       if (cancelled) return
       if (r?.ok) {
         setUrl(r.path)
@@ -59,10 +67,8 @@ function PhotoTile({ m, chatId, downloadMedia, onClick, registerSrc, idx }) {
         <div
           onClick={(e) => {
             e.stopPropagation()
-            // Retry загрузку
             setError(false); setLoading(true)
-            const useThumb = m.mediaType === 'video'
-            downloadMedia(chatId, m.id, useThumb).then(r => {
+            downloadMedia(chatId, m.id, false).then(r => {
               if (r?.ok) { setUrl(r.path); registerSrc?.(idx, r.path) }
               else setError(true)
             }).finally(() => setLoading(false))
@@ -73,13 +79,6 @@ function PhotoTile({ m, chatId, downloadMedia, onClick, registerSrc, idx }) {
             cursor: 'pointer', textAlign: 'center', padding: 6,
           }}
         >↻ клик — загрузить</div>
-      )}
-      {m.mediaType === 'video' && (
-        <div style={{
-          position: 'absolute', top: 6, right: 6,
-          background: 'rgba(0,0,0,0.6)', color: '#fff',
-          padding: '2px 6px', borderRadius: 4, fontSize: 10,
-        }}>📹</div>
       )}
     </div>
   )
@@ -185,7 +184,7 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
       if (entry.isIntersecting) {
         for (const m of album.msgs) onVisible(m)
       }
-    }, { threshold: 0.5 })
+    }, { threshold: 0.15 })  // v0.87.34: снизили для надёжности
     obs.observe(ref.current)
     return () => obs.disconnect()
   }, [album.msgs.map(m => m.id).join(',')])

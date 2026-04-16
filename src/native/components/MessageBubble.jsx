@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from 'react'
 import FormattedText from './FormattedText.jsx'
 import LinkPreview from './LinkPreview.jsx'
+import VideoTile from './VideoTile.jsx'
 
 export default function MessageBubble({
   m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible,
@@ -19,7 +20,7 @@ export default function MessageBubble({
     if (!onVisible || !ref.current) return
     const obs = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) onVisible(m)
-    }, { threshold: 0.5 })
+    }, { threshold: 0.15 })  // v0.87.34: снизили с 0.5 — для коротких bubble сообщений 0.5 не достигается
     obs.observe(ref.current)
     return () => obs.disconnect()
   }, [m.id])
@@ -120,9 +121,7 @@ export default function MessageBubble({
           </div>
         )}
         {m.mediaType === 'video' && (
-          <div onClick={handleDownload} style={{ cursor: 'pointer', fontSize: 12, opacity: 0.85, marginBottom: 4 }}>
-            {mediaUrl ? '📹 видео скачано' : mediaLoading ? '⏳ загрузка...' : '📹 видео (клик для скачивания)'}
-          </div>
+          <VideoTile m={m} chatId={chatId} />
         )}
         {m.mediaType === 'audio' && (
           <div onClick={handleDownload} style={{ cursor: 'pointer', fontSize: 12, opacity: 0.85, marginBottom: 4 }}>

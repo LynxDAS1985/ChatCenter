@@ -16,6 +16,7 @@ function copyStaticPlugin() {
         { from: 'main/pin-dock.html', to: 'out/main/pin-dock.html' },
         { from: 'main/log-viewer.html', to: 'out/main/log-viewer.html' },
         { from: 'main/photo-viewer.html', to: 'out/main/photo-viewer.html' },
+        { from: 'main/video-player.html', to: 'out/main/video-player.html' },
       ]
       // Hooks directory
       const hooksDir = 'main/preloads/hooks'
@@ -60,6 +61,7 @@ export default defineConfig({
           pin: resolve(__dirname, 'main/preloads/pin.preload.cjs'),
           'pin-dock': resolve(__dirname, 'main/preloads/pin-dock.preload.cjs'),
           photoViewer: resolve(__dirname, 'main/preloads/photoViewer.preload.cjs'),
+          videoPlayer: resolve(__dirname, 'main/preloads/videoPlayer.preload.cjs'),
         },
         output: {
           // Production paths expect .js not .mjs

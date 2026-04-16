@@ -22,6 +22,7 @@ import { createWindow as createWindowFromManager } from './utils/windowManager.j
 import { createTray as createTrayFromManager, openLogViewer } from './utils/trayManager.js'
 import { registerWindowHandlers } from './handlers/windowHandlers.js'
 import { registerPhotoViewerHandler } from './handlers/photoViewerHandler.js'
+import { registerVideoPlayerHandler } from './handlers/videoPlayerHandler.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
@@ -258,6 +259,8 @@ function setupIPC() {
   registerWindowHandlers(() => mainWindow)
   // v0.87.28: отдельное окно просмотра фото
   registerPhotoViewerHandler()
+  // v0.87.34: отдельное окно плеера видео со streaming через cc-media://
+  registerVideoPlayerHandler()
 
   // Мессенджеры — загрузка
   ipcMain.handle('messengers:load', () => {

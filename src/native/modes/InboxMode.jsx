@@ -9,6 +9,8 @@ import ForwardPicker from '../components/ForwardPicker.jsx'
 import { AlbumBubble } from '../components/MediaAlbum.jsx'
 import { groupMessages, formatDayLabel, findFirstUnreadId } from '../utils/messageGrouping.js'
 import { useInitialScroll } from '../hooks/useInitialScroll.js'
+import { useForceReadAtBottom } from '../hooks/useForceReadAtBottom.js'
+import { useDropAndPaste } from '../hooks/useDropAndPaste.js'
 
 const ITEM_HEIGHT = 64
 
@@ -215,40 +217,10 @@ export default function InboxMode({ store }) {
     }, 1500)
   }
 
-  // v0.87.16: drag-n-drop файлов в окно чата
-  const [dragOver, setDragOver] = useState(false)
-  const handleDragOver = (e) => { e.preventDefault(); setDragOver(true) }
-  const handleDragLeave = () => setDragOver(false)
-  const handleDrop = async (e) => {
-    e.preventDefault(); setDragOver(false)
-    if (!store.activeChatId) return
-    for (const f of e.dataTransfer.files) {
-      await store.sendFile(store.activeChatId, f.path, '')
-    }
-  }
-
-  // v0.87.17: Ctrl+V вставка картинки (только если есть изображение в буфере)
-  const handlePaste = async (e) => {
-    if (!store.activeChatId) return
-    const items = Array.from(e.clipboardData?.items || [])
-    const imgItem = items.find(i => i.type.startsWith('image/'))
-    if (!imgItem) return  // не картинка — обычная вставка текста, не трогаем
-    e.preventDefault()
-    const blob = imgItem.getAsFile()
-    if (!blob) { showToast('Не удалось получить картинку из буфера', 'error'); return }
-    try {
-      const arrayBuffer = await blob.arrayBuffer()
-      const r = await window.api?.invoke('tg:send-clipboard-image', {
-        chatId: store.activeChatId,
-        data: Array.from(new Uint8Array(arrayBuffer)),
-        ext: blob.type.split('/')[1] || 'png',
-      })
-      if (r?.ok) showToast('📎 Картинка отправлена', 'success')
-      else showToast('✗ Ошибка: ' + (r?.error || 'неизвестно'), 'error')
-    } catch (err) {
-      showToast('✗ Ошибка: ' + err.message, 'error')
-    }
-  }
+  // v0.87.34: drag-n-drop файлов + Ctrl+V картинки — вынесено в хук
+  const { dragOver, handleDragOver, handleDragLeave, handleDrop, handlePaste } = useDropAndPaste({
+    activeChatId: store.activeChatId, sendFile: store.sendFile, showToast,
+  })
 
   const handleScroll = async (e) => {
     // v0.87.27: индикатор scroll-to-bottom + newBelow-счётчик
@@ -283,6 +255,16 @@ export default function InboxMode({ store }) {
       if (added > 0) setNewBelow(n => n + added)
     }
   }, [activeMessages.length])
+
+  // v0.87.34: FORCE mark-read когда юзер в самом низу чата — вынесено в хук
+  const activeUnread = store.chats.find(c => c.id === store.activeChatId)?.unreadCount || 0
+  useForceReadAtBottom({
+    atBottom,
+    activeChatId: store.activeChatId,
+    activeMessages,
+    activeUnread,
+    markRead: store.markRead,
+  })
 
   // Скролл-вниз-одной-кнопкой
   const scrollToBottom = () => {

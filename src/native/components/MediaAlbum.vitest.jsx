@@ -117,24 +117,34 @@ describe('AlbumBubble render', () => {
     cleanup()
   })
 
-  // v0.87.33: для video используется thumb=true (чтобы не качать полное видео ~100МБ)
-  it('RF 0.87.33: video тайл вызывает downloadMedia с thumb=true', async () => {
+  // v0.87.34: video тайл теперь использует VideoTile компонент (вызывает window.api напрямую)
+  // Проверяем что VideoTile запрашивает ТОЛЬКО thumb при mount (не полное видео)
+  it('RF 0.87.34: video тайл в альбоме использует window.api тг:download-media thumb=true', async () => {
+    const invokeMock = vi.fn((channel) => {
+      if (channel === 'tg:download-media') return Promise.resolve({ ok: true, path: 'cc-media://media/t.jpg' })
+      return Promise.resolve({ ok: true })
+    })
+    globalThis.window.api = { invoke: invokeMock, on: vi.fn(() => () => {}), send: vi.fn() }
     const videoAlbum = {
       ...makeAlbum(1),
       msgs: [{
         id: '200', chatId: 'c1', senderId: 's', senderName: 'X',
         text: '', timestamp: 1712000000000, isOutgoing: false,
         mediaType: 'video', mediaWidth: 1280, mediaHeight: 720,
+        duration: 60, fileSize: 10000000,
         strippedThumb: 'data:image/jpeg;base64,AAAA', groupedId: 'g2',
       }],
     }
-    const downloadMedia = vi.fn(() => Promise.resolve({ ok: false }))
     render(
-      <AlbumBubble album={videoAlbum} chatId="c1" downloadMedia={downloadMedia} />
+      <AlbumBubble album={videoAlbum} chatId="c1" downloadMedia={() => Promise.resolve({ ok: false })} />
     )
-    await new Promise(r => setTimeout(r, 5))
-    // Третий аргумент downloadMedia(chatId, msgId, thumb) — должен быть true для video
-    expect(downloadMedia.mock.calls[0]?.[2]).toBe(true)
+    await new Promise(r => setTimeout(r, 50))
+    const mediaCalls = invokeMock.mock.calls.filter(c => c[0] === 'tg:download-media')
+    expect(mediaCalls.length).toBeGreaterThan(0)
+    expect(mediaCalls[0][1].thumb).toBe(true)
+    // НЕ должен быть вызван tg:download-video до клика
+    const videoCalls = invokeMock.mock.calls.filter(c => c[0] === 'tg:download-video')
+    expect(videoCalls.length).toBe(0)
     cleanup()
   })
 

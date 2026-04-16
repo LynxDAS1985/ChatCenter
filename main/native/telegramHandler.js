@@ -447,6 +447,48 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
+  // v0.87.34: скачивание видео с progress events для <video> streaming player.
+  // Эмитит tg:media-progress { chatId, messageId, bytes, total } каждый чанк.
+  // По окончании возвращает cc-media:// путь — UI откроет его в <video controls src=...>
+  // и браузер через Range requests играет сразу, не дожидаясь полного файла.
+  ipcMain.handle('tg:download-video', async (event, { chatId, messageId }) => {
+    log(`download-video: chat=${chatId} msg=${messageId}`)
+    try {
+      if (!client) return { ok: false, error: 'Не подключён' }
+      const mediaDir = path.join(path.dirname(cachePath), 'tg-media')
+      try { fs.mkdirSync(mediaDir, { recursive: true }) } catch(_) {}
+      const rawChat = String(chatId).split(':').pop()
+      // video файл — .mp4 (большинство видео в Telegram)
+      const filePath = path.join(mediaDir, `${rawChat}_${messageId}_video.mp4`)
+      if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
+        log(`download-video: cached ${filePath}`)
+        return { ok: true, path: `cc-media://video/${encodeURIComponent(path.basename(filePath))}`, cached: true }
+      }
+      const entity = chatEntityMap.get(chatId) || rawChat
+      const msgs = await client.getMessages(entity, { ids: [Number(messageId)] })
+      if (!msgs[0]) return { ok: false, error: 'Сообщение не найдено' }
+      if (!msgs[0].media) return { ok: false, error: 'Нет медиа' }
+      const total = Number(msgs[0].media.document?.size) || 0
+      // Используем client.downloadMedia с progressCallback для live-событий
+      const buf = await client.downloadMedia(msgs[0], {
+        progressCallback: (got) => {
+          try {
+            event.sender.send('tg:media-progress', {
+              chatId, messageId, bytes: Number(got) || 0, total,
+            })
+          } catch(_) {}
+        }
+      })
+      if (!buf) return { ok: false, error: 'Telegram вернул пусто' }
+      fs.writeFileSync(filePath, buf)
+      log(`download-video: OK size=${buf.length}`)
+      return { ok: true, path: `cc-media://video/${encodeURIComponent(path.basename(filePath))}`, total }
+    } catch (e) {
+      log('download-video err: ' + e.message)
+      return { ok: false, error: e.message }
+    }
+  })
+
   // v0.87.22: поддержка thumb-режима — быстрое превью ~20КБ вместо полного фото ~300КБ
   ipcMain.handle('tg:download-media', async (_, { chatId, messageId, thumb = true }) => {
     log(`download-media: chat=${chatId} msg=${messageId} thumb=${thumb}`)
@@ -723,6 +765,7 @@ function mapMessage(m, chatId) {
   const media = m.media
   let mediaType = null, mediaPreview = null, strippedThumb = null, mediaWidth = null, mediaHeight = null
   let webPage = null
+  let duration = null, fileSize = null  // v0.87.34: для video
   if (media) {
     const cn = media.className
     if (cn === 'MessageMediaPhoto') {
@@ -741,6 +784,16 @@ function mapMessage(m, chatId) {
       else mediaType = 'file'
       mediaPreview = media.document?.attributes?.find(a => a.fileName)?.fileName || 'файл'
       strippedThumb = extractStrippedThumb(media)
+      // v0.87.34: извлекаем duration + dimensions для video
+      const videoAttr = media.document?.attributes?.find(a => a.className === 'DocumentAttributeVideo')
+      if (videoAttr) {
+        mediaWidth = Number(videoAttr.w) || null
+        mediaHeight = Number(videoAttr.h) || null
+        duration = Number(videoAttr.duration) || null
+      }
+      const audioAttr = media.document?.attributes?.find(a => a.className === 'DocumentAttributeAudio')
+      if (audioAttr) duration = Number(audioAttr.duration) || null
+      fileSize = Number(media.document?.size) || null
     }
     else if (cn === 'MessageMediaWebPage') {
       mediaType = 'link'
@@ -776,6 +829,7 @@ function mapMessage(m, chatId) {
     strippedThumb,  // v0.87.24: мгновенное размытое превью (data:URL)
     mediaWidth, mediaHeight,  // для правильного aspect ratio placeholder
     webPage,  // v0.87.27: превью ссылки (title/description/siteName)
+    duration, fileSize,  // v0.87.34: для video/audio прогресс-бар и ⏱ overlay
     // v0.87.29: groupedId — несколько медиа в одном сообщении (альбом)
     groupedId: m.groupedId ? String(m.groupedId) : null,
     replyToId: m.replyTo?.replyToMsgId ? String(m.replyTo.replyToMsgId) : null,

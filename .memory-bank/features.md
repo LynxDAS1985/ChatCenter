@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.33 (16 апреля 2026)
+## Текущая версия: v0.87.34 (16 апреля 2026)
 
 ## 🔴 СТАТУС ФИЧЕЙ v0.87.27–29 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
 
@@ -115,6 +115,81 @@
 ---
 
 ## Changelog
+
+### v0.87.34 (16 апреля 2026) — Variant A Video Streaming + Fix unread (force markRead + threshold)
+
+**Пользовательский feedback по v0.87.33**:
+- ❌ «Пролистал в самый низ, счётчик как был 2 так и остался» (канал MIMS Automobility)
+- ✅ Одобрен «Variant A: poster + streaming» — делать сразу с тестами
+
+**1. FIX unread counter — force markRead в самом низу чата**:
+Ранее в InboxMode использовался только `IntersectionObserver(threshold: 0.5)`. Проблемы:
+  - Короткие bubble (маленький текст) не пересекают 0.5 → не срабатывает
+  - Быстрый скролл через 10-20 сообщений за 1 сек → observer не успевает
+  - Debounce batch (1.5с) мог пропустить последнюю порцию при переключении чатов
+
+**Фикс**:
+  - Снизил `threshold` с 0.5 до 0.15 в MessageBubble.jsx и MediaAlbum.jsx (AlbumBubble)
+  - **Новый хук** [useForceReadAtBottom.js](src/native/hooks/useForceReadAtBottom.js) — когда `atBottom === true` И `unreadCount > 0`, через 400мс вызывает `markRead(chatId, lastMsgId, unreadCount)`, сбрасывая всё до нуля
+  - Это «страховочный» путь независимо от IntersectionObserver
+
+**2. Variant A Video Streaming — постер + отдельное окно плеера**:
+
+**MTProto metadata** — в mapMessage добавлены `duration` (сек) и `fileSize` (байт):
+  - `DocumentAttributeVideo.duration/w/h` извлекается для video
+  - `DocumentAttributeAudio.duration` для аудио
+  - `media.document.size` для размера файла
+
+**IPC `tg:download-video`** ([telegramHandler.js](main/native/telegramHandler.js)):
+  - Скачивает полное видео с `progressCallback` от GramJS
+  - Эмитит `tg:media-progress { chatId, messageId, bytes, total }` каждый чанк
+  - Возвращает `cc-media://video/<filename>.mp4` по окончании
+  - Кэширует файлы — повторный клик открывает мгновенно
+
+**cc-media:// protocol с Range support** ([ccMediaProtocol.js](main/native/ccMediaProtocol.js)):
+  - `registerSchemesAsPrivileged` с `stream: true`
+  - Обрабатывает HTTP `Range: bytes=N-M` — отдаёт `206 Partial Content` с `Content-Range` и `Accept-Ranges`
+  - Правильный MIME для mp4/webm/mov/mp3/ogg/wav по расширению
+  - **Это позволяет `<video>` браузера перематывать и стримить** — запросы по кускам
+  - Когда пользователь тянет ползунок — браузер запрашивает только нужные байты
+
+**VideoPlayer окно** — новое BrowserWindow через [videoPlayerHandler.js](main/handlers/videoPlayerHandler.js):
+  - IPC: `video:open {src, title}`, `video:close`, `video:minimize`, `video:maximize`, `video:toggle-pin`
+  - Новый HTML [main/video-player.html](main/video-player.html) с `<video controls>` + тулбар
+  - Preload [main/preloads/videoPlayer.preload.cjs](main/preloads/videoPlayer.preload.cjs)
+  - Поддержка клавиш: `Esc` закрыть, `Space/k` play-pause, `← →` ±5 сек, `m` mute, `f` fullscreen
+
+**Новый компонент [VideoTile.jsx](src/native/components/VideoTile.jsx)** — для UI:
+  - При mount качает ТОЛЬКО постер (thumb=true, ~20-80 КБ) — не полный файл
+  - Показывает ▶ круглую кнопку по центру, duration в углу (`2:05`, `1:30:45`), размер файла (`42.0 МБ`)
+  - При клике: `tg:download-video` → прогресс-бар + спиннер `15 МБ / 42 МБ · 35%` → готово → `video:open`
+  - Error state с сообщением
+  - Используется в MessageBubble для одиночного video И в MediaAlbum для video тайлов альбома
+
+**3. Рефакторинг** — 2 новых хука чтобы держать InboxMode < 600 строк:
+  - `useForceReadAtBottom` — force markRead когда atBottom=true
+  - `useDropAndPaste` — drag-n-drop файлов + Ctrl+V картинки
+  - InboxMode сократился с 610 до 576 строк
+
+**4. Тесты** — 7 новых тестов в [VideoTile.vitest.jsx](src/native/components/VideoTile.vitest.jsx):
+  - При mount качается ТОЛЬКО thumb, НЕ полное видео (проверяет IPC calls)
+  - Отображение ▶ кнопки
+  - Formatter duration: `2:05` / `0:29` / `1:30:45`
+  - Formatter size: `42.0 МБ` / `500 КБ`
+  - Клик → `tg:download-video` + `video:open` (IPC chain)
+  - Обновлён тест в MediaAlbum.vitest.jsx (video тайл делегирует в VideoTile)
+  - **Всего: 67 тестов (было 57)** в 9 файлах
+
+**Что проверить в v0.87.34**:
+- [ ] Канал MIMS Automobility (unread=2) → открываю, листаю в низ → счётчик становится 0
+- [ ] Любой канал с большим unread → пролистал всё → счётчик 0 через 0.5 сек
+- [ ] Видео в канале «Автовоз» → виден постер (не блюр!) + ▶ + `2:05 · 12 МБ` в углу
+- [ ] Клик по видео → прогресс-бар «15 МБ / 42 МБ · 35%» на постере
+- [ ] После скачивания → открывается отдельное окно плеера с видео
+- [ ] В плеере работают: ← → ±5сек, Space play/pause, m mute, f fullscreen
+- [ ] 📌 в плеере делает окно alwaysOnTop
+- [ ] Если видео уже раз скачано — клик открывает МГНОВЕННО (из кэша)
+- [ ] В альбоме из video+photo — video показывается с ▶ overlay, photo без
 
 ### v0.87.33 (16 апреля 2026) — FIX: видео-альбомы не грузились + счётчик unread не уменьшался
 
