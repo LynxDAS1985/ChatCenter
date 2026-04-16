@@ -3,8 +3,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { AlbumBubble } from './MediaAlbum.jsx'
 
+// v0.87.33: мокаем IntersectionObserver чтобы сразу сработал isIntersecting
+let observerCallback = null
 beforeEach(() => {
   globalThis.window.api = { invoke: vi.fn(), on: vi.fn(), send: vi.fn() }
+  observerCallback = null
+  globalThis.IntersectionObserver = class {
+    constructor(cb) { observerCallback = cb }
+    observe(el) {
+      // Имитируем intersection через микрозадачу
+      setTimeout(() => observerCallback?.([{ isIntersecting: true, target: el }]), 0)
+    }
+    disconnect() {}
+    unobserve() {}
+  }
 })
 
 function makeAlbum(count, opts = {}) {
@@ -86,6 +98,55 @@ describe('AlbumBubble render', () => {
       <AlbumBubble album={album} chatId="c1" downloadMedia={() => Promise.resolve({ ok: false })} />
     )
     expect(container.innerHTML).toMatchSnapshot()
+    cleanup()
+  })
+
+  // v0.87.33: регрессионный тест для счётчика непрочитанных — IntersectionObserver
+  // должен вызывать onVisible для КАЖДОГО msg альбома, не только firstMsg
+  it('RF 0.87.33: onVisible вызывается для всех 5 msgs альбома (счётчик unread)', async () => {
+    const album = makeAlbum(5)
+    const onVisible = vi.fn()
+    render(
+      <AlbumBubble album={album} chatId="c1" onVisible={onVisible}
+        downloadMedia={() => Promise.resolve({ ok: false })} />
+    )
+    await new Promise(r => setTimeout(r, 5))
+    expect(onVisible.mock.calls.length).toBe(5)
+    const calledIds = onVisible.mock.calls.map(c => c[0].id)
+    expect(calledIds).toEqual(album.msgs.map(m => m.id))
+    cleanup()
+  })
+
+  // v0.87.33: для video используется thumb=true (чтобы не качать полное видео ~100МБ)
+  it('RF 0.87.33: video тайл вызывает downloadMedia с thumb=true', async () => {
+    const videoAlbum = {
+      ...makeAlbum(1),
+      msgs: [{
+        id: '200', chatId: 'c1', senderId: 's', senderName: 'X',
+        text: '', timestamp: 1712000000000, isOutgoing: false,
+        mediaType: 'video', mediaWidth: 1280, mediaHeight: 720,
+        strippedThumb: 'data:image/jpeg;base64,AAAA', groupedId: 'g2',
+      }],
+    }
+    const downloadMedia = vi.fn(() => Promise.resolve({ ok: false }))
+    render(
+      <AlbumBubble album={videoAlbum} chatId="c1" downloadMedia={downloadMedia} />
+    )
+    await new Promise(r => setTimeout(r, 5))
+    // Третий аргумент downloadMedia(chatId, msgId, thumb) — должен быть true для video
+    expect(downloadMedia.mock.calls[0]?.[2]).toBe(true)
+    cleanup()
+  })
+
+  // v0.87.33: для photo thumb=false (качаем полное)
+  it('RF 0.87.33: photo тайл вызывает downloadMedia с thumb=false', async () => {
+    const album = makeAlbum(1)
+    const downloadMedia = vi.fn(() => Promise.resolve({ ok: false }))
+    render(
+      <AlbumBubble album={album} chatId="c1" downloadMedia={downloadMedia} />
+    )
+    await new Promise(r => setTimeout(r, 5))
+    expect(downloadMedia.mock.calls[0]?.[2]).toBe(false)
     cleanup()
   })
 })

@@ -2,23 +2,31 @@
 // Показывает ВСЕ фото сеткой (без «+N» ограничения) — каждое кликабельно.
 // Layout: 1→full, 2→2x1, 3→L-форма, 4→2x2, 5+→3 колонки.
 // Клик → PhotoViewer window с массивом srcs и индексом нажатого.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import FormattedText from './FormattedText.jsx'
 
 function PhotoTile({ m, chatId, downloadMedia, onClick, registerSrc, idx }) {
   const [url, setUrl] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
   useEffect(() => {
     let cancelled = false
     if (m.mediaType !== 'photo' && m.mediaType !== 'video') return
     setLoading(true)
-    downloadMedia(chatId, m.id, false).then(r => {
+    setError(false)
+    // v0.87.33: для video ВСЕГДА thumb=true (полное видео ~100МБ качать нельзя для превью)
+    // для photo — полное (300-700 КБ)
+    const useThumb = m.mediaType === 'video'
+    downloadMedia(chatId, m.id, useThumb).then(r => {
       if (cancelled) return
       if (r?.ok) {
         setUrl(r.path)
         registerSrc?.(idx, r.path)
+      } else {
+        setError(true)
       }
-    }).finally(() => { if (!cancelled) setLoading(false) })
+    }).catch(() => { if (!cancelled) setError(true) })
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [m.id])
 
@@ -46,6 +54,25 @@ function PhotoTile({ m, chatId, downloadMedia, onClick, registerSrc, idx }) {
         }}>
           <span className="native-spinner" />
         </div>
+      )}
+      {!url && !loading && error && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation()
+            // Retry загрузку
+            setError(false); setLoading(true)
+            const useThumb = m.mediaType === 'video'
+            downloadMedia(chatId, m.id, useThumb).then(r => {
+              if (r?.ok) { setUrl(r.path); registerSrc?.(idx, r.path) }
+              else setError(true)
+            }).finally(() => setLoading(false))
+          }}
+          style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.4)', color: '#fff', fontSize: 11,
+            cursor: 'pointer', textAlign: 'center', padding: 6,
+          }}
+        >↻ клик — загрузить</div>
       )}
       {m.mediaType === 'video' && (
         <div style={{
@@ -147,14 +174,25 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
   const text = album.msgs.map(m => m.text).filter(Boolean).join('\n')
   const isOutgoing = album.isOutgoing
   const replyToMsg = album.replyToId && getMessage ? getMessage(chatId, album.replyToId) : null
+  const ref = useRef(null)
 
+  // v0.87.33: IntersectionObserver — при реальной видимости альбома помечаем
+  // ВСЕ сообщения альбома как прочитанные (в MTProto альбом = N messages, каждое
+  // увеличивает server unreadCount → счётчик не уменьшался если помечать только firstMsg).
   useEffect(() => {
-    if (!onVisible) return
-    onVisible(firstMsg)
-  }, [firstMsg.id])
+    if (!onVisible || !ref.current) return
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        for (const m of album.msgs) onVisible(m)
+      }
+    }, { threshold: 0.5 })
+    obs.observe(ref.current)
+    return () => obs.disconnect()
+  }, [album.msgs.map(m => m.id).join(',')])
 
   return (
     <div
+      ref={ref}
       data-msg-id={firstMsg.id}
       style={{
         alignSelf: isOutgoing ? 'flex-end' : 'flex-start',

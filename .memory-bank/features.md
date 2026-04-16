@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.32 (16 апреля 2026)
+## Текущая версия: v0.87.33 (16 апреля 2026)
 
 ## 🔴 СТАТУС ФИЧЕЙ v0.87.27–29 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
 
@@ -115,6 +115,33 @@
 ---
 
 ## Changelog
+
+### v0.87.33 (16 апреля 2026) — FIX: видео-альбомы не грузились + счётчик unread не уменьшался
+
+**Пользовательский feedback** (канал «Автовоз» с видео-альбомом «Кино по выходным»):
+- ❌ «Не везде фото грузит» — на фото иконки «🛒»/«📹», stripped thumb есть, full — нет
+- ❌ «Открываю чат — переходит на первое непрочитанное, листаю вниз — счётчик не меняется»
+
+**Причина 1: видео-альбомы качались как полные файлы**
+В [MediaAlbum.jsx:PhotoTile](src/native/components/MediaAlbum.jsx) для ВСЕХ тайлов вызывался `downloadMedia(chatId, m.id, false)` — `thumb=false` значит **полный файл**. Для фото это ~300-700 КБ (OK). Для видео это **100-500 МБ целиком** → GramJS таймаутится или висит. На скриншоте виден пост канала «Автовоз: Кино по выходным» — это видео-анонсы, а не фото.
+
+**Фикс**: для `m.mediaType === 'video'` используем `thumb=true` — GramJS качает только постер (~20-80 КБ). Для `photo` — `thumb=false` (полное ~300-700 КБ).
+
+**Причина 2: счётчик непрочитанных не уменьшался для альбомов**
+В MTProto **альбом = N отдельных сообщений** с одним `groupedId`. Сервер увеличивает `unreadCount` на N (по каждому msg). А я в [AlbumBubble](src/native/components/MediaAlbum.jsx) делал `useEffect(() => onVisible(firstMsg), [firstMsg.id])` — вызывался ОДИН раз на mount и только для **первого** сообщения альбома.
+Если альбом из 5 фото → unreadCount увеличивался на 5, я помечал 1 → visible счётчик уменьшался на 1 → «не меняется» на глаз.
+
+**Фикс**: IntersectionObserver на контейнере AlbumBubble. При `isIntersecting=true` вызываем `onVisible(m)` **для КАЖДОГО msg в альбоме**. Счётчик уменьшается на правильную величину.
+
+**Дополнительные улучшения**:
+- Error state в PhotoTile — если downloadMedia вернул `ok: false` → показываем «↻ клик — загрузить», пользователь может перезапустить
+- Добавил 3 регрессионных теста в [MediaAlbum.vitest.jsx](src/native/components/MediaAlbum.vitest.jsx):
+  - `RF 0.87.33: onVisible вызывается для всех 5 msgs альбома`
+  - `RF 0.87.33: video тайл вызывает downloadMedia с thumb=true`
+  - `RF 0.87.33: photo тайл вызывает downloadMedia с thumb=false`
+- Мок `IntersectionObserver` в beforeEach имитирует `isIntersecting: true`
+
+**Ловушка 85** в common-mistakes.md: в MTProto альбом = N messages, каждое увеличивает unreadCount. Любая логика visibility/markRead должна работать со всеми msg альбома, не с первым.
 
 ### v0.87.32 (16 апреля 2026) — CI FIX: snapshot-тесты падали на GitHub Actions из-за timezone
 
