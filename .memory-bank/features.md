@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.31 (16 апреля 2026)
+## Текущая версия: v0.87.32 (16 апреля 2026)
 
 ## 🔴 СТАТУС ФИЧЕЙ v0.87.27–29 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
 
@@ -115,6 +115,22 @@
 ---
 
 ## Changelog
+
+### v0.87.32 (16 апреля 2026) — CI FIX: snapshot-тесты падали на GitHub Actions из-за timezone
+
+**Причина падения CI v0.87.31**:
+Snapshots содержали результат `new Date(1712000000000).toLocaleTimeString('ru', ...)` — но этот результат **зависит от часового пояса машины**:
+- Моя Windows-машина (MSK): сохранила snapshot как `00:33`
+- GitHub Actions ubuntu-latest (UTC): рендерил как `19:33`
+- CI diff: `Expected "00:33" / Received "19:33"` → 3 snapshot падают → сборка красная
+
+**Фикс (v0.87.32)**:
+1. Новый файл [vitest.setup.js](vitest.setup.js) — переопределяет `Date.prototype.toLocaleTimeString / toLocaleDateString / toLocaleString` чтобы **всегда форсить `timeZone: 'UTC'`** при форматировании.
+2. [vitest.config.mjs](vitest.config.mjs) — добавлен `setupFiles: ['./vitest.setup.js']`
+3. Пересохранены все 6 snapshots с UTC-временем `19:33`
+4. Теперь snapshot-тесты детерминированы на любой машине (Windows/Linux/Mac/CI)
+
+**Ловушка 84**: любой snapshot-тест где рендер включает время/дату → надо фиксировать timezone через setup-файл. Иначе CI падает при разных TZ между разработчиками и CI.
 
 ### v0.87.31 (16 апреля 2026) — Альбом: все фото видно + Стрелки в PhotoViewer + Pre-commit vitest + 4 новых snapshot-теста
 

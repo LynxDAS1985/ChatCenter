@@ -9,5 +9,7 @@ export default defineConfig({
     globals: true,
     include: ['src/**/*.vitest.jsx', 'src/**/*.vitest.js'],
     css: false,
+    // v0.87.32: фиксируем UTC для toLocaleTimeString/DateString в snapshot-тестах
+    setupFiles: ['./vitest.setup.js'],
   },
 })
