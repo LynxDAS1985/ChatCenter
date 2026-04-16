@@ -133,19 +133,31 @@ export default function InboxMode({ store }) {
 
   const getMessage = (chatId, msgId) => (store.messages[chatId] || []).find(m => m.id === String(msgId))
 
-  // v0.87.16: прочитывание по видимости — отмечаем до maxId по мере скролла
-  const lastReadRef = useRef(0)
+  // v0.87.18: read-by-visibility с уникальными id (Set) чтобы счётчик не дёргался
+  const readSeenRef = useRef(new Set())  // уникальные прочитанные id в текущем чате
+  const lastReadMaxRef = useRef(0)
+
+  // Сброс при смене чата
+  useEffect(() => {
+    readSeenRef.current = new Set()
+    lastReadMaxRef.current = 0
+  }, [store.activeChatId])
+
   const readByVisibility = (msg) => {
     if (msg.isOutgoing) return
     const id = Number(msg.id)
-    if (id <= lastReadRef.current) return
-    lastReadRef.current = id
-    // Debounce: отправляем mark-read не чаще раз в 2 сек
+    if (readSeenRef.current.has(id)) return  // уже считали
+    readSeenRef.current.add(id)
+    if (id > lastReadMaxRef.current) lastReadMaxRef.current = id
+    // Debounce: отправляем batch раз в 1.5 сек
     if (!readByVisibility._timer) {
       readByVisibility._timer = setTimeout(() => {
         readByVisibility._timer = null
-        if (store.activeChatId) store.markRead(store.activeChatId, lastReadRef.current, 1)
-      }, 2000)
+        if (!store.activeChatId) return
+        const count = readSeenRef.current.size
+        store.markRead(store.activeChatId, lastReadMaxRef.current, count)
+        readSeenRef.current = new Set()  // сбрасываем batch
+      }, 1500)
     }
   }
 

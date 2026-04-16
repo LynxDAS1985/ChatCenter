@@ -304,7 +304,7 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       const firstChats = firstPage.map(mapDialog)
       emit('tg:chats', { accountId: currentAccount?.id, chats: firstChats, append: false })
       saveChatsCache(firstChats)  // v0.87.14: кэш для мгновенного старта
-      loadAvatarsAsync(firstPage.slice(0, 50))
+      loadAvatarsAsync(firstPage) // v0.87.18: ВСЕ чаты, не только 50
 
       // v0.87.13: ВСЕГДА пробуем подгрузить ещё страницу (GramJS часто возвращает меньше limit)
       if (firstPage.length > 50) {
@@ -379,23 +379,27 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
-  // v0.87.15: скачать медиа сообщения и вернуть file:// путь (кэш в %APPDATA%/ЦентрЧатов/tg-media/)
   ipcMain.handle('tg:download-media', async (_, { chatId, messageId }) => {
+    log(`download-media: chat=${chatId} msg=${messageId}`)
     try {
-      if (!client) return { ok: false }
+      if (!client) return { ok: false, error: 'Не подключён' }
       const mediaDir = path.join(path.dirname(cachePath), 'tg-media')
       try { fs.mkdirSync(mediaDir, { recursive: true }) } catch(_) {}
       const rawChat = String(chatId).split(':').pop()
-      const filePath = path.join(mediaDir, `${rawChat}_${messageId}.bin`)
+      const filePath = path.join(mediaDir, `${rawChat}_${messageId}.jpg`)  // v0.87.18: .jpg чтобы <img> подхватывал
       if (fs.existsSync(filePath)) {
+        log(`download-media: cached ${filePath}`)
         return { ok: true, path: 'file:///' + encodeURI(filePath.replace(/\\/g, '/')) }
       }
       const entity = chatEntityMap.get(chatId) || rawChat
       const msgs = await client.getMessages(entity, { ids: [Number(messageId)] })
-      if (!msgs[0]) return { ok: false, error: 'Сообщение не найдено' }
-      const buf = await client.downloadMedia(msgs[0])
-      if (!buf) return { ok: false, error: 'Нет медиа' }
+      if (!msgs[0]) { log('download-media: сообщение не найдено'); return { ok: false, error: 'Сообщение не найдено' } }
+      if (!msgs[0].media) { log('download-media: у сообщения НЕТ media'); return { ok: false, error: 'Нет медиа в сообщении' } }
+      log(`download-media: скачиваем, media.className=${msgs[0].media.className}`)
+      const buf = await client.downloadMedia(msgs[0], { progressCallback: () => {} })
+      if (!buf) { log('download-media: downloadMedia вернул null'); return { ok: false, error: 'Telegram вернул пустой файл' } }
       fs.writeFileSync(filePath, buf)
+      log(`download-media: OK, size=${buf.length}`)
       return { ok: true, path: 'file:///' + encodeURI(filePath.replace(/\\/g, '/')) }
     } catch (e) {
       log('download-media err: ' + e.message)
@@ -662,7 +666,7 @@ async function loadRestPagesAsync(firstPage) {
       if (!page.length) { log(`пустая страница на итерации ${i+1}, стоп`); break }
       const chats = page.map(mapDialog)
       emit('tg:chats', { accountId: currentAccount?.id, chats, append: true })
-      loadAvatarsAsync(page.slice(0, 50))
+      loadAvatarsAsync(page) // v0.87.18: ВСЕ чаты страницы
       last = page[page.length - 1]
       offsetDate = last.message?.date || 0
       offsetId = last.message?.id || 0
