@@ -6,7 +6,6 @@ import { List } from 'react-window'
 import ChatListItem from '../components/ChatListItem.jsx'
 import MessageBubble from '../components/MessageBubble.jsx'
 import ForwardPicker from '../components/ForwardPicker.jsx'
-import PhotoViewer from '../components/PhotoViewer.jsx'
 import { groupMessages, formatDayLabel, findFirstUnreadId } from '../utils/messageGrouping.js'
 
 const ITEM_HEIGHT = 64
@@ -112,11 +111,15 @@ export default function InboxMode({ store }) {
   const [toast, setToast] = useState(null)
   const [pinnedMsg, setPinnedMsg] = useState(null)
 
-  // v0.87.27: PhotoViewer src + индикатор scroll-to-bottom + первый непрочитанный
-  const [viewerSrc, setViewerSrc] = useState(null)
+  // v0.87.28: индикатор scroll-to-bottom + первый непрочитанный
+  // PhotoViewer теперь отдельное окно (IPC photo:open) — не React overlay
   const [atBottom, setAtBottom] = useState(true)
   const [newBelow, setNewBelow] = useState(0)
   const firstUnreadIdRef = useRef(null)
+
+  const openPhotoWindow = (src) => {
+    try { window.api?.invoke('photo:open', { src }) } catch(_) {}
+  }
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
@@ -487,7 +490,7 @@ export default function InboxMode({ store }) {
                           downloadMedia={store.downloadMedia}
                           getMessage={getMessage}
                           onVisible={readByVisibility}
-                          onPhotoOpen={setViewerSrc}
+                          onPhotoOpen={openPhotoWindow}
                           onReplyClick={scrollToMessage}
                         />
                       ))}
@@ -557,8 +560,6 @@ export default function InboxMode({ store }) {
       {toast && (
         <div className={`native-toast native-toast--${toast.type}`}>{toast.message}</div>
       )}
-      {/* v0.87.27: полноэкранный просмотрщик фото */}
-      {viewerSrc && <PhotoViewer src={viewerSrc} onClose={() => setViewerSrc(null)} />}
     </div>
   )
 }

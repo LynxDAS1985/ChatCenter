@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' cc-media: blob: data: https:; img-src 'self' cc-media: blob: data: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
+<title>Просмотр фото</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; color: #fff; }
+  body { display: flex; align-items: center; justify-content: center; user-select: none; -webkit-app-region: drag; }
+  .wrap { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  img { max-width: 100%; max-height: 100%; transform-origin: center; will-change: transform; cursor: grab; -webkit-app-region: no-drag; transition: transform 0.1s ease-out; }
+  img.dragging { cursor: grabbing; transition: none; }
+  .toolbar {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 4px; align-items: center;
+    background: rgba(20,20,20,0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 6px 10px; color: #fff; font-size: 13px;
+    -webkit-app-region: no-drag;
+    z-index: 10;
+  }
+  .toolbar button, .toolbar a {
+    border: none; background: transparent; color: #fff;
+    padding: 4px 10px; font-size: 14px; cursor: pointer;
+    border-radius: 6px; text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+  }
+  .toolbar button:hover, .toolbar a:hover { background: rgba(255,255,255,0.12); }
+  .toolbar span.pct { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; }
+  .pin-active { color: #2AABEE !important; }
+  .hint { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 11px; opacity: 0.5; -webkit-app-region: no-drag; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <img id="photo" draggable="false" alt="photo" />
+  <div class="toolbar">
+    <button id="btn-minus" title="Уменьшить (−)">−</button>
+    <span class="pct" id="pct">100%</span>
+    <button id="btn-plus" title="Увеличить (+)">+</button>
+    <button id="btn-reset" title="Сброс (двойной клик по фото)">⟲</button>
+    <button id="btn-pin" title="Закрепить окно поверх всех">📌</button>
+    <a id="btn-download" download title="Скачать">⬇</a>
+    <button id="btn-min" title="Свернуть">_</button>
+    <button id="btn-max" title="Развернуть">▢</button>
+    <button id="btn-close" title="Закрыть (Esc)">✕</button>
+  </div>
+  <div class="hint">Колёсико — зум • Перетащите — сдвинуть • Двойной клик — сброс</div>
+</div>
+<script>
+  const img = document.getElementById('photo')
+  const pctEl = document.getElementById('pct')
+  let scale = 1, offX = 0, offY = 0, drag = null
+
+  function apply() {
+    img.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`
+    pctEl.textContent = Math.round(scale * 100) + '%'
+  }
+  function reset() { scale = 1; offX = 0; offY = 0; apply() }
+
+  img.addEventListener('wheel', (e) => {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? -0.15 : 0.15
+    scale = Math.max(0.2, Math.min(8, scale + scale * delta))
+    apply()
+  }, { passive: false })
+
+  img.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return
+    drag = { x: e.clientX - offX, y: e.clientY - offY }
+    img.classList.add('dragging')
+  })
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return
+    offX = e.clientX - drag.x; offY = e.clientY - drag.y
+    apply()
+  })
+  window.addEventListener('mouseup', () => { drag = null; img.classList.remove('dragging') })
+  img.addEventListener('dblclick', reset)
+
+  document.getElementById('btn-plus').onclick = () => { scale = Math.min(8, scale + 0.25); apply() }
+  document.getElementById('btn-minus').onclick = () => { scale = Math.max(0.2, scale - 0.25); apply() }
+  document.getElementById('btn-reset').onclick = reset
+  document.getElementById('btn-close').onclick = () => window.photo?.close()
+  document.getElementById('btn-min').onclick = () => window.photo?.minimize()
+  document.getElementById('btn-max').onclick = () => window.photo?.maximize()
+
+  let pinned = false
+  const pinBtn = document.getElementById('btn-pin')
+  pinBtn.onclick = async () => {
+    pinned = !pinned
+    pinBtn.classList.toggle('pin-active', pinned)
+    try { await window.photo?.togglePin(pinned) } catch(_) {}
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') window.photo?.close()
+    if (e.key === '+' || e.key === '=') { scale = Math.min(8, scale + 0.25); apply() }
+    if (e.key === '-') { scale = Math.max(0.2, scale - 0.25); apply() }
+    if (e.key === '0') reset()
+  })
+
+  // Приём src от main
+  if (window.photo?.onSetSrc) {
+    window.photo.onSetSrc(({ src }) => {
+      img.src = src
+      document.getElementById('btn-download').href = src
+      reset()
+    })
+  }
+</script>
+</body>
+</html>

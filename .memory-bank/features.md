@@ -1,27 +1,30 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.27 (16 апреля 2026)
+## Текущая версия: v0.87.28 (16 апреля 2026)
 
-## 🔴 НЕПРОВЕРЕННЫЕ ФИЧИ v0.87.27 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
+## 🔴 СТАТУС ФИЧЕЙ v0.87.27–28 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
 
-Список добавлено/изменено, но пользовательская проверка ожидается:
+| # | Фича | Статус | Комментарий пользователя | Файлы |
+|---|------|--------|--------------------------|-------|
+| 1 | Reply-клик → scroll к оригиналу + жёлтая вспышка 1.5с | ✅ **работает** | «работает» (v0.87.27 проверка) | MessageBubble.jsx, InboxMode.jsx, styles.css |
+| 2 | «Новые сообщения» divider при открытии чата | ⏳ ожидание | не проверено | InboxMode.jsx, messageGrouping.js, styles.css |
+| 3 | Runtime smoke-тест main-процесса | ⏳ ожидание | не проверено | src/__tests__/mainRuntime.test.cjs |
+| 4 | Проверка `telegram/*` подпутей в тесте | ⏳ ожидание | не проверено | mainRuntime.test.cjs |
+| 5 | Avatar cache bust при logout | ⏳ ожидание | не проверено | telegramHandler.js |
+| 6 | Авто-очистка `tg-media/` старше 30 дней | ⏳ ожидание | не проверено | telegramHandler.js |
+| 7a | Клик на фото → React-overlay (v0.87.27) | ❌ **НЕ ТАК** | «не верно, делается на весь экран, просил отдельное окно» | ~~PhotoViewer.jsx удалён~~ |
+| 7b | Клик на фото → отдельное **BrowserWindow** (v0.87.28) | ⏳ ожидание | нужно проверить новое решение | photoViewerHandler.js, photo-viewer.html, photoViewer.preload.cjs |
+| 8 | Индикатор новых сообщений при скролле назад | ⏳ ожидание | не проверено | InboxMode.jsx, styles.css |
+| 9 | Превью ссылок (title/description/siteName) | ⏳ ожидание | не проверено | LinkPreview.jsx, telegramHandler.js |
+| 10 | Ctrl+↑ → редактирование последнего своего сообщения | ⏳ ожидание | не проверено | InboxMode.jsx |
+| 11 | Аватарка слева от групп чужих сообщений | ✅ **работает** | «это есть» | InboxMode.jsx, styles.css |
+| 12 | IPC `window:set-always-on-top` | ⏳ ожидание | частично — заменено на `photo:toggle-pin` | photoViewerHandler.js |
+| 13 | **lastMessage preview для медиа/action** (v0.87.28) | ⏳ ожидание | новый фикс — исправляет «—» в списке у чатов | telegramHandler.js `messagePreview()`, nativeStore.js |
 
-| # | Фича | Статус проверки | Файлы |
-|---|------|-----------------|-------|
-| 1 | Reply-клик → scroll к оригиналу + жёлтая вспышка 1.5с | ⏳ ожидание | MessageBubble.jsx, InboxMode.jsx, styles.css |
-| 2 | «Новые сообщения» divider при открытии чата | ⏳ ожидание | InboxMode.jsx, messageGrouping.js, styles.css |
-| 3 | Runtime smoke-тест main-процесса (parse всех файлов) | ⏳ ожидание | src/__tests__/mainRuntime.test.cjs |
-| 4 | Проверка `telegram/*` подпутей в тесте | ⏳ ожидание | mainRuntime.test.cjs |
-| 5 | Avatar cache bust при logout (удаление tg-avatars + tg-media + cache.json) | ⏳ ожидание | telegramHandler.js |
-| 6 | Авто-очистка `tg-media/` старше 30 дней при старте | ⏳ ожидание | telegramHandler.js |
-| 7 | Клик на фото → PhotoViewer (pan/zoom/pin/download/Esc) | ⏳ ожидание | PhotoViewer.jsx, MessageBubble.jsx, windowHandlers.js |
-| 8 | Индикатор новых сообщений при скролле назад (↓ + counter) | ⏳ ожидание | InboxMode.jsx, styles.css |
-| 9 | Превью ссылок (title/description/siteName) | ⏳ ожидание | LinkPreview.jsx, telegramHandler.js mapMessage |
-| 10 | Ctrl+↑ → редактирование последнего своего сообщения | ⏳ ожидание | InboxMode.jsx |
-| 11 | Аватарка слева от групп чужих сообщений | ⏳ ожидание | InboxMode.jsx, styles.css |
-| 12 | IPC `window:set-always-on-top` (для PhotoViewer pin) | ⏳ ожидание | windowHandlers.js |
+**Ещё НЕ начато** (обсуждается):
+- Скролл при открытии чата: к первому непрочитанному / в конец / к watermark — ожидается выбор варианта пользователем.
 
-Виртуализация **списка чатов** — уже реализована в v0.87.12 через `react-window` List. Речь шла о списке **сообщений** в открытом чате — его пока нет (будущая задача).
+Виртуализация **списка чатов** — уже реализована в v0.87.12 через `react-window` List. Виртуализация **списка сообщений** в открытом чате — пока нет (будущая задача).
 
 ---
 
@@ -112,6 +115,37 @@
 ---
 
 ## Changelog
+
+### v0.87.28 (16 апреля 2026) — PhotoViewer отдельное окно + lastMessage preview
+
+**Пользовательский feedback по v0.87.27**:
+- ✅ Reply-клик scroll + вспышка — работает
+- ✅ Аватарка в группе чужих — работает
+- ❌ PhotoViewer **НЕ ТАК** — был React-overlay на весь экран; пользователь просил отдельное модальное окно, которое можно передвигать/увеличивать/закреплять
+
+**Что сделано в v0.87.28**:
+1. **PhotoViewer → отдельное BrowserWindow** — удалил `src/native/components/PhotoViewer.jsx` (React-overlay). Новый `main/handlers/photoViewerHandler.js` создаёт frameless BrowserWindow 900×700 (по умолчанию, можно ресайзить/максимизировать). Новый HTML `main/photo-viewer.html` + preload `main/preloads/photoViewer.preload.cjs`. IPC: `photo:open {src}` (открывает / переиспользует окно), `photo:close`, `photo:minimize`, `photo:maximize`, `photo:toggle-pin`. Окно имеет:
+   - Собственную тулбар: зум ± + процент, сброс ⟲, закрепить 📌 (alwaysOnTop), download ⬇, свернуть _, развернуть ▢, закрыть ✕
+   - Колёсико = zoom 0.2–8x, drag = pan, двойной клик или `0` = reset, +/- = зум
+   - Drag самого окна по body (webkit-app-region: drag), но не по фото/кнопкам
+   - Esc закрывает окно
+2. **lastMessage preview** — чаты в списке показывали «—» для сообщений без текста. Причина: `d.message?.message || ''` в mapDialog даёт пустую строку для медиа/service messages. Добавил функцию `messagePreview(m)` в [telegramHandler.js](main/native/telegramHandler.js) которая возвращает:
+   - `🖼 Фото` / `📹 Видео` / `🎵 Аудио` / `📎 имяФайла.ext` / `🎤 Голосовое` / `⭕ Видеосообщение` / `🎴 Стикер`
+   - `📍 Геолокация` / `👤 Контакт` / `📊 Опрос` / `🔗 Ссылка` / `💳 Оплата` / `🎮 Игра`
+   - Для service: `👤 добавлен участник` / `📌 закреплено сообщение` / `✏️ название чата изменено` / `📞 звонок` и т.д.
+   - Также применяется в [nativeStore.js](src/native/store/nativeStore.js) для tg:new-message чтобы новые входящие тоже получали preview (ribbon + список)
+3. Новые файлы добавлены в `electron.vite.config.js` для билда:
+   - `main/photo-viewer.html` копируется в `out/main/`
+   - `main/preloads/photoViewer.preload.cjs` собирается в `out/preload/photoViewer.mjs`
+
+**Что проверить в v0.87.28**:
+- [ ] Клик по фото → открывается отдельное окно (не overlay на весь экран)
+- [ ] Окно можно передвигать за шапку (drag body)
+- [ ] Окно можно ресайзить за углы (resizable)
+- [ ] Кнопка 📌 делает окно alwaysOnTop (поверх всех окон Windows), повторный клик — выключает
+- [ ] Колёсико в окне фото зумит
+- [ ] Минимизация/максимизация кнопками
+- [ ] Список чатов: для чатов с документами/фото/голосовыми в последнем сообщении — видно «📎 Файл.docx» / «🖼 Фото» / «🎤 Голосовое», а не «—»
 
 ### v0.87.27 (16 апреля 2026) — 12 новых фичей: PhotoViewer, reply-scroll, unread divider, link preview, Ctrl+↑, аватарки в группе, кэш-bust, runtime-тест
 **⚠️ НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ — пока пользователь не подтвердит проверку!** См. таблицу «Непроверенные фичи» выше.

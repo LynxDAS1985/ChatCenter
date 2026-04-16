@@ -780,6 +780,51 @@ function mapMessage(m, chatId) {
   }
 }
 
+// v0.87.28: плашка для сообщений без текста (медиа/сервисные)
+function messagePreview(m) {
+  if (!m) return ''
+  if (m.message) return m.message
+  // Service/action messages
+  const action = m.action
+  if (action) {
+    const cn = action.className
+    if (cn === 'MessageActionChatAddUser') return '👤 добавлен участник'
+    if (cn === 'MessageActionChatDeleteUser') return '👤 участник вышел'
+    if (cn === 'MessageActionChatJoinedByLink') return '👤 присоединился по ссылке'
+    if (cn === 'MessageActionPinMessage') return '📌 закреплено сообщение'
+    if (cn === 'MessageActionChannelCreate') return '📢 канал создан'
+    if (cn === 'MessageActionChatEditPhoto') return '🖼 фото чата изменено'
+    if (cn === 'MessageActionChatEditTitle') return '✏️ название чата изменено'
+    if (cn === 'MessageActionPhoneCall') return '📞 звонок'
+    return '⚙️ служебное сообщение'
+  }
+  // Media messages
+  const media = m.media
+  if (media) {
+    const cn = media.className
+    if (cn === 'MessageMediaPhoto') return '🖼 Фото'
+    if (cn === 'MessageMediaDocument') {
+      const mime = media.document?.mimeType || ''
+      const fname = media.document?.attributes?.find(a => a.fileName)?.fileName
+      if (mime.startsWith('video/')) return '📹 Видео'
+      if (mime.startsWith('audio/')) return '🎵 Аудио'
+      if (mime.startsWith('image/')) return '🖼 Фото'
+      if (media.document?.attributes?.some(a => a.className === 'DocumentAttributeSticker')) return '🎴 Стикер'
+      if (media.document?.attributes?.some(a => a.className === 'DocumentAttributeVideo' && a.roundMessage)) return '⭕ Видеосообщение'
+      if (media.document?.attributes?.some(a => a.className === 'DocumentAttributeAudio' && a.voice)) return '🎤 Голосовое'
+      return `📎 ${fname || 'Файл'}`
+    }
+    if (cn === 'MessageMediaGeo' || cn === 'MessageMediaGeoLive') return '📍 Геолокация'
+    if (cn === 'MessageMediaContact') return '👤 Контакт'
+    if (cn === 'MessageMediaPoll') return '📊 Опрос'
+    if (cn === 'MessageMediaWebPage') return '🔗 Ссылка'
+    if (cn === 'MessageMediaGame') return '🎮 Игра'
+    if (cn === 'MessageMediaInvoice') return '💳 Оплата'
+    return '📎 вложение'
+  }
+  return ''
+}
+
 // v0.87.12: единый маппер dialog → наш формат
 function mapDialog(d) {
   const entity = d.entity || {}
@@ -792,7 +837,8 @@ function mapDialog(d) {
     accountId: currentAccount?.id,
     title: d.title || d.name || 'Без названия',
     type,
-    lastMessage: d.message?.message || '',
+    // v0.87.28: если нет текста — показываем тип медиа/action, не пустую строку
+    lastMessage: messagePreview(d.message),
     lastMessageTs: d.message?.date ? d.message.date * 1000 : 0,
     unreadCount: d.unreadCount || 0,
     rawId: String(d.id),

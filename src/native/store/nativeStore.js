@@ -94,6 +94,17 @@ export default function useNativeStore() {
     })
 
     addHandler('tg:new-message', ({ chatId, message }) => {
+      // v0.87.28: превью медиа в списке чатов
+      const mediaPreview = message.mediaType === 'photo' ? '🖼 Фото'
+        : message.mediaType === 'video' ? '📹 Видео'
+        : message.mediaType === 'audio' ? '🎵 Аудио'
+        : message.mediaType === 'file' ? ('📎 ' + (message.mediaPreview || 'Файл'))
+        : message.mediaType === 'link' ? '🔗 Ссылка'
+        : message.mediaType === 'location' ? '📍 Геолокация'
+        : message.mediaType === 'contact' ? '👤 Контакт'
+        : message.mediaType === 'poll' ? '📊 Опрос'
+        : message.mediaType ? '📎 вложение' : ''
+      const preview = message.text || mediaPreview || ''
       setState(s => ({
         ...s,
         messages: { ...s.messages, [chatId]: [...(s.messages[chatId] || []), message] },
@@ -101,7 +112,7 @@ export default function useNativeStore() {
         chats: s.chats.map(c => c.id === chatId
           ? {
               ...c,
-              lastMessage: message.text || '[медиа]',
+              lastMessage: preview,
               lastMessageTs: message.timestamp,
               unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
             }
@@ -113,8 +124,8 @@ export default function useNativeStore() {
         try {
           window.api?.invoke('app:custom-notify', {
             title: chat?.title || 'Telegram',
-            body: message.text || '[медиа]',
-            fullBody: message.text || '[медиа]',
+            body: preview || '[медиа]',
+            fullBody: preview || '[медиа]',
             iconUrl: chat?.avatar || '',
             iconDataUrl: '',
             color: '#2AABEE',

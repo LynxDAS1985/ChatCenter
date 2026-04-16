@@ -21,6 +21,7 @@ import { initBackupNotifHandler } from './handlers/backupNotifHandler.js'
 import { createWindow as createWindowFromManager } from './utils/windowManager.js'
 import { createTray as createTrayFromManager, openLogViewer } from './utils/trayManager.js'
 import { registerWindowHandlers } from './handlers/windowHandlers.js'
+import { registerPhotoViewerHandler } from './handlers/photoViewerHandler.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
@@ -255,6 +256,8 @@ function setupIPC() {
 
   // Управление окном — вынесено в windowHandlers.js (hide/minimize/set-always-on-top)
   registerWindowHandlers(() => mainWindow)
+  // v0.87.28: отдельное окно просмотра фото
+  registerPhotoViewerHandler()
 
   // Мессенджеры — загрузка
   ipcMain.handle('messengers:load', () => {
