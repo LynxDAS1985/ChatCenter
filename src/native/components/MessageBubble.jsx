@@ -48,10 +48,11 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
         background: m.isOutgoing ? 'var(--amoled-accent)' : 'var(--amoled-surface-hover)',
         color: m.isOutgoing ? '#fff' : 'var(--amoled-text)',
         fontSize: 14, wordBreak: 'break-word',
+        // v0.87.24: тонкая рамка для разграничения + glow на своих
+        border: m.isOutgoing ? 'none' : '1px solid rgba(255,255,255,0.06)',
+        boxShadow: m.isOutgoing ? '0 0 12px rgba(42,171,238,0.15)' : 'none',
       }}>
-        {!m.isOutgoing && m.senderName && (
-          <div style={{ fontSize: 11, color: 'var(--amoled-text-dim)', marginBottom: 2 }}>{m.senderName}</div>
-        )}
+        {/* v0.87.24: имя автора вынесено в group-header над группой сообщений */}
         {/* Reply цитата */}
         {replyToMsg && (
           <div style={{
@@ -63,11 +64,35 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
             ↪ {replyToMsg.text?.slice(0, 80) || '[медиа]'}
           </div>
         )}
-        {/* Медиа */}
+        {/* v0.87.24: Медиа с stripped thumb как placeholder */}
         {m.mediaType === 'photo' && (
-          mediaUrl
-            ? <img src={mediaUrl} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: m.text ? 6 : 0 }} />
-            : <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>{mediaLoading ? '⏳ загрузка...' : '🖼 фото'}</div>
+          <div style={{
+            position: 'relative',
+            width: '100%',
+            aspectRatio: m.mediaWidth && m.mediaHeight ? `${m.mediaWidth} / ${m.mediaHeight}` : '4 / 3',
+            maxHeight: 400,
+            borderRadius: 8,
+            marginBottom: m.text ? 6 : 0,
+            overflow: 'hidden',
+            background: m.strippedThumb ? `url("${m.strippedThumb}") center/cover no-repeat` : 'rgba(0,0,0,0.3)',
+          }}>
+            {/* Полный фото поверх — fade-in когда загрузится */}
+            {mediaUrl && (
+              <img src={mediaUrl} alt="" style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%',
+                objectFit: 'cover', animation: 'native-fadein 0.25s ease',
+              }} />
+            )}
+            {/* Индикатор загрузки поверх thumb */}
+            {!mediaUrl && mediaLoading && (
+              <div style={{
+                position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(0,0,0,0.2)', color: '#fff', fontSize: 11,
+              }}>
+                <span className="native-spinner" />
+              </div>
+            )}
+          </div>
         )}
         {m.mediaType === 'video' && (
           <div onClick={handleDownload} style={{ cursor: 'pointer', fontSize: 12, opacity: 0.85, marginBottom: 4 }}>

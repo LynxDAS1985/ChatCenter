@@ -10,7 +10,7 @@ import path from 'node:path'
 import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
 import { NewMessage } from 'telegram/events/index.js'
-import { Api } from 'telegram'
+import { Api, Helpers } from 'telegram'
 
 // api_id / api_hash зашиты — ChatCenter (Demo33) app на my.telegram.org
 const API_ID = 8392940
@@ -255,6 +255,21 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       }
       return { ok: false, error: e.message }
     }
+  })
+
+  // v0.87.24: manual sync unread (вызывается из renderer при window.focus)
+  ipcMain.handle('tg:rescan-unread', async () => {
+    try {
+      if (!client) return { ok: false }
+      const page = await client.getDialogs({ limit: 100 })
+      const updates = page.map(d => ({
+        id: `${currentAccount?.id}:${String(d.id)}`,
+        unreadCount: d.unreadCount || 0,
+      }))
+      emit('tg:unread-bulk-sync', { accountId: currentAccount?.id, updates })
+      log(`manual rescan: ${updates.length} чатов`)
+      return { ok: true, count: updates.length }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 
   // v0.87.17: получить закреплённое сообщение
@@ -553,6 +568,7 @@ async function startLogin(phone) {
     setTimeout(() => emit('tg:login-step', null), 200)
     pendingLogin = null
     attachMessageListener()
+    startUnreadRescan()
   }).catch(err => {
     const errMsg = err.message || String(err)
     log('login failed: ' + errMsg)
@@ -603,6 +619,7 @@ async function autoRestoreSession() {
     }
     emit('tg:account-update', currentAccount)
     attachMessageListener()
+    startUnreadRescan()
     log('session restored, account=' + currentAccount.name)
   } catch (e) {
     log('session restore failed: ' + e.message)
@@ -629,13 +646,34 @@ function mapEntities(entities) {
   }))
 }
 
+// v0.87.24: stripped photo → data:URL для мгновенного превью (Вариант A)
+// PhotoStrippedSize — 1-3КБ JPEG в минимальном формате (Telegram шлёт в самом сообщении)
+function extractStrippedThumb(media) {
+  try {
+    const photo = media?.photo || media?.document
+    if (!photo?.sizes && !photo?.thumbs) return null
+    const sizes = photo.sizes || photo.thumbs || []
+    const stripped = sizes.find(s => s.className === 'PhotoStrippedSize')
+    if (!stripped?.bytes) return null
+    const jpegBuffer = Helpers.strippedPhotoToJpg(stripped.bytes)
+    return 'data:image/jpeg;base64,' + Buffer.from(jpegBuffer).toString('base64')
+  } catch (_) { return null }
+}
+
 // v0.87.15: маппер message → наш формат с поддержкой медиа + reply + entities
 function mapMessage(m, chatId) {
   const media = m.media
-  let mediaType = null, mediaPreview = null
+  let mediaType = null, mediaPreview = null, strippedThumb = null, mediaWidth = null, mediaHeight = null
   if (media) {
     const cn = media.className
-    if (cn === 'MessageMediaPhoto') { mediaType = 'photo' }
+    if (cn === 'MessageMediaPhoto') {
+      mediaType = 'photo'
+      strippedThumb = extractStrippedThumb(media)
+      // Размер из самого большого size
+      const photo = media.photo
+      const largest = photo?.sizes?.filter(s => s.w && s.h).sort((a, b) => (b.w * b.h) - (a.w * a.h))[0]
+      if (largest) { mediaWidth = largest.w; mediaHeight = largest.h }
+    }
     else if (cn === 'MessageMediaDocument') {
       const mime = media.document?.mimeType || ''
       if (mime.startsWith('video/')) mediaType = 'video'
@@ -643,6 +681,7 @@ function mapMessage(m, chatId) {
       else if (mime.startsWith('image/')) mediaType = 'photo'
       else mediaType = 'file'
       mediaPreview = media.document?.attributes?.find(a => a.fileName)?.fileName || 'файл'
+      strippedThumb = extractStrippedThumb(media)
     }
     else if (cn === 'MessageMediaWebPage') { mediaType = 'link' }
     else if (cn === 'MessageMediaGeo') { mediaType = 'location' }
@@ -656,12 +695,14 @@ function mapMessage(m, chatId) {
     senderId: String(m.senderId || ''),
     senderName: m.sender?.firstName || m.sender?.title || '',
     text: m.message || '',
-    entities: mapEntities(m.entities),  // v0.87.23: форматирование (bold, italic, links, hashtags)
+    entities: mapEntities(m.entities),
     timestamp: (m.date || 0) * 1000,
     isOutgoing: !!m.out,
     isEdited: !!m.editDate,
     mediaType,
     mediaPreview,
+    strippedThumb,  // v0.87.24: мгновенное размытое превью (data:URL)
+    mediaWidth, mediaHeight,  // для правильного aspect ratio placeholder
     replyToId: m.replyTo?.replyToMsgId ? String(m.replyTo.replyToMsgId) : null,
   }
 }
@@ -778,6 +819,25 @@ async function loadAvatarsAsync(dialogs) {
     } catch (e) { stats.failed++; log(`avatar err для ${d.title}: ${e.message}`) }
   }
   log(`аватарки: total=${stats.total} hasPhoto=${stats.hasPhoto} noPhoto=${stats.noPhoto} fetched=${stats.fetched} downloaded=${stats.downloaded} cached=${stats.cached} failed=${stats.failed}`)
+}
+
+// v0.87.24: периодический rescan unread (часть Комбо D вариант A)
+let unreadRescanTimer = null
+function startUnreadRescan() {
+  if (unreadRescanTimer) clearInterval(unreadRescanTimer)
+  unreadRescanTimer = setInterval(async () => {
+    if (!client || !currentAccount) return
+    try {
+      const page = await client.getDialogs({ limit: 50 })
+      const updates = page.map(d => ({
+        id: `${currentAccount.id}:${String(d.id)}`,
+        unreadCount: d.unreadCount || 0,
+      })).filter(u => u.unreadCount >= 0)
+      emit('tg:unread-bulk-sync', { accountId: currentAccount.id, updates })
+      log(`periodic unread rescan: ${updates.length} чатов`)
+    } catch (e) { log('periodic rescan err: ' + e.message) }
+  }, 30000)  // каждые 30 сек
+  log('periodic unread rescan запущен (30 сек)')
 }
 
 function attachMessageListener() {

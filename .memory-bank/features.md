@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.23 (16 апреля 2026)
+## Текущая версия: v0.87.24 (16 апреля 2026)
 
 ---
 
@@ -91,6 +91,30 @@
 ---
 
 ## Changelog
+
+### v0.87.24 (16 апреля 2026) — Stripped thumbs + группировка + Kombo D unread-sync
+- **Stripped photo (Вариант A)**:
+  - В `mapMessage` → `extractStrippedThumb` читает `PhotoStrippedSize` из `media.photo.sizes`
+  - Используется `Helpers.strippedPhotoToJpg(bytes)` из GramJS — распаковывает 1-3КБ stripped JPEG в полный
+  - Конвертирует в `data:image/jpeg;base64,...` — отправляется с message в renderer
+  - MessageBubble: stripped как `background-image` + полный фото поверх с fade-in
+  - `aspectRatio` баббла из `mediaWidth/mediaHeight` — нет скачков layout
+  - Результат: **мгновенное размытое превью** + плавная замена на полное фото
+- **Группировка 2+5+3** (+ время у каждого):
+  - `renderItems` computed в useMemo: группируем по автору, разделители дня/времени
+  - Правила новой группы: другой автор **ИЛИ** прошло >5 мин **ИЛИ** другой день
+  - Дневной разделитель: «Сегодня», «Вчера», «12 апреля»
+  - 5-минутный разделитель: `HH:MM` между группами
+  - Группа: имя автора над первым сообщением, `gap: 2px` внутри группы, `gap: 10px` между
+  - Каждый баббл: тонкая рамка `rgba(255,255,255,0.06)` для чужих, glow `rgba(42,171,238,0.15)` для своих
+  - Время **у каждого** сообщения (оставлено)
+- **Kombo D — синхронизация unread**:
+  - **Часть A (периодический)**: `startUnreadRescan()` — setInterval 30 сек. Запрашивает `getDialogs({limit:50})`, emit `tg:unread-bulk-sync`. Store обновляет массово через Map.
+  - **Часть B (window.focus)**: IPC `tg:rescan-unread` — при фокусе окна renderer вызывает rescanUnread()
+  - **Часть C (raw updates)**: уже работает — UpdateReadHistoryInbox/Outbox + UpdateReadChannelInbox/Outbox
+  - **Часть D (точка sync после mark-read)**: v0.87.22 — GetPeerDialogs через 800мс
+  - Итого: 4 независимых механизма синхронизации → максимальная точность
+- Vitest: 11/11 ✅, E2E: 9/9 ✅.
 
 ### v0.87.23 (16 апреля 2026) — Откат thumbs + форматирование + подробные логи unread/чатов
 - **Откат ускорения через thumbs**: пользователь просит полные фото как было. Возвращено `downloadMedia(msg, thumb: false)` — полное фото по умолчанию.

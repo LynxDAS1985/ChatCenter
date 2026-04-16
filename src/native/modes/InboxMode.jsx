@@ -26,9 +26,15 @@ export default function InboxMode({ store }) {
   const [listHeight, setListHeight] = useState(600)
   const containerRef = useRef(null)
 
-  // v0.87.14: сразу грузим кэш (мгновенный UI), потом реальные чаты
   useEffect(() => {
     store.loadCachedChats?.()
+  }, [])
+
+  // v0.87.24: window.focus → rescan unread (Комбо D — часть B)
+  useEffect(() => {
+    const onFocus = () => { store.rescanUnread?.() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   }, [])
 
   useEffect(() => {
@@ -130,6 +136,51 @@ export default function InboxMode({ store }) {
     const q = msgSearch.toLowerCase()
     return activeMessages.filter(m => (m.text || '').toLowerCase().includes(q))
   }, [activeMessages, msgSearch])
+
+  // v0.87.24: группируем сообщения по автору + вставляем таймстамп-разделители
+  // Правила: новая группа если: (1) другой отправитель ИЛИ (2) прошло > 5 мин ИЛИ (3) другой день
+  const renderItems = useMemo(() => {
+    const items = []  // { type: 'divider'|'group', data }
+    let currentGroup = null
+    let prevDay = null
+    for (const m of visibleMessages) {
+      const day = new Date(m.timestamp).toDateString()
+      // Дневной разделитель
+      if (day !== prevDay) {
+        if (prevDay !== null) currentGroup = null
+        items.push({ type: 'day', id: `day-${day}`, day })
+        prevDay = day
+      }
+      // 5-минутный разделитель в пределах дня
+      if (currentGroup) {
+        const lastMsg = currentGroup.msgs[currentGroup.msgs.length - 1]
+        const gapMinutes = (m.timestamp - lastMsg.timestamp) / 60000
+        const sameAuthor = m.senderId === lastMsg.senderId && m.isOutgoing === lastMsg.isOutgoing
+        if (!sameAuthor || gapMinutes > 5) {
+          if (gapMinutes > 5 && sameAuthor) {
+            // таймстамп-разделитель при большом промежутке даже если один автор
+            items.push({ type: 'time', id: `time-${m.id}`, time: m.timestamp })
+          }
+          currentGroup = null
+        }
+      }
+      if (!currentGroup) {
+        currentGroup = { type: 'group', id: `g-${m.id}`, msgs: [], senderId: m.senderId, senderName: m.senderName, isOutgoing: m.isOutgoing }
+        items.push(currentGroup)
+      }
+      currentGroup.msgs.push(m)
+    }
+    return items
+  }, [visibleMessages])
+
+  const formatDayLabel = (dayStr) => {
+    const d = new Date(dayStr)
+    const today = new Date().toDateString()
+    const yesterday = new Date(Date.now() - 86400000).toDateString()
+    if (d.toDateString() === today) return 'Сегодня'
+    if (d.toDateString() === yesterday) return 'Вчера'
+    return d.toLocaleDateString('ru', { day: 'numeric', month: 'long', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })
+  }
 
   const getMessage = (chatId, msgId) => (store.messages[chatId] || []).find(m => m.id === String(msgId))
 
@@ -366,19 +417,35 @@ export default function InboxMode({ store }) {
                 <div style={{ color: 'var(--amoled-text-dim)', textAlign: 'center', padding: 20 }}>
                   {msgSearch ? 'Ничего не найдено' : 'Нет сообщений'}
                 </div>
-              ) : visibleMessages.map(m => (
-                <MessageBubble
-                  key={m.id} m={m} chatId={store.activeChatId}
-                  onReply={setReplyTo}
-                  onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
-                  onDelete={handleDelete}
-                  onForward={handleForward}
-                  onPin={handlePin}
-                  downloadMedia={store.downloadMedia}
-                  getMessage={getMessage}
-                  onVisible={readByVisibility}
-                />
-              ))}
+              ) : renderItems.map(item => {
+                if (item.type === 'day') {
+                  return <div key={item.id} className="native-msg-divider" style={{ fontWeight: 600 }}>{formatDayLabel(item.day)}</div>
+                }
+                if (item.type === 'time') {
+                  return <div key={item.id} className="native-msg-divider">{new Date(item.time).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}</div>
+                }
+                // group
+                return (
+                  <div key={item.id} className="native-msg-group" style={{ alignItems: item.isOutgoing ? 'flex-end' : 'flex-start' }}>
+                    {!item.isOutgoing && item.senderName && (
+                      <div className="native-msg-author">{item.senderName}</div>
+                    )}
+                    {item.msgs.map(m => (
+                      <MessageBubble
+                        key={m.id} m={m} chatId={store.activeChatId}
+                        onReply={setReplyTo}
+                        onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
+                        onDelete={handleDelete}
+                        onForward={handleForward}
+                        onPin={handlePin}
+                        downloadMedia={store.downloadMedia}
+                        getMessage={getMessage}
+                        onVisible={readByVisibility}
+                      />
+                    ))}
+                  </div>
+                )
+              })}
             </div>
             {/* Reply / Edit панель */}
             {(replyTo || editTarget) && (

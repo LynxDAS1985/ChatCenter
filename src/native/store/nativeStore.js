@@ -163,6 +163,15 @@ export default function useNativeStore() {
       }))
     })
 
+    // v0.87.24: bulk sync — rescan всех активных чатов (Комбо D)
+    addHandler('tg:unread-bulk-sync', ({ updates }) => {
+      const map = new Map(updates.map(u => [u.id, u.unreadCount]))
+      setState(s => ({
+        ...s,
+        chats: s.chats.map(c => map.has(c.id) ? { ...c, unreadCount: map.get(c.id) } : c)
+      }))
+    })
+
     addHandler('tg:read', ({ chatId, outgoing, stillUnread, maxId }) => {
       if (outgoing) {
         // v0.87.17: собеседник прочитал наши сообщения до maxId → ставим isRead=true
@@ -259,6 +268,11 @@ export default function useNativeStore() {
     return window.api?.invoke('tg:refresh-avatar', { chatId })
   }, [])
 
+  // v0.87.24: manual rescan unread (Комбо D — часть B)
+  const rescanUnread = useCallback(async () => {
+    return window.api?.invoke('tg:rescan-unread', {})
+  }, [])
+
   const setTyping = useCallback(async (chatId) => {
     return window.api?.invoke('tg:set-typing', { chatId })
   }, [])
@@ -323,7 +337,7 @@ export default function useNativeStore() {
     startLogin, submitCode, submitPassword, cancelLogin,
     loadChats, loadCachedChats, loadMessages, loadOlderMessages,
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
-    getPinnedMessage, refreshAvatar,
+    getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, setTyping,
   }
 }
