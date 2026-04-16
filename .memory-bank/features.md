@@ -1,6 +1,27 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.26 (16 апреля 2026)
+## Текущая версия: v0.87.27 (16 апреля 2026)
+
+## 🔴 НЕПРОВЕРЕННЫЕ ФИЧИ v0.87.27 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
+
+Список добавлено/изменено, но пользовательская проверка ожидается:
+
+| # | Фича | Статус проверки | Файлы |
+|---|------|-----------------|-------|
+| 1 | Reply-клик → scroll к оригиналу + жёлтая вспышка 1.5с | ⏳ ожидание | MessageBubble.jsx, InboxMode.jsx, styles.css |
+| 2 | «Новые сообщения» divider при открытии чата | ⏳ ожидание | InboxMode.jsx, messageGrouping.js, styles.css |
+| 3 | Runtime smoke-тест main-процесса (parse всех файлов) | ⏳ ожидание | src/__tests__/mainRuntime.test.cjs |
+| 4 | Проверка `telegram/*` подпутей в тесте | ⏳ ожидание | mainRuntime.test.cjs |
+| 5 | Avatar cache bust при logout (удаление tg-avatars + tg-media + cache.json) | ⏳ ожидание | telegramHandler.js |
+| 6 | Авто-очистка `tg-media/` старше 30 дней при старте | ⏳ ожидание | telegramHandler.js |
+| 7 | Клик на фото → PhotoViewer (pan/zoom/pin/download/Esc) | ⏳ ожидание | PhotoViewer.jsx, MessageBubble.jsx, windowHandlers.js |
+| 8 | Индикатор новых сообщений при скролле назад (↓ + counter) | ⏳ ожидание | InboxMode.jsx, styles.css |
+| 9 | Превью ссылок (title/description/siteName) | ⏳ ожидание | LinkPreview.jsx, telegramHandler.js mapMessage |
+| 10 | Ctrl+↑ → редактирование последнего своего сообщения | ⏳ ожидание | InboxMode.jsx |
+| 11 | Аватарка слева от групп чужих сообщений | ⏳ ожидание | InboxMode.jsx, styles.css |
+| 12 | IPC `window:set-always-on-top` (для PhotoViewer pin) | ⏳ ожидание | windowHandlers.js |
+
+Виртуализация **списка чатов** — уже реализована в v0.87.12 через `react-window` List. Речь шла о списке **сообщений** в открытом чате — его пока нет (будущая задача).
 
 ---
 
@@ -91,6 +112,35 @@
 ---
 
 ## Changelog
+
+### v0.87.27 (16 апреля 2026) — 12 новых фичей: PhotoViewer, reply-scroll, unread divider, link preview, Ctrl+↑, аватарки в группе, кэш-bust, runtime-тест
+**⚠️ НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ — пока пользователь не подтвердит проверку!** См. таблицу «Непроверенные фичи» выше.
+
+**Что добавлено**:
+1. **Reply-клик scroll to original** — клик по reply-цитате (↪ текст) → плавный скролл к оригиналу + 1.5с жёлтая вспышка подсветки. `onReplyClick` prop в MessageBubble.jsx, `scrollToMessage(id)` в InboxMode.jsx через `[data-msg-id="..."]` query. Если оригинал не загружен (скрыт в infinite scroll) — toast «прокрутите вверх».
+2. **«Новые сообщения» divider** — жёлтая горизонтальная плашка с линиями появляется перед первым непрочитанным сообщением при открытии чата. `firstUnreadIdRef` вычисляется в useEffect при смене activeChatId. `findFirstUnreadId()` в `messageGrouping.js`.
+3. **Runtime smoke-тест main** — `src/__tests__/mainRuntime.test.cjs` парсит каждый `main/**/*.js`, вытаскивает все `import { X } from 'pkg'`, делает `require(pkg)` и проверяет что каждое имя реально экспортируется. Отдельно проверяет подпути `telegram/sessions/index.js`, `telegram/events/index.js`, `telegram/Utils.js`. Ловит ошибки типа Ловушки 79 ДО запуска Electron.
+4. **Avatar cache bust** — при `tg:remove-account` удаляются все файлы из `tg-avatars/`, `tg-media/`, `tg-cache.json`, очищается `chatEntityMap`. Следующий аккаунт не получает старые аватарки/медиа.
+5. **Сжатие tg-media** — `ipcMain.handle('tg:cleanup-media', {maxDays=30})` + авто-вызов при инициализации handler'а. Файлы старше 30 дней удаляются; логируется освобождённый размер в МБ.
+6. **PhotoViewer** — новый компонент `src/native/components/PhotoViewer.jsx` — полноэкранный просмотрщик с: pan (drag мышкой), zoom (колёсико + кнопки ± + двойной клик reset), pin (кнопка 📌 → IPC `window:set-always-on-top`), download (⬇), Esc закрытие. Клик по фото в MessageBubble → `onPhotoOpen(mediaUrl)`.
+7. **Индикатор новых снизу** — круглая кнопка ↓ в правом нижнем углу scroll-области появляется когда юзер НЕ внизу чата. Показывает счётчик новых входящих (`newBelow` state). Клик → плавный скролл вниз + сброс счётчика.
+8. **Link Preview** — новый `LinkPreview.jsx`. `mapMessage` в telegramHandler.js извлекает `webPage` (url/title/description/siteName). Рендерится карточкой с левой синей полосой. Клик → `app:open-external`.
+9. **Ctrl+↑ → редактирование** — при пустом input + Ctrl+↑ ставим последнее своё текстовое сообщение в edit-режим с заполненным input.
+10. **Аватарка слева от групп чужих** — новый `.native-msg-group-row` flex-layout с `.native-msg-avatar` (32×32 круг). Использует `activeChat.avatar` для private-чатов; для групп — инициалы имени sender'а. Для своих сообщений (row-reverse) — без аватарки.
+11. **`window:set-always-on-top` IPC** — новый обработчик в `main/handlers/windowHandlers.js` (вынесено из main.js т.к. превысил лимит 600).
+12. **Рефакторинг**: `groupMessages`, `formatDayLabel`, `findFirstUnreadId` вынесены в `src/native/utils/messageGrouping.js`; window-handlers вынесены в `main/handlers/windowHandlers.js`.
+
+**Что проверить (до закрытия задачи)**:
+- [ ] Клик по фото → открывается модалка на весь экран, колёсико зумит, drag двигает, 📌 закрепляет окно поверх других
+- [ ] Reply-цитата кликабельна → скролл + жёлтая вспышка
+- [ ] При открытии чата с >0 unread видна жёлтая плашка «Новые сообщения» перед первым непрочитанным
+- [ ] При скролле вверх в правом-нижнем углу появляется ↓ с цифрой новых
+- [ ] Ссылка в сообщении рендерится карточкой (title/description)
+- [ ] Ctrl+↑ в пустом поле → последнее своё сообщение в edit
+- [ ] Слева от чужой группы видна аватарка чата/отправителя
+- [ ] После logout аватарки следующего аккаунта обновляются (не старые)
+- [ ] Файлы `tg-media/` старше 30 дней удаляются при старте (проверять `Roaming/ЦентрЧатов/tg-media`)
+- [ ] Главный тест: `npm test` проходит, в том числе `mainRuntime.test.cjs` с проверкой всех main модулей и подпутей telegram/*
 
 ### v0.87.26 (16 апреля 2026) — UI фиксы: разделители дат + размер фото + счётчик непрочитанных
 - **Проблема 1 — разделители дат плохо видно**: `.native-msg-divider` был `rgba(255,255,255,0.04)` на чистом #000 → почти невидимы. **Фикс**: `.native-msg-divider--day` — акцентный фон с синей обводкой, uppercase, backdrop-blur; обёртка `.native-msg-day-row` с горизонтальными градиент-линиями по бокам (как в Telegram).

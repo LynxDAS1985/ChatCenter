@@ -1,9 +1,13 @@
 // v0.87.12: Режим «Чаты» (Inbox) с виртуальным скроллом, поиском, иконками типов.
+// v0.87.27: photoViewer, scroll-to-reply, «новые сообщения» divider, Ctrl+↑ edit,
+// scroll-to-bottom индикатор, аватарка слева от групп чужих сообщений.
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { List } from 'react-window'
 import ChatListItem from '../components/ChatListItem.jsx'
 import MessageBubble from '../components/MessageBubble.jsx'
 import ForwardPicker from '../components/ForwardPicker.jsx'
+import PhotoViewer from '../components/PhotoViewer.jsx'
+import { groupMessages, formatDayLabel, findFirstUnreadId } from '../utils/messageGrouping.js'
 
 const ITEM_HEIGHT = 64
 
@@ -108,6 +112,12 @@ export default function InboxMode({ store }) {
   const [toast, setToast] = useState(null)
   const [pinnedMsg, setPinnedMsg] = useState(null)
 
+  // v0.87.27: PhotoViewer src + индикатор scroll-to-bottom + первый непрочитанный
+  const [viewerSrc, setViewerSrc] = useState(null)
+  const [atBottom, setAtBottom] = useState(true)
+  const [newBelow, setNewBelow] = useState(0)
+  const firstUnreadIdRef = useRef(null)
+
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 4000)
@@ -137,50 +147,18 @@ export default function InboxMode({ store }) {
     return activeMessages.filter(m => (m.text || '').toLowerCase().includes(q))
   }, [activeMessages, msgSearch])
 
-  // v0.87.24: группируем сообщения по автору + вставляем таймстамп-разделители
-  // Правила: новая группа если: (1) другой отправитель ИЛИ (2) прошло > 5 мин ИЛИ (3) другой день
-  const renderItems = useMemo(() => {
-    const items = []  // { type: 'divider'|'group', data }
-    let currentGroup = null
-    let prevDay = null
-    for (const m of visibleMessages) {
-      const day = new Date(m.timestamp).toDateString()
-      // Дневной разделитель
-      if (day !== prevDay) {
-        if (prevDay !== null) currentGroup = null
-        items.push({ type: 'day', id: `day-${day}`, day })
-        prevDay = day
-      }
-      // 5-минутный разделитель в пределах дня
-      if (currentGroup) {
-        const lastMsg = currentGroup.msgs[currentGroup.msgs.length - 1]
-        const gapMinutes = (m.timestamp - lastMsg.timestamp) / 60000
-        const sameAuthor = m.senderId === lastMsg.senderId && m.isOutgoing === lastMsg.isOutgoing
-        if (!sameAuthor || gapMinutes > 5) {
-          if (gapMinutes > 5 && sameAuthor) {
-            // таймстамп-разделитель при большом промежутке даже если один автор
-            items.push({ type: 'time', id: `time-${m.id}`, time: m.timestamp })
-          }
-          currentGroup = null
-        }
-      }
-      if (!currentGroup) {
-        currentGroup = { type: 'group', id: `g-${m.id}`, msgs: [], senderId: m.senderId, senderName: m.senderName, isOutgoing: m.isOutgoing }
-        items.push(currentGroup)
-      }
-      currentGroup.msgs.push(m)
-    }
-    return items
-  }, [visibleMessages])
+  // v0.87.27: группировка + разделители вынесены в utils/messageGrouping.js
+  const renderItems = useMemo(
+    () => groupMessages(visibleMessages, firstUnreadIdRef.current),
+    [visibleMessages]
+  )
 
-  const formatDayLabel = (dayStr) => {
-    const d = new Date(dayStr)
-    const today = new Date().toDateString()
-    const yesterday = new Date(Date.now() - 86400000).toDateString()
-    if (d.toDateString() === today) return 'Сегодня'
-    if (d.toDateString() === yesterday) return 'Вчера'
-    return d.toLocaleDateString('ru', { day: 'numeric', month: 'long', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })
-  }
+  // Запоминаем ID первого непрочитанного при открытии чата (для «новые сообщения»)
+  useEffect(() => {
+    if (!store.activeChatId) { firstUnreadIdRef.current = null; return }
+    const chat = store.chats.find(c => c.id === store.activeChatId)
+    firstUnreadIdRef.current = findFirstUnreadId(activeMessages, chat?.unreadCount || 0)
+  }, [store.activeChatId, activeMessages.length > 0])
 
   const getMessage = (chatId, msgId) => (store.messages[chatId] || []).find(m => m.id === String(msgId))
 
@@ -257,11 +235,17 @@ export default function InboxMode({ store }) {
   }
 
   const handleScroll = async (e) => {
+    // v0.87.27: индикатор scroll-to-bottom + newBelow-счётчик
+    const el = e.target
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    setAtBottom(nearBottom)
+    if (nearBottom) setNewBelow(0)
+    // Infinite scroll up
     if (loadingOlderRef.current) return
-    if (e.target.scrollTop < 100 && activeMessages.length > 0) {
+    if (el.scrollTop < 100 && activeMessages.length > 0) {
       loadingOlderRef.current = true
       const oldest = activeMessages[0]
-      const prevHeight = e.target.scrollHeight
+      const prevHeight = el.scrollHeight
       await store.loadOlderMessages(store.activeChatId, oldest.id, 50)
       setTimeout(() => {
         if (msgsScrollRef.current) {
@@ -270,6 +254,33 @@ export default function InboxMode({ store }) {
         loadingOlderRef.current = false
       }, 100)
     }
+  }
+
+  // v0.87.27: при новом входящем сообщении если юзер НЕ внизу — растим счётчик
+  const prevMsgCountRef = useRef(activeMessages.length)
+  useEffect(() => {
+    const prev = prevMsgCountRef.current
+    const now = activeMessages.length
+    prevMsgCountRef.current = now
+    if (now > prev && !atBottom) {
+      const added = activeMessages.slice(prev).filter(m => !m.isOutgoing).length
+      if (added > 0) setNewBelow(n => n + added)
+    }
+  }, [activeMessages.length])
+
+  // Скролл-вниз-одной-кнопкой
+  const scrollToBottom = () => {
+    const el = msgsScrollRef.current
+    if (el) { el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); setNewBelow(0) }
+  }
+
+  // v0.87.27: клик по reply-цитате — скроллим к оригиналу + 1.5с жёлтое мерцание
+  const scrollToMessage = (msgId) => {
+    const el = msgsScrollRef.current?.querySelector(`[data-msg-id="${msgId}"]`)
+    if (!el) { showToast('Исходное сообщение не загружено — прокрутите вверх', 'info'); return }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('native-msg-flash')
+    setTimeout(() => el.classList.remove('native-msg-flash'), 1500)
   }
 
   const handleDelete = async (m) => {
@@ -437,28 +448,66 @@ export default function InboxMode({ store }) {
                 if (item.type === 'time') {
                   return <div key={item.id} className="native-msg-divider">{new Date(item.time).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}</div>
                 }
-                // group
+                if (item.type === 'unread') {
+                  return (
+                    <div key={item.id} className="native-msg-unread-divider">
+                      <span>Новые сообщения</span>
+                    </div>
+                  )
+                }
+                // group — v0.87.27 аватарка слева для чужих групп (не для своих)
+                const groupChat = !item.isOutgoing ? activeChat : null
+                const groupInitials = item.senderName ? item.senderName.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') : '?'
                 return (
-                  <div key={item.id} className="native-msg-group" style={{ alignItems: item.isOutgoing ? 'flex-end' : 'flex-start' }}>
-                    {!item.isOutgoing && item.senderName && (
-                      <div className="native-msg-author">{item.senderName}</div>
+                  <div key={item.id} className="native-msg-group-row" style={{
+                    display: 'flex',
+                    flexDirection: item.isOutgoing ? 'row-reverse' : 'row',
+                    alignItems: 'flex-end',
+                    gap: 8,
+                  }}>
+                    {!item.isOutgoing && (
+                      <div className="native-msg-avatar" style={{
+                        background: groupChat?.avatar ? `url("${groupChat.avatar}") center/cover no-repeat` : '#65aadd',
+                      }}>
+                        {!groupChat?.avatar && groupInitials}
+                      </div>
                     )}
-                    {item.msgs.map(m => (
-                      <MessageBubble
-                        key={m.id} m={m} chatId={store.activeChatId}
-                        onReply={setReplyTo}
-                        onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
-                        onDelete={handleDelete}
-                        onForward={handleForward}
-                        onPin={handlePin}
-                        downloadMedia={store.downloadMedia}
-                        getMessage={getMessage}
-                        onVisible={readByVisibility}
-                      />
-                    ))}
+                    <div className="native-msg-group" style={{ alignItems: item.isOutgoing ? 'flex-end' : 'flex-start', flex: '0 1 auto' }}>
+                      {!item.isOutgoing && item.senderName && (
+                        <div className="native-msg-author">{item.senderName}</div>
+                      )}
+                      {item.msgs.map(m => (
+                        <MessageBubble
+                          key={m.id} m={m} chatId={store.activeChatId}
+                          onReply={setReplyTo}
+                          onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
+                          onDelete={handleDelete}
+                          onForward={handleForward}
+                          onPin={handlePin}
+                          downloadMedia={store.downloadMedia}
+                          getMessage={getMessage}
+                          onVisible={readByVisibility}
+                          onPhotoOpen={setViewerSrc}
+                          onReplyClick={scrollToMessage}
+                        />
+                      ))}
+                    </div>
                   </div>
                 )
               })}
+              {/* v0.87.27: индикатор «есть новые снизу» */}
+              {!atBottom && (
+                <button
+                  onClick={scrollToBottom}
+                  className="native-scroll-bottom-btn"
+                  title="К последнему сообщению"
+                >
+                  ↓
+                  {newBelow > 0 && (
+                    <span className="native-scroll-bottom-badge">{newBelow > 99 ? '99+' : newBelow}</span>
+                  )}
+                </button>
+              )}
             </div>
             {/* Reply / Edit панель */}
             {(replyTo || editTarget) && (
@@ -475,7 +524,15 @@ export default function InboxMode({ store }) {
               <input
                 value={input}
                 onChange={e => handleInputChange(e.target.value)}
-                onKeyDown={e => { if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim()) handleReplySend() }}
+                onKeyDown={e => {
+                  if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim()) handleReplySend()
+                  // v0.87.27: Ctrl+↑ — редактируем последнее своё сообщение (если поле пустое)
+                  if (e.key === 'ArrowUp' && e.ctrlKey && !input.trim() && !editTarget) {
+                    e.preventDefault()
+                    const lastOwn = [...activeMessages].reverse().find(m => m.isOutgoing && !m.mediaType)
+                    if (lastOwn) { setEditTarget(lastOwn); setInput(lastOwn.text || '') }
+                  }
+                }}
                 onPaste={handlePaste}
                 placeholder={editTarget ? 'Отредактируйте сообщение...' : replyTo ? 'Ответ...' : 'Введите сообщение... (перетащите файл / Ctrl+V фото)'}
                 disabled={sending}
@@ -500,6 +557,8 @@ export default function InboxMode({ store }) {
       {toast && (
         <div className={`native-toast native-toast--${toast.type}`}>{toast.message}</div>
       )}
+      {/* v0.87.27: полноэкранный просмотрщик фото */}
+      {viewerSrc && <PhotoViewer src={viewerSrc} onClose={() => setViewerSrc(null)} />}
     </div>
   )
 }

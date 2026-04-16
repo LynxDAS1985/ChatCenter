@@ -1,8 +1,14 @@
-// v0.87.15: пузырёк сообщения — текст, медиа, reply, edit, меню действий
+// v0.87.15: пузырёк сообщения — текст, медиа, reply, edit, меню действий.
+// v0.87.27: onPhotoOpen (клик → PhotoViewer), onReplyClick (клик по reply-цитате →
+// scroll к оригиналу), data-msg-id (для внешнего скролла), LinkPreview для ссылок.
 import { useState, useEffect, useRef } from 'react'
 import FormattedText from './FormattedText.jsx'
+import LinkPreview from './LinkPreview.jsx'
 
-export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible, downloadMedia, getMessage }) {
+export default function MessageBubble({
+  m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible,
+  downloadMedia, getMessage, onPhotoOpen, onReplyClick,
+}) {
   const [menu, setMenu] = useState(false)
   const [mediaUrl, setMediaUrl] = useState(null)
   const [mediaLoading, setMediaLoading] = useState(false)
@@ -40,7 +46,7 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
   const bubbleMinWidth = hasMedia ? 280 : 'auto'
 
   return (
-    <div ref={ref} style={{
+    <div ref={ref} data-msg-id={m.id} style={{
       alignSelf: m.isOutgoing ? 'flex-end' : 'flex-start',
       maxWidth: hasMedia ? 'min(420px, 65%)' : '65%',
       minWidth: bubbleMinWidth,
@@ -58,35 +64,43 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
         border: m.isOutgoing ? 'none' : '1px solid rgba(255,255,255,0.06)',
         boxShadow: m.isOutgoing ? '0 0 12px rgba(42,171,238,0.15)' : 'none',
       }}>
-        {/* v0.87.24: имя автора вынесено в group-header над группой сообщений */}
-        {/* Reply цитата */}
+        {/* Reply цитата — v0.87.27 кликабельная, скролл к оригиналу */}
         {replyToMsg && (
-          <div style={{
-            borderLeft: '3px solid rgba(255,255,255,0.4)',
-            paddingLeft: 8,
-            marginBottom: 4,
-            marginLeft: hasMedia ? 8 : 0,
-            marginRight: hasMedia ? 8 : 0,
-            marginTop: hasMedia ? 6 : 0,
-            fontSize: 12, opacity: 0.7,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-          }}>
+          <div
+            onClick={(e) => { e.stopPropagation(); onReplyClick?.(replyToMsg.id) }}
+            style={{
+              borderLeft: '3px solid rgba(255,255,255,0.4)',
+              paddingLeft: 8,
+              marginBottom: 4,
+              marginLeft: hasMedia ? 8 : 0,
+              marginRight: hasMedia ? 8 : 0,
+              marginTop: hasMedia ? 6 : 0,
+              fontSize: 12, opacity: 0.8,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              cursor: 'pointer',
+            }}
+            title="Перейти к оригиналу"
+          >
             ↪ {replyToMsg.text?.slice(0, 80) || '[медиа]'}
           </div>
         )}
         {/* v0.87.26: Медиа с stripped thumb — достаточный размер + правильный aspect */}
         {m.mediaType === 'photo' && (
-          <div style={{
-            position: 'relative',
-            width: '100%',
-            aspectRatio: m.mediaWidth && m.mediaHeight ? `${m.mediaWidth} / ${m.mediaHeight}` : '4 / 3',
-            minHeight: 180,
-            maxHeight: 420,
-            borderRadius: 8,
-            marginBottom: m.text ? 6 : 0,
-            overflow: 'hidden',
-            background: m.strippedThumb ? `url("${m.strippedThumb}") center/cover no-repeat` : 'rgba(0,0,0,0.3)',
-          }}>
+          <div
+            onClick={() => { if (mediaUrl) onPhotoOpen?.(mediaUrl) }}
+            style={{
+              position: 'relative',
+              width: '100%',
+              aspectRatio: m.mediaWidth && m.mediaHeight ? `${m.mediaWidth} / ${m.mediaHeight}` : '4 / 3',
+              minHeight: 180,
+              maxHeight: 420,
+              borderRadius: 8,
+              marginBottom: m.text ? 6 : 0,
+              overflow: 'hidden',
+              background: m.strippedThumb ? `url("${m.strippedThumb}") center/cover no-repeat` : 'rgba(0,0,0,0.3)',
+              cursor: mediaUrl ? 'zoom-in' : 'default',
+            }}
+          >
             {/* Полный фото поверх — fade-in когда загрузится */}
             {mediaUrl && (
               <img src={mediaUrl} alt="" style={{
@@ -120,7 +134,6 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
             📎 {m.mediaPreview || 'файл'} {mediaUrl && '✓'}
           </div>
         )}
-        {m.mediaType === 'link' && <div style={{ fontSize: 12, opacity: 0.7 }}>🔗 ссылка</div>}
         {m.mediaType === 'location' && <div style={{ fontSize: 12, opacity: 0.7 }}>📍 геолокация</div>}
         {m.mediaType === 'contact' && <div style={{ fontSize: 12, opacity: 0.7 }}>👤 контакт</div>}
         {m.mediaType === 'poll' && <div style={{ fontSize: 12, opacity: 0.7 }}>📊 опрос</div>}
@@ -129,6 +142,12 @@ export default function MessageBubble({ m, chatId, onReply, onEdit, onDelete, on
           whiteSpace: 'pre-wrap',
           padding: hasMedia ? '4px 8px 0' : 0,
         }}><FormattedText text={m.text} entities={m.entities} /></div>}
+
+        {/* v0.87.27: превью ссылки — если есть webPage в сообщении */}
+        {m.mediaType === 'link' && m.webPage && (
+          <LinkPreview wp={m.webPage} isOutgoing={m.isOutgoing} />
+        )}
+
         <div style={{
           fontSize: 10, opacity: 0.75, marginTop: 2, textAlign: 'right',
           padding: hasMedia ? '2px 8px 4px' : 0,

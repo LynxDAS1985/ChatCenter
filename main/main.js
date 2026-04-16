@@ -20,6 +20,7 @@ import { initAILoginHandler } from './handlers/aiLoginHandler.js'
 import { initBackupNotifHandler } from './handlers/backupNotifHandler.js'
 import { createWindow as createWindowFromManager } from './utils/windowManager.js'
 import { createTray as createTrayFromManager, openLogViewer } from './utils/trayManager.js'
+import { registerWindowHandlers } from './handlers/windowHandlers.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV === 'development'
@@ -252,16 +253,8 @@ function setupIPC() {
     data: { version: app.getVersion(), name: 'ЦентрЧатов', platform: process.platform }
   }))
 
-  // Управление окном
-  ipcMain.handle('window:hide', () => {
-    mainWindow?.hide()
-    return { ok: true }
-  })
-
-  ipcMain.handle('window:minimize', () => {
-    mainWindow?.minimize()
-    return { ok: true }
-  })
+  // Управление окном — вынесено в windowHandlers.js (hide/minimize/set-always-on-top)
+  registerWindowHandlers(() => mainWindow)
 
   // Мессенджеры — загрузка
   ipcMain.handle('messengers:load', () => {

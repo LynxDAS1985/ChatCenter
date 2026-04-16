@@ -76,6 +76,23 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
   try { fs.mkdirSync(avatarsDir, { recursive: true }) } catch(_) {}
   log(`init, session=${sessionPath}, avatars=${avatarsDir}, cache=${cachePath}`)
 
+  // v0.87.27: авто-очистка старых медиа при старте — файлы старше 30 дней
+  try {
+    const mediaDir = path.join(userDataPath, 'tg-media')
+    if (fs.existsSync(mediaDir)) {
+      const cutoff = Date.now() - 30 * 86400000
+      let removed = 0, freed = 0
+      for (const f of fs.readdirSync(mediaDir)) {
+        const fp = path.join(mediaDir, f)
+        try {
+          const st = fs.statSync(fp)
+          if (st.mtimeMs < cutoff) { freed += st.size; fs.unlinkSync(fp); removed++ }
+        } catch(_) {}
+      }
+      if (removed > 0) log(`auto cleanup: removed=${removed} freed=${(freed/1024/1024).toFixed(1)}MB`)
+    }
+  } catch(_) {}
+
   // v0.87.12: дожидаемся когда renderer точно готов принять events
   const startRestore = () => {
     const win = getMainWindowFn?.()
@@ -465,11 +482,53 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       if (client) { try { await client.disconnect() } catch(_) {} client = null }
       currentAccount = null
       if (sessionPath && fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath)
+      // v0.87.27: avatar & media cache bust — удаляем кэш при logout чтобы следующий
+      // аккаунт не получал старые аватарки
+      try {
+        if (avatarsDir && fs.existsSync(avatarsDir)) {
+          for (const f of fs.readdirSync(avatarsDir)) {
+            try { fs.unlinkSync(path.join(avatarsDir, f)) } catch(_) {}
+          }
+          log('avatars cache cleared')
+        }
+        if (cachePath) {
+          const mediaDir = path.join(path.dirname(cachePath), 'tg-media')
+          if (fs.existsSync(mediaDir)) {
+            for (const f of fs.readdirSync(mediaDir)) {
+              try { fs.unlinkSync(path.join(mediaDir, f)) } catch(_) {}
+            }
+            log('media cache cleared')
+          }
+          if (fs.existsSync(cachePath)) { try { fs.unlinkSync(cachePath) } catch(_) {} }
+        }
+        chatEntityMap.clear()
+      } catch (e) { log('cache bust err: ' + e.message) }
       emit('tg:account-update', { id: 'self', status: 'disconnected', removed: true })
       return { ok: true }
     } catch (e) {
       return { ok: false, error: e.message }
     }
+  })
+
+  // v0.87.27: очистка старых медиа — вызывается по таймеру или вручную
+  // Удаляет файлы в tg-media старше maxDays (по умолчанию 30)
+  ipcMain.handle('tg:cleanup-media', async (_, { maxDays = 30 } = {}) => {
+    try {
+      if (!cachePath) return { ok: false, error: 'нет cache path' }
+      const mediaDir = path.join(path.dirname(cachePath), 'tg-media')
+      if (!fs.existsSync(mediaDir)) return { ok: true, removed: 0 }
+      const cutoff = Date.now() - maxDays * 86400000
+      let removed = 0, bytesFree = 0
+      for (const f of fs.readdirSync(mediaDir)) {
+        const fp = path.join(mediaDir, f)
+        try {
+          const st = fs.statSync(fp)
+          if (st.mtimeMs < cutoff) { bytesFree += st.size; fs.unlinkSync(fp); removed++ }
+        } catch(_) {}
+      }
+      log(`cleanup-media: removed=${removed} freed=${(bytesFree/1024/1024).toFixed(1)}MB`)
+      return { ok: true, removed, bytesFree }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 }
 
@@ -663,6 +722,7 @@ function extractStrippedThumb(media) {
 function mapMessage(m, chatId) {
   const media = m.media
   let mediaType = null, mediaPreview = null, strippedThumb = null, mediaWidth = null, mediaHeight = null
+  let webPage = null
   if (media) {
     const cn = media.className
     if (cn === 'MessageMediaPhoto') {
@@ -682,7 +742,20 @@ function mapMessage(m, chatId) {
       mediaPreview = media.document?.attributes?.find(a => a.fileName)?.fileName || 'файл'
       strippedThumb = extractStrippedThumb(media)
     }
-    else if (cn === 'MessageMediaWebPage') { mediaType = 'link' }
+    else if (cn === 'MessageMediaWebPage') {
+      mediaType = 'link'
+      // v0.87.27: полноценное превью ссылки — title/description/siteName/photo
+      const wp = media.webpage
+      if (wp && wp.className === 'WebPage') {
+        webPage = {
+          url: wp.url || wp.displayUrl || '',
+          title: wp.title || '',
+          description: wp.description || '',
+          siteName: wp.siteName || '',
+          photoUrl: null,
+        }
+      }
+    }
     else if (cn === 'MessageMediaGeo') { mediaType = 'location' }
     else if (cn === 'MessageMediaContact') { mediaType = 'contact' }
     else if (cn === 'MessageMediaPoll') { mediaType = 'poll' }
@@ -702,6 +775,7 @@ function mapMessage(m, chatId) {
     mediaPreview,
     strippedThumb,  // v0.87.24: мгновенное размытое превью (data:URL)
     mediaWidth, mediaHeight,  // для правильного aspect ratio placeholder
+    webPage,  // v0.87.27: превью ссылки (title/description/siteName)
     replyToId: m.replyTo?.replyToMsgId ? String(m.replyTo.replyToMsgId) : null,
   }
 }
