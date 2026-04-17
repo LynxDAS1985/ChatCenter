@@ -232,7 +232,7 @@ function setupIPC() {
   ipcMain.handle('app:open-external', (_, url) => { try { shell.openExternal(url) } catch(_) {} return { ok: true } })
   // v0.84.2: Renderer логирование — пишет в тот же файл лога
   ipcMain.on('app:log', (event, { level, message }) => {
-    const ts = new Date().toISOString().slice(0, 19).replace('T', ' ')
+    const ts = new Date().toLocaleString('sv-SE').replace('T', ' ')
     const line = `[${ts}] [R:${level || 'INFO'}] ${message}\n`
     const lp = getLogFilePath()
     if (lp) try { fs.appendFileSync(lp, line) } catch {}

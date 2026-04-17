@@ -112,24 +112,22 @@
   startLoadWatchdog()
   video.addEventListener('canplay', () => { if (loadTimer) { clearTimeout(loadTimer); loadTimer = null } })
 
-  // v0.87.38: pin/pip кнопки — работают через preload (если есть) ИЛИ ничего не делают.
-  // Главные кнопки (close/min/max) = нативные Windows, не зависят от JS.
+  // v0.87.38: pin/pip — через console.log команды (main ловит через console-message).
+  // НЕ зависит от preload! Паттерн как в monitor.preload.cjs.
   let pinned = false
   const pinBtn = document.getElementById('pin')
-  if (pinBtn) pinBtn.onclick = async () => {
+  if (pinBtn) pinBtn.onclick = () => {
     pinned = !pinned
     pinBtn.classList.toggle('pin-active', pinned)
-    try { await window.video?.togglePin(pinned) } catch(_) {}
+    console.log('__CC_VIDEO__pin:' + (pinned ? '1' : '0'))
   }
 
-  // v0.87.35: PiP — компактное окно в углу (через main IPC, не Chromium PiP)
-  // Это даёт resize, move, alwaysOnTop — стандартное Chromium PiP API не даёт resize.
   let pipActive = false
   const pipBtn = document.getElementById('pip')
-  pipBtn.onclick = async () => {
+  if (pipBtn) pipBtn.onclick = () => {
     pipActive = !pipActive
     pipBtn.classList.toggle('pin-active', pipActive)
-    try { await window.video?.togglePip(pipActive) } catch(_) {}
+    console.log('__CC_VIDEO__pip:' + (pipActive ? '1' : '0'))
   }
 
   // v0.87.35: выбор audio tracks / subtitles. Если в video есть несколько —

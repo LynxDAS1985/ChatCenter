@@ -131,10 +131,33 @@ export function registerVideoPlayerHandler() {
         }, 200)
       })
       videoWindow.on('closed', () => { videoWindow = null })
-      // v0.87.38: console.log из video-player.html → в наши логи (LogViewer)
+      // v0.87.38: console-message — логи + обработка команд __CC_VIDEO__ (без preload!)
       videoWindow.webContents.on('console-message', (_, level, msg) => {
-        if (level >= 2) console.error('[video-window]', msg)
-        else console.log('[video-window]', msg)
+        if (typeof msg === 'string' && msg.startsWith('__CC_VIDEO__')) {
+          const [cmd, val] = msg.slice(13).split(':')
+          const on = val === '1'
+          if (cmd === 'pin') {
+            try { videoWindow?.setAlwaysOnTop(on, 'floating') } catch(_) {}
+            console.log('[video-window] pin:', on)
+          } else if (cmd === 'pip') {
+            try {
+              if (on) {
+                prevBounds = videoWindow.getBounds()
+                const d = screen.getPrimaryDisplay()
+                videoWindow.setBounds({ x: d.workAreaSize.width - 500, y: d.workAreaSize.height - 290, width: 480, height: 270 })
+                videoWindow.setAlwaysOnTop(true, 'floating')
+              } else {
+                if (prevBounds) videoWindow.setBounds(prevBounds)
+                videoWindow.setAlwaysOnTop(false)
+              }
+            } catch(_) {}
+            console.log('[video-window] pip:', on)
+          }
+        } else if (level >= 2) {
+          console.error('[video-window]', msg)
+        } else {
+          console.log('[video-window]', msg)
+        }
       })
       // v0.87.38: передаём src через query params — НЕ зависит от preload/IPC timing.
       // Раньше: loadFile → ready-to-show → send IPC → preload мог не загрузиться → src пуст.
