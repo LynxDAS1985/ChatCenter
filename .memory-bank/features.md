@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.36 (16 апреля 2026)
+## Текущая версия: v0.87.37 (17 апреля 2026)
 
 ## 🔴 СТАТУС ФИЧЕЙ v0.87.27–29 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
 
@@ -115,6 +115,36 @@
 ---
 
 ## Changelog
+
+### v0.87.37 (17 апреля 2026) — CRITICAL FIX: скролл к старым сообщениям сбрасывал watermark → unread=50
+
+**Пользовательский feedback v0.87.36**: «Прочитал все сообщения, было 0. После отмотки на старые — счётчик стал 50. Так в любом чате.»
+
+**Корневая причина (Ловушка 93)**:
+В MTProto `client.markAsRead(entity, maxId)` — УСТАНАВЛИВАЕТ (не увеличивает) read-watermark на maxId.
+При скролле вверх IntersectionObserver видел старые сообщения (id=100) → `readByVisibility` вызывался → через 1.5с `markRead(chatId, maxId=100, count)` → main: `client.markAsRead(entity, 100)` → сервер **СБРАСЫВАЛ** watermark с 150 до 100 → сообщения #101–#150 снова «непрочитанные» → `GetPeerDialogs` → `unreadCount=50` → бейдж растёт вместо уменьшения.
+
+**Фикс (ДВА уровня защиты)**:
+
+1. **Main-процесс** ([telegramHandler.js](main/native/telegramHandler.js)):
+   - `markReadMaxSent: Map<chatId, maxId>` — хранит максимальный id отправленный на сервер
+   - Перед `markAsRead`: проверяем `numMaxId < prev` → SKIP (логируем, не отправляем)
+   - Только если `numMaxId > prev` → отправляем + обновляем Map
+
+2. **Renderer** ([InboxMode.jsx](src/native/modes/InboxMode.jsx)):
+   - `maxEverSentRef = useRef(0)` — максимальный id отправленный в текущей сессии чата
+   - В `readByVisibility` timer: `if (lastReadMax <= maxEverSent) return` → не дёргаем IPC
+   - В `useForceReadAtBottom`: `if (lastId <= maxEverSent) return`
+   - При смене чата `maxEverSentRef.current = 0` (другой чат — другой watermark)
+
+**Результат**: watermark НИКОГДА не уменьшается. При скролле к старым — ничего не отправляется. При скролле к новым — продвигается.
+
+**Что проверить**:
+- [ ] Открой чат → пролистай до конца → unread=0
+- [ ] Прокрути ВВЕРХ к самым старым сообщениям → **unread ОСТАЁТСЯ 0** (не растёт!)
+- [ ] Прокрути снова вниз → тоже 0
+- [ ] Переключись на другой чат с непрочитанными → unread уменьшается нормально
+- [ ] Закрой-открой приложение → watermark сохранён корректно
 
 ### v0.87.36 (16 апреля 2026) — Inline видео + ⛶/📌 + Кэш сообщений + Shimmer + Fix стрелки ↓
 

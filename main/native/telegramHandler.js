@@ -190,14 +190,28 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
   })
 
   // v0.87.14: пометить чат прочитанным
+  // v0.87.37: GUARD — НИКОГДА не уменьшаем maxId! Если отправить markAsRead
+  // с maxId меньше предыдущего → сервер СБРАСЫВАЕТ watermark назад →
+  // все сообщения после этого id становятся "непрочитанными" → бейдж растёт.
+  // Это случалось при скролле к старым сообщениям (IntersectionObserver видел
+  // старые msg → readByVisibility → markRead с маленьким maxId).
+  const markReadMaxSent = new Map()  // chatId → максимальный отправленный maxId
   ipcMain.handle('tg:mark-read', async (_, { chatId, maxId }) => {
     try {
       if (!client) return { ok: false, error: 'Не подключён' }
       const entity = chatEntityMap.get(chatId)
       if (!entity) return { ok: false, error: 'Чат не найден в кэше' }
+      const numMaxId = maxId ? Number(maxId) : 0
+      // Guard: не уменьшаем watermark
+      const prev = markReadMaxSent.get(chatId) || 0
+      if (numMaxId > 0 && numMaxId < prev) {
+        log(`mark-read SKIP: chat=${chatId} maxId=${numMaxId} < prev=${prev} (не сбрасываем watermark)`)
+        return { ok: true, skipped: true }
+      }
+      if (numMaxId > prev) markReadMaxSent.set(chatId, numMaxId)
       try {
-        await client.markAsRead(entity, maxId ? Number(maxId) : undefined)
-        log(`mark-read OK: ${chatId} maxId=${maxId || 'all'}`)
+        await client.markAsRead(entity, numMaxId > 0 ? numMaxId : undefined)
+        log(`mark-read OK: ${chatId} maxId=${numMaxId || 'all'}`)
       } catch (e1) {
         if (entity.className === 'InputPeerChannel' || entity.channelId) {
           await client.invoke(new Api.channels.ReadHistory({ channel: entity, maxId: Number(maxId) || 0 }))

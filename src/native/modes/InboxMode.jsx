@@ -187,34 +187,40 @@ export default function InboxMode({ store }) {
   // при каждом рендере → накапливались параллельные таймеры → markRead вызывался с count=0
   // → локально unreadCount сбрасывался в 0 раньше чем должно).
   const readSeenRef = useRef(new Set())
-  const readBatchRef = useRef(new Set())  // batch для текущего debounce-окна
+  const readBatchRef = useRef(new Set())
   const lastReadMaxRef = useRef(0)
   const readTimerRef = useRef(null)
+  // v0.87.37: Guard — максимальный maxId который мы когда-либо отправляли.
+  // НИКОГДА не уменьшаем — иначе сервер сбрасывает watermark и все «после» непрочитаны.
+  const maxEverSentRef = useRef(0)
 
-  // Сброс при смене чата + отмена pending таймера
   useEffect(() => {
     readSeenRef.current = new Set()
     readBatchRef.current = new Set()
     lastReadMaxRef.current = 0
+    maxEverSentRef.current = 0  // при смене чата — обнуляем (другой чат)
     if (readTimerRef.current) { clearTimeout(readTimerRef.current); readTimerRef.current = null }
   }, [store.activeChatId])
 
   const readByVisibility = (msg) => {
     if (msg.isOutgoing) return
     const id = Number(msg.id)
-    if (readSeenRef.current.has(id)) return  // уже считали в этой сессии чата
+    if (readSeenRef.current.has(id)) return
     readSeenRef.current.add(id)
     readBatchRef.current.add(id)
     if (id > lastReadMaxRef.current) lastReadMaxRef.current = id
-    // Debounce 1.5с: один таймер на всё окно
     if (readTimerRef.current) return
     const chatAtStart = store.activeChatId
     readTimerRef.current = setTimeout(() => {
       readTimerRef.current = null
       if (!chatAtStart || chatAtStart !== store.activeChatId) { readBatchRef.current = new Set(); return }
       const count = readBatchRef.current.size
-      if (count === 0) return  // пустой batch — не дёргаем (фикс сброса в 0)
+      if (count === 0) return
       readBatchRef.current = new Set()
+      // v0.87.37: GUARD — не уменьшаем maxId (при скролле к старым сообщениям
+      // lastReadMax может быть маленьким → сервер сбрасывает watermark → бейдж растёт)
+      if (lastReadMaxRef.current <= maxEverSentRef.current) return
+      maxEverSentRef.current = lastReadMaxRef.current
       store.markRead(chatAtStart, lastReadMaxRef.current, count)
     }, 1500)
   }
@@ -266,6 +272,7 @@ export default function InboxMode({ store }) {
     activeMessages,
     activeUnread,
     markRead: store.markRead,
+    maxEverSentRef,
   })
 
   // v0.87.35: Стрелочка «к последнему непрочитанному» (как в Telegram).
