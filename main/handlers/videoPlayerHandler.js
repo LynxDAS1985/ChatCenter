@@ -50,7 +50,14 @@ export function registerVideoPlayerHandler() {
     try {
       if (!src) return { ok: false, error: 'no src' }
       const actualSrc = resolveVideoSrc(src)
-      console.log('[video:open] src:', src?.slice(0, 80), '→ actualSrc:', actualSrc?.slice(0, 80))
+      console.log('[video:open] === DEBUG ===')
+      console.log('[video:open] src:', src)
+      console.log('[video:open] actualSrc:', actualSrc)
+      console.log('[video:open] htmlPath:', getHtmlPath())
+      console.log('[video:open] htmlExists:', fs.existsSync(getHtmlPath()))
+      console.log('[video:open] preloadPath:', getPreloadPath())
+      console.log('[video:open] preloadExists:', fs.existsSync(getPreloadPath()))
+      console.log('[video:open] isDev:', isDev)
       if (videoWindow && !videoWindow.isDestroyed()) {
         videoWindow.webContents.send('video:set-src', { src: actualSrc, title, startTime, pip })
         videoWindow.focus()

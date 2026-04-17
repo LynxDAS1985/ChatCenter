@@ -99,13 +99,19 @@
   function startLoadWatchdog() {
     if (loadTimer) clearTimeout(loadTimer)
     loadTimer = setTimeout(() => {
-      if (video.readyState < 2 && errEl.style.display === 'none') {
+      if (!video.src || video.src === '' || video.src === window.location.href) {
+        errEl.textContent = `⚠️ Источник видео не установлен!\n\nquery src: ${querySrc || 'НЕТ'}\nwindow.video: ${typeof window.video}\nlocation.search: ${window.location.search?.slice(0,100) || 'пусто'}`
+        errEl.style.display = 'block'
+        console.error('[video-player] watchdog: video.src ПУСТ!', { querySrc, windowVideo: typeof window.video, search: window.location.search })
+      } else if (video.readyState < 2 && errEl.style.display === 'none') {
         errEl.textContent = `⚠️ Видео не загружается (readyState=${video.readyState}).\n\nURL: ${video.src?.slice(0, 120)}\n\nПопробуйте закрыть и открыть заново.`
         errEl.style.display = 'block'
         console.error('[video-player] watchdog: readyState=' + video.readyState, 'src=' + video.src)
       }
     }, 5000)
   }
+  // Запускаем watchdog сразу при загрузке страницы (если querySrc не сработал)
+  startLoadWatchdog()
   video.addEventListener('canplay', () => { if (loadTimer) { clearTimeout(loadTimer); loadTimer = null } })
 
   let pinned = false
@@ -213,8 +219,15 @@
 
   // v0.87.38: FALLBACK — если preload не загрузился, читаем src из query params
   // (loadFile передаёт их). Это гарантирует что видео заиграет даже без IPC.
+  // DEBUG: показываем что получили
+  console.log('[video-player] === DEBUG ===')
+  console.log('[video-player] location.href:', window.location.href)
+  console.log('[video-player] location.search:', window.location.search)
+  console.log('[video-player] window.video:', typeof window.video, window.video ? Object.keys(window.video) : 'undefined')
+
   const params = new URLSearchParams(window.location.search)
   const querySrc = params.get('src')
+  console.log('[video-player] querySrc:', querySrc?.slice(0, 120) || 'NULL')
   if (querySrc) {
     console.log('[video-player] init from query:', querySrc.slice(0, 120))
     video.src = querySrc
