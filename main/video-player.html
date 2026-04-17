@@ -112,22 +112,21 @@
   startLoadWatchdog()
   videoEl.addEventListener('canplay', () => { if (loadTimer) { clearTimeout(loadTimer); loadTimer = null } })
 
-  // v0.87.38: pin/pip — через console.log команды (main ловит через console-message).
-  // НЕ зависит от preload! Паттерн как в monitor.preload.cjs.
+  // v0.87.38: pin/pip через preload IPC (SyntaxError починен → window.video работает)
   let pinned = false
   const pinBtn = document.getElementById('pin')
-  if (pinBtn) pinBtn.onclick = () => {
+  if (pinBtn) pinBtn.onclick = async () => {
     pinned = !pinned
     pinBtn.classList.toggle('pin-active', pinned)
-    console.log('__CC_VIDEO__pin:' + (pinned ? '1' : '0'))
+    await window.video.togglePin(pinned)
   }
 
   let pipActive = false
   const pipBtn = document.getElementById('pip')
-  if (pipBtn) pipBtn.onclick = () => {
+  if (pipBtn) pipBtn.onclick = async () => {
     pipActive = !pipActive
     pipBtn.classList.toggle('pin-active', pipActive)
-    console.log('__CC_VIDEO__pip:' + (pipActive ? '1' : '0'))
+    await window.video.togglePip(pipActive)
   }
 
   // v0.87.35: выбор audio tracks / subtitles. Если в video есть несколько —
