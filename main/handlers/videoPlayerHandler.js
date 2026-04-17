@@ -87,7 +87,24 @@ export function registerVideoPlayerHandler() {
       videoWindow.webContents.once('did-finish-load', () => {
         setTimeout(() => {
           if (!videoWindow || videoWindow.isDestroyed()) return
+          // v0.87.38: ТРИ пути доставки src: query params + IPC + executeJavaScript.
+          // Если хотя бы один сработает — видео будет играть.
           videoWindow.webContents.send('video:set-src', { src: actualSrc, title, startTime, pip })
+          // Путь 3: ПРЯМОЙ inject через executeJavaScript — обходит preload и query
+          const injectJS = `
+            try {
+              var v = document.getElementById('v');
+              if (v && (!v.src || v.src === '' || v.src === location.href)) {
+                console.log('[video-inject] setting src directly');
+                v.src = ${JSON.stringify(actualSrc)};
+                v.play().catch(function(){});
+                var t = document.getElementById('title');
+                if (t) t.textContent = ${JSON.stringify(title || 'Видео')};
+                ${startTime ? `v.addEventListener('loadedmetadata', function() { v.currentTime = ${startTime}; }, {once:true});` : ''}
+              }
+            } catch(e) { console.error('[video-inject] error:', e); }
+          `
+          videoWindow.webContents.executeJavaScript(injectJS).catch(() => {})
           if (pip) {
             try {
               prevBounds = videoWindow.getBounds()
