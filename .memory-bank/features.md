@@ -250,7 +250,9 @@
   - **Попытка 6** (v0.87.38): `net.fetch(pathToFileURL)` + `bypassCSP:true` в protocol handler (из Electron docs + issue #38749). **ВИДЕО ЗАИГРАЛО!** Но кнопки (close/pin/pip/min/max) не работают — preload не загружается → `window.video` = undefined.
   - **Фикс кнопок** (v0.87.38): fallback `window.close()` для закрытия + Esc.
   - **ВАЖНО**: Пользователь тестировал на СТАРОЙ СБОРКЕ (логи от 09:33, последний билд 14:31). Все фиксы v0.87.38 (net.fetch, bypassCSP, дедупликация, fallback кнопок) НЕ были применены. Нужен полный перезапуск `npm run dev`.
-  - **Итого**: 6 попыток. Финальное решение: `net.fetch` + `bypassCSP` + fallback. Ожидает ПЕРЕЗАПУСКА + подтверждения.
+  - **Попытка 7** (v0.87.38): кнопки pin/pip не работали (preload не загружается). Фикс: console.log('__CC_VIDEO__pin:1') из HTML → main ловит через webContents.on('console-message') → setAlwaysOnTop/setBounds. Ожидает подтверждения.
+  - **Также**: R:ERROR в логах показывал UTC время (toISOString) вместо локального (toLocaleString).
+  - **Итого**: 7 попыток для видео-окна. Видео играет ✅, нативные кнопки close/min/max ✅, pin/pip через console-message.
 
 - ❌ **React warning «two children with the same key»** — `tg:new-message` дублировал msg уже имеющийся в массиве. Фикс v0.87.38: дедупликация по id. Ожидает подтверждения.
 
