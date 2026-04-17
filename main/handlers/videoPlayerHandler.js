@@ -54,21 +54,26 @@ export function registerVideoPlayerHandler() {
           preload: getPreloadPath(),
         },
       })
-      videoWindow.once('ready-to-show', () => {
-        videoWindow?.show()
-        videoWindow?.webContents.send('video:set-src', { src, title, startTime, pip })
-        // v0.87.36: если запрошен PiP сразу — активируем его
-        if (pip) {
-          try {
-            prevBounds = videoWindow.getBounds()
-            const primaryDisp = screen.getPrimaryDisplay()
-            const w = 480, h = 270
-            const x = primaryDisp.workAreaSize.width - w - 20
-            const y = primaryDisp.workAreaSize.height - h - 20
-            videoWindow.setBounds({ x, y, width: w, height: h })
-            videoWindow.setAlwaysOnTop(true, 'floating')
-          } catch(_) {}
-        }
+      videoWindow.once('ready-to-show', () => { videoWindow?.show() })
+      // v0.87.38: did-finish-load + 200мс delay — гарантирует что JS на странице
+      // выполнился и window.video.onSetSrc зарегистрирован.
+      // Раньше: ready-to-show → send → JS ещё не выполнился → IPC терялся → пустой плеер.
+      videoWindow.webContents.once('did-finish-load', () => {
+        setTimeout(() => {
+          if (!videoWindow || videoWindow.isDestroyed()) return
+          videoWindow.webContents.send('video:set-src', { src, title, startTime, pip })
+          if (pip) {
+            try {
+              prevBounds = videoWindow.getBounds()
+              const primaryDisp = screen.getPrimaryDisplay()
+              const w = 480, h = 270
+              const x = primaryDisp.workAreaSize.width - w - 20
+              const y = primaryDisp.workAreaSize.height - h - 20
+              videoWindow.setBounds({ x, y, width: w, height: h })
+              videoWindow.setAlwaysOnTop(true, 'floating')
+            } catch(_) {}
+          }
+        }, 200)
       })
       videoWindow.on('closed', () => { videoWindow = null })
       await videoWindow.loadFile(getHtmlPath())
