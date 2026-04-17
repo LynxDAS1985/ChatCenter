@@ -92,7 +92,8 @@ export function registerVideoPlayerHandler() {
           // v0.87.38: ТРИ пути доставки src: query params + IPC + executeJavaScript.
           // Если хотя бы один сработает — видео будет играть.
           videoWindow.webContents.send('video:set-src', { src: actualSrc, title, startTime, pip })
-          // Путь 3: ПРЯМОЙ inject через executeJavaScript — обходит preload и query
+          // Путь 3: inject через executeJavaScript — обходит preload
+          const winId = videoWindow.id
           const injectJS = `
             try {
               var v = document.getElementById('v');
@@ -100,10 +101,10 @@ export function registerVideoPlayerHandler() {
                 console.log('[video-inject] setting src directly');
                 v.src = ${JSON.stringify(actualSrc)};
                 v.play().catch(function(){});
-                var t = document.getElementById('title');
-                if (t) t.textContent = ${JSON.stringify(title || 'Видео')};
-                ${startTime ? `v.addEventListener('loadedmetadata', function() { v.currentTime = ${startTime}; }, {once:true});` : ''}
               }
+              var t = document.getElementById('title');
+              if (t) t.textContent = ${JSON.stringify(title || 'Видео')};
+              ${startTime ? `v.addEventListener('loadedmetadata', function() { v.currentTime = ${startTime}; }, {once:true});` : ''}
             } catch(e) { console.error('[video-inject] error:', e); }
           `
           videoWindow.webContents.executeJavaScript(injectJS).catch(() => {})

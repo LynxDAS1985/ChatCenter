@@ -204,12 +204,23 @@
     audioBtn.style.display = hasAudio ? '' : 'none'
     subBtn.style.display = hasSub ? '' : 'none'
   })
-  document.getElementById('close').onclick = () => window.video?.close()
-  document.getElementById('min').onclick = () => window.video?.minimize()
-  document.getElementById('max').onclick = () => window.video?.maximize()
+  // v0.87.38: fallback — если preload не загрузился, используем window.close() напрямую
+  document.getElementById('close').onclick = () => {
+    if (window.video?.close) window.video.close()
+    else window.close()
+  }
+  document.getElementById('min').onclick = () => {
+    if (window.video?.minimize) window.video.minimize()
+  }
+  document.getElementById('max').onclick = () => {
+    if (window.video?.maximize) window.video.maximize()
+  }
 
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') window.video?.close()
+    if (e.key === 'Escape') {
+      if (window.video?.close) window.video.close()
+      else window.close()
+    }
     if (e.key === ' ' || e.key === 'k') { e.preventDefault(); video.paused ? video.play() : video.pause() }
     if (e.key === 'ArrowRight') { video.currentTime = Math.min(video.duration || 0, video.currentTime + 5) }
     if (e.key === 'ArrowLeft') { video.currentTime = Math.max(0, video.currentTime - 5) }

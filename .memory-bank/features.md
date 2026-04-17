@@ -247,7 +247,9 @@
   - **Почему watchdog не сработал**: проверял `readyState < 2` но НЕ проверял `!video.src`. Пустой src = не ошибка по мнению браузера.
   - **Попытка 4** (v0.87.38): loadFile({query: {src}}) + URLSearchParams fallback. НЕ ПОМОГЛО — src всё равно не доходит.
   - **Попытка 5** (v0.87.38): `executeJavaScript` прямой inject `v.src = '...'` после did-finish-load. Обходит preload, query, IPC — прямо в DOM. Ожидает подтверждения.
-  - **Итого**: 5 попыток. Три пути доставки src одновременно (query + IPC + executeJS). Если хоть один сработает — видео заиграет.
+  - **Попытка 6** (v0.87.38): `net.fetch(pathToFileURL)` + `bypassCSP:true` в protocol handler (из Electron docs + issue #38749). **ВИДЕО ЗАИГРАЛО!** Но кнопки (close/pin/pip/min/max) не работают — preload не загружается → `window.video` = undefined.
+  - **Фикс кнопок** (v0.87.38): fallback `window.close()` для закрытия + Esc, остальные через preload (если доступен). Ожидает подтверждения.
+  - **Итого**: 6 попыток для видео-окна. Финальное решение: `net.fetch` + `bypassCSP` + fallback кнопок.
 
 - ❌ **React warning «two children with the same key»** — `tg:new-message` дублировал msg уже имеющийся в массиве. Фикс v0.87.38: дедупликация по id. Ожидает подтверждения.
 
