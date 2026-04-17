@@ -78,7 +78,7 @@ export function registerVideoPlayerHandler() {
         titleBarOverlay: {
           color: '#0a0a0a',
           symbolColor: '#ffffff',
-          height: 36,
+          height: 24,
         },
         resizable: true, movable: true,
         minimizable: true, maximizable: true, fullscreenable: true,

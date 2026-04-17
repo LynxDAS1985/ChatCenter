@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.38 (17 апреля 2026)
+## Текущая версия: v0.87.39 (17 апреля 2026)
 
 ## 🔴 СТАТУС ФИЧЕЙ v0.87.27–29 — НЕ ПОМЕЧАТЬ СДЕЛАННЫМИ ПОКА ПОЛЬЗОВАТЕЛЬ НЕ ПОДТВЕРДИТ!
 
@@ -115,6 +115,47 @@
 ---
 
 ## Changelog
+
+### v0.87.39 (17 апреля 2026) — Тонкий header 24px + полная история решения видео-окна
+
+**Вариант C: тонкий 24px header** с нативными кнопками Windows, видео на всю площадь.
+- `titleBarOverlay: { height: 24 }` (было 36)
+- toolbar встроен в titlebar (position: fixed, top: 0, height: 24px)
+- Видео `height: calc(100vh - 24px)` (было 100% - 36px)
+- Кнопки toolbar: padding 1px 6px, font-size 12px (компактнее)
+- Title: flex: 1, app-region: drag (перетаскивание за заголовок)
+- 📌 pin убрана (не работала), оставлена ◰ PiP
+
+**ПОЛНАЯ ИСТОРИЯ РЕШЁННЫХ ПРОБЛЕМ v0.87.26–39:**
+
+| Проблема | Причина | Решение | Версия |
+|---|---|---|---|
+| Разделители дат не видны | `rgba(255,255,255,0.04)` на чёрном | Акцентный фон + линии по бокам | v0.87.26 |
+| Фото одиночное крохотное | bubble maxWidth 65% схлопывался | minWidth: 280, maxWidth: min(420,65%) | v0.87.26 |
+| Счётчик непрочитанных (readByVisibility._timer) | Property на пересоздаваемой функции | useRef для таймера | v0.87.26 |
+| Rescan unread только 50 чатов | getDialogs limit:50 без пагинации | fetchAllUnreadUpdates 5×100 | v0.87.26 |
+| Named export Helpers not found | CJS пакет telegram, named import | import from 'telegram/Utils.js' | v0.87.25 |
+| Reply-клик scroll | Не было | scrollIntoView + жёлтая вспышка | v0.87.27 |
+| Аватарка в группе чужих | Не было | .native-msg-avatar 32×32 | v0.87.27 |
+| PhotoViewer overlay вместо окна | React overlay на весь экран | BrowserWindow frameless | v0.87.28 |
+| lastMessage «—» для медиа | d.message.message пустой | messagePreview() с типами | v0.87.28 |
+| Медиа-альбомы по очереди | Нет groupedId группировки | collapseAlbums + MediaAlbum grid | v0.87.29 |
+| Скролл при открытии чата | Не скроллил к непрочитанному | useInitialScroll (Вариант A) | v0.87.29 |
+| Жёлтая подсветка last-read | Не было | CSS native-last-read-glow 3.5с | v0.87.29 |
+| CI snapshots TZ mismatch | getHours = UTC в CI, MSK локально | vitest.setup.js forceUTC | v0.87.32 |
+| Video-альбомы не грузились | thumb=false для video = полный файл | thumb=true для video (постер) | v0.87.33 |
+| Unread не уменьшался (альбомы) | onVisible только для firstMsg | IntersectionObserver все msgs | v0.87.33 |
+| IntersectionObserver threshold 0.5 | Короткие bubble не пересекали | threshold: 0.15 + forceReadAtBottom | v0.87.34 |
+| Видео inline не было | Отдельное окно (не в чате) | VideoTile inline `<video>` + ⛶ | v0.87.36 |
+| Skeleton при загрузке не было | «Нет сообщений» вместо загрузки | MessageSkeleton + shimmer | v0.87.36 |
+| Стрелка ↓ уезжала при скролле | position:absolute в scroll-div | wrapper relative, кнопка снаружи | v0.87.36 |
+| Скролл к старым = unread растёт | markAsRead УСТАНАВЛИВАЕТ watermark | maxEverSentRef guard (никогда не уменьшаем) | v0.87.37 |
+| Unread в списке устаревший | tg:chats заменял массив | merge Math.max(ts) + syncPerChat | v0.87.38 |
+| Видео-окно пустой плеер | readFileSync блокировал / cc-media не работал | net.fetch + bypassCSP | v0.87.38 |
+| Кнопки видео-окна не работали | const video конфликт с window.video от preload | const videoEl | v0.87.38 |
+| Время в логах UTC | toISOString / getHours | toLocaleString('sv-SE') | v0.87.38 |
+| React duplicate keys | tg:new-message без дедупликации | existing.some(m.id) | v0.87.38 |
+| Толстая чёрная рамка видео | titleBarOverlay height:36 + margin | height:24 + toolbar в titlebar | v0.87.39 |
 
 ### v0.87.38 (17 апреля 2026) — FIX видео в отдельном окне + убрана 📌 из inline + FIX сортировка чатов
 
