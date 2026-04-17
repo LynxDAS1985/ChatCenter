@@ -6,18 +6,107 @@ import { useEffect, useRef, useState } from 'react'
 import FormattedText from './FormattedText.jsx'
 import VideoTile from './VideoTile.jsx'
 
+// v0.87.39: Постер видео для альбома (как в Telegram Desktop).
+// objectFit: cover, ▶ по центру, duration в углу. Клик → скачивание + отдельное окно.
+function VideoPosterTile({ m, chatId, downloadMedia }) {
+  const [posterUrl, setPosterUrl] = useState(null)
+  const [downloading, setDownloading] = useState(false)
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    downloadMedia?.(chatId, m.id, true).then(r => {
+      if (!cancelled && r?.ok) setPosterUrl(r.path)
+    })
+    return () => { cancelled = true }
+  }, [m.id])
+
+  useEffect(() => {
+    if (!downloading) return
+    const sub = window.api?.on?.('tg:media-progress', (data) => {
+      if (data.chatId !== chatId || String(data.messageId) !== String(m.id)) return
+      if (data.total > 0) setProgress(Math.min(1, data.bytes / data.total))
+    })
+    return () => { try { sub?.() } catch(_) {} }
+  }, [downloading])
+
+  const handleClick = async () => {
+    if (downloading) return
+    setDownloading(true); setProgress(0)
+    try {
+      const r = await window.api?.invoke('tg:download-video', { chatId, messageId: m.id })
+      if (r?.ok) {
+        await window.api?.invoke('video:open', {
+          src: r.path, title: m.mediaPreview || 'Видео',
+          width: m.mediaWidth || 0, height: m.mediaHeight || 0,
+        })
+      }
+    } finally { setDownloading(false); setProgress(0) }
+  }
+
+  const dur = m.duration ? (m.duration >= 3600
+    ? `${Math.floor(m.duration/3600)}:${String(Math.floor(m.duration%3600/60)).padStart(2,'0')}:${String(Math.round(m.duration%60)).padStart(2,'0')}`
+    : `${Math.floor(m.duration/60)}:${String(Math.round(m.duration%60)).padStart(2,'0')}`) : ''
+
+  return (
+    <div onClick={handleClick} style={{
+      position: 'relative', width: '100%', height: '100%', cursor: 'pointer',
+      background: m.strippedThumb ? `url("${m.strippedThumb}") center/cover no-repeat` : 'rgba(0,0,0,0.3)',
+    }}>
+      {posterUrl && <img src={posterUrl} alt="" style={{
+        position: 'absolute', inset: 0, width: '100%', height: '100%',
+        objectFit: 'cover', animation: 'native-fadein 0.25s ease',
+      }} />}
+      {!downloading && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.15)',
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+            border: '2px solid rgba(255,255,255,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontSize: 20, paddingLeft: 3,
+          }}>▶</div>
+        </div>
+      )}
+      {downloading && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 11,
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%',
+            border: '3px solid rgba(255,255,255,0.25)', borderTopColor: '#fff',
+            animation: 'native-spin 0.9s linear infinite',
+          }} />
+          <div style={{ marginTop: 6 }}>{Math.round(progress * 100)}%</div>
+        </div>
+      )}
+      {dur && !downloading && (
+        <div style={{
+          position: 'absolute', bottom: 6, left: 6,
+          background: 'rgba(0,0,0,0.6)', color: '#fff',
+          fontSize: 11, padding: '2px 6px', borderRadius: 4,
+        }}>{dur}</div>
+      )}
+    </div>
+  )
+}
+
 function PhotoTile({ m, chatId, downloadMedia, onClick, registerSrc, idx }) {
   const [url, setUrl] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
 
   // v0.87.34: video — используем VideoTile (с ▶, прогрессом, отдельным player окном)
+  // v0.87.39: В АЛЬБОМЕ видео = постер + ▶ (как в Telegram Desktop).
+  // НЕ inline <video controls> — он раздувает ячейку и обрезается.
+  // Клик → скачивание + отдельное окно.
   if (m.mediaType === 'video') {
-    return (
-      <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
-        <VideoTile m={m} chatId={chatId} inAlbum />
-      </div>
-    )
+    return <VideoPosterTile m={m} chatId={chatId} downloadMedia={downloadMedia} />
   }
 
   useEffect(() => {
@@ -103,14 +192,11 @@ export default function MediaAlbum({ album, chatId, downloadMedia, onPhotoOpen }
   const n = all.length
   const [srcs, registerSrc] = useAlbumSrcs(n)
 
-  // v0.87.39: если в альбоме есть хотя бы одно видео → 1 колонка (видео с controls
-  // не влезает в 2-колоночный grid — обрезается). Для фото-only → сетка.
+  // v0.87.39: сетка для ВСЕХ (фото + видео-постеры). Видео показывается как постер
+  // с objectFit:cover (как в Telegram Desktop), не как <video controls>.
   const hasVideo = all.some(m => m.mediaType === 'video')
   let gridStyle
-  if (hasVideo) {
-    // Видео-альбом: каждое на всю ширину, не обрезается
-    gridStyle = { gridTemplateColumns: '1fr' }
-  } else if (n === 1) {
+  if (n === 1) {
     gridStyle = { gridTemplateColumns: '1fr' }
   } else if (n === 2) {
     gridStyle = { gridTemplateColumns: 'repeat(2, 1fr)', gridAutoRows: '1fr' }
@@ -122,8 +208,8 @@ export default function MediaAlbum({ album, chatId, downloadMedia, onPhotoOpen }
     gridStyle = { gridTemplateColumns: 'repeat(3, 1fr)', gridAutoRows: '1fr' }
   }
 
-  const rows = hasVideo ? n : (n <= 1 ? 1 : n === 2 ? 1 : n === 3 ? 2 : n === 4 ? 2 : Math.ceil(n / 3))
-  const minHeight = hasVideo ? 0 : Math.min(520, rows * 160)
+  const rows = n <= 1 ? 1 : n === 2 ? 1 : n === 3 ? 2 : n === 4 ? 2 : Math.ceil(n / 3)
+  const minHeight = Math.min(520, rows * 160)
 
   const textMsg = album.msgs.find(m => m.text) || album.msgs[0]
 
@@ -149,9 +235,9 @@ export default function MediaAlbum({ album, chatId, downloadMedia, onPhotoOpen }
     }}>
       {all.map((m, i) => (
         <div key={m.id} style={
-          !hasVideo && n === 3 && i === 0 ? { gridArea: 'a' }
-          : !hasVideo && n === 3 && i === 1 ? { gridArea: 'b' }
-          : !hasVideo && n === 3 && i === 2 ? { gridArea: 'c' }
+          n === 3 && i === 0 ? { gridArea: 'a' }
+          : n === 3 && i === 1 ? { gridArea: 'b' }
+          : n === 3 && i === 2 ? { gridArea: 'c' }
           : undefined
         }>
           <PhotoTile

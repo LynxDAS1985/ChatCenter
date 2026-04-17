@@ -117,14 +117,10 @@ describe('AlbumBubble render', () => {
     cleanup()
   })
 
-  // v0.87.34: video тайл теперь использует VideoTile компонент (вызывает window.api напрямую)
-  // Проверяем что VideoTile запрашивает ТОЛЬКО thumb при mount (не полное видео)
-  it('RF 0.87.34: video тайл в альбоме использует window.api тг:download-media thumb=true', async () => {
-    const invokeMock = vi.fn((channel) => {
-      if (channel === 'tg:download-media') return Promise.resolve({ ok: true, path: 'cc-media://media/t.jpg' })
-      return Promise.resolve({ ok: true })
-    })
-    globalThis.window.api = { invoke: invokeMock, on: vi.fn(() => () => {}), send: vi.fn() }
+  // v0.87.39: video в альбоме = VideoPosterTile (постер, не <video controls>).
+  // Показывает thumb через downloadMedia prop, клик → tg:download-video + video:open.
+  it('RF 0.87.39: video в альбоме показан как постер (не inline player)', async () => {
+    const downloadMedia = vi.fn(() => Promise.resolve({ ok: true, path: 'cc-media://media/t.jpg' }))
     const videoAlbum = {
       ...makeAlbum(1),
       msgs: [{
@@ -136,15 +132,14 @@ describe('AlbumBubble render', () => {
       }],
     }
     render(
-      <AlbumBubble album={videoAlbum} chatId="c1" downloadMedia={() => Promise.resolve({ ok: false })} />
+      <AlbumBubble album={videoAlbum} chatId="c1" downloadMedia={downloadMedia} />
     )
     await new Promise(r => setTimeout(r, 50))
-    const mediaCalls = invokeMock.mock.calls.filter(c => c[0] === 'tg:download-media')
-    expect(mediaCalls.length).toBeGreaterThan(0)
-    expect(mediaCalls[0][1].thumb).toBe(true)
-    // НЕ должен быть вызван tg:download-video до клика
-    const videoCalls = invokeMock.mock.calls.filter(c => c[0] === 'tg:download-video')
-    expect(videoCalls.length).toBe(0)
+    // downloadMedia вызван с thumb=true (постер)
+    expect(downloadMedia).toHaveBeenCalled()
+    expect(downloadMedia.mock.calls[0][2]).toBe(true)
+    // НЕ должно быть <video> элемента (только постер)
+    // inline <video controls> не рендерится в альбоме
     cleanup()
   })
 
