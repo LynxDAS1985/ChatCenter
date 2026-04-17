@@ -85,11 +85,28 @@
   const errEl = document.getElementById('err')
   const titleEl = document.getElementById('title')
 
-  video.addEventListener('error', () => {
-    errEl.textContent = '⚠️ Не удалось проиграть видео. Возможно, повреждён файл или неподдерживаемый формат.'
+  video.addEventListener('error', (e) => {
+    const code = video.error?.code || '?'
+    const msg = video.error?.message || ''
+    errEl.textContent = `⚠️ Ошибка видео (код ${code}): ${msg || 'файл не найден или формат не поддерживается'}\n\nURL: ${video.src?.slice(0, 120)}`
     errEl.style.display = 'block'
+    console.error('[video-player] error:', code, msg, video.src)
   })
   video.addEventListener('loadedmetadata', () => { errEl.style.display = 'none' })
+
+  // v0.87.38: если через 5 сек видео не начало играть и нет ошибки — показать предупреждение
+  let loadTimer = null
+  function startLoadWatchdog() {
+    if (loadTimer) clearTimeout(loadTimer)
+    loadTimer = setTimeout(() => {
+      if (video.readyState < 2 && errEl.style.display === 'none') {
+        errEl.textContent = `⚠️ Видео не загружается (readyState=${video.readyState}).\n\nURL: ${video.src?.slice(0, 120)}\n\nПопробуйте закрыть и открыть заново.`
+        errEl.style.display = 'block'
+        console.error('[video-player] watchdog: readyState=' + video.readyState, 'src=' + video.src)
+      }
+    }, 5000)
+  }
+  video.addEventListener('canplay', () => { if (loadTimer) { clearTimeout(loadTimer); loadTimer = null } })
 
   let pinned = false
   const pinBtn = document.getElementById('pin')
@@ -196,7 +213,9 @@
 
   if (window.video?.onSetSrc) {
     window.video.onSetSrc(({ src, title, startTime, pip }) => {
+      console.log('[video-player] set src:', src?.slice(0, 120))
       video.src = src
+      startLoadWatchdog()
       if (title) titleEl.textContent = title
       // v0.87.36: продолжить с указанной секунды (из inline-плеера в чате)
       if (typeof startTime === 'number' && startTime > 0) {

@@ -50,6 +50,7 @@ export function registerVideoPlayerHandler() {
     try {
       if (!src) return { ok: false, error: 'no src' }
       const actualSrc = resolveVideoSrc(src)
+      console.log('[video:open] src:', src?.slice(0, 80), '→ actualSrc:', actualSrc?.slice(0, 80))
       if (videoWindow && !videoWindow.isDestroyed()) {
         videoWindow.webContents.send('video:set-src', { src: actualSrc, title, startTime, pip })
         videoWindow.focus()
