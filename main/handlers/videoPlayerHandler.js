@@ -95,7 +95,16 @@ export function registerVideoPlayerHandler() {
         }, 200)
       })
       videoWindow.on('closed', () => { videoWindow = null })
-      await videoWindow.loadFile(getHtmlPath())
+      // v0.87.38: передаём src через query params — НЕ зависит от preload/IPC timing.
+      // Раньше: loadFile → ready-to-show → send IPC → preload мог не загрузиться → src пуст.
+      await videoWindow.loadFile(getHtmlPath(), {
+        query: {
+          src: actualSrc,
+          title: title || 'Видео',
+          startTime: String(startTime || 0),
+          pip: pip ? '1' : '',
+        }
+      })
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })

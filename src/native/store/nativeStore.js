@@ -136,6 +136,9 @@ export default function useNativeStore() {
     })
 
     addHandler('tg:new-message', ({ chatId, message }) => {
+      // v0.87.38: дедупликация — если msg с таким id уже есть → обновляем, не дублируем.
+      // Без этого: tg:messages загрузил 50 msg → tg:new-message пришёл для уже имеющегося
+      // → дубль → React warning «Encountered two children with the same key».
       // v0.87.28: превью медиа в списке чатов
       const mediaPreview = message.mediaType === 'photo' ? '🖼 Фото'
         : message.mediaType === 'video' ? '📹 Видео'
@@ -147,19 +150,26 @@ export default function useNativeStore() {
         : message.mediaType === 'poll' ? '📊 Опрос'
         : message.mediaType ? '📎 вложение' : ''
       const preview = message.text || mediaPreview || ''
-      setState(s => ({
-        ...s,
-        messages: { ...s.messages, [chatId]: [...(s.messages[chatId] || []), message] },
-        // v0.87.14: обновляем lastMessage/unread в чате
-        chats: s.chats.map(c => c.id === chatId
-          ? {
-              ...c,
-              lastMessage: preview,
-              lastMessageTs: message.timestamp,
-              unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
-            }
-          : c)
-      }))
+      setState(s => {
+        const existing = s.messages[chatId] || []
+        // Дедупликация: если msg с таким id уже есть — обновляем на месте
+        const isDup = existing.some(m => m.id === message.id)
+        const nextMsgs = isDup
+          ? existing.map(m => m.id === message.id ? message : m)
+          : [...existing, message]
+        return {
+          ...s,
+          messages: { ...s.messages, [chatId]: nextMsgs },
+          chats: s.chats.map(c => c.id === chatId
+            ? {
+                ...c,
+                lastMessage: preview,
+                lastMessageTs: message.timestamp,
+                unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
+              }
+            : c)
+        }
+      })
       // v0.87.14: Toast через MessengerRibbon (только входящие, не для активного чата)
       if (!message.isOutgoing && stateRef.current.activeChatId !== chatId) {
         const chat = stateRef.current.chats.find(c => c.id === chatId)

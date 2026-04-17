@@ -211,9 +211,25 @@
     if (e.key === 'f') { if (document.fullscreenElement) document.exitFullscreen(); else video.requestFullscreen() }
   })
 
+  // v0.87.38: FALLBACK — если preload не загрузился, читаем src из query params
+  // (loadFile передаёт их). Это гарантирует что видео заиграет даже без IPC.
+  const params = new URLSearchParams(window.location.search)
+  const querySrc = params.get('src')
+  if (querySrc) {
+    console.log('[video-player] init from query:', querySrc.slice(0, 120))
+    video.src = querySrc
+    if (params.get('title')) titleEl.textContent = params.get('title')
+    const st = parseFloat(params.get('startTime'))
+    if (st > 0) video.addEventListener('loadedmetadata', () => { video.currentTime = st }, { once: true })
+    if (params.get('pip') === '1') { pipActive = true; pipBtn.classList.add('pin-active') }
+    startLoadWatchdog()
+    video.play().catch(() => {})
+  }
+
+  // IPC path — для reuse-case (переключение видео в уже открытом окне)
   if (window.video?.onSetSrc) {
     window.video.onSetSrc(({ src, title, startTime, pip }) => {
-      console.log('[video-player] set src:', src?.slice(0, 120))
+      console.log('[video-player] set src via IPC:', src?.slice(0, 120))
       video.src = src
       startLoadWatchdog()
       if (title) titleEl.textContent = title
