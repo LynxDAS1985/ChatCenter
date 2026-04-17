@@ -16,7 +16,8 @@ export default function FormattedText({ text, entities = [] }) {
       parts.push(<AutoLinks key={`t${cursor}`} text={text.slice(cursor, e.offset)} />)
     }
     const chunk = text.slice(e.offset, e.offset + e.length)
-    parts.push(<FormatSpan key={`e${e.offset}`} entity={e} text={chunk} />)
+    // v0.87.39: уникальный key — offset+type (раньше только offset → дубли при bold+italic на одном месте)
+    parts.push(<FormatSpan key={`e${e.offset}_${e.type}`} entity={e} text={chunk} />)
     cursor = e.offset + e.length
   }
   if (cursor < text.length) {

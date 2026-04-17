@@ -14,8 +14,8 @@ function PhotoTile({ m, chatId, downloadMedia, onClick, registerSrc, idx }) {
   // v0.87.34: video — используем VideoTile (с ▶, прогрессом, отдельным player окном)
   if (m.mediaType === 'video') {
     return (
-      <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-        <VideoTile m={m} chatId={chatId} />
+      <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+        <VideoTile m={m} chatId={chatId} inAlbum />
       </div>
     )
   }

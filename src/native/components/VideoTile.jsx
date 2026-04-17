@@ -24,7 +24,8 @@ function formatSize(bytes) {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' ГБ'
 }
 
-export default function VideoTile({ m, chatId }) {
+// inAlbum — если true, используем компактный режим без minHeight (для grid-ячейки)
+export default function VideoTile({ m, chatId, inAlbum }) {
   const [posterUrl, setPosterUrl] = useState(null)
   const [videoSrc, setVideoSrc] = useState(null)
   const [playing, setPlaying] = useState(false)
@@ -123,8 +124,8 @@ export default function VideoTile({ m, chatId }) {
           position: 'relative',
           width: '100%',
           aspectRatio: aspect,
-          minHeight: 180,
-          maxHeight: 420,
+          minHeight: inAlbum ? 0 : 180,
+          maxHeight: inAlbum ? '100%' : 420,
           borderRadius: 8,
           overflow: 'hidden',
           background: '#000',
