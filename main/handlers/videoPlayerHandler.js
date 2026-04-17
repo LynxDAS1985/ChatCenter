@@ -1,7 +1,7 @@
 // v0.87.34: Отдельное BrowserWindow для проигрывания видео.
 // Открывается через IPC 'video:open' { src } — где src это cc-media://video/... URL
 // (cc-media protocol с Range поддержкой позволяет <video> стримить и перематывать).
-import { ipcMain, BrowserWindow, screen } from 'electron'
+import { ipcMain, BrowserWindow, screen, app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -29,11 +29,29 @@ export function registerVideoPlayerHandler() {
   // v0.87.35: сохраняем bounds перед PiP чтобы потом восстановить
   let prevBounds = null
 
+  // v0.87.38: cc-media:// → file:// для отдельного окна.
+  // cc-media:// работает в renderer (http://localhost:5173) но НЕ работает
+  // в BrowserWindow с file:// origin (loadFile) для <video src>.
+  function resolveVideoSrc(src) {
+    if (!src || !src.startsWith('cc-media://')) return src
+    try {
+      const u = new URL(src)
+      const filename = decodeURIComponent(u.pathname.slice(1))
+      const mediaDir = path.join(app.getPath('userData'), 'tg-media')
+      const filePath = path.join(mediaDir, filename)
+      if (fs.existsSync(filePath)) {
+        return 'file:///' + encodeURI(filePath.replace(/\\/g, '/'))
+      }
+    } catch(_) {}
+    return src
+  }
+
   ipcMain.handle('video:open', async (_, { src, title, startTime, pip }) => {
     try {
       if (!src) return { ok: false, error: 'no src' }
+      const actualSrc = resolveVideoSrc(src)
       if (videoWindow && !videoWindow.isDestroyed()) {
-        videoWindow.webContents.send('video:set-src', { src, title, startTime, pip })
+        videoWindow.webContents.send('video:set-src', { src: actualSrc, title, startTime, pip })
         videoWindow.focus()
         return { ok: true, reused: true }
       }
@@ -61,7 +79,7 @@ export function registerVideoPlayerHandler() {
       videoWindow.webContents.once('did-finish-load', () => {
         setTimeout(() => {
           if (!videoWindow || videoWindow.isDestroyed()) return
-          videoWindow.webContents.send('video:set-src', { src, title, startTime, pip })
+          videoWindow.webContents.send('video:set-src', { src: actualSrc, title, startTime, pip })
           if (pip) {
             try {
               prevBounds = videoWindow.getBounds()
