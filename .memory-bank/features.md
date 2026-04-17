@@ -253,7 +253,8 @@
   - **Попытка 7** (v0.87.38): кнопки pin/pip не работали (preload не загружается). Фикс: console.log('__CC_VIDEO__pin:1') из HTML → main ловит через webContents.on('console-message') → setAlwaysOnTop/setBounds. Ожидает подтверждения.
   - **Также**: R:ERROR в логах показывал UTC время (toISOString) вместо локального (toLocaleString).
   - **КОРЕНЬ ПРОБЛЕМЫ НАЙДЕН** (попытка 8): preload через `contextBridge.exposeInMainWorld('video', {...})` создавал `window.video`. А в `<script>` HTML было `const video = document.getElementById('v')` — КОНФЛИКТ имён! `SyntaxError: Identifier 'video' has already been declared` → весь JS крашился → ни кнопки, ни src, ни watchdog не работали. **Фикс**: переименовал `const video` → `const videoEl` по всему HTML. Preload РАБОТАЛ всё это время!
-  - **Итого**: 8 попыток. Все 7 предыдущих фиксов (net.fetch, bypassCSP, query params, executeJS, titleBarOverlay, console-message, fallback кнопок) были ПРАВИЛЬНЫМИ и нужными — но ни один не мог сработать из-за SyntaxError на строке 82.
+  - **Попытка 9** (v0.87.38): кнопки вернули на preload IPC. ◰ PiP РАБОТАЕТ ✅. 📌 pin НЕ работает — убрана из UI (пользователь: «убери совсем»).
+  - **Итого v0.87.38**: видео ✅, нативные close/min/max ✅, ◰ PiP ✅, 📌 убрана.
 
 - ❌ **React warning «two children with the same key»** — `tg:new-message` дублировал msg уже имеющийся в массиве. Фикс v0.87.38: дедупликация по id. Ожидает подтверждения.
 

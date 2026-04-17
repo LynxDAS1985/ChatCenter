@@ -68,7 +68,6 @@
   <video id="v" controls preload="auto" playsinline></video>
   <div id="err" class="error"></div>
   <div class="toolbar">
-    <button id="pin" title="Закрепить поверх всех окон">📌</button>
     <button id="pip" title="Мини-плеер в углу (поверх всех окон)">◰</button>
     <button id="audio-btn" title="Аудио-дорожка" style="display:none">🎧</button>
     <button id="sub-btn" title="Субтитры" style="display:none">CC</button>
@@ -111,15 +110,6 @@
   // Запускаем watchdog сразу при загрузке страницы (если querySrc не сработал)
   startLoadWatchdog()
   videoEl.addEventListener('canplay', () => { if (loadTimer) { clearTimeout(loadTimer); loadTimer = null } })
-
-  // v0.87.38: pin/pip через preload IPC (SyntaxError починен → window.video работает)
-  let pinned = false
-  const pinBtn = document.getElementById('pin')
-  if (pinBtn) pinBtn.onclick = async () => {
-    pinned = !pinned
-    pinBtn.classList.toggle('pin-active', pinned)
-    await window.video.togglePin(pinned)
-  }
 
   let pipActive = false
   const pipBtn = document.getElementById('pip')
