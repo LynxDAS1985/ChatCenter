@@ -252,7 +252,8 @@
   - **ВАЖНО**: Пользователь тестировал на СТАРОЙ СБОРКЕ (логи от 09:33, последний билд 14:31). Все фиксы v0.87.38 (net.fetch, bypassCSP, дедупликация, fallback кнопок) НЕ были применены. Нужен полный перезапуск `npm run dev`.
   - **Попытка 7** (v0.87.38): кнопки pin/pip не работали (preload не загружается). Фикс: console.log('__CC_VIDEO__pin:1') из HTML → main ловит через webContents.on('console-message') → setAlwaysOnTop/setBounds. Ожидает подтверждения.
   - **Также**: R:ERROR в логах показывал UTC время (toISOString) вместо локального (toLocaleString).
-  - **Итого**: 7 попыток для видео-окна. Видео играет ✅, нативные кнопки close/min/max ✅, pin/pip через console-message.
+  - **КОРЕНЬ ПРОБЛЕМЫ НАЙДЕН** (попытка 8): preload через `contextBridge.exposeInMainWorld('video', {...})` создавал `window.video`. А в `<script>` HTML было `const video = document.getElementById('v')` — КОНФЛИКТ имён! `SyntaxError: Identifier 'video' has already been declared` → весь JS крашился → ни кнопки, ни src, ни watchdog не работали. **Фикс**: переименовал `const video` → `const videoEl` по всему HTML. Preload РАБОТАЛ всё это время!
+  - **Итого**: 8 попыток. Все 7 предыдущих фиксов (net.fetch, bypassCSP, query params, executeJS, titleBarOverlay, console-message, fallback кнопок) были ПРАВИЛЬНЫМИ и нужными — но ни один не мог сработать из-за SyntaxError на строке 82.
 
 - ❌ **React warning «two children with the same key»** — `tg:new-message` дублировал msg уже имеющийся в массиве. Фикс v0.87.38: дедупликация по id. Ожидает подтверждения.
 

@@ -79,38 +79,38 @@
   <div id="track-menu" class="track-menu" style="display:none"></div>
 </div>
 <script>
-  const video = document.getElementById('v')
+  const videoEl = document.getElementById('v')
   const errEl = document.getElementById('err')
   const titleEl = document.getElementById('title')
 
-  video.addEventListener('error', (e) => {
-    const code = video.error?.code || '?'
-    const msg = video.error?.message || ''
-    errEl.textContent = `⚠️ Ошибка видео (код ${code}): ${msg || 'файл не найден или формат не поддерживается'}\n\nURL: ${video.src?.slice(0, 120)}`
+  videoEl.addEventListener('error', (e) => {
+    const code = videoEl.error?.code || '?'
+    const msg = videoEl.error?.message || ''
+    errEl.textContent = `⚠️ Ошибка видео (код ${code}): ${msg || 'файл не найден или формат не поддерживается'}\n\nURL: ${videoEl.src?.slice(0, 120)}`
     errEl.style.display = 'block'
-    console.error('[video-player] error:', code, msg, video.src)
+    console.error('[video-player] error:', code, msg, videoEl.src)
   })
-  video.addEventListener('loadedmetadata', () => { errEl.style.display = 'none' })
+  videoEl.addEventListener('loadedmetadata', () => { errEl.style.display = 'none' })
 
   // v0.87.38: если через 5 сек видео не начало играть и нет ошибки — показать предупреждение
   let loadTimer = null
   function startLoadWatchdog() {
     if (loadTimer) clearTimeout(loadTimer)
     loadTimer = setTimeout(() => {
-      if (!video.src || video.src === '' || video.src === window.location.href) {
+      if (!videoEl.src || videoEl.src === '' || videoEl.src === window.location.href) {
         errEl.textContent = `⚠️ Источник видео не установлен!\n\nquery src: ${querySrc || 'НЕТ'}\nwindow.video: ${typeof window.video}\nlocation.search: ${window.location.search?.slice(0,100) || 'пусто'}`
         errEl.style.display = 'block'
-        console.error('[video-player] watchdog: video.src ПУСТ!', { querySrc, windowVideo: typeof window.video, search: window.location.search })
-      } else if (video.readyState < 2 && errEl.style.display === 'none') {
-        errEl.textContent = `⚠️ Видео не загружается (readyState=${video.readyState}).\n\nURL: ${video.src?.slice(0, 120)}\n\nПопробуйте закрыть и открыть заново.`
+        console.error('[video-player] watchdog: videoEl.src ПУСТ!', { querySrc, windowVideo: typeof window.video, search: window.location.search })
+      } else if (videoEl.readyState < 2 && errEl.style.display === 'none') {
+        errEl.textContent = `⚠️ Видео не загружается (readyState=${videoEl.readyState}).\n\nURL: ${videoEl.src?.slice(0, 120)}\n\nПопробуйте закрыть и открыть заново.`
         errEl.style.display = 'block'
-        console.error('[video-player] watchdog: readyState=' + video.readyState, 'src=' + video.src)
+        console.error('[video-player] watchdog: readyState=' + videoEl.readyState, 'src=' + videoEl.src)
       }
     }, 5000)
   }
   // Запускаем watchdog сразу при загрузке страницы (если querySrc не сработал)
   startLoadWatchdog()
-  video.addEventListener('canplay', () => { if (loadTimer) { clearTimeout(loadTimer); loadTimer = null } })
+  videoEl.addEventListener('canplay', () => { if (loadTimer) { clearTimeout(loadTimer); loadTimer = null } })
 
   // v0.87.38: pin/pip — через console.log команды (main ловит через console-message).
   // НЕ зависит от preload! Паттерн как в monitor.preload.cjs.
@@ -141,8 +141,8 @@
     const h = document.createElement('h4')
     h.textContent = kind === 'audio' ? 'Аудио-дорожка' : 'Субтитры'
     menu.appendChild(h)
-    if (kind === 'audio' && video.audioTracks) {
-      const tracks = video.audioTracks
+    if (kind === 'audio' && videoEl.audioTracks) {
+      const tracks = videoEl.audioTracks
       for (let i = 0; i < tracks.length; i++) {
         const t = tracks[i]
         const b = document.createElement('button')
@@ -155,7 +155,7 @@
         menu.appendChild(b)
       }
     } else if (kind === 'sub') {
-      const tracks = video.textTracks
+      const tracks = videoEl.textTracks
       const off = document.createElement('button')
       off.textContent = 'Отключить'
       if (Array.from(tracks).every(t => t.mode !== 'showing')) off.classList.add('active')
@@ -196,9 +196,9 @@
   })
 
   // После загрузки метаданных показать кнопки если есть tracks
-  video.addEventListener('loadedmetadata', () => {
-    const hasAudio = video.audioTracks && video.audioTracks.length > 1
-    const hasSub = video.textTracks && video.textTracks.length > 0
+  videoEl.addEventListener('loadedmetadata', () => {
+    const hasAudio = videoEl.audioTracks && videoEl.audioTracks.length > 1
+    const hasSub = videoEl.textTracks && videoEl.textTracks.length > 0
     audioBtn.style.display = hasAudio ? '' : 'none'
     subBtn.style.display = hasSub ? '' : 'none'
   })
@@ -209,11 +209,11 @@
       if (window.video?.close) window.video.close()
       else window.close()
     }
-    if (e.key === ' ' || e.key === 'k') { e.preventDefault(); video.paused ? video.play() : video.pause() }
-    if (e.key === 'ArrowRight') { video.currentTime = Math.min(video.duration || 0, video.currentTime + 5) }
-    if (e.key === 'ArrowLeft') { video.currentTime = Math.max(0, video.currentTime - 5) }
-    if (e.key === 'm') { video.muted = !video.muted }
-    if (e.key === 'f') { if (document.fullscreenElement) document.exitFullscreen(); else video.requestFullscreen() }
+    if (e.key === ' ' || e.key === 'k') { e.preventDefault(); videoEl.paused ? videoEl.play() : videoEl.pause() }
+    if (e.key === 'ArrowRight') { videoEl.currentTime = Math.min(videoEl.duration || 0, videoEl.currentTime + 5) }
+    if (e.key === 'ArrowLeft') { videoEl.currentTime = Math.max(0, videoEl.currentTime - 5) }
+    if (e.key === 'm') { videoEl.muted = !videoEl.muted }
+    if (e.key === 'f') { if (document.fullscreenElement) document.exitFullscreen(); else videoEl.requestFullscreen() }
   })
 
   // v0.87.38: FALLBACK — если preload не загрузился, читаем src из query params
@@ -229,31 +229,31 @@
   console.log('[video-player] querySrc:', querySrc?.slice(0, 120) || 'NULL')
   if (querySrc) {
     console.log('[video-player] init from query:', querySrc.slice(0, 120))
-    video.src = querySrc
+    videoEl.src = querySrc
     if (params.get('title')) titleEl.textContent = params.get('title')
     const st = parseFloat(params.get('startTime'))
-    if (st > 0) video.addEventListener('loadedmetadata', () => { video.currentTime = st }, { once: true })
+    if (st > 0) videoEl.addEventListener('loadedmetadata', () => { videoEl.currentTime = st }, { once: true })
     if (params.get('pip') === '1') { pipActive = true; pipBtn.classList.add('pin-active') }
     startLoadWatchdog()
-    video.play().catch(() => {})
+    videoEl.play().catch(() => {})
   }
 
   // IPC path — для reuse-case (переключение видео в уже открытом окне)
   if (window.video?.onSetSrc) {
     window.video.onSetSrc(({ src, title, startTime, pip }) => {
       console.log('[video-player] set src via IPC:', src?.slice(0, 120))
-      video.src = src
+      videoEl.src = src
       startLoadWatchdog()
       if (title) titleEl.textContent = title
       // v0.87.36: продолжить с указанной секунды (из inline-плеера в чате)
       if (typeof startTime === 'number' && startTime > 0) {
-        const applyStart = () => { video.currentTime = startTime }
-        if (video.readyState >= 1) applyStart()
-        else video.addEventListener('loadedmetadata', applyStart, { once: true })
+        const applyStart = () => { videoEl.currentTime = startTime }
+        if (videoEl.readyState >= 1) applyStart()
+        else videoEl.addEventListener('loadedmetadata', applyStart, { once: true })
       }
       // v0.87.36: если открылось сразу в PiP режиме — синхронизируем состояние кнопки
       if (pip) { pipActive = true; pipBtn.classList.add('pin-active') }
-      video.play().catch(() => {})
+      videoEl.play().catch(() => {})
     })
   }
 </script>
