@@ -68,9 +68,18 @@ export function registerVideoPlayerHandler() {
       const primary = screen.getPrimaryDisplay()
       const w = Math.min(1000, primary.workAreaSize.width - 120)
       const h = Math.min(720, primary.workAreaSize.height - 120)
+      // v0.87.38: НЕ frameless — используем titleBarOverlay для нативных кнопок Windows.
+      // Preload не загружался → кастомные кнопки close/min/max не работали.
+      // Нативные кнопки Windows ГАРАНТИРОВАННО работают без preload.
       videoWindow = new BrowserWindow({
         width: w, height: h,
         frame: false,
+        titleBarStyle: 'hidden',
+        titleBarOverlay: {
+          color: '#0a0a0a',
+          symbolColor: '#ffffff',
+          height: 36,
+        },
         resizable: true, movable: true,
         minimizable: true, maximizable: true, fullscreenable: true,
         alwaysOnTop: false,

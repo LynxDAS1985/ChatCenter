@@ -7,7 +7,7 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; color: #fff; }
   body { display: flex; align-items: center; justify-content: center; user-select: none; -webkit-app-region: drag; }
-  .wrap { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .wrap { position: relative; width: 100%; height: calc(100% - 36px); margin-top: 36px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
   video {
     max-width: 100vw; max-height: 100vh;
     background: #000;
@@ -73,9 +73,7 @@
     <button id="audio-btn" title="Аудио-дорожка" style="display:none">🎧</button>
     <button id="sub-btn" title="Субтитры" style="display:none">CC</button>
     <span class="title" id="title">Видео</span>
-    <button id="min" title="Свернуть">_</button>
-    <button id="max" title="Развернуть">▢</button>
-    <button id="close" title="Закрыть (Esc)">✕</button>
+    <!-- v0.87.38: _ ▢ ✕ убраны — используются нативные кнопки Windows (titleBarOverlay) -->
   </div>
   <!-- Меню выбора audio track / subtitles -->
   <div id="track-menu" class="track-menu" style="display:none"></div>
@@ -114,9 +112,11 @@
   startLoadWatchdog()
   video.addEventListener('canplay', () => { if (loadTimer) { clearTimeout(loadTimer); loadTimer = null } })
 
+  // v0.87.38: pin/pip кнопки — работают через preload (если есть) ИЛИ ничего не делают.
+  // Главные кнопки (close/min/max) = нативные Windows, не зависят от JS.
   let pinned = false
   const pinBtn = document.getElementById('pin')
-  pinBtn.onclick = async () => {
+  if (pinBtn) pinBtn.onclick = async () => {
     pinned = !pinned
     pinBtn.classList.toggle('pin-active', pinned)
     try { await window.video?.togglePin(pinned) } catch(_) {}
@@ -204,17 +204,7 @@
     audioBtn.style.display = hasAudio ? '' : 'none'
     subBtn.style.display = hasSub ? '' : 'none'
   })
-  // v0.87.38: fallback — если preload не загрузился, используем window.close() напрямую
-  document.getElementById('close').onclick = () => {
-    if (window.video?.close) window.video.close()
-    else window.close()
-  }
-  document.getElementById('min').onclick = () => {
-    if (window.video?.minimize) window.video.minimize()
-  }
-  document.getElementById('max').onclick = () => {
-    if (window.video?.maximize) window.video.maximize()
-  }
+  // v0.87.38: кнопки close/min/max = нативные Windows (titleBarOverlay), не наш JS
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {

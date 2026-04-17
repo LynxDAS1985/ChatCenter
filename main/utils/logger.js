@@ -24,7 +24,8 @@ export function initLogger(userDataPath) {
   const origWarn = console.warn.bind(console)
   const origError = console.error.bind(console)
   function writeLog(level, args) {
-    const d = new Date(); const ts = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0')
+    // v0.87.38: toLocaleString гарантирует ЛОКАЛЬНОЕ время (getHours мог давать UTC)
+    const ts = new Date().toLocaleString('sv-SE').replace('T', ' ')
     const msg = `[${ts}] [${level}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`
     try { fs.appendFileSync(logFilePath, msg) } catch (e) { origError('[Logger] Write failed:', e.code, logFilePath) }
   }

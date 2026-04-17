@@ -248,8 +248,9 @@
   - **Попытка 4** (v0.87.38): loadFile({query: {src}}) + URLSearchParams fallback. НЕ ПОМОГЛО — src всё равно не доходит.
   - **Попытка 5** (v0.87.38): `executeJavaScript` прямой inject `v.src = '...'` после did-finish-load. Обходит preload, query, IPC — прямо в DOM. Ожидает подтверждения.
   - **Попытка 6** (v0.87.38): `net.fetch(pathToFileURL)` + `bypassCSP:true` в protocol handler (из Electron docs + issue #38749). **ВИДЕО ЗАИГРАЛО!** Но кнопки (close/pin/pip/min/max) не работают — preload не загружается → `window.video` = undefined.
-  - **Фикс кнопок** (v0.87.38): fallback `window.close()` для закрытия + Esc, остальные через preload (если доступен). Ожидает подтверждения.
-  - **Итого**: 6 попыток для видео-окна. Финальное решение: `net.fetch` + `bypassCSP` + fallback кнопок.
+  - **Фикс кнопок** (v0.87.38): fallback `window.close()` для закрытия + Esc.
+  - **ВАЖНО**: Пользователь тестировал на СТАРОЙ СБОРКЕ (логи от 09:33, последний билд 14:31). Все фиксы v0.87.38 (net.fetch, bypassCSP, дедупликация, fallback кнопок) НЕ были применены. Нужен полный перезапуск `npm run dev`.
+  - **Итого**: 6 попыток. Финальное решение: `net.fetch` + `bypassCSP` + fallback. Ожидает ПЕРЕЗАПУСКА + подтверждения.
 
 - ❌ **React warning «two children with the same key»** — `tg:new-message` дублировал msg уже имеющийся в массиве. Фикс v0.87.38: дедупликация по id. Ожидает подтверждения.
 
