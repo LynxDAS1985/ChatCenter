@@ -39,7 +39,8 @@ export default function VideoTile({ m, chatId, inAlbum }) {
   // Загружаем постер (thumb) сразу — лёгкий, ~20-80 КБ
   useEffect(() => {
     let cancelled = false
-    window.api?.invoke('tg:download-media', { chatId, messageId: m.id, thumb: true }).then(r => {
+    // v0.87.39: thumb=false для чёткого постера (не blur)
+    window.api?.invoke('tg:download-media', { chatId, messageId: m.id, thumb: false }).then(r => {
       if (cancelled) return
       if (r?.ok) setPosterUrl(r.path)
     })

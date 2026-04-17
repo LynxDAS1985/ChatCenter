@@ -32,11 +32,11 @@ const baseVideo = {
 }
 
 describe('VideoTile render (Variant A — poster + streaming)', () => {
-  it('при mount качает ТОЛЬКО thumb (постер), НЕ полное видео', async () => {
+  it('при mount качает постер (thumb=false для чёткого кадра)', async () => {
     render(<VideoTile m={baseVideo} chatId="c1" />)
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('tg:download-media', {
-        chatId: 'c1', messageId: '1', thumb: true,
+        chatId: 'c1', messageId: '1', thumb: false,
       })
     })
     // НЕ должен быть вызван tg:download-video до клика

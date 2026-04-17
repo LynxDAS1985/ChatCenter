@@ -13,9 +13,11 @@ function VideoPosterTile({ m, chatId, downloadMedia }) {
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState(0)
 
+  // v0.87.39: thumb=false для нормального постера (не blur).
+  // thumb=true даёт stripped ~10КБ = мутное. thumb=false = полный кадр ~100-300КБ.
   useEffect(() => {
     let cancelled = false
-    downloadMedia?.(chatId, m.id, true).then(r => {
+    downloadMedia?.(chatId, m.id, false).then(r => {
       if (!cancelled && r?.ok) setPosterUrl(r.path)
     })
     return () => { cancelled = true }

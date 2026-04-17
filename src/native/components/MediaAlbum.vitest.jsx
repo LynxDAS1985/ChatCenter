@@ -135,9 +135,9 @@ describe('AlbumBubble render', () => {
       <AlbumBubble album={videoAlbum} chatId="c1" downloadMedia={downloadMedia} />
     )
     await new Promise(r => setTimeout(r, 50))
-    // downloadMedia вызван с thumb=true (постер)
+    // downloadMedia вызван с thumb=false (чёткий постер, не blur)
     expect(downloadMedia).toHaveBeenCalled()
-    expect(downloadMedia.mock.calls[0][2]).toBe(true)
+    expect(downloadMedia.mock.calls[0][2]).toBe(false)
     // НЕ должно быть <video> элемента (только постер)
     // inline <video controls> не рендерится в альбоме
     cleanup()

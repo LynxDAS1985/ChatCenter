@@ -69,13 +69,13 @@ export function registerVideoPlayerHandler() {
       const maxH = primary.workAreaSize.height - 80
       let w, h
       if (width && height && width > 0 && height > 0) {
-        // Масштабируем чтобы влезло на экран + 24px для titlebar
-        const scale = Math.min(1, maxW / width, (maxH - 24) / height)
+        // v0.87.39: масштаб 0.6 от оригинала (не 1:1 — слишком большое для мелких видео)
+        const scale = Math.min(0.6, maxW / width, (maxH - 24) / height)
         w = Math.max(400, Math.round(width * scale))
-        h = Math.max(300, Math.round(height * scale) + 24)
+        h = Math.max(280, Math.round(height * scale) + 24)
       } else {
-        w = Math.min(1000, maxW)
-        h = Math.min(720, maxH)
+        w = Math.min(700, maxW)
+        h = Math.min(500, maxH)
       }
       // v0.87.38: НЕ frameless — используем titleBarOverlay для нативных кнопок Windows.
       // Preload не загружался → кастомные кнопки close/min/max не работали.
