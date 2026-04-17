@@ -91,13 +91,27 @@ export default function useNativeStore() {
     addHandler('tg:chats', ({ accountId, chats, append }) => {
       setState(s => {
         if (append) {
-          // v0.87.12: фоновая страница — добавляем к существующим, убираем дубли по id
           const existing = new Set(s.chats.map(c => c.id))
           const newOnes = chats.filter(c => !existing.has(c.id))
           return { ...s, chats: [...s.chats, ...newOnes] }
         }
+        // v0.87.38: MERGE вместо REPLACE — сохраняем lastMessageTs от более нового значения.
+        // Без этого tg:chats перезаписывал lastMessageTs серверным (устаревшим), и чаты
+        // с новыми сообщениями падали вниз списка вместо того чтобы быть наверху.
+        const existingMap = new Map(s.chats.filter(c => c.accountId === accountId).map(c => [c.id, c]))
+        const merged = chats.map(c => {
+          const old = existingMap.get(c.id)
+          if (!old) return c
+          return {
+            ...c,
+            // Сохраняем БОЛЕЕ НОВЫЙ timestamp (max)
+            lastMessageTs: Math.max(c.lastMessageTs || 0, old.lastMessageTs || 0),
+            // Сохраняем lastMessage от более нового
+            lastMessage: (old.lastMessageTs || 0) > (c.lastMessageTs || 0) ? old.lastMessage : c.lastMessage,
+          }
+        })
         const others = s.chats.filter(c => c.accountId !== accountId)
-        return { ...s, chats: [...others, ...chats] }
+        return { ...s, chats: [...others, ...merged] }
       })
     })
 

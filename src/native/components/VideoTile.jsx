@@ -144,10 +144,9 @@ export default function VideoTile({ m, chatId }) {
             background: '#000',
           }}
         />
-        {/* Overlay кнопки: expand + PiP */}
+        {/* v0.87.38: только ⛶ кнопка — 📌 доступна внутри отдельного окна, не в чате */}
         <div style={{
           position: 'absolute', top: 8, right: 8,
-          display: 'flex', gap: 4,
           zIndex: 10,
           pointerEvents: 'none',
         }}>
@@ -156,11 +155,6 @@ export default function VideoTile({ m, chatId }) {
             title="Открыть в отдельном окне"
             style={videoBtnStyle}
           >⛶</button>
-          <button
-            onClick={handlePip}
-            title="Мини-плеер поверх всех окон"
-            style={videoBtnStyle}
-          >📌</button>
         </div>
       </div>
     )

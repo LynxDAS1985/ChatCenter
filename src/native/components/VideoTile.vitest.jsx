@@ -93,18 +93,16 @@ describe('VideoTile render (Variant A — poster + streaming)', () => {
     cleanup()
   })
 
-  it('v0.87.36: кнопка 📌 открывает video:open с pip=true', async () => {
+  // v0.87.38: 📌 убрана из inline — она доступна только в отдельном окне
+  it('v0.87.38: inline-видео НЕ содержит кнопку 📌 (только ⛶)', async () => {
     const { container } = render(<VideoTile m={baseVideo} chatId="c1" />)
     fireEvent.click(container.firstChild)
     await waitFor(() => expect(container.querySelector('video')).toBeTruthy())
     const btns = container.querySelectorAll('button')
     const pipBtn = Array.from(btns).find(b => b.textContent === '📌')
-    expect(pipBtn).toBeTruthy()
-    fireEvent.click(pipBtn)
-    await waitFor(() => {
-      const openCall = invokeMock.mock.calls.find(c => c[0] === 'video:open' && c[1].pip === true)
-      expect(openCall).toBeTruthy()
-    })
+    expect(pipBtn).toBeFalsy()  // 📌 НЕ должна быть
+    const expandBtn = Array.from(btns).find(b => b.textContent === '⛶')
+    expect(expandBtn).toBeTruthy()  // ⛶ ДОЛЖНА быть
     cleanup()
   })
 

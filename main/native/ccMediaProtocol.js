@@ -88,9 +88,19 @@ export function registerCcMediaHandler(userData) {
           }
         }
 
-        // Без Range — отдаём целиком, но разрешаем Range в будущем
-        const data = fs.readFileSync(filePath)
-        return new Response(data, {
+        // v0.87.38: Без Range — отдаём через ReadableStream (не readFileSync).
+        // readFileSync для видео 50+ МБ блокирует main thread →
+        // <video> в BrowserWindow считает что ответ не пришёл → пустой плеер.
+        const fullStream = fs.createReadStream(filePath)
+        const webStream = new ReadableStream({
+          start(controller) {
+            fullStream.on('data', c => controller.enqueue(new Uint8Array(c)))
+            fullStream.on('end', () => controller.close())
+            fullStream.on('error', e => controller.error(e))
+          },
+          cancel() { fullStream.destroy() },
+        })
+        return new Response(webStream, {
           headers: {
             'Content-Type': contentType,
             'Content-Length': String(fileSize),
