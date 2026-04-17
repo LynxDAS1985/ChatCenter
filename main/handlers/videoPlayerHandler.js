@@ -102,6 +102,11 @@ export function registerVideoPlayerHandler() {
         }, 200)
       })
       videoWindow.on('closed', () => { videoWindow = null })
+      // v0.87.38: console.log из video-player.html → в наши логи (LogViewer)
+      videoWindow.webContents.on('console-message', (_, level, msg) => {
+        if (level >= 2) console.error('[video-window]', msg)
+        else console.log('[video-window]', msg)
+      })
       // v0.87.38: передаём src через query params — НЕ зависит от preload/IPC timing.
       // Раньше: loadFile → ready-to-show → send IPC → preload мог не загрузиться → src пуст.
       await videoWindow.loadFile(getHtmlPath(), {
