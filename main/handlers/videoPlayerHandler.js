@@ -46,11 +46,9 @@ export function registerVideoPlayerHandler() {
     return src
   }
 
-  ipcMain.handle('video:open', async (_, { src, title, startTime, pip }) => {
+  ipcMain.handle('video:open', async (_, { src, title, startTime, pip, width, height }) => {
     try {
       if (!src) return { ok: false, error: 'no src' }
-      // v0.87.38: НЕ конвертируем cc-media:// → file://. Protocol handler теперь
-      // использует net.fetch(file://) + bypassCSP:true → работает во ВСЕХ окнах.
       const actualSrc = src
       console.log('[video:open] === DEBUG ===')
       console.log('[video:open] src:', src)
@@ -65,9 +63,20 @@ export function registerVideoPlayerHandler() {
         videoWindow.focus()
         return { ok: true, reused: true }
       }
+      // v0.87.39: подстраиваем окно под размер видео (если известен)
       const primary = screen.getPrimaryDisplay()
-      const w = Math.min(1000, primary.workAreaSize.width - 120)
-      const h = Math.min(720, primary.workAreaSize.height - 120)
+      const maxW = primary.workAreaSize.width - 80
+      const maxH = primary.workAreaSize.height - 80
+      let w, h
+      if (width && height && width > 0 && height > 0) {
+        // Масштабируем чтобы влезло на экран + 24px для titlebar
+        const scale = Math.min(1, maxW / width, (maxH - 24) / height)
+        w = Math.max(400, Math.round(width * scale))
+        h = Math.max(300, Math.round(height * scale) + 24)
+      } else {
+        w = Math.min(1000, maxW)
+        h = Math.min(720, maxH)
+      }
       // v0.87.38: НЕ frameless — используем titleBarOverlay для нативных кнопок Windows.
       // Preload не загружался → кастомные кнопки close/min/max не работали.
       // Нативные кнопки Windows ГАРАНТИРОВАННО работают без preload.

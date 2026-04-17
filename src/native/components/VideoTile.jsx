@@ -97,6 +97,7 @@ export default function VideoTile({ m, chatId, inAlbum }) {
     try {
       await window.api?.invoke('video:open', {
         src: videoSrc, title: m.mediaPreview || 'Видео', startTime: time,
+        width: m.mediaWidth || 0, height: m.mediaHeight || 0,
       })
     } catch(_) {}
   }

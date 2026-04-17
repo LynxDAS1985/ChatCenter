@@ -103,26 +103,27 @@ export default function MediaAlbum({ album, chatId, downloadMedia, onPhotoOpen }
   const n = all.length
   const [srcs, registerSrc] = useAlbumSrcs(n)
 
-  // Layout стратегия
+  // v0.87.39: если в альбоме есть хотя бы одно видео → 1 колонка (видео с controls
+  // не влезает в 2-колоночный grid — обрезается). Для фото-only → сетка.
+  const hasVideo = all.some(m => m.mediaType === 'video')
   let gridStyle
-  if (n === 1) {
-    gridStyle = { gridTemplateColumns: '1fr', gridAutoRows: '1fr' }
+  if (hasVideo) {
+    // Видео-альбом: каждое на всю ширину, не обрезается
+    gridStyle = { gridTemplateColumns: '1fr' }
+  } else if (n === 1) {
+    gridStyle = { gridTemplateColumns: '1fr' }
   } else if (n === 2) {
     gridStyle = { gridTemplateColumns: 'repeat(2, 1fr)', gridAutoRows: '1fr' }
   } else if (n === 3) {
-    gridStyle = {
-      gridTemplate: `"a a" 1fr "b c" 1fr / 1fr 1fr`,
-    }
+    gridStyle = { gridTemplate: `"a a" 1fr "b c" 1fr / 1fr 1fr` }
   } else if (n === 4) {
     gridStyle = { gridTemplateColumns: 'repeat(2, 1fr)', gridAutoRows: '1fr' }
   } else {
-    // 5+ — 3 колонки, строк столько сколько нужно
     gridStyle = { gridTemplateColumns: 'repeat(3, 1fr)', gridAutoRows: '1fr' }
   }
 
-  // Высота блока — пропорционально числу фото, но с потолком
-  const rows = n <= 1 ? 1 : n === 2 ? 1 : n === 3 ? 2 : n === 4 ? 2 : Math.ceil(n / 3)
-  const minHeight = Math.min(520, rows * 160)
+  const rows = hasVideo ? n : (n <= 1 ? 1 : n === 2 ? 1 : n === 3 ? 2 : n === 4 ? 2 : Math.ceil(n / 3))
+  const minHeight = hasVideo ? 0 : Math.min(520, rows * 160)
 
   const textMsg = album.msgs.find(m => m.text) || album.msgs[0]
 
@@ -148,9 +149,9 @@ export default function MediaAlbum({ album, chatId, downloadMedia, onPhotoOpen }
     }}>
       {all.map((m, i) => (
         <div key={m.id} style={
-          n === 3 && i === 0 ? { gridArea: 'a' }
-          : n === 3 && i === 1 ? { gridArea: 'b' }
-          : n === 3 && i === 2 ? { gridArea: 'c' }
+          !hasVideo && n === 3 && i === 0 ? { gridArea: 'a' }
+          : !hasVideo && n === 3 && i === 1 ? { gridArea: 'b' }
+          : !hasVideo && n === 3 && i === 2 ? { gridArea: 'c' }
           : undefined
         }>
           <PhotoTile
