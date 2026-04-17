@@ -294,8 +294,10 @@
   - **Попытка 7** (v0.87.38): кнопки pin/pip не работали (preload не загружается). Фикс: console.log('__CC_VIDEO__pin:1') из HTML → main ловит через webContents.on('console-message') → setAlwaysOnTop/setBounds. Ожидает подтверждения.
   - **Также**: R:ERROR в логах показывал UTC время (toISOString) вместо локального (toLocaleString).
   - **КОРЕНЬ ПРОБЛЕМЫ НАЙДЕН** (попытка 8): preload через `contextBridge.exposeInMainWorld('video', {...})` создавал `window.video`. А в `<script>` HTML было `const video = document.getElementById('v')` — КОНФЛИКТ имён! `SyntaxError: Identifier 'video' has already been declared` → весь JS крашился → ни кнопки, ни src, ни watchdog не работали. **Фикс**: переименовал `const video` → `const videoEl` по всему HTML. Preload РАБОТАЛ всё это время!
-  - **Попытка 9** (v0.87.38): кнопки вернули на preload IPC. ◰ PiP РАБОТАЕТ ✅. 📌 pin НЕ работает — убрана из UI (пользователь: «убери совсем»).
+  - **Попытка 9** (v0.87.38): кнопки вернули на preload IPC. ◰ PiP РАБОТАЕТ ✅. 📌 pin НЕ работает — убрана из UI.
   - **Итого v0.87.38**: видео ✅, нативные close/min/max ✅, ◰ PiP ✅, 📌 убрана.
+  - **v0.87.39**: видео-альбом = постеры (как Telegram), тонкий header 24px, окно подстраивается под размер.
+  - **Проблемы из логов (v0.87.39)**: (1) rescan спамил каждые 15с — фикс: логируем только при изменении; (2) FLOOD_WAIT от аватарок (users.GetFullUser) 26с бан — нужно throttle; (3) console-message deprecated API; (4) кодировка в терминале Windows (кракозябры UTF-8 в CP866 — не баг, в файле логов OK).
 
 - ❌ **React warning «two children with the same key»** — `tg:new-message` дублировал msg уже имеющийся в массиве. Фикс v0.87.38: дедупликация по id. Ожидает подтверждения.
 

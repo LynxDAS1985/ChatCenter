@@ -1086,13 +1086,18 @@ function startUnreadRescan() {
   if (unreadRescanTimer) clearInterval(unreadRescanTimer)
   // v0.87.35: immediate rescan при старте чтобы списочные счётчики сразу были точными
   // (раньше ждали первые 30 сек → устаревшие цифры в списке)
+  // v0.87.39: логируем rescan только при ИЗМЕНЕНИИ (раньше спамил каждые 15 сек)
+  let lastRescanUnread = -1
   const doRescan = async () => {
     if (!client || !currentAccount) return
     try {
       const updates = await fetchAllUnreadUpdates()
       emit('tg:unread-bulk-sync', { accountId: currentAccount.id, updates })
       const withUnread = updates.filter(u => u.unreadCount > 0).length
-      log(`unread rescan: ${updates.length} чатов (${withUnread} с непрочитанным)`)
+      if (withUnread !== lastRescanUnread) {
+        log(`unread rescan: ${updates.length} чатов (${withUnread} с непрочитанным)`)
+        lastRescanUnread = withUnread
+      }
     } catch (e) { log('rescan err: ' + e.message) }
   }
   setTimeout(doRescan, 1500)  // immediate sync через 1.5 сек после старта
