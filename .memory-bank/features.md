@@ -245,7 +245,9 @@
   - **Попытка 3** (v0.87.38): cc-media:// → file:// для BrowserWindow. Не помогло.
   - **Корень проблемы**: preload НЕ загружался → `window.video` = undefined → IPC `video:set-src` терялся → `video.src` оставался ПУСТЫМ → `<video>` без src не генерирует ошибок (readyState=0, error=null — тишина).
   - **Почему watchdog не сработал**: проверял `readyState < 2` но НЕ проверял `!video.src`. Пустой src = не ошибка по мнению браузера.
-  - **ФИНАЛЬНЫЙ ФИкс** (v0.87.38): src передаётся через `loadFile({query: {src}})` — парсится в HTML через `URLSearchParams`. НЕ зависит от preload/IPC. Ожидает подтверждения.
+  - **Попытка 4** (v0.87.38): loadFile({query: {src}}) + URLSearchParams fallback. НЕ ПОМОГЛО — src всё равно не доходит.
+  - **Попытка 5** (v0.87.38): `executeJavaScript` прямой inject `v.src = '...'` после did-finish-load. Обходит preload, query, IPC — прямо в DOM. Ожидает подтверждения.
+  - **Итого**: 5 попыток. Три пути доставки src одновременно (query + IPC + executeJS). Если хоть один сработает — видео заиграет.
 
 - ❌ **React warning «two children with the same key»** — `tg:new-message` дублировал msg уже имеющийся в массиве. Фикс v0.87.38: дедупликация по id. Ожидает подтверждения.
 
