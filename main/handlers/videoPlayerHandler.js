@@ -49,7 +49,9 @@ export function registerVideoPlayerHandler() {
   ipcMain.handle('video:open', async (_, { src, title, startTime, pip }) => {
     try {
       if (!src) return { ok: false, error: 'no src' }
-      const actualSrc = resolveVideoSrc(src)
+      // v0.87.38: НЕ конвертируем cc-media:// → file://. Protocol handler теперь
+      // использует net.fetch(file://) + bypassCSP:true → работает во ВСЕХ окнах.
+      const actualSrc = src
       console.log('[video:open] === DEBUG ===')
       console.log('[video:open] src:', src)
       console.log('[video:open] actualSrc:', actualSrc)

@@ -14,8 +14,9 @@ export function registerCcMediaScheme() {
         scheme: 'cc-media',
         privileges: {
           standard: true, secure: true,
-          supportFetchAPI: true, bypassCSP: false,
-          stream: true,  // v0.87.34: позволяет <video>/<audio> делать Range requests
+          supportFetchAPI: true,
+          bypassCSP: true,   // v0.87.38: нужно для <video> в secondary BrowserWindow
+          stream: true,       // v0.87.34: Range requests для video seeking
         }
       }
     ])
@@ -53,65 +54,19 @@ export function registerCcMediaHandler(userData) {
         const filePath = path.join(dir, filename)
         if (!fs.existsSync(filePath)) return new Response('not-found', { status: 404 })
 
-        const stats = fs.statSync(filePath)
-        const fileSize = stats.size
-        const contentType = mimeFor(filename)
-
-        // v0.87.34: HTTP Range для streaming
-        const rangeHeader = req.headers.get('range') || req.headers.get('Range')
-        if (rangeHeader) {
-          const match = /bytes=(\d+)-(\d*)/.exec(rangeHeader)
-          if (match) {
-            const start = parseInt(match[1], 10)
-            const end = match[2] ? parseInt(match[2], 10) : fileSize - 1
-            const realEnd = Math.min(end, fileSize - 1)
-            const chunkSize = realEnd - start + 1
-            const stream = fs.createReadStream(filePath, { start, end: realEnd })
-            // Конвертируем Node stream в Web Stream
-            const webStream = new ReadableStream({
-              start(controller) {
-                stream.on('data', c => controller.enqueue(new Uint8Array(c)))
-                stream.on('end', () => controller.close())
-                stream.on('error', e => controller.error(e))
-              },
-              cancel() { stream.destroy() },
-            })
-            return new Response(webStream, {
-              status: 206,
-              headers: {
-                'Content-Type': contentType,
-                'Content-Length': String(chunkSize),
-                'Content-Range': `bytes ${start}-${realEnd}/${fileSize}`,
-                'Accept-Ranges': 'bytes',
-              },
-            })
-          }
-        }
-
-        // v0.87.38: Без Range — отдаём через ReadableStream (не readFileSync).
-        // readFileSync для видео 50+ МБ блокирует main thread →
-        // <video> в BrowserWindow считает что ответ не пришёл → пустой плеер.
-        const fullStream = fs.createReadStream(filePath)
-        const webStream = new ReadableStream({
-          start(controller) {
-            fullStream.on('data', c => controller.enqueue(new Uint8Array(c)))
-            fullStream.on('end', () => controller.close())
-            fullStream.on('error', e => controller.error(e))
-          },
-          cancel() { fullStream.destroy() },
-        })
-        return new Response(webStream, {
-          headers: {
-            'Content-Type': contentType,
-            'Content-Length': String(fileSize),
-            'Accept-Ranges': 'bytes',
-          }
+        // v0.87.38: РЕШЕНИЕ — net.fetch('file://...') вместо ручного fs.createReadStream.
+        // net.fetch правильно обрабатывает Range requests для <video> seeking,
+        // работает во ВСЕХ BrowserWindow'ах (не только в main session),
+        // и не блокирует main thread.
+        const fileUrl = pathToFileURL(filePath).href
+        return net.fetch(fileUrl, {
+          headers: req.headers,  // пробрасываем Range и другие заголовки
         })
       } catch (e) {
         console.error('[cc-media] error:', e.message)
         return new Response('error', { status: 500 })
       }
     })
-    console.log('[cc-media] protocol registered with Range support')
+    console.log('[cc-media] protocol registered (net.fetch)')
   } catch (e) { console.error('[cc-media] register failed:', e.message) }
 }
