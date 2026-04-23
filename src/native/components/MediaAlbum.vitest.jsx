@@ -3,26 +3,36 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { AlbumBubble } from './MediaAlbum.jsx'
 
-// v0.87.33: мокаем IntersectionObserver чтобы сразу сработал isIntersecting
-let observerCallback = null
+// v0.87.33: мокаем IntersectionObserver чтобы сразу сработал isIntersecting.
+// v0.87.47: Вариант 2 создаёт ДВА observer (seen + read) — мок должен
+// помнить все callbacks и по-разному триггерить seen-observer (rootMargin=-49%)
+// vs read-observer (без rootMargin).
+let observerCallbacks = []
 beforeEach(() => {
   globalThis.window.api = { invoke: vi.fn(), on: vi.fn(), send: vi.fn() }
-  observerCallback = null
-  // v0.87.43: новая логика (seen + away). Имитируем полный цикл:
-  // 1) ratio=1.0 (полностью видно) → seen
-  // 2) isIntersecting=false, bottom<0 (ушло вверх) → read
+  observerCallbacks = []
   globalThis.IntersectionObserver = class {
-    constructor(cb) { observerCallback = cb }
+    constructor(cb, opts) {
+      this.cb = cb
+      this.opts = opts || {}
+      observerCallbacks.push(this)
+    }
     observe(el) {
       setTimeout(() => {
-        observerCallback?.([{
-          intersectionRatio: 1.0, isIntersecting: true,
-          boundingClientRect: { bottom: 300 }, target: el,
-        }])
-        observerCallback?.([{
-          intersectionRatio: 0, isIntersecting: false,
-          boundingClientRect: { bottom: -10 }, target: el,
-        }])
+        const isSeenObs = /-\d+%/.test(this.opts.rootMargin || '')
+        if (isSeenObs) {
+          // Seen-observer: msg вошёл в центральную полосу viewport
+          this.cb([{ isIntersecting: true, target: el }])
+        } else {
+          // Read-observer: сперва msg в viewport (не стреляет),
+          // потом ушёл выше (bottom<0) — триггерит onRead когда seen=true
+          this.cb([{
+            isIntersecting: false,
+            boundingClientRect: { bottom: -10 },
+            rootBounds: { top: 0 },
+            target: el,
+          }])
+        }
       }, 0)
     }
     disconnect() {}

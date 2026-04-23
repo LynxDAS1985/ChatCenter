@@ -1,6 +1,51 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.46 (23 апреля 2026)
+## Текущая версия: v0.87.47 (23 апреля 2026)
+
+### v0.87.47 — FIX счётчик не уменьшался на длинных постах (ratio 0.95 → центр viewport)
+
+**Проблема** (скриншот пользователя, чат «Автовоз»): юзер прокрутил **5+ постов** вниз — счётчик застыл на 16, не меняется. В логах за 15+ секунд активной прокрутки (top 24857→31120, 6263px прокрутки) **ни одного** события `read-scrolled-away` / `read-batch-send`. `store-unread-bulk-active` от сервера стабильно возвращал 28 — фронт ничего не пометил.
+
+**Причина в [useReadOnScrollAway.js:24](src/native/hooks/useReadOnScrollAway.js#L24) (v0.87.43)**:
+```js
+if (entry.intersectionRatio >= 0.95 && !seenRef.current) { seenRef.current = true }
+```
+Пороги 0.95 ("msg почти полностью в viewport") **физически недостижим** для длинных постов: в Автовозе посты ~800px, viewport 570px → max ratio = 570/800 ≈ **0.71**. seenRef никогда не становится true → фаза 2 не срабатывает → `onRead` не вызывается.
+
+**Пользователь так описал баг**: «ты че хуйню пишешь, я постов 5 пролистал». Счётчик не уменьшался СКОЛЬКО БЫ ни скроллил.
+
+**Решение — Вариант 2 (Telegram-style)**: логика «msg пересёк центр viewport»:
+
+```js
+const seenObs = new IntersectionObserver(([entry]) => {
+  if (entry.isIntersecting && !seenRef.current) {
+    seenRef.current = true
+    onSeen?.()
+  }
+}, { root, rootMargin: '-49% 0px -49% 0px', threshold: 0 })
+
+const readObs = new IntersectionObserver(([entry]) => {
+  if (entry.isIntersecting || !seenRef.current || readRef.current) return
+  const rootTop = entry.rootBounds?.top ?? 0
+  if (entry.boundingClientRect.bottom < rootTop) {
+    readRef.current = true
+    onRead?.()
+  }
+}, { root, threshold: 0 })
+```
+
+`rootMargin: '-49% 0 -49% 0'` превращает root в тонкую полосу 2% высоты в самом центре viewport. Любой msg, прошедший через центр экрана, триггерит isIntersecting=true для seen-observer — **независимо от своего размера**. Длинный пост → проходит через центр → seen. Прокрутил мимо вверх → read.
+
+**Сравнение**:
+| Версия | Условие seen | Длинный msg (800px) | Старый баг (open = mass read) |
+|--------|--------------|---------------------|-------------------------------|
+| до v0.87.43 | ratio ≥ 0.15 | ✅ | ❌ (пометит всё что в viewport) |
+| v0.87.43 | ratio ≥ 0.95 | ❌ (недостижимо) | ✅ |
+| **v0.87.47** | msg пересёк центр | ✅ | ✅ (только 1-2 msg в центре) |
+
+**Тесты**: полностью переписаны `useReadOnScrollAway.vitest.jsx` — **13 сценариев** (было 9). Главный — "v0.87.47 РЕГРЕССИЯ: длинный msg (height > viewport) помечается read". Также адаптирован мок в `MediaAlbum.vitest.jsx` под два observer.
+
+**Итого**: 116 vitest ✅ (было 111), E2E 17/17, UI 9/9.
 
 ### v0.87.46 — FIX расхождение бейджей: список чатов 16, стрелка 28
 

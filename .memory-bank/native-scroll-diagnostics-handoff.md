@@ -341,6 +341,19 @@ UNREAD SYNC сервер=6                            [22 - 16 = 6]
 
 ---
 
+## v0.87.47 — FIX счётчик не уменьшался на длинных постах (center viewport)
+
+**Проблема**: v0.87.43 ввёл `ratio >= 0.95` для детекции seen. Для длинных постов (юридические тексты в канале Автовоз ~800px при viewport 570px) ratio максимум **0.71** — порог никогда не достигается. Лог доказывает: 15 сек активной прокрутки (6000px), ноль `read-scrolled-away`.
+
+**Фикс в `src/native/hooks/useReadOnScrollAway.js`** — Вариант 2 (Telegram-style):
+
+- Seen-observer: `rootMargin: '-49% 0px -49% 0px', threshold: 0` — полоса 2% в центре viewport. Msg пересекает центр → `isIntersecting=true` → seen. Работает для msg любого размера.
+- Read-observer: `threshold: 0` без rootMargin. При `!isIntersecting && boundingClientRect.bottom < rootBounds.top` + seen → onRead.
+
+Тесты полностью переписаны: 13 сценариев (включая регрессию длинного msg). Мок в MediaAlbum.vitest.jsx обновлён под два observer (различает их по наличию rootMargin).
+
+---
+
 ## v0.87.45 — «Карточки» вместо MTProto-сообщений (альбом = 1)
 
 **Проблема**: пользователь видит альбом из 9 фото → бейдж показывает 9, а в ленте 1 карточка.
