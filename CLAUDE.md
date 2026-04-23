@@ -38,6 +38,7 @@
    | Рабочий процесс | `.memory-bank/workflow.md` |
    | Типичные ошибки | `.memory-bank/common-mistakes.md` |
    | Что реализовано | `.memory-bank/features.md` |
+   | Диагностика скролла native | `.memory-bank/native-scroll-diagnostics-handoff.md` |
    | Ключевые решения | `.memory-bank/decisions.md` |
    | IPC/API | `.memory-bank/api.md` |
    | Мессенджеры | `.memory-bank/messengers.md` |
@@ -168,6 +169,7 @@ npm test  # 410+ тестов, включая проверку лимитов р
 | `workflow.md` | Правила работы AI, планирование, чеклист |
 | `common-mistakes.md` | Типичные ошибки и как их избежать |
 | `features.md` | Реализованные функции, статус, Changelog |
+| `native-scroll-diagnostics-handoff.md` | Передача контекста по диагностике скролла native ЦентрЧатов |
 | `decisions.md` | Ключевые архитектурные решения (ADR) |
 | `api.md` | IPC-каналы, форматы сообщений, DTO |
 | `messengers.md` | Инструкции интеграции каждого мессенджера (селекторы DOM, особенности) |

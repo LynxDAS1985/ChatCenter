@@ -3,7 +3,7 @@
 // scroll-to-bottom индикатор, аватарка слева от групп чужих сообщений.
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { List } from 'react-window'
-import ChatListItem from '../components/ChatListItem.jsx'
+import ChatRow from '../components/ChatRow.jsx'
 import MessageBubble from '../components/MessageBubble.jsx'
 import ForwardPicker from '../components/ForwardPicker.jsx'
 import { AlbumBubble } from '../components/MediaAlbum.jsx'
@@ -13,19 +13,10 @@ import { useInitialScroll } from '../hooks/useInitialScroll.js'
 import { useForceReadAtBottom } from '../hooks/useForceReadAtBottom.js'
 import { useDropAndPaste } from '../hooks/useDropAndPaste.js'
 import { useMessageActions } from '../hooks/useMessageActions.js'
+import { useScrollDiagnostics } from '../hooks/useScrollDiagnostics.js'
+import { getUnreadAnchorDebug } from '../utils/scrollDiagnostics.js'
 
 const ITEM_HEIGHT = 64
-
-// v0.87.13: отдельный компонент вне InboxMode — react-window передаст свежие props каждый рендер
-function ChatRow({ index, style, chats, activeChatId, setActiveChat }) {
-  const c = chats[index]
-  if (!c) return null
-  return (
-    <div style={style}>
-      <ChatListItem chat={c} active={activeChatId === c.id} onClick={() => setActiveChat(c.id)} />
-    </div>
-  )
-}
 
 export default function InboxMode({ store }) {
   const [input, setInput] = useState('')
@@ -80,6 +71,7 @@ export default function InboxMode({ store }) {
 
   const activeChat = store.chats.find(c => c.id === store.activeChatId)
   const activeMessages = store.messages[store.activeChatId] || []
+  const activeUnread = activeChat?.unreadCount || 0
 
   const handleSend = async () => {
     if (!input.trim() || !store.activeChatId || sending) return
@@ -122,13 +114,14 @@ export default function InboxMode({ store }) {
   const [atBottom, setAtBottom] = useState(true)
   const [newBelow, setNewBelow] = useState(0)
   const firstUnreadIdRef = useRef(null)
+  const scrollDiag = useScrollDiagnostics({ activeChatId: store.activeChatId, activeChat, activeMessages, activeUnread, loading: store.loadingMessages?.[store.activeChatId], scrollRef: msgsScrollRef })
 
   // v0.87.29 Вариант A: начальный скролл чата (в низ / на first-unread) + жёлтая подсветка
   useInitialScroll({
     activeChatId: store.activeChatId,
     messagesCount: activeMessages.length,
     scrollRef: msgsScrollRef,
-    firstUnreadIdRef,
+    firstUnreadIdRef, activeUnread,
   })
 
   // v0.87.31: принимаем либо string src (одиночное фото из MessageBubble),
@@ -178,6 +171,7 @@ export default function InboxMode({ store }) {
     if (!store.activeChatId) { firstUnreadIdRef.current = null; return }
     const chat = store.chats.find(c => c.id === store.activeChatId)
     firstUnreadIdRef.current = findFirstUnreadId(activeMessages, chat?.unreadCount || 0)
+    scrollDiag.logEvent('first-unread-calc', getUnreadAnchorDebug(activeMessages, chat?.unreadCount || 0))
   }, [store.activeChatId, activeMessages.length > 0])
 
   const getMessage = (chatId, msgId) => (store.messages[chatId] || []).find(m => m.id === String(msgId))
@@ -236,16 +230,21 @@ export default function InboxMode({ store }) {
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
     setAtBottom(nearBottom)
     if (nearBottom) setNewBelow(0)
+    scrollDiag.observeScroll(nearBottom, loadingOlderRef.current)
     // Infinite scroll up
     if (loadingOlderRef.current) return
     if (el.scrollTop < 100 && activeMessages.length > 0) {
       loadingOlderRef.current = true
       const oldest = activeMessages[0]
       const prevHeight = el.scrollHeight
-      await store.loadOlderMessages(store.activeChatId, oldest.id, 50)
+      const chatAtStart = store.activeChatId
+      scrollDiag.logEvent('load-older-trigger', { beforeId: oldest.id, prevHeight, messages: activeMessages.length, unread: activeUnread })
+      const result = await store.loadOlderMessages(chatAtStart, oldest.id, 50)
+      scrollDiag.logEvent('load-older-result', { beforeId: oldest.id, ok: result?.ok, hasMore: result?.hasMore })
       setTimeout(() => {
         if (msgsScrollRef.current) {
           msgsScrollRef.current.scrollTop = msgsScrollRef.current.scrollHeight - prevHeight
+          scrollDiag.logEvent('load-older-apply', { beforeId: oldest.id, prevHeight, activeChanged: chatAtStart !== store.activeChatId })
         }
         loadingOlderRef.current = false
       }, 100)
@@ -260,12 +259,11 @@ export default function InboxMode({ store }) {
     prevMsgCountRef.current = now
     if (now > prev && !atBottom) {
       const added = activeMessages.slice(prev).filter(m => !m.isOutgoing).length
-      if (added > 0) setNewBelow(n => n + added)
+      if (added > 0) { scrollDiag.logEvent('new-below', { added, prev, now }); setNewBelow(n => n + added) }
     }
   }, [activeMessages.length])
 
   // v0.87.34: FORCE mark-read когда юзер в самом низу чата — вынесено в хук
-  const activeUnread = store.chats.find(c => c.id === store.activeChatId)?.unreadCount || 0
   useForceReadAtBottom({
     atBottom,
     activeChatId: store.activeChatId,
@@ -282,10 +280,12 @@ export default function InboxMode({ store }) {
     const el = msgsScrollRef.current
     if (!el) return
     const firstUnread = firstUnreadIdRef.current
+    scrollDiag.logEvent('button-scroll', { activeUnread, firstUnread })
     if (firstUnread) {
       const target = el.querySelector(`[data-msg-id="${firstUnread}"]`)
       if (target) {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        scrollDiag.logEvent('button-scroll-target', { firstUnread })
         target.classList.add('native-msg-last-read-highlight')
         setTimeout(() => target.classList.remove('native-msg-last-read-highlight'), 2500)
         setNewBelow(0)
@@ -294,6 +294,7 @@ export default function InboxMode({ store }) {
     }
     // Нет непрочитанных или элемент не в DOM — просто в самый низ
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    scrollDiag.logEvent('button-scroll-bottom', { activeUnread, firstUnread })
     setNewBelow(0)
   }
 
@@ -428,6 +429,9 @@ export default function InboxMode({ store }) {
             <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <MessageListOverlay show={store.loadingMessages?.[store.activeChatId] && visibleMessages.length > 0} />
             <div ref={msgsScrollRef} onScroll={handleScroll}
+              onWheel={() => scrollDiag.markUserScroll('wheel')}
+              onTouchStart={() => scrollDiag.markUserScroll('touch')}
+              onPointerDown={() => scrollDiag.markUserScroll('pointer')}
               onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
               style={{
                 flex: 1, overflowY: 'auto', padding: 16,

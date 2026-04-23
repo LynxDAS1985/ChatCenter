@@ -2,6 +2,7 @@
 // Состояние: список аккаунтов, чаты, сообщения, выбранный чат/контакт, режим отображения.
 // Синхронизация с main-процессом через IPC (tg:* channels).
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostics.js'
 
 /**
  * @typedef {Object} NativeAccount
@@ -118,6 +119,11 @@ export default function useNativeStore() {
     addHandler('tg:messages', ({ chatId, messages, append }) => {
       setState(s => {
         const existing = s.messages[chatId] || []
+        const chat = s.chats.find(c => c.id === chatId)
+        logNativeScroll('store-tg-messages', {
+          chatId, append: !!append, incoming: messages?.length || 0, existing: existing.length,
+          active: s.activeChatId === chatId, ...getUnreadAnchorDebug(messages || [], chat?.unreadCount || 0),
+        })
         let next
         if (append) {
           // v0.87.15: дозагрузка старых — добавляем в начало, убираем дубли
@@ -220,6 +226,7 @@ export default function useNativeStore() {
 
     // v0.87.22: точная синхронизация unread с серверным значением Telegram
     addHandler('tg:chat-unread-sync', ({ chatId, unreadCount }) => {
+      logNativeScroll('store-unread-sync', { chatId, unread: unreadCount, active: stateRef.current.activeChatId === chatId })
       setState(s => ({
         ...s,
         chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount } : c)
@@ -229,6 +236,8 @@ export default function useNativeStore() {
     // v0.87.24: bulk sync — rescan всех активных чатов (Комбо D)
     addHandler('tg:unread-bulk-sync', ({ updates }) => {
       const map = new Map(updates.map(u => [u.id, u.unreadCount]))
+      const activeId = stateRef.current.activeChatId
+      if (activeId && map.has(activeId)) logNativeScroll('store-unread-bulk-active', { chatId: activeId, unread: map.get(activeId), updates: updates.length })
       setState(s => ({
         ...s,
         chats: s.chats.map(c => map.has(c.id) ? { ...c, unreadCount: map.get(c.id) } : c)
@@ -249,6 +258,7 @@ export default function useNativeStore() {
         }))
         return
       }
+      logNativeScroll('store-read', { chatId, stillUnread: stillUnread || 0, maxId })
       setState(s => ({
         ...s,
         chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount: stillUnread || 0 } : c)
@@ -260,7 +270,11 @@ export default function useNativeStore() {
 
   const setMode = useCallback((mode) => setState(s => ({ ...s, mode })), [])
   const setActiveAccount = useCallback((id) => setState(s => ({ ...s, activeAccountId: id })), [])
-  const setActiveChat = useCallback((id) => setState(s => ({ ...s, activeChatId: id })), [])
+  const setActiveChat = useCallback((id) => setState(s => {
+    const chat = s.chats.find(c => c.id === id)
+    logNativeScroll('store-set-active-chat', { from: s.activeChatId || null, to: id, unread: chat?.unreadCount || 0, hasMessages: !!s.messages[id] })
+    return { ...s, activeChatId: id }
+  }), [])
 
   // ──  Login ──
   const startLogin = useCallback(async (phone) => {
@@ -341,6 +355,8 @@ export default function useNativeStore() {
   }, [])
 
   const loadMessages = useCallback(async (chatId, limit = 50) => {
+    const cachedPreview = !stateRef.current.messages[chatId] ? loadChatCache(chatId) : null
+    logNativeScroll('store-load-messages', { chatId, limit, hadMessages: !!stateRef.current.messages[chatId], cached: cachedPreview?.length || 0 })
     // v0.87.36: поднимаем флаг загрузки (для shimmer overlay) + пытаемся мгновенно
     // подставить кэш из localStorage
     setState(s => {
@@ -357,6 +373,7 @@ export default function useNativeStore() {
 
   // v0.87.15: загрузка более старых сообщений (infinite scroll вверх)
   const loadOlderMessages = useCallback(async (chatId, beforeId, limit = 50) => {
+    logNativeScroll('store-load-older', { chatId, beforeId, limit })
     return window.api?.invoke('tg:get-messages', { chatId, limit, offsetId: Number(beforeId) })
   }, [])
 
