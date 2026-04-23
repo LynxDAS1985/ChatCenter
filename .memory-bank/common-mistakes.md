@@ -1,5 +1,34 @@
 # Типичные ошибки — ChatCenter
 
+## 🟡 В РАССЛЕДОВАНИИ (v0.87.49): счётчик непрочитанных застревает на N после пролистывания
+
+**Симптом**: в чате с unread=N юзер пролистал до последнего сообщения. Счётчик в списке и на стрелке остаётся N, не становится 0. Воспроизводится в разных чатах (Автовоз, АвтоБизнес, Ассоциация РОАД).
+
+**ДОКАЗАНО по коду** (не гипотеза):
+
+1. **[nativeStore.js:228](src/native/store/nativeStore.js#L228) handler `tg:chat-unread-sync`** обновляет ТОЛЬКО `chat.unreadCount`, поле `chat.groupedUnread` не трогает. Аналогично `tg:unread-bulk-sync`.
+
+2. **[ChatListItem.jsx:26](src/native/components/ChatListItem.jsx#L26)** использует `badgeCount = chat.groupedUnread ?? chat.unreadCount`.
+
+3. **Следствие**: если `groupedUnread=3` (прошлый recompute), а потом сервер прислал `unread=0` — бейдж всё равно показывает 3. Залипание до следующего recompute.
+
+4. **recomputeGroupedUnread не вызывается после markRead** — только на `window.focus` и session restore. Между этими событиями UI показывает stale.
+
+**НЕ доказано (v0.87.49 собирает данные)**:
+
+- **Гипотеза A**: последние 1-3 msg не помечаются т.к. никогда не уходят выше viewport (фаза 2 `useReadOnScrollAway` не срабатывает).
+- **Гипотеза B**: `scrollTop` прыгает с bottomGap=0 обратно вверх без видимой причины → `atBottom` false → `useForceReadAtBottom` cleanup убивает 400мс таймер до fire.
+
+**Добавленная диагностика (v0.87.49)**:
+- `force-read-schedule/skip/fire/cleanup` в `useForceReadAtBottom`
+- `bottom-state-change` в handleScroll при переходах true↔false
+- `scroll-anomaly` при Δtop>500px за <200мс (reasonGuess: height-changed / programmatic)
+- `badge-state` при смене unreadCount/groupedUnread активного чата
+
+**Правило на будущее**: когда вводится новое поле для UI которое ПЕРЕКРЫВАЕТ старое (groupedUnread ?? unreadCount) — оно ОБЯЗАНО обновляться ВСЕМИ теми же handler'ами что и старое. Иначе рассинхрон и stale UI. Либо смешивать поля прямо в handler'е (в `tg:chat-unread-sync` сбросить `groupedUnread` тоже), либо не вводить дублирующее поле вообще.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: гонка авто-load-older с initial-scroll + browser scroll anchoring (v0.87.48)
 
 **Симптом**: Юзер открывает чат — встаёт не у первого непрочитанного/низа, а **далеко вверху, где-то в середине**. Ничего не скроллил сам.

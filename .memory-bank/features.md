@@ -1,6 +1,58 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.48 (23 апреля 2026)
+## Текущая версия: v0.87.49 (23 апреля 2026)
+
+### v0.87.49 — ДИАГНОСТИКА: счётчик непрочитанных застревает после прокрутки до конца (только логи)
+
+**Проблема** (скриншоты пользователя, чаты «Ассоциация РОАД», «Автовоз», «АвтоБизнес»): юзер пролистывает чат до конца — счётчик непрочитанных остаётся на N (чаще 1-3), не становится 0. В списке чатов бейдж не обновляется.
+
+**Статус**: код логики НЕ меняется. Добавлены только диагностические логи чтобы получить 100% картину причин. После воспроизведения и анализа — точечный фикс в следующей версии.
+
+#### ДОКАЗАНО по коду (без новых логов)
+
+**Факт 1** — [nativeStore.js:228-234](src/native/store/nativeStore.js#L228) handler `tg:chat-unread-sync` обновляет ТОЛЬКО `unreadCount`, поле `groupedUnread` не трогает. То же в `tg:unread-bulk-sync`.
+
+**Факт 2** — [ChatListItem.jsx:26](src/native/components/ChatListItem.jsx#L26) — `badgeCount = typeof chat.groupedUnread === 'number' ? chat.groupedUnread : chat.unreadCount`. Приоритет у `groupedUnread`.
+
+**Следствие**: если `chat.groupedUnread=3` было установлено recompute'ом, а потом сервер прислал `unread=0` — `groupedUnread` остаётся 3, `badgeCount=3`. Бейдж застрял до следующего `recomputeGroupedUnread` (вызывается только по window.focus / session restore, НЕ после markRead).
+
+#### НЕ доказано — требует новых логов
+
+**Гипотеза B**: `scrollTop` прыгает с низа (bottomGap=0) обратно вверх (bottomGap=40000+) за ~800мс без видимой причины в лог (17:22:25 в чате Автовоз). Если это правда — `atBottom` становится false → `useForceReadAtBottom` useEffect cleanup убивает 400мс таймер ДО того как он стрельнет.
+
+**Гипотеза A**: последние 1-3 msg остаются в viewport до конца прокрутки и никогда не проходят «фазу 2» (ушёл выше viewport) в `useReadOnScrollAway`. Они не попадают в batch → markRead уходит с maxId предпоследнего msg → сервер оставляет unread=N.
+
+#### Добавленные логи (v0.87.49)
+
+1. **`useForceReadAtBottom`** (4 события) — [useForceReadAtBottom.js](src/native/hooks/useForceReadAtBottom.js):
+   - `force-read-schedule { chatId, lastId, unread, maxEverSent, atBottom }` — таймер 400мс поставлен
+   - `force-read-skip { reason: not-at-bottom/no-chat/no-messages/unread-zero/no-last-id }` — effect вышел раньше
+   - `force-read-skip-guard { lastId, maxEverSent }` — lastId ≤ watermark
+   - `force-read-fire { chatId, lastId, unread }` — таймер стрельнул, шлём markRead
+   - `force-read-cleanup { chatId, lastId, atBottomAtSetup, unreadAtSetup }` — useEffect cleanup (dep changed)
+
+2. **`bottom-state-change`** ([InboxMode.jsx handleScroll](src/native/modes/InboxMode.jsx)) — при переходе nearBottom true↔false: `{ prev, curr, scrollTop, scrollHeight, clientHeight, bottomGap }`
+
+3. **`scroll-anomaly`** (InboxMode handleScroll) — если |ΔscrollTop|>500px за <200мс: `{ dtMs, deltaTop, deltaHeight, prevTop, currTop, reasonGuess: height-changed(layout-shift/load-older) | programmatic-scroll }`
+
+4. **`badge-state`** (InboxMode useEffect) — при смене `activeChat.unreadCount` или `activeChat.groupedUnread`: `{ chatId, title, unread, grouped, badge, prevUnread, prevGrouped }`
+
+#### План диагностики — шаги
+
+1. Перезапустить приложение (v0.87.49).
+2. Открыть любой чат с unread > 0.
+3. Пролистать до конца.
+4. Смотреть бейдж. Если застрял:
+   - Проверить `force-read-*` — был ли таймер поставлен, стрельнул ли, был ли cleanup.
+   - Проверить `bottom-state-change` — менялся ли `atBottom` с true на false.
+   - Проверить `scroll-anomaly` — был ли прыжок scrollTop после достижения низа.
+   - Проверить `badge-state` — какие значения `unread/grouped/badge` на момент застревания.
+
+Эти 4 точки закрывают все слепые пятна. После получения логов → точечный фикс причины.
+
+#### Тесты
+- 122 vitest passed (без изменений, логи не трогают логику)
+- E2E 17/17, UI 9/9
 
 ### v0.87.48 — FIX скролл уезжал в середину при открытии чата (гонка load-older vs initial-scroll)
 

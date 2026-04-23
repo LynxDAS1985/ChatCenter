@@ -100,6 +100,25 @@ export default function InboxMode({ store }) {
     ? activeChat.groupedUnread
     : activeUnread
 
+  // v0.87.49: диагностика расхождения unreadCount vs groupedUnread на активном чате.
+  // Лог пишется только при СМЕНЕ значений (не на каждый render). Цель: увидеть момент
+  // когда unreadCount упал до 0, но groupedUnread застрял > 0 (бейдж не обновляется).
+  const prevBadgeRef = useRef({ u: null, g: null })
+  useEffect(() => {
+    if (!activeChat) return
+    const u = activeChat.unreadCount ?? null
+    const g = typeof activeChat.groupedUnread === 'number' ? activeChat.groupedUnread : null
+    const prev = prevBadgeRef.current
+    if (prev.u !== u || prev.g !== g) {
+      scrollDiag.logEvent('badge-state', {
+        chatId: activeChat.id, title: activeChat.title,
+        unread: u, grouped: g, badge: activeUnreadCards,
+        prevUnread: prev.u, prevGrouped: prev.g,
+      })
+      prevBadgeRef.current = { u, g }
+    }
+  }, [activeChat?.unreadCount, activeChat?.groupedUnread])
+
   const handleSend = async () => {
     if (!input.trim() || !store.activeChatId || sending) return
     setSending(true)
@@ -277,10 +296,43 @@ export default function InboxMode({ store }) {
     activeChatId: store.activeChatId, sendFile: store.sendFile, showToast,
   })
 
+  // v0.87.49: диагностика — отслеживаем смены atBottom true↔false + прыжки scrollTop
+  const prevNearBottomRef = useRef(null)
+  const prevScrollStateRef = useRef({ top: 0, height: 0, t: 0 })
+
   const handleScroll = async (e) => {
     // v0.87.27: индикатор scroll-to-bottom + newBelow-счётчик
     const el = e.target
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+
+    // v0.87.49: лог переходов atBottom — чтобы увидеть когда и почему хук useForceReadAtBottom
+    // получит cleanup (atBottom меняется с true на false).
+    if (prevNearBottomRef.current !== null && prevNearBottomRef.current !== nearBottom) {
+      scrollDiag.logEvent('bottom-state-change', {
+        prev: prevNearBottomRef.current, curr: nearBottom,
+        scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
+        bottomGap: el.scrollHeight - el.scrollTop - el.clientHeight,
+      })
+    }
+    prevNearBottomRef.current = nearBottom
+
+    // v0.87.49: детектор прыжка scrollTop — если между двумя scroll events scrollTop
+    // скакнул >500px за <100мс без свежего user-action → зафиксировать reason-guess.
+    const now = Date.now()
+    const prev = prevScrollStateRef.current
+    const dt = now - prev.t
+    const deltaTop = el.scrollTop - prev.top
+    const deltaHeight = el.scrollHeight - prev.height
+    if (prev.t > 0 && Math.abs(deltaTop) > 500 && dt < 200) {
+      scrollDiag.logEvent('scroll-anomaly', {
+        dtMs: dt, deltaTop, deltaHeight,
+        prevTop: prev.top, currTop: el.scrollTop,
+        prevHeight: prev.height, currHeight: el.scrollHeight,
+        reasonGuess: deltaHeight !== 0 ? 'height-changed(layout-shift/load-older)' : 'programmatic-scroll',
+      })
+    }
+    prevScrollStateRef.current = { top: el.scrollTop, height: el.scrollHeight, t: now }
+
     setAtBottom(nearBottom)
     if (nearBottom) setNewBelow(0)
     scrollDiag.observeScroll(nearBottom, loadingOlderRef.current)

@@ -341,6 +341,34 @@ UNREAD SYNC сервер=6                            [22 - 16 = 6]
 
 ---
 
+## v0.87.49 — ДИАГНОСТИКА: счётчик непрочитанных застревает после пролистывания (только логи)
+
+Что сделано: ТОЛЬКО добавлены логи, никаких изменений логики.
+
+Новые события в `[native-scroll]`:
+- `force-read-schedule { chatId, lastId, unread, maxEverSent, atBottom }`
+- `force-read-skip { reason: not-at-bottom/no-chat/no-messages/unread-zero/no-last-id }`
+- `force-read-skip-guard { lastId, maxEverSent }`
+- `force-read-fire { chatId, lastId, unread }`
+- `force-read-cleanup { chatId, lastId, atBottomAtSetup, unreadAtSetup }`
+- `bottom-state-change { prev, curr, scrollTop, scrollHeight, clientHeight, bottomGap }`
+- `scroll-anomaly { dtMs, deltaTop, deltaHeight, prevTop, currTop, prevHeight, currHeight, reasonGuess }`
+- `badge-state { chatId, title, unread, grouped, badge, prevUnread, prevGrouped }`
+
+Доказанные факты (без логов):
+- `tg:chat-unread-sync` сбрасывает `unreadCount`, но не трогает `groupedUnread` → если последний recompute оставил `groupedUnread=3`, UI показывает 3 даже когда сервер вернул 0.
+- `recomputeGroupedUnread` вызывается только на window.focus и после session restore — не после markRead.
+
+План использования:
+1. Перезапустить приложение после v0.87.49.
+2. Воспроизвести баг: открыть чат с unread, пролистать до конца.
+3. Вытащить логи `[native-scroll]` за последние 30 секунд.
+4. По событиям `force-read-*` понять сработал ли fallback для последних msg.
+5. По `bottom-state-change` + `scroll-anomaly` понять почему (если не сработал) — был ли atBottom обратно false, прыгал ли scrollTop.
+6. По `badge-state` проверить stale-ли `groupedUnread` после markRead.
+
+---
+
 ## v0.87.48 — FIX скролл уезжал в середину при открытии (race авто-load-older vs initial-scroll)
 
 **Проблема**: при открытии чата скроллТоп=0 триггерил авто-`load-older` (условие `scrollTop<100`) одновременно с initial-scroll. prevHeight запоминал высоту ДО initial-scroll. Результат — наша формула `scrollHeight-prevHeight` перекрывала корректный scrollTop от browser scroll anchoring (Chrome Scroll Anchoring API, вкл. по умолчанию). Юзер уезжал в середину чата.
