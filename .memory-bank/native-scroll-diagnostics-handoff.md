@@ -235,6 +235,31 @@ button-scroll-target top=40630                           ← не сдвинул
 
 ---
 
+## v0.87.42 НАХОДКА: «открыл чат с 22 → стало 6» (23 апреля, 13:40)
+
+Новый сценарий: канал Журнал Движок, unread=22.
+
+```text
+chat-open unread=22
+initial-done top=21368 firstUnread=12866
+mark-read maxId=12881                           [через 1.5с]
+user-scroll-intent                              [ПОЗЖЕ чем markRead!]
+UNREAD SYNC сервер=6                            [22 - 16 = 6]
+```
+
+**Объяснение:** IntersectionObserver при initial-scroll видит 16 сообщений (12866-12881) в viewport 570px. Они все «visible» → через 1.5с → `markRead(maxId=12881)` → сервер помечает прочитанными → unread=6. Произошло ДО первого user-scroll.
+
+**Это Telegram-поведение? НЕТ.** В Telegram Desktop: первые 2-3 секунды после открытия чата НЕ маркируют. Только после user-interaction (колесо/клавиша).
+
+**Варианты для согласования с юзером:**
+
+- A: debounce markRead 1.5с → 3-5с
+- B: НЕ markRead пока не было user-scroll-intent (чистый Telegram-стиль)
+- C: 2с timeout + user-scroll-intent (что раньше)
+- D: убрать readByVisibility, только markRead at bottom
+
+---
+
 ## v0.87.40 ПРОБЛЕМА СЧЁТЧИКА (23 апреля 2026, 12:20)
 
 Воспроизведение на канале АвтоБизнес (был 36 в списке):
