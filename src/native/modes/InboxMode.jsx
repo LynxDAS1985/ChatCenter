@@ -225,7 +225,8 @@ export default function InboxMode({ store }) {
       // lastReadMax может быть маленьким → сервер сбрасывает watermark → бейдж растёт)
       if (lastReadMaxRef.current <= maxEverSentRef.current) return
       maxEverSentRef.current = lastReadMaxRef.current
-      store.markRead(chatAtStart, lastReadMaxRef.current, count)
+      // v0.87.41: убран count — локально не вычитаем, сервер обновит через unread-sync
+      store.markRead(chatAtStart, lastReadMaxRef.current)
     }, 1500)
   }
 

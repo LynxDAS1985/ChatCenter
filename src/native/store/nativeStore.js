@@ -310,18 +310,13 @@ export default function useNativeStore() {
   }, [])
 
   // v0.87.16: markRead принимает maxId (до какого сообщения прочитано) и localRead (сколько прочитано в UI)
-  const markRead = useCallback(async (chatId, maxId, localRead = 0) => {
-    setState(s => ({
-      ...s,
-      chats: s.chats.map(c => {
-        if (c.id !== chatId) return c
-        // Если localRead передан — уменьшаем на это число, иначе — сбрасываем полностью
-        const newUnread = localRead > 0
-          ? Math.max(0, (c.unreadCount || 0) - localRead)
-          : 0
-        return { ...c, unreadCount: newUnread }
-      })
-    }))
+  // v0.87.41: НЕ вычитаем локально (Telegram-style). Раньше: localRead вычитался
+  // сразу → прыжок 36→25→35 когда сервер возвращал реальное 35. Теперь:
+  // - markRead отправляет на сервер
+  // - сервер возвращает точное значение через tg:chat-unread-sync
+  // - локально unreadCount обновляется ТОЛЬКО из этого sync
+  // Результат: плавное уменьшение 36→35→34→... как в Telegram, без прыжков.
+  const markRead = useCallback(async (chatId, maxId) => {
     return window.api?.invoke('tg:mark-read', { chatId, maxId })
   }, [])
 

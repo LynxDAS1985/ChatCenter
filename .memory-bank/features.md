@@ -1,6 +1,31 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.40 (23 апреля 2026)
+## Текущая версия: v0.87.41 (23 апреля 2026)
+
+### v0.87.41 — Telegram-style markRead (убрано локальное вычитание unreadCount)
+
+**Проблема пользователя**: «в списке было 36, встал на чат — стало 25, через 10 сек — 35, цифры прыгают»
+
+**Корень**: `nativeStore.markRead()` принимал параметр `localRead` (например 11 видимых сообщений), вычитал локально `36 - 11 = 25`. Потом сервер возвращал реальное `35` (прочитано только 1 сообщение по maxId) → прыжок 36→25→35.
+
+**Фикс (Telegram-style)**:
+- Убран параметр `localRead` из `markRead(chatId, maxId)`
+- НЕ вычитаем локально — полагаемся ТОЛЬКО на `tg:chat-unread-sync` от сервера
+- Счётчик в списке обновляется плавно 36→35→34→... по мере серверных подтверждений
+- Как в Telegram Desktop
+
+**Затронутые файлы**:
+- `src/native/store/nativeStore.js`: `markRead` упрощён до `(chatId, maxId) => IPC`
+- `src/native/modes/InboxMode.jsx`: `store.markRead(chatAtStart, lastReadMaxRef.current)` (без count)
+- `src/native/hooks/useForceReadAtBottom.js`: `markRead(chatId, lastId)` (без activeUnread)
+
+**Тесты**: новый `src/native/store/nativeStore.vitest.jsx` — 4 теста:
+- markRead НЕ вычитает локально
+- unreadCount обновляется ТОЛЬКО из tg:chat-unread-sync
+- сигнатура markRead = 2 аргумента (не 3)
+- регрессионный тест на прыжок 36→25→35
+
+**Итого**: 83/83 vitest ✅ (было 79)
 
 ### v0.87.40 — FIX скролл уходил наверх при открытии чата с непрочитанными
 

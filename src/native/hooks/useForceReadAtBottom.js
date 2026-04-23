@@ -12,7 +12,8 @@ export function useForceReadAtBottom({ atBottom, activeChatId, activeMessages, a
     if (maxEverSentRef?.current && lastId <= maxEverSentRef.current) return
     const t = setTimeout(() => {
       if (maxEverSentRef) maxEverSentRef.current = Math.max(maxEverSentRef.current || 0, lastId)
-      markRead(activeChatId, lastId, activeUnread)
+      // v0.87.41: убран activeUnread — не вычитаем локально, ждём server sync
+      markRead(activeChatId, lastId)
     }, 400)
     return () => clearTimeout(t)
   }, [atBottom, activeChatId, activeMessages.length, activeUnread])
