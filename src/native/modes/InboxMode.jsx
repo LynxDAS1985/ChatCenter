@@ -91,7 +91,14 @@ export default function InboxMode({ store }) {
 
   const activeChat = store.chats.find(c => c.id === store.activeChatId)
   const activeMessages = store.messages[store.activeChatId] || []
+  // v0.87.45: activeUnread = MTProto-число (альбом=N фото) — нужно для findFirstUnreadId,
+  // markRead, initial-scroll (там считаем "последние N incoming msgs").
   const activeUnread = activeChat?.unreadCount || 0
+  // v0.87.46: для UI-бейдей (стрелка вниз) используем "карточки" = groupedUnread.
+  // Иначе расхождение: список чатов показывает 16 (карточки), стрелка 28 (MTProto).
+  const activeUnreadCards = (typeof activeChat?.groupedUnread === 'number')
+    ? activeChat.groupedUnread
+    : activeUnread
 
   const handleSend = async () => {
     if (!input.trim() || !store.activeChatId || sending) return
@@ -576,16 +583,17 @@ export default function InboxMode({ store }) {
               })}
             </div>
               {/* v0.87.35/36: кнопка ↓ ВНЕ scroll-контейнера → не скроллится */}
-              {(!atBottom || activeUnread > 0) && (
+              {/* v0.87.46: бейдж = activeUnreadCards (карточки, альбом=1), не unreadCount */}
+              {(!atBottom || activeUnreadCards > 0) && (
                 <button
                   onClick={scrollToBottom}
                   className="native-scroll-bottom-btn"
-                  title={activeUnread > 0 ? `К первому непрочитанному (${activeUnread})` : 'К последнему сообщению'}
+                  title={activeUnreadCards > 0 ? `К первому непрочитанному (${activeUnreadCards})` : 'К последнему сообщению'}
                 >
                   ↓
-                  {(activeUnread > 0 || newBelow > 0) && (
+                  {(activeUnreadCards > 0 || newBelow > 0) && (
                     <span className="native-scroll-bottom-badge">
-                      {(activeUnread > 0 ? activeUnread : newBelow) > 99 ? '99+' : (activeUnread > 0 ? activeUnread : newBelow)}
+                      {(activeUnreadCards > 0 ? activeUnreadCards : newBelow) > 99 ? '99+' : (activeUnreadCards > 0 ? activeUnreadCards : newBelow)}
                     </span>
                   )}
                 </button>

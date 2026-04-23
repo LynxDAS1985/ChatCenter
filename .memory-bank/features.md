@@ -1,6 +1,25 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.45 (23 апреля 2026)
+## Текущая версия: v0.87.46 (23 апреля 2026)
+
+### v0.87.46 — FIX расхождение бейджей: список чатов 16, стрелка 28
+
+**Проблема** (скриншот пользователя, чат «Автовоз»): В списке чатов бейдж **16**, а внутри чата на кнопке-стрелке ↓ — **28**. Одновременно. Один и тот же чат.
+
+**Причина**: В v0.87.45 ввели `chat.groupedUnread` (альбом = 1 карточка) и переключили `ChatListItem` на него. Но в `InboxMode.jsx` бейдж стрелки остался на старом `activeChat.unreadCount` (= сырое MTProto-число, альбом = N отдельных msg). Список показывал карточки (16), стрелка — сообщения (28).
+
+**Фикс в `src/native/modes/InboxMode.jsx`** — добавлена переменная `activeUnreadCards`:
+
+```js
+const activeUnread = activeChat?.unreadCount || 0  // для логики (findFirstUnread, markRead)
+const activeUnreadCards = (typeof activeChat?.groupedUnread === 'number')
+  ? activeChat.groupedUnread
+  : activeUnread  // для UI-бейджа и условия показа стрелки
+```
+
+Все 4 места использования в кнопке-стрелке (условие показа, `title`, бейдж `>99`, контент бейджа) переключены на `activeUnreadCards`. `activeUnread` (MTProto) остался для `findFirstUnreadId`, `markRead maxId`, `scrollDiag.logEvent` — там нужно сырое число сообщений.
+
+**Правило на будущее записано в common-mistakes.md**: когда вводишь новое поле для UI — найди ВСЕ места где старое отображается и обнови синхронно.
 
 ### v0.87.45 — «Карточки» вместо сообщений (альбомы = 1) + сброс unreadCount из кэша
 
