@@ -79,3 +79,90 @@ describe('v0.87.41: markRead Telegram-style (no local subtraction)', () => {
     expect(result.current.chats.find(c => c.id === 'chat1').unreadCount).toBe(35)
   })
 })
+
+// v0.87.45: handler tg:grouped-unread — карточки (альбомы = 1) приходят параллельным batch.
+describe('v0.87.45: tg:grouped-unread handler', () => {
+  it('обновляет chat.groupedUnread по updates от сервера', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [
+          { id: 'chat1', accountId: 'acc1', title: 'A', unreadCount: 9 },
+          { id: 'chat2', accountId: 'acc1', title: 'B', unreadCount: 3 },
+        ],
+      })
+    })
+    act(() => {
+      onHandlers['tg:grouped-unread']?.({
+        accountId: 'acc1',
+        updates: {
+          chat1: { server: 9, grouped: 1 },  // альбом из 9 фото = 1 карточка
+          chat2: { server: 3, grouped: 3 },  // 3 отдельных msgs = 3 карточки
+        },
+      })
+    })
+    const c1 = result.current.chats.find(c => c.id === 'chat1')
+    const c2 = result.current.chats.find(c => c.id === 'chat2')
+    expect(c1.groupedUnread).toBe(1)
+    expect(c1.unreadCount).toBe(9)
+    expect(c2.groupedUnread).toBe(3)
+    expect(c2.unreadCount).toBe(3)
+  })
+
+  it('чаты без update остаются без groupedUnread (не затирает)', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [
+          { id: 'chat1', accountId: 'acc1', title: 'A', unreadCount: 5 },
+          { id: 'chat2', accountId: 'acc1', title: 'B', unreadCount: 0 },
+        ],
+      })
+    })
+    act(() => {
+      onHandlers['tg:grouped-unread']?.({
+        accountId: 'acc1',
+        updates: { chat1: { server: 5, grouped: 2 } },
+      })
+    })
+    const c1 = result.current.chats.find(c => c.id === 'chat1')
+    const c2 = result.current.chats.find(c => c.id === 'chat2')
+    expect(c1.groupedUnread).toBe(2)
+    expect(c2.groupedUnread).toBeUndefined()  // нет апдейта — не затираем
+  })
+
+  it('recomputeGroupedUnread() вызывает IPC tg:recompute-grouped-unread', async () => {
+    const { result } = renderHook(() => useNativeStore())
+    await act(async () => { await result.current.recomputeGroupedUnread() })
+    expect(invokeMock).toHaveBeenCalledWith('tg:recompute-grouped-unread', {})
+  })
+
+  it('повторный updates перезаписывает grouped — альбом расширился до 2 групп', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'A', unreadCount: 9 }],
+      })
+    })
+    act(() => {
+      onHandlers['tg:grouped-unread']?.({
+        accountId: 'acc1',
+        updates: { chat1: { server: 9, grouped: 1 } },
+      })
+    })
+    expect(result.current.chats.find(c => c.id === 'chat1').groupedUnread).toBe(1)
+    // Пришло ещё 6 одиночных сообщений — теперь 2 альбома = 2 группы?
+    act(() => {
+      onHandlers['tg:grouped-unread']?.({
+        accountId: 'acc1',
+        updates: { chat1: { server: 15, grouped: 7 } },
+      })
+    })
+    const c1 = result.current.chats.find(c => c.id === 'chat1')
+    expect(c1.groupedUnread).toBe(7)
+    expect(c1.unreadCount).toBe(15)
+  })
+})

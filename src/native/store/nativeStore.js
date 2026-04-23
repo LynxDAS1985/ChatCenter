@@ -244,6 +244,21 @@ export default function useNativeStore() {
       }))
     })
 
+    // v0.87.45: grouped unread — карточки-альбомы считаются как 1 (не N сообщений).
+    // Сервер присылает { chatId: { server, grouped } } — server = MTProto unread, grouped = сколько "карточек" в ленте.
+    // ChatListItem показывает chat.groupedUnread ?? chat.unreadCount (приоритет groupedUnread).
+    addHandler('tg:grouped-unread', ({ updates }) => {
+      logNativeScroll('store-grouped-unread', { count: Object.keys(updates || {}).length })
+      setState(s => ({
+        ...s,
+        chats: s.chats.map(c => {
+          const u = updates?.[c.id]
+          if (!u) return c
+          return { ...c, groupedUnread: u.grouped, unreadCount: u.server }
+        })
+      }))
+    })
+
     addHandler('tg:read', ({ chatId, outgoing, stillUnread, maxId }) => {
       if (outgoing) {
         // v0.87.17: собеседник прочитал наши сообщения до maxId → ставим isRead=true
@@ -345,6 +360,12 @@ export default function useNativeStore() {
     return window.api?.invoke('tg:rescan-unread', {})
   }, [])
 
+  // v0.87.45: пересчёт "карточек" (альбомы как 1) через параллельный batch.
+  // Не использует кэш — всегда свежий запрос getMessages для чатов с unread > 0.
+  const recomputeGroupedUnread = useCallback(async () => {
+    return window.api?.invoke('tg:recompute-grouped-unread', {})
+  }, [])
+
   const setTyping = useCallback(async (chatId) => {
     return window.api?.invoke('tg:set-typing', { chatId })
   }, [])
@@ -419,7 +440,7 @@ export default function useNativeStore() {
     startLogin, submitCode, submitPassword, cancelLogin,
     loadChats, loadCachedChats, loadMessages, loadOlderMessages,
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
-    getPinnedMessage, refreshAvatar, rescanUnread,
+    getPinnedMessage, refreshAvatar, rescanUnread, recomputeGroupedUnread,
     downloadMedia, removeAccount, markRead, setTyping,
   }
 }

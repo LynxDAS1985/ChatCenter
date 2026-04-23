@@ -86,4 +86,33 @@ describe('ChatListItem render', () => {
     expect(container.innerHTML).toMatchSnapshot()
     cleanup()
   })
+
+  // v0.87.45: groupedUnread приоритетнее unreadCount (альбом = 1 карточка)
+  it('groupedUnread=1 побеждает unreadCount=9 (альбом из 9 фото)', () => {
+    const { container } = render(<ChatListItem chat={{
+      ...baseChat, unreadCount: 9, groupedUnread: 1,
+    }} />)
+    // Должен показывать 1, не 9
+    expect(container.querySelector('[style*="background: var(--amoled-accent)"]').textContent).toBe('1')
+    cleanup()
+  })
+
+  it('groupedUnread=0 скрывает бейдж даже при unreadCount=5', () => {
+    const { container } = render(<ChatListItem chat={{
+      ...baseChat, unreadCount: 5, groupedUnread: 0,
+    }} />)
+    // Бейджа нет (0 карточек)
+    const badge = container.querySelector('[style*="background: var(--amoled-accent)"]')
+    expect(badge).toBeNull()
+    cleanup()
+  })
+
+  it('когда groupedUnread undefined — фоллбек на unreadCount', () => {
+    const { container } = render(<ChatListItem chat={{
+      ...baseChat, unreadCount: 7,
+      // groupedUnread не задан — должен упасть на unreadCount
+    }} />)
+    expect(container.querySelector('[style*="background: var(--amoled-accent)"]').textContent).toBe('7')
+    cleanup()
+  })
 })

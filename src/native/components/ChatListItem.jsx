@@ -21,6 +21,9 @@ export default function ChatListItem({ chat, active, onClick }) {
   const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('')
   const icon = typeIcon(chat.type, chat.isBot)
+  // v0.87.45: groupedUnread считает альбомы как 1 карточку (как в Telegram Desktop).
+  // Приходит с сервера через tg:grouped-unread после recompute. Фоллбек — обычный unreadCount.
+  const badgeCount = typeof chat.groupedUnread === 'number' ? chat.groupedUnread : chat.unreadCount
 
   return (
     <div
@@ -72,11 +75,11 @@ export default function ChatListItem({ chat, active, onClick }) {
             {chat.title}
             {chat.verified && <span style={{ color: 'var(--amoled-accent)', marginLeft: 4 }}>✓</span>}
           </div>
-          {chat.unreadCount > 0 && (
+          {badgeCount > 0 && (
             <div style={{
               background: 'var(--amoled-accent)', color: '#fff',
               fontSize: 11, padding: '1px 7px', borderRadius: 10, minWidth: 20, textAlign: 'center'
-            }}>{chat.unreadCount > 999 ? '999+' : chat.unreadCount}</div>
+            }}>{badgeCount > 999 ? '999+' : badgeCount}</div>
           )}
         </div>
         <div style={{

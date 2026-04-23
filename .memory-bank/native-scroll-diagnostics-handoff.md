@@ -287,3 +287,86 @@ UNREAD SYNC сервер=6                            [22 - 16 = 6]
 - В `markRead`: убрать `localRead` параметр, не вычитать локально.
 - Просто полагаться на `tg:chat-unread-sync` после GetPeerDialogs — придёт через 800мс.
 - Опционально: для активного чата возвращать `unreadCount = 0` в `ChatListItem` (как в Telegram).
+
+---
+
+## v0.87.41 — ФИКС прыжка 36→25→35 (Telegram-style markRead)
+
+`src/native/store/nativeStore.js` — сигнатура markRead изменена с `(chatId, maxId, localRead)` на `(chatId, maxId)`.
+Убрана локальная оптимистичная вычитка. `unreadCount` меняется **только** через `tg:chat-unread-sync`.
+Прыжки исчезли: 36 → 35 → 34 → ... плавно.
+
+Тесты: `src/native/store/nativeStore.vitest.jsx` — 4 теста подтверждают отсутствие локального вычитания.
+
+---
+
+## v0.87.42 — ФИКС бейджа «50» на стрелочке после load-older
+
+`src/native/hooks/useNewBelowCounter.js` — новый хук, отслеживает смену `lastMsgId` (не `messages.length`).
+Раньше: при prepend (load-older) `messages.slice(prev)` возвращал последние 50 msgs → бейдж показывал 50.
+Теперь: если `lastMsgId` не изменился — skip (это prepend, не новое входящее).
+
+Логи: `[native-scroll] new-below added=N prevLastId nowLastId` / `new-below-skip reason=prepend`.
+
+---
+
+## v0.87.43 — «Вариант 5»: seen+scrolled-away IntersectionObserver
+
+`src/native/hooks/useReadOnScrollAway.js` — двухфазный IntersectionObserver заменил старый threshold=0.15.
+
+**Фаза 1 (Seen)**: `intersectionRatio >= 0.95` → msg помечен как «виденный» в `seenRef`.
+**Фаза 2 (Read)**: `!isIntersecting && boundingClientRect.bottom < 0 && seenRef` → `onRead(msgId)`.
+
+Защищает от ложных markRead при:
+- Initial render (msg появились на экране, но не прокручены мимо)
+- Fast scroll (msg промелькнул — не набрал 95% ratio)
+
+Логи: `[native-scroll] read-scrolled-away msgId batchSize currentUnread`, `read-batch-send maxId count`, `read-batch-skip reason`.
+
+Тесты: `src/native/hooks/useReadOnScrollAway.vitest.jsx`.
+
+---
+
+## v0.87.44 — ФИКС «было 7 → стало 1» (default atBottom)
+
+`src/native/modes/InboxMode.jsx:118` — `useState(false)` вместо `useState(true)`.
+
+Раньше: `atBottom=true` (default) + unread>0 → `useForceReadAtBottom` через 400мс отправлял markRead(lastMsgId) ДО любого scroll event → сервер возвращал unread=1.
+
+Теперь: `atBottom=true` только после реального scroll event c `nearBottom<80`.
+
+Тесты: `src/native/hooks/useForceReadAtBottom.vitest.jsx` — 5 сценариев, включая регрессию v0.87.44.
+
+Попутно: `src/__tests__/hookOrder.test.cjs` исключает `.vitest.jsx` (false-positive на renderHook).
+
+---
+
+## v0.87.45 — «Карточки» вместо MTProto-сообщений (альбом = 1)
+
+**Проблема**: пользователь видит альбом из 9 фото → бейдж показывает 9, а в ленте 1 карточка.
+
+**Решение — «Вариант 2»** (параллельный batch recompute):
+
+1. `main/native/telegramHandler.js` — новый IPC `tg:recompute-grouped-unread`:
+   - Фильтрует чаты с `unreadCount > 0`
+   - Для каждого: `getMessages(entity, { limit: min(unread, 30) })`
+   - Группирует по `groupedId` (Set уникальных) + singles → `grouped = groups.size + singles`
+   - Batch=5 + 150ms delay (защита от FLOOD_WAIT)
+   - Emit `tg:grouped-unread` → `{ [chatId]: { server, grouped } }`
+
+2. Сброс `unreadCount` из кэша — `saveChatsCache()` и `tg:get-cached-chats` форсят `unreadCount: 0`.
+   Избегаем стейл-значения из `tg-cache.json` после рестарта (пользователь прямо сказал: «не брать ничего из кэша в этом вопросе»).
+
+3. `src/native/store/nativeStore.js` — handler `tg:grouped-unread` пишет `chat.groupedUnread`.
+   Action `recomputeGroupedUnread()` → IPC.
+
+4. `src/native/components/ChatListItem.jsx`:
+   `badgeCount = typeof chat.groupedUnread === 'number' ? chat.groupedUnread : chat.unreadCount`.
+
+5. `src/native/modes/InboxMode.jsx`:
+   - После первого `tg:chats` (session restore) — через 800мс `recomputeGroupedUnread()` (ref-guard, один раз).
+   - На `window.focus` — рядом с `rescanUnread()`.
+
+Тесты: +4 в `nativeStore.vitest.jsx` + 3 в `ChatListItem.vitest.jsx` = **111 vitest**.
+
+**Проверено на другие источники staleness**: `localStorage chat-messages:*` хранит только msgs (без unread) — OK. `ai-draft:*`, `user_auth` — не связаны с unread. Только `tg-cache.json.unreadCount` был проблемой (исправлено).

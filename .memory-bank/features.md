@@ -1,6 +1,47 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.44 (23 апреля 2026)
+## Текущая версия: v0.87.45 (23 апреля 2026)
+
+### v0.87.45 — «Карточки» вместо сообщений (альбомы = 1) + сброс unreadCount из кэша
+
+**Проблема** (из жалобы пользователя): «по факту одно сообщение» ≠ `unreadCount: 9`. В Telegram альбом из 9 фото = **1 карточка в ленте**, но MTProto возвращает 9 отдельных сообщений → бейдж показывал 9 вместо 1.
+
+**Решение — «Вариант 2»** (выбран пользователем: «Для МАКСИМАЛЬНОЙ точности с первого запуска — Вариант 2, не брать не чего из кэша»):
+
+**Main-процесс** (`main/native/telegramHandler.js`):
+
+1. Новый IPC handler `tg:recompute-grouped-unread`:
+   - Берёт `fetchAllUnreadUpdates()` → фильтрует `unreadCount > 0`
+   - Для каждого чата: `client.getMessages(entity, { limit: min(unread, 30) })`
+   - Группирует по `groupedId`: `new Set(groupedId)` + `singles` (msgs без groupedId)
+   - `grouped = groups.size + singles` — сколько карточек в ленте
+   - Parallel batch = 5 + 150ms delay между batches (защита от FLOOD_WAIT)
+   - Emit `tg:grouped-unread` с `{ [chatId]: { server, grouped } }`
+
+2. Сброс `unreadCount` из кэша:
+   - `saveChatsCache()` теперь сохраняет `unreadCount: 0` — счётчик всегда свежий с сервера
+   - `tg:get-cached-chats` при загрузке тоже форсит `unreadCount: 0`
+   - Раньше после рестарта показывался устаревший счётчик из `tg-cache.json`
+
+**Renderer** (`src/native/store/nativeStore.js`):
+
+- Новый handler `tg:grouped-unread` — обновляет `chat.groupedUnread` + `chat.unreadCount` по updates
+- Новый action `recomputeGroupedUnread()` → IPC `tg:recompute-grouped-unread`
+- Чаты без update не затираются (сохраняют свой `groupedUnread`)
+
+**UI** (`src/native/components/ChatListItem.jsx`):
+
+- `badgeCount = typeof chat.groupedUnread === 'number' ? chat.groupedUnread : chat.unreadCount`
+- При наличии `groupedUnread=1` показывает 1 (а не 9 альбомных msgs)
+
+**Триггеры пересчёта** (`src/native/modes/InboxMode.jsx`):
+
+1. После первого `tg:chats` (session restore) через 800мс — даём main собрать unreadUpdates
+2. На `window.focus` — рядом с `rescanUnread()`
+
+**Тесты**: +4 vitest в `nativeStore.vitest.jsx` + 3 в `ChatListItem.vitest.jsx` = **111 vitest ✅** (было 104).
+
+**Проверка кэша на другие источники неточности**: просмотрены `tg-cache.json`, `localStorage chat-messages:*`, `ai-draft:*`, `user_auth` — только `tg-cache.json.unreadCount` был staleness-источником (исправлено). Сообщения в `chat-messages:*` не содержат `unreadCount`.
 
 ### v0.87.44 — FIX «было 7, стало 1 за секунду» — default atBottom=true при открытии
 

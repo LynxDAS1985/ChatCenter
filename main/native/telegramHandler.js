@@ -175,14 +175,17 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       const raw = fs.readFileSync(cachePath, 'utf8')
       const data = JSON.parse(raw)
       // v0.87.16: подставляем avatar из файлов если в кэше был undefined
+      // v0.87.45: всегда unreadCount=0 из кэша (источник неточности). Точные цифры
+      // придут через tg:unread-bulk-sync и tg:grouped-unread после первого rescan.
       const chats = (data.chats || []).map(c => {
-        if (c.avatar) return c
+        const cleaned = { ...c, unreadCount: 0 }
+        if (cleaned.avatar) return cleaned
         const rawId = c.rawId || String(c.id).split(':').pop()
         const avatarFile = path.join(avatarsDir, `${rawId}.jpg`)
         if (fs.existsSync(avatarFile)) {
-          return { ...c, avatar: 'file:///' + encodeURI(avatarFile.replace(/\\/g, '/')) }
+          return { ...cleaned, avatar: 'file:///' + encodeURI(avatarFile.replace(/\\/g, '/')) }
         }
-        return c
+        return cleaned
       })
       log(`tg:get-cached-chats: ${chats.length} чатов, с аватарками: ${chats.filter(c => c.avatar).length}`)
       return { ok: true, chats }
@@ -301,6 +304,56 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       if (/CHAT_ADMIN_REQUIRED/i.test(e.message)) {
         return { ok: false, error: 'Нет прав админа для закрепления в этом чате' }
       }
+      return { ok: false, error: e.message }
+    }
+  })
+
+  // v0.87.45: параллельный пересчёт "сообщения vs карточки" с группировкой по groupedId.
+  // Для чатов с unreadCount > 0 грузим последние N msgs и группируем альбомы в 1 карточку.
+  // Batch по 5 одновременно с защитой от FLOOD_WAIT.
+  ipcMain.handle('tg:recompute-grouped-unread', async () => {
+    try {
+      if (!client || !currentAccount) return { ok: false }
+      const updates = await fetchAllUnreadUpdates()
+      const unreadChats = updates.filter(u => u.unreadCount > 0)
+      if (unreadChats.length === 0) {
+        log(`grouped-unread: нет чатов с unread, skip`)
+        return { ok: true, count: 0 }
+      }
+      const result = {}
+      const batchSize = 5
+      for (let i = 0; i < unreadChats.length; i += batchSize) {
+        const batch = unreadChats.slice(i, i + batchSize)
+        await Promise.all(batch.map(async (c) => {
+          try {
+            const entity = chatEntityMap.get(c.id)
+            if (!entity) return
+            const limit = Math.min(c.unreadCount, 30)
+            const msgs = await client.getMessages(entity, { limit })
+            // Группируем по groupedId — уникальные groupedId + отдельные msgs без groupedId
+            const groups = new Set()
+            let singles = 0
+            for (const m of msgs) {
+              if (m.out) continue  // исходящие не в unread
+              if (m.groupedId) groups.add(String(m.groupedId))
+              else singles++
+            }
+            result[c.id] = {
+              server: c.unreadCount,       // сколько по серверу (msgs)
+              grouped: groups.size + singles, // сколько "карточек"
+            }
+          } catch (e) {
+            log(`grouped-unread err for ${c.id}: ${e.message}`)
+          }
+        }))
+        // v0.87.45: защита от FLOOD_WAIT — 150мс между batches
+        if (i + batchSize < unreadChats.length) await new Promise(r => setTimeout(r, 150))
+      }
+      emit('tg:grouped-unread', { accountId: currentAccount.id, updates: result })
+      log(`grouped-unread: пересчитано ${Object.keys(result).length} чатов`)
+      return { ok: true, count: Object.keys(result).length }
+    } catch (e) {
+      log('grouped-unread err: ' + e.message)
       return { ok: false, error: e.message }
     }
   })
@@ -968,14 +1021,17 @@ function mapDialog(d) {
 function saveChatsCache(chats) {
   try {
     if (!cachePath) return
+    // v0.87.45: НЕ сохраняем unreadCount в кэш (даёт устаревшие цифры после перезапуска).
+    // При следующем запуске unreadCount будет 0 до ответа сервера через recomputeGroupedUnread.
     const enriched = chats.map(c => {
-      if (c.avatar) return c
+      const cleaned = { ...c, unreadCount: 0 }  // счётчик всегда получаем свежий с сервера
+      if (cleaned.avatar) return cleaned
       const rawId = c.rawId || String(c.id).split(':').pop()
       const avatarFile = path.join(avatarsDir, `${rawId}.jpg`)
       if (fs.existsSync(avatarFile)) {
-        return { ...c, avatar: 'file:///' + encodeURI(avatarFile.replace(/\\/g, '/')) }
+        return { ...cleaned, avatar: 'file:///' + encodeURI(avatarFile.replace(/\\/g, '/')) }
       }
-      return c
+      return cleaned
     })
     fs.writeFileSync(cachePath, JSON.stringify({ accountId: currentAccount?.id, chats: enriched, updatedAt: Date.now() }), 'utf8')
   } catch (e) { log('saveChatsCache err: ' + e.message) }

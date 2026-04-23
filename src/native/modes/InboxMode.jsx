@@ -32,15 +32,34 @@ export default function InboxMode({ store }) {
   }, [])
 
   // v0.87.24: window.focus → rescan unread (Комбо D — часть B)
+  // v0.87.45: + recomputeGroupedUnread — пересчитывает "карточки" (альбомы как 1).
   useEffect(() => {
-    const onFocus = () => { store.rescanUnread?.() }
+    const onFocus = () => {
+      store.rescanUnread?.()
+      store.recomputeGroupedUnread?.()
+    }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
+  // v0.87.45: при подключении аккаунта загружаем чаты + сразу параллельный пересчёт
+  // группированных карточек (альбомы как 1). Без этого при первом запуске счётчики
+  // показывают MTProto-количество сообщений, а не карточек.
+  const groupedRecomputedRef = useRef(false)
   useEffect(() => {
     if (store.activeAccountId) store.loadChats(store.activeAccountId)
   }, [store.activeAccountId])
+
+  // Триггерится один раз после появления чатов в списке (не раньше — иначе нечего пересчитывать).
+  useEffect(() => {
+    if (!store.activeAccountId) return
+    if (groupedRecomputedRef.current) return
+    if (!store.chats || store.chats.length === 0) return
+    groupedRecomputedRef.current = true
+    // Маленькая задержка, чтобы дать main-процессу получить первичные updates через tg:chats.
+    const t = setTimeout(() => { store.recomputeGroupedUnread?.() }, 800)
+    return () => clearTimeout(t)
+  }, [store.activeAccountId, store.chats?.length])
 
   useEffect(() => {
     if (!store.activeChatId) return
