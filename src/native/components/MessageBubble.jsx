@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import FormattedText from './FormattedText.jsx'
 import LinkPreview from './LinkPreview.jsx'
 import VideoTile from './VideoTile.jsx'
+import { useReadOnScrollAway } from '../hooks/useReadOnScrollAway.js'
 
 export default function MessageBubble({
   m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible,
@@ -15,15 +16,15 @@ export default function MessageBubble({
   const [mediaLoading, setMediaLoading] = useState(false)
   const ref = useRef(null)
 
-  // v0.87.16: IntersectionObserver — onVisible срабатывает когда сообщение в viewport
-  useEffect(() => {
-    if (!onVisible || !ref.current) return
-    const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) onVisible(m)
-    }, { threshold: 0.15 })  // v0.87.34: снизили с 0.5 — для коротких bubble сообщений 0.5 не достигается
-    obs.observe(ref.current)
-    return () => obs.disconnect()
-  }, [m.id])
+  // v0.87.43: Вариант 5 — Msg помечается прочитанным ТОЛЬКО когда:
+  //   1. Полностью виден (≥95%) → помечен seen
+  //   2. Потом ушёл ВЫШЕ viewport → onRead
+  // Защита от "промелькнувшее ≠ прочитанное" при fast-scroll и initial render.
+  useReadOnScrollAway({
+    elementRef: ref,
+    enabled: !!onVisible,
+    onRead: () => onVisible?.(m),
+  })
 
   // v0.87.23: ВОЗВРАТ — полное фото (не thumb). Как было до v0.87.22.
   const handleDownload = async () => {

@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import FormattedText from './FormattedText.jsx'
 import VideoTile from './VideoTile.jsx'
+import { useReadOnScrollAway } from '../hooks/useReadOnScrollAway.js'
 
 // v0.87.39: Постер видео для альбома (как в Telegram Desktop).
 // objectFit: cover, ▶ по центру, duration в углу. Клик → скачивание + отдельное окно.
@@ -264,19 +265,14 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
   const replyToMsg = album.replyToId && getMessage ? getMessage(chatId, album.replyToId) : null
   const ref = useRef(null)
 
-  // v0.87.33: IntersectionObserver — при реальной видимости альбома помечаем
-  // ВСЕ сообщения альбома как прочитанные (в MTProto альбом = N messages, каждое
-  // увеличивает server unreadCount → счётчик не уменьшался если помечать только firstMsg).
-  useEffect(() => {
-    if (!onVisible || !ref.current) return
-    const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) {
-        for (const m of album.msgs) onVisible(m)
-      }
-    }, { threshold: 0.15 })  // v0.87.34: снизили для надёжности
-    obs.observe(ref.current)
-    return () => obs.disconnect()
-  }, [album.msgs.map(m => m.id).join(',')])
+  // v0.87.43: Вариант 5 — альбом помечаем прочитанным только когда:
+  // 1. Альбом полностью виден (95%) → seen
+  // 2. Альбом ушёл ВЫШЕ viewport → markRead для ВСЕХ msgs альбома
+  useReadOnScrollAway({
+    elementRef: ref,
+    enabled: !!onVisible,
+    onRead: () => { for (const m of album.msgs) onVisible?.(m) },
+  })
 
   return (
     <div

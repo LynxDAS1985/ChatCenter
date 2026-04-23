@@ -1,6 +1,53 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.42 (23 апреля 2026)
+## Текущая версия: v0.87.43 (23 апреля 2026)
+
+### v0.87.43 — Вариант 5: seen+scrolled-away IntersectionObserver (Telegram-style read-tracking)
+
+**Проблема (из логов v0.87.42)**: открыл чат с 22 непрочитанными, ничего не скроллил — через 1.5с markRead пометил 16 сообщений (все что в viewport при initial scroll).
+
+**Причина**: старый IntersectionObserver с `threshold: 0.15` помечал msg как "виденные" сразу при появлении в экране. При initial-scroll 15+ msg появляются одновременно → все в batch → markRead.
+
+**Фикс v0.87.43 — двойной IntersectionObserver**:
+
+Новый хук `src/native/hooks/useReadOnScrollAway.js`:
+1. **Фаза 1 (Seen)**: msg должен быть полностью видим (`intersectionRatio >= 0.95`) → помечается `seenRef=true`
+2. **Фаза 2 (Read)**: msg ушёл ВЫШЕ viewport (`isIntersecting=false, boundingClientRect.bottom < 0`) И был seen → `onRead()`
+
+Защищает от:
+- Промелькнувшие сообщения при fast-scroll (не набирают 95% → не seen)
+- Initial-render (msg просто появились, не прокручены мимо)
+- Прыжки через кнопку ↓ (быстрый scroll, seen не срабатывает)
+- Layout shifts от media (IntersectionObserver сам пересчитывается)
+
+**Затронутые файлы**:
+- `useReadOnScrollAway.js` — новый хук
+- `MessageBubble.jsx` — заменил простой Observer на хук
+- `MediaAlbum.jsx` (AlbumBubble) — заменил простой Observer на хук
+- `InboxMode.jsx` — добавлены `scrollDiag.logEvent` для `read-scrolled-away`, `read-batch-send`, `read-batch-skip`
+
+**Расширенное логирование**:
+Теперь в `chatcenter.log` видна полная картина убывания счётчика:
+```
+[native-scroll] read-scrolled-away msgId=12866 batchSize=1 currentUnread=22
+[native-scroll] read-scrolled-away msgId=12867 batchSize=2 currentUnread=22
+...
+[native-scroll] read-batch-send maxId=12870 count=5 currentUnread=22
+[native-scroll] store-unread-sync unread=17
+```
+
+**Тесты** (+9 новых в `useReadOnScrollAway.vitest.jsx`):
+- msg на 50% — НЕ seen, НЕ read
+- msg полностью (100%) — SEEN, не read
+- seen → ушёл выше → READ
+- промелькнувшее (0.3) → ушёл выше → НЕ read ⭐ ключевой
+- ушёл вниз (bottom>0) → НЕ read
+- onRead только один раз
+- onSeen только один раз
+- threshold [0, 0.95] настроен
+- регрессия: 10 bubbles по 50% → 0 read (было 10)
+
+**Итого**: 99/99 vitest ✅ (было 90)
 
 ### v0.87.42 — FIX бейджа стрелки «50» при load-older (prepend ≠ новое снизу)
 

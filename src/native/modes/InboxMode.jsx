@@ -214,6 +214,12 @@ export default function InboxMode({ store }) {
     readSeenRef.current.add(id)
     readBatchRef.current.add(id)
     if (id > lastReadMaxRef.current) lastReadMaxRef.current = id
+    // v0.87.43: лог "msg реально уплыл вверх = прочитан"
+    scrollDiag.logEvent('read-scrolled-away', {
+      msgId: id,
+      batchSize: readBatchRef.current.size,
+      currentUnread: activeUnread,
+    })
     if (readTimerRef.current) return
     const chatAtStart = store.activeChatId
     readTimerRef.current = setTimeout(() => {
@@ -222,11 +228,17 @@ export default function InboxMode({ store }) {
       const count = readBatchRef.current.size
       if (count === 0) return
       readBatchRef.current = new Set()
-      // v0.87.37: GUARD — не уменьшаем maxId (при скролле к старым сообщениям
-      // lastReadMax может быть маленьким → сервер сбрасывает watermark → бейдж растёт)
-      if (lastReadMaxRef.current <= maxEverSentRef.current) return
+      if (lastReadMaxRef.current <= maxEverSentRef.current) {
+        scrollDiag.logEvent('read-batch-skip', {
+          reason: 'maxId не продвинулся', lastReadMax: lastReadMaxRef.current, maxEverSent: maxEverSentRef.current,
+        })
+        return
+      }
       maxEverSentRef.current = lastReadMaxRef.current
-      // v0.87.41: убран count — локально не вычитаем, сервер обновит через unread-sync
+      // v0.87.43: лог отправки batch на сервер
+      scrollDiag.logEvent('read-batch-send', {
+        maxId: lastReadMaxRef.current, count, currentUnread: activeUnread,
+      })
       store.markRead(chatAtStart, lastReadMaxRef.current)
     }, 1500)
   }

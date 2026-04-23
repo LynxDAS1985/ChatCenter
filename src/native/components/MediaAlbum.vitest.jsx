@@ -8,11 +8,22 @@ let observerCallback = null
 beforeEach(() => {
   globalThis.window.api = { invoke: vi.fn(), on: vi.fn(), send: vi.fn() }
   observerCallback = null
+  // v0.87.43: новая логика (seen + away). Имитируем полный цикл:
+  // 1) ratio=1.0 (полностью видно) → seen
+  // 2) isIntersecting=false, bottom<0 (ушло вверх) → read
   globalThis.IntersectionObserver = class {
     constructor(cb) { observerCallback = cb }
     observe(el) {
-      // Имитируем intersection через микрозадачу
-      setTimeout(() => observerCallback?.([{ isIntersecting: true, target: el }]), 0)
+      setTimeout(() => {
+        observerCallback?.([{
+          intersectionRatio: 1.0, isIntersecting: true,
+          boundingClientRect: { bottom: 300 }, target: el,
+        }])
+        observerCallback?.([{
+          intersectionRatio: 0, isIntersecting: false,
+          boundingClientRect: { bottom: -10 }, target: el,
+        }])
+      }, 0)
     }
     disconnect() {}
     unobserve() {}
