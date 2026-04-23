@@ -159,3 +159,57 @@ UNREAD SYNC сервер=47                                 [реальный un
 - Unread clamp: Math.min(realUnread, incoming.length) — защита от завышенного серверного значения.
 
 Файлы: src/native/hooks/useInitialScroll.js, src/native/modes/InboxMode.jsx.
+
+---
+
+## v0.87.40 ЧАСТИЧНО не решил проблему (23 апреля 2026, вечер)
+
+После перезапуска, воспроизведение на канале «Журнал Движок» (unread=29):
+
+```text
+chat-state messages=50 loading=true
+initial-wait-loading                                     ← ✅ loading guard работает
+
+top-threshold top=0 lastUserType=none                    ← ⚠️ handleScroll на рендере
+load-older-trigger beforeId=12809                        ← ⚠️ запрос СТАРЫХ без user-scroll-intent
+store-load-older beforeId=12809
+
+store-tg-messages append=false firstId=12838 anchor=12859  ← СВЕЖИЕ от сервера
+chat-state loading=false
+initial-run firstUnread=12859
+initial-done top=15111                                   ← ✅ основной скролл правильный
+
+store-tg-messages APPEND=true firstId=12759              ← ⚠️ поздний ответ на load-older
+chat-state messages=100 top=52598                        ← ⚠️ scrollBrowser подвинул сам
+load-older-apply top=40630                               ← ⚠️ компенсация сдвинула ещё
+```
+
+**Причина (главная гипотеза из handoff подтверждена):**
+
+`handleScroll` в InboxMode.jsx:227 запускает `loadOlderMessages` на **программном** рендере:
+- При появлении кэша в state `scrollTop=0` → `handleScroll` видит `top < 100` → `load-older-trigger`
+- `lastUserType=none` (никто мышь/колесо не трогал) — но защиты от этого нет
+- `append=true` приходит ПОСЛЕ `initial-done` → компенсация `scrollTop = scrollHeight - prevHeight` перебивает правильную позицию.
+
+**v0.87.40 ЧАСТИЧНО недостаточен:**
+- ✅ useInitialScroll ждёт свежих данных (loading guard работает)
+- ✅ firstUnread пересчитывается на fresh
+- ✅ unread clamp работает
+- ❌ `handleScroll → load-older-trigger` запускается без user-scroll-intent
+- ❌ async компенсация после append=true перебивает initial-done
+
+**Стрелка ↓ тоже плохо работает:**
+
+```text
+button-scroll firstUnread=12860 top=40630
+button-scroll-target top=40630                           ← не сдвинулся!
+```
+
+`scrollIntoView` не изменил позицию — 12860 уже в viewport или браузер решил что не надо.
+
+**Нужный фикс (ещё не применён):**
+
+1. В `handleScroll`: блокировать `loadOlderMessages` если `lastUserScrollIntent.at < Date.now() - 1500ms` ИЛИ `sinceOpenMs < 2000ms`. Паттерн: не запускать infinite scroll до первого реального действия пользователя.
+2. В `scrollToMessage` из кнопки ↓: сначала reset `scrollTop = 0` или использовать принудительный скролл через `el.offsetTop` — не полагаться на `scrollIntoView({block: 'start'})` если элемент уже в viewport.
+
+**Счётчик 29→28→27 — это НЕ баг**, это точные sync с сервером после markRead.
