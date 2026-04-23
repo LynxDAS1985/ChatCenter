@@ -166,3 +166,128 @@ describe('v0.87.45: tg:grouped-unread handler', () => {
     expect(c1.unreadCount).toBe(15)
   })
 })
+
+// v0.87.50: clamp groupedUnread по unreadCount в sync-handlers.
+// Баг v0.87.49: сервер возвращал unread=0 после markRead, но chat.groupedUnread
+// оставался от прошлого recompute (23). Бейдж показывал 23 вместо 0.
+describe('v0.87.50: clamp groupedUnread в unread-sync handlers', () => {
+  it('⭐ РЕГРЕССИЯ: tg:chat-unread-sync с unread=0 → groupedUnread тоже 0', () => {
+    const { result } = renderHook(() => useNativeStore())
+    // Подготовка: чат с grouped=23 (прошлый recompute)
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'Geely', unreadCount: 23 }],
+      })
+    })
+    act(() => {
+      onHandlers['tg:grouped-unread']?.({
+        accountId: 'acc1',
+        updates: { chat1: { server: 23, grouped: 23 } },
+      })
+    })
+    expect(result.current.chats.find(c => c.id === 'chat1').groupedUnread).toBe(23)
+    // Юзер долистал → сервер вернул unread=0
+    act(() => {
+      onHandlers['tg:chat-unread-sync']?.({ chatId: 'chat1', unreadCount: 0 })
+    })
+    const c = result.current.chats.find(c => c.id === 'chat1')
+    expect(c.unreadCount).toBe(0)
+    expect(c.groupedUnread).toBe(0)  // ← КЛЮЧЕВОЕ: до фикса было 23
+  })
+
+  it('tg:chat-unread-sync с unread=5 < grouped=9 → grouped clamp до 5', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'T', unreadCount: 9 }],
+      })
+    })
+    act(() => {
+      onHandlers['tg:grouped-unread']?.({
+        accountId: 'acc1',
+        updates: { chat1: { server: 9, grouped: 9 } },
+      })
+    })
+    act(() => {
+      onHandlers['tg:chat-unread-sync']?.({ chatId: 'chat1', unreadCount: 5 })
+    })
+    const c = result.current.chats.find(c => c.id === 'chat1')
+    expect(c.unreadCount).toBe(5)
+    expect(c.groupedUnread).toBe(5)  // clamp: grouped не может быть больше unread
+  })
+
+  it('tg:chat-unread-sync с unread=10 > grouped=3 → grouped не трогаем', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'T', unreadCount: 9 }],
+      })
+    })
+    act(() => {
+      onHandlers['tg:grouped-unread']?.({
+        accountId: 'acc1',
+        updates: { chat1: { server: 9, grouped: 3 } },  // альбом=1 карточка
+      })
+    })
+    // Пришло ещё msgs — сервер говорит unread=10, но grouped (3) уже < 10
+    act(() => {
+      onHandlers['tg:chat-unread-sync']?.({ chatId: 'chat1', unreadCount: 10 })
+    })
+    const c = result.current.chats.find(c => c.id === 'chat1')
+    expect(c.unreadCount).toBe(10)
+    expect(c.groupedUnread).toBe(3)  // grouped НЕ увеличиваем (ждём следующий recompute)
+  })
+
+  it('tg:unread-bulk-sync clamp — несколько чатов за раз', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [
+          { id: 'c1', accountId: 'acc1', title: 'A', unreadCount: 23 },
+          { id: 'c2', accountId: 'acc1', title: 'B', unreadCount: 5 },
+        ],
+      })
+    })
+    act(() => {
+      onHandlers['tg:grouped-unread']?.({
+        accountId: 'acc1',
+        updates: {
+          c1: { server: 23, grouped: 23 },
+          c2: { server: 5, grouped: 5 },
+        },
+      })
+    })
+    // Bulk sync от периодического rescan: оба стали 0
+    act(() => {
+      onHandlers['tg:unread-bulk-sync']?.({
+        updates: [
+          { id: 'c1', unreadCount: 0 },
+          { id: 'c2', unreadCount: 0 },
+        ],
+      })
+    })
+    expect(result.current.chats.find(c => c.id === 'c1').groupedUnread).toBe(0)
+    expect(result.current.chats.find(c => c.id === 'c2').groupedUnread).toBe(0)
+  })
+
+  it('если groupedUnread был undefined — sync его НЕ создаёт (оставляем undefined)', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'T', unreadCount: 5 }],
+        // groupedUnread НЕ задан — ещё не было recompute
+      })
+    })
+    act(() => {
+      onHandlers['tg:chat-unread-sync']?.({ chatId: 'chat1', unreadCount: 3 })
+    })
+    const c = result.current.chats.find(c => c.id === 'chat1')
+    expect(c.unreadCount).toBe(3)
+    expect(c.groupedUnread).toBeUndefined()
+  })
+})

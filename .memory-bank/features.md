@@ -1,6 +1,55 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.49 (23 апреля 2026)
+## Текущая версия: v0.87.50 (23 апреля 2026)
+
+### v0.87.50 — FIX бейдж застревал на 23 после прочтения (clamp groupedUnread в sync-handlers)
+
+**Диагностика из v0.87.49 логов дала 100% картину**. Chat Geely EX5 EM-i, 18:38:47-48:
+
+```
+18:38:47 bottom-state-change prev=false curr=true bottomGap=59   ← юзер докатил
+18:38:47 force-read-schedule lastId=17898 unread=23 atBottom=true ← таймер 400мс
+18:38:47 force-read-fire lastId=17898                             ← таймер стрельнул
+18:38:47 [tg] mark-read OK maxId=17898                            ← GramJS успех
+18:38:48 [tg] UNREAD SYNC Telegram сервер=0                       ← СЕРВЕР вернул 0
+18:38:48 store-unread-sync unread=0 active=true                   ← store получил
+18:38:48 badge-state unread=0 grouped=23 badge=23 prevGrouped=23  ← БАГ в UI
+```
+
+Всё работало КРОМЕ одного: `chat.groupedUnread=23` (прошлый recompute) не обнулялся при получении свежего unreadCount.
+
+**Корневая причина** (доказано по коду):
+- [nativeStore.js:228](src/native/store/nativeStore.js#L228) handler `tg:chat-unread-sync` обновлял ТОЛЬКО `unreadCount`
+- [ChatListItem.jsx:26](src/native/components/ChatListItem.jsx#L26) использует `badgeCount = chat.groupedUnread ?? chat.unreadCount`
+- Следствие: сервер 0 → unreadCount 0, но `groupedUnread` остался 23 → `badgeCount = 23 ?? 0 = 23`. Залипание.
+
+**Опровергнутые гипотезы** (через логи v0.87.49):
+- Гипотеза A (useReadOnScrollAway не помечает последние msg) — `force-read-fire` сработал идеально для `lastId=17898`
+- Гипотеза B (scrollTop прыгал) — ни одного `scroll-anomaly`, `bottom-state-change` только 1 раз false→true
+- Проблема в API / GramJS / MTProto — нет, `UNREAD SYNC сервер=0`
+
+**Единственная истинная причина**: рассинхрон между `unreadCount` и `groupedUnread` в store handlers.
+
+**Fix — точечный, 2 handler в одном файле** ([nativeStore.js](src/native/store/nativeStore.js)):
+
+```js
+// tg:chat-unread-sync + tg:unread-bulk-sync
+const nextGrouped = typeof c.groupedUnread === 'number'
+  ? Math.min(c.groupedUnread, unreadCount)
+  : c.groupedUnread
+return { ...c, unreadCount, groupedUnread: nextGrouped }
+```
+
+**Семантика clamp'а**: `grouped` не может быть больше чем MTProto-сообщений которые сервер считает непрочитанными. Если сервер говорит 0 → `grouped=min(23,0)=0`. Если сервер говорит 5 < grouped=9 → `grouped=5`. Если сервер говорит 10 > grouped=3 → grouped остаётся 3 (пришли новые, но мы не знаем их структуру — ждём recompute).
+
+**Тесты** (+5 в [nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx)):
+1. РЕГРЕССИЯ Geely: `unread=0` после `grouped=23` → `grouped=0`
+2. `unread=5 < grouped=9` → `grouped=5` (clamp)
+3. `unread=10 > grouped=3` → `grouped=3` не увеличивается (ждём recompute)
+4. bulk-sync для 2 чатов → оба clamp'ятся
+5. Если `groupedUnread` был undefined — sync не создаёт (остаётся undefined, fallback на unreadCount)
+
+**Итого**: 127 vitest (было 122), E2E 17/17, UI 9/9.
 
 ### v0.87.49 — ДИАГНОСТИКА: счётчик непрочитанных застревает после прокрутки до конца (только логи)
 

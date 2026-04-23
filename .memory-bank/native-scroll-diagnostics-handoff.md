@@ -341,6 +341,30 @@ UNREAD SYNC сервер=6                            [22 - 16 = 6]
 
 ---
 
+## v0.87.50 — FIX «бейдж застрял на 23 после прочтения» (clamp groupedUnread)
+
+Логи v0.87.49 доказали: API mark-read работал, сервер вернул `unread=0`, store получил sync. Баг в том что `tg:chat-unread-sync` handler не трогал `chat.groupedUnread`, а UI приоритизирует его над `unreadCount`.
+
+Цитата-улика из лога (Geely EX5 EM-i, 18:38:48):
+```
+[tg] UNREAD SYNC сервер=0
+store-unread-sync unread=0
+badge-state unread=0 grouped=23 badge=23 prevGrouped=23
+```
+
+Фикс в handlers `tg:chat-unread-sync` + `tg:unread-bulk-sync`:
+```js
+const nextGrouped = typeof c.groupedUnread === 'number'
+  ? Math.min(c.groupedUnread, unreadCount)
+  : c.groupedUnread
+```
+
++5 regression тестов в nativeStore.vitest.jsx — 127 vitest passed (было 122).
+
+Диагностические логи force-read-*/bottom-state-change/scroll-anomaly/badge-state оставлены — они проверили что force-read работает (fire успешно) и прыжков scrollTop нет.
+
+---
+
 ## v0.87.49 — ДИАГНОСТИКА: счётчик непрочитанных застревает после пролистывания (только логи)
 
 Что сделано: ТОЛЬКО добавлены логи, никаких изменений логики.

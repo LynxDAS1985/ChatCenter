@@ -1,5 +1,38 @@
 # Типичные ошибки — ChatCenter
 
+## 🔴 КРИТИЧЕСКОЕ: stale groupedUnread при tg:chat-unread-sync (v0.87.50, решено)
+
+**Симптом**: юзер пролистывает чат до конца → сервер получает markRead → возвращает `unread=0`. Но бейдж в списке продолжает показывать старое число (23, 16, 3 — в разных чатах по-разному). Застревает до перезапуска или `window.focus`.
+
+**История**:
+- v0.87.45 ввели поле `chat.groupedUnread` для показа «карточек» (альбом=1) вместо сырого MTProto-числа.
+- v0.87.46 обновили [ChatListItem.jsx:26](src/native/components/ChatListItem.jsx#L26): `badgeCount = chat.groupedUnread ?? chat.unreadCount`.
+- **Забыли обновить sync-handlers**: `tg:chat-unread-sync` и `tg:unread-bulk-sync` в [nativeStore.js](src/native/store/nativeStore.js) писали **только** `unreadCount`, поле `groupedUnread` не трогали.
+- Итог: сервер возвращает `unread=0` → в store `unreadCount=0, groupedUnread=23 (stale)` → UI `23 ?? 0 = 23`.
+
+**Доказательство 100%** (из лога v0.87.49 для Geely EX5 EM-i):
+```
+18:38:48 [tg] UNREAD SYNC сервер=0
+18:38:48 store-unread-sync unread=0 active=true
+18:38:48 badge-state unread=0 grouped=23 badge=23 prevGrouped=23
+```
+
+**Фикс (v0.87.50)** — в handlers `tg:chat-unread-sync` и `tg:unread-bulk-sync` добавлен clamp:
+```js
+const nextGrouped = typeof c.groupedUnread === 'number'
+  ? Math.min(c.groupedUnread, unreadCount)
+  : c.groupedUnread
+```
+Семантика: grouped не может быть больше чем сообщений, которое сервер считает непрочитанными.
+
+**ПРАВИЛО (эта ошибка не должна повторяться)**: когда вводишь поле в store с приоритетом в UI над другим полем (`A ?? B`) — **все IPC handler'ы, обновляющие B, должны также трогать A** (сбрасывать, clamp'ить или пересчитывать). Иначе stale A залипнет. Проверочный тест обязателен: написать regression который имитирует sync пустого значения B при непустом A.
+
+**Связанные места в коде**, куда смотреть при похожих багах:
+- [nativeStore.js tg:chats handler](src/native/store/nativeStore.js) — при merge/append убедиться что `groupedUnread` сохраняется или clamp'ится
+- [nativeStore.js tg:new-message handler](src/native/store/nativeStore.js) — при append нового msg `unreadCount++`, но `groupedUnread` не известен — оставить как есть (его recompute подправит)
+
+---
+
 ## 🟡 В РАССЛЕДОВАНИИ (v0.87.49): счётчик непрочитанных застревает на N после пролистывания
 
 **Симптом**: в чате с unread=N юзер пролистал до последнего сообщения. Счётчик в списке и на стрелке остаётся N, не становится 0. Воспроизводится в разных чатах (Автовоз, АвтоБизнес, Ассоциация РОАД).

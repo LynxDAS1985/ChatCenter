@@ -225,22 +225,40 @@ export default function useNativeStore() {
     })
 
     // v0.87.22: точная синхронизация unread с серверным значением Telegram
+    // v0.87.50: clamp groupedUnread по unreadCount. Баг до этого: сервер присылал unread=0
+    // после markRead, но chat.groupedUnread оставался от прошлого recompute (например 23) →
+    // UI показывал 23 ("badgeCount = groupedUnread ?? unreadCount"). Фикс: grouped не может
+    // быть больше сообщений которое сервер посчитал непрочитанными.
     addHandler('tg:chat-unread-sync', ({ chatId, unreadCount }) => {
       logNativeScroll('store-unread-sync', { chatId, unread: unreadCount, active: stateRef.current.activeChatId === chatId })
       setState(s => ({
         ...s,
-        chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount } : c)
+        chats: s.chats.map(c => {
+          if (c.id !== chatId) return c
+          const nextGrouped = typeof c.groupedUnread === 'number'
+            ? Math.min(c.groupedUnread, unreadCount)
+            : c.groupedUnread
+          return { ...c, unreadCount, groupedUnread: nextGrouped }
+        })
       }))
     })
 
     // v0.87.24: bulk sync — rescan всех активных чатов (Комбо D)
+    // v0.87.50: тот же clamp groupedUnread что и в chat-unread-sync
     addHandler('tg:unread-bulk-sync', ({ updates }) => {
       const map = new Map(updates.map(u => [u.id, u.unreadCount]))
       const activeId = stateRef.current.activeChatId
       if (activeId && map.has(activeId)) logNativeScroll('store-unread-bulk-active', { chatId: activeId, unread: map.get(activeId), updates: updates.length })
       setState(s => ({
         ...s,
-        chats: s.chats.map(c => map.has(c.id) ? { ...c, unreadCount: map.get(c.id) } : c)
+        chats: s.chats.map(c => {
+          if (!map.has(c.id)) return c
+          const unreadCount = map.get(c.id)
+          const nextGrouped = typeof c.groupedUnread === 'number'
+            ? Math.min(c.groupedUnread, unreadCount)
+            : c.groupedUnread
+          return { ...c, unreadCount, groupedUnread: nextGrouped }
+        })
       }))
     })
 
