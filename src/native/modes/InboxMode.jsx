@@ -112,7 +112,10 @@ export default function InboxMode({ store }) {
 
   // v0.87.28: индикатор scroll-to-bottom + первый непрочитанный
   // PhotoViewer теперь отдельное окно (IPC photo:open) — не React overlay
-  const [atBottom, setAtBottom] = useState(true)
+  // v0.87.44: default false! Раньше true → useForceReadAtBottom срабатывал СРАЗУ при
+  // открытии чата (до первого реального scroll event) → отмечал lastMsgId прочитанным
+  // → сервер возвращал unread=1 вместо 7. Баг «было 7, стало 1 за секунду».
+  const [atBottom, setAtBottom] = useState(false)
   const [newBelow, setNewBelow] = useState(0)
   const firstUnreadIdRef = useRef(null)
   const scrollDiag = useScrollDiagnostics({ activeChatId: store.activeChatId, activeChat, activeMessages, activeUnread, loading: store.loadingMessages?.[store.activeChatId], scrollRef: msgsScrollRef })

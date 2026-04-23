@@ -20,7 +20,7 @@ function collectJsxFiles(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, entry.name)
     if (entry.isDirectory()) out.push(...collectJsxFiles(p))
-    else if (entry.isFile() && /\.(jsx|js)$/.test(entry.name) && !p.includes('__tests__')) out.push(p)
+    else if (entry.isFile() && /\.(jsx|js)$/.test(entry.name) && !p.includes('__tests__') && !p.includes('.vitest.')) out.push(p)
   }
   return out
 }

@@ -1,6 +1,37 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.43 (23 апреля 2026)
+## Текущая версия: v0.87.44 (23 апреля 2026)
+
+### v0.87.44 — FIX «было 7, стало 1 за секунду» — default atBottom=true при открытии
+
+**Проблема (из логов v0.87.43)**: открыл чат с 7 непрочитанными, не трогал — через 400мс markRead(maxId=12887, последнее msg) → сервер: 7→1.
+
+**Причина** в `InboxMode.jsx`:
+```js
+const [atBottom, setAtBottom] = useState(true)  // ← default true!
+```
+
+`atBottom` меняется только в `handleScroll`. При открытии чата scroll event ещё не произошёл → `atBottom=true` (stale default).
+
+`useForceReadAtBottom` при `atBottom=true` + `unread > 0` → через 400мс отправляет markRead(lastMsgId) → сервер помечает всё до последнего → осталось 1 (только тот что пришёл пока читали).
+
+**Фикс одна строка**:
+```js
+const [atBottom, setAtBottom] = useState(false)  // default false
+```
+
+`atBottom=true` устанавливается **только** после реального scroll event когда `nearBottom<80px`.
+
+**Тесты** (+5 новых в `useForceReadAtBottom.vitest.jsx`):
+- atBottom=false: НЕ вызывает markRead ⭐ регрессия v0.87.44
+- atBottom=true + unread>0: вызывает через 400мс
+- atBottom=true + unread=0: НЕ вызывает
+- maxEverSentRef guard не позволяет уменьшать maxId
+- Регрессионный сценарий «было 7, стало 1» воспроизведён
+
+**Также фикс**: `hookOrder.test.cjs` исключает `.vitest.jsx` файлы (false-positive на renderHook callback).
+
+**Итого**: 104/104 vitest ✅ (было 99)
 
 ### v0.87.43 — Вариант 5: seen+scrolled-away IntersectionObserver (Telegram-style read-tracking)
 
