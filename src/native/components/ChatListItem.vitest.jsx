@@ -87,32 +87,21 @@ describe('ChatListItem render', () => {
     cleanup()
   })
 
-  // v0.87.45: groupedUnread приоритетнее unreadCount (альбом = 1 карточка)
-  it('groupedUnread=1 побеждает unreadCount=9 (альбом из 9 фото)', () => {
+  // v0.87.51: groupedUnread удалён — UI показывает чистый unreadCount от Telegram API.
+  it('v0.87.51: unreadCount=9 показывает 9 (Telegram API value)', () => {
     const { container } = render(<ChatListItem chat={{
-      ...baseChat, unreadCount: 9, groupedUnread: 1,
+      ...baseChat, unreadCount: 9,
     }} />)
-    // Должен показывать 1, не 9
-    expect(container.querySelector('[style*="background: var(--amoled-accent)"]').textContent).toBe('1')
+    expect(container.querySelector('[style*="background: var(--amoled-accent)"]').textContent).toBe('9')
     cleanup()
   })
 
-  it('groupedUnread=0 скрывает бейдж даже при unreadCount=5', () => {
+  it('v0.87.51: groupedUnread если задан — ИГНОРИРУЕТСЯ (используем unreadCount)', () => {
+    // Даже если где-то остался груженный груздь в chat, UI должен показывать unreadCount.
     const { container } = render(<ChatListItem chat={{
-      ...baseChat, unreadCount: 5, groupedUnread: 0,
+      ...baseChat, unreadCount: 5, groupedUnread: 1,  // groupedUnread игнорируется
     }} />)
-    // Бейджа нет (0 карточек)
-    const badge = container.querySelector('[style*="background: var(--amoled-accent)"]')
-    expect(badge).toBeNull()
-    cleanup()
-  })
-
-  it('когда groupedUnread undefined — фоллбек на unreadCount', () => {
-    const { container } = render(<ChatListItem chat={{
-      ...baseChat, unreadCount: 7,
-      // groupedUnread не задан — должен упасть на unreadCount
-    }} />)
-    expect(container.querySelector('[style*="background: var(--amoled-accent)"]').textContent).toBe('7')
+    expect(container.querySelector('[style*="background: var(--amoled-accent)"]').textContent).toBe('5')
     cleanup()
   })
 })

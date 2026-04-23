@@ -21,9 +21,10 @@ export default function ChatListItem({ chat, active, onClick }) {
   const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('')
   const icon = typeIcon(chat.type, chat.isBot)
-  // v0.87.45: groupedUnread считает альбомы как 1 карточку (как в Telegram Desktop).
-  // Приходит с сервера через tg:grouped-unread после recompute. Фоллбек — обычный unreadCount.
-  const badgeCount = typeof chat.groupedUnread === 'number' ? chat.groupedUnread : chat.unreadCount
+  // v0.87.51: показываем ровно то число что возвращает Telegram API (chat.unreadCount).
+  // groupedUnread (v0.87.45-50) удалён — источник рассинхронов. Если юзер хочет видеть
+  // "альбом=1" — это задача сервера, не клиента. Telegram MTProto считает каждое фото как msg.
+  const badgeCount = chat.unreadCount
 
   return (
     <div

@@ -3,36 +3,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { AlbumBubble } from './MediaAlbum.jsx'
 
-// v0.87.33: мокаем IntersectionObserver чтобы сразу сработал isIntersecting.
-// v0.87.47: Вариант 2 создаёт ДВА observer (seen + read) — мок должен
-// помнить все callbacks и по-разному триггерить seen-observer (rootMargin=-49%)
-// vs read-observer (без rootMargin).
-let observerCallbacks = []
+// v0.87.51: мок IntersectionObserver — один observer с threshold=0.
+// Симулирует появление msg в viewport ПОСЛЕ initial: первый callback hidden, второй visible.
 beforeEach(() => {
   globalThis.window.api = { invoke: vi.fn(), on: vi.fn(), send: vi.fn() }
-  observerCallbacks = []
   globalThis.IntersectionObserver = class {
-    constructor(cb, opts) {
-      this.cb = cb
-      this.opts = opts || {}
-      observerCallbacks.push(this)
-    }
+    constructor(cb, opts) { this.cb = cb; this.opts = opts || {} }
     observe(el) {
       setTimeout(() => {
-        const isSeenObs = /-\d+%/.test(this.opts.rootMargin || '')
-        if (isSeenObs) {
-          // Seen-observer: msg вошёл в центральную полосу viewport
-          this.cb([{ isIntersecting: true, target: el }])
-        } else {
-          // Read-observer: сперва msg в viewport (не стреляет),
-          // потом ушёл выше (bottom<0) — триггерит onRead когда seen=true
-          this.cb([{
-            isIntersecting: false,
-            boundingClientRect: { bottom: -10 },
-            rootBounds: { top: 0 },
-            target: el,
-          }])
-        }
+        // Initial: msg скрыт (юзер не открывал) → не read
+        this.cb([{ isIntersecting: false, target: el }])
+        // Scroll событие: msg появился → read (initial-guard уже сбросился)
+        this.cb([{ isIntersecting: true, target: el }])
       }, 0)
     }
     disconnect() {}

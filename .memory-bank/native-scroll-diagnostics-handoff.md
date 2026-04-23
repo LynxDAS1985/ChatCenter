@@ -341,6 +341,38 @@ UNREAD SYNC сервер=6                            [22 - 16 = 6]
 
 ---
 
+## v0.87.51 — Прогрессия счётчика в реальном времени + откат groupedUnread
+
+3 изменения:
+
+1. `useReadOnScrollAway.js` — один IntersectionObserver с `threshold: 0` + initial-guard. Msg при открытии в viewport → НЕ read. Любое последующее появление (скролл) → read. Без тротлинга центральной полосы (v0.87.47), работает при любой скорости.
+
+2. InboxMode: таймер батча markRead с 1500мс до 300мс. Прогрессия счётчика в реальном времени при прокрутке.
+
+3. Удалён `groupedUnread` — UI использует сырой `chat.unreadCount` от Telegram API. Откат v0.87.45-50. См. урок в common-mistakes.md.
+
+Новые логи для диагностики:
+- `read-initial-visible { msgId }` — msg виден при открытии (не помечаем)
+- `read-initial-hidden { msgId }` — msg скрыт при открытии
+- `read-fire { msgId }` — помечен через observer
+
+Ожидаемая цепочка при листании чата с unread=23:
+```
+read-initial-visible msgId=X (для тех что в viewport при open)
+(юзер скроллит)
+read-fire msgId=Y
+read-batch-send maxId=Y count=N
+[tg] mark-read OK maxId=Y
+store-unread-sync unread=20  ← уменьшилось!
+badge-state unread=20 prevUnread=23
+(продолжается)
+badge-state unread=15 prevUnread=20
+...
+badge-state unread=0 prevUnread=3
+```
+
+---
+
 ## v0.87.50 — FIX «бейдж застрял на 23 после прочтения» (clamp groupedUnread)
 
 Логи v0.87.49 доказали: API mark-read работал, сервер вернул `unread=0`, store получил sync. Баг в том что `tg:chat-unread-sync` handler не трогал `chat.groupedUnread`, а UI приоритизирует его над `unreadCount`.

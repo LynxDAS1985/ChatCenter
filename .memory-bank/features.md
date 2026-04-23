@@ -1,6 +1,63 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.50 (23 апреля 2026)
+## Текущая версия: v0.87.51 (23 апреля 2026)
+
+### v0.87.51 — Прогрессия счётчика в реальном времени + удалён groupedUnread
+
+**Проблема до этого (от пользователя)**:
+- Бейдж показывает 23 — юзер листает — бейдж стоит на 23 — в самом конце внезапно падает в 0.
+- Нет прогрессии 23→20→15→10→0 по ходу прокрутки.
+- Альбом из 5 фото должен давать +5 к счётчику (как считает Telegram API), а не +1.
+
+**Три изменения в одном коммите**:
+
+#### 1. Прочтение «msg появился → прочитан» ([useReadOnScrollAway.js](src/native/hooks/useReadOnScrollAway.js))
+
+Переписан с двух IntersectionObserver (seen через центр + read при уходе выше) на **один** с `threshold: 0` + initial-guard.
+
+- `threshold: 0` — observer срабатывает когда msg хоть частично в viewport
+- **Initial-guard**: первый callback после observe() игнорируется — если msg УЖЕ в viewport при открытии чата → не помечаем (защита от mass-read на open).
+- Последующий `isIntersecting=true` → `onRead()` один раз.
+
+Почему это лучше v0.87.47 (центр viewport):
+- Observer с `rootMargin -49% -49%` тротлит callbacks (спека). При быстром скролле msg пролетает мимо центральной полосы 2% без регистрации.
+- `threshold: 0` ловит **любое** появление — работает при любой скорости.
+
+Новые логи:
+- `read-initial-visible { msgId }` — msg виден при открытии (не помечаем)
+- `read-initial-hidden { msgId }` — msg скрыт при открытии (ждём скролл)
+- `read-fire { msgId }` — помечен
+
+#### 2. Батч markRead 1500мс → 300мс ([InboxMode.jsx:291](src/native/modes/InboxMode.jsx#L291))
+
+В `readByVisibility` таймер копит прочитанные msg id и отправляет пачкой. Было 1500мс (1.5 секунды). Стало 300мс.
+
+Эффект: за секунду прокрутки 3-4 отправки на сервер → сервер возвращает уменьшающийся `unread` через `tg:chat-unread-sync` → UI показывает прогрессию 23→20→15→...→0.
+
+Риск FLOOD_WAIT: минимальный, Telegram переваривает такой темп.
+
+#### 3. Удалён `groupedUnread` — UI показывает сырой `unreadCount` от Telegram API
+
+Причина отката v0.87.45-50:
+- `groupedUnread` (локальная группировка альбомов как 1 карточка) создавала **рассинхрон** с сервером: UI показывал 23 когда сервер уже 0, затыкался до следующего recompute.
+- Пользователь явно попросил: «показывай сколько передаёт API Telegram» — альбом из 5 фото = 5 в бейдже, как считает MTProto.
+- Это то поведение которое было до v0.87.45. Возврат к нему убирает целый класс багов.
+
+**Удалены**:
+- Handler `tg:grouped-unread` в `nativeStore.js` + action `recomputeGroupedUnread`
+- Clamp в handlers `tg:chat-unread-sync` / `tg:unread-bulk-sync` (из v0.87.50)
+- IPC `tg:recompute-grouped-unread` в [main/native/telegramHandler.js](main/native/telegramHandler.js)
+- Триггеры recompute на `window.focus` и после session restore в `InboxMode.jsx`
+- Переменная `activeUnreadCards` в `InboxMode.jsx` (кнопка стрелки)
+- Чтение `chat.groupedUnread` в `ChatListItem.jsx`
+
+**Тесты**:
+- `useReadOnScrollAway.vitest.jsx` полностью переписан — 7 тестов под новую логику (threshold=0 + initial-guard)
+- `nativeStore.vitest.jsx` очищен от groupedUnread + добавлены 3 новых теста подтверждающих новое поведение
+- `ChatListItem.vitest.jsx` — groupedUnread тесты заменены на «UI показывает unreadCount от API»
+- `MediaAlbum.vitest.jsx` — мок IntersectionObserver адаптирован под один observer (initial hidden → visible)
+
+**Итого**: 113 vitest ✅, E2E 17/17, UI 9/9.
 
 ### v0.87.50 — FIX бейдж застревал на 23 после прочтения (clamp groupedUnread в sync-handlers)
 

@@ -1,60 +1,52 @@
-// v0.87.47: Вариант 2 (Telegram-style) — двойной IntersectionObserver center+away.
-// Msg помечается прочитанным ТОЛЬКО если:
-//   Фаза 1 (Seen): msg пересёк горизонтальную середину viewport → seenRef=true
-//   Фаза 2 (Read): msg ушёл ВЫШЕ viewport (rect.bottom < rootBounds.top) И был seen
+// v0.87.51: msg считается прочитанным как только появился в viewport.
+// Один IntersectionObserver с threshold=0 — срабатывает при появлении хоть одного пикселя.
+// Защита от mass-read при открытии чата: msg которые УЖЕ в viewport при первом callback
+// пропускаются (initial). Только msg которые появились из-за скролла → onRead().
 //
-// Почему через "центр viewport" (vs 0.95 ratio в v0.87.43):
-// Длинные msg (юридический текст, больше viewport) физически не могут набрать ratio>=0.95
-// → seen НЕ срабатывал → счётчик не уменьшался. Логика "прошёл через центр экрана"
-// работает независимо от размера msg: любое сообщение, которое юзер прокрутил мимо,
-// обязательно пересекло центральную полосу viewport.
-//
-// Rootmargin '-49% 0 -49% 0' превращает root в тонкую горизонтальную полосу шириной
-// во весь viewport и высотой 2% от viewport — это "зона чтения" в середине экрана.
-//
-// Защита (как в v0.87.43):
-// - Initial render: msg появились ниже центра → isIntersecting=false → seen=false → read=false
-// - Fast scroll через центр → seen=true, если msg успел уйти выше → read=true (это правильно:
-//   юзер прокрутил сознательно)
-// - Прыжок через кнопку ↓: обычный скролл не проходит через центр всех msg (IntersectionObserver
-//   использует тротлинг), поэтому только реально проходящие через центр msg → seen.
+// Почему так, а не через "центр" (v0.87.47): observer с rootMargin тротлит callbacks при
+// быстром скролле → msg "пролетает" мимо центра без регистрации. threshold=0 срабатывает
+// на появление — не пропускает.
 import { useEffect, useRef } from 'react'
+import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 
-export function useReadOnScrollAway({ elementRef, onRead, onSeen, enabled = true, root = null }) {
+export function useReadOnScrollAway({ elementRef, onRead, onSeen, enabled = true, root = null, msgId = null }) {
   const seenRef = useRef(false)
   const readRef = useRef(false)
+  const initialGuardRef = useRef(true)
 
   useEffect(() => {
     if (!enabled || !elementRef.current) return
     seenRef.current = false
     readRef.current = false
+    initialGuardRef.current = true
 
-    // Фаза 1 (Seen): msg пересекает центральную полосу viewport.
-    // rootMargin negative top/bottom 49% → остаётся полоса 2% в центре.
-    const seenObs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting && !seenRef.current) {
-        seenRef.current = true
-        onSeen?.()
+    const obs = new IntersectionObserver(([entry]) => {
+      // v0.87.51: первый callback — initial state. Если msg уже в viewport при mount →
+      // это НЕ прочтение (open-chat). Просто фиксируем что msg "initially visible/hidden".
+      if (initialGuardRef.current) {
+        initialGuardRef.current = false
+        if (entry.isIntersecting) {
+          // Msg виден при открытии — мог быть прочитан юзером ранее, не трогаем.
+          seenRef.current = true  // чтобы НЕ сработать при первом "уходе и возврате"
+          logNativeScroll('read-initial-visible', { msgId })
+        } else {
+          // Msg скрыт при открытии — ждём пока появится (скроллом)
+          logNativeScroll('read-initial-hidden', { msgId })
+        }
+        return
       }
-    }, { root, rootMargin: '-49% 0px -49% 0px', threshold: 0 })
-    seenObs.observe(elementRef.current)
 
-    // Фаза 2 (Read): msg ушёл ВЫШЕ viewport (rect.bottom < rootBounds.top) + был seen.
-    // Обычный observer без rootMargin — отслеживает реальный viewport.
-    const readObs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting || !seenRef.current || readRef.current) return
-      const rootTop = entry.rootBounds?.top ?? 0
-      if (entry.boundingClientRect.bottom < rootTop) {
+      // Любое ПОСЛЕДУЮЩЕЕ появление в viewport = юзер его увидел при скролле → read
+      if (entry.isIntersecting && !readRef.current) {
         readRef.current = true
+        onSeen?.()
         onRead?.()
+        logNativeScroll('read-fire', { msgId })
       }
     }, { root, threshold: 0 })
-    readObs.observe(elementRef.current)
+    obs.observe(elementRef.current)
 
-    return () => {
-      seenObs.disconnect()
-      readObs.disconnect()
-    }
+    return () => obs.disconnect()
   }, [enabled])
 
   return { seenRef, readRef }

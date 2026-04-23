@@ -308,55 +308,8 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     }
   })
 
-  // v0.87.45: параллельный пересчёт "сообщения vs карточки" с группировкой по groupedId.
-  // Для чатов с unreadCount > 0 грузим последние N msgs и группируем альбомы в 1 карточку.
-  // Batch по 5 одновременно с защитой от FLOOD_WAIT.
-  ipcMain.handle('tg:recompute-grouped-unread', async () => {
-    try {
-      if (!client || !currentAccount) return { ok: false }
-      const updates = await fetchAllUnreadUpdates()
-      const unreadChats = updates.filter(u => u.unreadCount > 0)
-      if (unreadChats.length === 0) {
-        log(`grouped-unread: нет чатов с unread, skip`)
-        return { ok: true, count: 0 }
-      }
-      const result = {}
-      const batchSize = 5
-      for (let i = 0; i < unreadChats.length; i += batchSize) {
-        const batch = unreadChats.slice(i, i + batchSize)
-        await Promise.all(batch.map(async (c) => {
-          try {
-            const entity = chatEntityMap.get(c.id)
-            if (!entity) return
-            const limit = Math.min(c.unreadCount, 30)
-            const msgs = await client.getMessages(entity, { limit })
-            // Группируем по groupedId — уникальные groupedId + отдельные msgs без groupedId
-            const groups = new Set()
-            let singles = 0
-            for (const m of msgs) {
-              if (m.out) continue  // исходящие не в unread
-              if (m.groupedId) groups.add(String(m.groupedId))
-              else singles++
-            }
-            result[c.id] = {
-              server: c.unreadCount,       // сколько по серверу (msgs)
-              grouped: groups.size + singles, // сколько "карточек"
-            }
-          } catch (e) {
-            log(`grouped-unread err for ${c.id}: ${e.message}`)
-          }
-        }))
-        // v0.87.45: защита от FLOOD_WAIT — 150мс между batches
-        if (i + batchSize < unreadChats.length) await new Promise(r => setTimeout(r, 150))
-      }
-      emit('tg:grouped-unread', { accountId: currentAccount.id, updates: result })
-      log(`grouped-unread: пересчитано ${Object.keys(result).length} чатов`)
-      return { ok: true, count: Object.keys(result).length }
-    } catch (e) {
-      log('grouped-unread err: ' + e.message)
-      return { ok: false, error: e.message }
-    }
-  })
+  // v0.87.51: удалён IPC tg:recompute-grouped-unread. UI теперь показывает серверный
+  // unreadCount как есть (альбом=N фото). Это то что возвращает Telegram API.
 
   // v0.87.24: manual sync unread (вызывается из renderer при window.focus)
   // v0.87.26: используем fetchAllUnreadUpdates с пагинацией — раньше было 100 чатов

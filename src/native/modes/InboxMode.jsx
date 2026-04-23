@@ -32,34 +32,16 @@ export default function InboxMode({ store }) {
   }, [])
 
   // v0.87.24: window.focus → rescan unread (Комбо D — часть B)
-  // v0.87.45: + recomputeGroupedUnread — пересчитывает "карточки" (альбомы как 1).
+  // v0.87.51: удалён recomputeGroupedUnread — используем только серверный unreadCount.
   useEffect(() => {
-    const onFocus = () => {
-      store.rescanUnread?.()
-      store.recomputeGroupedUnread?.()
-    }
+    const onFocus = () => { store.rescanUnread?.() }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  // v0.87.45: при подключении аккаунта загружаем чаты + сразу параллельный пересчёт
-  // группированных карточек (альбомы как 1). Без этого при первом запуске счётчики
-  // показывают MTProto-количество сообщений, а не карточек.
-  const groupedRecomputedRef = useRef(false)
   useEffect(() => {
     if (store.activeAccountId) store.loadChats(store.activeAccountId)
   }, [store.activeAccountId])
-
-  // Триггерится один раз после появления чатов в списке (не раньше — иначе нечего пересчитывать).
-  useEffect(() => {
-    if (!store.activeAccountId) return
-    if (groupedRecomputedRef.current) return
-    if (!store.chats || store.chats.length === 0) return
-    groupedRecomputedRef.current = true
-    // Маленькая задержка, чтобы дать main-процессу получить первичные updates через tg:chats.
-    const t = setTimeout(() => { store.recomputeGroupedUnread?.() }, 800)
-    return () => clearTimeout(t)
-  }, [store.activeAccountId, store.chats?.length])
 
   useEffect(() => {
     if (!store.activeChatId) return
@@ -94,30 +76,21 @@ export default function InboxMode({ store }) {
   // v0.87.45: activeUnread = MTProto-число (альбом=N фото) — нужно для findFirstUnreadId,
   // markRead, initial-scroll (там считаем "последние N incoming msgs").
   const activeUnread = activeChat?.unreadCount || 0
-  // v0.87.46: для UI-бейдей (стрелка вниз) используем "карточки" = groupedUnread.
-  // Иначе расхождение: список чатов показывает 16 (карточки), стрелка 28 (MTProto).
-  const activeUnreadCards = (typeof activeChat?.groupedUnread === 'number')
-    ? activeChat.groupedUnread
-    : activeUnread
 
-  // v0.87.49: диагностика расхождения unreadCount vs groupedUnread на активном чате.
-  // Лог пишется только при СМЕНЕ значений (не на каждый render). Цель: увидеть момент
-  // когда unreadCount упал до 0, но groupedUnread застрял > 0 (бейдж не обновляется).
-  const prevBadgeRef = useRef({ u: null, g: null })
+  // v0.87.51: диагностика изменения unreadCount на активном чате — видно прогрессию
+  // 23→20→15→...→0 при прокрутке.
+  const prevUnreadRef = useRef(null)
   useEffect(() => {
     if (!activeChat) return
     const u = activeChat.unreadCount ?? null
-    const g = typeof activeChat.groupedUnread === 'number' ? activeChat.groupedUnread : null
-    const prev = prevBadgeRef.current
-    if (prev.u !== u || prev.g !== g) {
+    if (prevUnreadRef.current !== u) {
       scrollDiag.logEvent('badge-state', {
         chatId: activeChat.id, title: activeChat.title,
-        unread: u, grouped: g, badge: activeUnreadCards,
-        prevUnread: prev.u, prevGrouped: prev.g,
+        unread: u, prevUnread: prevUnreadRef.current,
       })
-      prevBadgeRef.current = { u, g }
+      prevUnreadRef.current = u
     }
-  }, [activeChat?.unreadCount, activeChat?.groupedUnread])
+  }, [activeChat?.unreadCount])
 
   const handleSend = async () => {
     if (!input.trim() || !store.activeChatId || sending) return
@@ -288,7 +261,7 @@ export default function InboxMode({ store }) {
         maxId: lastReadMaxRef.current, count, currentUnread: activeUnread,
       })
       store.markRead(chatAtStart, lastReadMaxRef.current)
-    }, 1500)
+    }, 300)  // v0.87.51: было 1500мс — счётчик падал разом в конце. 300мс → плавная прогрессия.
   }
 
   // v0.87.34: drag-n-drop файлов + Ctrl+V картинки — вынесено в хук
@@ -644,17 +617,17 @@ export default function InboxMode({ store }) {
               })}
             </div>
               {/* v0.87.35/36: кнопка ↓ ВНЕ scroll-контейнера → не скроллится */}
-              {/* v0.87.46: бейдж = activeUnreadCards (карточки, альбом=1), не unreadCount */}
-              {(!atBottom || activeUnreadCards > 0) && (
+              {/* v0.87.51: бейдж = activeUnread (сырой Telegram API, как в ChatListItem) */}
+              {(!atBottom || activeUnread > 0) && (
                 <button
                   onClick={scrollToBottom}
                   className="native-scroll-bottom-btn"
-                  title={activeUnreadCards > 0 ? `К первому непрочитанному (${activeUnreadCards})` : 'К последнему сообщению'}
+                  title={activeUnread > 0 ? `К первому непрочитанному (${activeUnread})` : 'К последнему сообщению'}
                 >
                   ↓
-                  {(activeUnreadCards > 0 || newBelow > 0) && (
+                  {(activeUnread > 0 || newBelow > 0) && (
                     <span className="native-scroll-bottom-badge">
-                      {(activeUnreadCards > 0 ? activeUnreadCards : newBelow) > 99 ? '99+' : (activeUnreadCards > 0 ? activeUnreadCards : newBelow)}
+                      {(activeUnread > 0 ? activeUnread : newBelow) > 99 ? '99+' : (activeUnread > 0 ? activeUnread : newBelow)}
                     </span>
                   )}
                 </button>
