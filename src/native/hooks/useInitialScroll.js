@@ -2,6 +2,8 @@
 // Если есть firstUnreadId — скроллим на него + жёлтая подсветка 3.5с.
 // Если всё прочитано — скроллим в самый низ.
 // Защита: однократно на chatId (initialScrollDoneRef).
+// v0.87.48: doneRef экспонируется наружу — InboxMode блокирует авто-load-older
+// пока initial-scroll не закончился (иначе гонка с browser scroll anchoring).
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
 
@@ -49,4 +51,6 @@ export function useInitialScroll({ activeChatId, messagesCount, scrollRef, first
 
     return () => clearTimeout(timer)
   }, [activeChatId, messagesCount, loading])
+
+  return { doneRef }
 }

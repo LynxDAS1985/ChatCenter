@@ -341,6 +341,22 @@ UNREAD SYNC сервер=6                            [22 - 16 = 6]
 
 ---
 
+## v0.87.48 — FIX скролл уезжал в середину при открытии (race авто-load-older vs initial-scroll)
+
+**Проблема**: при открытии чата скроллТоп=0 триггерил авто-`load-older` (условие `scrollTop<100`) одновременно с initial-scroll. prevHeight запоминал высоту ДО initial-scroll. Результат — наша формула `scrollHeight-prevHeight` перекрывала корректный scrollTop от browser scroll anchoring (Chrome Scroll Anchoring API, вкл. по умолчанию). Юзер уезжал в середину чата.
+
+**Фикс**:
+- `src/native/hooks/useInitialScroll.js` — экспортирует `{ doneRef }` (ref, который становится `=activeChatId` после initial-scroll)
+- `src/native/modes/InboxMode.jsx` — в `handleScroll` блокировка:
+  ```js
+  if (initialScrollDoneRef.current !== store.activeChatId) return
+  ```
+  Новый лог `load-older-skip-initial` для диагностики.
+
+**Тесты**: `useInitialScroll.vitest.jsx` (новый, 5 контрактных тестов doneRef) + `InboxMode.vitest.jsx` +1 регрессия (loadOlderMessages НЕ вызывается при render с scrollTop=0).
+
+---
+
 ## v0.87.47 — FIX счётчик не уменьшался на длинных постах (center viewport)
 
 **Проблема**: v0.87.43 ввёл `ratio >= 0.95` для детекции seen. Для длинных постов (юридические тексты в канале Автовоз ~800px при viewport 570px) ratio максимум **0.71** — порог никогда не достигается. Лог доказывает: 15 сек активной прокрутки (6000px), ноль `read-scrolled-away`.

@@ -148,7 +148,7 @@ export default function InboxMode({ store }) {
 
   // v0.87.29/40: начальный скролл чата — ПОСЛЕ загрузки свежих данных с сервера.
   // loading=true пока messages обновляются, loading=false — свежие в state.
-  useInitialScroll({
+  const { doneRef: initialScrollDoneRef } = useInitialScroll({
     activeChatId: store.activeChatId,
     messagesCount: activeMessages.length,
     scrollRef: msgsScrollRef,
@@ -286,6 +286,15 @@ export default function InboxMode({ store }) {
     scrollDiag.observeScroll(nearBottom, loadingOlderRef.current)
     // Infinite scroll up
     if (loadingOlderRef.current) return
+    // v0.87.48: блокируем авто-load-older пока initial-scroll не закончился.
+    // Иначе scrollTop=0 (сразу после открытия чата) вызывает load-older одновременно
+    // с initial-scroll → browser scroll anchoring корректирует scrollTop сам, а наша
+    // ручная формула scrollHeight-prevHeight его перебивает → юзер улетает в середину.
+    // Ловушка 103 в common-mistakes.md.
+    if (initialScrollDoneRef.current !== store.activeChatId) {
+      scrollDiag.logEvent('load-older-skip-initial', { scrollTop: el.scrollTop, chatId: store.activeChatId })
+      return
+    }
     if (el.scrollTop < 100 && activeMessages.length > 0) {
       loadingOlderRef.current = true
       const oldest = activeMessages[0]

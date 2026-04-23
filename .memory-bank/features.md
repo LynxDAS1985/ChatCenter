@@ -1,6 +1,51 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.47 (23 апреля 2026)
+## Текущая версия: v0.87.48 (23 апреля 2026)
+
+### v0.87.48 — FIX скролл уезжал в середину при открытии чата (гонка load-older vs initial-scroll)
+
+**Проблема** (скриншот пользователя, чат АвтоБизнес): открыл чат → уехало в середину, далеко от последнего сообщения. Юзер ничего не скроллил.
+
+**Точная цепочка из логов** (16:38:22-24):
+```
+chat-open top=0 → store-load-messages → store-tg-messages messages=50 height=17103
+initial-schedule → initial-target top=16180 bottomGap=406   ← правильно встал у низа
+load-older-trigger prevHeight=16097 ← АВТО-триггер т.к. top=0 < 100 в handleScroll!
+store-load-older → результат: +50 старых сверху → messages=100, height=35391
+chat-state top=34468 bottomGap=406   ← browser scroll anchoring подвинул корректно
+load-older-apply top=19294           ← НАША формула перебила (откатила на 15174px вверх)
+```
+
+**Корневая причина** — гонка в `handleScroll`:
+- Авто-триггер `load-older` срабатывает при `scrollTop < 100`. При открытии чата `scrollTop=0` (до initial-scroll) → триггерится сразу.
+- `prevHeight = 16097` записывается **до** initial-scroll.
+- Parallel initial-scroll переставляет `scrollTop=16180`, высота 17103.
+- Приходит load-older → DOM растёт до 35391 → **browser scroll anchoring** (CSS Scroll Anchoring, Chrome 56+, вкл. по умолчанию) автоматически корректирует scrollTop на 34468.
+- Через `setTimeout(100)` наш код делает `scrollTop = 35391 - 16097 = 19294` — **перебивает правильную коррекцию**.
+- Итог: юзер на середине чата.
+
+**Fix (Вариант A)**:
+
+1. `src/native/hooks/useInitialScroll.js` — экспонирует `doneRef`:
+```js
+return { doneRef }
+```
+
+2. `src/native/modes/InboxMode.jsx` — блокируем авто-load-older пока `doneRef.current !== activeChatId`:
+```js
+if (initialScrollDoneRef.current !== store.activeChatId) {
+  scrollDiag.logEvent('load-older-skip-initial', { scrollTop: el.scrollTop, chatId: store.activeChatId })
+  return
+}
+```
+
+Авто-load-older теперь ждёт пока initial-scroll поставит scrollTop в финальное положение. Пользователь сам решит загрузить старые — скроллом вверх.
+
+**Тесты**:
+- `useInitialScroll.vitest.jsx` (новый файл, 5 тестов) — контракт `doneRef`: null при отсутствии чата/loading/messagesCount=0; устанавливается в activeChatId после initial-scroll
+- `InboxMode.vitest.jsx` +1 регрессионный тест — `loadOlderMessages` НЕ вызывается при открытии чата даже если scrollTop=0
+
+**Итого**: 122 vitest ✅ (было 116), E2E 17/17, UI 9/9.
 
 ### v0.87.47 — FIX счётчик не уменьшался на длинных постах (ratio 0.95 → центр viewport)
 

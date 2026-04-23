@@ -145,6 +145,36 @@ describe('InboxMode render smoke', () => {
     cleanup()
   })
 
+  // v0.87.48: регрессия — авто-load-older НЕ должен стрелять сразу при рендере
+  // (до того как initial-scroll завершится). Иначе гонка с browser scroll anchoring
+  // перемещала юзера в середину чата при открытии. Ловушка 103.
+  it('RF 0.87.48: loadOlderMessages НЕ вызывается при открытии чата (до initial-scroll)', async () => {
+    const chatId = 'tg_self:race'
+    const messages = Array.from({ length: 50 }, (_, i) => ({
+      id: String(100 + i), chatId, senderId: 's', text: 'msg' + i,
+      timestamp: 1712000000000 + i * 1000, isOutgoing: false,
+    }))
+    const store = buildStore({
+      activeAccountId: 'tg_self',
+      chats: [{ id: chatId, accountId: 'tg_self', title: 'C', unreadCount: 3, type: 'channel' }],
+      activeChatId: chatId,
+      messages: { [chatId]: messages },
+    })
+    const { container } = render(<InboxMode store={store} />)
+    // Симулируем scroll event scrollTop=0 (как происходит при chat-open ДО initial-scroll)
+    const scrollEl = container.querySelector('[style*="overflowY: auto"]') || container.querySelector('div')
+    if (scrollEl) {
+      Object.defineProperty(scrollEl, 'scrollTop', { value: 0, configurable: true })
+      Object.defineProperty(scrollEl, 'scrollHeight', { value: 10000, configurable: true })
+      Object.defineProperty(scrollEl, 'clientHeight', { value: 570, configurable: true })
+      scrollEl.dispatchEvent(new Event('scroll', { bubbles: true }))
+    }
+    await new Promise(r => setTimeout(r, 50))
+    // loadOlderMessages НЕ должен был быть вызван — initial-scroll ещё не done
+    expect(store.loadOlderMessages).not.toHaveBeenCalled()
+    cleanup()
+  })
+
   it('рендерится со ссылкой (link preview)', () => {
     const chatId = 'tg_self:3'
     const messages = [{
