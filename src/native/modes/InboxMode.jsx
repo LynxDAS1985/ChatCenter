@@ -13,6 +13,7 @@ import { useInitialScroll } from '../hooks/useInitialScroll.js'
 import { useForceReadAtBottom } from '../hooks/useForceReadAtBottom.js'
 import { useDropAndPaste } from '../hooks/useDropAndPaste.js'
 import { useMessageActions } from '../hooks/useMessageActions.js'
+import { useNewBelowCounter } from '../hooks/useNewBelowCounter.js'
 import { useScrollDiagnostics } from '../hooks/useScrollDiagnostics.js'
 import { getUnreadAnchorDebug } from '../utils/scrollDiagnostics.js'
 
@@ -262,17 +263,16 @@ export default function InboxMode({ store }) {
     }
   }
 
-  // v0.87.27: при новом входящем сообщении если юзер НЕ внизу — растим счётчик
-  const prevMsgCountRef = useRef(activeMessages.length)
-  useEffect(() => {
-    const prev = prevMsgCountRef.current
-    const now = activeMessages.length
-    prevMsgCountRef.current = now
-    if (now > prev && !atBottom) {
-      const added = activeMessages.slice(prev).filter(m => !m.isOutgoing).length
-      if (added > 0) { scrollDiag.logEvent('new-below', { added, prev, now }); setNewBelow(n => n + added) }
-    }
-  }, [activeMessages.length])
+  // v0.87.42: newBelow по смене lastMsgId (не по размеру) — фикс бейджа 50 при load-older
+  useNewBelowCounter({
+    messages: activeMessages,
+    atBottom,
+    onAdded: ({ added, prevLastId, nowLastId }) => {
+      scrollDiag.logEvent('new-below', { added, prevLastId, nowLastId })
+      setNewBelow(n => n + added)
+    },
+    onSkip: (info) => scrollDiag.logEvent('new-below-skip', info),
+  })
 
   // v0.87.34: FORCE mark-read когда юзер в самом низу чата — вынесено в хук
   useForceReadAtBottom({
