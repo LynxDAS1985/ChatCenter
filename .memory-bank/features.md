@@ -1,6 +1,21 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.39 (17 апреля 2026)
+## Текущая версия: v0.87.40 (23 апреля 2026)
+
+### v0.87.40 — FIX скролл уходил наверх при открытии чата с непрочитанными
+
+**Причина (из логов [native-scroll])**:
+1. `useInitialScroll` срабатывал на КЭШЕ из localStorage (старые id 22146-22195) ДО того как пришли свежие с сервера (22242-22293). Скролл уходил на самое старое из кэша.
+2. Локальный `unread=95` был завышен (реально сервер = 47). При `incoming=50, unread=95`: `max(0, 50 - 95) = 0` → anchor = самое первое = максимально наверх.
+
+**Фикс**:
+- `useInitialScroll` принимает `loading` — не срабатывает пока `loadingMessages[chatId] === true`
+- `firstUnreadIdRef` пересчитывается при смене `firstId/lastId/activeUnread` (раньше только при первом появлении messages)
+- Clamp: `Math.min(realUnread, incoming.length)` — защита от завышенного серверного `unreadCount`
+
+**Файлы**: [useInitialScroll.js](src/native/hooks/useInitialScroll.js), [InboxMode.jsx](src/native/modes/InboxMode.jsx)
+
+**Тесты**: 79/79 vitest ✅
 
 ## Диагностика native-scroll ЦентрЧатов (22 апреля 2026)
 

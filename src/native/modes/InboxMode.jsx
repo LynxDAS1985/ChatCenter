@@ -116,12 +116,14 @@ export default function InboxMode({ store }) {
   const firstUnreadIdRef = useRef(null)
   const scrollDiag = useScrollDiagnostics({ activeChatId: store.activeChatId, activeChat, activeMessages, activeUnread, loading: store.loadingMessages?.[store.activeChatId], scrollRef: msgsScrollRef })
 
-  // v0.87.29 Вариант A: начальный скролл чата (в низ / на first-unread) + жёлтая подсветка
+  // v0.87.29/40: начальный скролл чата — ПОСЛЕ загрузки свежих данных с сервера.
+  // loading=true пока messages обновляются, loading=false — свежие в state.
   useInitialScroll({
     activeChatId: store.activeChatId,
     messagesCount: activeMessages.length,
     scrollRef: msgsScrollRef,
     firstUnreadIdRef, activeUnread,
+    loading: store.loadingMessages?.[store.activeChatId],
   })
 
   // v0.87.31: принимаем либо string src (одиночное фото из MessageBubble),
@@ -166,13 +168,21 @@ export default function InboxMode({ store }) {
     [visibleMessages]
   )
 
-  // Запоминаем ID первого непрочитанного при открытии чата (для «новые сообщения»)
+  // v0.87.40: пересчёт firstUnread при смене свежих данных (firstId/lastId/unread)
+  // Раньше триггер activeMessages.length > 0 срабатывал только ОДИН раз на кэше.
+  // Теперь пересчитываем когда приходят свежие (firstId меняется) или unread обновляется.
+  const firstMsgId = activeMessages[0]?.id
+  const lastMsgId = activeMessages[activeMessages.length - 1]?.id
   useEffect(() => {
     if (!store.activeChatId) { firstUnreadIdRef.current = null; return }
     const chat = store.chats.find(c => c.id === store.activeChatId)
-    firstUnreadIdRef.current = findFirstUnreadId(activeMessages, chat?.unreadCount || 0)
-    scrollDiag.logEvent('first-unread-calc', getUnreadAnchorDebug(activeMessages, chat?.unreadCount || 0))
-  }, [store.activeChatId, activeMessages.length > 0])
+    const realUnread = chat?.unreadCount || 0
+    // v0.87.40: clamp unread к числу incoming (сервер мог вернуть завышенное)
+    const incoming = activeMessages.filter(m => !m.isOutgoing)
+    const clampedUnread = Math.min(realUnread, incoming.length)
+    firstUnreadIdRef.current = findFirstUnreadId(activeMessages, clampedUnread)
+    scrollDiag.logEvent('first-unread-calc', getUnreadAnchorDebug(activeMessages, clampedUnread))
+  }, [store.activeChatId, firstMsgId, lastMsgId, activeUnread])
 
   const getMessage = (chatId, msgId) => (store.messages[chatId] || []).find(m => m.id === String(msgId))
 

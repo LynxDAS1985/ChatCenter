@@ -5,7 +5,7 @@
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
 
-export function useInitialScroll({ activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread }) {
+export function useInitialScroll({ activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading }) {
   const doneRef = useRef(null)
 
   useEffect(() => {
@@ -13,6 +13,13 @@ export function useInitialScroll({ activeChatId, messagesCount, scrollRef, first
     if (doneRef.current === activeChatId) return
     if (messagesCount === 0) {
       logNativeScroll('initial-wait-empty', { chatId: activeChatId, activeUnread })
+      return
+    }
+    // v0.87.40: ждём пока свежие данные с сервера придут (loading=false)
+    // Раньше: срабатывал на кэше → скролл на старое сообщение из кэша,
+    // потом приходили свежие и реальный unread, но скролл уже в неправильном месте.
+    if (loading) {
+      logNativeScroll('initial-wait-loading', { chatId: activeChatId, messages: messagesCount, activeUnread })
       return
     }
     logNativeScroll('initial-schedule', { chatId: activeChatId, messages: messagesCount, activeUnread })
@@ -41,5 +48,5 @@ export function useInitialScroll({ activeChatId, messagesCount, scrollRef, first
     }, 150)
 
     return () => clearTimeout(timer)
-  }, [activeChatId, messagesCount])
+  }, [activeChatId, messagesCount, loading])
 }

@@ -125,3 +125,37 @@ npm.cmd run build
 ```
 
 Важно: не запускать приложение самостоятельно. По правилам проекта приложение запускает и проверяет пользователь.
+
+---
+
+## ПРИЧИНА НАЙДЕНА И ИСПРАВЛЕНА (v0.87.40, 23 апреля 2026)
+
+Из реальных логов после воспроизведения бага:
+
+```text
+chat-open messages=0 unread=95
+first-unread-calc messages=0 anchorId=null           [список пуст]
+chat-state messages=50                                [появился КЭШ]
+first-unread-calc messages=50 unread=95
+                  firstId=22146 lastId=22195          [старые из кэша!]
+                  anchorId=22146                      [anchor = самое старое]
+initial-run firstUnread=22146                         [скролл на 22146]
+initial-done top=110                                  [уехали наверх]
+
+store-tg-messages firstId=22242 lastId=22293          [свежие пришли ПОЗЖЕ]
+UNREAD SYNC сервер=47                                 [реальный unread = 47, не 95]
+```
+
+Два бага:
+
+1. useInitialScroll срабатывал на КЭШЕ (id 22146-22195) до получения свежих данных с сервера (id 22242-22293). Скролл уходил на самое старое сообщение из кэша.
+
+2. unread=95 был ЗАВЫШЕН (реально 47). Логика incoming.length - unread = 50 - 95 = -45 → max(0, -45) = 0 → anchorIndex=0 → самое первое сообщение = уехали максимально вверх.
+
+Фикс:
+
+- useInitialScroll принимает параметр loading, не срабатывает пока loading=true.
+- firstUnreadIdRef пересчитывается при смене firstId/lastId/unread (не только при первом появлении messages).
+- Unread clamp: Math.min(realUnread, incoming.length) — защита от завышенного серверного значения.
+
+Файлы: src/native/hooks/useInitialScroll.js, src/native/modes/InboxMode.jsx.
