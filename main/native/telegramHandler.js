@@ -485,6 +485,11 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
           text: text,  // используем исходный параметр, не result.message
           entities: [],
           timestamp: (result.date || Math.floor(Date.now() / 1000)) * 1000,
+          // v0.87.65: localSentAt — client-time отправки (мс). Отличается от timestamp
+          // (serverDate * 1000, секундная точность + задержка сервера). Используется
+          // в MessageBubble для точного "msg был отправлен только что" — анимация
+          // отправки стабильно срабатывает для каждого, не только через один.
+          localSentAt: Date.now(),
           isOutgoing: true,
           isEdited: false,
           mediaType: null,

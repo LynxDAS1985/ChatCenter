@@ -156,6 +156,19 @@ export default function InboxMode({ store }) {
     loading: store.loadingMessages?.[store.activeChatId],
   })
 
+  // v0.87.65: fade-in scroll-container при смене чата — скрывает визуальный "прыжок"
+  // initial-scroll с scrollTop=0 к firstUnread. CSS animation 250мс opacity 0→1.
+  // Реализовано через classList + reflow trick (не key= — чтобы не remount ref).
+  useEffect(() => {
+    const el = msgsScrollRef.current
+    if (!el || !store.activeChatId) return
+    el.classList.remove('native-chat-fadein')
+    void el.offsetWidth  // force reflow — иначе браузер не перезапускает animation
+    el.classList.add('native-chat-fadein')
+    const t = setTimeout(() => el.classList.remove('native-chat-fadein'), 400)
+    return () => clearTimeout(t)
+  }, [store.activeChatId])
+
   // v0.87.31: принимаем либо string src (одиночное фото из MessageBubble),
   // либо { srcs, index } (альбом из MediaAlbum с навигацией ← →)
   const openPhotoWindow = (payload) => {
@@ -443,14 +456,13 @@ export default function InboxMode({ store }) {
         showToast(`Ошибка отправки: ${result?.error || 'неизвестно'}`, 'error')
         setInput(text)  // возвращаем текст в поле — чтобы не потерялся
       } else {
-        // v0.87.62: авто-скролл к отправленному сообщению. Раньше msg уходил ниже viewport,
-        // юзер видел стрелку ↓ но не сам bubble. Из логов v0.87.61: deltaHeight=154
-        // deltaTop=0 → юзер оставался на старой позиции. Теперь после успешной отправки
-        // прокручиваем scroll-container в самый низ — новый bubble точно виден.
+        // v0.87.62: авто-скролл после отправки.
+        // v0.87.65: smooth behavior — раньше был резкий прыжок scrollTop=scrollHeight,
+        // теперь плавная прокрутка через scrollTo({ behavior: 'smooth' }).
         setTimeout(() => {
           const el = msgsScrollRef.current
           if (!el) return
-          el.scrollTop = el.scrollHeight
+          el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
           scrollDiag.logEvent('send-scroll-done', {
             top: el.scrollTop, height: el.scrollHeight,
             bottomGap: el.scrollHeight - el.scrollTop - el.clientHeight,

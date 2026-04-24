@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.64 (24 апреля 2026)
+## Текущая версия: v0.87.65 (24 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.40 → v0.87.63). Старое — в архиве:
 
@@ -38,6 +38,79 @@
 **Почему важно**: раньше советы выглядели как стена текста с одинаковыми подзаголовками. Теперь — за 2–5 секунд понятно: приоритет, что даст, сколько стоит.
 
 **Тесты**: только документация. `npm run check-memory` ✅, автотесты ✅.
+
+---
+
+### v0.87.65 — Плавность: анимация mount-only + smooth scroll + fade-in чата
+
+**Обратная связь пользователя после v0.87.64**:
+- ✅ Все пункты «что проверить» пройдены — работает
+- ❌ Эффект отправки показывается не всегда (через одно или через 2 сообщения)
+- ❌ Скролл после отправки резкий — хочется плавный
+- ❌ Анимация неоновая — хочется плавнее
+- ❌ При открытии чата виден «прыжок» initial-scroll — нужно плавно
+
+**3 изменения** (все minimal-invasive, логику initial-scroll не трогаем):
+
+#### 1. Анимация отправки — mount-only через useEffect (вместо inline isJustSent)
+
+**Было** (v0.87.59): `className={isJustSent ? 'native-msg-sent' : undefined}` где `isJustSent = Date.now() - m.timestamp < 2000`. Проблема: `m.timestamp` = `result.date * 1000` (серверное время секундной точности + возможная задержка). Окно 2000мс жёсткое → иногда не попадало, проигрывалось «через одно».
+
+**Стало** (v0.87.65):
+- `main/native/telegramHandler.js` `tg:send-message` добавляет в msg поле **`localSentAt: Date.now()`** (client-time при emit)
+- [MessageBubble.jsx](src/native/components/MessageBubble.jsx) useEffect с пустыми deps (mount-only):
+  ```js
+  useEffect(() => {
+    if (!ref.current || !m.isOutgoing) return
+    const sentAt = m.localSentAt || m.timestamp || 0
+    if (!sentAt || (Date.now() - sentAt) > 3000) return
+    ref.current.classList.add('native-msg-sent')
+    setTimeout(() => ref.current?.classList.remove('native-msg-sent'), 1600)
+  }, [])
+  ```
+- Окно расширено с 2000 до 3000мс. Re-render не ломает анимацию (useEffect с `[]` срабатывает только на mount).
+
+#### 2. Smooth scroll после отправки
+
+`handleReplySend` → раньше `el.scrollTop = el.scrollHeight` (мгновенный прыжок). Стало:
+```js
+el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+```
+
+#### 3. Fade-in scroll-container при смене чата
+
+**Проблема**: между `chat-open scrollTop=0` и `initial-scroll` setTimeout(150мс) юзер видит верх чата → затем прыжок вниз к firstUnread. Визуально заметно и неприятно.
+
+**Решение** (безопасное — не трогает логику initial-scroll):
+- [src/native/styles.css](src/native/styles.css) — новый `@keyframes native-chat-fadein` (opacity 0 → 1, 250мс)
+- [InboxMode.jsx](src/native/modes/InboxMode.jsx) — useEffect на смену `activeChatId`:
+  ```js
+  el.classList.remove('native-chat-fadein')
+  void el.offsetWidth  // force reflow — перезапуск анимации
+  el.classList.add('native-chat-fadein')
+  ```
+  Через 400мс убираем класс. При каждой смене чата scroll-container fade-in за 250мс — прыжок initial-scroll происходит внутри fade и не виден.
+
+**Почему не `key={activeChatId}`**: это бы remount'ило div, ломая `msgsScrollRef.current` для `useInitialScroll`. Через classList + reflow — безопасно.
+
+#### 4. Плавнее keyframes анимации sent (убран scale-bump)
+
+**Было**: `scale(0.95) → scale(1.02) → scale(1)` + opacity — ощущение «прыжка».
+
+**Стало**: чистый fade-in (opacity 0.3 → 1) + плавное затухание glow. Длительность 1.2с → **1.6с**. Easing `cubic-bezier(0.25, 0.1, 0.25, 1)` — стандартный material ease-out.
+
+**Тесты**: 116 vitest ✅.
+
+**Что проверить пользователю**:
+- [ ] Анимация отправки показывается для **каждого** msg (не через один)
+- [ ] Скролл после отправки **плавный**, не мгновенный прыжок
+- [ ] При открытии чата контент плавно появляется (opacity fade) — прыжок initial-scroll не виден
+- [ ] Анимация sent — плавная, без scale-bump
+
+**Осталось проверить** (с прошлых релизов — не решено):
+- Link preview (Ctrl+↑ edit, lastMessage preview, медиа-альбомы сеткой) — ⏳ не тестировалось вручную
+- Video PiP, Auto-cleanup tg-media, LRU 2 ГБ — ⏳
+- FLOOD_WAIT throttle для аватарок (v0.87.55) — ⏳ нужно проверить на практике
 
 ---
 

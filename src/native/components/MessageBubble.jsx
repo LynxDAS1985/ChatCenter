@@ -45,16 +45,27 @@ export default function MessageBubble({
   // v0.87.26: для сообщений с одиночным фото/видео без/с коротким текстом — фиксированная
   // минимальная ширина чтобы bubble не схлопывался до крохотного размера.
   const hasMedia = m.mediaType === 'photo' || m.mediaType === 'video'
-  // v0.87.59: класс неоновой анимации "только что отправлено" — активен 1.2с
-  // для исходящих сообщений не старше 2 секунд от текущего момента.
-  const isJustSent = m.isOutgoing && m.timestamp && (Date.now() - m.timestamp < 2000)
+
+  // v0.87.65: неоновая анимация отправки через useEffect (mount-only).
+  // Раньше (v0.87.59): inline `isJustSent` через `Date.now() - timestamp < 2000` —
+  // не всегда срабатывало т.к. timestamp = серверное время секундной точности.
+  // Теперь: используем localSentAt (client-time при emit) + useEffect с пустыми deps —
+  // гарантированно срабатывает один раз при mount, re-render не ломает.
+  useEffect(() => {
+    if (!ref.current || !m.isOutgoing) return
+    // Окно "свежести" = 3 сек. Предпочитаем localSentAt (точный client-time), fallback на timestamp.
+    const sentAt = m.localSentAt || m.timestamp || 0
+    if (!sentAt || (Date.now() - sentAt) > 3000) return
+    ref.current.classList.add('native-msg-sent')
+    const t = setTimeout(() => { ref.current?.classList.remove('native-msg-sent') }, 1600)
+    return () => clearTimeout(t)
+  }, [])
 
   return (
     // v0.87.62 final: bubble content-sized (width: auto), max ограничен parent group
     // (maxWidth: 75% scroll-row). Короткий текст — маленький bubble. Длинный — до 75%
     // с переносом. Для media (фото/видео) — min 280px / max 420px чтобы не раздувать.
     <div ref={ref} data-msg-id={m.id}
-      className={isJustSent ? 'native-msg-sent' : undefined}
       style={{
       alignSelf: m.isOutgoing ? 'flex-end' : 'flex-start',
       maxWidth: hasMedia ? 420 : '100%',
