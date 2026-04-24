@@ -2,7 +2,7 @@
 
 Это единственный источник истины для проекта ЦентрЧатов / ChatCenter.
 
-**Версия**: v0.87.59 (24 апреля 2026)
+**Версия**: v0.87.60 (24 апреля 2026)
 
 ---
 
@@ -35,8 +35,9 @@
 | Файл | Темы | Размер |
 |---|---|---|
 | `mistakes/native-scroll-unread.md` | native скролл, счётчик, markRead, IntersectionObserver | ~19 КБ |
-| `mistakes/webview-injection.md` | Ядро: DOM, спам, селекторы, injection, стек-группировка | ~130 КБ |
+| `mistakes/webview-injection.md` | Ядро: injection, IPC, звук, mark-read, MAX sidebar DOM | ~9 КБ |
 | `mistakes/webview-navigation-ui.md` | Навигация между чатами, MAX SvelteKit, ribbon CSS/UI | ~31 КБ |
+| `mistakes/webview-stack-grouping.md` | Стековая группировка, ghost-items, cleanupStack | ~125 КБ |
 | `mistakes/notifications-ribbon.md` | Кастомные уведомления, ribbon BrowserWindow | ~50 КБ |
 | `mistakes/electron-core.md` | Electron, IPC, Settings, AI, авто-ответ | ~56 КБ |
 
@@ -72,7 +73,7 @@
 
 ---
 
-## 📏 Лимиты размеров (v0.87.59)
+## 📏 Лимиты размеров (v0.87.60)
 
 | Файл | Максимум | Если превышен |
 |---|---|---|
@@ -83,13 +84,17 @@
 **Почему это важно**: `Read` имеет лимит 256 КБ. Файл > 200 КБ либо не прочитается, либо съест весь контекст. А контекст нужен для задачи, не для истории.
 
 **Автоматическая защита от разрастания**:
-- `node src/__tests__/memoryBankSizeLimits.test.cjs` — автотест падает при превышении
-- `bash scripts/check-memory.sh` — ручная проверка здоровья (размеры, версии, ссылки)
+- `node src/__tests__/memoryBankSizeLimits.test.cjs` — автотест лимитов размера
+- `node src/__tests__/featuresReferences.test.cjs` — автотест валидности ссылок в последних 10 версиях features.md
+- `bash scripts/check-memory.sh` (или `npm run check-memory`) — ручная проверка здоровья
+- `bash scripts/regen-claude-structure.sh` (или `npm run regen-claude-structure`) — регенерация таблицы «Структура памяти» в CLAUDE.md
+- **Pre-commit hook** (`scripts/hooks/pre-commit`) — запускает `check-memory.sh` если коммит трогает `.memory-bank/` или `CLAUDE.md`
 
 **Примеры разбиения**:
 - `common-mistakes.md` 294 КБ → индекс 5 КБ + `mistakes/` 4 файла (v0.87.56)
 - `features.md` 445 КБ → активный 100 КБ + `archive/features-v0.87-early.md` + `archive/features-pre-v0.87.md` (v0.87.58)
 - `mistakes/webview-injection.md` 165 КБ → `webview-injection.md` 130 КБ + `webview-navigation-ui.md` 31 КБ (v0.87.59)
+- `mistakes/webview-injection.md` 130 КБ → `webview-injection.md` 9 КБ (ядро) + `webview-stack-grouping.md` 125 КБ (v0.87.60)
 
 **Журнал изменений структуры памяти**: [`CHANGELOG.md`](./CHANGELOG.md).
 

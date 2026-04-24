@@ -11,6 +11,51 @@
 
 ---
 
+## 2026-04-24 — v0.87.60
+
+### Добавлено
+- **Pre-commit hook: проверка Memory Bank** — `scripts/hooks/pre-commit`
+  автоматически вызывает `bash scripts/check-memory.sh` если коммит
+  трогает `.memory-bank/*`, `CLAUDE.md`, `package.json` или
+  `package-lock.json`. Коммит блокируется при проблемах.
+- **`scripts/regen-claude-structure.sh`** — автоматическая регенерация
+  блока «Структура памяти» в CLAUDE.md между маркерами
+  `<!-- STRUCTURE-AUTO-START -->` и `<!-- STRUCTURE-AUTO-END -->`.
+  Запуск: `npm run regen-claude-structure`.
+- **`src/__tests__/featuresReferences.test.cjs`** — автотест ловит
+  dangling-ссылки в последних **10** версиях `features.md`. Старые
+  версии не проверяются (ссылки могут быть на удалённые файлы, это
+  нормально для истории). Добавлен в общий `npm test`.
+- **`.memory-bank/mistakes/webview-stack-grouping.md`** — новый
+  тематический файл при втором разбиении `webview-injection.md`.
+- **Правило `.claude/skills/`** в CLAUDE.md: при создании новых
+  skills/commands обязательно добавлять их в CLAUDE.md с описанием
+  «что делает / когда вызывать / аргументы».
+
+### Изменено
+- **`mistakes/webview-injection.md`** (130 КБ) → 9 КБ.
+  Разбит второй раз: стековая группировка, ghost-items, cleanupStack
+  вынесены в `webview-stack-grouping.md` (125 КБ). В `webview-injection.md`
+  остались только 5 секций ядра injection (звук, toDataUrl, IPC,
+  mark-read throttling, MAX sidebar DOM).
+- **CLAUDE.md** — добавлены маркеры `<!-- STRUCTURE-AUTO-START/END -->`
+  вокруг блока «Структура памяти» для авто-регенерации.
+- **`common-mistakes.md`** индекс дополнен пунктом
+  `webview-stack-grouping.md` (2c).
+
+### Зачем эта версия
+- Pre-commit hook защищает автоматически: человек не может случайно
+  закоммитить рассинхрон версий или битую ссылку в CLAUDE.md.
+- Регенерация структуры исключает ручное редактирование таблицы
+  «Структура памяти» при добавлении файлов (одно место правды — папка,
+  CLAUDE.md подстраивается).
+- Dangling-refs тест ловит когда старая запись в features.md указывает
+  на удалённый файл — в последних 10 версиях это ошибка.
+- Второе разбиение webview-injection.md: 130 КБ было близко к лимиту
+  200 КБ, выделена логически отдельная тема (стековая группировка).
+
+---
+
 ## 2026-04-24 — v0.87.59
 
 ### Добавлено

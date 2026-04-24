@@ -37,6 +37,24 @@ if [ $FAIL -eq 1 ]; then
 fi
 echo "✅ Статические тесты: OK"
 
+# v0.87.60: Проверка здоровья Memory Bank (размеры, версии, ссылки)
+# Запускается только если в staged есть файлы из .memory-bank/ или CLAUDE.md / package*.json
+MEMORY_STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(\.memory-bank/|CLAUDE\.md$|package(-lock)?\.json$)')
+if [ -n "$MEMORY_STAGED" ]; then
+  if [ -x scripts/check-memory.sh ]; then
+    bash scripts/check-memory.sh > /tmp/check-memory.log 2>&1
+    if [ $? -ne 0 ]; then
+      echo ""
+      echo "❌ Memory Bank не прошёл проверку:"
+      cat /tmp/check-memory.log
+      echo ""
+      echo "Исправь и сделай новый commit. --no-verify запрещён без разрешения пользователя."
+      exit 1
+    fi
+    echo "✅ Memory Bank: OK"
+  fi
+fi
+
 # v0.87.31: Vitest render-тесты — ловят TDZ, hook-order, битые импорты
 # Запускаем только если в staged есть .jsx / .vitest файлы (экономим время)
 VITEST_CANDIDATES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(jsx|vitest\.(jsx|js))$' | grep -v 'node_modules')

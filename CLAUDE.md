@@ -212,8 +212,9 @@
 | Когда читать | Файл |
 |------|------|
 | Задача про native-скролл, счётчик, markRead, IntersectionObserver | `.memory-bank/mistakes/native-scroll-unread.md` |
-| Задача про WebView injection / DOM-селекторы / спам / стек-группировку | `.memory-bank/mistakes/webview-injection.md` |
+| Задача про WebView injection / DOM-селекторы / спам / звук / mark-read throttling | `.memory-bank/mistakes/webview-injection.md` |
 | Задача про навигацию между чатами / MAX SvelteKit / UI в WebView / ribbon CSS | `.memory-bank/mistakes/webview-navigation-ui.md` |
+| Задача про стековую группировку / ghost-items / cleanupStack | `.memory-bank/mistakes/webview-stack-grouping.md` |
 | Задача про уведомления, ribbon, BrowserWindow | `.memory-bank/mistakes/notifications-ribbon.md` |
 | Задача про Electron, IPC, Settings, AI, авто-ответ | `.memory-bank/mistakes/electron-core.md` |
 
@@ -248,7 +249,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.87.59 (24 апреля 2026)
+**Текущая версия**: v0.87.60 (24 апреля 2026)
 
 ---
 
@@ -370,8 +371,18 @@ npm run test:vitest
 ### Если меняется структура Memory Bank
 
 Синхронизируй:
-- CLAUDE.md
+- CLAUDE.md (вручную + `bash scripts/regen-claude-structure.sh` для таблицы структуры)
 - `.memory-bank/README.md`
+- `.memory-bank/CHANGELOG.md` — добавь запись о структурном изменении
+
+### Если создаёшь новые файлы в `.claude/skills/` или `.claude/commands/`
+
+- **Обязательно** добавь их в CLAUDE.md (секция «Первое действие» или отдельная секция про skills)
+- Укажи: **что делает**, **когда вызывать**, **какие аргументы принимает**
+- Skills в `.claude/skills/` — это project-specific агенты и slash-команды Claude Code. Без записи в CLAUDE.md агент не узнает что они существуют и не будет их использовать.
+- Обнови `.memory-bank/CHANGELOG.md` (если skill влияет на рабочий процесс)
+
+Сейчас в проекте `.claude/skills/` **нет** — только `settings.json`. Правило действует на будущее.
 
 ### Лимиты размеров файлов памяти
 
@@ -384,13 +395,17 @@ npm run test:vitest
 **Почему лимиты важны**: инструмент `Read` имеет предел 256 КБ. Файл больше — не читается. 100+ КБ съедает огромную долю контекста, нужного для задачи.
 
 **Автоматическая защита**:
-- **Тест**: `node src/__tests__/memoryBankSizeLimits.test.cjs` — падает если файл перерос
-- **Скрипт диагностики**: `bash scripts/check-memory.sh` — показывает размеры, сверку версий, сломанные ссылки. Запускать перед крупной сессией или раз в неделю.
+- **Тест лимитов**: `node src/__tests__/memoryBankSizeLimits.test.cjs` — падает если файл перерос
+- **Тест dangling-refs**: `node src/__tests__/featuresReferences.test.cjs` — падает если в последних 10 версиях `features.md` ссылка указывает на несуществующий файл
+- **Pre-commit hook**: `scripts/hooks/pre-commit` вызывает `check-memory.sh` если в коммите есть `.memory-bank/*` или `CLAUDE.md` → коммит блокируется при проблемах
+- **Скрипт диагностики**: `bash scripts/check-memory.sh` (или `npm run check-memory`) — размеры, сверку версий, сломанные ссылки
+- **Регенерация структуры**: `bash scripts/regen-claude-structure.sh` (или `npm run regen-claude-structure`) — автоматически обновляет таблицу «Структура памяти» между маркерами `<!-- STRUCTURE-AUTO-START/END -->`
 
 **Примеры разбиения** (для справки):
 - `common-mistakes.md` 294 КБ → индекс 5 КБ + `mistakes/` 4 файла (v0.87.56)
 - `features.md` 445 КБ → активный 100 КБ + 2 архивных файла (v0.87.58)
 - `mistakes/webview-injection.md` 165 КБ → `webview-injection.md` 130 КБ + `webview-navigation-ui.md` 31 КБ (v0.87.59)
+- `mistakes/webview-injection.md` 130 КБ → `webview-injection.md` 9 КБ (ядро) + `webview-stack-grouping.md` 125 КБ (v0.87.60)
 
 **Журнал изменений структуры**: [`CHANGELOG.md`](.memory-bank/CHANGELOG.md).
 
@@ -489,47 +504,54 @@ npm run test:vitest
 
 ## 📁 Структура памяти (.memory-bank)
 
+<!-- STRUCTURE-AUTO-START -->
+<!-- Регенерируется скриптом scripts/regen-claude-structure.sh. НЕ редактировать вручную между маркерами. -->
+
 ### Активные файлы в корне
 
-| Файл | Содержимое |
-|------|------------|
-| `README.md` | Карта Memory Bank |
-| `architecture.md` | Архитектура, слои, модули, схема данных |
-| `coding-rules.md` | Стиль кода, IPC, WebView, безопасность |
-| `workflow.md` | Правила работы AI, планирование, чеклист |
-| `common-mistakes.md` | **Индекс** ловушек (детали в `mistakes/`) |
-| `features.md` | Changelog активных версий (старое в архиве) |
-| `CHANGELOG.md` | Журнал изменений структуры Memory Bank |
-| `native-scroll-diagnostics-handoff.md` | Диагностика скролла native |
-| `decisions.md` | Ключевые архитектурные решения (ADR) |
-| `api.md` | IPC-каналы, форматы сообщений, DTO |
-| `messengers.md` | Интеграция мессенджеров: селекторы DOM |
-| `ai-integration.md` | Провайдеры ИИ, промпты |
-| `autoreply.md` | Логика авто-ответчика |
-| `ui-components.md` | UI-компоненты, цвета, стили |
-| `native-mode-plan.md` | План нативного режима (в разработке) |
+| Файл | Размер |
+|------|--------|
+| `CHANGELOG.md` | 9 КБ |
+| `README.md` | 8 КБ |
+| `ai-integration.md` | 10 КБ |
+| `api.md` | 8 КБ |
+| `architecture.md` | 10 КБ |
+| `autoreply.md` | 6 КБ |
+| `coding-rules.md` | 5 КБ |
+| `common-mistakes.md` | 6 КБ |
+| `decisions.md` | 16 КБ |
+| `features.md` | 76 КБ |
+| `messengers.md` | 14 КБ |
+| `native-mode-plan.md` | 22 КБ |
+| `native-scroll-diagnostics-handoff.md` | 18 КБ |
+| `ui-components.md` | 14 КБ |
+| `workflow.md` | 4 КБ |
 
 ### Подпапка `mistakes/` — детали ловушек
 
-| Файл | Темы |
-|------|------|
-| `mistakes/native-scroll-unread.md` | Native скролл, счётчик, markRead, IntersectionObserver |
-| `mistakes/webview-injection.md` | Ядро: DOM, спам, селекторы мессенджеров, injection |
-| `mistakes/webview-navigation-ui.md` | Навигация между чатами, MAX SvelteKit, ribbon CSS/UI |
-| `mistakes/notifications-ribbon.md` | Кастомные уведомления, ribbon BrowserWindow |
-| `mistakes/electron-core.md` | Electron, IPC, Settings, AI, авто-ответ |
+| Файл | Размер |
+|------|--------|
+| `mistakes/electron-core.md` | 56 КБ |
+| `mistakes/native-scroll-unread.md` | 19 КБ |
+| `mistakes/notifications-ribbon.md` | 49 КБ |
+| `mistakes/webview-injection.md` | 9 КБ |
+| `mistakes/webview-navigation-ui.md` | 31 КБ |
+| `mistakes/webview-stack-grouping.md` | 123 КБ |
 
-### Подпапка `archive/` — неактуальное (НЕ читать по умолчанию)
+### Подпапка `archive/` — НЕ читать по умолчанию
 
-| Файл | Что содержит |
-|------|------|
-| `archive/README.md` | Правила архивации и журнал |
-| `archive/2026-04-common-mistakes-resolved.md` | Решённые ⚪ ИСТОРИЯ секции (groupedUnread, v0.87.51) |
-| `archive/features-v0.87-early.md` | Changelog v0.87.0 → v0.87.39 |
-| `archive/features-pre-v0.87.md` | Changelog v0.1.0 → v0.86.10 |
+| Файл | Размер |
+|------|--------|
+| `archive/2026-04-common-mistakes-resolved.md` | 11 КБ |
+| `archive/README.md` | 4 КБ |
+| `archive/features-pre-v0.87.md` | 251 КБ |
+| `archive/features-v0.87-early.md` | 126 КБ |
+
+_Регенерировано: 2026-04-24_
+<!-- STRUCTURE-AUTO-END -->
 
 ---
 
-**Версия проекта**: v0.87.59 (24 апреля 2026)
+**Версия проекта**: v0.87.60 (24 апреля 2026)
 **Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
-**Последнее обновление**: 24 апреля 2026 — v0.87.59: FIX сообщение не появлялось в чате после отправки — emit tg:new-message из response client.sendMessage (Telegram MTProto не дублирует UpdateNewMessage для собственных исходящих)
+**Последнее обновление**: 24 апреля 2026 — v0.87.60: FIX сообщение не появлялось в чате после отправки — emit tg:new-message из response client.sendMessage (Telegram MTProto не дублирует UpdateNewMessage для собственных исходящих)

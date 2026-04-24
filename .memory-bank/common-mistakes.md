@@ -1,6 +1,6 @@
 # Типичные ошибки — ChatCenter (индекс)
 
-**Версия**: v0.87.59 (24 апреля 2026)
+**Версия**: v0.87.60 (24 апреля 2026)
 **Структура**: файл-индекс. Реальные ловушки разложены по темам в [`mistakes/`](./mistakes/). Решённые и неактуальные ловушки — в [`archive/`](./archive/).
 
 ---
@@ -29,12 +29,13 @@
 - Связанный handoff: [`native-scroll-diagnostics-handoff.md`](./native-scroll-diagnostics-handoff.md)
 
 ### 2. [`mistakes/webview-injection.md`](./mistakes/webview-injection.md)
-**Когда читать**: ЯДРО — работа с WebView мессенджеров, инъекция скриптов, DOM-селекторы.
-- WebView selectors: Telegram Web K, MAX sidebar DOM
-- MutationObserver, стековая группировка, ghost-items
+**Когда читать**: ЯДРО — injection в WebView, DOM-селекторы.
+- Telegram Web K, MAX sidebar DOM
+- MutationObserver, executeJavaScript
 - Спам-фильтры (IPC без фильтра, `shared/spamPatterns.json`)
-- `executeJavaScript`: `toDataUrl` зависание, context isolation
+- `toDataUrl` зависание, context isolation
 - Двойной звук (4 пути воспроизведения)
+- `mark-read` throttling в фоне (Chromium background)
 
 ### 2b. [`mistakes/webview-navigation-ui.md`](./mistakes/webview-navigation-ui.md)
 **Когда читать**: навигация между чатами + UI-интеграция в WebView.
@@ -46,6 +47,13 @@
   `expandedByDefault` auto-dismiss, fade-out мигание, FIFO deadlock,
   Emoji regex для modern Unicode
 - CSS `.messenger-name` невидимый
+
+### 2c. [`mistakes/webview-stack-grouping.md`](./mistakes/webview-stack-grouping.md)
+**Когда читать**: стековая группировка сообщений в ribbon, ghost-items, `cleanupStack`.
+- FIFO-порядок добавления/удаления
+- Race conditions при добавлении во время cleanup
+- Фантомные элементы (ghost-items) после анимаций
+- Правила очистки устаревших элементов
 
 ### 3. [`mistakes/notifications-ribbon.md`](./mistakes/notifications-ribbon.md)
 **Когда читать**: задача про уведомления, ribbon-окно, кастомные нотификации.
