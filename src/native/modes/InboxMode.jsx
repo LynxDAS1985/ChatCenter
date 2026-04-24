@@ -225,6 +225,9 @@ export default function InboxMode({ store }) {
     readBatchRef.current = new Set()
     lastReadMaxRef.current = 0
     maxEverSentRef.current = 0  // при смене чата — обнуляем (другой чат)
+    // v0.87.52: сбрасываем счётчик "новых снизу" при смене чата — иначе залипает
+    // от предыдущего чата (баг: Geely new-below=33 + Автопоток new-below=8 = стрелка 41).
+    setNewBelow(0)
     if (readTimerRef.current) { clearTimeout(readTimerRef.current); readTimerRef.current = null }
   }, [store.activeChatId])
 
@@ -342,6 +345,7 @@ export default function InboxMode({ store }) {
   useNewBelowCounter({
     messages: activeMessages,
     atBottom,
+    chatId: store.activeChatId,
     onAdded: ({ added, prevLastId, nowLastId }) => {
       scrollDiag.logEvent('new-below', { added, prevLastId, nowLastId })
       setNewBelow(n => n + added)

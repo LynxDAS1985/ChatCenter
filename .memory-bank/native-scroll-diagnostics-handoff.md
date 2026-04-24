@@ -341,6 +341,26 @@ UNREAD SYNC сервер=6                            [22 - 16 = 6]
 
 ---
 
+## v0.87.52 — FIX newBelow залипает между чатами (стрелка 41 вместо 8)
+
+Корневая причина: state `newBelow` (useState в InboxMode) и `prevLastIdRef` (useRef в useNewBelowCounter) не сбрасывались при смене `activeChatId`. Накопленные значения от Geely (33) + Автопоток (8) = стрелка 41, хотя в Автопотке только 8 новых.
+
+Fix:
+- `useNewBelowCounter` принимает `chatId`. При его смене сбрасывает `prevLastIdRef` и возвращает `onSkip({ reason: 'chat-switch' })` без `onAdded`.
+- В `InboxMode.jsx` в useEffect по смене `store.activeChatId` добавлен `setNewBelow(0)`.
+
+Доказательство из лога (до фикса):
+```
+new-below chat=Geely added=33
+new-below chat=Автопоток added=8  ← накопилось до 41
+```
+
++2 теста в `useNewBelowCounter.vitest.jsx`:
+- смена chatId не вызывает onAdded (onSkip reason=chat-switch)
+- после смены chatId новые msg в новом чате считаются нормально
+
+---
+
 ## v0.87.51 — Прогрессия счётчика в реальном времени + откат groupedUnread
 
 3 изменения:

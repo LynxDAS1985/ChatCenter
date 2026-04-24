@@ -175,6 +175,26 @@ describe('InboxMode render smoke', () => {
     cleanup()
   })
 
+  // v0.87.52: smoke-тест — InboxMode рендерится после смены activeChatId без ошибки.
+  // Регрессия newBelow=sticky покрыта в useNewBelowCounter.vitest.jsx.
+  it('RF 0.87.52: rerender при смене activeChatId не падает', async () => {
+    const chatA = 'tg_self:A', chatB = 'tg_self:B'
+    const { rerender, unmount } = render(<InboxMode store={buildStore({
+      activeAccountId: 'tg_self',
+      chats: [{ id: chatA, accountId: 'tg_self', title: 'A', unreadCount: 0, type: 'channel' }],
+      activeChatId: chatA,
+      messages: { [chatA]: [{ id: '1', chatId: chatA, senderId: 's', text: '.', timestamp: 1, isOutgoing: false }] },
+    })} />)
+    expect(() => rerender(<InboxMode store={buildStore({
+      activeAccountId: 'tg_self',
+      chats: [{ id: chatB, accountId: 'tg_self', title: 'B', unreadCount: 0, type: 'channel' }],
+      activeChatId: chatB,
+      messages: { [chatB]: [{ id: '10', chatId: chatB, senderId: 's', text: '.', timestamp: 1, isOutgoing: false }] },
+    })} />)).not.toThrow()
+    unmount()
+    cleanup()
+  })
+
   it('рендерится со ссылкой (link preview)', () => {
     const chatId = 'tg_self:3'
     const messages = [{
