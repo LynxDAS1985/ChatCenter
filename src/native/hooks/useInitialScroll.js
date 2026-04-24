@@ -9,10 +9,17 @@
 // v0.87.68: doneRef хранит Set виденных chatId (не последний!). Баг v0.87.67:
 // при возврате к чату A (после B) initial-scroll запускался ЗАНОВО — видимое моргание.
 // Теперь: если chatId уже в Set — не перезапускаем (сохраняем текущий scroll).
+// v0.87.70: добавлен getSavedScrollTop — при возврате к виденному чату ВОССТАНАВЛИВАЕМ
+// позицию (как Telegram Desktop). Без этого scrollTop оставался от предыдущего чата
+// (один div на всё приложение → позиция не наследуется корректно).
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
 
-export function useInitialScroll({ activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading, onDone }) {
+export function useInitialScroll({
+  activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading,
+  onDone,
+  getSavedScrollTop,  // v0.87.70: (chatId) => number | null — сохранённая позиция
+}) {
   // v0.87.68: Set — все чаты где initial-scroll УЖЕ был выполнен.
   // Раньше (до v0.87.67) — единственный chatId (последний). Не работало для A↔B↔A.
   const doneSetRef = useRef(new Set())
@@ -23,10 +30,27 @@ export function useInitialScroll({ activeChatId, messagesCount, scrollRef, first
 
   useEffect(() => {
     if (!activeChatId) return
-    // v0.87.68: если уже видели этот чат — НЕ перезапускаем scroll (сохраняем позицию).
+    // v0.87.68: если уже видели этот чат — не перезапускаем initial-scroll.
+    // v0.87.70: восстанавливаем сохранённую позицию (как Telegram Desktop).
     if (doneSetRef.current.has(activeChatId)) {
-      doneRef.current = activeChatId  // sync обёртки для внешнего guard (InboxMode load-older)
-      // Сразу уведомляем владельца — контент готов мгновенно (seen chat).
+      doneRef.current = activeChatId
+      // Restore: приоритет firstUnread (новые пришли) > savedScrollTop > оставить как есть
+      if (scrollRef.current) {
+        const savedTop = getSavedScrollTop?.(activeChatId)
+        const firstUnread = firstUnreadIdRef.current
+        if (firstUnread) {
+          // Новые непрочитанные пришли пока был в другом чате → к ним
+          const el = scrollRef.current.querySelector(`[data-msg-id="${firstUnread}"]`)
+          if (el) {
+            el.scrollIntoView({ block: 'start', behavior: 'auto' })
+            logNativeScroll('initial-restore-firstUnread', { chatId: activeChatId, firstUnread })
+          }
+        } else if (typeof savedTop === 'number') {
+          // Позиции где юзер был (как Telegram Desktop)
+          scrollRef.current.scrollTop = savedTop
+          logNativeScroll('initial-restore-saved', { chatId: activeChatId, savedTop })
+        }
+      }
       try { onDone?.(activeChatId) } catch(_) {}
       return
     }

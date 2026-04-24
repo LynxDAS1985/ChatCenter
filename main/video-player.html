@@ -34,24 +34,6 @@
   .toolbar button:hover { background: rgba(255,255,255,0.15); }
   .title { font-size: 11px; opacity: 0.75; padding: 0 6px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-app-region: drag; }
   .pin-active { color: #2AABEE !important; }
-  .track-menu {
-    position: absolute; top: 26px; right: 10px;
-    background: rgba(20,20,20,0.95); backdrop-filter: blur(10px);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px; padding: 6px;
-    color: #fff; font-size: 12px;
-    min-width: 180px;
-    -webkit-app-region: no-drag;
-    z-index: 20;
-  }
-  .track-menu button {
-    display: block; width: 100%; text-align: left;
-    padding: 6px 10px; background: transparent; color: #fff;
-    border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
-  }
-  .track-menu button:hover { background: rgba(255,255,255,0.1); }
-  .track-menu button.active { background: rgba(42,171,238,0.3); color: #2AABEE; }
-  .track-menu h4 { margin: 4px 8px; font-size: 11px; opacity: 0.6; text-transform: uppercase; }
   .error {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
     padding: 16px 24px; background: rgba(20,20,20,0.95); border-radius: 12px;
@@ -67,13 +49,10 @@
   <div id="err" class="error"></div>
   <div class="toolbar">
     <button id="pip" title="Мини-плеер в углу (поверх всех окон)">◰</button>
-    <button id="audio-btn" title="Аудио-дорожка" style="display:none">🎧</button>
-    <button id="sub-btn" title="Субтитры" style="display:none">CC</button>
     <span class="title" id="title">Видео</span>
     <!-- v0.87.38: _ ▢ ✕ убраны — используются нативные кнопки Windows (titleBarOverlay) -->
+    <!-- v0.87.70: subtitles/audio tracks кнопки удалены — не работали, не нужны -->
   </div>
-  <!-- Меню выбора audio track / subtitles -->
-  <div id="track-menu" class="track-menu" style="display:none"></div>
 </div>
 <script>
   const videoEl = document.getElementById('v')
@@ -117,78 +96,7 @@
     await window.video.togglePip(pipActive)
   }
 
-  // v0.87.35: выбор audio tracks / subtitles. Если в video есть несколько —
-  // кнопки 🎧 / CC показываются, клик открывает меню выбора.
-  const audioBtn = document.getElementById('audio-btn')
-  const subBtn = document.getElementById('sub-btn')
-  const menu = document.getElementById('track-menu')
-
-  function renderMenu(kind) {
-    menu.innerHTML = ''
-    const h = document.createElement('h4')
-    h.textContent = kind === 'audio' ? 'Аудио-дорожка' : 'Субтитры'
-    menu.appendChild(h)
-    if (kind === 'audio' && videoEl.audioTracks) {
-      const tracks = videoEl.audioTracks
-      for (let i = 0; i < tracks.length; i++) {
-        const t = tracks[i]
-        const b = document.createElement('button')
-        b.textContent = t.label || t.language || ('Дорожка ' + (i + 1))
-        if (t.enabled) b.classList.add('active')
-        b.onclick = () => {
-          for (let j = 0; j < tracks.length; j++) tracks[j].enabled = j === i
-          menu.style.display = 'none'
-        }
-        menu.appendChild(b)
-      }
-    } else if (kind === 'sub') {
-      const tracks = videoEl.textTracks
-      const off = document.createElement('button')
-      off.textContent = 'Отключить'
-      if (Array.from(tracks).every(t => t.mode !== 'showing')) off.classList.add('active')
-      off.onclick = () => {
-        for (const t of tracks) t.mode = 'hidden'
-        menu.style.display = 'none'
-      }
-      menu.appendChild(off)
-      for (let i = 0; i < tracks.length; i++) {
-        const t = tracks[i]
-        const b = document.createElement('button')
-        b.textContent = t.label || t.language || ('Субтитры ' + (i + 1))
-        if (t.mode === 'showing') b.classList.add('active')
-        b.onclick = () => {
-          for (const other of tracks) other.mode = 'hidden'
-          t.mode = 'showing'
-          menu.style.display = 'none'
-        }
-        menu.appendChild(b)
-      }
-    }
-    menu.style.display = 'block'
-  }
-  audioBtn.onclick = () => {
-    menu.style.display = (menu.style.display === 'none' && menu.dataset.kind !== 'audio') ? 'block' : 'none'
-    menu.dataset.kind = 'audio'
-    renderMenu('audio')
-  }
-  subBtn.onclick = () => {
-    menu.style.display = (menu.style.display === 'none' && menu.dataset.kind !== 'sub') ? 'block' : 'none'
-    menu.dataset.kind = 'sub'
-    renderMenu('sub')
-  }
-  document.addEventListener('click', (e) => {
-    if (!menu.contains(e.target) && e.target !== audioBtn && e.target !== subBtn) {
-      menu.style.display = 'none'
-    }
-  })
-
-  // После загрузки метаданных показать кнопки если есть tracks
-  videoEl.addEventListener('loadedmetadata', () => {
-    const hasAudio = videoEl.audioTracks && videoEl.audioTracks.length > 1
-    const hasSub = videoEl.textTracks && videoEl.textTracks.length > 0
-    audioBtn.style.display = hasAudio ? '' : 'none'
-    subBtn.style.display = hasSub ? '' : 'none'
-  })
+  // v0.87.70: удалены subtitles / audio tracks — не работали корректно, функция убрана.
   // v0.87.38: кнопки close/min/max = нативные Windows (titleBarOverlay), не наш JS
 
   window.addEventListener('keydown', (e) => {

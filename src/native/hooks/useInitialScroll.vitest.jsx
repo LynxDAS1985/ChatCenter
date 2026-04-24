@@ -122,6 +122,75 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
     expect(onDone).not.toHaveBeenCalled()
   })
 
+  // v0.87.70: восстанавливаем сохранённый scrollTop при возврате к виденному чату
+  // (как Telegram Desktop). Регрессия: раньше scrollTop оставался от предыдущего чата —
+  // один div на всё приложение, позиция не per-chat.
+  it('⭐ v0.87.70: возврат к виденному чату — восстанавливаем savedScrollTop', async () => {
+    const scrollEl = {
+      scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
+      querySelector: () => null,
+    }
+    const savedPositions = { 'chat-A': 1234, 'chat-B': 500 }
+    const onDone = vi.fn()
+    const { rerender } = renderHook(({ chatId }) => {
+      const scrollRef = useRef(scrollEl)
+      const firstUnreadIdRef = useRef(null)
+      return useInitialScroll({
+        activeChatId: chatId, messagesCount: 50, scrollRef,
+        firstUnreadIdRef, activeUnread: 0, loading: false,
+        onDone,
+        getSavedScrollTop: (id) => savedPositions[id] ?? null,
+      })
+    }, { initialProps: { chatId: 'chat-A' } })
+
+    // Первое открытие A — initial-scroll (в низ), не restore
+    await new Promise(r => setTimeout(r, 250))
+    expect(scrollEl.scrollTop).toBe(scrollEl.scrollHeight)  // scrolled to bottom
+
+    // Переключение B → A (возврат к виденному)
+    rerender({ chatId: 'chat-B' })
+    await new Promise(r => setTimeout(r, 250))
+    // Теперь B в seen
+    rerender({ chatId: 'chat-A' })
+    await new Promise(r => setTimeout(r, 50))
+    // Восстановили сохранённую позицию для A
+    expect(scrollEl.scrollTop).toBe(1234)
+  })
+
+  it('v0.87.70: savedScrollTop ИГНОРИРУЕТСЯ если есть firstUnread (новые msg важнее)', async () => {
+    const scrollEl = {
+      scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
+      querySelector: (sel) => sel.includes('data-msg-id="msg-99"')
+        ? { scrollIntoView: vi.fn(), classList: { add: vi.fn(), remove: vi.fn() } }
+        : null,
+    }
+    const onDone = vi.fn()
+    const firstUnreadIdRefInner = { current: null }
+    const { rerender } = renderHook(({ chatId, unreadId }) => {
+      const scrollRef = useRef(scrollEl)
+      const firstUnreadIdRef = useRef(unreadId)
+      firstUnreadIdRefInner.current = firstUnreadIdRef
+      return useInitialScroll({
+        activeChatId: chatId, messagesCount: 50, scrollRef,
+        firstUnreadIdRef, activeUnread: unreadId ? 1 : 0, loading: false,
+        onDone,
+        getSavedScrollTop: () => 777,  // есть сохранённая позиция
+      })
+    }, { initialProps: { chatId: 'chat-X', unreadId: null } })
+
+    // Первое открытие — без unread, идёт в низ
+    await new Promise(r => setTimeout(r, 250))
+
+    // Возврат с firstUnread = новые пришли → НЕ savedScrollTop (77), а firstUnread
+    firstUnreadIdRefInner.current.current = 'msg-99'
+    rerender({ chatId: 'chat-Y', unreadId: 'msg-99' })
+    await new Promise(r => setTimeout(r, 250))
+    rerender({ chatId: 'chat-X', unreadId: 'msg-99' })
+    await new Promise(r => setTimeout(r, 50))
+    // scrollIntoView был вызван на el с msg-99, а не scrollTop=777
+    expect(scrollEl.scrollTop).not.toBe(777)
+  })
+
   // v0.87.68: Set-based guard — initial-scroll НЕ перезапускается для уже виденного чата.
   // Регрессия: раньше doneRef хранил только последний chatId → при возврате A→B→A
   // initial-scroll запускался заново → моргание контента.

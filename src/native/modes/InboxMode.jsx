@@ -32,6 +32,10 @@ export default function InboxMode({ store }) {
   // контент мгновенно. seenChatsRef хранит chatId уже завершивших initial-scroll.
   const [chatReady, setChatReady] = useState(false)
   const seenChatsRef = useRef(new Set())
+  // v0.87.70: Map<chatId, scrollTop> — своя позиция для каждого чата (как в Telegram
+  // Desktop). При возврате к чату восстанавливаем ту позицию, где юзер был.
+  // Обновляется на каждом scroll event в handleScroll.
+  const scrollPosByChatRef = useRef(new Map())
 
   useEffect(() => {
     store.loadCachedChats?.()
@@ -166,6 +170,8 @@ export default function InboxMode({ store }) {
       seenChatsRef.current.add(chatId)
       setChatReady(true)
     },
+    // v0.87.70: возврат сохранённой позиции при повторном открытии (Telegram-style).
+    getSavedScrollTop: (chatId) => scrollPosByChatRef.current.get(chatId) ?? null,
   })
 
   // v0.87.66 → v0.87.67: при смене чата проверяем — если уже открывали этот чат
@@ -312,6 +318,13 @@ export default function InboxMode({ store }) {
     // v0.87.27: индикатор scroll-to-bottom + newBelow-счётчик
     const el = e.target
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+
+    // v0.87.70: сохраняем текущий scrollTop для активного чата.
+    // При возврате к этому чату восстановим с Map (как в Telegram Desktop).
+    // Не триггерит re-render — useRef.
+    if (store.activeChatId && chatReady) {
+      scrollPosByChatRef.current.set(store.activeChatId, el.scrollTop)
+    }
 
     // v0.87.49: лог переходов atBottom — чтобы увидеть когда и почему хук useForceReadAtBottom
     // получит cleanup (atBottom меняется с true на false).

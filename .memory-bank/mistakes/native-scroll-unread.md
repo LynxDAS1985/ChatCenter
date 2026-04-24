@@ -48,6 +48,42 @@ text=1111  bubbleW=39  groupW=60  groupRowW=588  scrollW=620
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: scrollTop — глобальное свойство div, а не per-chat state (v0.87.70)
+
+**Симптом**: переключаешься между чатами, второй чат открывается на той же пиксельной высоте что первый. Если в первом был посередине — во втором тоже посередине.
+
+**Корень**: `msgsScrollRef.current` — **один** `<div>` на всё приложение. `scrollTop` — CSS свойство этого div, в пикселях. При смене `activeChatId` React перерисовывает children (messages другие), но **scrollTop не сбрасывается автоматически** — остаётся от предыдущего чата.
+
+**Доказательство из логов** (v0.87.69):
+```
+15:50:34 Дугин     → chat-open top=26743
+15:50:34 Automarketolog → chat-open top=26743  ← пиксель в пиксель от Дугина
+```
+
+**ПРАВИЛО**: Когда один DOM-элемент обслуживает несколько логических scrollable списков (переключаемых через state) — нужно **хранить scrollTop в Map<key, number>** и восстанавливать при смене.
+
+**Шаблон (v0.87.70)**:
+```js
+// В компоненте
+const scrollPosByChatRef = useRef(new Map())
+
+// В handleScroll — сохраняем на каждом скролле
+if (activeChatId) {
+  scrollPosByChatRef.current.set(activeChatId, el.scrollTop)
+}
+
+// При возврате к видимому чату — восстанавливаем (перед показом контента):
+const saved = scrollPosByChatRef.current.get(activeChatId)
+if (typeof saved === 'number') el.scrollTop = saved
+```
+
+**Приоритет поведения (как Telegram Desktop)**:
+1. Есть firstUnread (новые пришли) → scrollIntoView на первое новое
+2. Есть сохранённая позиция → восстановить
+3. Ничего нет (первое открытие) → в низ
+
+---
+
 ## 🟡 ВАЖНОЕ: Скрывать UI до onDone сигнала, а не по таймеру (v0.87.66)
 
 **Симптом**: пользователь видит «прыжок» scrollbar при открытии чата даже когда был CSS fade-in 250мс на scroll-container.
