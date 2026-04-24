@@ -2,7 +2,7 @@
 
 Это единственный источник истины для проекта ЦентрЧатов / ChatCenter.
 
-**Версия**: v0.87.62 (24 апреля 2026)
+**Версия**: v0.87.63 (24 апреля 2026)
 
 ---
 
@@ -73,7 +73,7 @@
 
 ---
 
-## 📏 Лимиты размеров (v0.87.62)
+## 📏 Лимиты размеров (v0.87.63)
 
 | Файл | Максимум | Если превышен |
 |---|---|---|
@@ -94,7 +94,7 @@
 - `common-mistakes.md` 294 КБ → индекс 5 КБ + `mistakes/` 4 файла (v0.87.56)
 - `features.md` 445 КБ → активный 100 КБ + `archive/features-v0.87-early.md` + `archive/features-pre-v0.87.md` (v0.87.58)
 - `mistakes/webview-injection.md` 165 КБ → `webview-injection.md` 130 КБ + `webview-navigation-ui.md` 31 КБ (v0.87.59)
-- `mistakes/webview-injection.md` 130 КБ → `webview-injection.md` 9 КБ (ядро) + `webview-stack-grouping.md` 125 КБ (v0.87.62)
+- `mistakes/webview-injection.md` 130 КБ → `webview-injection.md` 9 КБ (ядро) + `webview-stack-grouping.md` 125 КБ (v0.87.63)
 
 **Журнал изменений структуры памяти**: [`CHANGELOG.md`](./CHANGELOG.md).
 
