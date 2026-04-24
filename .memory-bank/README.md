@@ -2,7 +2,7 @@
 
 Это единственный источник истины для проекта ЦентрЧатов / ChatCenter.
 
-**Версия**: v0.87.58 (24 апреля 2026)
+**Версия**: v0.87.59 (24 апреля 2026)
 
 ---
 
@@ -18,6 +18,7 @@
 | `workflow.md` | Правила работы AI, планирование, чеклист | Перед началом задачи |
 | `common-mistakes.md` | **Индекс** ловушек (детали в `mistakes/`) | При ошибках/отладке |
 | `features.md` | Changelog активных версий (старое в архиве) | При добавлении функций |
+| `CHANGELOG.md` | Журнал изменений структуры Memory Bank | При правках структуры памяти |
 | `native-scroll-diagnostics-handoff.md` | Диагностика скролла native | При расследовании native-scroll |
 | `decisions.md` | Ключевые архитектурные решения (ADR) | При принятии решений |
 | `api.md` | IPC-каналы, форматы сообщений, DTO | При работе с IPC |
@@ -33,10 +34,11 @@
 
 | Файл | Темы | Размер |
 |---|---|---|
-| `mistakes/native-scroll-unread.md` | native скролл, счётчик, markRead, IntersectionObserver | ~17 КБ |
-| `mistakes/webview-injection.md` | DOM, спам, селекторы мессенджеров, навигация | ~165 КБ |
-| `mistakes/notifications-ribbon.md` | кастомные уведомления, ribbon BrowserWindow | ~50 КБ |
-| `mistakes/electron-core.md` | Electron, IPC, Settings, AI, авто-ответ | ~52 КБ |
+| `mistakes/native-scroll-unread.md` | native скролл, счётчик, markRead, IntersectionObserver | ~19 КБ |
+| `mistakes/webview-injection.md` | Ядро: DOM, спам, селекторы, injection, стек-группировка | ~130 КБ |
+| `mistakes/webview-navigation-ui.md` | Навигация между чатами, MAX SvelteKit, ribbon CSS/UI | ~31 КБ |
+| `mistakes/notifications-ribbon.md` | Кастомные уведомления, ribbon BrowserWindow | ~50 КБ |
+| `mistakes/electron-core.md` | Electron, IPC, Settings, AI, авто-ответ | ~56 КБ |
 
 **Правило чтения**: сначала индекс (`common-mistakes.md`) → по теме выбираешь файл → читаешь только его.
 
@@ -70,7 +72,7 @@
 
 ---
 
-## 📏 Лимиты размеров (v0.87.58)
+## 📏 Лимиты размеров (v0.87.59)
 
 | Файл | Максимум | Если превышен |
 |---|---|---|
@@ -80,9 +82,16 @@
 
 **Почему это важно**: `Read` имеет лимит 256 КБ. Файл > 200 КБ либо не прочитается, либо съест весь контекст. А контекст нужен для задачи, не для истории.
 
+**Автоматическая защита от разрастания**:
+- `node src/__tests__/memoryBankSizeLimits.test.cjs` — автотест падает при превышении
+- `bash scripts/check-memory.sh` — ручная проверка здоровья (размеры, версии, ссылки)
+
 **Примеры разбиения**:
 - `common-mistakes.md` 294 КБ → индекс 5 КБ + `mistakes/` 4 файла (v0.87.56)
 - `features.md` 445 КБ → активный 100 КБ + `archive/features-v0.87-early.md` + `archive/features-pre-v0.87.md` (v0.87.58)
+- `mistakes/webview-injection.md` 165 КБ → `webview-injection.md` 130 КБ + `webview-navigation-ui.md` 31 КБ (v0.87.59)
+
+**Журнал изменений структуры памяти**: [`CHANGELOG.md`](./CHANGELOG.md).
 
 ---
 

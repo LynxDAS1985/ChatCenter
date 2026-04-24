@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.58 (24 апреля 2026)
+## Текущая версия: v0.87.59 (24 апреля 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.40 → v0.87.58). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.40 → v0.87.59). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -12,6 +12,56 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.59 — Автотест лимитов памяти + скрипт check-memory + CHANGELOG Memory Bank + разбиение webview-injection.md
+
+**Зачем эта версия**: поставить **автоматическую защиту** от разрастания Memory Bank — чтобы история с `common-mistakes.md` 294 КБ (v0.87.56) и `features.md` 445 КБ (v0.87.58) не повторилась в новых файлах. Плюс превентивно разбить следующий кандидат — `mistakes/webview-injection.md` (165 КБ).
+
+**Что сделано**:
+
+#### 1. Новый автотест `src/__tests__/memoryBankSizeLimits.test.cjs`
+
+Падает если какой-то `.md`-файл памяти перерос лимит:
+- Любой `.md` в корне `.memory-bank/` → ≤ **100 КБ**
+- Файл в `mistakes/` → ≤ **200 КБ**
+- `common-mistakes.md` (индекс) → ≤ **10 КБ**
+
+Дополнительно проверяет что все ссылки `.memory-bank/*.md` в CLAUDE.md указывают на существующие файлы.
+
+Добавлен в `npm test` рядом с `fileSizeLimits.test.cjs`. Формат совместим с существующими тестами (CJS, `test()`/`assert()`).
+
+#### 2. Новый скрипт `scripts/check-memory.sh`
+
+Ручная проверка здоровья Memory Bank:
+- Размеры всех файлов с цветовой индикацией (красный — превышен, жёлтый — > 80%, зелёный — в норме)
+- Сверка версий в 4 местах (`package.json`, `package-lock.json`, `CLAUDE.md`, `features.md`)
+- Устаревшие ссылки в CLAUDE.md
+- Размер архива
+
+Запуск: `npm run check-memory` (добавлен в `package.json → scripts`) или напрямую `bash scripts/check-memory.sh`.
+
+#### 3. Новый файл `.memory-bank/CHANGELOG.md`
+
+Журнал изменений **самой структуры** Memory Bank (не проекта): разбиения, новые правила, новые автотесты. Обновляется при любом структурном изменении. Шаблон записи прописан в файле.
+
+Добавлен в CLAUDE.md и `.memory-bank/README.md` как активный файл.
+
+#### 4. Разбиение `mistakes/webview-injection.md` 165 КБ на 2 файла
+
+- `mistakes/webview-injection.md` (~130 КБ) — **ядро**: injection, IPC, DOM-селекторы (Telegram Web K, MAX sidebar), спам-фильтры, `executeJavaScript`, `toDataUrl` зависание, стековая группировка, ghost-items, двойной звук
+- `mistakes/webview-navigation-ui.md` (~31 КБ) — **новый**: навигация между чатами (`location.hash`, `history.pushState`, `buildChatNavigateScript`), MAX SvelteKit (`scrollListContent`, `messageWrapper`, enrichment), sender-based dedup, ribbon CSS/UI в WebView-контексте (mouseenter, expandedByDefault, fade-out, FIFO deadlock, emoji regex)
+
+#### 5. Обновлены индекс и документация
+
+- `common-mistakes.md` индекс — добавлен пункт про `webview-navigation-ui.md`
+- `CLAUDE.md` — новый файл в таблицах mistakes/, ссылки на автотест и скрипт в секции лимитов памяти
+- `.memory-bank/README.md` — добавлен `CHANGELOG.md` в активные файлы, обновлена таблица mistakes/, добавлены ссылки на автотест/скрипт
+
+**Тесты**: `node src/__tests__/memoryBankSizeLimits.test.cjs` — **21/21 passed**. `bash scripts/check-memory.sh` — всё зелёное.
+
+**Зачем именно автотест, а не только скрипт**: агент забудет запускать скрипт вручную. Тест встраивается в `npm test` → падает автоматически на CI/pre-commit → защита работает без участия человека.
 
 ---
 

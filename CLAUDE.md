@@ -212,7 +212,8 @@
 | Когда читать | Файл |
 |------|------|
 | Задача про native-скролл, счётчик, markRead, IntersectionObserver | `.memory-bank/mistakes/native-scroll-unread.md` |
-| Задача про WebView, DOM-селекторы, спам, навигацию | `.memory-bank/mistakes/webview-injection.md` |
+| Задача про WebView injection / DOM-селекторы / спам / стек-группировку | `.memory-bank/mistakes/webview-injection.md` |
+| Задача про навигацию между чатами / MAX SvelteKit / UI в WebView / ribbon CSS | `.memory-bank/mistakes/webview-navigation-ui.md` |
 | Задача про уведомления, ribbon, BrowserWindow | `.memory-bank/mistakes/notifications-ribbon.md` |
 | Задача про Electron, IPC, Settings, AI, авто-ответ | `.memory-bank/mistakes/electron-core.md` |
 
@@ -247,7 +248,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.87.58 (24 апреля 2026)
+**Текущая версия**: v0.87.59 (24 апреля 2026)
 
 ---
 
@@ -382,9 +383,16 @@ npm run test:vitest
 
 **Почему лимиты важны**: инструмент `Read` имеет предел 256 КБ. Файл больше — не читается. 100+ КБ съедает огромную долю контекста, нужного для задачи.
 
+**Автоматическая защита**:
+- **Тест**: `node src/__tests__/memoryBankSizeLimits.test.cjs` — падает если файл перерос
+- **Скрипт диагностики**: `bash scripts/check-memory.sh` — показывает размеры, сверку версий, сломанные ссылки. Запускать перед крупной сессией или раз в неделю.
+
 **Примеры разбиения** (для справки):
 - `common-mistakes.md` 294 КБ → индекс 5 КБ + `mistakes/` 4 файла (v0.87.56)
 - `features.md` 445 КБ → активный 100 КБ + 2 архивных файла (v0.87.58)
+- `mistakes/webview-injection.md` 165 КБ → `webview-injection.md` 130 КБ + `webview-navigation-ui.md` 31 КБ (v0.87.59)
+
+**Журнал изменений структуры**: [`CHANGELOG.md`](.memory-bank/CHANGELOG.md).
 
 ### Когда переводить в архив
 
@@ -491,6 +499,7 @@ npm run test:vitest
 | `workflow.md` | Правила работы AI, планирование, чеклист |
 | `common-mistakes.md` | **Индекс** ловушек (детали в `mistakes/`) |
 | `features.md` | Changelog активных версий (старое в архиве) |
+| `CHANGELOG.md` | Журнал изменений структуры Memory Bank |
 | `native-scroll-diagnostics-handoff.md` | Диагностика скролла native |
 | `decisions.md` | Ключевые архитектурные решения (ADR) |
 | `api.md` | IPC-каналы, форматы сообщений, DTO |
@@ -505,7 +514,8 @@ npm run test:vitest
 | Файл | Темы |
 |------|------|
 | `mistakes/native-scroll-unread.md` | Native скролл, счётчик, markRead, IntersectionObserver |
-| `mistakes/webview-injection.md` | DOM, спам, селекторы мессенджеров, навигация |
+| `mistakes/webview-injection.md` | Ядро: DOM, спам, селекторы мессенджеров, injection |
+| `mistakes/webview-navigation-ui.md` | Навигация между чатами, MAX SvelteKit, ribbon CSS/UI |
 | `mistakes/notifications-ribbon.md` | Кастомные уведомления, ribbon BrowserWindow |
 | `mistakes/electron-core.md` | Electron, IPC, Settings, AI, авто-ответ |
 
@@ -520,6 +530,6 @@ npm run test:vitest
 
 ---
 
-**Версия проекта**: v0.87.58 (24 апреля 2026)
+**Версия проекта**: v0.87.59 (24 апреля 2026)
 **Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
-**Последнее обновление**: 24 апреля 2026 — v0.87.58: FIX сообщение не появлялось в чате после отправки — emit tg:new-message из response client.sendMessage (Telegram MTProto не дублирует UpdateNewMessage для собственных исходящих)
+**Последнее обновление**: 24 апреля 2026 — v0.87.59: FIX сообщение не появлялось в чате после отправки — emit tg:new-message из response client.sendMessage (Telegram MTProto не дублирует UpdateNewMessage для собственных исходящих)

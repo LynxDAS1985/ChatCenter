@@ -1,6 +1,6 @@
 # Типичные ошибки — ChatCenter (индекс)
 
-**Версия**: v0.87.54 (24 апреля 2026)
+**Версия**: v0.87.59 (24 апреля 2026)
 **Структура**: файл-индекс. Реальные ловушки разложены по темам в [`mistakes/`](./mistakes/). Решённые и неактуальные ловушки — в [`archive/`](./archive/).
 
 ---
@@ -29,12 +29,23 @@
 - Связанный handoff: [`native-scroll-diagnostics-handoff.md`](./native-scroll-diagnostics-handoff.md)
 
 ### 2. [`mistakes/webview-injection.md`](./mistakes/webview-injection.md)
-**Когда читать**: работа с WebView мессенджеров, инъекция скриптов, DOM-селекторы.
-- WebView selectors: Telegram Web K, MAX (SvelteKit), VK
+**Когда читать**: ЯДРО — работа с WebView мессенджеров, инъекция скриптов, DOM-селекторы.
+- WebView selectors: Telegram Web K, MAX sidebar DOM
 - MutationObserver, стековая группировка, ghost-items
 - Спам-фильтры (IPC без фильтра, `shared/spamPatterns.json`)
 - `executeJavaScript`: `toDataUrl` зависание, context isolation
+- Двойной звук (4 пути воспроизведения)
+
+### 2b. [`mistakes/webview-navigation-ui.md`](./mistakes/webview-navigation-ui.md)
+**Когда читать**: навигация между чатами + UI-интеграция в WebView.
 - Навигация: `location.hash`, `history.pushState`, `buildChatNavigateScript`
+- MAX SvelteKit: `scrollListContent` (sidebar vs чат), `messageWrapper ≠ message`
+- Pipeline text truncation (60 символов), enrichment header MAX
+- Sender-based dedup через 3 пути, dedup-суффикс
+- Ribbon CSS/UI в WebView: `mouseenter/mouseleave` в transparent BrowserWindow,
+  `expandedByDefault` auto-dismiss, fade-out мигание, FIFO deadlock,
+  Emoji regex для modern Unicode
+- CSS `.messenger-name` невидимый
 
 ### 3. [`mistakes/notifications-ribbon.md`](./mistakes/notifications-ribbon.md)
 **Когда читать**: задача про уведомления, ribbon-окно, кастомные нотификации.
