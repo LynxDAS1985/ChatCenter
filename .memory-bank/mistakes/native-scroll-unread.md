@@ -8,6 +8,67 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: flex + maxWidth на content-sized parent = круговая схлопка (v0.87.62)
+
+**Симптом**: bubble исходящих и входящих в чате становятся шириной 1-2 символов (каждая буква на своей строке), timestamp разбит по цифрам. Проявляется одинаково в групповых и приватных чатах для **коротких текстов**.
+
+**Диагностика из лога v0.87.61** `bubble-width-diag`:
+```
+text=1111  bubbleW=39  groupW=60  groupRowW=588  scrollW=620
+```
+- `groupRowW=588` — корректно растянут (stretch в column parent)
+- `groupW=60` — **content-sized** из-за `flex: 0 1 auto`
+- `bubble maxWidth=65%` от `groupW=60` = 39px ← **рекурсивная схлопка**
+
+**Корень**: `maxWidth: 65%` у bubble зависит от ширины parent (group). Но group имеет `flex: 0 1 auto` (= content-sized), значит ширина group = intrinsic content = ширина bubble. bubble = 65% от себя → схлопка до минимума.
+
+**ПРАВИЛО**: Если родитель в flex-row/col имеет `flex: 0 1 auto` (content-sized) — **НЕ задавать `maxWidth: X%` детям**. Проценты от content-size = круговая зависимость → схлопка.
+
+**ПРАВИЛЬНО (3 варианта)**:
+1. `maxWidth: X%` ставить на parent (group), bubble внутри — `maxWidth: 100%`, `width: auto`
+2. Parent делать `flex: 1 1 auto` или `width: 100%` — тогда `%` у bubble работают нормально
+3. Использовать абсолютный `maxWidth: Npx` на bubble (не проценты)
+
+**Решение (v0.87.62)**: выбран вариант 1 — `.native-msg-group` получила `maxWidth: 75%`, bubble внутри `maxWidth: 100%, width: auto`. Bubble content-sized внутри ограничения 75% row.
+
+---
+
+## 🟡 ВАЖНОЕ: `width: X%` vs `maxWidth: X%` на bubble-контейнере — разная семантика (v0.87.62)
+
+**Симптом первой попытки v0.87.62**: юзер увидел пустые поля рядом с короткими bubble («111» в 75%-коробке, остальное пусто).
+
+**Причина**: поставил `width: 75%` на `.native-msg-group` → bubble всегда занимает 75%, даже когда текста на 30px.
+
+**ПРАВИЛО**: Для content-sized bubble (размер по тексту) — использовать `maxWidth`, не `width`. `width: X%` = всегда X%, `maxWidth: X%` = content-size до X%.
+
+**Семантика**:
+- `width: 75%` → коробка всегда 75%, короткий текст → пустое место
+- `maxWidth: 75%` → коробка = content (до 75% лимита), короткий текст → компактно
+- Выбор зависит от UX требования: «всегда одинаковая ширина» vs «компактно для коротких»
+
+---
+
+## 🟡 ВАЖНОЕ: после отправки msg нужен авто-скролл — scroll anchoring не сработает (v0.87.62)
+
+**Симптом**: юзер отправляет сообщение → новый bubble добавлен в DOM ниже viewport → юзер остаётся на старой позиции, видит стрелку ↓ но не само сообщение.
+
+**Причина**: когда новый элемент добавляется в конец scroll-контейнера (не выше текущей позиции), **browser scroll anchoring не применяется** — он работает только для insert-before (выше viewport). Для insert-after scrollTop не двигается автоматически.
+
+**ПРАВИЛО**: Любое пользовательское действие добавляющее контент в конец scrollable области (отправка msg, apply filter, load-newer) — **ОБЯЗАНО** вручную скроллить вниз после действия.
+
+**Шаблон**:
+```js
+// После успешного emit tg:new-message (или любого addToList)
+setTimeout(() => {
+  const el = msgsScrollRef.current
+  if (el) el.scrollTop = el.scrollHeight
+}, 50)  // 50мс чтобы React успел обновить DOM
+```
+
+**Применено в v0.87.62**: `InboxMode.jsx handleReplySend` после успеха отправки.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: Telegram MTProto НЕ дублирует UpdateNewMessage для своих исходящих (v0.87.58)
 
 **Симптом**: юзер отправил сообщение → `send-message OK messageId=X` в логах → но сообщение **не появляется в чате** до перезагрузки.

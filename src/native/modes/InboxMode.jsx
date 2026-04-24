@@ -442,25 +442,21 @@ export default function InboxMode({ store }) {
         // v0.87.55: показываем юзеру что именно пошло не так — иначе он нажимает и не понимает
         showToast(`Ошибка отправки: ${result?.error || 'неизвестно'}`, 'error')
         setInput(text)  // возвращаем текст в поле — чтобы не потерялся
+      } else {
+        // v0.87.62: авто-скролл к отправленному сообщению. Раньше msg уходил ниже viewport,
+        // юзер видел стрелку ↓ но не сам bubble. Из логов v0.87.61: deltaHeight=154
+        // deltaTop=0 → юзер оставался на старой позиции. Теперь после успешной отправки
+        // прокручиваем scroll-container в самый низ — новый bubble точно виден.
+        setTimeout(() => {
+          const el = msgsScrollRef.current
+          if (!el) return
+          el.scrollTop = el.scrollHeight
+          scrollDiag.logEvent('send-scroll-done', {
+            top: el.scrollTop, height: el.scrollHeight,
+            bottomGap: el.scrollHeight - el.scrollTop - el.clientHeight,
+          })
+        }, 50)
       }
-      // v0.87.61: диагностика скролла через 100мс после появления msg в DOM
-      setTimeout(() => {
-        const el = msgsScrollRef.current
-        if (!el) return
-        const after = {
-          top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight,
-          bottomGap: el.scrollHeight - el.scrollTop - el.clientHeight,
-        }
-        scrollDiag.logEvent('send-scroll-after', {
-          scrollAfter: after,
-          deltaHeight: before ? (after.height - before.height) : null,
-          deltaTop: before ? (after.top - before.top) : null,
-          // Ожидаем: height вырос (новый msg добавил ~40-80px), top НЕ изменился
-          // (юзер ушёл за viewport на deltaHeight) — скролла к новому msg нет.
-          expectedBehavior: before && (after.height - before.height) > 0 && (after.top - before.top) === 0
-            ? 'stayed (user scrolled out of view)' : 'auto-scrolled',
-        })
-      }, 100)
     } catch (e) {
       scrollDiag.logEvent('send-throw', { error: e?.message, name: e?.constructor?.name })
       showToast(`Сбой отправки: ${e?.message || e}`, 'error')
@@ -630,7 +626,17 @@ export default function InboxMode({ store }) {
                         {!groupChat?.avatar && groupInitials}
                       </div>
                     )}
-                    <div className="native-msg-group" style={{ alignItems: item.isOutgoing ? 'flex-end' : 'flex-start', flex: '0 1 auto' }}>
+                    <div className="native-msg-group" style={{
+                      // v0.87.62 final: maxWidth 75% — bubble content-sized до 75% row-width.
+                      // Короткий "111" = ~30px (без пустых полей), длинный = до 75% с переносом.
+                      // alignItems flex-end/start — bubble прижат к нужному краю.
+                      // Причина отката к content-size: фиксированная width: 75% (первая попытка)
+                      // давала пустые поля при коротком тексте — неправильный UX.
+                      maxWidth: '75%',
+                      alignItems: item.isOutgoing ? 'flex-end' : 'flex-start',
+                      display: 'flex',
+                      flexDirection: 'column',
+                    }}>
                       {!item.isOutgoing && item.senderName && (
                         <div className="native-msg-author">{item.senderName}</div>
                       )}

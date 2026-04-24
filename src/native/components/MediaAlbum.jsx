@@ -279,8 +279,10 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
       ref={ref}
       data-msg-id={firstMsg.id}
       style={{
+        // v0.87.62: альбом — media контент, ограничиваем 520px чтобы не раздувать.
+        // group-row даёт 75% ширины scroll-container, берём min(520px, доступное).
         alignSelf: isOutgoing ? 'flex-end' : 'flex-start',
-        maxWidth: 'min(520px, 80%)',
+        maxWidth: 520,
         minWidth: 280,
         position: 'relative',
       }}
