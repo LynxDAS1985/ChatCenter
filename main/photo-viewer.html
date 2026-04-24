@@ -49,9 +49,18 @@
     transition: background 0.15s, color 0.15s;
   }
   .toolbar button:hover, .toolbar a:hover { background: rgba(255,255,255,0.12); }
+  /* v0.87.71: эффект нажатия — кнопка сжимается при клике (feedback) */
+  .toolbar button:active { transform: scale(0.92); background: rgba(255,255,255,0.2); }
   .toolbar span.pct { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; }
   .toolbar span.counter { min-width: 56px; text-align: center; opacity: 0.85; border-left: 1px solid rgba(255,255,255,0.15); border-right: 1px solid rgba(255,255,255,0.15); padding: 0 10px; margin: 0 4px; }
-  .pin-active { color: #2AABEE !important; }
+  /* v0.87.71: pin-active — синий фон + белый pin + внутренняя тень.
+     Раньше был только "color: #2AABEE" на иконку — юзер не замечал что закреплено. */
+  .pin-active {
+    color: #fff !important;
+    background: #2AABEE !important;
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,0.15), 0 0 8px rgba(42,171,238,0.5);
+  }
+  .pin-active:hover { background: #1e8fc7 !important; }
 
   /* Стрелки навигации — плавные */
   .nav-arrow {
