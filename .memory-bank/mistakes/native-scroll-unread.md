@@ -48,6 +48,42 @@ text=1111  bubbleW=39  groupW=60  groupRowW=588  scrollW=620
 
 ---
 
+## 🟡 ВАЖНОЕ: Скрывать UI до onDone сигнала, а не по таймеру (v0.87.66)
+
+**Симптом**: пользователь видит «прыжок» scrollbar при открытии чата даже когда был CSS fade-in 250мс на scroll-container.
+
+**Причина**: CSS-animation на `mount` использует **фиксированное время** (250мс). А настоящее завершение initial-scroll зависит от:
+- `setTimeout(150мс)` до scrollIntoView
+- Задержка сервера `tg:messages` (loading=true пока ждём)
+- DOM измерения после рендера
+
+В среднем 200-500мс, может больше. Fade-in 250мс иногда успевает закончиться до initial-scroll → прыжок виден.
+
+**ПРАВИЛО**: Когда UI должен скрывать асинхронный процесс с неопределённым временем — **не использовать CSS animations фиксированной длительности**. Использовать **state управляемый сигналом завершения** процесса.
+
+**Пример (v0.87.66)**:
+```js
+// Хук процесса уведомляет о завершении
+useInitialScroll({ ..., onDone: () => setChatReady(true) })
+
+// UI реагирует на state
+<MessageListOverlay show={!chatReady} />
+<div style={{ opacity: chatReady ? 1 : 0, transition: 'opacity 200ms' }}>
+  {/* content */}
+</div>
+```
+
+При смене триггера (например `activeChatId`) — сбрасываем state:
+```js
+useEffect(() => setChatReady(false), [store.activeChatId])
+```
+
+**Контраст с CSS-только решением**:
+- ❌ `@keyframes opacity 0→1 duration:250ms` — не знает реального завершения процесса
+- ✅ `opacity: state ? 1 : 0, transition: opacity 200ms` — реагирует на актуальное событие
+
+---
+
 ## 🟡 ВАЖНОЕ: после отправки msg нужен авто-скролл — scroll anchoring не сработает (v0.87.62)
 
 **Симптом**: юзер отправляет сообщение → новый bubble добавлен в DOM ниже viewport → юзер остаётся на старой позиции, видит стрелку ↓ но не само сообщение.

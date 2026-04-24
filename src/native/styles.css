@@ -541,16 +541,9 @@
   animation: native-msg-sent-glow 1.6s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-/* v0.87.65: плавное появление контента чата при открытии — скрывает "прыжок"
-   initial-scroll с scrollTop=0 к firstUnread. Scroll-container стартует с opacity:0
-   и переходит в opacity:1 за 250мс. Между маунтом и initial-done прыжок не виден. */
-.native-chat-fadein {
-  animation: native-chat-fadein 250ms ease-out;
-}
-@keyframes native-chat-fadein {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+/* v0.87.65 → v0.87.66 переехало в inline style InboxMode с state chatReady:
+   opacity 0 → 1 переключается после onDone из useInitialScroll.
+   CSS-класс больше не нужен (оставлена пустая отметка для истории версий). */
 
 /* v0.87.54: синий неон «вы остановились здесь» — 3.5с мягкое свечение
    в общем стиле accent (#2AABEE) — Telegram-blue, сочетается с остальным UI. */

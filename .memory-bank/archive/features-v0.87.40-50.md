@@ -1,0 +1,529 @@
+# Архив features v0.87.40 – v0.87.50
+
+**Период**: 23 апреля 2026 (native Telegram scroll + unread counter iterations).
+**Вынесено из `features.md` 24 апреля 2026 (v0.87.66)** — `features.md` превысил лимит 100 КБ.
+
+**НЕ читать по умолчанию** — содержимое про старые итерации где:
+- groupedUnread (v0.87.45-50) **удалён** в v0.87.51 — записи остались как учебный пример
+- initial-scroll, markRead, useReadOnScrollAway — текущие версии в `mistakes/native-scroll-unread.md`
+
+---
+
+### v0.87.50 — FIX бейдж застревал на 23 после прочтения (clamp groupedUnread в sync-handlers)
+
+**Диагностика из v0.87.49 логов дала 100% картину**. Chat Geely EX5 EM-i, 18:38:47-48:
+
+```
+18:38:47 bottom-state-change prev=false curr=true bottomGap=59   ← юзер докатил
+18:38:47 force-read-schedule lastId=17898 unread=23 atBottom=true ← таймер 400мс
+18:38:47 force-read-fire lastId=17898                             ← таймер стрельнул
+18:38:47 [tg] mark-read OK maxId=17898                            ← GramJS успех
+18:38:48 [tg] UNREAD SYNC Telegram сервер=0                       ← СЕРВЕР вернул 0
+18:38:48 store-unread-sync unread=0 active=true                   ← store получил
+18:38:48 badge-state unread=0 grouped=23 badge=23 prevGrouped=23  ← БАГ в UI
+```
+
+Всё работало КРОМЕ одного: `chat.groupedUnread=23` (прошлый recompute) не обнулялся при получении свежего unreadCount.
+
+**Корневая причина** (доказано по коду):
+- [nativeStore.js:228](src/native/store/nativeStore.js#L228) handler `tg:chat-unread-sync` обновлял ТОЛЬКО `unreadCount`
+- [ChatListItem.jsx:26](src/native/components/ChatListItem.jsx#L26) использует `badgeCount = chat.groupedUnread ?? chat.unreadCount`
+- Следствие: сервер 0 → unreadCount 0, но `groupedUnread` остался 23 → `badgeCount = 23 ?? 0 = 23`. Залипание.
+
+**Опровергнутые гипотезы** (через логи v0.87.49):
+- Гипотеза A (useReadOnScrollAway не помечает последние msg) — `force-read-fire` сработал идеально для `lastId=17898`
+- Гипотеза B (scrollTop прыгал) — ни одного `scroll-anomaly`, `bottom-state-change` только 1 раз false→true
+- Проблема в API / GramJS / MTProto — нет, `UNREAD SYNC сервер=0`
+
+**Единственная истинная причина**: рассинхрон между `unreadCount` и `groupedUnread` в store handlers.
+
+**Fix — точечный, 2 handler в одном файле** ([nativeStore.js](src/native/store/nativeStore.js)):
+
+```js
+// tg:chat-unread-sync + tg:unread-bulk-sync
+const nextGrouped = typeof c.groupedUnread === 'number'
+  ? Math.min(c.groupedUnread, unreadCount)
+  : c.groupedUnread
+return { ...c, unreadCount, groupedUnread: nextGrouped }
+```
+
+**Семантика clamp'а**: `grouped` не может быть больше чем MTProto-сообщений которые сервер считает непрочитанными. Если сервер говорит 0 → `grouped=min(23,0)=0`. Если сервер говорит 5 < grouped=9 → `grouped=5`. Если сервер говорит 10 > grouped=3 → grouped остаётся 3 (пришли новые, но мы не знаем их структуру — ждём recompute).
+
+**Тесты** (+5 в [nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx)):
+1. РЕГРЕССИЯ Geely: `unread=0` после `grouped=23` → `grouped=0`
+2. `unread=5 < grouped=9` → `grouped=5` (clamp)
+3. `unread=10 > grouped=3` → `grouped=3` не увеличивается (ждём recompute)
+4. bulk-sync для 2 чатов → оба clamp'ятся
+5. Если `groupedUnread` был undefined — sync не создаёт (остаётся undefined, fallback на unreadCount)
+
+**Итого**: 127 vitest (было 122), E2E 17/17, UI 9/9.
+
+### v0.87.49 — ДИАГНОСТИКА: счётчик непрочитанных застревает после прокрутки до конца (только логи)
+
+**Проблема** (скриншоты пользователя, чаты «Ассоциация РОАД», «Автовоз», «АвтоБизнес»): юзер пролистывает чат до конца — счётчик непрочитанных остаётся на N (чаще 1-3), не становится 0. В списке чатов бейдж не обновляется.
+
+**Статус**: код логики НЕ меняется. Добавлены только диагностические логи чтобы получить 100% картину причин. После воспроизведения и анализа — точечный фикс в следующей версии.
+
+#### ДОКАЗАНО по коду (без новых логов)
+
+**Факт 1** — [nativeStore.js:228-234](src/native/store/nativeStore.js#L228) handler `tg:chat-unread-sync` обновляет ТОЛЬКО `unreadCount`, поле `groupedUnread` не трогает. То же в `tg:unread-bulk-sync`.
+
+**Факт 2** — [ChatListItem.jsx:26](src/native/components/ChatListItem.jsx#L26) — `badgeCount = typeof chat.groupedUnread === 'number' ? chat.groupedUnread : chat.unreadCount`. Приоритет у `groupedUnread`.
+
+**Следствие**: если `chat.groupedUnread=3` было установлено recompute'ом, а потом сервер прислал `unread=0` — `groupedUnread` остаётся 3, `badgeCount=3`. Бейдж застрял до следующего `recomputeGroupedUnread` (вызывается только по window.focus / session restore, НЕ после markRead).
+
+#### НЕ доказано — требует новых логов
+
+**Гипотеза B**: `scrollTop` прыгает с низа (bottomGap=0) обратно вверх (bottomGap=40000+) за ~800мс без видимой причины в лог (17:22:25 в чате Автовоз). Если это правда — `atBottom` становится false → `useForceReadAtBottom` useEffect cleanup убивает 400мс таймер ДО того как он стрельнет.
+
+**Гипотеза A**: последние 1-3 msg остаются в viewport до конца прокрутки и никогда не проходят «фазу 2» (ушёл выше viewport) в `useReadOnScrollAway`. Они не попадают в batch → markRead уходит с maxId предпоследнего msg → сервер оставляет unread=N.
+
+#### Добавленные логи (v0.87.49)
+
+1. **`useForceReadAtBottom`** (4 события) — [useForceReadAtBottom.js](src/native/hooks/useForceReadAtBottom.js):
+   - `force-read-schedule { chatId, lastId, unread, maxEverSent, atBottom }` — таймер 400мс поставлен
+   - `force-read-skip { reason: not-at-bottom/no-chat/no-messages/unread-zero/no-last-id }` — effect вышел раньше
+   - `force-read-skip-guard { lastId, maxEverSent }` — lastId ≤ watermark
+   - `force-read-fire { chatId, lastId, unread }` — таймер стрельнул, шлём markRead
+   - `force-read-cleanup { chatId, lastId, atBottomAtSetup, unreadAtSetup }` — useEffect cleanup (dep changed)
+
+2. **`bottom-state-change`** ([InboxMode.jsx handleScroll](src/native/modes/InboxMode.jsx)) — при переходе nearBottom true↔false: `{ prev, curr, scrollTop, scrollHeight, clientHeight, bottomGap }`
+
+3. **`scroll-anomaly`** (InboxMode handleScroll) — если |ΔscrollTop|>500px за <200мс: `{ dtMs, deltaTop, deltaHeight, prevTop, currTop, reasonGuess: height-changed(layout-shift/load-older) | programmatic-scroll }`
+
+4. **`badge-state`** (InboxMode useEffect) — при смене `activeChat.unreadCount` или `activeChat.groupedUnread`: `{ chatId, title, unread, grouped, badge, prevUnread, prevGrouped }`
+
+#### План диагностики — шаги
+
+1. Перезапустить приложение (v0.87.49).
+2. Открыть любой чат с unread > 0.
+3. Пролистать до конца.
+4. Смотреть бейдж. Если застрял:
+   - Проверить `force-read-*` — был ли таймер поставлен, стрельнул ли, был ли cleanup.
+   - Проверить `bottom-state-change` — менялся ли `atBottom` с true на false.
+   - Проверить `scroll-anomaly` — был ли прыжок scrollTop после достижения низа.
+   - Проверить `badge-state` — какие значения `unread/grouped/badge` на момент застревания.
+
+Эти 4 точки закрывают все слепые пятна. После получения логов → точечный фикс причины.
+
+#### Тесты
+- 122 vitest passed (без изменений, логи не трогают логику)
+- E2E 17/17, UI 9/9
+
+### v0.87.48 — FIX скролл уезжал в середину при открытии чата (гонка load-older vs initial-scroll)
+
+**Проблема** (скриншот пользователя, чат АвтоБизнес): открыл чат → уехало в середину, далеко от последнего сообщения. Юзер ничего не скроллил.
+
+**Точная цепочка из логов** (16:38:22-24):
+```
+chat-open top=0 → store-load-messages → store-tg-messages messages=50 height=17103
+initial-schedule → initial-target top=16180 bottomGap=406   ← правильно встал у низа
+load-older-trigger prevHeight=16097 ← АВТО-триггер т.к. top=0 < 100 в handleScroll!
+store-load-older → результат: +50 старых сверху → messages=100, height=35391
+chat-state top=34468 bottomGap=406   ← browser scroll anchoring подвинул корректно
+load-older-apply top=19294           ← НАША формула перебила (откатила на 15174px вверх)
+```
+
+**Корневая причина** — гонка в `handleScroll`:
+- Авто-триггер `load-older` срабатывает при `scrollTop < 100`. При открытии чата `scrollTop=0` (до initial-scroll) → триггерится сразу.
+- `prevHeight = 16097` записывается **до** initial-scroll.
+- Parallel initial-scroll переставляет `scrollTop=16180`, высота 17103.
+- Приходит load-older → DOM растёт до 35391 → **browser scroll anchoring** (CSS Scroll Anchoring, Chrome 56+, вкл. по умолчанию) автоматически корректирует scrollTop на 34468.
+- Через `setTimeout(100)` наш код делает `scrollTop = 35391 - 16097 = 19294` — **перебивает правильную коррекцию**.
+- Итог: юзер на середине чата.
+
+**Fix (Вариант A)**:
+
+1. `src/native/hooks/useInitialScroll.js` — экспонирует `doneRef`:
+```js
+return { doneRef }
+```
+
+2. `src/native/modes/InboxMode.jsx` — блокируем авто-load-older пока `doneRef.current !== activeChatId`:
+```js
+if (initialScrollDoneRef.current !== store.activeChatId) {
+  scrollDiag.logEvent('load-older-skip-initial', { scrollTop: el.scrollTop, chatId: store.activeChatId })
+  return
+}
+```
+
+Авто-load-older теперь ждёт пока initial-scroll поставит scrollTop в финальное положение. Пользователь сам решит загрузить старые — скроллом вверх.
+
+**Тесты**:
+- `useInitialScroll.vitest.jsx` (новый файл, 5 тестов) — контракт `doneRef`: null при отсутствии чата/loading/messagesCount=0; устанавливается в activeChatId после initial-scroll
+- `InboxMode.vitest.jsx` +1 регрессионный тест — `loadOlderMessages` НЕ вызывается при открытии чата даже если scrollTop=0
+
+**Итого**: 122 vitest ✅ (было 116), E2E 17/17, UI 9/9.
+
+### v0.87.47 — FIX счётчик не уменьшался на длинных постах (ratio 0.95 → центр viewport)
+
+**Проблема** (скриншот пользователя, чат «Автовоз»): юзер прокрутил **5+ постов** вниз — счётчик застыл на 16, не меняется. В логах за 15+ секунд активной прокрутки (top 24857→31120, 6263px прокрутки) **ни одного** события `read-scrolled-away` / `read-batch-send`. `store-unread-bulk-active` от сервера стабильно возвращал 28 — фронт ничего не пометил.
+
+**Причина в [useReadOnScrollAway.js:24](src/native/hooks/useReadOnScrollAway.js#L24) (v0.87.43)**:
+```js
+if (entry.intersectionRatio >= 0.95 && !seenRef.current) { seenRef.current = true }
+```
+Пороги 0.95 ("msg почти полностью в viewport") **физически недостижим** для длинных постов: в Автовозе посты ~800px, viewport 570px → max ratio = 570/800 ≈ **0.71**. seenRef никогда не становится true → фаза 2 не срабатывает → `onRead` не вызывается.
+
+**Пользователь так описал баг**: «ты че хуйню пишешь, я постов 5 пролистал». Счётчик не уменьшался СКОЛЬКО БЫ ни скроллил.
+
+**Решение — Вариант 2 (Telegram-style)**: логика «msg пересёк центр viewport»:
+
+```js
+const seenObs = new IntersectionObserver(([entry]) => {
+  if (entry.isIntersecting && !seenRef.current) {
+    seenRef.current = true
+    onSeen?.()
+  }
+}, { root, rootMargin: '-49% 0px -49% 0px', threshold: 0 })
+
+const readObs = new IntersectionObserver(([entry]) => {
+  if (entry.isIntersecting || !seenRef.current || readRef.current) return
+  const rootTop = entry.rootBounds?.top ?? 0
+  if (entry.boundingClientRect.bottom < rootTop) {
+    readRef.current = true
+    onRead?.()
+  }
+}, { root, threshold: 0 })
+```
+
+`rootMargin: '-49% 0 -49% 0'` превращает root в тонкую полосу 2% высоты в самом центре viewport. Любой msg, прошедший через центр экрана, триггерит isIntersecting=true для seen-observer — **независимо от своего размера**. Длинный пост → проходит через центр → seen. Прокрутил мимо вверх → read.
+
+**Сравнение**:
+| Версия | Условие seen | Длинный msg (800px) | Старый баг (open = mass read) |
+|--------|--------------|---------------------|-------------------------------|
+| до v0.87.43 | ratio ≥ 0.15 | ✅ | ❌ (пометит всё что в viewport) |
+| v0.87.43 | ratio ≥ 0.95 | ❌ (недостижимо) | ✅ |
+| **v0.87.47** | msg пересёк центр | ✅ | ✅ (только 1-2 msg в центре) |
+
+**Тесты**: полностью переписаны `useReadOnScrollAway.vitest.jsx` — **13 сценариев** (было 9). Главный — "v0.87.47 РЕГРЕССИЯ: длинный msg (height > viewport) помечается read". Также адаптирован мок в `MediaAlbum.vitest.jsx` под два observer.
+
+**Итого**: 116 vitest ✅ (было 111), E2E 17/17, UI 9/9.
+
+### v0.87.46 — FIX расхождение бейджей: список чатов 16, стрелка 28
+
+**Проблема** (скриншот пользователя, чат «Автовоз»): В списке чатов бейдж **16**, а внутри чата на кнопке-стрелке ↓ — **28**. Одновременно. Один и тот же чат.
+
+**Причина**: В v0.87.45 ввели `chat.groupedUnread` (альбом = 1 карточка) и переключили `ChatListItem` на него. Но в `InboxMode.jsx` бейдж стрелки остался на старом `activeChat.unreadCount` (= сырое MTProto-число, альбом = N отдельных msg). Список показывал карточки (16), стрелка — сообщения (28).
+
+**Фикс в `src/native/modes/InboxMode.jsx`** — добавлена переменная `activeUnreadCards`:
+
+```js
+const activeUnread = activeChat?.unreadCount || 0  // для логики (findFirstUnread, markRead)
+const activeUnreadCards = (typeof activeChat?.groupedUnread === 'number')
+  ? activeChat.groupedUnread
+  : activeUnread  // для UI-бейджа и условия показа стрелки
+```
+
+Все 4 места использования в кнопке-стрелке (условие показа, `title`, бейдж `>99`, контент бейджа) переключены на `activeUnreadCards`. `activeUnread` (MTProto) остался для `findFirstUnreadId`, `markRead maxId`, `scrollDiag.logEvent` — там нужно сырое число сообщений.
+
+**Правило на будущее записано в common-mistakes.md**: когда вводишь новое поле для UI — найди ВСЕ места где старое отображается и обнови синхронно.
+
+### v0.87.45 — «Карточки» вместо сообщений (альбомы = 1) + сброс unreadCount из кэша
+
+**Проблема** (из жалобы пользователя): «по факту одно сообщение» ≠ `unreadCount: 9`. В Telegram альбом из 9 фото = **1 карточка в ленте**, но MTProto возвращает 9 отдельных сообщений → бейдж показывал 9 вместо 1.
+
+**Решение — «Вариант 2»** (выбран пользователем: «Для МАКСИМАЛЬНОЙ точности с первого запуска — Вариант 2, не брать не чего из кэша»):
+
+**Main-процесс** (`main/native/telegramHandler.js`):
+
+1. Новый IPC handler `tg:recompute-grouped-unread`:
+   - Берёт `fetchAllUnreadUpdates()` → фильтрует `unreadCount > 0`
+   - Для каждого чата: `client.getMessages(entity, { limit: min(unread, 30) })`
+   - Группирует по `groupedId`: `new Set(groupedId)` + `singles` (msgs без groupedId)
+   - `grouped = groups.size + singles` — сколько карточек в ленте
+   - Parallel batch = 5 + 150ms delay между batches (защита от FLOOD_WAIT)
+   - Emit `tg:grouped-unread` с `{ [chatId]: { server, grouped } }`
+
+2. Сброс `unreadCount` из кэша:
+   - `saveChatsCache()` теперь сохраняет `unreadCount: 0` — счётчик всегда свежий с сервера
+   - `tg:get-cached-chats` при загрузке тоже форсит `unreadCount: 0`
+   - Раньше после рестарта показывался устаревший счётчик из `tg-cache.json`
+
+**Renderer** (`src/native/store/nativeStore.js`):
+
+- Новый handler `tg:grouped-unread` — обновляет `chat.groupedUnread` + `chat.unreadCount` по updates
+- Новый action `recomputeGroupedUnread()` → IPC `tg:recompute-grouped-unread`
+- Чаты без update не затираются (сохраняют свой `groupedUnread`)
+
+**UI** (`src/native/components/ChatListItem.jsx`):
+
+- `badgeCount = typeof chat.groupedUnread === 'number' ? chat.groupedUnread : chat.unreadCount`
+- При наличии `groupedUnread=1` показывает 1 (а не 9 альбомных msgs)
+
+**Триггеры пересчёта** (`src/native/modes/InboxMode.jsx`):
+
+1. После первого `tg:chats` (session restore) через 800мс — даём main собрать unreadUpdates
+2. На `window.focus` — рядом с `rescanUnread()`
+
+**Тесты**: +4 vitest в `nativeStore.vitest.jsx` + 3 в `ChatListItem.vitest.jsx` = **111 vitest ✅** (было 104).
+
+**Проверка кэша на другие источники неточности**: просмотрены `tg-cache.json`, `localStorage chat-messages:*`, `ai-draft:*`, `user_auth` — только `tg-cache.json.unreadCount` был staleness-источником (исправлено). Сообщения в `chat-messages:*` не содержат `unreadCount`.
+
+### v0.87.44 — FIX «было 7, стало 1 за секунду» — default atBottom=true при открытии
+
+**Проблема (из логов v0.87.43)**: открыл чат с 7 непрочитанными, не трогал — через 400мс markRead(maxId=12887, последнее msg) → сервер: 7→1.
+
+**Причина** в `InboxMode.jsx`:
+```js
+const [atBottom, setAtBottom] = useState(true)  // ← default true!
+```
+
+`atBottom` меняется только в `handleScroll`. При открытии чата scroll event ещё не произошёл → `atBottom=true` (stale default).
+
+`useForceReadAtBottom` при `atBottom=true` + `unread > 0` → через 400мс отправляет markRead(lastMsgId) → сервер помечает всё до последнего → осталось 1 (только тот что пришёл пока читали).
+
+**Фикс одна строка**:
+```js
+const [atBottom, setAtBottom] = useState(false)  // default false
+```
+
+`atBottom=true` устанавливается **только** после реального scroll event когда `nearBottom<80px`.
+
+**Тесты** (+5 новых в `useForceReadAtBottom.vitest.jsx`):
+- atBottom=false: НЕ вызывает markRead ⭐ регрессия v0.87.44
+- atBottom=true + unread>0: вызывает через 400мс
+- atBottom=true + unread=0: НЕ вызывает
+- maxEverSentRef guard не позволяет уменьшать maxId
+- Регрессионный сценарий «было 7, стало 1» воспроизведён
+
+**Также фикс**: `hookOrder.test.cjs` исключает `.vitest.jsx` файлы (false-positive на renderHook callback).
+
+**Итого**: 104/104 vitest ✅ (было 99)
+
+### v0.87.43 — Вариант 5: seen+scrolled-away IntersectionObserver (Telegram-style read-tracking)
+
+**Проблема (из логов v0.87.42)**: открыл чат с 22 непрочитанными, ничего не скроллил — через 1.5с markRead пометил 16 сообщений (все что в viewport при initial scroll).
+
+**Причина**: старый IntersectionObserver с `threshold: 0.15` помечал msg как "виденные" сразу при появлении в экране. При initial-scroll 15+ msg появляются одновременно → все в batch → markRead.
+
+**Фикс v0.87.43 — двойной IntersectionObserver**:
+
+Новый хук `src/native/hooks/useReadOnScrollAway.js`:
+1. **Фаза 1 (Seen)**: msg должен быть полностью видим (`intersectionRatio >= 0.95`) → помечается `seenRef=true`
+2. **Фаза 2 (Read)**: msg ушёл ВЫШЕ viewport (`isIntersecting=false, boundingClientRect.bottom < 0`) И был seen → `onRead()`
+
+Защищает от:
+- Промелькнувшие сообщения при fast-scroll (не набирают 95% → не seen)
+- Initial-render (msg просто появились, не прокручены мимо)
+- Прыжки через кнопку ↓ (быстрый scroll, seen не срабатывает)
+- Layout shifts от media (IntersectionObserver сам пересчитывается)
+
+**Затронутые файлы**:
+- `useReadOnScrollAway.js` — новый хук
+- `MessageBubble.jsx` — заменил простой Observer на хук
+- `MediaAlbum.jsx` (AlbumBubble) — заменил простой Observer на хук
+- `InboxMode.jsx` — добавлены `scrollDiag.logEvent` для `read-scrolled-away`, `read-batch-send`, `read-batch-skip`
+
+**Расширенное логирование**:
+Теперь в `chatcenter.log` видна полная картина убывания счётчика:
+```
+[native-scroll] read-scrolled-away msgId=12866 batchSize=1 currentUnread=22
+[native-scroll] read-scrolled-away msgId=12867 batchSize=2 currentUnread=22
+...
+[native-scroll] read-batch-send maxId=12870 count=5 currentUnread=22
+[native-scroll] store-unread-sync unread=17
+```
+
+**Тесты** (+9 новых в `useReadOnScrollAway.vitest.jsx`):
+- msg на 50% — НЕ seen, НЕ read
+- msg полностью (100%) — SEEN, не read
+- seen → ушёл выше → READ
+- промелькнувшее (0.3) → ушёл выше → НЕ read ⭐ ключевой
+- ушёл вниз (bottom>0) → НЕ read
+- onRead только один раз
+- onSeen только один раз
+- threshold [0, 0.95] настроен
+- регрессия: 10 bubbles по 50% → 0 read (было 10)
+
+**Итого**: 99/99 vitest ✅ (было 90)
+
+### v0.87.42 — FIX бейджа стрелки «50» при load-older (prepend ≠ новое снизу)
+
+**Проблема (из логов v0.87.41)**: при открытии чата автоматический `load-older` догружал 50 старых сообщений в **начало** массива (prepend). Старый код считал это как «50 новых снизу» и показывал `↓ 50` на кнопке scroll-to-bottom.
+
+**Причина** в `InboxMode.jsx`:
+```js
+// Баг: при prepend активный срез возвращает последние 50 (сдвинувшиеся)
+const added = activeMessages.slice(prev).filter(m => !m.isOutgoing).length
+```
+
+**Фикс v0.87.42**:
+- Новый хук `src/native/hooks/useNewBelowCounter.js`
+- Отслеживает `lastMsgId` (id последнего сообщения). Если не изменился → это prepend, НЕ считаем.
+- Если изменился → реально пришло новое в конец → считаем только новые msgs ПОСЛЕ `prevLastId`
+- Логгер `[native-scroll] new-below-skip` — видно в логах когда срабатывает защита
+
+**Тесты** (+7 новых в `useNewBelowCounter.vitest.jsx`):
+- init: при первом рендере НЕ вызывает onAdded
+- prepend (load-older): добавление в НАЧАЛО не засчитывается ✅ (ключевой)
+- append: новое снизу → added=1
+- append 3 новых: added=3
+- outgoing: не считаются
+- atBottom=true: не копим
+- **Регрессионный** сценарий из логов: 50 старых prepend → 0 newBelow (было +50)
+
+**Итого**: 90/90 vitest ✅
+
+### v0.87.41 — Telegram-style markRead (убрано локальное вычитание unreadCount)
+
+**Проблема пользователя**: «в списке было 36, встал на чат — стало 25, через 10 сек — 35, цифры прыгают»
+
+**Корень**: `nativeStore.markRead()` принимал параметр `localRead` (например 11 видимых сообщений), вычитал локально `36 - 11 = 25`. Потом сервер возвращал реальное `35` (прочитано только 1 сообщение по maxId) → прыжок 36→25→35.
+
+**Фикс (Telegram-style)**:
+- Убран параметр `localRead` из `markRead(chatId, maxId)`
+- НЕ вычитаем локально — полагаемся ТОЛЬКО на `tg:chat-unread-sync` от сервера
+- Счётчик в списке обновляется плавно 36→35→34→... по мере серверных подтверждений
+- Как в Telegram Desktop
+
+**Затронутые файлы**:
+- `src/native/store/nativeStore.js`: `markRead` упрощён до `(chatId, maxId) => IPC`
+- `src/native/modes/InboxMode.jsx`: `store.markRead(chatAtStart, lastReadMaxRef.current)` (без count)
+- `src/native/hooks/useForceReadAtBottom.js`: `markRead(chatId, lastId)` (без activeUnread)
+
+**Тесты**: новый `src/native/store/nativeStore.vitest.jsx` — 4 теста:
+- markRead НЕ вычитает локально
+- unreadCount обновляется ТОЛЬКО из tg:chat-unread-sync
+- сигнатура markRead = 2 аргумента (не 3)
+- регрессионный тест на прыжок 36→25→35
+
+**Итого**: 83/83 vitest ✅ (было 79)
+
+### v0.87.40 — FIX скролл уходил наверх при открытии чата с непрочитанными
+
+**Причина (из логов [native-scroll])**:
+1. `useInitialScroll` срабатывал на КЭШЕ из localStorage (старые id 22146-22195) ДО того как пришли свежие с сервера (22242-22293). Скролл уходил на самое старое из кэша.
+2. Локальный `unread=95` был завышен (реально сервер = 47). При `incoming=50, unread=95`: `max(0, 50 - 95) = 0` → anchor = самое первое = максимально наверх.
+
+**Фикс**:
+- `useInitialScroll` принимает `loading` — не срабатывает пока `loadingMessages[chatId] === true`
+- `firstUnreadIdRef` пересчитывается при смене `firstId/lastId/activeUnread` (раньше только при первом появлении messages)
+- Clamp: `Math.min(realUnread, incoming.length)` — защита от завышенного серверного `unreadCount`
+
+**Файлы**: [useInitialScroll.js](src/native/hooks/useInitialScroll.js), [InboxMode.jsx](src/native/modes/InboxMode.jsx)
+
+**Тесты**: 79/79 vitest ✅
+
+## Диагностика native-scroll ЦентрЧатов (22 апреля 2026)
+
+- Добавлено файловое логирование для нативного режима `ЦентрЧатов` (`src/native/*`), не для WebView-мессенджеров.
+- Все строки диагностики имеют префикс `[native-scroll]` и попадают в `userData/chatcenter.log` через IPC `app:log`.
+- Логируются: выбор активного чата, `unreadCount`, расчёт первого непрочитанного, initial-scroll, позиция scroll-контейнера, `top-threshold`, запуск/результат/применение `loadOlderMessages`, клики по кнопке вниз, пользовательские wheel/touch/pointer события.
+- Цель: после воспроизведения бага “чат без непрочитанных открывается выше низа” по логам понять, что перебило позицию: initial-scroll, stale first-unread, авто-догрузка старых сообщений или изменение высоты контента.
+- Смотреть в логе события: `store-set-active-chat` → `chat-open` → `store-load-messages` → `store-tg-messages` → `first-unread-calc` → `initial-*` → `top-threshold` / `load-older-*`.
+
+## СТАТУС ФИЧЕЙ v0.87.27–29 (обновлено 24 апреля 2026 после v0.87.54)
+
+| # | Фича | Статус | Комментарий пользователя |
+|---|------|--------|--------------------------|
+| 1 | Reply-клик → scroll к оригиналу + жёлтая вспышка 1.5с | ✅ **работает** | «работает» |
+| 2 | «Новые сообщения» divider при открытии чата | ✅ **работает** | подтверждено 24.04.2026 |
+| 3 | Runtime smoke-тест main-процесса | ⏳ | не проверено |
+| 4 | Проверка `telegram/*` подпутей в тесте | ⏳ | не проверено |
+| 5 | Avatar cache bust при logout | ⏳ | не проверено |
+| 6 | Авто-очистка `tg-media/` старше 30 дней | ⏳ | не проверено |
+| 7a | Клик на фото → React-overlay (v0.87.27) | ❌ | «не верно, на весь экран» — удалено |
+| 7b | Клик на фото → отдельное **BrowserWindow** (v0.87.28) | ✅ **работает** | «Подойдет» |
+| 8 | Индикатор новых сообщений при скролле назад (стрелка с бейджем) | ✅ **работает** | подтверждено 24.04.2026 |
+| 9 | Превью ссылок (title/description/siteName) | ⏳ | не проверено |
+| 10 | Ctrl+↑ → редактирование последнего своего | ⏳ | не проверено |
+| 11 | Аватарка слева от групп чужих сообщений | ✅ **работает** | «это есть» |
+| 12 | IPC `photo:toggle-pin` (pin окна фото) | ⏳ | часть PhotoViewer — не проверено |
+| 13 | lastMessage preview (медиа/action вместо «—») | ⏳ | не проверено |
+| 14 | **Группировка медиа-альбомов** (v0.87.29) | ⏳ | «надо группировку как в телеграмме» — сделано, ждёт ручной визуальной проверки сетки 2×2/3×3 |
+| 15 | **Вариант A: скролл при открытии чата** (v0.87.29) | ✅ **работает** | подтверждено 24.04.2026 — скроллит на первое непрочитанное |
+| 16 | **Синий неон «последнее прочитанное»** (v0.87.54, был жёлтый v0.87.29) | ✅ **работает (после смены цвета)** | подтверждено 24.04.2026 + цвет сменён на accent #2AABEE |
+
+Виртуализация **списка чатов** — уже реализована в v0.87.12 через `react-window` List. Виртуализация **списка сообщений** в открытом чате — пока нет (будущая задача).
+
+---
+
+## Статус функций
+
+### Инфраструктура
+| Функция | Статус | Версия |
+|---------|--------|--------|
+| Базовая структура проекта | ✅ Сделано | v0.2.0 |
+| Electron + главное окно | ✅ Сделано | v0.2.0 |
+| IPC preload (contextBridge) | ✅ Сделано | v0.2.0 |
+| JSON-хранилище (userData) | ✅ Сделано | v0.5.0 |
+| Сохранение размера/позиции окна | ✅ Сделано | v0.5.0 |
+| Трей-иконка + меню | ✅ Сделано | v0.5.0 |
+
+### Мессенджеры
+| Функция | Статус | Версия |
+|---------|--------|--------|
+| WebView-вкладки | ✅ Сделано | v0.2.0 |
+| Telegram Web | ✅ Базово (WebView) | v0.2.0 |
+| WhatsApp Web | ✅ Базово (WebView) | v0.2.0 |
+| ВКонтакте | ✅ Базово (WebView) | v0.2.0 |
+| Добавление мессенджера вручную (любой URL) | ✅ Сделано | v0.5.0 |
+| Закрытие вкладок | ✅ Сделано | v0.5.0 |
+| Подтверждение перед закрытием вкладки | ✅ Сделано | v0.31.0 |
+| Закрепление вкладок (pin/lock) | ✅ Сделано | v0.32.0 |
+| Персистентность списка мессенджеров | ✅ Сделано | v0.5.0 |
+
+### Мониторинг сообщений (ChatMonitor)
+| Функция | Статус | Версия |
+|---------|--------|--------|
+| MutationObserver в WebView preload | ✅ Сделано | v0.6.0 |
+| Счётчик непрочитанных (TG/WA/VK) | ✅ Сделано | v0.6.0 |
+| Передача через ipcRenderer.sendToHost | ✅ Сделано | v0.6.0 |
+| Бейдж непрочитанных на вкладке | ✅ Сделано | v0.5.0 |
+| Звуковой сигнал (Web Audio, двухтональный) | ✅ Сделано | v0.24.0 |
+| Автопереключение вкладки при новом сообщении | ✅ Сделано | v0.24.0 |
+
+### ИИ-помощник
+| Функция | Статус | Версия |
+|---------|--------|--------|
+| Интеграция OpenAI GPT-4o-mini | ✅ Сделано | v0.6.0 |
+| Интеграция Anthropic Claude | ✅ Сделано | v0.6.0 |
+| Интеграция DeepSeek (бесплатный tier) | ✅ Сделано | v0.7.0 |
+| Интеграция ГигаЧат (Сбербанк, OAuth2) | ✅ Сделано | v0.7.0 |
+| Панель вариантов ответа (3 варианта) | ✅ Сделано | v0.6.0 |
+| Выбор ответа одним кликом (копирование) | ✅ Сделано | v0.6.0 |
+| Настройки ИИ (провайдер, модель, ключ) | ✅ Сделано | v0.6.0 |
+| Resizable AI-панель (drag + запоминание) | ✅ Сделано | v0.7.0 |
+| Кнопки показать/скрыть ключ | ✅ Сделано | v0.7.0 |
+| SSE-стриминг ответов (токены по мере генерации) | ✅ Сделано | v0.10.0 |
+| Автосохранение черновика ввода по вкладке | ✅ Сделано | v0.10.0 |
+| Бейдж трея с числом непрочитанных | ✅ Сделано | v0.10.0 |
+| Режим WebView AI (GigaChat/ChatGPT/Claude/DeepSeek) | ✅ Сделано | v0.11.0 |
+| Разрешения на чтение чата (нет/последнее/история) | ✅ Сделано | v0.11.0 |
+| Вставка контекста чата в AI WebView (executeJavaScript + clipboard) | ✅ Сделано | v0.11.0 |
+| Per-provider режимы: API-ключ или Веб-интерфейс в настройках каждого ИИ | ✅ Сделано | v0.12.0 |
+| Индикатор режима 🔧/🌐 на кнопке провайдера | ✅ Сделано | v0.12.0 |
+| ⚙️ всегда видна (не только когда провайдер подключён) | ✅ Сделано | v0.12.0 |
+
+### Шаблоны
+| Функция | Статус | Версия |
+|---------|--------|--------|
+| Создание/редактирование шаблонов | ✅ Сделано | v0.8.0 |
+| Быстрый поиск по шаблонам | ✅ Сделано | v0.8.0 |
+| Категории шаблонов | ✅ Сделано | v0.9.0 |
+
+### Авто-ответчик
+| Функция | Статус | Версия |
+|---------|--------|--------|
+| Авто-ответ по ключевым словам | ✅ Сделано | v0.8.0 |
+| Авто-ответ по расписанию | 📋 Запланировано | — |
+| Авто-ответ для конкретного чата | 📋 Запланировано | — |
+| ИИ-авто-ответ | 📋 Запланировано | — |
+| Задержка перед ответом | 📋 Запланировано | — |
+
+### Настройки
+| Функция | Статус | Версия |
+|---------|--------|--------|
+| Настройки ИИ-провайдера/ключа/модели | ✅ Сделано | v0.6.0 |
+| Управление мессенджерами | ✅ Сделано | v0.5.0 |
+| Поиск в мессенджере (findInPage) | ✅ Сделано | v0.5.0 |
+| Тёмная/светлая тема | ✅ Сделано | v0.6.0 |
+| Горячие клавиши (Ctrl+1-9, T, W, F, ,) | ✅ Сделано | v0.6.0 |
+| Drag-and-Drop порядок вкладок | ✅ Сделано | v0.6.0 |
+| Управление правилами авто-ответа | ✅ Сделано | v0.8.0 |
+
+---
+
+## Changelog
+

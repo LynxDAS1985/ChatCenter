@@ -81,4 +81,44 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
     await new Promise(r => setTimeout(r, 250))
     expect(result.current.doneRef.current).toBe('chat-xyz')
   })
+
+  // v0.87.66: onDone callback вызывается после initial-scroll для снятия overlay в InboxMode
+  it('⭐ v0.87.66: onDone callback вызван с chatId после завершения initial-scroll', async () => {
+    const scrollEl = {
+      scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
+      querySelector: () => null,
+    }
+    const onDone = vi.fn()
+    renderHook(() => {
+      const scrollRef = useRef(scrollEl)
+      const firstUnreadIdRef = useRef(null)
+      return useInitialScroll({
+        activeChatId: 'chat-xyz', messagesCount: 50, scrollRef,
+        firstUnreadIdRef, activeUnread: 0, loading: false,
+        onDone,
+      })
+    })
+    await new Promise(r => setTimeout(r, 250))
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalledWith('chat-xyz')
+  })
+
+  it('v0.87.66: onDone НЕ вызывается пока loading=true', async () => {
+    const scrollEl = {
+      scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
+      querySelector: () => null,
+    }
+    const onDone = vi.fn()
+    renderHook(() => {
+      const scrollRef = useRef(scrollEl)
+      const firstUnreadIdRef = useRef(null)
+      return useInitialScroll({
+        activeChatId: 'chat-xyz', messagesCount: 50, scrollRef,
+        firstUnreadIdRef, activeUnread: 0, loading: true,  // ← ждём свежих
+        onDone,
+      })
+    })
+    await new Promise(r => setTimeout(r, 250))
+    expect(onDone).not.toHaveBeenCalled()
+  })
 })

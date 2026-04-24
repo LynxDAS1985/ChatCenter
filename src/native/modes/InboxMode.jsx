@@ -26,6 +26,11 @@ export default function InboxMode({ store }) {
   const listRef = useRef(null)
   const [listHeight, setListHeight] = useState(600)
   const containerRef = useRef(null)
+  // v0.87.66: chatReady=true только после завершения initial-scroll. Пока false —
+  // scroll-container невидим (opacity 0) + MessageListOverlay (shimmer) показан.
+  // Пользователь не видит "прыжок" scroll с top=0 к firstUnread. Когда initial-scroll
+  // закончился — контент fade-in за 200мс. Сбрасывается при смене activeChatId.
+  const [chatReady, setChatReady] = useState(false)
 
   useEffect(() => {
     store.loadCachedChats?.()
@@ -148,25 +153,20 @@ export default function InboxMode({ store }) {
 
   // v0.87.29/40: начальный скролл чата — ПОСЛЕ загрузки свежих данных с сервера.
   // loading=true пока messages обновляются, loading=false — свежие в state.
+  // v0.87.66: onDone → setChatReady(true). До этого момента overlay скрывает scroll.
   const { doneRef: initialScrollDoneRef } = useInitialScroll({
     activeChatId: store.activeChatId,
     messagesCount: activeMessages.length,
     scrollRef: msgsScrollRef,
     firstUnreadIdRef, activeUnread,
     loading: store.loadingMessages?.[store.activeChatId],
+    onDone: () => setChatReady(true),
   })
 
-  // v0.87.65: fade-in scroll-container при смене чата — скрывает визуальный "прыжок"
-  // initial-scroll с scrollTop=0 к firstUnread. CSS animation 250мс opacity 0→1.
-  // Реализовано через classList + reflow trick (не key= — чтобы не remount ref).
+  // v0.87.66: сбрасываем chatReady при смене чата — overlay закрывает новый чат
+  // до завершения его initial-scroll. Юзер не видит прыжок scroll.
   useEffect(() => {
-    const el = msgsScrollRef.current
-    if (!el || !store.activeChatId) return
-    el.classList.remove('native-chat-fadein')
-    void el.offsetWidth  // force reflow — иначе браузер не перезапускает animation
-    el.classList.add('native-chat-fadein')
-    const t = setTimeout(() => el.classList.remove('native-chat-fadein'), 400)
-    return () => clearTimeout(t)
+    setChatReady(false)
   }, [store.activeChatId])
 
   // v0.87.31: принимаем либо string src (одиночное фото из MessageBubble),
@@ -575,7 +575,10 @@ export default function InboxMode({ store }) {
                 (раньше внутри → при скролле уезжала вместе с контентом → не видна).
                 Также здесь рендерим overlay-shimmer поверх кэшированных сообщений. */}
             <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <MessageListOverlay show={store.loadingMessages?.[store.activeChatId] && visibleMessages.length > 0} />
+              {/* v0.87.66: overlay-shimmer показан пока !chatReady (initial-scroll
+                  не закончился) И есть сообщения. Когда initial-scroll done → overlay
+                  исчезает, scroll-container становится видим. Юзер не видит "прыжок". */}
+              <MessageListOverlay show={!chatReady && visibleMessages.length > 0} />
             <div ref={msgsScrollRef} onScroll={handleScroll}
               onWheel={() => scrollDiag.markUserScroll('wheel')}
               onTouchStart={() => scrollDiag.markUserScroll('touch')}
@@ -586,6 +589,10 @@ export default function InboxMode({ store }) {
                 display: 'flex', flexDirection: 'column', gap: 6,
                 outline: dragOver ? '2px dashed var(--amoled-accent)' : 'none',
                 background: dragOver ? 'rgba(42,171,238,0.08)' : 'transparent',
+                // v0.87.66: контент невидим до завершения initial-scroll + плавный fade-in.
+                // Прыжок scrollTop=0 → firstUnread происходит "под" overlay'ем.
+                opacity: chatReady ? 1 : 0,
+                transition: 'opacity 200ms ease-out',
               }}>
               {dragOver && (
                 <div style={{

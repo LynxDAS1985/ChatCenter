@@ -4,10 +4,12 @@
 // Защита: однократно на chatId (initialScrollDoneRef).
 // v0.87.48: doneRef экспонируется наружу — InboxMode блокирует авто-load-older
 // пока initial-scroll не закончился (иначе гонка с browser scroll anchoring).
+// v0.87.66: onDone callback — InboxMode держит overlay-shimmer пока initial-scroll
+// не завершился. Пользователь не видит прыжок scroll с 0 к firstUnread.
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
 
-export function useInitialScroll({ activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading }) {
+export function useInitialScroll({ activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading, onDone }) {
   const doneRef = useRef(null)
 
   useEffect(() => {
@@ -47,6 +49,9 @@ export function useInitialScroll({ activeChatId, messagesCount, scrollRef, first
       }
       logNativeScroll('initial-done', { chatId: activeChatId, firstUnread, activeUnread, ...getScrollMetrics(scrollEl) })
       doneRef.current = activeChatId
+      // v0.87.66: уведомляем владельца — scroll уже на правильной позиции.
+      // InboxMode по этому сигналу скрывает shimmer-overlay и показывает контент.
+      try { onDone?.(activeChatId) } catch(_) {}
     }, 150)
 
     return () => clearTimeout(timer)
