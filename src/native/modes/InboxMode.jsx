@@ -28,9 +28,10 @@ export default function InboxMode({ store }) {
   const containerRef = useRef(null)
   // v0.87.66: chatReady=true только после завершения initial-scroll. Пока false —
   // scroll-container невидим (opacity 0) + MessageListOverlay (shimmer) показан.
-  // Пользователь не видит "прыжок" scroll с top=0 к firstUnread. Когда initial-scroll
-  // закончился — контент fade-in за 200мс. Сбрасывается при смене activeChatId.
+  // v0.87.67: shimmer ТОЛЬКО для чатов открываемых ВПЕРВЫЕ. Повторное открытие —
+  // контент мгновенно. seenChatsRef хранит chatId уже завершивших initial-scroll.
   const [chatReady, setChatReady] = useState(false)
+  const seenChatsRef = useRef(new Set())
 
   useEffect(() => {
     store.loadCachedChats?.()
@@ -154,19 +155,29 @@ export default function InboxMode({ store }) {
   // v0.87.29/40: начальный скролл чата — ПОСЛЕ загрузки свежих данных с сервера.
   // loading=true пока messages обновляются, loading=false — свежие в state.
   // v0.87.66: onDone → setChatReady(true). До этого момента overlay скрывает scroll.
+  // v0.87.67: запоминаем в seenChatsRef — повторное открытие без shimmer.
   const { doneRef: initialScrollDoneRef } = useInitialScroll({
     activeChatId: store.activeChatId,
     messagesCount: activeMessages.length,
     scrollRef: msgsScrollRef,
     firstUnreadIdRef, activeUnread,
     loading: store.loadingMessages?.[store.activeChatId],
-    onDone: () => setChatReady(true),
+    onDone: (chatId) => {
+      seenChatsRef.current.add(chatId)
+      setChatReady(true)
+    },
   })
 
-  // v0.87.66: сбрасываем chatReady при смене чата — overlay закрывает новый чат
-  // до завершения его initial-scroll. Юзер не видит прыжок scroll.
+  // v0.87.66 → v0.87.67: при смене чата проверяем — если уже открывали этот чат
+  // раньше (initial-scroll уже завершался) → chatReady=true СРАЗУ, без shimmer.
+  // Для нового чата (первое открытие) → false, ждём сигнал onDone.
   useEffect(() => {
-    setChatReady(false)
+    if (!store.activeChatId) { setChatReady(false); return }
+    if (seenChatsRef.current.has(store.activeChatId)) {
+      setChatReady(true)  // уже видели — мгновенный показ
+    } else {
+      setChatReady(false) // новый — shimmer до onDone
+    }
   }, [store.activeChatId])
 
   // v0.87.31: принимаем либо string src (одиночное фото из MessageBubble),
