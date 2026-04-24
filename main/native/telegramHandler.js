@@ -476,6 +476,29 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       // ширины → каждая буква на своей строке. Теперь строим минимальный plain msg
       // строго по нашему формату (те же поля что у входящих).
       try {
+        // v0.87.68: лог для диагностики link preview — видно что сервер вернул
+        const resultMediaCn = result.media?.className || 'none'
+        log(`send-message: result.media=${resultMediaCn} text.len=${(result.message || text).length}`)
+
+        // v0.87.68: извлекаем webPage из result.media если Telegram распарсил ссылку.
+        // Раньше mediaType был всегда null → LinkPreview в MessageBubble не рендерился.
+        let mediaType = null
+        let webPage = null
+        if (result.media?.className === 'MessageMediaWebPage') {
+          const wp = result.media.webpage
+          if (wp && wp.className === 'WebPage') {
+            mediaType = 'link'
+            webPage = {
+              url: wp.url || wp.displayUrl || '',
+              title: wp.title || '',
+              description: wp.description || '',
+              siteName: wp.siteName || '',
+              photoUrl: null,
+            }
+            log(`send-message: webPage title="${webPage.title}" site="${webPage.siteName}"`)
+          }
+        }
+
         const myUserId = (currentAccount?.id || 'me').replace(/^tg_/, '')
         const msg = {
           id: String(result.id),
@@ -492,12 +515,13 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
           localSentAt: Date.now(),
           isOutgoing: true,
           isEdited: false,
-          mediaType: null,
+          mediaType,
+          webPage,  // v0.87.68: Link preview для отправленных ссылок
           replyToId: replyTo ? String(replyTo) : null,
           groupedId: null,
         }
         emit('tg:new-message', { chatId, message: msg })
-        log(`send-message: emitted tg:new-message id=${msg.id}`)
+        log(`send-message: emitted tg:new-message id=${msg.id} mediaType=${mediaType || 'text'}`)
       } catch (emitErr) {
         log(`send-message: emit tg:new-message failed: ${emitErr.message}`)
       }

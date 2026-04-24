@@ -121,4 +121,42 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
     await new Promise(r => setTimeout(r, 250))
     expect(onDone).not.toHaveBeenCalled()
   })
+
+  // v0.87.68: Set-based guard — initial-scroll НЕ перезапускается для уже виденного чата.
+  // Регрессия: раньше doneRef хранил только последний chatId → при возврате A→B→A
+  // initial-scroll запускался заново → моргание контента.
+  it('⭐ v0.87.68: A→B→A — initial-scroll НЕ запускается повторно для A', async () => {
+    const scrollEl = {
+      scrollTop: 100, scrollHeight: 2000, clientHeight: 500,
+      querySelector: () => null,
+    }
+    const onDone = vi.fn()
+    const { rerender } = renderHook(({ chatId }) => {
+      const scrollRef = useRef(scrollEl)
+      const firstUnreadIdRef = useRef(null)
+      return useInitialScroll({
+        activeChatId: chatId, messagesCount: 50, scrollRef,
+        firstUnreadIdRef, activeUnread: 0, loading: false,
+        onDone,
+      })
+    }, { initialProps: { chatId: 'chat-A' } })
+
+    await new Promise(r => setTimeout(r, 250))
+    expect(onDone).toHaveBeenCalledWith('chat-A')
+    expect(onDone).toHaveBeenCalledTimes(1)
+
+    // Переключение A → B → ожидаем что для B выполнится initial-scroll
+    rerender({ chatId: 'chat-B' })
+    await new Promise(r => setTimeout(r, 250))
+    expect(onDone).toHaveBeenCalledWith('chat-B')
+    expect(onDone).toHaveBeenCalledTimes(2)
+
+    // Возврат к A — initial-scroll НЕ должен запускаться заново (моргание фикс)
+    rerender({ chatId: 'chat-A' })
+    await new Promise(r => setTimeout(r, 250))
+    // onDone вызывается СРАЗУ для A (без setTimeout 150мс) — подтверждает что
+    // мы ушли через ранний-return ветку "уже в Set"
+    expect(onDone).toHaveBeenCalledTimes(3)
+    expect(onDone).toHaveBeenLastCalledWith('chat-A')
+  })
 })

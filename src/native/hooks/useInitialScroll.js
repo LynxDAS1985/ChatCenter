@@ -6,15 +6,30 @@
 // пока initial-scroll не закончился (иначе гонка с browser scroll anchoring).
 // v0.87.66: onDone callback — InboxMode держит overlay-shimmer пока initial-scroll
 // не завершился. Пользователь не видит прыжок scroll с 0 к firstUnread.
+// v0.87.68: doneRef хранит Set виденных chatId (не последний!). Баг v0.87.67:
+// при возврате к чату A (после B) initial-scroll запускался ЗАНОВО — видимое моргание.
+// Теперь: если chatId уже в Set — не перезапускаем (сохраняем текущий scroll).
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
 
 export function useInitialScroll({ activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading, onDone }) {
+  // v0.87.68: Set — все чаты где initial-scroll УЖЕ был выполнен.
+  // Раньше (до v0.87.67) — единственный chatId (последний). Не работало для A↔B↔A.
+  const doneSetRef = useRef(new Set())
+  // Обратно-совместимая обёртка: .current возвращает последний chatId что был в Set
+  // (не строго корректно, но внешний guard в InboxMode использует !== activeChatId проверку,
+  // ему достаточно знать что "для этого чата initial-scroll был"). Теперь обёртка через getter.
   const doneRef = useRef(null)
 
   useEffect(() => {
-    if (!activeChatId) { doneRef.current = null; return }
-    if (doneRef.current === activeChatId) return
+    if (!activeChatId) return
+    // v0.87.68: если уже видели этот чат — НЕ перезапускаем scroll (сохраняем позицию).
+    if (doneSetRef.current.has(activeChatId)) {
+      doneRef.current = activeChatId  // sync обёртки для внешнего guard (InboxMode load-older)
+      // Сразу уведомляем владельца — контент готов мгновенно (seen chat).
+      try { onDone?.(activeChatId) } catch(_) {}
+      return
+    }
     if (messagesCount === 0) {
       logNativeScroll('initial-wait-empty', { chatId: activeChatId, activeUnread })
       return
@@ -48,14 +63,15 @@ export function useInitialScroll({ activeChatId, messagesCount, scrollRef, first
         scrollEl.scrollTop = scrollEl.scrollHeight
       }
       logNativeScroll('initial-done', { chatId: activeChatId, firstUnread, activeUnread, ...getScrollMetrics(scrollEl) })
+      // v0.87.68: добавляем в Set виденных. Теперь A↔B↔A не запускает scroll повторно.
+      doneSetRef.current.add(activeChatId)
       doneRef.current = activeChatId
       // v0.87.66: уведомляем владельца — scroll уже на правильной позиции.
-      // InboxMode по этому сигналу скрывает shimmer-overlay и показывает контент.
       try { onDone?.(activeChatId) } catch(_) {}
     }, 150)
 
     return () => clearTimeout(timer)
   }, [activeChatId, messagesCount, loading])
 
-  return { doneRef }
+  return { doneRef, doneSetRef }
 }

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.68 (24 апреля 2026)
+## Текущая версия: v0.87.69 (24 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.51 → v0.87.66). Старое — в архиве:
 
@@ -107,6 +107,80 @@
 **Почему важно**: раньше советы выглядели как стена текста с одинаковыми подзаголовками. Теперь — за 2–5 секунд понятно: приоритет, что даст, сколько стоит.
 
 **Тесты**: только документация. `npm run check-memory` ✅, автотесты ✅.
+
+---
+
+### v0.87.69 — Моргание при A→B→A фикс + Link preview для исходящих
+
+**Обратная связь пользователя**:
+- ✅ FLOOD_WAIT throttle аватарок работает (все аватарки загружены)
+- ✅ Ctrl+↑ — редактирование последнего
+- ✅ lastMessage preview с медиа работает
+- ❌ **Переключение A→B→A всё ещё моргает**, даже после v0.87.67
+- ❌ **Link preview пустой** — отправил ссылку → bubble пустой
+
+---
+
+#### Проблема 1: моргание A→B→A
+
+**Корень** (нашёл чтением кода, не логи): v0.87.67 правильно не показывал shimmer для уже виденных чатов (через `seenChatsRef` в InboxMode). Но внутри `useInitialScroll` был ДРУГОЙ guard — `doneRef.current === activeChatId`. `doneRef` хранил **только последний** chatId. При A→B→A:
+- doneRef становился 'B'
+- Возврат на A → guard `'B' === 'A'` = **не равны** → initial-scroll **запускался заново** через 150мс
+- scrollIntoView сдвигал контент → моргание
+
+**Фикс**: `doneRef` → `doneSetRef = new Set()`. Все виденные chatId. Возврат на A → `Set.has('A') === true` → **ранний return**, scroll не двигается, текущая позиция сохраняется.
+
+[src/native/hooks/useInitialScroll.js](src/native/hooks/useInitialScroll.js):
+```js
+const doneSetRef = useRef(new Set())
+
+useEffect(() => {
+  if (doneSetRef.current.has(activeChatId)) {
+    onDone?.(activeChatId)  // сразу уведомляем что контент готов
+    return  // НЕ перезапускаем scroll
+  }
+  // ... обычная ветка initial-scroll
+  doneSetRef.current.add(activeChatId)
+})
+```
+
+**Тест** добавлен в [useInitialScroll.vitest.jsx](src/native/hooks/useInitialScroll.vitest.jsx):
+- ⭐ A→B→A: onDone вызван 3 раза, для A и B setTimeout 150мс, для повторного A — **сразу**
+
+#### Проблема 2: Link preview пустой
+
+**Корень** (по коду): в `tg:send-message` handler я строил минимальный msg с `mediaType: null`. Игнорировал `result.media` от GramJS. Если Telegram распарсил ссылку — `result.media.className === 'MessageMediaWebPage'` + `result.media.webpage.{url,title,description,siteName}`. Мы это выкидывали.
+
+В `MessageBubble` preview рендерится только когда `m.mediaType === 'link' && m.webPage`. У нас всегда null → **нет preview**.
+
+**Фикс** в [main/native/telegramHandler.js](main/native/telegramHandler.js) `tg:send-message`:
+```js
+if (result.media?.className === 'MessageMediaWebPage') {
+  const wp = result.media.webpage
+  if (wp?.className === 'WebPage') {
+    mediaType = 'link'
+    webPage = {
+      url: wp.url || wp.displayUrl || '',
+      title: wp.title || '',
+      description: wp.description || '',
+      siteName: wp.siteName || '',
+      photoUrl: null,
+    }
+  }
+}
+// msg: { ..., mediaType, webPage, ... }
+```
+
++ лог `send-message: result.media=... webPage title=... site=...` — в будущем видно что Telegram вернул для диагностики.
+
+**Важно про пустой bubble на скриншоте**: возможно Telegram не успел распарсить ссылку в момент отправки (парсится асинхронно после отправки). Тогда `result.media` будет null, preview не появится. Это нормально для свежеотправленных ссылок — при следующей перезагрузке чата Telegram уже распарсил и preview будет.
+
+**Что ПРОВЕРИТЬ пользователю**:
+- [ ] Отправь ссылку типа `https://yandex.ru` → видно ли bubble с текстом ссылки (не пустой)?
+- [ ] В логе `chatcenter.log` найди строку `send-message: result.media=...` — что там (none / MessageMediaWebPage)?
+- [ ] Закрой приложение → снова открой тот же чат → preview появилась?
+
+**Тесты**: 119 vitest ✅ (было 118, +1 на A→B→A).
 
 ---
 
