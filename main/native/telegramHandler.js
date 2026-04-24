@@ -467,16 +467,32 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       if (replyTo) params.replyTo = Number(replyTo)
       const result = await client.sendMessage(entity, params)
       log(`send-message OK: chat=${chatId} messageId=${result.id}`)
-      // v0.87.58: emit tg:new-message для наших же исходящих.
-      // Telegram MTProto НЕ шлёт UpdateNewMessage для собственных отправок — данные
-      // возвращаются прямо в response к sendMessage. Раньше мы игнорировали result,
-      // брали только id, UI не получал событие → сообщение не появлялось в чате
-      // пока не перезагрузишь messages. Теперь emit из response.
+      // v0.87.59: emit tg:new-message с МИНИМАЛЬНЫМ корректным msg-объектом.
+      // Раньше (v0.87.58) прогоняли result через mapMessage — но MTProto Message
+      // содержит поля (peerId, fromId, nested senders), которые mapMessage обрабатывает
+      // по-разному для in/out. Результат: у нас text рендерился в bubble, но поля
+      // senderId/senderName были объектами/пустыми → группировка в messageGrouping
+      // ломалась → native-msg-group-row не растягивался → bubble становился ~40px
+      // ширины → каждая буква на своей строке. Теперь строим минимальный plain msg
+      // строго по нашему формату (те же поля что у входящих).
       try {
-        const mapped = mapMessage(result, chatId)
-        mapped.isOutgoing = true
-        emit('tg:new-message', { chatId, message: mapped })
-        log(`send-message: emitted tg:new-message id=${mapped.id}`)
+        const myUserId = (currentAccount?.id || 'me').replace(/^tg_/, '')
+        const msg = {
+          id: String(result.id),
+          chatId,
+          senderId: myUserId,
+          senderName: currentAccount?.name || '',
+          text: text,  // используем исходный параметр, не result.message
+          entities: [],
+          timestamp: (result.date || Math.floor(Date.now() / 1000)) * 1000,
+          isOutgoing: true,
+          isEdited: false,
+          mediaType: null,
+          replyToId: replyTo ? String(replyTo) : null,
+          groupedId: null,
+        }
+        emit('tg:new-message', { chatId, message: msg })
+        log(`send-message: emitted tg:new-message id=${msg.id}`)
       } catch (emitErr) {
         log(`send-message: emit tg:new-message failed: ${emitErr.message}`)
       }

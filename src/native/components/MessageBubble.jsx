@@ -46,9 +46,14 @@ export default function MessageBubble({
   // минимальная ширина чтобы bubble не схлопывался до крохотного размера.
   const hasMedia = m.mediaType === 'photo' || m.mediaType === 'video'
   const bubbleMinWidth = hasMedia ? 280 : 'auto'
+  // v0.87.59: класс неоновой анимации "только что отправлено" — активен 1.2с
+  // для исходящих сообщений не старше 2 секунд от текущего момента.
+  const isJustSent = m.isOutgoing && m.timestamp && (Date.now() - m.timestamp < 2000)
 
   return (
-    <div ref={ref} data-msg-id={m.id} style={{
+    <div ref={ref} data-msg-id={m.id}
+      className={isJustSent ? 'native-msg-sent' : undefined}
+      style={{
       alignSelf: m.isOutgoing ? 'flex-end' : 'flex-start',
       maxWidth: hasMedia ? 'min(420px, 65%)' : '65%',
       minWidth: bubbleMinWidth,

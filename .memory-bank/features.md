@@ -123,6 +123,39 @@
 
 ---
 
+### v0.87.60 — FIX bubble «в столбик» после отправки + неоновая анимация sent
+
+**Проблема 1 (скриншот пользователя)**: после фикса v0.87.58 сообщения стали появляться в чате сразу, но bubble был **ОЧЕНЬ узкий** — каждая буква на своей строке, timestamp `11:16` разбит на `11:` и `16`. 4 подряд отправленных `"1111"` выглядели как 4 тонких столбика из 4 цифр.
+
+**Причина**: в v0.87.58 я передал в `emit('tg:new-message')` результат `mapMessage(result, chatId)`. У `mapMessage` есть ветки которые рассчитывают `senderId`/`fromId`/`peerId` и для исходящего MTProto Message эти поля могли быть объектами вместо строк → `messageGrouping.js` получал msg с невалидным `senderId` → группировка рассыпалась → `native-msg-group-row` не растягивался до 100% ширины scroll-контейнера → `maxWidth: 65%` у bubble оказался 65% от почти-нуля.
+
+**Fix** в [main/native/telegramHandler.js](main/native/telegramHandler.js) `tg:send-message`: заменил `mapMessage(result)` на минимальный plain-объект с гарантированно правильными типами (строка / число / boolean), такими же как у входящих после `mapMessage`:
+```js
+const myUserId = (currentAccount?.id || 'me').replace(/^tg_/, '')
+const msg = {
+  id: String(result.id), chatId, senderId: myUserId,
+  senderName: currentAccount?.name || '',
+  text: text,  // из входного параметра
+  entities: [], timestamp: (result.date || Date.now()/1000) * 1000,
+  isOutgoing: true, isEdited: false, mediaType: null, groupedId: null,
+  replyToId: replyTo ? String(replyTo) : null,
+}
+```
+
+**Проблема 2 (запрос пользователя)**: «красивый неоновый эффект отправки».
+
+**Fix**:
+- [src/native/styles.css](src/native/styles.css) — `@keyframes native-msg-sent-glow` (1.2с): начальное `scale(0.95) opacity 0.5` → пик 20% `scale(1.02) + box-shadow 0 0 16px accent + 0 0 32px accent-glow` (двойная тень) → затухание.
+- [src/native/components/MessageBubble.jsx](src/native/components/MessageBubble.jsx) — `className="native-msg-sent"` для исходящих с `timestamp < 2сек` от now.
+
+**Тесты**: 116 vitest ✅, E2E 17/17, UI 9/9.
+
+**Ожидает подтверждения пользователя**:
+1. Bubble нормальной ширины (текст в одну строку)
+2. Неоновая вспышка 1.2с при отправке
+
+---
+
 ### v0.87.58 — FIX сообщение не появляется после отправки (emit tg:new-message для исходящих)
 
 **Симптом**: юзер ввёл текст → «Отпр.» → поле очистилось, в логах `send-message OK messageId=X`, но сообщение **не появляется в ленте чата** до перезагрузки.

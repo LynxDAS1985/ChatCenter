@@ -518,6 +518,33 @@
   animation: native-flash 1.5s ease;
 }
 
+/* v0.87.59: неоновая анимация ОТПРАВКИ сообщения — 1.2с яркая вспышка accent.
+   Применяется к только что отправленному bubble (по таймстемпу) чтобы юзер
+   видел что отправка прошла. Короче чем last-read-glow (3.5с) чтобы не отвлекать. */
+@keyframes native-msg-sent-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(42,171,238,0), 0 0 0 0 rgba(42,171,238,0);
+    transform: scale(0.95);
+    opacity: 0.5;
+  }
+  20% {
+    box-shadow: 0 0 16px 4px rgba(42,171,238,0.8), 0 0 32px 10px rgba(42,171,238,0.4);
+    transform: scale(1.02);
+    opacity: 1;
+  }
+  60% {
+    box-shadow: 0 0 10px 2px rgba(42,171,238,0.5), 0 0 20px 6px rgba(42,171,238,0.2);
+    transform: scale(1);
+  }
+  100% {
+    box-shadow: 0 0 12px rgba(42,171,238,0.15), 0 0 0 0 rgba(42,171,238,0);
+    transform: scale(1);
+  }
+}
+.native-msg-sent > div:first-child {
+  animation: native-msg-sent-glow 1.2s ease-out;
+}
+
 /* v0.87.54: синий неон «вы остановились здесь» — 3.5с мягкое свечение
    в общем стиле accent (#2AABEE) — Telegram-blue, сочетается с остальным UI. */
 @keyframes native-last-read-glow {
