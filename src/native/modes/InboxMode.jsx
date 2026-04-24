@@ -79,9 +79,17 @@ export default function InboxMode({ store }) {
 
   // v0.87.51: диагностика изменения unreadCount на активном чате — видно прогрессию
   // 23→20→15→...→0 при прокрутке.
+  // v0.87.53: prevUnreadRef сбрасывается при смене activeChatId — иначе в логе
+  // "переключение на чат с unread=13 после чата с unread=0" пишется как "unread=13
+  // prevUnread=0", создавая ложную иллюзию роста счётчика в одном чате.
   const prevUnreadRef = useRef(null)
+  const prevUnreadChatIdRef = useRef(null)
   useEffect(() => {
     if (!activeChat) return
+    if (prevUnreadChatIdRef.current !== activeChat.id) {
+      prevUnreadChatIdRef.current = activeChat.id
+      prevUnreadRef.current = null  // новый чат — не сравниваем с прошлым
+    }
     const u = activeChat.unreadCount ?? null
     if (prevUnreadRef.current !== u) {
       scrollDiag.logEvent('badge-state', {
@@ -90,7 +98,7 @@ export default function InboxMode({ store }) {
       })
       prevUnreadRef.current = u
     }
-  }, [activeChat?.unreadCount])
+  }, [activeChat?.id, activeChat?.unreadCount])
 
   const handleSend = async () => {
     if (!input.trim() || !store.activeChatId || sending) return

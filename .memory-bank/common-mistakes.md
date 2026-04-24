@@ -1,5 +1,23 @@
 # Типичные ошибки — ChatCenter
 
+## 🟡 ВАЖНОЕ: диагностические useRef в логах ТОЖЕ должны сбрасываться при смене activeChatId (v0.87.53)
+
+**Симптом**: В логе `badge-state` пишется `unread=13 prevUnread=0` при переключении на чат Geely после чата с unread=0. Создаёт ложную иллюзию что счётчик «вырос с 0 до 13».
+
+**Корень**: диагностический `prevUnreadRef` в InboxMode хранил значение между рендерами, но НЕ сбрасывался при смене activeChatId. В итоге сравнивал unread нового чата со старым значением прошлого чата.
+
+**Правило расширяется** (v0.87.52 + v0.87.53): любой useRef/useState в InboxMode, привязанный к конкретному чату — **включая используемые только для логирования** — должен сбрасываться в useEffect по activeChatId. Артефакты логов тратят часы на ложные расследования.
+
+**Проверочный список state'ов в InboxMode** (v0.87.53 актуально):
+- ✅ `readSeenRef, readBatchRef, lastReadMaxRef, maxEverSentRef, readTimerRef` — useEffect [activeChatId]
+- ✅ `newBelow` (useState) — useEffect [activeChatId] → setNewBelow(0)
+- ✅ `prevLastIdRef` в useNewBelowCounter — через параметр chatId
+- ✅ `prevUnreadRef, prevUnreadChatIdRef` в InboxMode — сброс при смене id
+- ✅ `firstUnreadIdRef` — пересчёт на смену activeChatId/firstMsgId/lastMsgId/activeUnread
+- ✅ `prevNearBottomRef, prevScrollStateRef` — attached к scroll element, сами перезапишутся
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: State в InboxMode должен быть привязан к activeChatId (v0.87.52)
 
 **Симптом**: Бейдж на стрелке показывает 41, а в списке чатов того же чата бейджа нет (unreadCount=0). Открыл другой чат — на стрелке видишь число из предыдущего чата плюс прирост.
