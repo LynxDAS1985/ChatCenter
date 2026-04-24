@@ -467,6 +467,19 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
       if (replyTo) params.replyTo = Number(replyTo)
       const result = await client.sendMessage(entity, params)
       log(`send-message OK: chat=${chatId} messageId=${result.id}`)
+      // v0.87.58: emit tg:new-message для наших же исходящих.
+      // Telegram MTProto НЕ шлёт UpdateNewMessage для собственных отправок — данные
+      // возвращаются прямо в response к sendMessage. Раньше мы игнорировали result,
+      // брали только id, UI не получал событие → сообщение не появлялось в чате
+      // пока не перезагрузишь messages. Теперь emit из response.
+      try {
+        const mapped = mapMessage(result, chatId)
+        mapped.isOutgoing = true
+        emit('tg:new-message', { chatId, message: mapped })
+        log(`send-message: emitted tg:new-message id=${mapped.id}`)
+      } catch (emitErr) {
+        log(`send-message: emit tg:new-message failed: ${emitErr.message}`)
+      }
       return { ok: true, messageId: String(result.id) }
     } catch (e) {
       log(`send-message ERROR: chat=${chatId} ${e.message} (${e.constructor?.name})`)

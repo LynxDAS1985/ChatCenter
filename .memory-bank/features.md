@@ -11,11 +11,39 @@
 
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
-**До рефакторинга v0.87.58** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+**До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
 
-### v0.87.58 — Внедрение промта правил работы в CLAUDE.md + разбиение features.md + правило «конфликт память vs код»
+### v0.87.58 — FIX сообщение не появляется после отправки (emit tg:new-message для исходящих)
+
+**Симптом**: юзер ввёл текст → «Отпр.» → поле очистилось, в логах `send-message OK messageId=X`, но сообщение **не появляется в ленте чата** до перезагрузки.
+
+**100% доказательство из лога** (чат Автолиберти, ID `-272274113`, 11:16:21-24):
+```
+send-message START len=4 → send-message OK messageId=537483
+send-message START len=4 → send-message OK messageId=537484
+(дальше 2 минуты только unread-bulk-sync unread=0, НИ ОДНОГО tg:new-message)
+```
+
+**Корень**: Telegram MTProto **не дублирует** `UpdateNewMessage` для собственных исходящих сообщений — данные возвращаются прямо в response к `client.sendMessage()`. Наш handler `tg:send-message` брал только `result.id` и возвращал в renderer, игнорируя остальной объект Message. UI ждал события от listener'а входящих (`attachMessageListener`), но для своих же отправок оно не приходит.
+
+**Fix** в [main/native/telegramHandler.js](main/native/telegramHandler.js) `tg:send-message` handler: после успешного `client.sendMessage()` сразу вызываем:
+```js
+const mapped = mapMessage(result, chatId)
+mapped.isOutgoing = true
+emit('tg:new-message', { chatId, message: mapped })
+```
+
+Store через handler `tg:new-message` (nativeStore.js:144) добавит сообщение в `messages[chatId]` и UI его отрендерит — как обычно делает для входящих.
+
+**Тесты**: 116 vitest, E2E 17/17, UI 9/9.
+
+**Ожидает подтверждения от пользователя**: реальная отправка сообщения в чате и появление его в ленте сразу.
+
+---
+
+### v0.87.57 — Внедрение промта правил работы в CLAUDE.md + разбиение features.md + правило «конфликт память vs код»
 
 **Зачем эта версия**: закрепить в CLAUDE.md полный набор правил работы ИИ (4 принципа Karpathy, pipeline, критические запреты, правила проверки, формат ответа) и решить проблему раздутого `features.md` (445 КБ — не читался целиком).
 

@@ -8,6 +8,26 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: Telegram MTProto НЕ дублирует UpdateNewMessage для своих исходящих (v0.87.58)
+
+**Симптом**: юзер отправил сообщение → `send-message OK messageId=X` в логах → но сообщение **не появляется в чате** до перезагрузки.
+
+**Корень**: `client.sendMessage()` возвращает полный Message объект в response (включая `id`, `date`, `text`, `out=true`). Telegram **не присылает** `UpdateNewMessage` через listener-подписку для собственных отправок — это было бы дублированием.
+
+Старый handler только возвращал `messageId` наверх, игнорируя остальной result. UI ждал `tg:new-message` event от listener'а входящих → никогда не получал его → сообщение не отображалось.
+
+**ПРАВИЛО**: Любой IPC handler который делает действие в Telegram (sendMessage / sendFile / forward / edit) **обязан** emit'ить соответствующее событие в renderer **из response**, не полагаясь на MTProto listener:
+- `client.sendMessage()` → `emit('tg:new-message', { chatId, message: mapMessage(result) })`
+- `client.sendFile()` → то же самое
+- `client.editMessage()` → `emit('tg:message-edited', ...)` если бы такой был
+- `client.forwardMessages()` → для каждого forwarded → `tg:new-message`
+
+**Где применено (v0.87.58)**: `tg:send-message` handler. Остальные (sendFile, forward) — проверить отдельно при жалобе пользователя.
+
+**ВАЖНО установить `isOutgoing=true` перед emit** — mapMessage определяет это по `m.out`, но в некоторых случаях GramJS отдаёт объект где `out` не выставлен. Без `isOutgoing=true` сообщение будет выглядеть как входящее (слева вместо справа).
+
+---
+
 ## 🟡 ВАЖНОЕ: диагностические useRef в логах ТОЖЕ должны сбрасываться при смене activeChatId (v0.87.53)
 
 **Симптом**: В логе `badge-state` пишется `unread=13 prevUnread=0` при переключении на чат Geely после чата с unread=0. Создаёт ложную иллюзию что счётчик «вырос с 0 до 13».
