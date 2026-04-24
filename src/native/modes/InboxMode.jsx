@@ -419,7 +419,15 @@ export default function InboxMode({ store }) {
     setSending(true)
     const text = input.trim()
     setInput('')
-    scrollDiag.logEvent('send-start', { chatId: store.activeChatId, len: text.length, isEdit: !!editTarget, replyTo: replyTo?.id })
+    // v0.87.61: диагностика скролла ДО отправки
+    const scrollElBefore = msgsScrollRef.current
+    const before = scrollElBefore ? {
+      top: scrollElBefore.scrollTop,
+      height: scrollElBefore.scrollHeight,
+      client: scrollElBefore.clientHeight,
+      bottomGap: scrollElBefore.scrollHeight - scrollElBefore.scrollTop - scrollElBefore.clientHeight,
+    } : null
+    scrollDiag.logEvent('send-start', { chatId: store.activeChatId, len: text.length, isEdit: !!editTarget, replyTo: replyTo?.id, scrollBefore: before })
     try {
       let result
       if (editTarget) {
@@ -435,6 +443,24 @@ export default function InboxMode({ store }) {
         showToast(`Ошибка отправки: ${result?.error || 'неизвестно'}`, 'error')
         setInput(text)  // возвращаем текст в поле — чтобы не потерялся
       }
+      // v0.87.61: диагностика скролла через 100мс после появления msg в DOM
+      setTimeout(() => {
+        const el = msgsScrollRef.current
+        if (!el) return
+        const after = {
+          top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight,
+          bottomGap: el.scrollHeight - el.scrollTop - el.clientHeight,
+        }
+        scrollDiag.logEvent('send-scroll-after', {
+          scrollAfter: after,
+          deltaHeight: before ? (after.height - before.height) : null,
+          deltaTop: before ? (after.top - before.top) : null,
+          // Ожидаем: height вырос (новый msg добавил ~40-80px), top НЕ изменился
+          // (юзер ушёл за viewport на deltaHeight) — скролла к новому msg нет.
+          expectedBehavior: before && (after.height - before.height) > 0 && (after.top - before.top) === 0
+            ? 'stayed (user scrolled out of view)' : 'auto-scrolled',
+        })
+      }, 100)
     } catch (e) {
       scrollDiag.logEvent('send-throw', { error: e?.message, name: e?.constructor?.name })
       showToast(`Сбой отправки: ${e?.message || e}`, 'error')

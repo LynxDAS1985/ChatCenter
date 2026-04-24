@@ -6,6 +6,7 @@ import FormattedText from './FormattedText.jsx'
 import LinkPreview from './LinkPreview.jsx'
 import VideoTile from './VideoTile.jsx'
 import { useReadOnScrollAway } from '../hooks/useReadOnScrollAway.js'
+import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 
 export default function MessageBubble({
   m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible,
@@ -38,6 +39,46 @@ export default function MessageBubble({
 
   useEffect(() => {
     if (m.mediaType === 'photo' && !mediaUrl) handleDownload()
+  }, [m.id])
+
+  // v0.87.61: ДИАГНОСТИКА ширины bubble и parent chain.
+  // Баг: в группах исходящие и входящие рендерятся в узкий столбик (каждая буква
+  // на своей строке). В приватных — нормально. Лог поможет увидеть живой DOM —
+  // какая ширина у bubble, у parent group, group-row, scroll-container.
+  // Фильтры: лог только для msg с коротким text (<20 символов) и без media —
+  // чтобы не спамить на больших чатах.
+  useEffect(() => {
+    if (!ref.current) return
+    const hasText = m.text && m.text.length > 0 && m.text.length < 40
+    if (!hasText || hasMedia) return
+    // Небольшая задержка чтобы layout устаканился после mount
+    const t = setTimeout(() => {
+      const el = ref.current
+      if (!el) return
+      const inner = el.firstChild  // .native-msg-sent > div:first-child == сам bubble
+      const group = el.closest('.native-msg-group')
+      const groupRow = el.closest('.native-msg-group-row')
+      const scrollEl = el.closest('[data-scroll-container="true"]') || groupRow?.parentElement
+      logNativeScroll('bubble-width-diag', {
+        msgId: m.id,
+        text: m.text.slice(0, 20),
+        isOutgoing: m.isOutgoing,
+        // Ширины
+        bubbleW: el.clientWidth,
+        innerW: inner?.clientWidth || 0,
+        groupW: group?.clientWidth || 0,
+        groupRowW: groupRow?.clientWidth || 0,
+        scrollW: scrollEl?.clientWidth || 0,
+        // Вычисленные стили
+        bubbleMaxWidth: el.style.maxWidth,
+        bubbleMinWidth: el.style.minWidth,
+        groupFlex: group?.style?.flex || getComputedStyle(group || document.body).flex,
+        groupRowFlexDir: groupRow?.style?.flexDirection || '',
+        hasAuthor: !!groupRow?.querySelector('.native-msg-author'),
+        hasAvatar: !!groupRow?.querySelector('.native-msg-avatar'),
+      })
+    }, 50)
+    return () => clearTimeout(t)
   }, [m.id])
 
   const replyToMsg = m.replyToId && getMessage ? getMessage(chatId, m.replyToId) : null
