@@ -163,8 +163,26 @@ export default function MessageBubble({
         }}><FormattedText text={m.text} entities={m.entities} /></div>}
 
         {/* v0.87.27: превью ссылки — если есть webPage в сообщении */}
+        {/* v0.87.72: URL строкой над карточкой (как Telegram Desktop). Показываем
+            только если в m.text нет самой ссылки — иначе дубликат. Для исходящих
+            telegramHandler.js кладёт text=input → обычно URL уже в text. Но для
+            входящих text может быть пустым, а webPage.url заполнен сервером. */}
         {m.mediaType === 'link' && m.webPage && (
-          <LinkPreview wp={m.webPage} isOutgoing={m.isOutgoing} />
+          <>
+            {m.webPage.url && !(m.text && m.text.includes(m.webPage.url)) && (
+              <div style={{ marginBottom: 4, wordBreak: 'break-all' }}>
+                <a
+                  href={m.webPage.url}
+                  style={{ color: m.isOutgoing ? '#fff' : 'var(--amoled-accent)', textDecoration: 'underline' }}
+                  onClick={e => {
+                    e.preventDefault()
+                    try { window.api?.invoke('app:open-external', m.webPage.url) } catch(_) {}
+                  }}
+                >{m.webPage.url}</a>
+              </div>
+            )}
+            <LinkPreview wp={m.webPage} isOutgoing={m.isOutgoing} />
+          </>
         )}
 
         <div style={{

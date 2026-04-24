@@ -413,7 +413,9 @@
 /* v0.87.71: разрешаем выделение текста в сообщениях (для копирования).
    Глобальный body { user-select: none } в src/index.css блокирует всё приложение —
    кнопки, UI-элементы не выделяются. Но в bubble юзер должен иметь возможность
-   скопировать часть или весь текст сообщения / заголовок link-preview. */
+   скопировать часть или весь текст сообщения / заголовок link-preview.
+   v0.87.72: ссылки ТОЖЕ выделяются (как в Telegram Desktop). Drag ссылок
+   выключен чтобы не конкурировать с выделением. Короткий клик = открытие. */
 .native-msg-group, .native-msg-group * {
   user-select: text;
   -webkit-user-select: text;
@@ -421,10 +423,17 @@
 }
 /* Кнопки внутри bubble (меню действий ⋯ / reply / etc) — кликабельные, не text */
 .native-msg-group button,
-.native-msg-group [role="button"],
-.native-msg-group a {
+.native-msg-group [role="button"] {
   user-select: none;
   cursor: pointer;
+}
+/* v0.87.72: ссылки — текст выделяется, drag отключён. Короткий клик ведёт на URL. */
+.native-msg-group a {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: pointer;
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 
 .native-msg-group + .native-msg-group {

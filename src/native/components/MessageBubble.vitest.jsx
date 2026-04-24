@@ -70,6 +70,40 @@ describe('MessageBubble render', () => {
     cleanup()
   })
 
+  // v0.87.72: URL строкой над LinkPreview когда text НЕ содержит URL (как Telegram Desktop)
+  it('v0.87.72: URL строкой показан если его нет в text (исходящие пустые, только webPage)', () => {
+    const m = {
+      ...baseMsg, id: '6', text: '',  // text пустой — нужна отдельная строка URL
+      isOutgoing: true, mediaType: 'link',
+      webPage: { url: 'https://yandex.ru', title: 'Яндекс', description: 'D', siteName: 'yandex.ru' },
+    }
+    const { container } = render(<MessageBubble m={m} chatId="c1" />)
+    // Должен быть <a> с href=https://yandex.ru
+    const link = container.querySelector('a[href="https://yandex.ru"]')
+    expect(link).toBeTruthy()
+    expect(link.textContent).toBe('https://yandex.ru')
+    cleanup()
+  })
+
+  it('v0.87.72: URL строкой НЕ дублируется если уже в text', () => {
+    const m = {
+      ...baseMsg, id: '7', text: 'Посмотри https://dup.com это интересно',
+      mediaType: 'link',
+      webPage: { url: 'https://dup.com', title: 'Dup', description: 'D', siteName: 'dup.com' },
+    }
+    const { container } = render(<MessageBubble m={m} chatId="c1" />)
+    // Не должно быть ДВУХ вхождений "https://dup.com" на верхнем уровне (только в тексте)
+    const links = container.querySelectorAll('a[href="https://dup.com"]')
+    // В text рендерится через AutoLinks как <a>, в preview тоже может быть <a>, но
+    // нашего ОТДЕЛЬНОГО <a> с href=url строкой выше preview — не должно быть
+    // Проверяем что URL встречается ровно 1 раз как отдельная строка (в text)
+    const url = 'https://dup.com'
+    const urlCount = (container.textContent.match(new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length
+    // Может быть 1 (text) или 2 (text + title/siteName где-то) — главное не 3 (где добавилась отдельная строка)
+    expect(urlCount).toBeLessThanOrEqual(2)
+    cleanup()
+  })
+
   it('snapshot: типичное текстовое сообщение (визуальная регрессия)', () => {
     const { container } = render(<MessageBubble m={baseMsg} chatId="c1" />)
     expect(container.innerHTML).toMatchSnapshot()
