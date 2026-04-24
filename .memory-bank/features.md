@@ -1,6 +1,51 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.54 (24 апреля 2026)
+## Текущая версия: v0.87.55 (24 апреля 2026)
+
+### v0.87.55 — Диагностика отправки + FLOOD_WAIT throttle + console-message API совместимость
+
+**Три задачи в одном коммите**:
+
+#### 1. Диагностика отправки сообщений (баг: «ввёл текст → Отпр. → ничего»)
+
+Пользователь на скриншоте: введено «йыйый», нажата кнопка «Отпр.» — текст не отправляется, UI молчит. В логах **ни одного** события про попытку отправки.
+
+**Причина** — нет диагностики. В `tg:send-message` handler и в `handleReplySend` не было логов ошибки, при неудаче пустой `return { ok: false, error: ... }` просто игнорировался.
+
+**Fix**:
+- [main/native/telegramHandler.js](main/native/telegramHandler.js) `tg:send-message` — логи на всех этапах: `send-message START`, `hasEntity`, `send-message OK/ERROR` с текстом ошибки и типом
+- [src/native/modes/InboxMode.jsx](src/native/modes/InboxMode.jsx) `handleReplySend` — логи `send-skip`, `send-start`, `send-result { ok, error }`, `send-throw` + **toast с ошибкой** + **возврат текста в поле** (раньше терялся)
+
+Теперь юзер видит причину (типа «FLOOD_WAIT», «PEER_ID_INVALID», «Не подключён»), а текст не пропадает.
+
+#### 2. FLOOD_WAIT throttle для аватарок
+
+**Проблема**: `loadAvatarsAsync` делал 196 запросов `GetFullUser`/`GetFullChannel` подряд без задержки → Telegram банил сессию на 26 секунд.
+
+**Fix** в [main/native/telegramHandler.js](main/native/telegramHandler.js) `loadAvatarsAsync`:
+- Новый helper `throttledInvoke(reqFactory)` — не чаще 1 запроса в 200мс (= 5 RPS)
+- На FLOOD_WAIT ошибку — парсит секунды из сообщения, ждёт N+1 секунд, ретрай
+- Stats `floodWaits` счётчик в логе для мониторинга
+
+Применено к обоим `GetFullChannel` и `GetFullUser` внутри `loadAvatarsAsync`. `downloadProfilePhoto` не throttled т.к. это прямая загрузка, не RPC.
+
+#### 3. console-message Electron 41+ совместимость
+
+**Проблема**: в Electron 41 старые поля `e.message`, `e.level`, `e.sourceId` помечены deprecated. Новый API даёт объект `e.details.{message, level, sourceId, lineNumber}` где `level` — строка (`'info'`, `'warning'`, `'error'`, `'verbose'`), а не число (0-3).
+
+**Fix** (backward-compatible) в [src/utils/consoleMessageHandler.js](src/utils/consoleMessageHandler.js):
+```js
+const d = e.details || e
+const msg = d.message ?? e.message
+const rawLevel = d.level ?? e.level
+const lvl = typeof rawLevel === 'number' ? rawLevel
+  : rawLevel === 'warning' ? 1 : rawLevel === 'error' ? 2
+  : rawLevel === 'info' ? 0 : rawLevel === 'verbose' ? 3 : -1
+```
+
+Работает и со старым API (числа), и с новым (строки). Deprecation warning в консоли исчезнет.
+
+**Итого**: 116 vitest ✅, E2E 17/17, UI 9/9.
 
 ### v0.87.54 — Синий неон last-read + подтверждение 8 пунктов v0.87.51
 

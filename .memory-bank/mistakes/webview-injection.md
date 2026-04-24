@@ -1,0 +1,708 @@
+# Ловушки: WebView injection и навигация мессенджеров
+
+**Извлечено из** `common-mistakes.md` 24 апреля 2026 (v0.87.54).
+**Темы**: DOM-селекторы (Telegram Web K, MAX, VK), MutationObserver, спам-фильтры, executeJavaScript, стековая группировка, навигация между чатами.
+
+---
+
+## 🟡 ВАЖНОЕ: Двойной звук — 4 пути воспроизведения без дедупликации
+
+**Симптом**: При получении сообщения играются два звука с разницей ~1 секунда. Оба от нашей программы (не от мессенджера — его Audio подавлен).
+
+**Причина**: В App.jsx есть **4 независимых места** вызова `playNotificationSound()`:
+1. `__CC_NOTIF__` handler (основной, через Notification API перехват)
+2. `messenger:badge` IPC (от ChatMonitor badge update)
+3. `page-title-updated` event (unread count в заголовке WebView)
+4. `unread-count` IPC (от monitor preload)
+
+Когда приходит сообщение, `__CC_NOTIF__` срабатывает первым (синхронно из console-message). Через ~0.5-1сек WebView обновляет title/badge → срабатывает второй path → второй звук.
+
+**ПРАВИЛО**: Все пути воспроизведения звука ДОЛЖНЫ проверять `lastSoundTsRef` — если для этого мессенджера звук уже играл <3сек назад → пропускать.
+
+**Решение (v0.62.5)**: `lastSoundTsRef = useRef({})` — `{[messengerId]: timestamp}`. Все 4 места проверяют `Date.now() - lastSoundTsRef.current[id] > 3000` перед воспроизведением.
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: toDataUrl зависание в executeJavaScript injection
+
+### ❌ console.log внутри toDataUrl callback → Pipeline пуст, нет звука/ribbon
+
+**Симптом**: Лог WebView показывает "ПОКАЗАНО" (intercepted), но Pipeline в App.jsx пуст. Нет звука, нет ribbon. Пользователь видит сообщение в Логе, но уведомления нет.
+
+**Причина**: В `executeJavaScript` injection (fallback когда CSP блокирует `<script>` tag из preload), `console.log('__CC_NOTIF__'+...)` был завёрнут в `toDataUrl(enriched.icon, callback)`. Функция `toDataUrl` создаёт `new Image()` с `crossOrigin='anonymous'` для конвертации аватарки в data URL. Если загрузка зависала (CORS, timeout, сетевая ошибка) → callback НЕ вызывался → `console.log` НЕ выполнялся → `console-message` event НЕ приходил в App.jsx.
+
+**Почему Лог показывал "ПОКАЗАНО"**: `_logNotif('passed', ...)` вызывался ДО `toDataUrl`, а `console.log` — ВНУТРИ callback. Лог и console.log были разделены асинхронной операцией.
+
+**ПРАВИЛО**: НИКОГДА не оборачивать `console.log('__CC_NOTIF__'+...)` в асинхронные операции (Image loading, fetch, timers). Отправляй СИНХРОННО, как в preload версии.
+
+**Решение (v0.57.0)**: Удалён `toDataUrl`, `console.log` вызывается напрямую с `enriched.icon` (HTTP URL или пустая строка). App.jsx обрабатывает оба формата.
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: IPC new-message handler БЕЗ спам-фильтра
+
+### ❌ Timestamp "18:22" прошёл через `new-message` IPC → ribbon
+
+**Симптом**: При получении сообщения в MAX показывается ribbon с текстом "18:22" (timestamp), а реальное сообщение ("Ааа") не показывается вообще.
+
+**Причина 1**: IPC `new-message` handler в App.jsx НЕ имел спам-фильтра. `__CC_MSG__` handler имел, `__CC_NOTIF__` handler имел, но IPC `new-message` — нет. Timestamp "18:22" приходил из Path 2 `sendUpdate` → `getLastMessageText('max')` → `[class*="message"]:last-child [class*="text"]` возвращал timestamp.
+
+**Причина 2**: `getLastMessageText` для MAX не фильтровал timestamps. Селектор `[class*="message"]:last-child [class*="text"]` матчит элементы с timestamp'ами.
+
+**Причина 3**: `quickNewMsgCheck` пропускал реальные сообщения в MAX — addedNodes содержали контейнеры с >40 children (SvelteKit рендерит большими блоками).
+
+**Решение (v0.56.1)**:
+1. Спам-фильтр в IPC `new-message` handler + per-messenger regex + senderCache fallback
+2. Timestamp-фильтр в Path 2 `sendUpdate` и в `getLastMessageText`
+3. Deep scan в `quickNewMsgCheck` — для nodes 40-200 children ищет leaf-текстовые элементы
+4. `extractMsgText()` — отдельная функция с очисткой embedded timestamps ("Ааа18:22" → "Ааа")
+
+**Ключевой урок**: ВСЕ handler'ы входящих сообщений ДОЛЖНЫ иметь спам-фильтр. Новый handler без фильтра = timestamp/system text пройдёт как сообщение. SvelteKit-мессенджеры (MAX) обновляют DOM большими блоками — нужен deep scan, не только проверка addedNodes напрямую.
+
+---
+
+## 🟡 ВАЖНОЕ: mark-read не работает при свёрнутом окне (Chromium background throttling)
+
+**Симптом**: Нажал "Прочитано" в ribbon при свёрнутом окне — не помечает. Открыл окно — помечает.
+
+**Причина**: Chromium throttles WebView в свёрнутом окне. `executeJavaScript()` выполняется и возвращает `ok=true`, но DOM-клик НЕ обрабатывается мессенджером до восстановления окна.
+
+**ЛОВУШКА**: `document.hidden` в Electron renderer = `false` даже при минимизированном окне! Нельзя использовать `document.hidden` для определения свёрнутого окна.
+
+**ПРАВИЛО**: Проверять `mainWindow.isMinimized()` в main.js (не в renderer). Если свёрнуто → невидимо восстановить (`setOpacity(0)` + `restore()`), выполнить mark-read, через 1.2сек свернуть обратно (`minimize()` + `setOpacity(1)`).
+
+**Решение (v0.62.7)**: main.js `notif:mark-read` handler → `isMinimized()` check → invisible restore/minimize cycle.
+
+---
+
+## 🟡 ВАЖНОЕ: MAX sidebar DOM ≠ Telegram — нет .chatlist-chat, нет .peer-title
+
+**Симптом**: `mark-read` для MAX всегда возвращает `ok=false method=notFound titles=0`. Все 12 CSS-селекторов + TreeWalker не находят чаты в sidebar.
+
+**Причина**: MAX (SvelteKit) использует `<nav class="navigation svelte-xxx">` с 51 child-элементами. Нет `.chatlist-chat`, нет `.peer-title`, нет `[class*="chatlist"]`. Все generic-селекторы от Telegram возвращают 0.
+
+**Почему enrichment работал**: `__CC_NOTIF__` берёт имя из Notification API `data.t` (DOM не нужен). `__CC_MSG__` DOM enrichment использует **topbar** (`.topbar .headerWrapper`), не sidebar.
+
+**ПРАВИЛО**: Для MAX навигация к чату — `[class*="wrapper--withActions"]` (реальный Svelte-класс sidebar, март 2026). Поиск по textContent.indexOf(senderName). **ВАЖНО**: простой `.click()` на wrapper НЕ работает (Svelte event delegation). Нужно: (1) искать `<a>` или `<button>` child внутри wrapper, (2) проверить parent на `<a>`, (3) если нет — `MouseEvent({bubbles:true})`. НЕ использовать `<nav> a[href]`, `.chatlist-chat`, `.peer-title`.
+
+**Решение (v0.62.4)**: Полностью переписан MAX-блок в `buildChatNavigateScript`: nav→a[href] exact/icase/partial → all a[href] → TreeWalker → scroll fallback.
+
+---
+
+## 🟡 ВАЖНОЕ: Стэковая группировка — ghost-items и cleanupStack
+
+**Контекст**: В v0.63.0 группировка ribbon переделана: вместо отдельной карточки-группы, сообщения складываются как строки в существующую карточку (хост).
+
+**Ловушка 1**: Дочерние сообщения (`isStackChild: true`) хранятся в `items` Map, но НЕ имеют своего DOM-элемента. Их `el` указывает на хост. НЕ вызывать DOM-операции (remove, offsetHeight и т.д.) на ghost-items — это удалит хост!
+
+**Ловушка 2**: При dismiss хоста ОБЯЗАТЕЛЬНО вызывать `cleanupStack(messengerId)` — иначе ghost-items останутся в Map и будут считаться активными, блокируя новые уведомления.
+
+**Ловушка 3**: `stacks` Map хранит `messengerId → { hostId, childIds }`. При появлении ПЕРВОГО сообщения создаётся запись в stacks. Если хост удалён — запись удаляется в cleanupStack. Следующее сообщение создаст новую карточку и новый стэк.
+
+**ПРАВИЛО**: Всегда проверять `item.isStackChild` перед DOM-операциями в dismissItem и forceRemoveItem.
+
+**Ловушка 4 (v0.63.1)**: НЕ дублировать имя отправителя в стэкнутых строках. Имя уже показано в хост-карточке (`.sender`). В стэке показывать ТОЛЬКО текст сообщения (`.stacked-body`).
+
+**Ловушка 5 (v0.63.2)**: FIFO в main.js (`notifItems`) имел лимит 6 — при 7+ сообщениях хост удалялся из массива. `markRead(hostId)` не находил item → mark-read не выполнялся. **ПРАВИЛО**: FIFO лимит `notifItems` должен быть значительно больше MAX_ITEMS (сейчас 30), т.к. стэк может содержать 10+ сообщений на одну карточку.
+
+**Ловушка 6 (v0.63.3)**: Тултип в ribbon — НЕ использовать `title` атрибут (некрасивый, с задержкой). Использовать кастомный `position: fixed` div. Показывать ТОЛЬКО если `scrollWidth > clientWidth` (текст реально обрезан). CSS-класс `.cc-tooltip` (не `.tooltip` — может конфликтовать).
+
+**Ловушка 7 (v0.63.4)**: Кликабельный тултип (`pointer-events` включены) конфликтует с hover-логикой dismiss-таймера. Решение: при уходе мыши с тултипа — проверять `e.relatedTarget`, не скрывать если вернулся на текстовый элемент. Debounce 300мс через `setTimeout` — обязательно `clearTimeout` при каждом `mouseout`, иначе старый тултип появится на новом месте.
+
+**Ловушка 8 (v0.63.5)**: `overflow: visible` + `overflow-y: auto` = горизонтальный скролл! Когда задаёшь `overflow-y: auto`, браузер автоматически меняет `overflow-x: visible` → `overflow-x: auto`. Для длинных слов без пробелов (тарабарщина, URL, хэши) это создаёт горизонтальный скроллбар. **ПРАВИЛО**: всегда явно задавать `overflow-x: hidden` + `word-break: break-word` если нужен только вертикальный скролл.
+
+**Ловушка 9 (v0.63.6→v0.63.9)**: ~~Тултип стэка vs одиночный тултип~~ — ОТМЕНЕНО в v0.63.9. Теперь каждый элемент показывает СВОЙ тултип. НЕ использовать приоритет `.stack-container` — пользователь хочет видеть конкретное сообщение, а не превью всего стэка.
+
+**Ловушка 12 (v0.63.9)**: Тултип обрезается окном notification (position:fixed, window ограничен по высоте). **ПРАВИЛО**: После рендера тултипа проверять `neededTop < 0`. Если не помещается — увеличить окно через `notifApi.resize(calcHeight() + extraHeight)`. Хранить `tooltipExtraHeight` и восстанавливать в `hideTooltip*()` через `reportHeight()`.
+
+**Ловушка 13 (v0.63.9→v0.64.0)**: `scrollWidth > clientWidth` не работает для `.msg-text-content` span с inline `overflow:hidden` — scrollWidth === clientWidth потому что overflow скрыт. **ПРАВИЛО**: Для `.body-text` с `data-full` — НЕ проверять scrollWidth. Сравнивать `data-full.length > data-short.length`. Для остальных — проверять scrollWidth на видимом span.
+
+**Ловушка 39 (v0.74.2)**: `countUnreadTelegram()` fallback `if (personal === 0) personal = allTotal` срабатывал даже когда вкладка "Личные" НАЙДЕНА, но без бейджа. Результат: 32 канала помечены как "32 личных". **ПРАВИЛО**: Отслеживать `personalTabFound` boolean. Fallback `personal = allTotal` ТОЛЬКО если `!personalTabFound`. Если вкладка найдена, но бейдж отсутствует — `personal = 0` КОРРЕКТНО (нет личных сообщений).
+
+**Ловушка 38 (v0.74.0)**: `notifCountRef` не сбрасывается при чтении сообщений внутри WebView. `handleTabClick` обнуляет `notifCountRef[id] = 0`, но если пользователь УЖЕ на вкладке и читает чаты внутри WebView — клик не происходит. `unread-count` IPC возвращает `domCount=0`, но `Math.max(0, notifCountRef=2) = 2` → бейдж застревает. **ПРАВИЛО**: Проверять `isViewing = activeIdRef === messengerId && windowFocused`. Если пользователь смотрит вкладку и `domCount < notifCountRef` → сбросить `notifCountRef = domCount`. Также: `page-title-updated` без числа (e.g. "MAX") + isViewing → сброс в 0. В фоне — по-прежнему `Math.max` (DOM может моргнуть в 0 при ре-рендере).
+
+**Ловушка 37 (v0.73.8→v0.73.9)**: Badge API (`navigator.setAppBadge`) вызывается из **ДВУХ** мест: (1) Service Worker и (2) **page context**. Блокировка только SW (clearStorageData + register override) НЕ ДОСТАТОЧНА — Telegram Web вызывает `navigator.setAppBadge(32)` напрямую из page JS. Chromium транслирует вызов в `ITaskbarList3::SetOverlayIcon`, перебивая наш overlay. **ПРАВИЛО**: Блокировать Badge API на **ТРЁХ** уровнях: (1) `navigator.setAppBadge = function() { return Promise.resolve() }` в page context (monitor.preload.js script tag + App.jsx executeJavaScript), (2) `ses.clearStorageData({ storages: ['serviceworkers'] })` в setupSession (убивает закешированные SW), (3) `app.setBadgeCount = function() { return false }` в main.js (блокирует Electron API). JS-блокировку `register()` оставить как страховку.
+
+**Ловушка 36 (v0.72.7)**: Пиксельный шрифт 3×5 (PIXEL_FONT + BGRA Buffer) нечитаемый на overlay badge Windows. Цифры 3, 4, 9 неразличимы после Windows downscaling 64×64 → ~16×16. Нет антиалиасинга — пиксели превращаются в кашу. **ПРАВИЛО**: Для overlay badge использовать Canvas-рендеринг через скрытый `BrowserWindow({ show: false, offscreen: true })` + `loadURL('about:blank')` + `executeJavaScript(canvas code)` → `nativeImage.createFromDataURL()`. Canvas даёт нормальный шрифт Arial Bold с антиалиасингом. Fallback на пиксельный метод если badgeWin не готов.
+
+**Ловушка 35 (v0.72.6)**: Overlay badge показывает НЕПРАВИЛЬНОЕ число (33 вместо 39). Причина: `useEffect([totalUnread])` вызывает `tray:set-badge` МГНОВЕННО при каждом изменении totalUnread. Telegram шлёт page-title-updated первым (33), потом другие вкладки обновляют unreadCounts (+3, +2, +1=39), каждый раз вызывая setOverlayIcon. Windows Shell API НЕ обрабатывает rapid fire setOverlayIcon (<100мс между вызовами) — показывает промежуточное значение. **ПРАВИЛО**: Overlay badge обновлять через debounce (500мс). Все вкладки успевают отправить свои счётчики → один вызов setOverlayIcon с финальной суммой. Также: `notifCountRef` НЕ обнулять при domCount>0 — использовать `Math.max(domCount, notifCountRef)`, обнулять только при клике на вкладку. Также: `page-title-updated` regex `/(\d+)/` не парсит MAX title "N непрочитанный чат" — добавить `/^(\d+)\s+непрочитанн/`.
+
+**Ловушка 34 (v0.72.5)**: Overlay бейдж размытый/мутный при Windows DPI >100%. Иконка 32×32 масштабируется Windows → bilinear interpolation размывает пиксели. **ПРАВИЛО**: Overlay иконку делать 64×64 с 4× масштабом шрифта + белая обводка (3px) для контраста. Windows уменьшит если DPI=100% — чётко. При DPI 150%/200% — исходное разрешение достаточное, размытия нет. Также: `requestCtxMenuSpace` IPC вообще убрать из pin-dock.html если DOCK_PREVIEW_RESERVE достаточный — даже если handler делает return, сам IPC round-trip может вызывать микро-шевеление layout.
+
+**Ловушка 33 (v0.72.4)**: MAX (web.max.ru) использует Svelte → все CSS классы имеют суффиксы `svelte-XXXXX` (например `navigation svelte-1aijhs3`). Селекторы `[class*="badge"]`, `[class*="counter"]`, `[class*="ChatItem"]` НЕ РАБОТАЮТ — такие подстроки в Svelte-классах отсутствуют. `countUnreadMAX()` возвращает 0, overlay бейдж не обновляется для MAX. **ПРАВИЛО**: Для Svelte SPA (MAX, и любых будущих) НЕ использовать class-based поиск бейджей. Вместо этого: (1) искать числовые дочерние `span/div` внутри навигационных вкладок ("Все", "Чаты"), (2) fallback — парсить маленькие числовые `span` в sidebar (левая часть экрана, width<45, height<28, число 1-9999).
+
+**Ловушка 32 (v0.72.4)**: Dock дёргается при ПКМ — `dock:ctx-menu-space` вызывает `dockWin.setBounds()` мгновенно, перемещая окно вверх. Пользователь видит прыжок dock. **ПРАВИЛО**: `DOCK_PREVIEW_RESERVE` должен быть ДОСТАТОЧНЫМ для контекстного меню (≥420px). Если меню помещается без resize — `dock:ctx-menu-space` handler делает `if (neededH <= bounds.height) return` → нет `setBounds()` = нет дёрганья. НЕ полагаться на динамический resize окна — это всегда вызывает визуальный прыжок.
+
+**Ловушка 31 (v0.72.3)**: Overlay бейдж на иконке нечитаемый — 16×16 пикселей с шрифтом 3×5 слишком мелкий, цифры сливаются. Бейдж на иконке трея (системный трей) НЕ нужен пользователю — нужен на иконке приложения в таскбаре. **ПРАВИЛО**: `createOverlayBadgeIcon` → 32×32 с `drawPixelTextScaled(scale=2)` — каждый пиксель шрифта рисуется как 2×2 блок. НЕ менять `tray.setImage()` со счётчиком — только `tray.setToolTip()`. Бейдж числа → `mainWindow.setOverlayIcon()`.
+
+**Ловушка 30 (v0.72.2)**: Контекстное меню моргает при открытии. **Глубокая причина**: CSS `@keyframes ctxIn { 0% { opacity:0 } 100% { opacity:1 } }` — анимация стартует МГНОВЕННО при вставке DOM-элемента, ДО позиционирования (setTimeout 30ms). Пользователь видит: opacity:0→1 в точке (0,0), потом элемент прыгает в правильную позицию. Плюс `mousedown` handler закрывал меню с fade-out при ПКМ (button=2), а `contextmenu` создавал новое → двойная анимация. **ПРАВИЛО**: Для анимации появления элементов в DOM НИКОГДА не использовать `@keyframes` — они стартуют мгновенно при вставке. Использовать CSS transition + класс `.visible`: создать элемент с `opacity:0; transform: scale(0.97)`, позиционировать, затем через `requestAnimationFrame` добавить класс `.visible { opacity:1; transform: scale(1) }`. Для закрытия — `classList.remove('visible')` + setTimeout для удаления из DOM. В `mousedown`: пропускать `button===2` на элементе-триггере.
+
+**Ловушка 29 (v0.72.0)**: MAX отправляет notification при РЕДАКТИРОВАНИИ сообщения — body содержит "09:26 ред." (timestamp + "ред."). Это НЕ новое сообщение, а маркер редактирования. Также `extractMsgText()` может вернуть "ред." как текст последнего DOM-элемента. **ПРАВИЛО**: Все фильтры в `monitor.preload.js` (`isSpamNotif`, `extractMsgText`, `getLastMessageText`) должны проверять regex `/^(\d{1,2}:\d{2}\s*)?ред\.?\s*$/i` и `/^edited\.?\s*$/i` — отбрасывать как спам/пустой текст.
+
+**Ловушка 28 (v0.71.8)**: `position: fixed; bottom: 0` на dock-wrapper БЕЗ `min-height: 100vh` на body ломает `-webkit-app-region: drag` — Electron не рассчитывает hit-testing для fixed-элементов за пределами body. `moveTop()` по таймеру вызывает моргание окна. **ПРАВИЛО**: Для frameless transparent окон с drag: ОБЯЗАТЕЛЬНО `min-height: 100vh` + `flex/justify-content: flex-end` (не `position: fixed`). НЕ использовать `moveTop()` по интервалу — только `setAlwaysOnTop` при blur. Для `user-select: text` на элементах внутри drag-зоны — добавлять `-webkit-app-region: no-drag` на конкретный элемент.
+
+**Ловушка 27 (v0.71.7)**: `setIgnoreMouseEvents(true, { forward: true })` БЛОКИРУЕТ `-webkit-app-region: drag`! Окно становится click-through, но drag через app-region перестаёт работать. **ПРАВИЛО**: Для transparent frameless окон НЕ использовать `setIgnoreMouseEvents`. Вместо этого: CSS `position: fixed; bottom: 0` (или left/top) на видимом контенте + БЕЗ `min-height: 100vh` на html/body. Electron transparent окна автоматически пропускают клики через пиксели с alpha=0. Элементы без min-height/flex-grow не создают "painted" пикселей в пустых областях. Также: `moveTop()` каждые N секунд вместо `setAlwaysOnTop` в каждом событии — меньше дёрганья.
+
+**Ловушка 26 (v0.71.6)**: `setAlwaysOnTop(true, 'screen-saver', 1)` + реассерт при blur НЕ ДОСТАТОЧЕН для Windows 11 таскбара. Таскбар Windows имеет специальный z-order и агрессивно перекрывает even screen-saver level окна. **ПРАВИЛО**: Для окон которые ОБЯЗАНЫ быть поверх Windows таскбара — использовать `setInterval(1000ms)` с `setAlwaysOnTop() + moveTop()`. Периодический `moveTop()` принудительно поднимает окно. Не забыть `clearInterval` при закрытии окна.
+
+**Ловушка 25 (v0.71.4)**: Frameless transparent BrowserWindow с предвыделенной прозрачной зоной (DOCK_PREVIEW_RESERVE) перехватывает клики к нижележащим окнам и Windows таскбару — пользователь думает что dock часть таскбара. **ПРАВИЛО**: Для transparent frameless окон с большой прозрачной зоной ОБЯЗАТЕЛЬНО использовать `setIgnoreMouseEvents(true, { forward: true })`. Переключать на `setIgnoreMouseEvents(false)` через IPC при mouseenter на видимые элементы (dock bar, контекстное меню), обратно при mouseleave. Задержка 50ms на mouseleave чтобы не мигало при переходе между элементами.
+
+**Ловушка 24 (v0.71.3)**: Контекстное меню в dock НЕ показывалось — окно dock имеет высоту `dockBaseHeight + DOCK_PREVIEW_RESERVE (150px)`, а меню ~280px. `position: fixed` в body всё равно обрезается BrowserWindow. **ПРАВИЛО**: Для всплывающих элементов, превышающих размер frameless BrowserWindow, НУЖНО временно расширять окно через IPC (`dock:ctx-menu-space`). При закрытии меню — восстанавливать размер. Нельзя полагаться на `position: fixed` — оно НЕ выходит за границы BrowserWindow.
+
+**Ловушка 23 (v0.71.1)**: Контекстное меню внутри элемента с `position: relative` обрезается границами BrowserWindow, если окно меньше меню. **ПРАВИЛО**: Всплывающие меню, тултипы с интерактивностью (`pointer-events: auto`) рендерить в `document.body` с `position: fixed`, НЕ внутри элемента-триггера. Позиционировать через `getBoundingClientRect()` триггера. Также ВСЕГДА проверять выход за границы экрана (top < 0 → показать снизу, left + width > innerWidth → сместить влево).
+
+**Ловушка 22 (v0.71.0)**: `pin:go-to-chat` передавал ТОЛЬКО `messengerId` без `senderName` → App.jsx переключал вкладку мессенджера, но НЕ навигировал к конкретному чату (потому что `buildChatNavigateScript` требует `senderName` или `chatTag`). **ПРАВИЛО**: При передаче `notify:clicked` ВСЕГДА включать `senderName` (и `chatTag` если есть). Без них навигация = только переключение вкладки. Проверять: `mainWindow.webContents.send('notify:clicked', { messengerId, senderName, chatTag })`.
+
+**Ловушка 21 (v0.70.0)**: Изменение `border-width` при `.active` состоянии (`1px → 2px`) вызывает layout shift — кнопка становится на 2px больше, карточка растёт, окно BrowserWindow не успевает подстроиться → появляются скроллбары. **ПРАВИЛО**: Для визуального выделения `.active` состояния НИКОГДА не менять `border-width`, `padding`, `margin` — они влияют на layout. Использовать `box-shadow: inset 0 0 0 1px ...` или `outline` — они НЕ влияют на размеры элемента. Также ВСЕГДА добавлять `overflow: hidden` на `html` и `body` во frameless окнах.
+
+**Ловушка 20 (v0.68.0)**: Dock остаётся видимым после удаления всех задач. `removePin()` вызывает `removeFromDock()` только если `item.inDock=true`, но dock мог быть показан ранее (через showDockEmpty). **ПРАВИЛО**: После КАЖДОГО удаления pin (removePin, pinWin.on('closed')) — вызывать `checkDockVisibility()` которая проверяет: есть ли хоть один `item.inDock=true` в `pinItems`? Если нет и `showDockEmpty=false` → `dockWin.hide()`.
+
+**Ловушка 19 (v0.67.1)**: Дубль иконки при наличии HTML-label + JS-текста. Если в HTML уже есть `<span class="timer-label">⏰</span>`, не добавлять ⏰ в JS при `timerRemaining.textContent = '\u23F0 ' + min + ':'...`. **ПРАВИЛО**: Декоративные иконки (⏰, 📌 и т.д.) размещать ТОЛЬКО в одном месте — либо в HTML label, либо в JS текст. Не дублировать.
+
+**Ловушка 18 (v0.66.1)**: `\uXXXX` и `\u{XXXXX}` — это **JavaScript** Unicode escape-последовательности. Они НЕ работают в HTML text content и атрибутах. HTML показывает их буквально как текст. **ПРАВИЛО**: В HTML-разметке (вне `<script>`) использовать ТОЛЬКО реальные UTF-8 символы (📌, ⏰, ×) или HTML entities (`&#x1F4CC;`). JS Unicode escapes допустимы ТОЛЬКО внутри `<script>` блоков.
+
+**Ловушка 17 (v0.65.0)**: `bText.textContent = fullText` в expandedByDefault удаляет ВСЕ дочерние элементы (`.msg-time`, `.pin-msg-btn`) и заменяет текстовым узлом. **ПРАВИЛО**: Вместо `el.textContent = text` обновлять конкретный span: `el.querySelector('.msg-text-content').textContent = text`. Если span не найден — fallback на textContent.
+
+**Ловушка 16 (v0.64.3)**: CSS-правило `.stacked-body span` перебивает `.msg-time` по specificity (0,3,1 > 0,1,0). Стэковые `.msg-time` становятся яркими 0.8, а host `.msg-time` остаётся 0.3. **ПРАВИЛО**: При стилизации `span`-потомков ВСЕГДА исключать `.msg-time` через `:not(.msg-time)`, чтобы время оставалось единообразным.
+
+**Ловушка 15 (v0.64.2)**: Цвет `.stacked-body` не обновляется при expanded. CSS `.notif-item.expanded .body-text` повышает `color` до `0.8`, но `.stacked-body` — отдельный класс, не потомок `.body-text`. **ПРАВИЛО**: При изменении стилей expanded для host-сообщения — ВСЕГДА проверить что аналогичные стили применяются и к `.stacked-body` и его `span`-потомкам.
+
+**Ловушка 14 (v0.64.0)**: Inline стили (из JS `el.style.cssText = '...'`) имеют приоритет над CSS-классами. В expanded mode `.msg-text-content` имеет inline `white-space:nowrap; overflow:hidden` → CSS `.notif-item.expanded .body-text .msg-text-content { white-space: pre-wrap }` НЕ работает. **ПРАВИЛО**: Использовать `!important` в CSS expanded для перебития inline стилей.
+
+**Ловушка 10 (v0.63.8)**: Тултип закрывается при попытке навести на иконку копирования. Причина: mouseout из текстового элемента → `hideTooltipFade()` срабатывает ДО того как мышь дойдёт до тултипа. **ПРАВИЛО**: НЕ скрывать тултип мгновенно при mouseout. Использовать `scheduleHide()` с задержкой 100мс + `cancelHide()` при mouseover на `.cc-tooltip`. Проверять `:hover` перед скрытием.
+
+**Ловушка 11 (v0.63.8)**: `body-text` с flex (время + текст) ломает expanded mode. При expand `white-space: pre-wrap` не работает с `display: flex`. **ПРАВИЛО**: `.notif-item.expanded .body-text` должен иметь `display: block !important`, а `.msg-text-content` внутри — `white-space: pre-wrap; overflow: visible`.
+
+**Ловушка 18 (v0.73.0→v0.73.6)**: Chromium Badge API (`navigator.setAppBadge`) вызывается из **Service Worker** мессенджеров. Chromium обрабатывает через C++ Mojo IPC: `BadgeManager::SetBadge()` → `Browser::SetBadgeCount()` → `ITaskbarList3::SetOverlayIcon` — **полностью минуя JS**. Никакие JS override, feature flags, `app.setBadgeCount` override, setInterval refresh **НЕ ПОМОГАЮТ**. **ПРАВИЛО**: Блокировать **Service Worker** в WebView: `navigator.serviceWorker.register = reject` + `getRegistrations().forEach(r.unregister())`. Без SW нет badge. Мессенджеры (Telegram, WhatsApp) — SPA, работают без SW. Блокировать в ДВУХ местах: monitor.preload.js (script tag injection, до скриптов мессенджера) и App.jsx executeJavaScript fallback.
+
+**Ловушка 40 (v0.77.2)**: blob: URL привязан к origin WebView. notification.html = другой BrowserWindow → blob не загрузится. **ПРАВИЛО**: Конвертировать blob→data:URL через canvas.toDataURL() ВНУТРИ WebView executeJavaScript, ПЕРЕД отправкой в handleNewMessage/ribbon.
+
+**Ловушка 41 (v0.77.4)**: VK MutationObserver ловит parent node ("Елена ДугинаТекст") И child node ("Текст") как ДВА сообщения. Тексты РАЗНЫЕ → точный дедуп не ловит. **ПРАВИЛО**: Дедуп по ПОДСТРОКЕ: `prevText.includes(newText) || newText.includes(prevText)` в пределах 5 сек. Также VK не использует Notification API — только MutationObserver.
+
+**Ловушка 102 (v0.87.38)** — ⛔⛔⛔ `contextBridge.exposeInMainWorld('video')` + `const video = ...` в HTML = SyntaxError**: Preload создаёт `window.video`. HTML `const video = ...` — конфликт → `SyntaxError: Identifier 'video' has already been declared` → ВЕСЬ JS крашится → ни кнопки, ни src, ни watchdog — ничего. 7 попыток починки шли мимо. **ПРАВИЛО**: имя в `exposeInMainWorld('NAME')` НИКОГДА не должно совпадать с переменной в `<script>`.
+
+**Ловушка 100 (v0.87.38)** — Preload в Electron BrowserWindow молча не загружается — и нет ошибок**: Если preload файл не загрузился (путь неверный, sandbox блокирует, формат несовместим) — BrowserWindow открывается НОРМАЛЬНО, HTML показывается, но `window.api` / `window.video` = undefined. Никаких ошибок в console. `contextBridge.exposeInMainWorld()` просто не вызвался. **ПРАВИЛО**: для окон где КРИТИЧНО чтобы контролы работали — использовать `titleBarStyle: 'hidden'` + `titleBarOverlay` (нативные кнопки Windows для close/min/max) вместо frameless + JS кнопок через preload. Нативные кнопки работают ВСЕГДА, независимо от preload. Кастомные кнопки (pin/pip) — через preload как бонус, с graceful degradation если не загрузился.
+
+**Ловушка 101 (v0.87.38)** — `new Date().getHours()` в Electron main-процессе может возвращать UTC вместо локального**: В логах время было 09:35 когда системное 14:35 (разница 5ч = UTC+5). `getHours()` в Node.js зависит от `TZ` env var. В Electron main-процессе TZ может быть не установлен или установлен неправильно. **ПРАВИЛО**: использовать `new Date().toLocaleString('sv-SE')` вместо ручного `getHours()/getMinutes()` — это ГАРАНТИРУЕТ локальное время.
+
+**Ловушка 98 (v0.87.38)** — `<video>` без src МОЛЧИТ — ни error, ни stalled, ни timeout**: Если `video.src` = пустая строка или не установлен → `readyState = 0`, `video.error = null`, никаких событий. Watchdog проверявший `readyState < 2` не различал «ещё грузится» от «src вообще не установлен». Результат: пользователь видит пустой плеер 0:00 без ошибок. **Правило**: watchdog для `<video>` должен ОТДЕЛЬНО проверять `!video.src || video.src === ''` как ошибку типа «источник не задан, проверьте передачу данных». Также: не полагаться на IPC для ПЕРВОНАЧАЛЬНОЙ передачи данных в новое BrowserWindow — использовать URL query params через `loadFile({query:...})` как гарантированный канал.
+
+**Ловушка 99 (v0.87.38)** — `tg:new-message` без дедупликации → React «two children with the same key»**: Telegram может доставить одно и то же сообщение через два пути: (1) `tg:messages` при загрузке чата, (2) `tg:new-message` real-time event. Если msg приходит почти одновременно — оба добавляются в массив → два элемента с одним id → React key collision → warning в логах для КАЖДОГО дубля. **Правило**: в handler `tg:new-message` ВСЕГДА проверять `existing.some(m => m.id === message.id)`. Если дубль — обновляем на месте (`map`), не добавляем в конец.
+
+**Ловушка 97 (v0.87.38)** — Custom protocol `cc-media://` НЕ работает для `<video src>` в BrowserWindow с file:// origin**: В главном renderer (Vite dev server, `http://localhost:5173`) custom protocol `cc-media://` работает для `<video>`, `<img>`, fetch. Но в **отдельном BrowserWindow** загруженном через `loadFile()` (origin = `file://`) — `<video src="cc-media://...">` молча не загружается. Пустой плеер с 0:00, без ошибок в console. Причина: Chromium в file:// режиме ограничивает cross-origin запросы к custom schemes. CSP `media-src cc-media:` не помогает. **Правило**: для `<video>/<audio>` в отдельных BrowserWindow'ах — конвертировать `cc-media://` URL обратно в `file:///` абсолютный путь (main знает userData через `app.getPath('userData')`). CSP должен включать `media-src file:`. Inline `<img>` с cc-media:// работает в обоих случаях — ограничение только для media-элементов со streaming (video/audio).
+
+**Ловушка 96 (v0.87.38)** — `ready-to-show` в Electron НЕ гарантирует что JS на странице выполнился**: `BrowserWindow` event `ready-to-show` срабатывает когда **первый paint готов**, но inline `<script>` может ещё не выполниться. Если main отправляет IPC через `webContents.send()` в `ready-to-show` callback → renderer JS listener (`ipcRenderer.on()`) ещё не зарегистрирован → событие **теряется в пустоту**. Симптом: окно открывается, но контент пустой (видео/фото/данные не пришли). **Правило**: для отправки данных в новое окно использовать `webContents.once('did-finish-load', () => { setTimeout(() => { send(...) }, 200) })`. `did-finish-load` гарантирует что DOM и `<script>` выполнены; 200мс buffer на случай async init. Это уже было зафиксировано в Ловушке 70 для autoRestoreSession — тот же паттерн.
+
+**Ловушка 94 (v0.87.38)** — `readFileSync` для больших видео блокирует main thread → `<video>` в BrowserWindow показывает пустой плеер**: В cc-media:// protocol handler я использовал `fs.readFileSync(filePath)` для ответа без Range. Для видео 50+ МБ это занимало 2-5 секунд. За это время Chromium считал что ответ «завис» → `<video>` показывал пустую полоску 0:00. **Правило**: в Electron `protocol.handle()` всегда использовать `fs.createReadStream()` → `ReadableStream` для ответов. Даже для маленьких файлов это безопаснее. Для `<video>` это КРИТИЧНО — первые байты (moov atom в mp4) нужны сразу для определения duration/кодека.
+
+**Ловушка 95 (v0.87.38)** — `tg:chats` handler ЗАМЕНЯЕТ массив → чаты с новыми сообщениями падают вниз**: При получении `tg:chats` event от сервера — весь массив чатов аккаунта заменялся свежим. Серверные `lastMessageTs` могли быть СТАРЕЕ чем локально обновлённые через `tg:new-message`. Результат: чат с только что полученным сообщением (top в UI) после прилёта tg:chats проваливался вниз списка. **Правило**: при merge серверных данных с локальными — всегда использовать `Math.max(server.ts, local.ts)` для timestamp-полей. Серверные данные авторитетны для `unreadCount`, но НЕ для порядка сортировки если UI уже знает о более свежем сообщении.
+
+**Ловушка 93 (v0.87.37)** — ⛔⛔⛔ КРИТИЧЕСКОЕ: `markAsRead(entity, maxId)` УСТАНАВЛИВАЕТ watermark, а НЕ увеличивает**: В MTProto `markAsRead` / `messages.ReadHistory` принимает `maxId` — это НЕ инкремент, а АБСОЛЮТНАЯ ПОЗИЦИЯ. Если отправить maxId=100, а ранее watermark был 150 → **сервер СБРАСЫВАЕТ watermark назад к 100** → все сообщения #101–#150 снова непрочитанные → `unreadCount` РАСТЁТ вместо уменьшения. Симптом у пользователя: «прочитал всё, отмотал назад — стало 50 непрочитанных». Это было самым разрушительным багом: IntersectionObserver видел старые сообщения при скролле вверх → readByVisibility → markRead с маленьким maxId → watermark сброс. **ПРАВИЛО**: НИКОГДА не вызывать `markAsRead` с maxId МЕНЬШЕ чем предыдущий отправленный. Хранить `Map<chatId, lastMaxId>` и проверять: `if (newMaxId < lastMax) → SKIP`. Делать на ДВУ УРОВНЯХ: (1) main-процесс (guard в IPC handler), (2) renderer (ref с maxEverSent). **Два уровня** потому что один может быть обойдён через timing/race. Регрессионный тест: открыть чат, markRead(100), markRead(50) → проверить что второй SKIP.
+
+**Ловушка 91 (v0.87.36)** — `position: absolute` кнопки внутри `overflow: auto` контейнера позиционируется относительно НАЧАЛА контента, а не окна**: В InboxMode кнопка `↓ scroll-to-bottom` была в scroll-div с `overflow-y: auto` + `position: relative`. При скролле кнопка **уезжает вместе с контентом** — её не видно. Причина: `position: absolute` берёт bounding box ближайшего relative-предка, но если этот предок сам скроллится — абсолютный элемент тоже скроллится. **Правило**: любые floating-кнопки (scroll-to-bottom, FAB, tooltip, tooltip-badge) должны быть **ВНЕ scrollable контейнера** — оборачивать scroll в relative-wrapper и класть кнопку в wrapper, не в scroll. Исключение: `position: sticky` работает внутри scroll но имеет другие ограничения (требует non-static ancestor chain без overflow hidden).
+
+**Ловушка 103 (v0.87.40 diagnostic)** — native-scroll баги нельзя расследовать только по `[tg]` логам**: Для нативного `ЦентрЧатов` Telegram API даёт сообщения и `unreadCount`, но позицию меняет renderer (`InboxMode`, `useInitialScroll`, `handleScroll`, media layout). Если в `chatcenter.log` есть только `[tg] emit tg:messages/unread-sync`, причину ухода чата вверх не видно. **Правило**: для scroll-багов смотреть строки `[native-scroll]`: `store-set-active-chat`, `chat-open`, `first-unread-calc`, `initial-*`, `top-threshold`, `load-older-*`, `button-scroll-*`, `user-scroll-intent`. Если после `initial-done` сразу идёт `top-threshold` и `load-older-trigger` без свежего `user-scroll-intent`, значит старые сообщения догрузились из-за программного/начального scroll, а не действия пользователя.
+
+**Ловушка 92 (v0.87.36)** — `let prevBounds` объявлен ПОСЛЕ первого использования в IPC handler → ReferenceError**: В `videoPlayerHandler.js` я писал `let prevBounds = null` перед `ipcMain.handle('video:toggle-pip')`, но раньше в `ipcMain.handle('video:open')` использовал `prevBounds = videoWindow.getBounds()` когда `pip=true`. При первом вызове с pip → ReferenceError temporal dead zone. **Правило**: любые `let/const` переменные общие для нескольких IPC handler'ов внутри одной `register...Handler()` функции объявлять в **самом начале** функции, до первого `ipcMain.handle()`. Javascript var hoists, let/const — нет. Закрытия внутри handler'ов замыкают правильно, но порядок инициализации важен при асинхронном вызове.
+
+**Ловушка 89 (v0.87.35)** — Счётчик unread в списке чатов может быть устаревшим для НЕактивных чатов**: Проблема: `tg:new-message` event приходит → локально инкрементим на 1. Но Telegram сервер считает иначе (группировка альбомов, forwards в канале умножают, edits не считаются и т.д.) → наш локальный счётчик расходится. Симптом: «в списке 14, открываю чат — становится 30». **Правило**: после каждого `tg:new-message` для не-активного чата запустить отложенный (600мс) `GetPeerDialogs` для ЭТОГО чата → эмит `tg:chat-unread-sync` с реальным значением. Debounce 3 сек на чат чтобы не перегрузить API при рассылке. Периодический rescan тоже полезен, но должен быть ≤15 сек (не 30+). И делать immediate rescan при старте приложения (через 1.5с после init).
+
+**Ловушка 90 (v0.87.35)** — Кнопка «↓» должна вести к непрочитанному, не только в низ**: Telegram Desktop / iOS / Android — все ведут себя так: кнопка плавающая ↓ в чате → если есть непрочитанные, скроллит к ПЕРВОМУ непрочитанному (подсветка чтобы было видно). Если всё прочитано → в самый низ. Также кнопка должна показываться **пока есть непрочитанные**, даже если юзер физически в самом низу scroll-контейнера (например, unread=0 ещё не синхронизировался с сервером). **Правило**: условие показа `!atBottom || unreadCount > 0`, логика клика: `firstUnreadIdRef ? scrollToElement : scrollToBottom`. Бейдж показывает actual `unreadCount` приоритет, иначе `newBelow` счётчик добавленных новых.
+
+**Ловушка 87 (v0.87.34)** — IntersectionObserver threshold 0.5 не срабатывает для коротких bubble**: IntersectionObserver с threshold 0.5 требует чтобы 50% элемента пересекло viewport. Для коротких msg (1-2 строки, высота 30-40px в чате 600px viewport) это часто не случается на быстром скролле. Симптом пользователя: «пролистал чат, счётчик unread не уменьшился». **Правило**: для read-tracking использовать `threshold: 0.15` (15% — достаточно чтобы считать прочитанным) + ДОПОЛНИТЕЛЬНЫЙ «force markRead» путь когда юзер физически в самом низу чата (atBottom=true). Два независимых пути защиты > один точный.
+
+**Ловушка 88 (v0.87.34)** — Без HTTP Range в cc-media:// `<video>` качает ВСЁ перед игрой**: Custom protocol в Electron по умолчанию не поддерживает Range requests. Browser `<video>` тогда качает весь файл одним запросом и начинает играть только после этого → пауза 10-30 секунд перед началом. Также невозможно перемотать вперёд без скачивания всех байт до этой точки. **Фикс**: в `protocol.registerSchemesAsPrivileged` добавить `stream: true`, в `protocol.handle` парсить `req.headers.get('range')`, отдавать `206 Partial Content` с `Content-Range`, `Accept-Ranges: bytes`, и правильный `Content-Type` (video/mp4 и т.д.). Использовать `fs.createReadStream(path, {start, end})` как ReadableStream. Без этого streaming работать не будет.
+
+**Ловушка 85 (v0.87.33)** — В MTProto альбом = N отдельных messages, счётчик unread считает каждое**: Сервер Telegram увеличивает `unreadCount` на N при получении альбома из N фото (это N сообщений с общим `groupedId`). Локально в UI мы показываем это как ОДНУ карточку `AlbumBubble`. Если помечать прочитанным только `firstMsg` — локальный unread уменьшается на 1, а server всё ещё хочет N (при GetPeerDialogs придёт обратно большой unread). Симптом: «листаю вниз — счётчик не меняется». **Правило**: в IntersectionObserver для AlbumBubble вызывать `onVisible(m)` **для КАЖДОГО msg в альбоме**, не только firstMsg. Так же mark-read отправляет maxId который должен покрывать ПОСЛЕДНИЙ msg альбома. Регрессионный тест в `MediaAlbum.vitest.jsx` проверяет что `onVisible.mock.calls.length === album.msgs.length`.
+
+**Ловушка 86 (v0.87.33)** — Для video в превью нельзя использовать `thumb=false` (качается полное видео 50-500 МБ)**: В GramJS `client.downloadMedia(msg, {})` с пустыми options для video качает **весь файл**. Для фото (`MessageMediaPhoto`) это ~300-700 КБ (OK). Для видео (`MessageMediaDocument` video/mp4) это полный файл. GramJS либо таймаутится, либо параллельно висит 5-10 запросов по 50МБ → очередь забита. Симптом: stripped thumb видно (placeholder), full не приходит. **Правило**: для video ВСЕГДА использовать `thumb=true` при превью в ленте (GramJS берёт постер ~20-80 КБ). Полное видео — только по явному действию (download кнопка, PhotoViewer) с прогресс-индикатором.
+
+**Ловушка 84 (v0.87.32)** — Snapshot-тесты с датой/временем зависят от TZ машины → CI падает**: В v0.87.31 я сделал 6 snapshot-тестов компонентов. Они содержат `toLocaleTimeString('ru', ...)` рендер — `19:33` (моя Windows машина), но на GitHub Actions (ubuntu-latest UTC) снимок содержит другое время. CI падал с «Snapshot mismatched: Expected "00:33" / Received "19:33"». **Правило**: при snapshot-тестировании React-компонентов, которые форматируют дату/время через `toLocale...` — всегда использовать setup-файл vitest который **форсит UTC**: переопределить `Date.prototype.toLocaleTimeString/DateString/String` чтобы добавлять `timeZone: 'UTC'` к опциям. Пример: [vitest.setup.js](vitest.setup.js) + `setupFiles: ['./vitest.setup.js']` в `vitest.config.mjs`. Альтернатива — использовать `vi.setSystemTime(new Date('2024-01-01T00:00:00Z'))` + фиксированный rendered-текст. НЕ полагаться на `process.env.TZ = 'UTC'` — Node кэширует timezone при старте. **Также**: после добавления setup — переcохранить все snapshots (`rm -rf __snapshots__ && vitest run`).
+
+**Ловушка 83 (v0.87.30)** — Статические `.cjs` тесты НЕ ЛОВЯТ runtime-ошибки JSX (TDZ, порядок hooks, битые импорты)**: У нас 27 статических `.test.cjs` тестов (парсят файлы как текст, ищут паттерны). НО они **не выполняют JSX**, значит не ловят: (1) `ReferenceError: Cannot access 'X' before initialization` (TDZ при использовании const/let до объявления); (2) «Rendered more hooks than during the previous render» (порядок React hooks); (3) битые импорты; (4) undefined в render-time; (5) infinite loops в useEffect. В v0.87.29 пользователь получил TDZ-ошибку — статический тест прошёл ✅, а приложение падало ❌. **Фикс**: каждый крупный React-компонент должен иметь `<name>.vitest.jsx` файл с render-smoke тестами через `@testing-library/react` + happy-dom. Моки: `window.api`, `IntersectionObserver`, `ResizeObserver` (их нет в happy-dom). Включены в `vitest run` который часть `npm test`. Пример: [InboxMode.vitest.jsx](src/native/modes/InboxMode.vitest.jsx) — 6 сценариев (пустой/194 чата/актив/unread/album/link). **ПРАВИЛО**: если добавил/переработал компонент > 100 строк — обязательно vitest render-тест на разных состояниях. Не полагайся на grep-тесты для ловли runtime-багов.
+
+**Ловушка 82 (v0.87.28)** — React-overlay ≠ «модальное окно, которое передвигается и закрепляется**: В v0.87.27 сделал PhotoViewer как React-компонент с `position: fixed, inset: 0` и кнопкой 📌 которая шлёт `window:set-always-on-top` у **главного** окна (что делало всё приложение поверх других окон — не то что ожидалось). Пользователь сказал «делается на весь экран, а я просил отдельное модальное окно». **ПРАВИЛО**: когда юзер говорит «отдельное окно, которое можно передвигать/увеличивать/закреплять» — это **BrowserWindow** в Electron, не React-overlay. Признаки которые должны заставить выбирать BrowserWindow: «перетаскивать», «изменять размер», «поверх окон», «отдельно от главного приложения», «открепить». Overlay подходит только когда: клик по фону закрывает, нельзя уйти от главного окна, размер = viewport. **Фикс**: отдельный BrowserWindow (frameless, resizable, movable) + собственный HTML + preload. IPC для управления именно этим окном (`photo:toggle-pin` а не глобальный `window:set-always-on-top`).
+
+**Ловушка 80 (v0.87.26)** — Накапливание параллельных таймеров из пересоздаваемых inline-функций**: В `InboxMode.jsx` была `readByVisibility._timer` — property на функции, объявленной внутри тела React-компонента. При каждом рендере создаётся НОВАЯ функция с новым скрытым `_timer`. Старый таймер из предыдущего рендера продолжает тикать, срабатывает, вызывает `store.markRead(chatId, maxId, count)` — но `count` в момент срабатывания может быть 0 (batch уже сброшен из другой копии). А `markRead` с `localRead=0` в `nativeStore.js` был `newUnread = 0` (полный сброс). Симптом: счётчик непрочитанных сбрасывался в 0 раньше чем ожидалось. **Фикс**: вместо `fn._prop` использовать `useRef(null)` — один и тот же ref между рендерами. Плюс отдельный `batchRef` для debounce-окна (сбрасываемый в timer callback) + `seenRef` общий (все id что когда-либо видели в этой сессии чата). Ещё guard: `if (count === 0) return` чтобы пустой batch не дёргал сервер. **ПРАВИЛО**: debounce-таймеры, timers, cache Maps — всё это требует `useRef` в React-компонентах. `fn._prop` работает только в top-level функциях, которые создаются один раз.
+
+**Ловушка 81 (v0.87.26)** — `getDialogs({limit:N})` без пагинации в rescan**: `startUnreadRescan` брал `limit: 50`, `tg:rescan-unread` — 100. У юзеров с 200+ чатов все чаты вне первой страницы **никогда не синхронизировались** — их `unreadCount` оставался устаревшим навсегда. Симптом: новое сообщение в старом чате приходит раз в час, unread=1 навсегда даже если пользователь его прочитал на телефоне. **Фикс**: `fetchAllUnreadUpdates()` с циклом пагинации `{offsetDate, offsetId, offsetPeer}` от последнего элемента предыдущей страницы. До 5 страниц × 100 = 500 чатов. **ПРАВИЛО**: аналогично Ловушке 69 — любой rescan/sync, который должен покрывать ВСЕ чаты, обязан пагинировать. Однократный `limit: N` работает ТОЛЬКО на сбор первой страницы при старте.
+
+**Ловушка 79 (v0.87.25)**: ⛔ **CommonJS-пакеты в ESM-проекте: named imports молча ломаются в runtime, не падают на статике**. В v0.87.24 написал `import { Helpers } from 'telegram'` (хотел `strippedPhotoToJpg` из `Helpers`). Пакет `telegram` (GramJS) — **CommonJS**, у него `module.exports = { Api, TelegramClient, ... }` без `Helpers`. Vite сборка прошла ✅, vitest прошёл ✅, eslint прошёл ✅ — НИ ОДИН из 400+ тестов не проверял **runtime-загрузку main/**. Приложение падало на старте: `Named export 'Helpers' not found. The requested module 'telegram' is a CommonJS module`. **Почему не ловят обычные тесты**: (1) vitest работает на **renderer** (src/), не трогает main/; (2) eslint — только синтаксис, не разрешает модули; (3) electron-vite build не проверяет **existance** named exports в CJS-deps, только сам компилит; (4) esbuild в dev-режиме преобразует `import { X }` в `const { X } = require(...)` — **это именно runtime-проверка**, а не compile-time. **Фикс**: `import { strippedPhotoToJpg } from 'telegram/Utils.js'` — прямой путь к подмодулю GramJS, где функция **реально** экспортирована. **НОВЫЙ ТЕСТ**: `src/__tests__/mainImports.test.cjs` статически парсит `main/**/*.{js,cjs,mjs}` на `import { X, Y } from 'pkg'` для пакетов `['telegram', 'baileys', 'vk-io', 'input']`, делает `require(pkg)` и проверяет что каждое имя **реально** есть в `module.exports` или `module.exports.default`. Включён в `npm test`. **ПРАВИЛО**: любой тест-набор для Electron-проекта должен иметь **runtime-import check** для main-процесса, а не только синтаксический lint. Особенно опасны пакеты-мосты GramJS/Baileys/Discord.js — они CommonJS, имеют внутренний re-export который не виден снаружи. Симптом-маркер: «название пакета» и «named export которого нет в package.json exports поля». При сомнениях — использовать `import pkg from 'pkg'; const { X } = pkg` или прямой путь `pkg/path/to/module.js`.
+
+**Ловушка 78 (v0.87.20)**: ⛔ **В Electron dev-режиме `file://` URL в `<img>` не работают — Chromium блокирует смешанные протоколы**. В dev Vite отдаёт UI по `http://localhost:5173`, а наши аватарки/медиа лежат на диске → `<img src="file://...">`. Chromium применяет **mixed-content policy**: file в http контексте — silent block. Нет ошибок в console. Главное коварство — в логах main `download-media: OK, size=278553`, а в UI пустота. **ПРОБОВАЛИ и НЕ ПОМОГЛО**: (1) encodeURI — URL корректный, но блок идёт уровнем выше; (2) CSP `img-src 'self' file:` — CSP разрешает, но Chromium всё равно блокирует из-за mixed-content. **ПРАВИЛЬНОЕ решение** ([electronjs.org/docs/latest/api/protocol](https://www.electronjs.org/docs/latest/api/protocol)): custom protocol `cc-media://` через `protocol.registerSchemesAsPrivileged` + `protocol.handle`. Отдаёт файлы с правильным Content-Type. Protocol считается secure → работает из http-контекста. **ПРАВИЛО**: в Electron для доступа к локальным файлам из renderer **всегда** custom protocol, не file://. Исключение — prod build где index.html тоже грузится с file://.
+
+**Ловушка 77 (v0.87.19)**: ⛔ **messages.ReadHistory vs channels.ReadHistory** — MTProto **две разные RPC** для mark-read. Я использовал `client.invoke(Api.messages.ReadHistory { peer, maxId })` для всех типов чатов. Для user/chat работает, но **для каналов возвращает `400: PEER_ID_INVALID`**. В логах: `mark-read error: 400: PEER_ID_INVALID (caused by messages.ReadHistory)`. По документации [core.telegram.org/method/channels.readHistory](https://core.telegram.org/method/channels.readHistory) — для каналов отдельный метод. **Фикс**: использовать `client.markAsRead(entity, maxId)` — GramJS сам выбирает нужный RPC. Fallback: явный `channels.ReadHistory` если `entity.className === 'InputPeerChannel'`. **ПРАВИЛО**: в MTProto каналы часто имеют отдельные методы (getMessages → channels.getMessages, readHistory → channels.readHistory). Использовать высокоуровневый GramJS API а не raw invoke — он разруливает.
+
+**Ловушка 76 (v0.87.19)**: ⛔ **CSP `default-src 'self'` блокирует file:// для `<img>`**. В `index.html` была строгая CSP: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'`. Блокировал `<img src="file://.../photo.jpg">`. Chromium молча НЕ рендерит — никаких console.error. В логах main-процесса `download-media: OK size=249531` — файлы скачивались, но в UI не показывались. **Фикс**: `img-src 'self' file: blob: data: https: http:; media-src 'self' file: blob:; default-src 'self' file: blob: data:`. **ПРАВИЛО**: в Electron приложениях с кэшем на диске (аватарки, медиа, temporary files) всегда явно разрешать `file:` в CSP для `img-src` и `media-src`. Без этого Chromium молча отказывает — **никаких ошибок в логах**, только пустое место в UI. Очень коварный баг.
+
+**Ловушка 75 (v0.87.18)**: ⛔ **Жёсткие slice(0, N) лимиты забываются и дают молчаливые баги**. В v0.87.11 я поставил `loadAvatarsAsync(firstPage.slice(0, 50))` чтобы не грузить слишком много аватарок при отладке. Забыл убрать. У пользователя с 194 чатами аватарки были только у первых 50. В логах видно `total=50 hasPhoto=44 noPhoto=6` — много раз подряд одинаковое total=50 при разных размерах firstPage. Тесты не ловят — это runtime-поведение с реальным Telegram. **ПРАВИЛО**: любой `.slice(0, N)` или `.limit = N` в production коде требует **комментарий** `// LIMIT: 50 для производительности — NNN чатов грузятся за MMMms` или он будет забыт. Либо делать через конфиг с осмысленным именем.
+
+**Ловушка 74 (v0.87.17)**: ⛔ **`prompt()` и `alert()` в Electron renderer ненадёжны** — могут не открываться в зависимости от версии Electron / настроек окна. Вместо них **всегда делать кастомные React-модалки**. В v0.87.16 я использовал `prompt('название чата')` для forward — у пользователя клик по кнопке ➥ не давал реакции (prompt не открывался). Также `alert()` для сообщения об ошибке — теряется контекст, выглядит непрофессионально. **Фикс**: (1) ForwardPicker React-модалка с поиском и аватарками; (2) Toast через `.native-toast` класс с анимацией slide-in справа, типы info/success/error. **ПРАВИЛО**: в native-режиме НЕ использовать `alert/prompt/confirm` вообще — только свои UI-компоненты. Для confirm — отдельный небольшой компонент `ConfirmDialog`.
+
+**Ловушка 73 (v0.87.16)**: ⛔ **mark-read должен быть по видимости сообщений, не auto при открытии**. В v0.87.15 я делал `store.markRead(chatId)` сразу при `setActiveChat` — все непрочитанные сбрасывались одним махом. Пользователь просил «счётчик по мере прочитывания». **Правильно**: IntersectionObserver на каждый MessageBubble, threshold 0.5. При попадании в viewport → `onVisible(m)` → обновляем lastReadId + debounced 2 сек `markRead(chatId, maxId, 1)`. Счётчик в списке уменьшается `unreadCount -= 1` за каждое видимое сообщение. Отдельный IPC `tg:mark-read { chatId, maxId }` → `client.invoke(messages.ReadHistory { peer, maxId })`. **ПРАВИЛО**: read-receipt в чате должен отражать фактическое прочитывание, не программный «клик открыл чат».
+
+**Ловушка 72 (v0.87.14)**: ⛔ **file:// URL с кириллицей требует encodeURI()**. В v0.87.11 добавили загрузку аватарок в `%APPDATA%/ЦентрЧатов/tg-avatars/*.jpg`. Файлы писались на диск (44 штуки), но в UI **не показывались** — `<div style="background: url('file:///C:/Users/Директор/AppData/Roaming/ЦентрЧатов/...')">` не загружается в Chromium рендере из-за некодированных кириллических символов в пути. **Симптом**: аватарки есть в файловой системе, но в списке чатов цветные круги с инициалами. Нет ошибок в логах — Chromium просто молча игнорирует невалидный URL. **Фикс**: `encodeURI(avatarPath.replace(/\\/g, '/'))` перед `file:///`. **ПРАВИЛО**: для любого `file://` URL в HTML/CSS из Electron всегда применять `encodeURI()`. Особенно критично в русских системах где `%APPDATA%` содержит кириллицу (имя пользователя). Лучше сразу писать helper `toFileUrl(path)` и использовать везде.
+
+**Ловушка 71 (v0.87.13)**: ⛔ **Окно логов — отдельный HTML, не React**. В v0.87.10 добавил фильтр `⚡ Native` в `src/components/LogModal.jsx`. Но окно логов открывается через `openLogViewer()` в `main/utils/trayManager.js` — это **отдельный `BrowserWindow`** который грузит `main/log-viewer.html` (vanilla HTML+JS, без React). Мой React-фикс НЕ применялся. **Симптом**: пользователь видит старое окно без кнопки Native. **Фикс**: редактировать `main/log-viewer.html` напрямую. **ПРАВИЛО**: в проекте ДВА пути отображения логов: (1) `LogModal.jsx` — React-модалка внутри главного окна; (2) `log-viewer.html` — отдельное окно через трей. Изменения в одном НЕ применяются ко второму автоматически. Делать в обоих.
+
+**Ловушка 70 (v0.87.12)**: ⛔ **autoRestoreSession эмитит events до готовности renderer**. В v0.87.4 Ловушка 65 исправила `mainWindow=null`, но осталась вторая волна — `mainWindow` есть, но `webContents.isLoading()=true`, React-бандл ещё грузится, подписки на IPC events не установлены. `emit('tg:account-update')` теряется в пустоту. **Симптом**: session-файл `tg-session.txt` есть на диске, в логах `restoring session` успешно, но UI показывает «Нет подключённых аккаунтов». **Фикс**: перед `autoRestoreSession()` делать цикл `setTimeout(startRestore, 500)` + `win.webContents.once('did-finish-load', ...)` + дополнительно 500мс задержки (чтобы React useEffect успел сработать). **ПРАВИЛО**: для всех background tasks, эмитящих events при старте (не ожидающих ipcMain.handle запроса от renderer), нужна проверка готовности renderer: не только `mainWindow !== null`, но и `!webContents.isLoading()`. Альтернатива — renderer сам запрашивает `invoke('tg:get-state')` после монтирования и получает текущий статус синхронно.
+
+**Ловушка 69 (v0.87.11)**: ⛔ **`client.getDialogs({ limit: 100 })` без пагинации — теряет 90% чатов**. У активного пользователя сотни чатов, одна страница API возвращает только первые ~100. В v0.87.3 эта ошибка была — у пользователя видно было только верхние несколько. **Фикс**: цикл пагинации с `offsetDate/offsetId/offsetPeer` от последнего элемента предыдущей страницы, стоп на `page.length < PAGE_SIZE` или после 20 итераций. **ПРАВИЛО**: любой `get*` API Telegram (getDialogs, getMessages, getHistory, getContacts) в production **всегда пагинировать** — без лимита сверху это не списки, а генераторы страниц. Для аватарок чатов — **асинхронно**, не блокировать основной запрос.
+
+**Ловушка 68 (v0.87.10)**: ⛔ **Optimistic state блокирует server state**. В v0.87.5 я ввёл `optimisticStep='code'` чтобы UI мгновенно переключался при клике «Получить код» (не ждать GramJS 5-15 сек). Логика: `step = optimisticStep || serverStep`. Когда GramJS дальше эмитил `step=password` (нужен 2FA) — UI **продолжал показывать code** потому что optimistic перебивал. **Симптом**: ввёл код → "Проверка..." висит вечно. В логах сервер кричит `emit step=password`, но рендер не обновляется. **Фикс**: список приоритетов `SERVER_PRIORITY = ['phone', 'code', 'password', 'success']`. Server step берётся если он **продвинутее** optimistic. Optimistic используется только для phone→code (когда сервер ещё ничего не сказал). **ПРАВИЛО**: при использовании optimistic UI всегда продумывать как server state перебивает локальный, иначе UI зависает в промежуточном состоянии. Аналогично в любых async-flows с server-driven state: TanStack Query, Redux, Zustand — server должен выигрывать когда он "правее" по flow.
+
+**Ловушка 67 (v0.87.9)**: ⛔ **Не все "ошибки" GramJS — фатальные. SESSION_PASSWORD_NEEDED / PHONE_CODE_INVALID / PASSWORD_HASH_INVALID — это штатные сигналы**, GramJS сам продолжит flow и вызовет callback. В v0.87.8 я добавил `client.disconnect() + destroy()` на ЛЮБУЮ ошибку (чтобы остановить FLOOD_WAIT retry из Ловушки 66) — но это **убило client на 2FA-сигнале**: GramJS хотел вызвать `password: async () => askPassword()`, но client уже мёртв → UI висит вечно на "Проверка...". **Фикс**: разделить ошибки на recoverable (не трогать client) и fatal (остановить). **Recoverable** (regex): `SESSION_PASSWORD_NEEDED`, `PHONE_CODE_INVALID`, `PASSWORD_HASH_INVALID`, `PHONE_CODE_EMPTY`. **Fatal**: `FLOOD_WAIT`, `PHONE_NUMBER_INVALID`, `PHONE_NUMBER_BANNED`, `USER_DEACTIVATED`, network errors. Также `.catch()` отдельно обрабатывает `SESSION_PASSWORD_NEEDED` как exception (в некоторых версиях GramJS так) — эмулируем `emit step=password`. **ПРАВИЛО**: перед `client.disconnect()` всегда проверять ТИП ошибки. «Защита от флуда» из Ловушки 66 не должна ломать нормальный flow.
+
+**Ловушка 66 (v0.87.8)**: ⛔ **GramJS `client.start()` автоматически повторяет auth.SendCode при ошибках — мы САМИ флудим Telegram**. В v0.87.7 при первом FLOOD_WAIT (168 сек) GramJS повторял `phoneNumber: async () => phone` несколько раз **в секунду**. Каждый повтор → новый `auth.SendCode` → новый FLOOD_WAIT → лимит нарастает. За минуту сотни попыток. **Логи v0.87.7**: `client asked phoneNumber → onError wait 168 → client asked phoneNumber → onError wait 167 → ...`. **Причина**: `client.start()` имеет встроенный retry. `onError` callback показывает ошибку, но **не останавливает сам client**. **Фикс**: в `onError` после emit ошибки — **обязательно** `client.disconnect() + client.destroy() + client = null + pendingLogin = null`. Это разрывает retry-цикл. **ПРАВИЛО**: при любой серьёзной ошибке GramJS (FLOOD, PHONE_INVALID, AUTH_KEY) — останавливать client явно, не полагаться на автоматическое прекращение. **Для UI**: извлекать `waitSeconds` из ошибки и показывать live countdown через `setInterval`, блокировать кнопку «Получить код» пока countdown > 0.
+
+**Ловушка 65 (v0.87.4)**: ⛔ **Init handlers ДО создания mainWindow → emit() в никуда**. В v0.87.3 `initTelegramHandler({ mainWindow })` вызывался в `app.whenReady` ДО `createWindowFromManager`. В этот момент `mainWindow = null`. Handler сохранял `mainWindowRef = null` → все последующие `win.webContents.send(...)` молча не срабатывали → UI никогда не получал события. **Симптом для пользователя**: кнопка нажата → ничего не происходит. Второй клик → "уже в процессе" (pendingLogin установлен). **Фикс**: (1) перенести вызов `initTelegramHandler` ПОСЛЕ `createWindowFromManager`; (2) передавать **функцию** `getMainWindow: () => mainWindow` вместо прямой ссылки — даёт актуальный объект в момент emit. **ПРАВИЛО**: любой handler который шлёт события в окно через `win.webContents.send` ДОЛЖЕН получать окно через геттер, НЕ через прямую переменную. В момент init окна может не быть. Аналогичная проблема уже встречалась у dockPinHandlers (там используется `getMainWindow: () => mainWindow` — пример как правильно).
+
+**Ловушка 64 АБСОЛЮТНЫЙ ФИНАЛ (v0.86.10) — проблема НЕ в нашем коде, проблема в Telegram Web K**:
+
+После 5 итераций (v0.86.5–v0.86.9) и всех попыток пользователь установил: **чёрный экран возникает для чата, содержащего только файл без текстового сообщения** (чистое вложение). Это **внутренний баг Telegram Web K**, не наш. Код клиентского рендеринга не может восстановиться после rejection `peer changed` именно при таких чатах.
+
+**Что НИКАК не работает — полный список v0.86.5–v0.86.9 (все отмечены ❌, все удалены из кода)**:
+
+1. ❌ `window.dispatchEvent(new Event('resize'))` (v0.86.5) — Telegram использует `ResizeObserver`, а не `window.onresize`
+2. ❌ `document.body.style.minHeight='100vh'` (v0.86.5) — body уже такого размера
+3. ❌ Warm-up с `dispatchEvent(resize)` (v0.86.7) — тот же бесполезный синтетический event
+4. ❌ Удаление `Partitions/custom_*/` с пересозданием сессии через QR — проблема не в данных IndexedDB
+5. ❌ Переключение URL `/k/` ↔ `/a/` — у обеих Telegram вкладок URL одинаковый
+6. ❌ `reloadIgnoringCache()` (v0.86.8) — URL с hash остаётся → гонка повторяется
+7. ❌ Физический resize родителя WebView `parent.style.width = (clientWidth-1)+'px'` + `requestAnimationFrame` (v0.86.8) — сам Telegram прерывает рендер из-за rejection, никакой resize не лечит
+8. ❌ `el.loadURL(currentUrl.split('#')[0])` — загрузка без hash (v0.86.9) — не помогло для чатов с чистыми файлами
+9. ❌ Отключение `disable-gpu-compositing` — не пробовали системно, но не имеет отношения к race
+
+**Что работает из всего этого**: НИЧЕГО из клиентских JS-трюков. Проблема на уровне внутренней логики Telegram K, доступа к которой у нас нет.
+
+**РЕАЛЬНОЕ РЕШЕНИЕ (на будущее)**: подключить Telegram через нативный MTProto клиент (gramjs или telegram-client для Node.js) параллельно WebView — читать чаты и отправлять сообщения через API Telegram, минуя Web K. Аналог предложенного для WhatsApp Baileys. См. features.md v0.86.10.
+
+**ПРАВИЛО**: если симптом чёрного экрана в чате с вложением без текста — это Telegram Web bug, не трогать клиентский код. Документировать и искать другой канал данных.
+
+**Историческая справка — v0.86.9 попытка**: ✅ **`peer-changed` race в Telegram Web K при URL с hash**.
+
+**Доказательство** (лог v0.86.8 после auto-reload): `probe[err]: rej|peer changed` + `column-center=0x0`. Ошибка идёт **изнутри самого Telegram Web K** как unhandled promise rejection.
+
+**Механика**: WebView сохраняет URL с hash вида `#@LynxDAS`. При каждой загрузке/reload Telegram парсит hash → пытается открыть этот peer → отправляет сетевой запрос → но peer-state ещё инициализируется → гонка → его внутренний Promise отклоняется с reason `peer changed` → код рендера column-center прерывается → остаётся 0×0.
+
+**Почему стандартная Telegram БНК работает**: первая загрузка идёт по чистому URL `web.telegram.org/k/` без hash → нет попытки открыть peer → нет race → column-center нормально рендерится. Hash появляется ТОЛЬКО после первого клика на чат, и к этому моменту Telegram уже в desktop-layout.
+
+**Фикс**: при auto-recovery `loadURL(currentUrl.split('#')[0])` — грузим без hash. Telegram открывается «голым», пользователь сам кликает нужный чат после восстановления.
+
+⛔ **Что НЕ сработало для Telegram Web K layout lock-in**:
+
+1. ❌ **`window.dispatchEvent(new Event('resize'))`** (v0.86.5) — Telegram Web K игнорирует синтетические resize-события, потому что использует `ResizeObserver` на реальных DOM-элементах, а не `window.onresize`. ResizeObserver реагирует только на **реальное** изменение размера. Доказательство в логе v0.86.7: после активации probe ещё раз показал `column-center=0x0`.
+2. ❌ **`document.body.style.minHeight='100vh'`** (v0.86.5) — не помогло, потому что body размер и так 100vh.
+3. ❌ **Warm-up перебор вкладок при старте** (v0.86.7) — не помогает для кастомных Telega, потому что прогрев использовал тот же бесполезный `dispatchEvent(resize)`.
+4. ❌ **Удаление partition `custom_*`** — не помогло, проблема не в данных IndexedDB.
+5. ❌ **Переключение URL `/k/` ↔ `/a/`** — у стандартной и кастомной Telega URL одинаковый.
+6. ❌ **`reloadIgnoringCache()`** (v0.86.8) — после reload URL остаётся с тем же hash → та же `peer-changed` гонка → 0×0 повторяется. Доказательство: `recover: column-center 0x0 даже после reload`.
+7. ❌ **Физический resize родителя WebView** (v0.86.8) — сам по себе не лечит peer-changed race, потому что проблема не в layout, а в том что Telegram прервал рендер из-за rejection.
+
+✅ **Что сработало (v0.86.8)**:
+
+- **Физический resize родителя WebView**: `parent.style.width = (clientWidth - 1) + 'px'` → через 2× `requestAnimationFrame` возвращаем. ResizeObserver Telegram реально видит изменение → пересчитывает layout.
+- **Auto-recovery через reload**: если через 2 сек после активации `#column-center.getBoundingClientRect() === 0×0` → однократный `reloadIgnoringCache()`. Flag-карта не даёт зациклить.
+
+**ПРАВИЛО**: для адаптивных SPA с ResizeObserver **синтетические resize-события бесполезны**. Нужен **реальный** delta по пикселям. Если не помогло — только полный reload WebView.
+
+**Ловушка 64 (v0.86.5 — исходная)**: ⛔ **Чёрный экран Telegram Web в кастомной partition** — layout lock-in адаптивного SPA при инициализации «в фоне». **Симптом**: в кастомной вкладке Telega (любая partition `custom_*`) при клике на чат вся правая область чёрная, стандартный Telegram БНК работает. **Что пробовали и не помогло**: (1) удаление `Partitions/custom_*/` и пересоздание сессии через QR-скан — не помогло (значит не данные); (2) переключение URL `/k/` ↔ `/a/` — URL был одинаковый у обеих вкладок. **Диагностика**: добавили `dom-probe` через `executeJavaScript` — 12 полей. **Доказательство**: `probe[column-center]: size=0x0 disp=flex`, `probe[bubbles]: size=0x0 disp=none n=28`. DOM целый (1554 элементов, 28 пузырьков, 9 canvas), `body.bg=rgb(24,24,24)` нормальный, `webgl=ok`, `err=none`, `readyState=complete`. **Правая колонка Telegram схлопнута в 0×0 пикселей**. **Причина**: Telegram Web K имеет **адаптивный layout** — при ширине ≤ ~600px уходит в **mobile-режим** где chat и sidebar показываются по очереди. Когда WebView инициализируется в неактивной вкладке (у нас: `zIndex:0, pointerEvents:none`), Telegram через `ResizeObserver` читает некорректный/нулевой первичный размер → фиксирует mobile-layout. После активации вкладки **window размер не меняется** (1200×704 всё время), resize event не срабатывает → Telegram остаётся в состоянии "mobile, chat закрыт" → column-center 0×0 → чёрный экран. Стандартный Telegram работает потому что активируется **первым** при старте → получает правильный размер сразу. **Фикс**: `useEffect` на `activeId` в App.jsx — при смене вкладки шлём `window.dispatchEvent(new Event('resize'))` в WebView через `executeJavaScript`. Три повтора (0/150/500ms) чтобы поймать готовность Telegram. **ПРАВИЛО**: любой адаптивный SPA (Telegram K/A, возможно другие) при инициализации «невидимым» в Electron `<webview>` может зафиксировать mobile-layout. Лечение — форсировать resize event при смене `activeId`. **Не путать с Ловушкой 55**: там GPU-compositing loss (фон становится чёрный из-за потери GPU-контекста), фикс — `disable-gpu-compositing`. Здесь — layout lock-in, лечится через resize event. Оба фикса нужны одновременно.
+
+**Ловушка 62 ОБНОВЛЕНО (v0.86.4 ШАГ 1 — частичный успех)**: после применения фильтра `textContent === data-icon`:
+- ✅ `status-dblcheck` — исчез из ribbon (у него `<span data-icon="status-dblcheck">` на родителе → совпадение сработало).
+- ❌ `ic-expand-more` — **всё ещё проходит**. Причина: у этого SVG **нет** атрибута `data-icon` на предке. Структура: `<span><svg><title>ic-expand-more</title></svg></span>` — `closest('[data-icon]')` возвращает `null`, условие не срабатывает.
+- ✅ Реальные сообщения (`Свы`, `Дда`, `Цуч`) проходят корректно.
+
+**Шаг 1b (следующий)**: дополнить фильтр проверкой `if (sp.querySelector('svg')) continue` — любой span с SVG-потомком это иконка, пропускаем. Покрывает остаток SVG-фантомов без `data-icon`.
+
+**Оригинальная находка** (используется в Шаге 1): Фантомы `status-dblcheck`, `ic-expand-more`, `default-user` — это **SVG `<title>` элементы** внутри `<span data-icon="NAME">`. `span.textContent` возвращает содержимое `<title>` = имя иконки. **Фикс**: в цикле sidebar watcher — `var iconName = sp.closest('[data-icon]')?.getAttribute('data-icon'); if (iconName && text === iconName) continue`. Точечный, не ломает язык, отсекает по доказанному сигналу из лога (span `dataIcon:"stat..."` + textContent="status-dblcheck"). **ПРАВИЛО**: при парсинге preview sidebar — если textContent span-а буквально совпадает с именем SVG-иконки в родителе, игнорировать (это не пользовательский текст). Шаг 2 плана — убедиться что Notification API+sidebar покрывают открытый чат после этого фикса. Если нет — Шаг 3: добавить `#main` watcher на `.message-in` с дедупом по `data-id`. **Что НЕ решает Шаг 1**: "Фото" (по решению пользователя оставлено — валидное уведомление), "печатает..." (уже глушится `_isSpam` regex в whatsapp.hook.js:32). ⛔ **ЗАПРЕЩЕНО предлагать**: фильтр по `dir="auto"` как единственный критерий, фильтр по `total ≤ N`, смена времени (время без секунд → ≥2 сообщений в минуту теряются). **Предыдущая попытка (v0.86.2–v0.86.3)**: подход с фильтром `span[dir="auto"]` **НЕ СРАБОТАЛ** — после v0.86.2 sidebar watcher полностью замолчал в открытом чате (0 записей `wa-sidebar: new from` за всю сессию при реально пришедших сообщениях). **Доказательство из логов 14:26–14:28**: observer attached ✓, Notification API для первого сообщения до захода в чат ✓, после захода — только `page-title-updated` (звук title +1), ribbon НЕ показывается. **Причина**: для **текущего открытого** чата WhatsApp-Web не кладёт preview-текст последнего сообщения в `span[dir="auto"]` строки sidebar — либо preview не обновляется вовсе (сообщение уже в основной области), либо текст рендерится с другим `dir`. В результате цикл по `span[dir="auto"]` даёт пустой `lastMsg` → `continue`. **⛔ ЗАПРЕЩЕНО В БУДУЩЕМ предлагать подходы**: фильтр по `dir="auto"`, фильтр по наличию `[data-icon]` родителя, фильтр по количеству spans (`total ≤ N`) — все три эвристики были проанализированы по диагностическим логам `__CC_DIAG__wa-span` и либо не работают для открытого чата, либо хрупкие. **v0.86.3 фикс**: откат селектора на `span[dir], span[class]` (как в v0.86.1) — уведомления в открытом чате снова приходят, но вместе с фантомами. Добавлена диагностика `__CC_DIAG__wa-open` для строк с `aria-selected="true"` или CSS-классом `selected` — чтобы собрать **реальную структуру DOM активной строки** и выбрать новый признак. **План**: после следующего теста пользователя прочитать лог, увидеть, где живёт текст preview для открытого чата, выбрать стабильный селектор. **Описание исходной проблемы (v0.86.2)**: WhatsApp sidebar watcher давал ФАНТОМНЫЕ уведомления. **Симптом**: после снятия debounce (v0.86.1) в лог падали "сообщения" с текстом `status-dblcheck`, `ic-expand-more`, `Фото`, `печатает...` — это CSS-классы иконок и системные статусы, а не реальный текст. **Причина**: селектор `span[dir], span[class]` + итерация с конца брали ПЕРВЫЙ непустой span — но этим spanом часто оказывался контейнер иконки (SVG `data-icon`) или статус-элемент. Текстовая фильтрация (regex на "Фото", "печатает") не подходит — блокирует реальные сообщения с такими словами и ломает другие языки. **Диагностика**: логирование всех spans row через `__CC_DIAG__wa-span` показало: реальные сообщения приходят в `span[dir="auto"]` на idx=0 (total=7 spans), фантомы — в `span[dir=""]` внутри `[data-icon]` (total=9-10). **Рассмотренные варианты**: (1) `dir="auto"` ✅ — WhatsApp сам маркирует пользовательский текст auto-детектом языка; (2) исключать `[data-icon]` родителя — не ловит "Фото"/"печатает"; (3) фильтр по total≤7 — хрупко, ломается при вложениях. **Фикс**: селектор `span[dir="auto"], span[dir="rtl"]` + дополнительная проверка `!sp.closest('[data-icon]')`. Диагностика `__CC_DIAG__wa-span` удалена. **ПРАВИЛО**: WhatsApp Web разметка — пользовательский текст всегда в `dir="auto"`. НЕ использовать текст для распознавания фантомов (язык может быть любой). **Не помогло ранее**: Ловушка 46 про body-fallback (другой мессенджер, VK/MAX); Ловушка 61 только убрала требование badge, но породила фантомы когда debounce сняли.
+
+**Ловушка 61 (v0.86.1)**: WhatsApp sidebar watcher требовал badge — но для ОТКРЫТОГО чата badge нет. **Симптом**: sidebar observer привязался (`wa-sidebar: observer attached`) но не шлёт уведомления при новых сообщениях. **Причина**: `if (!badge) continue` пропускал чаты без зелёного кружка. Когда пользователь стоит в чате с Дугиным и Дугин пишет — badge НЕ показывается (чат открыт, сообщение сразу видно). **Фикс**: убрать обязательность badge. Достаточно изменения текста. **ПРАВИЛО**: WhatsApp показывает badge ТОЛЬКО для закрытых чатов. Для открытого — текст меняется но badge нет.
+
+**Ловушка 60 (v0.86.0)**: Ribbon из title-update перехватывал `__CC_NOTIF__`. **Симптом**: Ribbon показывал "+1 новое сообщение" без имени и текста вместо нормального ribbon с именем отправителя. **Причина**: `page-title-updated` event срабатывает РАНЬШЕ чем `__CC_NOTIF__` (который идёт через console-message → consoleMessageParser → handleNewMessage). Title-update ribbon без имени показывался первым, а `__CC_NOTIF__` ribbon дедуплицировался. **ПРАВИЛО**: Ribbon отправлять ТОЛЬКО через `__CC_NOTIF__` или `__CC_MSG__` (handleNewMessage) — там есть имя и текст. `page-title-updated` — ТОЛЬКО для звука и badge update. **Ловушка titleFlash**: детекция мигания title ("WA" → "(1) WA") тоже ломала — count=1 при каждом flash вызывала ribbon.
+
+**Ловушка 59 (v0.86.0)**: WhatsApp "Перейти к чату" — `.click()` на DIV не работал. **Симптом**: статусбар показывает `(exact)` но чат не открывается. **Причина**: WhatsApp SPA не реагирует на `.click()`. Нужен `mousedown + click` с `bubbles:true`. DOM-путь: `SPAN>DIV>DIV>DIV>DIV[role=gridcell]>DIV[role=row]`. Кликать нужно на `[role=gridcell]` или `[role=listitem]`. **Фикс**: `waClick()` = mousedown+click с bubbles. `findRow()` поднимается 10 уровней, ищет role=listitem/row/gridcell. **Тест**: 6 проверок в navigateToChat.test.cjs.
+
+**Ловушка 58 (v0.85.9)**: "Перейти к чату" открывал ГРУППУ вместо личного чата. **Симптом**: Дугин пишет в личку → нажимаешь "Перейти к чату" → открывается группа "Автолиберти!!!!!". **Причина**: `querySelector('[data-peer-id="611696632"]')` находил ПЕРВЫЙ элемент в DOM — аватарку Дугина ВНУТРИ открытой группы (он участник), а не его чат в chatlist. **Цепочка неудачных фиксов**: (1) `.closest('a').href` брал href от другого чата → переход в чужой чат. (2) `location.hash` — Telegram Web K не реагирует на hash когда уже на странице. (3) `closest('[data-peer-id]')` — возвращал тот же неправильный элемент. **Итоговый фикс**: `.chatlist-chat[data-peer-id="611696632"]` — ищет ТОЛЬКО в списке чатов, не внутри открытого чата/группы. **ПРАВИЛО**: В Telegram Web K `data-peer-id` может быть на МНОГИХ элементах (аватарки участников в чате, профиль и т.д.). Для навигации к чату — ВСЕГДА фильтровать по `.chatlist-chat` или `a[data-peer-id]`.
+
+**Ловушка 57 (v0.85.8)**: "Перейти к чату" для каналов Telegram не работало. **Симптом**: нажимаешь "Перейти к чату" → Telegram показывает главный экран вместо канала. **Причина**: chatTag `c2650004765_...` — prefix `c` = канал. `location.hash = '#2650004765'` — неправильно. Telegram Web K требует `#-1002650004765` для каналов (`-100` prefix). **Фикс**: парсить prefix chatTag: `c` → `-100` + peerId, `u` → peerId без изменений, `peer4` → `-100`. **Тест**: 5 runtime-тестов с реальными chatTag из логов пользователя.
+
+**Ловушка 56 (v0.85.7)**: 1-символьные сообщения ("С", "+", "1") блокировались — ribbon и звук не показывались. **Симптом**: Клиент ответил "С", в логе `status: "blocked", reason: "empty"`, в Pipeline Trace ничего. **Причина**: `_isSpam(body)` в hook-файлах: `if (!body || body.length < 2) return 'empty'`. Порог `< 2` был бездумно скопирован из `extractMsgText` (DOM-сканирование) при создании per-messenger hooks v0.82.0. Для DOM порог нужен (мусорные span). Для Notification API — НЕТ (мессенджер сам фильтрует мусор). **Фикс**: `body.length < 2` → `!body.trim()` во всех 4 hooks. enrichNotif (VK/MAX) НЕ тронут (другой контекст). **Тест**: notifHooks проверяет что `_isSpam` НЕ содержит `body.length < 2`. isSpamText проверяет 5 однобуквенных.
+
+**Ловушка 55 (v0.85.6)**: badge_blocked спамит Pipeline Trace — 130+ записей за 30 мин, вытесняет полезные логи. **Причина**: Telegram вызывает `navigator.setAppBadge(N)` при КАЖДОМ действии (скролл, навигация, фокус). Hook блокирует и логирует КАЖДЫЙ вызов. **Фикс**: badge_blocked обрабатывается ПЕРВЫМ (до traceNotif), не логируется, не обновляет monitorStatus. Только сброс счётчика при badge=0 + viewing.
+
+**Ловушка 54 (v0.85.5)**: Красные кругляшки на вкладках мессенджеров при загрузке. **Симптом**: Индикатор статуса монитора красный (error), хотя мессенджер загрузился и работает. **Причина**: `setMonitorStatus('active')` вызывался ТОЛЬКО при `unread-count` IPC или `page-title-updated` с числом. Если 0 непрочитанных — ни один из этих каналов не срабатывает → 20 сек loading → error → красный. **Фикс**: `setMonitorStatus('active')` при ЛЮБОМ `__CC_` ответе от monitor.preload (DIAG, NOTIF, MSG, BADGE, ACCOUNT, HOOK_OK) в consoleMessageHandler.js. Таймаут 20→10 сек + логирование.
+
+**Ловушка 53 (v0.85.3)**: `"type": "module"` в package.json → Electron preload файлы с `.js` расширением считаются ESM → `require()` не работает → `window.api` не создаётся → ВСЕ IPC сломано (уведомления, загрузка мессенджеров, настройки). **Симптом**: `ReferenceError: require is not defined in ES module scope` в консоли. "Нет мессенджеров" при запуске. Кнопки "Тест" не работают. **Причина**: Electron 41 + Node 22 строго следуют `"type": "module"` в package.json для preload скриптов. Раньше (Electron 33) это игнорировалось. **ПРАВИЛО**: ВСЕ preload файлы (app, monitor, notification, pin, pin-dock) ДОЛЖНЫ иметь расширение `.cjs` если используют `require()`. **Фикс**: переименовать *.preload.js → *.preload.cjs + обновить все пути. **Тест который ДОЛЖЕН был поймать**: нужен тест что preload файлы имеют .cjs расширение.
+
+**Ловушка 52 (v0.85.3)**: React 19 useEffect вызывается ДО инициализации `window.api` (preload). **Симптом**: "Нет мессенджеров" при запуске, хотя данные на диске есть. **Причина**: `window.api?.invoke('messengers:load').then(...)` — если `window.api` = undefined, то `undefined.then()` = TypeError, ломает весь `Promise.all`, ни then ни catch не срабатывают, `setMessengers` не вызывается → пустой список. **ПРАВИЛО**: В начале useEffect загрузки ОБЯЗАТЕЛЬНО проверять `if (!window.api?.invoke)` и загружать DEFAULT_MESSENGERS как fallback. После проверки использовать `window.api.invoke()` без `?.` (уже проверили). **Фикс**: Добавлена guard-проверка в useEffect загрузки (App.jsx строка 235).
+
+**Ловушка 51 (v0.85.0→v0.85.3)**: При использовании AI-агентов для рефакторинга — файлы создаются на диске но НЕ добавляются в git. **Симптом**: CI падает `Could not resolve "./AIProviderTabs.jsx"` — файл есть локально, но не в git. Build локально работает потому что файл на диске. **Причина**: Агент создал `AIProviderTabs.jsx` и `useIPCListeners.js` при выносе кода из AISidebar.jsx, но человек (или AI) при `git add` перечислил файлы вручную и пропустил новые. **ПРАВИЛО**: После рефакторинга с агентами — ОБЯЗАТЕЛЬНО `git status` + проверить `??` (untracked) файлы. Если есть новые .js/.jsx — добавить. Тест `npm test` включает `electron-vite build` — ловит отсутствующие файлы локально.
+
+**Ловушка 50 (v0.83.2→v0.83.4)**: При выносе JSX кода в отдельный компонент — undefined переменные → белый экран. **Симптом**: `ReferenceError: X is not defined at AIConfigPanel`. **Причина**: 12 переменных из scope AISidebar не переданы в AIConfigPanel (aiApiKey, StepRow, isGigaChat, openProviderUrl, openLoginWindow, testConnection, setProviderProp→set, webviewUrl, contextMode, isBillingError, provider, error). **ПРАВИЛО**: При выносе JSX в компонент — проверить ВСЕ переменные: передать как prop, импортировать, или вычислить локально. Тест `componentScope.test.js` ловит это автоматически. **ПРИЗНАКИ**: Белый экран + ErrorBoundary `X is not defined`.
+
+**Ловушка 49 (v0.81.7→v0.83.1, РЕШЕНО)**: MAX показывает ribbon для СВОИХ исходящих сообщений. **Симптом**: Пишешь "Пт" собеседнику → ribbon "Дугин Алексей Сергеевич: Пт". **Причина**: MAX вызывает `showNotification` для ВСЕХ сообщений (и входящих, и исходящих). `enrichNotif` находит в chatlist ваше имя "Дугин Алексей Сергеевич" и ставит как sender. `own-msg` фильтр в App.jsx не ловит: текст "Пт" не начинается с имени аккаунта ("Автолиберти"). `accountInfo` = "Автолиберти" (бизнес), а sender = "Дугин Алексей Сергеевич" (личное имя) — не совпадают. **Как отличить**: `__CC_NOTIF__` t="Дугин Алексей Сергее" при том что аккаунт = "Автолиберти". **Гипотезы для фикса**: (1) сравнить enriched sender с header активного чата — если совпадает, это чат с ЭТИМ человеком и notification может быть своим, (2) блокировать __CC_NOTIF__ если пользователь СЕЙЧАС на вкладке MAX и чат открыт (viewing), (3) в enrichNotif проверять, является ли sender автором последнего сообщения через DOM.
+
+**Ловушка 48 (v0.81.3, ПОДТВЕРЖДЕНО)**: `isSpam` ReferenceError в App.jsx __CC_NOTIF__ handler. **После фикса уведомления MAX заработали** — ribbon показывается при новых сообщениях. **Симптом**: MAX (и любой мессенджер с Notification API) — `__CC_NOTIF__` получен, `source` записан в Pipeline Trace, но нет `handle`/`ribbon`. Уведомление не показывается. **Причина**: строка 1692 `if (text && !isSpam)` — переменная `isSpam` НЕ ОПРЕДЕЛЕНА. ES module = strict mode → ReferenceError → catch {} на строке 1771 молча глотает. `handleNewMessage` не вызывается. Баг появился при рефакторинге v0.79.0: `isSpamText()` перенесён на строку 1683 как inline проверка, но строка 1692 с `!isSpam` осталась. **ПРИЗНАКИ**: Pipeline Trace показывает `source: __CC_NOTIF__` но НЕТ `handle`/`ribbon` после. **Как проверить**: `grep "!isSpam" src/App.jsx` должен возвращать 0 результатов. **Фикс**: `if (text && !isSpam)` → `if (text)`.
+
+**Ловушка 47 (v0.80.8→v0.81.2)**: VK фантомные уведомления + свои сообщения как чужие. **Три проблемы**: (1) Path 2 при смене чата возвращал текст другого чата → фантом. Фикс v0.81.0: `type !== 'vk'`. (2) chatObserver не различает входящие/исходящие — своё "любимка" показывалось как от "Елена Дугина" (enrichment берёт sender из header, не из пузыря). Склеивал sender+text ("Елена ДугинаПокушал ?"). Фикс v0.81.2: `if (type === 'vk') return` в `startChatObserver`. (3) unread-count (UC) — единственный надёжный для VK, давал чистый текст. **Ошибочные гипотезы**: сброс dedup, задержка snapshot, фильтр исходящих CSS, extractMsgText leaf-scan. **ПРИЗНАКИ**: `msg-src: CO` + свой текст от чужого имени. **Проверка**: Pipeline Trace только `msg-src: UC`, нет `msg-src: CO`.
+
+**Ловушка 42 (v0.80.2)**: VK enrichment берёт sender из ConvoListItem/ConvoHeader который содержит статус: "Елена Дугиназаходила 6 минут назад". **ПРАВИЛО**: `cleanSenderStatus()` в messageProcessing.js — вызывать ПЕРЕД sender-strip и ribbon. Regex: `/(заходил[аи]?\s*.*)/i` + `/(online|offline|печатает|typing|в\s+сети)/i`. Проверять что ribbon использует ОЧИЩЕННЫЙ `senderName`, НЕ `extra.senderName`.
+
+**Ловушка 43 (v0.80.3)**: VK `viewing: block` блокировал ribbon даже если пользователь на вкладке VK но чат НЕ открыт (список чатов). VK не использует Notification API → все через MutationObserver → нет `fromNotifAPI`. **ПРАВИЛО**: Блокировать viewing ТОЛЬКО если `!extra` (мусор без sender). Если `extra` есть (MutationObserver нашёл sender) → пропускать (не знаем открыт ли конкретный чат).
+
+**Ловушка 44 (v0.80.5)**: Vite кэш `node_modules/.vite/` может быть НЕДЕЛЬНОЙ давности → новые модули (messageProcessing.js, messengerConfigs.js) НЕ попадают в runtime. Код правильный, import есть, функция вызывается, лог показывает очистку — но ribbon берёт старую версию из кэша. **ПРАВИЛО**: После добавления НОВЫХ файлов в src/utils/ — ОБЯЗАТЕЛЬНО `rm -rf node_modules/.vite/` перед `npm run dev`. Или добавить в scripts/dev.js автоочистку кэша.
+
+**Ловушка 45 (v0.80.5)**: MAX chatObserver body-fallback + навигация внутри мессенджера. При открытии чата MutationObserver ловит рендер ИСТОРИИ сообщений как "новые". Через 15 минут дедуп истёк → старые сообщения проходят. Также свои сообщения ловятся как чужие. **ПРАВИЛО**: Grace period 5 сек при навигации (URL change) ВНУТРИ WebView — аналогично grace при dom-ready.
+
+**Ловушка 46 (v0.80.6)**: body-fallback для VK/MAX = ГАРАНТИРОВАННЫЕ фантомы. VK рендерит chatlist, навигацию, бейджи при загрузке → MutationObserver на body ловит ВСЁ. isSidebarNode не покрывает все VK-элементы. Ловушка 43 (viewing pass для MutationObserver) усилила проблему — теперь фантомы проходят viewing. **ПРАВИЛО**: `noBodyFallbackTypes = ['vk', 'max']` — НЕ fallback'ать на body. `chatObserverTarget = 'none'` → ждать навигацию → `setupNavigationWatcher` перепривяжет к контейнеру. Уведомления без открытого чата через `page-title-updated`.
+
+**Ловушка 44 (v0.80.5)**: При навигации внутри MAX/VK (открытие чата) MutationObserver ловит рендер истории сообщений как "новые". Также ловит СВОИ сообщения. Grace period от первого body-fallback (5 сек) уже истёк. **ПРАВИЛО**: При URL change в `setupNavigationWatcher` → `monitorReady = false` на 5 сек. Без этого: фантомы при каждом открытии чата + свои сообщения в ribbon.
+
+**Ловушка 45 (v0.80.4)**: electron-vite dev server КЭШИРУЕТ код. Изменения в App.jsx/utils могут НЕ подхватиться без полного перезапуска `npm run dev`. HMR (Hot Module Reload) не всегда работает для глубоких зависимостей (utils → App.jsx). **ПРАВИЛО**: После изменения кода → ПОЛНЫЙ перезапуск: `Ctrl+C` → `npm run dev`. Не полагаться на HMR.
+
+**Ловушка 38 (v0.76.8)**: `isSidebarNode` НИКОГДА не вызывался в `quickNewMsgCheck`! Условие `if (chatObserverTarget === 'body-fallback' && _chatContainerEl && ...)` → `_chatContainerEl = null` → весь if = false → sidebar-фильтр не работал. **ПРАВИЛО**: При body-fallback ВСЕГДА вызывать `isSidebarNode(node)` ПЕРЕД проверкой `_chatContainerEl`.
+
+**Ловушка 37 (v0.76.7)**: `querySelector('.badge')` внутри `.chatlist-chat` находит ОБЁРТОЧНЫЙ `.badge` (весь текст чата), не числовой бейдж. **ПРАВИЛО**: `querySelectorAll('.badge')` + проверка `/^\d+$/.test(textContent.trim())` → находит только числовой бейдж.
+
+**Ловушка 36 (v0.76.4)**: `.badge` в TG Web K (вертикальные папки) — обёрточный элемент. `chat.querySelector('.badge').textContent` = весь текст чата + число в конце. `textContent.match(/(\d+)\s*$/)` = число непрочитанных из конца. Исключать даты (2025/2026) и время.
+
+**Ловушка 35 (v0.76.3)**: Folder badge/title/Badge API Telegram содержат фантомные непрочитанные из архива, скрытых ботов, других папок. Видимый chatlist (`.chatlist-chat .badge` с числом) — единственный достоверный источник. **ПРАВИЛО**: Если chatlist загружен (≥5 чатов) но ни один `.badge` не содержит числа → allTotal = 0 (антифантом).
+
+**Ловушка 34 (v0.76.2)**: `data-peer-type` атрибут ОТСУТСТВУЕТ в некоторых версиях Telegram Web K (вертикальные папки). Но `data-peer-id` ВСЕГДА есть. Положительный = user/bot, отрицательный = group/channel. **ПРАВИЛО**: В `getChatType` и split-подсчёте использовать `data-peer-id` как fallback.
+
+**Ловушка 33 (v0.76.0)**: `#app` как chatObserver container → `isSidebarNode` фильтр НЕ применяется! Sidebar-фильтр работает только при `chatObserverTarget === 'body-fallback'`. Если observer на `#app` → ВСЕ мутации внутри (sidebar, даты, аватары) считаются сообщениями. **ПРАВИЛО**: Для WhatsApp лучше body-fallback + sidebar-фильтр, чем `#app` как container.
+
+**Ловушка 32 (v0.75.9)**: WhatsApp `#main` появляется ТОЛЬКО при открытом чате. Без чата → контейнер не найден → body fallback. `#app` как fallback безопаснее body — содержит только UI приложения, а не весь DOM. ARIA roles `grid`/`row`/`gridcell` = список чатов WhatsApp (sidebar), мутации в них — НЕ сообщения.
+
+**Ловушка 31 (v0.75.8)**: WhatsApp chatObserver fallback на body → `addedNodes` с alt-текстами иконок (`default-contact-refreshed`, `status-dblcheckic-image`) проходят как "сообщения". **ПРАВИЛО**: Фильтровать в спам-фильтре: текст без пробелов, только латиница через дефис, <60 символов = UI-артефакт, не сообщение.
+
+**Ловушка 30 (v0.75.6)**: Race condition: useEffect сбрасывает бейдж → следующий `unread-count` IPC (DOM badge ещё не обновился) → ставит бейдж обратно. **ПРАВИЛО**: Telegram `navigator.setAppBadge(N)` — авторитетный источник. Если badge=0 и пользователь смотрит → принудительно 0, не ждать DOM. Обрабатывать `__CC_BADGE_BLOCKED__` в console-message handler.
+
+**Ловушка 29 (v0.75.5)**: `notify:clicked` ("Перейти к чату" в ribbon) вызывает `setActiveId` но НЕ `handleTabClick` → `notifCountRef` не сбрасывается. Для мессенджеров без числа в title (MAX="MAX", WhatsApp="WhatsApp") `page-title-updated` не перезапускается → бейдж залипает навсегда. **ПРАВИЛО**: Сброс notifCountRef должен быть привязан к `activeId` (useEffect), а не к отдельным handler'ам. Единый механизм покрывает все пути переключения.
+
+**Ловушка 28 (v0.75.4)**: В вертикальном layout Telegram Web K (`has-vertical-folders`), `sidebar-tools-button[0]` = **кнопка меню/гамбургер**, НЕ первая папка "Все чаты". Папки — внутри `folders-sidebar__scrollable-position > folders-sidebar__folder-item`. **ПРАВИЛО**: Для вертикальных папок искать бейдж отдельно: `querySelector('.folders-sidebar__scrollable-position .folders-sidebar__folder-item .badge')`.
+
+**Ловушка 27 (v0.75.3)**: `document.title` Telegram (`"(1) Telegram Web"`) содержит ВСЕ непрочитанные: видимые + архив + скрытые папки + боты. DOM-бейджи (`badge.badge-unread`, folder tabs) показывают только ВИДИМЫЕ. Если DOM загружен и показывает 0, а title > 0 — это фантом из скрытого раздела. **ПРАВИЛО**: DOM-подсчёт ПРИОРИТЕТНЕЕ title. Title = fallback только если DOM ещё не загружен (нет tabs/chatlist/badges элементов).
+
+**Ловушка 26 (v0.75.1)**: Буфер 64×64 для overlay → Windows масштабирует с **билинейной интерполяцией** → мутные размытые пиксели. **ПРАВИЛО**: Overlay icon = **32×32** (стандартный размер Windows). НЕ увеличивать буфер "для крупности" — Windows всё равно масштабирует в ~16-20px, но из 32×32 чётче чем из 64×64.
+
+**Ловушка 25 (v0.75.0)**: Split overlay (два числа на overlay) — нечитаемо! Windows overlay icon отображается ~16-20px на экране. Два числа с разделителем не читаются ни при каком размере буфера (32, 64). **ПРАВИЛО**: Overlay = ОДНО крупное число. Для детальной разбивки использовать: (1) тултип трея, (2) бейджи на вкладках (💬/📢), (3) настройку "только личные"/"все". НЕ пытаться впихнуть два числа в overlay.
+
+**Ловушка 24 (v0.74.8)**: Overlay буфер 32×32 — Windows масштабирует в ~16×16 отображаемых пикселей. PIXEL_FONT 3×5 scale=2 = 6×10 в буфере → ~3×5 на экране = нечитаемо. **ПРАВИЛО**: Для overlay использовать буфер **64×64** — Windows масштабирует в ~32×32 → цифры вдвое крупнее. OVERLAY_FONT 5×7 scale=2-3 на 64×64 = отличная читаемость.
+
+**Ловушка 23 (v0.74.7)**: OVERLAY_FONT 5×7 слишком широкий для двух чисел в overlay 32×32. Два двузначных числа "99|99" при scale=2 = 49px > 32px → падает в scale=1 (нечитаемо мелко). **ПРАВИЛО**: Для split overlay использовать PIXEL_FONT 3×5 (компактнее). "99|99" при scale=2 = 30px ≤ 32. Auto-scale: 3 для однозначных, 2 для двузначных.
+
+**Ловушка 22 (v0.74.6)**: Перепутал **tray** и **overlay**! `createTrayBadgeIcon` — иконка в system tray (справа у часов). `createOverlayIcon` — бейдж на иконке программы в панели задач Windows. Это ДВА РАЗНЫХ API: `tray.setImage()` vs `mainWindow.setOverlayIcon()`. **ПРАВИЛО**: Tray = system tray (маленькая иконка справа). Overlay = taskbar badge (поверх иконки программы). Бейджи с числами = OVERLAY. Трей = чистая иконка.
+
+**Ловушка 20 (v0.74.4)**: useEffect overlay зависел от `[totalUnread, totalPersonalWithFallback]`, но НЕ от `settings.overlayMode`. Смена режима не перезапускала effect → overlay не обновлялся. **ПРАВИЛО**: Если useEffect читает settings (через ref или state) и должен реагировать на их изменение — обязательно добавить соответствующий state в массив зависимостей.
+
+**Ловушка 21 (v0.74.4)**: Принудительный `setUnreadCounts({id: 0})` в `handleTabClick` обнулял бейдж для ВСЕХ мессенджеров, включая те где title содержит число (Telegram "(33)"). `page-title-updated` не перезапускается если title не менялся → бейдж остаётся 0 навсегда, overlay мигает. **ПРАВИЛО**: НЕ обнулять `unreadCounts` напрямую — только через IPC от мессенджера (`page-title-updated` или `unread-count`). `notifCountRef.current[id] = 0` в `handleTabClick` достаточно.
+
+**Ловушка 19 (v0.74.3)**: WhatsApp Business Web — `CHAT_CONTAINER_SELECTORS` устарели: `[role="application"]` НЕТ, `data-testid` убраны. `#main` появляется ТОЛЬКО при открытом чате. Без открытого чата → fallback на `document.body` → MutationObserver ловит начальный рендер sidebar (role="grid", 68 rows) как новое сообщение. Текст содержит `status-dblcheckic-image...` — alt иконки статуса доставки. **ПРАВИЛО**: (1) `#side` + role="grid" в sidebar-фильтре, (2) grace period 5с после fallback, (3) `status-dblcheck/check/time` → пропускать в extractMsgText, (4) `handleTabClick` принудительно сбрасывает unreadCounts (WhatsApp title без числа → page-title-updated не сбросит).
+
+---
+
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: location.hash навигация переключает чаты без спроса (v0.53.1 → v0.53.2)
+
+### ❌ window.location.hash = peerId в WebView вызывает переход к другому чату
+
+**Симптом**: Пользователь печатает в одной вкладке Telegram, а его неожиданно перекидывает в другую вкладку Telegram или в другой чат.
+
+**Причина (v0.53.1)**: `buildChatNavigateScript` содержал `window.location.hash = peerId` как fallback. Проблемы:
+1. Hash навигация срабатывала даже когда чат уже был найден в DOM через другой метод retry.
+2. `tryNavigate` не проверял `activeIdRef.current` — выполнялся на фоновом WebView после того как пользователь переключил вкладку.
+3. 4 retry с 1.5 сек интервалом — агрессивные повторы кликали по чатам после того как пользователь уже начал работать.
+
+**Решение (v0.53.2)**:
+1. **Убрана `location.hash` навигация** — слишком агрессивно, перехватывает контроль у пользователя.
+2. **Проверка `activeIdRef.current === messengerId`** перед каждой попыткой — если пользователь переключил вкладку, навигация отменяется.
+3. **Retry уменьшен до 2** попыток (было 4).
+4. **Правильный формат peerId**: user=ID, chat=`-ID`, channel=`-100ID` — через DOM selector вместо hash.
+
+**Ключевой урок**: НИКОГДА не менять `location.hash` / `location.href` в чужом WebView — это навигационный hijack. Навигация к чату должна быть через DOM click или API, и ВСЕГДА проверять что пользователь не переключил вкладку. Агрессивные retry опасны — пользователь мог уже начать работать в другом месте.
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: scrollListContent — это SIDEBAR, а не чат (MAX) (v0.59.2 → v0.60.0)
+
+### ❌ chatObserver привязался к сайдбару → ribbon с именами контактов вместо текста сообщений
+
+**Симптом**: При получении 1 реального сообщения ("Авч") — показывается ribbon "Толстиков Юрий Павлович Теперь в MAX!" (имя контакта из сайдбара). До 9 спам-нотификаций за 1 сообщение.
+
+**Причина**: DOM Inspector показал `.scrollListContent` с 521 children. Я предположил что это контейнер сообщений и добавил в `CHAT_CONTAINER_SELECTORS.max`. На самом деле 521 children = 521 чат-диалогов в сайдбаре. chatObserver ловил мутации сайдбара (обновление preview последнего сообщения, статусы "Теперь в MAX!") и передавал их как новые сообщения.
+
+**Как диагностировать**: 521 children ≠ количество сообщений в чате (обычно 20-100). Реальный контейнер сообщений MAX — `.history` (870 children — bubble wrappers, date separators и т.д.).
+
+**Решение (v0.60.0)**:
+1. Убран `.scrollListContent` из `CHAT_CONTAINER_SELECTORS.max`
+2. Добавлен `.scrollListContent|scrollListScrollable|chatListItem` в `_sidebarRe` для фильтрации
+3. Реальные селекторы MAX: `.history`, `[class*="history"][class*="svelte"]`, `.openedChat`
+
+**Ключевой урок**: ВСЕГДА проверяй DOM Inspector данные перед добавлением селекторов. Большое число children (500+) скорее сайдбар/список чатов, чем контейнер сообщений. Сверяй с реальным количеством сообщений в чате.
+
+---
+
+## 🟡 ВАЖНОЕ: messageWrapper ≠ message (SvelteKit MAX) (v0.60.0)
+
+### ❌ Fallback findChatContainer искал `.message[class*="svelte"]` — не существует в MAX
+
+**Симптом**: `findChatContainer` не мог найти контейнер через fallback-метод (поиск parent'а 3+ элементов `.message[class*="svelte"]`).
+
+**Причина**: MAX использует SvelteKit, DOM-элементы имеют класс `messageWrapper svelte-1kh0oxy`, НЕ `message svelte-...`. Fallback искал `.message[class*="svelte"]` — 0 результатов.
+
+**Решение**: Использовать реальный селектор `.history` вместо fallback. Если fallback нужен, искать `.messageWrapper[class*="svelte"]`.
+
+**Ключевой урок**: SvelteKit-приложения (MAX) используют хешированные классы (`svelte-xxxxx`). Имена классов могут отличаться от ожидаемых (`messageWrapper` вместо `message`). ВСЕГДА проверяй реальные классы через DOM Inspector.
+
+---
+
+## 🟡 ВАЖНОЕ: history.pushState override НЕ работает из preload (context isolation) (v0.60.0)
+
+### ❌ Переопределение history.pushState в preload не ловит навигацию SPA
+
+**Симптом**: VK и MAX — SPA-приложения, навигация через `history.pushState()` без перезагрузки страницы. Попытка перехватить `pushState` из preload не работает.
+
+**Причина**: Context isolation в WebView: preload выполняется в изолированном мире (isolated world). `window.history` в preload — это копия, НЕ тот же объект что в main world. Переопределение `history.pushState` в preload не влияет на main world скрипты мессенджера.
+
+**Каналы main world → preload**: Единственный надёжный канал — `console.log()` в main world → `console-message` event на `<webview>` в renderer.
+
+**Решение (v0.60.0)**: Вместо override `pushState` — polling `location.href` каждые 2 секунды (`setupNavigationWatcher`). При изменении URL → re-attach chatObserver к новому контейнеру.
+
+**Ключевой урок**: В WebView с context isolation НЕЛЬЗЯ переопределить глобальные объекты main world из preload. `window`, `document`, `history`, `Notification` — все изолированы. Для перехвата используй: (1) `executeJavaScript` (выполняется в main world), (2) polling, (3) `console.log` канал.
+
+---
+
+## 🟡 ВАЖНОЕ: Pipeline text truncation — 60 символов + неправильный парсинг __CC_DIAG__ (v0.60.0)
+
+### ❌ В Pipeline Trace текст обрезан до "йнер" вместо полного слова
+
+**Симптом**: В таблице Pipeline Trace текст сообщений обрезан до нечитаемых фрагментов ("йнер" вместо "контейнер").
+
+**Причина 1**: `traceNotif()` обрезал текст `.slice(0, 60)` — слишком мало для диагностических сообщений.
+
+**Причина 2**: `__CC_DIAG__` парсер в App.jsx резал тег на 30 символов (`msg.slice(0, 30)`) вместо поиска реального конца тега. Это могло резать посередине слова.
+
+**Решение (v0.60.0)**:
+1. Лимит текста в `traceNotif` увеличен 60→200 символов
+2. `__CC_DIAG__` парсер: находит конец тега через `msg.indexOf('__', 4)` вместо фиксированного среза
+
+**Ключевой урок**: Диагностические логи должны быть достаточно длинными для отладки. 60 символов — слишком мало. Парсинг тегов — по разделителям, не по фиксированной позиции.
+
+---
+
+## 🟡 ВАЖНОЕ: Enrichment header — неправильный селектор для MAX (v0.60.0)
+
+### ❌ Enrichment показывал "Еременко Вячеслав Борисович" вместо реального отправителя
+
+**Симптом**: При получении сообщения в MAX, enrichment определял отправителя как контакт из сайдбара, а не из заголовка открытого чата.
+
+**Причина**: Header-селекторы enrichment не включали MAX-специфичный `.topbar .headerWrapper`. Fallback шёл в сайдбар-селекторы и подхватывал первое имя.
+
+**Решение**: Добавлен селектор `.topbar .headerWrapper` + strip префикса "Окно чата с" (MAX добавляет этот текст в `aria-label` или `title`).
+
+**Ключевой урок**: Каждый мессенджер имеет свою структуру header'а с именем чата. ОБЯЗАТЕЛЬНО добавлять мессенджер-специфичные header-селекторы при интеграции нового мессенджера. Проверять через DOM Inspector.
+
+---
+
+## 🟡 ВАЖНОЕ: Sender-based dedup — один источник генерирует дубли через 3 пути (v0.60.0)
+
+### ❌ 9 уведомлений за 1 реальное сообщение
+
+**Симптом**: Одно сообщение в MAX генерирует до 9 ribbon-уведомлений.
+
+**Причина**: Три независимых пути перехвата (`__CC_NOTIF__`, `__CC_MSG__`, IPC `new-message`) могут сработать на одно и то же сообщение. Каждый путь проходит свой спам-фильтр и dedup независимо.
+
+**Решение (v0.60.0)**: Sender-based dedup — `notifSenderTsRef` хранит `{messengerId:senderName → timestamp}`. Если `__CC_NOTIF__` уже обработал сообщение от sender X, то `__CC_MSG__` и IPC от того же sender'а блокируются на 3 секунды.
+
+**Ключевой урок**: При 3 независимых путях перехвата НЕОБХОДИМ cross-path dedup. Приоритет: `__CC_NOTIF__` (самый точный — прямо из Notification API мессенджера) → `__CC_MSG__` → IPC `new-message`.
+
+---
+
+## 🟡 ВАЖНОЕ: Sender-dedup по имени ненадёжен — разное enrichment даёт разные имена (v0.60.0 → v0.60.2)
+
+### ❌ `__CC_NOTIF__` записывает "Дугин Алексей Сергеевич", а `__CC_MSG__` получает "Окно чата с Дугин Ал..."
+
+**Симптом**: Дубль ribbon — два уведомления на одно сообщение. Sender-dedup не срабатывает.
+
+**Причина**: `__CC_NOTIF__` получает sender name прямо из Notification API мессенджера ("Дугин Алексей Сергеевич"). `__CC_MSG__` делает DOM enrichment через `.topbar .headerWrapper` и получает "Окно чата с Дугин Алексей Сергеевич     Дугин Алексей Сергеевич  В сети" (дубль имени + статус + prefix). Strip "Окно чата с" работает, но результат > 80 символов → отклоняется length check → fallback получает НЕ-stripped имя → dedup ключи не совпадают.
+
+**Решение (v0.60.2)**: Per-messengerId dedup — если `__CC_NOTIF__` от messengerId был <3 сек назад, блокировать `__CC_MSG__` целиком (без сравнения sender name). Плюс дедупликация дублирующегося имени ("Иванов Иван     Иванов Иван" → "Иванов Иван") и strip после executeJavaScript.
+
+**Ключевой урок**: Sender-based dedup по имени — НЕНАДЁЖЕН, разные пути enrichment дают разные имена. Надёжнее — per-messengerId dedup с коротким окном (3 сек).
+
+---
+
+## 🟡 ВАЖНОЕ: mouseenter/mouseleave ненадёжны в transparent focusable:false BrowserWindow на Windows (v0.60.3)
+
+### ❌ Hover на одном ribbon ставит на паузу ВСЕ уведомления
+
+**Симптом**: При наведении курсора на одно уведомление — progress bar останавливается у ВСЕХ ribbon.
+
+**Причина**: Windows обрабатывает transparent + focusable:false BrowserWindow как единую hit-target. `mouseenter`/`mouseleave` события на отдельных DOM-элементах внутри такого окна работают некорректно — могут срабатывать одновременно для нескольких элементов.
+
+**Решение (v0.60.3)**: Единый `mousemove` handler на контейнере + `e.target.closest('.notif-item')` для определения какой конкретно элемент под курсором. Трекинг `hoveredItemId` — пауза/возобновление только для конкретного item.
+
+**Ключевой урок**: В transparent BrowserWindow на Windows НЕЛЬЗЯ полагаться на per-element `mouseenter`/`mouseleave`. Используй `mousemove` на контейнере + `closest()` для определения элемента под курсором.
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: expandedByDefault отключает таймер auto-dismiss (v0.60.3 → v0.60.4)
+
+### ❌ При "Кнопки действий сразу" ribbon висит вечно — таймер не запускается
+
+**Симптом**: Время показа 18 сек, "Кнопки действий сразу" ON → ribbon никогда не исчезает.
+
+**Причина**: В notification.html: `if (!data.expandedByDefault) { timer = setTimeout(...) } else { progress.pause }`. Когда expandedByDefault=true, таймер НЕ создавался, progress bar паузился. Логика была "expanded = на паузе". Но пользователь ожидает: "показать кнопки сразу" ≠ "не исчезать".
+
+**Решение (v0.60.4)**: Таймер ВСЕГДА запускается: `timer = setTimeout(...)` без условия. `expandedByDefault` — только визуальный `el.classList.add('expanded')`, таймер не затрагивается.
+
+**Ключевой урок**: `expandedByDefault` = визуальное состояние (показать кнопки). НЕ путать с "остановить таймер". Таймер управляется ТОЛЬКО через hover/click expand, не через начальное визуальное состояние.
+
+---
+
+## 🟡 ВАЖНОЕ: Прыжок ribbon при dismiss — element.remove() без коллапса высоты (v0.60.3 → v0.60.4)
+
+### ❌ При закрытии верхнего ribbon нижние "прыгают" вверх
+
+**Симптом**: При dismiss нескольких ribbon — нижние резко прыгают вверх в момент удаления DOM-элемента.
+
+**Причина**: CSS анимация `dismissOut` анимирует transform/opacity, но элемент продолжает занимать место в layout. Через 360мс `element.remove()` → мгновенный сдвиг всех элементов ниже.
+
+**Решение (v0.60.4)**: Двухэтапный dismiss: (1) `fadeSlide` 250мс — визуальное затухание, (2) `collapsing` class — `height: 0, min-height: 0` через CSS transition 200мс — плавный коллапс пространства. DOM-элемент удаляется только после полного коллапса.
+
+**Ключевой урок**: При удалении элемента из flex-контейнера НЕЛЬЗЯ просто `element.remove()` — это вызывает мгновенный layout shift. Нужно сначала анимировать высоту к 0, потом удалять.
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: CSS-анимация `.fade-out` вызывает мигание при смене классов (v0.60.4 → v0.60.5)
+
+### ❌ При dismiss ribbon мигает (показывается на 1 кадр перед исчезновением)
+
+**Симптом**: Нажатие "Прочитано" или закрытие → ribbon исчезает → мигает обратно → исчезает снова.
+
+**Причина**: CSS `animation: fadeSlide 250ms forwards` держит opacity=0 через `forwards` fill mode. Но `el.classList.remove('fade-out')` УБИРАЕТ анимацию → opacity МГНОВЕННО возвращается к исходному значению (1) на 1 кадр → затем `classList.add('collapsing')` ставит opacity:0 снова.
+
+**Решение (v0.60.5)**: Полностью отказаться от CSS-анимаций для dismiss. Вместо этого:
+1. `el.style.animation = 'none'` — отменить slideIn
+2. `el.style.opacity = '1'` — зафиксировать текущее состояние
+3. `void el.offsetHeight` — force reflow
+4. `el.style.transition = 'opacity 250ms...'` + `el.style.opacity = '0'` — fade
+5. `setTimeout(260)` → `el.style.height = '0'` — collapse
+6. `setTimeout(210)` → `el.remove()` — удалить
+
+**Ключевой урок**: НИКОГДА не используй `classList.remove()` для CSS-анимации с `forwards` fill mode, если после этого нужно продолжить анимацию. `forwards` держит конечное состояние ТОЛЬКО пока класс присутствует. При удалении класса — мгновенный откат. Используй inline `style.transition` + inline `style.opacity` для многоэтапных dismiss-анимаций.
+
+---
+
+## 🟡 ВАЖНОЕ: Пустой body в Notification API = стикер/медиа, а НЕ спам (v0.60.8 → v0.60.9)
+
+### ❌ Мульти-эмодзи стикеры из MAX блокируются как "empty"
+
+**Симптом**: При отправке стикеров с несколькими эмодзи (😇😉👍, 👋❤️‍🔥😉) из MAX — нет ribbon, нет звука, в Лог "ЗАБЛОК Пустое". Одиночный эмодзи 👍 проходит нормально.
+
+**Причина**: MAX вызывает `new Notification("Имя Фамилия", {body: ""})` для мульти-эмодзи стикеров. Body пустой. `isSpamNotif("")` возвращает `'empty'` → блокировка. Одиночный 👍 приходит как `{body: "👍"}` — не пустой, проходит.
+
+**Решение (v0.60.9)**: В обоих override (`window.Notification` и `ServiceWorkerRegistration.showNotification`): если `isSpamNotif` вернул `'empty'`, но `title` существует и НЕ совпадает с `_appTitles` (названия мессенджеров), — это реальный sender, подставляем placeholder `"📎 Стикер"` вместо пустого body.
+
+**Ключевой урок**: Пустой body в Notification API ≠ спам. Мессенджеры используют пустой body для стикеров, медиа, реакций. Если title — имя реального sender'а, значит мессенджер считает это достойным уведомления. Доверяем мессенджеру.
+
+## 🟡 ВАЖНОЕ: Одинаковый placeholder = ложная дедупликация (v0.60.9 → v0.61.0)
+
+### ❌ Несколько стикеров подряд → показывается только первый
+
+**Симптом**: Отправлено 4 стикера подряд — ribbon только для первого. Остальные заблокированы dedup (`notifDedup | age=2458мс`, `recentNotifs | age=6113мс`).
+
+**Причина**: Все стикеры получали одинаковый body `"📎 Стикер"` → `dedupKey = messengerId + ':📎 Стикер'` → одинаковый для всех → dedup (5 сек notifDedup + 10 сек recentNotifs) блокирует повторные.
+
+**Решение (v0.61.0)**: Счётчик `_stickerSeq` в injection-коде: `"📎 Стикер #1"`, `"📎 Стикер #2"` и т.д. Каждый стикер получает уникальный body → уникальный dedupKey → проходит dedup.
+
+**Ключевой урок**: При подстановке placeholder'ов для dedup-системы, каждый placeholder ДОЛЖЕН быть уникальным. Иначе все одинаковые placeholder'ы будут считаться дублями.
+
+## 🟡 ВАЖНОЕ: Emoji regex слишком узкий для modern Unicode (v0.61.1 → v0.61.2)
+
+### ❌ DOM-извлечение не находит эмодзи в стикерах MAX
+
+**Симптом**: `_extractStickerFromDOM()` находит контейнер `.history`, но не извлекает эмодзи из последних сообщений. Все стикеры → fallback "📎 Стикер".
+
+**Причина**: Regex `/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}...]+$/u` слишком узкий. Не покрывает: ❤ (U+2764), ❤️‍🔥 (ZWJ sequence), многие символы из Misc Symbols, Dingbats, Variation Selectors. Также `naturalWidth` для img может быть 0 если изображение ещё загружается.
+
+**Решение (v0.61.2)**: Вместо whitelist Unicode ranges — blacklist: `!/[a-zA-Zа-яА-Я0-9]/.test(t)`. Текст <= 30 символов без букв и цифр = эмодзи. Для img: дополнительно проверяем `style.width`, `style.height`, `getAttribute('width')`.
+
+**Ключевой урок**: Emoji regex — ловушка. Unicode постоянно расширяется (ZWJ sequences, skin tones, flags). Вместо whitelist ranges лучше использовать blacklist (нет букв/цифр = эмодзи). Также DOM-элементы img могут иметь naturalWidth=0 до полной загрузки.
+
+## 🟡 ВАЖНОЕ: DOM-извлечение стикера невозможно без открытого чата (v0.61.2)
+
+### ❌ _extractStickerFromDOM() возвращает null — "no container, tried: 0"
+
+**Симптом**: Стикеры из MAX всегда показывают "📎 Стикер", хотя DOM-извлечение реализовано. `__CC_STICKER_DBG__` показывает `{"err":"no container","tried":0}`.
+
+**Причина**: Notification API вызывается когда пользователь НЕ находится в чате отправителя (или на другой вкладке). В этом случае URL = `https://web.max.ru/` (без ID чата) → DOM не содержит `.history` контейнер → querySelectorAll возвращает 0 элементов.
+
+**Ограничение**: Это неустранимо — мы не можем заставить WebView открыть нужный чат для DOM-извлечения. DOM-извлечение работает только если пользователь УЖЕ смотрит на чат.
+
+**Fallback**: "📎 Стикер" — корректный placeholder для ситуации когда содержимое стикера неизвестно.
+
+**MAX body поведение**: 1-2 одинаковых эмодзи → body непустой (👎👎, 🌹🌹). 3+ или комбинации разных → body пустой → fallback.
+
+## 🟡 ВАЖНОЕ: Dedup-суффикс виден пользователю (v0.61.0 → v0.61.1)
+
+### ❌ "📎 Стикер #3" — пользователь видит технический суффикс
+
+**Симптом**: В ribbon показывается "📎 Стикер #1", "📎 Стикер #2" — пользователю непонятно что значит номер.
+
+**Причина**: Суффикс `#N` добавлен для dedup-уникальности (чтобы каждый стикер имел уникальный body). Но он передавался напрямую в ribbon.
+
+**Решение (v0.61.1)**: `displayText = text.replace(/ #\d+$/, '')` перед отправкой в `app:custom-notify`. Dedup работает с полным текстом (с #N), ribbon показывает чистый (без #N).
+
+**Ключевой урок**: Технические суффиксы для dedup должны обрезаться на этапе отображения. Dedup-ключ и display-текст — разные вещи.
+
+## 🔴 КРИТИЧЕСКОЕ: Анимированный dismiss + FIFO = deadlock (v0.60.5-0.60.6 → v0.60.7)
+
+### ❌ Ribbon зависают при быстром потоке (10+ сообщений)
+
+**Симптом**: При 10+ сообщениях подряд ribbon зависают, не закрываются кнопками, пустые места в стеке.
+
+**Причина**: `dismissItem()` удаляет элемент из `items` Map только через 520мс (fade 250мс + пауза 80мс + collapse 180мс). Когда приходит 7-й ribbon, `addNotification` проверяет `while (items.size >= MAX_ITEMS)` и вызывает `dismissItem()` на самый старый. Но `dismissItem` проверяет `if (item.dismissing) return` — элемент уже в процессе dismiss → `items.size` НЕ уменьшается → бесконечный цикл `while`.
+
+**Решение (v0.60.7)**: Отдельная функция `forceRemoveItem(id)` для FIFO вытеснения — мгновенное `el.remove() + items.delete(id)` без анимации. `dismissItem()` используется только для пользовательского dismiss (клик "Прочитано", таймер).
+
+**Ключевой урок**: Если `dismissItem` асинхронный (с анимацией), НЕЛЬЗЯ использовать его в синхронном цикле `while (size >= max)`. Асинхронное удаление не уменьшает коллекцию мгновенно → deadlock. Для FIFO вытеснения всегда используй синхронное удаление.
+
+## 🟡 Кнопка «Прочитано» в ribbon не помечает чат прочитанным (v0.62.0)
+
+### ❌ «Прочитано» только убирала ribbon, но не взаимодействовала с мессенджером
+
+**Симптом**: Пользователь нажимает «Прочитано» в ribbon → уведомление исчезает, но в мессенджере чат остаётся непрочитанным (бейдж/счётчик не сбрасывается).
+
+**Причина**: `notif:mark-read` в main.js просто удалял item из `notifItems` массива, но не отправлял сигнал в renderer для взаимодействия с WebView мессенджера.
+
+**Решение (v0.62.0)**: Полная IPC-цепочка: `notification.html` → `notif:mark-read` → `main.js` (находит item, извлекает messengerId/senderName/chatTag) → `notify:mark-read` → `App.jsx` useEffect handler → `buildChatNavigateScript()` генерирует per-messenger JS → `executeJavaScript()` кликает по чату в WebView → мессенджер помечает прочитанным.
+
+**Ключевой урок**: Любая кнопка «Прочитано» должна взаимодействовать с мессенджером через WebView, а не просто скрывать UI-элемент. Для пометки прочитанным нужен клик по чату в sidebar мессенджера — это единственный универсальный способ сбросить badge/counter.
+
+## 🟡 CSS .messenger-name невидимый — нет явного color (v0.62.1)
+
+### ❌ Подпись мессенджера в ribbon не видна на тёмном фоне
+
+**Симптом**: Элемент `.messenger-name` создаётся, но пользователь его не видит. В DevTools элемент существует с правильным текстом.
+
+**Причина**: `.messenger-name` не имел явного `color`. На тёмном фоне `#1a1a2e` наследуемый цвет (чёрный по умолчанию) с `opacity: 0.45` — полностью невидим. В отличие от `.sender` (color: #e2e8f0) и `.body-text` (color: rgba(255,255,255,0.6)), `.messenger-name` полагался на наследование.
+
+**Решение**: Добавить явный `color: rgba(255,255,255,0.45)` вместо `opacity: 0.45`.
+
+**Ключевой урок**: Для ЛЮБОГО текстового элемента на тёмном фоне ОБЯЗАТЕЛЬНО задавай `color` явно. Не полагайся на наследование — `body` может не иметь белого цвета. Лучше использовать `color: rgba(255,255,255,N)` вместо `color: inherit; opacity: N`.
+
+## 🟡 buildChatNavigateScript для MAX — только exact match (v0.62.1)
+
+### ❌ Mark-read не находит чат в MAX если имя длинное
+
+**Симптом**: При нажатии «Прочитано» чат не помечается прочитанным, хотя имя отправителя корректное.
+
+**Причина**: Скрипт для MAX использовал только `===` (exact match). Если `textContent.trim()` из DOM не совпадает точно с `senderName` (пробелы, регистр, обрезка) → чат не найден.
+
+**Решение (v0.62.1)**: Добавлен partial/startsWith match + case-insensitive. После клика — `scrollDown()` для сброса unread (скроллит `.history` вниз). Fallback: если чат не найден — всё равно скроллит текущий чат. Добавлено логирование (`titles.length`, `samples`).
+

@@ -22,16 +22,29 @@ export function createConsoleMessageHandler(deps) {
    * @returns {function} Event handler for 'console-message'
    */
   return (el, messengerId) => (e) => {
-    const msg = e.message
+    // v0.87.55: Electron 41+ deprecated позиционные поля (e.message, e.level, e.sourceId).
+    // Новый API отдаёт объект e.details.{message, level, sourceId, lineNumber}.
+    // level в новом API — строка ('info'|'warning'|'error'|'verbose'), в старом — число (0-3).
+    // Fallback: сначала пробуем новый API, потом старый.
+    const d = e.details || e
+    const msg = d.message ?? e.message
     if (!msg) return
+    const rawLevel = d.level ?? e.level
+    // Нормализуем level в число (1=warning, 2=error): совместимо и с числами (0-3) и со строками.
+    const lvl = typeof rawLevel === 'number' ? rawLevel
+      : rawLevel === 'warning' ? 1
+      : rawLevel === 'error' ? 2
+      : rawLevel === 'info' ? 0
+      : rawLevel === 'verbose' ? 3
+      : -1
+    const sourceId = d.sourceId ?? e.sourceId ?? ''
+    const lineNumber = d.lineNumber ?? e.lineNumber ?? '?'
     // v0.86.5 DIAG: логируем ERROR+WARNING из WebView консоли (CSP, attachment, media, Telegram runtime).
-    // level: 0=info 1=warning 2=error 3=debug (Electron console-message Event)
     try {
-      const lvl = (typeof e.level === 'number') ? e.level : -1
       if ((lvl === 1 || lvl === 2) && !msg.startsWith('__CC_') && !msg.includes('DevTools') && !msg.includes('Electron Security Warning')) {
-        const src = (e.sourceId || '').split('/').slice(-1)[0] || ''
+        const src = (sourceId || '').split('/').slice(-1)[0] || ''
         const tag = lvl === 2 ? 'wv-err' : 'wv-warn'
-        traceNotif(tag, lvl === 2 ? 'error' : 'warn', messengerId, msg.slice(0, 300), `line=${e.lineNumber || '?'} src=${src.slice(0, 60)}`)
+        traceNotif(tag, lvl === 2 ? 'error' : 'warn', messengerId, msg.slice(0, 300), `line=${lineNumber} src=${src.slice(0, 60)}`)
       }
     } catch(_) {}
     // v0.79.8: Парсинг через consoleMessageParser.js

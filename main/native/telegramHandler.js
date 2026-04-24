@@ -453,14 +453,25 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
 
   // v0.87.15: sendMessage с поддержкой reply
   ipcMain.handle('tg:send-message', async (_, { chatId, text, replyTo }) => {
+    // v0.87.55: полные логи — ловим почему юзер нажимает "Отпр." а ничего не происходит
+    log(`send-message START: chat=${chatId} len=${text?.length} replyTo=${replyTo || 'none'}`)
     try {
-      if (!client) return { ok: false, error: 'Не подключён' }
+      if (!client) {
+        log(`send-message FAIL: client=null`)
+        return { ok: false, error: 'Не подключён' }
+      }
+      const hasEntity = chatEntityMap.has(chatId)
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      log(`send-message: hasEntity=${hasEntity} entity=${hasEntity ? 'from-map' : 'fallback-id'}`)
       const params = { message: text }
       if (replyTo) params.replyTo = Number(replyTo)
       const result = await client.sendMessage(entity, params)
+      log(`send-message OK: chat=${chatId} messageId=${result.id}`)
       return { ok: true, messageId: String(result.id) }
-    } catch (e) { return { ok: false, error: e.message } }
+    } catch (e) {
+      log(`send-message ERROR: chat=${chatId} ${e.message} (${e.constructor?.name})`)
+      return { ok: false, error: e.message }
+    }
   })
 
   // v0.87.15: удаление сообщения
@@ -1017,9 +1028,35 @@ async function loadRestPagesAsync(firstPage) {
 // v0.87.11: асинхронная загрузка аватарок для чатов — не блокирует UI.
 // Аватарки кешируются в %APPDATA%/ЦентрЧатов/tg-avatars/{chatId}.jpg.
 // По готовности emit tg:chat-avatar { chatId, avatarPath } — renderer обновит.
+// v0.87.55: добавлен throttle 200мс между GetFull* запросами + handler FLOOD_WAIT.
+// Раньше при 196 чатах уходило 196 запросов подряд → Telegram банил на 26 секунд.
 async function loadAvatarsAsync(dialogs) {
   if (!client || !avatarsDir) return
-  const stats = { total: dialogs.length, hasPhoto: 0, noPhoto: 0, downloaded: 0, cached: 0, failed: 0, fetched: 0 }
+  const stats = { total: dialogs.length, hasPhoto: 0, noPhoto: 0, downloaded: 0, cached: 0, failed: 0, fetched: 0, floodWaits: 0 }
+
+  // v0.87.55: throttle helper — не чаще раза в 200мс + обработка FLOOD_WAIT ошибок.
+  let lastReqTs = 0
+  const THROTTLE_MS = 200
+  async function throttledInvoke(reqFactory) {
+    const wait = Math.max(0, THROTTLE_MS - (Date.now() - lastReqTs))
+    if (wait > 0) await new Promise(r => setTimeout(r, wait))
+    lastReqTs = Date.now()
+    try {
+      return await client.invoke(reqFactory())
+    } catch (e) {
+      const match = String(e?.message || '').match(/FLOOD_WAIT.*?(\d+)/)
+      if (match) {
+        const seconds = Number(match[1]) || 30
+        stats.floodWaits++
+        log(`FLOOD_WAIT ${seconds}s — ждём и продолжаем`)
+        await new Promise(r => setTimeout(r, (seconds + 1) * 1000))
+        lastReqTs = Date.now()
+        return await client.invoke(reqFactory())
+      }
+      throw e
+    }
+  }
+
   // v0.87.19: для чатов БЕЗ photo в entity — запрашиваем GetFullChannel/GetFullChat/GetFullUser
   // многие каналы в getDialogs возвращаются без photo, только через Full-запросы
   for (const d of dialogs) {
@@ -1032,18 +1069,18 @@ async function loadAvatarsAsync(dialogs) {
         emit('tg:chat-avatar', { chatId, avatarPath: `cc-media://avatars/${encodeURIComponent(path.basename(avatarPath))}` })
         continue
       }
-      // v0.87.19: если у entity нет photo — догружаем через GetFull*
+      // v0.87.19: если у entity нет photo — догружаем через GetFull* (throttled)
       if (!entity?.photo || entity.photo.photoEmpty) {
         try {
           if (d.isChannel || d.isGroup) {
-            const full = await client.invoke(new Api.channels.GetFullChannel({ channel: entity || d.inputEntity }))
+            const full = await throttledInvoke(() => new Api.channels.GetFullChannel({ channel: entity || d.inputEntity }))
             const chatWithPhoto = full.chats?.find(c => c.id?.toString() === entity?.id?.toString()) || full.chats?.[0]
             if (chatWithPhoto?.photo && !chatWithPhoto.photo.photoEmpty) {
               entity = chatWithPhoto
               stats.fetched++
             } else { stats.noPhoto++; continue }
           } else if (d.isUser) {
-            const full = await client.invoke(new Api.users.GetFullUser({ id: entity || d.inputEntity }))
+            const full = await throttledInvoke(() => new Api.users.GetFullUser({ id: entity || d.inputEntity }))
             const userWithPhoto = full.users?.find(u => u.id?.toString() === entity?.id?.toString()) || full.users?.[0]
             if (userWithPhoto?.photo && !userWithPhoto.photo.photoEmpty) {
               entity = userWithPhoto
@@ -1060,7 +1097,7 @@ async function loadAvatarsAsync(dialogs) {
       emit('tg:chat-avatar', { chatId, avatarPath: `cc-media://avatars/${encodeURIComponent(path.basename(avatarPath))}` })
     } catch (e) { stats.failed++; log(`avatar err для ${d.title}: ${e.message}`) }
   }
-  log(`аватарки: total=${stats.total} hasPhoto=${stats.hasPhoto} noPhoto=${stats.noPhoto} fetched=${stats.fetched} downloaded=${stats.downloaded} cached=${stats.cached} failed=${stats.failed}`)
+  log(`аватарки: total=${stats.total} hasPhoto=${stats.hasPhoto} noPhoto=${stats.noPhoto} fetched=${stats.fetched} downloaded=${stats.downloaded} cached=${stats.cached} failed=${stats.failed} floodWaits=${stats.floodWaits}`)
 }
 
 // v0.87.24: периодический rescan unread (часть Комбо D вариант A)

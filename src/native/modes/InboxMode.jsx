@@ -411,18 +411,34 @@ export default function InboxMode({ store }) {
   })
 
   const handleReplySend = async () => {
-    if (!input.trim() || sending) return
+    // v0.87.55: логи + error-toast для диагностики "ввёл текст → Отпр. → ничего"
+    if (!input.trim() || sending) {
+      scrollDiag.logEvent('send-skip', { hasText: !!input.trim(), sending, chatId: store.activeChatId })
+      return
+    }
     setSending(true)
     const text = input.trim()
     setInput('')
+    scrollDiag.logEvent('send-start', { chatId: store.activeChatId, len: text.length, isEdit: !!editTarget, replyTo: replyTo?.id })
     try {
+      let result
       if (editTarget) {
-        await store.editMessage(store.activeChatId, editTarget.id, text)
+        result = await store.editMessage(store.activeChatId, editTarget.id, text)
         setEditTarget(null)
       } else {
-        await store.sendMessage(store.activeChatId, text, replyTo?.id)
+        result = await store.sendMessage(store.activeChatId, text, replyTo?.id)
         setReplyTo(null)
       }
+      scrollDiag.logEvent('send-result', { ok: result?.ok, messageId: result?.messageId, error: result?.error })
+      if (!result?.ok) {
+        // v0.87.55: показываем юзеру что именно пошло не так — иначе он нажимает и не понимает
+        showToast(`Ошибка отправки: ${result?.error || 'неизвестно'}`, 'error')
+        setInput(text)  // возвращаем текст в поле — чтобы не потерялся
+      }
+    } catch (e) {
+      scrollDiag.logEvent('send-throw', { error: e?.message, name: e?.constructor?.name })
+      showToast(`Сбой отправки: ${e?.message || e}`, 'error')
+      setInput(text)
     } finally { setSending(false) }
   }
 
