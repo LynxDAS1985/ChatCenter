@@ -36,14 +36,14 @@ describe('AccountContextMenu — Шаг 1 (меню)', () => {
     cleanup()
   })
 
-  it('маскирует номер телефона', () => {
+  it('форматирует номер телефона (полный, не маскирован — v0.87.89)', () => {
     const { container } = render(
       <AccountContextMenu account={baseAccount} x={100} y={100} onClose={() => {}} onLogout={() => {}} />
     )
-    // Должен быть формат +7 (***) ***-XX-XX
-    expect(container.textContent).toMatch(/\+7 \(\*\*\*\) \*\*\*-\d\d-\d\d/)
-    // Полный номер не должен светиться
-    expect(container.textContent).not.toContain('+79001234567')
+    // Должен быть формат +7 (XXX) XXX-XX-XX полностью
+    expect(container.textContent).toMatch(/\+7 \(\d{3}\) \d{3}-\d{2}-\d{2}/)
+    // Конкретно для +79001234567 → +7 (900) 123-45-67
+    expect(container.textContent).toContain('+7 (900) 123-45-67')
     cleanup()
   })
 
@@ -64,12 +64,23 @@ describe('AccountContextMenu — Шаг 1 (меню)', () => {
     cleanup()
   })
 
+  it('информация об аккаунте центрирована (v0.87.89)', () => {
+    const { container } = render(
+      <AccountContextMenu account={baseAccount} x={100} y={100} onClose={() => {}} onLogout={() => {}} />
+    )
+    // Шапка с инфо должна иметь text-align: center
+    const header = container.querySelector('.native-account-menu > div')
+    expect(header.style.textAlign).toBe('center')
+    cleanup()
+  })
+
   it('БЕЗ phone — не показывает строку телефона', () => {
     const noPhone = { ...baseAccount, phone: null }
     const { container } = render(
       <AccountContextMenu account={noPhone} x={100} y={100} onClose={() => {}} onLogout={() => {}} />
     )
-    expect(container.textContent).not.toContain('+7')
+    // Не должно быть номера с цифрами
+    expect(container.textContent).not.toMatch(/\+7 \(\d{3}\)/)
     cleanup()
   })
 

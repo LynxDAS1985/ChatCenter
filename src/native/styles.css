@@ -368,6 +368,25 @@
   to   { opacity: 1; transform: scale(1); }
 }
 
+/* v0.87.89: spring-анимация открытия меню — bouncy + slide + blur fade.
+   cubic-bezier(0.34, 1.56, 0.64, 1) даёт overshoot ~10% → ощущение «упругости». */
+@keyframes native-menu-popin {
+  0% {
+    opacity: 0;
+    transform: scale(0.82) translateY(-6px);
+    filter: blur(3px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
 /* v0.87.26: разделители дат/времени — контрастнее + линии по бокам как в Telegram */
 .native-msg-divider {
   align-self: center;

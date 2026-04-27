@@ -8,13 +8,15 @@ import { useState, useEffect, useRef } from 'react'
 
 function formatPhone(phone) {
   if (!phone) return ''
-  // +79001234567 → +7 (***) ***-45-67
+  // v0.87.89: показываем номер полностью (по запросу пользователя — это его свой аккаунт).
+  // +79001234567 → +7 (900) 123-45-67
   const digits = (phone + '').replace(/\D/g, '')
-  if (digits.length === 11 && digits.startsWith('7')) {
-    return `+7 (***) ***-${digits.slice(7, 9)}-${digits.slice(9, 11)}`
+  if (digits.length === 11 && (digits.startsWith('7') || digits.startsWith('8'))) {
+    return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`
   }
+  // Другие страны — просто с + впереди
   if (digits.length >= 10) {
-    return `+${digits.slice(0, -7)}*** ***-${digits.slice(-4, -2)}-${digits.slice(-2)}`
+    return '+' + digits
   }
   return phone
 }
@@ -81,33 +83,70 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
       style={{
         position: 'fixed',
         left: safeX, top: safeY, width: MENU_W,
-        background: 'var(--amoled-surface)',
-        border: '1px solid var(--amoled-border)',
-        borderRadius: 8,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+        // v0.87.89: контрастнее AMOLED-фону — слегка светлее `surface`, чтобы не сливалось с чёрным
+        background: 'linear-gradient(180deg, #1a1f2e 0%, #141823 100%)',
+        // v0.87.89: яркая рамка accent-цветом + полупрозрачный outer glow
+        border: '1px solid rgba(255,255,255,0.12)',
+        borderRadius: 12,
+        boxShadow: [
+          '0 0 0 1px rgba(42,171,238,0.25)',         // тонкое accent-кольцо
+          '0 16px 48px rgba(0,0,0,0.65)',            // глубокая основная тень
+          '0 4px 12px rgba(42,171,238,0.15)',        // мягкое accent-свечение
+          'inset 0 1px 0 rgba(255,255,255,0.06)',    // тонкий highlight сверху
+        ].join(', '),
         zIndex: 1000,
         overflow: 'hidden',
-        animation: 'native-menu-fadein 150ms ease-out',
+        // v0.87.89: bouncy spring-анимация (overshoot 1.56) — открывается «упруго»
+        animation: 'native-menu-popin 220ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+        transformOrigin: 'top left',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* Шапка: инфо об аккаунте — всегда видна */}
-      <div style={{ padding: 12, borderBottom: '1px solid var(--amoled-border)' }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--amoled-text)' }}>
-          👤 {account.name || 'Без имени'}
+      {/* Шапка: инфо об аккаунте — всегда видна.
+          v0.87.89: центрирование + AMOLED-цвета, номер показывается полностью */}
+      <div style={{
+        padding: '14px 12px 12px',
+        borderBottom: '1px solid var(--amoled-border)',
+        textAlign: 'center',
+        background: 'linear-gradient(180deg, rgba(42,171,238,0.04) 0%, transparent 100%)',
+      }}>
+        <div style={{
+          fontSize: 15,
+          fontWeight: 700,
+          color: '#fff',
+          letterSpacing: 0.2,
+        }}>
+          {account.name || 'Без имени'}
         </div>
         {account.phone && (
-          <div style={{ fontSize: 12, color: 'var(--amoled-text-dim)', marginTop: 2 }}>
+          <div style={{
+            fontSize: 12,
+            color: 'var(--amoled-text-dim)',
+            marginTop: 4,
+            fontVariantNumeric: 'tabular-nums',
+          }}>
             {formatPhone(account.phone)}
           </div>
         )}
         {account.username && (
-          <div style={{ fontSize: 12, color: 'var(--amoled-accent)', marginTop: 2 }}>
+          <div style={{
+            fontSize: 12,
+            color: 'var(--amoled-accent)',
+            marginTop: 2,
+            fontWeight: 500,
+          }}>
             @{account.username}
           </div>
         )}
         {account.connectedAt && (
-          <div style={{ fontSize: 11, color: 'var(--amoled-text-dimmer)', marginTop: 4 }}>
+          <div style={{
+            fontSize: 10,
+            color: 'var(--amoled-text-dimmer)',
+            marginTop: 6,
+            opacity: 0.7,
+          }}>
             Подключён {formatConnectedDate(account.connectedAt)}
           </div>
         )}
@@ -124,14 +163,23 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
               padding: '10px 12px',
               background: 'transparent',
               border: 'none',
-              color: 'var(--amoled-danger)',
+              // v0.87.89: нейтральный цвет в обычном состоянии, красный только при hover
+              color: 'var(--amoled-text)',
               fontSize: 13,
               cursor: 'pointer',
               borderRadius: 4,
-              textAlign: 'left',
+              textAlign: 'center',
+              fontWeight: 500,
+              transition: 'background 150ms, color 150ms',
             }}
-            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(239,68,68,0.12)'
+              e.currentTarget.style.color = 'var(--amoled-danger)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--amoled-text)'
+            }}
           >
             🚪 Выйти из аккаунта
           </button>
@@ -139,11 +187,25 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
 
         {step === 'confirm' && (
           <>
-            <div style={{ fontSize: 12, color: 'var(--amoled-text-dim)', padding: '8px 4px 12px', lineHeight: 1.4 }}>
-              ⚠️ Точно выйти? Сессия будет удалена, при следующем входе нужно вводить код заново.
+            <div style={{
+              fontSize: 12,
+              color: 'var(--amoled-text-dim)',
+              padding: '6px 8px 12px',
+              lineHeight: 1.5,
+              textAlign: 'center',
+            }}>
+              ⚠️ Точно выйти?<br />
+              <span style={{ fontSize: 11, color: 'var(--amoled-text-dimmer)' }}>
+                Сессия будет удалена. При следующем входе нужно вводить код заново.
+              </span>
             </div>
             {error && (
-              <div style={{ fontSize: 11, color: 'var(--amoled-danger)', padding: '0 4px 8px' }}>
+              <div style={{
+                fontSize: 11,
+                color: 'var(--amoled-danger)',
+                padding: '0 4px 8px',
+                textAlign: 'center',
+              }}>
                 Ошибка: {error}
               </div>
             )}
@@ -155,15 +217,21 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
                   background: 'var(--amoled-surface-hover)',
                   border: '1px solid var(--amoled-border)',
                   color: 'var(--amoled-text)', borderRadius: 4, cursor: 'pointer',
+                  transition: 'background 150ms',
                 }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--amoled-border)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'var(--amoled-surface-hover)'}
               >❌ Отмена</button>
               <button
                 onClick={handleConfirm}
                 style={{
                   flex: 1, padding: '8px 10px', fontSize: 12,
-                  background: 'var(--amoled-danger)', border: 'none',
+                  background: 'rgba(239,68,68,0.85)', border: 'none',
                   color: '#fff', borderRadius: 4, cursor: 'pointer', fontWeight: 600,
+                  transition: 'background 150ms',
                 }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239,68,68,1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(239,68,68,0.85)'}
               >✅ Выйти</button>
             </div>
           </>
