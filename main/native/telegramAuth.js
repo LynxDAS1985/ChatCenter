@@ -170,14 +170,18 @@ async function startLogin(phone) {
       status: 'connected',
       connectedAt: Date.now(), // v0.87.91: дата подключения для UI
     }
+    log(`account-update [first emit, no avatar yet]: id=${state.currentAccount.id} name="${state.currentAccount.name}"`)
+    emit('tg:account-update', state.currentAccount)
     // v0.87.91: загружаем аватарку профиля асинхронно — не блокируем login
     loadOwnAvatar(me).then(avatar => {
       if (avatar) {
         state.currentAccount = { ...state.currentAccount, avatar }
+        log(`account-update [with avatar]: avatar=${avatar.slice(0, 80)}...`)
         emit('tg:account-update', state.currentAccount)
+      } else {
+        log('loadOwnAvatar returned null — avatar НЕ установлен')
       }
     }).catch(e => log('own avatar err: ' + e.message))
-    emit('tg:account-update', state.currentAccount)
     emit('tg:login-step', { step: 'success', phone })  // v0.87.10: явный success — UI закроет модалку
     setTimeout(() => emit('tg:login-step', null), 200)
     state.pendingLogin = null
@@ -232,14 +236,18 @@ export async function autoRestoreSession() {
       status: 'connected',
       connectedAt: Date.now(), // v0.87.91: дата восстановления сессии (как новое подключение)
     }
+    log(`account-update [restore, no avatar yet]: id=${state.currentAccount.id}`)
+    emit('tg:account-update', state.currentAccount)
     // v0.87.91: подгружаем аватарку асинхронно — не блокируем restore
     loadOwnAvatar(me).then(avatar => {
       if (avatar) {
         state.currentAccount = { ...state.currentAccount, avatar }
+        log(`account-update [restore, with avatar]: avatar=${avatar.slice(0, 80)}...`)
         emit('tg:account-update', state.currentAccount)
+      } else {
+        log('loadOwnAvatar returned null on restore')
       }
     }).catch(e => log('own avatar err: ' + e.message))
-    emit('tg:account-update', state.currentAccount)
     attachMessageListener()
     startUnreadRescan()
     log('session restored, account=' + state.currentAccount.name)

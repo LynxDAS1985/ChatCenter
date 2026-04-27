@@ -113,16 +113,16 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
         alignItems: 'center',
         gap: 12,
       }}>
-        {/* Аватарка 56×56 — фото или инициалы */}
+        {/* Аватарка 68×68 (v0.87.92: +20% от 56) — фото или инициалы */}
         <div style={{
-          width: 56, height: 56, flexShrink: 0,
+          width: 68, height: 68, flexShrink: 0,
           borderRadius: '50%',
           background: account.avatar
             ? `url("${account.avatar}") center/cover no-repeat`
             : `linear-gradient(135deg, var(--amoled-accent) 0%, #1d6fa5 100%)`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontSize: 20, fontWeight: 700,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.4), 0 0 0 2px rgba(255,255,255,0.06)',
+          color: '#fff', fontSize: 24, fontWeight: 700,
+          boxShadow: '0 2px 10px rgba(0,0,0,0.45), 0 0 0 2px rgba(255,255,255,0.08)',
           letterSpacing: 0.5,
         }}>
           {!account.avatar && (account.name || '?').slice(0, 2).toUpperCase()}

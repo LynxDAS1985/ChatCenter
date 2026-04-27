@@ -76,6 +76,12 @@ export default function useNativeStore() {
     }
 
     addHandler('tg:account-update', (acc) => {
+      // v0.87.92: диагностика загрузки аватарки
+      console.log('[nativeStore] tg:account-update', {
+        id: acc.id, name: acc.name,
+        hasAvatar: !!acc.avatar,
+        avatarPreview: acc.avatar ? acc.avatar.slice(0, 100) : null,
+      })
       setState(s => {
         const existing = s.accounts.find(a => a.id === acc.id)
         const accounts = existing
