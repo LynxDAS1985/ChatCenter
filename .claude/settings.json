@@ -14,5 +14,31 @@
       "NotebookEdit(*)"
     ],
     "deny": []
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/check-size-hook.cjs",
+            "timeout": 15,
+            "statusMessage": "Проверка лимитов файлов кода..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/check-size-hook.cjs",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
   }
 }

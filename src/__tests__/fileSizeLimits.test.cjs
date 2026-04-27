@@ -44,21 +44,52 @@ function countLines(filePath) {
   catch (e) { return -1 }
 }
 
-// Собираем все .jsx / .js / .cjs из src/ и main/ рекурсивно
-function walk(dir, out) {
-  out = out || []
+// v0.87.75: три списка расширений —
+//   KNOWN       = имеют правило лимита (getLimit() их знает)
+//   IGNORED     = бинарники/доки — пропускаем молча, НЕ считаем за нарушение
+//   (всё остальное) → UNKNOWN → тест падает с инструкцией
+var KNOWN_EXT = [
+  '.jsx', '.tsx',                             // React-компоненты
+  '.js', '.ts', '.mjs', '.cts', '.mts',       // JS / TypeScript / ESM
+  '.cjs',                                     // CommonJS (preloads)
+  '.html',                                    // инлайн-страницы BrowserWindow
+  '.css', '.scss',                            // стили
+  '.json',                                    // конфиги (spamPatterns и т.п.)
+]
+var IGNORED_EXT = [
+  '.md', '.txt', '.yml', '.yaml',             // документация/конфиги
+  '.svg', '.png', '.jpg', '.jpeg', '.gif',    // изображения
+  '.ico', '.webp', '.bmp',                    // изображения
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',  // шрифты
+  '.mp3', '.mp4', '.webm', '.wav', '.ogg',    // медиа
+  '.pem', '.crt', '.key',                     // ключи
+  '.map',                                     // source maps
+]
+
+function getExt(name) {
+  var i = name.lastIndexOf('.')
+  return i < 0 ? '' : name.substring(i).toLowerCase()
+}
+
+// Собираем файлы из src/ и main/. Возвращаем { known, unknown }.
+// known — попадут в size test; unknown — упадёт "тест неизвестных расширений".
+function walk(dir, acc) {
+  acc = acc || { known: [], unknown: [] }
   var entries
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch (e) { return out }
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch (e) { return acc }
   entries.forEach(function (e) {
     var full = path.join(dir, e.name).replace(/\\/g, '/')
     if (e.isDirectory()) {
       if (e.name === 'node_modules' || e.name === '__snapshots__') return
-      walk(full, out)
-    } else if (/\.(jsx|js|cjs)$/.test(e.name)) {
-      out.push(full)
+      walk(full, acc)
+    } else {
+      var ext = getExt(e.name)
+      if (IGNORED_EXT.indexOf(ext) >= 0) return
+      if (KNOWN_EXT.indexOf(ext) >= 0) acc.known.push(full)
+      else acc.unknown.push(full + '  (расширение "' + ext + '")')
     }
   })
-  return out
+  return acc
 }
 
 // Известные исключения: файлы с индивидуальным (повышенным) потолком
@@ -88,56 +119,99 @@ var KNOWN_EXCEPTIONS = {
   'main/handlers/dockPinHandlers.js': {
     ceiling: 600,
     reason: 'Исторически большой handler. Разбиение low priority.'
+  },
+  // v0.87.75: исключения для файлов кроме .js/.jsx
+  'main/notification.html': {
+    ceiling: 1000,
+    reason: 'Инлайн-страница BrowserWindow (HTML+CSS+JS). Разбиение low priority.'
   }
 }
 
-// Определить лимит по пути файла
+// v0.87.75: все типы файлов покрыты правилами. Если появится что-то новое
+// (например, файл в новой папке с неожиданным расширением) — тест упадёт
+// через проверку "unknown extensions" или "нет правила для файла".
+
+// Универсальные предикаты
+var isReactFile = function (p) { return /\.(jsx|tsx)$/.test(p) }
+// "JS-like" = код на JS/TS/ESM. Исключая .cjs, .jsx/.tsx (у них свои правила).
+var isJsLike   = function (p) { return /\.(js|ts|mjs|cts|mts)$/.test(p) }
+
 function getLimit(p) {
-  // Тесты / snapshots
-  if (p.includes('/__tests__/') || /\.(test|vitest)\.(js|jsx|cjs)$/.test(p)) {
+  // ── 1. Тесты (.test.* / .vitest.*) — строгие, но крупнее обычных утилит
+  if (p.includes('/__tests__/') || /\.(test|vitest)\.(js|ts|jsx|tsx|cjs|mjs)$/.test(p)) {
     return { limit: 400, kind: 'тест' }
   }
-  // preload .cjs
+
+  // ── 2. React-компоненты (.jsx / .tsx)
+  if (isReactFile(p)) {
+    if (p.includes('src/components/')) return { limit: 700, kind: 'component .jsx/.tsx' }
+    return { limit: 600, kind: '.jsx/.tsx' }
+  }
+
+  // ── 3. Preload CommonJS (.cjs) — скрипты в WebView
   if (p.endsWith('.cjs') && p.includes('main/preloads/')) {
     return { limit: 600, kind: 'preload .cjs' }
   }
-  // JSX — по папкам
-  if (p.endsWith('.jsx')) {
-    if (p.includes('src/components/')) return { limit: 700, kind: 'component .jsx' }
-    return { limit: 600, kind: '.jsx' }
+  // Fallback для .cjs вне preloads (обычно нет, но чтобы не было дыры)
+  if (p.endsWith('.cjs')) {
+    return { limit: 400, kind: 'other .cjs' }
   }
-  // Preload hooks (НЕ React hooks, это скрипты-инъекции в WebView)
-  if (p.endsWith('.js') && p.includes('main/preloads/hooks/')) {
-    return { limit: 300, kind: 'preload hook .js' }
+
+  // ── 4. JS/TS/ESM — по папке
+  if (isJsLike(p)) {
+    // Preload hooks (инъекции в WebView)
+    if (p.includes('main/preloads/hooks/')) {
+      return { limit: 300, kind: 'preload hook .js/.ts' }
+    }
+    // React hooks (реально маленькие)
+    if (p.includes('/hooks/')) {
+      return { limit: 150, kind: 'React hook .js/.ts' }
+    }
+    // Крупные интеграции
+    if (
+      p.includes('main/handlers/') ||
+      p.includes('main/native/') ||
+      p.includes('src/native/store/') ||
+      p.includes('src/native/utils/') ||
+      p.includes('main/preloads/utils/')
+    ) {
+      return { limit: 500, kind: 'integration .js/.ts' }
+    }
+    // Корневой main
+    if (p === 'main/main.js' || p === 'main/main.ts') {
+      return { limit: 600, kind: 'main .js/.ts' }
+    }
+    // Обычные утилиты
+    return { limit: 300, kind: 'utility .js/.ts' }
   }
-  // React hooks — реально маленькие
-  if (p.endsWith('.js') && p.includes('/hooks/')) {
-    return { limit: 150, kind: 'React hook .js' }
+
+  // ── 5. HTML (инлайн-страницы BrowserWindow в main/)
+  if (p.endsWith('.html')) {
+    return { limit: 800, kind: 'HTML' }
   }
-  // JS — крупные интеграции
-  if (p.endsWith('.js') && (
-    p.includes('main/handlers/') ||
-    p.includes('main/native/') ||
-    p.includes('src/native/store/') ||
-    p.includes('src/native/utils/') ||
-    p.includes('main/preloads/utils/')
-  )) {
-    return { limit: 500, kind: 'integration .js' }
+
+  // ── 6. CSS / SCSS (стили)
+  if (/\.(css|scss)$/.test(p)) {
+    return { limit: 800, kind: 'CSS/SCSS' }
   }
-  // main/main.js — корневой
-  if (p === 'main/main.js') {
-    return { limit: 600, kind: 'main .js' }
+
+  // ── 7. JSON (конфиги spamPatterns и т.п.)
+  if (p.endsWith('.json')) {
+    return { limit: 500, kind: 'JSON конфиг' }
   }
-  // JS — обычные утилиты
-  if (p.endsWith('.js')) {
-    return { limit: 300, kind: 'utility .js' }
-  }
+
   return null
 }
 
-console.log('\n🧪 Автоматическая проверка лимитов файлов кода (v0.87.68)\n')
+console.log('\n🧪 Автоматическая проверка лимитов файлов (v0.87.75)\n')
 
-var allFiles = walk('src', []).concat(walk('main', []))
+// v0.87.75: walk() теперь возвращает {known, unknown}. Пустой IGNORED_EXT — пропущен.
+// Сканируем src/, main/ и shared/ (последняя — общие конфиги типа spamPatterns.json).
+var srcScan = walk('src')
+var mainScan = walk('main')
+var sharedScan = walk('shared')
+var allFiles = srcScan.known.concat(mainScan.known).concat(sharedScan.known)
+var unknownExtFiles = srcScan.unknown.concat(mainScan.unknown).concat(sharedScan.unknown)
 console.log('   Найдено файлов: ' + allFiles.length + '\n')
 
 // Сортируем по типу для читаемости
@@ -175,6 +249,45 @@ Object.keys(buckets).sort().forEach(function (kind) {
   })
   console.log('')
 })
+
+// ── v0.87.75: железная защита от «тихих» дыр ──
+// (A) Все кодовые файлы имеют правило лимита.
+// (B) KNOWN_EXCEPTIONS не содержат устаревших записей.
+// (C) Нет файлов с совсем неизвестным расширением (.vue/.svelte/.toml и т.п.).
+// Любое нарушение → тест падает с инструкцией.
+console.log('── Железная защита от дыр (v0.87.75): ──')
+
+// (A) Файлы в KNOWN_EXT, но без правила в getLimit()
+var uncovered = []
+allFiles.forEach(function (f) {
+  if (!getLimit(f)) uncovered.push(f)
+})
+test('(A) Все файлы покрыты правилом лимита в getLimit()', function () {
+  assert(uncovered.length === 0,
+    uncovered.length + ' файлов без правила:\n    ' + uncovered.join('\n    ') +
+    '\n  → добавь правило в getLimit() в src/__tests__/fileSizeLimits.test.cjs')
+})
+
+// (B) Исключения для уже несуществующих файлов
+var staleExceptions = []
+Object.keys(KNOWN_EXCEPTIONS).forEach(function (p) {
+  if (!fs.existsSync(p)) staleExceptions.push(p)
+})
+test('(B) KNOWN_EXCEPTIONS не содержат несуществующих файлов', function () {
+  assert(staleExceptions.length === 0,
+    'В KNOWN_EXCEPTIONS есть устаревшие записи:\n    ' + staleExceptions.join('\n    ') +
+    '\n  → удали эти записи из fileSizeLimits.test.cjs')
+})
+
+// (C) Файлы в src/ и main/ с расширением вне KNOWN_EXT и IGNORED_EXT
+test('(C) Нет файлов с неизвестными расширениями в src/ и main/', function () {
+  assert(unknownExtFiles.length === 0,
+    unknownExtFiles.length + ' файлов с неизвестным расширением:\n    ' + unknownExtFiles.join('\n    ') +
+    '\n  → либо добавь расширение в KNOWN_EXT (и правило в getLimit()),\n' +
+    '    либо в IGNORED_EXT (если это бинарник/документ).\n' +
+    '    Оба списка — в src/__tests__/fileSizeLimits.test.cjs')
+})
+console.log('')
 
 // ── Общая статистика ──
 console.log('── Статистика: ──')
