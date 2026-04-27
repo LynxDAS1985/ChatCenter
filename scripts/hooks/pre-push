@@ -1,0 +1,77 @@
+#!/bin/bash
+# v0.87.80: pre-push hook — запускает все cjs-тесты + vitest перед push.
+# Если что-то упало — push блокируется (та же цепочка что в GitHub Actions CI).
+#
+# Установка: npm run setup-hooks (вызывается автоматически через postinstall).
+# Ручной запуск: npm run pre-push.
+#
+# ВАЖНО: НЕ запускает electron-vite build и e2e — они требуют Electron,
+# что запрещено правилами CLAUDE.md в Claude Code. Полная цепочка `npm test`
+# прогоняется только в CI на GitHub.
+#
+# Обход: git push --no-verify (ЗАПРЕЩЕНО правилами без явного разрешения).
+
+set -u
+
+echo ""
+echo "🛡  pre-push: локальные проверки (та же цепочка что в CI)..."
+echo ""
+
+# Список cjs-тестов из package.json scripts.test (без vitest run / build / e2e)
+TESTS=(
+  isSpamText navigateToChat messengerConfigs monitorPreload overlayIcon
+  handleNewMessage messageProcessing mainProcess appStructure projectHealth
+  aiProviders consoleMessageParser ipcChannels fileSizeLimits memoryBankSizeLimits
+  featuresReferences memoryLeaks notifHooks componentScope hookOrder
+  mainImports mainRuntime mediaCacheQuota unitRuntime buildContract
+  storageErrors aiErrors extractedModules smokeTest integration
+)
+
+TOTAL=${#TESTS[@]}
+i=0
+for t in "${TESTS[@]}"; do
+  i=$((i + 1))
+  printf "  [%2d/%d] %s ... " "$i" "$TOTAL" "$t"
+  if node "src/__tests__/$t.test.cjs" > /tmp/cc-pp-out.log 2>&1; then
+    echo "✅"
+  else
+    echo "❌"
+    echo ""
+    echo "════════════════════════════════════════════════════════════"
+    echo "❌ pre-push: тест '$t' упал"
+    echo "════════════════════════════════════════════════════════════"
+    tail -20 /tmp/cc-pp-out.log
+    echo "════════════════════════════════════════════════════════════"
+    echo ""
+    echo "🚫 PUSH ЗАБЛОКИРОВАН. Чини тест и пробуй снова."
+    echo "   Обход: git push --no-verify (ЗАПРЕЩЕНО без разрешения)"
+    echo ""
+    rm -f /tmp/cc-pp-out.log
+    exit 1
+  fi
+done
+
+echo ""
+echo "  ✅ Все $TOTAL cjs-тестов прошли"
+echo ""
+echo "  [vitest] запуск ..."
+if npm run test:vitest --silent > /tmp/cc-pp-vitest.log 2>&1; then
+  RESULT=$(grep -E "Tests" /tmp/cc-pp-vitest.log | tail -1)
+  echo "  ✅ vitest: $RESULT"
+else
+  echo "  ❌ vitest упал"
+  echo ""
+  echo "════════════════════════════════════════════════════════════"
+  tail -30 /tmp/cc-pp-vitest.log
+  echo "════════════════════════════════════════════════════════════"
+  echo ""
+  echo "🚫 PUSH ЗАБЛОКИРОВАН."
+  rm -f /tmp/cc-pp-vitest.log
+  exit 1
+fi
+
+rm -f /tmp/cc-pp-out.log /tmp/cc-pp-vitest.log
+echo ""
+echo "✅ pre-push: всё зелёное — push разрешён"
+echo ""
+exit 0
