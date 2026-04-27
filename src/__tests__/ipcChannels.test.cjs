@@ -12,6 +12,13 @@ var handlersDir = 'main/handlers/'
   try { mainCode += '\n' + fs.readFileSync(handlersDir + f, 'utf8') } catch(e) {}
 })
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
+// v0.87.82: часть IPC вызовов переехала в hooks (useAppBootstrap, useAppIPCListeners и т.п.)
+var hooksDir = 'src/hooks'
+try {
+  fs.readdirSync(hooksDir).forEach(function(f) {
+    if (f.endsWith('.js')) appCode += '\n' + fs.readFileSync(hooksDir + '/' + f, 'utf8')
+  })
+} catch(e) {}
 var preloadCode = fs.readFileSync('main/preloads/app.preload.cjs', 'utf8')
 
 var passed = 0, failed = 0

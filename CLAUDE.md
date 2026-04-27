@@ -248,7 +248,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.87.81 (27 апреля 2026)
+**Текущая версия**: v0.87.82 (27 апреля 2026)
 
 ---
 
@@ -729,6 +729,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.87.81 (27 апреля 2026)
+**Версия проекта**: v0.87.82 (27 апреля 2026)
 **Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
-**Последнее обновление**: 27 апреля 2026 — v0.87.81: разбиение main.js (Шаг 4/7) — вынесены `main/utils/storage.js` (initStorage + migrateSettings), `main/utils/gigachat.js` (httpsPostSkipSsl + getGigaChatToken), `main/utils/ruError.js` (перевод ошибок API). main.js: 598 → 483 строк. Обновлены 3 теста (mainProcess, memoryLeaks, aiErrors).
+**Последнее обновление**: 27 апреля 2026 — v0.87.82: разбиение App.jsx (Шаг 5/7) — вынесены `useAppBootstrap.js` (Promise.all загрузка), `useConsoleErrorLogger.js` (patch console.error), `useAppIPCListeners.js` (window-state + badge + notifLog polling + autoreset). App.jsx: 599 → 475 строк. Обновлены 2 теста (appStructure, ipcChannels).

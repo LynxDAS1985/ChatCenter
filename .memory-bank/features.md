@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.81 (27 апреля 2026)
+## Текущая версия: v0.87.82 (27 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.65 → v0.87.75). Старое — в архиве:
 
@@ -14,6 +14,56 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.82 — Разбиение App.jsx: useAppBootstrap + useConsoleErrorLogger + useAppIPCListeners (Шаг 5/7)
+
+**Зачем**: `src/App.jsx` 599/600 = 99.8%. Любая новая фича UI → красный тест. По плану разбиения второй из четырёх рискованных файлов.
+
+**Что вынесено**:
+
+```
+ДО:
+src/App.jsx [599]
+  ├─ useEffect Promise.all загрузка (~60 строк)
+  ├─ useEffect patch console.error + show-log-modal (~22 строки)
+  └─ 4 useEffect: window-state + badge + notifLog + autoreset (~50 строк)
+
+ПОСЛЕ:
+src/App.jsx                          [475]  79% лимита, запас 125 строк
+src/hooks/useAppBootstrap.js         [82]   Promise.all messengers/settings/paths
+src/hooks/useConsoleErrorLogger.js   [33]   patch console.error + show-log-modal
+src/hooks/useAppIPCListeners.js      [90]   window-state + badge + polling + autoreset
+```
+
+**Контракт сохранён**: вызовы хуков в App.jsx с теми же зависимостями (refs, setters). Поведение не меняется.
+
+**Обновлены 2 теста**:
+- `appStructure.test.cjs` — проверка `playNotificationSound(` теперь в `allAppCode` (включая hooks). Порог `App.jsx > 500 строк` снижен до `> 300` (после рефакторинга осталось 475).
+- `ipcChannels.test.cjs` — поиск `window.api.invoke(...)` теперь в App.jsx + всех файлах из `src/hooks/`.
+
+**Проверки**:
+- `bash scripts/hooks/pre-push` → 30/30 cjs ✅, vitest 123/123 ✅
+- ESLint ✅
+- Pre-commit ✅
+
+**⚠ UI-проверка пользователем после Шага 5**:
+- При запуске → загружаются мессенджеры, настройки, темa (useAppBootstrap)
+- Открывается приложение, активная вкладка = первая (правильная)
+- Звук уведомления при получении нового сообщения (useAppIPCListeners → playNotificationSound)
+- Окно теряет/получает фокус → badge правильно обновляется
+- Открыть NotifLogModal → лог обновляется каждые 3 секунды
+- При переключении на вкладку с непрочитанными → счётчик сбрасывается через 1.5 сек
+
+**Файлы изменены**:
+- `src/App.jsx` — −124 строки (599 → 475)
+- `src/hooks/useAppBootstrap.js` — новый
+- `src/hooks/useConsoleErrorLogger.js` — новый
+- `src/hooks/useAppIPCListeners.js` — новый
+- `src/__tests__/appStructure.test.cjs` — обновлён
+- `src/__tests__/ipcChannels.test.cjs` — обновлён
+- `package.json`, `package-lock.json`, `CLAUDE.md` — версия 0.87.82
 
 ---
 

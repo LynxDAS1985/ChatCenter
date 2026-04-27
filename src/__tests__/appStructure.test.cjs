@@ -71,7 +71,8 @@ test('isDuplicateSubstring() из messageProcessing', () => assert(allAppCode.in
 test('stripSenderFromText() из messageProcessing', () => assert(allAppCode.includes('stripSenderFromText(')))
 test('isOwnMessage() из messageProcessing', () => assert(allAppCode.includes('isOwnMessage(')))
 test('WebView setup в отдельном файле (v0.82.6)', () => assert(webviewCode.length > 100 && code.includes('createWebviewSetup'), 'webviewSetup.js должен существовать'))
-test('playNotificationSound() из sound', () => assert(code.includes('playNotificationSound(')))
+// v0.87.82: playNotificationSound вызов теперь в useAppIPCListeners.js (был в App.jsx)
+test('playNotificationSound() из sound', () => assert(allAppCode.includes('playNotificationSound(')))
 test('buildChatNavigateScript() из navigateToChat', () => assert(allAppCode.includes('buildChatNavigateScript(')))
 test('detectMessengerType() из конфига', () => assert(allAppCode.includes('detectMessengerType(')))
 
@@ -90,7 +91,8 @@ test('Минимум console.log (< 5 в renderer)', () => {
   var logLines = code.split('\n').filter(l => /^\s*console\.log/.test(l) && !l.includes("console.log('__CC_"))
   assert(logLines.length < 5, 'found ' + logLines.length + ' console.log lines')
 })
-test('App.jsx > 500 строк (не пустой)', () => assert(lines > 500, 'lines=' + lines))
+// v0.87.82: после рефакторинга App.jsx ≈ 475 строк (было 599). Порог снижен до 300 — главное чтобы файл не был пустым.
+test('App.jsx > 300 строк (не пустой)', () => assert(lines > 300, 'lines=' + lines))
 
 // ── Компоненты ──
 console.log('\\n── Компоненты: ──')

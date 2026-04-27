@@ -1,4 +1,5 @@
 // v0.39.0 — Кастомные уведомления Messenger Ribbon
+// v0.87.82 — Refactored: 3 useEffect вынесены в useAppBootstrap / useConsoleErrorLogger / useAppIPCListeners
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
 import AddMessengerModal from './components/AddMessengerModal.jsx'
@@ -26,6 +27,9 @@ import useSearch from './hooks/useSearch.js'
 import useTabContextMenu from './hooks/useTabContextMenu.js'
 import useNotifyNavigation from './hooks/useNotifyNavigation.js'
 import useWebViewLifecycle from './hooks/useWebViewLifecycle.js'
+import useAppBootstrap from './hooks/useAppBootstrap.js'
+import useConsoleErrorLogger from './hooks/useConsoleErrorLogger.js'
+import useAppIPCListeners from './hooks/useAppIPCListeners.js'
 import NativeApp from './native/NativeApp.jsx'
 
 // v0.87.0: специальный "виртуальный" мессенджер — рендерит NativeApp вместо <webview>
@@ -214,28 +218,8 @@ export default function App() {
     searchInputRef,
   })
 
-  // ── v0.84.2: Renderer логирование + show-log-modal IPC ───────────────
-  useEffect(() => {
-    const origError = console.error.bind(console)
-    const patchedError = (...args) => {
-      origError(...args)
-      try { window.api?.send('app:log', { level: 'ERROR', message: args.map(a => typeof a === 'string' ? a : String(a)).join(' ') }) } catch {}
-    }
-    console.error = patchedError
-    let unsub
-    const setup = () => {
-      if (!window.api?.on) return
-      unsub = window.api?.on('show-log-modal', () => {
-        window.api?.invoke('app:read-log').then(content => {
-          setLogContent(content || 'Лог пуст')
-          setShowLogModal(true)
-        })
-      })
-    }
-    if (window.api?.on) setup()
-    else setTimeout(setup, 1000)
-    return () => { if (unsub) unsub(); console.error = origError }
-  }, [])
+  // ── v0.87.82: Renderer логирование + show-log-modal IPC → useConsoleErrorLogger
+  useConsoleErrorLogger({ setLogContent, setShowLogModal })
 
   // ── Применение темы ────────────────────────────────────────────────────
   useEffect(() => {
@@ -244,68 +228,13 @@ export default function App() {
     window.api?.invoke('window:set-titlebar-theme', theme).catch(() => {})
   }, [settings.theme])
 
-  // ── Загрузка при старте ────────────────────────────────────────────────
-  useEffect(() => {
-    const t0 = performance.now()
-    const log = (l) => { try { window.api?.send('app:log', { level: 'INFO', message: `[startup] +${Math.round(performance.now()-t0)}ms ${l}` }) } catch(_) {} }
-    log('useEffect start')
-    // Защита: window.api может быть undefined при HMR (React 19)
-    if (!window.api?.invoke) {
-      console.error('[App] window.api не инициализирован — загружаем DEFAULT_MESSENGERS')
-      setMessengers([...DEFAULT_MESSENGERS, NATIVE_CC_TAB])
-      setActiveId(DEFAULT_MESSENGERS[0].id)
-      setAppReady(true)
-      return
-    }
-    Promise.all([
-      window.api?.invoke('messengers:load').then(loadedList => {
-        log(`messengers:load ok (${loadedList?.length || 0} items)`)
-        // v0.87.1: фильтруем native_cc из сохранённых (мог попасть в файл из старой версии)
-        const noNative = (loadedList || []).filter(m => m.id !== NATIVE_CC_ID && !m.isNative)
-        const cleaned = noNative.map(m => {
-          const def = DEFAULT_MESSENGERS.find(d => d.id === m.id)
-          if (def) {
-            const { accountScript, ...rest } = m
-            return def.accountScript ? { ...rest, accountScript: def.accountScript } : rest
-          }
-          return m
-        })
-        // v0.87.0: добавляем вкладку «ЦентрЧатов» (нативный Telegram) ВСЕГДА в конец
-        const withNative = [...cleaned, NATIVE_CC_TAB]
-        setMessengers(withNative)
-        setActiveId(withNative[0]?.id || null)
-      }).catch(() => {
-        setMessengers([...DEFAULT_MESSENGERS, NATIVE_CC_TAB])
-        setActiveId(DEFAULT_MESSENGERS[0].id)
-      }),
-      window.api?.invoke('settings:get').then(s => {
-        log('settings:get ok')
-        setSettings(s)
-        if (s.aiSidebarWidth) {
-          const w = Math.max(240, Math.min(600, s.aiSidebarWidth))
-          setAiWidth(w); aiWidthRef.current = w
-        }
-        if (s.zoomLevels && typeof s.zoomLevels === 'object') {
-          setZoomLevels(s.zoomLevels)
-          zoomLevelsRef.current = s.zoomLevels
-        }
-        const todayDate = new Date().toISOString().slice(0, 10)
-        const savedStats = s.stats || {}
-        const loadedStats = savedStats.date !== todayDate
-          ? { today: 0, autoToday: 0, total: savedStats.total || 0, date: todayDate }
-          : { today: savedStats.today || 0, autoToday: savedStats.autoToday || 0, total: savedStats.total || 0, date: savedStats.date }
-        setStats(loadedStats)
-        statsRef.current = loadedStats
-      }).catch(() => {}),
-      window.api?.invoke('app:get-paths').then(({ monitorPreload }) => {
-        log('app:get-paths ok')
-        if (monitorPreload) {
-          const url = 'file:///' + monitorPreload.replace(/\\/g, '/').replace(/^\//, '')
-          setMonitorPreloadUrl(url)
-        }
-      }).catch(() => {})
-    ]).finally(() => { log('Promise.all done → appReady=true'); setAppReady(true) })
-  }, [])
+  // ── Загрузка при старте → useAppBootstrap (v0.87.82)
+  useAppBootstrap({
+    NATIVE_CC_TAB, NATIVE_CC_ID,
+    setMessengers, setActiveId, setSettings, setAiWidth, setZoomLevels, setStats,
+    setMonitorPreloadUrl, setAppReady,
+    aiWidthRef, zoomLevelsRef, statsRef,
+  })
 
   // ── Автосохранение мессенджеров ────────────────────────────────────────
   useEffect(() => {
@@ -316,35 +245,15 @@ export default function App() {
     }, 600)
   }, [messengers])
 
-  // ── IPC window-state ───────────────────────────────────────────────────
-  useEffect(() => {
-    return window.api?.on('window-state', (state) => {
-      windowFocusedRef.current = state.focused
-    })
-  }, [])
-
-  // ── Бейдж-события от ChatMonitor ───────────────────────────────────────
-  useEffect(() => {
-    return window.api?.on('messenger:badge', ({ id, count }) => {
-      setUnreadCounts(prev => {
-        const prev_count = prev[id] || 0
-        if (count > prev_count && settingsRef.current.soundEnabled !== false) {
-          const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[id]
-          const lastSnd = lastSoundTsRef.current[id] || 0
-          const sinceLast = Date.now() - lastSnd
-          if (!messengerMuted && sinceLast > 3000) {
-            const m = messengersRef.current.find(x => x.id === id)
-            playNotificationSound(m?.color)
-            lastSoundTsRef.current[id] = Date.now()
-            traceNotif('sound', 'pass', id, `badge +${count - prev_count}`, 'звук badge')
-          } else if (!messengerMuted) {
-            traceNotif('sound', 'block', id, `badge +${count - prev_count}`, `dedup badge ${sinceLast}мс назад`)
-          }
-        }
-        return { ...prev, [id]: count }
-      })
-    })
-  }, [])
+  // ── IPC listeners + auto-reset notifCount + notifLog polling → useAppIPCListeners (v0.87.82)
+  // (window-state, messenger:badge, notifLogModal polling, notifCountRef auto-reset)
+  useAppIPCListeners({
+    windowFocusedRef, settingsRef, messengersRef, lastSoundTsRef, notifCountRef,
+    webviewRefs, pipelineTraceRef,
+    activeId, notifLogModal,
+    setUnreadCounts, setNotifLogModal,
+    traceNotif,
+  })
 
   useNotifyNavigation({
     webviewRefs, activeIdRef, windowFocusedRef, pendingMarkReadsRef,
@@ -355,26 +264,9 @@ export default function App() {
     notifCountRef, lastRibbonTsRef, notifSenderTsRef,
   })
 
-  // ── Автообновление лога уведомлений ────────────────────────────────────
-  useEffect(() => {
-    if (!notifLogModal) return
-    const mid = notifLogModal.messengerId
-    const interval = setInterval(() => {
-      const wv = webviewRefs.current[mid]
-      if (!wv) return
-      wv.executeJavaScript(`(function() { return JSON.stringify(window.__cc_notif_log || []); })()`)
-        .then(json => {
-          try {
-            const log = JSON.parse(json)
-            const trace = pipelineTraceRef.current.filter(e => !e.mid || e.mid === mid)
-            setNotifLogModal(prev => prev && prev.messengerId === mid ? { ...prev, log, trace } : prev)
-          } catch {}
-        }).catch(() => {})
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [notifLogModal?.messengerId])
+  // v0.87.82: notifLog polling + notifCount auto-reset → useAppIPCListeners (выше)
 
-  // ── Очистка ────────────────────────────────────────────────────────────
+  // ── Cleanup таймеров на unmount ────────────────────────────────────────
   useEffect(() => {
     return () => {
       Object.values(retryTimers.current).forEach(t => clearTimeout(t))
@@ -383,22 +275,6 @@ export default function App() {
       clearTimeout(zoomSaveTimer.current)
     }
   }, [])
-
-  // v0.75.5: Автосброс notifCountRef при переключении на вкладку
-  useEffect(() => {
-    if (!activeId) return
-    const timer = setTimeout(() => {
-      if (notifCountRef.current[activeId] > 0 && windowFocusedRef.current) {
-        devLog(`[BADGE] auto-reset notifCountRef[${activeId}] = ${notifCountRef.current[activeId]} → 0 (viewing)`)
-        notifCountRef.current[activeId] = 0
-        setUnreadCounts(prev => {
-          if (prev[activeId] > 0) return { ...prev, [activeId]: 0 }
-          return prev
-        })
-      }
-    }, 1500)
-    return () => clearTimeout(timer)
-  }, [activeId])
 
   // ── v0.86.5-6: WebView lifecycle (вынесено в useWebViewLifecycle.js для лимита 600 строк)
   // Ловушка 64: forced resize + warm-up + health-check
