@@ -41,14 +41,20 @@ console.log('\\n🧪 Тесты navigateToChat\\n')
 // Проверяем реальный модуль
 let realBuild
 try {
-  // ESM import не работает в CommonJS, проверяем паттерны напрямую
+  // ESM import не работает в CommonJS, проверяем паттерны напрямую.
+  // v0.87.77: navigateToChat.js разбит на роутер + 5 файлов в navigators/.
+  // Склеиваем все файлы для проверки паттернов.
   const fs = require('fs')
-  const code = fs.readFileSync('src/utils/navigateToChat.js', 'utf8')
+  const path = require('path')
+  const router = fs.readFileSync('src/utils/navigateToChat.js', 'utf8')
+  const navDir = 'src/utils/navigators'
+  const navFiles = fs.readdirSync(navDir).filter(f => f.endsWith('.js'))
+  const code = [router, ...navFiles.map(f => fs.readFileSync(path.join(navDir, f), 'utf8'))].join('\n')
 
   console.log('── Структура модуля: ──')
 
   test('Файл существует и не пуст', () => assert(code.length > 100))
-  test('Экспортирует buildChatNavigateScript', () => assert(code.includes('export function buildChatNavigateScript')))
+  test('Экспортирует buildChatNavigateScript', () => assert(router.includes('export function buildChatNavigateScript')))
   test('Содержит Telegram навигацию', () => assert(code.includes('telegram.org')))
   test('Содержит WhatsApp навигацию', () => assert(code.includes('whatsapp.com')))
   test('Содержит VK навигацию', () => assert(code.includes('vk.com')))

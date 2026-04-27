@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.76 (24 апреля 2026)
+## Текущая версия: v0.87.77 (24 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.65 → v0.87.75). Старое — в архиве:
 
@@ -14,6 +14,49 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.77 — Разбиение navigateToChat.js на router + navigators/ (Шаг 2/7 разбиений)
+
+**Зачем**: `src/utils/navigateToChat.js` 300/300 = 100% лимита. Любая новая логика навигации (например, добавление нового мессенджера) — красный тест. Файл состоял из одной функции `buildChatNavigateScript` с 5 веток `if (url.includes(...))` — естественная граница для разбиения по мессенджерам.
+
+**Что сделано**:
+
+```
+ДО:
+src/utils/navigateToChat.js [300/300]  ❌ 100%
+
+ПОСЛЕ:
+src/utils/navigateToChat.js  [22 строки] ← роутер по url
+src/utils/navigators/
+├── telegramNavigate.js  [111 строк] ← Telegram Web K
+├── maxNavigate.js       [83 строки]  ← MAX SvelteKit
+├── whatsappNavigate.js  [61 строка]  ← WhatsApp Web
+├── vkNavigate.js        [20 строк]   ← VK
+└── genericNavigate.js   [21 строка]  ← fallback TreeWalker
+```
+
+**Контракт сохранён**: главный экспорт `buildChatNavigateScript(url, senderName, chatTag)` работает как раньше. Импорт в `src/components/NotifLogModal.jsx` и `src/hooks/useIPCListeners.js` не менялся.
+
+**Тест navigateToChat.test.cjs обновлён**: раньше читал один файл и грепал паттерны. Теперь склеивает router + все navigators/ и грепает по объединённому коду. 40 ✅ / 0 ❌.
+
+**Проверки**:
+- `npm run lint` ✅
+- `npm run test:vitest` ✅ (123 / 123)
+- `node src/__tests__/navigateToChat.test.cjs` ✅ (40 / 40)
+- `node src/__tests__/fileSizeLimits.test.cjs` ✅ (163 / 163, ноль warnings от навигаторов)
+
+**Файлы изменены**:
+- `src/utils/navigateToChat.js` — переписан с 300 → 22 строк (роутер)
+- `src/utils/navigators/{telegram,max,whatsapp,vk,generic}Navigate.js` — 5 новых файлов
+- `src/__tests__/navigateToChat.test.cjs` — читает все navigators/
+- `package.json`, `package-lock.json`, `CLAUDE.md` — версия 0.87.77
+
+**Что должен проверить пользователь** (UI):
+- В ribbon уведомлений нажми «Перейти к чату» — открывается нужный чат в Telegram/WhatsApp/VK/MAX
+- Особенно: каналы Telegram (chatTag начинается с `c`), пользователи (с `u`)
+- В NotifLogModal: клик по строке лога открывает чат
 
 ---
 
