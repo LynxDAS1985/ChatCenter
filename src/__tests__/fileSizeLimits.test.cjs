@@ -100,10 +100,9 @@ var KNOWN_EXCEPTIONS = {
     ceiling: 1300,
     reason: 'Крупный файл интеграции Telegram. Запланировано разбиение на telegramAuth/Messages/Chats/Media.'
   },
-  'src/native/modes/InboxMode.jsx': {
-    ceiling: 800,
-    reason: 'Экран чата. Запланировано разбиение на InboxMode + InboxMessageList + InboxHeader.'
-  },
+  // v0.87.83: InboxMode.jsx разбит на 4 файла (useReadByVisibility, useInboxScroll,
+  // InboxMessageInput, InboxChatListSidebar) — теперь 566 строк, под стандартным лимитом 600.
+  // Исключение удалено.
   'src/utils/webviewSetup.js': {
     ceiling: 600,
     reason: 'Исторически большая утилита настройки WebView (зум, сессии, partition). Разбиение low priority.'

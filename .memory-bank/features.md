@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.82 (27 апреля 2026)
+## Текущая версия: v0.87.83 (27 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.65 → v0.87.75). Старое — в архиве:
 
@@ -14,6 +14,60 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.83 — Разбиение InboxMode.jsx: 4 файла, исключение удалено (Шаг 6/7)
+
+**Зачем**: `src/native/modes/InboxMode.jsx` 789/800 — был с исключением (потолок 800 вместо стандартного 600). По плану handoff-code-limits.md — рекомендация разбить на главный + InboxMessageList + InboxHeader.
+
+**Что вынесено** (4 файла вместо 3 рекомендованных):
+
+```
+ДО:
+src/native/modes/InboxMode.jsx [789]  ← с исключением 800
+  ├─ read-by-visibility batch markRead (~50)
+  ├─ handleScroll + load-older + диагностика (~70)
+  ├─ Input + reply/edit панель JSX (~50)
+  └─ Левая колонка списка чатов JSX (~75)
+
+ПОСЛЕ:
+src/native/modes/InboxMode.jsx [566]   94% от стандартного лимита 600
+src/native/hooks/useReadByVisibility.js  [72]   batch markRead с защитой watermark
+src/native/hooks/useInboxScroll.js       [97]   handleScroll + scroll-anomaly + load-older
+src/native/components/InboxMessageInput.jsx     [63]   input + reply/edit
+src/native/components/InboxChatListSidebar.jsx  [73]   поиск + virtual list чатов
+```
+
+**🟢 Исключение `KNOWN_EXCEPTIONS['src/native/modes/InboxMode.jsx']` УДАЛЕНО** — теперь под стандартным лимитом 600 без поблажек.
+
+**Контракт сохранён**:
+- `useReadByVisibility({ activeChatId, activeUnread, markRead, scrollDiag, maxEverSentRef })` возвращает `{ readByVisibility }`. Использует внутренний `activeChatIdRef` чтобы closure в setTimeout не был stale.
+- `useInboxScroll({ store, activeMessages, ...refs, ...setters })` возвращает `{ handleScroll }`.
+- `<InboxMessageInput {...input/reply/edit/handlers} />` принимает state и handlers как props.
+- `<InboxChatListSidebar store={store} activeAccountChats search setSearch listHeight setListHeight />` инкапсулирует ResizeObserver и virtual List.
+
+**Проверки** (все с первого раза):
+- `bash scripts/hooks/pre-push` → 30/30 cjs ✅, vitest 123/123 ✅
+- ESLint ✅
+- pre-commit ✅
+
+**⚠ UI-проверка пользователем после Шага 6**:
+- Открыть Telegram (native) → список чатов слева работает (поиск, прокрутка, выбор чата)
+- Открыть чат → сообщения загружаются, scroll работает
+- При прокрутке вниз → счётчик непрочитанных уменьшается (batch markRead каждые 300мс)
+- При прокрутке вверх (до scrollTop<100) → подгружаются старые сообщения (load-older)
+- Поле ввода: Reply, Edit (Ctrl+↑), Ctrl+Enter отправка, drag-n-drop, Ctrl+V картинка
+- Save позиции прокрутки per-chat: открыть чат-1 → прокрутить → открыть чат-2 → вернуться в чат-1 → должны быть на той же позиции
+
+**Файлы изменены**:
+- `src/native/modes/InboxMode.jsx` — −223 строки (789 → 566)
+- `src/native/hooks/useReadByVisibility.js` — новый
+- `src/native/hooks/useInboxScroll.js` — новый
+- `src/native/components/InboxMessageInput.jsx` — новый
+- `src/native/components/InboxChatListSidebar.jsx` — новый
+- `src/__tests__/fileSizeLimits.test.cjs` — удалена запись `'src/native/modes/InboxMode.jsx'` из `KNOWN_EXCEPTIONS`
+- `package.json`, `package-lock.json`, `CLAUDE.md` — версия 0.87.83
 
 ---
 
