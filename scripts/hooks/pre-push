@@ -25,6 +25,7 @@ TESTS=(
   featuresReferences memoryLeaks notifHooks componentScope hookOrder
   mainImports mainRuntime mediaCacheQuota unitRuntime buildContract
   storageErrors aiErrors extractedModules smokeTest integration
+  integrationChains
 )
 
 TOTAL=${#TESTS[@]}

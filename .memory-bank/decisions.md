@@ -70,11 +70,15 @@
 
 ## ADR-006 — Zustand для состояния UI (3 марта 2026)
 
-**Статус**: 📋 Планируется
+**Статус**: ❌ Отменено (27 апреля 2026, в составе v0.87.87)
 
 **Контекст**: Нужно управлять состоянием: текущий мессенджер, входящие сообщения, варианты ИИ.
 
-**Решение**: Zustand — минималистичный, без бойлерплейта Redux.
+**Изначальное решение**: Zustand — минималистичный, без бойлерплейта Redux.
+
+**Почему отменено**: фактически в проекте используется **React hooks + IPC**, а не Zustand. Native-режим (`src/native/store/nativeStore.js`) — кастомный store на React useState + IPC subscriptions, без Zustand-зависимости. См. `native-mode-plan.md` → раздел «Технологический стек»: «Локальный store React hooks + IPC (не Zustand) — Минимум зависимостей, легче на start».
+
+Пакет `zustand` не установлен в `package.json`. Возвращаться к этому решению — не планируется.
 
 ---
 
@@ -138,33 +142,38 @@
 
 ## ADR-010 — Рефакторинг до <1000 строк: план (26 марта 2026)
 
-**Статус**: 🟡 В процессе
+**Статус**: ✅ ЗАВЕРШЕНО — переплавлено в новую систему лимитов (27 апреля 2026, v0.87.87)
 
-**Текущие размеры**: App.jsx 2137, main.js 1719, monitor.preload.js 825
+**Изначальный план (март 2026)**: разбить App.jsx (2137), main.js (1719), monitor.preload.js (825) до <1000 строк через выносы.
 
-**Что уже вынесено** (v0.82.0-v0.82.4):
-- ✅ Notification hooks → `hooks/{type}.hook.js` (monitor.preload.js -220, App.jsx -338)
-- ✅ AI handlers → `handlers/aiHandlers.js` (main.js -177)
-- ✅ Notification handlers → `handlers/notifHandlers.js` (main.js -66)
-- ✅ Unread counters → `utils/unreadCounters.js` (monitor.preload.js -491)
+**Что в итоге сделано** (v0.82.0 → v0.87.86):
 
-**Что нужно для main.js → <1000** (осталось 1719):
-- DockManager класс (~683 строк dock/pin) → `main/models/dockManager.js`
-- ВЫСОКИЙ РИСК: circular зависимости, mutable state (pinItems Map), таймеры
-- Нужна отдельная сессия с полным контекстом
+1. **Постепенный вынос** (v0.82.0-v0.82.4): notification hooks, AI handlers, notif handlers, unread counters.
 
-**Что нужно для App.jsx → <1000** (осталось 2137):
-- `handleNewMessage` (160 строк) + console-message handler (354 строк) = 514 строк notification pipeline
-- Имеет 20+ зависимостей от App scope (refs, state setters, imported utils)
-- Custom hook `useNotificationPipeline` — ПОПЫТКА СДЕЛАНА (v0.82.6), откачена: refs дублируются, ренейминг ломает console-message handler
-- Альтернатива: перенос ВСЕХ notification refs в Zustand store (полный рефакторинг state management)
-- **ПЛАН (Вариант 4 — AppShell + WebviewManager)**:
-  - Граница разреза: строки 611-1453 (~842 строки) → `src/components/WebviewManager.jsx`
-  - Включает: account extraction, notification pipeline (handleNewMessage, traceNotif, refs), setWebviewRef, ALL event listeners
-  - App.jsx после: ~1295 строк (UI + state + effects + render)
-  - WebviewManager: ~900 строк (WebView init + events + notification pipeline)
-  - Props: messengers, activeId, settings, webviewRefs, notifReadyRef, + все state setters
-  - **setWebviewRef** вызывается как `ref={el => setWebviewRef(el, m.id)}` — передаётся как callback от WebviewManager
+2. **Новая система лимитов** (v0.87.68-v0.87.86): вместо «всем <1000» — **разные лимиты по типу пути**:
+   - `.jsx` в `components/` → 700, в `native/` → 600
+   - `.js` в `hooks/` → 150, в `utils/` → 300, в крупных интеграциях → 500
+   - `main/main.js`, `App.jsx` → 600
+   - HTML/CSS → 800, JSON → 500
+   - Тесты → 400
+
+3. **План разбиения 7/7** (v0.87.76 → v0.87.86): все рискованные файлы разбиты:
+   - `App.jsx` 2137 → **475** строк
+   - `main/main.js` 1719 → **484** строки
+   - `monitor.preload.js` 825 → **разделён** на utils/* + hooks/*
+   - `telegramHandler.js` 1260 → **~80** строк (тонкий роутер)
+   - `InboxMode.jsx` 789 → **567** строк
+   - `notification.html` 902 → **12** строк (HTML+CSS+JS разделены)
+   - `navigateToChat.js` 300 → **22** строки
+
+4. **Защита от регрессии**:
+   - `fileSizeLimits.test.cjs` — авто-сканирование всех файлов с правилами по типу
+   - Pre-push git hook — блокирует push при упавшем тесте
+   - 3 защиты от «тихих дыр»: (A) нет правила, (B) устаревшее исключение, (C) неизвестное расширение
+
+**Текущее состояние** (см. `code-limits-status.md`): 5 low-priority исключений (webviewSetup, messengerConfigs, consoleMessageHandler, dockPinHandlers, notification.js). Все рискованные — без исключений.
+
+**Документация**: правила лимитов теперь в CLAUDE.md → раздел «🚫 Лимиты размера файлов ВСЕХ типов». Снапшот размеров — в `code-limits-status.md`.
   - **ТРЕБУЕТ ОТДЕЛЬНУЮ СЕССИЮ** — 614 строк перемещения + обновление imports + проброска 20+ props
 
 ---

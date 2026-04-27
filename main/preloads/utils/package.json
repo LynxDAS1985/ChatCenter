@@ -1,0 +1,4 @@
+{
+  "type": "commonjs",
+  "_comment": "v0.87.87: локальный package.json — переопределяет type:module из корня. Все .js файлы в этой папке трактуются как CommonJS (require / module.exports работают). Нужно для unreadCounters.js → require('./unreadTelegram.js') внутри."
+}

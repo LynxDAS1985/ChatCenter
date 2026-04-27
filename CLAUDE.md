@@ -76,8 +76,8 @@
 |------|------|
 | Расследование бага скролла native | [`.memory-bank/native-scroll-diagnostics-handoff.md`](.memory-bank/native-scroll-diagnostics-handoff.md) |
 | Большой план native-режима | [`.memory-bank/native-mode-plan.md`](.memory-bank/native-mode-plan.md) |
-| Лимиты файлов кода / план разбиения 2 больших файлов | [`.memory-bank/handoff-code-limits.md`](.memory-bank/handoff-code-limits.md) |
-| **Шаг 7/7 разбиения**: telegramHandler.js (1260 строк) | [`.memory-bank/handoff-telegram-handler-split.md`](.memory-bank/handoff-telegram-handler-split.md) — конкретный план с line ranges, рисками, командами |
+| Лимиты файлов кода / снапшот размеров | [`.memory-bank/code-limits-status.md`](.memory-bank/code-limits-status.md) |
+| Архив handoff-документов плана разбиения | [`.memory-bank/handoff-code-limits.md`](.memory-bank/handoff-code-limits.md) — план разбиения **7/7 закрыт** в v0.87.86 |
 
 ### Правило повторного чтения
 
@@ -249,7 +249,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.87.86 (27 апреля 2026)
+**Текущая версия**: v0.87.87 (27 апреля 2026)
 
 ---
 
@@ -730,6 +730,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.87.86 (27 апреля 2026)
+**Версия проекта**: v0.87.87 (27 апреля 2026)
 **Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
-**Последнее обновление**: 27 апреля 2026 — v0.87.86: разбиение `main/native/telegramHandler.js` (1284 → 87 строк) на 6 модулей (Шаг 7/7 — финал плана разбиения). Вынесены: `telegramState.js` (singleton state + emit + Map'ы), `telegramErrors.js` (translateTelegramError), `telegramAuth.js` (login flow + autoRestore), `telegramChats.js` (IPC чатов + FLOOD_WAIT throttle), `telegramMessages.js` (IPC сообщений + NewMessage event), `telegramMedia.js` (IPC медиа). Контракт сохранён — все IPC каналы и события те же. Запись `KNOWN_EXCEPTIONS['main/native/telegramHandler.js']` удалена. Pre-push hook ✅ (30/30 cjs + 123/123 vitest), ESLint ✅. UI-проверка пользователем требуется. План разбиения 7/7 закрыт.
+**Последнее обновление**: 27 апреля 2026 — v0.87.87: cleanup после плана разбиения 7/7. (1) `unreadCounters.js` 495→266 строк, Telegram-логика → `unreadTelegram.js` + локальный `package.json type:commonjs` для preloads/utils. (2) `useIPCListeners.js` удалён как мёртвый код. (3) `integration.test.cjs` 391→276, цепочки 3-5 → `integrationChains.test.cjs`. (4) `code-limits-status.md` обновлён до актуальных размеров. (5) Архивирован `handoff-telegram-handler-split.md`. (6) ADR-006 (Zustand) → ❌ Отменено, ADR-010 (Рефакторинг <1000) → ✅ Завершено. Pre-push hook: 31/31 cjs + 123/123 vitest ✅.

@@ -120,15 +120,17 @@ npm test  # но это запускает Electron, не делай без ра
 
 ## 🎯 Рекомендации для следующего ИИ
 
-### Приоритет 1: Разбить `telegramHandler.js`
+### Приоритет 1: ✅ Разбить `telegramHandler.js` — **СДЕЛАНО в v0.87.86**
 
-**📋 Подготовлен отдельный handoff: [`handoff-telegram-handler-split.md`](./handoff-telegram-handler-split.md)** (27 апреля 2026, после v0.87.83). В нём — конкретный план разбиения на 6 модулей, line ranges, описание рисков (общий state клиента, FLOOD_WAIT throttle, NewMessage event listener), порядок работы, команда-чекер тестов, UI-проверка, troubleshooting.
+telegramHandler.js: 1260 → ~80 строк (тонкий роутер). Вынесены 6 модулей в `main/native/`:
+- `telegramState.js` — singleton state + emit + Map'ы (chatEntityMap, markReadMaxSent)
+- `telegramErrors.js` — translateTelegramError (перевод API-ошибок)
+- `telegramAuth.js` — startLogin + autoRestoreSession + 4 IPC handlers
+- `telegramChats.js` — IPC чатов + FLOOD_WAIT throttle для аватарок
+- `telegramMessages.js` — IPC сообщений + NewMessage event listener
+- `telegramMedia.js` — IPC медиа + cleanup
 
-Эта задача стоит 4-6 часов. После разбиения:
-- Каждый файл под 400 строк
-- Легко найти где что
-- Легко тестировать отдельно
-- Можно удалить исключение из `KNOWN_EXCEPTIONS` в тесте
+**Исключение из `KNOWN_EXCEPTIONS` удалено**. Подробности в архивированном handoff: [`archive/2026-04-handoff-telegram-handler-split.md`](./archive/2026-04-handoff-telegram-handler-split.md) — образец подробного handoff'а перед сложным рефакторингом.
 
 ### Приоритет 2: ✅ Разбить `InboxMode.jsx` — **СДЕЛАНО в v0.87.83**
 

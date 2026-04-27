@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "0.87.86",
+  "version": "0.87.87",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",
@@ -21,7 +21,7 @@
     "check-memory": "bash scripts/check-memory.sh",
     "regen-claude-structure": "bash scripts/regen-claude-structure.sh",
     "start": "node scripts/dev.cjs",
-    "test": "node src/__tests__/isSpamText.test.cjs && node src/__tests__/navigateToChat.test.cjs && node src/__tests__/messengerConfigs.test.cjs && node src/__tests__/monitorPreload.test.cjs && node src/__tests__/overlayIcon.test.cjs && node src/__tests__/handleNewMessage.test.cjs && node src/__tests__/messageProcessing.test.cjs && node src/__tests__/mainProcess.test.cjs && node src/__tests__/appStructure.test.cjs && node src/__tests__/projectHealth.test.cjs && node src/__tests__/aiProviders.test.cjs && node src/__tests__/consoleMessageParser.test.cjs && node src/__tests__/ipcChannels.test.cjs && node src/__tests__/fileSizeLimits.test.cjs && node src/__tests__/memoryBankSizeLimits.test.cjs && node src/__tests__/featuresReferences.test.cjs && node src/__tests__/memoryLeaks.test.cjs && node src/__tests__/notifHooks.test.cjs && node src/__tests__/componentScope.test.cjs && node src/__tests__/hookOrder.test.cjs && node src/__tests__/mainImports.test.cjs && node src/__tests__/mainRuntime.test.cjs && node src/__tests__/mediaCacheQuota.test.cjs && node src/__tests__/unitRuntime.test.cjs && node src/__tests__/buildContract.test.cjs && node src/__tests__/storageErrors.test.cjs && node src/__tests__/aiErrors.test.cjs && node src/__tests__/extractedModules.test.cjs && node src/__tests__/smokeTest.test.cjs && node src/__tests__/integration.test.cjs && vitest run && electron-vite build && node e2e/app.e2e.cjs && node e2e/ui.e2e.cjs"
+    "test": "node src/__tests__/isSpamText.test.cjs && node src/__tests__/navigateToChat.test.cjs && node src/__tests__/messengerConfigs.test.cjs && node src/__tests__/monitorPreload.test.cjs && node src/__tests__/overlayIcon.test.cjs && node src/__tests__/handleNewMessage.test.cjs && node src/__tests__/messageProcessing.test.cjs && node src/__tests__/mainProcess.test.cjs && node src/__tests__/appStructure.test.cjs && node src/__tests__/projectHealth.test.cjs && node src/__tests__/aiProviders.test.cjs && node src/__tests__/consoleMessageParser.test.cjs && node src/__tests__/ipcChannels.test.cjs && node src/__tests__/fileSizeLimits.test.cjs && node src/__tests__/memoryBankSizeLimits.test.cjs && node src/__tests__/featuresReferences.test.cjs && node src/__tests__/memoryLeaks.test.cjs && node src/__tests__/notifHooks.test.cjs && node src/__tests__/componentScope.test.cjs && node src/__tests__/hookOrder.test.cjs && node src/__tests__/mainImports.test.cjs && node src/__tests__/mainRuntime.test.cjs && node src/__tests__/mediaCacheQuota.test.cjs && node src/__tests__/unitRuntime.test.cjs && node src/__tests__/buildContract.test.cjs && node src/__tests__/storageErrors.test.cjs && node src/__tests__/aiErrors.test.cjs && node src/__tests__/extractedModules.test.cjs && node src/__tests__/smokeTest.test.cjs && node src/__tests__/integration.test.cjs && node src/__tests__/integrationChains.test.cjs && vitest run && electron-vite build && node e2e/app.e2e.cjs && node e2e/ui.e2e.cjs"
   },
   "dependencies": {
     "input": "^1.0.1",

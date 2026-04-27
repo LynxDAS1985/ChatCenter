@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.86 (27 апреля 2026)
+## Текущая версия: v0.87.87 (27 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.65 → v0.87.75). Старое — в архиве:
 
@@ -14,6 +14,62 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.87 — Cleanup после плана разбиения 7/7: документация + срочные разбиения
+
+**Зачем**: после закрытия плана 7/7 (v0.87.86) пользователь попросил полную проверку проекта. Найдено 4 группы задач: устаревшая документация, файлы для архивации, устаревшие ADR, файлы 80%+ от лимита (риск красного теста при следующем коммите). Сделано всё в одном коммите.
+
+**Группа A: документация**
+
+1. `code-limits-status.md` (был v0.87.68 — отстаёт на 18 версий!) — переписан с актуальными цифрами. Удалены строки про разбитые файлы (telegramHandler, InboxMode). Добавлен раздел «План разбиения 7/7 ВСЕ ШАГИ ЗАКРЫТЫ» с историей.
+2. `handoff-code-limits.md` — Приоритет 1 (telegramHandler) помечен ✅ СДЕЛАНО в v0.87.86. Ссылка на архивированный handoff.
+3. `decisions.md`:
+   - **ADR-006 (Zustand)** → ❌ Отменено. Используется React hooks + IPC, пакет zustand не установлен.
+   - **ADR-010 (Рефакторинг <1000)** → ✅ ЗАВЕРШЕНО. Переплавлено в новую систему лимитов.
+
+**Группа B: архивация handoff'ов**
+
+- `handoff-telegram-handler-split.md` (64 КБ) → `archive/2026-04-handoff-telegram-handler-split.md`. В журнал `archive/README.md` добавлена запись.
+- `handoff-step7-completed.md` (43 КБ) — удалён (был локальный, не закоммичен; вся информация в `features.md` changelog v0.87.86).
+- `CLAUDE.md` — удалена строка «Шаг 7/7: telegramHandler.js» из таблицы «Узкие файлы».
+
+**Группа C: срочные разбиения (риск красного теста)**
+
+1. **`unreadCounters.js` 495→266 строк** — Telegram-логика вынесена в `unreadTelegram.js` (242 строки). Re-export Telegram-функций для обратной совместимости. Создан **локальный `main/preloads/utils/package.json`** с `"type": "commonjs"` — переопределяет корневой `type:module`, чтобы `require()` и `module.exports` работали в `.js` файлах папки.
+2. **`useIPCListeners.js` удалён** — мёртвый код (никем не импортировался). Был заменён на `useAppIPCListeners.js` в Шаге 5 (v0.87.82).
+3. **`integration.test.cjs` 391→276 строк** — цепочки 3-5 (URL/config, App.jsx imports, lifecycle) вынесены в новый `integrationChains.test.cjs` (150 строк). Оба добавлены в `npm test` script и `pre-push` hook.
+
+**Тест-фиксы** (требовались после разбиения):
+- `monitorPreload.test.cjs` — `unreadCode` склейка из 2 файлов (unreadCounters + unreadTelegram).
+- `getMessengerType()` в `unreadCounters.js` — добавлена защита `if (typeof location === 'undefined') return null` для Node-test контекста (smokeTest require'ит preload, там нет `location`).
+
+**Проверки**:
+- `bash scripts/hooks/pre-push` → **31/31 cjs ✅** (было 30, +1 integrationChains) + **vitest 123/123 ✅**
+- `npm run lint` ✅
+- `npm run check-memory` ✅ (все 4 версии 0.87.87)
+
+**Файлы изменены**:
+- `main/preloads/utils/unreadCounters.js` — 495→266 строк
+- `main/preloads/utils/unreadTelegram.js` — новый (242 строки)
+- `main/preloads/utils/package.json` — новый (type: commonjs)
+- `src/hooks/useIPCListeners.js` — удалён
+- `src/__tests__/integration.test.cjs` — 391→276 строк
+- `src/__tests__/integrationChains.test.cjs` — новый (150 строк)
+- `src/__tests__/monitorPreload.test.cjs` — обновлена склейка `unreadCode`
+- `package.json` — `npm test` цепочка + версия 0.87.87
+- `scripts/hooks/pre-push` — добавлен `integrationChains` в TESTS массив
+- `.memory-bank/code-limits-status.md` — переписан полностью (был v0.87.68 → актуально v0.87.86)
+- `.memory-bank/handoff-code-limits.md` — Приоритет 1 ✅ СДЕЛАНО
+- `.memory-bank/decisions.md` — ADR-006 ❌, ADR-010 ✅
+- `.memory-bank/handoff-telegram-handler-split.md` → `archive/2026-04-...`
+- `.memory-bank/handoff-step7-completed.md` — удалён
+- `.memory-bank/archive/README.md` — журнал
+- `CLAUDE.md` — удалена ссылка на архивированный handoff
+- `package-lock.json`, `.memory-bank/features.md` — версия 0.87.87
+
+**🟡 Что осталось вручную пользователю**: UI-проверка после Шага 7 (12 пунктов из архивированного handoff). Подробная инструкция в финальном отчёте сессии.
 
 ---
 

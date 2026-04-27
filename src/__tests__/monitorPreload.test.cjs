@@ -9,7 +9,10 @@ const fs = require('fs')
 const path = require('path')
 const code = fs.readFileSync('main/preloads/monitor.preload.cjs', 'utf8')
 // v0.82.3: unread counters вынесены в отдельный файл
-const unreadCode = fs.existsSync('main/preloads/utils/unreadCounters.js') ? fs.readFileSync('main/preloads/utils/unreadCounters.js', 'utf8') : ''
+// v0.87.87: unreadCounters.js разбит — Telegram-логика → unreadTelegram.js. Склеиваем для проверки паттернов.
+const unreadCounters = fs.existsSync('main/preloads/utils/unreadCounters.js') ? fs.readFileSync('main/preloads/utils/unreadCounters.js', 'utf8') : ''
+const unreadTelegramCode = fs.existsSync('main/preloads/utils/unreadTelegram.js') ? fs.readFileSync('main/preloads/utils/unreadTelegram.js', 'utf8') : ''
+const unreadCode = unreadCounters + '\n' + unreadTelegramCode
 // v0.84.3: Extracted utility modules
 const utilsDir = 'main/preloads/utils'
 const chatMetadataCode = fs.existsSync(path.join(utilsDir, 'chatMetadata.js')) ? fs.readFileSync(path.join(utilsDir, 'chatMetadata.js'), 'utf8') : ''
