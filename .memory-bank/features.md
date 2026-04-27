@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.78 (24 апреля 2026)
+## Текущая версия: v0.87.79 (24 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.65 → v0.87.75). Старое — в архиве:
 
@@ -14,6 +14,34 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.79 — Фикс CI: integration.test.cjs после разбиения navigateToChat.js
+
+**Что сломалось**: после v0.87.77 (разбиение navigateToChat.js на router + navigators/) GitHub Actions CI упал на ubuntu-latest:
+- ❌ navigateToChat: TG URL → TG скрипт с .chatlist-chat
+- ❌ navigateToChat: VK URL → VK скрипт с ConvoListItem
+
+`integration.test.cjs:285-292` читает `src/utils/navigateToChat.js` и проверяет паттерны (`.chatlist-chat`, `ConvoListItem`) в нём. После разбиения роутер 22 строки, паттерны переехали в `navigators/telegramNavigate.js` и `navigators/vkNavigate.js` — тест их не нашёл.
+
+**Почему локально не упало**: я запускал только `npm run test:vitest` + `npm run lint` + `node ./fileSizeLimits.test.cjs` + `navigateToChat.test.cjs` (последний я обновил по тому же шаблону, поэтому он зелёный). А `integration.test.cjs` локально не прогонял — `npm test` запрещён правилами (запускает electron в e2e).
+
+**Фикс** (тот же шаблон что для navigateToChat.test.cjs):
+- В `integration.test.cjs` добавлен `var path = require('path')`
+- Чтение `navigateToChat.js` заменено на склейку router + всех файлов в `navigators/`. Теперь тест видит паттерны независимо от того, в каком из 6 файлов они лежат.
+
+**Урок**: после **разбиения файлов** локально надо прогонять **все cjs-тесты по очереди**, а не только vitest. Нашёл и записал в memory bank как ловушку.
+
+**Проверки**:
+- Прогнал все 30 cjs-тестов вручную → 0 ❌
+- `node src/__tests__/integration.test.cjs` → 35 ✅ / 0 ❌
+- `npm run test:vitest` → 123 / 123 ✅
+- `npm run lint` ✅
+
+**Файлы изменены**:
+- `src/__tests__/integration.test.cjs` — склейка router + navigators/
+- `package.json`, `package-lock.json`, `CLAUDE.md` — версия 0.87.79
 
 ---
 

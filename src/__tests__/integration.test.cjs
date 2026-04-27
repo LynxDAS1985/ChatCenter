@@ -6,6 +6,7 @@
  */
 
 var fs = require('fs')
+var path = require('path')
 
 var passed = 0, failed = 0
 function test(name, fn) {
@@ -269,7 +270,15 @@ test('__CC_ACCOUNT__:Алексей Дугин → set account name', function()
 console.log('\\n── Цепочка: URL → detectType → config: ──')
 
 var configCode = fs.readFileSync('src/utils/messengerConfigs.js', 'utf8')
-var navCode = fs.readFileSync('src/utils/navigateToChat.js', 'utf8')
+// v0.87.77: navigateToChat.js разбит на роутер + navigators/. Склеиваем
+// все файлы для проверки паттернов (.chatlist-chat / ConvoListItem
+// теперь в navigators/telegramNavigate.js и navigators/vkNavigate.js).
+var navRouter = fs.readFileSync('src/utils/navigateToChat.js', 'utf8')
+var navDir = 'src/utils/navigators'
+var navFiles = fs.readdirSync(navDir).filter(function(f) { return f.endsWith('.js') })
+var navCode = [navRouter].concat(navFiles.map(function(f) {
+  return fs.readFileSync(path.join(navDir, f), 'utf8')
+})).join('\n')
 
 test('Telegram URL → telegram type → TG DOM-скан', function() {
   assert(configCode.includes("'telegram'"))

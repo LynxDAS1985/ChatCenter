@@ -5,6 +5,51 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: после разбиения файла прогнать ВСЕ cjs-тесты, не только vitest (v0.87.79)
+
+**Симптом**: разбили большой файл на модули, локально `npm run lint` + `npm run test:vitest` зелёные → push → GitHub Actions CI падает на одном из 30 cjs-тестов которые проверяют **паттерны grep'ом** в исходном файле.
+
+**Реальный случай**:
+- v0.87.77 разбил `src/utils/navigateToChat.js` (300 → 22 строки) на router + 5 файлов в `navigators/`
+- Я обновил `navigateToChat.test.cjs` (склеил router + navigators/) — этот тест я знал и проверил
+- НО `integration.test.cjs:285-292` тоже читает `navigateToChat.js` и грепает `.chatlist-chat`, `ConvoListItem` — **второй такой же тест**, я о нём не вспомнил
+- v0.87.78 (notification.html разбит) тоже прошёл лимиты, но CI продолжал падать с тем же v0.87.77 фейлом
+- v0.87.79 — починил, склеив `navigateToChat.js` со всеми `navigators/*.js` в `integration.test.cjs`
+
+**Почему `npm test` локально нельзя**: цепочка `npm test` в проекте включает `electron-vite build && node e2e/app.e2e.cjs && node e2e/ui.e2e.cjs` — последние два запускают **Electron**, что нарушает критический запрет CLAUDE.md.
+
+**Правило**: при **разбиении файла на модули** или **переименовании файла** обязательно прогнать ВСЕ cjs-тесты которые могут читать этот файл grep'ом:
+
+```bash
+for t in isSpamText navigateToChat messengerConfigs monitorPreload \
+         overlayIcon handleNewMessage messageProcessing mainProcess \
+         appStructure projectHealth aiProviders consoleMessageParser \
+         ipcChannels fileSizeLimits memoryBankSizeLimits featuresReferences \
+         memoryLeaks notifHooks componentScope hookOrder mainImports \
+         mainRuntime mediaCacheQuota unitRuntime buildContract storageErrors \
+         aiErrors extractedModules smokeTest integration; do
+  node src/__tests__/$t.test.cjs > /dev/null 2>&1 || echo "❌ $t"
+done
+```
+
+Без этого CI **обязательно** упадёт после крупного разбиения, и придётся делать второй коммит-фикс.
+
+**Какие тесты особенно опасны** (содержат `fs.readFileSync(...).includes(...)`):
+- `integration.test.cjs` — проверяет цепочки между файлами через grep
+- `appStructure.test.cjs` — структура проекта
+- `componentScope.test.cjs` — вложенность функций
+- `extractedModules.test.cjs` — что именно экспортируется
+- `mainImports.test.cjs` — какие импорты в main.js
+- `appStructure`, `featuresReferences` — пути к файлам
+
+При разбиении файла X — ищи `readFileSync.*X` по всем тестам:
+
+```bash
+grep -rn "readFileSync.*<имя_файла>" src/__tests__/
+```
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: FLOOD_WAIT от массовых GramJS RPC вызовов (v0.87.55)
 
 **Симптом**: Приложение бан Telegram сервером на 26 секунд, все новые чаты без аватарок, в логе `FLOOD_WAIT_X`.
