@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.90 (27 апреля 2026)
+## Текущая версия: v0.87.91 (27 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.65 → v0.87.75). Старое — в архиве:
 
@@ -14,6 +14,30 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.91 — AccountContextMenu: аватарка + Sheen + Slide + белый текст
+
+3 части по запросу пользователя:
+
+**A) Аватарка** — `loadOwnAvatar(me)` в `telegramAuth.js` через `client.downloadProfilePhoto(me, { isBig: false })` → `tg-avatars/me_<id>.jpg` → URL в `state.currentAccount.avatar`. Также `connectedAt: Date.now()`. Грузится асинхронно (не блокирует login), кэшируется.
+
+**B) Flex-layout** — шапка меню: аватарка 56×56 слева (фото или градиент accent→blue с инициалами), текст справа (имя жирным белым, номер dim, @username accent, дата dimmer).
+
+**C) Sheen + Slide эффекты в `styles.css`**:
+- `.native-btn-sheen::before` — белая полоса skewX(-20°), `left: -75% → 125%` за 600мс при hover
+- `.native-btn-sheen:hover` — фон `rgba(239,68,68,0.85)` + красное box-shadow свечение
+- `.native-btn-sheen:active` — `scale(0.97)` (нажатие)
+- `@keyframes native-menu-slide-in` — opacity + translateX 20→0 за 250мс spring. Применяется к шагам menu/confirm.
+
+Текст в кнопке белый по умолчанию (был красный).
+
+Тесты: `text-align center` → `flex layout` + 2 новых (инициалы / URL фото). Всего vitest **142/142** ✅, cjs **31/31** ✅.
+
+**Файлы**: `telegramAuth.js`, `AccountContextMenu.jsx`, `AccountContextMenu.vitest.jsx`, `styles.css`, версия 0.87.91.
+
+**UI-проверка**: перезапуск → аватарка загрузилась → ПКМ → меню с фото слева, текстом справа → hover «Выйти» = белый блик → клик = slide-переход → confirm-кнопки → active = squish.
 
 ---
 

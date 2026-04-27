@@ -387,6 +387,53 @@
   }
 }
 
+/* v0.87.91: slide-in для блока в AccountContextMenu при переходе menu → confirm.
+   Новый блок въезжает справа с лёгким fade. */
+@keyframes native-menu-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* v0.87.91: Sheen-эффект для destructive-кнопок при hover.
+   Полупрозрачный белый блик пробегает слева направо за 600мс. */
+.native-btn-sheen::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: -75%;
+  width: 50%;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.18) 40%,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(255, 255, 255, 0.18) 60%,
+    transparent 100%
+  );
+  transform: skewX(-20deg);
+  pointer-events: none;
+  transition: left 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.native-btn-sheen:hover::before {
+  left: 125%;
+}
+/* При hover у Sheen-кнопки также усиливаем фон + подсветка */
+.native-btn-sheen:hover {
+  background: rgba(239, 68, 68, 0.85) !important;
+  border-color: rgba(239, 68, 68, 1) !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4), 0 0 0 1px rgba(239, 68, 68, 0.3) !important;
+}
+/* Active (нажатие) — лёгкое сжатие */
+.native-btn-sheen:active {
+  transform: scale(0.97);
+  transition: transform 80ms;
+}
+
 /* v0.87.26: разделители дат/времени — контрастнее + линии по бокам как в Telegram */
 .native-msg-divider {
   align-self: center;

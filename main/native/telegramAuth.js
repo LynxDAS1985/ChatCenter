@@ -5,12 +5,35 @@
 // и счётчики не синхронизируются.
 import { ipcMain } from 'electron'
 import fs from 'node:fs'
+import path from 'node:path'
 import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
 import { state, log, emit, API_ID, API_HASH } from './telegramState.js'
 import { translateTelegramError } from './telegramErrors.js'
 import { attachMessageListener } from './telegramMessages.js'
 import { startUnreadRescan } from './telegramChats.js'
+
+// v0.87.91: загрузка аватарки профиля пользователя (для AccountContextMenu).
+// Сохраняется в tg-avatars/me_<id>.jpg, возвращает file:/// URL или null.
+async function loadOwnAvatar(me) {
+  try {
+    if (!state.client || !state.avatarsDir || !me?.id) return null
+    const filename = `me_${me.id}.jpg`
+    const filepath = path.join(state.avatarsDir, filename)
+    // Если уже скачан — используем кэш
+    if (fs.existsSync(filepath)) {
+      return 'file:///' + encodeURI(filepath.replace(/\\/g, '/'))
+    }
+    const buffer = await state.client.downloadProfilePhoto(me, { isBig: false })
+    if (!buffer || !buffer.length) return null
+    fs.writeFileSync(filepath, buffer)
+    log(`own avatar saved: ${filename} (${buffer.length} bytes)`)
+    return 'file:///' + encodeURI(filepath.replace(/\\/g, '/'))
+  } catch (e) {
+    log('loadOwnAvatar error: ' + e.message)
+    return null
+  }
+}
 
 export function initAuthHandlers() {
   ipcMain.handle('tg:login-start', async (_, { phone }) => {
@@ -145,7 +168,15 @@ async function startLogin(phone) {
       phone: phone,
       username: me.username || '',
       status: 'connected',
+      connectedAt: Date.now(), // v0.87.91: дата подключения для UI
     }
+    // v0.87.91: загружаем аватарку профиля асинхронно — не блокируем login
+    loadOwnAvatar(me).then(avatar => {
+      if (avatar) {
+        state.currentAccount = { ...state.currentAccount, avatar }
+        emit('tg:account-update', state.currentAccount)
+      }
+    }).catch(e => log('own avatar err: ' + e.message))
     emit('tg:account-update', state.currentAccount)
     emit('tg:login-step', { step: 'success', phone })  // v0.87.10: явный success — UI закроет модалку
     setTimeout(() => emit('tg:login-step', null), 200)
@@ -199,7 +230,15 @@ export async function autoRestoreSession() {
       phone: me.phone ? '+' + me.phone : '',
       username: me.username || '',
       status: 'connected',
+      connectedAt: Date.now(), // v0.87.91: дата восстановления сессии (как новое подключение)
     }
+    // v0.87.91: подгружаем аватарку асинхронно — не блокируем restore
+    loadOwnAvatar(me).then(avatar => {
+      if (avatar) {
+        state.currentAccount = { ...state.currentAccount, avatar }
+        emit('tg:account-update', state.currentAccount)
+      }
+    }).catch(e => log('own avatar err: ' + e.message))
     emit('tg:account-update', state.currentAccount)
     attachMessageListener()
     startUnreadRescan()

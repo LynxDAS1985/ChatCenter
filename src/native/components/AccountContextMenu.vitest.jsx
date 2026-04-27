@@ -64,13 +64,35 @@ describe('AccountContextMenu — Шаг 1 (меню)', () => {
     cleanup()
   })
 
-  it('информация об аккаунте центрирована (v0.87.89)', () => {
+  it('шапка — flex layout с аватаркой слева (v0.87.91)', () => {
     const { container } = render(
       <AccountContextMenu account={baseAccount} x={100} y={100} onClose={() => {}} onLogout={() => {}} />
     )
-    // Шапка с инфо должна иметь text-align: center
     const header = container.querySelector('.native-account-menu > div')
-    expect(header.style.textAlign).toBe('center')
+    expect(header.style.display).toBe('flex')
+    expect(header.style.alignItems).toBe('center')
+    cleanup()
+  })
+
+  it('показывает инициалы в аватарке если нет URL (v0.87.91)', () => {
+    const { container } = render(
+      <AccountContextMenu account={{ ...baseAccount, avatar: null }} x={100} y={100} onClose={() => {}} onLogout={() => {}} />
+    )
+    // Avatar div — первый child шапки. Должен содержать инициалы AL (Алексей Дугин → АД).
+    const avatar = container.querySelector('.native-account-menu > div > div')
+    expect(avatar.textContent).toMatch(/[А-ЯA-Z]{1,2}/)
+    cleanup()
+  })
+
+  it('показывает фото в аватарке если есть URL (v0.87.91)', () => {
+    const { container } = render(
+      <AccountContextMenu account={{ ...baseAccount, avatar: 'file:///C:/path/me.jpg' }} x={100} y={100} onClose={() => {}} onLogout={() => {}} />
+    )
+    const avatar = container.querySelector('.native-account-menu > div > div')
+    // background style должен содержать URL фото
+    expect(avatar.style.background).toContain('me.jpg')
+    // Инициалов нет — есть фото
+    expect(avatar.textContent).toBe('')
     cleanup()
   })
 

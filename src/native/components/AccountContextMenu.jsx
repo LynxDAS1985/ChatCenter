@@ -104,90 +104,85 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* Шапка: инфо об аккаунте — всегда видна.
-          v0.87.89: центрирование + AMOLED-цвета, номер показывается полностью */}
+      {/* Шапка: аватарка слева + инфо справа (v0.87.91 — flex layout). */}
       <div style={{
-        padding: '14px 12px 12px',
+        padding: '14px 14px 12px',
         borderBottom: '1px solid var(--amoled-border)',
-        textAlign: 'center',
         background: 'linear-gradient(180deg, rgba(42,171,238,0.04) 0%, transparent 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
       }}>
+        {/* Аватарка 56×56 — фото или инициалы */}
         <div style={{
-          fontSize: 15,
-          fontWeight: 700,
-          color: '#fff',
-          letterSpacing: 0.2,
+          width: 56, height: 56, flexShrink: 0,
+          borderRadius: '50%',
+          background: account.avatar
+            ? `url("${account.avatar}") center/cover no-repeat`
+            : `linear-gradient(135deg, var(--amoled-accent) 0%, #1d6fa5 100%)`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontSize: 20, fontWeight: 700,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.4), 0 0 0 2px rgba(255,255,255,0.06)',
+          letterSpacing: 0.5,
         }}>
-          {account.name || 'Без имени'}
+          {!account.avatar && (account.name || '?').slice(0, 2).toUpperCase()}
         </div>
-        {account.phone && (
+        {/* Текст справа — left-aligned внутри своего блока */}
+        <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
           <div style={{
-            fontSize: 12,
-            color: 'var(--amoled-text-dim)',
-            marginTop: 4,
-            fontVariantNumeric: 'tabular-nums',
+            fontSize: 15, fontWeight: 700, color: '#fff',
+            letterSpacing: 0.2,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
-            {formatPhone(account.phone)}
+            {account.name || 'Без имени'}
           </div>
-        )}
-        {account.username && (
-          <div style={{
-            fontSize: 12,
-            color: 'var(--amoled-accent)',
-            marginTop: 2,
-            fontWeight: 500,
-          }}>
-            @{account.username}
-          </div>
-        )}
-        {account.connectedAt && (
-          <div style={{
-            fontSize: 10,
-            color: 'var(--amoled-text-dimmer)',
-            marginTop: 6,
-            opacity: 0.7,
-          }}>
-            Подключён {formatConnectedDate(account.connectedAt)}
-          </div>
-        )}
+          {account.phone && (
+            <div style={{
+              fontSize: 12, color: 'var(--amoled-text-dim)', marginTop: 3,
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {formatPhone(account.phone)}
+            </div>
+          )}
+          {account.username && (
+            <div style={{
+              fontSize: 12, color: 'var(--amoled-accent)', marginTop: 2,
+              fontWeight: 500,
+            }}>
+              @{account.username}
+            </div>
+          )}
+          {account.connectedAt && (
+            <div style={{
+              fontSize: 10, color: 'var(--amoled-text-dimmer)', marginTop: 5, opacity: 0.7,
+            }}>
+              Подключён {formatConnectedDate(account.connectedAt)}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Низ: меняется в зависимости от шага */}
-      <div style={{ padding: 8, transition: 'all 200ms ease-out' }}>
+      {/* Низ: меняется в зависимости от шага. v0.87.91 — slide transition + Sheen на кнопке. */}
+      <div style={{ padding: 10, position: 'relative', overflow: 'hidden', minHeight: 56 }}>
         {step === 'menu' && (
           <button
             onClick={() => setStep('confirm')}
-            className="native-account-menu__btn native-account-menu__btn--danger"
+            className="native-account-menu__btn native-account-menu__btn--danger native-btn-sheen"
             style={{
               width: '100%',
-              padding: '10px 12px',
-              // v0.87.90: по умолчанию — красная заливка с red-текстом (видно опасное действие).
+              padding: '11px 12px',
               background: 'rgba(239,68,68,0.12)',
               border: '1px solid rgba(239,68,68,0.25)',
-              color: 'var(--amoled-danger)',
+              color: '#fff', // v0.87.91: белый по умолчанию
               fontSize: 13,
               cursor: 'pointer',
               borderRadius: 6,
               textAlign: 'center',
               fontWeight: 600,
               letterSpacing: 0.2,
-              transition: 'all 180ms cubic-bezier(0.34, 1.4, 0.64, 1)',
-              boxShadow: '0 0 0 0 rgba(239,68,68,0)',
-            }}
-            onMouseEnter={(e) => {
-              // v0.87.90: при hover — ярче фон + белый текст + лёгкий подъём + красное свечение
-              e.currentTarget.style.background = 'rgba(239,68,68,0.85)'
-              e.currentTarget.style.borderColor = 'rgba(239,68,68,1)'
-              e.currentTarget.style.color = '#fff'
-              e.currentTarget.style.transform = 'translateY(-1px)'
-              e.currentTarget.style.boxShadow = '0 4px 14px rgba(239,68,68,0.35), 0 0 0 1px rgba(239,68,68,0.4)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(239,68,68,0.12)'
-              e.currentTarget.style.borderColor = 'rgba(239,68,68,0.25)'
-              e.currentTarget.style.color = 'var(--amoled-danger)'
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = '0 0 0 0 rgba(239,68,68,0)'
+              position: 'relative',
+              overflow: 'hidden',
+              animation: 'native-menu-slide-in 250ms cubic-bezier(0.34, 1.4, 0.64, 1)',
             }}
           >
             🚪 Выйти из аккаунта
@@ -195,11 +190,11 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
         )}
 
         {step === 'confirm' && (
-          <>
+          <div style={{ animation: 'native-menu-slide-in 250ms cubic-bezier(0.34, 1.4, 0.64, 1)' }}>
             <div style={{
               fontSize: 12,
               color: 'var(--amoled-text-dim)',
-              padding: '6px 8px 12px',
+              padding: '4px 8px 12px',
               lineHeight: 1.5,
               textAlign: 'center',
             }}>
@@ -218,32 +213,48 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
                 Ошибка: {error}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={onClose}
                 style={{
-                  flex: 1, padding: '8px 10px', fontSize: 12,
+                  flex: 1, padding: '9px 10px', fontSize: 12,
                   background: 'var(--amoled-surface-hover)',
                   border: '1px solid var(--amoled-border)',
-                  color: 'var(--amoled-text)', borderRadius: 4, cursor: 'pointer',
-                  transition: 'background 150ms',
+                  color: 'var(--amoled-text)', borderRadius: 6, cursor: 'pointer',
+                  transition: 'all 150ms',
+                  fontWeight: 500,
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--amoled-border)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'var(--amoled-surface-hover)'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--amoled-border)'
+                  e.currentTarget.style.borderColor = 'var(--amoled-text-dim)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'var(--amoled-surface-hover)'
+                  e.currentTarget.style.borderColor = 'var(--amoled-border)'
+                }}
               >❌ Отмена</button>
               <button
                 onClick={handleConfirm}
+                className="native-btn-sheen"
                 style={{
-                  flex: 1, padding: '8px 10px', fontSize: 12,
-                  background: 'rgba(239,68,68,0.85)', border: 'none',
-                  color: '#fff', borderRadius: 4, cursor: 'pointer', fontWeight: 600,
-                  transition: 'background 150ms',
+                  flex: 1, padding: '9px 10px', fontSize: 12,
+                  background: 'rgba(239,68,68,0.85)',
+                  border: '1px solid rgba(239,68,68,1)',
+                  color: '#fff', borderRadius: 6, cursor: 'pointer', fontWeight: 600,
+                  position: 'relative', overflow: 'hidden',
+                  transition: 'all 150ms',
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239,68,68,1)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(239,68,68,0.85)'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(239,68,68,1)'
+                  e.currentTarget.style.boxShadow = '0 4px 14px rgba(239,68,68,0.45)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(239,68,68,0.85)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
               >✅ Выйти</button>
             </div>
-          </>
+          </div>
         )}
 
         {step === 'progress' && (
