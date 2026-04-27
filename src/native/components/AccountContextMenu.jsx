@@ -106,23 +106,23 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
     >
       {/* Шапка: аватарка слева + инфо справа (v0.87.91 — flex layout). */}
       <div style={{
-        padding: '14px 14px 12px',
+        padding: '8px 10px',
         borderBottom: '1px solid var(--amoled-border)',
         background: 'linear-gradient(180deg, rgba(42,171,238,0.04) 0%, transparent 100%)',
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
+        gap: 8,
       }}>
-        {/* Аватарка 68×68 (v0.87.92: +20% от 56) — фото или инициалы */}
+        {/* Аватарка 80×80 (v0.87.93: +18%, маленькие отступы от краёв меню) */}
         <div style={{
-          width: 68, height: 68, flexShrink: 0,
+          width: 80, height: 80, flexShrink: 0,
           borderRadius: '50%',
           background: account.avatar
             ? `url("${account.avatar}") center/cover no-repeat`
             : `linear-gradient(135deg, var(--amoled-accent) 0%, #1d6fa5 100%)`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontSize: 24, fontWeight: 700,
-          boxShadow: '0 2px 10px rgba(0,0,0,0.45), 0 0 0 2px rgba(255,255,255,0.08)',
+          color: '#fff', fontSize: 28, fontWeight: 700,
+          boxShadow: '0 3px 12px rgba(0,0,0,0.5), 0 0 0 2px rgba(255,255,255,0.1)',
           letterSpacing: 0.5,
         }}>
           {!account.avatar && (account.name || '?').slice(0, 2).toUpperCase()}

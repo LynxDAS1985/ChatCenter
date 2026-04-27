@@ -5,6 +5,99 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: file:/// URL **ЗАБЛОКИРОВАН** в renderer — используй `cc-media://` (v0.87.93)
+
+### Симптом
+
+В DevTools console:
+```
+Not allowed to load local resource: file:///C:/Users/...
+```
+
+В UI — пустой круг вместо аватарки/изображения. В `chatcenter.log` (через `console-message` listener в `windowManager.js`) тоже эта же ошибка с уровнем ERROR.
+
+### Что НЕЛЬЗЯ делать
+
+🔴 **НЕ возвращай `file:///...` URL из main process в renderer**:
+
+```js
+// ❌ ПЛОХО — Chromium заблокирует в renderer:
+return 'file:///' + encodeURI(filepath.replace(/\\/g, '/'))
+```
+
+Причина: renderer работает на `http://localhost:5173` (dev) или `app://` (prod). Из этих origin'ов Chromium **запрещает** загрузку `file:///` ресурсов — это базовая security policy браузера. `webSecurity: false` помогает не во всех случаях и **никогда** не должен ставиться.
+
+### Как НАДО делать
+
+🟢 **Используй кастомный protocol `cc-media://`** — он зарегистрирован в `main/native/ccMediaProtocol.js` (v0.87.21):
+
+```js
+// ✅ ХОРОШО — cc-media:// читается через privileged protocol:
+return `cc-media://avatars/${filename}`         // для аватарок
+return `cc-media://media/${filename}`           // для фото/файлов
+return `cc-media://video/${filename}`           // для видео (с Range support)
+```
+
+### Что протокол делает
+
+`registerCcMediaScheme()` (вызывается из `main.js`) регистрирует scheme как:
+- `standard: true` — нормальный URL парсинг
+- `secure: true` — считается безопасным origin
+- `bypassCSP: true` — обходит Content Security Policy
+- `stream: true` — поддержка HTTP Range (для `<video>` seeking)
+
+`registerCcMediaHandler(userData)` маршрутизирует по hostname:
+- `cc-media://avatars/X.jpg` → `<userData>/tg-avatars/X.jpg`
+- `cc-media://media/X.jpg` → `<userData>/tg-media/X.jpg`
+- `cc-media://video/X.mp4` → `<userData>/tg-media/X.mp4`
+
+Чтение через `net.fetch(pathToFileURL(filePath))` — обходит блокировки renderer и поддерживает Range.
+
+### Как диагностировать (без DevTools)
+
+⚠ **НЕ нужно открывать DevTools** — есть готовая инфраструктура логирования:
+
+1. **Файл лога**: `%APPDATA%/ЦентрЧатов/chatcenter.log`
+2. **Все ошибки renderer** с уровнем ≥ 2 (error) перехватываются через `mainWindow.webContents.on('console-message', ...)` в `main/utils/windowManager.js:63` → пишутся в `chatcenter.log` через `console.error` патч в `main/utils/logger.js`.
+3. **Свои логи из renderer**: `window.api?.send('app:log', { level: 'INFO', message: '...' })`. Примеры:
+   - `src/hooks/useAppBootstrap.js:25`
+   - `src/native/utils/scrollDiagnostics.js:29`
+4. **`console.log()` в renderer (info)** не попадает в файл — только в DevTools. Для диагностики используй `app:log` или `console.error` (он перехватывается).
+
+**Правильная команда для проверки**:
+```bash
+grep -i "not allowed\|file:///" "$APPDATA/ЦентрЧатов/chatcenter.log" | tail -10
+```
+
+### Реальный случай (v0.87.91 → v0.87.93)
+
+1. **v0.87.91**: добавил аватарку пользователя через `client.downloadProfilePhoto(me)` → сохранил в `tg-avatars/me_<id>.jpg` → вернул `file:///` URL.
+2. Backend: ✅ файл скачан (5318 bytes из лога), URL передан через IPC.
+3. UI: ❌ пустой круг — Chromium блокирует `file:///` в renderer.
+4. **v0.87.92**: добавил `console.log` в `nativeStore.js` — попросил пользователя открыть DevTools. **Зря** — у проекта уже есть свой логер через `chatcenter.log`.
+5. **v0.87.93**: заменил на `cc-media://avatars/me_<id>.jpg` → заработало.
+
+Между шагами 4 и 5 пользователь справедливо матерился.
+
+### Чек-лист для будущих фич с локальными файлами
+
+- [ ] Файл сохраняется в `<userData>/tg-avatars/`, `tg-media/` или другой подпапке
+- [ ] Возвращаемый URL **не** содержит `file:///`
+- [ ] Возвращаемый URL — `cc-media://<kind>/<filename>` (kind: `avatars`/`media`/`video`)
+- [ ] Если нужен новый kind (например `cc-media://stickers/`) — добавить в `registerCcMediaHandler` switch.
+- [ ] **НЕ** добавлять `console.log` в renderer для диагностики — использовать `window.api.send('app:log', ...)` чтобы попадало в `chatcenter.log`.
+
+### Связанные файлы
+
+- `main/native/ccMediaProtocol.js` — реализация протокола (~70 строк)
+- `main/main.js` (где-то рядом со startup) — `registerCcMediaScheme()` + `registerCcMediaHandler(userDataPath)`
+- `main/native/telegramChats.js:61,233` — пример использования для аватарок чатов (но там пока `file:///` — TODO мигрировать)
+- `main/native/telegramAuth.js loadOwnAvatar()` — использует `cc-media://` (v0.87.93)
+- `main/utils/windowManager.js:63` — perехват console-message (откуда брать ошибки)
+- `main/utils/logger.js:45` — `console.error` → `chatcenter.log`
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: после разбиения файла прогнать ВСЕ cjs-тесты, не только vitest (v0.87.79)
 
 **Симптом**: разбили большой файл на модули, локально `npm run lint` + `npm run test:vitest` зелёные → push → GitHub Actions CI падает на одном из 30 cjs-тестов которые проверяют **паттерны grep'ом** в исходном файле.

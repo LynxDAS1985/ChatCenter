@@ -84,13 +84,13 @@ describe('AccountContextMenu — Шаг 1 (меню)', () => {
     cleanup()
   })
 
-  it('показывает фото в аватарке если есть URL (v0.87.91)', () => {
+  it('показывает фото в аватарке если есть URL (v0.87.93: cc-media://)', () => {
     const { container } = render(
-      <AccountContextMenu account={{ ...baseAccount, avatar: 'file:///C:/path/me.jpg' }} x={100} y={100} onClose={() => {}} onLogout={() => {}} />
+      <AccountContextMenu account={{ ...baseAccount, avatar: 'cc-media://avatars/me_12345.jpg' }} x={100} y={100} onClose={() => {}} onLogout={() => {}} />
     )
     const avatar = container.querySelector('.native-account-menu > div > div')
     // background style должен содержать URL фото
-    expect(avatar.style.background).toContain('me.jpg')
+    expect(avatar.style.background).toContain('me_12345.jpg')
     // Инициалов нет — есть фото
     expect(avatar.textContent).toBe('')
     cleanup()
