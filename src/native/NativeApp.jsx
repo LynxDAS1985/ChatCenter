@@ -7,6 +7,7 @@ import './styles.css'
 import useNativeStore from './store/nativeStore.js'
 import LoginModal from './components/LoginModal.jsx'
 import InboxMode from './modes/InboxMode.jsx'
+import AccountContextMenu from './components/AccountContextMenu.jsx'
 
 const MODES = [
   { id: 'inbox', label: 'Чаты' },
@@ -17,9 +18,16 @@ const MODES = [
 export default function NativeApp() {
   const store = useNativeStore()
   const [showLogin, setShowLogin] = useState(false)
+  // v0.87.88: ПКМ-меню аккаунта { account, x, y } или null
+  const [accountMenu, setAccountMenu] = useState(null)
 
   const hasAccounts = store.accounts.length > 0
   const showLoginScreen = showLogin || !!store.loginFlow
+
+  const handleAccountContextMenu = (e, account) => {
+    e.preventDefault()
+    setAccountMenu({ account, x: e.clientX, y: e.clientY })
+  }
 
   return (
     <div className="native-mode">
@@ -45,7 +53,8 @@ export default function NativeApp() {
               key={acc.id}
               className={`native-account ${store.activeAccountId === acc.id ? 'native-account--active' : ''}`}
               onClick={() => store.setActiveAccount(acc.id)}
-              title={`${acc.name} ${acc.phone || ''}`}
+              onContextMenu={(e) => handleAccountContextMenu(e, acc)}
+              title={`${acc.name} ${acc.phone || ''} — ПКМ для меню`}
             >
               {(acc.name || '?').slice(0, 2).toUpperCase()}
               <div className={`native-account__dot native-account__dot--${
@@ -97,6 +106,17 @@ export default function NativeApp() {
           )}
         </div>
       </div>
+
+      {/* v0.87.88: меню аккаунта по ПКМ */}
+      {accountMenu && (
+        <AccountContextMenu
+          account={accountMenu.account}
+          x={accountMenu.x}
+          y={accountMenu.y}
+          onClose={() => setAccountMenu(null)}
+          onLogout={store.removeAccount}
+        />
+      )}
     </div>
   )
 }
