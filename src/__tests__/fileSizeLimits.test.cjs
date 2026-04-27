@@ -96,10 +96,8 @@ function walk(dir, acc) {
 // Текущий снапшот в .memory-bank/code-limits-status.md
 // Рекомендации по разбиению в .memory-bank/handoff-code-limits.md
 var KNOWN_EXCEPTIONS = {
-  'main/native/telegramHandler.js': {
-    ceiling: 1300,
-    reason: 'Крупный файл интеграции Telegram. Запланировано разбиение на telegramAuth/Messages/Chats/Media.'
-  },
+  // v0.87.85: telegramHandler.js разбит на 6 модулей (Шаг 7/7) — теперь под стандартным
+  // лимитом 500 для main/native/*.js. Исключение удалено.
   // v0.87.83: InboxMode.jsx разбит на 4 файла (useReadByVisibility, useInboxScroll,
   // InboxMessageInput, InboxChatListSidebar) — теперь 566 строк, под стандартным лимитом 600.
   // Исключение удалено.

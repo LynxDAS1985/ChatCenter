@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.85 (27 апреля 2026)
+## Текущая версия: v0.87.86 (27 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.65 → v0.87.75). Старое — в архиве:
 
@@ -14,6 +14,69 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.86 — Разбиение `telegramHandler.js`: 6 модулей, исключение удалено (Шаг 7/7 — финал плана)
+
+**Зачем**: `telegramHandler.js` был 1284 строки / 1300 — крупнейший файл с исключением `KNOWN_EXCEPTIONS`. Последний рискованный файл из плана разбиения.
+
+**Что вынесено**:
+
+```
+ДО:  main/native/telegramHandler.js [1284/1300]  ← KNOWN_EXCEPTIONS
+ПОСЛЕ:
+  main/native/telegramHandler.js   [87]    тонкий роутер (init + cleanup at start)
+  main/native/telegramState.js     [47]    общий state + emit + Map'ы (singleton)
+  main/native/telegramErrors.js    [42]    translateTelegramError
+  main/native/telegramAuth.js      [212]   startLogin + autoRestoreSession + 4 IPC
+  main/native/telegramChats.js     [460]   IPC чатов + FLOOD_WAIT throttle
+  main/native/telegramMessages.js  [398]   IPC сообщений + NewMessage event listener
+  main/native/telegramMedia.js     [129]   IPC медиа + cleanup
+```
+
+**Контракт сохранён**:
+- Все IPC каналы те же: `tg:login-start/code/password/cancel`, `tg:get-chats`,
+  `tg:get-cached-chats`, `tg:get-messages`, `tg:send-message`, `tg:send-file`,
+  `tg:send-clipboard-image`, `tg:forward`, `tg:mark-read`, `tg:pin`, `tg:rescan-unread`,
+  `tg:get-pinned`, `tg:refresh-avatar`, `tg:set-typing`, `tg:download-video`,
+  `tg:download-media`, `tg:cleanup-media`, `tg:media-cache-size`, `tg:remove-account`,
+  `tg:edit-message`, `tg:delete-message`.
+- Все события те же: `tg:account-update`, `tg:login-step`, `tg:chats`, `tg:messages`,
+  `tg:new-message`, `tg:chat-unread-sync`, `tg:unread-bulk-sync`, `tg:chat-avatar`,
+  `tg:typing`, `tg:read`, `tg:media-progress`.
+
+**Архитектура**: `telegramState.js` экспортирует singleton-объект `state` + Map'ы (`chatEntityMap`, `markReadMaxSent`, `maxOutgoingRead`, `lastPerChatSync`). Node.js модули кэшируются → один экземпляр на процесс. Все остальные модули импортируют их и работают через `state.client`, `chatEntityMap.get(...)`. Map'ы изменяемые сами по себе — изменение видно во всех импортирующих.
+
+**Критические сохранения**:
+- FLOOD_WAIT throttle (200мс между GetFull*) в `loadAvatarsAsync` — перенесён ДОСЛОВНО (см. mistakes/electron-core.md, инцидент v0.87.55).
+- Watermark guard (`markReadMaxSent` Map) в `tg:mark-read` — НЕ уменьшаем maxId, иначе бейдж растёт обратно.
+- `attachMessageListener()` + `startUnreadRescan()` вызываются после `client.start()` SUCCESS в `startLogin` И в `autoRestoreSession`.
+
+**Удалена запись** `KNOWN_EXCEPTIONS['main/native/telegramHandler.js']` в `src/__tests__/fileSizeLimits.test.cjs` — теперь под стандартным лимитом 500 для `main/native/*.js` (фактически 87/500 — запас 413 строк, 83%).
+
+**Проверки**: pre-push hook ✅ (30/30 cjs + vitest 123/123), ESLint ✅ (`--max-warnings 0`), check-memory ✅.
+
+**Файлы изменены**:
+- [main/native/telegramHandler.js](main/native/telegramHandler.js) — переписан (1284 → 87)
+- [main/native/telegramState.js](main/native/telegramState.js) — новый
+- [main/native/telegramErrors.js](main/native/telegramErrors.js) — новый
+- [main/native/telegramAuth.js](main/native/telegramAuth.js) — новый
+- [main/native/telegramChats.js](main/native/telegramChats.js) — новый
+- [main/native/telegramMessages.js](main/native/telegramMessages.js) — новый
+- [main/native/telegramMedia.js](main/native/telegramMedia.js) — новый
+- [src/__tests__/fileSizeLimits.test.cjs](src/__tests__/fileSizeLimits.test.cjs) — удалена запись KNOWN_EXCEPTIONS
+- `package.json`, `package-lock.json`, `CLAUDE.md`, `features.md` — версия v0.87.86
+
+**Замечание о коллизии версий**: handoff просил коммит разбиения как v0.87.85, но v0.87.85 уже была занята предыдущим коммитом (расширение самого handoff'а, 8605403). Чтобы не переписывать историю — bump до **v0.87.86**. Cleanup-коммит документации (5 мест: code-limits-status, handoff-code-limits, ссылка в CLAUDE, архивация handoff, журнал archive) сместится на v0.87.87.
+
+**🎉 План разбиения 7/7 закрыт.** Все рискованные файлы под стандартными лимитами без поблажек.
+
+**UI-проверка пользователем требуется** — 12 пунктов в 4 группах из handoff'а:
+1. Авторизация (вход с нуля, auto-restore session, logout)
+2. Чаты (список загружается, открытие чата, прочитанность)
+3. Сообщения (отправка, reply/edit/delete/forward, входящие в реальном времени)
+4. Медиа (photo/video, send file/clipboard, pin/unpin)
 
 ---
 
