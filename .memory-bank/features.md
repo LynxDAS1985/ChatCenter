@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.80 (27 апреля 2026)
+## Текущая версия: v0.87.81 (27 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.65 → v0.87.75). Старое — в архиве:
 
@@ -14,6 +14,57 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.81 — Разбиение main.js: storage + gigachat + ruError (Шаг 4/7)
+
+**Зачем**: `main/main.js` 598/600 = 99.6% лимита. Любая новая фича main-процесса → красный тест. План в `handoff-code-limits.md` советовал «отрефакторить срочно».
+
+**Что вынесено**:
+
+```
+ДО:
+main/main.js [598 строк]
+  ├─ SETTINGS_VERSION + migrateSettings + initStorage  (~45 строк)
+  ├─ GIGACHAT_* константы + httpsPostSkipSsl + getGigaChatToken (~55 строк)
+  └─ ruError() переводчик API-ошибок (~30 строк)
+
+ПОСЛЕ:
+main/main.js [483 строки] — 80% лимита, запас 117 строк
+main/utils/storage.js  [45]   ← initStorage + migrateSettings + SETTINGS_VERSION
+main/utils/gigachat.js [58]   ← httpsPostSkipSsl + getGigaChatToken + GIGACHAT_CHAT_URL
+main/utils/ruError.js  [31]   ← перевод API-ошибок
+```
+
+**Контракт сохранён**:
+- `initAIHandlers({ httpsPostSkipSsl, getGigaChatToken, ruError, GIGACHAT_CHAT_URL })` теперь импортирует из `gigachat.js` и `ruError.js`. Сигнатура та же.
+- `initStorage(app.getPath('userData'))` — добавлен параметр userDataPath (раньше функция вызывала `app.getPath` напрямую, теперь принимает извне для тестируемости).
+
+**Обновлены 3 теста** (читали main.js grep'ом):
+- `mainProcess.test.cjs` — добавлены чтения `storage.js`/`gigachat.js`/`ruError.js` в `allCode`. Тест `ruError определена` теперь принимает `export function ruError` тоже.
+- `memoryLeaks.test.cjs` — добавлены 3 файла в массив склейки `mainCode`.
+- `aiErrors.test.cjs` — извлекает `ruError` через regex теперь из `main/utils/ruError.js` (с fallback на `main.js`). Поддерживает `export function`.
+
+**Проверки**:
+- `bash scripts/hooks/pre-push` → 30/30 cjs ✅, vitest 123/123 ✅
+- ESLint ✅
+- Pre-commit ✅
+
+**Файлы изменены**:
+- `main/main.js` — −115 строк (598 → 483)
+- `main/utils/storage.js` — новый
+- `main/utils/gigachat.js` — новый
+- `main/utils/ruError.js` — новый
+- `src/__tests__/mainProcess.test.cjs` — обновлён
+- `src/__tests__/memoryLeaks.test.cjs` — обновлён
+- `src/__tests__/aiErrors.test.cjs` — обновлён
+- `package.json`, `package-lock.json`, `CLAUDE.md` — версия 0.87.81
+
+**⚠ UI-проверка после Шага 4**:
+- Запустить приложение → настройки сохраняются (storage)
+- ИИ запрос с любым провайдером → ответ приходит (или внятная ошибка от ruError)
+- Запрос к GigaChat → токен получается, ответ приходит
 
 ---
 

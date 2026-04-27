@@ -17,7 +17,8 @@ try { appCode += '\n' + fs.readFileSync('src/components/TabBar.jsx', 'utf8') } c
 var mainCode = fs.readFileSync('main/main.js', 'utf8')
 try { mainCode += '\n' + fs.readFileSync('main/handlers/dockPinHandlers.js', 'utf8') } catch(e) {}
 // v0.85.0: notificationManager, trayManager, windowManager, backupNotif, aiLogin вынесены
-;['main/handlers/notificationManager.js','main/handlers/aiLoginHandler.js','main/handlers/backupNotifHandler.js','main/utils/windowManager.js','main/utils/trayManager.js'].forEach(function(f) {
+// v0.87.81: storage, gigachat, ruError вынесены в main/utils/
+;['main/handlers/notificationManager.js','main/handlers/aiLoginHandler.js','main/handlers/backupNotifHandler.js','main/utils/windowManager.js','main/utils/trayManager.js','main/utils/storage.js','main/utils/gigachat.js','main/utils/ruError.js'].forEach(function(f) {
   try { mainCode += '\n' + fs.readFileSync(f, 'utf8') } catch(e) {}
 })
 

@@ -18,7 +18,11 @@ const aiLoginCode = fs.existsSync('main/handlers/aiLoginHandler.js') ? fs.readFi
 const backupNotifCode = fs.existsSync('main/handlers/backupNotifHandler.js') ? fs.readFileSync('main/handlers/backupNotifHandler.js', 'utf8') : ''
 const windowMgrCode = fs.existsSync('main/utils/windowManager.js') ? fs.readFileSync('main/utils/windowManager.js', 'utf8') : ''
 const trayMgrCode = fs.existsSync('main/utils/trayManager.js') ? fs.readFileSync('main/utils/trayManager.js', 'utf8') : ''
-const allCode = code + '\n' + aiCode + '\n' + notifCode + '\n' + loggerCode + '\n' + sessionCode + '\n' + notifMgrCode + '\n' + aiLoginCode + '\n' + backupNotifCode + '\n' + windowMgrCode + '\n' + trayMgrCode
+// v0.87.81: storage/gigachat/ruError вынесены в main/utils/
+const storageCode = fs.existsSync('main/utils/storage.js') ? fs.readFileSync('main/utils/storage.js', 'utf8') : ''
+const gigachatCode = fs.existsSync('main/utils/gigachat.js') ? fs.readFileSync('main/utils/gigachat.js', 'utf8') : ''
+const ruErrorCode = fs.existsSync('main/utils/ruError.js') ? fs.readFileSync('main/utils/ruError.js', 'utf8') : ''
+const allCode = code + '\n' + aiCode + '\n' + notifCode + '\n' + loggerCode + '\n' + sessionCode + '\n' + notifMgrCode + '\n' + aiLoginCode + '\n' + backupNotifCode + '\n' + windowMgrCode + '\n' + trayMgrCode + '\n' + storageCode + '\n' + gigachatCode + '\n' + ruErrorCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -41,7 +45,7 @@ console.log('\\n── Ключевые функции: ──')
 test('createWindow определена', () => assert(allCode.includes('function createWindow')))
 test('createTray определена', () => assert(allCode.includes('function createTray')))
 test('setupSession определена', () => assert(allCode.includes('function setupSession')))
-test('ruError определена', () => assert(code.includes('function ruError')))
+test('ruError определена', () => assert(allCode.includes('function ruError') || allCode.includes('export function ruError')))
 
 // ── IPC handlers ──
 console.log('\\n── IPC handlers: ──')

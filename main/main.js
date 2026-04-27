@@ -1,15 +1,18 @@
 // v0.84.4 — Refactored: notification, login, backup, window, tray extracted
+// v0.87.81 — Refactored: storage, gigachat, ruError extracted to main/utils/
 import { app, BrowserWindow, ipcMain, session, nativeImage, Notification, shell, clipboard, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import https from 'node:https'
 import http from 'node:http'
-import crypto from 'node:crypto'
 import { fileURLToPath } from 'url'
 
 import { createTrayBadgeIcon, createOverlayIcon } from './utils/overlayIcon.js'
 import { initLogger, readLogFile, clearLogFile, setLogViewerOpener, getLogFilePath } from './utils/logger.js'
 import { setupSession } from './utils/sessionSetup.js'
+import { initStorage, migrateSettings } from './utils/storage.js'
+import { httpsPostSkipSsl, getGigaChatToken, GIGACHAT_CHAT_URL } from './utils/gigachat.js'
+import { ruError } from './utils/ruError.js'
 import { initAIHandlers } from './handlers/aiHandlers.js'
 import { initTelegramHandler } from './native/telegramHandler.js'
 import { registerCcMediaScheme, registerCcMediaHandler } from './native/ccMediaProtocol.js'
@@ -39,47 +42,9 @@ if (process.platform === 'win32') {
 }
 
 // v0.84.4: Logger, session — вынесены в main/utils/logger.js, main/utils/sessionSetup.js
-
-// ─── Версионирование settings (v0.84.1) ────────────────────────────────────
-const SETTINGS_VERSION = 2
-
-function migrateSettings(settings, storagePath) {
-  if (!settings || typeof settings !== 'object') return { _version: SETTINGS_VERSION, soundEnabled: true, minimizeToTray: true }
-  // Backup перед миграцией
-  if ((settings._version || 1) < SETTINGS_VERSION && storagePath) {
-    try { fs.copyFileSync(storagePath, storagePath + '.bak'); console.log('[Settings] Backup created') } catch {}
-  }
-  const v = settings._version || 1
-  // Миграция v1 → v2: добавлены поля notificationsEnabled, overlayMode
-  if (v < 2) {
-    if (settings.notificationsEnabled === undefined) settings.notificationsEnabled = true
-    if (settings.overlayMode === undefined) settings.overlayMode = 'all'
-  }
-  settings._version = SETTINGS_VERSION
-  return settings
-}
-
-// ─── Простое хранилище (JSON-файл, без ESM-зависимостей) ────────────────────
+// v0.87.81: SETTINGS_VERSION, migrateSettings, initStorage — вынесены в main/utils/storage.js
 
 let storage = null
-
-function initStorage() {
-  const filePath = path.join(app.getPath('userData'), 'chatcenter.json')
-  let data = {}
-  try { data = JSON.parse(fs.readFileSync(filePath, 'utf8')) } catch (e) { console.warn('[Storage] Не удалось прочитать chatcenter.json:', e.message) }
-
-  const save = () => {
-    try { fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8') } catch (e) {
-      console.error('[Storage] Ошибка сохранения:', e.message)
-    }
-  }
-
-  return {
-    get: (key, def = null) => (key in data ? data[key] : def),
-    set: (key, val) => { data[key] = val; save() },
-    delete: (key) => { delete data[key]; save() }
-  }
-}
 
 // ─── Дефолтные мессенджеры (копия для main-process) ─────────────────────────
 
@@ -115,88 +80,8 @@ app.on('will-quit', () => {
   try { if (tray && !tray.isDestroyed()) tray.destroy() } catch {}
 })
 
-// ─── ГигаЧат: HTTPS без проверки SSL-сертификата Сбербанка ───────────────────
-
-const GIGACHAT_AUTH_URL = 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth'
-const GIGACHAT_CHAT_URL = 'https://gigachat.devices.sberbank.ru/api/v1/chat/completions'
-const aiTokenCache = {}
-
-function httpsPostSkipSsl(url, bodyStr, headers) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url)
-    const agent = new https.Agent({ rejectUnauthorized: false })
-    const req = https.request({
-      hostname: u.hostname,
-      port: u.port || 443,
-      path: u.pathname + u.search,
-      method: 'POST',
-      headers: { ...headers, 'Content-Length': Buffer.byteLength(bodyStr) },
-      agent
-    }, res => {
-      let data = ''
-      res.on('data', chunk => { data += chunk })
-      res.on('end', () => {
-        try { resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, data: JSON.parse(data) }) }
-        catch { reject(new Error(`GigaChat parse error: ${data.slice(0, 200)}`)) }
-      })
-    })
-    req.on('error', reject)
-    req.write(bodyStr)
-    req.end()
-  })
-}
-
-async function getGigaChatToken(clientId, clientSecret) {
-  const cacheKey = `${clientId}:${clientSecret}`
-  const cached = aiTokenCache[cacheKey]
-  if (cached && cached.expires_at > Date.now() + 60000) return cached.access_token
-
-  const credentials = Buffer.from(`${clientId.trim()}:${clientSecret.trim()}`).toString('base64')
-  const result = await httpsPostSkipSsl(
-    GIGACHAT_AUTH_URL,
-    'scope=GIGACHAT_API_PERS',
-    {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'RqUID': crypto.randomUUID()
-    }
-  )
-  if (!result.ok || !result.data.access_token) {
-    throw new Error(`GigaChat auth failed: ${result.data?.message || 'нет токена'}`)
-  }
-  aiTokenCache[cacheKey] = result.data
-  return result.data.access_token
-}
-
-// ─── Перевод API-ошибок на русский ───────────────────────────────────────────
-
-function ruError(msg) {
-  if (!msg) return 'Неизвестная ошибка'
-  const m = msg.toLowerCase()
-  if (m.includes('exceeded') && m.includes('quota') || m.includes('insufficient_quota') || m.includes('insufficient balance') || m.includes('insufficient_balance'))
-    return 'Недостаточно средств на балансе. Пополните счёт на сайте провайдера'
-  if (m.includes('invalid api key') || m.includes('incorrect api key') || m.includes('no api key'))
-    return 'Неверный API-ключ. Проверьте ключ в настройках'
-  if (m.includes('rate limit') || m.includes('too many requests'))
-    return 'Слишком много запросов. Подождите немного и попробуйте снова'
-  if (m.includes('model') && (m.includes('not exist') || m.includes('not found') || m.includes('does not exist')))
-    return 'Указанная модель не найдена. Проверьте название модели'
-  if (m.includes('context') && m.includes('length'))
-    return 'Сообщение слишком длинное для этой модели'
-  if (m.includes('can\'t decode') || m.includes('cannot decode') || m.includes('decode') && m.includes('header'))
-    return 'Неверный формат Client ID или Client Secret. Убедитесь что скопировали без пробелов'
-  if (m.includes('unauthorized') || m.includes('authentication') || m.includes('authorization'))
-    return 'Ошибка авторизации. Проверьте Client ID и Client Secret'
-  if (m.includes('billing') || m.includes('payment'))
-    return 'Проблема с оплатой. Проверьте платёжные данные у провайдера'
-  if (m.includes('overloaded') || m.includes('capacity') || m.includes('unavailable'))
-    return 'Сервер провайдера перегружен. Попробуйте позже'
-  if (m.includes('network') || m.includes('fetch') || m.includes('connect'))
-    return 'Нет соединения с сервером провайдера. Проверьте интернет'
-  if (m.includes('timeout'))
-    return 'Превышено время ожидания ответа от провайдера'
-  return msg // не переводим неизвестные — оставляем как есть
-}
+// v0.87.81: ГигаЧат HTTPS, getGigaChatToken — вынесены в main/utils/gigachat.js
+// v0.87.81: ruError — вынесена в main/utils/ruError.js
 
 // ─── Notification IPC setup ─────────────────────────────────────────────────
 
@@ -492,8 +377,8 @@ app.whenReady().then(() => {
 
   registerCcMediaHandler(app.getPath('userData'))
 
-  // Инициализируем хранилище
-  storage = initStorage()
+  // Инициализируем хранилище (v0.87.81: initStorage в main/utils/storage.js)
+  storage = initStorage(app.getPath('userData'))
 
   // v0.84.1: Миграция settings
   const settings = storage.get('settings', {})

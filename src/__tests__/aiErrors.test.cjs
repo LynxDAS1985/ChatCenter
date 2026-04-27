@@ -16,9 +16,11 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || 'fail') }
 console.log('\n🧪 AI error matrix тесты\n')
 
 // Копия ruError для тестирования
-var mainCode = fs.readFileSync('main/main.js', 'utf8')
-var ruErrorMatch = mainCode.match(/function ruError\(msg\)\s*\{([\s\S]*?)\n\}/)
-assert(ruErrorMatch, 'ruError function not found')
+// v0.87.81: ruError вынесена в main/utils/ruError.js, ищем сначала там, затем main.js (legacy)
+var sourceFile = fs.existsSync('main/utils/ruError.js') ? 'main/utils/ruError.js' : 'main/main.js'
+var mainCode = fs.readFileSync(sourceFile, 'utf8')
+var ruErrorMatch = mainCode.match(/(?:export\s+)?function ruError\(msg\)\s*\{([\s\S]*?)\n\}/)
+assert(ruErrorMatch, 'ruError function not found in ' + sourceFile)
 
 // Восстанавливаем функцию через eval
 var ruError
