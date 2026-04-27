@@ -77,6 +77,7 @@
 | Расследование бага скролла native | [`.memory-bank/native-scroll-diagnostics-handoff.md`](.memory-bank/native-scroll-diagnostics-handoff.md) |
 | Большой план native-режима | [`.memory-bank/native-mode-plan.md`](.memory-bank/native-mode-plan.md) |
 | Лимиты файлов кода / план разбиения 2 больших файлов | [`.memory-bank/handoff-code-limits.md`](.memory-bank/handoff-code-limits.md) |
+| **Шаг 7/7 разбиения**: telegramHandler.js (1260 строк) | [`.memory-bank/handoff-telegram-handler-split.md`](.memory-bank/handoff-telegram-handler-split.md) — конкретный план с line ranges, рисками, командами |
 
 ### Правило повторного чтения
 
@@ -248,7 +249,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.87.83 (27 апреля 2026)
+**Текущая версия**: v0.87.84 (27 апреля 2026)
 
 ---
 
@@ -729,6 +730,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.87.83 (27 апреля 2026)
+**Версия проекта**: v0.87.84 (27 апреля 2026)
 **Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
-**Последнее обновление**: 27 апреля 2026 — v0.87.83: разбиение InboxMode.jsx (Шаг 6/7) — вынесены `useReadByVisibility.js` (batch markRead), `useInboxScroll.js` (handleScroll + load-older), `InboxMessageInput.jsx` (input + reply/edit панель), `InboxChatListSidebar.jsx` (поиск + список чатов). InboxMode.jsx: 789 → 566 строк. Исключение из KNOWN_EXCEPTIONS удалено (теперь под стандартным лимитом 600).
+**Последнее обновление**: 27 апреля 2026 — v0.87.84: подготовлен handoff для Шага 7 (`telegramHandler.js` 1260 строк) — отдельный файл `.memory-bank/handoff-telegram-handler-split.md` с конкретным планом разбиения на 6 модулей, line ranges, описанием рисков (общий state клиента, FLOOD_WAIT throttle, NewMessage event), порядком работы, командой-чекером, UI-проверкой. Сам Шаг 7 — отдельной сессией.

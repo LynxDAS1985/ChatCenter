@@ -122,19 +122,22 @@ npm test  # но это запускает Electron, не делай без ра
 
 ### Приоритет 1: Разбить `telegramHandler.js`
 
+**📋 Подготовлен отдельный handoff: [`handoff-telegram-handler-split.md`](./handoff-telegram-handler-split.md)** (27 апреля 2026, после v0.87.83). В нём — конкретный план разбиения на 6 модулей, line ranges, описание рисков (общий state клиента, FLOOD_WAIT throttle, NewMessage event listener), порядок работы, команда-чекер тестов, UI-проверка, troubleshooting.
+
 Эта задача стоит 4-6 часов. После разбиения:
 - Каждый файл под 400 строк
 - Легко найти где что
 - Легко тестировать отдельно
 - Можно удалить исключение из `KNOWN_EXCEPTIONS` в тесте
 
-### Приоритет 2: Разбить `InboxMode.jsx`
+### Приоритет 2: ✅ Разбить `InboxMode.jsx` — **СДЕЛАНО в v0.87.83**
 
-2-3 часа. Аналогично — удалить исключение после.
+InboxMode.jsx: 789 → 566 строк (под стандартным лимитом 600). Исключение из `KNOWN_EXCEPTIONS` удалено. Вынесены 4 файла: `useReadByVisibility.js`, `useInboxScroll.js`, `InboxMessageInput.jsx`, `InboxChatListSidebar.jsx`.
 
-### Приоритет 3: Отрефакторить `App.jsx` и `main.js`
+### Приоритет 3: ✅ Отрефакторить `App.jsx` и `main.js` — **СДЕЛАНО в v0.87.81-82**
 
-Оба на 99% лимита. Буквально одна новая строка → красный тест. Вынести по одному useEffect / одному IPC handler в отдельные hooks / handlers файлы. **Сделать СЕГОДНЯ**, пока не случайный коммит не сломает.
+- `main.js`: 598 → 483 (Шаг 4) — вынесены `storage.js`, `gigachat.js`, `ruError.js`
+- `App.jsx`: 599 → 475 (Шаг 5) — вынесены `useAppBootstrap.js`, `useConsoleErrorLogger.js`, `useAppIPCListeners.js`
 
 ---
 
