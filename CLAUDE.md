@@ -248,7 +248,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.87.75 (24 апреля 2026)
+**Текущая версия**: v0.87.76 (24 апреля 2026)
 
 ---
 
@@ -684,28 +684,30 @@ Auto-memory — постоянная память Claude между сессия
 
 | Файл | Размер |
 |------|--------|
-| `CHANGELOG.md` | 12 КБ |
+| `CHANGELOG.md` | 19 КБ |
 | `README.md` | 8 КБ |
 | `ai-integration.md` | 10 КБ |
 | `api.md` | 8 КБ |
 | `architecture.md` | 10 КБ |
 | `autoreply.md` | 6 КБ |
+| `code-limits-status.md` | 4 КБ |
 | `coding-rules.md` | 5 КБ |
 | `common-mistakes.md` | 6 КБ |
 | `decisions.md` | 16 КБ |
-| `features.md` | 87 КБ |
+| `features.md` | 45 КБ |
+| `handoff-code-limits.md` | 8 КБ |
 | `messengers.md` | 14 КБ |
 | `native-mode-plan.md` | 22 КБ |
 | `native-scroll-diagnostics-handoff.md` | 18 КБ |
 | `ui-components.md` | 14 КБ |
-| `workflow.md` | 4 КБ |
+| `workflow.md` | 8 КБ |
 
 ### Подпапка `mistakes/` — детали ловушек
 
 | Файл | Размер |
 |------|--------|
 | `mistakes/electron-core.md` | 56 КБ |
-| `mistakes/native-scroll-unread.md` | 19 КБ |
+| `mistakes/native-scroll-unread.md` | 28 КБ |
 | `mistakes/notifications-ribbon.md` | 49 КБ |
 | `mistakes/webview-injection.md` | 9 КБ |
 | `mistakes/webview-navigation-ui.md` | 31 КБ |
@@ -719,12 +721,14 @@ Auto-memory — постоянная память Claude между сессия
 | `archive/README.md` | 4 КБ |
 | `archive/features-pre-v0.87.md` | 251 КБ |
 | `archive/features-v0.87-early.md` | 126 КБ |
+| `archive/features-v0.87.40-50.md` | 40 КБ |
+| `archive/features-v0.87.51-64.md` | 54 КБ |
 
-_Регенерировано: 2026-04-24_
+_Регенерировано: 2026-04-27_
 <!-- STRUCTURE-AUTO-END -->
 
 ---
 
-**Версия проекта**: v0.87.75 (24 апреля 2026)
+**Версия проекта**: v0.87.76 (24 апреля 2026)
 **Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
-**Последнее обновление**: 24 апреля 2026 — v0.87.75: лимиты для ВСЕХ типов файлов (JSX/TSX/JS/TS/CJS/MJS/HTML/CSS/SCSS/JSON) + железная тройная защита: (A) нет правила, (B) устаревшее исключение, (C) неизвестное расширение — любое нарушение ломает тест.
+**Последнее обновление**: 24 апреля 2026 — v0.87.76: архивация старых v0.87.51-64 из features.md (97→45 КБ, до 100 КБ лимита оставалось 3 КБ).
