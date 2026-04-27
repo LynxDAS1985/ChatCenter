@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.77 (24 апреля 2026)
+## Текущая версия: v0.87.78 (24 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.65 → v0.87.75). Старое — в архиве:
 
@@ -14,6 +14,59 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.78 — Разбиение notification.html на html/css/js (Шаг 3/7 разбиений)
+
+**Зачем**: `main/notification.html` 902 строки = 90% от потолка 1000 (исключение). Внутри был inline `<style>` (320 строк) и `<script>` (568 строк). По правилам v0.87.75 — HTML должен быть отдельно от CSS/JS.
+
+**Что сделано**:
+
+```
+ДО:
+main/notification.html [902]
+  ├─ <style>...</style>      (CSS внутри)
+  └─ <script>...</script>    (JS внутри)
+
+ПОСЛЕ:
+main/notification.html [12]   ← только структура + ссылки
+main/notification.css  [321]  ← все стили
+main/notification.js   [569]  ← вся логика (исключение 700, фундаментально цельный renderer)
+```
+
+**Почему `notification.js` исключение, а не разбиение**: 569 строк — это renderer-код для отдельного BrowserWindow (уведомления-ribbon). Внутри тесно связаны: DOM render → animations → IPC listeners → стек сообщений → expand/collapse. Разбить на 2 файла без потери читаемости сложно. Поставил потолок 700 (запас на 130 строк), пометил как low priority в `KNOWN_EXCEPTIONS`.
+
+**Изменения вне файлов**:
+- `electron.vite.config.js` `copyStaticPlugin` — добавлены 2 строки для копирования `notification.css` и `notification.js` в `out/main/` при production-сборке.
+- `KNOWN_EXCEPTIONS` в тесте лимитов — убрано исключение `notification.html` (теперь 12 строк, не нужно), добавлено `notification.js` (потолок 700).
+
+**Контракт сохранён**: BrowserWindow по-прежнему грузит `notification.html` через `path.join(__dirname, '../../main/notification.html')`. HTML ссылается на `notification.css` и `notification.js` относительными путями — Electron резолвит их в той же папке. В production файлы окажутся в `out/main/` рядом.
+
+**Проверки**:
+- `node src/__tests__/fileSizeLimits.test.cjs` ✅ (165 / 165, исключение работает)
+- `npm run lint` ✅
+- `npm run check-memory` ✅
+
+**⚠ Что нужно проверить пользователю в работающем приложении**:
+- Уведомления приходят и показываются справа экрана
+- Анимация slide-in / slide-out на месте
+- Hover на карточку — таймер pause
+- Кнопка «Перейти к чату» — открывает чат с эффектом slide-left
+- Кнопка «Прочитано» — зеленеет и dismiss
+- Кнопка ✕ — закрытие
+- Стек сообщений (если 2+ от одного мессенджера) — складываются в одну карточку
+- Кнопка 📌 пин — закрепляет сообщение
+
+Если что-то из этого не работает — возможно проблема в путях к CSS/JS. Откатить можно одной командой: `git revert <hash>`.
+
+**Файлы изменены**:
+- `main/notification.html` — переписан с 902 → 12 строк
+- `main/notification.css` — новый, извлечённый CSS (321)
+- `main/notification.js` — новый, извлечённый JS (569)
+- `electron.vite.config.js` — добавлены 2 строки в `copies`
+- `src/__tests__/fileSizeLimits.test.cjs` — `KNOWN_EXCEPTIONS` обновлён
+- `package.json`, `package-lock.json`, `CLAUDE.md` — версия 0.87.78
 
 ---
 

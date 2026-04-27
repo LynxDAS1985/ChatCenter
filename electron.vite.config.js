@@ -17,6 +17,9 @@ function copyStaticPlugin() {
         { from: 'main/log-viewer.html', to: 'out/main/log-viewer.html' },
         { from: 'main/photo-viewer.html', to: 'out/main/photo-viewer.html' },
         { from: 'main/video-player.html', to: 'out/main/video-player.html' },
+        // v0.87.78: notification.html разбит на html/css/js — копируем все три
+        { from: 'main/notification.css', to: 'out/main/notification.css' },
+        { from: 'main/notification.js', to: 'out/main/notification.js' },
       ]
       // Hooks directory
       const hooksDir = 'main/preloads/hooks'

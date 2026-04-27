@@ -120,10 +120,10 @@ var KNOWN_EXCEPTIONS = {
     ceiling: 600,
     reason: 'Исторически большой handler. Разбиение low priority.'
   },
-  // v0.87.75: исключения для файлов кроме .js/.jsx
-  'main/notification.html': {
-    ceiling: 1000,
-    reason: 'Инлайн-страница BrowserWindow (HTML+CSS+JS). Разбиение low priority.'
+  // v0.87.78: notification разбит на html/css/js. JS превышает default 300.
+  'main/notification.js': {
+    ceiling: 700,
+    reason: 'Renderer-код для notification BrowserWindow. Извлечён из inline <script>. Разбиение на 2 модуля — low priority, файл логически цельный (DOM render + animations + IPC).'
   }
 }
 
