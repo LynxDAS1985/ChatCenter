@@ -161,24 +161,33 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
             style={{
               width: '100%',
               padding: '10px 12px',
-              background: 'transparent',
-              border: 'none',
-              // v0.87.89: нейтральный цвет в обычном состоянии, красный только при hover
-              color: 'var(--amoled-text)',
+              // v0.87.90: по умолчанию — красная заливка с red-текстом (видно опасное действие).
+              background: 'rgba(239,68,68,0.12)',
+              border: '1px solid rgba(239,68,68,0.25)',
+              color: 'var(--amoled-danger)',
               fontSize: 13,
               cursor: 'pointer',
-              borderRadius: 4,
+              borderRadius: 6,
               textAlign: 'center',
-              fontWeight: 500,
-              transition: 'background 150ms, color 150ms',
+              fontWeight: 600,
+              letterSpacing: 0.2,
+              transition: 'all 180ms cubic-bezier(0.34, 1.4, 0.64, 1)',
+              boxShadow: '0 0 0 0 rgba(239,68,68,0)',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(239,68,68,0.12)'
-              e.currentTarget.style.color = 'var(--amoled-danger)'
+              // v0.87.90: при hover — ярче фон + белый текст + лёгкий подъём + красное свечение
+              e.currentTarget.style.background = 'rgba(239,68,68,0.85)'
+              e.currentTarget.style.borderColor = 'rgba(239,68,68,1)'
+              e.currentTarget.style.color = '#fff'
+              e.currentTarget.style.transform = 'translateY(-1px)'
+              e.currentTarget.style.boxShadow = '0 4px 14px rgba(239,68,68,0.35), 0 0 0 1px rgba(239,68,68,0.4)'
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = 'var(--amoled-text)'
+              e.currentTarget.style.background = 'rgba(239,68,68,0.12)'
+              e.currentTarget.style.borderColor = 'rgba(239,68,68,0.25)'
+              e.currentTarget.style.color = 'var(--amoled-danger)'
+              e.currentTarget.style.transform = 'translateY(0)'
+              e.currentTarget.style.boxShadow = '0 0 0 0 rgba(239,68,68,0)'
             }}
           >
             🚪 Выйти из аккаунта
