@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.94 (28 апреля 2026)
+## Текущая версия: v0.87.95 (28 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.80 → v0.87.92). Старое — в архиве:
 
@@ -15,6 +15,47 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.95 — Полный выход из аккаунта (Вариант Б): призрак исправлен + предпросмотр + toast
+
+Проблема: после выхода в боковой панели появлялся призрак «Без имени» (синий вопросительный знак). Корень — backend отправлял `emit('tg:account-update', { id: 'self', ... })` с НОВЫМ id вместо старого. UI не находил «self» в списке и ДОБАВЛЯЛ как новый аккаунт.
+
+**Что сделано**:
+
+A) **Backend (telegramChats.js)**:
+- Запоминаем `oldId` ДО обнуления `state.currentAccount`
+- В `emit('tg:account-update', { id: oldId, removed: true, wipeStats })` — правильный id
+- Новый IPC `tg:get-cleanup-stats` — подсчёт что будет удалено (без удаления)
+- В `tg:remove-account` — полная уборка через `performFullWipe()` + проверка после (post-wipe verification)
+
+B) **Новый модуль `main/native/telegramCleanup.js`** (~128 строк):
+- `collectCleanupStats()` — безопасный подсчёт (для предпросмотра)
+- `performFullWipe()` — реальное удаление session + avatars + cache + media + tmp + чистка Map'ов + clearInterval таймера
+- 5 категорий: session, avatars, cache, media, tmp
+- Возвращает отчёт: `{ totalFiles, totalBytes, byCategory }`
+
+C) **Frontend (nativeStore.js)**:
+- Handler `tg:account-update` с флагом `removed: true` — удаляет аккаунт + обнуляет `chats`, `messages`, `activeChatId`, `activeAccountId`, `loadingMessages`, `typing`
+- Сохраняет `lastWipe` в state — для toast в UI
+- Новая функция `getCleanupStats()` — обёртка IPC
+
+D) **UI (AccountContextMenu.jsx)**:
+- При клике «🚪 Выйти из аккаунта» — асинхронно зовётся `getCleanupStats()` для предпросмотра
+- В confirm-блоке таблица категорий с количеством файлов и размером (форматировано: `1.4 МБ`, `245 КБ`)
+- ИТОГО снизу — общее число файлов и мегабайт
+- Загрузка: «Считаем что удалится...» пока IPC отвечает
+
+E) **Toast в NativeApp.jsx**:
+- При смене `store.lastWipe` — показывается toast «✅ Аккаунт удалён. Освобождено N МБ»
+- Spring-анимация появления (popin), исчезает через 4 секунды
+
+**Контракт**: после успешного выхода в боковой панели **только** кнопка `+ Добавить аккаунт`. Никаких призраков, никаких следов на диске.
+
+Тесты: 31/31 cjs ✅, 142/142 vitest ✅. Тест confirm-шага обновлён — текст изменился из-за предпросмотра.
+
+**Файлы**: telegramChats.js, telegramCleanup.js (новый), nativeStore.js, AccountContextMenu.jsx + .vitest.jsx, NativeApp.jsx. Версия 0.87.95.
 
 ---
 

@@ -124,7 +124,9 @@ describe('AccountContextMenu — Шаг 2 (подтверждение)', () => {
     const exitBtn = getByText(/Выйти из аккаунта/)
     fireEvent.click(exitBtn)
     expect(container.textContent).toContain('Точно выйти')
-    expect(container.textContent).toContain('Сессия будет удалена')
+    // v0.87.95: текст изменился из-за предпросмотра — может быть «Сессия и кэш будут удалены» (без stats)
+    // или «Будет удалено: ... ИТОГО» (со stats). Проверяем что хоть что-то есть.
+    expect(container.textContent).toMatch(/Сессия|Будет удалено/)
     cleanup()
   })
 

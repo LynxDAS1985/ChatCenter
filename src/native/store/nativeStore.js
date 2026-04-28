@@ -76,6 +76,22 @@ export default function useNativeStore() {
     }
 
     addHandler('tg:account-update', (acc) => {
+      // v0.87.95: removed: true → удалить аккаунт + ОБНУЛИТЬ всё (чаты, сообщения, активные)
+      if (acc.removed) {
+        setState(s => ({
+          ...s,
+          accounts: s.accounts.filter(a => a.id !== acc.id),
+          activeAccountId: s.activeAccountId === acc.id ? null : s.activeAccountId,
+          activeChatId: null,
+          chats: [],
+          messages: {},
+          loadingMessages: {},
+          typing: {},
+          // wipeStats доступны через s.lastWipe для toast в UI
+          lastWipe: acc.wipeStats || null,
+        }))
+        return
+      }
       setState(s => {
         const existing = s.accounts.find(a => a.id === acc.id)
         const accounts = existing
@@ -404,15 +420,15 @@ export default function useNativeStore() {
   }, [])
 
   const removeAccount = useCallback(async (accountId) => {
-    const result = await window.api?.invoke('tg:remove-account', { accountId })
-    if (result?.ok) {
-      setState(s => ({
-        ...s,
-        accounts: s.accounts.filter(a => a.id !== accountId),
-        activeAccountId: s.activeAccountId === accountId ? null : s.activeAccountId
-      }))
-    }
-    return result
+    // v0.87.95: чистка состояния делается через handler tg:account-update {removed:true}
+    // (приходит из backend после успешного wipe). Тут только вызов IPC.
+    return await window.api?.invoke('tg:remove-account', { accountId })
+  }, [])
+
+  // v0.87.95: предпросмотр — что будет удалено при logout. Возвращает
+  // { totalFiles, totalBytes, byCategory } без реального удаления.
+  const getCleanupStats = useCallback(async () => {
+    return await window.api?.invoke('tg:get-cleanup-stats')
   }, [])
 
   return {
@@ -423,5 +439,6 @@ export default function useNativeStore() {
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
     getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, setTyping,
+    getCleanupStats,
   }
 }

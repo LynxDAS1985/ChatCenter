@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { state, chatEntityMap, markReadMaxSent, log, emit, Api } from './telegramState.js'
 import { mapMessage, messagePreview } from './telegramMessages.js'
+import { collectCleanupStats, performFullWipe } from './telegramCleanup.js'
 
 // v0.87.23: маппер entities MTProto → наш формат (для inline mapDialog при необходимости)
 export function mapEntities(entities) {
@@ -425,34 +426,47 @@ export function initChatsHandlers() {
     }
   })
 
+  // v0.87.95: подсчёт что будет удалено (для предпросмотра в UI до подтверждения)
+  ipcMain.handle('tg:get-cleanup-stats', async () => {
+    try {
+      const stats = collectCleanupStats()
+      return { ok: true, ...stats }
+    } catch (e) {
+      return { ok: false, error: e.message }
+    }
+  })
+
   ipcMain.handle('tg:remove-account', async () => {
     try {
+      // v0.87.95: запоминаем oldId ДО обнуления — для правильного emit
+      const oldId = state.currentAccount?.id || null
+      const oldUsername = state.currentAccount?.username || ''
+
       if (state.client) { try { await state.client.disconnect() } catch(_) {} state.client = null }
       state.currentAccount = null
-      if (state.sessionPath && fs.existsSync(state.sessionPath)) fs.unlinkSync(state.sessionPath)
-      // v0.87.27: avatar & media cache bust — удаляем кэш при logout чтобы следующий
-      // аккаунт не получал старые аватарки
-      try {
-        if (state.avatarsDir && fs.existsSync(state.avatarsDir)) {
-          for (const f of fs.readdirSync(state.avatarsDir)) {
-            try { fs.unlinkSync(path.join(state.avatarsDir, f)) } catch(_) {}
-          }
-          log('avatars cache cleared')
-        }
-        if (state.cachePath) {
-          const mediaDir = path.join(path.dirname(state.cachePath), 'tg-media')
-          if (fs.existsSync(mediaDir)) {
-            for (const f of fs.readdirSync(mediaDir)) {
-              try { fs.unlinkSync(path.join(mediaDir, f)) } catch(_) {}
-            }
-            log('media cache cleared')
-          }
-          if (fs.existsSync(state.cachePath)) { try { fs.unlinkSync(state.cachePath) } catch(_) {} }
-        }
-        chatEntityMap.clear()
-      } catch (e) { log('cache bust err: ' + e.message) }
-      emit('tg:account-update', { id: 'self', status: 'disconnected', removed: true })
-      return { ok: true }
+
+      // v0.87.95: полная уборка с подсчётом — отчёт в журнал.
+      const before = collectCleanupStats()
+      const result = performFullWipe()
+      log(`logout: removed ${result.totalFiles} files, ${(result.totalBytes / 1024 / 1024).toFixed(1)} MB. Details: ${JSON.stringify(result.byCategory)}`)
+
+      // Проверка что всё реально стёрлось (post-wipe verification)
+      const after = collectCleanupStats()
+      if (after.totalFiles > 0) {
+        log(`logout WARNING: ${after.totalFiles} files left undeleted (locked?). Details: ${JSON.stringify(after.byCategory)}`)
+      } else {
+        log('logout verification: all clean ✓')
+      }
+
+      // v0.87.95: emit с ПРАВИЛЬНЫМ id + детали для toast
+      emit('tg:account-update', {
+        id: oldId || 'unknown',
+        username: oldUsername,
+        status: 'disconnected',
+        removed: true,
+        wipeStats: { totalFiles: result.totalFiles, totalBytes: result.totalBytes, before },
+      })
+      return { ok: true, totalFiles: result.totalFiles, totalBytes: result.totalBytes }
     } catch (e) {
       return { ok: false, error: e.message }
     }

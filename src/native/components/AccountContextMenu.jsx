@@ -28,12 +28,37 @@ function formatConnectedDate(ts) {
   return d.toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-export default function AccountContextMenu({ account, x, y, onClose, onLogout }) {
+// v0.87.95: формат байт → читаемая строка (1234567 → "1.2 МБ")
+function formatBytes(b) {
+  if (!b || b < 0) return '0 КБ'
+  if (b < 1024) return b + ' Б'
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1).replace(/\.0$/, '') + ' КБ'
+  return (b / 1024 / 1024).toFixed(1).replace(/\.0$/, '') + ' МБ'
+}
+
+// v0.87.95: одна строка предпросмотра — иконка + категория + N файлов, размер.
+// Если в категории 0 файлов — не рендерится (компактнее).
+function CleanupRow({ icon, label, data }) {
+  if (!data || data.files === 0) return null
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
+      <span style={{ width: 16 }}>{icon}</span>
+      <span style={{ flex: 1, color: 'var(--amoled-text-dim)' }}>{label}</span>
+      <span style={{ color: 'var(--amoled-text)', fontVariantNumeric: 'tabular-nums' }}>
+        {data.files} {data.files === 1 ? 'ф.' : data.files < 5 ? 'ф.' : 'ф.'}, {formatBytes(data.bytes)}
+      </span>
+    </div>
+  )
+}
+
+export default function AccountContextMenu({ account, x, y, onClose, onLogout, getCleanupStats }) {
   // Шаг: 'menu' — главное меню с кнопкой «Выйти»
-  //      'confirm' — подтверждение «Точно выйти?»
+  //      'confirm' — подтверждение «Точно выйти?» с предпросмотром
   //      'progress' — идёт выход (заблокировано)
   const [step, setStep] = useState('menu')
   const [error, setError] = useState(null)
+  const [stats, setStats] = useState(null)  // v0.87.95: предпросмотр
+  const [statsLoading, setStatsLoading] = useState(false)
   const menuRef = useRef(null)
 
   // Закрытие по Esc и клику вне меню
@@ -53,10 +78,24 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
   }, [step, onClose])
 
   // Корректировка позиции — не вылезать за край экрана
-  const MENU_W = 280
-  const MENU_H = step === 'menu' ? 180 : 220
+  // v0.87.95: confirm-блок с предпросмотром — выше (есть таблица категорий)
+  const MENU_W = 320
+  const MENU_H = step === 'menu' ? 180 : 360
   const safeX = Math.min(x, window.innerWidth - MENU_W - 8)
   const safeY = Math.min(y, window.innerHeight - MENU_H - 8)
+
+  // v0.87.95: при переходе в confirm — асинхронно загружаем предпросмотр
+  const handleStartConfirm = async () => {
+    setStep('confirm')
+    if (typeof getCleanupStats === 'function') {
+      setStatsLoading(true)
+      try {
+        const r = await getCleanupStats()
+        if (r?.ok) setStats(r)
+      } catch (_) {}
+      setStatsLoading(false)
+    }
+  }
 
   const handleConfirm = async () => {
     setStep('progress')
@@ -166,7 +205,7 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
       <div style={{ padding: 10, position: 'relative', overflow: 'hidden', minHeight: 56 }}>
         {step === 'menu' && (
           <button
-            onClick={() => setStep('confirm')}
+            onClick={handleStartConfirm}
             className="native-account-menu__btn native-account-menu__btn--danger native-btn-sheen"
             style={{
               width: '100%',
@@ -192,16 +231,49 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout })
         {step === 'confirm' && (
           <div style={{ animation: 'native-menu-slide-in 250ms cubic-bezier(0.34, 1.4, 0.64, 1)' }}>
             <div style={{
-              fontSize: 12,
-              color: 'var(--amoled-text-dim)',
-              padding: '4px 8px 12px',
-              lineHeight: 1.5,
+              fontSize: 13,
+              color: 'var(--amoled-text)',
+              padding: '4px 4px 8px',
+              lineHeight: 1.4,
               textAlign: 'center',
+              fontWeight: 600,
             }}>
-              ⚠️ Точно выйти?<br />
-              <span style={{ fontSize: 11, color: 'var(--amoled-text-dimmer)' }}>
-                Сессия будет удалена. При следующем входе нужно вводить код заново.
-              </span>
+              ⚠️ Точно выйти{account.username ? ` из @${account.username}` : ''}?
+            </div>
+            {/* v0.87.95: предпросмотр — что именно будет удалено */}
+            <div style={{
+              padding: '8px 4px',
+              fontSize: 11,
+              color: 'var(--amoled-text-dim)',
+              borderTop: '1px solid var(--amoled-border)',
+              borderBottom: '1px solid var(--amoled-border)',
+              marginBottom: 10,
+            }}>
+              {statsLoading ? (
+                <div style={{ textAlign: 'center', padding: 8 }}>Считаем что удалится…</div>
+              ) : stats ? (
+                <>
+                  <div style={{ marginBottom: 6, color: 'var(--amoled-text-dimmer)' }}>Будет удалено:</div>
+                  <CleanupRow icon="📁" label="Вход в Телеграм" data={stats.byCategory?.session} />
+                  <CleanupRow icon="📷" label="Аватарки" data={stats.byCategory?.avatars} />
+                  <CleanupRow icon="💬" label="Кэш чатов" data={stats.byCategory?.cache} />
+                  <CleanupRow icon="🎬" label="Медиа из чатов" data={stats.byCategory?.media} />
+                  <CleanupRow icon="📋" label="Временные" data={stats.byCategory?.tmp} />
+                  <div style={{
+                    marginTop: 6, paddingTop: 6,
+                    borderTop: '1px dashed var(--amoled-border)',
+                    color: 'var(--amoled-text)', fontWeight: 600,
+                    display: 'flex', justifyContent: 'space-between',
+                  }}>
+                    <span>ИТОГО:</span>
+                    <span>{stats.totalFiles} файлов, {formatBytes(stats.totalBytes)}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: 8, color: 'var(--amoled-text-dimmer)' }}>
+                  Сессия и кэш будут удалены полностью.
+                </div>
+              )}
             </div>
             {error && (
               <div style={{

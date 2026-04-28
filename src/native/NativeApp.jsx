@@ -2,7 +2,7 @@
 // Содержит: header с переключателем режимов, sidebar аккаунтов, основную область.
 // Режимы: Inbox (чаты) / Contacts (клиенты) / Kanban (доска).
 // Стили — AMOLED, изолированы через .native-mode корневой класс.
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './styles.css'
 import useNativeStore from './store/nativeStore.js'
 import LoginModal from './components/LoginModal.jsx'
@@ -20,6 +20,8 @@ export default function NativeApp() {
   const [showLogin, setShowLogin] = useState(false)
   // v0.87.88: ПКМ-меню аккаунта { account, x, y } или null
   const [accountMenu, setAccountMenu] = useState(null)
+  // v0.87.95: toast после успешного выхода — { message, ts }
+  const [logoutToast, setLogoutToast] = useState(null)
 
   const hasAccounts = store.accounts.length > 0
   const showLoginScreen = showLogin || !!store.loginFlow
@@ -28,6 +30,19 @@ export default function NativeApp() {
     e.preventDefault()
     setAccountMenu({ account, x: e.clientX, y: e.clientY })
   }
+
+  // v0.87.95: после удаления аккаунта показываем toast «Освобождено N МБ»
+  // store.lastWipe устанавливается в handler tg:account-update {removed:true}
+  useEffect(() => {
+    if (!store.lastWipe) return
+    const mb = (store.lastWipe.totalBytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')
+    setLogoutToast({
+      message: `✅ Аккаунт удалён. Освобождено ${mb} МБ`,
+      ts: Date.now(),
+    })
+    const t = setTimeout(() => setLogoutToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [store.lastWipe?.totalBytes])
 
   return (
     <div className="native-mode">
@@ -115,7 +130,17 @@ export default function NativeApp() {
           y={accountMenu.y}
           onClose={() => setAccountMenu(null)}
           onLogout={store.removeAccount}
+          getCleanupStats={store.getCleanupStats}
         />
+      )}
+
+      {/* v0.87.95: toast «Освобождено N МБ» после успешного выхода */}
+      {logoutToast && (
+        <div className="native-toast native-toast--success" style={{
+          animation: 'native-menu-popin 220ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+        }}>
+          {logoutToast.message}
+        </div>
       )}
     </div>
   )
