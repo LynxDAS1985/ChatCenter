@@ -32,7 +32,8 @@ import { attachTelegramIpcListeners, loadChatCache } from './nativeStoreIpc.js'
 const DEFAULT_STATE = {
   mode: 'inbox',
   accounts: [],
-  activeAccountId: null,
+  activeAccountId: null,   // активный для нового login + подсветка в sidebar
+  chatFilter: 'all',       // v0.87.105 (ADR-016): фильтр чатов в едином списке. 'all' | accountId
   chats: [],
   activeChatId: null,
   messages: {},
@@ -53,6 +54,8 @@ export default function useNativeStore() {
 
   const setMode = useCallback((mode) => setState(s => ({ ...s, mode })), [])
   const setActiveAccount = useCallback((id) => setState(s => ({ ...s, activeAccountId: id })), [])
+  // v0.87.105 (ADR-016): фильтр чатов — 'all' (по умолчанию) или accountId
+  const setChatFilter = useCallback((filter) => setState(s => ({ ...s, chatFilter: filter || 'all' })), [])
   const setActiveChat = useCallback((id) => setState(s => {
     const chat = s.chats.find(c => c.id === id)
     logNativeScroll('store-set-active-chat', { from: s.activeChatId || null, to: id, unread: chat?.unreadCount || 0, hasMessages: !!s.messages[id] })
@@ -187,6 +190,7 @@ export default function useNativeStore() {
   const removeAccount = useCallback(async (accountId) => {
     // v0.87.95: чистка состояния делается через handler tg:account-update {removed:true}
     // (приходит из backend после успешного wipe). Тут только вызов IPC.
+    // v0.87.105: accountId теперь обязателен (multi-account). Если не передан — backend удалит активный.
     return await window.api?.invoke('tg:remove-account', { accountId })
   }, [])
 
@@ -198,7 +202,7 @@ export default function useNativeStore() {
 
   return {
     ...state,
-    setMode, setActiveAccount, setActiveChat,
+    setMode, setActiveAccount, setActiveChat, setChatFilter,
     startLogin, submitCode, submitPassword, cancelLogin,
     loadChats, loadCachedChats, loadMessages, loadOlderMessages,
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,

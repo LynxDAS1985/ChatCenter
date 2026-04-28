@@ -3,7 +3,7 @@
 import { ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import { state, chatEntityMap, log } from './telegramState.js'
+import { state, chatEntityMap, log, getClientForChat } from './telegramState.js'
 
 export function initMediaHandlers() {
   // v0.87.34: скачивание видео с progress events для <video> streaming player.
@@ -13,7 +13,8 @@ export function initMediaHandlers() {
   ipcMain.handle('tg:download-video', async (event, { chatId, messageId }) => {
     log(`download-video: chat=${chatId} msg=${messageId}`)
     try {
-      if (!state.client) return { ok: false, error: 'Не подключён' }
+      const client = getClientForChat(chatId)
+      if (!client) return { ok: false, error: 'Не подключён' }
       const mediaDir = path.join(path.dirname(state.cachePath), 'tg-media')
       try { fs.mkdirSync(mediaDir, { recursive: true }) } catch(_) {}
       const rawChat = String(chatId).split(':').pop()
@@ -24,12 +25,12 @@ export function initMediaHandlers() {
         return { ok: true, path: `cc-media://video/${encodeURIComponent(path.basename(filePath))}`, cached: true }
       }
       const entity = chatEntityMap.get(chatId) || rawChat
-      const msgs = await state.client.getMessages(entity, { ids: [Number(messageId)] })
+      const msgs = await client.getMessages(entity, { ids: [Number(messageId)] })
       if (!msgs[0]) return { ok: false, error: 'Сообщение не найдено' }
       if (!msgs[0].media) return { ok: false, error: 'Нет медиа' }
       const total = Number(msgs[0].media.document?.size) || 0
       // Используем client.downloadMedia с progressCallback для live-событий
-      const buf = await state.client.downloadMedia(msgs[0], {
+      const buf = await client.downloadMedia(msgs[0], {
         progressCallback: (got) => {
           try {
             event.sender.send('tg:media-progress', {
@@ -52,7 +53,8 @@ export function initMediaHandlers() {
   ipcMain.handle('tg:download-media', async (_, { chatId, messageId, thumb = true }) => {
     log(`download-media: chat=${chatId} msg=${messageId} thumb=${thumb}`)
     try {
-      if (!state.client) return { ok: false, error: 'Не подключён' }
+      const client = getClientForChat(chatId)
+      if (!client) return { ok: false, error: 'Не подключён' }
       const mediaDir = path.join(path.dirname(state.cachePath), 'tg-media')
       try { fs.mkdirSync(mediaDir, { recursive: true }) } catch(_) {}
       const rawChat = String(chatId).split(':').pop()
@@ -62,12 +64,12 @@ export function initMediaHandlers() {
         return { ok: true, path: `cc-media://media/${encodeURIComponent(path.basename(filePath))}` }
       }
       const entity = chatEntityMap.get(chatId) || rawChat
-      const msgs = await state.client.getMessages(entity, { ids: [Number(messageId)] })
+      const msgs = await client.getMessages(entity, { ids: [Number(messageId)] })
       if (!msgs[0]) return { ok: false, error: 'Сообщение не найдено' }
       if (!msgs[0].media) return { ok: false, error: 'Нет медиа в сообщении' }
       // thumb=true → GramJS скачает наименьший thumbnail (быстро, ~10-50 КБ)
       // thumb=false → полное фото (для просмотра в полный размер)
-      const buf = await state.client.downloadMedia(msgs[0], thumb ? { thumb: 0 } : {})
+      const buf = await client.downloadMedia(msgs[0], thumb ? { thumb: 0 } : {})
       if (!buf) return { ok: false, error: 'Telegram вернул пустой файл' }
       fs.writeFileSync(filePath, buf)
       log(`download-media: OK size=${buf.length} thumb=${thumb}`)

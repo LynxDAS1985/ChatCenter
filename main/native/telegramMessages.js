@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { NewMessage } from 'telegram/events/index.js'
 import { strippedPhotoToJpg } from 'telegram/Utils.js'
-import { state, chatEntityMap, maxOutgoingRead, lastPerChatSync, log, emit, Api } from './telegramState.js'
+import { state, chatEntityMap, maxOutgoingRead, lastPerChatSync, log, emit, Api, getClientForChat, getAccountForChat } from './telegramState.js'
 
 // v0.87.24: stripped photo → data:URL для мгновенного превью (Вариант A)
 // PhotoStrippedSize — 1-3КБ JPEG в минимальном формате (Telegram шлёт в самом сообщении)
@@ -157,84 +157,93 @@ export function messagePreview(m) {
 }
 
 // v0.87.35: точный sync unreadCount для одного чата через GetPeerDialogs
-async function syncPerChatUnread(chatId) {
+// v0.87.105 (ADR-016): client передаётся явно (multi-account).
+// Backward-compat: без второго аргумента — берём по chatId через getClientForChat.
+async function syncPerChatUnread(chatId, client) {
   try {
     const last = lastPerChatSync.get(chatId) || 0
     if (Date.now() - last < 3000) return  // не чаще раз в 3 сек на чат
     lastPerChatSync.set(chatId, Date.now())
     const entity = chatEntityMap.get(chatId)
-    if (!entity || !state.client) return
-    const dialog = await state.client.invoke(new Api.messages.GetPeerDialogs({ peers: [new Api.InputDialogPeer({ peer: entity })] }))
+    const tgClient = client || getClientForChat(chatId)
+    if (!entity || !tgClient) return
+    const dialog = await tgClient.invoke(new Api.messages.GetPeerDialogs({ peers: [new Api.InputDialogPeer({ peer: entity })] }))
     const d = dialog.dialogs?.[0]
     if (d) emit('tg:chat-unread-sync', { chatId, unreadCount: d.unreadCount || 0 })
   } catch (e) { /* silent */ }
 }
 
 // v0.87.85: NewMessage event listener — главный канал входящих в реальном времени.
-// ВАЖНО: вызывается из telegramAuth.js ПОСЛЕ успешного state.client.start() / connect().
-// Если забыть привязать — никакие входящие не приходят в реальном времени.
-export function attachMessageListener() {
-  if (!state.client) return
+// v0.87.105 (ADR-016): принимает (client, accountId) — multi-account.
+// Вызывается ПОСЛЕ успешного login / connect для КАЖДОГО клиента в state.clients.
+// Если забыть привязать — входящие на этом аккаунте не приходят.
+// Backward-compat: если вызвано без аргументов, использует state.client + state.activeAccountId.
+export function attachMessageListener(client, accountId) {
+  const tgClient = client || state.client
+  const aid = accountId || state.activeAccountId || state.currentAccount?.id
+  if (!tgClient || !aid) return
   try {
-    state.client.addEventHandler(async (event) => {
+    tgClient.addEventHandler(async (event) => {
       try {
         const m = event.message
         if (!m) return
         const chatIdRaw = String(m.chatId || m.peerId?.userId || m.peerId?.chatId || m.peerId?.channelId || '')
-        const chatId = `${state.currentAccount?.id}:${chatIdRaw}`
+        const chatId = `${aid}:${chatIdRaw}`
         emit('tg:new-message', { chatId, message: mapMessage(m, chatId) })
         // v0.87.35: точный sync unreadCount для этого чата через GetPeerDialogs
         // (чтобы UI показывал реальное число сразу, не ждал mark-read / periodic rescan)
-        setTimeout(() => syncPerChatUnread(chatId), 600)
+        setTimeout(() => syncPerChatUnread(chatId, tgClient), 600)
       } catch (e) { log('new-message handler err: ' + e.message) }
     }, new NewMessage({}))
 
     // v0.87.14: raw updates — typing + read receipts
-    state.client.addEventHandler((update) => {
+    tgClient.addEventHandler((update) => {
       try {
         const cn = update?.className
         // Typing: UpdateUserTyping / UpdateChatUserTyping / UpdateChannelUserTyping
         if (cn === 'UpdateUserTyping' || cn === 'UpdateChatUserTyping' || cn === 'UpdateChannelUserTyping') {
           const userIdRaw = String(update.userId || update.fromId?.userId || '')
           const chatIdRaw = String(update.chatId || update.channelId || update.userId || '')
-          const chatId = `${state.currentAccount?.id}:${chatIdRaw}`
+          const chatId = `${aid}:${chatIdRaw}`
           const isTyping = update.action?.className === 'SendMessageTypingAction'
           emit('tg:typing', { chatId, userId: userIdRaw, typing: isTyping })
         }
         // Read receipts (собеседник прочитал наши сообщения) — для галочек ✓✓
         if (cn === 'UpdateReadHistoryOutbox' || cn === 'UpdateReadChannelOutbox') {
           const chatIdRaw = String(update.peer?.userId || update.peer?.chatId || update.channelId || '')
-          const chatId = `${state.currentAccount?.id}:${chatIdRaw}`
+          const chatId = `${aid}:${chatIdRaw}`
           const maxId = Number(update.maxId || 0)
           maxOutgoingRead.set(chatId, Math.max(maxOutgoingRead.get(chatId) || 0, maxId))
           emit('tg:read', { chatId, maxId, outgoing: true })
-          log(`outgoing read: chat=${chatId} maxId=${maxId} (собеседник прочитал наши до этого id)`)
+          log(`outgoing read: chat=${chatId} maxId=${maxId}`)
         }
         // Read inbox (мы прочитали)
         if (cn === 'UpdateReadHistoryInbox' || cn === 'UpdateReadChannelInbox') {
           const chatIdRaw = String(update.peer?.userId || update.peer?.chatId || update.channelId || '')
-          const chatId = `${state.currentAccount?.id}:${chatIdRaw}`
+          const chatId = `${aid}:${chatIdRaw}`
           emit('tg:read', { chatId, maxId: Number(update.maxId || 0), outgoing: false, stillUnread: Number(update.stillUnreadCount || 0) })
         }
       } catch (e) { /* silent */ }
     })
-    log('event handler + raw updates attached')
+    log(`event handler + raw updates attached (${aid})`)
   } catch (e) { log('attach listener err: ' + e.message) }
 }
 
 export function initMessagesHandlers() {
   // v0.87.16: отправка картинки из буфера обмена (Ctrl+V)
+  // v0.87.105 (ADR-016): client определяется по chatId (multi-account)
   ipcMain.handle('tg:send-clipboard-image', async (_, { chatId, data, ext }) => {
     log(`send-clipboard-image: chat=${chatId} bytes=${data?.length} ext=${ext}`)
     try {
-      if (!state.client) { log('send-clipboard: client null'); return { ok: false, error: 'Не подключён' } }
+      const client = getClientForChat(chatId)
+      if (!client) { log('send-clipboard: client null'); return { ok: false, error: 'Не подключён' } }
       const tmpDir = path.join(path.dirname(state.cachePath), 'tg-tmp')
       try { fs.mkdirSync(tmpDir, { recursive: true }) } catch(_) {}
       const tmpFile = path.join(tmpDir, `clip_${Date.now()}.${ext}`)
       fs.writeFileSync(tmpFile, Buffer.from(data))
       log(`send-clipboard: saved tmp ${tmpFile}`)
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
-      await state.client.sendFile(entity, { file: tmpFile })
+      await client.sendFile(entity, { file: tmpFile })
       log(`send-clipboard: sent OK`)
       try { fs.unlinkSync(tmpFile) } catch(_) {}
       return { ok: true }
@@ -243,9 +252,10 @@ export function initMessagesHandlers() {
 
   ipcMain.handle('tg:send-file', async (_, { chatId, filePath, caption }) => {
     try {
-      if (!state.client) return { ok: false }
+      const client = getClientForChat(chatId)
+      if (!client) return { ok: false }
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
-      const result = await state.client.sendFile(entity, { file: filePath, caption: caption || '' })
+      const result = await client.sendFile(entity, { file: filePath, caption: caption || '' })
       return { ok: true, messageId: String(result.id) }
     } catch (e) {
       log('send-file err: ' + e.message)
@@ -256,10 +266,16 @@ export function initMessagesHandlers() {
   ipcMain.handle('tg:forward', async (_, { fromChatId, toChatId, messageId }) => {
     log(`forward: ${fromChatId} → ${toChatId} msgId=${messageId}`)
     try {
-      if (!state.client) return { ok: false, error: 'Не подключён' }
+      // v0.87.105: ВАЖНО — forward между аккаунтами невозможен (другой client),
+      // поэтому используем client отправляющего чата (fromChatId)
+      const client = getClientForChat(fromChatId)
+      if (!client) return { ok: false, error: 'Не подключён' }
+      const fromAcc = String(fromChatId).split(':')[0]
+      const toAcc = String(toChatId).split(':')[0]
+      if (fromAcc !== toAcc) return { ok: false, error: 'Пересылка между разными аккаунтами не поддерживается' }
       const fromEntity = chatEntityMap.get(fromChatId) || String(fromChatId).split(':').pop()
       const toEntity = chatEntityMap.get(toChatId) || String(toChatId).split(':').pop()
-      await state.client.forwardMessages(toEntity, { messages: [Number(messageId)], fromPeer: fromEntity })
+      await client.forwardMessages(toEntity, { messages: [Number(messageId)], fromPeer: fromEntity })
       log(`forward: OK`)
       return { ok: true }
     } catch (e) { log('forward err: ' + e.message); return { ok: false, error: e.message } }
@@ -268,12 +284,13 @@ export function initMessagesHandlers() {
   // v0.87.15: messages с типом медиа и возможностью дозагрузки вверх (offsetId)
   ipcMain.handle('tg:get-messages', async (_, { chatId, limit = 50, offsetId = 0 }) => {
     try {
-      if (!state.client) return { ok: false, error: 'Не подключён', messages: [] }
+      const client = getClientForChat(chatId)
+      if (!client) return { ok: false, error: 'Не подключён', messages: [] }
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
-      const msgs = await state.client.getMessages(entity, { limit, offsetId })
+      const msgs = await client.getMessages(entity, { limit, offsetId })
       // v0.87.17: пытаемся узнать max outgoing read через getFullEntity (для галочек)
       try {
-        const full = await state.client.invoke(
+        const full = await client.invoke(
           entity.className === 'InputPeerUser' || entity.userId
             ? new Api.users.GetFullUser({ id: entity })
             : new Api.channels.GetFullChannel({ channel: entity })
@@ -296,12 +313,14 @@ export function initMessagesHandlers() {
   })
 
   // v0.87.15: sendMessage с поддержкой reply
+  // v0.87.105 (ADR-016): client по chatId — отправка от правильного аккаунта
   ipcMain.handle('tg:send-message', async (_, { chatId, text, replyTo }) => {
     // v0.87.55: полные логи — ловим почему юзер нажимает "Отпр." а ничего не происходит
     log(`send-message START: chat=${chatId} len=${text?.length} replyTo=${replyTo || 'none'}`)
     try {
-      if (!state.client) {
-        log(`send-message FAIL: client=null`)
+      const client = getClientForChat(chatId)
+      if (!client) {
+        log(`send-message FAIL: client=null for chat=${chatId}`)
         return { ok: false, error: 'Не подключён' }
       }
       const hasEntity = chatEntityMap.has(chatId)
@@ -309,7 +328,7 @@ export function initMessagesHandlers() {
       log(`send-message: hasEntity=${hasEntity} entity=${hasEntity ? 'from-map' : 'fallback-id'}`)
       const params = { message: text }
       if (replyTo) params.replyTo = Number(replyTo)
-      const result = await state.client.sendMessage(entity, params)
+      const result = await client.sendMessage(entity, params)
       log(`send-message OK: chat=${chatId} messageId=${result.id}`)
       // v0.87.59: emit tg:new-message с МИНИМАЛЬНЫМ корректным msg-объектом.
       // Раньше (v0.87.58) прогоняли result через mapMessage — но MTProto Message
@@ -343,12 +362,14 @@ export function initMessagesHandlers() {
           }
         }
 
-        const myUserId = (state.currentAccount?.id || 'me').replace(/^tg_/, '')
+        // v0.87.105: используем аккаунт связанный с этим chatId (а не активный)
+        const senderAccount = getAccountForChat(chatId) || state.currentAccount
+        const myUserId = (senderAccount?.id || 'me').replace(/^tg_/, '')
         const msg = {
           id: String(result.id),
           chatId,
           senderId: myUserId,
-          senderName: state.currentAccount?.name || '',
+          senderName: senderAccount?.name || '',
           text: text,  // используем исходный параметр, не result.message
           entities: [],
           timestamp: (result.date || Math.floor(Date.now() / 1000)) * 1000,
@@ -379,9 +400,10 @@ export function initMessagesHandlers() {
   // v0.87.15: удаление сообщения
   ipcMain.handle('tg:delete-message', async (_, { chatId, messageId, forAll = true }) => {
     try {
-      if (!state.client) return { ok: false }
+      const client = getClientForChat(chatId)
+      if (!client) return { ok: false }
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
-      await state.client.deleteMessages(entity, [Number(messageId)], { revoke: forAll })
+      await client.deleteMessages(entity, [Number(messageId)], { revoke: forAll })
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -389,9 +411,10 @@ export function initMessagesHandlers() {
   // v0.87.15: редактирование сообщения
   ipcMain.handle('tg:edit-message', async (_, { chatId, messageId, text }) => {
     try {
-      if (!state.client) return { ok: false }
+      const client = getClientForChat(chatId)
+      if (!client) return { ok: false }
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
-      await state.client.editMessage(entity, { message: Number(messageId), text })
+      await client.editMessage(entity, { message: Number(messageId), text })
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })

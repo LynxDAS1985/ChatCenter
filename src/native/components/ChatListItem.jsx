@@ -16,15 +16,17 @@ function typeIcon(type, isBot) {
   return null
 }
 
-export default function ChatListItem({ chat, active, onClick }) {
+export default function ChatListItem({ chat, active, onClick, account }) {
   const bgColor = AVATAR_COLORS[hashString(chat.title || '?') % AVATAR_COLORS.length]
   const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('')
   const icon = typeIcon(chat.type, chat.isBot)
   // v0.87.51: показываем ровно то число что возвращает Telegram API (chat.unreadCount).
-  // groupedUnread (v0.87.45-50) удалён — источник рассинхронов. Если юзер хочет видеть
-  // "альбом=1" — это задача сервера, не клиента. Telegram MTProto считает каждое фото как msg.
   const badgeCount = chat.unreadCount
+  // v0.87.105 (ADR-016): инициалы аккаунта для бейджа (если multi-account)
+  const accBadge = account
+    ? (account.name || account.username || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('')
+    : null
 
   return (
     <div
@@ -68,6 +70,28 @@ export default function ChatListItem({ chat, active, onClick }) {
       {/* Текст */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* v0.87.105: бейдж аккаунта — слева от иконки чата (когда 2+ аккаунта) */}
+          {accBadge && (
+            <span
+              title={account?.name || account?.username || ''}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 20,
+                height: 14,
+                padding: '0 4px',
+                background: 'rgba(42,171,238,0.20)',
+                border: '1px solid rgba(42,171,238,0.40)',
+                borderRadius: 3,
+                color: '#9ed6f5',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                flexShrink: 0,
+              }}
+            >{accBadge}</span>
+          )}
           {icon && <span style={{ fontSize: 12, flexShrink: 0 }}>{icon}</span>}
           <div style={{
             fontWeight: 600, fontSize: 14, flex: 1,

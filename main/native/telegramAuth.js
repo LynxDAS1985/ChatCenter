@@ -1,18 +1,24 @@
-// v0.87.85: авторизация Telegram — startLogin (phone → code → 2FA) + autoRestoreSession.
+// v0.87.85: авторизация Telegram — startLogin (phone → code → 2FA) + autoRestoreSessions.
 // Извлечён из telegramHandler.js (Шаг 7/7 разбиения).
+// v0.87.105 (ADR-016): multi-account. startLogin создаёт client в state.clients Map,
+// сессии хранятся per-account в tg-sessions/{accountId}.txt. autoRestoreSessions сканирует папку.
 // КРИТИЧНО: после успешного client.start() / connect() обязательно вызывать
-// attachMessageListener() и startUnreadRescan() — иначе входящие не приходят
-// и счётчики не синхронизируются.
+// attachMessageListener(client, accountId) — иначе входящие не приходят на этом аккаунте.
 import { ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
 import { isValidPhoneNumber } from 'libphonenumber-js'
-import { state, log, emit, API_ID, API_HASH } from './telegramState.js'
+import { state, log, emit, API_ID, API_HASH, registerAccount, setActiveAccount, unregisterAccount } from './telegramState.js'
 import { translateTelegramError } from './telegramErrors.js'
 import { attachMessageListener } from './telegramMessages.js'
 import { startUnreadRescan } from './telegramChats.js'
+
+// v0.87.105: путь к файлу сессии конкретного аккаунта
+function sessionFileFor(accountId) {
+  return path.join(state.sessionsDir, `${accountId}.txt`)
+}
 
 // v0.87.101: проверка формата через libphonenumber-js (Google-стандарт).
 // Знает реальные правила длины и формата для каждой из 240 стран.
@@ -27,16 +33,17 @@ function validatePhoneFormat(raw) {
 
 // v0.87.91: загрузка аватарки профиля пользователя (для AccountContextMenu).
 // v0.87.93: возвращает cc-media://avatars/<filename> URL (Chromium блокирует file:/// в renderer).
+// v0.87.105: client передаётся явно (multi-account — может быть не state.client активного).
 // Сохраняется в tg-avatars/me_<id>.jpg.
-async function loadOwnAvatar(me) {
+async function loadOwnAvatar(client, me) {
   try {
-    if (!state.client || !state.avatarsDir || !me?.id) return null
+    if (!client || !state.avatarsDir || !me?.id) return null
     const filename = `me_${me.id}.jpg`
     const filepath = path.join(state.avatarsDir, filename)
     if (fs.existsSync(filepath)) {
       return `cc-media://avatars/${filename}`
     }
-    const buffer = await state.client.downloadProfilePhoto(me, { isBig: false })
+    const buffer = await client.downloadProfilePhoto(me, { isBig: false })
     if (!buffer || !buffer.length) return null
     fs.writeFileSync(filepath, buffer)
     log(`own avatar saved: ${filename} (${buffer.length} bytes)`)
@@ -102,7 +109,10 @@ export function initAuthHandlers() {
 async function startLogin(phone) {
   log(`startLogin phone=${phone}`)
   const stringSession = new StringSession('')
-  state.client = new TelegramClient(stringSession, API_ID, API_HASH, {
+  // v0.87.105 (ADR-016): создаём локальный client. Не пишем в state.client напрямую —
+  // в Map добавим только после успешного login (через registerAccount).
+  // Если login провалится — client уничтожим, state.clients не тронем.
+  const newClient = new TelegramClient(stringSession, API_ID, API_HASH, {
     connectionRetries: 5,
     deviceModel: 'ChatCenter Desktop',
     systemVersion: 'Windows 10',
@@ -137,7 +147,7 @@ async function startLogin(phone) {
 
   // Запускаем авторизацию в фоне (не блокирует IPC handler)
   log('client.start() calling...')
-  state.client.start({
+  newClient.start({
     phoneNumber: async () => {
       // v0.87.101 Слой 3: closure-счётчик прерывает retry-цикл GramJS.
       // Telegram отверг номер → нет смысла слать тот же номер второй раз.
@@ -197,24 +207,27 @@ async function startLogin(phone) {
         emit('tg:login-step', { step: currentStep, phone, error: msg, waitUntil: waitSeconds > 0 ? Date.now() + waitSeconds * 1000 : null })
         if (state.pendingLogin) state.pendingLogin._emitted = true
       }
-      // Останавливаем GramJS retry-цикл ТОЛЬКО при фатальных
-      try { state.client?.disconnect() } catch(_) {}
-      try { state.client?.destroy() } catch(_) {}
-      state.client = null
+      // Останавливаем GramJS retry-цикл ТОЛЬКО при фатальных.
+      // v0.87.105: уничтожаем ЛОКАЛЬНЫЙ newClient — state.clients не задеваем
+      // (там либо ничего нет, либо ДРУГОЙ работающий аккаунт — его не трогаем).
+      try { newClient?.disconnect() } catch(_) {}
+      try { newClient?.destroy() } catch(_) {}
       state.pendingLogin = null
     },
   }).then(async () => {
     log('client.start() SUCCESS')
-    // Успех — сохраняем сессию
-    const sessionStr = state.client.session.save()
+    const me = await newClient.getMe()
+    const accountId = `tg_${me.id}`
+
+    // v0.87.105: сохраняем сессию ПЕРСОНАЛЬНО для этого аккаунта
+    const sessionStr = newClient.session.save()
     try {
-      fs.writeFileSync(state.sessionPath, sessionStr, 'utf8')
-      log('session saved')
+      fs.writeFileSync(sessionFileFor(accountId), sessionStr, 'utf8')
+      log(`session saved → ${accountId}.txt`)
     } catch (e) { log('session save error: ' + e.message) }
 
-    const me = await state.client.getMe()
-    state.currentAccount = {
-      id: `tg_${me.id}`,
+    const account = {
+      id: accountId,
       messenger: 'telegram',
       name: [me.firstName, me.lastName].filter(Boolean).join(' ').trim() || me.username || 'Telegram',
       phone: phone,
@@ -222,19 +235,26 @@ async function startLogin(phone) {
       status: 'connected',
       connectedAt: Date.now(), // v0.87.91: дата подключения для UI
     }
-    emit('tg:account-update', state.currentAccount)
+    // v0.87.105: добавляем в Map клиентов и аккаунтов. Если первый — становится активным.
+    registerAccount(accountId, newClient, account)
+
+    emit('tg:account-update', account)
     // v0.87.91: загружаем аватарку профиля асинхронно — не блокируем login
-    loadOwnAvatar(me).then(avatar => {
+    loadOwnAvatar(newClient, me).then(avatar => {
       if (avatar) {
-        state.currentAccount = { ...state.currentAccount, avatar }
-        emit('tg:account-update', state.currentAccount)
+        const updated = { ...account, avatar }
+        state.accounts.set(accountId, updated)
+        if (state.activeAccountId === accountId) state.currentAccount = updated
+        emit('tg:account-update', updated)
       }
     }).catch(e => log('own avatar err: ' + e.message))
     emit('tg:login-step', { step: 'success', phone })  // v0.87.10: явный success — UI закроет модалку
     setTimeout(() => emit('tg:login-step', null), 200)
     state.pendingLogin = null
-    attachMessageListener()
-    startUnreadRescan()
+    // v0.87.105: NewMessage handler привязывается к ЭТОМУ client (не глобальному state.client)
+    attachMessageListener(newClient, accountId)
+    // Rescan unread — общий, поднимаем только один раз
+    if (!state.unreadRescanTimer) startUnreadRescan()
   }).catch(err => {
     const errMsg = err.message || String(err)
     log('login failed: ' + errMsg)
@@ -253,24 +273,20 @@ async function startLogin(phone) {
       emit('tg:login-step', { step: currentStep, phone, error: msg })
       if (state.pendingLogin) state.pendingLogin._emitted = true
     }
-    // v0.87.98: всегда сбрасываем client+pending после catch — иначе зависшая авторизация
-    // блокирует следующую попытку с сообщением "Авторизация уже в процессе".
+    // v0.87.105: уничтожаем ЛОКАЛЬНЫЙ newClient — state.clients не задеваем.
     state.pendingLogin = null
-    try { state.client?.disconnect() } catch(_) {}
-    try { state.client?.destroy() } catch(_) {}
-    state.client = null
+    try { newClient?.disconnect() } catch(_) {}
+    try { newClient?.destroy() } catch(_) {}
   })
 
   return { ok: true }
 }
 
-export async function autoRestoreSession() {
-  if (!fs.existsSync(state.sessionPath)) return
-  const sessionStr = fs.readFileSync(state.sessionPath, 'utf8').trim()
-  if (!sessionStr) return
-  log('restoring session...')
+// v0.87.105 (ADR-016): восстановить ОДНУ сессию из строки. Возвращает true при успехе.
+async function restoreOneSession(sessionStr, knownAccountId) {
+  if (!sessionStr) return false
   const stringSession = new StringSession(sessionStr)
-  state.client = new TelegramClient(stringSession, API_ID, API_HASH, {
+  const client = new TelegramClient(stringSession, API_ID, API_HASH, {
     connectionRetries: 5,
     deviceModel: 'ChatCenter Desktop',
     systemVersion: 'Windows 10',
@@ -278,31 +294,92 @@ export async function autoRestoreSession() {
     langCode: 'ru',
   })
   try {
-    await state.client.connect()
-    const me = await state.client.getMe()
-    state.currentAccount = {
-      id: `tg_${me.id}`,
+    await client.connect()
+    const me = await client.getMe()
+    const accountId = `tg_${me.id}`
+    if (knownAccountId && knownAccountId !== accountId) {
+      log(`restore: имя файла (${knownAccountId}) ≠ getMe() (${accountId}) — переименовываем`)
+      try { fs.renameSync(sessionFileFor(knownAccountId), sessionFileFor(accountId)) } catch(_) {}
+    }
+    const account = {
+      id: accountId,
       messenger: 'telegram',
       name: [me.firstName, me.lastName].filter(Boolean).join(' ').trim() || me.username || 'Telegram',
       phone: me.phone ? '+' + me.phone : '',
       username: me.username || '',
       status: 'connected',
-      connectedAt: Date.now(), // v0.87.91: дата восстановления сессии (как новое подключение)
+      connectedAt: Date.now(),
     }
-    emit('tg:account-update', state.currentAccount)
-    // v0.87.91: подгружаем аватарку асинхронно — не блокируем restore
-    loadOwnAvatar(me).then(avatar => {
+    registerAccount(accountId, client, account)
+    emit('tg:account-update', account)
+    loadOwnAvatar(client, me).then(avatar => {
       if (avatar) {
-        state.currentAccount = { ...state.currentAccount, avatar }
-        emit('tg:account-update', state.currentAccount)
+        const updated = { ...account, avatar }
+        state.accounts.set(accountId, updated)
+        if (state.activeAccountId === accountId) state.currentAccount = updated
+        emit('tg:account-update', updated)
       }
     }).catch(e => log('own avatar err: ' + e.message))
-    attachMessageListener()
-    startUnreadRescan()
-    log('session restored, account=' + state.currentAccount.name)
+    attachMessageListener(client, accountId)
+    log(`session restored, account=${account.name} (${accountId})`)
+    return accountId
   } catch (e) {
-    log('session restore failed: ' + e.message)
-    try { state.client?.disconnect() } catch(_) {}
-    state.client = null
+    log(`session restore failed (${knownAccountId || 'unknown'}): ${e.message}`)
+    try { client?.disconnect() } catch(_) {}
+    return false
   }
 }
+
+// v0.87.105 (ADR-016): миграция старого ОДНОГО файла tg-session.txt.
+// При первом запуске после v0.87.105 — читаем, getMe(), переносим в tg-sessions/{id}.txt.
+async function migrateLegacySession() {
+  if (!state.sessionPath || !fs.existsSync(state.sessionPath)) return
+  const oldStr = (() => { try { return fs.readFileSync(state.sessionPath, 'utf8').trim() } catch(_) { return '' } })()
+  if (!oldStr) {
+    try { fs.unlinkSync(state.sessionPath) } catch(_) {}
+    return
+  }
+  log('legacy session detected — migrating to tg-sessions/{id}.txt')
+  const accountId = await restoreOneSession(oldStr, null)
+  if (accountId) {
+    try {
+      fs.writeFileSync(sessionFileFor(accountId), oldStr, 'utf8')
+      fs.unlinkSync(state.sessionPath)
+      log(`migrated: tg-session.txt → ${accountId}.txt`)
+    } catch (e) { log(`migrate write error: ${e.message}`) }
+  } else {
+    log('legacy session migration failed — оставляем старый файл, не удаляем')
+  }
+}
+
+// v0.87.105 (ADR-016): сканировать tg-sessions/ и восстановить ВСЕ найденные сессии.
+export async function autoRestoreSessions() {
+  // 1. Миграция старого ОДНОГО файла (один раз)
+  await migrateLegacySession()
+
+  // 2. Сканируем папку tg-sessions/
+  if (!state.sessionsDir || !fs.existsSync(state.sessionsDir)) return
+  const files = fs.readdirSync(state.sessionsDir).filter(f => f.endsWith('.txt'))
+  if (!files.length) { log('no saved sessions'); return }
+
+  log(`restoring ${files.length} session(s)...`)
+  let restored = 0
+  for (const f of files) {
+    const accountId = f.replace(/\.txt$/, '')
+    // Пропускаем если уже восстановлен (мог migrate сделать)
+    if (state.clients.has(accountId)) { restored++; continue }
+    const sessionStr = (() => {
+      try { return fs.readFileSync(path.join(state.sessionsDir, f), 'utf8').trim() } catch(_) { return '' }
+    })()
+    if (!sessionStr) continue
+    const ok = await restoreOneSession(sessionStr, accountId)
+    if (ok) restored++
+  }
+  log(`autoRestoreSessions: ${restored}/${files.length} восстановлено`)
+
+  // 3. Запускаем общий unread rescan (один раз, для всех аккаунтов)
+  if (restored > 0 && !state.unreadRescanTimer) startUnreadRescan()
+}
+
+// v0.87.105: backward-compat alias — на случай если где-то ещё импортируется старое имя
+export const autoRestoreSession = autoRestoreSessions

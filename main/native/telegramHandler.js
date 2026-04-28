@@ -13,18 +13,22 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { state, log } from './telegramState.js'
-import { initAuthHandlers, autoRestoreSession } from './telegramAuth.js'
+import { initAuthHandlers, autoRestoreSessions } from './telegramAuth.js'
 import { initChatsHandlers } from './telegramChatsIpc.js'
 import { initMessagesHandlers } from './telegramMessages.js'
 import { initMediaHandlers } from './telegramMedia.js'
 
 export function initTelegramHandler({ getMainWindow, userDataPath }) {
   state.getMainWindowFn = getMainWindow
+  // v0.87.105 (ADR-016): multi-account — папка с per-account сессиями.
+  state.sessionsDir = path.join(userDataPath, 'tg-sessions')
+  // legacy путь — для миграции старого ОДНОГО файла. Не используется для записи.
   state.sessionPath = path.join(userDataPath, 'tg-session.txt')
   state.avatarsDir = path.join(userDataPath, 'tg-avatars')
   state.cachePath = path.join(userDataPath, 'tg-cache.json')
+  try { fs.mkdirSync(state.sessionsDir, { recursive: true }) } catch(_) {}
   try { fs.mkdirSync(state.avatarsDir, { recursive: true }) } catch(_) {}
-  log(`init, session=${state.sessionPath}, avatars=${state.avatarsDir}, cache=${state.cachePath}`)
+  log(`init, sessions=${state.sessionsDir}, avatars=${state.avatarsDir}, cache=${state.cachePath}`)
 
   cleanupOldMediaOnStart(userDataPath)
 
@@ -43,10 +47,10 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
     }
     if (win.webContents.isLoading()) {
       win.webContents.once('did-finish-load', () => {
-        setTimeout(() => autoRestoreSession().catch(e => log('autoRestore error: ' + e.message)), 500)
+        setTimeout(() => autoRestoreSessions().catch(e => log('autoRestore error: ' + e.message)), 500)
       })
     } else {
-      autoRestoreSession().catch(e => log('autoRestore error: ' + e.message))
+      autoRestoreSessions().catch(e => log('autoRestore error: ' + e.message))
     }
   }
   setTimeout(startRestore, 1000)

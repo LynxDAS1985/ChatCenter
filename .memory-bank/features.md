@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.104 (28 апреля 2026)
+## Текущая версия: v0.87.105 (28 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.80 → v0.87.92). Старое — в архиве:
 
@@ -15,6 +15,89 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.105 — Реализация multi-account для нативного Telegram (Шаг 2.5)
+
+**Контекст**: в v0.87.104 задокументирован план (ADR-016 + Шаг 2.5). В этой версии — полная реализация согласно плану, без отступлений.
+
+**UX согласно Варианту B** (выбрано в обсуждении):
+
+```
+┌──────┬─────────────────────────────────────┐
+│ ●BН  │  [Все] [BНК] [Avtoliberty]          │  ← фильтр (при 2+ аккаунтах)
+│ ●AV  │  ──────────                          │
+│ ───  │  🔍 Поиск по чатам                   │
+│  +   │  ──────────                          │
+│      │  💬 458 чатов                        │
+│      │  ──────────                          │
+│      │  [BН] OZONовая Дыра (999+)           │  ← цветной бейдж аккаунта
+│      │  [AV] Иванов клиент (3)              │
+│      │  [BН] Эксплойт ✓ (25)                │
+│      │  [AV] Заявка #12345 (1)              │
+│      │  ...                                 │
+└──────┴──────────────────────────────────────┘
+```
+
+**Backend (8 файлов)**:
+
+1. **`telegramState.js`** — `state.clients: Map<accountId, TelegramClient>`, `state.accounts: Map<accountId, NativeAccount>`, `state.activeAccountId`, `state.sessionsDir`. Backward-compat алиасы `state.client` / `state.currentAccount` указывают на активный. Helpers: `accountIdFromChat(chatId)`, `getClientForChat(chatId)`, `getAccountForChat(chatId)`, `registerAccount(id, client, account)`, `setActiveAccount(id)`, `unregisterAccount(id)`.
+
+2. **`telegramAuth.js`** — `startLogin` создаёт ЛОКАЛЬНЫЙ `newClient` (не `state.client`). После success → `registerAccount(accountId, newClient, account)`, `attachMessageListener(newClient, accountId)`. Сохранение в `tg-sessions/{accountId}.txt`. При login fail — уничтожаем только локальный newClient, существующие в state.clients не задеваем.
+
+3. **`telegramAuth.js → autoRestoreSessions`** — сканирует `tg-sessions/` и восстанавливает все. Для каждого: `restoreOneSession(sessionStr, accountId)` → `registerAccount` → `attachMessageListener`.
+
+4. **`telegramAuth.js → migrateLegacySession`** — при первом запуске v0.87.105 читает старый `tg-session.txt`, делает `getMe()`, переносит в `tg-sessions/{id}.txt`, удаляет старый.
+
+5. **`telegramHandler.js`** — `state.sessionsDir = path.join(userData, 'tg-sessions')` + `mkdirSync`. Вызов `autoRestoreSessions` (новое имя). Старый `autoRestoreSession` остался как backward-compat alias.
+
+6. **`telegramMessages.js`** — `attachMessageListener(client, accountId)` параметризован. Все handlers (`tg:send-message`, `tg:get-messages`, `tg:edit-message`, `tg:delete-message`, `tg:forward`, `tg:send-file`, `tg:send-clipboard-image`) маршрутизируют через `getClientForChat(chatId)`.
+
+7. **`telegramChatsIpc.js`** — все handlers через `getClientForChat`. `tg:get-chats` принимает `args.accountId` (если не передан — итерирует по всем `state.clients`). `tg:remove-account` принимает `args.accountId` (per-account wipe; full wipe только если последний). `tg:get-cached-chats` читает все `tg-cache-{accountId}.json`.
+
+8. **`telegramChats.js`** — `mapDialog(d, accountId)`, `saveChatsCache(chats, accountId)` (per-account кэш), `loadAvatarsAsync(dialogs, accountId)`, `loadRestPagesAsync(firstPage, client, accountId)`. `fetchAllUnreadUpdates` итерирует по всем `state.clients`.
+
+9. **`telegramMedia.js`** — `download-video` / `download-media` через `getClientForChat`.
+
+**Renderer (4 файла)**:
+
+10. **`store/nativeStore.js`** — добавлено `chatFilter: 'all'` в `DEFAULT_STATE`, callback `setChatFilter`. `loadChats` без аргумента (multi-account default).
+
+11. **`store/nativeStoreIpc.js`** — `tg:account-update` `removed: true` при `isLast=false` точечно удаляет ТОЛЬКО чаты/сообщения этого аккаунта (фильтрация по prefix accountId в chatId), остальные аккаунты сохраняются.
+
+12. **`components/InboxChatListSidebar.jsx`** — фильтр-кнопки `[Все] [Account1] [Account2]` сверху (показываются при 2+ аккаунтах). Бейджи аккаунтов передаются в `ChatRow → ChatListItem`.
+
+13. **`components/ChatListItem.jsx`** — рендер инициалов аккаунта (accBadge) слева от иконки чата.
+
+14. **`modes/InboxMode.jsx`** — фильтр чатов через `store.chatFilter` (по умолчанию 'all'). `loadChats()` без аргумента.
+
+**Тесты**:
+
+- **`src/__tests__/multiAccount.test.cjs`** — новый, 42 проверки (state, helpers, auth, handler, IPC routing, mapDialog, UI chatFilter, sidebar buttons, account badge).
+- Добавлен в `scripts/hooks/pre-push` и `package.json:scripts.test`.
+
+**Миграция данных**:
+
+При первом запуске v0.87.105 — `migrateLegacySession()`:
+1. Если `tg-session.txt` существует — читаем, `getMe()`, перемещаем в `tg-sessions/{accountId}.txt`, удаляем старый.
+2. Если миграция упала — старый файл оставляем (резерв на следующий запуск).
+
+**Что юзер увидит**:
+
+- Один аккаунт — UI как раньше (фильтр-кнопки скрыты, бейджи аккаунта не показываются).
+- Два аккаунта — фильтр сверху + бейджи `[BH]` / `[AV]` слева в каждом чате.
+- Logout одного из двух — второй продолжает работать, его чаты/сообщения остаются.
+- При перезапуске оба аккаунта восстанавливаются автоматически.
+
+**Что НЕ задето** (поведение сохранено):
+- Login flow (phone → code → 2FA), CodeInput, CountryPicker
+- Send/edit/delete/forward сообщений
+- Markread, pin, typing, аватарки, медиа
+- Kanban / Контакты / AI-помощник
+- WebView вкладки (Telegram Web БНК / Avtoliberty работают по-старому через `app:register-webview` v0.84.0)
+
+**Pre-push pipeline**: 32 cjs-тестов (был 31) + vitest 143/143 + lint 0 ошибок.
 
 ---
 

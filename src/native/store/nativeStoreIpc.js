@@ -35,20 +35,58 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   }
 
   addHandler('tg:account-update', (acc) => {
-    // v0.87.95: removed: true → удалить аккаунт + ОБНУЛИТЬ всё (чаты, сообщения, активные)
+    // v0.87.95: removed: true → удалить аккаунт.
+    // v0.87.105 (ADR-016): при logout одного из нескольких — удаляем ТОЛЬКО его чаты/сообщения,
+    // остальные аккаунты остаются. wipeStats.isLast === true → последний → полная очистка.
     if (acc.removed) {
-      setState(s => ({
-        ...s,
-        accounts: s.accounts.filter(a => a.id !== acc.id),
-        activeAccountId: s.activeAccountId === acc.id ? null : s.activeAccountId,
-        activeChatId: null,
-        chats: [],
-        messages: {},
-        loadingMessages: {},
-        typing: {},
-        // wipeStats доступны через s.lastWipe для toast в UI
-        lastWipe: acc.wipeStats || null,
-      }))
+      setState(s => {
+        const isLast = acc.wipeStats?.isLast || s.accounts.length <= 1
+        if (isLast) {
+          // Полная очистка — последний аккаунт удалили
+          return {
+            ...s,
+            accounts: [],
+            activeAccountId: null,
+            chatFilter: 'all',
+            activeChatId: null,
+            chats: [],
+            messages: {},
+            loadingMessages: {},
+            typing: {},
+            lastWipe: acc.wipeStats || null,
+          }
+        }
+        // Не последний — точечная очистка
+        const newAccounts = s.accounts.filter(a => a.id !== acc.id)
+        const newChats = s.chats.filter(c => c.accountId !== acc.id)
+        const newMessages = {}
+        for (const [chatId, msgs] of Object.entries(s.messages)) {
+          if (chatId.split(':')[0] !== acc.id) newMessages[chatId] = msgs
+        }
+        const newLoading = {}
+        for (const chatId of Object.keys(s.loadingMessages)) {
+          if (chatId.split(':')[0] !== acc.id) newLoading[chatId] = s.loadingMessages[chatId]
+        }
+        // Сброс активного чата если он принадлежал удалённому аккаунту
+        const activeStillValid = s.activeChatId && s.activeChatId.split(':')[0] !== acc.id
+        // Сброс фильтра если фильтровали по этому аккаунту
+        const newFilter = s.chatFilter === acc.id ? 'all' : s.chatFilter
+        // Если активный аккаунт удалили — переключаемся на первый оставшийся
+        const newActiveAccountId = s.activeAccountId === acc.id
+          ? (newAccounts[0]?.id || null)
+          : s.activeAccountId
+        return {
+          ...s,
+          accounts: newAccounts,
+          activeAccountId: newActiveAccountId,
+          chatFilter: newFilter,
+          activeChatId: activeStillValid ? s.activeChatId : null,
+          chats: newChats,
+          messages: newMessages,
+          loadingMessages: newLoading,
+          lastWipe: acc.wipeStats || null,
+        }
+      })
       return
     }
     setState(s => {
@@ -67,11 +105,14 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   addHandler('tg:chats', ({ accountId, chats, append }) => {
     setState(s => {
       if (append) {
+        // v0.87.105: при append дедуп по id (Map с префиксом accountId — между аккаунтами уникален)
         const existing = new Set(s.chats.map(c => c.id))
         const newOnes = chats.filter(c => !existing.has(c.id))
         return { ...s, chats: [...s.chats, ...newOnes] }
       }
       // v0.87.38: MERGE вместо REPLACE — сохраняем lastMessageTs от более нового значения.
+      // v0.87.105 (ADR-016): MERGE применяется ТОЛЬКО к чатам ЭТОГО аккаунта;
+      // чаты других аккаунтов остаются нетронутыми (multi-account).
       // Без этого tg:chats перезаписывал lastMessageTs серверным (устаревшим), и чаты
       // с новыми сообщениями падали вниз списка вместо того чтобы быть наверху.
       const existingMap = new Map(s.chats.filter(c => c.accountId === accountId).map(c => [c.id, c]))

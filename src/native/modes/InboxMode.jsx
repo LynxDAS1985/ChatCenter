@@ -39,9 +39,11 @@ export default function InboxMode({ store }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
+  // v0.87.105 (ADR-016): загружаем чаты ВСЕХ аккаунтов разом (multi-account).
+  // Если accountId не передан, backend itерирует по всем зарегистрированным.
   useEffect(() => {
-    if (store.activeAccountId) store.loadChats(store.activeAccountId)
-  }, [store.activeAccountId])
+    if (store.accounts.length > 0) store.loadChats()
+  }, [store.accounts.length])
 
   useEffect(() => {
     if (!store.activeChatId) return
@@ -52,13 +54,16 @@ export default function InboxMode({ store }) {
     // по мере показа (IntersectionObserver) или scroll в низ.
   }, [store.activeChatId])
 
+  // v0.87.105 (ADR-016): единая лента всех аккаунтов с возможностью фильтра.
+  // store.chatFilter: 'all' | accountId. По умолчанию 'all' — показываем чаты со всех аккаунтов.
   const activeAccountChats = useMemo(() => {
     const q = search.trim().toLowerCase()
+    const filter = store.chatFilter || 'all'
     return (store.chats || [])
-      .filter(c => !store.activeAccountId || c.accountId === store.activeAccountId)
+      .filter(c => filter === 'all' ? true : c.accountId === filter)
       .filter(c => !q || (c.title || '').toLowerCase().includes(q) || (c.lastMessage || '').toLowerCase().includes(q))
       .sort((a, b) => (b.lastMessageTs || 0) - (a.lastMessageTs || 0))
-  }, [store.chats, store.activeAccountId, search])
+  }, [store.chats, store.chatFilter, search])
 
   const activeChat = store.chats.find(c => c.id === store.activeChatId)
   const activeMessages = store.messages[store.activeChatId] || []
