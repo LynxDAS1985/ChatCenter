@@ -1,0 +1,179 @@
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 100vh;
+  }
+  #dock-wrapper {
+    position: relative;
+  }
+  #dock {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: #1a1a2e;
+    border-radius: 10px;
+    border: 1px solid rgba(99,102,241,0.2);
+    box-shadow: 0 -2px 16px rgba(0,0,0,0.4);
+    white-space: nowrap;
+  }
+  .dock-drag {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    -webkit-app-region: drag;
+    cursor: grab;
+    user-select: none;
+    flex-shrink: 0;
+    padding: 0 2px;
+  }
+  .dock-label { font-size: 10px; color: rgba(99,102,241,0.6); }
+  .dock-count {
+    font-size: 9px; font-weight: 700;
+    color: rgba(99,102,241,0.8);
+    background: rgba(99,102,241,0.12);
+    border-radius: 8px; padding: 0 5px;
+    min-width: 16px; text-align: center;
+    line-height: 16px; height: 16px;
+  }
+  .dock-count.zero { display: none; }
+  .dock-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; padding: 4px 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px; cursor: grab;
+    flex-shrink: 0; max-width: 180px;
+    transition: all 0.15s;
+    animation: tabAppear 400ms cubic-bezier(0.22, 1, 0.36, 1);
+    position: relative;
+  }
+  .dock-tab.dragging { opacity: 0.4; cursor: grabbing; }
+  .dock-tab.drag-over { border-color: rgba(99,102,241,0.6); background: rgba(99,102,241,0.12); }
+  @keyframes tabAppear {
+    0%   { opacity: 0; transform: translateY(8px) scale(0.9); box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+    40%  { opacity: 1; transform: translateY(-2px) scale(1.03); box-shadow: 0 0 12px 2px rgba(99,102,241,0.4); }
+    70%  { transform: translateY(1px) scale(0.99); box-shadow: 0 0 6px 1px rgba(99,102,241,0.2); }
+    100% { opacity: 1; transform: translateY(0) scale(1); box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+  }
+  .dock-tab:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); }
+  .dock-tab.alert { animation: tabFlash 600ms ease-in-out infinite; border-color: rgba(239,68,68,0.5); }
+  @keyframes tabFlash {
+    0%, 100% { background: rgba(239,68,68,0.1); }
+    50%      { background: rgba(239,68,68,0.3); }
+  }
+  .tab-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .tab-name {
+    font-size: 11px; color: rgba(255,255,255,0.7);
+    white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; max-width: 90px;
+  }
+  .tab-timer { font-size: 9px; color: rgba(99,102,241,0.8); flex-shrink: 0; display: none; }
+  .tab-timer.active { display: inline; }
+  .tab-timer.expired { color: #f87171; }
+  .tab-close {
+    width: 16px; height: 16px; border: none;
+    background: transparent; color: rgba(255,255,255,0.25);
+    font-size: 12px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 3px; flex-shrink: 0; transition: all 0.15s;
+  }
+  .tab-close:hover { color: #f87171; background: rgba(239,68,68,0.15); }
+  .dock-close {
+    width: 18px; height: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: rgba(255,255,255,0.25); font-size: 11px;
+    cursor: pointer; display: flex;
+    align-items: center; justify-content: center;
+    border-radius: 4px; flex-shrink: 0;
+    margin-left: 2px; transition: all 0.15s;
+  }
+  .dock-close:hover { color: #f87171; background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.3); }
+  .dock-empty { font-size: 10px; color: rgba(255,255,255,0.2); user-select: none; padding: 0 4px; }
+
+  /* Превью тултип */
+  .dock-preview {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    max-width: 260px; min-width: 140px;
+    padding: 8px 10px;
+    background: #1e1e38;
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    pointer-events: none;
+    opacity: 0; transform: translateY(8px) scale(0.96);
+    animation: previewSlideIn 300ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    z-index: 10;
+  }
+  @keyframes previewSlideIn {
+    0%   { opacity: 0; transform: translateY(8px) scale(0.96); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .preview-sender { font-size: 11px; font-weight: 600; color: #e2e8f0; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preview-text { font-size: 11px; color: rgba(255,255,255,0.7); line-height: 1.4; white-space: pre-wrap; word-break: break-word; max-height: 80px; overflow: hidden; }
+  .preview-time { font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 3px; }
+  .preview-note { font-size: 10px; color: rgba(99,102,241,0.7); line-height: 1.3; margin-top: 3px; font-style: italic; white-space: pre-wrap; word-break: break-word; max-height: 40px; overflow: hidden; }
+  .tab-note-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(99,102,241,0.6); flex-shrink: 0; display: none; }
+  .tab-note-dot.visible { display: inline-block; }
+
+  .tab-category { font-size: 8px; line-height: 12px; padding: 0 4px; border-radius: 3px; flex-shrink: 0; font-weight: 600; }
+
+  /* Счётчик по категориям */
+  .cat-counts { display: inline-flex; align-items: center; gap: 2px; margin-left: 1px; }
+  .cat-badge { font-size: 8px; font-weight: 700; line-height: 14px; padding: 0 3px; border-radius: 4px; min-width: 14px; text-align: center; }
+  .cat-badge.hidden { display: none; }
+  .cat-badge.urgent { color: #f87171; background: rgba(239,68,68,0.15); }
+  .cat-badge.work { color: #fbbf24; background: rgba(245,158,11,0.15); }
+  .cat-badge.later { color: #4ade80; background: rgba(34,197,94,0.15); }
+
+  /* Контекстное меню — fixed в body, НЕ внутри таба */
+  /* НЕ используем keyframe animation — она начинается ДО позиционирования → моргание (Ловушка 30) */
+  /* Вместо этого: opacity:0 → позиционирование → добавляем .visible → CSS transition */
+  .ctx-menu {
+    position: fixed;
+    min-width: 170px;
+    background: #1e1e38;
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    padding: 4px 0;
+    z-index: 100;
+    opacity: 0; transform: translateY(4px) scale(0.97);
+    transition: opacity 150ms ease-out, transform 150ms ease-out;
+    pointer-events: none;
+  }
+  .ctx-menu.visible {
+    opacity: 1; transform: translateY(0) scale(1);
+    pointer-events: auto;
+  }
+  .ctx-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    cursor: pointer; transition: background 0.1s;
+    white-space: nowrap;
+  }
+  .ctx-item:hover { background: rgba(99,102,241,0.15); color: #fff; }
+  .ctx-item.danger:hover { background: rgba(239,68,68,0.15); color: #f87171; }
+  .ctx-sep { height: 1px; background: rgba(255,255,255,0.06); margin: 3px 0; }
+  .ctx-icon { width: 16px; text-align: center; font-size: 12px; flex-shrink: 0; }
+  .ctx-item.cat-active { color: #fff; font-weight: 600; }
+
+  /* Подсветка таба при открытом контекстном меню */
+  .dock-tab.ctx-active {
+    background: rgba(99,102,241,0.15);
+    border-color: rgba(99,102,241,0.4);
+    box-shadow: 0 0 8px rgba(99,102,241,0.2);
+  }
+
+  /* Анимации ctxIn/ctxOut удалены — используем CSS transition на .ctx-menu/.visible (Ловушка 30) */

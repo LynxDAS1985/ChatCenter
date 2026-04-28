@@ -1,9 +1,17 @@
 // v0.87.0: Экран авторизации Telegram (phone → code → 2FA)
+// v0.87.99: CountryPicker + ввод только национальной части номера (как в Telegram).
+// v0.87.101: libphonenumber-js — настоящая валидация по правилам страны.
 import { useState, useEffect } from 'react'
+import { isValidPhoneNumber, parsePhoneNumberFromString } from 'libphonenumber-js'
+import CountryPicker from './CountryPicker.jsx'
+import CodeInput from './CodeInput.jsx'
+import { getDefaultCountry } from '../data/countries.js'
 
 export default function LoginModal({ onClose, startLogin, submitCode, submitPassword, cancelLogin, loginFlow }) {
   // v0.87.6: ВСЕ useState строго сверху в одном порядке (React правило)
-  const [phone, setPhone] = useState('')
+  // v0.87.99: country = выбранная страна, nationalNumber = только цифры без кода страны
+  const [country, setCountry] = useState(() => getDefaultCountry(navigator.language || 'ru-RU'))
+  const [nationalNumber, setNationalNumber] = useState('')
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -11,6 +19,15 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
   const [stickyError, setStickyError] = useState('')
   const [optimisticStep, setOptimisticStep] = useState(null)
   const [countdown, setCountdown] = useState(0)
+
+  // v0.87.99: финальный номер для отправки в Telegram
+  // v0.87.101: валидация через libphonenumber-js — учитывает реальные правила
+  // длины и формата для каждой страны (не «10 цифр для России» как у нас было).
+  const rawPhone = '+' + (country?.dial || '') + nationalNumber
+  const parsedPhone = nationalNumber ? parsePhoneNumberFromString(rawPhone) : null
+  const isPhoneValid = !!parsedPhone && isValidPhoneNumber(rawPhone)
+  // Финальный номер в формате E.164 (как Telegram ожидает)
+  const fullPhone = parsedPhone?.number || rawPhone
 
   // v0.87.10: server step имеет приоритет когда он "продвинутее" optimistic
   // (server: phone → code → password → success). Optimistic нужен только для phone→code.
@@ -57,11 +74,24 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
   const waitingForCode = optimisticStep === 'code' && loginFlow?.step !== 'code' && loginFlow?.step !== 'password'
 
   const handlePhone = async () => {
+    if (!isPhoneValid) {
+      // v0.87.101: подсказываем сколько цифр ожидается с учётом уже введённых
+      const have = nationalNumber.length
+      const need = country?.nationalDigits || 10
+      if (have < need) {
+        setLocalError(`Номер слишком короткий: ${have} цифр, нужно ${need} для ${country?.name || 'страны'}`)
+      } else if (have > need) {
+        setLocalError(`Номер слишком длинный: ${have} цифр, нужно ${need} для ${country?.name || 'страны'}`)
+      } else {
+        setLocalError(`Этот номер не подходит формату ${country?.name || 'страны'}. Проверь правильность`)
+      }
+      return
+    }
     setBusy(true); setLocalError(''); setStickyError('')
     // v0.87.5: мгновенно переключаем UI на экран кода (не ждём GramJS 5-15 сек)
     setOptimisticStep('code')
     try {
-      const r = await startLogin(phone.trim())
+      const r = await startLogin(fullPhone)
       if (!r?.ok) {
         setOptimisticStep(null)
         setLocalError(r?.error || 'Ошибка отправки кода')
@@ -105,17 +135,29 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
           <>
             <div className="native-login__title">Подключить Telegram</div>
             <div className="native-login__subtitle">
-              Код придёт в Telegram на указанный номер
+              Выбери страну и введи свой номер
             </div>
-            <input
-              type="tel"
-              placeholder="+79001234567"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              disabled={busy}
-              autoFocus
-              onKeyDown={e => e.key === 'Enter' && !busy && phone.trim() && handlePhone()}
-            />
+            <div className="phone-row">
+              <CountryPicker
+                value={country}
+                onChange={c => { setCountry(c); setLocalError(''); setStickyError('') }}
+                disabled={busy}
+              />
+              <input
+                type="tel"
+                placeholder={'1'.repeat(country?.nationalDigits || 10).replace(/(\d{3})(\d{3})(\d{2})(\d{2}).*/, '$1 $2-$3-$4')}
+                value={nationalNumber}
+                onChange={e => {
+                  // Принимаем только цифры, лимит 15 (макс E.164)
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 15)
+                  setNationalNumber(digits)
+                  setLocalError(''); setStickyError('')
+                }}
+                disabled={busy}
+                autoFocus
+                onKeyDown={e => e.key === 'Enter' && !busy && isPhoneValid && handlePhone()}
+              />
+            </div>
             {error && (
               <div className="native-login__error">
                 <div>
@@ -128,7 +170,7 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
                 </div>
               </div>
             )}
-            <button className="native-btn" onClick={handlePhone} disabled={busy || !phone.trim() || countdown > 0}>
+            <button className="native-btn" onClick={handlePhone} disabled={busy || !isPhoneValid || countdown > 0}>
               {busy ? 'Отправка…' : countdown > 0 ? `Подождите ${formatCountdown(countdown)}` : 'Получить код'}
             </button>
             <button className="native-btn native-btn--ghost" onClick={handleCancel} disabled={busy}>
@@ -143,18 +185,15 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
             <div className="native-login__subtitle">
               {waitingForCode
                 ? <><span className="native-spinner" />Отправляем код в Telegram...</>
-                : `Код отправлен в Telegram на номер ${loginFlow?.phone || phone}`}
+                : `Код отправлен в Telegram на номер ${loginFlow?.phone || fullPhone}`}
             </div>
-            <input
-              type="text"
-              placeholder={waitingForCode ? 'Ждите...' : '12345'}
+            {/* v0.87.102: 5 отдельных ячеек вместо одного input. Тире "–" вместо плейсхолдер-цифр. */}
+            <CodeInput
+              length={5}
               value={code}
-              onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
-              maxLength={6}
+              onChange={setCode}
               disabled={busy || waitingForCode}
-              autoFocus
-              onKeyDown={e => e.key === 'Enter' && !busy && !waitingForCode && code.trim() && handleCode()}
-              style={{ fontSize: '24px', textAlign: 'center', letterSpacing: '0.4em', opacity: waitingForCode ? 0.5 : 1 }}
+              onComplete={() => { if (!busy && !waitingForCode) handleCode() }}
             />
             {error && <div className="native-login__error">{error}</div>}
             {!waitingForCode && !error && (
@@ -162,7 +201,7 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
                 💡 Если у вас включена двухфакторная защита (облачный пароль) — после кода появится экран ввода пароля.
               </div>
             )}
-            <button className="native-btn" onClick={handleCode} disabled={busy || waitingForCode || !code.trim()}>
+            <button className="native-btn" onClick={handleCode} disabled={busy || waitingForCode || code.length < 5}>
               {busy ? <><span className="native-spinner" />Проверка…</> : waitingForCode ? 'Ожидание...' : 'Подтвердить'}
             </button>
             <button className="native-btn native-btn--ghost" onClick={handleCancel} disabled={busy}>

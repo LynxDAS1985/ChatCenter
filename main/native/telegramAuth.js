@@ -8,10 +8,22 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions/index.js'
+import { isValidPhoneNumber } from 'libphonenumber-js'
 import { state, log, emit, API_ID, API_HASH } from './telegramState.js'
 import { translateTelegramError } from './telegramErrors.js'
 import { attachMessageListener } from './telegramMessages.js'
 import { startUnreadRescan } from './telegramChats.js'
+
+// v0.87.101: проверка формата через libphonenumber-js (Google-стандарт).
+// Знает реальные правила длины и формата для каждой из 240 стран.
+// Старая ручная проверка «8-15 цифр» пропускала «+79126370331» (10 цифр для России — мало).
+function validatePhoneFormat(raw) {
+  const phone = (raw || '').trim()
+  if (!phone) return 'Введите номер телефона'
+  if (!phone.startsWith('+')) return 'Номер должен начинаться с +'
+  if (!isValidPhoneNumber(phone)) return 'Неверный формат номера. Проверь правильность для своей страны'
+  return null
+}
 
 // v0.87.91: загрузка аватарки профиля пользователя (для AccountContextMenu).
 // v0.87.93: возвращает cc-media://avatars/<filename> URL (Chromium блокирует file:/// в renderer).
@@ -38,6 +50,13 @@ async function loadOwnAvatar(me) {
 export function initAuthHandlers() {
   ipcMain.handle('tg:login-start', async (_, { phone }) => {
     try {
+      // v0.87.98 Слой 2: проверка формата ДО startLogin. Не даём GramJS зациклиться.
+      const formatErr = validatePhoneFormat(phone)
+      if (formatErr) {
+        log('login-start rejected: ' + formatErr + ' (phone="' + (phone || '').slice(0, 6) + '…")')
+        emit('tg:login-step', { step: 'phone', error: formatErr })
+        return { ok: false, error: formatErr }
+      }
       if (state.pendingLogin) {
         return { ok: false, error: 'Авторизация уже в процессе. Сначала отмените текущую.' }
       }
@@ -91,6 +110,13 @@ async function startLogin(phone) {
     langCode: 'ru',
   })
 
+  // v0.87.101: счётчик в LOCAL closure variable — НЕ в state.pendingLogin.
+  // Раньше при первой ошибке мы делали state.pendingLogin = null, и при следующем
+  // вызове phoneNumber callback счётчик сбрасывался на 0 → throw не срабатывал →
+  // бесконечный retry-цикл GramJS возвращался (баг v0.87.98 → v0.87.100).
+  // Closure-переменная живёт пока живёт замыкание, её state.pendingLogin не обнулит.
+  let phoneAttempts = 0
+  let firstError = null
   state.pendingLogin = {}
 
   // Промисифицированный callback для ввода кода (UI получает tg:login-step step=code)
@@ -112,7 +138,17 @@ async function startLogin(phone) {
   // Запускаем авторизацию в фоне (не блокирует IPC handler)
   log('client.start() calling...')
   state.client.start({
-    phoneNumber: async () => { log('client asked phoneNumber'); return phone },
+    phoneNumber: async () => {
+      // v0.87.101 Слой 3: closure-счётчик прерывает retry-цикл GramJS.
+      // Telegram отверг номер → нет смысла слать тот же номер второй раз.
+      phoneAttempts++
+      log('client asked phoneNumber (попытка ' + phoneAttempts + ')')
+      if (phoneAttempts > 1) {
+        log('phone уже отправлен — прерываем retry-цикл')
+        throw new Error('PHONE_NUMBER_INVALID')
+      }
+      return phone
+    },
     phoneCode: async () => {
       log('client asked phoneCode')
       return await askCode()
@@ -124,6 +160,12 @@ async function startLogin(phone) {
     onError: (err) => {
       log('client onError: ' + err.message)
       const errMsg = err.message || String(err)
+
+      // v0.87.101 Слой 4: запоминаем ПЕРВУЮ ошибку в closure-переменной.
+      // Все следующие "Cannot send requests while disconnected" — побочка retry-цикла.
+      if (!firstError && !/SESSION_PASSWORD_NEEDED/i.test(errMsg)) {
+        firstError = errMsg
+      }
 
       // v0.87.9 КРИТИЧНО: SESSION_PASSWORD_NEEDED и PHONE_CODE_INVALID и PASSWORD_HASH_INVALID —
       // это НЕ ошибки которые надо обрабатывать, GramJS сам вызовет наш password/phoneCode callback.
@@ -139,12 +181,22 @@ async function startLogin(phone) {
         return
       }
 
+      // v0.87.98 Слой 3: "Cannot send requests while disconnected" — побочка retry-цикла.
+      // Считаем фатальной и убиваем client, иначе спам в логе.
+      const isDisconnectSpam = /Cannot send requests while disconnected|reconnect/i.test(errMsg)
+
       // Фатальные ошибки — стоп client (FLOOD_WAIT, PHONE_NUMBER_INVALID, BANNED, NETWORK)
-      const msg = translateTelegramError(errMsg)
+      // v0.87.101: показываем ПЕРВУЮ ошибку (closure firstError), не последнюю
+      const realErr = firstError || errMsg
+      const msg = translateTelegramError(realErr)
       const currentStep = state.pendingLogin?.passwordResolve ? 'password' : (state.pendingLogin?.codeResolve ? 'code' : 'phone')
-      const waitMatch = errMsg.match(/(?:A wait of |wait of |FLOOD_WAIT_)(\d+)/i)
+      const waitMatch = realErr.match(/(?:A wait of |wait of |FLOOD_WAIT_)(\d+)/i)
       const waitSeconds = waitMatch ? parseInt(waitMatch[1]) : 0
-      emit('tg:login-step', { step: currentStep, phone, error: msg, waitUntil: waitSeconds > 0 ? Date.now() + waitSeconds * 1000 : null })
+      // Эмитим ТОЛЬКО первый раз — чтобы UI не моргал тысячей disconnect-сообщений
+      if (!state.pendingLogin?._emitted || !isDisconnectSpam) {
+        emit('tg:login-step', { step: currentStep, phone, error: msg, waitUntil: waitSeconds > 0 ? Date.now() + waitSeconds * 1000 : null })
+        if (state.pendingLogin) state.pendingLogin._emitted = true
+      }
       // Останавливаем GramJS retry-цикл ТОЛЬКО при фатальных
       try { state.client?.disconnect() } catch(_) {}
       try { state.client?.destroy() } catch(_) {}
@@ -193,15 +245,20 @@ async function startLogin(phone) {
       emit('tg:login-step', { step: 'password', phone })
       return
     }
-    const msg = translateTelegramError(errMsg)
+    // v0.87.101 Слой 4: показываем ПЕРВУЮ ошибку (closure firstError)
+    const realErr = firstError || errMsg
+    const msg = translateTelegramError(realErr)
     const currentStep = state.pendingLogin?.passwordResolve ? 'password' : (state.pendingLogin?.codeResolve ? 'code' : 'phone')
-    emit('tg:login-step', { step: currentStep, phone, error: msg })
-    // Фатальные — сбрасываем client
-    if (/phone.*invalid|banned|deactivated|wait of|FLOOD_WAIT/i.test(errMsg)) {
-      state.pendingLogin = null
-      try { state.client?.disconnect() } catch(_) {}
-      state.client = null
+    if (!state.pendingLogin?._emitted) {
+      emit('tg:login-step', { step: currentStep, phone, error: msg })
+      if (state.pendingLogin) state.pendingLogin._emitted = true
     }
+    // v0.87.98: всегда сбрасываем client+pending после catch — иначе зависшая авторизация
+    // блокирует следующую попытку с сообщением "Авторизация уже в процессе".
+    state.pendingLogin = null
+    try { state.client?.disconnect() } catch(_) {}
+    try { state.client?.destroy() } catch(_) {}
+    state.client = null
   })
 
   return { ok: true }

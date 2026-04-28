@@ -20,6 +20,9 @@ function copyStaticPlugin() {
         // v0.87.78: notification.html разбит на html/css/js — копируем все три
         { from: 'main/notification.css', to: 'out/main/notification.css' },
         { from: 'main/notification.js', to: 'out/main/notification.js' },
+        // v0.87.97: pin-dock.html разбит на html/css/js
+        { from: 'main/pin-dock.css', to: 'out/main/pin-dock.css' },
+        { from: 'main/pin-dock.js', to: 'out/main/pin-dock.js' },
       ]
       // Hooks directory
       const hooksDir = 'main/preloads/hooks'

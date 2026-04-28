@@ -1,0 +1,235 @@
+/* v0.87.97: вынесено из styles.css.
+   Сообщения: разделители, группы, аватарки, ссылки, shimmer, glow. */
+
+/* v0.87.26: разделители дат/времени — контрастнее + линии по бокам как в Telegram */
+.native-msg-divider {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--amoled-text-dim);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  margin: 14px 0 6px;
+  user-select: none;
+  backdrop-filter: blur(8px);
+  text-transform: uppercase;
+}
+.native-msg-divider--day {
+  color: var(--amoled-accent);
+  background: rgba(42,171,238,0.12);
+  border-color: rgba(42,171,238,0.28);
+  font-weight: 600;
+  font-size: 11px;
+}
+/* декоративные линии по бокам для day-разделителя */
+.native-msg-day-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 6px;
+  padding: 0 8px;
+}
+.native-msg-day-row::before,
+.native-msg-day-row::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+}
+
+.native-msg-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;  /* плотно внутри группы */
+}
+
+/* v0.87.71: разрешаем выделение текста в сообщениях (для копирования).
+   Глобальный body { user-select: none } в src/index.css блокирует всё приложение —
+   кнопки, UI-элементы не выделяются. Но в bubble юзер должен иметь возможность
+   скопировать часть или весь текст сообщения / заголовок link-preview.
+   v0.87.72: ссылки ТОЖЕ выделяются (как в Telegram Desktop). Drag ссылок
+   выключен чтобы не конкурировать с выделением. Короткий клик = открытие. */
+.native-msg-group, .native-msg-group * {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+/* Кнопки внутри bubble (меню действий ⋯ / reply / etc) — кликабельные, не text */
+.native-msg-group button,
+.native-msg-group [role="button"] {
+  user-select: none;
+  cursor: pointer;
+}
+/* v0.87.72: ссылки — текст выделяется, drag отключён. Короткий клик ведёт на URL. */
+.native-msg-group a {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: pointer;
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+.native-msg-group + .native-msg-group {
+  margin-top: 10px;  /* отступ между группами разных авторов */
+}
+
+.native-msg-author {
+  font-size: 11px;
+  color: var(--amoled-text-dim);
+  margin-bottom: 2px;
+  padding: 0 12px;
+  font-weight: 600;
+}
+
+/* v0.87.27: аватарка слева от группы чужих сообщений */
+.native-msg-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* v0.87.27: divider «Новые сообщения» */
+.native-msg-unread-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 14px 0 6px;
+  color: #ffb84d;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.native-msg-unread-divider::before,
+.native-msg-unread-divider::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,184,77,0.5), transparent);
+}
+.native-msg-unread-divider > span {
+  background: rgba(255,184,77,0.12);
+  border: 1px solid rgba(255,184,77,0.3);
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+/* v0.87.36: Shimmer-плейсхолдеры для загрузки чата */
+.native-msg-skeleton {
+  position: relative;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.native-msg-skeleton-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%);
+  animation: native-shimmer 1.6s infinite;
+}
+@keyframes native-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* v0.87.36: Overlay-shimmer поверх реальных сообщений когда подгружаются свежие */
+.native-msg-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: rgba(42,171,238,0.2);
+  overflow: hidden;
+  z-index: 3;
+  pointer-events: none;
+}
+.native-msg-overlay-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--amoled-accent) 50%,
+    transparent 100%);
+  animation: native-shimmer 1.2s infinite;
+}
+.native-msg-overlay-label {
+  position: absolute;
+  top: 10px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20,20,20,0.9);
+  backdrop-filter: blur(8px);
+  color: var(--amoled-text-dim);
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 14px;
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid rgba(255,255,255,0.1);
+  animation: native-fadein 0.3s ease;
+}
+
+/* v0.87.27: мерцание при scroll-to-reply */
+@keyframes native-flash {
+  0%, 100% { box-shadow: 0 0 0 rgba(255,235,100,0); }
+  50% { box-shadow: 0 0 0 3px rgba(255,235,100,0.6); }
+}
+.native-msg-flash > div:first-child {
+  animation: native-flash 1.5s ease;
+}
+
+/* v0.87.65: плавная неоновая анимация ОТПРАВКИ — 1.6с, без резких scale-bump.
+   Раньше (v0.87.59): scale 0.95 → 1.02 → 1 давал ощущение "прыжка". Теперь чистый
+   fade-in + плавное ambient-glow затухание. Длительность увеличена для плавности. */
+@keyframes native-msg-sent-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(42,171,238,0), 0 0 0 0 rgba(42,171,238,0);
+    opacity: 0.3;
+  }
+  25% {
+    box-shadow: 0 0 14px 2px rgba(42,171,238,0.7), 0 0 28px 8px rgba(42,171,238,0.3);
+    opacity: 1;
+  }
+  60% {
+    box-shadow: 0 0 10px 1px rgba(42,171,238,0.45), 0 0 20px 6px rgba(42,171,238,0.18);
+  }
+  100% {
+    box-shadow: 0 0 6px rgba(42,171,238,0.1), 0 0 0 0 rgba(42,171,238,0);
+  }
+}
+.native-msg-sent > div:first-child {
+  animation: native-msg-sent-glow 1.6s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* v0.87.65 → v0.87.66 переехало в inline style InboxMode с state chatReady:
+   opacity 0 → 1 переключается после onDone из useInitialScroll.
+   CSS-класс больше не нужен (оставлена пустая отметка для истории версий). */
+
+/* v0.87.54: синий неон «вы остановились здесь» — 3.5с мягкое свечение
+   в общем стиле accent (#2AABEE) — Telegram-blue, сочетается с остальным UI. */
+@keyframes native-last-read-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(42,171,238,0.9), 0 0 0 0 rgba(42,171,238,0);
+    background: rgba(42,171,238,0.14);
+    outline: 1px solid rgba(42,171,238,0.6);
+  }
+  30% {
+    box-shadow: 0 0 20px 3px rgba(42,171,238,0.7), 0 0 40px 8px rgba(42,171,238,0.25);
+    background: rgba(42,171,238,0.08);
+    outline: 1px solid rgba(42,171,238,0.4);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(42,171,238,0), 0 0 0 0 rgba(42,171,238,0);
+    background: transparent;
+    outline: 1px solid rgba(42,171,238,0);
+  }
+}
+.native-msg-last-read-highlight > div:first-child {
+  animation: native-last-read-glow 3.5s ease-out;
+  border-radius: 12px;
+}

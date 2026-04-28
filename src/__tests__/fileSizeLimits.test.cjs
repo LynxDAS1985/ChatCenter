@@ -102,8 +102,8 @@ var KNOWN_EXCEPTIONS = {
   // InboxMessageInput, InboxChatListSidebar) — теперь 566 строк, под стандартным лимитом 600.
   // Исключение удалено.
   'src/utils/webviewSetup.js': {
-    ceiling: 600,
-    reason: 'Исторически большая утилита настройки WebView (зум, сессии, partition). Разбиение low priority.'
+    ceiling: 500,
+    reason: 'v0.87.97: handleNewMessage вынесён в webviewHandleNewMessage.js (170 строк). Осталась логика setWebviewRef, listeners, dom-ready injection.'
   },
   'src/utils/messengerConfigs.js': {
     ceiling: 400,
@@ -113,14 +113,15 @@ var KNOWN_EXCEPTIONS = {
     ceiling: 450,
     reason: 'Большой парсер console-message. Логически цельный.'
   },
-  'main/handlers/dockPinHandlers.js': {
-    ceiling: 600,
-    reason: 'Исторически большой handler. Разбиение low priority.'
-  },
   // v0.87.78: notification разбит на html/css/js. JS превышает default 300.
   'main/notification.js': {
     ceiling: 700,
     reason: 'Renderer-код для notification BrowserWindow. Извлечён из inline <script>. Разбиение на 2 модуля — low priority, файл логически цельный (DOM render + animations + IPC).'
+  },
+  // v0.87.97: pin-dock разбит на html/css/js. JS превышает default 300.
+  'main/pin-dock.js': {
+    ceiling: 600,
+    reason: 'Renderer-код для pin-dock BrowserWindow. Извлечён из inline <script>. Логически цельный (DOM render + drag + IPC).'
   }
 }
 

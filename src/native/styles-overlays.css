@@ -1,0 +1,101 @@
+/* v0.87.97: вынесено из styles.css.
+   Overlays: scroll-to-bottom, PhotoViewer, toast. */
+
+/* v0.87.27: scroll-to-bottom кнопка */
+.native-scroll-bottom-btn {
+  position: absolute;
+  right: 20px; bottom: 20px;
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: var(--amoled-surface);
+  color: var(--amoled-text);
+  border: 1px solid var(--amoled-border);
+  font-size: 18px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 5;
+  transition: all 0.15s;
+}
+.native-scroll-bottom-btn:hover {
+  background: var(--amoled-surface-hover);
+  border-color: var(--amoled-accent);
+}
+.native-scroll-bottom-badge {
+  position: absolute;
+  top: -4px; right: -4px;
+  background: var(--amoled-accent);
+  color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px; text-align: center;
+}
+
+/* v0.87.27: PhotoViewer — полноэкранный просмотр */
+.native-photo-viewer {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.95);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10001;
+  overflow: hidden;
+  animation: native-fadein 0.15s ease;
+}
+.native-photo-viewer img {
+  max-width: 92vw;
+  max-height: 86vh;
+  transform-origin: center center;
+  will-change: transform;
+}
+.native-photo-toolbar {
+  position: absolute;
+  top: 16px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(20,20,20,0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 6px 10px;
+  color: #fff;
+  font-size: 13px;
+  z-index: 10002;
+}
+.native-photo-toolbar button,
+.native-photo-toolbar a {
+  border: none; background: transparent; color: #fff;
+  padding: 4px 10px; font-size: 14px; cursor: pointer;
+  border-radius: 6px; transition: background 0.15s;
+  text-decoration: none;
+}
+.native-photo-toolbar button:hover,
+.native-photo-toolbar a:hover {
+  background: rgba(255,255,255,0.1);
+}
+.native-photo-toolbar > span {
+  min-width: 46px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* v0.87.17: toast уведомления */
+.native-toast {
+  position: fixed;
+  bottom: 20px; right: 20px;
+  padding: 12px 18px;
+  background: var(--amoled-surface);
+  border: 1px solid var(--amoled-border);
+  border-left: 4px solid var(--amoled-accent);
+  border-radius: 8px;
+  color: var(--amoled-text);
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  z-index: 10000;
+  animation: native-toast-in 0.3s ease;
+  max-width: 400px;
+}
+.native-toast--error { border-left-color: var(--amoled-danger); }
+.native-toast--success { border-left-color: var(--amoled-success); }
+@keyframes native-toast-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

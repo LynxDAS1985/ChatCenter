@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "0.87.96",
+  "version": "0.87.102",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "input": "^1.0.1",
+    "libphonenumber-js": "^1.12.42",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-window": "^2.2.7",

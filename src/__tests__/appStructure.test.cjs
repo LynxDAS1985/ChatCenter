@@ -9,11 +9,13 @@ const path = require('path')
 const code = fs.readFileSync('src/App.jsx', 'utf8')
 // v0.82.6: WebView setup вынесен
 const webviewCode = fs.existsSync('src/utils/webviewSetup.js') ? fs.readFileSync('src/utils/webviewSetup.js', 'utf8') : ''
+// v0.87.97: handleNewMessage вынесен из webviewSetup.js в отдельный файл
+const handleNewMessageCode = fs.existsSync('src/utils/webviewHandleNewMessage.js') ? fs.readFileSync('src/utils/webviewHandleNewMessage.js', 'utf8') : ''
 // v0.84.3: Hooks and components extracted from App.jsx
 const hooksDir = 'src/hooks'
 const hooksCode = fs.existsSync(hooksDir) ? fs.readdirSync(hooksDir).map(f => fs.readFileSync(path.join(hooksDir, f), 'utf8')).join('\n') : ''
 const tabBarCode = fs.existsSync('src/components/TabBar.jsx') ? fs.readFileSync('src/components/TabBar.jsx', 'utf8') : ''
-const allAppCode = code + '\n' + webviewCode + '\n' + hooksCode + '\n' + tabBarCode
+const allAppCode = code + '\n' + webviewCode + '\n' + handleNewMessageCode + '\n' + hooksCode + '\n' + tabBarCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
