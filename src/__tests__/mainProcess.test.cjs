@@ -5,7 +5,11 @@
  */
 
 const fs = require('fs')
-const code = fs.readFileSync('main/main.js', 'utf8')
+const mainJsRaw = fs.readFileSync('main/main.js', 'utf8')
+// v0.87.103: handlers переехали в mainIpcHandlers.js — для проверок «есть IPC handler / есть импорт»
+// объединяем оба файла. Для проверок что-то ОТСУТСТВУЕТ в main.js — используй mainJsRaw напрямую.
+const mainIpcRaw = fs.existsSync('main/handlers/mainIpcHandlers.js') ? fs.readFileSync('main/handlers/mainIpcHandlers.js', 'utf8') : ''
+const code = mainJsRaw + '\n' + mainIpcRaw
 // v0.82.2: AI handlers вынесены в отдельный файл
 const aiCode = fs.existsSync('main/handlers/aiHandlers.js') ? fs.readFileSync('main/handlers/aiHandlers.js', 'utf8') : ''
 const notifCode = fs.existsSync('main/handlers/notifHandlers.js') ? fs.readFileSync('main/handlers/notifHandlers.js', 'utf8') : ''
@@ -22,7 +26,9 @@ const trayMgrCode = fs.existsSync('main/utils/trayManager.js') ? fs.readFileSync
 const storageCode = fs.existsSync('main/utils/storage.js') ? fs.readFileSync('main/utils/storage.js', 'utf8') : ''
 const gigachatCode = fs.existsSync('main/utils/gigachat.js') ? fs.readFileSync('main/utils/gigachat.js', 'utf8') : ''
 const ruErrorCode = fs.existsSync('main/utils/ruError.js') ? fs.readFileSync('main/utils/ruError.js', 'utf8') : ''
-const allCode = code + '\n' + aiCode + '\n' + notifCode + '\n' + loggerCode + '\n' + sessionCode + '\n' + notifMgrCode + '\n' + aiLoginCode + '\n' + backupNotifCode + '\n' + windowMgrCode + '\n' + trayMgrCode + '\n' + storageCode + '\n' + gigachatCode + '\n' + ruErrorCode
+// v0.87.103: setupIPC вынесен в mainIpcHandlers.js (~230 строк IPC)
+const mainIpcCode = fs.existsSync('main/handlers/mainIpcHandlers.js') ? fs.readFileSync('main/handlers/mainIpcHandlers.js', 'utf8') : ''
+const allCode = code + '\n' + aiCode + '\n' + notifCode + '\n' + loggerCode + '\n' + sessionCode + '\n' + notifMgrCode + '\n' + aiLoginCode + '\n' + backupNotifCode + '\n' + windowMgrCode + '\n' + trayMgrCode + '\n' + storageCode + '\n' + gigachatCode + '\n' + ruErrorCode + '\n' + mainIpcCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -36,7 +42,8 @@ console.log('\\n🧪 Тесты main.js\\n')
 // ── Импорты ──
 console.log('── Импорты: ──')
 test('Импорт Electron', () => assert(code.includes("import { app, BrowserWindow")))
-test('Импорт overlayIcon', () => assert(code.includes("import { createTrayBadgeIcon, createOverlayIcon }")))
+// v0.87.103: createTrayBadgeIcon — в trayManager.js, createOverlayIcon — в mainIpcHandlers.js
+test('Импорт overlayIcon', () => assert(code.includes("createOverlayIcon") && allCode.includes('createTrayBadgeIcon')))
 test('Импорт fs', () => assert(code.includes("import fs from")))
 test('Импорт path', () => assert(code.includes("import path from")))
 

@@ -66,8 +66,9 @@ preloadFiles.forEach(function(f) {
 })
 
 // Проверяем что все пути в коде ссылаются на .cjs (не .js)
+// v0.87.103: добавлен mainIpcHandlers.js (часть IPC переехала из main.js)
 var allMainCode = ''
-;['main/main.js','main/utils/windowManager.js','main/handlers/notificationManager.js','main/handlers/dockPinUtils.js'].forEach(function(f) {
+;['main/main.js','main/utils/windowManager.js','main/handlers/notificationManager.js','main/handlers/dockPinUtils.js','main/handlers/mainIpcHandlers.js'].forEach(function(f) {
   try { allMainCode += fs.readFileSync(f, 'utf8') } catch(e) {}
 })
 test('Все пути preload в коде → .cjs (не .js)', function() {
@@ -115,6 +116,8 @@ test('TG accountScript: диагностика __CC_DIAG__account', function() {
 // ═══════════════════════════════════════
 console.log('\n── Main process imports: ──')
 var mainCode = fs.readFileSync('main/main.js', 'utf8')
+// v0.87.103: setupIPC вынесен в mainIpcHandlers.js — добавляем в mainCode для проверок IPC handlers
+try { mainCode += '\n' + fs.readFileSync('main/handlers/mainIpcHandlers.js', 'utf8') } catch(e) {}
 // v0.85.0: extracted modules
 ;['main/handlers/notificationManager.js','main/handlers/aiLoginHandler.js','main/handlers/backupNotifHandler.js','main/utils/windowManager.js','main/utils/trayManager.js'].forEach(function(f) {
   try { mainCode += '\n' + fs.readFileSync(f, 'utf8') } catch(e) {}

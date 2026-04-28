@@ -104,9 +104,11 @@ test('monitor.preload.cjs: нет inline enrichNotif', () => assert(!monitorCode
 test('monitor.preload.cjs: нет inline isSpamNotif', () => assert(!monitorCode.includes('function isSpamNotif('), 'inline isSpamNotif должен быть удалён'))
 test('monitor.preload.cjs: загрузка hook через fs.readFileSync', () => assert(monitorCode.includes('hooks') && monitorCode.includes('readFileSync'), 'должен загружать hook из файла'))
 
-// ── IPC handler в main.js ──
+// ── IPC handler ──
+// v0.87.103: app:read-hook вынесен из main.js в main/handlers/mainIpcHandlers.js
 console.log('\n── IPC: ──')
-const mainCode = fs.readFileSync(path.join(__dirname, '../../main/main.js'), 'utf8')
+const mainCode = fs.readFileSync(path.join(__dirname, '../../main/main.js'), 'utf8') + '\n' +
+  fs.readFileSync(path.join(__dirname, '../../main/handlers/mainIpcHandlers.js'), 'utf8')
 test('main.js: app:read-hook handler', () => assert(mainCode.includes("app:read-hook"), 'main.js должен иметь app:read-hook handler'))
 
 console.log(`\n📊 Результат: ${passed} ✅ / ${failed} ❌ из ${passed + failed}`)

@@ -7,8 +7,10 @@
 var fs = require('fs')
 var mainCode = fs.readFileSync('main/main.js', 'utf8')
 // v0.82.4: handlers вынесены в отдельные файлы
+// v0.87.97: dockPinState вынесен из dockPinHandlers
+// v0.87.103: mainIpcHandlers вынесен из main.js (~230 строк IPC)
 var handlersDir = 'main/handlers/'
-;['aiHandlers.js', 'notifHandlers.js', 'dockPinHandlers.js'].forEach(function(f) {
+;['aiHandlers.js', 'notifHandlers.js', 'dockPinHandlers.js', 'dockPinState.js', 'mainIpcHandlers.js'].forEach(function(f) {
   try { mainCode += '\n' + fs.readFileSync(handlersDir + f, 'utf8') } catch(e) {}
 })
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')

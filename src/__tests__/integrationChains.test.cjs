@@ -74,6 +74,8 @@ try { appCode += '\n' + fs.readFileSync('src/components/TabBar.jsx', 'utf8') } c
 try { fs.readdirSync('src/hooks/').forEach(function(f) { appCode += '\n' + fs.readFileSync('src/hooks/' + f, 'utf8') }) } catch(e) {}
 // v0.82.6: WebView setup вынесен
 try { appCode += '\n' + fs.readFileSync('src/utils/webviewSetup.js', 'utf8') } catch(e) {}
+// v0.87.97: handleNewMessage (содержит isDuplicateExact/Substring и др.) вынесен в отдельный файл
+try { appCode += '\n' + fs.readFileSync('src/utils/webviewHandleNewMessage.js', 'utf8') } catch(e) {}
 
 test('App.jsx → isSpamText → spamPatterns.json', function() {
   assert(appCode.includes('isSpamText('))
@@ -118,9 +120,11 @@ test('App.jsx → NotifLogModal → components', function() {
 })
 
 test('main.js → overlayIcon → main/utils', function() {
-  var mainCode = fs.readFileSync('main/main.js', 'utf8')
-  assert(mainCode.includes('createOverlayIcon('))
-  assert(mainCode.includes("from './utils/overlayIcon.js'"))
+  // v0.87.103: overlayIcon переехал из main.js в mainIpcHandlers.js (используется для tray:set-badge)
+  var combined = fs.readFileSync('main/main.js', 'utf8') + '\n' +
+    fs.readFileSync('main/handlers/mainIpcHandlers.js', 'utf8')
+  assert(combined.includes('createOverlayIcon('))
+  assert(combined.includes("from '../utils/overlayIcon.js'") || combined.includes("from './utils/overlayIcon.js'"))
 })
 
 // ═══════════════════════════════════════════════════════════════════════

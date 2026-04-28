@@ -14,9 +14,15 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || 'fail') }
 
 console.log('\n🧪 Storage error тесты\n')
 
-// Проверяем что main.js и handlers защищены от битых данных
-const mainCode = fs.readFileSync('main/main.js', 'utf8')
-const dockCode = fs.existsSync('main/handlers/dockPinHandlers.js') ? fs.readFileSync('main/handlers/dockPinHandlers.js', 'utf8') : ''
+// Проверяем что main.js и handlers защищены от битых данных.
+// v0.87.97: state и storage.get-вызовы dock вынесены в dockPinState.js
+// v0.87.103: messengers:load / settings:get / etc — вынесены в mainIpcHandlers.js
+const mainJsCode = fs.readFileSync('main/main.js', 'utf8')
+const mainIpcCode = fs.existsSync('main/handlers/mainIpcHandlers.js') ? fs.readFileSync('main/handlers/mainIpcHandlers.js', 'utf8') : ''
+const mainCode = mainJsCode + '\n' + mainIpcCode
+const dockHandlersCode = fs.existsSync('main/handlers/dockPinHandlers.js') ? fs.readFileSync('main/handlers/dockPinHandlers.js', 'utf8') : ''
+const dockStateCode = fs.existsSync('main/handlers/dockPinState.js') ? fs.readFileSync('main/handlers/dockPinState.js', 'utf8') : ''
+const dockCode = dockHandlersCode + '\n' + dockStateCode
 
 console.log('── Storage.get с дефолтами: ──')
 test('messengers:load имеет дефолт []', function() {

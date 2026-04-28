@@ -14,7 +14,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { state, log } from './telegramState.js'
 import { initAuthHandlers, autoRestoreSession } from './telegramAuth.js'
-import { initChatsHandlers } from './telegramChats.js'
+import { initChatsHandlers } from './telegramChatsIpc.js'
 import { initMessagesHandlers } from './telegramMessages.js'
 import { initMediaHandlers } from './telegramMedia.js'
 

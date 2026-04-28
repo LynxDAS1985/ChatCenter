@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.102 (28 апреля 2026)
+## Текущая версия: v0.87.103 (28 апреля 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.80 → v0.87.92). Старое — в архиве:
 
@@ -15,6 +15,44 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.103 — Разбиение 5 файлов на 80%+ от лимита
+
+**Контекст**: тест `fileSizeLimits` показывал 5 файлов на 80–95% от лимита. При следующих фичах они бы пробили потолок, поэтому разбиваем сейчас.
+
+**Что разбито**:
+
+| Файл | До | После | Куда вынесено |
+|---|---|---|---|
+| `src/native/modes/InboxMode.jsx` | 567 (95%) | **391** ✅ | `components/InboxChatPanel.jsx` (~210 строк JSX окна чата) |
+| `main/native/telegramChats.js` | 475 (95%) | **217** ✅ | `telegramChatsIpc.js` (~270 строк, все `ipcMain.handle('tg:*')`) |
+| `src/native/store/nativeStore.js` | 445 (89%) | **209** ✅ | `store/nativeStoreIpc.js` (~250 строк, `attachTelegramIpcListeners` + cache helpers) |
+| `main/main.js` | 484 (81%) | **247** ✅ | `handlers/mainIpcHandlers.js` (~250 строк, `registerMainIpcHandlers` со всеми app:*/messengers:*/settings:*/tray:*) |
+| `src/hooks/useTabContextMenu.js` | 127 (85%) | **88** ✅ | `hooks/tabContextMenuDiag.js` (~50 строк, runTabDiag для diagDOM/diagFull/diagAccount) |
+
+**Принципы разбиения**:
+- В каждом случае выделен **самостоятельный логический кусок** (UI рендер, IPC handlers, диагностика).
+- Состояние не дублируется — передаётся через `setState` callback или объект deps.
+- Импорты и контракты не задеты — тесты `vitest 143/143`, `lint clean`.
+
+**Тесты обновлены под новую структуру** (10 тестов считают content нескольких файлов как объединённый):
+- `appStructure.test.cjs` — добавлен `webviewHandleNewMessage.js`
+- `storageErrors.test.cjs` — добавлен `mainIpcHandlers.js` + `dockPinState.js`
+- `ipcChannels.test.cjs` — добавлены `mainIpcHandlers.js` + `dockPinState.js`
+- `mainProcess.test.cjs` — добавлен `mainIpcHandlers.js`, обновлён тест overlayIcon (теперь в trayManager.js + mainIpcHandlers.js)
+- `notifHooks.test.cjs` — добавлен `mainIpcHandlers.js`
+- `integrationChains.test.cjs` — добавлен `webviewHandleNewMessage.js`, обновлён mainCode
+- `smokeTest.test.cjs` — добавлен `mainIpcHandlers.js`
+
+**Финальные результаты**:
+- `fileSizeLimits` 199 → **204** проходят (5 новых файлов, ни одного предупреждения 80%+)
+- `vitest` 143/143 ✅
+- `lint` 0 ошибок
+- pre-commit static tests: все проходят (storageErrors, componentScope, appStructure, mainImports, mainProcess, smokeTest, integrationChains, notifHooks, ipcChannels, ...)
+
+**Что не задето**: ВСЯ бизнес-логика, IPC контракты, UI поведение, рендер-выводы. Это чистый рефакторинг — функциональность 100% сохранена.
 
 ---
 
