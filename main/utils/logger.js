@@ -77,6 +77,24 @@ export function initLogger(userDataPath) {
   console.warn = (...args) => { origWarn(...args); writeLog('WARN', args) }
   console.error = (...args) => {
     origError(...args)
+
+    // v0.87.96: GramJS internal reconnect (Error: TIMEOUT в client/updates.js) —
+    // это НЕ ошибка приложения, а нормальное сетевое событие при разрыве связи
+    // с серверами Телеграма. Перенаправляем в WARN чтобы не пугать красным
+    // в журнале (попадёт в кнопку «Предупр.» вместо «Ошибки»).
+    const text = args.map(a => {
+      if (typeof a === 'string') return a
+      if (a instanceof Error) return (a.message || '') + ' ' + (a.stack || '')
+      try { return JSON.stringify(a) } catch (_) { return '' }
+    }).join(' ')
+    const isGramjsReconnect =
+      /Error:\s*TIMEOUT/i.test(text) &&
+      /telegram[\\/]client[\\/]updates/i.test(text)
+    if (isGramjsReconnect) {
+      writeLog('WARN', ['[GramJS reconnect]', ...args])
+      return
+    }
+
     // v0.87.94: если все args — пустые объекты, добавляем stack чтобы найти кто вызвал.
     // Раньше получали [ERROR] {} без указания на источник — невозможно было дебажить.
     const finalArgs = args
