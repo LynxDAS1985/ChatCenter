@@ -258,3 +258,89 @@
 **Контекст**: app.getPath('userData') = %APPDATA%/ЦентрЧатов/ (кириллица). package.json name = chat-center, но Electron использует productName. Данные мессенджеров (Partitions) в %APPDATA%/chat-center/, а лог — в ЦентрЧатов.
 
 **Важно для AI**: При чтении лога: os.homedir()/AppData/Roaming/ЦентрЧатов/chatcenter.log
+
+---
+
+## ADR-016 — Multi-account нативного Telegram: Map клиентов + единая лента (28 апреля 2026)
+
+**Статус**: 📋 Запланировано (реализация в v0.87.104)
+
+**Контекст**: В v0.87.103 пользователь обнаружил что при добавлении второго Telegram-аккаунта в native режиме первый исчезает. Расследование:
+
+1. `state.client` — singleton (один TelegramClient на процесс)
+2. `state.currentAccount` — singleton (один аккаунт)
+3. `state.sessionPath` — один файл `tg-session.txt`
+4. UI (`nativeStore.js`: `accounts: []`) **уже** поддерживает несколько (массив)
+5. План [`native-mode-plan.md`](./native-mode-plan.md) в архитектуре (`accountId` поле, sidebar аккаунтов, SQL `accounts` table) тоже подразумевает multi-account
+6. **Но конкретный шаг реализации был упущен** — Шаг 2 описывал MVP с одним файлом сессии
+
+При login второго аккаунта `state.client` пересоздаётся, `tg-session.txt` перезаписывается → первый аккаунт навсегда теряется.
+
+**Решение**:
+
+### State refactor (Map вместо singleton)
+
+```js
+// telegramState.js
+state.clients = new Map()         // accountId → TelegramClient
+state.accounts = new Map()        // accountId → NativeAccount
+state.activeAccountId = null      // текущий выбранный — для UI и нового login
+state.sessionsDir = null          // папка %APPDATA%/ЦентрЧатов/tg-sessions/
+state.chatEntityMap = new Map()   // accountId → Map<chatId, entity> (двухуровневая)
+```
+
+### Сессии — отдельный файл на аккаунт
+
+```
+%APPDATA%/ЦентрЧатов/
+├── tg-sessions/
+│   ├── tg_12345.txt    ← сессия аккаунта BНК
+│   ├── tg_67890.txt    ← сессия аккаунта Avtoliberty
+│   └── tg_24680.txt    ← сессия третьего аккаунта (если будет)
+└── tg-avatars/        ← общая (имя файла = userId, уникален между аккаунтами)
+```
+
+### Маршрутизация по chatId
+
+`chatId` уже имеет формат `{accountId}:{chatNumericId}` (`mapDialog`, telegramChats.js строка 29). На стороне backend парсим: `accountId = chatId.split(':')[0]` → берём правильный client из Map.
+
+### UI — единая лента (Вариант B)
+
+| Поведение | Описание |
+|---|---|
+| Список чатов | Все чаты со всех аккаунтов в одном scroll, отсортированы по `lastMessageTs` |
+| Цветной бейдж | У каждого чата маленький бейдж с инициалами/цветом аккаунта (BНК / AV) |
+| Фильтр сверху | Кнопки «Все / БНК / Avtoliberty» — временно показать только один |
+| Sidebar | Слева мини-иконки аккаунтов, клик ставит фильтр (не переключает контекст) |
+| Кнопка «+» | Запускает login flow → создаётся НОВЫЙ TelegramClient в Map |
+| Отправка | По выбранному chatId определяется accountId → используется правильный клиент |
+| Уведомления | Звук + ribbon одинаково на ВСЕ аккаунты с лейблом аккаунта |
+
+### autoRestoreSession → сканирует папку
+
+```js
+const files = fs.readdirSync(state.sessionsDir).filter(f => f.endsWith('.txt'))
+for (const f of files) {
+  const accountId = f.replace('.txt', '')
+  await restoreOne(accountId)
+}
+```
+
+### Миграция старого файла
+
+Старый `tg-session.txt` при первом запуске после v0.87.104 → читаем → `getMe()` → переименовываем в `tg-sessions/{id}.txt` → удаляем старый. Без потери первого аккаунта.
+
+**Ловушки**:
+
+- ❌ **НЕ забыть** `accountId` в `chatId`. Формат `{accountId}:{chatNumericId}` уже используется. При маршрутизации `chatId.split(':')[0]` = accountId.
+- ❌ **НЕ держать** `state.client` (singleton) и `state.clients` (Map) одновременно — расхождение приведёт к багам. Заменить ВСЕ обращения.
+- ❌ **NewMessage event handler** регистрируется на каждом client отдельно. Если забыть — входящие на втором не приходят.
+- ❌ **Cleanup при logout одного** — НЕ должен трогать чужие файлы. `performFullWipe()` перенаправить на per-account scope.
+- ❌ **chatEntityMap** теперь двухуровневый: `state.chatEntityMap.get(accountId).get(chatId)`.
+
+**Затрагиваемые файлы** (12 файлов):
+
+`main/native/`: telegramState.js, telegramAuth.js, telegramHandler.js, telegramChats.js, telegramChatsIpc.js, telegramMessages.js, telegramMedia.js, telegramCleanup.js
+`src/native/`: store/nativeStore.js, store/nativeStoreIpc.js, components/InboxChatListSidebar.jsx, components/LoginModal.jsx
+
+**Связано**: [native-mode-plan.md](./native-mode-plan.md) Шаг 2.5 (новый), features.md v0.87.104

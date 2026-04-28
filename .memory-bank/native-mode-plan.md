@@ -180,6 +180,129 @@ Hotkeys: `Ctrl+1` Чаты, `Ctrl+2` Клиенты, `Ctrl+3` Доска.
 - Эмиссия `tg:account-update { status: 'connected', name, phone, username }` после успешного входа
 - Обработка ошибок: PHONE_CODE_INVALID, PHONE_NUMBER_INVALID, FLOOD_WAIT_X, SESSION_PASSWORD_NEEDED
 
+### ⏳ Шаг 2.5 — Multi-account Telegram (3-4 часа) — добавлено 28.04.2026
+
+**Контекст**: Шаг 2 описал MVP single-session (`tg-session.txt`, один `state.client`). UI и архитектура (`accountId` поле, sidebar, SQL accounts table) уже подразумевают multi, но конкретный шаг был упущен. Полное обсуждение в [decisions.md → ADR-016](./decisions.md).
+
+**Цель**: оператор может добавить 2+ Telegram-аккаунта одновременно, переключаться без потерь, видеть **все чаты в одном списке** (вариант B — единая лента).
+
+**Backend (8 файлов в `main/native/`)**:
+
+1. **telegramState.js** — Maps вместо singleton:
+   ```js
+   state.clients = new Map()         // accountId → TelegramClient
+   state.accounts = new Map()        // accountId → NativeAccount
+   state.activeAccountId = null      // выбранный для нового login
+   state.sessionsDir = null          // папка ~/AppData/Roaming/ЦентрЧатов/tg-sessions/
+   state.chatEntityMap = new Map()   // двухуровневая: accountId → Map<chatId, entity>
+   ```
+
+2. **telegramAuth.js** — `startLogin` создаёт client в Map:
+   ```js
+   async function startLogin(phone) {
+     const client = new TelegramClient(...)   // НЕ trogaем существующих
+     // ... после success:
+     const me = await client.getMe()
+     const accountId = `tg_${me.id}`
+     state.clients.set(accountId, client)
+     state.accounts.set(accountId, { ...account })
+     fs.writeFileSync(path.join(state.sessionsDir, `${accountId}.txt`), session)
+   }
+   ```
+
+3. **telegramAuth.js** — `autoRestoreSessions` (новое имя):
+   ```js
+   for (const f of fs.readdirSync(state.sessionsDir)) {
+     if (!f.endsWith('.txt')) continue
+     const accountId = f.replace('.txt', '')
+     // restore client, добавить в Map, attachMessageListener для НЕГО
+   }
+   ```
+
+4. **telegramHandler.js** — `state.sessionsDir = path.join(userData, 'tg-sessions')` + `mkdirSync`. Миграция: если есть старый `tg-session.txt`, прочитать → `getMe()` → переместить в `tg-sessions/{id}.txt`.
+
+5. **telegramChats.js / telegramChatsIpc.js / telegramMessages.js / telegramMedia.js** — все обращения к `state.client` → `getClientForChat(chatId)`:
+   ```js
+   function getClientForChat(chatId) {
+     const accountId = String(chatId).split(':')[0]
+     return state.clients.get(accountId)
+   }
+   ```
+
+6. **telegramCleanup.js** — `performFullWipe(accountId)` — удаляет ТОЛЬКО файлы этого аккаунта (его сессия, его чаты в кэше). Чужие сессии и общая папка `tg-avatars/` (с уникальными именами файлов по userId) не задеваются.
+
+7. **telegramMessages.js** — `attachMessageListener(client, accountId)` — регистрируется на КАЖДОМ клиенте. NewMessage emit с `chatId = ${accountId}:${chatNumericId}`.
+
+**UI (4 файла в `src/native/`)**:
+
+8. **store/nativeStore.js** — добавить `activeFilter: 'all' | accountId` в state:
+   ```js
+   const [activeFilter, setActiveFilter] = useState('all')
+   const filteredChats = activeFilter === 'all'
+     ? chats
+     : chats.filter(c => c.accountId === activeFilter)
+   ```
+
+9. **store/nativeStoreIpc.js** — `tg:account-update` уже работает корректно (массив accounts), не перезаписывает. Проверить что `tg:chats` `append: true` для новых аккаунтов не вытесняет старых.
+
+10. **components/InboxChatListSidebar.jsx** — фильтр-кнопки сверху + цветной бейдж аккаунта на каждом чате:
+    ```jsx
+    <div className="account-filter-bar">
+      <button className={activeFilter === 'all' ? 'active' : ''}
+              onClick={() => setActiveFilter('all')}>Все</button>
+      {accounts.map(a => (
+        <button key={a.id}
+                className={activeFilter === a.id ? 'active' : ''}
+                onClick={() => setActiveFilter(a.id)}>
+          {a.name}
+        </button>
+      ))}
+    </div>
+    ```
+
+11. **components/LoginModal.jsx** — login для НОВОГО аккаунта (не выходим из старого). UI уже это делает (после success — onClose()), но нужно проверить что предыдущие аккаунты остаются в `accounts` массиве.
+
+**Тесты** (новые/обновлённые):
+
+- `multiAccount.test.cjs` — checking что state.clients/accounts/sessionsDir есть в коде
+- `storageErrors.test.cjs` — добавить проверку что `tg-sessions` папка создаётся
+- `appStructure.test.cjs` — проверить что `getClientForChat` существует
+- runtime (`mainRuntime.test.cjs`) — проверить что `state.clients instanceof Map`
+
+**Миграция данных** (один раз при первом запуске v0.87.104):
+
+```js
+const oldSession = path.join(userData, 'tg-session.txt')
+if (fs.existsSync(oldSession) && !fs.existsSync(state.sessionsDir)) {
+  fs.mkdirSync(state.sessionsDir, { recursive: true })
+  // Восстановить → getMe() → узнать id → переместить
+  const tempClient = new TelegramClient(new StringSession(oldText), API_ID, API_HASH, ...)
+  await tempClient.connect()
+  const me = await tempClient.getMe()
+  const newPath = path.join(state.sessionsDir, `tg_${me.id}.txt`)
+  fs.renameSync(oldSession, newPath)
+  log(`Migrated old session → tg_${me.id}.txt`)
+}
+```
+
+**Что юзер увидит**:
+
+```
+┌─────┬──────────────────────────────────┐
+│ ●BН │  [Все] [БНК] [Avtoliberty]       │  ← Фильтр-кнопки сверху
+│ ●AV │  ──────────                       │
+│ ─── │  🟢BН OZONовая Дыра (999+)        │  ← Цветной бейдж
+│  +  │  🟣AV Иванов клиент (3)           │
+│     │  🟢BН Эксплойт ✓ (25)             │
+│     │  🟣AV Заявка #12345 (1)           │
+│     │  ...                              │
+└─────┴───────────────────────────────────┘
+```
+
+Звук + ribbon уведомления — **одинаково на все аккаунты** с лейблом «BНК / AV». Tray badge — суммарный.
+
+---
+
 ### ⏳ Шаг 3 — Загрузка чатов (2-3 дня)
 - `client.getDialogs({ limit: 100 })` — топ 100 диалогов
 - Маппинг → единый формат `Chat { id, accountId, title, type, lastMessage, lastMessageTs, unreadCount, avatar }`
