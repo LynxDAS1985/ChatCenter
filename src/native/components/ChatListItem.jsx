@@ -97,11 +97,13 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
           width: 44, height: 44, borderRadius: '50%',
           background: chat.avatar ? `url("${chat.avatar}") center/cover no-repeat` : bgColor,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontSize: 16, fontWeight: 600
+          color: '#fff', fontSize: 16, fontWeight: 600,
+          // v0.87.110: заглушён → тёмно-серая аватарка
+          filter: chat.isMuted ? 'brightness(0.5) saturate(0.4)' : 'none',
         }}>
           {!chat.avatar && (initials || '?')}
         </div>
-        {/* Онлайн-статус — не трогаем (только если личный чат и собеседник онлайн) */}
+        {/* Онлайн-статус (только личный чат) */}
         {chat.isOnline && !multiAccount && (
           <div style={{
             position: 'absolute', bottom: 0, right: 0,
@@ -109,6 +111,17 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
             background: 'var(--amoled-success)',
             border: '2px solid var(--amoled-surface)',
           }} />
+        )}
+        {/* v0.87.110: 🔕 значок в левом нижнем углу аватарки когда заглушён */}
+        {chat.isMuted && (
+          <div style={{
+            position: 'absolute', bottom: -1, left: -1,
+            width: 16, height: 16, borderRadius: '50%',
+            background: 'var(--amoled-surface)',
+            border: '1px solid var(--amoled-border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 9,
+          }}>🔕</div>
         )}
       </div>
       {/* Текст */}
@@ -122,10 +135,7 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
             {chat.title}
             {chat.verified && <span style={{ color: 'var(--amoled-accent)', marginLeft: 4 }}>✓</span>}
           </div>
-          {/* v0.87.109: заглушен — серый бейдж + 🔕; нет — синий бейдж */}
-          {chat.isMuted && (
-            <span style={{ fontSize: 13, color: 'var(--amoled-text-dim)', flexShrink: 0 }}>🔕</span>
-          )}
+          {/* v0.87.110: заглушён — серый бейдж (иконка теперь на аватарке) */}
           {badgeCount > 0 && (
             <div style={{
               background: chat.isMuted ? 'rgba(128,128,128,0.35)' : 'var(--amoled-accent)',

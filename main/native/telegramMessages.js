@@ -89,11 +89,19 @@ export function mapMessage(m, chatId) {
     else if (cn === 'MessageMediaPoll') { mediaType = 'poll' }
     else mediaType = 'other'
   }
+  // v0.87.110: аватарка отправителя — берём из кэша если уже скачана loadAvatarsAsync
+  const rawSenderId = String(m.senderId || m.fromId?.userId || '')
+  let senderAvatar = null
+  if (rawSenderId && state.avatarsDir) {
+    const p = path.join(state.avatarsDir, `${rawSenderId}.jpg`)
+    if (fs.existsSync(p)) senderAvatar = `cc-media://avatars/${encodeURIComponent(rawSenderId + '.jpg')}`
+  }
   return {
     id: String(m.id),
     chatId,
-    senderId: String(m.senderId || ''),
+    senderId: rawSenderId,
     senderName: m.sender?.firstName || m.sender?.title || '',
+    senderAvatar,  // v0.87.110: URL из кэша или null (фронт показывает цветной круг)
     text: m.message || '',
     entities: mapEntities(m.entities),
     timestamp: (m.date || 0) * 1000,

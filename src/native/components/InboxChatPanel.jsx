@@ -148,7 +148,11 @@ export default function InboxChatPanel({
               )
             }
             // group — v0.87.27 аватарка слева для чужих групп
-            const groupChat = !item.isOutgoing ? activeChat : null
+            // v0.87.110: ФИКС — аватарка отправителя, не аватарка чата
+            const SENDER_COLORS = ['#e17076','#eda86c','#a695e7','#7bc862','#65aadd','#ee7aae','#6ec9cb']
+            const senderColorIdx = Math.abs((item.senderId || '').split('').reduce((h,c) => (h+c.charCodeAt(0))&0xffffffff, 0)) % SENDER_COLORS.length
+            const senderBg = SENDER_COLORS[senderColorIdx]
+            const senderAvatar = !item.isOutgoing ? item.senderAvatar : null
             const groupInitials = item.senderName
               ? item.senderName.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('')
               : '?'
@@ -160,9 +164,9 @@ export default function InboxChatPanel({
               }}>
                 {!item.isOutgoing && (
                   <div className="native-msg-avatar" style={{
-                    background: groupChat?.avatar ? `url("${groupChat.avatar}") center/cover no-repeat` : '#65aadd',
+                    background: senderAvatar ? `url("${senderAvatar}") center/cover no-repeat` : senderBg,
                   }}>
-                    {!groupChat?.avatar && groupInitials}
+                    {!senderAvatar && groupInitials}
                   </div>
                 )}
                 <div className="native-msg-group" style={{
