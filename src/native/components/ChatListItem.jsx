@@ -1,10 +1,10 @@
 // v0.87.12: строка списка чатов — вынесено из InboxMode для лимита 600 строк.
 // v0.87.106 (multi-account UI):
 //   - Цветная полоса слева 3px = фирменный цвет мессенджера (Telegram=#2AABEE)
-//   - Аватарка чата 44px (как было) с угловой ✈️ внизу справа = иконка мессенджера
+//   - Аватарка чата 44px (без угловой иконки — v0.87.107)
 //   - Иконка типа чата (👤 👥 📢 🤖) ПЕРЕД именем (как было)
-//   - Микро-строка под именем: «✈️ Telegram · БНК» серым 11px (когда multi-account)
-//   - Tooltip при hover: название мессенджера + имя аккаунта + телефон
+//   - Микро-строка под именем: «✈️ Telegram · БНК» серым 10px (когда multi-account)
+//   - Tooltip при hover на микро-строке: название мессенджера + имя аккаунта + телефон
 //   - Hover в sidebar по аккаунту → этот чат подсвечивается (если accountId совпал)
 
 import { getMessengerColor, getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
@@ -90,7 +90,7 @@ export default function ChatListItem({ chat, active, onClick, account, hoveredAc
           }}
         />
       )}
-      {/* Аватарка 44px (без изменений) с угловой ✈️ */}
+      {/* Аватарка 44px */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <div style={{
           width: 44, height: 44, borderRadius: '50%',
@@ -100,26 +100,6 @@ export default function ChatListItem({ chat, active, onClick, account, hoveredAc
         }}>
           {!chat.avatar && (initials || '?')}
         </div>
-        {/* v0.87.106: угловая иконка мессенджера (правый нижний угол аватарки) */}
-        {multiAccount && (
-          <span
-            title={tooltip}
-            style={{
-              position: 'absolute',
-              bottom: -2,
-              right: -2,
-              width: 18,
-              height: 18,
-              borderRadius: '50%',
-              background: 'var(--amoled-bg)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 10,
-              border: `1px solid ${stripeColor}`,
-            }}
-          >{messengerEmoji}</span>
-        )}
         {/* Онлайн-статус — не трогаем (только если личный чат и собеседник онлайн) */}
         {chat.isOnline && !multiAccount && (
           <div style={{

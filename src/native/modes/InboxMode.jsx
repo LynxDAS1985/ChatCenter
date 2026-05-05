@@ -17,7 +17,7 @@ import useReadByVisibility from '../hooks/useReadByVisibility.js'
 import useInboxScroll from '../hooks/useInboxScroll.js'
 import { getUnreadAnchorDebug } from '../utils/scrollDiagnostics.js'
 
-export default function InboxMode({ store, hoveredAccountId }) {
+export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
@@ -361,6 +361,23 @@ export default function InboxMode({ store, hoveredAccountId }) {
 
       {/* Окно чата → InboxChatPanel (v0.87.103) */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* v0.87.108: переключатель режимов перенесён в шапку правой панели */}
+        {modes && (
+          <div style={{
+            height: 48, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            padding: '0 16px',
+            borderBottom: '1px solid var(--amoled-border)',
+            background: 'var(--amoled-surface)', flexShrink: 0, gap: 4,
+          }}>
+            {modes.map(m => (
+              <button
+                key={m.id}
+                className={`native-mode-switcher__btn ${store.mode === m.id ? 'native-mode-switcher__btn--active' : ''}`}
+                onClick={() => store.setMode(m.id)}
+              >{m.label}</button>
+            ))}
+          </div>
+        )}
         <InboxChatPanel
           store={store} activeChat={activeChat} activeMessages={activeMessages}
           activeUnread={activeUnread} visibleMessages={visibleMessages} renderItems={renderItems}

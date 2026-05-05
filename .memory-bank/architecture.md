@@ -88,6 +88,13 @@ ChatCenter — Electron-приложение. Одно окно, несколь�
 │  │   ├── aiLoginHandler.js — OAuth clipboard poll  │
 │  │   ├── aiWebviewContext.js — контекст в webview  │
 │  │   └── devLog.js — dev-only логирование          │
+│  ├── native/ — нативный режим Telegram (v0.87.3+)  │
+│  │   ├── NativeApp.jsx — корневой компонент        │
+│  │   ├── components/ — ChatListItem, ChatPanel...  │
+│  │   ├── modes/ — InboxMode и др.                  │
+│  │   ├── store/ — состояние native                 │
+│  │   └── utils/                                    │
+│  │       └── messengerBranding.js — цвета/emoji    │
 │  ├── constants.js — DEFAULT_MESSENGERS             │
 │  ├── main.jsx — точка входа React                  │
 │  └── __tests__/ (25 файлов, 850+ assertions)       │

@@ -190,21 +190,6 @@ export default function NativeApp() {
 
   return (
     <div className="native-mode">
-      <div className="native-header">
-        <div className="native-header__brand">ЦентрЧатов</div>
-        <div className="native-mode-switcher">
-          {MODES.map(m => (
-            <button
-              key={m.id}
-              className={`native-mode-switcher__btn ${store.mode === m.id ? 'native-mode-switcher__btn--active' : ''}`}
-              onClick={() => store.setMode(m.id)}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="native-content">
         <div className="native-sidebar" style={{ width: 76 }}>
           {/* v0.87.106: круглые аватарки + ✈️ + точка онлайн + бейдж непрочит. БЕЗ яркой подсветки активного. */}
@@ -250,14 +235,30 @@ export default function NativeApp() {
               </button>
             </div>
           ) : store.mode === 'inbox' ? (
-            <InboxMode store={store} hoveredAccountId={hoveredAccountId} />
+            <InboxMode store={store} hoveredAccountId={hoveredAccountId} modes={MODES} />
           ) : (
-            <div className="native-empty">
-              <div className="native-empty__icon">🚧</div>
-              <div className="native-empty__title">Режим «{MODES.find(m => m.id === store.mode)?.label}»</div>
-              <div className="native-empty__text">
-                UI в разработке.<br />
-                Пока доступен только режим «Чаты».
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{
+                height: 48, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                padding: '0 16px',
+                borderBottom: '1px solid var(--amoled-border)',
+                background: 'var(--amoled-surface)', flexShrink: 0, gap: 4,
+              }}>
+                {MODES.map(m => (
+                  <button
+                    key={m.id}
+                    className={`native-mode-switcher__btn ${store.mode === m.id ? 'native-mode-switcher__btn--active' : ''}`}
+                    onClick={() => store.setMode(m.id)}
+                  >{m.label}</button>
+                ))}
+              </div>
+              <div className="native-empty">
+                <div className="native-empty__icon">🚧</div>
+                <div className="native-empty__title">Режим «{MODES.find(m => m.id === store.mode)?.label}»</div>
+                <div className="native-empty__text">
+                  UI в разработке.<br />
+                  Пока доступен только режим «Чаты».
+                </div>
               </div>
             </div>
           )}
