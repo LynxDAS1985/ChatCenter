@@ -195,15 +195,80 @@ test('Removed: isLast → full wipe', () => {
     'Если последний — полная очистка состояния')
 })
 
-// ─── ChatRow / ChatListItem: бейдж аккаунта ──────────────────────
-console.log('\n── UI: бейдж аккаунта в чатах ──')
+// ─── ChatRow / ChatListItem: метки аккаунта в чате (v0.87.106) ───
+console.log('\n── UI: метки аккаунта в чатах (v0.87.106) ──')
 const rowCode = fs.readFileSync('src/native/components/ChatRow.jsx', 'utf8')
 const itemCode = fs.readFileSync('src/native/components/ChatListItem.jsx', 'utf8')
 test('ChatRow передаёт account в ChatListItem', () => {
   assert(rowCode.includes('account={account}'), 'Прокидываем найденный аккаунт')
 })
-test('ChatListItem рендерит бейдж аккаунта (accBadge)', () => {
-  assert(itemCode.includes('accBadge'), 'Инициалы аккаунта показываются в чате')
+test('ChatRow передаёт hoveredAccountId (Улучшение 1)', () => {
+  assert(rowCode.includes('hoveredAccountId'), 'hover-подсветка чатов аккаунта')
+})
+test('ChatListItem использует messengerBranding (полоса+эмоджи)', () => {
+  assert(itemCode.includes('messengerBranding'), 'Импорт фирменных цветов мессенджеров')
+})
+test('ChatListItem рисует полосу слева (фирменный цвет)', () => {
+  assert(itemCode.includes('stripeColor') && itemCode.includes('width: 3'),
+    'Цветная полоса слева 3px = цвет мессенджера')
+})
+test('ChatListItem рисует угловой emoji мессенджера на аватарке', () => {
+  assert(itemCode.includes('messengerEmoji'), 'Угловой ✈️/💬/🔵 в правом нижнем углу аватарки')
+})
+test('ChatListItem рисует микро-строку «✈️ Telegram · БНК»', () => {
+  assert(itemCode.includes('messengerName') && itemCode.includes('account.name'),
+    'Под именем чата — серая строка с мессенджером и аккаунтом')
+})
+test('ChatListItem dimmed при hoveredAccountId !== chat.accountId (Улучшение 1)', () => {
+  assert(itemCode.includes('dimmed') && itemCode.includes('hoveredAccountId'),
+    'Hover в sidebar → чужие чаты приглушены (opacity 0.35)')
+})
+
+console.log('\n── messengerBranding утилиты: ──')
+const brandingCode = fs.readFileSync('src/native/utils/messengerBranding.js', 'utf8')
+test('MESSENGER_COLORS = фирменные', () => {
+  assert(brandingCode.includes("'#2AABEE'") && brandingCode.includes("'#25D366'"),
+    'Telegram=#2AABEE, WhatsApp=#25D366')
+})
+test('MESSENGER_EMOJI = ✈️ для telegram', () => {
+  assert(brandingCode.includes("'✈️'"), 'Иконка Telegram')
+})
+
+console.log('\n── Sidebar (NativeApp.jsx): круглые аватарки + ✈️ + бейдж непрочит. ──')
+const navCode = fs.readFileSync('src/native/NativeApp.jsx', 'utf8')
+test('AccountAvatar компонент круглый (borderRadius 50%)', () => {
+  assert(navCode.includes('AccountAvatar') && navCode.includes("borderRadius: '50%'"),
+    'Круглые аватарки в sidebar')
+})
+test('Sidebar: угловая иконка мессенджера на аватарке', () => {
+  assert(navCode.includes('MESSENGER_EMOJI'), 'Иконка ✈️ в углу аватарки sidebar')
+})
+test('Sidebar: бейдж непрочитанных (unreadByAccount)', () => {
+  assert(navCode.includes('unreadByAccount'), 'Подсчёт непрочитанных по аккаунту')
+})
+test('Sidebar: hover → setHoveredAccountId (Улучшение 1)', () => {
+  assert(navCode.includes('setHoveredAccountId'), 'Hover на аккаунте → подсветка чатов')
+})
+test('Sidebar: NO яркая подсветка активного (active className убран)', () => {
+  assert(!navCode.includes("'native-account--active'") || !navCode.includes("activeAccountId === acc.id ? 'native-account--active'"),
+    'Активный аккаунт не выделен синим фоном')
+})
+
+console.log('\n── Хедер открытого чата (Бонус): ──')
+const panelCode = fs.readFileSync('src/native/components/InboxChatPanel.jsx', 'utf8')
+test('InboxChatPanel импортирует messengerBranding', () => {
+  assert(panelCode.includes('messengerBranding'),
+    'Иконка ✈️ + название аккаунта серым справа от имени чата')
+})
+
+console.log('\n── Фильтр под поиском (а не сверху): ──')
+const sidebarChatCode = fs.readFileSync('src/native/components/InboxChatListSidebar.jsx', 'utf8')
+test('Поиск идёт ПЕРВЫМ (раньше был фильтр)', () => {
+  // Ищем что блок с input стоит ВЫШЕ блока с фильтр-кнопками в исходнике
+  const inputIdx = sidebarChatCode.indexOf('Поиск по чатам')
+  const filterIdx = sidebarChatCode.indexOf("setChatFilter('all')")
+  assert(inputIdx > 0 && filterIdx > 0 && inputIdx < filterIdx,
+    'Input поиска должен быть В КОДЕ выше блока фильтров (= в UI выше)')
 })
 
 console.log(`\n📊 Результат: ${passed} ✅ / ${failed} ❌ из ${passed + failed}`)

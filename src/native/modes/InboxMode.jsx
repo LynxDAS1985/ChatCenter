@@ -17,7 +17,7 @@ import useReadByVisibility from '../hooks/useReadByVisibility.js'
 import useInboxScroll from '../hooks/useInboxScroll.js'
 import { getUnreadAnchorDebug } from '../utils/scrollDiagnostics.js'
 
-export default function InboxMode({ store }) {
+export default function InboxMode({ store, hoveredAccountId }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
@@ -356,6 +356,7 @@ export default function InboxMode({ store }) {
         activeAccountChats={activeAccountChats}
         search={search} setSearch={setSearch}
         listHeight={listHeight} setListHeight={setListHeight}
+        hoveredAccountId={hoveredAccountId}
       />
 
       {/* Окно чата → InboxChatPanel (v0.87.103) */}

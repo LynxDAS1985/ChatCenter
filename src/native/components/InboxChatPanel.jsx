@@ -6,6 +6,8 @@ import { AlbumBubble } from './MediaAlbum.jsx'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
 import { formatDayLabel } from '../utils/messageGrouping.js'
+// v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
+import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
 
 export default function InboxChatPanel({
   // chat data
@@ -43,6 +45,27 @@ export default function InboxChatPanel({
             : activeChat.isOnline && <span style={{ color: 'var(--amoled-success)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>● онлайн</span>
           }
         </div>
+        {/* v0.87.106: маркер мессенджера+аккаунта в шапке (Бонус). Показываем при 2+ аккаунтах. */}
+        {(() => {
+          const accounts = store.accounts || []
+          if (accounts.length < 2) return null
+          const acc = accounts.find(a => a.id === activeChat.accountId)
+          if (!acc) return null
+          const emoji = getMessengerEmoji(acc.messenger || 'telegram')
+          const name = getMessengerName(acc.messenger || 'telegram')
+          return (
+            <span
+              title={`${emoji} ${name} · ${acc.name}${acc.phone ? '\n' + acc.phone : ''}`}
+              style={{
+                marginRight: 12,
+                fontSize: 11,
+                color: 'var(--amoled-text-muted)',
+                fontWeight: 400,
+                whiteSpace: 'nowrap',
+              }}
+            >{emoji} {name} · {acc.name || acc.username || 'аккаунт'}</span>
+          )
+        })()}
         <button
           onClick={() => { setShowMsgSearch(v => !v); if (showMsgSearch) setMsgSearch('') }}
           style={{ background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)', cursor: 'pointer', fontSize: 16, padding: '4px 8px' }}

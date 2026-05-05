@@ -2,7 +2,10 @@
 // Содержит: header с переключателем режимов, sidebar аккаунтов, основную область.
 // Режимы: Inbox (чаты) / Contacts (клиенты) / Kanban (доска).
 // Стили — AMOLED, изолированы через .native-mode корневой класс.
-import { useState, useEffect } from 'react'
+// v0.87.106 (multi-account UI): круглые аватарки с фото, иконка мессенджера ✈️ в углу,
+// зелёная точка-индикатор онлайн, бейдж непрочитанных. БЕЗ яркой подсветки активного.
+// + hover на аккаунте → подсветка его чатов в списке (Улучшение 1).
+import { useState, useEffect, useMemo } from 'react'
 import './styles.css'
 import useNativeStore from './store/nativeStore.js'
 import LoginModal from './components/LoginModal.jsx'
@@ -15,6 +18,135 @@ const MODES = [
   { id: 'kanban', label: 'Доска' },
 ]
 
+// v0.87.106: фирменные цвета мессенджеров (ADR-016).
+// Используются для углового маркера на аватарке + полосы слева у чатов.
+const MESSENGER_COLORS = {
+  telegram: '#2AABEE',
+  whatsapp: '#25D366',
+  vk: '#0077FF',
+  max: '#7B3FE4',
+  viber: '#7360F2',
+}
+
+// v0.87.106: emoji-маркер мессенджера для углового бейджа на аватарке
+const MESSENGER_EMOJI = {
+  telegram: '✈️',
+  whatsapp: '💬',
+  vk: '🔵',
+  max: '💎',
+  viber: '🟣',
+}
+
+// v0.87.106: круглый аватар аккаунта в sidebar.
+// 48px фото (или инициалы), угловая иконка мессенджера, зелёная точка онлайн,
+// красный бейдж непрочитанных. Tooltip при hover.
+function AccountAvatar({ account, unreadCount, onClick, onContextMenu, onMouseEnter, onMouseLeave }) {
+  const initials = (account.name || '?').split(' ').filter(Boolean).slice(0, 2)
+    .map(w => w[0]?.toUpperCase() || '').join('') || '?'
+  const messenger = account.messenger || 'telegram'
+  const color = MESSENGER_COLORS[messenger] || MESSENGER_COLORS.telegram
+  const emoji = MESSENGER_EMOJI[messenger] || '💬'
+  const tooltip = `${emoji} ${messenger.charAt(0).toUpperCase() + messenger.slice(1)} · ${account.name}` +
+    (account.phone ? `\n${account.phone}` : '') +
+    (unreadCount > 0 ? `\n${unreadCount} непрочитанных` : '')
+
+  return (
+    <div
+      className="account-avatar-wrap"
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      title={tooltip}
+      style={{
+        position: 'relative',
+        width: 56,
+        marginBottom: 12,
+        cursor: 'pointer',
+        textAlign: 'center',
+      }}
+    >
+      <div
+        className="account-avatar-circle"
+        style={{
+          position: 'relative',
+          width: 48,
+          height: 48,
+          margin: '0 auto',
+          borderRadius: '50%',
+          background: account.avatar ? `url("${account.avatar}") center/cover no-repeat` : color,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#fff',
+          fontSize: 16,
+          fontWeight: 600,
+          transition: 'transform 0.15s',
+        }}
+      >
+        {!account.avatar && initials}
+        {/* Угловая иконка мессенджера в правом верхнем углу */}
+        <span style={{
+          position: 'absolute',
+          top: -2,
+          right: -2,
+          width: 18,
+          height: 18,
+          borderRadius: '50%',
+          background: 'var(--amoled-bg)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 10,
+          border: `1px solid ${color}`,
+        }}>{emoji}</span>
+        {/* Зелёная точка-индикатор онлайн (правый нижний угол) */}
+        {account.status === 'connected' && (
+          <span style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: 12,
+            height: 12,
+            borderRadius: '50%',
+            background: 'var(--amoled-success)',
+            border: '2px solid var(--amoled-bg)',
+          }} />
+        )}
+        {/* Красный бейдж непрочитанных (поверх, левый верхний угол) */}
+        {unreadCount > 0 && (
+          <span style={{
+            position: 'absolute',
+            top: -4,
+            left: -4,
+            minWidth: 18,
+            height: 18,
+            padding: '0 5px',
+            borderRadius: 9,
+            background: 'var(--amoled-danger)',
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1px solid var(--amoled-bg)',
+          }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+        )}
+      </div>
+      <div style={{
+        marginTop: 4,
+        fontSize: 11,
+        color: 'var(--amoled-text-dim)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        padding: '0 2px',
+      }}>{account.name}</div>
+    </div>
+  )
+}
+
 export default function NativeApp() {
   const store = useNativeStore()
   const [showLogin, setShowLogin] = useState(false)
@@ -22,6 +154,18 @@ export default function NativeApp() {
   const [accountMenu, setAccountMenu] = useState(null)
   // v0.87.95: toast после успешного выхода — { message, ts }
   const [logoutToast, setLogoutToast] = useState(null)
+  // v0.87.106 Улучшение 1: hover на аккаунте → подсвечиваем его чаты в списке
+  const [hoveredAccountId, setHoveredAccountId] = useState(null)
+
+  // v0.87.106: подсчёт непрочитанных по аккаунтам (для бейджей)
+  const unreadByAccount = useMemo(() => {
+    const map = {}
+    for (const c of store.chats) {
+      if (!c.accountId) continue
+      map[c.accountId] = (map[c.accountId] || 0) + (c.unreadCount || 0)
+    }
+    return map
+  }, [store.chats])
 
   const hasAccounts = store.accounts.length > 0
   const showLoginScreen = showLogin || !!store.loginFlow
@@ -62,26 +206,24 @@ export default function NativeApp() {
       </div>
 
       <div className="native-content">
-        <div className="native-sidebar">
+        <div className="native-sidebar" style={{ width: 76 }}>
+          {/* v0.87.106: круглые аватарки + ✈️ + точка онлайн + бейдж непрочит. БЕЗ яркой подсветки активного. */}
           {store.accounts.map(acc => (
-            <div
+            <AccountAvatar
               key={acc.id}
-              className={`native-account ${store.activeAccountId === acc.id ? 'native-account--active' : ''}`}
+              account={acc}
+              unreadCount={unreadByAccount[acc.id] || 0}
               onClick={() => store.setActiveAccount(acc.id)}
               onContextMenu={(e) => handleAccountContextMenu(e, acc)}
-              title={`${acc.name} ${acc.phone || ''} — ПКМ для меню`}
-            >
-              {(acc.name || '?').slice(0, 2).toUpperCase()}
-              <div className={`native-account__dot native-account__dot--${
-                acc.status === 'connected' ? 'ok' :
-                acc.status === 'error' ? 'err' : 'off'
-              }`} />
-            </div>
+              onMouseEnter={() => setHoveredAccountId(acc.id)}
+              onMouseLeave={() => setHoveredAccountId(null)}
+            />
           ))}
           <div
             className="native-account native-account__add"
             onClick={() => setShowLogin(true)}
             title="Добавить аккаунт"
+            style={{ width: 48, height: 48, margin: '0 auto' }}
           >+</div>
         </div>
 
@@ -108,7 +250,7 @@ export default function NativeApp() {
               </button>
             </div>
           ) : store.mode === 'inbox' ? (
-            <InboxMode store={store} />
+            <InboxMode store={store} hoveredAccountId={hoveredAccountId} />
           ) : (
             <div className="native-empty">
               <div className="native-empty__icon">🚧</div>

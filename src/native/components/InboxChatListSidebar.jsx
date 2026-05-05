@@ -41,6 +41,7 @@ export default function InboxChatListSidebar({
   activeAccountChats,
   search, setSearch,
   listHeight, setListHeight,
+  hoveredAccountId,
 }) {
   const listRef = useRef(null)
   const containerRef = useRef(null)
@@ -65,7 +66,17 @@ export default function InboxChatListSidebar({
       background: 'var(--amoled-surface)',
       display: 'flex', flexDirection: 'column',
     }}>
-      {/* v0.87.105: Фильтр аккаунтов — показываем только при 2+ аккаунтах */}
+      {/* v0.87.106: Поиск ПЕРВЫЙ (был после фильтра) */}
+      <div style={{ padding: 10, borderBottom: '1px solid var(--amoled-border)', flexShrink: 0 }}>
+        <input
+          type="text"
+          placeholder="🔍 Поиск по чатам..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width: '100%', fontSize: 13 }}
+        />
+      </div>
+      {/* v0.87.106: Фильтр ПОД поиском (был СВЕРХУ). Показываем при 2+ аккаунтах. */}
       {showFilters && (
         <div style={{
           display: 'flex', gap: 4, padding: '8px 10px',
@@ -111,15 +122,6 @@ export default function InboxChatListSidebar({
           })}
         </div>
       )}
-      <div style={{ padding: 10, borderBottom: '1px solid var(--amoled-border)', flexShrink: 0 }}>
-        <input
-          type="text"
-          placeholder="🔍 Поиск по чатам..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ width: '100%', fontSize: 13 }}
-        />
-      </div>
       <div style={{
         padding: '8px 14px', fontSize: 11, color: 'var(--amoled-text-dim)',
         borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-bg)', flexShrink: 0,
@@ -145,6 +147,8 @@ export default function InboxChatListSidebar({
               // v0.87.105: передаём accounts чтобы ChatRow мог отрисовать бейдж аккаунта
               accounts: store.accounts,
               showAccountBadge: store.accounts.length >= 2,
+              // v0.87.106 Улучшение 1: hover в sidebar → подсветка чатов аккаунта
+              hoveredAccountId,
             }}
             style={{ height: listHeight, width: '100%' }}
           />
