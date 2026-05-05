@@ -1,10 +1,12 @@
 // v0.87.83: вынесено из InboxMode.jsx — левая колонка (поиск + список чатов).
 // v0.87.105 (ADR-016): multi-account — фильтр-кнопки сверху для выбора аккаунта.
+// v0.87.109: ПКМ на чате → меню заглушения (MuteMenu).
 // Содержит: фильтр аккаунтов, поиск по чатам, счётчик «найдено», виртуальный список ChatRow.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { List } from 'react-window'
 import ChatRow from './ChatRow.jsx'
+import MuteMenu from './MuteMenu.jsx'
 
 const ITEM_HEIGHT = 64
 
@@ -45,6 +47,13 @@ export default function InboxChatListSidebar({
 }) {
   const listRef = useRef(null)
   const containerRef = useRef(null)
+  // v0.87.109: состояние меню заглушения { chat, x, y } или null
+  const [muteMenu, setMuteMenu] = useState(null)
+
+  const handleContextMenu = useCallback((e, chat) => {
+    e.preventDefault()
+    setMuteMenu({ chat, x: e.clientX, y: e.clientY })
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -149,11 +158,23 @@ export default function InboxChatListSidebar({
               showAccountBadge: store.accounts.length >= 2,
               // v0.87.106 Улучшение 1: hover в sidebar → подсветка чатов аккаунта
               hoveredAccountId,
+              // v0.87.109: ПКМ → меню заглушения
+              onContextMenu: handleContextMenu,
             }}
             style={{ height: listHeight, width: '100%' }}
           />
         )}
       </div>
+      {/* v0.87.109: меню заглушения по ПКМ (position: fixed — не влияет на layout) */}
+      {muteMenu && (
+        <MuteMenu
+          chat={muteMenu.chat}
+          x={muteMenu.x}
+          y={muteMenu.y}
+          onClose={() => setMuteMenu(null)}
+          onSetMute={store.setMute}
+        />
+      )}
     </div>
   )
 }

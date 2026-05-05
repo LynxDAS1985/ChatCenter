@@ -24,7 +24,7 @@ function typeIcon(type, isBot) {
   return null
 }
 
-export default function ChatListItem({ chat, active, onClick, account, hoveredAccountId, multiAccount }) {
+export default function ChatListItem({ chat, active, onClick, onContextMenu, account, hoveredAccountId, multiAccount }) {
   const bgColor = AVATAR_COLORS[hashString(chat.title || '?') % AVATAR_COLORS.length]
   const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('')
@@ -54,6 +54,7 @@ export default function ChatListItem({ chat, active, onClick, account, hoveredAc
   return (
     <div
       onClick={onClick}
+      onContextMenu={onContextMenu}
       style={{
         position: 'relative',
         padding: '10px 12px 10px 14px',
@@ -121,9 +122,14 @@ export default function ChatListItem({ chat, active, onClick, account, hoveredAc
             {chat.title}
             {chat.verified && <span style={{ color: 'var(--amoled-accent)', marginLeft: 4 }}>✓</span>}
           </div>
+          {/* v0.87.109: заглушен — серый бейдж + 🔕; нет — синий бейдж */}
+          {chat.isMuted && (
+            <span style={{ fontSize: 13, color: 'var(--amoled-text-dim)', flexShrink: 0 }}>🔕</span>
+          )}
           {badgeCount > 0 && (
             <div style={{
-              background: 'var(--amoled-accent)', color: '#fff',
+              background: chat.isMuted ? 'rgba(128,128,128,0.35)' : 'var(--amoled-accent)',
+              color: chat.isMuted ? 'var(--amoled-text-dim)' : '#fff',
               fontSize: 11, padding: '1px 7px', borderRadius: 10, minWidth: 20, textAlign: 'center'
             }}>{badgeCount > 999 ? '999+' : badgeCount}</div>
           )}

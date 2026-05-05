@@ -32,6 +32,7 @@ export function mapDialog(d, accountId) {
   const id = `${aid}:${String(d.id)}`
   // v0.87.14: сохраняем entity для markAsRead / sendMessage — без entity GramJS не знает куда слать
   chatEntityMap.set(id, d.inputEntity || d.entity || d.id)
+  const muteUntil = d.dialog?.notifySettings?.muteUntil || 0
   return {
     id,
     accountId: aid,
@@ -46,6 +47,9 @@ export function mapDialog(d, accountId) {
     isOnline: type === 'user' && entity.status?.className === 'UserStatusOnline',
     isBot: !!entity.bot,
     verified: !!entity.verified,
+    // v0.87.109: mute status из notifySettings
+    isMuted: muteUntil > Math.floor(Date.now() / 1000),
+    muteUntil,
   }
 }
 

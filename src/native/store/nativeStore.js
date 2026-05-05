@@ -200,6 +200,21 @@ export default function useNativeStore() {
     return await window.api?.invoke('tg:get-cleanup-stats')
   }, [])
 
+  // v0.87.109: заглушить/включить уведомления чата.
+  // muteUntil=0 → включить, иначе Unix timestamp до которого заглушён.
+  const setMute = useCallback(async (chatId, muteUntil) => {
+    const r = await window.api?.invoke('tg:set-mute', { chatId, muteUntil })
+    if (r?.ok) {
+      setState(s => ({
+        ...s,
+        chats: s.chats.map(c => c.id === chatId
+          ? { ...c, isMuted: muteUntil > Math.floor(Date.now() / 1000), muteUntil }
+          : c)
+      }))
+    }
+    return r
+  }, [])
+
   return {
     ...state,
     setMode, setActiveAccount, setActiveChat, setChatFilter,
@@ -208,6 +223,6 @@ export default function useNativeStore() {
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
     getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, setTyping,
-    getCleanupStats,
+    getCleanupStats, setMute,
   }
 }

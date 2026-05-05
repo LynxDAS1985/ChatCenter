@@ -320,6 +320,30 @@ export function initChatsHandlers() {
       return { ok: false, error: e.message }
     }
   })
+
+  // v0.87.109: заглушить / включить уведомления чата
+  // muteUntil=0 → включить; 2147483647 → навсегда; иначе unix timestamp
+  ipcMain.handle('tg:set-mute', async (_, { chatId, muteUntil }) => {
+    try {
+      const client = getClientForChat(chatId)
+      if (!client) return { ok: false, error: 'Не подключён' }
+      const entity = chatEntityMap.get(chatId)
+      if (!entity) return { ok: false, error: 'Чат не найден' }
+      await client.invoke(new Api.account.UpdateNotifySettings({
+        peer: new Api.InputNotifyPeer({ peer: entity }),
+        settings: new Api.InputPeerNotifySettings({
+          muteUntil: muteUntil || 0,
+          showPreviews: true,
+          silent: false,
+        }),
+      }))
+      log(`set-mute: chat=${chatId} muteUntil=${muteUntil}`)
+      return { ok: true }
+    } catch (e) {
+      log('set-mute err: ' + e.message)
+      return { ok: false, error: e.message }
+    }
+  })
 }
 
 // v0.87.105: удалить только файлы конкретного аккаунта (когда есть другие активные)
