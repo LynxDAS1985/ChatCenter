@@ -1,11 +1,19 @@
 // v0.87.15: пузырёк сообщения — текст, медиа, reply, edit, меню действий.
 // v0.87.27: onPhotoOpen (клик → PhotoViewer), onReplyClick (клик по reply-цитате →
 // scroll к оригиналу), data-msg-id (для внешнего скролла), LinkPreview для ссылок.
+// v0.87.118: цвета отправителей, тултип на reply-цитате, кнопки НАД сообщением, fwdFrom.
 import { useState, useEffect, useRef } from 'react'
 import FormattedText from './FormattedText.jsx'
 import LinkPreview from './LinkPreview.jsx'
 import VideoTile from './VideoTile.jsx'
 import { useReadOnScrollAway } from '../hooks/useReadOnScrollAway.js'
+
+// v0.87.118: цвета отправителей — детерминированы по senderId (как в Telegram).
+// Один отправитель всегда получает один цвет во всех чатах.
+const SENDER_COLORS = ['#E17076','#7BC862','#65AADD','#EE7AAE','#AA77B2','#6EC9CB','#FAA774']
+function getSenderColor(senderId) {
+  return SENDER_COLORS[Math.abs(parseInt(senderId) || 0) % SENDER_COLORS.length]
+}
 
 export default function MessageBubble({
   m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible,
@@ -14,6 +22,7 @@ export default function MessageBubble({
   const [menu, setMenu] = useState(false)
   const [mediaUrl, setMediaUrl] = useState(null)
   const [mediaLoading, setMediaLoading] = useState(false)
+  const [replyHover, setReplyHover] = useState(false)  // v0.87.118: тултип цитаты
   const ref = useRef(null)
 
   // v0.87.43: Вариант 5 — Msg помечается прочитанным ТОЛЬКО когда:
@@ -47,13 +56,8 @@ export default function MessageBubble({
   const hasMedia = m.mediaType === 'photo' || m.mediaType === 'video'
 
   // v0.87.65: неоновая анимация отправки через useEffect (mount-only).
-  // Раньше (v0.87.59): inline `isJustSent` через `Date.now() - timestamp < 2000` —
-  // не всегда срабатывало т.к. timestamp = серверное время секундной точности.
-  // Теперь: используем localSentAt (client-time при emit) + useEffect с пустыми deps —
-  // гарантированно срабатывает один раз при mount, re-render не ломает.
   useEffect(() => {
     if (!ref.current || !m.isOutgoing) return
-    // Окно "свежести" = 3 сек. Предпочитаем localSentAt (точный client-time), fallback на timestamp.
     const sentAt = m.localSentAt || m.timestamp || 0
     if (!sentAt || (Date.now() - sentAt) > 3000) return
     ref.current.classList.add('native-msg-sent')
@@ -61,50 +65,118 @@ export default function MessageBubble({
     return () => clearTimeout(t)
   }, [])
 
+  // v0.87.118: цвет отправителя цитаты
+  const replyColor = replyToMsg ? getSenderColor(replyToMsg.senderId) : null
+
   return (
     // v0.87.62 final: bubble content-sized (width: auto), max ограничен parent group
-    // (maxWidth: 75% scroll-row). Короткий текст — маленький bubble. Длинный — до 75%
-    // с переносом. Для media (фото/видео) — min 280px / max 420px чтобы не раздувать.
     <div ref={ref} data-msg-id={m.id}
       style={{
-      alignSelf: m.isOutgoing ? 'flex-end' : 'flex-start',
-      maxWidth: hasMedia ? 420 : '100%',
-      minWidth: hasMedia ? 280 : 'auto',
-      width: 'auto',
-      position: 'relative',
-    }}
+        alignSelf: m.isOutgoing ? 'flex-end' : 'flex-start',
+        maxWidth: hasMedia ? 420 : '100%',
+        minWidth: hasMedia ? 280 : 'auto',
+        width: 'auto',
+        position: 'relative',
+      }}
       onMouseEnter={() => setMenu(true)}
-      onMouseLeave={() => setMenu(false)}
+      onMouseLeave={() => { setMenu(false); setReplyHover(false) }}
     >
+      {/* v0.87.118: кнопки НАД сообщением — не закрывают текст */}
+      {menu && (onReply || onEdit || onDelete) && (
+        <div style={{
+          position: 'absolute', bottom: 'calc(100% + 3px)',
+          [m.isOutgoing ? 'left' : 'right']: 0,
+          display: 'flex', gap: 2, zIndex: 20,
+          background: 'rgba(18,18,18,0.92)',
+          backdropFilter: 'blur(8px)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 8, padding: '3px 4px',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+        }}>
+          <button onClick={() => onReply?.(m)} title="Ответить" style={miniBtn}>↪</button>
+          {onForward && <button onClick={() => onForward(m)} title="Переслать" style={miniBtn}>➥</button>}
+          {onPin && <button onClick={() => onPin(m)} title="Закрепить" style={miniBtn}>📌</button>}
+          {m.isOutgoing && onEdit && <button onClick={() => onEdit(m)} title="Редактировать" style={miniBtn}>✏️</button>}
+          {m.isOutgoing && onDelete && <button onClick={() => onDelete(m)} title="Удалить" style={{...miniBtn, color: 'var(--amoled-danger)'}}>🗑</button>}
+        </div>
+      )}
+
       <div style={{
         padding: hasMedia ? 4 : '8px 12px', borderRadius: 12,
         background: m.isOutgoing ? 'var(--amoled-accent)' : 'var(--amoled-surface-hover)',
         color: m.isOutgoing ? '#fff' : 'var(--amoled-text)',
         fontSize: 14, wordBreak: 'break-word',
-        // v0.87.24: тонкая рамка для разграничения + glow на своих
         border: m.isOutgoing ? 'none' : '1px solid rgba(255,255,255,0.06)',
         boxShadow: m.isOutgoing ? '0 0 12px rgba(42,171,238,0.15)' : 'none',
       }}>
-        {/* Reply цитата — v0.87.27 кликабельная, скролл к оригиналу */}
-        {replyToMsg && (
-          <div
-            onClick={(e) => { e.stopPropagation(); onReplyClick?.(replyToMsg.id) }}
-            style={{
-              borderLeft: '3px solid rgba(255,255,255,0.4)',
-              paddingLeft: 8,
-              marginBottom: 4,
-              marginLeft: hasMedia ? 8 : 0,
-              marginRight: hasMedia ? 8 : 0,
-              marginTop: hasMedia ? 6 : 0,
-              fontSize: 12, opacity: 0.8,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              cursor: 'pointer',
-            }}
-            title="Перейти к оригиналу"
-          >
-            ↪ {replyToMsg.text?.slice(0, 80) || '[медиа]'}
+        {/* v0.87.118: пересланное сообщение — красивый заголовок как в Telegram */}
+        {m.fwdFrom && (
+          <div style={{
+            fontSize: 11, marginBottom: 4, fontStyle: 'italic',
+            marginLeft: hasMedia ? 8 : 0, marginRight: hasMedia ? 8 : 0,
+            marginTop: hasMedia ? 6 : 0,
+            display: 'flex', alignItems: 'center', gap: 4,
+            color: 'var(--amoled-text-dim)',
+          }}>
+            <span>↪ Переслано от</span>
+            <span style={{
+              fontWeight: 700, fontStyle: 'normal',
+              color: getSenderColor(m.fwdFrom.id || m.fwdFrom.name),
+            }}>{m.fwdFrom.name || 'неизвестно'}</span>
           </div>
         )}
+
+        {/* v0.87.118: Reply цитата — цветная полоска + имя + тултип на hover */}
+        {replyToMsg && (
+          <div style={{
+            position: 'relative',
+            marginBottom: 6,
+            marginLeft: hasMedia ? 8 : 0, marginRight: hasMedia ? 8 : 0,
+            marginTop: hasMedia ? 6 : 0,
+          }}>
+            <div
+              onClick={(e) => { e.stopPropagation(); onReplyClick?.(replyToMsg.id) }}
+              onMouseEnter={() => setReplyHover(true)}
+              onMouseLeave={() => setReplyHover(false)}
+              style={{
+                borderLeft: `3px solid ${replyColor}`,
+                paddingLeft: 8, paddingTop: 3, paddingBottom: 3,
+                borderRadius: '0 4px 4px 0',
+                background: 'rgba(255,255,255,0.06)',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ fontSize: 11, fontWeight: 700, color: replyColor, marginBottom: 2 }}>
+                {replyToMsg.senderName || 'Сообщение'}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280 }}>
+                {replyToMsg.mediaType && !replyToMsg.text ? `[${replyToMsg.mediaType}]` : (replyToMsg.text?.slice(0, 100) || '[медиа]')}
+              </div>
+            </div>
+            {/* v0.87.118: тултип с полным текстом при наведении на цитату */}
+            {replyHover && replyToMsg.text && (
+              <div style={{
+                position: 'absolute', bottom: 'calc(100% + 6px)',
+                [m.isOutgoing ? 'right' : 'left']: 0,
+                background: 'rgba(12,12,12,0.96)', backdropFilter: 'blur(10px)',
+                border: `1px solid ${replyColor}50`,
+                borderRadius: 10, padding: '10px 14px',
+                maxWidth: 340, zIndex: 50,
+                fontSize: 12, color: 'var(--amoled-text)',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+                pointerEvents: 'none',
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: replyColor, marginBottom: 5 }}>
+                  {replyToMsg.senderName || 'Сообщение'}
+                </div>
+                <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, maxHeight: 180, overflow: 'auto', opacity: 0.9 }}>
+                  {replyToMsg.text}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* v0.87.26: Медиа с stripped thumb — достаточный размер + правильный aspect */}
         {m.mediaType === 'photo' && (
           <div
@@ -122,14 +194,12 @@ export default function MessageBubble({
               cursor: mediaUrl ? 'zoom-in' : 'default',
             }}
           >
-            {/* Полный фото поверх — fade-in когда загрузится */}
             {mediaUrl && (
               <img src={mediaUrl} alt="" style={{
                 position: 'absolute', inset: 0, width: '100%', height: '100%',
                 objectFit: 'cover', animation: 'native-fadein 0.25s ease',
               }} />
             )}
-            {/* Индикатор загрузки поверх thumb */}
             {!mediaUrl && mediaLoading && (
               <div style={{
                 position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -175,11 +245,7 @@ export default function MessageBubble({
           </div>
         )}
 
-        {/* v0.87.27: превью ссылки — если есть webPage в сообщении */}
-        {/* v0.87.72: URL строкой над карточкой (как Telegram Desktop). Показываем
-            только если в m.text нет самой ссылки — иначе дубликат. Для исходящих
-            telegramHandler.js кладёт text=input → обычно URL уже в text. Но для
-            входящих text может быть пустым, а webPage.url заполнен сервером. */}
+        {/* v0.87.27: превью ссылки */}
         {m.mediaType === 'link' && m.webPage && (
           <>
             {m.webPage.url && !(m.text && m.text.includes(m.webPage.url)) && (
@@ -214,29 +280,12 @@ export default function MessageBubble({
           </div>
         )}
       </div>
-      {/* Контекст-меню (при hover) */}
-      {menu && (onReply || onEdit || onDelete) && (
-        <div style={{
-          position: 'absolute', top: -4,
-          [m.isOutgoing ? 'left' : 'right']: -4,
-          display: 'flex', gap: 2,
-          background: 'var(--amoled-surface)',
-          border: '1px solid var(--amoled-border)',
-          borderRadius: 6, padding: 2,
-        }}>
-          <button onClick={() => onReply?.(m)} title="Ответить" style={miniBtn}>↪</button>
-          {onForward && <button onClick={() => onForward(m)} title="Переслать" style={miniBtn}>➥</button>}
-          {onPin && <button onClick={() => onPin(m)} title="Закрепить" style={miniBtn}>📌</button>}
-          {m.isOutgoing && onEdit && <button onClick={() => onEdit(m)} title="Редактировать" style={miniBtn}>✏️</button>}
-          {m.isOutgoing && onDelete && <button onClick={() => onDelete(m)} title="Удалить" style={{...miniBtn, color: 'var(--amoled-danger)'}}>🗑</button>}
-        </div>
-      )}
     </div>
   )
 }
 
 const miniBtn = {
   border: 'none', background: 'transparent', cursor: 'pointer',
-  padding: '2px 6px', fontSize: 12, color: 'var(--amoled-text)',
-  borderRadius: 4,
+  padding: '2px 6px', fontSize: 13, color: 'var(--amoled-text)',
+  borderRadius: 4, lineHeight: 1,
 }

@@ -7,7 +7,7 @@ import { ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { state, chatEntityMap, markReadMaxSent, log, emit, Api, getClientForChat, unregisterAccount } from './telegramState.js'
-import { mapMessage } from './telegramMessages.js'
+import { mapMessage } from './telegramMessageMapper.js'
 import { collectCleanupStats, performFullWipe } from './telegramCleanup.js'
 import {
   mapDialog, saveChatsCache, loadRestPagesAsync, loadAvatarsAsync, fetchAllUnreadUpdates,

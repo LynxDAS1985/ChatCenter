@@ -7,7 +7,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { state, chatEntityMap, log, emit, Api } from './telegramState.js'
-import { messagePreview } from './telegramMessages.js'
+import { messagePreview } from './telegramMessageMapper.js'
 
 // v0.87.23: маппер entities MTProto → наш формат (для inline mapDialog при необходимости)
 export function mapEntities(entities) {
