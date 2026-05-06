@@ -196,8 +196,7 @@ async function downloadSenderAvatarsInBackground(msgs, chatId, client) {
     if (m.out) continue
     const senderId = String(m.senderId || m.fromId?.userId || '')
     if (!senderId || senderMap.has(senderId) || !m.sender) continue
-    const avatarPath = path.join(state.avatarsDir, `${senderId}.jpg`)
-    if (!fs.existsSync(avatarPath)) senderMap.set(senderId, m.sender)
+    if (!fs.existsSync(path.join(state.avatarsDir, `${senderId}.jpg`))) senderMap.set(senderId, m.sender)
   }
   if (senderMap.size === 0) return
   log(`sender avatars: скачиваем ${senderMap.size} отправителей для chat=${chatId}`)
@@ -207,8 +206,24 @@ async function downloadSenderAvatarsInBackground(msgs, chatId, client) {
       const wait = Math.max(0, 200 - (Date.now() - lastReqTs))
       if (wait > 0) await new Promise(r => setTimeout(r, wait))
       lastReqTs = Date.now()
-      const buffer = await client.downloadProfilePhoto(sender, { isBig: false })
-      if (!buffer || buffer.length === 0) continue
+      // Если у User нет photo в базовом entity — берём полный профиль через GetFullUser
+      // (то же что loadAvatarsAsync делает для диалогов — иначе downloadProfilePhoto вернёт null)
+      let resolvedSender = sender
+      if (!sender?.photo || sender.photo?.className === 'UserProfilePhotoEmpty') {
+        try {
+          const full = await client.invoke(new Api.users.GetFullUser({ id: sender }))
+          const fullUser = full.users?.find(u => String(u.id) === senderId) || full.users?.[0]
+          if (fullUser?.photo && fullUser.photo?.className !== 'UserProfilePhotoEmpty') {
+            resolvedSender = fullUser
+            log(`sender avatar GetFullUser OK: ${senderId} photo=${fullUser.photo?.className}`)
+          } else {
+            log(`sender avatar no-photo: ${senderId}`)
+            continue
+          }
+        } catch (fe) { log(`sender avatar GetFullUser err: ${senderId} ${fe.message}`); continue }
+      }
+      const buffer = await client.downloadProfilePhoto(resolvedSender, { isBig: false })
+      if (!buffer || buffer.length === 0) { log(`sender avatar empty-buffer: ${senderId}`); continue }
       const avatarPath = path.join(state.avatarsDir, `${senderId}.jpg`)
       fs.writeFileSync(avatarPath, buffer)
       const avatarUrl = `cc-media://avatars/${encodeURIComponent(senderId + '.jpg')}`
@@ -220,6 +235,8 @@ async function downloadSenderAvatarsInBackground(msgs, chatId, client) {
         const sec = Number(flood[1]) || 30
         log(`sender avatar FLOOD_WAIT ${sec}s`)
         await new Promise(r => setTimeout(r, (sec + 1) * 1000))
+      } else {
+        log(`sender avatar err: ${senderId} ${e.message}`)
       }
     }
   }

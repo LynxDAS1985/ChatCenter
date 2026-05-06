@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.111 (6 мая 2026)
+## Текущая версия: v0.87.112 (6 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.93 → v0.87.109). Старое — в архиве:
 
@@ -16,6 +16,19 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.112 — Фикс аватарок: GetFullUser для User без photo в базовой entity
+
+**Причина** (найдена через логи): `downloadSenderAvatarsInBackground` вызывал `downloadProfilePhoto(m.sender)` напрямую. У части User-объектов из группы `photo=n/a` — базовая GramJS entity не содержит атрибут photo. `downloadProfilePhoto` при `entity.photo === null` немедленно возвращает `null` без запроса к серверу. Буфер null → тихий пропуск.
+
+**Из логов**: `total=50 noSender=0 toDownload=7` — 7 хотели скачать, только 3 получили `OK`. Остальные 4 имели `photo=n/a`.
+
+**Фикс**: перед `downloadProfilePhoto` — если `sender.photo` отсутствует/пустой, вызываем `Api.users.GetFullUser` чтобы получить полный профиль (то же что делает `loadAvatarsAsync` для диалогов). Если и в полном профиле нет фото — пропускаем. Добавлено логирование ошибок (было тихо).
+
+**Затронутые файлы:**
+- [`main/native/telegramMessages.js`](../main/native/telegramMessages.js) — `GetFullUser` fallback в `downloadSenderAvatarsInBackground`
 
 ---
 
