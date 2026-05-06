@@ -147,9 +147,12 @@ export async function loadAvatarsAsync(dialogs, accountId) {
       const chatId = `${aid}:${String(d.id)}`
       const avatarPath = path.join(state.avatarsDir, `${String(d.id)}.jpg`)
       if (fs.existsSync(avatarPath)) {
-        stats.cached++
-        emit('tg:chat-avatar', { chatId, avatarPath: `cc-media://avatars/${encodeURIComponent(path.basename(avatarPath))}` })
-        continue
+        if (fs.statSync(avatarPath).size > 0) {
+          stats.cached++
+          emit('tg:chat-avatar', { chatId, avatarPath: `cc-media://avatars/${encodeURIComponent(path.basename(avatarPath))}` })
+          continue
+        }
+        try { fs.unlinkSync(avatarPath) } catch(_) {}  // v0.87.115: 0-байтовый файл — удаляем, скачиваем заново
       }
       // v0.87.19: если у entity нет photo — догружаем через GetFull* (throttled)
       if (!entity?.photo || entity.photo.photoEmpty) {
@@ -173,7 +176,7 @@ export async function loadAvatarsAsync(dialogs, accountId) {
       }
       stats.hasPhoto++
       const buffer = await tgClient.downloadProfilePhoto(entity, { isBig: false })
-      if (!buffer) { stats.failed++; continue }
+      if (!buffer || buffer.length === 0) { stats.failed++; continue }  // v0.87.115: 0-байтовые не сохраняем
       fs.writeFileSync(avatarPath, buffer)
       stats.downloaded++
       emit('tg:chat-avatar', { chatId, avatarPath: `cc-media://avatars/${encodeURIComponent(path.basename(avatarPath))}` })

@@ -67,7 +67,7 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
         display: 'flex',
         gap: 10,
         alignItems: 'center',
-        height: 64,
+        height: 74,
         boxSizing: 'border-box',
         opacity: dimmed ? 0.35 : 1,
       }}
@@ -91,13 +91,13 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
           }}
         />
       )}
-      {/* Аватарка 44px */}
+      {/* Аватарка 53px (+20% от 44px, v0.87.116) */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <div style={{
-          width: 44, height: 44, borderRadius: '50%',
+          width: 53, height: 53, borderRadius: '50%',
           background: chat.avatar ? `url("${chat.avatar}") center/cover no-repeat` : bgColor,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontSize: 16, fontWeight: 600,
+          color: '#fff', fontSize: 19, fontWeight: 600,
           // v0.87.110: заглушён → тёмно-серая аватарка
           filter: chat.isMuted ? 'brightness(0.5) saturate(0.4)' : 'none',
         }}>

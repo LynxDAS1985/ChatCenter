@@ -97,7 +97,7 @@ export function mapMessage(m, chatId) {
   let senderAvatar = null
   if (rawSenderId && state.avatarsDir) {
     const p = path.join(state.avatarsDir, `${rawSenderId}.jpg`)
-    if (fs.existsSync(p)) senderAvatar = `cc-media://avatars/${encodeURIComponent(rawSenderId + '.jpg')}`
+    if (fs.existsSync(p) && fs.statSync(p).size > 0) senderAvatar = `cc-media://avatars/${encodeURIComponent(rawSenderId + '.jpg')}`
   }
   return {
     id: String(m.id),
@@ -355,8 +355,12 @@ export function initMessagesHandlers() {
     try {
       const client = getClientForChat(chatId)
       if (!client) return { ok: false, error: 'Не подключён', messages: [] }
+      // v0.87.117: диагностика «1 сообщение в чате» — логируем источник entity и кол-во
+      const hasMapEntity = chatEntityMap.has(chatId)
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      if (!hasMapEntity) log(`get-messages WARN: entity-fallback chat=${chatId} mapSize=${chatEntityMap.size}`)
       const msgs = await client.getMessages(entity, { limit, offsetId })
+      log(`get-messages: chat=${chatId} got=${msgs.length}/${limit} hasEntity=${hasMapEntity}`)
       // v0.87.17: пытаемся узнать max outgoing read через getFullEntity (для галочек)
       try {
         const full = await client.invoke(
@@ -378,7 +382,8 @@ export function initMessagesHandlers() {
       downloadSenderAvatarsInBackground(msgs, chatId, client).catch(() => {})
       return { ok: true, messages, hasMore: msgs.length >= limit }
     } catch (e) {
-      log('get-messages err: ' + e.message)
+      const flood = String(e?.message || '').match(/FLOOD_WAIT.*?(\d+)/)
+      log('get-messages err: ' + e.message + (flood ? ` [FLOOD_WAIT ${flood[1]}s]` : ''))
       return { ok: false, error: e.message, messages: [] }
     }
   })

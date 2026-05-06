@@ -356,3 +356,52 @@ seenRef вечно false → фаза 2 (ушёл выше) пропускает
 **Решение (v0.87.44)**: `useState(false)`. `atBottom=true` только после `nearBottom<80` в `handleScroll`. Тест `useForceReadAtBottom.vitest.jsx` фиксирует регрессию.
 
 ---
+
+## 🔴 БАГ В РАССЛЕДОВАНИИ: «1 сообщение в чате» при открытии (v0.87.117, 6 мая 2026)
+
+### Симптом
+Открываем чат — видим 1 (иногда 0) сообщений, хотя в реальном Telegram их сотни. Происходит со многими чатами при запуске. Перезапуск не всегда помогает.
+
+### Два вероятных корня (не подтверждены логами, ждём диагностику)
+
+**Корень A — `chatEntityMap` пуст в момент клика**
+
+`loadChats` (`telegramChats.js`) заполняет `chatEntityMap` во время загрузки диалогов. Если пользователь кликнул по чату ДО того как диалоги подгрузились — `chatEntityMap.get(chatId)` возвращает `undefined`.
+
+Тогда entity = `String(chatId).split(':').pop()` = просто числовая строка (`"-1001234567890"`). GramJS не может по голой строке найти канал/группу → `getMessages` возвращает 1 или 0 сообщений.
+
+Результат: `tg:messages` не эмитируется (ошибка) → в UI остаётся кэш localStorage (1 старое сообщение).
+
+**Корень B — FLOOD_WAIT из-за загрузки аватарок**
+
+`loadAvatarsAsync` в `telegramChats.js` скачивает аватарки 659 чатов с throttle 200мс каждая → ~132 секунды работы. В это время Telegram rate-limit активен. Запрос `tg:get-messages` (который тоже обращается к Telegram API) получает FLOOD_WAIT → возвращает `{ ok: false }` → `tg:messages` не эмитируется → старый кэш остаётся.
+
+### Где смотреть в коде
+
+| Файл | Что | Строка |
+|---|---|---|
+| `main/native/telegramChats.js` | заполнение `chatEntityMap` | ~34 |
+| `main/native/telegramMessages.js` | `tg:get-messages` handler | ~354 |
+| `main/native/telegramMessages.js` | entity fallback (теперь логируется) | ~359-361 |
+| `src/native/store/nativeStore.js` | `loadMessages` — показывает кэш сначала | ~138 |
+| `src/native/store/nativeStoreIpc.js` | `tg:messages` handler | ~135 |
+
+### Диагностические логи (добавлены в v0.87.117)
+
+В `telegramMessages.js`, обработчик `tg:get-messages`:
+```
+get-messages WARN: entity-fallback chat=tg_XXX:-100123456 mapSize=0
+get-messages: chat=tg_XXX:-100123456 got=1/50 hasEntity=false
+get-messages err: FLOOD_WAIT ... [FLOOD_WAIT 15s]
+```
+
+**Что искать в логах**: строки `WARN: entity-fallback` (корень A) или `FLOOD_WAIT` (корень B).
+
+### Следующий шаг (не сделан)
+
+Подождать пока пользователь запустит приложение с логами и покажет вывод консоли → определить реальный корень → фикс.
+
+**Вероятный фикс для корня A**: ждать пока `chatEntityMap` заполнится перед показом чата, или пробовать GetPeerDialogs как запасной путь.  
+**Вероятный фикс для корня B**: перенести `loadAvatarsAsync` на ПОСЛЕ первых открытий чатов, или снизить throttle-пачку.
+
+---

@@ -157,10 +157,23 @@ export default function MessageBubble({
         {m.mediaType === 'contact' && <div style={{ fontSize: 12, opacity: 0.7 }}>👤 контакт</div>}
         {m.mediaType === 'poll' && <div style={{ fontSize: 12, opacity: 0.7 }}>📊 опрос</div>}
 
-        {m.text && <div style={{
-          whiteSpace: 'pre-wrap',
-          padding: hasMedia ? '4px 8px 0' : 0,
-        }}><FormattedText text={m.text} entities={m.entities} /></div>}
+        {/* v0.87.116: время СБОКУ — для текстовых сообщений (без фото/видео) flex-row */}
+        {m.text && !hasMedia ? (
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
+            <div style={{ flex: 1, whiteSpace: 'pre-wrap' }}>
+              <FormattedText text={m.text} entities={m.entities} />
+            </div>
+            <div style={{ fontSize: 10, opacity: 0.7, flexShrink: 0, whiteSpace: 'nowrap', marginBottom: 1 }}>
+              {m.isEdited && <span style={{ marginRight: 3 }}>ред.</span>}
+              {new Date(m.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
+              {m.isOutgoing && <span style={{ marginLeft: 3, fontSize: 11 }} title={m.isRead ? 'Прочитано' : 'Отправлено'}>{m.isRead ? '✓✓' : '✓'}</span>}
+            </div>
+          </div>
+        ) : (
+          m.text && <div style={{ whiteSpace: 'pre-wrap', padding: '4px 8px 0' }}>
+            <FormattedText text={m.text} entities={m.entities} />
+          </div>
+        )}
 
         {/* v0.87.27: превью ссылки — если есть webPage в сообщении */}
         {/* v0.87.72: URL строкой над карточкой (как Telegram Desktop). Показываем
@@ -185,19 +198,21 @@ export default function MessageBubble({
           </>
         )}
 
-        <div style={{
-          fontSize: 10, opacity: 0.75, marginTop: 2, textAlign: 'right',
-          padding: hasMedia ? '2px 8px 4px' : 0,
-        }}>
-          {m.isEdited && <span style={{ marginRight: 4 }}>ред.</span>}
-          {new Date(m.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
-          {/* v0.87.17: галочки прочитанности (только для исходящих) */}
-          {m.isOutgoing && (
-            <span style={{ marginLeft: 4, fontSize: 11 }} title={m.isRead ? 'Прочитано' : 'Отправлено'}>
-              {m.isRead ? '✓✓' : '✓'}
-            </span>
-          )}
-        </div>
+        {/* время снизу — только для фото/видео или сообщений без текста */}
+        {(hasMedia || !m.text) && (
+          <div style={{
+            fontSize: 10, opacity: 0.75, marginTop: 2, textAlign: 'right',
+            padding: hasMedia ? '2px 8px 4px' : 0,
+          }}>
+            {m.isEdited && <span style={{ marginRight: 4 }}>ред.</span>}
+            {new Date(m.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
+            {m.isOutgoing && (
+              <span style={{ marginLeft: 4, fontSize: 11 }} title={m.isRead ? 'Прочитано' : 'Отправлено'}>
+                {m.isRead ? '✓✓' : '✓'}
+              </span>
+            )}
+          </div>
+        )}
       </div>
       {/* Контекст-меню (при hover) */}
       {menu && (onReply || onEdit || onDelete) && (

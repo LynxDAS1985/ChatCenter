@@ -8,7 +8,7 @@ import { List } from 'react-window'
 import ChatRow from './ChatRow.jsx'
 import MuteMenu from './MuteMenu.jsx'
 
-const ITEM_HEIGHT = 64
+const ITEM_HEIGHT = 74
 
 // v0.87.105: цветной бейдж аккаунта — короткие инициалы из имени аккаунта.
 // Используется для отметки в каждом чате (показать какому аккаунту принадлежит).
