@@ -145,6 +145,10 @@ export async function loadAvatarsAsync(dialogs, accountId) {
     try {
       let entity = d.entity
       const chatId = `${aid}:${String(d.id)}`
+      // v0.87.118: пауза если юзер только открыл чат — уступаем канал tg:get-messages.
+      // state.msgRequestTs выставляется в telegramMessages.js прямо перед каждым getMessages.
+      const msSinceMsg = Date.now() - (state.msgRequestTs || 0)
+      if (msSinceMsg < 5000) await new Promise(r => setTimeout(r, 5000 - msSinceMsg + 200))
       const avatarPath = path.join(state.avatarsDir, `${String(d.id)}.jpg`)
       if (fs.existsSync(avatarPath)) {
         if (fs.statSync(avatarPath).size > 0) {

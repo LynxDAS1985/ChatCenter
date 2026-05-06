@@ -99,7 +99,8 @@ export default function InboxChatPanel({
       {/* v0.87.36: wrapper relative — кнопка ↓ вне scroll-контейнера + overlay-shimmer */}
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {/* v0.87.66: overlay-shimmer пока !chatReady — initial-scroll прыжок не виден */}
-        <MessageListOverlay show={!chatReady && visibleMessages.length > 0} />
+        {/* v0.87.118: overlay также при загрузке поверх кэша (1 старое сообщение → синяя полоска) */}
+        <MessageListOverlay show={((!chatReady) || !!store.loadingMessages?.[store.activeChatId]) && visibleMessages.length > 0} />
         <div ref={msgsScrollRef} onScroll={handleScroll}
           onWheel={() => scrollDiag.markUserScroll('wheel')}
           onTouchStart={() => scrollDiag.markUserScroll('touch')}

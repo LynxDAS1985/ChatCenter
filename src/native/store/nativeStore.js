@@ -145,7 +145,17 @@ export default function useNativeStore() {
       const nextMessages = cached ? { ...s.messages, [chatId]: cached } : s.messages
       return { ...s, messages: nextMessages, loadingMessages: { ...s.loadingMessages, [chatId]: true } }
     })
-    return window.api?.invoke('tg:get-messages', { chatId, limit })
+    const result = await window.api?.invoke('tg:get-messages', { chatId, limit })
+    // v0.87.118: авторетрай через 3с — вероятно FLOOD_WAIT от загрузки аватарок.
+    // При успешном retry tg:messages придёт автоматически и обновит стор.
+    // При повторной ошибке — снимаем флаг loadingMessages чтобы не висел shimmer вечно.
+    if (!result?.ok) {
+      setTimeout(async () => {
+        const retry = await window.api?.invoke('tg:get-messages', { chatId, limit })
+        if (!retry?.ok) setState(s => { const lm = {...s.loadingMessages}; delete lm[chatId]; return {...s, loadingMessages: lm} })
+      }, 3000)
+    }
+    return result
   }, [])
 
   const sendMessage = useCallback(async (chatId, text, replyTo) => {

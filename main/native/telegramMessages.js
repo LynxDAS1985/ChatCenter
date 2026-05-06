@@ -359,6 +359,7 @@ export function initMessagesHandlers() {
       const hasMapEntity = chatEntityMap.has(chatId)
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
       if (!hasMapEntity) log(`get-messages WARN: entity-fallback chat=${chatId} mapSize=${chatEntityMap.size}`)
+      state.msgRequestTs = Date.now()  // v0.87.118: сигнал loadAvatarsAsync — уступи канал
       const msgs = await client.getMessages(entity, { limit, offsetId })
       log(`get-messages: chat=${chatId} got=${msgs.length}/${limit} hasEntity=${hasMapEntity}`)
       // v0.87.17: пытаемся узнать max outgoing read через getFullEntity (для галочек)
