@@ -214,12 +214,24 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     }
   })
 
-  // v0.87.11: аватарки приходят асинхронно — обновляем chat.avatar
+  // v0.87.11: аватарки чатов приходят асинхронно — обновляем chat.avatar
   addHandler('tg:chat-avatar', ({ chatId, avatarPath }) => {
     setState(s => ({
       ...s,
       chats: s.chats.map(c => c.id === chatId ? { ...c, avatar: avatarPath } : c)
     }))
+  })
+
+  // v0.87.111: аватарки отправителей групп — обновляем senderAvatar в сообщениях чата
+  addHandler('tg:sender-avatar', ({ chatId, senderId, avatarUrl }) => {
+    setState(s => {
+      const msgs = s.messages[chatId]
+      if (!msgs) return s
+      const updated = msgs.map(m =>
+        m.senderId === senderId && !m.senderAvatar ? { ...m, senderAvatar: avatarUrl } : m
+      )
+      return { ...s, messages: { ...s.messages, [chatId]: updated } }
+    })
   })
 
   // v0.87.14: typing-индикатор

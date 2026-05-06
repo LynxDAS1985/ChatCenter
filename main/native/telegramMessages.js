@@ -1,6 +1,9 @@
 // v0.87.85: IPC handlers по сообщениям + NewMessage event listener.
 // Извлечён из telegramHandler.js (Шаг 7/7 разбиения).
+// v0.87.111: downloadSenderAvatarsInBackground — скачивает аватарки отправителей
+// группового чата после загрузки сообщений (loadAvatarsAsync покрывает только диалоги).
 import { ipcMain } from 'electron'
+
 import fs from 'node:fs'
 import path from 'node:path'
 import { NewMessage } from 'telegram/events/index.js'
@@ -181,6 +184,47 @@ async function syncPerChatUnread(chatId, client) {
   } catch (e) { /* silent */ }
 }
 
+// v0.87.111: фоновая загрузка аватарок отправителей группового чата.
+// loadAvatarsAsync обрабатывает только диалоги (чаты из списка), но не участников групп.
+// Вызывается после tg:get-messages без await — не блокирует UI.
+// Скачанные аватарки эмитируют tg:sender-avatar → фронт обновляет senderAvatar в сообщениях.
+async function downloadSenderAvatarsInBackground(msgs, chatId, client) {
+  if (!client || !state.avatarsDir) return
+  // Собираем уникальных отправителей (не исходящих) без кэша аватарки
+  const senderMap = new Map()
+  for (const m of msgs) {
+    if (m.out) continue
+    const senderId = String(m.senderId || m.fromId?.userId || '')
+    if (!senderId || senderMap.has(senderId) || !m.sender) continue
+    const avatarPath = path.join(state.avatarsDir, `${senderId}.jpg`)
+    if (!fs.existsSync(avatarPath)) senderMap.set(senderId, m.sender)
+  }
+  if (senderMap.size === 0) return
+  log(`sender avatars: скачиваем ${senderMap.size} отправителей для chat=${chatId}`)
+  let lastReqTs = 0
+  for (const [senderId, sender] of senderMap) {
+    try {
+      const wait = Math.max(0, 200 - (Date.now() - lastReqTs))
+      if (wait > 0) await new Promise(r => setTimeout(r, wait))
+      lastReqTs = Date.now()
+      const buffer = await client.downloadProfilePhoto(sender, { isBig: false })
+      if (!buffer || buffer.length === 0) continue
+      const avatarPath = path.join(state.avatarsDir, `${senderId}.jpg`)
+      fs.writeFileSync(avatarPath, buffer)
+      const avatarUrl = `cc-media://avatars/${encodeURIComponent(senderId + '.jpg')}`
+      emit('tg:sender-avatar', { chatId, senderId, avatarUrl })
+      log(`sender avatar OK: ${senderId}`)
+    } catch (e) {
+      const flood = String(e?.message || '').match(/FLOOD_WAIT.*?(\d+)/)
+      if (flood) {
+        const sec = Number(flood[1]) || 30
+        log(`sender avatar FLOOD_WAIT ${sec}s`)
+        await new Promise(r => setTimeout(r, (sec + 1) * 1000))
+      }
+    }
+  }
+}
+
 // v0.87.85: NewMessage event listener — главный канал входящих в реальном времени.
 // v0.87.105 (ADR-016): принимает (client, accountId) — multi-account.
 // Вызывается ПОСЛЕ успешного login / connect для КАЖДОГО клиента в state.clients.
@@ -313,6 +357,8 @@ export function initMessagesHandlers() {
         return mapped
       }).reverse()
       emit('tg:messages', { chatId, messages, append: offsetId > 0, readUpTo })
+      // v0.87.111: фоновая загрузка аватарок отправителей (без await — не блокирует UI)
+      downloadSenderAvatarsInBackground(msgs, chatId, client).catch(() => {})
       return { ok: true, messages, hasMore: msgs.length >= limit }
     } catch (e) {
       log('get-messages err: ' + e.message)
