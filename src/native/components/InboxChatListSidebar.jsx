@@ -131,13 +131,14 @@ export default function InboxChatListSidebar({
           })}
         </div>
       )}
-      <div style={{
-        padding: '8px 14px', fontSize: 11, color: 'var(--amoled-text-dim)',
-        borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-bg)', flexShrink: 0,
-      }}>
-        💬 {activeAccountChats.length}
-        {search && ` найдено из ${(store.chats || []).filter(c => filter === 'all' ? true : c.accountId === filter).length}`}
-      </div>
+      {search && (
+        <div style={{
+          padding: '8px 14px', fontSize: 11, color: 'var(--amoled-text-dim)',
+          borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-bg)', flexShrink: 0,
+        }}>
+          найдено {activeAccountChats.length} из {(store.chats || []).filter(c => filter === 'all' ? true : c.accountId === filter).length}
+        </div>
+      )}
       <div ref={containerRef} style={{ flex: 1, minHeight: 0 }}>
         {activeAccountChats.length === 0 ? (
           <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>

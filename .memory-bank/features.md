@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.113 (6 мая 2026)
+## Текущая версия: v0.87.114 (6 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.93 → v0.87.109). Старое — в архиве:
 
@@ -19,21 +19,36 @@
 
 ---
 
-### v0.87.113 — ГЛАВНЫЙ фикс аватарок: messageGrouping.js не передавал senderAvatar
+### v0.87.114 — Убран счётчик чатов + правило в CLAUDE.md
 
-**Причина всех предыдущих неудач**: `groupMessages()` в `messageGrouping.js` создавал группы без поля `senderAvatar`. `InboxChatPanel.jsx` читает `item.senderAvatar` — но `item` это group-объект, где этого поля никогда не было → всегда `undefined` → цветной круг. Файлы скачивались, IPC работал, но данные терялись при группировке.
-
-**Цепочка всех ошибок (4 шага)**:
-1. v0.87.110: был неправильный источник (аватарка чата вместо отправителя) — исправлено
-2. v0.87.111: файлов нет для участников групп → добавили фоновое скачивание
-3. v0.87.112: User без photo → добавили GetFullUser fallback
-4. **v0.87.113**: данные терялись в messageGrouping.js — настоящая причина
-
-**Фикс**: добавлено `senderAvatar: m.senderAvatar || null` в обоих местах создания group/album объектов в `messageGrouping.js` (строки ~22 и ~62).
-
-**Правило на будущее**: при добавлении нового поля в message-объект — сразу проверять `messageGrouping.js`. Любое поле не перечисленное в `currentGroup = {...}` — недоступно через `item.*` в `InboxChatPanel.jsx`.
+- Убран `💬 659` из шапки списка чатов (`InboxChatListSidebar.jsx` строка 138). Теперь строка с количеством показывается **только при активном поиске** («найдено X из Y»), в обычном режиме — скрыта.
+- В `CLAUDE.md` добавлен пункт §4 «Никаких изменений без прямой просьбы».
 
 **Затронутые файлы:**
+- [`src/native/components/InboxChatListSidebar.jsx`](../src/native/components/InboxChatListSidebar.jsx)
+
+---
+
+### v0.87.113 — ГЛАВНЫЙ фикс аватарок отправителей в групповых чатах ✅ РАБОТАЕТ
+
+**Результат**: аватарки отправителей в групповых чатах появляются через несколько секунд после открытия чата. При повторном открытии — сразу.
+
+**Полная история проблемы (4 шага неудач)**:
+
+| Версия | Что делали | Почему не помогло |
+|---|---|---|
+| v0.87.110 | `mapMessage` читает аватарку из файлового кэша | Кэш пустой — `loadAvatarsAsync` не скачивает участников групп |
+| v0.87.111 | Фоновое скачивание `downloadSenderAvatarsInBackground` | Файлы скачивались, IPC слал события — но аватарки не появлялись |
+| v0.87.112 | `GetFullUser` для User без photo в базовой entity | Скачивалось больше — но всё равно не показывалось |
+| **v0.87.113** | **`senderAvatar` добавлен в `messageGrouping.js`** | **← настоящая причина** |
+
+**Корень**: `groupMessages()` создавал group-объекты без поля `senderAvatar`. `InboxChatPanel.jsx` читает `item.senderAvatar` — поле отсутствовало → всегда `undefined`. Файлы были, IPC работал, данные терялись при группировке сообщений.
+
+**Правило на будущее**: при добавлении нового поля в message — сразу проверять `messageGrouping.js` строки ~22 и ~62. Любое поле не перечисленное в `currentGroup = {...}` — недоступно в `InboxChatPanel.jsx`.
+
+**Затронутые файлы (v0.87.111–113)**:
+- [`main/native/telegramMessages.js`](../main/native/telegramMessages.js) — `downloadSenderAvatarsInBackground` + `GetFullUser` fallback
+- [`src/native/store/nativeStoreIpc.js`](../src/native/store/nativeStoreIpc.js) — обработчик `tg:sender-avatar`
 - [`src/native/utils/messageGrouping.js`](../src/native/utils/messageGrouping.js) — `senderAvatar` в group и album объектах
 
 ---
