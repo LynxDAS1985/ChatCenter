@@ -20,6 +20,7 @@ function collapseAlbums(msgs) {
       msgs: [m],
       // атрибуты наследуем от первого (для reply/edit/forward мы используем именно его id)
       senderId: m.senderId, senderName: m.senderName, isOutgoing: m.isOutgoing,
+      senderAvatar: m.senderAvatar || null,  // v0.87.113
       timestamp: m.timestamp, isRead: m.isRead, isEdited: m.isEdited,
       replyToId: m.replyToId, text: m.text, entities: m.entities,
     }
@@ -60,6 +61,7 @@ export function groupMessages(visibleMessages, firstUnreadId) {
       currentGroup = {
         type: 'group', id: `g-${m.id}`, msgs: [],
         senderId: m.senderId, senderName: m.senderName, isOutgoing: m.isOutgoing,
+        senderAvatar: m.senderAvatar || null,  // v0.87.113: аватарка отправителя для группы
       }
       items.push(currentGroup)
     }

@@ -8,25 +8,35 @@
 
 ---
 
-## 🔴 КРИТИЧЕСКОЕ: аватарки в групповом чате берут фото ЧАТА вместо ОТПРАВИТЕЛЯ (v0.87.27–v0.87.110)
+## 🔴 КРИТИЧЕСКОЕ: аватарки отправителей в группах — полная история ошибок (v0.87.27–v0.87.113)
 
-**Симптом**: в групповом чате у всех сообщений одна и та же аватарка — фото самого чата/группы. Разные отправители, одно лицо.
+### Симптом
+Цветные круги с буквами вместо фотографий отправителей в групповых чатах.
 
-**Корень**: `InboxChatPanel.jsx` использовал:
+### Корень ошибки #1 — v0.87.110 (неправильный источник аватарки)
+`InboxChatPanel.jsx` использовал `activeChat.avatar` для ВСЕХ входящих — фото самого чата, не отправителя.
+**Фикс**: `mapMessage` добавляет `senderAvatar` из файлового кэша. `InboxChatPanel.jsx` читает `item.senderAvatar`.
+
+### Корень ошибки #2 — v0.87.111 (нет файлов для участников групп)
+`loadAvatarsAsync` скачивает аватарки только диалогов (чаты из списка). Участники групп без прямого диалога — никогда не попадали в кэш.
+**Фикс**: `downloadSenderAvatarsInBackground` — после `tg:get-messages` скачивает отправителей в фоне.
+
+### Корень ошибки #3 — v0.87.112 (User без photo в базовой entity)
+`downloadProfilePhoto(m.sender)` возвращает null если `sender.photo === null` (базовая GramJS entity). Из 7 отправителей скачивалось только 3.
+**Фикс**: вызываем `GetFullUser` перед скачиванием — как делает `loadAvatarsAsync`.
+
+### 🔴 Корень ошибки #4 — v0.87.113 (ГЛАВНЫЙ, скрытый) — `messageGrouping.js` теряет senderAvatar
+`groupMessages()` создаёт группы без поля `senderAvatar`:
 ```js
-const groupChat = !item.isOutgoing ? activeChat : null
-// ...
-background: groupChat?.avatar ? `url("${groupChat.avatar}")` : '#65aadd'
+currentGroup = { senderId, senderName, isOutgoing /* ← senderAvatar ОТСУТСТВУЕТ */ }
 ```
-`groupChat = activeChat` → фото чата для ВСЕХ входящих сообщений.
+`item.senderAvatar` в `InboxChatPanel.jsx` всегда `undefined` → цветной круг.
+Это перекрывало все предыдущие фиксы — файлы скачивались, IPC работал, но данные терялись в группировке.
+**Фикс (v0.87.113)**: `senderAvatar: m.senderAvatar || null` в обоих местах создания group/album объектов.
 
-**Фикс (v0.87.110)**:
-- `telegramMessages.js` → `mapMessage` добавляет `senderAvatar` — путь из кэша `tg-avatars/{senderId}.jpg` (если скачан `loadAvatarsAsync`)
-- `InboxChatPanel.jsx` → использует `item.senderAvatar`, при отсутствии — цветной круг по хэшу `senderId`
-
-**Ограничение**: фото появляется только если аватарка отправителя уже скачана ранее (при загрузке списка чатов). При первом открытии нового чата — цветной круг до следующей сессии.
-
-**Правило**: в групповых чатах **никогда** не использовать `activeChat.avatar` для аватарок сообщений. Всегда брать из `item.senderAvatar` (или `item.senderId` для цвета).
+### Правило
+- При добавлении нового поля в message-объект — **сразу проверять `messageGrouping.js`** (строки 22, 62). Любое поле не перечисленное там — недоступно в `InboxChatPanel.jsx` через `item.*`.
+- Никогда не использовать `activeChat.avatar` для аватарок сообщений. Только `item.senderAvatar`.
 
 ---
 
