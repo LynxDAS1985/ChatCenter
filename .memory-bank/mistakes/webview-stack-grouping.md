@@ -272,7 +272,7 @@
 
 **Ловушка 43 (v0.80.3)**: VK `viewing: block` блокировал ribbon даже если пользователь на вкладке VK но чат НЕ открыт (список чатов). VK не использует Notification API → все через MutationObserver → нет `fromNotifAPI`. **ПРАВИЛО**: Блокировать viewing ТОЛЬКО если `!extra` (мусор без sender). Если `extra` есть (MutationObserver нашёл sender) → пропускать (не знаем открыт ли конкретный чат).
 
-**Ловушка 44 (v0.80.5)**: Vite кэш `node_modules/.vite/` может быть НЕДЕЛЬНОЙ давности → новые модули (messageProcessing.js, messengerConfigs.js) НЕ попадают в runtime. Код правильный, import есть, функция вызывается, лог показывает очистку — но ribbon берёт старую версию из кэша. **ПРАВИЛО**: После добавления НОВЫХ файлов в src/utils/ — ОБЯЗАТЕЛЬНО `rm -rf node_modules/.vite/` перед `npm run dev`. Или добавить в scripts/dev.js автоочистку кэша.
+**Ловушка 44 (v0.80.5, уточнено v0.87.122)**: Vite кэш `node_modules/.vite/` может быть старым → новые модули (messageProcessing.js, messengerConfigs.js) НЕ попадают в runtime. Код правильный, import есть, функция вызывается, но renderer берёт старую версию из кэша. **НО** автоочистка cache на каждом `npm run dev` дала холодный старт renderer около 45 секунд. **ПРАВИЛО**: cache чистить только явно, когда есть признаки stale-кэша или добавлены/переименованы новые renderer-модули: `npm run dev -- --clear-cache` или `CLEAR_VITE_CACHE=1 npm run dev`. Не возвращать постоянную автоочистку в `scripts/dev.cjs`.
 
 **Ловушка 45 (v0.80.5)**: MAX chatObserver body-fallback + навигация внутри мессенджера. При открытии чата MutationObserver ловит рендер ИСТОРИИ сообщений как "новые". Через 15 минут дедуп истёк → старые сообщения проходят. Также свои сообщения ловятся как чужие. **ПРАВИЛО**: Grace period 5 сек при навигации (URL change) ВНУТРИ WebView — аналогично grace при dom-ready.
 
@@ -326,4 +326,3 @@
 
 
 ---
-

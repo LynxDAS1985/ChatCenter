@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.87.119 (6 мая 2026)
+## Текущая версия: v0.87.135 (7 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.93 → v0.87.109). Старое — в архиве:
 
@@ -16,6 +16,155 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.87.135 — Windows installer в корневую папку dist
+
+- Добавлен `npm run dist:win`: собирает production build, затем Windows x64 NSIS installer.
+- Выходная папка: корневая `dist/`; после сборки скрипт оставляет только `ЦентрЧатов-Setup-<version>-x64.exe`, удаляя временный мусор builder внутри `dist`.
+- Добавлен `electron-builder`; упаковка стартует из `out/main/main.js`, включает собранные `out/**`, берёт Electron из локального `node_modules/electron/dist` и отключает `winCodeSign` для локального unsigned installer.
+
+---
+
+### v0.87.134 — start:prodlike для проверки dev-server bottleneck
+
+- Добавлен `npm run start:prodlike`: отдельный production-like запуск без изменения обычного `npm run dev/start`.
+- `scripts/prodlike.cjs` сначала делает `npm run build`, потом запускает `electron-vite preview`.
+- Цель: сравнить готовый `out/renderer/index.html` с текущим `http://localhost:5173`, где логи показывают долгую Vite/dev загрузку `TabBar`, hooks, CSS и `webviewSetup`.
+- Не менялись: Telegram sessions/accounts, WebView partitions, VK/MAX/WhatsApp/Telegram runtime и UI.
+
+---
+
+### v0.87.133 — A2.1: manual tab diagnostics disabled from startup graph
+
+- `src/hooks/useTabContextMenu.js`: manual `tabContextMenuDiag` import disabled; it no longer pulls diagnostic scripts into `App.jsx` startup graph.
+- `src/components/NotifLogModal.jsx`: DOM/Storage/Account diagnostic tabs hidden while this rarely used tool is disabled.
+- Reason: user does not use this manual diagnostics tool now; normal tab work, unread, navigation, WebView runtime and Telegram API accounts do not need it.
+- Not changed: Telegram sessions/accounts, `tg:get-accounts snapshot`, WebView partitions, VK/MAX/WhatsApp/Telegram runtime.
+
+### v0.87.132 — Stage A1: NativeApp removed from App.jsx static startup graph
+
+- `src/App.jsx`: `NativeApp` switched from a static import to a controlled `React.lazy` import.
+- Native mode is wrapped in its own `Suspense` fallback so the main `App.jsx` shell can finish importing before the native module graph resolves.
+- Added startup marks `module:NativeApp lazy import requested/resolved` for the next live log comparison.
+- Telegram API/sessions/accounts, `tg:get-accounts snapshot`, native store, WebView partitions and VK/MAX/WhatsApp/Telegram WebView tabs were not changed.
+- Tests updated to enforce the lazy contract and diagnostics marks.
+
+### v0.87.131 — Parallel renderer startup imports
+
+- `src/main.jsx`: startup imports switched from sequential awaits to `Promise.all`.
+- `react`, `react-dom/client`, `index.css` and `App` now start loading in parallel; render still waits for all four to finish.
+- Added startup marks `parallel imports start` and `parallel imports done`.
+- Goal: remove artificial dev-startup wait where `/src/App.jsx` started only after `/src/index.css` completed.
+- Telegram sessions/API/accounts/native store were not changed.
+
+### v0.87.130 — Full startup diagnostics without behavior changes
+
+- `main/utils/windowManager.js`: `session.webRequest` now logs start/done/failed, slow requests, pending snapshots and summaries at `dom-ready`, `did-finish-load`, `ready-to-show`, 5/10/15/30/45/60/90 sec.
+- `src/boot-probe.js`: renderer resource summaries, DOMContentLoaded/window load marks, longtask observer and delayed summaries.
+- `src/main.jsx`: marks around root lookup, `createRoot`, `render` and first `requestAnimationFrame`.
+- `src/App.jsx` and `src/native/NativeApp.jsx`: first-render/mounted marks with accounts/chats/tabs counts.
+- Goal: one restart should show whether the delay is Vite request/pending URL, CSS transform, JS execution, React render or native mount. Telegram sessions/API/UI are unchanged.
+
+### v0.87.129 — Реальные timing-логи Chromium requests без предварительного прогрева
+
+- Предварительные `http.get` module probes перед `loadURL` убраны, чтобы не прогревать Vite и не искажать замер.
+- В `main/utils/windowManager.js` добавлен dev-only `webRequest` timing для реальных запросов Chromium к `http://localhost:5173/*`.
+- Логируются start/done/failed, URL, status, cache flag и длительность для `/src/*`, `/node_modules/.vite/*`, `/@vite/*`.
+- Runtime Telegram, аккаунты, чаты, renderer state и UI не менялись.
+
+### v0.87.128 — Диагностика готовности Vite dev-server перед loadURL
+
+- В `main/utils/windowManager.js` добавлен dev-only probe `http://localhost:5173` перед `BrowserWindow.loadURL`.
+- Probe логирует `dev-server probe start/done/failed`, HTTP status, время ответа и timeout `3000ms`.
+- При ошибке или timeout обычный `loadURL` всё равно продолжается; Telegram, аккаунты, чаты, renderer state и UI не менялись.
+- Добавлен структурный тест, который фиксирует наличие probe, timeout и продолжение `loadURL` через `finally`.
+
+### v0.87.127 — Безопасное восстановление native-аккаунтов после restore race
+
+- Исправлена регрессия `v0.87.126`: `NativeApp` возвращён на статический import, чтобы `useNativeStore` и IPC-подписки появлялись раньше.
+- Добавлен IPC snapshot `tg:get-accounts`: renderer при mount забирает текущие `state.accounts` и `activeAccountId` из main process.
+- `useNativeStore` после установки listeners запрашивает `tg:get-accounts` и мержит аккаунты в локальный store.
+- Это защищает UI от ситуации, когда `autoRestoreSessions` уже отправил `tg:account-update`, а renderer ещё не подписался.
+- `AISidebar`, `LogModal`, `ConfirmCloseModal` остаются lazy; `NativeApp` временно не lazy до живой проверки.
+
+### v0.87.126 — Lazy-загрузка тяжёлых стартовых панелей
+
+- После проверки логов `v0.87.125` подтверждено: первый lazy-шаг помог мало, `App imported` всё ещё около `35.9-36.7s`.
+- `AISidebar`, `NativeApp`, `LogModal`, `ConfirmCloseModal` переведены на `React.lazy`, чтобы они не входили в стартовый import graph `App.jsx`.
+- Для `NativeApp` и `AISidebar` добавлены явные fallback-компоненты, чтобы первый кадр не ломал layout, пока chunk догружается.
+- `TabBar`, `createWebviewSetup`, Telegram IPC, native store, аккаунты, WebView lifecycle и загрузка чатов не менялись.
+- Обновлены структурные тесты: теперь проверяется lazy-контракт для `AISidebar`, `NativeApp`, `LogModal`, `ConfirmCloseModal`.
+
+### v0.87.125 — Безопасная lazy-загрузка условных панелей
+
+- `AddMessengerModal`, `SettingsPanel`, `TemplatesPanel`, `AutoReplyPanel`, `NotifLogModal` переведены на `React.lazy`.
+- `NativeApp`, `AISidebar`, `TabBar`, WebView setup и Telegram/native логика не тронуты.
+- Цель: уменьшить стартовый `App` import graph без изменения поведения аккаунтов и основного экрана.
+- Обновлены структурные тесты, чтобы проверять lazy-import и `Suspense`.
+
+### v0.87.124 — Диагностика renderer import graph
+
+- Добавлен `src/boot-probe.js`, который логирует достижение первого module script до `src/main.jsx`.
+- `src/main.jsx` временно переведён на dynamic imports с `[startup-renderer]` логами: старт module script, импорт React, `react-dom`, CSS, `App`, начало и постановка render.
+- Цель: понять, уходит ли пауза `~42s` до запуска `main.jsx` или внутри import graph renderer.
+
+### v0.87.123 — Диагностика окна до renderer `dom-ready`
+
+- По логу `v0.87.122` подтверждено, что `dom-ready` всё ещё около `45.4s`; снятие автоочистки Vite cache само по себе не ускорило старт.
+- В `main/utils/windowManager.js` добавлены `[startup-window]` логи: `loadURL/loadFile start`, `did-start-loading`, `ready-to-show`, `dom-ready`, `did-finish-load`, `did-fail-load`, resolve/fail promise.
+- Цель: понять, где именно уходит 45 секунд: ожидание dev server, загрузка renderer bundle или Chromium/Electron lifecycle.
+
+### v0.87.122 — Убран принудительный холодный старт Vite в dev-режиме
+
+- `scripts/dev.cjs` больше не удаляет `node_modules/.vite` на каждом запуске.
+- Ручная очистка cache сохранена: `npm run dev -- --clear-cache` или `CLEAR_VITE_CACHE=1`.
+- По логу `v0.87.121` подтверждено, что пауза `~45.6s` была до `dom-ready` renderer, до native Telegram API и до WebView lifecycle.
+- [`startup-load-investigation.md`](./startup-load-investigation.md) обновлён результатами проверки `16:26`.
+
+### v0.87.121 — Разделение WebView Telegram и native API в расследовании старта
+
+- Уточнено, что верхние Telegram-вкладки являются WebView-сессиями с отдельными `partition`, а `ЦентрЧатов` — отдельная native API-вкладка `native_cc`.
+- Добавлены `[startup-webview]` логи для списка WebView-вкладок, настройки Electron session и lifecycle событий `<webview>`.
+- Обновлён [`startup-load-investigation.md`](./startup-load-investigation.md): вывод про повторный `loadChats()` теперь явно относится только к native API-слою.
+
+### v0.87.120 — Диагностика долгой загрузки native Telegram
+
+**Что сделано:**
+
+**Документ расследования:**
+- Новый файл [`startup-load-investigation.md`](./startup-load-investigation.md)
+- Назначение: фиксировать найденные причины долгого старта, новые логи, применённые изменения и итог проверки
+- После закрытия расследования файл будет перенесён в `.memory-bank/archive/`
+
+**Startup-логи в общий лог приложения:**
+- `[startup-native] loadCachedChats...` — renderer запросил кэш чатов
+- `[startup-native] loadChats...` — renderer запросил загрузку чатов
+- `[startup-tg] autoRestoreSessions...` — восстановление Telegram-сессий
+- `[startup-tg] get-chats...` — загрузка чатов по аккаунтам
+- `[startup-tg] loadRestPages...` — фоновая дозагрузка страниц
+- `[startup-tg] unread-rescan...` — фоновая сверка непрочитанных
+
+**Где смотреть:**
+- В приложении открыть лог ChatCenter
+- Выбрать фильтр `Native`
+- Смотреть строки `[startup-native]` и `[startup-tg]`
+
+**Затронутые файлы:**
+- [`main/native/telegramAuth.js`](../main/native/telegramAuth.js)
+- [`main/native/telegramChats.js`](../main/native/telegramChats.js)
+- [`main/native/telegramChatsIpc.js`](../main/native/telegramChatsIpc.js)
+- [`main/main.js`](../main/main.js) — строка версии в startup-логе
+- [`src/native/store/nativeStore.js`](../src/native/store/nativeStore.js)
+- [`startup-load-investigation.md`](./startup-load-investigation.md)
+- [`README.md`](./README.md)
+- [`CHANGELOG.md`](./CHANGELOG.md)
+
+**Что НЕ менялось:**
+- Поведение загрузки чатов пока не менялось
+- `unreadCount` не подменяется локально
+- Аватарки и FLOOD_WAIT throttle не упрощались
 
 ---
 
@@ -509,7 +658,7 @@
 | `main/native/telegramChats.js` | 475 (95%) | **217** ✅ | `telegramChatsIpc.js` (~270 строк, все `ipcMain.handle('tg:*')`) |
 | `src/native/store/nativeStore.js` | 445 (89%) | **209** ✅ | `store/nativeStoreIpc.js` (~250 строк, `attachTelegramIpcListeners` + cache helpers) |
 | `main/main.js` | 484 (81%) | **247** ✅ | `handlers/mainIpcHandlers.js` (~250 строк, `registerMainIpcHandlers` со всеми app:*/messengers:*/settings:*/tray:*) |
-| `src/hooks/useTabContextMenu.js` | 127 (85%) | **88** ✅ | `hooks/tabContextMenuDiag.js` (~50 строк, runTabDiag для diagDOM/diagFull/diagAccount) |
+| `src/hooks/useTabContextMenu.js` | 127 (85%) | **88** ✅ | `hooks/tabContextMenuDiag.js` был вынесен исторически; в v0.87.133 ручная диагностика отключена из startup graph |
 
 **Принципы разбиения**:
 - В каждом случае выделен **самостоятельный логический кусок** (UI рендер, IPC handlers, диагностика).

@@ -66,6 +66,7 @@ export function registerMainIpcHandlers(deps) {
   ipcMain.handle('messengers:load', () => {
     const stored = storage.get('messengers')
     const list = (stored && stored.length > 0) ? stored : DEFAULT_MESSENGERS
+    console.log(`[startup-webview] ipc messengers:load stored=${stored && stored.length > 0 ? 'yes' : 'default'} count=${list.length} ids=${list.map(m => `${m.id}:${m.partition || 'no-partition'}`).join(',')}`)
 
     if (!stored || stored.length === 0) {
       storage.set('messengers', DEFAULT_MESSENGERS)
@@ -74,7 +75,10 @@ export function registerMainIpcHandlers(deps) {
     // Инициализируем сессии для всех мессенджеров
     list.forEach(m => {
       if (m.partition) {
-        try { setupSession(session.fromPartition(m.partition)) } catch (e) { console.warn(`[Session] Ошибка для ${m.id}:`, e.message) }
+        try {
+          console.log(`[startup-webview] ipc setupSession id=${m.id} name="${m.name || ''}" partition=${m.partition} url=${m.url || ''}`)
+          setupSession(session.fromPartition(m.partition))
+        } catch (e) { console.warn(`[Session] Ошибка для ${m.id}:`, e.message) }
       }
     })
 

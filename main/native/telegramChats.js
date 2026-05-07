@@ -9,6 +9,8 @@ import path from 'node:path'
 import { state, chatEntityMap, log, emit, Api } from './telegramState.js'
 import { messagePreview } from './telegramMessageMapper.js'
 
+const startupLog = (msg) => log(`[startup-tg] ${msg}`)
+
 // v0.87.23: маппер entities MTProto → наш формат (для inline mapDialog при необходимости)
 export function mapEntities(entities) {
   if (!Array.isArray(entities)) return []
@@ -81,10 +83,12 @@ export function saveChatsCache(chats, accountId) {
 // v0.87.12: фоновая загрузка остальных страниц — emit с append: true
 // v0.87.105 (ADR-016): client + accountId передаются явно (multi-account)
 export async function loadRestPagesAsync(firstPage, client, accountId) {
+  const startedAt = Date.now()
   try {
     const tgClient = client || state.client
     const aid = accountId || state.currentAccount?.id
     if (!tgClient || !aid) return
+    startupLog(`loadRestPages start account=${aid} firstPage=${firstPage.length}`)
     const PAGE = 200
     let last = firstPage[firstPage.length - 1]
     let offsetDate = last.message?.date || 0
@@ -93,9 +97,14 @@ export async function loadRestPagesAsync(firstPage, client, accountId) {
     // v0.87.13: стоп ТОЛЬКО когда пустая страница (не по < PAGE — GramJS часто возвращает меньше)
     for (let i = 0; i < 30; i++) {
       const page = await tgClient.getDialogs({ limit: PAGE, offsetDate, offsetId, offsetPeer })
-      if (!page.length) { log(`пустая страница на итерации ${i+1}, стоп`); break }
+      if (!page.length) {
+        log(`пустая страница на итерации ${i+1}, стоп`)
+        startupLog(`loadRestPages empty account=${aid} iteration=${i + 1} ms=${Date.now() - startedAt}`)
+        break
+      }
       const chats = page.map(d => mapDialog(d, aid))
       emit('tg:chats', { accountId: aid, chats, append: true })
+      startupLog(`loadRestPages page account=${aid} iteration=${i + 1} count=${page.length} ms=${Date.now() - startedAt}`)
       loadAvatarsAsync(page, aid) // v0.87.18: ВСЕ чаты страницы
       last = page[page.length - 1]
       offsetDate = last.message?.date || 0
@@ -103,6 +112,7 @@ export async function loadRestPagesAsync(firstPage, client, accountId) {
       offsetPeer = last.inputEntity || last.entity
     }
     log(`все страницы загружены (${aid})`)
+    startupLog(`loadRestPages done account=${aid} ms=${Date.now() - startedAt}`)
   } catch (e) { log('loadRestPages err: ' + e.message) }
 }
 
@@ -194,13 +204,17 @@ export async function loadAvatarsAsync(dialogs, accountId) {
 // v0.87.105 (ADR-016): итерируем по ВСЕМ зарегистрированным аккаунтам.
 export async function fetchAllUnreadUpdates(maxPages = 5, pageSize = 100) {
   if (state.clients.size === 0) return []
+  const startedAt = Date.now()
   const updates = []
   for (const [accountId, client] of state.clients.entries()) {
+    const accountStartedAt = Date.now()
+    let accountCount = 0
     let offsetDate, offsetId, offsetPeer
     for (let i = 0; i < maxPages; i++) {
       try {
         const page = await client.getDialogs({ limit: pageSize, offsetDate, offsetId, offsetPeer })
         if (!page.length) break
+        accountCount += page.length
         for (const d of page) {
           updates.push({
             id: `${accountId}:${String(d.id)}`,
@@ -214,7 +228,9 @@ export async function fetchAllUnreadUpdates(maxPages = 5, pageSize = 100) {
         offsetPeer = last.inputEntity
       } catch (e) { log(`rescan page err (${accountId}): ${e.message}`); break }
     }
+    startupLog(`unread-fetch account=${accountId} chats=${accountCount} ms=${Date.now() - accountStartedAt}`)
   }
+  startupLog(`unread-fetch done total=${updates.length} clients=${state.clients.size} ms=${Date.now() - startedAt}`)
   return updates
 }
 
@@ -225,7 +241,9 @@ export function startUnreadRescan() {
   let lastRescanUnread = -1
   const doRescan = async () => {
     if (state.clients.size === 0) return
+    const startedAt = Date.now()
     try {
+      startupLog(`unread-rescan start clients=${state.clients.size}`)
       const updates = await fetchAllUnreadUpdates()
       // emit без конкретного accountId — каждый update содержит свой id с префиксом
       emit('tg:unread-bulk-sync', { updates })
@@ -234,6 +252,7 @@ export function startUnreadRescan() {
         log(`unread rescan: ${updates.length} чатов (${withUnread} с непрочитанным) для ${state.clients.size} аккаунт(ов)`)
         lastRescanUnread = withUnread
       }
+      startupLog(`unread-rescan done updates=${updates.length} withUnread=${withUnread} ms=${Date.now() - startedAt}`)
     } catch (e) { log('rescan err: ' + e.message) }
   }
   setTimeout(doRescan, 1500)

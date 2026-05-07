@@ -1,7 +1,6 @@
-// useTabContextMenu.js — Context menu logic + diagnostic scripts
-// v0.87.103: диагностика (handleTabContextAction_diag) вынесена в tabContextMenuDiag.js
+// useTabContextMenu.js — Context menu logic.
+// v0.87.133: heavy tabContextMenuDiag is disabled and no longer imported during startup.
 import { useState, useCallback } from 'react'
-import { runTabDiag } from './tabContextMenuDiag.js'
 
 /**
  * @param {Object} deps
@@ -28,10 +27,18 @@ export default function useTabContextMenu({
 }) {
   const [contextMenuTab, setContextMenuTab] = useState(null) // { id, x, y }
 
-  // v0.87.103: тонкая обёртка над runTabDiag
   const handleTabContextAction_diag = useCallback((action, mid, wv) => {
-    runTabDiag(action, mid, wv, { messengersRef, setNotifLogModal })
-  }, [])
+    setNotifLogModal(prev => prev ? {
+      ...prev,
+      [`${action === 'diagDOM' ? 'domScan' : action}Data`]: {
+        disabled: true,
+        reason: 'A2.1: manual WebView diagnostics disabled to keep startup graph lighter',
+        action,
+        messengerId: mid,
+        hasWebview: !!wv,
+      },
+    } : prev)
+  }, [setNotifLogModal])
 
   // Pin/unpin tab
   const togglePinTab = useCallback((id) => {

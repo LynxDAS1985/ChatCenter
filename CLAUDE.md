@@ -90,6 +90,7 @@
 |------|------|
 | Расследование бага скролла native | [`.memory-bank/native-scroll-diagnostics-handoff.md`](.memory-bank/native-scroll-diagnostics-handoff.md) |
 | Большой план native-режима | [`.memory-bank/native-mode-plan.md`](.memory-bank/native-mode-plan.md) |
+| Расследование долгой загрузки Telegram при старте | [`.memory-bank/startup-load-investigation.md`](.memory-bank/startup-load-investigation.md) |
 | Лимиты файлов кода / снапшот размеров | [`.memory-bank/code-limits-status.md`](.memory-bank/code-limits-status.md) |
 | Архив handoff-документов плана разбиения | [`.memory-bank/handoff-code-limits.md`](.memory-bank/handoff-code-limits.md) — план разбиения **7/7 закрыт** в v0.87.86 |
 
@@ -263,7 +264,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.87.119 (6 мая 2026)
+**Текущая версия**: v0.87.135 (7 мая 2026)
 
 ---
 
@@ -714,6 +715,7 @@ Auto-memory — постоянная память Claude между сессия
 | `messengers.md` | 14 КБ |
 | `native-mode-plan.md` | 22 КБ |
 | `native-scroll-diagnostics-handoff.md` | 18 КБ |
+| `startup-load-investigation.md` | 7 КБ |
 | `ui-components.md` | 14 КБ |
 | `workflow.md` | 8 КБ |
 
@@ -744,6 +746,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.87.119 (6 мая 2026)
+**Версия проекта**: v0.87.135 (7 мая 2026)
 **Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
-**Последнее обновление**: 6 мая 2026 — v0.87.119: UI сообщений — цвета отправителей + тултип на reply-цитате + кнопки НАД сообщением + красивые пересланные + разбиение telegramMessageMapper.js. v0.87.118: фикс «1 сообщение в чате» — пауза аватарок при открытии чата + авторетрай + синяя полоска при загрузке. v0.87.117: диагностические логи entity-fallback + FLOOD_WAIT.
+**Последнее обновление**: 7 мая 2026 — v0.87.135: добавлен `npm run dist:win`, Windows x64 NSIS installer собирается в корневой `dist/`, после сборки остаётся только установочный `.exe`. v0.87.134: `start:prodlike` подтвердил, что долгий старт был из-за Vite dev server.

@@ -28,6 +28,33 @@ test('react-dom есть', function() { assert(pkg.dependencies['react-dom']) })
 test('electron есть', function() { assert(pkg.devDependencies.electron) })
 test('electron-vite есть', function() { assert(pkg.devDependencies['electron-vite']) })
 test('npm test script определён', function() { assert(pkg.scripts.test && pkg.scripts.test.length > 10) })
+test('start:prodlike script defined for production-like startup comparison', function() {
+  assert(pkg.scripts['start:prodlike'] === 'node scripts/prodlike.cjs')
+})
+test('dist:win builds installer into dist', function() {
+  assert(pkg.scripts['dist:win'] === 'node scripts/dist-win.cjs', 'missing dist:win wrapper script')
+  assert(pkg.build && pkg.build.directories && pkg.build.directories.output === 'dist', 'installer output must be dist')
+  assert(pkg.build.electronDist === 'node_modules/electron/dist', 'packaging must use local Electron to avoid GitHub download')
+  assert(pkg.build.win && pkg.build.win.signAndEditExecutable === false, 'local unsigned installer must not download winCodeSign')
+  assert(pkg.build.extraMetadata && pkg.build.extraMetadata.main === 'out/main/main.js', 'packaged app must start from built main')
+})
+test('scripts/dist-win.cjs keeps only installer in dist safely', function() {
+  var distWin = fs.readFileSync('scripts/dist-win.cjs', 'utf8')
+  assert(distWin.includes('Refusing to clean outside dist'), 'cleanup must guard dist path')
+  assert(distWin.includes('\\\\\\\\?\\\\'), 'Windows cleanup must support Cyrillic paths')
+  assert(distWin.includes('fs.unlinkSync'), 'Windows cleanup must unlink files explicitly')
+  assert(distWin.includes('Expected exactly one installer'), 'cleanup must verify installer count before deleting extras')
+  assert(distWin.includes('dist cleanup left extra files'), 'cleanup must fail if any non-installer file remains')
+  assert(distWin.includes('verifyPackagedApp'), 'must verify packaged app before cleanup')
+  assert(distWin.includes('out/renderer/index.html') && distWin.includes('node_modules/telegram/package.json'), 'package verification must cover renderer and production deps')
+  assert(distWin.includes("['--win', '--x64']"), 'must build Windows x64 installer')
+})
+test('scripts/prodlike.cjs builds before electron-vite preview', function() {
+  var prodlike = fs.readFileSync('scripts/prodlike.cjs', 'utf8')
+  assert(prodlike.includes("delete env.ELECTRON_RUN_AS_NODE"), 'must avoid inherited ELECTRON_RUN_AS_NODE')
+  assert(prodlike.includes("['run', 'build']"), 'must build first')
+  assert(prodlike.includes("['preview']"), 'must launch electron-vite preview after build')
+})
 
 // ── Версии синхронизированы ──
 console.log('\\n── Версии: ──')

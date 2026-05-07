@@ -1,9 +1,41 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App'
-import './index.css'
+const rendererBootT0 = window.__ccStartupT0 || performance.now()
 
-console.log('[BOOT] ChatCenter renderer start')
+function bootLog(message) {
+  if (window.__ccStartupMark) {
+    window.__ccStartupMark('main', message)
+    return
+  }
+  const line = `[startup-renderer] main +${Math.round(performance.now() - rendererBootT0)}ms ${message}`
+  try { window.api?.send('app:log', { level: 'INFO', message: line }) } catch {}
+  try { console.log(line) } catch {}
+}
+
+bootLog('module start before imports')
+bootLog('parallel imports start')
+
+const [reactModule, reactDomModule, , appModule] = await Promise.all([
+  import('react').then((module) => {
+    bootLog('react imported')
+    return module
+  }),
+  import('react-dom/client').then((module) => {
+    bootLog('react-dom imported')
+    return module
+  }),
+  import('./index.css').then((module) => {
+    bootLog('index.css imported')
+    return module
+  }),
+  import('./App').then((module) => {
+    bootLog('App imported')
+    return module
+  }),
+])
+bootLog('parallel imports done')
+
+const React = reactModule.default || reactModule
+const ReactDOM = reactDomModule.default || reactDomModule
+const App = appModule.default
 
 // Error boundary — ловит ошибки и показывает в ТЕРМИНАЛЕ (через console.error)
 class ErrorBoundary extends React.Component {
@@ -18,6 +50,16 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+bootLog('render start')
+const rootElement = document.getElementById('root')
+bootLog(`root element ${rootElement ? 'found' : 'missing'}`)
+const root = ReactDOM.createRoot(rootElement)
+bootLog('react root created')
+root.render(
   <ErrorBoundary><App /></ErrorBoundary>
 )
+bootLog('render scheduled')
+requestAnimationFrame(() => {
+  bootLog('first requestAnimationFrame after render')
+  window.__ccStartupSummary?.('after-render-raf')
+})

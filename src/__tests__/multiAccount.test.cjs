@@ -137,6 +137,15 @@ test('tg:remove-account: per-account vs full wipe (isLast)', () => {
     'Если последний аккаунт — full wipe; иначе per-account')
 })
 
+test('tg:get-accounts snapshot возвращает accounts из main state', () => {
+  assert(chatsIpcCode.includes("ipcMain.handle('tg:get-accounts'"),
+    'Renderer должен иметь snapshot, если пропустил ранний tg:account-update')
+  assert(chatsIpcCode.includes('Array.from(state.accounts.values())'),
+    'Snapshot должен возвращать текущие accounts из main state')
+  assert(chatsIpcCode.includes('activeAccountId'),
+    'Snapshot должен возвращать activeAccountId')
+})
+
 // ─── Chats: mapDialog принимает accountId ────────────────────────
 console.log('\n── telegramChats.js: ──')
 const chatsCode = fs.readFileSync('main/native/telegramChats.js', 'utf8')
@@ -165,6 +174,12 @@ test('DEFAULT_STATE.chatFilter = "all"', () => {
 })
 test('setChatFilter callback экспортируется', () => {
   assert(storeCode.includes('setChatFilter'), 'UI должен мочь сменить фильтр')
+})
+test('nativeStore при mount запрашивает tg:get-accounts snapshot', () => {
+  assert(storeCode.includes("'tg:get-accounts'") || storeCode.includes('"tg:get-accounts"'),
+    'useNativeStore должен забрать accounts snapshot после подписки на IPC')
+  assert(storeCode.includes('accounts snapshot request') && storeCode.includes('accounts snapshot response'),
+    'Snapshot должен логироваться в startup-native')
 })
 
 const sidebarCode = fs.readFileSync('src/native/components/InboxChatListSidebar.jsx', 'utf8')

@@ -1,5 +1,7 @@
 // v0.84.4 — Refactored: notification, login, backup, window, tray extracted
 // v0.87.81 — Refactored: storage, gigachat, ruError extracted to main/utils/
+// v0.87.135 — Added Windows installer packaging into root dist/
+// v0.87.134 — Added start:prodlike script for production-like startup comparison
 // v0.87.103 — Refactored: setupIPC вынесен в handlers/mainIpcHandlers.js (~230 строк)
 import { app, BrowserWindow, session, nativeImage, screen } from 'electron'
 import path from 'node:path'
@@ -137,7 +139,7 @@ app.whenReady().then(() => {
   initLogger(app.getPath('userData'))
   setLogViewerOpener(openLogViewer)
   __slog('logger init')
-  console.log('=== ChatCenter v0.87.2 start ===')
+  console.log('=== ChatCenter v0.87.135 start ===')
 
   registerCcMediaHandler(app.getPath('userData'))
 
@@ -156,9 +158,13 @@ app.whenReady().then(() => {
   // Настраиваем сессии
   setupSession(session.defaultSession)
   const storedMessengers = storage.get('messengers', DEFAULT_MESSENGERS)
+  console.log(`[startup-webview] main stored messengers count=${storedMessengers.length} ids=${storedMessengers.map(m => `${m.id}:${m.partition || 'no-partition'}`).join(',')}`)
   storedMessengers.forEach(m => {
     if (m.partition) {
-      try { setupSession(session.fromPartition(m.partition)) } catch (e) { console.warn(`[Session] Ошибка для ${m.id}:`, e.message) }
+      try {
+        console.log(`[startup-webview] main setupSession id=${m.id} name="${m.name || ''}" partition=${m.partition} url=${m.url || ''}`)
+        setupSession(session.fromPartition(m.partition))
+      } catch (e) { console.warn(`[Session] Ошибка для ${m.id}:`, e.message) }
     }
   })
 

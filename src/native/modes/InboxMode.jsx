@@ -17,6 +17,8 @@ import useReadByVisibility from '../hooks/useReadByVisibility.js'
 import useInboxScroll from '../hooks/useInboxScroll.js'
 import { getUnreadAnchorDebug } from '../utils/scrollDiagnostics.js'
 
+try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
+
 export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)

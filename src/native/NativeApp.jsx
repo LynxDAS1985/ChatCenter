@@ -12,6 +12,8 @@ import LoginModal from './components/LoginModal.jsx'
 import InboxMode from './modes/InboxMode.jsx'
 import AccountContextMenu from './components/AccountContextMenu.jsx'
 
+try { window.__ccStartupMark?.('module:NativeApp', 'module evaluated after native static imports') } catch {}
+
 const MODES = [
   { id: 'inbox', label: 'Чаты' },
   { id: 'contacts', label: 'Клиенты' },
@@ -148,6 +150,12 @@ function AccountAvatar({ account, unreadCount, onClick, onContextMenu, onMouseEn
 }
 
 export default function NativeApp() {
+  try {
+    if (!window.__ccNativeAppFirstRenderLogged) {
+      window.__ccNativeAppFirstRenderLogged = true
+      window.__ccStartupMark?.('component:NativeApp', 'first render start')
+    }
+  } catch {}
   const store = useNativeStore()
   const [showLogin, setShowLogin] = useState(false)
   // v0.87.88: ПКМ-меню аккаунта { account, x, y } или null
@@ -169,6 +177,16 @@ export default function NativeApp() {
 
   const hasAccounts = store.accounts.length > 0
   const showLoginScreen = showLogin || !!store.loginFlow
+
+  useEffect(() => {
+    try {
+      window.__ccStartupMark?.(
+        'component:NativeApp',
+        `mounted accounts=${store.accounts.length} chats=${store.chats.length} active=${store.activeAccountId || 'none'} loginFlow=${!!store.loginFlow}`
+      )
+      window.__ccStartupSummary?.('NativeApp-mounted')
+    } catch {}
+  }, [])
 
   const handleAccountContextMenu = (e, account) => {
     e.preventDefault()

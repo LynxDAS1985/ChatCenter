@@ -7,6 +7,8 @@
  * Определение типа мессенджера: по URL страницы.
  */
 
+try { window.__ccStartupMark?.('module:messengerConfigs', 'module evaluated') } catch {}
+
 // ── Определение типа мессенджера по URL ──────────────────────────────────
 export function detectMessengerType(url) {
   if (!url) return 'unknown'

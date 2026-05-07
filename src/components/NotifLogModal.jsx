@@ -43,9 +43,6 @@ export default function NotifLogModal({ ctx }) {
               {[
                 ['log', `Лог (${notifLogModal.log.length})`, 'Входящие сообщения — что пришло и от кого'],
                 ['trace', `Pipeline (${(notifLogModal.trace||[]).length})`, 'Путь сообщения через фильтры, дедуп и обогащение'],
-                ['domScan', 'DOM', 'Структура страницы — селекторы, контейнеры, бейджи'],
-                ['diagFull', 'Хранилище', 'Cookies, localStorage, IndexedDB, аватарки'],
-                ['diagAccount', 'Аккаунт', 'Имя аккаунта — тест скрипта извлечения имени'],
               ].map(([tab, label, tooltip]) => (
                 <button key={tab} className="px-2 py-1 rounded text-xs cursor-pointer" style={{
                   backgroundColor: notifLogTab === tab ? 'rgba(96,165,250,0.2)' : 'transparent',

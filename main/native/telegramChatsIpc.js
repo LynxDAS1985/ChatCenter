@@ -13,7 +13,24 @@ import {
   mapDialog, saveChatsCache, loadRestPagesAsync, loadAvatarsAsync, fetchAllUnreadUpdates,
 } from './telegramChats.js'
 
+const startupLog = (msg) => log(`[startup-tg] ${msg}`)
+
 export function initChatsHandlers() {
+  // v0.87.127: snapshot current accounts for renderer.
+  // Prevents event-only restore races when tg:account-update was emitted before UI subscribed.
+  ipcMain.handle('tg:get-accounts', async () => {
+    try {
+      const accounts = Array.from(state.accounts.values())
+      return {
+        ok: true,
+        accounts,
+        activeAccountId: state.activeAccountId || accounts[0]?.id || null,
+      }
+    } catch (e) {
+      return { ok: false, error: e.message, accounts: [], activeAccountId: null }
+    }
+  })
+
   // v0.87.105 (ADR-016): кэш per-account — tg-cache-{id}.json. Читаем все.
   ipcMain.handle('tg:get-cached-chats', async () => {
     try {
@@ -211,6 +228,7 @@ export function initChatsHandlers() {
   // Если передан — загружаем чаты ОДНОГО аккаунта.
   // Если нет — загружаем для ВСЕХ аккаунтов (multi-account default).
   ipcMain.handle('tg:get-chats', async (_, args) => {
+    const startedAt = Date.now()
     try {
       const requestedAccountId = args?.accountId || null
       const accountIds = requestedAccountId
@@ -219,6 +237,7 @@ export function initChatsHandlers() {
 
       if (accountIds.length === 0) return { ok: false, error: 'Нет подключённых аккаунтов', chats: [] }
       log(`get-chats: старт для ${accountIds.length} аккаунт(ов)`)
+      startupLog(`get-chats start requested=${requestedAccountId || 'all'} accounts=${accountIds.join(',')} count=${accountIds.length}`)
 
       const allFirstChats = []
       for (const accountId of accountIds) {
@@ -229,17 +248,21 @@ export function initChatsHandlers() {
         } catch (e) { log(`get-chats(${accountId}) err: ${e.message}`) }
       }
 
+      startupLog(`get-chats done requested=${requestedAccountId || 'all'} firstChats=${allFirstChats.length} ms=${Date.now() - startedAt}`)
       return { ok: true, chats: allFirstChats, hasMore: allFirstChats.length > 50 }
     } catch (e) {
       log('get-chats error: ' + e.message)
+      startupLog(`get-chats failed ms=${Date.now() - startedAt} err="${e.message}"`)
       return { ok: false, error: e.message, chats: [] }
     }
   })
 
   // v0.87.105: загрузка чатов для одного аккаунта — выделено для использования в multi-itetrate
   async function loadChatsForAccount(client, accountId, allFirstChats) {
+    const startedAt = Date.now()
     const account = state.accounts.get(accountId)
     if (!account) return
+    startupLog(`loadChatsForAccount start account=${accountId} name="${account.name}"`)
     const PAGE = 200
     const firstPage = await client.getDialogs({ limit: PAGE, folder: 0 })
     const unreadCount = firstPage.reduce((sum, d) => sum + (d.unreadCount || 0), 0)
@@ -260,11 +283,13 @@ export function initChatsHandlers() {
     const firstChats = firstPage.map(d => mapDialog(d, accountId))
     emit('tg:chats', { accountId, chats: firstChats, append: false })
     saveChatsCache(firstChats, accountId)
+    startupLog(`loadChatsForAccount firstPage account=${accountId} chats=${firstPage.length} unreadChats=${withUnread} unreadMsgs=${unreadCount} ms=${Date.now() - startedAt}`)
     loadAvatarsAsync(firstPage, accountId)
     if (firstPage.length > 50) {
       loadRestPagesAsync(firstPage, client, accountId)
     }
     if (allFirstChats) allFirstChats.push(...firstChats)
+    startupLog(`loadChatsForAccount done account=${accountId} returned=${firstChats.length} ms=${Date.now() - startedAt}`)
   }
 
   // v0.87.95: подсчёт что будет удалено (для предпросмотра в UI до подтверждения)

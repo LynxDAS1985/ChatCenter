@@ -15,6 +15,8 @@ import { translateTelegramError } from './telegramErrors.js'
 import { attachMessageListener } from './telegramMessages.js'
 import { startUnreadRescan } from './telegramChats.js'
 
+const startupLog = (msg) => log(`[startup-tg] ${msg}`)
+
 // v0.87.105: путь к файлу сессии конкретного аккаунта
 function sessionFileFor(accountId) {
   return path.join(state.sessionsDir, `${accountId}.txt`)
@@ -285,6 +287,8 @@ async function startLogin(phone) {
 // v0.87.105 (ADR-016): восстановить ОДНУ сессию из строки. Возвращает true при успехе.
 async function restoreOneSession(sessionStr, knownAccountId) {
   if (!sessionStr) return false
+  const startedAt = Date.now()
+  startupLog(`restoreOneSession start known=${knownAccountId || 'unknown'}`)
   const stringSession = new StringSession(sessionStr)
   const client = new TelegramClient(stringSession, API_ID, API_HASH, {
     connectionRetries: 5,
@@ -295,6 +299,7 @@ async function restoreOneSession(sessionStr, knownAccountId) {
   })
   try {
     await client.connect()
+    startupLog(`restoreOneSession connected known=${knownAccountId || 'unknown'} ms=${Date.now() - startedAt}`)
     const me = await client.getMe()
     const accountId = `tg_${me.id}`
     if (knownAccountId && knownAccountId !== accountId) {
@@ -322,9 +327,11 @@ async function restoreOneSession(sessionStr, knownAccountId) {
     }).catch(e => log('own avatar err: ' + e.message))
     attachMessageListener(client, accountId)
     log(`session restored, account=${account.name} (${accountId})`)
+    startupLog(`restoreOneSession done account=${accountId} name="${account.name}" ms=${Date.now() - startedAt}`)
     return accountId
   } catch (e) {
     log(`session restore failed (${knownAccountId || 'unknown'}): ${e.message}`)
+    startupLog(`restoreOneSession failed known=${knownAccountId || 'unknown'} ms=${Date.now() - startedAt} err="${e.message}"`)
     try { client?.disconnect() } catch(_) {}
     return false
   }
@@ -354,15 +361,25 @@ async function migrateLegacySession() {
 
 // v0.87.105 (ADR-016): сканировать tg-sessions/ и восстановить ВСЕ найденные сессии.
 export async function autoRestoreSessions() {
+  const startedAt = Date.now()
+  startupLog('autoRestoreSessions start')
   // 1. Миграция старого ОДНОГО файла (один раз)
   await migrateLegacySession()
 
   // 2. Сканируем папку tg-sessions/
-  if (!state.sessionsDir || !fs.existsSync(state.sessionsDir)) return
+  if (!state.sessionsDir || !fs.existsSync(state.sessionsDir)) {
+    startupLog(`autoRestoreSessions skip no-sessions-dir ms=${Date.now() - startedAt}`)
+    return
+  }
   const files = fs.readdirSync(state.sessionsDir).filter(f => f.endsWith('.txt'))
-  if (!files.length) { log('no saved sessions'); return }
+  if (!files.length) {
+    log('no saved sessions')
+    startupLog(`autoRestoreSessions no-saved-sessions ms=${Date.now() - startedAt}`)
+    return
+  }
 
   log(`restoring ${files.length} session(s)...`)
+  startupLog(`autoRestoreSessions files=${files.length}`)
   let restored = 0
   for (const f of files) {
     const accountId = f.replace(/\.txt$/, '')
@@ -376,6 +393,7 @@ export async function autoRestoreSessions() {
     if (ok) restored++
   }
   log(`autoRestoreSessions: ${restored}/${files.length} восстановлено`)
+  startupLog(`autoRestoreSessions done restored=${restored}/${files.length} clients=${state.clients.size} ms=${Date.now() - startedAt}`)
 
   // 3. Запускаем общий unread rescan (один раз, для всех аккаунтов)
   if (restored > 0 && !state.unreadRescanTimer) startUnreadRescan()

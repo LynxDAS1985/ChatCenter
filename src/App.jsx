@@ -1,21 +1,13 @@
 // v0.39.0 — Кастомные уведомления Messenger Ribbon
 // v0.87.82 — Refactored: 3 useEffect вынесены в useAppBootstrap / useConsoleErrorLogger / useAppIPCListeners
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { DEFAULT_MESSENGERS } from './constants.js'
-import AddMessengerModal from './components/AddMessengerModal.jsx'
-import SettingsPanel from './components/SettingsPanel.jsx'
-import AISidebar from './components/AISidebar.jsx'
-import TemplatesPanel from './components/TemplatesPanel.jsx'
-import AutoReplyPanel from './components/AutoReplyPanel.jsx'
 import { devLog, devError } from './utils/devLog.js'
 import { playNotificationSound } from './utils/sound.js'
 import { buildChatNavigateScript } from './utils/navigateToChat.js'
 import { createWebviewSetup } from './utils/webviewSetup.js'
 import TabBar from './components/TabBar.jsx'
-import NotifLogModal from './components/NotifLogModal.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
-import LogModal from './components/LogModal.jsx'
-import ConfirmCloseModal from './components/ConfirmCloseModal.jsx'
 
 // Hooks
 import useKeyboardShortcuts from './hooks/useKeyboardShortcuts.js'
@@ -30,7 +22,25 @@ import useWebViewLifecycle from './hooks/useWebViewLifecycle.js'
 import useAppBootstrap from './hooks/useAppBootstrap.js'
 import useConsoleErrorLogger from './hooks/useConsoleErrorLogger.js'
 import useAppIPCListeners from './hooks/useAppIPCListeners.js'
-import NativeApp from './native/NativeApp.jsx'
+
+try { window.__ccStartupMark?.('module:App', 'module evaluated after static imports') } catch {}
+
+const NativeApp = lazy(() => {
+  try { window.__ccStartupMark?.('module:NativeApp', 'lazy import requested') } catch {}
+  return import('./native/NativeApp.jsx').then((module) => {
+    try { window.__ccStartupMark?.('module:NativeApp', 'lazy import resolved') } catch {}
+    return module
+  })
+})
+
+const AddMessengerModal = lazy(() => import('./components/AddMessengerModal.jsx'))
+const AISidebar = lazy(() => import('./components/AISidebar.jsx'))
+const SettingsPanel = lazy(() => import('./components/SettingsPanel.jsx'))
+const TemplatesPanel = lazy(() => import('./components/TemplatesPanel.jsx'))
+const AutoReplyPanel = lazy(() => import('./components/AutoReplyPanel.jsx'))
+const NotifLogModal = lazy(() => import('./components/NotifLogModal.jsx'))
+const ConfirmCloseModal = lazy(() => import('./components/ConfirmCloseModal.jsx'))
+const LogModal = lazy(() => import('./components/LogModal.jsx'))
 
 // v0.87.0: специальный "виртуальный" мессенджер — рендерит NativeApp вместо <webview>
 const NATIVE_CC_ID = 'native_cc'
@@ -45,11 +55,37 @@ const NATIVE_CC_TAB = {
   isNative: true,
 }
 
+function AISidebarFallback({ visible, width, panelRef }) {
+  if (!visible) return null
+  return (
+    <aside
+      ref={panelRef}
+      className="shrink-0"
+      style={{
+        width,
+        backgroundColor: 'var(--cc-panel)',
+        borderLeft: '1px solid var(--cc-border)',
+      }}
+    />
+  )
+}
+
 // Навигация → src/utils/navigateToChat.js | Звук → src/utils/sound.js | Вкладка → components/MessengerTab.jsx
 
 // ─── Главный компонент ────────────────────────────────────────────────────
 
+function NativeAppFallback() {
+  try { window.__ccStartupMark?.('component:NativeApp', 'fallback render') } catch {}
+  return <div className="w-full h-full" style={{ backgroundColor: '#000' }} />
+}
+
 export default function App() {
+  try {
+    if (!window.__ccAppFirstRenderLogged) {
+      window.__ccAppFirstRenderLogged = true
+      window.__ccStartupMark?.('component:App', 'first render start')
+    }
+  } catch {}
   const [messengers, setMessengers] = useState([])
   const [activeId, setActiveId] = useState(null)
   const [accountInfo, setAccountInfo] = useState({})
@@ -117,6 +153,12 @@ export default function App() {
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   useEffect(() => { messengersRef.current = messengers }, [messengers])
   useEffect(() => { zoomLevelsRef.current = zoomLevels }, [zoomLevels])
+  useEffect(() => {
+    try {
+      window.__ccStartupMark?.('component:App', `mounted messengers=${messengers.length} active=${activeId || 'none'} nativeTab=${messengers.some(m => m.isNative)}`)
+      window.__ccStartupSummary?.('App-mounted')
+    } catch {}
+  }, [])
 
   // bumpStats обновляется каждый рендер
   bumpStatsRef.current = (delta) => {
@@ -362,7 +404,9 @@ export default function App() {
                 }}
               >
                 {m.isNative || m.id === NATIVE_CC_ID ? (
-                  <NativeApp />
+                  <Suspense fallback={<NativeAppFallback />}>
+                    <NativeApp />
+                  </Suspense>
                 ) : (
                   <webview
                     ref={el => setWebviewRef(el, m.id)}
@@ -400,69 +444,81 @@ export default function App() {
         )}
 
         {/* ── ИИ-боковая панель ── */}
-        <ErrorBoundary name="AISidebar"><AISidebar
-          settings={settings}
-          onSettingsChange={handleSettingsChange}
-          lastMessage={lastMessage}
-          visible={showAI}
-          width={aiWidth}
-          onToggle={() => setShowAI(!showAI)}
-          panelRef={aiPanelRef}
-          chatHistory={chatHistory}
-          activeMessengerId={activeId}
-        /></ErrorBoundary>
+        <ErrorBoundary name="AISidebar">
+          <Suspense fallback={<AISidebarFallback visible={showAI} width={aiWidth} panelRef={aiPanelRef} />}>
+            <AISidebar
+              settings={settings}
+              onSettingsChange={handleSettingsChange}
+              lastMessage={lastMessage}
+              visible={showAI}
+              width={aiWidth}
+              onToggle={() => setShowAI(!showAI)}
+              panelRef={aiPanelRef}
+              chatHistory={chatHistory}
+              activeMessengerId={activeId}
+            />
+          </Suspense>
+        </ErrorBoundary>
       </div>
 
       {/* ── Модальные окна ── */}
-      {showAddModal && (
-        <AddMessengerModal onAdd={addMessenger} onClose={() => setShowAddModal(false)} />
-      )}
+      <Suspense fallback={null}>
+        {showAddModal && (
+          <AddMessengerModal onAdd={addMessenger} onClose={() => setShowAddModal(false)} />
+        )}
 
-      {editingMessenger && (
-        <AddMessengerModal editing={editingMessenger} onSave={saveMessenger} onAdd={() => {}} onClose={() => setEditingMessenger(null)} />
-      )}
+        {editingMessenger && (
+          <AddMessengerModal editing={editingMessenger} onSave={saveMessenger} onAdd={() => {}} onClose={() => setEditingMessenger(null)} />
+        )}
 
-      {showSettings && (
-        <ErrorBoundary name="Settings"><SettingsPanel
-          messengers={messengers} settings={settings}
-          onMessengersChange={setMessengers} onSettingsChange={handleSettingsChange}
-          onClose={() => setShowSettings(false)}
-        /></ErrorBoundary>
-      )}
+        {showSettings && (
+          <ErrorBoundary name="Settings"><SettingsPanel
+            messengers={messengers} settings={settings}
+            onMessengersChange={setMessengers} onSettingsChange={handleSettingsChange}
+            onClose={() => setShowSettings(false)}
+          /></ErrorBoundary>
+        )}
 
-      {showTemplates && (
-        <ErrorBoundary name="Templates"><TemplatesPanel
-          settings={settings} onSettingsChange={handleSettingsChange} onClose={() => setShowTemplates(false)}
-        /></ErrorBoundary>
-      )}
+        {showTemplates && (
+          <ErrorBoundary name="Templates"><TemplatesPanel
+            settings={settings} onSettingsChange={handleSettingsChange} onClose={() => setShowTemplates(false)}
+          /></ErrorBoundary>
+        )}
 
-      {showAutoReply && (
-        <ErrorBoundary name="AutoReply"><AutoReplyPanel
-          settings={settings} onSettingsChange={handleSettingsChange} onClose={() => setShowAutoReply(false)}
-        /></ErrorBoundary>
-      )}
+        {showAutoReply && (
+          <ErrorBoundary name="AutoReply"><AutoReplyPanel
+            settings={settings} onSettingsChange={handleSettingsChange} onClose={() => setShowAutoReply(false)}
+          /></ErrorBoundary>
+        )}
+      </Suspense>
 
-      {confirmClose && <ConfirmCloseModal
-        confirmClose={confirmClose}
-        onCancel={() => setConfirmClose(null)}
-        onConfirm={() => removeMessenger(confirmClose.id)}
-      />}
+      <Suspense fallback={null}>
+        {confirmClose && <ConfirmCloseModal
+          confirmClose={confirmClose}
+          onCancel={() => setConfirmClose(null)}
+          onConfirm={() => removeMessenger(confirmClose.id)}
+        />}
+      </Suspense>
 
       {/* ── Модальное окно: Лог уведомлений ── */}
-      {notifLogModal && <ErrorBoundary name="NotifLog"><NotifLogModal ctx={{
-        notifLogModal, setNotifLogModal, notifLogTab, setNotifLogTab,
-        traceFilter, setTraceFilter, setCellTooltip,
-        settings, setSettings, webviewRefs,
-        handleTabContextAction_diag,
-        traceNotif, handleNewMessage, pipelineTraceRef
-      }} /></ErrorBoundary>}
+      <Suspense fallback={null}>
+        {notifLogModal && <ErrorBoundary name="NotifLog"><NotifLogModal ctx={{
+          notifLogModal, setNotifLogModal, notifLogTab, setNotifLogTab,
+          traceFilter, setTraceFilter, setCellTooltip,
+          settings, setSettings, webviewRefs,
+          handleTabContextAction_diag,
+          traceNotif, handleNewMessage, pipelineTraceRef
+        }} /></ErrorBoundary>}
+      </Suspense>
 
       {/* ── v0.84.2: Модальное окно системного лога ── */}
-      {showLogModal && <LogModal
-        content={logContent}
-        onClose={() => setShowLogModal(false)}
-        onRefresh={() => window.api?.invoke('app:read-log').then(c => setLogContent(c || 'Лог пуст'))}
-      />}
+      <Suspense fallback={null}>
+        {showLogModal && <LogModal
+          content={logContent}
+          onClose={() => setShowLogModal(false)}
+          onRefresh={() => window.api?.invoke('app:read-log').then(c => setLogContent(c || 'Лог пуст'))}
+        />}
+      </Suspense>
 
       {/* ── Тултип для ячеек таблицы лога ── */}
       {cellTooltip && (

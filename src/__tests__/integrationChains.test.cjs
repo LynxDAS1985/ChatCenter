@@ -116,7 +116,25 @@ test('App.jsx → MessengerTab → components', function() {
 
 test('App.jsx → NotifLogModal → components', function() {
   assert(appCode.includes('<NotifLogModal'))
-  assert(appCode.includes("from './components/NotifLogModal.jsx'"))
+  assert(appCode.includes("import('./components/NotifLogModal.jsx')"))
+})
+
+test('App.jsx → startup-heavy panels lazy imports', function() {
+  assert(appCode.includes("import('./components/AISidebar.jsx')"))
+  assert(appCode.includes("import('./components/LogModal.jsx')"))
+  assert(appCode.includes("import('./components/ConfirmCloseModal.jsx')"))
+})
+
+test('App.jsx → NativeApp controlled lazy import with account snapshot protection', function() {
+  assert(appCode.includes("import('./native/NativeApp.jsx')"))
+  assert(!appCode.includes("from './native/NativeApp.jsx'"))
+})
+
+test('useTabContextMenu → tabContextMenuDiag disabled from startup graph (A2.1)', function() {
+  var hookCode = fs.readFileSync('src/hooks/useTabContextMenu.js', 'utf8')
+  assert(!hookCode.includes("from './tabContextMenuDiag.js'"))
+  assert(!hookCode.includes("import('./tabContextMenuDiag.js')"))
+  assert(hookCode.includes('manual WebView diagnostics disabled'))
 })
 
 test('main.js → overlayIcon → main/utils', function() {

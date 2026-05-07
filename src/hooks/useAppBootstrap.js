@@ -24,6 +24,9 @@ export default function useAppBootstrap({
     const log = (l) => {
       try { window.api?.send('app:log', { level: 'INFO', message: `[startup] +${Math.round(performance.now()-t0)}ms ${l}` }) } catch(_) {}
     }
+    const logWebview = (l) => {
+      try { window.api?.send('app:log', { level: 'INFO', message: `[startup-webview] renderer +${Math.round(performance.now()-t0)}ms ${l}` }) } catch(_) {}
+    }
     log('useEffect start')
     if (!window.api?.invoke) {
       console.error('[App] window.api не инициализирован — загружаем DEFAULT_MESSENGERS')
@@ -45,6 +48,8 @@ export default function useAppBootstrap({
           return m
         })
         const withNative = [...cleaned, NATIVE_CC_TAB]
+        logWebview(`messengers loaded webview=${cleaned.length} native=1 ids=${cleaned.map(m => `${m.id}:${m.partition || 'no-partition'}`).join(',')}`)
+        logWebview(`native tab appended id=${NATIVE_CC_TAB.id} name="${NATIVE_CC_TAB.name}"`)
         setMessengers(withNative)
         setActiveId(withNative[0]?.id || null)
       }).catch(() => {

@@ -6,6 +6,19 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 import { attachTelegramIpcListeners, loadChatCache } from './nativeStoreIpc.js'
 
+function logNativeLoad(event, data = {}) {
+  const text = Object.entries(data)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ')
+  try {
+    window.api?.send?.('app:log', {
+      level: 'INFO',
+      message: `[startup-native] ${event}${text ? ' ' + text : ''}`,
+    })
+  } catch(_) {}
+}
+
 /**
  * @typedef {Object} NativeAccount
  * @property {string} id — внутренний ID (tg_12345, wa_+79..., vk_456)
@@ -49,7 +62,43 @@ export default function useNativeStore() {
 
   // v0.87.103: все IPC listeners вынесены в nativeStoreIpc.js → attachTelegramIpcListeners
   useEffect(() => {
-    return attachTelegramIpcListeners({ setState, stateRef })
+    const detach = attachTelegramIpcListeners({ setState, stateRef })
+    let cancelled = false
+    ;(async () => {
+      const startedAt = Date.now()
+      logNativeLoad('accounts snapshot request')
+      const r = await window.api?.invoke?.('tg:get-accounts', {})
+      if (cancelled || !r?.ok) {
+        logNativeLoad('accounts snapshot response', {
+          ok: !!r?.ok,
+          accounts: r?.accounts?.length || 0,
+          ms: Date.now() - startedAt,
+          error: r?.error || '',
+        })
+        return
+      }
+      setState(s => {
+        const incoming = Array.isArray(r.accounts) ? r.accounts : []
+        if (!incoming.length) return s
+        const byId = new Map(s.accounts.map(a => [a.id, a]))
+        for (const acc of incoming) byId.set(acc.id, { ...(byId.get(acc.id) || {}), ...acc })
+        return {
+          ...s,
+          accounts: Array.from(byId.values()),
+          activeAccountId: s.activeAccountId || r.activeAccountId || incoming[0]?.id || null,
+        }
+      })
+      logNativeLoad('accounts snapshot response', {
+        ok: true,
+        accounts: r.accounts?.length || 0,
+        active: r.activeAccountId || '',
+        ms: Date.now() - startedAt,
+      })
+    })()
+    return () => {
+      cancelled = true
+      detach()
+    }
   }, [])
 
   const setMode = useCallback((mode) => setState(s => ({ ...s, mode })), [])
@@ -83,15 +132,33 @@ export default function useNativeStore() {
 
   // ── Data actions ──
   const loadChats = useCallback(async (accountId) => {
-    return window.api?.invoke('tg:get-chats', { accountId })
+    const startedAt = Date.now()
+    logNativeLoad('loadChats request', { accountId: accountId || 'all' })
+    const result = await window.api?.invoke('tg:get-chats', { accountId })
+    logNativeLoad('loadChats response', {
+      accountId: accountId || 'all',
+      ok: !!result?.ok,
+      chats: result?.chats?.length || 0,
+      ms: Date.now() - startedAt,
+      error: result?.error || '',
+    })
+    return result
   }, [])
 
   // v0.87.14: мгновенная загрузка кэша
   const loadCachedChats = useCallback(async () => {
+    const startedAt = Date.now()
+    logNativeLoad('loadCachedChats request')
     const r = await window.api?.invoke('tg:get-cached-chats', {})
     if (r?.ok && r.chats?.length) {
       setState(s => ({ ...s, chats: [...s.chats.filter(c => !r.chats.find(nc => nc.id === c.id)), ...r.chats] }))
     }
+    logNativeLoad('loadCachedChats response', {
+      ok: !!r?.ok,
+      chats: r?.chats?.length || 0,
+      ms: Date.now() - startedAt,
+      error: r?.error || '',
+    })
     return r
   }, [])
 

@@ -13,6 +13,8 @@ import { logGeometry, runDomProbe, attachRuntimeErrorCatcher } from './webviewDi
 import { createHandleNewMessage } from './webviewHandleNewMessage.js'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 
+try { window.__ccStartupMark?.('module:webviewSetup', 'module evaluated') } catch {}
+
 // v0.83.1: Sender cache cleanup — удаляем записи старше 5 мин, лимит 50 записей
 function cleanupSenderCache(cache) {
   const now = Date.now()
@@ -37,6 +39,19 @@ export function createWebviewSetup(deps) {
     setMonitorStatus, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
     setWebviewLoading, setZoomLevels, monitorPreloadUrl,
   } = deps
+  const startupWebviewSeen = new Set()
+  const startupWebviewLog = (messengerId, message) => {
+    try {
+      const key = `${messengerId}:${message}`
+      if (startupWebviewSeen.has(key)) return
+      startupWebviewSeen.add(key)
+      const m = messengersRef.current.find(x => x.id === messengerId)
+      window.api?.send('app:log', {
+        level: 'INFO',
+        message: `[startup-webview] ${message} id=${messengerId} name="${m?.name || ''}" partition=${m?.partition || ''} url=${m?.url || ''}`,
+      })
+    } catch {}
+  }
   // ── Извлечение аккаунта из WebView ───────────────────────────────────────
   const tryExtractAccount = (messengerId, attempt = 0) => {
     if (attempt > 12) return
@@ -131,13 +146,16 @@ export function createWebviewSetup(deps) {
       el._chatcenterListeners = []
       webviewRefs.current[messengerId] = el
       const addListener = (event, fn) => { el.addEventListener(event, fn); el._chatcenterListeners.push([event, fn]) }
+      startupWebviewLog(messengerId, 'ref-init')
       setMonitorStatus(prev => ({ ...prev, [messengerId]: 'loading' }))
       // ── СЕКЦИЯ: События загрузки страницы ──
       setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       addListener('did-start-loading', () => {
+        startupWebviewLog(messengerId, 'did-start-loading')
         setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       })
       addListener('did-stop-loading', () => {
+        startupWebviewLog(messengerId, 'did-stop-loading')
         setWebviewLoading(prev => ({ ...prev, [messengerId]: false }))
       })
 
@@ -172,10 +190,14 @@ export function createWebviewSetup(deps) {
       addListener('did-frame-finish-load', (e) => {
         if (e?.isMainFrame === false) traceNotif('frame', 'info', messengerId, '', `subframe finished`)
       })
-      addListener('did-finish-load', () => { attachRuntimeErrorCatcher(el) })
+      addListener('did-finish-load', () => {
+        startupWebviewLog(messengerId, 'did-finish-load')
+        attachRuntimeErrorCatcher(el)
+      })
 
       // ── СЕКЦИЯ: DOM-ready — инициализация монитора ──
       addListener('dom-ready', () => {
+        startupWebviewLog(messengerId, 'dom-ready')
         // v0.84.0: Регистрация webContentsId для multi-account routing
         try {
           const wcId = el.getWebContentsId?.()

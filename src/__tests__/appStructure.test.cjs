@@ -36,9 +36,17 @@ test('messageProcessing', () => assert(allAppCode.includes('messageProcessing.js
 test('sound', () => assert(allAppCode.includes('sound.js')))
 test('navigateToChat', () => assert(allAppCode.includes('navigateToChat.js')))
 test('MessengerTab', () => assert(allAppCode.includes('MessengerTab.jsx')))
-test('NotifLogModal', () => assert(code.includes("from './components/NotifLogModal.jsx'")))
-test('SettingsPanel', () => assert(code.includes("from './components/SettingsPanel.jsx'")))
-test('AISidebar', () => assert(code.includes("from './components/AISidebar.jsx'")))
+test('NotifLogModal', () => assert(code.includes("import('./components/NotifLogModal.jsx')")))
+test('SettingsPanel', () => assert(code.includes("import('./components/SettingsPanel.jsx')")))
+test('AISidebar lazy import', () => assert(code.includes("import('./components/AISidebar.jsx')")))
+test('NativeApp controlled lazy import (A1 startup split)', () => {
+  assert(code.includes("import('./native/NativeApp.jsx')"), 'NativeApp should load by dynamic import')
+  assert(!code.includes("from './native/NativeApp.jsx'"), 'NativeApp must not stay in App.jsx static import graph')
+  assert(code.includes('<Suspense fallback={<NativeAppFallback />}>'), 'NativeApp should have an isolated Suspense fallback')
+  assert(code.includes('lazy import requested') && code.includes('lazy import resolved'), 'NativeApp lazy import should be visible in startup logs')
+})
+test('LogModal lazy import', () => assert(code.includes("import('./components/LogModal.jsx')")))
+test('ConfirmCloseModal lazy import', () => assert(code.includes("import('./components/ConfirmCloseModal.jsx')")))
 
 // ── Нет дублирования (inline код удалён) ──
 console.log('\\n── Нет дублирования: ──')
@@ -63,6 +71,11 @@ test('handleNewMessage определена', () => assert(code.includes('handle
 test('setWebviewRef определена', () => assert(code.includes('setWebviewRef')))
 test('handleTabContextAction определена', () => assert(code.includes('handleTabContextAction')))
 test('handleTabContextAction_diag определена', () => assert(code.includes('handleTabContextAction_diag')))
+test('tabContextMenuDiag отключён из startup graph (A2.1)', () => {
+  assert(!hooksCode.includes("from './tabContextMenuDiag.js'"), 'useTabContextMenu must not statically import tabContextMenuDiag')
+  assert(!hooksCode.includes("import('./tabContextMenuDiag.js')"), 'manual diagnostics are disabled, not lazy-loaded')
+  assert(hooksCode.includes('manual WebView diagnostics disabled'), 'disabled diagnostic status should be explicit')
+})
 test('traceNotif определена', () => assert(code.includes('traceNotif')))
 
 // ── Использует модульные функции ──
@@ -102,6 +115,8 @@ test('NotifLogModal используется', () => assert(code.includes('<Noti
 test('MessengerTab используется', () => assert(allAppCode.includes('<MessengerTab')))
 test('SettingsPanel используется', () => assert(code.includes('<SettingsPanel')))
 test('AISidebar используется', () => assert(code.includes('<AISidebar')))
+test('Условные панели грузятся через lazy()', () =>
+  assert(code.includes('lazy(() => import') && code.includes('<Suspense fallback={null}>')))
 
 // v0.86.10 Ловушка 64: resize/reload откачены, hook содержит health-check + warm-up
 test('useWebViewLifecycle hook подключён (Ловушка 64)', () =>

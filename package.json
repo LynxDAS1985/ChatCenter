@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "0.87.119",
+  "version": "0.87.135",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",
@@ -15,6 +15,8 @@
     "postinstall": "npm run setup-hooks 2>/dev/null || true",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
+    "start:prodlike": "node scripts/prodlike.cjs",
+    "dist:win": "node scripts/dist-win.cjs",
     "test:e2e": "node e2e/app.e2e.cjs && node e2e/ui.e2e.cjs",
     "test:vitest": "vitest run",
     "test:vitest-watch": "vitest",
@@ -31,6 +33,43 @@
     "react-window": "^2.2.7",
     "telegram": "^2.26.22"
   },
+  "build": {
+    "appId": "ru.chatcenter.app",
+    "productName": "ЦентрЧатов",
+    "directories": {
+      "output": "dist"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "out/main/main.js"
+    },
+    "asar": true,
+    "npmRebuild": false,
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ЦентрЧатов"
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.58.2",
@@ -41,6 +80,7 @@
     "@vitest/ui": "^4.1.4",
     "autoprefixer": "^10.4.27",
     "electron": "^41.1.0",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.4",
     "globals": "^17.4.0",

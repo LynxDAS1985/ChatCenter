@@ -136,7 +136,9 @@ test('index.html содержит #root', function() { assert(indexHtml.includes
 test('index.html подключает main.jsx', function() { assert(indexHtml.includes('main.jsx')) })
 
 var mainJsx = fs.readFileSync('src/main.jsx', 'utf8')
-test('main.jsx импортирует App', function() { assert(mainJsx.includes("from './App'")) })
+test('main.jsx импортирует App через startup parallel import', function() {
+  assert((mainJsx.includes("import('./App.jsx')") || mainJsx.includes("import('./App')")) && mainJsx.includes('Promise.all'), 'main.jsx должен грузить App через parallel dynamic import')
+})
 test('main.jsx использует createRoot', function() { assert(mainJsx.includes('createRoot')) })
 test('main.jsx имеет ErrorBoundary', function() { assert(mainJsx.includes('ErrorBoundary')) })
 

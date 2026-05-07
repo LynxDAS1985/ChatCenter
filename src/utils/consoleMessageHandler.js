@@ -1,6 +1,8 @@
 // v0.84.3: Extracted from webviewSetup.js — console-message event handler
 // Contains: __CC_BADGE_BLOCKED__, __CC_ACCOUNT__, __CC_MSG__ (with DOM enrichment), __CC_NOTIF__ (with blob icon conversion)
 
+try { window.__ccStartupMark?.('module:consoleMessageHandler', 'module evaluated') } catch {}
+
 /**
  * Creates the console-message event handler for WebView elements.
  * @param {object} deps - All closure dependencies from webviewSetup

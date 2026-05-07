@@ -1,6 +1,8 @@
 // TabBar.jsx — Tab bar with messenger tabs, header buttons, search bar
 import MessengerTab from './MessengerTab.jsx'
 
+try { window.__ccStartupMark?.('module:TabBar', 'module evaluated') } catch {}
+
 /**
  * Props:
  * - messengers, activeId, accountInfo, settings, unreadCounts, unreadSplit

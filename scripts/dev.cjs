@@ -6,11 +6,15 @@ const path = require('path')
 
 const fs = require('fs')
 
-// v0.80.5: Очистка vite-кэша при запуске (ловушка 44)
+// v0.87.122: cache очищаем только явно.
+// Автоочистка на каждом старте защищала от ловушки 44, но делала каждый dev-запуск холодным.
 const viteCache = path.join(__dirname, '..', 'node_modules', '.vite')
-if (fs.existsSync(viteCache)) {
+const shouldClearViteCache = process.env.CLEAR_VITE_CACHE === '1' || process.argv.includes('--clear-cache')
+if (shouldClearViteCache && fs.existsSync(viteCache)) {
   fs.rmSync(viteCache, { recursive: true, force: true })
   console.log('[dev] Vite cache cleared')
+} else if (shouldClearViteCache) {
+  console.log('[dev] Vite cache already empty')
 }
 
 const env = { ...process.env }
