@@ -175,13 +175,31 @@ export class TdlibClientManager extends EventEmitter {
       const renamed = (newAccountId !== accountId) ? this._renameAccount(accountId, newAccountId) : true
       const finalId = renamed ? newAccountId : accountId
       const fullName = `${me.first_name || ''} ${me.last_name || ''}`.trim()
-      const username = me.usernames?.active_usernames?.[0] || ''
+      const username = me.usernames?.active_usernames?.[0] || me.username || ''
+      const phone = me.phone_number ? `+${me.phone_number}` : ''
+      // v0.89.0 / Этап 3.13: fallback name — phone если нет first/last/username.
+      // Без этого UI показывал «Без имени» для self-аккаунтов где TDLib возвращает
+      // user.first_name='' (бывает у некоторых аккаунтов).
+      const displayName = fullName || (username ? `@${username}` : '') || phone || `Telegram ${userId}`
+      // v0.89.0 / Этап 3.13: явно качаем свою profile_photo если есть. TDLib
+      // не всегда пушит updateUserPhoto автоматически — getMe возвращает user
+      // с profile_photo, мы передаём в pipeline ровно как для updateUser.
+      // Save в userCache + schedule download.
+      const record = this.accounts.get(finalId)
+      if (record) {
+        record.userCache.set(Number(userId), me)
+        // dynamic import чтобы не делать tdlibAvatars обязательным для тестов
+        try {
+          const { scheduleAvatarDownload } = await import('./tdlibAvatars.js')
+          scheduleAvatarDownload(this, record, 'user', userId, me.profile_photo?.small)
+        } catch (_) {}
+      }
       this.emit('account:update', {
         id: finalId,
         messenger: 'telegram',
         status: 'connected',
-        name: fullName || (username ? `@${username}` : ''),
-        phone: me.phone_number ? `+${me.phone_number}` : '',
+        name: displayName,
+        phone,
         username,
         userId: String(userId),
       })

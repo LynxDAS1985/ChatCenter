@@ -261,6 +261,107 @@ export async function getMessage(client, chatId, messageId, opts = {}) {
 // getChatPinnedMessage
 // ──────────────────────────────────────────────────────────────────────
 
+// ──────────────────────────────────────────────────────────────────────
+// sendFile (inputMessagePhoto / inputMessageVideo / inputMessageDocument)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Отправляет файл. Тип определяется по mime/расширению:
+ *  - image/* → inputMessagePhoto
+ *  - video/* → inputMessageVideo
+ *  - audio/* → inputMessageAudio
+ *  - остальные → inputMessageDocument
+ *
+ * Документация: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1send_message.html
+ *
+ * @param {object} client
+ * @param {string|number} chatId — TDLib chat_id
+ * @param {string} filePath — абсолютный путь к локальному файлу
+ * @param {object} [opts] — { caption, replyTo, chatIdStr }
+ * @returns {Promise<{ ok, messageId?, error? }>}
+ */
+export async function sendFile(client, chatId, filePath, opts = {}) {
+  if (!client?.invoke) return { ok: false, error: 'client not ready' }
+  if (!filePath) return { ok: false, error: 'no filePath' }
+
+  const lower = String(filePath).toLowerCase()
+  const ext = lower.slice(lower.lastIndexOf('.') + 1)
+  // Простой определитель типа по расширению. Для production может потребоваться
+  // mime-type lookup, но для main use cases достаточно.
+  let inputType = 'inputMessageDocument'
+  if (/^(jpg|jpeg|png|webp|heic|gif)$/.test(ext)) inputType = 'inputMessagePhoto'
+  else if (/^(mp4|m4v|mov|webm|avi)$/.test(ext)) inputType = 'inputMessageVideo'
+  else if (/^(mp3|m4a|aac|ogg|opus|wav)$/.test(ext)) inputType = 'inputMessageAudio'
+
+  const inputFile = { '@type': 'inputFileLocal', path: String(filePath) }
+  const caption = opts.caption
+    ? { '@type': 'formattedText', text: String(opts.caption), entities: [] }
+    : null
+
+  let content
+  if (inputType === 'inputMessagePhoto') {
+    content = { '@type': 'inputMessagePhoto', photo: inputFile, ...(caption ? { caption } : {}) }
+  } else if (inputType === 'inputMessageVideo') {
+    content = { '@type': 'inputMessageVideo', video: inputFile, ...(caption ? { caption } : {}) }
+  } else if (inputType === 'inputMessageAudio') {
+    content = { '@type': 'inputMessageAudio', audio: inputFile, ...(caption ? { caption } : {}) }
+  } else {
+    content = { '@type': 'inputMessageDocument', document: inputFile, disable_content_type_detection: false, ...(caption ? { caption } : {}) }
+  }
+
+  try {
+    const request = {
+      '@type': 'sendMessage',
+      chat_id: Number(chatId),
+      input_message_content: content,
+    }
+    if (opts.replyTo) {
+      request.reply_to = { '@type': 'inputMessageReplyToMessage', message_id: Number(opts.replyTo) }
+    }
+    const result = await client.invoke(request)
+    return { ok: true, messageId: result?.id != null ? String(result.id) : null }
+  } catch (e) {
+    if (e && typeof e === 'object' && e['@type'] === 'error') return { ok: false, error: e.message || String(e.code) }
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// forwardMessages
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Пересылает одно или несколько сообщений из одного чата в другой.
+ *
+ * Документация: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1forward_messages.html
+ *
+ * @param {object} client
+ * @param {string|number} fromChatId — TDLib chat_id источника
+ * @param {string|number} toChatId — TDLib chat_id назначения
+ * @param {Array<string|number>|string|number} messageIds — id одного или массив
+ * @param {object} [opts] — { sendCopy, removeCaption }
+ */
+export async function forwardMessages(client, fromChatId, toChatId, messageIds, opts = {}) {
+  if (!client?.invoke) return { ok: false, error: 'client not ready' }
+  const ids = (Array.isArray(messageIds) ? messageIds : [messageIds]).map(Number).filter(Boolean)
+  if (!ids.length) return { ok: false, error: 'no messageIds' }
+  try {
+    await client.invoke({
+      '@type': 'forwardMessages',
+      chat_id: Number(toChatId),
+      from_chat_id: Number(fromChatId),
+      message_ids: ids,
+      send_copy: !!opts.sendCopy,
+      remove_caption: !!opts.removeCaption,
+      options: { '@type': 'messageSendOptions' },
+    })
+    return { ok: true }
+  } catch (e) {
+    if (e && typeof e === 'object' && e['@type'] === 'error') return { ok: false, error: e.message || String(e.code) }
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
 export async function getChatPinnedMessage(client, chatId, opts = {}) {
   if (!client?.invoke) return { ok: false, error: 'client not ready' }
   try {

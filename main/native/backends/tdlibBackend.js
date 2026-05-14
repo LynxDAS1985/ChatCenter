@@ -18,7 +18,7 @@
 
 import {
   getChatHistory, sendTextMessage, editMessageText, deleteMessages,
-  viewMessages, getMessage, getChatPinnedMessage,
+  viewMessages, getMessage, getChatPinnedMessage, sendFile, forwardMessages,
 } from './tdlibMessages.js'
 import {
   downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
@@ -304,10 +304,13 @@ export function createTdlibBackend(opts = {}) {
           replyTo, chatIdStr: chatId, extras: makeExtras(manager, ctx.accountId),
         })
       },
-      async sendFile(_chatId, _filePath, _caption) {
-        // Использует inputMessageDocument/Photo — отдельная функция в tdlibMessages.
-        // На Этапе 2.6 пропускаем, чтобы не разрастаться.
-        return { ok: false, error: 'sendFile not implemented in tdlib backend yet' }
+      // v0.89.0 / Этап 3.13: реальная реализация через TDLib inputMessagePhoto/Video/Document
+      async sendFile(chatId, filePath, caption) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return sendFile(ctx.client, ctx.rawId, filePath, {
+          caption, chatIdStr: chatId,
+        })
       },
       async deleteMessage(chatId, msgId, forAll = true) {
         const ctx = getClientForChat(manager, chatId)
@@ -319,8 +322,18 @@ export function createTdlibBackend(opts = {}) {
         if (ctx.error) return ctx.error
         return editMessageText(ctx.client, ctx.rawId, msgId, text)
       },
-      async forwardMessage(_fromChatId, _toChatId, _msgId) {
-        return { ok: false, error: 'forwardMessage not implemented in tdlib backend yet' }
+      // v0.89.0 / Этап 3.13: TDLib forwardMessages
+      async forwardMessage(fromChatId, toChatId, msgId) {
+        const fromCtx = getClientForChat(manager, fromChatId)
+        if (fromCtx.error) return fromCtx.error
+        const toCtx = getClientForChat(manager, toChatId)
+        if (toCtx.error) return toCtx.error
+        // Если перевод между разными аккаунтами — TDLib не поддерживает direct
+        // forward. Нужно скачать → переотправить. Пока возвращаем error.
+        if (fromCtx.accountId !== toCtx.accountId) {
+          return { ok: false, error: 'cross-account forward not supported' }
+        }
+        return forwardMessages(fromCtx.client, fromCtx.rawId, toCtx.rawId, [msgId])
       },
       async markRead(chatId, maxId) {
         const ctx = getClientForChat(manager, chatId)

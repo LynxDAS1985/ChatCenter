@@ -204,13 +204,8 @@ describe('backend.messages', () => {
     }))
   })
 
-  it('forwardMessage/sendFile — пока NOT_IMPL (Этап 3.10: getTopic+markTopicRead реализованы)', async () => {
-    const { backend } = makeBackend()
-    const r3 = await backend.messages.forwardMessage('tg_main:-1', 'tg_main:-2', 1)
-    const r4 = await backend.messages.sendFile('tg_main:-1', '/x')
-    expect(r3.ok).toBe(false)
-    expect(r4.ok).toBe(false)
-  })
+  // Этап 3.13: sendFile + forwardMessage — тесты вынесены в tdlibBackendSendFwd.vitest.js
+  //  (лимит файла 400 строк).
 
   it('getPinned работает', async () => {
     const { backend, mockClient } = makeBackend()

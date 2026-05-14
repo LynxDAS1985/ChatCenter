@@ -192,7 +192,8 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
   })
   handle('tg:set-mute', () => ({ ok: true }))  // TODO: TDLib setChatNotificationSettings
   handle('tg:pin', () => ({ ok: true }))        // TODO: TDLib toggleChatIsPinned
-  handle('tg:send-file', () => ({ ok: false, error: 'sendFile not implemented in tdlib backend yet' }))
+  handle('tg:send-file', ({ chatId, filePath, caption } = {}) =>
+    backend.messages.sendFile(chatId, filePath, caption))
   handle('tg:get-cleanup-stats', async () => {
     // Простой возврат — для UI «очистить кеш». TDLib имеет getStorageStatistics
     // но синтаксис другой; пока возвращаем минимум.
