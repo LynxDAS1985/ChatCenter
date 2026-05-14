@@ -10,7 +10,8 @@
 |---|---|---|
 | **0** Smoke POC TDLib | `39bdd74` | npm install tdl + prebuilt-tdlib. POC `tdlibPoc.cjs` — libtdjson.dll 30 МБ загружается, клиент создаётся без подключения. |
 | **1** Абстракция messengerBackend | `39bdd74`, `445d654` (CI fix) | Интерфейс из 31 метода через JSDoc + factory `getBackend()` с фичефлагом `USE_TDLIB_BACKEND`. STUB backends для gramjs и tdlib. 66 структурных тестов. |
-| **2.1** TDLib mapper | (текущий коммит) | `backends/tdlibMapper.js` 409 строк: `mapMessage`, `mapChat`, `mapEntities`, `messagePreview`. Покрывает TDLib типы: text, photo, video, audio, voice, voicenote, animation, document, sticker, location, contact, poll + 20 типов entities + reply + forward (user/chat/channel/hidden). 51 vitest тест в 2 файлах (basic + media). |
+| **2.1** TDLib mapper | `e90ee5c` | `backends/tdlibMapper.js` 409 строк: `mapMessage`, `mapChat`, `mapEntities`, `messagePreview`. Покрывает TDLib типы: text, photo, video, audio, voice, voicenote, animation, document, sticker, location, contact, poll + 20 типов entities + reply + forward (user/chat/channel/hidden). 51 vitest тест в 2 файлах (basic + media). |
+| **2.2** TDLib client manager | (текущий) | `backends/tdlibClient.js` 316 строк: `TdlibClientManager` (EventEmitter) с per-account клиентами, user/chat cache через `updateUser`/`updateNewChat`/`updateChatTitle` events, маршрутизация `updateNewMessage` → `mapMessage` с senderName из cache → `message:new` event. 30 vitest тестов с mock-клиентом (EventEmitter), без реального TDLib-соединения. |
 
 ---
 

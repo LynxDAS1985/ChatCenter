@@ -11,6 +11,37 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 2.2: TDLib Client Manager
+
+### Added
+- **`main/native/backends/tdlibClient.js`** (316 строк) — `TdlibClientManager` класс
+  (расширяет `EventEmitter`). Управляет жизненным циклом TDLib-клиентов
+  (по одному на аккаунт), маршрутизирует TDLib updates наверх как высокоуровневые
+  события (`message:new`, `chat:unread-sync`, `account:auth-state`, `account:error`,
+  `user:status`, `message:edited`/`deleted`).
+- **User/chat cache** через `updateUser` / `updateNewChat` events. При получении
+  `updateNewMessage` mapMessage вызывается с `senderName` из cache (TDLib хранит
+  users/chats отдельно от messages, синхронизирует их перед первым сообщением).
+- **Хелперы** `userDisplayName(user)` — first_name+last_name → @username fallback,
+  `chatDisplayName(chat)` — title.
+- **Patch chat в cache** через 9 типов updateChat* events: title, photo, permissions,
+  last_message, read_inbox/outbox, notification_settings, marked_as_unread,
+  scheduled_messages, unread_mention_count.
+- **`src/__tests__/tdlibClient.vitest.js`** (383 строки, 30 тестов) — mock-клиент
+  через `node:events.EventEmitter` симулирует TDLib updates. Без реального TDLib
+  соединения. Покрытие: create/remove аккаунты, user/chat cache, patch chat,
+  updateNewMessage с sender lookup, auth state, errors, getAccountChats.
+
+### Прогресс по плану миграции
+- Этап 0 (POC) ✅ — `39bdd74`
+- Этап 1 (абстракция) ✅ — `39bdd74` + `445d654`
+- Этап 2.1 (TDLib mapper) ✅ — `e90ee5c`
+- Этап 2.2 (TDLib client manager) ✅ — текущий коммит
+- Этап 2.3 (TDLib authorization flow) — следующий
+- Этапы 2.4-2.6 / 3 / 4 — впереди
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 2.1: TDLib mapper
 
 ### Added
