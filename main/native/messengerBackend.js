@@ -1,0 +1,141 @@
+// v0.89.0 — Stage 4 / Этап 1: абстракция messengerBackend
+//
+// Один интерфейс, два backend'а: gramjsBackend (текущий) и tdlibBackend (будущий).
+// Цель: на Этапе 4 удалить GramJS-интеграцию полностью, переключив через USE_TDLIB_BACKEND.
+//
+// СЕЙЧАС (Этап 1) — это только подготовка инфраструктуры:
+//   - Интерфейс описан через JSDoc.
+//   - getBackend() возвращает gramjsBackend (адаптер над текущими IPC handlers).
+//   - tdlibBackend = STUB с TODO для Этапа 2.
+//
+// НЕ ТРОГАЕТСЯ: текущие telegramHandler.js / telegramMessages.js / etc продолжают
+// работать как есть. Никакая логика не переписана. Только добавлена «прослойка».
+//
+// Подробный план миграции: .memory-bank/tdlib-migration-plan.md
+
+/**
+ * @typedef {object} Chat
+ * @property {string} id            — '{accountId}:{chatNumericId}'
+ * @property {string} accountId
+ * @property {string} title
+ * @property {'user'|'group'|'channel'} type
+ * @property {string} lastMessage
+ * @property {number} lastMessageTs — unix ms
+ * @property {number} unreadCount
+ * @property {number} readInboxMaxId
+ * @property {string|null} avatar
+ * @property {boolean} hasPhoto
+ * @property {boolean} isOnline
+ * @property {boolean} isMuted
+ * @property {number} muteUntil
+ * @property {boolean} isForum
+ */
+
+/**
+ * @typedef {object} NativeMessage
+ * @property {string} id
+ * @property {string} chatId
+ * @property {string} senderId
+ * @property {string} senderName
+ * @property {string|null} senderAvatar
+ * @property {string} text
+ * @property {Array} entities
+ * @property {number} timestamp     — unix ms
+ * @property {boolean} isOutgoing
+ * @property {boolean} isEdited
+ * @property {string|null} mediaType — 'photo'|'video'|'document'|'voice'|'sticker'|'link'|null
+ * @property {object|null} webPage
+ * @property {string|null} replyToId
+ * @property {string|null} groupedId
+ * @property {object|null} fwdFrom
+ */
+
+/**
+ * @typedef {object} BackendAuth
+ * @property {(phone: string) => Promise<{ok: boolean, error?: string}>} startLogin
+ * @property {(code: string) => Promise<{ok: boolean, success?: boolean, error?: string}>} submitCode
+ * @property {(password: string) => Promise<{ok: boolean, success?: boolean, error?: string}>} submitPassword
+ * @property {() => Promise<{ok: boolean}>} cancelLogin
+ * @property {() => Promise<void>} autoRestoreSessions
+ * @property {(accountId: string) => Promise<{ok: boolean, error?: string}>} removeAccount
+ */
+
+/**
+ * @typedef {object} BackendChats
+ * @property {(accountId?: string) => Promise<{ok: boolean, chats: Chat[]}>} getChats
+ * @property {(accountId: string) => Promise<{ok: boolean, chats: Chat[]}>} getCachedChats
+ * @property {(options?: object) => Promise<{ok: boolean, accountStats?: Array}>} rescanUnread
+ * @property {() => Promise<object>} healthCheck
+ */
+
+/**
+ * @typedef {object} BackendMessages
+ * @property {(params: object) => Promise<{ok: boolean, messages: NativeMessage[], hasMore: boolean}>} get
+ * @property {(params: object) => Promise<{ok: boolean, messages: NativeMessage[]}>} getTopic
+ * @property {(chatId: string, text: string, replyTo?: string) => Promise<{ok: boolean, messageId?: string, error?: string}>} send
+ * @property {(chatId: string, filePath: string, caption?: string) => Promise<{ok: boolean, messageId?: string}>} sendFile
+ * @property {(chatId: string, msgId: string, forAll?: boolean) => Promise<{ok: boolean}>} deleteMessage
+ * @property {(chatId: string, msgId: string, text: string) => Promise<{ok: boolean}>} editMessage
+ * @property {(fromChatId: string, toChatId: string, msgId: string) => Promise<{ok: boolean}>} forwardMessage
+ * @property {(chatId: string, maxId: number) => Promise<{ok: boolean}>} markRead
+ * @property {(chatId: string, topicId: number, maxId: number) => Promise<{ok: boolean}>} markTopicRead
+ * @property {(chatId: string) => Promise<{ok: boolean, message?: NativeMessage}>} getPinned
+ */
+
+/**
+ * @typedef {object} BackendMedia
+ * @property {(params: {chatId: string, msgId: string, thumb?: boolean}) => Promise<{ok: boolean, path?: string}>} download
+ * @property {(params: {chatId: string, msgId: string}) => Promise<{ok: boolean, path?: string}>} downloadVideo
+ * @property {() => Promise<{bytes: number}>} getCacheSize
+ * @property {() => Promise<{ok: boolean, freedBytes: number}>} cleanup
+ */
+
+/**
+ * @typedef {object} BackendForum
+ * @property {(chatId: string, limit?: number) => Promise<{ok: boolean, isForum: boolean, topics: Array}>} getTopics
+ * @property {(params: object) => Promise<{ok: boolean, messages: NativeMessage[]}>} getTopicMessages
+ */
+
+/**
+ * @typedef {object} MessengerBackend
+ * @property {'gramjs'|'tdlib'} name
+ * @property {BackendAuth} auth
+ * @property {BackendChats} chats
+ * @property {BackendMessages} messages
+ * @property {BackendMedia} media
+ * @property {BackendForum} forum
+ */
+
+// Текущий выбранный backend. На Этапе 1 — всегда gramjs.
+// На Этапе 3 будем переключать через env USE_TDLIB_BACKEND=1.
+const SELECTED_BACKEND = process.env.USE_TDLIB_BACKEND === '1' ? 'tdlib' : 'gramjs'
+
+let _backend = null
+
+/**
+ * Возвращает выбранный backend. Singleton — один инстанс на процесс.
+ * Этап 1: возвращает gramjsBackend, который пока проксирует к существующим
+ * IPC handlers без переписывания их.
+ *
+ * @returns {MessengerBackend}
+ */
+export function getBackend() {
+  if (_backend) return _backend
+  if (SELECTED_BACKEND === 'tdlib') {
+    // STUB на Этапе 1, реализация в Этапе 2
+    const { createTdlibBackend } = require('./backends/tdlibBackend.js')
+    _backend = createTdlibBackend()
+  } else {
+    const { createGramjsBackend } = require('./backends/gramjsBackend.js')
+    _backend = createGramjsBackend()
+  }
+  return _backend
+}
+
+/**
+ * Имя текущего backend'а — для логов/диагностики.
+ * @returns {'gramjs'|'tdlib'}
+ */
+export function getBackendName() {
+  return SELECTED_BACKEND
+}
