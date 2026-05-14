@@ -32,6 +32,18 @@ import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
 // HELPERS
 // ──────────────────────────────────────────────────────────────────────
 
+// Wrapper для invoke который возвращает { ok, result?, error? } вместо throw.
+// TDLib шлёт {'@type':'error', code, message} как rejected promise.
+// Особый случай: error code=404 для loadChats означает «список закончился» (это норма).
+async function safeInvoke(client, request) {
+  try {
+    const r = await client.invoke(request)
+    return { ok: true, result: r }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e), code: e?.code || 0 }
+  }
+}
+
 /** Парсит наш составной id 'accountId:rawId' → { accountId, rawId (число) } */
 function parseChatId(chatId) {
   const s = String(chatId || '')
@@ -179,24 +191,31 @@ export function createTdlibBackend(opts = {}) {
 
     chats: {
       async getChats(accountId) {
-        // На Этапе 2.6: TDLib сам поддерживает список чатов в cache через
-        // updateNewChat / updateChatPosition. manager.getAccountChats возвращает
-        // их в Chat-формате.
-        // Для refresh из сервера: client.invoke({'@type': 'loadChats', limit}).
-        if (accountId) {
-          const client = manager.getClient(accountId)
-          if (client?.invoke) {
-            try {
-              await client.invoke({
-                '@type': 'loadChats',
-                chat_list: { '@type': 'chatListMain' },
-                limit: 100,
-              })
-            } catch (_) { /* ignore — может быть уже всё загружено */ }
+        // v0.89.0 / Этап 3.11: правильная пагинация TDLib loadChats.
+        // loadChats({limit:N}) — это команда «загрузи следующие N чатов». TDLib
+        // строит список через updateNewChat events АСИНХРОННО. invoke резолвится
+        // сразу с Ok или с error code=404 когда чатов больше нет.
+        // Чтобы получить ВСЕ чаты (у юзера 600+), вызываем loadChats в цикле
+        // пока не получим 404. Между вызовами даём TDLib время на updateNewChat.
+        const accountIds = accountId ? [accountId] : manager.listAccounts()
+        for (const aid of accountIds) {
+          const client = manager.getClient(aid)
+          if (!client?.invoke) continue
+          // Загружаем Main + Archive lists (юзер может иметь архивные тоже)
+          for (const chatList of [
+            { '@type': 'chatListMain' },
+            { '@type': 'chatListArchive' },
+          ]) {
+            for (let i = 0; i < 20; i++) {  // макс 20 страниц x 100 = 2000 чатов
+              const r = await safeInvoke(client, { '@type': 'loadChats', chat_list: chatList, limit: 100 })
+              if (!r.ok) break  // 404 «end of list» или ошибка — выходим
+              // Маленькая пауза чтобы updateNewChat events успели прийти
+              await new Promise((res) => setTimeout(res, 80))
+            }
           }
-          return { ok: true, chats: manager.getAccountChats(accountId) }
         }
-        // Без accountId — собираем со всех аккаунтов
+        // Возвращаем то что накопилось в cache
+        if (accountId) return { ok: true, chats: manager.getAccountChats(accountId) }
         const all = []
         for (const aid of manager.listAccounts()) all.push(...manager.getAccountChats(aid))
         return { ok: true, chats: all }

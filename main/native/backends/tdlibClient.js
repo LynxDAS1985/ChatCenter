@@ -19,6 +19,7 @@
 
 import { EventEmitter } from 'node:events'
 import { mapMessage, mapChat } from './tdlibMapper.js'
+import { scheduleAvatarDownload, handleAvatarReady } from './tdlibAvatars.js'
 
 // ──────────────────────────────────────────────────────────────────────
 // USER NAME / AVATAR HELPERS
@@ -261,7 +262,7 @@ export class TdlibClientManager extends EventEmitter {
         if (update.user?.id != null) {
           record.userCache.set(Number(update.user.id), update.user)
           // v0.89.0 / Этап 3.9: фоновая загрузка аватарки пользователя
-          this._scheduleAvatarDownload(record, 'user', update.user.id, update.user.profile_photo?.small)
+          scheduleAvatarDownload(this, record, 'user', update.user.id, update.user.profile_photo?.small)
         }
         return
 
@@ -269,7 +270,7 @@ export class TdlibClientManager extends EventEmitter {
         if (update.chat?.id != null) {
           record.chatCache.set(Number(update.chat.id), update.chat)
           // v0.89.0 / Этап 3.9: фоновая загрузка аватарки чата
-          this._scheduleAvatarDownload(record, 'chat', update.chat.id, update.chat.photo?.small)
+          scheduleAvatarDownload(this, record, 'chat', update.chat.id, update.chat.photo?.small)
         }
         return
 
@@ -340,7 +341,7 @@ export class TdlibClientManager extends EventEmitter {
         // tdlibMedia слушает это событие для реализации downloadFile-promise + onProgress.
         this.emit('file:update', { accountId, file: update.file })
         // v0.89.0 / Этап 3.9: если это аватарка из _pendingAvatars и она готова — эмитим
-        this._handleAvatarReady(record, update.file)
+        handleAvatarReady(this, record, update.file)
         return
 
       default:
@@ -391,60 +392,8 @@ export class TdlibClientManager extends EventEmitter {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────
-  // AVATARS (chat / user profile photos)
-  // ──────────────────────────────────────────────────────────────
-
-  /**
-   * Запускает фоновую загрузку аватарки (low priority).
-   * Если photo уже скачана (local.is_downloading_completed=true) — мгновенно эмитит.
-   * Иначе сохраняет fileId → mapping в _pendingAvatars и ждёт updateFile.
-   */
-  _scheduleAvatarDownload(record, kind, ownerId, photoFile) {
-    if (!photoFile?.id) return
-    const fileId = Number(photoFile.id)
-    if (photoFile.local?.is_downloading_completed && photoFile.local?.path) {
-      this._emitAvatarReady(record, kind, ownerId, photoFile.local.path)
-      return
-    }
-    // Запросить downloadFile (low priority — UI не критичен)
-    this._pendingAvatars.set(fileId, { accountId: record.accountId, kind, ownerId: Number(ownerId) })
-    if (record.client?.invoke) {
-      record.client.invoke({
-        '@type': 'downloadFile', file_id: fileId, priority: 1,
-        offset: 0, limit: 0, synchronous: false,
-      }).then((r) => {
-        // Если файл уже был скачан — invoke сразу вернёт complete file
-        if (r?.local?.is_downloading_completed && r.local.path) {
-          this._handleAvatarReady(record, r)
-        }
-      }).catch(() => { /* silent — TDLib может вернуть FILE_REFERENCE_INVALID и т.п. */ })
-    }
-  }
-
-  _handleAvatarReady(record, file) {
-    if (!file?.id || !file.local?.is_downloading_completed || !file.local?.path) return
-    const pending = this._pendingAvatars.get(Number(file.id))
-    if (!pending) return
-    if (pending.accountId !== record.accountId) return
-    this._pendingAvatars.delete(Number(file.id))
-    this._emitAvatarReady(record, pending.kind, pending.ownerId, file.local.path)
-  }
-
-  _emitAvatarReady(record, kind, ownerId, absPath) {
-    const accountId = record.accountId
-    // Используем file:// для UI — Electron security разрешает file: только если webPreferences
-    // позволяет, или через custom protocol. У нас уже есть cc-media:// — но он привязан
-    // к фиксированным sub-folders. Для TDLib files используем file:// (работает в Electron
-    // при настройках по умолчанию для main BrowserWindow). Если не сработает — fallback
-    // на cc-media:// с дополнительным sub-protocol в отдельном этапе.
-    const url = 'file:///' + encodeURI(absPath.replace(/\\/g, '/'))
-    if (kind === 'chat') {
-      this.emit('chat:avatar', { accountId, chatId: `${accountId}:${ownerId}`, avatarPath: url })
-    } else if (kind === 'user') {
-      this.emit('user:avatar', { accountId, userId: String(ownerId), avatarPath: url })
-    }
-  }
+  // Avatar pipeline (scheduleAvatarDownload, handleAvatarReady, copyToAvatarsDir)
+  // вынесен в ./tdlibAvatars.js — tdlibClient.js упёрся в лимит 500 строк.
 
   _handleNewMessage(record, tdMsg) {
     if (!tdMsg) return
