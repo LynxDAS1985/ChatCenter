@@ -182,9 +182,11 @@ describe('closeTdlibRuntime', () => {
     const mgr = initTdlibRuntime({ userDataDir: tmpDir, tdl, prebuiltTdlib: makeMockPrebuilt() })
     mgr.createAccount('tg_a', { apiId: 1, apiHash: 'h' })
     mgr.createAccount('tg_b', { apiId: 1, apiHash: 'h' })
-    const clients = mgr.listAccounts().map(a => mgr.getClient(a))
+    // v0.89.0: client теперь wrapped через tdlibNormalize. Raw EventEmitter c .close
+    // лежит в client._raw. Проверяем что raw.close был вызван.
+    const rawClients = mgr.listAccounts().map(a => mgr.getClient(a)._raw)
     await closeTdlibRuntime()
-    for (const c of clients) {
+    for (const c of rawClients) {
       expect(c.close).toHaveBeenCalled()
     }
   })

@@ -19,6 +19,7 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { TdlibClientManager } from './tdlibClient.js'
+import { wrapClientForNormalization } from './tdlibNormalize.js'
 
 let _manager = null
 let _runtimeState = null  // { tdl, prebuiltTdlib, userDataDir, sessionsDir, configured }
@@ -67,13 +68,20 @@ export function initTdlibRuntime(opts = {}) {
         || path.join(sessionsDir, clientParams.accountSubdir || 'pending')
       try { fs.mkdirSync(accountSessionDir, { recursive: true }) } catch (_) {}
       try { fs.mkdirSync(path.join(accountSessionDir, 'files'), { recursive: true }) } catch (_) {}
-      return tdl.createClient({
+      const rawClient = tdl.createClient({
         apiId: Number(clientParams.apiId) || 0,
         apiHash: String(clientParams.apiHash || ''),
         databaseDirectory: accountSessionDir,
         filesDirectory: path.join(accountSessionDir, 'files'),
         ...((clientParams.extraOptions) || {}),
       })
+      // КРИТИЧНО: tdl эмитит updates с `_` discriminator (не `@type`).
+      // Наш код (mapper, manager, messages) работает с `@type`. Обёртка
+      // конвертирует `_` → `@type` на входе update events и результатов invoke.
+      // Без этого _handleUpdate в TdlibClientManager не распознаёт типы updates
+      // → updateAuthorizationState теряется → login flow зависает.
+      // (См. main/native/backends/tdlibNormalize.js)
+      return wrapClientForNormalization(rawClient)
     },
   })
 

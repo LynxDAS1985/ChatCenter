@@ -11,6 +11,70 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 3.4: КРИТИЧНЫЙ ФИКС — нормализация tdl формата
+
+### Bug
+**Login flow зависал на «Отправляем код в Telegram...»** при USE_TDLIB_BACKEND=1.
+Telegram действительно слал SMS-код (видно в логе через WebView Telegram push),
+но UI не получал `tg:login-step { step: 'code' }` → промис tg:login-start висел вечно.
+
+### Корневая причина
+Библиотека [`tdl`](https://github.com/Bannerets/tdl) внутри переименовывает
+TDLib JSON-API discriminator `@type` → `_` через `deepRenameKey('@type', '_', res)`
+([node_modules/tdl/dist/client.js:532](node_modules/tdl/dist/client.js#L532)).
+
+Весь наш код (tdlibMapper, tdlibClient._handleUpdate, tdlibMessages, tdlibMedia)
+проверяет `obj['@type']` согласно стандартной TDLib документации
+(core.telegram.org). При получении реальных событий от tdl это поле было
+`undefined` — все checks `if (type === 'updateNewMessage')` не матчились,
+события игнорировались.
+
+В частности: `updateAuthorizationState` приходил с `_: 'updateAuthorizationState'`,
+наш `_handleUpdate` switch падал в default → `_handleAuthState` никогда не
+вызывался → resolvers в TdlibAuthFlow не резолвились → login висел.
+
+### Fix
+- **`main/native/backends/tdlibNormalize.js`** (90 строк) — новая утилита:
+  - `deepRenameKey(from, to, obj)` — рекурсивный rename ключа без мутации.
+  - `normalizeFromTdl(obj)` — `deepRenameKey('_', '@type', obj)`.
+  - `wrapClientForNormalization(rawClient)` — обёртка над реальным tdl client:
+    - `invoke(request)` — request передаётся как есть (tdl сама конвертирует
+      `@type` → `_` для отправки); результат нормализуется `_` → `@type`.
+    - `on('update', handler)` — каждый update нормализуется перед вызовом handler.
+    - `off`, `close`, `_raw` (для тестов).
+    - Не-update events проходят без изменений.
+- **`main/native/backends/tdlibRuntime.js`** — clientFactory оборачивает результат
+  `tdl.createClient()` через `wrapClientForNormalization`. ОДНА точка изменения,
+  весь остальной код работает с `@type` как и раньше.
+
+### Преимущества подхода
+- **Локальная правка**: всего одна обёртка в одном месте создания клиента.
+- **Mapper / Manager / Messages / Media / IPC handlers НЕ трогаются** —
+  они продолжают работать с `@type` как было задумано по TDLib JSON-API.
+- **Тесты с mock-клиентами продолжают работать** — мок-клиенты эмитят `@type`
+  сразу (без `_`), и они оборачиваются wrapper'ом тоже без проблем (deepRename
+  не трогает существующее `@type` поле, только переименовывает `_`).
+
+### Tests
+- **`src/__tests__/tdlibNormalize.vitest.js`** (16 тестов):
+  - deepRenameKey: 6 (top-level, nested, arrays, immutability, primitives, reverse)
+  - normalizeFromTdl: 1
+  - wrapClientForNormalization: 8 (invoke result normalize, request as-is,
+    update events normalize, off, non-update events pass-through, close,
+    null safe, _raw expose)
+  - End-to-end auth flow simulation: 1
+- **`src/__tests__/tdlibRuntime.vitest.js`** — обновлён 1 тест: `closeTdlibRuntime`
+  закрывает клиенты теперь через `client._raw.close` (wrapper не имеет `close` spy).
+- **`src/__tests__/tdlibStartup.vitest.js`** — обновлены 3 теста sendToRenderer
+  использовать `client._raw.emit` (raw EventEmitter спрятан в `_raw`).
+
+### Прогресс
+- Этапы 0, 1, 2.1-2.6, 3.1, 3.2, 3.3 ✅
+- **Этап 3.4 (нормализация tdl формата) ✅** — текущий коммит
+- Этап 4 — реальное тестирование пользователем (повторно с этим фиксом)
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 3.3: main.js startup integration. **Этап 3 закрыт.**
 
 ### Added

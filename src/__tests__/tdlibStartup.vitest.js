@@ -205,8 +205,9 @@ describe('sendToRenderer передача через mainWindow', () => {
       tdl, prebuiltTdlib: { getTdjson: () => '/x' },
     })
     // Создаём аккаунт + эмитим сообщение через mock client
+    // v0.89.0: client wrapped через tdlibNormalize — raw EventEmitter в _raw
     r.manager.createAccount('tg_a', { apiId: 1, apiHash: 'h' })
-    const client = r.manager.getClient('tg_a')
+    const client = r.manager.getClient('tg_a')._raw
     client.emit('update', {
       '@type': 'updateNewMessage',
       message: {
@@ -231,7 +232,7 @@ describe('sendToRenderer передача через mainWindow', () => {
     })
     const h = getTdlibStartupHandle()
     h.manager.createAccount('tg_a', { apiId: 1, apiHash: 'h' })
-    const client = h.manager.getClient('tg_a')
+    const client = h.manager.getClient('tg_a')._raw
     // Эмитим event — не должно крашить
     expect(() => client.emit('update', {
       '@type': 'updateAuthorizationState',
@@ -255,7 +256,7 @@ describe('sendToRenderer передача через mainWindow', () => {
     })
     const h = getTdlibStartupHandle()
     h.manager.createAccount('tg_a', { apiId: 1, apiHash: 'h' })
-    const client = h.manager.getClient('tg_a')
+    const client = h.manager.getClient('tg_a')._raw
     expect(() => client.emit('update', {
       '@type': 'updateAuthorizationState',
       authorization_state: { '@type': 'authorizationStateWaitCode' },
