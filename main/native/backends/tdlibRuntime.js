@@ -143,11 +143,21 @@ export function autoRestoreSessionsFromDisk(opts = {}) {
   if (!fs.existsSync(dir)) return []
   const restored = []
   for (const entry of fs.readdirSync(dir)) {
-    if (entry === 'pending') continue  // временный logged-out аккаунт
     const accountDir = path.join(dir, entry)
     try {
       if (!fs.statSync(accountDir).isDirectory()) continue
     } catch (_) { continue }
+    // v0.89.0 / Этап 3.6: 'pending' восстанавливаем ТОЛЬКО если там валидная
+    // TDLib БД (db.sqlite > 100KB). Пустую папку pending игнорируем — она от
+    // отменённого login. Если БД есть — login был успешен, просто не дошёл
+    // до finalize (старый код до этапа 3.5). После restore сделаем
+    // finalizeAccount → переименование на tg_${userId}.
+    if (entry === 'pending') {
+      try {
+        const dbFile = path.join(accountDir, 'db.sqlite')
+        if (!fs.existsSync(dbFile) || fs.statSync(dbFile).size < 100 * 1024) continue
+      } catch (_) { continue }
+    }
     if (_manager.listAccounts().includes(entry)) continue  // уже создан
 
     const params = opts.makeClientParams
@@ -156,10 +166,7 @@ export function autoRestoreSessionsFromDisk(opts = {}) {
     try {
       _manager.createAccount(entry, { ...params, sessionDir: accountDir, accountSubdir: entry })
       restored.push(entry)
-    } catch (e) {
-      // Логировать в реальной интеграции через _log; пока тихо пропускаем
-      // (Этап 3.2 подключит реальный логгер).
-    }
+    } catch (_) { /* silent — пройдём дальше */ }
   }
   return restored
 }

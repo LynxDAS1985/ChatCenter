@@ -94,6 +94,21 @@ export function initTdlibBackendStartup(opts) {
       })
       if (restoredAccountIds.length > 0) {
         log('info', `auto-restored sessions: ${restoredAccountIds.join(', ')}`)
+        // v0.89.0 / Этап 3.6: для каждой restored сессии ждём Ready (TDLib читает БД)
+        // и финализируем (getMe → rename → emit account:update → UI sidebar).
+        // Не await'им весь массив — fire-and-forget с отдельными log'ами по результату.
+        for (const aid of restoredAccountIds) {
+          ;(async () => {
+            const ready = await manager.waitForReady(aid, 15000)
+            if (ready.ok) {
+              const fin = await manager.finalizeAccount(aid)
+              if (fin.ok) log('info', `finalized restored account: ${aid} → ${fin.newAccountId}`)
+              else log('warn', `finalize ${aid} failed: ${fin.error}`)
+            } else {
+              log('warn', `restored ${aid} not Ready: ${ready.state || ready.error}`)
+            }
+          })().catch((e) => log('warn', `restore-finalize ${aid} err: ${e?.message || e}`))
+        }
       }
     } catch (e) {
       log('warn', `auto-restore failed (continuing): ${e?.message || e}`)

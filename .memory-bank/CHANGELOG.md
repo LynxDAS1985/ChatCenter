@@ -11,6 +11,68 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 3.6: восстановление + finalize при autoRestore
+
+### Bug (по фактам из реального запуска)
+
+После Этапа 3.5 пользователь повторно запустил `USE_TDLIB_BACKEND=1; npm start`.
+В sidebar появилась stale аватарка «Б» (от старого GramJS-кэша), но **TDLib
+аккаунт не подгрузился** — `restored=0 accounts` в логе. Чаты пустые,
+кнопка «+» не работает.
+
+Факты из системы:
+- `%APPDATA%\ЦентрЧатов\tdlib-sessions\pending\` — папка существует
+  и содержит **11.5 МБ TDLib БД** (`db.sqlite` + `td.binlog`). Файлы
+  активно пишутся → TDLib работает с валидной session.
+- Но `autoRestoreSessionsFromDisk` **пропускал** папку `pending` (была
+  логика «pending = временный logged-out, игнорировать»).
+- Прошлый login дошёл до Ready, но завершился ДО Этапа 3.5 (когда
+  ещё не было `_finalizePending`) — поэтому переименование
+  `pending → tg_${userId}` не сделалось, папка осталась `pending`.
+
+### Fix
+
+- **`autoRestoreSessionsFromDisk`** ([tdlibRuntime.js](main/native/backends/tdlibRuntime.js)):
+  - Папку `pending` теперь **восстанавливаем** если в ней `db.sqlite > 100 КБ`
+    (heuristic — valid TDLib session). Пустой `pending` без БД (от отменённого
+    login) продолжаем пропускать.
+- **`TdlibClientManager.waitForReady(accountId, timeoutMs)`** — новый метод:
+  - Промис резолвится при `account:auth-state` event со state =
+    `authorizationStateReady` → `{ ok: true }`.
+  - Другие `authorizationStateWait*` → `{ ok: false, error: 'need-relogin' }`.
+  - `authorizationStateClosed`/`LoggingOut` → `{ ok: false, error: 'closed' }`.
+  - Timeout → `{ ok: false, error: 'timeout' }`.
+  - `WaitTdlibParameters`/`WaitEncryptionKey` игнорируются (tdl сама обрабатывает).
+- **`TdlibClientManager.finalizeAccount(accountId)`** — вынесена логика
+  finalize из `tdlibBackend._finalizePending` в метод manager'а:
+  - `client.invoke({ '@type': 'getMe' })` → user info.
+  - `_renameAccount(accountId, 'tg_${userId}')`.
+  - emit `account:update` с полным name/phone/username/userId.
+- **`tdlibStartup`** ([tdlibStartup.js](main/native/backends/tdlibStartup.js)):
+  - После `autoRestoreSessionsFromDisk` для каждого restored accountId:
+    fire-and-forget `await manager.waitForReady(aid, 15000)` →
+    если ok → `manager.finalizeAccount(aid)`.
+  - Это эмитит `tg:account-update` → UI sidebar получает реальный аккаунт
+    с правильным name/phone.
+
+### Tests
+
+- **`src/__tests__/tdlibClientFinalize.vitest.js`** (новый, 14 тестов):
+  - waitForReady (8 тестов): уже Ready, Ready приходит позже,
+    WaitPhoneNumber → need-relogin, WaitCode → need-relogin, Closed,
+    WaitTdlibParameters игнорируется, timeout, listener cleanup.
+  - finalizeAccount (6 тестов): getMe → rename → emit полный путь;
+    fallback на @username когда имени нет; client не существует →
+    ok:false; getMe падает → ok:false; getMe без id → ok:false;
+    уже правильный accountId работает (без rename).
+
+### Прогресс
+- Этапы 0, 1, 2.1-2.6, 3.1-3.5 ✅
+- **Этап 3.6 (autoRestore + finalize) ✅** — текущий коммит
+- Этап 4 — реальное тестирование
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 3.5: три фикса по результатам реального login
 
 ### Bugs (из реального login flow USE_TDLIB_BACKEND=1)

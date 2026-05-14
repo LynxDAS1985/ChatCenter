@@ -102,6 +102,88 @@ export class TdlibClientManager extends EventEmitter {
   }
 
   /**
+   * Ждёт пока auth state аккаунта станет `authorizationStateReady`.
+   * Используется после autoRestore — TDLib читает БД и через несколько мс
+   * присылает Ready (если сессия валидна). Если sessions partial/invalid —
+   * приходит WaitPhoneNumber/WaitCode/etc → reject с этим состоянием.
+   *
+   * @param {string} accountId
+   * @param {number} [timeoutMs=15000]
+   * @returns {Promise<{ok: boolean, state?: string, error?: string}>}
+   */
+  waitForReady(accountId, timeoutMs = 15000) {
+    return new Promise((resolve) => {
+      const current = this.getAuthState(accountId)
+      if (current === 'authorizationStateReady') return resolve({ ok: true, state: current })
+      let done = false
+      const handler = (p) => {
+        if (done || p.accountId !== accountId) return
+        if (p.state === 'authorizationStateReady') {
+          done = true
+          clearTimeout(timer)
+          this.off('account:auth-state', handler)
+          resolve({ ok: true, state: p.state })
+        } else if (p.state && p.state.startsWith('authorizationStateWait')
+                && p.state !== 'authorizationStateWaitTdlibParameters'
+                && p.state !== 'authorizationStateWaitEncryptionKey') {
+          // Sessions требует повторный login (code/password/phone) — не ready
+          done = true
+          clearTimeout(timer)
+          this.off('account:auth-state', handler)
+          resolve({ ok: false, state: p.state, error: 'need-relogin' })
+        } else if (p.state === 'authorizationStateClosed' || p.state === 'authorizationStateLoggingOut') {
+          done = true
+          clearTimeout(timer)
+          this.off('account:auth-state', handler)
+          resolve({ ok: false, state: p.state, error: 'closed' })
+        }
+      }
+      const timer = setTimeout(() => {
+        if (done) return
+        done = true
+        this.off('account:auth-state', handler)
+        resolve({ ok: false, state: this.getAuthState(accountId), error: 'timeout' })
+      }, timeoutMs)
+      this.on('account:auth-state', handler)
+    })
+  }
+
+  /**
+   * Финализирует залогиненный аккаунт: getMe → rename → emit account:update.
+   * Используется после login flow и после autoRestoreSessionsFromDisk
+   * (когда session валидна и сразу пришёл Ready).
+   *
+   * @param {string} accountId — текущий id в Map (обычно 'pending' или 'tg_pending_X')
+   * @returns {Promise<{ok: boolean, newAccountId?: string, error?: string}>}
+   */
+  async finalizeAccount(accountId) {
+    const client = this.getClient(accountId)
+    if (!client?.invoke) return { ok: false, error: 'no client' }
+    try {
+      const me = await client.invoke({ '@type': 'getMe' })
+      const userId = me?.id
+      if (!userId) return { ok: false, error: 'getMe returned no id' }
+      const newAccountId = `tg_${userId}`
+      const renamed = (newAccountId !== accountId) ? this._renameAccount(accountId, newAccountId) : true
+      const finalId = renamed ? newAccountId : accountId
+      const fullName = `${me.first_name || ''} ${me.last_name || ''}`.trim()
+      const username = me.usernames?.active_usernames?.[0] || ''
+      this.emit('account:update', {
+        id: finalId,
+        messenger: 'telegram',
+        status: 'connected',
+        name: fullName || (username ? `@${username}` : ''),
+        phone: me.phone_number ? `+${me.phone_number}` : '',
+        username,
+        userId: String(userId),
+      })
+      return { ok: true, newAccountId: finalId }
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  }
+
+  /**
    * Переименовывает аккаунт. Используется после успешного логина:
    * tg_pending_${ts} → tg_${realUserId}. Папка sessions на диске НЕ
    * переименовывается (TDLib держит файлы открытыми), это работает
