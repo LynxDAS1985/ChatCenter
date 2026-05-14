@@ -165,6 +165,13 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
       channel: 'tg:account-update',
       data: { id: accountId, messenger: 'telegram', status: 'error', error: error?.message || String(error) },
     }))
+    // v0.89.0 / Этап 3.5: после успешного логина backend.auth._finalizePending
+    // эмитит account:update с полным набором полей. Мостим как tg:account-update
+    // — UI sidebar добавит аккаунт в список (через nativeStoreIpc.js handler).
+    subscribe('account:update', (data) => ({
+      channel: 'tg:account-update',
+      data,
+    }))
     subscribe('account:connection', ({ accountId, state }) => ({
       channel: 'tg:account-connection',
       data: { accountId, state },

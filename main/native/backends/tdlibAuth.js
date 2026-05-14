@@ -18,6 +18,31 @@
 
 import { setTdlibManager } from './tdlibClient.js'
 
+// Перевод типичных кодов ошибок TDLib на русский для UI.
+// TDLib возвращает английские коды («PHONE_CODE_INVALID», «PASSWORD_HASH_INVALID»),
+// UI должен показывать понятные сообщения. Если кода нет в таблице — возвращаем как есть.
+const ERR_RU = {
+  PHONE_NUMBER_INVALID: 'Номер телефона указан в неправильном формате',
+  PHONE_NUMBER_BANNED: 'Номер заблокирован в Telegram',
+  PHONE_NUMBER_OCCUPIED: 'Номер уже используется другим пользователем',
+  PHONE_NUMBER_FLOOD: 'Слишком много попыток. Попробуй позже',
+  PHONE_CODE_EMPTY: 'Введите код подтверждения',
+  PHONE_CODE_INVALID: 'Неверный код. Проверь и попробуй снова',
+  PHONE_CODE_EXPIRED: 'Код устарел. Запроси новый',
+  PASSWORD_HASH_INVALID: 'Неверный пароль двухфакторной защиты',
+  PASSWORD_EMPTY: 'Введите пароль',
+  SESSION_PASSWORD_NEEDED: 'Требуется пароль двухфакторной защиты',
+  API_ID_INVALID: 'Ошибка приложения: неверный API ID',
+  AUTH_KEY_DUPLICATED: 'Сессия использована на другом устройстве',
+}
+export function translateTdlibError(msg) {
+  if (!msg) return msg
+  // TDLib иногда оборачивает: «error: PHONE_CODE_INVALID» — извлекаем код
+  const match = String(msg).match(/[A-Z_]{4,}/)
+  const code = match ? match[0] : String(msg)
+  return ERR_RU[code] || msg
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // TDLIB PARAMETERS BUILDER
 // ──────────────────────────────────────────────────────────────────────
@@ -147,7 +172,7 @@ export class TdlibAuthFlow {
         if (this._codeResolver === resolve) {
           this._codeResolver = null
           this.state = 'error'
-          resolve({ ok: false, error: e?.message || String(e) })
+          resolve({ ok: false, error: translateTdlibError(e?.message || String(e)) })
         }
       })
     })
@@ -167,7 +192,7 @@ export class TdlibAuthFlow {
       Promise.resolve(client.invoke({ '@type': 'checkAuthenticationCode', code: String(code) })).catch((e) => {
         if (this._passwordResolver === resolve) {
           this._passwordResolver = null
-          resolve({ ok: false, error: e?.message || String(e) })
+          resolve({ ok: false, error: translateTdlibError(e?.message || String(e)) })
         }
       })
     })
@@ -187,7 +212,7 @@ export class TdlibAuthFlow {
       Promise.resolve(client.invoke({ '@type': 'checkAuthenticationPassword', password: String(password) })).catch((e) => {
         if (this._readyResolver === resolve) {
           this._readyResolver = null
-          resolve({ ok: false, error: e?.message || String(e) })
+          resolve({ ok: false, error: translateTdlibError(e?.message || String(e)) })
         }
       })
     })
@@ -217,11 +242,10 @@ export class TdlibAuthFlow {
     if (!client?.invoke) return
 
     if (stateName === 'authorizationStateWaitTdlibParameters') {
-      // Самый первый запрос TDLib — отправляем setTdlibParameters.
-      client.invoke(this.tdlibParameters).catch((err) => {
-        this.state = 'error'
-        this._rejectPending(err?.message || 'setTdlibParameters failed')
-      })
+      // НЕ отправляем setTdlibParameters сами — tdl автоматически это делает
+      // через _handleAuthInit (см. node_modules/tdl/dist/client.js строка 610-650).
+      // tdl использует apiId/apiHash/databaseDirectory из createClient options.
+      // Если мы попытаемся отправить второй раз — TDLib вернёт "Unexpected setTdlibParameters".
       return
     }
 
@@ -297,7 +321,7 @@ export class TdlibAuthFlow {
       const r = this[key]
       if (r) {
         this[key] = null
-        r({ ok: false, error: reason })
+        r({ ok: false, error: translateTdlibError(reason) })
       }
     }
   }

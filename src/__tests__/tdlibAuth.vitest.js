@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { TdlibClientManager } from '../../main/native/backends/tdlibClient.js'
-import { buildTdlibParameters, TdlibAuthFlow } from '../../main/native/backends/tdlibAuth.js'
+import { buildTdlibParameters, TdlibAuthFlow, translateTdlibError } from '../../main/native/backends/tdlibAuth.js'
 
 function makeMockClient() {
   const client = new EventEmitter()
@@ -38,6 +38,28 @@ function emitAuthState(client, stateType, payload = {}) {
 // ──────────────────────────────────────────────────────────────────────
 // buildTdlibParameters
 // ──────────────────────────────────────────────────────────────────────
+
+describe('translateTdlibError', () => {
+  it('PHONE_NUMBER_INVALID → русский', () => {
+    expect(translateTdlibError('PHONE_NUMBER_INVALID')).toBe('Номер телефона указан в неправильном формате')
+  })
+  it('PASSWORD_HASH_INVALID → русский', () => {
+    expect(translateTdlibError('PASSWORD_HASH_INVALID')).toBe('Неверный пароль двухфакторной защиты')
+  })
+  it('PHONE_CODE_INVALID → русский', () => {
+    expect(translateTdlibError('PHONE_CODE_INVALID')).toBe('Неверный код. Проверь и попробуй снова')
+  })
+  it('извлекает код из обёрнутого сообщения', () => {
+    expect(translateTdlibError('error: PHONE_NUMBER_BANNED at line 42')).toBe('Номер заблокирован в Telegram')
+  })
+  it('неизвестный код возвращается как есть', () => {
+    expect(translateTdlibError('TOTALLY_NEW_ERROR')).toBe('TOTALLY_NEW_ERROR')
+  })
+  it('null/undefined возвращается как есть', () => {
+    expect(translateTdlibError(null)).toBe(null)
+    expect(translateTdlibError(undefined)).toBe(undefined)
+  })
+})
 
 describe('buildTdlibParameters', () => {
   it('строит корректный объект с обязательными полями', () => {
@@ -100,10 +122,11 @@ describe('TdlibAuthFlow — полный flow с 2FA', () => {
   it('Wait params → setTdlibParameters; Wait phone → startLogin; Wait code → submit; Wait pwd → submit; Ready', async () => {
     const { flow, mockClient } = makeFlow()
 
-    // Шаг 1: TDLib просит параметры
+    // Шаг 1: TDLib просит параметры — НАШ код НЕ отправляет setTdlibParameters
+    // (tdl сама обрабатывает через _handleAuthInit, см. tdlib-stage4 этап 3.4 фикс).
     emitAuthState(mockClient, 'authorizationStateWaitTdlibParameters')
-    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
-      '@type': 'setTdlibParameters', api_id: 1,
+    expect(mockClient.invoke).not.toHaveBeenCalledWith(expect.objectContaining({
+      '@type': 'setTdlibParameters',
     }))
 
     // Шаг 2: TDLib просит номер
@@ -190,7 +213,8 @@ describe('TdlibAuthFlow — ошибки', () => {
     mockClient.invoke.mockRejectedValueOnce(new Error('PHONE_NUMBER_INVALID'))
     const r = await flow.startLogin('+1')
     expect(r.ok).toBe(false)
-    expect(r.error).toContain('PHONE_NUMBER_INVALID')
+    // v0.89.0 / Этап 3.5: translateTdlibError мапит коды в русский для UI.
+    expect(r.error).toBe('Номер телефона указан в неправильном формате')
   })
 
   it('TDLib closed во время ожидания → resolver резолвится с ошибкой', async () => {

@@ -269,6 +269,57 @@ describe('backend.auth', () => {
     expect(r.error).toBe('phone required')
   })
 
+  it('finalizePending: после успешного submitPassword → getMe + rename + emit account:update', async () => {
+    const { backend, mgr } = makeBackend()
+    const accountUpdateEvent = vi.fn()
+    mgr.on('account:update', accountUpdateEvent)
+    // Запускаем login
+    const promise = backend.auth.startLogin('+71234567890')
+    const pendingAid = mgr.listAccounts().find(a => a.startsWith('tg_pending_'))
+    const pendingClient = mgr.getClient(pendingAid)
+    // Симулируем WaitCode → startLogin резолвится
+    pendingClient.emit('update', {
+      '@type': 'updateAuthorizationState',
+      authorization_state: { '@type': 'authorizationStateWaitCode' },
+    })
+    await promise
+    // SubmitCode → WaitPassword
+    const codePromise = backend.auth.submitCode('12345')
+    pendingClient.emit('update', {
+      '@type': 'updateAuthorizationState',
+      authorization_state: { '@type': 'authorizationStateWaitPassword' },
+    })
+    await codePromise
+    // submitPassword → Ready + getMe вызов
+    pendingClient.invoke.mockResolvedValueOnce({ '@type': 'ok' })  // checkAuthenticationPassword
+    pendingClient.invoke.mockResolvedValueOnce({                    // getMe
+      '@type': 'user', id: 638454350,
+      first_name: 'Иван', last_name: 'Петров',
+      phone_number: '79521303032',
+    })
+    const pwdPromise = backend.auth.submitPassword('mypass')
+    pendingClient.emit('update', {
+      '@type': 'updateAuthorizationState',
+      authorization_state: { '@type': 'authorizationStateReady' },
+    })
+    const pwdResult = await pwdPromise
+    expect(pwdResult.ok).toBe(true)
+    expect(pwdResult.success).toBe(true)
+    // getMe был вызван
+    expect(pendingClient.invoke).toHaveBeenCalledWith({ '@type': 'getMe' })
+    // Аккаунт переименован
+    expect(mgr.listAccounts()).toContain('tg_638454350')
+    expect(mgr.listAccounts()).not.toContain(pendingAid)
+    // account:update эмитнут
+    expect(accountUpdateEvent).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'tg_638454350',
+      messenger: 'telegram',
+      status: 'connected',
+      name: 'Иван Петров',
+      phone: '+79521303032',
+    }))
+  })
+
   it('removeAccount проксирует в manager', async () => {
     const { backend } = makeBackend()
     const r = await backend.auth.removeAccount('tg_main')

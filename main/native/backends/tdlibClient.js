@@ -101,6 +101,28 @@ export class TdlibClientManager extends EventEmitter {
     return Array.from(this.accounts.keys())
   }
 
+  /**
+   * Переименовывает аккаунт. Используется после успешного логина:
+   * tg_pending_${ts} → tg_${realUserId}. Папка sessions на диске НЕ
+   * переименовывается (TDLib держит файлы открытыми), это работает
+   * в памяти Map; metadata-файл для autoRestore — задача отдельного этапа.
+   *
+   * @param {string} oldId
+   * @param {string} newId
+   * @returns {boolean} — true если rename удался, false если oldId не найден
+   */
+  _renameAccount(oldId, newId) {
+    if (!oldId || !newId || oldId === newId) return false
+    const record = this.accounts.get(oldId)
+    if (!record) return false
+    if (this.accounts.has(newId)) return false  // целевое имя занято
+    record.accountId = newId
+    this.accounts.delete(oldId)
+    this.accounts.set(newId, record)
+    this.emit('account:renamed', { oldId, newId })
+    return true
+  }
+
   /** @returns {object|null} клиент TDLib для аккаунта */
   getClient(accountId) {
     return this.accounts.get(accountId)?.client || null

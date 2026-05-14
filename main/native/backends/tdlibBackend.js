@@ -96,6 +96,34 @@ export function createTdlibBackend(opts = {}) {
   let _authFlow = null
   let _pendingAccountId = null
 
+  // Получает user info через getMe и переименовывает аккаунт tg_pending_X → tg_<userId>.
+  // Также эмитит account:update event для UI sidebar (через event bridge → tg:account-update).
+  // Вызывается ПОСЛЕ успешного login (step === 'success' или success: true).
+  const _finalizePending = async () => {
+    if (!_pendingAccountId) return
+    const client = manager.getClient(_pendingAccountId)
+    if (!client?.invoke) return
+    try {
+      const me = await client.invoke({ '@type': 'getMe' })
+      const userId = me?.id
+      if (!userId) return
+      const newAccountId = `tg_${userId}`
+      const renamed = manager._renameAccount(_pendingAccountId, newAccountId)
+      const fullName = `${me.first_name || ''} ${me.last_name || ''}`.trim()
+      const username = me.usernames?.active_usernames?.[0] || ''
+      manager.emit('account:update', {
+        id: renamed ? newAccountId : _pendingAccountId,
+        messenger: 'telegram',
+        status: 'connected',
+        name: fullName || (username ? `@${username}` : ''),
+        phone: me.phone_number ? `+${me.phone_number}` : '',
+        username,
+        userId: String(userId),
+      })
+      _pendingAccountId = renamed ? newAccountId : _pendingAccountId
+    } catch (_) { /* TDLib мог упасть на getMe — не критично, аккаунт остаётся под pending */ }
+  }
+
   return {
     name: 'tdlib',
     _manager: manager,
@@ -110,15 +138,22 @@ export function createTdlibBackend(opts = {}) {
         _authFlow = new TdlibAuthFlow({
           manager, accountId: _pendingAccountId, tdlibParameters,
         })
-        return _authFlow.startLogin(phone)
+        const r = await _authFlow.startLogin(phone)
+        // Если login без 2FA прошёл сразу (step === 'success') — финализируем.
+        if (r?.ok && (r.step === 'success' || r.success)) await _finalizePending()
+        return r
       },
       async submitCode(code) {
         if (!_authFlow) return { ok: false, error: 'no login in progress' }
-        return _authFlow.submitCode(code)
+        const r = await _authFlow.submitCode(code)
+        if (r?.ok && (r.step === 'success' || r.success)) await _finalizePending()
+        return r
       },
       async submitPassword(password) {
         if (!_authFlow) return { ok: false, error: 'no login in progress' }
-        return _authFlow.submitPassword(password)
+        const r = await _authFlow.submitPassword(password)
+        if (r?.ok && (r.step === 'success' || r.success)) await _finalizePending()
+        return r
       },
       async cancelLogin() {
         if (!_authFlow) return { ok: true }

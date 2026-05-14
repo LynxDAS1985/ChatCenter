@@ -11,6 +11,82 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 3.5: три фикса по результатам реального login
+
+### Bugs (из реального login flow USE_TDLIB_BACKEND=1)
+
+После Этапа 3.4 (нормализация tdl формата) login пошёл дальше, но обнаружились:
+
+1. **Ошибка «Unexpected setTdlibParameters»** при вводе кода. tdl библиотека
+   через `_handleAuthInit` (node_modules/tdl/dist/client.js строка 610-650)
+   **автоматически** отправляет `setTdlibParameters` сразу при создании клиента —
+   до нашей подписки на updates. Наш код в `TdlibAuthFlow._onAuthState` тоже
+   отправлял setTdlibParameters в ответ на `WaitTdlibParameters` → второй
+   вызов → TDLib отвергал как «unexpected».
+2. **Ошибки на английском** (`PASSWORD_HASH_INVALID`, `PHONE_CODE_INVALID`)
+   показывались напрямую в UI. UI ожидает русские строки.
+3. **Аккаунт не появлялся в sidebar** после успешного login. Не было
+   `getMe()` + переименования `tg_pending_${ts}` → `tg_${userId}` + emit
+   `account:update` event.
+
+### Fixes
+
+- **`main/native/backends/tdlibAuth.js`**:
+  - Убран `client.invoke(setTdlibParameters)` в `_onAuthState` — tdl делает сама.
+  - Добавлена таблица `ERR_RU` с переводами 11 типичных кодов TDLib
+    (`PHONE_NUMBER_INVALID` → «Номер телефона указан в неправильном формате»,
+    `PASSWORD_HASH_INVALID` → «Неверный пароль двухфакторной защиты», etc).
+  - Экспорт `translateTdlibError(msg)` — извлекает `[A-Z_]{4,}` код регуляркой
+    и мапит через таблицу. Неизвестные коды возвращаются как есть (fallback).
+  - Все resolvers (startLogin/submitCode/submitPassword + _rejectPending)
+    оборачивают error через `translateTdlibError`.
+- **`main/native/backends/tdlibClient.js`** — новый метод `_renameAccount(oldId, newId)`:
+  переименовывает запись в Map<accountId, record>, обновляет `record.accountId`,
+  эмитит `account:renamed`. Возвращает false если oldId не найден, целевое имя
+  занято, или ids одинаковы.
+- **`main/native/backends/tdlibBackend.js`** — функция `_finalizePending` (closure):
+  - Вызывается после каждого successful step ('success' или success: true)
+    из startLogin/submitCode/submitPassword.
+  - `client.invoke({ '@type': 'getMe' })` → получает user info.
+  - `manager._renameAccount(_pendingAccountId, 'tg_${user.id}')`.
+  - `manager.emit('account:update', { id, messenger: 'telegram', status: 'connected',
+    name, phone, username, userId })`.
+- **`main/native/tdlibIpcHandlers.js`** — добавлен мост: `account:update` event
+  от manager → `tg:account-update` IPC → UI sidebar добавит аккаунт.
+
+### Tests
+
+- **`src/__tests__/tdlibAuth.vitest.js`**:
+  - Новый `describe('translateTdlibError')` с 6 тестами (PHONE/PASSWORD/CODE,
+    обёрнутые сообщения, неизвестные коды, null/undefined).
+  - Обновлён тест «полный flow с 2FA»: теперь проверяет что setTdlibParameters
+    НЕ отправляется самим кодом (tdl делает сама).
+  - Обновлён тест «invoke падает»: проверяет русский перевод вместо raw code.
+- **`src/__tests__/tdlibClientRename.vitest.js`** (новый, 7 тестов):
+  - rename меняет id в Map + эмитит `account:renamed`
+  - record.accountId обновляется (getClient по новому id)
+  - user/chat cache переезжают с записью
+  - целевое имя занято → false без изменений
+  - oldId не найден → false
+  - oldId === newId → false (noop)
+  - пустые id → false
+- **`src/__tests__/tdlibBackend.vitest.js`** — новый тест «finalizePending»:
+  полный flow startLogin → WaitCode → submitCode → WaitPassword → submitPassword
+  → Ready + getMe. Проверяет: getMe был вызван, аккаунт переименован
+  `tg_pending_X` → `tg_638454350`, account:update эмитнут с правильными полями
+  (id, name, phone, username, userId).
+
+### Лимит файлов
+- `tdlibClient.vitest.js` упёрся в 400 строк → 3 теста на `_renameAccount`
+  вынесены в `tdlibClientRename.vitest.js`.
+
+### Прогресс
+- Этапы 0, 1, 2.1-2.6, 3.1, 3.2, 3.3, 3.4 ✅
+- **Этап 3.5 (три фикса real-login) ✅** — текущий коммит
+- Этап 4 — реальное тестирование пользователем (повторно)
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 3.4: КРИТИЧНЫЙ ФИКС — нормализация tdl формата
 
 ### Bug
