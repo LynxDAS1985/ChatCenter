@@ -3,7 +3,8 @@
 // Если любой модуль кидает ошибку при загрузке (Named export не найден, path ошибка, синтаксис) —
 // тест падает. Это страховка от Ловушки 79 (CommonJS named imports в ESM).
 // НЕ запускаем Electron, только чистый node — проверяем парсинг/импорт.
-// NB: main/ использует electron и GramJS — эти модули заглушаются, проверяется только наш код.
+// NB: main/ использует electron и tdl/prebuilt-tdlib — эти модули заглушаются, проверяется только наш код.
+// v0.89.0 / Этап 4: GramJS полностью удалён — проверки telegram/* подпутей убраны.
 
 const { spawnSync } = require('node:child_process')
 const fs = require('node:fs')
@@ -63,18 +64,8 @@ for (const file of files) {
   })
 }
 
-// Отдельная проверка: что все явно используемые нами под-пути telegram/* действительно существуют
-const TELEGRAM_SUBPATHS = [
-  'telegram/sessions/index.js',
-  'telegram/events/index.js',
-  'telegram/Utils.js',
-]
-for (const sub of TELEGRAM_SUBPATHS) {
-  test(`require подпути: ${sub}`, () => {
-    const m = require(sub)
-    assert(m && typeof m === 'object', `${sub} вернул не объект`)
-  })
-}
+// v0.89.0 / Этап 4: GramJS (`telegram` пакет) полностью удалён из проекта.
+// Раньше тут проверялись require('telegram/sessions/index.js') и т.п. — больше не нужно.
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

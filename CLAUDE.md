@@ -269,7 +269,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.89.0 (14 мая 2026)
+**Текущая версия**: v0.89.1 (14 мая 2026)
 
 ---
 
@@ -751,6 +751,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.89.0 (14 мая 2026)
-**Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
-**Последнее обновление**: 14 мая 2026 — v0.89.0: Этап 2 виртуализации завершён. `renderItems.map(...)` в `InboxChatPanel` заменён на `VirtualMessageList` (react-window 2.2 + `useDynamicRowHeight`). `msgsScrollRef` синхронизируется с `listRef.current.element` (outermost div react-window), события `onScroll/onWheel/onDrag` пробрасываются в `<List>` через props. `useInitialScroll` и `scrollToMessage` получили fallback `onMissingTarget`/`scrollToVirtualRow` — когда элемент с `data-msg-id` не в видимом виртуальном DOM, скролл идёт через `scrollToRow({ index })` по индексу `renderItems`. Защитные тесты v0.88.2 расширены 5 проверками на виртуализированный путь.
+**Версия проекта**: v0.89.1 (14 мая 2026)
+**Статус**: 🟢 Фазы 1-4+ выполнены + TDLib миграция завершена (Stage 4 Этапы 1-4)
+**Последнее обновление**: 14 мая 2026 — v0.89.1: TDLib миграция Stage 4 / Этап 4 — полное удаление GramJS. Удалены 13 production-файлов (`telegramHandler.js`, `telegramMessages.js`, `telegramChats.js`, `telegramMedia.js`, `telegramAuth.js`, `gramjsBackend.js`, и др.) + 4 GramJS-only теста. `main/main.js` больше не имеет fallback на GramJS — только `initTdlibBackendStartup`. `messengerBackend.js` упрощён до JSDoc + `getBackendName()` → `'tdlib'`. `messengerBackend.test.cjs` переписан под TDLib-only (61 проверка). Зависимость `telegram` отдельно удалена из `package.json`. План миграции [`tdlib-migration-plan.md`](.memory-bank/tdlib-migration-plan.md) помечен как ЗАВЕРШЁННЫЙ.

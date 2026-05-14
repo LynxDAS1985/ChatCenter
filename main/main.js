@@ -14,7 +14,9 @@ import { setupSession } from './utils/sessionSetup.js'
 import { initStorage, migrateSettings } from './utils/storage.js'
 import { httpsPostSkipSsl, getGigaChatToken, GIGACHAT_CHAT_URL } from './utils/gigachat.js'
 import { ruError } from './utils/ruError.js'
-import { initTelegramHandler } from './native/telegramHandler.js'
+// v0.89.0 / Этап 4: GramJS backend полностью удалён. Telegram-интеграция работает
+// только через TDLib (initTdlibBackendStartup). USE_TDLIB_BACKEND env-флаг и
+// fallback на GramJS убраны — больше нет смысла поддерживать две реализации.
 import { initTdlibBackendStartup } from './native/backends/tdlibStartup.js'
 import { registerCcMediaScheme, registerCcMediaHandler } from './native/ccMediaProtocol.js'
 import { initNotifHandlers } from './handlers/notifHandlers.js'
@@ -223,35 +225,21 @@ app.whenReady().then(() => {
     mainWindow.webContents.once('dom-ready', () => __slog('dom-ready'))
   }
 
-  // v0.87.4: инициализация Telegram handler после создания окна (mainWindow ready)
-  // v0.89.0 (Stage 4 Этап 3.3): условный выбор GramJS vs TDLib через USE_TDLIB_BACKEND env.
-  // При ошибке TDLib инициализации — safe fallback на GramJS чтобы рабочее окружение
-  // не сломалось (например, если prebuilt-tdlib не загрузился).
-  const useTdlibBackend = process.env.USE_TDLIB_BACKEND === '1'
-  let backendInitOk = false
-  if (useTdlibBackend) {
-    try {
-      const r = initTdlibBackendStartup({
-        userDataPath: app.getPath('userData'),
-        getMainWindow: () => mainWindow,
-        ipcMain,
-        log: (level, msg) => __slog(`[tdlib] ${level}: ${msg}`),
-      })
-      if (r.ok) {
-        backendInitOk = true
-        __slog(`TDLib backend started (restored=${r.restoredAccountIds?.length || 0} accounts)`)
-      } else {
-        console.error('[main] TDLib startup failed:', r.error, '— falling back to GramJS')
-      }
-    } catch (e) {
-      console.error('[main] TDLib init exception:', e.message, '— falling back to GramJS')
+  // v0.89.0 / Этап 4: только TDLib backend. GramJS полностью удалён.
+  try {
+    const r = initTdlibBackendStartup({
+      userDataPath: app.getPath('userData'),
+      getMainWindow: () => mainWindow,
+      ipcMain,
+      log: (level, msg) => __slog(`[tdlib] ${level}: ${msg}`),
+    })
+    if (r.ok) {
+      __slog(`TDLib backend started (restored=${r.restoredAccountIds?.length || 0} accounts)`)
+    } else {
+      console.error('[main] TDLib startup failed:', r.error)
     }
-  }
-  if (!backendInitOk) {
-    try {
-      initTelegramHandler({ getMainWindow: () => mainWindow, userDataPath: app.getPath('userData') })
-      __slog('initTelegramHandler done (GramJS)')
-    } catch (e) { console.error('[main] initTelegramHandler error:', e.message) }
+  } catch (e) {
+    console.error('[main] TDLib init exception:', e.message)
   }
 
   app.on('activate', () => {

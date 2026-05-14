@@ -1,17 +1,12 @@
-// v0.89.0 — Stage 4 / Этап 1: абстракция messengerBackend
+// v0.89.0 — Stage 4 / Этап 4: абстракция messengerBackend (TDLib-only).
 //
-// Один интерфейс, два backend'а: gramjsBackend (текущий) и tdlibBackend (будущий).
-// Цель: на Этапе 4 удалить GramJS-интеграцию полностью, переключив через USE_TDLIB_BACKEND.
+// После завершения Этапа 4 GramJS-интеграция полностью удалена из проекта.
+// Единственный реальный backend — TDLib. Этот файл оставлен как JSDoc-описание
+// интерфейса (типы ниже) — используется тестами (messengerBackend.test.cjs) и
+// служит документацией для потенциальных будущих backend'ов (например, MTProto-обёртка).
 //
-// СЕЙЧАС (Этап 1) — это только подготовка инфраструктуры:
-//   - Интерфейс описан через JSDoc.
-//   - getBackend() возвращает gramjsBackend (адаптер над текущими IPC handlers).
-//   - tdlibBackend = STUB с TODO для Этапа 2.
-//
-// НЕ ТРОГАЕТСЯ: текущие telegramHandler.js / telegramMessages.js / etc продолжают
-// работать как есть. Никакая логика не переписана. Только добавлена «прослойка».
-//
-// Подробный план миграции: .memory-bank/tdlib-migration-plan.md
+// Реальный TDLib runtime создаётся через initTdlibBackendStartup в main.js
+// (см. main/native/backends/tdlibStartup.js).
 
 /**
  * @typedef {object} Chat
@@ -98,7 +93,7 @@
 
 /**
  * @typedef {object} MessengerBackend
- * @property {'gramjs'|'tdlib'} name
+ * @property {'tdlib'} name
  * @property {BackendAuth} auth
  * @property {BackendChats} chats
  * @property {BackendMessages} messages
@@ -106,36 +101,6 @@
  * @property {BackendForum} forum
  */
 
-// Текущий выбранный backend. На Этапе 1 — всегда gramjs.
-// На Этапе 3 будем переключать через env USE_TDLIB_BACKEND=1.
-const SELECTED_BACKEND = process.env.USE_TDLIB_BACKEND === '1' ? 'tdlib' : 'gramjs'
-
-let _backend = null
-
-/**
- * Возвращает выбранный backend. Singleton — один инстанс на процесс.
- * Этап 1: возвращает gramjsBackend, который пока проксирует к существующим
- * IPC handlers без переписывания их.
- *
- * @returns {MessengerBackend}
- */
-export function getBackend() {
-  if (_backend) return _backend
-  if (SELECTED_BACKEND === 'tdlib') {
-    // STUB на Этапе 1, реализация в Этапе 2
-    const { createTdlibBackend } = require('./backends/tdlibBackend.js')
-    _backend = createTdlibBackend()
-  } else {
-    const { createGramjsBackend } = require('./backends/gramjsBackend.js')
-    _backend = createGramjsBackend()
-  }
-  return _backend
-}
-
-/**
- * Имя текущего backend'а — для логов/диагностики.
- * @returns {'gramjs'|'tdlib'}
- */
 export function getBackendName() {
-  return SELECTED_BACKEND
+  return 'tdlib'
 }

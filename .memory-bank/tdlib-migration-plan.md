@@ -2,7 +2,8 @@
 
 **Версия проекта при старте плана**: v0.89.0
 **Дата старта**: 14 мая 2026
-**Статус**: 🟢 Этапы 0, 1, 2 (полностью), 3 (полностью) ✅. Следующий: Этап 4 (реальное тестирование + финализация, удаление GramJS).
+**Дата завершения**: 14 мая 2026
+**Статус**: 🟢 **МИГРАЦИЯ ЗАВЕРШЕНА** — Этапы 0, 1, 2, 3 (3.1-3.13), 4 ✅. GramJS полностью удалён из проекта.
 
 ## ✅ Что уже сделано
 
@@ -259,29 +260,38 @@ src/native/utils/        — messageGrouping, scrollDiagnostics, etc
 
 ---
 
-## 🚦 Текущий статус
+## 🚦 Финальный статус — миграция завершена
 
-- **Phase 2 виртуализации**: 12 пунктов чек-листа отложены до завершения миграции (пользователь так попросил 14 мая 2026).
-- **Этап 0**: ожидание разрешения на `npm install tdl prebuilt-tdlib`.
-- **Проблема #2 «1 сообщение в чате»**: будет закрыта переходом на TDLib (gap detection встроено).
+| Этап | Статус | Дата |
+|---|---|---|
+| 0 — POC | ✅ | 14 мая 2026 |
+| 1 — Абстракция backend | ✅ | 14 мая 2026 |
+| 2 — TDLib backend (mapper, client, auth, messages, media) | ✅ | 14 мая 2026 |
+| 3.1-3.13 — IPC handlers, normalize, login, restore, avatars, forum, sendFile/forwardMessage | ✅ | 14 мая 2026 |
+| 4 — Полное удаление GramJS | ✅ | 14 мая 2026 |
+
+**Что удалено в Этапе 4** (см. также [`CHANGELOG.md`](./CHANGELOG.md#2026-05-14--tdlib-stage-4--этап-4-полное-удаление-gramjs)):
+
+13 production-файлов (`gramjsBackend.js`, `telegramHandler.js`, `telegramAuth.js`, `telegramChats.js`,
+`telegramChatsIpc.js`, `telegramCleanup.js`, `telegramErrors.js`, `telegramForumTopicsIpc.js`,
+`telegramMedia.js`, `telegramMessageMapper.js`, `telegramMessages.js`, `telegramState.js`, `tdlibPoc.cjs`)
++ 4 GramJS-only теста (`multiAccount`, `multiAccountUI`, `mediaCacheQuota`, `unreadAutoPrefetch`).
+
+Зависимость `telegram` (GramJS) удалена из `package.json` отдельным шагом.
+
+**Проблема #2 «1 сообщение в чате»** закрыта переходом на TDLib (gap detection встроено через
+`use_message_database` + автоматический `getDifference` на reconnect).
 
 ---
 
-## ➡️ Следующий шаг
+## ➡️ Что дальше
 
-**Пользователь должен запустить**:
+Миграция завершена. Дальнейшая работа над Telegram-интеграцией — внутри TDLib backend (`main/native/backends/tdlib*.js` + `main/native/tdlibIpcHandlers.js`). Этот документ остаётся как **исторический отчёт** о миграции для будущих архитектурных решений.
 
-```
-npm install tdl prebuilt-tdlib
-```
-
-После этого ассистент:
-1. Создаст `main/native/tdlibPoc.js` — изолированный POC (40-50 строк).
-2. Попросит пользователя запустить POC: `node main/native/tdlibPoc.js`.
-3. Проверит работоспособность TDLib в Electron.
-4. Перейдёт к Этапу 1 (абстракция backend).
-
-**Время на полную миграцию**: ~5 недель calendar-time.
+Связанные документы:
+- [`.memory-bank/CHANGELOG.md`](./CHANGELOG.md) — все записи по Stage 4 (Этапы 1-4).
+- [`.memory-bank/features.md`](./features.md) — пользовательский changelog.
+- [`.memory-bank/api.md`](./api.md) — описание IPC каналов (актуально для TDLib).
 
 ---
 

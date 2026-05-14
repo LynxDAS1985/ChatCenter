@@ -1,8 +1,8 @@
-// v0.89.0 — Stage 4 / Этап 3.2: IPC handlers для TDLib backend
+// v0.89.0 — Stage 4 / Этап 4: IPC handlers для TDLib backend (TDLib-only)
 //
-// Регистрирует те же IPC каналы (`tg:get-messages`, `tg:send-message`, etc),
-// что и существующие GramJS-handlers, но направляет их через MessengerBackend
-// → tdlibBackend. Это позволяет UI работать без знания какой backend активен.
+// Регистрирует все IPC каналы (`tg:get-messages`, `tg:send-message`, etc),
+// направляет их через MessengerBackend → tdlibBackend.
+// После Этапа 4 это единственный набор Telegram-обработчиков в проекте.
 //
 // АРХИТЕКТУРА:
 //   - `initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer })` — единая точка
@@ -12,12 +12,7 @@
 //   - Подписывается на manager events (message:new, chat:unread-sync, etc) и
 //     проксирует их как tg:* events в UI.
 //
-// БЕЗОПАСНОСТЬ:
-//   - Регистрируется ТОЛЬКО при USE_TDLIB_BACKEND=1 — иначе обычные GramJS
-//     handlers (telegramHandler.js) продолжают работать.
-//   - НЕ удаляет существующие handlers — main.js при флаге выбирает один из двух.
-//
-// IPC КАНАЛЫ (совместимы с GramJS-контрактом, см. .memory-bank/api.md):
+// IPC КАНАЛЫ (см. .memory-bank/api.md):
 //   Login: tg:login-start, tg:login-code, tg:login-password, tg:login-cancel
 //   Account: tg:get-accounts, tg:remove-account
 //   Chats: tg:get-chats, tg:get-cached-chats, tg:rescan-unread, tg:health-check
@@ -124,8 +119,7 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
 
   // v0.89.0 / Этап 3.8: после get-messages эмитим `tg:messages` event с
   // правильными полями (chatId, messages, append, appendNewer, readUpTo, aroundId,
-  // afterId) — как делает GramJS (telegramMessages.js:242). Без emit UI store
-  // не получит сообщения и зависает на «загрузка».
+  // afterId). Без emit UI store не получит сообщения и зависает на «загрузка».
   handle('tg:get-messages', async (params = {}) => {
     const r = await backend.messages.get(params)
     if (r?.ok && Array.isArray(r.messages)) {

@@ -11,6 +11,55 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 4: полное удаление GramJS
+
+### Удалено
+
+13 production-файлов GramJS-интеграции:
+
+- `main/native/backends/gramjsBackend.js` — backend-адаптер.
+- `main/native/telegramHandler.js` (был 1260 строк) — корневой orchestrator.
+- `main/native/telegramAuth.js` — `tg:login-*` handlers.
+- `main/native/telegramChats.js`, `telegramChatsIpc.js` — `tg:get-chats`, `tg:rescan-unread`.
+- `main/native/telegramCleanup.js` — periodic cache cleanup.
+- `main/native/telegramErrors.js` — RU-перевод GramJS-ошибок.
+- `main/native/telegramForumTopicsIpc.js` — `tg:get-topics` для forum-чатов.
+- `main/native/telegramMedia.js` — `tg:download-media`, `tg:download-video`.
+- `main/native/telegramMessageMapper.js` — GramJS Message → NativeMessage.
+- `main/native/telegramMessages.js` — `tg:get-messages`, `tg:send-message`, `tg:mark-read`.
+- `main/native/telegramState.js` — общий state singleton (clients/cache).
+- `main/native/tdlibPoc.cjs` — PoC-скрипт времён Этапа 1.
+
+4 GramJS-only теста удалены (`multiAccount.test.cjs`, `multiAccountUI.test.cjs`,
+`mediaCacheQuota.test.cjs`, `unreadAutoPrefetch.test.cjs`) — поведение теперь покрывается
+TDLib-вариантами в `src/__tests__/tdlib*.vitest.js` + `VirtualMessageList.vitest.jsx`.
+
+### Изменено
+
+- `main/main.js` — убран fallback на GramJS. Единственная инициализация — `initTdlibBackendStartup`.
+  Env-флаг `USE_TDLIB_BACKEND` больше не читается (всегда TDLib).
+- `main/native/messengerBackend.js` — упрощён до JSDoc-описания интерфейса + `getBackendName()` → `'tdlib'`.
+- `src/__tests__/messengerBackend.test.cjs` — переписан под TDLib-only. Проверяет что все 13 GramJS-файлов
+  удалены и 11 TDLib-модулей на месте.
+- `src/__tests__/mainRuntime.test.cjs` — убраны `require('telegram/*')` проверки.
+- `package.json` — `test` script больше не вызывает 4 удалённых cjs-теста.
+
+### Почему
+
+Stage 4 Этап 4 — финальная стадия миграции с GramJS на TDLib (план: `.memory-bank/native-mode-plan.md`,
+секции «Stage 4»). После того как все Этапы 3.1–3.13 закрыли функциональные эквиваленты (auth, chats,
+messages, media, forum, avatars, sendFile, forwardMessage), параллельная поддержка двух backend'ов
+становится мёртвым грузом — лишний код, лишние тесты, два разных rate-limit поведения. TDLib стабильнее
+GramJS (используется в официальных клиентах), и проект целевой на одного backend'а.
+
+### Чем это закрывает
+
+- Завершает миграцию GramJS → TDLib (Stage 4 / весь план).
+- Уменьшает кодовую базу на ~3500 строк production-кода + ~500 строк удалённых тестов.
+- Снимает потенциальный риск двойной инициализации (GramJS + TDLib) одной сессии Telegram.
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 3.9+3.10: аватарки + forum topics + memory leak fix
 
 ### Bugs (из реального запуска после 3.8)
