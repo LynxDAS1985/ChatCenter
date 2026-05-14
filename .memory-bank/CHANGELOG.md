@@ -11,6 +11,42 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 2.3: TDLib authorization flow
+
+### Added
+- **`main/native/backends/tdlibAuth.js`** (313 строк):
+  - `buildTdlibParameters({ apiId, apiHash, databaseDirectory, ... })` — собирает
+    корректный объект для `setTdlibParameters` (SQLite база сообщений, файлов,
+    chat info, отключены secret chats, ru-локаль по умолчанию).
+  - Класс `TdlibAuthFlow` — реализация authorization state machine TDLib:
+    `authorizationStateWaitTdlibParameters` (автоматически шлёт параметры),
+    `WaitPhoneNumber` → `startLogin()`, `WaitCode` → `submitCode()`,
+    `WaitPassword` → `submitPassword()`, `Ready` → success.
+  - Внешний API сигнатурно повторяет GramJS `tg:login-start/code/password/cancel`.
+  - **Защита от race conditions**: resolvers устанавливаются СИНХРОННО перед
+    `client.invoke()`. Иначе TDLib мог успеть прислать следующий state до того
+    как наш `await` зарегистрирует обработчик → промис зависал бы навсегда.
+  - `cancelLogin()` отменяет pending промисы и шлёт `logOut`.
+  - Поддержка failure cases: `authorizationStateClosed`, `WaitEmailAddress`
+    (не поддерживается — возвращаем ошибку), invoke-исключения.
+  - `dispose()` снимает event listener с manager (чтобы не было утечек).
+- **`src/__tests__/tdlibAuth.vitest.js`** (282 строки, 19 тестов):
+  - `buildTdlibParameters` — 4 теста (корректные поля, required validation).
+  - Полный flow с 2FA (Wait params → Phone → Code → Password → Ready).
+  - Flow без 2FA (после code сразу Ready).
+  - Input validation (пустые phone/code/password).
+  - Ошибки: invoke падает, TDLib closed, Email auth → not supported, cancelLogin.
+  - `dispose()` снимает listener.
+  - Изоляция между аккаунтами (auth state другого account не меняет наш flow).
+
+### Прогресс по плану миграции
+- Этапы 0, 1, 2.1, 2.2 ✅ (`39bdd74`, `445d654`, `e90ee5c`, `3fa1344`)
+- Этап 2.3 (TDLib authorization) ✅ — текущий коммит
+- Этап 2.4 (TDLib messages: getChatHistory, sendMessage, markRead) — следующий
+- Этапы 2.5-2.6 / 3 / 4 — впереди
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 2.2: TDLib Client Manager
 
 ### Added
