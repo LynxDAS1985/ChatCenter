@@ -2,7 +2,15 @@
 
 **Версия проекта при старте плана**: v0.89.0
 **Дата старта**: 14 мая 2026
-**Статус**: 🟡 Этап 0 — ожидание разрешения на `npm install tdl prebuilt-tdlib`
+**Статус**: 🟢 Этап 0 ✅ + Этап 1 ✅ + Этап 2.1 ✅ (TDLib mapper). В работе: Этап 2.2 (TDLib client manager).
+
+## ✅ Что уже сделано
+
+| Этап | Коммит | Описание |
+|---|---|---|
+| **0** Smoke POC TDLib | `39bdd74` | npm install tdl + prebuilt-tdlib. POC `tdlibPoc.cjs` — libtdjson.dll 30 МБ загружается, клиент создаётся без подключения. |
+| **1** Абстракция messengerBackend | `39bdd74`, `445d654` (CI fix) | Интерфейс из 31 метода через JSDoc + factory `getBackend()` с фичефлагом `USE_TDLIB_BACKEND`. STUB backends для gramjs и tdlib. 66 структурных тестов. |
+| **2.1** TDLib mapper | (текущий коммит) | `backends/tdlibMapper.js` 409 строк: `mapMessage`, `mapChat`, `mapEntities`, `messagePreview`. Покрывает TDLib типы: text, photo, video, audio, voice, voicenote, animation, document, sticker, location, contact, poll + 20 типов entities + reply + forward (user/chat/channel/hidden). 51 vitest тест в 2 файлах (basic + media). |
 
 ---
 
@@ -38,7 +46,7 @@ TDLib — это **то на чём построены сами клиенты T
 
 ### Этап 0 — Проверка возможности (1-2 дня)
 
-**Статус**: 🟡 Ожидание
+**Статус**: ✅ Завершён 14 мая 2026 (коммит `39bdd74`)
 
 **Что нужно**:
 1. Пользователь запускает: `npm install tdl prebuilt-tdlib` (ассистент НЕ может — правило CLAUDE.md «без `npm install`»).
@@ -57,6 +65,9 @@ TDLib — это **то на чём построены сами клиенты T
 ---
 
 ### Этап 1 — Абстракция `messengerBackend` (3-4 дня)
+
+**Статус**: ✅ Завершён 14 мая 2026 (коммиты `39bdd74` + `445d654`)
+
 
 **Цель**: оба backend'а (GramJS текущий и TDLib будущий) реализуют один и тот же интерфейс. Чтобы переключение между ними было через feature flag.
 

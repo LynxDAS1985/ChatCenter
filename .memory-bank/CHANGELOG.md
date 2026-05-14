@@ -11,6 +11,31 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 2.1: TDLib mapper
+
+### Added
+- **`main/native/backends/tdlibMapper.js`** (409 строк) — конвертер TDLib JSON-API
+  объектов (`@type: 'message'`, `'chat'`, `'textEntity'`) в наш формат NativeMessage / Chat.
+  Покрывает: text, photo, video, audio, voice/voicenote, animation/GIF, document,
+  sticker, location, contact, poll + 20 типов textEntity + reply + forward
+  (user/chat/channel/hidden). Минимальные thumbnails через `minithumbnail.data`.
+- **`src/__tests__/tdlibMapper.vitest.js`** (255 строк, 30 тестов) — базовые сценарии:
+  entities, текст, sender, mapChat, messagePreview.
+- **`src/__tests__/tdlibMapperMedia.vitest.js`** (260 строк, 21 тест) — медиа-типы
+  и сложные сценарии: альбомы, reply, forward.
+
+### Changed
+- **`tdlib-migration-plan.md`** — статусы этапов 0/1/2.1 помечены как ✅ завершённые.
+
+### Прогресс по плану миграции
+- Этап 0 (POC) ✅ — коммит `39bdd74`
+- Этап 1 (абстракция) ✅ — коммиты `39bdd74` + `445d654`
+- Этап 2.1 (TDLib mapper) ✅ — текущий коммит
+- Этап 2.2 (TDLib client manager) — следующий
+- Этапы 2.3-2.6 / 3 / 4 — впереди
+
+---
+
 ## 2026-05-14 — План миграции backend с GramJS на TDLib
 
 ### Added
