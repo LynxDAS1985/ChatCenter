@@ -31,6 +31,7 @@
 | `native-mode-plan.md` | План нативного режима (в разработке) | При работе над native |
 | `group-topic-investigation.md` | Расследование Telegram forum/group topics: нет меню тем в native, неясно откуда грузятся сообщения | При задачах про Telegram-группы с темами / forum topics |
 | `phase-2-visual-test.md` | Живой чек-лист визуальной проверки Phase 2 виртуализации (v0.89.0): 12 пунктов + журнал найденных проблем | Пока виртуализация проверяется вживую, после закрытия — в архив |
+| `tdlib-migration-plan.md` | План миграции backend с GramJS на TDLib (5 этапов, ~5 недель) | При работе над переходом на TDLib backend |
 
 ### 📚 Детализация ловушек — `.memory-bank/mistakes/`
 

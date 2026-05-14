@@ -11,6 +11,18 @@
 
 ---
 
+## 2026-05-14 — План миграции backend с GramJS на TDLib
+
+### Added
+- **`tdlib-migration-plan.md`** — детальный план миграции backend Telegram с GramJS на официальную TDLib (через `tdl` + `prebuilt-tdlib`). 5 этапов: проверка возможности, абстракция `messengerBackend`, реализация TDLib backend, параллельная работа двух backend'ов с feature flag, финализация и удаление GramJS. ~5 недель calendar-time.
+- **Мотивация миграции**: TDLib даёт встроенно gap detection, `updates.getDifference`, локальную SQLite-базу, приоритет активного чата, параллельные media DC. Всё что мы пытаемся написать вручную поверх GramJS — уже сделано в официальной библиотеке Telegram.
+
+### Changed
+- **Memory Bank map** — `.memory-bank/README.md` и `CLAUDE.md` теперь указывают на план миграции.
+- **Phase 2 виртуализации**: визуальная проверка 12 пунктов чек-листа отложена пока миграция в работе (по просьбе пользователя 14 мая 2026).
+
+---
+
 ## 2026-05-14 — Phase 2 виртуализации: чек-лист визуальной проверки
 
 ### Added
