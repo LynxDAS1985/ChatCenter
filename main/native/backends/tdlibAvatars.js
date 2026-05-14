@@ -44,7 +44,13 @@ export function scheduleAvatarDownload(manager, record, kind, ownerId, photoFile
       if (r?.local?.is_downloading_completed && r.local.path) {
         handleAvatarReady(manager, record, r)
       }
-    }).catch(() => { /* silent — TDLib может вернуть FILE_REFERENCE_INVALID */ })
+    }).catch((e) => {
+      // v0.89.0 / Этап 3.12: логируем (раньше silent скрывал FILE_REFERENCE_INVALID
+      // и подобные ошибки → не было видно почему аватарки не качаются).
+      try {
+        manager.emit('avatar:error', { accountId: record.accountId, fileId, kind, ownerId, error: e?.message || String(e) })
+      } catch (_) {}
+    })
   }
 }
 

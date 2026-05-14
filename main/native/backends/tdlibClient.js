@@ -274,8 +274,17 @@ export class TdlibClientManager extends EventEmitter {
         }
         return
 
-      case 'updateChatTitle':
       case 'updateChatPhoto':
+        // v0.89.0 / Этап 3.12: TDLib шлёт photo отдельным event если её не было
+        // в момент updateNewChat (или при смене фото). Запускаем download здесь
+        // дополнительно — без этого аватарки многих чатов не появлялись.
+        if (update.chat_id != null) {
+          scheduleAvatarDownload(this, record, 'chat', update.chat_id, update.photo?.small)
+        }
+        this._patchChat(record, update)
+        return
+
+      case 'updateChatTitle':
       case 'updateChatPermissions':
       case 'updateChatLastMessage':
       case 'updateChatPosition':
