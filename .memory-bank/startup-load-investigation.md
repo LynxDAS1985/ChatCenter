@@ -1714,11 +1714,13 @@ AI sidebar/panels
 
 ---
 
-## Итог расследования
+## Итог расследования dev-загрузки
 
-Регрессия `v0.87.126` с пропавшими native-аккаунтами закрыта в `v0.87.127`.
+Регрессия `v0.87.126` закрыта в `v0.87.127`.
 
-Расследование долгой загрузки не закрыто. На текущий момент причина смещена с Telegram API/аватарок на dev-загрузку renderer и тяжёлый стартовый import graph.
+Расследование долгой загрузки `npm start` / dev закрыто: причина была не в Telegram API, аккаунтах, аватарках или установщике. Задержка была в dev-загрузке renderer через Vite (`http://localhost:5173`) и тяжёлом import graph.
+
+Методы запуска и новая проблема `start:prodlike` вынесены в `.memory-bank/prodlike-webview-investigation.md`.
 
 ## v0.87.134 — отдельный production-like контрольный запуск
 
@@ -1726,6 +1728,6 @@ AI sidebar/panels
 
 Зачем: проверить гипотезу, что основная задержка идёт от Vite dev server/static graph (`http://localhost:5173`), а не от Telegram/VK/MAX/WhatsApp, аккаунтов или WebView-сессий. Telegram sessions/accounts, WebView partitions и runtime мессенджеров не менялись.
 
-Проверка живым логом `15:21:57`: гипотеза подтверждена. `loadFile` из `out/renderer/index.html`, `dom-ready ~685ms`, `ready-to-show ~696ms`, `loadFile resolved ~733ms`, `App imported ~85ms`, `App-mounted ~229ms`, `NativeApp-mounted ~628ms`, `resource-summary slow=none`. В dev-режиме ранее `App imported` был около `29s`, `NativeApp-mounted` около `53s`. Главная задержка была в Vite dev server/static graph, не в Telegram API/аккаунтах.
+Проверка логом `15:21:57`: гипотеза подтверждена. `loadFile/dom-ready/ready-to-show` меньше секунды, `App imported ~85ms`, `NativeApp-mounted ~628ms`, `slow=none`. В dev ранее: `App imported ~29s`, `NativeApp-mounted ~53s`. Задержка была в Vite dev server/static graph, не в Telegram API/аккаунтах.
 
-v0.87.135: добавлен `npm run dist:win`; в `dist/` после сборки остаётся только `.exe`.
+`prodlike-webview-investigation` закрыт: причина была в слабом интернете, не в `start:prodlike`.

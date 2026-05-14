@@ -490,6 +490,16 @@ CREATE TABLE settings (
 | `tg:send-message` | `{ chatId, text }` | `{ ok, messageId? }` |
 | `tg:remove-account` | `{ accountId }` | `{ ok }` |
 
+### Telegram forum topics — not implemented yet (2026-05-12)
+
+Current `tg:get-chats` / `tg:get-messages` contract is flat: one Telegram dialog = one native chat id.
+This is incomplete for Telegram forum/supergroup topics. The active investigation is documented in
+[`group-topic-investigation.md`](./group-topic-investigation.md).
+
+Do not treat forum topics as ordinary `tg:get-messages(chatId)` data. A correct implementation needs a
+separate topic list and a selected topic/thread id, likely through new IPC such as `tg:get-forum-topics`
+and topic-aware message loading.
+
 ### Main → Renderer (events)
 
 | Канал | Данные |
@@ -513,6 +523,7 @@ CREATE TABLE settings (
 3. **WhatsApp Baileys = серая зона** — не для массовых рассылок, риск бана при злоупотреблении
 4. **MAX Bot API только боты** — личные чаты остаются в WebView (или ждём пока MAX выпустит User API)
 5. **VK direct auth deprecated** — только OAuth через окно (не прямой логин/пароль)
+6. **Telegram forum topics не поддержаны в native** — forum-группа сейчас отображается как один плоский чат; меню тем и загрузка сообщений конкретной темы требуют отдельной реализации. См. [`group-topic-investigation.md`](./group-topic-investigation.md).
 
 ---
 

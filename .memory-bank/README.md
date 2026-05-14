@@ -20,6 +20,7 @@
 | `features.md` | Changelog активных версий (старое в архиве) | При добавлении функций |
 | `CHANGELOG.md` | Журнал изменений структуры Memory Bank | При правках структуры памяти |
 | `startup-load-investigation.md` | Живой документ расследования долгой загрузки Telegram при старте | Пока расследуем старт/загрузку; после фикса уйдёт в архив |
+| `prodlike-webview-investigation.md` | Закрытая памятка: слабый интернет может выглядеть как баг `start:prodlike`/WebView | При подозрении на медленную загрузку VK/MAX/Telegram WebView |
 | `native-scroll-diagnostics-handoff.md` | Диагностика скролла native | При расследовании native-scroll |
 | `decisions.md` | Ключевые архитектурные решения (ADR) | При принятии решений |
 | `api.md` | IPC-каналы, форматы сообщений, DTO | При работе с IPC |
@@ -28,6 +29,7 @@
 | `autoreply.md` | Логика авто-ответчика | При работе с авто-ответом |
 | `ui-components.md` | UI-компоненты, цвета, стили | При работе с UI |
 | `native-mode-plan.md` | План нативного режима (в разработке) | При работе над native |
+| `group-topic-investigation.md` | Расследование Telegram forum/group topics: нет меню тем в native, неясно откуда грузятся сообщения | При задачах про Telegram-группы с темами / forum topics |
 
 ### 📚 Детализация ловушек — `.memory-bank/mistakes/`
 
@@ -51,6 +53,7 @@
 | Файл | Что содержит |
 |------|------|
 | `archive/README.md` | Правила архивации + журнал |
+| `archive/2026-05-connection-health-plan.md` | Архивный план и итог реализации единого статуса качества подключения / экрана `Подключения` |
 | `archive/2026-04-common-mistakes-resolved.md` | Секции ⚪ ИСТОРИЯ (решено в v0.87.51) |
 | `archive/features-v0.87-early.md` | Changelog v0.87.0 – v0.87.39 (~140 КБ) |
 | `archive/features-pre-v0.87.md` | Changelog v0.1.0 – v0.86.10 (~210 КБ) |

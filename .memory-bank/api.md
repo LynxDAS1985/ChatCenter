@@ -15,6 +15,29 @@
 
 ---
 
+## Telegram forum topics — investigation (2026-05-12)
+
+Native Telegram API currently has flat chat/message channels:
+
+- `tg:get-chats` loads Telegram dialogs.
+- `tg:get-messages` loads messages for one `chatId`. For Telegram-like unread opening it can receive `{ aroundId, addOffset }` to load a window around `readInboxMaxId` instead of only the latest page.
+
+This is not enough for Telegram forum groups, because a forum group has topics/threads inside one supergroup.
+Current native `chatId` identifies only `accountId + peerId`; it does not include `topicId`.
+
+Investigation document: [`group-topic-investigation.md`](./group-topic-investigation.md).
+
+Potential future IPC, not implemented yet:
+
+| Channel | Params | Return |
+|---|---|---|
+| `tg:get-forum-topics` | `{ chatId, limit?, offset? }` | `{ ok, topics }` |
+| `tg:get-topic-messages` | `{ chatId, topicId, limit?, offsetId?, aroundId?, addOffset? }` | `{ ok, messages, aroundId? }` |
+
+Rule for future work: do not silently show forum group messages as if a concrete topic was selected. The UI must show the selected topic or clearly say that native topic mode is not available yet.
+
+---
+
 ## Реализованные каналы (v0.5.0)
 
 ### `app:ping` — проверка IPC

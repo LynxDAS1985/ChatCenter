@@ -11,6 +11,37 @@
 
 ---
 
+## 2026-05-12 — Telegram forum topics investigation
+
+### Added
+- **`group-topic-investigation.md`** — отдельный документ расследования проблемы: в native CenterChats Telegram forum-группа открывается как один плоский чат, нет меню тем, поэтому непонятно из какого topic/thread загружены сообщения.
+
+### Changed
+- **Memory Bank map** — `.memory-bank/README.md` и `CLAUDE.md` теперь указывают на документ расследования Telegram forum/group topics.
+- **Native/API docs** — `native-mode-plan.md` и `api.md` помечают forum topics как отдельную не реализованную часть Telegram API, которую нельзя путать с обычным `tg:get-messages`.
+
+---
+
+## 2026-05-12 — archive connection-health plan
+
+### Changed
+- **`archive/2026-05-connection-health-plan.md`** — завершённый план и итог реализации единого статуса качества подключения перенесён из корня `.memory-bank/` в архив после ручной проверки пользователем.
+- **Memory Bank map** — `.memory-bank/README.md`, `CLAUDE.md`, `features.md` и `archive/README.md` теперь указывают на архивный путь.
+
+---
+
+## 2026-05-08 — v0.87.136
+
+### Added
+- **`archive/2026-05-connection-health-plan.md`** — план и итог реализации единого статуса качества подключения. Изначально создан как `connection-health-plan.md`, 12 мая 2026 перенесён в архив после ручной проверки.
+
+### Changed
+- **Memory Bank map** — `.memory-bank/README.md` и `CLAUDE.md` теперь ссылаются на документ статусов подключения.
+- **UI docs** — `ui-components.md` описывает `connectionHealth` вместо старого UI-смысла `monitorStatus`.
+- **Mistakes docs** — ловушки 54/55 помечены как исторические для UI: monitor/preload остаётся внутренним механизмом, но точка показывает качество подключения.
+- **Native/API docs** — зафиксировано, что нижний блок `Подключения` использует per-account замеры `tg:get-chats` / `tg:rescan-unread`, а `Not connected` отображается как `error`.
+- **WebView docs** — зафиксировано, что последнее время ответа берётся из лёгкого `network-fetch` probe внутри WebView, а не из времени загрузки страницы и не из локального DOM-only `executeJavaScript`; после самопроверки probe усилен цепочкой `current-page → favicon → origin-root`.
+
 ## 2026-05-07 — v0.87.135
 
 ### Added
