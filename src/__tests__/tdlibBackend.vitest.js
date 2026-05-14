@@ -204,14 +204,10 @@ describe('backend.messages', () => {
     }))
   })
 
-  it('getTopic/markTopicRead/forwardMessage/sendFile — пока NOT_IMPL', async () => {
+  it('forwardMessage/sendFile — пока NOT_IMPL (Этап 3.10: getTopic+markTopicRead реализованы)', async () => {
     const { backend } = makeBackend()
-    const r1 = await backend.messages.getTopic({ chatId: 'tg_main:-1' })
-    const r2 = await backend.messages.markTopicRead('tg_main:-1', 1, 100)
     const r3 = await backend.messages.forwardMessage('tg_main:-1', 'tg_main:-2', 1)
     const r4 = await backend.messages.sendFile('tg_main:-1', '/x')
-    expect(r1.ok).toBe(false)
-    expect(r2.ok).toBe(false)
     expect(r3.ok).toBe(false)
     expect(r4.ok).toBe(false)
   })
@@ -367,11 +363,10 @@ describe('backend.media', () => {
 // ──────────────────────────────────────────────────────────────────────
 
 describe('backend.forum', () => {
-  it('getTopics возвращает NOT_IMPL', async () => {
+  it('forum.getTopicMessages — alias к messages.getTopic, NOT_IMPL по соглашению', async () => {
     const { backend } = makeBackend()
-    const r = await backend.forum.getTopics('tg_main:-1', 10)
+    const r = await backend.forum.getTopicMessages({ chatId: 'tg_main:-1' })
     expect(r.ok).toBe(false)
-    expect(r.topics).toEqual([])
   })
 
   it('getTopicMessages возвращает NOT_IMPL', async () => {

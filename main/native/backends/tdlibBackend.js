@@ -26,6 +26,7 @@ import {
 } from './tdlibMedia.js'
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
+import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
 
 // ──────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -224,7 +225,9 @@ export function createTdlibBackend(opts = {}) {
           const t0 = Date.now()
           try {
             await client.invoke({ '@type': 'getOption', name: 'version' })
-            accountStats.push({ accountId, ms: Date.now() - t0, ok: true })
+            // Min 1 мс — getOption отвечает <1ms из кэша TDLib, UI плохо
+            // воспринимает 0 (выглядит как «не проверилось»).
+            accountStats.push({ accountId, ms: Math.max(1, Date.now() - t0), ok: true })
           } catch (e) {
             accountStats.push({ accountId, ms: Date.now() - t0, ok: false, error: e?.message || String(e) })
           }
@@ -245,10 +248,35 @@ export function createTdlibBackend(opts = {}) {
           extras: makeExtras(manager, ctx.accountId),
         })
       },
-      async getTopic(_params) {
-        // Forum topics — отдельная задача. На Этапе 2.6 пропускаем
-        // (см. group-topic-investigation.md). UI пока не разрешает отправку в темы.
-        return { ok: false, error: 'forum topics not implemented in tdlib backend yet', messages: [] }
+      // v0.89.0 / Этап 3.10: TDLib getMessageThreadHistory для forum topics
+      async getTopic(params) {
+        const ctx = getClientForChat(manager, params?.chatId)
+        if (ctx.error) return { ...ctx.error, messages: [] }
+        const topicId = Number(params?.topicId || params?.topMessageId)
+        if (!topicId) return { ok: false, error: 'no topicId', messages: [] }
+        const limit = Number(params?.limit) || 50
+        try {
+          const result = await ctx.client.invoke({
+            '@type': 'getMessageThreadHistory',
+            chat_id: ctx.rawId,
+            message_id: topicId,
+            from_message_id: Number(params?.aroundId || params?.offsetId || 0),
+            offset: Number(params?.addOffset || 0),
+            limit,
+          })
+          const extras = makeExtras(manager, ctx.accountId)
+          const messages = (result?.messages || []).map((m) => {
+            const senderId = m.sender_id
+            const senderName = extras.getSenderName(senderId)
+            const senderAvatar = extras.getSenderAvatar(senderId)
+            // mapMessage импорт уже есть в tdlibBackend через tdlibMessages?
+            // Нет — mapMessage из tdlibMapper. Импортируем в Stage 3.10.
+            return tdlibMapMessageDirect(m, params.chatId, { senderName, senderAvatar })
+          }).filter(Boolean).reverse()
+          return { ok: true, messages, hasMore: messages.length >= limit }
+        } catch (e) {
+          return { ok: false, error: e?.message || String(e), messages: [] }
+        }
       },
       async send(chatId, text, replyTo) {
         const ctx = getClientForChat(manager, chatId)
@@ -283,8 +311,20 @@ export function createTdlibBackend(opts = {}) {
         // отметит всё ниже. Этого достаточно для UI-level mark-read.
         return viewMessages(ctx.client, ctx.rawId, [maxId])
       },
-      async markTopicRead(_chatId, _topicId, _maxId) {
-        return { ok: false, error: 'markTopicRead not implemented yet' }
+      // v0.89.0 / Этап 3.10: TDLib readAllMessageThreadMentions / viewMessages
+      // для thread. Простой вариант: viewMessages в самом чате с force_read.
+      async markTopicRead(chatId, topicId, maxId) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        try {
+          await ctx.client.invoke({
+            '@type': 'viewMessages',
+            chat_id: ctx.rawId,
+            message_ids: [Number(maxId)],
+            force_read: true,
+          })
+          return { ok: true }
+        } catch (e) { return { ok: false, error: e?.message || String(e) } }
       },
       async getPinned(chatId) {
         const ctx = getClientForChat(manager, chatId)
@@ -364,11 +404,46 @@ export function createTdlibBackend(opts = {}) {
     },
 
     forum: {
-      async getTopics(_chatId, _limit) {
-        return { ok: false, error: 'forum.getTopics not implemented yet', isForum: false, topics: [] }
+      // v0.89.0 / Этап 3.10: TDLib getForumTopics
+      async getTopics(chatId, limit = 100) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return { ...ctx.error, isForum: false, topics: [] }
+        // Проверим что чат — реально forum (is_forum=true в supergroup)
+        const tdChat = manager.getChatCached(ctx.accountId, ctx.rawId)
+        const isForum = !!(tdChat?.type?.is_forum)
+        if (!isForum) return { ok: true, isForum: false, topics: [] }
+        try {
+          const result = await ctx.client.invoke({
+            '@type': 'getForumTopics',
+            chat_id: ctx.rawId,
+            query: '',
+            offset_date: 0,
+            offset_message_id: 0,
+            offset_message_thread_id: 0,
+            limit: Math.min(100, Number(limit) || 100),
+          })
+          const topics = (result?.topics || []).map((t) => ({
+            id: String(t.info?.message_thread_id || ''),
+            topicId: String(t.info?.message_thread_id || ''),
+            topMessageId: String(t.info?.message_thread_id || ''),
+            title: t.info?.name || '',
+            unreadCount: Number(t.unread_count) || 0,
+            iconColor: t.info?.icon?.color || 0,
+            iconCustomEmojiId: t.info?.icon?.custom_emoji_id ? String(t.info.icon.custom_emoji_id) : null,
+            isClosed: !!t.info?.is_closed,
+            isPinned: !!t.is_pinned,
+            readInboxMaxId: Number(t.last_read_inbox_message_id) || 0,
+          }))
+          return { ok: true, isForum: true, topics }
+        } catch (e) {
+          return { ok: false, error: e?.message || String(e), isForum: true, topics: [] }
+        }
       },
+      // Alias: forum.getTopicMessages → messages.getTopic (UI зовёт messages.getTopic
+      // через tg:get-topic-messages, forum.getTopicMessages пока не используется).
+      // Возвращаем NOT_IMPL чтобы было ясно если кто-то его дёрнет.
       async getTopicMessages(_params) {
-        return { ok: false, error: 'forum.getTopicMessages not implemented yet', messages: [] }
+        return { ok: false, error: 'forum.getTopicMessages: use messages.getTopic instead', messages: [] }
       },
     },
 

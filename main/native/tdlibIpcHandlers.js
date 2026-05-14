@@ -266,6 +266,13 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
     subscribe('user:status', ({ accountId, userId, status }) => ({
       channel: 'tg:user-status', data: { accountId, userId, online: status === 'userStatusOnline' },
     }))
+    // v0.89.0 / Этап 3.9: аватарки чатов и пользователей (sender)
+    subscribe('chat:avatar', ({ chatId, avatarPath }) => ({
+      channel: 'tg:chat-avatar', data: { chatId, avatarPath },
+    }))
+    subscribe('user:avatar', ({ accountId, userId, avatarPath }) => ({
+      channel: 'tg:sender-avatar', data: { accountId, userId, avatarPath },
+    }))
   }
 
   // Возвращает unregister функцию — для тестов и graceful shutdown

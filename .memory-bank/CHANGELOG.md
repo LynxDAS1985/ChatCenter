@@ -11,6 +11,77 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 3.9+3.10: аватарки + forum topics + memory leak fix
+
+### Bugs (из реального запуска после 3.8)
+
+1. `[ERROR] MaxListenersExceededWarning: 11 file:update listeners added to [TdlibClientManager]`
+   — каждая параллельная downloadFile подписывается на `file:update`, default limit 10.
+2. **Health check 0 мс** — выглядит подозрительно (на самом деле getOption отвечает <1мс из кэша).
+3. **Аватарки чатов/отправителей не загружаются** — нет моста `tg:chat-avatar`/`tg:sender-avatar`.
+4. **Forum topics не работают** — `messages.getTopic` и `forum.getTopics` были STUB.
+
+### Fixes — Этап 3.9 (cosmetic + avatars)
+
+- **`TdlibClientManager.setMaxListeners(100)`** в конструкторе — не утечка, listeners
+  снимаются после resolve, default Node.js limit 10 слишком жёсткий для UI с 20 аватарками
+  загружающимися параллельно.
+- **healthCheck min 1 мс** — `Math.max(1, Date.now() - t0)` чтобы UI не путался.
+- **Avatars pipeline** в `tdlibClient.js`:
+  - `_pendingAvatars: Map<fileId, { accountId, kind, ownerId }>` — связь между file и owner.
+  - `_scheduleAvatarDownload(record, kind, ownerId, photoFile)` — при `updateNewChat`/
+    `updateUser` запускает `downloadFile` с priority=1 (background).
+  - `_handleAvatarReady(record, file)` — при `updateFile` с `is_downloading_completed=true`
+    проверяет `_pendingAvatars` и эмитит соответствующее событие.
+  - `_emitAvatarReady` — emit `chat:avatar` или `user:avatar` с `file://` URL
+    (TDLib хранит файлы вне cc-media:// folders).
+- **Bridge events** в `tdlibIpcHandlers.js`:
+  - `chat:avatar` → `tg:chat-avatar` (UI store обновляет chat.avatar)
+  - `user:avatar` → `tg:sender-avatar` (UI обновляет senderAvatar в messages)
+
+### Fixes — Этап 3.10 (forum topics)
+
+- **`messages.getTopic`** — реализован через TDLib `getMessageThreadHistory`:
+  `{ '@type': 'getMessageThreadHistory', chat_id, message_id (=topicId), from_message_id,
+  offset, limit }`. Возвращает messages в reverse-order (UI ждёт от старых к новым).
+- **`messages.markTopicRead`** — реализован через TDLib `viewMessages` с `force_read: true`.
+  TDLib обновляет `last_read_inbox_message_id` для текущего thread.
+- **`forum.getTopics`** — реализован через TDLib `getForumTopics`:
+  - Сначала проверяет `chat.type.is_forum` из cache — если не forum, возвращает
+    `{ ok: true, isForum: false, topics: [] }` без сетевого запроса.
+  - При forum-чате: invoke `getForumTopics({ chat_id, query: '', offset_*, limit })`.
+  - Мапит `forumTopic.info.message_thread_id` → `id/topicId/topMessageId` (UI ждёт
+    все 3 поля для совместимости с GramJS).
+  - Также мапит: `title`, `unreadCount`, `iconColor`, `iconCustomEmojiId`, `isClosed`,
+    `isPinned`, `readInboxMaxId`.
+- **`forum.getTopicMessages`** — теперь noop с указанием «use messages.getTopic instead»
+  (UI зовёт `tg:get-topic-messages` который маршрутится в `messages.getTopic`).
+
+### Tests
+
+- Обновлены тесты в `tdlibBackend.vitest.js` под новые реализации:
+  - Был «getTopic/markTopicRead/forwardMessage/sendFile NOT_IMPL» — теперь только
+    forwardMessage/sendFile NOT_IMPL.
+  - Удалён тест «getTopics возвращает NOT_IMPL».
+- **`src/__tests__/tdlibBackendForum.vitest.js`** (новый, 12 тестов):
+  - messages.getTopic (4): параметры, reverse-order, no topicId, invoke fail
+  - messages.markTopicRead (2): viewMessages вызов, invalid chatId
+  - forum.getTopics (6): не-forum chat, forum chat с topics, параметры invoke,
+    limit clamp до 100, invoke fail, invalid chatId
+- vitest: 472 теста (35 файлов).
+
+### Лимиты файлов
+- `tdlibBackend.vitest.js` упёрся в 400 строк → forum-тесты вынесены в
+  `tdlibBackendForum.vitest.js`.
+
+### Прогресс
+- Этапы 0, 1, 2.1-2.6, 3.1-3.8 ✅
+- **Этап 3.9 (avatars + cosmetic fixes) ✅**
+- **Этап 3.10 (forum topics) ✅**
+- Этап 4 — реальное тестирование
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 3.8: emit tg:messages + missing IPC handlers + healthCheck format
 
 ### Bugs из реального запуска (post Этап 3.7)
