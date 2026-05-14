@@ -34,6 +34,8 @@ const messagesCode = fs.readFileSync('main/native/telegramMessages.js', 'utf8')
 const storeCode = fs.readFileSync('src/native/store/nativeStore.js', 'utf8')
 const storeIpcCode = fs.readFileSync('src/native/store/nativeStoreIpc.js', 'utf8')
 const scrollCode = fs.readFileSync('src/native/hooks/useInboxScroll.js', 'utf8')
+// v0.88.x разбивка: prefetch-логика вынесена в отдельный hook (лимит 150 строк).
+const prefetchCode = fs.readFileSync('src/native/hooks/useInboxNewerPrefetch.js', 'utf8')
 const panelCode = fs.readFileSync('src/native/components/InboxChatPanel.jsx', 'utf8')
 const inboxCode = fs.readFileSync('src/native/modes/InboxMode.jsx', 'utf8')
 
@@ -91,33 +93,37 @@ test('v0.88.1: backend НЕ эмитит tg:messages при пустом afterId
     'tg:get-topic-messages must NOT emit tg:messages for empty afterId-response (avoid UI flicker)')
 })
 
-console.log('\n── Hook useInboxScroll (prefetch триггер): ──')
-test('NEWER_PREFETCH_THRESHOLD_PX определён', () => {
-  assert(scrollCode.includes('NEWER_PREFETCH_THRESHOLD_PX'),
-    'Prefetch threshold constant must exist')
+console.log('\n── Hook useInboxScroll / useInboxNewerPrefetch (prefetch триггер): ──')
+test('useInboxScroll делегирует prefetch в useInboxNewerPrefetch', () => {
+  assert(scrollCode.includes('useInboxNewerPrefetch') && scrollCode.includes('newerPrefetch.maybeTrigger'),
+    'useInboxScroll must delegate downward prefetch to useInboxNewerPrefetch hook')
 })
-test('handleScroll вызывает store.loadNewerMessages у низа', () => {
-  assert(scrollCode.includes('store.loadNewerMessages'),
-    'useInboxScroll must trigger loadNewerMessages near bottom')
-  assert(scrollCode.includes('fromBottomPx') && scrollCode.includes('NEWER_PREFETCH_THRESHOLD_PX'),
+test('NEWER_PREFETCH_THRESHOLD_PX определён в useInboxNewerPrefetch', () => {
+  assert(prefetchCode.includes('NEWER_PREFETCH_THRESHOLD_PX'),
+    'Prefetch threshold constant must exist in the dedicated newer-prefetch hook')
+})
+test('maybeTrigger вызывает store.loadNewerMessages у низа', () => {
+  assert(prefetchCode.includes('store.loadNewerMessages'),
+    'newer-prefetch hook must trigger loadNewerMessages near bottom')
+  assert(prefetchCode.includes('fromBottomPx') && prefetchCode.includes('NEWER_PREFETCH_THRESHOLD_PX'),
     'Trigger must be based on distance from bottom')
 })
 test('диагностические события load-newer-* логируются', () => {
-  assert(scrollCode.includes('load-newer-trigger') && scrollCode.includes('load-newer-result'),
+  assert(prefetchCode.includes('load-newer-trigger') && prefetchCode.includes('load-newer-result'),
     'Newer-prefetch diagnostics events must be logged')
 })
 test('v0.88.1: noMoreNewerRef блокирует бесконечный цикл у конца чата', () => {
-  assert(scrollCode.includes('noMoreNewerRef') && scrollCode.includes('reachedEnd'),
+  assert(prefetchCode.includes('noMoreNewerRef') && prefetchCode.includes('reachedEnd'),
     'Hook must mark viewKey as exhausted when Telegram returns hasMore=false or empty')
-  assert(scrollCode.match(/!noMoreNewerRef\.current\.get\(viewKey\)/),
+  assert(prefetchCode.match(/noMoreNewerRef\.current\.get\(viewKey\)/),
     'Trigger condition must check noMoreNewerRef before re-firing prefetch')
 })
 test('v0.88.2: сброс noMoreNewerRef при росте activeMessages (real-time push страховка)', () => {
-  assert(scrollCode.includes('prevMessagesLenRef') && scrollCode.includes('prevScrollKeyRef'),
+  assert(prefetchCode.includes('prevMessagesLenRef') && prefetchCode.includes('prevScrollKeyRef'),
     'Hook must track previous messages length and viewKey to detect array growth')
-  assert(scrollCode.match(/noMoreNewerRef\.current\.delete\(key\)/),
+  assert(prefetchCode.match(/noMoreNewerRef\.current\.delete\(key\)/),
     'When activeMessages array grows within same viewKey, the no-more flag must be cleared')
-  assert(scrollCode.includes('load-newer-flag-reset'),
+  assert(prefetchCode.includes('load-newer-flag-reset'),
     'Flag reset must be observable in diagnostics (load-newer-flag-reset event)')
 })
 

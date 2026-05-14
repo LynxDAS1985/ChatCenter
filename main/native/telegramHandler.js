@@ -15,6 +15,7 @@ import fs from 'node:fs'
 import { state, log } from './telegramState.js'
 import { initAuthHandlers, autoRestoreSessions } from './telegramAuth.js'
 import { initChatsHandlers } from './telegramChatsIpc.js'
+import { initForumTopicsHandlers } from './telegramForumTopicsIpc.js'
 import { initMessagesHandlers } from './telegramMessages.js'
 import { initMediaHandlers } from './telegramMedia.js'
 
@@ -35,6 +36,7 @@ export function initTelegramHandler({ getMainWindow, userDataPath }) {
   // Регистрируем все IPC handlers
   initAuthHandlers()
   initChatsHandlers()
+  initForumTopicsHandlers()
   initMessagesHandlers()
   initMediaHandlers()
 

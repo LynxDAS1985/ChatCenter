@@ -1,13 +1,14 @@
 // v0.87.103: вынесено из telegramChats.js — все IPC handlers (~250 строк).
 // В telegramChats.js остались только утилиты (mapping, кэш, аватарки, rescan).
 // Содержит: tg:get-cached-chats, tg:mark-read, tg:pin, tg:rescan-unread,
-// tg:get-pinned, tg:refresh-avatar, tg:set-typing, tg:get-chats,
-// tg:get-cleanup-stats, tg:remove-account.
+// tg:get-pinned, tg:refresh-avatar, tg:set-typing, tg:health-check, tg:get-chats,
+// tg:get-cleanup-stats, tg:remove-account, tg:set-mute.
+// v0.88.x: forum-topics handlers (tg:get-forum-topics, tg:mark-topic-read) +
+// helpers cacheCustomEmojiDocument вынесены в telegramForumTopicsIpc.js
+// (этот файл уже был за лимитом 500 строк).
 import { ipcMain } from 'electron'
-import fs from 'node:fs'
 import path from 'node:path'
 import { state, chatEntityMap, markReadMaxSent, log, emit, Api, getClientForChat, unregisterAccount } from './telegramState.js'
-import { mapMessage } from './telegramMessageMapper.js'
 import { collectCleanupStats, performFullWipe } from './telegramCleanup.js'
 import {
   mapDialog, saveChatsCache, loadRestPagesAsync, loadAvatarsAsync, fetchAllUnreadUpdates,
@@ -28,6 +29,38 @@ export function initChatsHandlers() {
       }
     } catch (e) {
       return { ok: false, error: e.message, accounts: [], activeAccountId: null }
+    }
+  })
+
+  // Lightweight connection health probe for the "Connections" panel.
+  // It intentionally does not load chats, unread counters, avatars or cache.
+  ipcMain.handle('tg:health-check', async (_, args) => {
+    const requestedAccountId = args?.accountId || null
+    const accountIds = requestedAccountId
+      ? [requestedAccountId]
+      : Array.from(state.clients.keys())
+
+    if (!accountIds.length) {
+      return { ok: false, error: 'Нет подключённых аккаунтов', accountStats: [] }
+    }
+
+    const accountStats = await Promise.all(accountIds.map(async (accountId) => {
+      const startedAt = Date.now()
+      const client = state.clients.get(accountId)
+      if (!client) {
+        return { accountId, ok: false, ms: Date.now() - startedAt, error: 'Клиент не подключен' }
+      }
+      try {
+        await client.getMe()
+        return { accountId, ok: true, ms: Date.now() - startedAt }
+      } catch (e) {
+        return { accountId, ok: false, ms: Date.now() - startedAt, error: e.message }
+      }
+    }))
+
+    return {
+      ok: accountStats.every(s => s.ok),
+      accountStats,
     }
   })
 
@@ -83,7 +116,7 @@ export function initChatsHandlers() {
   // все сообщения после этого id становятся "непрочитанными" → бейдж растёт.
   // Это случалось при скролле к старым сообщениям (IntersectionObserver видел
   // старые msg → readByVisibility → markRead с маленьким maxId).
-  ipcMain.handle('tg:mark-read', async (_, { chatId, maxId }) => {
+  ipcMain.handle('tg:mark-read', async (_, { chatId, maxId, readInboxMaxId }) => {
     try {
       // v0.87.105 (ADR-016): client по chatId — multi-account
       const client = getClientForChat(chatId)
@@ -91,8 +124,18 @@ export function initChatsHandlers() {
       const entity = chatEntityMap.get(chatId)
       if (!entity) return { ok: false, error: 'Чат не найден в кэше' }
       const numMaxId = maxId ? Number(maxId) : 0
+      const readCursor = Number(readInboxMaxId || 0)
+      if (readCursor > 0 && numMaxId > 0 && numMaxId <= readCursor) {
+        log(`mark-read SKIP: chat=${chatId} maxId=${numMaxId} <= readInboxMaxId=${readCursor}`)
+        return { ok: true, skipped: true, reason: 'before-read-cursor' }
+      }
       // Guard: не уменьшаем watermark
-      const prev = markReadMaxSent.get(chatId) || 0
+      let prev = markReadMaxSent.get(chatId) || 0
+      if (readCursor > 0 && prev > readCursor) {
+        log(`mark-read guard reset by server cursor: chat=${chatId} prev=${prev} readInboxMaxId=${readCursor}`)
+        prev = readCursor
+        markReadMaxSent.set(chatId, readCursor)
+      }
       if (numMaxId > 0 && numMaxId < prev) {
         log(`mark-read SKIP: chat=${chatId} maxId=${numMaxId} < prev=${prev} (не сбрасываем watermark)`)
         return { ok: true, skipped: true }
@@ -129,6 +172,8 @@ export function initChatsHandlers() {
     }
   })
 
+  // tg:mark-topic-read — см. telegramForumTopicsIpc.js (вынесено в v0.88.x).
+
   ipcMain.handle('tg:pin', async (_, { chatId, messageId, unpin = false }) => {
     log(`pin: chat=${chatId} msg=${messageId} unpin=${unpin}`)
     try {
@@ -161,11 +206,11 @@ export function initChatsHandlers() {
   ipcMain.handle('tg:rescan-unread', async () => {
     try {
       if (!state.client) return { ok: false }
-      const updates = await fetchAllUnreadUpdates()
+      const { updates, accountStats } = await fetchAllUnreadUpdates()
       emit('tg:unread-bulk-sync', { accountId: state.currentAccount?.id, updates })
       const withUnread = updates.filter(u => u.unreadCount > 0).length
       log(`manual rescan: ${updates.length} чатов (${withUnread} с непрочитанным)`)
-      return { ok: true, count: updates.length }
+      return { ok: true, count: updates.length, accountStats }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -186,6 +231,8 @@ export function initChatsHandlers() {
       return { ok: true, message: mapMessage(msgs[0], chatId) }
     } catch (e) { return { ok: false, error: e.message, message: null } }
   })
+
+  // tg:get-forum-topics — см. telegramForumTopicsIpc.js (вынесено в v0.88.x).
 
   // v0.87.17: дозагрузка photo для конкретной entity (для каналов без photo в getDialogs)
   ipcMain.handle('tg:refresh-avatar', async (_, { chatId }) => {
@@ -240,16 +287,22 @@ export function initChatsHandlers() {
       startupLog(`get-chats start requested=${requestedAccountId || 'all'} accounts=${accountIds.join(',')} count=${accountIds.length}`)
 
       const allFirstChats = []
+      const accountStats = []
       for (const accountId of accountIds) {
         const client = state.clients.get(accountId)
         if (!client) continue
+        const accountStartedAt = Date.now()
         try {
           await loadChatsForAccount(client, accountId, allFirstChats)
-        } catch (e) { log(`get-chats(${accountId}) err: ${e.message}`) }
+          accountStats.push({ accountId, ok: true, ms: Date.now() - accountStartedAt })
+        } catch (e) {
+          accountStats.push({ accountId, ok: false, ms: Date.now() - accountStartedAt, error: e.message })
+          log(`get-chats(${accountId}) err: ${e.message}`)
+        }
       }
 
       startupLog(`get-chats done requested=${requestedAccountId || 'all'} firstChats=${allFirstChats.length} ms=${Date.now() - startedAt}`)
-      return { ok: true, chats: allFirstChats, hasMore: allFirstChats.length > 50 }
+      return { ok: true, chats: allFirstChats, hasMore: allFirstChats.length > 50, accountStats }
     } catch (e) {
       log('get-chats error: ' + e.message)
       startupLog(`get-chats failed ms=${Date.now() - startedAt} err="${e.message}"`)

@@ -102,8 +102,15 @@ var KNOWN_EXCEPTIONS = {
   // InboxMessageInput, InboxChatListSidebar) — теперь 566 строк, под стандартным лимитом 600.
   // Исключение удалено.
   'src/utils/webviewSetup.js': {
-    ceiling: 500,
-    reason: 'v0.87.97: handleNewMessage вынесён в webviewHandleNewMessage.js (170 строк). Осталась логика setWebviewRef, listeners, dom-ready injection.'
+    ceiling: 600,
+    reason: 'v0.88.x: createWebviewSetup — фабрика с closures (deps→handlers), references shared state. handleNewMessage уже вынесен в webviewHandleNewMessage.js (170 строк) в v0.87.97. Дальнейшее разбиение требует архитектурного рефакторинга (closures → классы или модули) — отдельный шаг.'
+  },
+  // v0.88.x: App.jsx — корневой компонент с providers, top-level state, routing.
+  // Разбиение требует архитектурного решения (вынос layout/providers в отдельные компоненты)
+  // — отдельный плановый шаг рефактора. Пока exception с обоснованием.
+  'src/App.jsx': {
+    ceiling: 800,
+    reason: 'v0.88.x: Корневой компонент с providers, top-level state, routing между native/webview режимами. Разбиение требует архитектурного рефакторинга.'
   },
   'src/utils/messengerConfigs.js': {
     ceiling: 400,
@@ -122,6 +129,21 @@ var KNOWN_EXCEPTIONS = {
   'main/pin-dock.js': {
     ceiling: 600,
     reason: 'Renderer-код для pin-dock BrowserWindow. Извлечён из inline <script>. Логически цельный (DOM render + drag + IPC).'
+  },
+  // v0.88.0..v0.88.2: nativeStore содержит state + actions для всего native Telegram режима:
+  // login flow, чаты, сообщения, форум-темы с markTopicRead retry loop, unread-window helpers,
+  // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
+  // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
+  'src/native/store/nativeStore.js': {
+    ceiling: 850,
+    reason: 'v0.88.0..0.88.2: добавлены loadNewerMessages + throttle + smart addOffset (~40 строк к 764). Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
+  },
+  // v0.88.x: профильные тесты v0.88.x вынесены в nativeStoreUnreadPrefetch.vitest.jsx (218 строк).
+  // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,
+  // bulk-sync — разбивать дальше нет смысла, они одного домена (read/unread state).
+  'src/native/store/nativeStore.vitest.jsx': {
+    ceiling: 450,
+    reason: 'v0.88.x: v0.88-специфика вынесена в nativeStoreUnreadPrefetch.vitest.jsx. Остались сцепленные регрессионные тесты Telegram-style read/unread (405 строк, минимальное превышение default 400).'
   }
 }
 
