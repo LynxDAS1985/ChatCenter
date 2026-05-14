@@ -91,6 +91,7 @@
 | Расследование бага скролла native | [`.memory-bank/native-scroll-diagnostics-handoff.md`](.memory-bank/native-scroll-diagnostics-handoff.md) |
 | Большой план native-режима | [`.memory-bank/native-mode-plan.md`](.memory-bank/native-mode-plan.md) |
 | Расследование Telegram-групп с темами / forum topics в native | [`.memory-bank/group-topic-investigation.md`](.memory-bank/group-topic-investigation.md) |
+| Чек-лист визуальной проверки Phase 2 виртуализации (v0.89.0) | [`.memory-bank/phase-2-visual-test.md`](.memory-bank/phase-2-visual-test.md) |
 | Расследование долгой загрузки Telegram при старте | [`.memory-bank/startup-load-investigation.md`](.memory-bank/startup-load-investigation.md) |
 | Закрытая памятка: слабый интернет vs `start:prodlike`/WebView | [`.memory-bank/prodlike-webview-investigation.md`](.memory-bank/prodlike-webview-investigation.md) |
 | Архив: план единого статуса качества подключения | [`.memory-bank/archive/2026-05-connection-health-plan.md`](.memory-bank/archive/2026-05-connection-health-plan.md) — читать только по явной просьбе |

@@ -45,36 +45,68 @@ function initialsFor(senderName) {
 // react-window 2.x передаёт { index, style, ariaAttributes, ...rowProps }.
 // `style` обязательно применить к корневому элементу (position absolute + top + height
 // от библиотеки) — иначе виртуализация сломается.
-// Padding 16px по бокам + 6px снизу — эквивалент старого `padding: 16; gap: 6` на
-// scroll-container. ResizeObserver react-window учтёт paddingBottom как часть высоты row.
+//
+// КРИТИЧНО для divider-строк (day/time/unread):
+//   - react-window даёт row только position:absolute + top + height (БЕЗ width 100%).
+//     Width=auto = content-sized → divider схлопывается под pill, теряется горизонтальное
+//     центрирование, которое раньше работало через `align-self: center` в flex-column.
+//   - CSS-классы дивайдеров используют `margin: 14px 0 6px` — но ResizeObserver измеряет
+//     border-box БЕЗ margin → следующий row наезжает на margin предыдущего ⇒ дивайдер
+//     визуально склеивается со следующим именем отправителя.
+//   - Решение: на wrapper-row ставим явный width: '100%' + display:flex justifyContent:center
+//     + переносим margin → padding (попадает в border-box, учитывается ResizeObserver).
+//     На самом divider'е обнуляем margin inline чтобы не было двойного отступа.
+//
+// defaultRowHeight 50 (а не 70): дивайдеры реально ~25-30px, короткие сообщения ~40-60px.
+// Меньшая дельта между defaultRowHeight и реальной после ResizeObserver = меньше
+// «дёргания» scrollTop на лету (см. log `top=8831 → 8733` — откат на 100px при скролле).
 function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
   const item = renderItems[index]
-  const rowStyle = {
+  // Базовый row-wrapper: гарантирует ширину 100% и horizontal padding.
+  // Для каждого типа добавляем свои padding-top/bottom (вместо CSS margin) и flex.
+  const baseRowStyle = {
     ...style,
+    width: '100%',
     paddingLeft: 16,
     paddingRight: 16,
-    paddingBottom: 6,
     boxSizing: 'border-box',
   }
-  if (!item) return <div style={rowStyle} {...ariaAttributes} />
+  if (!item) return <div style={{ ...baseRowStyle, paddingBottom: 6 }} {...ariaAttributes} />
 
   if (item.type === 'day') {
     return (
-      <div style={rowStyle} {...ariaAttributes} className="native-msg-day-row">
-        <span className="native-msg-divider native-msg-divider--day">{formatDayLabel(item.day)}</span>
+      <div style={{
+        ...baseRowStyle,
+        paddingTop: 14, paddingBottom: 6,
+        display: 'flex', alignItems: 'center', gap: 10,
+      }} {...ariaAttributes} className="native-msg-day-row">
+        <span className="native-msg-divider native-msg-divider--day" style={{ margin: 0 }}>
+          {formatDayLabel(item.day)}
+        </span>
       </div>
     )
   }
   if (item.type === 'time') {
     return (
-      <div style={rowStyle} {...ariaAttributes} className="native-msg-divider">
-        {new Date(item.time).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
+      <div style={{
+        ...baseRowStyle,
+        paddingTop: 14, paddingBottom: 6,
+        display: 'flex', justifyContent: 'center', alignItems: 'center',
+      }} {...ariaAttributes}>
+        <span className="native-msg-divider" style={{ margin: 0 }}>
+          {new Date(item.time).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
+        </span>
       </div>
     )
   }
   if (item.type === 'unread') {
     return (
-      <div style={rowStyle} {...ariaAttributes} className="native-msg-unread-divider">
+      <div style={{
+        ...baseRowStyle,
+        paddingTop: 14, paddingBottom: 6,
+        display: 'flex', alignItems: 'center', gap: 10,
+        margin: 0,  // CSS-класс добавляет margin, который не учитывает ResizeObserver
+      }} {...ariaAttributes} className="native-msg-unread-divider">
         <span>Новые сообщения</span>
       </div>
     )
@@ -90,7 +122,7 @@ function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
   const senderBg = senderColorFor(item.senderId)
   const senderAvatar = !item.isOutgoing ? item.senderAvatar : null
   return (
-    <div style={rowStyle} {...ariaAttributes} className="native-msg-group-row">
+    <div style={{ ...baseRowStyle, paddingBottom: 6 }} {...ariaAttributes} className="native-msg-group-row">
       <div style={{
         display: 'flex',
         flexDirection: item.isOutgoing ? 'row-reverse' : 'row',
@@ -173,8 +205,10 @@ export default function VirtualMessageList({
   style,
 }) {
   // useDynamicRowHeight: react-window сам мерит реальную высоту row через ResizeObserver.
-  // defaultRowHeight используется до первого измерения.
-  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 70, key: cacheKey })
+  // defaultRowHeight — высота до первого измерения. Поставил 50 (ближе к средней реальной)
+  // вместо 70: меньше дельта между «до measure» и «после» → меньше «дёргания» scrollTop.
+  // По логам v0.89.0 при 70 наблюдался откат scrollTop на ~100px в момент measure.
+  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 50, key: cacheKey })
   return (
     <List
       listRef={listRef}
