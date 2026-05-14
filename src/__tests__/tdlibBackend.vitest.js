@@ -85,12 +85,17 @@ describe('backend.chats', () => {
     ])
   })
 
-  it('healthCheck делает getOption и измеряет ms', async () => {
+  it('healthCheck делает getOption и возвращает accountStats массив', async () => {
     const { backend, mockClient } = makeBackend()
     mockClient.invoke.mockResolvedValueOnce({ '@type': 'optionValueString', value: '1.8.30' })
     const r = await backend.chats.healthCheck()
     expect(r.ok).toBe(true)
-    expect(r.perAccount.tg_main.ms).toBeGreaterThanOrEqual(0)
+    // v0.89.0 / Этап 3.8: UI ожидает accountStats[] с { accountId, ms, ok }
+    expect(Array.isArray(r.accountStats)).toBe(true)
+    expect(r.accountStats[0]).toEqual(expect.objectContaining({
+      accountId: 'tg_main', ok: true,
+    }))
+    expect(r.accountStats[0].ms).toBeGreaterThanOrEqual(0)
     expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
       '@type': 'getOption', name: 'version',
     }))

@@ -185,12 +185,14 @@ describe('chats IPC handlers', () => {
     expect(r.accountStats).toBeDefined()
   })
 
-  it('tg:health-check', async () => {
+  it('tg:health-check возвращает accountStats[]', async () => {
     const { ipcMain, mockClient } = setup()
     mockClient.invoke.mockResolvedValueOnce({ '@type': 'optionValueString', value: '1.8.30' })
     const r = await ipcMain.invoke('tg:health-check', {})
     expect(r.ok).toBe(true)
-    expect(r.perAccount.tg_main).toBeDefined()
+    // v0.89.0 / Этап 3.8: UI ожидает accountStats[] (массив, не объект)
+    expect(Array.isArray(r.accountStats)).toBe(true)
+    expect(r.accountStats[0]).toEqual(expect.objectContaining({ accountId: 'tg_main', ok: true }))
   })
 })
 

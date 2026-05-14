@@ -122,8 +122,32 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
   // MESSAGES
   // ────────────────────────────────────────────────────────────────────
 
-  handle('tg:get-messages', (params = {}) => backend.messages.get(params))
-  handle('tg:get-topic-messages', (params = {}) => backend.messages.getTopic(params))
+  // v0.89.0 / Этап 3.8: после get-messages эмитим `tg:messages` event с
+  // правильными полями (chatId, messages, append, appendNewer, readUpTo, aroundId,
+  // afterId) — как делает GramJS (telegramMessages.js:242). Без emit UI store
+  // не получит сообщения и зависает на «загрузка».
+  handle('tg:get-messages', async (params = {}) => {
+    const r = await backend.messages.get(params)
+    if (r?.ok && Array.isArray(r.messages)) {
+      sendToRenderer('tg:messages', {
+        chatId: params.chatId,
+        messages: r.messages,
+        append: Boolean(params.offsetId) && !params.aroundId && !params.afterId,
+        appendNewer: !!params.afterId,
+        readUpTo: 0,
+        aroundId: Number(params.aroundId) || 0,
+        afterId: Number(params.afterId) || 0,
+      })
+    }
+    return r
+  })
+  handle('tg:get-topic-messages', async (params = {}) => {
+    const r = await backend.messages.getTopic(params)
+    if (r?.ok && Array.isArray(r.messages)) {
+      sendToRenderer('tg:messages', { chatId: params.chatId, messages: r.messages, append: false })
+    }
+    return r
+  })
   handle('tg:send-message', ({ chatId, text, replyTo } = {}) =>
     backend.messages.send(chatId, text, replyTo))
   handle('tg:edit-message', ({ chatId, messageId, text } = {}) =>
@@ -137,6 +161,43 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
   handle('tg:mark-topic-read', ({ chatId, topicId, maxId } = {}) =>
     backend.messages.markTopicRead(chatId, topicId, maxId))
   handle('tg:get-pinned-message', ({ chatId } = {}) => backend.messages.getPinned(chatId))
+  // v0.89.0 / Этап 3.8: UI зовёт 'tg:get-pinned' (без -message). Alias.
+  handle('tg:get-pinned', ({ chatId } = {}) => backend.messages.getPinned(chatId))
+  // 'tg:refresh-avatar' — GramJS-only концепция (force-обновить кэш аватарки чата).
+  // В TDLib аватарки приходят через updateChatPhoto / updateUser events автоматически.
+  // Регистрируем noop чтобы UI не получал «No handler» error.
+  handle('tg:refresh-avatar', () => ({ ok: true }))
+
+  // v0.89.0 / Этап 3.8: noop-stubs для остальных IPC которые UI зовёт, но
+  // мы пока не реализовали через TDLib backend. Возвращают { ok: true } — UI
+  // не падает на errors. Реальная реализация — отдельный этап (4).
+  handle('tg:set-typing', async ({ chatId } = {}) => {
+    // TDLib: sendChatAction. Не критично — без typing-индикатора UI работает.
+    if (!chatId) return { ok: true }
+    try {
+      const { client, rawId } = (() => {
+        const colon = String(chatId).indexOf(':')
+        if (colon < 0) return {}
+        const accountId = String(chatId).slice(0, colon)
+        return { client: backend._manager.getClient(accountId), rawId: Number(String(chatId).slice(colon + 1)) }
+      })()
+      if (client?.invoke) {
+        await client.invoke({
+          '@type': 'sendChatAction', chat_id: rawId,
+          action: { '@type': 'chatActionTyping' },
+        })
+      }
+    } catch (_) {}
+    return { ok: true }
+  })
+  handle('tg:set-mute', () => ({ ok: true }))  // TODO: TDLib setChatNotificationSettings
+  handle('tg:pin', () => ({ ok: true }))        // TODO: TDLib toggleChatIsPinned
+  handle('tg:send-file', () => ({ ok: false, error: 'sendFile not implemented in tdlib backend yet' }))
+  handle('tg:get-cleanup-stats', async () => {
+    // Простой возврат — для UI «очистить кеш». TDLib имеет getStorageStatistics
+    // но синтаксис другой; пока возвращаем минимум.
+    return { ok: true, bytes: 0, fileCount: 0 }
+  })
 
   // ────────────────────────────────────────────────────────────────────
   // MEDIA

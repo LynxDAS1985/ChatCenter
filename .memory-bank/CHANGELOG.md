@@ -11,6 +11,65 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 3.8: emit tg:messages + missing IPC handlers + healthCheck format
+
+### Bugs из реального запуска (post Этап 3.7)
+
+После 3.7 чаты загружаются. Но при клике на чат:
+
+1. Сообщения не появляются — индикатор бежит вечно.
+2. Логи показывают непрерывные ошибки:
+   ```
+   ERROR: No handler registered for 'tg:get-pinned'
+   ERROR: No handler registered for 'tg:refresh-avatar'
+   ```
+3. Health-check показывает «Не отвечает / ошибка» хотя в логе `ms=23`.
+
+### Fixes (main/native/tdlibIpcHandlers.js + tdlibBackend.js)
+
+**Emit tg:messages event** (та же проблема что 3.7 с tg:chats):
+- GramJS `telegramMessages.js:242` после getHistory эмитит `tg:messages` event.
+- UI store (nativeStoreIpc.js) подписан только на event, не на invoke response.
+- Мой `tg:get-messages` возвращал messages через invoke response → UI висел.
+- ✅ После `backend.messages.get(params)` теперь эмитим
+  `sendToRenderer('tg:messages', { chatId, messages, append, appendNewer, readUpTo, aroundId, afterId })`.
+- Аналогично для `tg:get-topic-messages`.
+
+**Alias `tg:get-pinned`**:
+- UI зовёт `tg:get-pinned` (без `-message`), я зарегистрировал `tg:get-pinned-message`.
+- ✅ Добавлен handler `tg:get-pinned` который проксирует в `backend.messages.getPinned`.
+
+**noop `tg:refresh-avatar`**:
+- В TDLib аватарки приходят через `updateChatPhoto` event автоматически —
+  «refresh» концепция GramJS-only.
+- ✅ Регистрируем noop `{ ok: true }` чтобы UI не получал «No handler» error
+  каждый раз при открытии чата.
+
+**Missing handlers** для UI:
+- ✅ `tg:set-typing` — пробрасывает в TDLib `sendChatAction` (chatActionTyping).
+- ✅ `tg:set-mute` — noop (TODO: setChatNotificationSettings).
+- ✅ `tg:pin` — noop (TODO: toggleChatIsPinned).
+- ✅ `tg:send-file` — STUB с понятным error.
+- ✅ `tg:get-cleanup-stats` — простой stub `{ ok, bytes: 0, fileCount: 0 }`.
+
+**healthCheck format**:
+- UI ожидает `{ ok, accountStats: [{ accountId, ms, ok, error? }] }`
+  (см. `accountStatById` в `nativeStore.js:154` — array.find).
+- Я возвращал `{ ok, perAccount: { tg_xxx: {...} } }` — несовместимо.
+- ✅ Backend `chats.healthCheck` теперь собирает `accountStats: []`.
+
+### Tests
+
+- Обновлены 2 теста под новый формат `accountStats` (вместо `perAccount`).
+- vitest: 460/460 проходят.
+
+### Прогресс
+- Этапы 0, 1, 2.1-2.6, 3.1-3.7 ✅
+- **Этап 3.8 (emit tg:messages + missing handlers) ✅** — текущий коммит
+- Этап 4 — реальное тестирование (продолжение)
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 3.6: восстановление + finalize при autoRestore
 
 ### Bug (по фактам из реального запуска)

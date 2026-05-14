@@ -215,19 +215,21 @@ export function createTdlibBackend(opts = {}) {
       },
       async healthCheck() {
         // Лёгкий probe: getOption('version') — TDLib обычно отвечает за единицы мс.
-        const result = {}
+        // UI ожидает { ok, accountStats: [{ accountId, ms, ok, error? }] }
+        // (см. accountStatById в nativeStore.js:154).
+        const accountStats = []
         for (const accountId of manager.listAccounts()) {
           const client = manager.getClient(accountId)
-          if (!client?.invoke) { result[accountId] = { ms: -1, error: 'no client' }; continue }
+          if (!client?.invoke) { accountStats.push({ accountId, ms: -1, ok: false, error: 'no client' }); continue }
           const t0 = Date.now()
           try {
             await client.invoke({ '@type': 'getOption', name: 'version' })
-            result[accountId] = { ms: Date.now() - t0 }
+            accountStats.push({ accountId, ms: Date.now() - t0, ok: true })
           } catch (e) {
-            result[accountId] = { ms: Date.now() - t0, error: e?.message || String(e) }
+            accountStats.push({ accountId, ms: Date.now() - t0, ok: false, error: e?.message || String(e) })
           }
         }
-        return { ok: true, perAccount: result }
+        return { ok: true, accountStats }
       },
     },
 
