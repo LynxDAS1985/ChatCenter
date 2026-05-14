@@ -87,8 +87,34 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
   // CHATS
   // ────────────────────────────────────────────────────────────────────
 
-  handle('tg:get-chats', ({ accountId } = {}) => backend.chats.getChats(accountId))
-  handle('tg:get-cached-chats', ({ accountId } = {}) => backend.chats.getCachedChats(accountId))
+  // v0.89.0 / Этап 3.7: после get-chats / get-cached-chats эмитим `tg:chats` event
+  // чтобы UI store (nativeStoreIpc.js) подхватил чаты. GramJS делает то же самое.
+  // Без emit UI обновляется только через event — invoke response не обновляет store.
+  handle('tg:get-chats', async ({ accountId } = {}) => {
+    const r = await backend.chats.getChats(accountId)
+    if (r?.ok && Array.isArray(r.chats)) {
+      // Группируем по accountId — UI ожидает per-account events
+      const byAccount = new Map()
+      for (const c of r.chats) {
+        if (!byAccount.has(c.accountId)) byAccount.set(c.accountId, [])
+        byAccount.get(c.accountId).push(c)
+      }
+      for (const [aid, chats] of byAccount.entries()) {
+        sendToRenderer('tg:chats', { accountId: aid, chats, append: false })
+      }
+    }
+    return r
+  })
+  handle('tg:get-cached-chats', async ({ accountId } = {}) => {
+    const r = await backend.chats.getCachedChats(accountId)
+    if (r?.ok && Array.isArray(r.chats) && r.chats.length > 0) {
+      const targetAccountId = accountId || r.chats[0]?.accountId
+      if (targetAccountId) {
+        sendToRenderer('tg:chats', { accountId: targetAccountId, chats: r.chats, append: false })
+      }
+    }
+    return r
+  })
   handle('tg:rescan-unread', () => backend.chats.rescanUnread())
   handle('tg:health-check', () => backend.chats.healthCheck())
 
