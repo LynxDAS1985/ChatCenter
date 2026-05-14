@@ -140,6 +140,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const msgsScrollRef = useRef(null)
+  // v0.89.0: imperative API виртуализации react-window (scrollToRow, get element).
+  // Используется как fallback когда querySelector('[data-msg-id]') промахивается
+  // (элемент не в видимом виртуальном DOM).
+  const virtualListRef = useRef(null)
   const loadingOlderRef = useRef(false)
   // v0.88.0: prefetch новых сообщений вниз (Telegram-style infinite scroll).
   // loadingNewerRef — guard от параллельных запросов, [loadingNewer, setLoadingNewer] — для UI индикатора.
@@ -188,6 +192,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.87.29/40: начальный скролл — ПОСЛЕ загрузки свежих данных.
   // v0.87.66: onDone → setChatReady(true). v0.87.67: запоминаем seenChatsRef.
+  // v0.89.0: onMissingTarget — fallback для виртуализации (querySelector промахнулся).
   const { doneRef: initialScrollDoneRef } = useInitialScroll({
     activeChatId: activeViewKey,
     messagesCount: activeMessages.length,
@@ -200,6 +205,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     },
     // v0.87.70: возврат сохранённой позиции (Telegram-style).
     getSavedScrollTop: (chatId) => scrollPosByChatRef.current.get(chatId) ?? null,
+    // v0.89.0: virtual fallback для firstUnread когда он вне видимого DOM.
+    onMissingTarget: (firstUnread) => scrollToVirtualRow(firstUnread, 'start'),
   })
 
   // v0.87.66/67: при смене чата проверяем seenChatsRef — если уже видели, chatReady=true сразу.
@@ -253,6 +260,36 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     () => groupMessages(visibleMessages, firstUnreadId),
     [visibleMessages, firstUnreadId]
   )
+
+  // v0.89.0: ищем индекс renderItems где находится msgId — для виртуализированного
+  // scrollToRow. msgId может быть либо в group.msgs[*].id, либо в album.msgs[*].id.
+  const findRenderItemIndex = (msgId) => {
+    if (msgId == null) return -1
+    const target = String(msgId)
+    for (let i = 0; i < renderItems.length; i++) {
+      const item = renderItems[i]
+      if (item?.type !== 'group') continue
+      for (const m of item.msgs || []) {
+        if (m?.type === 'album') {
+          for (const am of m.msgs || []) {
+            if (String(am.id) === target) return i
+          }
+        } else if (String(m?.id) === target) {
+          return i
+        }
+      }
+    }
+    return -1
+  }
+
+  // v0.89.0: fallback для виртуализации — useInitialScroll вызывает его если
+  // querySelector('[data-msg-id]') промахнулся (firstUnread не в видимом DOM).
+  const scrollToVirtualRow = (msgId, align = 'start') => {
+    const idx = findRenderItemIndex(msgId)
+    if (idx < 0) return false
+    try { virtualListRef.current?.scrollToRow({ index: idx, align, behavior: 'auto' }) } catch (_) {}
+    return true
+  }
 
   // v0.87.40: пересчёт firstUnread при смене свежих данных (firstId/lastId/unread)
   const firstMsgId = activeMessages[0]?.id
@@ -383,13 +420,31 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     scrollToAbsoluteBottom()
   }
 
-  // v0.87.27: клик по reply-цитате — скроллим к оригиналу + 1.5с жёлтое мерцание
+  // v0.87.27: клик по reply-цитате — скроллим к оригиналу + 1.5с жёлтое мерцание.
+  // v0.89.0: при виртуализации reply-target может быть вне видимого DOM →
+  // fallback на scrollToRow по индексу renderItems. После того как row станет
+  // видим, повторно ищем DOM-элемент и подсвечиваем.
   const scrollToMessage = (msgId) => {
     const el = msgsScrollRef.current?.querySelector(`[data-msg-id="${msgId}"]`)
-    if (!el) { showToast('Исходное сообщение не загружено — прокрутите вверх', 'info'); return }
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    el.classList.add('native-msg-flash')
-    setTimeout(() => el.classList.remove('native-msg-flash'), 1500)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('native-msg-flash')
+      setTimeout(() => el.classList.remove('native-msg-flash'), 1500)
+      return
+    }
+    // v0.89.0: виртуализация — пробуем найти через renderItems и scrollToRow
+    if (scrollToVirtualRow(msgId, 'center')) {
+      // После асинхронного scroll'а react-window смонтирует row → подсветим.
+      setTimeout(() => {
+        const found = msgsScrollRef.current?.querySelector(`[data-msg-id="${msgId}"]`)
+        if (found) {
+          found.classList.add('native-msg-flash')
+          setTimeout(() => found.classList.remove('native-msg-flash'), 1500)
+        }
+      }, 200)
+      return
+    }
+    showToast('Исходное сообщение не загружено — прокрутите вверх', 'info')
   }
 
   // v0.87.36: action-handlers (delete/forward/pin) — вынесено в хук
@@ -497,7 +552,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           replyTo={replyTo} setReplyTo={setReplyTo}
           editTarget={editTarget} setEditTarget={setEditTarget}
           handleInputChange={handleInputChange} handleReplySend={handleReplySend} handlePaste={handlePaste}
-          msgsScrollRef={msgsScrollRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
+          msgsScrollRef={msgsScrollRef} virtualListRef={virtualListRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
           scrollToBottom={handleScrollButtonClick} scrollToAbsoluteBottom={handleScrollButtonDoubleClick} scrollToMessage={scrollToMessage}

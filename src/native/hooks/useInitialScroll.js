@@ -12,6 +12,10 @@
 // v0.87.70: добавлен getSavedScrollTop — при возврате к виденному чату ВОССТАНАВЛИВАЕМ
 // позицию (как Telegram Desktop). Без этого scrollTop оставался от предыдущего чата
 // (один div на всё приложение → позиция не наследуется корректно).
+// v0.89.0: добавлен onMissingTarget — fallback для виртуализации. При виртуальном
+// рендере (react-window) firstUnread может быть ВНЕ видимого DOM, querySelector
+// промахнётся. Тогда вызываем onMissingTarget(firstUnread), который скроллит
+// через listRef.scrollToRow по индексу в renderItems (вне querySelector).
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
 
@@ -19,6 +23,7 @@ export function useInitialScroll({
   activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading,
   onDone,
   getSavedScrollTop,  // v0.87.70: (chatId) => number | null — сохранённая позиция
+  onMissingTarget,    // v0.89.0: (firstUnreadId) => void — fallback для виртуализации
 }) {
   // v0.87.68: Set — все чаты где initial-scroll УЖЕ был выполнен.
   // Раньше (до v0.87.67) — единственный chatId (последний). Не работало для A↔B↔A.
@@ -44,6 +49,10 @@ export function useInitialScroll({
           if (el) {
             el.scrollIntoView({ block: 'start', behavior: 'auto' })
             logNativeScroll('initial-restore-firstUnread', { chatId: activeChatId, firstUnread })
+          } else if (onMissingTarget) {
+            // v0.89.0: виртуализация — элемент не в DOM, скроллим через scrollToRow
+            onMissingTarget(firstUnread)
+            logNativeScroll('initial-restore-firstUnread-virtual', { chatId: activeChatId, firstUnread })
           }
         } else if (typeof savedTop === 'number') {
           // Позиции где юзер был (как Telegram Desktop)
@@ -79,6 +88,11 @@ export function useInitialScroll({
           logNativeScroll('initial-target', { chatId: activeChatId, firstUnread, ...getScrollMetrics(scrollEl) })
           el.classList.add('native-msg-last-read-highlight')
           setTimeout(() => el.classList.remove('native-msg-last-read-highlight'), 3500)
+        } else if (onMissingTarget) {
+          // v0.89.0: виртуализация — firstUnread не в видимом DOM, fallback на scrollToRow.
+          // Подсветка применяется позже (после того как row смонтируется при виртуальном скролле).
+          onMissingTarget(firstUnread)
+          logNativeScroll('initial-target-virtual', { chatId: activeChatId, firstUnread, ...getScrollMetrics(scrollEl) })
         } else {
           logNativeScroll('initial-target-missing', { chatId: activeChatId, firstUnread, ...getScrollMetrics(scrollEl) })
           scrollEl.scrollTop = scrollEl.scrollHeight

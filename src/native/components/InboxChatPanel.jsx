@@ -1,11 +1,15 @@
 // v0.87.103: вынесено из InboxMode.jsx — рендер правой части (окно активного чата).
 // Содержит: header с поиском, закреплённое, список сообщений, scroll-to-bottom, message input.
 // Принимает все нужные props через единый объект (упрощает интерфейс).
-import MessageBubble from './MessageBubble.jsx'
-import { AlbumBubble } from './MediaAlbum.jsx'
+// v0.89.0: рендер сообщений через VirtualMessageList (react-window 2.2). Полностью
+// заменил прежний прямой рендер всех items в DOM. Старая система
+// «msgsScrollRef → handleScroll → onScroll на <div>» переиграна: msgsScrollRef теперь
+// синхронизируется с listRef.current.element (outermost div react-window), события
+// onScroll/onWheel/onDrag пробрасываются в <List> через VirtualMessageList пропсы.
+import { useEffect, useRef, useState } from 'react'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
-import { formatDayLabel } from '../utils/messageGrouping.js'
+import VirtualMessageList from './VirtualMessageList.jsx'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
 import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
@@ -23,9 +27,27 @@ export default function InboxChatPanel({
   // scroll
   msgsScrollRef, handleScroll, scrollDiag, dragOver, handleDragOver, handleDragLeave, handleDrop,
   chatReady, atBottom, newBelow, scrollToBottom, scrollToAbsoluteBottom, scrollToMessage,
+  // v0.89.0: imperative API виртуализации (scrollToRow + getter element)
+  virtualListRef,
   // message actions
   handleDelete, handleForward, handlePin, openPhotoWindow, getMessage, readByVisibility,
 }) {
+  // v0.89.0: react-window держит scroll-контейнер сам. msgsScrollRef нужен внешним
+  // хукам (useInitialScroll, useReadOnScrollAway, scrollPos save) — синхронизируем
+  // его с listRef.current.element через useState (триггерит re-render когда element
+  // появился — IntersectionObserver внутри MessageBubble тогда получит правильный root).
+  const innerListRef = useRef(null)
+  const effectiveListRef = virtualListRef || innerListRef
+  const [scrollElement, setScrollElement] = useState(null)
+
+  useEffect(() => {
+    const el = effectiveListRef.current?.element || null
+    if (msgsScrollRef) msgsScrollRef.current = el
+    setScrollElement(el)
+    return () => {
+      if (msgsScrollRef && msgsScrollRef.current === el) msgsScrollRef.current = null
+    }
+  }, [renderItems.length, effectiveListRef, msgsScrollRef])
   const showUnreadWindowInfo = !!unreadWindow?.unreadWindowRequested
     && unreadWindow?.unreadWindowComplete === false
   const unreadLoaded = Math.max(0, Number(unreadWindow?.loadedIncoming || 0))
@@ -133,20 +155,15 @@ export default function InboxChatPanel({
         {/* v0.87.66: overlay-shimmer пока !chatReady — initial-scroll прыжок не виден */}
         {/* v0.87.118: overlay также при загрузке поверх кэша (1 старое сообщение → синяя полоска) */}
         <MessageListOverlay show={((!chatReady) || !!messagesLoading) && visibleMessages.length > 0} />
-        <div ref={msgsScrollRef} onScroll={handleScroll}
-          onWheel={() => scrollDiag.markUserScroll('wheel')}
-          onTouchStart={() => scrollDiag.markUserScroll('touch')}
-          onPointerDown={() => scrollDiag.markUserScroll('pointer')}
-          onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-          style={{
-            flex: 1, overflowY: 'auto', padding: 16,
-            display: 'flex', flexDirection: 'column', gap: 6,
-            outline: dragOver ? '2px dashed var(--amoled-accent)' : 'none',
-            background: dragOver ? 'rgba(42,171,238,0.08)' : 'transparent',
-            // v0.87.66: контент невидим до завершения initial-scroll + плавный fade-in
-            opacity: chatReady ? 1 : 0,
-            transition: 'opacity 200ms ease-out',
-          }}>
+        {/* v0.89.0: виртуализация рендера через react-window. msgsScrollRef
+            синхронизируется с listRef.current.element через useEffect выше. */}
+        <div style={{
+          flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0,
+          outline: dragOver ? '2px dashed var(--amoled-accent)' : 'none',
+          background: dragOver ? 'rgba(42,171,238,0.08)' : 'transparent',
+          opacity: chatReady ? 1 : 0,
+          transition: 'opacity 200ms ease-out',
+        }}>
           {dragOver && (
             <div style={{
               position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -162,100 +179,36 @@ export default function InboxChatPanel({
                 {msgSearch ? 'Ничего не найдено' : (activeChat.isForum && !activeTopic ? 'Выберите тему слева' : 'Нет сообщений')}
               </div>
             )
-          ) : (<>{renderItems.map(item => {
-            if (item.type === 'day') {
-              return (
-                <div key={item.id} className="native-msg-day-row">
-                  <span className="native-msg-divider native-msg-divider--day">{formatDayLabel(item.day)}</span>
-                </div>
-              )
-            }
-            if (item.type === 'time') {
-              return <div key={item.id} className="native-msg-divider">{new Date(item.time).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}</div>
-            }
-            if (item.type === 'unread') {
-              return (
-                <div key={item.id} className="native-msg-unread-divider">
-                  <span>Новые сообщения</span>
-                </div>
-              )
-            }
-            // group — v0.87.27 аватарка слева для чужих групп
-            // v0.87.110: ФИКС — аватарка отправителя, не аватарка чата
-            const SENDER_COLORS = ['#e17076','#eda86c','#a695e7','#7bc862','#65aadd','#ee7aae','#6ec9cb']
-            const senderColorIdx = Math.abs((item.senderId || '').split('').reduce((h,c) => (h+c.charCodeAt(0))&0xffffffff, 0)) % SENDER_COLORS.length
-            const senderBg = SENDER_COLORS[senderColorIdx]
-            const senderAvatar = !item.isOutgoing ? item.senderAvatar : null
-            const groupInitials = item.senderName
-              ? item.senderName.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('')
-              : '?'
-            return (
-              <div key={item.id} className="native-msg-group-row" style={{
-                display: 'flex',
-                flexDirection: item.isOutgoing ? 'row-reverse' : 'row',
-                alignItems: 'flex-end', gap: 8,
-              }}>
-                {!item.isOutgoing && (
-                  <div className="native-msg-avatar" style={{
-                    background: senderAvatar ? `url("${senderAvatar}") center/cover no-repeat` : senderBg,
-                  }}>
-                    {!senderAvatar && groupInitials}
-                  </div>
-                )}
-                <div className="native-msg-group" style={{
-                  // v0.87.62 final: maxWidth 75% — bubble content-sized до 75%.
-                  maxWidth: '75%',
-                  alignItems: item.isOutgoing ? 'flex-end' : 'flex-start',
-                  display: 'flex', flexDirection: 'column',
-                }}>
-                  {!item.isOutgoing && item.senderName && (
-                    <div className="native-msg-author">{item.senderName}</div>
-                  )}
-                  {item.msgs.map(m => (
-                    m.type === 'album' ? (
-                      <AlbumBubble
-                        key={m.id} album={m} chatId={store.activeChatId}
-                        downloadMedia={store.downloadMedia}
-                        onPhotoOpen={openPhotoWindow}
-                        onReply={setReplyTo}
-                        onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
-                        onDelete={handleDelete}
-                        onForward={handleForward}
-                        onPin={handlePin}
-                        getMessage={getMessage}
-                        onVisible={readByVisibility}
-                        readRoot={msgsScrollRef.current}
-                        onReplyClick={scrollToMessage}
-                      />
-                    ) : (
-                      <MessageBubble
-                        key={m.id} m={m} chatId={store.activeChatId}
-                        onReply={setReplyTo}
-                        onEdit={(msg) => { setEditTarget(msg); setInput(msg.text) }}
-                        onDelete={handleDelete}
-                        onForward={handleForward}
-                        onPin={handlePin}
-                        downloadMedia={store.downloadMedia}
-                        getMessage={getMessage}
-                        onVisible={readByVisibility}
-                        readRoot={msgsScrollRef.current}
-                        onPhotoOpen={openPhotoWindow}
-                        onReplyClick={scrollToMessage}
-                      />
-                    )
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-          {/* v0.88.0: индикатор подгрузки новых сообщений (Telegram-style) — внизу ленты */}
+          ) : (
+            <VirtualMessageList
+              listRef={effectiveListRef}
+              renderItems={renderItems}
+              cacheKey={store.activeChatId}
+              rowContext={{
+                store, readRoot: scrollElement,
+                setReplyTo, setEditTarget, setInput,
+                handleDelete, handleForward, handlePin,
+                openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
+              }}
+              onScroll={handleScroll}
+              onWheel={() => scrollDiag.markUserScroll('wheel')}
+              onTouchStart={() => scrollDiag.markUserScroll('touch')}
+              onPointerDown={() => scrollDiag.markUserScroll('pointer')}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            />
+          )}
+          {/* v0.88.0/0.89.0: индикатор подгрузки новых сообщений (Telegram-style)
+              рендерится поверх ленты, прикреплён к низу контейнера. */}
           {loadingNewer && (
-            <div className="native-msgs-loading-newer" aria-live="polite">
+            <div className="native-msgs-loading-newer" aria-live="polite" style={{
+              position: 'absolute', left: 0, right: 0, bottom: 0, pointerEvents: 'none',
+            }}>
               <span className="native-msgs-loading-newer__dot" />
               <span>Загружаю ещё...</span>
             </div>
           )}
-          </>)}
         </div>
         {/* v0.87.35/36: кнопка ↓ ВНЕ scroll-контейнера */}
         {/* v0.87.51: бейдж = activeUnread (сырой Telegram API, как в ChatListItem) */}

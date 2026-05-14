@@ -146,16 +146,22 @@ test('styles-messages.css содержит .native-msgs-loading-newer', () => {
     'CSS must define the loading indicator class and animation')
 })
 
-// v0.88.2: страховочные проверки для критичных фич, которые могут пострадать
-// при будущей виртуализации (Этап 2). Если виртуализация сломает любую из них —
-// эти статические тесты упадут и сразу укажут где смотреть.
-console.log('\n── Защита критичных интеграций перед Этапом 2: ──')
+// v0.88.2 / v0.89.0: страховочные проверки для критичных фич, которые могут пострадать
+// при виртуализации (Этап 2). Если виртуализация сломает любую из них — эти
+// статические тесты упадут и сразу укажут где смотреть.
+// После Phase 2 виртуализации (v0.89.0) проводка onReplyClick переехала из
+// InboxChatPanel.jsx в VirtualMessageList.jsx через rowContext.scrollToMessage.
+console.log('\n── Защита критичных интеграций (виртуализация v0.89.0): ──')
 test('Reply → scroll-to-message: MessageBubble получает onReplyClick', () => {
   const bubbleCode = fs.readFileSync('src/native/components/MessageBubble.jsx', 'utf8')
   assert(bubbleCode.includes('onReplyClick'),
     'MessageBubble must accept onReplyClick for reply-to-message navigation')
-  assert(panelCode.includes('onReplyClick={scrollToMessage}'),
-    'InboxChatPanel must wire scrollToMessage into MessageBubble.onReplyClick')
+  // v0.89.0: проводка onReplyClick={scrollToMessage} теперь в VirtualMessageList
+  const vlistCode = fs.readFileSync('src/native/components/VirtualMessageList.jsx', 'utf8')
+  assert(vlistCode.includes('onReplyClick={scrollToMessage}'),
+    'VirtualMessageList must wire scrollToMessage into MessageBubble.onReplyClick (Phase 2)')
+  assert(panelCode.includes('scrollToMessage'),
+    'InboxChatPanel must pass scrollToMessage through rowContext to VirtualMessageList')
 })
 test('Reply → scroll-to-message: AlbumBubble тоже получает onReplyClick', () => {
   const albumCode = fs.readFileSync('src/native/components/MediaAlbum.jsx', 'utf8')
@@ -178,6 +184,41 @@ test('Mark-read через читающую линию: useReadOnScrollAway с r
   const readCode = fs.readFileSync('src/native/hooks/useReadOnScrollAway.js', 'utf8')
   assert(readCode.includes("rootMargin: '-48% 0px -48% 0px'"),
     'Read tracker must use middle reading line (rootMargin -48%) for Telegram-style read')
+})
+
+// v0.89.0: проверки самой виртуализации
+console.log('\n── Виртуализация v0.89.0: ──')
+test('InboxChatPanel рендерит VirtualMessageList вместо renderItems.map', () => {
+  assert(panelCode.includes('VirtualMessageList'),
+    'InboxChatPanel must render messages via VirtualMessageList for react-window virtualization')
+  assert(!panelCode.includes('renderItems.map'),
+    'InboxChatPanel must NOT keep renderItems.map fallback alongside VirtualMessageList')
+})
+test('VirtualMessageList использует react-window List + useDynamicRowHeight', () => {
+  const vlistCode = fs.readFileSync('src/native/components/VirtualMessageList.jsx', 'utf8')
+  assert(vlistCode.includes("from 'react-window'"),
+    'VirtualMessageList must import from react-window')
+  assert(vlistCode.includes('useDynamicRowHeight'),
+    'VirtualMessageList must use useDynamicRowHeight for dynamic message heights')
+  assert(vlistCode.includes('<List'),
+    'VirtualMessageList must render react-window <List>')
+})
+test('InboxMode прокидывает virtualListRef в InboxChatPanel', () => {
+  assert(inboxCode.includes('virtualListRef'),
+    'InboxMode must create virtualListRef for react-window scrollToRow API')
+  assert(inboxCode.includes('virtualListRef={virtualListRef}'),
+    'InboxMode must pass virtualListRef prop to InboxChatPanel')
+})
+test('InboxMode имеет findRenderItemIndex + scrollToVirtualRow для fallback', () => {
+  assert(inboxCode.includes('findRenderItemIndex'),
+    'InboxMode must define findRenderItemIndex(msgId) helper for virtual scroll fallback')
+  assert(inboxCode.includes('scrollToVirtualRow'),
+    'InboxMode must define scrollToVirtualRow(msgId, align) fallback')
+})
+test('useInitialScroll поддерживает onMissingTarget fallback для виртуализации', () => {
+  const initialCode = fs.readFileSync('src/native/hooks/useInitialScroll.js', 'utf8')
+  assert(initialCode.includes('onMissingTarget'),
+    'useInitialScroll must accept onMissingTarget callback for virtualized scroll fallback')
 })
 
 console.log(`\n📊 Результат: ${passed} ✅ / ${failed} ❌ из ${passed + failed}`)

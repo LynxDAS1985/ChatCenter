@@ -1,28 +1,30 @@
 // v0.89.0: Виртуализация рендера сообщений через react-window 2.2.
 //
 // Заменяет старый renderItems.map(...) в InboxChatPanel: при больших чатах
-// (4000+ сообщений в array) DOM держит только видимые ~20 rows + overscan,
+// (4000+ сообщений) DOM держит только видимые ~20 rows + overscan,
 // что даёт плавный 60 FPS скролл вместо лагов на старом рендере.
 //
 // API react-window 2.x (см. node_modules/react-window/dist/react-window.d.ts):
 //   <List
 //     rowCount={N}
 //     rowHeight={useDynamicRowHeight({ defaultRowHeight: 70 })}
-//     rowComponent={MessageRow}    ← компонент получает { index, style, ariaAttributes, ...rowProps }
+//     rowComponent={MessageRow}
 //     rowProps={{ ... }}
 //     listRef={ref}                ← imperative API: scrollToRow({ index, align }), get element
 //     onRowsRendered={({ startIndex, stopIndex }) => ...}
 //     style={{ height, width }}
 //     overscanCount={3}
+//     ...HTMLAttributes              ← onScroll, onWheel, onDragOver и т.п. ложатся на outer <div>
 //   />
 //
 // Типы row из messageGrouping.js: 'day' | 'time' | 'unread' | 'group'.
-// Все 4 рендерятся одинаково внутри MessageRow, react-window сам мерит высоту.
+// Все 4 рендерятся одинаково внутри MessageRow, react-window сам мерит высоту
+// через useDynamicRowHeight (ResizeObserver под капотом).
 //
 // IntersectionObserver для mark-read: продолжает работать. react-window рендерит
-// видимые row в DOM, MessageBubble внутри row получает readRoot = scroll container.
+// видимые row в DOM, MessageBubble/AlbumBubble внутри row получают readRoot
+// = listRef.current.element (outermost div, который скроллит react-window).
 
-import { forwardRef } from 'react'
 import { List, useDynamicRowHeight } from 'react-window'
 import MessageBubble from './MessageBubble.jsx'
 import { AlbumBubble } from './MediaAlbum.jsx'
@@ -41,29 +43,38 @@ function initialsFor(senderName) {
 
 // Компонент row — рендерит один элемент renderItems.
 // react-window 2.x передаёт { index, style, ariaAttributes, ...rowProps }.
-// `style` обязательно применить к корневому элементу (position absolute + top/height
+// `style` обязательно применить к корневому элементу (position absolute + top + height
 // от библиотеки) — иначе виртуализация сломается.
+// Padding 16px по бокам + 6px снизу — эквивалент старого `padding: 16; gap: 6` на
+// scroll-container. ResizeObserver react-window учтёт paddingBottom как часть высоты row.
 function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
   const item = renderItems[index]
-  if (!item) return <div style={style} {...ariaAttributes} />
+  const rowStyle = {
+    ...style,
+    paddingLeft: 16,
+    paddingRight: 16,
+    paddingBottom: 6,
+    boxSizing: 'border-box',
+  }
+  if (!item) return <div style={rowStyle} {...ariaAttributes} />
 
   if (item.type === 'day') {
     return (
-      <div style={style} {...ariaAttributes} className="native-msg-day-row">
+      <div style={rowStyle} {...ariaAttributes} className="native-msg-day-row">
         <span className="native-msg-divider native-msg-divider--day">{formatDayLabel(item.day)}</span>
       </div>
     )
   }
   if (item.type === 'time') {
     return (
-      <div style={style} {...ariaAttributes} className="native-msg-divider">
+      <div style={rowStyle} {...ariaAttributes} className="native-msg-divider">
         {new Date(item.time).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
       </div>
     )
   }
   if (item.type === 'unread') {
     return (
-      <div style={style} {...ariaAttributes} className="native-msg-unread-divider">
+      <div style={rowStyle} {...ariaAttributes} className="native-msg-unread-divider">
         <span>Новые сообщения</span>
       </div>
     )
@@ -79,8 +90,8 @@ function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
   const senderBg = senderColorFor(item.senderId)
   const senderAvatar = !item.isOutgoing ? item.senderAvatar : null
   return (
-    <div style={style} {...ariaAttributes} className="native-msg-group-row" data-row-flex={item.isOutgoing ? 'row-reverse' : 'row'}>
-      <div className="native-msg-row-inner" style={{
+    <div style={rowStyle} {...ariaAttributes} className="native-msg-group-row">
+      <div style={{
         display: 'flex',
         flexDirection: item.isOutgoing ? 'row-reverse' : 'row',
         alignItems: 'flex-end', gap: 8, width: '100%',
@@ -142,14 +153,25 @@ function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
 // Главный экспорт — обёртка над <List>.
 // Принимает renderItems и весь контекст рендера через rowContext.
 // listRef прокидывается наружу для scrollToRow / element getter.
-const VirtualMessageList = forwardRef(function VirtualMessageList({
+// onScroll/onWheel/onTouchStart/onPointerDown/onDrag* ложатся на outer <div>
+// react-window через ...rest (List принимает HTMLAttributes<HTMLDivElement>).
+export default function VirtualMessageList({
   renderItems,
   rowContext,
   onRowsRendered,
   listRef,
   // ключ для useDynamicRowHeight — меняется при смене чата, кэш сбрасывается
   cacheKey,
-}, _ref) {
+  // прокидываемые DOM-события на outer scroll-контейнер react-window
+  onScroll,
+  onWheel,
+  onTouchStart,
+  onPointerDown,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  style,
+}) {
   // useDynamicRowHeight: react-window сам мерит реальную высоту row через ResizeObserver.
   // defaultRowHeight используется до первого измерения.
   const rowHeight = useDynamicRowHeight({ defaultRowHeight: 70, key: cacheKey })
@@ -162,9 +184,18 @@ const VirtualMessageList = forwardRef(function VirtualMessageList({
       rowProps={{ renderItems, rowContext }}
       onRowsRendered={onRowsRendered}
       overscanCount={3}
-      style={{ height: '100%', width: '100%' }}
+      // overflowAnchor: 'none' — отключает браузерное scroll anchoring.
+      // Иначе при prepend (load-older) Chrome пытается «удержать видимый якорь»,
+      // а наша ручная формула `scrollTop = scrollHeight - prevHeight` в useInboxScroll
+      // дерётся с ним → юзер уезжает в середину чата (Ловушка 48 в mistakes/native-scroll-unread.md).
+      style={{ height: '100%', width: '100%', overflowAnchor: 'none', ...style }}
+      onScroll={onScroll}
+      onWheel={onWheel}
+      onTouchStart={onTouchStart}
+      onPointerDown={onPointerDown}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
     />
   )
-})
-
-export default VirtualMessageList
+}

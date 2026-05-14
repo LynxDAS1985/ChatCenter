@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.88.2 (13 мая 2026)
+## Текущая версия: v0.89.0 (14 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.106 → v0.88.2). Старое — в архиве:
 
@@ -17,6 +17,55 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.0 — Этап 2 виртуализации: VirtualMessageList в InboxChatPanel
+
+**Контекст**: v0.88.x подготовили почву (страховка push, защитные тесты), v0.89.0 — собственно
+рефакторинг рендера. До этого `renderItems.map(...)` рендерил **весь** список сообщений в DOM
+(в чатах с 4000+ непрочитанных это даёт лаги при скролле). Теперь DOM держит только
+видимые ~20 строк + overscan через [`react-window`](https://github.com/bvaughn/react-window) 2.2.
+
+**Что сделано**:
+
+- [`src/native/components/VirtualMessageList.jsx`](src/native/components/VirtualMessageList.jsx) — компонент Phase 1 (создан в v0.88.3) расширен: принимает события `onScroll/onWheel/onTouchStart/onPointerDown/onDragOver/onDragLeave/onDrop` и пробрасывает их в outer div `<List>` через `...rest`. `MessageRow` теперь сам делает `padding: 16px по бокам + 6px снизу` (вместо старого `padding/gap` на scroll-контейнере), `boxSizing: 'border-box'` — `ResizeObserver` react-window учитывает paddingBottom как часть высоты row.
+- [`src/native/components/InboxChatPanel.jsx`](src/native/components/InboxChatPanel.jsx) — `renderItems.map(...)` блок (~95 строк) заменён на `<VirtualMessageList>`. `msgsScrollRef` теперь синхронизируется с `listRef.current.element` через `useEffect` + `useState scrollElement`. Этот state нужен IntersectionObserver'у в `MessageBubble.readRoot` — при первом рендере root ещё `null`, после монтирования react-window выставляется реальный element, observer пересоздаётся (deps `[enabled, root]` в `useReadOnScrollAway`).
+- [`src/native/hooks/useInitialScroll.js`](src/native/hooks/useInitialScroll.js) — добавлен опциональный `onMissingTarget(firstUnreadId)` callback. Когда `querySelector('[data-msg-id]')` промахивается (firstUnread вне видимого виртуального DOM), вызывается `onMissingTarget` → InboxMode скроллит через `listRef.current.scrollToRow({ index })`. Без fallback react-window открывал чат сверху, юзер не видел непрочитанные.
+- [`src/native/modes/InboxMode.jsx`](src/native/modes/InboxMode.jsx):
+  - `virtualListRef = useRef(null)` — imperative API react-window.
+  - `findRenderItemIndex(msgId)` — ищет где сообщение в `renderItems` (учитывает альбомы: `item.msgs[*].msgs[*].id` для типа `album`).
+  - `scrollToVirtualRow(msgId, align)` — вызывает `virtualListRef.scrollToRow({ index, align })`.
+  - `scrollToMessage(msgId)` сначала пробует старый `querySelector` (видимый row), потом fallback `scrollToVirtualRow(msgId, 'center')` + повторная попытка подсветить через 200 мс.
+  - `useInitialScroll` получает `onMissingTarget: id => scrollToVirtualRow(id, 'start')`.
+- [`src/__tests__/unreadAutoPrefetch.test.cjs`](src/__tests__/unreadAutoPrefetch.test.cjs) — 2 защитных теста v0.88.2 обновлены (проверка проводки `onReplyClick={scrollToMessage}` теперь смотрит в `VirtualMessageList.jsx`, не в `InboxChatPanel.jsx`); добавлено 5 новых тестов: `InboxChatPanel рендерит VirtualMessageList`, `VirtualMessageList использует react-window <List> + useDynamicRowHeight`, `InboxMode прокидывает virtualListRef`, `findRenderItemIndex + scrollToVirtualRow`, `useInitialScroll.onMissingTarget`.
+
+**Сохранено без изменений**:
+
+- `useReadOnScrollAway` (rootMargin `-48% 0px -48% 0px`) — работает как раньше, просто root = `listRef.element` вместо div'a.
+- `useInboxScroll` + `useInboxNewerPrefetch` (load-older, prefetch-newer, atBottom) — onScroll-event тот же, теперь приходит из react-window.
+- `useReadByVisibility` (batch markRead 300мс) — не трогали.
+- `useNewBelowCounter`, `useForceReadAtBottom`, `useMessageActions` — не трогали.
+- `messageGrouping.js` — критичная защита v0.87.113 (senderAvatar в group/album) — без изменений.
+
+**Известные риски, требующие визуальной проверки**:
+
+- **load-older preserve scroll position** (`scrollTop = scrollHeight - prevHeight`) при виртуализации работает, но `useDynamicRowHeight` измеряет высоту row асинхронно через `ResizeObserver`. Если новые сообщения ещё не обмерены — `scrollHeight` неточен. Если будет «прыжок» при подгрузке вверх — нужна будет замена на `scrollToRow({ index: addedCount, align: 'start' })`.
+- **`overflow-anchor`** браузера на virtualised DOM работает иначе. Если будут «дрожания» при добавлении сообщений сверху — добавить `overflow-anchor: none` на outer div react-window.
+- **Шапка / pinned message / unread-status bar** живут вне списка — никак не должны были пострадать.
+
+**Версия**: v0.88.2 → v0.89.0 (minor — UI-функциональность не изменилась, но внутренняя архитектура рендера переработана).
+
+**Проверено**:
+
+```powershell
+npm.cmd run lint                                            # ожидается OK
+npm.cmd run test:vitest                                      # ожидается 166/166 (не должны отвалиться без изменений в API)
+node src\__tests__\unreadAutoPrefetch.test.cjs               # 27/27 (+5 виртуализационных)
+node src\__tests__\fileSizeLimits.test.cjs                   # лимиты в порядке
+```
+
+⚠ **Визуальная проверка пользователем обязательна**: открыть чат с 100+ непрочитанными → должен встать на первое непрочитанное (проверка `onMissingTarget` fallback). Reply-click на старое сообщение → scroll-to-reply должен работать. Прокрутка длинного чата (4000+) — должна быть плавной без лагов DOM.
 
 ---
 
