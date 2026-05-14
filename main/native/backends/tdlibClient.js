@@ -217,6 +217,15 @@ export class TdlibClientManager extends EventEmitter {
         })
         return
 
+      case 'updateFile':
+        // TDLib присылает updateFile при изменении статуса файла:
+        // - При запуске downloadFile (provisional)
+        // - На каждом chunk прогресса (local.downloaded_size растёт)
+        // - При завершении (local.is_downloading_completed = true, local.path = реальный путь)
+        // tdlibMedia слушает это событие для реализации downloadFile-promise + onProgress.
+        this.emit('file:update', { accountId, file: update.file })
+        return
+
       default:
         // Прокидываем сырое update — для редких типов и диагностики.
         this.emit('update:raw', { accountId, update })

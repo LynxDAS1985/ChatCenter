@@ -345,6 +345,16 @@ describe('auth state + errors', () => {
     mockClient.emit('update', { '@type': 'updateFutureThing', some: 'data' })
     expect(rawEvent).toHaveBeenCalled()
   })
+
+  it('updateFile → file:update event с { accountId, file }', () => {
+    const { mgr, mockClient } = makeManager()
+    mgr.createAccount('tg_a', {})
+    const fileEvent = vi.fn()
+    mgr.on('file:update', fileEvent)
+    const file = { id: 100, local: { downloaded_size: 50000, is_downloading_completed: false } }
+    mockClient.emit('update', { '@type': 'updateFile', file })
+    expect(fileEvent).toHaveBeenCalledWith({ accountId: 'tg_a', file })
+  })
 })
 
 // ──────────────────────────────────────────────────────────────────────

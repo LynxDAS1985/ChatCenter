@@ -11,6 +11,42 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 2.5: TDLib media (downloadFile + updateFile)
+
+### Added
+- **`main/native/backends/tdlibMedia.js`** (207 строк):
+  - `downloadFile({ manager, accountId, fileId, priority, onProgress })` — асинхронная
+    загрузка файла. Запускает `downloadFile` invoke с `synchronous: false` + слушает
+    `file:update` events для прогресса и завершения. Возвращает Promise<{ ok, path?, file?, error? }>.
+    Корректно очищает listener после resolve (без утечек памяти).
+  - `cancelDownload({ manager, accountId, fileId })` — `cancelDownloadFile`.
+  - `extractMediaFileId(content)` — извлекает fileId из TDLib message content для
+    photo (largest size) / video / audio / voice / videoNote / animation / document / sticker.
+  - `getCachedFilePath(tdFile)` — синхронная проверка `local.is_downloading_completed`.
+  - `getStorageStatistics(client)` / `optimizeStorage(client)` — для UI «очистить кеш».
+- **`main/native/backends/tdlibClient.js`** — добавлен case `updateFile` → emit
+  `file:update` event с `{ accountId, file }`. Это нужно для tdlibMedia.downloadFile
+  чтобы он мог подписываться на manager (не на клиент напрямую — разделение
+  ответственности).
+- **`src/__tests__/tdlibMedia.vitest.js`** (28 тестов):
+  - extractMediaFileId: 7 (все типы медиа + null cases)
+  - getCachedFilePath: 3
+  - downloadFile main flow: 11 (мгновенно если кешировано, через updateFile,
+    onProgress, фильтрация по fileId + accountId, ошибки, validation, priority clamp,
+    нет утечек listener)
+  - cancelDownload: 2
+  - storage: 3
+- **`src/__tests__/tdlibClient.vitest.js`** — добавлен +1 тест на `updateFile → file:update`.
+
+### Прогресс по плану миграции
+- Этапы 0, 1, 2.1, 2.2, 2.3, 2.4 ✅
+- Этап 2.5 (TDLib media) ✅ — текущий коммит
+- Этап 2.6 (подключение tdlibBackend.js к реальным реализациям) — следующий
+- Этап 3 (feature flag, параллельная работа) — после 2.6
+- Этап 4 (финализация, удаление GramJS) — после 3
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 2.4: TDLib messages API
 
 ### Added
