@@ -89,16 +89,16 @@ test('tdl установлен в node_modules', () => {
 test('prebuilt-tdlib установлен в node_modules', () => {
   assert(fs.existsSync('node_modules/prebuilt-tdlib/package.json'), 'node_modules/prebuilt-tdlib/package.json must exist')
 })
-test('libtdjson.dll присутствует и > 1 МБ', () => {
-  // На Windows x64
-  const winLib = 'node_modules/@prebuilt-tdlib/win32-x64/tdjson.dll'
-  const unixLib = 'node_modules/@prebuilt-tdlib/linux-x64/libtdjson.so'
-  const macLib = 'node_modules/@prebuilt-tdlib/darwin-x64/libtdjson.dylib'
-  const exists = fs.existsSync(winLib) || fs.existsSync(unixLib) || fs.existsSync(macLib)
-  assert(exists, 'at least one platform binary must exist')
-  const present = [winLib, unixLib, macLib].find(p => fs.existsSync(p))
-  const size = fs.statSync(present).size
-  assert(size > 1024 * 1024, `library too small (${size} bytes)`)
+test('libtdjson присутствует для текущей платформы и > 1 МБ', () => {
+  // prebuilt-tdlib содержит platform-specific бинарники в @prebuilt-tdlib/{platform}-{arch}/.
+  // Реальный путь зависит от платформы и архитектуры (Windows: tdjson.dll, Linux: libtdjson.so,
+  // macOS: libtdjson.dylib). Спрашиваем у самой библиотеки через getTdjson().
+  const { getTdjson } = require('prebuilt-tdlib')
+  const libPath = getTdjson()
+  assert(libPath && typeof libPath === 'string', 'getTdjson() must return a path string')
+  assert(fs.existsSync(libPath), `library not found at ${libPath}`)
+  const size = fs.statSync(libPath).size
+  assert(size > 1024 * 1024, `library too small (${size} bytes at ${libPath})`)
 })
 test('tdl/package.json указывает на entry point', () => {
   const pkg = JSON.parse(fs.readFileSync('node_modules/tdl/package.json', 'utf8'))
