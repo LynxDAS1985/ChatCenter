@@ -248,7 +248,14 @@ test('incomplete unread window blocks mark-read', () => {
 console.log('\n── Read tracker + Telegram-style unread badges: ──')
 test('all native chat types use root-aware reading line', () => {
   assert(readOnScrollAwayCode.includes("rootMargin: '-48% 0px -48% 0px'") && readOnScrollAwayCode.includes('read-line-read'))
-  assert(panelCode.includes('readRoot={msgsScrollRef.current}'))
+  // v0.89.0: readRoot переехал в VirtualMessageList rowContext (виртуализация Phase 2).
+  // InboxChatPanel держит scrollElement state, который синхронизируется с listRef.current.element,
+  // и передаёт его как readRoot в rowContext → MessageBubble/AlbumBubble.
+  const vlistCode = fs.readFileSync('src/native/components/VirtualMessageList.jsx', 'utf8')
+  assert(vlistCode.includes('readRoot={readRoot}'),
+    'VirtualMessageList must pass readRoot to MessageBubble/AlbumBubble via rowContext')
+  assert(panelCode.includes('readRoot: scrollElement'),
+    'InboxChatPanel must put scrollElement (= listRef.element) into rowContext.readRoot')
 })
 test('Native unread badges use Telegram-style count formatter', () => {
   assert(unreadFormatCode.includes('formatUnreadCount') && unreadFormatCode.includes('toFixed(1)'))
