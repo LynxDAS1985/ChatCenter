@@ -1,0 +1,131 @@
+// v0.89.0 — Stage 4 / Этап 3.3: TDLib backend startup orchestrator
+//
+// Точка входа для USE_TDLIB_BACKEND=1: связывает все слои (runtime → manager →
+// backend → IPC handlers) и подписывает их на жизненный цикл главного окна.
+//
+// Аналог `initTelegramHandler` для GramJS (telegramHandler.js) — но через
+// TDLib stack. main.js при флаге включенном вызывает этот startup вместо
+// GramJS точки входа.
+//
+// БЕЗОПАСНОСТЬ:
+//   - Идемпотентен по effect: повторный вызов вернёт существующий handle.
+//   - При ошибке возвращает { ok: false, error } чтобы main.js мог fallback'нуться
+//     на GramJS (initTelegramHandler).
+//   - DI всех зависимостей через опции — для тестов.
+
+import { initTdlibRuntime, autoRestoreSessionsFromDisk, closeTdlibRuntime } from './tdlibRuntime.js'
+import { createTdlibBackend } from './tdlibBackend.js'
+import { buildTdlibParameters } from './tdlibAuth.js'
+import { initTdlibIpcHandlers } from '../tdlibIpcHandlers.js'
+
+// Telegram API credentials из конфига приложения.
+const DEFAULT_API_ID = 8392940
+const DEFAULT_API_HASH = '33a9605b6f86a176e240cc141e864bf5'
+
+let _handle = null
+
+/**
+ * Инициализирует TDLib backend и подключает IPC handlers.
+ *
+ * @param {object} opts
+ * @param {string} opts.userDataPath — обычно app.getPath('userData')
+ * @param {() => object} opts.getMainWindow — функция возвращающая BrowserWindow
+ * @param {object} opts.ipcMain — electron's ipcMain (или mock в тестах)
+ * @param {number} [opts.apiId=DEFAULT_API_ID]
+ * @param {string} [opts.apiHash=DEFAULT_API_HASH]
+ * @param {object} [opts.tdl] — DI для тестов
+ * @param {object} [opts.prebuiltTdlib] — DI для тестов
+ * @param {(level: string, msg: string) => void} [opts.log]
+ * @returns {{ ok: boolean, manager?, backend?, unregister?, error? }}
+ */
+export function initTdlibBackendStartup(opts) {
+  if (_handle) return { ok: true, ..._handle }
+
+  const log = opts.log || ((level, msg) => console.log(`[tdlib-startup ${level}] ${msg}`))
+
+  try {
+    if (!opts.userDataPath) throw new Error('userDataPath required')
+    if (!opts.ipcMain?.handle) throw new Error('ipcMain required')
+    if (typeof opts.getMainWindow !== 'function') throw new Error('getMainWindow required')
+
+    const apiId = opts.apiId || DEFAULT_API_ID
+    const apiHash = opts.apiHash || DEFAULT_API_HASH
+
+    // 1. Runtime singleton + manager
+    const manager = initTdlibRuntime({
+      userDataDir: opts.userDataPath,
+      tdl: opts.tdl,
+      prebuiltTdlib: opts.prebuiltTdlib,
+      verbosityLevel: opts.verbosityLevel,
+    })
+    log('info', `runtime initialized — userData=${opts.userDataPath}`)
+
+    // 2. Backend через manager
+    const backend = createTdlibBackend({
+      manager,
+      tdlibParameters: buildTdlibParameters({
+        apiId, apiHash,
+        databaseDirectory: `${opts.userDataPath}/tdlib-sessions/pending`,
+      }),
+      makeClientParams: () => ({
+        apiId, apiHash,
+        // accountSubdir подставится в auth flow при создании клиента
+      }),
+    })
+    log('info', `backend created (tdlib)`)
+
+    // 3. IPC handlers + event bridge
+    const sendToRenderer = (channel, payload) => {
+      const win = opts.getMainWindow()
+      if (win && !win.isDestroyed?.()) {
+        try { win.webContents.send(channel, payload) } catch (e) { /* race during close */ }
+      }
+    }
+    const unregisterIpc = initTdlibIpcHandlers({
+      ipcMain: opts.ipcMain, backend, sendToRenderer, log,
+    })
+    log('info', `IPC handlers registered`)
+
+    // 4. Auto-restore previous sessions (если они есть на диске)
+    let restoredAccountIds = []
+    try {
+      restoredAccountIds = autoRestoreSessionsFromDisk({
+        makeClientParams: (accountId) => ({ apiId, apiHash, accountSubdir: accountId }),
+      })
+      if (restoredAccountIds.length > 0) {
+        log('info', `auto-restored sessions: ${restoredAccountIds.join(', ')}`)
+      }
+    } catch (e) {
+      log('warn', `auto-restore failed (continuing): ${e?.message || e}`)
+    }
+
+    _handle = {
+      manager, backend, unregister: () => {
+        try { unregisterIpc() } catch (_) {}
+        _handle = null
+      },
+      restoredAccountIds,
+    }
+    return { ok: true, ..._handle }
+  } catch (e) {
+    log('error', `init failed: ${e?.message || e}`)
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
+/**
+ * Возвращает текущий startup handle (или null если не инициализирован).
+ */
+export function getTdlibStartupHandle() { return _handle }
+
+/**
+ * Сбрасывает singleton — для тестов.
+ * Также сбрасывает tdlibRuntime singleton (manager + client connections).
+ */
+export async function resetTdlibStartup() {
+  if (_handle?.unregister) {
+    try { _handle.unregister() } catch (_) {}
+  }
+  _handle = null
+  try { await closeTdlibRuntime() } catch (_) {}
+}

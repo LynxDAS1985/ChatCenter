@@ -11,6 +11,61 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 3.3: main.js startup integration. **Этап 3 закрыт.**
+
+### Added
+- **`main/native/backends/tdlibStartup.js`** (130 строк):
+  `initTdlibBackendStartup({ userDataPath, getMainWindow, ipcMain, apiId?, apiHash?, tdl?, prebuiltTdlib?, log? })`
+  — orchestrator который последовательно собирает все слои:
+  1. `initTdlibRuntime` (singleton + manager)
+  2. `createTdlibBackend({ manager, tdlibParameters, makeClientParams })`
+  3. `sendToRenderer = (ch, p) => mainWindow.webContents.send(ch, p)`
+     (с защитой от `isDestroyed` и try/catch для race conditions)
+  4. `initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer })`
+  5. `autoRestoreSessionsFromDisk({ makeClientParams })` — поднимает
+     существующие сессии (если есть)
+  Возвращает `{ ok, manager, backend, unregister, restoredAccountIds, error? }`.
+- **Идемпотентность**: повторный вызов возвращает существующий handle.
+- **`resetTdlibStartup()`** — graceful shutdown для тестов (unregister IPC +
+  closeTdlibRuntime).
+
+### Changed
+- **`main/main.js`** (строки 17-18, 6, 225-249):
+  - Импортирован `ipcMain` из 'electron' и `initTdlibBackendStartup`.
+  - Логика инициализации backend:
+    ```
+    const useTdlibBackend = process.env.USE_TDLIB_BACKEND === '1'
+    if (useTdlibBackend) try { TDLib startup } catch { fallback to GramJS }
+    if (!backendInitOk) initTelegramHandler (GramJS как сейчас)
+    ```
+  - При USE_TDLIB_BACKEND=0 (по умолчанию) — **поведение не изменилось**.
+  - При USE_TDLIB_BACKEND=1 + успешная инициализация TDLib — GramJS НЕ запускается.
+  - При USE_TDLIB_BACKEND=1 + ошибка TDLib — safe fallback на GramJS,
+    приложение работает (с warning в логах).
+
+### Tests
+- **`src/__tests__/tdlibStartup.vitest.js`** (334 строки, 16 тестов):
+  - Validation: 3 (без userDataPath/ipcMain/getMainWindow)
+  - Successful init: 4 (runtime+backend+ipc, singleton, idempotency, custom apiId/Hash)
+  - Error handling: 2 (empty tdjson path, configure throws)
+  - sendToRenderer: 3 (forward to webContents.send, isDestroyed safe, send throws safe)
+  - Auto-restore: 2 (восстановление существующих папок, пустая папка)
+  - Unregister/reset: 2 (cleanup IPC handlers, повторный init после reset)
+
+### Безопасность миграции
+- **Default behavior unchanged**: без env var GramJS работает как раньше.
+- **Two paths не конфликтуют**: при USE_TDLIB_BACKEND=1 только TDLib запускается,
+  иначе только GramJS. Одновременно НЕ возможно.
+- **Fallback при ошибке TDLib**: попытка `initTdlibBackendStartup` → если ok=false
+  → main.js всё равно запускает initTelegramHandler. Пользователь не заметит
+  что TDLib не загрузился (только увидит warning в console).
+
+### Прогресс по плану миграции
+- **Этап 3 ПОЛНОСТЬЮ ЗАКРЫТ**: 3.1 runtime ✅ + 3.2 IPC handlers ✅ + 3.3 main.js ✅
+- Этап 4 (реальное тестирование с пользователем + удаление GramJS) — следующий
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 3.2: TDLib IPC handlers
 
 ### Added
