@@ -11,6 +11,41 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 2.4: TDLib messages API
+
+### Added
+- **`main/native/backends/tdlibMessages.js`** (254 строки) — чистые обёртки над
+  `client.invoke()` для работы с сообщениями:
+  - `getChatHistory(client, chatId, opts)` — `messages.getChatHistory` с поддержкой
+    `fromMessageId`/`offset`/`limit`. Возвращает массив `NativeMessage` после
+    `mapMessage` + `.reverse()` (UI ждёт сверху→старые, снизу→новые).
+    Опционально `extras.getSenderName(senderId)` / `getSenderAvatar(senderId)`
+    callbacks для подстановки из user/chat cache.
+  - `sendTextMessage(client, chatId, text, opts)` — `sendMessage` с
+    `inputMessageText`. Опционально `replyTo` → `inputMessageReplyToMessage`.
+  - `editMessageText(client, chatId, messageId, newText)` — `editMessageText`.
+  - `deleteMessages(client, chatId, messageIds, forAll)` — `deleteMessages` с
+    `revoke`. Поддерживает одиночный id или массив.
+  - `viewMessages(client, chatId, messageIds, opts)` — `viewMessages` с
+    `force_read=true` по умолчанию (TDLib эквивалент GramJS `markRead`).
+  - `getMessage(client, chatId, messageId)` — для reply preview / pinned lookup.
+  - `getChatPinnedMessage(client, chatId)` — обрабатывает "Pinned message not found"
+    как `ok:true, message:null` (это не ошибка).
+  - Все методы: единый `{ ok: boolean, ..., error?: string }` формат ответа,
+    `wrapError()` корректно обрабатывает TDLib `{ '@type': 'error', code, message }`.
+- **`src/__tests__/tdlibMessages.vitest.js`** (24 теста) — каждый метод проверен:
+  параметры invoke, обработка ошибок, edge cases (пустой text, пустой ids).
+
+### Прогресс по плану миграции
+- Этапы 0, 1, 2.1, 2.2, 2.3 ✅
+- Этап 2.4 (TDLib messages API) ✅ — текущий коммит
+- Этап 2.5 (TDLib media: downloadFile + updateFile events) — следующий
+- Этап 2.6 (подключение tdlibBackend.js к реальным реализациям) — после 2.5
+- Этап 3 (feature flag, параллельная работа) — после 2.6
+- Этап 4 (финализация, удаление GramJS) — после 3
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 2.3: TDLib authorization flow
 
 ### Added
