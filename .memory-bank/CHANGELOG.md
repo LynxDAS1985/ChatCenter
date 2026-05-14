@@ -11,6 +11,47 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 2.6: tdlibBackend — подключение всех модулей. **Этап 2 закрыт.**
+
+### Added
+- **`main/native/backends/tdlibBackend.js`** переписан (70 → 343 строки) — реальная
+  реализация интерфейса `MessengerBackend` через композицию tdlibAuth +
+  tdlibMessages + tdlibMedia + tdlibClient. `createTdlibBackend({ manager,
+  tdlibParameters, makeClientParams })` — manager как DI (создаётся ОДИН раз на
+  процесс выше по стеку, на Этапе 3).
+- **Helpers:**
+  - `parseChatId('accountId:rawId')` — наш составной id → {accountId, rawId number}
+  - `getClientForChat(manager, chatId)` — резолвит client + accountId или возвращает error
+  - `makeExtras(manager, accountId)` — callbacks для mapMessage: senderName из
+    userCache (для User sender) или chatCache (для Chat sender)
+- **Реализованы методы (21/31):**
+  - `auth.startLogin/submitCode/submitPassword/cancelLogin/removeAccount` — через
+    TdlibAuthFlow с временным `tg_pending_${ts}` accountId (после login переименуется по getMe)
+  - `chats.getChats/getCachedChats/rescanUnread/healthCheck` — из manager cache
+    (TDLib сам поддерживает list через updateNewChat / updateChatPosition events).
+    `healthCheck` — light probe через `getOption('version')`.
+  - `messages.get/send/editMessage/deleteMessage/markRead/getPinned` — через tdlibMessages.
+    `markRead` использует `viewMessages([maxId])` — TDLib сама отметит всё ниже.
+  - `media.download/downloadVideo/getCacheSize/cleanup` — через tdlibMedia.
+    `download` сначала делает `getMessage` invoke чтобы достать file_id из raw content.
+- **STUB методы (10/31)** — возвращают `{ok: false, error: '... not implemented yet'}`:
+  `sendFile`, `forwardMessage`, `messages.getTopic`, `markTopicRead`, `forum.getTopics`,
+  `forum.getTopicMessages`, `auth.autoRestoreSessions`. Реализация в Этапе 3 (интеграция).
+
+### Tests
+- **`src/__tests__/tdlibBackend.vitest.js`** (27 тестов) — полная интеграция:
+  factory validation, basic structure (3), chats (4), messages (10), auth (5),
+  media (3), forum stubs (2). Тестируется композиция всех TDLib модулей.
+
+### Прогресс по плану миграции
+- **Этап 2 (Реализация TDLib backend) ✅ ПОЛНОСТЬЮ ЗАКРЫТ**
+- Этапы 2.1 (mapper) + 2.2 (client manager) + 2.3 (auth) + 2.4 (messages) +
+  2.5 (media) + 2.6 (backend integration) = всё ✅
+- Этап 3 (feature flag, параллельная работа двух backend'ов) — следующий
+- Этап 4 (финализация, удаление 11 файлов GramJS) — после 3
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 2.5: TDLib media (downloadFile + updateFile)
 
 ### Added

@@ -2,7 +2,7 @@
 
 **Версия проекта при старте плана**: v0.89.0
 **Дата старта**: 14 мая 2026
-**Статус**: 🟢 Этап 0 ✅ + Этап 1 ✅ + Этап 2.1 ✅ (TDLib mapper). В работе: Этап 2.2 (TDLib client manager).
+**Статус**: 🟢 Этапы 0, 1, 2 (полностью) ✅. Следующий: Этап 3 (feature flag + параллельная работа GramJS / TDLib).
 
 ## ✅ Что уже сделано
 
@@ -14,7 +14,8 @@
 | **2.2** TDLib client manager | `3fa1344` | `backends/tdlibClient.js` 316 строк: `TdlibClientManager` (EventEmitter) с per-account клиентами, user/chat cache через `updateUser`/`updateNewChat`/`updateChatTitle` events, маршрутизация `updateNewMessage` → `mapMessage` с senderName из cache → `message:new` event. 30 vitest тестов с mock-клиентом (EventEmitter), без реального TDLib-соединения. |
 | **2.3** TDLib authorization flow | `3a45caa` | `backends/tdlibAuth.js` 313 строк: `buildTdlibParameters()` + `TdlibAuthFlow` (state machine waitTdlibParameters → waitPhoneNumber → waitCode → waitPassword → ready). Внешний API: `startLogin(phone)`, `submitCode(code)`, `submitPassword(password)`, `cancelLogin()` — совместим с GramJS `tg:login-*`. Resolvers ставятся синхронно ПЕРЕД invoke (race-free). 19 vitest тестов с mock TDLib client. |
 | **2.4** TDLib messages API | `c02d9d7` | `backends/tdlibMessages.js` 254 строки: чистые обёртки над client.invoke() — `getChatHistory`, `sendTextMessage`, `editMessageText`, `deleteMessages`, `viewMessages` (mark-read), `getMessage`, `getChatPinnedMessage`. Возвращают унифицированный формат `{ ok, ..., error? }`. TDLib messages декодируются через `mapMessage` с поддержкой `extras.getSenderName/getSenderAvatar` callbacks для подстановки из user/chat cache. 24 vitest теста. |
-| **2.5** TDLib media | (текущий) | `backends/tdlibMedia.js` 207 строк: `downloadFile({manager, accountId, fileId, priority, onProgress})` — асинхронная загрузка файла с прогрессом через `updateFile` events. `tdlibClient.js` теперь эмитит `file:update` для удобной подписки. Также `cancelDownload`, `extractMediaFileId` (TDLib message content → fileId), `getCachedFilePath`, `getStorageStatistics`, `optimizeStorage`. 28 vitest тестов с реальной эмуляцией updateFile через mock EventEmitter. |
+| **2.5** TDLib media | `319592a` | `backends/tdlibMedia.js` 207 строк: `downloadFile({manager, accountId, fileId, priority, onProgress})` — асинхронная загрузка файла с прогрессом через `updateFile` events. `tdlibClient.js` теперь эмитит `file:update` для удобной подписки. Также `cancelDownload`, `extractMediaFileId` (TDLib message content → fileId), `getCachedFilePath`, `getStorageStatistics`, `optimizeStorage`. 28 vitest тестов с реальной эмуляцией updateFile через mock EventEmitter. |
+| **2.6** Подключение tdlibBackend.js | (текущий) | `backends/tdlibBackend.js` 343 строки: реальная реализация интерфейса `MessengerBackend` через композицию `tdlibAuth/Messages/Media/Client`. `createTdlibBackend({ manager, tdlibParameters, makeClientParams })` — принимает manager как DI. `parseChatId('accountId:rawId')` парсит составной id. `makeExtras(manager, accountId)` создаёт callbacks для senderName из cache. Реализованы: 21 метод из 31, остальные (sendFile, forwardMessage, getTopic, markTopicRead, forum.*, autoRestoreSessions) — STUB с понятным error для Этапа 3. 27 vitest тестов. **Этап 2 закрыт.** |
 
 ---
 

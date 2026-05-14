@@ -1,69 +1,342 @@
-// v0.89.0 — Stage 4 / Этап 1: TDLib backend (STUB)
+// v0.89.0 — Stage 4 / Этап 2.6: TDLib backend — реальная реализация
 //
-// Этот файл будет наполняться реальной реализацией на Этапе 2.
-// Сейчас — только заглушка с правильным интерфейсом, чтобы factory в
-// messengerBackend.js мог его вернуть при USE_TDLIB_BACKEND=1.
+// Соединяет tdlibClient + tdlibAuth + tdlibMessages + tdlibMedia в единый
+// MessengerBackend, который удовлетворяет интерфейс messengerBackend.js.
 //
-// Запускать его пока нельзя — все методы бросают ошибку «not implemented yet».
+// АРХИТЕКТУРА:
+//   - createTdlibBackend({ manager, tdlibParameters }) → MessengerBackend
+//   - manager — экземпляр TdlibClientManager (создаётся ОДИН раз на процесс)
+//   - tdlibParameters — результат buildTdlibParameters(), используется при login нового аккаунта
 //
-// Архитектура:
-//   - Один TdClient на каждый аккаунт через td_create_client_id (или несколько createClient).
-//   - Login flow через authorization_state events.
-//   - Сообщения / чаты через tdl.invoke({ '@type': '...' }).
-//   - Mapping TDLib message format → наш NativeMessage в backends/tdlibMapper.js (создается на Этапе 2).
+// chatId в наших методах — наш составной формат '{accountId}:{rawId}'.
+// Внутри парсим accountId, получаем client через manager.getClient(accountId),
+// rawId передаём в tdlibMessages как TDLib chat_id (число).
 //
-// Подробный план: .memory-bank/tdlib-migration-plan.md → Этап 2.
+// AUTH FLOW: хранит state одного активного логина (login в TDLib линейный — нельзя
+// параллельно). При завершении flow.dispose(). Создание следующего аккаунта =
+// new TdlibAuthFlow для нового tempAccountId.
 
-const NOT_IMPL = (method) => () => {
-  throw new Error(`tdlibBackend.${method}: not implemented yet (Stage 4 / Этап 2)`)
+import {
+  getChatHistory, sendTextMessage, editMessageText, deleteMessages,
+  viewMessages, getMessage, getChatPinnedMessage,
+} from './tdlibMessages.js'
+import {
+  downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
+  getStorageStatistics, optimizeStorage,
+} from './tdlibMedia.js'
+import { TdlibAuthFlow } from './tdlibAuth.js'
+import { userDisplayName } from './tdlibClient.js'
+
+// ──────────────────────────────────────────────────────────────────────
+// HELPERS
+// ──────────────────────────────────────────────────────────────────────
+
+/** Парсит наш составной id 'accountId:rawId' → { accountId, rawId (число) } */
+function parseChatId(chatId) {
+  const s = String(chatId || '')
+  const colon = s.indexOf(':')
+  if (colon < 0) return { accountId: null, rawId: null }
+  return { accountId: s.slice(0, colon), rawId: Number(s.slice(colon + 1)) }
 }
 
 /**
+ * Возвращает client для chatId или null + готовый error-ответ.
+ */
+function getClientForChat(manager, chatId) {
+  const { accountId, rawId } = parseChatId(chatId)
+  if (!accountId) return { error: { ok: false, error: 'invalid chatId' } }
+  const client = manager.getClient(accountId)
+  if (!client) return { error: { ok: false, error: 'account not found: ' + accountId } }
+  return { accountId, rawId, client }
+}
+
+/**
+ * Создаёт extras для mapMessage — резолвит senderName/senderAvatar из cache.
+ * accountId нужен чтобы знать в каком cache искать (multi-account).
+ */
+function makeExtras(manager, accountId) {
+  return {
+    getSenderName: (senderId) => {
+      if (!senderId) return ''
+      if (senderId['@type'] === 'messageSenderUser') {
+        const user = manager.getUserCached(accountId, senderId.user_id)
+        return userDisplayName(user)
+      }
+      if (senderId['@type'] === 'messageSenderChat') {
+        const chat = manager.getChatCached(accountId, senderId.chat_id)
+        return chat?.title || ''
+      }
+      return ''
+    },
+    getSenderAvatar: (_senderId) => {
+      // На Этапе 2.6 senderAvatar пока null. В Этапе 3 (интеграция) накатим
+      // через downloadFile для profile_photo + cc-media:// URL.
+      return null
+    },
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// MAIN FACTORY
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * @param {object} opts
+ * @param {object} opts.manager — TdlibClientManager (обязательно)
+ * @param {object} [opts.tdlibParameters] — для нового логина
+ * @param {() => object} [opts.makeClientParams] — функция возвращающая параметры
+ *   для clientFactory (apiId, apiHash, tdlibParameters) при создании нового аккаунта
  * @returns {import('../messengerBackend.js').MessengerBackend}
  */
-export function createTdlibBackend() {
+export function createTdlibBackend(opts = {}) {
+  const { manager, tdlibParameters, makeClientParams } = opts
+  if (!manager) throw new Error('TdlibClientManager required')
+
+  // Состояние одного активного login (TDLib линейный). dispose() после завершения.
+  let _authFlow = null
+  let _pendingAccountId = null
+
   return {
     name: 'tdlib',
+    _manager: manager,
 
     auth: {
-      startLogin: NOT_IMPL('auth.startLogin'),
-      submitCode: NOT_IMPL('auth.submitCode'),
-      submitPassword: NOT_IMPL('auth.submitPassword'),
-      cancelLogin: NOT_IMPL('auth.cancelLogin'),
-      autoRestoreSessions: NOT_IMPL('auth.autoRestoreSessions'),
-      removeAccount: NOT_IMPL('auth.removeAccount'),
+      async startLogin(phone) {
+        if (!phone) return { ok: false, error: 'phone required' }
+        // Создаём временный accountId — после авторизации переименуем по getMe().
+        _pendingAccountId = 'tg_pending_' + Date.now()
+        const params = makeClientParams ? makeClientParams() : { apiId: 0, apiHash: '' }
+        manager.createAccount(_pendingAccountId, params)
+        _authFlow = new TdlibAuthFlow({
+          manager, accountId: _pendingAccountId, tdlibParameters,
+        })
+        return _authFlow.startLogin(phone)
+      },
+      async submitCode(code) {
+        if (!_authFlow) return { ok: false, error: 'no login in progress' }
+        return _authFlow.submitCode(code)
+      },
+      async submitPassword(password) {
+        if (!_authFlow) return { ok: false, error: 'no login in progress' }
+        return _authFlow.submitPassword(password)
+      },
+      async cancelLogin() {
+        if (!_authFlow) return { ok: true }
+        const r = await _authFlow.cancelLogin()
+        _authFlow = null
+        if (_pendingAccountId) {
+          await manager.removeAccount(_pendingAccountId).catch(() => {})
+          _pendingAccountId = null
+        }
+        return r
+      },
+      async autoRestoreSessions() {
+        // На Этапе 2.6 noop. Реальная реализация (на Этапе 3): прочитать
+        // папку tdlib-sessions/, для каждой создать manager.createAccount().
+        return
+      },
+      async removeAccount(accountId) {
+        const ok = await manager.removeAccount(accountId)
+        return { ok }
+      },
     },
 
     chats: {
-      getChats: NOT_IMPL('chats.getChats'),
-      getCachedChats: NOT_IMPL('chats.getCachedChats'),
-      rescanUnread: NOT_IMPL('chats.rescanUnread'),
-      healthCheck: NOT_IMPL('chats.healthCheck'),
+      async getChats(accountId) {
+        // На Этапе 2.6: TDLib сам поддерживает список чатов в cache через
+        // updateNewChat / updateChatPosition. manager.getAccountChats возвращает
+        // их в Chat-формате.
+        // Для refresh из сервера: client.invoke({'@type': 'loadChats', limit}).
+        if (accountId) {
+          const client = manager.getClient(accountId)
+          if (client?.invoke) {
+            try {
+              await client.invoke({
+                '@type': 'loadChats',
+                chat_list: { '@type': 'chatListMain' },
+                limit: 100,
+              })
+            } catch (_) { /* ignore — может быть уже всё загружено */ }
+          }
+          return { ok: true, chats: manager.getAccountChats(accountId) }
+        }
+        // Без accountId — собираем со всех аккаунтов
+        const all = []
+        for (const aid of manager.listAccounts()) all.push(...manager.getAccountChats(aid))
+        return { ok: true, chats: all }
+      },
+      async getCachedChats(accountId) {
+        return { ok: true, chats: manager.getAccountChats(accountId) }
+      },
+      async rescanUnread() {
+        // TDLib сам шлёт updateChatReadInbox при синхронизации — нам не нужно
+        // явно делать rescan. Просто возвращаем актуальный snapshot из cache.
+        const accountStats = manager.listAccounts().map((accountId) => {
+          const chats = manager.getAccountChats(accountId)
+          const unreadTotal = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0)
+          return { accountId, chats: chats.length, unreadTotal, ms: 0 }
+        })
+        return { ok: true, accountStats }
+      },
+      async healthCheck() {
+        // Лёгкий probe: getOption('version') — TDLib обычно отвечает за единицы мс.
+        const result = {}
+        for (const accountId of manager.listAccounts()) {
+          const client = manager.getClient(accountId)
+          if (!client?.invoke) { result[accountId] = { ms: -1, error: 'no client' }; continue }
+          const t0 = Date.now()
+          try {
+            await client.invoke({ '@type': 'getOption', name: 'version' })
+            result[accountId] = { ms: Date.now() - t0 }
+          } catch (e) {
+            result[accountId] = { ms: Date.now() - t0, error: e?.message || String(e) }
+          }
+        }
+        return { ok: true, perAccount: result }
+      },
     },
 
     messages: {
-      get: NOT_IMPL('messages.get'),
-      getTopic: NOT_IMPL('messages.getTopic'),
-      send: NOT_IMPL('messages.send'),
-      sendFile: NOT_IMPL('messages.sendFile'),
-      deleteMessage: NOT_IMPL('messages.deleteMessage'),
-      editMessage: NOT_IMPL('messages.editMessage'),
-      forwardMessage: NOT_IMPL('messages.forwardMessage'),
-      markRead: NOT_IMPL('messages.markRead'),
-      markTopicRead: NOT_IMPL('messages.markTopicRead'),
-      getPinned: NOT_IMPL('messages.getPinned'),
+      async get(params) {
+        const ctx = getClientForChat(manager, params?.chatId)
+        if (ctx.error) return { ...ctx.error, messages: [], hasMore: false }
+        return getChatHistory(ctx.client, ctx.rawId, {
+          limit: params.limit,
+          fromMessageId: params.aroundId || params.offsetId,
+          offset: params.addOffset,
+          chatIdStr: params.chatId,
+          extras: makeExtras(manager, ctx.accountId),
+        })
+      },
+      async getTopic(_params) {
+        // Forum topics — отдельная задача. На Этапе 2.6 пропускаем
+        // (см. group-topic-investigation.md). UI пока не разрешает отправку в темы.
+        return { ok: false, error: 'forum topics not implemented in tdlib backend yet', messages: [] }
+      },
+      async send(chatId, text, replyTo) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return sendTextMessage(ctx.client, ctx.rawId, text, {
+          replyTo, chatIdStr: chatId, extras: makeExtras(manager, ctx.accountId),
+        })
+      },
+      async sendFile(_chatId, _filePath, _caption) {
+        // Использует inputMessageDocument/Photo — отдельная функция в tdlibMessages.
+        // На Этапе 2.6 пропускаем, чтобы не разрастаться.
+        return { ok: false, error: 'sendFile not implemented in tdlib backend yet' }
+      },
+      async deleteMessage(chatId, msgId, forAll = true) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return deleteMessages(ctx.client, ctx.rawId, [msgId], forAll)
+      },
+      async editMessage(chatId, msgId, text) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return editMessageText(ctx.client, ctx.rawId, msgId, text)
+      },
+      async forwardMessage(_fromChatId, _toChatId, _msgId) {
+        return { ok: false, error: 'forwardMessage not implemented in tdlib backend yet' }
+      },
+      async markRead(chatId, maxId) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        // viewMessages в TDLib не принимает maxId — нужен массив id. Простая
+        // реализация: помечаем виденым один последний msg id, TDLib сама
+        // отметит всё ниже. Этого достаточно для UI-level mark-read.
+        return viewMessages(ctx.client, ctx.rawId, [maxId])
+      },
+      async markTopicRead(_chatId, _topicId, _maxId) {
+        return { ok: false, error: 'markTopicRead not implemented yet' }
+      },
+      async getPinned(chatId) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return getChatPinnedMessage(ctx.client, ctx.rawId, {
+          chatIdStr: chatId, extras: makeExtras(manager, ctx.accountId),
+        })
+      },
     },
 
     media: {
-      download: NOT_IMPL('media.download'),
-      downloadVideo: NOT_IMPL('media.downloadVideo'),
-      getCacheSize: NOT_IMPL('media.getCacheSize'),
-      cleanup: NOT_IMPL('media.cleanup'),
+      async download({ chatId, msgId }) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        // Сначала получаем message чтобы достать file_id
+        const msgRes = await getMessage(ctx.client, ctx.rawId, msgId, {
+          chatIdStr: chatId, extras: makeExtras(manager, ctx.accountId),
+        })
+        if (!msgRes.ok) return { ok: false, error: msgRes.error }
+        // ВНИМАНИЕ: getMessage возвращает NativeMessage без file_id (mapMessage
+        // не пропускает raw TDLib file). Получим raw — отдельным getMessage с
+        // synchronous и без mapper.
+        let tdMsg
+        try {
+          tdMsg = await ctx.client.invoke({
+            '@type': 'getMessage', chat_id: ctx.rawId, message_id: Number(msgId),
+          })
+        } catch (e) { return { ok: false, error: e?.message || String(e) } }
+        const { fileId } = extractMediaFileId(tdMsg?.content)
+        if (!fileId) return { ok: false, error: 'no media file in message' }
+        // Проверяем кеш
+        const cached = getCachedFilePath(
+          tdMsg.content?.photo?.sizes?.[tdMsg.content.photo.sizes.length - 1]?.photo
+            || tdMsg.content?.video?.video || tdMsg.content?.document?.document
+            || tdMsg.content?.audio?.audio || tdMsg.content?.voice_note?.voice
+        )
+        if (cached) return { ok: true, path: cached }
+        // Запускаем загрузку
+        return downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 16 })
+      },
+      async downloadVideo({ chatId, msgId, onProgress }) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        let tdMsg
+        try {
+          tdMsg = await ctx.client.invoke({
+            '@type': 'getMessage', chat_id: ctx.rawId, message_id: Number(msgId),
+          })
+        } catch (e) { return { ok: false, error: e?.message || String(e) } }
+        const fileId = tdMsg?.content?.video?.video?.id
+        if (!fileId) return { ok: false, error: 'no video file' }
+        return downloadFile({
+          manager, accountId: ctx.accountId, fileId, priority: 24, onProgress,
+        })
+      },
+      async getCacheSize() {
+        // Суммируем по всем аккаунтам
+        let total = 0
+        for (const accountId of manager.listAccounts()) {
+          const client = manager.getClient(accountId)
+          if (!client) continue
+          const r = await getStorageStatistics(client)
+          if (r.ok) total += r.bytes
+        }
+        return { bytes: total }
+      },
+      async cleanup() {
+        let freed = 0
+        for (const accountId of manager.listAccounts()) {
+          const client = manager.getClient(accountId)
+          if (!client) continue
+          const r = await optimizeStorage(client)
+          if (r.ok) freed += r.freedBytes
+        }
+        return { ok: true, freedBytes: freed }
+      },
     },
 
     forum: {
-      getTopics: NOT_IMPL('forum.getTopics'),
-      getTopicMessages: NOT_IMPL('forum.getTopicMessages'),
+      async getTopics(_chatId, _limit) {
+        return { ok: false, error: 'forum.getTopics not implemented yet', isForum: false, topics: [] }
+      },
+      async getTopicMessages(_params) {
+        return { ok: false, error: 'forum.getTopicMessages not implemented yet', messages: [] }
+      },
     },
+
+    // Helper для внешних слушателей событий manager (на Этапе 3 IPC handlers
+    // будут подписываться через _manager.on('message:new', ...) etc).
+    _cancelDownload: (params) => cancelDownload({ manager, ...params }),
   }
 }
