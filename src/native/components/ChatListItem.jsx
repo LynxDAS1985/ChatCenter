@@ -8,6 +8,7 @@
 //   - Hover в sidebar по аккаунту → этот чат подсвечивается (если accountId совпал)
 
 import { getMessengerColor, getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
+import { formatUnreadCount } from '../utils/unreadFormat.js'
 
 const AVATAR_COLORS = ['#e17076', '#eda86c', '#a695e7', '#7bc862', '#65aadd', '#ee7aae', '#6ec9cb']
 
@@ -141,7 +142,7 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
               background: chat.isMuted ? 'rgba(128,128,128,0.35)' : 'var(--amoled-accent)',
               color: chat.isMuted ? 'var(--amoled-text-dim)' : '#fff',
               fontSize: 11, padding: '1px 7px', borderRadius: 10, minWidth: 20, textAlign: 'center'
-            }}>{badgeCount > 999 ? '999+' : badgeCount}</div>
+            }}>{formatUnreadCount(badgeCount)}</div>
           )}
         </div>
         {/* v0.87.106: микро-строка с мессенджером и именем аккаунта (только в multi-account) */}

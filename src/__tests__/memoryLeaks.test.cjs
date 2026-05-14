@@ -158,14 +158,14 @@ test('main.js: setupSession ошибка логируется', function() {
   assert(mainCode.includes('[Session]'), 'setupSession catch должен логировать')
 })
 
-// 6. Monitor status: active при __CC_ ответе
+// 6. Connection health: ok при __CC_ ответе
 var cmhCode = ''
 try { cmhCode = fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8') } catch(e) {}
-test('__CC_ → setMonitorStatus active (fix красных кругляшков)', function() {
-  assert(cmhCode.includes("setMonitorStatus") && cmhCode.includes("'active'"), 'consoleMessageHandler должен ставить active при __CC_ ответе')
+test('__CC_ → connectionHealth ok', function() {
+  assert(cmhCode.includes('setConnectionHealth') && cmhCode.includes('markHealthOk'), 'consoleMessageHandler должен отмечать connectionHealth ok при __CC_ ответе')
 })
-test('WebView timeout → error логируется', function() {
-  assert(appCode.includes('[Monitor]') && appCode.includes('не ответил'), 'таймаут монитора должен логироваться')
+test('WebView timeout → slow логируется', function() {
+  assert(appCode.includes('[ConnectionHealth]') && appCode.includes('дольше 10 сек'), 'долгая проверка подключения должна логироваться')
 })
 
 // v0.86.0: title-update звук для WhatsApp (ribbon только через __CC_NOTIF__)

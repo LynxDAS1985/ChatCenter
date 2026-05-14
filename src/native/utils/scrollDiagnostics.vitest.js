@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { findFirstUnreadId } from './messageGrouping.js'
 import { getScrollMetrics, getUnreadAnchorDebug, logNativeScroll } from './scrollDiagnostics.js'
 
 beforeEach(() => {
@@ -26,6 +27,17 @@ describe('scrollDiagnostics', () => {
       firstIncomingId: '1',
       lastIncomingId: '4',
     })
+  })
+
+  it('выбирает первый непрочитанный после readInboxMaxId, а не первый элемент загруженного окна', () => {
+    const messages = [
+      { id: '79773', isOutgoing: false },
+      { id: '79784', isOutgoing: false },
+      { id: '79871', isOutgoing: false },
+      { id: '79872', isOutgoing: false },
+      { id: '79873', isOutgoing: false },
+    ]
+    expect(findFirstUnreadId(messages, 138, 79871)).toBe('79872')
   })
 
   it('пишет renderer-событие в общий chatcenter.log через app:log', () => {

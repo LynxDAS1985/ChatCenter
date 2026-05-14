@@ -26,7 +26,7 @@ describe('ChatListItem render', () => {
 
   it('unread > 999 показывает 999+', () => {
     const { container } = render(<ChatListItem chat={{ ...baseChat, unreadCount: 1500 }} />)
-    expect(container.textContent).toContain('999+')
+    expect(container.textContent).toContain('1.5K')
     cleanup()
   })
 

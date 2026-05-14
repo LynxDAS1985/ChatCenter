@@ -87,9 +87,14 @@ export function formatDayLabel(dayStr) {
 }
 
 // Определение первого непрочитанного id для «Новые сообщения» divider
-export function findFirstUnreadId(messages, unreadCount) {
+export function findFirstUnreadId(messages, unreadCount, readInboxMaxId = 0) {
   if (!unreadCount || !messages.length) return null
   const incoming = messages.filter(m => !m.isOutgoing)
+  const cursor = Number(readInboxMaxId || 0)
+  if (cursor > 0) {
+    const firstAfterCursor = incoming.find(m => Number(m.id) > cursor)
+    if (firstAfterCursor) return firstAfterCursor.id
+  }
   const first = incoming[Math.max(0, incoming.length - unreadCount)]
   return first?.id || null
 }

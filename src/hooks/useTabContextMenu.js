@@ -1,6 +1,7 @@
 // useTabContextMenu.js — Context menu logic.
 // v0.87.133: heavy tabContextMenuDiag is disabled and no longer imported during startup.
 import { useState, useCallback } from 'react'
+import { markHealthPending } from '../utils/connectionHealth.js'
 
 /**
  * @param {Object} deps
@@ -10,7 +11,7 @@ import { useState, useCallback } from 'react'
  * @param {React.MutableRefObject} deps.pipelineTraceRef
  * @param {Array} deps.messengers
  * @param {Object} deps.settings
- * @param {Function} deps.setMonitorStatus
+ * @param {Function} deps.setConnectionHealth
  * @param {Function} deps.setNotifLogModal
  * @param {Function} deps.setNotifLogTab
  * @param {Function} deps.setEditingMessenger
@@ -22,7 +23,7 @@ import { useState, useCallback } from 'react'
 export default function useTabContextMenu({
   webviewRefs, messengersRef, settingsRef, pipelineTraceRef,
   messengers, settings,
-  setMonitorStatus, setNotifLogModal, setNotifLogTab, setEditingMessenger, setSettings,
+  setConnectionHealth, setNotifLogModal, setNotifLogTab, setEditingMessenger, setSettings,
   askRemoveMessenger, traceNotif, handleNewMessage,
 }) {
   const [contextMenuTab, setContextMenuTab] = useState(null) // { id, x, y }
@@ -58,7 +59,17 @@ export default function useTabContextMenu({
     const wv = webviewRefs.current[id]
     if (action === 'reload') {
       if (wv) { try { wv.reload() } catch {} }
-      setMonitorStatus(prev => ({ ...prev, [id]: 'loading' }))
+      const m = messengersRef.current.find(x => x.id === id)
+      setConnectionHealth?.(prev => ({
+        ...prev,
+        [id]: markHealthPending(prev[id], {
+          id,
+          type: 'webview',
+          label: m?.name || id,
+          url: m?.url || '',
+          details: 'Ручная перезагрузка вкладки',
+        }),
+      }))
     } else if (action === 'diag') {
       if (wv) { try { wv.send('run-diagnostics') } catch {} }
     } else if (action === 'notifLog') {

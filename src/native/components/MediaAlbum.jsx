@@ -257,7 +257,7 @@ export default function MediaAlbum({ album, chatId, downloadMedia, onPhotoOpen }
 }
 
 // Сам контейнер-бубл вокруг альбома (с текстом, meta и т.д. — аналог MessageBubble)
-export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply, onEdit, onDelete, onForward, onPin, onReplyClick, getMessage, onVisible }) {
+export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply, onEdit, onDelete, onForward, onPin, onReplyClick, getMessage, onVisible, readRoot }) {
   const [menu, setMenu] = useState(false)
   const firstMsg = album.msgs[0]
   const text = album.msgs.map(m => m.text).filter(Boolean).join('\n')
@@ -271,6 +271,8 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
   useReadOnScrollAway({
     elementRef: ref,
     enabled: !!onVisible,
+    root: readRoot || null,
+    msgId: firstMsg.id,
     onRead: () => { for (const m of album.msgs) onVisible?.(m) },
   })
 

@@ -145,6 +145,60 @@ describe('InboxMode render smoke', () => {
     cleanup()
   })
 
+  it('не ставит разделитель "Новые" на старое сообщение до readInboxMaxId', async () => {
+    const chatId = 'tg_self:cursor'
+    const messages = [
+      { id: '79773', chatId, senderId: 's', text: 'old 1', timestamp: 1712000000000, isOutgoing: false },
+      { id: '79784', chatId, senderId: 's', text: 'old 2', timestamp: 1712000001000, isOutgoing: false },
+      { id: '79871', chatId, senderId: 's', text: 'last read', timestamp: 1712000002000, isOutgoing: false },
+      { id: '79872', chatId, senderId: 's', text: 'new 1', timestamp: 1712000003000, isOutgoing: false },
+      { id: '79873', chatId, senderId: 's', text: 'new 2', timestamp: 1712000004000, isOutgoing: false },
+    ]
+    const store = buildStore({
+      activeAccountId: 'tg_self',
+      chats: [{ id: chatId, accountId: 'tg_self', title: 'C', unreadCount: 138, readInboxMaxId: 79871, type: 'channel' }],
+      activeChatId: chatId,
+      messages: { [chatId]: messages },
+      messageWindows: { [chatId]: { readInboxMaxId: 79871, unreadCount: 138 } },
+    })
+    const { container } = render(<InboxMode store={store} />)
+    await new Promise(r => setTimeout(r, 50))
+    const newMsg = Array.from(container.querySelectorAll('[data-msg-id]')).find(el => el.getAttribute('data-msg-id') === '79872')
+    expect(newMsg).toBeTruthy()
+    const divider = container.querySelector('.native-msg-unread-divider')
+    expect(divider).toBeTruthy()
+    expect(divider.compareDocumentPosition(newMsg) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    cleanup()
+  })
+
+  it('не отправляет mark-read для сообщений старее readInboxMaxId', async () => {
+    const chatId = 'tg_self:read-skip'
+    let observerCallback = null
+    globalThis.IntersectionObserver = class {
+      constructor(cb) { observerCallback = cb }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    }
+    const messages = [
+      { id: '10', chatId, senderId: 's', text: 'old', timestamp: 1712000000000, isOutgoing: false },
+      { id: '11', chatId, senderId: 's', text: 'new', timestamp: 1712000001000, isOutgoing: false },
+    ]
+    const store = buildStore({
+      activeAccountId: 'tg_self',
+      chats: [{ id: chatId, accountId: 'tg_self', title: 'C', unreadCount: 1, readInboxMaxId: 10, type: 'channel' }],
+      activeChatId: chatId,
+      messages: { [chatId]: messages },
+      messageWindows: { [chatId]: { readInboxMaxId: 10, unreadCount: 1 } },
+    })
+    render(<InboxMode store={store} />)
+    observerCallback?.([{ isIntersecting: true, boundingClientRect: { bottom: 100 }, rootBounds: { top: 50 } }])
+    observerCallback?.([{ isIntersecting: false, boundingClientRect: { bottom: 20 }, rootBounds: { top: 50 } }])
+    await new Promise(r => setTimeout(r, 400))
+    expect(store.markRead).not.toHaveBeenCalledWith(chatId, 10)
+    cleanup()
+  })
+
   // v0.87.48: регрессия — авто-load-older НЕ должен стрелять сразу при рендере
   // (до того как initial-scroll завершится). Иначе гонка с browser scroll anchoring
   // перемещала юзера в середину чата при открытии. Ловушка 103.

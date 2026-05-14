@@ -1,5 +1,6 @@
 // v0.84.3: Extracted from webviewSetup.js — console-message event handler
 // Contains: __CC_BADGE_BLOCKED__, __CC_ACCOUNT__, __CC_MSG__ (with DOM enrichment), __CC_NOTIF__ (with blob icon conversion)
+import { markHealthOk } from './connectionHealth.js'
 
 try { window.__ccStartupMark?.('module:consoleMessageHandler', 'module evaluated') } catch {}
 
@@ -14,8 +15,25 @@ export function createConsoleMessageHandler(deps) {
     recentNotifsRef, notifReadyRef, notifDedupRef, notifMidTsRef, notifSenderTsRef, senderCacheRef, pendingMsgRef,
     webviewRefs, messengersRef, settingsRef, windowFocusedRef, activeIdRef,
     cleanupSenderCache,
-    setAccountInfo, setUnreadCounts, setMonitorStatus, notifCountRef,
+    setAccountInfo, setUnreadCounts, setConnectionHealth, notifCountRef,
   } = deps
+
+  const updateConnectionOk = (messengerId, el, details) => {
+    if (!setConnectionHealth) return
+    const messenger = messengersRef.current.find(x => x.id === messengerId)
+    let url = messenger?.url || ''
+    try { url = el?.getURL?.() || url } catch {}
+    setConnectionHealth(prev => ({
+      ...prev,
+      [messengerId]: markHealthOk(prev[messengerId], {
+        id: messengerId,
+        type: 'webview',
+        label: messenger?.name || messengerId,
+        url,
+        details,
+      }),
+    }))
+  }
 
   /**
    * Returns a console-message handler bound to a specific WebView element and messenger.
@@ -63,8 +81,8 @@ export function createConsoleMessageHandler(deps) {
       }
       const ready = !!notifReadyRef.current[messengerId]
       traceNotif('debug', 'info', messengerId, (parsed.text || parsed.body || parsed.value || '').toString().slice(0, 200), `${parsed.prefix || parsed.type} | ready=${ready}`)
-      // v0.85.5: Любой __CC_ ответ (кроме badge_blocked) → статус active
-      setMonitorStatus(prev => prev[messengerId] === 'active' ? prev : { ...prev, [messengerId]: 'active' })
+      // Любой __CC_ ответ (кроме badge_blocked) подтверждает, что страница отвечает.
+      updateConnectionOk(messengerId, el, `${parsed.prefix || parsed.type} ответил`)
     }
     // badge_blocked уже обработан выше
     // ── __CC_ACCOUNT__: имя профиля ──

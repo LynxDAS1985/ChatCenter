@@ -17,7 +17,7 @@ function getSenderColor(senderId) {
 
 export default function MessageBubble({
   m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible,
-  downloadMedia, getMessage, onPhotoOpen, onReplyClick,
+  downloadMedia, getMessage, onPhotoOpen, onReplyClick, readRoot,
 }) {
   const [menu, setMenu] = useState(false)
   const [mediaUrl, setMediaUrl] = useState(null)
@@ -32,6 +32,8 @@ export default function MessageBubble({
   useReadOnScrollAway({
     elementRef: ref,
     enabled: !!onVisible,
+    root: readRoot || null,
+    msgId: m.id,
     onRead: () => onVisible?.(m),
   })
 

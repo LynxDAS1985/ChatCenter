@@ -6,6 +6,12 @@ import { devLog, devError } from './utils/devLog.js'
 import { playNotificationSound } from './utils/sound.js'
 import { buildChatNavigateScript } from './utils/navigateToChat.js'
 import { createWebviewSetup } from './utils/webviewSetup.js'
+import { markHealthPending } from './utils/connectionHealth.js'
+import { probeWebviewHealth } from './utils/webviewHealthProbe.js'
+import {
+  HEALTH_SCHEDULER_TICK_MS,
+  selectConnectionHealthJobs,
+} from './utils/connectionHealthScheduler.js'
 import TabBar from './components/TabBar.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 
@@ -41,6 +47,7 @@ const AutoReplyPanel = lazy(() => import('./components/AutoReplyPanel.jsx'))
 const NotifLogModal = lazy(() => import('./components/NotifLogModal.jsx'))
 const ConfirmCloseModal = lazy(() => import('./components/ConfirmCloseModal.jsx'))
 const LogModal = lazy(() => import('./components/LogModal.jsx'))
+const ConnectionsPanel = lazy(() => import('./components/ConnectionsPanel.jsx'))
 
 // v0.87.0: специальный "виртуальный" мессенджер — рендерит NativeApp вместо <webview>
 const NATIVE_CC_ID = 'native_cc'
@@ -91,7 +98,7 @@ export default function App() {
   const [accountInfo, setAccountInfo] = useState({})
   const [unreadCounts, setUnreadCounts] = useState({})
   const [unreadSplit, setUnreadSplit] = useState({})       // { [id]: { personal, channels } }
-  const [monitorStatus, setMonitorStatus] = useState({})   // { [id]: 'loading'|'active'|'error' }
+  const [connectionHealth, setConnectionHealth] = useState({}) // { [id]: connection quality/status }
   const [statusBarMsg, setStatusBarMsg] = useState(null)   // последнее сообщение для статусбара
   const [messagePreview, setMessagePreview] = useState({}) // { [id]: 'текст превью' }
   const [showAddModal, setShowAddModal] = useState(false)
@@ -120,6 +127,8 @@ export default function App() {
   const [cellTooltip, setCellTooltip] = useState(null)
   const [showLogModal, setShowLogModal] = useState(false)
   const [logContent, setLogContent] = useState('')
+  const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
+  const [activeNativeAccountId, setActiveNativeAccountId] = useState(null)
 
   const webviewRefs = useRef({})
   const notifReadyRef = useRef({})
@@ -147,12 +156,21 @@ export default function App() {
   const statsSaveTimer = useRef(null)
   const zoomSaveTimer = useRef(null)
   const bumpStatsRef = useRef(null)
+  const nativeConnectionActionsRef = useRef(null)
+  const connectionHealthRef = useRef({})
+  const webviewLoadingRef = useRef({})
+  const activeNativeAccountIdRef = useRef(null)
+  const healthInFlightWebviewRef = useRef(new Set())
+  const healthInFlightNativeRef = useRef(new Set())
 
   // Синхронизация рефов
   useEffect(() => { settingsRef.current = settings }, [settings])
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   useEffect(() => { messengersRef.current = messengers }, [messengers])
   useEffect(() => { zoomLevelsRef.current = zoomLevels }, [zoomLevels])
+  useEffect(() => { connectionHealthRef.current = connectionHealth }, [connectionHealth])
+  useEffect(() => { webviewLoadingRef.current = webviewLoading }, [webviewLoading])
+  useEffect(() => { activeNativeAccountIdRef.current = activeNativeAccountId }, [activeNativeAccountId])
   useEffect(() => {
     try {
       window.__ccStartupMark?.('component:App', `mounted messengers=${messengers.length} active=${activeId || 'none'} nativeTab=${messengers.some(m => m.isNative)}`)
@@ -189,7 +207,7 @@ export default function App() {
     retryTimers, previewTimers, statusBarMsgTimer, bumpStatsRef: { current: null },
     settingsRef, activeIdRef, messengersRef, windowFocusedRef, zoomLevelsRef,
     setAccountInfo, setActiveId, setChatHistory, setLastMessage, setMessagePreview,
-    setMonitorStatus, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
+    setConnectionHealth, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
     setWebviewLoading, setZoomLevels, monitorPreloadUrl,
   })
 
@@ -240,7 +258,7 @@ export default function App() {
   const { handleTabContextAction, handleTabContextAction_diag, contextMenuTab, setContextMenuTab, togglePinTab } = useTabContextMenu({
     webviewRefs, messengersRef, settingsRef, pipelineTraceRef,
     messengers, settings,
-    setMonitorStatus, setNotifLogModal, setNotifLogTab, setEditingMessenger, setSettings,
+    setConnectionHealth, setNotifLogModal, setNotifLogTab, setEditingMessenger, setSettings,
     askRemoveMessenger, traceNotif, handleNewMessage,
   })
 
@@ -339,6 +357,160 @@ export default function App() {
     window.api?.invoke('settings:save', newSettings).catch(() => {})
   }, [])
 
+  const handleNativeConnectionSnapshot = useCallback((items) => {
+    setConnectionHealth(prev => {
+      const next = {}
+      for (const [id, value] of Object.entries(prev)) {
+        if (value?.type !== 'native') next[id] = value
+      }
+      for (const item of items || []) {
+        if (item?.id) next[item.id] = item
+      }
+      return next
+    })
+  }, [])
+
+  const openConnectionsPanel = useCallback(() => setShowConnectionsPanel(true), [])
+
+  const runWebviewHealthProbe = useCallback((check) => {
+    const id = check?.id
+    if (!id || healthInFlightWebviewRef.current.has(id)) return Promise.resolve(null)
+    const webview = check.webview || webviewRefs.current[id]
+    if (!webview) return Promise.resolve(null)
+    healthInFlightWebviewRef.current.add(id)
+    return probeWebviewHealth({
+      webview,
+      id,
+      label: check.label,
+      url: check.url,
+      setConnectionHealth,
+      details: check.details,
+    }).finally(() => {
+      healthInFlightWebviewRef.current.delete(id)
+    })
+  }, [])
+
+  const runNativeHealthCheck = useCallback((id) => {
+    if (!id || healthInFlightNativeRef.current.has(id)) return Promise.resolve(null)
+    healthInFlightNativeRef.current.add(id)
+    return Promise.resolve(nativeConnectionActionsRef.current?.refreshOne?.(id))
+      .finally(() => {
+        healthInFlightNativeRef.current.delete(id)
+      })
+  }, [])
+
+  const refreshAllConnections = useCallback(() => {
+    const webviewChecks = []
+    setConnectionHealth(prev => {
+      const next = { ...prev }
+      for (const m of messengersRef.current) {
+        if (m.isNative) continue
+        const wv = webviewRefs.current[m.id]
+        if (wv) {
+          next[m.id] = markHealthPending(next[m.id], {
+            id: m.id,
+            type: 'webview',
+            label: m.name,
+            url: m.url,
+            details: 'Проверка всех подключений',
+          })
+          webviewChecks.push({ webview: wv, id: m.id, label: m.name, url: m.url })
+        }
+      }
+      return next
+    })
+    setTimeout(() => {
+      for (const check of webviewChecks) {
+        runWebviewHealthProbe({
+          ...check,
+          details: 'Ручная проверка всех подключений',
+        })
+      }
+    }, 0)
+    nativeConnectionActionsRef.current?.refreshAll?.()
+  }, [runWebviewHealthProbe])
+
+  const refreshProblematicConnections = useCallback(() => {
+    const nativeProblemIds = []
+    const webviewChecks = []
+    setConnectionHealth(prev => {
+      const next = { ...prev }
+      for (const [id, item] of Object.entries(prev)) {
+        if (!['slow', 'error'].includes(item?.state)) continue
+        if (item.type === 'native') {
+          nativeProblemIds.push(id)
+          continue
+        }
+        if (item.type !== 'webview') continue
+        const wv = webviewRefs.current[id]
+        const m = messengersRef.current.find(x => x.id === id)
+        if (wv) {
+          next[id] = markHealthPending(item, {
+            id,
+            type: 'webview',
+            label: m?.name || item.label || id,
+            url: m?.url || item.url || '',
+            details: 'Проверка проблемного подключения',
+          })
+          webviewChecks.push({ webview: wv, id, label: m?.name || item.label || id, url: m?.url || item.url || '' })
+        }
+      }
+      return next
+    })
+    setTimeout(() => {
+      for (const check of webviewChecks) {
+        runWebviewHealthProbe({
+          ...check,
+          details: 'Ручная проверка проблемного подключения',
+        })
+      }
+    }, 0)
+    if (nativeProblemIds.length) {
+      for (const id of nativeProblemIds) runNativeHealthCheck(id)
+    }
+  }, [runNativeHealthCheck, runWebviewHealthProbe])
+
+  useEffect(() => {
+    const runSchedulerTick = () => {
+      const jobs = selectConnectionHealthJobs({
+        connectionHealth: connectionHealthRef.current,
+        messengers: messengersRef.current,
+        activeId: activeIdRef.current,
+        activeNativeAccountId: activeIdRef.current === NATIVE_CC_ID ? activeNativeAccountIdRef.current : null,
+        windowFocused: windowFocusedRef.current,
+        webviewLoading: webviewLoadingRef.current,
+        inFlightWebview: healthInFlightWebviewRef.current,
+        inFlightNative: healthInFlightNativeRef.current,
+      })
+
+      for (const job of jobs.webview) {
+        const webview = webviewRefs.current[job.id]
+        if (!webview) continue
+        runWebviewHealthProbe({
+          webview,
+          ...job,
+          details: 'Автоматическая проверка подключения',
+        })
+      }
+
+      for (const job of jobs.native) {
+        runNativeHealthCheck(job.id)
+      }
+    }
+
+    const timer = setInterval(runSchedulerTick, HEALTH_SCHEDULER_TICK_MS)
+    const firstTick = setTimeout(runSchedulerTick, 1500)
+    return () => {
+      clearInterval(timer)
+      clearTimeout(firstTick)
+    }
+  }, [runNativeHealthCheck, runWebviewHealthProbe])
+
+  const openSystemLog = useCallback(() => {
+    setShowLogModal(true)
+    window.api?.invoke('app:read-log').then(c => setLogContent(c || 'Лог пуст')).catch(() => setLogContent('Не удалось прочитать лог'))
+  }, [])
+
   // ── Computed values ────────────────────────────────────────────────────
   const pinnedTabs = settings.pinnedTabs || {}
   const theme = settings.theme || 'dark'
@@ -350,7 +522,7 @@ export default function App() {
       <TabBar
         messengers={messengers} activeId={activeId} accountInfo={accountInfo}
         settings={settings} unreadCounts={unreadCounts} unreadSplit={unreadSplit}
-        messagePreview={messagePreview} zoomLevels={zoomLevels} monitorStatus={monitorStatus}
+        messagePreview={messagePreview} zoomLevels={zoomLevels} connectionHealth={connectionHealth}
         webviewLoading={webviewLoading} newMessageIds={newMessageIds} dragOverId={dragOverId}
         contextMenuTab={contextMenuTab} showAI={showAI} showTemplates={showTemplates}
         showAutoReply={showAutoReply} searchVisible={searchVisible} searchText={searchText}
@@ -367,6 +539,7 @@ export default function App() {
         changeZoom={changeZoom} zoomEditing={zoomEditing} setZoomEditing={setZoomEditing}
         zoomInputValue={zoomInputValue} setZoomInputValue={setZoomInputValue} zoomInputRef={zoomInputRef}
         statusBarMsg={statusBarMsg} stats={stats} totalUnread={totalUnread}
+        onOpenConnections={openConnectionsPanel}
       />
 
       {/* ── Основной layout ── */}
@@ -405,7 +578,12 @@ export default function App() {
               >
                 {m.isNative || m.id === NATIVE_CC_ID ? (
                   <Suspense fallback={<NativeAppFallback />}>
-                    <NativeApp />
+                    <NativeApp
+                      onOpenConnections={openConnectionsPanel}
+                      onConnectionSnapshot={handleNativeConnectionSnapshot}
+                      onConnectionActionsReady={(actions) => { nativeConnectionActionsRef.current = actions }}
+                      onActiveNativeAccountChange={setActiveNativeAccountId}
+                    />
                   </Suspense>
                 ) : (
                   <webview
@@ -463,6 +641,18 @@ export default function App() {
 
       {/* ── Модальные окна ── */}
       <Suspense fallback={null}>
+        {showConnectionsPanel && <ConnectionsPanel
+          connectionHealth={connectionHealth}
+          messengers={messengers}
+          activeId={activeId}
+          activeNativeAccountId={activeNativeAccountId}
+          webviewLoading={webviewLoading}
+          onClose={() => setShowConnectionsPanel(false)}
+          onRefreshAll={refreshAllConnections}
+          onRefreshProblematic={refreshProblematicConnections}
+          onOpenLog={openSystemLog}
+        />}
+
         {showAddModal && (
           <AddMessengerModal onAdd={addMessenger} onClose={() => setShowAddModal(false)} />
         )}

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { List } from 'react-window'
 import ChatRow from './ChatRow.jsx'
 import MuteMenu from './MuteMenu.jsx'
+import { formatUnreadCount } from '../utils/unreadFormat.js'
 
 const ITEM_HEIGHT = 74
 
@@ -38,6 +39,29 @@ function AccountBadgeMini({ name, color }) {
   )
 }
 
+function ForumTopicIcon({ topic }) {
+  const canShowImage = topic.iconEmojiUrl && !String(topic.iconEmojiMimeType || '').includes('x-tgsticker')
+  const isVideo = String(topic.iconEmojiMimeType || '').includes('webm')
+  return (
+    <div style={{
+      width: 36, height: 36, borderRadius: 8,
+      background: topic.iconColor ? `#${Number(topic.iconColor).toString(16).padStart(6, '0').slice(-6)}` : 'rgba(42,171,238,0.25)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#fff', fontWeight: 700, flexShrink: 0,
+      fontSize: topic.iconEmoji ? 20 : 18,
+      overflow: 'hidden',
+    }}>
+      {canShowImage ? (
+        isVideo ? (
+          <video src={topic.iconEmojiUrl} autoPlay loop muted playsInline style={{ width: 28, height: 28, objectFit: 'contain' }} />
+        ) : (
+          <img src={topic.iconEmojiUrl} alt={topic.iconEmoji || '#'} style={{ width: 28, height: 28, objectFit: 'contain' }} />
+        )
+      ) : (topic.iconEmoji || '#')}
+    </div>
+  )
+}
+
 export default function InboxChatListSidebar({
   store,
   activeAccountChats,
@@ -49,6 +73,8 @@ export default function InboxChatListSidebar({
   const containerRef = useRef(null)
   // v0.87.109: состояние меню заглушения { chat, x, y } или null
   const [muteMenu, setMuteMenu] = useState(null)
+  const [visibleForumChatId, setVisibleForumChatId] = useState(null)
+  const [forumClosing, setForumClosing] = useState(false)
 
   const handleContextMenu = useCallback((e, chat) => {
     e.preventDefault()
@@ -63,14 +89,118 @@ export default function InboxChatListSidebar({
     const ro = new ResizeObserver(update)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [setListHeight])
+  }, [setListHeight, store.forumTopicPanelChatId])
+
+  useEffect(() => {
+    if (store.forumTopicPanelChatId) {
+      setVisibleForumChatId(store.forumTopicPanelChatId)
+      setForumClosing(false)
+      return undefined
+    }
+    if (!visibleForumChatId) return undefined
+    setForumClosing(true)
+    const timer = setTimeout(() => {
+      setVisibleForumChatId(null)
+      setForumClosing(false)
+    }, 180)
+    return () => clearTimeout(timer)
+  }, [store.forumTopicPanelChatId, visibleForumChatId])
 
   // v0.87.105 (ADR-016): нужны ли фильтр-кнопки — только если 2+ аккаунта.
   const showFilters = store.accounts.length >= 2
   const filter = store.chatFilter || 'all'
+  const forumChatId = visibleForumChatId || store.forumTopicPanelChatId
+  const forumChat = forumChatId ? store.chats.find(c => c.id === forumChatId) : null
+  const forumTopics = forumChatId ? (store.forumTopics?.[forumChatId] || []) : []
+  const selectedTopic = forumChatId ? store.activeForumTopic?.[forumChatId] : null
+
+  if (forumChat) {
+    return (
+      <div className={`native-forum-topic-panel ${forumClosing ? 'native-forum-topic-panel--closing' : ''}`} style={{
+        width: 340, borderRight: '1px solid var(--amoled-border)',
+        background: 'var(--amoled-surface)',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{
+          height: 58, display: 'flex', alignItems: 'center', gap: 10,
+          padding: '0 12px', borderBottom: '1px solid var(--amoled-border)',
+          background: 'var(--amoled-bg)', flexShrink: 0,
+        }}>
+          <button
+            onClick={() => store.closeForumTopics?.()}
+            title="Закрыть темы"
+            style={{
+              width: 34, height: 34, borderRadius: 6,
+              border: '1px solid var(--amoled-border)',
+              background: 'transparent',
+              color: 'var(--amoled-text)',
+              fontSize: 20,
+              cursor: 'pointer',
+            }}
+          >×</button>
+          <div style={{ minWidth: 0 }}>
+            <div style={{
+              color: 'var(--amoled-text)', fontWeight: 700, fontSize: 15,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{forumChat.title}</div>
+            <div style={{ color: 'var(--amoled-text-muted)', fontSize: 12 }}>Темы группы</div>
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          {store.forumTopicsLoading?.[forumChatId] && forumTopics.length === 0 ? (
+            <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>
+              Загрузка тем...
+            </div>
+          ) : forumTopics.length === 0 ? (
+            <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>
+              Темы не найдены
+            </div>
+          ) : forumTopics.map(topic => {
+            const active = selectedTopic?.id === topic.id
+            return (
+              <div
+                className={`native-forum-topic-row ${active ? 'native-forum-topic-row--active' : ''}`}
+                key={topic.id}
+                onClick={() => store.selectForumTopic?.(forumChatId, topic)}
+                style={{
+                  height: 66,
+                  padding: '9px 12px',
+                  borderBottom: '1px solid var(--amoled-border)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+              >
+                <ForumTopicIcon topic={topic} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{
+                    color: 'var(--amoled-text)', fontWeight: 700, fontSize: 14,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{topic.title}{topic.isClosed ? ' 🔇' : ''}</div>
+                  <div style={{
+                    color: 'var(--amoled-text-dim)', fontSize: 12,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{topic.lastMessage || 'Нет предпросмотра'}</div>
+                </div>
+                {topic.unreadCount > 0 && (
+                  <span style={{
+                    minWidth: 30, padding: '3px 7px', borderRadius: 12,
+                    background: 'rgba(255,255,255,0.28)',
+                    color: '#fff', fontSize: 12, fontWeight: 700, textAlign: 'center',
+                    flexShrink: 0,
+                  }}>{formatUnreadCount(topic.unreadCount)}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div style={{
+    <div className="native-chat-list-panel" style={{
       width: 340, borderRight: '1px solid var(--amoled-border)',
       background: 'var(--amoled-surface)',
       display: 'flex', flexDirection: 'column',

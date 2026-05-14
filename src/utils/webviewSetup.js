@@ -11,7 +11,14 @@ import { playNotificationSound } from './sound.js'
 import { createConsoleMessageHandler } from './consoleMessageHandler.js'
 import { logGeometry, runDomProbe, attachRuntimeErrorCatcher } from './webviewDiagnostics.js'
 import { createHandleNewMessage } from './webviewHandleNewMessage.js'
+import { probeWebviewHealth } from './webviewHealthProbe.js'
 import { DEFAULT_MESSENGERS } from '../constants.js'
+import {
+  markHealthError,
+  markHealthOk,
+  markHealthPending,
+  markHealthSlow,
+} from './connectionHealth.js'
 
 try { window.__ccStartupMark?.('module:webviewSetup', 'module evaluated') } catch {}
 
@@ -36,10 +43,37 @@ export function createWebviewSetup(deps) {
     retryTimers, previewTimers, statusBarMsgTimer, bumpStatsRef,
     settingsRef, activeIdRef, messengersRef, windowFocusedRef, zoomLevelsRef,
     setAccountInfo, setActiveId, setChatHistory, setLastMessage, setMessagePreview,
-    setMonitorStatus, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
+    setConnectionHealth, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
     setWebviewLoading, setZoomLevels, monitorPreloadUrl,
   } = deps
   const startupWebviewSeen = new Set()
+  const webviewLoadStartedAt = {}
+  const webviewProbeTimers = {}
+  const healthLabel = (messengerId) => messengersRef.current.find(x => x.id === messengerId)?.name || messengerId
+  const healthUrl = (el, messengerId) => {
+    try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' }
+  }
+  const updateHealth = (messengerId, updater) => {
+    if (!setConnectionHealth) return
+    setConnectionHealth(prev => ({
+      ...prev,
+      [messengerId]: updater(prev[messengerId]),
+    }))
+  }
+  const scheduleHealthProbe = (el, messengerId, details = 'Проверка вкладки', delay = 0) => {
+    if (!setConnectionHealth || !el) return
+    clearTimeout(webviewProbeTimers[messengerId])
+    webviewProbeTimers[messengerId] = setTimeout(() => {
+      probeWebviewHealth({
+        webview: el,
+        id: messengerId,
+        label: healthLabel(messengerId),
+        url: healthUrl(el, messengerId),
+        setConnectionHealth,
+        details,
+      })
+    }, delay)
+  }
   const startupWebviewLog = (messengerId, message) => {
     try {
       const key = `${messengerId}:${message}`
@@ -147,15 +181,36 @@ export function createWebviewSetup(deps) {
       webviewRefs.current[messengerId] = el
       const addListener = (event, fn) => { el.addEventListener(event, fn); el._chatcenterListeners.push([event, fn]) }
       startupWebviewLog(messengerId, 'ref-init')
-      setMonitorStatus(prev => ({ ...prev, [messengerId]: 'loading' }))
+      webviewLoadStartedAt[messengerId] = Date.now()
+      updateHealth(messengerId, prev => markHealthPending(prev, {
+        id: messengerId,
+        type: 'webview',
+        label: healthLabel(messengerId),
+        url: healthUrl(el, messengerId),
+      }))
       // ── СЕКЦИЯ: События загрузки страницы ──
       setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       addListener('did-start-loading', () => {
         startupWebviewLog(messengerId, 'did-start-loading')
+        webviewLoadStartedAt[messengerId] = Date.now()
+        updateHealth(messengerId, prev => markHealthPending(prev, {
+          id: messengerId,
+          type: 'webview',
+          label: healthLabel(messengerId),
+          url: healthUrl(el, messengerId),
+        }))
         setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       })
       addListener('did-stop-loading', () => {
         startupWebviewLog(messengerId, 'did-stop-loading')
+        updateHealth(messengerId, prev => markHealthOk(prev, {
+          id: messengerId,
+          type: 'webview',
+          label: healthLabel(messengerId),
+          url: healthUrl(el, messengerId),
+          details: 'Загрузка завершилась',
+        }))
+        scheduleHealthProbe(el, messengerId, 'Проверка после завершения загрузки', 150)
         setWebviewLoading(prev => ({ ...prev, [messengerId]: false }))
       })
 
@@ -164,7 +219,14 @@ export function createWebviewSetup(deps) {
         const reason = e?.details?.reason || e?.reason || 'unknown'
         devError(`[WebView CRASH] ${messengerId}: reason=${reason}`)
         traceNotif('crash', 'error', messengerId, '', `WebView crashed: ${reason}`)
-        setMonitorStatus(prev => ({ ...prev, [messengerId]: 'error' }))
+        updateHealth(messengerId, prev => markHealthError(prev, {
+          id: messengerId,
+          type: 'webview',
+          label: healthLabel(messengerId),
+          startedAt: webviewLoadStartedAt[messengerId],
+          url: healthUrl(el, messengerId),
+          errorText: `WebView crashed: ${reason}`,
+        }))
       })
       addListener('unresponsive', () => {
         devError(`[WebView HANG] ${messengerId}: unresponsive`)
@@ -176,6 +238,15 @@ export function createWebviewSetup(deps) {
         if (code === -3) return // -3 = aborted (normal navigation)
         devError(`[WebView FAIL] ${messengerId}: code=${code} ${desc}`)
         traceNotif('load-fail', 'error', messengerId, '', `code=${code} ${desc}`)
+        updateHealth(messengerId, prev => markHealthError(prev, {
+          id: messengerId,
+          type: 'webview',
+          label: healthLabel(messengerId),
+          startedAt: webviewLoadStartedAt[messengerId],
+          url: healthUrl(el, messengerId),
+          errorCode: code,
+          errorText: desc,
+        }))
       })
       // v0.86.5-6 DIAG: смена чата + геометрия + DOM-probe (вынесено в webviewDiagnostics.js)
       addListener('did-navigate-in-page', (e) => {
@@ -192,12 +263,28 @@ export function createWebviewSetup(deps) {
       })
       addListener('did-finish-load', () => {
         startupWebviewLog(messengerId, 'did-finish-load')
+        updateHealth(messengerId, prev => markHealthOk(prev, {
+          id: messengerId,
+          type: 'webview',
+          label: healthLabel(messengerId),
+          url: healthUrl(el, messengerId),
+          details: 'Страница загружена',
+        }))
+        scheduleHealthProbe(el, messengerId, 'Проверка после загрузки страницы', 150)
         attachRuntimeErrorCatcher(el)
       })
 
       // ── СЕКЦИЯ: DOM-ready — инициализация монитора ──
       addListener('dom-ready', () => {
         startupWebviewLog(messengerId, 'dom-ready')
+        updateHealth(messengerId, prev => markHealthOk(prev, {
+          id: messengerId,
+          type: 'webview',
+          label: healthLabel(messengerId),
+          url: healthUrl(el, messengerId),
+          details: 'DOM готов',
+        }))
+        scheduleHealthProbe(el, messengerId, 'Проверка после готовности DOM', 250)
         // v0.84.0: Регистрация webContentsId для multi-account routing
         try {
           const wcId = el.getWebContentsId?.()
@@ -212,15 +299,22 @@ export function createWebviewSetup(deps) {
         // v0.57.0: снижено с 30 до 5 сек — 30 сек блокировало реальные сообщения в MAX.
         notifReadyRef.current[messengerId] = false
         setTimeout(() => { notifReadyRef.current[messengerId] = true }, 5000)
-        // v0.85.5: Через 10 сек если монитор не ответил — помечаем как error
-        // Монитор шлёт __CC_DIAG__, __CC_NOTIF_HOOK_OK__, unread-count — любой из них → active
+        // Через 10 сек без завершения загрузки показываем пользователю медленное подключение.
+        // Это больше не статус monitorStatus: UI-точка показывает качество сети/доступности.
         setTimeout(() => {
-          setMonitorStatus(prev => {
-            if (prev[messengerId] === 'loading') {
-              devError(`[Monitor] ${messengerId}: не ответил за 10 сек → error`)
-              return { ...prev, [messengerId]: 'error' }
+          updateHealth(messengerId, prev => {
+            if (prev?.state === 'pending') {
+              devError(`[ConnectionHealth] ${messengerId}: проверка дольше 10 сек → slow`)
+              return markHealthSlow(prev, {
+                id: messengerId,
+                type: 'webview',
+                label: healthLabel(messengerId),
+                startedAt: webviewLoadStartedAt[messengerId],
+                url: healthUrl(el, messengerId),
+                details: 'Проверка дольше 10 сек',
+              })
             }
-            return prev
+            return prev || markHealthOk(null, { id: messengerId, type: 'webview', label: healthLabel(messengerId), url: healthUrl(el, messengerId) })
           })
         }, 10000)
         // Применяем зум если он не стандартный
@@ -307,8 +401,14 @@ export function createWebviewSetup(deps) {
             }
             return { ...prev, [messengerId]: count }
           })
-          // Обновляем статус мониторинга — title работает
-          setMonitorStatus(prev => ({ ...prev, [messengerId]: 'active' }))
+          updateHealth(messengerId, prev => markHealthOk(prev, {
+            id: messengerId,
+            type: 'webview',
+            label: healthLabel(messengerId),
+            url: healthUrl(el, messengerId),
+            details: 'title-update ответил',
+          }))
+          scheduleHealthProbe(el, messengerId, 'Проверка после title-update', 250)
         } else if (activeIdRef.current === messengerId && windowFocusedRef.current) {
           // v0.74.0: Title без числа (например "MAX") — пользователь смотрит и всё прочитал
           notifCountRef.current[messengerId] = 0
@@ -376,8 +476,14 @@ export function createWebviewSetup(deps) {
             }
             return { ...prev, [messengerId]: count }
           })
-          // Монитор прислал данные — значит работает
-          setMonitorStatus(prev => ({ ...prev, [messengerId]: 'active' }))
+          updateHealth(messengerId, prev => markHealthOk(prev, {
+            id: messengerId,
+            type: 'webview',
+            label: healthLabel(messengerId),
+            url: healthUrl(el, messengerId),
+            details: 'unread-count ответил',
+          }))
+          scheduleHealthProbe(el, messengerId, 'Проверка после unread-count', 250)
         } else if (e.channel === 'unread-split') {
           // Раздельный счётчик: личные vs каналы
           const split = e.args[0]
@@ -447,7 +553,7 @@ export function createWebviewSetup(deps) {
         recentNotifsRef, notifReadyRef, notifDedupRef, notifMidTsRef, notifSenderTsRef, senderCacheRef, pendingMsgRef,
         webviewRefs, messengersRef, settingsRef, windowFocusedRef, activeIdRef,
         cleanupSenderCache,
-        setAccountInfo, setUnreadCounts, setMonitorStatus, notifCountRef,
+        setAccountInfo, setUnreadCounts, setConnectionHealth, notifCountRef,
       })
       addListener('console-message', consoleHandler(el, messengerId))
     }

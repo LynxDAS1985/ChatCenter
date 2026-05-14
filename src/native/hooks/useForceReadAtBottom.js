@@ -35,7 +35,7 @@ export function useForceReadAtBottom({ atBottom, activeChatId, activeMessages, a
       if (maxEverSentRef) maxEverSentRef.current = Math.max(maxEverSentRef.current || 0, lastId)
       logNativeScroll('force-read-fire', { chatId: activeChatId, lastId, unread: activeUnread })
       // v0.87.41: убран activeUnread — не вычитаем локально, ждём server sync
-      markRead(activeChatId, lastId)
+      markRead(activeChatId, lastId, { source: 'bottom' })
     }, 400)
     return () => {
       // v0.87.49: cleanup = deps changed; лог покажет ЧТО именно изменилось

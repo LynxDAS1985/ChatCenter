@@ -6,7 +6,7 @@ try { window.__ccStartupMark?.('module:TabBar', 'module evaluated') } catch {}
 /**
  * Props:
  * - messengers, activeId, accountInfo, settings, unreadCounts, unreadSplit
- * - messagePreview, zoomLevels, monitorStatus, webviewLoading
+ * - messagePreview, zoomLevels, connectionHealth, webviewLoading
  * - newMessageIds, dragOverId, contextMenuTab
  * - showAI, showTemplates, showAutoReply, searchVisible, searchText
  * - theme, currentZoom, isResizing
@@ -21,7 +21,7 @@ try { window.__ccStartupMark?.('module:TabBar', 'module evaluated') } catch {}
  */
 export default function TabBar({
   messengers, activeId, accountInfo, settings, unreadCounts, unreadSplit,
-  messagePreview, zoomLevels, monitorStatus, webviewLoading,
+  messagePreview, zoomLevels, connectionHealth, webviewLoading,
   newMessageIds, dragOverId, contextMenuTab,
   showAI, showTemplates, showAutoReply, searchVisible, searchText,
   theme, currentZoom,
@@ -33,6 +33,7 @@ export default function TabBar({
   handleTabContextAction,
   changeZoom, zoomEditing, setZoomEditing, zoomInputValue, setZoomInputValue, zoomInputRef,
   statusBarMsg, stats, totalUnread,
+  onOpenConnections,
 }) {
   const pinnedTabs = settings.pinnedTabs || {}
 
@@ -77,7 +78,7 @@ export default function TabBar({
               unreadSplit={unreadSplit[m.id]}
               messagePreview={messagePreview[m.id]}
               zoomLevel={zoomLevels[m.id]}
-              monitorStatus={monitorStatus[m.id]}
+              connectionHealth={connectionHealth[m.id]}
               isPageLoading={!!webviewLoading[m.id]}
               isNew={newMessageIds.has(m.id)}
               isPinned={!!pinnedTabs[m.id]}
@@ -89,6 +90,7 @@ export default function TabBar({
               onDragOver={() => handleDragOver(m.id)}
               onDrop={() => handleDrop(m.id)}
               onDragEnd={handleDragEnd}
+              onOpenConnections={onOpenConnections}
             />
           ))}
 

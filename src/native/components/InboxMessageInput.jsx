@@ -5,6 +5,8 @@ export default function InboxMessageInput({
   input, setInput, sending, replyTo, editTarget, setReplyTo, setEditTarget,
   activeMessages,
   handleInputChange, handleReplySend, handlePaste,
+  disabled = false,
+  disabledText = 'Недоступно',
 }) {
   return (
     <>
@@ -47,14 +49,15 @@ export default function InboxMessageInput({
           }}
           onPaste={handlePaste}
           placeholder={
-            editTarget ? 'Отредактируйте сообщение...'
+            disabled ? disabledText
+            : editTarget ? 'Отредактируйте сообщение...'
             : replyTo ? 'Ответ...'
             : 'Введите сообщение... (перетащите файл / Ctrl+V фото)'
           }
-          disabled={sending}
+          disabled={sending || disabled}
           style={{ flex: 1 }}
         />
-        <button className="native-btn" onClick={handleReplySend} disabled={sending || !input.trim()}>
+        <button className="native-btn" onClick={handleReplySend} disabled={disabled || sending || !input.trim()}>
           {sending ? '...' : editTarget ? '✓' : 'Отпр.'}
         </button>
       </div>

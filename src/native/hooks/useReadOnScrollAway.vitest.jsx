@@ -1,5 +1,3 @@
-// v0.87.51: тесты для новой логики "msg появился в viewport → прочитан".
-// Один IntersectionObserver с threshold=0 + initial-guard от mass-read при открытии.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { useRef } from 'react'
@@ -24,70 +22,72 @@ beforeEach(() => {
   globalThis.window.api = { send: vi.fn(), invoke: vi.fn(), on: vi.fn(() => () => {}) }
 })
 
-function setup() {
+function setup(root = null) {
   const onRead = vi.fn()
   const onSeen = vi.fn()
   renderHook(() => {
     const elementRef = useRef({ tagName: 'DIV' })
-    useReadOnScrollAway({ elementRef, onRead, onSeen, enabled: true, msgId: 'test-1' })
+    useReadOnScrollAway({ elementRef, onRead, onSeen, enabled: true, root, msgId: 'test-1' })
   })
   return { onRead, onSeen, obs: observerInstances[0] }
 }
 
-describe('useReadOnScrollAway v0.87.51 — threshold=0 + initial-guard', () => {
-  it('создаётся ОДИН observer с threshold=0', () => {
-    setup()
+describe('useReadOnScrollAway - root-aware reading line', () => {
+  it('creates one observer using the middle reading line', () => {
+    const root = { tagName: 'SCROLLER' }
+    setup(root)
     expect(observerInstances.length).toBe(1)
+    expect(observerInstances[0].opts.root).toBe(root)
+    expect(observerInstances[0].opts.rootMargin).toBe('-48% 0px -48% 0px')
     expect(observerInstances[0].opts.threshold).toBe(0)
   })
 
-  it('⭐ РЕГРЕССИЯ open-chat: msg УЖЕ в viewport при открытии → НЕ read', () => {
+  it('does not mark an initially visible message as read on chat open', () => {
     const { onRead, obs } = setup()
-    // Первый callback сразу после observe() — msg уже виден (initial state)
-    obs.trigger({ isIntersecting: true })
+    obs.trigger({ isIntersecting: true, rootBounds: { top: 100 }, boundingClientRect: { bottom: 150 } })
     expect(onRead).not.toHaveBeenCalled()
   })
 
-  it('msg появился из-за скролла (был скрыт, стал виден) → READ', () => {
+  it('marks an initially visible message read after it leaves the reading line upward', () => {
     const { onRead, obs } = setup()
-    // Initial: msg скрыт
-    obs.trigger({ isIntersecting: false })
-    expect(onRead).not.toHaveBeenCalled()
-    // Юзер прокрутил → msg появился
-    obs.trigger({ isIntersecting: true })
+    obs.trigger({ isIntersecting: true, rootBounds: { top: 100 }, boundingClientRect: { bottom: 150 } })
+    obs.trigger({ isIntersecting: false, rootBounds: { top: 100 }, boundingClientRect: { bottom: 90 } })
     expect(onRead).toHaveBeenCalledTimes(1)
   })
 
-  it('msg initially visible → ушёл → появился снова → READ (юзер вернулся, читает)', () => {
-    const { onRead, obs } = setup()
-    obs.trigger({ isIntersecting: true })   // initial visible — initial-guard сбрасывается
-    obs.trigger({ isIntersecting: false })  // ушёл
-    obs.trigger({ isIntersecting: true })   // появился опять — READ (юзер повторно смотрит)
-    expect(onRead).toHaveBeenCalledTimes(1)
-  })
-
-  it('⭐ onSeen и onRead — оба вызываются одновременно при появлении', () => {
+  it('marks a hidden message only after it crosses and then leaves the reading line', () => {
     const { onRead, onSeen, obs } = setup()
-    obs.trigger({ isIntersecting: false })  // initial hidden
-    obs.trigger({ isIntersecting: true })   // появился
+    obs.trigger({ isIntersecting: false, rootBounds: { top: 100 }, boundingClientRect: { bottom: 300 } })
+    obs.trigger({ isIntersecting: true, rootBounds: { top: 100 }, boundingClientRect: { bottom: 140 } })
     expect(onSeen).toHaveBeenCalledTimes(1)
+    expect(onRead).not.toHaveBeenCalled()
+    obs.trigger({ isIntersecting: false, rootBounds: { top: 100 }, boundingClientRect: { bottom: 90 } })
     expect(onRead).toHaveBeenCalledTimes(1)
   })
 
-  it('enabled=false — observer не создаётся', () => {
+  it('does not mark read when the message leaves downward', () => {
+    const { onRead, obs } = setup()
+    obs.trigger({ isIntersecting: false, rootBounds: { top: 100 }, boundingClientRect: { bottom: 300 } })
+    obs.trigger({ isIntersecting: true, rootBounds: { top: 100 }, boundingClientRect: { bottom: 140 } })
+    obs.trigger({ isIntersecting: false, rootBounds: { top: 100 }, boundingClientRect: { bottom: 300 } })
+    expect(onRead).not.toHaveBeenCalled()
+  })
+
+  it('fires read only once', () => {
+    const { onRead, obs } = setup()
+    obs.trigger({ isIntersecting: false, rootBounds: { top: 100 }, boundingClientRect: { bottom: 300 } })
+    obs.trigger({ isIntersecting: true, rootBounds: { top: 100 }, boundingClientRect: { bottom: 140 } })
+    obs.trigger({ isIntersecting: false, rootBounds: { top: 100 }, boundingClientRect: { bottom: 90 } })
+    obs.trigger({ isIntersecting: true, rootBounds: { top: 100 }, boundingClientRect: { bottom: 140 } })
+    obs.trigger({ isIntersecting: false, rootBounds: { top: 100 }, boundingClientRect: { bottom: 90 } })
+    expect(onRead).toHaveBeenCalledTimes(1)
+  })
+
+  it('enabled=false does not create observer', () => {
     renderHook(() => {
       const elementRef = useRef({ tagName: 'DIV' })
       useReadOnScrollAway({ elementRef, onRead: vi.fn(), onSeen: vi.fn(), enabled: false })
     })
     expect(observerInstances.length).toBe(0)
-  })
-
-  it('многократный trigger isIntersecting=true — onRead только ОДИН раз', () => {
-    const { onRead, obs } = setup()
-    obs.trigger({ isIntersecting: false })  // initial hidden
-    obs.trigger({ isIntersecting: true })
-    obs.trigger({ isIntersecting: true })
-    obs.trigger({ isIntersecting: true })
-    expect(onRead).toHaveBeenCalledTimes(1)
   })
 })

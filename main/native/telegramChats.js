@@ -44,6 +44,7 @@ export function mapDialog(d, accountId) {
     lastMessage: messagePreview(d.message),
     lastMessageTs: d.message?.date ? d.message.date * 1000 : 0,
     unreadCount: d.unreadCount || 0,
+    readInboxMaxId: Number(d.dialog?.readInboxMaxId || d.readInboxMaxId || 0),
     rawId: String(d.id),
     hasPhoto: !!(entity.photo && !entity.photo.photoEmpty),
     isOnline: type === 'user' && entity.status?.className === 'UserStatusOnline',
@@ -203,12 +204,14 @@ export async function loadAvatarsAsync(dialogs, accountId) {
 // v0.87.26: ФИКС — пагинация до 500 чатов вместо фикса 50.
 // v0.87.105 (ADR-016): итерируем по ВСЕМ зарегистрированным аккаунтам.
 export async function fetchAllUnreadUpdates(maxPages = 5, pageSize = 100) {
-  if (state.clients.size === 0) return []
+  if (state.clients.size === 0) return { updates: [], accountStats: [] }
   const startedAt = Date.now()
   const updates = []
+  const accountStats = []
   for (const [accountId, client] of state.clients.entries()) {
     const accountStartedAt = Date.now()
     let accountCount = 0
+    let accountError = ''
     let offsetDate, offsetId, offsetPeer
     for (let i = 0; i < maxPages; i++) {
       try {
@@ -226,12 +229,24 @@ export async function fetchAllUnreadUpdates(maxPages = 5, pageSize = 100) {
         offsetDate = last.date
         offsetId = last.message?.id
         offsetPeer = last.inputEntity
-      } catch (e) { log(`rescan page err (${accountId}): ${e.message}`); break }
+      } catch (e) {
+        accountError = e.message
+        log(`rescan page err (${accountId}): ${e.message}`)
+        break
+      }
     }
-    startupLog(`unread-fetch account=${accountId} chats=${accountCount} ms=${Date.now() - accountStartedAt}`)
+    const accountMs = Date.now() - accountStartedAt
+    accountStats.push({
+      accountId,
+      ok: !accountError,
+      chats: accountCount,
+      ms: accountMs,
+      error: accountError,
+    })
+    startupLog(`unread-fetch account=${accountId} chats=${accountCount} ms=${accountMs}${accountError ? ` err="${accountError}"` : ''}`)
   }
   startupLog(`unread-fetch done total=${updates.length} clients=${state.clients.size} ms=${Date.now() - startedAt}`)
-  return updates
+  return { updates, accountStats }
 }
 
 // v0.87.24+: периодический rescan unread (immediate + каждые 15 сек)
@@ -244,7 +259,7 @@ export function startUnreadRescan() {
     const startedAt = Date.now()
     try {
       startupLog(`unread-rescan start clients=${state.clients.size}`)
-      const updates = await fetchAllUnreadUpdates()
+      const { updates } = await fetchAllUnreadUpdates()
       // emit без конкретного accountId — каждый update содержит свой id с префиксом
       emit('tg:unread-bulk-sync', { updates })
       const withUnread = updates.filter(u => u.unreadCount > 0).length

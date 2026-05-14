@@ -5,12 +5,18 @@
 // v0.87.106 (multi-account UI): круглые аватарки с фото, иконка мессенджера ✈️ в углу,
 // зелёная точка-индикатор онлайн, бейдж непрочитанных. БЕЗ яркой подсветки активного.
 // + hover на аккаунте → подсветка его чатов в списке (Улучшение 1).
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import './styles.css'
 import useNativeStore from './store/nativeStore.js'
 import LoginModal from './components/LoginModal.jsx'
 import InboxMode from './modes/InboxMode.jsx'
 import AccountContextMenu from './components/AccountContextMenu.jsx'
+import ConnectionStatusDot from '../components/ConnectionStatusDot.jsx'
+import { formatUnreadCount } from './utils/unreadFormat.js'
+import {
+  createPendingHealth,
+  markHealthError,
+} from '../utils/connectionHealth.js'
 
 try { window.__ccStartupMark?.('module:NativeApp', 'module evaluated after native static imports') } catch {}
 
@@ -42,7 +48,7 @@ const MESSENGER_EMOJI = {
 // v0.87.106: круглый аватар аккаунта в sidebar.
 // 48px фото (или инициалы), угловая иконка мессенджера, зелёная точка онлайн,
 // красный бейдж непрочитанных. Tooltip при hover.
-function AccountAvatar({ account, unreadCount, onClick, onContextMenu, onMouseEnter, onMouseLeave }) {
+function AccountAvatar({ account, unreadCount, health, onClick, onContextMenu, onMouseEnter, onMouseLeave, onOpenConnections }) {
   const initials = (account.name || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('') || '?'
   const messenger = account.messenger || 'telegram'
@@ -103,18 +109,18 @@ function AccountAvatar({ account, unreadCount, onClick, onContextMenu, onMouseEn
           border: `1px solid ${color}`,
         }}>{emoji}</span>
         {/* Зелёная точка-индикатор онлайн (правый нижний угол) */}
-        {account.status === 'connected' && (
-          <span style={{
+        <ConnectionStatusDot
+          health={health}
+          fallbackLabel={`${messenger} · ${account.name}`}
+          size={12}
+          onClick={onOpenConnections}
+          style={{
             position: 'absolute',
             bottom: 0,
             right: 0,
-            width: 12,
-            height: 12,
-            borderRadius: '50%',
-            background: 'var(--amoled-success)',
             border: '2px solid var(--amoled-bg)',
-          }} />
-        )}
+          }}
+        />
         {/* Красный бейдж непрочитанных (поверх, левый верхний угол) */}
         {unreadCount > 0 && (
           <span style={{
@@ -133,7 +139,7 @@ function AccountAvatar({ account, unreadCount, onClick, onContextMenu, onMouseEn
             alignItems: 'center',
             justifyContent: 'center',
             border: '1px solid var(--amoled-bg)',
-          }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+          }}>{formatUnreadCount(unreadCount)}</span>
         )}
       </div>
       <div style={{
@@ -149,7 +155,23 @@ function AccountAvatar({ account, unreadCount, onClick, onContextMenu, onMouseEn
   )
 }
 
-export default function NativeApp() {
+function buildNativeAccountHealth(account, unreadCount, chatsCount) {
+  const base = {
+    id: account.id,
+    type: 'native',
+    label: `${account.messenger || 'telegram'} · ${account.name}`,
+    details: `Чаты: ${chatsCount || 0}; непрочитано: ${unreadCount || 0}`,
+  }
+  if (account.status === 'error' || account.status === 'disconnected') {
+    return markHealthError(null, {
+      ...base,
+      errorText: account.error || account.status,
+    })
+  }
+  return createPendingHealth(base)
+}
+
+export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onConnectionActionsReady, onActiveNativeAccountChange }) {
   try {
     if (!window.__ccNativeAppFirstRenderLogged) {
       window.__ccNativeAppFirstRenderLogged = true
@@ -157,6 +179,8 @@ export default function NativeApp() {
     }
   } catch {}
   const store = useNativeStore()
+  const autoCheckedAccountsRef = useRef(new Set())
+  const connectionChecksInFlightRef = useRef(new Set())
   const [showLogin, setShowLogin] = useState(false)
   // v0.87.88: ПКМ-меню аккаунта { account, x, y } или null
   const [accountMenu, setAccountMenu] = useState(null)
@@ -174,6 +198,88 @@ export default function NativeApp() {
     }
     return map
   }, [store.chats])
+
+  const chatsByAccount = useMemo(() => {
+    const map = {}
+    for (const c of store.chats) {
+      if (!c.accountId) continue
+      map[c.accountId] = (map[c.accountId] || 0) + 1
+    }
+    return map
+  }, [store.chats])
+
+  const accountHealth = useMemo(() => {
+    const map = {}
+    for (const acc of store.accounts) {
+      map[acc.id] = store.nativeConnectionHealth?.[acc.id]
+        || buildNativeAccountHealth(acc, unreadByAccount[acc.id] || 0, chatsByAccount[acc.id] || 0)
+    }
+    return map
+  }, [store.accounts, store.nativeConnectionHealth, unreadByAccount, chatsByAccount])
+
+  const activeNativeAccountId = useMemo(() => {
+    const activeChat = store.chats.find(chat => chat.id === store.activeChatId)
+    if (activeChat?.accountId) return activeChat.accountId
+    if (store.chatFilter && store.chatFilter !== 'all') return store.chatFilter
+    return null
+  }, [store.activeChatId, store.chatFilter, store.chats])
+
+  useEffect(() => {
+    onConnectionSnapshot?.(Object.values(accountHealth))
+  }, [accountHealth, onConnectionSnapshot])
+
+  useEffect(() => {
+    onActiveNativeAccountChange?.(activeNativeAccountId)
+  }, [activeNativeAccountId, onActiveNativeAccountChange])
+
+  useEffect(() => {
+    return () => onActiveNativeAccountChange?.(null)
+  }, [onActiveNativeAccountChange])
+
+  useEffect(() => {
+    const runConnectionCheck = async (id) => {
+      if (!id || connectionChecksInFlightRef.current.has(id)) return null
+      connectionChecksInFlightRef.current.add(id)
+      try {
+        return await store.checkConnection?.(id)
+      } finally {
+        connectionChecksInFlightRef.current.delete(id)
+      }
+    }
+    onConnectionActionsReady?.({
+      refreshAll: async () => {
+        const results = []
+        for (const acc of store.accounts) results.push(await runConnectionCheck(acc.id))
+        return results
+      },
+      refreshOne: async (id) => {
+        return runConnectionCheck(id)
+      },
+      refreshProblematic: async (ids = []) => {
+        const targetIds = ids.length ? ids : store.accounts.map(a => a.id)
+        const results = []
+        for (const id of targetIds) results.push(await runConnectionCheck(id))
+        return results
+      },
+    })
+    return () => onConnectionActionsReady?.(null)
+  }, [onConnectionActionsReady, store.accounts, store.checkConnection])
+
+  useEffect(() => {
+    const currentIds = new Set(store.accounts.map(acc => acc.id))
+    for (const id of Array.from(autoCheckedAccountsRef.current)) {
+      if (!currentIds.has(id)) autoCheckedAccountsRef.current.delete(id)
+    }
+    for (const acc of store.accounts) {
+      if (!acc?.id || autoCheckedAccountsRef.current.has(acc.id)) continue
+      autoCheckedAccountsRef.current.add(acc.id)
+      if (connectionChecksInFlightRef.current.has(acc.id)) continue
+      connectionChecksInFlightRef.current.add(acc.id)
+      Promise.resolve(store.checkConnection?.(acc.id)).finally(() => {
+        connectionChecksInFlightRef.current.delete(acc.id)
+      })
+    }
+  }, [store.accounts, store.checkConnection])
 
   const hasAccounts = store.accounts.length > 0
   const showLoginScreen = showLogin || !!store.loginFlow
@@ -216,10 +322,12 @@ export default function NativeApp() {
               key={acc.id}
               account={acc}
               unreadCount={unreadByAccount[acc.id] || 0}
+              health={accountHealth[acc.id]}
               onClick={() => store.setActiveAccount(acc.id)}
               onContextMenu={(e) => handleAccountContextMenu(e, acc)}
               onMouseEnter={() => setHoveredAccountId(acc.id)}
               onMouseLeave={() => setHoveredAccountId(null)}
+              onOpenConnections={onOpenConnections}
             />
           ))}
           <div

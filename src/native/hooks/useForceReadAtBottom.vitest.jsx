@@ -40,7 +40,7 @@ describe('useForceReadAtBottom — защита от ложного срабат
       })
     })
     await new Promise(r => setTimeout(r, 500))
-    expect(markRead).toHaveBeenCalledWith('chat1', 200)
+    expect(markRead).toHaveBeenCalledWith('chat1', 200, { source: 'bottom' })
   })
 
   it('atBottom=true + unread=0: НЕ вызывает markRead', async () => {
@@ -93,7 +93,7 @@ describe('useForceReadAtBottom — защита от ложного срабат
     })
     await new Promise(r => setTimeout(r, 500))
     // Старое поведение: markRead(chat1, 12887) → сервер: 7 - 6 = 1 непрочитанное
-    expect(markRead).toHaveBeenCalledWith('chat1', 12887)
+    expect(markRead).toHaveBeenCalledWith('chat1', 12887, { source: 'bottom' })
 
     // Новое поведение (фикс v0.87.44): default atBottom=false → markRead НЕ вызван
     // (этот кейс проверен в первом тесте выше)

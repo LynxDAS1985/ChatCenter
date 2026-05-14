@@ -1,14 +1,15 @@
 /**
  * Компонент вкладки мессенджера.
- * Отображает название, бейдж непрочитанных, статус мониторинга, аватар аккаунта.
+ * Отображает название, бейдж непрочитанных, качество подключения, аватар аккаунта.
  */
 import { useState, useEffect, useRef } from 'react'
+import ConnectionStatusDot from './ConnectionStatusDot.jsx'
 
 export default function MessengerTab({
   messenger: m, isActive, accountInfo, unreadCount, isNew,
-  unreadSplit, messagePreview, zoomLevel, monitorStatus, isPageLoading, isPinned,
+  unreadSplit, messagePreview, zoomLevel, connectionHealth, isPageLoading, isPinned,
   onClick, onClose, onContextMenu, isDragOver,
-  onDragStart, onDragOver, onDrop, onDragEnd
+  onDragStart, onDragOver, onDrop, onDragEnd, onOpenConnections
 }) {
   const [hovered, setHovered] = useState(false)
   const [badgePulse, setBadgePulse] = useState(false)
@@ -65,14 +66,18 @@ export default function MessengerTab({
       }}
     >
       <span className="relative inline-flex w-2 h-2 shrink-0"
-        title={monitorStatus === 'active' ? 'Мониторинг активен' : monitorStatus === 'loading' ? 'Загрузка монитора...' : monitorStatus === 'error' ? 'Монитор не отвечает' : ''}
       >
         {isNew && !isActive && (
           <span className="animate-ping absolute inset-0 rounded-full" style={{ backgroundColor: m.color, opacity: 0.6 }} />
         )}
-        <span className="relative w-2 h-2 rounded-full block transition-all duration-150" style={{
-          backgroundColor: monitorStatus === 'error' ? '#ef4444' : monitorStatus === 'loading' ? '#eab308' : isActive ? m.color : `${m.color}55`
-        }} />
+        <ConnectionStatusDot
+          health={connectionHealth}
+          fallbackColor={isActive ? m.color : `${m.color}55`}
+          fallbackLabel={m.name}
+          size={8}
+          className="relative transition-all duration-150"
+          onClick={onOpenConnections}
+        />
       </span>
 
       <span className="flex flex-col items-center leading-tight">

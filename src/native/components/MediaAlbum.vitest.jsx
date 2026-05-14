@@ -11,10 +11,9 @@ beforeEach(() => {
     constructor(cb, opts) { this.cb = cb; this.opts = opts || {} }
     observe(el) {
       setTimeout(() => {
-        // Initial: msg скрыт (юзер не открывал) → не read
-        this.cb([{ isIntersecting: false, target: el }])
-        // Scroll событие: msg появился → read (initial-guard уже сбросился)
-        this.cb([{ isIntersecting: true, target: el }])
+        this.cb([{ isIntersecting: false, target: el, rootBounds: { top: 100 }, boundingClientRect: { bottom: 300 } }])
+        this.cb([{ isIntersecting: true, target: el, rootBounds: { top: 100 }, boundingClientRect: { bottom: 140 } }])
+        this.cb([{ isIntersecting: false, target: el, rootBounds: { top: 100 }, boundingClientRect: { bottom: 90 } }])
       }, 0)
     }
     disconnect() {}

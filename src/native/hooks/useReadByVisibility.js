@@ -1,16 +1,13 @@
-// v0.87.83: вынесено из InboxMode.jsx — read-by-visibility batch markRead.
-// При попадании msg в видимую область (через IntersectionObserver или onVisible
-// callback) добавляем в batch. Каждые 300мс шлём batch на сервер.
-//
-// Защита от уменьшения watermark: maxEverSentRef хранит максимальный maxId
-// который мы когда-либо отправили. Если новый batch не продвигает maxId —
-// пропускаем (иначе сервер сбрасывает прочитанность).
+// v0.87.83: read-by-visibility batch markRead.
+// The local watermark guard is initialized from Telegram's server read cursor
+// so a stale local highwater cannot block valid reads after first chat open.
 
 import { useEffect, useRef } from 'react'
 
 export default function useReadByVisibility({
   activeChatId,
   activeUnread,
+  readInboxMaxId = 0,
   markRead,
   scrollDiag,
   maxEverSentRef,
@@ -26,14 +23,21 @@ export default function useReadByVisibility({
   useEffect(() => {
     readSeenRef.current = new Set()
     readBatchRef.current = new Set()
-    lastReadMaxRef.current = 0
-    maxEverSentRef.current = 0  // при смене чата — обнуляем watermark
+    const cursor = Number(readInboxMaxId || 0)
+    lastReadMaxRef.current = cursor
+    if (maxEverSentRef) maxEverSentRef.current = cursor
+    scrollDiag.logEvent('read-guard-reset', { chatId: activeChatId, readInboxMaxId: cursor })
     if (readTimerRef.current) { clearTimeout(readTimerRef.current); readTimerRef.current = null }
-  }, [activeChatId])
+  }, [activeChatId, readInboxMaxId])
 
   const readByVisibility = (msg) => {
     if (msg.isOutgoing) return
     const id = Number(msg.id)
+    const cursor = Number(readInboxMaxId || 0)
+    if (cursor > 0 && id <= cursor) {
+      scrollDiag.logEvent('read-skip-before-cursor', { msgId: id, readInboxMaxId: cursor })
+      return
+    }
     if (readSeenRef.current.has(id)) return
     readSeenRef.current.add(id)
     readBatchRef.current.add(id)
@@ -52,19 +56,20 @@ export default function useReadByVisibility({
       const count = readBatchRef.current.size
       if (count === 0) return
       readBatchRef.current = new Set()
-      if (lastReadMaxRef.current <= maxEverSentRef.current) {
+      const maxEverSent = maxEverSentRef?.current || 0
+      if (lastReadMaxRef.current <= maxEverSent) {
         scrollDiag.logEvent('read-batch-skip', {
-          reason: 'maxId не продвинулся',
+          reason: 'maxId did not advance',
           lastReadMax: lastReadMaxRef.current,
-          maxEverSent: maxEverSentRef.current,
+          maxEverSent,
         })
         return
       }
-      maxEverSentRef.current = lastReadMaxRef.current
+      if (maxEverSentRef) maxEverSentRef.current = lastReadMaxRef.current
       scrollDiag.logEvent('read-batch-send', {
         maxId: lastReadMaxRef.current, count, currentUnread: activeUnread,
       })
-      markRead(chatAtStart, lastReadMaxRef.current)
+      markRead(chatAtStart, lastReadMaxRef.current, { source: 'visibility', count })
     }, 300)
   }
 
