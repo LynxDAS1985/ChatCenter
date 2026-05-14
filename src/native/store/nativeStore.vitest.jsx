@@ -35,7 +35,11 @@ describe('v0.87.41: markRead Telegram-style (no local subtraction)', () => {
     expect(result.current.chats.find(c => c.id === 'chat1').unreadCount).toBe(36)
 
     // IPC ушёл на сервер
-    expect(invokeMock).toHaveBeenCalledWith('tg:mark-read', { chatId: 'chat1', maxId: 3797 })
+    expect(invokeMock).toHaveBeenCalledWith('tg:mark-read', {
+      chatId: 'chat1',
+      maxId: 3797,
+      readInboxMaxId: undefined,
+    })
   })
 
   it('unreadCount обновляется ТОЛЬКО из tg:chat-unread-sync (server)', async () => {
@@ -77,6 +81,281 @@ describe('v0.87.41: markRead Telegram-style (no local subtraction)', () => {
     })
     // Плавный переход 36→35
     expect(result.current.chats.find(c => c.id === 'chat1').unreadCount).toBe(35)
+  })
+  it('markRead passes readInboxMaxId to backend when it is known', async () => {
+    const { result } = renderHook(() => useNativeStore())
+    await act(async () => {
+      await result.current.markRead('chat1', 3797, { readInboxMaxId: 3700 })
+    })
+    expect(invokeMock).toHaveBeenCalledWith('tg:mark-read', {
+      chatId: 'chat1',
+      maxId: 3797,
+      readInboxMaxId: 3700,
+    })
+  })
+})
+
+describe('Telegram forum topics: unread counters come from Telegram refresh', () => {
+  it('markTopicRead does not clear topic unread locally and uses refreshed Telegram topic count', async () => {
+    vi.useFakeTimers()
+    let topicsCall = 0
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-forum-topics') {
+        topicsCall += 1
+        return Promise.resolve({
+          ok: true,
+          isForum: true,
+          topics: [{
+            id: '10',
+            topicId: '10',
+            topMessageId: '10',
+            title: 'OZON',
+            unreadCount: topicsCall <= 2 ? 185 : 160,
+          }],
+        })
+      }
+      if (channel === 'tg:get-topic-messages') return Promise.resolve({ ok: true, messages: [] })
+      if (channel === 'tg:mark-topic-read') return Promise.resolve({ ok: true })
+      return Promise.resolve({ ok: true })
+    })
+
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'Forum', unreadCount: 185, type: 'group' }],
+      })
+    })
+
+    await act(async () => {
+      await result.current.loadForumTopics('chat1')
+    })
+    const topic = result.current.forumTopics.chat1[0]
+    expect(topic.unreadCount).toBe(185)
+
+    await act(async () => {
+      await result.current.selectForumTopic('chat1', topic)
+    })
+    await act(async () => {
+      const readResult = await result.current.markTopicRead('chat1', topic, 12345)
+      expect(readResult).toMatchObject({ ok: true, refreshed: true, retryScheduled: true, unreadCount: 185 })
+    })
+
+    expect(result.current.forumTopics.chat1[0].unreadCount).toBe(185)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700)
+    })
+
+    expect(result.current.forumTopics.chat1[0].unreadCount).toBe(160)
+    expect(result.current.activeForumTopic.chat1.unreadCount).toBe(160)
+    expect(invokeMock).toHaveBeenCalledWith('tg:mark-topic-read', {
+      chatId: 'chat1',
+      topicId: '10',
+      topMessageId: '10',
+      maxId: 12345,
+    })
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-forum-topics', { chatId: 'chat1', limit: 50 })
+    vi.useRealTimers()
+  })
+
+  it('markTopicRead refresh also updates active topic unread-window metadata', async () => {
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-forum-topics') {
+        return Promise.resolve({
+          ok: true,
+          isForum: true,
+          topics: [{
+            id: '10',
+            topicId: '10',
+            topMessageId: '10',
+            title: 'OZON',
+            unreadCount: 160,
+            readInboxMaxId: 2000,
+          }],
+        })
+      }
+      if (channel === 'tg:get-topic-messages') {
+        return Promise.resolve({
+          ok: true,
+          messages: Array.from({ length: 84 }, (_, i) => ({
+            id: String(2001 + i),
+            isOutgoing: false,
+            timestamp: Date.now() + i,
+          })),
+        })
+      }
+      if (channel === 'tg:mark-topic-read') return Promise.resolve({ ok: true })
+      return Promise.resolve({ ok: true })
+    })
+
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'Forum', unreadCount: 271, type: 'group' }],
+      })
+    })
+
+    const staleTopic = {
+      id: '10',
+      topicId: '10',
+      topMessageId: '10',
+      title: 'OZON',
+      unreadCount: 271,
+      readInboxMaxId: 2000,
+    }
+    await act(async () => {
+      await result.current.selectForumTopic('chat1', staleTopic)
+    })
+    expect(result.current.messageWindows['chat1:topic:10'].unreadCount).toBe(271)
+
+    await act(async () => {
+      await result.current.markTopicRead('chat1', staleTopic, 2084)
+    })
+
+    expect(result.current.forumTopics.chat1[0].unreadCount).toBe(160)
+    expect(result.current.activeForumTopic.chat1.unreadCount).toBe(160)
+    expect(result.current.messageWindows['chat1:topic:10'].unreadCount).toBe(160)
+  })
+
+  it('markTopicRead keeps current unread count if Telegram topic refresh fails', async () => {
+    let topicsCall = 0
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-forum-topics') {
+        topicsCall += 1
+        if (topicsCall > 1) return Promise.resolve({ ok: false, error: 'NETWORK' })
+        return Promise.resolve({
+          ok: true,
+          isForum: true,
+          topics: [{
+            id: '10',
+            topicId: '10',
+            topMessageId: '10',
+            title: 'OZON',
+            unreadCount: 185,
+          }],
+        })
+      }
+      if (channel === 'tg:get-topic-messages') return Promise.resolve({ ok: true, messages: [] })
+      if (channel === 'tg:mark-topic-read') return Promise.resolve({ ok: true })
+      return Promise.resolve({ ok: true })
+    })
+
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'Forum', unreadCount: 185, type: 'group' }],
+      })
+    })
+
+    await act(async () => {
+      await result.current.loadForumTopics('chat1')
+    })
+    const topic = result.current.forumTopics.chat1[0]
+    await act(async () => {
+      await result.current.selectForumTopic('chat1', topic)
+    })
+    await act(async () => {
+      const readResult = await result.current.markTopicRead('chat1', topic, 12345)
+      expect(readResult).toMatchObject({ ok: true, refreshed: false, refreshError: 'NETWORK' })
+    })
+
+    expect(result.current.forumTopics.chat1[0].unreadCount).toBe(185)
+    expect(result.current.activeForumTopic.chat1.unreadCount).toBe(185)
+  })
+})
+
+describe('Telegram-like unread opening windows', () => {
+  it('loadMessages requests a bounded window around readInboxMaxId when chat has unread', async () => {
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-messages') return Promise.resolve({
+        ok: true,
+        aroundId: 1000,
+        messages: Array.from({ length: 90 }, (_, i) => ({
+          id: String(1001 + i),
+          isOutgoing: false,
+          timestamp: Date.now() + i,
+        })),
+      })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'T', unreadCount: 76, readInboxMaxId: 1000 }],
+      })
+    })
+
+    await act(async () => {
+      await result.current.loadMessages('chat1')
+    })
+
+    // v0.88.0: limit ограничен 100 (жёсткий лимит Telegram API),
+    // addOffset = -0.9*limit = -90 для unread>30 (90% окна — непрочитанные).
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-messages', {
+      chatId: 'chat1',
+      limit: 100,
+      aroundId: 1000,
+      addOffset: -90,
+    })
+    expect(result.current.messageWindows.chat1).toMatchObject({
+      unreadWindowRequested: true,
+      unreadWindowComplete: true,
+      loadedIncoming: 90,
+      unreadCount: 76,
+      readInboxMaxId: 1000,
+    })
+  })
+
+  it('selectForumTopic requests a bounded topic window around topic readInboxMaxId', async () => {
+    const topic = { id: '10', topicId: '10', topMessageId: '10', title: 'OZON', unreadCount: 458, readInboxMaxId: 2000 }
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-topic-messages') return Promise.resolve({
+        ok: true,
+        aroundId: 2000,
+        messages: Array.from({ length: 120 }, (_, i) => ({
+          id: String(2001 + i),
+          isOutgoing: false,
+          timestamp: Date.now() + i,
+        })),
+      })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'Forum', unreadCount: 458, type: 'group' }],
+      })
+    })
+
+    await act(async () => {
+      await result.current.selectForumTopic('chat1', topic)
+    })
+
+    // v0.88.0: для тем форумов та же логика — limit=100, addOffset=-90 (unread>30).
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-topic-messages', {
+      chatId: 'chat1',
+      topicId: '10',
+      topMessageId: '10',
+      limit: 100,
+      aroundId: 2000,
+      addOffset: -90,
+    })
+    expect(result.current.messageWindows['chat1:topic:10']).toMatchObject({
+      unreadWindowRequested: true,
+      unreadWindowComplete: false,
+      loadedIncoming: 120,
+      unreadCount: 458,
+      readInboxMaxId: 2000,
+    })
   })
 })
 
@@ -125,3 +404,195 @@ describe('v0.87.51: bulk-sync и chat-unread-sync обновляют тольк�
   })
 })
 
+// v0.88.0: автодогрузка новых сообщений вниз (Telegram-style infinite scroll down).
+// MTProto messages.getHistory имеет лимит 100 за запрос — пачки идут по 100.
+// Throttle 300мс per-key защищает от FLOOD_WAIT при быстром скролле.
+describe('v0.88.0: loadNewerMessages — Telegram-style infinite scroll down', () => {
+  it('loadNewerMessages вызывает tg:get-messages с afterId и лимитом 100', async () => {
+    const { result } = renderHook(() => useNativeStore())
+    invokeMock.mockClear()
+    await act(async () => {
+      await result.current.loadNewerMessages('chat1', 5000, 100)
+    })
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-messages', {
+      chatId: 'chat1',
+      limit: 100,
+      afterId: 5000,
+    })
+  })
+
+  it('loadNewerMessages для активной форум-темы использует tg:get-topic-messages', async () => {
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-forum-topics') return Promise.resolve({
+        ok: true, isForum: true,
+        topics: [{ id: '10', topicId: '10', topMessageId: '10', title: 'T', unreadCount: 5 }],
+      })
+      if (channel === 'tg:get-topic-messages') return Promise.resolve({ ok: true, messages: [] })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'Forum', unreadCount: 5, type: 'group' }],
+      })
+    })
+    await act(async () => {
+      await result.current.loadForumTopics('chat1')
+    })
+    const topic = result.current.forumTopics.chat1[0]
+    await act(async () => {
+      await result.current.selectForumTopic('chat1', topic)
+    })
+    invokeMock.mockClear()
+    await act(async () => {
+      await result.current.loadNewerMessages('chat1', 12345, 100)
+    })
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-topic-messages', expect.objectContaining({
+      chatId: 'chat1',
+      topicId: '10',
+      afterId: 12345,
+      limit: 100,
+    }))
+  })
+
+  it('loadNewerMessages блокирует повторный запрос в течение 300мс (throttle)', async () => {
+    const { result } = renderHook(() => useNativeStore())
+    invokeMock.mockClear()
+    await act(async () => {
+      await result.current.loadNewerMessages('chat1', 100, 100)
+    })
+    const r2 = await result.current.loadNewerMessages('chat1', 200, 100)
+    expect(r2).toEqual({ ok: false, throttled: true })
+    // Должен быть только ОДИН реальный вызов IPC
+    const newerCalls = invokeMock.mock.calls.filter(c => c[0] === 'tg:get-messages')
+    expect(newerCalls.length).toBe(1)
+  })
+
+  it('loadNewerMessages возвращает ok:false без afterId', async () => {
+    const { result } = renderHook(() => useNativeStore())
+    const r = await result.current.loadNewerMessages('chat1', 0, 100)
+    expect(r.ok).toBe(false)
+  })
+
+  it('tg:messages с appendNewer:true добавляет сообщения в конец с дедупом', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:messages']?.({
+        chatId: 'chat1',
+        messages: [{ id: '100' }, { id: '101' }],
+        append: false,
+      })
+    })
+    expect(result.current.messages.chat1.map(m => m.id)).toEqual(['100', '101'])
+    act(() => {
+      onHandlers['tg:messages']?.({
+        chatId: 'chat1',
+        messages: [{ id: '101' }, { id: '102' }, { id: '103' }],  // 101 дубль
+        appendNewer: true,
+      })
+    })
+    expect(result.current.messages.chat1.map(m => m.id)).toEqual(['100', '101', '102', '103'])
+  })
+
+  it('v0.88.1: appendNewer с пустым массивом НЕ создаёт новый массив (избегаем дёрга UI)', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:messages']?.({
+        chatId: 'chat1',
+        messages: [{ id: '100' }, { id: '101' }],
+        append: false,
+      })
+    })
+    const refBefore = result.current.messages.chat1
+    act(() => {
+      onHandlers['tg:messages']?.({
+        chatId: 'chat1',
+        messages: [],
+        appendNewer: true,
+      })
+    })
+    const refAfter = result.current.messages.chat1
+    // КЛЮЧЕВОЕ: ссылка на массив должна остаться той же — иначе React сделает лишний рендер
+    // и пользователь видит «дёрг» окна, как было в баге v0.88.0.
+    expect(refAfter).toBe(refBefore)
+    expect(refAfter.map(m => m.id)).toEqual(['100', '101'])
+  })
+
+  it('v0.88.1: appendNewer с только-дубликатами НЕ создаёт новый массив', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:messages']?.({
+        chatId: 'chat1',
+        messages: [{ id: '100' }, { id: '101' }],
+        append: false,
+      })
+    })
+    const refBefore = result.current.messages.chat1
+    act(() => {
+      onHandlers['tg:messages']?.({
+        chatId: 'chat1',
+        messages: [{ id: '100' }, { id: '101' }],  // только дубликаты
+        appendNewer: true,
+      })
+    })
+    expect(result.current.messages.chat1).toBe(refBefore)
+  })
+})
+
+// v0.88.0: лимит окна unread = 100 (жёсткий потолок Telegram API),
+// плюс умный addOffset для большого числа непрочитанных.
+describe('v0.88.0: unreadWindowRequestParams — Telegram API ceiling 100', () => {
+  it('загрузка чата с unread=2000 запрашивает limit=100 (не 500)', async () => {
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-messages') return Promise.resolve({ ok: true, messages: [] })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'Big', unreadCount: 2000, readInboxMaxId: 5000 }],
+      })
+    })
+    invokeMock.mockClear()
+    await act(async () => {
+      await result.current.loadMessages('chat1')
+    })
+    // limit должен быть 100 (потолок API), addOffset для unread>30 = -0.9*limit = -90
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-messages', expect.objectContaining({
+      chatId: 'chat1',
+      limit: 100,
+      aroundId: 5000,
+      addOffset: -90,
+    }))
+  })
+
+  it('маленький unread (5) сохраняет контекст — addOffset = -limit/4', async () => {
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-messages') return Promise.resolve({ ok: true, messages: [] })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'Small', unreadCount: 5, readInboxMaxId: 5000 }],
+      })
+    })
+    invokeMock.mockClear()
+    await act(async () => {
+      await result.current.loadMessages('chat1', 50)
+    })
+    // unread=5 ≤ 30 → addOffset = -Math.floor(50/4) = -12, limit берётся базовый 50
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-messages', expect.objectContaining({
+      chatId: 'chat1',
+      limit: 50,
+      aroundId: 5000,
+      addOffset: -12,
+    }))
+  })
+})

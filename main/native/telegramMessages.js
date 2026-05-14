@@ -196,7 +196,10 @@ export function initMessagesHandlers() {
   })
 
   // v0.87.15: messages с типом медиа и возможностью дозагрузки вверх (offsetId)
-  ipcMain.handle('tg:get-messages', async (_, { chatId, limit = 50, offsetId = 0 }) => {
+  // v0.88.0: afterId — догрузка НОВЫХ сообщений вниз (Telegram MTProto min_id).
+  // Используется в Telegram-style infinite scroll down: после прочтения последних
+  // загруженных сообщений берём следующую пачку из 100 по min_id = afterId.
+  ipcMain.handle('tg:get-messages', async (_, { chatId, limit = 50, offsetId = 0, aroundId = 0, addOffset, afterId = 0 }) => {
     try {
       const client = getClientForChat(chatId)
       if (!client) return { ok: false, error: 'Не подключён', messages: [] }
@@ -205,8 +208,17 @@ export function initMessagesHandlers() {
       const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
       if (!hasMapEntity) log(`get-messages WARN: entity-fallback chat=${chatId} mapSize=${chatEntityMap.size}`)
       state.msgRequestTs = Date.now()  // v0.87.118: сигнал loadAvatarsAsync — уступи канал
-      const msgs = await client.getMessages(entity, { limit, offsetId })
-      log(`get-messages: chat=${chatId} got=${msgs.length}/${limit} hasEntity=${hasMapEntity}`)
+      const effectiveOffsetId = Number(aroundId || offsetId) || 0
+      const numAfterId = Number(afterId) || 0
+      const numLimit = Number(limit) || 50
+      // v0.88.0: догрузка вниз через min_id. offset_id=0 + add_offset=-limit
+      // даёт окно из limit сообщений с id > afterId (новее).
+      const request = numAfterId
+        ? { limit: numLimit, offsetId: 0, minId: numAfterId, addOffset: -numLimit }
+        : { limit: numLimit, offsetId: effectiveOffsetId }
+      if (!numAfterId && aroundId) request.addOffset = Number.isFinite(Number(addOffset)) ? Number(addOffset) : -Math.floor(numLimit / 3)
+      const msgs = await client.getMessages(entity, request)
+      log(`get-messages: chat=${chatId} got=${msgs.length}/${limit} hasEntity=${hasMapEntity} around=${aroundId || 0} after=${numAfterId} addOffset=${request.addOffset ?? ''}`)
       // v0.87.17: пытаемся узнать max outgoing read через getFullEntity (для галочек)
       try {
         const full = await client.invoke(
@@ -223,10 +235,15 @@ export function initMessagesHandlers() {
         if (mapped.isOutgoing) mapped.isRead = Number(mapped.id) <= readUpTo
         return mapped
       }).reverse()
-      emit('tg:messages', { chatId, messages, append: offsetId > 0, readUpTo })
+      // v0.88.1: при afterId-запросе с пустым массивом — НЕ эмитим, чтобы не дёргать UI.
+      // Это типичный случай «конец чата достигнут» (новее ничего нет). Фронт сам ставит
+      // флаг noMoreNewer по ok:true + hasMore:false и больше не зовёт prefetch для этого ключа.
+      if (!(numAfterId && msgs.length === 0)) {
+        emit('tg:messages', { chatId, messages, append: offsetId > 0 && !aroundId && !numAfterId, appendNewer: !!numAfterId, readUpTo, aroundId: Number(aroundId) || 0, afterId: numAfterId })
+      }
       // v0.87.111: фоновая загрузка аватарок отправителей (без await — не блокирует UI)
       downloadSenderAvatarsInBackground(msgs, chatId, client).catch(() => {})
-      return { ok: true, messages, hasMore: msgs.length >= limit }
+      return { ok: true, messages, hasMore: msgs.length >= limit, aroundId: Number(aroundId) || 0 }
     } catch (e) {
       const flood = String(e?.message || '').match(/FLOOD_WAIT.*?(\d+)/)
       log('get-messages err: ' + e.message + (flood ? ` [FLOOD_WAIT ${flood[1]}s]` : ''))
@@ -236,6 +253,75 @@ export function initMessagesHandlers() {
 
   // v0.87.15: sendMessage с поддержкой reply
   // v0.87.105 (ADR-016): client по chatId — отправка от правильного аккаунта
+  // v0.87.137: messages for selected Telegram forum topic/thread.
+  // v0.88.0: afterId для догрузки новых сообщений темы вниз (Telegram min_id).
+  // This keeps ordinary tg:get-messages behavior unchanged.
+  ipcMain.handle('tg:get-topic-messages', async (_, { chatId, topicId, topMessageId, limit = 50, offsetId = 0, aroundId = 0, addOffset, afterId = 0 }) => {
+    try {
+      const client = getClientForChat(chatId)
+      if (!client) return { ok: false, error: 'Не подключён', messages: [] }
+      const entity = chatEntityMap.get(chatId) || String(chatId).split(':').pop()
+      const msgId = Number(topicId || topMessageId)
+      if (!msgId) return { ok: false, error: 'Не выбрана тема', messages: [] }
+      state.msgRequestTs = Date.now()
+      const numAfterId = Number(afterId) || 0
+      const numLimit = Number(limit) || 50
+      // v0.88.0: для afterId — offsetId=0 + minId=afterId + addOffset=-limit.
+      // Без afterId — поведение как было (aroundId-окно или классическая пагинация вверх).
+      const effectiveOffsetId = numAfterId ? 0 : (Number(aroundId || offsetId) || 0)
+      const effectiveAddOffset = numAfterId
+        ? -numLimit
+        : (aroundId
+          ? (Number.isFinite(Number(addOffset)) ? Number(addOffset) : -Math.floor(numLimit / 3))
+          : 0)
+      const res = await client.invoke(new Api.messages.GetReplies({
+        peer: entity,
+        msgId,
+        offsetId: effectiveOffsetId,
+        offsetDate: 0,
+        addOffset: effectiveAddOffset,
+        limit: numLimit,
+        maxId: 0,
+        minId: numAfterId,
+        hash: 0,
+      }))
+      let rawMessages = (res.messages || []).filter(m => m.className !== 'MessageEmpty')
+      let source = 'replies'
+      if (rawMessages.length === 0) {
+        const search = await client.invoke(new Api.messages.Search({
+          peer: entity,
+          q: '',
+          topMsgId: msgId,
+          filter: new Api.InputMessagesFilterEmpty(),
+          minDate: 0,
+          maxDate: 0,
+          offsetId: effectiveOffsetId,
+          addOffset: effectiveAddOffset,
+          limit: numLimit,
+          maxId: 0,
+          minId: numAfterId,
+          hash: 0,
+        }))
+        rawMessages = (search.messages || []).filter(m => m.className !== 'MessageEmpty')
+        source = 'search-topMsgId'
+      }
+      log(`get-topic-messages: chat=${chatId} topic=${topicId || msgId} top=${msgId} source=${source} got=${rawMessages.length}/${limit} around=${aroundId || 0} after=${numAfterId} addOffset=${effectiveAddOffset}`)
+      const messages = rawMessages.map(m => mapMessage(m, chatId)).reverse()
+      // v0.88.0: для afterId эмитим как форум-тема через tg:messages с topic key.
+      // v0.88.1: НЕ эмитим если пусто — избегаем дёрга UI при «конце темы».
+      const emitKey = numAfterId && (topicId || msgId) ? `${chatId}:topic:${topicId || msgId}` : chatId
+      if (numAfterId && messages.length > 0) {
+        emit('tg:messages', { chatId: emitKey, messages, append: false, appendNewer: true, afterId: numAfterId })
+      }
+      downloadSenderAvatarsInBackground(rawMessages, chatId, client).catch(() => {})
+      return { ok: true, messages, hasMore: rawMessages.length >= numLimit, aroundId: Number(aroundId) || 0, afterId: numAfterId }
+    } catch (e) {
+      const flood = String(e?.message || '').match(/FLOOD_WAIT.*?(\d+)/)
+      log('get-topic-messages err: ' + e.message + (flood ? ` [FLOOD_WAIT ${flood[1]}s]` : ''))
+      return { ok: false, error: e.message, messages: [] }
+    }
+  })
+
   ipcMain.handle('tg:send-message', async (_, { chatId, text, replyTo }) => {
     // v0.87.55: полные логи — ловим почему юзер нажимает "Отпр." а ничего не происходит
     log(`send-message START: chat=${chatId} len=${text?.length} replyTo=${replyTo || 'none'}`)

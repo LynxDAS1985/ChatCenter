@@ -6,12 +6,15 @@ import { AlbumBubble } from './MediaAlbum.jsx'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
 import { formatDayLabel } from '../utils/messageGrouping.js'
+import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
 import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
 
 export default function InboxChatPanel({
   // chat data
-  store, activeChat, activeMessages, activeUnread, visibleMessages, renderItems, isTyping,
+  store, activeChat, activeTopic, activeMessages, activeUnread, visibleMessages, renderItems, isTyping, messagesLoading, unreadWindow,
+  // v0.88.0: prefetch новых сообщений вниз (Telegram-style infinite scroll down)
+  loadingNewer,
   // search/pin/toast/forward
   pinnedMsg, setPinnedMsg, showMsgSearch, setShowMsgSearch, msgSearch, setMsgSearch,
   // input
@@ -19,10 +22,21 @@ export default function InboxChatPanel({
   handleInputChange, handleReplySend, handlePaste,
   // scroll
   msgsScrollRef, handleScroll, scrollDiag, dragOver, handleDragOver, handleDragLeave, handleDrop,
-  chatReady, atBottom, newBelow, scrollToBottom, scrollToMessage,
+  chatReady, atBottom, newBelow, scrollToBottom, scrollToAbsoluteBottom, scrollToMessage,
   // message actions
   handleDelete, handleForward, handlePin, openPhotoWindow, getMessage, readByVisibility,
 }) {
+  const showUnreadWindowInfo = !!unreadWindow?.unreadWindowRequested
+    && unreadWindow?.unreadWindowComplete === false
+  const unreadLoaded = Math.max(0, Number(unreadWindow?.loadedIncoming || 0))
+  const freshUnreadTotal = activeTopic
+    ? Number(activeTopic.unreadCount || 0)
+    : Number(activeChat?.unreadCount || 0)
+  const unreadTotal = Math.max(0, Number.isFinite(freshUnreadTotal)
+    ? freshUnreadTotal
+    : Number(unreadWindow?.unreadCount || 0))
+  const showFreshUnreadWindowInfo = showUnreadWindowInfo && unreadLoaded < unreadTotal
+
   if (!activeChat) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amoled-text-dim)' }}>
@@ -39,7 +53,12 @@ export default function InboxChatPanel({
         display: 'flex', alignItems: 'center',
       }}>
         <div style={{ flex: 1 }}>
-          {activeChat.title}
+          {activeTopic ? (
+            <>
+              <div>{activeTopic.title}</div>
+              <div style={{ color: 'var(--amoled-text-muted)', fontSize: 12, fontWeight: 400 }}>в {activeChat.title}</div>
+            </>
+          ) : activeChat.title}
           {isTyping
             ? <span style={{ color: 'var(--amoled-accent)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>✍️ печатает...</span>
             : activeChat.isOnline && <span style={{ color: 'var(--amoled-success)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>● онлайн</span>
@@ -97,10 +116,23 @@ export default function InboxChatPanel({
         </div>
       )}
       {/* v0.87.36: wrapper relative — кнопка ↓ вне scroll-контейнера + overlay-shimmer */}
+      {showFreshUnreadWindowInfo && (
+        <div className="native-unread-window-status">
+          <span className="native-unread-window-status__dot" />
+          <span>
+            {unreadWindow.unreadWindowLoading
+              ? 'Загружаю непрочитанные сообщения'
+              : 'Загружена часть непрочитанных сообщений'}
+          </span>
+          {unreadTotal > 0 && (
+            <strong>{formatUnreadCount(Math.min(unreadLoaded, unreadTotal), { exactUntil: 9999 })} из {formatUnreadCount(unreadTotal, { exactUntil: 9999 })}</strong>
+          )}
+        </div>
+      )}
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {/* v0.87.66: overlay-shimmer пока !chatReady — initial-scroll прыжок не виден */}
         {/* v0.87.118: overlay также при загрузке поверх кэша (1 старое сообщение → синяя полоска) */}
-        <MessageListOverlay show={((!chatReady) || !!store.loadingMessages?.[store.activeChatId]) && visibleMessages.length > 0} />
+        <MessageListOverlay show={((!chatReady) || !!messagesLoading) && visibleMessages.length > 0} />
         <div ref={msgsScrollRef} onScroll={handleScroll}
           onWheel={() => scrollDiag.markUserScroll('wheel')}
           onTouchStart={() => scrollDiag.markUserScroll('touch')}
@@ -123,14 +155,14 @@ export default function InboxChatPanel({
             }}>📎 Отпустите файл для отправки</div>
           )}
           {visibleMessages.length === 0 ? (
-            store.loadingMessages?.[store.activeChatId] ? (
+            messagesLoading ? (
               <MessageSkeleton count={5} />
             ) : (
               <div style={{ color: 'var(--amoled-text-dim)', textAlign: 'center', padding: 20 }}>
-                {msgSearch ? 'Ничего не найдено' : 'Нет сообщений'}
+                {msgSearch ? 'Ничего не найдено' : (activeChat.isForum && !activeTopic ? 'Выберите тему слева' : 'Нет сообщений')}
               </div>
             )
-          ) : renderItems.map(item => {
+          ) : (<>{renderItems.map(item => {
             if (item.type === 'day') {
               return (
                 <div key={item.id} className="native-msg-day-row">
@@ -192,6 +224,7 @@ export default function InboxChatPanel({
                         onPin={handlePin}
                         getMessage={getMessage}
                         onVisible={readByVisibility}
+                        readRoot={msgsScrollRef.current}
                         onReplyClick={scrollToMessage}
                       />
                     ) : (
@@ -205,6 +238,7 @@ export default function InboxChatPanel({
                         downloadMedia={store.downloadMedia}
                         getMessage={getMessage}
                         onVisible={readByVisibility}
+                        readRoot={msgsScrollRef.current}
                         onPhotoOpen={openPhotoWindow}
                         onReplyClick={scrollToMessage}
                       />
@@ -214,19 +248,31 @@ export default function InboxChatPanel({
               </div>
             )
           })}
+          {/* v0.88.0: индикатор подгрузки новых сообщений (Telegram-style) — внизу ленты */}
+          {loadingNewer && (
+            <div className="native-msgs-loading-newer" aria-live="polite">
+              <span className="native-msgs-loading-newer__dot" />
+              <span>Загружаю ещё...</span>
+            </div>
+          )}
+          </>)}
         </div>
         {/* v0.87.35/36: кнопка ↓ ВНЕ scroll-контейнера */}
         {/* v0.87.51: бейдж = activeUnread (сырой Telegram API, как в ChatListItem) */}
         {(!atBottom || activeUnread > 0) && (
           <button
             onClick={scrollToBottom}
+            onDoubleClick={(e) => {
+              e.preventDefault()
+              scrollToAbsoluteBottom?.()
+            }}
             className="native-scroll-bottom-btn"
             title={activeUnread > 0 ? `К первому непрочитанному (${activeUnread})` : 'К последнему сообщению'}
           >
             ↓
             {(activeUnread > 0 || newBelow > 0) && (
               <span className="native-scroll-bottom-badge">
-                {(activeUnread > 0 ? activeUnread : newBelow) > 99 ? '99+' : (activeUnread > 0 ? activeUnread : newBelow)}
+                {formatUnreadCount(activeUnread > 0 ? activeUnread : newBelow, { exactUntil: 9999 })}
               </span>
             )}
           </button>
@@ -241,6 +287,8 @@ export default function InboxChatPanel({
         handleInputChange={handleInputChange}
         handleReplySend={handleReplySend}
         handlePaste={handlePaste}
+        disabled={activeChat.isForum}
+        disabledText={activeTopic ? 'Отправка в темы будет следующим этапом' : 'Сначала выберите тему слева'}
       />
     </>
   )

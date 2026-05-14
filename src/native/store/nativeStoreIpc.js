@@ -51,6 +51,10 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             activeChatId: null,
             chats: [],
             messages: {},
+            forumTopics: {},
+            forumTopicsLoading: {},
+            forumTopicPanelChatId: null,
+            activeForumTopic: {},
             loadingMessages: {},
             typing: {},
             lastWipe: acc.wipeStats || null,
@@ -62,6 +66,14 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         const newMessages = {}
         for (const [chatId, msgs] of Object.entries(s.messages)) {
           if (chatId.split(':')[0] !== acc.id) newMessages[chatId] = msgs
+        }
+        const newForumTopics = {}
+        for (const [chatId, topics] of Object.entries(s.forumTopics || {})) {
+          if (chatId.split(':')[0] !== acc.id) newForumTopics[chatId] = topics
+        }
+        const newActiveForumTopic = {}
+        for (const [chatId, topic] of Object.entries(s.activeForumTopic || {})) {
+          if (chatId.split(':')[0] !== acc.id) newActiveForumTopic[chatId] = topic
         }
         const newLoading = {}
         for (const chatId of Object.keys(s.loadingMessages)) {
@@ -83,6 +95,9 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
           activeChatId: activeStillValid ? s.activeChatId : null,
           chats: newChats,
           messages: newMessages,
+          forumTopics: newForumTopics,
+          forumTopicPanelChatId: s.forumTopicPanelChatId?.split(':')[0] === acc.id ? null : s.forumTopicPanelChatId,
+          activeForumTopic: newActiveForumTopic,
           loadingMessages: newLoading,
           lastWipe: acc.wipeStats || null,
         }
@@ -132,12 +147,12 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     })
   })
 
-  addHandler('tg:messages', ({ chatId, messages, append }) => {
+  addHandler('tg:messages', ({ chatId, messages, append, appendNewer }) => {
     setState(s => {
       const existing = s.messages[chatId] || []
       const chat = s.chats.find(c => c.id === chatId)
       logNativeScroll('store-tg-messages', {
-        chatId, append: !!append, incoming: messages?.length || 0, existing: existing.length,
+        chatId, append: !!append, appendNewer: !!appendNewer, incoming: messages?.length || 0, existing: existing.length,
         active: s.activeChatId === chatId, ...getUnreadAnchorDebug(messages || [], chat?.unreadCount || 0),
       })
       let next
@@ -146,6 +161,19 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         const existingIds = new Set(existing.map(m => m.id))
         const newOld = messages.filter(m => !existingIds.has(m.id))
         next = [...newOld, ...existing]
+      } else if (appendNewer) {
+        // v0.88.0: дозагрузка новых вниз — добавляем в конец, убираем дубли.
+        // Сохраняем сортировку по id (на случай если backend вернул что-то не по порядку).
+        const existingIds = new Set(existing.map(m => m.id))
+        const newNewer = (messages || []).filter(m => !existingIds.has(m.id))
+        // v0.88.1: если ничего нового — НЕ меняем state (избегаем лишнего рендера/«дёрга» UI).
+        // Backend в v0.88.1 уже не эмитит пустые afterId-ответы, но на случай старого кода — защита здесь.
+        if (newNewer.length === 0) {
+          const loadingCopy = { ...s.loadingMessages }
+          delete loadingCopy[chatId]
+          return { ...s, loadingMessages: loadingCopy }
+        }
+        next = [...existing, ...newNewer]
       } else {
         next = messages
       }
@@ -259,7 +287,19 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     logNativeScroll('store-unread-sync', { chatId, unread: unreadCount, active: stateRef.current.activeChatId === chatId })
     setState(s => ({
       ...s,
-      chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount } : c)
+      chats: s.chats.map(c => c.id === chatId ? { ...c, unreadCount } : c),
+      messageWindows: s.messageWindows?.[chatId]
+        ? {
+            ...s.messageWindows,
+            [chatId]: {
+              ...s.messageWindows[chatId],
+              unreadCount: Number(unreadCount || 0),
+              unreadWindowComplete: !s.messageWindows[chatId].unreadWindowRequested
+                || Number(s.messageWindows[chatId].loadedIncoming || 0) >= Number(unreadCount || 0),
+              updatedAt: Date.now(),
+            },
+          }
+        : s.messageWindows,
     }))
   })
 
@@ -270,7 +310,18 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     if (activeId && map.has(activeId)) logNativeScroll('store-unread-bulk-active', { chatId: activeId, unread: map.get(activeId), updates: updates.length })
     setState(s => ({
       ...s,
-      chats: s.chats.map(c => map.has(c.id) ? { ...c, unreadCount: map.get(c.id) } : c)
+      chats: s.chats.map(c => map.has(c.id) ? { ...c, unreadCount: map.get(c.id) } : c),
+      messageWindows: Object.fromEntries(Object.entries(s.messageWindows || {}).map(([key, window]) => {
+        if (!map.has(key)) return [key, window]
+        const unreadCount = Number(map.get(key) || 0)
+        return [key, {
+          ...window,
+          unreadCount,
+          unreadWindowComplete: !window.unreadWindowRequested
+            || Number(window.loadedIncoming || 0) >= unreadCount,
+          updatedAt: Date.now(),
+        }]
+      })),
     }))
   })
 

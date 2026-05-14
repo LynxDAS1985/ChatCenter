@@ -5,6 +5,23 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 import { attachTelegramIpcListeners, loadChatCache } from './nativeStoreIpc.js'
+import {
+  markHealthByDuration,
+  markHealthError,
+  markHealthPending,
+} from '../../utils/connectionHealth.js'
+
+const NATIVE_SLOW_MS = 10000
+const TOPIC_READ_REFRESH_DELAYS_MS = [0, 700, 1500, 3000]
+// v0.88.0: лимит = жёсткий потолок Telegram MTProto messages.getHistory (100).
+// Источник: core.telegram.org/api/offsets. Просить больше бесполезно — API всё равно отдаст 100.
+// Раньше было 500 → баннер «100 из 138» застревал, т.к. код ждал страницу которая никогда не придёт.
+const UNREAD_WINDOW_MAX_MESSAGES = 100
+const UNREAD_WINDOW_EXTRA_MESSAGES = 30
+// v0.88.0: догрузка вниз пачками по 100 (Telegram-style infinite scroll).
+const NEWER_PAGE_SIZE = 100
+// v0.88.0: минимальный интервал между пачками вниз — защита от FLOOD_WAIT.
+const NEWER_PAGE_MIN_INTERVAL_MS = 300
 
 function logNativeLoad(event, data = {}) {
   const text = Object.entries(data)
@@ -50,14 +67,103 @@ const DEFAULT_STATE = {
   chats: [],
   activeChatId: null,
   messages: {},
+  forumTopics: {},        // { [chatId]: Topic[] } — Telegram forum groups
+  forumTopicsLoading: {},
+  forumTopicPanelChatId: null,
+  activeForumTopic: {},   // { [chatId]: Topic }
   loginFlow: null,
+  messageWindows: {},
   typing: {},             // v0.87.14: { [chatId]: { userId, at } } — таймер через 5 сек истекает
   loadingMessages: {},    // v0.87.36: { [chatId]: true } — флаг идущей загрузки (для shimmer overlay)
+  nativeConnectionHealth: {}, // { [accountId]: connectionHealth } — реальные замеры Telegram API
+}
+
+function topicMessageKey(chatId, topic) {
+  const topicId = topic?.topicId || topic?.id || topic?.topMessageId
+  return topicId ? `${chatId}:topic:${topicId}` : chatId
+}
+
+function topicIdentity(topic) {
+  return String(topic?.topicId || topic?.id || topic?.topMessageId || '')
+}
+
+function countIncoming(messages) {
+  return (Array.isArray(messages) ? messages : []).filter(m => !m.isOutgoing).length
+}
+
+function buildUnreadWindowMeta({ messages, unreadCount, readInboxMaxId, requested, aroundId, loading = false }) {
+  const loadedIncoming = countIncoming(messages)
+  const unread = Number(unreadCount || 0)
+  return {
+    unreadWindowRequested: !!requested,
+    unreadWindowComplete: !unread || !requested || loadedIncoming >= unread,
+    unreadWindowLoading: !!loading,
+    loadedIncoming,
+    unreadCount: unread,
+    readInboxMaxId: Number(readInboxMaxId || 0),
+    aroundId: Number(aroundId || 0),
+    updatedAt: Date.now(),
+  }
+}
+
+function unreadWindowRequestParams(unreadCount, readInboxMaxId, baseLimit = 50) {
+  const unread = Number(unreadCount || 0)
+  const cursor = Number(readInboxMaxId || 0)
+  if (!unread || !cursor) return { limit: baseLimit, aroundId: 0, addOffset: 0, requested: false }
+  const limit = Math.min(Math.max(Number(baseLimit) || 50, unread + UNREAD_WINDOW_EXTRA_MESSAGES), UNREAD_WINDOW_MAX_MESSAGES)
+  // v0.88.0: умный addOffset.
+  // При большом числе непрочитанных (>30) — окно почти всё после курсора (~90%), оставляем
+  // только небольшой контекст сверху. При маленьком (<30) — больше контекста (~25%).
+  // Это даёт первое окно ближе к первому непрочитанному, остальное догружаем через loadNewerMessages.
+  const addOffset = unread > 30
+    ? -Math.floor(limit * 0.9)
+    : -Math.floor(limit / 4)
+  return { limit, aroundId: cursor, addOffset, requested: true }
+}
+
+function nativeAccountLabel(account) {
+  return `${account?.messenger || 'telegram'} · ${account?.name || account?.id || 'аккаунт'}`
+}
+
+function nativeAccountDetails(account, chats, prefix) {
+  const accountChats = chats.filter(c => c.accountId === account.id)
+  const unread = accountChats.reduce((sum, c) => sum + (c.unreadCount || 0), 0)
+  return `${prefix}; чаты: ${accountChats.length}; непрочитано: ${unread}`
+}
+
+function updateNativeHealthForAccounts(state, accountIds, buildHealth) {
+  const ids = new Set(accountIds || [])
+  if (!ids.size) return state
+  const nextHealth = { ...state.nativeConnectionHealth }
+  for (const account of state.accounts) {
+    if (!ids.has(account.id)) continue
+    nextHealth[account.id] = buildHealth(account, nextHealth[account.id])
+  }
+  return { ...state, nativeConnectionHealth: nextHealth }
+}
+
+function accountIdsForRequest(state, accountId) {
+  if (accountId) return [accountId]
+  return state.accounts.map(a => a.id)
+}
+
+function healthErrorText(result, fallback = 'Ошибка Telegram API') {
+  return result?.error || result?.message || fallback
+}
+
+function accountStatById(result, accountId) {
+  const stats = Array.isArray(result?.accountStats) ? result.accountStats : []
+  return stats.find(s => s?.accountId === accountId) || null
 }
 
 export default function useNativeStore() {
   const [state, setState] = useState(DEFAULT_STATE)
   const stateRef = useRef(state)
+  const topicReadRefreshInFlightRef = useRef(new Set())
+  // v0.88.0: per-key throttle для loadNewerMessages.
+  // Ключ = activeChatId или `${chatId}:topic:${topicId}` — чтобы темы и обычные чаты
+  // не блокировали друг друга. Значение = timestamp последнего запроса.
+  const loadingNewerRef = useRef(new Map())
   stateRef.current = state
 
   // v0.87.103: все IPC listeners вынесены в nativeStoreIpc.js → attachTelegramIpcListeners
@@ -68,11 +174,22 @@ export default function useNativeStore() {
       const startedAt = Date.now()
       logNativeLoad('accounts snapshot request')
       const r = await window.api?.invoke?.('tg:get-accounts', {})
+      const ms = Date.now() - startedAt
       if (cancelled || !r?.ok) {
+        if (!cancelled) {
+          setState(s => updateNativeHealthForAccounts(s, s.accounts.map(a => a.id), (account, prev) => markHealthError(prev, {
+            id: account.id,
+            type: 'native',
+            label: nativeAccountLabel(account),
+            lastMs: ms,
+            errorText: healthErrorText(r, 'tg:get-accounts не ответил'),
+            details: 'Проверка аккаунтов завершилась ошибкой',
+          })))
+        }
         logNativeLoad('accounts snapshot response', {
           ok: !!r?.ok,
           accounts: r?.accounts?.length || 0,
-          ms: Date.now() - startedAt,
+          ms,
           error: r?.error || '',
         })
         return
@@ -82,17 +199,23 @@ export default function useNativeStore() {
         if (!incoming.length) return s
         const byId = new Map(s.accounts.map(a => [a.id, a]))
         for (const acc of incoming) byId.set(acc.id, { ...(byId.get(acc.id) || {}), ...acc })
-        return {
+        const nextState = {
           ...s,
           accounts: Array.from(byId.values()),
           activeAccountId: s.activeAccountId || r.activeAccountId || incoming[0]?.id || null,
         }
+        return updateNativeHealthForAccounts(nextState, incoming.map(a => a.id), (account, prev) => markHealthPending(prev, {
+          id: account.id,
+          type: 'native',
+          label: nativeAccountLabel(account),
+          details: nativeAccountDetails(account, nextState.chats, 'Аккаунт найден; ждём личную API-проверку'),
+        }))
       })
       logNativeLoad('accounts snapshot response', {
         ok: true,
         accounts: r.accounts?.length || 0,
         active: r.activeAccountId || '',
-        ms: Date.now() - startedAt,
+        ms,
       })
     })()
     return () => {
@@ -108,7 +231,26 @@ export default function useNativeStore() {
   const setActiveChat = useCallback((id) => setState(s => {
     const chat = s.chats.find(c => c.id === id)
     logNativeScroll('store-set-active-chat', { from: s.activeChatId || null, to: id, unread: chat?.unreadCount || 0, hasMessages: !!s.messages[id] })
-    return { ...s, activeChatId: id }
+    const isKnownForum = chat?.isForum === true || !!s.forumTopics?.[id]?.length
+    const reopenForumPanel = s.activeChatId === id && isKnownForum && s.forumTopicPanelChatId !== id
+    return {
+      ...s,
+      activeChatId: id,
+      forumTopicPanelChatId: reopenForumPanel ? id : s.forumTopicPanelChatId,
+      activeForumTopic: { ...s.activeForumTopic, [id]: null },
+    }
+  }), [])
+
+  const closeForumTopics = useCallback(() => setState(s => {
+    const activeTopic = s.forumTopicPanelChatId ? s.activeForumTopic?.[s.forumTopicPanelChatId] : null
+    const nextActiveForumTopic = { ...(s.activeForumTopic || {}) }
+    if (s.forumTopicPanelChatId) delete nextActiveForumTopic[s.forumTopicPanelChatId]
+    return {
+      ...s,
+      forumTopicPanelChatId: null,
+      activeForumTopic: nextActiveForumTopic,
+      activeChatId: activeTopic ? null : s.activeChatId,
+    }
   }), [])
 
   // ──  Login ──
@@ -135,11 +277,12 @@ export default function useNativeStore() {
     const startedAt = Date.now()
     logNativeLoad('loadChats request', { accountId: accountId || 'all' })
     const result = await window.api?.invoke('tg:get-chats', { accountId })
+    const ms = Date.now() - startedAt
     logNativeLoad('loadChats response', {
       accountId: accountId || 'all',
       ok: !!result?.ok,
       chats: result?.chats?.length || 0,
-      ms: Date.now() - startedAt,
+      ms,
       error: result?.error || '',
     })
     return result
@@ -150,16 +293,75 @@ export default function useNativeStore() {
     const startedAt = Date.now()
     logNativeLoad('loadCachedChats request')
     const r = await window.api?.invoke('tg:get-cached-chats', {})
+    const ms = Date.now() - startedAt
     if (r?.ok && r.chats?.length) {
       setState(s => ({ ...s, chats: [...s.chats.filter(c => !r.chats.find(nc => nc.id === c.id)), ...r.chats] }))
     }
     logNativeLoad('loadCachedChats response', {
       ok: !!r?.ok,
       chats: r?.chats?.length || 0,
-      ms: Date.now() - startedAt,
+      ms,
       error: r?.error || '',
     })
     return r
+  }, [])
+
+  const checkConnection = useCallback(async (accountId) => {
+    const startedAt = Date.now()
+    setState(s => updateNativeHealthForAccounts(s, accountIdsForRequest(s, accountId), (account, prev) => markHealthPending(prev, {
+      id: account.id,
+      type: 'native',
+      label: nativeAccountLabel(account),
+      details: 'Проверяем соединение Telegram API',
+    })))
+    logNativeLoad('healthCheck request', { accountId: accountId || 'all' })
+    const result = await window.api?.invoke('tg:health-check', { accountId })
+    const ms = Date.now() - startedAt
+    setState(s => {
+      const targetIds = accountIdsForRequest(s, accountId)
+      return updateNativeHealthForAccounts(s, targetIds, (account, prev) => {
+        const accountStat = accountStatById(result, account.id)
+        const accountMs = typeof accountStat?.ms === 'number' ? accountStat.ms : ms
+        if (!result?.ok && !accountStat) {
+          return markHealthError(prev, {
+            id: account.id,
+            type: 'native',
+            label: nativeAccountLabel(account),
+            startedAt,
+            lastMs: accountMs,
+            errorText: healthErrorText(result, 'tg:health-check не ответил'),
+            details: 'Проверка соединения завершилась ошибкой',
+          })
+        }
+        if (!accountStat || accountStat.ok === false) {
+          return markHealthError(prev, {
+            id: account.id,
+            type: 'native',
+            label: nativeAccountLabel(account),
+            startedAt,
+            lastMs: accountMs,
+            errorText: accountStat?.error || 'tg:health-check не ответил для аккаунта',
+            details: 'Проверка соединения аккаунта завершилась ошибкой',
+          })
+        }
+        return markHealthByDuration(prev, {
+          id: account.id,
+          type: 'native',
+          label: nativeAccountLabel(account),
+          startedAt,
+          lastMs: accountMs,
+          slowMs: NATIVE_SLOW_MS,
+          details: 'tg:health-check ответил',
+        })
+      })
+    })
+    logNativeLoad('healthCheck response', {
+      accountId: accountId || 'all',
+      ok: !!result?.ok,
+      ms,
+      error: result?.error || '',
+    })
+    return result
   }, [])
 
   // v0.87.16: markRead принимает maxId (до какого сообщения прочитано) и localRead (сколько прочитано в UI)
@@ -169,8 +371,95 @@ export default function useNativeStore() {
   // - сервер возвращает точное значение через tg:chat-unread-sync
   // - локально unreadCount обновляется ТОЛЬКО из этого sync
   // Результат: плавное уменьшение 36→35→34→... как в Telegram, без прыжков.
-  const markRead = useCallback(async (chatId, maxId) => {
-    return window.api?.invoke('tg:mark-read', { chatId, maxId })
+  const markRead = useCallback(async (chatId, maxId, options = {}) => {
+    return window.api?.invoke('tg:mark-read', {
+      chatId,
+      maxId,
+      readInboxMaxId: options?.readInboxMaxId,
+    })
+  }, [])
+
+  const markTopicRead = useCallback(async (chatId, topic, maxId) => {
+    if (!chatId || !topic) return { ok: false, error: 'Не выбрана тема' }
+    const topicId = topic.topicId || topic.id || topic.topMessageId
+    const r = await window.api?.invoke('tg:mark-topic-read', {
+      chatId,
+      topicId,
+      topMessageId: topic.topMessageId,
+      maxId,
+    })
+    if (r?.ok) {
+      const refreshKey = `${chatId}:topic:${topicIdentity(topic)}`
+      if (topicReadRefreshInFlightRef.current.has(refreshKey)) {
+        return { ...r, refreshed: false, refreshSkipped: 'already-running' }
+      }
+      topicReadRefreshInFlightRef.current.add(refreshKey)
+      const baselineTopic = stateRef.current.activeForumTopic?.[chatId] || topic
+      const baselineUnread = Number(baselineTopic?.unreadCount || 0)
+
+      const refreshTopicCounters = async (attempt = 0) => {
+        const currentTopicCount = stateRef.current.forumTopics?.[chatId]?.length || 50
+        const refresh = await window.api?.invoke('tg:get-forum-topics', {
+          chatId,
+          limit: Math.max(currentTopicCount, 50),
+        })
+        if (!refresh?.ok || !refresh.isForum) {
+          topicReadRefreshInFlightRef.current.delete(refreshKey)
+          return { refreshed: false, refreshError: refresh?.error, attempt }
+        }
+        const refreshedTopics = Array.isArray(refresh.topics) ? refresh.topics : []
+        const readTopicId = topicIdentity(topic)
+        const refreshedTopic = refreshedTopics.find(t => topicIdentity(t) === readTopicId)
+        const refreshedUnread = Number(refreshedTopic?.unreadCount || 0)
+        setState(s => {
+          const activeTopic = s.activeForumTopic?.[chatId]
+          const activeTopicId = topicIdentity(activeTopic || topic)
+          const refreshedActiveTopic = activeTopicId
+            ? refreshedTopics.find(t => topicIdentity(t) === activeTopicId)
+            : null
+          const nextActiveForumTopic = { ...(s.activeForumTopic || {}) }
+          if (refreshedActiveTopic) nextActiveForumTopic[chatId] = refreshedActiveTopic
+          const nextMessageWindows = { ...(s.messageWindows || {}) }
+          if (refreshedActiveTopic) {
+            const windowKey = topicMessageKey(chatId, refreshedActiveTopic)
+            const currentWindow = nextMessageWindows[windowKey]
+            if (currentWindow) {
+              const unreadCount = Number(refreshedActiveTopic.unreadCount || 0)
+              nextMessageWindows[windowKey] = {
+                ...currentWindow,
+                unreadCount,
+                unreadWindowComplete: !currentWindow.unreadWindowRequested
+                  || Number(currentWindow.loadedIncoming || 0) >= unreadCount,
+                updatedAt: Date.now(),
+              }
+            }
+          }
+          return {
+            ...s,
+            chats: s.chats.map(c => c.id === chatId ? { ...c, isForum: true } : c),
+            forumTopics: { ...s.forumTopics, [chatId]: refreshedTopics },
+            activeForumTopic: nextActiveForumTopic,
+            messageWindows: nextMessageWindows,
+          }
+        })
+        const sameUnread = baselineUnread > 0 && refreshedTopic && refreshedUnread === baselineUnread
+        const hasRetry = attempt < TOPIC_READ_REFRESH_DELAYS_MS.length - 1
+        if (sameUnread && hasRetry) {
+          setTimeout(() => {
+            refreshTopicCounters(attempt + 1).catch(() => {
+              topicReadRefreshInFlightRef.current.delete(refreshKey)
+            })
+          }, TOPIC_READ_REFRESH_DELAYS_MS[attempt + 1])
+          return { refreshed: true, retryScheduled: true, attempt, unreadCount: refreshedUnread }
+        }
+        topicReadRefreshInFlightRef.current.delete(refreshKey)
+        return { refreshed: true, retryScheduled: false, attempt, unreadCount: refreshedUnread }
+      }
+
+      const refreshResult = await refreshTopicCounters(0)
+      return { ...r, ...refreshResult }
+    }
+    return r
   }, [])
 
   const sendFile = useCallback(async (chatId, filePath, caption) => {
@@ -194,8 +483,50 @@ export default function useNativeStore() {
   }, [])
 
   // v0.87.24: manual rescan unread (Комбо D — часть B)
-  const rescanUnread = useCallback(async () => {
-    return window.api?.invoke('tg:rescan-unread', {})
+  const rescanUnread = useCallback(async (options = {}) => {
+    const updateHealth = options?.updateHealth === true
+    const startedAt = Date.now()
+    const r = await window.api?.invoke('tg:rescan-unread', {})
+    const ms = Date.now() - startedAt
+    if (!updateHealth) return r
+    setState(s => updateNativeHealthForAccounts(s, s.accounts.map(a => a.id), (account, prev) => {
+      const accountStat = accountStatById(r, account.id)
+      const hasPersonalStat = !!accountStat
+      const accountMs = typeof accountStat?.ms === 'number' ? accountStat.ms : null
+      if (!r?.ok) {
+        return markHealthError(prev, {
+          id: account.id,
+          type: 'native',
+          label: nativeAccountLabel(account),
+          startedAt,
+          lastMs: ms,
+          errorText: healthErrorText(r, 'tg:rescan-unread не ответил'),
+          details: 'Проверка непрочитанных завершилась ошибкой',
+        })
+      }
+      if (!hasPersonalStat) return prev
+      if (accountStat.ok === false) {
+        return markHealthError(prev, {
+          id: account.id,
+          type: 'native',
+          label: nativeAccountLabel(account),
+          startedAt,
+          lastMs: accountMs,
+          errorText: accountStat.error || 'tg:rescan-unread не ответил для аккаунта',
+          details: 'Проверка непрочитанных аккаунта завершилась ошибкой',
+        })
+      }
+      return markHealthByDuration(prev, {
+        id: account.id,
+        type: 'native',
+        label: nativeAccountLabel(account),
+        startedAt,
+        lastMs: accountMs,
+        slowMs: NATIVE_SLOW_MS,
+        details: nativeAccountDetails(account, s.chats, `tg:rescan-unread ответил; проверено чатов: ${accountStat.chats ?? '-'}`),
+      })
+    }))
+    return r
   }, [])
 
   const setTyping = useCallback(async (chatId) => {
@@ -203,25 +534,150 @@ export default function useNativeStore() {
   }, [])
 
   const loadMessages = useCallback(async (chatId, limit = 50) => {
+    const chat = stateRef.current.chats.find(c => c.id === chatId)
+    const unreadParams = unreadWindowRequestParams(chat?.unreadCount, chat?.readInboxMaxId, limit)
     const cachedPreview = !stateRef.current.messages[chatId] ? loadChatCache(chatId) : null
-    logNativeScroll('store-load-messages', { chatId, limit, hadMessages: !!stateRef.current.messages[chatId], cached: cachedPreview?.length || 0 })
+    logNativeScroll('store-load-messages', {
+      chatId,
+      limit: unreadParams.limit,
+      hadMessages: !!stateRef.current.messages[chatId],
+      cached: cachedPreview?.length || 0,
+      unread: chat?.unreadCount || 0,
+      aroundId: unreadParams.aroundId,
+    })
     // v0.87.36: поднимаем флаг загрузки (для shimmer overlay) + пытаемся мгновенно
     // подставить кэш из localStorage
     setState(s => {
       const cached = !s.messages[chatId] && loadChatCache(chatId)
       const nextMessages = cached ? { ...s.messages, [chatId]: cached } : s.messages
-      return { ...s, messages: nextMessages, loadingMessages: { ...s.loadingMessages, [chatId]: true } }
+      return {
+        ...s,
+        messages: nextMessages,
+        messageWindows: {
+          ...(s.messageWindows || {}),
+          [chatId]: buildUnreadWindowMeta({
+            messages: cached || s.messages[chatId] || [],
+            unreadCount: chat?.unreadCount || 0,
+            readInboxMaxId: chat?.readInboxMaxId || 0,
+            requested: unreadParams.requested,
+            aroundId: unreadParams.aroundId,
+            loading: unreadParams.requested,
+          }),
+        },
+        loadingMessages: { ...s.loadingMessages, [chatId]: true },
+      }
     })
-    const result = await window.api?.invoke('tg:get-messages', { chatId, limit })
+    const result = await window.api?.invoke('tg:get-messages', {
+      chatId,
+      limit: unreadParams.limit,
+      aroundId: unreadParams.aroundId,
+      addOffset: unreadParams.addOffset,
+    })
     // v0.87.118: авторетрай через 3с — вероятно FLOOD_WAIT от загрузки аватарок.
     // При успешном retry tg:messages придёт автоматически и обновит стор.
     // При повторной ошибке — снимаем флаг loadingMessages чтобы не висел shimmer вечно.
     if (!result?.ok) {
       setTimeout(async () => {
-        const retry = await window.api?.invoke('tg:get-messages', { chatId, limit })
+        const retry = await window.api?.invoke('tg:get-messages', {
+          chatId,
+          limit: unreadParams.limit,
+          aroundId: unreadParams.aroundId,
+          addOffset: unreadParams.addOffset,
+        })
         if (!retry?.ok) setState(s => { const lm = {...s.loadingMessages}; delete lm[chatId]; return {...s, loadingMessages: lm} })
       }, 3000)
+    } else {
+      setState(s => ({
+        ...s,
+        messageWindows: {
+          ...(s.messageWindows || {}),
+          [chatId]: buildUnreadWindowMeta({
+            messages: result.messages || [],
+            unreadCount: chat?.unreadCount || 0,
+            readInboxMaxId: chat?.readInboxMaxId || 0,
+            requested: unreadParams.requested,
+            aroundId: unreadParams.aroundId,
+            loading: false,
+          }),
+        },
+      }))
     }
+    return result
+  }, [])
+
+  const loadForumTopics = useCallback(async (chatId, limit = 50) => {
+    if (!chatId) return { ok: false, isForum: false, topics: [] }
+    setState(s => ({ ...s, forumTopicsLoading: { ...(s.forumTopicsLoading || {}), [chatId]: true } }))
+    const result = await window.api?.invoke('tg:get-forum-topics', { chatId, limit })
+    setState(s => {
+      const loading = { ...(s.forumTopicsLoading || {}) }
+      delete loading[chatId]
+      if (!result?.ok) return { ...s, forumTopicsLoading: loading }
+      const nextChats = s.chats.map(c => c.id === chatId ? { ...c, isForum: !!result.isForum } : c)
+      if (!result.isForum) {
+        return { ...s, chats: nextChats, forumTopicsLoading: loading }
+      }
+      return {
+        ...s,
+        chats: nextChats,
+        forumTopicPanelChatId: chatId,
+        forumTopics: { ...s.forumTopics, [chatId]: result.topics || [] },
+        forumTopicsLoading: loading,
+      }
+    })
+    return result
+  }, [])
+
+  const selectForumTopic = useCallback(async (chatId, topic, limit = 50) => {
+    if (!chatId || !topic) return { ok: false, error: 'Не выбрана тема', messages: [] }
+    const key = topicMessageKey(chatId, topic)
+    const unreadParams = unreadWindowRequestParams(topic.unreadCount, topic.readInboxMaxId, limit)
+    setState(s => ({
+      ...s,
+      activeChatId: chatId,
+      activeForumTopic: { ...s.activeForumTopic, [chatId]: topic },
+      messageWindows: {
+        ...(s.messageWindows || {}),
+        [key]: buildUnreadWindowMeta({
+          messages: s.messages[key] || [],
+          unreadCount: topic.unreadCount || 0,
+          readInboxMaxId: topic.readInboxMaxId || 0,
+          requested: unreadParams.requested,
+          aroundId: unreadParams.aroundId,
+          loading: unreadParams.requested,
+        }),
+      },
+      loadingMessages: { ...s.loadingMessages, [key]: true },
+    }))
+    const result = await window.api?.invoke('tg:get-topic-messages', {
+      chatId,
+      topicId: topic.topicId || topic.id,
+      topMessageId: topic.topMessageId,
+      limit: unreadParams.limit,
+      aroundId: unreadParams.aroundId,
+      addOffset: unreadParams.addOffset,
+    })
+    setState(s => {
+      const loadingCopy = { ...s.loadingMessages }
+      delete loadingCopy[key]
+      if (!result?.ok) return { ...s, loadingMessages: loadingCopy }
+      return {
+        ...s,
+        messages: { ...s.messages, [key]: result.messages || [] },
+        messageWindows: {
+          ...(s.messageWindows || {}),
+          [key]: buildUnreadWindowMeta({
+            messages: result.messages || [],
+            unreadCount: topic.unreadCount || 0,
+            readInboxMaxId: topic.readInboxMaxId || 0,
+            requested: unreadParams.requested,
+            aroundId: unreadParams.aroundId,
+            loading: false,
+          }),
+        },
+        loadingMessages: loadingCopy,
+      }
+    })
     return result
   }, [])
 
@@ -229,9 +685,58 @@ export default function useNativeStore() {
     return window.api?.invoke('tg:send-message', { chatId, text, replyTo })
   }, [])
 
+  // v0.88.0: загрузка более НОВЫХ сообщений (infinite scroll вниз, Telegram-style).
+  // Telegram MTProto messages.getHistory имеет жёсткий лимит 100 за запрос.
+  // Throttle 300мс per-key — защита от FLOOD_WAIT при быстром скролле.
+  // Ключ = activeMessageKey: для тем `${chatId}:topic:${topicId}`, иначе chatId.
+  const loadNewerMessages = useCallback(async (chatId, afterId, limit = NEWER_PAGE_SIZE) => {
+    if (!chatId || !afterId) return { ok: false, error: 'нет chatId/afterId' }
+    const activeTopic = stateRef.current.activeForumTopic?.[chatId]
+    const throttleKey = activeTopic ? topicMessageKey(chatId, activeTopic) : chatId
+    const now = Date.now()
+    const lastTs = loadingNewerRef.current.get(throttleKey) || 0
+    if (now - lastTs < NEWER_PAGE_MIN_INTERVAL_MS) {
+      logNativeScroll('store-load-newer-throttle', { chatId, key: throttleKey, sinceLastMs: now - lastTs })
+      return { ok: false, throttled: true }
+    }
+    loadingNewerRef.current.set(throttleKey, now)
+    logNativeScroll('store-load-newer', { chatId, afterId, limit, key: throttleKey, topic: !!activeTopic })
+    if (activeTopic) {
+      const result = await window.api?.invoke('tg:get-topic-messages', {
+        chatId,
+        topicId: activeTopic.topicId || activeTopic.id,
+        topMessageId: activeTopic.topMessageId,
+        limit,
+        afterId: Number(afterId),
+      })
+      return result
+    }
+    return window.api?.invoke('tg:get-messages', { chatId, limit, afterId: Number(afterId) })
+  }, [])
+
   // v0.87.15: загрузка более старых сообщений (infinite scroll вверх)
   const loadOlderMessages = useCallback(async (chatId, beforeId, limit = 50) => {
     logNativeScroll('store-load-older', { chatId, beforeId, limit })
+    const activeTopic = stateRef.current.activeForumTopic?.[chatId]
+    if (activeTopic) {
+      const key = topicMessageKey(chatId, activeTopic)
+      const result = await window.api?.invoke('tg:get-topic-messages', {
+        chatId,
+        topicId: activeTopic.topicId || activeTopic.id,
+        topMessageId: activeTopic.topMessageId,
+        limit,
+        offsetId: Number(beforeId),
+      })
+      if (result?.ok) {
+        setState(s => {
+          const existing = s.messages[key] || []
+          const existingIds = new Set(existing.map(m => m.id))
+          const newOld = (result.messages || []).filter(m => !existingIds.has(m.id))
+          return { ...s, messages: { ...s.messages, [key]: [...newOld, ...existing] } }
+        })
+      }
+      return result
+    }
     return window.api?.invoke('tg:get-messages', { chatId, limit, offsetId: Number(beforeId) })
   }, [])
 
@@ -294,12 +799,12 @@ export default function useNativeStore() {
 
   return {
     ...state,
-    setMode, setActiveAccount, setActiveChat, setChatFilter,
+    setMode, setActiveAccount, setActiveChat, setChatFilter, closeForumTopics,
     startLogin, submitCode, submitPassword, cancelLogin,
-    loadChats, loadCachedChats, loadMessages, loadOlderMessages,
+    loadChats, loadCachedChats, checkConnection, loadMessages, loadForumTopics, selectForumTopic, loadOlderMessages, loadNewerMessages,
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
     getPinnedMessage, refreshAvatar, rescanUnread,
-    downloadMedia, removeAccount, markRead, setTyping,
+    downloadMedia, removeAccount, markRead, markTopicRead, setTyping,
     getCleanupStats, setMute,
   }
 }

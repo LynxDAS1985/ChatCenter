@@ -119,6 +119,56 @@
 }
 
 /* v0.87.36: Shimmer-плейсхолдеры для загрузки чата */
+.native-unread-window-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(255,184,77,0.18);
+  background: rgba(255,184,77,0.08);
+  color: var(--amoled-text-dim);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.native-unread-window-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffb84d;
+  box-shadow: 0 0 0 4px rgba(255,184,77,0.12);
+}
+.native-unread-window-status strong {
+  color: #ffb84d;
+  font-weight: 700;
+}
+
+/* v0.88.0: индикатор «загружаю ещё» при prefetch новых сообщений вниз (Telegram-style).
+   Появляется в самом низу ленты сообщений на время фоновой подгрузки. */
+.native-msgs-loading-newer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-top: 4px;
+  color: var(--amoled-text-dim);
+  font-size: 11px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.native-msgs-loading-newer__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amoled-accent);
+  animation: native-msgs-loading-newer-pulse 1.2s ease-in-out infinite;
+}
+@keyframes native-msgs-loading-newer-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1.0); }
+}
+
 .native-msg-skeleton {
   position: relative;
   border-radius: 12px;

@@ -19,6 +19,11 @@ import { getUnreadAnchorDebug } from '../utils/scrollDiagnostics.js'
 
 try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
 
+function topicMessageKey(chatId, topic) {
+  const topicId = topic?.topicId || topic?.id || topic?.topMessageId
+  return topicId ? `${chatId}:topic:${topicId}` : chatId
+}
+
 export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -36,7 +41,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.87.24: window.focus → rescan unread
   useEffect(() => {
-    const onFocus = () => { store.rescanUnread?.() }
+    const onFocus = () => { store.rescanUnread?.({ updateHealth: false }) }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
@@ -49,12 +54,21 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   useEffect(() => {
     if (!store.activeChatId) return
+    const chat = store.chats.find(c => c.id === store.activeChatId)
+    if ((chat?.type === 'group' || chat?.type === 'channel') && chat.isForum !== false) {
+      let cancelled = false
+      store.loadForumTopics?.(store.activeChatId, 50).then(r => {
+        if (cancelled || r?.isForum) return
+        if (!store.messages[store.activeChatId]) store.loadMessages(store.activeChatId, 50)
+      })
+      return () => { cancelled = true }
+    }
     if (!store.messages[store.activeChatId]) {
       store.loadMessages(store.activeChatId, 50)
     }
     // v0.87.16: НЕ помечаем всё прочитанным при открытии — счётчик уменьшается
     // по мере показа (IntersectionObserver) или scroll в низ.
-  }, [store.activeChatId])
+  }, [store.activeChatId, store.chats.length])
 
   // v0.87.105 (ADR-016): единая лента всех аккаунтов с возможностью фильтра.
   // store.chatFilter: 'all' | accountId. По умолчанию 'all' — показываем чаты со всех аккаунтов.
@@ -68,9 +82,15 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   }, [store.chats, store.chatFilter, search])
 
   const activeChat = store.chats.find(c => c.id === store.activeChatId)
-  const activeMessages = store.messages[store.activeChatId] || []
+  const activeTopic = store.activeForumTopic?.[store.activeChatId] || null
+  const forumNeedsTopic = !!activeChat?.isForum && !activeTopic
+  const activeMessageKey = topicMessageKey(store.activeChatId, activeTopic)
+  const activeViewKey = activeTopic ? activeMessageKey : store.activeChatId
+  const activeMessages = forumNeedsTopic ? [] : (store.messages[activeMessageKey] || [])
   // v0.87.45: activeUnread = MTProto-число (альбом=N фото) — для findFirstUnread, markRead, initial-scroll.
-  const activeUnread = activeChat?.unreadCount || 0
+  const activeUnread = forumNeedsTopic ? 0 : (activeTopic ? (activeTopic.unreadCount || 0) : (activeChat?.unreadCount || 0))
+  const activeMessageWindow = store.messageWindows?.[activeMessageKey] || null
+  const activeReadInboxMaxId = Number(activeTopic?.readInboxMaxId || activeChat?.readInboxMaxId || activeMessageWindow?.readInboxMaxId || 0)
 
   // v0.87.51: диагностика прогрессии 23→20→15→...→0 при прокрутке.
   // v0.87.53: prevUnreadRef сбрасывается при смене activeChatId.
@@ -121,6 +141,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const msgsScrollRef = useRef(null)
   const loadingOlderRef = useRef(false)
+  // v0.88.0: prefetch новых сообщений вниз (Telegram-style infinite scroll).
+  // loadingNewerRef — guard от параллельных запросов, [loadingNewer, setLoadingNewer] — для UI индикатора.
+  const loadingNewerRef = useRef(false)
+  const [loadingNewer, setLoadingNewer] = useState(false)
 
   // v0.87.17: forward-модалка + тост + закреплённое
   const [forwardTarget, setForwardTarget] = useState(null)
@@ -132,21 +156,44 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // → сервер возвращал unread=1 вместо 7. Баг «было 7, стало 1 за секунду».
   const [atBottom, setAtBottom] = useState(false)
   const [newBelow, setNewBelow] = useState(0)
+  const [firstUnreadId, setFirstUnreadId] = useState(null)
   const firstUnreadIdRef = useRef(null)
+  const scrollButtonClickTimerRef = useRef(null)
   const scrollDiag = useScrollDiagnostics({
-    activeChatId: store.activeChatId, activeChat, activeMessages, activeUnread,
-    loading: store.loadingMessages?.[store.activeChatId],
+    activeChatId: activeViewKey, activeChat, activeMessages, activeUnread,
+    loading: store.loadingMessages?.[activeMessageKey],
     scrollRef: msgsScrollRef,
   })
+  const loadedIncomingCount = activeMessages.filter(m => !m.isOutgoing).length
+  const unreadWindowIncomplete = !!activeMessageWindow?.unreadWindowRequested
+    && activeMessageWindow?.unreadWindowComplete === false
+  const markReadCurrentView = async (viewKey, maxId, options = {}) => {
+    const source = options?.source || 'unknown'
+    if (unreadWindowIncomplete && source !== 'visibility') {
+      scrollDiag.logEvent('mark-read-skip-unread-window', {
+        viewKey,
+        unread: activeUnread,
+        loadedIncoming: loadedIncomingCount,
+        source,
+        maxId,
+      })
+      return { ok: true, skipped: true, reason: 'unread-window-incomplete' }
+    }
+    if (activeChat?.isForum) {
+      if (!activeTopic) return { ok: true, skipped: true }
+      return store.markTopicRead?.(store.activeChatId, activeTopic, maxId)
+    }
+    return store.markRead?.(viewKey, maxId, { readInboxMaxId: activeReadInboxMaxId, source })
+  }
 
   // v0.87.29/40: начальный скролл — ПОСЛЕ загрузки свежих данных.
   // v0.87.66: onDone → setChatReady(true). v0.87.67: запоминаем seenChatsRef.
   const { doneRef: initialScrollDoneRef } = useInitialScroll({
-    activeChatId: store.activeChatId,
+    activeChatId: activeViewKey,
     messagesCount: activeMessages.length,
     scrollRef: msgsScrollRef,
     firstUnreadIdRef, activeUnread,
-    loading: store.loadingMessages?.[store.activeChatId],
+    loading: store.loadingMessages?.[activeMessageKey],
     onDone: (chatId) => {
       seenChatsRef.current.add(chatId)
       setChatReady(true)
@@ -157,13 +204,13 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.87.66/67: при смене чата проверяем seenChatsRef — если уже видели, chatReady=true сразу.
   useEffect(() => {
-    if (!store.activeChatId) { setChatReady(false); return }
-    if (seenChatsRef.current.has(store.activeChatId)) {
+    if (!activeViewKey) { setChatReady(false); return }
+    if (seenChatsRef.current.has(activeViewKey)) {
       setChatReady(true)
     } else {
       setChatReady(false)
     }
-  }, [store.activeChatId])
+  }, [activeViewKey])
 
   // v0.87.31: photo (single src) или { srcs, index } (album с навигацией ← →)
   const openPhotoWindow = (payload) => {
@@ -180,10 +227,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   useEffect(() => {
     setPinnedMsg(null)
     if (!store.activeChatId) return
+    if (activeChat?.isForum) return
     store.getPinnedMessage?.(store.activeChatId).then(r => {
       if (r?.ok && r.message) setPinnedMsg(r.message)
     })
-  }, [store.activeChatId])
+  }, [store.activeChatId, activeChat?.isForum])
 
   // v0.87.17: догружаем аватарки для активных чатов без photo (каналы)
   useEffect(() => {
@@ -202,36 +250,51 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.87.27: группировка + разделители вынесены в utils/messageGrouping.js
   const renderItems = useMemo(
-    () => groupMessages(visibleMessages, firstUnreadIdRef.current),
-    [visibleMessages]
+    () => groupMessages(visibleMessages, firstUnreadId),
+    [visibleMessages, firstUnreadId]
   )
 
   // v0.87.40: пересчёт firstUnread при смене свежих данных (firstId/lastId/unread)
   const firstMsgId = activeMessages[0]?.id
   const lastMsgId = activeMessages[activeMessages.length - 1]?.id
   useEffect(() => {
-    if (!store.activeChatId) { firstUnreadIdRef.current = null; return }
+    if (!activeViewKey) {
+      firstUnreadIdRef.current = null
+      setFirstUnreadId(null)
+      return
+    }
     const chat = store.chats.find(c => c.id === store.activeChatId)
-    const realUnread = chat?.unreadCount || 0
+    const topic = store.activeForumTopic?.[store.activeChatId]
+    const realUnread = topic ? (topic.unreadCount || 0) : (chat?.unreadCount || 0)
     // v0.87.40: clamp unread к числу incoming (сервер мог вернуть завышенное)
     const incoming = activeMessages.filter(m => !m.isOutgoing)
     const clampedUnread = Math.min(realUnread, incoming.length)
-    firstUnreadIdRef.current = findFirstUnreadId(activeMessages, clampedUnread)
-    scrollDiag.logEvent('first-unread-calc', getUnreadAnchorDebug(activeMessages, clampedUnread))
-  }, [store.activeChatId, firstMsgId, lastMsgId, activeUnread])
+    const nextFirstUnreadId = findFirstUnreadId(activeMessages, clampedUnread, activeReadInboxMaxId)
+    firstUnreadIdRef.current = nextFirstUnreadId
+    setFirstUnreadId(nextFirstUnreadId)
+    scrollDiag.logEvent('first-unread-calc', {
+      ...getUnreadAnchorDebug(activeMessages, clampedUnread),
+      readInboxMaxId: activeReadInboxMaxId,
+      firstUnreadId: nextFirstUnreadId,
+    })
+  }, [activeViewKey, firstMsgId, lastMsgId, activeUnread, activeReadInboxMaxId])
 
-  const getMessage = (chatId, msgId) => (store.messages[chatId] || []).find(m => m.id === String(msgId))
+  const getMessage = (chatId, msgId) => (store.messages[activeMessageKey] || store.messages[chatId] || []).find(m => m.id === String(msgId))
 
   // v0.87.83: read-by-visibility batch markRead → useReadByVisibility hook.
   // v0.87.37: maxEverSentRef — никогда не уменьшаем watermark.
   const maxEverSentRef = useRef(0)
   const { readByVisibility } = useReadByVisibility({
-    activeChatId: store.activeChatId,
-    activeUnread, markRead: store.markRead, scrollDiag, maxEverSentRef,
+    activeChatId: activeViewKey,
+    activeUnread,
+    readInboxMaxId: activeReadInboxMaxId,
+    markRead: markReadCurrentView,
+    scrollDiag,
+    maxEverSentRef,
   })
 
   // v0.87.52: сброс newBelow при смене чата (иначе залипает от прошлого).
-  useEffect(() => { setNewBelow(0) }, [store.activeChatId])
+  useEffect(() => { setNewBelow(0) }, [activeViewKey])
 
   // v0.87.34: drag-n-drop файлов + Ctrl+V картинки
   const { dragOver, handleDragOver, handleDragLeave, handleDrop, handlePaste } = useDropAndPaste({
@@ -239,16 +302,18 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   })
 
   // v0.87.83: handleScroll → useInboxScroll hook.
+  // v0.88.0: + loadingNewerRef/setLoadingNewer для Telegram-style infinite scroll down.
   const { handleScroll } = useInboxScroll({
-    store, activeMessages, activeUnread, chatReady,
+    store, scrollKey: activeViewKey, activeMessages, activeUnread, chatReady,
     msgsScrollRef, scrollPosByChatRef, initialScrollDoneRef, loadingOlderRef,
+    loadingNewerRef, setLoadingNewer,
     scrollDiag, setAtBottom, setNewBelow,
   })
 
   // v0.87.42: newBelow по смене lastMsgId
   useNewBelowCounter({
     messages: activeMessages,
-    atBottom, chatId: store.activeChatId,
+    atBottom, chatId: activeViewKey,
     onAdded: ({ added, prevLastId, nowLastId }) => {
       scrollDiag.logEvent('new-below', { added, prevLastId, nowLastId })
       setNewBelow(n => n + added)
@@ -258,8 +323,9 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.87.34: FORCE mark-read когда юзер в самом низу
   useForceReadAtBottom({
-    atBottom, activeChatId: store.activeChatId, activeMessages, activeUnread,
-    markRead: store.markRead, maxEverSentRef,
+    atBottom, activeChatId: activeViewKey, activeMessages, activeUnread,
+    markRead: markReadCurrentView,
+    maxEverSentRef,
   })
 
   // v0.87.35: «к последнему непрочитанному» (Telegram-style).
@@ -284,6 +350,39 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     setNewBelow(0)
   }
 
+  const scrollToAbsoluteBottom = () => {
+    const el = msgsScrollRef.current
+    if (!el) return
+    scrollDiag.logEvent('button-scroll-absolute-bottom', { activeUnread, messages: activeMessages.length })
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    const viewKey = activeViewKey || store.activeChatId
+    if (viewKey) scrollPosByChatRef.current.set(viewKey, el.scrollHeight)
+    setAtBottom(true)
+    setNewBelow(0)
+    const lastMsg = activeMessages[activeMessages.length - 1]
+    const lastId = Number(lastMsg?.id) || 0
+    if (lastId > 0 && activeUnread > 0 && lastId > (maxEverSentRef.current || 0)) {
+      maxEverSentRef.current = lastId
+      markReadCurrentView(viewKey, lastId, { source: 'absolute-bottom' })
+    }
+  }
+
+  const handleScrollButtonClick = () => {
+    if (scrollButtonClickTimerRef.current) clearTimeout(scrollButtonClickTimerRef.current)
+    scrollButtonClickTimerRef.current = setTimeout(() => {
+      scrollButtonClickTimerRef.current = null
+      scrollToBottom()
+    }, 220)
+  }
+
+  const handleScrollButtonDoubleClick = () => {
+    if (scrollButtonClickTimerRef.current) {
+      clearTimeout(scrollButtonClickTimerRef.current)
+      scrollButtonClickTimerRef.current = null
+    }
+    scrollToAbsoluteBottom()
+  }
+
   // v0.87.27: клик по reply-цитате — скроллим к оригиналу + 1.5с жёлтое мерцание
   const scrollToMessage = (msgId) => {
     const el = msgsScrollRef.current?.querySelector(`[data-msg-id="${msgId}"]`)
@@ -302,6 +401,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     // v0.87.55: логи + error-toast для "ввёл текст → Отпр. → ничего"
     if (!input.trim() || sending) {
       scrollDiag.logEvent('send-skip', { hasText: !!input.trim(), sending, chatId: store.activeChatId })
+      return
+    }
+    if (activeChat?.isForum) {
+      scrollDiag.logEvent('send-skip-forum-topic-readonly', { chatId: store.activeChatId, topicId: activeTopic?.id })
+      showToast('Отправка в темы будет следующим этапом', 'info')
       return
     }
     setSending(true)
@@ -381,9 +485,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           </div>
         )}
         <InboxChatPanel
-          store={store} activeChat={activeChat} activeMessages={activeMessages}
+          store={store} activeChat={activeChat} activeTopic={activeTopic} activeMessages={activeMessages}
           activeUnread={activeUnread} visibleMessages={visibleMessages} renderItems={renderItems}
-          isTyping={isTyping}
+          unreadWindow={activeMessageWindow}
+          loadingNewer={loadingNewer}
+          isTyping={isTyping} messagesLoading={!!store.loadingMessages?.[activeMessageKey]}
           pinnedMsg={pinnedMsg} setPinnedMsg={setPinnedMsg}
           showMsgSearch={showMsgSearch} setShowMsgSearch={setShowMsgSearch}
           msgSearch={msgSearch} setMsgSearch={setMsgSearch}
@@ -394,7 +500,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           msgsScrollRef={msgsScrollRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
-          scrollToBottom={scrollToBottom} scrollToMessage={scrollToMessage}
+          scrollToBottom={handleScrollButtonClick} scrollToAbsoluteBottom={handleScrollButtonDoubleClick} scrollToMessage={scrollToMessage}
           handleDelete={handleDelete} handleForward={handleForward} handlePin={handlePin}
           openPhotoWindow={openPhotoWindow} getMessage={getMessage} readByVisibility={readByVisibility}
         />

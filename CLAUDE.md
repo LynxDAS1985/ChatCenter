@@ -90,7 +90,10 @@
 |------|------|
 | Расследование бага скролла native | [`.memory-bank/native-scroll-diagnostics-handoff.md`](.memory-bank/native-scroll-diagnostics-handoff.md) |
 | Большой план native-режима | [`.memory-bank/native-mode-plan.md`](.memory-bank/native-mode-plan.md) |
+| Расследование Telegram-групп с темами / forum topics в native | [`.memory-bank/group-topic-investigation.md`](.memory-bank/group-topic-investigation.md) |
 | Расследование долгой загрузки Telegram при старте | [`.memory-bank/startup-load-investigation.md`](.memory-bank/startup-load-investigation.md) |
+| Закрытая памятка: слабый интернет vs `start:prodlike`/WebView | [`.memory-bank/prodlike-webview-investigation.md`](.memory-bank/prodlike-webview-investigation.md) |
+| Архив: план единого статуса качества подключения | [`.memory-bank/archive/2026-05-connection-health-plan.md`](.memory-bank/archive/2026-05-connection-health-plan.md) — читать только по явной просьбе |
 | Лимиты файлов кода / снапшот размеров | [`.memory-bank/code-limits-status.md`](.memory-bank/code-limits-status.md) |
 | Архив handoff-документов плана разбиения | [`.memory-bank/handoff-code-limits.md`](.memory-bank/handoff-code-limits.md) — план разбиения **7/7 закрыт** в v0.87.86 |
 
@@ -264,7 +267,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.87.135 (7 мая 2026)
+**Текущая версия**: v0.88.2 (13 мая 2026)
 
 ---
 
@@ -746,6 +749,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.87.135 (7 мая 2026)
+**Версия проекта**: v0.88.2 (13 мая 2026)
 **Статус**: 🟢 Фазы 1-4+ выполнены — WebView, мониторинг, ИИ-помощник, шаблоны, авто-ответчик
-**Последнее обновление**: 7 мая 2026 — v0.87.135: добавлен `npm run dist:win`, Windows x64 NSIS installer собирается в корневой `dist/`, после сборки остаётся только установочный `.exe`. v0.87.134: `start:prodlike` подтвердил, что долгий старт был из-за Vite dev server.
+**Последнее обновление**: 13 мая 2026 — v0.88.2: страховка push для real-time (Шаг 1 перед Этапом 2). При росте `activeMessages.length` для активного viewKey флаг `noMoreNewerRef` автоматически сбрасывается — это закрывает теоретический пробел «push рассинхронился и флаг блокирует prefetch навсегда». Добавлены статические тесты на критичные интеграции (reply-scroll, группировка, initial-scroll, mark-read), которые упадут если виртуализация Этапа 2 их сломает.
