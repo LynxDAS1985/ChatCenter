@@ -11,6 +11,55 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 3.2: TDLib IPC handlers
+
+### Added
+- **`main/native/tdlibIpcHandlers.js`** (215 строк):
+  `initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log })` —
+  единая точка регистрации IPC channels через TDLib backend.
+- **Зарегистрированные каналы (22)** — все совместимы с GramJS-контрактом
+  (см. `api.md`), UI не нужно знать какой backend активен:
+  - Login: `tg:login-start/-code/-password/-cancel`
+  - Account: `tg:get-accounts`, `tg:remove-account`
+  - Chats: `tg:get-chats`, `tg:get-cached-chats`, `tg:rescan-unread`, `tg:health-check`
+  - Messages: `tg:get-messages/-topic-messages/-send/-edit/-delete/-forward/-mark-read/-mark-topic-read/-get-pinned-message`
+  - Media: `tg:download-media`, `tg:download-video`
+  - Forum: `tg:get-forum-topics`
+- **Event bridge** — manager events → renderer:
+  - `message:new` → `tg:new-message`
+  - `message:edited` → `tg:message-edited`
+  - `message:deleted` → `tg:message-deleted`
+  - `chat:unread-sync` → `tg:chat-unread-sync`
+  - `account:auth-state` → `tg:login-step` (через `stateToLoginStep` маппер
+    TDLib auth state → GramJS-style `{ step: 'phone'|'code'|'password'|'success' }`)
+  - `account:error` → `tg:account-update { status: 'error' }`
+  - `account:connection` → `tg:account-connection`
+  - `user:status` → `tg:user-status`
+- **`sendToRenderer`** — функция передаётся через DI (в production:
+  `(ch, p) => mainWindow.webContents.send(ch, p)`; в тестах: `vi.fn()`).
+- **`unregister`** — возвращаемая функция снимает все handlers и
+  manager event listeners (для graceful shutdown + тестов).
+- **Защита**: каждый handler обёрнут в try/catch — exception → `{ ok: false, error }`,
+  не разрушает event loop.
+
+### Tests
+- **`src/__tests__/tdlibIpcHandlers.vitest.js`** (308 строк, 23 теста):
+  - Validation: 3 (без ipcMain.handle, без backend, без sendToRenderer)
+  - Registration: 2 (все 22 канала, unregister снимает все)
+  - Messages routing: 6 (get/send/markRead/delete/edit/exception → ok:false)
+  - Chats routing: 3
+  - Accounts: 3 (list, connected status, remove)
+  - Event bridge: 6 (message:new → tg:new-message, unread-sync, login-step,
+    auth ready, account error, unregister снимает listeners)
+
+### Прогресс по плану миграции
+- Этапы 0, 1, 2.1-2.6, 3.1 ✅
+- **Этап 3.2 (TDLib IPC handlers) ✅** — текущий коммит
+- Этап 3.3 (интеграция в main.js startup + USE_TDLIB_BACKEND условный выбор) — следующий
+- Этап 4 (финализация, удаление GramJS) — после 3.3
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 3.1: TDLib runtime singleton
 
 ### Added
