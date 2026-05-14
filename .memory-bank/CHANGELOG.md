@@ -11,6 +11,50 @@
 
 ---
 
+## 2026-05-14 — TDLib Stage 4 / Этап 3.1: TDLib runtime singleton
+
+### Added
+- **`main/native/backends/tdlibRuntime.js`** (170 строк):
+  - `initTdlibRuntime({ userDataDir, tdl?, prebuiltTdlib?, verbosityLevel })`
+    — singleton инициализация TDLib runtime для процесса. Идемпотентна
+    (повторный вызов вернёт существующий manager).
+  - Внутри: `tdl.configure({ tdjson: prebuiltTdlib.getTdjson() })` +
+    создание `TdlibClientManager` с реальной `clientFactory` через
+    `tdl.createClient(params)`.
+  - Сессии хранятся в `${userDataDir}/tdlib-sessions/${accountId}/`,
+    подпапка `files/` для медиа.
+  - `getTdlibManager()` — возвращает текущий manager или null.
+  - `getTdlibRuntimeState()` — { configured, tdjsonPath, userDataDir, sessionsDir }
+  - `getSessionDirForAccount(accountId)` — путь к sessions конкретного аккаунта.
+  - `closeTdlibRuntime()` — graceful shutdown (закрывает все клиенты,
+    сбрасывает singleton). Нужно для тестов (изоляция между сценариями).
+  - `autoRestoreSessionsFromDisk({ makeClientParams })` — сканирует
+    `tdlib-sessions/`, восстанавливает аккаунты как `manager.createAccount`.
+    Игнорирует папку `pending/` (временный logged-out) и файлы (не папки).
+- **DI через опции:** `tdl` и `prebuilt-tdlib` модули принимаются через
+  опции `initTdlibRuntime`. По умолчанию `require('tdl')` / `require('prebuilt-tdlib')`.
+  Тесты передают mock'и — без реального TDLib подключения.
+
+### Tests
+- **`src/__tests__/tdlibRuntime.vitest.js`** (260 строк, 22 теста):
+  - initTdlibRuntime: 7 (validation, configure call, returned manager,
+    sessions-папка создаётся, идемпотентность, пустой path, clientFactory дёргает tdl.createClient)
+  - getTdlibManager / getTdlibRuntimeState: 2 (null до init, заполнено после)
+  - getSessionDirForAccount: 2
+  - closeTdlibRuntime: 4 (сброс singleton, закрытие клиентов, идемпотентность)
+  - autoRestoreSessionsFromDisk: 6 (восстановление из disk, ignore pending,
+    dedup, пустые случаи, файлы пропускаются)
+  - Каждый тест в изолированной tmp-папке (`fs.mkdtempSync`) с cleanup в afterEach.
+
+### Прогресс по плану миграции
+- Этапы 0, 1, 2.1-2.6 ✅
+- **Этап 3.1 (TDLib runtime singleton) ✅** — текущий коммит
+- Этап 3.2 (IPC handlers для TDLib — `tg:*` channels через backend) — следующий
+- Этап 3.3 (интеграция в main.js startup + USE_TDLIB_BACKEND feature flag) — после 3.2
+- Этап 4 (финализация, удаление GramJS) — после 3
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 2.6: tdlibBackend — подключение всех модулей. **Этап 2 закрыт.**
 
 ### Added
