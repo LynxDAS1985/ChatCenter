@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.14 (15 мая 2026)
+## Текущая версия: v0.89.15 (15 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.14). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.15). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,70 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.15 — Видео раз и навсегда: ВСЕГДА ждём `is_downloading_completed`, копируем в `tg-media/`
+
+**Контекст**: после v0.89.14 пользователь сообщил `ENOENT` на `tdlib-sessions/.../temp/2767` — десятки повторов за 2 секунды при попытке перезапустить видео. Логи (`chatcenter.log` 15 мая 18:17:55-57) показали, что фикс v0.89.14 (`stabilizeTempFile` для temp/) применялся **только** к non-streamable видео из-за условия `if (!r?.partial)` в `downloadVideo` — streamable (`supports_streaming=true`) обходили стабилизацию.
+
+#### Корневая причина (одной строкой)
+
+Архитектурно неверная попытка отдать `<video>` URL в TDLib-папку, которая нестабильна:
+1. `tdlib-sessions/.../pending/files/temp/<N>` — TDLib переименовывает на completion, чистит при `optimizeStorage`
+2. `tdlib-sessions/.../videos/<hash>.<ext>` — TDLib удаляет при чистке («Очистить кеш» вызывает `optimizeStorage`)
+3. Progressive playback (early-resolve на 256 KB префикса) даёт ссылку на ещё-растущий файл с потенциально меняющимся именем
+
+По [TDLib docs](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1local_file.html): `path` стабилен **только** после `is_downloading_completed=true`. Но даже после — наш UI «Очистить кеш» может удалить файл.
+
+#### Радикальное решение (одно, надёжное, навсегда)
+
+**Принцип**: НИ ОДИН TDLib-файл плеером напрямую не читается. Любой скачанный файл копируется в `userData/tg-media/<fileId>_<size>.<ext>` — это **НАША** папка, TDLib её не трогает.
+
+**4 файла, ~150 строк правок**:
+
+1. **[main/native/backends/tdlibMedia.js](../main/native/backends/tdlibMedia.js)**:
+   - Удалён параметр `progressive` из `downloadFile`. Всегда ждём `is_downloading_completed=true`. Никаких early-резолвов
+   - `stabilizeTempFile` → `stabilizeForPlayback`: копирует ЛЮБОЙ TDLib-файл (не только `temp/`) в `tg-media/`
+   - Имя файла детерминированно: `<fileId>_<size>.<ext>` — дедуп между чатами и сессиями
+   - При совпадении размера в `tg-media/` — copy не делается (быстрый кеш)
+
+2. **[main/native/backends/tdlibBackend.js](../main/native/backends/tdlibBackend.js)**:
+   - `media.download` и `media.downloadVideo` теперь **всегда** вызывают `stabilizeForPlayback` после успешной загрузки (раньше было `if (!r?.partial)` — пропускало streamable)
+   - `downloadVideo` больше не читает `tdMsg.content.video.supports_streaming` (флаг больше не нужен)
+
+3. **[src/native/components/VideoTile.jsx](../src/native/components/VideoTile.jsx)**:
+   - Удалён state `partial` и связанный с ним оверлей «Загрузка X%» поверх играющего видео
+   - Effect для `tg:media-progress` теперь зависит только от `downloading`
+   - UX: пользователь видит прогресс-спиннер на постере до начала проигрывания. Когда видео стартует — оно полностью на диске, плавная перемотка, никаких неожиданных остановок
+
+4. **[main/native/ccMediaProtocol.js](../main/native/ccMediaProtocol.js)**:
+   - Удалён `kind='tdlib'` handler. Плеер больше не может попасть в `tdlib-sessions/` через cc-media. Любая старая ссылка с `cc-media://tdlib/...` вернёт 404 (но таких в UI после рестарта не остаётся — URL генерируются заново)
+
+**Тесты**: добавлено 13 новых для `stabilizeForPlayback` + 4 переписанных для `downloadFile` (теперь проверяют, что progressive флаг игнорируется и `partial` поле не возвращается). Всего: 546 → 559 vitest тестов.
+
+#### Что починилось (5 разных багов одним фиксом)
+
+| Симптом | Версия добавлен | Корень |
+|---|---|---|
+| `ENOENT: tdlib-sessions/.../temp/<N>` | v0.89.8 | TDLib чистит `temp/` |
+| `PIPELINE_ERROR_DECODE` при переходе temp→videos | v0.89.8 | Путь меняется в процессе воспроизведения |
+| «Перемотка не работает» (отскакивает в начало) | v0.89.10 (clamp по `buffered`), v0.89.12 | Range запросы на нестабильный файл |
+| «Запускается с начала» после паузы | v0.89.11 | `<video>` перезапускается на потере источника |
+| Видео ломается после «Очистить кеш» | давно | `optimizeStorage` удаляет TDLib-файлы |
+
+#### Что подтверждает решение
+
+1. **TDLib официальная документация**: `path` нестабилен до `is_downloading_completed=true`
+2. **Логи пользователя**: 50+ ENOENT именно на `pending/files/temp/2767` (15 мая 18:17:55-57)
+3. **Telegram Web K / Desktop**: тоже не дают плееру прямой путь, проксируют через `readFilePart` (у нас простая альтернатива — копия в свою папку)
+4. **Запись в [.memory-bank/mistakes/tdlib-video-player.md](mistakes/tdlib-video-player.md)** — добавлены ловушки #8 и #9, итого 9 ловушек в серии v0.89.6–v0.89.15
+
+#### Чего НЕ делаем (и почему)
+
+- ❌ Не используем `readFilePart` стриминг через cc-media — у нас локальный диск, проще скопировать
+- ❌ Не возвращаем progressive playback с обновлением URL на лету — Chromium `<video>` теряет позицию при смене `src`
+- ❌ Не оставляем kind=`tdlib` в ccMediaProtocol «на всякий случай» — это была подпорка, скрывавшая баг
 
 ---
 

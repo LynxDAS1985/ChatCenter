@@ -1,4 +1,5 @@
 // v0.89.0 — Stage 4 / Этап 2.5: тесты TDLib media.
+// v0.89.15 — progressive playback удалён, stabilizeForPlayback → отдельный файл.
 
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
@@ -21,10 +22,6 @@ function makeManager() {
   mgr.createAccount('tg_a', {})
   return { mgr, mockClient }
 }
-
-// ──────────────────────────────────────────────────────────────────────
-// extractMediaFileId
-// ──────────────────────────────────────────────────────────────────────
 
 describe('extractMediaFileId', () => {
   it('messagePhoto → fileId максимального размера', () => {
@@ -76,10 +73,6 @@ describe('extractMediaFileId', () => {
       .toEqual({ fileId: null, kind: 'photo' })
   })
 })
-
-// ──────────────────────────────────────────────────────────────────────
-// getCachedFilePath
-// ──────────────────────────────────────────────────────────────────────
 
 describe('getCachedFilePath', () => {
   it('downloading_completed=true → возвращает path', () => {
@@ -324,75 +317,77 @@ describe('tdlibPathToCcMediaUrl', () => {
 
 })
 
-// v0.89.9: progressive playback ТОЛЬКО при флаге progressive:true (по TDLib
-// docs: video.supports_streaming). Иначе non-streamable видео показывают
-// 0:00 (moov atom в конце файла, без него <video> не знает длительность).
-describe('downloadFile progressive playback (v0.89.9 — opt-in)', () => {
-  it('progressive:true + prefix>=256KB → резолв early с partial:true', async () => {
+// v0.89.15: downloadFile ВСЕГДА ждёт is_downloading_completed=true.
+// См. .memory-bank/mistakes/tdlib-video-player.md ловушки #8, #9.
+describe('downloadFile: всегда ждёт is_downloading_completed (v0.89.15)', () => {
+  it('partial download (prefix>=256 KB) НЕ резолвит раньше completion', async () => {
     const { mgr, mockClient } = makeManager()
-    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 100, local: {} }))
-    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 100, priority: 1, progressive: true })
-    setImmediate(() => {
-      mockClient.emit('update', {
-        '@type': 'updateFile',
-        file: { id: 100, local: { is_downloading_completed: false, downloaded_prefix_size: 256 * 1024, path: 'C:\\app\\tdlib-sessions\\tg_a\\files\\videos\\big.mp4' } },
-      })
-    })
-    const r = await p
-    expect(r.partial).toBe(true)
-    expect(r.path).toBe('cc-media://tdlib/tg_a/files/videos/big.mp4')
-  })
-
-  it('progressive:false (default) + prefix>=256KB → НЕ резолв early', async () => {
-    const { mgr, mockClient } = makeManager()
-    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 101, local: {} }))
+    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 200, local: {} }))
     let resolved = false
-    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 101, priority: 1 })
+    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 200, priority: 1 })
     p.then(() => { resolved = true })
     mockClient.emit('update', {
       '@type': 'updateFile',
-      file: { id: 101, local: { is_downloading_completed: false, downloaded_prefix_size: 256 * 1024, path: '/x' } },
-    })
-    await new Promise(r => setTimeout(r, 20))
-    expect(resolved).toBe(false)
-    // cleanup — completed
-    mockClient.emit('update', {
-      '@type': 'updateFile',
-      file: { id: 101, local: { is_downloading_completed: true, path: 'C:\\app\\tdlib-sessions\\tg_a\\files\\X.jpg' } },
-    })
-    await p
-  })
-
-  it('completed всегда резолв с partial:false (даже без progressive)', async () => {
-    const { mgr, mockClient } = makeManager()
-    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 102, local: {} }))
-    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 102, priority: 1 })
-    setImmediate(() => {
-      mockClient.emit('update', {
-        '@type': 'updateFile',
-        file: { id: 102, local: { is_downloading_completed: true, path: 'C:\\app\\tdlib-sessions\\tg_a\\files\\X.jpg' } },
-      })
-    })
-    const r = await p
-    expect(r.partial).toBe(false)
-  })
-
-  it('progressive:true но prefix<256KB → НЕ резолв early (мало данных)', async () => {
-    const { mgr, mockClient } = makeManager()
-    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 103, local: {} }))
-    let resolved = false
-    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 103, priority: 1, progressive: true })
-    p.then(() => { resolved = true })
-    mockClient.emit('update', {
-      '@type': 'updateFile',
-      file: { id: 103, local: { is_downloading_completed: false, downloaded_prefix_size: 100, path: '/x' } },
+      file: { id: 200, local: { is_downloading_completed: false, downloaded_prefix_size: 1024 * 1024, path: '/temp/200' } },
     })
     await new Promise(r => setTimeout(r, 20))
     expect(resolved).toBe(false)
     mockClient.emit('update', {
       '@type': 'updateFile',
-      file: { id: 103, local: { is_downloading_completed: true, path: 'C:\\app\\tdlib-sessions\\tg_a\\files\\X.jpg' } },
+      file: { id: 200, local: { is_downloading_completed: true, path: '/stable/X.mp4' } },
+    })
+    const r = await p
+    expect(r.ok).toBe(true)
+    expect(r.path).toBe('/stable/X.mp4')
+  })
+
+  it('progressive флаг проигнорирован (фича удалена) — всё равно ждёт completed', async () => {
+    const { mgr, mockClient } = makeManager()
+    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 201, local: {} }))
+    let resolved = false
+    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 201, priority: 1, progressive: true })
+    p.then(() => { resolved = true })
+    mockClient.emit('update', {
+      '@type': 'updateFile',
+      file: { id: 201, local: { is_downloading_completed: false, downloaded_prefix_size: 5 * 1024 * 1024, path: '/temp/201' } },
+    })
+    await new Promise(r => setTimeout(r, 20))
+    expect(resolved).toBe(false)
+    mockClient.emit('update', {
+      '@type': 'updateFile',
+      file: { id: 201, local: { is_downloading_completed: true, path: '/stable/Y.mp4' } },
     })
     await p
+  })
+
+  it('result.partial поле НЕ возвращается', async () => {
+    const { mgr, mockClient } = makeManager()
+    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 202, local: {} }))
+    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 202, priority: 1 })
+    setImmediate(() => {
+      mockClient.emit('update', {
+        '@type': 'updateFile',
+        file: { id: 202, local: { is_downloading_completed: true, path: '/x' } },
+      })
+    })
+    const r = await p
+    expect(r.partial).toBeUndefined()
+    expect(r.path).toBe('/x')
+  })
+
+  it('download_error → ok:false', async () => {
+    const { mgr, mockClient } = makeManager()
+    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 203, local: {} }))
+    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 203, priority: 1 })
+    setImmediate(() => {
+      mockClient.emit('update', {
+        '@type': 'updateFile',
+        file: { id: 203, local: { is_downloading_completed: false, download_error: { code: 400 } } },
+      })
+    })
+    const r = await p
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('download failed')
   })
 })
+

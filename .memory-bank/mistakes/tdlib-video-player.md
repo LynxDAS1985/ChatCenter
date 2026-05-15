@@ -1,6 +1,8 @@
-# Ловушки TDLib медиа + HTML5 video plyer
+# Ловушки TDLib медиа + HTML5 video player
 
-Серия ошибок v0.89.6 → v0.89.13 — миграция медиа-пайплайна с GramJS на TDLib + воспроизведение видео через Chromium `<video>`. Записано чтобы **не повторять**.
+Серия ошибок v0.89.6 → v0.89.15 — миграция медиа-пайплайна с GramJS на TDLib + воспроизведение видео через Chromium `<video>`. Записано чтобы **не повторять**.
+
+**Итоговое архитектурное решение (v0.89.15)**: НИ ОДИН файл TDLib плеер напрямую не читает. Любой скачанный файл копируется в `userData/tg-media/<fileId>_<size>.<ext>` и плеер получает только `cc-media://media/...`. См. ловушки #8, #9.
 
 ---
 
@@ -169,6 +171,56 @@ function logToMain(level, message) {
 
 ---
 
+## Ловушка #8: TDLib `temp/<N>` нестабилен — даже короткий промежуток между ENOENT
+
+**Версия**: исправлено радикально в v0.89.15 (после неполных попыток v0.89.13/14).
+
+**Симптом**: после короткой паузы (1–5 минут) или нажатия «Перезапустить» — `<video>` падает в `MEDIA_ERR_SRC_NOT_SUPPORTED`. В `chatcenter.log` десятки строк:
+```
+[ERROR] [cc-media] file not found: ...\tdlib-sessions\pending\files\temp\2767
+err: ENOENT — no such file
+```
+
+**Корневая причина**:
+- TDLib хранит файлы в процессе скачивания в `tdlib-sessions/.../pending/files/temp/<N>`
+- Когда `is_downloading_completed=true`, TDLib **переименовывает** `temp/<N>` → `videos/<hash>.<ext>` (или удаляет temp если файл сразу cached)
+- Даже completed файлы TDLib удаляет при чистке (`optimizeStorage` — вызывается нашим UI «Очистить кеш»)
+- В v0.89.8–v0.89.14 я резолвил `downloadFile` с partial-флагом и отдавал URL вида `cc-media://tdlib/.../temp/2767`. Плеер хранил этот URL, через минуту TDLib чистил temp → ENOENT при первой же попытке seek/restart.
+
+**По официальной TDLib документации** ([td_api::file::local::path](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1local_file.html)):
+> `path` of the local file. Empty if not available, which can be the case even if `downloaded_size` is non-zero. **Can be changed remotely at any time before the file is downloaded** to the local filesystem.
+
+То есть путь стабилен **только** после `is_downloading_completed=true`. Но даже после — наш собственный `optimizeStorage()` может его убить.
+
+**Решение (v0.89.15)**: НИ ОДИН TDLib-файл не отдаётся плееру напрямую. Любой скачанный файл копируется в `userData/tg-media/<fileId>_<size>.<ext>`. Папка `tg-media/` — НАША, TDLib её не трогает. См. `stabilizeForPlayback()` в [tdlibMedia.js](../../main/native/backends/tdlibMedia.js).
+
+**Правило**: для любого медиа, попадающего в `<video>`/`<img>` через `cc-media://` — **обязательно** копировать в `tg-media/` через `stabilizeForPlayback()`. Не отдавать URL `cc-media://tdlib/...` плееру (kind=`tdlib` удалён из ccMediaProtocol.js в v0.89.15).
+
+---
+
+## Ловушка #9: Progressive playback с unstable URL — фундаментально не работает
+
+**Версия**: добавлено в v0.89.8, удалено в v0.89.15.
+
+**Симптом**: видео начинает играть, перемотка вперёд иногда работает, после паузы или попытки перезапуска — `<video>` теряет позицию, скачет в 0:00 или падает в `PIPELINE_ERROR_DECODE`. После закрытия чата и возврата — `MEDIA_ERR_SRC_NOT_SUPPORTED`.
+
+**Корневая причина**: progressive playback требует, чтобы URL источника был **стабилен на всё время воспроизведения**. У TDLib URL временный:
+1. На 256 KB префикса я резолвил с URL `cc-media://tdlib/temp/<N>`
+2. TDLib продолжал докачивать, файл рос — `<video>` Range-запрос на новые байты иногда получал «обрезанный» chunk
+3. Когда TDLib финализировал скачивание — `temp/<N>` исчезал, появлялся `videos/<hash>.<ext>` — URL уже не валиден
+4. Chromium `<video>` не умеет менять `src` без перезапуска и потери позиции
+
+**Сравнение с тем, как работают официальные клиенты**:
+- **Telegram Desktop** (C++): свой плеер через `readFilePart` API
+- **Telegram Web K** (WASM): Service Worker перехватывает media requests и тоже зовёт `readFilePart`
+- **Оба никогда** не дают плееру прямой путь к TDLib-файлу
+
+У нас есть локальный диск — мы можем просто скачать и скопировать. Это и проще, и надёжнее, чем стримить через `readFilePart`.
+
+**Правило**: `downloadFile` в [tdlibMedia.js](../../main/native/backends/tdlibMedia.js) **всегда** ждёт `is_downloading_completed=true`. Никаких early-резолвов. UX-компенсация — прогресс-спиннер на постере (уже был в [VideoTile.jsx](../../src/native/components/VideoTile.jsx) с v0.87.36).
+
+---
+
 ## Урок-обобщение: процесс отладки видео
 
 1. **Сначала факты от пользователя**: что именно видно? таймер 0:00 vs играет 0:22 — РАЗНЫЕ проблемы.
@@ -190,3 +242,11 @@ function logToMain(level, message) {
    - Clamp seeks по `<video>.buffered`
    - «Защитные кнопки» поверх собственных багов
    - Менять несколько вещей сразу когда жалоба на одну
+   - Отдавать `<video>`/`<img>` URL вида `cc-media://tdlib/...` (kind=`tdlib` удалён в v0.89.15)
+   - Резолвить `downloadFile` раньше `is_downloading_completed=true`
+   - Доверять «временным» полям TDLib (downloaded_prefix_size, partial path)
+
+7. **ДЕЛАТЬ**:
+   - Любой скачанный файл — через `stabilizeForPlayback()` → `tg-media/<fileId>_<size>.<ext>` → `cc-media://media/...`
+   - Для UX «не блокировать UI» — прогресс-спиннер на постере (уже есть)
+   - При жалобе пользователя на «не работает» — сначала `git log` за последние 5 коммитов, проверить что **я недавно сломал**, не лепить новые UI элементы

@@ -23,7 +23,7 @@ import {
 } from './tdlibMessages.js'
 import {
   downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
-  tdlibPathToCcMediaUrl, stabilizeTempFile, getStorageStatistics, optimizeStorage,
+  tdlibPathToCcMediaUrl, stabilizeForPlayback, getStorageStatistics, optimizeStorage,
 } from './tdlibMedia.js'
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
@@ -385,7 +385,8 @@ export function createTdlibBackend(opts = {}) {
     },
 
     media: {
-      // v0.89.14: temp/ → tg-media (TDLib чистит temp/, файлы могут пропасть)
+      // v0.89.15: ВСЕГДА копируем скачанные файлы в userData/tg-media/.
+      // Подробности — см. шапка tdlibMedia.js + mistakes/tdlib-video-player.md.
       async download({ chatId, msgId, onProgress }) {
         const ctx = getClientForChat(manager, chatId)
         if (ctx.error) return ctx.error
@@ -400,13 +401,13 @@ export function createTdlibBackend(opts = {}) {
             || tdMsg.content?.video?.video || tdMsg.content?.document?.document
             || tdMsg.content?.audio?.audio || tdMsg.content?.voice_note?.voice)
         if (cached) {
-          const stable = stabilizeTempFile(cached, userDataDir)
+          const stable = stabilizeForPlayback(cached, userDataDir, fileId)
           return { ok: true, path: stable || tdlibPathToCcMediaUrl(cached) || cached }
         }
         const r = await downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 16, onProgress })
         if (r?.ok && r?.file?.local?.path) {
-          const stable = stabilizeTempFile(r.file.local.path, userDataDir)
-          if (stable) r.path = stable
+          const stable = stabilizeForPlayback(r.file.local.path, userDataDir, fileId)
+          r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
         }
         return r
       },
@@ -419,11 +420,11 @@ export function createTdlibBackend(opts = {}) {
         } catch (e) { return { ok: false, error: e?.message || String(e) } }
         const fileId = tdMsg?.content?.video?.video?.id
         if (!fileId) return { ok: false, error: 'no video file' }
-        const progressive = !!tdMsg.content.video?.supports_streaming
-        const r = await downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 24, onProgress, progressive })
-        if (r?.ok && !r?.partial && r?.file?.local?.path) {
-          const stable = stabilizeTempFile(r.file.local.path, userDataDir)
-          if (stable) r.path = stable
+        // v0.89.15: НИКАКОГО progressive — ждём полной загрузки, потом stabilize.
+        const r = await downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 24, onProgress })
+        if (r?.ok && r?.file?.local?.path) {
+          const stable = stabilizeForPlayback(r.file.local.path, userDataDir, fileId)
+          r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
         }
         return r
       },

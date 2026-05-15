@@ -4,6 +4,10 @@
 //   2. Клик ▶ → tg:download-video (прогресс-бар), после окончания → <video controls autoplay inline>
 //   3. Кнопки ⛶ / 📌 поверх playing video → переводят в отдельное окно с той же секунды
 //   4. IntersectionObserver — auto-pause если видео уехало из viewport
+// v0.89.15: УБРАН progressive playback. Видео всегда ждёт полной загрузки
+// перед стартом — иначе TDLib чистит temp/ файл и плеер падает (ENOENT,
+// PIPELINE_ERROR_DECODE, перезапуск с 0:00). См. ловушка «временные файлы
+// TDLib» в .memory-bank/mistakes/tdlib-video-player.md.
 import { useEffect, useState, useRef } from 'react'
 
 function formatDuration(sec) {
@@ -42,9 +46,6 @@ export default function VideoTile({ m, chatId, inAlbum }) {
   const [playing, setPlaying] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState(0)
-  // v0.89.11: partial=true когда видео скачивается в фоне (progressive playback).
-  // Используем для показа индикатора «Загрузка X%» в углу видео пока играет.
-  const [partial, setPartial] = useState(false)
   const [error, setError] = useState(null)
   const videoRef = useRef(null)
   const containerRef = useRef(null)
@@ -61,23 +62,20 @@ export default function VideoTile({ m, chatId, inAlbum }) {
     return () => { cancelled = true }
   }, [m.id])
 
-  // Прогресс скачивания. v0.89.11: слушаем пока downloading ИЛИ partial
-  // (для progressive playback — индикатор «Загрузка X%» во время воспроизведения
-  // пока TDLib докачивает в фоне).
+  // v0.89.15: прогресс показывается только пока downloading=true (постер со
+  // спиннером). После полной загрузки videoSrc стабилен, ничего не качается.
   useEffect(() => {
-    if (!downloading && !partial) return
+    if (!downloading) return
     const sub = window.api?.on?.('tg:media-progress', (data) => {
       if (data.chatId !== chatId || String(data.messageId) !== String(m.id)) return
       if (data.total > 0) {
         const ratio = Math.min(1, data.bytes / data.total)
         setProgress(ratio)
-        // v0.89.11: когда докачали полностью — снимаем флаг partial и убираем индикатор
-        if (ratio >= 1) setPartial(false)
       }
     })
     if (typeof sub === 'function') unsubRef.current = sub
     return () => { try { unsubRef.current?.() } catch(_) {} }
-  }, [downloading, partial, m.id, chatId])
+  }, [downloading, m.id, chatId])
 
   // Auto-pause при уходе из viewport
   useEffect(() => {
@@ -100,19 +98,13 @@ export default function VideoTile({ m, chatId, inAlbum }) {
     setProgress(0)
     try {
       const r = await window.api?.invoke('tg:download-video', { chatId, messageId: m.id })
-      // v0.89.10: диагностика — логируем что получили от backend
       console.log('[VideoTile] tg:download-video result:', {
-        ok: r?.ok, path: r?.path, partial: r?.partial, fileSize: r?.file?.size,
-        downloaded: r?.file?.local?.downloaded_size,
-        prefix: r?.file?.local?.downloaded_prefix_size,
+        ok: r?.ok, path: r?.path, fileSize: r?.file?.size,
         completed: r?.file?.local?.is_downloading_completed,
         error: r?.error,
       })
       if (!r?.ok) { setError(r?.error || 'Не удалось скачать'); return }
       setVideoSrc(r.path)
-      // v0.89.11: запоминаем что файл ещё скачивается (для индикатора в углу).
-      // r.partial=true когда supports_streaming=true и резолв early на 256 KB.
-      setPartial(!!r.partial)
       setPlaying(true)
     } catch (err) {
       setError(err.message)
@@ -239,43 +231,9 @@ export default function VideoTile({ m, chatId, inAlbum }) {
             style={videoBtnStyle}
           >⛶</button>
         </div>
-        {/* v0.89.11: индикатор «идёт фоновая загрузка» — показывается только пока
-            partial=true. Пользователь видит что часть видео ещё качается и не
-            пугается зависанию при попытке перемотать вперёд (мы блокируем
-            seek за пределы буфера через onSeeking handler). */}
-        {partial && (
-          <>
-            <div style={{
-              position: 'absolute', top: 8, left: 8, zIndex: 10,
-              background: 'rgba(0,0,0,0.7)',
-              backdropFilter: 'blur(8px)',
-              color: '#fff', fontSize: 11, fontWeight: 500,
-              padding: '4px 10px', borderRadius: 6,
-              display: 'flex', alignItems: 'center', gap: 6,
-              pointerEvents: 'none',
-            }}>
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: 'var(--amoled-accent)',
-                animation: 'native-pulse 1.2s ease-in-out infinite',
-              }} />
-              <span>Загрузка {Math.round(progress * 100)}%</span>
-            </div>
-            {/* Тонкая полоска снизу видео — показывает докуда скачано */}
-            <div style={{
-              position: 'absolute', left: 0, right: 0, bottom: 0,
-              height: 2, zIndex: 9,
-              background: 'rgba(255,255,255,0.15)',
-              pointerEvents: 'none',
-            }}>
-              <div style={{
-                height: '100%', width: `${progress * 100}%`,
-                background: 'var(--amoled-accent)',
-                transition: 'width 0.2s',
-              }} />
-            </div>
-          </>
-        )}
+        {/* v0.89.15: индикатор «фоновой загрузки» удалён — видео всегда
+            играется только после полной загрузки. Прогресс виден на постере
+            до начала проигрывания (см. секцию `downloading` ниже). */}
       </div>
     )
   }

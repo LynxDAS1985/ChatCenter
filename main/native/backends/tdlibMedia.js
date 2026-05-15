@@ -1,18 +1,23 @@
 // v0.89.0 — Stage 4 / Этап 2.5: TDLib media (downloadFile + updateFile events)
+// v0.89.15 — РАДИКАЛЬНОЕ упрощение: убран progressive playback целиком.
 //
 // TDLib работает с файлами через асинхронный API:
 //   1. `client.invoke({'@type': 'downloadFile', file_id, priority, ...})` — запуск
 //   2. TDLib присылает `updateFile` events по мере прогресса:
 //        file.local.downloaded_size растёт, на каждом chunk
 //   3. Когда `file.local.is_downloading_completed === true` — `file.local.path`
-//        указывает на реальный путь файла на диске.
+//        указывает на ФИНАЛЬНЫЙ стабильный путь файла на диске.
 //
-// Архитектурно: TdlibClientManager уже эмитит `file:update` events при получении
-// `updateFile`. Эта обёртка `downloadFile` подписывается на manager (а не на client
-// напрямую), чтобы было разделение ответственности.
+// КРИТИЧНО (v0.89.15): мы НЕ резолвим раньше is_downloading_completed=true.
+// По официальной TDLib docs (td_api::file::local::path):
+//   «path of the local file. Empty if not available […]. Can be changed remotely
+//    AT ANY TIME before the file is downloaded to the local filesystem.»
+// До завершения путь нестабилен: TDLib может переименовать temp/<N> → videos/<hash>.mp4
+// или удалить temp/<N> при чистке. Серия v0.89.7–v0.89.14 шла по кругу из-за
+// попыток отдать temp-путь в <video> — TDLib его убирал, плеер падал в ENOENT.
 //
-// Также: если файл уже скачан до запуска downloadFile — invoke сразу вернёт
-// объект с is_downloading_completed=true. Тогда промис резолвится мгновенно.
+// Поэтому: ждём ПОЛНОЙ загрузки → каллер вызывает stabilizeForPlayback() →
+// копия в userData/tg-media/ (наша папка, TDLib её не трогает) → cc-media://media/...
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -64,16 +69,12 @@ export function getCachedFilePath(tdFile) {
 /**
  * v0.89.7: конвертирует абсолютный путь к файлу TDLib в cc-media:// URL.
  *
- * Раньше backend.media.download возвращал raw path (например
- * `C:\Users\...\tdlib-sessions\pending\files\videos\WAIFF_1.mp4`) — UI пытался
- * загрузить через `file:///` URL, и Chromium падал с DECODER_ERROR_NOT_SUPPORTED
- * для некоторых видео (file:/// scheme не имеет stream/bypassCSP privileges
- * cc-media протокола). Фото тоже не отображались — Chromium не загружал
- * через file:/// в этом контексте.
+ * ВНИМАНИЕ (v0.89.15): этот helper оставлен как fallback для случаев когда
+ * stabilizeForPlayback не смог скопировать файл (диск переполнен и т.п.).
+ * Основной путь воспроизведения — через `stabilizeForPlayback`, а не отсюда.
+ * См. ловушку «временные файлы TDLib» в `.memory-bank/mistakes/tdlib-video-player.md`.
  *
- * Новый формат URL: `cc-media://tdlib/{accountSubdir}/files/{kind}/{filename}`
- * → resolves в `userData/tdlib-sessions/{accountSubdir}/files/{kind}/{filename}`
- * через расширенный ccMediaProtocol handler.
+ * Формат URL: `cc-media://tdlib/{accountSubdir}/files/{kind}/{filename}`.
  *
  * @param {string} absPath — TDLib `file.local.path` (абсолютный OS-путь)
  * @returns {string|null} cc-media:// URL или null если путь не из tdlib-sessions
@@ -91,38 +92,50 @@ export function tdlibPathToCcMediaUrl(absPath) {
 }
 
 /**
- * v0.89.14: для файлов в `tdlib-sessions/.../files/temp/` TDLib может удалять
- * или перезаписывать их в любой момент (это temp директория). Логи показали
- * «no video file» — UI получал путь, потом TDLib удалял файл, и cc-media
- * handler возвращал 404.
+ * v0.89.15: КОПИРУЕТ скачанный TDLib-файл в стабильную папку userData/tg-media/.
  *
- * Решение: копируем temp/ файлы в стабильный `userData/tg-media/` (как делал
- * GramJS). Возвращаем cc-media://media/ URL — там TDLib не достанет.
+ * Почему НЕ играем напрямую из tdlib-sessions/:
+ *   1. `temp/<N>` файлы TDLib удаляет при чистке (ENOENT в логах v0.89.14)
+ *   2. Даже completed файлы TDLib может удалить через optimizeStorage()
+ *      (вызывается нашим UI «Очистить кеш»)
+ *   3. Путь может измениться между partial→completed (temp/N → videos/hash.mp4)
+ *      → Chromium <video> теряет src
  *
- * @param {string} absPath — TDLib file.local.path
+ * Папка `tg-media/` — НАША, TDLib её не трогает. Гарантия стабильности URL
+ * на всё время жизни приложения (до явного `cleanupTgMedia` если будет).
+ *
+ * Дедуп: имя файла = `<fileId>_<size>.<ext>`. Если файл с таким именем
+ * и таким же размером уже на диске — копировать не надо.
+ *
+ * @param {string} absPath — TDLib `file.local.path` (после is_downloading_completed=true)
  * @param {string} userDataDir — корневой userData (для tg-media/)
- * @returns {string|null} cc-media://media/<filename> или null если не temp
+ * @param {number|string} [fileId] — TDLib file.id (для стабильного имени)
+ * @returns {string|null} cc-media://media/<name> или null если что-то пошло не так
  */
-export function stabilizeTempFile(absPath, userDataDir) {
-  if (!absPath || !userDataDir) return null
-  const normalized = absPath.replace(/\\/g, '/')
-  if (!normalized.includes('/files/temp/')) return null
+export function stabilizeForPlayback(absPath, userDataDir, fileId) {
+  if (!absPath || !userDataDir || typeof absPath !== 'string') return null
   try {
     if (!fs.existsSync(absPath)) return null
-    const size = fs.statSync(absPath).size
-    if (size <= 0) return null
-    const ext = path.extname(absPath) || '.bin'
-    // Используем size + базовое имя как ключ — если TDLib переоткроет тот же
-    // файл, мы переиспользуем копию (не дублируем диск). Если изменился размер
-    // — копируем заново.
-    const baseName = path.basename(absPath, ext).replace(/[^a-zA-Z0-9_-]/g, '_')
-    const stableName = `${baseName}_${size}${ext}`
+    const stat = fs.statSync(absPath)
+    if (!stat.isFile() || stat.size <= 0) return null
+    const size = stat.size
+    const ext = (path.extname(absPath) || '.bin').toLowerCase()
+    // Стабильное имя:
+    //   - предпочитаем `<fileId>_<size><ext>` (детерминированно, дедуп между чатами)
+    //   - fallback `<basename>_<size><ext>` — если fileId не передан
+    const idPart = (fileId !== undefined && fileId !== null && fileId !== '')
+      ? String(fileId).replace(/[^a-zA-Z0-9_-]/g, '_')
+      : path.basename(absPath, path.extname(absPath)).replace(/[^a-zA-Z0-9_-]/g, '_')
+    const stableName = `${idPart}_${size}${ext}`
     const mediaDir = path.join(userDataDir, 'tg-media')
     try { fs.mkdirSync(mediaDir, { recursive: true }) } catch (_) {}
     const destPath = path.join(mediaDir, stableName)
-    if (!fs.existsSync(destPath) || fs.statSync(destPath).size !== size) {
-      fs.copyFileSync(absPath, destPath)
-    }
+    // Дедуп: если копия с тем же размером уже есть — пропускаем copy.
+    let needCopy = true
+    try {
+      if (fs.existsSync(destPath) && fs.statSync(destPath).size === size) needCopy = false
+    } catch (_) {}
+    if (needCopy) fs.copyFileSync(absPath, destPath)
     return `cc-media://media/${encodeURIComponent(stableName)}`
   } catch (_) { return null }
 }
@@ -132,7 +145,12 @@ export function stabilizeTempFile(absPath, userDataDir) {
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Запускает скачивание файла и ждёт завершения.
+ * Запускает скачивание файла и ждёт ПОЛНОГО завершения (is_downloading_completed=true).
+ *
+ * v0.89.15: убран флаг `progressive`. См. шапку файла — резолвить раньше
+ * полной загрузки запрещено из-за нестабильности temp-путей TDLib.
+ * Для UX «не блокировать UI на больших видео» — caller показывает прогресс-бар
+ * через onProgress (см. VideoTile.jsx — spinner с процентами на постере).
  *
  * @param {object} opts
  * @param {object} opts.manager — TdlibClientManager (нужен для подписки на file:update)
@@ -140,15 +158,11 @@ export function stabilizeTempFile(absPath, userDataDir) {
  * @param {number} opts.fileId — TDLib file.id (целое число)
  * @param {number} [opts.priority=1] — 1 (low) ... 32 (high)
  * @param {(file: object) => void} [opts.onProgress] — вызывается на каждом chunk
- * @param {boolean} [opts.progressive=false] — для streamable видео (см. TDLib
- *   `video.supports_streaming` — True если moov atom в начале файла). Если true,
- *   резолвим раньше при downloaded_prefix_size >= 256 KB чтобы UI начал играть
- *   пока остаток скачивается. Для НЕ-streamable видео (supports_streaming=false)
- *   moov atom в конце — без него плеер показывает 0:00. ВСЕГДА false по дефолту
- *   во избежание чёрного экрана.
- * @returns {Promise<{ ok, path?: string, file?: object, partial?: boolean, error? }>}
+ * @returns {Promise<{ ok, path?: string, file?: object, error? }>}
+ *   `path` — RAW TDLib file.local.path. Caller ОБЯЗАН пропустить через
+ *   `stabilizeForPlayback` перед передачей в renderer.
  */
-export function downloadFile({ manager, accountId, fileId, priority = 1, onProgress, progressive = false }) {
+export function downloadFile({ manager, accountId, fileId, priority = 1, onProgress }) {
   if (!manager) return Promise.resolve({ ok: false, error: 'manager required' })
   if (!accountId) return Promise.resolve({ ok: false, error: 'accountId required' })
   if (fileId == null) return Promise.resolve({ ok: false, error: 'fileId required' })
@@ -158,35 +172,17 @@ export function downloadFile({ manager, accountId, fileId, priority = 1, onProgr
   return new Promise((resolve) => {
     let settled = false
 
-    // v0.89.9: progressive playback ТОЛЬКО для streamable видео (TDLib
-    // `video.supports_streaming === true`). Caller передаёт progressive: true
-    // только если флаг есть на medias. Иначе ждём полной загрузки —
-    // для non-streamable файлов moov atom в конце, без него <video> показывает
-    // 0:00 и чёрный экран. См. TDLib docs:
-    //   https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1video.html
-    //   field supports_streaming — "True, if the video is expected to be streamed"
-    const PROGRESSIVE_THRESHOLD = 256 * 1024
     // Слушатель updateFile — фильтруем по accountId + fileId.
     const onFileUpdate = ({ accountId: aid, file }) => {
       if (settled || aid !== accountId || file?.id !== Number(fileId)) return
       // Прогресс
       try { onProgress?.(file) } catch (_) {}
-      const completed = !!file?.local?.is_downloading_completed
-      const earlyReady = progressive
-        && !completed
-        && file?.local?.path
-        && Number(file.local?.downloaded_prefix_size || 0) >= PROGRESSIVE_THRESHOLD
-      if (completed || earlyReady) {
+      if (file?.local?.is_downloading_completed) {
         settled = true
         manager.off('file:update', onFileUpdate)
-        resolve({
-          ok: true,
-          path: tdlibPathToCcMediaUrl(file.local.path) || file.local.path,
-          file,
-          partial: !completed,
-        })
+        // Возвращаем RAW путь — caller должен стабилизировать.
+        resolve({ ok: true, path: file.local.path, file })
       } else if (file?.local?.download_error) {
-        // TDLib может пометить ошибку в local.download_error
         settled = true
         manager.off('file:update', onFileUpdate)
         resolve({ ok: false, error: `download failed: file ${fileId}` })
@@ -207,7 +203,7 @@ export function downloadFile({ manager, accountId, fileId, priority = 1, onProgr
       if (!settled && result?.local?.is_downloading_completed) {
         settled = true
         manager.off('file:update', onFileUpdate)
-        resolve({ ok: true, path: tdlibPathToCcMediaUrl(result.local.path) || result.local.path, file: result })
+        resolve({ ok: true, path: result.local.path, file: result })
       }
     }).catch((err) => {
       if (!settled) {
