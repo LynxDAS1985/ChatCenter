@@ -14,6 +14,9 @@
 // Также: если файл уже скачан до запуска downloadFile — invoke сразу вернёт
 // объект с is_downloading_completed=true. Тогда промис резолвится мгновенно.
 
+import fs from 'node:fs'
+import path from 'node:path'
+
 // ──────────────────────────────────────────────────────────────────────
 // HELPERS
 // ──────────────────────────────────────────────────────────────────────
@@ -85,6 +88,43 @@ export function tdlibPathToCcMediaUrl(absPath) {
   const normalized = after.replace(/\\/g, '/')
   // encodeURI пропускает разделители /, но кодирует Cyrillic и пробелы.
   return `cc-media://tdlib/${encodeURI(normalized)}`
+}
+
+/**
+ * v0.89.14: для файлов в `tdlib-sessions/.../files/temp/` TDLib может удалять
+ * или перезаписывать их в любой момент (это temp директория). Логи показали
+ * «no video file» — UI получал путь, потом TDLib удалял файл, и cc-media
+ * handler возвращал 404.
+ *
+ * Решение: копируем temp/ файлы в стабильный `userData/tg-media/` (как делал
+ * GramJS). Возвращаем cc-media://media/ URL — там TDLib не достанет.
+ *
+ * @param {string} absPath — TDLib file.local.path
+ * @param {string} userDataDir — корневой userData (для tg-media/)
+ * @returns {string|null} cc-media://media/<filename> или null если не temp
+ */
+export function stabilizeTempFile(absPath, userDataDir) {
+  if (!absPath || !userDataDir) return null
+  const normalized = absPath.replace(/\\/g, '/')
+  if (!normalized.includes('/files/temp/')) return null
+  try {
+    if (!fs.existsSync(absPath)) return null
+    const size = fs.statSync(absPath).size
+    if (size <= 0) return null
+    const ext = path.extname(absPath) || '.bin'
+    // Используем size + базовое имя как ключ — если TDLib переоткроет тот же
+    // файл, мы переиспользуем копию (не дублируем диск). Если изменился размер
+    // — копируем заново.
+    const baseName = path.basename(absPath, ext).replace(/[^a-zA-Z0-9_-]/g, '_')
+    const stableName = `${baseName}_${size}${ext}`
+    const mediaDir = path.join(userDataDir, 'tg-media')
+    try { fs.mkdirSync(mediaDir, { recursive: true }) } catch (_) {}
+    const destPath = path.join(mediaDir, stableName)
+    if (!fs.existsSync(destPath) || fs.statSync(destPath).size !== size) {
+      fs.copyFileSync(absPath, destPath)
+    }
+    return `cc-media://media/${encodeURIComponent(stableName)}`
+  } catch (_) { return null }
 }
 
 // ──────────────────────────────────────────────────────────────────────

@@ -106,6 +106,11 @@ export function registerCcMediaHandler(userData) {
             }
             const chunkSize = end - start + 1
             const stream = fs.createReadStream(filePath, { start, end })
+            // v0.89.14: УБРАЛ Cache-Control: 'no-store'. Логи показали что
+            // <video> делает 60+ seekings за 5 сек когда кеш запрещён —
+            // плеер перезапрашивает Range на каждый seek, decoder не успевает
+            // собрать поток → PIPELINE_ERROR_DECODE. Без no-store Chromium
+            // кеширует Range ответы и seek работает локально.
             return new Response(Readable.toWeb(stream), {
               status: 206,
               headers: {
@@ -113,7 +118,6 @@ export function registerCcMediaHandler(userData) {
                 'Content-Length': String(chunkSize),
                 'Content-Range': `bytes ${start}-${end}/${total}`,
                 'Accept-Ranges': 'bytes',
-                'Cache-Control': 'no-store',
               },
             })
           }
@@ -128,7 +132,6 @@ export function registerCcMediaHandler(userData) {
             'Content-Type': mime,
             'Content-Length': String(total),
             'Accept-Ranges': 'bytes',
-            'Cache-Control': 'no-store',
           },
         })
       } catch (e) {

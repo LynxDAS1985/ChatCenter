@@ -23,7 +23,7 @@ import {
 } from './tdlibMessages.js'
 import {
   downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
-  tdlibPathToCcMediaUrl, getStorageStatistics, optimizeStorage,
+  tdlibPathToCcMediaUrl, stabilizeTempFile, getStorageStatistics, optimizeStorage,
 } from './tdlibMedia.js'
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
@@ -94,10 +94,8 @@ function makeExtras(manager, accountId) {
  * @param {object} opts
  * @param {object} opts.manager — TdlibClientManager (обязательно)
  * @param {(accountSubdir?: string) => object} [opts.makeClientParams] — функция
- *   возвращающая параметры для clientFactory (apiId, apiHash, tdlibParameters,
- *   accountSubdir) при создании нового аккаунта.
- * @param {string} [opts.userDataDir] — userData папка (нужна `getCleanupStats`
- *   для fs-скана tdlib-sessions/ и tg-avatars/).
+ *   возвращающая параметры для clientFactory при создании нового аккаунта.
+ * @param {string} [opts.userDataDir] — userData папка (для getCleanupStats fs-скана).
  * @returns {import('../messengerBackend.js').MessengerBackend}
  */
 export function createTdlibBackend(opts = {}) {
@@ -387,44 +385,46 @@ export function createTdlibBackend(opts = {}) {
     },
 
     media: {
-      // v0.89.4: onProgress callback из IPC handler → media.download → downloadFile
+      // v0.89.14: temp/ → tg-media (TDLib чистит temp/, файлы могут пропасть)
       async download({ chatId, msgId, onProgress }) {
         const ctx = getClientForChat(manager, chatId)
         if (ctx.error) return ctx.error
         let tdMsg
         try {
-          tdMsg = await ctx.client.invoke({
-            '@type': 'getMessage', chat_id: ctx.rawId, message_id: Number(msgId),
-          })
+          tdMsg = await ctx.client.invoke({ '@type': 'getMessage', chat_id: ctx.rawId, message_id: Number(msgId) })
         } catch (e) { return { ok: false, error: e?.message || String(e) } }
         const { fileId } = extractMediaFileId(tdMsg?.content)
         if (!fileId) return { ok: false, error: 'no media file in message' }
         const cached = getCachedFilePath(
           tdMsg.content?.photo?.sizes?.[tdMsg.content.photo.sizes.length - 1]?.photo
             || tdMsg.content?.video?.video || tdMsg.content?.document?.document
-            || tdMsg.content?.audio?.audio || tdMsg.content?.voice_note?.voice
-        )
-        // v0.89.7: конвертация raw TDLib path → cc-media:// URL (UI ждёт это
-        if (cached) return { ok: true, path: tdlibPathToCcMediaUrl(cached) || cached }
-        return downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 16, onProgress })
+            || tdMsg.content?.audio?.audio || tdMsg.content?.voice_note?.voice)
+        if (cached) {
+          const stable = stabilizeTempFile(cached, userDataDir)
+          return { ok: true, path: stable || tdlibPathToCcMediaUrl(cached) || cached }
+        }
+        const r = await downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 16, onProgress })
+        if (r?.ok && r?.file?.local?.path) {
+          const stable = stabilizeTempFile(r.file.local.path, userDataDir)
+          if (stable) r.path = stable
+        }
+        return r
       },
       async downloadVideo({ chatId, msgId, onProgress }) {
         const ctx = getClientForChat(manager, chatId)
         if (ctx.error) return ctx.error
         let tdMsg
         try {
-          tdMsg = await ctx.client.invoke({
-            '@type': 'getMessage', chat_id: ctx.rawId, message_id: Number(msgId),
-          })
+          tdMsg = await ctx.client.invoke({ '@type': 'getMessage', chat_id: ctx.rawId, message_id: Number(msgId) })
         } catch (e) { return { ok: false, error: e?.message || String(e) } }
         const fileId = tdMsg?.content?.video?.video?.id
         if (!fileId) return { ok: false, error: 'no video file' }
-        const v = tdMsg.content.video
-        const progressive = !!v?.supports_streaming
-        // v0.89.10: диагностика для отладки чёрного экрана 0:00
-        console.log('[downloadVideo] req:', { fileId, supports_streaming: v?.supports_streaming, progressive, size: v?.video?.size, w: v?.width, h: v?.height, duration: v?.duration, completed: v?.video?.local?.is_downloading_completed, prefix: v?.video?.local?.downloaded_prefix_size })
+        const progressive = !!tdMsg.content.video?.supports_streaming
         const r = await downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 24, onProgress, progressive })
-        console.log('[downloadVideo] result:', { ok: r?.ok, partial: r?.partial, completed: r?.file?.local?.is_downloading_completed, downloaded: r?.file?.local?.downloaded_size, size: r?.file?.size, path: r?.path?.slice(0, 90), localPath: r?.file?.local?.path, error: r?.error })
+        if (r?.ok && !r?.partial && r?.file?.local?.path) {
+          const stable = stabilizeTempFile(r.file.local.path, userDataDir)
+          if (stable) r.path = stable
+        }
         return r
       },
       async getCacheSize() {
@@ -493,7 +493,6 @@ export function createTdlibBackend(opts = {}) {
         return { ok: false, error: 'forum.getTopicMessages: use messages.getTopic instead', messages: [] }
       },
     },
-
     _cancelDownload: (params) => cancelDownload({ manager, ...params }),
   }
 }
