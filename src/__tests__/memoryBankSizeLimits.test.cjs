@@ -94,6 +94,35 @@ test('все .memory-bank/* ссылки в CLAUDE.md указывают на с
     'Отсутствуют файлы, упомянутые в CLAUDE.md: ' + missing.join(', '))
 })
 
+// v0.89.17: ловим случай когда файл существует локально но НЕ tracked в git.
+// Был реальный инцидент: создал code-todo.md + ссылку в CLAUDE.md, забыл `git add`.
+// Локально fs.accessSync проходил, CI клонировал только tracked → битая ссылка.
+test('все .memory-bank/* ссылки в CLAUDE.md также tracked в git', function () {
+  var claude = fs.readFileSync('CLAUDE.md', 'utf8')
+  var refs = claude.match(/\.memory-bank\/[a-zA-Z0-9./_-]+\.md/g) || []
+  var unique = Array.from(new Set(refs))
+  var tracked
+  try {
+    var out = require('child_process').execSync('git ls-files .memory-bank/', { encoding: 'utf8' })
+    tracked = new Set(out.split(/\r?\n/).map(function (s) { return s.trim() }).filter(Boolean))
+  } catch (e) {
+    // git недоступен (не репозиторий) — пропускаем эту проверку
+    return
+  }
+  var untracked = unique.filter(function (ref) {
+    var norm = ref.replace(/\\/g, '/')
+    if (tracked.has(norm)) return false
+    // Файл может существовать но не tracked. Если не существует — уже поймал
+    // предыдущий тест, поэтому не дублируем.
+    try { fs.accessSync(ref) } catch (e) { return false }
+    return true
+  })
+  assert(untracked.length === 0,
+    'Файлы упомянуты в CLAUDE.md, существуют локально, но НЕ в git (CI упадёт): ' +
+    untracked.join(', ') +
+    '\n  → Добавь: git add ' + untracked.join(' '))
+})
+
 // ── Итог ──
 console.log('\n' + (failed === 0
   ? '✅ Все проверки пройдены (' + passed + '/' + (passed + failed) + ')'
