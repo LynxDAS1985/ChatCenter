@@ -35,10 +35,6 @@ export default function VideoTile({ m, chatId, inAlbum }) {
   // Используем для показа индикатора «Загрузка X%» в углу видео пока играет.
   const [partial, setPartial] = useState(false)
   const [error, setError] = useState(null)
-  // v0.89.12: счётчик попыток воспроизведения. Используется как React key на
-  // <video> — инкремент перемонтирует элемент с новым decoder instance.
-  // Стандартное восстановление для MEDIA_ERR_DECODE (код 3) по MDN.
-  const [playAttempt, setPlayAttempt] = useState(0)
   const videoRef = useRef(null)
   const containerRef = useRef(null)
   const unsubRef = useRef(null)
@@ -142,77 +138,8 @@ export default function VideoTile({ m, chatId, inAlbum }) {
 
   const aspect = m.mediaWidth && m.mediaHeight ? `${m.mediaWidth} / ${m.mediaHeight}` : '16 / 9'
 
-  // v0.89.11: открыть видео в отдельном окне плеера (там есть codec-error
-  // fallback с кнопкой «Открыть во внешнем плеере» — VLC/Movies&TV).
-  const handleOpenFullPlayer = async (e) => {
-    e?.stopPropagation?.()
-    try {
-      await window.api?.invoke('video:open', {
-        src: videoSrc, title: m.mediaPreview || 'Видео',
-        width: m.mediaWidth || 0, height: m.mediaHeight || 0,
-      })
-    } catch (_) {}
-  }
-
-  // v0.89.12: перезапустить inline-плеер с новым decoder instance. По MDN это
-  // стандартное восстановление для MEDIA_ERR_DECODE (код 3) — большинство
-  // случаев решаются перемонтированием <video> элемента. Если ошибка persistent
-  // (битый файл целиком) — юзер увидит ту же ошибку снова и сможет открыть в
-  // отдельном плеере (там VLC-фолбэк).
-  const handleRetry = (e) => {
-    e?.stopPropagation?.()
-    setError(null)
-    setPlayAttempt(p => p + 1)
-  }
-
   // Если играет inline — показываем <video>
   if (playing && videoSrc) {
-    // v0.89.11: при ошибке codec/декодера (MediaError code=4) — показываем
-    // понятное сообщение + кнопку открытия в полном плеере (там есть fallback
-    // на внешний плеер VLC). Раньше ошибка только setError'илась но UI её не
-    // показывал в playing-state → юзер видел чёрный 0:00 без понимания почему.
-    if (error) {
-      return (
-        <div
-          ref={containerRef}
-          style={{
-            position: 'relative', width: '100%', aspectRatio: aspect,
-            minHeight: inAlbum ? 0 : 180, maxHeight: inAlbum ? '100%' : 420,
-            borderRadius: 8, overflow: 'hidden', background: 'rgba(0,0,0,0.85)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            padding: 20, gap: 12,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div style={{ fontSize: 14, color: '#fff', textAlign: 'center', maxWidth: 320 }}>
-            ⚠️ Не удалось воспроизвести видео
-          </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', textAlign: 'center', maxWidth: 320 }}>
-            {error}
-          </div>
-          {/* v0.89.12: «Перезапустить» — пересоздаёт <video> с новым decoder
-              (по MDN стандартное восстановление для MEDIA_ERR_DECODE) */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button
-              onClick={handleRetry}
-              style={{
-                background: 'var(--amoled-accent)', color: '#fff', border: 0,
-                padding: '8px 16px', borderRadius: 6, cursor: 'pointer',
-                fontSize: 12, fontWeight: 500,
-              }}
-            >🔄 Перезапустить</button>
-            <button
-              onClick={handleOpenFullPlayer}
-              style={{
-                background: 'rgba(255,255,255,0.15)', color: '#fff', border: 0,
-                padding: '8px 16px', borderRadius: 6, cursor: 'pointer',
-                fontSize: 12, fontWeight: 500,
-              }}
-            >🎬 Открыть в плеере</button>
-          </div>
-        </div>
-      )
-    }
     return (
       <div
         ref={containerRef}
@@ -229,7 +156,6 @@ export default function VideoTile({ m, chatId, inAlbum }) {
         onClick={(e) => e.stopPropagation()}
       >
         <video
-          key={playAttempt}
           ref={videoRef}
           src={videoSrc}
           controls
@@ -241,6 +167,7 @@ export default function VideoTile({ m, chatId, inAlbum }) {
             objectFit: 'contain',
             background: '#000',
           }}
+          // Диагностика для отладки — события <video> в Console.
           onLoadStart={() => console.log('[VideoTile] <video> loadstart src=', videoSrc)}
           onLoadedMetadata={(e) => console.log('[VideoTile] <video> loadedmetadata: duration=', e.target.duration, 'size=', e.target.videoWidth + 'x' + e.target.videoHeight)}
           onCanPlay={() => console.log('[VideoTile] <video> canplay')}
@@ -252,31 +179,6 @@ export default function VideoTile({ m, chatId, inAlbum }) {
               readyState: e.target.readyState, networkState: e.target.networkState,
               src: videoSrc,
             })
-            setError(`Ошибка плеера (код ${err?.code || '?'}): ${err?.message || 'неизвестно'}`)
-          }}
-          // v0.89.11: блокируем перемотку за пределы загруженного буфера —
-          // иначе <video> зависает на попытке прочитать байты которых ещё нет
-          // (TDLib скачивает последовательно от offset=0). HTMLMediaElement
-          // .buffered — список загруженных временных интервалов; ищем
-          // максимальный end, если seek-target за ним — возвращаем currentTime.
-          onSeeking={(e) => {
-            const buf = e.target.buffered
-            if (buf.length === 0) {
-              if (e.target.currentTime > 0.1) {
-                console.warn('[VideoTile] seek blocked: буфер пуст, target=', e.target.currentTime.toFixed(1))
-                e.target.currentTime = 0
-              }
-              return
-            }
-            let maxBuffered = 0
-            for (let i = 0; i < buf.length; i++) maxBuffered = Math.max(maxBuffered, buf.end(i))
-            // Небольшой запас (-0.5 сек) — чтобы не упирались в самый край где
-            // часто бывает stall.
-            const safeMax = Math.max(0, maxBuffered - 0.5)
-            if (e.target.currentTime > safeMax) {
-              console.warn('[VideoTile] seek blocked: target=', e.target.currentTime.toFixed(1), '> buffered=', maxBuffered.toFixed(1), '(safeMax=', safeMax.toFixed(1) + ')')
-              e.target.currentTime = safeMax
-            }
           }}
         />
         {/* v0.87.38: только ⛶ кнопка — 📌 доступна внутри отдельного окна, не в чате */}

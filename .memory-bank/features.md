@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.12 (15 мая 2026)
+## Текущая версия: v0.89.13 (15 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.12). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.13). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,67 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.13 — Откат сломанного onSeeking clamp + кнопок (вернули нормальную перемотку)
+
+**Контекст**: пользователь сообщил что после полной загрузки видео НЕ перематывается. И сообщил критику: «ходишь по кругу», «не нужны кнопки».
+
+**Корневая причина** (моя ошибка в v0.89.10):
+
+В v0.89.10 я добавил `onSeeking` handler:
+```js
+const buf = e.target.buffered
+let maxBuffered = 0
+for (let i = 0; i < buf.length; i++) maxBuffered = Math.max(maxBuffered, buf.end(i))
+if (e.target.currentTime > maxBuffered - 0.5) {
+  e.target.currentTime = maxBuffered - 0.5  // ← сбрасывает seek
+}
+```
+
+**Ошибка в моей логике**: `HTMLMediaElement.buffered` — это **НЕ «что скачано на диск»**. Это **«что плеер уже прочитал в память»**. Цитата [WHATWG HTML spec](https://html.spec.whatwg.org/multipage/media.html#dom-media-buffered):
+> «ranges of the media resource that the user agent has buffered»
+
+Даже когда файл **полностью на диске** (`is_downloading_completed=true`), `<video>.buffered` содержит только то что плеер **уже прочитал**. Если юзер посмотрел 20 сек, `buffered` ≈ 0-25 сек. Тык в конец полоски → `target > 25` → мой clamp возвращает в 25 → видео не перематывается.
+
+**Снесённое в v0.89.13**:
+
+[`VideoTile.jsx`](src/native/components/VideoTile.jsx):
+1. ❌ `onSeeking` clamp handler — главный виновник
+2. ❌ Кнопка «🔄 Перезапустить» (v0.89.12)
+3. ❌ Кнопка «🎬 Открыть в плеере» из inline error (v0.89.11)
+4. ❌ `key={playAttempt}` атрибут и state `playAttempt`
+5. ❌ Helpers `handleRetry`, `handleOpenFullPlayer`
+6. ❌ Error UI block в playing-state
+
+**Сохранено** (рабочие фиксы):
+- ✅ Range support в cc-media protocol (v0.89.8) — Manual Range parsing с `Readable.toWeb`
+- ✅ Progressive playback для streamable (v0.89.9) — `supports_streaming` флаг
+- ✅ Индикатор «Загрузка X%» (v0.89.10) — информативный, не блокирует
+- ✅ Диагностические `console.log` в VideoTile/cc-media/downloadVideo (v0.89.10) — для отладки
+
+**Открытая проблема — PIPELINE_ERROR_DECODE на части видео**:
+
+Пользователь сообщил что у некоторых файлов (например `edit.mp4`) выдаётся `PipelineStatus::PIPELINE_ERROR_DECODE`. ВАЖНО: эти видео **играют в обычном Telegram клиенте**, значит файл нормальный.
+
+Разница архитектур:
+- **Telegram Desktop** — Qt `QMediaPlayer` с локальным файловым доступом, без HTTP/Range
+- **Мы** — Chromium `<video src="cc-media://...">` с Range запросами на каждый seek
+
+Гипотеза: при seek Chromium делает Range запрос на произвольный byte offset. MP4 это не линейный поток — Chromium должен найти ближайший keyframe. На некоторых файлах (особенно отредактированных) этот процесс может фейлиться.
+
+**План для следующих версий**:
+1. Дождаться логов Console (Ctrl+Shift+I) при PIPELINE_ERROR_DECODE — точные offset'ы при seek
+2. Изучить какие именно Range запросы делает Chromium
+3. Возможно: добавить **MP4 keyframe-aware Range handling** в cc-media protocol — сейчас отдаём байты ровно с запрошенного offset
+
+**Версия**: v0.89.12 → v0.89.13 (patch — откат сломанного).
+
+**Что юзеру проверить**:
+1. Открыть **уже скачанное** видео → пощёлкать по полоске в разных местах → перемотка должна работать (отскоков нет)
+2. Перемотка во время загрузки — может пауза на буферизацию (стандарт `<video>`), но НЕ должно «не давать перематывать»
+3. Если видео не играет вообще — отправить содержимое Console (Ctrl+Shift+I → Console) с строками `[VideoTile]` и `[cc-media]`
 
 ---
 
