@@ -184,20 +184,25 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
     } catch (_) {}
     return { ok: true }
   })
-  // v0.89.2: реальная реализация через TDLib setChatNotificationSettings.
-  // Контракт: { chatId, muteFor } где muteFor — секунды от now (0 = размьютить,
-  // 2147483647 ≈ 68 лет = «навсегда» для UI).
-  handle('tg:set-mute', ({ chatId, muteFor } = {}) =>
-    backend.chats.setMute(chatId, muteFor))
-  // v0.89.2: реальная реализация через TDLib toggleChatIsPinned (chat_list=Main).
-  // Контракт: { chatId, isPinned } — boolean.
-  handle('tg:pin', ({ chatId, isPinned } = {}) =>
-    backend.chats.togglePin(chatId, isPinned))
+  // v0.89.3: реальная реализация через TDLib setChatNotificationSettings.
+  // Контракт UI (nativeStore.js:787-788): `{ chatId, muteUntil }` где muteUntil —
+  // Unix timestamp (секунды) до которого приглушено (0 = unmute, 2147483647 =
+  // «навсегда»). backend.chats.setMute сама конвертирует в TDLib `mute_for = now`.
+  handle('tg:set-mute', ({ chatId, muteUntil } = {}) =>
+    backend.chats.setMute(chatId, muteUntil))
+  // v0.89.3: pin/unpin СООБЩЕНИЯ в чате (TDLib pinChatMessage/unpinChatMessage).
+  // Контракт UI (nativeStore.js:473-475): `{ chatId, messageId, unpin }`. Раньше
+  // handler был toggleChatIsPinned (закреп ЧАТА в Main-list) — это была регрессия
+  // от GramJS контракта где tg:pin закреплял именно сообщение.
+  handle('tg:pin', ({ chatId, messageId, unpin } = {}) => {
+    if (unpin) return backend.messages.unpinMessage(chatId, messageId)
+    return backend.messages.pinMessage(chatId, messageId, { disableNotification: true })
+  })
   handle('tg:send-file', ({ chatId, filePath, caption } = {}) =>
     backend.messages.sendFile(chatId, filePath, caption))
-  // v0.89.2: реальная реализация через TDLib getStorageStatisticsFast (быстрая
-  // версия без скана файлов, читает счётчики из БД). Возвращает { bytes (files),
-  // dbBytes (database), fileCount: 0 (Fast не считает файлы поштучно) }.
+  // v0.89.3: реальная реализация через fs-скан tdlib-sessions/ + tg-avatars/.
+  // Возвращает { totalFiles, totalBytes, byCategory: { session, avatars, cache,
+  // media, tmp } } совместимо с UI AccountContextMenu (см. nativeStore.js:780-783).
   handle('tg:get-cleanup-stats', () => backend.chats.getCleanupStats())
 
   // ────────────────────────────────────────────────────────────────────

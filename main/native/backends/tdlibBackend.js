@@ -19,6 +19,7 @@
 import {
   getChatHistory, sendTextMessage, editMessageText, deleteMessages,
   viewMessages, getMessage, getChatPinnedMessage, sendFile, forwardMessages,
+  pinMessage as pinMessageRaw, unpinMessage as unpinMessageRaw,
 } from './tdlibMessages.js'
 import {
   downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
@@ -27,25 +28,19 @@ import {
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
 import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
-import { setMute as setMuteRaw, togglePin as togglePinRaw, getCleanupStats as getCleanupStatsRaw } from './tdlibChatActions.js'
+import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw } from './tdlibChatActions.js'
 
 // ──────────────────────────────────────────────────────────────────────
 // HELPERS
 // ──────────────────────────────────────────────────────────────────────
 
 // Wrapper для invoke который возвращает { ok, result?, error?, code? } вместо throw.
-// TDLib шлёт {'@type':'error', code, message} как rejected promise (tdl выкидывает
-// TDLibError с .code и .message). Особый случай: error code=404 для loadChats
-// означает «список закончился» (это норма, см. loadChats цикл ниже).
-// v0.89.2: сохраняем `code` как есть (undefined вместо фейкового 0) — позволяет
-// различать «список закончился» (404) от «другая ошибка» в потребителях.
+// TDLib шлёт {'@type':'error', code, message} как rejected promise (tdl → TDLibError).
+// `code` сохраняем как есть (undefined вместо 0) — потребители могут различать
+// «404 = loadChats end-of-list» от других ошибок.
 async function safeInvoke(client, request) {
-  try {
-    const r = await client.invoke(request)
-    return { ok: true, result: r }
-  } catch (e) {
-    return { ok: false, error: e?.message || String(e), code: e?.code }
-  }
+  try { return { ok: true, result: await client.invoke(request) } }
+  catch (e) { return { ok: false, error: e?.message || String(e), code: e?.code } }
 }
 
 /** Парсит наш составной id 'accountId:rawId' → { accountId, rawId (число) } */
@@ -103,10 +98,12 @@ function makeExtras(manager, accountId) {
  * @param {(accountSubdir?: string) => object} [opts.makeClientParams] — функция
  *   возвращающая параметры для clientFactory (apiId, apiHash, tdlibParameters,
  *   accountSubdir) при создании нового аккаунта.
+ * @param {string} [opts.userDataDir] — userData папка (нужна `getCleanupStats`
+ *   для fs-скана tdlib-sessions/ и tg-avatars/).
  * @returns {import('../messengerBackend.js').MessengerBackend}
  */
 export function createTdlibBackend(opts = {}) {
-  const { manager, makeClientParams } = opts
+  const { manager, makeClientParams, userDataDir } = opts
   if (!manager) throw new Error('TdlibClientManager required')
 
   // Состояние одного активного login (TDLib линейный). dispose() после завершения.
@@ -242,20 +239,18 @@ export function createTdlibBackend(opts = {}) {
         }
         return { ok: true, accountStats }
       },
-      // v0.89.2: реализации chat-level admin actions вынесены в tdlibChatActions.js
-      // (tdlibBackend.js упёрся в лимит 500 строк после реализации этих методов).
-      async setMute(chatId, muteFor) {
+      // v0.89.3: setMute принимает muteUntil (Unix timestamp), как шлёт UI MuteMenu.
+      // tdlibChatActions.setMute конвертирует в TDLib `mute_for = max(0, muteUntil - now)`.
+      async setMute(chatId, muteUntil) {
         const ctx = getClientForChat(manager, chatId)
         if (ctx.error) return ctx.error
-        return setMuteRaw(ctx.client, ctx.rawId, muteFor)
+        return setMuteRaw(ctx.client, ctx.rawId, muteUntil)
       },
-      async togglePin(chatId, isPinned) {
-        const ctx = getClientForChat(manager, chatId)
-        if (ctx.error) return ctx.error
-        return togglePinRaw(ctx.client, ctx.rawId, isPinned)
-      },
+      // v0.89.3: getCleanupStats — fs-скан tdlib-sessions/ + tg-avatars/, возвращает
+      // { totalFiles, totalBytes, byCategory: { session, avatars, cache, media, tmp } }
+      // в формате который ждёт UI AccountContextMenu CleanupRow. userDataDir обязателен.
       async getCleanupStats() {
-        return getCleanupStatsRaw(manager)
+        return getCleanupStatsRaw(manager, userDataDir)
       },
     },
 
@@ -368,6 +363,17 @@ export function createTdlibBackend(opts = {}) {
         return getChatPinnedMessage(ctx.client, ctx.rawId, {
           chatIdStr: chatId, extras: makeExtras(manager, ctx.accountId),
         })
+      },
+      // v0.89.3: pin/unpin СООБЩЕНИЯ (TDLib pinChatMessage/unpinChatMessage).
+      async pinMessage(chatId, messageId, opts) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return pinMessageRaw(ctx.client, ctx.rawId, messageId, opts)
+      },
+      async unpinMessage(chatId, messageId) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return unpinMessageRaw(ctx.client, ctx.rawId, messageId)
       },
     },
 

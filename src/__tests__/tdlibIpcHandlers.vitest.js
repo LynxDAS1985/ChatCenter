@@ -8,7 +8,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { TdlibClientManager } from '../../main/native/backends/tdlibClient.js'
 import { createTdlibBackend } from '../../main/native/backends/tdlibBackend.js'
-import { buildTdlibParameters } from '../../main/native/backends/tdlibAuth.js'
 import { initTdlibIpcHandlers } from '../../main/native/tdlibIpcHandlers.js'
 
 // ──────────────────────────────────────────────────────────────────────
@@ -42,7 +41,6 @@ function setup() {
   mgr.createAccount('tg_main', {})
   const backend = createTdlibBackend({
     manager: mgr,
-    tdlibParameters: buildTdlibParameters({ apiId: 1, apiHash: 'h', databaseDirectory: '/tmp' }),
     makeClientParams: () => ({ apiId: 1, apiHash: 'h' }),
   })
   const ipcMain = makeMockIpcMain()
@@ -305,5 +303,82 @@ describe('manager → renderer event bridge', () => {
       },
     })
     expect(sendToRenderer).not.toHaveBeenCalled()
+  })
+})
+
+// ──────────────────────────────────────────────────────────────────────
+// v0.89.3 — IPC контракт-тесты: UI payload → handler → backend → TDLib invoke.
+// Эти тесты ловят регрессии типа «UI шлёт muteUntil, handler читает muteFor».
+// Описание контракта см. .memory-bank/api.md → «Native Telegram (tg:*)».
+// ──────────────────────────────────────────────────────────────────────
+
+describe('IPC contracts (UI payload signatures)', () => {
+  it('tg:pin {chatId, messageId, unpin:false} → TDLib pinChatMessage', async () => {
+    const { ipcMain, mockClient } = setup()
+    // UI шлёт ровно эти три поля (см. src/native/store/nativeStore.js:473-475)
+    const r = await ipcMain.invoke('tg:pin', { chatId: 'tg_main:-1001', messageId: 12345, unpin: false })
+    expect(r.ok).toBe(true)
+    expect(mockClient.invoke).toHaveBeenCalledWith({
+      '@type': 'pinChatMessage',
+      chat_id: -1001,
+      message_id: 12345,
+      disable_notification: true,
+      only_for_self: false,
+    })
+  })
+
+  it('tg:pin {unpin:true} → TDLib unpinChatMessage', async () => {
+    const { ipcMain, mockClient } = setup()
+    await ipcMain.invoke('tg:pin', { chatId: 'tg_main:-1001', messageId: 12345, unpin: true })
+    expect(mockClient.invoke).toHaveBeenCalledWith({
+      '@type': 'unpinChatMessage', chat_id: -1001, message_id: 12345,
+    })
+  })
+
+  it('tg:set-mute {chatId, muteUntil} → TDLib setChatNotificationSettings c mute_for', async () => {
+    const { ipcMain, mockClient } = setup()
+    const now = Math.floor(Date.now() / 1000)
+    // UI MuteMenu.jsx:36 шлёт абсолютный Unix timestamp (см. nativeStore.js:787-788)
+    await ipcMain.invoke('tg:set-mute', { chatId: 'tg_main:-1001', muteUntil: now + 3600 })
+    const call = mockClient.invoke.mock.calls[0][0]
+    expect(call['@type']).toBe('setChatNotificationSettings')
+    expect(call.chat_id).toBe(-1001)
+    // mute_for — duration от now, конвертация в handler (≈3600 ± 1 секунда)
+    expect(call.notification_settings.mute_for).toBeGreaterThanOrEqual(3599)
+    expect(call.notification_settings.mute_for).toBeLessThanOrEqual(3601)
+  })
+
+  it('tg:set-mute {muteUntil: 0} → unmute (mute_for=0)', async () => {
+    const { ipcMain, mockClient } = setup()
+    await ipcMain.invoke('tg:set-mute', { chatId: 'tg_main:-1001', muteUntil: 0 })
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      notification_settings: expect.objectContaining({ mute_for: 0 }),
+    }))
+  })
+
+  it('tg:set-mute regression: handler НЕ читает поле muteFor', async () => {
+    // Регрессионный тест: до v0.89.3 handler читал { muteFor } которого UI не шлёт.
+    // Если кто-то снова переименует поле в muteFor — этот тест поймает.
+    const { ipcMain, mockClient } = setup()
+    // Шлём muteUntil (как реальный UI) — должно сработать.
+    await ipcMain.invoke('tg:set-mute', { chatId: 'tg_main:-1', muteUntil: 0 })
+    expect(mockClient.invoke).toHaveBeenCalled()
+    mockClient.invoke.mockClear()
+    // Шлём muteFor (неправильное имя поля) — должно быть unmute fallback (Math.max).
+    await ipcMain.invoke('tg:set-mute', { chatId: 'tg_main:-1', muteFor: 3600 })
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      notification_settings: expect.objectContaining({ mute_for: 0 }),
+    }))
+  })
+
+  it('tg:get-cleanup-stats → shape {totalFiles, totalBytes, byCategory}', async () => {
+    // UI AccountContextMenu CleanupRow ждёт byCategory.{session,avatars,cache,media,tmp}
+    // с полями {files, bytes}. Без userDataDir получаем пустой результат (0/0).
+    const { ipcMain } = setup()
+    const r = await ipcMain.invoke('tg:get-cleanup-stats', {})
+    expect(r.ok).toBe(true)
+    expect(r).toHaveProperty('totalFiles')
+    expect(r).toHaveProperty('totalBytes')
+    expect(r).toHaveProperty('byCategory')
   })
 })

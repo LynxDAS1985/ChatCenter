@@ -11,6 +11,40 @@
 
 ---
 
+## 2026-05-15 — TDLib Stage 4: второй аудит — IPC контракты (v0.89.3)
+
+После «backend correctness» аудита v0.89.2 запустили **второй** независимый аудит — против renderer-side кода (`nativeStore.js`, `MuteMenu.jsx`, `AccountContextMenu.jsx`). Обнаружили 3 user-facing регрессии в `Фиксе #3` v0.89.2 (TDLib API правильный, но payload не совпадает с UI). Все исправлены.
+
+### Закрытые проблемы
+
+1. **`tg:pin` делал не ту операцию**: UI шлёт `{chatId, messageId, unpin}` для закрепа **сообщения**, мой handler v0.89.2 делал `toggleChatIsPinned` для закрепа **чата** в Main-list. Каждый клик «Закрепить сообщение» → снимал закреп с чата. **Фикс**: `pinMessage`/`unpinMessage` (TDLib `pinChatMessage`/`unpinChatMessage`) в `tdlibMessages.js`. `togglePin` удалён.
+
+2. **`tg:set-mute` всегда давал unmute**: UI шлёт `{chatId, muteUntil}` (Unix timestamp), мой handler читал `{chatId, muteFor}` (duration) — поле `muteFor` всегда undefined → `mute_for = 0`. **Фикс**: handler читает `muteUntil`, конвертирует в TDLib `mute_for = max(0, muteUntil - now)` внутри `tdlibChatActions.setMute`.
+
+3. **`tg:get-cleanup-stats` показывал пустоту**: UI ждёт `{totalFiles, totalBytes, byCategory: {session, avatars, cache, media, tmp}}` для 5 CleanupRow + ИТОГО. Мой handler возвращал `{bytes, dbBytes, fileCount: 0}` через `getStorageStatisticsFast`. **Фикс**: `getCleanupStats(manager, userDataDir)` — реальный fs-скан `tdlib-sessions/{accountId}/db.sqlite` + `files/{profile_photos|photos|videos|stickers|temp|...}` + `userData/tg-avatars/` с категоризацией. Таблица `FILES_CATEGORY` маппит TDLib file-type директории на UI категории.
+
+### Корневая причина
+
+[`.memory-bank/api.md`](./api.md) **не содержал НИ ОДНОГО** канала `tg:*`. Контракт IPC жил только в коде. После удаления GramJS handler-эпохи v0.89.1 не осталось источника истины, и replacement в v0.89.2 был сделан «по TDLib спеке», без проверки UI-контракта.
+
+**Закрыто**: [`api.md`](./api.md) теперь документирует все 24 `tg:*` канала с payload + response shapes + 12 renderer events. Также вставлено замечание про `device_model` для существующих сессий — TDLib не перезаписывает при апгрейде.
+
+### Защита от повторения
+
+Добавлен IPC-контракт-блок в [`tdlibIpcHandlers.vitest.js`](../src/__tests__/tdlibIpcHandlers.vitest.js): 5 тестов проверяют что `ipcMain.invoke(channel, UI-payload)` корректно транслируется в правильный TDLib `client.invoke({@type, ...})`. Включён регрессионный тест для `tg:set-mute` — ловит обратное переименование `muteUntil → muteFor`.
+
+### Архитектурное
+
+- **Удалено**: `backend.chats.togglePin` + соответствующие тесты (UI не использует closure pin chat).
+- **Реструктурировано**: `tdlibChatActions.js` теперь содержит `setMute` + `getCleanupStats` (fs-scan). `pinMessage`/`unpinMessage` живут в `tdlibMessages.js` (там их логическое место).
+- **Тестов**: 506 → 518 (+12).
+
+### Урок
+
+«TDLib API correctness» != «UI-feature correctness». Stub'ы `{ ok: true }` маскировали проблему долго. **Backend-only тесты могут быть зелёными при полностью сломанной фиче** если контракт payload разошёлся. Защита — отдельный слой контракт-тестов на уровне IPC + документация контракта в api.md (single source of truth).
+
+---
+
 ## 2026-05-15 — TDLib Stage 4: пост-миграционный аудит (v0.89.2)
 
 Независимый аудит реализации TDLib backend против документации стека (tdl + TDLib core API). Найдено 3 критичных + 3 точечных проблемы — все 6 закрыты.

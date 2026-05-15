@@ -269,7 +269,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.89.2 (15 мая 2026)
+**Текущая версия**: v0.89.3 (15 мая 2026)
 
 ---
 
@@ -751,6 +751,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.89.2 (15 мая 2026)
-**Статус**: 🟢 Фазы 1-4+ выполнены + TDLib миграция завершена + независимый аудит закрыт
-**Последнее обновление**: 15 мая 2026 — v0.89.2: пост-миграционный аудит TDLib стека по docs. **6 фиксов**: (1) `tdlibParameters` теперь реально передаются в `tdl.createClient` через `clientFactory` — раньше `buildTdlibParameters` был dead code и TDLib видел приложение как «Unknown device v1.0 / EN» без enable_storage_optimizer; (2) `sendFile`: `.gif → inputMessageAnimation` (с required `duration/width/height`), `.heic → inputMessageDocument` (TDLib не поддерживает HEIC как Photo), все required поля inputMessage<Type> (added_sticker_file_ids, supports_streaming, show_caption_above_media, has_spoiler); (3) реальная реализация трёх IPC stub'ов: `tg:set-mute → setChatNotificationSettings`, `tg:pin → toggleChatIsPinned`, `tg:get-cleanup-stats → getStorageStatisticsFast`; (4) dedup `_finalizePending` → `manager.finalizeAccount` (единая точка с phone-fallback и auto-download своей profile_photo); (5) `authorizationStateWaitRegistration` → дружелюбная ru-ошибка (раньше «unsupported state»); (6) `safeInvoke`/`wrapError` сохраняют TDLib error.code как есть (undefined вместо фейкового 0); `_pendingAvatars` очищается в .catch (защита от утечки). Новый файл [`tdlibChatActions.js`](main/native/backends/tdlibChatActions.js) (split из `tdlibBackend.js` — уперлось в лимит 500 строк). +21 vitest тест (`tdlibBackendChatActions.vitest.js` + дополнения к `tdlibBackendSendFwd`/`tdlibRuntime`/`tdlibAuth`).
+**Версия проекта**: v0.89.3 (15 мая 2026)
+**Статус**: 🟢 Фазы 1-4+ выполнены + TDLib миграция завершена + два аудита закрыты (backend correctness + IPC contracts)
+**Последнее обновление**: 15 мая 2026 — v0.89.3: второй аудит ПОСЛЕ v0.89.2 обнаружил, что три IPC канала (`tg:pin`, `tg:set-mute`, `tg:get-cleanup-stats`) реализованы технически правильно по TDLib спеке, но контракт payload **не совпадает с UI** (renderer-side `nativeStore.js` / `MuteMenu.jsx` / `AccountContextMenu.jsx`). Все три исправлены: (1) **`tg:pin`** — раньше делал `toggleChatIsPinned` (закреп ЧАТА в Main-list), теперь правильно делает `pinChatMessage`/`unpinChatMessage` (закреп СООБЩЕНИЯ в чате — то что шлёт UI `{chatId, messageId, unpin}`). (2) **`tg:set-mute`** — раньше handler читал `muteFor` (которого UI не шлёт), теперь читает `muteUntil` (Unix timestamp как шлёт UI) и конвертирует в TDLib `mute_for = max(0, muteUntil - now)`. Раньше любой клик в MuteMenu давал unmute. (3) **`tg:get-cleanup-stats`** — раньше возвращал `{ bytes, dbBytes, fileCount }` через `getStorageStatisticsFast`, теперь возвращает `{ totalFiles, totalBytes, byCategory: { session, avatars, cache, media, tmp } }` через **fs-скан** `tdlib-sessions/` + `tg-avatars/` (как делал GramJS `collectCleanupStats`). UI предпросмотр logout снова показывает реальные данные. Корневая причина (отсутствие документации IPC) закрыта: [`.memory-bank/api.md`](.memory-bank/api.md) теперь содержит таблицы всех 24 `tg:*` каналов с payload и response shapes + 12 renderer events. Добавлены IPC-контракт тесты в [`tdlibIpcHandlers.vitest.js`](src/__tests__/tdlibIpcHandlers.vitest.js) — ловят регрессии «UI payload ↔ handler» автоматически. Тестов: 506 → 518 (+12).

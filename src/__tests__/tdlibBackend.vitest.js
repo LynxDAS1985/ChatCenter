@@ -4,7 +4,6 @@ import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { TdlibClientManager } from '../../main/native/backends/tdlibClient.js'
 import { createTdlibBackend } from '../../main/native/backends/tdlibBackend.js'
-import { buildTdlibParameters } from '../../main/native/backends/tdlibAuth.js'
 
 function makeMockClient(invokeImpl) {
   const client = new EventEmitter()
@@ -17,9 +16,10 @@ function makeBackend() {
   const mockClient = makeMockClient()
   const mgr = new TdlibClientManager({ clientFactory: () => mockClient })
   mgr.createAccount('tg_main', {})
+  // v0.89.3: tdlibParameters больше не передаётся в createTdlibBackend (теперь
+  // живёт в clientParams через makeClientParams). См. tdlibStartup.js.
   const backend = createTdlibBackend({
     manager: mgr,
-    tdlibParameters: buildTdlibParameters({ apiId: 1, apiHash: 'h', databaseDirectory: '/tmp' }),
     makeClientParams: () => ({ apiId: 1, apiHash: 'h' }),
   })
   return { mgr, mockClient, backend }

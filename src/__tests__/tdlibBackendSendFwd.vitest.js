@@ -7,7 +7,6 @@ import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { TdlibClientManager } from '../../main/native/backends/tdlibClient.js'
 import { createTdlibBackend } from '../../main/native/backends/tdlibBackend.js'
-import { buildTdlibParameters } from '../../main/native/backends/tdlibAuth.js'
 
 function makeMockClient() {
   const c = new EventEmitter()
@@ -22,7 +21,6 @@ function makeBackend() {
   mgr.createAccount('tg_main', {})
   const backend = createTdlibBackend({
     manager: mgr,
-    tdlibParameters: buildTdlibParameters({ apiId: 1, apiHash: 'h', databaseDirectory: '/tmp' }),
     makeClientParams: () => ({ apiId: 1, apiHash: 'h' }),
   })
   return { mgr, mockClient, backend }

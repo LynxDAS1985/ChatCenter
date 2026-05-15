@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.2 (15 мая 2026)
+## Текущая версия: v0.89.3 (15 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.106 → v0.88.2). Старое — в архиве:
 
@@ -17,6 +17,74 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.3 — Второй аудит: IPC контракты UI ↔ backend (3 user-facing регрессии)
+
+**Контекст**: после v0.89.2 («все TDLib API правильные по спеке») запустили **второй** независимый аудит — на этот раз против [`src/native/store/nativeStore.js`](src/native/store/nativeStore.js) и UI-компонентов. Аудит выявил, что **3 из 6 фиксов v0.89.2** реализованы технически правильно по TDLib спеке, но **payload-контракт не совпадает с тем что шлёт renderer**. Эти регрессии были замаскированы предыдущими stub'ами `{ ok: true }` — теперь, когда функции «реальные», расхождение раскрылось.
+
+#### Найдено и исправлено
+
+**1. `tg:pin` делал совершенно другую операцию**
+
+| | UI [(nativeStore.js:473-475)](src/native/store/nativeStore.js) | v0.89.2 handler |
+|---|---|---|
+| Намерение | Закрепить **сообщение** в чате | Закрепляет **чат** в Main-list |
+| Payload UI | `{ chatId, messageId, unpin }` | Читал `{ chatId, isPinned }` → `messageId` игнорировался |
+| Эффект | (Ожидаемо) `pinChatMessage` | `toggleChatIsPinned` + `isPinned = !!undefined = false` → **каждый клик снимал чат с закрепа** |
+
+**Исправление** ([`tdlibMessages.js`](main/native/backends/tdlibMessages.js)): добавлены `pinMessage` (TDLib `pinChatMessage(chat_id, message_id, disable_notification:true, only_for_self:false)`) и `unpinMessage` (TDLib `unpinChatMessage`). [`tdlibIpcHandlers.js`](main/native/tdlibIpcHandlers.js) `tg:pin` теперь читает `{chatId, messageId, unpin}` и делает правильный invoke.
+
+**2. `tg:set-mute` всегда давал unmute**
+
+| | UI [(MuteMenu.jsx:36)](src/native/components/MuteMenu.jsx) → [(nativeStore.js:787-788)](src/native/store/nativeStore.js) | v0.89.2 handler |
+|---|---|---|
+| Payload UI | `{ chatId, muteUntil }` — Unix timestamp | Читал `{ chatId, muteFor }` — `undefined` |
+| Любой клик («На час»/«Навсегда»/«Включить») | TDLib `mute_for = 0` | unmute |
+
+**Исправление** ([`tdlibChatActions.js`](main/native/backends/tdlibChatActions.js)): `setMute(client, chatId, muteUntil)` принимает абсолютный timestamp, внутри конвертирует `mute_for = Math.max(0, muteUntil - Math.floor(Date.now()/1000))`. Math.max защищает от устаревших timestamps. 2147483647 («навсегда» INT_MAX) → большое mute_for ≈ 70 лет.
+
+**3. `tg:get-cleanup-stats` показывал пустоту в предпросмотре logout**
+
+| | UI [(AccountContextMenu.jsx:257-269)](src/native/components/AccountContextMenu.jsx) | v0.89.2 handler |
+|---|---|---|
+| Ждёт | `{ totalFiles, totalBytes, byCategory: { session, avatars, cache, media, tmp } }` (5 CleanupRow + ИТОГО) | Возвращал `{ ok, bytes, dbBytes, fileCount: 0 }` через `getStorageStatisticsFast` |
+| Юзер видел в preview logout | Реальная статистика по категориям | «undefined файлов, 0 Б», все 5 строк пустые |
+
+**Исправление** ([`tdlibChatActions.js`](main/native/backends/tdlibChatActions.js)): `getCleanupStats(manager, userDataDir)` делает **filesystem-скан** `tdlib-sessions/{accountId}/` + `userData/tg-avatars/` рекурсивно через `fs.readdirSync`/`fs.statSync`. Категоризация по таблице `FILES_CATEGORY` соответствующей TDLib file-type директориям (`profile_photos→avatars`, `photos/videos/voice/video_notes/documents/music/audio→media`, `stickers/thumbnails/wallpapers/animations→cache`, `temp→tmp`, `db.sqlite→session`).
+
+#### Корневая причина — отсутствие документации IPC контракта
+
+В [`.memory-bank/api.md`](.memory-bank/api.md) **не был задокументирован НИ ОДИН** канал `tg:*`. Я заменял stub'ы и не имел источника истины о том что UI шлёт. GramJS handler (источник истины GitHub) удалён в Этапе 4. Аудит v0.89.2 сверял **TDLib API correctness**, но не **renderer ↔ backend контракт**.
+
+**Закрыто в v0.89.3**: [`.memory-bank/api.md`](.memory-bank/api.md) теперь содержит таблицы всех **24 `tg:*` каналов** с payload + response shapes + **12 renderer events** + замечания про `device_model` для существующих сессий.
+
+#### Защита от повторения
+
+Добавлены **IPC-контракт тесты** в [`src/__tests__/tdlibIpcHandlers.vitest.js`](src/__tests__/tdlibIpcHandlers.vitest.js) — проверяют что invoke с **UI-payload** (`{ chatId, messageId, unpin }`, `{ chatId, muteUntil }`) корректно транслируется в правильный TDLib `invoke({@type, ...})`. Включён регрессионный тест для `tg:set-mute`: если кто-то снова переименует поле в `muteFor` — тест поймает.
+
+#### Удалено
+
+- `backend.chats.togglePin` (закреп чата в Main-list) — UI этот контракт не использует. Дёргать через TDLib `toggleChatIsPinned` можно, но это была попытка реализовать неправильную операцию. Удалено вместе с тестами.
+
+#### Тесты
+
+506 → 518 (+12):
+- IPC контракт-блок (5 тестов): `tg:pin pin/unpin`, `tg:set-mute conversion`, `tg:set-mute regression vs muteFor`, `tg:get-cleanup-stats shape`.
+- [`tdlibBackendChatActions.vitest.js`](src/__tests__/tdlibBackendChatActions.vitest.js) — переписан под новые контракты: 7 тестов `setMute` (включая прошлое-время → 0), 7 тестов `pinMessage`/`unpinMessage`, 4 теста `getCleanupStats` с реальной tmpdir + fs.
+
+**Версия**: v0.89.2 → v0.89.3 (patch — bug fixes для UI совместимости, без новых фич).
+
+**Проверено**:
+
+```powershell
+npm run lint                                                  # OK
+node src/__tests__/fileSizeLimits.test.cjs                     # 243/243
+node src/__tests__/featuresReferences.test.cjs                 # 2/2
+node src/__tests__/messengerBackend.test.cjs                   # 61/61
+npm run test:vitest                                            # 518/518 (37 файлов)
+```
 
 ---
 

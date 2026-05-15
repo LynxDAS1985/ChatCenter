@@ -424,6 +424,36 @@ export async function forwardMessages(client, fromChatId, toChatId, messageIds, 
   }
 }
 
+// v0.89.3: pin/unpin СООБЩЕНИЯ через TDLib pinChatMessage / unpinChatMessage
+// (раньше IPC tg:pin переключал чат в Main-list — регрессия от GramJS контракта).
+// docs: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1pin_chat_message.html
+
+export async function pinMessage(client, chatId, messageId, opts = {}) {
+  if (!client?.invoke) return { ok: false, error: 'client not ready' }
+  const msgId = Number(messageId)
+  if (!msgId) return { ok: false, error: 'no messageId' }
+  try {
+    await client.invoke({
+      '@type': 'pinChatMessage',
+      chat_id: Number(chatId),
+      message_id: msgId,
+      disable_notification: opts.disableNotification !== false,
+      only_for_self: !!opts.onlyForSelf,
+    })
+    return { ok: true }
+  } catch (e) { return wrapError(e) }
+}
+
+export async function unpinMessage(client, chatId, messageId) {
+  if (!client?.invoke) return { ok: false, error: 'client not ready' }
+  const msgId = Number(messageId)
+  if (!msgId) return { ok: false, error: 'no messageId' }
+  try {
+    await client.invoke({ '@type': 'unpinChatMessage', chat_id: Number(chatId), message_id: msgId })
+    return { ok: true }
+  } catch (e) { return wrapError(e) }
+}
+
 export async function getChatPinnedMessage(client, chatId, opts = {}) {
   if (!client?.invoke) return { ok: false, error: 'client not ready' }
   try {

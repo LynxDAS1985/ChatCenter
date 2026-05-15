@@ -15,6 +15,105 @@
 
 ---
 
+## Native Telegram (`tg:*`) — TDLib backend
+
+Все каналы зарегистрированы в [`main/native/tdlibIpcHandlers.js`](../main/native/tdlibIpcHandlers.js). UI вызывает через [`window.api.invoke('tg:*', payload)`](../src/native/store/nativeStore.js) — preload [bridge](../main/preload.cjs).
+
+### Login
+
+| Канал | Payload | Ответ |
+|---|---|---|
+| `tg:login-start` | `{ phone: '+71234567890' }` | `{ ok, step: 'code'\|'password'\|'success', error? }` |
+| `tg:login-code` | `{ code: '12345' }` | `{ ok, step: 'password'\|'success', error? }` |
+| `tg:login-password` | `{ password: '...' }` | `{ ok, success?: true, error? }` |
+| `tg:login-cancel` | — | `{ ok }` |
+
+Ошибки переводятся на русский через `translateTdlibError` ([`tdlibAuth.js`](../main/native/backends/tdlibAuth.js#L38)). `authorizationStateWaitRegistration` → дружелюбное «У этого номера ещё нет аккаунта Telegram».
+
+### Accounts
+
+| Канал | Payload | Ответ |
+|---|---|---|
+| `tg:get-accounts` | — | `{ ok, accounts: [{id, messenger:'telegram', status, name, phone}], activeAccountId }` |
+| `tg:remove-account` | `{ accountId }` | `{ ok }` |
+
+### Chats
+
+| Канал | Payload | Ответ |
+|---|---|---|
+| `tg:get-chats` | `{ accountId? }` | `{ ok, chats: Chat[] }` + эмитит `tg:chats` event per-account |
+| `tg:get-cached-chats` | `{ accountId? }` | `{ ok, chats: Chat[] }` + эмитит `tg:chats` event |
+| `tg:rescan-unread` | — | `{ ok, accountStats: [{accountId, chats, unreadTotal, ms}] }` |
+| `tg:health-check` | — | `{ ok, accountStats: [{accountId, ms, ok, error?}] }` |
+| `tg:set-mute` | `{ chatId, muteUntil }` | `{ ok, error? }` |
+| `tg:get-cleanup-stats` | — | `{ ok, totalFiles, totalBytes, byCategory: { session, avatars, cache, media, tmp } }` |
+
+**`muteUntil`** — Unix timestamp (секунды) до которого приглушено: `0` = unmute, `2147483647` = «навсегда», иначе `Math.floor(Date.now()/1000) + seconds`. Backend конвертирует в TDLib `mute_for = max(0, muteUntil - now)`.
+
+**`byCategory`** — каждая категория: `{ files: number, bytes: number }`:
+- `session` — `tdlib-sessions/{accountId}/db.sqlite` + журналы
+- `avatars` — `files/profile_photos/` + общая `tg-avatars/`
+- `media` — `files/{photos,videos,voice,video_notes,documents,music,audio}/`
+- `cache` — `files/{stickers,thumbnails,wallpapers,animations}/`
+- `tmp` — `files/temp/`
+
+### Messages
+
+| Канал | Payload | Ответ |
+|---|---|---|
+| `tg:get-messages` | `{ chatId, limit?, aroundId?, offsetId?, afterId?, addOffset? }` | `{ ok, messages, hasMore }` + эмит `tg:messages` |
+| `tg:get-topic-messages` | `{ chatId, topicId, limit?, aroundId?, addOffset? }` | `{ ok, messages }` + эмит `tg:messages` |
+| `tg:send-message` | `{ chatId, text, replyTo? }` | `{ ok, messageId?, message? }` |
+| `tg:edit-message` | `{ chatId, messageId, text }` | `{ ok }` |
+| `tg:delete-message` | `{ chatId, messageId, forAll? }` | `{ ok }` |
+| `tg:forward` | `{ fromChatId, toChatId, messageId }` | `{ ok }` |
+| `tg:mark-read` | `{ chatId, maxId }` | `{ ok }` |
+| `tg:mark-topic-read` | `{ chatId, topicId, maxId }` | `{ ok }` |
+| `tg:get-pinned-message` / `tg:get-pinned` | `{ chatId }` | `{ ok, message?: NativeMessage \| null }` |
+| `tg:pin` | `{ chatId, messageId, unpin? }` | `{ ok }` — закреп/откреп **сообщения** в чате (НЕ закреп чата в Main-list). При `unpin:true` → TDLib `unpinChatMessage`, иначе `pinChatMessage(disable_notification:true, only_for_self:false)`. |
+| `tg:send-file` | `{ chatId, filePath, caption? }` | `{ ok, messageId? }` |
+| `tg:set-typing` | `{ chatId }` | `{ ok }` (sendChatAction typing) |
+| `tg:refresh-avatar` | `{ chatId }` | `{ ok }` (noop — TDLib шлёт автоматически) |
+
+### Media
+
+| Канал | Payload | Ответ |
+|---|---|---|
+| `tg:download-media` | `{ chatId, messageId, thumb? }` | `{ ok, path? }` (локальный путь к файлу) |
+| `tg:download-video` | `{ chatId, messageId }` | `{ ok, path? }` |
+
+### Forum
+
+| Канал | Payload | Ответ |
+|---|---|---|
+| `tg:get-forum-topics` | `{ chatId, limit? }` | `{ ok, isForum, topics: [{id, title, unreadCount, ...}] }` |
+
+### Renderer events (`webContents.send`)
+
+Эмитятся из IPC handler через event-bridge (`manager.on(...) → sendToRenderer(...)`):
+
+| Event | Data |
+|---|---|
+| `tg:new-message` | `{ chatId, message: NativeMessage }` |
+| `tg:message-edited` | `{ chatId, messageId, editDate }` |
+| `tg:message-deleted` | `{ chatId, messageIds: string[] }` |
+| `tg:chats` | `{ accountId, chats, append }` |
+| `tg:messages` | `{ chatId, messages, append?, appendNewer?, aroundId?, afterId?, readUpTo? }` |
+| `tg:chat-unread-sync` | `{ chatId, unreadCount }` |
+| `tg:chat-avatar` | `{ chatId, avatarPath: 'cc-media://avatars/...' }` |
+| `tg:sender-avatar` | `{ accountId, userId, avatarPath }` |
+| `tg:login-step` | `{ step, accountId, codeInfo?, passwordInfo?, raw? }` |
+| `tg:account-update` | `{ id, messenger, status, name, phone, username, userId }` |
+| `tg:account-connection` | `{ accountId, state }` |
+| `tg:user-status` | `{ accountId, userId, online: boolean }` |
+
+### Замечания
+
+- `device_model` / `application_version` для **существующих TDLib сессий** не обновятся при патч-релизе — TDLib пишет их в session-БД при первом `setTdlibParameters` и не перечитывает на повторных запусках. Новые логины — увидят актуальную версию.
+- IPC контракт-тесты живут в [`src/__tests__/tdlibIpcHandlers.vitest.js`](../src/__tests__/tdlibIpcHandlers.vitest.js) — добавлять при изменении payload-формата.
+
+---
+
 ## Telegram forum topics — investigation (2026-05-12)
 
 Native Telegram API currently has flat chat/message channels:

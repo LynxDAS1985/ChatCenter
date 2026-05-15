@@ -69,8 +69,11 @@ export function initTdlibBackendStartup(opts) {
     })
 
     // 2. Backend через manager
+    // v0.89.3: userDataDir пробрасываем в backend для chat.getCleanupStats —
+    // fs-скан tdlib-sessions/ + tg-avatars/.
     const backend = createTdlibBackend({
       manager,
+      userDataDir: opts.userDataPath,
       makeClientParams: (accountSubdir) => ({
         apiId, apiHash, tdlibParameters,
         accountSubdir: accountSubdir || undefined,
