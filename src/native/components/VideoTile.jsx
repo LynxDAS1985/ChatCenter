@@ -138,8 +138,54 @@ export default function VideoTile({ m, chatId, inAlbum }) {
 
   const aspect = m.mediaWidth && m.mediaHeight ? `${m.mediaWidth} / ${m.mediaHeight}` : '16 / 9'
 
+  // v0.89.11: открыть видео в отдельном окне плеера (там есть codec-error
+  // fallback с кнопкой «Открыть во внешнем плеере» — VLC/Movies&TV).
+  const handleOpenFullPlayer = async (e) => {
+    e?.stopPropagation?.()
+    try {
+      await window.api?.invoke('video:open', {
+        src: videoSrc, title: m.mediaPreview || 'Видео',
+        width: m.mediaWidth || 0, height: m.mediaHeight || 0,
+      })
+    } catch (_) {}
+  }
+
   // Если играет inline — показываем <video>
   if (playing && videoSrc) {
+    // v0.89.11: при ошибке codec/декодера (MediaError code=4) — показываем
+    // понятное сообщение + кнопку открытия в полном плеере (там есть fallback
+    // на внешний плеер VLC). Раньше ошибка только setError'илась но UI её не
+    // показывал в playing-state → юзер видел чёрный 0:00 без понимания почему.
+    if (error) {
+      return (
+        <div
+          ref={containerRef}
+          style={{
+            position: 'relative', width: '100%', aspectRatio: aspect,
+            minHeight: inAlbum ? 0 : 180, maxHeight: inAlbum ? '100%' : 420,
+            borderRadius: 8, overflow: 'hidden', background: 'rgba(0,0,0,0.85)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            padding: 20, gap: 12,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ fontSize: 14, color: '#fff', textAlign: 'center', maxWidth: 320 }}>
+            ⚠️ Не удалось воспроизвести видео
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', textAlign: 'center', maxWidth: 320 }}>
+            {error}
+          </div>
+          <button
+            onClick={handleOpenFullPlayer}
+            style={{
+              background: '#2AABEE', color: '#fff', border: 0,
+              padding: '8px 16px', borderRadius: 6, cursor: 'pointer',
+              fontSize: 12, fontWeight: 500,
+            }}
+          >🎬 Открыть в плеере</button>
+        </div>
+      )
+    }
     return (
       <div
         ref={containerRef}
