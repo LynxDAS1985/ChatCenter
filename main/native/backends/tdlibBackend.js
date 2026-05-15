@@ -30,10 +30,6 @@ import { userDisplayName } from './tdlibClient.js'
 import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
 import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccountSessionStats, removeAccountSessionFiles } from './tdlibChatActions.js'
 
-// ──────────────────────────────────────────────────────────────────────
-// HELPERS
-// ──────────────────────────────────────────────────────────────────────
-
 // Wrapper для invoke который возвращает { ok, result?, error?, code? } вместо throw.
 // TDLib шлёт {'@type':'error', code, message} как rejected promise (tdl → TDLibError).
 // `code` сохраняем как есть (undefined вместо 0) — потребители могут различать
@@ -80,17 +76,19 @@ function makeExtras(manager, accountId) {
       }
       return ''
     },
-    getSenderAvatar: (_senderId) => {
-      // На Этапе 2.6 senderAvatar пока null. В Этапе 3 (интеграция) накатим
-      // через downloadFile для profile_photo + cc-media:// URL.
+    // v0.89.6: из record.userAvatars/chatAvatars cache (раньше hardcoded null,
+    // фото шло только через event tg:sender-avatar → race на старте).
+    getSenderAvatar: (senderId) => {
+      if (!senderId) return null
+      const record = manager.accounts.get(accountId)
+      if (!record) return null
+      if (senderId['@type'] === 'messageSenderUser') return record.userAvatars?.get(Number(senderId.user_id)) || null
+      if (senderId['@type'] === 'messageSenderChat') return record.chatAvatars?.get(Number(senderId.chat_id)) || null
       return null
     },
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// MAIN FACTORY
-// ──────────────────────────────────────────────────────────────────────
 
 /**
  * @param {object} opts

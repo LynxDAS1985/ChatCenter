@@ -11,6 +11,38 @@
 
 ---
 
+## 2026-05-15 — TDLib Stage 4: snapshot caches (v0.89.6) — production bug
+
+Визуальная проверка пользователем после релиза v0.89.5 показала реальную regression: «Без имени» в AccountContextMenu, ВСЕ чаты без аватарок (только инициалы), отправители в групповых чатах без аватарок.
+
+### Корневая причина (та же что в GramJS-эру)
+
+Backend получал данные через TDLib events и эмитил renderer events. Snapshot APIs (`tg:get-accounts`, `tg:get-chats`, `tg:get-messages`) **не возвращали кеш** — данные шли только через события. На старте autoRestore→finalizeAccount→avatars запускаются ДО mount React → события эмитятся в пустоту → теряются навсегда.
+
+Конкретные пробелы:
+- `tdlibClient.getAccountChats` — `mapChat` без `extras.avatar` → все чаты `avatar: null`
+- `tdlibBackend.makeExtras.getSenderAvatar` — захардкожен `return null` (TODO с Этапа 2.6)
+- `tdlibIpcHandlers.tg:get-accounts` — после v0.89.4 фикса #7 возвращал только id/status
+
+### Решение — snapshot caches per record
+
+Добавлены в `record` (TdlibClientManager):
+- `chatAvatars: Map<chatId, url>`
+- `userAvatars: Map<userId, url>`
+- `ownUserId: number` (для определения own-avatar)
+
+`emitAvatarReady` сохраняет URL в cache ДО emit. `getAccountChats` / `makeExtras.getSenderAvatar` / `tg:get-accounts` теперь читают из cache. Own-avatar дополнительно эмитит `account:update {avatar}` для AccountContextMenu.
+
+### Урок
+
+Snapshot APIs ДОЛЖНЫ возвращать всё кешированное в backend. Если данные передаются только через events — UI, не успевший подписаться, никогда не получит данные. Это была давняя категория багов (GramJS-эра, `archive/features-v0.87.93-105.md:370`), повторилась в TDLib миграции и осталась незамеченной во всех 4 предыдущих аудитах потому что v0.89.4 emit-tests проверяли event эмиссию, но не snapshot-completeness.
+
+**Защита от 5-го раунда такого класса**: добавлены тесты «после finalize tg:get-accounts возвращает name/phone/avatar», «getAccountChats читает chatAvatars», «getSenderAvatar читает userAvatars (регрессия для hardcoded null)». Любая попытка вернуться к event-only без snapshot — поймана.
+
+**Тестов**: 531 → 537 (+6).
+
+---
+
 ## 2026-05-15 — TDLib Stage 4: четвёртый аудит — drift fixes (v0.89.5)
 
 Четвёртый раунд независимого аудита. **0 функциональных регрессий найдено** (vs 6/3/8 в трёх прошлых раундах). Закрылись только 2 точечных drift'а документации vs код:

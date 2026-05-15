@@ -72,16 +72,32 @@ export function handleAvatarReady(manager, record, file) {
 }
 
 /**
- * Копирует TDLib file в tg-avatars/ и эмитит соответствующий event с cc-media:// URL.
+ * Копирует TDLib file в tg-avatars/, СОХРАНЯЕТ в snapshot cache и эмитит event.
+ *
+ * v0.89.6 — кеширование url в record.chatAvatars / record.userAvatars (cache)
+ * до emit, чтобы tg:get-chats / tg:get-accounts snapshot вернули url даже если
+ * UI пропустил event (race на старте — UI монтируется после autoRestore →
+ * finalizeAccount → download → emitAvatarReady).
+ *
+ * Для kind='user' если ownerId === record.ownUserId — эмитим дополнительно
+ * `account:update {id, avatar}` чтобы UI обновил аватарку аккаунта в боковой
+ * панели (не только в сообщениях — там через tg:sender-avatar).
  */
 export function emitAvatarReady(manager, record, kind, ownerId, absPath) {
   const accountId = record.accountId
   const url = copyToAvatarsDir(absPath, ownerId)
   if (!url) return
+  const numericOwnerId = Number(ownerId)
   if (kind === 'chat') {
+    record.chatAvatars?.set(numericOwnerId, url)
     manager.emit('chat:avatar', { accountId, chatId: `${accountId}:${ownerId}`, avatarPath: url })
   } else if (kind === 'user') {
+    record.userAvatars?.set(numericOwnerId, url)
     manager.emit('user:avatar', { accountId, userId: String(ownerId), avatarPath: url })
+    // v0.89.6: если это own avatar — эмитим account:update для обновления sidebar
+    if (record.ownUserId && numericOwnerId === Number(record.ownUserId)) {
+      manager.emit('account:update', { id: accountId, messenger: 'telegram', avatar: url })
+    }
   }
 }
 

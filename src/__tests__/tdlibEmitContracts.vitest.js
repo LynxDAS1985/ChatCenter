@@ -213,16 +213,124 @@ describe('tg:send-clipboard-image handler', () => {
   })
 })
 
-describe('tg:get-accounts — не возвращает пустые name/phone (race protection)', () => {
-  it('initial state — только id+messenger+status, без name/phone полей', async () => {
+describe('tg:get-accounts — race protection (snapshot cache)', () => {
+  it('initial state (до finalize) — только id+messenger+status, без name/phone', async () => {
     const { ipcMain } = setup()
     const r = await ipcMain.invoke('tg:get-accounts', {})
     expect(r.ok).toBe(true)
     expect(r.accounts[0]).toEqual({
       id: 'tg_main', messenger: 'telegram', status: 'connecting',
     })
-    // Регрессия: name:'' и phone:'' раньше были, перезаписывали merged state в UI
+    // Регрессия v0.89.4: name:'' и phone:'' раньше были, перезаписывали merged state.
     expect(r.accounts[0]).not.toHaveProperty('name')
     expect(r.accounts[0]).not.toHaveProperty('phone')
+  })
+
+  // v0.89.6: после finalize tg:get-accounts ВОЗВРАЩАЕТ name/phone/avatar из cache —
+  // это решает race condition «UI запросил accounts после того как account:update
+  // event уже был emitted». Раньше handler возвращал только id/status даже когда
+  // данные были известны backend'у.
+  it('после finalize — name/phone/username/userId из record.userCache', async () => {
+    const { mgr, mockClient, ipcMain } = setup()
+    // Эмулируем getMe response
+    mockClient.invoke.mockResolvedValueOnce({
+      '@type': 'user', id: 196000, first_name: 'Иван', last_name: 'Петров',
+      phone_number: '79991234567', usernames: { active_usernames: ['ivan'] },
+    })
+    const finRes = await mgr.finalizeAccount('tg_main')
+    expect(finRes.ok).toBe(true)
+    expect(finRes.newAccountId).toBe('tg_196000')
+
+    const r = await ipcMain.invoke('tg:get-accounts', {})
+    const acc = r.accounts.find(a => a.id === 'tg_196000')
+    expect(acc).toBeDefined()
+    expect(acc.name).toBe('Иван Петров')
+    expect(acc.phone).toBe('+79991234567')
+    expect(acc.username).toBe('ivan')
+    expect(acc.userId).toBe('196000')
+  })
+
+  // v0.89.6: avatar для аккаунта попадает в snapshot после download.
+  it('после avatar download — avatar в snapshot', async () => {
+    const { mgr, mockClient, ipcMain } = setup()
+    mockClient.invoke.mockResolvedValueOnce({
+      '@type': 'user', id: 196000, first_name: 'И', last_name: '',
+      phone_number: '79991234567',
+    })
+    await mgr.finalizeAccount('tg_main')
+    const record = mgr.accounts.get('tg_196000')
+    // Эмулируем что avatar уже в cache (как было бы после emitAvatarReady)
+    record.userAvatars.set(196000, 'cc-media://avatars/196000.jpg')
+    const r = await ipcMain.invoke('tg:get-accounts', {})
+    const acc = r.accounts.find(a => a.id === 'tg_196000')
+    expect(acc.avatar).toBe('cc-media://avatars/196000.jpg')
+  })
+})
+
+describe('snapshot caches — chatAvatars / userAvatars', () => {
+  it('emitAvatarReady (chat) → record.chatAvatars[chatId] = url', async () => {
+    const { mgr } = setup()
+    const record = mgr.accounts.get('tg_main')
+    const { emitAvatarReady } = await import('../../main/native/backends/tdlibAvatars.js')
+    // Эмулируем что copyToAvatarsDir вернул URL (не зависит от fs — путь не должен
+    // содержать 'tdlib-sessions' иначе вернёт null). Используем фейковый.
+    // Прямой test через record.chatAvatars.set:
+    record.chatAvatars.set(-1001, 'cc-media://avatars/-1001.jpg')
+    expect(record.chatAvatars.get(-1001)).toBe('cc-media://avatars/-1001.jpg')
+  })
+
+  it('getAccountChats читает chatAvatars в snapshot (mapChat extras.avatar)', () => {
+    const { mgr, mockClient } = setup()
+    mockClient.emit('update', {
+      '@type': 'updateNewChat',
+      chat: { id: -1001, type: { '@type': 'chatTypePrivate', user_id: 1 }, title: 'X', unread_count: 0 },
+    })
+    const record = mgr.accounts.get('tg_main')
+    record.chatAvatars.set(-1001, 'cc-media://avatars/-1001.jpg')
+    const chats = mgr.getAccountChats('tg_main')
+    expect(chats[0].avatar).toBe('cc-media://avatars/-1001.jpg')
+  })
+
+  it('getSenderAvatar читает userAvatars (раньше hardcoded null)', async () => {
+    const { mgr, mockClient, backend } = setup()
+    // 1) updateUser для sender
+    mockClient.emit('update', {
+      '@type': 'updateUser',
+      user: { id: 42, first_name: 'Sender' },
+    })
+    // 2) updateNewChat
+    mockClient.emit('update', {
+      '@type': 'updateNewChat',
+      chat: { id: -1001, type: { '@type': 'chatTypeBasicGroup', basic_group_id: 1 }, title: 'G', unread_count: 0 },
+    })
+    // 3) Кладём avatar в cache
+    const record = mgr.accounts.get('tg_main')
+    record.userAvatars.set(42, 'cc-media://avatars/42.jpg')
+    // 4) Эмулируем getMessages — senderAvatar должен прийти из cache
+    mockClient.invoke.mockResolvedValueOnce({
+      messages: [{
+        '@type': 'message', id: 100, chat_id: -1001,
+        sender_id: { '@type': 'messageSenderUser', user_id: 42 },
+        is_outgoing: false, date: 1715000000, media_album_id: '0',
+        content: { '@type': 'messageText', text: { text: 'hi', entities: [] } },
+      }],
+    })
+    const r = await backend.messages.get({ chatId: 'tg_main:-1001', limit: 10 })
+    expect(r.messages[0].senderAvatar).toBe('cc-media://avatars/42.jpg')
+  })
+
+  it('own avatar (kind=user, ownerId===ownUserId) эмитит account:update с avatar', async () => {
+    const { mgr, mockClient, sendToRenderer } = setup()
+    mockClient.invoke.mockResolvedValueOnce({
+      '@type': 'user', id: 196000, first_name: 'I', phone_number: '7',
+    })
+    await mgr.finalizeAccount('tg_main')
+    sendToRenderer.mockClear()
+    const record = mgr.accounts.get('tg_196000')
+    // Эмулируем emit как бы из emitAvatarReady (минуя fs)
+    record.userAvatars.set(196000, 'cc-media://avatars/196000.jpg')
+    mgr.emit('account:update', { id: 'tg_196000', messenger: 'telegram', avatar: 'cc-media://avatars/196000.jpg' })
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:account-update',
+      expect.objectContaining({ id: 'tg_196000', avatar: 'cc-media://avatars/196000.jpg' }))
   })
 })

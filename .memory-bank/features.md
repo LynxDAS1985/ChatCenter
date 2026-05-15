@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.5 (15 мая 2026)
+## Текущая версия: v0.89.6 (15 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.5). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.6). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,71 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.6 — Snapshot caches: фикс «Без имени» + отсутствующих аватарок (production bug)
+
+**Контекст**: после релиза v0.89.5 (4-й аудит) пользователь визуально проверил приложение — увидел реальную regression: «Без имени» в AccountContextMenu, ВСЕ чаты без аватарок (только инициалы), отправители в групповых чатах без аватарок. Скриншоты сделал, отправил.
+
+#### Корневая причина (та же категория что в GramJS-эру — [archive/features-v0.87.93-105.md:370](.memory-bank/archive/features-v0.87.93-105.md))
+
+Backend получал name/phone/avatar через TDLib events и эмитил соответствующие renderer events (`tg:account-update`, `tg:chat-avatar`, `tg:sender-avatar`). НО snapshot API-handlers (`tg:get-accounts`, `tg:get-chats`, `tg:get-messages`) **не возвращали эти данные**.
+
+Возникал race condition: на старте `autoRestoreSessionsFromDisk` → `finalizeAccount` → `scheduleAvatarDownload` запускаются ВО ВРЕМЯ инициализации backend, **до** монтирования React-компонентов. Когда UI наконец-то подписывался на события через `nativeStoreIpc.js`, события уже были эмитированы — терялись навсегда. Затем UI запрашивал `tg:get-accounts`/`get-chats`, но snapshot возвращал только примитивные поля (id/status/title) — без name/phone/avatar.
+
+Конкретные пробелы:
+- [`tdlibClient.js#getAccountChats`](main/native/backends/tdlibClient.js) — `mapChat(tdChat, accountId)` без `extras.avatar` → все чаты возвращались с `avatar: null`
+- [`tdlibBackend.js#makeExtras.getSenderAvatar`](main/native/backends/tdlibBackend.js) — **захардкожен `return null`** (TODO с Этапа 2.6, никогда не закрыт) → `senderAvatar` в `mapMessage` всегда null
+- [`tdlibIpcHandlers.js#tg:get-accounts`](main/native/tdlibIpcHandlers.js) — возвращал только `{id, messenger, status}` (после фикса #7 v0.89.4) → `name/phone/avatar` УЖЕ были известны backend'у в `record.userCache`, но не возвращались
+
+#### Решение — snapshot caches per record
+
+Добавлены 3 новых поля в `record` ([`tdlibClient.js`](main/native/backends/tdlibClient.js)):
+- `chatAvatars: Map<chatId, url>` — cc-media:// URL для каждого чата
+- `userAvatars: Map<userId, url>` — cc-media:// URL для каждого пользователя
+- `ownUserId: number` — выставляется в `finalizeAccount` после `getMe`
+
+**`emitAvatarReady`** ([`tdlibAvatars.js`](main/native/backends/tdlibAvatars.js)) — теперь сохраняет URL в соответствующий cache ДО `manager.emit`. Если это **own avatar** (kind=user + ownerId===ownUserId) — дополнительно эмитит `account:update {id, avatar}` чтобы AccountContextMenu обновился.
+
+**`getAccountChats`** — читает `record.chatAvatars.get(chatId)` и передаёт в `mapChat({avatar})`. Снапшот теперь содержит avatar URL для чатов с уже скачанными аватарками.
+
+**`makeExtras.getSenderAvatar`** — читает `record.userAvatars.get(userId)` для `messageSenderUser` и `record.chatAvatars.get(chat_id)` для `messageSenderChat`. Теперь `mapMessage` возвращает `senderAvatar` сразу при `tg:get-messages` snapshot — не приходится ждать события.
+
+**`tg:get-accounts`** handler — теперь читает `record.userCache.get(ownUserId)` (там лежит `me` объект после `finalizeAccount`) + `record.userAvatars.get(ownUserId)`. Формирует `displayName = fullName || @username || phone || Telegram ${userId}` (тот же fallback что в `finalizeAccount`). Возвращает `{id, messenger, status, name, phone, username, userId, avatar?}`.
+
+#### Тесты (+6)
+
+[`tdlibEmitContracts.vitest.js`](src/__tests__/tdlibEmitContracts.vitest.js):
+- После `finalize` `tg:get-accounts` возвращает name/phone/username/userId
+- После avatar download — avatar в snapshot
+- `emitAvatarReady (chat) → record.chatAvatars`
+- `getAccountChats` читает chatAvatars в snapshot
+- `getSenderAvatar` читает userAvatars (регрессия для hardcoded null)
+- Own avatar → `account:update {avatar}` (для AccountContextMenu)
+
+**Тестов**: 531 → 537 (+6).
+
+#### Что увидит пользователь
+
+При запуске приложения (visual проверка):
+- ✅ В AccountContextMenu — реальное имя (Иван Петров) и телефон вместо «Без имени» и «?»
+- ✅ Аватарки чатов в списке (по факту скачанные TDLib)
+- ✅ Аватарки отправителей в групповых чатах (мини-кружочки слева от сообщений)
+- ✅ Аватарки в Settings → Active Sessions с правильным application_version (v0.89.6) — для НОВЫХ логинов. Для существующих сессий — `device_model` останется тем что было записано при первом login (ограничение TDLib).
+
+**Версия**: v0.89.5 → v0.89.6 (patch — функциональный bug fix для production).
+
+**Проверено**:
+
+```powershell
+npm run lint                                                  # OK
+node src/__tests__/fileSizeLimits.test.cjs                     # 244/244
+node src/__tests__/messengerBackend.test.cjs                   # 61/61
+npm run test:vitest                                            # 537/537 (38 файлов)
+```
+
+⚠ **Visual повторная проверка обязательна**: открыть приложение → проверить что (1) аккаунт в sidebar показывает имя и аватарку, (2) аватарки чатов в Inbox-режиме видны, (3) в групповых чатах рядом с сообщениями отправителей мини-аватарки.
 
 ---
 

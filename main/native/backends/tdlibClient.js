@@ -79,13 +79,14 @@ export class TdlibClientManager extends EventEmitter {
     if (!this.clientFactory) throw new Error('clientFactory not configured')
 
     const client = this.clientFactory(clientParams)
+    // v0.89.6: snapshot caches — раньше avatar/name шли только через events
+    // (race с UI subscription). Теперь храним и читаем при tg:get-chats/get-accounts.
     const record = {
-      accountId,
-      client,
-      userCache: new Map(),
-      chatCache: new Map(),
-      authState: null,
-      params: clientParams,
+      accountId, client,
+      userCache: new Map(), chatCache: new Map(),
+      chatAvatars: new Map(), userAvatars: new Map(),
+      ownUserId: null,
+      authState: null, params: clientParams,
     }
     this.accounts.set(accountId, record)
     this._wireClient(record)
@@ -181,14 +182,12 @@ export class TdlibClientManager extends EventEmitter {
       // Без этого UI показывал «Без имени» для self-аккаунтов где TDLib возвращает
       // user.first_name='' (бывает у некоторых аккаунтов).
       const displayName = fullName || (username ? `@${username}` : '') || phone || `Telegram ${userId}`
-      // v0.89.0 / Этап 3.13: явно качаем свою profile_photo если есть. TDLib
-      // не всегда пушит updateUserPhoto автоматически — getMe возвращает user
-      // с profile_photo, мы передаём в pipeline ровно как для updateUser.
-      // Save в userCache + schedule download.
+      // v0.89.0 / Этап 3.13: явно качаем свою profile_photo (TDLib не всегда
+      // пушит updateUserPhoto автоматически для getMe-юзера).
       const record = this.accounts.get(finalId)
       if (record) {
         record.userCache.set(Number(userId), me)
-        // dynamic import чтобы не делать tdlibAvatars обязательным для тестов
+        record.ownUserId = Number(userId)  // v0.89.6: для snapshot и own-avatar detection
         try {
           const { scheduleAvatarDownload } = await import('./tdlibAvatars.js')
           scheduleAvatarDownload(this, record, 'user', userId, me.profile_photo?.small)
@@ -475,17 +474,15 @@ export class TdlibClientManager extends EventEmitter {
   // HELPERS для UI / IPC
   // ──────────────────────────────────────────────────────────────
 
-  /**
-   * Возвращает список чатов аккаунта в нашем формате (Chat[]).
-   * Без сетевого запроса — из локального кэша TDLib (заполняется через
-   * updateNewChat events во время initial sync).
-   */
+  /** Возвращает список чатов из локального кэша (без сетевого запроса). */
   getAccountChats(accountId) {
     const record = this.accounts.get(accountId)
     if (!record) return []
     const result = []
     for (const tdChat of record.chatCache.values()) {
-      const mapped = mapChat(tdChat, accountId)
+      // v0.89.6: avatar из chatAvatars cache (если был скачан) — раньше всегда null
+      const avatar = record.chatAvatars.get(Number(tdChat.id)) || null
+      const mapped = mapChat(tdChat, accountId, { avatar })
       if (mapped) result.push(mapped)
     }
     return result

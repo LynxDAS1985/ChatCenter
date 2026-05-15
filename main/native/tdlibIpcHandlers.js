@@ -61,20 +61,40 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
   // ACCOUNTS
   // ────────────────────────────────────────────────────────────────────
 
-  // v0.89.4: НЕ возвращаем пустые `name`/`phone` — UI делает spread merge
-  // ({...existing, ...acc}), и пустые значения стирали бы реальное имя если
-  // tg:account-update с finalize пришёл раньше. Возвращаем только то что точно
-  // знаем (id + status), остальное UI получит через event-bridge.
+  // v0.89.6: возвращаем cached name/phone/username/avatar из record (если уже
+  // получены через getMe + avatar download). Это нужно потому что UI может
+  // запросить tg:get-accounts ПОСЛЕ того как event tg:account-update уже эмитился
+  // (race на старте: autoRestore → finalizeAccount запускается до mount UI).
+  // Раньше (v0.89.4 фикс #7) возвращали только id/messenger/status чтобы избежать
+  // race с merge — но без cache в snapshot данные терялись навсегда если UI
+  // подписался слишком поздно. Теперь cache решает это: данные есть с момента
+  // когда они получены backend'ом.
   handle('tg:get-accounts', () => {
     const manager = backend._manager
     if (!manager) return { ok: false, accounts: [] }
     const accounts = manager.listAccounts().map(accountId => {
       const authState = manager.getAuthState(accountId)
-      return {
+      const record = manager.accounts.get(accountId)
+      const acc = {
         id: accountId,
         messenger: 'telegram',
         status: authState === 'authorizationStateReady' ? 'connected' : 'connecting',
       }
+      const ownUserId = record?.ownUserId
+      const me = ownUserId ? record.userCache.get(ownUserId) : null
+      if (me) {
+        const fullName = `${me.first_name || ''} ${me.last_name || ''}`.trim()
+        const username = me.usernames?.active_usernames?.[0] || me.username || ''
+        const phone = me.phone_number ? `+${me.phone_number}` : ''
+        const displayName = fullName || (username ? `@${username}` : '') || phone || `Telegram ${ownUserId}`
+        acc.name = displayName
+        acc.phone = phone
+        acc.username = username
+        acc.userId = String(ownUserId)
+        const avatar = record.userAvatars?.get(ownUserId)
+        if (avatar) acc.avatar = avatar
+      }
+      return acc
     })
     return { ok: true, accounts, activeAccountId: accounts[0]?.id || null }
   })

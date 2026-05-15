@@ -269,7 +269,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.89.5 (15 мая 2026)
+**Текущая версия**: v0.89.6 (15 мая 2026)
 
 ---
 
@@ -751,6 +751,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.89.5 (15 мая 2026)
-**Статус**: 🟢 Фазы 1-4+ + TDLib миграция завершена + **четыре аудита закрыты** (TDLib spec + invoke contracts + emit contracts + drift check)
-**Последнее обновление**: 15 мая 2026 — v0.89.5: четвёртый аудит нашёл **0 функциональных регрессий** (первый раз после v0.89.2/3/4 у которых было 6/3/8). Только 2 точечных drift'а — оба исправлены: (1) `.memory-bank/api.md:37` описывал устаревший shape `tg:get-accounts` с `name/phone` — после фикса v0.89.4 #7 этих полей нет, документация приведена в соответствие; (2) `applicationVersion` имел fallback `'0.89.2'` в `tdlibStartup.js:67`/`tdlibAuth.js:86` и `main.js` не передавал реальную версию — TDLib записывал «ChatCenter 0.89.2» в session-БД для новых login'ов (видно в Telegram → Settings → Active Sessions). Теперь `main.js:230` передаёт `applicationVersion: app.getVersion()` (Electron API читает из package.json) → автоматически обновляется при каждом patch. **TDLib миграция полностью завершена, все 4 раунда аудита закрыты.**
+**Версия проекта**: v0.89.6 (15 мая 2026)
+**Статус**: 🟢 Фазы 1-4+ + TDLib миграция + **5 аудитов** (TDLib spec + invoke + emit contracts + drift check + production visual)
+**Последнее обновление**: 15 мая 2026 — v0.89.6: реальная visual-проверка пользователем после v0.89.5 показала «Без имени» в AccountContextMenu + ВСЕ аватарки чатов отсутствуют + аватарки отправителей в группах отсутствуют. Корневая причина: snapshot APIs (`tg:get-accounts`, `tg:get-chats`, `tg:get-messages`) **не возвращали кешированные данные** — `name/phone/avatar` для аккаунта и `avatar` для чатов/отправителей шли ТОЛЬКО через events (`tg:account-update`, `tg:chat-avatar`, `tg:sender-avatar`). Если event эмитился ДО подписки UI (race: autoRestore → finalizeAccount → avatars запускаются до mount React) — данные терялись навсегда. Та же категория багов что в GramJS-эру (см. `archive/features-v0.87.93-105.md:370`). **Фикс**: добавлены snapshot caches в `record`: `chatAvatars: Map<chatId, url>`, `userAvatars: Map<userId, url>`, `ownUserId: number`. `emitAvatarReady` сохраняет URL в cache ДО emit. `getAccountChats` читает `chatAvatars` → `mapChat extras.avatar`. `makeExtras.getSenderAvatar` (ранее hardcoded `null` — TODO с Этапа 2.6) теперь читает из `userAvatars`/`chatAvatars`. `tg:get-accounts` возвращает `name/phone/username/userId/avatar` из `record.userCache.get(ownUserId)` + `record.userAvatars.get(ownUserId)`. Для own-avatar дополнительно эмитится `account:update {avatar}` чтобы AccountContextMenu обновился. +6 vitest тестов (`tdlibEmitContracts.vitest.js`). Тестов: 531 → 537.
