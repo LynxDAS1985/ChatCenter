@@ -269,7 +269,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.89.3 (15 мая 2026)
+**Текущая версия**: v0.89.4 (15 мая 2026)
 
 ---
 
@@ -751,6 +751,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.89.3 (15 мая 2026)
-**Статус**: 🟢 Фазы 1-4+ выполнены + TDLib миграция завершена + два аудита закрыты (backend correctness + IPC contracts)
-**Последнее обновление**: 15 мая 2026 — v0.89.3: второй аудит ПОСЛЕ v0.89.2 обнаружил, что три IPC канала (`tg:pin`, `tg:set-mute`, `tg:get-cleanup-stats`) реализованы технически правильно по TDLib спеке, но контракт payload **не совпадает с UI** (renderer-side `nativeStore.js` / `MuteMenu.jsx` / `AccountContextMenu.jsx`). Все три исправлены: (1) **`tg:pin`** — раньше делал `toggleChatIsPinned` (закреп ЧАТА в Main-list), теперь правильно делает `pinChatMessage`/`unpinChatMessage` (закреп СООБЩЕНИЯ в чате — то что шлёт UI `{chatId, messageId, unpin}`). (2) **`tg:set-mute`** — раньше handler читал `muteFor` (которого UI не шлёт), теперь читает `muteUntil` (Unix timestamp как шлёт UI) и конвертирует в TDLib `mute_for = max(0, muteUntil - now)`. Раньше любой клик в MuteMenu давал unmute. (3) **`tg:get-cleanup-stats`** — раньше возвращал `{ bytes, dbBytes, fileCount }` через `getStorageStatisticsFast`, теперь возвращает `{ totalFiles, totalBytes, byCategory: { session, avatars, cache, media, tmp } }` через **fs-скан** `tdlib-sessions/` + `tg-avatars/` (как делал GramJS `collectCleanupStats`). UI предпросмотр logout снова показывает реальные данные. Корневая причина (отсутствие документации IPC) закрыта: [`.memory-bank/api.md`](.memory-bank/api.md) теперь содержит таблицы всех 24 `tg:*` каналов с payload и response shapes + 12 renderer events. Добавлены IPC-контракт тесты в [`tdlibIpcHandlers.vitest.js`](src/__tests__/tdlibIpcHandlers.vitest.js) — ловят регрессии «UI payload ↔ handler» автоматически. Тестов: 506 → 518 (+12).
+**Версия проекта**: v0.89.4 (15 мая 2026)
+**Статус**: 🟢 Фазы 1-4+ + TDLib миграция завершена + три аудита закрыты (backend correctness + invoke contracts + **emit contracts**)
+**Последнее обновление**: 15 мая 2026 — v0.89.4: третий аудит обнаружил что v0.89.2/3 закрыли только **invoke-направление** контрактов (UI→backend), но **emit-направление** (backend→UI) никто не проверял систематически. Найдено 8 регрессий, все закрыты: (1) `tg:sender-avatar` — backend эмитил `{accountId, userId, avatarPath}`, UI ждал `{senderId, avatarUrl}` — аватарки отправителей в группах не появлялись; UI handler теперь iterates все `state.messages` по senderId; (2) `tg:remove-account` полностью сломан — теперь полный flow: scan→`logOut`→`close`→`fs.rmSync`→ emit `tg:account-update {removed:true, wipeStats}` (раньше «удалённый» аккаунт воскрешался при перезапуске); (3) `tg:send-clipboard-image` handler не существовал → Ctrl+V скриншот падал; теперь handler пишет в tmp + `sendFile`; (4) `tg:media-progress` не эмитился — теперь `onProgress` callback в `media.download/downloadVideo` пробрасывает chunks в `sendToRenderer`; (5) `tg:typing` не эмитился — теперь `tdlibClient` обрабатывает `updateChatAction` и эмитит `chat:typing`; (6) `tg:read` (outgoing) не эмитился — теперь `updateChatReadOutbox` эмитит `chat:read-outbox`; (7) `tg:get-accounts` возвращал пустые `name:''`/`phone:''` → race condition в UI merge; теперь только id/messenger/status; (8) удалена зависимость `telegram` (GramJS) из package.json и package-lock.json. Системная защита: новый файл [`tdlibEmitContracts.vitest.js`](src/__tests__/tdlibEmitContracts.vitest.js) (13 тестов) проверяет каждое emit↔UI handler соответствие — больше не пропустим этот класс регрессий. Тестов: 518 → 531 (+13).

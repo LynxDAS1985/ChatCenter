@@ -250,15 +250,28 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     }))
   })
 
-  // v0.87.111: аватарки отправителей групп — обновляем senderAvatar в сообщениях чата
-  addHandler('tg:sender-avatar', ({ chatId, senderId, avatarUrl }) => {
+  // v0.87.111 → v0.89.4: аватарки отправителей групп.
+  // Раньше payload был `{chatId, senderId, avatarUrl}` — но backend не знает в каком
+  // чате этот юзер (TDLib шлёт `updateUser` без привязки к chat). Теперь UI
+  // итерирует ВСЕ message-массивы и обновляет matching senderId.
+  addHandler('tg:sender-avatar', ({ senderId, avatarUrl }) => {
+    if (!senderId || !avatarUrl) return
     setState(s => {
-      const msgs = s.messages[chatId]
-      if (!msgs) return s
-      const updated = msgs.map(m =>
-        m.senderId === senderId && !m.senderAvatar ? { ...m, senderAvatar: avatarUrl } : m
-      )
-      return { ...s, messages: { ...s.messages, [chatId]: updated } }
+      const newMessages = {}
+      let anyChanged = false
+      for (const [chatId, msgs] of Object.entries(s.messages)) {
+        let changed = false
+        const updated = msgs.map(m => {
+          if (m.senderId === senderId && !m.senderAvatar) {
+            changed = true
+            return { ...m, senderAvatar: avatarUrl }
+          }
+          return m
+        })
+        newMessages[chatId] = changed ? updated : msgs
+        if (changed) anyChanged = true
+      }
+      return anyChanged ? { ...s, messages: newMessages } : s
     })
   })
 

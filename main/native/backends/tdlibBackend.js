@@ -28,7 +28,7 @@ import {
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
 import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
-import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw } from './tdlibChatActions.js'
+import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccountSessionStats, removeAccountSessionFiles } from './tdlibChatActions.js'
 
 // ──────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -110,11 +110,7 @@ export function createTdlibBackend(opts = {}) {
   let _authFlow = null
   let _pendingAccountId = null
 
-  // v0.89.2: единая точка финализации — manager.finalizeAccount (в tdlibClient.js).
-  // Раньше тут жила копия логики getMe → rename → emit account:update, но без
-  // phone-fallback на имя и без auto-download своей profile_photo. Это давало
-  // расхождение между manual-login (без fallback) и auto-restore (с fallback).
-  // Теперь оба пути зовут одну функцию.
+  // v0.89.2: единая точка финализации — manager.finalizeAccount (tdlibClient.js).
   const _finalizePending = async () => {
     if (!_pendingAccountId) return
     const r = await manager.finalizeAccount(_pendingAccountId)
@@ -169,9 +165,24 @@ export function createTdlibBackend(opts = {}) {
         // папку tdlib-sessions/, для каждой создать manager.createAccount().
         return
       },
+      // v0.89.4: полный logout flow: scan→logOut→close→fs.rmSync→emit removed.
+      // Раньше только client.close() — сессия оставалась валидной на серверах,
+      // файлы на диске, autoRestore воскрешал «удалённый» аккаунт.
       async removeAccount(accountId) {
+        if (!accountId) return { ok: false, error: 'accountId required' }
+        const wipeStats = userDataDir ? scanAccountSessionStats(userDataDir, accountId) : { totalFiles: 0, totalBytes: 0 }
+        const client = manager.getClient(accountId)
+        if (client?.invoke) {
+          try { await client.invoke({ '@type': 'logOut' }) } catch (_) { /* best effort */ }
+        }
         const ok = await manager.removeAccount(accountId)
-        return { ok }
+        const filesRemoved = (ok && userDataDir) ? removeAccountSessionFiles(userDataDir, accountId) : false
+        const isLast = manager.listAccounts().length === 0
+        manager.emit('account:update', {
+          id: accountId, messenger: 'telegram', status: 'disconnected',
+          removed: true, wipeStats: { ...wipeStats, isLast, filesRemoved },
+        })
+        return { ok, wipeStats: { ...wipeStats, isLast } }
       },
     },
 
@@ -378,17 +389,12 @@ export function createTdlibBackend(opts = {}) {
     },
 
     media: {
-      async download({ chatId, msgId }) {
+      // v0.89.4: onProgress callback пробрасывается через chain
+      // IPC handler → backend.media.download → downloadFile → manager.on('file:update').
+      // IPC handler регистрирует sendToRenderer('tg:media-progress', ...) колбэк.
+      async download({ chatId, msgId, onProgress }) {
         const ctx = getClientForChat(manager, chatId)
         if (ctx.error) return ctx.error
-        // Сначала получаем message чтобы достать file_id
-        const msgRes = await getMessage(ctx.client, ctx.rawId, msgId, {
-          chatIdStr: chatId, extras: makeExtras(manager, ctx.accountId),
-        })
-        if (!msgRes.ok) return { ok: false, error: msgRes.error }
-        // ВНИМАНИЕ: getMessage возвращает NativeMessage без file_id (mapMessage
-        // не пропускает raw TDLib file). Получим raw — отдельным getMessage с
-        // synchronous и без mapper.
         let tdMsg
         try {
           tdMsg = await ctx.client.invoke({
@@ -397,15 +403,13 @@ export function createTdlibBackend(opts = {}) {
         } catch (e) { return { ok: false, error: e?.message || String(e) } }
         const { fileId } = extractMediaFileId(tdMsg?.content)
         if (!fileId) return { ok: false, error: 'no media file in message' }
-        // Проверяем кеш
         const cached = getCachedFilePath(
           tdMsg.content?.photo?.sizes?.[tdMsg.content.photo.sizes.length - 1]?.photo
             || tdMsg.content?.video?.video || tdMsg.content?.document?.document
             || tdMsg.content?.audio?.audio || tdMsg.content?.voice_note?.voice
         )
         if (cached) return { ok: true, path: cached }
-        // Запускаем загрузку
-        return downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 16 })
+        return downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 16, onProgress })
       },
       async downloadVideo({ chatId, msgId, onProgress }) {
         const ctx = getClientForChat(manager, chatId)
@@ -489,8 +493,6 @@ export function createTdlibBackend(opts = {}) {
       },
     },
 
-    // Helper для внешних слушателей событий manager (на Этапе 3 IPC handlers
-    // будут подписываться через _manager.on('message:new', ...) etc).
     _cancelDownload: (params) => cancelDownload({ manager, ...params }),
   }
 }

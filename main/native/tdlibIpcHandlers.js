@@ -24,10 +24,11 @@
  * @param {object} deps.ipcMain — electron's ipcMain (или mock в тестах)
  * @param {object} deps.backend — результат createTdlibBackend()
  * @param {(channel: string, payload: any) => void} deps.sendToRenderer
+ * @param {string} [deps.userDataPath] — нужен для tg:send-clipboard-image (tmp file)
  * @param {(level: string, msg: string) => void} [deps.log] — опциональный логгер
  * @returns {() => void} — функция unregister (для тестов и cleanup)
  */
-export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) {
+export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDataPath, log }) {
   if (!ipcMain?.handle) throw new Error('initTdlibIpcHandlers: ipcMain.handle required')
   if (!backend) throw new Error('initTdlibIpcHandlers: backend required')
   if (typeof sendToRenderer !== 'function') throw new Error('initTdlibIpcHandlers: sendToRenderer required')
@@ -60,6 +61,10 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
   // ACCOUNTS
   // ────────────────────────────────────────────────────────────────────
 
+  // v0.89.4: НЕ возвращаем пустые `name`/`phone` — UI делает spread merge
+  // ({...existing, ...acc}), и пустые значения стирали бы реальное имя если
+  // tg:account-update с finalize пришёл раньше. Возвращаем только то что точно
+  // знаем (id + status), остальное UI получит через event-bridge.
   handle('tg:get-accounts', () => {
     const manager = backend._manager
     if (!manager) return { ok: false, accounts: [] }
@@ -69,8 +74,6 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
         id: accountId,
         messenger: 'telegram',
         status: authState === 'authorizationStateReady' ? 'connected' : 'connecting',
-        name: '',   // Заполнится через updateUser → tg:account-update event
-        phone: '',
       }
     })
     return { ok: true, accounts, activeAccountId: accounts[0]?.id || null }
@@ -200,6 +203,26 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
   })
   handle('tg:send-file', ({ chatId, filePath, caption } = {}) =>
     backend.messages.sendFile(chatId, filePath, caption))
+  // v0.89.4: clipboard-paste картинки (UI useDropAndPaste.js шлёт Uint8Array).
+  // Пишем во временный файл userDataDir/tdlib-tmp/paste-X.ext + backend.messages.sendFile.
+  // После отправки запланирована очистка (background — не блокируем).
+  handle('tg:send-clipboard-image', async ({ chatId, data, ext, caption } = {}) => {
+    if (!chatId) return { ok: false, error: 'chatId required' }
+    if (!data || !data.length) return { ok: false, error: 'empty clipboard data' }
+    const { writeFile, mkdir, unlink } = await import('node:fs/promises')
+    const path = await import('node:path')
+    if (!userDataPath) return { ok: false, error: 'userDataPath not configured' }
+    const tmpDir = path.join(userDataPath, 'tdlib-tmp')
+    try { await mkdir(tmpDir, { recursive: true }) } catch (_) {}
+    const safeExt = String(ext || 'png').replace(/[^a-z0-9]/gi, '').slice(0, 6) || 'png'
+    const tmpPath = path.join(tmpDir, `paste-${Date.now()}.${safeExt}`)
+    try { await writeFile(tmpPath, Buffer.from(data)) }
+    catch (e) { return { ok: false, error: 'tmp write failed: ' + (e?.message || e) } }
+    const r = await backend.messages.sendFile(chatId, tmpPath, caption)
+    // Удаляем tmp с задержкой — TDLib uploads асинхронно из локального пути.
+    setTimeout(() => { unlink(tmpPath).catch(() => {}) }, 60_000)
+    return r
+  })
   // v0.89.3: реальная реализация через fs-скан tdlib-sessions/ + tg-avatars/.
   // Возвращает { totalFiles, totalBytes, byCategory: { session, avatars, cache,
   // media, tmp } } совместимо с UI AccountContextMenu (см. nativeStore.js:780-783).
@@ -209,10 +232,27 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
   // MEDIA
   // ────────────────────────────────────────────────────────────────────
 
+  // v0.89.4: onProgress колбэк эмитит tg:media-progress в renderer.
+  // UI VideoTile.jsx и MediaAlbum.jsx подписаны на этот канал для прогресс-бара.
+  const makeProgressCallback = (chatId, messageId) => (file) => {
+    if (!file?.local || !file?.size) return
+    sendToRenderer('tg:media-progress', {
+      chatId,
+      messageId: String(messageId),
+      bytes: Number(file.local.downloaded_size) || 0,
+      total: Number(file.size) || 0,
+    })
+  }
   handle('tg:download-media', ({ chatId, messageId, thumb } = {}) =>
-    backend.media.download({ chatId, msgId: messageId, thumb }))
+    backend.media.download({
+      chatId, msgId: messageId, thumb,
+      onProgress: makeProgressCallback(chatId, messageId),
+    }))
   handle('tg:download-video', ({ chatId, messageId } = {}) =>
-    backend.media.downloadVideo({ chatId, msgId: messageId }))
+    backend.media.downloadVideo({
+      chatId, msgId: messageId,
+      onProgress: makeProgressCallback(chatId, messageId),
+    }))
 
   // ────────────────────────────────────────────────────────────────────
   // FORUM
@@ -250,6 +290,14 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
     subscribe('chat:unread-sync', ({ chatId, unreadCount }) => ({
       channel: 'tg:chat-unread-sync', data: { chatId, unreadCount },
     }))
+    // v0.89.4: typing-индикатор (UI nativeStoreIpc.js:266 ждёт {chatId, userId, typing}).
+    subscribe('chat:typing', ({ chatId, userId, typing }) => ({
+      channel: 'tg:typing', data: { chatId, userId, typing },
+    }))
+    // v0.89.4: outgoing read-receipts (UI ждёт {chatId, outgoing:true, maxId}).
+    subscribe('chat:read-outbox', ({ chatId, maxId }) => ({
+      channel: 'tg:read', data: { chatId, outgoing: true, maxId },
+    }))
     subscribe('account:auth-state', ({ accountId, state, payload }) => ({
       channel: 'tg:login-step',
       data: stateToLoginStep(state, accountId, payload),
@@ -276,8 +324,11 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
     subscribe('chat:avatar', ({ chatId, avatarPath }) => ({
       channel: 'tg:chat-avatar', data: { chatId, avatarPath },
     }))
-    subscribe('user:avatar', ({ accountId, userId, avatarPath }) => ({
-      channel: 'tg:sender-avatar', data: { accountId, userId, avatarPath },
+    // v0.89.4: UI ждёт `{ senderId, avatarUrl }` (не accountId/userId/avatarPath).
+    // chatId не передаём — аватарка пользователя не привязана к конкретному чату,
+    // UI handler iterates все state.messages и обновляет matching senderId.
+    subscribe('user:avatar', ({ userId, avatarPath }) => ({
+      channel: 'tg:sender-avatar', data: { senderId: String(userId), avatarUrl: avatarPath },
     }))
   }
 

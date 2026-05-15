@@ -47,6 +47,7 @@
 | `tg:health-check` | — | `{ ok, accountStats: [{accountId, ms, ok, error?}] }` |
 | `tg:set-mute` | `{ chatId, muteUntil }` | `{ ok, error? }` |
 | `tg:get-cleanup-stats` | — | `{ ok, totalFiles, totalBytes, byCategory: { session, avatars, cache, media, tmp } }` |
+| `tg:remove-account` | `{ accountId }` | `{ ok, wipeStats: { totalFiles, totalBytes, isLast } }` (v0.89.4: + полный logOut + fs.rmSync + emit `tg:account-update {removed:true}`) |
 
 **`muteUntil`** — Unix timestamp (секунды) до которого приглушено: `0` = unmute, `2147483647` = «навсегда», иначе `Math.floor(Date.now()/1000) + seconds`. Backend конвертирует в TDLib `mute_for = max(0, muteUntil - now)`.
 
@@ -72,6 +73,7 @@
 | `tg:get-pinned-message` / `tg:get-pinned` | `{ chatId }` | `{ ok, message?: NativeMessage \| null }` |
 | `tg:pin` | `{ chatId, messageId, unpin? }` | `{ ok }` — закреп/откреп **сообщения** в чате (НЕ закреп чата в Main-list). При `unpin:true` → TDLib `unpinChatMessage`, иначе `pinChatMessage(disable_notification:true, only_for_self:false)`. |
 | `tg:send-file` | `{ chatId, filePath, caption? }` | `{ ok, messageId? }` |
+| `tg:send-clipboard-image` | `{ chatId, data: number[], ext, caption? }` (v0.89.4) | `{ ok, messageId? }` — пишет во tmp file + sendFile |
 | `tg:set-typing` | `{ chatId }` | `{ ok }` (sendChatAction typing) |
 | `tg:refresh-avatar` | `{ chatId }` | `{ ok }` (noop — TDLib шлёт автоматически) |
 
@@ -92,20 +94,25 @@
 
 Эмитятся из IPC handler через event-bridge (`manager.on(...) → sendToRenderer(...)`):
 
-| Event | Data |
-|---|---|
-| `tg:new-message` | `{ chatId, message: NativeMessage }` |
-| `tg:message-edited` | `{ chatId, messageId, editDate }` |
-| `tg:message-deleted` | `{ chatId, messageIds: string[] }` |
-| `tg:chats` | `{ accountId, chats, append }` |
-| `tg:messages` | `{ chatId, messages, append?, appendNewer?, aroundId?, afterId?, readUpTo? }` |
-| `tg:chat-unread-sync` | `{ chatId, unreadCount }` |
-| `tg:chat-avatar` | `{ chatId, avatarPath: 'cc-media://avatars/...' }` |
-| `tg:sender-avatar` | `{ accountId, userId, avatarPath }` |
-| `tg:login-step` | `{ step, accountId, codeInfo?, passwordInfo?, raw? }` |
-| `tg:account-update` | `{ id, messenger, status, name, phone, username, userId }` |
-| `tg:account-connection` | `{ accountId, state }` |
-| `tg:user-status` | `{ accountId, userId, online: boolean }` |
+| Event | Data | UI listener? |
+|---|---|---|
+| `tg:new-message` | `{ chatId, message: NativeMessage }` | ✅ nativeStoreIpc |
+| `tg:message-edited` | `{ chatId, messageId, editDate }` | ⚠️ orphan (нет UI handler) |
+| `tg:message-deleted` | `{ chatId, messageIds: string[] }` | ⚠️ orphan |
+| `tg:chats` | `{ accountId, chats, append }` | ✅ |
+| `tg:messages` | `{ chatId, messages, append?, appendNewer?, aroundId?, afterId?, readUpTo? }` | ✅ |
+| `tg:chat-unread-sync` | `{ chatId, unreadCount }` | ✅ |
+| `tg:chat-avatar` | `{ chatId, avatarPath: 'cc-media://avatars/...' }` | ✅ |
+| **`tg:sender-avatar`** | `{ senderId, avatarUrl }` (v0.89.4 — без chatId/accountId; UI iterates все state.messages по senderId) | ✅ |
+| `tg:login-step` | `{ step, accountId, codeInfo?, passwordInfo?, raw? }` | ✅ |
+| `tg:account-update` | `{ id, messenger, status, name?, phone?, username?, userId? }` + `{removed:true, wipeStats:{totalFiles,totalBytes,isLast}}` для logout | ✅ |
+| `tg:account-connection` | `{ accountId, state }` | ⚠️ orphan |
+| `tg:user-status` | `{ accountId, userId, online: boolean }` | ⚠️ orphan |
+| **`tg:typing`** (v0.89.4) | `{ chatId, userId, typing }` — TDLib `updateChatAction → chatActionTyping/Cancel` | ✅ |
+| **`tg:read`** (v0.89.4) | `{ chatId, outgoing: true, maxId }` — TDLib `updateChatReadOutbox` (двойная галочка) | ✅ |
+| **`tg:media-progress`** (v0.89.4) | `{ chatId, messageId, bytes, total }` — на каждый `updateFile` chunk во время `tg:download-media`/`download-video` | ✅ VideoTile, MediaAlbum |
+
+**⚠️ Orphan events**: эмитятся backend'ом но UI не подписан — либо удалить bridge, либо добавить UI handler. Решение отложено до v0.90.0.
 
 ### Замечания
 

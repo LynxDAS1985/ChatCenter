@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.3 (15 мая 2026)
+## Текущая версия: v0.89.4 (15 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.106 → v0.88.2). Старое — в архиве:
 
@@ -17,6 +17,96 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.4 — Третий аудит: emit-направление IPC + удаление GramJS dep (8 регрессий)
+
+**Контекст**: v0.89.2/3 закрыли invoke-направление контрактов (UI→backend), но никто не проверял emit-направление (backend→UI) систематически. Третий аудит обнаружил 8 user-visible регрессий, которые в коде существовали с момента TDLib миграции (v0.89.1).
+
+#### Что исправлено
+
+**1. `tg:sender-avatar` payload mismatch** — аватарки отправителей в группах не появлялись
+
+| | Было | Стало |
+|---|---|---|
+| Backend emit | `{accountId, userId, avatarPath}` | `{senderId, avatarUrl}` |
+| UI handler | принимал `{chatId, senderId, avatarUrl}` — `chatId=undefined` → exit | iterates ВСЕ `state.messages` по `senderId` |
+
+**Изменено**: [`tdlibIpcHandlers.js`](main/native/tdlibIpcHandlers.js) bridge, [`nativeStoreIpc.js`](src/native/store/nativeStoreIpc.js) handler.
+
+**2. `tg:remove-account` flow полностью переделан**
+
+Раньше: только `client.close()` — сессия оставалась на серверах Telegram (security), файлы оставались на диске, `autoRestoreSessionsFromDisk` воскрешал «удалённый» аккаунт.
+
+Теперь ([tdlibBackend.js](main/native/backends/tdlibBackend.js#L191)):
+```
+scanAccountSessionStats → client.invoke('logOut') → manager.removeAccount(close+delete)
+  → removeAccountSessionFiles(fs.rmSync) → emit 'account:update {removed:true, wipeStats}'
+```
+
+UI получает `tg:account-update {removed:true, wipeStats:{totalFiles, totalBytes, isLast, filesRemoved}}` → handler чистит state.accounts/chats/messages для удалённого аккаунта (или полная очистка если isLast).
+
+**3. `tg:send-clipboard-image` handler не существовал** — Ctrl+V скриншот падал
+
+UI [`useDropAndPaste.js:29`](src/native/hooks/useDropAndPaste.js) шлёт `{chatId, data: Uint8Array, ext, caption?}`. Новый handler в [`tdlibIpcHandlers.js`](main/native/tdlibIpcHandlers.js) пишет во временный файл `userDataPath/tdlib-tmp/paste-{ts}.{ext}` и зовёт `backend.messages.sendFile`. После send → `setTimeout(unlink, 60s)` удаляет tmp.
+
+**4. `tg:media-progress` не эмитился** — прогресс-бар видео всегда 0%
+
+[`tdlibBackend.media.download/downloadVideo`](main/native/backends/tdlibBackend.js) теперь принимают `onProgress` callback. IPC handler регистрирует callback который зовёт `sendToRenderer('tg:media-progress', {chatId, messageId, bytes, total})`. `downloadFile` в [`tdlibMedia.js`](main/native/backends/tdlibMedia.js) уже эмитил chunks через `manager.on('file:update')` — теперь они проходят до UI.
+
+**5. `tg:typing` не эмитился** — «X печатает...» не работало
+
+[`tdlibClient._handleUpdate`](main/native/backends/tdlibClient.js) теперь обрабатывает `updateChatAction`: при `chatActionTyping`/`chatActionCancel` от `messageSenderUser` эмитит `chat:typing {chatId, userId, typing}`. IPC bridge → `tg:typing`.
+
+**6. `tg:read` (outgoing) не эмитился** — read receipts (двойная галочка)
+
+[`tdlibClient._patchChat`](main/native/backends/tdlibClient.js) при `updateChatReadOutbox` теперь эмитит `chat:read-outbox {chatId, maxId}`. IPC bridge → `tg:read {chatId, outgoing:true, maxId}`. UI handler ставит `m.isRead=true` для исходящих с id≤maxId.
+
+**7. `tg:get-accounts` race condition** — пустой `name:''` стирал реальное имя
+
+Раньше при старте handler возвращал `{id, messenger, status, name:'', phone:''}`. UI делал spread merge → если `tg:account-update` от finalize пришёл раньше, пустые поля перезаписывали реальные. Теперь возвращает только `{id, messenger, status}` — UI получает name/phone через event-bridge.
+
+**8. Зависимость `telegram` (GramJS) удалена** из `package.json` + `package-lock.json`
+
+CHANGELOG v0.89.1 говорил «удалено отдельным шагом», но физически оставалась. ~30 МБ мёртвого кода. Удалена только запись из root deps — npm install/prune почистит `node_modules` автоматически.
+
+#### Системная защита: emit-direction контракт-тесты
+
+Корневая причина того что три аудита подряд что-то находили: тесты проверяли **только invoke-направление** (UI payload → handler → TDLib invoke). Emit-направление (TDLib update → manager.emit → bridge → sendToRenderer → UI handler) нигде не покрывалось.
+
+Новый файл [`tdlibEmitContracts.vitest.js`](src/__tests__/tdlibEmitContracts.vitest.js) — 13 тестов:
+
+- `updateChatAction → tg:typing` (для typing + cancel + sender:chat ignored)
+- `updateChatReadOutbox → tg:read {outgoing:true}`
+- `user:avatar → tg:sender-avatar {senderId, avatarUrl}` (регрессия: НЕ должно быть accountId/userId)
+- `removeAccount → tg:account-update {removed:true, wipeStats}` + проверка вызова `logOut`
+- `tg:download-media + updateFile → tg:media-progress {bytes, total}` (real chain test)
+- `tg:send-clipboard-image` handler существует + проверка обработки ошибок
+- `tg:get-accounts` НЕ возвращает пустые name/phone (регрессия v0.89.2)
+
+#### Архитектурное
+
+- **Новые exports** [`tdlibChatActions.js`](main/native/backends/tdlibChatActions.js): `scanAccountSessionStats(userDataDir, accountId)`, `removeAccountSessionFiles(userDataDir, accountId)`.
+- **Новые manager events**: `chat:typing`, `chat:read-outbox`.
+- **Новые backend.media options**: `onProgress` колбэк теперь работает.
+- **Orphan events** задокументированы в api.md (помечены ⚠️): `message:edited`, `message:deleted`, `account:connection`, `user:status` — UI пока не слушает. Отложено до v0.90.0.
+
+**Тестов**: 518 → 531 (+13).
+
+**Версия**: v0.89.3 → v0.89.4 (patch — bug fixes + feature gaps).
+
+**Проверено**:
+
+```powershell
+npm run lint                                                  # OK
+node src/__tests__/fileSizeLimits.test.cjs                     # 244/244
+node src/__tests__/featuresReferences.test.cjs                 # 2/2
+node src/__tests__/messengerBackend.test.cjs                   # 61/61
+npm run test:vitest                                            # 531/531 (38 файлов)
+```
+
+⚠ **Visual проверка обязательна**: открыть чат с групповыми сообщениями (аватарки отправителей), нажать «Закрепить сообщение», заглушить чат на час через MuteMenu, попробовать Ctrl+V скриншот в чат, выйти из аккаунта → проверить что после перезапуска приложения аккаунт удалён.
 
 ---
 

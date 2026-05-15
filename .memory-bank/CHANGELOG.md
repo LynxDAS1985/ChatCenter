@@ -11,6 +11,48 @@
 
 ---
 
+## 2026-05-15 — TDLib Stage 4: третий аудит — emit-направление (v0.89.4)
+
+После двух раундов «invoke-направления» (v0.89.2, v0.89.3) запустили третий — на этот раз против **emit-направления** (backend→UI). Обнаружено 8 регрессий, все закрыты.
+
+### Закрытые проблемы
+
+1. **`tg:sender-avatar` payload mismatch**: backend эмитил `{accountId, userId, avatarPath}`, UI ждал `{chatId, senderId, avatarUrl}`. UI теперь iterates все `state.messages` по `senderId` без `chatId` привязки.
+2. **`tg:remove-account` flow полностью переделан**: scan → `logOut` → `close` → `fs.rmSync` → emit `tg:account-update {removed:true, wipeStats}`. Раньше «удалённый» аккаунт воскрешался при перезапуске.
+3. **`tg:send-clipboard-image` handler добавлен**: Ctrl+V скриншот теперь работает. Handler пишет в `userDataPath/tdlib-tmp/paste-X.ext`, зовёт `sendFile`, через 60с удаляет tmp.
+4. **`tg:media-progress` emit добавлен**: `onProgress` callback в backend.media пробрасывает chunks в renderer. Прогресс-бар видео теперь показывает реальный %.
+5. **`tg:typing` emit добавлен**: TDLib `updateChatAction` теперь обрабатывается в `tdlibClient._handleUpdate`, эмитит `chat:typing → tg:typing`.
+6. **`tg:read` (outgoing) emit добавлен**: TDLib `updateChatReadOutbox` теперь эмитит `chat:read-outbox → tg:read {outgoing:true}`. Двойная галочка работает.
+7. **`tg:get-accounts` не возвращает пустые поля**: убраны `name:''`, `phone:''` — race с finalize merge не происходит.
+8. **GramJS dep `telegram` удалена** из `package.json` + `package-lock.json`. node_modules/telegram очистится при следующем `npm install`.
+
+### Системная защита
+
+Новый файл [`tdlibEmitContracts.vitest.js`](../src/__tests__/tdlibEmitContracts.vitest.js) — 13 тестов на **emit-направление**:
+- typing (3 теста: typing, cancel, sender:chat ignored)
+- read outgoing
+- sender-avatar (без accountId/userId — регрессия)
+- removeAccount (full flow + logOut вызов)
+- media-progress (real chain через updateFile)
+- send-clipboard-image (handler exists + error cases)
+- get-accounts (no empty fields)
+
+### Архитектурное
+
+- Новые exports `tdlibChatActions.js`: `scanAccountSessionStats`, `removeAccountSessionFiles` (per-account fs helpers).
+- Новые `manager.emit` events: `chat:typing`, `chat:read-outbox`.
+- Новый `initTdlibIpcHandlers` опция: `userDataPath` (нужен для `tg:send-clipboard-image` tmp file).
+- Orphan emits (`message:edited`/`deleted`/`account:connection`/`user:status`) задокументированы в `api.md` (⚠️). Решение отложено до v0.90.0.
+- **Тестов**: 518 → 531 (+13).
+
+### Корневая причина и системный вывод
+
+Три аудита подряд находили проблемы потому что каждый закрывал только то что сам сформулировал. v0.89.2 — TDLib spec correctness. v0.89.3 — invoke contracts. v0.89.4 — emit contracts. Теперь **обе стороны** канала покрыты контракт-тестами.
+
+Защита от 4-го раунда: для добавления нового `tg:*` канала / event нужно одновременно (1) подписать UI handler, (2) реализовать backend invoke/emit, (3) добавить контракт-тест (invoke-side ИЛИ emit-side). Каждое из трёх покрывается отдельным тестовым файлом.
+
+---
+
 ## 2026-05-15 — TDLib Stage 4: второй аудит — IPC контракты (v0.89.3)
 
 После «backend correctness» аудита v0.89.2 запустили **второй** независимый аудит — против renderer-side кода (`nativeStore.js`, `MuteMenu.jsx`, `AccountContextMenu.jsx`). Обнаружили 3 user-facing регрессии в `Фиксе #3` v0.89.2 (TDLib API правильный, но payload не совпадает с UI). Все исправлены.

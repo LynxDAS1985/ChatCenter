@@ -133,6 +133,57 @@ function walkAndCategorize(rootDir, category, acc) {
 }
 
 /**
+ * Сканирует session-папку ОДНОГО аккаунта. Используется при `tg:remove-account`
+ * для wipeStats (UI показывает «удалено N файлов, M МБ»).
+ *
+ * @param {string} userDataDir
+ * @param {string} accountId
+ * @returns {{ totalFiles: number, totalBytes: number }}
+ */
+export function scanAccountSessionStats(userDataDir, accountId) {
+  const acc = { totalFiles: 0, totalBytes: 0, byCategory: {} }
+  if (!userDataDir || !accountId) return { totalFiles: 0, totalBytes: 0 }
+  const root = path.join(userDataDir, 'tdlib-sessions', accountId)
+  try { fs.statSync(root) } catch (_) { return { totalFiles: 0, totalBytes: 0 } }
+
+  // top-level: db.sqlite + журналы
+  let topEntries
+  try { topEntries = fs.readdirSync(root, { withFileTypes: true }) }
+  catch (_) { topEntries = [] }
+  for (const e of topEntries) {
+    if (!e.isFile()) continue
+    const s = statFile(path.join(root, e.name))
+    if (!s) continue
+    acc.totalFiles += 1
+    acc.totalBytes += s.size
+  }
+  // files/* — все категории суммарно
+  walkAndCategorize(path.join(root, 'files'), 'media', acc)
+  return { totalFiles: acc.totalFiles, totalBytes: acc.totalBytes }
+}
+
+/**
+ * Удаляет файлы сессии аккаунта с диска. Вызывается ПОСЛЕ закрытия клиента
+ * (`client.close()`) — иначе TDLib держит файлы открытыми и rmSync может упасть
+ * на Windows. Безопасно при отсутствии папки.
+ *
+ * @param {string} userDataDir
+ * @param {string} accountId
+ * @returns {boolean} — true если папка была и удалена
+ */
+export function removeAccountSessionFiles(userDataDir, accountId) {
+  if (!userDataDir || !accountId) return false
+  const dir = path.join(userDataDir, 'tdlib-sessions', accountId)
+  try {
+    if (!fs.existsSync(dir)) return false
+    fs.rmSync(dir, { recursive: true, force: true })
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
+/**
  * Сканирует TDLib session-папки и общую tg-avatars/ папку, возвращает breakdown
  * по категориям совместимый с UI AccountContextMenu предпросмотром logout.
  *

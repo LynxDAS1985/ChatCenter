@@ -316,6 +316,24 @@ export class TdlibClientManager extends EventEmitter {
         this._patchChat(record, update)
         return
 
+      // v0.89.4: typing-индикатор. TDLib шлёт `updateChatAction` когда пользователь
+      // печатает / записывает голосовое / отправляет фото / etc. UI слушает только
+      // typing для отображения «X печатает...».
+      case 'updateChatAction':
+        if (update.sender_id?.['@type'] === 'messageSenderUser') {
+          const actionType = update.action?.['@type'] || null
+          const isTyping = actionType === 'chatActionTyping'
+          // Cancel action — actionType === 'chatActionCancel' → typing:false.
+          // Прочие (recording, uploading) пока не транслируем (UI не использует).
+          this.emit('chat:typing', {
+            accountId,
+            chatId: `${accountId}:${update.chat_id}`,
+            userId: String(update.sender_id.user_id),
+            typing: isTyping,
+          })
+        }
+        return
+
       case 'updateNewMessage':
         this._handleNewMessage(record, update.message)
         return
@@ -415,6 +433,15 @@ export class TdlibClientManager extends EventEmitter {
         accountId: record.accountId,
         chatId: `${record.accountId}:${update.chat_id}`,
         unreadCount: update.unread_count,
+      })
+    }
+    // v0.89.4: outgoing read-receipts (двойная галочка) — собеседник прочитал
+    // наши сообщения до maxId. UI обновляет m.isRead=true для outgoing с id<=maxId.
+    if (type === 'updateChatReadOutbox') {
+      this.emit('chat:read-outbox', {
+        accountId: record.accountId,
+        chatId: `${record.accountId}:${update.chat_id}`,
+        maxId: Number(update.last_read_outbox_message_id) || 0,
       })
     }
   }

@@ -90,6 +90,7 @@ export function initTdlibBackendStartup(opts) {
     }
     const unregisterIpc = initTdlibIpcHandlers({
       ipcMain: opts.ipcMain, backend, sendToRenderer, log,
+      userDataPath: opts.userDataPath,
     })
     log('info', `IPC handlers registered`)
 
