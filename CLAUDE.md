@@ -269,7 +269,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.89.4 (15 мая 2026)
+**Текущая версия**: v0.89.5 (15 мая 2026)
 
 ---
 
@@ -751,6 +751,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.89.4 (15 мая 2026)
-**Статус**: 🟢 Фазы 1-4+ + TDLib миграция завершена + три аудита закрыты (backend correctness + invoke contracts + **emit contracts**)
-**Последнее обновление**: 15 мая 2026 — v0.89.4: третий аудит обнаружил что v0.89.2/3 закрыли только **invoke-направление** контрактов (UI→backend), но **emit-направление** (backend→UI) никто не проверял систематически. Найдено 8 регрессий, все закрыты: (1) `tg:sender-avatar` — backend эмитил `{accountId, userId, avatarPath}`, UI ждал `{senderId, avatarUrl}` — аватарки отправителей в группах не появлялись; UI handler теперь iterates все `state.messages` по senderId; (2) `tg:remove-account` полностью сломан — теперь полный flow: scan→`logOut`→`close`→`fs.rmSync`→ emit `tg:account-update {removed:true, wipeStats}` (раньше «удалённый» аккаунт воскрешался при перезапуске); (3) `tg:send-clipboard-image` handler не существовал → Ctrl+V скриншот падал; теперь handler пишет в tmp + `sendFile`; (4) `tg:media-progress` не эмитился — теперь `onProgress` callback в `media.download/downloadVideo` пробрасывает chunks в `sendToRenderer`; (5) `tg:typing` не эмитился — теперь `tdlibClient` обрабатывает `updateChatAction` и эмитит `chat:typing`; (6) `tg:read` (outgoing) не эмитился — теперь `updateChatReadOutbox` эмитит `chat:read-outbox`; (7) `tg:get-accounts` возвращал пустые `name:''`/`phone:''` → race condition в UI merge; теперь только id/messenger/status; (8) удалена зависимость `telegram` (GramJS) из package.json и package-lock.json. Системная защита: новый файл [`tdlibEmitContracts.vitest.js`](src/__tests__/tdlibEmitContracts.vitest.js) (13 тестов) проверяет каждое emit↔UI handler соответствие — больше не пропустим этот класс регрессий. Тестов: 518 → 531 (+13).
+**Версия проекта**: v0.89.5 (15 мая 2026)
+**Статус**: 🟢 Фазы 1-4+ + TDLib миграция завершена + **четыре аудита закрыты** (TDLib spec + invoke contracts + emit contracts + drift check)
+**Последнее обновление**: 15 мая 2026 — v0.89.5: четвёртый аудит нашёл **0 функциональных регрессий** (первый раз после v0.89.2/3/4 у которых было 6/3/8). Только 2 точечных drift'а — оба исправлены: (1) `.memory-bank/api.md:37` описывал устаревший shape `tg:get-accounts` с `name/phone` — после фикса v0.89.4 #7 этих полей нет, документация приведена в соответствие; (2) `applicationVersion` имел fallback `'0.89.2'` в `tdlibStartup.js:67`/`tdlibAuth.js:86` и `main.js` не передавал реальную версию — TDLib записывал «ChatCenter 0.89.2» в session-БД для новых login'ов (видно в Telegram → Settings → Active Sessions). Теперь `main.js:230` передаёт `applicationVersion: app.getVersion()` (Electron API читает из package.json) → автоматически обновляется при каждом patch. **TDLib миграция полностью завершена, все 4 раунда аудита закрыты.**

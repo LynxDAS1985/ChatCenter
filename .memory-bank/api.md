@@ -34,7 +34,7 @@
 
 | Канал | Payload | Ответ |
 |---|---|---|
-| `tg:get-accounts` | — | `{ ok, accounts: [{id, messenger:'telegram', status, name, phone}], activeAccountId }` |
+| `tg:get-accounts` | — | `{ ok, accounts: [{id, messenger:'telegram', status}], activeAccountId }` (v0.89.4: `name`/`phone` убраны — приходят отдельно через `tg:account-update` event после finalize, чтобы избежать race condition с merge) |
 | `tg:remove-account` | `{ accountId }` | `{ ok }` |
 
 ### Chats

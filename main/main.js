@@ -226,9 +226,13 @@ app.whenReady().then(() => {
   }
 
   // v0.89.0 / Этап 4: только TDLib backend. GramJS полностью удалён.
+  // v0.89.5: applicationVersion из package.json через app.getVersion() —
+  // TDLib запишет актуальную версию в session-БД для новых login'ов
+  // (видно в Telegram Settings → Active Sessions).
   try {
     const r = initTdlibBackendStartup({
       userDataPath: app.getPath('userData'),
+      applicationVersion: app.getVersion(),
       getMainWindow: () => mainWindow,
       ipcMain,
       log: (level, msg) => __slog(`[tdlib] ${level}: ${msg}`),
