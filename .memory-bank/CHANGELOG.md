@@ -11,6 +11,26 @@
 
 ---
 
+## 2026-05-15 — TDLib Stage 4: фикс progressive playback (v0.89.9)
+
+После v0.89.8 пользователь увидел чёрный экран и `0:00` при открытии видео. Корневая причина — нарушение TDLib контракта по [`video.supports_streaming`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1video.html).
+
+### Что было не так
+
+v0.89.8 включала progressive playback для всех видео — резолв при `downloaded_prefix_size >= 256 KB`. Согласно документации TDLib, это корректно ТОЛЬКО для видео с `supports_streaming === true` (moov atom в начале MP4). Для non-streamable (большинство мобильных загрузок — moov в конце) первые 256 KB не содержат метаданных → `<video>` показывает `0:00` и чёрный экран.
+
+### Решение
+
+`downloadFile` принимает `progressive: boolean` (default false). `backend.media.downloadVideo` читает `tdMsg.content.video.supports_streaming` и передаёт значение. Только streamable видео получают early resolve. Остальные — полная загрузка перед открытием.
+
+### Урок
+
+Любая «оптимизация» вроде progressive playback должна учитывать metadata-флаги стека. В TDLib `supports_streaming` — официальный контракт, нарушение которого даёт неработающий UI без error log (просто пустое видео).
+
+**Тестов**: 545 → 546.
+
+---
+
 ## 2026-05-15 — TDLib Stage 4: seek + progressive playback + codec UX (v0.89.8)
 
 После v0.89.7 пользователь подтвердил визуально что фото/видео загружаются ✅. Но появились новые проблемы:

@@ -100,9 +100,15 @@ export function tdlibPathToCcMediaUrl(absPath) {
  * @param {number} opts.fileId — TDLib file.id (целое число)
  * @param {number} [opts.priority=1] — 1 (low) ... 32 (high)
  * @param {(file: object) => void} [opts.onProgress] — вызывается на каждом chunk
- * @returns {Promise<{ ok, path?: string, file?: object, error? }>}
+ * @param {boolean} [opts.progressive=false] — для streamable видео (см. TDLib
+ *   `video.supports_streaming` — True если moov atom в начале файла). Если true,
+ *   резолвим раньше при downloaded_prefix_size >= 256 KB чтобы UI начал играть
+ *   пока остаток скачивается. Для НЕ-streamable видео (supports_streaming=false)
+ *   moov atom в конце — без него плеер показывает 0:00. ВСЕГДА false по дефолту
+ *   во избежание чёрного экрана.
+ * @returns {Promise<{ ok, path?: string, file?: object, partial?: boolean, error? }>}
  */
-export function downloadFile({ manager, accountId, fileId, priority = 1, onProgress }) {
+export function downloadFile({ manager, accountId, fileId, priority = 1, onProgress, progressive = false }) {
   if (!manager) return Promise.resolve({ ok: false, error: 'manager required' })
   if (!accountId) return Promise.resolve({ ok: false, error: 'accountId required' })
   if (fileId == null) return Promise.resolve({ ok: false, error: 'fileId required' })
@@ -112,13 +118,13 @@ export function downloadFile({ manager, accountId, fileId, priority = 1, onProgr
   return new Promise((resolve) => {
     let settled = false
 
-    // v0.89.8: progressive playback — резолвим раньше, когда у TDLib есть префикс
-    // данных достаточный для запуска видео (256 KB обычно хватает на metadata +
-    // первые секунды H.264). UI получает cc-media URL, <video> начинает играть.
-    // TDLib продолжает скачивать в фоне, файл растёт на диске. cc-media protocol
-    // handler читает текущий размер через fs.statSync — Range запросы получают
-    // актуальные байты. Если юзер сидает за пределы скачанного — buffer wait
-    // (стандартное поведение <video>).
+    // v0.89.9: progressive playback ТОЛЬКО для streamable видео (TDLib
+    // `video.supports_streaming === true`). Caller передаёт progressive: true
+    // только если флаг есть на medias. Иначе ждём полной загрузки —
+    // для non-streamable файлов moov atom в конце, без него <video> показывает
+    // 0:00 и чёрный экран. См. TDLib docs:
+    //   https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1video.html
+    //   field supports_streaming — "True, if the video is expected to be streamed"
     const PROGRESSIVE_THRESHOLD = 256 * 1024
     // Слушатель updateFile — фильтруем по accountId + fileId.
     const onFileUpdate = ({ accountId: aid, file }) => {
@@ -126,7 +132,8 @@ export function downloadFile({ manager, accountId, fileId, priority = 1, onProgr
       // Прогресс
       try { onProgress?.(file) } catch (_) {}
       const completed = !!file?.local?.is_downloading_completed
-      const earlyReady = !completed
+      const earlyReady = progressive
+        && !completed
         && file?.local?.path
         && Number(file.local?.downloaded_prefix_size || 0) >= PROGRESSIVE_THRESHOLD
       if (completed || earlyReady) {

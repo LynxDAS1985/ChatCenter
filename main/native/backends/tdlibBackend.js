@@ -422,9 +422,9 @@ export function createTdlibBackend(opts = {}) {
         } catch (e) { return { ok: false, error: e?.message || String(e) } }
         const fileId = tdMsg?.content?.video?.video?.id
         if (!fileId) return { ok: false, error: 'no video file' }
-        return downloadFile({
-          manager, accountId: ctx.accountId, fileId, priority: 24, onProgress,
-        })
+        // v0.89.9: progressive только при TDLib video.supports_streaming=true.
+        const progressive = !!tdMsg?.content?.video?.supports_streaming
+        return downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 24, onProgress, progressive })
       },
       async getCacheSize() {
         // Суммируем по всем аккаунтам
