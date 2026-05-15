@@ -62,16 +62,30 @@ export function registerCcMediaHandler(userData) {
                   : kind === 'video' ? path.join(userData, 'tg-media')
                   : kind === 'tdlib' ? path.join(userData, 'tdlib-sessions')
                   : null
-        if (!dir) return new Response('not-found', { status: 404 })
+        if (!dir) {
+          console.warn('[cc-media] unknown kind:', kind, 'url:', req.url)
+          return new Response('not-found', { status: 404 })
+        }
         const filePath = path.join(dir, filename)
         let stat
         try { stat = fs.statSync(filePath) }
-        catch (_) { return new Response('not-found', { status: 404 }) }
-        if (!stat.isFile()) return new Response('not-found', { status: 404 })
+        catch (e) {
+          console.error('[cc-media] file not found:', filePath, 'err:', e.message)
+          return new Response('not-found', { status: 404 })
+        }
+        if (!stat.isFile()) {
+          console.warn('[cc-media] not a file:', filePath)
+          return new Response('not-found', { status: 404 })
+        }
 
         const total = stat.size
         const mime = mimeFor(filename)
         const range = req.headers.get('range') || req.headers.get('Range')
+        // v0.89.10: диагностика — каждый request к видео логируется. После
+        // определения причины (по логам пользователя) уберём чтобы не засорять.
+        if (mime.startsWith('video/')) {
+          console.log('[cc-media] video req:', { kind, total, range: range || 'NO-RANGE', mime, file: path.basename(filePath) })
+        }
 
         // v0.89.8: manual Range parsing — `bytes=START-END` или `bytes=START-`.
         // <video> seeking шлёт Range: bytes=N-, мы возвращаем 206 Partial Content

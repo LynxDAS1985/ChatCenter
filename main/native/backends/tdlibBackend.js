@@ -387,9 +387,7 @@ export function createTdlibBackend(opts = {}) {
     },
 
     media: {
-      // v0.89.4: onProgress callback пробрасывается через chain
-      // IPC handler → backend.media.download → downloadFile → manager.on('file:update').
-      // IPC handler регистрирует sendToRenderer('tg:media-progress', ...) колбэк.
+      // v0.89.4: onProgress callback из IPC handler → media.download → downloadFile
       async download({ chatId, msgId, onProgress }) {
         const ctx = getClientForChat(manager, chatId)
         if (ctx.error) return ctx.error
@@ -407,7 +405,6 @@ export function createTdlibBackend(opts = {}) {
             || tdMsg.content?.audio?.audio || tdMsg.content?.voice_note?.voice
         )
         // v0.89.7: конвертация raw TDLib path → cc-media:// URL (UI ждёт это
-        // для рендера через <img>/<video> с правильными codec privileges).
         if (cached) return { ok: true, path: tdlibPathToCcMediaUrl(cached) || cached }
         return downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 16, onProgress })
       },
@@ -422,9 +419,13 @@ export function createTdlibBackend(opts = {}) {
         } catch (e) { return { ok: false, error: e?.message || String(e) } }
         const fileId = tdMsg?.content?.video?.video?.id
         if (!fileId) return { ok: false, error: 'no video file' }
-        // v0.89.9: progressive только при TDLib video.supports_streaming=true.
-        const progressive = !!tdMsg?.content?.video?.supports_streaming
-        return downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 24, onProgress, progressive })
+        const v = tdMsg.content.video
+        const progressive = !!v?.supports_streaming
+        // v0.89.10: диагностика для отладки чёрного экрана 0:00
+        console.log('[downloadVideo] req:', { fileId, supports_streaming: v?.supports_streaming, progressive, size: v?.video?.size, w: v?.width, h: v?.height, duration: v?.duration, completed: v?.video?.local?.is_downloading_completed, prefix: v?.video?.local?.downloaded_prefix_size })
+        const r = await downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 24, onProgress, progressive })
+        console.log('[downloadVideo] result:', { ok: r?.ok, partial: r?.partial, completed: r?.file?.local?.is_downloading_completed, downloaded: r?.file?.local?.downloaded_size, size: r?.file?.size, path: r?.path?.slice(0, 90), localPath: r?.file?.local?.path, error: r?.error })
+        return r
       },
       async getCacheSize() {
         // Суммируем по всем аккаунтам

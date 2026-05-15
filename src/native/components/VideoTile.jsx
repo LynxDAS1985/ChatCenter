@@ -79,6 +79,14 @@ export default function VideoTile({ m, chatId, inAlbum }) {
     setProgress(0)
     try {
       const r = await window.api?.invoke('tg:download-video', { chatId, messageId: m.id })
+      // v0.89.10: диагностика — логируем что получили от backend
+      console.log('[VideoTile] tg:download-video result:', {
+        ok: r?.ok, path: r?.path, partial: r?.partial, fileSize: r?.file?.size,
+        downloaded: r?.file?.local?.downloaded_size,
+        prefix: r?.file?.local?.downloaded_prefix_size,
+        completed: r?.file?.local?.is_downloading_completed,
+        error: r?.error,
+      })
       if (!r?.ok) { setError(r?.error || 'Не удалось скачать'); return }
       setVideoSrc(r.path)
       setPlaying(true)
@@ -145,6 +153,19 @@ export default function VideoTile({ m, chatId, inAlbum }) {
             width: '100%', height: '100%',
             objectFit: 'contain',
             background: '#000',
+          }}
+          onLoadStart={() => console.log('[VideoTile] <video> loadstart src=', videoSrc)}
+          onLoadedMetadata={(e) => console.log('[VideoTile] <video> loadedmetadata: duration=', e.target.duration, 'size=', e.target.videoWidth + 'x' + e.target.videoHeight)}
+          onCanPlay={() => console.log('[VideoTile] <video> canplay')}
+          onStalled={() => console.warn('[VideoTile] <video> STALLED (буфер не наполняется)')}
+          onError={(e) => {
+            const err = e.target.error
+            console.error('[VideoTile] <video> error:', {
+              code: err?.code, message: err?.message,
+              readyState: e.target.readyState, networkState: e.target.networkState,
+              src: videoSrc,
+            })
+            setError(`Ошибка плеера (код ${err?.code || '?'}): ${err?.message || 'неизвестно'}`)
           }}
         />
         {/* v0.87.38: только ⛶ кнопка — 📌 доступна внутри отдельного окна, не в чате */}
