@@ -67,6 +67,49 @@ export function getCachedFilePath(tdFile) {
 }
 
 /**
+ * v0.89.16: извлекает file_id ПРЕВЬЮ (thumbnail) для медиа-сообщения.
+ *
+ * TDLib хранит ТРИ слоя превью для видео/анимаций/документов:
+ *   1. minithumbnail — base64 в самом сообщении (~200 байт, размытый)
+ *   2. thumbnail.file — JPEG (~10-100 КБ, чёткий кадр) — ЭТО ИЗВЛЕКАЕМ ЗДЕСЬ
+ *   3. video.video / animation.animation / document.document — само медиа
+ *
+ * Раньше (до v0.89.16) VideoTile.jsx вызывал `tg:download-media` для постера,
+ * но `extractMediaFileId` возвращал file_id САМОГО видео (не превью!) — каждое
+ * появление видео в чате запускало фоновое скачивание полного файла (десятки МБ).
+ * Это исчерпывало трафик, забивало TDLib priority queue, и постер всё равно не
+ * рендерился (Chromium не показывает mp4 в `<img>`).
+ *
+ * См. [td_api::video](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1video.html):
+ *   field `thumbnail` — type `thumbnail { format, width, height, file: file }`.
+ *
+ * @param {object} content — tdMsg.content (messageVideo/Animation/Document/...)
+ * @returns {number|null} file_id превью или null если у сообщения нет thumbnail
+ */
+export function extractThumbnailFileId(content) {
+  if (!content) return null
+  const cn = content['@type']
+  if (cn === 'messageVideo')     return content.video?.thumbnail?.file?.id ?? null
+  if (cn === 'messageAnimation') return content.animation?.thumbnail?.file?.id ?? null
+  if (cn === 'messageDocument')  return content.document?.thumbnail?.file?.id ?? null
+  if (cn === 'messageVideoNote') return content.video_note?.thumbnail?.file?.id ?? null
+  if (cn === 'messageAudio')     return content.audio?.album_cover_thumbnail?.file?.id ?? null
+  // messagePhoto: для фото "превью" — это меньший из sizes (обычно type='m').
+  // Используем самый маленький размер с file.id.
+  if (cn === 'messagePhoto') {
+    const sizes = content.photo?.sizes || []
+    if (!sizes.length) return null
+    const smallest = sizes.reduce((a, b) => {
+      const aArea = (a.width || 0) * (a.height || 0)
+      const bArea = (b.width || 0) * (b.height || 0)
+      return aArea < bArea ? a : b
+    })
+    return smallest.photo?.id ?? null
+  }
+  return null
+}
+
+/**
  * v0.89.7: конвертирует абсолютный путь к файлу TDLib в cc-media:// URL.
  *
  * ВНИМАНИЕ (v0.89.15): этот helper оставлен как fallback для случаев когда

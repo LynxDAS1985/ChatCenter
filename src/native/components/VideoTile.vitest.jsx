@@ -1,6 +1,5 @@
 // v0.87.34: vitest для VideoTile — ловит регрессии в Variant A (poster + streaming).
-// Проверяет: НЕ качаем full video без клика, постер грузится через tg:download-media thumb=true,
-// клик → tg:download-video + video:open.
+// v0.89.16: постер качается через tg:download-thumbnail (НЕ tg:download-media).
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import VideoTile from './VideoTile.jsx'
@@ -9,7 +8,7 @@ let invokeMock
 
 beforeEach(() => {
   invokeMock = vi.fn((channel, args) => {
-    if (channel === 'tg:download-media') {
+    if (channel === 'tg:download-thumbnail') {
       return Promise.resolve({ ok: true, path: 'cc-media://media/thumb.jpg' })
     }
     if (channel === 'tg:download-video') {
@@ -32,16 +31,19 @@ const baseVideo = {
 }
 
 describe('VideoTile render (Variant A — poster + streaming)', () => {
-  it('при mount качает постер (thumb=false для чёткого кадра)', async () => {
+  it('при mount качает thumbnail (НЕ full video) для постера', async () => {
     render(<VideoTile m={baseVideo} chatId="c1" />)
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('tg:download-media', {
-        chatId: 'c1', messageId: '1', thumb: false,
+      expect(invokeMock).toHaveBeenCalledWith('tg:download-thumbnail', {
+        chatId: 'c1', messageId: '1',
       })
     })
     // НЕ должен быть вызван tg:download-video до клика
     const videoCalls = invokeMock.mock.calls.filter(c => c[0] === 'tg:download-video')
     expect(videoCalls.length).toBe(0)
+    // НЕ должен быть вызван tg:download-media (старый ошибочный путь, качал полное видео)
+    const oldCalls = invokeMock.mock.calls.filter(c => c[0] === 'tg:download-media')
+    expect(oldCalls.length).toBe(0)
     cleanup()
   })
 

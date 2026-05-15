@@ -1,12 +1,12 @@
 # Ловушки TDLib медиа + HTML5 video player
 
-Серия ошибок v0.89.6 → v0.89.15 — миграция медиа-пайплайна с GramJS на TDLib + воспроизведение видео через Chromium `<video>`. Записано чтобы **не повторять**.
+Серия ошибок v0.89.6 → v0.89.16 — миграция медиа-пайплайна с GramJS на TDLib + воспроизведение видео через Chromium `<video>` + постеры. Записано чтобы **не повторять**.
 
-## ✅ СТАТУС: СЕРИЯ ЗАКРЫТА (v0.89.15, подтверждено пользователем 15 мая 2026)
+## ✅ СТАТУС: СЕРИЯ ЗАКРЫТА (v0.89.15 — воспроизведение, v0.89.16 — постеры)
 
 **Итоговое архитектурное решение**: НИ ОДИН файл TDLib плеер напрямую не читает. Любой скачанный файл копируется в `userData/tg-media/<fileId>_<size>.<ext>` и плеер получает только `cc-media://media/...`. См. ловушки #8, #9.
 
-## 📋 Сводка всех 9 ловушек серии
+## 📋 Сводка всех 10 ловушек серии
 
 | # | Ловушка | Версия добавления | Версия фикса | Корневая причина |
 |---|---|---|---|---|
@@ -17,8 +17,9 @@
 | 5 | Snapshot API без кеширования | до v0.89.6 | v0.89.6 | name/avatar только через events — race при старте |
 | 6 | «Защитные кнопки» поверх багов | v0.89.11/12 | v0.89.13 | Лечил симптом своего же бага вместо отката |
 | 7 | Renderer logs не в файл | до v0.89.13 | v0.89.13 | DevTools Console не пишет в `chatcenter.log` |
-| 8 | TDLib `temp/<N>` нестабилен | v0.89.7 | **v0.89.15** | TDLib чистит temp/ при `optimizeStorage` |
-| 9 | Progressive playback с unstable URL | v0.89.8 | **v0.89.15** | Путь меняется при `temp→videos` — `<video>` теряет позицию |
+| 8 | TDLib `temp/<N>` нестабилен | v0.89.7 | v0.89.15 | TDLib чистит temp/ при `optimizeStorage` |
+| 9 | Progressive playback с unstable URL | v0.89.8 | v0.89.15 | Путь меняется при `temp→videos` — `<video>` теряет позицию |
+| 10 | Параметр `thumb` в `media.download` — мёртвый код | v0.87.39 | **v0.89.16** | Backend игнорировал флаг, качал полное видео под видом постера |
 
 ## 🎯 Главные правила, выведенные из серии
 
@@ -242,6 +243,49 @@ err: ENOENT — no such file
 У нас есть локальный диск — мы можем просто скачать и скопировать. Это и проще, и надёжнее, чем стримить через `readFilePart`.
 
 **Правило**: `downloadFile` в [tdlibMedia.js](../../main/native/backends/tdlibMedia.js) **всегда** ждёт `is_downloading_completed=true`. Никаких early-резолвов. UX-компенсация — прогресс-спиннер на постере (уже был в [VideoTile.jsx](../../src/native/components/VideoTile.jsx) с v0.87.36).
+
+---
+
+## Ловушка #10: Параметр `thumb` в `tg:download-media` — мёртвый код
+
+**Версия**: фикс v0.89.16 (баг существовал с v0.87.39).
+
+**Симптом**: вместо чёткого постера видео виден чёрный экран или только размытый minithumbnail. На скриншоте пользователя в посте `Machinelearning` — большая чёрная область с круглой кнопкой ▶ по центру, JPEG-кадра нет.
+
+**Корневая причина**: `VideoTile.jsx` и `MediaAlbum.jsx` при монтировании вызывали:
+```js
+window.api.invoke('tg:download-media', { chatId, messageId, thumb: false })
+```
+
+С комментарием `v0.87.39: thumb=false для чёткого постера (не blur)`. Но в backend этот параметр **никогда не использовался**:
+
+```js
+// main/native/backends/tdlibBackend.js (до v0.89.16):
+async download({ chatId, msgId, onProgress }) {
+  // ...
+  const { fileId } = extractMediaFileId(tdMsg?.content)  // ← thumb игнорируется
+  // ...
+}
+
+// А extractMediaFileId для messageVideo возвращал file_id ПОЛНОГО видео:
+if (cn === 'messageVideo') return { fileId: content.video?.video?.id, kind: 'video' }
+//                                                  ^^^^^^ это mp4, ~45 МБ
+```
+
+Каждое появление видео в чате запускало **фоновое скачивание десятков МБ** под видом постера. UI ставил полученный URL вида `cc-media://media/<видео.mp4>` в `<img src="">` — Chromium не рендерит mp4 в `<img>`, виден только размытый minithumbnail (если был) или чёрный фон.
+
+**По TDLib документации** ([td_api::video](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1video.html)):
+- `video.minithumbnail` — base64 ~200 байт в самом сообщении (размытый, мгновенный)
+- `video.thumbnail.file` — JPEG ~10-100 КБ (чёткий кадр для постера) ← **это надо качать**
+- `video.video` — mp4 десятки МБ (это для клика «▶»)
+
+**Решение (v0.89.16)**:
+- Новый helper `extractThumbnailFileId(content)` извлекает `thumbnail.file.id` для video/animation/document/videoNote/audio/photo
+- Новый метод `backend.media.downloadThumbnail({chatId, msgId})` качает только превью (priority=8)
+- Новый IPC `tg:download-thumbnail` без флага `thumb`
+- VideoTile.jsx + MediaAlbum.jsx переведены на новый канал
+
+**Правило**: если параметр функции **не используется** внутри — удалить его из сигнатуры, не оставлять как «обещание». Если параметр **обязан** менять поведение — добавить тест, который проверяет это поведение **внутри backend**, а не только в UI. Иначе backend может молча игнорировать флаг (как случилось с `thumb` от v0.87.39 до v0.89.16 — больше двух недель в проде).
 
 ---
 

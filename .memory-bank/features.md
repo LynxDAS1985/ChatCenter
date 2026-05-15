@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.15 (15 мая 2026)
+## Текущая версия: v0.89.16 (15 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.15). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.16). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,86 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.16 — Постер видео (thumbnail JPEG) — отдельный IPC, без скачивания полного файла
+
+**Контекст**: после v0.89.15 пользователь увидел чёрный экран вместо превью в постере видео (Telegram-like UX отсутствовал). Скриншот показал: только размытый фон (`m.strippedThumb`) + кнопка ▶, JPEG-постер не подгружался.
+
+#### Корневая причина
+
+`VideoTile.jsx` + `MediaAlbum.jsx` при монтировании вызывали:
+```js
+window.api.invoke('tg:download-media', { chatId, messageId, thumb: false })
+```
+
+Параметр `thumb` в backend `media.download` **никогда не использовался**. Хелпер `extractMediaFileId(content)` для `messageVideo` возвращал `content.video.video.id` — это file_id **самого видео** (mp4, ~45 МБ), а не его превью.
+
+Цепочка ошибки:
+1. UI вызывает `tg:download-media` под видом «постера»
+2. Backend качает ПОЛНОЕ видео (десятки МБ в фон) на каждое появление видео в чате
+3. Backend возвращает URL `cc-media://media/<видео.mp4>`
+4. UI ставит этот URL в `<img src="...">` — Chromium не рендерит mp4 в img
+5. Виден только размытый minithumbnail (если есть) или чёрный фон
+
+По [TDLib докам](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1video.html) у `video` есть ТРИ слоя:
+- `minithumbnail: minithumbnail` — base64 ~200 байт в самом сообщении (размытый)
+- `thumbnail: thumbnail { format, width, height, file: file }` — JPEG ~10-100 КБ (чёткий) ← **это надо качать для постера**
+- `video: file` — mp4 десятки МБ (это для клика «▶»)
+
+#### Как делают другие клиенты
+
+| Клиент | Слой 1 (0 мс) | Слой 2 (~200 мс) | Слой 3 (на клик ▶) |
+|---|---|---|---|
+| Telegram Desktop (C++) | minithumbnail | `thumbnail.file` через `readFilePart` | `video.video` |
+| Telegram Web K (WASM) | minithumbnail | `thumbnail.file` через Service Worker | `video.video` |
+| **ChatCenter до v0.89.16** | minithumbnail | ❌ ОТСУТСТВУЕТ — качали полный mp4 | `video.video` |
+| **ChatCenter v0.89.16** | minithumbnail | ✅ `thumbnail.file` через `tg:download-thumbnail` | `video.video` |
+
+#### Решение
+
+**4 файла, ~80 строк правок + 18 новых тестов**:
+
+1. **[main/native/backends/tdlibMedia.js](../main/native/backends/tdlibMedia.js)** — новый helper:
+   ```js
+   export function extractThumbnailFileId(content) {
+     if (content?.['@type'] === 'messageVideo')     return content.video?.thumbnail?.file?.id ?? null
+     if (content?.['@type'] === 'messageAnimation') return content.animation?.thumbnail?.file?.id ?? null
+     if (content?.['@type'] === 'messageDocument')  return content.document?.thumbnail?.file?.id ?? null
+     if (content?.['@type'] === 'messageVideoNote') return content.video_note?.thumbnail?.file?.id ?? null
+     if (content?.['@type'] === 'messageAudio')     return content.audio?.album_cover_thumbnail?.file?.id ?? null
+     if (content?.['@type'] === 'messagePhoto')     return /* наименьший size для превью */ ...
+     return null
+   }
+   ```
+   Использован оператор `??` (не `||`), чтобы `file_id=0` (теоретически валидный) не превратился в `null`.
+
+2. **[main/native/backends/tdlibBackend.js](../main/native/backends/tdlibBackend.js)** — новый метод `backend.media.downloadThumbnail`:
+   - priority=8 (ниже video=24, выше default=1 — постеры важнее фона, но не блокируют клик на «▶»)
+   - Возвращает `cc-media://media/<fileId>_<size>.jpg` через `stabilizeForPlayback`
+   - Бонус: media-секция отрефакторена через IIFE с хелперами `dlAndStabilize` + `fetchMessage` (убрана дубликация в 3 методах: download/downloadVideo/downloadThumbnail)
+
+3. **[main/native/tdlibIpcHandlers.js](../main/native/tdlibIpcHandlers.js)** — новый IPC `tg:download-thumbnail`
+
+4. **[src/native/components/VideoTile.jsx](../src/native/components/VideoTile.jsx)** и **[src/native/components/MediaAlbum.jsx](../src/native/components/MediaAlbum.jsx)** — переведены с `tg:download-media` на `tg:download-thumbnail` для постера. В MediaAlbum для `PhotoTile` (полные фото в альбоме) `downloadMedia` callback **сохранён** — он там не для превью, а для полного фото на клик.
+
+**Tests**: 559 → 577. Новый файл [`src/__tests__/tdlibMediaThumbnail.vitest.js`](../src/__tests__/tdlibMediaThumbnail.vitest.js) — 18 тестов:
+- 14 для `extractThumbnailFileId`: все типы сообщений (video, animation, document, videoNote, audio, photo, text, voice, sticker), edge cases (null, без thumbnail, без sizes, id=0)
+- 4 для `backend.media.downloadThumbnail`: качает правильный file_id (thumbnail, не video), `no thumbnail` error, ошибка getMessage, priority=8
+
+Обновлены `VideoTile.vitest.jsx` + `MediaAlbum.vitest.jsx` (проверяют новый канал). Добавлено `downloadThumbnail` в `REQUIRED_METHODS` контракта в [`messengerBackend.test.cjs`](../src/__tests__/messengerBackend.test.cjs).
+
+#### Эффект
+
+🟢 **Что починилось**:
+- Чёткий JPEG-кадр виден до клика ▶ (как в обычном Telegram)
+- **Перестало качать 45+ МБ** в фон при появлении видео в чате
+- Экономия трафика на мобильной связи
+- Меньше нагрузка на TDLib priority queue
+- TDLib не забивается фоновыми full-загрузками — клик «▶» начинает скачку моментально
+
+📚 **Документация ловушек**: добавлена ловушка #10 в [.memory-bank/mistakes/tdlib-video-player.md](mistakes/tdlib-video-player.md): «параметр `thumb` в `media.download` был мёртвым кодом — игнорировался backend'ом».
 
 ---
 

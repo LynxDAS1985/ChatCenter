@@ -273,6 +273,15 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
       chatId, msgId: messageId,
       onProgress: makeProgressCallback(chatId, messageId),
     }))
+  // v0.89.16: качаем ТОЛЬКО превью (thumbnail JPEG ~10-100 КБ) для постера.
+  // Используется VideoTile.jsx + MediaAlbum.jsx при монтировании. Без этого
+  // канала постеры качались как полные видео (десятки МБ в фон на каждое
+  // сообщение) — см. ловушка #10 в mistakes/tdlib-video-player.md.
+  handle('tg:download-thumbnail', ({ chatId, messageId } = {}) =>
+    backend.media.downloadThumbnail({
+      chatId, msgId: messageId,
+      onProgress: makeProgressCallback(chatId, messageId),
+    }))
 
   // ────────────────────────────────────────────────────────────────────
   // FORUM

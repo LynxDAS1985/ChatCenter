@@ -52,7 +52,7 @@ const REQUIRED_METHODS = {
   auth: ['startLogin', 'submitCode', 'submitPassword', 'cancelLogin', 'autoRestoreSessions', 'removeAccount'],
   chats: ['getChats', 'getCachedChats', 'rescanUnread', 'healthCheck'],
   messages: ['get', 'getTopic', 'send', 'sendFile', 'deleteMessage', 'editMessage', 'forwardMessage', 'markRead', 'markTopicRead', 'getPinned'],
-  media: ['download', 'downloadVideo', 'getCacheSize', 'cleanup'],
+  media: ['download', 'downloadVideo', 'downloadThumbnail', 'getCacheSize', 'cleanup'],
   forum: ['getTopics', 'getTopicMessages'],
 }
 

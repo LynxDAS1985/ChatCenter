@@ -1,20 +1,8 @@
-// v0.89.0 — Stage 4 / Этап 2.6: TDLib backend — реальная реализация
-//
+// v0.89.0 — Stage 4 / Этап 2.6: TDLib backend — реальная реализация.
 // Соединяет tdlibClient + tdlibAuth + tdlibMessages + tdlibMedia в единый
-// MessengerBackend, который удовлетворяет интерфейс messengerBackend.js.
-//
-// АРХИТЕКТУРА:
-//   - createTdlibBackend({ manager, tdlibParameters }) → MessengerBackend
-//   - manager — экземпляр TdlibClientManager (создаётся ОДИН раз на процесс)
-//   - tdlibParameters — результат buildTdlibParameters(), используется при login нового аккаунта
-//
-// chatId в наших методах — наш составной формат '{accountId}:{rawId}'.
-// Внутри парсим accountId, получаем client через manager.getClient(accountId),
-// rawId передаём в tdlibMessages как TDLib chat_id (число).
-//
-// AUTH FLOW: хранит state одного активного логина (login в TDLib линейный — нельзя
-// параллельно). При завершении flow.dispose(). Создание следующего аккаунта =
-// new TdlibAuthFlow для нового tempAccountId.
+// MessengerBackend (интерфейс messengerBackend.js). chatId в наших методах —
+// составной '{accountId}:{rawId}'. AUTH FLOW линейный (TDLib не позволяет
+// параллельные login'ы) — хранит state одного активного логина.
 
 import {
   getChatHistory, sendTextMessage, editMessageText, deleteMessages,
@@ -23,7 +11,8 @@ import {
 } from './tdlibMessages.js'
 import {
   downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
-  tdlibPathToCcMediaUrl, stabilizeForPlayback, getStorageStatistics, optimizeStorage,
+  tdlibPathToCcMediaUrl, stabilizeForPlayback, extractThumbnailFileId,
+  getStorageStatistics, optimizeStorage,
 } from './tdlibMedia.js'
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
@@ -384,16 +373,29 @@ export function createTdlibBackend(opts = {}) {
       },
     },
 
-    media: {
+    media: (() => {
       // v0.89.15: ВСЕГДА копируем скачанные файлы в userData/tg-media/.
       // Подробности — см. шапка tdlibMedia.js + mistakes/tdlib-video-player.md.
-      async download({ chatId, msgId, onProgress }) {
+      const dlAndStabilize = async (accountId, fileId, priority, onProgress) => {
+        const r = await downloadFile({ manager, accountId, fileId, priority, onProgress })
+        if (r?.ok && r?.file?.local?.path) {
+          const stable = stabilizeForPlayback(r.file.local.path, userDataDir, fileId)
+          r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
+        }
+        return r
+      }
+      const fetchMessage = async (chatId, msgId) => {
         const ctx = getClientForChat(manager, chatId)
-        if (ctx.error) return ctx.error
-        let tdMsg
+        if (ctx.error) return { ctx }
         try {
-          tdMsg = await ctx.client.invoke({ '@type': 'getMessage', chat_id: ctx.rawId, message_id: Number(msgId) })
-        } catch (e) { return { ok: false, error: e?.message || String(e) } }
+          const tdMsg = await ctx.client.invoke({ '@type': 'getMessage', chat_id: ctx.rawId, message_id: Number(msgId) })
+          return { ctx, tdMsg }
+        } catch (e) { return { ctx: { error: { ok: false, error: e?.message || String(e) } } } }
+      }
+      return {
+      async download({ chatId, msgId, onProgress }) {
+        const { ctx, tdMsg } = await fetchMessage(chatId, msgId)
+        if (ctx.error) return ctx.error
         const { fileId } = extractMediaFileId(tdMsg?.content)
         if (!fileId) return { ok: false, error: 'no media file in message' }
         const cached = getCachedFilePath(
@@ -404,29 +406,24 @@ export function createTdlibBackend(opts = {}) {
           const stable = stabilizeForPlayback(cached, userDataDir, fileId)
           return { ok: true, path: stable || tdlibPathToCcMediaUrl(cached) || cached }
         }
-        const r = await downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 16, onProgress })
-        if (r?.ok && r?.file?.local?.path) {
-          const stable = stabilizeForPlayback(r.file.local.path, userDataDir, fileId)
-          r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
-        }
-        return r
+        return dlAndStabilize(ctx.accountId, fileId, 16, onProgress)
+      },
+      // v0.89.16: качает thumbnail JPEG (~10-100 КБ) для постера видео.
+      // См. шапку extractThumbnailFileId в tdlibMedia.js.
+      async downloadThumbnail({ chatId, msgId, onProgress }) {
+        const { ctx, tdMsg } = await fetchMessage(chatId, msgId)
+        if (ctx.error) return ctx.error
+        const fileId = extractThumbnailFileId(tdMsg?.content)
+        if (!fileId) return { ok: false, error: 'no thumbnail' }
+        return dlAndStabilize(ctx.accountId, fileId, 8, onProgress)
       },
       async downloadVideo({ chatId, msgId, onProgress }) {
-        const ctx = getClientForChat(manager, chatId)
+        const { ctx, tdMsg } = await fetchMessage(chatId, msgId)
         if (ctx.error) return ctx.error
-        let tdMsg
-        try {
-          tdMsg = await ctx.client.invoke({ '@type': 'getMessage', chat_id: ctx.rawId, message_id: Number(msgId) })
-        } catch (e) { return { ok: false, error: e?.message || String(e) } }
         const fileId = tdMsg?.content?.video?.video?.id
         if (!fileId) return { ok: false, error: 'no video file' }
         // v0.89.15: НИКАКОГО progressive — ждём полной загрузки, потом stabilize.
-        const r = await downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 24, onProgress })
-        if (r?.ok && r?.file?.local?.path) {
-          const stable = stabilizeForPlayback(r.file.local.path, userDataDir, fileId)
-          r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
-        }
-        return r
+        return dlAndStabilize(ctx.accountId, fileId, 24, onProgress)
       },
       async getCacheSize() {
         // Суммируем по всем аккаунтам
@@ -449,7 +446,8 @@ export function createTdlibBackend(opts = {}) {
         }
         return { ok: true, freedBytes: freed }
       },
-    },
+      }
+    })(),
 
     forum: {
       // v0.89.0 / Этап 3.10: TDLib getForumTopics

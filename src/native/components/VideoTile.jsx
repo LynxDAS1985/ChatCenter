@@ -51,11 +51,13 @@ export default function VideoTile({ m, chatId, inAlbum }) {
   const containerRef = useRef(null)
   const unsubRef = useRef(null)
 
-  // Загружаем постер (thumb) сразу — лёгкий, ~20-80 КБ
+  // v0.89.16: качаем именно thumbnail (~10-100 КБ JPEG-кадр), а не полное видео.
+  // Раньше вызывали tg:download-media с thumb:false — это ошибочно качало
+  // полный mp4 (десятки МБ) на каждое появление видео в чате. См. ловушка #10
+  // в .memory-bank/mistakes/tdlib-video-player.md.
   useEffect(() => {
     let cancelled = false
-    // v0.87.39: thumb=false для чёткого постера (не blur)
-    window.api?.invoke('tg:download-media', { chatId, messageId: m.id, thumb: false }).then(r => {
+    window.api?.invoke('tg:download-thumbnail', { chatId, messageId: m.id }).then(r => {
       if (cancelled) return
       if (r?.ok) setPosterUrl(r.path)
     })

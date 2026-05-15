@@ -120,9 +120,12 @@ describe('AlbumBubble render', () => {
   })
 
   // v0.87.39: video в альбоме = VideoPosterTile (постер, не <video controls>).
-  // Показывает thumb через downloadMedia prop, клик → tg:download-video + video:open.
+  // v0.89.16: постер качается через tg:download-thumbnail напрямую (НЕ через
+  // downloadMedia prop — тот качал full video размером с десятки МБ).
   it('RF 0.87.39: video в альбоме показан как постер (не inline player)', async () => {
-    const downloadMedia = vi.fn(() => Promise.resolve({ ok: true, path: 'cc-media://media/t.jpg' }))
+    const downloadMedia = vi.fn(() => Promise.resolve({ ok: false }))
+    const thumbnailInvoke = vi.fn(() => Promise.resolve({ ok: true, path: 'cc-media://media/thumb.jpg' }))
+    globalThis.window.api = { invoke: thumbnailInvoke, on: vi.fn(() => () => {}), send: vi.fn() }
     const videoAlbum = {
       ...makeAlbum(1),
       msgs: [{
@@ -137,11 +140,10 @@ describe('AlbumBubble render', () => {
       <AlbumBubble album={videoAlbum} chatId="c1" downloadMedia={downloadMedia} />
     )
     await new Promise(r => setTimeout(r, 50))
-    // downloadMedia вызван с thumb=false (чёткий постер, не blur)
-    expect(downloadMedia).toHaveBeenCalled()
-    expect(downloadMedia.mock.calls[0][2]).toBe(false)
-    // НЕ должно быть <video> элемента (только постер)
-    // inline <video controls> не рендерится в альбоме
+    // Постер видео качается через tg:download-thumbnail (новый канал v0.89.16)
+    expect(thumbnailInvoke).toHaveBeenCalledWith('tg:download-thumbnail', {
+      chatId: 'c1', messageId: '200',
+    })
     cleanup()
   })
 

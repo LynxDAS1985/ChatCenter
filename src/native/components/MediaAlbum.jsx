@@ -13,12 +13,17 @@ function VideoPosterTile({ m, chatId, downloadMedia }) {
   const [posterUrl, setPosterUrl] = useState(null)
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState(0)
+  // подавляем "unused" — downloadMedia пришёл по контракту, но для постера видео
+  // используется отдельный канал tg:download-thumbnail (см. ниже).
+  void downloadMedia
 
-  // v0.87.39: thumb=false для нормального постера (не blur).
-  // thumb=true даёт stripped ~10КБ = мутное. thumb=false = полный кадр ~100-300КБ.
+  // v0.89.16: качаем thumbnail (JPEG ~10-100 КБ), не полное видео.
+  // Раньше вызывали downloadMedia → tg:download-media → backend.media.download
+  // возвращал file_id полного видео (десятки МБ) — ошибочно скачивалось всё.
+  // См. ловушка #10 в .memory-bank/mistakes/tdlib-video-player.md.
   useEffect(() => {
     let cancelled = false
-    downloadMedia?.(chatId, m.id, false).then(r => {
+    window.api?.invoke('tg:download-thumbnail', { chatId, messageId: m.id }).then(r => {
       if (!cancelled && r?.ok) setPosterUrl(r.path)
     })
     return () => { cancelled = true }
