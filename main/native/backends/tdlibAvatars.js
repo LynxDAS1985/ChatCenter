@@ -47,6 +47,10 @@ export function scheduleAvatarDownload(manager, record, kind, ownerId, photoFile
     }).catch((e) => {
       // v0.89.0 / Этап 3.12: логируем (раньше silent скрывал FILE_REFERENCE_INVALID
       // и подобные ошибки → не было видно почему аватарки не качаются).
+      // v0.89.2: чистим pending запись чтобы не висела вечно если TDLib никогда
+      // не пришлёт `updateFile` для этого fileId (например, чат удалён или
+      // FILE_REFERENCE_INVALID — TDLib не делает retry автоматически).
+      manager._pendingAvatars.delete(fileId)
       try {
         manager.emit('avatar:error', { accountId: record.accountId, fileId, kind, ownerId, error: e?.message || String(e) })
       } catch (_) {}

@@ -184,15 +184,21 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, log }) 
     } catch (_) {}
     return { ok: true }
   })
-  handle('tg:set-mute', () => ({ ok: true }))  // TODO: TDLib setChatNotificationSettings
-  handle('tg:pin', () => ({ ok: true }))        // TODO: TDLib toggleChatIsPinned
+  // v0.89.2: реальная реализация через TDLib setChatNotificationSettings.
+  // Контракт: { chatId, muteFor } где muteFor — секунды от now (0 = размьютить,
+  // 2147483647 ≈ 68 лет = «навсегда» для UI).
+  handle('tg:set-mute', ({ chatId, muteFor } = {}) =>
+    backend.chats.setMute(chatId, muteFor))
+  // v0.89.2: реальная реализация через TDLib toggleChatIsPinned (chat_list=Main).
+  // Контракт: { chatId, isPinned } — boolean.
+  handle('tg:pin', ({ chatId, isPinned } = {}) =>
+    backend.chats.togglePin(chatId, isPinned))
   handle('tg:send-file', ({ chatId, filePath, caption } = {}) =>
     backend.messages.sendFile(chatId, filePath, caption))
-  handle('tg:get-cleanup-stats', async () => {
-    // Простой возврат — для UI «очистить кеш». TDLib имеет getStorageStatistics
-    // но синтаксис другой; пока возвращаем минимум.
-    return { ok: true, bytes: 0, fileCount: 0 }
-  })
+  // v0.89.2: реальная реализация через TDLib getStorageStatisticsFast (быстрая
+  // версия без скана файлов, читает счётчики из БД). Возвращает { bytes (files),
+  // dbBytes (database), fileCount: 0 (Fast не считает файлы поштучно) }.
+  handle('tg:get-cleanup-stats', () => backend.chats.getCleanupStats())
 
   // ────────────────────────────────────────────────────────────────────
   // MEDIA

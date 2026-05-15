@@ -82,6 +82,90 @@ describe('sendFile — определение типа по расширению
     }))
   })
 
+  // v0.89.2: GIF теперь идёт как Animation (раньше — Photo, терялась анимация).
+  it('gif → inputMessageAnimation (а не Photo) с required полями', async () => {
+    const { backend, mockClient } = makeBackend()
+    mockClient.invoke.mockResolvedValueOnce({ '@type': 'message', id: 200 })
+    await backend.messages.sendFile('tg_main:-1', '/x/funny.gif', 'caption')
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      input_message_content: expect.objectContaining({
+        '@type': 'inputMessageAnimation',
+        animation: expect.objectContaining({ '@type': 'inputFileLocal', path: '/x/funny.gif' }),
+        duration: 0, width: 0, height: 0,
+        added_sticker_file_ids: [],
+        show_caption_above_media: false,
+        has_spoiler: false,
+        caption: expect.objectContaining({ text: 'caption' }),
+      }),
+    }))
+  })
+
+  // v0.89.2: HEIC TDLib не поддерживает как Photo — идёт как Document.
+  it('heic → inputMessageDocument (TDLib не поддерживает HEIC photo)', async () => {
+    const { backend, mockClient } = makeBackend()
+    mockClient.invoke.mockResolvedValueOnce({ '@type': 'message', id: 1 })
+    await backend.messages.sendFile('tg_main:-1', '/x/photo.heic')
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      input_message_content: expect.objectContaining({
+        '@type': 'inputMessageDocument',
+        document: expect.objectContaining({ path: '/x/photo.heic' }),
+      }),
+    }))
+  })
+
+  // v0.89.2: Photo/Video/Audio должны передавать ВСЕ required-поля (по TDLib спеке).
+  it('photo передаёт width=0,height=0,added_sticker_file_ids=[],show_caption_above_media=false,has_spoiler=false', async () => {
+    const { backend, mockClient } = makeBackend()
+    mockClient.invoke.mockResolvedValueOnce({ '@type': 'message', id: 1 })
+    await backend.messages.sendFile('tg_main:-1', '/x/photo.jpg')
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      input_message_content: expect.objectContaining({
+        '@type': 'inputMessagePhoto',
+        added_sticker_file_ids: [],
+        width: 0, height: 0,
+        show_caption_above_media: false,
+        has_spoiler: false,
+      }),
+    }))
+  })
+
+  it('video передаёт supports_streaming=true + required-поля', async () => {
+    const { backend, mockClient } = makeBackend()
+    mockClient.invoke.mockResolvedValueOnce({ '@type': 'message', id: 1 })
+    await backend.messages.sendFile('tg_main:-1', '/x/clip.mp4')
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      input_message_content: expect.objectContaining({
+        '@type': 'inputMessageVideo',
+        supports_streaming: true,
+        duration: 0, width: 0, height: 0,
+        added_sticker_file_ids: [],
+      }),
+    }))
+  })
+
+  it('audio передаёт title="" + performer="" + duration=0', async () => {
+    const { backend, mockClient } = makeBackend()
+    mockClient.invoke.mockResolvedValueOnce({ '@type': 'message', id: 1 })
+    await backend.messages.sendFile('tg_main:-1', '/x/track.mp3')
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      input_message_content: expect.objectContaining({
+        '@type': 'inputMessageAudio',
+        duration: 0,
+        title: '',
+        performer: '',
+      }),
+    }))
+  })
+
+  it('ogg → inputMessageAudio (как и mp3)', async () => {
+    const { backend, mockClient } = makeBackend()
+    mockClient.invoke.mockResolvedValueOnce({ '@type': 'message', id: 1 })
+    await backend.messages.sendFile('tg_main:-1', '/x/sound.ogg')
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      input_message_content: expect.objectContaining({ '@type': 'inputMessageAudio' }),
+    }))
+  })
+
   it('invalid chatId → ok: false', async () => {
     const { backend } = makeBackend()
     const r = await backend.messages.sendFile('no-colon', '/x.jpg')

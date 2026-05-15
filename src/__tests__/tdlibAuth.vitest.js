@@ -19,11 +19,10 @@ function makeFlow() {
   const mockClient = makeMockClient()
   const mgr = new TdlibClientManager({ clientFactory: () => mockClient })
   mgr.createAccount('tg_1', {})
+  // v0.89.2: TdlibAuthFlow больше не принимает tdlibParameters — tdl сам формирует
+  // setTdlibParameters из createClient options. См. tdlibRuntime.js.
   const flow = new TdlibAuthFlow({
     manager: mgr, accountId: 'tg_1',
-    tdlibParameters: buildTdlibParameters({
-      apiId: 1, apiHash: 'h', databaseDirectory: '/tmp/tdlib-1',
-    }),
   })
   return { mgr, mockClient, flow }
 }
@@ -62,37 +61,50 @@ describe('translateTdlibError', () => {
 })
 
 describe('buildTdlibParameters', () => {
-  it('строит корректный объект с обязательными полями', () => {
-    const p = buildTdlibParameters({
-      apiId: 8392940, apiHash: 'secret', databaseDirectory: '/tmp/db',
-    })
-    expect(p['@type']).toBe('setTdlibParameters')
-    expect(p.api_id).toBe(8392940)
-    expect(p.api_hash).toBe('secret')
-    expect(p.database_directory).toBe('/tmp/db')
-    expect(p.files_directory).toBe('/tmp/db/files')
+  // v0.89.2: формат вывода изменился. Теперь buildTdlibParameters возвращает только
+  // приложение-специфичные параметры (device_model, application_version, use_*_database).
+  // api_id/api_hash/database_directory/files_directory подставляет сам tdl через
+  // верхнеуровневые createClient options. См. node_modules/tdl/dist/client.js:629-637.
+  it('строит объект параметров приложения (без @type/api_id/database_directory)', () => {
+    const p = buildTdlibParameters()
+    expect(p['@type']).toBeUndefined()      // tdl сам ставит @type:'setTdlibParameters'
+    expect(p.api_id).toBeUndefined()         // подставляется tdl из createClient.apiId
+    expect(p.api_hash).toBeUndefined()
+    expect(p.database_directory).toBeUndefined()
+    expect(p.files_directory).toBeUndefined()
     expect(p.use_message_database).toBe(true)
+    expect(p.use_file_database).toBe(true)
+    expect(p.use_chat_info_database).toBe(true)
     expect(p.use_secret_chats).toBe(false)
     expect(p.system_language_code).toBe('ru')
     expect(p.device_model).toBe('ChatCenter')
+    expect(p.enable_storage_optimizer).toBe(true)
+    expect(p.ignore_file_names).toBe(false)
   })
 
-  it('падает если нет apiId/apiHash', () => {
-    expect(() => buildTdlibParameters({ databaseDirectory: '/tmp' })).toThrow(/apiId\+apiHash/)
-  })
-
-  it('падает если нет databaseDirectory', () => {
-    expect(() => buildTdlibParameters({ apiId: 1, apiHash: 'h' })).toThrow(/databaseDirectory/)
-  })
-
-  it('кастомизация языка/устройства', () => {
+  it('кастомизация языка/устройства/версии', () => {
     const p = buildTdlibParameters({
-      apiId: 1, apiHash: 'h', databaseDirectory: '/tmp',
-      systemLanguageCode: 'en', deviceModel: 'TestModel', applicationVersion: '1.2.3',
+      systemLanguageCode: 'en', deviceModel: 'TestModel',
+      applicationVersion: '1.2.3', systemVersion: 'TestOS',
     })
     expect(p.system_language_code).toBe('en')
     expect(p.device_model).toBe('TestModel')
     expect(p.application_version).toBe('1.2.3')
+    expect(p.system_version).toBe('TestOS')
+  })
+
+  it('disable storage optimizer через опцию', () => {
+    const p = buildTdlibParameters({ enableStorageOptimizer: false })
+    expect(p.enable_storage_optimizer).toBe(false)
+  })
+
+  it('disable databases через опцию', () => {
+    const p = buildTdlibParameters({
+      useMessageDatabase: false, useFileDatabase: false, useChatInfoDatabase: false,
+    })
+    expect(p.use_message_database).toBe(false)
+    expect(p.use_file_database).toBe(false)
+    expect(p.use_chat_info_database).toBe(false)
   })
 })
 
@@ -101,11 +113,12 @@ describe('buildTdlibParameters', () => {
 // ──────────────────────────────────────────────────────────────────────
 
 describe('TdlibAuthFlow construct', () => {
-  it('требует manager + accountId + tdlibParameters', () => {
+  it('требует manager + accountId (tdlibParameters больше не нужен — v0.89.2)', () => {
     const mgr = new TdlibClientManager({ clientFactory: () => makeMockClient() })
     expect(() => new TdlibAuthFlow({})).toThrow(/manager required/)
     expect(() => new TdlibAuthFlow({ manager: mgr })).toThrow(/accountId required/)
-    expect(() => new TdlibAuthFlow({ manager: mgr, accountId: 'tg_1' })).toThrow(/tdlibParameters/)
+    // С v0.89.2 этого достаточно — tdlibParameters больше не аргумент.
+    expect(() => new TdlibAuthFlow({ manager: mgr, accountId: 'tg_1' })).not.toThrow()
   })
 
   it('начальное состояние = idle', () => {
@@ -294,12 +307,28 @@ describe('TdlibAuthFlow — изоляция между аккаунтами', (
     mgr.createAccount('tg_a', {})
     mgr.createAccount('tg_b', {})
 
-    const flowA = new TdlibAuthFlow({
-      manager: mgr, accountId: 'tg_a',
-      tdlibParameters: buildTdlibParameters({ apiId: 1, apiHash: 'h', databaseDirectory: '/tmp/a' }),
-    })
+    const flowA = new TdlibAuthFlow({ manager: mgr, accountId: 'tg_a' })
     emitAuthState(mockB, 'authorizationStateWaitPhoneNumber')
     // flowA не должен менять state
     expect(flowA.state).toBe('idle')
+  })
+})
+
+// ──────────────────────────────────────────────────────────────────────
+// v0.89.2 — Спец-обработка authorizationStateWaitRegistration
+// ──────────────────────────────────────────────────────────────────────
+
+describe('TdlibAuthFlow — WaitRegistration', () => {
+  it('WaitRegistration → дружелюбная ru-ошибка (не "unsupported state")', async () => {
+    const { mockClient, flow } = makeFlow()
+    // Pending promise для startLogin — чтобы было кого reject'ать
+    const pending = flow.startLogin('+71234567890')
+    // TDLib шлёт WaitRegistration вместо WaitCode — значит номер новый
+    emitAuthState(mockClient, 'authorizationStateWaitRegistration', {
+      terms_of_service: { '@type': 'termsOfService', text: { text: 'TOS' } },
+    })
+    const r = await pending
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/нет аккаунта Telegram/)
   })
 })

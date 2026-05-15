@@ -24,14 +24,15 @@ import { mapMessage } from './tdlibMapper.js'
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Конвертирует invoke-ошибку в наш { ok: false, error } формат.
- * TDLib ошибки имеют вид { '@type': 'error', code, message }, обычные Error
- * имеют только .message.
+ * Конвертирует invoke-ошибку в наш { ok: false, error, code? } формат.
+ * TDLib ошибки имеют вид { '@type': 'error', code, message } или tdl кидает
+ * TDLibError с .code и .message. v0.89.2 — сохраняем `code` чтобы потребители
+ * могли различать (например, 404 для loadChats — конец списка, не ошибка).
  */
 function wrapError(err) {
   if (err && typeof err === 'object') {
-    if (err['@type'] === 'error') return { ok: false, error: err.message || String(err.code) }
-    if (err.message) return { ok: false, error: err.message }
+    if (err['@type'] === 'error') return { ok: false, error: err.message || String(err.code || ''), code: err.code }
+    if (err.message) return { ok: false, error: err.message, code: err.code }
   }
   return { ok: false, error: String(err) }
 }
@@ -266,13 +267,28 @@ export async function getMessage(client, chatId, messageId, opts = {}) {
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Отправляет файл. Тип определяется по mime/расширению:
- *  - image/* → inputMessagePhoto
- *  - video/* → inputMessageVideo
- *  - audio/* → inputMessageAudio
- *  - остальные → inputMessageDocument
+ * Отправляет файл. Тип определяется по расширению:
+ *  - .jpg/.jpeg/.png/.webp → inputMessagePhoto (HEIC исключён — TDLib не поддерживает
+ *    HEIC как Photo, серверная сторона делает Telegram-клиент через preview)
+ *  - .gif → inputMessageAnimation (с required duration/width/height — TDLib читает
+ *    метаданные из файла, передаём 0 — он сам подставит)
+ *  - .mp4/.m4v/.mov/.webm/.avi → inputMessageVideo
+ *  - .mp3/.m4a/.aac/.flac/.wav/.ogg/.opus → inputMessageAudio
+ *  - всё остальное (включая .heic, .pdf, .docx, .zip, ...) → inputMessageDocument
  *
- * Документация: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1send_message.html
+ * Все required-поля inputMessage<Type> заполняются (см. TDLib docs):
+ *  - inputMessagePhoto: added_sticker_file_ids=[], width=0, height=0,
+ *    show_caption_above_media=false, has_spoiler=false
+ *  - inputMessageAnimation: added_sticker_file_ids=[], duration=0, width=0, height=0,
+ *    show_caption_above_media=false, has_spoiler=false
+ *  - inputMessageVideo: added_sticker_file_ids=[], duration=0, width=0, height=0,
+ *    supports_streaming=true, show_caption_above_media=false, has_spoiler=false
+ *  - inputMessageAudio: duration=0, title='', performer=''
+ *
+ * TDLib читает реальные размеры/длительность из файла на сервере (FFprobe-like),
+ * передача 0 — стандартный паттерн для Telegram Desktop / Android клиентов.
+ *
+ * Документация типов: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1send_message.html
  *
  * @param {object} client
  * @param {string|number} chatId — TDLib chat_id
@@ -286,12 +302,6 @@ export async function sendFile(client, chatId, filePath, opts = {}) {
 
   const lower = String(filePath).toLowerCase()
   const ext = lower.slice(lower.lastIndexOf('.') + 1)
-  // Простой определитель типа по расширению. Для production может потребоваться
-  // mime-type lookup, но для main use cases достаточно.
-  let inputType = 'inputMessageDocument'
-  if (/^(jpg|jpeg|png|webp|heic|gif)$/.test(ext)) inputType = 'inputMessagePhoto'
-  else if (/^(mp4|m4v|mov|webm|avi)$/.test(ext)) inputType = 'inputMessageVideo'
-  else if (/^(mp3|m4a|aac|ogg|opus|wav)$/.test(ext)) inputType = 'inputMessageAudio'
 
   const inputFile = { '@type': 'inputFileLocal', path: String(filePath) }
   const caption = opts.caption
@@ -299,14 +309,60 @@ export async function sendFile(client, chatId, filePath, opts = {}) {
     : null
 
   let content
-  if (inputType === 'inputMessagePhoto') {
-    content = { '@type': 'inputMessagePhoto', photo: inputFile, ...(caption ? { caption } : {}) }
-  } else if (inputType === 'inputMessageVideo') {
-    content = { '@type': 'inputMessageVideo', video: inputFile, ...(caption ? { caption } : {}) }
-  } else if (inputType === 'inputMessageAudio') {
-    content = { '@type': 'inputMessageAudio', audio: inputFile, ...(caption ? { caption } : {}) }
+  if (/^(jpg|jpeg|png|webp)$/.test(ext)) {
+    // Photo — JPEG/PNG/WEBP. HEIC намеренно исключён: TDLib не конвертирует HEIC
+    // в Photo, попытка отправить как Photo даёт ошибку «PHOTO_INVALID_DIMENSIONS».
+    // Лучше отправить HEIC как Document — клиенты iOS/desktop откроют через preview.
+    content = {
+      '@type': 'inputMessagePhoto',
+      photo: inputFile,
+      added_sticker_file_ids: [],
+      width: 0, height: 0,
+      show_caption_above_media: false,
+      has_spoiler: false,
+      ...(caption ? { caption } : {}),
+    }
+  } else if (ext === 'gif') {
+    // Animation — TDLib поле inputMessageAnimation для GIF. Без него GIF
+    // отправлялся как inputMessagePhoto и Telegram сохранял как статичный PNG,
+    // теряя анимацию.
+    content = {
+      '@type': 'inputMessageAnimation',
+      animation: inputFile,
+      added_sticker_file_ids: [],
+      duration: 0, width: 0, height: 0,
+      show_caption_above_media: false,
+      has_spoiler: false,
+      ...(caption ? { caption } : {}),
+    }
+  } else if (/^(mp4|m4v|mov|webm|avi)$/.test(ext)) {
+    content = {
+      '@type': 'inputMessageVideo',
+      video: inputFile,
+      added_sticker_file_ids: [],
+      duration: 0, width: 0, height: 0,
+      supports_streaming: true,
+      show_caption_above_media: false,
+      has_spoiler: false,
+      ...(caption ? { caption } : {}),
+    }
+  } else if (/^(mp3|m4a|aac|flac|wav|ogg|opus)$/.test(ext)) {
+    content = {
+      '@type': 'inputMessageAudio',
+      audio: inputFile,
+      duration: 0,
+      title: '',
+      performer: '',
+      ...(caption ? { caption } : {}),
+    }
   } else {
-    content = { '@type': 'inputMessageDocument', document: inputFile, disable_content_type_detection: false, ...(caption ? { caption } : {}) }
+    // Document — всё остальное (включая HEIC, PDF, DOCX, ZIP и т.п.).
+    content = {
+      '@type': 'inputMessageDocument',
+      document: inputFile,
+      disable_content_type_detection: false,
+      ...(caption ? { caption } : {}),
+    }
   }
 
   try {
@@ -321,8 +377,10 @@ export async function sendFile(client, chatId, filePath, opts = {}) {
     const result = await client.invoke(request)
     return { ok: true, messageId: result?.id != null ? String(result.id) : null }
   } catch (e) {
-    if (e && typeof e === 'object' && e['@type'] === 'error') return { ok: false, error: e.message || String(e.code) }
-    return { ok: false, error: e?.message || String(e) }
+    if (e && typeof e === 'object' && e['@type'] === 'error') {
+      return { ok: false, error: e.message || String(e.code), code: e.code }
+    }
+    return { ok: false, error: e?.message || String(e), code: e?.code }
   }
 }
 
@@ -346,6 +404,9 @@ export async function forwardMessages(client, fromChatId, toChatId, messageIds, 
   const ids = (Array.isArray(messageIds) ? messageIds : [messageIds]).map(Number).filter(Boolean)
   if (!ids.length) return { ok: false, error: 'no messageIds' }
   try {
+    // v0.89.2: TDLib forwardMessages.options — `MessageSendOptions|null`.
+    // По спеке «pass null to use default options». Раньше передавали пустой
+    // {'@type':'messageSendOptions'} — формально валидно, но необязательно.
     await client.invoke({
       '@type': 'forwardMessages',
       chat_id: Number(toChatId),
@@ -353,12 +414,13 @@ export async function forwardMessages(client, fromChatId, toChatId, messageIds, 
       message_ids: ids,
       send_copy: !!opts.sendCopy,
       remove_caption: !!opts.removeCaption,
-      options: { '@type': 'messageSendOptions' },
     })
     return { ok: true }
   } catch (e) {
-    if (e && typeof e === 'object' && e['@type'] === 'error') return { ok: false, error: e.message || String(e.code) }
-    return { ok: false, error: e?.message || String(e) }
+    if (e && typeof e === 'object' && e['@type'] === 'error') {
+      return { ok: false, error: e.message || String(e.code), code: e.code }
+    }
+    return { ok: false, error: e?.message || String(e), code: e?.code }
   }
 }
 

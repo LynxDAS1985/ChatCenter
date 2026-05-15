@@ -27,20 +27,24 @@ import {
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
 import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
+import { setMute as setMuteRaw, togglePin as togglePinRaw, getCleanupStats as getCleanupStatsRaw } from './tdlibChatActions.js'
 
 // ──────────────────────────────────────────────────────────────────────
 // HELPERS
 // ──────────────────────────────────────────────────────────────────────
 
-// Wrapper для invoke который возвращает { ok, result?, error? } вместо throw.
-// TDLib шлёт {'@type':'error', code, message} как rejected promise.
-// Особый случай: error code=404 для loadChats означает «список закончился» (это норма).
+// Wrapper для invoke который возвращает { ok, result?, error?, code? } вместо throw.
+// TDLib шлёт {'@type':'error', code, message} как rejected promise (tdl выкидывает
+// TDLibError с .code и .message). Особый случай: error code=404 для loadChats
+// означает «список закончился» (это норма, см. loadChats цикл ниже).
+// v0.89.2: сохраняем `code` как есть (undefined вместо фейкового 0) — позволяет
+// различать «список закончился» (404) от «другая ошибка» в потребителях.
 async function safeInvoke(client, request) {
   try {
     const r = await client.invoke(request)
     return { ok: true, result: r }
   } catch (e) {
-    return { ok: false, error: e?.message || String(e), code: e?.code || 0 }
+    return { ok: false, error: e?.message || String(e), code: e?.code }
   }
 }
 
@@ -96,45 +100,28 @@ function makeExtras(manager, accountId) {
 /**
  * @param {object} opts
  * @param {object} opts.manager — TdlibClientManager (обязательно)
- * @param {object} [opts.tdlibParameters] — для нового логина
- * @param {() => object} [opts.makeClientParams] — функция возвращающая параметры
- *   для clientFactory (apiId, apiHash, tdlibParameters) при создании нового аккаунта
+ * @param {(accountSubdir?: string) => object} [opts.makeClientParams] — функция
+ *   возвращающая параметры для clientFactory (apiId, apiHash, tdlibParameters,
+ *   accountSubdir) при создании нового аккаунта.
  * @returns {import('../messengerBackend.js').MessengerBackend}
  */
 export function createTdlibBackend(opts = {}) {
-  const { manager, tdlibParameters, makeClientParams } = opts
+  const { manager, makeClientParams } = opts
   if (!manager) throw new Error('TdlibClientManager required')
 
   // Состояние одного активного login (TDLib линейный). dispose() после завершения.
   let _authFlow = null
   let _pendingAccountId = null
 
-  // Получает user info через getMe и переименовывает аккаунт tg_pending_X → tg_<userId>.
-  // Также эмитит account:update event для UI sidebar (через event bridge → tg:account-update).
-  // Вызывается ПОСЛЕ успешного login (step === 'success' или success: true).
+  // v0.89.2: единая точка финализации — manager.finalizeAccount (в tdlibClient.js).
+  // Раньше тут жила копия логики getMe → rename → emit account:update, но без
+  // phone-fallback на имя и без auto-download своей profile_photo. Это давало
+  // расхождение между manual-login (без fallback) и auto-restore (с fallback).
+  // Теперь оба пути зовут одну функцию.
   const _finalizePending = async () => {
     if (!_pendingAccountId) return
-    const client = manager.getClient(_pendingAccountId)
-    if (!client?.invoke) return
-    try {
-      const me = await client.invoke({ '@type': 'getMe' })
-      const userId = me?.id
-      if (!userId) return
-      const newAccountId = `tg_${userId}`
-      const renamed = manager._renameAccount(_pendingAccountId, newAccountId)
-      const fullName = `${me.first_name || ''} ${me.last_name || ''}`.trim()
-      const username = me.usernames?.active_usernames?.[0] || ''
-      manager.emit('account:update', {
-        id: renamed ? newAccountId : _pendingAccountId,
-        messenger: 'telegram',
-        status: 'connected',
-        name: fullName || (username ? `@${username}` : ''),
-        phone: me.phone_number ? `+${me.phone_number}` : '',
-        username,
-        userId: String(userId),
-      })
-      _pendingAccountId = renamed ? newAccountId : _pendingAccountId
-    } catch (_) { /* TDLib мог упасть на getMe — не критично, аккаунт остаётся под pending */ }
+    const r = await manager.finalizeAccount(_pendingAccountId)
+    if (r?.ok && r.newAccountId) _pendingAccountId = r.newAccountId
   }
 
   return {
@@ -146,10 +133,12 @@ export function createTdlibBackend(opts = {}) {
         if (!phone) return { ok: false, error: 'phone required' }
         // Создаём временный accountId — после авторизации переименуем по getMe().
         _pendingAccountId = 'tg_pending_' + Date.now()
-        const params = makeClientParams ? makeClientParams() : { apiId: 0, apiHash: '' }
+        const params = makeClientParams
+          ? makeClientParams(_pendingAccountId)
+          : { apiId: 0, apiHash: '' }
         manager.createAccount(_pendingAccountId, params)
         _authFlow = new TdlibAuthFlow({
-          manager, accountId: _pendingAccountId, tdlibParameters,
+          manager, accountId: _pendingAccountId,
         })
         const r = await _authFlow.startLogin(phone)
         // Если login без 2FA прошёл сразу (step === 'success') — финализируем.
@@ -252,6 +241,21 @@ export function createTdlibBackend(opts = {}) {
           }
         }
         return { ok: true, accountStats }
+      },
+      // v0.89.2: реализации chat-level admin actions вынесены в tdlibChatActions.js
+      // (tdlibBackend.js упёрся в лимит 500 строк после реализации этих методов).
+      async setMute(chatId, muteFor) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return setMuteRaw(ctx.client, ctx.rawId, muteFor)
+      },
+      async togglePin(chatId, isPinned) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return togglePinRaw(ctx.client, ctx.rawId, isPinned)
+      },
+      async getCleanupStats() {
+        return getCleanupStatsRaw(manager)
       },
     },
 

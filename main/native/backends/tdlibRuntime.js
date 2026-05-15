@@ -60,8 +60,15 @@ export function initTdlibRuntime(opts = {}) {
   try { fs.mkdirSync(sessionsDir, { recursive: true }) } catch (_) { /* may already exist */ }
 
   // Manager + фабрика создающая реальный tdl-клиент.
-  // clientParams ожидает: { apiId, apiHash, sessionDir? } — собранные в tdlibBackend.startLogin
-  // через makeClientParams. Тут оборачиваем в полный tdlib createClient call.
+  // clientParams ожидает: { apiId, apiHash, sessionDir?, tdlibParameters? } —
+  // собранные в tdlibBackend.startLogin через makeClientParams.
+  //
+  // v0.89.2 — Фикс: tdlibParameters передаём в createClient.
+  // tdl расширяет setTdlibParameters через `...this._options.tdlibParameters`
+  // (см. node_modules/tdl/dist/client.js:629-637). Раньше эти параметры
+  // ставились в авторизации (buildTdlibParameters) но никуда не уходили —
+  // TDLib видел приложение как «Unknown device v1.0 / EN» с выключенным
+  // enable_storage_optimizer.
   _manager = new TdlibClientManager({
     clientFactory: (clientParams = {}) => {
       const accountSessionDir = clientParams.sessionDir
@@ -73,6 +80,7 @@ export function initTdlibRuntime(opts = {}) {
         apiHash: String(clientParams.apiHash || ''),
         databaseDirectory: accountSessionDir,
         filesDirectory: path.join(accountSessionDir, 'files'),
+        tdlibParameters: clientParams.tdlibParameters || {},
         ...((clientParams.extraOptions) || {}),
       })
       // КРИТИЧНО: tdl эмитит updates с `_` discriminator (не `@type`).

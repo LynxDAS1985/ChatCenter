@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.1 (14 мая 2026)
+## Текущая версия: v0.89.2 (15 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.87.106 → v0.88.2). Старое — в архиве:
 
@@ -17,6 +17,76 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.2 — Пост-миграционный аудит TDLib стека (6 фиксов по docs)
+
+**Контекст**: после полного удаления GramJS в v0.89.1 пользователь попросил независимый аудит реализации TDLib backend против документации стека (tdl, TDLib core API). Аудит выявил 3 критичных пункта и 3 точечные ошибки. Все 6 закрыты в этой версии. Сверки делались с `node_modules/tdl/dist/client.js` (исходники tdl) и `core.telegram.org/tdlib/docs/`.
+
+#### Фикс #1 — `tdlibParameters` реально передаются в `tdl.createClient`
+
+До v0.89.2 функция `buildTdlibParameters()` (`tdlibAuth.js`) возвращала готовый объект `setTdlibParameters` с `'@type'`, `api_id`, `device_model`, `application_version`, `enable_storage_optimizer: true` — но он **никуда не уходил**. В `_onAuthState` при `authorizationStateWaitTdlibParameters` стоял ранний `return` (tdl сам шлёт), а наш объект просто хранился в `TdlibAuthFlow.tdlibParameters` и забывался.
+
+**Следствие**: TDLib видел приложение как `device_model="Unknown device"`, `application_version="1.0"`, `system_language_code="en"` (defaults tdl). Юзеры в **«Активных сессиях Telegram» видели «Unknown device»** — это выглядит как фишинг. Storage optimizer был выключен, кеш TDLib рос без авто-очистки.
+
+**Что сделано**:
+
+- [`main/native/backends/tdlibAuth.js`](main/native/backends/tdlibAuth.js) — `buildTdlibParameters` теперь возвращает **только** application-специфичные поля (`device_model`, `application_version`, `use_message_database`, `use_chat_info_database`, `use_file_database`, `enable_storage_optimizer`, `system_language_code`). Без `'@type'`, `api_id`, `database_directory` — эти подставляет сам tdl из верхнеуровневых createClient options (см. `node_modules/tdl/dist/client.js:629-637`).
+- [`main/native/backends/tdlibRuntime.js`](main/native/backends/tdlibRuntime.js) — `clientFactory` принимает `clientParams.tdlibParameters` и передаёт в `tdl.createClient({ tdlibParameters: ... })`. tdl расширяет setTdlibParameters через `...this._options.tdlibParameters`.
+- [`main/native/backends/tdlibStartup.js`](main/native/backends/tdlibStartup.js) — строит `tdlibParameters` один раз (с `applicationVersion: '0.89.2'`, `systemVersion: process.platform`) и пробрасывает через `makeClientParams`.
+- `TdlibAuthFlow` больше не требует и не хранит `tdlibParameters` — удалена dead code зависимость.
+
+#### Фикс #2 — sendFile mappings (`.gif → Animation`, `.heic → Document`, required-поля)
+
+[`main/native/backends/tdlibMessages.js`](main/native/backends/tdlibMessages.js) — расширение `sendFile`:
+
+- **`.gif` → `inputMessageAnimation`** (раньше → `inputMessagePhoto` → Telegram сохранял как застывшую PNG, теряя анимацию). Required поля: `animation, duration:0, width:0, height:0, added_sticker_file_ids:[]`. TDLib читает реальные размеры из файла на сервере.
+- **`.heic` → `inputMessageDocument`** (раньше → `inputMessagePhoto` → TDLib отклонял с `PHOTO_INVALID_DIMENSIONS`). Telegram-клиенты iOS/Desktop откроют HEIC через preview-сервис.
+- **Photo/Video/Audio/Animation** теперь передают **ВСЕ required-поля** по TDLib спеке: `added_sticker_file_ids:[]`, `show_caption_above_media:false`, `has_spoiler:false`. Для Video — `supports_streaming:true`. Для Audio — `title:'', performer:''`. Без них TDLib иногда падал на проверке схемы.
+- **`forwardMessages`** — убран явный `options:{}` (TDLib допускает `null` per spec «pass null to use default»).
+- **`wrapError`/`safeInvoke`** — сохраняют `e?.code` как есть (undefined вместо фейкового 0). Различает 404 «конец списка loadChats» от других ошибок.
+
+#### Фикс #3 — три IPC stub'а заменены реальной реализацией
+
+Вынесено в новый файл [`main/native/backends/tdlibChatActions.js`](main/native/backends/tdlibChatActions.js) (split из `tdlibBackend.js` — упёрся в лимит 500 строк после реализации):
+
+- **`tg:set-mute`** → `setChatNotificationSettings` с ПОЛНЫМ 16-полевым `chatNotificationSettings` объектом (`use_default_*:true` для всех опций кроме `mute_for`). Раньше IPC возвращал `{ ok: true }` без действия — UI «Mute» visually работал, в Telegram ничего не происходило.
+- **`tg:pin`** → `toggleChatIsPinned` с `chat_list: { '@type': 'chatListMain' }` (TDLib требует chat_list как REQUIRED).
+- **`tg:get-cleanup-stats`** → `getStorageStatisticsFast` (быстрый ответ из БД TDLib без сканирования файлов). Суммируется `files_size + database_size` по всем аккаунтам.
+
+#### Фикс #4 — dedup `_finalizePending` → `manager.finalizeAccount`
+
+[`main/native/backends/tdlibBackend.js`](main/native/backends/tdlibBackend.js) — `_finalizePending` теперь зовёт `manager.finalizeAccount(_pendingAccountId)` вместо дублирующейся логики getMe→rename→emit. Раньше manual-login использовал свою версию (без phone-fallback), auto-restore — версию из clientManager (с fallback). После v0.89.2 — единая точка с консистентным поведением (phone-fallback на имя + auto-download своей profile_photo).
+
+#### Фикс #5 — `authorizationStateWaitRegistration` → дружелюбная RU-ошибка
+
+[`main/native/backends/tdlibAuth.js`](main/native/backends/tdlibAuth.js) — отдельная ветка для `WaitRegistration` (TDLib шлёт когда номер валиден, но Telegram-аккаунта ещё нет). Возвращает `«У этого номера ещё нет аккаунта Telegram. Зарегистрируйтесь через официальное приложение Telegram.»` вместо `«unsupported state: authorizationStateWaitRegistration»`. Раньше попадало в fallback.
+
+#### Фикс #6 — `_pendingAvatars` catch leak
+
+[`main/native/backends/tdlibAvatars.js`](main/native/backends/tdlibAvatars.js) — при ошибке `downloadFile` запись из `_pendingAvatars` теперь удаляется (раньше висела вечно если TDLib никогда не пришлёт `updateFile` — например, `FILE_REFERENCE_INVALID` или удалённый чат). Защита от роста Map при долгой работе.
+
+#### Тесты
+
++21 vitest тест на новое поведение (всего теперь 506):
+
+- [`src/__tests__/tdlibBackendChatActions.vitest.js`](src/__tests__/tdlibBackendChatActions.vitest.js) — новый файл с 11 тестами на `setMute/togglePin/getCleanupStats`.
+- [`src/__tests__/tdlibBackendSendFwd.vitest.js`](src/__tests__/tdlibBackendSendFwd.vitest.js) — +6 тестов: `gif → Animation`, `heic → Document`, required-поля для photo/video/audio, `ogg → Audio`.
+- [`src/__tests__/tdlibAuth.vitest.js`](src/__tests__/tdlibAuth.vitest.js) — переписан `buildTdlibParameters` контракт + добавлен тест `WaitRegistration → ru-error`.
+- [`src/__tests__/tdlibRuntime.vitest.js`](src/__tests__/tdlibRuntime.vitest.js) — +2 теста на проброс `tdlibParameters` в `tdl.createClient`.
+
+**Версия**: v0.89.1 → v0.89.2 (patch — bug fixes + проводка параметров, без новых пользовательских фич).
+
+**Проверено**:
+
+```powershell
+npm run lint                                                  # OK
+node src/__tests__/fileSizeLimits.test.cjs                     # 243/243
+node src/__tests__/messengerBackend.test.cjs                   # 61/61
+node src/__tests__/featuresReferences.test.cjs                 # 2/2
+npm run test:vitest                                            # 506/506 (37 файлов)
+```
 
 ---
 

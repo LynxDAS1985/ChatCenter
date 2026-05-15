@@ -60,16 +60,20 @@ export function initTdlibBackendStartup(opts) {
     })
     log('info', `runtime initialized — userData=${opts.userDataPath}`)
 
+    // v0.89.2: формируем tdlibParameters один раз. Они передаются tdl как option
+    // и расширяют первый setTdlibParameters (см. node_modules/tdl/dist/client.js:629).
+    // Без этого TDLib видел "Unknown device v1.0 / EN" и не оптимизировал storage.
+    const tdlibParameters = buildTdlibParameters({
+      applicationVersion: opts.applicationVersion || '0.89.2',
+      systemVersion: opts.systemVersion || process.platform,
+    })
+
     // 2. Backend через manager
     const backend = createTdlibBackend({
       manager,
-      tdlibParameters: buildTdlibParameters({
-        apiId, apiHash,
-        databaseDirectory: `${opts.userDataPath}/tdlib-sessions/pending`,
-      }),
-      makeClientParams: () => ({
-        apiId, apiHash,
-        // accountSubdir подставится в auth flow при создании клиента
+      makeClientParams: (accountSubdir) => ({
+        apiId, apiHash, tdlibParameters,
+        accountSubdir: accountSubdir || undefined,
       }),
     })
     log('info', `backend created (tdlib)`)
@@ -90,7 +94,7 @@ export function initTdlibBackendStartup(opts) {
     let restoredAccountIds = []
     try {
       restoredAccountIds = autoRestoreSessionsFromDisk({
-        makeClientParams: (accountId) => ({ apiId, apiHash, accountSubdir: accountId }),
+        makeClientParams: (accountId) => ({ apiId, apiHash, tdlibParameters, accountSubdir: accountId }),
       })
       if (restoredAccountIds.length > 0) {
         log('info', `auto-restored sessions: ${restoredAccountIds.join(', ')}`)

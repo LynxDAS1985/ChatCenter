@@ -125,6 +125,37 @@ describe('initTdlibRuntime', () => {
     expect(fs.existsSync(path.join(tmpDir, 'tdlib-sessions', 'tg_abc'))).toBe(true)
     expect(fs.existsSync(path.join(tmpDir, 'tdlib-sessions', 'tg_abc', 'files'))).toBe(true)
   })
+
+  // v0.89.2: tdlibParameters обязаны проходить в tdl.createClient — tdl расширяет
+  // setTdlibParameters через `...this._options.tdlibParameters`. Без этого
+  // TDLib видит «Unknown device / EN» без enable_storage_optimizer.
+  it('clientFactory передаёт tdlibParameters в tdl.createClient', () => {
+    const tdl = makeMockTdl()
+    const mgr = initTdlibRuntime({
+      userDataDir: tmpDir, tdl, prebuiltTdlib: makeMockPrebuilt(),
+    })
+    const tdlibParameters = {
+      device_model: 'ChatCenter', application_version: '0.89.2',
+      system_language_code: 'ru', enable_storage_optimizer: true,
+    }
+    mgr.createAccount('tg_xyz', {
+      apiId: 8392940, apiHash: 'hash', accountSubdir: 'tg_xyz', tdlibParameters,
+    })
+    expect(tdl.createClient).toHaveBeenCalledWith(expect.objectContaining({
+      tdlibParameters,
+    }))
+  })
+
+  it('clientFactory подставляет пустой объект tdlibParameters если не передан', () => {
+    const tdl = makeMockTdl()
+    const mgr = initTdlibRuntime({
+      userDataDir: tmpDir, tdl, prebuiltTdlib: makeMockPrebuilt(),
+    })
+    mgr.createAccount('tg_def', { apiId: 1, apiHash: 'h', accountSubdir: 'tg_def' })
+    expect(tdl.createClient).toHaveBeenCalledWith(expect.objectContaining({
+      tdlibParameters: {},
+    }))
+  })
 })
 
 // ──────────────────────────────────────────────────────────────────────

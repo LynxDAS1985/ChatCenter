@@ -269,7 +269,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.89.1 (14 мая 2026)
+**Текущая версия**: v0.89.2 (15 мая 2026)
 
 ---
 
@@ -751,6 +751,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.89.1 (14 мая 2026)
-**Статус**: 🟢 Фазы 1-4+ выполнены + TDLib миграция завершена (Stage 4 Этапы 1-4)
-**Последнее обновление**: 14 мая 2026 — v0.89.1: TDLib миграция Stage 4 / Этап 4 — полное удаление GramJS. Удалены 13 production-файлов (`telegramHandler.js`, `telegramMessages.js`, `telegramChats.js`, `telegramMedia.js`, `telegramAuth.js`, `gramjsBackend.js`, и др.) + 4 GramJS-only теста. `main/main.js` больше не имеет fallback на GramJS — только `initTdlibBackendStartup`. `messengerBackend.js` упрощён до JSDoc + `getBackendName()` → `'tdlib'`. `messengerBackend.test.cjs` переписан под TDLib-only (61 проверка). Зависимость `telegram` отдельно удалена из `package.json`. План миграции [`tdlib-migration-plan.md`](.memory-bank/tdlib-migration-plan.md) помечен как ЗАВЕРШЁННЫЙ.
+**Версия проекта**: v0.89.2 (15 мая 2026)
+**Статус**: 🟢 Фазы 1-4+ выполнены + TDLib миграция завершена + независимый аудит закрыт
+**Последнее обновление**: 15 мая 2026 — v0.89.2: пост-миграционный аудит TDLib стека по docs. **6 фиксов**: (1) `tdlibParameters` теперь реально передаются в `tdl.createClient` через `clientFactory` — раньше `buildTdlibParameters` был dead code и TDLib видел приложение как «Unknown device v1.0 / EN» без enable_storage_optimizer; (2) `sendFile`: `.gif → inputMessageAnimation` (с required `duration/width/height`), `.heic → inputMessageDocument` (TDLib не поддерживает HEIC как Photo), все required поля inputMessage<Type> (added_sticker_file_ids, supports_streaming, show_caption_above_media, has_spoiler); (3) реальная реализация трёх IPC stub'ов: `tg:set-mute → setChatNotificationSettings`, `tg:pin → toggleChatIsPinned`, `tg:get-cleanup-stats → getStorageStatisticsFast`; (4) dedup `_finalizePending` → `manager.finalizeAccount` (единая точка с phone-fallback и auto-download своей profile_photo); (5) `authorizationStateWaitRegistration` → дружелюбная ru-ошибка (раньше «unsupported state»); (6) `safeInvoke`/`wrapError` сохраняют TDLib error.code как есть (undefined вместо фейкового 0); `_pendingAvatars` очищается в .catch (защита от утечки). Новый файл [`tdlibChatActions.js`](main/native/backends/tdlibChatActions.js) (split из `tdlibBackend.js` — уперлось в лимит 500 строк). +21 vitest тест (`tdlibBackendChatActions.vitest.js` + дополнения к `tdlibBackendSendFwd`/`tdlibRuntime`/`tdlibAuth`).

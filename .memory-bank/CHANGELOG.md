@@ -11,6 +11,30 @@
 
 ---
 
+## 2026-05-15 — TDLib Stage 4: пост-миграционный аудит (v0.89.2)
+
+Независимый аудит реализации TDLib backend против документации стека (tdl + TDLib core API). Найдено 3 критичных + 3 точечных проблемы — все 6 закрыты.
+
+### Закрытые проблемы
+
+1. **`buildTdlibParameters` был dead code**: возвращал готовый объект, но никуда не передавался. TDLib видел приложение как «Unknown device v1.0 / EN» без `enable_storage_optimizer`. Фикс: `clientFactory` в `tdlibRuntime.js` пробрасывает `clientParams.tdlibParameters` в `tdl.createClient({ tdlibParameters })`. tdl расширяет setTdlibParameters через `...this._options.tdlibParameters` (см. `node_modules/tdl/dist/client.js:629-637`).
+2. **`sendFile` неточные mappings**: `.gif → inputMessagePhoto` (теряла анимацию), `.heic → inputMessagePhoto` (TDLib не поддерживает). Также не передавались required поля inputMessage<Type>. Фикс: добавлена ветка для `inputMessageAnimation`, `.heic` теперь Document, все required поля заполняются (TDLib читает реальные размеры из файла на сервере).
+3. **Три IPC канала были stub'ами**: `tg:set-mute`, `tg:pin`, `tg:get-cleanup-stats` возвращали `{ ok: true }` без действий. Юзер нажимал «Закрепить чат» — ничего не происходило. Фикс: реальная реализация через `setChatNotificationSettings` (16-полевой объект), `toggleChatIsPinned` (chat_list:chatListMain), `getStorageStatisticsFast`. Вынесено в [`tdlibChatActions.js`](../main/native/backends/tdlibChatActions.js) — split из `tdlibBackend.js`.
+4. **Дублирование `_finalizePending` vs `finalizeAccount`**: две почти одинаковые функции с разным набором fallback'ов на имя. Manual-login и auto-restore вели себя по-разному. Фикс: `_finalizePending` теперь зовёт `manager.finalizeAccount` — единая точка с phone-fallback и auto-download своей profile_photo.
+5. **`authorizationStateWaitRegistration` не обрабатывался**: новый Telegram-номер давал generic «unsupported state» вместо понятной инструкции. Фикс: отдельная ветка с RU-сообщением «У этого номера ещё нет аккаунта Telegram. Зарегистрируйтесь через официальное приложение».
+6. **`_pendingAvatars` catch leak**: при ошибке `downloadFile` запись висела в Map вечно. Фикс: в `.catch` теперь `delete(fileId)`. Также `safeInvoke`/`wrapError` сохраняют `e?.code` как есть вместо фейкового 0.
+
+### Архитектурное
+
+- **Новый файл [`tdlibChatActions.js`](../main/native/backends/tdlibChatActions.js)** (111 строк): `setMute`, `togglePin`, `getCleanupStats`. Split из `tdlibBackend.js` который упёрся в лимит 500 строк после реализации.
+- **Тестов**: 485 → 506 (+21). Новый файл `tdlibBackendChatActions.vitest.js` (11 тестов) + дополнения к `tdlibBackendSendFwd` (gif/heic/required-fields), `tdlibRuntime` (tdlibParameters проброс), `tdlibAuth` (WaitRegistration).
+
+### Почему важно
+
+Аудит показал, что миграция архитектурно собрана правильно, но эти 6 точечных мест давали user-facing регрессии (Unknown device в Telegram сессиях, неработающие mute/pin/закрепление, потеря анимации GIF). Без аудита они могли долго оставаться незамеченными — UI не выдавал ошибок, просто действия молча не работали.
+
+---
+
 ## 2026-05-14 — TDLib Stage 4 / Этап 4: полное удаление GramJS
 
 ### Удалено

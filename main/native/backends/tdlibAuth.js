@@ -48,41 +48,45 @@ export function translateTdlibError(msg) {
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Собирает корректный объект для invoke({ '@type': 'setTdlibParameters', ... }).
- * См. https://core.telegram.org/tdlib/docs/structtd_1_1td__api_1_1set_tdlib_parameters.html
+ * Собирает объект параметров для `tdl.createClient({ tdlibParameters: ... })`.
  *
- * @param {object} opts
- * @param {number} opts.apiId
- * @param {string} opts.apiHash
- * @param {string} opts.databaseDirectory — обязательная папка для SQLite
- * @param {string} [opts.filesDirectory]
+ * tdl расширяет setTdlibParameters через `...this._options.tdlibParameters`
+ * (см. node_modules/tdl/dist/client.js:629-637), поэтому ключи api_id, api_hash,
+ * database_directory, files_directory, use_test_dc, database_encryption_key —
+ * tdl подставляет сам из верхнеуровневых createClient options. Здесь только
+ * параметры приложения: device_model, application_version, use_*_database,
+ * enable_storage_optimizer.
+ *
+ * До v0.89.2 функция возвращала полный `setTdlibParameters` объект с `@type` —
+ * но он отправлялся в TdlibAuthFlow только теоретически (раннее `return` для
+ * `WaitTdlibParameters`) и никуда не доходил. TDLib видел приложение как
+ * «Unknown device v1.0 / EN» без storage optimizer.
+ *
+ * Документация TDLib: https://core.telegram.org/tdlib/docs/structtd_1_1td__api_1_1set_tdlib_parameters.html
+ *
+ * @param {object} [opts]
  * @param {boolean} [opts.useMessageDatabase=true]
  * @param {boolean} [opts.useFileDatabase=true]
  * @param {boolean} [opts.useChatInfoDatabase=true]
  * @param {string} [opts.systemLanguageCode='ru']
  * @param {string} [opts.deviceModel='ChatCenter']
- * @param {string} [opts.applicationVersion='0.89.0']
+ * @param {string} [opts.applicationVersion='0.89.2']
+ * @param {string} [opts.systemVersion='']
+ * @param {boolean} [opts.enableStorageOptimizer=true]
+ * @returns {object}
  */
-export function buildTdlibParameters(opts) {
-  if (!opts?.apiId || !opts?.apiHash) throw new Error('apiId+apiHash required')
-  if (!opts?.databaseDirectory) throw new Error('databaseDirectory required')
+export function buildTdlibParameters(opts = {}) {
   return {
-    '@type': 'setTdlibParameters',
-    api_id: Number(opts.apiId),
-    api_hash: String(opts.apiHash),
-    database_directory: String(opts.databaseDirectory),
-    files_directory: String(opts.filesDirectory || opts.databaseDirectory + '/files'),
     use_message_database: opts.useMessageDatabase !== false,
     use_file_database: opts.useFileDatabase !== false,
     use_chat_info_database: opts.useChatInfoDatabase !== false,
     use_secret_chats: false,
     system_language_code: opts.systemLanguageCode || 'ru',
     device_model: opts.deviceModel || 'ChatCenter',
-    application_version: opts.applicationVersion || '0.89.0',
+    application_version: opts.applicationVersion || '0.89.2',
     system_version: opts.systemVersion || '',
-    enable_storage_optimizer: true,
+    enable_storage_optimizer: opts.enableStorageOptimizer !== false,
     ignore_file_names: false,
-    use_test_dc: false,
   }
 }
 
@@ -99,16 +103,15 @@ export class TdlibAuthFlow {
    * @param {object} opts
    * @param {object} opts.manager — TdlibClientManager
    * @param {string} opts.accountId
-   * @param {object} opts.tdlibParameters — результат buildTdlibParameters()
    */
-  constructor({ manager, accountId, tdlibParameters }) {
+  constructor({ manager, accountId }) {
     if (!manager) throw new Error('manager required')
     if (!accountId) throw new Error('accountId required')
-    if (!tdlibParameters) throw new Error('tdlibParameters required')
 
     this.manager = manager
     this.accountId = accountId
-    this.tdlibParameters = tdlibParameters
+    // v0.89.2: tdlibParameters больше не передаются сюда — tdl сам формирует
+    // setTdlibParameters из createClient options (см. tdlibRuntime.js).
     this.state = 'idle'  // idle | waiting-phone | waiting-code | waiting-password | ready | error | closed
 
     // Pending resolvers — на каждый submitX-метод
@@ -310,7 +313,17 @@ export class TdlibAuthFlow {
       return
     }
 
-    // Иные состояния (WaitOtherDeviceConfirmation, WaitRegistration) — fallback в ошибку.
+    if (stateName === 'authorizationStateWaitRegistration') {
+      // v0.89.2: TDLib шлёт это состояние когда номер ВАЛИДЕН, но Telegram-аккаунта
+      // ещё нет (регистрация нового пользователя). ChatCenter — b2b для уже
+      // существующих пользователей, регистрация через приложение не поддерживается.
+      // Канонический recovery: invoke('registerUser', { first_name, last_name }) —
+      // отдельная фича отдельного этапа.
+      this._rejectPending('У этого номера ещё нет аккаунта Telegram. Зарегистрируйтесь через официальное приложение Telegram.')
+      return
+    }
+
+    // Иные состояния (WaitOtherDeviceConfirmation, и т.п.) — fallback в ошибку.
     if (stateName?.startsWith('authorizationStateWait')) {
       this._rejectPending(`unsupported state: ${stateName}`)
     }
