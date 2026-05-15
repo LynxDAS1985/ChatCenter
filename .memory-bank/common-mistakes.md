@@ -72,6 +72,16 @@
 - ИИ-интеграция: 4 провайдера (OpenAI/Anthropic/DeepSeek/GigaChat)
 - Кастомные уведомления (v0.39.0) — общая справка, не ловушки
 
+### 5. [`mistakes/tdlib-video-player.md`](./mistakes/tdlib-video-player.md)
+**Когда читать**: задача про воспроизведение видео/фото из TDLib, cc-media protocol, Range requests, MEDIA_ERR_DECODE, прогрессивное воспроизведение, snapshot caches.
+- `HTMLMediaElement.buffered` ≠ файл на диске (это память плеера)
+- TDLib `video.supports_streaming` — обязательно проверять для progressive
+- `net.fetch('file://')` не пробрасывает Range — нужен manual `fs.createReadStream({start, end})`
+- ВСЁ медиа через `cc-media://` scheme (codec privileges)
+- Snapshot API должны возвращать кеш (не только events)
+- НЕ добавлять «защитные кнопки» вместо устранения причины
+- Renderer логи в файл через IPC `app:log`
+
 ### 📦 [`archive/`](./archive/)
 **Когда читать**: **только если пользователь явно попросил** заглянуть в архив.
 - `2026-04-common-mistakes-resolved.md` — секции ⚪ ИСТОРИЯ из старого common-mistakes.md (решено в v0.87.51 через удаление `groupedUnread`)

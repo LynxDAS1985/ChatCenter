@@ -24,6 +24,17 @@ function formatSize(bytes) {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' ГБ'
 }
 
+// v0.89.13: пишем в main-логфайл (chatcenter.log) — чтобы видеть события
+// плеера в "Логи ChatCenter" окне БЕЗ открытия DevTools. Используется для
+// диагностики PIPELINE_ERROR_DECODE и других проблем со <video>.
+function logToMain(level, message) {
+  try {
+    if (window.api?.send) {
+      window.api.send('app:log', { level, message: '[VideoTile] ' + message })
+    }
+  } catch (_) {}
+}
+
 // inAlbum — если true, используем компактный режим без minHeight (для grid-ячейки)
 export default function VideoTile({ m, chatId, inAlbum }) {
   const [posterUrl, setPosterUrl] = useState(null)
@@ -167,18 +178,53 @@ export default function VideoTile({ m, chatId, inAlbum }) {
             objectFit: 'contain',
             background: '#000',
           }}
-          // Диагностика для отладки — события <video> в Console.
-          onLoadStart={() => console.log('[VideoTile] <video> loadstart src=', videoSrc)}
-          onLoadedMetadata={(e) => console.log('[VideoTile] <video> loadedmetadata: duration=', e.target.duration, 'size=', e.target.videoWidth + 'x' + e.target.videoHeight)}
-          onCanPlay={() => console.log('[VideoTile] <video> canplay')}
-          onStalled={() => console.warn('[VideoTile] <video> STALLED (буфер не наполняется)')}
+          // v0.89.13: события пишутся И в Console И в main-логфайл chatcenter.log
+          // (через IPC app:log). Так можно смотреть «Логи ChatCenter» окно
+          // без открытия DevTools.
+          onLoadStart={() => {
+            console.log('[VideoTile] <video> loadstart src=', videoSrc)
+            logToMain('INFO', 'loadstart src=' + (videoSrc || '').slice(0, 120))
+          }}
+          onLoadedMetadata={(e) => {
+            const info = 'loadedmetadata duration=' + e.target.duration +
+              ' size=' + e.target.videoWidth + 'x' + e.target.videoHeight
+            console.log('[VideoTile] <video>', info)
+            logToMain('INFO', info)
+          }}
+          onCanPlay={() => {
+            console.log('[VideoTile] <video> canplay')
+            logToMain('INFO', 'canplay')
+          }}
+          onStalled={() => {
+            console.warn('[VideoTile] <video> STALLED (буфер не наполняется)')
+            logToMain('WARN', 'STALLED (буфер не наполняется)')
+          }}
+          onSeeking={(e) => {
+            // v0.89.13: логируем перемотку для отладки PIPELINE_ERROR_DECODE
+            const buf = e.target.buffered
+            const bufRanges = []
+            for (let i = 0; i < buf.length; i++) bufRanges.push(buf.start(i).toFixed(1) + '-' + buf.end(i).toFixed(1))
+            logToMain('INFO', 'seeking to=' + e.target.currentTime.toFixed(1) +
+              ' buffered=[' + bufRanges.join(',') + ']' +
+              ' readyState=' + e.target.readyState)
+          }}
           onError={(e) => {
             const err = e.target.error
-            console.error('[VideoTile] <video> error:', {
+            const info = {
               code: err?.code, message: err?.message,
               readyState: e.target.readyState, networkState: e.target.networkState,
-              src: videoSrc,
-            })
+              currentTime: e.target.currentTime,
+              duration: e.target.duration,
+              src: (videoSrc || '').slice(0, 120),
+            }
+            console.error('[VideoTile] <video> error:', info)
+            logToMain('ERROR', '<video> error: code=' + info.code +
+              ' message=' + (info.message || '?') +
+              ' readyState=' + info.readyState +
+              ' networkState=' + info.networkState +
+              ' currentTime=' + info.currentTime?.toFixed(1) +
+              ' duration=' + info.duration?.toFixed(1) +
+              ' src=' + info.src)
           }}
         />
         {/* v0.87.38: только ⛶ кнопка — 📌 доступна внутри отдельного окна, не в чате */}
