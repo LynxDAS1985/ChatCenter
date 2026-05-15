@@ -46,9 +46,16 @@ export function registerCcMediaHandler(userData) {
         const u = new URL(req.url)
         const kind = u.hostname
         const filename = decodeURIComponent(u.pathname.slice(1))
+        // v0.89.7: kind='tdlib' — обслуживаем файлы из tdlib-sessions/.../files/...
+        // напрямую, без копирования в tg-media. Без этого backend возвращал raw
+        // file:// path и Chromium decoder падал на kUnsupportedConfig для
+        // некоторых видео + photos не загружались (стрим/CSP privileges
+        // доступны только через cc-media:// scheme).
+        // URL формат: cc-media://tdlib/{accountSubdir}/files/{kind}/{name}
         const dir = kind === 'avatars' ? path.join(userData, 'tg-avatars')
                   : kind === 'media' ? path.join(userData, 'tg-media')
                   : kind === 'video' ? path.join(userData, 'tg-media')
+                  : kind === 'tdlib' ? path.join(userData, 'tdlib-sessions')
                   : null
         if (!dir) return new Response('not-found', { status: 404 })
         const filePath = path.join(dir, filename)

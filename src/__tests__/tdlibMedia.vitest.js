@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events'
 import { TdlibClientManager } from '../../main/native/backends/tdlibClient.js'
 import {
   downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
-  getStorageStatistics, optimizeStorage,
+  tdlibPathToCcMediaUrl, getStorageStatistics, optimizeStorage,
 } from '../../main/native/backends/tdlibMedia.js'
 
 function makeMockClient() {
@@ -289,5 +289,59 @@ describe('getStorageStatistics / optimizeStorage', () => {
     const r = await getStorageStatistics(mockClient)
     expect(r.ok).toBe(false)
     expect(r.error).toBe('FAIL')
+  })
+})
+
+// v0.89.7: tdlibPathToCcMediaUrl — конвертация raw TDLib path в cc-media:// URL.
+// Без неё UI пытался загрузить через file:/// и Chromium падал на
+// DECODER_ERROR_NOT_SUPPORTED для видео (отсутствие stream/bypassCSP privileges).
+describe('tdlibPathToCcMediaUrl', () => {
+  it('Windows path → cc-media://tdlib/...', () => {
+    const p = 'C:\\Users\\X\\AppData\\Roaming\\Center\\tdlib-sessions\\pending\\files\\videos\\W.mp4'
+    expect(tdlibPathToCcMediaUrl(p)).toBe('cc-media://tdlib/pending/files/videos/W.mp4')
+  })
+
+  it('Linux path → cc-media://tdlib/...', () => {
+    const p = '/home/u/.config/Center/tdlib-sessions/tg_196/files/photos/12345.jpg'
+    expect(tdlibPathToCcMediaUrl(p)).toBe('cc-media://tdlib/tg_196/files/photos/12345.jpg')
+  })
+
+  it('Cyrillic в пути — URL-encoded', () => {
+    const p = 'C:\\Users\\Директор\\AppData\\Roaming\\ЦентрЧатов\\tdlib-sessions\\pending\\files\\videos\\W.mp4'
+    const url = tdlibPathToCcMediaUrl(p)
+    // encodeURI кодирует Cyrillic, оставляет / как есть
+    expect(url).toContain('cc-media://tdlib/pending/files/videos/W.mp4')
+    // Кириллицы в пути сейчас нет после префикса
+  })
+
+  it('путь без tdlib-sessions → null', () => {
+    expect(tdlibPathToCcMediaUrl('/tmp/random.jpg')).toBe(null)
+    expect(tdlibPathToCcMediaUrl('C:\\Other\\files\\X.jpg')).toBe(null)
+  })
+
+  it('пустой/null → null', () => {
+    expect(tdlibPathToCcMediaUrl(null)).toBe(null)
+    expect(tdlibPathToCcMediaUrl('')).toBe(null)
+    expect(tdlibPathToCcMediaUrl(undefined)).toBe(null)
+  })
+
+  it('не-строка → null', () => {
+    expect(tdlibPathToCcMediaUrl({ path: '/x' })).toBe(null)
+    expect(tdlibPathToCcMediaUrl(123)).toBe(null)
+  })
+
+  it('downloadFile резолвится с cc-media:// URL (не raw path)', async () => {
+    const { mgr, mockClient } = makeManager()
+    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 99, local: {} }))
+    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 99, priority: 1 })
+    setImmediate(() => {
+      mockClient.emit('update', {
+        '@type': 'updateFile',
+        file: { id: 99, local: { is_downloading_completed: true, path: 'C:\\app\\tdlib-sessions\\tg_a\\files\\photos\\X.jpg' } },
+      })
+    })
+    const r = await p
+    expect(r.ok).toBe(true)
+    expect(r.path).toBe('cc-media://tdlib/tg_a/files/photos/X.jpg')
   })
 })

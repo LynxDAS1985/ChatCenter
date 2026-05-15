@@ -23,7 +23,7 @@ import {
 } from './tdlibMessages.js'
 import {
   downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
-  getStorageStatistics, optimizeStorage,
+  tdlibPathToCcMediaUrl, getStorageStatistics, optimizeStorage,
 } from './tdlibMedia.js'
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
@@ -406,7 +406,9 @@ export function createTdlibBackend(opts = {}) {
             || tdMsg.content?.video?.video || tdMsg.content?.document?.document
             || tdMsg.content?.audio?.audio || tdMsg.content?.voice_note?.voice
         )
-        if (cached) return { ok: true, path: cached }
+        // v0.89.7: конвертация raw TDLib path → cc-media:// URL (UI ждёт это
+        // для рендера через <img>/<video> с правильными codec privileges).
+        if (cached) return { ok: true, path: tdlibPathToCcMediaUrl(cached) || cached }
         return downloadFile({ manager, accountId: ctx.accountId, fileId, priority: 16, onProgress })
       },
       async downloadVideo({ chatId, msgId, onProgress }) {

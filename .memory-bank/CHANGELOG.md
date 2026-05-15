@@ -11,6 +11,39 @@
 
 ---
 
+## 2026-05-15 — TDLib Stage 4: cc-media:// для TDLib медиа (v0.89.7)
+
+После v0.89.6 (snapshot caches → аватарки/имя работают, **подтверждено пользователем визуально на скриншоте**) обнаружились ещё 2 production бага через лог `video-player`:
+
+1. Фото в сообщениях не отображаются (пустые превью)
+2. Видео падает с `DECODER_ERROR_NOT_SUPPORTED: kUnsupportedConfig`
+
+### Корневая причина (из лога)
+
+`backend.media.download` возвращал raw TDLib path (`C:\...\tdlib-sessions\pending\files\videos\WAIFF_1.mp4`). UI загружал через `file:///` URL. Chromium decoder без privileges `stream/bypassCSP/supportFetchAPI` (есть только у custom protocol `cc-media://`) отказывается инициализировать некоторые codec configs. Аналогично с фото — `file:///` в этом контексте не загружает корректно.
+
+GramJS работал потому что копировал медиа в `userData/tg-media/` и отдавал `cc-media://media/...` URL. Для TDLib мы оставляли raw путь — это была регрессия миграции.
+
+### Решение
+
+`ccMediaProtocol.js` — новый kind `tdlib`:
+```
+cc-media://tdlib/{accountSubdir}/files/{kind}/{filename}
+→ userData/tdlib-sessions/{accountSubdir}/files/{kind}/{filename}
+```
+
+`tdlibMedia.tdlibPathToCcMediaUrl(absPath)` — helper извлекает relative path после `tdlib-sessions`, нормализует `\\`→`/`, URL-encodes Cyrillic, возвращает `cc-media://tdlib/...` URL.
+
+`downloadFile` + `backend.media.download` теперь возвращают cc-media URL (оба пути — через invoke и через `updateFile` event).
+
+### Урок
+
+Кросс-проверка с GramJS-эрой даёт точные точки регрессии. Каждое место где raw OS path передавался в renderer — потенциальная точка отказа из-за privileges Chromium custom protocol vs `file:///`. Любой URL в renderer для медиа должен идти через cc-media:// — нет исключений.
+
+**Тестов**: 537 → 544 (+7).
+
+---
+
 ## 2026-05-15 — TDLib Stage 4: snapshot caches (v0.89.6) — production bug
 
 Визуальная проверка пользователем после релиза v0.89.5 показала реальную regression: «Без имени» в AccountContextMenu, ВСЕ чаты без аватарок (только инициалы), отправители в групповых чатах без аватарок.

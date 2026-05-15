@@ -58,6 +58,35 @@ export function getCachedFilePath(tdFile) {
   return tdFile.local.path || null
 }
 
+/**
+ * v0.89.7: конвертирует абсолютный путь к файлу TDLib в cc-media:// URL.
+ *
+ * Раньше backend.media.download возвращал raw path (например
+ * `C:\Users\...\tdlib-sessions\pending\files\videos\WAIFF_1.mp4`) — UI пытался
+ * загрузить через `file:///` URL, и Chromium падал с DECODER_ERROR_NOT_SUPPORTED
+ * для некоторых видео (file:/// scheme не имеет stream/bypassCSP privileges
+ * cc-media протокола). Фото тоже не отображались — Chromium не загружал
+ * через file:/// в этом контексте.
+ *
+ * Новый формат URL: `cc-media://tdlib/{accountSubdir}/files/{kind}/{filename}`
+ * → resolves в `userData/tdlib-sessions/{accountSubdir}/files/{kind}/{filename}`
+ * через расширенный ccMediaProtocol handler.
+ *
+ * @param {string} absPath — TDLib `file.local.path` (абсолютный OS-путь)
+ * @returns {string|null} cc-media:// URL или null если путь не из tdlib-sessions
+ */
+export function tdlibPathToCcMediaUrl(absPath) {
+  if (!absPath || typeof absPath !== 'string') return null
+  const marker = 'tdlib-sessions'
+  const idx = absPath.indexOf(marker)
+  if (idx < 0) return null
+  const after = absPath.slice(idx + marker.length + 1) // +1 за trailing slash/backslash
+  // Нормализуем backslash → slash для URL.
+  const normalized = after.replace(/\\/g, '/')
+  // encodeURI пропускает разделители /, но кодирует Cyrillic и пробелы.
+  return `cc-media://tdlib/${encodeURI(normalized)}`
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // downloadFile
 // ──────────────────────────────────────────────────────────────────────
@@ -91,7 +120,7 @@ export function downloadFile({ manager, accountId, fileId, priority = 1, onProgr
       if (file?.local?.is_downloading_completed) {
         settled = true
         manager.off('file:update', onFileUpdate)
-        resolve({ ok: true, path: file.local.path, file })
+        resolve({ ok: true, path: tdlibPathToCcMediaUrl(file.local.path) || file.local.path, file })
       } else if (file?.local?.download_error) {
         // TDLib может пометить ошибку в local.download_error
         settled = true
@@ -114,7 +143,7 @@ export function downloadFile({ manager, accountId, fileId, priority = 1, onProgr
       if (!settled && result?.local?.is_downloading_completed) {
         settled = true
         manager.off('file:update', onFileUpdate)
-        resolve({ ok: true, path: result.local.path, file: result })
+        resolve({ ok: true, path: tdlibPathToCcMediaUrl(result.local.path) || result.local.path, file: result })
       }
     }).catch((err) => {
       if (!settled) {

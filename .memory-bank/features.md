@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.6 (15 мая 2026)
+## Текущая версия: v0.89.7 (15 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.6). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.7). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,80 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.7 — Фото/видео в сообщениях через cc-media:// (production bug из лога)
+
+**Контекст**: после v0.89.6 пользователь подтвердил визуально что аватарки и имя аккаунта работают (зафиксировано на скриншоте). Но обнаружились **2 новые проблемы**:
+
+1. **Фото в сообщениях не отображаются** — пустые/мутные превью (скриншот)
+2. **Видео падает с decoder error** — лог:
+   ```
+   [ERROR] [video-window] [video-player] error: 4 PipelineStatus::DECODER_ERROR_NOT_SUPPORTED:
+   video decoder initialization failed with DecoderStatus::Codes::kUnsupportedConfig
+   file:///C:/Users/.../tdlib-sessions/pending/files/videos/WAIFF_1.mp4
+   ```
+
+#### Корневая причина (из лога — пользователь попросил «прочитай лог обязательно»)
+
+[`backend.media.download`](main/native/backends/tdlibBackend.js) возвращал **raw TDLib path** (например `C:\Users\Директор\AppData\Roaming\ЦентрЧатов\tdlib-sessions\pending\files\videos\WAIFF_1.mp4`). UI [`video-player.html`](main/video-player.html) загружал через `file:///` URL.
+
+Сравнение с GramJS-эрой ([`main/native/ccMediaProtocol.js:50-51`](main/native/ccMediaProtocol.js)):
+- GramJS копировал медиа в `userData/tg-media/` → URL `cc-media://media/X.jpg`
+- TDLib хранил в `tdlib-sessions/.../files/...` → UI получал raw path → `file:///`
+
+Разница в **privileges**: `cc-media://` зарегистрирован с `supportFetchAPI: true, bypassCSP: true, stream: true` (для Range-запросов в `<video>`). `file:///` URLs не имеют этих privileges → Chromium decoder отказывается инициализировать некоторые codec configs (особенно для streamed MP4 + video с custom decoder requirements). UI тесты [`MediaAlbum.vitest.jsx:125`](src/native/components/MediaAlbum.vitest.jsx), [`VideoTile.vitest.jsx:13-16`](src/native/components/VideoTile.vitest.jsx) подтверждают: UI ждёт `cc-media://media/X.jpg` / `cc-media://video/X.mp4` URL, не raw path.
+
+#### Решение — расширить cc-media:// handler + конвертер path
+
+[`ccMediaProtocol.js`](main/native/ccMediaProtocol.js) — новый kind `tdlib`:
+```js
+: kind === 'tdlib' ? path.join(userData, 'tdlib-sessions')
+```
+URL формат: `cc-media://tdlib/{accountSubdir}/files/{kind}/{filename}` → resolves в `userData/tdlib-sessions/{accountSubdir}/files/{kind}/{filename}` через `net.fetch('file://...')` с Range support.
+
+[`tdlibMedia.js`](main/native/backends/tdlibMedia.js) — новый helper `tdlibPathToCcMediaUrl(absPath)`:
+- Ищет `tdlib-sessions` в пути → extract relative
+- Нормализует `\\` → `/`
+- Возвращает `cc-media://tdlib/{relPath}` с `encodeURI` для Cyrillic
+- Возвращает `null` если путь не из tdlib-sessions
+
+[`downloadFile`](main/native/backends/tdlibMedia.js) — оба пути resolve (через invoke и через `updateFile`) теперь возвращают `cc-media://` URL вместо raw path.
+
+[`backend.media.download`](main/native/backends/tdlibBackend.js) — cached path тоже конвертируется через `tdlibPathToCcMediaUrl`.
+
+#### Тесты (+7)
+
+[`tdlibMedia.vitest.js`](src/__tests__/tdlibMedia.vitest.js) — новый describe `tdlibPathToCcMediaUrl`:
+- Windows path → cc-media://tdlib/...
+- Linux path → cc-media://tdlib/...
+- Cyrillic в пути → URL-encoded
+- путь без tdlib-sessions → null
+- пустой/null → null
+- не-строка → null
+- downloadFile резолвится с cc-media:// URL (не raw path)
+
+**Тестов**: 537 → 544 (+7).
+
+#### Что увидит пользователь
+
+- ✅ Фото в сообщениях отображаются (через `cc-media://tdlib/...` с правильными privileges)
+- ✅ Видео воспроизводится (`<video>` через cc-media:// с stream privileges → Range requests → decoder инициализируется)
+- ✅ Cyrillic в пути userData (`%D0%A6%D0%B5%D0%BD%D1%82%D1%80%D0%A7%D0%B0%D1%82%D0%BE%D0%B2` = «ЦентрЧатов») корректно URL-encoded
+
+⚠ Известное ограничение: если в самом видео используется codec не поддерживаемый Chromium (HEVC/H.265 без hardware acceleration, AV1) — decoder всё равно может упасть. Это TDLib скачивает оригинальный файл, Telegram-серверы обычно транскодируют в H.264, но не для всех случаев (например при «отправить как файл»).
+
+**Версия**: v0.89.6 → v0.89.7 (patch — production bug fix).
+
+**Проверено**:
+
+```powershell
+npm run lint                                                  # OK
+node src/__tests__/fileSizeLimits.test.cjs                     # 244/244
+node src/__tests__/messengerBackend.test.cjs                   # 61/61
+npm run test:vitest                                            # 544/544 (38 файлов)
+```
 
 ---
 
