@@ -35,6 +35,10 @@ export default function VideoTile({ m, chatId, inAlbum }) {
   // Используем для показа индикатора «Загрузка X%» в углу видео пока играет.
   const [partial, setPartial] = useState(false)
   const [error, setError] = useState(null)
+  // v0.89.12: счётчик попыток воспроизведения. Используется как React key на
+  // <video> — инкремент перемонтирует элемент с новым decoder instance.
+  // Стандартное восстановление для MEDIA_ERR_DECODE (код 3) по MDN.
+  const [playAttempt, setPlayAttempt] = useState(0)
   const videoRef = useRef(null)
   const containerRef = useRef(null)
   const unsubRef = useRef(null)
@@ -150,6 +154,17 @@ export default function VideoTile({ m, chatId, inAlbum }) {
     } catch (_) {}
   }
 
+  // v0.89.12: перезапустить inline-плеер с новым decoder instance. По MDN это
+  // стандартное восстановление для MEDIA_ERR_DECODE (код 3) — большинство
+  // случаев решаются перемонтированием <video> элемента. Если ошибка persistent
+  // (битый файл целиком) — юзер увидит ту же ошибку снова и сможет открыть в
+  // отдельном плеере (там VLC-фолбэк).
+  const handleRetry = (e) => {
+    e?.stopPropagation?.()
+    setError(null)
+    setPlayAttempt(p => p + 1)
+  }
+
   // Если играет inline — показываем <video>
   if (playing && videoSrc) {
     // v0.89.11: при ошибке codec/декодера (MediaError code=4) — показываем
@@ -175,14 +190,26 @@ export default function VideoTile({ m, chatId, inAlbum }) {
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', textAlign: 'center', maxWidth: 320 }}>
             {error}
           </div>
-          <button
-            onClick={handleOpenFullPlayer}
-            style={{
-              background: '#2AABEE', color: '#fff', border: 0,
-              padding: '8px 16px', borderRadius: 6, cursor: 'pointer',
-              fontSize: 12, fontWeight: 500,
-            }}
-          >🎬 Открыть в плеере</button>
+          {/* v0.89.12: «Перезапустить» — пересоздаёт <video> с новым decoder
+              (по MDN стандартное восстановление для MEDIA_ERR_DECODE) */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button
+              onClick={handleRetry}
+              style={{
+                background: 'var(--amoled-accent)', color: '#fff', border: 0,
+                padding: '8px 16px', borderRadius: 6, cursor: 'pointer',
+                fontSize: 12, fontWeight: 500,
+              }}
+            >🔄 Перезапустить</button>
+            <button
+              onClick={handleOpenFullPlayer}
+              style={{
+                background: 'rgba(255,255,255,0.15)', color: '#fff', border: 0,
+                padding: '8px 16px', borderRadius: 6, cursor: 'pointer',
+                fontSize: 12, fontWeight: 500,
+              }}
+            >🎬 Открыть в плеере</button>
+          </div>
         </div>
       )
     }
@@ -202,6 +229,7 @@ export default function VideoTile({ m, chatId, inAlbum }) {
         onClick={(e) => e.stopPropagation()}
       >
         <video
+          key={playAttempt}
           ref={videoRef}
           src={videoSrc}
           controls
