@@ -31,6 +31,9 @@ export default function VideoTile({ m, chatId, inAlbum }) {
   const [playing, setPlaying] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState(0)
+  // v0.89.11: partial=true когда видео скачивается в фоне (progressive playback).
+  // Используем для показа индикатора «Загрузка X%» в углу видео пока играет.
+  const [partial, setPartial] = useState(false)
   const [error, setError] = useState(null)
   const videoRef = useRef(null)
   const containerRef = useRef(null)
@@ -47,16 +50,23 @@ export default function VideoTile({ m, chatId, inAlbum }) {
     return () => { cancelled = true }
   }, [m.id])
 
-  // Прогресс скачивания
+  // Прогресс скачивания. v0.89.11: слушаем пока downloading ИЛИ partial
+  // (для progressive playback — индикатор «Загрузка X%» во время воспроизведения
+  // пока TDLib докачивает в фоне).
   useEffect(() => {
-    if (!downloading) return
+    if (!downloading && !partial) return
     const sub = window.api?.on?.('tg:media-progress', (data) => {
       if (data.chatId !== chatId || String(data.messageId) !== String(m.id)) return
-      if (data.total > 0) setProgress(Math.min(1, data.bytes / data.total))
+      if (data.total > 0) {
+        const ratio = Math.min(1, data.bytes / data.total)
+        setProgress(ratio)
+        // v0.89.11: когда докачали полностью — снимаем флаг partial и убираем индикатор
+        if (ratio >= 1) setPartial(false)
+      }
     })
     if (typeof sub === 'function') unsubRef.current = sub
     return () => { try { unsubRef.current?.() } catch(_) {} }
-  }, [downloading, m.id, chatId])
+  }, [downloading, partial, m.id, chatId])
 
   // Auto-pause при уходе из viewport
   useEffect(() => {
@@ -89,6 +99,9 @@ export default function VideoTile({ m, chatId, inAlbum }) {
       })
       if (!r?.ok) { setError(r?.error || 'Не удалось скачать'); return }
       setVideoSrc(r.path)
+      // v0.89.11: запоминаем что файл ещё скачивается (для индикатора в углу).
+      // r.partial=true когда supports_streaming=true и резолв early на 256 KB.
+      setPartial(!!r.partial)
       setPlaying(true)
     } catch (err) {
       setError(err.message)
@@ -167,6 +180,30 @@ export default function VideoTile({ m, chatId, inAlbum }) {
             })
             setError(`Ошибка плеера (код ${err?.code || '?'}): ${err?.message || 'неизвестно'}`)
           }}
+          // v0.89.11: блокируем перемотку за пределы загруженного буфера —
+          // иначе <video> зависает на попытке прочитать байты которых ещё нет
+          // (TDLib скачивает последовательно от offset=0). HTMLMediaElement
+          // .buffered — список загруженных временных интервалов; ищем
+          // максимальный end, если seek-target за ним — возвращаем currentTime.
+          onSeeking={(e) => {
+            const buf = e.target.buffered
+            if (buf.length === 0) {
+              if (e.target.currentTime > 0.1) {
+                console.warn('[VideoTile] seek blocked: буфер пуст, target=', e.target.currentTime.toFixed(1))
+                e.target.currentTime = 0
+              }
+              return
+            }
+            let maxBuffered = 0
+            for (let i = 0; i < buf.length; i++) maxBuffered = Math.max(maxBuffered, buf.end(i))
+            // Небольшой запас (-0.5 сек) — чтобы не упирались в самый край где
+            // часто бывает stall.
+            const safeMax = Math.max(0, maxBuffered - 0.5)
+            if (e.target.currentTime > safeMax) {
+              console.warn('[VideoTile] seek blocked: target=', e.target.currentTime.toFixed(1), '> buffered=', maxBuffered.toFixed(1), '(safeMax=', safeMax.toFixed(1) + ')')
+              e.target.currentTime = safeMax
+            }
+          }}
         />
         {/* v0.87.38: только ⛶ кнопка — 📌 доступна внутри отдельного окна, не в чате */}
         <div style={{
@@ -180,6 +217,43 @@ export default function VideoTile({ m, chatId, inAlbum }) {
             style={videoBtnStyle}
           >⛶</button>
         </div>
+        {/* v0.89.11: индикатор «идёт фоновая загрузка» — показывается только пока
+            partial=true. Пользователь видит что часть видео ещё качается и не
+            пугается зависанию при попытке перемотать вперёд (мы блокируем
+            seek за пределы буфера через onSeeking handler). */}
+        {partial && (
+          <>
+            <div style={{
+              position: 'absolute', top: 8, left: 8, zIndex: 10,
+              background: 'rgba(0,0,0,0.7)',
+              backdropFilter: 'blur(8px)',
+              color: '#fff', fontSize: 11, fontWeight: 500,
+              padding: '4px 10px', borderRadius: 6,
+              display: 'flex', alignItems: 'center', gap: 6,
+              pointerEvents: 'none',
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: 'var(--amoled-accent)',
+                animation: 'native-pulse 1.2s ease-in-out infinite',
+              }} />
+              <span>Загрузка {Math.round(progress * 100)}%</span>
+            </div>
+            {/* Тонкая полоска снизу видео — показывает докуда скачано */}
+            <div style={{
+              position: 'absolute', left: 0, right: 0, bottom: 0,
+              height: 2, zIndex: 9,
+              background: 'rgba(255,255,255,0.15)',
+              pointerEvents: 'none',
+            }}>
+              <div style={{
+                height: '100%', width: `${progress * 100}%`,
+                background: 'var(--amoled-accent)',
+                transition: 'width 0.2s',
+              }} />
+            </div>
+          </>
+        )}
       </div>
     )
   }
