@@ -15,6 +15,7 @@
 
 import { initTdlibRuntime, autoRestoreSessionsFromDisk, closeTdlibRuntime } from './tdlibRuntime.js'
 import { createTdlibBackend } from './tdlibBackend.js'
+import { cleanupTgMedia, TG_MEDIA_DEFAULTS } from './tgMediaCleanup.js'
 import { buildTdlibParameters } from './tdlibAuth.js'
 import { initTdlibIpcHandlers } from '../tdlibIpcHandlers.js'
 
@@ -80,6 +81,15 @@ export function initTdlibBackendStartup(opts) {
       }),
     })
     log('info', `backend created (tdlib)`)
+
+    // v0.89.17: фоновая LRU-очистка tg-media/ при старте (не блокирует init).
+    // Лимиты 1 ГБ / 7 дней / 5 мин immunity (как Telegram Desktop). См. tgMediaCleanup.js.
+    if (opts.userDataPath) setImmediate(() => {
+      try {
+        const r = cleanupTgMedia(opts.userDataPath, TG_MEDIA_DEFAULTS)
+        if (r.removedCount > 0) log('info', `tg-media LRU: freed ${r.freedBytes}b in ${r.removedCount} files`)
+      } catch (e) { log('warn', `tg-media cleanup failed: ${e?.message}`) }
+    })
 
     // 3. IPC handlers + event bridge
     const sendToRenderer = (channel, payload) => {

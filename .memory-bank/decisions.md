@@ -1,5 +1,35 @@
 # Ключевые решения (ADR) — ChatCenter
 
+## ADR-NEW — `tg-media/` как LRU-кеш под управлением приложения (15 мая 2026, v0.89.17)
+
+**Статус**: ✅ Принято и реализовано
+
+**Контекст**: В v0.89.15 решено НЕ играть медиа из TDLib-папок (нестабильны: `temp/` чистится, `optimizeStorage` удаляет даже completed). Скачанные файлы копируются в `userData/tg-media/<fileId>_<size>.<ext>` через `stabilizeForPlayback()`. Это решило проблему стабильности URL, но создало новую: папка растёт без ограничений (TDLib `optimizeStorage` нашу папку не трогает).
+
+**Решение**: реализовать LRU-кеш для `tg-media/` — точный аналог TDLib `optimizeStorage`:
+- **Лимит размера** 1 ГБ
+- **TTL** 7 дней
+- **Immunity** 5 минут (mtime обновляется при чтении через cc-media handler)
+- **wipeAll** для ручной кнопки «Очистить кеш»
+
+**Альтернативы** (отклонены):
+- Использовать `readFilePart` TDLib API для streaming — сложно (IPC overhead, backpressure, edge cases). У нас есть локальный диск — копия проще.
+- Симлинки `tg-media/file → tdlib-sessions/file` — на Windows требуют админ прав.
+- Mirror TDLib cleanup: после `optimizeStorage` сканировать `tg-media/` и удалять файлы, чьи исходники в `tdlib-sessions/` пропали — нужна привязка `tg-media name → tdlib file`. Сложнее чем независимый LRU.
+- Префикс `accountId_` в именах для per-account очистки — LRU саморегулируется через TTL, префиксы не нужны (TODO-3 в `code-todo.md`).
+
+**Почему LRU+TTL правильный выбор**:
+1. **Стандарт индустрии**: Telegram Desktop, Telegram Web K, WhatsApp, Signal — все используют LRU+TTL
+2. **TDLib официально документирует** алгоритм в [optimizeStorage](https://core.telegram.org/tdlib/getting-started#storage-optimization)
+3. **Простой и предсказуемый**: пользователь знает что 1 ГБ — лимит, 7 дней — TTL
+4. **Безопасный**: immunity 5 минут защищает играющие сейчас файлы
+
+**Реализация**: [`main/native/backends/tgMediaCleanup.js`](tgMediaCleanup.js). 4 точки интеграции: `getCleanupStats`, `media.cleanup`, `tdlibStartup` (фон-чистка при init), `ccMediaProtocol` (touch mtime при read).
+
+**Last verified**: 15 мая 2026, v0.89.17, 20 тестов в `tgMediaCleanup.vitest.js`.
+
+---
+
 ## ADR-001 — Electron как платформа (3 марта 2026)
 
 **Статус**: ✅ Принято

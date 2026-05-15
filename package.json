@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "0.89.16",
+  "version": "0.89.17",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",

@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.16 (15 мая 2026)
+## Текущая версия: v0.89.17 (15 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.16). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.17). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,123 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.17 — LRU-кеш для `tg-media/` (как в Telegram Desktop)
+
+**Контекст**: после v0.89.15 каждое медиа копируется в `userData/tg-media/` для стабильности URL. Папка росла без ограничений. Ревью v0.89.16 нашло 3 проблемы:
+
+1. **`getCleanupStats` не сканировал `tg-media/`** → UI «Очистить кеш» врал о реальном размере (показывал N МБ, реально на диске M+N МБ)
+2. **`removeAccountSessionFiles` не чистил `tg-media/`** → файлы удалённого аккаунта оставались
+3. **Нет автоочистки** → папка росла бесконечно
+
+#### Как делают другие клиенты (исследование)
+
+| Клиент | Подход |
+|---|---|
+| Telegram Desktop (C++) | TDLib `optimizeStorage` — LRU + TTL + immunity_delay |
+| Telegram Web K (WASM) | TDLib через WASM, лимит ~512 МБ |
+| WhatsApp Desktop | TTL 30 дней по умолчанию, авточистка по LRU |
+| Signal Desktop | TTL настраивается, очистка при старте |
+
+**Общий паттерн**: LRU (Least Recently Used) + лимит по размеру + лимит по возрасту + immunity для недавно открытых.
+
+#### Документация TDLib
+
+[`optimizeStorage`](https://core.telegram.org/tdlib/getting-started#storage-optimization):
+> Files are removed in LRU order within the specified limits. The `immunity_delay` parameter protects recently accessed files.
+
+#### Решение
+
+Новый модуль [`main/native/backends/tgMediaCleanup.js`](../main/native/backends/tgMediaCleanup.js) (~160 строк) — точный аналог `optimizeStorage` для нашей папки `tg-media/`.
+
+**Дефолты как в Telegram Desktop** ([TG_MEDIA_DEFAULTS](../main/native/backends/tgMediaCleanup.js)):
+
+| Параметр | Значение | Зачем |
+|---|---|---|
+| `maxSizeBytes` | 1 ГБ | Лимит размера папки |
+| `ttlSeconds` | 7 дней | Файлы старше — удаляем |
+| `immunityDelay` | 5 минут | Только что открытые — не трогать (защита играющих видео) |
+
+**API модуля**:
+- `getTgMediaStats(userDataDir)` → `{ totalBytes, fileCount, oldestMtime }` — для UI «Очистить кеш»
+- `cleanupTgMedia(userDataDir, opts)` → `{ ok, freedBytes, removedCount, remainingBytes }`
+- `touchTgMediaFile(absPath)` — обновляет mtime файла (LRU-маркер «недавно открыт»)
+
+**Алгоритм очистки** (мирорит TDLib):
+1. **TTL-проход**: удалить все файлы старше `ttlSeconds`
+2. **LRU-проход**: если суммарный размер > `maxSizeBytes` — сортируем по mtime (старые первыми), удаляем по одному до выхода в лимит, **пропуская файлы моложе `immunityDelay`**
+3. **wipeAll** (`maxSizeBytes:0`): удалить ВСЁ независимо от возраста — для ручной кнопки «Очистить кеш»
+
+#### Точки интеграции (4 файла)
+
+1. **[tdlibChatActions.getCleanupStats](../main/native/backends/tdlibChatActions.js)** (строка 240):
+   ```js
+   walkAndCategorize(path.join(userDataDir, 'tg-media'), 'media', acc)
+   ```
+   → Решает Проблему #1: UI видит реальный размер.
+
+2. **[tdlibBackend.media.cleanup](../main/native/backends/tdlibBackend.js)**:
+   ```js
+   freed += cleanupTgMedia(userDataDir, { maxSizeBytes: 0, ttlSeconds: 0 }).freedBytes
+   ```
+   → Кнопка «Очистить кеш» теперь реально удаляет `tg-media/`.
+
+3. **[tdlibStartup.js](../main/native/backends/tdlibStartup.js)** — после `createTdlibBackend`:
+   ```js
+   if (opts.userDataPath) setImmediate(() => cleanupTgMedia(opts.userDataPath, TG_MEDIA_DEFAULTS))
+   ```
+   → Решает Проблему #3: автоочистка при старте по LRU+TTL.
+
+4. **[ccMediaProtocol.js](../main/native/ccMediaProtocol.js)** — в handler:
+   ```js
+   if (kind === 'media') touchTgMediaFile(filePath)
+   ```
+   → Каждое чтение файла обновляет mtime. Играющее видео получает «свежий» mtime → защищено immunity от cleanup.
+
+#### Проблема #2 (`tg-media/` при удалении аккаунта)
+
+Решена **автоматически через LRU**: имена файлов в `tg-media/` детерминированные (`<fileId>_<size>.<ext>`). После удаления аккаунта его файлы никто не запрашивает → mtime не обновляется → через 7 дней TTL их сам удаляет. Префикс accountId в именах не нужен (записано в `code-todo.md` как TODO-3 на случай если поведение нужно сильнее).
+
+#### Тесты
+
+Новый файл [`src/__tests__/tgMediaCleanup.vitest.js`](../src/__tests__/tgMediaCleanup.vitest.js) — **20 тестов**:
+
+| Раздел | Что проверяет |
+|---|---|
+| `getTgMediaStats` (6) | пустая папка, несуществующая, null, суммарный размер, oldestMtime, игнор поддиректорий |
+| `cleanupTgMedia: TTL` (2) | удаление по возрасту, `ttlSeconds:0` отключает |
+| `cleanupTgMedia: LRU` (3) | удаление самых старых при превышении лимита, immunity защищает играющие, под лимитом — ничего не делает |
+| `cleanupTgMedia: wipeAll` (2) | `maxSizeBytes:0` удаляет ВСЁ, `remainingBytes:0` после wipe |
+| `cleanupTgMedia: edge cases` (5) | папки нет, null, пустая папка, дефолты публичные, игнор поддиректорий |
+| `touchTgMediaFile` (2) | обновляет mtime, false на несуществующий файл |
+
+**Tests**: 577 → 597.
+
+#### Эффект
+
+🟢 **Что починилось**:
+- UI «Очистить кеш» показывает **реальный** размер диска (с `tg-media/`)
+- Кнопка «Очистить кеш» реально освобождает место в `tg-media/`
+- Автоочистка при старте: файлы старше 7 дней — удаляются; если папка > 1 ГБ — удаляются самые старые до лимита
+- Играющее видео защищено: cc-media handler обновляет mtime при каждом Range-запросе → immunity 5 мин не даст удалить
+- Поведение **идентично официальному Telegram Desktop**
+
+🟢 **Безопасность**:
+- Не блокирует init — cleanup в `setImmediate` с try/catch
+- Не падает на отсутствующих файлах / правах — все `fs` операции обёрнуты
+- Не трогает поддиректории — только файлы в корне `tg-media/`
+
+🟡 **Архитектурно**:
+- Алгоритм соответствует [TDLib `optimizeStorage` docs](https://core.telegram.org/tdlib/getting-started#storage-optimization)
+- Один и тот же подход в Telegram Desktop, Web, WhatsApp, Signal
+
+#### Чего НЕ сделано (записано в [code-todo.md](code-todo.md) как TODO)
+
+- ❌ Конфигурация лимитов в UI (Settings → Storage Usage) — не запрашивалась
+- ❌ Префикс accountId в именах файлов (TODO-3) — LRU саморегулируется через TTL
+- ❌ Удаление `thumb` параметра (TODO-1) — отдельно
 
 ---
 

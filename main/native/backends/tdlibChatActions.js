@@ -238,5 +238,10 @@ export function getCleanupStats(manager, userDataDir) {
   const avatarsCacheDir = path.join(userDataDir, 'tg-avatars')
   walkAndCategorize(avatarsCacheDir, 'avatars', acc)
 
+  // 4. v0.89.17: tg-media/ — наш LRU-кеш для медиа после stabilizeForPlayback.
+  // Без этого блока UI «Очистить кеш» врёт о реальном размере. См. tgMediaCleanup.js.
+  const tgMediaDir = path.join(userDataDir, 'tg-media')
+  walkAndCategorize(tgMediaDir, 'media', acc)
+
   return { ok: true, ...acc }
 }

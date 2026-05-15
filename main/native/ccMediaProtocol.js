@@ -11,6 +11,7 @@ import { protocol } from 'electron'
 import { Readable } from 'node:stream'
 import fs from 'node:fs'
 import path from 'node:path'
+import { touchTgMediaFile } from './backends/tgMediaCleanup.js'
 
 export function registerCcMediaScheme() {
   try {
@@ -74,6 +75,11 @@ export function registerCcMediaHandler(userData) {
           console.warn('[cc-media] not a file:', filePath)
           return new Response('not-found', { status: 404 })
         }
+
+        // v0.89.17: LRU — обновляем mtime для tg-media/ при каждом чтении.
+        // Играющее видео получает «свежий» mtime → cleanupTgMedia immunity
+        // защищает от удаления (см. tgMediaCleanup.js).
+        if (kind === 'media') touchTgMediaFile(filePath)
 
         const total = stat.size
         const mime = mimeFor(filename)

@@ -18,11 +18,10 @@ import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
 import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
 import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccountSessionStats, removeAccountSessionFiles } from './tdlibChatActions.js'
+import { cleanupTgMedia } from './tgMediaCleanup.js'
 
-// Wrapper для invoke который возвращает { ok, result?, error?, code? } вместо throw.
-// TDLib шлёт {'@type':'error', code, message} как rejected promise (tdl → TDLibError).
-// `code` сохраняем как есть (undefined вместо 0) — потребители могут различать
-// «404 = loadChats end-of-list» от других ошибок.
+// Wrapper для invoke: возвращает { ok, result?, error?, code? } вместо throw.
+// `code` сохраняем как есть — потребители различают «404=end-of-list» от других.
 async function safeInvoke(client, request) {
   try { return { ok: true, result: await client.invoke(request) } }
   catch (e) { return { ok: false, error: e?.message || String(e), code: e?.code } }
@@ -408,8 +407,7 @@ export function createTdlibBackend(opts = {}) {
         }
         return dlAndStabilize(ctx.accountId, fileId, 16, onProgress)
       },
-      // v0.89.16: качает thumbnail JPEG (~10-100 КБ) для постера видео.
-      // См. шапку extractThumbnailFileId в tdlibMedia.js.
+      // v0.89.16: качает thumbnail JPEG для постера. См. extractThumbnailFileId.
       async downloadThumbnail({ chatId, msgId, onProgress }) {
         const { ctx, tdMsg } = await fetchMessage(chatId, msgId)
         if (ctx.error) return ctx.error
@@ -444,6 +442,8 @@ export function createTdlibBackend(opts = {}) {
           const r = await optimizeStorage(client)
           if (r.ok) freed += r.freedBytes
         }
+        // v0.89.17: ручная «Очистить кеш» = удалить ВСЁ в tg-media/.
+        freed += cleanupTgMedia(userDataDir, { maxSizeBytes: 0, ttlSeconds: 0 }).freedBytes
         return { ok: true, freedBytes: freed }
       },
       }
