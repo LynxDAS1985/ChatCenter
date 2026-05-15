@@ -293,8 +293,6 @@ describe('getStorageStatistics / optimizeStorage', () => {
 })
 
 // v0.89.7: tdlibPathToCcMediaUrl — конвертация raw TDLib path в cc-media:// URL.
-// Без неё UI пытался загрузить через file:/// и Chromium падал на
-// DECODER_ERROR_NOT_SUPPORTED для видео (отсутствие stream/bypassCSP privileges).
 describe('tdlibPathToCcMediaUrl', () => {
   it('Windows path → cc-media://tdlib/...', () => {
     const p = 'C:\\Users\\X\\AppData\\Roaming\\Center\\tdlib-sessions\\pending\\files\\videos\\W.mp4'
@@ -308,40 +306,82 @@ describe('tdlibPathToCcMediaUrl', () => {
 
   it('Cyrillic в пути — URL-encoded', () => {
     const p = 'C:\\Users\\Директор\\AppData\\Roaming\\ЦентрЧатов\\tdlib-sessions\\pending\\files\\videos\\W.mp4'
-    const url = tdlibPathToCcMediaUrl(p)
-    // encodeURI кодирует Cyrillic, оставляет / как есть
-    expect(url).toContain('cc-media://tdlib/pending/files/videos/W.mp4')
-    // Кириллицы в пути сейчас нет после префикса
+    expect(tdlibPathToCcMediaUrl(p)).toContain('cc-media://tdlib/pending/files/videos/W.mp4')
   })
 
   it('путь без tdlib-sessions → null', () => {
     expect(tdlibPathToCcMediaUrl('/tmp/random.jpg')).toBe(null)
-    expect(tdlibPathToCcMediaUrl('C:\\Other\\files\\X.jpg')).toBe(null)
+    expect(tdlibPathToCcMediaUrl('C:\\Other\\X.jpg')).toBe(null)
   })
 
-  it('пустой/null → null', () => {
+  it('пустой/null/не-строка → null', () => {
     expect(tdlibPathToCcMediaUrl(null)).toBe(null)
     expect(tdlibPathToCcMediaUrl('')).toBe(null)
     expect(tdlibPathToCcMediaUrl(undefined)).toBe(null)
-  })
-
-  it('не-строка → null', () => {
     expect(tdlibPathToCcMediaUrl({ path: '/x' })).toBe(null)
     expect(tdlibPathToCcMediaUrl(123)).toBe(null)
   })
 
-  it('downloadFile резолвится с cc-media:// URL (не raw path)', async () => {
+})
+
+// v0.89.8: progressive playback — резолв при prefix_size >= 256 KB.
+describe('downloadFile progressive playback (v0.89.8)', () => {
+  it('резолвится early когда downloaded_prefix_size >= 256 KB (НЕ ждёт completed)', async () => {
     const { mgr, mockClient } = makeManager()
-    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 99, local: {} }))
-    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 99, priority: 1 })
+    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 100, local: {} }))
+    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 100, priority: 1 })
     setImmediate(() => {
+      // updateFile с partial — 256 KB префикса есть, но completed=false
       mockClient.emit('update', {
         '@type': 'updateFile',
-        file: { id: 99, local: { is_downloading_completed: true, path: 'C:\\app\\tdlib-sessions\\tg_a\\files\\photos\\X.jpg' } },
+        file: {
+          id: 100,
+          local: {
+            is_downloading_completed: false,
+            downloaded_prefix_size: 256 * 1024,
+            path: 'C:\\app\\tdlib-sessions\\tg_a\\files\\videos\\big.mp4',
+          },
+        },
       })
     })
     const r = await p
     expect(r.ok).toBe(true)
-    expect(r.path).toBe('cc-media://tdlib/tg_a/files/photos/X.jpg')
+    expect(r.partial).toBe(true)
+    expect(r.path).toBe('cc-media://tdlib/tg_a/files/videos/big.mp4')
+  })
+
+  it('НЕ резолвится early когда downloaded_prefix_size < 256 KB', async () => {
+    const { mgr, mockClient } = makeManager()
+    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 101, local: {} }))
+    let resolved = false
+    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 101, priority: 1 })
+    p.then(() => { resolved = true })
+    // partial с маленьким префиксом
+    mockClient.emit('update', {
+      '@type': 'updateFile',
+      file: { id: 101, local: { is_downloading_completed: false, downloaded_prefix_size: 100, path: '/x' } },
+    })
+    await new Promise(r => setTimeout(r, 20))
+    expect(resolved).toBe(false)
+    // Cleanup
+    mockClient.emit('update', {
+      '@type': 'updateFile',
+      file: { id: 101, local: { is_downloading_completed: true, path: 'C:\\app\\tdlib-sessions\\tg_a\\files\\X.jpg' } },
+    })
+    await p
+  })
+
+  it('completed резолвится с partial:false', async () => {
+    const { mgr, mockClient } = makeManager()
+    mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 102, local: {} }))
+    const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 102, priority: 1 })
+    setImmediate(() => {
+      mockClient.emit('update', {
+        '@type': 'updateFile',
+        file: { id: 102, local: { is_downloading_completed: true, path: 'C:\\app\\tdlib-sessions\\tg_a\\files\\X.jpg' } },
+      })
+    })
+    const r = await p
+    expect(r.partial).toBe(false)
   })
 })

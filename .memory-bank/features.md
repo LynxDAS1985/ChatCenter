@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.7 (15 мая 2026)
+## Текущая версия: v0.89.8 (15 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.7). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.8). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,77 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.8 — Seek + progressive playback + codec error UX
+
+**Контекст**: после v0.89.7 пользователь визуально подтвердил что фото и видео грузятся через cc-media://tdlib URL ✅. Но обнаружились ещё проблемы:
+
+1. **Перемотка не работает** на полностью скачанных видео (скриншот 1: видео играет 0:05/0:30, но клик по прогресс-бару не сидает)
+2. **Хочется смотреть пока грузится** + полная перемотка после загрузки
+3. **Некоторые видео всё ещё падают**: `DECODER_ERROR_NOT_SUPPORTED: kUnsupportedConfig` (из лога video-player.html) — реальный codec issue (HEVC/H.265, AV1)
+
+#### Фикс #1 — Manual Range support в cc-media protocol
+
+Корневая причина seek bug: [`ccMediaProtocol.js`](main/native/ccMediaProtocol.js) до v0.89.8 использовал `net.fetch(pathToFileURL(filePath).href, { headers: req.headers })`. В текущей версии Electron `net.fetch` для `file://` URL **не пробрасывает Range header** корректно → response без `Accept-Ranges` + `Content-Range` headers → `<video>` не знает что можно сидать.
+
+**Решение**: ручная обработка Range request. Парсим `Range: bytes=START-END`, делаем `fs.createReadStream(filePath, { start, end })`, конвертируем Node stream в Web ReadableStream через `Readable.toWeb(stream)`, возвращаем 206 Partial Content с правильными headers:
+- `Content-Type: <mime>`
+- `Content-Length: <chunk size>`
+- `Content-Range: bytes START-END/TOTAL`
+- `Accept-Ranges: bytes`
+
+Для запросов без Range — возвращаем 200 OK с `Accept-Ranges: bytes` (чтобы player знал что поддерживается seek для последующих запросов).
+
+#### Фикс #2 — Progressive playback (смотреть пока грузится)
+
+[`tdlibMedia.js#downloadFile`](main/native/backends/tdlibMedia.js) — раньше резолвился только когда `is_downloading_completed: true`. Теперь резолвится **early** когда `downloaded_prefix_size >= 256 KB` (достаточно для MP4 metadata + первых секунд H.264). 
+
+Поток:
+1. UI зовёт `tg:download-video`
+2. TDLib стартует фоновое скачивание, шлёт `updateFile` events
+3. Backend резолвит как только префикс ≥ 256 KB → UI получает `{ ok: true, path: 'cc-media://tdlib/...', partial: true }`
+4. UI открывает video-player с этим URL — `<video>` начинает играть
+5. TDLib продолжает скачивать в фоне, файл растёт на диске
+6. cc-media protocol handler читает `fs.statSync(filePath).size` динамически — Range запросы получают актуальные байты
+7. Юзер играет с начала → нормально. Сидает за пределы скачанного → стандартный buffer wait
+8. После завершения скачивания — full seek работает
+
+#### Фикс #3 — Codec error UX (HEVC/AV1)
+
+Для codec'ов которые Chromium не может декодировать (HEVC/H.265 без HW-acceleration, AV1, некоторые экзотические профили) — раньше показывалась техническая ошибка `MediaError code 4: DECODER_ERROR_NOT_SUPPORTED`. Сейчас:
+
+- [`video-player.html`](main/video-player.html) при `MediaError.code === 4` или сообщении с `DECODER`/`kUnsupportedConfig` → рендерит дружелюбное UI:
+  - «⚠️ Этот формат видео не поддерживается»
+  - «Chromium не может декодировать этот codec (вероятно HEVC/H.265 или AV1)»
+  - 🎬 Кнопка «Открыть во внешнем плеере»
+
+- Новый IPC `video:open-external` ([`videoPlayerHandler.js`](main/handlers/videoPlayerHandler.js)) — конвертирует `cc-media://` URL в OS path, зовёт `shell.openPath` → Windows откроет в default video приложении (VLC если установлен, иначе Movies & TV).
+
+- Новый exposed API: `window.video.openExternal(ccMediaUrl)` ([`videoPlayer.preload.cjs`](main/preloads/videoPlayer.preload.cjs)).
+
+#### Тесты
+
+- `tdlibMedia.vitest.js` (4 новых теста для progressive playback): резолв при prefix_size >= 256 KB с partial:true, НЕ резолв при < 256 KB, completed = partial:false.
+- Существующие 6 тестов для `tdlibPathToCcMediaUrl` сохранены.
+
+**Тестов**: 544 → 545.
+
+**Версия**: v0.89.7 → v0.89.8 (patch — UX fixes).
+
+**Проверено**:
+
+```powershell
+npm run lint                                                  # OK
+node src/__tests__/fileSizeLimits.test.cjs                     # 244/244
+npm run test:vitest                                            # 545/545 (38 файлов)
+```
+
+⚠ **Что проверить пользователю**:
+1. Открыть чат с уже-загруженным видео → нажать на середину прогресс-бара → должно сидать (раньше зависало на буферизации)
+2. Открыть чат с **большим** не-скачанным видео → клик «Открыть» → должно начать играть через 1-2 сек (раньше ждали полной загрузки)
+3. Если видео в HEVC/неподдерживаемом codec — увидеть кнопку «🎬 Открыть во внешнем плеере» → нажать → Windows откроет в VLC
 
 ---
 

@@ -112,15 +112,32 @@ export function downloadFile({ manager, accountId, fileId, priority = 1, onProgr
   return new Promise((resolve) => {
     let settled = false
 
+    // v0.89.8: progressive playback — резолвим раньше, когда у TDLib есть префикс
+    // данных достаточный для запуска видео (256 KB обычно хватает на metadata +
+    // первые секунды H.264). UI получает cc-media URL, <video> начинает играть.
+    // TDLib продолжает скачивать в фоне, файл растёт на диске. cc-media protocol
+    // handler читает текущий размер через fs.statSync — Range запросы получают
+    // актуальные байты. Если юзер сидает за пределы скачанного — buffer wait
+    // (стандартное поведение <video>).
+    const PROGRESSIVE_THRESHOLD = 256 * 1024
     // Слушатель updateFile — фильтруем по accountId + fileId.
     const onFileUpdate = ({ accountId: aid, file }) => {
       if (settled || aid !== accountId || file?.id !== Number(fileId)) return
       // Прогресс
       try { onProgress?.(file) } catch (_) {}
-      if (file?.local?.is_downloading_completed) {
+      const completed = !!file?.local?.is_downloading_completed
+      const earlyReady = !completed
+        && file?.local?.path
+        && Number(file.local?.downloaded_prefix_size || 0) >= PROGRESSIVE_THRESHOLD
+      if (completed || earlyReady) {
         settled = true
         manager.off('file:update', onFileUpdate)
-        resolve({ ok: true, path: tdlibPathToCcMediaUrl(file.local.path) || file.local.path, file })
+        resolve({
+          ok: true,
+          path: tdlibPathToCcMediaUrl(file.local.path) || file.local.path,
+          file,
+          partial: !completed,
+        })
       } else if (file?.local?.download_error) {
         // TDLib может пометить ошибку в local.download_error
         settled = true

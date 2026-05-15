@@ -59,12 +59,46 @@
   const errEl = document.getElementById('err')
   const titleEl = document.getElementById('title')
 
-  videoEl.addEventListener('error', (e) => {
+  videoEl.addEventListener('error', () => {
     const code = videoEl.error?.code || '?'
     const msg = videoEl.error?.message || ''
-    errEl.textContent = `⚠️ Ошибка видео (код ${code}): ${msg || 'файл не найден или формат не поддерживается'}\n\nURL: ${videoEl.src?.slice(0, 120)}`
-    errEl.style.display = 'block'
     console.error('[video-player] error:', code, msg, videoEl.src)
+    // v0.89.8: MediaError.code === 4 (MEDIA_ERR_SRC_NOT_SUPPORTED) или сообщение
+    // содержит DECODER_ERROR — codec не поддерживается Chromium (HEVC/H.265,
+    // AV1 без HW-ускорения, etc). Показываем дружелюбное сообщение + кнопку
+    // «Открыть во внешнем плеере» (Windows: VLC/Movies&TV через shell.openPath).
+    const isCodecError = code === 4 || /decoder|kUnsupportedConfig|not.*supported/i.test(msg)
+    if (isCodecError && window.video?.openExternal && videoEl.src) {
+      errEl.innerHTML = ''
+      const title = document.createElement('div')
+      title.style.fontSize = '15px'; title.style.marginBottom = '10px'
+      title.textContent = '⚠️ Этот формат видео не поддерживается'
+      const sub = document.createElement('div')
+      sub.style.fontSize = '12px'; sub.style.color = 'rgba(255,255,255,0.6)'
+      sub.style.marginBottom = '14px'
+      sub.textContent = 'Chromium не может декодировать этот codec (вероятно HEVC/H.265 или AV1). Откройте во внешнем плеере.'
+      const btn = document.createElement('button')
+      btn.textContent = '🎬 Открыть во внешнем плеере'
+      btn.style.cssText = 'background:#2AABEE;color:#fff;border:0;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;'
+      btn.onclick = async () => {
+        btn.disabled = true
+        btn.textContent = 'Открываю...'
+        const r = await window.video.openExternal(videoEl.src)
+        if (r?.ok) {
+          btn.textContent = '✅ Открыто'
+          setTimeout(() => window.video?.close?.(), 1000)
+        } else {
+          btn.textContent = '❌ Ошибка: ' + (r?.error || '')
+          btn.disabled = false
+        }
+      }
+      errEl.appendChild(title)
+      errEl.appendChild(sub)
+      errEl.appendChild(btn)
+    } else {
+      errEl.textContent = `⚠️ Ошибка видео (код ${code}): ${msg || 'файл не найден или формат не поддерживается'}\n\nURL: ${videoEl.src?.slice(0, 120)}`
+    }
+    errEl.style.display = 'block'
   })
   videoEl.addEventListener('loadedmetadata', () => { errEl.style.display = 'none' })
 

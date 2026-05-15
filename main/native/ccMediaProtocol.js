@@ -2,8 +2,13 @@
 // v0.87.34: Поддержка HTTP Range запросов — нужно для <video> streaming (перемотка, буферизация).
 // Без Range браузер качает ВСЁ видео одним куском перед запуском → длинная пауза.
 // С Range <video> запрашивает куски по мере нужды → мгновенное воспроизведение.
-import { protocol, net } from 'electron'
-import { pathToFileURL } from 'node:url'
+// v0.89.8: РЕАЛЬНЫЙ manual Range handling вместо net.fetch('file://...').
+// Причина: в текущей версии Electron net.fetch для file:// URL не пробрасывает
+// Range header корректно → видео загружается полностью но <video> seek не работает
+// (нет Accept-Ranges + Content-Range в response). Manual fs.createReadStream({start,end})
+// + правильные 206 Partial Content headers решает проблему.
+import { protocol } from 'electron'
+import { Readable } from 'node:stream'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -59,15 +64,58 @@ export function registerCcMediaHandler(userData) {
                   : null
         if (!dir) return new Response('not-found', { status: 404 })
         const filePath = path.join(dir, filename)
-        if (!fs.existsSync(filePath)) return new Response('not-found', { status: 404 })
+        let stat
+        try { stat = fs.statSync(filePath) }
+        catch (_) { return new Response('not-found', { status: 404 }) }
+        if (!stat.isFile()) return new Response('not-found', { status: 404 })
 
-        // v0.87.38: РЕШЕНИЕ — net.fetch('file://...') вместо ручного fs.createReadStream.
-        // net.fetch правильно обрабатывает Range requests для <video> seeking,
-        // работает во ВСЕХ BrowserWindow'ах (не только в main session),
-        // и не блокирует main thread.
-        const fileUrl = pathToFileURL(filePath).href
-        return net.fetch(fileUrl, {
-          headers: req.headers,  // пробрасываем Range и другие заголовки
+        const total = stat.size
+        const mime = mimeFor(filename)
+        const range = req.headers.get('range') || req.headers.get('Range')
+
+        // v0.89.8: manual Range parsing — `bytes=START-END` или `bytes=START-`.
+        // <video> seeking шлёт Range: bytes=N-, мы возвращаем 206 Partial Content
+        // с правильными Content-Range + Content-Length headers. Без этого
+        // currentTime= не работает (зависает на буферизации).
+        if (range) {
+          const match = /bytes=(\d+)-(\d*)/.exec(String(range))
+          if (match) {
+            const start = Number(match[1])
+            const end = match[2] && match[2].length
+              ? Math.min(Number(match[2]), total - 1)
+              : total - 1
+            if (start >= total || end < start) {
+              return new Response(null, {
+                status: 416,
+                headers: { 'Content-Range': `bytes */${total}`, 'Accept-Ranges': 'bytes' },
+              })
+            }
+            const chunkSize = end - start + 1
+            const stream = fs.createReadStream(filePath, { start, end })
+            return new Response(Readable.toWeb(stream), {
+              status: 206,
+              headers: {
+                'Content-Type': mime,
+                'Content-Length': String(chunkSize),
+                'Content-Range': `bytes ${start}-${end}/${total}`,
+                'Accept-Ranges': 'bytes',
+                'Cache-Control': 'no-store',
+              },
+            })
+          }
+        }
+
+        // Нет Range — отдаём весь файл, но с Accept-Ranges чтобы <video> знал
+        // что можно потом сидать
+        const stream = fs.createReadStream(filePath)
+        return new Response(Readable.toWeb(stream), {
+          status: 200,
+          headers: {
+            'Content-Type': mime,
+            'Content-Length': String(total),
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'no-store',
+          },
         })
       } catch (e) {
         console.error('[cc-media] error:', e.message)

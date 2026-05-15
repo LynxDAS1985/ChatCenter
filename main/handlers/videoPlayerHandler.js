@@ -1,7 +1,7 @@
 // v0.87.34: Отдельное BrowserWindow для проигрывания видео.
 // Открывается через IPC 'video:open' { src } — где src это cc-media://video/... URL
 // (cc-media protocol с Range поддержкой позволяет <video> стримить и перематывать).
-import { ipcMain, BrowserWindow, screen, app } from 'electron'
+import { ipcMain, BrowserWindow, screen, app, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -185,6 +185,33 @@ export function registerVideoPlayerHandler() {
   ipcMain.handle('video:close', () => {
     try { videoWindow?.close(); videoWindow = null; return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // v0.89.8: открыть видео во внешнем плеере (для codec'ов не поддерживаемых
+  // Chromium — например HEVC/H.265 без HW-ускорения). UI получает кнопку при
+  // DECODER_ERROR_NOT_SUPPORTED, нажатие → этот handler конвертирует cc-media://
+  // URL в OS path и зовёт shell.openPath (Windows откроет видео в default
+  // приложении — VLC если установлен, иначе Movies & TV).
+  ipcMain.handle('video:open-external', async (_, { url } = {}) => {
+    try {
+      if (!url) return { ok: false, error: 'no url' }
+      // Парсим cc-media://kind/path → OS path
+      const u = new URL(url)
+      const kind = u.hostname
+      const userData = app.getPath('userData')
+      const filename = decodeURIComponent(u.pathname.slice(1))
+      const baseDir = kind === 'tdlib' ? path.join(userData, 'tdlib-sessions')
+        : kind === 'avatars' ? path.join(userData, 'tg-avatars')
+        : kind === 'media' || kind === 'video' ? path.join(userData, 'tg-media')
+        : null
+      if (!baseDir) return { ok: false, error: 'unknown cc-media kind' }
+      const osPath = path.join(baseDir, filename)
+      if (!fs.existsSync(osPath)) return { ok: false, error: 'file not found' }
+      const result = await shell.openPath(osPath)
+      // shell.openPath возвращает '' при успехе, текст ошибки при неудаче.
+      if (result) return { ok: false, error: result }
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e?.message || String(e) } }
   })
   ipcMain.handle('video:toggle-pin', (_, { on }) => {
     try {
