@@ -145,40 +145,6 @@ describe('restoreMouseEvents', () => {
   })
 })
 
-// Регрессия: проверяем, что во ВСЕХ местах .hide() на transparent окнах
-// используется safeHideTransparentWindow (а не сырой .hide()).
-describe('регрессия v0.89.18: все .hide() на transparent окнах используют helper', () => {
-  it('код не содержит сырых notifWin.hide() / dockState.win.hide() в production handlers', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-
-    const FILES_TO_CHECK = [
-      'main/handlers/notifHandlers.js',
-      'main/handlers/notificationManager.js',
-      'main/handlers/dockPinHandlers.js',
-      'main/handlers/dockPinState.js',
-    ]
-
-    // Эти helper-методы должны быть импортированы из transparentWindowGuard
-    const OK_PATTERNS = [/safeHideTransparentWindow\(/]
-    // Эти паттерны — те, которые мы запрещаем (raw .hide() на transparent windows)
-    const FORBIDDEN_PATTERNS = [
-      /\bnotifWin\.hide\(/,
-      /\bdockState\.win\.hide\(/,
-      // win.hide() для pin window (см. dockPinHandlers.js — обработчик pin:dock).
-      // Допускаем только если рядом safeHideTransparentWindow.
-    ]
-
-    for (const rel of FILES_TO_CHECK) {
-      const abs = path.resolve(process.cwd(), rel)
-      const content = fs.readFileSync(abs, 'utf8')
-      for (const forbidden of FORBIDDEN_PATTERNS) {
-        const match = content.match(forbidden)
-        expect(match, `${rel}: запрещённый сырой .hide() паттерн ${forbidden}. Используй safeHideTransparentWindow().`).toBeNull()
-      }
-      // Минимум одна ссылка на helper должна быть
-      const usesHelper = OK_PATTERNS.some(p => p.test(content))
-      expect(usesHelper, `${rel}: файл должен использовать safeHideTransparentWindow для transparent окон`).toBe(true)
-    }
-  })
-})
+// v0.89.19: регрессия вынесена в src/__tests__/transparentWindowGuard.test.cjs
+// — этот .cjs тест ВСЕГДА запускается в pre-commit (vitest триггерится только
+// на .jsx/.vitest.* изменениях, .js файлы проходили мимо).
