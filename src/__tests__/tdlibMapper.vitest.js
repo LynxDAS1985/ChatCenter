@@ -195,17 +195,48 @@ describe('mapChat', () => {
     expect(r.type).toBe('channel')
   })
 
-  it('chatTypeSupergroup is_channel=false и is_forum=true → group + isForum', () => {
+  // v0.89.25 (ловушка #24): is_forum в TDLib хранится в `supergroup` объекте,
+  // НЕ в `chatTypeSupergroup`. Раньше mapChat читал `type.is_forum` — это была
+  // ошибка, которая прятала ВСЕ forum-чаты от пользователя (isForum=false для всех).
+  it('chatTypeSupergroup + extras.supergroup.is_forum=true → isForum=true', () => {
     const tdChat = {
       '@type': 'chat',
       id: -1001234,
-      type: { '@type': 'chatTypeSupergroup', supergroup_id: 999, is_channel: false, is_forum: true },
+      type: { '@type': 'chatTypeSupergroup', supergroup_id: 999, is_channel: false },
       title: 'Чат с темами',
       unread_count: 0,
     }
-    const r = mapChat(tdChat, 'tg_1')
+    const supergroup = { '@type': 'supergroup', id: 999, is_channel: false, is_forum: true }
+    const r = mapChat(tdChat, 'tg_1', { supergroup })
     expect(r.type).toBe('group')
     expect(r.isForum).toBe(true)
+  })
+
+  it('chatTypeSupergroup БЕЗ extras.supergroup → isForum=false (даже если type.is_forum=true ошибочно)', () => {
+    // Регрессия: type.is_forum НЕ должен влиять на isForum.
+    const tdChat = {
+      '@type': 'chat',
+      id: -1001234,
+      // Намеренно ставим is_forum в type — должно быть проигнорировано.
+      type: { '@type': 'chatTypeSupergroup', supergroup_id: 999, is_forum: true },
+      title: 'Forum-like impostor',
+      unread_count: 0,
+    }
+    const r = mapChat(tdChat, 'tg_1') // без extras.supergroup
+    expect(r.isForum).toBe(false)
+  })
+
+  it('chatTypeSupergroup + extras.supergroup без is_forum → isForum=false', () => {
+    const tdChat = {
+      '@type': 'chat',
+      id: -1001234,
+      type: { '@type': 'chatTypeSupergroup', supergroup_id: 999, is_channel: false },
+      title: 'Обычная супергруппа',
+      unread_count: 0,
+    }
+    const supergroup = { '@type': 'supergroup', id: 999, is_channel: false }
+    const r = mapChat(tdChat, 'tg_1', { supergroup })
+    expect(r.isForum).toBe(false)
   })
 
   it('null/undefined → null; отсутствие accountId → null', () => {

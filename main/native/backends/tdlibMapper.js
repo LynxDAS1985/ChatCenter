@@ -328,10 +328,12 @@ export function mapChat(tdChat, accountId, extras = {}) {
     chatKind = 'group'
   } else if (cn === 'chatTypeSupergroup') {
     chatKind = type.is_channel ? 'channel' : 'group'
-    isForum = !!type.is_forum
-    // v0.89.24: diagnostic — фиксируем isForum value при mapChat. Если is_forum
-    // меняется через updateChatType (TDLib может прислать позже init) — будут
-    // несколько записей для одного chatId.
+    // v0.89.25: ловушка #24 — is_forum в TDLib хранится в supergroup объекте,
+    // НЕ в chatTypeSupergroup. До v0.89.24 мы читали `type.is_forum` который
+    // ВСЕГДА undefined → isForum=false для всех forum-чатов → панель тем
+    // никогда не открывалась. Caller (tdlibClient.getAccountChats) теперь
+    // передаёт supergroup через extras.
+    isForum = !!extras.supergroup?.is_forum
     if (isForum) {
       try { console.log('[forum-map] chatId=' + tdChat.id + ' title=' + JSON.stringify(tdChat.title || '') + ' is_forum=true') } catch (_) {}
     }

@@ -144,6 +144,17 @@ var KNOWN_EXCEPTIONS = {
   'src/native/store/nativeStore.vitest.jsx': {
     ceiling: 450,
     reason: 'v0.88.x: v0.88-специфика вынесена в nativeStoreUnreadPrefetch.vitest.jsx. Остались сцепленные регрессионные тесты Telegram-style read/unread (405 строк, минимальное превышение default 400).'
+  },
+  // v0.89.25 (ловушка #24 forum is_forum): добавлены supergroupCache + updateSupergroup handler + getSupergroup
+  // метод (~15 строк). Файл уже был на 499 при стандартном лимите 500. Минимальное превышение, разбивать
+  // tdlibBackend (auth/chats/messages/media/forum в одном модуле) — отдельная архитектурная задача.
+  'main/native/backends/tdlibBackend.js': {
+    ceiling: 550,
+    reason: 'v0.89.25: один backend для auth/chats/messages/media/forum/storage. Разбивать требует extract по доменам (отдельная плановая задача).'
+  },
+  'main/native/backends/tdlibClient.js': {
+    ceiling: 550,
+    reason: 'v0.89.25: TdlibClientManager — единый клиент для accounts/auth/updates routing/caches (user/chat/supergroup/avatars). Разбивать требует архитектурного решения.'
   }
 }
 

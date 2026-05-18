@@ -201,6 +201,9 @@ describe('chat cache via updateNewChat / patches', () => {
   })
 })
 
+// v0.89.25: тесты supergroup cache вынесены в tdlibClientSupergroup.vitest.js
+// (этот файл превышал лимит 400 строк).
+
 // ──────────────────────────────────────────────────────────────────────
 // NEW MESSAGE — emit + cache lookup для senderName
 // ──────────────────────────────────────────────────────────────────────

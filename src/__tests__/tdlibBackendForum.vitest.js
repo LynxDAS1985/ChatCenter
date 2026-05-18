@@ -95,17 +95,44 @@ describe('forum.getTopics (TDLib getForumTopics)', () => {
     expect(r.topics).toEqual([])
   })
 
-  it('forum чат с topics → правильно мапятся поля', async () => {
+  // v0.89.25 (ловушка #24): Регрессия — если кто-то поставит is_forum в
+  // chatTypeSupergroup без обновления supergroup в cache, isForum=false
+  // (потому что TDLib не использует это поле в type, оно из supergroup).
+  it('РЕГРЕССИЯ: type.is_forum=true БЕЗ updateSupergroup → isForum=false', async () => {
     const { backend, mockClient } = makeBackend()
-    // Кешируем forum chat
     mockClient.emit('update', {
       '@type': 'updateNewChat',
       chat: {
         id: -1001,
-        type: { '@type': 'chatTypeSupergroup', supergroup_id: 1, is_channel: false, is_forum: true },
+        // is_forum в type — НЕ должен влиять (TDLib его так не шлёт)
+        type: { '@type': 'chatTypeSupergroup', supergroup_id: 1, is_forum: true },
+        title: 'Forum-like impostor',
+        unread_count: 0,
+      },
+    })
+    // НЕ эмитим updateSupergroup → supergroup НЕ в cache
+    const r = await backend.forum.getTopics('tg_main:-1001', 10)
+    expect(r.ok).toBe(true)
+    expect(r.isForum).toBe(false)
+    expect(r.topics).toEqual([])
+  })
+
+  it('forum чат с topics → правильно мапятся поля', async () => {
+    const { backend, mockClient } = makeBackend()
+    // v0.89.25 (ловушка #24): is_forum в supergroup, не в chatTypeSupergroup.
+    // Кешируем chat + supergroup отдельно (как делает TDLib).
+    mockClient.emit('update', {
+      '@type': 'updateNewChat',
+      chat: {
+        id: -1001,
+        type: { '@type': 'chatTypeSupergroup', supergroup_id: 1, is_channel: false },
         title: 'Forum',
         unread_count: 0,
       },
+    })
+    mockClient.emit('update', {
+      '@type': 'updateSupergroup',
+      supergroup: { '@type': 'supergroup', id: 1, is_channel: false, is_forum: true },
     })
     mockClient.invoke.mockResolvedValueOnce({
       topics: [
@@ -136,9 +163,13 @@ describe('forum.getTopics (TDLib getForumTopics)', () => {
     mockClient.emit('update', {
       '@type': 'updateNewChat',
       chat: {
-        id: -1001, type: { '@type': 'chatTypeSupergroup', supergroup_id: 1, is_forum: true },
+        id: -1001, type: { '@type': 'chatTypeSupergroup', supergroup_id: 1 },
         title: 'X', unread_count: 0,
       },
+    })
+    mockClient.emit('update', {
+      '@type': 'updateSupergroup',
+      supergroup: { '@type': 'supergroup', id: 1, is_forum: true },
     })
     mockClient.invoke.mockResolvedValueOnce({ topics: [] })
     await backend.forum.getTopics('tg_main:-1001', 25)
@@ -153,9 +184,13 @@ describe('forum.getTopics (TDLib getForumTopics)', () => {
     mockClient.emit('update', {
       '@type': 'updateNewChat',
       chat: {
-        id: -1001, type: { '@type': 'chatTypeSupergroup', supergroup_id: 1, is_forum: true },
+        id: -1001, type: { '@type': 'chatTypeSupergroup', supergroup_id: 1 },
         title: 'X', unread_count: 0,
       },
+    })
+    mockClient.emit('update', {
+      '@type': 'updateSupergroup',
+      supergroup: { '@type': 'supergroup', id: 1, is_forum: true },
     })
     mockClient.invoke.mockResolvedValueOnce({ topics: [] })
     await backend.forum.getTopics('tg_main:-1001', 500)
@@ -167,9 +202,13 @@ describe('forum.getTopics (TDLib getForumTopics)', () => {
     mockClient.emit('update', {
       '@type': 'updateNewChat',
       chat: {
-        id: -1001, type: { '@type': 'chatTypeSupergroup', supergroup_id: 1, is_forum: true },
+        id: -1001, type: { '@type': 'chatTypeSupergroup', supergroup_id: 1 },
         title: 'X', unread_count: 0,
       },
+    })
+    mockClient.emit('update', {
+      '@type': 'updateSupergroup',
+      supergroup: { '@type': 'supergroup', id: 1, is_forum: true },
     })
     mockClient.invoke.mockRejectedValueOnce(new Error('FORUM_DISABLED'))
     const r = await backend.forum.getTopics('tg_main:-1001', 50)

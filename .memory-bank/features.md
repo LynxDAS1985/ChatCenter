@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.24 (18 мая 2026)
+## Текущая версия: v0.89.25 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.24). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.25). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,68 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.25 — Fix: `is_forum` в TDLib supergroup, не в chatTypeSupergroup (ловушка #24)
+
+**Контекст**: после v0.89.24 диагностических логов пользователь воспроизвёл проблему. Логи дали точную картину:
+```
+[forum-ui] activeChatId=tg_611696632:-1002966550893
+           chatFound=true type=group
+           isForum=false      ← баг здесь
+           triggerForum=false
+```
+
+`[forum-map]` event не появился вообще — значит `mapChat()` ставил `isForum=false` для всех forum-чатов.
+
+#### Корневая причина — TDLib API spec
+
+📚 [TDLib chatTypeSupergroup](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1chat_type_supergroup.html):
+```
+chatTypeSupergroup { supergroup_id, is_channel }   // ← НЕТ is_forum
+```
+
+📚 [TDLib supergroup](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1supergroup.html) — отдельный объект, доступный через `updateSupergroup`:
+```
+supergroup { id, is_channel, is_forum, ... }   // ← ВОТ ЗДЕСЬ is_forum
+```
+
+С v0.89.1 (когда добавляли forum topics) я читал `chat.type.is_forum` — это поле **никогда не существовало в TDLib**. JS возвращал `undefined`, `!!undefined === false`. Все forum-чаты помечались `isForum=false`.
+
+**Самое неприятное**: vitest тест проверял именно эту неправильную модель — `type: { is_forum: true }` → ожидаем `isForum=true`. Тест проходил, но проверял НЕ ту реальность. False-positive.
+
+#### Решение (4 правки)
+
+1. **[`tdlibClient.js`](../main/native/backends/tdlibClient.js)** — новый `supergroupCache` + handler `updateSupergroup` + метод `getSupergroup(accountId, sgId)`
+
+2. **[`tdlibClient.js:507`](../main/native/backends/tdlibClient.js)** — `getAccountChats` извлекает supergroup из cache и передаёт mapChat через extras
+
+3. **[`tdlibMapper.js`](../main/native/backends/tdlibMapper.js)** — `mapChat` читает `extras.supergroup?.is_forum` (не `type.is_forum`)
+
+4. **[`tdlibBackend.js`](../main/native/backends/tdlibBackend.js)** — `forum.getTopics` тоже использует `manager.getSupergroup(...)?.is_forum`
+
+#### Тесты
+
+- **tdlibClient.vitest.js**: +5 тестов для supergroup cache (обновление, getSupergroup, null cases, обновление существующей записи, отсутствующий account)
+- **tdlibMapper.vitest.js**: обновлён старый тест + 2 новых:
+  - С `extras.supergroup.is_forum=true` → `isForum=true` ✓
+  - Регрессия: `type.is_forum=true` БЕЗ extras → `isForum=false` (защита от старой логики)
+  - С supergroup без is_forum → `isForum=false`
+
+**Tests**: 608 → 615 (+7).
+
+#### Документация — новая ловушка #24
+
+Создан новый файл [`mistakes/tdlib-forum.md`](mistakes/tdlib-forum.md) специально для TDLib forum/supergroup metadata ловушек. Также добавлен в:
+- `common-mistakes.md` индекс (раздел 6)
+- `CLAUDE.md` секция «Детализация ловушек»
+
+**Правило для будущих сессий**: при работе с TDLib не доверять интуиции про где хранится поле. Сверять с [td_api spec](https://core.telegram.org/tdlib/docs/). Поля, кажущиеся «логично в type», могут быть в отдельных объектах: `supergroup`, `basicGroup`, `secretChat`, `user`, `userFullInfo`, `supergroupFullInfo`.
+
+#### Diagnostic logs остаются
+
+Логи v0.89.24 (`[forum-map]`, `[forum-ui]`, `[forum-ipc]`, `[forum-be]`) остаются в коде на 1-2 недели — на случай если ещё какие-то forum-чаты не открываются. После подтверждения стабильности — удалю.
 
 ---
 

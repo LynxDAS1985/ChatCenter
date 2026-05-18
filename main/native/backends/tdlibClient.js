@@ -84,6 +84,7 @@ export class TdlibClientManager extends EventEmitter {
     const record = {
       accountId, client,
       userCache: new Map(), chatCache: new Map(),
+      supergroupCache: new Map(), // v0.89.25 — is_forum (см. ловушка #24)
       chatAvatars: new Map(), userAvatars: new Map(),
       ownUserId: null,
       authState: null, params: clientParams,
@@ -178,12 +179,9 @@ export class TdlibClientManager extends EventEmitter {
       const fullName = `${me.first_name || ''} ${me.last_name || ''}`.trim()
       const username = me.usernames?.active_usernames?.[0] || me.username || ''
       const phone = me.phone_number ? `+${me.phone_number}` : ''
-      // v0.89.0 / Этап 3.13: fallback name — phone если нет first/last/username.
-      // Без этого UI показывал «Без имени» для self-аккаунтов где TDLib возвращает
-      // user.first_name='' (бывает у некоторых аккаунтов).
+      // v0.89.0 / Этап 3.13: fallback name — phone если нет first/last/username (self-аккаунты могут иметь first_name='').
       const displayName = fullName || (username ? `@${username}` : '') || phone || `Telegram ${userId}`
-      // v0.89.0 / Этап 3.13: явно качаем свою profile_photo (TDLib не всегда
-      // пушит updateUserPhoto автоматически для getMe-юзера).
+      // v0.89.0 / Этап 3.13: явно качаем свою profile_photo (TDLib не всегда пушит updateUserPhoto для getMe-юзера).
       const record = this.accounts.get(finalId)
       if (record) {
         record.userCache.set(Number(userId), me)
@@ -247,6 +245,12 @@ export class TdlibClientManager extends EventEmitter {
     return this.accounts.get(accountId)?.chatCache.get(Number(chatId)) || null
   }
 
+  /** v0.89.25 (ловушка #24): cached supergroup — нужен для is_forum. */
+  getSupergroup(accountId, supergroupId) {
+    if (supergroupId == null) return null
+    return this.accounts.get(accountId)?.supergroupCache.get(Number(supergroupId)) || null
+  }
+
   /** @returns {'waiting'|'ready'|'closed'|null} текущее состояние авторизации */
   getAuthState(accountId) {
     return this.accounts.get(accountId)?.authState || null
@@ -275,10 +279,9 @@ export class TdlibClientManager extends EventEmitter {
         return
 
       case 'updateUser':
-        // TDLib пушит User объекты целиком при изменениях. Каждый раз заменяем целиком.
+        // TDLib пушит User целиком при изменениях — заменяем + фоновая аватарка (Этап 3.9).
         if (update.user?.id != null) {
           record.userCache.set(Number(update.user.id), update.user)
-          // v0.89.0 / Этап 3.9: фоновая загрузка аватарки пользователя
           scheduleAvatarDownload(this, record, 'user', update.user.id, update.user.profile_photo?.small)
         }
         return
@@ -286,9 +289,13 @@ export class TdlibClientManager extends EventEmitter {
       case 'updateNewChat':
         if (update.chat?.id != null) {
           record.chatCache.set(Number(update.chat.id), update.chat)
-          // v0.89.0 / Этап 3.9: фоновая загрузка аватарки чата
           scheduleAvatarDownload(this, record, 'chat', update.chat.id, update.chat.photo?.small)
         }
+        return
+
+      // v0.89.25: TDLib шлёт updateSupergroup отдельно от updateNewChat — для is_forum (см. ловушка #24).
+      case 'updateSupergroup':
+        if (update.supergroup?.id != null) record.supergroupCache.set(Number(update.supergroup.id), update.supergroup)
         return
 
       case 'updateChatPhoto':
@@ -311,19 +318,14 @@ export class TdlibClientManager extends EventEmitter {
       case 'updateChatNotificationSettings':
       case 'updateChatIsMarkedAsUnread':
       case 'updateChatHasScheduledMessages':
-        // Patch существующего chat в cache (если есть).
         this._patchChat(record, update)
         return
 
-      // v0.89.4: typing-индикатор. TDLib шлёт `updateChatAction` когда пользователь
-      // печатает / записывает голосовое / отправляет фото / etc. UI слушает только
-      // typing для отображения «X печатает...».
+      // v0.89.4: typing-индикатор.
       case 'updateChatAction':
         if (update.sender_id?.['@type'] === 'messageSenderUser') {
           const actionType = update.action?.['@type'] || null
           const isTyping = actionType === 'chatActionTyping'
-          // Cancel action — actionType === 'chatActionCancel' → typing:false.
-          // Прочие (recording, uploading) пока не транслируем (UI не использует).
           this.emit('chat:typing', {
             accountId,
             chatId: `${accountId}:${update.chat_id}`,
@@ -482,7 +484,11 @@ export class TdlibClientManager extends EventEmitter {
     for (const tdChat of record.chatCache.values()) {
       // v0.89.6: avatar из chatAvatars cache (если был скачан) — раньше всегда null
       const avatar = record.chatAvatars.get(Number(tdChat.id)) || null
-      const mapped = mapChat(tdChat, accountId, { avatar })
+      // v0.89.25: supergroup объект для is_forum (см. ловушка #24).
+      // TDLib хранит is_forum в supergroup, НЕ в chatTypeSupergroup.
+      const sgId = tdChat?.type?.supergroup_id
+      const supergroup = sgId != null ? record.supergroupCache.get(Number(sgId)) : null
+      const mapped = mapChat(tdChat, accountId, { avatar, supergroup })
       if (mapped) result.push(mapped)
     }
     return result

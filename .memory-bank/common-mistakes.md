@@ -82,6 +82,11 @@
 - НЕ добавлять «защитные кнопки» вместо устранения причины
 - Renderer логи в файл через IPC `app:log`
 
+### 6. [`mistakes/tdlib-forum.md`](./mistakes/tdlib-forum.md)
+**Когда читать**: задача про forum topics в native Telegram, supergroup metadata, `is_forum`, `chatTypeSupergroup`, getSupergroup, updateSupergroup.
+- `is_forum` в `supergroup` объекте, НЕ в `chatTypeSupergroup` (TDLib spec)
+- При работе с TDLib metadata — сверять с td_api spec (поля могут быть в supergroupFullInfo / userFullInfo / supergroup)
+
 ### 📦 [`archive/`](./archive/)
 **Когда читать**: **только если пользователь явно попросил** заглянуть в архив.
 - `2026-04-common-mistakes-resolved.md` — секции ⚪ ИСТОРИЯ из старого common-mistakes.md (решено в v0.87.51 через удаление `groupedUnread`)

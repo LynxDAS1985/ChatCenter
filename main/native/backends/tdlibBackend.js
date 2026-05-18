@@ -457,8 +457,11 @@ export function createTdlibBackend(opts = {}) {
         }
         // Проверим что чат — реально forum (is_forum=true в supergroup)
         const tdChat = manager.getChatCached(ctx.accountId, ctx.rawId)
-        const isForum = !!(tdChat?.type?.is_forum)
-        console.log('[forum-be] chatId=' + chatId + ' acc=' + ctx.accountId + ' raw=' + ctx.rawId + ' cached=' + !!tdChat + ' typeAt=' + (tdChat?.type?.['@type'] || 'none') + ' is_ch=' + !!(tdChat?.type?.is_channel) + ' is_fr=' + !!(tdChat?.type?.is_forum) + ' title=' + JSON.stringify(tdChat?.title || ''))
+        // v0.89.25 (ловушка #24): is_forum в supergroup, не в chatTypeSupergroup
+        const sgId = tdChat?.type?.supergroup_id
+        const supergroup = sgId != null ? manager.getSupergroup(ctx.accountId, sgId) : null
+        const isForum = !!supergroup?.is_forum
+        console.log('[forum-be] chatId=' + chatId + ' sgId=' + sgId + ' sgCached=' + !!supergroup + ' is_fr=' + isForum + ' title=' + JSON.stringify(tdChat?.title || ''))
         if (!isForum) return { ok: true, isForum: false, topics: [] }
         try {
           const result = await ctx.client.invoke({
