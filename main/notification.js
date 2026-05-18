@@ -31,8 +31,14 @@
   function reportHeight() {
     setTimeout(() => {
       const h = calcHeight()
+      // v0.89.27: передаём также количество items + containerChildren — main
+      // использует это как авторитативный сигнал terminal state (когда оба=0,
+      // окно ОБЯЗАНО скрыться, независимо от main notifItems[] мусора от
+      // ghost-stacking накопления). См. ловушка #26.
+      const itemsCount = items.size
+      const containerCount = container.children.length
       // v0.89.20: diagnostic — что ИМЕННО уходит в main для setBounds.
-      try { window.notifApi.log('INFO', 'reportHeight→resize(' + h + ') items=' + items.size + ' containerChildren=' + container.children.length) } catch (_) {}
+      try { window.notifApi.log('INFO', 'reportHeight→resize(' + h + ') items=' + itemsCount + ' containerChildren=' + containerCount) } catch (_) {}
       // v0.89.21: ДЕТАЛЬНЫЙ снэпшот ВСЕХ DOM-элементов для диагностики stale state.
       // v0.89.23: добавлен computed transform (CSS animation НЕ пишется в
       // el.style.transform — только в getComputedStyle, см. MDN).
@@ -54,7 +60,9 @@
         }
         if (details.length) window.notifApi.log('TRACE', 'DOM snapshot ' + details.join(' '))
       } catch (_) {}
-      window.notifApi.resize(h)
+      // v0.89.27: передаём rendererPure=true когда у renderer ничего нет —
+      // авторитативный terminal signal для main (см. ловушка #26).
+      window.notifApi.resize(h, { rendererPure: itemsCount === 0 && containerCount === 0 })
     }, 60)
   }
 

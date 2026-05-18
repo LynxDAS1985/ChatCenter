@@ -16,8 +16,10 @@ contextBridge.exposeInMainWorld('notifApi', {
   markRead: (id) => ipcRenderer.send('notif:mark-read', id),
   // Notification window → Main: уведомление закрыто (таймер или крестик)
   dismiss: (id) => ipcRenderer.send('notif:dismiss', id),
-  // Notification window → Main: сообщить новую высоту
-  resize: (height) => ipcRenderer.send('notif:resize', height),
+  // Notification window → Main: сообщить новую высоту.
+  // v0.89.27: добавлен второй параметр meta с rendererPure флагом
+  // (authoritative signal что у renderer ничего нет — см. ловушка #26).
+  resize: (height, meta) => ipcRenderer.send('notif:resize', height, meta),
   // Notification window → Main: закрепить сообщение в отдельном окне
   pinMessage: (data) => ipcRenderer.send('notif:pin-message', data),
   // v0.89.20: diagnostic log в chatcenter.log через main process app:log IPC.

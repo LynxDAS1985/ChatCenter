@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.26 (18 мая 2026)
+## Текущая версия: v0.89.27 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.26). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.27). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,64 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.27 — `rendererPure` авторитативный signal — ловушка #26
+
+**Контекст**: после v0.89.26 пользователь снова видит полоску. Логи 15:00:27 показали:
+```
+[notif-resize] raw=0 visible=true items=2   ← MAIN items=2!
+IGNORE stale raw=0 (items=2 > 0)
+```
+
+Хотя `hideIfEmpty()` v0.89.26 был в каждом handler — он проверяет `notifItems.length === 0`, а в main process **накопился мусор**: 2 stale items без соответствия в renderer.
+
+#### Корневая причина — мусор в main `notifItems[]` от ghost-stacking
+
+Stacking pipeline:
+1. Уведомление #1 от мессенджера X → main `notifItems.push(id=A)` → renderer `addNotification(A)` → DOM element создан, `stacks.set(X, {hostId:A, childIds:[]})`
+2. Уведомление #2 от того же X → main `notifItems.push(id=B)` → renderer `addNotification(B)` → НЕ создаёт DOM (stackMessageIntoHost), создаёт ghost-item в `items` Map, push в `stacks.get(X).childIds`
+
+Когда user dismiss host A:
+- renderer dismiss(A) → `cleanupStack(X)` → отправляет `notifApi.dismiss(B)` → main удаляет B
+- Затем `dismissItem(A)` отправляет `notifApi.dismiss(A)` → main удаляет A
+- Итого main `notifItems[]` = []
+
+**НО**: если ghost B был удалён в renderer через **другой путь** (`forceRemoveItem` при дубликате id, или FIFO в renderer Map), `cleanupStack` проверяет `items.get(id)` — если null → НЕ отправляет dismiss IPC → **main помнит B как живой навсегда**.
+
+Накопление мусора в main → `hideIfEmpty()` всегда видит `length > 0` → safeHide никогда не вызывается → окно остаётся visible с старыми bounds → пустая полоска.
+
+#### Решение — renderer = source of truth для terminal state
+
+Расширили `notif:resize` IPC contract — renderer передаёт второй параметр `meta = { rendererPure: B }`:
+- `rendererPure: true` когда `items.size === 0 && container.children.length === 0`
+- Это **авторитативный signal** что у renderer ВООБЩЕ ничего нет
+
+Main process в `notif:resize`:
+```js
+if (height <= 0 && rendererPure) {
+  // Renderer пуст → main очищает мусор и скрывает окно
+  if (itemsCount > 0) setNotifItems([])
+  safeHideTransparentWindow(notifWin)
+  return
+}
+```
+
+3 файла изменены:
+- `main/notification.js` — `reportHeight()` передаёт `rendererPure` флаг
+- `main/preloads/notification.preload.cjs` — `resize(height, meta)` подпись
+- `main/handlers/notifHandlers.js` — обработка `rendererPure` в `notif:resize`
+
+Защита v0.89.23 `IGNORE stale raw=0 (items > 0)` **остаётся** для случая когда renderer ещё не успел рендерить (rendererPure=false потому что DOM или Map не пусты). v0.89.27 — отдельная ветка для случая когда renderer **точно** пуст.
+
+#### Ловушка #26 — записана в `mistakes/notifications-ribbon.md`
+
+«Stacking создаёт ghost-items в renderer Map без DOM. Если ghost удаляется в renderer **не через cleanupStack** (forceRemoveItem, FIFO) — dismiss IPC к main НЕ отправляется → main `notifItems[]` накапливает мусор. Решение: расширенный IPC с `rendererPure` флагом — renderer как source of truth для terminal state».
+
+#### Tests
+
+Lint OK. Существующие vitest проходят (изменение в renderer и IPC contract — purely additive).
 
 ---
 

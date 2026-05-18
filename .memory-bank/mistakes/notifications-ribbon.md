@@ -517,6 +517,65 @@ const hideIfEmpty = () => {
 
 **Защита v0.89.23 остаётся** — она нужна для других race (между `notif:show` и первым reportHeight, когда renderer ещё не успел отрендерить). Теперь main process **сам гарантирует** скрытие через `hideIfEmpty()`, не зависит от renderer.
 
+**🔴 ЛОВУШКА #26 (v0.89.27): main `notifItems[]` накапливает мусор от ghost-stacking**
+
+**Симптом** (скриншот 15:00, 18 мая 2026): полоска появляется ОПЯТЬ — даже после v0.89.26 `hideIfEmpty()`. Лог:
+```
+15:00:27 dismiss final-report id=3 itemsAfter=0 calcH=0      ← renderer пуст
+15:00:27 reportHeight→resize(0) items=0 containerChildren=0   ← renderer
+15:00:27 [notif-resize] raw=0 visible=true items=2            ← MAIN items=2 мусор
+15:00:27 IGNORE stale raw=0 (items=2 > 0)                     ← блокирует safeHide
+```
+
+**Корневая причина — ghost-stacking создаёт mismatch**:
+
+Stacking flow ([`notification.js:177-216`](../../main/notification.js)):
+1. Уведомление #1 от мессенджера X → main `notifItems.push(A)`, renderer `addNotification(A)` создаёт DOM element + `stacks.set(X, {hostId:A, childIds:[]})`
+2. Уведомление #2 от X → main `notifItems.push(B)`, renderer `stackMessageIntoHost(A,B)` — **создаёт ghost** в `items` Map (`isStackChild:true, el: A.el`) без DOM element, push в `stacks.get(X).childIds`
+
+Когда user dismiss host A:
+- `cleanupStack(X)` → для каждого ghostId → `notifApi.dismiss(ghostId)` → main filter → удаляет B
+- `dismissItem(A)` → `notifApi.dismiss(A)` → main filter → удаляет A
+- main `notifItems[]` = [] ✓
+
+**НО** если ghost B был удалён в renderer **через другой путь** — `cleanupStack` пропускает его:
+```js
+stack.childIds.forEach(id => {
+  const child = items.get(id)
+  if (child && !child.dismissing) {  // ← null если ghost уже удалён
+    notifApi.dismiss(id)
+  }
+})
+```
+
+Пути удаления ghost без dismiss IPC:
+- `forceRemoveItem(id)` при `addNotification` если duplicate id (стр. 287-289)
+- FIFO в `notifItems` push в notificationManager.js:198 (но это **main** FIFO — не отправляет renderer dismiss)
+- ВАЖНО: main FIFO при `notifItems.length >= 30` делает `notifItems.shift()` — БЕЗ уведомления renderer
+
+Результат: main `notifItems[]` накапливает мусор — id'и которых уже нет в renderer. `hideIfEmpty()` всегда видит `length > 0` → safeHide никогда не срабатывает → пустая полоска.
+
+**Решение (v0.89.27)** — renderer = source of truth для terminal state. Расширен IPC contract:
+
+```js
+// notification.js (renderer):
+const itemsCount = items.size
+const containerCount = container.children.length
+window.notifApi.resize(h, { rendererPure: itemsCount === 0 && containerCount === 0 })
+
+// notifHandlers.js (main):
+if (height <= 0 && rendererPure) {
+  // АВТОРИТАТИВНЫЙ сигнал что у renderer ВООБЩЕ ничего нет
+  if (itemsCount > 0) setNotifItems([])  // очистка мусора
+  safeHideTransparentWindow(notifWin)
+  return
+}
+```
+
+`rendererPure` — отдельная **terminal-state ветка**. v0.89.23 защита `IGNORE stale raw=0 (items > 0)` остаётся для случая когда `rendererPure=false` (renderer ещё рендерит).
+
+**Правило**: при mismatch между main и renderer state — **terminal-state signal должен быть от renderer** (visual source of truth). main не должен накапливать «теневое» состояние которое renderer не подтверждает.
+
 ---
 
 ## 🔴 isViewingThisChat подавляет ВСЕ уведомления на активной вкладке (v0.39.0)

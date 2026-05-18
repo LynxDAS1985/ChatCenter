@@ -78,22 +78,31 @@ export function initNotifHandlers(deps) {
   })
 
   let lastNotifBounds = null
-  ipcMain.on('notif:resize', (_event, height) => {
+  ipcMain.on('notif:resize', (_event, height, meta) => {
     const notifWin = getNotifWin()
     if (!notifWin || notifWin.isDestroyed()) return
     const rawHeight = height
     height = Math.round(height)
     const itemsCount = getNotifItems().length
-    // v0.89.20: diagnostic log — фиксируем КАЖДЫЙ resize event для расследования
-    // mid-animation полоски (см. analysis в conversation 2026-05-18).
+    const rendererPure = !!meta?.rendererPure
     console.log('[notif-resize] raw=' + rawHeight + ' rounded=' + height +
-      ' visible=' + notifWin.isVisible() + ' items=' + itemsCount)
-    // v0.89.23 (Баг #2): защита от запоздалого reportHeight(0) от dismiss
-    // предыдущего уведомления — если в main process УЖЕ есть новый item
-    // (items>0), но renderer прислал resize(0) (потому что setTimeout 60ms
-    // в reportHeight отработал ПОСЛЕ того как renderer обработал прошлый dismiss),
-    // то это stale event. Игнорируем — renderer следующим reportHeight пришлёт
-    // правильное значение для нового item. См. ловушка #23.
+      ' visible=' + notifWin.isVisible() + ' items=' + itemsCount + ' rendererPure=' + rendererPure)
+    // v0.89.27 (ловушка #26): renderer = source of truth для terminal state.
+    // Если renderer прислал rendererPure=true (items.size=0 + container.children=0)
+    // — это АВТОРИТАТИВНЫЙ сигнал что у него вообще ничего нет. Очищаем main
+    // notifItems[] от мусора (ghost-stacking накопление, FIFO не отправлял
+    // dismiss IPC и т.п.) и гарантированно скрываем окно.
+    if (height <= 0 && rendererPure) {
+      if (itemsCount > 0) {
+        console.log('[notif-resize] CLEAR main notifItems (had ' + itemsCount + ' stale items, renderer pure)')
+        setNotifItems([])
+      }
+      safeHideTransparentWindow(notifWin)
+      lastNotifBounds = null
+      return
+    }
+    // v0.89.23: защита от запоздалого reportHeight(0) от dismiss предыдущего
+    // уведомления — если main УЖЕ имеет new item но renderer ещё не отрендерил.
     if (height <= 0 && itemsCount > 0) {
       console.log('[notif-resize] IGNORE stale raw=0 (items=' + itemsCount + ' > 0)')
       return
