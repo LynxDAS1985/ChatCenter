@@ -62,17 +62,9 @@ export default function useInboxNewerPrefetch({
     setLoadingNewer,
   }) => {
     const fromBottomPx = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (
-      !loadingNewerRef
-      || loadingNewerRef.current
-      || noMoreNewerRef.current.get(viewKey)
-      || initialScrollDoneKey !== viewKey
-      || activeMessages.length === 0
-      || fromBottomPx >= NEWER_PREFETCH_THRESHOLD_PX
-      || fromBottomPx < 0  // bouncy scroll
-    ) {
-      return false
-    }
+    if (!loadingNewerRef || loadingNewerRef.current || noMoreNewerRef.current.get(viewKey)
+        || initialScrollDoneKey !== viewKey || activeMessages.length === 0
+        || fromBottomPx >= NEWER_PREFETCH_THRESHOLD_PX || fromBottomPx < 0) return false
 
     // Берём последнее ВХОДЯЩЕЕ сообщение как afterId. Исходящие (наши отправленные)
     // не годятся для min_id Telegram-style: новые входящие приходят через push tg:new-message,

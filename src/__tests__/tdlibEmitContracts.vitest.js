@@ -1,18 +1,6 @@
-// v0.89.4 — emit-direction IPC контракт-тесты.
-//
-// Защита от того что пропустил третий аудит: эти тесты проверяют что для каждого
-// manager.emit('X', payload) в backend есть bridge sendToRenderer('tg:Y', ...)
-// и что payload совпадает с тем что UI ждёт в nativeStoreIpc.js addHandler.
-//
-// Подход: эмитим TDLib update, проверяем что sendToRenderer вызвался с
-// правильным каналом и shape (полные поля и их типы).
-//
-// Соответствие UI listeners (см. src/native/store/nativeStoreIpc.js):
-//   addHandler('tg:typing', ({ chatId, userId, typing }) => ...)
-//   addHandler('tg:read', ({ chatId, outgoing, stillUnread, maxId }) => ...)
-//   addHandler('tg:sender-avatar', ({ senderId, avatarUrl }) => ...)
-//   addHandler('tg:account-update', (acc) => ...)        // acc.removed → cleanup
-//   addHandler('tg:media-progress', (data) => ...)
+// v0.89.4 — emit-direction IPC контракт-тесты: TDLib update → sendToRenderer.
+// Покрывает: tg:typing, tg:read, tg:sender-avatar, tg:account-update, tg:media-progress.
+// Соответствие UI listeners — см. src/native/store/nativeStoreIpc.js addHandler.
 
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
@@ -64,7 +52,6 @@ describe('tg:typing — updateChatAction bridge', () => {
       chatId: 'tg_main:-1001', userId: '42', typing: true,
     })
   })
-
   it('chatActionCancel → tg:typing {typing:false}', () => {
     const { mockClient, sendToRenderer } = setup()
     mockClient.emit('update', {
@@ -75,7 +62,6 @@ describe('tg:typing — updateChatAction bridge', () => {
     expect(sendToRenderer).toHaveBeenCalledWith('tg:typing',
       expect.objectContaining({ typing: false }))
   })
-
   it('messageSenderChat (бот/канал) — не эмитим typing', () => {
     const { mockClient, sendToRenderer } = setup()
     mockClient.emit('update', {
@@ -137,7 +123,6 @@ describe('tg:account-update {removed:true} — removeAccount flow', () => {
       wipeStats: expect.objectContaining({ isLast: true }),
     }))
   })
-
   it('removeAccount вызывает logOut на TDLib перед close', async () => {
     const { mockClient, backend } = setup()
     await backend.auth.removeAccount('tg_main')
@@ -188,7 +173,6 @@ describe('tg:send-clipboard-image handler', () => {
     const { ipcMain } = setup()
     expect(ipcMain.handlers.has('tg:send-clipboard-image')).toBe(true)
   })
-
   it('без userDataPath → ok:false с понятной ошибкой', async () => {
     const { ipcMain } = setup() // НЕТ userDataDir
     const r = await ipcMain.invoke('tg:send-clipboard-image', {
@@ -197,14 +181,12 @@ describe('tg:send-clipboard-image handler', () => {
     expect(r.ok).toBe(false)
     expect(r.error).toMatch(/userDataPath/i)
   })
-
   it('без chatId → ok:false', async () => {
     const { ipcMain } = setup({ userDataDir: '/tmp/test' })
     const r = await ipcMain.invoke('tg:send-clipboard-image', { data: [1, 2, 3], ext: 'png' })
     expect(r.ok).toBe(false)
     expect(r.error).toMatch(/chatId/i)
   })
-
   it('пустой data → ok:false', async () => {
     const { ipcMain } = setup({ userDataDir: '/tmp/test' })
     const r = await ipcMain.invoke('tg:send-clipboard-image', { chatId: 'tg_main:-1', data: [], ext: 'png' })
@@ -278,7 +260,6 @@ describe('snapshot caches — chatAvatars / userAvatars', () => {
     record.chatAvatars.set(-1001, 'cc-media://avatars/-1001.jpg')
     expect(record.chatAvatars.get(-1001)).toBe('cc-media://avatars/-1001.jpg')
   })
-
   it('getAccountChats читает chatAvatars в snapshot (mapChat extras.avatar)', () => {
     const { mgr, mockClient } = setup()
     mockClient.emit('update', {
@@ -290,7 +271,6 @@ describe('snapshot caches — chatAvatars / userAvatars', () => {
     const chats = mgr.getAccountChats('tg_main')
     expect(chats[0].avatar).toBe('cc-media://avatars/-1001.jpg')
   })
-
   it('getSenderAvatar читает userAvatars (раньше hardcoded null)', async () => {
     const { mgr, mockClient, backend } = setup()
     // 1) updateUser для sender
@@ -318,7 +298,6 @@ describe('snapshot caches — chatAvatars / userAvatars', () => {
     const r = await backend.messages.get({ chatId: 'tg_main:-1001', limit: 10 })
     expect(r.messages[0].senderAvatar).toBe('cc-media://avatars/42.jpg')
   })
-
   it('own avatar (kind=user, ownerId===ownUserId) эмитит account:update с avatar', async () => {
     const { mgr, mockClient, sendToRenderer } = setup()
     mockClient.invoke.mockResolvedValueOnce({

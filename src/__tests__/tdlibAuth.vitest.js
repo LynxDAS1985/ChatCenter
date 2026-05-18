@@ -34,9 +34,7 @@ function emitAuthState(client, stateType, payload = {}) {
   })
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// buildTdlibParameters
-// ──────────────────────────────────────────────────────────────────────
+// === buildTdlibParameters ===
 
 describe('translateTdlibError', () => {
   it('PHONE_NUMBER_INVALID → русский', () => {
@@ -81,7 +79,6 @@ describe('buildTdlibParameters', () => {
     expect(p.enable_storage_optimizer).toBe(true)
     expect(p.ignore_file_names).toBe(false)
   })
-
   it('кастомизация языка/устройства/версии', () => {
     const p = buildTdlibParameters({
       systemLanguageCode: 'en', deviceModel: 'TestModel',
@@ -92,12 +89,10 @@ describe('buildTdlibParameters', () => {
     expect(p.application_version).toBe('1.2.3')
     expect(p.system_version).toBe('TestOS')
   })
-
   it('disable storage optimizer через опцию', () => {
     const p = buildTdlibParameters({ enableStorageOptimizer: false })
     expect(p.enable_storage_optimizer).toBe(false)
   })
-
   it('disable databases через опцию', () => {
     const p = buildTdlibParameters({
       useMessageDatabase: false, useFileDatabase: false, useChatInfoDatabase: false,
@@ -108,9 +103,7 @@ describe('buildTdlibParameters', () => {
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────
-// TdlibAuthFlow — construct
-// ──────────────────────────────────────────────────────────────────────
+// === TdlibAuthFlow — construct ===
 
 describe('TdlibAuthFlow construct', () => {
   it('требует manager + accountId (tdlibParameters больше не нужен — v0.89.2)', () => {
@@ -120,16 +113,13 @@ describe('TdlibAuthFlow construct', () => {
     // С v0.89.2 этого достаточно — tdlibParameters больше не аргумент.
     expect(() => new TdlibAuthFlow({ manager: mgr, accountId: 'tg_1' })).not.toThrow()
   })
-
   it('начальное состояние = idle', () => {
     const { flow } = makeFlow()
     expect(flow.state).toBe('idle')
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────
-// SEQUENCE: full login with 2FA
-// ──────────────────────────────────────────────────────────────────────
+// === SEQUENCE: full login with 2FA ===
 
 describe('TdlibAuthFlow — полный flow с 2FA', () => {
   it('Wait params → setTdlibParameters; Wait phone → startLogin; Wait code → submit; Wait pwd → submit; Ready', async () => {
@@ -184,7 +174,6 @@ describe('TdlibAuthFlow — полный flow с 2FA', () => {
     expect(pwdResult).toEqual({ ok: true, success: true })
     expect(flow.state).toBe('ready')
   })
-
   it('флоу без 2FA — после code сразу Ready', async () => {
     const { flow, mockClient } = makeFlow()
     emitAuthState(mockClient, 'authorizationStateWaitPhoneNumber')
@@ -201,26 +190,21 @@ describe('TdlibAuthFlow — полный flow с 2FA', () => {
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────
-// ERRORS / INPUT VALIDATION
-// ──────────────────────────────────────────────────────────────────────
+// === ERRORS / INPUT VALIDATION ===
 
 describe('TdlibAuthFlow — ошибки', () => {
   it('startLogin без phone → ok=false', async () => {
     const { flow } = makeFlow()
     expect(await flow.startLogin('')).toEqual({ ok: false, error: 'phone required' })
   })
-
   it('submitCode без code → ok=false', async () => {
     const { flow } = makeFlow()
     expect(await flow.submitCode('')).toEqual({ ok: false, error: 'code required' })
   })
-
   it('submitPassword без password → ok=false', async () => {
     const { flow } = makeFlow()
     expect(await flow.submitPassword('')).toEqual({ ok: false, error: 'password required' })
   })
-
   it('startLogin invoke падает → ok=false с error', async () => {
     const { flow, mockClient } = makeFlow()
     mockClient.invoke.mockRejectedValueOnce(new Error('PHONE_NUMBER_INVALID'))
@@ -229,7 +213,6 @@ describe('TdlibAuthFlow — ошибки', () => {
     // v0.89.0 / Этап 3.5: translateTdlibError мапит коды в русский для UI.
     expect(r.error).toBe('Номер телефона указан в неправильном формате')
   })
-
   it('TDLib closed во время ожидания → resolver резолвится с ошибкой', async () => {
     const { flow, mockClient } = makeFlow()
     emitAuthState(mockClient, 'authorizationStateWaitPhoneNumber')
@@ -242,7 +225,6 @@ describe('TdlibAuthFlow — ошибки', () => {
     expect(r.error).toBe('closed')
     expect(flow.state).toBe('closed')
   })
-
   it('Email auth — возвращает ошибку', async () => {
     const { flow, mockClient } = makeFlow()
     emitAuthState(mockClient, 'authorizationStateWaitPhoneNumber')
@@ -252,7 +234,6 @@ describe('TdlibAuthFlow — ошибки', () => {
     expect(r.ok).toBe(false)
     expect(r.error).toContain('email auth not supported')
   })
-
   it('cancelLogin — вызывает logOut и закрывает state', async () => {
     const { flow, mockClient } = makeFlow()
     const r = await flow.cancelLogin()
@@ -260,7 +241,6 @@ describe('TdlibAuthFlow — ошибки', () => {
     expect(r).toEqual({ ok: true })
     expect(flow.state).toBe('closed')
   })
-
   it('cancelLogin отменяет pending startLogin', async () => {
     const { flow, mockClient } = makeFlow()
     emitAuthState(mockClient, 'authorizationStateWaitPhoneNumber')
@@ -272,9 +252,7 @@ describe('TdlibAuthFlow — ошибки', () => {
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────
-// dispose: removes listener
-// ──────────────────────────────────────────────────────────────────────
+// === dispose: removes listener ===
 
 describe('TdlibAuthFlow.dispose', () => {
   it('dispose снимает слушатель с manager', () => {
@@ -284,7 +262,6 @@ describe('TdlibAuthFlow.dispose', () => {
     const afterCount = mgr.listenerCount('account:auth-state')
     expect(afterCount).toBe(beforeCount - 1)
   })
-
   it('dispose вызванный дважды не падает', () => {
     const { flow } = makeFlow()
     flow.dispose()
@@ -292,9 +269,7 @@ describe('TdlibAuthFlow.dispose', () => {
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────
-// ROUTING: auth events для другого accountId — игнор
-// ──────────────────────────────────────────────────────────────────────
+// === ROUTING: auth events для другого accountId — игнор ===
 
 describe('TdlibAuthFlow — изоляция между аккаунтами', () => {
   it('Auth state для другого accountId не меняет наше state', () => {
@@ -314,9 +289,7 @@ describe('TdlibAuthFlow — изоляция между аккаунтами', (
   })
 })
 
-// ──────────────────────────────────────────────────────────────────────
-// v0.89.2 — Спец-обработка authorizationStateWaitRegistration
-// ──────────────────────────────────────────────────────────────────────
+// === v0.89.2 — Спец-обработка authorizationStateWaitRegistration ===
 
 describe('TdlibAuthFlow — WaitRegistration', () => {
   it('WaitRegistration → дружелюбная ru-ошибка (не "unsupported state")', async () => {
