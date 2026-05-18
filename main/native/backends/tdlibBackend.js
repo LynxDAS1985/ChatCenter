@@ -349,7 +349,13 @@ export function createTdlibBackend(opts = {}) {
       // forumTopic.unread_count.
       async markTopicRead(chatId, topicId, maxId) {
         const ctx = getClientForChat(manager, chatId)
-        if (ctx.error) return ctx.error
+        if (ctx.error) {
+          console.log('[topic-mark] chatId=' + chatId + ' ctx-error=' + JSON.stringify(ctx.error))
+          return ctx.error
+        }
+        // v0.89.32: diagnostic — фиксируем каждый вызов markTopicRead с источником,
+        // чтобы видеть в логе достигает ли TDLib и с каким maxId.
+        console.log('[topic-mark] INVOKE chatId=' + chatId + ' rawChat=' + ctx.rawId + ' topicId=' + topicId + ' maxId=' + maxId + ' source=messageSourceForumTopicHistory')
         try {
           await ctx.client.invoke({
             '@type': 'viewMessages',
@@ -358,8 +364,12 @@ export function createTdlibBackend(opts = {}) {
             source: { '@type': 'messageSourceForumTopicHistory' },
             force_read: true,
           })
+          console.log('[topic-mark] OK chatId=' + chatId + ' maxId=' + maxId)
           return { ok: true }
-        } catch (e) { return { ok: false, error: e?.message || String(e) } }
+        } catch (e) {
+          console.log('[topic-mark] ERROR chatId=' + chatId + ' maxId=' + maxId + ' err=' + (e?.message || String(e)))
+          return { ok: false, error: e?.message || String(e) }
+        }
       },
       async getPinned(chatId) {
         const ctx = getClientForChat(manager, chatId)

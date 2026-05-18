@@ -135,8 +135,8 @@ var KNOWN_EXCEPTIONS = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 900,
-    reason: 'v0.89.31: добавлены setState блоки в loadOlder/loadNewer для топиков — пересчёт messageWindows[key].loadedIncoming (~30 строк к 850). Закрывает «плашка 100 из 217 замирает». Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
+    ceiling: 950,
+    reason: 'v0.89.32: добавлены диагностические try-catch app:log блоки в markTopicRead, refreshTopicCounters, loadOlder/loadNewer для топиков (~16 строк к 900). Временная диагностика — снять после анализа логов юзера и закрытия двух жалоб (счётчик замирает / окно моргает). Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
   },
   // v0.88.x: профильные тесты v0.88.x вынесены в nativeStoreUnreadPrefetch.vitest.jsx (218 строк).
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,

@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.31 (18 мая 2026)
+## Текущая версия: v0.89.32 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.31). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.32). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,21 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.32 — Диагностические логи для форум-топиков (markRead pipeline + prepend size jumps)
+
+После v0.89.31: счётчик «уменьшался → замер → опять → замер», окно «дёргалось». Из лога юзера 17:57 нашёл два факта:
+1. **Замирания** = `read-batch-skip reason=maxId did not advance` — watermark `maxEverSent` защита из ловушки v0.87.37 (правильное поведение, иначе прыжки 36→25→35 из v0.87.41)
+2. **Дёргание** = `top=27666→1669` после `store-tg-messages incoming=100` (prepend в react-window) + `atBottom:true→false` → `force-read-cleanup`. Известная гонка с виртуализацией, **100% решения для react-window prepend scroll preservation нет** — классический шаблон зависит от внутренней реализации библиотеки. Не правлю.
+
+**Только логи** (по указанию):
+- [`tdlibBackend.js`](../main/native/backends/tdlibBackend.js) `markTopicRead`: `[topic-mark] INVOKE/OK/ERROR` — каждый вызов TDLib `viewMessages` в форуме
+- [`nativeStore.js`](../src/native/store/nativeStore.js) `markTopicRead`: `[topic-mark-ui] SEND` + `[topic-mark-refresh] baseline=X refreshed=Y delta=Z` — показывает обновил ли TDLib `unread_count` после `viewMessages`
+- [`nativeStore.js`](../src/native/store/nativeStore.js) `loadOlder/loadNewer`: `[topic-load-older/newer] beforeCount=X added=Y afterCount=Z` — момент prepend больших батчей для корреляции с `chat-state top=X`
+
+`scroll-jump` детектор (deltaTop>500px) уже есть в `useInboxScroll.js:53-67`. **Tests**: 622 без изменений.
 
 ---
 

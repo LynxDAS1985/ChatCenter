@@ -382,6 +382,12 @@ export default function useNativeStore() {
   const markTopicRead = useCallback(async (chatId, topic, maxId) => {
     if (!chatId || !topic) return { ok: false, error: 'Не выбрана тема' }
     const topicId = topic.topicId || topic.id || topic.topMessageId
+    // v0.89.32: diagnostic — UI side markTopicRead invocation
+    try {
+      window.api?.send?.('app:log', { level: 'INFO',
+        message: '[topic-mark-ui] SEND chatId=' + chatId + ' topicId=' + topicId +
+          ' maxId=' + maxId + ' baselineUnread=' + (topic.unreadCount || 0) })
+    } catch (_) {}
     const r = await window.api?.invoke('tg:mark-topic-read', {
       chatId,
       topicId,
@@ -411,6 +417,15 @@ export default function useNativeStore() {
         const readTopicId = topicIdentity(topic)
         const refreshedTopic = refreshedTopics.find(t => topicIdentity(t) === readTopicId)
         const refreshedUnread = Number(refreshedTopic?.unreadCount || 0)
+        // v0.89.32: diagnostic — refreshTopicCounters результат для отслеживания
+        // действительно ли getForumTopics возвращает обновлённый unread_count
+        // после markTopicRead. Если baseline == refreshed → TDLib не обновил.
+        try {
+          window.api?.send?.('app:log', { level: 'INFO',
+            message: '[topic-mark-refresh] chatId=' + chatId + ' attempt=' + attempt +
+              ' baseline=' + baselineUnread + ' refreshed=' + refreshedUnread +
+              ' delta=' + (baselineUnread - refreshedUnread) })
+        } catch (_) {}
         setState(s => {
           const activeTopic = s.activeForumTopic?.[chatId]
           const activeTopicId = topicIdentity(activeTopic || topic)
@@ -754,6 +769,15 @@ export default function useNativeStore() {
             aroundId: currentWindow.aroundId,
             loading: false,
           }) : currentWindow
+          // v0.89.32: diagnostic — фиксируем скачок размера messages[key] (prepend
+          // больших батчей вызывает scroll-jump в виртуализированном списке).
+          try {
+            window.api?.send?.('app:log', { level: 'INFO',
+              message: '[topic-load-newer] key=' + key + ' beforeCount=' + existing.length +
+                ' added=' + newMsgs.length + ' afterCount=' + merged.length +
+                ' loadedIncoming=' + (nextWindow?.loadedIncoming || 0) +
+                ' unreadCount=' + (nextWindow?.unreadCount || 0) })
+          } catch (_) {}
           return {
             ...s,
             messages: { ...s.messages, [key]: merged },
@@ -799,6 +823,16 @@ export default function useNativeStore() {
             aroundId: currentWindow.aroundId,
             loading: false,
           }) : currentWindow
+          // v0.89.32: diagnostic — prepend старых сообщений в виртуализированный список
+          // сдвигает scrollTop (видно как "дёргание"). Логируем размер скачка чтобы
+          // подтвердить корреляцию.
+          try {
+            window.api?.send?.('app:log', { level: 'INFO',
+              message: '[topic-load-older] key=' + key + ' beforeCount=' + existing.length +
+                ' prepended=' + newOld.length + ' afterCount=' + merged.length +
+                ' loadedIncoming=' + (nextWindow?.loadedIncoming || 0) +
+                ' unreadCount=' + (nextWindow?.unreadCount || 0) })
+          } catch (_) {}
           return {
             ...s,
             messages: { ...s.messages, [key]: merged },
