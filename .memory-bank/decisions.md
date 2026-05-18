@@ -1,5 +1,124 @@
 # Ключевые решения (ADR) — ChatCenter
 
+## ADR — Notification BrowserWindow: итоги серии багов v0.89.15-v0.89.23 (18 мая 2026)
+
+**Статус**: ✅ Принято и реализовано
+
+**Контекст**: за 3 дня (15-18 мая) серия пользовательских жалоб привела к 9 версиям (v0.89.15-v0.89.23) и 4 новым ловушкам (#20-#23) для одного компонента — **notification BrowserWindow** (Messenger Ribbon в `main/notification.*` + `main/handlers/notifHandlers.js` + `main/handlers/notificationManager.js`).
+
+### Какие баги случились и **почему** решили именно так
+
+**1. Ghost hit-test region после `.hide()` на Win11 (v0.89.18, ловушка #20)**
+
+Корневая причина: `transparent: true` + `frame: false` BrowserWindow на Win11 оставляет невидимый hit-test регион после `.hide()` (известная Electron issue #15947).
+
+**Альтернативы** (отклонены):
+- ❌ Перейти на non-transparent окно — потеряем кастомный дизайн ribbon
+- ❌ Использовать native Notification API целиком — у нас кастомные кнопки «Перейти / Прочитано» / стэкинг / закрепление, нативный API такого не даёт
+- ❌ Игнорировать (закрыть глаза) — клики «глотались», UX страдал
+
+**Принятое решение**: helper `safeHideTransparentWindow()` который перед `.hide()` уводит окно за экран (`-30000`) в размер 1×1. Скрытое окно за пределами всех мониторов размером 1px физически не может ловить клики.
+
+**Почему так**: 
+- Сохраняет существующий дизайн
+- Не требует архитектурного переписывания
+- Гарантия на уровне Windows compositor (окно вне всех мониторов)
+- 5 точек применения (notif/dock/pin) через единый helper — DRY
+
+---
+
+**2. `setIgnoreMouseEvents(true)` ломал клики (v0.89.22, ловушка #21)**
+
+Корневая причина: в v0.89.18 я добавил `setIgnoreMouseEvents(true)` в helper как «тройную защиту». Но это нарушило **ловушку #27 (v0.71.7)**: ломает `-webkit-app-region: drag` у dock/pin окон. У 5 точек `.show()` не было парного `restoreMouseEvents(false)` → state `true` оставался → клики проходили сквозь видимое окно.
+
+**Альтернативы** (отклонены):
+- ❌ Добавить `restoreMouseEvents` во все 5 точек show — fragile, легко забыть в будущем
+- ❌ Оставить `setIgnoreMouseEvents` + написать тесты — не закрывает root cause
+
+**Принятое решение**: УДАЛИТЬ `setIgnoreMouseEvents` целиком из helper. Защита от ghost hit-test полностью покрывается через `setBounds(offscreen 1×1) + hide()` — это сам по себе достаточный механизм.
+
+**Почему так**:
+- Меньше кода = меньше точек отказа
+- Соблюдает ловушку #27 нашего проекта
+- Соответствует Electron docs «state persists until explicitly changed» — мы избегаем самого state-management
+- Регрессионный тест в pre-commit (`.cjs`) — физически запрещает вернуть `setIgnoreMouseEvents(true)`
+
+---
+
+**3. «Пустая полоса»: slideIn animation + offsetHeight (v0.89.23, ловушка #22)**
+
+Корневая причина: CSS `slideIn` animation 300ms сдвигает element с `translateX(380px)` до `translateX(0)`. `offsetHeight` ignores transform (MDN). Поэтому `calcHeight()` сразу видит финальную height нового element и main process расширяет окно — но element ещё за правым краем визуально → пустая полоса 60-300ms.
+
+**Альтернативы** (отклонены):
+- ❌ Убрать slideIn animation целиком — потеря UX-плавности
+- ❌ Использовать `getBoundingClientRect()` (учитывает transform) — добавляет ms к перерасчёту, не решает race (element только что добавлен, размер ещё формируется)
+- ❌ Hardcode delay 300ms на main — magic number, ломается если CSS animation поменяют
+- ❌ Использовать transition height вместо transform translate — более тяжёлая правка, ломает дизайн slideIn
+
+**Принятое решение**: `slideInDone` флаг на element. `calcHeight()` пропускает elements где `slideInDone === 'false'`. После `animationend` event → ставим `'true'` + новый `reportHeight()`. Страховка setTimeout 600ms если `animationend` не сработает.
+
+**Почему так**:
+- Использует **event-driven** механизм (animationend) — авторитативное завершение, не угадывание времени
+- Страховка через timeout — защита от edge cases (cascade delay, animation overrides)
+- Минимальная инвазивность — добавил один dataset attribute + listener, ничего не сломал в существующей логике
+
+---
+
+**4. IPC race `raw=0 items=1` (v0.89.23, ловушка #23)**
+
+Корневая причина: `notif:resize` идёт через async IPC. `reportHeight` использует `setTimeout(fn, 60)` для коалесcинга. Если renderer прислал поздний `resize(0)` от прошлого dismiss ПОСЛЕ того как main process получил новое `notif:show` → main скрывает окно несмотря на наличие items.
+
+**Альтернативы** (отклонены):
+- ❌ Включить порядковые номера в IPC сообщения — большая правка, нужны на всех endpoints
+- ❌ Убрать setTimeout 60ms — может вызвать множественные resize за короткое время (caterpillar effect при rapid additions)
+- ❌ Делать reportHeight synchronously — может вернуть stale layout (нужен flush)
+
+**Принятое решение**: в main process проверять `if (raw=0 && itemsCount > 0) return`. Игнорировать stale `resize(0)` если main УЖЕ знает что есть item. Следующий reportHeight от renderer пришлёт правильное значение.
+
+**Почему так**:
+- Использует **авторитативное состояние** main process (`notifItems[]`) — единственная Source of Truth
+- Не требует синхронизации между renderer/main — main решает сам по своему state
+- Простая проверка, понятная любому коду reader
+
+---
+
+### Общие принципы из всей серии (правила на будущее)
+
+🟢 **Принцип #1**: для CSS-анимируемых свойств — `getComputedStyle()`, не `el.style`. Inline style не отражает CSS keyframes (MDN).
+
+🟢 **Принцип #2**: для определения visual position — `getBoundingClientRect()`, не `offsetHeight`. offsetHeight ignores transform.
+
+🟢 **Принцип #3**: для transparent BrowserWindow на Win11 — `setBounds(offscreen 1×1) + hide()`, БЕЗ `setIgnoreMouseEvents` (ломает app-region drag, ловушка #27).
+
+🟢 **Принцип #4**: при IPC + setTimeout-coalescing — main process не доверяет slепо последнему received значению. Проверять консистентность с авторитативным state.
+
+🟢 **Принцип #5**: при diagnostic logging — читать MDN для каждого свойства которое логируешь. Inline style ≠ computed style ≠ visual state.
+
+### Регрессионная защита (всегда в pre-commit)
+
+`src/__tests__/transparentWindowGuard.test.cjs` падает локально если:
+- сырой `notifWin.hide()` без safeHide
+- сырой `dockState.win.hide()` без safeHide
+- `setIgnoreMouseEvents(true)` вернётся в helper
+- safeHide не использует setBounds или offscreen координаты
+
+Это гарантирует что **ловушки #20 и #21 не повторятся** — физически невозможно сделать коммит с регрессией.
+
+### Серия закрыта — что осталось
+
+12 ловушек документировано в [`mistakes/notifications-ribbon.md`](mistakes/notifications-ribbon.md):
+- #1-#19: исторические (v0.89.6 → v0.89.18)
+- #20: ghost hit-test (v0.89.18)
+- #21: setIgnoreMouseEvents ломает клики (v0.89.22)
+- #22: пустая полоса от slideIn (v0.89.23)
+- #23: IPC race stale resize=0 (v0.89.23)
+
+Diagnostic logging (v0.89.20-21-23) пока **остаётся в коде** — на случай если новый баг проявится. Удалим в отдельном patch'е если 1-2 недели не будет повторений.
+
+**Last verified**: 18 мая 2026, v0.89.23, 608 vitest + 17 cjs + CI ubuntu+windows ✅.
+
+---
+
 ## ADR-NEW — `tg-media/` как LRU-кеш под управлением приложения (15 мая 2026, v0.89.17)
 
 **Статус**: ✅ Принято и реализовано

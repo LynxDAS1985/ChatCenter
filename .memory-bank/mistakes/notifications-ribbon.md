@@ -5,6 +5,30 @@
 
 ---
 
+## 📌 КАРТА СЕРИИ v0.89.18-v0.89.23 (18 мая 2026)
+
+За 3 дня — 4 связанных бага в notification BrowserWindow. Каждый раскрыл неожиданное поведение API стека (Electron / Win11 / MDN). Серия **закрыта** в v0.89.23.
+
+| # | Симптом | Версия фикса | Где в файле |
+|---|---|---|---|
+| **#20** | Ghost hit-test region после `.hide()` — невидимый блок ловит клики | v0.89.18 | строка 285 |
+| **#21** | `setIgnoreMouseEvents(true)` ломал клики — двойной клик нужен | v0.89.22 | строка 320 |
+| **#22** | «Пустая полоса» — окно расширилось, но element ещё за экраном | v0.89.23 | ниже после ловушки #5 |
+| **#23** | IPC race `raw=0 items=1` — окно скрылось ошибочно | v0.89.23 | ниже после ловушки #22 |
+
+**Архитектурное обоснование** (почему именно так решили) — в [`decisions.md`](../decisions.md) → «ADR — Notification BrowserWindow: итоги серии багов v0.89.15-v0.89.23».
+
+**Регрессионная защита**: `src/__tests__/transparentWindowGuard.test.cjs` — pre-commit hook падает при попытке вернуть антипаттерны #20/#21.
+
+**5 принципов из серии** (на будущее):
+1. CSS-анимируемые свойства — через `getComputedStyle()`, не `el.style`
+2. Visual position — через `getBoundingClientRect()`, не `offsetHeight`
+3. Transparent окно на Win11: `setBounds(offscreen 1×1) + hide()`, БЕЗ `setIgnoreMouseEvents`
+4. IPC + setTimeout-coalescing: main process проверяет авторитативный state
+5. Diagnostic logging для CSS — читать MDN для каждого свойства
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: Startup ribbon — уведомления при запуске для старых сообщений
 
 ### ❌ page-title-updated и unread-count не проверяют warm-up + 10 сек недостаточно

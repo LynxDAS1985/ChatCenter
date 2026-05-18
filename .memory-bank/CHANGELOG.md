@@ -11,6 +11,45 @@
 
 ---
 
+## 2026-05-18 — Серия notification BrowserWindow: фиксы + 4 ловушки + ADR (v0.89.18 → v0.89.23)
+
+**Что добавлено**:
+
+1. **`mistakes/notifications-ribbon.md`** — 4 новые ловушки:
+   - #20 (v0.89.18): Ghost hit-test region на Win11 после `.hide()` у transparent BrowserWindow
+   - #21 (v0.89.22): `setIgnoreMouseEvents(true)` нарушал ловушку #27 — ломал `-webkit-app-region: drag`
+   - #22 (v0.89.23): «Пустая полоса» — slideIn animation + offsetHeight (MDN-документация)
+   - #23 (v0.89.23): IPC race `raw=0 items=1` — stale `resize(0)` от прошлого dismiss
+   - **Карта серии в начале файла** — обзор #20-#23 с таблицей
+
+2. **`decisions.md`** — новый ADR «Notification BrowserWindow: итоги серии v0.89.15-v0.89.23»:
+   - Что произошло (4 бага за 3 дня)
+   - Какие альтернативы рассматривались и почему **отклонены**
+   - Почему принятое решение лучше альтернатив
+   - 5 принципов на будущее (computed style, getBoundingClientRect, transparent windows Win11, IPC race, diagnostic logging)
+   - Регрессионная защита через pre-commit hook
+
+3. **Новые тесты**:
+   - `src/__tests__/transparentWindowGuard.test.cjs` — 17 проверок в pre-commit (с регрессией против `setIgnoreMouseEvents(true)`)
+   - `src/__tests__/transparentWindowGuard.vitest.js` — 11 unit-тестов helper'а
+
+4. **Новый helper** `main/utils/transparentWindowGuard.js`:
+   - `safeHideTransparentWindow(win)` — `setBounds(offscreen 1×1) + hide()`
+   - НЕ использует `setIgnoreMouseEvents` (нарушает ловушку #27)
+
+5. **Diagnostic logging** в notification pipeline (notif-guard, notif-resize, notif-reposition, notif-renderer):
+   - DOM snapshot с `getComputedStyle().transform` (MDN: animation values только в computed style)
+   - reportHeight stages: start / mid-report / final-report
+
+**Зачем**: один компонент дал 4 разные ловушки за 3 дня. Без сводной ADR-документации следующая сессия повторит хотя бы одну из них. С документацией + регрессионным тестом — физически невозможно.
+
+**Auto-memory правила** (новые в `.claude/memory/`):
+- `feedback_close_documented_traps.md` — закрывать «потенциальные» ловушки кодом, не описанием
+- `feedback_read_traps_before_use.md` — перед использованием Electron API grep'ить `mistakes/*.md`
+- `feedback_computed_style_for_animations.md` — логировать CSS animations через `getComputedStyle`
+
+---
+
 ## 2026-05-15 — TDLib Stage 4: фикс progressive playback (v0.89.9)
 
 После v0.89.8 пользователь увидел чёрный экран и `0:00` при открытии видео. Корневая причина — нарушение TDLib контракта по [`video.supports_streaming`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1video.html).
