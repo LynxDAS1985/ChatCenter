@@ -64,10 +64,21 @@ export function initNotifHandlers(deps) {
     if (!notifWin || notifWin.isDestroyed()) return
     const rawHeight = height
     height = Math.round(height)
+    const itemsCount = getNotifItems().length
     // v0.89.20: diagnostic log — фиксируем КАЖДЫЙ resize event для расследования
     // mid-animation полоски (см. analysis в conversation 2026-05-18).
     console.log('[notif-resize] raw=' + rawHeight + ' rounded=' + height +
-      ' visible=' + notifWin.isVisible() + ' items=' + getNotifItems().length)
+      ' visible=' + notifWin.isVisible() + ' items=' + itemsCount)
+    // v0.89.23 (Баг #2): защита от запоздалого reportHeight(0) от dismiss
+    // предыдущего уведомления — если в main process УЖЕ есть новый item
+    // (items>0), но renderer прислал resize(0) (потому что setTimeout 60ms
+    // в reportHeight отработал ПОСЛЕ того как renderer обработал прошлый dismiss),
+    // то это stale event. Игнорируем — renderer следующим reportHeight пришлёт
+    // правильное значение для нового item. См. ловушка #23.
+    if (height <= 0 && itemsCount > 0) {
+      console.log('[notif-resize] IGNORE stale raw=0 (items=' + itemsCount + ' > 0)')
+      return
+    }
     if (height <= 0) {
       // v0.89.18: safeHideTransparentWindow — без этого на Win11 остаётся
       // невидимый hit-test регион + тонкая линия (см. ловушка v0.39.0 → v0.89.18

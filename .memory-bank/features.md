@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.22 (18 мая 2026)
+## Текущая версия: v0.89.23 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.22). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.23). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,86 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.23 — Два бага notification pipeline: «пустая полоса» + race `raw=0 items=1`
+
+**Контекст**: после v0.89.22 пользователь прислал скриншот в 12:12 — сверху видно Telegram уведомление «vevs.home», ниже **пустая полоса**. Логи v0.89.20-21 + DOM snapshots показали: items=2 в DOM, оба op=1 tf=none, но визуально один не виден.
+
+#### Два независимых бага, оба подтверждены документально по стеку
+
+**Баг #1 — «Пустая полоса»**: slideIn animation 300ms + offsetHeight включён в calcHeight → окно расширяется СРАЗУ, но новый element ещё за экраном (translateX анимируется).
+
+Подтверждение из MDN:
+- 📚 [HTMLElement.offsetHeight](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/offsetHeight): «measures layout position, not visual position. CSS transforms affect only visual rendering»
+- 📚 [Using CSS animations](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_animations/Using_CSS_animations): «Animated property values do NOT appear in `element.style` — only computed style»
+
+**Баг #2 — Race `raw=0 items=1`**: renderer прислал `notif:resize(0)` от прошлого dismiss ПОСЛЕ того как main process получил новое `notif:show` (items=1) → main скрывает окно ошибочно.
+
+Подтверждение из Electron docs:
+- 📚 [ipcRenderer.send](https://www.electronjs.org/docs/latest/api/ipc-renderer): «Send an **asynchronous** message to the main process»
+- setTimeout 60ms в `reportHeight` не гарантирует порядок относительно других IPC
+
+#### Решение Баг #1 — slideInDone флаг
+
+В [`main/notification.js`](../main/notification.js):
+
+```js
+// Перед appendChild:
+el.dataset.slideInDone = 'false'
+
+// Слушаем animationend для slideIn:
+el.addEventListener('animationend', (e) => {
+  if (e.animationName !== 'slideIn') return
+  el.dataset.slideInDone = 'true'
+  reportHeight()  // ← перепроверяем теперь когда element на месте
+}, { once: true })
+
+// Страховка 600ms на случай если animationend не сработает
+
+// В calcHeight():
+if (child.dataset.slideInDone === 'false') continue  // ← новое: пропускаем анимирующиеся
+```
+
+**Эффект**: `calcHeight` НЕ включает новый element пока он анимируется → main НЕ расширяет окно раньше времени → пользователь не видит пустоты.
+
+#### Решение Баг #2 — игнорировать stale `raw=0`
+
+В [`main/handlers/notifHandlers.js`](../main/handlers/notifHandlers.js):
+
+```js
+const itemsCount = getNotifItems().length
+if (height <= 0 && itemsCount > 0) {
+  console.log('[notif-resize] IGNORE stale raw=0 (items=' + itemsCount + ' > 0)')
+  return  // ← stale event от прошлого dismiss
+}
+```
+
+**Эффект**: если main знает что есть item, но renderer прислал `0` (запоздалый reportHeight) — игнорируем. Следующий reportHeight от renderer пришлёт правильное значение.
+
+#### Усиление диагностики
+
+DOM snapshot теперь логирует:
+- `inlineTf` (старый `tf`) — `el.style.transform` (inline)
+- `realTf` — `getComputedStyle(el).transform` (учитывает CSS animation!)
+- `slid` — флаг `slideInDone`
+
+Если баг #1 вернётся — лог сразу покажет реальный transform.
+
+#### Документация
+
+Обе ловушки записаны в [`mistakes/notifications-ribbon.md`](mistakes/notifications-ribbon.md):
+- Ловушка #22 — «Пустая полоса» (slideIn + offsetHeight)
+- Ловушка #23 — IPC race (stale resize=0)
+
+Каждая с MDN/Electron ссылками + правилом.
+
+#### Урок
+
+В v0.89.21 я добавил DOM snapshot, но логировал только `el.style.transform` — это inline style, **не** учитывает CSS animation. По MDN: animation values «only exist in computed style». Я не прочитал MDN при добавлении лога. Через 1 итерацию (v0.89.21 → v0.89.22) пользователь поймал баг через скриншот.
+
+**Правило (для auto-memory)**: при добавлении diagnostic log для CSS-анимируемых свойств — ВСЕГДА читать `getComputedStyle()`, не `el.style`.
 
 ---
 

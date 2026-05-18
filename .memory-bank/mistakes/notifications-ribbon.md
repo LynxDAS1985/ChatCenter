@@ -369,6 +369,79 @@ export function safeHideTransparentWindow(win) {
 - На Windows: мгновенное изменение, может мелькать
 - Решение: использовать CSS-анимацию ВНУТРИ окна, а `setBounds` вызывать по IPC `notif:resize` когда HTML сообщает нужную высоту
 
+**🔴 ЛОВУШКА #22 (v0.89.23): «Пустая полоса» — slideIn animation + setBounds на основе offsetHeight**
+
+**Симптом** (скриншот пользователя, 18 мая 2026 в 12:12): сверху видно нормальное Telegram уведомление «vevs.home», ниже — пустая полоса. Окно высоты 352px, но visually занято только верхней частью.
+
+**Корневая причина** — подтверждено MDN документацией:
+
+1. 📚 **`offsetHeight` НЕ зависит от `transform`** ([MDN HTMLElement.offsetHeight](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/offsetHeight)):
+   > «`offsetHeight` measures layout position, not visual position. CSS transforms affect only visual rendering without changing position in the document layout flow.»
+
+2. 📚 **CSS animation transform НЕ пишется в `el.style.transform`** ([MDN Using CSS animations](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_animations/Using_CSS_animations)):
+   > «Animated property values do NOT appear in `element.style` — they only exist in the computed style during animation.»
+
+**Цепочка**:
+```
+T=0       appendChild(el), CSS animation slideIn 300ms запускается
+          el.style.transform="" (inline) НО visually translateX(380px) → 0
+T=60ms    reportHeight() → calcHeight() = 352 (offsetHeight=158 уже!)
+          main: setBounds(352) — окно расширяется СРАЗУ
+T=60-300  visually: новый element ЕЩЁ за экраном (translateX анимируется)
+          В окне внизу — ПУСТОТА (где element будет, но ещё нет)
+T=300ms   animation done — пустоты больше нет
+```
+
+**Решение (v0.89.23)** — в [`main/notification.js`](../../main/notification.js):
+- Перед `appendChild` поставить `el.dataset.slideInDone = 'false'`
+- Слушать `animationend` для slideIn → ставить `'true'` + `reportHeight()`
+- В `calcHeight()` пропускать elements с `slideInDone === 'false'`
+- Страховка: setTimeout 600ms на случай если animationend не сработает
+
+Окно не расширяется пока новый element анимируется → нет пустоты.
+
+**Регрессионная защита**: DOM snapshot теперь логирует `getComputedStyle().transform` (видим РЕАЛЬНЫЙ transform во время animation) + флаг `slideInDone`.
+
+**Правило**: при CSS animation с transform — НЕ полагаться на `offsetHeight` для расчёта visual layout пока animation идёт. Использовать `getBoundingClientRect()` (учитывает transform) или явный флаг готовности.
+
+**🔴 ЛОВУШКА #23 (v0.89.23): IPC race — stale `resize(0)` от прошлого dismiss**
+
+**Симптом** (логи 12:12:03-04, 18 мая 2026):
+```
+12:12:02 safeHide called wasVisible=true h=136  ← старое уведомление закрылось
+12:12:03 [notif-resize] raw=0 visible=true items=1  ← items=1, но raw=0!
+12:12:03 safeHide called  ← окно ошибочно скрыто
+12:12:04 [notif-resize] raw=424 visible=false items=1  ← правильный resize поздно
+```
+
+Окно ошибочно скрывается несмотря на новое уведомление в `notifItems[]`.
+
+**Корневая причина** — подтверждено Electron docs:
+📚 [Electron ipcRenderer.send](https://www.electronjs.org/docs/latest/api/ipc-renderer):
+> «Send an **asynchronous** message to the main process via channel.»
+
+**Цепочка**:
+```
+T=0    User dismiss item id=76
+T=520  Renderer animation done, el.remove(), reportHeight() → setTimeout 60ms
+T=550  Main: новое уведомление пришло → notif:show → items.push (length=1)
+T=580  Renderer прислал resize(0) от прошлого reportHeight (stale)
+T=600  Main: height=0 → safeHide ❌ (items=1!)
+T=700  Renderer прислал resize(424) для нового item — окно уже скрыто
+```
+
+**Решение (v0.89.23)** — в [`main/handlers/notifHandlers.js`](../../main/handlers/notifHandlers.js):
+```js
+if (height <= 0 && itemsCount > 0) {
+  console.log('[notif-resize] IGNORE stale raw=0 (items=' + itemsCount + ' > 0)')
+  return
+}
+```
+
+Если main process знает что есть item (`notifItems.length > 0`), но renderer прислал `resize(0)` — это **запоздалый stale event**. Игнорируем — следующий reportHeight пришлёт правильное значение.
+
+**Правило**: при IPC + setTimeout-coalescing — main process **не должен слепо доверять** последнему received значению. Проверять консистентность с авторитативным состоянием (`notifItems[].length` в main).
+
 ---
 
 ## 🔴 isViewingThisChat подавляет ВСЕ уведомления на активной вкладке (v0.39.0)

@@ -15,6 +15,13 @@
     for (const child of container.children) {
       // Пропускаем элементы в процессе dismiss (opacity=0 или height=0)
       if (child.style.pointerEvents === 'none') continue
+      // v0.89.23 (Баг #1): пропускаем элементы в процессе slideIn animation.
+      // offsetHeight уже = финальное значение СРАЗУ после appendChild,
+      // НО visually element находится на transform: translateX(380px) до конца
+      // animation (300ms). Если включить его в height — main расширит окно,
+      // а element будет ещё за правым краем → видна «пустая полоса».
+      // См. ловушка #22 в mistakes/notifications-ribbon.md.
+      if (child.dataset.slideInDone === 'false') continue
       const ch = child.offsetHeight
       if (ch > 0) h += ch + 4
     }
@@ -27,16 +34,23 @@
       // v0.89.20: diagnostic — что ИМЕННО уходит в main для setBounds.
       try { window.notifApi.log('INFO', 'reportHeight→resize(' + h + ') items=' + items.size + ' containerChildren=' + container.children.length) } catch (_) {}
       // v0.89.21: ДЕТАЛЬНЫЙ снэпшот ВСЕХ DOM-элементов для диагностики stale state.
+      // v0.89.23: добавлен computed transform (CSS animation НЕ пишется в
+      // el.style.transform — только в getComputedStyle, см. MDN).
+      // Также добавлен slideInDone флаг — пропускается ли элемент в calcHeight.
       try {
         const details = []
         for (let i = 0; i < container.children.length; i++) {
           const c = container.children[i]
           const cs = c.style
+          let computedTf = 'none'
+          try { computedTf = window.getComputedStyle(c).transform || 'none' } catch (_) {}
           details.push('[' + i + ' id=' + (c.dataset?.id || '?') +
             ' h=' + c.offsetHeight +
             ' op=' + (cs.opacity || '1') +
             ' pe=' + (cs.pointerEvents || 'auto') +
-            ' tf=' + (cs.transform || 'none').replace(/\s+/g, '') + ']')
+            ' inlineTf=' + (cs.transform || 'none').replace(/\s+/g, '') +
+            ' realTf=' + computedTf.replace(/\s+/g, '').slice(0, 40) +
+            ' slid=' + (c.dataset?.slideInDone || '?') + ']')
         }
         if (details.length) window.notifApi.log('TRACE', 'DOM snapshot ' + details.join(' '))
       } catch (_) {}
@@ -534,6 +548,30 @@
     cascadeQueue++
     clearTimeout(cascadeTimer)
     cascadeTimer = setTimeout(() => { cascadeQueue = 0 }, 600)
+
+    // v0.89.23 (Баг #1): помечаем что element в процессе slideIn — calcHeight
+    // его НЕ учитывает пока CSS animation не завершится. Иначе окно расширится
+    // раньше чем element выехал в видимую зону (видна «пустая полоса»).
+    el.dataset.slideInDone = 'false'
+    const onSlideInEnd = (e) => {
+      // Только событие slideIn (не другие animations типа goChatPulse)
+      if (e.animationName !== 'slideIn') return
+      el.dataset.slideInDone = 'true'
+      el.removeEventListener('animationend', onSlideInEnd)
+      // Перепроверяем height — теперь element учитывается в calcHeight
+      reportHeight()
+    }
+    el.addEventListener('animationend', onSlideInEnd)
+    // Страховка на случай если animationend не сработает (cascade delay, error
+    // в keyframes, etc.) — таймаут 600ms (300ms animation + 5 каскадов × 100ms).
+    setTimeout(() => {
+      if (el.dataset.slideInDone === 'false') {
+        el.dataset.slideInDone = 'true'
+        el.removeEventListener('animationend', onSlideInEnd)
+        try { window.notifApi.log('WARN', 'slideIn animationend timeout fallback id=' + data.id) } catch (_) {}
+        reportHeight()
+      }
+    }, 600)
 
     container.appendChild(el)
 
