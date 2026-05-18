@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.17 (15 мая 2026)
+## Текущая версия: v0.89.18 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.17). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.18). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,103 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.18 — Ghost hit-test после `.hide()` у transparent окон (Windows 11)
+
+**Контекст**: пользователь сообщил с скриншотом — после показа уведомления на экране остаётся тонкая линия + невидимый прямоугольник, перехватывающий клики. Зона становится «некликабельной» — мешает работать.
+
+#### Корневая причина (по фактам)
+
+Известная Electron issue для BrowserWindow с `transparent: true` + `frame: false` на Windows 11: после `.hide()` окно становится невидимым, но **OS hit-test регион** в bounds окна **не освобождается**. Это видно как:
+1. Тонкая линия (остаточный кадр DWM frame buffer)
+2. Невидимый прямоугольник, перехватывающий клики
+
+Самое неприятное — **проблема уже была документирована в проекте** в [.memory-bank/mistakes/notifications-ribbon.md:280-283](mistakes/notifications-ribbon.md) ещё в v0.39.0:
+> `focusable: false` + `setIgnoreMouseEvents(false)` по умолчанию — окно кликабельно даже после hide
+
+Но **78 версий** проблема висела в коде без фикса. Описали — не закрыли.
+
+#### Что было затронуто
+
+5 мест вызова `.hide()` на transparent BrowserWindow:
+- [`notifHandlers.js:66`](../main/handlers/notifHandlers.js) — dismiss последнего уведомления
+- [`notificationManager.js:113`](../main/handlers/notificationManager.js) — `repositionNotifWin(count=0)`
+- [`dockPinHandlers.js:108`](../main/handlers/dockPinHandlers.js) — pin → dock
+- [`dockPinHandlers.js:267`](../main/handlers/dockPinHandlers.js) — `dock:close` IPC
+- [`dockPinState.js:162`](../main/handlers/dockPinState.js) — нет pins в dock
+
+Все 4 transparent окна затронуты: notifWin (370×N снизу справа), dockWin (пользовательская позиция), pin window (300×150 по центру).
+
+#### Решение — единый helper
+
+Новый модуль [`main/utils/transparentWindowGuard.js`](../main/utils/transparentWindowGuard.js):
+
+```js
+export function safeHideTransparentWindow(win) {
+  if (!win || win.isDestroyed()) return false
+  try {
+    win.setIgnoreMouseEvents(true)                                  // (1) клики насквозь
+    win.setBounds({ x: -30000, y: -30000, width: 1, height: 1 })   // (2) за экран в 1×1
+    win.hide()                                                      // (3) фактический hide
+    return true
+  } catch (_) { return false }
+}
+
+export function restoreMouseEvents(win) { ... }  // setIgnoreMouseEvents(false) перед show
+```
+
+**Логика трёх шагов**:
+1. **setIgnoreMouseEvents(true)** — если OS hit-region и «прилипнет», клики пройдут насквозь (главная защита)
+2. **setBounds offscreen 1×1** — даже если hit-region останется, он за экраном размером 1 пиксель, пользователь никогда его не «поймает»
+3. **hide()** — собственно скрываем окно
+
+Эта тройная защита покрывает все известные сценарии Windows 11 ghost hit-test.
+
+#### Регрессионная защита (главное)
+
+Новый тест [`src/__tests__/transparentWindowGuard.vitest.js`](../src/__tests__/transparentWindowGuard.vitest.js) — **18 тестов**:
+- 13 для `safeHideTransparentWindow`: порядок шагов, offscreen bounds, edge cases (null, destroyed, без методов), throw recovery
+- 5 для `restoreMouseEvents`: вызов с false, null-safe, destroyed-safe, throw-safe
+- **1 регрессионный тест** который **сканирует 4 production файла** и падает, если кто-то добавит сырой `.hide()` на `notifWin` или `dockState.win`:
+  ```js
+  expect(content).not.toMatch(/\bnotifWin\.hide\(/)
+  expect(content).not.toMatch(/\bdockState\.win\.hide\(/)
+  expect(content).toMatch(/safeHideTransparentWindow\(/)
+  ```
+  Это значит — **любая будущая регрессия поймается локально в pre-commit**, не дойдёт даже до CI.
+
+**Tests**: 597 → 615 (+18).
+
+#### Рекомендации на будущее (записаны в `mistakes/notifications-ribbon.md` ловушка #20)
+
+🟢 **Правило**: ЛЮБОЕ окно `transparent: true` на Windows 11 → `.hide()` ТОЛЬКО через `safeHideTransparentWindow()`. Никогда напрямую. Регрессионный тест ловит.
+
+🟢 **Расширение в будущем**: если появится новое transparent окно — добавить путь к нему в `FILES_TO_CHECK` массив в `transparentWindowGuard.vitest.js`. Регрессия будет автоматически защищать новое место.
+
+🟡 **Архитектурное улучшение** (TODO-6 в `code-todo.md`): можно создать обёртку `createTransparentWindow(opts)` которая возвращает BrowserWindow с уже подменёнными `.hide()` / `.show()` методами через Proxy. Тогда даже забыть импортировать helper нельзя. Но это инвазивно — оставим на потом.
+
+🔴 **Что НЕ делать**:
+- НЕ возвращаться к сырому `.hide()` «для оптимизации» — три extra вызова занимают <1 мс, цена незаметна
+- НЕ удалять регрессионный тест — это единственный страж
+- НЕ переименовывать `notifWin` или `dockState.win` без обновления списка запрещённых паттернов в тесте
+
+#### Эффект
+
+🟢 **Что починилось**:
+- После закрытия уведомления никакого следа на экране
+- Клики проходят везде где должны проходить
+- Поведение идентично macOS / Linux (где `transparent` без проблем)
+
+🟢 **Безопасность реализации**:
+- Все три шага в `try/catch` — `setIgnoreMouseEvents` / `setBounds` / `hide` могут падать на destroyed окне, мы это ловим
+- `null`/`undefined` окно → early return, не падает
+- Опциональная проверка `typeof win.foo === 'function'` для каждого вызова — устойчиво к нестандартным мокам в тестах
+
+🟢 **DRY**:
+- Один helper, 5 точек применения, импорт в 3 файла
+- Никакого копипаста setIgnoreMouseEvents+setBounds+hide
 
 ---
 

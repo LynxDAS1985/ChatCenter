@@ -282,6 +282,31 @@
 - НО окно всё равно кликабельно — `setIgnoreMouseEvents(false)` по умолчанию
 - Если поставить `setIgnoreMouseEvents(true)` — клики будут проходить СКВОЗЬ окно
 
+**🔴 РЕАЛИЗОВАНО в v0.89.18 — ловушка №20: ghost hit-test после `.hide()`**
+
+**Симптом** (пользователь, 18 мая 2026): после показа уведомления на экране остаётся тонкая линия + невидимый прямоугольник, перехватывающий клики. Видно на скриншоте — артефакт ~80px на правой стороне.
+
+**Корневая причина**: `transparent: true` + `frame: false` BrowserWindow на Windows 11 после `.hide()` оставляет OS hit-test регион в bounds окна. Это известная Electron issue ([electron#15947](https://github.com/electron/electron/issues/15947)). Пункт «2.» выше описывал риск, но не закрывал — **78 версий** проблема висела в коде.
+
+**Решение**: helper [`main/utils/transparentWindowGuard.js`](../../main/utils/transparentWindowGuard.js) с функцией `safeHideTransparentWindow(win)`:
+```js
+win.setIgnoreMouseEvents(true)           // клики проходят насквозь
+win.setBounds({ x: -30000, y: -30000, width: 1, height: 1 }) // увели за экран в 1×1
+win.hide()                               // фактический hide
+```
+И `restoreMouseEvents(win)` перед каждым `showInactive()`/`show()`.
+
+**5 мест применения** (все `.hide()` на transparent BrowserWindow):
+- `notifHandlers.js:66` — последнее уведомление dismiss
+- `notificationManager.js:113` — `repositionNotifWin(count=0)`
+- `dockPinHandlers.js:108` — pin → dock
+- `dockPinHandlers.js:267` — `dock:close` IPC
+- `dockPinState.js:162` — нет pins в dock
+
+**Регрессионная защита**: [`src/__tests__/transparentWindowGuard.vitest.js`](../../src/__tests__/transparentWindowGuard.vitest.js) содержит тест, который сканирует 4 файла и **падает**, если кто-то добавит сырой `.hide()` на transparent окно без helper'а. Любая будущая регрессия поймается в CI.
+
+**Правило на будущее**: ЛЮБОЕ окно `transparent: true` на Windows 11 → `.hide()` ТОЛЬКО через `safeHideTransparentWindow()`. Никогда напрямую. Pre-commit поймает.
+
 **3. Путь к notification.html в production:**
 - В dev: `path.join(__dirname, '../../main/notification.html')` (от out/main/)
 - В prod: зависит от структуры сборки — `notification.html` должен быть включён в `build.files` в package.json или скопирован при сборке

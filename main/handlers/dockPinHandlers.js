@@ -4,6 +4,7 @@
 import { ipcMain, BrowserWindow, screen } from 'electron'
 import { getPinHtmlPath, createPinBrowserWindow, startTimerForItem } from './dockPinUtils.js'
 import { createDockPinState, DOCK_PREVIEW_RESERVE } from './dockPinState.js'
+import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
 export function initDockPinSystem(deps) {
 const { getMainWindow, storage, isDev, __dirname, path, DEFAULT_MESSENGERS } = deps
@@ -105,7 +106,8 @@ ipcMain.on('pin:minimize-to-dock', (event) => {
     addToDock(pinId, item.data)
     savePinItems()
   }
-  win.hide()
+  // v0.89.18: safeHide — transparent pin window иначе оставляет ghost на Win11
+  safeHideTransparentWindow(win)
 })
 
 // ── Pin: запустить таймер ──
@@ -263,9 +265,8 @@ ipcMain.on('dock:ctx-menu-space', (_event, extraH) => {
 
 // ── Dock: закрыть/скрыть панель ──
 ipcMain.on('dock:close', () => {
-  if (dockState.win && !dockState.win.isDestroyed()) {
-    dockState.win.hide()
-  }
+  // v0.89.18: safeHide — иначе ghost hit-region на Win11
+  safeHideTransparentWindow(dockState.win)
 })
 
 // ── Dock: сохранить порядок табов ──

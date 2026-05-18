@@ -4,6 +4,7 @@
 // removePin, checkDockVisibility, findPinIdByWin, getShowDockEmpty, getDockCenterExpand.
 import { BrowserWindow, screen } from 'electron'
 import { getPinHtmlPath, getDockPreloadPath, getDockHtmlPath, createPinBrowserWindow, startTimerForItem } from './dockPinUtils.js'
+import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
 export const DOCK_PREVIEW_RESERVE = 420 // пространство для тултипа + контекстного меню
 
@@ -159,7 +160,8 @@ export function createDockPinState(deps) {
     }
     if (!hasDocked) {
       if (!getShowDockEmpty()) {
-        dockState.win.hide()
+        // v0.89.18: safeHide — иначе ghost hit-region на Win11
+        safeHideTransparentWindow(dockState.win)
       } else {
         dockState.win.webContents.send('dock:show-empty', true)
       }
