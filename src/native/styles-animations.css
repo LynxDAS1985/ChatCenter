@@ -125,13 +125,21 @@
 .native-forum-topic-row {
   border-radius: 10px;
   margin: 2px 6px;
-  transition: background-color 140ms ease, box-shadow 140ms ease;
+  transition: background-color 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  border-left: 3px solid transparent;
 }
 
+/* v0.89.28: усилен контраст active state + добавлена цветная левая полоса
+   (раньше 0.13 alpha почти не различалась на тёмном фоне). */
 .native-forum-topic-row--active {
-  background: rgba(255, 255, 255, 0.13) !important;
+  background: rgba(42, 171, 238, 0.18) !important;
+  border-left-color: var(--amoled-accent, #2AABEE) !important;
 }
 
 .native-forum-topic-row:hover {
-  background: rgba(255, 255, 255, 0.09) !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.native-forum-topic-row--active:hover {
+  background: rgba(42, 171, 238, 0.24) !important;
 }

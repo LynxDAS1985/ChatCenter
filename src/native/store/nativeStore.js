@@ -632,6 +632,17 @@ export default function useNativeStore() {
     if (!chatId || !topic) return { ok: false, error: 'Не выбрана тема', messages: [] }
     const key = topicMessageKey(chatId, topic)
     const unreadParams = unreadWindowRequestParams(topic.unreadCount, topic.readInboxMaxId, limit)
+    // v0.89.28: diagnostic — selectForumTopic был «черным ящиком», сообщения
+    // не приходили без следов в логах. См. ловушка #27.
+    try {
+      window.api?.send?.('app:log', { level: 'INFO',
+        message: '[topic-ui] selectForumTopic chatId=' + chatId +
+          ' topicId=' + (topic.topicId || topic.id) +
+          ' topMessageId=' + topic.topMessageId +
+          ' unreadCount=' + topic.unreadCount +
+          ' readInboxMaxId=' + topic.readInboxMaxId +
+          ' params=' + JSON.stringify(unreadParams) })
+    } catch (_) {}
     setState(s => ({
       ...s,
       activeChatId: chatId,
@@ -657,6 +668,14 @@ export default function useNativeStore() {
       aroundId: unreadParams.aroundId,
       addOffset: unreadParams.addOffset,
     })
+    // v0.89.28: diagnostic — результат tg:get-topic-messages
+    try {
+      window.api?.send?.('app:log', { level: 'INFO',
+        message: '[topic-ui] tg:get-topic-messages result ok=' + !!result?.ok +
+          ' messagesCount=' + (result?.messages?.length || 0) +
+          ' hasMore=' + !!result?.hasMore +
+          ' error=' + (result?.error || 'none') })
+    } catch (_) {}
     setState(s => {
       const loadingCopy = { ...s.loadingMessages }
       delete loadingCopy[key]

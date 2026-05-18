@@ -262,19 +262,29 @@ export function createTdlibBackend(opts = {}) {
       // v0.89.0 / Этап 3.10: TDLib getMessageThreadHistory для forum topics
       async getTopic(params) {
         const ctx = getClientForChat(manager, params?.chatId)
-        if (ctx.error) return { ...ctx.error, messages: [] }
+        if (ctx.error) {
+          console.log('[topic-be] getTopic ctx.error chatId=' + params?.chatId + ' err=' + JSON.stringify(ctx.error))
+          return { ...ctx.error, messages: [] }
+        }
         const topicId = Number(params?.topicId || params?.topMessageId)
-        if (!topicId) return { ok: false, error: 'no topicId', messages: [] }
+        if (!topicId) {
+          console.log('[topic-be] no topicId — params=' + JSON.stringify(params))
+          return { ok: false, error: 'no topicId', messages: [] }
+        }
         const limit = Number(params?.limit) || 50
+        const fromMessageId = Number(params?.aroundId || params?.offsetId || 0)
+        const offset = Number(params?.addOffset || 0)
+        console.log('[topic-be] getTopic chatId=' + params.chatId + ' raw=' + ctx.rawId + ' topicId=' + topicId + ' from_message_id=' + fromMessageId + ' offset=' + offset + ' limit=' + limit)
         try {
           const result = await ctx.client.invoke({
             '@type': 'getMessageThreadHistory',
             chat_id: ctx.rawId,
             message_id: topicId,
-            from_message_id: Number(params?.aroundId || params?.offsetId || 0),
-            offset: Number(params?.addOffset || 0),
+            from_message_id: fromMessageId,
+            offset: offset,
             limit,
           })
+          console.log('[topic-be] invoke result messagesCount=' + (result?.messages?.length || 0))
           const extras = makeExtras(manager, ctx.accountId)
           const messages = (result?.messages || []).map((m) => {
             const senderId = m.sender_id
@@ -286,6 +296,7 @@ export function createTdlibBackend(opts = {}) {
           }).filter(Boolean).reverse()
           return { ok: true, messages, hasMore: messages.length >= limit }
         } catch (e) {
+          console.log('[topic-be] invoke ERROR err=' + (e?.message || String(e)))
           return { ok: false, error: e?.message || String(e), messages: [] }
         }
       },
