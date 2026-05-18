@@ -2,7 +2,7 @@
 // Manages: notifWin, notifItems, dedup, icon cache, custom notification display
 
 import { Notification } from 'electron'
-import { safeHideTransparentWindow, restoreMouseEvents } from '../utils/transparentWindowGuard.js'
+import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
 let notifWin = null
 let notifItems = [] // [{id, messengerId, ...}]
@@ -122,7 +122,6 @@ function repositionNotifWin() {
   const height = count * 76 + (count - 1) * 4 + 8
   // Позиция: внизу справа, с отступом 10px от края
   const y = workArea.y + workArea.height - height - 10
-  restoreMouseEvents(notifWin)
   notifWin.setBounds({
     x: workArea.x + workArea.width - 380,
     y,
@@ -207,8 +206,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
 
   // Показываем окно ДО отправки данных — иначе rAF/setTimeout может не сработать в hidden window
   if (!notifWin.isVisible()) {
-    // v0.89.18: restoreMouseEvents — после safeHide клики были off, возвращаем
-    restoreMouseEvents(notifWin)
+    // v0.89.22: restoreMouseEvents удалён вместе с setIgnoreMouseEvents (ловушка #27)
     // Временно показываем с минимальной высотой, HTML скорректирует через notif:resize
     const { workArea } = screen.getPrimaryDisplay()
     notifWin.setBounds({ x: workArea.x + workArea.width - 380, y: workArea.y + workArea.height - 100, width: 370, height: 90 })

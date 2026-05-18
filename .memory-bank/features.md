@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.21 (18 мая 2026)
+## Текущая версия: v0.89.22 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.21). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.22). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,125 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.22 — УДАЛЁН `setIgnoreMouseEvents` из safeHide — фикс «двойных кликов»
+
+**Контекст**: пользователь со скриншотом Task Manager — нажатия мыши тормозят / иногда не срабатывают с первого раза. Windows работает нормально, CPU 3.1%, память 1.65 ГБ — **не performance проблема**.
+
+#### Корневая причина — повторил ловушку #27 через 18 версий
+
+В v0.89.18 я добавил `setIgnoreMouseEvents(true)` в `safeHideTransparentWindow()` как «тройную защиту» от ghost hit-test региона. Но **нарушил ловушку #27 (v0.71.7)**:
+
+📂 [`mistakes/webview-stack-grouping.md`](mistakes/webview-stack-grouping.md) ловушка #27:
+> `setIgnoreMouseEvents(true)` БЛОКИРУЕТ `-webkit-app-region: drag`!
+> **ПРАВИЛО**: Для transparent frameless окон НЕ использовать `setIgnoreMouseEvents`.
+
+📂 [Electron docs](https://www.electronjs.org/docs/latest/api/browser-window#winsetignoremouseeventsignore-options):
+> The state needs to be reset before subsequent calls. **The window must call this with `ignore=false` to receive mouse events.**
+
+📂 [`main/pin-dock.preload.cjs:37`](main/preloads/pin-dock.preload.cjs):
+> `// v0.71.4: УДАЛЕНО — setIgnoreMouseEvents ломает -webkit-app-region: drag (ловушка 27)`
+
+#### Что я не учёл
+
+В 5 точках `.show()` для pin/dock окон **не было парных `restoreMouseEvents(win)`**:
+- `dockPinHandlers.js:75` — pin window show
+- `dockPinHandlers.js:155` — item.win.show
+- `dockPinHandlers.js:237` — dockState.win.showInactive
+- `dockPinState.js:138` — dock.showInactive
+- `dockPinUtils.js:86` — item.win.show
+
+grep вернул **0 вызовов** restoreMouseEvents в этих файлах. → `setIgnoreMouseEvents` state оставался `true` после show → клики проходили насквозь видимых окон → пользователь видел «двойной клик».
+
+#### Решение
+
+**УДАЛЁН `setIgnoreMouseEvents` целиком**. Также удалена функция `restoreMouseEvents` (больше не нужна).
+
+📂 [`main/utils/transparentWindowGuard.js`](../main/utils/transparentWindowGuard.js):
+```js
+// БЫЛО (v0.89.18 → v0.89.21):
+export function safeHideTransparentWindow(win) {
+  win.setIgnoreMouseEvents(true)   // ← УДАЛЕНО (ловушка #27)
+  win.setBounds({x:-30000, y:-30000, width:1, height:1})
+  win.hide()
+}
+export function restoreMouseEvents(win) { ... }  // ← УДАЛЕНА
+
+// СТАЛО (v0.89.22):
+export function safeHideTransparentWindow(win) {
+  win.setBounds({x:-30000, y:-30000, width:1, height:1})
+  win.hide()
+}
+```
+
+#### Почему двух шагов достаточно
+
+- **Скрытое окно не получает hit-test** (`.hide()` убирает из таскбара и hit-test pipeline)
+- **Даже visible — за пределами всех мониторов** (`-30000, -30000` — Win11 поддерживает до ~32k)
+- **Размер 1×1 — пользователь никогда не наведёт мышь именно на 1 пиксель**
+
+`setIgnoreMouseEvents` был **третьим избыточным слоем**, который ломал ловушку #27. Удаление не ослабляет защиту.
+
+#### Регрессионная защита (ГЛАВНОЕ — чтобы не повторилось через 18 версий)
+
+📂 [`src/__tests__/transparentWindowGuard.test.cjs`](../src/__tests__/transparentWindowGuard.test.cjs) — новый assertion (всегда в pre-commit):
+```js
+assert(!/setIgnoreMouseEvents\s*\(\s*true\s*\)/.test(helper),
+  'setIgnoreMouseEvents(true) ВЕРНУЛИ в helper! Это ломает -webkit-app-region: drag\n' +
+  '   у pin/dock окон (ловушка #27). См. mistakes/notifications-ribbon.md #21.')
+```
+
+Любая будущая попытка вернуть `setIgnoreMouseEvents(true)` поймается **локально в pre-commit**.
+
+📂 vitest добавлен тест:
+```js
+it('НЕ вызывает setIgnoreMouseEvents (ловушка #27 — блокирует drag)', () => {
+  ...
+  expect(setIgnoreMouseEvents).not.toHaveBeenCalled()
+})
+```
+
+#### Очистка
+
+- Удалена функция `restoreMouseEvents` из helper'а
+- Удалены импорты в `notifHandlers.js` и `notificationManager.js`
+- Удалены 5 вызовов `restoreMouseEvents()`
+- 18 vitest тестов → 11 (убраны тесты restoreMouseEvents + assertions setIgnoreMouseEvents)
+- 17 cjs assertion → 17 (одна перевёрнута: «НЕ должно быть setIgnoreMouseEvents(true)»)
+
+#### Документация — ловушка #21
+
+В [`mistakes/notifications-ribbon.md`](mistakes/notifications-ribbon.md) — полная запись с:
+- Симптомом (двойной клик)
+- Корневой причиной (повторил ловушку #27)
+- Цепочкой кода
+- Решением + регрессионной защитой
+- Правилом на будущее: «если в `mistakes/*.md` есть ловушка про API X — прочитать ПЕРЕД использованием»
+
+#### Эффект
+
+🟢 **Что починилось**:
+- Клики через pin/dock окна работают с первого раза
+- `-webkit-app-region: drag` для перетаскивания dock работает
+- Ловушка #27 соблюдена
+
+🟢 **Что НЕ сломалось**:
+- Защита от ghost hit-test региона **сохранена** (offscreen + hide)
+- Все 597 vitest проходят
+- 32 cjs-теста + новый assertion в pre-commit
+
+⭐⭐⭐⭐⭐ Уверенность: высокая. Подтверждено:
+- Ловушка #27 в нашем проекте
+- Electron official docs
+- 0 вызовов restoreMouseEvents в pin/dock (grep)
+- CPU нормальный (опровергает perf-гипотезу)
+- Скриншот Task Manager показал что причина не CPU
+
+#### Урок (в auto-memory)
+
+«Если в `mistakes/*.md` есть ловушка про API — **прочитать ПЕРЕД использованием**, особенно если правишь похожий код». В v0.89.18 я не прочитал `webview-stack-grouping.md` где была ловушка #27. Через 4 итерации (v0.89.18 → 19 → 20 → 21) пользователь поймал баг через Task Manager.
 
 ---
 

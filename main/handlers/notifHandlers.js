@@ -1,7 +1,7 @@
 // v0.82.4: Notification ribbon IPC handlers — вынесены из main.js
 // Обработка кликов, mark-read, dismiss, resize для Messenger Ribbon
 import { ipcMain, screen } from 'electron'
-import { safeHideTransparentWindow, restoreMouseEvents } from '../utils/transparentWindowGuard.js'
+import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
 export function initNotifHandlers(deps) {
   // deps передаются из main.js — мутабельные ссылки
@@ -80,14 +80,10 @@ export function initNotifHandlers(deps) {
     const x = workArea.x + workArea.width - 380
     const y = workArea.y + workArea.height - height - 10
     if (lastNotifBounds && lastNotifBounds.x === x && lastNotifBounds.y === y && lastNotifBounds.h === height) {
-      if (!notifWin.isVisible()) {
-        restoreMouseEvents(notifWin)
-        notifWin.showInactive()
-      }
+      if (!notifWin.isVisible()) notifWin.showInactive()
       return
     }
     lastNotifBounds = { x, y, h: height }
-    restoreMouseEvents(notifWin)
     notifWin.setBounds({ x, y, width: 370, height })
     if (!notifWin.isVisible()) notifWin.showInactive()
   })

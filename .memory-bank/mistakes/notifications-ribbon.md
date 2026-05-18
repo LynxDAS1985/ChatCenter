@@ -307,6 +307,53 @@ win.hide()                               // фактический hide
 
 **Правило на будущее**: ЛЮБОЕ окно `transparent: true` на Windows 11 → `.hide()` ТОЛЬКО через `safeHideTransparentWindow()`. Никогда напрямую. Pre-commit поймает.
 
+**🔴 ЛОВУШКА #21 (v0.89.22): `setIgnoreMouseEvents` в safeHide ломал клики**
+
+**Симптом** (пользователь со скриншотом Task Manager, 18 мая 2026): нажатия мыши тормозят / иногда не срабатывают с первого раза. Windows работает нормально, CPU нагрузка 3.1% — **не perf проблема**, а проблема **событий мыши**.
+
+**Корневая причина** — повторил ловушку #27 v0.71.7 через 18 версий:
+
+```js
+// v0.89.18 — мой helper в transparentWindowGuard.js:
+export function safeHideTransparentWindow(win) {
+  win.setIgnoreMouseEvents(true)            // ← НАРУШЕНИЕ #27
+  win.setBounds({x:-30000, ..., width:1, height:1})
+  win.hide()
+}
+```
+
+Что я не учёл:
+1. **Ловушка #27 (v0.71.7)**: `setIgnoreMouseEvents` блокирует `-webkit-app-region: drag` у pin/dock окон. `pin-dock.preload.cjs:37` прямо записывает: «УДАЛЕНО — setIgnoreMouseEvents ломает -webkit-app-region: drag».
+2. **Electron official docs**: «state persists until explicitly changed» — state `true` остаётся пока явно не вернуть `false`.
+3. **В 5 точках `.show()` для pin/dock** не было парных `restoreMouseEvents(win)` (grep подтвердил 0 вызовов в dockPin*).
+
+**Цепочка симптома**:
+```
+1. Pin window visible (нормальная работа)
+2. User → отправить в dock → safeHide → setIgnoreMouseEvents(true) + offscreen + hide
+3. User → открыть pin обратно → win.show()
+   ↑ НЕТ парного restoreMouseEvents → setIgnoreMouseEvents всё ещё true
+4. Pin visible, но клики ПРОХОДЯТ НАСКВОЗЬ
+5. User кликает → click сквозь pin → попадает в окно ПОД ним
+6. Пользователь видит «нажатие не сработало», кликает второй раз
+```
+
+**Решение (v0.89.22)**: УДАЛЁН `setIgnoreMouseEvents` из `safeHide` целиком. Также удалена функция `restoreMouseEvents` (больше не нужна). Защита от ghost-региона полностью покрывается через:
+- `setBounds({x:-30000, y:-30000, width:1, height:1})` — окно физически **за всеми мониторами**, размер **1 пиксель**
+- `hide()` — окно скрыто
+
+Скрытое окно не получает hit-test. Даже visible — за пределами всех мониторов. Размер 1×1 — пользователь никогда не «наведёт мышь именно на этот пиксель». Третий слой защиты (setIgnoreMouseEvents) был **избыточным** и ломал клики.
+
+**Регрессионная защита**:
+- [`src/__tests__/transparentWindowGuard.test.cjs`](../../src/__tests__/transparentWindowGuard.test.cjs) теперь **падает** если кто-то вернёт `setIgnoreMouseEvents(true)` в helper:
+  ```js
+  assert(!/setIgnoreMouseEvents\s*\(\s*true\s*\)/.test(helper),
+    'setIgnoreMouseEvents(true) ВЕРНУЛИ в helper! Это ломает...')
+  ```
+- vitest: новый assertion `НЕ вызывает setIgnoreMouseEvents (ловушка #27 — блокирует drag)`
+
+**Правило на будущее**: если в `mistakes/*.md` есть ловушка про API X — **прочитать её перед использованием X**, особенно если правишь похожий код. У меня в v0.89.18 на втором dashe сессии не дошли руки прочитать `webview-stack-grouping.md` где была ловушка #27. Через 4 итерации (v0.89.18 → v0.89.19 → v0.89.20 → v0.89.21) пользователь поймал баг через скриншот Task Manager.
+
 **3. Путь к notification.html в production:**
 - В dev: `path.join(__dirname, '../../main/notification.html')` (от out/main/)
 - В prod: зависит от структуры сборки — `notification.html` должен быть включён в `build.files` в package.json или скопирован при сборке

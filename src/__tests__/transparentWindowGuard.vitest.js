@@ -1,15 +1,15 @@
-// v0.89.18: тесты safeHideTransparentWindow + restoreMouseEvents.
+// v0.89.18: тесты safeHideTransparentWindow.
+// v0.89.22: УДАЛЕНЫ тесты restoreMouseEvents — функция удалена (см. шапку
+// transparentWindowGuard.js, ловушка #21 в mistakes/notifications-ribbon.md).
 //
-// Зачем эти helper'ы: BrowserWindow с `transparent: true` + `frame: false` на
+// Зачем safeHide: BrowserWindow с `transparent: true` + `frame: false` на
 // Windows 11 после `.hide()` может оставить невидимый hit-test регион,
-// перехватывающий клики. Решение — `setIgnoreMouseEvents(true)` +
-// уведение за экран в 1×1 ПЕРЕД `.hide()`. См. шапку модуля
-// `main/utils/transparentWindowGuard.js`.
+// перехватывающий клики. Решение — увод за экран в 1×1 размер ПЕРЕД `.hide()`.
+// БЕЗ setIgnoreMouseEvents (нарушает ловушку #27 — block drag region).
 
 import { describe, it, expect, vi } from 'vitest'
 import {
   safeHideTransparentWindow,
-  restoreMouseEvents,
   __test,
 } from '../../main/utils/transparentWindowGuard.js'
 
@@ -17,17 +17,15 @@ import {
 function makeMockWindow({ destroyed = false } = {}) {
   return {
     isDestroyed: vi.fn(() => destroyed),
-    setIgnoreMouseEvents: vi.fn(),
     setBounds: vi.fn(),
     hide: vi.fn(),
   }
 }
 
 describe('safeHideTransparentWindow', () => {
-  it('вызывает три шага в правильном порядке: setIgnoreMouseEvents(true) → setBounds(offscreen) → hide()', () => {
+  it('вызывает два шага в правильном порядке: setBounds(offscreen) → hide()', () => {
     const win = makeMockWindow()
     const calls = []
-    win.setIgnoreMouseEvents.mockImplementation((v) => calls.push(['setIgnoreMouseEvents', v]))
     win.setBounds.mockImplementation((b) => calls.push(['setBounds', b]))
     win.hide.mockImplementation(() => calls.push(['hide']))
 
@@ -35,10 +33,23 @@ describe('safeHideTransparentWindow', () => {
 
     expect(result).toBe(true)
     expect(calls).toEqual([
-      ['setIgnoreMouseEvents', true],
       ['setBounds', __test.OFFSCREEN_BOUNDS],
       ['hide'],
     ])
+  })
+
+  it('НЕ вызывает setIgnoreMouseEvents (ловушка #27 — блокирует drag)', () => {
+    // Регрессия: setIgnoreMouseEvents в v0.89.18 ломал pin/dock drag.
+    // В v0.89.22 удалён. Если кто-то вернёт — тест упадёт.
+    const setIgnoreMouseEvents = vi.fn()
+    const win = {
+      isDestroyed: vi.fn(() => false),
+      setIgnoreMouseEvents,
+      setBounds: vi.fn(),
+      hide: vi.fn(),
+    }
+    safeHideTransparentWindow(win)
+    expect(setIgnoreMouseEvents).not.toHaveBeenCalled()
   })
 
   it('offscreen bounds — за пределами экрана и размер 1×1', () => {
@@ -56,24 +67,14 @@ describe('safeHideTransparentWindow', () => {
   it('isDestroyed=true → false, ничего не вызывает', () => {
     const win = makeMockWindow({ destroyed: true })
     expect(safeHideTransparentWindow(win)).toBe(false)
-    expect(win.setIgnoreMouseEvents).not.toHaveBeenCalled()
     expect(win.setBounds).not.toHaveBeenCalled()
     expect(win.hide).not.toHaveBeenCalled()
   })
 
-  it('окно без setIgnoreMouseEvents (нестандартное) — продолжает работу', () => {
-    const win = makeMockWindow()
-    delete win.setIgnoreMouseEvents
-    expect(safeHideTransparentWindow(win)).toBe(true)
-    expect(win.setBounds).toHaveBeenCalled()
-    expect(win.hide).toHaveBeenCalled()
-  })
-
-  it('окно без setBounds — продолжает работу', () => {
+  it('окно без setBounds — продолжает работу (hide всё равно вызывается)', () => {
     const win = makeMockWindow()
     delete win.setBounds
     expect(safeHideTransparentWindow(win)).toBe(true)
-    expect(win.setIgnoreMouseEvents).toHaveBeenCalledWith(true)
     expect(win.hide).toHaveBeenCalled()
   })
 
@@ -84,7 +85,7 @@ describe('safeHideTransparentWindow', () => {
   })
 
   it('окно без isDestroyed — работает (некоторые тесты передают чистый mock)', () => {
-    const win = { setIgnoreMouseEvents: vi.fn(), setBounds: vi.fn(), hide: vi.fn() }
+    const win = { setBounds: vi.fn(), hide: vi.fn() }
     expect(safeHideTransparentWindow(win)).toBe(true)
     expect(win.hide).toHaveBeenCalled()
   })
@@ -101,12 +102,6 @@ describe('safeHideTransparentWindow', () => {
     expect(safeHideTransparentWindow(win)).toBe(false)
   })
 
-  it('setIgnoreMouseEvents кидает — возвращает false, не падает', () => {
-    const win = makeMockWindow()
-    win.setIgnoreMouseEvents.mockImplementation(() => { throw new Error('boom') })
-    expect(safeHideTransparentWindow(win)).toBe(false)
-  })
-
   it('isDestroyed() кидает — возвращает false, не падает', () => {
     const win = makeMockWindow()
     win.isDestroyed.mockImplementation(() => { throw new Error('boom') })
@@ -114,37 +109,6 @@ describe('safeHideTransparentWindow', () => {
   })
 })
 
-describe('restoreMouseEvents', () => {
-  it('вызывает setIgnoreMouseEvents(false)', () => {
-    const win = makeMockWindow()
-    restoreMouseEvents(win)
-    expect(win.setIgnoreMouseEvents).toHaveBeenCalledWith(false)
-  })
-
-  it('null/undefined → не падает', () => {
-    expect(() => restoreMouseEvents(null)).not.toThrow()
-    expect(() => restoreMouseEvents(undefined)).not.toThrow()
-  })
-
-  it('isDestroyed=true → ничего не вызывает', () => {
-    const win = makeMockWindow({ destroyed: true })
-    restoreMouseEvents(win)
-    expect(win.setIgnoreMouseEvents).not.toHaveBeenCalled()
-  })
-
-  it('окно без setIgnoreMouseEvents — не падает', () => {
-    const win = makeMockWindow()
-    delete win.setIgnoreMouseEvents
-    expect(() => restoreMouseEvents(win)).not.toThrow()
-  })
-
-  it('setIgnoreMouseEvents кидает — не падает', () => {
-    const win = makeMockWindow()
-    win.setIgnoreMouseEvents.mockImplementation(() => { throw new Error('boom') })
-    expect(() => restoreMouseEvents(win)).not.toThrow()
-  })
-})
-
-// v0.89.19: регрессия вынесена в src/__tests__/transparentWindowGuard.test.cjs
+// v0.89.19: регрессия sweep вынесена в src/__tests__/transparentWindowGuard.test.cjs
 // — этот .cjs тест ВСЕГДА запускается в pre-commit (vitest триггерится только
 // на .jsx/.vitest.* изменениях, .js файлы проходили мимо).
