@@ -660,10 +660,15 @@ export default function useNativeStore() {
       },
       loadingMessages: { ...s.loadingMessages, [key]: true },
     }))
+    // v0.89.30 (ловушка #29): threadMessageId — РЕАЛЬНЫЙ message_thread_id (int53)
+    // для TDLib getMessageThreadHistory. isGeneral — флаг для general topic
+    // (использует getChatHistory вместо getMessageThreadHistory).
     const result = await window.api?.invoke('tg:get-topic-messages', {
       chatId,
       topicId: topic.topicId || topic.id,
       topMessageId: topic.topMessageId,
+      threadMessageId: topic.threadMessageId || null,
+      isGeneral: !!topic.isGeneral,
       limit: unreadParams.limit,
       aroundId: unreadParams.aroundId,
       addOffset: unreadParams.addOffset,
@@ -721,10 +726,13 @@ export default function useNativeStore() {
     loadingNewerRef.current.set(throttleKey, now)
     logNativeScroll('store-load-newer', { chatId, afterId, limit, key: throttleKey, topic: !!activeTopic })
     if (activeTopic) {
+      // v0.89.30 (ловушка #29): передаём threadMessageId + isGeneral
       const result = await window.api?.invoke('tg:get-topic-messages', {
         chatId,
         topicId: activeTopic.topicId || activeTopic.id,
         topMessageId: activeTopic.topMessageId,
+        threadMessageId: activeTopic.threadMessageId || null,
+        isGeneral: !!activeTopic.isGeneral,
         limit,
         afterId: Number(afterId),
       })
@@ -739,10 +747,13 @@ export default function useNativeStore() {
     const activeTopic = stateRef.current.activeForumTopic?.[chatId]
     if (activeTopic) {
       const key = topicMessageKey(chatId, activeTopic)
+      // v0.89.30 (ловушка #29): передаём threadMessageId + isGeneral
       const result = await window.api?.invoke('tg:get-topic-messages', {
         chatId,
         topicId: activeTopic.topicId || activeTopic.id,
         topMessageId: activeTopic.topMessageId,
+        threadMessageId: activeTopic.threadMessageId || null,
+        isGeneral: !!activeTopic.isGeneral,
         limit,
         offsetId: Number(beforeId),
       })

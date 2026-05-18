@@ -259,38 +259,28 @@ export function createTdlibBackend(opts = {}) {
           extras: makeExtras(manager, ctx.accountId),
         })
       },
-      // v0.89.0 / Этап 3.10: TDLib getMessageThreadHistory для forum topics
+      // v0.89.30 (ловушка #29): isGeneral → getChatHistory, иначе
+      // getMessageThreadHistory(threadMessageId) — РЕАЛЬНЫЙ message_thread_id (int53).
       async getTopic(params) {
         const ctx = getClientForChat(manager, params?.chatId)
-        if (ctx.error) {
-          console.log('[topic-be] getTopic ctx.error chatId=' + params?.chatId + ' err=' + JSON.stringify(ctx.error))
-          return { ...ctx.error, messages: [] }
-        }
-        // v0.89.29 (ловушка #28): topicId может быть 0 для general topic.
-        // `||` превращал 0 в undefined → ошибка no topicId. Используем `??`.
-        const rawTopicId = params?.topicId ?? params?.topMessageId
-        if (rawTopicId === undefined || rawTopicId === null || rawTopicId === '') {
-          console.log('[topic-be] no topicId — params=' + JSON.stringify(params))
-          return { ok: false, error: 'no topicId', messages: [] }
-        }
-        const topicId = Number(rawTopicId)
-        if (Number.isNaN(topicId)) {
-          console.log('[topic-be] invalid topicId — params=' + JSON.stringify(params))
-          return { ok: false, error: 'invalid topicId', messages: [] }
-        }
+        if (ctx.error) return { ...ctx.error, messages: [] }
         const limit = Number(params?.limit) || 50
         const fromMessageId = Number(params?.aroundId || params?.offsetId || 0)
         const offset = Number(params?.addOffset || 0)
-        console.log('[topic-be] getTopic chatId=' + params.chatId + ' raw=' + ctx.rawId + ' topicId=' + topicId + ' from_message_id=' + fromMessageId + ' offset=' + offset + ' limit=' + limit)
+        const isGeneral = !!params?.isGeneral
+        console.log('[topic-be] getTopic chatId=' + params.chatId + ' isGeneral=' + isGeneral + ' threadMsgId=' + params?.threadMessageId + ' from=' + fromMessageId + ' offset=' + offset + ' limit=' + limit)
         try {
-          const result = await ctx.client.invoke({
-            '@type': 'getMessageThreadHistory',
-            chat_id: ctx.rawId,
-            message_id: topicId,
-            from_message_id: fromMessageId,
-            offset: offset,
-            limit,
-          })
+          let result
+          if (isGeneral) {
+            result = await ctx.client.invoke({ '@type': 'getChatHistory', chat_id: ctx.rawId, from_message_id: fromMessageId, offset, limit, only_local: false })
+          } else {
+            const threadMessageId = params?.threadMessageId ? Number(params.threadMessageId) : Number(params?.topicId || params?.topMessageId)
+            if (!threadMessageId || Number.isNaN(threadMessageId)) {
+              console.log('[topic-be] no threadMessageId — empty topic')
+              return { ok: true, messages: [], hasMore: false }
+            }
+            result = await ctx.client.invoke({ '@type': 'getMessageThreadHistory', chat_id: ctx.rawId, message_id: threadMessageId, from_message_id: fromMessageId, offset, limit })
+          }
           console.log('[topic-be] invoke result messagesCount=' + (result?.messages?.length || 0))
           const extras = makeExtras(manager, ctx.accountId)
           const messages = (result?.messages || []).map((m) => {
@@ -496,17 +486,22 @@ export function createTdlibBackend(opts = {}) {
             console.log('[forum-be] sample topic[0] info=' + JSON.stringify(result.topics[0].info) + ' unread=' + result.topics[0].unread_count)
           }
           const topics = (result?.topics || []).map((t) => {
-            // v0.89.29 (ловушка #28): TDLib 1.8+ переименовал поле:
-            //   - СТАРОЕ: t.info.message_thread_id (int53)
-            //   - НОВОЕ: t.info.forum_topic_id (int32) + t.info.is_general (Bool)
-            // См. https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1forum_topic_info.html
-            // Используем nullish coalescing (??) — 0 валидное значение для general topic.
-            const threadId = t.info?.forum_topic_id ?? t.info?.message_thread_id
-            const idStr = threadId !== null && threadId !== undefined ? String(threadId) : ''
+            // v0.89.29 (ловушка #28): forum_topic_id — это UI-id (int32),
+            // v0.89.30 (ловушка #29): message_thread_id — это РАЗНОЕ поле,
+            // int53, реальный id root-сообщения thread'а. Нужен для
+            // getMessageThreadHistory.
+            // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1forum_topic_info.html
+            // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message.html
+            const forumTopicId = t.info?.forum_topic_id ?? t.info?.message_thread_id
+            const idStr = forumTopicId !== null && forumTopicId !== undefined ? String(forumTopicId) : ''
+            // threadMessageId: для getMessageThreadHistory. Берём из last_message.
+            // Может быть null для пустых тем — обработка в backend.getTopic.
+            const threadMsgId = t.last_message?.message_thread_id ?? t.last_message?.id ?? null
             return {
               id: idStr,
               topicId: idStr,
               topMessageId: idStr,
+              threadMessageId: threadMsgId !== null ? String(threadMsgId) : null,
               title: t.info?.name || '',
               isGeneral: !!t.info?.is_general,
               unreadCount: Number(t.unread_count) || 0,

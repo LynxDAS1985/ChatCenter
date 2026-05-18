@@ -341,10 +341,13 @@ describe('Telegram-like unread opening windows', () => {
     })
 
     // v0.88.0: для тем форумов та же логика — limit=100, addOffset=-90 (unread>30).
+    // v0.89.30 (ловушка #29): добавлены threadMessageId + isGeneral
     expect(invokeMock).toHaveBeenCalledWith('tg:get-topic-messages', {
       chatId: 'chat1',
       topicId: '10',
       topMessageId: '10',
+      threadMessageId: null,
+      isGeneral: false,
       limit: 100,
       aroundId: 2000,
       addOffset: -90,

@@ -176,3 +176,105 @@ console.log('[forum-be] sample topic[0] info=' + JSON.stringify(result.topics[0]
 - Добавлено `forumTopicInfo.chat_id`
 - Добавлено `forumTopicInfo.is_general`
 - В `forumTopic` добавлено `order` (int64)
+
+---
+
+## 🔴 ЛОВУШКА #29 (v0.89.30): `forum_topic_id` ≠ `message_thread_id` (даже после v0.89.29 fix)
+
+**Симптом** (логи 16:11, 18 мая 2026): после v0.89.29 пользователь снова не видит сообщений. Темы выделяются ✅, но при клике:
+
+```
+[topic-ui] topicId=1 ... (для General)
+[topic-be] invoke ERROR err=Message not found
+
+[topic-ui] topicId=2645 ... (для других)
+[topic-be] invoke ERROR err=Scheduled messages can't have message threads
+```
+
+`topicId` теперь не пустой (v0.89.29 fix работает), но TDLib отвергает запросы. Я **передавал не то поле** в `getMessageThreadHistory`.
+
+**Корневая причина — два РАЗНЫХ идентификатора в TDLib**:
+
+📚 [TDLib forumTopicInfo](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1forum_topic_info.html):
+```
+forumTopicInfo.forum_topic_id: int32   ← короткий UI-id (например 26320 или 1)
+```
+
+📚 [TDLib message](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message.html):
+```
+message.message_thread_id: int53    ← реальный id root-message thread'а
+```
+
+📚 [TDLib getMessageThreadHistory](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_message_thread_history.html):
+```
+getMessageThreadHistory {
+  chat_id: int53
+  message_id: int53      ← ОЖИДАЕТ id message thread'а (int53), не forum_topic_id (int32)
+}
+```
+
+**Это два разных поля**:
+| Поле | Тип | Назначение |
+|---|---|---|
+| `forumTopicInfo.forum_topic_id` | int32 | UI-id темы (короткий, ~26320) |
+| `message.message_thread_id` | int53 | Реальный id root-message в thread'е (большой) |
+
+В v0.89.29 я использовал `forum_topic_id` как `message_id` для `getMessageThreadHistory` — TDLib искал message с этим id, не находил → `Message not found` или случайно находил scheduled → `Scheduled messages can't have message threads`.
+
+**Дополнительно**: General topic (`is_general: true`) не имеет thread root message. Для general нужен `getChatHistory`, не `getMessageThreadHistory`.
+
+**Решение (v0.89.30)** — 3 правки:
+
+1. **`tdlibBackend.js` getTopics** — сохраняем 2 идентификатора + флаг:
+   ```js
+   const threadMsgId = t.last_message?.message_thread_id ?? t.last_message?.id ?? null
+   return {
+     id: forumTopicIdStr,                              // UI-id
+     topicId: forumTopicIdStr,
+     threadMessageId: threadMsgId !== null ? String(threadMsgId) : null,  // для TDLib
+     isGeneral: !!t.info?.is_general,                  // флаг для branch
+     ...
+   }
+   ```
+
+2. **`nativeStore.js` selectForumTopic + loadOlder/NewerMessages** — отправляем оба:
+   ```js
+   await window.api.invoke('tg:get-topic-messages', {
+     chatId,
+     topicId: ...,
+     threadMessageId: topic.threadMessageId,
+     isGeneral: !!topic.isGeneral,
+     ...
+   })
+   ```
+
+3. **`tdlibBackend.js` getTopic** — branch на 2 пути:
+   ```js
+   if (isGeneral) {
+     // General — обычная история чата
+     result = await client.invoke({ '@type': 'getChatHistory', chat_id, from_message_id, offset, limit })
+   } else {
+     // Обычная тема — message_thread_id (int53) из last_message
+     const threadMessageId = Number(params.threadMessageId) || Number(params.topicId)
+     if (!threadMessageId) return { ok: true, messages: [], hasMore: false }  // пустая тема
+     result = await client.invoke({ '@type': 'getMessageThreadHistory', chat_id, message_id: threadMessageId, ... })
+   }
+   ```
+
+**Регрессионная защита (vitest)**:
+- `forum.getTopics`: проверяем что `topic.threadMessageId === '5000'` (из mock `last_message.message_thread_id`) + `isGeneral: false`
+- General topic test: `is_general: true` → `isGeneral=true`, `threadMessageId=null` если нет `last_message`
+- `messages.getTopic` General: проверяем что invoke `getChatHistory` (НЕ `getMessageThreadHistory`)
+- `messages.getTopic` обычная тема: проверяем что invoke с `message_id: threadMessageId` (int53)
+- Empty topic: нет `threadMessageId` и не general → `ok: true, messages: []` (не error)
+
+**Правило**: в TDLib два разных идентификатора с похожим назначением могут существовать **одновременно**:
+- UI-id (short, числовой, для display и list)
+- Real id (long, int53, для API operations)
+
+При использовании API operations всегда проверять — какое именно id требуется (читать `message_id_` description в TDLib docs). Не путать с UI-id из info-объекта.
+
+**Известные пары UI-id vs Real-id в TDLib**:
+- `forumTopicInfo.forum_topic_id` (int32 UI) vs `message.message_thread_id` (int53 для API)
+- `userInfo.id` vs `User.id` (могут отличаться в разных контекстах)
+- При сомнениях — `console.log(JSON.stringify(rawTdlibObject))` чтобы увидеть сырую структуру
