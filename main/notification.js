@@ -26,6 +26,20 @@
       const h = calcHeight()
       // v0.89.20: diagnostic — что ИМЕННО уходит в main для setBounds.
       try { window.notifApi.log('INFO', 'reportHeight→resize(' + h + ') items=' + items.size + ' containerChildren=' + container.children.length) } catch (_) {}
+      // v0.89.21: ДЕТАЛЬНЫЙ снэпшот ВСЕХ DOM-элементов для диагностики stale state.
+      try {
+        const details = []
+        for (let i = 0; i < container.children.length; i++) {
+          const c = container.children[i]
+          const cs = c.style
+          details.push('[' + i + ' id=' + (c.dataset?.id || '?') +
+            ' h=' + c.offsetHeight +
+            ' op=' + (cs.opacity || '1') +
+            ' pe=' + (cs.pointerEvents || 'auto') +
+            ' tf=' + (cs.transform || 'none').replace(/\s+/g, '') + ']')
+        }
+        if (details.length) window.notifApi.log('TRACE', 'DOM snapshot ' + details.join(' '))
+      } catch (_) {}
       window.notifApi.resize(h)
     }, 60)
   }
@@ -273,6 +287,13 @@
     const item = items.get(id)
     if (!item) return
     clearTimeout(item.timer)
+    // v0.89.21: лог — что именно удаляем (ghost vs real, состояние)
+    try {
+      window.notifApi.log('INFO', 'forceRemoveItem id=' + id +
+        ' isStackChild=' + !!item.isStackChild +
+        ' itemsBefore=' + items.size +
+        ' containerBefore=' + container.children.length)
+    } catch (_) {}
     // v0.63.0: ghost-item (child стэка) — только удаляем из Map
     if (item.isStackChild) {
       items.delete(id)
@@ -285,7 +306,18 @@
   }
 
   function addNotification(data) {
+    // v0.89.21: diagnostic — что именно пришло из main + текущее состояние
+    try {
+      window.notifApi.log('INFO', 'addNotification id=' + data.id +
+        ' messenger=' + (data.messengerId || '?') +
+        ' bodyLen=' + ((data.body || '').length) +
+        ' iconType=' + (data.iconDataUrl ? 'data' : (data.iconUrl ? 'url' : 'none')) +
+        ' grouping=' + !!data.grouping +
+        ' itemsBefore=' + items.size +
+        ' containerBefore=' + container.children.length)
+    } catch (_) {}
     if (items.has(data.id)) {
+      try { window.notifApi.log('WARN', 'addNotification duplicate id=' + data.id + ' → forceRemove') } catch (_) {}
       forceRemoveItem(data.id)
     }
 

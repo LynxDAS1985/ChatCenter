@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.20 (18 мая 2026)
+## Текущая версия: v0.89.21 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.20). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.21). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,62 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.21 — Дополнительные diagnostic logs: addNotification + forceRemoveItem + DOM snapshot
+
+**Контекст**: v0.89.20 логи опровергли первоначальную гипотезу про mid-animation полоску (calcH=0 на одиночном dismiss). Но логи показали **новое расхождение**: в моменты с несколькими уведомлениями `items.size` в Map != `container.children.length` в DOM. Например: `items=3 containerChildren=2`. Это значит — в renderer Map и DOM расходятся, но v0.89.20 логи не показывают **какие именно** элементы в DOM и их состояние.
+
+#### Что добавлено (3 точки в `main/notification.js`)
+
+1. **`addNotification`** (строка 287) — лог при получении новой notif от main:
+   - id, messengerId, длина body, тип иконки (data/url/none)
+   - grouping enabled
+   - items.size + container.children.length **ДО** добавления
+   - WARN при дубликате id → forceRemove
+
+2. **`forceRemoveItem`** (строка 272) — лог при принудительном удалении:
+   - id, isStackChild (ghost vs real)
+   - items.size + container.children.length **ДО** удаления
+
+3. **`reportHeight`** (строка 24) — **снэпшот ВСЕХ DOM-элементов** перед resize:
+   ```
+   [0 id=42 h=82 op=1 pe=auto tf=none]
+   [1 id=43 h=0 op=0 pe=none tf=translateX(80px)scale(0.95)]
+   ```
+   Покажет: какие elements остались в DOM, в каком состоянии (opacity, pointer-events, transform), реальная offsetHeight.
+
+**Канал**: всё через `window.notifApi.log` → IPC `app:log` → файл `chatcenter.log` с префиксом `[notif-renderer]`.
+
+#### Что покажут эти логи
+
+| Сценарий | Лог покажет |
+|---|---|
+| Уведомление пришло с пустым body | `bodyLen=0 iconType=none` |
+| Дубликат id (race condition) | `WARN addNotification duplicate` |
+| Stale DOM element | `[N id=X h=82 op=1 pe=auto]` хотя items.size меньше |
+| Element застрял в mid-animation | `h=0 op=0 pe=none tf=translateX(80px)scale(0.95)` |
+| Ghost item (stack child) | `isStackChild=true` в forceRemoveItem |
+
+#### План использования
+
+1. Пользователь запускает v0.89.21 (с дополнительными логами)
+2. Получает несколько уведомлений, ждёт пока появится полоска
+3. Присылает `chatcenter.log`
+4. Я по `DOM snapshot` событиям точно увижу что в окне в момент полоски
+
+**Tests**: не добавлены (только diagnostic). Lint OK, 614 vitest OK. Версия `0.89.20 → 0.89.21` (patch).
+
+#### Что опровергнуто фактами из v0.89.20 логов
+
+| Моя гипотеза | Опровергнуто фактом |
+|---|---|
+| mid-animation reportHeight возвращает height>0 → setBounds(10px) | calcH=0 на одиночном dismiss (`pointerEvents='none'` skip) |
+| полоска 10px = окно с height=10 | окно в момент полоски имеет height=190 (нормальный для 1 item) |
+| второй reportHeight(0) иногда не приходит | final-report всегда приходит, safeHide всегда срабатывает |
+
+Новая гипотеза по фактам: «застрявший» DOM элемент остаётся в `container` после dismiss (Map синхронизирован, DOM нет). DOM snapshot покажет это.
 
 ---
 
