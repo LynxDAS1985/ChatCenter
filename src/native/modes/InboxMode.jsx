@@ -55,9 +55,24 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   useEffect(() => {
     if (!store.activeChatId) return
     const chat = store.chats.find(c => c.id === store.activeChatId)
+    // v0.89.24: diagnostic forum
+    try {
+      window.api?.send?.('app:log', { level: 'INFO',
+        message: '[forum-ui] activeChatId=' + store.activeChatId +
+          ' chatFound=' + !!chat +
+          ' type=' + (chat?.type || 'none') +
+          ' isForum=' + (chat?.isForum === undefined ? 'undefined' : chat?.isForum) +
+          ' triggerForum=' + !!((chat?.type === 'group' || chat?.type === 'channel') && chat.isForum !== false) })
+    } catch (_) {}
     if ((chat?.type === 'group' || chat?.type === 'channel') && chat.isForum !== false) {
       let cancelled = false
       store.loadForumTopics?.(store.activeChatId, 50).then(r => {
+        try {
+          window.api?.send?.('app:log', { level: 'INFO',
+            message: '[forum-ui] loadForumTopics result ok=' + !!r?.ok +
+              ' isForum=' + !!r?.isForum + ' topicsCount=' + (r?.topics?.length || 0) +
+              ' cancelled=' + cancelled })
+        } catch (_) {}
         if (cancelled || r?.isForum) return
         if (!store.messages[store.activeChatId]) store.loadMessages(store.activeChatId, 50)
       })

@@ -241,9 +241,7 @@ export function createTdlibBackend(opts = {}) {
         if (ctx.error) return ctx.error
         return setMuteRaw(ctx.client, ctx.rawId, muteUntil)
       },
-      // v0.89.3: getCleanupStats — fs-скан tdlib-sessions/ + tg-avatars/, возвращает
-      // { totalFiles, totalBytes, byCategory: { session, avatars, cache, media, tmp } }
-      // в формате который ждёт UI AccountContextMenu CleanupRow. userDataDir обязателен.
+      // v0.89.3: getCleanupStats — fs-скан tdlib-sessions/+tg-avatars/ для AccountContextMenu.
       async getCleanupStats() {
         return getCleanupStatsRaw(manager, userDataDir)
       },
@@ -453,10 +451,14 @@ export function createTdlibBackend(opts = {}) {
       // v0.89.0 / Этап 3.10: TDLib getForumTopics
       async getTopics(chatId, limit = 100) {
         const ctx = getClientForChat(manager, chatId)
-        if (ctx.error) return { ...ctx.error, isForum: false, topics: [] }
+        if (ctx.error) {
+          console.log('[forum-be] getClientForChat error chatId=' + chatId + ' err=' + JSON.stringify(ctx.error))
+          return { ...ctx.error, isForum: false, topics: [] }
+        }
         // Проверим что чат — реально forum (is_forum=true в supergroup)
         const tdChat = manager.getChatCached(ctx.accountId, ctx.rawId)
         const isForum = !!(tdChat?.type?.is_forum)
+        console.log('[forum-be] chatId=' + chatId + ' acc=' + ctx.accountId + ' raw=' + ctx.rawId + ' cached=' + !!tdChat + ' typeAt=' + (tdChat?.type?.['@type'] || 'none') + ' is_ch=' + !!(tdChat?.type?.is_channel) + ' is_fr=' + !!(tdChat?.type?.is_forum) + ' title=' + JSON.stringify(tdChat?.title || ''))
         if (!isForum) return { ok: true, isForum: false, topics: [] }
         try {
           const result = await ctx.client.invoke({

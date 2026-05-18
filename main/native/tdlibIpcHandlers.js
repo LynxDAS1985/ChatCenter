@@ -287,8 +287,16 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
   // FORUM
   // ────────────────────────────────────────────────────────────────────
 
-  handle('tg:get-forum-topics', ({ chatId, limit } = {}) =>
-    backend.forum.getTopics(chatId, limit))
+  // v0.89.24: diagnostic — расследование почему forum-чаты не показывают темы.
+  handle('tg:get-forum-topics', async ({ chatId, limit } = {}) => {
+    console.log('[forum-ipc] tg:get-forum-topics chatId=' + chatId + ' limit=' + limit)
+    const result = await backend.forum.getTopics(chatId, limit)
+    console.log('[forum-ipc] result ok=' + !!result?.ok +
+      ' isForum=' + !!result?.isForum +
+      ' topicsCount=' + (result?.topics?.length || 0) +
+      ' error=' + (result?.error || 'none'))
+    return result
+  })
 
   // ────────────────────────────────────────────────────────────────────
   // EVENT BRIDGE: manager events → renderer tg:* events

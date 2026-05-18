@@ -329,6 +329,12 @@ export function mapChat(tdChat, accountId, extras = {}) {
   } else if (cn === 'chatTypeSupergroup') {
     chatKind = type.is_channel ? 'channel' : 'group'
     isForum = !!type.is_forum
+    // v0.89.24: diagnostic — фиксируем isForum value при mapChat. Если is_forum
+    // меняется через updateChatType (TDLib может прислать позже init) — будут
+    // несколько записей для одного chatId.
+    if (isForum) {
+      try { console.log('[forum-map] chatId=' + tdChat.id + ' title=' + JSON.stringify(tdChat.title || '') + ' is_forum=true') } catch (_) {}
+    }
   }
 
   const muteFor = Number(tdChat.notification_settings?.mute_for || 0)
