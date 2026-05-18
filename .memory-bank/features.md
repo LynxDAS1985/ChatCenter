@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.28 (18 мая 2026)
+## Текущая версия: v0.89.29 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.28). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.29). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,73 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.29 — TDLib 1.8 переименовал `message_thread_id` → `forum_topic_id` (ловушка #28)
+
+**Контекст**: после v0.89.28 diagnostic logs пользователь воспроизвёл: кликает на тему OZON → справа черно. Логи 15:35:
+
+```
+[topic-ui] selectForumTopic ... topicId= topMessageId= unreadCount=215
+                                ↑↑↑ ПУСТЫЕ!
+[topic-be] no topicId — params={topicId:"",topMessageId:"",...}
+[topic-ui] result ok=false error=no topicId
+```
+
+Для **ВСЕХ** тем (74, 215, 100 непрочитанных) `topicId` пустая строка.
+
+#### Корневая причина — TDLib breaking change в API между 1.7 → 1.8
+
+📚 Сверка с [официальной TDLib документацией](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1forum_topic_info.html):
+
+| Старое (TDLib 1.7.x) | Новое (TDLib 1.8+) |
+|---|---|
+| `forumTopicInfo.message_thread_id: int53` | `forumTopicInfo.forum_topic_id: int32` |
+| — | `forumTopicInfo.chat_id: int53` (добавлено) |
+| — | `forumTopicInfo.is_general: Bool` (добавлено) |
+
+Наш проект: `prebuilt-tdlib@0.1008064.0` → **TDLib v1.8.64** (новейшая на май 2026).
+
+Наш код в [tdlibBackend.js:488](../main/native/backends/tdlibBackend.js) читал `t.info?.message_thread_id` — **поле НЕ существует** в 1.8+ → `undefined` → `String(undefined || '') === ''` → все topics с пустым `id`.
+
+#### Решение
+
+```js
+// Поддержка обоих имён (новое первым, старое как fallback)
+const threadId = t.info?.forum_topic_id ?? t.info?.message_thread_id
+const idStr = threadId !== null && threadId !== undefined ? String(threadId) : ''
+```
+
+Использовали `??` (nullish coalescing) вместо `||` — чтобы `0` (валидное значение для general topic) не fall-through на fallback.
+
+Также добавили `isGeneral: !!t.info?.is_general` в наш topic объект — UI может отличать general от пользовательских тем.
+
+#### Регрессионная защита
+
+```js
+// При первом полученном topic печатает СЫРУЮ структуру info от TDLib
+if (result?.topics?.[0]) {
+  console.log('[forum-be] sample topic[0] info=' + JSON.stringify(result.topics[0].info) + ' unread=...')
+}
+```
+
+Если TDLib снова переименует поле в будущих версиях — увидим в первой сессии после апдейта.
+
+#### Ловушка #28 — записана в `mistakes/tdlib-forum.md`
+
+«TDLib **не использует semver** в смысле "minor не ломает API". Каждая новая версия (1.7 → 1.8) может переименовать или удалить поля. При апдейте `prebuilt-tdlib` — проверять td_api spec на breaking changes».
+
+Добавлен список известных переименований 1.7 → 1.8 для справки.
+
+#### Эффект
+
+🟢 **Что починилось**:
+- Forum topics получают корректные `id` (forum_topic_id или 1 для general)
+- `selectForumTopic` отправляет правильный topicId → backend.getTopic не отбрасывает
+- TDLib `getMessageThreadHistory` получает валидный `message_id` → возвращает сообщения
+- Active state работает (id для каждого topic уникальный) — синяя полоса слева видна
+- «Загружаю непрочитанные» завершается + показываются сообщения
 
 ---
 

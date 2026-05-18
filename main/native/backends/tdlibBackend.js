@@ -266,10 +266,17 @@ export function createTdlibBackend(opts = {}) {
           console.log('[topic-be] getTopic ctx.error chatId=' + params?.chatId + ' err=' + JSON.stringify(ctx.error))
           return { ...ctx.error, messages: [] }
         }
-        const topicId = Number(params?.topicId || params?.topMessageId)
-        if (!topicId) {
+        // v0.89.29 (ловушка #28): topicId может быть 0 для general topic.
+        // `||` превращал 0 в undefined → ошибка no topicId. Используем `??`.
+        const rawTopicId = params?.topicId ?? params?.topMessageId
+        if (rawTopicId === undefined || rawTopicId === null || rawTopicId === '') {
           console.log('[topic-be] no topicId — params=' + JSON.stringify(params))
           return { ok: false, error: 'no topicId', messages: [] }
+        }
+        const topicId = Number(rawTopicId)
+        if (Number.isNaN(topicId)) {
+          console.log('[topic-be] invalid topicId — params=' + JSON.stringify(params))
+          return { ok: false, error: 'invalid topicId', messages: [] }
         }
         const limit = Number(params?.limit) || 50
         const fromMessageId = Number(params?.aroundId || params?.offsetId || 0)
@@ -484,18 +491,32 @@ export function createTdlibBackend(opts = {}) {
             offset_message_thread_id: 0,
             limit: Math.min(100, Number(limit) || 100),
           })
-          const topics = (result?.topics || []).map((t) => ({
-            id: String(t.info?.message_thread_id || ''),
-            topicId: String(t.info?.message_thread_id || ''),
-            topMessageId: String(t.info?.message_thread_id || ''),
-            title: t.info?.name || '',
-            unreadCount: Number(t.unread_count) || 0,
-            iconColor: t.info?.icon?.color || 0,
-            iconCustomEmojiId: t.info?.icon?.custom_emoji_id ? String(t.info.icon.custom_emoji_id) : null,
-            isClosed: !!t.info?.is_closed,
-            isPinned: !!t.is_pinned,
-            readInboxMaxId: Number(t.last_read_inbox_message_id) || 0,
-          }))
+          // v0.89.29: diagnostic первого topic — для отладки структуры TDLib response
+          if (result?.topics?.[0]) {
+            console.log('[forum-be] sample topic[0] info=' + JSON.stringify(result.topics[0].info) + ' unread=' + result.topics[0].unread_count)
+          }
+          const topics = (result?.topics || []).map((t) => {
+            // v0.89.29 (ловушка #28): TDLib 1.8+ переименовал поле:
+            //   - СТАРОЕ: t.info.message_thread_id (int53)
+            //   - НОВОЕ: t.info.forum_topic_id (int32) + t.info.is_general (Bool)
+            // См. https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1forum_topic_info.html
+            // Используем nullish coalescing (??) — 0 валидное значение для general topic.
+            const threadId = t.info?.forum_topic_id ?? t.info?.message_thread_id
+            const idStr = threadId !== null && threadId !== undefined ? String(threadId) : ''
+            return {
+              id: idStr,
+              topicId: idStr,
+              topMessageId: idStr,
+              title: t.info?.name || '',
+              isGeneral: !!t.info?.is_general,
+              unreadCount: Number(t.unread_count) || 0,
+              iconColor: t.info?.icon?.color || 0,
+              iconCustomEmojiId: t.info?.icon?.custom_emoji_id ? String(t.info.icon.custom_emoji_id) : null,
+              isClosed: !!t.info?.is_closed,
+              isPinned: !!t.is_pinned,
+              readInboxMaxId: Number(t.last_read_inbox_message_id) || 0,
+            }
+          })
           return { ok: true, isForum: true, topics }
         } catch (e) {
           return { ok: false, error: e?.message || String(e), isForum: true, topics: [] }
