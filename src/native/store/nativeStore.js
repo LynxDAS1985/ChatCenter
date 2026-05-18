@@ -736,6 +736,31 @@ export default function useNativeStore() {
         limit,
         afterId: Number(afterId),
       })
+      // v0.89.31 (ловушка #30): складываем новые msg в state + обновляем
+      // messageWindows[key].loadedIncoming, чтобы плашка «N из M» двигалась.
+      if (result?.ok) {
+        const key = topicMessageKey(chatId, activeTopic)
+        setState(s => {
+          const existing = s.messages[key] || []
+          const existingIds = new Set(existing.map(m => m.id))
+          const newMsgs = (result.messages || []).filter(m => !existingIds.has(m.id))
+          const merged = [...existing, ...newMsgs]
+          const currentWindow = s.messageWindows?.[key]
+          const nextWindow = currentWindow ? buildUnreadWindowMeta({
+            messages: merged,
+            unreadCount: currentWindow.unreadCount || activeTopic.unreadCount || 0,
+            readInboxMaxId: currentWindow.readInboxMaxId || activeTopic.readInboxMaxId || 0,
+            requested: currentWindow.unreadWindowRequested,
+            aroundId: currentWindow.aroundId,
+            loading: false,
+          }) : currentWindow
+          return {
+            ...s,
+            messages: { ...s.messages, [key]: merged },
+            messageWindows: nextWindow ? { ...(s.messageWindows || {}), [key]: nextWindow } : s.messageWindows,
+          }
+        })
+      }
       return result
     }
     return window.api?.invoke('tg:get-messages', { chatId, limit, afterId: Number(afterId) })
@@ -762,7 +787,23 @@ export default function useNativeStore() {
           const existing = s.messages[key] || []
           const existingIds = new Set(existing.map(m => m.id))
           const newOld = (result.messages || []).filter(m => !existingIds.has(m.id))
-          return { ...s, messages: { ...s.messages, [key]: [...newOld, ...existing] } }
+          const merged = [...newOld, ...existing]
+          // v0.89.31 (ловушка #30): обновляем messageWindows[key].loadedIncoming
+          // чтобы плашка «N из M» двигалась при подгрузке вверх.
+          const currentWindow = s.messageWindows?.[key]
+          const nextWindow = currentWindow ? buildUnreadWindowMeta({
+            messages: merged,
+            unreadCount: currentWindow.unreadCount || activeTopic.unreadCount || 0,
+            readInboxMaxId: currentWindow.readInboxMaxId || activeTopic.readInboxMaxId || 0,
+            requested: currentWindow.unreadWindowRequested,
+            aroundId: currentWindow.aroundId,
+            loading: false,
+          }) : currentWindow
+          return {
+            ...s,
+            messages: { ...s.messages, [key]: merged },
+            messageWindows: nextWindow ? { ...(s.messageWindows || {}), [key]: nextWindow } : s.messageWindows,
+          }
         })
       }
       return result

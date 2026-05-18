@@ -343,8 +343,10 @@ export function createTdlibBackend(opts = {}) {
         // отметит всё ниже. Этого достаточно для UI-level mark-read.
         return viewMessages(ctx.client, ctx.rawId, [maxId])
       },
-      // v0.89.0 / Этап 3.10: TDLib readAllMessageThreadMentions / viewMessages
-      // для thread. Простой вариант: viewMessages в самом чате с force_read.
+      // v0.89.31 (ловушка #30): по TDLib spec viewMessages для форум-топика
+      // требует source: messageSourceForumTopicHistory. Без source TDLib
+      // угадывает по состоянию чата → в форумах угадывание не обновляет
+      // forumTopic.unread_count.
       async markTopicRead(chatId, topicId, maxId) {
         const ctx = getClientForChat(manager, chatId)
         if (ctx.error) return ctx.error
@@ -353,6 +355,7 @@ export function createTdlibBackend(opts = {}) {
             '@type': 'viewMessages',
             chat_id: ctx.rawId,
             message_ids: [Number(maxId)],
+            source: { '@type': 'messageSourceForumTopicHistory' },
             force_read: true,
           })
           return { ok: true }

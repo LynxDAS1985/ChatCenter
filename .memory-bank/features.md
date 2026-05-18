@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.30 (18 мая 2026)
+## Текущая версия: v0.89.31 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.30). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.31). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,14 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.31 — Форум-топики: плашка «N из M» двигается, счётчик сбрасывается (ловушка #30)
+
+После v0.89.30 пользователь сообщил: плашка «100 из 217» замирает, счётчик 217 не сбрасывается. **Три причины**: (1) `loadOlder/loadNewerMessages` для топиков не пересчитывали `messageWindows[key].loadedIncoming`; (2) [`viewMessages`](https://github.com/tdlib/td/blob/master/td/generate/scheme/td_api.tl) для форумов требует `source: messageSourceForumTopicHistory`, мы не передавали; (3) `unreadWindowIncomplete` блокировал force-read.
+
+**Правки** (3, ~30 строк): `nativeStore.js` loadOlder/Newer для топика пересчитывают `messageWindows[key]` через `buildUnreadWindowMeta`; [`tdlibBackend.js`](../main/native/backends/tdlibBackend.js) `markTopicRead` добавляет `source: messageSourceForumTopicHistory`. **Tests**: 620 → 622. **Ловушка #30** в `mistakes/tdlib-forum.md`.
 
 ---
 
@@ -105,79 +113,9 @@ if (result?.topics?.[0]) {
 
 ### v0.89.28 — Forum topic UI: active state visible + diagnostic для load topic messages
 
-**Контекст**: после v0.89.25 forum-чаты ПРАВИЛЬНО показывают панель тем (логи `[forum-map]` подтверждают). Пользователь увидел скриншот с проблемами:
-1. Кликнул на «ОБЩИЙ ЧАТ» (74 непрочитанных) — справа **чёрно**, висит «Загружаю непрочитанные сообщения из 74»
-2. **Не видно** какая тема выбрана — нет visual feedback
+После v0.89.25 forum-чаты показывают панель тем, но (1) активная тема почти не видна (13% alpha на AMOLED), (2) клик на тему — справа чёрно, нет логов про `tg:get-topic-messages`.
 
-#### Проблема 1: active style почти не виден
-
-📂 [`styles-animations.css:131`](../src/native/styles-animations.css) до v0.89.28:
-```css
-.native-forum-topic-row--active {
-  background: rgba(255, 255, 255, 0.13) !important;   /* 13% alpha — едва видно */
-}
-```
-
-13% alpha на тёмном AMOLED фоне почти неразличимо. Решение — увеличить контраст + цветная граница слева (как Telegram Desktop):
-```css
-.native-forum-topic-row {
-  border-left: 3px solid transparent;
-}
-.native-forum-topic-row--active {
-  background: rgba(42, 171, 238, 0.18) !important;
-  border-left-color: var(--amoled-accent, #2AABEE) !important;
-}
-.native-forum-topic-row:hover { background: rgba(255, 255, 255, 0.12) !important; }
-.native-forum-topic-row--active:hover { background: rgba(42, 171, 238, 0.24) !important; }
-```
-
-#### Проблема 2: сообщения topic не загружаются — нет логов
-
-В `chatcenter.log` за 15:18 (момент скриншота) — **ноль** записей про `tg:get-topic-messages` или `getMessageThreadHistory`. Чёрный ящик.
-
-Добавлены 3 точки логирования (diagnostic only, без правок поведения):
-
-1. **`selectForumTopic`** в [nativeStore.js:631](../src/native/store/nativeStore.js):
-   ```
-   [topic-ui] selectForumTopic chatId=X topicId=Y topMessageId=Z
-              unreadCount=N readInboxMaxId=M params={...}
-   ```
-
-2. **`tg:get-topic-messages` result** в том же файле после invoke:
-   ```
-   [topic-ui] tg:get-topic-messages result ok=B messagesCount=N hasMore=B error=...
-   ```
-
-3. **`backend.messages.getTopic`** в [tdlibBackend.js:263](../main/native/backends/tdlibBackend.js):
-   ```
-   [topic-be] getTopic chatId=X raw=Y topicId=Z from_message_id=N offset=M limit=L
-   [topic-be] invoke result messagesCount=N
-   [topic-be] invoke ERROR err=...
-   ```
-
-#### Что покажут логи
-
-| Сценарий | Лог покажет |
-|---|---|
-| UI клик не вызывает selectForumTopic | `[topic-ui] selectForumTopic` отсутствует |
-| TDLib invoke падает | `[topic-be] invoke ERROR err=...` |
-| TDLib вернул 0 сообщений | `[topic-be] invoke result messagesCount=0` |
-| `from_message_id` неправильный | видно в логе — можно сопоставить с TDLib spec |
-| Ответ доходит до renderer | `[topic-ui] result ok=true messagesCount=N` |
-
-#### Версия
-
-`0.89.27 → 0.89.28` (patch — diagnostic + CSS). Lint OK, vitest 616 OK.
-
-#### План использования
-
-1. Пользователь перезапускает приложение
-2. Открывает forum-чат (OZONовая Дыра)
-3. Кликает на тему («ОБЩИЙ ЧАТ» 74 непрочитанных)
-4. Если сообщения не появляются — присылает `chatcenter.log`
-5. По логам определим что сломано в pipeline
-
-CSS — должно сразу быть видно активную тему (синяя полоса слева + светлый фон).
+**Правки**: CSS active state увеличен с 13% alpha до `rgba(42,171,238,0.18)` + `border-left: 3px solid #2AABEE` (Telegram-style). 3 точки логирования: `selectForumTopic`, `tg:get-topic-messages` result, `backend.messages.getTopic`. Логи v0.89.29 показали `topicId=""` (см. ловушка #28).
 
 ---
 

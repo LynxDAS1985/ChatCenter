@@ -112,6 +112,18 @@ describe('messages.markTopicRead', () => {
     }))
   })
 
+  // v0.89.31 (ловушка #30): по TDLib spec для форум-топика viewMessages
+  // должен передавать source=messageSourceForumTopicHistory, иначе TDLib
+  // угадывает по состоянию чата → forumTopic.unread_count не обновляется.
+  it('передаёт source=messageSourceForumTopicHistory (TDLib spec)', async () => {
+    const { backend, mockClient } = makeBackend()
+    await backend.messages.markTopicRead('tg_main:-1001', 5, 100)
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+      '@type': 'viewMessages',
+      source: { '@type': 'messageSourceForumTopicHistory' },
+    }))
+  })
+
   it('invalid chatId → ok: false', async () => {
     const { backend } = makeBackend()
     const r = await backend.messages.markTopicRead('no-colon', 1, 100)

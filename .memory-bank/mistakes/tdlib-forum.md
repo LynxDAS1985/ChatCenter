@@ -278,3 +278,60 @@ getMessageThreadHistory {
 - `forumTopicInfo.forum_topic_id` (int32 UI) vs `message.message_thread_id` (int53 для API)
 - `userInfo.id` vs `User.id` (могут отличаться в разных контекстах)
 - При сомнениях — `console.log(JSON.stringify(rawTdlibObject))` чтобы увидеть сырую структуру
+
+---
+
+## 🔴 ЛОВУШКА #30 (v0.89.31): форум-топик `viewMessages` БЕЗ `source` = TDLib угадывает, `unread_count` не обновляется
+
+### Симптом
+
+После v0.89.30 сообщения в форум-топике грузятся, юзер видит «Загружена часть непрочитанных 100 из 217». При прокрутке вверх/вниз догружаются ещё, но:
+
+1. **Плашка «100 из 217» замирает** — никогда не становится «150 из 217», «200 из 217»
+2. **Счётчик 217 не сбрасывается** даже когда юзер дошёл до самого низа треда
+
+### Корневые причины (три накладывающихся бага)
+
+#### Причина А: `loadOlderMessages`/`loadNewerMessages` не пересчитывают `messageWindows[key]`
+
+`buildUnreadWindowMeta` (`nativeStore.js`) вычисляет `loadedIncoming` из массива сообщений. Вызывался только в:
+- `selectForumTopic` (первая загрузка)
+- `refreshTopicCounters` (после успешного markTopicRead)
+
+В `loadOlderMessages` для топика — `setState` обновлял только `messages[key]`, не трогал `messageWindows[key]`. В `loadNewerMessages` для топика — вообще не было `setState` (только `return result`).
+
+→ `loadedIncoming` замер на 100, плашка не двигается.
+
+#### Причина Б: `viewMessages` БЕЗ `source` — TDLib угадывает
+
+[TDLib spec](https://github.com/tdlib/td/blob/master/td/generate/scheme/td_api.tl):
+```
+//@source Source of the message view; pass null to guess the source based on chat open state
+viewMessages chat_id:int53 message_ids:vector<int53> source:MessageSource force_read:Bool = Ok;
+
+//@description The message is from history of a forum topic
+messageSourceForumTopicHistory = MessageSource;
+```
+
+В `tdlibBackend.js markTopicRead` `source` НЕ передавался → TDLib угадывал по состоянию чата → в форуме угадывание не помечало сообщения именно в треде → `forumTopic.unread_count` оставался прежним.
+
+#### Причина В (последствие А): блокировка `unread-window-incomplete`
+
+`InboxMode.jsx` блокирует все `markRead` кроме `source: 'visibility'` пока `unreadWindowIncomplete=true`. Из-за причины А окно никогда не становилось «complete» → `useForceReadAtBottom` всегда скипался → markTopicRead не дёргался при доходе до низа.
+
+### Решение (v0.89.31)
+
+**3 правки**:
+
+1. **`nativeStore.js` `loadOlderMessages` для топика** — после успеха в setState дополнительно пересчитать `messageWindows[key]` через `buildUnreadWindowMeta` с merged массивом сообщений
+2. **`nativeStore.js` `loadNewerMessages` для топика** — добавить setState блок (отсутствовал): слить `result.messages` в `messages[key]` + пересчитать `messageWindows[key]`
+3. **`tdlibBackend.js` `markTopicRead`** — добавить `source: { '@type': 'messageSourceForumTopicHistory' }` в `viewMessages.invoke`
+
+### Регрессионная защита
+
+- **`nativeStore.vitest.jsx`** — тест: loadOlder + loadNewer для топика обновляют `messageWindows[key].loadedIncoming` (100 → 150 → 200)
+- **`tdlibBackendForum.vitest.js`** — тест: `markTopicRead` вызывает `viewMessages` с `source: { '@type': 'messageSourceForumTopicHistory' }`
+
+### Правило
+
+При работе с TDLib API всегда сверяться с td_api.tl spec по поводу опциональных параметров. «Опциональный» в TDLib doc часто значит «TDLib попробует угадать», что работает в простых случаях (личка) и ломается в сложных (форумы, треды). Передавать явные `source: MessageSource` и аналогичные дискриминаторы там, где они есть.
