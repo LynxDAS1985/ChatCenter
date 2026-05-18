@@ -265,4 +265,45 @@ describe('InboxMode render smoke', () => {
     expect(() => render(<InboxMode store={store} />)).not.toThrow()
     cleanup()
   })
+
+  // v0.89.33: snapshot readInboxMaxId — divider «Новые сообщения» не двигается
+  // после markRead (как в Telegram Desktop / WhatsApp / Discord).
+  it('v0.89.33: divider застывает на snapshot позиции при изменении readInboxMaxId', async () => {
+    const chatId = 'tg_self:snapshot'
+    const mkMsg = (id) => ({ id: String(id), chatId, senderId: 's', text: 'm' + id,
+      timestamp: 1712000000000 + id * 1000, isOutgoing: false })
+    const messages = [mkMsg(99), mkMsg(100), mkMsg(101), mkMsg(102), mkMsg(103)]
+    // 1) Открыли чат: readInboxMaxId=99 → divider должен быть перед msg 100
+    const store1 = buildStore({
+      activeAccountId: 'tg_self',
+      chats: [{ id: chatId, accountId: 'tg_self', title: 'C', unreadCount: 4, readInboxMaxId: 99, type: 'user' }],
+      activeChatId: chatId,
+      messages: { [chatId]: messages },
+      messageWindows: { [chatId]: { readInboxMaxId: 99, unreadCount: 4 } },
+    })
+    const { container, rerender } = render(<InboxMode store={store1} />)
+    await new Promise(r => setTimeout(r, 50))
+    const msg100Before = container.querySelector('[data-msg-id="100"]')
+    const dividerBefore = container.querySelector('.native-msg-unread-divider')
+    expect(dividerBefore).toBeTruthy()
+    expect(msg100Before).toBeTruthy()
+    expect(dividerBefore.compareDocumentPosition(msg100Before) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // 2) Server sync: cursor двинулся 99 → 101, unread 4 → 2 (markRead)
+    // С нашим snapshot — divider должен остаться перед msg 100, не прыгать на 102.
+    const store2 = {
+      ...store1,
+      chats: [{ id: chatId, accountId: 'tg_self', title: 'C', unreadCount: 2, readInboxMaxId: 101, type: 'user' }],
+      messageWindows: { [chatId]: { readInboxMaxId: 101, unreadCount: 2 } },
+    }
+    rerender(<InboxMode store={store2} />)
+    await new Promise(r => setTimeout(r, 50))
+    const msg100After = container.querySelector('[data-msg-id="100"]')
+    const dividerAfter = container.querySelector('.native-msg-unread-divider')
+    expect(dividerAfter).toBeTruthy()
+    expect(msg100After).toBeTruthy()
+    // ВАЖНО: divider всё ещё ПЕРЕД msg 100 — не прыгнул на 102.
+    expect(dividerAfter.compareDocumentPosition(msg100After) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    cleanup()
+  })
 })

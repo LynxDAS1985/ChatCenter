@@ -177,6 +177,12 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [newBelow, setNewBelow] = useState(0)
   const [firstUnreadId, setFirstUnreadId] = useState(null)
   const firstUnreadIdRef = useRef(null)
+  // v0.89.33: snapshot readInboxMaxId на момент открытия чата/топика.
+  // Как в Telegram Desktop / WhatsApp / Discord — divider «НОВЫЕ СООБЩЕНИЯ»
+  // застывает на позиции открытия и НЕ двигается при последующих markRead.
+  // Сбрасывается только при смене activeViewKey.
+  // Фиксируется на ПЕРВОМ НЕНУЛЕВОМ значении (до этого данные ещё не пришли).
+  const frozenReadCursorRef = useRef({ viewKey: null, cursor: 0 })
   const scrollButtonClickTimerRef = useRef(null)
   const scrollDiag = useScrollDiagnostics({
     activeChatId: activeViewKey, activeChat, activeMessages, activeUnread,
@@ -321,12 +327,24 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     // v0.87.40: clamp unread к числу incoming (сервер мог вернуть завышенное)
     const incoming = activeMessages.filter(m => !m.isOutgoing)
     const clampedUnread = Math.min(realUnread, incoming.length)
-    const nextFirstUnreadId = findFirstUnreadId(activeMessages, clampedUnread, activeReadInboxMaxId)
+    // v0.89.33: snapshot readInboxMaxId на момент открытия чата.
+    // Сброс при смене viewKey. Фиксация на первом ненулевом значении.
+    if (frozenReadCursorRef.current.viewKey !== activeViewKey) {
+      frozenReadCursorRef.current = { viewKey: activeViewKey, cursor: 0 }
+    }
+    if (frozenReadCursorRef.current.cursor === 0 && activeReadInboxMaxId > 0) {
+      frozenReadCursorRef.current.cursor = activeReadInboxMaxId
+    }
+    // Используем snapshot если он зафиксирован (>0), иначе живое значение
+    // (актуально для случая когда чат только открылся и cursor ещё 0).
+    const snapshotCursor = frozenReadCursorRef.current.cursor || activeReadInboxMaxId
+    const nextFirstUnreadId = findFirstUnreadId(activeMessages, clampedUnread, snapshotCursor)
     firstUnreadIdRef.current = nextFirstUnreadId
     setFirstUnreadId(nextFirstUnreadId)
     scrollDiag.logEvent('first-unread-calc', {
       ...getUnreadAnchorDebug(activeMessages, clampedUnread),
       readInboxMaxId: activeReadInboxMaxId,
+      snapshotCursor,
       firstUnreadId: nextFirstUnreadId,
     })
   }, [activeViewKey, firstMsgId, lastMsgId, activeUnread, activeReadInboxMaxId])

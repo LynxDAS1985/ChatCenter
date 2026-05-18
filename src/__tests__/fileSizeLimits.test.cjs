@@ -155,6 +155,14 @@ var KNOWN_EXCEPTIONS = {
   'main/native/backends/tdlibClient.js': {
     ceiling: 550,
     reason: 'v0.89.25: TdlibClientManager — единый клиент для accounts/auth/updates routing/caches (user/chat/supergroup/avatars). Разбивать требует архитектурного решения.'
+  },
+  // v0.89.33: snapshot readInboxMaxId для divider «Новые сообщения» (Telegram Desktop UX-стандарт)
+  // добавил frozenReadCursorRef + сброс по viewKey + фиксация на ненулевом cursor (~15 строк к 596).
+  // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
+  // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
+  'src/native/modes/InboxMode.jsx': {
+    ceiling: 650,
+    reason: 'v0.89.33: snapshot ref для divider (~15 строк). InboxMode интегрирует все hooks режима inbox.'
   }
 }
 

@@ -8,6 +8,54 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: divider «Новые сообщения» должен застывать на snapshot позиции открытия (v0.89.33)
+
+### Симптом
+Юзер открывает чат → видит divider «НОВЫЕ СООБЩЕНИЯ» в правильном месте. Листает вниз/вверх. Каждый раз когда `markRead` отправляется или Telegram присылает sync — **divider перепрыгивает на новую позицию** (всегда перед "первым непрочитанным" с точки зрения текущего `readInboxMaxId`). Создаёт ощущение «полоска постоянно появляется и куда-то прыгает».
+
+### Корень
+[`InboxMode.jsx:332`](../src/native/modes/InboxMode.jsx) пересчёт `firstUnreadId` имел в deps **живые** `activeUnread` + `activeReadInboxMaxId`. Каждый server sync менял эти значения → useEffect пересчитывал → divider сдвигался.
+
+Лог 18:29-18:30 показал: за 36 секунд 8 пересчётов, divider сдвинулся на ~33 сообщения вперёд (`readCursor=56008 → 56042`).
+
+### Решение (v0.89.33)
+Snapshot ref на момент открытия чата, как в Telegram Desktop / WhatsApp / Discord:
+
+```js
+const frozenReadCursorRef = useRef({ viewKey: null, cursor: 0 })
+
+useEffect(() => {
+  // Сброс при смене чата
+  if (frozenReadCursorRef.current.viewKey !== activeViewKey) {
+    frozenReadCursorRef.current = { viewKey: activeViewKey, cursor: 0 }
+  }
+  // Фиксация на ПЕРВОМ НЕНУЛЕВОМ значении (данные могут прийти не сразу)
+  if (frozenReadCursorRef.current.cursor === 0 && activeReadInboxMaxId > 0) {
+    frozenReadCursorRef.current.cursor = activeReadInboxMaxId
+  }
+  // Snapshot для findFirstUnreadId, живое значение как fallback пока snapshot=0
+  const snapshotCursor = frozenReadCursorRef.current.cursor || activeReadInboxMaxId
+  const nextFirstUnreadId = findFirstUnreadId(activeMessages, clampedUnread, snapshotCursor)
+  // ...
+}, [activeViewKey, firstMsgId, lastMsgId, activeUnread, activeReadInboxMaxId])
+```
+
+**Ключевые моменты**:
+- Snapshot замораживается на ПЕРВОМ ненулевом cursor (учитывает что данные могут прийти не сразу)
+- Сбрасывается только при смене `activeViewKey` (новый чат/топик)
+- Deps useEffect не тронуты — пересчёт всё ещё триггерится при `firstMsgId`/`lastMsgId` (нужно для подгрузки), но использует ЗАМОРОЖЕННЫЙ cursor
+- Счётчик в боковой панели НЕ застужается — он живёт от `unreadCount` напрямую (не нарушает v0.87.41)
+
+### Правило
+UI-маркеры «прочитано до сюда» / «новые сообщения» / «закладка визита» в чатах **должны** быть snapshot значений на момент `openChat`, не живыми индикаторами серверного состояния. Это стандарт всех мессенджеров (Telegram Desktop, WhatsApp Web, Discord, Slack). Живой индикатор делает UX «полоска появляется при каждой синхронизации» — раздражающий и нестандартный.
+
+При добавлении любых других «закладок состояния на момент открытия» (например «вы прочитали последнее сообщение в этой сессии» в WhatsApp-style) — повторять паттерн snapshot ref + сброс по [activeViewKey].
+
+### Регрессионная защита
+[`InboxMode.vitest.jsx`](../src/native/modes/InboxMode.vitest.jsx) — тест «v0.89.33: divider застывает на snapshot позиции при изменении readInboxMaxId»: рендер с `readInboxMaxId=99` → проверка divider перед msg #100 → rerender с `readInboxMaxId=101` → проверка что divider всё ещё перед msg #100, не прыгнул вперёд.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: аватарки отправителей в группах — полная история ошибок (v0.87.27–v0.87.113)
 
 ### Симптом

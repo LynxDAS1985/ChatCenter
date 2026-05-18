@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.32 (18 мая 2026)
+## Текущая версия: v0.89.33 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.32). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.33). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -21,18 +21,23 @@
 
 ---
 
+### v0.89.33 — Divider «Новые сообщения» застывает на snapshot позиции открытия (как в Telegram Desktop)
+
+После v0.89.32 пользователь: полоска «НОВЫЕ СООБЩЕНИЯ» постоянно перепрыгивает при прокрутке. Лог показал: за 36с 8 пересчётов `firstUnreadId`, divider сдвинулся на ~33 msg.
+
+**Корень**: useEffect пересчёта в [`InboxMode.jsx`](../src/native/modes/InboxMode.jsx) имел в deps живой `activeReadInboxMaxId` → каждый server sync двигал divider.
+
+**Сверка с документацией**: [TDLib spec](https://github.com/tdlib/td/blob/master/td/generate/scheme/td_api.tl) `openChat` lifecycle + `forumTopic.last_read_inbox_message_id`. Telegram Desktop / WhatsApp / Discord / Slack — все делают snapshot при openChat, divider застывает до closeChat. UX-стандарт.
+
+**Решение** (~15 строк + 1 тест): новый `frozenReadCursorRef`. Сброс при смене `activeViewKey`. Фиксация на ПЕРВОМ ненулевом cursor. `findFirstUnreadId` использует snapshot. Deps useEffect не тронуты. Счётчик в боковой панели остался живой (не нарушает v0.87.41).
+
+**Tests**: 622 → 623. **Ловушка** в `mistakes/native-scroll-unread.md` — паттерн «snapshot ref на момент openChat».
+
+---
+
 ### v0.89.32 — Диагностические логи для форум-топиков (markRead pipeline + prepend size jumps)
 
-После v0.89.31: счётчик «уменьшался → замер → опять → замер», окно «дёргалось». Из лога юзера 17:57 нашёл два факта:
-1. **Замирания** = `read-batch-skip reason=maxId did not advance` — watermark `maxEverSent` защита из ловушки v0.87.37 (правильное поведение, иначе прыжки 36→25→35 из v0.87.41)
-2. **Дёргание** = `top=27666→1669` после `store-tg-messages incoming=100` (prepend в react-window) + `atBottom:true→false` → `force-read-cleanup`. Известная гонка с виртуализацией, **100% решения для react-window prepend scroll preservation нет** — классический шаблон зависит от внутренней реализации библиотеки. Не правлю.
-
-**Только логи** (по указанию):
-- [`tdlibBackend.js`](../main/native/backends/tdlibBackend.js) `markTopicRead`: `[topic-mark] INVOKE/OK/ERROR` — каждый вызов TDLib `viewMessages` в форуме
-- [`nativeStore.js`](../src/native/store/nativeStore.js) `markTopicRead`: `[topic-mark-ui] SEND` + `[topic-mark-refresh] baseline=X refreshed=Y delta=Z` — показывает обновил ли TDLib `unread_count` после `viewMessages`
-- [`nativeStore.js`](../src/native/store/nativeStore.js) `loadOlder/loadNewer`: `[topic-load-older/newer] beforeCount=X added=Y afterCount=Z` — момент prepend больших батчей для корреляции с `chat-state top=X`
-
-`scroll-jump` детектор (deltaTop>500px) уже есть в `useInboxScroll.js:53-67`. **Tests**: 622 без изменений.
+После v0.89.31 две жалобы: счётчик замирает / окно дёргается. Лог 17:57 показал: (1) замирания = `read-batch-skip` watermark защита v0.87.37 (правильное поведение); (2) дёргание = `top=27666→1669` после prepend 100 msg в react-window. 100% решения нет — добавлены диагностические логи: `[topic-mark] INVOKE/OK/ERROR` в backend, `[topic-mark-ui] SEND` + `[topic-mark-refresh] delta` в store, `[topic-load-older/newer] before/added/after`. **Tests**: 622 без изменений.
 
 ---
 
