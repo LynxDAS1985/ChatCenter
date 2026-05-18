@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.25 (18 мая 2026)
+## Текущая версия: v0.89.26 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.25). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.26). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,71 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.26 — Окно notification не скрывалось после dismiss (ловушка #25)
+
+**Контекст**: пользователь снова видит пустую полоску после всех dismiss. Скриншот в 14:48. Логи показали точную причину — **мой v0.89.23 фикс создал новую проблему**.
+
+#### Корневая причина
+
+📂 Логи 14:48:18 (момент после dismiss последнего уведомления):
+```
+14:48:18 dismiss final-report id=104 itemsAfter=0 calcH=0
+14:48:18 reportHeight→resize(0) items=0 containerChildren=0   ← renderer ВСЁ ПУСТО
+14:48:18 [notif-resize] raw=0 visible=true items=1            ← main items=1!
+14:48:18 IGNORE stale raw=0 (items=1 > 0)                     ← v0.89.23 ignore
+```
+
+Race condition:
+1. Renderer dismiss animation → `notif:resize(0)` отправляется (через setTimeout 60ms)
+2. Renderer dismiss animation → `notif:dismiss` отправляется
+3. IPC порядок **НЕ гарантирован** — `notif:resize(0)` дошёл первым
+4. Main: `items=1`, `raw=0` → защита v0.89.23 IGNORE'нула resize
+5. Main: получает `notif:dismiss` → items=0
+6. **БОЛЬШЕ resize не приходит** — renderer уже всё отрапортовал
+7. Окно остаётся `visible=true` с старыми bounds → **пустая полоска**
+
+📂 [`notifHandlers.js:56-58`](../main/handlers/notifHandlers.js) — `notif:dismiss` handler (до v0.89.26):
+```js
+ipcMain.on('notif:dismiss', (_event, id) => {
+  const notifItems = getNotifItems()
+  setNotifItems(notifItems.filter(n => n.id !== id))
+  // ← НЕ проверяет items.length === 0 → НЕ скрывает окно
+})
+```
+
+То же самое в `notif:click` и `notif:mark-read` — все 3 handler'а могут уменьшить items до 0, но никто не вызывает `safeHide`.
+
+#### Решение
+
+Helper `hideIfEmpty()` в начале `initNotifHandlers` — вызывается после каждого `setNotifItems`:
+```js
+const hideIfEmpty = () => {
+  if (getNotifItems().length === 0) {
+    const notifWin = getNotifWin()
+    if (notifWin && !notifWin.isDestroyed()) safeHideTransparentWindow(notifWin)
+  }
+}
+```
+
+Применён в трёх местах:
+- `notif:click` — после удаления item
+- `notif:mark-read` — после удаления item
+- `notif:dismiss` — после удаления item
+
+**Main process — source of truth**. Не ждём `notif:resize(0)` от renderer (он может прийти ДО `notif:dismiss` из-за async IPC).
+
+Защита v0.89.23 `IGNORE stale raw=0 (items > 0)` **остаётся** — она нужна для других race (между `notif:show` и первым reportHeight). Теперь main process сам гарантирует скрытие через `hideIfEmpty()`.
+
+#### Ловушка #25 — записана в `mistakes/notifications-ribbon.md`
+
+«Главный процесс — авторитативный источник состояния. После любого изменения `notifItems[]` ОБЯЗАТЕЛЬНО проверять `length === 0` и вызывать safeHide. Не полагаться на renderer reportHeight(0) — IPC порядок не гарантирован».
+
+#### Tests
+
+Lint OK. Vitest 616 уже покрывает existing handlers (handler контракты в `notifHooks.test.cjs`).
 
 ---
 

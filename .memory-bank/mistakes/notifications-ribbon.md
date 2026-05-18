@@ -466,6 +466,57 @@ if (height <= 0 && itemsCount > 0) {
 
 **Правило**: при IPC + setTimeout-coalescing — main process **не должен слепо доверять** последнему received значению. Проверять консистентность с авторитативным состоянием (`notifItems[].length` в main).
 
+**🔴 ЛОВУШКА #25 (v0.89.26): окно visible после dismiss — мой собственный v0.89.23 фикс создал deadlock**
+
+**Симптом** (скриншот 14:48, 18 мая 2026): пользователь видит пустую полоску в правом нижнем углу. Лог показал точное время:
+
+```
+14:48:18 dismiss final-report id=104 itemsAfter=0 calcH=0
+14:48:18 reportHeight→resize(0) items=0 containerChildren=0     ← renderer пуст
+14:48:18 [notif-resize] raw=0 visible=true items=1               ← MAIN items=1
+14:48:18 IGNORE stale raw=0 (items=1 > 0)                        ← v0.89.23 фикс
+```
+
+Окно `visible=true` с старыми bounds, больше resize не приходит → видна полоска.
+
+**Корневая причина — race в моём же v0.89.23 фиксе**:
+
+В v0.89.23 я добавил защиту от stale `resize(0)`:
+```js
+if (height <= 0 && itemsCount > 0) return  // IGNORE
+```
+
+Это правильно для случая «новое уведомление пришло, renderer ещё не отрапортовал». Но создаёт **deadlock** при dismiss:
+
+```
+T=0     renderer dismiss animation done
+T=520   renderer.reportHeight() → setTimeout 60ms
+T=540   renderer вызывает notifApi.dismiss(id) → IPC notif:dismiss
+T=580   IPC notif:resize(0) приходит первым (порядок не гарантирован)
+        main: items=1, raw=0 → IGNORE (defense #23)
+T=600   IPC notif:dismiss приходит → items=0
+        main: НЕТ повторного reportHeight → safeHide НИКОГДА не вызывается
+        ОКНО ОСТАЁТСЯ ВИДИМЫМ
+```
+
+📂 Все 3 dismissing handler'а ([`notifHandlers.js:10-58`](../../main/handlers/notifHandlers.js)) — `notif:click`, `notif:mark-read`, `notif:dismiss` — удаляют item из `notifItems[]` но **не проверяют `length === 0`** → не вызывают safeHide.
+
+**Решение (v0.89.26)**: helper `hideIfEmpty()` в `initNotifHandlers` — вызывается после каждого `setNotifItems(...)`:
+```js
+const hideIfEmpty = () => {
+  if (getNotifItems().length === 0) {
+    const notifWin = getNotifWin()
+    if (notifWin && !notifWin.isDestroyed()) safeHideTransparentWindow(notifWin)
+  }
+}
+```
+
+Применён в `notif:click`, `notif:mark-read`, `notif:dismiss` — после каждого filter.
+
+**Правило**: main process — авторитативный источник состояния. После любого изменения коллекции `notifItems[]` ОБЯЗАТЕЛЬНО проверять `length === 0` и вызывать safeHide самостоятельно. **Не полагаться на renderer reportHeight(0)** — IPC порядок не гарантирован, может прийти раньше dismiss.
+
+**Защита v0.89.23 остаётся** — она нужна для других race (между `notif:show` и первым reportHeight, когда renderer ещё не успел отрендерить). Теперь main process **сам гарантирует** скрытие через `hideIfEmpty()`, не зависит от renderer.
+
 ---
 
 ## 🔴 isViewingThisChat подавляет ВСЕ уведомления на активной вкладке (v0.39.0)

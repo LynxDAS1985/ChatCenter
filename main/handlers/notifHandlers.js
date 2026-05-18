@@ -7,10 +7,27 @@ export function initNotifHandlers(deps) {
   // deps передаются из main.js — мутабельные ссылки
   const { getNotifItems, setNotifItems, getNotifWin, getMainWindow } = deps
 
+  // v0.89.26 (ловушка #25): после удаления item из notifItems[] — если список
+  // ПУСТ, главный процесс ОБЯЗАН сразу скрыть окно. Иначе:
+  // 1. Renderer присылает resize(0)
+  // 2. Защита v0.89.23 IGNORE stale raw=0 (items=N > 0) срабатывает потому что
+  //    notif:dismiss ещё не дошёл (IPC порядок не гарантирован)
+  // 3. notif:dismiss приходит позже → items=0, но больше resize не будет
+  // 4. Окно остаётся visible → пустая полоска
+  //
+  // Main process = source of truth. Не ждём renderer.
+  const hideIfEmpty = () => {
+    if (getNotifItems().length === 0) {
+      const notifWin = getNotifWin()
+      if (notifWin && !notifWin.isDestroyed()) safeHideTransparentWindow(notifWin)
+    }
+  }
+
   ipcMain.on('notif:click', (_event, id) => {
     const notifItems = getNotifItems()
     const item = notifItems.find(n => n.id === id)
     setNotifItems(notifItems.filter(n => n.id !== id))
+    hideIfEmpty()
     const mainWindow = getMainWindow()
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show()
@@ -29,6 +46,7 @@ export function initNotifHandlers(deps) {
     const notifItems = getNotifItems()
     const item = notifItems.find(n => n.id === id)
     setNotifItems(notifItems.filter(n => n.id !== id))
+    hideIfEmpty()
     const mainWindow = getMainWindow()
     if (!mainWindow || mainWindow.isDestroyed() || !item?.messengerId) return
     const payload = {
@@ -56,6 +74,7 @@ export function initNotifHandlers(deps) {
   ipcMain.on('notif:dismiss', (_event, id) => {
     const notifItems = getNotifItems()
     setNotifItems(notifItems.filter(n => n.id !== id))
+    hideIfEmpty()
   })
 
   let lastNotifBounds = null
