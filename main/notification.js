@@ -23,7 +23,10 @@
 
   function reportHeight() {
     setTimeout(() => {
-      window.notifApi.resize(calcHeight())
+      const h = calcHeight()
+      // v0.89.20: diagnostic — что ИМЕННО уходит в main для setBounds.
+      try { window.notifApi.log('INFO', 'reportHeight→resize(' + h + ') items=' + items.size + ' containerChildren=' + container.children.length) } catch (_) {}
+      window.notifApi.resize(h)
     }, 60)
   }
 
@@ -117,12 +120,18 @@
     el.style.opacity = '0'
     el.style.transform = 'translateX(80px) scale(0.95)'
 
+    // v0.89.20: diagnostic — фиксируем старт dismiss (для расследования полоски).
+    try { window.notifApi.log('INFO', 'dismiss start id=' + id + ' itemsBefore=' + items.size + ' fromMain=' + !!fromMain) } catch (_) {}
+
     // Этап 2: пауза 80мс → коллапс высоты 180мс (v0.60.6: естественная задержка)
     setTimeout(() => {
       el.style.transition = 'height 180ms ease-in-out, min-height 180ms ease-in-out, margin-bottom 180ms ease-in-out'
       el.style.height = '0'
       el.style.minHeight = '0'
       el.style.marginBottom = '-4px'
+      // v0.89.20: фиксируем mid-animation reportHeight — наша гипотеза предполагает
+      // что здесь приходит height>0 → main делает setBounds → видна полоска.
+      try { window.notifApi.log('INFO', 'dismiss mid-report id=' + id + ' calcH=' + calcHeight() + ' elH=' + el.offsetHeight) } catch (_) {}
       reportHeight()
 
       // Этап 3: удаление из DOM
@@ -130,6 +139,8 @@
         el.remove()
         items.delete(id)
         if (groupingEnabled && item.messengerId) cleanupStack(item.messengerId)
+        // v0.89.20: финальный reportHeight — должен прийти с calcH=0.
+        try { window.notifApi.log('INFO', 'dismiss final-report id=' + id + ' itemsAfter=' + items.size + ' calcH=' + calcHeight()) } catch (_) {}
         reportHeight()
       }, 190)
     }, 330)

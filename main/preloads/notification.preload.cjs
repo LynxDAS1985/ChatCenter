@@ -20,4 +20,9 @@ contextBridge.exposeInMainWorld('notifApi', {
   resize: (height) => ipcRenderer.send('notif:resize', height),
   // Notification window → Main: закрепить сообщение в отдельном окне
   pinMessage: (data) => ipcRenderer.send('notif:pin-message', data),
+  // v0.89.20: diagnostic log в chatcenter.log через main process app:log IPC.
+  // Используется для расследования бага «остаётся видимая полоска после dismiss».
+  log: (level, message) => {
+    try { ipcRenderer.send('app:log', { level, message: '[notif-renderer] ' + message }) } catch (_) {}
+  },
 })

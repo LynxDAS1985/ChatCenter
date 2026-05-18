@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.19 (18 мая 2026)
+## Текущая версия: v0.89.20 (18 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.19). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.20). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,42 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.20 — Диагностическое логирование notification pipeline
+
+**Контекст**: пользователь со скриншотом — после v0.89.18 фикса всё ещё иногда видна тонкая видимая полоска (~370×10px) в правом нижнем углу. Прошлый анализ был ГИПОТЕЗОЙ по чтению кода — без подтверждения runtime.
+
+#### Что добавлено (только логирование, никакого изменения поведения)
+
+| Где | Что логируется |
+|---|---|
+| [transparentWindowGuard.js](../main/utils/transparentWindowGuard.js) `safeHide` | wasVisible, boundsBefore |
+| [transparentWindowGuard.js](../main/utils/transparentWindowGuard.js) `restoreMouseEvents` | факт вызова |
+| [notifHandlers.js](../main/handlers/notifHandlers.js) `notif:resize` | raw + rounded height, visible, items count |
+| [notificationManager.js](../main/handlers/notificationManager.js) `repositionNotifWin` | count, visible |
+| [notification.js](../main/notification.js) renderer `reportHeight` | calcHeight, items.size, container.children.length |
+| [notification.js](../main/notification.js) `dismissItem` старт/mid/final | id, items size, calcH в каждой стадии |
+
+**Канал**: renderer пишет через новый `window.notifApi.log(level, message)` → IPC `app:log` → файл `chatcenter.log`. Префикс `[notif-renderer]` отличает от main.
+
+#### Что подтвердит/опровергнет логирование
+
+Моя гипотеза была: «промежуточный reportHeight внутри dismiss-анимации возвращает height>0 → main делает `setBounds(370×10)` → полоска ВИДНА 190мс → второй reportHeight(0) иногда не приходит → полоска остаётся».
+
+**Уже найдено при добавлении логов** (потенциальное опровержение): `calcHeight()` в [notification.js:17](../main/notification.js#L17) **уже пропускает** элементы с `pointerEvents='none'`. А `dismissItem` ставит `pointerEvents='none'` на строке 110 ДО первого reportHeight. То есть mid-animation reportHeight теоретически должен возвращать **0**. Если так — моя гипотеза неверна.
+
+Логи покажут что на самом деле.
+
+#### План
+
+1. Пользователь запускает приложение
+2. Получает 1-2 уведомления, ждёт пока скроются
+3. Если полоска появилась — пришлёт `chatcenter.log`
+4. По фактам определим причину
+
+**Tests**: не добавлены (только diagnostic). Lint + 614 vitest проходят. Версия `0.89.19 → 0.89.20` (patch — diagnostic only).
 
 ---
 

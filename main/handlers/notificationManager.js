@@ -110,6 +110,8 @@ function repositionNotifWin() {
   const { screen } = _deps
   if (!notifWin || notifWin.isDestroyed()) return
   const count = notifItems.length
+  // v0.89.20: diagnostic log
+  console.log('[notif-reposition] count=' + count + ' visible=' + notifWin.isVisible())
   if (count === 0) {
     // v0.89.18: safeHide — иначе ghost hit-region на Win11.
     safeHideTransparentWindow(notifWin)

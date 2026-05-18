@@ -44,6 +44,13 @@ export function safeHideTransparentWindow(win) {
   if (!win) return false
   try {
     if (typeof win.isDestroyed === 'function' && win.isDestroyed()) return false
+    // v0.89.20: diagnostic log — расследование бага «остаётся полоска»
+    try {
+      const wasVisible = typeof win.isVisible === 'function' ? win.isVisible() : 'unknown'
+      const boundsBefore = typeof win.getBounds === 'function' ? win.getBounds() : null
+      console.log('[notif-guard] safeHide called wasVisible=' + wasVisible +
+        ' boundsBefore=' + JSON.stringify(boundsBefore))
+    } catch (_) {}
     // Шаг 1: клики сквозь окно даже если hit-region останется
     if (typeof win.setIgnoreMouseEvents === 'function') {
       win.setIgnoreMouseEvents(true)
@@ -57,7 +64,8 @@ export function safeHideTransparentWindow(win) {
       win.hide()
     }
     return true
-  } catch (_) {
+  } catch (e) {
+    try { console.warn('[notif-guard] safeHide error: ' + e?.message) } catch (_) {}
     return false
   }
 }
@@ -76,6 +84,8 @@ export function restoreMouseEvents(win) {
     if (typeof win.isDestroyed === 'function' && win.isDestroyed()) return
     if (typeof win.setIgnoreMouseEvents === 'function') {
       win.setIgnoreMouseEvents(false)
+      // v0.89.20: diagnostic log
+      try { console.log('[notif-guard] restoreMouseEvents called') } catch (_) {}
     }
   } catch (_) { /* noop */ }
 }

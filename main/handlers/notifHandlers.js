@@ -62,7 +62,12 @@ export function initNotifHandlers(deps) {
   ipcMain.on('notif:resize', (_event, height) => {
     const notifWin = getNotifWin()
     if (!notifWin || notifWin.isDestroyed()) return
+    const rawHeight = height
     height = Math.round(height)
+    // v0.89.20: diagnostic log — фиксируем КАЖДЫЙ resize event для расследования
+    // mid-animation полоски (см. analysis в conversation 2026-05-18).
+    console.log('[notif-resize] raw=' + rawHeight + ' rounded=' + height +
+      ' visible=' + notifWin.isVisible() + ' items=' + getNotifItems().length)
     if (height <= 0) {
       // v0.89.18: safeHideTransparentWindow — без этого на Win11 остаётся
       // невидимый hit-test регион + тонкая линия (см. ловушка v0.39.0 → v0.89.18
