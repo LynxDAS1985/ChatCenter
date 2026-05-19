@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.41 (19 мая 2026)
+## Текущая версия: v0.89.42 (19 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.41). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.42). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,12 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.42 — Phase 2 webview миграции: feature flag + условный рендер (pilot без ChatMonitor)
+
+Phase 2.1: toggle `useWebContentsView` в SettingsPanel (default OFF). Phase 2.2: App.jsx условный рендер `<WebContentsViewSlot>` vs `<webview>`. Phase 2.3 (min): pilot БЕЗ ChatMonitor — задокументировано. Phase 2.3 (full) — отдельная фаза. Регрессия +2 проверки.
 
 ---
 
@@ -229,39 +235,7 @@ if (result?.topics?.[0]) {
 
 ### v0.89.24 — Diagnostic логи для forum topics pipeline
 
-**Контекст**: пользователь сообщил что forum-чаты (например OZONовая Дыра в Telegram) не открываются через панель тем. После v0.89.1 (TDLib Stage 4 Этап 3.10 — добавление forum topics) код не менялся, но регрессия проявилась сейчас. В логах **0 событий** про forum — handlers не логировали.
-
-#### Что добавлено (только diagnostic, без правок поведения)
-
-| Где | Лог |
-|---|---|
-| [`tdlibIpcHandlers.js`](../main/native/tdlibIpcHandlers.js) `tg:get-forum-topics` | `[forum-ipc] tg:get-forum-topics chatId=X limit=N` + result |
-| [`tdlibBackend.js`](../main/native/backends/tdlibBackend.js) `forum.getTopics` | `[forum-be] getTopics chatId, accountId, rawId, chatCached=B, typeAt, is_channel, is_forum, title` |
-| [`tdlibMapper.js`](../main/native/backends/tdlibMapper.js) `mapChat` | `[forum-map] chatId=X title=Y is_forum=true` при mapping forum-чата |
-| [`InboxMode.jsx`](../src/native/modes/InboxMode.jsx) useEffect | `[forum-ui] activeChatId, chatFound, type, isForum, triggerForum` + result |
-
-**Канал**: main → `console.log` (через main logger в `chatcenter.log`). Renderer → `window.api.send('app:log', ...)` → файл.
-
-#### Что покажут логи
-
-| Сценарий | Лог покажет |
-|---|---|
-| TDLib не загрузил `is_forum=true` для чата | `[forum-map]` отсутствует для этого chatId |
-| getChatCached возвращает stale data | `[forum-be]` `is_forum=false` для известного forum-чата |
-| Условие в UI не срабатывает | `[forum-ui]` `triggerForum=false` |
-| Backend invoke `getForumTopics` падает | `[forum-be]` error + `[forum-ipc]` error |
-| Renderer вообще не зовёт handler | `[forum-ipc]` не появится |
-
-#### Версия
-
-`0.89.23 → 0.89.24` (patch — diagnostic only). Lint + check-memory OK.
-
-#### План использования
-
-1. Пользователь перезапускает приложение
-2. Открывает forum-чат который **должен** показать панель тем (OZONовая Дыра)
-3. Присылает свежий `chatcenter.log`
-4. По фактам определим что именно сломано в pipeline
+Пользователь: forum-чаты не открывают панель тем. Добавлены 4 точки логирования `[forum-ipc/be/map/ui]` без правок поведения. Логи v0.89.25 → нашли причину (is_forum в supergroup, не chatTypeSupergroup, ловушка #24).
 
 ---
 

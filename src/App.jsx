@@ -14,6 +14,8 @@ import {
 } from './utils/connectionHealthScheduler.js'
 import TabBar from './components/TabBar.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+// v0.89.42 (Phase 2.2): WebContentsView pilot — условный рендер по settings.useWebContentsView.
+import WebContentsViewSlot from './components/WebContentsViewSlot.jsx'
 
 // Hooks
 import useKeyboardShortcuts from './hooks/useKeyboardShortcuts.js'
@@ -585,6 +587,20 @@ export default function App() {
                       onActiveNativeAccountChange={setActiveNativeAccountId}
                     />
                   </Suspense>
+                ) : settings.useWebContentsView ? (
+                  /* v0.89.42 (Phase 2.2 pilot): WebContentsViewSlot вместо <webview>.
+                     ВНИМАНИЕ — pilot mode БЕЗ ChatMonitor: setWebviewRef + webviewSetup
+                     не вызываются для slot, поэтому НЕТ перехвата сообщений (нет ribbon
+                     уведомлений, нет mark-read, нет enrichNotif). Только для визуальной
+                     проверки UX-улучшений (разделитель не залипает, нет webview boundary).
+                     Phase 2.3 (полная миграция ChatMonitor) — отдельная фаза. */
+                  <WebContentsViewSlot
+                    viewId={m.id}
+                    url={m.url}
+                    partition={m.partition}
+                    preload={monitorPreloadUrl || undefined}
+                    visible={activeId === m.id}
+                  />
                 ) : (
                   <webview
                     ref={el => setWebviewRef(el, m.id)}
