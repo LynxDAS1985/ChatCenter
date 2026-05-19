@@ -256,6 +256,81 @@ test('Документация .memory-bank/webcontents-view-pilot-results.md с
   assert(fs.existsSync(abs), 'webcontents-view-pilot-results.md удалён!')
 })
 
+// ──────────────────────────────────────────────────────────────────
+// v0.89.44: Phase 2.3 (full) + cleanup UI + cache metrics
+// ──────────────────────────────────────────────────────────────────
+
+test('webContentsViewBridge.js: getWebContentsId/style/src — расширенный контракт', () => {
+  const abs = path.resolve(process.cwd(), 'src/utils/webContentsViewBridge.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  // webviewSetup использует el.getWebContentsId?.() для multi-account routing.
+  assert(/getWebContentsId/.test(content),
+    'getWebContentsId удалён из bridge — multi-account routing в webviewSetup сломается')
+  // webviewSetup может делать el.style.display = 'none' — нужен любой stub.
+  assert(/style\s*:/.test(content), 'style: proxy/stub удалён из bridge')
+  // el.src = url → wcv:load-url (или хотя бы getter/setter).
+  assert(/set\s+src|src:\s*\(/.test(content),
+    'src setter удалён из bridge — webviewSetup при el.src=url не сможет навигировать')
+})
+
+test('WebContentsViewSlot.jsx: onCreated callback для подключения bridge', () => {
+  const abs = path.resolve(process.cwd(), 'src/components/WebContentsViewSlot.jsx')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/onCreated/.test(content),
+    'onCreated prop удалён из WebContentsViewSlot — App.jsx не сможет подключить bridge после создания view')
+})
+
+test('App.jsx: bridge подключается при создании WebContentsView', () => {
+  const abs = path.resolve(process.cwd(), 'src/App.jsx')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/createWebContentsViewBridge/.test(content),
+    'createWebContentsViewBridge не импортирован/не используется в App.jsx — Phase 2.3 откат')
+  assert(/_isWebContentsViewBridge/.test(content),
+    'проверка _isWebContentsViewBridge удалена — будет создавать новый bridge каждый рендер')
+})
+
+test('App.jsx: removeMessenger вызывает wcv:cleanup-partition (Совет 3)', () => {
+  const abs = path.resolve(process.cwd(), 'src/App.jsx')
+  const content = fs.readFileSync(abs, 'utf8')
+  // Находим блок removeMessenger и проверяем что в нём есть wcv:cleanup-partition.
+  const idx = content.indexOf('removeMessenger = useCallback')
+  assert(idx > 0, 'removeMessenger callback не найден в App.jsx')
+  const block = content.slice(idx, idx + 1500)
+  assert(/wcv:cleanup-partition/.test(block),
+    'wcv:cleanup-partition не вызывается в removeMessenger — осколки сессии остаются на диске после удаления мессенджера')
+  assert(/full:\s*true/.test(block),
+    'cleanup должен быть с full:true (logout) — иначе cookies/localStorage останутся')
+})
+
+test('SettingsPanel.jsx: кнопка очистки кэша WebContentsView (Совет 2)', () => {
+  const abs = path.resolve(process.cwd(), 'src/components/SettingsPanel.jsx')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/wcv:cleanup-partition/.test(content),
+    'кнопка очистки кэша WebContentsView удалена из SettingsPanel — Совет 2 откат')
+  assert(/cleanupWcvPartitions|wcvCleanup/.test(content),
+    'обработчик/state для кнопки очистки WebContentsView удалён')
+})
+
+test('nativeStore.js: метрики hit/miss IndexedDB кэша (Совет 4)', () => {
+  const abs = path.resolve(process.cwd(), 'src/native/store/nativeStore.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/idb-cache/.test(content),
+    "logNativeScroll('idb-cache', ...) удалён — нет метрик hit/miss для оптимизации кэша")
+  // Проверяем что обе ветки логируются (общий чат + топик).
+  const matches = content.match(/idb-cache/g) || []
+  assert(matches.length >= 2,
+    'метрика idb-cache должна быть и в loadMessages, и в selectForumTopic — нашлась только в одной ветке')
+})
+
+test('topicMessagesCache.js удалён, остался только messagesCache.js (Совет 5)', () => {
+  const obsolete = path.resolve(process.cwd(), 'src/native/utils/topicMessagesCache.js')
+  assert(!fs.existsSync(obsolete),
+    'topicMessagesCache.js (re-export) восстановлен — новые импорты должны использовать messagesCache.js')
+  const replacement = path.resolve(process.cwd(), 'src/native/utils/messagesCache.js')
+  assert(fs.existsSync(replacement),
+    'messagesCache.js удалён — это основной модуль кэша сообщений')
+})
+
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) {
   console.log('\n❌ Регрессионная защита сломана. Это означает возврат устаревшего паттерна.')

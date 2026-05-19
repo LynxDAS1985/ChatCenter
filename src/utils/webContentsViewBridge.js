@@ -127,6 +127,40 @@ export function createWebContentsViewBridge(viewId) {
       }
     },
 
+    // v0.89.44 (Совет 1): эмуляция дополнительных свойств которые webviewSetup
+    // использует. Без них при подключении bridge к setWebviewRef будут ошибки.
+    /**
+     * Возвращает viewId как fake webContentsId. Используется в webviewSetup
+     * для регистрации multi-account routing (`app:register-webview`). Для
+     * WebContentsView routing уже встроен через wcv:create с partition.
+     * Возвращаем псевдо-id (хеш строки), чтобы registerwebview принял число.
+     */
+    getWebContentsId() {
+      // Простой хеш viewId → положительное число, стабильное для одного id
+      let h = 0
+      for (let i = 0; i < viewId.length; i++) h = ((h << 5) - h) + viewId.charCodeAt(i) | 0
+      return Math.abs(h) || 1
+    },
+
+    /**
+     * Фиктивный style объект. webviewSetup иногда ставит `el.style.display = 'none'`
+     * для скрытия webview (например при автоскрытии). Для WebContentsView скрытие
+     * управляется через visible prop в Slot — здесь просто no-op.
+     */
+    style: new Proxy({}, {
+      get() { return '' },
+      set() { return true },
+    }),
+
+    /**
+     * Фиктивный src setter — webviewSetup может присваивать `el.src = url` для
+     * навигации. Проксируем через wcv:load-url.
+     */
+    set src(url) {
+      if (url) window.api?.invoke('wcv:load-url', { id: viewId, url }).catch(() => {})
+    },
+    get src() { return null },
+
     // Маркер для отладки и регрессионных тестов
     _isWebContentsViewBridge: true,
     _viewId: viewId,

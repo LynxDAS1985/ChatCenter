@@ -16,6 +16,8 @@ import TabBar from './components/TabBar.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 // v0.89.42 (Phase 2.2): WebContentsView pilot — условный рендер по settings.useWebContentsView.
 import WebContentsViewSlot from './components/WebContentsViewSlot.jsx'
+// v0.89.44 (Совет 1): bridge для подключения webviewSetup к WebContentsView через wcv:* IPC.
+import { createWebContentsViewBridge } from './utils/webContentsViewBridge.js'
 
 // Hooks
 import useKeyboardShortcuts from './hooks/useKeyboardShortcuts.js'
@@ -231,6 +233,14 @@ export default function App() {
   })
 
   const removeMessenger = useCallback((id) => {
+    // v0.89.44 (Совет 3): авто-cleanup partition при удалении мессенджера.
+    // full:true — чистим ВСЁ (cookies, localStorage, IndexedDB) = эффект logout.
+    // Иначе осколки сессии остаются на диске даже если мессенджер удалён из UI.
+    const removed = messengersRef.current.find(m => m.id === id)
+    if (removed?.partition) {
+      try { window.api?.invoke('wcv:cleanup-partition', { partition: removed.partition, full: true })
+        .catch(() => {}) } catch (_) {}
+    }
     setMessengers(prev => {
       const next = prev.filter(m => m.id !== id)
       setActiveId(curr => curr === id ? (next[0]?.id || null) : curr)
@@ -588,18 +598,24 @@ export default function App() {
                     />
                   </Suspense>
                 ) : settings.useWebContentsView ? (
-                  /* v0.89.42 (Phase 2.2 pilot): WebContentsViewSlot вместо <webview>.
-                     ВНИМАНИЕ — pilot mode БЕЗ ChatMonitor: setWebviewRef + webviewSetup
-                     не вызываются для slot, поэтому НЕТ перехвата сообщений (нет ribbon
-                     уведомлений, нет mark-read, нет enrichNotif). Только для визуальной
-                     проверки UX-улучшений (разделитель не залипает, нет webview boundary).
-                     Phase 2.3 (полная миграция ChatMonitor) — отдельная фаза. */
+                  /* v0.89.42 → v0.89.44 — Phase 2.3 full. WebContentsViewSlot + bridge
+                     для подключения ChatMonitor через webviewSetup. При первом рендере
+                     создаём bridge-объект эмулирующий <webview> интерфейс и передаём
+                     в setWebviewRef → старый ChatMonitor-код получает события через
+                     wcv:event IPC и выполняет executeJavaScript через wcv:execute-js. */
                   <WebContentsViewSlot
                     viewId={m.id}
                     url={m.url}
                     partition={m.partition}
                     preload={monitorPreloadUrl || undefined}
                     visible={activeId === m.id}
+                    onCreated={() => {
+                      // Создаём bridge один раз на messenger.id и подключаем к setWebviewRef.
+                      if (!webviewRefs.current[m.id] || !webviewRefs.current[m.id]._isWebContentsViewBridge) {
+                        const bridge = createWebContentsViewBridge(m.id)
+                        setWebviewRef(bridge, m.id)
+                      }
+                    }}
                   />
                 ) : (
                   <webview

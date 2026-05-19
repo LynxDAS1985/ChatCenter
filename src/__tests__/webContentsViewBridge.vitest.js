@@ -163,4 +163,38 @@ describe('webContentsViewBridge v0.89.43', () => {
     expect(h1).toHaveBeenCalled()
     expect(h2).toHaveBeenCalled()
   })
+
+  // v0.89.44 (Совет 1): расширенный webview-контракт для webviewSetup.
+  it('getWebContentsId возвращает стабильный положительный число для одного viewId', () => {
+    const a = createWebContentsViewBridge('view1')
+    const b = createWebContentsViewBridge('view1')
+    expect(a.getWebContentsId()).toBe(b.getWebContentsId())
+    expect(a.getWebContentsId()).toBeGreaterThan(0)
+  })
+
+  it('getWebContentsId возвращает РАЗНЫЕ значения для разных viewId', () => {
+    const a = createWebContentsViewBridge('view1').getWebContentsId()
+    const b = createWebContentsViewBridge('view2').getWebContentsId()
+    expect(a).not.toBe(b)
+  })
+
+  it('style — proxy, set не падает (webviewSetup делает el.style.display = "none")', () => {
+    const b = createWebContentsViewBridge('view1')
+    expect(() => { b.style.display = 'none' }).not.toThrow()
+    expect(b.style.display).toBe('')
+  })
+
+  it('src setter проксирует через wcv:load-url IPC', () => {
+    const b = createWebContentsViewBridge('view1')
+    b.src = 'https://web.telegram.org/k/'
+    expect(invokeMock).toHaveBeenCalledWith('wcv:load-url',
+      { id: 'view1', url: 'https://web.telegram.org/k/' })
+  })
+
+  it('src setter с пустым значением не дергает IPC', () => {
+    const b = createWebContentsViewBridge('view1')
+    invokeMock.mockClear()
+    b.src = ''
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
 })

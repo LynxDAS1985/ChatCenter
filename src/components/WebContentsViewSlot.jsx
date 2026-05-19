@@ -28,6 +28,7 @@ import { useEffect, useRef } from 'react'
 export default function WebContentsViewSlot({
   viewId, url, partition, preload,
   visible = true,
+  onCreated,
   onIpcMessage, onDidFinishLoad, onDomReady, onDidFailLoad,
   onPageTitleUpdated, onConsoleMessage, onRenderProcessGone,
 }) {
@@ -55,6 +56,9 @@ export default function WebContentsViewSlot({
       lastUrlRef.current = url
       // После создания — сразу выставляем bounds.
       pushBounds()
+      // v0.89.44 (Совет 1): onCreated callback — для подключения bridge в App.jsx
+      // когда useWebContentsView=true (см. setWebviewRef + webviewSetup).
+      try { onCreated?.() } catch (_) {}
     })()
     return () => {
       alive = false

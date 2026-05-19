@@ -95,6 +95,10 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
   const [errorLog, setErrorLog] = useState(null)        // null = не загружен, '' = пуст, 'текст' = есть записи
   const [logLoading, setLogLoading] = useState(false)
   const [logClearing, setLogClearing] = useState(false)
+  // v0.89.44 (Совет 2): WebContentsView partition cleanup. wcvCleanup* = null
+  // когда ничего не делаем; объект {running, done, total, message} во время
+  // и после операции. Видно только когда useWebContentsView=true.
+  const [wcvCleanup, setWcvCleanup] = useState(null)
   const previewTimerRef = useRef(null)
 
   const loadLog = async () => {
@@ -116,6 +120,27 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
       setErrorLog('')
     } catch {}
     setLogClearing(false)
+  }
+
+  // v0.89.44 (Совет 2): по очереди чистит cache для каждого мессенджера через
+  // wcv:cleanup-partition. full:false — оставляем cookies/сессии (logout НЕ
+  // делаем). Полная очистка происходит при удалении мессенджера (Совет 3).
+  const cleanupWcvPartitions = async () => {
+    const targets = messengers.filter(m => m.partition && !m.isNative)
+    if (targets.length === 0) {
+      setWcvCleanup({ running: false, done: 0, total: 0, message: 'Нет мессенджеров с partition' })
+      return
+    }
+    setWcvCleanup({ running: true, done: 0, total: targets.length, message: '' })
+    let done = 0
+    for (const m of targets) {
+      try {
+        await window.api?.invoke('wcv:cleanup-partition', { partition: m.partition, full: false })
+      } catch (_) {}
+      done += 1
+      setWcvCleanup({ running: done < targets.length, done, total: targets.length, message: '' })
+    }
+    setWcvCleanup({ running: false, done, total: targets.length, message: 'Очищено: ' + done + ' из ' + targets.length })
   }
 
   useEffect(() => {
@@ -461,6 +486,31 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <p className="text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>
                 Файл: <code style={{ color: 'var(--cc-text-dim)' }}>userData/ai-errors.log</code> · Показаны последние 30 строк
               </p>
+
+              {/* v0.89.44 (Совет 2): очистка кэша WebContentsView для всех
+                  мессенджеров. Видна только когда пилот WebContentsView включён.
+                  Иначе кнопка бесполезна — partition создаётся через старый webview,
+                  и наш wcv:cleanup-partition такие partition не трогает. */}
+              {settings.useWebContentsView && (
+                <div className="mt-2">
+                  <button
+                    onClick={cleanupWcvPartitions}
+                    disabled={wcvCleanup?.running}
+                    className="w-full py-2 rounded-xl text-sm transition-all cursor-pointer disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)', border: '1px solid var(--cc-border)' }}
+                    onMouseEnter={e => { if (!wcvCleanup?.running) e.currentTarget.style.backgroundColor = 'var(--cc-border)' }}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
+                    title="Удаляет кэш изображений и страниц для каждого мессенджера. Сессии (cookies) сохраняются — выходить из аккаунтов не нужно."
+                  >
+                    {wcvCleanup?.running
+                      ? '⏳ Очистка ' + wcvCleanup.done + '/' + wcvCleanup.total + '…'
+                      : '🧹 Очистить кэш WebContentsView'}
+                  </button>
+                  {wcvCleanup?.message && (
+                    <p className="text-[10px] mt-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>{wcvCleanup.message}</p>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 

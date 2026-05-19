@@ -579,7 +579,14 @@ export default function useNativeStore() {
     // с invoke загружаем последние сообщения из IDB. Если localStorage cache
     // (loadChatCache) пуст или мал, IDB может дать больше истории (~50 vs ~10
     // для localStorage). Не перезаписываем если в state уже есть свежие данные.
+    // v0.89.44 (Совет 4): метрика hit/miss — позволяет в логе видеть эффективность
+    // кэша при будущей оптимизации (расширение TTL, лимита и т.д.).
     loadCacheMessages(chatId, null).then(cached => {
+      logNativeScroll('idb-cache', {
+        op: 'loadMessages', chatId,
+        result: cached?.messages?.length ? 'hit' : 'miss',
+        count: cached?.messages?.length || 0,
+      })
       if (!cached) return
       setState(s => {
         if ((s.messages[chatId] || []).length > 0) return s
@@ -693,6 +700,13 @@ export default function useNativeStore() {
     // Desktop через TDLib local cache. Юзер видит сообщения сразу, не 188-500мс
     // чёрного экрана. Когда сервер ответит — state обновится свежими данными.
     loadCacheMessages(chatId, topicIdForCache).then(cached => {
+      // v0.89.44 (Совет 4): метрика hit/miss для топиков. Особенно важна
+      // для топиков — главный сценарий optimistic render (см. v0.89.39).
+      logNativeScroll('idb-cache', {
+        op: 'selectForumTopic', chatId, topicId: topicIdForCache,
+        result: cached?.messages?.length ? 'hit' : 'miss',
+        count: cached?.messages?.length || 0,
+      })
       // Если за время загрузки кэша юзер кликнул другой топик — игнорируем.
       if (!cached || selectTopicRequestRef.current.get(chatId) !== requestId) return
       setState(s => {
