@@ -208,6 +208,54 @@ test('App.jsx: условный рендер WebContentsViewSlot vs <webview>', 
     '<webview> тег УДАЛЁН из App.jsx! Phase 2 — feature-flag миграция, fallback должен оставаться')
 })
 
+// v0.89.43: новые компоненты Phase 2 продолжение
+test('WebContentsViewSlot.jsx: реактивный loadURL для url change без пересоздания', () => {
+  const abs = path.resolve(process.cwd(), 'src/components/WebContentsViewSlot.jsx')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/wcv:load-url/.test(content),
+    'реактивный wcv:load-url удалён — url change будет требовать пересоздания view')
+  assert(/lastUrlRef/.test(content),
+    'lastUrlRef удалён — без него loadURL будет дёргаться каждый рендер')
+})
+
+test('webContentsViewManager.js: cleanupPartition существует', () => {
+  const abs = path.resolve(process.cwd(), 'main/utils/webContentsViewManager.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/cleanupPartition/.test(content),
+    'cleanupPartition удалён из webContentsViewManager — partition cleanup потерян')
+  assert(/clearCache|clearStorageData/.test(content),
+    'clearCache/clearStorageData удалены из cleanupPartition')
+})
+
+test('webContentsViewIpcHandlers.js: wcv:cleanup-partition канал', () => {
+  const abs = path.resolve(process.cwd(), 'main/handlers/webContentsViewIpcHandlers.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/wcv:cleanup-partition/.test(content),
+    'IPC канал wcv:cleanup-partition удалён')
+})
+
+test('webContentsViewBridge.js существует и эмулирует webview интерфейс', () => {
+  const abs = path.resolve(process.cwd(), 'src/utils/webContentsViewBridge.js')
+  assert(fs.existsSync(abs), 'webContentsViewBridge.js удалён!')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/createWebContentsViewBridge/.test(content), 'createWebContentsViewBridge экспорт удалён')
+  // Эмулируемые методы <webview> — все 4 обязательны для совместимости с webviewSetup
+  for (const m of ['executeJavaScript', 'send', 'addEventListener', 'removeEventListener']) {
+    assert(content.includes(m), 'метод ' + m + ' удалён из bridge — webviewSetup не сможет работать через него')
+  }
+  assert(/_chatcenterListeners/.test(content), '_chatcenterListeners массив удалён — webviewSetup ломается')
+})
+
+test('Документация .memory-bank/electron-breaking-changes.md существует', () => {
+  const abs = path.resolve(process.cwd(), '.memory-bank/electron-breaking-changes.md')
+  assert(fs.existsSync(abs), 'electron-breaking-changes.md удалён!')
+})
+
+test('Документация .memory-bank/webcontents-view-pilot-results.md существует', () => {
+  const abs = path.resolve(process.cwd(), '.memory-bank/webcontents-view-pilot-results.md')
+  assert(fs.existsSync(abs), 'webcontents-view-pilot-results.md удалён!')
+})
+
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) {
   console.log('\n❌ Регрессионная защита сломана. Это означает возврат устаревшего паттерна.')

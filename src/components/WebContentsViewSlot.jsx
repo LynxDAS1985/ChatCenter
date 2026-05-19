@@ -34,8 +34,12 @@ export default function WebContentsViewSlot({
   const containerRef = useRef(null)
   const lastBoundsRef = useRef({ x: 0, y: 0, width: 0, height: 0 })
   const createdRef = useRef(false)
+  const lastUrlRef = useRef(null)
 
-  // Создание / уничтожение WebContentsView через IPC
+  // Создание / уничтожение WebContentsView через IPC.
+  // Зависимости: viewId, partition, preload — изменение этих параметров требует
+  // пересоздания view (это базовые опции webPreferences). url НЕ в зависимостях —
+  // он обновляется через wcv:load-url в отдельном эффекте (Совет 2 v0.89.43).
   useEffect(() => {
     let alive = true
     if (!viewId) return
@@ -48,6 +52,7 @@ export default function WebContentsViewSlot({
         return
       }
       createdRef.current = true
+      lastUrlRef.current = url
       // После создания — сразу выставляем bounds.
       pushBounds()
     })()
@@ -58,7 +63,17 @@ export default function WebContentsViewSlot({
         createdRef.current = false
       }
     }
-  }, [viewId, url, partition, preload])
+  }, [viewId, partition, preload])
+
+  // v0.89.43 (Совет 2): реактивный loadURL при изменении url БЕЗ пересоздания
+  // view (избегаем потери session, аватара, scroll позиции). View пересоздаётся
+  // только если меняется partition или preload (это базовые webPreferences).
+  useEffect(() => {
+    if (!createdRef.current || !viewId || !url) return
+    if (lastUrlRef.current === url) return
+    lastUrlRef.current = url
+    window.api?.invoke('wcv:load-url', { id: viewId, url }).catch(() => {})
+  }, [viewId, url])
 
   // Подписка на 'wcv:event' (один канал для всех событий main → renderer).
   useEffect(() => {

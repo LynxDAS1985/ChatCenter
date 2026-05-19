@@ -58,6 +58,11 @@ export function initWebContentsViewIpcHandlers({ ipcMain, getMainWindow, sendToR
   })
   handle('wcv:destroy', ({ id } = {}) => ({ ok: manager.destroyView(id) }))
   handle('wcv:list', () => ({ ok: true, ids: manager.listViews() }))
+  // v0.89.43 (Совет 3): partition cleanup — освобождает дисковое пространство
+  // для конкретной session('persist:foo'). opts.full=true чистит ВСЁ включая
+  // cookies/localstorage (logout). По умолчанию только cache + индексы.
+  handle('wcv:cleanup-partition', ({ partition, full } = {}) =>
+    manager.cleanupPartition(partition, { full: !!full }))
 
   // Subscribe to manager events → forward to renderer как 'wcv:event'.
   const eventTypes = [

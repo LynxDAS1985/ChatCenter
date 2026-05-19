@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.42 (19 мая 2026)
+## Текущая версия: v0.89.43 (19 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.42). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,12 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.43 — 5 советов Phase 2 расширения (loadURL reactive, partition cleanup, breaking changes docs, pilot template, bridge для webviewSetup)
+
+Совет 2: реактивный `wcv:load-url` без пересоздания view (lastUrlRef). Совет 3: `cleanupPartition(partition, opts)` + IPC `wcv:cleanup-partition` (clearCache + clearStorageData). Совет 4: новый `.memory-bank/electron-breaking-changes.md` — мониторинг + чек-лист. Совет 5: `.memory-bank/webcontents-view-pilot-results.md` — шаблон лога пилота. Совет 1 (min): `src/utils/webContentsViewBridge.js` — proxy эмулирующий `<webview>` интерфейс через `wcv:*` IPC (для подключения webviewSetup в Phase 2.3 full без переписки). **Tests**: 650 → 667 (+17 bridge unit), modernPatternsGuard 21 → 27. Bridge experimental, не подключён к App.jsx.
 
 ---
 

@@ -183,6 +183,38 @@ export class WebContentsViewManager extends EventEmitter {
       this.destroyView(id)
     }
   }
+
+  /**
+   * v0.89.43 (Совет 3): cleanup для конкретной partition session.
+   * Очищает cache + storage + cookies для session('persist:foo') чтобы
+   * предотвратить бесконтрольный рост дискового пространства.
+   *
+   * НЕ удаляет авторизацию (через clearStorageData без 'localstorage' / 'cookies'
+   * по умолчанию — только cache и indexeddb). При полном logout юзер сам
+   * может вызвать с opts.full=true.
+   *
+   * @param {string} partition — 'persist:foo' или 'foo'
+   * @param {Object} [opts] — { full: boolean — очистить всё включая cookies/localstorage }
+   * @returns {Promise<{ok: boolean, sizeBefore?: number, sizeAfter?: number, error?: string}>}
+   */
+  async cleanupPartition(partition, opts = {}) {
+    if (!partition) return { ok: false, error: 'partition required' }
+    try {
+      const electron = require('electron')
+      const ses = electron.session.fromPartition(partition)
+      const sizeBefore = await ses.getCacheSize().catch(() => 0)
+      // По дефолту чистим только cache + индексы хранилища, не трогая cookies/localstorage
+      const storages = opts.full
+        ? ['appcache', 'cookies', 'filesystem', 'indexdb', 'localstorage', 'shadercache', 'websql', 'serviceworkers', 'cachestorage']
+        : ['appcache', 'filesystem', 'indexdb', 'shadercache', 'cachestorage']
+      await ses.clearCache()
+      await ses.clearStorageData({ storages })
+      const sizeAfter = await ses.getCacheSize().catch(() => 0)
+      return { ok: true, sizeBefore, sizeAfter }
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  }
 }
 
 // Singleton — в production main процессе используется один экземпляр.
