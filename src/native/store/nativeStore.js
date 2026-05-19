@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 import { attachTelegramIpcListeners, loadChatCache } from './nativeStoreIpc.js'
+import { saveTopicMessages, loadTopicMessages } from '../utils/topicMessagesCache.js'
 import {
   markHealthByDuration,
   markHealthError,
@@ -652,6 +653,7 @@ export default function useNativeStore() {
   const selectForumTopic = useCallback(async (chatId, topic, limit = 50) => {
     if (!chatId || !topic) return { ok: false, error: 'Не выбрана тема', messages: [] }
     const key = topicMessageKey(chatId, topic)
+    const topicIdForCache = topic.topicId || topic.id
     const unreadParams = unreadWindowRequestParams(topic.unreadCount, topic.readInboxMaxId, limit)
     // v0.89.37: race protection — каждому invoke выдаём requestId. Если за
     // время ожидания ответа юзер кликнул другой топик (selectTopicRequestRef
@@ -659,6 +661,19 @@ export default function useNativeStore() {
     // Так делает Discord (AbortController) и Telegram Desktop (requestId).
     const requestId = Date.now() + ':' + Math.random().toString(36).slice(2, 7)
     selectTopicRequestRef.current.set(chatId, requestId)
+    // v0.89.39: IndexedDB cache — optimistic render. Загружаем последние сообщения
+    // из локального кэша мгновенно, пока сервер отвечает. Так делает Telegram
+    // Desktop через TDLib local cache. Юзер видит сообщения сразу, не 188-500мс
+    // чёрного экрана. Когда сервер ответит — state обновится свежими данными.
+    loadTopicMessages(chatId, topicIdForCache).then(cached => {
+      // Если за время загрузки кэша юзер кликнул другой топик — игнорируем.
+      if (!cached || selectTopicRequestRef.current.get(chatId) !== requestId) return
+      setState(s => {
+        // Если в state уже есть свежие сообщения от сервера — кэш НЕ перезаписывает.
+        if ((s.messages[key] || []).length > 0) return s
+        return { ...s, messages: { ...s.messages, [key]: cached.messages } }
+      })
+    }).catch(() => {})
     // v0.89.28: diagnostic — selectForumTopic был «черным ящиком», сообщения
     // не приходили без следов в логах. См. ловушка #27.
     try {
@@ -741,6 +756,14 @@ export default function useNativeStore() {
         loadingMessages: loadingCopy,
       }
     })
+    // v0.89.39: сохраняем свежие данные в IndexedDB кэш для следующего открытия.
+    // saveTopicMessages — fire and forget (async, не блокирует UI).
+    if (result?.ok && Array.isArray(result.messages)) {
+      saveTopicMessages(chatId, topicIdForCache, result.messages, {
+        unreadCount: topic.unreadCount || 0,
+        readInboxMaxId: topic.readInboxMaxId || 0,
+      }).catch(() => {})
+    }
     return result
   }, [])
 

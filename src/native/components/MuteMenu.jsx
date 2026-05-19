@@ -21,12 +21,11 @@ export default function MuteMenu({ chat, x, y, onClose, onSetMute }) {
     const close = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
     const closeKey = (e) => { if (e.key === 'Escape') { if (step === 'times') setStep('main'); else onClose() } }
     // v0.89.38: pointerdown (W3C) вместо mousedown — поддержка mouse/touch/pen.
-    document.addEventListener('pointerdown', close)
-    document.addEventListener('keydown', closeKey)
-    return () => {
-      document.removeEventListener('pointerdown', close)
-      document.removeEventListener('keydown', closeKey)
-    }
+    // v0.89.39: AbortController — один cleanup вместо 2 removeEventListener вызовов.
+    const ac = new AbortController()
+    document.addEventListener('pointerdown', close, { signal: ac.signal })
+    document.addEventListener('keydown', closeKey, { signal: ac.signal })
+    return () => ac.abort()
   }, [onClose, step])
 
   const menuW = 210

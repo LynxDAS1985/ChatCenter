@@ -41,8 +41,8 @@ module.exports = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 950,
-    reason: 'v0.89.32: добавлены диагностические try-catch app:log блоки в markTopicRead, refreshTopicCounters, loadOlder/loadNewer для топиков (~16 строк к 900). Временная диагностика — снять после анализа логов юзера и закрытия двух жалоб (счётчик замирает / окно моргает). Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
+    ceiling: 1000,
+    reason: 'v0.89.39: добавлены IndexedDB cache optimistic render + save (~13 строк). Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
   },
   // v0.88.x: профильные тесты v0.88.x вынесены в nativeStoreUnreadPrefetch.vitest.jsx (218 строк).
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,

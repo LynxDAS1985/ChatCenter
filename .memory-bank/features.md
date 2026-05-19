@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.38 (19 мая 2026)
+## Текущая версия: v0.89.39 (19 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.38). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.39). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,16 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.39 — AbortController в hooks + IndexedDB кэш форум-топиков (Telegram-style optimistic render)
+
+**Совет 2 — AbortController**: в [`MuteMenu.jsx`](../src/native/components/MuteMenu.jsx) и [`AccountContextMenu.jsx`](../src/native/components/AccountContextMenu.jsx) (по 2 listener'а: pointerdown + keydown) — `{ signal: ac.signal }` + один `ac.abort()` вместо 2 removeEventListener. В файлах с 1 listener — НЕ трогаю (SIMPLICITY).
+
+**Совет 3 — IndexedDB optimistic render**: новый [`topicMessagesCache.js`](../src/native/utils/topicMessagesCache.js) — IDB store `cc-topic-cache`, последние 50 сообщений на топик, TTL 7 дней, graceful degradation. В [`selectForumTopic`](../src/native/store/nativeStore.js) при клике параллельно `loadTopicMessages` → если кэш есть → optimistic render. После сервера → `saveTopicMessages`. Как Telegram Desktop через TDLib local cache.
+
+**Tests**: 624 → 631 (+7).
 
 ---
 
