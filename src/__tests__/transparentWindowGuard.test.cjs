@@ -103,26 +103,33 @@ test('notificationManager.js: notifWin имеет backgroundThrottling: false', 
 // место = «невидимая полоса». backgroundThrottling: false (v0.89.35) ускоряет
 // быстрый путь, но НЕ закрывает race с одновременным batch. Force transform
 // в fallback — единственная гарантия final state.
-test('notification.js: slideIn fallback ФОРСИРУЕТ transform translateX(0)', () => {
+test('notification.js: slideIn force transform — в helper для обоих путей', () => {
   const abs = path.resolve(process.cwd(), 'main/notification.js')
   const content = fs.readFileSync(abs, 'utf8')
-  // Ищем setTimeout 600 ms fallback и проверяем что внутри есть force transform.
-  // Окно: от 'el.dataset.slideInDone = \'true\'' (повторно в setTimeout) до '}, 600)'.
-  const idx = content.indexOf("slideIn animationend timeout fallback")
-  assert(idx > 0,
-    'fallback блок slideIn animationend timeout не найден — кто-то удалил защиту v0.89.23+')
-  // Окно поиска: 1000 символов до строки лога + 500 после
-  const block = content.slice(Math.max(0, idx - 1000), idx + 500)
-  assert(/transform\s*=\s*['"`]translateX\(0\)/.test(block),
-    'force transform=translateX(0) УДАЛЁН из fallback!\n' +
-    '   Без него при race (4+ одновременных нотификаций) slideIn частично прерывается,\n' +
-    '   element остаётся с translateX(380px) за экраном, но calcHeight учитывает\n' +
-    '   его h px → окно расширяется на пустое место = «невидимая полоса».\n' +
-    '   См. ловушка #29 в mistakes/notifications-ribbon.md.')
-  assert(/style\.animation\s*=\s*['"`]none['"`]/.test(block),
-    'force animation=none УДАЛЁН из fallback — анимация может продолжить выполнение и перебить forced transform')
-  assert(/style\.opacity\s*=\s*['"`]1['"`]/.test(block),
-    'force opacity=1 УДАЛЁН из fallback — element может остаться полупрозрачным')
+  // v0.89.38: единый helper forceFinalSlideInState вызывается из:
+  //   1. onSlideInEnd (нормальный animationend)
+  //   2. setTimeout 600мс (fallback)
+  // Раньше force был только в fallback (v0.89.36) — но animationend может
+  // сработать нормально при частично прерванной анимации, transform застрянет.
+  assert(/forceFinalSlideInState/.test(content),
+    'helper forceFinalSlideInState УДАЛЁН из notification.js!\n' +
+    '   Без него force transform применяется только в fallback path (через 600мс).\n' +
+    '   Если animationend сработал нормально — translateX(380px) застревает.\n' +
+    '   См. ловушка #29 v0.89.38 в mistakes/notifications-ribbon.md.')
+  const helperIdx = content.indexOf('const forceFinalSlideInState')
+  assert(helperIdx > 0, 'definition helper не найдено')
+  const helperBlock = content.slice(helperIdx, helperIdx + 400)
+  assert(/transform\s*=\s*['"`]translateX\(0\)/.test(helperBlock),
+    'force transform=translateX(0) УДАЛЁН из helper')
+  assert(/style\.animation\s*=\s*['"`]none['"`]/.test(helperBlock),
+    'force animation=none УДАЛЁН из helper — анимация может продолжить выполнение')
+  assert(/style\.opacity\s*=\s*['"`]1['"`]/.test(helperBlock),
+    'force opacity=1 УДАЛЁН из helper')
+  // Проверка вызовов helper в обоих путях
+  const calls = (content.match(/forceFinalSlideInState\s*\(\s*\)/g) || []).length
+  assert(calls >= 2,
+    'forceFinalSlideInState() должен вызываться минимум 2 раза: в onSlideInEnd и в fallback.\n' +
+    '   Найдено вызовов: ' + calls + '. Один из путей пропускает force → element застрянет.')
 })
 
 // Защита от изменения helper'а — если кто-то удалит safeHideTransparentWindow

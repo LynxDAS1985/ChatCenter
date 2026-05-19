@@ -20,10 +20,11 @@ export default function MuteMenu({ chat, x, y, onClose, onSetMute }) {
   useEffect(() => {
     const close = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
     const closeKey = (e) => { if (e.key === 'Escape') { if (step === 'times') setStep('main'); else onClose() } }
-    document.addEventListener('mousedown', close)
+    // v0.89.38: pointerdown (W3C) вместо mousedown — поддержка mouse/touch/pen.
+    document.addEventListener('pointerdown', close)
     document.addEventListener('keydown', closeKey)
     return () => {
-      document.removeEventListener('mousedown', close)
+      document.removeEventListener('pointerdown', close)
       document.removeEventListener('keydown', closeKey)
     }
   }, [onClose, step])

@@ -34,8 +34,9 @@ export default function CountryPicker({ value, onChange, disabled }) {
     const onDoc = (e) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
     }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    // v0.89.38: pointerdown (W3C) вместо mousedown — поддержка mouse/touch/pen.
+    document.addEventListener('pointerdown', onDoc)
+    return () => document.removeEventListener('pointerdown', onDoc)
   }, [open])
 
   // Фокус на поиск + расчёт позиционирования при открытии

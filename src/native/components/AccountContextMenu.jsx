@@ -69,11 +69,12 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout, g
       if (menuRef.current && !menuRef.current.contains(e.target)) onClose()
     }
     document.addEventListener('keydown', onKey)
-    // clickaway срабатывает на mousedown — чтобы не конфликтовать с onClick кнопок внутри меню
-    setTimeout(() => document.addEventListener('mousedown', onClick), 0)
+    // v0.89.38: clickaway на pointerdown (W3C, mouse/touch/pen). setTimeout 0
+    // — чтобы не сработало на текущий клик который и открыл меню.
+    setTimeout(() => document.addEventListener('pointerdown', onClick), 0)
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener('mousedown', onClick)
+      document.removeEventListener('pointerdown', onClick)
     }
   }, [step, onClose])
 

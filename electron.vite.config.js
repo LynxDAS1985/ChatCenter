@@ -68,6 +68,7 @@ export default defineConfig({
           'pin-dock': resolve(__dirname, 'main/preloads/pin-dock.preload.cjs'),
           photoViewer: resolve(__dirname, 'main/preloads/photoViewer.preload.cjs'),
           videoPlayer: resolve(__dirname, 'main/preloads/videoPlayer.preload.cjs'),
+          'log-viewer': resolve(__dirname, 'main/preloads/log-viewer.preload.cjs'),
         },
         output: {
           // Production paths expect .js not .mjs

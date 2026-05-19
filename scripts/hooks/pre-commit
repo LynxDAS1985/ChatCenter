@@ -18,7 +18,7 @@ fi
 
 echo "🧪 Быстрые статические тесты (hook order, size, scope, structure, mainImports)..."
 FAIL=0
-for t in hookOrder.test.cjs componentScope.test.cjs fileSizeLimits.test.cjs appStructure.test.cjs mainImports.test.cjs mainRuntime.test.cjs transparentWindowGuard.test.cjs; do
+for t in hookOrder.test.cjs componentScope.test.cjs fileSizeLimits.test.cjs appStructure.test.cjs mainImports.test.cjs mainRuntime.test.cjs transparentWindowGuard.test.cjs modernPatternsGuard.test.cjs; do
   if [ -f "src/__tests__/$t" ]; then
     node "src/__tests__/$t" > /tmp/pre-commit.log 2>&1
     if [ $? -ne 0 ]; then

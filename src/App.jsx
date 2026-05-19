@@ -262,7 +262,7 @@ export default function App() {
     askRemoveMessenger, traceNotif, handleNewMessage,
   })
 
-  const { startResize } = useAIPanelResize({
+  const { startResize, onPointerMove, onPointerUp } = useAIPanelResize({
     isResizingRef, resizeStartRef, aiWidthRef, aiPanelRef, settingsRef,
     setIsResizing, setAiWidth, setSettings,
   })
@@ -604,17 +604,23 @@ export default function App() {
             </div>
           )}
 
-          {isResizing && (
-            <div className="absolute inset-0 z-50" style={{ cursor: 'col-resize' }} />
-          )}
+          {/* v0.89.38: глобальный fixed overlay вынесен на корень App (см. ниже).
+              Локальный absolute inset-0 z-50 не покрывал AI sidebar webview —
+              события мыши уходили в webview (отдельный процесс по Electron docs)
+              → mouseup не доходил до window → разделитель залипал. */}
         </div>
 
         {/* ── Resizer ── */}
+        {/* v0.89.38: pointer events (W3C 2018+) вместо устаревших mouse events.
+            setPointerCapture гарантирует доставку до pointerup; touchAction:'none'
+            предотвращает дефолтный pan/zoom на touch-устройствах. */}
         {showAI && (
           <div
-            onMouseDown={startResize}
+            onPointerDown={startResize}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
             className="shrink-0 cursor-col-resize transition-colors duration-150"
-            style={{ width: '6px', backgroundColor: isResizing ? '#2AABEE88' : 'var(--cc-border)' }}
+            style={{ width: '6px', backgroundColor: isResizing ? '#2AABEE88' : 'var(--cc-border)', touchAction: 'none' }}
             onMouseEnter={e => { if (!isResizing) e.currentTarget.style.backgroundColor = '#2AABEE66' }}
             onMouseLeave={e => { if (!isResizing) e.currentTarget.style.backgroundColor = 'var(--cc-border)' }}
             title="Потяни для изменения ширины панели ИИ"
@@ -715,6 +721,23 @@ export default function App() {
         <div className="cc-notif-tooltip" style={{ left: Math.min(cellTooltip.x + 8, window.innerWidth - 460), top: cellTooltip.y + 16 }}>
           {cellTooltip.text}
         </div>
+      )}
+
+      {/* v0.89.38: глобальный fixed overlay при resize разделителя AI sidebar.
+          По Electron docs https://www.electronjs.org/docs/latest/api/webview-tag
+          события мыши не пересекают границу <webview> — это отдельный процесс.
+          Без overlay поверх ВСЕХ webview (мессенджеры + AI) mouseup мог
+          застрять в webview, isResizingRef.current оставался true → разделитель
+          залипал. Глобальный fixed overlay с z-index 999999 покрывает оба
+          webview гарантированно. */}
+      {isResizing && (
+        <div
+          data-cc-resize-overlay="true"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 999999,
+            cursor: 'col-resize', userSelect: 'none',
+          }}
+        />
       )}
     </div>
   )

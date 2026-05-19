@@ -1,10 +1,21 @@
 // v0.84.4: Tray and log viewer — extracted from main.js
+// v0.89.38: log-viewer переведён на безопасные webPreferences (contextIsolation: true,
+//           nodeIntegration: false) + preload + IPC channel 'log-viewer:content'.
+//           По Electron Security Guidelines (https://www.electronjs.org/docs/latest/tutorial/security):
+//             - Don't #2: «Do not enable Node.js integration for remote content»
+//             - Don't #3: «Do not disable WebSecurity / contextIsolation»
 
 import { Tray, Menu, BrowserWindow } from 'electron'
 import { createTrayBadgeIcon } from './overlayIcon.js'
 
 let _deps = null
 let logViewerWin = null
+
+function getLogViewerPreloadPath() {
+  const { isDev, __dirname, path } = _deps
+  if (isDev) return path.join(__dirname, '../../main/preloads/log-viewer.preload.cjs')
+  return path.join(__dirname, '../preload/log-viewer.cjs')
+}
 
 // v0.84.3: Отдельное окно для просмотра логов
 function openLogViewer() {
@@ -13,23 +24,29 @@ function openLogViewer() {
   logViewerWin = new BrowserWindow({
     width: 900, height: 600, title: 'Логи ChatCenter',
     backgroundColor: '#1a1b2e',
-    webPreferences: { contextIsolation: false, nodeIntegration: true },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      preload: getLogViewerPreloadPath(),
+    },
   })
   const htmlPath = isDev
     ? path.join(__dirname, '../../main/log-viewer.html')
     : path.join(__dirname, '../main/log-viewer.html')
   logViewerWin.loadFile(htmlPath)
-  logViewerWin.webContents.once('did-finish-load', () => {
-    const logContent = readLogFile(1000)
-    logViewerWin.webContents.executeJavaScript(`window.__logContent = ${JSON.stringify(logContent)}; loadLog()`)
-  })
+  const sendLog = () => {
+    if (!logViewerWin || logViewerWin.isDestroyed()) return
+    try {
+      const content = readLogFile(1000)
+      logViewerWin.webContents.send('log-viewer:content', content)
+    } catch (_) {}
+  }
+  logViewerWin.webContents.once('did-finish-load', sendLog)
   // Auto refresh: обновляем лог каждые 3 сек пока окно открыто
   const logRefreshInterval = setInterval(() => {
     if (!logViewerWin || logViewerWin.isDestroyed()) { clearInterval(logRefreshInterval); return }
-    try {
-      const content = readLogFile(1000)
-      logViewerWin.webContents.executeJavaScript(`window.__logContent = ${JSON.stringify(content)}; if(autoMode) loadLog()`)
-    } catch {}
+    sendLog()
   }, 3000)
   logViewerWin.on('closed', () => { logViewerWin = null; clearInterval(logRefreshInterval) })
 }

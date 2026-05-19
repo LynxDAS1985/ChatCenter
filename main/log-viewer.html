@@ -105,27 +105,27 @@ function copyAll() {
 }
 
 function clearLog() {
-  try {
-    require('electron').ipcRenderer.invoke('app:clear-log').then(() => {
-      allLines = []
-      render()
-    })
-  } catch(e) { allLines = []; render() }
+  // v0.89.38: clearLog через contextBridge preload (nodeIntegration: false).
+  if (window.logViewer && typeof window.logViewer.clearLog === 'function') {
+    window.logViewer.clearLog().then(() => { allLines = []; render() }).catch(() => { allLines = []; render() })
+  } else { allLines = []; render() }
 }
 
 function loadLog() {
-  // Получаем лог через IPC (если доступен) или через глобальную переменную
-  if (window.__logContent) {
-    allLines = window.__logContent.split('\n').map(parseLine).filter(Boolean)
-    render()
-  }
+  // v0.89.38: содержимое теперь приходит через window.logViewer.onContent
+  // (preload subscribes to ipcRenderer 'log-viewer:content'). loadLog() — no-op,
+  // оставлен для совместимости со старыми вызовами (toggleAuto, button).
 }
 
-// Получаем лог при загрузке + Auto по умолчанию
+// v0.89.38: Подписка на обновления лога через безопасный contextBridge API.
 window.addEventListener('DOMContentLoaded', () => {
-  setTimeout(loadLog, 100)
-  // Auto включён по умолчанию
-  autoIv = setInterval(loadLog, 3000)
+  if (window.logViewer && typeof window.logViewer.onContent === 'function') {
+    window.logViewer.onContent((content) => {
+      if (!autoMode && allLines.length > 0) return // ручной режим — не перезаписываем
+      allLines = (content || '').split('\n').map(parseLine).filter(Boolean)
+      render()
+    })
+  }
 })
 </script>
 </body>

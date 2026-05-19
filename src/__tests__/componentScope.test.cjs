@@ -115,7 +115,9 @@ const ALLOWED = {
     // v0.86.7: useWebViewLifecycle hook
     'lifecycle',
     // v0.87.2: arrow params в useEffect
-    'loadedList'],
+    'loadedList',
+    // v0.89.38: useAIPanelResize теперь возвращает pointer event handlers + 'events' из текста комментария
+    'onPointerMove', 'onPointerUp', 'events'],
 }
 
 for (const comp of components) {

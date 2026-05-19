@@ -560,13 +560,27 @@
     // v0.89.23 (Баг #1): помечаем что element в процессе slideIn — calcHeight
     // его НЕ учитывает пока CSS animation не завершится. Иначе окно расширится
     // раньше чем element выехал в видимую зону (видна «пустая полоса»).
+    // v0.89.38: helper для финального состояния slideIn keyframe 100%.
+    // Вызывается ИЗ ОБОИХ путей (animationend + fallback timeout) — это правка
+    // ловушки #29 (v0.89.36 ставил force только в fallback path). Из лога 13:35
+    // 19 мая видно: animationend срабатывает нормально (slid=true), но CSS
+    // animation forwards может частично прерваться — translateX застрял на 380.
+    // Force в обоих путях = гарантия final state.
+    const forceFinalSlideInState = () => {
+      el.style.animation = 'none'
+      el.style.transform = 'translateX(0) scale(1)'
+      el.style.opacity = '1'
+    }
     el.dataset.slideInDone = 'false'
     const onSlideInEnd = (e) => {
       // Только событие slideIn (не другие animations типа goChatPulse)
       if (e.animationName !== 'slideIn') return
       el.dataset.slideInDone = 'true'
       el.removeEventListener('animationend', onSlideInEnd)
-      // Перепроверяем height — теперь element учитывается в calcHeight
+      // v0.89.38: ФОРСИРУЕМ финальное состояние даже на нормальном animationend.
+      // CSS animation forwards не гарантирует translateX(0) при частичной
+      // прерванной анимации.
+      forceFinalSlideInState()
       reportHeight()
     }
     el.addEventListener('animationend', onSlideInEnd)
@@ -576,15 +590,10 @@
       if (el.dataset.slideInDone === 'false') {
         el.dataset.slideInDone = 'true'
         el.removeEventListener('animationend', onSlideInEnd)
-        // v0.89.36 (ловушка #29): ФОРСИРУЕМ финальное состояние slideIn keyframe 100%.
-        // Без этого element остаётся с transform=translateX(380px) (0% keyframe),
-        // визуально за рамкой окна, но calcHeight его учитывает (slideInDone=true)
-        // → окно расширяется на h px пустого пространства = «невидимая полоса».
+        // v0.89.36/v0.89.38 (ловушка #29): ФОРСИРУЕМ финальное состояние.
         // Гарантирует final state независимо от backgroundThrottling, cascade
         // delay, keyframe error или race с пакетом одновременных нотификаций.
-        el.style.animation = 'none'
-        el.style.transform = 'translateX(0) scale(1)'
-        el.style.opacity = '1'
+        forceFinalSlideInState()
         try { window.notifApi.log('WARN', 'slideIn animationend timeout fallback id=' + data.id + ' transform forced') } catch (_) {}
         reportHeight()
       }

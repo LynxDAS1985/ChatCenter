@@ -5,6 +5,115 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: webview boundary блокирует mouseup → drag разделитель залипает (v0.89.38)
+
+### Симптом
+Юзер тянет разделитель между чатами и AI sidebar, отпускает мышь — перегородка продолжает двигаться. Невозможно прекратить drag.
+
+### Корневая причина
+
+[Electron webview docs](https://www.electronjs.org/docs/latest/api/webview-tag) (verbatim):
+> «You can not add keyboard, mouse, and scroll event listeners to `webview`.»
+> «the `webview` runs in a separate process»
+> «Out-of-Process iframes (OOPIFs)»
+
+События мыши **физически** не пересекают границу `<webview>` — это отдельный процесс. Когда курсор уходит на webview (мессенджеры или AI ChatGPT), `mouseup`/`pointerup` идут внутрь webview, не доходят до window listener в host.
+
+В [`App.jsx`](../src/App.jsx) был **локальный** overlay:
+```jsx
+{isResizing && (
+  <div className="absolute inset-0 z-50" />  // ❌ покрывает только chats area
+)}
+```
+
+`absolute inset-0` = относительно ближайшего relative-родителя (chats div). Не покрывает AI sidebar webview. → mouseup в AI webview → host не получает → `isResizingRef.current` остаётся true → разделитель залипает.
+
+### Решение (v0.89.38)
+
+**Глобальный `position: fixed` overlay** на корневом уровне App.jsx:
+```jsx
+{isResizing && (
+  <div
+    data-cc-resize-overlay="true"
+    style={{
+      position: 'fixed', inset: 0, zIndex: 999999,
+      cursor: 'col-resize', userSelect: 'none',
+    }}
+  />
+)}
+```
+
+`position: fixed` относительно viewport — покрывает **оба** webview гарантированно. Z-index 999999 чтобы webview не перекрыл overlay.
+
+### Параллельная модернизация (v0.89.38)
+
+В этом же коммите переход на **Pointer Events API** (W3C 2018+) для всех drag/clickaway операций:
+- [`useAIPanelResize.js`](../src/hooks/useAIPanelResize.js): `mouse*` → `pointer*` + `setPointerCapture` (гарантия доставки в пределах документа)
+- 3 dropdown'а (`MuteMenu.jsx`, `CountryPicker.jsx`, `AccountContextMenu.jsx`): `addEventListener('mousedown')` → `addEventListener('pointerdown')`
+
+Pointer Events — единый API для mouse/touch/pen, рекомендован MDN/W3C начиная с 2018. `setPointerCapture` гарантирует доставку всех pointer событий до `pointerup` (в пределах документа, не пересекает webview boundary — поэтому overlay тоже нужен).
+
+### Регрессионная защита
+
+[`modernPatternsGuard.test.cjs`](../src/__tests__/modernPatternsGuard.test.cjs) проверяет:
+- Маркер `data-cc-resize-overlay` присутствует в App.jsx
+- `position: fixed` + `zIndex: 999999` в overlay
+- `setPointerCapture` в useAIPanelResize
+- `pointerdown` (не `mousedown`) в 3 dropdown файлах
+- Отсутствие `window.addEventListener('mousemove')` (откат к старому)
+
+Pre-commit + pre-push hooks падают при возврате к старым паттернам.
+
+### Правило
+
+Для любого drag/resize over Electron `<webview>`:
+1. **Глобальный `position: fixed` overlay** при isResizing — обязательно (events не пересекают webview boundary)
+2. **Pointer Events + setPointerCapture** — современный W3C стандарт (overlay не отменяет — он для webview, capture для документа)
+3. Локальный `absolute` overlay внутри chat area = **БАГ** (не покрывает sidebar webview)
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: nodeIntegration: true + contextIsolation: false = нарушение Electron Security (v0.89.38)
+
+### Симптом
+[`main/utils/trayManager.js:16`](../main/utils/trayManager.js) до v0.89.38 создавал log viewer BrowserWindow с:
+```js
+webPreferences: { contextIsolation: false, nodeIntegration: true }
+```
+
+Это нарушает [Electron Security Guidelines](https://www.electronjs.org/docs/latest/tutorial/security):
+- **Don't #2**: «Do not enable Node.js integration for remote content»
+- **Don't #3**: «Do not disable contextIsolation»
+
+С Electron v12 `contextIsolation: true` — дефолт. Преднамеренное отключение — security risk:
+- В renderer можно `require('fs')`, `require('child_process')` — полный доступ к файловой системе
+- Если в логе случайно окажется HTML/script (XSS) — исполнится в Node контексте
+- `contextIsolation: false` смешивает window object renderer + Node — доступ к internals Electron
+
+### Решение (v0.89.38)
+
+1. Создан [`main/preloads/log-viewer.preload.cjs`](../main/preloads/log-viewer.preload.cjs) с `contextBridge.exposeInMainWorld('logViewer', { onContent, clearLog })`
+2. `trayManager.js` создаёт окно с `contextIsolation: true, nodeIntegration: false, sandbox: false, preload`
+3. `executeJavaScript(window.__logContent = ...)` заменён на `webContents.send('log-viewer:content', content)`
+4. `log-viewer.html` использует `window.logViewer.onContent(cb)` вместо `window.__logContent`
+5. Прямой `require('electron')` в HTML заменён на `window.logViewer.clearLog()`
+
+### Регрессионная защита
+
+[`modernPatternsGuard.test.cjs`](../src/__tests__/modernPatternsGuard.test.cjs) сканирует все BrowserWindow-creating файлы и падает при найденном `nodeIntegration: true` или `contextIsolation: false` (с учётом исключения комментариев).
+
+### Правило
+
+Любое новое `BrowserWindow` в проекте **обязано**:
+- `contextIsolation: true`
+- `nodeIntegration: false`
+- `preload` с `contextBridge` для exposing renderer API
+- IPC channels (`webContents.send` + `ipcRenderer.on`) для main↔renderer коммуникации
+
+Никаких `executeJavaScript(window.__data = ...)` injection — это XSS vector.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: file:/// URL **ЗАБЛОКИРОВАН** в renderer — используй `cc-media://` (v0.87.93)
 
 ### Симптом
