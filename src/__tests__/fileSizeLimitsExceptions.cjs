@@ -41,8 +41,8 @@ module.exports = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 1000,
-    reason: 'v0.89.39: добавлены IndexedDB cache optimistic render + save (~13 строк). Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
+    ceiling: 1050,
+    reason: 'v0.89.40: расширили IndexedDB cache на обычные чаты + loadOlder/Newer + TTL cleanup (~30 строк). Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
   },
   // v0.88.x: профильные тесты v0.88.x вынесены в nativeStoreUnreadPrefetch.vitest.jsx (218 строк).
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,

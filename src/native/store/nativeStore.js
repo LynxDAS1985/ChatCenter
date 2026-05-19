@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 import { attachTelegramIpcListeners, loadChatCache } from './nativeStoreIpc.js'
-import { saveTopicMessages, loadTopicMessages } from '../utils/topicMessagesCache.js'
+import { saveMessages as saveCacheMessages, loadMessages as loadCacheMessages, cleanupExpired as cleanupExpiredCache } from '../utils/messagesCache.js'
 import {
   markHealthByDuration,
   markHealthError,
@@ -176,6 +176,14 @@ export default function useNativeStore() {
   // v0.87.103: все IPC listeners вынесены в nativeStoreIpc.js → attachTelegramIpcListeners
   useEffect(() => {
     const detach = attachTelegramIpcListeners({ setState, stateRef })
+    // v0.89.40: TTL cleanup IDB кэша — удаляем записи старше 7 дней при старте.
+    // requestIdleCallback / setTimeout — чтобы не блокировать первый рендер.
+    const idleCb = () => { cleanupExpiredCache().catch(() => {}) }
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(idleCb, { timeout: 5000 })
+    } else {
+      setTimeout(idleCb, 3000)
+    }
     let cancelled = false
     ;(async () => {
       const startedAt = Date.now()
@@ -567,6 +575,17 @@ export default function useNativeStore() {
       unread: chat?.unreadCount || 0,
       aroundId: unreadParams.aroundId,
     })
+    // v0.89.40: IndexedDB optimistic render для обычных чатов — параллельно
+    // с invoke загружаем последние сообщения из IDB. Если localStorage cache
+    // (loadChatCache) пуст или мал, IDB может дать больше истории (~50 vs ~10
+    // для localStorage). Не перезаписываем если в state уже есть свежие данные.
+    loadCacheMessages(chatId, null).then(cached => {
+      if (!cached) return
+      setState(s => {
+        if ((s.messages[chatId] || []).length > 0) return s
+        return { ...s, messages: { ...s.messages, [chatId]: cached.messages } }
+      })
+    }).catch(() => {})
     // v0.87.36: поднимаем флаг загрузки (для shimmer overlay) + пытаемся мгновенно
     // подставить кэш из localStorage
     setState(s => {
@@ -623,6 +642,14 @@ export default function useNativeStore() {
           }),
         },
       }))
+      // v0.89.40: сохраняем свежие данные в IndexedDB кэш (fire-and-forget).
+      // Следующее открытие чата — мгновенно из кэша.
+      if (Array.isArray(result.messages)) {
+        saveCacheMessages(chatId, null, result.messages, {
+          unreadCount: chat?.unreadCount || 0,
+          readInboxMaxId: chat?.readInboxMaxId || 0,
+        }).catch(() => {})
+      }
     }
     return result
   }, [])
@@ -665,7 +692,7 @@ export default function useNativeStore() {
     // из локального кэша мгновенно, пока сервер отвечает. Так делает Telegram
     // Desktop через TDLib local cache. Юзер видит сообщения сразу, не 188-500мс
     // чёрного экрана. Когда сервер ответит — state обновится свежими данными.
-    loadTopicMessages(chatId, topicIdForCache).then(cached => {
+    loadCacheMessages(chatId, topicIdForCache).then(cached => {
       // Если за время загрузки кэша юзер кликнул другой топик — игнорируем.
       if (!cached || selectTopicRequestRef.current.get(chatId) !== requestId) return
       setState(s => {
@@ -757,9 +784,9 @@ export default function useNativeStore() {
       }
     })
     // v0.89.39: сохраняем свежие данные в IndexedDB кэш для следующего открытия.
-    // saveTopicMessages — fire and forget (async, не блокирует UI).
+    // saveCacheMessages — fire and forget (async, не блокирует UI).
     if (result?.ok && Array.isArray(result.messages)) {
-      saveTopicMessages(chatId, topicIdForCache, result.messages, {
+      saveCacheMessages(chatId, topicIdForCache, result.messages, {
         unreadCount: topic.unreadCount || 0,
         readInboxMaxId: topic.readInboxMaxId || 0,
       }).catch(() => {})
@@ -831,10 +858,30 @@ export default function useNativeStore() {
             messageWindows: nextWindow ? { ...(s.messageWindows || {}), [key]: nextWindow } : s.messageWindows,
           }
         })
+        // v0.89.40: сохраняем merged tail в IDB — следующее открытие топика
+        // покажет более свежий snapshot (включая результаты пролистывания вниз).
+        const mergedForCache = stateRef.current.messages[topicMessageKey(chatId, activeTopic)]
+        if (Array.isArray(mergedForCache)) {
+          saveCacheMessages(chatId, activeTopic.topicId || activeTopic.id, mergedForCache, {
+            unreadCount: activeTopic.unreadCount || 0,
+            readInboxMaxId: activeTopic.readInboxMaxId || 0,
+          }).catch(() => {})
+        }
       }
       return result
     }
-    return window.api?.invoke('tg:get-messages', { chatId, limit, afterId: Number(afterId) })
+    // v0.89.40: обычный чат — после загрузки новых сообщений тоже сохраняем
+    // в IndexedDB для optimistic render при следующем открытии.
+    const result = await window.api?.invoke('tg:get-messages', { chatId, limit, afterId: Number(afterId) })
+    if (result?.ok && Array.isArray(result.messages)) {
+      const currentChat = stateRef.current.chats.find(c => c.id === chatId)
+      const merged = stateRef.current.messages[chatId] || result.messages
+      saveCacheMessages(chatId, null, merged, {
+        unreadCount: currentChat?.unreadCount || 0,
+        readInboxMaxId: currentChat?.readInboxMaxId || 0,
+      }).catch(() => {})
+    }
+    return result
   }, [])
 
   // v0.87.15: загрузка более старых сообщений (infinite scroll вверх)
@@ -886,10 +933,28 @@ export default function useNativeStore() {
             messageWindows: nextWindow ? { ...(s.messageWindows || {}), [key]: nextWindow } : s.messageWindows,
           }
         })
+        // v0.89.40: сохраняем merged tail в IDB после prepend старых.
+        const mergedForCache = stateRef.current.messages[key]
+        if (Array.isArray(mergedForCache)) {
+          saveCacheMessages(chatId, activeTopic.topicId || activeTopic.id, mergedForCache, {
+            unreadCount: activeTopic.unreadCount || 0,
+            readInboxMaxId: activeTopic.readInboxMaxId || 0,
+          }).catch(() => {})
+        }
       }
       return result
     }
-    return window.api?.invoke('tg:get-messages', { chatId, limit, offsetId: Number(beforeId) })
+    // v0.89.40: обычный чат — после prepend старых тоже сохраняем в IDB.
+    const result = await window.api?.invoke('tg:get-messages', { chatId, limit, offsetId: Number(beforeId) })
+    if (result?.ok && Array.isArray(result.messages)) {
+      const currentChat = stateRef.current.chats.find(c => c.id === chatId)
+      const merged = stateRef.current.messages[chatId] || result.messages
+      saveCacheMessages(chatId, null, merged, {
+        unreadCount: currentChat?.unreadCount || 0,
+        readInboxMaxId: currentChat?.readInboxMaxId || 0,
+      }).catch(() => {})
+    }
+    return result
   }, [])
 
   const deleteMessage = useCallback(async (chatId, messageId, forAll = true) => {
