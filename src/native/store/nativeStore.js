@@ -164,6 +164,12 @@ export default function useNativeStore() {
   // Ключ = activeChatId или `${chatId}:topic:${topicId}` — чтобы темы и обычные чаты
   // не блокировали друг друга. Значение = timestamp последнего запроса.
   const loadingNewerRef = useRef(new Map())
+  // v0.89.37: race protection для selectForumTopic. При быстром переключении
+  // топиков пользователь кликает A → B → C, все три invoke в полёте. Если
+  // ответ A пришёл когда юзер на C — старый ответ записывал в state messages[A]
+  // (вроде безвредно), но overlay/loading state мог затереться. Храним последний
+  // requestId на key — старые ответы игнорируем (Discord-style AbortController).
+  const selectTopicRequestRef = useRef(new Map())
   stateRef.current = state
 
   // v0.87.103: все IPC listeners вынесены в nativeStoreIpc.js → attachTelegramIpcListeners
@@ -647,6 +653,12 @@ export default function useNativeStore() {
     if (!chatId || !topic) return { ok: false, error: 'Не выбрана тема', messages: [] }
     const key = topicMessageKey(chatId, topic)
     const unreadParams = unreadWindowRequestParams(topic.unreadCount, topic.readInboxMaxId, limit)
+    // v0.89.37: race protection — каждому invoke выдаём requestId. Если за
+    // время ожидания ответа юзер кликнул другой топик (selectTopicRequestRef
+    // обновится новым id для chatId), старый ответ будет игнорирован.
+    // Так делает Discord (AbortController) и Telegram Desktop (requestId).
+    const requestId = Date.now() + ':' + Math.random().toString(36).slice(2, 7)
+    selectTopicRequestRef.current.set(chatId, requestId)
     // v0.89.28: diagnostic — selectForumTopic был «черным ящиком», сообщения
     // не приходили без следов в логах. См. ловушка #27.
     try {
@@ -656,6 +668,7 @@ export default function useNativeStore() {
           ' topMessageId=' + topic.topMessageId +
           ' unreadCount=' + topic.unreadCount +
           ' readInboxMaxId=' + topic.readInboxMaxId +
+          ' requestId=' + requestId +
           ' params=' + JSON.stringify(unreadParams) })
     } catch (_) {}
     setState(s => ({
@@ -688,6 +701,17 @@ export default function useNativeStore() {
       aroundId: unreadParams.aroundId,
       addOffset: unreadParams.addOffset,
     })
+    // v0.89.37: race protection — если за время invoke юзер кликнул другой
+    // топик в этом chatId, старый ответ ИГНОРИРУЕМ (не затираем активный state).
+    const currentRequestId = selectTopicRequestRef.current.get(chatId)
+    if (currentRequestId !== requestId) {
+      try {
+        window.api?.send?.('app:log', { level: 'INFO',
+          message: '[topic-ui] stale response ignored chatId=' + chatId +
+            ' staleId=' + requestId + ' currentId=' + currentRequestId })
+      } catch (_) {}
+      return { ok: false, stale: true }
+    }
     // v0.89.28: diagnostic — результат tg:get-topic-messages
     try {
       window.api?.send?.('app:log', { level: 'INFO',

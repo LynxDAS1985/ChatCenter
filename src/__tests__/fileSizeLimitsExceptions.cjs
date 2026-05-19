@@ -48,8 +48,8 @@ module.exports = {
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,
   // bulk-sync — разбивать дальше нет смысла, они одного домена (read/unread state).
   'src/native/store/nativeStore.vitest.jsx': {
-    ceiling: 450,
-    reason: 'v0.88.x: v0.88-специфика вынесена в nativeStoreUnreadPrefetch.vitest.jsx. Остались сцепленные регрессионные тесты Telegram-style read/unread (405 строк, минимальное превышение default 400).'
+    ceiling: 500,
+    reason: 'v0.89.37: добавлен race protection тест для selectForumTopic (+48 строк). Тесты по доменам read/unread + load + race — единый домен. Дальнейшее разбиение — отдельный плановый шаг.'
   },
   // v0.89.25 (ловушка #24 forum is_forum): добавлены supergroupCache + updateSupergroup handler + getSupergroup
   // метод (~15 строк). Файл уже был на 499 при стандартном лимите 500. Минимальное превышение, разбивать

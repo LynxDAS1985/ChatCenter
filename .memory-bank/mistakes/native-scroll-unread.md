@@ -8,6 +8,97 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: первая загрузка топика — чёрный экран без skeleton + race при быстром переключении (v0.89.37)
+
+### Симптом
+1. Юзер кликает топик впервые → справа **чёрный экран** на 500-600мс пока не загрузятся сообщения. Только тогда появляется content.
+2. При быстром переключении A → B → C ответы могут затирать активный state stale данными.
+
+### Корневая причина #1 (skeleton)
+
+[`InboxChatPanel.jsx:157`](../src/native/components/InboxChatPanel.jsx) до v0.89.37:
+```js
+<MessageListOverlay show={((!chatReady) || !!messagesLoading) && visibleMessages.length > 0} />
+```
+
+Условие `&& visibleMessages.length > 0` означает: overlay показывается **только когда уже есть сообщения**. На **первой загрузке топика** `messages=0` → overlay скрыт → юзер видит чёрный фон (контейнер ниже имеет `opacity: 0` пока `chatReady=false`).
+
+Цепочка чёрного экрана:
+1. t=0: клик → setState → messages=0, loading=true
+2. visibleMessages.length === 0 → overlay НЕ показывается
+3. `<div opacity={chatReady ? 1 : 0}>` → opacity=0 → чёрно
+4. t=188: messages=18 пришли, loading=false
+5. React rerender, virtual list mount, ref callbacks
+6. t=~400: useInitialScroll закончил scrollTo → onDone() → setChatReady(true)
+7. t=~600: opacity 0→1 transition 200мс → юзер видит content
+
+Итого **~600мс чёрного экрана** на первой загрузке.
+
+### Решение #1 (Skeleton)
+
+Убрано условие `&& visibleMessages.length > 0`:
+```js
+<MessageListOverlay show={(!chatReady) || !!messagesLoading} />
+```
+
+Overlay показывается с **первого клика**, даже если messages=0. Это UX-стандарт всех мессенджеров (Telegram Desktop, WhatsApp Web, Discord, Slack).
+
+### Корневая причина #2 (race)
+
+[`nativeStore.js selectForumTopic`](../src/native/store/nativeStore.js) до v0.89.37 не имел защиты от race:
+```js
+const result = await window.api?.invoke('tg:get-topic-messages', ...)
+setState(s => { ... messages: { ...s.messages, [key]: result.messages || [] } ... })
+```
+
+Если юзер кликнул A → B быстро:
+- invoke A в полёте → ответ A пришёл когда активный B
+- setState затирает `messages[keyA]` (вроде безвредно, но `loadingMessages[keyA]` может конфликтовать с активным)
+
+### Решение #2 (race protection, Discord-style)
+
+`selectTopicRequestRef = useRef(new Map())` хранит **последний requestId** на chatId. Каждый invoke получает свой `requestId`. После `await invoke` сравниваем — если в Map уже другой id, ответ **игнорируем**:
+
+```js
+const requestId = Date.now() + ':' + Math.random().toString(36).slice(2, 7)
+selectTopicRequestRef.current.set(chatId, requestId)
+// ...
+const result = await window.api?.invoke('tg:get-topic-messages', ...)
+if (selectTopicRequestRef.current.get(chatId) !== requestId) {
+  return { ok: false, stale: true }   // stale response — игнорируем
+}
+setState(...)
+```
+
+Это паттерн как у Discord (AbortController) и Telegram Desktop (requestId сопоставление).
+
+### Сверка с другими мессенджерами
+
+| Мессенджер | Подход к первому открытию | Подход к race |
+|---|---|---|
+| Telegram Desktop | Локальный TDLib кэш на диске — instant render | requestId сопоставление |
+| WhatsApp Web | IndexedDB cache + skeleton shimmer | Промис cancel |
+| Discord | Skeleton + `AbortController` | AbortController |
+| Slack | Skeleton + lastReadCursor | Promise.race с cancel |
+
+### Регрессионная защита
+
+[`nativeStore.vitest.jsx`](../src/native/store/nativeStore.vitest.jsx) тест:
+- Кликаем A → invoke A в полёте (Promise не резолвится)
+- Кликаем B → invoke B резолвится с 1 сообщением → `messages[keyB] = [1]`
+- Резолвим ответ A → проверяем `messages[keyA] === undefined` (stale игнорирован)
+- `messages[keyB]` не затёрт
+
+### Правило
+
+При каждом UI-инициированном async invoke который меняет видимый state:
+1. **Показывать skeleton/overlay сразу** при клике, не ждать ответа сервера
+2. **Сохранять requestId** до invoke, сравнивать после await — если в state уже другой запрос, игнорировать ответ
+
+Это два паттерна вместе закрывают «чёрный экран» + «затирание state stale ответом» = базовый UX любого мессенджера.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: divider «Новые сообщения» должен застывать на snapshot позиции открытия (v0.89.33)
 
 ### Симптом

@@ -154,7 +154,10 @@ export default function InboxChatPanel({
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {/* v0.87.66: overlay-shimmer пока !chatReady — initial-scroll прыжок не виден */}
         {/* v0.87.118: overlay также при загрузке поверх кэша (1 старое сообщение → синяя полоска) */}
-        <MessageListOverlay show={((!chatReady) || !!messagesLoading) && visibleMessages.length > 0} />
+        {/* v0.89.37: убрано visibleMessages.length>0 — на первой загрузке топика */}
+        {/* messages=0, overlay не показывался → юзер видел чёрный фон 500-600мс. */}
+        {/* Теперь skeleton-overlay показывается сразу при клике (как Telegram/WhatsApp). */}
+        <MessageListOverlay show={(!chatReady) || !!messagesLoading} />
         {/* v0.89.0: виртуализация рендера через react-window. msgsScrollRef
             синхронизируется с listRef.current.element через useEffect выше. */}
         <div style={{
