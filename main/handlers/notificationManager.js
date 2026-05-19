@@ -93,6 +93,14 @@ function createNotifWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // v0.89.35 (ловушка #28): Electron docs — «if backgroundThrottling is
+      // disabled, the visibility state will remain visible even if the window
+      // is minimized, occluded, or hidden». Без этого Chromium throttling
+      // ставит CSS animations + rAF на паузу когда окно hide()/перемещено
+      // за экран → slideIn keyframes застревают на 0% (translateX=380px),
+      // item невидим но bounds учитывают его → «пустая полоса» в окне.
+      // Закрывает корень серии v0.89.18-v0.89.27 + старую ловушку v0.47.2 (rAF).
+      backgroundThrottling: false,
     }
   })
 

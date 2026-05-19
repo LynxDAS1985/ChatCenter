@@ -5,27 +5,141 @@
 
 ---
 
-## 📌 КАРТА СЕРИИ v0.89.18-v0.89.23 (18 мая 2026)
+## 📌 КАРТА СЕРИИ v0.89.18-v0.89.27 + КОРНЕВОЙ ФИКС v0.89.35 (19 мая 2026)
 
-За 3 дня — 4 связанных бага в notification BrowserWindow. Каждый раскрыл неожиданное поведение API стека (Electron / Win11 / MDN). Серия **закрыта** в v0.89.23.
+За 4 дня (18-19 мая) — 6 связанных багов в notification BrowserWindow. Серия **изначально закрыта в v0.89.23**, но через сутки проблема снова появилась (id=17 застрял с translateX=380px). Корневая причина найдена в v0.89.35 и закрыта **одной строкой** по официальной документации Electron.
 
-| # | Симптом | Версия фикса | Где в файле |
+| # | Симптом | Версия фикса | Природа |
 |---|---|---|---|
-| **#20** | Ghost hit-test region после `.hide()` — невидимый блок ловит клики | v0.89.18 | строка 285 |
-| **#21** | `setIgnoreMouseEvents(true)` ломал клики — двойной клик нужен | v0.89.22 | строка 320 |
-| **#22** | «Пустая полоса» — окно расширилось, но element ещё за экраном | v0.89.23 | ниже после ловушки #5 |
-| **#23** | IPC race `raw=0 items=1` — окно скрылось ошибочно | v0.89.23 | ниже после ловушки #22 |
+| **#20** | Ghost hit-test region после `.hide()` — невидимый блок ловит клики | v0.89.18 | симптом (helper `safeHideTransparentWindow`) |
+| **#21** | `setIgnoreMouseEvents(true)` ломал клики — двойной клик нужен | v0.89.22 | симптом (откат опасной защиты) |
+| **#22** | «Пустая полоса» — окно расширилось, но element ещё за экраном | v0.89.23 | симптом (timing IPC) |
+| **#23** | IPC race `raw=0 items=1` — окно скрылось ошибочно | v0.89.23 | симптом (`IGNORE stale`) |
+| **#25** | Окно не скрывалось после dismiss (gap в hideIfEmpty) | v0.89.26 | симптом (`hideIfEmpty` после каждого dismiss) |
+| **#26** | Main `notifItems[]` накапливает мусор от ghost-stacking | v0.89.27 | симптом (`rendererPure` signal) |
+| **#28** | **CSS animations + rAF throttled в hidden window** | **v0.89.35** | **КОРЕНЬ — закрыт по Electron docs** |
 
-**Архитектурное обоснование** (почему именно так решили) — в [`decisions.md`](../decisions.md) → «ADR — Notification BrowserWindow: итоги серии багов v0.89.15-v0.89.23».
+**Архитектурное обоснование** — в [`decisions.md`](../decisions.md) → «ADR — Notification BrowserWindow: итоги серии багов v0.89.15-v0.89.23».
 
-**Регрессионная защита**: `src/__tests__/transparentWindowGuard.test.cjs` — pre-commit hook падает при попытке вернуть антипаттерны #20/#21.
+**Регрессионная защита**: `src/__tests__/transparentWindowGuard.test.cjs` — pre-commit hook падает при попытке вернуть антипаттерны #20/#21 и при удалении `backgroundThrottling: false` (#28).
 
-**5 принципов из серии** (на будущее):
+**6 принципов из серии** (обновлено):
 1. CSS-анимируемые свойства — через `getComputedStyle()`, не `el.style`
 2. Visual position — через `getBoundingClientRect()`, не `offsetHeight`
 3. Transparent окно на Win11: `setBounds(offscreen 1×1) + hide()`, БЕЗ `setIgnoreMouseEvents`
 4. IPC + setTimeout-coalescing: main process проверяет авторитативный state
 5. Diagnostic logging для CSS — читать MDN для каждого свойства
+6. **NEW**: BrowserWindow с CSS animations/rAF + частые `hide()`/`show()` → **`backgroundThrottling: false`** обязателен
+
+---
+
+## 🔴 ЛОВУШКА #28 (v0.89.35): CSS animations и rAF throttled в hidden BrowserWindow — корень серии #20-#26
+
+### Симптом (19 мая, 09:07)
+
+После закрытия серии v0.89.18-v0.89.27 проблема снова появилась через сутки. Скриншот пользователя: тонкая горизонтальная пустая полоса в нижней части окна уведомлений + кнопка «Закрыть» не реагирует.
+
+### Расследование по логу
+
+```
+09:01:07 addNotification id=17 messenger=telegram itemsBefore=6 containerBefore=2
+         ↑↑↑ в Map уже 6 items, в DOM 2 — 4 ghost накопились
+09:07:11 addNotification id=25 itemsBefore=1 containerBefore=1
+09:07:12 DOM snapshot [0 id=17 h=109 op=1 pe=auto realTf=matrix(1,0,0,1,380,0) slid=true]
+                                                  ↑↑↑ translateX(380px) — за правой границей
+09:07:12 notif-resize raw=467 visible=true items=3 rendererPure=false
+                                                   ↑↑↑ main: 3, renderer: 2
+```
+
+`realTf=matrix(1,0,0,1,380,0)` — это `translateX(380px)`. Точное значение из CSS keyframes [`notification.css:59`](../main/notification.css):
+
+```css
+@keyframes slideIn {
+  0%   { transform: translateX(380px) scale(0.95); opacity: 0; }
+  70%  { transform: translateX(-8px) scale(1); opacity: 1; }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+```
+
+id=17 **застрял на 0% keyframe** — анимация `slideIn` не запустилась.
+
+### Корневая причина
+
+[Electron BrowserWindow docs](https://www.electronjs.org/docs/latest/api/browser-window) (verbatim):
+
+> «If `backgroundThrottling` is disabled, the visibility state will remain `visible` even if the window is minimized, occluded, or hidden.»
+
+[`notificationManager.js:78-97`](../main/handlers/notificationManager.js) создавал `notifWin` **без** `backgroundThrottling: false`. По умолчанию Chromium включает throttling для hidden / occluded окон:
+- `requestAnimationFrame` — пауза
+- CSS animations / transitions — заморозка на текущем keyframe
+- `setTimeout` — снижение точности
+
+Цепочка падения:
+1. notifWin создан, `backgroundThrottling: true` (Chromium default)
+2. После dismiss всех `safeHideTransparentWindow(notifWin)` → окно скрыто
+3. Приходит новое сообщение → `showInactive()` + `notif:show`
+4. Renderer создаёт DOM с `transform: translateX(380px); animation: slideIn 300ms forwards`
+5. Chromium ещё не успел переключить окно в `visible` (throttling задержан)
+6. Анимация throttled → keyframes не выполняются → item застрял на 0%
+7. `items.Map` и `container.children` хранят element, `offsetHeight` ненулевой
+8. `reportHeight()` посылает реальную высоту (109+346=467px) в main
+9. main делает `setBounds({height: 467})` — окно правильно высокое
+10. Но id=17 (109px) визуально за рамкой (translateX=380, ширина окна 370)
+11. → 109px пустого пространства в bounds окна = **«пустая полоса»**
+
+### Почему 5 предыдущих фиксов не помогли
+
+| Фикс | Что закрывал | Почему не помог #28 |
+|---|---|---|
+| **v0.89.18** safeHide | hit-test после `.hide()` | Окно visible=true, не скрыто |
+| **v0.89.22** убран setIgnoreMouseEvents | Клики работают | Не о bounds окна |
+| **v0.89.23** IGNORE stale `raw=0 items>0` | IPC race | `raw=467 items=3` — защита не срабатывает |
+| **v0.89.26** hideIfEmpty в dismiss | Окно скрывается при `length===0` | length>0 пока есть live id=17 |
+| **v0.89.27** rendererPure signal | Очистка main мусора | rendererPure=true только когда renderer ПОЛНОСТЬЮ пуст. id=17 не уходит → false навсегда |
+
+Все 5 закрывали **симптомы** — последствия. Корень (throttled animations) не трогали.
+
+### Старая ловушка v0.47.2 (тот же стек)
+
+Ранее в файле уже была описана связанная проблема: «requestAnimationFrame НЕ работает в hidden BrowserWindow». Тогда заменили rAF на `setTimeout(60ms)`. **Это была половинчатая мера** — `setTimeout` менее агрессивно throttled, но **CSS animations всё равно паузились**. Та же причина — `backgroundThrottling: true` по умолчанию.
+
+### Решение (v0.89.35)
+
+**Одна строка** в [`notificationManager.js`](../main/handlers/notificationManager.js):
+
+```js
+webPreferences: {
+  preload: getNotifPreloadPath(),
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: false,
+  backgroundThrottling: false,  // ← v0.89.35
+}
+```
+
+### Регрессионная защита
+
+[`transparentWindowGuard.test.cjs`](../src/__tests__/transparentWindowGuard.test.cjs) проверяет `/backgroundThrottling:\s*false/` в `notificationManager.js`. Pre-commit hook падает при удалении параметра.
+
+### Что закрывается
+
+- ✅ slideIn keyframes выполняются всегда
+- ✅ Items не застревают на translateX(380)
+- ✅ Renderer Map не накапливает ghost
+- ✅ Main `notifItems[]` синхронизируется
+- ✅ Bounds окна равны реальной высоте → нет полосы
+- ✅ Старая ловушка v0.47.2 (rAF) тоже закрывается одним фиксом
+
+### Правило
+
+Для любого BrowserWindow который:
+- Использует CSS animations или `requestAnimationFrame`
+- Часто `hide()` / `show()` циклы
+- Имеет `transparent: true` или `show: false` инициально
+
+→ **обязательно** `backgroundThrottling: false` в `webPreferences`.
+
+Это **прямая рекомендация Electron documentation**, не хак.
 
 ---
 

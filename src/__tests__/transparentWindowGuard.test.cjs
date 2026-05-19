@@ -76,6 +76,25 @@ for (const rel of FILES_TO_CHECK) {
   })
 }
 
+// v0.89.35 (ловушка #28): notifWin webPreferences должен содержать
+// backgroundThrottling: false. Без него Chromium throttling ставит CSS
+// animations + rAF на паузу когда окно hide()/offscreen — slideIn keyframes
+// застревают на 0% (translateX=380px) → item невидим но bounds учитывают
+// его → «пустая полоса». Закрывает корень серии v0.89.18-v0.89.27.
+// Прямая рекомендация Electron docs: visibility state will remain visible.
+test('notificationManager.js: notifWin имеет backgroundThrottling: false', () => {
+  const abs = path.resolve(process.cwd(), 'main/handlers/notificationManager.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  // Ищем строку backgroundThrottling: false в опциях notifWin webPreferences
+  assert(/backgroundThrottling:\s*false/.test(content),
+    'backgroundThrottling: false УДАЛЁН из notifWin webPreferences!\n' +
+    '   Без него на Win11 CSS animations и requestAnimationFrame паузятся\n' +
+    '   когда окно hide() — slideIn keyframes застревают на 0% (translateX=380px),\n' +
+    '   item невидим но bounds учитывают его → «пустая полоса» в окне.\n' +
+    '   См. ловушка #28 в mistakes/notifications-ribbon.md.\n' +
+    '   Документация: https://www.electronjs.org/docs/latest/api/browser-window')
+})
+
 // Защита от изменения helper'а — если кто-то удалит safeHideTransparentWindow
 // или сильно его упростит, регрессия молча перестанет защищать.
 test('main/utils/transparentWindowGuard.js существует и экспортирует helper', () => {

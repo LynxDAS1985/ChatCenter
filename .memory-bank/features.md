@@ -1,8 +1,8 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.34 (18 мая 2026)
+## Текущая версия: v0.89.35 (19 мая 2026)
 
-**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.34). Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.35). Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
@@ -18,6 +18,26 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.89.35 — Корень серии notification ribbon: `backgroundThrottling: false` (ловушка #28)
+
+Через сутки после «закрытия» серии v0.89.18-v0.89.27 пользователь снова увидел пустую полосу + кнопка «Закрыть» не реагирует. Лог 09:07: `DOM snapshot id=17 realTf=matrix(1,0,0,1,380,0)` — item застрял с `translateX(380px)` (0% keyframe из CSS `slideIn`). Анимация не запустилась.
+
+**Сверка с [Electron docs](https://www.electronjs.org/docs/latest/api/browser-window)** (verbatim): «If `backgroundThrottling` is disabled, the visibility state will remain `visible` even if the window is minimized, occluded, or hidden».
+
+**Сверка с кодом**: `notificationManager.js` создавал notifWin БЕЗ `backgroundThrottling: false` → по умолчанию Chromium throttling включён → CSS animations и `requestAnimationFrame` паузятся когда окно `hide()` или occluded → `slideIn` keyframes не выполняются → item застрял → невидим но bounds учитывают высоту → **«пустая полоса»**.
+
+**5 предыдущих фиксов (v0.89.18 safeHide, v0.89.22 убран setIgnoreMouseEvents, v0.89.23 IGNORE stale, v0.89.26 hideIfEmpty, v0.89.27 rendererPure) закрывали симптомы. Корень — `backgroundThrottling: true` по умолчанию — не трогали.**
+
+Также закрывает старую ловушку **v0.47.2** «requestAnimationFrame НЕ работает в hidden BrowserWindow» — тот же стек, тот же throttling, тот же фикс.
+
+**Решение** — 1 строка в [`notificationManager.js:91-97`](../main/handlers/notificationManager.js): добавлен `backgroundThrottling: false` в `webPreferences`.
+
+**Регрессионная защита**: [`transparentWindowGuard.test.cjs`](../src/__tests__/transparentWindowGuard.test.cjs) проверяет наличие параметра. Pre-commit hook падает при удалении (верифицировано: убрал параметр → 17/18 ✅, вернул → 18/18 ✅).
+
+**Ловушка #28** в `mistakes/notifications-ribbon.md` — полная история + правило для будущего.
 
 ---
 
