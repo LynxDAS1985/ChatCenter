@@ -145,6 +145,47 @@ test('trayManager.js: log viewer окно подключает preload', () => {
     'preload для log-viewer не подключён в trayManager.js')
 })
 
+// v0.89.41: WebContentsView migration infrastructure exists
+test('webContentsViewManager.js существует и экспонирует API', () => {
+  const abs = path.resolve(process.cwd(), 'main/utils/webContentsViewManager.js')
+  assert(fs.existsSync(abs), 'webContentsViewManager.js удалён!')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/class WebContentsViewManager/.test(content), 'класс WebContentsViewManager удалён')
+  assert(/createView|setBounds|loadURL|executeJavaScript|destroyView/.test(content),
+    'основные методы менеджера удалены')
+  assert(/getWebContentsViewManager/.test(content), 'singleton getter удалён')
+})
+
+test('webContentsViewIpcHandlers.js существует и регистрирует wcv:* каналы', () => {
+  const abs = path.resolve(process.cwd(), 'main/handlers/webContentsViewIpcHandlers.js')
+  assert(fs.existsSync(abs), 'webContentsViewIpcHandlers.js удалён!')
+  const content = fs.readFileSync(abs, 'utf8')
+  const channels = ['wcv:create', 'wcv:set-bounds', 'wcv:load-url', 'wcv:execute-js',
+    'wcv:send', 'wcv:destroy', 'wcv:list']
+  for (const ch of channels) {
+    assert(content.includes(ch), 'IPC канал ' + ch + ' удалён из webContentsViewIpcHandlers.js')
+  }
+})
+
+test('main.js регистрирует initWebContentsViewIpcHandlers', () => {
+  const abs = path.resolve(process.cwd(), 'main/main.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/initWebContentsViewIpcHandlers/.test(content),
+    'initWebContentsViewIpcHandlers не подключён в main.js')
+})
+
+test('WebContentsViewSlot.jsx существует с базовыми IPC интеграциями', () => {
+  const abs = path.resolve(process.cwd(), 'src/components/WebContentsViewSlot.jsx')
+  assert(fs.existsSync(abs), 'WebContentsViewSlot.jsx удалён!')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/wcv:create/.test(content), 'wcv:create вызов удалён из WebContentsViewSlot')
+  assert(/wcv:destroy/.test(content), 'wcv:destroy вызов удалён из WebContentsViewSlot')
+  assert(/wcv:set-bounds/.test(content), 'wcv:set-bounds вызов удалён из WebContentsViewSlot')
+  assert(/wcv:event/.test(content), 'wcv:event subscription удалена из WebContentsViewSlot')
+  assert(/ResizeObserver/.test(content),
+    'ResizeObserver удалён — без него не отслеживается изменение размера слота')
+})
+
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) {
   console.log('\n❌ Регрессионная защита сломана. Это означает возврат устаревшего паттерна.')

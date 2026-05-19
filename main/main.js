@@ -21,6 +21,8 @@ import { initTdlibBackendStartup } from './native/backends/tdlibStartup.js'
 import { registerCcMediaScheme, registerCcMediaHandler } from './native/ccMediaProtocol.js'
 import { initNotifHandlers } from './handlers/notifHandlers.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
+// v0.89.41: WebContentsView migration infrastructure (feature-flagged, default OFF)
+import { initWebContentsViewIpcHandlers } from './handlers/webContentsViewIpcHandlers.js'
 import { initNotificationManager } from './handlers/notificationManager.js'
 import { initBackupNotifHandler } from './handlers/backupNotifHandler.js'
 import { createWindow as createWindowFromManager } from './utils/windowManager.js'
@@ -102,6 +104,18 @@ function setupNotifIPC() {
     __dirname,
     path,
     DEFAULT_MESSENGERS,
+  })
+
+  // v0.89.41: WebContentsView migration infrastructure. Feature flag по умолчанию
+  // OFF в settings — renderer продолжает использовать <webview> тег. Когда юзер
+  // включает useWebContentsView в settings, WebContentsViewSlot создаёт view
+  // через эти IPC handlers. Полная замена <webview> — отдельная фаза миграции.
+  initWebContentsViewIpcHandlers({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    sendToRenderer: (channel, payload) => {
+      try { mainWindow?.webContents?.send(channel, payload) } catch (_) {}
+    },
   })
 }
 
