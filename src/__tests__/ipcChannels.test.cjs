@@ -10,7 +10,7 @@ var mainCode = fs.readFileSync('main/main.js', 'utf8')
 // v0.87.97: dockPinState вынесен из dockPinHandlers
 // v0.87.103: mainIpcHandlers вынесен из main.js (~230 строк IPC)
 var handlersDir = 'main/handlers/'
-;['aiHandlers.js', 'notifHandlers.js', 'dockPinHandlers.js', 'dockPinState.js', 'mainIpcHandlers.js'].forEach(function(f) {
+;['aiHandlers.js', 'notifHandlers.js', 'dockPinHandlers.js', 'dockPinState.js', 'mainIpcHandlers.js', 'webContentsViewIpcHandlers.js'].forEach(function(f) {
   try { mainCode += '\n' + fs.readFileSync(handlersDir + f, 'utf8') } catch(e) {}
 })
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
@@ -33,7 +33,9 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || 'fail') }
 console.log('\\n🧪 Тесты IPC каналов\\n')
 
 // Извлекаем каналы из main.js
-var handleChannels = (mainCode.match(/ipcMain\.handle\(\s*'([^']+)'/g) || []).map(function(m) { return m.match(/'([^']+)'/)[1] })
+// v0.89.44: webContentsViewIpcHandlers.js регистрирует через локальный handle() wrapper.
+// Расширили регекс — также ловим `handle('chan', ...)` в дополнение к `ipcMain.handle('chan', ...)`.
+var handleChannels = (mainCode.match(/(?:ipcMain\.handle|\bhandle)\(\s*'([^']+)'/g) || []).map(function(m) { return m.match(/'([^']+)'/)[1] })
 var onChannels = (mainCode.match(/ipcMain\.on\(\s*'([^']+)'/g) || []).map(function(m) { return m.match(/'([^']+)'/)[1] })
 var allMainChannels = handleChannels.concat(onChannels)
 
