@@ -576,7 +576,16 @@
       if (el.dataset.slideInDone === 'false') {
         el.dataset.slideInDone = 'true'
         el.removeEventListener('animationend', onSlideInEnd)
-        try { window.notifApi.log('WARN', 'slideIn animationend timeout fallback id=' + data.id) } catch (_) {}
+        // v0.89.36 (ловушка #29): ФОРСИРУЕМ финальное состояние slideIn keyframe 100%.
+        // Без этого element остаётся с transform=translateX(380px) (0% keyframe),
+        // визуально за рамкой окна, но calcHeight его учитывает (slideInDone=true)
+        // → окно расширяется на h px пустого пространства = «невидимая полоса».
+        // Гарантирует final state независимо от backgroundThrottling, cascade
+        // delay, keyframe error или race с пакетом одновременных нотификаций.
+        el.style.animation = 'none'
+        el.style.transform = 'translateX(0) scale(1)'
+        el.style.opacity = '1'
+        try { window.notifApi.log('WARN', 'slideIn animationend timeout fallback id=' + data.id + ' transform forced') } catch (_) {}
         reportHeight()
       }
     }, 600)

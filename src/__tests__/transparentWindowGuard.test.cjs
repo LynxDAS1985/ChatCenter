@@ -95,6 +95,36 @@ test('notificationManager.js: notifWin имеет backgroundThrottling: false', 
     '   Документация: https://www.electronjs.org/docs/latest/api/browser-window')
 })
 
+// v0.89.36 (ловушка #29): notification.js slideIn fallback ДОЛЖЕН форсировать
+// финальное состояние transform=translateX(0). Иначе при race с пакетом
+// одновременных нотификаций (4+ за 1мс от разных мессенджеров) CSS animation
+// частично прерывается, element остаётся с translateX(380px) (за экраном),
+// но calcHeight его учитывает (slideInDone=true) → окно расширяется на пустое
+// место = «невидимая полоса». backgroundThrottling: false (v0.89.35) ускоряет
+// быстрый путь, но НЕ закрывает race с одновременным batch. Force transform
+// в fallback — единственная гарантия final state.
+test('notification.js: slideIn fallback ФОРСИРУЕТ transform translateX(0)', () => {
+  const abs = path.resolve(process.cwd(), 'main/notification.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  // Ищем setTimeout 600 ms fallback и проверяем что внутри есть force transform.
+  // Окно: от 'el.dataset.slideInDone = \'true\'' (повторно в setTimeout) до '}, 600)'.
+  const idx = content.indexOf("slideIn animationend timeout fallback")
+  assert(idx > 0,
+    'fallback блок slideIn animationend timeout не найден — кто-то удалил защиту v0.89.23+')
+  // Окно поиска: 1000 символов до строки лога + 500 после
+  const block = content.slice(Math.max(0, idx - 1000), idx + 500)
+  assert(/transform\s*=\s*['"`]translateX\(0\)/.test(block),
+    'force transform=translateX(0) УДАЛЁН из fallback!\n' +
+    '   Без него при race (4+ одновременных нотификаций) slideIn частично прерывается,\n' +
+    '   element остаётся с translateX(380px) за экраном, но calcHeight учитывает\n' +
+    '   его h px → окно расширяется на пустое место = «невидимая полоса».\n' +
+    '   См. ловушка #29 в mistakes/notifications-ribbon.md.')
+  assert(/style\.animation\s*=\s*['"`]none['"`]/.test(block),
+    'force animation=none УДАЛЁН из fallback — анимация может продолжить выполнение и перебить forced transform')
+  assert(/style\.opacity\s*=\s*['"`]1['"`]/.test(block),
+    'force opacity=1 УДАЛЁН из fallback — element может остаться полупрозрачным')
+})
+
 // Защита от изменения helper'а — если кто-то удалит safeHideTransparentWindow
 // или сильно его упростит, регрессия молча перестанет защищать.
 test('main/utils/transparentWindowGuard.js существует и экспортирует helper', () => {

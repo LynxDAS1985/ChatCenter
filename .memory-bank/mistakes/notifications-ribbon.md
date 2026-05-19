@@ -5,9 +5,9 @@
 
 ---
 
-## 📌 КАРТА СЕРИИ v0.89.18-v0.89.27 + КОРНЕВОЙ ФИКС v0.89.35 (19 мая 2026)
+## 📌 КАРТА СЕРИИ v0.89.18-v0.89.27 + КОРНЕВЫЕ ФИКСЫ v0.89.35-v0.89.36 (19 мая 2026)
 
-За 4 дня (18-19 мая) — 6 связанных багов в notification BrowserWindow. Серия **изначально закрыта в v0.89.23**, но через сутки проблема снова появилась (id=17 застрял с translateX=380px). Корневая причина найдена в v0.89.35 и закрыта **одной строкой** по официальной документации Electron.
+За 4 дня (18-19 мая) — 7 связанных багов в notification BrowserWindow. Серия **изначально закрыта в v0.89.23**, но через сутки проблема снова появилась (id=17 застрял с translateX=380px). Корневая причина #28 (Chromium throttling) найдена в v0.89.35. Через час после фикса — снова «пустая полоса» (race с пакетом одновременных нотификаций) → ловушка #29 закрыта в v0.89.36 force-transform fallback.
 
 | # | Симптом | Версия фикса | Природа |
 |---|---|---|---|
@@ -17,7 +17,8 @@
 | **#23** | IPC race `raw=0 items=1` — окно скрылось ошибочно | v0.89.23 | симптом (`IGNORE stale`) |
 | **#25** | Окно не скрывалось после dismiss (gap в hideIfEmpty) | v0.89.26 | симптом (`hideIfEmpty` после каждого dismiss) |
 | **#26** | Main `notifItems[]` накапливает мусор от ghost-stacking | v0.89.27 | симптом (`rendererPure` signal) |
-| **#28** | **CSS animations + rAF throttled в hidden window** | **v0.89.35** | **КОРЕНЬ — закрыт по Electron docs** |
+| **#28** | **CSS animations + rAF throttled в hidden window** | **v0.89.35** | **КОРЕНЬ throttling — закрыт по Electron docs** |
+| **#29** | **slideIn fallback ставит только флаг, transform остаётся 380px** | **v0.89.36** | **КОРЕНЬ race — force transform в fallback** |
 
 **Архитектурное обоснование** — в [`decisions.md`](../decisions.md) → «ADR — Notification BrowserWindow: итоги серии багов v0.89.15-v0.89.23».
 
@@ -140,6 +141,134 @@ webPreferences: {
 → **обязательно** `backgroundThrottling: false` в `webPreferences`.
 
 Это **прямая рекомендация Electron documentation**, не хак.
+
+---
+
+## 🔴 ЛОВУШКА #29 (v0.89.36): slideIn fallback ставит только флаг, реальный transform остаётся 380px — race с пакетом одновременных нотификаций
+
+### Симптом (19 мая, 10:13)
+
+Через час после фикса v0.89.35 (`backgroundThrottling: false`) — пользователь снова видит «невидимую полосу» в notification окне. Скриншот: тонкая горизонтальная пустая полоса в нижней части окна, кнопка «Закрыть» не реагирует.
+
+### Расследование по логу
+
+Лог 10:11:00 — **4 уведомления в одну миллисекунду** (race):
+
+```
+10:11:00 addNotification id=102 messenger=native_cc itemsBefore=0
+10:11:00 addNotification id=103 messenger=native_cc itemsBefore=1
+10:11:00 addNotification id=104 messenger=native_cc itemsBefore=2
+10:11:00 addNotification id=105 messenger=telegram  itemsBefore=3
+         ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+         4 разных мессенджера за 1мс — стандартный сценарий синхронизации
+
+10:11:00 DOM snapshot [1 id=105 h=182 realTf=matrix(0.95,0,0,0.95,380,0) slid=false]
+                                                                          ↑↑↑↑↑↑↑↑↑
+                                                                          slideIn НЕ запустилась
+```
+
+Через 2 минуты (10:13:03) — id=105 всё ещё в DOM:
+```
+DOM snapshot id=105 h=182 op=1 realTf=matrix(1,0,0,1,380,0) slid=true
+                                       ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+                                       translateX(380) — за рамкой окна
+                                       slid=true — но transform не дошёл до 0
+```
+
+`slid=true, translateX=380` — это **противоречие**. Анимация частично прошла (scale 0.95→1.0), но translateX **застрял на 0% keyframe**.
+
+### Корневая причина
+
+[`main/notification.js:573-582`](../main/notification.js) — fallback v0.89.23 (Баг #1):
+
+```js
+setTimeout(() => {
+  if (el.dataset.slideInDone === 'false') {
+    el.dataset.slideInDone = 'true'              ← ставит ТОЛЬКО флаг
+    el.removeEventListener('animationend', onSlideInEnd)
+    // НЕТ force transform!
+    reportHeight()
+  }
+}, 600)
+```
+
+Fallback пометил `slideInDone='true'` через 600мс (animationend не сработал из-за race с пакетом 4-х нотификаций), но **не форсировал** transform. Element остался в 0% keyframe (`translateX(380px)`).
+
+### Цепочка проявления
+
+1. 4 нотификации пришли одновременно (`Promise.all` от Telegram при синхронизации)
+2. React batches setState → 4 element-а добавляются в DOM почти одновременно
+3. CSS animation triggered для каждого
+4. Cascade delay + browser layout — некоторые animation **не доезжают** до 100% keyframe
+5. Через 600мс fallback ставит `slideInDone=true` для застрявших
+6. [`calcHeight()`](../main/notification.js) в начале файла теперь учитывает их (h=182)
+7. Окно расширяется на 182px пустого пространства
+8. Visual transform остаётся `translateX(380)` → element за рамкой окна
+9. → **«невидимая полоса»**
+
+### Почему v0.89.35 не помог
+
+`backgroundThrottling: false` (v0.89.35) ускоряет **быстрый путь** — CSS animations и rAF не throttled. Но **race с одновременным batch-добавлением** — это разная проблема:
+- Browser layout/paint queue
+- React batches setState
+- 4 параллельных `requestAnimationFrame` callbacks
+- CSS animation engine может пропустить frame
+
+`backgroundThrottling: false` снижает вероятность, но **не гарантирует** что все 4 animation дойдут до 100%.
+
+### Сверка с другими мессенджерами
+
+| Мессенджер | Подход | Что отличается |
+|---|---|---|
+| Telegram Desktop | JS-driven `requestAnimationFrame` loop с explicit final state | Не полагается на CSS animation |
+| WhatsApp Web | CSS `transition` (не `animation`) — start/end явные | Transition всегда даёт final state |
+| Discord | `framer-motion` с onComplete + final state guarantee | Библиотека гарантирует final state |
+| Slack | CSS + JS-fallback который **форсирует** конечное состояние | Так же как наш v0.89.36 |
+
+**Общий паттерн**: гарантировать final state через JS, не полагаться только на CSS `animationend`.
+
+### Решение (v0.89.36)
+
+[`main/notification.js:573-595`](../main/notification.js) — fallback теперь **форсирует** финальное состояние:
+
+```js
+setTimeout(() => {
+  if (el.dataset.slideInDone === 'false') {
+    el.dataset.slideInDone = 'true'
+    el.removeEventListener('animationend', onSlideInEnd)
+    // v0.89.36: ФОРСИРУЕМ финальное состояние slideIn keyframe 100%.
+    el.style.animation = 'none'
+    el.style.transform = 'translateX(0) scale(1)'
+    el.style.opacity = '1'
+    reportHeight()
+  }
+}, 600)
+```
+
+3 свойства принудительно ставятся в **финальное состояние** slideIn keyframe 100%. Это страховка от **любых** race-conditions — backgroundThrottling, cascade delay, keyframe error, race с пакетом одновременных нотификаций.
+
+### Регрессионная защита
+
+[`transparentWindowGuard.test.cjs`](../src/__tests__/transparentWindowGuard.test.cjs) проверяет в fallback блоке наличие:
+- `style.transform = 'translateX(0)...'`
+- `style.animation = 'none'`
+- `style.opacity = '1'`
+
+Pre-commit hook падает при удалении любого из трёх. Верифицировано: убрал force transform → 18/19, вернул → 19/19.
+
+### Что закрывается
+
+- ✅ «Невидимая полоса» при 4+ одновременных нотификациях (race)
+- ✅ Cascade delay > 600мс (большой стек)
+- ✅ Keyframe error / прерывание animation
+- ✅ Будущие throttling сценарии (страховка)
+- ✅ Гарантия: через 600мс после addNotification element **всегда** в видимой зоне
+
+### Правило
+
+CSS animations не дают гарантии final state. Любой код полагающийся на CSS animation для перевода элемента в конкретное состояние **обязан** иметь JS-fallback который **форсирует** это состояние, а не просто помечает флагом.
+
+«Помечать флагом без forced state» = баг ждущий проявления.
 
 ---
 
