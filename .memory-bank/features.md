@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.47 (20 мая 2026)
+## Текущая версия: v0.89.48 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,88 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.89.48 — Диагностика пилота WebContentsView: error handlers + timing + smoke-тесты + crashpad override
+
+**Дата**: 20 мая 2026
+**Тип**: диагностика + регрессия + dev experience
+**Файлы**: 4 production + 1 test + dev script
+
+#### Контекст
+
+После v0.89.47 юзер снова видит «не запускается» при включенном пилоте, но в логе НЕТ информации почему. v0.89.46 фильтр crashpad частично проглотил полезную диагностику, а renderer-крахи вообще не логируются. Сделана инфраструктура чтобы такие тихие крахи не повторялись.
+
+#### Совет «убрать дубликат monitorPreloadUrl» — ОТМЕНЁН
+
+Я был неправ. Проверил [Electron docs `<webview>`](https://www.electronjs.org/docs/latest/api/webview-tag#preload) (verbatim): «The **protocol** of script's URL must be either `file:` or `asar:`».
+
+То есть `<webview>` тег требует URL формат, не path. Дубликат `monitorPreloadUrl` нужен. Спасибо что попросил перепроверить — иначе бы я ввёл регрессию.
+
+#### Совет 3 — Глобальные error handlers (главный фикс этой версии)
+
+**Renderer** — в [`src/hooks/useConsoleErrorLogger.js`](src/hooks/useConsoleErrorLogger.js):
+```js
+window.addEventListener('error', onError)                  // sync uncaught
+window.addEventListener('unhandledrejection', onRejection) // async без .catch
+```
+
+Оба пишут в `chatcenter.log` через `window.api.send('app:log', ...)` с префиксом `[renderer-uncaught]` / `[renderer-unhandled-rejection]`.
+
+**Main** — в [`main/main.js`](main/main.js):
+```js
+process.on('uncaughtException', err => console.error('[main-uncaught]', err))
+process.on('unhandledRejection', reason => console.error('[main-unhandled-rejection]', reason))
+```
+
+`console.error` уже патчится логгером → запись в `chatcenter.log`.
+
+**Эффект**: теперь любой тихий крах оставит след. Можно будет диагностировать.
+
+#### Совет 4 — Тайминг wcv:create
+
+В [`main/handlers/webContentsViewIpcHandlers.js`](main/handlers/webContentsViewIpcHandlers.js) `wcv:create` handler меряет `Date.now() - t0` и пишет в лог:
+
+```
+[wcv-timing] create id=telegram ms=147 ok=true preload=yes partition=persist:telegram
+[wcv-timing] create id=whatsapp ms=89  ok=true preload=yes partition=persist:whatsapp
+```
+
+Можно сравнить с `<webview>` (его медленные грузы видны в `dev-request slow` логах).
+
+#### Совет 2 — Smoke-тесты без Playwright (без npm install)
+
+В [`src/__tests__/webContentsViewPatterns.test.cjs`](src/__tests__/webContentsViewPatterns.test.cjs) добавлено 4 smoke-теста:
+
+1. **useAppBootstrap НЕ оборачивает path в file:// перед setMonitorPreloadPath** — точнее, проверяет что `setMonitorPreloadPath?.(monitorPreload)` получает именно raw переменную, не вычисленный URL.
+2. **wcv:create handler логирует тайминг** — проверка наличия `[wcv-timing] create` и расчёта `Date.now() - t0`.
+3. **Renderer + main глобальные error handlers** — проверки addEventListener('error'/'unhandledrejection') в hook + process.on в main.js.
+4. **scripts/dev.cjs фильтр НЕ глотает ERROR строки** — наличие `IMPORTANT` override regex.
+
+#### Бонус — Ослабление crashpad-фильтра
+
+В [`scripts/dev.cjs`](scripts/dev.cjs) добавлен **positive override**:
+
+```js
+const IMPORTANT = /\bERROR\b|\bError\b|\bFAIL\b|\bFatal\b/
+// Если строка важная — пропускаем даже при noise pattern.
+if (NOISE.some(rx => rx.test(line)) && !IMPORTANT.test(line)) continue
+```
+
+В v0.89.47 фильтр глотал любую строку matching noise — включая случаи когда в той же строке было ERROR. Теперь ERROR всегда виден.
+
+#### Регрессия
+
+- `webContentsViewPatterns.test.cjs`: 23 → 27 (+4 smoke)
+- `modernPatternsGuard.test.cjs`: 15 ✅
+- vitest всего: 683 ✅, lint ✅, memory bank ✅
+
+#### Что юзер должен сделать после `git pull`
+
+1. `npm start`
+2. Если снова «не запускается» — проверить `chatcenter.log` (Настройки → Диагностика → Загрузить лог ошибок).
+3. Прислать содержимое лога — теперь там будут реальные причины (renderer-uncaught / main-unhandled-rejection / wcv-timing с error).
+
+#### Прежнее (v0.89.47)
 
 ### v0.89.47 — Полировка пилота WebContentsView: 5 советов после v0.89.46 critical fix
 

@@ -156,6 +156,15 @@ app.whenReady().then(() => {
   initLogger(app.getPath('userData'))
   setLogViewerOpener(openLogViewer)
   __slog('logger init')
+  // v0.89.48 (Совет 3): глобальные error handlers в main. До этого тихие крахи
+  // (например WebContentsView с битым preload в v0.89.46) не оставляли следа в
+  // chatcenter.log — теперь любой uncaught error или promise rejection пишется.
+  process.on('uncaughtException', (err) => {
+    try { console.error('[main-uncaught]', err?.stack || err) } catch (_) {}
+  })
+  process.on('unhandledRejection', (reason) => {
+    try { console.error('[main-unhandled-rejection]', reason?.stack || reason) } catch (_) {}
+  })
   console.log('=== ChatCenter v0.87.135 start ===')
 
   registerCcMediaHandler(app.getPath('userData'))

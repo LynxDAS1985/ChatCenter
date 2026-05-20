@@ -36,11 +36,23 @@ export function initWebContentsViewIpcHandlers({ ipcMain, getMainWindow, sendToR
   handle('wcv:create', ({ id, url, partition, preload } = {}) => {
     const parentWindow = getMainWindow()
     if (!parentWindow) return { ok: false, error: 'no main window' }
+    // v0.89.48 (Совет 5): тайминг wcv:create. Пишем в общий логгер чтобы
+    // в chatcenter.log была картина «пилот ускоряет или замедляет открытие?»
+    // Сравнение с <webview> — там нет аналогичного замера, но видно по
+    // dev-request slow логам сколько грузится monitor.preload и url-страница.
+    const t0 = Date.now()
     try {
       const view = manager.createView({ id, url, partition, preload, parentWindow })
-      if (!view) return { ok: false, error: 'WebContentsView API недоступен (требуется Electron v30+)' }
-      return { ok: true }
+      const dt = Date.now() - t0
+      if (!view) {
+        console.log(`[wcv-timing] create id=${id} ms=${dt} ok=false reason=API_unavailable`)
+        return { ok: false, error: 'WebContentsView API недоступен (требуется Electron v30+)' }
+      }
+      console.log(`[wcv-timing] create id=${id} ms=${dt} ok=true preload=${preload ? 'yes' : 'no'} partition=${partition || '-'}`)
+      return { ok: true, ms: dt }
     } catch (e) {
+      const dt = Date.now() - t0
+      console.log(`[wcv-timing] create id=${id} ms=${dt} ok=false error=${e?.message || e}`)
       return { ok: false, error: e?.message || String(e) }
     }
   })

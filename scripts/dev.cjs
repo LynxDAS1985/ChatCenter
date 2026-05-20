@@ -20,17 +20,19 @@ if (shouldClearViteCache && fs.existsSync(viteCache)) {
 const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
 
-// v0.89.47 (Совет 4): фильтруем шумные Chromium-логи которые пугают, но безобидны:
-//   - crashpad ... not connected   — crash reporter не подключен в dev (нам не нужен)
-//   - DEP0190 DeprecationWarning   — Node предупреждение из электрон-вайта про spawn args
-// Эти строки бесполезны при разработке и пугают «там что-то сломалось». Фильтруем.
-// Если нужно увидеть полный лог — установить CC_DEV_VERBOSE=1.
+// v0.89.47 (Совет 4): фильтруем шумные Chromium-логи которые пугают, но безобидны.
+// v0.89.48: ослабили — позитивный override. Если в строке есть ERROR/Error/FAIL,
+// строку НЕ фильтруем даже если matches noise pattern. Иначе можно проглотить
+// важную диагностику (например `... ERROR ... preload script must have absolute`
+// частично совпадала с фильтром в v0.89.47).
+// CC_DEV_VERBOSE=1 → показывает ВСЁ.
 const VERBOSE = process.env.CC_DEV_VERBOSE === '1'
 const NOISE = [
   /crashpad.*not connected/i,
   /DeprecationWarning.*shell option true/i,
   /Use `node --trace-deprecation/i,
 ]
+const IMPORTANT = /\bERROR\b|\bError\b|\bFAIL\b|\bFatal\b/
 function filterChunk(chunk, stream) {
   if (VERBOSE) { stream.write(chunk); return }
   const text = chunk.toString('utf8')
@@ -40,7 +42,8 @@ function filterChunk(chunk, stream) {
     const line = lines[i]
     const eol = lines[i + 1] || ''
     if (!line) { out += eol; continue }
-    if (NOISE.some(rx => rx.test(line))) continue
+    // Если строка важная — пропускаем даже при совпадении с noise (override).
+    if (NOISE.some(rx => rx.test(line)) && !IMPORTANT.test(line)) continue
     out += line + eol
   }
   if (out) stream.write(out)

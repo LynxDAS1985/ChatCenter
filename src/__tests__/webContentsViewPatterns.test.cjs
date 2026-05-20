@@ -304,6 +304,60 @@ test('useAppBootstrap.js: задаёт оба значения — URL и Path',
     'setMonitorPreloadPath удалён — WebContentsView без raw path упадёт при создании view')
 })
 
+// ──────────────────────────────────────────────────────────────────
+// v0.89.48: smoke-test контракта пилота (Совет 2).
+// Без реального Electron — проверяем именно те цепочки которые v0.89.46 ломались:
+// 1) useAppBootstrap.js → setMonitorPreloadPath получает RAW путь (не file://)
+// 2) App.jsx → передаёт его в WebContentsViewSlot.preload
+// 3) wcv:create handler меряет тайминг и логирует
+// ──────────────────────────────────────────────────────────────────
+
+test('Smoke: useAppBootstrap НЕ оборачивает path в file:// перед setMonitorPreloadPath', () => {
+  const abs = path.resolve(process.cwd(), 'src/hooks/useAppBootstrap.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  // Регистрируем что setMonitorPreloadPath?.(monitorPreload) — НЕ url
+  // (т.е. monitorPreload — это значение от main `app:get-paths`, абсолютный путь).
+  const m = content.match(/setMonitorPreloadPath\s*\?\s*\.\s*\(([^)]+)\)/)
+  assert(m, 'setMonitorPreloadPath не вызывается с аргументом')
+  const arg = m[1].trim()
+  assert(arg === 'monitorPreload',
+    'setMonitorPreloadPath должен получать ИМЕННО monitorPreload (raw path от main), а не url. ' +
+    'Сейчас аргумент: ' + arg)
+})
+
+test('Smoke: wcv:create handler логирует тайминг (Совет 5)', () => {
+  const abs = path.resolve(process.cwd(), 'main/handlers/webContentsViewIpcHandlers.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/wcv-timing.*create/.test(content),
+    '[wcv-timing] create лог удалён — нет понимания скорости пилота')
+  assert(/Date\.now\(\)\s*-\s*t0/.test(content),
+    'тайминг dt = Date.now() - t0 удалён из wcv:create handler')
+})
+
+test('Smoke: renderer + main глобальные error handlers (Совет 3)', () => {
+  // Renderer: useConsoleErrorLogger подписывается на window error + unhandledrejection
+  const renderer = fs.readFileSync(path.resolve(process.cwd(), 'src/hooks/useConsoleErrorLogger.js'), 'utf8')
+  assert(/addEventListener\(['"]error['"]/.test(renderer),
+    "window.addEventListener('error', ...) удалён — uncaught рендер-ошибки пропадут")
+  assert(/addEventListener\(['"]unhandledrejection['"]/.test(renderer),
+    "window.addEventListener('unhandledrejection', ...) удалён — async ошибки без .catch пропадут")
+  // Main: process.on('uncaughtException') + 'unhandledRejection'
+  const main = fs.readFileSync(path.resolve(process.cwd(), 'main/main.js'), 'utf8')
+  assert(/process\.on\(['"]uncaughtException['"]/.test(main),
+    "process.on('uncaughtException') удалён — main-крахи без следа в chatcenter.log")
+  assert(/process\.on\(['"]unhandledRejection['"]/.test(main),
+    "process.on('unhandledRejection') удалён — promise-rejections пропадут")
+})
+
+test('Smoke: scripts/dev.cjs фильтр НЕ глотает ERROR строки (v0.89.48 ослабление)', () => {
+  const abs = path.resolve(process.cwd(), 'scripts/dev.cjs')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/IMPORTANT/.test(content),
+    'IMPORTANT override regex удалён — фильтр снова может проглотить ERROR строки')
+  assert(/\\bERROR\\b/.test(content) || /\\bError\\b/.test(content),
+    'IMPORTANT regex должен включать ERROR/Error чтобы реальные ошибки не глотались')
+})
+
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) {
   console.log('\n❌ WebContentsView migration защита сломана.')
