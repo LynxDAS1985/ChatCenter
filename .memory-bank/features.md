@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.51 (20 мая 2026)
+## Текущая версия: v0.89.52 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,52 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.89.52 — Пошаговые логи после `new WebContentsView ok` (изоляция места native crash)
+
+**Дата**: 20 мая 2026
+**Тип**: диагностика
+**Файлы**: 1 правка
+
+#### Симптом из лога v0.89.51
+
+```
+[wcv-mgr] createView id=telegram preload=C:\...\monitor.preload.cjs partition=persist:telegram
+[wcv-mgr] new WebContentsView starting...
+[wcv-mgr] new WebContentsView ok                ← конструктор отработал!
+[crashpad ... not connected]                     ← но программа закрылась
+PS C:\Projects\ChatCenter>
+```
+
+**Конструктор `new WebContentsView` НЕ падает**. Краш происходит между `ok` и возвратом из handler'а — на одном из трёх шагов:
+
+1. `forwardEvent` подписка на 11 событий webContents (мало вероятно — это просто .on calls)
+2. **`parentWindow.contentView.addChildView(view)`** ← главное подозрение
+3. `view.webContents.loadURL(url)` (асинхронно, возвращает Promise — но native crash при загрузке возможен)
+
+#### Решение — пошаговые логи
+
+В [`main/utils/webContentsViewManager.js`](main/utils/webContentsViewManager.js) после `new WebContentsView ok`:
+
+```
+[wcv-mgr] forwarding events...
+[wcv-mgr] events forwarded
+[wcv-mgr] adding to parent contentView (type=present/missing)...
+[wcv-mgr] addChildView ok                   ← или addChildView FAILED: <msg>
+[wcv-mgr] queuing loadURL https://...
+[wcv-mgr] createView return view id=...
+[wcv-mgr] loadURL settled id=...            ← асинхронно
+```
+
+Если main крашится на `addChildView` — увидим `adding to parent...` без `ok`. Если на `loadURL` — увидим `queuing loadURL` без `settled`.
+
+#### Гипотеза про addChildView
+
+[Electron BrowserWindow docs](https://www.electronjs.org/docs/latest/api/browser-window): `BrowserWindow.contentView` — primary view рендерера HTML. `addChildView` поддерживается с v30, но добавление WebContentsView к BrowserWindow с уже активным renderer'ом может вызвать конфликт раскладки или native ошибку.
+
+Альтернатива (если addChildView крашит) — мигрировать на `BaseWindow` вместо `BrowserWindow`, либо использовать `BrowserWindow.setBrowserView` (deprecated). Но это уже в следующих версиях.
+
+#### Прежнее (v0.89.51)
 
 ### v0.89.51 — Защита от невалидного preload + diag внутри webContentsViewManager.createView
 

@@ -125,37 +125,56 @@ export class WebContentsViewManager extends EventEmitter {
     console.log(`[wcv-mgr] new WebContentsView ok`)
     const wc = view.webContents
 
-    // Forward all relevant events through manager EventEmitter, чтобы renderer
-    // мог подписаться через единый IPC канал.
-    const forwardEvent = (eventName) => {
-      wc.on(eventName, (...args) => {
-        try { this.emit(eventName, { viewId: id, args }) } catch (_) {}
+    // v0.89.52: вместо forwarding каждого события — обёрнем в try и логируем
+    // ровно те, что свалились (если такое случится).
+    console.log(`[wcv-mgr] forwarding events...`)
+    try {
+      const forwardEvent = (eventName) => {
+        wc.on(eventName, (...args) => {
+          try { this.emit(eventName, { viewId: id, args }) } catch (_) {}
+        })
+      }
+      forwardEvent('did-finish-load')
+      forwardEvent('dom-ready')
+      forwardEvent('did-fail-load')
+      forwardEvent('did-navigate-in-page')
+      forwardEvent('did-frame-finish-load')
+      forwardEvent('did-start-loading')
+      forwardEvent('did-stop-loading')
+      forwardEvent('render-process-gone')
+      forwardEvent('unresponsive')
+      forwardEvent('page-title-updated')
+      forwardEvent('console-message')
+      wc.on('ipc-message', (event, channel, ...args) => {
+        try { this.emit('ipc-message', { viewId: id, channel, args }) } catch (_) {}
       })
+    } catch (e) {
+      console.error(`[wcv-mgr] forwarding events FAILED: ${e?.message || e}`)
     }
-    forwardEvent('did-finish-load')
-    forwardEvent('dom-ready')
-    forwardEvent('did-fail-load')
-    forwardEvent('did-navigate-in-page')
-    forwardEvent('did-frame-finish-load')
-    forwardEvent('did-start-loading')
-    forwardEvent('did-stop-loading')
-    forwardEvent('render-process-gone')
-    forwardEvent('unresponsive')
-    forwardEvent('page-title-updated')
-    forwardEvent('console-message')
+    console.log(`[wcv-mgr] events forwarded`)
 
-    // ipc-message — отдельный сигнатура: (event, channel, ...args).
-    wc.on('ipc-message', (event, channel, ...args) => {
-      try { this.emit('ipc-message', { viewId: id, channel, args }) } catch (_) {}
-    })
-
-    try { parentWindow.contentView.addChildView(view) } catch (e) {
-      // Если parent не BaseWindow — fallback на addBrowserView (для BrowserWindow).
-      try { parentWindow.contentView?.addChildView?.(view) } catch (_) {}
+    // v0.89.52: BrowserWindow.contentView — это primary view (HTML рендерер),
+    // добавление дочернего view через addChildView возможно с Electron v30+.
+    // Если main крашится на этом шаге — самое вероятное место бага.
+    console.log(`[wcv-mgr] adding to parent contentView (type=${parentWindow.contentView ? 'present' : 'missing'})...`)
+    try {
+      parentWindow.contentView.addChildView(view)
+      console.log(`[wcv-mgr] addChildView ok`)
+    } catch (e) {
+      console.error(`[wcv-mgr] addChildView FAILED: ${e?.message || e}`)
     }
+
     this.views.set(id, { view, parentWindow, bounds: { x: 0, y: 0, width: 0, height: 0 } })
 
-    if (url) view.webContents.loadURL(url).catch(() => {})
+    if (url) {
+      console.log(`[wcv-mgr] queuing loadURL ${url}`)
+      view.webContents.loadURL(url).then(() => {
+        console.log(`[wcv-mgr] loadURL settled id=${id}`)
+      }).catch((e) => {
+        console.error(`[wcv-mgr] loadURL failed id=${id}: ${e?.message || e}`)
+      })
+    }
+    console.log(`[wcv-mgr] createView return view id=${id}`)
     return view
   }
 
