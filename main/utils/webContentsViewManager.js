@@ -162,26 +162,21 @@ export class WebContentsViewManager extends EventEmitter {
       console.error(`[wcv-mgr] addChildView FAILED: ${e?.message || e}`)
     }
 
+    // v0.90.2: ДЕФОЛТНЫЕ bounds ДО loadURL. Если bounds=(0,0,0,0), Chromium
+    // может крашить renderer при rendering. Slot обновит позже через wcv:set-bounds.
+    try {
+      const pb = parentWindow.getContentBounds?.() || { width: 800, height: 600 }
+      view.setBounds({ x: 0, y: 0, width: pb.width || 800, height: pb.height || 600 })
+      console.log(`[wcv-mgr] default bounds set: ${pb.width || 800}x${pb.height || 600}`)
+    } catch (e) { console.error(`[wcv-mgr] default bounds failed: ${e?.message || e}`) }
+
     this.views.set(id, { view, parentWindow, bounds: { x: 0, y: 0, width: 0, height: 0 } })
 
     if (url) {
-      // v0.89.57: data: URL первый — без сети/CSP/preload-injection. Если крашит — корень в архитектуре.
-      const dataUrl = 'data:text/html;charset=utf-8,<h1>WCV%20isolation%20test</h1>'
-      console.log(`[wcv-mgr] step 1: loadURL data: (minimal isolation)`)
-      try {
-        view.webContents.loadURL(dataUrl)
-          .then(() => {
-            console.log(`[wcv-mgr] data: settled id=${id} — now real URL ${url}`)
-            view.webContents.loadURL(url)
-              .then(() => console.log(`[wcv-mgr] real URL settled id=${id}`))
-              .catch((e) => console.error(`[wcv-mgr] real URL failed id=${id}: ${e?.message || e}`))
-          })
-          .catch((e) => console.error(`[wcv-mgr] data: failed id=${id}: ${e?.message || e}`))
-        console.log(`[wcv-mgr] loadURL sync returned ok id=${id}`)
-        setImmediate(() => console.log(`[wcv-mgr] setImmediate tick after loadURL id=${id}`))
-      } catch (e) {
-        console.error(`[wcv-mgr] loadURL sync exception id=${id}: ${e?.message || e}`)
-      }
+      console.log(`[wcv-mgr] queuing loadURL ${url}`)
+      view.webContents.loadURL(url)
+        .then(() => console.log(`[wcv-mgr] loadURL settled id=${id}`))
+        .catch((e) => console.error(`[wcv-mgr] loadURL failed id=${id}: ${e?.message || e}`))
     }
     console.log(`[wcv-mgr] createView return view id=${id}`)
     return view

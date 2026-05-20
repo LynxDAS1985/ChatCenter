@@ -613,22 +613,25 @@ export default function App() {
                     />
                   </Suspense>
                 ) : (
-                  /* v0.90.0: ВСЕГДА WebContentsView. <webview> тег удалён —
-                     главное окно теперь BaseWindow, primary view = React UI без webviewTag.
-                     m.partition (`persist:telegram` и т.д.) — сохраняет авторизации. */
-                  <WebContentsViewSlot
-                    viewId={m.id}
-                    url={m.url}
-                    partition={m.partition}
-                    preload={monitorPreloadPath || undefined}
-                    visible={activeId === m.id}
-                    onCreated={() => {
-                      if (!webviewRefs.current[m.id] || !webviewRefs.current[m.id]._isWebContentsViewBridge) {
-                        const bridge = createWebContentsViewBridge(m.id)
-                        setWebviewRef(bridge, m.id)
-                      }
-                    }}
-                  />
+                  /* v0.90.0: ВСЕГДА WebContentsView. <webview> тег удалён.
+                     v0.90.2: preload временно отключён + lazy mount только для
+                     активной вкладки — выявить минимально работающую конфигурацию.
+                     ChatMonitor (уведомления/mark-read) не работает пока. */
+                  activeId === m.id ? (
+                    <WebContentsViewSlot
+                      viewId={m.id}
+                      url={m.url}
+                      partition={m.partition}
+                      preload={undefined}
+                      visible={true}
+                      onCreated={() => {
+                        if (!webviewRefs.current[m.id] || !webviewRefs.current[m.id]._isWebContentsViewBridge) {
+                          const bridge = createWebContentsViewBridge(m.id)
+                          setWebviewRef(bridge, m.id)
+                        }
+                      }}
+                    />
+                  ) : null
                 )}
               </div>
             ))

@@ -271,13 +271,13 @@ test('main/: deprecated BrowserView не используется', () => {
 // v0.89.47: preload — raw path для WebContentsView, file:// URL для <webview>
 // ──────────────────────────────────────────────────────────────────
 
-test('v0.90.0: App.jsx WebContentsViewSlot — preload + m.partition', () => {
+test('v0.90.0: App.jsx WebContentsViewSlot — partition=m.partition', () => {
   const content = fs.readFileSync(path.resolve(process.cwd(), 'src/App.jsx'), 'utf8')
   const start = content.indexOf('<WebContentsViewSlot'); const end = content.indexOf('/>', start)
   assert(start > 0 && end > start, 'WebContentsViewSlot не найден')
   const block = content.slice(start, end + 2)
-  assert(/preload=\{monitorPreloadPath\b/.test(block), 'monitorPreloadPath удалён — нет ChatMonitor')
-  // v0.90.0: partition=m.partition (изоляция persist:wcv-* больше не нужна — нет webviewTag).
+  // v0.90.2: preload временно undefined (изоляционный тест) — ChatMonitor вернём после.
+  // partition=m.partition — основное правило (без префикса persist:wcv-).
   assert(/partition=\{m\.partition\}/.test(block),
     'WebContentsViewSlot должен получать m.partition (без префикса persist:wcv-)')
 })

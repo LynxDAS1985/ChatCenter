@@ -72,8 +72,21 @@ export default function WebContentsViewSlot({
       lastUrlRef.current = url
       // После создания — сразу выставляем bounds.
       pushBounds()
-      // v0.89.44 (Совет 1): onCreated callback — для подключения bridge в App.jsx
-      // когда useWebContentsView=true (см. setWebviewRef + webviewSetup).
+      // v0.90.2: watchdog — если за 15с не пришёл did-finish-load или did-fail-load,
+      // показываем сообщение «загрузка зависла» в UI вместо тихой смерти.
+      const watchdog = setTimeout(() => {
+        if (!alive) return
+        try { window.api?.send('app:log', { level: 'ERROR',
+          message: '[WCV] watchdog: ' + viewId + ' loadURL timeout 15s (native crash?)' }) } catch (_) {}
+        setCreateError('Telegram/мессенджер не загрузился за 15 секунд. Возможно проблема с сетью или native crash WebContentsView. См. логи (Настройки → Диагностика).')
+      }, 15000)
+      // Снимаем watchdog при did-finish-load (см. wcv:event ниже).
+      const detachOnLoad = window.api?.on?.('wcv:event', (payload) => {
+        if (payload?.viewId === viewId && (payload.type === 'did-finish-load' || payload.type === 'did-fail-load')) {
+          clearTimeout(watchdog)
+          try { detachOnLoad?.() } catch (_) {}
+        }
+      })
       try { onCreated?.() } catch (_) {}
     })()
     return () => {

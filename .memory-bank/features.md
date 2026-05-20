@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.90.1 (20 мая 2026)
+## Текущая версия: v0.90.2 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -21,7 +21,11 @@
 
 ---
 
-### v0.90.1 — Фикс v0.90.0: BaseWindow не имеет `.loadURL`/`.loadFile` (BrowserWindow API). В [`windowManager.js`](main/utils/windowManager.js): `mainWindow.loadURL` → `mainWindow.webContents.loadURL`.
+### v0.90.2 — child WebContentsView Telegram крашит, изоляционные попытки + watchdog
+
+v0.90.0 миграция работает для primary (React UI грузится). Но child WebContentsView для Telegram всё равно крашит на `loadURL`. Три попытки изолировать минимальную конфигурацию: (1) setBounds default ДО loadURL — bounds=(0,0,0,0) могла крашить renderer; (2) preload={undefined} + lazy mount только активной вкладки (пилот без ChatMonitor); (3) watchdog 15с — `setCreateError` если did-finish-load не пришло (ошибка в UI вместо тихой смерти).
+
+### v0.90.1 — Фикс v0.90.0: BaseWindow не имеет `.loadURL`/`.loadFile`. `mainWindow.loadURL` → `mainWindow.webContents.loadURL`.
 
 ### v0.90.0 — АРХИТЕКТУРНАЯ МИГРАЦИЯ: BrowserWindow → BaseWindow + WebContentsView
 
