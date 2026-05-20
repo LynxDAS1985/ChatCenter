@@ -8,6 +8,16 @@ export function setupSession(ses) {
   // v0.85.5: Защита от повторного setupSession — предотвращает MaxListenersExceededWarning
   const partitionKey = ses.storagePath || 'default'
   if (_setupDone.has(partitionKey)) return
+  // v0.89.56: пропускаем изолированные WebContentsView partitions (`persist:wcv-*`).
+  // setupSession настраивает session под <webview> тег — webRequest hooks, CSP
+  // модификации, очистка SW. Для WebContentsView пилота это создаёт конфликт
+  // с Chromium guest-page manager → нативный краш при loadURL (10 версий
+  // расследования v0.89.46-v0.89.55). Изолированная session без этих hooks
+  // даёт чистую среду для пилота.
+  if (partitionKey.includes('persist:wcv-') || partitionKey.includes('wcv-')) {
+    console.log('[Session] setupSession SKIPPED for WebContentsView partition: ' + partitionKey)
+    return
+  }
   _setupDone.add(partitionKey)
 
   ses.setUserAgent(CHROME_UA)

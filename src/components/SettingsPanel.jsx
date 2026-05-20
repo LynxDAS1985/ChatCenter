@@ -135,7 +135,8 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
     let done = 0
     for (const m of targets) {
       try {
-        await window.api?.invoke('wcv:cleanup-partition', { partition: m.partition, full: false })
+        // v0.89.56: пилот использует изолированный partition `persist:wcv-${id}` — чистим именно его.
+        await window.api?.invoke('wcv:cleanup-partition', { partition: 'persist:wcv-' + m.id, full: false })
       } catch (_) {}
       done += 1
       setWcvCleanup({ running: done < targets.length, done, total: targets.length, message: '' })
@@ -396,7 +397,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                   сообщений) — для проверки UX-улучшений (разделитель не залипает). */}
               <SettingRow
                 label="WebContentsView (экспериментально, требует перезапуска)"
-                description="Современный API Electron вместо <webview> тега. ВКЛЮЧИЛИ — перезапустите программу. Полный функционал: уведомления, mark-read, ribbon работают. УХОДИТ webview boundary baг разделителя. ВЫКЛЮЧИЛИ — тоже перезапустите, вернётся стабильный <webview>.">
+                description="Современный API Electron вместо <webview> тега. ВНИМАНИЕ: пилот использует ОТДЕЛЬНУЮ сессию — при включении нужно ЗАЛОГИНИТЬСЯ ЗАНОВО в каждом мессенджере. Авторизация webview-режима сохраняется. Полный функционал: уведомления, mark-read, ribbon. Уходит баг залипающего разделителя.">
                 <Toggle value={!!settings.useWebContentsView} onChange={v => set('useWebContentsView', v)} />
               </SettingRow>
               <SettingRow label="Бейдж на иконке (overlay)" description="Что показывать на иконке в панели задач Windows">

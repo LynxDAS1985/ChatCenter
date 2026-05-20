@@ -244,6 +244,9 @@ export default function App() {
     if (removed?.partition) {
       try { window.api?.invoke('wcv:cleanup-partition', { partition: removed.partition, full: true })
         .catch(() => {}) } catch (_) {}
+      // v0.89.56: также чистим изолированную WebContentsView partition.
+      try { window.api?.invoke('wcv:cleanup-partition', { partition: 'persist:wcv-' + id, full: true })
+        .catch(() => {}) } catch (_) {}
     }
     setMessengers(prev => {
       const next = prev.filter(m => m.id !== id)
@@ -620,10 +623,9 @@ export default function App() {
                   <WebContentsViewSlot
                     viewId={m.id}
                     url={m.url}
-                    partition={m.partition}
-                    /* v0.89.55: preload возвращён. Корень крашей был в Chromium
-                       switch (см. main.js applyGpuStabilitySwitches), не preload.
-                       Полный ChatMonitor работает. */
+                    /* v0.89.56: изолированный partition обходит конфликт setupSession
+                       + webviewTag. См. mistakes/electron-core.md «webviewTag + WCV». */
+                    partition={'persist:wcv-' + m.id}
                     preload={monitorPreloadPath || undefined}
                     visible={activeId === m.id}
                     onCreated={() => {

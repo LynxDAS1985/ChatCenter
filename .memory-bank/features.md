@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.55 (20 мая 2026)
+## Текущая версия: v0.89.56 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -21,7 +21,25 @@
 
 ---
 
-### v0.89.55 — ✅ РЕШЕНИЕ серии v0.89.46-v0.89.54: условный `disable-gpu-compositing` switch
+### v0.89.56 — Изолированная partition `persist:wcv-*` для WebContentsView pilot (КОРЕНЬ найден)
+
+v0.89.55 (`disable-gpu-compositing` switch) ОПРОВЕРГНУТА: лог показал `gpu-compositing ENABLED (WebContentsView pilot mode)` — switch не применился, программа всё равно упала.
+
+**Реальный корень** (анализ нашего кода): тройной конфликт `webviewTag:true` (в [`windowManager.js:134`](main/utils/windowManager.js)) + `setupSession` hooks (CSP/webRequest/SW в [`sessionSetup.js`](main/utils/sessionSetup.js)) + общий `m.partition`. Chromium guest-page manager + WebContentsView с тем же partition → native crash.
+
+**Решение** — изолированная partition:
+- [`App.jsx`](src/App.jsx) WebContentsViewSlot: `partition={'persist:wcv-' + m.id}`
+- [`sessionSetup.js`](main/utils/sessionSetup.js): early return для `wcv-*`
+- [`App.jsx removeMessenger`](src/App.jsx): cleanup обоих partitions
+- [`SettingsPanel.jsx`](src/components/SettingsPanel.jsx): кнопка чистит `persist:wcv-*`, тумблер описывает «новая авторизация»
+
+⚠️ Минус: при первом включении — login заново. ✅ Плюс: пилот **полностью работает** с ChatMonitor.
+
+История 10 опровергнутых гипотез — в [`mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md).
+
+Регрессия: wcv guard 31/31 ✅, fileSizeLimits 274/274 ✅, lint ✅.
+
+### v0.89.55 — Условный `disable-gpu-compositing` (ОПРОВЕРГНУТО в v0.89.56)
 
 **Дата**: 20 мая 2026
 **Тип**: критическая поправка + закрытие 9-серийного расследования

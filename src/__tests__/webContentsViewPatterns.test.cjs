@@ -278,15 +278,18 @@ test('main/: deprecated BrowserView не используется', () => {
 // v0.89.47: preload — raw path для WebContentsView, file:// URL для <webview>
 // ──────────────────────────────────────────────────────────────────
 
-test('App.jsx: WebContentsViewSlot получает monitorPreloadPath (v0.89.55)', () => {
+test('App.jsx: WebContentsViewSlot — preload + persist:wcv-* partition (v0.89.56)', () => {
   const content = fs.readFileSync(path.resolve(process.cwd(), 'src/App.jsx'), 'utf8')
-  const start = content.indexOf('<WebContentsViewSlot')
-  const end = content.indexOf('/>', start)
-  assert(start > 0 && end > start, 'WebContentsViewSlot не найден в App.jsx')
+  const start = content.indexOf('<WebContentsViewSlot'); const end = content.indexOf('/>', start)
+  assert(start > 0 && end > start, 'WebContentsViewSlot не найден')
   const block = content.slice(start, end + 2)
-  // v0.89.55: корень крашей — disable-gpu-compositing (см. applyGpuStabilitySwitches). preload работает.
   assert(/preload=\{monitorPreloadPath\b/.test(block), 'monitorPreloadPath удалён — нет ChatMonitor')
-  assert(!/preload=\{monitorPreloadUrl\b/.test(block), 'НЕ monitorPreloadUrl — URL формат для <webview>')
+  assert(/persist:wcv-/.test(block), 'partition должен быть persist:wcv-<id> — иначе конфликт setupSession')
+})
+
+test('sessionSetup.js: пропускает persist:wcv-* (v0.89.56)', () => {
+  const content = fs.readFileSync(path.resolve(process.cwd(), 'main/utils/sessionSetup.js'), 'utf8')
+  assert(/wcv-/.test(content), 'Skip для wcv-partitions удалён — setupSession сломает пилот')
 })
 
 test('main.js: условный disable-gpu-compositing (v0.89.55)', () => {

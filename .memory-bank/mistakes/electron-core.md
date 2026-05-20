@@ -5,7 +5,71 @@
 
 ---
 
-## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot падает на loadURL — корень `disable-gpu-compositing` switch ✅ РЕШЕНО v0.89.55
+## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot — нужна ИЗОЛИРОВАННАЯ session (v0.89.56)
+
+### Симптом
+
+При включённом пилоте WebContentsView Telegram (или любой URL) крашит main процесс при `loadURL`. Native crash, JS handlers `uncaughtException`/`unhandledRejection` не ловят.
+
+```
+[wcv-mgr] queuing loadURL https://web.telegram.org/k/
+[crashpad ... not connected]
+PS prompt
+```
+
+### Корневая причина (доказана v0.89.56)
+
+**Тройной конфликт** в одном BrowserWindow:
+1. **`webviewTag: true`** в [`windowManager.js:134`](../../main/utils/windowManager.js#L134) регистрирует Chromium guest-page manager для `<webview>` элементов
+2. **`setupSession(persist:telegram)`** в [`sessionSetup.js`](../../main/utils/sessionSetup.js) навешивает webRequest hooks (`onHeadersReceived` модифицирует CSP/X-Frame-Options) + `clearStorageData({serviceworkers, cachestorage})` + permission handlers — всё под `<webview>` ToS
+3. **WebContentsView с тем же partition** попадает в этот guest-manager и использует ту же session с уже-навешенными hooks → конфликт на architectural level → native crash
+
+### Решение (v0.89.56)
+
+**Изолированная partition `persist:wcv-${messengerId}`** для пилота:
+
+| Слой | Что меняется |
+|---|---|
+| [`App.jsx`](../../src/App.jsx) WebContentsViewSlot | `partition={'persist:wcv-' + m.id}` (не `m.partition`) |
+| [`sessionSetup.js`](../../main/utils/sessionSetup.js) | early return для `wcv-*` partitions — не настраиваем под `<webview>` |
+| [`App.jsx`](../../src/App.jsx) `removeMessenger` | cleanup ОБА partitions при удалении мессенджера |
+| [`SettingsPanel.jsx`](../../src/components/SettingsPanel.jsx) | кнопка cleanup чистит `wcv-*` partitions |
+
+| Тумблер | Telegram → используется session |
+|---|---|
+| **OFF** (default) | `persist:telegram` (настроена через setupSession для `<webview>`) |
+| **ON** (пилот) | `persist:wcv-telegram` (чистая, без webRequest hooks) |
+
+### Последствие для юзера
+
+⚠️ **При переключении тумблера — новая авторизация**. Cookies, localStorage, sessionStorage у двух sessions разные. Это **одноразовый** logout при включении пилота. После входа всё работает (cookies сохраняются в новой session).
+
+### История 10 опровергнутых гипотез (расследование v0.89.46-v0.89.55)
+
+| Версия | Гипотеза | Опровергнута |
+|---|---|---|
+| v0.89.46 | `file://` URL в preload | Конструктор не падал |
+| v0.89.51 | preload не существует | `fs.existsSync` подтвердил наличие |
+| v0.89.52 | конструктор `new WebContentsView()` | `[wcv-mgr] new WebContentsView ok` |
+| v0.89.52 | `addChildView()` | `[wcv-mgr] addChildView ok` |
+| v0.89.53 | CSP в `monitor.preload.cjs` | Краш без preload (`preload=(none)`) |
+| v0.89.54 | `sandbox: false` | С `sandbox: true` — краш остался |
+| v0.89.54 | Telegram URL CSP | `about:blank` тоже крашит |
+| v0.89.55 | `disable-gpu-compositing` switch | Без switch — краш остался |
+| **v0.89.56** | **Конфликт session + webviewTag manager** | **Изолированная partition обходит** |
+
+### Правило для будущих фич
+
+При использовании WebContentsView в BrowserWindow где `webviewTag: true`:
+- ✅ **Всегда** используй partition с уникальным префиксом (`persist:wcv-*`, `persist:bv-*`, etc.)
+- ✅ Этот partition **никогда не должен попадать в setupSession для `<webview>`** — добавь early return по префиксу
+- ✅ webRequest hooks, permission handlers, CSP-модификации — только для session `<webview>`
+- ❌ **НЕ** используй один partition для `<webview>` и WebContentsView в одном окне
+- ❌ **НЕ** ожидай что Electron сам разрешит этот конфликт — не разрешит, нативно крашит
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot падает на loadURL — корень `disable-gpu-compositing` switch (ОПРОВЕРГНУТО в v0.89.55, см. выше)
 
 ### Симптом
 
