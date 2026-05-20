@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.49 (20 мая 2026)
+## Текущая версия: v0.89.50 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,51 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.89.50 — Render-branch + WCV-slot диагностические логи (расследование «пилот не запускается»)
+
+**Дата**: 20 мая 2026
+**Тип**: диагностика
+**Файлы**: 2 правки
+
+#### Симптом
+
+Юзер сообщает «не запускается» при включенном пилоте. Анализ его `chatcenter.log` (полтора мегабайта, 10138 строк) показал:
+- ✅ `[startup] settings:get ok | useWebContentsView=ON` — пилот включён
+- ✅ `messengers:load ok (5 items)` + `Promise.all done → appReady=true`
+- ✅ Нет `[renderer-uncaught]` / `[main-uncaught]` / любых ERROR
+- ❌ **Нет** `[wcv-timing] create` ни одной строки → `wcv:create` НИ РАЗУ не вызвался
+
+То есть `WebContentsViewSlot` не смонтирован или его useEffect не доходит до IPC invoke. Программа НЕ падает — но и пилот не работает.
+
+#### Решение — больше диагностики
+
+[`src/App.jsx`](src/App.jsx) — новый useEffect когда `appReady=true`:
+
+```
+[render-branch] activeId=telegram useWcv=true telegram=wcv,vk=wcv,whatsapp=wcv,...
+```
+
+Видно какая ветка рендера выбрана для каждого id:
+- `native` — Suspense + NativeApp (для NATIVE_CC_TAB)
+- `wcv` — WebContentsViewSlot (когда useWebContentsView=true)
+- `webview` — `<webview>` тег (когда useWebContentsView=false)
+
+[`src/components/WebContentsViewSlot.jsx`](src/components/WebContentsViewSlot.jsx) — три новых лога:
+
+```
+[WCV-slot] mount id=telegram url=https://web.telegram.org/k/ hasPreload=true hasPartition=true
+[WCV-slot] wcv:create invoke id=telegram
+[wcv-timing] create id=telegram ms=147 ok=true preload=yes partition=persist:telegram   ← из main
+```
+
+Если `[WCV-slot] mount` нет → компонент не смонтировался (проблема в render-branch).
+Если `mount` есть, `invoke` нет → useEffect упал до invoke.
+Если `invoke` есть, `[wcv-timing]` нет → IPC не дошёл до main.
+
+Теперь точное место сбоя можно найти из одного лога.
+
+#### Прежнее (v0.89.49)
 
 ### v0.89.49 — Toast при uncaught error + лог `useWebContentsView` при старте
 

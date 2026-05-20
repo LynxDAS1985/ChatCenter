@@ -43,11 +43,21 @@ export default function WebContentsViewSlot({
   // Создание / уничтожение WebContentsView через IPC.
   // Зависимости: viewId, partition, preload — изменение этих параметров требует
   // пересоздания view (это базовые опции webPreferences). url НЕ в зависимостях —
-  // он обновляется через wcv:load-url в отдельном эффекте (Совет 2 v0.89.43).
+  // он обновляется через wcv:load-url в отдельном эффекты (Совет 2 v0.89.43).
   useEffect(() => {
     let alive = true
-    if (!viewId) return
+    // v0.89.50: диагностика — раньше из лога было неясно «слот вообще смонтировался?»
+    // (отсутствовал [wcv-timing] лог при включённом пилоте). Теперь видно ровно
+    // на каком этапе остановилось: монтаж / отсутствие preload / invoke не дошёл.
+    try { window.api?.send('app:log', { level: 'INFO',
+      message: `[WCV-slot] mount id=${viewId} url=${url} hasPreload=${!!preload} hasPartition=${!!partition}` }) } catch (_) {}
+    if (!viewId) {
+      try { window.api?.send('app:log', { level: 'WARN', message: '[WCV-slot] no viewId — slot inactive' }) } catch (_) {}
+      return
+    }
     ;(async () => {
+      try { window.api?.send('app:log', { level: 'INFO',
+        message: `[WCV-slot] wcv:create invoke id=${viewId}` }) } catch (_) {}
       const r = await window.api?.invoke('wcv:create', { id: viewId, url, partition, preload })
       if (!alive) return
       if (!r?.ok) {

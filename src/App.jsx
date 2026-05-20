@@ -297,6 +297,16 @@ export default function App() {
   // ── v0.87.82: Renderer логирование + show-log-modal IPC → useConsoleErrorLogger
   useConsoleErrorLogger({ setLogContent, setShowLogModal })
 
+  // v0.89.50: диагностика — пишем какая ветка рендера выбрана для каждого
+  // мессенджера. Без этого нет [wcv-timing] → было неясно, монтируется ли Slot.
+  useEffect(() => {
+    if (!appReady || messengers.length === 0) return
+    try {
+      const s = messengers.map(m => `${m.id}=${(m.isNative || m.id === NATIVE_CC_ID) ? 'native' : (settings.useWebContentsView ? 'wcv' : 'webview')}`).join(',')
+      window.api?.send('app:log', { level: 'INFO', message: `[render-branch] activeId=${activeId} useWcv=${!!settings.useWebContentsView} ${s}` })
+    } catch (_) {}
+  }, [appReady, messengers.length, settings.useWebContentsView])
+
   // ── Применение темы ────────────────────────────────────────────────────
   useEffect(() => {
     const theme = settings.theme || 'dark'
