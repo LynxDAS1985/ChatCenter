@@ -202,17 +202,20 @@ export function createWindow(deps) {
   })
   mainWindow.once('ready-to-show', () => wlog('ready-to-show'))
 
+  // v0.90.0 фикс: BaseWindow не имеет .loadURL/.loadFile (это BrowserWindow API).
+  // Используем primaryView.webContents.loadURL напрямую — через mainWindow.webContents
+  // (Proxy перенаправляет на primaryView.webContents).
   if (isDev) {
     const devUrl = 'http://localhost:5173'
     attachDevRequestTiming(mainWindow, wlog)
     wlog(`loadURL start ${devUrl}`)
-    mainWindow.loadURL(devUrl)
+    mainWindow.webContents.loadURL(devUrl)
       .then(() => wlog(`loadURL resolved ${devUrl}`))
       .catch(err => wlog(`loadURL failed ${err.message}`))
   } else {
     const rendererPath = path.join(__dirname, '../renderer/index.html')
     wlog(`loadFile start ${rendererPath}`)
-    mainWindow.loadFile(rendererPath)
+    mainWindow.webContents.loadFile(rendererPath)
       .then(() => wlog(`loadFile resolved ${rendererPath}`))
       .catch(err => wlog(`loadFile failed ${err.message}`))
   }
