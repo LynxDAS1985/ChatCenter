@@ -5,7 +5,7 @@
 
 ---
 
-## 🔴 КРИТИЧЕСКОЕ: `<webview>` preload НЕСОВМЕСТИМ с WebContentsView (v0.89.53)
+## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot падает на loadURL — расследование v0.89.46+ ОТКРЫТО
 
 ### Симптом
 
@@ -19,9 +19,62 @@
 PS prompt
 ```
 
-Программа закрывается на этапе `loadURL`. Никакой JS ошибки в логе — uncaughtException / unhandledRejection / renderer-uncaught пусто.
+Программа закрывается на этапе `loadURL`. Никакой JS ошибки в логе — uncaughtException / unhandledRejection / renderer-uncaught пусто. Это **native crash Chromium renderer**.
 
-### Корневая причина
+### Что отметено (НЕ корень)
+
+**v0.89.53 гипотеза (отменена)**: «monitor.preload.cjs инжектит inline `<script>` → CSP violation». После v0.89.53 preload отключён (`preload={undefined}`), краш **ОСТАЛСЯ**. Значит preload не корень — он был необязательным звеном.
+
+### Что ещё проверяется
+
+**v0.89.54 гипотеза**: `sandbox: false` без preload — недокументированная комбинация. По [Electron Security Guidelines](https://www.electronjs.org/docs/latest/tutorial/security) `sandbox: false` имеет смысл только когда preload требует Node APIs. Изменено на `sandbox: true` (safe default).
+
+Альтернативные гипотезы (если v0.89.54 не помогает):
+1. **BrowserWindow + child WebContentsView** — мы используем `mainWindow` (BrowserWindow). По [WebContentsView docs](https://www.electronjs.org/docs/latest/api/web-contents-view) пример — `BaseWindow + WebContentsView`. С v30+ BrowserWindow.contentView.addChildView поддерживается, но менее протестировано.
+2. **`disable-gpu-compositing` switch** в main.js — конфликт с WebContentsView, который требует GPU compositing.
+3. **session conflict** — `setupSession('persist:telegram')` уже настроил session с webRequest/cert handlers. WebContentsView с partition использует ту же session → race с handlers.
+
+### Серия v0.89.46-v0.89.53 — пошаговая изоляция места
+
+| Версия | Что добавлено | Что выяснилось |
+|---|---|---|
+| v0.89.46-49 | Diag + global error handlers + toast | Native crash JS не ловит |
+| v0.89.50 | render-branch + slot mount логи | Slot монтируется, invoke уходит |
+| v0.89.51 | fs.existsSync preload + конструктор лог | Файл есть, конструктор работает |
+| v0.89.52 | Пошаговые `[wcv-mgr]` логи | Краш на loadURL |
+| v0.89.53 | preload={undefined} | Гипотеза «CSP в preload» — отменена |
+| v0.89.54 | sandbox:true + about:blank-первый | Изолировать sandbox vs URL |
+
+### Решение (v0.89.53 минимум — действует)
+
+Pilot работает **БЕЗ preload** (Phase 2.1 минимум). В [`src/App.jsx`](../../src/App.jsx):
+
+```jsx
+<WebContentsViewSlot preload={undefined} ... />
+```
+
+**Но это не помогло**. Расследование продолжается.
+
+### Эксперимент v0.89.54
+
+В [`webContentsViewManager.js`](../../main/utils/webContentsViewManager.js):
+1. `sandbox: true` (вместо `false`).
+2. `loadURL('about:blank')` ПЕРЕД реальным URL — если about:blank работает, корень в URL/CSP. Если even about:blank крашит — корень в WebContentsView конфигурации.
+
+### Правило для будущих фич (формируется)
+
+Если делаешь WebContentsView (не `<webview>` тег) — придерживайся **минимально безопасной конфигурации**:
+- ✅ `contextIsolation: true`
+- ✅ `nodeIntegration: false`
+- ✅ `sandbox: true` (с preload — false только если ОЧЕНЬ нужно Node API)
+- ✅ Test loadURL с разными URL (about:blank → внешний)
+- ⚠️ С `BrowserWindow` — экспериментально, лучше `BaseWindow`
+
+### --- ПРЕДЫДУЩАЯ ЛОВУШКА v0.89.46 (preload URL vs path) сохраняется ниже ---
+
+**v0.89.53 fix preload as URL — всё ещё актуален**: WebContentsView требует raw path, не file:// URL. Это отдельная ловушка, не связанная с текущим расследованием loadURL.
+
+### Прежнее описание (ниже сохранено для истории)
 
 `monitor.preload.cjs` написан для **`<webview>` тега** — он инжектит inline `<script>` в DOM:
 

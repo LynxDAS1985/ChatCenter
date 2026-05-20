@@ -89,10 +89,13 @@ export class WebContentsViewManager extends EventEmitter {
     const WebContentsView = getWebContentsView()
     if (!WebContentsView) return null
 
+    // v0.89.54: sandbox:false → true. По Electron Security Guidelines:
+    // sandbox:false осмысленно только когда preload требует Node APIs;
+    // с preload={undefined} (v0.89.53) — нужен sandbox:true как safe default.
     const webPreferences = {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       backgroundThrottling: false, // v0.89.35 — гарантия работы CSS animations в hidden state
     }
     if (partition) webPreferences.partition = partition
@@ -167,12 +170,20 @@ export class WebContentsViewManager extends EventEmitter {
     this.views.set(id, { view, parentWindow, bounds: { x: 0, y: 0, width: 0, height: 0 } })
 
     if (url) {
-      console.log(`[wcv-mgr] queuing loadURL ${url}`)
-      view.webContents.loadURL(url).then(() => {
-        console.log(`[wcv-mgr] loadURL settled id=${id}`)
-      }).catch((e) => {
-        console.error(`[wcv-mgr] loadURL failed id=${id}: ${e?.message || e}`)
-      })
+      // v0.89.54: about:blank-первый — изолирует «корень в URL» vs «в config».
+      console.log(`[wcv-mgr] step 1: loadURL about:blank (isolation test)`)
+      try {
+        view.webContents.loadURL('about:blank')
+          .then(() => {
+            console.log(`[wcv-mgr] about:blank settled id=${id} — loading real URL`)
+            view.webContents.loadURL(url)
+              .then(() => console.log(`[wcv-mgr] real URL settled id=${id}`))
+              .catch((e) => console.error(`[wcv-mgr] real URL failed id=${id}: ${e?.message || e}`))
+          })
+          .catch((e) => console.error(`[wcv-mgr] about:blank failed id=${id}: ${e?.message || e}`))
+      } catch (e) {
+        console.error(`[wcv-mgr] loadURL sync exception id=${id}: ${e?.message || e}`)
+      }
     }
     console.log(`[wcv-mgr] createView return view id=${id}`)
     return view

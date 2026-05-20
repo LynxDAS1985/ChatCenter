@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.53 (20 мая 2026)
+## Текущая версия: v0.89.54 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -21,7 +21,69 @@
 
 ---
 
-### v0.89.53 — РЕШЕНИЕ серии v0.89.46-v0.89.52: `<webview>` preload несовместим с WebContentsView (CSP violation)
+### v0.89.54 — ОТМЕНА v0.89.53 гипотезы: preload НЕ корень. sandbox:false без preload → меняем на sandbox:true + about:blank-первый
+
+**Дата**: 20 мая 2026
+**Тип**: расследование (8-я итерация)
+**Файлы**: 3 правки
+
+#### Что подтвердил лог юзера v0.89.53
+
+```
+[wcv-mgr] createView id=telegram preload=(none) partition=persist:telegram
+[wcv-mgr] new WebContentsView ok
+[wcv-mgr] addChildView ok
+[wcv-mgr] queuing loadURL https://web.telegram.org/k/
+[crashpad ... not connected]
+PS prompt
+```
+
+**preload отключён** (`preload=(none)`), но программа **всё равно падает** на том же месте. Гипотеза v0.89.53 «monitor.preload.cjs + CSP» — **ОТМЕНЕНА**.
+
+#### Что зафиксировано
+
+`preload` оставлен `undefined` (v0.89.53 фикс полезный — он исключил preload из подозреваемых), но теперь известно — это не корень.
+
+#### Новая гипотеза v0.89.54 — на основе Electron Security Guidelines
+
+В [`main/utils/webContentsViewManager.js`](main/utils/webContentsViewManager.js) `webPreferences`:
+
+```js
+contextIsolation: true,
+nodeIntegration: false,
+sandbox: false,            // ← подозреваемое
+backgroundThrottling: false,
+```
+
+По [Electron Security Guidelines](https://www.electronjs.org/docs/latest/tutorial/security) (verbatim):
+> «sandbox: When set to false, all features that allow a renderer process to communicate with the main process will be disabled — **usually used with preload scripts that need Node APIs**».
+
+`sandbox: false` имеет смысл **только когда preload требует Node APIs**. У нас preload убран (v0.89.53), а sandbox остался false — недокументированная комбинация. **Меняем на `sandbox: true`** (рекомендованная safe default).
+
+#### Диагностический эксперимент about:blank
+
+```js
+view.webContents.loadURL('about:blank')
+  .then(() => view.webContents.loadURL(realUrl))
+```
+
+Сначала минимальный URL. Если about:blank работает, реальный — крашит → корень в Telegram-specific (CSP, session, partition). Если about:blank уже крашит → корень в `WebContentsView` + `BrowserWindow` конфигурации (не зависит от URL).
+
+#### Альтернативные гипотезы (если v0.89.54 не помогает)
+
+1. **`BrowserWindow + child WebContentsView`** — [официальный пример](https://www.electronjs.org/docs/latest/api/web-contents-view) использует `BaseWindow + WebContentsView`. `BrowserWindow.contentView.addChildView()` поддерживается с v30+, но менее протестировано в production.
+
+2. **`disable-gpu-compositing` switch** в main.js (~line 146) — добавлен для webview воркэраунда. WebContentsView требует GPU compositing.
+
+3. **Session race** — `setupSession('persist:telegram')` уже настроил session handlers. WebContentsView создаёт view с тем же partition → race в handlers при loadURL.
+
+#### Регрессия
+
+- lint ✅, memory bank ✅, vitest 683 ✅
+
+#### Прежнее (v0.89.53)
+
+### v0.89.53 — Гипотеза «monitor.preload.cjs CSP» (ОТМЕНЕНА в v0.89.54)
 
 **Дата**: 20 мая 2026
 **Тип**: критический фикс + закрытие 8-серийного расследования

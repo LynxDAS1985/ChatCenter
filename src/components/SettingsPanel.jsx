@@ -395,8 +395,8 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                   перезапуска приложения. Пилот без ChatMonitor (без перехвата
                   сообщений) — для проверки UX-улучшений (разделитель не залипает). */}
               <SettingRow
-                label="WebContentsView (экспериментально, требует перезапуска)"
-                description="Современный API Electron вместо <webview> тега. ВНИМАНИЕ: в пилоте НЕ работают уведомления, mark-read, ribbon — это требует отдельной адаптации (Phase 3). Сейчас можно проверить только UX-улучшения: разделитель не залипает, нет webview boundary. Включайте только для визуального теста.">
+                label="⚠️ WebContentsView (НЕ работает, диагностика, перезапуск)"
+                description="Современный API Electron. Сейчас пилот НЕ запускается — Telegram падает при загрузке. Корень в расследовании (v0.89.54: проверяем sandbox config). Если включить — программа закроется. Выключите чтобы вернуться к стабильной версии.">
                 <Toggle value={!!settings.useWebContentsView} onChange={v => set('useWebContentsView', v)} />
               </SettingRow>
               <SettingRow label="Бейдж на иконке (overlay)" description="Что показывать на иконке в панели задач Windows">
