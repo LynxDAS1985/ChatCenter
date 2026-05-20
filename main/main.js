@@ -3,7 +3,7 @@
 // v0.87.135 — Added Windows installer packaging into root dist/
 // v0.87.134 — Added start:prodlike script for production-like startup comparison
 // v0.87.103 — Refactored: setupIPC вынесен в handlers/mainIpcHandlers.js (~230 строк)
-import { app, BrowserWindow, session, nativeImage, screen, ipcMain } from 'electron'
+import { app, BrowserWindow, BaseWindow, WebContentsView, session, nativeImage, screen, ipcMain } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import https from 'node:https'
@@ -143,36 +143,12 @@ function setupIPC() {
 let backupNotif = null
 
 // ─── GPU стабильность ─────────────────────────────────────────────────────
-// v0.85.6 (6 апреля 2026): `disable-gpu-compositing` добавлен как воркэраунд
-// для `<webview>` тега — без него Telegram чернеет при переключении вкладок
-// (потеря GPU compositor контекста).
-// v0.89.55: switch НЕСОВМЕСТИМ с WebContentsView pilot — overlay рендеринг
-// требует GPU compositor (доказано в логах v0.89.46-v0.89.54: даже `about:blank`
-// крашит). Решение: условное применение по settings.useWebContentsView.
-// Settings читаем СИНХРОННО из chatcenter.json через `app.getPath('userData')`
-// (доступен до app.whenReady по Electron docs).
-//
-// pilot=OFF (default): switch применён → `<webview>` работает, нет чёрного экрана
-// pilot=ON: switch НЕ применён → WebContentsView рендерится корректно,
-//           `<webview>` не используется (условный рендер в App.jsx),
-//           поэтому баг чёрного экрана webview не возникает.
-;(function applyGpuStabilitySwitches() {
-  let pilotEnabled = false
-  try {
-    const settingsPath = path.join(app.getPath('userData'), 'chatcenter.json')
-    if (fs.existsSync(settingsPath)) {
-      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
-      pilotEnabled = !!data?.settings?.useWebContentsView
-    }
-  } catch (_) {}
-  if (!pilotEnabled) {
-    app.commandLine.appendSwitch('disable-gpu-compositing')
-    console.log('[startup-main] gpu-compositing DISABLED (webview mode)')
-  } else {
-    console.log('[startup-main] gpu-compositing ENABLED (WebContentsView pilot mode)')
-  }
-  app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
-})()
+// v0.90.0: `disable-gpu-compositing` УДАЛЁН — он был воркэраундом для `<webview>`
+// тега, которого больше нет. WebContentsView требует GPU compositor (overlay
+// рендеринг), несовместим с software composition (см. mistakes/electron-core.md).
+// Сохраняем только SharedArrayBuffer.
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+console.log('[startup-main] BaseWindow + WebContentsView architecture (no webview tag)')
 
 // ─── Запуск ──
 const __mainStart = Date.now()
@@ -261,14 +237,16 @@ app.whenReady().then(() => {
 
   __slog('createWindowFromManager start')
   createWindowFromManager({
-    BrowserWindow,
+    BaseWindow,
+    WebContentsView,
+    BrowserWindow, // оставлен для совместимости — другие места ещё используют
     path,
     isDev,
     __dirname,
     storage,
     getForceQuit: () => forceQuit,
     getTray: () => tray,
-    setMainWindow: (w) => { mainWindow = w; __slog('mainWindow created') },
+    setMainWindow: (w) => { mainWindow = w; __slog('mainWindow created (BaseWindow + primary WebContentsView)') },
     getMainWindow: () => mainWindow,
   })
   if (mainWindow) {
@@ -300,6 +278,8 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindowFromManager({
+        BaseWindow,
+        WebContentsView,
         BrowserWindow,
         path,
         isDev,

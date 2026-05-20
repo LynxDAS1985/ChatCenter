@@ -135,8 +135,8 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
     let done = 0
     for (const m of targets) {
       try {
-        // v0.89.56: пилот использует изолированный partition `persist:wcv-${id}` — чистим именно его.
-        await window.api?.invoke('wcv:cleanup-partition', { partition: 'persist:wcv-' + m.id, full: false })
+        // v0.90.0: один partition — m.partition напрямую.
+        await window.api?.invoke('wcv:cleanup-partition', { partition: m.partition, full: false })
       } catch (_) {}
       done += 1
       setWcvCleanup({ running: done < targets.length, done, total: targets.length, message: '' })
@@ -395,11 +395,10 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                   старый <webview> тег работает как раньше. Включение требует
                   перезапуска приложения. Пилот без ChatMonitor (без перехвата
                   сообщений) — для проверки UX-улучшений (разделитель не залипает). */}
-              <SettingRow
-                label="WebContentsView (экспериментально, требует перезапуска)"
-                description="Современный API Electron вместо <webview> тега. ВНИМАНИЕ: пилот использует ОТДЕЛЬНУЮ сессию — при включении нужно ЗАЛОГИНИТЬСЯ ЗАНОВО в каждом мессенджере. Авторизация webview-режима сохраняется. Полный функционал: уведомления, mark-read, ribbon. Уходит баг залипающего разделителя.">
-                <Toggle value={!!settings.useWebContentsView} onChange={v => set('useWebContentsView', v)} />
-              </SettingRow>
+              {/* v0.90.0: тумблер useWebContentsView устарел. Главное окно
+                  мигрировано на BaseWindow + WebContentsView (по Electron docs).
+                  <webview> тег больше не работает. Все мессенджеры всегда через
+                  WebContentsView. Тумблер скрыт — оставлен для backward compat. */}
               <SettingRow label="Бейдж на иконке (overlay)" description="Что показывать на иконке в панели задач Windows">
                 <select
                   value={settings.overlayMode || 'personal'}

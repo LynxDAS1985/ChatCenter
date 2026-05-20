@@ -242,10 +242,8 @@ export default function App() {
     // Иначе осколки сессии остаются на диске даже если мессенджер удалён из UI.
     const removed = messengersRef.current.find(m => m.id === id)
     if (removed?.partition) {
+      // v0.90.0: один partition — WebContentsView использует m.partition напрямую.
       try { window.api?.invoke('wcv:cleanup-partition', { partition: removed.partition, full: true })
-        .catch(() => {}) } catch (_) {}
-      // v0.89.56: также чистим изолированную WebContentsView partition.
-      try { window.api?.invoke('wcv:cleanup-partition', { partition: 'persist:wcv-' + id, full: true })
         .catch(() => {}) } catch (_) {}
     }
     setMessengers(prev => {
@@ -614,37 +612,22 @@ export default function App() {
                       onActiveNativeAccountChange={setActiveNativeAccountId}
                     />
                   </Suspense>
-                ) : settings.useWebContentsView ? (
-                  /* v0.89.42 → v0.89.44 — Phase 2.3 full. WebContentsViewSlot + bridge
-                     для подключения ChatMonitor через webviewSetup. При первом рендере
-                     создаём bridge-объект эмулирующий <webview> интерфейс и передаём
-                     в setWebviewRef → старый ChatMonitor-код получает события через
-                     wcv:event IPC и выполняет executeJavaScript через wcv:execute-js. */
+                ) : (
+                  /* v0.90.0: ВСЕГДА WebContentsView. <webview> тег удалён —
+                     главное окно теперь BaseWindow, primary view = React UI без webviewTag.
+                     m.partition (`persist:telegram` и т.д.) — сохраняет авторизации. */
                   <WebContentsViewSlot
                     viewId={m.id}
                     url={m.url}
-                    /* v0.89.56: изолированный partition обходит конфликт setupSession
-                       + webviewTag. См. mistakes/electron-core.md «webviewTag + WCV». */
-                    partition={'persist:wcv-' + m.id}
+                    partition={m.partition}
                     preload={monitorPreloadPath || undefined}
                     visible={activeId === m.id}
                     onCreated={() => {
-                      // Создаём bridge один раз на messenger.id и подключаем к setWebviewRef.
                       if (!webviewRefs.current[m.id] || !webviewRefs.current[m.id]._isWebContentsViewBridge) {
                         const bridge = createWebContentsViewBridge(m.id)
                         setWebviewRef(bridge, m.id)
                       }
                     }}
-                  />
-                ) : (
-                  <webview
-                    ref={el => setWebviewRef(el, m.id)}
-                    src={m.url}
-                    partition={m.partition}
-                    preload={monitorPreloadUrl || undefined}
-                    style={{ width: '100%', height: '100%' }}
-                    allowpopups="true"
-                    webpreferences="backgroundThrottling=no"
                   />
                 )}
               </div>

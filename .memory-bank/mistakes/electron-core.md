@@ -5,9 +5,27 @@
 
 ---
 
-## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot — 11 опровергнутых гипотез, корень не найден (v0.89.57)
+## ✅ РЕШЕНО v0.90.0: WebContentsView требует BaseWindow, не BrowserWindow (12 опровергнутых гипотез v0.89.46-v0.89.57)
 
-### Статус: 🔴 НЕ РЕШЕНО, расследование продолжается
+### Статус: ✅ РЕШЕНО архитектурной миграцией (v0.90.0)
+
+### Что окончательно подтверждено
+
+`webviewTag: true` в primary BrowserWindow + child WebContentsView через `contentView.addChildView` = **архитектурная несовместимость в Electron 41**. Даже минимальный `data:text/html` URL на child WebContentsView крашит main процесс нативно. Это **не баг** — это ограничение API.
+
+### Решение (v0.90.0)
+
+Миграция главного окна `BrowserWindow` → `BaseWindow + primary WebContentsView`. Подробно — в [`features.md` v0.90.0](.memory-bank/features.md).
+
+### Правило для будущего
+
+- ✅ WebContentsView → **только в BaseWindow** (по [docs](https://www.electronjs.org/docs/latest/api/web-contents-view))
+- ❌ НЕ комбинируй `webviewTag: true` BrowserWindow и WebContentsView (любой URL крашит)
+- ✅ Если нужны и `<webview>` тег и WebContentsView — отдельные окна
+
+---
+
+## 🟡 АРХИВ: WebContentsView pilot — 11 опровергнутых гипотез (v0.89.46-v0.89.57, до миграции v0.90.0)
 
 ### v0.89.56 «изолированная partition `persist:wcv-*`» — ОПРОВЕРГНУТА
 

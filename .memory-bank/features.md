@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.57 (20 мая 2026)
+## Текущая версия: v0.90.0 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,16 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.90.0 — АРХИТЕКТУРНАЯ МИГРАЦИЯ: BrowserWindow → BaseWindow + WebContentsView
+
+12 опровергнутых гипотез v0.89.46-v0.89.57 доказали: `webviewTag:true` BrowserWindow + child WebContentsView = архитектурная несовместимость в Electron 41. По [Electron docs](https://www.electronjs.org/docs/latest/api/web-contents-view) WebContentsView → с `BaseWindow`.
+
+**Что**: BrowserWindow → `BaseWindow` + primary `WebContentsView` (React UI) + child WebContentsView (мессенджеры). `<webview>` тег удалён, всегда WebContentsView. `m.partition` сохранён (авторизации не теряются). Тумблер useWebContentsView скрыт. Удалён `disable-gpu-compositing` switch (был для `<webview>`).
+
+**Файлы**: [windowManager.js](main/utils/windowManager.js) (Proxy для совместимости), [main.js](main/main.js), [App.jsx](src/App.jsx), [SettingsPanel.jsx](src/components/SettingsPanel.jsx), [webContentsViewPatterns.test.cjs](src/__tests__/webContentsViewPatterns.test.cjs) (5 обновлённых проверок).
+
+**Регрессия**: 31/31 ✅ wcv, lint ✅, fileSizeLimits 274/274 ✅, memory bank ✅. Полная история — [`mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md).
 
 ### v0.89.57 — v0.89.56 ОПРОВЕРГНУТА: изолирующий тест data: URL + process-gone listeners
 
