@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.44 (19 мая 2026)
+## Текущая версия: v0.89.45 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,48 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.89.45 — 3 советa полировки: BrowserView guard, агрегатор метрики кэша, trim CLAUDE.md
+
+**Дата**: 20 мая 2026
+**Тип**: полировка + регрессионная защита
+**Файлы**: 2 production + 2 test + 1 doc
+
+#### Совет 1 — BrowserView guard в modernPatternsGuard
+
+[`src/__tests__/modernPatternsGuard.test.cjs`](src/__tests__/modernPatternsGuard.test.cjs) — новая проверка `main/: deprecated BrowserView не используется`. Рекурсивно обходит `main/`, ищет:
+- `new BrowserView(...)` — конструктор
+- `from 'electron' ... BrowserView` — именованный импорт
+- `require('electron').BrowserView` — require + property
+- `const { BrowserView } = require('electron')` — destructuring
+
+Снимает комментарии перед поиском (regex `//...` и `/* ... */`) — не падает на упоминаниях типа `/* BrowserView deprecated since v29 */`. По [Electron docs](https://www.electronjs.org/docs/latest/api/browser-view) BrowserView deprecated с v29.0.0 → должен быть заменён на WebContentsView.
+
+#### Совет 2 — Агрегатор метрики IndexedDB кэша
+
+Новый модуль [`src/native/utils/idbCacheMetrics.js`](src/native/utils/idbCacheMetrics.js):
+- API: `recordIdbCache(op, hit)` — копит счётчики hits/misses на каждый `op` (loadMessages, selectForumTopic).
+- Окно агрегации: **30 секунд**. По истечении окна — одна строка `idb-cache-window` со `summary` по каждому op + округлённый `rate`.
+- Если за окно 0 событий — лог не пишется (нет шума при простое).
+- Заменяет сотни поштучных `idb-cache` логов одной агрегированной.
+
+В [`nativeStore.js`](src/native/store/nativeStore.js) вызовы `logNativeScroll('idb-cache', {...})` заменены на `recordIdbCache(op, !!cached?.messages?.length)` в `loadMessages` и `selectForumTopic`.
+
+Новый [`src/__tests__/idbCacheMetrics.vitest.js`](src/__tests__/idbCacheMetrics.vitest.js) — 6 unit-тестов: 0 событий → 0 логов, hit + miss → rate '0.75', разные op в одной строке, окно открывается заново после flush, `_resetIdbCacheMetricsForTests` сбрасывает таймер.
+
+#### Совет 3 — Trim CLAUDE.md от промежуточной цепочки v0.89.41-v0.89.43
+
+В подвале CLAUDE.md цепочка «Предыдущий v0.89.43 → Предыдущий v0.89.42» вырезана — осталась только текущая v0.89.45 запись + ссылка на features.md. Файл стал лаконичнее на ~500 байт без потери информации (полная история тут в features.md).
+
+#### Регрессионная защита
+
+- `modernPatternsGuard.test.cjs`: 34 → 36 (+2: BrowserView guard, idbCacheMetrics существует и содержит таймер).
+- `idbCacheMetrics.vitest.js`: 6 unit-тестов (новый файл).
+- vitest всего: 672 + 6 = **678** ✅
+- `ipcChannels`: 29 ✅ (без изменений)
+- lint ✅, memory bank ✅, fileSizeLimits ✅
+
+#### Прежнее (v0.89.44)
 
 ### v0.89.44 — Phase 2.3 (full) активация bridge + 4 сопутствующих улучшения (cleanup кнопка, авто-cleanup, hit/miss метрика, удалён obsolete re-export)
 

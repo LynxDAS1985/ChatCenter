@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 import { attachTelegramIpcListeners, loadChatCache } from './nativeStoreIpc.js'
 import { saveMessages as saveCacheMessages, loadMessages as loadCacheMessages, cleanupExpired as cleanupExpiredCache } from '../utils/messagesCache.js'
+import { recordIdbCache } from '../utils/idbCacheMetrics.js'
 import {
   markHealthByDuration,
   markHealthError,
@@ -581,12 +582,10 @@ export default function useNativeStore() {
     // для localStorage). Не перезаписываем если в state уже есть свежие данные.
     // v0.89.44 (Совет 4): метрика hit/miss — позволяет в логе видеть эффективность
     // кэша при будущей оптимизации (расширение TTL, лимита и т.д.).
+    // v0.89.45: агрегатор — одна строка `idb-cache-window` каждые 30 секунд
+    // вместо сотен индивидуальных. См. idbCacheMetrics.js.
     loadCacheMessages(chatId, null).then(cached => {
-      logNativeScroll('idb-cache', {
-        op: 'loadMessages', chatId,
-        result: cached?.messages?.length ? 'hit' : 'miss',
-        count: cached?.messages?.length || 0,
-      })
+      recordIdbCache('loadMessages', !!cached?.messages?.length)
       if (!cached) return
       setState(s => {
         if ((s.messages[chatId] || []).length > 0) return s
@@ -702,11 +701,8 @@ export default function useNativeStore() {
     loadCacheMessages(chatId, topicIdForCache).then(cached => {
       // v0.89.44 (Совет 4): метрика hit/miss для топиков. Особенно важна
       // для топиков — главный сценарий optimistic render (см. v0.89.39).
-      logNativeScroll('idb-cache', {
-        op: 'selectForumTopic', chatId, topicId: topicIdForCache,
-        result: cached?.messages?.length ? 'hit' : 'miss',
-        count: cached?.messages?.length || 0,
-      })
+      // v0.89.45: агрегатор. Одна строка `idb-cache-window` каждые 30с.
+      recordIdbCache('selectForumTopic', !!cached?.messages?.length)
       // Если за время загрузки кэша юзер кликнул другой топик — игнорируем.
       if (!cached || selectTopicRequestRef.current.get(chatId) !== requestId) return
       setState(s => {
