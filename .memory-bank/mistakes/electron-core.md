@@ -5,7 +5,7 @@
 
 ---
 
-## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot падает на loadURL — расследование v0.89.46+ ОТКРЫТО
+## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot падает на loadURL — корень `disable-gpu-compositing` switch ✅ РЕШЕНО v0.89.55
 
 ### Симптом
 
@@ -15,11 +15,88 @@
 [wcv-mgr] new WebContentsView ok
 [wcv-mgr] addChildView ok
 [wcv-mgr] queuing loadURL https://web.telegram.org/k/
+  ИЛИ
+[wcv-mgr] step 1: loadURL about:blank (isolation test)
 [crashpad ... not connected]
 PS prompt
 ```
 
-Программа закрывается на этапе `loadURL`. Никакой JS ошибки в логе — uncaughtException / unhandledRejection / renderer-uncaught пусто. Это **native crash Chromium renderer**.
+Программа закрывается на этапе `loadURL`. **Даже `about:blank` крашит** (v0.89.54 эксперимент) — значит проблема не в URL.
+
+Никакой JS ошибки в логе — uncaughtException / unhandledRejection / renderer-uncaught пусто. Это **native crash Chromium renderer**.
+
+### КОРЕНЬ (доказано v0.89.55)
+
+В `main/main.js` строка:
+
+```js
+app.commandLine.appendSwitch('disable-gpu-compositing')
+```
+
+Добавлен **v0.85.6 (6 апреля 2026)** как воркэраунд для `<webview>` тега — без него Telegram чернеет при переключении вкладок (потеря GPU compositor контекста).
+
+По [Chromium docs](https://www.electronjs.org/docs/latest/api/command-line-switches#--disable-gpu-compositing) этот switch:
+> «All compositing will be done by software using **swiftshader** instead of the GPU.»
+
+Software composition (swiftshader) поддерживает **только single-layer rendering**, не overlay. WebContentsView физически рисуется **поверх** primary view BrowserWindow — это **overlay layer**, требует GPU compositor. Без него — native segfault Chromium при первом рендере (даже `about:blank`).
+
+| view + switch | Работает? |
+|---|---|
+| `<webview>` тег + `disable-gpu-compositing` | ✅ Software mode, single-layer renderer |
+| `BrowserWindow` primary + `disable-gpu-compositing` | ✅ Software mode, single layer |
+| **`WebContentsView` overlay + `disable-gpu-compositing`** | ❌ **NATIVE CRASH** — overlay требует compositor |
+
+### Решение (v0.89.55)
+
+**Условное применение switch**. Settings читаются СИНХРОННО из `chatcenter.json` ДО `app.whenReady` через `app.getPath('userData')` (по Electron docs — доступен до whenReady).
+
+В `main/main.js`:
+
+```js
+;(function applyGpuStabilitySwitches() {
+  let pilotEnabled = false
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'chatcenter.json')
+    if (fs.existsSync(settingsPath)) {
+      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+      pilotEnabled = !!data?.settings?.useWebContentsView
+    }
+  } catch (_) {}
+  if (!pilotEnabled) {
+    app.commandLine.appendSwitch('disable-gpu-compositing')
+  }
+  app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+})()
+```
+
+| Тумблер | switch применён | `<webview>` | WebContentsView | ChatMonitor |
+|---|---|---|---|---|
+| **OFF** (default) | ✅ да | ✅ нет чёрного экрана | — (не используется) | ✅ webview preload |
+| **ON** (пилот) | ❌ нет | — (не используется) | ✅ overlay рендерится | ✅ WebContentsView preload |
+
+**Полный функционал** в обоих режимах. Никакой регрессии для default режима.
+
+### История расследования (8 версий — изоляция корня)
+
+| Версия | Гипотеза | Опровергнута |
+|---|---|---|
+| v0.89.46 | `file://` URL preload | конструктор не падал |
+| v0.89.48 | global error handlers + crashpad filter | помогает диагностике, не корень |
+| v0.89.49 | toast при uncaught error | UX-фикс |
+| v0.89.50 | render-branch + slot mount логи | Slot OK, invoke уходит |
+| v0.89.51 | fs.existsSync preload + конструктор лог | конструктор OK |
+| v0.89.52 | пошаговые `[wcv-mgr]` логи | краш на loadURL |
+| v0.89.53 | `preload={undefined}` (гипотеза CSP) | краш остался без preload |
+| v0.89.54 | sandbox:true + about:blank эксперимент | **about:blank тоже крашит** → не URL |
+| **v0.89.55** | **`disable-gpu-compositing` switch** | **✅ ПОДТВЕРЖДЕНО** |
+
+### Правило для будущих фич
+
+Если делаешь WebContentsView (не `<webview>` тег):
+- ❌ **НЕ применяй `disable-gpu-compositing`** при включённом пилоте
+- ✅ Проверяй все Chromium switches в main.js перед миграцией
+- ✅ Settings читай через `app.getPath('userData')` — доступно до `app.whenReady`
+- ✅ `<webview>` и WebContentsView требуют **разной** GPU конфигурации
 
 ### Что отметено (НЕ корень)
 

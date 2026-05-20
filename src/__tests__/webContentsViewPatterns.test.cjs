@@ -278,25 +278,26 @@ test('main/: deprecated BrowserView не используется', () => {
 // v0.89.47: preload — raw path для WebContentsView, file:// URL для <webview>
 // ──────────────────────────────────────────────────────────────────
 
-test('App.jsx: WebContentsViewSlot не получает monitor.preload.cjs (v0.89.53)', () => {
-  const abs = path.resolve(process.cwd(), 'src/App.jsx')
-  const content = fs.readFileSync(abs, 'utf8')
+test('App.jsx: WebContentsViewSlot получает monitorPreloadPath (v0.89.55)', () => {
+  const content = fs.readFileSync(path.resolve(process.cwd(), 'src/App.jsx'), 'utf8')
   const start = content.indexOf('<WebContentsViewSlot')
-  assert(start > 0, 'WebContentsViewSlot не найден в App.jsx')
   const end = content.indexOf('/>', start)
-  assert(end > start, 'Закрывающий /> для WebContentsViewSlot не найден')
+  assert(start > 0 && end > start, 'WebContentsViewSlot не найден в App.jsx')
   const block = content.slice(start, end + 2)
-  // По расследованию v0.89.46-v0.89.53: monitor.preload.cjs инжектит inline
-  // <script> в DOM мессенджеров → CSP violation в WebContentsView → нативный
-  // краш при loadURL. Pilot работает БЕЗ preload (Phase 2.1 минимум).
-  assert(/preload=\{undefined\}/.test(block),
-    'WebContentsViewSlot должен получать preload={undefined} — иначе monitor.preload.cjs\n' +
-    '   роняет main нативно при загрузке Telegram/WhatsApp (CSP violation).\n' +
-    '   См. ловушку в .memory-bank/mistakes/electron-core.md → preload <webview> vs WebContentsView.')
-  assert(!/preload=\{monitorPreloadUrl\b/.test(block),
-    'WebContentsViewSlot НЕ должен получать monitorPreloadUrl — это URL формат для <webview> тега')
-  assert(!/preload=\{monitorPreloadPath\b/.test(block),
-    'WebContentsViewSlot НЕ должен получать monitorPreloadPath — monitor.preload.cjs роняет main при loadURL')
+  // v0.89.55: корень крашей — disable-gpu-compositing (см. applyGpuStabilitySwitches). preload работает.
+  assert(/preload=\{monitorPreloadPath\b/.test(block), 'monitorPreloadPath удалён — нет ChatMonitor')
+  assert(!/preload=\{monitorPreloadUrl\b/.test(block), 'НЕ monitorPreloadUrl — URL формат для <webview>')
+})
+
+test('main.js: условный disable-gpu-compositing (v0.89.55)', () => {
+  const content = fs.readFileSync(path.resolve(process.cwd(), 'main/main.js'), 'utf8')
+  assert(/applyGpuStabilitySwitches/.test(content), 'applyGpuStabilitySwitches удалена — WebContentsView пилот крашится')
+  assert(/useWebContentsView/.test(content), 'main.js не читает useWebContentsView из settings до switch')
+  const switchPos = content.indexOf("appendSwitch('disable-gpu-compositing')")
+  const fnStart = content.indexOf('applyGpuStabilitySwitches')
+  const fnEnd = content.indexOf('})()', fnStart)
+  assert(switchPos > fnStart && switchPos < fnEnd,
+    'appendSwitch(disable-gpu-compositing) должен быть ВНУТРИ applyGpuStabilitySwitches')
 })
 
 test('useAppBootstrap.js: задаёт оба значения — URL и Path', () => {

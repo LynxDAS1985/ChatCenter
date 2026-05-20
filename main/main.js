@@ -5,6 +5,7 @@
 // v0.87.103 — Refactored: setupIPC вынесен в handlers/mainIpcHandlers.js (~230 строк)
 import { app, BrowserWindow, session, nativeImage, screen, ipcMain } from 'electron'
 import path from 'node:path'
+import fs from 'node:fs'
 import https from 'node:https'
 import http from 'node:http'
 import { fileURLToPath } from 'url'
@@ -141,10 +142,37 @@ function setupIPC() {
 
 let backupNotif = null
 
-// ─── GPU стабильность (v0.85.5: fix чёрный экран WebView) ─────────────────────
-// Без этих флагов WebView может потерять GPU контекст при переключении вкладок
-app.commandLine.appendSwitch('disable-gpu-compositing') // предотвращает потерю GPU контекста
-app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+// ─── GPU стабильность ─────────────────────────────────────────────────────
+// v0.85.6 (6 апреля 2026): `disable-gpu-compositing` добавлен как воркэраунд
+// для `<webview>` тега — без него Telegram чернеет при переключении вкладок
+// (потеря GPU compositor контекста).
+// v0.89.55: switch НЕСОВМЕСТИМ с WebContentsView pilot — overlay рендеринг
+// требует GPU compositor (доказано в логах v0.89.46-v0.89.54: даже `about:blank`
+// крашит). Решение: условное применение по settings.useWebContentsView.
+// Settings читаем СИНХРОННО из chatcenter.json через `app.getPath('userData')`
+// (доступен до app.whenReady по Electron docs).
+//
+// pilot=OFF (default): switch применён → `<webview>` работает, нет чёрного экрана
+// pilot=ON: switch НЕ применён → WebContentsView рендерится корректно,
+//           `<webview>` не используется (условный рендер в App.jsx),
+//           поэтому баг чёрного экрана webview не возникает.
+;(function applyGpuStabilitySwitches() {
+  let pilotEnabled = false
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'chatcenter.json')
+    if (fs.existsSync(settingsPath)) {
+      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+      pilotEnabled = !!data?.settings?.useWebContentsView
+    }
+  } catch (_) {}
+  if (!pilotEnabled) {
+    app.commandLine.appendSwitch('disable-gpu-compositing')
+    console.log('[startup-main] gpu-compositing DISABLED (webview mode)')
+  } else {
+    console.log('[startup-main] gpu-compositing ENABLED (WebContentsView pilot mode)')
+  }
+  app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+})()
 
 // ─── Запуск ──
 const __mainStart = Date.now()

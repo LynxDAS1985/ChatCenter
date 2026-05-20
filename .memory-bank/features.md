@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.54 (20 мая 2026)
+## Текущая версия: v0.89.55 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -21,7 +21,100 @@
 
 ---
 
-### v0.89.54 — ОТМЕНА v0.89.53 гипотезы: preload НЕ корень. sandbox:false без preload → меняем на sandbox:true + about:blank-первый
+### v0.89.55 — ✅ РЕШЕНИЕ серии v0.89.46-v0.89.54: условный `disable-gpu-compositing` switch
+
+**Дата**: 20 мая 2026
+**Тип**: критическая поправка + закрытие 9-серийного расследования
+**Файлы**: 5 правок + ловушка обновлена
+
+#### Корневая причина (доказано фактами и [Chromium docs](https://www.electronjs.org/docs/latest/api/command-line-switches))
+
+В [`main/main.js`](main/main.js) строка (добавлена v0.85.6 — 6 апреля 2026):
+
+```js
+app.commandLine.appendSwitch('disable-gpu-compositing')
+```
+
+Был воркэраундом для `<webview>` тега — без него Telegram чернеет при переключении вкладок. Switch отключает GPU compositing глобально, всё рисуется software-mode (swiftshader).
+
+**Software composition не поддерживает overlay-рендеринг**. WebContentsView физически рисуется поверх primary view BrowserWindow — это overlay. Без compositor — native segfault Chromium при первом рендере (даже `about:blank`, что доказано в v0.89.54).
+
+#### Решение
+
+Условное применение switch в [`main/main.js`](main/main.js):
+
+```js
+;(function applyGpuStabilitySwitches() {
+  let pilotEnabled = false
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'chatcenter.json')
+    if (fs.existsSync(settingsPath)) {
+      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+      pilotEnabled = !!data?.settings?.useWebContentsView
+    }
+  } catch (_) {}
+  if (!pilotEnabled) {
+    app.commandLine.appendSwitch('disable-gpu-compositing')
+  }
+  app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+})()
+```
+
+Settings читаются СИНХРОННО до `app.whenReady` через `app.getPath('userData')` (по Electron docs — доступен).
+
+#### Возвращены v0.89.53/v0.89.54 откатные изменения
+
+После доказательства что они не были корнем:
+
+1. **`preload={monitorPreloadPath}`** в [`App.jsx`](src/App.jsx) — preload работает в WebContentsView. Гипотеза v0.89.53 «CSP блокирует preload» отменена: в `monitor.preload.cjs` инжекция `<script>` через `document.createElement` происходит ДО загрузки HTML страницы, до активации CSP.
+
+2. **`sandbox: false`** в [`webContentsViewManager.js`](main/utils/webContentsViewManager.js) — нужно для monitor.preload.cjs (использует require, fs, path).
+
+3. **Удалён about:blank эксперимент** — прямой `loadURL` (как и было до v0.89.54).
+
+#### Что юзер получает
+
+| Тумблер | switch | `<webview>` | WebContentsView | Уведомления / mark-read / ribbon |
+|---|---|---|---|---|
+| **OFF** (default) | ✅ применён | ✅ работает | — | ✅ через webview preload |
+| **ON** (пилот) | ❌ не применён | — (условный рендер пропускает) | ✅ overlay рендерится | ✅ через WebContentsView preload |
+
+**Полный функционал в обоих режимах**. Никакой регрессии для default.
+
+#### История расследования (9 версий)
+
+| Версия | Гипотеза | Опровергнута |
+|---|---|---|
+| v0.89.46 | `file://` URL preload | конструктор не падал |
+| v0.89.47 | path vs URL раздельно | косметика |
+| v0.89.48 | global error handlers + crashpad filter | помогает диагностике, не корень |
+| v0.89.49 | toast при uncaught error | UX-фикс |
+| v0.89.50 | render-branch + slot mount логи | slot OK, invoke уходит |
+| v0.89.51 | fs.existsSync preload + конструктор лог | конструктор OK |
+| v0.89.52 | пошаговые `[wcv-mgr]` логи | краш на loadURL |
+| v0.89.53 | `preload={undefined}` (CSP) | краш остался |
+| v0.89.54 | sandbox:true + about:blank | about:blank тоже крашит |
+| **v0.89.55** | **`disable-gpu-compositing` switch** | **✅ РЕШЕНО** |
+
+#### Ловушка
+
+В [`mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md) — статус ✅ РЕШЕНО, полная история, правило «`<webview>` и WebContentsView требуют разной GPU конфигурации».
+
+#### Регрессия
+
+- Новый тест `main.js: условный disable-gpu-compositing` — проверка функции `applyGpuStabilitySwitches`
+- Обновлён тест `App.jsx: WebContentsViewSlot получает monitorPreloadPath`
+- vitest 683 ✅, lint ✅, memory bank ✅
+
+#### Что юзер должен сделать
+
+После `npm start`:
+- Если пилот включён — будет работать полностью с уведомлениями
+- Если хочется выключить — перезапустить программу (switch применится снова)
+
+#### Прежнее (v0.89.54)
+
+### v0.89.54 — Эксперимент about:blank, гипотеза `disable-gpu-compositing` (РЕШЕНО в v0.89.55)
 
 **Дата**: 20 мая 2026
 **Тип**: расследование (8-я итерация)

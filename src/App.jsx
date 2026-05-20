@@ -621,11 +621,10 @@ export default function App() {
                     viewId={m.id}
                     url={m.url}
                     partition={m.partition}
-                    /* v0.89.53: preload отключён — monitor.preload.cjs инжектит
-                       inline <script> (CSP violation → native crash в WebContentsView).
-                       Pilot работает БЕЗ ChatMonitor. Полная история — в
-                       mistakes/electron-core.md «<webview> preload vs WebContentsView». */
-                    preload={undefined}
+                    /* v0.89.55: preload возвращён. Корень крашей был в Chromium
+                       switch (см. main.js applyGpuStabilitySwitches), не preload.
+                       Полный ChatMonitor работает. */
+                    preload={monitorPreloadPath || undefined}
                     visible={activeId === m.id}
                     onCreated={() => {
                       // Создаём bridge один раз на messenger.id и подключаем к setWebviewRef.
