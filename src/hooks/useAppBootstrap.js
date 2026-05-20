@@ -14,6 +14,7 @@ export default function useAppBootstrap({
   setZoomLevels,
   setStats,
   setMonitorPreloadUrl,
+  setMonitorPreloadPath,
   setAppReady,
   aiWidthRef,
   zoomLevelsRef,
@@ -78,8 +79,12 @@ export default function useAppBootstrap({
       window.api?.invoke('app:get-paths').then(({ monitorPreload }) => {
         log('app:get-paths ok')
         if (monitorPreload) {
+          // v0.89.47 (Совет 1): храним и URL (для <webview> тега), и raw path (для WebContentsView).
+          // <webview> ест file:// URL; WebContentsView требует абсолютный путь
+          // (Electron docs: webPreferences.preload — «absolute file path to the script»).
           const url = 'file:///' + monitorPreload.replace(/\\/g, '/').replace(/^\//, '')
           setMonitorPreloadUrl(url)
+          setMonitorPreloadPath?.(monitorPreload)
         }
       }).catch(() => {})
     ]).finally(() => { log('Promise.all done → appReady=true'); setAppReady(true) })

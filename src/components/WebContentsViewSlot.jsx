@@ -23,7 +23,7 @@
 // При visible=false слот сжимается до 0×0 (WebContentsView физически скрыт).
 //
 // Документация: https://www.electronjs.org/docs/latest/api/web-contents-view
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export default function WebContentsViewSlot({
   viewId, url, partition, preload,
@@ -36,6 +36,9 @@ export default function WebContentsViewSlot({
   const lastBoundsRef = useRef({ x: 0, y: 0, width: 0, height: 0 })
   const createdRef = useRef(false)
   const lastUrlRef = useRef(null)
+  // v0.89.47 (Совет 5): если wcv:create вернул ok:false — показываем сообщение
+  // вместо белого прямоугольника. Иначе юзер думает «программа сломалась».
+  const [createError, setCreateError] = useState(null)
 
   // Создание / уничтожение WebContentsView через IPC.
   // Зависимости: viewId, partition, preload — изменение этих параметров требует
@@ -50,8 +53,11 @@ export default function WebContentsViewSlot({
       if (!r?.ok) {
         try { window.api?.send('app:log', { level: 'ERROR',
           message: '[WCV] create failed id=' + viewId + ' error=' + (r?.error || 'unknown') }) } catch (_) {}
+        // v0.89.47 (Совет 5): покажем сообщение поверх пустого слота.
+        setCreateError(r?.error || 'WebContentsView не создался')
         return
       }
+      setCreateError(null)
       createdRef.current = true
       lastUrlRef.current = url
       // После создания — сразу выставляем bounds.
@@ -151,10 +157,37 @@ export default function WebContentsViewSlot({
       data-wcv-slot={viewId}
       style={{
         width: '100%', height: '100%',
+        position: 'relative',
         // Renderer сам ничего не рисует — main рисует WebContentsView поверх.
         // pointerEvents:'none' не нужен — WebContentsView перекрывает div физически.
         visibility: visible ? 'visible' : 'hidden',
       }}
-    />
+    >
+      {createError && (
+        // v0.89.47 (Совет 5): overlay-сообщение если wcv:create провалился.
+        // Юзеру понятно что и где выключить, не нужно лезть в логи.
+        <div
+          role="alert"
+          style={{
+            position: 'absolute', inset: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexDirection: 'column', gap: 12, padding: 24,
+            backgroundColor: 'var(--cc-surface, #1a1a1a)',
+            color: 'var(--cc-text, #eee)', textAlign: 'center',
+            fontSize: 14, lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontSize: 28 }}>⚠️</div>
+          <div style={{ fontWeight: 600 }}>WebContentsView не запустился</div>
+          <div style={{ opacity: 0.8 }}>
+            Откройте <b>Настройки → Уведомления</b> и выключите тумблер<br />
+            «WebContentsView (экспериментально)», затем перезапустите программу.
+          </div>
+          <div style={{ opacity: 0.5, fontSize: 11, marginTop: 8 }}>
+            Техническая ошибка: {String(createError).slice(0, 200)}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

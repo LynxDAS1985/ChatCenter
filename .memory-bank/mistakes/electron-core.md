@@ -5,6 +5,56 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: preload — `<webview>` ест file:// URL, WebContentsView требует raw path (v0.89.46)
+
+### Симптом
+
+Юзер включил пилот `useWebContentsView=true`, перезапустил программу. В консоли:
+
+```
+ERROR: preload script must have absolute path.
+ERROR: third_party\crashpad ... not connected
+```
+
+Программа падает на создании первого view.
+
+### Корневая причина
+
+`monitorPreloadUrl` формируется в [`useAppBootstrap.js`](../../src/hooks/useAppBootstrap.js) как `file:///c:/Projects/.../monitor.preload.cjs`. Старый `<webview>` тег **сам** конвертирует URL → путь — это историческое legacy-поведение. **WebContentsView** так не умеет: Electron строго требует абсолютный путь.
+
+По [Electron docs](https://www.electronjs.org/docs/latest/api/web-contents-view) (verbatim): «webPreferences.preload — Specifies a script that will be loaded before other scripts run in the page... **The value should be the absolute file path to the script**».
+
+Аналогично для [`BrowserWindow`](https://www.electronjs.org/docs/latest/api/browser-window) и [`WebContents`](https://www.electronjs.org/docs/latest/api/web-contents) — везде кроме legacy `<webview>` тега.
+
+### Решение (v0.89.46 + v0.89.47)
+
+**v0.89.46** — функция `normalizePreloadPath(preload)` в [`webContentsViewManager.js`](../../main/utils/webContentsViewManager.js): через `node:url#fileURLToPath` конвертирует `file://` → путь. Handle unicode и пробелы. Это страховка-нормализатор внутри manager.
+
+**v0.89.47** (архитектурно чище) — в [`useAppBootstrap.js`](../../src/hooks/useAppBootstrap.js) теперь хранятся **оба** значения отдельно:
+- `monitorPreloadUrl = "file:///c:/..."` → для `<webview>` тега
+- `monitorPreloadPath = "c:\\..."` → для WebContentsView и любых других новых API
+
+В [`App.jsx`](../../src/App.jsx) `WebContentsViewSlot` получает `preload={monitorPreloadPath}`, а старый `<webview>` — `preload={monitorPreloadUrl}`.
+
+### Регрессионная защита
+
+[`webContentsViewManager.vitest.js`](../../src/__tests__/webContentsViewManager.vitest.js) — 5 тестов нормализации (`null`, абсолютный путь, `file:///c:/...`, unicode, пробелы).
+
+[`modernPatternsGuard.test.cjs`](../../src/__tests__/modernPatternsGuard.test.cjs) — App.jsx передаёт в `WebContentsViewSlot` именно `monitorPreloadPath` (не URL).
+
+### Правило для будущих фич
+
+| Если используешь | Передавай preload как |
+|---|---|
+| `<webview>` тег | `file:///c:/path.cjs` URL |
+| `WebContentsView` / `BaseWindow.contentView` | `c:\\path.cjs` raw путь |
+| `BrowserWindow` | `c:\\path.cjs` raw путь |
+| `webContents.loadFile / setWindowOpenHandler` | raw путь |
+
+**Тест перед использованием**: открой [Electron docs](https://www.electronjs.org/docs/latest/api/web-contents-view) и убедись что там написано «absolute file path», а не «URL».
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: webview boundary блокирует mouseup → drag разделитель залипает (v0.89.38)
 
 ### Симптом

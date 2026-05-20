@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.46 (20 мая 2026)
+## Текущая версия: v0.89.47 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,64 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.89.47 — Полировка пилота WebContentsView: 5 советов после v0.89.46 critical fix
+
+**Дата**: 20 мая 2026
+**Тип**: полировка + UX + регрессия + dev experience
+**Файлы**: 5 production + 1 test + 1 docs + 1 dev-script
+
+#### Совет 1 — Раздельные monitorPreloadPath и monitorPreloadUrl
+
+В [`src/hooks/useAppBootstrap.js`](src/hooks/useAppBootstrap.js) теперь задаются **оба** значения:
+- `monitorPreloadUrl = "file:///c:/..."` — для старого `<webview>` тега (он сам конвертирует URL в путь)
+- `monitorPreloadPath = "c:\\..."` — для WebContentsView и любого другого нового API (требует абсолютный путь)
+
+В [`src/App.jsx`](src/App.jsx) `WebContentsViewSlot.preload={monitorPreloadPath}`, старый `<webview>` остаётся на URL.
+
+**Зачем**: архитектурно чище, чем нормализация в manager (v0.89.46). Каждый потребитель берёт нужный формат напрямую, нет неявных конвертаций. Manager-нормализация остаётся как страховка от случайной передачи file:// URL.
+
+#### Совет 2 — Регрессионный тест на формат preload
+
+В [`src/__tests__/modernPatternsGuard.test.cjs`](src/__tests__/modernPatternsGuard.test.cjs) две новые проверки:
+1. App.jsx — внутри блока `<WebContentsViewSlot ... />` есть `preload={monitorPreloadPath}` и **нет** `preload={monitorPreloadUrl}`. Изолирован парсингом от соседнего `<webview>` тега через `indexOf('/>')`.
+2. useAppBootstrap.js — содержит и `setMonitorPreloadUrl`, и `setMonitorPreloadPath`.
+
+#### Совет 3 — Ловушка в mistakes/electron-core.md
+
+В [`.memory-bank/mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md) добавлена секция «🔴 КРИТИЧЕСКОЕ: preload — `<webview>` ест file:// URL, WebContentsView требует raw path» — симптом, корень, решение, таблица соответствий API → формат, чек-лист.
+
+#### Совет 4 — Фильтр шумного crashpad-лога
+
+В [`scripts/dev.cjs`](scripts/dev.cjs) добавлен `filterChunk` — проксирует stdout/stderr дочернего процесса и скрывает безобидные но пугающие строки:
+- `crashpad ... not connected` — crash reporter не подключен в dev
+- `DEP0190 DeprecationWarning ... shell option true` — Node warning из electron-vite
+
+Если нужно увидеть полный лог — `CC_DEV_VERBOSE=1 npm start`.
+
+#### Совет 5 — Overlay при wcv:create ok:false
+
+В [`src/components/WebContentsViewSlot.jsx`](src/components/WebContentsViewSlot.jsx) добавлен `createError` state. Если `wcv:create` вернул `ok:false` — поверх пустого слота показывается:
+
+```
+        ⚠️
+WebContentsView не запустился
+
+Откройте Настройки → Уведомления и выключите тумблер
+«WebContentsView (экспериментально)», затем перезапустите программу.
+
+Техническая ошибка: <текст из ответа>
+```
+
+Раньше юзер видел просто белый прямоугольник — не понимал что сломалось. Теперь есть понятная инструкция.
+
+#### Регрессия
+
+- `modernPatternsGuard.test.cjs`: 36 → 38 (+2)
+- vitest всего: 683 ✅
+- lint ✅, memory bank ✅
+
+#### Прежнее (v0.89.46)
 
 ### v0.89.46 — Критический фикс пилота WebContentsView: `preload script must have absolute path`
 

@@ -20,12 +20,40 @@ if (shouldClearViteCache && fs.existsSync(viteCache)) {
 const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
 
+// v0.89.47 (Совет 4): фильтруем шумные Chromium-логи которые пугают, но безобидны:
+//   - crashpad ... not connected   — crash reporter не подключен в dev (нам не нужен)
+//   - DEP0190 DeprecationWarning   — Node предупреждение из электрон-вайта про spawn args
+// Эти строки бесполезны при разработке и пугают «там что-то сломалось». Фильтруем.
+// Если нужно увидеть полный лог — установить CC_DEV_VERBOSE=1.
+const VERBOSE = process.env.CC_DEV_VERBOSE === '1'
+const NOISE = [
+  /crashpad.*not connected/i,
+  /DeprecationWarning.*shell option true/i,
+  /Use `node --trace-deprecation/i,
+]
+function filterChunk(chunk, stream) {
+  if (VERBOSE) { stream.write(chunk); return }
+  const text = chunk.toString('utf8')
+  const lines = text.split(/(\r?\n)/)
+  let out = ''
+  for (let i = 0; i < lines.length; i += 2) {
+    const line = lines[i]
+    const eol = lines[i + 1] || ''
+    if (!line) { out += eol; continue }
+    if (NOISE.some(rx => rx.test(line))) continue
+    out += line + eol
+  }
+  if (out) stream.write(out)
+}
+
 // На Windows нужно shell:true для .cmd файлов
 const child = spawn('electron-vite', ['dev'], {
   env,
-  stdio: 'inherit',
+  stdio: ['inherit', 'pipe', 'pipe'],
   shell: true,
   cwd: path.join(__dirname, '..')
 })
+child.stdout?.on('data', (chunk) => filterChunk(chunk, process.stdout))
+child.stderr?.on('data', (chunk) => filterChunk(chunk, process.stderr))
 
 child.on('exit', code => process.exit(code || 0))

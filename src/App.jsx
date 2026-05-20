@@ -111,6 +111,9 @@ export default function App() {
   const [showAI, setShowAI] = useState(true)
   const [settings, setSettings] = useState({ soundEnabled: true, minimizeToTray: true, theme: 'dark' })
   const [monitorPreloadUrl, setMonitorPreloadUrl] = useState(null)
+  // v0.89.47 (Совет 1): абсолютный путь рядом с URL. <webview> читает URL,
+  // WebContentsView требует raw путь (Electron docs).
+  const [monitorPreloadPath, setMonitorPreloadPath] = useState(null)
   const [appReady, setAppReady] = useState(false)
   const [lastMessage, setLastMessage] = useState(null)
   const [aiWidth, setAiWidth] = useState(300)
@@ -304,7 +307,7 @@ export default function App() {
   useAppBootstrap({
     NATIVE_CC_TAB, NATIVE_CC_ID,
     setMessengers, setActiveId, setSettings, setAiWidth, setZoomLevels, setStats,
-    setMonitorPreloadUrl, setAppReady,
+    setMonitorPreloadUrl, setMonitorPreloadPath, setAppReady,
     aiWidthRef, zoomLevelsRef, statsRef,
   })
 
@@ -607,7 +610,10 @@ export default function App() {
                     viewId={m.id}
                     url={m.url}
                     partition={m.partition}
-                    preload={monitorPreloadUrl || undefined}
+                    /* v0.89.47 (Совет 1): передаём raw путь, не file:// URL.
+                       WebContentsView требует абсолютный путь. Старый <webview>
+                       тег ниже продолжает получать URL. */
+                    preload={monitorPreloadPath || undefined}
                     visible={activeId === m.id}
                     onCreated={() => {
                       // Создаём bridge один раз на messenger.id и подключаем к setWebviewRef.
