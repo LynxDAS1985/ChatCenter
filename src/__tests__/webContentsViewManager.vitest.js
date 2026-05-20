@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   WebContentsViewManager, getWebContentsViewManager, _resetForTests,
+  normalizePreloadPath,
 } from '../../main/utils/webContentsViewManager.js'
 
 describe('WebContentsViewManager v0.89.41', () => {
@@ -77,5 +78,41 @@ describe('WebContentsViewManager v0.89.41', () => {
     _resetForTests()
     const b = getWebContentsViewManager()
     expect(a).not.toBe(b)
+  })
+
+  // v0.89.46: нормализация preload (file:// URL → absolute path) для WebContentsView.
+  // Старый <webview> работал с file:// URL, новый WebContentsView требует raw path.
+  describe('normalizePreloadPath v0.89.46', () => {
+    it('null/undefined/пустая строка → возвращает как есть', () => {
+      expect(normalizePreloadPath(null)).toBeNull()
+      expect(normalizePreloadPath(undefined)).toBeUndefined()
+      expect(normalizePreloadPath('')).toBe('')
+    })
+
+    it('абсолютный путь без file:// — без изменений', () => {
+      expect(normalizePreloadPath('C:\\Projects\\app\\preload.cjs'))
+        .toBe('C:\\Projects\\app\\preload.cjs')
+      expect(normalizePreloadPath('/usr/local/share/preload.js'))
+        .toBe('/usr/local/share/preload.js')
+    })
+
+    it('file:///c:/path.cjs → c:\\path.cjs (Windows)', () => {
+      const r = normalizePreloadPath('file:///c:/Projects/ChatCenter/main/preloads/monitor.preload.cjs')
+      // fileURLToPath на Windows возвращает с backslash
+      expect(r).toMatch(/[\\\/]Projects[\\\/]ChatCenter[\\\/]main[\\\/]preloads[\\\/]monitor\.preload\.cjs$/)
+      expect(r.startsWith('file://')).toBe(false)
+    })
+
+    it('file:// URL с unicode (русские буквы) — decoded корректно', () => {
+      // %D0%94%D0%B8%D1%80%D0%B5%D0%BA%D1%82%D0%BE%D1%80 = "Директор" в UTF-8
+      const r = normalizePreloadPath('file:///c:/Users/%D0%94%D0%B8%D1%80%D0%B5%D0%BA%D1%82%D0%BE%D1%80/app.cjs')
+      expect(r).toMatch(/Директор/)
+      expect(r.startsWith('file://')).toBe(false)
+    })
+
+    it('file:// URL с пробелами — decoded корректно', () => {
+      const r = normalizePreloadPath('file:///c:/Program%20Files/app/preload.cjs')
+      expect(r).toMatch(/Program Files/)
+    })
   })
 })

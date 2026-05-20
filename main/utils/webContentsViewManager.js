@@ -35,6 +35,19 @@
 //   'unresponsive' { viewId }
 
 import { EventEmitter } from 'node:events'
+import { fileURLToPath } from 'node:url'
+
+// v0.89.46: WebContentsView требует АБСОЛЮТНЫЙ ПУТЬ к preload (по Electron docs:
+// «The value should be the absolute file path to the script»). Старый <webview>
+// тег принимает file:// URL, поэтому monitorPreloadUrl формируется именно так
+// в useAppBootstrap.js. Здесь нормализуем обратно в путь.
+// Также handle путей с пробелами и unicode-символами (например 'C:\Users\Директор\...').
+export function normalizePreloadPath(preload) {
+  if (!preload) return preload
+  if (!/^file:\/\//i.test(preload)) return preload
+  try { return fileURLToPath(preload) }
+  catch (_) { return decodeURI(preload.replace(/^file:\/\/\/?/i, '')) }
+}
 
 // WebContentsView импортируем условно — модуль должен загружаться даже в node без Electron
 // (для unit-тестов). В production main процессе require('electron').WebContentsView.
@@ -82,7 +95,7 @@ export class WebContentsViewManager extends EventEmitter {
       backgroundThrottling: false, // v0.89.35 — гарантия работы CSS animations в hidden state
     }
     if (partition) webPreferences.partition = partition
-    if (preload) webPreferences.preload = preload
+    if (preload) webPreferences.preload = normalizePreloadPath(preload)
 
     const view = new WebContentsView({ webPreferences })
     const wc = view.webContents

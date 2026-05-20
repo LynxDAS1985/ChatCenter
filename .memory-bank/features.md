@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.45 (20 мая 2026)
+## Текущая версия: v0.89.46 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,52 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.89.46 — Критический фикс пилота WebContentsView: `preload script must have absolute path`
+
+**Дата**: 20 мая 2026
+**Тип**: критический баг-фикс
+**Файлы**: 1 production + 1 test
+
+#### Симптом
+
+Юзер включил тумблер «WebContentsView (экспериментально)» в Настройках, перезапустил программу — `npm start` падает на этапе создания view:
+
+```
+[26568:0520/100636.549:ERROR:electron\shell\browser\web_contents_preferences.cc:237] preload script must have absolute path.
+[26568:0520/100636.561:ERROR:third_party\crashpad\crashpad\client\crashpad_client_win.cc:867] not connected
+```
+
+#### Корень
+
+`monitorPreloadUrl` в [`src/hooks/useAppBootstrap.js:81`](src/hooks/useAppBootstrap.js) формируется как `file:///c:/Projects/ChatCenter/main/preloads/monitor.preload.cjs` — это URL-формат для **старого `<webview>` тега** (он сам конвертирует URL → путь).
+
+**WebContentsView** требует **абсолютный путь к файлу** — без `file://` префикса. По [Electron docs](https://www.electronjs.org/docs/latest/api/web-contents-view) (verbatim): «webPreferences.preload — Specifies a script that will be loaded before other scripts run in the page... The value should be the **absolute file path** to the script».
+
+При попытке передать `file:///...` Electron бросает ошибку `preload script must have absolute path` и приложение падает.
+
+#### Решение
+
+Новая функция `normalizePreloadPath(preload)` в [`main/utils/webContentsViewManager.js`](main/utils/webContentsViewManager.js):
+- Если preload не начинается с `file://` — возвращает как есть.
+- Иначе через [`node:url#fileURLToPath`](https://nodejs.org/api/url.html#urlfileurltopathurl) конвертирует в абсолютный путь.
+- Handle unicode (русское имя пользователя `C:\Users\Директор\...` — закодировано как `%D0%94...` в URL) и пробелы (`Program Files` → `%20`).
+- Fallback `decodeURI` если `fileURLToPath` бросит исключение.
+
+Вызывается в `createView` перед `webPreferences.preload = ...`.
+
+#### Регрессионная защита
+
+- `webContentsViewManager.vitest.js` 12 → 17 (+5):
+  - `null`/`undefined`/пустая строка возвращаются как есть
+  - Абсолютный путь без `file://` префикса — без изменений
+  - `file:///c:/path.cjs` → `c:\path.cjs` (Windows)
+  - Unicode в пути (русские буквы)
+  - Пробелы в пути
+
+Все тесты ✅.
+
+#### Прежнее (v0.89.45)
 
 ### v0.89.45 — 3 советa полировки: BrowserView guard, агрегатор метрики кэша, trim CLAUDE.md
 
