@@ -349,6 +349,31 @@ test('Smoke: renderer + main глобальные error handlers (Совет 3)'
     "process.on('unhandledRejection') удалён — promise-rejections пропадут")
 })
 
+test('Smoke: useAppBootstrap логирует useWebContentsView при старте (v0.89.49)', () => {
+  const abs = path.resolve(process.cwd(), 'src/hooks/useAppBootstrap.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  assert(/useWebContentsView=/.test(content),
+    'логирование useWebContentsView=ON/OFF удалено из useAppBootstrap — из лога ' +
+    'снова непонятно «пилот активен или нет»')
+})
+
+test('Smoke: UncaughtErrorToast подключён в App.jsx (v0.89.49)', () => {
+  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.jsx'), 'utf8')
+  assert(/UncaughtErrorToast/.test(app),
+    'UncaughtErrorToast не импортирован или не вставлен в App.jsx — юзер не увидит ' +
+    'плашку при uncaught error, останется тихий краш')
+  const toastFile = path.resolve(process.cwd(), 'src/components/UncaughtErrorToast.jsx')
+  assert(fs.existsSync(toastFile), 'UncaughtErrorToast.jsx удалён!')
+  const toast = fs.readFileSync(toastFile, 'utf8')
+  assert(/cc-uncaught-error/.test(toast),
+    'cc-uncaught-error event listener удалён из UncaughtErrorToast — toast не реагирует на ошибки')
+  // Hook должен эмитить событие при обоих типах ошибок (sync + async).
+  const hook = fs.readFileSync(path.resolve(process.cwd(), 'src/hooks/useConsoleErrorLogger.js'), 'utf8')
+  const emitCount = (hook.match(/emitUncaughtEvent\(/g) || []).length
+  assert(emitCount >= 2,
+    'emitUncaughtEvent должен вызываться И в onError И в onRejection — нашёлся только ' + emitCount)
+})
+
 test('Smoke: scripts/dev.cjs фильтр НЕ глотает ERROR строки (v0.89.48 ослабление)', () => {
   const abs = path.resolve(process.cwd(), 'scripts/dev.cjs')
   const content = fs.readFileSync(abs, 'utf8')

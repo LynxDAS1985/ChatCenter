@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.48 (20 мая 2026)
+## Текущая версия: v0.89.49 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,53 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.89.49 — Toast при uncaught error + лог `useWebContentsView` при старте
+
+**Дата**: 20 мая 2026
+**Тип**: UX-улучшение + диагностика
+**Файлы**: 1 новый компонент + 3 правки + 1 тест
+
+#### Toast при uncaught error
+
+Новый компонент [`src/components/UncaughtErrorToast.jsx`](src/components/UncaughtErrorToast.jsx) — слушает CustomEvent `cc-uncaught-error`, показывает красную плашку в правом нижнем углу:
+
+```
+┌─────────────────────────────────┐
+│ ⚠️ Произошла ошибка в окне      │
+│    <текст ошибки до 200 симв.>  │
+│    Подробности: Настройки →     │
+│    Диагностика → Загрузить лог  │
+│                              ✕  │
+└─────────────────────────────────┘
+```
+
+- Показ 12 секунд, потом скрывается автоматически.
+- Каждая новая ошибка сбрасывает таймер.
+- Закрывается крестиком.
+
+[`src/hooks/useConsoleErrorLogger.js`](src/hooks/useConsoleErrorLogger.js) — функция `emitUncaughtEvent(message)` вызывается из обоих handler'ов (sync `error` + async `unhandledrejection`).
+
+[`src/App.jsx`](src/App.jsx) — компонент вставлен рядом с resize overlay, z-index 999998 (под overlay но над всем остальным).
+
+#### Лог useWebContentsView при старте
+
+[`src/hooks/useAppBootstrap.js`](src/hooks/useAppBootstrap.js) — после `settings:get` пишет:
+
+```
+[startup] +XXXms settings:get ok | useWebContentsView=ON
+```
+
+или `OFF`. Раньше из лога было непонятно, активирован ли пилот вообще — теперь видно сразу. Дополняет error handlers v0.89.48.
+
+#### Регрессия
+
+- `webContentsViewPatterns.test.cjs`: 27 → 29 (+2):
+  - useAppBootstrap логирует `useWebContentsView=`
+  - UncaughtErrorToast.jsx существует, импортирован в App.jsx, слушает событие; emitUncaughtEvent вызывается минимум 2 раза в useConsoleErrorLogger
+- vitest всего: 683 ✅
+
+#### Прежнее (v0.89.48)
 
 ### v0.89.48 — Диагностика пилота WebContentsView: error handlers + timing + smoke-тесты + crashpad override
 

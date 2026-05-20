@@ -10,6 +10,14 @@ function sendToLog(level, message) {
   try { window.api?.send('app:log', { level, message }) } catch {}
 }
 
+// v0.89.49 (Совет toast): эмитим событие чтобы <UncaughtErrorToast> мог его
+// поймать и показать плашку в правом нижнем углу. Юзер видит ошибку сразу,
+// не открывая лог. Отделено от console-патча чтобы не плодить toast'ы на
+// каждый console.error — только настоящие uncaught.
+function emitUncaughtEvent(message) {
+  try { window.dispatchEvent(new CustomEvent('cc-uncaught-error', { detail: message })) } catch {}
+}
+
 export default function useConsoleErrorLogger({ setLogContent, setShowLogModal }) {
   useEffect(() => {
     const origError = console.error.bind(console)
@@ -23,12 +31,14 @@ export default function useConsoleErrorLogger({ setLogContent, setShowLogModal }
     const onError = (event) => {
       const msg = event?.error?.stack || event?.message || String(event)
       sendToLog('ERROR', '[renderer-uncaught] ' + msg)
+      emitUncaughtEvent(event?.message || msg)
     }
     // v0.89.48: unhandled Promise rejection — async ошибки без .catch().
     const onRejection = (event) => {
       const reason = event?.reason
       const msg = reason?.stack || (typeof reason === 'string' ? reason : JSON.stringify(reason))
       sendToLog('ERROR', '[renderer-unhandled-rejection] ' + msg)
+      emitUncaughtEvent(reason?.message || String(reason).slice(0, 200))
     }
     window.addEventListener('error', onError)
     window.addEventListener('unhandledrejection', onRejection)

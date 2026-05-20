@@ -16,6 +16,7 @@ import TabBar from './components/TabBar.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 // v0.89.42 (Phase 2.2): WebContentsView pilot — условный рендер по settings.useWebContentsView.
 import WebContentsViewSlot from './components/WebContentsViewSlot.jsx'
+import UncaughtErrorToast from './components/UncaughtErrorToast.jsx'
 // v0.89.44 (Совет 1): bridge для подключения webviewSetup к WebContentsView через wcv:* IPC.
 import { createWebContentsViewBridge } from './utils/webContentsViewBridge.js'
 
@@ -777,6 +778,10 @@ export default function App() {
           }}
         />
       )}
+
+      {/* v0.89.49 (Совет toast): плашка в углу при uncaught error в renderer.
+          Юзер сразу видит «что-то сломалось», не нужно открывать лог. */}
+      <UncaughtErrorToast />
     </div>
   )
 }

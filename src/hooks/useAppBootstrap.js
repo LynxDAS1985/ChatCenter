@@ -58,7 +58,9 @@ export default function useAppBootstrap({
         setActiveId(DEFAULT_MESSENGERS[0].id)
       }),
       window.api?.invoke('settings:get').then(s => {
-        log('settings:get ok')
+        // v0.89.49: логируем состояние пилота WebContentsView при старте — раньше
+        // из лога было непонятно «пилот включён или нет», диагностика гадала.
+        log('settings:get ok | useWebContentsView=' + (s?.useWebContentsView ? 'ON' : 'OFF'))
         setSettings(s)
         if (s.aiSidebarWidth) {
           const w = Math.max(240, Math.min(600, s.aiSidebarWidth))
