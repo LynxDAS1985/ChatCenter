@@ -36,6 +36,7 @@
 
 import { EventEmitter } from 'node:events'
 import { fileURLToPath } from 'node:url'
+import fs from 'node:fs'
 
 // v0.89.46: WebContentsView требует АБСОЛЮТНЫЙ ПУТЬ к preload (по Electron docs:
 // «The value should be the absolute file path to the script»). Старый <webview>
@@ -95,9 +96,33 @@ export class WebContentsViewManager extends EventEmitter {
       backgroundThrottling: false, // v0.89.35 — гарантия работы CSS animations в hidden state
     }
     if (partition) webPreferences.partition = partition
-    if (preload) webPreferences.preload = normalizePreloadPath(preload)
+    // v0.89.51: проверяем что preload файл существует. Если передан невалидный
+    // путь — `new WebContentsView` может крашнуть main process нативно (без JS
+    // exception). Это могло быть причиной молчаливого закрытия программы в
+    // v0.89.46-v0.89.50: invoke wcv:create уходил, но [wcv-timing] никогда не
+    // приходил — main падал на `new WebContentsView`.
+    if (preload) {
+      const preloadPath = normalizePreloadPath(preload)
+      console.log(`[wcv-mgr] createView id=${id} preload=${preloadPath} partition=${partition || '(none)'}`)
+      if (!fs.existsSync(preloadPath)) {
+        console.error(`[wcv-mgr] preload file NOT FOUND: ${preloadPath} — пропускаем preload`)
+        // НЕ передаём preload — лучше создать view без него, чем убить main.
+      } else {
+        webPreferences.preload = preloadPath
+      }
+    } else {
+      console.log(`[wcv-mgr] createView id=${id} preload=(none) partition=${partition || '(none)'}`)
+    }
 
-    const view = new WebContentsView({ webPreferences })
+    console.log(`[wcv-mgr] new WebContentsView starting...`)
+    let view
+    try {
+      view = new WebContentsView({ webPreferences })
+    } catch (e) {
+      console.error(`[wcv-mgr] new WebContentsView FAILED: ${e?.message || e}`)
+      return null
+    }
+    console.log(`[wcv-mgr] new WebContentsView ok`)
     const wc = view.webContents
 
     // Forward all relevant events through manager EventEmitter, чтобы renderer

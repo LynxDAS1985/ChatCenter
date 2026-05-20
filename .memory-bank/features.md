@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.50 (20 мая 2026)
+## Текущая версия: v0.89.51 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,50 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.89.51 — Защита от невалидного preload + diag внутри webContentsViewManager.createView
+
+**Дата**: 20 мая 2026
+**Тип**: диагностика + защитный фикс
+**Файлы**: 1 правка
+
+#### Симптом из лога v0.89.50
+
+Анализ `chatcenter.log` второго запуска юзера показал:
+
+```
+[WCV-slot] mount id=telegram url=... hasPreload=true hasPartition=true  ← OK
+[WCV-slot] wcv:create invoke id=telegram                                ← IPC отправлен
+[wcv-timing] create id=telegram ms=Y ok=...                             ← ОТСУТСТВУЕТ
+```
+
+После отправки IPC `wcv:create` main process не отвечает. Программа жива (renderer не падает), но handler `wcv:create` не выполняет ни одного console.log — даже из `catch`. Гипотеза: `new WebContentsView` крашит main process нативно (segfault), JS exception handlers (`uncaughtException`) такое не ловят.
+
+#### Решение
+
+В [`main/utils/webContentsViewManager.js`](main/utils/webContentsViewManager.js):
+
+1. **Проверка существования preload файла** через `fs.existsSync` перед передачей в `webPreferences.preload`. Если файл не найден — создаём view БЕЗ preload (частично работающий пилот без ChatMonitor, но main жив). Раньше невалидный путь мог уронить main нативно.
+
+2. **Подробные console.log** вокруг `new WebContentsView`:
+   ```
+   [wcv-mgr] createView id=X preload=PATH partition=Y
+   [wcv-mgr] new WebContentsView starting...
+   [wcv-mgr] new WebContentsView ok
+   ```
+   
+   Если третий лог пропадает → конструктор зависает или native crash.
+
+3. **try/catch вокруг `new WebContentsView`** — если JS exception, ловим и возвращаем null (раньше exception улетал вверх).
+
+#### Что юзер должен сделать
+
+После `git pull && npm start`:
+- Подождать 30+ сек (Vite dev медленный)
+- Закрыть программу
+- Сказать «прочитай лог» — я сам найду в `chatcenter.log` маркер `[wcv-mgr]` и пойму где именно main крашится.
+
+#### Прежнее (v0.89.50)
 
 ### v0.89.50 — Render-branch + WCV-slot диагностические логи (расследование «пилот не запускается»)
 
