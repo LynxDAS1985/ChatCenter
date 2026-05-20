@@ -621,10 +621,11 @@ export default function App() {
                     viewId={m.id}
                     url={m.url}
                     partition={m.partition}
-                    /* v0.89.47 (Совет 1): передаём raw путь, не file:// URL.
-                       WebContentsView требует абсолютный путь. Старый <webview>
-                       тег ниже продолжает получать URL. */
-                    preload={monitorPreloadPath || undefined}
+                    /* v0.89.53: preload отключён — monitor.preload.cjs инжектит
+                       inline <script> (CSP violation → native crash в WebContentsView).
+                       Pilot работает БЕЗ ChatMonitor. Полная история — в
+                       mistakes/electron-core.md «<webview> preload vs WebContentsView». */
+                    preload={undefined}
                     visible={activeId === m.id}
                     onCreated={() => {
                       // Создаём bridge один раз на messenger.id и подключаем к setWebviewRef.

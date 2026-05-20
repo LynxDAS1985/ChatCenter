@@ -396,7 +396,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                   сообщений) — для проверки UX-улучшений (разделитель не залипает). */}
               <SettingRow
                 label="WebContentsView (экспериментально, требует перезапуска)"
-                description="Современный API Electron вместо <webview> тега. В пилотном режиме без ChatMonitor — только для визуальной проверки. Включайте только если знаете что делаете.">
+                description="Современный API Electron вместо <webview> тега. ВНИМАНИЕ: в пилоте НЕ работают уведомления, mark-read, ribbon — это требует отдельной адаптации (Phase 3). Сейчас можно проверить только UX-улучшения: разделитель не залипает, нет webview boundary. Включайте только для визуального теста.">
                 <Toggle value={!!settings.useWebContentsView} onChange={v => set('useWebContentsView', v)} />
               </SettingRow>
               <SettingRow label="Бейдж на иконке (overlay)" description="Что показывать на иконке в панели задач Windows">

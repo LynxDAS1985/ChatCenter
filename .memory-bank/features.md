@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.52 (20 мая 2026)
+## Текущая версия: v0.89.53 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -20,6 +20,86 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v0.89.53 — РЕШЕНИЕ серии v0.89.46-v0.89.52: `<webview>` preload несовместим с WebContentsView (CSP violation)
+
+**Дата**: 20 мая 2026
+**Тип**: критический фикс + закрытие 8-серийного расследования
+**Файлы**: 3 правки + 1 новая секция в mistakes
+
+#### Полный анализ серии (v0.89.46 → v0.89.53)
+
+| Версия | Гипотеза | Что выяснилось |
+|---|---|---|
+| v0.89.46 | preload как file:// URL крашит | Не помогло — конструктор не падал |
+| v0.89.47 | надо хранить path и URL раздельно | Косметика, не корень |
+| v0.89.48 | global error handlers + crashpad filter | Полезно для UX, но native crash не ловят |
+| v0.89.49 | toast при uncaught error | UX-фикс, не корень |
+| v0.89.50 | render-branch + slot mount логи | Slot монтируется, invoke уходит |
+| v0.89.51 | fs.existsSync preload + конструктор лог | Файл существует, конструктор работает |
+| v0.89.52 | пошаговые `[wcv-mgr]` логи | **Краш точно на `loadURL`** |
+| **v0.89.53** | **Корень — preload CSP violation** | **Откат к pilot БЕЗ preload** |
+
+#### Корневая причина
+
+`monitor.preload.cjs` написан для **`<webview>` тега**. Файл инжектит inline `<script>` в DOM мессенджеров (для ChatMonitor — перехват уведомлений, mark-read):
+
+```js
+// monitor.preload.cjs:27-30
+var s = document.createElement('script')
+s.textContent = hookCode
+;(document.head || document.documentElement).appendChild(s)
+```
+
+Цепочка краха в WebContentsView:
+1. `view.webContents.loadURL('https://web.telegram.org/k/')` стартует navigation
+2. Preload выполняется ДО загрузки HTML
+3. Preload пытается inject inline `<script>`
+4. Telegram имеет CSP `script-src 'self'` — блокирует
+5. В `<webview>` теге CSP violation терпится (специфическая sandbox)
+6. В WebContentsView CSP violation → **нативный краш Chromium**
+7. Native crash JS handlers (`uncaughtException` / `unhandledRejection`) **НЕ ловят**
+8. Программа тихо закрывается, в логе только последняя строка `[wcv-mgr] queuing loadURL ...`
+
+#### Решение
+
+[`src/App.jsx`](src/App.jsx) — `WebContentsViewSlot` получает `preload={undefined}`:
+
+```jsx
+<WebContentsViewSlot
+  viewId={m.id}
+  url={m.url}
+  partition={m.partition}
+  preload={undefined}     // ← ключевое
+  visible={activeId === m.id}
+  onCreated={...}
+/>
+```
+
+**Последствие**: пилот **работает** (окно открывается, мессенджер загружается), но **ChatMonitor отключен** в пилоте — нет уведомлений, mark-read, ribbon. Юзер видит UX-улучшения (разделитель не залипает, нет webview boundary).
+
+#### Что обновлено
+
+1. [`src/App.jsx`](src/App.jsx) — `preload={undefined}` + длинный комментарий с историей
+2. [`src/components/SettingsPanel.jsx`](src/components/SettingsPanel.jsx) — описание тумблера: «ВНИМАНИЕ: НЕ работают уведомления»
+3. [`src/__tests__/webContentsViewPatterns.test.cjs`](src/__tests__/webContentsViewPatterns.test.cjs) — регрессия `preload={undefined}` (НЕ Url, НЕ Path)
+4. [`.memory-bank/mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md) — новая критическая секция «`<webview>` preload несовместим с WebContentsView»
+
+#### Phase 3 (отдельная задача — НЕ в этой сессии)
+
+Полная замена `<webview>` → WebContentsView требует **новый preload** который не инжектит DOM сам. Варианты:
+
+1. **Inject через `webContents.executeJavaScript`** (через wcv:execute-js IPC) — обходит CSP так как выполняется в isolated world. **Предпочтительный вариант** — bridge ([`src/utils/webContentsViewBridge.js`](src/utils/webContentsViewBridge.js)) уже умеет проксировать executeJavaScript.
+2. Использовать `contentScripts` (Electron extension API) — официальный, требует другой архитектуры.
+3. Удалять CSP через `session.webRequest.onHeadersReceived` — небезопасно, ToS-риск.
+
+#### Регрессия
+
+- `webContentsViewPatterns.test.cjs`: 29 ✅ (обновлён тест preload)
+- vitest всего: 683 ✅
+- lint ✅, memory bank ✅
+
+#### Прежнее (v0.89.52)
 
 ### v0.89.52 — Пошаговые логи после `new WebContentsView ok` (изоляция места native crash)
 

@@ -278,7 +278,7 @@ test('main/: deprecated BrowserView не используется', () => {
 // v0.89.47: preload — raw path для WebContentsView, file:// URL для <webview>
 // ──────────────────────────────────────────────────────────────────
 
-test('App.jsx: WebContentsViewSlot получает monitorPreloadPath (не URL)', () => {
+test('App.jsx: WebContentsViewSlot не получает monitor.preload.cjs (v0.89.53)', () => {
   const abs = path.resolve(process.cwd(), 'src/App.jsx')
   const content = fs.readFileSync(abs, 'utf8')
   const start = content.indexOf('<WebContentsViewSlot')
@@ -286,13 +286,17 @@ test('App.jsx: WebContentsViewSlot получает monitorPreloadPath (не URL
   const end = content.indexOf('/>', start)
   assert(end > start, 'Закрывающий /> для WebContentsViewSlot не найден')
   const block = content.slice(start, end + 2)
-  assert(/preload=\{monitorPreloadPath\b/.test(block),
-    'WebContentsViewSlot должен получать monitorPreloadPath (raw путь).\n' +
-    '   Если передать monitorPreloadUrl (file://...) — Electron WebContentsView\n' +
-    '   падает с `preload script must have absolute path`. См. ловушку в\n' +
-    '   .memory-bank/mistakes/electron-core.md → preload URL vs path.')
+  // По расследованию v0.89.46-v0.89.53: monitor.preload.cjs инжектит inline
+  // <script> в DOM мессенджеров → CSP violation в WebContentsView → нативный
+  // краш при loadURL. Pilot работает БЕЗ preload (Phase 2.1 минимум).
+  assert(/preload=\{undefined\}/.test(block),
+    'WebContentsViewSlot должен получать preload={undefined} — иначе monitor.preload.cjs\n' +
+    '   роняет main нативно при загрузке Telegram/WhatsApp (CSP violation).\n' +
+    '   См. ловушку в .memory-bank/mistakes/electron-core.md → preload <webview> vs WebContentsView.')
   assert(!/preload=\{monitorPreloadUrl\b/.test(block),
     'WebContentsViewSlot НЕ должен получать monitorPreloadUrl — это URL формат для <webview> тега')
+  assert(!/preload=\{monitorPreloadPath\b/.test(block),
+    'WebContentsViewSlot НЕ должен получать monitorPreloadPath — monitor.preload.cjs роняет main при loadURL')
 })
 
 test('useAppBootstrap.js: задаёт оба значения — URL и Path', () => {

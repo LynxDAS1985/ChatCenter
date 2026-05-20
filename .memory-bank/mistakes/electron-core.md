@@ -5,6 +5,96 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: `<webview>` preload НЕСОВМЕСТИМ с WebContentsView (v0.89.53)
+
+### Симптом
+
+Юзер включает пилот WebContentsView, перезапускает программу. В консоли:
+
+```
+[wcv-mgr] new WebContentsView ok
+[wcv-mgr] addChildView ok
+[wcv-mgr] queuing loadURL https://web.telegram.org/k/
+[crashpad ... not connected]
+PS prompt
+```
+
+Программа закрывается на этапе `loadURL`. Никакой JS ошибки в логе — uncaughtException / unhandledRejection / renderer-uncaught пусто.
+
+### Корневая причина
+
+`monitor.preload.cjs` написан для **`<webview>` тега** — он инжектит inline `<script>` в DOM:
+
+```js
+// monitor.preload.cjs:27-30
+var s = document.createElement('script')
+s.textContent = hookCode
+;(document.head || document.documentElement).appendChild(s)
+```
+
+Когда WebContentsView начинает грузить страницу:
+1. Preload выполняется **до** загрузки HTML
+2. Telegram / WhatsApp / etc. имеют **строгий CSP** (`script-src 'self'`)
+3. CSP блокирует inline script injection
+4. В **`<webview>`** теге это терпится — там специфическая sandbox-конфигурация
+5. В **WebContentsView** preload CSP violation → **нативный краш Chromium** (segfault)
+6. Native crash JS обработчики `uncaughtException` / `unhandledRejection` **НЕ ловят**
+
+### История расследования
+
+Серия v0.89.46 → v0.89.52 — пошаговая изоляция места краха через детальные `[wcv-mgr]` логи:
+
+| Версия | Что добавлено | Что выяснилось |
+|---|---|---|
+| v0.89.46 | `normalizePreloadPath()` file://→path | Не помогло — конструктор не падал |
+| v0.89.48 | Глобальные uncaughtException handlers | Native crash не ловится |
+| v0.89.50 | `[render-branch]`, `[WCV-slot] mount` логи | Slot монтируется, invoke уходит |
+| v0.89.51 | `fs.existsSync(preload)` + конструктор лог | Файл есть, конструктор работает |
+| v0.89.52 | Пошаговые `[wcv-mgr]` логи | **Краш на `loadURL`** |
+
+После 7 версий поиска — выяснили что проблема не в API/путях/таймингах, а в **несовместимости самого preload**.
+
+### Решение (v0.89.53)
+
+Pilot работает **БЕЗ preload** (откат к Phase 2.1 минимум). В [`src/App.jsx`](../../src/App.jsx):
+
+```jsx
+<WebContentsViewSlot
+  viewId={m.id}
+  url={m.url}
+  partition={m.partition}
+  preload={undefined}    // ← НЕ передаём monitor.preload.cjs
+  ...
+/>
+```
+
+**Последствие**: пилот не имеет ChatMonitor (уведомления, mark-read, ribbon), но окно открывается без краха. Юзер может проверить UX-улучшения (разделитель не залипает, нет webview boundary).
+
+### Будущее (Phase 3 — отдельный preload для WebContentsView)
+
+Полная замена `<webview>` → WebContentsView требует **переписать `monitor.preload.cjs`** без inline `<script>` injection. Варианты:
+1. Inject через `webContents.executeJavaScript` (через wcv:execute-js IPC) — обходит CSP так как выполняется в isolated world.
+2. Использовать `contentScripts` (Electron extension API) — официальный путь, требует другой архитектуры.
+3. Зарегистрировать `<script>` через `webContents.session.webRequest.onHeadersReceived` для удаления CSP — небезопасно, ToS-риск.
+
+Вариант 1 предпочтителен. Bridge ([`src/utils/webContentsViewBridge.js`](../../src/utils/webContentsViewBridge.js)) уже умеет проксировать executeJavaScript — нужен только новый preload-script (`monitor-wcv.preload.js`) который не пытается inject DOM сам.
+
+### Регрессионная защита
+
+[`src/__tests__/webContentsViewPatterns.test.cjs`](../../src/__tests__/webContentsViewPatterns.test.cjs):
+- WebContentsViewSlot должен получать `preload={undefined}` (не path, не URL)
+- При попытке вернуть monitor.preload.cjs — тест падает с описанием ловушки.
+
+### Правило для будущих фич
+
+Если делаешь WebContentsView (не `<webview>` тег):
+- ✅ Не передавай preload, если не уверен в его CSP-совместимости с целевым доменом
+- ✅ Тестируй на доменах с строгим CSP (Telegram, WhatsApp, GitHub)
+- ✅ Помни: `<webview>` и WebContentsView — **разные** preload контракты
+- ❌ Не предполагай что preload `<webview>` будет работать в WebContentsView
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: preload — `<webview>` ест file:// URL, WebContentsView требует raw path (v0.89.46)
 
 ### Симптом
