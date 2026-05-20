@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.89.56 (20 мая 2026)
+## Текущая версия: v0.89.57 (20 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.89.43). Старое — в архиве:
 
@@ -21,7 +21,21 @@
 
 ---
 
-### v0.89.56 — Изолированная partition `persist:wcv-*` для WebContentsView pilot (КОРЕНЬ найден)
+### v0.89.57 — v0.89.56 ОПРОВЕРГНУТА: изолирующий тест data: URL + process-gone listeners
+
+11-я гипотеза за серию опровергнута. Юзер запустил v0.89.56 с partition `persist:wcv-telegram` — программа упала на loadURL так же как раньше. **Partition / setupSession hooks — НЕ корень**.
+
+**Стратегия**: больше не гадать. Минимальный изолирующий тест `data:text/html` URL в [`webContentsViewManager.js`](main/utils/webContentsViewManager.js):
+- Если data: тоже крашит → корень в самой архитектуре BrowserWindow+WebContentsView → пилот невозможен в нашей конфигурации, нужен отдельный BrowserWindow без `webviewTag:true` или полная миграция на BaseWindow
+- Если data: работает → корень в network/Chromium при внешних URL
+
+Добавлены `render-process-gone`, `did-fail-load`, `did-start-loading` listeners — поймаем reason native краша если Chromium его передаст.
+
+Это **диагностика**, не фикс. После следующего запуска юзера решение будет принято по фактам.
+
+История 11 опровергнутых гипотез — в [`mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md).
+
+### v0.89.56 — Изолированная partition `persist:wcv-*` (ОПРОВЕРГНУТО в v0.89.57)
 
 v0.89.55 (`disable-gpu-compositing` switch) ОПРОВЕРГНУТА: лог показал `gpu-compositing ENABLED (WebContentsView pilot mode)` — switch не применился, программа всё равно упала.
 

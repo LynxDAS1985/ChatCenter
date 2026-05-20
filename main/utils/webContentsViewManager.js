@@ -38,11 +38,8 @@ import { EventEmitter } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
 
-// v0.89.46: WebContentsView требует АБСОЛЮТНЫЙ ПУТЬ к preload (по Electron docs:
-// «The value should be the absolute file path to the script»). Старый <webview>
-// тег принимает file:// URL, поэтому monitorPreloadUrl формируется именно так
-// в useAppBootstrap.js. Здесь нормализуем обратно в путь.
-// Также handle путей с пробелами и unicode-символами (например 'C:\Users\Директор\...').
+// v0.89.46: WebContentsView требует абсолютный path (Electron docs), а <webview>
+// тег принимает file:// URL. Нормализуем file:// → path. Handle unicode + пробелы.
 export function normalizePreloadPath(preload) {
   if (!preload) return preload
   if (!/^file:\/\//i.test(preload)) return preload
@@ -89,10 +86,7 @@ export class WebContentsViewManager extends EventEmitter {
     const WebContentsView = getWebContentsView()
     if (!WebContentsView) return null
 
-    // v0.89.55: sandbox:false возвращён. monitor.preload.cjs использует
-    // require('electron'), fs, path — для этого sandbox должен быть false.
-    // Конфигурация идентична `<webview>` тегу — это позволяет переиспользовать
-    // тот же preload скрипт без изменений.
+    // v0.89.55: sandbox:false — monitor.preload.cjs использует Node APIs.
     const webPreferences = {
       contextIsolation: true,
       nodeIntegration: false,
@@ -100,11 +94,8 @@ export class WebContentsViewManager extends EventEmitter {
       backgroundThrottling: false, // v0.89.35 — гарантия работы CSS animations в hidden state
     }
     if (partition) webPreferences.partition = partition
-    // v0.89.51: проверяем что preload файл существует. Если передан невалидный
-    // путь — `new WebContentsView` может крашнуть main process нативно (без JS
-    // exception). Это могло быть причиной молчаливого закрытия программы в
-    // v0.89.46-v0.89.50: invoke wcv:create уходил, но [wcv-timing] никогда не
-    // приходил — main падал на `new WebContentsView`.
+    // v0.89.51: fs.existsSync(preload) перед `new WebContentsView` — невалидный
+    // путь может крашить main нативно.
     if (preload) {
       const preloadPath = normalizePreloadPath(preload)
       console.log(`[wcv-mgr] createView id=${id} preload=${preloadPath} partition=${partition || '(none)'}`)
@@ -126,8 +117,11 @@ export class WebContentsViewManager extends EventEmitter {
       console.error(`[wcv-mgr] new WebContentsView FAILED: ${e?.message || e}`)
       return null
     }
-    console.log(`[wcv-mgr] new WebContentsView ok`)
+    console.log(`[wcv-mgr] new WebContentsView ok (wc.id=${view.webContents?.id})`)
     const wc = view.webContents
+    wc.on('render-process-gone', (_e, d) => console.error(`[wcv-mgr] RPG id=${id} reason=${d?.reason} exit=${d?.exitCode}`))
+    wc.on('did-fail-load', (_e, c, d, u, m) => console.error(`[wcv-mgr] fail-load id=${id} c=${c} "${d}" url=${u} main=${m}`))
+    wc.on('did-start-loading', () => console.log(`[wcv-mgr] start-loading id=${id}`))
 
     // v0.89.52: вместо forwarding каждого события — обёрнем в try и логируем
     // ровно те, что свалились (если такое случится).
@@ -171,10 +165,23 @@ export class WebContentsViewManager extends EventEmitter {
     this.views.set(id, { view, parentWindow, bounds: { x: 0, y: 0, width: 0, height: 0 } })
 
     if (url) {
-      console.log(`[wcv-mgr] queuing loadURL ${url}`)
-      view.webContents.loadURL(url)
-        .then(() => console.log(`[wcv-mgr] loadURL settled id=${id}`))
-        .catch((e) => console.error(`[wcv-mgr] loadURL failed id=${id}: ${e?.message || e}`))
+      // v0.89.57: data: URL первый — без сети/CSP/preload-injection. Если крашит — корень в архитектуре.
+      const dataUrl = 'data:text/html;charset=utf-8,<h1>WCV%20isolation%20test</h1>'
+      console.log(`[wcv-mgr] step 1: loadURL data: (minimal isolation)`)
+      try {
+        view.webContents.loadURL(dataUrl)
+          .then(() => {
+            console.log(`[wcv-mgr] data: settled id=${id} — now real URL ${url}`)
+            view.webContents.loadURL(url)
+              .then(() => console.log(`[wcv-mgr] real URL settled id=${id}`))
+              .catch((e) => console.error(`[wcv-mgr] real URL failed id=${id}: ${e?.message || e}`))
+          })
+          .catch((e) => console.error(`[wcv-mgr] data: failed id=${id}: ${e?.message || e}`))
+        console.log(`[wcv-mgr] loadURL sync returned ok id=${id}`)
+        setImmediate(() => console.log(`[wcv-mgr] setImmediate tick after loadURL id=${id}`))
+      } catch (e) {
+        console.error(`[wcv-mgr] loadURL sync exception id=${id}: ${e?.message || e}`)
+      }
     }
     console.log(`[wcv-mgr] createView return view id=${id}`)
     return view

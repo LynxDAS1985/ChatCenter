@@ -5,7 +5,40 @@
 
 ---
 
-## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot — нужна ИЗОЛИРОВАННАЯ session (v0.89.56)
+## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot — 11 опровергнутых гипотез, корень не найден (v0.89.57)
+
+### Статус: 🔴 НЕ РЕШЕНО, расследование продолжается
+
+### v0.89.56 «изолированная partition `persist:wcv-*`» — ОПРОВЕРГНУТА
+
+Юзер запустил v0.89.56. Лог:
+```
+[wcv-mgr] createView id=telegram partition=persist:wcv-telegram   ← partition изменился ✅
+[wcv-mgr] new WebContentsView ok
+[wcv-mgr] addChildView ok
+[wcv-mgr] queuing loadURL https://web.telegram.org/k/
+[crashpad]                                                          ← краш
+```
+
+Изолированная session тоже **не решила** проблему. Partition и setupSession hooks — **не корень**.
+
+### v0.89.57 — диагностический изолирующий эксперимент
+
+В `webContentsViewManager.js` `createView`:
+1. Сначала грузим `data:text/html;charset=utf-8,<h1>WCV test</h1>` (без сети/CSP/preload)
+2. Если data: settled → потом грузим реальный URL
+3. Если data: тоже крашит → корень в самой архитектуре
+
+Добавлены listeners для поимки native краша:
+- `render-process-gone` (reason + exit code)
+- `did-fail-load`
+- `did-start-loading`
+
+`setImmediate(() => log('tick'))` после loadURL — увидеть пережил ли event loop.
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: WebContentsView pilot — нужна ИЗОЛИРОВАННАЯ session (v0.89.56 — ОПРОВЕРГНУТО)
 
 ### Симптом
 
