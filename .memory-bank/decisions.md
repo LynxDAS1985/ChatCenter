@@ -1,5 +1,33 @@
 # Ключевые решения (ADR) — ChatCenter
 
+## ADR — Откат миграции `<webview>` → WebContentsView (20 мая 2026, v0.91.0)
+
+**Статус**: ✅ Принято, откат выполнен
+
+**Контекст**: Electron официально пишет «we recommend to not use the webview tag, consider WebContentsView». Мы попытались мигрировать (16 версий v0.89.41-v0.90.2).
+
+**Что обнаружено**: на Windows 11 + Electron 41 child WebContentsView крашит native main процесс при `addChildView()` + `loadURL`. Подтверждено в Electron GitHub issues:
+- [#44934](https://github.com/electron/electron/issues/44934) — App crashes when adding child view to WebContentsView on Windows 11 (closed/not planned)
+- [#45367](https://github.com/electron/electron/issues/45367) — addChildView(WebContentsView) не рендерит (closed/not planned)
+- [#44897](https://github.com/electron/electron/issues/44897) — preload не загружается в child WebContentsView
+- [#47247](https://github.com/electron/electron/issues/47247) — webContents в WebContentsView крашит Electron
+
+**Решение**: **полный откат** к BrowserWindow + `<webview>` — production-tested архитектура работает в проекте с v0.1.0.
+
+**Условия пересмотра**: проверять каждые 6-12 месяцев. Повторная миграция возможна только если:
+1. Issue #44934 или #45367 закрыт как «fixed» в Electron release notes
+2. Есть rollback план + изолированный production-тест
+3. WebContentsView работает на Windows 11 в нашей конфигурации (multi-child views)
+
+**Альтернативы для будущего**:
+- Дождаться фикса Electron (не на нашей стороне)
+- Полная смена фреймворка (Tauri, Wails) — отдельная задача
+- iframe вместо `<webview>` — отвергнут (Telegram/WhatsApp CSP)
+
+**Полный урок и 7 правил для будущих миграций** — в [`mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md) → секция «УРОК v0.89.41-v0.91.0».
+
+---
+
 ## ADR — Notification BrowserWindow: итоги серии багов v0.89.15-v0.89.23 (18 мая 2026)
 
 **Статус**: ✅ Принято и реализовано

@@ -146,9 +146,8 @@ test('trayManager.js: log viewer окно подключает preload', () => {
 })
 
 // ──────────────────────────────────────────────────────────────────
-// Дополнительные регрессии: WebContentsView migration + preload + BrowserView
-// вынесены в `webContentsViewPatterns.test.cjs` (v0.89.47 — разбиение
-// после превышения 400-строчного лимита).
+// v0.91.0: WebContentsView migration откачена (Electron Issue #44934). Тесты
+// `webContentsViewPatterns.test.cjs` удалены. См. mistakes/electron-core.md.
 // ──────────────────────────────────────────────────────────────────
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

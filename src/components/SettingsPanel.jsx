@@ -95,10 +95,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
   const [errorLog, setErrorLog] = useState(null)        // null = не загружен, '' = пуст, 'текст' = есть записи
   const [logLoading, setLogLoading] = useState(false)
   const [logClearing, setLogClearing] = useState(false)
-  // v0.89.44 (Совет 2): WebContentsView partition cleanup. wcvCleanup* = null
-  // когда ничего не делаем; объект {running, done, total, message} во время
-  // и после операции. Видно только когда useWebContentsView=true.
-  const [wcvCleanup, setWcvCleanup] = useState(null)
+  // v0.91.0: wcvCleanup state удалён (откат WCV миграции)
   const previewTimerRef = useRef(null)
 
   const loadLog = async () => {
@@ -122,27 +119,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
     setLogClearing(false)
   }
 
-  // v0.89.44 (Совет 2): по очереди чистит cache для каждого мессенджера через
-  // wcv:cleanup-partition. full:false — оставляем cookies/сессии (logout НЕ
-  // делаем). Полная очистка происходит при удалении мессенджера (Совет 3).
-  const cleanupWcvPartitions = async () => {
-    const targets = messengers.filter(m => m.partition && !m.isNative)
-    if (targets.length === 0) {
-      setWcvCleanup({ running: false, done: 0, total: 0, message: 'Нет мессенджеров с partition' })
-      return
-    }
-    setWcvCleanup({ running: true, done: 0, total: targets.length, message: '' })
-    let done = 0
-    for (const m of targets) {
-      try {
-        // v0.90.0: один partition — m.partition напрямую.
-        await window.api?.invoke('wcv:cleanup-partition', { partition: m.partition, full: false })
-      } catch (_) {}
-      done += 1
-      setWcvCleanup({ running: done < targets.length, done, total: targets.length, message: '' })
-    }
-    setWcvCleanup({ running: false, done, total: targets.length, message: 'Очищено: ' + done + ' из ' + targets.length })
-  }
+  // v0.91.0: cleanupWcvPartitions удалён (откат WCV миграции).
 
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -395,10 +372,9 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                   старый <webview> тег работает как раньше. Включение требует
                   перезапуска приложения. Пилот без ChatMonitor (без перехвата
                   сообщений) — для проверки UX-улучшений (разделитель не залипает). */}
-              {/* v0.90.0: тумблер useWebContentsView устарел. Главное окно
-                  мигрировано на BaseWindow + WebContentsView (по Electron docs).
-                  <webview> тег больше не работает. Все мессенджеры всегда через
-                  WebContentsView. Тумблер скрыт — оставлен для backward compat. */}
+              {/* v0.91.0: тумблер useWebContentsView полностью убран. WCV миграция
+                  откачена из-за Electron Issue #44934 (Windows 11 crash). См. урок
+                  в .memory-bank/mistakes/electron-core.md. */}
               <SettingRow label="Бейдж на иконке (overlay)" description="Что показывать на иконке в панели задач Windows">
                 <select
                   value={settings.overlayMode || 'personal'}
@@ -487,30 +463,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                 Файл: <code style={{ color: 'var(--cc-text-dim)' }}>userData/ai-errors.log</code> · Показаны последние 30 строк
               </p>
 
-              {/* v0.89.44 (Совет 2): очистка кэша WebContentsView для всех
-                  мессенджеров. Видна только когда пилот WebContentsView включён.
-                  Иначе кнопка бесполезна — partition создаётся через старый webview,
-                  и наш wcv:cleanup-partition такие partition не трогает. */}
-              {settings.useWebContentsView && (
-                <div className="mt-2">
-                  <button
-                    onClick={cleanupWcvPartitions}
-                    disabled={wcvCleanup?.running}
-                    className="w-full py-2 rounded-xl text-sm transition-all cursor-pointer disabled:opacity-50"
-                    style={{ backgroundColor: 'var(--cc-hover)', color: 'var(--cc-text-dim)', border: '1px solid var(--cc-border)' }}
-                    onMouseEnter={e => { if (!wcvCleanup?.running) e.currentTarget.style.backgroundColor = 'var(--cc-border)' }}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
-                    title="Удаляет кэш изображений и страниц для каждого мессенджера. Сессии (cookies) сохраняются — выходить из аккаунтов не нужно."
-                  >
-                    {wcvCleanup?.running
-                      ? '⏳ Очистка ' + wcvCleanup.done + '/' + wcvCleanup.total + '…'
-                      : '🧹 Очистить кэш WebContentsView'}
-                  </button>
-                  {wcvCleanup?.message && (
-                    <p className="text-[10px] mt-1.5" style={{ color: 'var(--cc-text-dimmer)' }}>{wcvCleanup.message}</p>
-                  )}
-                </div>
-              )}
+              {/* v0.91.0: кнопка cleanup WebContentsView убрана (откат WCV) */}
             </div>
           </section>
 

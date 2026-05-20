@@ -5,7 +5,117 @@
 
 ---
 
-## ✅ РЕШЕНО v0.90.0: WebContentsView требует BaseWindow, не BrowserWindow (12 опровергнутых гипотез v0.89.46-v0.89.57)
+## 📚 УРОК v0.89.41-v0.91.0: попытка миграции `<webview>` → WebContentsView НЕ УДАЛАСЬ (Electron Issue #44934)
+
+### Статус: 🔴 ПИЛОТ ОТКАЧЕН, остался `<webview>` тег как ЕДИНСТВЕННАЯ работающая архитектура для multi-messenger UI на Windows 11
+
+### Что хотели сделать
+
+Электрон в [официальной документации](https://www.electronjs.org/docs/latest/api/webview-tag) написал (verbatim):
+> «We currently recommend to not use the webview tag and to consider alternatives, like iframe, a WebContentsView, or an architecture that avoids embedded content altogether.»
+
+Мы решили мигрировать с устаревшего `<webview>` тега на современный `WebContentsView`. Цель — соответствие официальной документации + потенциальные UX-улучшения (нет webview boundary, лучшая производительность).
+
+### Что было сделано (16 версий v0.89.41 → v0.91.0)
+
+**Фаза 1 — инфраструктура (v0.89.41-v0.89.45)**: создан `webContentsViewManager.js`, IPC handlers `wcv:*`, React-слот `WebContentsViewSlot.jsx`, bridge для совместимости с `webviewSetup.js`. Feature flag `useWebContentsView` (default OFF). Никакой регрессии.
+
+**Фаза 2 — пилот пытается работать (v0.89.46-v0.89.57)**: 12 версий поиска корня краша. Юзер включает тумблер пилота → программа крашится на `loadURL`. Гипотезы и опровержения:
+
+| Версия | Гипотеза | Опровергнута |
+|---|---|---|
+| v0.89.46 | preload как `file://` URL — нужен raw path | Конструктор не падал |
+| v0.89.51 | preload файл не существует | `fs.existsSync` подтвердил |
+| v0.89.52 | Конструктор `new WebContentsView()` | `[ok]` лог сработал |
+| v0.89.52 | `addChildView()` падает | `[ok]` лог сработал |
+| v0.89.53 | `monitor.preload.cjs` CSP violation | Краш без preload остался |
+| v0.89.54 | `sandbox: false` без preload | `sandbox: true` тоже крашит |
+| v0.89.54 | URL Telegram CSP | `about:blank` тоже крашит |
+| v0.89.55 | `disable-gpu-compositing` switch | Без switch тоже крашит |
+| v0.89.56 | `setupSession` hooks + общий partition | `persist:wcv-*` тоже крашит |
+| v0.89.57 | `data:text/html` URL | Тоже крашит |
+
+**Фаза 3 — архитектурная миграция (v0.90.0-v0.90.2)**: `BrowserWindow{webviewTag:true}` → `BaseWindow + WebContentsView`. По официальной документации Electron WebContentsView должен использоваться с BaseWindow. Primary view (React UI) заработал ✅. **НО** child WebContentsView для мессенджеров **продолжал крашиться** на любом `loadURL`.
+
+**Фаза 4 — поиск в официальных issues**: найдено **подтверждение** в Electron GitHub:
+- [Issue #44934](https://github.com/electron/electron/issues/44934): «App crashes when adding child view to WebContentsView on **Windows 11**» — closed (not planned)
+- [Issue #45367](https://github.com/electron/electron/issues/45367): «BaseWindow.contentView.addChildView(WebContentsView) is **not rendering** properly» — workaround `contentView = view` (но это ОДНА view на окно, не подходит)
+- [Issue #44897](https://github.com/electron/electron/issues/44897): «preload **не загружается** в child WebContentsView» — объясняет почему наши попытки с preload не давали разницы
+- [Issue #47247](https://github.com/electron/electron/issues/47247): «Adding WebContentsView webContents to another WebContentsView crashes Electron»
+
+### Корневая причина
+
+**Архитектурный баг Electron 33+** на Windows 11. `BaseWindow.contentView.addChildView(WebContentsView)` + последующий `loadURL` крашит native процесс. Не пофикшено в v41. Известно официально, но помечено «not planned».
+
+### Что мы НЕ могли изменить
+
+| Параметр | Пробовали | Результат |
+|---|---|---|
+| preload (URL/path/none) | Да | Не корень — Issue #44897 |
+| sandbox (true/false) | Да | Не корень |
+| partition (общий/изолированный) | Да | Не корень |
+| webviewTag (true/false) | Да | Не корень |
+| disable-gpu-compositing | Да | Не корень |
+| BrowserWindow → BaseWindow | Да | Primary работает, child нет |
+| URL (https/data:/about:blank) | Да | Любой URL крашит |
+| bounds (0,0 или real) | Да | Не корень |
+
+**ВЫВОД**: это **native баг Electron на Windows 11**, не наш код.
+
+### Что решили (v0.91.0)
+
+🔴 **ОТКАТ к BrowserWindow + `<webview>`** — единственная работающая архитектура для multi-messenger UI на Windows 11.
+
+**Удалены**:
+- `main/utils/webContentsViewManager.js`
+- `main/handlers/webContentsViewIpcHandlers.js`
+- `src/components/WebContentsViewSlot.jsx`
+- `src/utils/webContentsViewBridge.js`
+- `src/__tests__/webContentsViewPatterns.test.cjs`
+- `src/__tests__/webContentsViewManager.vitest.js`
+- `src/__tests__/webContentsViewBridge.vitest.js`
+
+**Сохранены** (полезные побочные эффекты):
+- `src/components/UncaughtErrorToast.jsx` — UX-фича для отображения ошибок renderer
+- Global error handlers (`useConsoleErrorLogger.js` + main.js `uncaughtException`) — полезно всегда
+- `src/native/utils/idbCacheMetrics.js` — независимая фича агрегации логов кэша
+- Crashpad filter в `scripts/dev.cjs` — фильтр шумных Chromium-логов
+- Документация `.memory-bank/electron-breaking-changes.md` — мониторинг будущих изменений
+
+### 🎓 УРОКИ ДЛЯ БУДУЩЕГО
+
+1. **Прежде чем мигрировать API, прочитай GitHub issues этого API**. Мы потратили 16 версий на воспроизведение известного бага. WebSearch в начале расследования сэкономил бы дни.
+
+2. **«Рекомендация в docs ≠ гарантия работы»**. Electron рекомендует WebContentsView вместо `<webview>`, но **это рекомендация, не обещание совместимости**. Реальное состояние API может отставать от документации.
+
+3. **Гипотезы должны быть testable БЫСТРО**. Я делал гипотезы по одной, каждая v0.89.46-v0.89.57 — отдельный запуск пользователя. Это очень долгий цикл. Параллельно искать в GitHub issues сэкономило бы 11 итераций.
+
+4. **Не угадывать когда есть факты в публичных источниках**. Все 12 опровергнутых гипотез были «может быть это?». Открытие Issue #44934 за 30 секунд решило вопрос: **корень не в нашем коде**.
+
+5. **Native crash JS не ловит**. `uncaughtException`/`unhandledRejection` бесполезны для native crash в Chromium content layer. Watchdog timer 15с тоже не работает — main умирает раньше event loop'а.
+
+6. **Production-tested архитектура важнее «modern»**. `<webview>` тег работал годами на нашей инфраструктуре. Хотя docs его «не рекомендует» — он **стабилен**. Современное API может оказаться нестабильным.
+
+7. **Полный откат — это нормально**. 16 версий, 1500 строк кода, дни разработки → возврат к стабильной архитектуре. **Это не неудача — это правильное решение**, когда упёрся в native bug.
+
+### Правило для будущих миграций
+
+- ✅ Перед миграцией: WebSearch + GitHub issues check на «<новая_api> crash <платформа> <версия>»
+- ✅ Параллельно с экспериментами в коде — поиск известных багов в issues
+- ✅ Если 2-3 гипотезы опровергнуты — **СТОП**, ищи в issues
+- ❌ НЕ продолжай 12 гипотез если нет прогресса
+- ❌ НЕ доверяй «рекомендациям» в docs без production-теста
+
+### Когда пересматривать решение
+
+Проверять каждые 6-12 месяцев новые Electron релизы:
+- Issue #44934 закрыт «not planned» — мало шансов на скорый фикс
+- Но если в Electron v45+ появится фикс — можно попробовать ещё раз
+- Условия повторной попытки: (a) issue закрыт «fixed», (b) production-protected миграция с rollback
+
+---
+
+## ✅ РЕШЕНО v0.90.0 (опровергнуто в v0.90.2): WebContentsView требует BaseWindow, не BrowserWindow
 
 ### Статус: ✅ РЕШЕНО архитектурной миграцией (v0.90.0)
 

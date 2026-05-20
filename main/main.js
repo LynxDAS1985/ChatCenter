@@ -3,7 +3,7 @@
 // v0.87.135 — Added Windows installer packaging into root dist/
 // v0.87.134 — Added start:prodlike script for production-like startup comparison
 // v0.87.103 — Refactored: setupIPC вынесен в handlers/mainIpcHandlers.js (~230 строк)
-import { app, BrowserWindow, BaseWindow, WebContentsView, session, nativeImage, screen, ipcMain } from 'electron'
+import { app, BrowserWindow, session, nativeImage, screen, ipcMain } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import https from 'node:https'
@@ -22,8 +22,8 @@ import { initTdlibBackendStartup } from './native/backends/tdlibStartup.js'
 import { registerCcMediaScheme, registerCcMediaHandler } from './native/ccMediaProtocol.js'
 import { initNotifHandlers } from './handlers/notifHandlers.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
-// v0.89.41: WebContentsView migration infrastructure (feature-flagged, default OFF)
-import { initWebContentsViewIpcHandlers } from './handlers/webContentsViewIpcHandlers.js'
+// v0.91.0: WebContentsView откачен — Issue #44934/45367 (Windows 11 crash на addChildView).
+// import { initWebContentsViewIpcHandlers } from './handlers/webContentsViewIpcHandlers.js'
 import { initNotificationManager } from './handlers/notificationManager.js'
 import { initBackupNotifHandler } from './handlers/backupNotifHandler.js'
 import { createWindow as createWindowFromManager } from './utils/windowManager.js'
@@ -107,17 +107,7 @@ function setupNotifIPC() {
     DEFAULT_MESSENGERS,
   })
 
-  // v0.89.41: WebContentsView migration infrastructure. Feature flag по умолчанию
-  // OFF в settings — renderer продолжает использовать <webview> тег. Когда юзер
-  // включает useWebContentsView в settings, WebContentsViewSlot создаёт view
-  // через эти IPC handlers. Полная замена <webview> — отдельная фаза миграции.
-  initWebContentsViewIpcHandlers({
-    ipcMain,
-    getMainWindow: () => mainWindow,
-    sendToRenderer: (channel, payload) => {
-      try { mainWindow?.webContents?.send(channel, payload) } catch (_) {}
-    },
-  })
+  // v0.91.0: WebContentsView IPC handlers убраны (откат WCV миграции — Issue #44934).
 }
 
 // ─── IPC Handlers ─────────────────────────────────────────────────────────────
@@ -142,13 +132,12 @@ function setupIPC() {
 
 let backupNotif = null
 
-// ─── GPU стабильность ─────────────────────────────────────────────────────
-// v0.90.0: `disable-gpu-compositing` УДАЛЁН — он был воркэраундом для `<webview>`
-// тега, которого больше нет. WebContentsView требует GPU compositor (overlay
-// рендеринг), несовместим с software composition (см. mistakes/electron-core.md).
-// Сохраняем только SharedArrayBuffer.
+// ─── GPU стабильность (v0.85.6: fix чёрный экран Telegram WebView) ─────────
+// Без `disable-gpu-compositing` неактивные `<webview>` теряют GPU compositor
+// контекст при переключении вкладок → чёрный экран при возврате на вкладку.
+// v0.91.0: возвращено после отката WebContentsView (см. mistakes/electron-core.md).
+app.commandLine.appendSwitch('disable-gpu-compositing')
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
-console.log('[startup-main] BaseWindow + WebContentsView architecture (no webview tag)')
 
 // ─── Запуск ──
 const __mainStart = Date.now()
@@ -237,16 +226,14 @@ app.whenReady().then(() => {
 
   __slog('createWindowFromManager start')
   createWindowFromManager({
-    BaseWindow,
-    WebContentsView,
-    BrowserWindow, // оставлен для совместимости — другие места ещё используют
+    BrowserWindow,
     path,
     isDev,
     __dirname,
     storage,
     getForceQuit: () => forceQuit,
     getTray: () => tray,
-    setMainWindow: (w) => { mainWindow = w; __slog('mainWindow created (BaseWindow + primary WebContentsView)') },
+    setMainWindow: (w) => { mainWindow = w; __slog('mainWindow created') },
     getMainWindow: () => mainWindow,
   })
   if (mainWindow) {
@@ -278,8 +265,6 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindowFromManager({
-        BaseWindow,
-        WebContentsView,
         BrowserWindow,
         path,
         isDev,

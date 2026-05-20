@@ -15,10 +15,12 @@ import {
 import TabBar from './components/TabBar.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 // v0.89.42 (Phase 2.2): WebContentsView pilot — условный рендер по settings.useWebContentsView.
-import WebContentsViewSlot from './components/WebContentsViewSlot.jsx'
+// v0.91.0: WebContentsViewSlot откачен (Issue #44934 Windows 11 crash)
+// import WebContentsViewSlot from './components/WebContentsViewSlot.jsx'
 import UncaughtErrorToast from './components/UncaughtErrorToast.jsx'
 // v0.89.44 (Совет 1): bridge для подключения webviewSetup к WebContentsView через wcv:* IPC.
-import { createWebContentsViewBridge } from './utils/webContentsViewBridge.js'
+// v0.91.0: WebContentsViewBridge откачен
+// import { createWebContentsViewBridge } from './utils/webContentsViewBridge.js'
 
 // Hooks
 import useKeyboardShortcuts from './hooks/useKeyboardShortcuts.js'
@@ -112,9 +114,6 @@ export default function App() {
   const [showAI, setShowAI] = useState(true)
   const [settings, setSettings] = useState({ soundEnabled: true, minimizeToTray: true, theme: 'dark' })
   const [monitorPreloadUrl, setMonitorPreloadUrl] = useState(null)
-  // v0.89.47 (Совет 1): абсолютный путь рядом с URL. <webview> читает URL,
-  // WebContentsView требует raw путь (Electron docs).
-  const [monitorPreloadPath, setMonitorPreloadPath] = useState(null)
   const [appReady, setAppReady] = useState(false)
   const [lastMessage, setLastMessage] = useState(null)
   const [aiWidth, setAiWidth] = useState(300)
@@ -240,12 +239,7 @@ export default function App() {
     // v0.89.44 (Совет 3): авто-cleanup partition при удалении мессенджера.
     // full:true — чистим ВСЁ (cookies, localStorage, IndexedDB) = эффект logout.
     // Иначе осколки сессии остаются на диске даже если мессенджер удалён из UI.
-    const removed = messengersRef.current.find(m => m.id === id)
-    if (removed?.partition) {
-      // v0.90.0: один partition — WebContentsView использует m.partition напрямую.
-      try { window.api?.invoke('wcv:cleanup-partition', { partition: removed.partition, full: true })
-        .catch(() => {}) } catch (_) {}
-    }
+    // v0.91.0: wcv:cleanup-partition убран (WCV миграция откачена)
     setMessengers(prev => {
       const next = prev.filter(m => m.id !== id)
       setActiveId(curr => curr === id ? (next[0]?.id || null) : curr)
@@ -298,16 +292,6 @@ export default function App() {
   // ── v0.87.82: Renderer логирование + show-log-modal IPC → useConsoleErrorLogger
   useConsoleErrorLogger({ setLogContent, setShowLogModal })
 
-  // v0.89.50: диагностика — пишем какая ветка рендера выбрана для каждого
-  // мессенджера. Без этого нет [wcv-timing] → было неясно, монтируется ли Slot.
-  useEffect(() => {
-    if (!appReady || messengers.length === 0) return
-    try {
-      const s = messengers.map(m => `${m.id}=${(m.isNative || m.id === NATIVE_CC_ID) ? 'native' : (settings.useWebContentsView ? 'wcv' : 'webview')}`).join(',')
-      window.api?.send('app:log', { level: 'INFO', message: `[render-branch] activeId=${activeId} useWcv=${!!settings.useWebContentsView} ${s}` })
-    } catch (_) {}
-  }, [appReady, messengers.length, settings.useWebContentsView])
-
   // ── Применение темы ────────────────────────────────────────────────────
   useEffect(() => {
     const theme = settings.theme || 'dark'
@@ -319,7 +303,7 @@ export default function App() {
   useAppBootstrap({
     NATIVE_CC_TAB, NATIVE_CC_ID,
     setMessengers, setActiveId, setSettings, setAiWidth, setZoomLevels, setStats,
-    setMonitorPreloadUrl, setMonitorPreloadPath, setAppReady,
+    setMonitorPreloadUrl, setAppReady,
     aiWidthRef, zoomLevelsRef, statsRef,
   })
 
@@ -613,25 +597,17 @@ export default function App() {
                     />
                   </Suspense>
                 ) : (
-                  /* v0.90.0: ВСЕГДА WebContentsView. <webview> тег удалён.
-                     v0.90.2: preload временно отключён + lazy mount только для
-                     активной вкладки — выявить минимально работающую конфигурацию.
-                     ChatMonitor (уведомления/mark-read) не работает пока. */
-                  activeId === m.id ? (
-                    <WebContentsViewSlot
-                      viewId={m.id}
-                      url={m.url}
-                      partition={m.partition}
-                      preload={undefined}
-                      visible={true}
-                      onCreated={() => {
-                        if (!webviewRefs.current[m.id] || !webviewRefs.current[m.id]._isWebContentsViewBridge) {
-                          const bridge = createWebContentsViewBridge(m.id)
-                          setWebviewRef(bridge, m.id)
-                        }
-                      }}
-                    />
-                  ) : null
+                  /* v0.91.0: откат к <webview> тегу. WebContentsView миграция
+                     невозможна на Windows 11 (Electron Issue #44934/45367). */
+                  <webview
+                    ref={el => setWebviewRef(el, m.id)}
+                    src={m.url}
+                    partition={m.partition}
+                    preload={monitorPreloadUrl || undefined}
+                    style={{ width: '100%', height: '100%' }}
+                    allowpopups="true"
+                    webpreferences="backgroundThrottling=no"
+                  />
                 )}
               </div>
             ))

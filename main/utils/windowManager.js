@@ -1,33 +1,12 @@
 // v0.84.4: Window creation — extracted from main.js
-// v0.90.0: Архитектурная миграция BrowserWindow → BaseWindow + WebContentsView.
-// Причина — `webviewTag: true` в primary BrowserWindow + child WebContentsView для
-// мессенджеров крашит main процесс при loadURL (12 версий v0.89.46-v0.89.57
-// доказали что это архитектурное ограничение Electron). По официальной документации
-// (https://www.electronjs.org/docs/latest/api/web-contents-view) WebContentsView
-// должен использоваться с BaseWindow, не BrowserWindow.
-//
-// Архитектура:
-//   BaseWindow (sole window)
-//   └── contentView.addChildView(primaryView)   // React UI (renderer)
-//   └── contentView.addChildView(messengerView) // мессенджер (через wcv:create)
-//
-// `<webview>` тег больше не работает (требует BrowserWindow primary view).
-// Все мессенджеры — через WebContentsView (бывший «пилот», теперь default).
+// v0.91.0: Откат к BrowserWindow + webviewTag после серии v0.89.46-v0.90.2.
+// Миграция на BaseWindow+WebContentsView невозможна на Windows 11 из-за известных
+// Electron bugs (см. .memory-bank/mistakes/electron-core.md):
+//   - Issue #44934: App crashes when adding child view to WebContentsView on Windows 11
+//   - Issue #45367: addChildView(WebContentsView) is not rendering properly
+//   - Issue #44897: preload не загружается в child WebContentsView
 
 let _deps = null
-
-// v0.90.0: Proxy чтобы существующий код работающий с `mainWindow.webContents`
-// продолжал работать. Все старые методы (`.show()`, `.isDestroyed()`, on('focus'))
-// проксируются на baseWindow, `.webContents` → primaryView.webContents.
-function createMainWindowProxy(baseWindow, primaryView) {
-  return new Proxy(baseWindow, {
-    get(target, prop) {
-      if (prop === 'webContents') return primaryView.webContents
-      const v = target[prop]
-      return typeof v === 'function' ? v.bind(target) : v
-    }
-  })
-}
 
 function getPreloadPath() {
   const { isDev, __dirname, path } = _deps
@@ -134,14 +113,13 @@ function attachDevRequestTiming(mainWindow, wlog) {
  */
 export function createWindow(deps) {
   _deps = deps
-  const { BaseWindow, WebContentsView, path, isDev, __dirname, storage, getForceQuit, getTray, setMainWindow, getMainWindow } = deps
+  const { BrowserWindow, path, isDev, __dirname, storage, getForceQuit, getTray, setMainWindow, getMainWindow } = deps
   const windowStart = Date.now()
   const wlog = (label) => console.log(`[startup-window] +${Date.now() - windowStart}ms ${label}`)
 
   const bounds = storage.get('windowBounds', { width: 1400, height: 900 })
 
-  // v0.90.0: BaseWindow вместо BrowserWindow. У BaseWindow нет primary WebContents.
-  const baseWindow = new BaseWindow({
+  const mainWindow = new BrowserWindow({
     width: bounds.width || 1400,
     height: bounds.height || 900,
     x: bounds.x,
@@ -154,33 +132,19 @@ export function createWindow(deps) {
       color: '#16213e',
       symbolColor: '#ffffff',
       height: 48
-    }
-  })
-
-  // Primary WebContentsView для React UI. webPreferences переехали сюда.
-  // ВНИМАНИЕ: НЕТ `webviewTag: true` — это было причиной краша WebContentsView
-  // в v0.89.46-v0.89.57. Старый `<webview>` тег больше НЕ работает.
-  const primaryView = new WebContentsView({
+    },
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
       sandbox: false,
       backgroundThrottling: false
     }
   })
-  baseWindow.contentView.addChildView(primaryView)
-  const updatePrimaryBounds = () => {
-    const b = baseWindow.getContentBounds()
-    primaryView.setBounds({ x: 0, y: 0, width: b.width, height: b.height })
-  }
-  updatePrimaryBounds()
-  baseWindow.on('resize', updatePrimaryBounds)
 
-  // v0.90.0: Proxy сохраняет API совместимость со старым кодом.
-  const mainWindow = createMainWindowProxy(baseWindow, primaryView)
-
-  // Отключаем throttling JS — для MutationObserver, Notification hooks в child views.
+  // Отключаем throttling JS при свёрнутом/скрытом окне —
+  // без этого MutationObserver, Notification hooks и IPC в WebView замораживаются
   mainWindow.webContents.backgroundThrottling = false
 
   // v0.85.3: Логируем ВСЕ ошибки renderer в main process (chatcenter.log)
@@ -202,20 +166,17 @@ export function createWindow(deps) {
   })
   mainWindow.once('ready-to-show', () => wlog('ready-to-show'))
 
-  // v0.90.0 фикс: BaseWindow не имеет .loadURL/.loadFile (это BrowserWindow API).
-  // Используем primaryView.webContents.loadURL напрямую — через mainWindow.webContents
-  // (Proxy перенаправляет на primaryView.webContents).
   if (isDev) {
     const devUrl = 'http://localhost:5173'
     attachDevRequestTiming(mainWindow, wlog)
     wlog(`loadURL start ${devUrl}`)
-    mainWindow.webContents.loadURL(devUrl)
+    mainWindow.loadURL(devUrl)
       .then(() => wlog(`loadURL resolved ${devUrl}`))
       .catch(err => wlog(`loadURL failed ${err.message}`))
   } else {
     const rendererPath = path.join(__dirname, '../renderer/index.html')
     wlog(`loadFile start ${rendererPath}`)
-    mainWindow.webContents.loadFile(rendererPath)
+    mainWindow.loadFile(rendererPath)
       .then(() => wlog(`loadFile resolved ${rendererPath}`))
       .catch(err => wlog(`loadFile failed ${err.message}`))
   }
