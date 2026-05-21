@@ -201,7 +201,16 @@ export function mapChat(tdChat, accountId, extras = {}) {
     // передаёт supergroup через extras.
     isForum = !!extras.supergroup?.is_forum
     if (isForum) {
-      try { console.log('[forum-map] chatId=' + tdChat.id + ' title=' + JSON.stringify(tdChat.title || '') + ' is_forum=true') } catch (_) {}
+      // v0.91.4: расширенный лог — для диагностики «бейдж непрочитанных у forum-группы
+      // пуст». Печатаем unread_count + unread_mention_count от TDLib, чтобы понять
+      // что сервер шлёт для forum-чатов (агрегирует или 0).
+      try {
+        console.log('[forum-map] chatId=' + tdChat.id +
+          ' title=' + JSON.stringify(tdChat.title || '') +
+          ' is_forum=true' +
+          ' unread_count=' + (tdChat.unread_count || 0) +
+          ' unread_mention_count=' + (tdChat.unread_mention_count || 0))
+      } catch (_) {}
     }
   }
 

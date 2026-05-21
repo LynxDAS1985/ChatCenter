@@ -19,6 +19,7 @@ import { userDisplayName } from './tdlibClient.js'
 import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
 import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccountSessionStats, removeAccountSessionFiles } from './tdlibChatActions.js'
 import { cleanupTgMedia } from './tgMediaCleanup.js'
+import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.4: forum topic preview
 
 // Wrapper для invoke: возвращает { ok, result?, error?, code? } вместо throw.
 // `code` сохраняем как есть — потребители различают «404=end-of-list» от других.
@@ -472,10 +473,7 @@ export function createTdlibBackend(opts = {}) {
       // v0.89.0 / Этап 3.10: TDLib getForumTopics
       async getTopics(chatId, limit = 100) {
         const ctx = getClientForChat(manager, chatId)
-        if (ctx.error) {
-          console.log('[forum-be] getClientForChat error chatId=' + chatId + ' err=' + JSON.stringify(ctx.error))
-          return { ...ctx.error, isForum: false, topics: [] }
-        }
+        if (ctx.error) { console.log('[forum-be] getClientForChat error chatId=' + chatId + ' err=' + JSON.stringify(ctx.error)); return { ...ctx.error, isForum: false, topics: [] } }
         // Проверим что чат — реально forum (is_forum=true в supergroup)
         const tdChat = manager.getChatCached(ctx.accountId, ctx.rawId)
         // v0.89.25 (ловушка #24): is_forum в supergroup, не в chatTypeSupergroup
@@ -507,8 +505,7 @@ export function createTdlibBackend(opts = {}) {
             // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message.html
             const forumTopicId = t.info?.forum_topic_id ?? t.info?.message_thread_id
             const idStr = forumTopicId !== null && forumTopicId !== undefined ? String(forumTopicId) : ''
-            // threadMessageId: для getMessageThreadHistory. Берём из last_message.
-            // Может быть null для пустых тем — обработка в backend.getTopic.
+            // threadMessageId для getMessageThreadHistory (берём из last_message; null для пустых тем).
             const threadMsgId = t.last_message?.message_thread_id ?? t.last_message?.id ?? null
             return {
               id: idStr,
@@ -523,8 +520,16 @@ export function createTdlibBackend(opts = {}) {
               isClosed: !!t.info?.is_closed,
               isPinned: !!t.is_pinned,
               readInboxMaxId: Number(t.last_read_inbox_message_id) || 0,
+              lastMessage: extractTopicPreview(t.last_message), // v0.91.4
+              lastMessageTs: Number(t.last_message?.date) || 0, // v0.91.4
             }
           })
+          // v0.91.4: диагностика chatUnreadCount vs sumTopicUnread (TDLib агрегирует или нет).
+          try {
+            const sumUnread = topics.reduce((s, t) => s + (t.unreadCount || 0), 0)
+            console.log('[forum-be] chatId=' + chatId + ' topicsCount=' + topics.length +
+              ' sumTopicUnread=' + sumUnread + ' chatUnreadCount=' + (tdChat?.unread_count || 0))
+          } catch (_) {}
           return { ok: true, isForum: true, topics }
         } catch (e) {
           return { ok: false, error: e?.message || String(e), isForum: true, topics: [] }
