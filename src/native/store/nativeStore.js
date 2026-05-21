@@ -770,12 +770,23 @@ export default function useNativeStore() {
         message: '[topic-ui] tg:get-topic-messages result ok=' + !!result?.ok +
           ' messagesCount=' + (result?.messages?.length || 0) +
           ' hasMore=' + !!result?.hasMore +
-          ' error=' + (result?.error || 'none') })
+          ' error=' + (result?.error || 'none') +
+          ' key=' + key })
     } catch (_) {}
     setState(s => {
       const loadingCopy = { ...s.loadingMessages }
       delete loadingCopy[key]
       if (!result?.ok) return { ...s, loadingMessages: loadingCopy }
+      // v0.91.5: диагностический лог — проверяем что messages[key] действительно
+      // обновляется (на случай race conditions с другими setState в полёте).
+      try {
+        window.api?.send?.('app:log', { level: 'INFO',
+          message: '[topic-state] applyMessages key=' + key +
+            ' newLen=' + (result.messages?.length || 0) +
+            ' prevLen=' + ((s.messages[key] || []).length) +
+            ' activeForumTopicId=' + (s.activeForumTopic?.[chatId]?.id || 'none') +
+            ' activeChatIdMatch=' + (s.activeChatId === chatId) })
+      } catch (_) {}
       return {
         ...s,
         messages: { ...s.messages, [key]: result.messages || [] },

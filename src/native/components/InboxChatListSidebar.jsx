@@ -39,25 +39,44 @@ function AccountBadgeMini({ name, color }) {
   )
 }
 
+// v0.91.5: helper для cap иконки темы. Custom emoji (icon.custom_emoji_id из TDLib)
+// — это premium фича, требует getCustomEmojiStickers + рендер lottie/webm/webp.
+// Сложно для первой итерации. Fallback: показываем первый символ unicode emoji
+// из title (если юзер сам поставил emoji в название) ИЛИ первую букву title.
+// Это так же делает Telegram Desktop когда custom emoji ещё не подгрузился.
+function extractTopicCap(title) {
+  if (!title) return '#'
+  // Array.from обрабатывает unicode emoji как один code-point (включая surrogates).
+  const firstChar = Array.from(title)[0]
+  if (!firstChar) return '#'
+  // Если первый символ — буква/цифра, делаем upper case, иначе оставляем (emoji).
+  // Простая heuristic: regex для emoji range (любой не-ascii не-letter).
+  if (/[a-zA-Zа-яА-Я0-9]/u.test(firstChar)) return firstChar.toUpperCase()
+  return firstChar  // эмодзи или знак пунктуации
+}
+
 function ForumTopicIcon({ topic }) {
   const canShowImage = topic.iconEmojiUrl && !String(topic.iconEmojiMimeType || '').includes('x-tgsticker')
   const isVideo = String(topic.iconEmojiMimeType || '').includes('webm')
+  // v0.91.5: если backend не передал iconEmoji (custom emoji не загружен) — вытаскиваем
+  // из title. Раньше для всех тем без emoji показывался жёсткий `#`.
+  const cap = topic.iconEmoji || extractTopicCap(topic.title)
   return (
     <div style={{
       width: 36, height: 36, borderRadius: 8,
       background: topic.iconColor ? `#${Number(topic.iconColor).toString(16).padStart(6, '0').slice(-6)}` : 'rgba(42,171,238,0.25)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       color: '#fff', fontWeight: 700, flexShrink: 0,
-      fontSize: topic.iconEmoji ? 20 : 18,
+      fontSize: 18,
       overflow: 'hidden',
     }}>
       {canShowImage ? (
         isVideo ? (
           <video src={topic.iconEmojiUrl} autoPlay loop muted playsInline style={{ width: 28, height: 28, objectFit: 'contain' }} />
         ) : (
-          <img src={topic.iconEmojiUrl} alt={topic.iconEmoji || '#'} style={{ width: 28, height: 28, objectFit: 'contain' }} />
+          <img src={topic.iconEmojiUrl} alt={cap} style={{ width: 28, height: 28, objectFit: 'contain' }} />
         )
-      ) : (topic.iconEmoji || '#')}
+      ) : cap}
     </div>
   )
 }

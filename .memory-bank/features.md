@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.4 (21 мая 2026)
+## Текущая версия: v0.91.5 (21 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,66 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.5 — Эмодзи-fallback для иконки темы + диагностика «выбрал тему форума — пустой экран»
+
+**Симптом** (Wildberries топик в OZONовая Дыра):
+1. Иконки тем в нашем UI = серый `#` для всех. В Telegram же — custom emoji (wb, OZON-лого, M Яндекс, 🔥 для Нарушения).
+2. Юзер кликнул на тему Wildberries — пустой чёрный экран с вечной загрузкой.
+
+**Диагностика по логу** (для бага 2):
+
+```
+16:22:03 [topic-ui] selectForumTopic ... topicId=4687 ... requestId=...:7pqg7
+16:22:03 [topic-be] getTopic ... isGeneral=false threadMsgId=56270782464 ...
+16:22:03 [topic-be] invoke result messagesCount=39
+16:22:03 [topic-ui] tg:get-topic-messages result ok=true messagesCount=39 hasMore=false error=none
+```
+
+Backend вернул **39 сообщений ok=true**. Никаких ошибок. Никаких `stale response ignored`. Но юзер видит пустоту.
+
+Это значит баг между ответом и рендером. Возможные сценарии:
+- Race: какой-то параллельный setState (load-newer/load-older для General topic в фоне) перезаписывает state после applyMessages
+- Resolve: UI читает не тот key (например, `chatId` без `:topic:4687`)
+- forumNeedsTopic = true ошибочно (activeForumTopic не установился)
+
+**Не делаю слепой фикс** — нужны логи с реальной сессии после рестарта.
+
+**Решение для эмодзи (фикс 1)** — [`InboxChatListSidebar.jsx ForumTopicIcon`](src/native/components/InboxChatListSidebar.jsx):
+
+Custom emoji (TDLib [`forumTopicIcon.custom_emoji_id`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1forum_topic_icon.html)) — premium feature: требует `getCustomEmojiStickers([emoji_id])`, загрузка sticker (.tgs lottie / .webm video / .webp), рендер lottie player. Отложено отдельной задачей.
+
+Минимальный fallback — helper `extractTopicCap(title)`:
+- Если `title` начинается с unicode emoji (не a-z, А-Я, 0-9) — показываем этот символ
+- Иначе — первая буква title в upper case
+
+Это покрывает темы где юзер сам ставит emoji в название (🔥 Нарушения → 🔥). Для остальных «#» → «F» (FAQ), «N» (Новости), «W» (Wildberries) — выглядит как у Telegram Desktop когда custom emoji ещё не загрузился.
+
+Так же делает Telegram Desktop ([source](https://github.com/telegramdesktop/tdesktop)) — pending state custom emoji = заглушка из первой буквы.
+
+**Решение для диагностики (фикс 2)** — два новых лога:
+
+В [`nativeStore.js selectForumTopic`](src/native/store/nativeStore.js) setState:
+```
+[topic-state] applyMessages key=... newLen=N prevLen=M activeForumTopicId=... activeChatIdMatch=true/false
+```
+
+В [`InboxMode.jsx`](src/native/modes/InboxMode.jsx) render useEffect:
+```
+[topic-resolve] chatId=... activeMessageKey=... activeMessages.len=N forumNeedsTopic=... allTopicKeys=k1=N,k2=M
+```
+
+После рестарта эти логи покажут точно где сбой:
+- Если `applyMessages newLen=39` но `[topic-resolve] activeMessages.len=0` → state не дошёл до UI (вероятно activeMessageKey пересчитан с другим topic)
+- Если `applyMessages` нет совсем → setState не сработал (selectForumTopic не дошёл до finalsetState)
+- Если `forumNeedsTopic=true` при наличии активного topic → activeForumTopic[chatId] не установлен (race)
+
+**Что НЕ тронуто**:
+- backend forum.getTopic — работает (39 сообщений возвращает)
+- race protection через selectTopicRequestRef — работает (нет stale в логе)
+- ForumTopicIcon iconColor fallback — был корректный, оставлен
 
 ---
 

@@ -107,6 +107,25 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const activeMessageKey = topicMessageKey(store.activeChatId, activeTopic)
   const activeViewKey = activeTopic ? activeMessageKey : store.activeChatId
   const activeMessages = forumNeedsTopic ? [] : (store.messages[activeMessageKey] || [])
+  // v0.91.5: диагностика для бага «выбрал тему форума → пустой экран, вечная загрузка».
+  // Из лога видно что backend возвращает messages, но UI пуст. Здесь — лог где UI
+  // резолвит activeMessages: какой ключ читается, сколько сообщений нашлось, какие
+  // ключи вообще есть в store.messages для этого chatId.
+  useEffect(() => {
+    if (!store.activeChatId) return
+    if (!activeChat?.isForum) return
+    try {
+      const allKeys = Object.keys(store.messages || {}).filter(k => k.startsWith(store.activeChatId))
+      const keyLengths = allKeys.map(k => k + '=' + (store.messages[k]?.length || 0)).join(',')
+      window.api?.send?.('app:log', { level: 'INFO',
+        message: '[topic-resolve] chatId=' + store.activeChatId +
+          ' activeTopicId=' + (activeTopic?.id || 'none') +
+          ' activeMessageKey=' + activeMessageKey +
+          ' activeMessages.len=' + activeMessages.length +
+          ' forumNeedsTopic=' + forumNeedsTopic +
+          ' allTopicKeys=' + (keyLengths || 'empty') })
+    } catch (_) {}
+  }, [store.activeChatId, activeTopic?.id, activeMessages.length])
   // v0.87.45: activeUnread = MTProto-число (альбом=N фото) — для findFirstUnread, markRead, initial-scroll.
   const activeUnread = forumNeedsTopic ? 0 : (activeTopic ? (activeTopic.unreadCount || 0) : (activeChat?.unreadCount || 0))
   const activeMessageWindow = store.messageWindows?.[activeMessageKey] || null
