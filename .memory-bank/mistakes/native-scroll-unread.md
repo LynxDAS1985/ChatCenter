@@ -8,6 +8,85 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: программный scrollTop в `useEffect` с deps `[messagesCount]` — silent killer (v0.91.2 → v0.91.7)
+
+**Серия 4-х фиксов одной и той же мины** в разных ветках useInitialScroll.js. Записываю как **правило**, чтобы больше не повторять.
+
+### Паттерн-мина
+
+```javascript
+useEffect(() => {
+  if (someCondition) {
+    scrollRef.current.scrollTop = X       // ← программная установка scrollTop
+  }
+}, [activeChatId, messagesCount, loading])  // ← deps включают messagesCount
+```
+
+**Почему стреляет**: на одно открытие чата приходит ~4 setState на messages[key]:
+1. IDB cache (optimistic, instant)
+2. TDLib server response
+3. load-newer prefetch #1
+4. load-newer prefetch #2
+
+Каждый setState меняет `messagesCount` → useEffect ре-запускается → программный scroll → юзера дёргает.
+
+Плюс юзер активно скроллит между этими событиями — каждый scroll сохраняет позицию в ref, и следующий useEffect читает **уже обновлённую** позицию и устанавливает её обратно. Получается **циклическая перезапись scrollTop**.
+
+### Симптомы (как опознать)
+
+- Юзер жалуется «программа сама прыгает» / «не запоминает позицию» / «перескакивает на середину»
+- В логе видно несколько срабатываний `[some-scroll-event]` за 1-2 секунды
+- Значения scrollTop колеблются (например 13678→10204→7811)
+- `lastUserType=wheel lastUserAgoMs<500` рядом со scroll событием — значит юзер скроллит, программа перебивает
+
+### Решение — паттерн `lastActiveChatIdRef`
+
+```javascript
+const lastActiveChatIdRef = useRef(null)
+useEffect(() => {
+  if (someCondition) {
+    const isReturning = lastActiveChatIdRef.current !== activeChatId
+    lastActiveChatIdRef.current = activeChatId
+    if (isReturning) {
+      scrollRef.current.scrollTop = X    // ← только при РЕАЛЬНОЙ смене чата
+    }
+  }
+}, [activeChatId, messagesCount, loading])  // deps оставляем как есть
+```
+
+Эффект: useEffect по-прежнему запускается на каждый setState (что нужно для других веток), но программный scroll выполняется **один раз на смену activeChatId**.
+
+### История фиксов (4 итерации, чтобы не повторять)
+
+| Версия | Что починили | Что забыли |
+|---|---|---|
+| **v0.91.2** | Удалили `firstUnread` auto-jump из ветки already-seen | Оставили `savedScrollTop` restore с теми же deps |
+| **v0.91.7** | Применили `lastActiveChatIdRef` к `savedScrollTop` восстановлению | — (закрыто полностью) |
+
+### Регрессионный тест
+
+`useInitialScroll.vitest.jsx`: тест «messagesCount изменился в том же чате — restore НЕ срабатывает». Симулирует 2 изменения messagesCount подряд, проверяет что `scrollEl.scrollTop` не меняется автоматически.
+
+### Правило для будущего
+
+**Перед добавлением нового `useEffect` который пишет в `scrollTop` / вызывает `scrollIntoView` / `scrollToRow`**:
+1. Проверить deps useEffect
+2. Если deps включают что-то что меняется при server-push / prefetch (`messagesCount`, `activeMessages`, `unreadCount` и т.д.) — применить паттерн `lastActiveChatIdRef`
+3. Иначе scroll операция должна быть в **user-action handler** (onClick, onWheel и т.д.), не в useEffect
+
+### Аудит проведён (v0.91.7)
+
+Прошёл по всем `scrollTop = `, `scrollIntoView(`, `scrollToRow(` в `src/native/`:
+- `useInitialScroll.js` — починено (2 ветки)
+- `useInboxScroll.js handleScroll` — внутри user-scroll handler ✅
+- `InboxMode.jsx scrollToBottom/scrollToMessage` — user click handlers ✅
+- `useForceReadAtBottom.js` — НЕ трогает scroll ✅
+- `VirtualMessageList.jsx` — только receives ref ✅
+
+Больше мин этого типа в проекте **нет**.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: первая загрузка топика — чёрный экран без skeleton + race при быстром переключении (v0.89.37)
 
 ### Симптом

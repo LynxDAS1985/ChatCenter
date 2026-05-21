@@ -11,6 +11,26 @@ description: Отложенные технические улучшения ко
 
 ---
 
+## 🟢 Низкий приоритет (cleanup после стабилизации)
+
+### TODO-N: Удалить временные диагностические логи v0.91.4-v0.91.5
+
+**Контекст**: для диагностики 2-х багов («бейдж непрочитанных пуст у forum-чата» и «выбрал тему — пустой экран») были добавлены логи. Они выполнили свою задачу — баги починены в v0.91.6 / v0.91.7. Сейчас логи только засоряют файл.
+
+**Что удалить**:
+1. `[forum-be] chatId=... topicsCount=N sumTopicUnread=K chatUnreadCount=L` — в [`tdlibBackend.js forum.getTopics`](../main/native/backends/tdlibBackend.js). Был нужен чтобы проверить агрегирует ли TDLib `chat.unread_count`. Юзер не пожаловался на бейдж после v0.91.4 — значит баги нет или невидим, лог не нужен.
+2. `[forum-map] chatId=... unread_count=N unread_mention_count=M` — в [`tdlibMapper.js mapChat`](../main/native/backends/tdlibMapper.js). Та же диагностика.
+3. `[topic-state] applyMessages key=... newLen=N prevLen=M ...` — в [`nativeStore.js selectForumTopic`](../src/native/store/nativeStore.js). Был нужен для отслеживания race condition. v0.91.6 / v0.91.7 показали что race не было — баг был в `useInitialScroll`.
+4. `[topic-resolve] chatId=... activeMessageKey=... activeMessages.len=N ...` — в [`InboxMode.jsx`](../src/native/modes/InboxMode.jsx). Та же диагностика, выполнила задачу.
+
+**Когда удалять**: когда юзер подтвердит что 5 фиксов v0.91.1-v0.91.7 работают стабильно 2-3 недели без откатов.
+
+**Почему важно**: эти логи срабатывают на КАЖДЫЙ открытие чата / каждое изменение messagesCount. В активной сессии — десятки строк в секунду. Лог быстро растёт, диагностика реальных проблем труднее.
+
+**Приоритет**: 🟢 низкий — функционально ничего не мешает, чистка.
+
+---
+
 ## 🟡 Средний приоритет
 
 ### TODO-1: Удалить мёртвый параметр `thumb` из `media.download`
