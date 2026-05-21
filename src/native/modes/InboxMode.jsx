@@ -74,11 +74,16 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
               ' cancelled=' + cancelled })
         } catch (_) {}
         if (cancelled || r?.isForum) return
-        if (!store.messages[store.activeChatId]) store.loadMessages(store.activeChatId, 50)
+        // v0.91.1: guard по loadingMessages, не по messages. TDLib эмитит updateNewMessage
+        // при старте → state.messages[id] почти всегда непуст (1-2 push'нутых сообщения)
+        // → старый guard `!messages[id]` блокировал initial-load навсегда. У Telegram Desktop
+        // / WhatsApp / Discord — getChatHistory ВСЕГДА при открытии чата. Лог 18:54:15:
+        // hasMessages=true messages=1, store-load-messages отсутствует, юзер сидит на 1 msg.
+        if (!store.loadingMessages?.[store.activeChatId]) store.loadMessages(store.activeChatId, 50)
       })
       return () => { cancelled = true }
     }
-    if (!store.messages[store.activeChatId]) {
+    if (!store.loadingMessages?.[store.activeChatId]) {
       store.loadMessages(store.activeChatId, 50)
     }
     // v0.87.16: НЕ помечаем всё прочитанным при открытии — счётчик уменьшается

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.0 (20 мая 2026)
+## Текущая версия: v0.91.1 (21 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,48 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.1 — Фикс: чат открывается пустым (initial `loadMessages` блокировался push-эмитами TDLib)
+
+**Симптом**: юзер открывает чат с 1000+ непрочитанных, видит **1 сообщение**, дальше минута тишины. Подгрузка истории начинается только когда юзер сам скроллит вверх (load-older). Никакого мгновенного показа, никакого Telegram-feel.
+
+**Диагностика** (по логу `C:/Users/.../ЦентрЧатов/chatcenter.log`):
+
+```
+18:54:15  store-set-active-chat ... hasMessages=true   ← в state УЖЕ 1 сообщение
+18:54:15  chat-open messages=1 loading=false           ← юзер видит 1
+18:54:15  (нет store-load-messages)                    ← loadMessages не вызвался
+18:54:44  messages=2 (через 29 секунд)                 ← push tg:new-message капнул
+18:55:16  load-older-trigger (через 60 секунд!)        ← юзер начал скроллить — только тогда подгрузка
+```
+
+**Корень**:
+- [`tdlibClient.js:472`](main/native/backends/tdlibClient.js) эмитит `message:new` для свежих сообщений из SQLite кэша TDLib при старте.
+- [`tdlibIpcBridge.js:53`](main/native/tdlibIpcBridge.js) проксирует в `tg:new-message`.
+- [`nativeStoreIpc.js:188`](src/native/store/nativeStoreIpc.js) кладёт push в `state.messages[chatId]`.
+- Результат: **state.messages[id] почти всегда непуст** до того как юзер кликнул чат.
+- [`InboxMode.jsx:77,81`](src/native/modes/InboxMode.jsx) проверяет `!store.messages[store.activeChatId]` → ложно → `loadMessages` **никогда** не вызывается.
+
+**Сравнение со стеком**:
+- [TDLib `getChatHistory`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html) — нужно вызывать при открытии. Сам читает SQLite-кэш + сервер.
+- Telegram Desktop, WhatsApp Web, Discord — запрашивают историю **всегда** при смене активного чата. Кэш = optimistic render поверх запроса.
+- Наш guard `!messages[id]` отклоняется от общего паттерна.
+
+**Решение** (одна правка, один файл, 2 слова):
+- [`InboxMode.jsx:77`](src/native/modes/InboxMode.jsx#L77) и [`:81`](src/native/modes/InboxMode.jsx#L81): `!store.messages[id]` → `!store.loadingMessages[id]`.
+- `loadingMessages` уже существует ([`nativeStore.js:79`](src/native/store/nativeStore.js#L79)) и устанавливается внутри `loadMessages` ([`:614`](src/native/store/nativeStore.js#L614)) — инфраструктура готова.
+- Защита от дубля сохраняется (быстрые клики), но push'нутые 1-2 сообщения больше не блокируют initial-load.
+
+**Что внутри `loadMessages` уже работает** (не трогали):
+- `loadCacheMessages` (IndexedDB, до 50 сообщений) — параллельно с `tg:get-messages`.
+- `loadChatCache` (localStorage, до 50) — параллельно.
+- `tg:get-messages` → TDLib `getChatHistory` (limit 100 при unread>30) — основной запрос.
+
+**Результат**: при клике на чат — мгновенно ~50 сообщений из IDB (если кэш есть), через 200-500мс — 100 свежих от сервера. Как в Telegram Desktop.
+
+**Регрессия**: не запускалась пока (lint + test:vitest + check-memory будут перед коммитом).
 
 ---
 
