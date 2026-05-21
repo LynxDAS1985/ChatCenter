@@ -1,43 +1,68 @@
-// v0.87.42: extract newBelow counting logic into testable hook.
-// Считает «новые сообщения снизу» по изменению lastMsgId, а не по размеру массива.
-// Это защищает от ложного срабатывания при prepend (load-older) когда массив
-// вырастает за счёт добавления СТАРЫХ в начало.
-// v0.87.52: принимает chatId — при его смене prevLastIdRef сбрасывается, чтобы
-// смена чата НЕ считалась как "новое сообщение снизу". Баг был: Geely пришло 33
-// новых → переключился на Автопоток → +8 из Автопотока = стрелка 41 вместо 8.
+// v0.87.42: считал «новые сообщения снизу» через изменение lastMsgId массива.
+// v0.91.3: ПЕРЕПИСАНО на event-based подход.
+//
+// Старая проблема (v0.87.42 → v0.91.2):
+//   Hook реагировал на массив `messages`. Любое изменение массива (replace при
+//   initial-load, prepend при load-older, append-newer при prefetch) могло
+//   попасть под условие «lastMsgId изменился» и инкрементить newBelow.
+//   В частности — initial-load заменял массив целиком, prevLastId (из preview
+//   сообщения от updateChatLastMessage) НЕ присутствовал в новом массиве →
+//   цикл доходил до конца → насчитывал ВСЁ окно (100 сообщений) как «новые».
+//   Результат: кнопка «↓ 200» при unreadCount=0 (см. лог 14:54:34 → 14:55:23,
+//   сумма 4 ложных new-below = 100+2+50+48 = 200).
+//
+// Новый подход (v0.91.3): подписываемся напрямую на TDLib event `tg:new-message`,
+// который эмитится ТОЛЬКО для updateNewMessage (server push). Ответы на наши
+// getChatHistory / getMessages приходят через `tg:messages` (другой канал) и
+// этим хуком игнорируются.
+//
+// Сверено по стеку:
+//   - TDLib spec: updateNewMessage = только server push, не response.
+//     https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1update_new_message.html
+//   - Telegram Desktop (mainwidget.cpp): Api::Updates::feedUpdate для updateNewMessage.
+//   - WhatsApp Web (whatsmeow): events.Message — только server push.
+//   - Discord: MESSAGE_CREATE gateway event vs REST response — counter только gateway.
+//
+// API:
+//   activeChatId — какой чат сейчас активен (фильтр)
+//   atBottom    — если true, не копим (юзер видит новое сам)
+//   onAdded({ added, messageId, fromEvent }) — реальное новое сообщение
+//   onSkip({ reason, ...info })              — диагностика (other-chat, outgoing, at-bottom)
 import { useEffect, useRef } from 'react'
 
-export function useNewBelowCounter({ messages, atBottom, chatId, onAdded, onSkip }) {
-  const prevLastIdRef = useRef(messages[messages.length - 1]?.id)
-  const prevChatIdRef = useRef(chatId)
+export function useNewBelowCounter({ activeChatId, atBottom, onAdded, onSkip }) {
+  // Ref для atBottom — иначе зависимость useEffect от atBottom переподписывала
+  // event handler каждый раз когда юзер достигает/уходит со дна (десятки раз в сек).
+  // Стандартный React паттерн для stable handlers — см. react.dev/reference/react/useRef.
+  const atBottomRef = useRef(atBottom)
+  atBottomRef.current = atBottom
 
   useEffect(() => {
-    const prevLastId = prevLastIdRef.current
-    const nowLastId = messages[messages.length - 1]?.id
+    if (!activeChatId) return
+    if (typeof window === 'undefined' || !window.api?.on) return
 
-    // v0.87.52: сменился чат — reset, НЕ считаем как "новое снизу"
-    if (prevChatIdRef.current !== chatId) {
-      prevChatIdRef.current = chatId
-      prevLastIdRef.current = nowLastId
-      onSkip?.({ reason: 'chat-switch', prevLastId, nowLastId })
-      return
-    }
+    const unsub = window.api.on('tg:new-message', (payload) => {
+      const chatId = payload?.chatId
+      const message = payload?.message
 
-    prevLastIdRef.current = nowLastId
+      // Фильтр 1: только для активного чата
+      if (chatId !== activeChatId) {
+        onSkip?.({ reason: 'other-chat', chatId, activeChatId, messageId: message?.id })
+        return
+      }
+      // Фильтр 2: только входящие (наши отправленные себе не считаем)
+      if (message?.isOutgoing) {
+        onSkip?.({ reason: 'outgoing', messageId: message.id })
+        return
+      }
+      // Фильтр 3: юзер уже на дне — не копим бейдж (увидит сам)
+      if (atBottomRef.current) {
+        onSkip?.({ reason: 'at-bottom', messageId: message?.id })
+        return
+      }
+      onAdded?.({ added: 1, messageId: message?.id, fromEvent: true })
+    })
 
-    // prepend / init / empty — не считаем
-    if (!prevLastId || !nowLastId || prevLastId === nowLastId) {
-      onSkip?.({ reason: prevLastId === nowLastId ? 'prepend-or-same' : 'init', prevLastId, nowLastId })
-      return
-    }
-    if (atBottom) return
-
-    // Считаем реально новые ПОСЛЕ prevLastId
-    let added = 0
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].id === prevLastId) break
-      if (!messages[i].isOutgoing) added++
-    }
-    if (added > 0) onAdded?.({ added, prevLastId, nowLastId })
-  }, [messages[messages.length - 1]?.id, atBottom, chatId])
+    return unsub
+  }, [activeChatId])
 }

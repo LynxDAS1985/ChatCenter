@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.2 (21 мая 2026)
+## Текущая версия: v0.91.3 (21 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,90 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.3 — Фикс: «↓ 200» при unread=0 (newBelow счётчик ловил phantom prevLastId). Event-based вариант
+
+**Симптом**: юзер открыл чат «Dan Okhlopkov», листает вверх → бейдж слева в списке чатов исчез (`unreadCount=0` от сервера), но кнопка ↓ в углу чата упорно показывает **200**. И не уменьшается пока юзер не дочитает.
+
+**Диагностика** (chatId `tg_611696632:-1001229486988`):
+
+```
+14:54:34  new-below prevLastId=32744931328 → nowLastId=32108445696   added=100  (initial load replace)
+14:55:12  new-below prevLastId=32108445696 → nowLastId=32744931328   added=2    (push 2 новых)
+14:55:13  new-below prevLastId=32744931328 → nowLastId=32742834176   added=50   (load-newer prefetch)
+14:55:23  new-below prevLastId=32742834176 → nowLastId=32686211072   added=48   (load-newer prefetch)
+                                                              СУММА = 200
+```
+
+И параллельно: `14:55:17 badge-state unread=0 prevUnread=599` — сервер пометил всё прочитанным, но `newBelow=200` остался.
+
+**Корень — 2 бага в [`useNewBelowCounter.js`](src/native/hooks/useNewBelowCounter.js)**:
+
+1. **Phantom prevLastId**: hook отслеживал последнее id в массиве и сравнивал старое → новое. Цикл `for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].id === prevLastId) break; added++ }` рассчитан на **append**. Но при `initial-load` массив заменялся целиком, `prevLastId` (из preview сообщения от updateChatLastMessage) **отсутствовал** в новом массиве → цикл уходил до конца → насчитывал ВСЁ окно как «новое».
+
+2. **Не сбрасывается при server-side `unreadCount=0`**: hook сбрасывал `newBelow` только при смене активного чата. Когда сервер подтверждал mass mark-read через `tg:chat-unread-sync unread=0`, `newBelow` оставался накопленным.
+
+**Архитектурная причина**: hook не различал источник изменения массива:
+- `tg:new-message` (TDLib `updateNewMessage` — server push) → ДОЛЖНО считаться
+- `tg:messages` (response на get-messages / load-older / load-newer batch) → НЕ должно
+
+Старая логика лезла в массив, не зная источника.
+
+**Сверка по 6 источникам**:
+
+| Источник | Что говорит |
+|---|---|
+| [TDLib `updateNewMessage`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1update_new_message.html) | "A new message was received" — приходит ТОЛЬКО для server push, не для responses |
+| Telegram Desktop ([mainwidget.cpp](https://github.com/telegramdesktop/tdesktop)) | `Api::Updates::feedUpdate` слушает updateNewMessage, не messages.Messages |
+| WhatsApp Web ([whatsmeow events](https://github.com/tulir/whatsmeow/blob/main/events/events.go)) | `events.Message` event — только server push, нет «counter по массиву» |
+| Discord ([Gateway MESSAGE_CREATE](https://discord.com/developers/docs/topics/gateway-events#message-create)) | Counter обновляется ТОЛЬКО на gateway events, не на REST response |
+| React docs ([useEffect+subscribe](https://react.dev/reference/react/useEffect#subscribing-to-events)) | `useEffect(() => { const unsub = subscribe(); return unsub }, [deps])` — официальный паттерн |
+| React docs ([useRef для stable handlers](https://react.dev/reference/react/useRef)) | Ref для свежих значений без переподписки — стандарт |
+
+**Все 4 мессенджера различают server-push vs API-response. Наш текущий код этого не делал — это его дефект.**
+
+**Решение** (полный Вариант B):
+
+1. **[`useNewBelowCounter.js`](src/native/hooks/useNewBelowCounter.js) переписан на event-based**:
+   - Подписка на `window.api.on('tg:new-message', ...)` через `useEffect`
+   - Фильтры: `chatId === activeChatId`, `!message.isOutgoing`, `!atBottomRef.current`
+   - `atBottom` через `useRef` (stable handler — без re-subscribe при каждой смене дна)
+   - Cleanup через returned unsub function
+   - Расширенные `onSkip` reasons: `other-chat`, `outgoing`, `at-bottom`
+   - `tg:messages` batch responses **игнорируются** (другой канал)
+
+2. **[`InboxMode.jsx`](src/native/modes/InboxMode.jsx) — auto-reset при unread=0**:
+   ```javascript
+   useEffect(() => {
+     if (activeUnread === 0 && newBelow > 0) {
+       scrollDiag.logEvent('new-below-reset', { reason: 'unread-cleared', prev: newBelow })
+       setNewBelow(0)
+     }
+   }, [activeUnread])
+   ```
+
+3. **Расширенное логирование**:
+   - `new-below { added, messageId, fromEvent }` — реальное событие
+   - `new-below-skip { reason, ... }` — отсев (other-chat / outgoing / at-bottom)
+   - `new-below-reset { reason, prev }` — сброс счётчика
+
+**Тесты**: [`useNewBelowCounter.vitest.jsx`](src/native/hooks/useNewBelowCounter.vitest.jsx) полностью переписан на event-based mock (`window.api.on` capture handler, `emitNewMessage()` helper). Покрытие: подписка/отписка lifecycle, 4 фильтра, atBottom через ref не пересоздаёт подписку, batch load НЕ срабатывает (regression-тест).
+
+**Что меняется в UX**:
+
+| Сценарий | До | После |
+|---|---|---|
+| Юзер скроллит, load-older догружает | 🔴 +50 в кнопке | ✅ +0 |
+| Сервер прислал push новое сообщение | ✅ +1 | ✅ +1 |
+| Сервер сказал unread=0 (mark-read all) | 🔴 счётчик висит | ✅ 0 |
+| Initial load принёс окно с unread cursor | 🔴 +100 phantom | ✅ +0 |
+
+**Что НЕ тронуто**:
+- Бейдж в списке чатов слева — он напрямую читает `chat.unreadCount` от TDLib, корректно.
+- Сброс newBelow при смене активного чата — был, остался ([InboxMode.jsx:372](src/native/modes/InboxMode.jsx#L372)).
+- Сброс newBelow при `nearBottom` — был, остался в [`useInboxScroll.js:70`](src/native/hooks/useInboxScroll.js#L70).
 
 ---
 

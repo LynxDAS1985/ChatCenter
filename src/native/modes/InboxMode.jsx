@@ -385,16 +385,28 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     scrollDiag, setAtBottom, setNewBelow,
   })
 
-  // v0.87.42: newBelow по смене lastMsgId
+  // v0.91.3: event-based newBelow — подписка на tg:new-message (server push),
+  // вместо отслеживания массива. См. useNewBelowCounter.js (полная история бага).
   useNewBelowCounter({
-    messages: activeMessages,
-    atBottom, chatId: activeViewKey,
-    onAdded: ({ added, prevLastId, nowLastId }) => {
-      scrollDiag.logEvent('new-below', { added, prevLastId, nowLastId })
+    activeChatId: activeViewKey,
+    atBottom,
+    onAdded: ({ added, messageId, fromEvent }) => {
+      scrollDiag.logEvent('new-below', { added, messageId, fromEvent })
       setNewBelow(n => n + added)
     },
     onSkip: (info) => scrollDiag.logEvent('new-below-skip', info),
   })
+
+  // v0.91.3: сброс newBelow когда сервер подтвердил «всё прочитано» (unreadCount=0).
+  // Без этого: накопленный newBelow висел как «↓ 200» при server-side unread=0
+  // (рассинхрон бейджа списка и кнопки в углу чата). Поведение Telegram Desktop:
+  // если сервер сказал «прочитано» — кнопка прячется.
+  useEffect(() => {
+    if (activeUnread === 0 && newBelow > 0) {
+      scrollDiag.logEvent('new-below-reset', { reason: 'unread-cleared', prev: newBelow })
+      setNewBelow(0)
+    }
+  }, [activeUnread])
 
   // v0.87.34: FORCE mark-read когда юзер в самом низу
   useForceReadAtBottom({
