@@ -16,6 +16,15 @@
 // рендере (react-window) firstUnread может быть ВНЕ видимого DOM, querySelector
 // промахнётся. Тогда вызываем onMissingTarget(firstUnread), который скроллит
 // через listRef.scrollToRow по индексу в renderItems (вне querySelector).
+// v0.91.2: ВЕТКА «already-seen» больше НЕ скроллит к firstUnread.
+// Корень бага: useEffect зависит от messagesCount → ре-запускается при каждом push/load-older.
+// Когда юзер активно читает в чате, mark-read скидывает unread в 0, потом server-side
+// store-unread-sync возвращает unread с обновлёнными новыми → firstUnreadIdRef.current
+// пересчитан → ветка вызывала onMissingTarget(firstUnread) → react-window.scrollToRow
+// бесцеремонно перебивает активный wheel-скролл юзера (нет защиты от user activity).
+// Так делают все мессенджеры: Telegram Desktop, WhatsApp Web, Discord, iOS Telegram —
+// программный scroll НЕ перебивает чтение. Restore = только savedScrollTop.
+// Auto-jump к firstUnread остаётся только при ПЕРВОМ открытии чата (ветка 1).
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
 
@@ -39,23 +48,13 @@ export function useInitialScroll({
     // v0.87.70: восстанавливаем сохранённую позицию (как Telegram Desktop).
     if (doneSetRef.current.has(activeChatId)) {
       doneRef.current = activeChatId
-      // Restore: приоритет firstUnread (новые пришли) > savedScrollTop > оставить как есть
+      // v0.91.2: Restore = ТОЛЬКО savedScrollTop. firstUnread-ветка удалена (см. коммент в шапке).
+      // Без этого useEffect зависит от messagesCount → каждый push/load-older перезапускает
+      // эффект → если firstUnreadIdRef.current оказался ненулевым (после mark-read + push)
+      // → программа прыгала на firstUnread посреди активного скролла юзера.
       if (scrollRef.current) {
         const savedTop = getSavedScrollTop?.(activeChatId)
-        const firstUnread = firstUnreadIdRef.current
-        if (firstUnread) {
-          // Новые непрочитанные пришли пока был в другом чате → к ним
-          const el = scrollRef.current.querySelector(`[data-msg-id="${firstUnread}"]`)
-          if (el) {
-            el.scrollIntoView({ block: 'start', behavior: 'auto' })
-            logNativeScroll('initial-restore-firstUnread', { chatId: activeChatId, firstUnread })
-          } else if (onMissingTarget) {
-            // v0.89.0: виртуализация — элемент не в DOM, скроллим через scrollToRow
-            onMissingTarget(firstUnread)
-            logNativeScroll('initial-restore-firstUnread-virtual', { chatId: activeChatId, firstUnread })
-          }
-        } else if (typeof savedTop === 'number') {
-          // Позиции где юзер был (как Telegram Desktop)
+        if (typeof savedTop === 'number') {
           scrollRef.current.scrollTop = savedTop
           logNativeScroll('initial-restore-saved', { chatId: activeChatId, savedTop })
         }

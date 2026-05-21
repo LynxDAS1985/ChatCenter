@@ -157,14 +157,21 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
     expect(scrollEl.scrollTop).toBe(1234)
   })
 
-  it('v0.87.70: savedScrollTop ИГНОРИРУЕТСЯ если есть firstUnread (новые msg важнее)', async () => {
+  // v0.91.2: ОБНОВЛЕНО — раньше при возврате в чат с firstUnread программа прыгала к нему.
+  // Это давало баг: useEffect зависит от messagesCount → ре-запускается при каждом push →
+  // если firstUnread пересчитан (mark-read + push новых) → ветка прыгала посреди активного
+  // скролла юзера. Теперь restore = ТОЛЬКО savedScrollTop. firstUnread auto-jump остаётся
+  // только при ПЕРВОМ открытии (ветка 1). Поведение Telegram Desktop / WhatsApp / Discord.
+  it('⭐ v0.91.2: возврат к чату — savedScrollTop ВСЕГДА используется (не прыгаем к firstUnread)', async () => {
+    const scrollIntoViewMock = vi.fn()
     const scrollEl = {
       scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
       querySelector: (sel) => sel.includes('data-msg-id="msg-99"')
-        ? { scrollIntoView: vi.fn(), classList: { add: vi.fn(), remove: vi.fn() } }
+        ? { scrollIntoView: scrollIntoViewMock, classList: { add: vi.fn(), remove: vi.fn() } }
         : null,
     }
     const onDone = vi.fn()
+    const onMissingTarget = vi.fn()
     const firstUnreadIdRefInner = { current: null }
     const { rerender } = renderHook(({ chatId, unreadId }) => {
       const scrollRef = useRef(scrollEl)
@@ -173,22 +180,70 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
       return useInitialScroll({
         activeChatId: chatId, messagesCount: 50, scrollRef,
         firstUnreadIdRef, activeUnread: unreadId ? 1 : 0, loading: false,
-        onDone,
+        onDone, onMissingTarget,
         getSavedScrollTop: () => 777,  // есть сохранённая позиция
       })
     }, { initialProps: { chatId: 'chat-X', unreadId: null } })
 
-    // Первое открытие — без unread, идёт в низ
+    // Первое открытие — без unread, идёт в низ (ветка 1)
     await new Promise(r => setTimeout(r, 250))
 
-    // Возврат с firstUnread = новые пришли → НЕ savedScrollTop (77), а firstUnread
+    // Переход в chat-Y с firstUnread (ветка 1 для Y — initial-scroll к unread, мок может быть вызван)
     firstUnreadIdRefInner.current.current = 'msg-99'
     rerender({ chatId: 'chat-Y', unreadId: 'msg-99' })
     await new Promise(r => setTimeout(r, 250))
+
+    // Чистим моки ПЕРЕД проверкой возврата — нас интересует только поведение ветки 2 (already-seen)
+    scrollIntoViewMock.mockClear()
+    onMissingTarget.mockClear()
+
+    // Возврат к chat-X с firstUnread="msg-99" — ветка 2 (already-seen) должна
+    // использовать savedScrollTop=777 БЕЗ прыжка к firstUnread
     rerender({ chatId: 'chat-X', unreadId: 'msg-99' })
     await new Promise(r => setTimeout(r, 50))
-    // scrollIntoView был вызван на el с msg-99, а не scrollTop=777
-    expect(scrollEl.scrollTop).not.toBe(777)
+    // v0.91.2: используется savedScrollTop=777, scrollIntoView/onMissingTarget НЕ вызваны
+    expect(scrollEl.scrollTop).toBe(777)
+    expect(scrollIntoViewMock).not.toHaveBeenCalled()
+    expect(onMissingTarget).not.toHaveBeenCalled()
+  })
+
+  // v0.91.2 — regression тест: при повторном useEffect-триггере (messagesCount изменился)
+  // программа НЕ должна прыгать к firstUnread. Симулируем: чат уже видели → сообщения пополнились.
+  it('⭐ v0.91.2: messagesCount изменился пока юзер в чате — НЕ прыжок к firstUnread', async () => {
+    const scrollIntoViewMock = vi.fn()
+    const onMissingTarget = vi.fn()
+    const scrollEl = {
+      scrollTop: 5000, scrollHeight: 10000, clientHeight: 500,
+      querySelector: () => ({ scrollIntoView: scrollIntoViewMock, classList: { add: vi.fn(), remove: vi.fn() } }),
+    }
+    const onDone = vi.fn()
+    const { rerender } = renderHook(({ messagesCount, unreadId }) => {
+      const scrollRef = useRef(scrollEl)
+      const firstUnreadIdRef = useRef(unreadId)
+      return useInitialScroll({
+        activeChatId: 'chat-active', messagesCount, scrollRef,
+        firstUnreadIdRef, activeUnread: unreadId ? 1 : 0, loading: false,
+        onDone, onMissingTarget,
+      })
+    }, { initialProps: { messagesCount: 100, unreadId: null } })
+
+    // Первое открытие — initial-scroll проходит
+    await new Promise(r => setTimeout(r, 250))
+    const scrollTopAfterInit = scrollEl.scrollTop
+    scrollIntoViewMock.mockClear()
+    onMissingTarget.mockClear()
+
+    // Юзер скроллит в середину
+    scrollEl.scrollTop = 5000
+
+    // Симулируем: пришли новые сообщения (messagesCount: 100 → 101), firstUnread появился
+    rerender({ messagesCount: 101, unreadId: 'msg-new' })
+    await new Promise(r => setTimeout(r, 50))
+
+    // v0.91.2: scrollTop НЕ должен прыгнуть (юзер всё ещё на 5000)
+    expect(scrollEl.scrollTop).toBe(5000)
+    expect(scrollIntoViewMock).not.toHaveBeenCalled()
+    expect(onMissingTarget).not.toHaveBeenCalled()
   })
 
   // v0.87.68: Set-based guard — initial-scroll НЕ перезапускается для уже виденного чата.

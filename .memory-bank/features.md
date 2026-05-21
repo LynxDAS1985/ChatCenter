@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.1 (21 мая 2026)
+## Текущая версия: v0.91.2 (21 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,66 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.2 — Фикс: программа сама прыгала на середину чата пока юзер читал (scroll-jump после v0.91.1)
+
+**Симптом**: юзер открыл чат, листает вверх → через секунду чат **сам** перескакивает в неизвестное место (видит сообщения откуда-то с середины, теряет позицию).
+
+**Когда проявилось**: v0.91.1 разблокировал initial loadMessages → теперь по-настоящему 100 сообщений в чате + работающий load-older → старая мина в `useInitialScroll` начала срабатывать.
+
+**Хронология из лога** (`tg_611696632:-1003061072345`, "Вайбкодинг комьюнити"):
+
+```
+14:01:25  load-older +50 → messagesCount: 150→200 → load-older-apply scrollTop=4684 ✅
+14:02:19  user-scroll-intent type=wheel (юзер крутит)
+14:02:20  mark-read через IntersectionObserver → unread: 445 → 0
+14:02:20  store-unread-sync → unread: 0 → 446 (за время чтения капнули новые)
+14:02:20  first-unread-calc → firstUnreadId=102998474752
+14:02:20  initial-restore-firstUnread-virtual ← ❌ react-window.scrollToRow
+14:02:20  scroll-anomaly deltaTop=4433 prevTop=4584 → currTop=9017 (+4433 пикселя)
+```
+
+`lastUserType=wheel lastUserAgoMs=240` — юзер активно крутил 240мс назад. Программный scrollToRow перебил.
+
+**Корень — три факта**:
+
+1. **React useEffect re-runs при изменении `messagesCount`** ([React docs](https://react.dev/reference/react/useEffect#parameters)): "If any of the dependencies are different... the Effect will re-run." `messagesCount = activeMessages.length` — обычное число, каждый push увеличивает length → effect перезапускается.
+
+2. **`firstUnreadIdRef.current` пишется на каждом рендере** в [`InboxMode.jsx:347`](src/native/modes/InboxMode.jsx#L347). По [React docs (useRef caveats)](https://react.dev/reference/react/useRef#caveats): "Do not write or read ref.current during rendering... This makes your component's behavior unpredictable." Эффект: useInitialScroll читает СВЕЖИЙ ref → видит пересчитанный firstUnread, не «значение на момент открытия».
+
+3. **react-window 2.x `scrollToRow` не имеет защиты от user activity** ([API docs](https://github.com/bvaughn/react-window)): `element.scrollTop = offset` без проверок `isUserScrolling`. То же про [MDN `scrollIntoView`](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollIntoView).
+
+**Сравнение со стеком**:
+
+- **Telegram Desktop** ([tdesktop](https://github.com/telegramdesktop/tdesktop)): auto-scroll к unread **только** при chat enter или scroll position at bottom. Mid-history reading — обновляется только counter badge.
+- **WhatsApp Web**: программно scrollTop при чтении не трогает, появляется кнопка «↓ N new messages».
+- **Discord** ([gateway events](https://discord.com/developers/docs/topics/gateway-events#message-create)): follow mode vs read mode — scroll трогается только если юзер на дне.
+- **iOS Telegram** ([TelegramUI](https://github.com/TelegramMessenger/Telegram-iOS)): `ChatHistoryListNode._isInteractivelyScrolling` — пока true, программные scroll ИГНОРИРУЮТСЯ.
+
+**Общий паттерн всех мессенджеров мира**: программно перебивать активный user scroll нельзя. Наш код это нарушал.
+
+**Правка** (одна функция, один файл):
+
+[`useInitialScroll.js`](src/native/hooks/useInitialScroll.js) — в ветке «already-seen» удалена ветка `firstUnread → scrollIntoView/onMissingTarget`. Restore при возврате к виденному чату = только `savedScrollTop`. Auto-jump к firstUnread остаётся при ПЕРВОМ открытии чата (ветка 1).
+
+**Что меняется в UX**:
+
+| Сценарий | До | После |
+|---|---|---|
+| Юзер активно читает, mark-read + капают новые | 🔴 прыжок | ✅ не трогаем |
+| Первое открытие чата с unread | ✅ scroll to unread anchor | ✅ scroll to unread anchor |
+| A → B → возврат в A | прыжок к новым unread | восстановление позиции где был (как TDesktop) |
+
+Сценарий «A→B→A»: компромисс. Поведение Telegram Desktop / WhatsApp / Discord — восстанавливать позицию, не дёргать.
+
+**Тесты**:
+- [`useInitialScroll.vitest.jsx`](src/native/hooks/useInitialScroll.vitest.jsx): обновлён тест «savedScrollTop ИГНОРИРУЕТСЯ при firstUnread» → теперь проверяет противоположное (savedScrollTop ВСЕГДА используется). Добавлен новый regression-тест «messagesCount изменился пока юзер в чате — НЕ прыжок».
+
+**Что НЕ тронуто**:
+- Ветка 1 (initial-scroll при впервые открываемом чате) — работает как раньше.
+- `firstUnreadIdRef` запись в render-фазе ([InboxMode.jsx:347](src/native/modes/InboxMode.jsx#L347)) — антипаттерн, но не наш scope. Можно вынести в useEffect отдельной задачей.
 
 ---
 
