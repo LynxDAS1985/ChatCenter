@@ -122,6 +122,51 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
     expect(onDone).not.toHaveBeenCalled()
   })
 
+  // v0.91.7: messagesCount изменился в том же чате — НЕ дёргаем scrollTop.
+  // Раньше (v0.91.2..v0.91.6): useEffect ре-запускался на каждый push/prefetch
+  // (deps messagesCount), в ветке already-seen restore savedTop срабатывал
+  // каждый раз → юзера дёргало в сохранённую позицию пока он скроллил.
+  // Лог 17:32:13 показал 3 разных savedTop за 1 секунду.
+  it('⭐ v0.91.7: messagesCount изменился в том же чате — restore НЕ срабатывает', async () => {
+    let savedPos = 1000
+    const scrollEl = {
+      scrollTop: 0, scrollHeight: 5000, clientHeight: 500,
+      querySelector: () => null,
+    }
+    const onDone = vi.fn()
+    const { rerender } = renderHook(({ messagesCount }) => {
+      const scrollRef = useRef(scrollEl)
+      const firstUnreadIdRef = useRef(null)
+      return useInitialScroll({
+        activeChatId: 'chat-A', messagesCount, scrollRef,
+        firstUnreadIdRef, activeUnread: 0, loading: false,
+        onDone,
+        getSavedScrollTop: () => savedPos,
+      })
+    }, { initialProps: { messagesCount: 50 } })
+
+    // Первое открытие — initial-scroll проходит (ветка 1)
+    await new Promise(r => setTimeout(r, 250))
+    const scrollAfterInit = scrollEl.scrollTop
+
+    // Юзер скроллит вверх — scrollTop сдвинулся, savedPos в его рефе обновился
+    scrollEl.scrollTop = 1500
+    savedPos = 1500
+
+    // messagesCount изменился (push/prefetch пришёл) — useEffect ре-запустился
+    rerender({ messagesCount: 100 })
+    await new Promise(r => setTimeout(r, 50))
+    // v0.91.7: restore НЕ срабатывает потому что activeChatId не менялся → scrollTop остался где был
+    expect(scrollEl.scrollTop).toBe(1500)
+
+    // Ещё одно изменение messagesCount
+    scrollEl.scrollTop = 2000
+    savedPos = 2000
+    rerender({ messagesCount: 150 })
+    await new Promise(r => setTimeout(r, 50))
+    expect(scrollEl.scrollTop).toBe(2000)
+  })
+
   // v0.87.70: восстанавливаем сохранённый scrollTop при возврате к виденному чату
   // (как Telegram Desktop). Регрессия: раньше scrollTop оставался от предыдущего чата —
   // один div на всё приложение, позиция не per-chat.

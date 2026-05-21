@@ -16,15 +16,14 @@
 // рендере (react-window) firstUnread может быть ВНЕ видимого DOM, querySelector
 // промахнётся. Тогда вызываем onMissingTarget(firstUnread), который скроллит
 // через listRef.scrollToRow по индексу в renderItems (вне querySelector).
-// v0.91.2: ВЕТКА «already-seen» больше НЕ скроллит к firstUnread.
-// Корень бага: useEffect зависит от messagesCount → ре-запускается при каждом push/load-older.
-// Когда юзер активно читает в чате, mark-read скидывает unread в 0, потом server-side
-// store-unread-sync возвращает unread с обновлёнными новыми → firstUnreadIdRef.current
-// пересчитан → ветка вызывала onMissingTarget(firstUnread) → react-window.scrollToRow
-// бесцеремонно перебивает активный wheel-скролл юзера (нет защиты от user activity).
-// Так делают все мессенджеры: Telegram Desktop, WhatsApp Web, Discord, iOS Telegram —
-// программный scroll НЕ перебивает чтение. Restore = только savedScrollTop.
-// Auto-jump к firstUnread остаётся только при ПЕРВОМ открытии чата (ветка 1).
+// v0.91.2: ветка «already-seen» НЕ скроллит к firstUnread (перебивало активный
+// wheel юзера при mark-read + server unread-sync). Auto-jump только при ПЕРВОМ
+// открытии (ветка 1). Так делают TDesktop / WhatsApp / Discord / iOS Telegram.
+// v0.91.7: restore savedScrollTop ТОЛЬКО при ДЕЙСТВИТЕЛЬНОЙ смене activeChatId,
+// не на каждый messagesCount/loading change. До этого 4 setState на открытие темы
+// (IDB cache → server → prefetch newer x2) → каждое запускало restore → юзера
+// дёргало в сохранённую позицию. Лог 17:32:13: 3 разных savedTop за 1 секунду
+// (13678→10204→7811). lastActiveChatIdRef хранит chatId с прошлого срабатывания.
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
 
@@ -41,6 +40,10 @@ export function useInitialScroll({
   // (не строго корректно, но внешний guard в InboxMode использует !== activeChatId проверку,
   // ему достаточно знать что "для этого чата initial-scroll был"). Теперь обёртка через getter.
   const doneRef = useRef(null)
+  // v0.91.7: для различения «реальная смена activeChatId» vs «messagesCount изменился
+  // в том же чате». Без этого ветка already-seen ре-запускала restore savedScrollTop
+  // на каждый push/prefetch, перебивая скролл юзера.
+  const lastActiveChatIdRef = useRef(null)
 
   useEffect(() => {
     if (!activeChatId) return
@@ -48,11 +51,12 @@ export function useInitialScroll({
     // v0.87.70: восстанавливаем сохранённую позицию (как Telegram Desktop).
     if (doneSetRef.current.has(activeChatId)) {
       doneRef.current = activeChatId
-      // v0.91.2: Restore = ТОЛЬКО savedScrollTop. firstUnread-ветка удалена (см. коммент в шапке).
-      // Без этого useEffect зависит от messagesCount → каждый push/load-older перезапускает
-      // эффект → если firstUnreadIdRef.current оказался ненулевым (после mark-read + push)
-      // → программа прыгала на firstUnread посреди активного скролла юзера.
-      if (scrollRef.current) {
+      // v0.91.7: restore выполняется ТОЛЬКО при реальной смене activeChatId.
+      // Если useEffect ре-запустился из-за messagesCount/loading (пришли новые
+      // сообщения в том же чате) — НЕ дёргаем scrollTop. Юзер активно читает.
+      const isReturning = lastActiveChatIdRef.current !== activeChatId
+      lastActiveChatIdRef.current = activeChatId
+      if (isReturning && scrollRef.current) {
         const savedTop = getSavedScrollTop?.(activeChatId)
         if (typeof savedTop === 'number') {
           scrollRef.current.scrollTop = savedTop
@@ -62,6 +66,7 @@ export function useInitialScroll({
       try { onDone?.(activeChatId) } catch(_) {}
       return
     }
+    lastActiveChatIdRef.current = activeChatId
     if (messagesCount === 0) {
       logNativeScroll('initial-wait-empty', { chatId: activeChatId, activeUnread })
       return

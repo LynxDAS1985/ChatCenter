@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.6 (21 мая 2026)
+## Текущая версия: v0.91.7 (21 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,97 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.7 — Фикс прыжков scrollTop при возврате в старый чат (недоделка v0.91.2)
+
+**Симптом**: юзер открыл тему/чат где раньше читал → программа сама дёргает скролл назад каждые 1-2 секунды. Невозможно нормально читать.
+
+**Диагностика** (лог 17:32:13):
+
+```
+17:31:54  initial-target-virtual top=3765                  ← initial-scroll ✅
+17:31:55  initial-restore-saved chatId=...topic:1 savedTop=3520
+17:32:00  initial-restore-saved chatId=...topic:1 savedTop=11103
+17:32:13  initial-restore-saved chatId=...topic:1 savedTop=13678
+17:32:13  initial-restore-saved chatId=...topic:1 savedTop=10204
+17:32:13  initial-restore-saved chatId=...topic:1 savedTop=7811
+```
+
+**Шесть** срабатываний restore-saved для одного topic:1, **3 разных значения savedTop за 1 секунду**. Юзер видит как scrollTop прыгает 13678 → 10204 → 7811.
+
+**Корень — недоделка v0.91.2** (зафиксировано в моих заметках, но не реализовано полностью):
+
+В v0.91.2 я починил `firstUnread`-ветку через паттерн «restore только при смене чата», но `savedScrollTop`-ветку **оставил с deps `[messagesCount]`**:
+
+```javascript
+useEffect(() => {
+  if (doneSetRef.current.has(activeChatId)) {
+    if (scrollRef.current) {
+      const savedTop = getSavedScrollTop?.(activeChatId)
+      if (typeof savedTop === 'number') {
+        scrollRef.current.scrollTop = savedTop   // ← срабатывает на каждый messagesCount change
+      }
+    }
+    return
+  }
+  ...
+}, [activeChatId, messagesCount, loading])
+```
+
+**Цепочка циклической перезаписи**:
+1. Юзер вернулся в topic:1, savedTop=11103 (из прошлой сессии работы с чатом) → restore ✅
+2. Юзер скроллит вниз → top=12000 → useInboxScroll сохраняет в `scrollPosByChatRef`
+3. Приходит `tg:messages` (IDB cache → server response → load-newer prefetch) → messagesCount меняется
+4. useEffect ре-запускается → читает свежий savedTop=12000 → set scrollTop=12000 (≈no-op)
+5. Юзер скроллит ещё → top=13000 → сохранение
+6. Снова `tg:messages` → restore → scrollTop=13000
+7. Между set и user-scroll-event возможна race-condition → scrollTop фиксируется на устаревшем значении из ref
+
+**Причина множественных setState** (4 за одно открытие темы):
+
+Это **не дубли**, а архитектурно-правильный optimistic-render pattern по Telegram Desktop:
+
+| Время | Источник | messagesCount |
+|---|---|---|
+| t+0 | IDB cache (optimistic) | 50 |
+| t+200ms | TDLib server response | 43 |
+| t+1s | load-newer prefetch #1 | 95 |
+| t+5s | load-newer prefetch #2 | 100 |
+
+Каждый setState запускает useEffect, каждый запуск — restore. До v0.91.7 — 4 прыжка scrollTop на одно открытие.
+
+**Решение — тот же паттерн что v0.91.2 для firstUnread**:
+
+Завести `lastActiveChatIdRef = useRef(null)`. Restore выполняем ТОЛЬКО когда `activeChatId !== lastActiveChatIdRef.current` (реальная смена чата):
+
+```javascript
+if (doneSetRef.current.has(activeChatId)) {
+  const isReturning = lastActiveChatIdRef.current !== activeChatId
+  lastActiveChatIdRef.current = activeChatId
+  if (isReturning && scrollRef.current) {              // ← только при смене
+    const savedTop = getSavedScrollTop?.(activeChatId)
+    if (typeof savedTop === 'number') {
+      scrollRef.current.scrollTop = savedTop
+    }
+  }
+  onDone?.(activeChatId)
+  return
+}
+lastActiveChatIdRef.current = activeChatId  // ← обновляем и в ветке 1
+```
+
+**Что меняется в UX**:
+
+| Сценарий | До v0.91.7 | После v0.91.7 |
+|---|---|---|
+| Юзер вернулся в чат A после B | restore savedTop ✅ | restore savedTop ✅ |
+| Юзер скроллит в A, пришёл push | 🔴 restore savedTop (прыжок) | ✅ не трогаем |
+| IDB cache → server response | 🔴 restore × 2 | ✅ один initial-scroll |
+| Load-newer prefetch | 🔴 restore | ✅ не трогаем |
+
+**Регрессионный тест** добавлен — `messagesCount изменился в том же чате — restore НЕ срабатывает`. Симулирует 2 изменения messagesCount, проверяет что scrollEl.scrollTop не дёргается.
 
 ---
 
