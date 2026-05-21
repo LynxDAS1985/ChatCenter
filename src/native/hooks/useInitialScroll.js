@@ -75,11 +75,35 @@ export function useInitialScroll({
     }
     logNativeScroll('initial-schedule', { chatId: activeChatId, messages: messagesCount, activeUnread })
 
-    const timer = setTimeout(() => {
+    // v0.91.6: retry-loop для scrollEl. Корень бага «вечная загрузка темы»:
+    // при смене activeChatId UI ставит chatReady=false → DOM scroll-контейнер
+    // скрыт за shimmer → scrollRef.current = null. Старый код делал `if (!scrollEl) return`
+    // без onDone → chatReady НЕ становился true → DOM никогда не рендерился →
+    // scrollEl навсегда null. Deadlock.
+    // Решение: до 10 попыток через requestAnimationFrame ждём пока scrollEl появится.
+    // Если так и не пришёл — всё равно вызываем onDone (лучше показать чат без
+    // initial-scroll чем держать вечный shimmer).
+    let cancelled = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 10
+    const runInitialScroll = () => {
+      if (cancelled) return
       const scrollEl = scrollRef.current
-      if (!scrollEl) return
+      if (!scrollEl) {
+        attempts++
+        if (attempts < MAX_ATTEMPTS) {
+          requestAnimationFrame(runInitialScroll)
+          return
+        }
+        // Не дождались scrollEl — отдаём контроль наружу, иначе deadlock с chatReady.
+        logNativeScroll('initial-no-scrollel', { chatId: activeChatId, attempts })
+        doneSetRef.current.add(activeChatId)
+        doneRef.current = activeChatId
+        try { onDone?.(activeChatId) } catch(_) {}
+        return
+      }
       const firstUnread = firstUnreadIdRef.current
-      logNativeScroll('initial-run', { chatId: activeChatId, firstUnread, activeUnread, ...getScrollMetrics(scrollEl) })
+      logNativeScroll('initial-run', { chatId: activeChatId, firstUnread, activeUnread, attempts, ...getScrollMetrics(scrollEl) })
       if (firstUnread) {
         const el = scrollEl.querySelector(`[data-msg-id="${firstUnread}"]`)
         if (el) {
@@ -89,7 +113,6 @@ export function useInitialScroll({
           setTimeout(() => el.classList.remove('native-msg-last-read-highlight'), 3500)
         } else if (onMissingTarget) {
           // v0.89.0: виртуализация — firstUnread не в видимом DOM, fallback на scrollToRow.
-          // Подсветка применяется позже (после того как row смонтируется при виртуальном скролле).
           onMissingTarget(firstUnread)
           logNativeScroll('initial-target-virtual', { chatId: activeChatId, firstUnread, ...getScrollMetrics(scrollEl) })
         } else {
@@ -100,14 +123,13 @@ export function useInitialScroll({
         scrollEl.scrollTop = scrollEl.scrollHeight
       }
       logNativeScroll('initial-done', { chatId: activeChatId, firstUnread, activeUnread, ...getScrollMetrics(scrollEl) })
-      // v0.87.68: добавляем в Set виденных. Теперь A↔B↔A не запускает scroll повторно.
       doneSetRef.current.add(activeChatId)
       doneRef.current = activeChatId
-      // v0.87.66: уведомляем владельца — scroll уже на правильной позиции.
       try { onDone?.(activeChatId) } catch(_) {}
-    }, 150)
+    }
+    const timer = setTimeout(runInitialScroll, 150)
 
-    return () => clearTimeout(timer)
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [activeChatId, messagesCount, loading])
 
   return { doneRef, doneSetRef }

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.5 (21 мая 2026)
+## Текущая версия: v0.91.6 (21 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,98 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.6 — Фикс вечной загрузки темы (scrollEl deadlock) + custom emoji иконки тем (вернули GramJS-feature)
+
+## Фикс 1 — вечная загрузка темы (DEADLOCK chatReady ↔ scrollEl)
+
+**Симптом**: юзер кликает тему форума → пустой чёрный экран навсегда.
+
+**Диагностика** через диагностические логи v0.91.5 — лог 17:05:51:
+
+```
+[topic-ui] selectForumTopic chatId=... topicId=4687
+[topic-resolve] activeMessages.len=39 forumNeedsTopic=false       ← state OK
+[topic-state] applyMessages newLen=39 prevLen=39
+   activeForumTopicId=4687 activeChatIdMatch=true                  ← состояние правильное
+```
+
+State полностью корректен: 39 сообщений в `messages[key]`, активный topic выставлен. Но ни одного `initial-schedule` / `initial-run` / `initial-target-virtual` / `initial-done` в логе для Wildberries. UI закрыт shimmer overlay.
+
+**Корень — [`useInitialScroll.js:80`](src/native/hooks/useInitialScroll.js)** (старый код):
+
+```javascript
+const timer = setTimeout(() => {
+  const scrollEl = scrollRef.current
+  if (!scrollEl) return    // ← SILENT EXIT, onDone не вызван
+  ...
+  try { onDone?.(activeChatId) } catch(_) {}  // ← никогда не доходит
+}, 150)
+```
+
+**Цепочка deadlock**:
+1. Смена `activeViewKey` → useEffect в [`InboxMode.jsx:258`](src/native/modes/InboxMode.jsx#L258) → `setChatReady(false)` (если нет в `seenChatsRef`)
+2. `chatReady=false` → CSS `opacity:0` на scroll-container → DOM не рендерится
+3. `scrollRef.current` (привязан к listRef.element react-window) = `null`
+4. useInitialScroll useEffect → ветка 1 (новый chatId) → `setTimeout 150ms`
+5. Через 150мс — `scrollEl = null` → silent return
+6. `onDone` не вызывается → `chatReady` остаётся `false` → DOM не рендерится → scrollEl навсегда `null` → ∞
+
+**Решение**: retry через `requestAnimationFrame` до 10 попыток, потом fallback `onDone(activeChatId)`:
+
+```javascript
+const runInitialScroll = () => {
+  const scrollEl = scrollRef.current
+  if (!scrollEl) {
+    attempts++
+    if (attempts < 10) {
+      requestAnimationFrame(runInitialScroll)
+      return
+    }
+    // Fallback — отдаём контроль наружу, иначе deadlock с chatReady.
+    logNativeScroll('initial-no-scrollel', { chatId, attempts })
+    doneSetRef.current.add(activeChatId)
+    try { onDone?.(activeChatId) } catch(_) {}
+    return
+  }
+  // ...нормальный путь initial-scroll
+}
+setTimeout(runInitialScroll, 150)
+```
+
+Если scrollEl появляется в течение ~10 кадров (≤166мс) — обычный initial-scroll. Иначе — `chatReady=true` без initial-scroll (юзер увидит чат снизу, что лучше чем вечный shimmer).
+
+## Фикс 2 — custom emoji иконки тем (восстановлено после миграции на TDLib)
+
+**Симптом**: иконки тем форума в нашем UI — однотонные квадратики с буквами F/W/O/Я/B. В Telegram — настоящие custom emoji (wb-логотип, OZON-знак, 🔥 для Нарушения).
+
+**Корень**: в [`.memory-bank/group-topic-investigation.md`](.memory-bank/group-topic-investigation.md) (строки 681-743) описано что в GramJS backend этот функционал был — `tg:get-forum-topics` кэшировал custom emoji documents в `tg-media/custom_emoji_<id>.<ext>` и возвращал `iconEmojiUrl` / `iconEmojiMimeType`. UI ([`InboxChatListSidebar.jsx ForumTopicIcon`](src/native/components/InboxChatListSidebar.jsx)) умеет рендерить `<img src={iconEmojiUrl}>` или `<video>` для webm.
+
+При миграции на TDLib backend (v0.89.0) логика потерялась. v0.91.4 возвращала только `iconCustomEmojiId`, без скачивания.
+
+**Решение**: новый модуль [`tdlibForumEmoji.js`](main/native/backends/tdlibForumEmoji.js) — `resolveTopicEmojis(topics, ctx)`:
+
+1. Собирает unique `iconCustomEmojiId` из тем
+2. invoke [`getCustomEmojiStickers`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_custom_emoji_stickers.html) batch
+3. Для каждого Sticker:
+   - mime по `sticker.format` (`stickerFormatWebp` → `image/webp`, `stickerFormatWebm` → `video/webm`, `stickerFormatTgs` → `application/x-tgsticker`)
+   - alt из `sticker.emoji` (запасной emoji)
+   - downloadFile + stabilizeForPlayback → `cc-media://media/<name>`
+4. In-memory cache на сессию (повторные открытия — instant)
+5. На topics добавляем `iconEmojiUrl` / `iconEmojiMimeType` / `iconEmoji`
+
+`.tgs` (Telegram animated lottie) — Chromium не рендерит в `<img>`. UI fallback на alt-emoji (как у Telegram Desktop когда .tgs не загружен).
+
+Интеграция в [`tdlibBackend.js forum.getTopics`](main/native/backends/tdlibBackend.js) — после маппинга тем, перед возвратом. Не блокирует основной ответ — если резолв упал (network/quota), темы вернутся без emoji, UI fallback на cap-букву из v0.91.5.
+
+## Что покажет лог после рестарта
+
+- `initial-schedule chatId=...:topic:4687` → потом `initial-run attempts=N` → `initial-done` (нормальный путь)
+- ИЛИ `initial-no-scrollel attempts=10` → fallback onDone (если DOM долго не рендерится)
+
+В обоих случаях `chatReady=true` → UI рендерит сообщения.
 
 ---
 

@@ -19,7 +19,8 @@ import { userDisplayName } from './tdlibClient.js'
 import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
 import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccountSessionStats, removeAccountSessionFiles } from './tdlibChatActions.js'
 import { cleanupTgMedia } from './tgMediaCleanup.js'
-import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.4: forum topic preview
+import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.4
+import { resolveTopicEmojis } from './tdlibForumEmoji.js'  // v0.91.6
 
 // Wrapper для invoke: возвращает { ok, result?, error?, code? } вместо throw.
 // `code` сохраняем как есть — потребители различают «404=end-of-list» от других.
@@ -525,11 +526,10 @@ export function createTdlibBackend(opts = {}) {
             }
           })
           // v0.91.4: диагностика chatUnreadCount vs sumTopicUnread (TDLib агрегирует или нет).
-          try {
-            const sumUnread = topics.reduce((s, t) => s + (t.unreadCount || 0), 0)
-            console.log('[forum-be] chatId=' + chatId + ' topicsCount=' + topics.length +
-              ' sumTopicUnread=' + sumUnread + ' chatUnreadCount=' + (tdChat?.unread_count || 0))
-          } catch (_) {}
+          try { const sumUnread = topics.reduce((s, t) => s + (t.unreadCount || 0), 0); console.log('[forum-be] chatId=' + chatId + ' topicsCount=' + topics.length + ' sumTopicUnread=' + sumUnread + ' chatUnreadCount=' + (tdChat?.unread_count || 0)) } catch (_) {}
+          // v0.91.6: custom emoji icons (вернули GramJS-feature). Не блокируем основной
+          // ответ — если резолв упал, темы вернутся без iconEmojiUrl (UI fallback на cap).
+          try { await resolveTopicEmojis(topics, { client: ctx.client, manager, accountId: ctx.accountId, userDataDir }) } catch (_) {}
           return { ok: true, isForum: true, topics }
         } catch (e) {
           return { ok: false, error: e?.message || String(e), isForum: true, topics: [] }
