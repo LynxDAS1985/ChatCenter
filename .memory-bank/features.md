@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.9 (22 мая 2026)
+## Текущая версия: v0.91.10 (22 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,26 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.10 — Расширение v0.91.9: edit/delete tracking + TTL pending + метрика частоты
+
+Продолжение v0.91.9 — 4 граничных случая:
+
+**Совет 1 — delete last_message** ([tdlibClient.js:361](main/native/backends/tdlibClient.js)): если в `update.message_ids` есть `chat.last_message.id` → обнуляем cache + emit `chat:last-message` с пустым preview. TDLib потом сам пришлёт `updateChatLastMessage` со следующим. Факт 🥇: [TDLib updateDeleteMessages](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1update_delete_messages.html) `is_permanent=true` = реальное удаление.
+
+**Совет 2 — edit last_message** ([tdlibClient.js:353](main/native/backends/tdlibClient.js)): если `update.message_id === chat.last_message.id` → обновляем `content` в cache + emit с новым preview через `extractTopicPreview`. Факт 🥇: [TDLib updateMessageContent](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1update_message_content.html).
+
+**Совет 3 — TTL pending** ([nativeStoreIpc.js](src/native/store/nativeStoreIpc.js)): `setTimeout` 30с на каждую запись в `pendingLastMessageRef` (защита от утечки ~50 байт/запись для несуществующих chatId). Helpers `pendingSet/pendingTake`, повторный event пере-устанавливает таймер.
+
+**Совет 4 — метрика** (паттерн `idbCacheMetrics.js`): `recordLastMsgEvent(kind)` агрегирует `applied/staleSkipped/pending` по 30с окну → одна строка `chat-last-msg-window` вместо сотен. При 0 событий не пишется.
+
+**Конфликты ✓**: race tg:new-message + edit (timestamp guard), TTL до chat в state (повторный event пере-добавит), не дублирует tg:new-message, multi-account.
+
+**Граничные ✓**: `is_permanent=false` no-op, удалили не last no-op, `last_message=null` no-op, `new_content=null` guard, пустой message_ids no-op.
+
+**Регрессия**: lint ✅, vitest 648/648 ✅, fileSizeLimits 270/270 ✅. Откат: `git revert <hash>`.
 
 ---
 
@@ -392,70 +412,13 @@ Custom emoji (TDLib [`forumTopicIcon.custom_emoji_id`](https://core.telegram.org
 
 ---
 
-### v0.91.4 — Фикс: «Нет предпросмотра» в темах форум-чатов + диагностика бейджа непрочитанных
+### v0.91.4 — «Нет предпросмотра» в темах форум-чатов + диагностика бейджа
 
-**Симптом**:
-1. В списке тем форум-чата (OZONовая Дыра → FAQ, Новости/СМИ, Юридический Раздел и т.д.) — у каждой темы под названием написано «Нет предпросмотра», хотя сообщения там есть.
-2. В списке чатов для форум-группы (OZONовая Дыра) НЕТ числа непрочитанных, хотя внутри тем сумма ~300+.
+Backend [`forum.getTopics`](main/native/backends/tdlibBackend.js) возвращал topic без `lastMessage`. Решение: helper `extractTopicPreview(tdMsg)` извлекает текст для `messageText` или эмодзи-аннотацию для медиа (🖼 Фото, 📹 Видео, 🎤 Голосовое, 📊 Опрос и т.д.). Возвращаем `lastMessage` + `lastMessageTs` в topic. По [TDLib forumTopic spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1forum_topic.html).
 
-**Корень фикса 1 (lastMessage в темах)**:
+Превью «У меня есть контакты...» в списке чатов для форум-группы — это TDLib `chat.last_message` (агрегированное по всем темам), не баг (так в Telegram Desktop).
 
-[`tdlibBackend.js forum.getTopics`](main/native/backends/tdlibBackend.js) возвращал `topic` объект БЕЗ поля `lastMessage`. UI [`InboxChatListSidebar.jsx:184`](src/native/components/InboxChatListSidebar.jsx#L184): `{topic.lastMessage || 'Нет предпросмотра'}` → fallback показывал плейсхолдер.
-
-TDLib API [`forumTopic.last_message`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1forum_topic.html) **есть** в ответе `getForumTopics` — мы его просто не извлекали.
-
-**Решение**: новый helper `extractTopicPreview(tdMsg)` в [`tdlibBackend.js`](main/native/backends/tdlibBackend.js) — извлекает текст из `content.text.text` для `messageText` или эмодзи-аннотацию для медиа:
-
-| `content.@type` | Превью |
-|---|---|
-| `messageText` | сам текст |
-| `messagePhoto` | 🖼 caption или «Фото» |
-| `messageVideo` | 📹 caption или «Видео» |
-| `messageAnimation` | 🎬 caption или «GIF» |
-| `messageAudio` | 🎵 caption или «Аудио» |
-| `messageVoiceNote` | 🎤 Голосовое |
-| `messageVideoNote` | ⭕ Видео-сообщение |
-| `messageDocument` | 📎 имя файла |
-| `messageSticker` | 🎟 emoji стикера |
-| `messagePoll` | 📊 вопрос опроса |
-| `messageLocation` | 📍 Геолокация |
-| `messageContact` | 👤 имя |
-| `messageCall` | 📞 Звонок |
-| `messagePinMessage` | 📌 Закреплено сообщение |
-| остальное | 📎 вложение |
-
-Возвращаем в topic: `lastMessage: extractTopicPreview(t.last_message)`, `lastMessageTs: Number(t.last_message?.date) || 0`. UI ([`InboxChatListSidebar.jsx`](src/native/components/InboxChatListSidebar.jsx)) уже умеет отображать `topic.lastMessage` — fallback на «Нет предпросмотра» теперь сработает только для **реально** пустых тем (что есть, например, FAQ).
-
-**Корень вопроса 2 («что за сообщение в списке чатов для форум-группы»)**:
-
-На скриншоте превью «У меня есть контакты двух каналов тут в тг» для OZONовая Дыра — это TDLib `chat.last_message` (последнее любое сообщение в группе, агрегированно по всем темам). Это [норма Telegram Desktop](https://github.com/telegramdesktop/tdesktop) — он показывает то же. Не баг.
-
-**Диагностика фикса 3 (бейдж непрочитанных у форум-группы)**:
-
-[`ChatListItem.jsx:33`](src/native/components/ChatListItem.jsx#L33): `const badgeCount = chat.unreadCount`. Если 0/null — бейдж не рендерится. По [TDLib `chat.unread_count` spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1chat.html) поле должно содержать «Number of unread messages in the chat» — для forum-чатов поведение неоднозначно (агрегирует или 0).
-
-**Не делал client-side aggregation сразу** — нужны данные с реальной сессии. Слепой фикс мог сломать существующие чаты.
-
-**Добавлено логирование** для диагностики (после рестарта будет видно в `chatcenter.log`):
-
-[`tdlibMapper.js mapChat`](main/native/backends/tdlibMapper.js):
-```
-[forum-map] chatId=-1002966550893 title="OZONовая Дыра" is_forum=true unread_count=N unread_mention_count=M
-```
-
-[`tdlibBackend.js forum.getTopics`](main/native/backends/tdlibBackend.js):
-```
-[forum-be] chatId=... topicsCount=N sumTopicUnread=K chatUnreadCount=L
-```
-
-**Что покажет лог**:
-- Если `chatUnreadCount == sumTopicUnread` — TDLib агрегирует, бейдж пустой по другой причине (баг рендера).
-- Если `chatUnreadCount == 0` при `sumTopicUnread > 0` — TDLib НЕ агрегирует, нужен client-side fallback (UI считает сумму по `store.forumTopics[chatId]`).
-- Если ни тот, ни другой — баг подгрузки топиков для форум-чатов на старте.
-
-После рестарта и просмотра лога — точечно фиксим v0.91.5.
-
-**Регрессионная защита**: тестов на эту область нет (низкая ценность — preview всего лишь cosmetic), но `messengerBackend.test.cjs` валидирует контракт.
+Бейдж непрочитанных у форум-группы пуст: добавлено логирование `[forum-map]` (`unread_count`, `unread_mention_count`) и `[forum-be]` (`sumTopicUnread` vs `chatUnreadCount`) — без слепого фикса. Решено в v0.91.8 (Совет 3 — client-side fallback `max(...)`).
 
 ---
 
@@ -632,16 +595,7 @@ TDLib API [`forumTopic.last_message`](https://core.telegram.org/tdlib/docs/class
 **Решение** (одна правка, один файл, 2 слова):
 - [`InboxMode.jsx:77`](src/native/modes/InboxMode.jsx#L77) и [`:81`](src/native/modes/InboxMode.jsx#L81): `!store.messages[id]` → `!store.loadingMessages[id]`.
 - `loadingMessages` уже существует ([`nativeStore.js:79`](src/native/store/nativeStore.js#L79)) и устанавливается внутри `loadMessages` ([`:614`](src/native/store/nativeStore.js#L614)) — инфраструктура готова.
-- Защита от дубля сохраняется (быстрые клики), но push'нутые 1-2 сообщения больше не блокируют initial-load.
-
-**Что внутри `loadMessages` уже работает** (не трогали):
-- `loadCacheMessages` (IndexedDB, до 50 сообщений) — параллельно с `tg:get-messages`.
-- `loadChatCache` (localStorage, до 50) — параллельно.
-- `tg:get-messages` → TDLib `getChatHistory` (limit 100 при unread>30) — основной запрос.
-
-**Результат**: при клике на чат — мгновенно ~50 сообщений из IDB (если кэш есть), через 200-500мс — 100 свежих от сервера. Как в Telegram Desktop.
-
-**Регрессия**: не запускалась пока (lint + test:vitest + check-memory будут перед коммитом).
+- Защита от дубля сохраняется (быстрые клики), push'нутые 1-2 сообщения больше не блокируют initial-load. `loadMessages` параллельно подхватывает кэш IDB/localStorage + tg:get-messages → ~50 instant + 100 свежих за 200-500мс (как Telegram Desktop).
 
 ---
 

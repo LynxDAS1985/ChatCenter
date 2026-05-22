@@ -35,18 +35,64 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   }
 
   // v0.91.9: pending queue для tg:chat-last-message, если event пришёл ДО chat в state.
-  // Применяется в tg:chats handler после merge.
+  // v0.91.10 (Совет 3): TTL 30с — защита от утечки памяти если чат удалён или TDLib
+  // эмитит для chatId которого никогда не будет в state (например орфанные accountId).
   const pendingLastMessageRef = new Map()
+  const PENDING_TTL_MS = 30000
+  function pendingSet(chatId, value) {
+    const existing = pendingLastMessageRef.get(chatId)
+    if (existing?._timer) clearTimeout(existing._timer)
+    const timer = setTimeout(() => {
+      const cur = pendingLastMessageRef.get(chatId)
+      if (cur?._timer === timer) pendingLastMessageRef.delete(chatId)
+    }, PENDING_TTL_MS)
+    pendingLastMessageRef.set(chatId, { ...value, _timer: timer })
+  }
+  function pendingTake(chatId) {
+    const v = pendingLastMessageRef.get(chatId)
+    if (!v) return null
+    if (v._timer) clearTimeout(v._timer)
+    pendingLastMessageRef.delete(chatId)
+    return v
+  }
   function applyPendingLastMessage(list) {
     if (pendingLastMessageRef.size === 0) return list
     return list.map(c => {
-      const p = pendingLastMessageRef.get(c.id)
+      const p = pendingTake(c.id)
       if (!p) return c
-      pendingLastMessageRef.delete(c.id)
       // Timestamp guard: применяем только если pending новее
       if (p.lastMessageTs > 0 && p.lastMessageTs < (c.lastMessageTs || 0)) return c
       return { ...c, lastMessage: p.lastMessage, lastMessageTs: p.lastMessageTs || (c.lastMessageTs || 0) }
     })
+  }
+
+  // v0.91.10 (Совет 4): метрика частоты tg:chat-last-message. Агрегатор по 30-секундному окну
+  // (паттерн idbCacheMetrics.js). В супергруппах TDLib может слать это часто — без агрегации
+  // лог зашумится. При 0 событий за окно — лог не пишется.
+  const LAST_MSG_WINDOW_MS = 30000
+  let lastMsgWindowCount = 0
+  let lastMsgWindowStaleSkipped = 0
+  let lastMsgWindowPending = 0
+  let lastMsgWindowTimer = null
+  function recordLastMsgEvent(kind) {
+    if (kind === 'applied') lastMsgWindowCount++
+    else if (kind === 'stale') lastMsgWindowStaleSkipped++
+    else if (kind === 'pending') lastMsgWindowPending++
+    if (lastMsgWindowTimer) return
+    lastMsgWindowTimer = setTimeout(() => {
+      lastMsgWindowTimer = null
+      const total = lastMsgWindowCount + lastMsgWindowStaleSkipped + lastMsgWindowPending
+      if (total === 0) return
+      logNativeScroll('chat-last-msg-window', {
+        windowMs: LAST_MSG_WINDOW_MS,
+        applied: lastMsgWindowCount,
+        staleSkipped: lastMsgWindowStaleSkipped,
+        pending: lastMsgWindowPending,
+      })
+      lastMsgWindowCount = 0
+      lastMsgWindowStaleSkipped = 0
+      lastMsgWindowPending = 0
+    }, LAST_MSG_WINDOW_MS)
   }
 
   addHandler('tg:account-update', (acc) => {
@@ -169,12 +215,17 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     setState(s => {
       const chat = s.chats.find(c => c.id === chatId)
       if (!chat) {
-        // Pending queue: чат ещё не появился в state — применим позже через tg:chats.
-        pendingLastMessageRef.set(chatId, { lastMessage: text, lastMessageTs: ts })
+        // v0.91.10: pending queue с TTL (см. pendingSet выше).
+        pendingSet(chatId, { lastMessage: text, lastMessageTs: ts })
+        recordLastMsgEvent('pending')
         return s
       }
       // Timestamp guard: не затираем свежее значение устаревшим update.
-      if (ts > 0 && ts < (chat.lastMessageTs || 0)) return s
+      if (ts > 0 && ts < (chat.lastMessageTs || 0)) {
+        recordLastMsgEvent('stale')
+        return s
+      }
+      recordLastMsgEvent('applied')
       return {
         ...s,
         chats: s.chats.map(c => c.id === chatId

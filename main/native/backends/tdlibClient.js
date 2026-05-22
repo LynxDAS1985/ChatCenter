@@ -350,22 +350,51 @@ export class TdlibClientManager extends EventEmitter {
         return
       }
 
-      case 'updateMessageContent':
+      case 'updateMessageContent': {
         this.emit('message:content-updated', {
           accountId, chatId: `${accountId}:${update.chat_id}`,
           messageId: String(update.message_id),
           newContent: update.new_content,
         })
-        return
-
-      case 'updateDeleteMessages':
-        if (update.is_permanent) {
-          this.emit('message:deleted', {
+        // v0.91.10 (Совет 2): если редактировали ПОСЛЕДНЕЕ сообщение чата —
+        // переэмитим chat:last-message с новым preview. Без этого превью в списке
+        // слева висит старым после edit. Cache обновляем тоже (для будущих updates).
+        const chatEdit = record.chatCache.get(Number(update.chat_id))
+        if (chatEdit?.last_message?.id != null
+            && String(chatEdit.last_message.id) === String(update.message_id)
+            && update.new_content) {
+          chatEdit.last_message.content = update.new_content
+          this.emit('chat:last-message', {
             accountId, chatId: `${accountId}:${update.chat_id}`,
-            messageIds: (update.message_ids || []).map(String),
+            lastMessage: extractTopicPreview(chatEdit.last_message),
+            lastMessageTs: chatEdit.last_message?.date ? Number(chatEdit.last_message.date) * 1000 : 0,
           })
         }
         return
+      }
+
+      case 'updateDeleteMessages': {
+        if (!update.is_permanent) return
+        this.emit('message:deleted', {
+          accountId, chatId: `${accountId}:${update.chat_id}`,
+          messageIds: (update.message_ids || []).map(String),
+        })
+        // v0.91.10 (Совет 1): если удалили ПОСЛЕДНЕЕ сообщение — эмитим пустое
+        // chat:last-message. TDLib позже сам пришлёт updateChatLastMessage со
+        // следующим валидным last_message (по TDLib spec), наш v0.91.9 handler
+        // подхватит. Здесь — быстрая очистка устаревшего превью.
+        const chatDel = record.chatCache.get(Number(update.chat_id))
+        const lastId = chatDel?.last_message?.id != null ? String(chatDel.last_message.id) : null
+        const deletedIds = (update.message_ids || []).map(String)
+        if (lastId && deletedIds.includes(lastId)) {
+          chatDel.last_message = null
+          this.emit('chat:last-message', {
+            accountId, chatId: `${accountId}:${update.chat_id}`,
+            lastMessage: '', lastMessageTs: 0,
+          })
+        }
+        return
+      }
 
       case 'updateUserStatus':
         this.emit('user:status', {
