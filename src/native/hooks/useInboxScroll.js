@@ -7,6 +7,7 @@
 
 import { useRef } from 'react'
 import useInboxNewerPrefetch from './useInboxNewerPrefetch.js'
+import { saveScrollPositions } from '../utils/scrollPositionsCache.js'
 
 export default function useInboxScroll({
   store,
@@ -35,9 +36,11 @@ export default function useInboxScroll({
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
 
     // v0.87.70: сохраняем текущий scrollTop для активного чата.
+    // v0.91.8 (Совет 1): и в localStorage (debounced 1с) — позиция переживает перезапуск.
     const viewKey = scrollKey || store.activeChatId
     if (viewKey && chatReady) {
       scrollPosByChatRef.current.set(viewKey, el.scrollTop)
+      saveScrollPositions(scrollPosByChatRef.current)
     }
 
     // v0.87.49: лог переходов atBottom (для диагностики useForceReadAtBottom)

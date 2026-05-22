@@ -188,18 +188,44 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
       })
     }, { initialProps: { chatId: 'chat-A' } })
 
-    // Первое открытие A — initial-scroll (в низ), не restore
+    // v0.91.8: первое открытие A — savedTop=1234 priority (была сохранённая позиция).
+    // savedTop не на дне (2000-1234-500=266 > 80) → restore savedTop, не bottom.
+    // Старое поведение (v0.87.70): scroll to bottom при initial. Изменено в v0.91.8
+    // для поддержки восстановления позиции после рестарта программы.
     await new Promise(r => setTimeout(r, 250))
-    expect(scrollEl.scrollTop).toBe(scrollEl.scrollHeight)  // scrolled to bottom
+    expect(scrollEl.scrollTop).toBe(1234)
 
-    // Переключение B → A (возврат к виденному)
+    // Переключение B → A (возврат к виденному) — ветка 2 (already-seen) тоже restore savedTop
     rerender({ chatId: 'chat-B' })
     await new Promise(r => setTimeout(r, 250))
-    // Теперь B в seen
     rerender({ chatId: 'chat-A' })
     await new Promise(r => setTimeout(r, 50))
-    // Восстановили сохранённую позицию для A
     expect(scrollEl.scrollTop).toBe(1234)
+  })
+
+  // v0.91.8 (Совет 1) — regression тест: savedTop на дне → auto-jump к firstUnread.
+  // Симулирует «юзер читал чат до конца, появились новые сообщения, открыл чат снова».
+  // Ожидаем что initial-scroll идёт к firstUnread (а не возвращает на дно).
+  it('⭐ v0.91.8: savedTop на дне + firstUnread → auto-jump к firstUnread, не restore', async () => {
+    const scrollEl = {
+      scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
+      // 2000 - 1980 - 500 = -480 < 80 → на дне (within 80px)
+      querySelector: () => null,  // virtual fallback через onMissingTarget
+    }
+    const onMissingTarget = vi.fn()
+    renderHook(() => {
+      const scrollRef = useRef(scrollEl)
+      const firstUnreadIdRef = useRef('msg-new')
+      return useInitialScroll({
+        activeChatId: 'chat-X', messagesCount: 50, scrollRef,
+        firstUnreadIdRef, activeUnread: 5, loading: false,
+        onMissingTarget,
+        getSavedScrollTop: () => 1980,  // был на дне (within 80px)
+      })
+    })
+    await new Promise(r => setTimeout(r, 250))
+    // savedTop был на дне → priority firstUnread → onMissingTarget вызван
+    expect(onMissingTarget).toHaveBeenCalledWith('msg-new')
   })
 
   // v0.91.2: ОБНОВЛЕНО — раньше при возврате в чат с firstUnread программа прыгала к нему.

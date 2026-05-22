@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.7 (21 мая 2026)
+## Текущая версия: v0.91.8 (22 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,82 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.8 — 4 улучшения UX: scroll-position персистентность, emoji-кэш на диске, бейдж форум-групп, сортировка тем
+
+**4 совета из аудита после v0.91.7 — все реализованы**:
+
+## Совет 1 — Сохранение позиции скролла между перезапусками
+
+**Что**: после рестарта программы старые чаты открываются на той же позиции где остановился юзер.
+
+**До**: `scrollPosByChatRef = useRef(new Map())` в [`InboxMode.jsx:38`](src/native/modes/InboxMode.jsx#L38) сбрасывался при перезапуске. Юзер каждый раз искал где был.
+
+**После**: новый модуль [`scrollPositionsCache.js`](src/native/utils/scrollPositionsCache.js) — `loadScrollPositions()` / `saveScrollPositions(map)` через localStorage с debounce 1с. Лимит 100 chatId (LRU trim).
+
+**Конфликт со v0.91.7 закрыт**: `lastActiveChatIdRef` после рестарта = null → ветка 2 не сработает. Поэтому в ветке 1 (`useInitialScroll.js`) добавлен приоритет savedTop: если есть saved позиция, восстанавливаем её; если saved был на дне (within 80px) — `auto-jump к firstUnread` (как Telegram Desktop).
+
+Похожие реализации:
+- Telegram Desktop — SQLite ScrollPosition
+- WhatsApp Web — IndexedDB
+- Discord — localStorage
+
+Лог: `[native-scroll] initial-restore-saved-first-open chatId=... savedTop=N`.
+
+## Совет 2 — Кэш custom emoji между перезапусками
+
+**Что**: после рестарта emoji в темах форумов видны мгновенно (не 1-2 секунды после `getCustomEmojiStickers`).
+
+**До**: [`tdlibForumEmoji.js`](main/native/backends/tdlibForumEmoji.js) держал `emojiCache = Map` только в памяти. При перезапуске Map = пуст → backend заново скачивал emoji (которые УЖЕ лежат в `tg-media/` на диске).
+
+**После**:
+- `loadCacheFromDisk(userDataDir)` — sync чтение `userData/forum-emoji-meta.json` при первом вызове, валидация что файл в `tg-media/` существует.
+- `saveCacheToDisk(userDataDir)` — debounced 2с после новых emoji.
+- Метадата: `{ emojiId → {url, mime, alt} }`.
+
+Лог: `[forum-emoji] loaded N entries from disk`.
+
+## Совет 3 — Бейдж непрочитанных у форум-групп в списке слева
+
+**Что**: число непрочитанных у форум-группы (типа OZONовая Дыра) в общем списке чатов.
+
+**До**: TDLib для форум-чатов после открытия форума обнуляет `chat.unread_count`. Бейдж пропадал у пользователя даже если в темах были непрочитанные (лог 11:51:59: `chat.unread_count=334` изначально → после открытия = 0).
+
+**После**: в [`nativeStore.js loadForumTopics`](src/native/store/nativeStore.js) — client-side fallback:
+```javascript
+const sumTopicUnread = topics.reduce((acc, t) => acc + (t.unreadCount || 0), 0)
+chat.unreadCount = Math.max(c.unreadCount || 0, sumTopicUnread)
+```
+
+Когда юзер откроет форум → topics подгружаются → бейдж агрегируется.
+
+## Совет 4 — Сортировка тем форума по непрочитанным
+
+**Что**: темы с новыми сообщениями наверху списка тем.
+
+**До**: в [`InboxChatListSidebar.jsx`](src/native/components/InboxChatListSidebar.jsx) — `forumTopics.map(...)` без сортировки (API-порядок).
+
+**После**: `sortForumTopics` функция — pinned первыми, потом unreadCount DESC, потом lastMessageTs DESC. Так делает Telegram Desktop.
+
+📊 **Резюме изменений**:
+
+| Файл | Изменение |
+|---|---|
+| `src/native/utils/scrollPositionsCache.js` | новый — load/save через localStorage |
+| `src/native/modes/InboxMode.jsx` | `useRef(loadScrollPositions())` |
+| `src/native/hooks/useInboxScroll.js` | `saveScrollPositions(map)` в handleScroll |
+| `src/native/hooks/useInitialScroll.js` | в ветке 1 — priority savedTop кроме «был на дне» |
+| `src/native/store/nativeStore.js` | `chat.unreadCount = max(...)` в loadForumTopics |
+| `src/native/components/InboxChatListSidebar.jsx` | `sortForumTopics` функция перед map |
+| `main/native/backends/tdlibForumEmoji.js` | disk persistence (load + debounced save) |
+
+**Что НЕ менял**:
+- backend для бейджа форум-групп — UI-агрегация достаточна, не делаем дубль invoke на старте
+- IndexedDB вместо localStorage для scroll positions — overkill для 100 KB
+- `forumTopics` сортировка в backend — UI быстрее, легче менять политику сортировки
+- TGS-emoji рендер — Chromium не умеет, отдельная задача (lottie-web)
 
 ---
 

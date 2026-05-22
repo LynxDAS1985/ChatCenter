@@ -16,6 +16,7 @@ import { useScrollDiagnostics } from '../hooks/useScrollDiagnostics.js'
 import useReadByVisibility from '../hooks/useReadByVisibility.js'
 import useInboxScroll from '../hooks/useInboxScroll.js'
 import { getUnreadAnchorDebug } from '../utils/scrollDiagnostics.js'
+import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
 
 try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
 
@@ -35,7 +36,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [chatReady, setChatReady] = useState(false)
   const seenChatsRef = useRef(new Set())
   // v0.87.70: Map<chatId, scrollTop> — своя позиция для каждого чата (как Telegram Desktop).
-  const scrollPosByChatRef = useRef(new Map())
+  // v0.91.8 (Совет 1): инициализируем из localStorage — позиция переживает перезапуск программы.
+  const scrollPosByChatRef = useRef(loadScrollPositions())
 
   useEffect(() => { store.loadCachedChats?.() }, [])
 

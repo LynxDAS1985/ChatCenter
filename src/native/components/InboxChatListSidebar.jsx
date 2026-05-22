@@ -55,6 +55,19 @@ function extractTopicCap(title) {
   return firstChar  // эмодзи или знак пунктуации
 }
 
+// v0.91.8 (Совет 4): сортировка тем форума — pinned первыми, потом по
+// количеству непрочитанных (DESC), потом по lastMessageTs (DESC).
+// Так делает Telegram Desktop — темы с новыми сообщениями всегда видны юзеру наверху.
+function sortForumTopics(a, b) {
+  const ap = a.isPinned ? 1 : 0
+  const bp = b.isPinned ? 1 : 0
+  if (ap !== bp) return bp - ap
+  const au = a.unreadCount || 0
+  const bu = b.unreadCount || 0
+  if (au !== bu) return bu - au
+  return (b.lastMessageTs || 0) - (a.lastMessageTs || 0)
+}
+
 function ForumTopicIcon({ topic }) {
   const canShowImage = topic.iconEmojiUrl && !String(topic.iconEmojiMimeType || '').includes('x-tgsticker')
   const isVideo = String(topic.iconEmojiMimeType || '').includes('webm')
@@ -174,7 +187,7 @@ export default function InboxChatListSidebar({
             <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>
               Темы не найдены
             </div>
-          ) : forumTopics.map(topic => {
+          ) : [...forumTopics].sort(sortForumTopics).map(topic => {
             const active = selectedTopic?.id === topic.id
             return (
               <div

@@ -668,16 +668,17 @@ export default function useNativeStore() {
       const loading = { ...(s.forumTopicsLoading || {}) }
       delete loading[chatId]
       if (!result?.ok) return { ...s, forumTopicsLoading: loading }
-      const nextChats = s.chats.map(c => c.id === chatId ? { ...c, isForum: !!result.isForum } : c)
-      if (!result.isForum) {
-        return { ...s, chats: nextChats, forumTopicsLoading: loading }
-      }
+      // v0.91.8: client-side fallback бейджа форум-чатов (TDLib обнуляет unread_count после открытия).
+      const topics = result.isForum ? (result.topics || []) : []
+      const sumUnread = topics.reduce((acc, t) => acc + (t.unreadCount || 0), 0)
+      const nextChats = s.chats.map(c => c.id !== chatId ? c : ({
+        ...c, isForum: !!result.isForum,
+        unreadCount: result.isForum ? Math.max(c.unreadCount || 0, sumUnread) : (c.unreadCount || 0),
+      }))
+      if (!result.isForum) return { ...s, chats: nextChats, forumTopicsLoading: loading }
       return {
-        ...s,
-        chats: nextChats,
-        forumTopicPanelChatId: chatId,
-        forumTopics: { ...s.forumTopics, [chatId]: result.topics || [] },
-        forumTopicsLoading: loading,
+        ...s, chats: nextChats, forumTopicPanelChatId: chatId,
+        forumTopics: { ...s.forumTopics, [chatId]: topics }, forumTopicsLoading: loading,
       }
     })
     return result

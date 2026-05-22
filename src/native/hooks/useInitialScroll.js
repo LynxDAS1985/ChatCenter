@@ -80,13 +80,8 @@ export function useInitialScroll({
     }
     logNativeScroll('initial-schedule', { chatId: activeChatId, messages: messagesCount, activeUnread })
 
-    // v0.91.6: retry-loop для scrollEl. Корень бага «вечная загрузка темы»:
-    // при смене activeChatId UI ставит chatReady=false → DOM scroll-контейнер
-    // скрыт за shimmer → scrollRef.current = null. Старый код делал `if (!scrollEl) return`
-    // без onDone → chatReady НЕ становился true → DOM никогда не рендерился →
-    // scrollEl навсегда null. Deadlock.
-    // Решение: до 10 попыток через requestAnimationFrame ждём пока scrollEl появится.
-    // Если так и не пришёл — всё равно вызываем onDone (лучше показать чат без
+        // v0.91.6: retry-loop для scrollEl (chatReady deadlock fix). Если scrollEl
+    // не появился за 10 кадров → onDone всё равно (лучше показать чат без
     // initial-scroll чем держать вечный shimmer).
     let cancelled = false
     let attempts = 0
@@ -108,7 +103,18 @@ export function useInitialScroll({
         return
       }
       const firstUnread = firstUnreadIdRef.current
-      logNativeScroll('initial-run', { chatId: activeChatId, firstUnread, activeUnread, attempts, ...getScrollMetrics(scrollEl) })
+      // v0.91.8: priority savedScrollTop из localStorage (если не был на дне).
+      const savedTop = getSavedScrollTop?.(activeChatId)
+      const hasSaved = typeof savedTop === 'number' && savedTop > 0
+      const savedAtBottom = hasSaved && (scrollEl.scrollHeight - savedTop - scrollEl.clientHeight < 80)
+      if (hasSaved && !savedAtBottom) {
+        scrollEl.scrollTop = savedTop
+        logNativeScroll('initial-restore-saved-first-open', { chatId: activeChatId, savedTop })
+        doneSetRef.current.add(activeChatId)
+        doneRef.current = activeChatId
+        try { onDone?.(activeChatId) } catch(_) {}
+        return
+      }
       if (firstUnread) {
         const el = scrollEl.querySelector(`[data-msg-id="${firstUnread}"]`)
         if (el) {

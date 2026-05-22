@@ -26,12 +26,59 @@
 // .tgs (animated lottie) — Chromium не рендерит в <img>. UI fall-back на alt emoji
 // (sticker.emoji) когда mime === application/x-tgsticker.
 
+import fs from 'node:fs'
+import path from 'node:path'
 import { downloadFile, stabilizeForPlayback } from './tdlibMedia.js'
 
-// In-memory кэш — для resolved emojis в рамках сессии. Ключ = emojiId, значение =
-// { url, mime, alt }. Cache живёт пока процесс не перезапущен. При перезапуске
-// файлы остаются в tg-media/, повторное скачивание не нужно (TDLib local cache).
+// v0.91.8 (Совет 2): персистентный кэш на диске. JSON-метадата emojiId → {url, mime, alt}
+// в userData/forum-emoji-meta.json. При старте приложения подхватывается, юзер сразу
+// видит реальные emoji вместо букв-заглушек. Сами файлы (.webp/.webm) лежат в tg-media/
+// и не сбрасываются между сессиями (TDLib local cache).
+const META_FILE = 'forum-emoji-meta.json'
+
 const emojiCache = new Map()
+let metaInitFromDir = null  // путь userData с которого инициализировали (для записи)
+let saveTimer = null
+
+function metaFilePath(userDataDir) {
+  return path.join(userDataDir, META_FILE)
+}
+
+function loadCacheFromDisk(userDataDir) {
+  if (!userDataDir || metaInitFromDir === userDataDir) return
+  metaInitFromDir = userDataDir
+  try {
+    const raw = fs.readFileSync(metaFilePath(userDataDir), 'utf8')
+    const obj = JSON.parse(raw)
+    if (!obj || typeof obj !== 'object') return
+    for (const [emojiId, meta] of Object.entries(obj)) {
+      if (!meta || typeof meta !== 'object') continue
+      // Валидируем URL: если cc-media://media/<name> и файл существует в tg-media/ — берём.
+      // Иначе кладём только alt+mime (UI fallback).
+      let url = meta.url || null
+      if (url && url.startsWith('cc-media://media/')) {
+        const fileName = url.slice('cc-media://media/'.length)
+        const absPath = path.join(userDataDir, 'tg-media', fileName)
+        if (!fs.existsSync(absPath)) url = null
+      }
+      emojiCache.set(emojiId, { url, mime: meta.mime || '', alt: meta.alt || '' })
+    }
+    try { console.log('[forum-emoji] loaded ' + emojiCache.size + ' entries from disk') } catch (_) {}
+  } catch (_) { /* нет файла / некорректный JSON — silent */ }
+}
+
+function saveCacheToDisk(userDataDir) {
+  if (!userDataDir) return
+  if (saveTimer) return
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    try {
+      const obj = {}
+      for (const [emojiId, meta] of emojiCache.entries()) obj[emojiId] = meta
+      fs.writeFileSync(metaFilePath(userDataDir), JSON.stringify(obj))
+    } catch (_) { /* quota / disk full — silent */ }
+  }, 2000)
+}
 
 function stickerMime(format) {
   const ft = format?.['@type']
@@ -55,6 +102,9 @@ function stickerMime(format) {
 export async function resolveTopicEmojis(topics, ctx) {
   if (!Array.isArray(topics) || topics.length === 0) return topics
   if (!ctx?.client || !ctx?.manager || !ctx?.accountId) return topics
+
+  // v0.91.8: при первом вызове подхватываем кэш с диска (instant emoji после рестарта).
+  if (ctx.userDataDir) loadCacheFromDisk(ctx.userDataDir)
 
   // Собираем unique IDs которых нет в кэше.
   const idsToFetch = []
@@ -119,6 +169,8 @@ export async function resolveTopicEmojis(topics, ctx) {
     t.iconEmojiMimeType = cached.mime || ''
     t.iconEmoji = cached.alt || ''
   }
+  // v0.91.8: персистим кэш на диск (debounce 2с — чтобы не писать слишком часто).
+  if (ctx.userDataDir && idsToFetch.length > 0) saveCacheToDisk(ctx.userDataDir)
   return topics
 }
 
