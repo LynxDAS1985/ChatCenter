@@ -34,6 +34,21 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     if (typeof unsub === 'function') unsubs.push(unsub)
   }
 
+  // v0.91.9: pending queue для tg:chat-last-message, если event пришёл ДО chat в state.
+  // Применяется в tg:chats handler после merge.
+  const pendingLastMessageRef = new Map()
+  function applyPendingLastMessage(list) {
+    if (pendingLastMessageRef.size === 0) return list
+    return list.map(c => {
+      const p = pendingLastMessageRef.get(c.id)
+      if (!p) return c
+      pendingLastMessageRef.delete(c.id)
+      // Timestamp guard: применяем только если pending новее
+      if (p.lastMessageTs > 0 && p.lastMessageTs < (c.lastMessageTs || 0)) return c
+      return { ...c, lastMessage: p.lastMessage, lastMessageTs: p.lastMessageTs || (c.lastMessageTs || 0) }
+    })
+  }
+
   addHandler('tg:account-update', (acc) => {
     // v0.87.95: removed: true → удалить аккаунт.
     // v0.87.105 (ADR-016): при logout одного из нескольких — удаляем ТОЛЬКО его чаты/сообщения,
@@ -123,27 +138,49 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         // v0.87.105: при append дедуп по id (Map с префиксом accountId — между аккаунтами уникален)
         const existing = new Set(s.chats.map(c => c.id))
         const newOnes = chats.filter(c => !existing.has(c.id))
-        return { ...s, chats: [...s.chats, ...newOnes] }
+        return { ...s, chats: [...s.chats, ...applyPendingLastMessage(newOnes)] }
       }
       // v0.87.38: MERGE вместо REPLACE — сохраняем lastMessageTs от более нового значения.
       // v0.87.105 (ADR-016): MERGE применяется ТОЛЬКО к чатам ЭТОГО аккаунта;
       // чаты других аккаунтов остаются нетронутыми (multi-account).
-      // Без этого tg:chats перезаписывал lastMessageTs серверным (устаревшим), и чаты
-      // с новыми сообщениями падали вниз списка вместо того чтобы быть наверху.
       const existingMap = new Map(s.chats.filter(c => c.accountId === accountId).map(c => [c.id, c]))
       const merged = chats.map(c => {
         const old = existingMap.get(c.id)
         if (!old) return c
         return {
           ...c,
-          // Сохраняем БОЛЕЕ НОВЫЙ timestamp (max)
           lastMessageTs: Math.max(c.lastMessageTs || 0, old.lastMessageTs || 0),
-          // Сохраняем lastMessage от более нового
           lastMessage: (old.lastMessageTs || 0) > (c.lastMessageTs || 0) ? old.lastMessage : c.lastMessage,
         }
       })
+      // v0.91.9: применяем pending lastMessage updates (которые пришли ДО chat в state).
+      const withPending = applyPendingLastMessage(merged)
       const others = s.chats.filter(c => c.accountId !== accountId)
-      return { ...s, chats: [...others, ...merged] }
+      return { ...s, chats: [...others, ...withPending] }
+    })
+  })
+
+  // v0.91.9: TDLib шлёт updateChatLastMessage отдельно от updateNewMessage. Без этого
+  // handler'а превью в списке чатов застывало (см. .memory-bank/api.md tg:chat-last-message).
+  addHandler('tg:chat-last-message', ({ chatId, lastMessage, lastMessageTs }) => {
+    if (!chatId) return
+    const ts = Number(lastMessageTs) || 0
+    const text = typeof lastMessage === 'string' ? lastMessage : ''
+    setState(s => {
+      const chat = s.chats.find(c => c.id === chatId)
+      if (!chat) {
+        // Pending queue: чат ещё не появился в state — применим позже через tg:chats.
+        pendingLastMessageRef.set(chatId, { lastMessage: text, lastMessageTs: ts })
+        return s
+      }
+      // Timestamp guard: не затираем свежее значение устаревшим update.
+      if (ts > 0 && ts < (chat.lastMessageTs || 0)) return s
+      return {
+        ...s,
+        chats: s.chats.map(c => c.id === chatId
+          ? { ...c, lastMessage: text, lastMessageTs: ts || (c.lastMessageTs || 0) }
+          : c)
+      }
     })
   })
 

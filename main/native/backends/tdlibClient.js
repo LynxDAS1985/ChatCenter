@@ -20,6 +20,7 @@
 import { EventEmitter } from 'node:events'
 import { mapMessage, mapChat } from './tdlibMapper.js'
 import { scheduleAvatarDownload, handleAvatarReady } from './tdlibAvatars.js'
+import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.9: preview для chat:last-message
 
 // ──────────────────────────────────────────────────────────────────────
 // USER NAME / AVATAR HELPERS
@@ -417,6 +418,9 @@ export class TdlibClientManager extends EventEmitter {
     else if (type === 'updateChatPhoto') chat.photo = update.photo
     else if (type === 'updateChatPermissions') chat.permissions = update.permissions
     else if (type === 'updateChatLastMessage') chat.last_message = update.last_message
+    // v0.91.9: 'updateChatLastMessage' эмитим в renderer (раньше только cache обновляли,
+    // превью в списке чатов «застывало» при супергруппах с большим потоком —
+    // TDLib шлёт это событие вместо тысяч updateNewMessage). См. TDLib spec.
     else if (type === 'updateChatReadInbox') {
       chat.last_read_inbox_message_id = update.last_read_inbox_message_id
       chat.unread_count = update.unread_count
@@ -434,6 +438,17 @@ export class TdlibClientManager extends EventEmitter {
         accountId: record.accountId,
         chatId: `${record.accountId}:${update.chat_id}`,
         unreadCount: update.unread_count,
+      })
+    }
+    // v0.91.9: эмит при изменении last_message (для превью в списке чатов).
+    // null last_message → пустое превью (чат опустошён).
+    if (type === 'updateChatLastMessage') {
+      const lm = update.last_message
+      this.emit('chat:last-message', {
+        accountId: record.accountId,
+        chatId: `${record.accountId}:${update.chat_id}`,
+        lastMessage: lm ? extractTopicPreview(lm) : '',
+        lastMessageTs: lm?.date ? Number(lm.date) * 1000 : 0,
       })
     }
     // v0.89.4: outgoing read-receipts (двойная галочка) — собеседник прочитал

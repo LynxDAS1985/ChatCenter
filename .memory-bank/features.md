@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.8 (22 мая 2026)
+## Текущая версия: v0.91.9 (22 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,58 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.9 — Фикс «застывшее превью в списке чатов»: добавлен обработчик updateChatLastMessage + pending queue
+
+**Симптом**: превью чата в списке слева показывает старое сообщение, в официальном Telegram Web — новое. Например в супергруппе «Вайбкодинг комьюнити» наша программа: «Я тоже, но оно недоделанное...», Telegram: «нахуй терминалы вообще нужны?».
+
+**Корень** (3+ факта, мин 1 уровень 🥇):
+
+1. **🥇 TDLib spec** [`updateChatLastMessage`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1update_chat_last_message.html): "The last message of a chat was changed". Это **отдельное** событие от `updateNewMessage` — TDLib шлёт его когда нужно синхронизировать last_message (например в супергруппах с большим потоком — вместо тысяч `updateNewMessage` шлёт один `updateChatLastMessage` со свежим итогом).
+2. **🥈 Код** [`tdlibClient.js:419`](main/native/backends/tdlibClient.js): `case 'updateChatLastMessage' → chat.last_message = update.last_message`. Обновляет **только** локальный cache, без emit в renderer.
+3. **🥈 Код** [`nativeStoreIpc.js`](src/native/store/nativeStoreIpc.js) grep: `chat.lastMessage` обновляется только в двух местах — `tg:chats` (при login) и `tg:new-message` (push новых). Handler для `tg:chat-last-message` отсутствовал.
+4. **🥈 Telegram Desktop**: оба event'а обрабатываются в `mapChat` paths.
+
+**Цепочка деградации**:
+1. `loadChats()` → `chat.last_message` от TDLib (свежее на момент запроса)
+2. В супергруппе быстро пришли тысячи сообщений
+3. Telegram оптимизирует: вместо тысяч `updateNewMessage` шлёт один `updateChatLastMessage`
+4. Наш backend `_patchChat` ловит update → обновляет cache → **не эмитит в renderer**
+5. `state.chats[].lastMessage` остаётся со старым значением → юзер видит несвежее превью
+
+**Конфликты проверены** ✓:
+- ☑ `tg:chats` merge политика (timestamp guard защищает)
+- ☑ Forum-чаты (chat.last_message агрегированно — не ломает v0.91.4 lastMessage в темах)
+- ☑ Сортировка списка чатов по lastMessageTs (монотонно растёт)
+- ☑ v0.91.3 newBelow counter подписан на `tg:new-message`, не на новый channel
+- ☑ multi-account (accountId в payload)
+
+**Граничные случаи** ✓:
+- ☑ `update.last_message === null` (опустошён чат) → `lastMessage=''`, `lastMessageTs=0`
+- ☑ `lastMessageTs < chat.lastMessageTs` → timestamp guard блокирует
+- ☑ `chatId` не в `state.chats` (race «event до addChat») → **pending queue** в `pendingLastMessageRef`, применяется в следующем `tg:chats`
+- ☑ Параллельные `tg:new-message` + `tg:chat-last-message` → timestamp guard в обоих handlerах делает результат идемпотентным
+
+**Реализация**:
+
+| Файл | Изменение |
+|---|---|
+| `main/native/backends/tdlibClient.js` | импорт `extractTopicPreview`, в `_patchChat` для `updateChatLastMessage` → `this.emit('chat:last-message', {accountId, chatId, lastMessage, lastMessageTs})` |
+| `main/native/tdlibIpcBridge.js` | новая подписка `chat:last-message` → IPC channel `tg:chat-last-message` |
+| `src/native/store/nativeStoreIpc.js` | handler `tg:chat-last-message` с timestamp guard + pending queue (Map<chatId, {lastMessage, lastMessageTs}>); в `tg:chats` merge — `applyPendingLastMessage` |
+| `.memory-bank/api.md` | новый IPC channel задокументирован |
+
+**Опасные зоны**:
+- IPC контракт (новый channel) — добавление обратно-совместимое
+- `state.chats[].lastMessage` (видимое юзеру каждую секунду) — есть timestamp guard
+- Эмит **очень часто** в большой группе — debounce не нужен (React batches updates, max 1 рендер/16ms)
+
+**Откат**: `git revert <hash>` — один коммит, без миграций/зависимостей/ENV.
+
+**Остаточный риск** (само-проверка «где сломается через месяц»):
+Если TDLib решит шлёт `updateChatLastMessage` с `last_message.id < existing` (например после удаления свежего сообщения, last становится более старое) — timestamp guard заблокирует валидное обновление. **Маловероятно**, но возможно. Решение: добавить отдельный handler для `updateMessageContent` если такая ситуация всплывёт.
 
 ---
 
@@ -593,47 +645,19 @@ TDLib API [`forumTopic.last_message`](https://core.telegram.org/tdlib/docs/class
 
 ---
 
-### v0.91.0 — ПОЛНЫЙ ОТКАТ WebContentsView миграции (Electron Issue #44934 — Windows 11 native crash)
+### v0.89.41 → v0.91.0 — серия WebContentsView миграция, 16 версий, полный откат
 
-После 16 версий попыток (v0.89.41 → v0.90.2) и WebSearch в Electron GitHub issues найдено **официальное подтверждение**: [#44934](https://github.com/electron/electron/issues/44934) — на Windows 11 `addChildView(WebContentsView)` + `loadURL` крашит main процесс. Помечено closed «not planned». Не пофикшено в Electron 41.
+Электрон рекомендовал переход с `<webview>` на WebContentsView. Серия v0.89.41-v0.90.2 — 16 итераций (12 опровергнутых гипотез, архитектурная миграция на BaseWindow). Корень провала найден через WebSearch: [Electron Issue #44934](https://github.com/electron/electron/issues/44934) — на Windows 11 `addChildView(WebContentsView)` + `loadURL` крашит main, closed «not planned».
 
-**Откат**: вернули `BrowserWindow{webviewTag:true}` + `<webview>` тег (production-tested архитектура).
+**v0.91.0 ПОЛНЫЙ ОТКАТ**: вернули `BrowserWindow{webviewTag:true}` + `<webview>` (production-tested). Удалены: webContentsViewManager.js, webContentsViewIpcHandlers.js, WebContentsViewSlot.jsx, webContentsViewBridge.js + 3 теста.
 
-**Удалены**: webContentsViewManager.js, webContentsViewIpcHandlers.js, WebContentsViewSlot.jsx, webContentsViewBridge.js, 3 теста (webContentsViewPatterns.test, webContentsViewManager.vitest, webContentsViewBridge.vitest).
-
-**Сохранены полезные побочные эффекты**: [`UncaughtErrorToast.jsx`](src/components/UncaughtErrorToast.jsx) (UX runtime), global error handlers (renderer + main), [`idbCacheMetrics.js`](src/native/utils/idbCacheMetrics.js), crashpad-фильтр в [`scripts/dev.cjs`](scripts/dev.cjs), документация [`electron-breaking-changes.md`](.memory-bank/electron-breaking-changes.md).
+**Сохранены полезные побочки**: UncaughtErrorToast.jsx, global error handlers, idbCacheMetrics.js, crashpad-фильтр, [`electron-breaking-changes.md`](.memory-bank/electron-breaking-changes.md).
 
 **Полный урок и 7 правил для будущих миграций** — в [`mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md).
 
-### v0.90.2 — child WebContentsView Telegram крашит, изоляционные попытки + watchdog
+### v0.89.42 → v0.89.44 — Phase 2/2.3 WebContentsView миграция (откачено в v0.91.0)
 
-v0.90.0 миграция работает для primary (React UI грузится). Но child WebContentsView для Telegram всё равно крашит на `loadURL`. Три попытки изолировать минимальную конфигурацию: (1) setBounds default ДО loadURL — bounds=(0,0,0,0) могла крашить renderer; (2) preload={undefined} + lazy mount только активной вкладки (пилот без ChatMonitor); (3) watchdog 15с — `setCreateError` если did-finish-load не пришло (ошибка в UI вместо тихой смерти).
-
-### v0.90.1 — Фикс v0.90.0: BaseWindow не имеет `.loadURL`/`.loadFile`. `mainWindow.loadURL` → `mainWindow.webContents.loadURL`.
-
-### v0.90.0 — АРХИТЕКТУРНАЯ МИГРАЦИЯ: BrowserWindow → BaseWindow + WebContentsView
-
-12 опровергнутых гипотез v0.89.46-v0.89.57 доказали: `webviewTag:true` BrowserWindow + child WebContentsView = архитектурная несовместимость в Electron 41. По [Electron docs](https://www.electronjs.org/docs/latest/api/web-contents-view) WebContentsView → с `BaseWindow`.
-
-**Что**: BrowserWindow → `BaseWindow` + primary `WebContentsView` (React UI) + child WebContentsView (мессенджеры). `<webview>` тег удалён, всегда WebContentsView. `m.partition` сохранён (авторизации не теряются). Тумблер useWebContentsView скрыт. Удалён `disable-gpu-compositing` switch (был для `<webview>`).
-
-**Файлы**: [windowManager.js](main/utils/windowManager.js), [main.js](main/main.js), [App.jsx](src/App.jsx), [SettingsPanel.jsx](src/components/SettingsPanel.jsx) + регрессионные тесты WCV (5 проверок, файлы удалены в v0.91.0).
-
-**Регрессия**: 31/31 ✅ wcv, lint ✅, fileSizeLimits 274/274 ✅, memory bank ✅. Полная история — [`mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md).
-
-### v0.89.46 → v0.89.57 — серия из 12 опровергнутых гипотез (закрыто в v0.90.0)
-
-Расследование почему пилот WebContentsView крашит main процесс. 12 итераций: preload/sandbox/disable-gpu-compositing/partition/data:URL — все опровергнуты. Корень доказан в v0.90.0 — архитектурная несовместимость `BrowserWindow webviewTag:true` + child `WebContentsView` (требует BaseWindow по Electron docs). Полная история — в [`mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md).
-
-### v0.89.44 — Phase 2.3 (full) активация bridge + 4 сопутствующих улучшения
-
-**Совет 1**: bridge подключён к App.jsx — webviewSetup работает через wcv:* IPC поверх WebContentsView. **Совет 2**: кнопка очистки кэша в Settings. **Совет 3**: авто-cleanup partition при удалении мессенджера (full:true logout). **Совет 4**: метрика hit/miss IDB кэша через logNativeScroll. **Совет 5**: удалён obsolete topicMessagesCache.js. Регрессия: modernPatternsGuard +7, vitest +5.
-
----
-
-### v0.89.43 — 5 советов Phase 2 расширения (loadURL reactive, partition cleanup, breaking changes docs, pilot template, bridge для webviewSetup)
-
-Совет 2: реактивный `wcv:load-url` без пересоздания view (lastUrlRef). Совет 3: `cleanupPartition(partition, opts)` + IPC `wcv:cleanup-partition` (clearCache + clearStorageData). Совет 4: новый `.memory-bank/electron-breaking-changes.md` — мониторинг + чек-лист. Совет 5: `.memory-bank/webcontents-view-pilot-results.md` — шаблон лога пилота. Совет 1 (min): `src/utils/webContentsViewBridge.js` — proxy эмулирующий `<webview>` интерфейс через `wcv:*` IPC (для подключения webviewSetup в Phase 2.3 full без переписки). **Tests**: 650 → 667 (+17 bridge unit), modernPatternsGuard 21 → 27. Bridge experimental, не подключён к App.jsx.
+Feature-flag в Settings, условный рендер `<WebContentsViewSlot>` vs `<webview>`, bridge для webviewSetup, реактивный `wcv:load-url`, cleanupPartition IPC, breaking-changes docs, IDB cache hit/miss metric. Полная история в [`mistakes/electron-core.md`](.memory-bank/mistakes/electron-core.md). Все файлы удалены в v0.91.0.
 
 ---
 

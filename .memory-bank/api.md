@@ -102,6 +102,7 @@
 | `tg:chats` | `{ accountId, chats, append }` | ✅ |
 | `tg:messages` | `{ chatId, messages, append?, appendNewer?, aroundId?, afterId?, readUpTo? }` | ✅ |
 | `tg:chat-unread-sync` | `{ chatId, unreadCount }` | ✅ |
+| `tg:chat-last-message` | `{ chatId, lastMessage: string, lastMessageTs: number }` — v0.91.9 для TDLib updateChatLastMessage event (синхронизация превью в списке чатов) | ✅ |
 | `tg:chat-avatar` | `{ chatId, avatarPath: 'cc-media://avatars/...' }` | ✅ |
 | **`tg:sender-avatar`** | `{ senderId, avatarUrl }` (v0.89.4 — без chatId/accountId; UI iterates все state.messages по senderId) | ✅ |
 | `tg:login-step` | `{ step, accountId, codeInfo?, passwordInfo?, raw? }` | ✅ |
