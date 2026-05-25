@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.13 (25 мая 2026)
+## Текущая версия: v0.91.14 (25 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -22,13 +22,33 @@
 
 ---
 
+### v0.91.14 — Фикс «возврат в чат кидает наверх, непрочитанные ниже» (retry-loop в ветке already-seen)
+
+Лог 14:54:35 (Вайбкодинг комьюнити, unread=5, открытие после ранее закрытого чата): `chat-open hasEl=false` → `initial-restore-skip no-scrollEl` → 4× `not-returning` → НЕТ `initial-restore-applied`. Scroll остался на top=0.
+
+🥇 [Telegram Web K (tweb) source](https://github.com/morethanwords/tweb): двухэтапное применение позиции — сохраняют в `setPeerOptions.savedPosition`, применяют через callback `attachPlaceholderOnRender` после mount DOM. Никогда не делают raw `scrollEl.scrollTop = X` синхронно.
+
+Корень: в `useInitialScroll.js` ветка «already-seen» (v0.91.7 + v0.91.11) не имела retry-loop для случая `scrollEl=null`. При первом срабатывании useEffect react-window DOM ещё не примонтирован → `scrollEl=null` → silent skip. **Параллельно** `lastActiveChatIdRef.current = activeChatId` ставился безусловно → следующее срабатывание `isReturning=false` → skip not-returning → restore не выполнялся НИКОГДА. Регрессия моих v0.91.7+v0.91.11.
+
+Решение: применил тот же `requestAnimationFrame` retry-loop × 10 что в ветке 1 (v0.91.6). `lastActiveChatIdRef.current = activeChatId` ставится **только когда DOM готов** или MAX_ATTEMPTS исчерпан — защита v0.91.7 сохранена.
+
+Симметрия восстановлена: обе ветки initial-scroll (новый чат и already-seen) теперь имеют retry для DOM mount race.
+
+Подробности — в [`mistakes/native-scroll-unread.md`](.memory-bank/mistakes/native-scroll-unread.md) «retry-loop ОБЯЗАТЕЛЕН в обеих ветках initial-scroll». Регрессия: 2 теста в `useInitialScroll.vitest.jsx`. Откат: `git revert <hash>`.
+
+---
+
 ### v0.91.13 — Фикс «открыл чат unread=304 → бейдж сразу 0» (threshold guard)
 
 В [`useForceReadAtBottom.js`](src/native/hooks/useForceReadAtBottom.js) добавлена константа `FORCE_READ_MAX_UNREAD=30`: при `unread > 30` markRead не отправляется, ждём IntersectionObserver per-msg. Корень, факты, тесты — в [`mistakes/native-scroll-unread.md`](.memory-bank/mistakes/native-scroll-unread.md) «mass-ack при открытии».
 
+**✅ Подтверждено логом 25 мая 2026 (chatcenter.log 14:52:57-14:53:14)**: 3 события `force-read-skip reason=unread-too-high threshold=30` для форум-чата `topic:1` (unread=60). markRead **не отправлен**. Юзер постепенно прочитал через IntersectionObserver per-msg (`first-unread-calc` показал прогрессию unread: 33 → 30 → 17 → 7 → 0).
+
 ---
 
 ### v0.91.12 — Фикс «дёрганья при скролле к дну» (dedup signal в prefetch)
+
+**✅ Подтверждено логом 25 мая 2026**: за всю сессию (4 часа работы) — **16 `load-newer-trigger` с УНИКАЛЬНЫМИ afterId**, ни одного повтора. До фикса было 4 одинаковых за 1с (см. ниже).
 
 Лог 12:02:22 — 4 `load-newer-trigger` с одним afterId за 1с. В [`useInboxNewerPrefetch.js`](src/native/hooks/useInboxNewerPrefetch.js) `reachedEnd` не учитывал «backend вернул 100 msg, все дубли» → noMoreNewerRef не ставился, prefetch стрелял повторно.
 

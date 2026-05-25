@@ -8,6 +8,109 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: ветка already-seen без retry-loop = restore не выполняется при `scrollEl=null` (v0.91.14)
+
+### Симптом
+Юзер возвращается в чат (был открыт ранее в сессии) с непрочитанными → его кидает в самый верх чата (top=0), непрочитанные где-то ниже. Скроллит вниз — они «пропадают» (помечаются прочитанными по мере прохождения), а в самом низу — другие сообщения.
+
+### Прямое доказательство (chatcenter.log 14:54:35)
+```
+14:54:35 chat-open Вайбкодинг unread=5 messages=104 loading=false hasEl=false
+14:54:35 initial-restore-skip reason=no-scrollEl                        ← scrollEl=null
+14:54:35 initial-restore-skip reason=not-returning                       ← isReturning стал false
+14:54:36 initial-restore-skip reason=not-returning  (×3, hasEl=true)     ← но уже не возврат
+... НЕТ initial-restore-applied / initial-target ...
+top=0  ← scroll остался на default react-window
+```
+
+### Корень
+В [`useInitialScroll.js`](../../src/native/hooks/useInitialScroll.js) ветка «already-seen» (v0.91.7 + v0.91.11) имела **архитектурный дефект**:
+
+```javascript
+// v0.91.11 ДО фикса:
+const isReturning = lastActiveChatIdRef.current !== activeChatId
+lastActiveChatIdRef.current = activeChatId   // ← БЕЗУСЛОВНО ставится!
+logRestoreDiag({...})  // → внутри skip if !scrollEl
+```
+
+Цепочка:
+1. Юзер открыл чат (был в `doneSet`) → ветка 2
+2. `isReturning=true` (lastActiveChatIdRef ≠ activeChatId)
+3. **`lastActiveChatIdRef.current = activeChatId` ставится сразу**
+4. `scrollEl = scrollRef.current` → **null** (react-window DOM ещё не примонтирован)
+5. `logRestoreDiag` → skip no-scrollEl + return
+6. `onDone(activeChatId)` → chatReady=true → DOM появился
+7. Через ms useEffect ре-запускается (messagesCount изменился: cache 104 → server 50 → prefetch 100 → 178)
+8. `isReturning = lastActiveChatIdRef.current(=activeChatId) !== activeChatId` → **false**
+9. **skip not-returning** → restore не выполняется НИКОГДА
+10. Scroll остался top=0 (react-window default)
+
+### Симметрия — ветка 1 уже имела фикс этого паттерна (v0.91.6)
+
+В ветке 1 (новый чат) v0.91.6 добавил `requestAnimationFrame` retry × 10 для случая `scrollEl=null` (когда `chatReady=false` → `opacity:0` → DOM react-window не примонтирован). **Но в ветку 2 этот фикс НЕ был применён.**
+
+### Решение (v0.91.14)
+Применить тот же retry-loop симметрично. `lastActiveChatIdRef.current` ставится **только после успешного завершения** (DOM появился) или после исчерпания `MAX_ATTEMPTS=10`:
+
+```javascript
+if (!isReturning) {
+  logNativeScroll('initial-restore-skip', { ... reason: 'not-returning' })
+  onDone?.(activeChatId)
+  return
+}
+let returnCancelled = false
+let returnAttempts = 0
+const tryRestore = () => {
+  if (returnCancelled) return
+  const scrollEl = scrollRef.current
+  if (!scrollEl) {
+    returnAttempts++
+    if (returnAttempts < 10) {
+      requestAnimationFrame(tryRestore)
+      return
+    }
+    lastActiveChatIdRef.current = activeChatId   // ставим только тут — больше не пробуем
+    return
+  }
+  lastActiveChatIdRef.current = activeChatId    // или тут — когда DOM есть
+  logRestoreDiag({...})
+}
+tryRestore()
+onDone?.(activeChatId)
+return () => { returnCancelled = true }
+```
+
+### Как делают на нашем стеке (TDLib chat)
+
+🥇 **Telegram Web K** ([tweb source](https://github.com/morethanwords/tweb)): `setPeerOptions: { savedPosition }` — позиция в свойствах экземпляра. Применяется через `attachPlaceholderOnRender` callback **после** mount DOM. `await Promise.all(renderNewPromises)` ждёт рендеринг. Никогда не делают raw `scrollEl.scrollTop = X` синхронно при возврате в чат.
+
+🥈 **react-virtuoso** (Element/Matrix, Rocket.Chat, Mattermost): `restoreStateFrom` snapshot применяется во **внутреннем useEffect после mount**. Virtuoso сам ждёт DOM.
+
+🥈 **React 19 docs** ([useEffect](https://react.dev/reference/react/useEffect)): условная проверка `if (!ref.current) return` + `requestAnimationFrame` retry — официально допустимый паттерн.
+
+### Правило
+Для **любого** useEffect который пишет в `ref.current.scrollTop`:
+1. Проверять `scrollEl !== null` ПЕРЕД присвоением
+2. Если `null` — retry через `requestAnimationFrame` до `MAX_ATTEMPTS` (10 кадров ≈ 166мс)
+3. Cleanup через cancel-флаг возвращённый из useEffect
+4. Состояние «уже попытались» (ref guard вроде `lastActiveChatIdRef`) — обновлять ТОЛЬКО после успешной попытки или после исчерпания retry. Иначе ре-mount DOM не получит шанса.
+
+### Регрессионные тесты
+[`useInitialScroll.vitest.jsx`](../../src/native/hooks/useInitialScroll.vitest.jsx):
+- «v0.91.14: scrollEl=null на старте → через rAF появляется → restore выполнен»
+- «v0.91.14: scrollEl=null × 10 кадров → MAX_ATTEMPTS → больше не пытаемся»
+
+### История ловушки
+
+| Версия | Что закрыли | Что забыли |
+|---|---|---|
+| v0.91.6 | retry-loop для ветки 1 (новый чат) при scrollEl=null | Не применили к ветке 2 |
+| v0.91.7 | lastActiveChatIdRef для защиты от циклической перезаписи | OK для случая когда DOM сразу готов |
+| v0.91.11 | Диагностика skip no-scrollEl выявила баг | Не исправлено — только лог |
+| **v0.91.14** | retry-loop в ветке 2 + lastActiveChatIdRef условный placement | **Закрыто** |
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: открыл чат с большим unread → mass-ack сразу обнуляет счётчик (v0.91.13)
 
 ### Симптом

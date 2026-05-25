@@ -1,17 +1,43 @@
-// v0.91.11: ВРЕМЕННАЯ диагностика «при возврате в чат программа прыгает вверх».
-// Логика restore (el.scrollTop = savedTop) остаётся в useInitialScroll.js
-// ветка already-seen. Этот модуль вынесен отдельно чтобы:
-//   1) Не раздувать useInitialScroll.js за лимит 150 строк (правило hooks/).
-//   2) Удалить ЦЕЛЫЙ файл одним движением после фикса корня (TODO-6).
-// Подробности — features.md v0.91.11. 4 точки лога:
-//   initial-restore-attempt  — попытка с scrollHeight/clientHeight
-//   initial-restore-applied  — фактический scrollTop + clamped флаг
-//                              (MDN scrollTop spec: значение обрезается до scrollHeight-clientHeight)
-//   initial-restore-postcheck — позиция через 100мс (react-window useDynamicRowHeight
-//                              мог сбросить кэш высот при смене cacheKey)
-//   initial-restore-skip     — причина: no-scrollEl / no-saved / not-returning
+// v0.91.11-14: модуль логики возврата в виденный чат (ветка already-seen).
+// Содержит:
+//   1. logRestoreDiag — 4 точки логирования (v0.91.11)
+//   2. tryRestoreWithRetry — retry-loop через rAF симметрично ветке 1 (v0.91.14)
+// Корень бага v0.91.14 (chatcenter.log 14:54:35): scrollEl=null при первом
+// срабатывании useEffect → silent skip + lastActiveChatIdRef ставился безусловно →
+// следующее срабатывание isReturning=false → restore никогда. Паттерн Telegram
+// Web K (tweb): отложенное применение позиции после mount DOM.
 
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
+
+const RETURN_MAX_ATTEMPTS = 10
+
+// v0.91.14: retry-loop до появления DOM. lastActiveChatIdRef ставится ТОЛЬКО
+// когда DOM готов или MAX_ATTEMPTS исчерпан — защита v0.91.7 сохранена.
+export function tryRestoreWithRetry({ chatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef }) {
+  let cancelled = false
+  let attempts = 0
+  const tick = () => {
+    if (cancelled) return
+    const scrollEl = scrollRef.current
+    if (!scrollEl) {
+      attempts++
+      if (attempts < RETURN_MAX_ATTEMPTS) {
+        requestAnimationFrame(tick)
+        return
+      }
+      logNativeScroll('initial-restore-skip', { chatId, reason: 'no-scrollEl-final', attempts })
+      lastActiveChatIdRef.current = chatId
+      return
+    }
+    lastActiveChatIdRef.current = chatId
+    logRestoreDiag({
+      chatId, isReturning: true, scrollEl,
+      savedTop: getSavedScrollTop?.(chatId), scrollRef,
+    })
+  }
+  tick()
+  return () => { cancelled = true }
+}
 
 export function logRestoreDiag({ chatId, isReturning, scrollEl, savedTop, scrollRef }) {
   if (!isReturning) {

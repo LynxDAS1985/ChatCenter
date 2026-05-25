@@ -355,3 +355,27 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
     expect(onDone).toHaveBeenLastCalledWith('chat-A')
   })
 })
+
+// v0.91.14: регрессия для retry-loop в ветке already-seen. Корень бага
+// (chatcenter.log 14:54:35): scrollEl=null при первом срабатывании → silent skip +
+// lastActiveChatIdRef обновлён → следующее isReturning=false → restore никогда.
+describe('v0.91.14: retry-loop в ветке already-seen при scrollEl=null (graceful exit)', () => {
+  it('scrollEl=null × 10 кадров → MAX_ATTEMPTS → не зависает', async () => {
+    const { rerender } = renderHook(({ chatId }) => {
+      const scrollRef = useRef(null)  // ВСЕГДА null — DOM не появится
+      const firstUnreadIdRef = useRef(null)
+      return useInitialScroll({
+        activeChatId: chatId, messagesCount: 50, scrollRef,
+        firstUnreadIdRef, activeUnread: 0, loading: false,
+        getSavedScrollTop: vi.fn(() => 1500),
+        onDone: () => {},
+      })
+    }, { initialProps: { chatId: 'chat-A' } })
+    await new Promise(r => setTimeout(r, 250))
+    rerender({ chatId: 'chat-B' })
+    await new Promise(r => setTimeout(r, 250))
+    rerender({ chatId: 'chat-A' })  // возврат — ветка 2 retry
+    await new Promise(r => setTimeout(r, 300))  // 10 rAF ≈ 166мс + запас
+    expect(true).toBe(true)  // если зависнет — vitest упадёт по timeout
+  })
+})

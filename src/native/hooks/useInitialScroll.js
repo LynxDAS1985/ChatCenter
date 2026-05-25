@@ -26,7 +26,7 @@
 // (13678→10204→7811). lastActiveChatIdRef хранит chatId с прошлого срабатывания.
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
-import { logRestoreDiag } from './useInitialScrollDiag.js'  // v0.91.11 (удалить с TODO-6)
+import { tryRestoreWithRetry } from './useInitialScrollDiag.js'  // v0.91.14 (логика возврата)
 
 export function useInitialScroll({
   activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading,
@@ -53,19 +53,18 @@ export function useInitialScroll({
     if (doneSetRef.current.has(activeChatId)) {
       doneRef.current = activeChatId
       // v0.91.7: restore выполняется ТОЛЬКО при реальной смене activeChatId.
-      // Если useEffect ре-запустился из-за messagesCount/loading (пришли новые
-      // сообщения в том же чате) — НЕ дёргаем scrollTop. Юзер активно читает.
       const isReturning = lastActiveChatIdRef.current !== activeChatId
-      lastActiveChatIdRef.current = activeChatId
-      // v0.91.11: диагностика «возврат прыгает вверх» — см. useInitialScrollDiag.js (TODO-6).
-      logRestoreDiag({
-        chatId: activeChatId, isReturning,
-        scrollEl: scrollRef.current,
-        savedTop: getSavedScrollTop?.(activeChatId),
-        scrollRef,
+      if (!isReturning) {
+        logNativeScroll('initial-restore-skip', { chatId: activeChatId, reason: 'not-returning' })
+        try { onDone?.(activeChatId) } catch(_) {}
+        return
+      }
+      // v0.91.14: retry-loop симметрично ветке 1 (v0.91.6). См. useInitialScrollDiag.js.
+      const cancel = tryRestoreWithRetry({
+        chatId: activeChatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef,
       })
       try { onDone?.(activeChatId) } catch(_) {}
-      return
+      return cancel
     }
     lastActiveChatIdRef.current = activeChatId
     if (messagesCount === 0) {
