@@ -77,6 +77,60 @@ describe('useForceReadAtBottom — защита от ложного срабат
     expect(markRead).not.toHaveBeenCalled()
   })
 
+  it('v0.91.13: atBottom=true + unread > 30 НЕ вызывает markRead (mass-ack guard)', async () => {
+    // Воспроизводит сценарий из chatcenter.log 13:24:24: открытие AlphaPet ЧАТ
+    // с unread=304, messages=1, bottomGap=0 (height=client). Без фикса
+    // markRead(lastId) → TDLib viewMessages обнуляет 304→0 одним вызовом.
+    const markRead = vi.fn()
+    renderHook(() => {
+      const maxEverSentRef = useRef(0)
+      useForceReadAtBottom({
+        atBottom: true,
+        activeChatId: 'tg_611696632:-1001707262828',
+        activeMessages: [msg('81257299968')],
+        activeUnread: 304,  // ← как в логе
+        markRead,
+        maxEverSentRef,
+      })
+    })
+    await new Promise(r => setTimeout(r, 500))
+    expect(markRead).not.toHaveBeenCalled()
+  })
+
+  it('v0.91.13: граничный случай — unread = 30 (на пороге) ВЫЗЫВАЕТ markRead', async () => {
+    const markRead = vi.fn()
+    renderHook(() => {
+      const maxEverSentRef = useRef(0)
+      useForceReadAtBottom({
+        atBottom: true,
+        activeChatId: 'chat1',
+        activeMessages: [msg('100'), msg('200')],
+        activeUnread: 30,  // ровно порог
+        markRead,
+        maxEverSentRef,
+      })
+    })
+    await new Promise(r => setTimeout(r, 500))
+    expect(markRead).toHaveBeenCalledWith('chat1', 200, { source: 'bottom' })
+  })
+
+  it('v0.91.13: unread = 31 (выше порога на 1) НЕ вызывает markRead', async () => {
+    const markRead = vi.fn()
+    renderHook(() => {
+      const maxEverSentRef = useRef(0)
+      useForceReadAtBottom({
+        atBottom: true,
+        activeChatId: 'chat1',
+        activeMessages: [msg('100'), msg('200')],
+        activeUnread: 31,
+        markRead,
+        maxEverSentRef,
+      })
+    })
+    await new Promise(r => setTimeout(r, 500))
+    expect(markRead).not.toHaveBeenCalled()
+  })
+
   it('v0.87.44 РЕГРЕССИЯ: сценарий «было 7, стало 1» воспроизведён без фикса', async () => {
     // Имитация открытия чата с default atBottom=true (СТАРОЕ поведение):
     const markRead = vi.fn()

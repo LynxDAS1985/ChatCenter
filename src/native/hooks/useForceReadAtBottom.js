@@ -2,8 +2,16 @@
 // v0.87.37: принимает maxEverSentRef чтобы не уменьшать watermark
 // v0.87.49: добавлены диагностические логи force-read-* — понять почему
 // последние 1-3 msg не помечаются при долистывании до конца.
+// v0.91.13: threshold guard. При unread > FORCE_READ_MAX_UNREAD НЕ делаем
+// mass-ack — ждём пока IntersectionObserver (read-batch-send) постепенно
+// пометит видимые msg. Без этого открытие чата с большим unread → atBottom=true
+// (при messages=1 height=client → bottomGap=0) → markRead(lastId) → TDLib
+// viewMessages mass-acks ВСЕ msg ≤ lastId → бейдж 304→0 без реального чтения.
+// Паттерн WhatsApp Web / Telegram Web K. Лог chatcenter.log 13:24:24-25.
 import { useEffect } from 'react'
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
+
+export const FORCE_READ_MAX_UNREAD = 30
 
 export function useForceReadAtBottom({ atBottom, activeChatId, activeMessages, activeUnread, markRead, maxEverSentRef }) {
   useEffect(() => {
@@ -14,6 +22,15 @@ export function useForceReadAtBottom({ atBottom, activeChatId, activeMessages, a
         : activeMessages.length === 0 ? 'no-messages'
         : 'unread-zero'
       logNativeScroll('force-read-skip', { chatId: activeChatId, reason, atBottom, msgs: activeMessages.length, unread: activeUnread })
+      return
+    }
+    // v0.91.13: при большом unread — НЕ mass-ack, ждём IntersectionObserver per-msg.
+    if (activeUnread > FORCE_READ_MAX_UNREAD) {
+      logNativeScroll('force-read-skip', {
+        chatId: activeChatId, reason: 'unread-too-high',
+        atBottom, msgs: activeMessages.length, unread: activeUnread,
+        threshold: FORCE_READ_MAX_UNREAD,
+      })
       return
     }
     const lastMsg = activeMessages[activeMessages.length - 1]

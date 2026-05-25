@@ -8,6 +8,65 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: открыл чат с большим unread → mass-ack сразу обнуляет счётчик (v0.91.13)
+
+### Симптом
+Юзер открывает чат с unread=304 (или любым большим). Через ~400мс бейдж становится 0 БЕЗ реального чтения. В Telegram Web / mobile эти 304 msg тоже помечены как прочитанные.
+
+### Корень
+[`useForceReadAtBottom.js`](../../src/native/hooks/useForceReadAtBottom.js) hook срабатывает при `atBottom=true && unread>0` через `setTimeout 400мс` → отправляет `markRead(lastId)`.
+
+При открытии чата с `messages=1` (или мало сообщений) `scrollHeight === clientHeight` → `bottomGap=0` → `atBottom=true` через onScroll-handler в `useInboxScroll.js`. Через 400мс hook отправляет markRead.
+
+🥇 [TDLib `viewMessages` spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1view_messages.html): «All messages with message identifiers less than or equal to the maximum identifier are marked as viewed». **markRead принципиально работает по диапазону**, не по списку id. Это не баг TDLib — это договор API.
+
+### Прямое доказательство (chatcenter.log 13:24:24)
+```
+chat-open AlphaPet ЧАТ unread=304 messages=1 bottomGap=0
+force-read-schedule lastId=81257299968 unread=304 atBottom=true
+force-read-fire lastId=81257299968 unread=304
+store-unread-sync unread=0 active=true       ← TDLib mass-ack
+badge-state unread=0 prevUnread=304          ← 304 → 0
+```
+
+### Решение (v0.91.13)
+Threshold guard: при `unread > 30` — НЕ вызываем markRead. Ждём пока IntersectionObserver per-msg (`read-batch-send` каждые ~500мс по 5-20 msg) уменьшит unread до ≤30. Тогда force-read-at-bottom добивает остаток.
+
+```javascript
+export const FORCE_READ_MAX_UNREAD = 30
+
+// в useEffect:
+if (activeUnread > FORCE_READ_MAX_UNREAD) {
+  logNativeScroll('force-read-skip', {
+    chatId, reason: 'unread-too-high', unread: activeUnread, threshold: FORCE_READ_MAX_UNREAD,
+  })
+  return
+}
+```
+
+### Граничные случаи
+- unread=0 → skip (было до v0.91.13)
+- unread=1..30 → markRead как раньше
+- unread=31..3700 → skip, ждём per-msg IntersectionObserver
+- IntersectionObserver не работает (большие msg, ratio<0.95) — закрыто v0.87.47 через rootMargin=-49%
+- Юзер открыл с unread=304 и НЕ скроллит → счётчик остаётся 304. Корректно — он действительно не читал.
+
+### Паттерн на нашем стеке
+- **Telegram Web K**: [`appMessagesManager.readMessages`](https://github.com/morethanwords/tweb) для **видимых** msg per-IntersectionObserver, не bulk при открытии
+- **WhatsApp Web**: тот же подход — при большом unread не помечать массово
+- **Discord**: ACK по `last_visible_message_id`, не по `last_in_array`
+
+### Правило
+markRead(maxId) — mass-ack операция в API мессенджеров (TDLib `viewMessages`, MTProto `messages.readHistory`, Discord REST `/ack`). Любой UI-hook который вызывает её **обязан** иметь threshold guard для большого unread. Иначе UX будет «бейдж исчезает без чтения».
+
+### Регрессионные тесты
+[`useForceReadAtBottom.vitest.jsx`](../../src/native/hooks/useForceReadAtBottom.vitest.jsx):
+- «unread=304 при atBottom → не markRead»
+- «unread=30 (граница) → markRead»
+- «unread=31 → не markRead»
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: prefetch newer стреляет N раз с одним afterId если backend возвращает только дубли (v0.91.12)
 
 ### Симптом
