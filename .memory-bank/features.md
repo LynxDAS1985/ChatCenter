@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.11 (25 мая 2026)
+## Текущая версия: v0.91.12 (25 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии** (v0.88.0 → v0.90.1). Старое — в архиве:
 
@@ -18,6 +18,16 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.12 — Фикс «дёрганья при скролле к дну» (dedup signal в prefetch)
+
+Лог 12:02:22 — 4 `load-newer-trigger` с одним afterId за 1с. В [`useInboxNewerPrefetch.js`](src/native/hooks/useInboxNewerPrefetch.js) `reachedEnd` не учитывал «backend вернул 100 msg, все дубли» → noMoreNewerRef не ставился, prefetch стрелял повторно.
+
+🥇 [TDLib `getChatHistory` spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html): TDLib работает по диапазону `from_message_id + offset`, не учитывает кэш клиента — если msg уже пришли через push раньше invoke, вернёт повторно.
+
+Решение: фильтруем `result.messages` по `existingIds` из `activeMessages`. Все дубли (newCount=0) → ставим флаг. Сброс через `useEffect` v0.88.2 при росте `activeMessages.length`. Подробности — в [`mistakes/native-scroll-unread.md`](.memory-bank/mistakes/native-scroll-unread.md). Регрессия: 4 теста в `useInboxNewerPrefetch.vitest.jsx`. Откат: `git revert <hash>`.
 
 ---
 

@@ -85,16 +85,25 @@ export default function useInboxNewerPrefetch({
       scrollHeight: el.scrollHeight, messages: activeMessages.length,
     })
     store.loadNewerMessages?.(chatAtStart, afterId, 100).then(result => {
+      // v0.91.12: dedup signal — Telegram/TDLib может вернуть hasMore=true но все
+      // incoming уже в нашем state (пришли через tg:new-message push до invoke).
+      // Без этой проверки prefetch стрелял 4-10 раз с тем же afterId на каждый scroll-tick
+      // (см. chatcenter.log v0.91.11 12:02:22 — 4 load-newer-trigger за секунду).
+      // Сброс флага происходит автоматически в useEffect выше при росте activeMessages.length
+      // (real-time push tg:new-message) — страховка v0.88.2 остаётся.
+      const existingIds = new Set(activeMessages.map(m => m.id))
+      const newCount = (result?.messages || []).filter(m => m?.id && !existingIds.has(m.id)).length
       const reachedEnd = !!result?.ok && (
         result?.hasMore === false
         || (Array.isArray(result?.messages) && result.messages.length === 0)
+        || newCount === 0
       )
       if (reachedEnd) {
         noMoreNewerRef.current.set(viewKeyAtStart, true)
       }
       scrollDiag?.logEvent('load-newer-result', {
         afterId, ok: result?.ok, throttled: !!result?.throttled,
-        hasMore: result?.hasMore, reachedEnd,
+        hasMore: result?.hasMore, reachedEnd, newCount,
         activeChanged: chatAtStart !== store.activeChatId || viewKeyAtStart !== viewKey,
       })
     }).catch(err => {

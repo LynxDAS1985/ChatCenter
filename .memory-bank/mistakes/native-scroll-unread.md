@@ -8,6 +8,55 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: prefetch newer стреляет N раз с одним afterId если backend возвращает только дубли (v0.91.12)
+
+### Симптом
+Юзер пролистывает вниз → программа дёргается, кнопка ↓ мигает, scrollHeight «дышит» на 10-15px. В логе `chatcenter.log` видно 4-10 одинаковых `load-newer-trigger afterId=X` за 1 секунду.
+
+### Корень
+В [`useInboxNewerPrefetch.js`](../../src/native/hooks/useInboxNewerPrefetch.js) условие `reachedEnd` смотрело только на:
+- `result.hasMore === false`
+- `result.messages.length === 0`
+
+И **НЕ учитывало** случай «backend вернул 100 msg, но все дубли». В этом случае:
+1. `result.ok = true`, `result.hasMore = true`, `result.messages.length = 100`
+2. `reachedEnd = false` → `noMoreNewerRef` не ставится
+3. `addHandler('tg:messages')` в `nativeStoreIpc.js` фильтрует дубли → state не меняется (v0.88.1 защита)
+4. Через 300мс `loadingNewerRef` снимается → следующий wheel-tick запускает prefetch с тем же `afterId`
+5. Цикл: 4-10 IPC-запросов за секунду пока юзер скроллит
+
+### Почему backend возвращает дубли
+По [TDLib `getChatHistory` spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html) — TDLib работает по `from_message_id + offset + limit` диапазону. Если в этом диапазоне есть сообщения которые уже пришли клиенту через `updateNewMessage` push до того как invoke завершился — backend всё равно возвращает их в массиве. `hasMore=true` показывает что есть **серверные** новые, не учитывая локальный кеш клиента.
+
+### Решение (v0.91.12)
+Расширили условие `reachedEnd` — фильтруем `result.messages` по `existingIds` (id уже в `activeMessages`). Если после фильтрации 0 — ставим флаг:
+
+```javascript
+const existingIds = new Set(activeMessages.map(m => m.id))
+const newCount = (result?.messages || []).filter(m => m?.id && !existingIds.has(m.id)).length
+const reachedEnd = !!result?.ok && (
+  result?.hasMore === false
+  || (Array.isArray(result?.messages) && result.messages.length === 0)
+  || newCount === 0   // ← v0.91.12
+)
+```
+
+### Страховка от ложного срабатывания
+`useEffect` v0.88.2 в этом же файле сбрасывает `noMoreNewerRef.delete(key)` когда `activeMessages.length > prev`. После push `tg:new-message` массив растёт → флаг автоматически снимается → prefetch снова работает.
+
+### Правило
+Для prefetch паттерна «загрузка следующей страницы по cursor (afterId/beforeId/min_id)»:
+1. Проверять `hasMore=false` — стандарт
+2. Проверять `messages.length=0` — стандарт
+3. **Проверять что после dedup с локальным state добавилось хоть что-то**. Без этого: dedup в merge возвращает 0 → state не меняется → prefetch триггерится снова → бесконечный цикл при scroll.
+
+Это паттерн Telegram Web K (`historyMaxId.endReached`), Element/Matrix через virtuoso `endReached`, Discord через локальный кэш диапазонов.
+
+### Регрессионный тест
+`nativeStoreUnreadPrefetch.vitest.jsx` — «v0.91.12: после load-newer с только-дубликатами prefetch блокируется».
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: программный scrollTop в `useEffect` с deps `[messagesCount]` — silent killer (v0.91.2 → v0.91.7)
 
 **Серия 4-х фиксов одной и той же мины** в разных ветках useInitialScroll.js. Записываю как **правило**, чтобы больше не повторять.
