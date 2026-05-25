@@ -8,6 +8,43 @@
 
 ---
 
+## 🔴 ВАЖНОЕ: bottom mode через raw scrollHeight тоже clamped (v0.91.16)
+
+### Симптом
+После v0.91.15 (anchor mode) для случая `atBottom=true` юзер всё равно видел «псевдо-дно» — позиция не на реальном дне.
+
+### Прямое доказательство (chatcenter.log 17:34:04)
+```
+chat-open top=1670 height=2185 client=514 bottomGap=1
+initial-restore-applied mode=bottom actualTop=1670 scrollHeight=2185
+```
+`messages=50`, `scrollHeight=2185` ≈ 50 × defaultRowHeight(50). react-window НЕ remeasured. `scrollEl.scrollTop = scrollEl.scrollHeight` дал 1670 (clamped). Реальная высота после remeasure ~4000.
+
+### Корень
+v0.91.15 ветка `saved.atBottom`:
+```javascript
+scrollEl.scrollTop = scrollEl.scrollHeight  // ← raw scrollHeight ещё не remeasured
+```
+Это **тот же баг что v0.91.15** (clamped pixel scrollTop), просто переехал в bottom branch.
+
+### Решение (v0.91.16)
+Bottom mode тоже через `scrollToRow` API react-window:
+```javascript
+onScrollToIndex(lastIndex, 'end')  // react-window сам пересчитает после remeasure
+```
++ postcheck через 100мс — повторяем scrollToRow чтобы остаться на реальном дне после remeasure.
+
+### Также v0.91.16: RETURN_MAX_ATTEMPTS 10 → 30
+Лог 17:34:00: `initial-restore-skip reason=no-scrollEl-final attempts=10` (166мс). При heavy renders DOM не успевал. Увеличено до 30 (~500мс).
+
+### Правило (продолжение v0.91.15)
+Для виртуализированных списков **никогда** не использовать raw `scrollHeight` для scroll операций. Всегда через imperative API виртуализации (`scrollToRow`, `scrollToIndex`). scrollHeight в react-window — производное значение которое зависит от текущего состояния cache высот.
+
+### Регрессия
+Архитектурно: anchor mode и bottom mode теперь идут через ОДИН путь — `scrollToRow`. Устранён двойной стандарт.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: пиксельный scrollTop fragile — clamped при ремаунте react-window (v0.91.15)
 
 ### Симптом

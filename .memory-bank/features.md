@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.15 (25 мая 2026)
+## Текущая версия: v0.91.16 (25 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -19,6 +19,30 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.16 — bottom mode через scrollToRow + retry MAX 30 (доделка v0.91.15)
+
+Лог 17:34:04 после v0.91.15: `initial-restore-applied mode=bottom actualTop=1670 scrollHeight=2185` для `messages=50`. scrollHeight=2185 ≈ 50×defaultRowHeight(50) — react-window не успел remeasure. Юзер на «псевдо-дне» (1670 при реальном дне ~4000).
+
+Корень: v0.91.15 ветка `saved.atBottom` использовала `scrollEl.scrollTop = scrollEl.scrollHeight` — raw scrollHeight тоже clamped когда useDynamicRowHeight кэш сброшен.
+
+Также лог 17:34:00: `initial-restore-skip reason=no-scrollEl-final attempts=10`. DOM react-window не появлялся за 166мс при heavy renders / быстром переключении.
+
+Решение:
+1. **bottom mode через scrollToRow**: `onScrollToIndex(lastIdx, 'end')` использует react-window scrollToRow API — самосинхронизируется с remeasure. Fallback `scrollEl.scrollHeight` если индекса нет.
+2. **Postcheck через 100мс**: после remeasure scrollHeight вырастает → повторяем scrollToRow → юзер на реальном дне.
+3. **RETURN_MAX_ATTEMPTS 10 → 30**: 166мс → 500мс. Heavy renders успевают примонтировать DOM.
+
+Стек: React 19.2.4, react-window 2.2.7 (scrollToRow API), tdl 8.1.0. Архитектурно: bottom mode теперь идёт через тот же путь что anchor mode (через scrollToRow imperative API react-window). Это устраняет двойной стандарт.
+
+Файлы:
+- `useInitialScrollDiag.js`: bottom через onScrollToIndex + postcheck + MAX=30
+- `useInitialScroll.js`: пробрасывает onScrollToIndex/onGetLastIndex
+- `InboxMode.jsx`: `onScrollToIndex = virtualListRef.scrollToRow`, `onGetLastIndex = renderItems.length - 1`
+
+Откат: `git revert <hash>`.
 
 ---
 

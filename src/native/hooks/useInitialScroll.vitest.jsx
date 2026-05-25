@@ -365,7 +365,7 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
 // (chatcenter.log 14:54:35): scrollEl=null при первом срабатывании → silent skip +
 // lastActiveChatIdRef обновлён → следующее isReturning=false → restore никогда.
 describe('v0.91.14: retry-loop в ветке already-seen при scrollEl=null (graceful exit)', () => {
-  it('scrollEl=null × 10 кадров → MAX_ATTEMPTS → не зависает', async () => {
+  it('scrollEl=null × MAX кадров → MAX_ATTEMPTS → не зависает', async () => {
     const { rerender } = renderHook(({ chatId }) => {
       const scrollRef = useRef(null)  // ВСЕГДА null — DOM не появится
       const firstUnreadIdRef = useRef(null)
@@ -380,7 +380,8 @@ describe('v0.91.14: retry-loop в ветке already-seen при scrollEl=null (
     rerender({ chatId: 'chat-B' })
     await new Promise(r => setTimeout(r, 250))
     rerender({ chatId: 'chat-A' })  // возврат — ветка 2 retry
-    await new Promise(r => setTimeout(r, 300))  // 10 rAF ≈ 166мс + запас
+    // v0.91.16: MAX=30 → ~500мс + запас. Раньше было 10 (166мс).
+    await new Promise(r => setTimeout(r, 700))
     expect(true).toBe(true)  // если зависнет — vitest упадёт по timeout
   })
 })

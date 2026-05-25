@@ -17,12 +17,19 @@
 
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 
-const RETURN_MAX_ATTEMPTS = 10
+// v0.91.16: увеличено с 10 до 30 (~500мс вместо 166мс) — heavy renders при
+// быстром переключении чатов не успевали примонтировать DOM react-window
+// (chatcenter.log 17:34:00: hasEl=false attempts=10 → юзер на default top=0).
+const RETURN_MAX_ATTEMPTS = 30
 
 // v0.91.14: retry-loop до появления DOM. lastActiveChatIdRef ставится ТОЛЬКО
 // когда DOM готов или MAX_ATTEMPTS исчерпан — защита v0.91.7 сохранена.
 // v0.91.15: добавлен onRestoreAnchor для восстановления через scrollToRow.
-export function tryRestoreWithRetry({ chatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef, onRestoreAnchor }) {
+// v0.91.16: добавлены onScrollToIndex / onGetLastIndex для bottom через scrollToRow.
+export function tryRestoreWithRetry({
+  chatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef,
+  onRestoreAnchor, onScrollToIndex, onGetLastIndex,
+}) {
   let cancelled = false
   let attempts = 0
   const tick = () => {
@@ -42,7 +49,7 @@ export function tryRestoreWithRetry({ chatId, scrollRef, getSavedScrollTop, last
     logRestoreDiag({
       chatId, isReturning: true, scrollEl,
       saved: getSavedScrollTop?.(chatId),
-      onRestoreAnchor,
+      onRestoreAnchor, onScrollToIndex, onGetLastIndex,
     })
   }
   tick()
@@ -50,8 +57,15 @@ export function tryRestoreWithRetry({ chatId, scrollRef, getSavedScrollTop, last
 }
 
 // v0.91.15: переписано для anchor msgId формата.
+// v0.91.16: bottom mode через scrollToRow + postcheck — раньше использовался
+// raw scrollHeight который ещё не remeasured react-window (clamped) →
+// юзер на «псевдо-дне» (chatcenter.log 17:34:04: scrollHeight=2185 для 50 msg
+// = defaultRowHeight×50, реальная высота ~4000).
 // saved = {anchorMsgId, atBottom} | null
-export function logRestoreDiag({ chatId, isReturning, scrollEl, saved, onRestoreAnchor }) {
+export function logRestoreDiag({
+  chatId, isReturning, scrollEl, saved,
+  onRestoreAnchor, onScrollToIndex, onGetLastIndex,
+}) {
   if (!isReturning) {
     logNativeScroll('initial-restore-skip', { chatId, reason: 'not-returning' })
     return
@@ -65,16 +79,41 @@ export function logRestoreDiag({ chatId, isReturning, scrollEl, saved, onRestore
     return
   }
   if (saved.atBottom) {
-    // Юзер был на дне — scroll to bottom. scrollEl надёжно знает scrollHeight.
-    scrollEl.scrollTop = scrollEl.scrollHeight
-    logNativeScroll('initial-restore-applied', {
-      chatId, mode: 'bottom', actualTop: scrollEl.scrollTop, scrollHeight: scrollEl.scrollHeight,
-    })
+    // v0.91.16: scrollToRow(lastIndex, 'end') — react-window сам пересчитает
+    // scrollTop после remeasure. Fallback scrollHeight только если индекса нет.
+    const lastIdx = onGetLastIndex?.()
+    if (typeof lastIdx === 'number' && lastIdx >= 0 && onScrollToIndex) {
+      try { onScrollToIndex(lastIdx, 'end') } catch (_) {}
+      logNativeScroll('initial-restore-applied', {
+        chatId, mode: 'bottom-row', lastIdx,
+        scrollHeight: scrollEl.scrollHeight, clientHeight: scrollEl.clientHeight,
+      })
+    } else {
+      scrollEl.scrollTop = scrollEl.scrollHeight
+      logNativeScroll('initial-restore-applied', {
+        chatId, mode: 'bottom-fallback',
+        actualTop: scrollEl.scrollTop, scrollHeight: scrollEl.scrollHeight,
+      })
+    }
+    // Postcheck: react-window может перемерить через rAF → scrollHeight вырастет →
+    // повторяем bottom scroll чтобы остаться на реальном дне.
+    setTimeout(() => {
+      const el = scrollRef.current
+      if (!el) return
+      const idx = onGetLastIndex?.()
+      if (typeof idx === 'number' && idx >= 0 && onScrollToIndex) {
+        try { onScrollToIndex(idx, 'end') } catch (_) {}
+      } else {
+        el.scrollTop = el.scrollHeight
+      }
+      logNativeScroll('initial-restore-postcheck', {
+        chatId, afterMs: 100, mode: 'bottom',
+        finalTop: el.scrollTop, scrollHeight: el.scrollHeight,
+      })
+    }, 100)
     return
   }
   if (saved.anchorMsgId) {
-    // Восстановление через scrollToRow — react-window сам пересчитает scrollTop
-    // после remeasure высот. Не зависит от scrollHeight на момент вызова.
     logNativeScroll('initial-restore-attempt', {
       chatId, anchorMsgId: saved.anchorMsgId,
       scrollHeight: scrollEl.scrollHeight, clientHeight: scrollEl.clientHeight,

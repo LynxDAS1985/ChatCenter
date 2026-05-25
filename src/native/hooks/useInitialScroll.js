@@ -34,6 +34,8 @@ export function useInitialScroll({
   getSavedScrollTop,  // v0.87.70 / v0.91.15: (chatId) => {anchorMsgId, atBottom} | null
   onMissingTarget,    // v0.89.0: (firstUnreadId) => void — fallback для firstUnread в виртуализации
   onRestoreAnchor,    // v0.91.15: (anchorMsgId) => void — восстановление позиции по msgId
+  onScrollToIndex,    // v0.91.16: (index, align) => void — bottom mode через scrollToRow
+  onGetLastIndex,     // v0.91.16: () => number — индекс последнего row для bottom mode
 }) {
   // v0.87.68: Set — все чаты где initial-scroll УЖЕ был выполнен.
   // Раньше (до v0.87.67) — единственный chatId (последний). Не работало для A↔B↔A.
@@ -61,10 +63,10 @@ export function useInitialScroll({
         return
       }
       // v0.91.14: retry-loop симметрично ветке 1 (v0.91.6). См. useInitialScrollDiag.js.
-      // v0.91.15: передаём onRestoreAnchor для восстановления через scrollToRow по msgId.
+      // v0.91.15: onRestoreAnchor для anchor mode. v0.91.16: onScrollToIndex/onGetLastIndex для bottom mode.
       const cancel = tryRestoreWithRetry({
         chatId: activeChatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef,
-        onRestoreAnchor,
+        onRestoreAnchor, onScrollToIndex, onGetLastIndex,
       })
       try { onDone?.(activeChatId) } catch(_) {}
       return cancel
