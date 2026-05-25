@@ -250,10 +250,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       seenChatsRef.current.add(chatId)
       setChatReady(true)
     },
-    // v0.87.70: возврат сохранённой позиции (Telegram-style).
+    // v0.87.70 + v0.91.15: anchor msgId через scrollToRow — стабильно при ремаунтах react-window.
     getSavedScrollTop: (chatId) => scrollPosByChatRef.current.get(chatId) ?? null,
-    // v0.89.0: virtual fallback для firstUnread когда он вне видимого DOM.
     onMissingTarget: (firstUnread) => scrollToVirtualRow(firstUnread, 'start'),
+    onRestoreAnchor: (anchorMsgId) => scrollToVirtualRow(anchorMsgId, 'end'),
   })
 
   // v0.87.66/67: при смене чата проверяем seenChatsRef — если уже видели, chatReady=true сразу.

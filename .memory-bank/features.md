@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.14 (25 мая 2026)
+## Текущая версия: v0.91.15 (25 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -19,6 +19,24 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.15 — Anchor msgId вместо пиксельного scrollTop (паттерн Telegram Web K)
+
+Лог 16:19:24: `requestedTop=2235 actualTop=1883 clamped=TRUE`. Пиксельный `scrollTop` обрезался браузером ([MDN scrollTop spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop)) когда react-window сбрасывал кэш высот при ремаунте (`useDynamicRowHeight({key: cacheKey})`). `handleScroll` сохранял clamped значение в `scrollPosByChatRef` → savedTop деградировал при каждом возврате: 11494 → 2235 → 1430.
+
+🥇 [Telegram Web K (tweb)](https://github.com/morethanwords/tweb): `setPeerOptions.topMessageFullMid` — сохраняют **id видимого msg**, не scrollTop. При возврате scrollIntoView по msgId. ID стабилен между ремаунтами.
+
+Решение: формат `scrollPositionsCache` изменён с `number` (scrollTop) на `{ anchorMsgId, atBottom }`. При уходе из чата сохраняем id последнего видимого снизу msg + флаг atBottom. При возврате:
+- `atBottom=true` → `scrollEl.scrollTop = scrollEl.scrollHeight` (scroll to bottom, scrollHeight надёжен)
+- `anchorMsgId` → `scrollToVirtualRow(msgId, 'end')` через react-window scrollToRow (msg окажется снизу viewport)
+
+Backward compat: старый формат (number) в localStorage игнорируется. STORAGE_VERSION=2.
+
+Стек: React 19.2.4, react-window 2.2.7 (scrollToRow API), tdl 8.1.0. Паттерн применён к 4 файлам: scrollPositionsCache.js (новый формат + findVisibleAnchorMsgId), useInboxScroll.js (handleScroll сохраняет anchor через DOM), useInitialScroll.js + useInitialScrollDiag.js (restore через onRestoreAnchor), InboxMode.jsx (onRestoreAnchor = scrollToVirtualRow).
+
+Подробности — в [`mistakes/native-scroll-unread.md`](.memory-bank/mistakes/native-scroll-unread.md) «anchor msgId вместо пиксельного scrollTop». Откат: `git revert <hash>`.
 
 ---
 

@@ -1,11 +1,19 @@
-// v0.91.11-14: модуль логики возврата в виденный чат (ветка already-seen).
-// Содержит:
-//   1. logRestoreDiag — 4 точки логирования (v0.91.11)
-//   2. tryRestoreWithRetry — retry-loop через rAF симметрично ветке 1 (v0.91.14)
-// Корень бага v0.91.14 (chatcenter.log 14:54:35): scrollEl=null при первом
-// срабатывании useEffect → silent skip + lastActiveChatIdRef ставился безусловно →
-// следующее срабатывание isReturning=false → restore никогда. Паттерн Telegram
-// Web K (tweb): отложенное применение позиции после mount DOM.
+// v0.91.11-15: модуль логики возврата в виденный чат (ветка already-seen).
+// История версий:
+//   v0.91.11 — диагностика 4 точки лога (initial-restore-attempt/applied/postcheck/skip)
+//   v0.91.14 — tryRestoreWithRetry с rAF retry × 10 (симметрия ветки 1 v0.91.6)
+//   v0.91.15 — переход с пиксельного scrollTop на anchor msgId (паттерн tweb)
+//
+// Корень бага v0.91.15 (chatcenter.log 16:19:24): пиксельный scrollTop был fragile —
+// при ремаунте react-window cacheKey reset → scrollHeight маленький → MDN scrollTop
+// spec обрезает значение до scrollHeight-clientHeight (clamped=TRUE) → handleScroll
+// сохранял clamped → savedTop деградировал при каждом возврате: 11494 → 2235 → 1430.
+//
+// Решение — anchor msgId (Telegram Web K setPeerOptions.topMessageFullMid):
+//   saved = {anchorMsgId, atBottom}
+//   Если atBottom — scrollEl.scrollTop = scrollEl.scrollHeight (scroll to bottom)
+//   Иначе если anchorMsgId — onRestoreAnchor(msgId) → scrollToRow по индексу
+// msgId стабилен между ремаунтами react-window — не зависит от scrollHeight.
 
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 
@@ -13,7 +21,8 @@ const RETURN_MAX_ATTEMPTS = 10
 
 // v0.91.14: retry-loop до появления DOM. lastActiveChatIdRef ставится ТОЛЬКО
 // когда DOM готов или MAX_ATTEMPTS исчерпан — защита v0.91.7 сохранена.
-export function tryRestoreWithRetry({ chatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef }) {
+// v0.91.15: добавлен onRestoreAnchor для восстановления через scrollToRow.
+export function tryRestoreWithRetry({ chatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef, onRestoreAnchor }) {
   let cancelled = false
   let attempts = 0
   const tick = () => {
@@ -32,14 +41,17 @@ export function tryRestoreWithRetry({ chatId, scrollRef, getSavedScrollTop, last
     lastActiveChatIdRef.current = chatId
     logRestoreDiag({
       chatId, isReturning: true, scrollEl,
-      savedTop: getSavedScrollTop?.(chatId), scrollRef,
+      saved: getSavedScrollTop?.(chatId),
+      onRestoreAnchor,
     })
   }
   tick()
   return () => { cancelled = true }
 }
 
-export function logRestoreDiag({ chatId, isReturning, scrollEl, savedTop, scrollRef }) {
+// v0.91.15: переписано для anchor msgId формата.
+// saved = {anchorMsgId, atBottom} | null
+export function logRestoreDiag({ chatId, isReturning, scrollEl, saved, onRestoreAnchor }) {
   if (!isReturning) {
     logNativeScroll('initial-restore-skip', { chatId, reason: 'not-returning' })
     return
@@ -48,23 +60,28 @@ export function logRestoreDiag({ chatId, isReturning, scrollEl, savedTop, scroll
     logNativeScroll('initial-restore-skip', { chatId, reason: 'no-scrollEl' })
     return
   }
-  if (typeof savedTop !== 'number') {
-    logNativeScroll('initial-restore-skip', { chatId, reason: 'no-saved', savedTopType: typeof savedTop })
+  if (!saved || typeof saved !== 'object') {
+    logNativeScroll('initial-restore-skip', { chatId, reason: 'no-saved', savedType: typeof saved })
     return
   }
-  logNativeScroll('initial-restore-attempt', {
-    chatId, savedTop, scrollHeight: scrollEl.scrollHeight, clientHeight: scrollEl.clientHeight,
-  })
-  scrollEl.scrollTop = savedTop
-  const actualTop = scrollEl.scrollTop
-  logNativeScroll('initial-restore-applied', {
-    chatId, requestedTop: savedTop, actualTop, clamped: actualTop !== savedTop,
-  })
-  logNativeScroll('initial-restore-saved', { chatId, savedTop })
-  setTimeout(() => {
-    const el = scrollRef.current
-    if (el) logNativeScroll('initial-restore-postcheck', {
-      chatId, afterMs: 100, finalTop: el.scrollTop, scrollHeight: el.scrollHeight,
+  if (saved.atBottom) {
+    // Юзер был на дне — scroll to bottom. scrollEl надёжно знает scrollHeight.
+    scrollEl.scrollTop = scrollEl.scrollHeight
+    logNativeScroll('initial-restore-applied', {
+      chatId, mode: 'bottom', actualTop: scrollEl.scrollTop, scrollHeight: scrollEl.scrollHeight,
     })
-  }, 100)
+    return
+  }
+  if (saved.anchorMsgId) {
+    // Восстановление через scrollToRow — react-window сам пересчитает scrollTop
+    // после remeasure высот. Не зависит от scrollHeight на момент вызова.
+    logNativeScroll('initial-restore-attempt', {
+      chatId, anchorMsgId: saved.anchorMsgId,
+      scrollHeight: scrollEl.scrollHeight, clientHeight: scrollEl.clientHeight,
+    })
+    try { onRestoreAnchor?.(saved.anchorMsgId) } catch (_) {}
+    logNativeScroll('initial-restore-applied', { chatId, mode: 'anchor', anchorMsgId: saved.anchorMsgId })
+    return
+  }
+  logNativeScroll('initial-restore-skip', { chatId, reason: 'empty-saved' })
 }

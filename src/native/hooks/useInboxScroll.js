@@ -7,7 +7,7 @@
 
 import { useRef } from 'react'
 import useInboxNewerPrefetch from './useInboxNewerPrefetch.js'
-import { saveScrollPositions } from '../utils/scrollPositionsCache.js'
+import { saveScrollPositions, findVisibleAnchorMsgId } from '../utils/scrollPositionsCache.js'
 
 export default function useInboxScroll({
   store,
@@ -35,12 +35,22 @@ export default function useInboxScroll({
     const el = e.target
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
 
-    // v0.87.70: сохраняем текущий scrollTop для активного чата.
+    // v0.87.70: сохраняем позицию для активного чата.
     // v0.91.8 (Совет 1): и в localStorage (debounced 1с) — позиция переживает перезапуск.
+    // v0.91.15: формат изменён с пиксельного scrollTop на anchor msgId. scrollTop
+    // деградировал при clamped restore (react-window cacheKey reset → scrollHeight мал
+    // → MDN scrollTop spec обрезает значение → handleScroll сохраняет clamped → позиция
+    // портится при каждом возврате). msgId стабилен между ремаунтами.
     const viewKey = scrollKey || store.activeChatId
     if (viewKey && chatReady) {
-      scrollPosByChatRef.current.set(viewKey, el.scrollTop)
-      saveScrollPositions(scrollPosByChatRef.current)
+      const anchorMsgId = findVisibleAnchorMsgId(el)
+      // Сохраняем только если есть хоть что-то полезное (anchor или atBottom).
+      // Иначе остаётся прежняя запись (защита от затирания при programmatic scroll
+      // когда react-window еще не отрендерил DOM).
+      if (anchorMsgId || nearBottom) {
+        scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
+        saveScrollPositions(scrollPosByChatRef.current)
+      }
     }
 
     // v0.87.49: лог переходов atBottom (для диагностики useForceReadAtBottom)

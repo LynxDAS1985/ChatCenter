@@ -31,8 +31,9 @@ import { tryRestoreWithRetry } from './useInitialScrollDiag.js'  // v0.91.14 (л
 export function useInitialScroll({
   activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading,
   onDone,
-  getSavedScrollTop,  // v0.87.70: (chatId) => number | null — сохранённая позиция
-  onMissingTarget,    // v0.89.0: (firstUnreadId) => void — fallback для виртуализации
+  getSavedScrollTop,  // v0.87.70 / v0.91.15: (chatId) => {anchorMsgId, atBottom} | null
+  onMissingTarget,    // v0.89.0: (firstUnreadId) => void — fallback для firstUnread в виртуализации
+  onRestoreAnchor,    // v0.91.15: (anchorMsgId) => void — восстановление позиции по msgId
 }) {
   // v0.87.68: Set — все чаты где initial-scroll УЖЕ был выполнен.
   // Раньше (до v0.87.67) — единственный chatId (последний). Не работало для A↔B↔A.
@@ -60,8 +61,10 @@ export function useInitialScroll({
         return
       }
       // v0.91.14: retry-loop симметрично ветке 1 (v0.91.6). См. useInitialScrollDiag.js.
+      // v0.91.15: передаём onRestoreAnchor для восстановления через scrollToRow по msgId.
       const cancel = tryRestoreWithRetry({
         chatId: activeChatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef,
+        onRestoreAnchor,
       })
       try { onDone?.(activeChatId) } catch(_) {}
       return cancel
@@ -103,13 +106,10 @@ export function useInitialScroll({
         return
       }
       const firstUnread = firstUnreadIdRef.current
-      // v0.91.8: priority savedScrollTop из localStorage (если не был на дне).
-      const savedTop = getSavedScrollTop?.(activeChatId)
-      const hasSaved = typeof savedTop === 'number' && savedTop > 0
-      const savedAtBottom = hasSaved && (scrollEl.scrollHeight - savedTop - scrollEl.clientHeight < 80)
-      if (hasSaved && !savedAtBottom) {
-        scrollEl.scrollTop = savedTop
-        logNativeScroll('initial-restore-saved-first-open', { chatId: activeChatId, savedTop })
+      // v0.91.8 + v0.91.15: priority anchor msgId если не на дне (saved={anchorMsgId, atBottom}).
+      const saved = getSavedScrollTop?.(activeChatId)
+      if (saved && saved.anchorMsgId && !saved.atBottom && onRestoreAnchor?.(saved.anchorMsgId) !== false) {
+        logNativeScroll('initial-restore-saved-first-open', { chatId: activeChatId, anchorMsgId: saved.anchorMsgId })
         doneSetRef.current.add(activeChatId)
         doneRef.current = activeChatId
         try { onDone?.(activeChatId) } catch(_) {}

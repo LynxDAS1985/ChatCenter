@@ -8,6 +8,95 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: пиксельный scrollTop fragile — clamped при ремаунте react-window (v0.91.15)
+
+### Симптом
+Юзер открыл чат, пролистал на дно. Переключился на другой чат. Вернулся обратно → позиция **не та**: scrollTop ниже истинного дна. С каждым следующим возвратом позиция **деградирует всё дальше**.
+
+### Прямое доказательство (chatcenter.log 16:19:24)
+```
+16:19:18 initial-restore-saved savedTop=11494         ← правильная позиция (на дне)
+16:19:24 chat-open top=1883 height=2401 client=517 bottomGap=1
+16:19:24 initial-restore-applied requestedTop=2235 actualTop=1883 clamped=TRUE  ⚠️
+16:19:24 initial-restore-saved savedTop=2235          ← сохранено clamped значение
+16:19:45 chat-open top=1430 height=2000               ← ещё хуже
+16:19:45 initial-restore-applied requestedTop=2235 actualTop=1430 clamped=TRUE  ⚠️
+```
+
+### Корень — три факта
+**🥇 [MDN Element.scrollTop spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop)**: «If the value is greater than the maximum available for the element, scrollTop will be set to the maximum available». Браузер **тихо обрезает** до `scrollHeight - clientHeight`.
+
+**🥇 [react-window 2.x useDynamicRowHeight](https://github.com/bvaughn/react-window)**: при смене `key` (=cacheKey=activeChatId в [`VirtualMessageList.jsx:211`](../../src/native/components/VirtualMessageList.jsx#L211)) кэш высот **сбрасывается**. Все row пересчитываются от `defaultRowHeight=50`. scrollHeight временно мал.
+
+**🥈 Наш код [`useInboxScroll.js:41-44`](../../src/native/hooks/useInboxScroll.js)** (до v0.91.15): `handleScroll` сохраняет el.scrollTop при **любом** изменении (включая programmatic от restore). Через ms scrollHeight вырастает после remeasure, но savedTop уже **записан clamped значением**.
+
+### Цепочка деградации
+1. Юзер на дне → `savedTop=11494` ✅
+2. Возврат → react-window cacheKey reset → scrollHeight=2401 (mess=50 × default=50)
+3. `scrollEl.scrollTop = 11494` → clamped до 1883
+4. `handleScroll` срабатывает → сохраняет 2235 (или 1883) в `savedTop`
+5. Возврат снова → ещё хуже → юзер всё дальше от дна
+
+### Решение (v0.91.15) — anchor msgId
+Формат `scrollPositionsCache`:
+```javascript
+// Было: Map<chatId, number>  ← scrollTop в пикселях
+// Стало: Map<chatId, { anchorMsgId: string|null, atBottom: boolean }>
+```
+
+При уходе: `handleScroll` находит последний видимый снизу msg через DOM:
+```javascript
+function findVisibleAnchorMsgId(scrollEl) {
+  const elements = scrollEl.querySelectorAll('[data-msg-id]')
+  const scrollBottom = scrollEl.scrollTop + scrollEl.clientHeight
+  let anchor = null
+  for (const el of elements) {
+    if (el.offsetTop <= scrollBottom) anchor = el.getAttribute('data-msg-id')
+  }
+  return anchor
+}
+```
+
+При возврате:
+- `saved.atBottom=true` → `scrollEl.scrollTop = scrollEl.scrollHeight` (scroll to bottom, scrollHeight надёжен)
+- `saved.anchorMsgId` → `onRestoreAnchor(msgId)` = `scrollToVirtualRow(msgId, 'end')` (react-window сам пересчитает scrollTop после remeasure)
+
+### Backward compat
+Старый формат (number) в localStorage **игнорируется** при загрузке. `STORAGE_VERSION=2` в обёртке. При первом сохранении нового формата старые данные перезаписываются.
+
+### Как делают на нашем стеке
+
+| Источник | Что сохраняют | Уровень |
+|---|---|---|
+| 🥇 **Telegram Web K** ([tweb source](https://github.com/morethanwords/tweb)) | `setPeerOptions.topMessageFullMid` — id видимого msg | Прямой аналог нашего |
+| 🥇 **react-virtuoso** ([scroll-position docs](https://virtuoso.dev/scroll-position/)) | `firstItemIndex` + `getItemAtPos` — индекс сообщения | Element/Matrix, Mattermost, Rocket.Chat |
+| 🥈 Discord | `last_visible_message_id` | Тот же паттерн |
+
+**Все mainstream chat-приложения** используют id-based restore. Пиксельный scrollTop — антипаттерн для chat с виртуализацией.
+
+### Правило
+Для **любого** виртуализированного списка с динамическими высотами row:
+1. **НЕ сохранять** пиксельный `scrollTop` — он fragile из-за clamping и ремаунтов
+2. **Сохранять** id видимого элемента (anchor) + флаг «на дне»
+3. **Восстанавливать** через imperative API виртуализации (`scrollToRow` / `scrollToIndex`) или `scrollIntoView` по DOM-id
+4. **Никогда** не использовать `handleScroll` для сохранения сразу после programmatic restore — это создаст цикл деградации
+
+### Регрессионная защита
+- Existing тесты `useInitialScroll.vitest.jsx` обновлены под новый формат
+- `scrollPositionsCache.js` — graceful migration старого формата
+
+### История ловушки
+
+| Версия | Что сохраняли | Как восстанавливали | Проблема |
+|---|---|---|---|
+| v0.87.70 | `Map<chatId, scrollTop number>` | `scrollEl.scrollTop = saved` | clamped при ремаунте |
+| v0.91.8 | + localStorage persist | то же | то же |
+| v0.91.11 | то же | + диагностика логов | выявила clamped |
+| v0.91.14 | то же | + retry-loop | retry не помогает, clamped всё равно |
+| **v0.91.15** | `{anchorMsgId, atBottom}` | `scrollToVirtualRow(msgId, 'end')` | **Закрыто** |
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: ветка already-seen без retry-loop = restore не выполняется при `scrollEl=null` (v0.91.14)
 
 ### Симптом
