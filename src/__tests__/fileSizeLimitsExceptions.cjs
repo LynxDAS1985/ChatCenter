@@ -67,7 +67,7 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 650,
-    reason: 'v0.89.33: snapshot ref для divider (~15 строк). InboxMode интегрирует все hooks режима inbox.'
+    ceiling: 660,
+    reason: 'v0.89.33: snapshot ref для divider (~15 строк). v0.91.17: useScrollPositionAutosave hook integration. InboxMode интегрирует все hooks режима inbox.'
   }
 }

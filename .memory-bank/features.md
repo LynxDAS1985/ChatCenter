@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.16 (25 мая 2026)
+## Текущая версия: v0.91.17 (25 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -19,6 +19,31 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.17 — Периодическое сохранение позиции каждые 1.5с (фикс «открыл-посмотрел-вернулся не туда»)
+
+Лог 18:08:30 показал что юзер открыл чат «о чём говорят коллеги» (`messages=0 hasEl=false`), переключился на «Клуб партнёров» (18:08:51), вернулся (18:08:53). В скриншотах #1 и #2 — РАЗНЫЕ статьи. То есть anchor не сохранил то место где юзер был.
+
+Корень: [`useInboxScroll.js handleScroll`](src/native/hooks/useInboxScroll.js) сохраняет anchor ТОЛЬКО при scroll событии. Если юзер открыл чат и **просто читает без скроллинга** (длинные статьи с превью, большие посты) — сохранения не происходит. При возврате → старый anchor из прошлой сессии (или null) → юзер не на своей позиции.
+
+🥇 [Telegram Web K (tweb)](https://github.com/morethanwords/tweb): ScrollSaver класс + сохранение **на смену peer** в `onChange peer`. Два места сохранения: scroll + смена чата.
+
+Решение: добавить `setInterval(1500мс)` в `InboxMode.jsx` — пока чат активен, каждые 1.5с сохраняем `findVisibleAnchorMsgId` + `atBottom` в `scrollPosByChatRef`. Защита: только при `chatReady=true`, `msgsScrollRef.current!==null`, `anchorMsgId || atBottom`. Cleanup автоматически при смене `activeViewKey` (useEffect deps).
+
+Почему НЕ через cleanup useEffect при смене activeChatId: React 19 порядок effects — children срабатывают раньше parent. К моменту cleanup в InboxMode `msgsScrollRef.current` уже = НОВЫЙ scrollEl (InboxChatPanel useEffect sync уже отработал) → сохранили бы позицию НОВОГО чата под ID СТАРОГО.
+
+Заодно фикс v0.91.15 bug в `scrollToBottom` handler — записывал `el.scrollHeight` (число) вместо нового формата `{anchorMsgId: null, atBottom: true}`.
+
+Стек: React 19.2.4, react-window 2.2.7, tdl 8.1.0, Electron 41.1.0. Не трогаем backend / store / handleScroll / initial scroll.
+
+Файлы:
+- `InboxMode.jsx`: добавлен useEffect с интервалом 1.5с после объявления activeViewKey (TDZ-safe), фикс scrollToBottom формата
+
+Документация: запись в features.md, новая ловушка в `mistakes/native-scroll-unread.md` «handleScroll не покрывает случай «юзер не скроллит»».
+
+Подробности — в [`mistakes/native-scroll-unread.md`](.memory-bank/mistakes/native-scroll-unread.md) «handleScroll не покрывает простой просмотр без скролла». Откат: `git revert <hash>`.
 
 ---
 

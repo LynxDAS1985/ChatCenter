@@ -8,6 +8,83 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: handleScroll не покрывает «юзер открыл-посмотрел-переключился» (v0.91.17)
+
+### Симптом
+Юзер открыл чат с длинным сообщением (статья, пост с большим превью), посмотрел его, переключился на другой чат, вернулся → попал на другое сообщение. Длинные сообщения создают ощущение «программа теряет позицию».
+
+### Прямое доказательство (chatcenter.log 18:08:30 + скриншоты)
+```
+18:08:30 chat-open «о чём говорят коллеги» unread=123 messages=0 hasEl=false
+   (юзер смотрит статью без скроллинга — handleScroll НЕ срабатывает)
+18:08:51 store-set-active-chat from=... to=«Клуб партнёров»
+18:08:53 store-set-active-chat from=«Клуб партнёров» to=«о чём говорят коллеги»
+18:08:53 initial-restore-applied mode=anchor anchorMsgId=10136584192
+   (восстановили anchor из ПРЕДЫДУЩЕЙ сессии, не текущей просмотренной позиции)
+```
+
+Скриншот #1 (до ухода): статья «Москва и Петербург...» 15 мая
+Скриншот #2 (после возврата): статья «Ботаник рассказала...» 11:36 ← НЕ та статья!
+
+### Корень
+[`useInboxScroll.js:36-58`](../../src/native/hooks/useInboxScroll.js) `handleScroll` сохраняет позицию **только при scroll событии** (через `onScroll` от react-window). Если юзер открыл чат и читает без скроллинга (длинные статьи помещаются в viewport частично без необходимости скроллить) → событие не происходит → `scrollPosByChatRef` не обновляется → при возврате используется устаревшая позиция (или из старой сессии).
+
+### Решение (v0.91.17)
+Добавили **2-й канал сохранения**: интервал каждые 1.5с в [`InboxMode.jsx`](../../src/native/modes/InboxMode.jsx) который сохраняет anchor через тот же `findVisibleAnchorMsgId` пока чат активен:
+
+```javascript
+useEffect(() => {
+  if (!activeViewKey || !chatReady) return
+  const interval = setInterval(() => {
+    const el = msgsScrollRef.current
+    if (!el) return
+    const anchorMsgId = findVisibleAnchorMsgId(el)
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    if (anchorMsgId || atBottom) {
+      scrollPosByChatRef.current.set(activeViewKey, { anchorMsgId, atBottom })
+      saveScrollPositions(scrollPosByChatRef.current)
+    }
+  }, 1500)
+  return () => clearInterval(interval)
+}, [activeViewKey, chatReady])
+```
+
+### Почему НЕ через cleanup useEffect при смене activeChatId
+
+🥈 **React 19 effect lifecycle** ([React docs](https://react.dev/reference/react/useEffect)): children effects срабатывают **раньше** parent. В нашей архитектуре:
+- `InboxChatPanel.jsx` useEffect синхронизирует `msgsScrollRef.current` с `react-window listRef.element` (deps `[renderItems.length]`).
+- При смене `activeChatId` → renderItems пересоздаются → InboxChatPanel useEffect срабатывает первым → `msgsScrollRef.current` уже **новый** scrollEl.
+- Если бы наш cleanup в InboxMode пытался сохранить позицию здесь — он бы взял **новый** DOM (для нового чата) и сохранил под **старым** chatId.
+
+То есть «сохранить при смене activeChatId» — **архитектурно опасно** в React 19 + react-window 2.x. Интервал — обход проблемы.
+
+### Где сломается через месяц
+
+Если юзер быстро (<1.5с) переключает чаты — anchor может не успеть сохраниться. Но в этом случае юзер и не прочитал ничего → не критично. Telegram Web K имеет ту же характеристику (peer-change save срабатывает только при реальном уходе, не при быстром tab-cycle).
+
+### Как делают другие на нашем стеке
+
+| Источник | Подход |
+|---|---|
+| 🥇 **Telegram Web K** ([tweb](https://github.com/morethanwords/tweb)) | ScrollSaver класс + `onChange peer` event handler. 2 канала сохранения. |
+| 🥈 react-virtuoso | `restoreStateFrom` + auto-save в `componentWillUnmount` virtuoso |
+| 🥈 Discord | `last_read_message_id` REST API + локальный кэш |
+
+Наш паттерн (scroll + interval) — упрощение tweb для нашей архитектуры (избегаем React 19 effect lifecycle сложностей).
+
+### Дополнительный фикс v0.91.15 bug
+Заодно исправлен баг в [`InboxMode.jsx scrollToBottom`](../../src/native/modes/InboxMode.jsx): записывал `el.scrollHeight` (число) вместо нового формата `{anchorMsgId: null, atBottom: true}`. После v0.91.15 формат изменился, но кнопка «↓» не была обновлена.
+
+### Правило
+
+Для сохранения позиции в виртуализированных чатах **недостаточно** только scroll-handler. Нужны минимум **2 канала**:
+1. scroll-handler — для активного скроллинга (быстрая реакция)
+2. interval ИЛИ on-peer-change ИЛИ visibility-change — для пассивного просмотра без скролла
+
+scroll-handler даёт **точность** (срабатывает при каждом скролле). Второй канал даёт **полноту** (покрывает случай «не скроллил»).
+
+---
+
 ## 🔴 ВАЖНОЕ: bottom mode через raw scrollHeight тоже clamped (v0.91.16)
 
 ### Симптом

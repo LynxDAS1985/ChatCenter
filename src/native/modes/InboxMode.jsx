@@ -17,6 +17,7 @@ import useReadByVisibility from '../hooks/useReadByVisibility.js'
 import useInboxScroll from '../hooks/useInboxScroll.js'
 import { getUnreadAnchorDebug } from '../utils/scrollDiagnostics.js'
 import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
+import { useScrollPositionAutosave } from '../hooks/useScrollPositionAutosave.js'
 
 try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
 
@@ -109,6 +110,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const activeMessageKey = topicMessageKey(store.activeChatId, activeTopic)
   const activeViewKey = activeTopic ? activeMessageKey : store.activeChatId
   const activeMessages = forumNeedsTopic ? [] : (store.messages[activeMessageKey] || [])
+
   // v0.91.5: диагностика для бага «выбрал тему форума → пустой экран, вечная загрузка».
   // Из лога видно что backend возвращает messages, но UI пуст. Здесь — лог где UI
   // резолвит activeMessages: какой ключ читается, сколько сообщений нашлось, какие
@@ -181,6 +183,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const msgsScrollRef = useRef(null)
+  useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef })  // v0.91.17
   // v0.89.0: imperative API виртуализации react-window (scrollToRow, get element).
   // Используется как fallback когда querySelector('[data-msg-id]') промахивается
   // (элемент не в видимом виртуальном DOM).
@@ -465,7 +468,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     scrollDiag.logEvent('button-scroll-absolute-bottom', { activeUnread, messages: activeMessages.length })
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     const viewKey = activeViewKey || store.activeChatId
-    if (viewKey) scrollPosByChatRef.current.set(viewKey, el.scrollHeight)
+    // v0.91.15: формат {anchorMsgId, atBottom} вместо number — restore через scrollToRow.
+    if (viewKey) scrollPosByChatRef.current.set(viewKey, { anchorMsgId: null, atBottom: true })
     setAtBottom(true)
     setNewBelow(0)
     const lastMsg = activeMessages[activeMessages.length - 1]
