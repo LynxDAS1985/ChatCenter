@@ -122,6 +122,107 @@
 
 ---
 
+## Logger events (для chatcenter.log)
+
+События которые пишутся в `chatcenter.log` через `logNativeScroll(name, payload)` или `console.log`. Используются для диагностики в production-сессиях пользователя. Полезные при разборе bug-reports.
+
+### Backend events (main process — `console.log`)
+
+| Событие | Где | Поля | Назначение |
+|---|---|---|---|
+| `[forum-map]` | [`tdlibMapper.js`](../main/native/backends/tdlibMapper.js) — для каждого forum-чата при mapChat | `chatId, title, is_forum, unread_count, unread_mention_count` | Диагностика бейджа форум-групп (v0.91.4). Видно агрегирует ли TDLib `chat.unread_count` |
+| `[forum-be]` | [`tdlibBackend.js forum.getTopics`](../main/native/backends/tdlibBackend.js) | `chatId, topicsCount, sumTopicUnread, chatUnreadCount` | Сверка sum по топикам vs chat.unread_count (v0.91.4) |
+| `[forum-emoji]` | [`tdlibForumEmoji.js`](../main/native/backends/tdlibForumEmoji.js) | `loaded N entries from disk` | Кэш custom emoji загружен с диска при первом запросе (v0.91.8) |
+| `[topic-be]` | [`tdlibBackend.js`](../main/native/backends/tdlibBackend.js) `messages.getTopic` | `chatId, isGeneral, threadMsgId, from, offset, limit` + `invoke result messagesCount=N` | Диагностика загрузки сообщений топика |
+| `[topic-mark]` | [`tdlibBackend.js`](../main/native/backends/tdlibBackend.js) `markTopicRead` | `chatId, rawChat, topicId, maxId, source` + `OK`/`ERROR` | Mark-read для форум-топика (markReadDiscussion API) |
+
+### Renderer events (через `logNativeScroll`)
+
+#### Чаты и сообщения
+
+| Событие | Поля | Назначение |
+|---|---|---|
+| `store-set-active-chat` | `from, to, unread, hasMessages` | Смена активного чата (нажатие в списке) |
+| `store-load-messages` | `chatId, limit, hadMessages, cached, unread, aroundId` | Initial запрос истории чата |
+| `store-tg-messages` | `chatId, append, appendNewer, incoming, existing, active, anchorIndex/Id` | tg:messages event от backend (replace/append/append-newer) |
+| `store-load-older` | `chatId, beforeId, limit` | Запрос старых сообщений (скролл вверх) |
+| `store-load-newer` | `chatId, afterId, limit, key, topic` | Запрос новых сообщений вниз (prefetch) |
+| `chat-open` | `chatId, title, unread, messages, loading, hasEl, top, height, client, bottomGap` | UI открыл чат (после смены activeChatId) |
+| `chat-state` | те же поля + `sinceOpenMs, lastUserType, lastUserAgoMs` | Текущее состояние при изменении (для диагностики прыжков) |
+
+#### Initial-scroll и restore позиции
+
+| Событие | Поля | Назначение |
+|---|---|---|
+| `initial-schedule` | `chatId, messages, activeUnread` | setTimeout 150мс запланирован |
+| `initial-wait-empty` | `chatId, activeUnread` | messagesCount=0 — ждём |
+| `initial-wait-loading` | `chatId, messages, activeUnread` | loading=true — ждём |
+| `initial-run` | `chatId, firstUnread, activeUnread, attempts, top, height` | Старт scroll-логики (после retry для scrollEl) |
+| `initial-target` | `chatId, firstUnread, ...` | scrollIntoView к найденному в DOM unread |
+| `initial-target-virtual` | те же | onMissingTarget → scrollToRow (виртуализация) |
+| `initial-target-missing` | те же | firstUnread не найден ни в DOM ни через onMissingTarget |
+| `initial-done` | те же | Initial-scroll завершён, chatReady=true |
+| `initial-restore-saved` | `chatId, savedTop` | Восстановление позиции при возврате к виденному чату (ветка already-seen) |
+| `initial-restore-attempt` | `chatId, savedTop, scrollHeight, clientHeight` | v0.91.11: диагностика — попытка restore в ветке already-seen (видно хватит ли scrollHeight) |
+| `initial-restore-applied` | `chatId, requestedTop, actualTop, clamped` | v0.91.11: диагностика — фактический scrollTop после присвоения, `clamped=true` = scrollHeight мал |
+| `initial-restore-postcheck` | `chatId, afterMs, finalTop, scrollHeight` | v0.91.11: диагностика — позиция через 100мс (react-window мог перемерить высоты) |
+| `initial-restore-skip` | `chatId, reason, savedTopType?` | v0.91.11: диагностика — skip с причиной (`no-scrollEl` / `no-saved` / `not-returning`) |
+| `initial-restore-saved-first-open` | `chatId, savedTop` | v0.91.8: восстановление позиции из localStorage при первом открытии после рестарта |
+| `initial-no-scrollel` | `chatId, attempts` | v0.91.6: scrollEl не появился за 10 кадров — fallback onDone без scroll |
+
+#### Превью чата (chat.lastMessage)
+
+| Событие | Поля | Назначение |
+|---|---|---|
+| `chat-last-msg-window` | `windowMs, applied, staleSkipped, pending` | v0.91.10: агрегатор tg:chat-last-message событий за 30с (метрика частоты обновлений превью) |
+
+#### Скролл и счётчики
+
+| Событие | Поля | Назначение |
+|---|---|---|
+| `bottom-state-change` | `prev, curr, scrollTop, scrollHeight, clientHeight, bottomGap` | Переход atBottom |
+| `bottom-state` | `nearBottom, ...` | Текущее состояние atBottom |
+| `scroll-anomaly` | `dtMs, deltaTop, deltaHeight, prevTop, currTop, prevHeight, currHeight, reasonGuess` | Резкий прыжок scrollTop (>500px за <200мс) |
+| `user-scroll-intent` | `type, top, height, client, bottomGap` | Wheel/touch/pointer от юзера |
+| `force-read-schedule` / `force-read-fire` / `force-read-skip` | разные | force markRead при atBottom |
+| `new-below` | `added, messageId, fromEvent` | v0.91.3: реальное входящее (server-push) — увеличить «↓ N» |
+| `new-below-skip` | `reason: 'other-chat' \| 'outgoing' \| 'at-bottom'` | Фильтры useNewBelowCounter |
+| `new-below-reset` | `reason: 'unread-cleared', prev` | v0.91.3: сброс при unread=0 |
+
+#### Форум-чаты (топики)
+
+| Событие | Поля | Назначение |
+|---|---|---|
+| `[topic-ui]` (через `app:log`) | `selectForumTopic chatId, topicId, ..., requestId, params` | UI выбрал тему |
+| `[topic-ui]` | `tg:get-topic-messages result ok=, messagesCount=, hasMore=, error=, key=` | Ответ от backend |
+| `[topic-ui]` | `stale response ignored chatId=, staleId=, currentId=` | Race-protection отбросил устаревший ответ |
+| `[topic-state]` | `applyMessages key, newLen, prevLen, activeForumTopicId, activeChatIdMatch` | v0.91.5: state.messages[key] обновлён |
+| `[topic-resolve]` | `chatId, activeTopicId, activeMessageKey, activeMessages.len, forumNeedsTopic, allTopicKeys` | v0.91.5: UI читает state для активного топика |
+| `[topic-mark-ui]` | `SEND chatId, topicId, maxId, baselineUnread` | UI отправил markRead |
+| `[topic-mark-refresh]` | `chatId, attempt, baseline, refreshed, delta` | Refresh после mark-read |
+| `[forum-ui]` (через `app:log`) | `activeChatId, chatFound, type, isForum, triggerForum` | UI решает грузить топики или сообщения |
+| `[forum-ui]` | `loadForumTopics result ok=, isForum=, topicsCount=, cancelled=` | Ответ |
+
+#### Кэш и метрики
+
+| Событие | Поля | Назначение |
+|---|---|---|
+| `idb-cache-window` | `windowMs, summary: {op: {h, m, rate}}` | v0.89.45: агрегатор IDB hit/miss за 30с |
+
+### Назначение и ротация
+
+- Лог пишется в `userData/chatcenter.log` (Windows: `C:/Users/<имя>/AppData/Roaming/ЦентрЧатов/chatcenter.log`).
+- Без явной ротации (TODO для будущего).
+- При багах: попросить юзера прислать последние 5000 строк → `grep` по relevant событиям.
+
+### Когда добавлять новое событие
+
+1. Только для **отладки реальных проблем**, не превентивно.
+2. Если событие в **горячем пути** (вызывается чаще 10 раз/сек) — обернуть в агрегатор по окну (см. `chat-last-msg-window`, `idb-cache-window` как примеры).
+3. Если событие диагностическое (для конкретной серии багов) — записать в [`code-todo.md`](./code-todo.md) запись на cleanup после стабилизации.
+
+---
+
 ## Telegram forum topics — investigation (2026-05-12)
 
 Native Telegram API currently has flat chat/message channels:

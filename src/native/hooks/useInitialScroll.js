@@ -26,6 +26,7 @@
 // (13678→10204→7811). lastActiveChatIdRef хранит chatId с прошлого срабатывания.
 import { useEffect, useRef } from 'react'
 import { getScrollMetrics, logNativeScroll } from '../utils/scrollDiagnostics.js'
+import { logRestoreDiag } from './useInitialScrollDiag.js'  // v0.91.11 (удалить с TODO-6)
 
 export function useInitialScroll({
   activeChatId, messagesCount, scrollRef, firstUnreadIdRef, activeUnread, loading,
@@ -56,13 +57,13 @@ export function useInitialScroll({
       // сообщения в том же чате) — НЕ дёргаем scrollTop. Юзер активно читает.
       const isReturning = lastActiveChatIdRef.current !== activeChatId
       lastActiveChatIdRef.current = activeChatId
-      if (isReturning && scrollRef.current) {
-        const savedTop = getSavedScrollTop?.(activeChatId)
-        if (typeof savedTop === 'number') {
-          scrollRef.current.scrollTop = savedTop
-          logNativeScroll('initial-restore-saved', { chatId: activeChatId, savedTop })
-        }
-      }
+      // v0.91.11: диагностика «возврат прыгает вверх» — см. useInitialScrollDiag.js (TODO-6).
+      logRestoreDiag({
+        chatId: activeChatId, isReturning,
+        scrollEl: scrollRef.current,
+        savedTop: getSavedScrollTop?.(activeChatId),
+        scrollRef,
+      })
       try { onDone?.(activeChatId) } catch(_) {}
       return
     }

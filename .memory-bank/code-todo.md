@@ -31,6 +31,22 @@ description: Отложенные технические улучшения ко
 
 ---
 
+### TODO-6: Удалить диагностический модуль v0.91.11 (useInitialScrollDiag.js)
+
+**Контекст**: в v0.91.11 для расследования бага «при возврате в чат программа перелистывает вверх» был вынесен отдельный модуль [`useInitialScrollDiag.js`](../src/native/hooks/useInitialScrollDiag.js) с функцией `logRestoreDiag(...)`. Вызывается в [`useInitialScroll.js`](../src/native/hooks/useInitialScroll.js) ветка «already-seen» один раз на смену чата + один setTimeout(100мс).
+
+**Что удалить** (когда корень найден и пофикшен):
+1. Файл `src/native/hooks/useInitialScrollDiag.js` целиком
+2. В `useInitialScroll.js` — строку `import { logRestoreDiag } from './useInitialScrollDiag.js'`
+3. В `useInitialScroll.js` — блок `logRestoreDiag({...})` в ветке already-seen (восстановить присвоение `scrollEl.scrollTop = savedTop` напрямую)
+4. В `api.md` — строки `initial-restore-attempt`, `initial-restore-applied`, `initial-restore-postcheck`, `initial-restore-skip` из таблицы «Initial-scroll и restore позиции» (оставить только `initial-restore-saved`)
+
+**Когда удалять**: в одном коммите с точечным фиксом корня (после анализа лога юзера).
+
+**Приоритет**: 🟢 низкий — выполняется один раз на смену чата, не горячий путь.
+
+---
+
 ## 🟡 Средний приоритет
 
 ### TODO-1: Удалить мёртвый параметр `thumb` из `media.download`
@@ -121,3 +137,4 @@ r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
 | 2026-05-15 | v0.89.16 | TODO-3 — accountId в `tg-media/` именах | 📋 в очереди |
 | 2026-05-15 | v0.89.16 | TODO-4 — progressive через `readFilePart` | 📋 на будущее |
 | 2026-05-15 | v0.89.16 | TODO-5 — обновить api.md, architecture.md, decisions.md | 📋 в очереди |
+| 2026-05-25 | v0.91.11 | TODO-6 — удалить диагностические `initial-restore-*` логи | 📋 в очереди |
