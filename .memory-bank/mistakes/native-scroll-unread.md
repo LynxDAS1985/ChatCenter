@@ -8,6 +8,84 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: load-older стартует через 30мс после chat-open, ВО ВРЕМЯ restore → массив +50 msgs → targetIdx сдвигается с 7 на 107 → юзера выкидывает (v0.91.24)
+
+### Симптом
+v0.91.22 закрыл closed-loop save (анкор больше не дрейфует на 1 msg/возврат), но юзер всё ещё видит «прыжки» при возврате в чат. Особенно если в этом чате есть несколько scroll-loaded страниц.
+
+### Прямое доказательство (chatcenter.log 14:01:22-25)
+
+```
+14:01:22.000  chat-open chatId=...-1001218028153 top=0 height=9300
+14:01:22.030  load-older-trigger     ← через 30мс, ВО ВРЕМЯ isRestoringRef=true
+14:01:22.???  store-load-older
+14:01:22.???  load-older-result hasMore=true
+14:01:22.???  store-tg-messages append=true existing=100 incoming=50  ← массив +50!
+14:01:22.???  scroll-anomaly prevHeight=9850 currHeight=66140         ← height ×6.7
+14:01:22.???  scroll-anomaly prevHeight=66140 currHeight=51024
+14:01:22.???  scroll-anomaly prevHeight=84409 currHeight=19868        ← ужалось до 19k
+14:01:22.???  anchor-postcheck-tick targetIdx=7   → 107  inViewport=FALSE  ← target уехал!
+```
+
+В `anchor-postcheck-tick` чётко видно: `targetIdx` за 32мс сдвинулся 7→107 (массив +100 элементов в начало). `scrollHeight` хаотично скакал. В итоге `atBottom=true scrollTop=20947` — юзер в самом низу вместо своей позиции.
+
+### Корень
+
+🥇 [MDN scrollTop spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop): «If specified value is greater than the maximum that the element can be scrolled, the value of scrollTop is set to the maximum». При load-older `scrollHeight` пересчитывается react-window — `scrollTop` клампится.
+
+🥇 [react-window 2.2.7 useDynamicRowHeight](https://github.com/bvaughn/react-window/blob/master/README.md): сначала использует `defaultRowHeight: 50` для оценки `scrollHeight`, потом измеряет реальные высоты через ResizeObserver → высота скачет.
+
+🥈 [`useInboxScroll.js:110-116`](src/native/hooks/useInboxScroll.js) проверяет ТОЛЬКО `loadingOlderRef` и `initialScrollDoneRef.current !== viewKey`, но **НЕ проверяет `isRestoringRef`**. Между `onDone()` callback (где `initialScrollDoneRef.current = chatId`) и реальной сходимостью restore проходит >100мс — за это окно load-older успевает сработать.
+
+### Цепочка
+
+1. Юзер возвращается в чат → `chat-open`
+2. react-window рендерит первые 10 row с `defaultRowHeight=50` → `scrollHeight=9300` (мало!)
+3. `scrollToRow(idx, 'end')` → `scrollTop` ставится в 0 (т.к. весь список «помещается»)
+4. **`useInboxScroll.handleScroll`** срабатывает (programmatic scroll триггерит scroll event — [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event))
+5. **`scrollTop < 100` И `activeMessages.length > 0`** → guard проходит
+6. `initialScrollDoneRef.current === viewKey` (уже выставлен в `onDone`) → guard НЕ блокирует
+7. **`isRestoringRef` НЕ проверяется** → load-older стартует
+8. 50 старых msgs в начало → `targetIdx` сдвинулся +50 → видимое окно уехало
+9. react-window remeasure 50 новых row → `scrollHeight` скачет → `scrollTop` clamp
+10. Юзер в `atBottom=true` хотя сохранена середина
+
+### Решение — третья проверка в `useInboxScroll.js` load-older guard
+
+```js
+// [useInboxScroll.js:110]
+if (loadingOlderRef.current) return
+if (isRestoringRef?.current) {  // v0.91.24
+  scrollDiag.logEvent('load-older-skip-restoring', { ... })
+  return
+}
+if (initialScrollDoneRef.current !== viewKey) { ... return }
+```
+
+`isRestoringRef` живёт 500мс (anchor mode) или 1500мс (bottom mode) — этого достаточно для сходимости restore. После сброса флага load-older разблокируется и работает как раньше.
+
+### Симметричный фикс — re-scroll в `onRowsRendered`
+
+🥇 [react-window 2.2.7 onRowsRendered](file:///c:/Projects/ChatCenter/node_modules/react-window/dist/react-window.d.ts:366): зовётся синхронно с rendering pipeline после measure phase. Используем как штатный сигнал «список устаканился» — переоцениваем `targetIdx` через `findRenderItemIndex(msgId)` (по msgId, не по индексу — индексы сдвигаются) и re-scroll если target за viewport. Max 8 attempts (защита от bounce). Abort при `markUserScroll` (юзер перехватил управление).
+
+### Почему НЕ через DOMRect-diff (паттерн Telegram Web K)
+
+🥉 [tweb scrollSaver.ts](https://github.com/morethanwords/tweb/blob/master/src/helpers/scrollSaver.ts) использует анкор-элемент + `DOMRect` diff: `scrollTop += newRect.top - oldRect.top`. У них нет виртуализации — элементы стабильны в DOM. У нас react-window рендерит только видимое окно — после `scrollToRow` старый элемент может исчезнуть из DOM. DOMRect-diff не применим.
+
+### Почему НЕ через Chromium `overflow-anchor: auto`
+
+🥇 [CSS overflow-anchor](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-anchor): браузерное scroll anchoring встроено в Chromium. Решает «prepend сдвигает scrollTop» автоматически. Но в нашем [`VirtualMessageList.jsx:221`](src/native/components/VirtualMessageList.jsx) это **отключено** (`overflow-anchor: 'none'`) — react-window сам мерит и встроенное anchoring ему мешает. Включить обратно — отдельная архитектурная задача.
+
+### Урок
+
+**При scroll restore в виртуализированном списке нельзя забывать про триггеры infinite-scroll**. У нас 2 направления — load-older (вверх) и load-newer (вниз). Оба триггерятся по `scrollTop < N` / `bottomGap < N`. Если restore поставил `scrollTop` в crit-зону, infinite-scroll стартует и портит позицию.
+
+**Правило**: любой trigger подгрузки данных должен иметь guard `if (isRestoringRef?.current) return`. Проверить и для `useInboxNewerPrefetch`.
+
+**Антипаттерн**: думать что «react-window сам разберётся с positioning после remeasure». react-window рассчитывает позицию ОДИН раз при scrollToRow по текущим (устаревшим) высотам. Если массив изменился во время restore — позиция уже неверная.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: closed-loop scroll-save при programmatic scroll → анкор сдвигается на 1 msg каждый возврат (v0.91.22)
 
 ### Симптом

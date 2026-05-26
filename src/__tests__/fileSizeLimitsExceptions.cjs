@@ -67,8 +67,18 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 730,
-    reason: 'v0.89.33: snapshot ref для divider (~15 строк). v0.91.17: useScrollPositionAutosave hook integration. v0.91.22: общий isRestoringRef + проброс в 3 хука для фикса closed-loop scroll (~8 строк). v0.91.23 diag: 4 ref-а для anchor restore tracking + handleRowsRendered диагностический + расширение onRestoreAnchor/onMissingTarget (~50 строк, удаляется в v0.91.24 после подтверждения).'
+    ceiling: 780,
+    reason: 'v0.89.33: snapshot ref для divider (~15 строк). v0.91.17: useScrollPositionAutosave hook integration. v0.91.22: общий isRestoringRef + проброс в 3 хука (~8 строк). v0.91.23 diag: 4 ref + handleRowsRendered (~50 строк). v0.91.24 фикс: handleRowsRendered теперь с re-scroll + handleUserIntent (~30 строк). Доменное разбиение InboxMode на (InboxScrollManager, InboxMessageLoading, InboxBehaviorTransform) — отдельная плановая задача после стабилизации saga.'
+  },
+  // v0.91.24: useInboxScroll — handleScroll hook с двумя направлениями infinite scroll
+  // (load-older вверх, load-newer вниз) + сохранение позиции + scroll-anomaly диагностика.
+  // Лимит default 150 для hooks. v0.91.24 добавил guard `if (isRestoringRef?.current)`
+  // перед load-older trigger (~10 строк) — главный фикс Проблемы 2. Разбиение на
+  // (useScrollSave, useLoadOlder, useScrollAnomalyDiag) — отдельная плановая задача
+  // после стабилизации saga.
+  'src/native/hooks/useInboxScroll.js': {
+    ceiling: 170,
+    reason: 'v0.91.24: добавлен guard isRestoringRef перед load-older trigger (~10 строк) для фикса load-older race во время restore. Разбиение хука — отдельная плановая задача.'
   },
   // v0.91.22: useInitialScroll — корневой хук восстановления позиции (saved scrollTop,
   // firstUnread auto-jump, anchor msgId, retry-loop для chatReady deadlock). История

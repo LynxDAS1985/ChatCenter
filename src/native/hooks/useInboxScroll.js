@@ -108,6 +108,19 @@ export default function useInboxScroll({
 
     // Infinite scroll up
     if (loadingOlderRef.current) return
+    // v0.91.24: блокируем load-older ПОКА restore активен. Корень Проблемы 2
+    // (лог 14:01:22-25): после scrollToRow scrollTop ставится приблизительно
+    // (по defaultRowHeight=50), часто близок к 0 → triger load-older срабатывает
+    // через 30мс после chat-open. 50 старых msgs в начало → target msgId
+    // сдвигается на индексах → react-window remeasure → юзер падает в atBottom.
+    // isRestoringRef живёт 500мс (anchor) / 1500мс (bottom) — за это окно
+    // restore сходится, потом флаг сбрасывается и load-older работает как раньше.
+    if (isRestoringRef?.current) {
+      scrollDiag.logEvent('load-older-skip-restoring', {
+        scrollTop: el.scrollTop, chatId: store.activeChatId, viewKey,
+      })
+      return
+    }
     // v0.87.48: блокируем авто-load-older пока initial-scroll не закончился
     if (initialScrollDoneRef.current !== viewKey) {
       scrollDiag.logEvent('load-older-skip-initial', { scrollTop: el.scrollTop, chatId: store.activeChatId, viewKey })

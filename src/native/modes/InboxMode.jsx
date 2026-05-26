@@ -378,16 +378,16 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     return true
   }
 
-  // v0.91.23 ДИАГНОСТИКА (TODO-10): onRowsRendered react-window зовётся при
-  // изменении видимого диапазона. Используем как штатный сигнал «список устаканился»
-  // после remeasure (см. node_modules/react-window/dist/react-window.d.ts:366).
-  // ТОЛЬКО ЛОГ — re-scroll НЕ делаем, чтобы сначала убедиться из реальных данных:
-  // - сколько раз onRowsRendered зовётся за один restore;
-  // - где оказывается targetIdx (в видимой области или вне);
-  // - сколько мс проходит от restore-start до сходимости;
-  // - что происходит когда msgId удалён (idx=-1) или ещё не отрендерен.
-  // Включается только когда isRestoringRef.current=true (т.е. идёт restore).
-  // В фикс-коммите v0.91.24 сюда добавится scrollToRow retry с защитой от bounce.
+  // v0.91.23 (diag) → v0.91.24 (active): onRowsRendered react-window зовётся
+  // синхронно с rendering pipeline после measure phase
+  // (node_modules/react-window/dist/react-window.d.ts:366). Используем как штатный
+  // сигнал «список устаканился» — лучше magic setTimeout × 5 (v0.91.16 для bottom).
+  //
+  // v0.91.24 ФИКС: если target msg не в видимой области → re-scroll. Index
+  // пересчитывается через findRenderItemIndex(msgId) — устойчиво к удалению
+  // и добавлению сообщений (в т.ч. load-older append=true). Max 8 attempts —
+  // защита от bounce loop. Сходимость: когда idx ∈ [startIndex, stopIndex] —
+  // сбрасываем isRestoringRef.
   const handleRowsRendered = ({ startIndex, stopIndex }) => {
     if (!isRestoringRef.current) return
     const msgId = restoreTargetMsgIdRef.current
@@ -404,6 +404,43 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       scrollTop: el?.scrollTop ?? null,
       scrollHeight: el?.scrollHeight ?? null,
     })
+    // msg ещё не отрендерен (load-older не дошёл) → ждём следующий тик
+    if (idx < 0) return
+    // сошлось — restore завершён
+    if (inViewport) {
+      isRestoringRef.current = false
+      restoreTargetMsgIdRef.current = null
+      restoreAttemptsRef.current = 0
+      return
+    }
+    // bounce-защита: сдаёмся через 8 попыток (по логу 14:01:22 attempts достигало 6+)
+    if (restoreAttemptsRef.current >= 8) {
+      isRestoringRef.current = false
+      restoreTargetMsgIdRef.current = null
+      restoreAttemptsRef.current = 0
+      scrollDiag.logEvent('anchor-postcheck-give-up', { msgId, lastTargetIdx: idx, attempts: 8 })
+      return
+    }
+    // re-scroll: msgId стабилен, idx свежий, align сохранён в onRestoreAnchor
+    try {
+      virtualListRef.current?.scrollToRow({
+        index: idx, align: restoreTargetAlignRef.current, behavior: 'auto',
+      })
+    } catch (_) {}
+  }
+
+  // v0.91.24: обёртка над scrollDiag.markUserScroll — если юзер начал крутить
+  // колесо / трогать сенсорный экран ВО ВРЕМЯ restore, отменяем restore и
+  // отдаём управление. Иначе наш re-scroll в handleRowsRendered перебивает
+  // user-scroll. Telegram Desktop / WhatsApp Web — все так делают.
+  const handleUserIntent = (type) => {
+    scrollDiag.markUserScroll(type)
+    if (isRestoringRef.current) {
+      isRestoringRef.current = false
+      restoreTargetMsgIdRef.current = null
+      restoreAttemptsRef.current = 0
+      scrollDiag.logEvent('anchor-postcheck-abort-user', { type })
+    }
   }
 
   // v0.87.40: пересчёт firstUnread при смене свежих данных (firstId/lastId/unread)
@@ -695,6 +732,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           handleInputChange={handleInputChange} handleReplySend={handleReplySend} handlePaste={handlePaste}
           msgsScrollRef={msgsScrollRef} virtualListRef={virtualListRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
           onRowsRendered={handleRowsRendered}
+          onUserIntent={handleUserIntent}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
           scrollToBottom={handleScrollButtonClick} scrollToAbsoluteBottom={handleScrollButtonDoubleClick} scrollToMessage={scrollToMessage}

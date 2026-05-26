@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.23 (26 мая 2026)
+## Текущая версия: v0.91.24 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -19,6 +19,100 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.24 — Фикс Проблемы 2: блок load-older во время restore + re-scroll через onRowsRendered + abort на user-scroll
+
+После v0.91.23 diag-логи `anchor-postcheck-tick` подтвердили корень: load-older стартует через 30мс после `chat-open` ВО ВРЕМЯ `isRestoringRef=true`, потому что [`useInboxScroll.js:110-116`](src/native/hooks/useInboxScroll.js) проверяет только `loadingOlderRef` и `initialScrollDoneRef`, но не `isRestoringRef`. 50 новых msgs в начало → `targetIdx` сдвигается на +50 (с 7 на 107 в логе 14:01:22) → `scrollHeight` хаотично пересчитывается → юзера выкидывает в `atBottom=true`.
+
+#### Три фикса в одном коммите
+
+**Фикс №1 — главный** ([`useInboxScroll.js`](src/native/hooks/useInboxScroll.js)):
+
+```js
+if (loadingOlderRef.current) return
+if (isRestoringRef?.current) {  // v0.91.24
+  scrollDiag.logEvent('load-older-skip-restoring', { ... })
+  return
+}
+if (initialScrollDoneRef.current !== viewKey) { ... return }
+```
+
+`isRestoringRef` живёт 500мс (anchor mode) или 1500мс (bottom mode) — за это окно restore сходится через `handleRowsRendered` retry. После сброса флага load-older работает как раньше.
+
+**Фикс №2 — re-scroll в `handleRowsRendered`** ([`InboxMode.jsx`](src/native/modes/InboxMode.jsx)):
+
+Diag v0.91.23 превращается в активный re-scroll:
+- Если `targetIdx` за пределами viewport — `virtualListRef.scrollToRow({index, align})`
+- Index пересчитывается через `findRenderItemIndex(msgId)` каждый тик — устойчиво к удалению/добавлению (msgId стабилен)
+- Сходимость: `idx ∈ [startIndex, stopIndex]` → сбрасываем `isRestoringRef`
+- Bounce-защита: max 8 attempts → сдаёмся (по логу 14:01:22 attempts достигало 6+)
+- Если `idx=-1` (msg не отрендерен) — пропускаем тик, ждём следующий
+
+**Фикс №3 — abort при user-scroll** ([`InboxMode.jsx`](src/native/modes/InboxMode.jsx) + [`InboxChatPanel.jsx`](src/native/components/InboxChatPanel.jsx)):
+
+Новый callback `handleUserIntent(type)` в InboxMode оборачивает `scrollDiag.markUserScroll(type)`. Если юзер начал крутить колесо / трогать сенсор ВО ВРЕМЯ `isRestoringRef=true` — флаг сбрасывается, восстановление отменяется, управление отдаётся юзеру. Лог `anchor-postcheck-abort-user`.
+
+#### 3+ фактов в основе фикса
+
+1. 🥇 [react-window 2.2.7 `onRowsRendered` (TS-типы локально)](file:///c:/Projects/ChatCenter/node_modules/react-window/dist/react-window.d.ts:366) — `(visibleRows: {startIndex, stopIndex}, allRows: {startIndex, stopIndex}) => void`, зовётся синхронно с rendering pipeline после measure phase.
+2. 🥇 [MDN scrollTop spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop) — clamp до `scrollHeight - clientHeight`. Объясняет почему юзер падает в `atBottom=true`.
+3. 🥇 [MDN scroll event](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event) — programmatic scroll триггерит scroll event. Объясняет почему load-older guard срабатывает.
+4. 🥈 Наш лог `anchor-postcheck-tick` 14:01:22 — `targetIdx` сдвинулся 7→107 за 32мс, `scrollHeight` 9850→66140→51024→19868.
+5. 🥈 Наш код [`useInboxScroll.js:110-116`](src/native/hooks/useInboxScroll.js) — отсутствие проверки `isRestoringRef`.
+
+#### Отвергнутые альтернативы
+
+| Подход | Почему не подходит |
+|---|---|
+| DOMRect-diff (Telegram Web K [scrollSaver.ts](https://github.com/morethanwords/tweb/blob/master/src/helpers/scrollSaver.ts)) | tweb не использует виртуализацию — DOM-элементы стабильны. У нас react-window рендерит только видимое окно, после `scrollToRow` старый элемент исчезает. |
+| Chromium `overflow-anchor: auto` ([MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-anchor)) | В [`VirtualMessageList.jsx:221`](src/native/components/VirtualMessageList.jsx) отключён (`overflow-anchor: 'none'`) с v0.89.0 — react-window сам мерит, встроенное anchoring мешает. Включить обратно — отдельная архитектурная задача. |
+| `initialScrollOffset` prop ([issue #216](https://github.com/bvaughn/react-window/issues/216)) | Автор issue сам называет «hacky», не работает с динамическими высотами. |
+| Magic `setTimeout × 5` как для bottom mode v0.91.16 | Magic numbers (50/100/300/500/1000мс). `onRowsRendered` — штатный сигнал, точнее. |
+
+#### Граничные случаи и защита
+
+| Случай | Защита |
+|---|---|
+| msgId удалён во время restore (`idx=-1`) | skip + ждём следующий `onRowsRendered` |
+| Bounce loop (scrollHeight скачет) | max 8 attempts → сдаёмся |
+| Юзер начал крутить во время restore | `handleUserIntent` сбрасывает флаг |
+| load-older навсегда заблокирован | `attempts>=8` сбрасывает флаг → guard прозрачен |
+| Новое сообщение (`tg:new-message`) во время restore | append в конец → indexes стабильны → target msgId валиден |
+| Race с `tg:messages append=true` (load-older блокированный) | `load-older-skip-restoring` лог → backend не запрашивается |
+
+#### Файлы
+
+- [`InboxMode.jsx`](src/native/modes/InboxMode.jsx) — `handleRowsRendered` теперь с re-scroll, новый `handleUserIntent`
+- [`InboxChatPanel.jsx`](src/native/components/InboxChatPanel.jsx) — приём `onUserIntent`, замена `scrollDiag.markUserScroll` на обёртку
+- [`useInboxScroll.js`](src/native/hooks/useInboxScroll.js) — новый guard `isRestoringRef?.current` перед load-older trigger
+- Documentation: `features.md`, `mistakes/native-scroll-unread.md` (новая ловушка), `native-scroll-restore-saga.md` (статус 🟡)
+
+#### Как воспроизвести фикс (для юзера)
+
+1. Запустить приложение
+2. Открыть чат А с историей >100 сообщений
+3. Прокрутить ВВЕРХ к середине истории (примерно на 50%)
+4. Перейти на чат B (любой)
+5. Вернуться на чат A
+6. **Ожидание**: позиция точно та же. Повторить 5 раз — позиция не должна смещаться. И НЕ должно быть прыжков из-за load-older.
+7. Лог `anchor-postcheck-tick` теперь должен сходиться `inViewport=true` в attempt=1-3, не дотягивая до 8.
+8. Лог `load-older-skip-restoring` должен появляться при возвратах (это значит фикс №1 работает).
+
+#### Регрессия
+
+- lint ✅
+- vitest ✅
+- fileSizeLimits ✅ — InboxMode ceiling 730 (запас остался)
+- check-memory ✅
+
+#### Откат
+
+```
+git revert <hash>
+```
+Изменения изолированы в 3 файлах. После revert — поведение v0.91.23 (diag-only, load-older без блокировки).
 
 ---
 

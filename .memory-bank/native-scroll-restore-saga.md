@@ -1,9 +1,91 @@
 # Сага восстановления позиции в native-режиме Telegram
 
 **Создано**: 26 мая 2026 (v0.91.18, после 7 коммитов).
-**Обновлено**: 26 мая 2026 (v0.91.23, diag для Проблемы 2 добавлена).
-**Статус**: 🟡 **Проблемы 1, 3, 4 — РЕШЕНЫ (подтверждено логом 13:06+). Проблема 2 — диагностируется**. Юзер видит «частично помогло»: anchor больше не дрейфует, но при ПЕРВОМ возврате остаётся прыжок из-за react-window remeasure.
+**Обновлено**: 26 мая 2026 (v0.91.24, фикс Проблемы 2 реализован).
+**Статус**: 🟡 **Все 4 проблемы — фиксы РЕАЛИЗОВАНЫ, ожидают подтверждения юзером на свежем логе**. Диагностические логи сохранены до подтверждения.
 **Назначение**: честная фиксация всех попыток + признание ошибок + детальная диагностика.
+
+---
+
+## 🎯 v0.91.24 — КОРЕНЬ ПРОБЛЕМЫ 2 НАЙДЕН
+
+### Что нашли
+
+Проблема не в «react-window scrollHeight clamp» как мы думали в v0.91.16. Это **race с infinite-scroll load-older**:
+
+```
+chat-open chatId=...-1001218028153 top=0 height=9300
++30мс  load-older-trigger     ← запускается ВО ВРЕМЯ isRestoringRef=true!
+       store-load-older
+       load-older-result hasMore=true
+       store-tg-messages append=true incoming=50 existing=100  ← +50 в начало!
++162мс load-older-apply top=165492 height=174792  ← scroll прыгнул на 165k
++169мс scroll-anomaly prevTop=165492 currTop=20947  ← react-window ужал обратно
+
+anchor-postcheck-tick targetIdx=7   inViewport=TRUE   attempt=2 (правильно)
+anchor-postcheck-tick targetIdx=7   inViewport=false  attempt=3
+anchor-postcheck-tick targetIdx=7   inViewport=false  attempt=4
+anchor-postcheck-tick targetIdx=107 inViewport=false  attempt=5  ← target уехал на +100!
+```
+
+### Как нашли
+
+1. **v0.91.19/20/21** — добавили диагностические логи `restore-start`, `scroll-save isRestoring`, stack-capture, multi-step postcheck, IPC burst tracker.
+2. **v0.91.22** — починили Проблемы 1, 3, 4 на основе подтверждённых данных. Лог 13:06+ показал что Проблемы 1 (closed-loop) и 3 (Maximum update depth) полностью ушли.
+3. **v0.91.23 diag** — добавили `handleRowsRendered` в InboxMode.jsx через `onRowsRendered` react-window 2.2.7 ([TS-типы локально](file:///c:/Projects/ChatCenter/node_modules/react-window/dist/react-window.d.ts:366)). Только лог `anchor-postcheck-tick`, БЕЗ re-scroll.
+4. **Свежий лог 14:01:22-25** — увидели что между attempt=4 и attempt=5 (32мс) targetIdx сдвинулся на +100 элементов, синхронно с `load-older-apply` и `store-tg-messages append=true incoming=50`.
+5. **Сверка с кодом** — [`useInboxScroll.js:110-116`](src/native/hooks/useInboxScroll.js) проверяет `loadingOlderRef` и `initialScrollDoneRef`, но **НЕ `isRestoringRef`**. Это пропущенная защита.
+
+### Почему load-older стартует во время restore
+
+1. `scrollToRow(idx, 'end')` ставит `scrollTop` приблизительно по defaultRowHeight=50 → реальный scrollTop часто получается 0 или близкий
+2. **Programmatic scroll триггерит scroll event** ([MDN spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event))
+3. `handleScroll` видит `scrollTop < 100`, `messages.length > 0`, `initialScrollDoneRef.current === viewKey` (выставлен в `onDone()` после `applied`)
+4. **`isRestoringRef` не проверяется** → guard прозрачен → load-older стартует
+5. 50 старых msgs в начало → target смещается → react-window remeasure → catastrophe
+
+### Что будем делать — v0.91.24 (3 фикса)
+
+#### Фикс №1 — главный (закрывает корень)
+
+[`useInboxScroll.js`](src/native/hooks/useInboxScroll.js) line 110: добавить guard:
+
+```js
+if (loadingOlderRef.current) return
+if (isRestoringRef?.current) {  // v0.91.24
+  scrollDiag.logEvent('load-older-skip-restoring', { ... })
+  return
+}
+```
+
+Пока `isRestoringRef.current === true` (500-1500мс) load-older заблокирован. После сходимости restore (или max attempts) флаг сбрасывается → load-older работает.
+
+#### Фикс №2 — re-scroll в `handleRowsRendered`
+
+[`InboxMode.jsx`](src/native/modes/InboxMode.jsx) — diag из v0.91.23 превращается в активный re-scroll: если `!inViewport` и `attempts < 8` → новый `scrollToRow(idx, align)`. Index пересчитывается через `findRenderItemIndex(msgId)` каждый тик — устойчиво к удалению/добавлению.
+
+#### Фикс №3 — abort на user-scroll
+
+`scrollDiagnostics.js` `markUserScroll`: если `isRestoringRef.current === true` И type ∈ `{wheel, touch, pointer}` → сбросить флаг. Юзер перехватил управление, restore отменяется.
+
+### Почему этот фикс правильный — 3+ факта
+
+1. 🥇 [react-window 2.2.7 onRowsRendered TS-типы](file:///c:/Projects/ChatCenter/node_modules/react-window/dist/react-window.d.ts:366) — публичный API, зовётся синхронно с rendering pipeline после measure.
+2. 🥇 [MDN scrollTop spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop) — clamp scrollTop до scrollHeight-clientHeight, объясняет почему юзер падает в `atBottom=true`.
+3. 🥇 [MDN scroll event](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event) — programmatic scroll триггерит scroll event, объясняет почему load-older guard срабатывает.
+4. 🥈 Наш лог `anchor-postcheck-tick` 14:01:22 — прямое доказательство сдвига targetIdx 7→107.
+5. 🥈 Наш код [`useInboxScroll.js:110-116`](src/native/hooks/useInboxScroll.js) — отсутствие `isRestoringRef` проверки.
+
+### Что мы НЕ делаем (отвергнутые альтернативы)
+
+| Подход | Почему отвергли |
+|---|---|
+| **DOMRect-diff анкор как у Telegram Web K** | [tweb scrollSaver.ts](https://github.com/morethanwords/tweb/blob/master/src/helpers/scrollSaver.ts) работает без виртуализации — DOM-элементы стабильны. У нас react-window рендерит только видимое окно, после scrollToRow старый элемент исчезает. |
+| **Chromium `overflow-anchor: auto`** | Включено для нашего сценария по умолчанию, но в [`VirtualMessageList.jsx:221`](src/native/components/VirtualMessageList.jsx) ОТКЛЮЧЕНО (`overflow-anchor: 'none'`) — react-window сам мерит, встроенное anchoring ему мешает. Включить обратно — отдельная архитектурная задача. |
+| **`initialScrollOffset` prop react-window** | [Issue #216](https://github.com/bvaughn/react-window/issues/216) автор сам называет «hacky». Не работает с динамическими высотами. |
+| **Magic `setTimeout × 5` как для bottom mode v0.91.16** | Это костыль — magic numbers (50/100/300/500/1000мс). `onRowsRendered` — штатный сигнал, точнее. |
+
+---
 
 ---
 

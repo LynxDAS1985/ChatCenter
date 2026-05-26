@@ -31,6 +31,8 @@ export default function InboxChatPanel({
   virtualListRef,
   // v0.91.23 diag: onRowsRendered (react-window) — для anchor-postcheck-tick
   onRowsRendered,
+  // v0.91.24: обёртка над markUserScroll — отменяет restore при user-scroll
+  onUserIntent,
   // message actions
   handleDelete, handleForward, handlePin, openPhotoWindow, getMessage, readByVisibility,
 }) {
@@ -196,9 +198,9 @@ export default function InboxChatPanel({
                 openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
               }}
               onScroll={handleScroll}
-              onWheel={() => scrollDiag.markUserScroll('wheel')}
-              onTouchStart={() => scrollDiag.markUserScroll('touch')}
-              onPointerDown={() => scrollDiag.markUserScroll('pointer')}
+              onWheel={() => (onUserIntent || scrollDiag.markUserScroll)('wheel')}
+              onTouchStart={() => (onUserIntent || scrollDiag.markUserScroll)('touch')}
+              onPointerDown={() => (onUserIntent || scrollDiag.markUserScroll)('pointer')}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
