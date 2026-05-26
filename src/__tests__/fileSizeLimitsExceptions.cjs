@@ -67,8 +67,8 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 780,
-    reason: 'v0.89.33: snapshot ref для divider (~15 строк). v0.91.17: useScrollPositionAutosave hook integration. v0.91.22: общий isRestoringRef + проброс в 3 хука (~8 строк). v0.91.23 diag: 4 ref + handleRowsRendered (~50 строк). v0.91.24 фикс: handleRowsRendered теперь с re-scroll + handleUserIntent (~30 строк). Доменное разбиение InboxMode на (InboxScrollManager, InboxMessageLoading, InboxBehaviorTransform) — отдельная плановая задача после стабилизации saga.'
+    ceiling: 900,
+    reason: 'v0.89.33-v0.91.22: snapshot ref + isRestoringRef ~23 строки. v0.91.23-24: 4 ref + handleRowsRendered + re-scroll + handleUserIntent ~80 строк. v0.91.24 Day 2: Virtuoso feature flag + initialTopMostItemIndex + firstItemIndex state + handleStartReached + handleEndReached + tg:messages listener (~80 строк). На Day 3 удалится v0.91.19-24 диагностика → файл вернётся к ~700. Доменное разбиение — отдельная задача.'
   },
   // v0.91.24: useInboxScroll — handleScroll hook с двумя направлениями infinite scroll
   // (load-older вверх, load-newer вниз) + сохранение позиции + scroll-anomaly диагностика.

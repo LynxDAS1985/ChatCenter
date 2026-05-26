@@ -59,6 +59,16 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const restoreTargetAlignRef = useRef('end')
   const restoreStartTimeRef = useRef(0)
   const restoreAttemptsRef = useRef(0)
+  // v0.91.24 Day 2: feature flag миграции react-window → react-virtuoso.
+  // Day 2 default=false → прод работает на старом react-window.
+  // Day 3 переключим на true. См. .memory-bank/virtuoso-migration-plan.md.
+  const useVirtuoso = false
+  // v0.91.24 Day 2: Virtuoso firstItemIndex для inverse infinite scroll (prepend).
+  // При load-older уменьшаем на N — новые msgs сверху, scrollTop не меняется.
+  // Reset при смене активного чата (key={cacheKey} ремаунтит Virtuoso).
+  // INITIAL = 10000 — даёт большой запас вниз (можно prepend до 10000 раз).
+  const VIRTUOSO_INITIAL_FIRST_ITEM_INDEX = 10000
+  const [firstItemIndex, setFirstItemIndex] = useState(VIRTUOSO_INITIAL_FIRST_ITEM_INDEX)
 
   useEffect(() => { store.loadCachedChats?.() }, [])
 
@@ -443,6 +453,79 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     }
   }
 
+  // v0.91.24 Day 2: вычисление initialTopMostItemIndex для Virtuoso restore.
+  // Маппим saved anchor msgId → текущий индекс в renderItems. Если msg
+  // удалён или ещё не отрендерен → undefined (Virtuoso стартует с дна).
+  const initialTopMostItemIndex = useVirtuoso
+    ? (() => {
+        const saved = scrollPosByChatRef.current.get(activeViewKey)
+        if (!saved) return undefined
+        if (saved.atBottom) return renderItems.length - 1
+        if (!saved.anchorMsgId) return undefined
+        const idx = findRenderItemIndex(saved.anchorMsgId)
+        return idx >= 0 ? idx : undefined
+      })()
+    : undefined
+
+  // v0.91.24 Day 2: reset firstItemIndex при смене активного чата.
+  // Виртуоз ремаунтится через key={cacheKey}, мы синхронизируем counter.
+  useEffect(() => {
+    if (!useVirtuoso) return
+    setFirstItemIndex(VIRTUOSO_INITIAL_FIRST_ITEM_INDEX)
+  }, [useVirtuoso, activeViewKey])
+
+  // v0.91.24 Day 2: при load-older (tg:messages append=true) уменьшаем firstItemIndex.
+  // Это официальный Virtuoso паттерн для inverse infinite scroll — позволяет
+  // prepend новых msgs без скачка scrollTop (issue #634, discussion #1032).
+  useEffect(() => {
+    if (!useVirtuoso) return
+    const unsub = window.api?.on?.('tg:messages', (payload) => {
+      if (!payload || payload.chatId !== store.activeChatId) return
+      if (!payload.append) return  // append=true только для load-older prepend
+      const count = payload.messages?.length || 0
+      if (count > 0) setFirstItemIndex(idx => idx - count)
+    })
+    return () => { if (typeof unsub === 'function') unsub() }
+  }, [useVirtuoso, store.activeChatId])
+
+  // v0.91.24 Day 2: load-older через Virtuoso startReached callback.
+  // Заменяет логику в useInboxScroll handleScroll (scrollTop < 100 → loadOlder).
+  // Virtuoso сам отслеживает positon по atTopThreshold (default 0 → ровно у верха).
+  const handleStartReached = () => {
+    if (!useVirtuoso) return
+    if (loadingOlderRef.current) return
+    if (initialScrollDoneRef.current !== activeViewKey) return  // защита от load до initial-scroll
+    const oldest = activeMessages[0]
+    if (!oldest) return
+    loadingOlderRef.current = true
+    const chatAtStart = store.activeChatId
+    scrollDiag.logEvent('virtuoso-start-reached', { beforeId: oldest.id, messages: activeMessages.length })
+    store.loadOlderMessages(chatAtStart, oldest.id, 50)
+      .catch((e) => scrollDiag.logEvent('virtuoso-start-reached-error', { error: e?.message }))
+      .finally(() => { loadingOlderRef.current = false })
+  }
+
+  // v0.91.24 Day 2: load-newer через Virtuoso endReached callback.
+  // Заменяет useInboxNewerPrefetch.maybeTrigger логику.
+  const handleEndReached = () => {
+    if (!useVirtuoso) return
+    if (loadingNewerRef.current) return
+    if (initialScrollDoneRef.current !== activeViewKey) return
+    const newest = activeMessages[activeMessages.length - 1]
+    if (!newest) return
+    if (newest.isOutgoing) return  // не пытаемся грузить дальше своего же сообщения
+    loadingNewerRef.current = true
+    setLoadingNewer(true)
+    const chatAtStart = store.activeChatId
+    scrollDiag.logEvent('virtuoso-end-reached', { afterId: newest.id, messages: activeMessages.length })
+    store.loadNewerMessages?.(chatAtStart, newest.id, 100)
+      .catch((e) => scrollDiag.logEvent('virtuoso-end-reached-error', { error: e?.message }))
+      .finally(() => {
+        loadingNewerRef.current = false
+        setLoadingNewer(false)
+      })
+  }
+
   // v0.87.40: пересчёт firstUnread при смене свежих данных (firstId/lastId/unread)
   const firstMsgId = activeMessages[0]?.id
   const lastMsgId = activeMessages[activeMessages.length - 1]?.id
@@ -733,6 +816,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           msgsScrollRef={msgsScrollRef} virtualListRef={virtualListRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
           onRowsRendered={handleRowsRendered}
           onUserIntent={handleUserIntent}
+          useVirtuoso={useVirtuoso}
+          virtuosoInitialIndex={initialTopMostItemIndex}
+          virtuosoFirstItemIndex={firstItemIndex}
+          virtuosoOnStartReached={handleStartReached}
+          virtuosoOnEndReached={handleEndReached}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
           scrollToBottom={handleScrollButtonClick} scrollToAbsoluteBottom={handleScrollButtonDoubleClick} scrollToMessage={scrollToMessage}

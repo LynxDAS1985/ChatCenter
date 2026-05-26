@@ -230,4 +230,59 @@ describe('VirtualMessageListV2 — smoke (Day 1)', () => {
     }).not.toThrow()
     cleanup()
   })
+
+  it('Day 2: одновременный props startReached + endReached + initialTopMostItemIndex + firstItemIndex', () => {
+    // Проверка что комбинация Day 2 props не вызывает крашей.
+    const renderItems = Array.from({ length: 100 }, (_, i) => ({
+      type: 'group',
+      senderId: `u${i}`,
+      senderName: `User ${i}`,
+      isOutgoing: false,
+      msgs: [{ id: String(i), type: 'text', text: `msg ${i}`, timestamp: Date.now() / 1000 }],
+    }))
+    expect(() => {
+      render(
+        <VirtualMessageListV2
+          renderItems={renderItems}
+          rowContext={buildRowContext()}
+          listRef={{ current: null }}
+          cacheKey="chat1"
+          initialTopMostItemIndex={50}
+          firstItemIndex={10000}
+          startReached={vi.fn()}
+          endReached={vi.fn()}
+        />
+      )
+    }).not.toThrow()
+    cleanup()
+  })
+
+  it('Day 2: переключение firstItemIndex (имитация load-older prepend) не крашит', () => {
+    const renderItems = [{
+      type: 'group', senderId: 'u', senderName: 'U', isOutgoing: false,
+      msgs: [{ id: '1', type: 'text', text: 't', timestamp: Date.now() / 1000 }],
+    }]
+    const { rerender } = render(
+      <VirtualMessageListV2
+        renderItems={renderItems}
+        rowContext={buildRowContext()}
+        listRef={{ current: null }}
+        cacheKey="chat1"
+        firstItemIndex={10000}
+      />
+    )
+    expect(() => {
+      // имитация: после load-older firstItemIndex уменьшается на 50
+      rerender(
+        <VirtualMessageListV2
+          renderItems={renderItems}
+          rowContext={buildRowContext()}
+          listRef={{ current: null }}
+          cacheKey="chat1"
+          firstItemIndex={9950}
+        />
+      )
+    }).not.toThrow()
+    cleanup()
+  })
 })
