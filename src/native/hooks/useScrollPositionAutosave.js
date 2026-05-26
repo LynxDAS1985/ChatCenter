@@ -35,5 +35,8 @@ export function useScrollPositionAutosave({ activeViewKey, chatReady, msgsScroll
       }
     }, AUTOSAVE_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef])
+    // v0.91.18: refs (msgsScrollRef, scrollPosByChatRef) не в deps — по React docs
+    // (https://react.dev/reference/react/useEffect) useRef имеет стабильную
+    // идентичность, рефы не нужно добавлять в dependencies.
+  }, [activeViewKey, chatReady])
 }

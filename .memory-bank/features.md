@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.17 (25 мая 2026)
+## Текущая версия: v0.91.18 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -19,6 +19,36 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.18 — Фикс ReferenceError scrollRef в postcheck setTimeout (доделка v0.91.16)
+
+🔴 **Логи chatcenter.log 10:04:59-10:05:02**: `[R:ERROR] [renderer-uncaught] ReferenceError: scrollRef is not defined` × 3 раза. Юзер видел красное сообщение об ошибке через UncaughtErrorToast.
+
+Корень: в v0.91.16 я переписывал `logRestoreDiag` для anchor msgId формата. Удалил `scrollRef` из параметров функции — но **забыл обновить** строку 101 в postcheck setTimeout где `scrollRef.current` всё ещё использовался. JavaScript closure не нашёл `scrollRef` в outer scope → **ReferenceError** при каждом срабатывании postcheck.
+
+🥇 [MDN ReferenceError spec](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Errors/Not_defined): «Возникает при попытке использовать переменную, которая не была объявлена или недоступна в текущей области видимости. Частая проблема — setTimeout callback теряет доступ к переменной outer scope если она там не объявлена».
+
+**Последствие в работе**: postcheck setTimeout(100мс) — это корректировка scrollTop после react-window remeasure. ReferenceError → exception → postcheck НЕ работал → юзер видел первый clamped scroll (~50% от реального дна) без последующей корректировки → восприятие «всё ещё прыгает» хотя v0.91.16 декларировал фикс.
+
+Почему lint не поймал: ESLint видит `scrollRef` как **свободную переменную** — может быть глобальная или из outer scope в runtime. Static analysis не отличает от валидного closure. Vitest не покрывал runtime внутри setTimeout (моки не симулируют 100мс задержку с реальным DOM).
+
+Решение: добавил `scrollRef` обратно в параметры `logRestoreDiag` (как было в v0.91.11). Также проброс из `tryRestoreWithRetry`.
+
+Заодно — фикс предупреждения React по `useScrollPositionAutosave` (v0.91.17): убрал `msgsScrollRef, scrollPosByChatRef` из deps. 🥇 [React useEffect docs](https://react.dev/reference/react/useEffect): «useRef имеет стабильную идентичность — НЕ нужно добавлять в массив зависимостей».
+
+Стек: React 19.2.4, react-window 2.2.7, tdl 8.1.0, Electron 41.1.0. Не трогаем backend / store / другие hooks.
+
+Что не делал: расследование `Maximum update depth exceeded` (09:11:08) — отдельный существующий баг при инициализации, не связан с моими v0.91.x фиксами (происходит ДО открытия чата, мой autosave hook не запущен). Требует отдельной задачи.
+
+Файлы:
+- `useInitialScrollDiag.js`: +`scrollRef` в параметры `logRestoreDiag` + проброс из `tryRestoreWithRetry`
+- `useScrollPositionAutosave.js`: refs убраны из deps
+
+Документация: запись в features.md, ловушка в `mistakes/native-scroll-unread.md` «забытый параметр функции после рефакторинга → ReferenceError, lint не ловит».
+
+Откат: `git revert <hash>` — постcheck снова сломается (ReferenceError вернётся), v0.91.16 в текущем виде уже сломан.
 
 ---
 

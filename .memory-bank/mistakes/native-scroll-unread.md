@@ -8,6 +8,93 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: забытый параметр функции после рефакторинга → silent ReferenceError в setTimeout (v0.91.18)
+
+### Симптом
+v0.91.16 декларировал «bottom mode через scrollToRow + postcheck для корректировки после remeasure». Но юзер всё равно видел «прыгает» — позиция не на реальном дне. В логе появилось красное всплывающее сообщение об ошибке (UncaughtErrorToast).
+
+### Прямое доказательство (chatcenter.log 10:04:59-10:05:02)
+```
+[R:ERROR] [renderer-uncaught] ReferenceError: scrollRef is not defined
+[R:ERROR] [renderer-uncaught] ReferenceError: scrollRef is not defined
+[R:ERROR] [renderer-uncaught] ReferenceError: scrollRef is not defined
+```
+3 ошибки подряд — каждый возврат в чат с `saved.atBottom=true` падает.
+
+### Корень
+В v0.91.16 я переписывал `logRestoreDiag` для anchor msgId формата:
+
+```javascript
+// БЫЛО (v0.91.11):
+export function logRestoreDiag({ chatId, isReturning, scrollEl, savedTop, scrollRef }) { ... }
+
+// СТАЛО (v0.91.16):
+export function logRestoreDiag({
+  chatId, isReturning, scrollEl, saved,       // ← scrollRef УДАЛЁН
+  onRestoreAnchor, onScrollToIndex, onGetLastIndex,
+}) {
+  ...
+  setTimeout(() => {
+    const el = scrollRef.current   // ← НО строка осталась со старым именем!
+    ...
+  }, 100)
+}
+```
+
+JavaScript scoping: внутри `setTimeout` callback `scrollRef` ищется в outer scope `logRestoreDiag` → его там нет (параметр удалён) → **ReferenceError**.
+
+### Почему lint не поймал
+
+🥇 [MDN ReferenceError](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Errors/Not_defined): «Использование переменной, которая не была объявлена или **недоступна в текущей области видимости**».
+
+ESLint в режиме `no-undef` ловит **только** undefined переменные. Но если `scrollRef` — это **возможная** глобальная переменная или из outer scope в runtime, static analysis не может различить. Наш ESLint config не имеет строгого `no-undef` для всех closure'ов.
+
+### Почему тесты не поймали
+
+Vitest unit-тесты:
+- Моки `scrollRef` через `useRef` — но **не вызывают** `logRestoreDiag` напрямую
+- `useInitialScroll.vitest.jsx` тестирует через `renderHook` — не симулирует 100мс задержку с реальным DOM
+- Сценарий postcheck `setTimeout` требует **integration теста** в браузере
+
+### Решение (v0.91.18)
+Добавил `scrollRef` обратно в параметры `logRestoreDiag` (как было в v0.91.11):
+
+```javascript
+export function logRestoreDiag({
+  chatId, isReturning, scrollEl, saved, scrollRef,   // ← добавлено
+  onRestoreAnchor, onScrollToIndex, onGetLastIndex,
+}) { ... }
+```
+
+И проброс из `tryRestoreWithRetry`:
+```javascript
+logRestoreDiag({
+  ..., scrollEl, scrollRef,   // ← добавлено
+})
+```
+
+### Граничные случаи проверены
+- `scrollRef.current === null` через 100мс — `if (!el) return` (строка 102, защита уже была)
+- Юзер сменил чат за 100мс — setTimeout всё равно сработает, но без ущерба (scrollToRow на нерелевантный индекс игнорируется react-window)
+- react-window не remeasured за 100мс — повторный `onScrollToIndex` идемпотентен
+
+### Правило
+При рефакторинге сигнатуры функции **обязательно**:
+1. Grep по имени удаляемого параметра внутри тела функции
+2. Особое внимание к **`setTimeout`/`requestAnimationFrame` callbacks** — closure лексический, ошибка только в runtime
+3. Запустить **интеграционный тест** через `npm start` после рефакторинга, не только vitest
+
+### Связанная проблема — `useScrollPositionAutosave` (v0.91.17)
+
+🥇 [React useEffect docs](https://react.dev/reference/react/useEffect): «useRef имеет стабильную идентичность — объект всегда один и тот же между re-renders. НЕ нужно добавлять в массив зависимостей».
+
+В v0.91.17 я добавил `msgsScrollRef, scrollPosByChatRef` в deps — это против React best practices. Не вызывает infinite loop (refs стабильны через Object.is), но React может предупреждать. Убрано в v0.91.18.
+
+### Регрессионная защита
+Существующие тесты `useInitialScroll.vitest.jsx` v0.91.14 «graceful exit» используют `useRef(null)` — теперь `scrollRef` в параметрах корректно проброшен. Регрессия не сломается.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: handleScroll не покрывает «юзер открыл-посмотрел-переключился» (v0.91.17)
 
 ### Симптом

@@ -46,8 +46,10 @@ export function tryRestoreWithRetry({
       return
     }
     lastActiveChatIdRef.current = chatId
+    // v0.91.18: scrollRef ОБЯЗАТЕЛЕН для postcheck setTimeout (был забыт в v0.91.16
+    // при переписывании → ReferenceError в postcheck → postcheck не работал).
     logRestoreDiag({
-      chatId, isReturning: true, scrollEl,
+      chatId, isReturning: true, scrollEl, scrollRef,
       saved: getSavedScrollTop?.(chatId),
       onRestoreAnchor, onScrollToIndex, onGetLastIndex,
     })
@@ -62,8 +64,11 @@ export function tryRestoreWithRetry({
 // юзер на «псевдо-дне» (chatcenter.log 17:34:04: scrollHeight=2185 для 50 msg
 // = defaultRowHeight×50, реальная высота ~4000).
 // saved = {anchorMsgId, atBottom} | null
+// v0.91.18: scrollRef добавлен обратно (был в v0.91.11, забыт при рефакторинге
+// v0.91.16). Используется в postcheck setTimeout — без него ReferenceError
+// (chatcenter.log 10:04:59 ×3). MDN: переменная недоступна в области видимости.
 export function logRestoreDiag({
-  chatId, isReturning, scrollEl, saved,
+  chatId, isReturning, scrollEl, saved, scrollRef,
   onRestoreAnchor, onScrollToIndex, onGetLastIndex,
 }) {
   if (!isReturning) {
