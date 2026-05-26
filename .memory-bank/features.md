@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.92.3 (26 мая 2026)
+## Текущая версия: v0.92.4 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -20,6 +20,79 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.92.4 — РЕГРЕССИОННЫЙ ФИКС: вернули isRestoringRef closed-loop guard
+
+После v0.92.3 (align: 'end' добавлен) юзер запустил — позиция всё равно прыгает.
+Анализ лога 17:34:56-17:35:31 показал **сильный дрейф** anchorMsgId между возвратами:
+
+```
+-1001196199866: 14984151040 → 15034482688 (+48 msgs!) → 15033434112 (-1) →
+                15027142656 (-6) → 15021899776 (-5)
+-1001409231353: 18597543936 → 19622002688 (+1024M!) → 19697500160 →
+                19696451584 → 19695403008 → 19692257280 → ...
+```
+
+Msg ID в Telegram = `1,048,576 × index`. Дрейф 1-1024 msgs туда-сюда = классический **closed-loop scroll-save**.
+
+#### Корень — моя ошибка в v0.92.0 Day 3
+
+В v0.91.22 был фикс closed-loop через `isRestoringRef` (паттерн Telegram Web K `_isJumping`):
+- Флаг ставится true перед programmatic scroll
+- `handleScroll` save пропускается если флаг true
+- Через 500-1500мс сбрасывается
+
+В v0.92.0 Day 3 я **УДАЛИЛ** `isRestoringRef`, ошибочно решив что Virtuoso `initialTopMostItemIndex`/`restoreStateFrom` не вызывают DOM scroll event.
+
+**Я был неправ.** [MDN scroll event spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event): «The scroll event fires when the document view has been scrolled. **This includes programmatic scrolling**.» Virtuoso использует DOM `scrollTo`/`scrollTop=` для применения `initialTopMostItemIndex` и `restoreStateFrom` → наш onScroll → handleScroll → save искажённого anchor → следующий restore читает искажённый → новый scroll → дрейф.
+
+#### Что вернули
+
+[`InboxMode.jsx`](src/native/modes/InboxMode.jsx):
+- `isRestoringRef = useRef(false)` объявление
+- В `useEffect [activeViewKey]`: при смене чата `isRestoringRef.current = true`, через 1000мс setTimeout сбрасываем (даёт Virtuoso закончить mount + measure + restore)
+- Проброс в `useScrollPositionAutosave` и `useInboxScroll`
+
+[`useInboxScroll.js`](src/native/hooks/useInboxScroll.js):
+- `isRestoringRef` параметр восстановлен
+- В handleScroll: `const blocked = !!isRestoringRef?.current; if (!blocked) { /* save */ }`
+- Также для throttled getState save (v0.92.2 pixel-perfect state) — skip во время restore
+- Лог `scroll-save` имеет поле `isRestoring: blocked` (диагностика что guard работает)
+
+[`useScrollPositionAutosave.js`](src/native/hooks/useScrollPositionAutosave.js):
+- `isRestoringRef` параметр восстановлен
+- Interval save пропускается если `isRestoringRef.current === true`
+- Лог `autosave-save isRestoring: true` (диагностика)
+
+#### 3+ факта
+
+🥇 [MDN scroll event spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event) — programmatic scroll вызывает event
+🥈 Наш лог 17:34:56-17:35:31 — дрейф anchor на 1-1024 msgs каждый возврат
+🥈 Наш код v0.91.22 — тот же фикс работал для react-window, должен работать для Virtuoso
+
+#### Регрессия
+
+- lint 0
+- vitest 661/661
+- fileSizeLimits 273/273
+- check-memory ✅
+
+#### Откат
+
+```bash
+git revert <этот hash>
+```
+Вернёт к v0.92.3 (align='end' есть, но closed-loop активен).
+
+#### Как проверить
+
+1. Программа лог `=== ChatCenter v0.92.4 start ===`
+2. Открыть чат А, прокрутить
+3. Переключаться A↔B↔A 10 раз
+4. В логе `restore-start savedAnchor=X`, при последующих возвратах **тот же X** (стабилен)
+5. В логе `scroll-save isRestoring=true` множество раз (это значит guard работает)
 
 ---
 

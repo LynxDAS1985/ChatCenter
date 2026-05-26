@@ -67,8 +67,8 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 780,
-    reason: 'v0.92.0: Virtuoso initialTopMostItemIndex + firstItemIndex state + handleStartReached/EndReached + tg:messages listener (~70 строк). v0.91.19-24 диагностика (~140 строк) удалена в v0.92.0 Day 3. InboxMode интегрирует все hooks режима inbox. Доменное разбиение — отдельная задача.'
+    ceiling: 820,
+    reason: 'v0.92.0-v0.92.4: Virtuoso initialTopMostItemIndex + firstItemIndex state + handleStartReached/EndReached + tg:messages listener. v0.92.4: вернули isRestoringRef + useEffect setTimeout (~20 строк, regression fix). Доменное разбиение — отдельная задача.'
   },
   // v0.92.0: useInboxScroll вернулся в стандартный лимит 150 после удаления
   // isRestoringRef guards. Текущий размер 139.

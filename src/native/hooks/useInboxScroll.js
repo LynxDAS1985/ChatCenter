@@ -31,6 +31,8 @@ export default function useInboxScroll({
   virtualListRef,
   scrollStateByChatRef,
   scrollStateMaxEntries = 50,
+  // v0.92.4: guard от closed-loop save при programmatic restore.
+  isRestoringRef,
 }) {
   const prevNearBottomRef = useRef(null)
   const prevScrollStateRef = useRef({ top: 0, height: 0, t: 0 })
@@ -58,21 +60,25 @@ export default function useInboxScroll({
       // Иначе остаётся прежняя запись (защита от затирания при programmatic scroll
       // когда react-window еще не отрендерил DOM).
       if (anchorMsgId || nearBottom) {
-        // v0.92.0: isRestoringRef guard и поле scroll-save isRestoring удалены —
-        // Virtuoso режим не триггерит scroll event при restore, guard не нужен.
-        scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
-        saveScrollPositions(scrollPosByChatRef.current)
+        // v0.92.4: ВОЗВРАЩАЕМ closed-loop guard (был ошибочно удалён в v0.92.0).
+        // Virtuoso initialTopMostItemIndex + restoreStateFrom вызывают DOM scroll
+        // event на scroller div (MDN: programmatic scrolling also fires scroll).
+        // Лог 17:35:16-31 показал дрейф anchor на 1-1024 msgs каждый возврат.
+        const blocked = !!isRestoringRef?.current
+        if (!blocked) {
+          scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
+          saveScrollPositions(scrollPosByChatRef.current)
+        }
         scrollDiag?.logEvent('scroll-save', {
           viewKey, anchorMsgId, atBottom: nearBottom,
           scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
+          isRestoring: blocked,  // v0.92.4 — true когда save пропущен
         })
       }
       // v0.92.2: pixel-perfect state save через Virtuoso getState.
-      // Throttle 200мс — getState() обходит весь дерево измерений, дорогой.
-      // Сохраняем в Map (не localStorage) — между запусками теряется,
-      // но для in-session переключений чатов даёт точную позицию (scrollTop + ranges).
-      // LRU trim при превышении лимита через Map insertion order.
-      if (virtualListRef?.current?.getState) {
+      // v0.92.4: skip во время restore — иначе сохраняем «во время прыжка» промежуточный
+      // state, который перетрёт правильный snapshot предыдущего открытия.
+      if (!isRestoringRef?.current && virtualListRef?.current?.getState) {
         const now = Date.now()
         if (now - lastStateSaveRef.current >= STATE_SAVE_THROTTLE_MS) {
           lastStateSaveRef.current = now

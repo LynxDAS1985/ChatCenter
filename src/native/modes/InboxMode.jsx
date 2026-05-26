@@ -56,6 +56,13 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // INITIAL = 10000 — даёт большой запас вниз (можно prepend до 10000 раз).
   const VIRTUOSO_INITIAL_FIRST_ITEM_INDEX = 10000
   const [firstItemIndex, setFirstItemIndex] = useState(VIRTUOSO_INITIAL_FIRST_ITEM_INDEX)
+  // v0.92.4: closed-loop guard ВЕРНУЛИ обратно (удалён по ошибке в v0.92.0 Day 3).
+  // Virtuoso initialTopMostItemIndex и restoreStateFrom ВЫЗЫВАЮТ DOM scroll event
+  // на scroller div → handleScroll → findVisibleAnchorMsgId → save искажённый anchor.
+  // По MDN scroll event spec: «programmatic scrolling also fires scroll event».
+  // Флаг ставится в true при смене activeViewKey, сбрасывается через 1000мс
+  // (даёт время Virtuoso закончить restore + измерения rows).
+  const isRestoringRef = useRef(false)
   // v0.92.2: pixel-perfect state restoration через Virtuoso StateSnapshot.
   // Map<chatId, {scrollTop, ranges[]}> — снимки точной позиции + измерения.
   // Сохраняются throttled через handleScroll → listRef.getState callback.
@@ -209,7 +216,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const msgsScrollRef = useRef(null)
-  useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef })  // v0.91.17 + v0.92.0
+  useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef, isRestoringRef })  // v0.91.17 + v0.92.4
   // v0.89.0: imperative API виртуализации react-window (scrollToRow, get element).
   // Используется как fallback когда querySelector('[data-msg-id]') промахивается
   // (элемент не в видимом виртуальном DOM).
@@ -410,6 +417,15 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // Virtuoso ремаунтится через key={cacheKey}, мы синхронизируем counter.
   useEffect(() => {
     setFirstItemIndex(VIRTUOSO_INITIAL_FIRST_ITEM_INDEX)
+    // v0.92.4: ставим isRestoringRef=true при смене чата на ~1000мс.
+    // За это окно Virtuoso ремаунтит, восстанавливает позицию через initialTopMostItemIndex/
+    // restoreStateFrom, измеряет row heights. ВСЕ эти scroll события — programmatic,
+    // не должны портить scrollPosByChatRef через handleScroll save.
+    if (activeViewKey) {
+      isRestoringRef.current = true
+      const t = setTimeout(() => { isRestoringRef.current = false }, 1000)
+      return () => clearTimeout(t)
+    }
   }, [activeViewKey])
 
   // v0.92.0: при load-older (tg:messages append=true) уменьшаем firstItemIndex.
@@ -529,6 +545,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     loadingNewerRef, setLoadingNewer,
     scrollDiag, setAtBottom, setNewBelow,
     virtualListRef, scrollStateByChatRef, scrollStateMaxEntries: SCROLL_STATE_MAX_ENTRIES,
+    isRestoringRef,  // v0.92.4: guard от closed-loop save при programmatic restore
   })
 
   // v0.91.3: event-based newBelow — подписка на tg:new-message (server push),
