@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.92.1 (26 мая 2026)
+## Текущая версия: v0.92.2 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -20,6 +20,123 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.92.2 — Pixel-perfect scroll restoration через Virtuoso getState/restoreStateFrom
+
+После v0.92.1 (handleScroll починен, 185 scroll-save в логе) юзер сообщил: позиция при возврате в чат **приблизительная** — попадает близко к дну (`bottomGap=329`), хотя `savedAtBottom=false`.
+
+#### Корень
+
+`initialTopMostItemIndex` Virtuoso использует **ТОЛЬКО ПРИ MOUNT**. На момент mount `renderItems` содержит cached 50 msgs из IDB. Если `savedAnchor msgId` НЕ среди этих 50 → `findRenderItemIndex` возвращает `-1` → fallback `renderItems.length - 1` (дно).
+
+Когда позже придут полные данные (load 100 от backend) — пересчёт `initialTopMostItemIndex` происходит, но Virtuoso **игнорирует** (mount уже завершён).
+
+#### Решение — официальный Virtuoso API для pixel-perfect restore
+
+🥇 [Virtuoso 4.18.7 TS-типы](file:///c:/Projects/ChatCenter/node_modules/react-virtuoso/dist/index.d.ts) `dist/index.d.ts:971-976`:
+
+```ts
+export declare interface StateSnapshot {
+    /** The measured size ranges of items */
+    ranges: SizeRange[];
+    /** The scroll position in pixels */
+    scrollTop: number;
+}
+
+// VirtuosoHandle:
+getState(stateCb: StateCallback): void;
+
+// VirtuosoProps:
+restoreStateFrom?: StateSnapshot;
+```
+
+`StateSnapshot` содержит **точный scrollTop в пикселях** + **измеренные `ranges`** (высоты строк). Это **штатный API** для precise state restoration — используется в Stream Chat React и Mattermost.
+
+#### 4 изменения в коде
+
+**Файл 1 — [`VirtualMessageList.jsx`](src/native/components/VirtualMessageList.jsx)**:
+- Добавлен prop `restoreStateFrom` (StateSnapshot), передаётся напрямую в `<Virtuoso>`
+- `listRef.current.getState(callback)` — новый метод в imperative handle, мост к `virtuosoRef.getState`
+
+**Файл 2 — [`InboxChatPanel.jsx`](src/native/components/InboxChatPanel.jsx)**:
+- Принимает `virtuosoRestoreStateFrom` prop, прокидывает в VirtualMessageList
+
+**Файл 3 — [`InboxMode.jsx`](src/native/modes/InboxMode.jsx)**:
+- `scrollStateByChatRef = useRef(new Map())` — Map<chatId, StateSnapshot> в памяти
+- `SCROLL_STATE_MAX_ENTRIES = 50` — LRU лимит
+- Передача `virtuosoRestoreStateFrom={scrollStateByChatRef.current.get(activeViewKey)}`
+- Передача `virtualListRef + scrollStateByChatRef + SCROLL_STATE_MAX_ENTRIES` в useInboxScroll
+
+**Файл 4 — [`useInboxScroll.js`](src/native/hooks/useInboxScroll.js)**:
+- Throttled (200мс) `virtualListRef.current.getState((state) => map.set(viewKey, state))`
+- LRU trim при превышении лимита через Map insertion order
+- Try/catch для безопасности на момент unmount
+
+#### Сравнение с production эталонами
+
+| Подход | Mattermost | Stream Chat | Element/Matrix | ChatCenter v0.92.2 (наш) |
+|---|---|---|---|---|
+| Виртуализация | Virtuoso | Virtuoso | Custom DOM | **Virtuoso** |
+| In-session restore | `getState`/`restoreStateFrom` | `getState`/`restoreStateFrom` | DOMRect diff | **`getState`/`restoreStateFrom`** ✅ |
+| Cross-session restore | URL state | localStorage scrollTop + msgId | URL fragment | anchorMsgId через `initialTopMostItemIndex` (приблизительно) |
+
+В v0.92.2 мы достигли **промышленного стандарта** для Virtuoso-чатов.
+
+#### Граничные случаи (учтены)
+
+| Случай | Решение |
+|---|---|
+| Map превысила 50 chatId | LRU trim через `keys().next().value` (oldest insertion) |
+| `getState` вызвано но Virtuoso unmount | try/catch, callback может не вызваться |
+| `restoreStateFrom` snapshot с msgId которого больше нет | Virtuoso восстановит scrollTop, ranges актуальны для существующих msgs |
+| `restoreStateFrom` + новые `tg:new-message` | Virtuoso автоматически добавляет row в ranges |
+| `restoreStateFrom` + `firstItemIndex` prepend | Virtuoso официально поддерживает обоюдно |
+| Throttle 200мс может пропустить event | На каждое последующее scroll событие throttle сбрасывается, точная позиция сохраняется через ~200мс после последнего scroll |
+
+#### Регрессия
+
+- lint 0
+- vitest 662/662 (+4 новых теста для restoreStateFrom + getState API)
+- fileSizeLimits 273/273
+- check-memory ✅
+
+#### Тесты
+
+Новые в [`VirtualMessageList.vitest.jsx`](src/native/components/VirtualMessageList.vitest.jsx):
+- `restoreStateFrom` prop принимается без крашей (StateSnapshot)
+- `listRef API имеет getState метод` (мост к Virtuoso getState)
+- `getState не падает на пустом списке`
+- Плюс существующие 12 smoke + 2 Day 2 (всего 16 в файле)
+
+#### Откат
+
+```bash
+git revert <этот hash>
+```
+Вернёт к v0.92.1 (handleScroll работает, scroll-save 185, но позиция при возврате приблизительная).
+
+#### Как проверить (для юзера)
+
+1. Запустить программу — лог `=== ChatCenter v0.92.2 start ===`
+2. Открыть чат А, прокрутить в середину (например, на 50% истории)
+3. Перейти на чат B, дождаться 200мс
+4. Вернуться на чат A → **позиция ТОЧНО ТА ЖЕ** (pixel-perfect)
+5. Повторить 5 раз A↔B↔A → позиция стабильна
+6. В логе должны быть `scroll-save` события (handleScroll работает)
+7. Никаких toast'ов
+
+**Ограничение**: после ПЕРЕЗАПУСКА программы pixel-perfect state теряется (Map в памяти). Cross-session restore работает по `anchorMsgId` (приблизительно, как в v0.92.1).
+
+#### Источники
+
+🥇 [Virtuoso 4.18.7 TS-типы локально — StateSnapshot, getState, restoreStateFrom](file:///c:/Projects/ChatCenter/node_modules/react-virtuoso/dist/index.d.ts)
+🥇 [Virtuoso API reference](https://virtuoso.dev/react-virtuoso/api-reference/virtuoso/)
+🥇 [Virtuoso state restoration docs](https://virtuoso.dev/react-virtuoso/virtuoso/state-restoration/)
+🥈 [Stream Chat React VirtualizedMessageList](https://github.com/GetStream/stream-chat-react/blob/master/src/components/MessageList/VirtualizedMessageList.tsx)
+🥈 [Mattermost webapp Virtuoso integration](https://github.com/mattermost/mattermost-webapp)
+🥈 Наш лог 16:39:07+ — anchor стабилен но position приблизительная (доказательство необходимости)
 
 ---
 

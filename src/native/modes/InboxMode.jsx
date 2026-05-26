@@ -56,6 +56,15 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // INITIAL = 10000 — даёт большой запас вниз (можно prepend до 10000 раз).
   const VIRTUOSO_INITIAL_FIRST_ITEM_INDEX = 10000
   const [firstItemIndex, setFirstItemIndex] = useState(VIRTUOSO_INITIAL_FIRST_ITEM_INDEX)
+  // v0.92.2: pixel-perfect state restoration через Virtuoso StateSnapshot.
+  // Map<chatId, {scrollTop, ranges[]}> — снимки точной позиции + измерения.
+  // Сохраняются throttled через handleScroll → listRef.getState callback.
+  // При смене чата map содержит последний snapshot предыдущего чата (~200мс назад).
+  // Лимит 50 chatId — LRU через Map insertion order (старые выкидываются на size>50).
+  // Не персистится между запусками — для cross-session используется anchorMsgId restore.
+  // По официальной доке Virtuoso 4.18.7: node_modules/react-virtuoso/dist/index.d.ts:971-976.
+  const scrollStateByChatRef = useRef(new Map())
+  const SCROLL_STATE_MAX_ENTRIES = 50
 
   useEffect(() => { store.loadCachedChats?.() }, [])
 
@@ -503,11 +512,14 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // v0.87.83: handleScroll → useInboxScroll hook.
   // v0.88.0: + loadingNewerRef/setLoadingNewer для Telegram-style infinite scroll down.
   // v0.92.0: isRestoringRef удалён — Virtuoso restore не триггерит handleScroll save проблем.
+  // v0.92.2: virtualListRef + scrollStateByChatRef добавлены для pixel-perfect save через
+  // Virtuoso getState — listRef.getState((state) => map.set(viewKey, state)) throttled.
   const { handleScroll } = useInboxScroll({
     store, scrollKey: activeViewKey, activeMessages, activeUnread, chatReady,
     msgsScrollRef, scrollPosByChatRef, initialScrollDoneRef, loadingOlderRef,
     loadingNewerRef, setLoadingNewer,
     scrollDiag, setAtBottom, setNewBelow,
+    virtualListRef, scrollStateByChatRef, scrollStateMaxEntries: SCROLL_STATE_MAX_ENTRIES,
   })
 
   // v0.91.3: event-based newBelow — подписка на tg:new-message (server push),
@@ -733,6 +745,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           virtuosoFirstItemIndex={firstItemIndex}
           virtuosoOnStartReached={handleStartReached}
           virtuosoOnEndReached={handleEndReached}
+          virtuosoRestoreStateFrom={scrollStateByChatRef.current.get(activeViewKey)}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
           scrollToBottom={handleScrollButtonClick} scrollToAbsoluteBottom={handleScrollButtonDoubleClick} scrollToMessage={scrollToMessage}

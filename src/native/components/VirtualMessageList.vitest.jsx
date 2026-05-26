@@ -285,4 +285,72 @@ describe('VirtualMessageList — smoke (Day 1)', () => {
     }).not.toThrow()
     cleanup()
   })
+
+  it('v0.92.2: принимает restoreStateFrom prop (StateSnapshot)', () => {
+    // Pixel-perfect restore — snapshot из предыдущего mount чата.
+    const renderItems = Array.from({ length: 30 }, (_, i) => ({
+      type: 'group', senderId: `u${i}`, senderName: `U${i}`, isOutgoing: false,
+      msgs: [{ id: String(i), type: 'text', text: `m${i}`, timestamp: Date.now() / 1000 }],
+    }))
+    const stateSnapshot = {
+      scrollTop: 1234,
+      ranges: [
+        { startIndex: 0, endIndex: 9, size: 50 },
+        { startIndex: 10, endIndex: 19, size: 80 },
+      ],
+    }
+    expect(() => {
+      render(
+        <VirtualMessageList
+          renderItems={renderItems}
+          rowContext={buildRowContext()}
+          listRef={{ current: null }}
+          cacheKey="chat1"
+          restoreStateFrom={stateSnapshot}
+        />
+      )
+    }).not.toThrow()
+    cleanup()
+  })
+
+  it('v0.92.2: listRef API имеет getState метод (мост к Virtuoso getState)', () => {
+    let capturedRef
+    function Probe() {
+      const r = useRef(null)
+      capturedRef = r
+      return (
+        <VirtualMessageList
+          renderItems={[]}
+          rowContext={buildRowContext()}
+          listRef={r}
+          cacheKey="chat1"
+        />
+      )
+    }
+    render(<Probe />)
+    expect(capturedRef.current).toBeDefined()
+    expect(typeof capturedRef.current.getState).toBe('function')
+    cleanup()
+  })
+
+  it('v0.92.2: getState не падает на пустом списке (callback может не вызваться)', () => {
+    let capturedRef
+    function Probe() {
+      const r = useRef(null)
+      capturedRef = r
+      return (
+        <VirtualMessageList
+          renderItems={[]}
+          rowContext={buildRowContext()}
+          listRef={r}
+          cacheKey="chat1"
+        />
+      )
+    }
+    render(<Probe />)
+    expect(() => {
+      capturedRef.current?.getState((state) => { /* may or may not be called */ })
+    }).not.toThrow()
+    cleanup()
+  })
 })

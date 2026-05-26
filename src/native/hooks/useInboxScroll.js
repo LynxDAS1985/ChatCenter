@@ -26,9 +26,17 @@ export default function useInboxScroll({
   setNewBelow,
   // v0.92.0: isRestoringRef удалён — Virtuoso через initialTopMostItemIndex / firstItemIndex
   // не триггерит наш handleScroll (DOM scroll event не появляется), guard не нужен.
+  // v0.92.2: virtualListRef + scrollStateByChatRef для pixel-perfect state save через
+  // Virtuoso getState. Throttled 200мс через lastStateSaveRef.
+  virtualListRef,
+  scrollStateByChatRef,
+  scrollStateMaxEntries = 50,
 }) {
   const prevNearBottomRef = useRef(null)
   const prevScrollStateRef = useRef({ top: 0, height: 0, t: 0 })
+  // v0.92.2: throttle для getState save (вызов каждый scroll event = слишком часто).
+  const lastStateSaveRef = useRef(0)
+  const STATE_SAVE_THROTTLE_MS = 200
   // v0.88.x: prefetch новых сообщений вниз — отдельный hook (см. useInboxNewerPrefetch.js).
   // Возвращает maybeTrigger(...) которую вызываем внутри handleScroll.
   const newerPrefetch = useInboxNewerPrefetch({ store, scrollKey, activeMessages, scrollDiag })
@@ -58,6 +66,28 @@ export default function useInboxScroll({
           viewKey, anchorMsgId, atBottom: nearBottom,
           scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
         })
+      }
+      // v0.92.2: pixel-perfect state save через Virtuoso getState.
+      // Throttle 200мс — getState() обходит весь дерево измерений, дорогой.
+      // Сохраняем в Map (не localStorage) — между запусками теряется,
+      // но для in-session переключений чатов даёт точную позицию (scrollTop + ranges).
+      // LRU trim при превышении лимита через Map insertion order.
+      if (virtualListRef?.current?.getState) {
+        const now = Date.now()
+        if (now - lastStateSaveRef.current >= STATE_SAVE_THROTTLE_MS) {
+          lastStateSaveRef.current = now
+          try {
+            virtualListRef.current.getState((state) => {
+              if (!state || !scrollStateByChatRef?.current) return
+              scrollStateByChatRef.current.set(viewKey, state)
+              // LRU trim — Map.entries сохраняет insertion order
+              if (scrollStateByChatRef.current.size > scrollStateMaxEntries) {
+                const oldest = scrollStateByChatRef.current.keys().next().value
+                if (oldest && oldest !== viewKey) scrollStateByChatRef.current.delete(oldest)
+              }
+            })
+          } catch (_) { /* getState может выбросить если Virtuoso unmount */ }
+        }
       }
     }
 

@@ -72,6 +72,11 @@ module.exports = {
   },
   // v0.92.0: useInboxScroll вернулся в стандартный лимит 150 после удаления
   // isRestoringRef guards. Текущий размер 139.
+  // v0.92.2: добавлен throttled getState save для pixel-perfect restoration (~30 строк).
+  'src/native/hooks/useInboxScroll.js': {
+    ceiling: 200,
+    reason: 'v0.92.2: throttled virtualListRef.getState((state) => map.set(viewKey, state)) save для Virtuoso pixel-perfect restore через StateSnapshot (~30 строк). См. .memory-bank/virtuoso-migration-plan.md.'
+  },
   // v0.92.0: useInitialScroll — корневой хук восстановления позиции (saved scrollTop,
   // firstUnread auto-jump, anchor msgId, retry-loop для chatReady deadlock). История
   // версий v0.87.29 → v0.91.22 (8 итераций) — каждая добавляла комментарии-предупреждения
