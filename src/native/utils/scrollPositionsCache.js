@@ -1,5 +1,9 @@
 // v0.91.8 (Совет 1): кэш позиций скролла per-chat между сессиями.
 // v0.91.15: формат изменён с number (scrollTop в пикселях) на { anchorMsgId, atBottom }.
+// v0.93.0: формат расширен на { anchorMsgId, atBottom, offsetFromTop } — pixel offset
+// от top of anchor row до scrollTop. Это позволяет pixel-perfect восстановление
+// внутри длинных постов через Virtuoso `initialTopMostItemIndex={index, align:'start', offset}`.
+// Backward compat: старые saves без offsetFromTop → offset=0 при load.
 //
 // Почему: пиксельный scrollTop fragile — при ремаунте react-window высоты
 // сбрасываются на defaultRowHeight, scrollHeight временно мал, MDN spec
@@ -23,7 +27,7 @@
 // Лимит — 100 chatId; при превышении выкидываем самые старые (LRU).
 
 const STORAGE_KEY = 'chat-scroll-positions'
-const STORAGE_VERSION = 2  // v0.91.15: формат изменён
+const STORAGE_VERSION = 3  // v0.93.0: добавлен offsetFromTop (backward compat для v2 saves)
 const MAX_ENTRIES = 100
 const SAVE_DEBOUNCE_MS = 1000
 
@@ -40,8 +44,8 @@ export function loadScrollPositions() {
     if (!raw) return new Map()
     const obj = JSON.parse(raw)
     if (!obj || typeof obj !== 'object') return new Map()
-    // v0.91.15: проверяем версию формата
-    const data = obj.__v === STORAGE_VERSION ? obj.entries : null
+    // v0.91.15: проверяем версию формата. v0.93.0: принимаем v2 (без offset) и v3 (с offset).
+    const data = (obj.__v === STORAGE_VERSION || obj.__v === 2) ? obj.entries : null
     if (!data || typeof data !== 'object') {
       // Старый формат (number scrollTop) — игнорируем, начнём заново
       return new Map()
@@ -52,8 +56,10 @@ export function loadScrollPositions() {
       if (value && typeof value === 'object') {
         const anchorMsgId = typeof value.anchorMsgId === 'string' ? value.anchorMsgId : null
         const atBottom = !!value.atBottom
+        // v0.93.0: offsetFromTop опционален (для v2 backward compat = 0)
+        const offsetFromTop = Number.isFinite(value.offsetFromTop) ? value.offsetFromTop : 0
         if (anchorMsgId || atBottom) {
-          map.set(chatId, { anchorMsgId, atBottom })
+          map.set(chatId, { anchorMsgId, atBottom, offsetFromTop })
         }
       }
     }
@@ -88,30 +94,48 @@ export function saveScrollPositions(map) {
 }
 
 /**
- * v0.91.15: находит anchor msgId — последний msg видимый снизу viewport.
- * Использует DOM query (react-window рендерит только видимые row + overscan,
- * querySelectorAll быстрый — ~20 элементов).
+ * v0.91.15: находит anchor msgId — ВЕРХНИЙ visible msg (первый msg чей bottom > scrollTop).
+ * v0.93.0: возвращает ОБЪЕКТ {anchorMsgId, offsetFromTop} для pixel-perfect restore.
  *
- * @param {HTMLElement} scrollEl — scroll container (react-window outer div)
- * @returns {string|null} msgId последнего видимого снизу, или null
+ * Старая версия (v0.91.15) брала НИЖНИЙ visible msg → при restore align='end' давал
+ * нижнюю часть item в viewport bottom. Для длинного поста (item > viewport) Virtuoso
+ * clamps scrollTop → юзер видел верхнюю часть item, не середину.
+ *
+ * Новая логика (v0.93.0):
+ *   - anchorMsgId = ВЕРХНИЙ visible msg (первый row чей bottom > scrollTop)
+ *   - offsetFromTop = scrollTop - anchorRow.offsetTop
+ *     → положительный offset = scrollTop ниже top of anchor row → юзер видит середину/низ row
+ *     → 0 = anchor row top совпадает с viewport top
+ * При restore: initialTopMostItemIndex={index, align:'start', offset: offsetFromTop}
+ * → Virtuoso ставит anchorRow.top в viewport top + сдвигает на offset вниз.
+ *
+ * @param {HTMLElement} scrollEl — scroll container (Virtuoso outer div)
+ * @returns {{anchorMsgId: string, offsetFromTop: number} | null}
  */
 export function findVisibleAnchorMsgId(scrollEl) {
   if (!scrollEl) return null
   try {
     const elements = scrollEl.querySelectorAll('[data-msg-id]')
     if (!elements.length) return null
-    const scrollBottom = scrollEl.scrollTop + scrollEl.clientHeight
-    let anchor = null
-    // react-window рендерит row с position:absolute + top → el.offsetTop корректен
+    const scrollTop = scrollEl.scrollTop
+    // v0.93.0: ВЕРХНИЙ visible msg — первый row чей нижний край ниже scrollTop.
+    // То есть row либо полностью видим, либо частично сверху (его середина/низ в viewport).
+    // Это даёт точную позицию для align='start' + offset = scrollTop - rowTop.
+    // react-window/Virtuoso рендерят row с position:absolute + top → offsetTop корректен.
     for (const el of elements) {
       const top = el.offsetTop
-      // Берём последний msg, который полностью выше или на границе scrollBottom
-      if (top <= scrollBottom) {
+      const bottom = top + el.offsetHeight
+      if (bottom > scrollTop) {
         const msgId = el.getAttribute('data-msg-id')
-        if (msgId) anchor = msgId
+        if (msgId) {
+          return {
+            anchorMsgId: msgId,
+            offsetFromTop: Math.max(0, Math.round(scrollTop - top)),
+          }
+        }
       }
     }
-    return anchor
+    return null
   } catch (_) { return null }
 }
 

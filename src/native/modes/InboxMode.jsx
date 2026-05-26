@@ -380,31 +380,38 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // Virtuoso через initialTopMostItemIndex + firstItemIndex решает scroll
   // restore штатно. Saga.md содержит полную историю 13 версий фиксов.
 
-  // v0.92.0/v0.92.3: вычисление initialTopMostItemIndex для Virtuoso restore.
+  // v0.93.0 PIXEL-PERFECT RESTORE: используем Virtuoso `IndexLocationWithAlign.offset`
+  // для точного восстановления позиции (включая середину длинных постов).
+  //
+  // По типам Virtuoso 4.18.7 (node_modules/react-virtuoso/dist/index.d.ts:765):
+  //   LocationOptions { align, behavior, offset }  ← offset = "The offset to scroll"
+  //
+  // findVisibleAnchorMsgId теперь сохраняет {anchorMsgId, offsetFromTop} — pixel offset
+  // от top of anchor row до scrollTop. Это позволяет восстанавливать СЕРЕДИНУ длинного
+  // поста (например, юзер был на 400px вниз от заголовка → offset=400).
+  //
+  // Логика:
+  //   align='start' → anchor row TOP at viewport TOP
+  //   offset=savedOffsetFromTop → scrollTop сдвигается на offset пикселей вниз внутри row
+  //   → точная позиция как было при save
+  //
   // 3 случая (по приоритету):
-  //   1. Already-seen чат с сохранённой позицией → saved anchorMsgId / atBottom
-  //   2. Первое открытие с непрочитанными → firstUnreadId (auto-jump на unread divider)
+  //   1. Already-seen с saved позицией → {index, align:'start', offset}
+  //   2. Первое открытие + firstUnread → {index, align:'start'} (divider сверху)
   //   3. Иначе → конец списка (новые сообщения внизу)
-  //
-  // v0.92.3 ФИКС «выравнивание по верху нижнего сообщения»:
-  // По типам Virtuoso 4.18.7 (node_modules/react-virtuoso/dist/index.d.ts:1258):
-  //   initialTopMostItemIndex?: IndexLocationWithAlign | number
-  // findVisibleAnchorMsgId сохраняет НИЖНИЙ видимый msg (последний с top<=scrollBottom).
-  // С `number` Virtuoso ставит этот msg в ВЕРХ viewport (align='start' по умолчанию)
-  // → юзер видит сообщения ПОСЛЕ saved anchor.
-  // С `{index, align: 'end'}` anchor msg оказывается в КОНЦЕ viewport — как было при save.
-  //
-  // По msgId через findRenderItemIndex — устойчиво к удалению/добавлению сообщений.
   const initialTopMostItemIndex = (() => {
     const saved = scrollPosByChatRef.current.get(activeViewKey)
     if (saved?.atBottom) return renderItems.length - 1
     if (saved?.anchorMsgId) {
       const idx = findRenderItemIndex(saved.anchorMsgId)
-      if (idx >= 0) return { index: idx, align: 'end' }  // v0.92.3: align='end' = низ viewport
+      if (idx >= 0) {
+        // v0.93.0: pixel-perfect через offset (0 для v2 backward compat = align='start' top)
+        return { index: idx, align: 'start', offset: saved.offsetFromTop || 0 }
+      }
     }
     if (firstUnreadId) {
       const idx = findRenderItemIndex(firstUnreadId)
-      if (idx >= 0) return { index: idx, align: 'start' }  // unread divider — лучше сверху
+      if (idx >= 0) return { index: idx, align: 'start' }
     }
     return renderItems.length - 1
   })()
@@ -605,8 +612,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     scrollDiag.logEvent('button-scroll-absolute-bottom', { activeUnread, messages: activeMessages.length })
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     const viewKey = activeViewKey || store.activeChatId
-    // v0.91.15: формат {anchorMsgId, atBottom} вместо number — restore через scrollToRow.
-    if (viewKey) scrollPosByChatRef.current.set(viewKey, { anchorMsgId: null, atBottom: true })
+    // v0.91.15/v0.93.0: формат {anchorMsgId, atBottom, offsetFromTop}.
+    if (viewKey) scrollPosByChatRef.current.set(viewKey, { anchorMsgId: null, atBottom: true, offsetFromTop: 0 })
     setAtBottom(true)
     setNewBelow(0)
     const lastMsg = activeMessages[activeMessages.length - 1]

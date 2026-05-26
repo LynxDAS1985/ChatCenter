@@ -34,12 +34,15 @@ export function useScrollPositionAutosave({ activeViewKey, chatReady, msgsScroll
       }
       const el = msgsScrollRef.current
       if (!el) return
-      const anchorMsgId = findVisibleAnchorMsgId(el)
+      // v0.93.0: findVisibleAnchorMsgId возвращает объект {anchorMsgId, offsetFromTop}.
+      const anchorInfo = findVisibleAnchorMsgId(el)
+      const anchorMsgId = anchorInfo?.anchorMsgId || null
+      const offsetFromTop = anchorInfo?.offsetFromTop || 0
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
       if (anchorMsgId || atBottom) {
-        scrollPosByChatRef.current.set(activeViewKey, { anchorMsgId, atBottom })
+        scrollPosByChatRef.current.set(activeViewKey, { anchorMsgId, atBottom, offsetFromTop })
         saveScrollPositions(scrollPosByChatRef.current)
-        logNativeScroll('autosave-save', { activeViewKey, anchorMsgId, atBottom })
+        logNativeScroll('autosave-save', { activeViewKey, anchorMsgId, atBottom, offsetFromTop })
       }
     }, AUTOSAVE_INTERVAL_MS)
     return () => clearInterval(interval)

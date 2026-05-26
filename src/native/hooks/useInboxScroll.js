@@ -46,28 +46,25 @@ export default function useInboxScroll({
     // портится при каждом возврате). msgId стабилен между ремаунтами.
     const viewKey = scrollKey || store.activeChatId
     if (viewKey && chatReady) {
-      const anchorMsgId = findVisibleAnchorMsgId(el)
+      // v0.93.0: findVisibleAnchorMsgId теперь возвращает объект {anchorMsgId, offsetFromTop}
+      // — pixel offset для pixel-perfect restore через Virtuoso initialTopMostItemIndex offset.
+      const anchorInfo = findVisibleAnchorMsgId(el)
+      const anchorMsgId = anchorInfo?.anchorMsgId || null
+      const offsetFromTop = anchorInfo?.offsetFromTop || 0
       // Сохраняем только если есть хоть что-то полезное (anchor или atBottom).
-      // Иначе остаётся прежняя запись (защита от затирания при programmatic scroll
-      // когда react-window еще не отрендерил DOM).
       if (anchorMsgId || nearBottom) {
-        // v0.92.4: ВОЗВРАЩАЕМ closed-loop guard (был ошибочно удалён в v0.92.0).
-        // Virtuoso initialTopMostItemIndex + restoreStateFrom вызывают DOM scroll
-        // event на scroller div (MDN: programmatic scrolling also fires scroll).
-        // Лог 17:35:16-31 показал дрейф anchor на 1-1024 msgs каждый возврат.
+        // v0.92.4: closed-loop guard — Virtuoso DOM scroll события не должны портить save.
         const blocked = !!isRestoringRef?.current
         if (!blocked) {
-          scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
+          scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom, offsetFromTop })
           saveScrollPositions(scrollPosByChatRef.current)
         }
         scrollDiag?.logEvent('scroll-save', {
-          viewKey, anchorMsgId, atBottom: nearBottom,
+          viewKey, anchorMsgId, atBottom: nearBottom, offsetFromTop,
           scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
-          isRestoring: blocked,  // v0.92.4 — true когда save пропущен
+          isRestoring: blocked,
         })
       }
-      // v0.92.6: throttled getState save УДАЛЁН — snapshot не работает с
-      // key={cacheKey} ремаунтом Virtuoso (лог 18:05:09+ показал scrollTop=0).
     }
 
     // v0.87.49: лог переходов atBottom (для диагностики useForceReadAtBottom)
