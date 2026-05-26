@@ -6,7 +6,6 @@
 // Возвращает { handleScroll } — onScroll handler для msgs scroll-container.
 
 import { useRef } from 'react'
-import useInboxNewerPrefetch from './useInboxNewerPrefetch.js'
 import { saveScrollPositions, findVisibleAnchorMsgId } from '../utils/scrollPositionsCache.js'
 
 export default function useInboxScroll({
@@ -39,9 +38,9 @@ export default function useInboxScroll({
   // v0.92.2: throttle для getState save (вызов каждый scroll event = слишком часто).
   const lastStateSaveRef = useRef(0)
   const STATE_SAVE_THROTTLE_MS = 200
-  // v0.88.x: prefetch новых сообщений вниз — отдельный hook (см. useInboxNewerPrefetch.js).
-  // Возвращает maybeTrigger(...) которую вызываем внутри handleScroll.
-  const newerPrefetch = useInboxNewerPrefetch({ store, scrollKey, activeMessages, scrollDiag })
+  // v0.92.5: useInboxNewerPrefetch УДАЛЁН из handleScroll — load-newer теперь
+  // делает Virtuoso endReached callback (handleEndReached в InboxMode).
+  // Старый паттерн scrollTop-based prefetch создавал ДУБЛЬ с Virtuoso → двойные вызовы.
 
   const handleScroll = async (e) => {
     const el = e.target
@@ -127,48 +126,20 @@ export default function useInboxScroll({
     if (nearBottom) setNewBelow(0)
     scrollDiag.observeScroll(nearBottom, loadingOlderRef.current)
 
-    // v0.88.x: Infinite scroll DOWN — делегируем в отдельный hook (Telegram-style).
-    // Не блокирует ниже идущий load-older: направления независимы, throttle внутри.
-    newerPrefetch.maybeTrigger({
-      el, viewKey,
-      initialScrollDoneKey: initialScrollDoneRef.current,
-      loadingNewerRef, setLoadingNewer,
-    })
-
-    // Infinite scroll up
-    if (loadingOlderRef.current) return
-    // v0.92.0: v0.91.24 isRestoringRef guard удалён — Virtuoso через
-    // startReached callback заменяет триггер по scrollTop<100. Старая ветка
-    // react-window (useVirtuoso=false) сохраняет поведение до v0.91.22.
-    // v0.87.48: блокируем авто-load-older пока initial-scroll не закончился
-    if (initialScrollDoneRef.current !== viewKey) {
-      scrollDiag.logEvent('load-older-skip-initial', { scrollTop: el.scrollTop, chatId: store.activeChatId, viewKey })
-      return
-    }
-    if (el.scrollTop < 100 && activeMessages.length > 0) {
-      loadingOlderRef.current = true
-      const oldest = activeMessages[0]
-      const prevHeight = el.scrollHeight
-      const chatAtStart = store.activeChatId
-      const viewKeyAtStart = viewKey
-      scrollDiag.logEvent('load-older-trigger', {
-        beforeId: oldest.id, prevHeight,
-        messages: activeMessages.length, unread: activeUnread,
-      })
-      const result = await store.loadOlderMessages(chatAtStart, oldest.id, 50)
-      scrollDiag.logEvent('load-older-result', {
-        beforeId: oldest.id, ok: result?.ok, hasMore: result?.hasMore,
-      })
-      setTimeout(() => {
-        if (msgsScrollRef.current) {
-          msgsScrollRef.current.scrollTop = msgsScrollRef.current.scrollHeight - prevHeight
-          scrollDiag.logEvent('load-older-apply', {
-            beforeId: oldest.id, prevHeight, activeChanged: chatAtStart !== store.activeChatId || viewKeyAtStart !== (scrollKey || store.activeChatId),
-          })
-        }
-        loadingOlderRef.current = false
-      }, 100)
-    }
+    // v0.92.5: ВСЕ infinite scroll триггеры УДАЛЕНЫ из handleScroll.
+    //
+    // СТАРОЕ (react-window паттерн до v0.92.0):
+    //   - newerPrefetch.maybeTrigger(...) для load-newer
+    //   - if (scrollTop < 100) → loadOlderMessages + ручная scrollTop коррекция
+    //
+    // ПРОБЛЕМА: эти триггеры дублировали Virtuoso startReached/endReached callbacks
+    // (handleStartReached/handleEndReached в InboxMode v0.92.0+). Каждое достижение
+    // верха/низа → ДВА вызова load-older/load-newer → race условия + ручная
+    // scrollTop коррекция перекрывала Virtuoso firstItemIndex auto-positioning.
+    //
+    // ТЕПЕРЬ (v0.92.5): handleScroll занимается ТОЛЬКО save (anchor + snapshot)
+    // и диагностикой (atBottom, scroll-anomaly). Все infinite scroll триггеры —
+    // через Virtuoso callbacks (startReached/endReached в InboxMode).
   }
 
   return { handleScroll }

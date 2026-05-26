@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.92.4 (26 мая 2026)
+## Текущая версия: v0.92.5 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -20,6 +20,93 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.92.5 — Устранение 3 пар двойных функций scroll restore + flush getState + диагностика
+
+После v0.92.4 (isRestoringRef вернули) юзер показал скриншоты «открыл середину длинного поста → возврат → видна шапка поста, не середина». Анализ кода нашёл **3 пары дублирующих функций** которые мешали друг другу:
+
+#### Дубль №1 — load-older
+
+**Старый** (react-window паттерн): [`useInboxScroll.js:148-171`](src/native/hooks/useInboxScroll.js) — `if (scrollTop < 100) → loadOlderMessages + setTimeout(() => scrollTop = scrollHeight - prevHeight)`.
+
+**Новый** (Virtuoso v0.92.0): `handleStartReached` в [`InboxMode.jsx`](src/native/modes/InboxMode.jsx) — Virtuoso официальный callback при достижении верха.
+
+**Конфликт**: оба срабатывают при `scrollTop < 100`. Старый делал ручную scrollTop коррекцию которая **перекрывала** Virtuoso `firstItemIndex` auto-positioning. Каскадные прыжки.
+
+#### Дубль №2 — load-newer
+
+**Старый**: `useInboxScroll.handleScroll` → `useInboxNewerPrefetch.maybeTrigger(...)` через `bottomGap < 1500`.
+
+**Новый**: `handleEndReached` в InboxMode через Virtuoso `endReached`.
+
+То же — два пути одного действия.
+
+#### Дубль №3 — `initialTopMostItemIndex` + `restoreStateFrom`
+
+[`InboxChatPanel.jsx`](src/native/components/InboxChatPanel.jsx) передавал оба одновременно. По [Virtuoso 4.18.7 TS-типам](file:///c:/Projects/ChatCenter/node_modules/react-virtuoso/dist/index.d.ts): когда заданы оба, `restoreStateFrom.scrollTop` побеждает. Мой v0.92.3 align='end' фикс был **бесполезен** при наличии snapshot.
+
+Хуже: throttle 200мс в `getState save` мог пропустить последний scroll → snapshot устарел (juzер скроллил до середины длинного поста, последний save был на «начало поста»). Restore с устаревшим scrollTop → юзер видит начало.
+
+#### 5 фиксов в одном коммите
+
+**Фикс №1 + №2 — `useInboxScroll.js` cleanup**:
+- Удалён `import useInboxNewerPrefetch`
+- Удалён весь `newerPrefetch.maybeTrigger(...)` блок
+- Удалён весь load-older блок (`if scrollTop < 100 → loadOlderMessages + setTimeout scrollTop=`)
+- `handleScroll` теперь занимается ТОЛЬКО save (anchor + snapshot) и диагностикой (atBottom, scroll-anomaly)
+- Все infinite scroll триггеры — через Virtuoso `startReached`/`endReached` в InboxMode
+
+**Фикс №3 — приоритет в InboxMode.jsx**:
+```js
+const savedSnapshot = scrollStateByChatRef.current.get(activeViewKey)
+const savedFromLocalStorage = scrollPosByChatRef.current.get(activeViewKey)
+// snapshot (pixel-perfect in-session) приоритетнее anchor (cross-session)
+const virtuosoRestoreState = savedSnapshot || undefined
+// initialTopMostItemIndex рассчитывается всегда (Virtuoso игнорирует если restoreStateFrom есть)
+```
+
+**Фикс №4 — синхронный flush getState** при unmount Virtuoso:
+```js
+useEffect(() => {
+  // ... isRestoringRef setup ...
+  return () => {
+    // Cleanup ПЕРЕД ремаунтом — virtualListRef ещё указывает на старый Virtuoso
+    virtualListRef.current?.getState?.((state) => {
+      scrollStateByChatRef.current.set(activeViewKey, state)
+      scrollDiag.logEvent('state-snapshot-flush', { viewKey: activeViewKey, scrollTop: state.scrollTop })
+    })
+  }
+}, [activeViewKey])
+```
+
+Не зависит от throttle — последний state синхронно сохраняется.
+
+**Фикс №5 — диагностический лог `state-restore-attempt`**:
+Видим из лога какой механизм restore применился — snapshot или initialTopMostItemIndex, актуальный ли scrollTop.
+
+#### 3+ фактов
+
+🥇 [Virtuoso TS-типы локально](file:///c:/Projects/ChatCenter/node_modules/react-virtuoso/dist/index.d.ts) — restoreStateFrom + initialTopMostItemIndex конфликтуют
+🥈 Наш код `useInboxScroll.js:148-171` + `InboxMode.handleStartReached` — двойной load-older
+🥈 Наш код `useInboxScroll.js:132-136` + `InboxMode.handleEndReached` — двойной load-newer
+🥈 Скриншоты юзера РБК Крипто — видна шапка длинного поста, не середина
+
+#### Регрессия
+
+- lint 0
+- vitest должен пройти
+- fileSizeLimits ✅
+- Размер useInboxScroll.js: 175 → ~120 строк (упрощение)
+
+#### Откат
+
+```bash
+git revert <этот hash>
+```
+
+Вернёт дубли load-older/load-newer + одновременная передача snapshot+initialIdx.
 
 ---
 
