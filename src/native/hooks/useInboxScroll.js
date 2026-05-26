@@ -50,6 +50,13 @@ export default function useInboxScroll({
       if (anchorMsgId || nearBottom) {
         scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
         saveScrollPositions(scrollPosByChatRef.current)
+        // v0.91.19 ДИАГНОСТИКА: фиксируем КАЖДОЕ сохранение через handleScroll для
+        // подтверждения/опровержения гипотезы «замкнутый круг» (programmatic scroll
+        // от restore → onScroll → handleScroll сохраняет искажённый anchor).
+        scrollDiag?.logEvent('scroll-save', {
+          viewKey, anchorMsgId, atBottom: nearBottom,
+          scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
+        })
       }
     }
 

@@ -31,6 +31,22 @@ description: Отложенные технические улучшения ко
 
 ---
 
+### TODO-7: Удалить диагностические логи v0.91.19 (restore-start / scroll-save / autosave-save)
+
+**Контекст**: после 7 коммитов v0.91.12-18 проблема «прыгает позиция при возврате» НЕ решена. Гипотеза «замкнутый круг handleScroll» косвенная — нет прямого доказательства в логах. В v0.91.19 добавлены 3 точки лога для подтверждения/опровержения. Подробности — [`native-scroll-restore-saga.md`](./native-scroll-restore-saga.md).
+
+**Что удалить** (когда корень найден и пофикшен):
+1. `scroll-save` в [`useInboxScroll.js`](../src/native/hooks/useInboxScroll.js) handleScroll (5 строк)
+2. `autosave-save` в [`useScrollPositionAutosave.js`](../src/native/hooks/useScrollPositionAutosave.js) (1 строка + 1 импорт)
+3. `restore-start` в [`useInitialScrollDiag.js`](../src/native/hooks/useInitialScrollDiag.js) tryRestoreWithRetry (5 строк)
+4. В `api.md` — соответствующие строки из таблицы events
+
+**Когда удалять**: в одном коммите с точечным фиксом корня (v0.91.20 предположительно).
+
+**Приоритет**: 🟢 низкий — события не в горячем пути (1 раз на restore, 1 раз на scroll юзера, 1 раз в 1.5с).
+
+---
+
 ### TODO-6: Удалить диагностический модуль v0.91.11 (useInitialScrollDiag.js)
 
 **Контекст**: в v0.91.11 для расследования бага «при возврате в чат программа перелистывает вверх» был вынесен отдельный модуль [`useInitialScrollDiag.js`](../src/native/hooks/useInitialScrollDiag.js) с функцией `logRestoreDiag(...)`. Вызывается в [`useInitialScroll.js`](../src/native/hooks/useInitialScroll.js) ветка «already-seen» один раз на смену чата + один setTimeout(100мс).
@@ -138,3 +154,4 @@ r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
 | 2026-05-15 | v0.89.16 | TODO-4 — progressive через `readFilePart` | 📋 на будущее |
 | 2026-05-15 | v0.89.16 | TODO-5 — обновить api.md, architecture.md, decisions.md | 📋 в очереди |
 | 2026-05-25 | v0.91.11 | TODO-6 — удалить диагностические `initial-restore-*` логи | 📋 в очереди |
+| 2026-05-26 | v0.91.19 | TODO-7 — удалить `restore-start` / `scroll-save` / `autosave-save` | 📋 в очереди |

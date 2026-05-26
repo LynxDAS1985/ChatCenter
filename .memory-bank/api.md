@@ -167,6 +167,9 @@
 | `initial-restore-applied` | `chatId, requestedTop, actualTop, clamped` | v0.91.11: диагностика — фактический scrollTop после присвоения, `clamped=true` = scrollHeight мал |
 | `initial-restore-postcheck` | `chatId, afterMs, finalTop, scrollHeight` | v0.91.11: диагностика — позиция через 100мс (react-window мог перемерить высоты) |
 | `initial-restore-skip` | `chatId, reason, savedTopType?` | v0.91.11: диагностика — skip с причиной (`no-scrollEl` / `no-saved` / `not-returning`) |
+| `restore-start` | `chatId, savedAnchor, savedAtBottom` | v0.91.19: диагностика — ДО начала restore, фиксируем что было сохранено |
+| `scroll-save` | `viewKey, anchorMsgId, atBottom, scrollTop, scrollHeight` | v0.91.19: диагностика — каждое сохранение через handleScroll (для проверки гипотезы «замкнутый круг») |
+| `autosave-save` | `activeViewKey, anchorMsgId, atBottom` | v0.91.19: диагностика — каждое сохранение через interval 1.5с |
 | `initial-restore-saved-first-open` | `chatId, savedTop` | v0.91.8: восстановление позиции из localStorage при первом открытии после рестарта |
 | `initial-no-scrollel` | `chatId, attempts` | v0.91.6: scrollEl не появился за 10 кадров — fallback onDone без scroll |
 

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.18 (26 мая 2026)
+## Текущая версия: v0.91.19 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -19,6 +19,41 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.19 — Диагностика «прыгает позиция при возврате» (3 точки лога, БЕЗ правки логики)
+
+После 7 коммитов v0.91.12-18 проблема НЕ решена (детали — в [`native-scroll-restore-saga.md`](.memory-bank/native-scroll-restore-saga.md)). Моя гипотеза «замкнутый круг handleScroll» **косвенная** — нет прямого доказательства в логах.
+
+Добавлены 3 точки логирования (логика не тронута):
+
+| Событие | Где | Когда срабатывает |
+|---|---|---|
+| `restore-start` | `tryRestoreWithRetry` в [`useInitialScrollDiag.js`](src/native/hooks/useInitialScrollDiag.js) | Перед каждым restore. Поля: `chatId, savedAnchor, savedAtBottom`. |
+| `scroll-save` | `handleScroll` в [`useInboxScroll.js`](src/native/hooks/useInboxScroll.js) | При каждом сохранении anchor (user scroll ИЛИ programmatic). Поля: `viewKey, anchorMsgId, atBottom, scrollTop, scrollHeight`. |
+| `autosave-save` | interval в [`useScrollPositionAutosave.js`](src/native/hooks/useScrollPositionAutosave.js) | Каждые 1.5с при наличии активного чата. Поля: `activeViewKey, anchorMsgId, atBottom`. |
+
+**Что покажет лог после повторного теста**:
+- Если ГИПОТЕЗА «замкнутый круг» верна: `restore-start savedAnchor=X` → через 0-50мс `scroll-save anchorMsgId=Y` (Y ≠ X). Подтверждение что programmatic scroll от restore триггерит handleScroll и портит сохранённую позицию.
+- Если корень в `autosave`: `autosave-save` срабатывает в момент сразу после restore с искажённым anchor.
+- Если оба: видим оба паттерна.
+- Если ни один: корень в другом — react-window cacheKey reset, React effect race и т.п.
+
+После анализа лога юзера → **точечный фикс** v0.91.20 (предположительно `isRestoringRef` флаг, ~10 строк, 3 файла).
+
+Это **только логи** — поведение не меняется. UncaughtErrorToast не должен показывать ошибок (это диагностика, не код).
+
+Стек: React 19.2.4, react-window 2.2.7, tdl 8.1.0. Не трогаем restore/save логику, только видимость.
+
+Файлы:
+- `useInboxScroll.js`: +5 строк лог `scroll-save` через `scrollDiag.logEvent`
+- `useScrollPositionAutosave.js`: +1 импорт + 1 строка лог `autosave-save`
+- `useInitialScrollDiag.js`: +5 строк лог `restore-start` перед `logRestoreDiag`
+
+TODO-7 в `code-todo.md`: удалить эти 3 лога в коммите с фиксом корня. Документация — `mistakes/native-scroll-unread.md` + `native-scroll-restore-saga.md`.
+
+Откат: `git revert <hash>` — только логи, не влияет на поведение.
 
 ---
 

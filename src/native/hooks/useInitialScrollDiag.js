@@ -46,11 +46,20 @@ export function tryRestoreWithRetry({
       return
     }
     lastActiveChatIdRef.current = chatId
+    // v0.91.19 ДИАГНОСТИКА: фиксируем что сохранено ДО restore — для сверки
+    // с scroll-save / autosave-save через несколько мс. Если saved=X но
+    // scroll-save через 50мс пишет anchor=Y — подтверждается замкнутый круг.
+    const saved = getSavedScrollTop?.(chatId)
+    logNativeScroll('restore-start', {
+      chatId,
+      savedAnchor: saved?.anchorMsgId ?? null,
+      savedAtBottom: !!saved?.atBottom,
+    })
     // v0.91.18: scrollRef ОБЯЗАТЕЛЕН для postcheck setTimeout (был забыт в v0.91.16
     // при переписывании → ReferenceError в postcheck → postcheck не работал).
     logRestoreDiag({
       chatId, isReturning: true, scrollEl, scrollRef,
-      saved: getSavedScrollTop?.(chatId),
+      saved,
       onRestoreAnchor, onScrollToIndex, onGetLastIndex,
     })
   }

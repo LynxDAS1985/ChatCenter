@@ -18,6 +18,7 @@
 
 import { useEffect } from 'react'
 import { findVisibleAnchorMsgId, saveScrollPositions } from '../utils/scrollPositionsCache.js'
+import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 
 const AUTOSAVE_INTERVAL_MS = 1500
 
@@ -32,6 +33,9 @@ export function useScrollPositionAutosave({ activeViewKey, chatReady, msgsScroll
       if (anchorMsgId || atBottom) {
         scrollPosByChatRef.current.set(activeViewKey, { anchorMsgId, atBottom })
         saveScrollPositions(scrollPosByChatRef.current)
+        // v0.91.19 ДИАГНОСТИКА: фиксируем КАЖДОЕ сохранение через interval — может
+        // срабатывать в неудачный момент (например сразу после programmatic restore).
+        logNativeScroll('autosave-save', { activeViewKey, anchorMsgId, atBottom })
       }
     }, AUTOSAVE_INTERVAL_MS)
     return () => clearInterval(interval)
