@@ -30,11 +30,7 @@ export default function InboxChatPanel({
   chatReady, atBottom, newBelow, scrollToBottom, scrollToAbsoluteBottom, scrollToMessage,
   // v0.89.0: imperative API виртуализации (scrollToRow + getter element)
   virtualListRef,
-  // v0.91.23 diag: onRowsRendered (react-window) — для anchor-postcheck-tick
-  onRowsRendered,
-  // v0.91.24: обёртка над markUserScroll — отменяет restore при user-scroll
-  onUserIntent,
-  // v0.91.24 Day 2: feature flag миграции на Virtuoso. По умолчанию false → старый react-window.
+  // v0.92.0 Day 3: feature flag миграции на Virtuoso. По умолчанию false → старый react-window.
   useVirtuoso = false,
   virtuosoInitialIndex,
   virtuosoFirstItemIndex,
@@ -206,9 +202,9 @@ export default function InboxChatPanel({
                   openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
                 }}
                 onScroll={handleScroll}
-                onWheel={() => (onUserIntent || scrollDiag.markUserScroll)('wheel')}
-                onTouchStart={() => (onUserIntent || scrollDiag.markUserScroll)('touch')}
-                onPointerDown={() => (onUserIntent || scrollDiag.markUserScroll)('pointer')}
+                onWheel={() => scrollDiag.markUserScroll('wheel')}
+                onTouchStart={() => scrollDiag.markUserScroll('touch')}
+                onPointerDown={() => scrollDiag.markUserScroll('pointer')}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -229,13 +225,12 @@ export default function InboxChatPanel({
                   openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
                 }}
                 onScroll={handleScroll}
-                onWheel={() => (onUserIntent || scrollDiag.markUserScroll)('wheel')}
-                onTouchStart={() => (onUserIntent || scrollDiag.markUserScroll)('touch')}
-                onPointerDown={() => (onUserIntent || scrollDiag.markUserScroll)('pointer')}
+                onWheel={() => scrollDiag.markUserScroll('wheel')}
+                onTouchStart={() => scrollDiag.markUserScroll('touch')}
+                onPointerDown={() => scrollDiag.markUserScroll('pointer')}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onRowsRendered={onRowsRendered}
               />
             ))
           )}

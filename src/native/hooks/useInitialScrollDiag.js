@@ -28,7 +28,8 @@ const RETURN_MAX_ATTEMPTS = 30
 // v0.91.16: добавлены onScrollToIndex / onGetLastIndex для bottom через scrollToRow.
 export function tryRestoreWithRetry({
   chatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef,
-  onRestoreAnchor, onScrollToIndex, onGetLastIndex, isRestoringRef,
+  onRestoreAnchor, onScrollToIndex, onGetLastIndex,
+  // v0.92.0: isRestoringRef удалён — Virtuoso initialTopMostItemIndex решает restore.
 }) {
   let cancelled = false
   let attempts = 0
@@ -53,13 +54,8 @@ export function tryRestoreWithRetry({
       savedAnchor: saved?.anchorMsgId ?? null,
       savedAtBottom: !!saved?.atBottom,
     })
-    // v0.91.22: блокируем save во время programmatic scroll. Сбрасываем через
-    // 1500мс — даём время и initial scroll, и postcheck setTimeout(100мс) бэк
-    // в bottom mode (postcheck тоже programmatic → нельзя триггерить save).
-    if (isRestoringRef) {
-      isRestoringRef.current = true
-      setTimeout(() => { isRestoringRef.current = false }, 1500)
-    }
+    // v0.92.0: isRestoringRef set + 1500мс timeout удалены — Virtuoso режим
+    // обходит этот код полностью (callbacks no-op).
     // v0.91.18: scrollRef ОБЯЗАТЕЛЕН для postcheck setTimeout (был забыт в v0.91.16).
     logRestoreDiag({
       chatId, isReturning: true, scrollEl, scrollRef,
@@ -113,21 +109,9 @@ export function logRestoreDiag({
         actualTop: scrollEl.scrollTop, scrollHeight: scrollEl.scrollHeight,
       })
     }
-    // v0.91.20 ДИАГНОСТИКА: 5 замеров scrollHeight + финал на 1000мс (TODO-8).
-    ;[50, 100, 300, 500, 1000].forEach(delay => {
-      setTimeout(() => {
-        const el = scrollRef.current
-        if (!el) return
-        logNativeScroll('postcheck-tick', { chatId, delay, mode: 'bottom', scrollTop: el.scrollTop, scrollHeight: el.scrollHeight })
-        if (delay === 1000) {
-          const idx = onGetLastIndex?.()
-          if (typeof idx === 'number' && idx >= 0 && onScrollToIndex) {
-            try { onScrollToIndex(idx, 'end') } catch (_) {}
-          } else { el.scrollTop = el.scrollHeight }
-          logNativeScroll('initial-restore-postcheck', { chatId, afterMs: 1000, mode: 'bottom', finalTop: el.scrollTop, scrollHeight: el.scrollHeight })
-        }
-      }, delay)
-    })
+    // v0.92.0: multi-step postcheck-tick × 5 удалён (TODO-8) — Virtuoso режим
+    // не использует react-window scrollHeight для restore. Если флаг useVirtuoso=false,
+    // bottom mode сделает один scrollToRow без retry (поведение v0.91.16 до 5-step).
     return
   }
   if (saved.anchorMsgId) {

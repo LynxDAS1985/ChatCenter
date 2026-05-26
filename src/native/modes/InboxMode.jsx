@@ -44,25 +44,16 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // и useInboxScroll, которые вызываются ДО useInitialScroll по порядку рендера.
   // Telegram Web K паттерн `_isJumping` (tweb ScrollSaver): scrollToRow → onScroll event
   // → handleScroll сохранил бы искажённый anchor (closed loop, 23× в логе 11:31:38).
-  const isRestoringRef = useRef(false)
-  // v0.91.23 ДИАГНОСТИКА Проблемы 2 (react-window scrollHeight remeasure портит позицию).
-  // Лог 13:08:02 показал: после onRestoreAnchor scrollHeight ужимался (14806→12417),
-  // юзера кидало в atBottom=true вместо середины. По react-window 2.2.7 типам
-  // (node_modules/react-window/dist/react-window.d.ts:366) onRowsRendered зовётся
-  // СИНХРОННО С rendering pipeline после measure. Используем его как штатный сигнал
-  // «список устаканился», вместо setTimeout × 5 (костыль).
-  // Эта версия — ТОЛЬКО ЛОГ (anchor-postcheck-tick), БЕЗ re-scroll логики.
-  // Цель — подтвердить из реального лога: targetIdx в видимой области или нет?
-  // Сколько раз и через сколько мс onRowsRendered зовётся за один restore?
-  // Удалить с фикс-коммитом v0.91.24 (TODO-10 в code-todo.md).
-  const restoreTargetMsgIdRef = useRef(null)
-  const restoreTargetAlignRef = useRef('end')
-  const restoreStartTimeRef = useRef(0)
-  const restoreAttemptsRef = useRef(0)
-  // v0.91.24 Day 2: feature flag миграции react-window → react-virtuoso.
-  // Day 2 default=false → прод работает на старом react-window.
-  // Day 3 переключим на true. См. .memory-bank/virtuoso-migration-plan.md.
-  const useVirtuoso = false
+  // v0.92.0 Day 3: v0.91.22-24 isRestoringRef + 4 restore-refs удалены —
+  // Virtuoso через initialTopMostItemIndex + firstItemIndex решает scroll
+  // restore штатно, без нашего closed-loop guard и retry-loop.
+  // История: .memory-bank/native-scroll-restore-saga.md.
+  // v0.92.0 Day 3: миграция завершена — Virtuoso по умолчанию.
+  // Старый VirtualMessageList.jsx ещё активен через флаг (для rollback safety
+  // до Day 4). Если флаг=false → старый react-window, диагностика v0.91.19-24
+  // уже удалена, поэтому возврат к флагу=false делается через `git revert` Day 3.
+  // См. .memory-bank/virtuoso-migration-plan.md.
+  const useVirtuoso = true
   // v0.91.24 Day 2: Virtuoso firstItemIndex для inverse infinite scroll (prepend).
   // При load-older уменьшаем на N — новые msgs сверху, scrollTop не меняется.
   // Reset при смене активного чата (key={cacheKey} ремаунтит Virtuoso).
@@ -213,7 +204,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const msgsScrollRef = useRef(null)
-  useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef, isRestoringRef })  // v0.91.17/22
+  useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef })  // v0.91.17 + v0.92.0
   // v0.89.0: imperative API виртуализации react-window (scrollToRow, get element).
   // Используется как fallback когда querySelector('[data-msg-id]') промахивается
   // (элемент не в видимом виртуальном DOM).
@@ -272,7 +263,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.87.29/40: начальный скролл — ПОСЛЕ загрузки свежих данных.
   // v0.87.66: onDone → setChatReady(true). v0.87.67: запоминаем seenChatsRef.
-  // v0.89.0: onMissingTarget — fallback для виртуализации (querySelector промахнулся).
+  // v0.92.0 Day 3: при useVirtuoso=true restore делает сам Virtuoso через
+  // initialTopMostItemIndex. useInitialScroll остаётся для firstUnread auto-jump
+  // при ПЕРВОМ открытии чата (новая ветка) и для onDone (setChatReady).
+  // Restore-callbacks (onMissingTarget/onRestoreAnchor/onScrollToIndex) в Virtuoso
+  // режиме — no-op, чтобы не перебивать initialTopMostItemIndex.
   const { doneRef: initialScrollDoneRef } = useInitialScroll({
     activeChatId: activeViewKey,
     messagesCount: activeMessages.length,
@@ -284,26 +279,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       setChatReady(true)
     },
     getSavedScrollTop: (chatId) => scrollPosByChatRef.current.get(chatId) ?? null,
-    onMissingTarget: (firstUnread) => {
-      // v0.91.23 diag: сохраняем target для handleRowsRendered.
-      restoreTargetMsgIdRef.current = firstUnread
-      restoreTargetAlignRef.current = 'start'
-      restoreStartTimeRef.current = Date.now()
-      restoreAttemptsRef.current = 0
-      scrollToVirtualRow(firstUnread, 'start')
-    },
-    onRestoreAnchor: (anchorMsgId) => {
-      // v0.91.23 diag: сохраняем target msgId (не индекс — индексы сдвигаются
-      // при удалении/добавлении сообщений) + align для будущего фикса v0.91.24.
-      restoreTargetMsgIdRef.current = anchorMsgId
-      restoreTargetAlignRef.current = 'end'
-      restoreStartTimeRef.current = Date.now()
-      restoreAttemptsRef.current = 0
-      scrollToVirtualRow(anchorMsgId, 'end')
-    },
-    onScrollToIndex: (idx, align) => { try { virtualListRef.current?.scrollToRow({ index: idx, align, behavior: 'auto' }) } catch (_) {} },
+    onMissingTarget: useVirtuoso ? () => {} : ((firstUnread) => scrollToVirtualRow(firstUnread, 'start')),
+    onRestoreAnchor: useVirtuoso ? () => {} : ((anchorMsgId) => scrollToVirtualRow(anchorMsgId, 'end')),
+    onScrollToIndex: useVirtuoso ? () => {} : ((idx, align) => { try { virtualListRef.current?.scrollToRow({ index: idx, align, behavior: 'auto' }) } catch (_) {} }),
     onGetLastIndex: () => renderItems.length - 1,
-    isRestoringRef,  // v0.91.22: общий ref (см. объявление выше)
   })
 
   // v0.87.66/67: при смене чата проверяем seenChatsRef — если уже видели, chatReady=true сразу.
@@ -388,82 +367,29 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     return true
   }
 
-  // v0.91.23 (diag) → v0.91.24 (active): onRowsRendered react-window зовётся
-  // синхронно с rendering pipeline после measure phase
-  // (node_modules/react-window/dist/react-window.d.ts:366). Используем как штатный
-  // сигнал «список устаканился» — лучше magic setTimeout × 5 (v0.91.16 для bottom).
-  //
-  // v0.91.24 ФИКС: если target msg не в видимой области → re-scroll. Index
-  // пересчитывается через findRenderItemIndex(msgId) — устойчиво к удалению
-  // и добавлению сообщений (в т.ч. load-older append=true). Max 8 attempts —
-  // защита от bounce loop. Сходимость: когда idx ∈ [startIndex, stopIndex] —
-  // сбрасываем isRestoringRef.
-  const handleRowsRendered = ({ startIndex, stopIndex }) => {
-    if (!isRestoringRef.current) return
-    const msgId = restoreTargetMsgIdRef.current
-    if (!msgId) return
-    const idx = findRenderItemIndex(msgId)
-    restoreAttemptsRef.current++
-    const inViewport = idx >= 0 && idx >= startIndex && idx <= stopIndex
-    const el = msgsScrollRef.current
-    scrollDiag.logEvent('anchor-postcheck-tick', {
-      msgId, targetIdx: idx, startIndex, stopIndex, inViewport,
-      align: restoreTargetAlignRef.current,
-      attempt: restoreAttemptsRef.current,
-      sinceStartMs: Date.now() - (restoreStartTimeRef.current || 0),
-      scrollTop: el?.scrollTop ?? null,
-      scrollHeight: el?.scrollHeight ?? null,
-    })
-    // msg ещё не отрендерен (load-older не дошёл) → ждём следующий тик
-    if (idx < 0) return
-    // сошлось — restore завершён
-    if (inViewport) {
-      isRestoringRef.current = false
-      restoreTargetMsgIdRef.current = null
-      restoreAttemptsRef.current = 0
-      return
-    }
-    // bounce-защита: сдаёмся через 8 попыток (по логу 14:01:22 attempts достигало 6+)
-    if (restoreAttemptsRef.current >= 8) {
-      isRestoringRef.current = false
-      restoreTargetMsgIdRef.current = null
-      restoreAttemptsRef.current = 0
-      scrollDiag.logEvent('anchor-postcheck-give-up', { msgId, lastTargetIdx: idx, attempts: 8 })
-      return
-    }
-    // re-scroll: msgId стабилен, idx свежий, align сохранён в onRestoreAnchor
-    try {
-      virtualListRef.current?.scrollToRow({
-        index: idx, align: restoreTargetAlignRef.current, behavior: 'auto',
-      })
-    } catch (_) {}
-  }
+  // v0.92.0 Day 3: handleRowsRendered + handleUserIntent удалены —
+  // Virtuoso через initialTopMostItemIndex + firstItemIndex решает scroll
+  // restore штатно. Saga.md содержит полную историю 13 версий фиксов.
 
-  // v0.91.24: обёртка над scrollDiag.markUserScroll — если юзер начал крутить
-  // колесо / трогать сенсорный экран ВО ВРЕМЯ restore, отменяем restore и
-  // отдаём управление. Иначе наш re-scroll в handleRowsRendered перебивает
-  // user-scroll. Telegram Desktop / WhatsApp Web — все так делают.
-  const handleUserIntent = (type) => {
-    scrollDiag.markUserScroll(type)
-    if (isRestoringRef.current) {
-      isRestoringRef.current = false
-      restoreTargetMsgIdRef.current = null
-      restoreAttemptsRef.current = 0
-      scrollDiag.logEvent('anchor-postcheck-abort-user', { type })
-    }
-  }
-
-  // v0.91.24 Day 2: вычисление initialTopMostItemIndex для Virtuoso restore.
-  // Маппим saved anchor msgId → текущий индекс в renderItems. Если msg
-  // удалён или ещё не отрендерен → undefined (Virtuoso стартует с дна).
+  // v0.92.0 Day 3: вычисление initialTopMostItemIndex для Virtuoso restore.
+  // 3 случая (по приоритету):
+  //   1. Already-seen чат с сохранённой позицией → saved anchorMsgId / atBottom
+  //   2. Первое открытие с непрочитанными → firstUnreadId (auto-jump на unread divider)
+  //   3. Иначе → конец списка (новые сообщения внизу)
+  // По msgId через findRenderItemIndex — устойчиво к удалению/добавлению сообщений.
   const initialTopMostItemIndex = useVirtuoso
     ? (() => {
         const saved = scrollPosByChatRef.current.get(activeViewKey)
-        if (!saved) return undefined
-        if (saved.atBottom) return renderItems.length - 1
-        if (!saved.anchorMsgId) return undefined
-        const idx = findRenderItemIndex(saved.anchorMsgId)
-        return idx >= 0 ? idx : undefined
+        if (saved?.atBottom) return renderItems.length - 1
+        if (saved?.anchorMsgId) {
+          const idx = findRenderItemIndex(saved.anchorMsgId)
+          if (idx >= 0) return idx
+        }
+        if (firstUnreadId) {
+          const idx = findRenderItemIndex(firstUnreadId)
+          if (idx >= 0) return idx
+        }
+        return renderItems.length - 1
       })()
     : undefined
 
@@ -587,12 +513,12 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.87.83: handleScroll → useInboxScroll hook.
   // v0.88.0: + loadingNewerRef/setLoadingNewer для Telegram-style infinite scroll down.
+  // v0.92.0: isRestoringRef удалён — Virtuoso restore не триггерит handleScroll save проблем.
   const { handleScroll } = useInboxScroll({
     store, scrollKey: activeViewKey, activeMessages, activeUnread, chatReady,
     msgsScrollRef, scrollPosByChatRef, initialScrollDoneRef, loadingOlderRef,
     loadingNewerRef, setLoadingNewer,
     scrollDiag, setAtBottom, setNewBelow,
-    isRestoringRef,  // v0.91.22: блокирует save во время programmatic scroll от restore
   })
 
   // v0.91.3: event-based newBelow — подписка на tg:new-message (server push),
@@ -814,8 +740,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           editTarget={editTarget} setEditTarget={setEditTarget}
           handleInputChange={handleInputChange} handleReplySend={handleReplySend} handlePaste={handlePaste}
           msgsScrollRef={msgsScrollRef} virtualListRef={virtualListRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
-          onRowsRendered={handleRowsRendered}
-          onUserIntent={handleUserIntent}
           useVirtuoso={useVirtuoso}
           virtuosoInitialIndex={initialTopMostItemIndex}
           virtuosoFirstItemIndex={firstItemIndex}

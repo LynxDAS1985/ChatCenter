@@ -3,6 +3,47 @@
 // Если есть runtime-ошибка (типа "Cannot access 'X' before initialization") — тест упадёт.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
+
+// v0.92.0: VirtualMessageListV2 (Virtuoso) НЕ рендерит row без размеров в happy-dom
+// (ResizeObserver требует реальный layout). Мокаем — рендерим все renderItems
+// напрямую через тот же MessageRow контракт, чтобы smoke-тесты могли найти
+// [data-msg-id] и .native-msg-unread-divider в DOM. Virtuoso-специфичные тесты
+// живут отдельно в VirtualMessageListV2.vitest.jsx.
+vi.mock('../components/VirtualMessageListV2.jsx', () => ({
+  default: function MockVirtualMessageListV2({ renderItems, rowContext, listRef }) {
+    // Минимальный mount — listRef API имитируем чтобы InboxChatPanel не падал
+    if (listRef && typeof listRef === 'object') {
+      listRef.current = {
+        element: null,
+        scrollToRow: () => {},
+      }
+    }
+    return (
+      <div data-testid="virtuoso-mock">
+        {renderItems.map((item, i) => {
+          if (!item) return null
+          if (item.type === 'unread') {
+            return <div key={i} className="native-msg-unread-divider"><span>Новые сообщения</span></div>
+          }
+          if (item.type === 'day' || item.type === 'time') {
+            return <div key={i} className="native-msg-divider">divider</div>
+          }
+          if (item.type === 'group') {
+            return (
+              <div key={i} className="native-msg-group-row">
+                {(item.msgs || []).map(m => (
+                  <div key={m.id} data-msg-id={String(m.id)}>{m.text || 'msg'}</div>
+                ))}
+              </div>
+            )
+          }
+          return null
+        })}
+      </div>
+    )
+  }
+}))
+
 import InboxMode from './InboxMode.jsx'
 
 // Mock window.api (IPC) — happy-dom не даёт Electron preload

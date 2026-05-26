@@ -24,7 +24,8 @@ export default function useInboxScroll({
   scrollDiag,
   setAtBottom,
   setNewBelow,
-  isRestoringRef,  // v0.91.22: блокирует save во время programmatic scroll от restore
+  // v0.92.0: isRestoringRef удалён — Virtuoso через initialTopMostItemIndex / firstItemIndex
+  // не триггерит наш handleScroll (DOM scroll event не появляется), guard не нужен.
 }) {
   const prevNearBottomRef = useRef(null)
   const prevScrollStateRef = useRef({ top: 0, height: 0, t: 0 })
@@ -49,21 +50,13 @@ export default function useInboxScroll({
       // Иначе остаётся прежняя запись (защита от затирания при programmatic scroll
       // когда react-window еще не отрендерил DOM).
       if (anchorMsgId || nearBottom) {
-        // v0.91.22: ФИКС замкнутого круга — если programmatic scroll от restore
-        // активен, НЕ сохраняем в Map. handleScroll всё равно срабатывает на
-        // programmatic scroll (MDN: scroll event fires for programmatic changes),
-        // но мы пропускаем save чтобы restored anchor не перезаписался на следующий.
-        // Лог scroll-save оставляем (диагностика v0.91.19) с полем isRestoring —
-        // увидим что blocked saves работают.
-        const blocked = !!isRestoringRef?.current
-        if (!blocked) {
-          scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
-          saveScrollPositions(scrollPosByChatRef.current)
-        }
+        // v0.92.0: isRestoringRef guard и поле scroll-save isRestoring удалены —
+        // Virtuoso режим не триггерит scroll event при restore, guard не нужен.
+        scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
+        saveScrollPositions(scrollPosByChatRef.current)
         scrollDiag?.logEvent('scroll-save', {
           viewKey, anchorMsgId, atBottom: nearBottom,
           scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
-          isRestoring: blocked,  // v0.91.22 — true когда save пропущен
         })
       }
     }
@@ -108,19 +101,9 @@ export default function useInboxScroll({
 
     // Infinite scroll up
     if (loadingOlderRef.current) return
-    // v0.91.24: блокируем load-older ПОКА restore активен. Корень Проблемы 2
-    // (лог 14:01:22-25): после scrollToRow scrollTop ставится приблизительно
-    // (по defaultRowHeight=50), часто близок к 0 → triger load-older срабатывает
-    // через 30мс после chat-open. 50 старых msgs в начало → target msgId
-    // сдвигается на индексах → react-window remeasure → юзер падает в atBottom.
-    // isRestoringRef живёт 500мс (anchor) / 1500мс (bottom) — за это окно
-    // restore сходится, потом флаг сбрасывается и load-older работает как раньше.
-    if (isRestoringRef?.current) {
-      scrollDiag.logEvent('load-older-skip-restoring', {
-        scrollTop: el.scrollTop, chatId: store.activeChatId, viewKey,
-      })
-      return
-    }
+    // v0.92.0: v0.91.24 isRestoringRef guard удалён — Virtuoso через
+    // startReached callback заменяет триггер по scrollTop<100. Старая ветка
+    // react-window (useVirtuoso=false) сохраняет поведение до v0.91.22.
     // v0.87.48: блокируем авто-load-older пока initial-scroll не закончился
     if (initialScrollDoneRef.current !== viewKey) {
       scrollDiag.logEvent('load-older-skip-initial', { scrollTop: el.scrollTop, chatId: store.activeChatId, viewKey })

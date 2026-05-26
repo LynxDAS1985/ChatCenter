@@ -29,29 +29,10 @@ export function loadChatCache(chatId) {
 export function attachTelegramIpcListeners({ setState, stateRef }) {
   if (!window.api?.on) return () => {}
   const unsubs = []
-  // v0.91.21 ДИАГНОСТИКА Проблемы 3 (Maximum update depth). Stack показывает
-  // setState из IPC handlers, но что вызывает loop неизвестно. Считаем bursts
-  // событий: если N events приходят в окно <100мс — лог. Цель — узнать
-  // какой channel приходит тысячами + соотношение count/ms.
-  // Удалить с TODO-9 после фикса корня.
-  const ipcBursts = new Map()
-  const trackIpcBurst = (channel) => {
-    let b = ipcBursts.get(channel)
-    if (!b) { b = { count: 0, firstTs: 0, scheduled: false }; ipcBursts.set(channel, b) }
-    const now = performance.now()
-    if (b.count === 0) b.firstTs = now
-    b.count++
-    if (b.scheduled) return
-    b.scheduled = true
-    setTimeout(() => {
-      const duration = performance.now() - b.firstTs
-      if (b.count > 1) logNativeScroll('ipc-burst', { channel, count: b.count, ms: Math.round(duration) })
-      b.count = 0; b.firstTs = 0; b.scheduled = false
-    }, 100)
-  }
+  // v0.92.0: v0.91.21 ipc-burst tracker удалён (TODO-9) — Проблема 3 решена
+  // через rAF-батчинг в v0.91.22. Maximum update depth больше не возникает.
   const addHandler = (channel, handler) => {
-    const wrapped = (...args) => { trackIpcBurst(channel); return handler(...args) }
-    const unsub = window.api.on(channel, wrapped)
+    const unsub = window.api.on(channel, handler)
     if (typeof unsub === 'function') unsubs.push(unsub)
   }
 
