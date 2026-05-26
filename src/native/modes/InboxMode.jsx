@@ -39,6 +39,26 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // v0.87.70: Map<chatId, scrollTop> — своя позиция для каждого чата (как Telegram Desktop).
   // v0.91.8 (Совет 1): инициализируем из localStorage — позиция переживает перезапуск программы.
   const scrollPosByChatRef = useRef(loadScrollPositions())
+  // v0.91.22: общий флаг блокировки save во время programmatic scroll от restore.
+  // Объявлен ЗДЕСЬ (а не внутри useInitialScroll), чтобы пробросить в useScrollPositionAutosave
+  // и useInboxScroll, которые вызываются ДО useInitialScroll по порядку рендера.
+  // Telegram Web K паттерн `_isJumping` (tweb ScrollSaver): scrollToRow → onScroll event
+  // → handleScroll сохранил бы искажённый anchor (closed loop, 23× в логе 11:31:38).
+  const isRestoringRef = useRef(false)
+  // v0.91.23 ДИАГНОСТИКА Проблемы 2 (react-window scrollHeight remeasure портит позицию).
+  // Лог 13:08:02 показал: после onRestoreAnchor scrollHeight ужимался (14806→12417),
+  // юзера кидало в atBottom=true вместо середины. По react-window 2.2.7 типам
+  // (node_modules/react-window/dist/react-window.d.ts:366) onRowsRendered зовётся
+  // СИНХРОННО С rendering pipeline после measure. Используем его как штатный сигнал
+  // «список устаканился», вместо setTimeout × 5 (костыль).
+  // Эта версия — ТОЛЬКО ЛОГ (anchor-postcheck-tick), БЕЗ re-scroll логики.
+  // Цель — подтвердить из реального лога: targetIdx в видимой области или нет?
+  // Сколько раз и через сколько мс onRowsRendered зовётся за один restore?
+  // Удалить с фикс-коммитом v0.91.24 (TODO-10 в code-todo.md).
+  const restoreTargetMsgIdRef = useRef(null)
+  const restoreTargetAlignRef = useRef('end')
+  const restoreStartTimeRef = useRef(0)
+  const restoreAttemptsRef = useRef(0)
 
   useEffect(() => { store.loadCachedChats?.() }, [])
 
@@ -183,7 +203,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const msgsScrollRef = useRef(null)
-  useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef })  // v0.91.17
+  useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef, isRestoringRef })  // v0.91.17/22
   // v0.89.0: imperative API виртуализации react-window (scrollToRow, get element).
   // Используется как fallback когда querySelector('[data-msg-id]') промахивается
   // (элемент не в видимом виртуальном DOM).
@@ -254,10 +274,26 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       setChatReady(true)
     },
     getSavedScrollTop: (chatId) => scrollPosByChatRef.current.get(chatId) ?? null,
-    onMissingTarget: (firstUnread) => scrollToVirtualRow(firstUnread, 'start'),
-    onRestoreAnchor: (anchorMsgId) => scrollToVirtualRow(anchorMsgId, 'end'),
+    onMissingTarget: (firstUnread) => {
+      // v0.91.23 diag: сохраняем target для handleRowsRendered.
+      restoreTargetMsgIdRef.current = firstUnread
+      restoreTargetAlignRef.current = 'start'
+      restoreStartTimeRef.current = Date.now()
+      restoreAttemptsRef.current = 0
+      scrollToVirtualRow(firstUnread, 'start')
+    },
+    onRestoreAnchor: (anchorMsgId) => {
+      // v0.91.23 diag: сохраняем target msgId (не индекс — индексы сдвигаются
+      // при удалении/добавлении сообщений) + align для будущего фикса v0.91.24.
+      restoreTargetMsgIdRef.current = anchorMsgId
+      restoreTargetAlignRef.current = 'end'
+      restoreStartTimeRef.current = Date.now()
+      restoreAttemptsRef.current = 0
+      scrollToVirtualRow(anchorMsgId, 'end')
+    },
     onScrollToIndex: (idx, align) => { try { virtualListRef.current?.scrollToRow({ index: idx, align, behavior: 'auto' }) } catch (_) {} },
     onGetLastIndex: () => renderItems.length - 1,
+    isRestoringRef,  // v0.91.22: общий ref (см. объявление выше)
   })
 
   // v0.87.66/67: при смене чата проверяем seenChatsRef — если уже видели, chatReady=true сразу.
@@ -342,6 +378,34 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     return true
   }
 
+  // v0.91.23 ДИАГНОСТИКА (TODO-10): onRowsRendered react-window зовётся при
+  // изменении видимого диапазона. Используем как штатный сигнал «список устаканился»
+  // после remeasure (см. node_modules/react-window/dist/react-window.d.ts:366).
+  // ТОЛЬКО ЛОГ — re-scroll НЕ делаем, чтобы сначала убедиться из реальных данных:
+  // - сколько раз onRowsRendered зовётся за один restore;
+  // - где оказывается targetIdx (в видимой области или вне);
+  // - сколько мс проходит от restore-start до сходимости;
+  // - что происходит когда msgId удалён (idx=-1) или ещё не отрендерен.
+  // Включается только когда isRestoringRef.current=true (т.е. идёт restore).
+  // В фикс-коммите v0.91.24 сюда добавится scrollToRow retry с защитой от bounce.
+  const handleRowsRendered = ({ startIndex, stopIndex }) => {
+    if (!isRestoringRef.current) return
+    const msgId = restoreTargetMsgIdRef.current
+    if (!msgId) return
+    const idx = findRenderItemIndex(msgId)
+    restoreAttemptsRef.current++
+    const inViewport = idx >= 0 && idx >= startIndex && idx <= stopIndex
+    const el = msgsScrollRef.current
+    scrollDiag.logEvent('anchor-postcheck-tick', {
+      msgId, targetIdx: idx, startIndex, stopIndex, inViewport,
+      align: restoreTargetAlignRef.current,
+      attempt: restoreAttemptsRef.current,
+      sinceStartMs: Date.now() - (restoreStartTimeRef.current || 0),
+      scrollTop: el?.scrollTop ?? null,
+      scrollHeight: el?.scrollHeight ?? null,
+    })
+  }
+
   // v0.87.40: пересчёт firstUnread при смене свежих данных (firstId/lastId/unread)
   const firstMsgId = activeMessages[0]?.id
   const lastMsgId = activeMessages[activeMessages.length - 1]?.id
@@ -408,6 +472,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     msgsScrollRef, scrollPosByChatRef, initialScrollDoneRef, loadingOlderRef,
     loadingNewerRef, setLoadingNewer,
     scrollDiag, setAtBottom, setNewBelow,
+    isRestoringRef,  // v0.91.22: блокирует save во время programmatic scroll от restore
   })
 
   // v0.91.3: event-based newBelow — подписка на tg:new-message (server push),
@@ -629,6 +694,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           editTarget={editTarget} setEditTarget={setEditTarget}
           handleInputChange={handleInputChange} handleReplySend={handleReplySend} handlePaste={handlePaste}
           msgsScrollRef={msgsScrollRef} virtualListRef={virtualListRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
+          onRowsRendered={handleRowsRendered}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
           scrollToBottom={handleScrollButtonClick} scrollToAbsoluteBottom={handleScrollButtonDoubleClick} scrollToMessage={scrollToMessage}

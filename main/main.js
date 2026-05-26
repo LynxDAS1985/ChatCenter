@@ -158,7 +158,9 @@ app.whenReady().then(() => {
   process.on('unhandledRejection', (reason) => {
     try { console.error('[main-unhandled-rejection]', reason?.stack || reason) } catch (_) {}
   })
-  console.log('=== ChatCenter v0.87.135 start ===')
+  // v0.91.22: было захардкожено v0.87.135 — теперь читаем актуальную версию из package.json
+  // через app.getVersion() (Electron API, источник истины).
+  console.log(`=== ChatCenter v${app.getVersion()} start ===`)
 
   registerCcMediaHandler(app.getPath('userData'))
 

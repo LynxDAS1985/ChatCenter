@@ -229,31 +229,52 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
 
   // v0.91.9: TDLib шлёт updateChatLastMessage отдельно от updateNewMessage. Без этого
   // handler'а превью в списке чатов застывало (см. .memory-bank/api.md tg:chat-last-message).
+  // v0.91.22: rAF-батчинг — Проблема 3 (Maximum update depth exceeded). При старте TDLib
+  // эмитит сотни updateChatLastMessage за <2с (лог 12:40:09-10: 280+ events). React 18+
+  // automatic batching НЕ работает между разными macrotask (один IPC event = одна task =
+  // один setState = один render). rAF собирает все события одного кадра в ОДИН setState.
+  // Dedupe по chatId — оставляем последнее значение (более старые перекрыты по логике).
+  let pendingLastMsg = []
+  let lastMsgRafScheduled = false
+  function flushPendingLastMsg() {
+    lastMsgRafScheduled = false
+    if (pendingLastMsg.length === 0) return
+    const batch = pendingLastMsg; pendingLastMsg = []
+    const byChatId = new Map()
+    for (const item of batch) byChatId.set(item.chatId, item)  // dedupe → last wins
+    setState(s => {
+      let chatsChanged = false
+      const nextChats = s.chats.map(chat => {
+        const item = byChatId.get(chat.id)
+        if (!item) return chat
+        byChatId.delete(chat.id)
+        if (item.ts > 0 && item.ts < (chat.lastMessageTs || 0)) {
+          recordLastMsgEvent('stale')
+          return chat
+        }
+        recordLastMsgEvent('applied')
+        chatsChanged = true
+        return { ...chat, lastMessage: item.text, lastMessageTs: item.ts || (chat.lastMessageTs || 0) }
+      })
+      // Оставшиеся (chat нет в state) → pending queue.
+      for (const [chatId, item] of byChatId) {
+        pendingSet(chatId, { lastMessage: item.text, lastMessageTs: item.ts })
+        recordLastMsgEvent('pending')
+      }
+      return chatsChanged ? { ...s, chats: nextChats } : s
+    })
+  }
   addHandler('tg:chat-last-message', ({ chatId, lastMessage, lastMessageTs }) => {
     if (!chatId) return
-    const ts = Number(lastMessageTs) || 0
-    const text = typeof lastMessage === 'string' ? lastMessage : ''
-    setState(s => {
-      const chat = s.chats.find(c => c.id === chatId)
-      if (!chat) {
-        // v0.91.10: pending queue с TTL (см. pendingSet выше).
-        pendingSet(chatId, { lastMessage: text, lastMessageTs: ts })
-        recordLastMsgEvent('pending')
-        return s
-      }
-      // Timestamp guard: не затираем свежее значение устаревшим update.
-      if (ts > 0 && ts < (chat.lastMessageTs || 0)) {
-        recordLastMsgEvent('stale')
-        return s
-      }
-      recordLastMsgEvent('applied')
-      return {
-        ...s,
-        chats: s.chats.map(c => c.id === chatId
-          ? { ...c, lastMessage: text, lastMessageTs: ts || (c.lastMessageTs || 0) }
-          : c)
-      }
+    pendingLastMsg.push({
+      chatId,
+      ts: Number(lastMessageTs) || 0,
+      text: typeof lastMessage === 'string' ? lastMessage : '',
     })
+    if (!lastMsgRafScheduled) {
+      lastMsgRafScheduled = true
+      requestAnimationFrame(flushPendingLastMsg)
+    }
   })
 
   addHandler('tg:messages', ({ chatId, messages, append, appendNewer }) => {
@@ -352,26 +373,54 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   })
 
   // v0.87.11: аватарки чатов приходят асинхронно — обновляем chat.avatar
+  // v0.91.22: rAF-батчинг — Проблема 3. Лог 12:40:09 показал 300+ chat-avatar events
+  // за 1.5с при старте → 300 рендеров. Map<chatId,avatarPath> + один setState на rAF.
+  let pendingChatAvatar = new Map()
+  let chatAvatarRafScheduled = false
+  function flushPendingChatAvatar() {
+    chatAvatarRafScheduled = false
+    if (pendingChatAvatar.size === 0) return
+    const updates = pendingChatAvatar; pendingChatAvatar = new Map()
+    setState(s => {
+      let changed = false
+      const nextChats = s.chats.map(c => {
+        if (!updates.has(c.id)) return c
+        changed = true
+        return { ...c, avatar: updates.get(c.id) }
+      })
+      return changed ? { ...s, chats: nextChats } : s
+    })
+  }
   addHandler('tg:chat-avatar', ({ chatId, avatarPath }) => {
-    setState(s => ({
-      ...s,
-      chats: s.chats.map(c => c.id === chatId ? { ...c, avatar: avatarPath } : c)
-    }))
+    if (!chatId) return
+    pendingChatAvatar.set(chatId, avatarPath)
+    if (!chatAvatarRafScheduled) {
+      chatAvatarRafScheduled = true
+      requestAnimationFrame(flushPendingChatAvatar)
+    }
   })
 
   // v0.87.111 → v0.89.4: аватарки отправителей групп.
   // Раньше payload был `{chatId, senderId, avatarUrl}` — но backend не знает в каком
   // чате этот юзер (TDLib шлёт `updateUser` без привязки к chat). Теперь UI
   // итерирует ВСЕ message-массивы и обновляет matching senderId.
-  addHandler('tg:sender-avatar', ({ senderId, avatarUrl }) => {
-    if (!senderId || !avatarUrl) return
+  // v0.91.22: rAF-батчинг — Проблема 3. При старте TDLib эмитит десятки updateUser
+  // подряд (~80 в логе 12:40:09). Каждый handler итерировал по ВСЕМ messages всех чатов
+  // → 80×O(messages_total) = sluggish. Map<senderId,avatarUrl> + одна итерация на rAF.
+  let pendingSenderAvatar = new Map()
+  let senderAvatarRafScheduled = false
+  function flushPendingSenderAvatar() {
+    senderAvatarRafScheduled = false
+    if (pendingSenderAvatar.size === 0) return
+    const updates = pendingSenderAvatar; pendingSenderAvatar = new Map()
     setState(s => {
       const newMessages = {}
       let anyChanged = false
       for (const [chatId, msgs] of Object.entries(s.messages)) {
         let changed = false
         const updated = msgs.map(m => {
-          if (m.senderId === senderId && !m.senderAvatar) {
+          const avatarUrl = updates.get(m.senderId)
+          if (avatarUrl && !m.senderAvatar) {
             changed = true
             return { ...m, senderAvatar: avatarUrl }
           }
@@ -382,6 +431,14 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
       }
       return anyChanged ? { ...s, messages: newMessages } : s
     })
+  }
+  addHandler('tg:sender-avatar', ({ senderId, avatarUrl }) => {
+    if (!senderId || !avatarUrl) return
+    pendingSenderAvatar.set(senderId, avatarUrl)
+    if (!senderAvatarRafScheduled) {
+      senderAvatarRafScheduled = true
+      requestAnimationFrame(flushPendingSenderAvatar)
+    }
   })
 
   // v0.87.14: typing-индикатор

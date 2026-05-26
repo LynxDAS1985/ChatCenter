@@ -36,6 +36,7 @@ export function useInitialScroll({
   onRestoreAnchor,    // v0.91.15: (anchorMsgId) => void — восстановление позиции по msgId
   onScrollToIndex,    // v0.91.16: (index, align) => void — bottom mode через scrollToRow
   onGetLastIndex,     // v0.91.16: () => number — индекс последнего row для bottom mode
+  isRestoringRef,     // v0.91.22: внешний ref-флаг блокировки save (см. InboxMode)
 }) {
   // v0.87.68: Set — все чаты где initial-scroll УЖЕ был выполнен.
   // Раньше (до v0.87.67) — единственный chatId (последний). Не работало для A↔B↔A.
@@ -64,9 +65,10 @@ export function useInitialScroll({
       }
       // v0.91.14: retry-loop симметрично ветке 1 (v0.91.6). См. useInitialScrollDiag.js.
       // v0.91.15: onRestoreAnchor для anchor mode. v0.91.16: onScrollToIndex/onGetLastIndex для bottom mode.
+      // v0.91.22: isRestoringRef блокирует save во время programmatic scroll.
       const cancel = tryRestoreWithRetry({
         chatId: activeChatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef,
-        onRestoreAnchor, onScrollToIndex, onGetLastIndex,
+        onRestoreAnchor, onScrollToIndex, onGetLastIndex, isRestoringRef,
       })
       try { onDone?.(activeChatId) } catch(_) {}
       return cancel
@@ -110,12 +112,19 @@ export function useInitialScroll({
       const firstUnread = firstUnreadIdRef.current
       // v0.91.8 + v0.91.15: priority anchor msgId если не на дне (saved={anchorMsgId, atBottom}).
       const saved = getSavedScrollTop?.(activeChatId)
-      if (saved && saved.anchorMsgId && !saved.atBottom && onRestoreAnchor?.(saved.anchorMsgId) !== false) {
-        logNativeScroll('initial-restore-saved-first-open', { chatId: activeChatId, anchorMsgId: saved.anchorMsgId })
-        doneSetRef.current.add(activeChatId)
-        doneRef.current = activeChatId
-        try { onDone?.(activeChatId) } catch(_) {}
-        return
+      if (saved && saved.anchorMsgId && !saved.atBottom) {
+        // v0.91.22: блокируем save во время programmatic scroll (ветка 1 priority restore).
+        if (isRestoringRef) {
+          isRestoringRef.current = true
+          setTimeout(() => { isRestoringRef.current = false }, 500)
+        }
+        if (onRestoreAnchor?.(saved.anchorMsgId) !== false) {
+          logNativeScroll('initial-restore-saved-first-open', { chatId: activeChatId, anchorMsgId: saved.anchorMsgId })
+          doneSetRef.current.add(activeChatId)
+          doneRef.current = activeChatId
+          try { onDone?.(activeChatId) } catch(_) {}
+          return
+        }
       }
       if (firstUnread) {
         const el = scrollEl.querySelector(`[data-msg-id="${firstUnread}"]`)

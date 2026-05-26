@@ -67,7 +67,29 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 660,
-    reason: 'v0.89.33: snapshot ref для divider (~15 строк). v0.91.17: useScrollPositionAutosave hook integration. InboxMode интегрирует все hooks режима inbox.'
+    ceiling: 730,
+    reason: 'v0.89.33: snapshot ref для divider (~15 строк). v0.91.17: useScrollPositionAutosave hook integration. v0.91.22: общий isRestoringRef + проброс в 3 хука для фикса closed-loop scroll (~8 строк). v0.91.23 diag: 4 ref-а для anchor restore tracking + handleRowsRendered диагностический + расширение onRestoreAnchor/onMissingTarget (~50 строк, удаляется в v0.91.24 после подтверждения).'
+  },
+  // v0.91.22: useInitialScroll — корневой хук восстановления позиции (saved scrollTop,
+  // firstUnread auto-jump, anchor msgId, retry-loop для chatReady deadlock). История
+  // версий v0.87.29 → v0.91.22 (8 итераций) — каждая добавляла комментарии-предупреждения
+  // о ловушках. CLAUDE.md запрещает резать комментарии при превышении лимита. Разбиение
+  // на под-хуки (3-4 файла useInitialScrollAnchor/Bottom/FirstUnread) — отдельная задача
+  // после стабилизации v0.91.22 фикса (нужны логи юзера что closed-loop ушёл).
+  'src/native/hooks/useInitialScroll.js': {
+    ceiling: 170,
+    reason: 'v0.91.22: добавлен внешний isRestoringRef param + блок set/timeout (~5 строк). Доменное разбиение на 3-4 под-хука — отдельная плановая задача.'
+  },
+  // v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers (tg:chat-last-message,
+  // tg:sender-avatar, tg:chat-avatar) добавил ~60 строк. Корень — Проблема 3 Maximum
+  // update depth: при старте TDLib эмитит сотни updateChat* за 1.5с (лог 12:40:09:
+  // 300+ chat-avatar, 280+ chat-last-message, 80+ sender-avatar). React 18+ automatic
+  // batching работает только в пределах одного macrotask, IPC events — разные task'и
+  // → каждый = отдельный render → переполнение update budget. rAF собирает все
+  // события одного кадра в один setState. Доменное разбиение IPC handlers — отдельная
+  // плановая задача (handoff-code-limits.md).
+  'src/native/store/nativeStoreIpc.js': {
+    ceiling: 600,
+    reason: 'v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers (~60 строк). Доменное разбиение IPC handlers (chats / messages / topics / metadata) — отдельный плановый шаг.'
   }
 }

@@ -29,6 +29,8 @@ export default function InboxChatPanel({
   chatReady, atBottom, newBelow, scrollToBottom, scrollToAbsoluteBottom, scrollToMessage,
   // v0.89.0: imperative API виртуализации (scrollToRow + getter element)
   virtualListRef,
+  // v0.91.23 diag: onRowsRendered (react-window) — для anchor-postcheck-tick
+  onRowsRendered,
   // message actions
   handleDelete, handleForward, handlePin, openPhotoWindow, getMessage, readByVisibility,
 }) {
@@ -200,6 +202,7 @@ export default function InboxChatPanel({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
+              onRowsRendered={onRowsRendered}
             />
           )}
           {/* v0.88.0/0.89.0: индикатор подгрузки новых сообщений (Telegram-style)

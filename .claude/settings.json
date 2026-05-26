@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(*)",
+      "PowerShell(*)",
       "Read(*)",
       "Write(*)",
       "Edit(*)",
@@ -11,7 +12,11 @@
       "WebSearch(*)",
       "Agent(*)",
       "TodoWrite(*)",
-      "NotebookEdit(*)"
+      "NotebookEdit(*)",
+      "AskUserQuestion(*)",
+      "ScheduleWakeup(*)",
+      "Skill(*)",
+      "ToolSearch(*)"
     ],
     "deny": []
   },

@@ -8,6 +8,85 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: closed-loop scroll-save при programmatic scroll → анкор сдвигается на 1 msg каждый возврат (v0.91.22)
+
+### Симптом
+Юзер открывает чат, листает вверх, переходит на другой чат, возвращается. Программа «прыгает» — открыта НЕ та позиция. При повторных переключениях позиция смещается всё дальше (открыл-полистал-вернулся-неправильное-сообщение).
+
+### Прямое доказательство (chatcenter.log 11:31:38, 23 повтора)
+```
+restore-start         savedAnchor=4048551936
+initial-restore-applied mode=anchor anchorMsgId=4048551936
+scroll-save           anchorMsgId=4049600512 lastUserType=none  ← через 53мс
+restore-start         savedAnchor=4049600512                    ← следующий возврат уже искажён
+initial-restore-applied mode=anchor anchorMsgId=4049600512
+scroll-save           anchorMsgId=4050124800 lastUserType=none
+```
+Анкор смещается на 1 msg каждый возврат: 4048→4049→4050→4051→4052.
+
+### Корень
+
+🥇 [MDN scroll event spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event): «The scroll event fires when the document view has been scrolled. This includes programmatic scrolling».
+
+Цепочка:
+1. Юзер возвращается → `tryRestoreWithRetry` → `onRestoreAnchor(savedAnchor)` → [react-window](https://github.com/bvaughn/react-window) `virtualListRef.scrollToRow({index, align:'end', behavior:'auto'})`
+2. Browser срабатывает `scroll` event на scroll-контейнере
+3. [`useInboxScroll.handleScroll`](src/native/hooks/useInboxScroll.js) вызывает `findVisibleAnchorMsgId(el)` — но **react-window ещё не перендерил DOM** на момент scroll event (rendering happens после current frame), видимая область сдвинута на 1 row
+4. Сохраняется НЕ тот msgId → следующий возврат читает испорченное значение → новый scroll → новый сдвиг
+
+### Решение — isRestoringRef флаг (паттерн Telegram Web K)
+
+🥇 [tweb ScrollSaver `_isJumping`](https://github.com/morethanwords/tweb/blob/master/src/helpers/scrollSaver.ts): тот же паттерн в Telegram Web K — флаг блокирует save handler во время programmatic scroll.
+
+**Реализация в ChatCenter**:
+
+```js
+// InboxMode.jsx — ОБЪЯВЛЕН ТУТ (не в useInitialScroll):
+// причина — useScrollPositionAutosave (line 186) и useInboxScroll (line 406)
+// вызываются ДО useInitialScroll (line 246). Если ref создавать внутри
+// useInitialScroll, другие хуки не смогут его получить (TDZ).
+const isRestoringRef = useRef(false)
+
+// Пробрасываем в 3 хука:
+useScrollPositionAutosave({ ..., isRestoringRef })  // skip save в interval
+useInitialScroll({ ..., isRestoringRef })           // ставит флаг перед scrollToRow
+useInboxScroll({ ..., isRestoringRef })             // skip save в handleScroll
+
+// useInitialScrollDiag.js — flag set перед programmatic scroll:
+if (isRestoringRef) {
+  isRestoringRef.current = true
+  setTimeout(() => { isRestoringRef.current = false }, 1500)
+}
+// 1500мс покрывает: initial scrollToRow + postcheck setTimeout 1000мс
+// (react-window scrollHeight remeasure требует времени).
+
+// useInboxScroll.handleScroll — skip save:
+const blocked = !!isRestoringRef?.current
+if (!blocked) {
+  scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
+  saveScrollPositions(scrollPosByChatRef.current)
+}
+// Лог scroll-save с полем isRestoring оставляем — диагностика что blocked saves работают.
+```
+
+### Почему НЕ через cancellation scroll-events
+
+Невозможно — `scroll` event не cancellable ([MDN spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event)). Только флаг-блокировка save-логики работает.
+
+### Симметрия для autosave (v0.91.17)
+
+`useScrollPositionAutosave` тоже подписан на anchor каждые 1.5с. При programmatic scroll он бы тоже сохранил искажённый anchor через 1.5с. Поэтому он тоже принимает `isRestoringRef` и пропускает interval save при `isRestoringRef.current === true`.
+
+### Урок
+
+**Programmatic scroll триггерит `scroll` event как любой user scroll** — handler не различает источник без флага. Это базовый паттерн «source-isolation» в любом scroll-restoration коде. У Telegram Web K, Discord, WhatsApp Web — все используют флаг `_isJumping` или эквивалент.
+
+**Антипаттерн**: думать что «React батчит» защитит от этого. React batching работает в пределах macrotask, scroll event может прийти ПОСЛЕ scrollToRow в новой task — батчинг не помогает.
+
+**Дополнительно**: TDZ при добавлении ref-флага — нельзя получить ref из хука, который вызывается ниже по порядку. Объявлять в родительском компоненте и пробрасывать как параметр.
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: забытый параметр функции после рефакторинга → silent ReferenceError в setTimeout (v0.91.18)
 
 ### Симптом

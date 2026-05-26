@@ -24,6 +24,7 @@ export default function useInboxScroll({
   scrollDiag,
   setAtBottom,
   setNewBelow,
+  isRestoringRef,  // v0.91.22: блокирует save во время programmatic scroll от restore
 }) {
   const prevNearBottomRef = useRef(null)
   const prevScrollStateRef = useRef({ top: 0, height: 0, t: 0 })
@@ -48,14 +49,21 @@ export default function useInboxScroll({
       // Иначе остаётся прежняя запись (защита от затирания при programmatic scroll
       // когда react-window еще не отрендерил DOM).
       if (anchorMsgId || nearBottom) {
-        scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
-        saveScrollPositions(scrollPosByChatRef.current)
-        // v0.91.19 ДИАГНОСТИКА: фиксируем КАЖДОЕ сохранение через handleScroll для
-        // подтверждения/опровержения гипотезы «замкнутый круг» (programmatic scroll
-        // от restore → onScroll → handleScroll сохраняет искажённый anchor).
+        // v0.91.22: ФИКС замкнутого круга — если programmatic scroll от restore
+        // активен, НЕ сохраняем в Map. handleScroll всё равно срабатывает на
+        // programmatic scroll (MDN: scroll event fires for programmatic changes),
+        // но мы пропускаем save чтобы restored anchor не перезаписался на следующий.
+        // Лог scroll-save оставляем (диагностика v0.91.19) с полем isRestoring —
+        // увидим что blocked saves работают.
+        const blocked = !!isRestoringRef?.current
+        if (!blocked) {
+          scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom })
+          saveScrollPositions(scrollPosByChatRef.current)
+        }
         scrollDiag?.logEvent('scroll-save', {
           viewKey, anchorMsgId, atBottom: nearBottom,
           scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
+          isRestoring: blocked,  // v0.91.22 — true когда save пропущен
         })
       }
     }

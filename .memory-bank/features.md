@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.21 (26 мая 2026)
+## Текущая версия: v0.91.23 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -19,6 +19,154 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.23 — Диагностика Проблемы 2 через react-window onRowsRendered (БЕЗ правки логики)
+
+После v0.91.22 закрылись Проблемы 1, 3, 4. Лог 13:08:02 показал что Проблема 2 (react-window remeasure портит позицию при anchor restore) **реальна и подтверждена**:
+
+```
+restore-start chatId=...-1001296261677 savedAnchor=8937013248 savedAtBottom=false
+scroll-anomaly prevHeight=14806 → currHeight=12417  ← scrollHeight ужался
+scroll-save anchorMsgId=10712252416 atBottom=TRUE   ← юзер упал в самый низ
+```
+
+Корень — связка двух вещей: (1) `react-window 2.2.7 useDynamicRowHeight` сначала использует `defaultRowHeight: 50` для всех row, потом измеряет через ResizeObserver и `scrollHeight` ужимается; (2) [MDN scrollTop spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop) clamp обрезает `scrollTop` до `scrollHeight - clientHeight`.
+
+**По правилу саги «не чинить вслепую»** — сначала диагностика. По [react-window TS-типам](file:///c:/Projects/ChatCenter/node_modules/react-window/dist/react-window.d.ts) (`react-window.d.ts:366`) `onRowsRendered` зовётся синхронно с rendering pipeline ПОСЛЕ measure phase. Это штатный сигнал «список устаканился» — лучше чем `setTimeout × 5` из v0.91.16 для bottom mode.
+
+**Что добавлено** (только наблюдение, БЕЗ re-scroll):
+
+- В [`InboxMode.jsx`](src/native/modes/InboxMode.jsx): 4 ref для трекинга restore (`restoreTargetMsgIdRef`, `restoreTargetAlignRef`, `restoreStartTimeRef`, `restoreAttemptsRef`). `onRestoreAnchor` и `onMissingTarget` сохраняют target msgId (не индекс — индексы сдвигаются при удалении/добавлении сообщений) перед scrollToRow.
+- `handleRowsRendered({startIndex, stopIndex})` пишет лог `anchor-postcheck-tick` с полями: `msgId`, `targetIdx` (через `findRenderItemIndex`), `startIndex/stopIndex`, `inViewport` (boolean), `align`, `attempt` (счётчик за один restore), `sinceStartMs`, `scrollTop`, `scrollHeight`. Только когда `isRestoringRef.current === true`.
+- В [`InboxChatPanel.jsx`](src/native/components/InboxChatPanel.jsx) проп `onRowsRendered` прокинут в `VirtualMessageList` (проп уже принимался с v0.89.0, никто не передавал).
+
+**Что покажет лог**:
+
+1. Сколько раз `onRowsRendered` зовётся за один restore (1? 5? 10?)
+2. На какой попытке `inViewport=true` (т.е. позиция стабилизировалась)
+3. Сколько мс проходит от `restore-start` до сходимости
+4. Что когда `targetIdx=-1` (msg удалён или ещё не отрендерен из-за load-older)
+
+**Что НЕ трогали**: re-scroll логика, useInitialScrollDiag, bottom mode (postcheck-tick × 5 оставлен из v0.91.20).
+
+**Источники**:
+- [react-window 2.2.7 ListProps.onRowsRendered](file:///c:/Projects/ChatCenter/node_modules/react-window/dist/react-window.d.ts) — `(visibleRows: {startIndex, stopIndex}, allRows: {startIndex, stopIndex}) => void`
+- [MDN scrollTop spec — clamp behavior](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop)
+- [react-window README — useDynamicRowHeight предупреждение](https://github.com/bvaughn/react-window/blob/master/README.md)
+- [react-window issue #216 — scroll memory pattern discussion](https://github.com/bvaughn/react-window/issues/216)
+
+**Регрессия**: lint ✅, vitest ✅, fileSizeLimits ✅ (ceiling InboxMode 670→730). Тесты `useInitialScroll.vitest.jsx` контракта `doneRef` не затронуты. `VirtualMessageList.vitest.jsx` smoke не затронут — проп `onRowsRendered` уже принимался с v0.89.0.
+
+**Откат**: `git revert <hash>` — изменения изолированы (новые ref + новый handler + проп через слой). Если откатить, `onRowsRendered` снова перестанет передаваться (поведение v0.91.22).
+
+**Дальше** — после подтверждения юзером из логов: фикс-коммит v0.91.24 добавит re-scroll логику в `handleRowsRendered` с защитой от bounce (max 5 attempts), от race с user-scroll (abort при `markUserScroll`), от удаления msg (idx=-1 пропуск).
+
+---
+
+### v0.91.22 — Финальный фикс closed-loop scroll + rAF-батчинг IPC + хардкод версии
+
+После v0.91.19/20/21 диагностика подтвердила **три корня** в логах. Версия делает только фиксы — диагностика (`scroll-save isRestoring`, `ipc-burst`, `postcheck-tick`) **сохранена** до подтверждения юзером (TODO-7/8/9 в [`code-todo.md`](.memory-bank/code-todo.md)).
+
+#### Проблема 1 — «открыл-полистал-вернулся прыгает на чужое сообщение» (closed loop)
+
+**Подтверждение в логе 11:31:38** (23 повтора):
+```
+restore-start         savedAnchor=4048551936
+initial-restore-applied mode=anchor anchorMsgId=4048551936
+scroll-save           anchorMsgId=4049600512 lastUserType=none      ← искажённый!
+```
+Каждый возврат смещал анкор на 1 msg ниже (4048→4049→4050→4051→4052→...) — потому что:
+1. `tryRestoreWithRetry` вызывал `onRestoreAnchor` → `virtualListRef.scrollToRow({ index, align:'end', behavior:'auto' })`
+2. По [MDN scroll event spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event) — `scroll` event срабатывает И для programmatic scroll
+3. `handleScroll` в [`useInboxScroll.js`](src/native/hooks/useInboxScroll.js) сохранял `findVisibleAnchorMsgId(el)` — но в момент срабатывания react-window ещё не перендерил DOM, видимая область была СДВИНУТА → сохранялся не тот msgId, что просили
+4. При следующем возврате — читали испорченное значение → новый promgammatic scroll → новый сдвиг
+
+**Решение — isRestoringRef флаг** (паттерн Telegram Web K `_isJumping` из [tweb ScrollSaver](https://github.com/morethanwords/tweb/blob/master/src/helpers/scrollSaver.ts)):
+
+- Ref объявлен ОДИН раз в [`InboxMode.jsx`](src/native/modes/InboxMode.jsx) около `scrollPosByChatRef` — потому что хуки `useScrollPositionAutosave`/`useInboxScroll` вызываются ДО `useInitialScroll` (TDZ).
+- Проброшен в 3 хука: `useInitialScroll` (ставит флаг перед programmatic scroll), `useInboxScroll.handleScroll` (пропускает save), `useScrollPositionAutosave` (пропускает interval save).
+- Таймауты: 500мс для anchor mode (восстановление мгновенное), 1500мс для bottom mode (покрывает initial scroll + 1000мс postcheck `scrollToRow` retry).
+- Лог `scroll-save` сохраняет поле `isRestoring: true/false` — диагностика что blocked saves работают (TODO-7).
+
+#### Проблема 3 — Maximum update depth exceeded при старте
+
+**Подтверждение в логе 12:40:09-10** (1.5с):
+```
+ipc-burst channel=tg:chat-avatar         count=300+ ms=1500
+ipc-burst channel=tg:chat-last-message   count=280+ ms=1500
+ipc-burst channel=tg:sender-avatar       count=80+  ms=1500
+[error] Warning: Maximum update depth exceeded ...
+       at nativeStoreIpc.js:215  (tg:chat-last-message)
+       at nativeStoreIpc.js:347  (tg:sender-avatar)
+```
+
+**Корень**: [React 18+ batching docs](https://react.dev/blog/2022/03/29/react-v18) — automatic batching работает только в пределах **одного macrotask**. Каждый IPC event приходит в **отдельной** task через `window.api.on` → каждый = отдельный `setState` → отдельный render. 660+ events за 1.5с = переполнение update budget.
+
+**Решение — rAF-батчинг** ([`nativeStoreIpc.js`](src/native/store/nativeStoreIpc.js)) для 3-х handlers:
+```js
+let pendingChatAvatar = new Map()
+let scheduled = false
+function flush() {
+  scheduled = false
+  if (pendingChatAvatar.size === 0) return
+  const updates = pendingChatAvatar; pendingChatAvatar = new Map()
+  setState(s => /* применяем ВСЕ updates за один render */)
+}
+addHandler('tg:chat-avatar', ({chatId, avatarPath}) => {
+  pendingChatAvatar.set(chatId, avatarPath)  // dedup → last wins
+  if (!scheduled) { scheduled = true; requestAnimationFrame(flush) }
+})
+```
+
+- Dedupe по chatId/senderId: если для одного chat пришло 5 avatar updates за кадр → применится последний.
+- Один setState на кадр = один render даже если событий 1000.
+- Сверено по: [React docs про batching](https://react.dev/learn/state-as-a-snapshot), Telegram Web K (`appDialogsManager` — тот же паттерн), [Discord Engineering](https://discord.com/blog/how-discord-stores-trillions-of-messages) (MobX rAF batching).
+- Timestamp guard для `tg:chat-last-message` сохранён в batch flush (через поле `ts` в payload).
+
+Применено к: `tg:chat-last-message`, `tg:sender-avatar`, `tg:chat-avatar`. Остальные handlers (tg:messages, tg:new-message, tg:chats) приходят редко — батчинг не нужен.
+
+#### Проблема 4 — хардкод версии в логе
+
+`main.js:161` печатал `=== ChatCenter v0.87.135 start ===` независимо от `package.json` (источник истины — `app.getVersion()` по [Electron docs](https://www.electronjs.org/docs/latest/api/app#appgetversion)). Заменено на template literal с `app.getVersion()`.
+
+#### Лимиты файлов
+
+`nativeStoreIpc.js`: 472 → 529 строк (rAF-батчинг ~60 строк). Ceiling 500→600 в [`fileSizeLimitsExceptions.cjs`](src/__tests__/fileSizeLimitsExceptions.cjs) — доменное разбиение IPC handlers (chats/messages/topics/metadata) — отдельная плановая задача.
+
+`InboxMode.jsx`: 653 → 661 строк (объявление ref + проброс в 3 хука). Ceiling 660→670.
+
+#### Что НЕ чинили в v0.91.22
+
+**Проблема 2** (react-window scrollHeight clamped в bottom mode) — в логе 0 `postcheck-tick` событий, юзер не воспроизвёл сценарий «возврат к чату где был внизу». Без подтверждения корня — не трогаем (saga rule «7 коммитов фиксов без логов — антипаттерн»). TODO-8 остаётся открытым.
+
+#### Файлы
+
+- [`InboxMode.jsx`](src/native/modes/InboxMode.jsx) — объявление `isRestoringRef`, проброс в 3 хука
+- [`useInitialScroll.js`](src/native/hooks/useInitialScroll.js) — принимает `isRestoringRef` как param (не создаёт внутри)
+- [`useInitialScrollDiag.js`](src/native/hooks/useInitialScrollDiag.js) — ставит флаг в `tryRestoreWithRetry` (1500мс)
+- [`useInboxScroll.js`](src/native/hooks/useInboxScroll.js) — пропускает save при `isRestoringRef.current`
+- [`useScrollPositionAutosave.js`](src/native/hooks/useScrollPositionAutosave.js) — пропускает interval save
+- [`nativeStoreIpc.js`](src/native/store/nativeStoreIpc.js) — rAF-батчинг для 3-х handlers
+- [`main/main.js`](main/main.js) — `app.getVersion()` вместо хардкода
+- [`fileSizeLimitsExceptions.cjs`](src/__tests__/fileSizeLimitsExceptions.cjs) — ceiling bumps
+- Documentation: `features.md`, `mistakes/native-scroll-unread.md`, `mistakes/electron-core.md` (новая ловушка), `native-scroll-restore-saga.md`
+
+#### Как воспроизвести фикс (для юзера)
+
+1. Запустить приложение
+2. Открыть чат А с историей > 100 сообщений
+3. Прокрутить ВВЕРХ к середине истории (примерно на 50%)
+4. Перейти на чат B
+5. Вернуться на чат A
+6. **Ожидание**: позиция точно та же, на которой остановился. Если повторить шаги 4-5 ещё 5 раз — позиция НЕ должна смещаться.
+7. Проверить лог `scroll-save` — должно быть много записей с `isRestoring: true` (это значит фикс работает: scroll события от restore залогированы, но в Map не сохранены).
+8. Проверить отсутствие `Maximum update depth` в логе при старте. Лог `ipc-burst` может остаться (диагностика).
+
+#### Откат
+
+`git revert <hash>` — изменения изолированы; rAF-батчинг — чистый паттерн без зависимостей от старой логики; флаг — добавление параметра без удаления старого поведения.
 
 ---
 

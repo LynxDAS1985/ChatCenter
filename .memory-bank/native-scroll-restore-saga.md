@@ -1,9 +1,134 @@
 # Сага восстановления позиции в native-режиме Telegram
 
 **Создано**: 26 мая 2026 (v0.91.18, после 7 коммитов).
-**Обновлено**: 26 мая 2026 (v0.91.19, диагностика добавлена + корень ПОДТВЕРЖДЁН).
-**Статус**: 🟡 **Корень подтверждён, фикс не сделан**. Юзер видит «прыгает» — каждый возврат смещает anchor на 1 msg вниз.
+**Обновлено**: 26 мая 2026 (v0.91.23, diag для Проблемы 2 добавлена).
+**Статус**: 🟡 **Проблемы 1, 3, 4 — РЕШЕНЫ (подтверждено логом 13:06+). Проблема 2 — диагностируется**. Юзер видит «частично помогло»: anchor больше не дрейфует, но при ПЕРВОМ возврате остаётся прыжок из-за react-window remeasure.
 **Назначение**: честная фиксация всех попыток + признание ошибок + детальная диагностика.
+
+---
+
+## 🟡 v0.91.23 — diag для Проблемы 2 (react-window scrollHeight remeasure)
+
+### Что показал лог v0.91.22
+
+**Закрылось** (подтверждено цифрами):
+
+| Метрика | Кол-во |
+|---|---|
+| `Maximum update depth` после старта v0.91.22 | **0 событий** ✅ |
+| `scroll-save isRestoring=true` (closed-loop save заблокирован) | **87 раз** ✅ |
+| `scroll-save isRestoring=false lastUserType=none` (programmatic save утёк) | **0** ✅ |
+| `savedAnchor` для одного чата при 8 переключениях A↔B | **СТАБИЛЕН** ✅ |
+
+**Осталось** (Проблема 2):
+```
+13:08:02 restore-start chatId=...-1001296261677 savedAnchor=8937013248 savedAtBottom=false
+13:08:02 (через 141мс) scroll-save anchorMsgId=10712252416 atBottom=TRUE  ← упал в самый низ
+13:08:02 scroll-anomaly prevHeight=14806 → currHeight=12417 reasonGuess=height-changed(layout-shift/load-older)
+```
+
+### Корень Проблемы 2 (по доке)
+
+1. [react-window 2.2.7 useDynamicRowHeight](https://github.com/bvaughn/react-window/blob/master/README.md) сначала использует `defaultRowHeight: 50` для оценки `scrollHeight` (всего N row × 50px), потом измеряет реальные высоты через ResizeObserver → `scrollHeight` ужимается.
+2. [MDN scrollTop spec](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop): «If specified value is greater than the maximum that the element can be scrolled, the value of scrollTop is set to the maximum». Когда `scrollHeight` ужался, ранее установленный `scrollTop` обрезается до низа → `atBottom=true`.
+
+### Почему фикс v0.91.16 не закрыл Проблему 2
+
+v0.91.16 добавил `postcheck setTimeout × [50, 100, 300, 500, 1000]` ms — но **только для bottom mode** (`saved.atBottom===true`). Для **anchor mode** (`saved.anchorMsgId`) retry НЕ было — `onRestoreAnchor` вызывался один раз.
+
+### v0.91.23 — что добавлено (ТОЛЬКО ЛОГ)
+
+По доке react-window 2.2.7 (`node_modules/react-window/dist/react-window.d.ts:366`): `onRowsRendered` зовётся синхронно с rendering pipeline ПОСЛЕ measure phase. Это штатный сигнал «список устаканился» — лучше чем magic numbers setTimeout.
+
+В [`InboxMode.jsx`](src/native/modes/InboxMode.jsx):
+- 4 ref для трекинга: `restoreTargetMsgIdRef`, `restoreTargetAlignRef`, `restoreStartTimeRef`, `restoreAttemptsRef`.
+- `onRestoreAnchor`/`onMissingTarget` сохраняют target **msgId** (не индекс — индексы сдвигаются при удалении/добавлении сообщений).
+- `handleRowsRendered({startIndex, stopIndex})` пишет `anchor-postcheck-tick` лог с полями: `msgId`, `targetIdx` (через `findRenderItemIndex`), `startIndex/stopIndex`, `inViewport`, `align`, `attempt`, `sinceStartMs`, `scrollTop`, `scrollHeight`. Только когда `isRestoringRef.current === true`.
+
+В [`InboxChatPanel.jsx`](src/native/components/InboxChatPanel.jsx) проп `onRowsRendered` прокинут в `VirtualMessageList` (проп уже принимался с v0.89.0, никто не передавал).
+
+### Что покажет лог v0.91.23
+
+1. **Сколько раз `onRowsRendered` зовётся за один restore** (1? 5? 10? — даст пик частоты для будущего max-attempts threshold)
+2. **На какой попытке `inViewport=true`** (это момент сходимости — после неё re-scroll не нужен)
+3. **Сколько мс проходит от `restore-start` до сходимости** (для сравнения с magic setTimeout 50/100/300/500/1000)
+4. **Что когда `targetIdx=-1`** (msg удалён, или ещё не отрендерен — нужна логика wait)
+5. **Где останавливается `targetIdx`** при первом вызове (за пределами viewport — насколько сильно ускользает)
+
+### Дальше (v0.91.24)
+
+После подтверждения юзером из логов — фикс-коммит добавит в `handleRowsRendered`:
+- Re-scroll через `virtualListRef.current?.scrollToRow({index: targetIdx, align: restoreTargetAlignRef.current})` если `!inViewport`
+- Max 5 attempts (защита от bounce)
+- Abort при `markUserScroll(wheel/touch/pointer)` — если юзер начал крутить, restore отменяется
+- Пропуск при `targetIdx=-1` (msg не отрендерен — ждём следующий onRowsRendered)
+- Удаление диагностического логирования (или сохранение через флаг `CC_LOG_RESTORE_TICKS`)
+
+---
+
+## ✅ v0.91.22 — Проблемы 1, 3, 4 РЕШЕНЫ (подтверждено)
+
+---
+
+## 🟡 v0.91.22 — ФИКС РЕАЛИЗОВАН (ожидает подтверждения)
+
+### Проблема 1 — closed-loop scroll-save — РЕШЕНА через `isRestoringRef`
+
+Паттерн Telegram Web K `_isJumping` ([tweb ScrollSaver](https://github.com/morethanwords/tweb/blob/master/src/helpers/scrollSaver.ts)):
+
+```js
+// InboxMode.jsx — один ref, проброшен в 3 хука
+const isRestoringRef = useRef(false)
+useScrollPositionAutosave({ ..., isRestoringRef })  // skip interval save
+useInitialScroll({ ..., isRestoringRef })           // ставит флаг перед scrollToRow
+useInboxScroll({ ..., isRestoringRef })             // skip handleScroll save
+
+// useInitialScrollDiag.js перед programmatic scroll:
+isRestoringRef.current = true
+setTimeout(() => { isRestoringRef.current = false }, 1500)
+// 1500мс = initial scroll + 1000мс postcheck
+```
+
+### Проблема 3 — Maximum update depth — РЕШЕНА через rAF-батчинг
+
+Подтверждённые в логе burst: `tg:chat-avatar` 300+, `tg:chat-last-message` 280+, `tg:sender-avatar` 80+ events за 1.5с при старте TDLib.
+
+```js
+// nativeStoreIpc.js — паттерн для каждого из 3-х handlers
+let pending = new Map()
+let scheduled = false
+function flush() {
+  scheduled = false
+  if (pending.size === 0) return
+  const batch = pending; pending = new Map()
+  setState(s => /* применить ВСЕ updates за один render */)
+}
+addHandler('tg:chat-avatar', ({chatId, avatarPath}) => {
+  pending.set(chatId, avatarPath)  // dedup
+  if (!scheduled) { scheduled = true; requestAnimationFrame(flush) }
+})
+```
+
+### Проблема 4 — хардкод версии — РЕШЕНА
+
+`main.js:161`: `'=== ChatCenter v0.87.135 start ==='` → `\`=== ChatCenter v${app.getVersion()} start ===\``.
+
+### Проблема 2 — react-window scrollHeight clamped (bottom mode) — НЕ ТРОГАЛИ
+
+В логе 0 `postcheck-tick` событий — юзер не воспроизвёл сценарий «возврат к чату где был внизу». По правилу саги «7 коммитов фиксов без логов — антипаттерн» не чиним вслепую. TODO-8 остаётся открытым.
+
+### Как воспроизвести фикс (для юзера)
+
+1. Запустить приложение
+2. Открыть чат А с историей > 100 сообщений
+3. Прокрутить ВВЕРХ к середине истории (примерно на 50%)
+4. Перейти на чат B
+5. Вернуться на чат A
+6. **Ожидание**: позиция точно та же. Повторить шаги 4-5 ещё 5 раз — позиция НЕ должна смещаться.
+7. Проверить лог `scroll-save` — должно быть много записей с `isRestoring: true` (это значит фикс работает).
+8. Проверить отсутствие `Maximum update depth` в логе при старте.
+
+После подтверждения юзером — удалить диагностику v0.91.19/20/21 (TODO-7/8/9) и обновить статус саги до 🟢 ЗАКРЫТО.
 
 ---
 

@@ -5,6 +5,107 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: IPC handlers + React 18+ automatic batching = ложное ожидание (v0.91.22)
+
+### Симптом
+При старте приложения с TDLib (multiple accounts с большим списком чатов): консоль засыпается ошибкой `Warning: Maximum update depth exceeded` через 1-2 секунды после `loadCachedChats`. Stack trace указывает на `setState` в IPC handlers (`tg:chat-last-message`, `tg:sender-avatar`).
+
+### Прямое доказательство (chatcenter.log 12:40:09-10, диагностика v0.91.21)
+```
+ipc-burst channel=tg:chat-avatar         count=300+ ms=1500
+ipc-burst channel=tg:chat-last-message   count=280+ ms=1500
+ipc-burst channel=tg:sender-avatar       count=80+  ms=1500
+[error] Warning: Maximum update depth exceeded ...
+       at nativeStoreIpc.js:215  (tg:chat-last-message setState)
+       at nativeStoreIpc.js:347  (tg:sender-avatar setState)
+```
+660+ IPC events за 1.5с = 660+ separate renders → React update budget overflow.
+
+### Корень — ложное ожидание про automatic batching
+
+🥇 [React 18 batching announcement](https://react.dev/blog/2022/03/29/react-v18): «We added a feature called "automatic batching" — multiple state updates are now batched even **inside promises, setTimeouts, native event handlers**, or any other event».
+
+**Что верно**: React 18+ батчит все setState внутри **ОДНОГО macrotask**.
+
+**Что НЕВЕРНО ожидать**: что 660 IPC events приходящие за 1.5с в **РАЗНЫХ** macrotasks автоматически забатчатся. Каждый `window.api.on('tg:chat-avatar', handler)` → каждый event прилетает в новой microtask/task → каждый setState → каждый render.
+
+### Доказательство в чистом виде
+
+```js
+// Этот код породит 100 renders, не 1, даже с React 18 batching:
+for (let i = 0; i < 100; i++) {
+  setTimeout(() => setState(s => ({ ...s, count: s.count + 1 })), 0)
+  //                                            ↑
+  //          каждый setTimeout — отдельная task → отдельный render
+}
+
+// А этот — 1 render благодаря automatic batching:
+setTimeout(() => {
+  for (let i = 0; i < 100; i++) {
+    setState(s => ({ ...s, count: s.count + 1 }))
+  }
+}, 0)
+//  ↑ все setState внутри ОДНОЙ task → один render
+```
+
+IPC events через `contextBridge` (`window.api.on`) приходят асинхронно — каждый в собственной task. Batching не помогает.
+
+### Решение — rAF-батчинг руками
+
+🥇 [requestAnimationFrame MDN](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame): «requestAnimationFrame is typically called 60 times per second... callbacks are queued together and fired in a single repaint».
+
+Паттерн (тот же что в Telegram Web K `appDialogsManager` и Discord MobX store):
+
+```js
+let pendingUpdates = new Map()  // dedup по ключу — last wins
+let scheduled = false
+
+function flush() {
+  scheduled = false
+  if (pendingUpdates.size === 0) return
+  const batch = pendingUpdates; pendingUpdates = new Map()
+  setState(s => {
+    // применяем ВСЕ updates за один render
+    ...
+  })
+}
+
+addHandler('tg:chat-avatar', ({chatId, avatarPath}) => {
+  pendingUpdates.set(chatId, avatarPath)
+  if (!scheduled) {
+    scheduled = true
+    requestAnimationFrame(flush)
+  }
+})
+```
+
+Преимущества:
+- Один render на кадр (60fps) даже если событий 1000
+- Dedupe по chatId/senderId — если для одного объекта пришло 5 updates за кадр, применится последний
+- rAF гарантирует что flush произойдёт перед next paint — UI не «пропустит» updates
+
+В ChatCenter v0.91.22 применено к 3-м самым шумным handlers: `tg:chat-last-message`, `tg:sender-avatar`, `tg:chat-avatar`. Остальные IPC handlers (`tg:messages`, `tg:new-message`, `tg:chats`) приходят редко (batches от 50 msg раз в открытие чата) — батчинг не нужен.
+
+### Когда применять rAF-батчинг
+
+✅ **Применять**:
+- IPC handler срабатывает в burst (>20 events/sec)
+- setState внутри handler делает дорогую операцию (iteration over all messages в `tg:sender-avatar`)
+- Stack trace показывает «Maximum update depth»
+
+❌ **НЕ применять**:
+- Handler срабатывает редко (e.g. `tg:chats` — раз в открытие/refresh)
+- Каждое событие критично для UI без задержки (e.g. typing indicator — задержка в 16мс заметна юзеру)
+- Логика handler сложная и не сводится к dedupe по ключу
+
+### Урок
+
+**«React batching» — не магия**. Она работает в пределах ОДНОЙ task. Все асинхронные источники в РАЗНЫХ task'ах (IPC, WebSocket, MutationObserver, fetch promises) могут переполнить update budget. Стандарт индустрии — rAF-батчинг с dedupe.
+
+**Антипаттерн**: думать что «raise the React update limit» (через `unstable_batchedUpdates`) спасёт. Это deprecated в React 18 и не решает корень проблемы — много рендеров остаются.
+
+---
+
 ## 📚 УРОК v0.89.41-v0.91.0: попытка миграции `<webview>` → WebContentsView НЕ УДАЛАСЬ (Electron Issue #44934)
 
 ### Статус: 🔴 ПИЛОТ ОТКАЧЕН, остался `<webview>` тег как ЕДИНСТВЕННАЯ работающая архитектура для multi-messenger UI на Windows 11

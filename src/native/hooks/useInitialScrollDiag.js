@@ -28,7 +28,7 @@ const RETURN_MAX_ATTEMPTS = 30
 // v0.91.16: добавлены onScrollToIndex / onGetLastIndex для bottom через scrollToRow.
 export function tryRestoreWithRetry({
   chatId, scrollRef, getSavedScrollTop, lastActiveChatIdRef,
-  onRestoreAnchor, onScrollToIndex, onGetLastIndex,
+  onRestoreAnchor, onScrollToIndex, onGetLastIndex, isRestoringRef,
 }) {
   let cancelled = false
   let attempts = 0
@@ -46,17 +46,21 @@ export function tryRestoreWithRetry({
       return
     }
     lastActiveChatIdRef.current = chatId
-    // v0.91.19 ДИАГНОСТИКА: фиксируем что сохранено ДО restore — для сверки
-    // с scroll-save / autosave-save через несколько мс. Если saved=X но
-    // scroll-save через 50мс пишет anchor=Y — подтверждается замкнутый круг.
+    // v0.91.19 ДИАГНОСТИКА: фиксируем что сохранено ДО restore.
     const saved = getSavedScrollTop?.(chatId)
     logNativeScroll('restore-start', {
       chatId,
       savedAnchor: saved?.anchorMsgId ?? null,
       savedAtBottom: !!saved?.atBottom,
     })
-    // v0.91.18: scrollRef ОБЯЗАТЕЛЕН для postcheck setTimeout (был забыт в v0.91.16
-    // при переписывании → ReferenceError в postcheck → postcheck не работал).
+    // v0.91.22: блокируем save во время programmatic scroll. Сбрасываем через
+    // 1500мс — даём время и initial scroll, и postcheck setTimeout(100мс) бэк
+    // в bottom mode (postcheck тоже programmatic → нельзя триггерить save).
+    if (isRestoringRef) {
+      isRestoringRef.current = true
+      setTimeout(() => { isRestoringRef.current = false }, 1500)
+    }
+    // v0.91.18: scrollRef ОБЯЗАТЕЛЕН для postcheck setTimeout (был забыт в v0.91.16).
     logRestoreDiag({
       chatId, isReturning: true, scrollEl, scrollRef,
       saved,

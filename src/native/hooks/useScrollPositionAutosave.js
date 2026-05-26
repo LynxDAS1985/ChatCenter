@@ -22,10 +22,17 @@ import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 
 const AUTOSAVE_INTERVAL_MS = 1500
 
-export function useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef }) {
+export function useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef, isRestoringRef }) {
   useEffect(() => {
     if (!activeViewKey || !chatReady) return
     const interval = setInterval(() => {
+      // v0.91.22: пропускаем сохранение во время programmatic scroll от restore.
+      // Иначе interval сохранил бы искажённый anchor (тот же замкнутый круг что
+      // в handleScroll — но через 1.5с интервал).
+      if (isRestoringRef?.current) {
+        logNativeScroll('autosave-save', { activeViewKey, anchorMsgId: null, atBottom: false, isRestoring: true })
+        return
+      }
       const el = msgsScrollRef.current
       if (!el) return
       const anchorMsgId = findVisibleAnchorMsgId(el)
@@ -33,8 +40,6 @@ export function useScrollPositionAutosave({ activeViewKey, chatReady, msgsScroll
       if (anchorMsgId || atBottom) {
         scrollPosByChatRef.current.set(activeViewKey, { anchorMsgId, atBottom })
         saveScrollPositions(scrollPosByChatRef.current)
-        // v0.91.19 ДИАГНОСТИКА: фиксируем КАЖДОЕ сохранение через interval — может
-        // срабатывать в неудачный момент (например сразу после programmatic restore).
         logNativeScroll('autosave-save', { activeViewKey, anchorMsgId, atBottom })
       }
     }, AUTOSAVE_INTERVAL_MS)
