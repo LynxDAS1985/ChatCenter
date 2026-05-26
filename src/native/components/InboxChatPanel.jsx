@@ -10,7 +10,6 @@ import { useEffect, useRef, useState } from 'react'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
 import VirtualMessageList from './VirtualMessageList.jsx'
-import VirtualMessageListV2 from './VirtualMessageListV2.jsx'  // v0.91.24 Day 2: Virtuoso замена
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
 import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
@@ -30,8 +29,7 @@ export default function InboxChatPanel({
   chatReady, atBottom, newBelow, scrollToBottom, scrollToAbsoluteBottom, scrollToMessage,
   // v0.89.0: imperative API виртуализации (scrollToRow + getter element)
   virtualListRef,
-  // v0.92.0 Day 3: feature flag миграции на Virtuoso. По умолчанию false → старый react-window.
-  useVirtuoso = false,
+  // v0.92.0: Virtuoso props (бывшие v_*) — все обязательны после Day 4 удаления feature flag.
   virtuosoInitialIndex,
   virtuosoFirstItemIndex,
   virtuosoOnStartReached,
@@ -190,49 +188,28 @@ export default function InboxChatPanel({
               </div>
             )
           ) : (
-            (useVirtuoso ? (
-              <VirtualMessageListV2
-                listRef={effectiveListRef}
-                renderItems={renderItems}
-                cacheKey={store.activeChatId}
-                rowContext={{
-                  store, readRoot: scrollElement,
-                  setReplyTo, setEditTarget, setInput,
-                  handleDelete, handleForward, handlePin,
-                  openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
-                }}
-                onScroll={handleScroll}
-                onWheel={() => scrollDiag.markUserScroll('wheel')}
-                onTouchStart={() => scrollDiag.markUserScroll('touch')}
-                onPointerDown={() => scrollDiag.markUserScroll('pointer')}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                initialTopMostItemIndex={virtuosoInitialIndex}
-                firstItemIndex={virtuosoFirstItemIndex}
-                startReached={virtuosoOnStartReached}
-                endReached={virtuosoOnEndReached}
-              />
-            ) : (
-              <VirtualMessageList
-                listRef={effectiveListRef}
-                renderItems={renderItems}
-                cacheKey={store.activeChatId}
-                rowContext={{
-                  store, readRoot: scrollElement,
-                  setReplyTo, setEditTarget, setInput,
-                  handleDelete, handleForward, handlePin,
-                  openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
-                }}
-                onScroll={handleScroll}
-                onWheel={() => scrollDiag.markUserScroll('wheel')}
-                onTouchStart={() => scrollDiag.markUserScroll('touch')}
-                onPointerDown={() => scrollDiag.markUserScroll('pointer')}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-              />
-            ))
+            <VirtualMessageList
+              listRef={effectiveListRef}
+              renderItems={renderItems}
+              cacheKey={store.activeChatId}
+              rowContext={{
+                store, readRoot: scrollElement,
+                setReplyTo, setEditTarget, setInput,
+                handleDelete, handleForward, handlePin,
+                openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
+              }}
+              onScroll={handleScroll}
+              onWheel={() => scrollDiag.markUserScroll('wheel')}
+              onTouchStart={() => scrollDiag.markUserScroll('touch')}
+              onPointerDown={() => scrollDiag.markUserScroll('pointer')}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              initialTopMostItemIndex={virtuosoInitialIndex}
+              firstItemIndex={virtuosoFirstItemIndex}
+              startReached={virtuosoOnStartReached}
+              endReached={virtuosoOnEndReached}
+            />
           )}
           {/* v0.88.0/0.89.0: индикатор подгрузки новых сообщений (Telegram-style)
               рендерится поверх ленты, прикреплён к низу контейнера. */}

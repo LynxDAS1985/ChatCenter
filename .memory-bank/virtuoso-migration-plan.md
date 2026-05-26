@@ -1,8 +1,8 @@
 # Миграция react-window → react-virtuoso
 
 **Создано**: 26 мая 2026 (v0.91.24, после саги scroll-restore из 13 версий).
-**Версия миграции**: v0.92.0 (запланирована).
-**Статус**: 🟡 **Day 1 в работе — изолированная подготовка**.
+**Версия миграции**: v0.92.0 (РЕАЛИЗОВАНА — Days 1-4 готовы).
+**Статус**: 🟢 **ЗАВЕРШЕНО — все 4 дня в репозитории, ожидается ручное подтверждение юзером**.
 **Связанные документы**: [`native-scroll-restore-saga.md`](./native-scroll-restore-saga.md), [`mistakes/native-scroll-unread.md`](./mistakes/native-scroll-unread.md).
 
 ---
@@ -276,10 +276,10 @@ Re-scroll в `onRowsRendered` (фикс v0.91.24) НЕ помог — `scrollTop
 
 ## ✅ Чекпойнты выполнения
 
-- [ ] Day 1: react-virtuoso установлен, V2 компонент создан + тесты, изолирован
-- [ ] Day 2: feature flag активен в dev, юзер протестировал
-- [ ] Day 3: флаг default true, диагностика удалена, v0.92.0 выпущена
-- [ ] Day 4: react-window удалён, старый компонент удалён
+- [x] **Day 1** (commit `5d0f444`): react-virtuoso 4.18.7 установлен, VirtualMessageListV2.jsx + 10 smoke-тестов изолированно
+- [x] **Day 2** (commit `c180123`): feature flag `useVirtuoso=false` по умолчанию, initialTopMostItemIndex + firstItemIndex + handleStartReached/EndReached
+- [x] **Day 3** (commit `bff12dc`): флаг переключён на true, v0.91.19-24 диагностика удалена (~140 строк), bump 0.92.0, features.md v0.91.11-24 архивированы
+- [x] **Day 4**: VirtualMessageList.jsx старый удалён, V2 переименован в основной, react-window убран из package.json, feature flag удалён, ceiling InboxMode 900→750
 
 ---
 

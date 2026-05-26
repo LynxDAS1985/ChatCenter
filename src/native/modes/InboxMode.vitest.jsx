@@ -4,13 +4,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 
-// v0.92.0: VirtualMessageListV2 (Virtuoso) НЕ рендерит row без размеров в happy-dom
+// v0.92.0: VirtualMessageList (Virtuoso) НЕ рендерит row без размеров в happy-dom
 // (ResizeObserver требует реальный layout). Мокаем — рендерим все renderItems
 // напрямую через тот же MessageRow контракт, чтобы smoke-тесты могли найти
 // [data-msg-id] и .native-msg-unread-divider в DOM. Virtuoso-специфичные тесты
-// живут отдельно в VirtualMessageListV2.vitest.jsx.
-vi.mock('../components/VirtualMessageListV2.jsx', () => ({
-  default: function MockVirtualMessageListV2({ renderItems, rowContext, listRef }) {
+// живут отдельно в VirtualMessageList.vitest.jsx.
+vi.mock('../components/VirtualMessageList.jsx', () => ({
+  default: function MockVirtualMessageList({ renderItems, rowContext, listRef }) {
     // Минимальный mount — listRef API имитируем чтобы InboxChatPanel не падал
     if (listRef && typeof listRef === 'object') {
       listRef.current = {

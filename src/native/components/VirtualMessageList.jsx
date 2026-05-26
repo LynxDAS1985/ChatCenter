@@ -1,36 +1,38 @@
-// v0.89.0: Виртуализация рендера сообщений через react-window 2.2.
+// v0.91.24 Day 1: Virtuoso-замена VirtualMessageList.jsx (изолированная).
 //
-// Заменяет старый renderItems.map(...) в InboxChatPanel: при больших чатах
-// (4000+ сообщений) DOM держит только видимые ~20 rows + overscan,
-// что даёт плавный 60 FPS скролл вместо лагов на старом рендере.
+// НЕ ПОДКЛЮЧЕНА НИГДЕ — рядом со старым файлом для безопасной миграции.
+// План миграции: .memory-bank/virtuoso-migration-plan.md.
 //
-// API react-window 2.x (см. node_modules/react-window/dist/react-window.d.ts):
-//   <List
-//     rowCount={N}
-//     rowHeight={useDynamicRowHeight({ defaultRowHeight: 70 })}
-//     rowComponent={MessageRow}
-//     rowProps={{ ... }}
-//     listRef={ref}                ← imperative API: scrollToRow({ index, align }), get element
-//     onRowsRendered={({ startIndex, stopIndex }) => ...}
-//     style={{ height, width }}
-//     overscanCount={3}
-//     ...HTMLAttributes              ← onScroll, onWheel, onDragOver и т.п. ложатся на outer <div>
-//   />
+// Цель — drop-in замена со ВСЕМ API старого VirtualMessageList:
+//   listRef.current.element            → root DOM (для msgsScrollRef sync)
+//   listRef.current.scrollToRow({...}) → имитация react-window API
+//   onRowsRendered({startIndex, stopIndex})
+//   onScroll / onWheel / onTouchStart / onPointerDown / onDragOver / ...
+//   cacheKey (для reset при смене чата)
 //
-// Типы row из messageGrouping.js: 'day' | 'time' | 'unread' | 'group'.
-// Все 4 рендерятся одинаково внутри MessageRow, react-window сам мерит высоту
-// через useDynamicRowHeight (ResizeObserver под капотом).
+// Почему миграция нужна:
+//   - react-window 2.2.7 + useDynamicRowHeight не может надёжно скроллить к
+//     далёкому target row (issue #216 / #6 открыты с 2019). См. saga.
+//   - Virtuoso (MIT) имеет встроенные firstItemIndex / initialTopMostItemIndex /
+//     startReached / endReached для нашего use case.
 //
-// IntersectionObserver для mark-read: продолжает работать. react-window рендерит
-// видимые row в DOM, MessageBubble/AlbumBubble внутри row получают readRoot
-// = listRef.current.element (outermost div, который скроллит react-window).
+// Что МЕНЯЕТСЯ в Day 2:
+//   - load-older уходит в startReached callback
+//   - load-newer уходит в endReached callback
+//   - restore позиции через initialTopMostItemIndex
+//
+// Что НЕ МЕНЯЕТСЯ:
+//   - MessageRow (DOM-агностик, дублирован ниже до Day 4 — потом удалим старый файл)
+//   - IntersectionObserver mark-read — работает на DOM rows
+//   - Группировка messageGrouping.js
 
-import { List, useDynamicRowHeight } from 'react-window'
+import { forwardRef, useImperativeHandle, useRef } from 'react'
+import { Virtuoso } from 'react-virtuoso'
 import MessageBubble from './MessageBubble.jsx'
 import { AlbumBubble } from './MediaAlbum.jsx'
 import { formatDayLabel } from '../utils/messageGrouping.js'
 
-// v0.87.110: цвета аватарок отправителей в групповых чатах (от ChatListItem)
+// Цвета аватарок (копия из VirtualMessageList.jsx до Day 4)
 const SENDER_COLORS = ['#e17076','#eda86c','#a695e7','#7bc862','#65aadd','#ee7aae','#6ec9cb']
 function senderColorFor(senderId) {
   const hash = Math.abs((senderId || '').split('').reduce((h, c) => (h + c.charCodeAt(0)) & 0xffffffff, 0))
@@ -41,37 +43,20 @@ function initialsFor(senderName) {
   return senderName.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('')
 }
 
-// Компонент row — рендерит один элемент renderItems.
-// react-window 2.x передаёт { index, style, ariaAttributes, ...rowProps }.
-// `style` обязательно применить к корневому элементу (position absolute + top + height
-// от библиотеки) — иначе виртуализация сломается.
+// Row компонент — рендерит один элемент renderItems.
+// Virtuoso передаёт (index, item) через itemContent prop, поэтому здесь
+// принимаем оба, в отличие от react-window {index, style, ariaAttributes}.
 //
-// КРИТИЧНО для divider-строк (day/time/unread):
-//   - react-window даёт row только position:absolute + top + height (БЕЗ width 100%).
-//     Width=auto = content-sized → divider схлопывается под pill, теряется горизонтальное
-//     центрирование, которое раньше работало через `align-self: center` в flex-column.
-//   - CSS-классы дивайдеров используют `margin: 14px 0 6px` — но ResizeObserver измеряет
-//     border-box БЕЗ margin → следующий row наезжает на margin предыдущего ⇒ дивайдер
-//     визуально склеивается со следующим именем отправителя.
-//   - Решение: на wrapper-row ставим явный width: '100%' + display:flex justifyContent:center
-//     + переносим margin → padding (попадает в border-box, учитывается ResizeObserver).
-//     На самом divider'е обнуляем margin inline чтобы не было двойного отступа.
-//
-// defaultRowHeight 50 (а не 70): дивайдеры реально ~25-30px, короткие сообщения ~40-60px.
-// Меньшая дельта между defaultRowHeight и реальной после ResizeObserver = меньше
-// «дёргания» scrollTop на лету (см. log `top=8831 → 8733` — откат на 100px при скролле).
-function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
-  const item = renderItems[index]
-  // Базовый row-wrapper: гарантирует ширину 100% и horizontal padding.
-  // Для каждого типа добавляем свои padding-top/bottom (вместо CSS margin) и flex.
+// КРИТИЧНО: padding не margin (Virtuoso ResizeObserver measure contentRect
+// без margin → margin ломает scrollHeight). См. virtuoso-migration-plan.md.
+function MessageRow({ item, rowContext }) {
   const baseRowStyle = {
-    ...style,
     width: '100%',
     paddingLeft: 16,
     paddingRight: 16,
     boxSizing: 'border-box',
   }
-  if (!item) return <div style={{ ...baseRowStyle, paddingBottom: 6 }} {...ariaAttributes} />
+  if (!item) return <div style={{ ...baseRowStyle, paddingBottom: 6 }} />
 
   if (item.type === 'day') {
     return (
@@ -79,7 +64,7 @@ function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
         ...baseRowStyle,
         paddingTop: 14, paddingBottom: 6,
         display: 'flex', alignItems: 'center', gap: 10,
-      }} {...ariaAttributes} className="native-msg-day-row">
+      }} className="native-msg-day-row">
         <span className="native-msg-divider native-msg-divider--day" style={{ margin: 0 }}>
           {formatDayLabel(item.day)}
         </span>
@@ -92,7 +77,7 @@ function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
         ...baseRowStyle,
         paddingTop: 14, paddingBottom: 6,
         display: 'flex', justifyContent: 'center', alignItems: 'center',
-      }} {...ariaAttributes}>
+      }}>
         <span className="native-msg-divider" style={{ margin: 0 }}>
           {new Date(item.time).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
         </span>
@@ -105,8 +90,8 @@ function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
         ...baseRowStyle,
         paddingTop: 14, paddingBottom: 6,
         display: 'flex', alignItems: 'center', gap: 10,
-        margin: 0,  // CSS-класс добавляет margin, который не учитывает ResizeObserver
-      }} {...ariaAttributes} className="native-msg-unread-divider">
+        margin: 0,
+      }} className="native-msg-unread-divider">
         <span>Новые сообщения</span>
       </div>
     )
@@ -122,7 +107,7 @@ function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
   const senderBg = senderColorFor(item.senderId)
   const senderAvatar = !item.isOutgoing ? item.senderAvatar : null
   return (
-    <div style={{ ...baseRowStyle, paddingBottom: 6 }} {...ariaAttributes} className="native-msg-group-row">
+    <div style={{ ...baseRowStyle, paddingBottom: 6 }} className="native-msg-group-row">
       <div style={{
         display: 'flex',
         flexDirection: item.isOutgoing ? 'row-reverse' : 'row',
@@ -182,19 +167,20 @@ function MessageRow({ index, style, ariaAttributes, renderItems, rowContext }) {
   )
 }
 
-// Главный экспорт — обёртка над <List>.
-// Принимает renderItems и весь контекст рендера через rowContext.
-// listRef прокидывается наружу для scrollToRow / element getter.
-// onScroll/onWheel/onTouchStart/onPointerDown/onDrag* ложатся на outer <div>
-// react-window через ...rest (List принимает HTMLAttributes<HTMLDivElement>).
-export default function VirtualMessageList({
+// Главный экспорт — drop-in замена VirtualMessageList с тем же API.
+//
+// listRef совместимость:
+//   listRef.current.element            — root scroll DOM (через Virtuoso scrollerRef)
+//   listRef.current.scrollToRow(config) — мост к virtuosoRef.scrollToIndex(config)
+//
+// onScroll / onWheel / onTouchStart / onPointerDown / onDragOver / onDragLeave / onDrop
+//   — через components.Scroller (кастомный wrapper Virtuoso outermost div).
+export default function VirtualMessageListV2({
   renderItems,
   rowContext,
   onRowsRendered,
   listRef,
-  // ключ для useDynamicRowHeight — меняется при смене чата, кэш сбрасывается
   cacheKey,
-  // прокидываемые DOM-события на outer scroll-контейнер react-window
   onScroll,
   onWheel,
   onTouchStart,
@@ -203,33 +189,83 @@ export default function VirtualMessageList({
   onDragLeave,
   onDrop,
   style,
+  // v0.91.24 Day 2 props (БУДУТ использованы при интеграции в InboxChatPanel):
+  //   initialTopMostItemIndex — стартовая позиция
+  //   firstItemIndex          — для prepend (load-older)
+  //   startReached            — callback load-older
+  //   endReached              — callback load-newer
+  initialTopMostItemIndex,
+  firstItemIndex = 0,
+  startReached,
+  endReached,
 }) {
-  // useDynamicRowHeight: react-window сам мерит реальную высоту row через ResizeObserver.
-  // defaultRowHeight — высота до первого измерения. Поставил 50 (ближе к средней реальной)
-  // вместо 70: меньше дельта между «до measure» и «после» → меньше «дёргания» scrollTop.
-  // По логам v0.89.0 при 70 наблюдался откат scrollTop на ~100px в момент measure.
-  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 50, key: cacheKey })
+  const virtuosoRef = useRef(null)
+  const scrollerElementRef = useRef(null)
+
+  // Мост к старому API — listRef.current.element + scrollToRow
+  useImperativeHandle(listRef, () => ({
+    get element() { return scrollerElementRef.current },
+    scrollToRow: (config) => {
+      try { virtuosoRef.current?.scrollToIndex(config) } catch (_) {}
+    },
+  }), [])
+
+  // Кастомный Scroller — пропускает DOM events родителю, сохраняет ref на DOM.
+  // Определён внутри функции но НЕ inline — обёрнут через useRef для стабильности.
+  // Virtuoso troubleshooting: «Components defined inline inside render functions
+  // trigger React to treat them as new types» → ремаунт. Через useRef избежим этого.
+  const ScrollerRef = useRef(null)
+  if (!ScrollerRef.current) {
+    ScrollerRef.current = forwardRef(function Scroller(props, ref) {
+      const setRef = (el) => {
+        scrollerElementRef.current = el
+        if (typeof ref === 'function') ref(el)
+        else if (ref) ref.current = el
+      }
+      return (
+        <div
+          {...props}
+          ref={setRef}
+          onScroll={(e) => { onScroll?.(e); props.onScroll?.(e) }}
+          onWheel={(e) => { onWheel?.(e); props.onWheel?.(e) }}
+          onTouchStart={(e) => { onTouchStart?.(e); props.onTouchStart?.(e) }}
+          onPointerDown={(e) => { onPointerDown?.(e); props.onPointerDown?.(e) }}
+          onDragOver={(e) => { onDragOver?.(e); props.onDragOver?.(e) }}
+          onDragLeave={(e) => { onDragLeave?.(e); props.onDragLeave?.(e) }}
+          onDrop={(e) => { onDrop?.(e); props.onDrop?.(e) }}
+        />
+      )
+    })
+  }
+
+  // rangeChanged — аналог react-window onRowsRendered.
+  // Virtuoso: {startIndex, endIndex}. Старый: {startIndex, stopIndex}.
+  // Мост: stopIndex = endIndex.
+  const handleRangeChanged = (range) => {
+    onRowsRendered?.({ startIndex: range.startIndex, stopIndex: range.endIndex })
+  }
+
   return (
-    <List
-      listRef={listRef}
-      rowCount={renderItems.length}
-      rowHeight={rowHeight}
-      rowComponent={MessageRow}
-      rowProps={{ renderItems, rowContext }}
-      onRowsRendered={onRowsRendered}
-      overscanCount={3}
-      // overflowAnchor: 'none' — отключает браузерное scroll anchoring.
-      // Иначе при prepend (load-older) Chrome пытается «удержать видимый якорь»,
-      // а наша ручная формула `scrollTop = scrollHeight - prevHeight` в useInboxScroll
-      // дерётся с ним → юзер уезжает в середину чата (Ловушка 48 в mistakes/native-scroll-unread.md).
-      style={{ height: '100%', width: '100%', overflowAnchor: 'none', ...style }}
-      onScroll={onScroll}
-      onWheel={onWheel}
-      onTouchStart={onTouchStart}
-      onPointerDown={onPointerDown}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
+    <Virtuoso
+      key={cacheKey}
+      ref={virtuosoRef}
+      data={renderItems}
+      itemContent={(_index, item) => <MessageRow item={item} rowContext={rowContext} />}
+      initialTopMostItemIndex={initialTopMostItemIndex}
+      firstItemIndex={firstItemIndex}
+      startReached={startReached}
+      endReached={endReached}
+      rangeChanged={handleRangeChanged}
+      // skipAnimationFrameInResizeObserver: рекомендация troubleshooting docs
+      // против "Reverse Scrolling Flickering with Dynamic Heights" (discussion #1083).
+      skipAnimationFrameInResizeObserver
+      // defaultItemHeight = 50 — то же что было в react-window useDynamicRowHeight,
+      // меньше «дёргания» при первом mount (ближе к реальной средней высоте).
+      defaultItemHeight={50}
+      // increaseViewportBy = overscan react-window (3 row × ~50 = 150px)
+      increaseViewportBy={{ top: 150, bottom: 150 }}
+      components={{ Scroller: ScrollerRef.current }}
+      style={{ height: '100%', width: '100%', ...style }}
     />
   )
 }

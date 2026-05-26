@@ -67,28 +67,20 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 900,
-    reason: 'v0.89.33-v0.91.22: snapshot ref + isRestoringRef ~23 строки. v0.91.23-24: 4 ref + handleRowsRendered + re-scroll + handleUserIntent ~80 строк. v0.91.24 Day 2: Virtuoso feature flag + initialTopMostItemIndex + firstItemIndex state + handleStartReached + handleEndReached + tg:messages listener (~80 строк). На Day 3 удалится v0.91.19-24 диагностика → файл вернётся к ~700. Доменное разбиение — отдельная задача.'
+    ceiling: 780,
+    reason: 'v0.92.0: Virtuoso initialTopMostItemIndex + firstItemIndex state + handleStartReached/EndReached + tg:messages listener (~70 строк). v0.91.19-24 диагностика (~140 строк) удалена в v0.92.0 Day 3. InboxMode интегрирует все hooks режима inbox. Доменное разбиение — отдельная задача.'
   },
-  // v0.91.24: useInboxScroll — handleScroll hook с двумя направлениями infinite scroll
-  // (load-older вверх, load-newer вниз) + сохранение позиции + scroll-anomaly диагностика.
-  // Лимит default 150 для hooks. v0.91.24 добавил guard `if (isRestoringRef?.current)`
-  // перед load-older trigger (~10 строк) — главный фикс Проблемы 2. Разбиение на
-  // (useScrollSave, useLoadOlder, useScrollAnomalyDiag) — отдельная плановая задача
-  // после стабилизации saga.
-  'src/native/hooks/useInboxScroll.js': {
-    ceiling: 170,
-    reason: 'v0.91.24: добавлен guard isRestoringRef перед load-older trigger (~10 строк) для фикса load-older race во время restore. Разбиение хука — отдельная плановая задача.'
-  },
-  // v0.91.22: useInitialScroll — корневой хук восстановления позиции (saved scrollTop,
+  // v0.92.0: useInboxScroll вернулся в стандартный лимит 150 после удаления
+  // isRestoringRef guards. Текущий размер 139.
+  // v0.92.0: useInitialScroll — корневой хук восстановления позиции (saved scrollTop,
   // firstUnread auto-jump, anchor msgId, retry-loop для chatReady deadlock). История
   // версий v0.87.29 → v0.91.22 (8 итераций) — каждая добавляла комментарии-предупреждения
   // о ловушках. CLAUDE.md запрещает резать комментарии при превышении лимита. Разбиение
   // на под-хуки (3-4 файла useInitialScrollAnchor/Bottom/FirstUnread) — отдельная задача
   // после стабилизации v0.91.22 фикса (нужны логи юзера что closed-loop ушёл).
   'src/native/hooks/useInitialScroll.js': {
-    ceiling: 170,
-    reason: 'v0.91.22: добавлен внешний isRestoringRef param + блок set/timeout (~5 строк). Доменное разбиение на 3-4 под-хука — отдельная плановая задача.'
+    ceiling: 160,
+    reason: 'v0.92.0: исторический корневой хук восстановления позиции (saved scrollTop / firstUnread / atBottom). При Virtuoso режиме restore callbacks no-op, остаётся retry-loop scrollRef + setChatReady. Доменное разбиение — отдельная плановая задача.'
   },
   // v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers (tg:chat-last-message,
   // tg:sender-avatar, tg:chat-avatar) добавил ~60 строк. Корень — Проблема 3 Maximum
