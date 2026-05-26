@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.92.2 (26 мая 2026)
+## Текущая версия: v0.92.3 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -20,6 +20,85 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.92.3 — ФИКС «выравнивание по верху нижнего сообщения» (align: 'end' для restore)
+
+После v0.92.2 юзер сделал скриншоты до/после возврата в чат:
+- **До**: «Скачал, дважды кликнул» сверху, **видео 17:10 частично видно внизу** viewport
+- **После возврата**: **видео полностью в верху** viewport, ниже «Обучаемся»
+
+Чёткое смещение позиции на 1-2 сообщения вниз.
+
+#### Точный корень
+
+`findVisibleAnchorMsgId` ([`scrollPositionsCache.js:98-115`](src/native/utils/scrollPositionsCache.js)) сохраняет **НИЖНИЙ** видимый msg:
+```js
+for (const el of elements) {
+  if (top <= scrollBottom) anchor = msgId  // ← последний прошедший = нижний
+}
+```
+
+В v0.92.0 я передавал `initialTopMostItemIndex={idx}` (число). По [Virtuoso API](https://virtuoso.dev/react-virtuoso/api-reference/virtuoso/): когда `initialTopMostItemIndex` — число, item ставится в **TOP viewport** (align='start' по умолчанию).
+
+Итог: сохраняли НИЖНИЙ msg, ставили его на ВЕРХ при restore → юзер видит сообщения ПОСЛЕ anchor.
+
+#### Решение — официальный Virtuoso API
+
+🥇 [Virtuoso 4.18.7 TS-типы локально:1258](file:///c:/Projects/ChatCenter/node_modules/react-virtuoso/dist/index.d.ts):
+
+```ts
+initialTopMostItemIndex?: IndexLocationWithAlign | number;
+```
+
+`IndexLocationWithAlign = { index: number, align: 'start' | 'center' | 'end', offset?: number, behavior?: 'auto' | 'smooth' }` — то есть **объект с align**!
+
+#### Что изменено
+
+[`InboxMode.jsx`](src/native/modes/InboxMode.jsx) — `initialTopMostItemIndex` computation:
+
+```js
+if (saved?.anchorMsgId) {
+  const idx = findRenderItemIndex(saved.anchorMsgId)
+  if (idx >= 0) return { index: idx, align: 'end' }  // ← v0.92.3: align='end'
+}
+if (firstUnreadId) {
+  const idx = findRenderItemIndex(firstUnreadId)
+  if (idx >= 0) return { index: idx, align: 'start' }  // unread divider — top
+}
+```
+
+`align: 'end'` для saved.anchorMsgId — anchor msg оказывается в **низу viewport**, как было при save.
+
+`align: 'start'` для firstUnreadId — divider сверху видим (поведение Telegram Desktop).
+
+#### Регрессия
+
+- lint 0
+- vitest 661/661
+- fileSizeLimits 273/273
+
+#### Источники
+
+🥇 [Virtuoso TS-типы локально](file:///c:/Projects/ChatCenter/node_modules/react-virtuoso/dist/index.d.ts) — `initialTopMostItemIndex` принимает IndexLocationWithAlign
+🥇 [Virtuoso API reference](https://virtuoso.dev/react-virtuoso/api-reference/virtuoso/)
+🥈 Наш `scrollPositionsCache.js:108` — save берёт НИЖНИЙ msg
+🥈 Скриншоты юзера до/после возврата — точное доказательство сдвига
+
+#### Откат
+
+```bash
+git revert <этот hash>
+```
+
+#### Как проверить (для юзера)
+
+1. Открыть программу — лог `=== ChatCenter v0.92.3 start ===`
+2. Открыть чат А
+3. Прокрутить так чтобы конкретный msg X был внизу viewport
+4. Перейти на чат B → вернуться на A
+5. **Тот же msg X должен быть внизу viewport** (точно как было)
 
 ---
 

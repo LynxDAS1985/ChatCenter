@@ -377,22 +377,31 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // Virtuoso через initialTopMostItemIndex + firstItemIndex решает scroll
   // restore штатно. Saga.md содержит полную историю 13 версий фиксов.
 
-  // v0.92.0: вычисление initialTopMostItemIndex для Virtuoso restore.
+  // v0.92.0/v0.92.3: вычисление initialTopMostItemIndex для Virtuoso restore.
   // 3 случая (по приоритету):
   //   1. Already-seen чат с сохранённой позицией → saved anchorMsgId / atBottom
   //   2. Первое открытие с непрочитанными → firstUnreadId (auto-jump на unread divider)
   //   3. Иначе → конец списка (новые сообщения внизу)
+  //
+  // v0.92.3 ФИКС «выравнивание по верху нижнего сообщения»:
+  // По типам Virtuoso 4.18.7 (node_modules/react-virtuoso/dist/index.d.ts:1258):
+  //   initialTopMostItemIndex?: IndexLocationWithAlign | number
+  // findVisibleAnchorMsgId сохраняет НИЖНИЙ видимый msg (последний с top<=scrollBottom).
+  // С `number` Virtuoso ставит этот msg в ВЕРХ viewport (align='start' по умолчанию)
+  // → юзер видит сообщения ПОСЛЕ saved anchor.
+  // С `{index, align: 'end'}` anchor msg оказывается в КОНЦЕ viewport — как было при save.
+  //
   // По msgId через findRenderItemIndex — устойчиво к удалению/добавлению сообщений.
   const initialTopMostItemIndex = (() => {
     const saved = scrollPosByChatRef.current.get(activeViewKey)
     if (saved?.atBottom) return renderItems.length - 1
     if (saved?.anchorMsgId) {
       const idx = findRenderItemIndex(saved.anchorMsgId)
-      if (idx >= 0) return idx
+      if (idx >= 0) return { index: idx, align: 'end' }  // v0.92.3: align='end' = низ viewport
     }
     if (firstUnreadId) {
       const idx = findRenderItemIndex(firstUnreadId)
-      if (idx >= 0) return idx
+      if (idx >= 0) return { index: idx, align: 'start' }  // unread divider — лучше сверху
     }
     return renderItems.length - 1
   })()
