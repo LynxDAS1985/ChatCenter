@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.92.0 (26 мая 2026)
+## Текущая версия: v0.92.1 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -20,6 +20,86 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.92.1 — ФИКС интеграции Virtuoso (handleScroll не вызывался → позиции не сохранялись)
+
+После запуска v0.92.0 юзер сообщил «нихуя не поменялось + ошибка». Анализ лога 16:03:55+ показал:
+
+| Событие | Кол-во ДО v0.92.0 | Кол-во ПОСЛЕ v0.92.0 |
+|---|---|---|
+| `scroll-save` | 632 | **0** |
+| `autosave-save` | сотни | **0** |
+| `bottom-state-change` | сотни | **0** |
+
+**Главная находка**: `handleScroll` вообще НЕ вызывался → новые позиции не сохранялись → каждый restore брал старый `savedAnchor` из localStorage (msgId не существовал в текущих 60 загруженных messages) → fallback → юзер на чужой позиции.
+
+#### Корень — официальная дока Virtuoso
+
+🥇 [Virtuoso Custom Scroll Container docs](https://virtuoso.dev/react-virtuoso/virtuoso/custom-scroll-container/) — прямая цитата:
+> «The `onScroll` event handler is **not directly passed to the Scroller component**. Instead, it's attached to the Virtuoso component itself.»
+
+Моя реализация в Day 1 использовала `components.Scroller` с `onScroll={...}` в JSX div — Virtuoso это игнорирует. Production эталон [Stream Chat React](https://github.com/GetStream/stream-chat-react/blob/master/src/components/MessageList/VirtualizedMessageList.tsx) использует `scrollerRef` callback + `<Virtuoso onScroll={...}>` напрямую.
+
+#### 4 фикса в одном коммите
+
+**Фикс 1 — VirtualMessageList.jsx** ([`VirtualMessageList.jsx`](src/native/components/VirtualMessageList.jsx)):
+
+- Удалён кастомный `components.Scroller` с `useRef + forwardRef` обёрткой (~25 строк)
+- Добавлен `scrollerRef={(el) => scrollerElementRef.current = el}` callback (по [Virtuoso API ref](https://virtuoso.dev/react-virtuoso/api-reference/virtuoso/) ОБЯЗАТЕЛЬНО callback, НЕ `useRef` — issue #274)
+- `onScroll/onWheel/onTouchStart/onPointerDown/onDragOver/onDragLeave/onDrop` теперь **прямые props** в `<Virtuoso>` (унаследованы из `HTMLAttributes<HTMLDivElement>`)
+- Импорт `forwardRef` убран
+
+**Фикс 2 — пороги start/endReached**:
+
+`atTopThreshold={200}` + `atBottomThreshold={200}` — defaults 0/4 вызывали immediate trigger startReached/endReached на mount (`virtuoso-end-reached sinceOpenMs=39` в логе). 200px — разумный буфер.
+
+**Фикс 3 — useConsoleErrorLogger.js**:
+
+Фильтр `ResizeObserver loop completed with undelivered notifications` (и `loop limit exceeded`). По [Virtuoso troubleshooting](https://virtuoso.dev/react-virtuoso/troubleshooting/) это benign warning Chromium, не настоящая ошибка. До v0.92.1 → 40+ toast'ов за 10 секунд, юзер видел красную плашку.
+
+**Фикс 4 — версия**: 0.92.0 → 0.92.1 (PATCH bugfix).
+
+#### 3+ факта в основе
+
+1. 🥇 [Virtuoso Custom Scroll Container](https://virtuoso.dev/react-virtuoso/virtuoso/custom-scroll-container/) — onScroll attached to Virtuoso, не Scroller
+2. 🥇 [Virtuoso troubleshooting](https://virtuoso.dev/react-virtuoso/troubleshooting/) — ResizeObserver loop = benign warning
+3. 🥇 [Virtuoso API reference](https://virtuoso.dev/react-virtuoso/api-reference/virtuoso/) — scrollerRef callback (не ref)
+4. 🥇 [Virtuoso issue #274](https://github.com/petyosi/react-virtuoso/issues/274) — useRef к scrollerRef → error
+5. 🥈 [Stream Chat React VirtualizedMessageList](https://github.com/GetStream/stream-chat-react/blob/master/src/components/MessageList/VirtualizedMessageList.tsx) — production эталон паттерна
+6. 🥈 Наш лог 16:03:55+ — 0 scroll-save после v0.92.0 (доказательство что handleScroll не вызывался)
+
+#### Регрессия
+
+- lint 0
+- vitest должен пройти (smoke-тесты VirtualMessageList не зависят от onScroll passing)
+- fileSizeLimits 273/273
+- check-memory ok
+
+#### Откат
+
+```bash
+git revert <v0.92.1>
+```
+Вернёт к v0.92.0 (нерабочее состояние Virtuoso со старым `components.Scroller`). НЕ рекомендуется.
+
+#### Как проверить
+
+1. Запустить программу — лог `=== ChatCenter v0.92.1 start ===`
+2. Открыть чат А с историей > 50 msgs
+3. Прокрутить в середину
+4. В логе должны появиться `scroll-save anchorMsgId=...` — это значит handleScroll работает!
+5. Перейти на чат B, вернуться на A — позиция должна сохраниться
+6. Toast `ResizeObserver loop completed` НЕ должен показываться
+7. `virtuoso-end-reached sinceOpenMs=...` через ~39мс после chat-open НЕ должно повторяться (теперь atBottomThreshold=200)
+
+#### Самопроверка от опытного разработчика
+
+«Где сломается через месяц?»
+- ⚠️ Virtuoso 4.19 может изменить scrollerRef signature → пин на ~4.18.7 (минор без caret)
+- ⚠️ Если включить `data` array changes слишком часто, `scrollerRef` callback может пересоздаваться → useEffect re-mount. Сейчас deps `[]` через useRef — стабильно.
+- ⚠️ `findVisibleAnchorMsgId(el)` в handleScroll ищет `[data-msg-id]` — в новом MessageRow data-msg-id ставит MessageBubble. Это работало в react-window, должно работать в Virtuoso (DOM rows те же).
 
 ---
 

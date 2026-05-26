@@ -26,7 +26,7 @@
 //   - IntersectionObserver mark-read — работает на DOM rows
 //   - Группировка messageGrouping.js
 
-import { forwardRef, useImperativeHandle, useRef } from 'react'
+import { useImperativeHandle, useRef } from 'react'
 import { Virtuoso } from 'react-virtuoso'
 import MessageBubble from './MessageBubble.jsx'
 import { AlbumBubble } from './MediaAlbum.jsx'
@@ -167,15 +167,18 @@ function MessageRow({ item, rowContext }) {
   )
 }
 
-// Главный экспорт — drop-in замена VirtualMessageList с тем же API.
+// Главный экспорт — drop-in замена с тем же API что и старый react-window VirtualMessageList.
+//
+// v0.92.1 ИСПРАВЛЕНИЕ: онScroll/onWheel/etc передаются НАПРЯМУЮ в <Virtuoso>, не через
+// components.Scroller. По официальной доке Virtuoso (custom-scroll-container):
+//   «The onScroll event handler is NOT directly passed to the Scroller component.
+//    Instead, it's attached to the Virtuoso component itself.»
+// Stream Chat React (production эталон) использует тот же паттерн через scrollerRef + Virtuoso props.
 //
 // listRef совместимость:
-//   listRef.current.element            — root scroll DOM (через Virtuoso scrollerRef)
+//   listRef.current.element            — root scroll DOM (через scrollerRef callback)
 //   listRef.current.scrollToRow(config) — мост к virtuosoRef.scrollToIndex(config)
-//
-// onScroll / onWheel / onTouchStart / onPointerDown / onDragOver / onDragLeave / onDrop
-//   — через components.Scroller (кастомный wrapper Virtuoso outermost div).
-export default function VirtualMessageListV2({
+export default function VirtualMessageList({
   renderItems,
   rowContext,
   onRowsRendered,
@@ -189,11 +192,6 @@ export default function VirtualMessageListV2({
   onDragLeave,
   onDrop,
   style,
-  // v0.91.24 Day 2 props (БУДУТ использованы при интеграции в InboxChatPanel):
-  //   initialTopMostItemIndex — стартовая позиция
-  //   firstItemIndex          — для prepend (load-older)
-  //   startReached            — callback load-older
-  //   endReached              — callback load-newer
   initialTopMostItemIndex,
   firstItemIndex = 0,
   startReached,
@@ -202,7 +200,8 @@ export default function VirtualMessageListV2({
   const virtuosoRef = useRef(null)
   const scrollerElementRef = useRef(null)
 
-  // Мост к старому API — listRef.current.element + scrollToRow
+  // Мост к старому API — listRef.current.element + scrollToRow.
+  // Геттер element берёт текущее значение ref → актуально даже после ремаунта Virtuoso.
   useImperativeHandle(listRef, () => ({
     get element() { return scrollerElementRef.current },
     scrollToRow: (config) => {
@@ -210,36 +209,8 @@ export default function VirtualMessageListV2({
     },
   }), [])
 
-  // Кастомный Scroller — пропускает DOM events родителю, сохраняет ref на DOM.
-  // Определён внутри функции но НЕ inline — обёрнут через useRef для стабильности.
-  // Virtuoso troubleshooting: «Components defined inline inside render functions
-  // trigger React to treat them as new types» → ремаунт. Через useRef избежим этого.
-  const ScrollerRef = useRef(null)
-  if (!ScrollerRef.current) {
-    ScrollerRef.current = forwardRef(function Scroller(props, ref) {
-      const setRef = (el) => {
-        scrollerElementRef.current = el
-        if (typeof ref === 'function') ref(el)
-        else if (ref) ref.current = el
-      }
-      return (
-        <div
-          {...props}
-          ref={setRef}
-          onScroll={(e) => { onScroll?.(e); props.onScroll?.(e) }}
-          onWheel={(e) => { onWheel?.(e); props.onWheel?.(e) }}
-          onTouchStart={(e) => { onTouchStart?.(e); props.onTouchStart?.(e) }}
-          onPointerDown={(e) => { onPointerDown?.(e); props.onPointerDown?.(e) }}
-          onDragOver={(e) => { onDragOver?.(e); props.onDragOver?.(e) }}
-          onDragLeave={(e) => { onDragLeave?.(e); props.onDragLeave?.(e) }}
-          onDrop={(e) => { onDrop?.(e); props.onDrop?.(e) }}
-        />
-      )
-    })
-  }
-
   // rangeChanged — аналог react-window onRowsRendered.
-  // Virtuoso: {startIndex, endIndex}. Старый: {startIndex, stopIndex}.
+  // Virtuoso: {startIndex, endIndex}. Старый react-window: {startIndex, stopIndex}.
   // Мост: stopIndex = endIndex.
   const handleRangeChanged = (range) => {
     onRowsRendered?.({ startIndex: range.startIndex, stopIndex: range.endIndex })
@@ -259,12 +230,29 @@ export default function VirtualMessageListV2({
       // skipAnimationFrameInResizeObserver: рекомендация troubleshooting docs
       // против "Reverse Scrolling Flickering with Dynamic Heights" (discussion #1083).
       skipAnimationFrameInResizeObserver
-      // defaultItemHeight = 50 — то же что было в react-window useDynamicRowHeight,
-      // меньше «дёргания» при первом mount (ближе к реальной средней высоте).
+      // defaultItemHeight = 50 — ближе к реальной средней высоте, меньше «дёргания» при mount.
       defaultItemHeight={50}
-      // increaseViewportBy = overscan react-window (3 row × ~50 = 150px)
+      // increaseViewportBy ≈ overscan react-window (3 row × ~50px = 150px).
       increaseViewportBy={{ top: 150, bottom: 150 }}
-      components={{ Scroller: ScrollerRef.current }}
+      // v0.92.1: атомарные пороги — startReached/endReached не должны срабатывать
+      // сразу при mount. Defaults 0 и 4 → endReached триггерил load-newer через 39мс
+      // от chat-open (лог 16:07:52). 200px = разумный буфер.
+      atTopThreshold={200}
+      atBottomThreshold={200}
+      // v0.92.1 КРИТИЧНО: scrollerRef callback — единственный способ получить DOM
+      // root в Virtuoso. NOT useRef — Virtuoso выкинет error (issue #274).
+      // Сохраняем в свой ref для listRef.element моста и для msgsScrollRef sync.
+      scrollerRef={(el) => { scrollerElementRef.current = el }}
+      // v0.92.1 КРИТИЧНО: DOM events ПРЯМО в <Virtuoso>, не в components.Scroller.
+      // По официальной доке custom-scroll-container: onScroll attached to Virtuoso itself.
+      // Virtuoso extends HTMLAttributes<HTMLDivElement> — эти props идут в root DOM.
+      onScroll={onScroll}
+      onWheel={onWheel}
+      onTouchStart={onTouchStart}
+      onPointerDown={onPointerDown}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       style={{ height: '100%', width: '100%', ...style }}
     />
   )

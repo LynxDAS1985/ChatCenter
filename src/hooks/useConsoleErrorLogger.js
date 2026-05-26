@@ -36,9 +36,18 @@ export default function useConsoleErrorLogger({ setLogContent, setShowLogModal }
     }
     console.error = patchedError
 
+    // v0.92.1: ResizeObserver loop — benign warning из Virtuoso (см. их troubleshooting:
+    // https://virtuoso.dev/react-virtuoso/troubleshooting/). Не настоящая ошибка,
+    // фильтруем чтобы не показывать toast и не засорять лог.
+    const isResizeObserverBenign = (msg) => {
+      if (!msg || typeof msg !== 'string') return false
+      return msg.includes('ResizeObserver loop completed with undelivered notifications') ||
+             msg.includes('ResizeObserver loop limit exceeded')
+    }
     // v0.89.48: window.onerror — любая uncaught синхронная ошибка в renderer.
     const onError = (event) => {
       const msg = event?.error?.stack || event?.message || String(event)
+      if (isResizeObserverBenign(event?.message) || isResizeObserverBenign(msg)) return
       sendToLog('ERROR', '[renderer-uncaught] ' + msg)
       emitUncaughtEvent(event?.message || msg)
     }
@@ -46,6 +55,7 @@ export default function useConsoleErrorLogger({ setLogContent, setShowLogModal }
     const onRejection = (event) => {
       const reason = event?.reason
       const msg = reason?.stack || (typeof reason === 'string' ? reason : JSON.stringify(reason))
+      if (isResizeObserverBenign(reason?.message) || isResizeObserverBenign(msg)) return
       sendToLog('ERROR', '[renderer-unhandled-rejection] ' + msg)
       emitUncaughtEvent(reason?.message || String(reason).slice(0, 200))
     }
