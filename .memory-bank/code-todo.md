@@ -31,6 +31,21 @@ description: Отложенные технические улучшения ко
 
 ---
 
+### TODO-8: Удалить диагностику v0.91.20 — stack capture + multi-step postcheck
+
+**Контекст**: в v0.91.20 добавлена диагностика для 2 проблем где корень НЕ был известен — Maximum update depth (нет stack) и react-window remeasure timing (не знали когда scrollHeight стабилизируется).
+
+**Что удалить** (в одном коммите с фиксами v0.91.21):
+1. В [`useConsoleErrorLogger.js`](../src/hooks/useConsoleErrorLogger.js) — `patchedError` stack capture блок (5 строк)
+2. В [`useInitialScrollDiag.js`](../src/native/hooks/useInitialScrollDiag.js) — multi-step `postcheck-tick` цикл (15 строк), вернуть простой postcheck с **правильным** timeout (из данных диагностики)
+3. В `api.md` — строка `postcheck-tick`
+
+**Когда удалять**: в коммите с фиксами v0.91.21.
+
+**Приоритет**: 🟢 низкий — события не в горячем пути.
+
+---
+
 ### TODO-7: Удалить диагностические логи v0.91.19 (restore-start / scroll-save / autosave-save)
 
 **Контекст**: после 7 коммитов v0.91.12-18 проблема «прыгает позиция при возврате» НЕ решена. Гипотеза «замкнутый круг handleScroll» косвенная — нет прямого доказательства в логах. В v0.91.19 добавлены 3 точки лога для подтверждения/опровержения. Подробности — [`native-scroll-restore-saga.md`](./native-scroll-restore-saga.md).
@@ -155,3 +170,4 @@ r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
 | 2026-05-15 | v0.89.16 | TODO-5 — обновить api.md, architecture.md, decisions.md | 📋 в очереди |
 | 2026-05-25 | v0.91.11 | TODO-6 — удалить диагностические `initial-restore-*` логи | 📋 в очереди |
 | 2026-05-26 | v0.91.19 | TODO-7 — удалить `restore-start` / `scroll-save` / `autosave-save` | 📋 в очереди |
+| 2026-05-26 | v0.91.20 | TODO-8 — удалить stack capture + multi-step postcheck (тики 50/100/300/500/1000мс) | 📋 в очереди |

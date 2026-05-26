@@ -109,22 +109,21 @@ export function logRestoreDiag({
         actualTop: scrollEl.scrollTop, scrollHeight: scrollEl.scrollHeight,
       })
     }
-    // Postcheck: react-window может перемерить через rAF → scrollHeight вырастет →
-    // повторяем bottom scroll чтобы остаться на реальном дне.
-    setTimeout(() => {
-      const el = scrollRef.current
-      if (!el) return
-      const idx = onGetLastIndex?.()
-      if (typeof idx === 'number' && idx >= 0 && onScrollToIndex) {
-        try { onScrollToIndex(idx, 'end') } catch (_) {}
-      } else {
-        el.scrollTop = el.scrollHeight
-      }
-      logNativeScroll('initial-restore-postcheck', {
-        chatId, afterMs: 100, mode: 'bottom',
-        finalTop: el.scrollTop, scrollHeight: el.scrollHeight,
-      })
-    }, 100)
+    // v0.91.20 ДИАГНОСТИКА: 5 замеров scrollHeight + финал на 1000мс (TODO-8).
+    ;[50, 100, 300, 500, 1000].forEach(delay => {
+      setTimeout(() => {
+        const el = scrollRef.current
+        if (!el) return
+        logNativeScroll('postcheck-tick', { chatId, delay, mode: 'bottom', scrollTop: el.scrollTop, scrollHeight: el.scrollHeight })
+        if (delay === 1000) {
+          const idx = onGetLastIndex?.()
+          if (typeof idx === 'number' && idx >= 0 && onScrollToIndex) {
+            try { onScrollToIndex(idx, 'end') } catch (_) {}
+          } else { el.scrollTop = el.scrollHeight }
+          logNativeScroll('initial-restore-postcheck', { chatId, afterMs: 1000, mode: 'bottom', finalTop: el.scrollTop, scrollHeight: el.scrollHeight })
+        }
+      }, delay)
+    })
     return
   }
   if (saved.anchorMsgId) {

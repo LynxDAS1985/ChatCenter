@@ -23,7 +23,16 @@ export default function useConsoleErrorLogger({ setLogContent, setShowLogModal }
     const origError = console.error.bind(console)
     const patchedError = (...args) => {
       origError(...args)
-      sendToLog('ERROR', args.map(a => typeof a === 'string' ? a : String(a)).join(' '))
+      const msg = args.map(a => typeof a === 'string' ? a : String(a)).join(' ')
+      // v0.91.20 ДИАГНОСТИКА: захват stack trace для критических React ошибок
+      // («Maximum update depth» / «Warning: Cannot update»). Без stack невозможно
+      // найти точный компонент с infinite loop. Срабатывает только при матче строки —
+      // не замедляет другие пути. Удалить после фикса корня (TODO-8).
+      let stack = ''
+      if (msg.includes('Maximum update depth') || msg.includes('Warning: Cannot update')) {
+        stack = new Error().stack || ''
+      }
+      sendToLog('ERROR', msg + (stack ? '\n[CAPTURED STACK]\n' + stack : ''))
     }
     console.error = patchedError
 
