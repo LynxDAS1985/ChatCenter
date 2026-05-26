@@ -1,8 +1,74 @@
 # Сага восстановления позиции в native-режиме Telegram
 
 **Создано**: 26 мая 2026 (v0.91.18, после 7 коммитов).
-**Статус**: 🔴 **НЕ РЕШЕНО**. Юзер всё равно видит «прыгает» позиция при возврате в чат.
-**Назначение**: честная фиксация всех попыток + признание ошибок.
+**Обновлено**: 26 мая 2026 (v0.91.19, диагностика добавлена + корень ПОДТВЕРЖДЁН).
+**Статус**: 🟡 **Корень подтверждён, фикс не сделан**. Юзер видит «прыгает» — каждый возврат смещает anchor на 1 msg вниз.
+**Назначение**: честная фиксация всех попыток + признание ошибок + детальная диагностика.
+
+---
+
+## ✅ КОРЕНЬ ПОДТВЕРЖДЁН (v0.91.19 диагностика)
+
+### 🔴 Проблема 1 — Замкнутый круг `handleScroll` (главная)
+
+**Прямое доказательство `chatcenter.log` 11:31:38**:
+```
+11:31:38.000 store-set-active-chat                                   (юзер кликнул чат A)
+11:31:38.000 chat-open                                                (DOM открыт)
+11:31:38.053 restore-start savedAnchor=4048551936                     ← хотим восстановить X
+11:31:38.053 initial-restore-applied mode=anchor anchorMsgId=4048551936
+                                                  ↑ scrollToRow(X, 'end') — programmatic
+11:31:38.106 scroll-save anchorMsgId=4049600512 lastUserType=none     ← ❌ через 53мс СОХРАНЁН Y!
+                                                ↑ юзер НЕ скроллил
+```
+
+**Деградация по 5 возвратам в один чат**:
+```
+4048551936 → 4049600512 → 4050649088 → 4051697664 → 4052746240
+```
+Каждый возврат смещает anchor на **1 msg вниз**.
+
+**Тот же чат «Forbes Russia»**:
+```
+100941168640 → 100943265792 → 100950605824 → 100952702976
+```
+
+**Статистика**:
+- 8 раз `restore-start` зарегистрирован
+- 13 раз `scroll-save lastUserType=none` (programmatic) — каждый раз искажает anchor
+- 679 раз `scroll-save lastUserType=wheel` (нормальный user scroll)
+
+**Почему**: `handleScroll` сохраняет anchor при **любом** scroll событии. 🥇 [MDN scroll event](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event): «Programmatic changes to scroll position also trigger this event». `scrollToRow` от моего restore триггерит `onScroll` → `handleScroll` находит **другой** видимый msg (т.к. после scroll viewport показывает другие msgs) → сохраняет его как anchor.
+
+### 🔴 Проблема 2 — react-window НЕ remeasured к моменту restore
+
+**Прямое доказательство 11:31:22-23**:
+```
+11:31:22.836 scroll-save scrollHeight=16594   ← на момент restore (mount + 800мс)
+11:31:23.???  scroll-save scrollHeight=77125  ← после remeasure (вырос в 4.6 раза!)
+```
+
+react-window 2.x `useDynamicRowHeight({key: cacheKey})` сбрасывает кэш высот при смене `cacheKey={store.activeChatId}`. Все row пересчитываются от `defaultRowHeight=50` → scrollHeight маленький. ResizeObserver измеряет реальные высоты через ~800мс → scrollHeight вырастает.
+
+Мой `scrollToRow(idx, 'end')` работает на **устаревших** высотах → пиксельная позиция всё равно неточная (хотя меньше чем с прямым `scrollTop`).
+
+**Текущий postcheck setTimeout(100мс)** — слишком быстро, react-window не успевает remeasured за 100мс. Нужно 500-800мс ИЛИ слушать `ResizeObserver` event.
+
+### 🔴 Проблема 3 — Maximum update depth exceeded (НЕ моя)
+
+**3 раза в логе**:
+- 10:49:18 — старая сессия
+- 11:29:44 ×2 — свежая сессия v0.91.19
+
+Возникает **при инициализации программы** (после `loadCachedChats`, до открытия первого чата). Не связан с моим autosave hook (он не активен без `activeViewKey`). Это **существующий** баг в другом компоненте.
+
+**НЕ моя задача в этой саге**. Отдельное расследование.
+
+### ✅ Проблема 4 — ReferenceError scrollRef (закрыта v0.91.18)
+
+**3 раза в логе 10:04:59-10:05:02** — но это **до** моего фикса v0.91.18. После 10:30 (когда v0.91.18 закоммичен) — больше не появляется.
+
+---
 
 ---
 
@@ -40,25 +106,12 @@
 
 ---
 
-## 🎯 Текущая гипотеза (НЕ подтверждена логом)
+## 🎯 Гипотеза ✅ ПОДТВЕРЖДЕНА (v0.91.19 diagnostics)
 
-**Замкнутый круг handleScroll**:
-1. Сохранили: юзер на сообщении X
-2. Уход и возврат → программа делает `scrollToVirtualRow(X, 'end')` (programmatic scroll)
-3. **🥇 [MDN scroll event](https://developer.mozilla.org/en-US/docs/Web/API/Element/scroll_event)**: «The scroll event fires when the document view or an element has been scrolled. **Programmatic changes to scroll position also trigger this event**»
-4. → `handleScroll` срабатывает → `findVisibleAnchorMsgId(el)` возвращает Y (последний видимый снизу после programmatic scroll)
-5. → handleScroll сохраняет Y вместо X
-6. → Следующий возврат restore'ит Y → новый Y′ → бесконечная деградация
-
-### Доказательства гипотезы (косвенные)
-- Лог 10:05:56 + 10:06:06 — два возврата в чат «Диагносты СНГ»: anchor1=`235432574976`, anchor2=`235435720704` (разные). **Что-то** перезаписало anchor между визитами.
-- handleScroll сохраняет позицию **при любом scroll** (нет различения user vs programmatic).
-- Из 🥇 [Telegram Web K source (tweb)](https://github.com/morethanwords/tweb): у них флаг `_isJumping` блокирует saveScrollPosition во время programmatic scroll.
-
-### ❌ Чего НЕ хватает для уверенности
-- **В `handleScroll` нет логов** — не видно когда он сохраняет и какой anchor.
-- **В `useScrollPositionAutosave` нет логов** — не видно когда interval сохраняет.
-- **Нет последовательности «restore X → save Y» в одном логе** — только конечный anchor.
+См. раздел «КОРЕНЬ ПОДТВЕРЖДЁН» выше. Все 3 факта в логе:
+- 8 событий `restore-start` зафиксированы
+- 13 событий `scroll-save lastUserType=none` (programmatic) — следуют через 30-100мс после restore
+- Деградация anchor 4048→4049→4050→4051→4052 (нумерация продолжает Telegram message id, каждый раз сохраняется СЛЕДУЮЩИЙ msg после того который пытались restore)
 
 ---
 
@@ -111,19 +164,41 @@ initial-restore-applied mode=anchor anchorMsgId=X
 scroll-save anchorMsgId=??? isProgrammatic=true/false   ← ВОТ ЧТО НУЖНО
 ```
 
-### Шаг 3 — если гипотеза подтвердится → фикс v0.91.19 через флаг
+### Шаг 3 — фикс v0.91.20 через флаг `isRestoringRef` (ПЛАН, не сделано)
 
-Флаг `isRestoringRef` устанавливается перед programmatic scroll, снимается через 1000мс. В handleScroll и autosave: `if (isRestoringRef.current) return` — не сохраняем во время programmatic scroll.
+✅ Гипотеза подтверждена → нужен флаг.
 
-Это Решение A которое я предложил в начале и **отказался** в пользу anchor msgId. Сейчас понятно что оно нужно **в любом случае** — anchor mode тоже подвержен циклу.
+**В `useInitialScroll.js`**:
+```javascript
+const isRestoringRef = useRef(false)
+// передать в tryRestoreWithRetry, useInboxScroll, useScrollPositionAutosave
+```
 
-### Шаг 4 — если гипотеза НЕ подтвердится
+**В `tryRestoreWithRetry`** перед programmatic scroll:
+```javascript
+isRestoringRef.current = true
+logRestoreDiag({...})  // выполняет scrollToRow
+setTimeout(() => { isRestoringRef.current = false }, 500)
+```
 
-Нужно искать другие причины:
-- react-window cacheKey reset → renderItems пересчитываются → `findVisibleAnchorMsgId` находит другой msg даже без scroll
-- autosave interval срабатывает в неудачный момент (когда react-window mid-render)
-- React 19 effect race conditions
-- ...
+**В `handleScroll`** в самом начале:
+```javascript
+if (isRestoringRef?.current) return  // НЕ сохраняем во время programmatic
+```
+
+**В `useScrollPositionAutosave` interval**:
+```javascript
+if (isRestoringRef?.current) return
+```
+
+Это Решение A которое я предложил в начале (v0.91.15 анализ) и **отказался** в пользу anchor msgId. Anchor msgId сам по себе **не лечит** цикл — нужно блокировать save во время programmatic scroll.
+
+### Шаг 4 — отдельная проблема: react-window не remeasured (Проблема 2)
+
+После фикса Проблемы 1 нужно проверить — позиция точная или ±N px из-за устаревших высот на момент restore. Возможные решения:
+- Увеличить postcheck timeout с 100мс до 500-800мс
+- Использовать `ResizeObserver` на scrollEl чтобы знать когда remeasure произошёл
+- Или сохранять не индекс row но **id msg + offset within msg** (Discord-style)
 
 ---
 
