@@ -90,6 +90,7 @@
 | Когда читать | Файл |
 |------|------|
 | Расследование бага скролла native | [`.memory-bank/native-scroll-diagnostics-handoff.md`](.memory-bank/native-scroll-diagnostics-handoff.md) |
+| 🔴 Сага восстановления позиции (v0.91.12-18, 7 коммитов, НЕ РЕШЕНО) | [`.memory-bank/native-scroll-restore-saga.md`](.memory-bank/native-scroll-restore-saga.md) — читать ОБЯЗАТЕЛЬНО перед любой правкой restore логики |
 | Большой план native-режима | [`.memory-bank/native-mode-plan.md`](.memory-bank/native-mode-plan.md) |
 | Расследование Telegram-групп с темами / forum topics в native | [`.memory-bank/group-topic-investigation.md`](.memory-bank/group-topic-investigation.md) |
 | Чек-лист визуальной проверки Phase 2 виртуализации (v0.89.0) | [`.memory-bank/phase-2-visual-test.md`](.memory-bank/phase-2-visual-test.md) |
