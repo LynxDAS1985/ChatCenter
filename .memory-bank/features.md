@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.92.5 (26 мая 2026)
+## Текущая версия: v0.92.6 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -20,6 +20,78 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.92.6 — УДАЛЕНИЕ snapshot mechanism v0.92.2 (архитектурно сломан с key= ремаунтом)
+
+После v0.92.5 (3 пары двойных функций устранены + diag) лог 18:05:09+ показал ТОЧНУЮ причину прыжков:
+
+```
+state-snapshot-flush ... scrollTop=0 hasEl=false         ← snapshot=0, DOM уже исчез
+state-restore-attempt ... snapshotScrollTop=0 mechanism=restoreStateFrom   ← Virtuoso ставит scrollTop=0
+```
+
+**Каждый возврат** → snapshot.scrollTop=0 → Virtuoso ставит scrollTop=0 → юзер в **самом начале чата**.
+
+#### Корень моей ошибки (v0.92.2)
+
+В `<Virtuoso key={cacheKey}>` при смене `activeChatId` Virtuoso **полностью ремаунтится**. React порядок:
+1. activeViewKey меняется → новый render → `key` другой
+2. **React unmount'ит старый Virtuoso** (commit phase)
+3. `virtualListRef.current` → null или новый instance
+4. **Потом** срабатывает `useEffect` cleanup (мой synchronous flush getState)
+5. `getState` возвращает scrollTop=0 (нового instance) или вообще не работает (hasEl=false)
+
+**Synchronous flush работает СЛИШКОМ ПОЗДНО** — старый Virtuoso уже unmount'ился.
+
+Production эталоны Virtuoso (Stream Chat, Mattermost) используют `getState`/`restoreStateFrom` **БЕЗ `key={...}`** — они переиспользуют один Virtuoso instance, меняя `data`. У нас `key={cacheKey}` обязателен (разные чаты — разные heights/measurements). Pattern не подходит.
+
+#### Что удалено (полный rollback v0.92.2 snapshot mechanism)
+
+| Файл | Что |
+|---|---|
+| `VirtualMessageList.jsx` | Убран `restoreStateFrom` prop, убран `listRef.getState` метод |
+| `InboxChatPanel.jsx` | Убран `virtuosoRestoreStateFrom` prop |
+| `InboxMode.jsx` | Убран `scrollStateByChatRef = useRef(new Map())`, убран `SCROLL_STATE_MAX_ENTRIES`, убран useEffect cleanup `getState flush`, убрана диагностика `state-restore-attempt`/`state-snapshot-flush` |
+| `useInboxScroll.js` | Убран `virtualListRef`/`scrollStateByChatRef`/`scrollStateMaxEntries` параметры, убран throttled `getState save` (~30 строк) |
+| `VirtualMessageList.vitest.jsx` | Удалены 3 теста v0.92.2 (restoreStateFrom prop, listRef.getState, getState на пустом списке) |
+
+#### Что остаётся работать
+
+- `initialTopMostItemIndex={index, align: 'end'}` — основной restore mechanism (v0.92.3)
+- `firstItemIndex` для prepend без скачка (v0.92.0)
+- `isRestoringRef` closed-loop guard (v0.92.4)
+- `scrollerRef` callback для DOM (v0.92.1)
+- `atTopThreshold={200}` + `atBottomThreshold={200}` (v0.92.1)
+- handleStartReached/EndReached (v0.92.0)
+- ResizeObserver filter (v0.92.1)
+- Cleanup от 3 пар двойных функций (v0.92.5)
+
+#### 3+ факта
+
+🥇 [React docs про useEffect cleanup timing](https://react.dev/reference/react/useEffect) — cleanup срабатывает после unmount, не до. Поэтому synchronous flush невозможен с key={...} ремаунтом.
+
+🥇 [Virtuoso TS-типы](file:///c:/Projects/ChatCenter/node_modules/react-virtuoso/dist/index.d.ts) — `restoreStateFrom` рассчитан на persist across **page reloads**, не на компонент ремаунт.
+
+🥈 Наш лог 18:05:09+ — все `state-snapshot-flush scrollTop=0 hasEl=false`. Прямое доказательство что snapshot сломан.
+
+🥈 Stream Chat React — production usage `restoreStateFrom` БЕЗ `key={...}` ремаунта (они меняют `data`, не unmount).
+
+#### Регрессия
+
+- lint 0
+- vitest 658/658 (было 661, -3 удалены тесты v0.92.2)
+- fileSizeLimits 273/273
+- check-memory ✅
+
+#### Откат
+
+```bash
+git revert <этот hash>
+```
+
+Вернёт сломанный snapshot mechanism v0.92.2 + diag. **НЕ рекомендуется.**
 
 ---
 

@@ -23,21 +23,13 @@ export default function useInboxScroll({
   scrollDiag,
   setAtBottom,
   setNewBelow,
-  // v0.92.0: isRestoringRef удалён — Virtuoso через initialTopMostItemIndex / firstItemIndex
-  // не триггерит наш handleScroll (DOM scroll event не появляется), guard не нужен.
-  // v0.92.2: virtualListRef + scrollStateByChatRef для pixel-perfect state save через
-  // Virtuoso getState. Throttled 200мс через lastStateSaveRef.
-  virtualListRef,
-  scrollStateByChatRef,
-  scrollStateMaxEntries = 50,
   // v0.92.4: guard от closed-loop save при programmatic restore.
   isRestoringRef,
+  // v0.92.6: virtualListRef + scrollStateByChatRef + throttled getState save УДАЛЕНЫ —
+  // restoreStateFrom архитектурно не работает с key={cacheKey} ремаунтом.
 }) {
   const prevNearBottomRef = useRef(null)
   const prevScrollStateRef = useRef({ top: 0, height: 0, t: 0 })
-  // v0.92.2: throttle для getState save (вызов каждый scroll event = слишком часто).
-  const lastStateSaveRef = useRef(0)
-  const STATE_SAVE_THROTTLE_MS = 200
   // v0.92.5: useInboxNewerPrefetch УДАЛЁН из handleScroll — load-newer теперь
   // делает Virtuoso endReached callback (handleEndReached в InboxMode).
   // Старый паттерн scrollTop-based prefetch создавал ДУБЛЬ с Virtuoso → двойные вызовы.
@@ -74,26 +66,8 @@ export default function useInboxScroll({
           isRestoring: blocked,  // v0.92.4 — true когда save пропущен
         })
       }
-      // v0.92.2: pixel-perfect state save через Virtuoso getState.
-      // v0.92.4: skip во время restore — иначе сохраняем «во время прыжка» промежуточный
-      // state, который перетрёт правильный snapshot предыдущего открытия.
-      if (!isRestoringRef?.current && virtualListRef?.current?.getState) {
-        const now = Date.now()
-        if (now - lastStateSaveRef.current >= STATE_SAVE_THROTTLE_MS) {
-          lastStateSaveRef.current = now
-          try {
-            virtualListRef.current.getState((state) => {
-              if (!state || !scrollStateByChatRef?.current) return
-              scrollStateByChatRef.current.set(viewKey, state)
-              // LRU trim — Map.entries сохраняет insertion order
-              if (scrollStateByChatRef.current.size > scrollStateMaxEntries) {
-                const oldest = scrollStateByChatRef.current.keys().next().value
-                if (oldest && oldest !== viewKey) scrollStateByChatRef.current.delete(oldest)
-              }
-            })
-          } catch (_) { /* getState может выбросить если Virtuoso unmount */ }
-        }
-      }
+      // v0.92.6: throttled getState save УДАЛЁН — snapshot не работает с
+      // key={cacheKey} ремаунтом Virtuoso (лог 18:05:09+ показал scrollTop=0).
     }
 
     // v0.87.49: лог переходов atBottom (для диагностики useForceReadAtBottom)

@@ -68,10 +68,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // Сохраняются throttled через handleScroll → listRef.getState callback.
   // При смене чата map содержит последний snapshot предыдущего чата (~200мс назад).
   // Лимит 50 chatId — LRU через Map insertion order (старые выкидываются на size>50).
-  // Не персистится между запусками — для cross-session используется anchorMsgId restore.
-  // По официальной доке Virtuoso 4.18.7: node_modules/react-virtuoso/dist/index.d.ts:971-976.
-  const scrollStateByChatRef = useRef(new Map())
-  const SCROLL_STATE_MAX_ENTRIES = 50
 
   useEffect(() => { store.loadCachedChats?.() }, [])
 
@@ -413,42 +409,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     return renderItems.length - 1
   })()
 
-  // v0.92.5: ВЗАИМОИСКЛЮЧАЮЩИЙ выбор механизма restore.
-  // Если оба переданы Virtuoso — restoreStateFrom побеждает (snapshot.scrollTop
-  // перекрывает initialTopMostItemIndex). Это сломало v0.92.3 align='end' фикс.
-  // Логика приоритета:
-  //   1. Если в Map есть свежий snapshot (in-session переключение) — используем его (pixel-perfect)
-  //   2. Иначе если есть savedAnchor (cross-session или после flush) — используем initialTopMostItemIndex с align='end'
-  // НЕ передаём snapshot если у нас уже есть savedAnchor + НЕ pixel-perfect случай
-  // (это устаревший snapshot который перекроет правильный anchor restore).
-  //
-  // savedSnapshot — snapshot из in-session Map (свежий, pixel-perfect)
-  // savedFromLocalStorage — anchor из scrollPosByChatRef (cross-session, точность row + align)
-  const savedSnapshot = scrollStateByChatRef.current.get(activeViewKey)
-  const savedFromLocalStorage = scrollPosByChatRef.current.get(activeViewKey)
-  // Приоритет: snapshot если он есть (in-session), иначе anchor (cross-session)
-  const virtuosoRestoreState = savedSnapshot || undefined
-  // initialTopMostItemIndex используется ТОЛЬКО когда snapshot нет
-  // (Virtuoso всё равно проигнорирует initialTopMostItemIndex когда restoreStateFrom есть)
-
-  // v0.92.5 ДИАГНОСТИКА: лог какой механизм применяется при mount/restore
-  useEffect(() => {
-    if (!activeViewKey) return
-    scrollDiag.logEvent('state-restore-attempt', {
-      viewKey: activeViewKey,
-      hasSnapshot: !!savedSnapshot,
-      snapshotScrollTop: savedSnapshot?.scrollTop ?? null,
-      snapshotRangesCount: savedSnapshot?.ranges?.length ?? 0,
-      hasSavedAnchor: !!savedFromLocalStorage?.anchorMsgId,
-      savedAnchorMsgId: savedFromLocalStorage?.anchorMsgId ?? null,
-      savedAtBottom: !!savedFromLocalStorage?.atBottom,
-      initialIdx: typeof initialTopMostItemIndex === 'object'
-        ? `{idx:${initialTopMostItemIndex.index},align:'${initialTopMostItemIndex.align}'}`
-        : String(initialTopMostItemIndex),
-      mechanism: savedSnapshot ? 'restoreStateFrom' : 'initialTopMostItemIndex',
-    })
-  }, [activeViewKey])
-
+  // v0.92.6: убрана v0.92.5 диагностика и логика выбора snapshot vs anchor.
+  // Используем только initialTopMostItemIndex (через v0.92.3 align='end' паттерн).
   // v0.92.0: reset firstItemIndex при смене активного чата.
   // Virtuoso ремаунтится через key={cacheKey}, мы синхронизируем counter.
   useEffect(() => {
@@ -460,23 +422,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     if (activeViewKey) {
       isRestoringRef.current = true
       const t = setTimeout(() => { isRestoringRef.current = false }, 1000)
-      return () => {
-        clearTimeout(t)
-        // v0.92.5: синхронный getState flush ПРИ unmount Virtuoso (key={cacheKey} ремаунт).
-        // Throttle 200мс в handleScroll может пропустить последний scroll save (юзер
-        // прокрутил → 100мс → переключился → snapshot устаревший). Cleanup срабатывает
-        // ПЕРЕД новым render → virtualListRef ещё указывает на старый Virtuoso instance.
-        try {
-          virtualListRef.current?.getState?.((state) => {
-            if (state && scrollStateByChatRef.current && activeViewKey) {
-              scrollStateByChatRef.current.set(activeViewKey, state)
-              scrollDiag.logEvent('state-snapshot-flush', {
-                viewKey: activeViewKey, scrollTop: state.scrollTop ?? null,
-              })
-            }
-          })
-        } catch (_) {}
-      }
+      return () => clearTimeout(t)
+      // v0.92.6: getState flush cleanup УДАЛЁН — useEffect cleanup срабатывает
+      // ПОСЛЕ unmount Virtuoso (key={cacheKey} ремаунт), virtualListRef.current
+      // указывает на новый instance → scrollTop=0. Лог 18:05:09+ подтвердил.
     }
   }, [activeViewKey])
 
@@ -589,14 +538,12 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // v0.87.83: handleScroll → useInboxScroll hook.
   // v0.88.0: + loadingNewerRef/setLoadingNewer для Telegram-style infinite scroll down.
   // v0.92.0: isRestoringRef удалён — Virtuoso restore не триггерит handleScroll save проблем.
-  // v0.92.2: virtualListRef + scrollStateByChatRef добавлены для pixel-perfect save через
-  // Virtuoso getState — listRef.getState((state) => map.set(viewKey, state)) throttled.
+  // v0.92.6: scrollStateByChatRef УДАЛЁН — snapshot не работает с key={cacheKey} ремаунтом.
   const { handleScroll } = useInboxScroll({
     store, scrollKey: activeViewKey, activeMessages, activeUnread, chatReady,
     msgsScrollRef, scrollPosByChatRef, initialScrollDoneRef, loadingOlderRef,
     loadingNewerRef, setLoadingNewer,
     scrollDiag, setAtBottom, setNewBelow,
-    virtualListRef, scrollStateByChatRef, scrollStateMaxEntries: SCROLL_STATE_MAX_ENTRIES,
     isRestoringRef,  // v0.92.4: guard от closed-loop save при programmatic restore
   })
 
@@ -823,7 +770,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           virtuosoFirstItemIndex={firstItemIndex}
           virtuosoOnStartReached={handleStartReached}
           virtuosoOnEndReached={handleEndReached}
-          virtuosoRestoreStateFrom={virtuosoRestoreState}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
           scrollToBottom={handleScrollButtonClick} scrollToAbsoluteBottom={handleScrollButtonDoubleClick} scrollToMessage={scrollToMessage}

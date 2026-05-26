@@ -196,26 +196,22 @@ export default function VirtualMessageList({
   firstItemIndex = 0,
   startReached,
   endReached,
-  // v0.92.2: pixel-perfect state restoration через Virtuoso StateSnapshot.
-  // {scrollTop, ranges[]} — точная позиция + измеренные высоты строк.
-  // Сохраняется через listRef.getState((state) => ...) при scroll событиях,
-  // передаётся обратно при ремаунте чата.
-  // По официальной доке Virtuoso 4.18.7 (node_modules/react-virtuoso/dist/index.d.ts:971-976).
-  restoreStateFrom,
+  // v0.92.6: restoreStateFrom УДАЛЁН — архитектурно сломан с key={cacheKey} ремаунтом.
+  // useEffect cleanup (getState flush) срабатывает ПОСЛЕ unmount Virtuoso → snapshot
+  // содержит scrollTop=0 нового instance. Production-эталоны (Stream Chat, Mattermost)
+  // используют getState/restoreStateFrom БЕЗ key={...} — переиспользуют один Virtuoso instance.
+  // У нас key={cacheKey} обязателен (разные чаты — разные heights/measurements).
+  // Используем только initialTopMostItemIndex с align='end' (v0.92.3 паттерн) для restore.
 }) {
   const virtuosoRef = useRef(null)
   const scrollerElementRef = useRef(null)
 
-  // Мост к старому API — listRef.current.element + scrollToRow + getState.
+  // Мост к старому API — listRef.current.element + scrollToRow.
   // Геттер element берёт текущее значение ref → актуально даже после ремаунта Virtuoso.
-  // v0.92.2: getState добавлен в API listRef для precise state save из useInboxScroll.handleScroll.
   useImperativeHandle(listRef, () => ({
     get element() { return scrollerElementRef.current },
     scrollToRow: (config) => {
       try { virtuosoRef.current?.scrollToIndex(config) } catch (_) {}
-    },
-    getState: (cb) => {
-      try { virtuosoRef.current?.getState(cb) } catch (_) {}
     },
   }), [])
 
@@ -234,11 +230,6 @@ export default function VirtualMessageList({
       itemContent={(_index, item) => <MessageRow item={item} rowContext={rowContext} />}
       initialTopMostItemIndex={initialTopMostItemIndex}
       firstItemIndex={firstItemIndex}
-      // v0.92.2: pixel-perfect restoration. Virtuoso восстанавливает scrollTop и
-      // измеренные ranges из snapshot. Если restoreStateFrom передан,
-      // initialTopMostItemIndex Virtuoso игнорирует (по доке). Это лучше для in-session
-      // переключений чатов — никаких прыжков от remeasure.
-      restoreStateFrom={restoreStateFrom}
       startReached={startReached}
       endReached={endReached}
       rangeChanged={handleRangeChanged}

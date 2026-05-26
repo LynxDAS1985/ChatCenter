@@ -34,8 +34,7 @@ export default function InboxChatPanel({
   virtuosoFirstItemIndex,
   virtuosoOnStartReached,
   virtuosoOnEndReached,
-  // v0.92.2: pixel-perfect state restoration через StateSnapshot.
-  virtuosoRestoreStateFrom,
+  // v0.92.6: virtuosoRestoreStateFrom УДАЛЁН — snapshot не работает с key={cacheKey} ремаунтом.
   // message actions
   handleDelete, handleForward, handlePin, openPhotoWindow, getMessage, readByVisibility,
 }) {
@@ -211,7 +210,6 @@ export default function InboxChatPanel({
               firstItemIndex={virtuosoFirstItemIndex}
               startReached={virtuosoOnStartReached}
               endReached={virtuosoOnEndReached}
-              restoreStateFrom={virtuosoRestoreStateFrom}
             />
           )}
           {/* v0.88.0/0.89.0: индикатор подгрузки новых сообщений (Telegram-style)
