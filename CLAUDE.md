@@ -92,6 +92,7 @@
 | Расследование бага скролла native | [`.memory-bank/native-scroll-diagnostics-handoff.md`](.memory-bank/native-scroll-diagnostics-handoff.md) |
 | 🟡 Сага восстановления позиции (v0.91.12-24, фиксы реализованы, осталось архитектурное ограничение react-window) | [`.memory-bank/native-scroll-restore-saga.md`](.memory-bank/native-scroll-restore-saga.md) — читать ОБЯЗАТЕЛЬНО перед любой правкой restore логики |
 | 🟡 План миграции react-window → react-virtuoso (Day 1-4, нач. v0.91.24, финал v0.92.0) | [`.memory-bank/virtuoso-migration-plan.md`](.memory-bank/virtuoso-migration-plan.md) — читать перед изменениями VirtualMessageList / useInboxScroll / useInitialScroll |
+| 🔴 Аудит scroll-архитектуры 26 мая (23 версии саги, 6 моих ошибок, 8 ломаных связей) | [`.memory-bank/audit-2026-05-26-scroll-architecture.md`](.memory-bank/audit-2026-05-26-scroll-architecture.md) — читать перед v0.93.0 cleanup |
 | Большой план native-режима | [`.memory-bank/native-mode-plan.md`](.memory-bank/native-mode-plan.md) |
 | Расследование Telegram-групп с темами / forum topics в native | [`.memory-bank/group-topic-investigation.md`](.memory-bank/group-topic-investigation.md) |
 | Чек-лист визуальной проверки Phase 2 виртуализации (v0.89.0) | [`.memory-bank/phase-2-visual-test.md`](.memory-bank/phase-2-visual-test.md) |
