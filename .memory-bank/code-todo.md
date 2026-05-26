@@ -31,6 +31,20 @@ description: Отложенные технические улучшения ко
 
 ---
 
+### TODO-9: Удалить IPC burst tracker v0.91.21
+
+**Контекст**: в v0.91.21 добавлен счётчик IPC bursts в `attachTelegramIpcListeners` для диагностики Maximum update depth (Проблема 3, корень loop не известен).
+
+**Что удалить** (в коммите с фиксом v0.91.22):
+1. В [`nativeStoreIpc.js`](../src/native/store/nativeStoreIpc.js) — `ipcBursts` Map + `trackIpcBurst` функция + обёртка `wrapped` в `addHandler` (~15 строк)
+2. В `api.md` — строка `ipc-burst`
+
+**Когда удалять**: в коммите с фиксом v0.91.22.
+
+**Приоритет**: 🟢 низкий — счётчик не в горячем пути, setTimeout 100мс на канал.
+
+---
+
 ### TODO-8: Удалить диагностику v0.91.20 — stack capture + multi-step postcheck
 
 **Контекст**: в v0.91.20 добавлена диагностика для 2 проблем где корень НЕ был известен — Maximum update depth (нет stack) и react-window remeasure timing (не знали когда scrollHeight стабилизируется).
@@ -171,3 +185,4 @@ r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
 | 2026-05-25 | v0.91.11 | TODO-6 — удалить диагностические `initial-restore-*` логи | 📋 в очереди |
 | 2026-05-26 | v0.91.19 | TODO-7 — удалить `restore-start` / `scroll-save` / `autosave-save` | 📋 в очереди |
 | 2026-05-26 | v0.91.20 | TODO-8 — удалить stack capture + multi-step postcheck (тики 50/100/300/500/1000мс) | 📋 в очереди |
+| 2026-05-26 | v0.91.21 | TODO-9 — удалить `ipc-burst` счётчик в attachTelegramIpcListeners | 📋 в очереди |

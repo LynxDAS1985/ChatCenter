@@ -171,6 +171,7 @@
 | `scroll-save` | `viewKey, anchorMsgId, atBottom, scrollTop, scrollHeight` | v0.91.19: диагностика — каждое сохранение через handleScroll (для проверки гипотезы «замкнутый круг») |
 | `autosave-save` | `activeViewKey, anchorMsgId, atBottom` | v0.91.19: диагностика — каждое сохранение через interval 1.5с |
 | `postcheck-tick` | `chatId, delay, mode, scrollTop, scrollHeight` | v0.91.20: диагностика — 5 замеров scrollHeight на 50/100/300/500/1000мс после restore (узнать когда react-window remeasured) |
+| `ipc-burst` | `channel, count, ms` | v0.91.21: диагностика Maximum update depth — N events за окно 100мс на каждый IPC channel (узнать какой channel приходит тысячами и за сколько мс) |
 | `initial-restore-saved-first-open` | `chatId, savedTop` | v0.91.8: восстановление позиции из localStorage при первом открытии после рестарта |
 | `initial-no-scrollel` | `chatId, attempts` | v0.91.6: scrollEl не появился за 10 кадров — fallback onDone без scroll |
 

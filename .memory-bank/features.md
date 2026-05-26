@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.91.20 (26 мая 2026)
+## Текущая версия: v0.91.21 (26 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -19,6 +19,33 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.91.21 — Диагностика IPC bursts для Проблемы 3 (БЕЗ правки логики)
+
+После v0.91.20 stack trace показал что Maximum update depth происходит из setState в `nativeStoreIpc.js:215` (tg:chat-last-message) и `:347` (tg:sender-avatar). Однако **причина loop не известна** — это может быть:
+- Много IPC events приходит в разных macrotasks (батчинг React не объединяет их в один re-render)
+- ИЛИ useEffect где-то с плохими deps создаёт cycle
+- ИЛИ что-то ещё
+
+🥇 [React 18 batching docs](https://react.dev/blog/2022/03/29/react-v18): «automatic batching работает всё равно где: setTimeout, promises, **native event handlers**». То есть IPC handlers ДОЛЖНЫ батчиться автоматически — НО только если они в **одной macrotask**. Если каждый IPC event = отдельная macrotask → каждый setState отдельный re-render.
+
+Диагностика: счётчик IPC bursts в `attachTelegramIpcListeners`. Обёртка над `addHandler` для **всех** channels — если N events приходят в окне <100мс → лог `ipc-burst {channel, count, ms}`. Это покажет:
+- Какой channel приходит тысячами (tg:chat-last-message? tg:sender-avatar? tg:chats?)
+- Через сколько мс приходит весь burst (10? 100? 1000?)
+- Можно ли решить через rAF batching
+
+Не трогаем поведение IPC handlers — только счётчик в обёртке. Удалить после фикса корня (TODO-9).
+
+Стек: React 19.2.4, Electron 41.1.0 (IPC через contextBridge).
+
+Файлы:
+- `nativeStoreIpc.js`: обёртка addHandler с `trackIpcBurst` (~15 строк)
+
+Документация: features.md, api.md (новое событие ipc-burst), code-todo.md TODO-9.
+
+Откат: `git revert <hash>` — только логирование.
 
 ---
 
