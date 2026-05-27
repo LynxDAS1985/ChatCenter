@@ -44,6 +44,48 @@ describe('useReadByVisibility read cursor guard', () => {
     })
   })
 
+  // v0.94.6: диагностика «прыжок курсора» — read-cursor-jump при прыжке через провал.
+  it('логирует read-cursor-jump когда курсор прыгает далеко за провал', async () => {
+    const markRead = vi.fn()
+    const scrollDiag = { logEvent: vi.fn() }
+    const { result } = renderHook(() => useHarness({
+      activeChatId: 'chat1',
+      activeUnread: 8624,
+      readInboxMaxId: 490000000000,
+      markRead,
+      scrollDiag,
+    }))
+    act(() => {
+      // увидели ОДНО свежее сообщение далеко за курсором (провал в окне)
+      result.current.readByVisibility({ id: '513000000000', isOutgoing: false })
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+    expect(scrollDiag.logEvent).toHaveBeenCalledWith('read-cursor-jump', expect.objectContaining({
+      seenCount: 1,
+    }))
+  })
+
+  it('НЕ логирует read-cursor-jump при последовательном чтении (без провала)', async () => {
+    const markRead = vi.fn()
+    const scrollDiag = { logEvent: vi.fn() }
+    const STEP = 1048576
+    const cursor = 490000000000
+    const { result } = renderHook(() => useHarness({
+      activeChatId: 'chat1',
+      activeUnread: 8624,
+      readInboxMaxId: cursor,
+      markRead,
+      scrollDiag,
+    }))
+    act(() => {
+      // два соседних сообщения (шаг ~2^20) — провала нет
+      result.current.readByVisibility({ id: String(cursor + STEP), isOutgoing: false })
+      result.current.readByVisibility({ id: String(cursor + STEP * 2), isOutgoing: false })
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+    expect(scrollDiag.logEvent).not.toHaveBeenCalledWith('read-cursor-jump', expect.anything())
+  })
+
   it('does not send mark-read for messages before Telegram readInboxMaxId', async () => {
     const markRead = vi.fn()
     const scrollDiag = { logEvent: vi.fn() }

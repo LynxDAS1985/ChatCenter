@@ -65,10 +65,25 @@ export default function useReadByVisibility({
         })
         return
       }
+      // v0.94.6: ДИАГНОСТИКА «прыжок курсора» (перед фиксом TODO-markread-gap, без смены поведения).
+      // TDLib message_id = server_id << 20 → шаг между соседними сообщениями ≈ 2^20.
+      // Если курсор перепрыгнул заметно дальше, чем реально увидели (count) — вероятен
+      // «провал» в загруженном окне, и viewMessages(force_read) пометит прочитанным невиденное.
+      const prevMax = maxEverSent || Number(readInboxMaxId || 0)
+      const MSG_ID_STEP = 1048576
+      const approxMsgsJumped = Math.round((lastReadMaxRef.current - prevMax) / MSG_ID_STEP)
       if (maxEverSentRef) maxEverSentRef.current = lastReadMaxRef.current
       scrollDiag.logEvent('read-batch-send', {
         maxId: lastReadMaxRef.current, count, currentUnread: activeUnread,
+        prevMax, approxMsgsJumped,
       })
+      if (approxMsgsJumped > count + 20) {
+        scrollDiag.logEvent('read-cursor-jump', {
+          prevMax, newMax: lastReadMaxRef.current, approxMsgsJumped, seenCount: count,
+          currentUnread: activeUnread,
+          note: 'cursor jumped further than seen — possible gap (marks unseen read)',
+        })
+      }
       markRead(chatAtStart, lastReadMaxRef.current, { source: 'visibility', count })
     }, 300)
   }
