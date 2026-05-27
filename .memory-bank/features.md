@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.94.4 (27 мая 2026)
+## Текущая версия: v0.94.5 (27 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -21,6 +21,24 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.94.5 — Тест на пилюлю непрочитанных + аудит «дыры» счётчика (markRead)
+
+#### Тест на облачко (#3)
+
+Пилюля прогресса непрочитанных была инлайном в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) — нетестируема в изоляции. Вынесена в presentational-компонент [UnreadProgressPill.jsx](src/native/components/UnreadProgressPill.jsx) (props: `show`, `loaded`, `total`, `onClick`) — как `MessageSkeleton`. Регресс-тест [UnreadProgressPill.vitest.jsx](src/native/components/UnreadProgressPill.vitest.jsx): видимость при show=true, класс `--hidden` при show=false (авто-гашение), клик→onClick (переход к первому непрочитанному), total=0 → только точка. Поведение и вид не изменились (тот же markup/CSS).
+
+#### Аудит «дыры» счётчика непрочитанных (8624 → 88)
+
+**Симптом** (лог 27 мая, топик Xiaomi Home `...:topic:281172`): пролистал ~100 → счётчик упал 8624→88. Не глюк — реальная пометка прочитанным.
+
+**Корень**: `useReadByVisibility` ([useReadByVisibility.js](src/native/hooks/useReadByVisibility.js)) шлёт `markRead(chatId, lastReadMax, {source:'visibility'})` с самым высоким видимым id, без проверки на «провал». Backend `viewMessages(..., force_read:true)` ([tdlibBackend.js:340-346](main/native/backends/tdlibBackend.js)) двигает `readInboxMaxId` → TDLib помечает прочитанным ВСЁ ≤ maxId. При разрыве в окне (старые непрочитанные + свежие, между — не загружено) видимое свежее сообщение прыгает курсором через провал → 8000+ старых прочитаны разом. Защита `markReadCurrentView` ([InboxMode.jsx:233-244](src/native/modes/InboxMode.jsx)) пропускает `source==='visibility'` → дыра (`mark-read-skip-unread-window`=0 в логе).
+
+**Решение НЕ внедрено** — зона markRead (история «было 7 стало 1» v0.87.44). Формализовано как **TODO-markread-gap** в [code-todo.md](.memory-bank/code-todo.md) с 3 кандидатами (контигуити-guard / force_read=false при неполном окне / не префетчить свежие). Рекомендация — force_read=false, но с планом + тестом на реальной сессии + сверкой TDLib docs.
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅. Прокрутка (v0.94.2) и индикатор (v0.94.3) не затронуты.
 
 ---
 

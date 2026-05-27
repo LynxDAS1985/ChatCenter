@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
 import VirtualMessageList from './VirtualMessageList.jsx'
+import UnreadProgressPill from './UnreadProgressPill.jsx'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
 import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
@@ -224,18 +225,14 @@ export default function InboxChatPanel({
         {/* v0.94.4: облачко прогресса непрочитанных НАД кнопкой ↓ (вместо широкого блока сверху).
             Клик → к первому непрочитанному (reuse scrollToBottom). Авто-гаснет при 100% через
             CSS-класс --hidden (opacity transition), без JS-таймеров. Число растёт по мере
-            прокрутки к непрочитанным (Вариант A — как в Telegram/RocketChat). */}
-        <button
-          type="button"
+            прокрутки к непрочитанным (Вариант A — как в Telegram/RocketChat).
+            v0.94.5: вынесено в UnreadProgressPill (тестируемый компонент). */}
+        <UnreadProgressPill
+          show={showFreshUnreadWindowInfo}
+          loaded={unreadLoaded}
+          total={unreadTotal}
           onClick={scrollToBottom}
-          className={'native-unread-pill' + (showFreshUnreadWindowInfo ? '' : ' native-unread-pill--hidden')}
-          title="Перейти к первому непрочитанному"
-        >
-          <span className="native-unread-pill__dot" />
-          {unreadTotal > 0 && (
-            <span>{formatUnreadCount(Math.min(unreadLoaded, unreadTotal), { exactUntil: 9999 })} / {formatUnreadCount(unreadTotal, { exactUntil: 9999 })}</span>
-          )}
-        </button>
+        />
       </div>
       {/* Input + Reply/Edit панель → InboxMessageInput (v0.87.83) */}
       <InboxMessageInput
