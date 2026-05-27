@@ -5,7 +5,7 @@
 // параллельные login'ы) — хранит state одного активного логина.
 
 import {
-  getChatHistory, sendTextMessage, editMessageText, deleteMessages,
+  getChatHistory, computeHistoryParams, sendTextMessage, editMessageText, deleteMessages,
   viewMessages, getMessage, getChatPinnedMessage, sendFile, forwardMessages,
   pinMessage as pinMessageRaw, unpinMessage as unpinMessageRaw,
 } from './tdlibMessages.js'
@@ -253,13 +253,13 @@ export function createTdlibBackend(opts = {}) {
       async get(params) {
         const ctx = getClientForChat(manager, params?.chatId)
         if (ctx.error) return { ...ctx.error, messages: [], hasMore: false }
-        return getChatHistory(ctx.client, ctx.rawId, {
-          limit: params.limit,
-          fromMessageId: params.aroundId || params.offsetId,
-          offset: params.addOffset,
-          chatIdStr: params.chatId,
-          extras: makeExtras(manager, ctx.accountId),
-        })
+        const limit = Number(params.limit) || 50
+        // v0.95.1: load-newer (afterId) грузит непрерывную страницу НОВЕЕ afterId, а не низ.
+        const { fromMessageId, offset } = computeHistoryParams({ afterId: params.afterId, aroundId: params.aroundId, offsetId: params.offsetId, addOffset: params.addOffset, limit })
+        const r = await getChatHistory(ctx.client, ctx.rawId, { limit, fromMessageId, offset, chatIdStr: params.chatId, extras: makeExtras(manager, ctx.accountId) })
+        // Диагностика (v0.95.1): грузит ли load-newer непрерывно (first ≈ afterId, не низ чата).
+        try { const m = r?.messages || []; console.log('[get-msgs] chat=' + params.chatId + ' afterId=' + Number(params.afterId || 0) + ' from=' + fromMessageId + ' offset=' + offset + ' count=' + m.length + ' first=' + (m[0]?.id || '-') + ' last=' + (m[m.length - 1]?.id || '-') + ' hasMore=' + r?.hasMore) } catch (_) {}
+        return r
       },
       // v0.89.30 (ловушка #29): isGeneral → getChatHistory, иначе
       // getMessageThreadHistory(threadMessageId) — РЕАЛЬНЫЙ message_thread_id (int53).

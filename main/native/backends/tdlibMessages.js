@@ -120,6 +120,39 @@ export async function getChatHistory(client, chatId, opts = {}) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// computeHistoryParams (v0.95.1)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Вычисляет { fromMessageId, offset } для getChatHistory по направлению загрузки.
+ *
+ * - load-newer (afterId): грузим СЛЕДУЮЩУЮ страницу НОВЕЕ afterId — непрерывно.
+ *   TDLib: отрицательный offset грузит новее from_message_id; правило `limit >= -offset`
+ *   (https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html).
+ *   offset = -(limit-1) → ~(limit-1) сообщений новее afterId + сам afterId (dup, отсеивается
+ *   дедупом в store). limit >= limit-1 — всегда валидно.
+ * - initial (aroundId) / load-older (offsetId): from_message_id + addOffset как есть.
+ *
+ * РАНЬШЕ (баг до v0.95.1): afterId не использовался → from_message_id=0 → TDLib грузил
+ * последние сообщения (низ чата), а не страницу после afterId → РАЗРЫВ в загруженном
+ * списке при большом числе непрочитанных (окно стояло на первом непрочитанном).
+ *
+ * @param {object} p — { afterId, aroundId, offsetId, addOffset, limit }
+ * @returns {{ fromMessageId: number, offset: number }}
+ */
+export function computeHistoryParams({ afterId, aroundId, offsetId, addOffset, limit } = {}) {
+  const lim = Number(limit) || 50
+  const after = Number(afterId || 0)
+  if (after > 0) {
+    return { fromMessageId: after, offset: -(lim - 1) }
+  }
+  return {
+    fromMessageId: Number(aroundId || offsetId || 0),
+    offset: Number(addOffset || 0),
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // sendTextMessage
 // ──────────────────────────────────────────────────────────────────────
 

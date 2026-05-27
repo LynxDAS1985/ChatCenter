@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import {
-  getChatHistory, sendTextMessage, editMessageText, deleteMessages,
+  getChatHistory, computeHistoryParams, sendTextMessage, editMessageText, deleteMessages,
   viewMessages, getMessage, getChatPinnedMessage,
 } from '../../main/native/backends/tdlibMessages.js'
 
@@ -282,5 +282,34 @@ describe('getChatPinnedMessage', () => {
     const r = await getChatPinnedMessage(client, -1001)
     expect(r.ok).toBe(false)
     expect(r.error).toBe('CHAT_INVALID')
+  })
+})
+
+// v0.95.1: load-newer должен грузить НЕПРЕРЫВНУЮ страницу новее afterId, а не низ чата.
+describe('computeHistoryParams', () => {
+  it('afterId → from=afterId, offset=-(limit-1) (грузим новее, непрерывно)', () => {
+    expect(computeHistoryParams({ afterId: 100, limit: 100 })).toEqual({ fromMessageId: 100, offset: -99 })
+    expect(computeHistoryParams({ afterId: 50, limit: 50 })).toEqual({ fromMessageId: 50, offset: -49 })
+  })
+
+  it('afterId имеет приоритет над aroundId/offsetId', () => {
+    expect(computeHistoryParams({ afterId: 100, aroundId: 999, offsetId: 888, limit: 100 }))
+      .toEqual({ fromMessageId: 100, offset: -99 })
+  })
+
+  it('initial (aroundId) → from=aroundId, offset=addOffset', () => {
+    expect(computeHistoryParams({ aroundId: 200, addOffset: -90, limit: 100 }))
+      .toEqual({ fromMessageId: 200, offset: -90 })
+  })
+
+  it('load-older (offsetId, без afterId) → from=offsetId, offset=0', () => {
+    expect(computeHistoryParams({ offsetId: 300, limit: 50 })).toEqual({ fromMessageId: 300, offset: 0 })
+  })
+
+  it('правило TDLib limit >= -offset соблюдается (offset = -(limit-1))', () => {
+    for (const lim of [1, 50, 100]) {
+      const { offset } = computeHistoryParams({ afterId: 7, limit: lim })
+      expect(lim).toBeGreaterThanOrEqual(-offset)
+    }
   })
 })

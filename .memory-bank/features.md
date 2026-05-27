@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.0 (27 мая 2026)
+## Текущая версия: v0.95.1 (27 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -21,6 +21,39 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.1 — НАСТОЯЩИЙ корень разреженной загрузки: load-newer игнорировал afterId → грузил низ, не следующую страницу
+
+Симптом: счётчик непрочитанных встаёт после ~100 (или вообще не двигается); чат с большим unread грузится «дырявно» (200 загружено при 1000+ непрочитанных).
+
+#### Корень (баг в backend, доказан кодом + логом + TDLib-докой)
+
+В [tdlibBackend.js `messages.get`](main/native/backends/tdlibBackend.js) параметр **`afterId` не использовался**:
+```js
+fromMessageId: params.aroundId || params.offsetId,  // afterId игнорировался!
+offset: params.addOffset,
+```
+load-newer (прокрутка вниз) шлёт `afterId`, но backend читал только `aroundId`/`offsetId` → `from_message_id=0` → TDLib `getChatHistory` грузит **последние сообщения (низ чата)**, а не страницу после afterId. При большом непрочитанном (окно стоит на первом непрочитанном, далеко от низа) load-newer **прыгал в самый низ** → между окном и низом оставался **незагруженный разрыв** → счётчик стоял (read-by-visibility упирался в гейт v0.94.7 на границе разрыва).
+
+#### Решение (по TDLib docs)
+
+[TDLib getChatHistory](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html): отрицательный `offset` (до -99) грузит **новее** `from_message_id`; правило `limit >= -offset` ([#236](https://github.com/tdlib/td/issues/236)).
+
+Чистая функция **`computeHistoryParams`** в [tdlibMessages.js](main/native/backends/tdlibMessages.js):
+- `afterId > 0` (load-newer): `{ fromMessageId: afterId, offset: -(limit-1) }` — грузим непрерывную страницу НОВЕЕ afterId (сам afterId приходит как dup, отсеивается дедупом store). `limit >= limit-1` — всегда валидно.
+- initial (`aroundId`) / load-older (`offsetId`): `fromMessageId` + `addOffset` как раньше (не тронуто).
+
+**+Логирование** `[get-msgs]` (afterId / from / offset / count / first / last / hasMore) — на реальной сессии видно, грузит ли load-newer непрерывно (first ≈ afterId, а не низ чата).
+
+#### Итог
+
+Прокрутка вниз теперь грузит сообщения **подряд** → нет разрыва → read-by-visibility помечает прочитанным непрерывно → **счётчик доходит до 0, как в Telegram**. Гейт v0.94.7 и контигуити-проверка v0.95.0 остаются защитой, но срабатывать почти не должны (разрыв больше не образуется).
+
+**Тесты** [tdlibMessages.vitest.js](src/__tests__/tdlibMessages.vitest.js) (+5): afterId→from=afterId,offset=-(limit-1); приоритет afterId; initial; load-older; правило `limit>=-offset`. tdlibBackend.js сжат под лимит (548/550).
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅. load-older и initial-load не затронуты.
 
 ---
 
