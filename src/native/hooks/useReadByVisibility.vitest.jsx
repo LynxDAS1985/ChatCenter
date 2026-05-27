@@ -44,8 +44,8 @@ describe('useReadByVisibility read cursor guard', () => {
     })
   })
 
-  // v0.94.6: диагностика «прыжок курсора» — read-cursor-jump при прыжке через провал.
-  it('логирует read-cursor-jump когда курсор прыгает далеко за провал', async () => {
+  // v0.94.7: ГЕЙТ от «провала» — markRead НЕ вызывается при прыжке курсора через разрыв.
+  it('блокирует markRead при прыжке курсора через провал (не каскадит на бэклог)', async () => {
     const markRead = vi.fn()
     const scrollDiag = { logEvent: vi.fn() }
     const { result } = renderHook(() => useHarness({
@@ -60,12 +60,14 @@ describe('useReadByVisibility read cursor guard', () => {
       result.current.readByVisibility({ id: '513000000000', isOutgoing: false })
     })
     await act(async () => { await vi.advanceTimersByTimeAsync(300) })
-    expect(scrollDiag.logEvent).toHaveBeenCalledWith('read-cursor-jump', expect.objectContaining({
+    // markRead НЕ вызван (иначе TDLib пометил бы прочитанным весь невиденный бэклог)
+    expect(markRead).not.toHaveBeenCalled()
+    expect(scrollDiag.logEvent).toHaveBeenCalledWith('read-cursor-jump-blocked', expect.objectContaining({
       seenCount: 1,
     }))
   })
 
-  it('НЕ логирует read-cursor-jump при последовательном чтении (без провала)', async () => {
+  it('НЕ блокирует при последовательном чтении — markRead вызывается как обычно', async () => {
     const markRead = vi.fn()
     const scrollDiag = { logEvent: vi.fn() }
     const STEP = 1048576
@@ -83,7 +85,8 @@ describe('useReadByVisibility read cursor guard', () => {
       result.current.readByVisibility({ id: String(cursor + STEP * 2), isOutgoing: false })
     })
     await act(async () => { await vi.advanceTimersByTimeAsync(300) })
-    expect(scrollDiag.logEvent).not.toHaveBeenCalledWith('read-cursor-jump', expect.anything())
+    expect(markRead).toHaveBeenCalledWith('chat1', cursor + STEP * 2, { source: 'visibility', count: 2 })
+    expect(scrollDiag.logEvent).not.toHaveBeenCalledWith('read-cursor-jump-blocked', expect.anything())
   })
 
   it('does not send mark-read for messages before Telegram readInboxMaxId', async () => {

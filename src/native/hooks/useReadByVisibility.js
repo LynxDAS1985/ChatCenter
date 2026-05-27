@@ -65,25 +65,33 @@ export default function useReadByVisibility({
         })
         return
       }
-      // v0.94.6: ДИАГНОСТИКА «прыжок курсора» (перед фиксом TODO-markread-gap, без смены поведения).
-      // TDLib message_id = server_id << 20 → шаг между соседними сообщениями ≈ 2^20.
-      // Если курсор перепрыгнул заметно дальше, чем реально увидели (count) — вероятен
-      // «провал» в загруженном окне, и viewMessages(force_read) пометит прочитанным невиденное.
+      // v0.94.7: ГЕЙТ от «провала» — не двигаем read-курсор через большой разрыв.
+      // TDLib viewMessages помечает прочитанным ВСЁ ≤ maxId (range-ack, договор API —
+      // см. mistakes/native-scroll-unread.md). Если курсор прыгнул СИЛЬНО дальше, чем
+      // реально увидели (load-newer подгрузил далёкий свежий блок мимо непрочитанного
+      // бэклога, и одно такое сообщение попало в видимость) — markRead обнулит невиденное.
+      // Это тот же mass-ack guard, что уже есть в useForceReadAtBottom (unread>30 → skip),
+      // но для read-by-visibility. TDLib message_id = server_id << 20 → шаг ≈ 2^20 на сообщение.
       const prevMax = maxEverSent || Number(readInboxMaxId || 0)
       const MSG_ID_STEP = 1048576
       const approxMsgsJumped = Math.round((lastReadMaxRef.current - prevMax) / MSG_ID_STEP)
+      // Блокируем только ЯВНЫЙ провал: прыжок и большой по абсолюту (>200 сообщений за
+      // один 300мс-батч физически не прочитать), и сильно больше реально увиденного (×5).
+      // Обычное и даже быстрое чтение (прыжок ≈ увиденному) НЕ блокируется.
+      if (approxMsgsJumped > 200 && approxMsgsJumped > count * 5) {
+        scrollDiag.logEvent('read-cursor-jump-blocked', {
+          prevMax, attemptedMax: lastReadMaxRef.current, approxMsgsJumped, seenCount: count,
+          currentUnread: activeUnread,
+          note: 'cursor jump across gap blocked — would mark unseen backlog read',
+        })
+        lastReadMaxRef.current = prevMax  // откат курсора на непрерывный фронтир (self-heal при дозагрузке разрыва)
+        return
+      }
       if (maxEverSentRef) maxEverSentRef.current = lastReadMaxRef.current
       scrollDiag.logEvent('read-batch-send', {
         maxId: lastReadMaxRef.current, count, currentUnread: activeUnread,
         prevMax, approxMsgsJumped,
       })
-      if (approxMsgsJumped > count + 20) {
-        scrollDiag.logEvent('read-cursor-jump', {
-          prevMax, newMax: lastReadMaxRef.current, approxMsgsJumped, seenCount: count,
-          currentUnread: activeUnread,
-          note: 'cursor jumped further than seen — possible gap (marks unseen read)',
-        })
-      }
       markRead(chatAtStart, lastReadMaxRef.current, { source: 'visibility', count })
     }, 300)
   }
