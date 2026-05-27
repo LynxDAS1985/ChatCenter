@@ -26,6 +26,9 @@ export default function useInboxScroll({
   setNewBelow,
   // v0.92.4: guard от closed-loop save при programmatic restore.
   isRestoringRef,
+  // v0.94.2: сюда кладём якорь (верхнее видимое сообщение) перед load-older —
+  // InboxMode useLayoutEffect возвращает его на то же место после prepend.
+  prependAnchorRef,
 }) {
   const prevNearBottomRef = useRef(null)
   const prevScrollStateRef = useRef({ top: 0, height: 0, t: 0 })
@@ -104,6 +107,29 @@ export default function useInboxScroll({
       loadingOlderRef.current = true
       const oldest = activeMessages[0]
       const chatAtStart = store.activeChatId
+
+      // v0.94.2: ЯКОРЬ перед prepend (DOMRect re-pin, паттерн Telegram Web K ScrollSaver).
+      // Берём ВЕРХНЕЕ видимое сообщение и его экранную позицию. После prepend старых
+      // сообщений сверху InboxMode useLayoutEffect вернёт его на тот же пиксель.
+      // Надёжнее дельты высоты: re-pin конкретного элемента устойчив к любым
+      // одновременным изменениям layout и к догрузке медиа.
+      try {
+        const scrollerTop = el.getBoundingClientRect().top
+        const rows = el.querySelectorAll('[data-msg-id]')
+        for (const row of rows) {
+          const rect = row.getBoundingClientRect()
+          if (rect.bottom > scrollerTop) {
+            if (prependAnchorRef) {
+              prependAnchorRef.current = {
+                msgId: row.getAttribute('data-msg-id'),
+                screenTop: rect.top - scrollerTop,
+              }
+            }
+            break
+          }
+        }
+      } catch (_) {}
+
       scrollDiag.logEvent('load-older-trigger', {
         beforeId: oldest.id, messages: activeMessages.length, unread: activeUnread,
       })
@@ -111,8 +137,8 @@ export default function useInboxScroll({
       scrollDiag.logEvent('load-older-result', {
         beforeId: oldest.id, ok: result?.ok, hasMore: result?.hasMore,
       })
-      // v0.94.0: НЕТ ручной scrollTop = scrollHeight - prevHeight. overflow-anchor:auto
-      // браузера держит позицию автоматически при добавлении контента выше viewport.
+      // v0.94.2: scrollTop коррекция — в InboxMode useLayoutEffect (после отрисовки,
+      // до paint → без мигания). overflow-anchor:none, держим позицию сами.
       setTimeout(() => { loadingOlderRef.current = false }, 100)
     }
   }

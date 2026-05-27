@@ -289,4 +289,14 @@ describe('VirtualMessageList — smoke (Day 1)', () => {
   // v0.92.6: тесты restoreStateFrom и listRef.getState УДАЛЕНЫ — snapshot
   // mechanism (v0.92.2) архитектурно сломан с key={cacheKey} ремаунтом, убран в v0.92.6.
   // Используем только initialTopMostItemIndex с align='end' (v0.92.3 паттерн).
+
+  // v0.94.2: РЕГРЕССИЯ — overflow-anchor ДОЛЖЕН быть 'none'. Если кто-то вернёт 'auto',
+  // load-older снова будет пиннить экран к верху → каскад подгрузок (баг чата «Машинное обучение»).
+  it('v0.94.2: scroll-контейнер имеет overflow-anchor: none', () => {
+    const { container } = render(<Wrapper renderItems={[]} />)
+    const scroller = container.querySelector('div')
+    expect(scroller).toBeTruthy()
+    expect(scroller.style.overflowAnchor).toBe('none')
+    cleanup()
+  })
 })

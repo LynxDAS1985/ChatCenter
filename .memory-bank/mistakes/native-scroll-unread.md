@@ -1350,3 +1350,29 @@ get-messages err: FLOOD_WAIT ... [FLOOD_WAIT 15s]
 5. Найти пересланное сообщение (переслано из другого чата) → «↪ Переслано от [имя]» вверху
 
 ---
+
+## 🔴 КРИТИЧЕСКОЕ: `overflow-anchor: auto` НЕ держит позицию на верхней границе (scrollTop≈0) → каскад load-older (v0.94.0 → исправлено v0.94.2)
+
+### Симптом
+Юзер листает чат вверх. Подгружаются старые сообщения (load-older), встают сверху. Но экран **остаётся прижат к верху** — то, что читал, улетает вниз, и тут же триггерится следующий load-older. Лог чата «Машинное обучение» (`tg_611696632:-1001164452773`): **13 каскадных load-older за 2 секунды**, messages 50→100→…→650, каждый раз `top`≈0, хотя `height` рос на ~12000px за подгрузку.
+
+### Корень (моя ошибка в v0.94.0)
+При удалении виртуализации (v0.94.0) я понадеялся на CSS `overflow-anchor: auto` («браузер сам держит позицию при добавлении контента выше viewport») и **убрал ручную коррекцию scrollTop**. Но браузерное scroll anchoring **подавляется на границе `scrollTop≈0`** — а load-older срабатывает именно там (`el.scrollTop < 100`). Поэтому при prepend 50 сообщений экран НЕ съезжал вниз → оставался у верха → контент «прыгал».
+
+### Почему это давало именно КАСКАД
+После prepend `scrollTop` оставался <100 (у верха) → следующая проверка снова видела «мы у верха» → ещё один load-older → бесконечно, пока есть `hasMore`. Плюс флуд `read-line-initial` (markRead переобрабатывал сотни сообщений на каждом каскадном рендере).
+
+### Решение (паттерн Telegram Web K ScrollSaver — DOMRect re-pin)
+1. **[VirtualMessageList.jsx](../../src/native/components/VirtualMessageList.jsx)** — `overflow-anchor: auto` → **`none`** (браузер не вмешивается, держим позицию сами). Подтверждено [MDN overflow-anchor](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-anchor): Slack/Discord/Telegram Web при reverse-infinite-scroll отключают anchoring.
+2. **[useInboxScroll.js](../../src/native/hooks/useInboxScroll.js)** — ПЕРЕД load-older запоминает ВЕРХНЕЕ видимое сообщение (`[data-msg-id]`) и его экранную позицию (`getBoundingClientRect().top - scrollerTop`) в `prependAnchorRef`.
+3. **[InboxMode.jsx](../../src/native/modes/InboxMode.jsx)** — `useLayoutEffect` (после коммита DOM, ДО paint → без мигания) находит то же сообщение, считает новую экранную позицию, `el.scrollTop += (newTop - savedTop)` → сообщение возвращается на тот же пиксель. Срабатывает **только при реальном prepend** (`diff > 0.5` — контент добавлен выше якоря), не на случайном ре-рендере / append снизу.
+
+### Почему re-pin по элементу, а не по дельте высоты
+Привязка к конкретному элементу устойчива к любым одновременным изменениям layout и к догрузке медиа. (Фото/видео и так резервируют высоту: `aspectRatio` из метаданных TDLib + `minHeight`, картинка `position:absolute` → поздних reflow нет, но re-pin надёжнее в принципе.)
+
+### Правило на будущее
+- ❌ **НЕ** полагаться на `overflow-anchor: auto` для удержания позиции при подгрузке старых сообщений сверху — на границе `scrollTop≈0` он не работает.
+- ✅ При reverse-infinite-scroll (чат): `overflow-anchor: none` + ручной re-pin верхнего видимого сообщения по DOMRect в `useLayoutEffect`.
+- ✅ Регресс-тест: scroll-контейнер обязан иметь `overflow-anchor: none` ([VirtualMessageList.vitest.jsx](../../src/native/components/VirtualMessageList.vitest.jsx)).
+
+---

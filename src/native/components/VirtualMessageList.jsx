@@ -170,10 +170,13 @@ function MessageRow({ item, rowContext }) {
 //   listRef.current.element            — root scroll DOM (msgsScrollRef sync)
 //   listRef.current.scrollToRow({index, align}) — scroll к row через scrollIntoView
 //
-// scroll-контейнер: один <div> с overflow-y:auto + overflow-anchor:auto.
-// overflow-anchor:auto — браузер САМ держит видимую позицию когда контент
-// добавляется выше viewport (load-older prepend). Это убирает необходимость
-// в ручной scrollTop коррекции (которая была источником прыжков в react-window).
+// scroll-контейнер: один <div> с overflow-y:auto + overflow-anchor:NONE.
+// v0.94.2: overflow-anchor ОТКЛЮЧЁН. Браузерное scroll anchoring НЕ держит позицию
+// на верхней границе (scrollTop≈0) — именно там срабатывает load-older. Лог чата
+// «Машинное обучение» показал 13 каскадных подгрузок, экран пиннился к верху.
+// По MDN и практике Telegram Web K / Discord / Slack: при reverse-infinite-scroll
+// нужно ОТКЛЮЧИТЬ overflow-anchor и держать позицию вручную (см. useInboxScroll +
+// useLayoutEffect-компенсация в InboxMode: re-pin верхнего видимого сообщения по DOMRect).
 export default function VirtualMessageList({
   renderItems,
   rowContext,
@@ -220,8 +223,9 @@ export default function VirtualMessageList({
       style={{
         height: '100%', width: '100%',
         overflowY: 'auto', overflowX: 'hidden',
-        // v0.94.0: браузерное scroll anchoring — держит позицию при prepend (load-older).
-        overflowAnchor: 'auto',
+        // v0.94.2: ОТКЛЮЧЕНО — позицию при load-older держим сами (DOMRect re-pin).
+        // overflow-anchor:auto не работает на границе scrollTop≈0 (где и грузим старые).
+        overflowAnchor: 'none',
         ...style,
       }}
     >

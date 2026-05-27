@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.94.0 (26 мая 2026)
+## Текущая версия: v0.94.2 (27 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -21,6 +21,68 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.94.2 — Фикс «прыгает и грузит без конца при прокрутке вверх» (overflow-anchor:none + DOMRect re-pin)
+
+Лог чата «Машинное обучение» (`tg_611696632:-1001164452773`) показал **13 каскадных load-older за 2 секунды**: сообщения 50→100→…→650, и каждый раз `scrollTop` оставался у нуля, хотя высота росла на ~12000px за подгрузку.
+
+#### Корень (моя ошибка в v0.94.0)
+
+В v0.94.0 я понадеялся на `overflow-anchor: auto` (браузер сам держит позицию при prepend) и убрал ручную коррекцию scrollTop. Это ошибка: **браузерное scroll anchoring НЕ работает на верхней границе** (`scrollTop≈0`), а именно там срабатывает load-older (`scrollTop < 100`). 50 старых сообщений добавлялись сверху → экран оставался прижат к верху → читаемое улетало вниз + тут же триггерился следующий load-older → каскад.
+
+Подтверждено [MDN overflow-anchor](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-anchor) + практикой: Telegram Web K, Discord, Slack при reverse-infinite-scroll **отключают** overflow-anchor и держат позицию кодом.
+
+#### Решение (паттерн tweb ScrollSaver — DOMRect re-pin, надёжнее дельты высоты)
+
+1. **[VirtualMessageList.jsx](src/native/components/VirtualMessageList.jsx)** — `overflow-anchor: auto` → **`none`** (браузер не мешает ручному управлению).
+2. **[useInboxScroll.js](src/native/hooks/useInboxScroll.js)** — перед load-older запоминает ВЕРХНЕЕ видимое сообщение (`[data-msg-id]`) и его экранную позицию (`getBoundingClientRect().top - scrollerTop`) в `prependAnchorRef`.
+3. **[InboxMode.jsx](src/native/modes/InboxMode.jsx)** — `useLayoutEffect` (после коммита DOM, ДО paint → без мигания) keyed на `activeMessages`: находит то же сообщение по `data-msg-id`, считает новую экранную позицию, `el.scrollTop += (newScreenTop - savedScreenTop)` → сообщение возвращается на тот же пиксель.
+
+**Почему re-pin по элементу, а не дельта высоты**: устойчиво к любым одновременным изменениям layout и к догрузке медиа (привязка к конкретному элементу, а не к числу). Фото/видео и так резервируют высоту (`aspectRatio` из метаданных TDLib + `minHeight`, картинка `position:absolute`) → поздних reflow нет.
+
+**Каскад прекращается**: после re-pin `scrollTop` далеко от верха → следующий scroll-event не триггерит load-older. Заодно уходит флуд `read-line-initial` (был следствием переобработки 650 сообщений при каскаде).
+
+#### Тест
+
++1 регрессионный ([VirtualMessageList.vitest.jsx](src/native/components/VirtualMessageList.vitest.jsx)): scroll-контейнер обязан иметь `overflow-anchor: none` (защита от возврата к `auto`).
+
+**Регрессия**: lint 0, vitest 661/661, fileSizeLimits, check-memory ✅. Точность restore при смене чатов (v0.94.0) не затронута.
+
+---
+
+### v0.94.1 — Фикс утечки слушателей TDLib `file:update` (единый диспетчер + таймаут)
+
+После v0.94.0 аудит лога показал `MaxListenersExceededWarning: 101 file:update listeners added to TdlibClientManager`. Полный разбор по коду + официальной документации стека + how-others-do-it.
+
+#### Корень (доказан документацией)
+
+Каждый `downloadFile` ([tdlibMedia.js](main/native/backends/tdlibMedia.js)) вешал **свой** `manager.on('file:update')` и снимал его только при `is_downloading_completed` или `download_error`. Две проблемы:
+
+1. **Утечка** (главная): TDLib иногда шлёт **одно** `updateFile` (`is_downloading_active=true`) и больше ничего — ни завершения, ни ошибки. Подтверждено: [TDLib issue #280](https://github.com/tdlib/td/issues/280), [#2585](https://github.com/tdlib/td/issues/2585) (stuck в poor network: связь рвётся каждые 10-30с, новых updateFile нет). Тогда слушатель висел **вечно**.
+2. **Всплеск**: нет лимита одновременных загрузок → чат со 100 медиа = 100+ слушателей разом → лимит 100 превышен.
+
+#### Решение (один диспетчер + таймаут)
+
+Рекомендованный TDLib паттерн (**один update-handler + маршрутизация по `file_id`**) + Node best practice (не вешать слушатель внутри часто вызываемой функции, [Node Events docs](https://nodejs.org/api/events.html)):
+
+- **`getFileUpdateRegistry(manager)`** в [tdlibMedia.js](main/native/backends/tdlibMedia.js): ОДИН постоянный `file:update` слушатель на менеджер + реестр `Map<"accountId:fileId", Set<waiter>>` в WeakMap (ключ — manager, изолирует тесты). Слушателей **всегда 1** — `MaxListenersExceededWarning` невозможен физически.
+- **Таймаут «нет прогресса» 120с**: перезапускается на каждом `updateFile`. Живое большое видео шлёт прогресс → не отваливается; зависшая загрузка (полная тишина TDLib) → снимается + резолвится ошибкой `download timeout`.
+- Исправлен неверный комментарий «Не утечка» в [tdlibClient.js](main/native/backends/tdlibClient.js).
+- Аватарки (`_pendingAvatars`) — отдельный путь без `file:update` слушателей, не затронуты.
+
+#### Тесты (+3 в [tdlibMediaDownload.vitest.js](src/__tests__/tdlibMediaDownload.vitest.js))
+
+- waiter снимается после завершения + `listenerCount('file:update') === 1`
+- 50 параллельных загрузок = 1 listener (не 50)
+- зависшая загрузка → таймаут чистит waiter + резолвит ошибкой (fake timers)
+
+Экспортирован тест-хелпер `_pendingDownloadCount(manager)`.
+
+**Регрессия**: lint 0, vitest, fileSizeLimits (tdlibMedia.js 404/500, тест 251/400), check-memory ✅.
+
+**Скролл (v0.94.0)** — по логам работает точно (30 восстановлений, 0 промахов), не трогали.
 
 ---
 

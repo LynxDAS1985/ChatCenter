@@ -2,7 +2,7 @@
 // v0.87.27: photoViewer, scroll-to-reply, «новые сообщения» divider, Ctrl+↑ edit.
 // v0.87.83 — Refactored: 4 блока вынесены в hooks/components.
 // v0.87.103 — JSX окна чата вынесен в InboxChatPanel.jsx (~210 строк).
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import ForwardPicker from '../components/ForwardPicker.jsx'
 import InboxChatListSidebar from '../components/InboxChatListSidebar.jsx'
 import InboxChatPanel from '../components/InboxChatPanel.jsx'
@@ -15,7 +15,7 @@ import { useNewBelowCounter } from '../hooks/useNewBelowCounter.js'
 import { useScrollDiagnostics } from '../hooks/useScrollDiagnostics.js'
 import useReadByVisibility from '../hooks/useReadByVisibility.js'
 import useInboxScroll from '../hooks/useInboxScroll.js'
-import { getUnreadAnchorDebug } from '../utils/scrollDiagnostics.js'
+import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostics.js'
 import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
 import { useScrollPositionAutosave } from '../hooks/useScrollPositionAutosave.js'
 
@@ -196,6 +196,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // (элемент не в видимом виртуальном DOM).
   const virtualListRef = useRef(null)
   const loadingOlderRef = useRef(false)
+  // v0.94.2: якорь для re-pin после load-older prepend (см. useLayoutEffect ниже).
+  const prependAnchorRef = useRef(null)
   // v0.88.0: prefetch новых сообщений вниз (Telegram-style infinite scroll).
   // loadingNewerRef — guard от параллельных запросов, [loadingNewer, setLoadingNewer] — для UI индикатора.
   const loadingNewerRef = useRef(false)
@@ -401,7 +403,34 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     loadingNewerRef, setLoadingNewer,
     scrollDiag, setAtBottom, setNewBelow,
     isRestoringRef,  // v0.92.4: guard от closed-loop save при programmatic restore
+    prependAnchorRef,  // v0.94.2: якорь для re-pin после load-older
   })
+
+  // v0.94.2: КОМПЕНСАЦИЯ ПРОКРУТКИ после load-older prepend (overflow-anchor:none).
+  // Паттерн Telegram Web K ScrollSaver: useInboxScroll перед подгрузкой запомнил
+  // верхнее видимое сообщение и его экранную позицию (prependAnchorRef). Здесь, после
+  // отрисовки новых старых сообщений сверху (useLayoutEffect = до paint, без мигания),
+  // возвращаем то же сообщение на тот же пиксель → экран не прыгает и не уходит к верху
+  // (иначе каскад из десятков подгрузок, см. лог чата «Машинное обучение»).
+  useLayoutEffect(() => {
+    const anchor = prependAnchorRef.current
+    if (!anchor) return
+    const el = msgsScrollRef.current
+    if (!el) return
+    const target = el.querySelector(`[data-msg-id="${anchor.msgId}"]`)
+    if (!target) return  // якорь ещё не отрисован — ждём следующий коммит
+    const newScreenTop = target.getBoundingClientRect().top - el.getBoundingClientRect().top
+    const diff = newScreenTop - anchor.screenTop
+    // diff > 0 → контент добавлен ВЫШЕ якоря (prepend произошёл). diff≈0 → это случайный
+    // ре-рендер или append снизу — НЕ трогаем scroll и НЕ сбрасываем якорь, ждём prepend.
+    if (diff > 0.5) {
+      prependAnchorRef.current = null
+      el.scrollTop += diff
+      logNativeScroll('load-older-compensate', {
+        msgId: anchor.msgId, diff: Math.round(diff), newTop: Math.round(el.scrollTop),
+      })
+    }
+  }, [activeMessages])
 
   // v0.91.3: event-based newBelow — подписка на tg:new-message (server push),
   // вместо отслеживания массива. См. useNewBelowCounter.js (полная история бага).
