@@ -23,6 +23,55 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 // ──────────────────────────────────────────────────────────────────────
+// file:update диспетчер (v0.94.1)
+// ──────────────────────────────────────────────────────────────────────
+//
+// РАНЬШЕ (до v0.94.1): каждый downloadFile вешал свой manager.on('file:update').
+// Открытие чата со 100 медиа → 100 слушателей → MaxListenersExceededWarning (лимит 100).
+// Хуже: TDLib иногда шлёт ОДНО updateFile (is_downloading_active=true) и больше ничего —
+// ни завершения, ни ошибки (TDLib issue #280, #2585: stuck в poor network). Тогда
+// слушатель висел вечно → настоящая утечка памяти.
+//
+// ТЕПЕРЬ: ОДИН постоянный слушатель на менеджер раздаёт обновления по accountId:fileId.
+// Слушателей всегда 1 — предупреждение невозможно. Это рекомендованный TDLib паттерн
+// (один update-handler + маршрутизация по file_id) и Node best practice (не вешать
+// слушатель внутри часто вызываемой функции).
+//
+// Реестр в WeakMap (ключ — manager): не держит менеджер в памяти, изолирует тесты.
+
+const _fileUpdateRegistries = new WeakMap()
+
+/**
+ * Лениво создаёт реестр ожидающих загрузок для менеджера и вешает ЕДИНСТВЕННЫЙ
+ * 'file:update' слушатель-диспетчер. Реестр: Map<"accountId:fileId", Set<(file)=>void>>.
+ */
+function getFileUpdateRegistry(manager) {
+  let reg = _fileUpdateRegistries.get(manager)
+  if (reg) return reg
+  reg = new Map()
+  _fileUpdateRegistries.set(manager, reg)
+  manager.on('file:update', ({ accountId, file }) => {
+    const set = reg.get(`${accountId}:${file?.id}`)
+    if (!set) return
+    // Копия: waiter может удалить себя из set во время итерации.
+    for (const waiter of [...set]) { try { waiter(file) } catch (_) {} }
+  })
+  return reg
+}
+
+/**
+ * v0.94.1: для тестов — суммарное число ожидающих загрузок (waiter) в реестре.
+ * Должно возвращаться к 0 после завершения/ошибки/таймаута (нет утечки).
+ */
+export function _pendingDownloadCount(manager) {
+  const reg = _fileUpdateRegistries.get(manager)
+  if (!reg) return 0
+  let n = 0
+  for (const set of reg.values()) n += set.size
+  return n
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // HELPERS
 // ──────────────────────────────────────────────────────────────────────
 
@@ -205,6 +254,11 @@ export function stabilizeForPlayback(absPath, userDataDir, fileId) {
  *   `path` — RAW TDLib file.local.path. Caller ОБЯЗАН пропустить через
  *   `stabilizeForPlayback` перед передачей в renderer.
  */
+// v0.94.1: таймаут «нет прогресса» — защита от stuck-загрузок TDLib (#280, #2585).
+// Сбрасывается на КАЖДОМ обновлении: большое видео качается долго, но шлёт прогресс,
+// поэтому не отваливается. Срабатывает только при ПОЛНОЙ тишине от TDLib.
+const NO_PROGRESS_TIMEOUT_MS = 120000
+
 export function downloadFile({ manager, accountId, fileId, priority = 1, onProgress }) {
   if (!manager) return Promise.resolve({ ok: false, error: 'manager required' })
   if (!accountId) return Promise.resolve({ ok: false, error: 'accountId required' })
@@ -212,26 +266,54 @@ export function downloadFile({ manager, accountId, fileId, priority = 1, onProgr
   const client = manager.getClient(accountId)
   if (!client?.invoke) return Promise.resolve({ ok: false, error: 'client not ready' })
 
+  const reg = getFileUpdateRegistry(manager)
+  const key = `${accountId}:${Number(fileId)}`
+
   return new Promise((resolve) => {
     let settled = false
+    let timer = null
 
-    // Слушатель updateFile — фильтруем по accountId + fileId.
-    const onFileUpdate = ({ accountId: aid, file }) => {
-      if (settled || aid !== accountId || file?.id !== Number(fileId)) return
-      // Прогресс
+    // Снимаем waiter из реестра + чистим таймер. Если набор опустел — убираем ключ.
+    const cleanup = () => {
+      if (timer) { clearTimeout(timer); timer = null }
+      const set = reg.get(key)
+      if (set) {
+        set.delete(waiter)
+        if (set.size === 0) reg.delete(key)
+      }
+    }
+    // Таймер «нет прогресса»: перезапускается на каждом обновлении (см. NO_PROGRESS_TIMEOUT_MS).
+    const armTimeout = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve({ ok: false, error: `download timeout: file ${fileId}` })
+      }, NO_PROGRESS_TIMEOUT_MS)
+    }
+
+    // Фильтрация по fileId уже сделана диспетчером (ключ Map). Здесь — только статус.
+    function waiter(file) {
+      if (settled) return
+      armTimeout() // живая загрузка шлёт прогресс → таймер сбрасывается, не отваливается
       try { onProgress?.(file) } catch (_) {}
       if (file?.local?.is_downloading_completed) {
         settled = true
-        manager.off('file:update', onFileUpdate)
+        cleanup()
         // Возвращаем RAW путь — caller должен стабилизировать.
         resolve({ ok: true, path: file.local.path, file })
       } else if (file?.local?.download_error) {
         settled = true
-        manager.off('file:update', onFileUpdate)
+        cleanup()
         resolve({ ok: false, error: `download failed: file ${fileId}` })
       }
     }
-    manager.on('file:update', onFileUpdate)
+
+    let set = reg.get(key)
+    if (!set) { set = new Set(); reg.set(key, set) }
+    set.add(waiter)
+    armTimeout()
 
     // Запускаем downloadFile. TDLib сразу вернёт file объект с partial info.
     Promise.resolve(client.invoke({
@@ -245,13 +327,13 @@ export function downloadFile({ manager, accountId, fileId, priority = 1, onProgr
       // Если файл уже скачан — TDLib возвращает file с is_downloading_completed=true
       if (!settled && result?.local?.is_downloading_completed) {
         settled = true
-        manager.off('file:update', onFileUpdate)
+        cleanup()
         resolve({ ok: true, path: result.local.path, file: result })
       }
     }).catch((err) => {
       if (!settled) {
         settled = true
-        manager.off('file:update', onFileUpdate)
+        cleanup()
         resolve({ ok: false, error: err?.message || String(err) })
       }
     })

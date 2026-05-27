@@ -323,3 +323,30 @@ if (cn === 'messageVideo') return { fileId: content.video?.video?.id, kind: 'vid
    - Любой скачанный файл — через `stabilizeForPlayback()` → `tg-media/<fileId>_<size>.<ext>` → `cc-media://media/...`
    - Для UX «не блокировать UI» — прогресс-спиннер на постере (уже есть)
    - При жалобе пользователя на «не работает» — сначала `git log` за последние 5 коммитов, проверить что **я недавно сломал**, не лепить новые UI элементы
+
+---
+
+## 🔴 КРИТИЧЕСКОЕ: утечка слушателей `file:update` — слушатель на каждую `downloadFile` (v0.89.0 → исправлено v0.94.1)
+
+### Симптом
+В логе: `MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 101 file:update listeners added to [TdlibClientManager]`.
+
+### Корень (две причины)
+Каждый вызов `downloadFile` ([tdlibMedia.js](../../main/native/backends/tdlibMedia.js)) вешал **свой** `manager.on('file:update', ...)` и снимал его только при `is_downloading_completed` ИЛИ `download_error`.
+1. **Утечка** (главная): TDLib иногда шлёт **одно** `updateFile` (`is_downloading_active=true`) и больше ничего — ни завершения, ни ошибки. Подтверждено [TDLib issue #280](https://github.com/tdlib/td/issues/280), [#2585](https://github.com/tdlib/td/issues/2585) (stuck в poor network). Тогда слушатель висел **вечно**.
+2. **Всплеск**: нет лимита одновременных загрузок → чат со 100 медиа = 100+ слушателей разом.
+
+Неверный комментарий в [tdlibClient.js](../../main/native/backends/tdlibClient.js) утверждал «не утечка, listeners снимаются после resolve» — это было ошибкой.
+
+### Решение (рекомендованный TDLib паттерн + Node best practice)
+- **`getFileUpdateRegistry(manager)`** в [tdlibMedia.js](../../main/native/backends/tdlibMedia.js): ОДИН постоянный `file:update` слушатель-диспетчер на менеджер + реестр `Map<"accountId:fileId", Set<waiter>>` в WeakMap. Слушателей **всегда 1** → `MaxListenersExceededWarning` невозможен.
+- **Таймаут «нет прогресса» 120с** — перезапускается на каждом `updateFile`. Живое большое видео шлёт прогресс → не отваливается; зависшая загрузка (полная тишина TDLib) → снимается + резолвится ошибкой `download timeout`.
+- Аватарки (`_pendingAvatars`) — отдельный путь без `file:update` слушателей, не затронуты.
+
+Подтверждено: [TDLib downloadFile](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1download_file.html) (один update-handler, маршрутизация по `file_id`), [Node Events](https://nodejs.org/api/events.html) (не вешать слушатель в часто вызываемой функции; поднятие лимита — лишь заплатка).
+
+### Правило на будущее
+- ❌ **НЕ** вешать `manager.on('file:update')` внутри `downloadFile` / любой часто вызываемой функции.
+- ❌ **НЕ** «лечить» `MaxListenersExceededWarning` поднятием лимита — это прячет утечку.
+- ✅ Один диспетчер на менеджер + маршрутизация по `file_id` + таймаут на случай зависших файлов (TDLib не гарантирует завершение).
+- ✅ Тесты ([tdlibMediaDownload.vitest.js](../../src/__tests__/tdlibMediaDownload.vitest.js)): waiter снимается + `listenerCount('file:update')===1`; 50 параллельных = 1 listener; stuck → таймаут чистит.

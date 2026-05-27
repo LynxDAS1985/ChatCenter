@@ -4,7 +4,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { TdlibClientManager } from '../../main/native/backends/tdlibClient.js'
-import { downloadFile } from '../../main/native/backends/tdlibMedia.js'
+import { downloadFile, _pendingDownloadCount } from '../../main/native/backends/tdlibMedia.js'
 
 function makeMockClient() {
   const client = new EventEmitter()
@@ -137,14 +137,42 @@ describe('downloadFile', () => {
     }))
   })
 
-  it('listener снимается после завершения (нет утечки)', async () => {
+  // v0.94.1: единый диспетчер — слушателей всегда 1, waiter снимается после завершения.
+  it('waiter снимается после завершения + listener не растёт (нет утечки)', async () => {
     const { mgr, mockClient } = makeManager()
-    const before = mgr.listenerCount('file:update')
     mockClient.invoke.mockResolvedValueOnce({
       '@type': 'file', id: 80, local: { is_downloading_completed: true, path: '/x' },
     })
     await downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 80 })
-    expect(mgr.listenerCount('file:update')).toBe(before)
+    expect(_pendingDownloadCount(mgr)).toBe(0)        // нет зависших waiter
+    expect(mgr.listenerCount('file:update')).toBe(1)  // ОДИН диспетчер, не растёт
+  })
+
+  // v0.94.1: 50 параллельных загрузок = по-прежнему ОДИН listener (а не 50).
+  it('много параллельных загрузок = один listener (не MaxListenersExceeded)', () => {
+    const { mgr, mockClient } = makeManager()
+    mockClient.invoke.mockImplementation(() => Promise.resolve({ id: 0, local: {} })) // partial, не резолвит
+    for (let i = 1; i <= 50; i++) downloadFile({ manager: mgr, accountId: 'tg_a', fileId: i })
+    expect(mgr.listenerCount('file:update')).toBe(1)
+    expect(_pendingDownloadCount(mgr)).toBe(50)
+  })
+
+  // v0.94.1: stuck-загрузка (TDLib #280/#2585: нет обновлений) → таймаут чистит waiter.
+  it('зависшая загрузка → таймаут «нет прогресса» снимает waiter и резолвит ошибкой', async () => {
+    vi.useFakeTimers()
+    try {
+      const { mgr, mockClient } = makeManager()
+      mockClient.invoke.mockImplementationOnce(() => Promise.resolve({ id: 90, local: {} })) // partial, никогда не завершится
+      const p = downloadFile({ manager: mgr, accountId: 'tg_a', fileId: 90 })
+      expect(_pendingDownloadCount(mgr)).toBe(1)
+      await vi.advanceTimersByTimeAsync(120000 + 10)
+      const r = await p
+      expect(r.ok).toBe(false)
+      expect(r.error).toMatch(/timeout/)
+      expect(_pendingDownloadCount(mgr)).toBe(0) // waiter снят, утечки нет
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

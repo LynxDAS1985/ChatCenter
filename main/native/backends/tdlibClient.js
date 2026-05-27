@@ -55,9 +55,12 @@ export class TdlibClientManager extends EventEmitter {
    */
   constructor(opts = {}) {
     super()
-    // v0.89.0 / Этап 3.9: каждая параллельная downloadFile подписывается на 'file:update'.
-    // При открытии чата с 20 фото — 20 listeners. Default limit 10 → MaxListenersExceededWarning.
-    // Не утечка — listeners снимаются после resolve. Просто увеличиваем лимит.
+    // v0.94.1: downloadFile использует ОДИН диспетчер 'file:update' на менеджер
+    // (см. tdlibMedia.js getFileUpdateRegistry) — слушателей всегда 1, не растёт с числом
+    // загрузок. setMaxListeners(100) оставлен как запас под прочие события (account:* и т.п.).
+    // РАНЬШЕ (до v0.94.1): каждая downloadFile вешала свой listener → 100+ при чате с медиа +
+    // настоящая утечка при stuck-загрузках TDLib (issue #280/#2585: нет завершения и нет
+    // ошибки → listener висел вечно). Исправлено диспетчером + таймаутом «нет прогресса».
     this.setMaxListeners(opts.maxListeners || 100)
     this.accounts = new Map()
     this.clientFactory = opts.clientFactory || null
