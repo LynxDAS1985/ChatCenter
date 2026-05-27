@@ -27,14 +27,9 @@ export default function InboxChatPanel({
   // scroll
   msgsScrollRef, handleScroll, scrollDiag, dragOver, handleDragOver, handleDragLeave, handleDrop,
   chatReady, atBottom, newBelow, scrollToBottom, scrollToAbsoluteBottom, scrollToMessage,
-  // v0.89.0: imperative API виртуализации (scrollToRow + getter element)
+  // v0.94.0: imperative API (scrollToRow + getter element) — теперь обычный DOM scroll
   virtualListRef,
-  // v0.92.0: Virtuoso props (бывшие v_*) — все обязательны после Day 4 удаления feature flag.
-  virtuosoInitialIndex,
-  virtuosoFirstItemIndex,
-  virtuosoOnStartReached,
-  virtuosoOnEndReached,
-  // v0.92.6: virtuosoRestoreStateFrom УДАЛЁН — snapshot не работает с key={cacheKey} ремаунтом.
+  // v0.94.0: virtuoso* props УДАЛЕНЫ — виртуализация убрана.
   // message actions
   handleDelete, handleForward, handlePin, openPhotoWindow, getMessage, readByVisibility,
 }) {
@@ -192,7 +187,6 @@ export default function InboxChatPanel({
             <VirtualMessageList
               listRef={effectiveListRef}
               renderItems={renderItems}
-              cacheKey={store.activeChatId}
               rowContext={{
                 store, readRoot: scrollElement,
                 setReplyTo, setEditTarget, setInput,
@@ -206,10 +200,6 @@ export default function InboxChatPanel({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              initialTopMostItemIndex={virtuosoInitialIndex}
-              firstItemIndex={virtuosoFirstItemIndex}
-              startReached={virtuosoOnStartReached}
-              endReached={virtuosoOnEndReached}
             />
           )}
           {/* v0.88.0/0.89.0: индикатор подгрузки новых сообщений (Telegram-style)

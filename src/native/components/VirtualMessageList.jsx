@@ -1,33 +1,30 @@
-// v0.91.24 Day 1: Virtuoso-замена VirtualMessageList.jsx (изолированная).
+// v0.94.0: ВИРТУАЛИЗАЦИЯ УДАЛЕНА. Рендер всех сообщений обычным DOM (renderItems.map).
 //
-// НЕ ПОДКЛЮЧЕНА НИГДЕ — рядом со старым файлом для безопасной миграции.
-// План миграции: .memory-bank/virtuoso-migration-plan.md.
+// История:
+//   v0.89.0  — react-window 2.2 (виртуализация)
+//   v0.92.0  — миграция на react-virtuoso (из-за scroll restore issue #216)
+//   v0.94.0  — ПОЛНОЕ удаление виртуализации
 //
-// Цель — drop-in замена со ВСЕМ API старого VirtualMessageList:
-//   listRef.current.element            → root DOM (для msgsScrollRef sync)
-//   listRef.current.scrollToRow({...}) → имитация react-window API
-//   onRowsRendered({startIndex, stopIndex})
-//   onScroll / onWheel / onTouchStart / onPointerDown / onDragOver / ...
-//   cacheKey (для reset при смене чата)
+// Почему убрали виртуализацию (23 версии саги scroll-restore):
+//   Виртуализация (react-window / Virtuoso) НЕСОВМЕСТИМА с pixel-perfect scroll
+//   restore. Обе сбрасывают измерения высот при ремаунте (key={chatId}), из-за чего
+//   scrollHeight скачет → restore промахивается. Telegram Web K (tweb) НЕ виртуализует
+//   — рендерит все msgs в DOM. У нас обычно 100-300 msgs в активной памяти (load по 50),
+//   обычный DOM это тянет без тормозов.
 //
-// Почему миграция нужна:
-//   - react-window 2.2.7 + useDynamicRowHeight не может надёжно скроллить к
-//     далёкому target row (issue #216 / #6 открыты с 2019). См. saga.
-//   - Virtuoso (MIT) имеет встроенные firstItemIndex / initialTopMostItemIndex /
-//     startReached / endReached для нашего use case.
+// Что даёт обычный DOM:
+//   - scrollHeight стабильный (DOM сам считает реальные размеры)
+//   - scrollTop сохраняется в пикселях, restore = el.scrollTop = saved (мгновенно, точно)
+//   - overflow-anchor: auto — браузер сам держит позицию при prepend (load-older)
+//   - НЕТ align/offset/anchor/snapshot — никаких прилипаний и выравниваний
 //
-// Что МЕНЯЕТСЯ в Day 2:
-//   - load-older уходит в startReached callback
-//   - load-newer уходит в endReached callback
-//   - restore позиции через initialTopMostItemIndex
+// listRef API (для msgsScrollRef sync + scroll-to-reply):
+//   listRef.current.element            → root scroll DOM
+//   listRef.current.scrollToRow({index, align}) → el.children[0].children[index].scrollIntoView
 //
-// Что НЕ МЕНЯЕТСЯ:
-//   - MessageRow (DOM-агностик, дублирован ниже до Day 4 — потом удалим старый файл)
-//   - IntersectionObserver mark-read — работает на DOM rows
-//   - Группировка messageGrouping.js
+// MessageRow, IntersectionObserver mark-read, группировка messageGrouping.js — не меняются.
 
 import { useImperativeHandle, useRef } from 'react'
-import { Virtuoso } from 'react-virtuoso'
 import MessageBubble from './MessageBubble.jsx'
 import { AlbumBubble } from './MediaAlbum.jsx'
 import { formatDayLabel } from '../utils/messageGrouping.js'
@@ -167,23 +164,20 @@ function MessageRow({ item, rowContext }) {
   )
 }
 
-// Главный экспорт — drop-in замена с тем же API что и старый react-window VirtualMessageList.
+// Главный экспорт — обычный DOM-скролл контейнер (БЕЗ виртуализации, v0.94.0).
 //
-// v0.92.1 ИСПРАВЛЕНИЕ: онScroll/onWheel/etc передаются НАПРЯМУЮ в <Virtuoso>, не через
-// components.Scroller. По официальной доке Virtuoso (custom-scroll-container):
-//   «The onScroll event handler is NOT directly passed to the Scroller component.
-//    Instead, it's attached to the Virtuoso component itself.»
-// Stream Chat React (production эталон) использует тот же паттерн через scrollerRef + Virtuoso props.
+// listRef API:
+//   listRef.current.element            — root scroll DOM (msgsScrollRef sync)
+//   listRef.current.scrollToRow({index, align}) — scroll к row через scrollIntoView
 //
-// listRef совместимость:
-//   listRef.current.element            — root scroll DOM (через scrollerRef callback)
-//   listRef.current.scrollToRow(config) — мост к virtuosoRef.scrollToIndex(config)
+// scroll-контейнер: один <div> с overflow-y:auto + overflow-anchor:auto.
+// overflow-anchor:auto — браузер САМ держит видимую позицию когда контент
+// добавляется выше viewport (load-older prepend). Это убирает необходимость
+// в ручной scrollTop коррекции (которая была источником прыжков в react-window).
 export default function VirtualMessageList({
   renderItems,
   rowContext,
-  onRowsRendered,
   listRef,
-  cacheKey,
   onScroll,
   onWheel,
   onTouchStart,
@@ -192,66 +186,30 @@ export default function VirtualMessageList({
   onDragLeave,
   onDrop,
   style,
-  initialTopMostItemIndex,
-  firstItemIndex = 0,
-  startReached,
-  endReached,
-  // v0.92.6: restoreStateFrom УДАЛЁН — архитектурно сломан с key={cacheKey} ремаунтом.
-  // useEffect cleanup (getState flush) срабатывает ПОСЛЕ unmount Virtuoso → snapshot
-  // содержит scrollTop=0 нового instance. Production-эталоны (Stream Chat, Mattermost)
-  // используют getState/restoreStateFrom БЕЗ key={...} — переиспользуют один Virtuoso instance.
-  // У нас key={cacheKey} обязателен (разные чаты — разные heights/measurements).
-  // Используем только initialTopMostItemIndex с align='end' (v0.92.3 паттерн) для restore.
+  // v0.94.0: cacheKey, onRowsRendered, initialTopMostItemIndex, firstItemIndex,
+  // startReached, endReached — БОЛЬШЕ НЕ ПРИНИМАЮТСЯ (виртуализация удалена).
+  // load-older/load-newer — через useInboxScroll handleScroll (DOM scrollTop триггеры).
 }) {
-  const virtuosoRef = useRef(null)
-  const scrollerElementRef = useRef(null)
+  const scrollerRef = useRef(null)
+  const innerRef = useRef(null)
 
-  // Мост к старому API — listRef.current.element + scrollToRow.
-  // Геттер element берёт текущее значение ref → актуально даже после ремаунта Virtuoso.
+  // Мост к старому API: element + scrollToRow.
+  // scrollToRow ищет row по индексу среди детей inner-контейнера и scrollIntoView.
   useImperativeHandle(listRef, () => ({
-    get element() { return scrollerElementRef.current },
-    scrollToRow: (config) => {
-      try { virtuosoRef.current?.scrollToIndex(config) } catch (_) {}
+    get element() { return scrollerRef.current },
+    scrollToRow: ({ index, align } = {}) => {
+      try {
+        const row = innerRef.current?.children?.[index]
+        if (!row) return
+        const block = align === 'end' ? 'end' : align === 'center' ? 'center' : 'start'
+        row.scrollIntoView({ block, behavior: 'auto' })
+      } catch (_) {}
     },
   }), [])
 
-  // rangeChanged — аналог react-window onRowsRendered.
-  // Virtuoso: {startIndex, endIndex}. Старый react-window: {startIndex, stopIndex}.
-  // Мост: stopIndex = endIndex.
-  const handleRangeChanged = (range) => {
-    onRowsRendered?.({ startIndex: range.startIndex, stopIndex: range.endIndex })
-  }
-
   return (
-    <Virtuoso
-      key={cacheKey}
-      ref={virtuosoRef}
-      data={renderItems}
-      itemContent={(_index, item) => <MessageRow item={item} rowContext={rowContext} />}
-      initialTopMostItemIndex={initialTopMostItemIndex}
-      firstItemIndex={firstItemIndex}
-      startReached={startReached}
-      endReached={endReached}
-      rangeChanged={handleRangeChanged}
-      // skipAnimationFrameInResizeObserver: рекомендация troubleshooting docs
-      // против "Reverse Scrolling Flickering with Dynamic Heights" (discussion #1083).
-      skipAnimationFrameInResizeObserver
-      // defaultItemHeight = 50 — ближе к реальной средней высоте, меньше «дёргания» при mount.
-      defaultItemHeight={50}
-      // increaseViewportBy ≈ overscan react-window (3 row × ~50px = 150px).
-      increaseViewportBy={{ top: 150, bottom: 150 }}
-      // v0.92.1: атомарные пороги — startReached/endReached не должны срабатывать
-      // сразу при mount. Defaults 0 и 4 → endReached триггерил load-newer через 39мс
-      // от chat-open (лог 16:07:52). 200px = разумный буфер.
-      atTopThreshold={200}
-      atBottomThreshold={200}
-      // v0.92.1 КРИТИЧНО: scrollerRef callback — единственный способ получить DOM
-      // root в Virtuoso. NOT useRef — Virtuoso выкинет error (issue #274).
-      // Сохраняем в свой ref для listRef.element моста и для msgsScrollRef sync.
-      scrollerRef={(el) => { scrollerElementRef.current = el }}
-      // v0.92.1 КРИТИЧНО: DOM events ПРЯМО в <Virtuoso>, не в components.Scroller.
-      // По официальной доке custom-scroll-container: onScroll attached to Virtuoso itself.
-      // Virtuoso extends HTMLAttributes<HTMLDivElement> — эти props идут в root DOM.
+    <div
+      ref={scrollerRef}
       onScroll={onScroll}
       onWheel={onWheel}
       onTouchStart={onTouchStart}
@@ -259,7 +217,19 @@ export default function VirtualMessageList({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      style={{ height: '100%', width: '100%', ...style }}
-    />
+      style={{
+        height: '100%', width: '100%',
+        overflowY: 'auto', overflowX: 'hidden',
+        // v0.94.0: браузерное scroll anchoring — держит позицию при prepend (load-older).
+        overflowAnchor: 'auto',
+        ...style,
+      }}
+    >
+      <div ref={innerRef}>
+        {renderItems.map((item, idx) => (
+          <MessageRow key={item?.key || idx} item={item} rowContext={rowContext} />
+        ))}
+      </div>
+    </div>
   )
 }

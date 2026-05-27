@@ -170,17 +170,17 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
   // v0.87.70: восстанавливаем сохранённый scrollTop при возврате к виденному чату
   // (как Telegram Desktop). Регрессия: раньше scrollTop оставался от предыдущего чата —
   // один div на всё приложение, позиция не per-chat.
-  it('⭐ v0.87.70 + v0.91.15: возврат к виденному чату — восстанавливаем через anchor msgId', async () => {
+  // v0.94.0: виртуализация удалена → restore через PIXEL scrollTop (число), без anchor msgId.
+  it('⭐ v0.94.0: возврат к виденному чату — восстанавливаем через pixel scrollTop', async () => {
     const scrollEl = {
       scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
       querySelector: () => null,
     }
-    // v0.91.15: формат {anchorMsgId, atBottom} вместо числа
+    // v0.94.0: формат {scrollTop, atBottom} — простое число пикселей
     const savedPositions = {
-      'chat-A': { anchorMsgId: 'msg-A-99', atBottom: false },
-      'chat-B': { anchorMsgId: 'msg-B-55', atBottom: false },
+      'chat-A': { scrollTop: 1234, atBottom: false },
+      'chat-B': { scrollTop: 555, atBottom: false },
     }
-    const onRestoreAnchor = vi.fn()
     const onDone = vi.fn()
     const { rerender } = renderHook(({ chatId }) => {
       const scrollRef = useRef(scrollEl)
@@ -190,47 +190,45 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
         firstUnreadIdRef, activeUnread: 0, loading: false,
         onDone,
         getSavedScrollTop: (id) => savedPositions[id] ?? null,
-        onRestoreAnchor,
       })
     }, { initialProps: { chatId: 'chat-A' } })
 
-    // v0.91.15: первое открытие — priority anchor msgId (ветка 1)
+    // Первое открытие — pixel restore (ветка 1)
     await new Promise(r => setTimeout(r, 250))
-    expect(onRestoreAnchor).toHaveBeenCalledWith('msg-A-99')
+    expect(scrollEl.scrollTop).toBe(1234)
 
-    // Переключение B → возврат A — ветка 2 (already-seen) тоже restore через anchor
-    onRestoreAnchor.mockClear()
+    // Переключение B → возврат A — ветка 2 (already-seen) тоже pixel restore
     rerender({ chatId: 'chat-B' })
     await new Promise(r => setTimeout(r, 250))
-    onRestoreAnchor.mockClear()
+    scrollEl.scrollTop = 0  // сбрасываем, чтобы убедиться что restore поставит 1234 заново
     rerender({ chatId: 'chat-A' })
     await new Promise(r => setTimeout(r, 50))
-    expect(onRestoreAnchor).toHaveBeenCalledWith('msg-A-99')
+    expect(scrollEl.scrollTop).toBe(1234)
   })
 
   // v0.91.8 (Совет 1) — regression тест: savedTop на дне → auto-jump к firstUnread.
   // Симулирует «юзер читал чат до конца, появились новые сообщения, открыл чат снова».
   // Ожидаем что initial-scroll идёт к firstUnread (а не возвращает на дно).
-  it('⭐ v0.91.8: savedTop на дне + firstUnread → auto-jump к firstUnread, не restore', async () => {
+  // v0.94.0: restore через querySelector(data-msg-id) scrollIntoView вместо onMissingTarget.
+  it('⭐ v0.94.0: saved atBottom + firstUnread → scroll к firstUnread (не pixel)', async () => {
+    const scrollIntoViewMock = vi.fn()
+    const target = { scrollIntoView: scrollIntoViewMock, classList: { add: vi.fn(), remove: vi.fn() } }
     const scrollEl = {
       scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
-      // 2000 - 1980 - 500 = -480 < 80 → на дне (within 80px)
-      querySelector: () => null,  // virtual fallback через onMissingTarget
+      querySelector: (sel) => sel.includes('data-msg-id="msg-new"') ? target : null,
     }
-    const onMissingTarget = vi.fn()
     renderHook(() => {
       const scrollRef = useRef(scrollEl)
       const firstUnreadIdRef = useRef('msg-new')
       return useInitialScroll({
         activeChatId: 'chat-X', messagesCount: 50, scrollRef,
         firstUnreadIdRef, activeUnread: 5, loading: false,
-        onMissingTarget,
-        getSavedScrollTop: () => 1980,  // был на дне (within 80px)
+        getSavedScrollTop: () => ({ scrollTop: 1980, atBottom: true }),  // был на дне
       })
     })
     await new Promise(r => setTimeout(r, 250))
-    // savedTop был на дне → priority firstUnread → onMissingTarget вызван
-    expect(onMissingTarget).toHaveBeenCalledWith('msg-new')
+    // saved.atBottom=true → ветка pixel пропущена → priority firstUnread → scrollIntoView
+    expect(scrollIntoViewMock).toHaveBeenCalled()
   })
 
   // v0.91.2: ОБНОВЛЕНО — раньше при возврате в чат с firstUnread программа прыгала к нему.
@@ -238,7 +236,8 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
   // если firstUnread пересчитан (mark-read + push новых) → ветка прыгала посреди активного
   // скролла юзера. Теперь restore = ТОЛЬКО savedScrollTop. firstUnread auto-jump остаётся
   // только при ПЕРВОМ открытии (ветка 1). Поведение Telegram Desktop / WhatsApp / Discord.
-  it('⭐ v0.91.2 + v0.91.15: возврат к чату — anchor msgId используется (не firstUnread)', async () => {
+  // v0.94.0: restore через pixel scrollTop (число), без anchor msgId / onMissingTarget.
+  it('⭐ v0.94.0: возврат к чату — pixel scrollTop используется (не firstUnread)', async () => {
     const scrollIntoViewMock = vi.fn()
     const scrollEl = {
       scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
@@ -247,8 +246,6 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
         : null,
     }
     const onDone = vi.fn()
-    const onMissingTarget = vi.fn()
-    const onRestoreAnchor = vi.fn()
     const firstUnreadIdRefInner = { current: null }
     const { rerender } = renderHook(({ chatId, unreadId }) => {
       const scrollRef = useRef(scrollEl)
@@ -257,30 +254,29 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
       return useInitialScroll({
         activeChatId: chatId, messagesCount: 50, scrollRef,
         firstUnreadIdRef, activeUnread: unreadId ? 1 : 0, loading: false,
-        onDone, onMissingTarget, onRestoreAnchor,
-        getSavedScrollTop: () => ({ anchorMsgId: 'msg-saved', atBottom: false }),
+        onDone,
+        getSavedScrollTop: () => ({ scrollTop: 800, atBottom: false }),
       })
     }, { initialProps: { chatId: 'chat-X', unreadId: null } })
 
-    // Первое открытие — priority anchor (ветка 1 v0.91.15)
+    // Первое открытие — pixel restore (ветка 1)
     await new Promise(r => setTimeout(r, 250))
+    expect(scrollEl.scrollTop).toBe(800)
 
     // Переход в chat-Y с firstUnread
     firstUnreadIdRefInner.current.current = 'msg-99'
     rerender({ chatId: 'chat-Y', unreadId: 'msg-99' })
     await new Promise(r => setTimeout(r, 250))
 
-    // Чистим моки перед проверкой возврата
+    // Чистим перед проверкой возврата
     scrollIntoViewMock.mockClear()
-    onMissingTarget.mockClear()
-    onRestoreAnchor.mockClear()
+    scrollEl.scrollTop = 0
 
-    // Возврат к chat-X — ветка 2 должна использовать anchor msgId БЕЗ прыжка к firstUnread
+    // Возврат к chat-X — ветка 2 должна использовать pixel scrollTop БЕЗ прыжка к firstUnread
     rerender({ chatId: 'chat-X', unreadId: 'msg-99' })
     await new Promise(r => setTimeout(r, 50))
-    expect(onRestoreAnchor).toHaveBeenCalledWith('msg-saved')
+    expect(scrollEl.scrollTop).toBe(800)
     expect(scrollIntoViewMock).not.toHaveBeenCalled()
-    expect(onMissingTarget).not.toHaveBeenCalled()
   })
 
   // v0.91.2 — regression тест: при повторном useEffect-триггере (messagesCount изменился)

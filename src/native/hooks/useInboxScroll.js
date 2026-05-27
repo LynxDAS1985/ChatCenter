@@ -1,12 +1,13 @@
-// v0.87.83: вынесено из InboxMode.jsx — handleScroll логика.
-// Делает: сохранение позиции скролла per-chat, диагностика прыжков,
-// инфинит-скролл вверх (load-older), детект newBelow.
-// v0.88.0..v0.88.2: prefetch вниз вынесен в useInboxNewerPrefetch.js (лимит 150 строк).
+// v0.87.83: handleScroll логика — сохранение позиции, диагностика, infinite scroll.
+// v0.94.0: ВИРТУАЛИЗАЦИЯ УДАЛЕНА. Вернулись к pixel scrollTop save + DOM scrollTop триггеры
+// load-older/load-newer (как было до v0.92.0). overflow-anchor:auto в DOM-контейнере
+// держит позицию при prepend, поэтому ручная scrollTop коррекция БОЛЬШЕ НЕ НУЖНА.
 //
 // Возвращает { handleScroll } — onScroll handler для msgs scroll-container.
 
 import { useRef } from 'react'
-import { saveScrollPositions, findVisibleAnchorMsgId } from '../utils/scrollPositionsCache.js'
+import useInboxNewerPrefetch from './useInboxNewerPrefetch.js'
+import { saveScrollPositions } from '../utils/scrollPositionsCache.js'
 
 export default function useInboxScroll({
   store,
@@ -25,46 +26,31 @@ export default function useInboxScroll({
   setNewBelow,
   // v0.92.4: guard от closed-loop save при programmatic restore.
   isRestoringRef,
-  // v0.92.6: virtualListRef + scrollStateByChatRef + throttled getState save УДАЛЕНЫ —
-  // restoreStateFrom архитектурно не работает с key={cacheKey} ремаунтом.
 }) {
   const prevNearBottomRef = useRef(null)
   const prevScrollStateRef = useRef({ top: 0, height: 0, t: 0 })
-  // v0.92.5: useInboxNewerPrefetch УДАЛЁН из handleScroll — load-newer теперь
-  // делает Virtuoso endReached callback (handleEndReached в InboxMode).
-  // Старый паттерн scrollTop-based prefetch создавал ДУБЛЬ с Virtuoso → двойные вызовы.
+  // v0.88.x: prefetch новых сообщений вниз (load-newer).
+  const newerPrefetch = useInboxNewerPrefetch({ store, scrollKey, activeMessages, scrollDiag })
 
   const handleScroll = async (e) => {
     const el = e.target
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
 
-    // v0.87.70: сохраняем позицию для активного чата.
-    // v0.91.8 (Совет 1): и в localStorage (debounced 1с) — позиция переживает перезапуск.
-    // v0.91.15: формат изменён с пиксельного scrollTop на anchor msgId. scrollTop
-    // деградировал при clamped restore (react-window cacheKey reset → scrollHeight мал
-    // → MDN scrollTop spec обрезает значение → handleScroll сохраняет clamped → позиция
-    // портится при каждом возврате). msgId стабилен между ремаунтами.
+    // v0.94.0: сохраняем pixel scrollTop. Без виртуализации scrollHeight стабилен,
+    // scrollTop не деградирует при ремаунте. Это самый простой и точный restore.
     const viewKey = scrollKey || store.activeChatId
     if (viewKey && chatReady) {
-      // v0.93.0: findVisibleAnchorMsgId теперь возвращает объект {anchorMsgId, offsetFromTop}
-      // — pixel offset для pixel-perfect restore через Virtuoso initialTopMostItemIndex offset.
-      const anchorInfo = findVisibleAnchorMsgId(el)
-      const anchorMsgId = anchorInfo?.anchorMsgId || null
-      const offsetFromTop = anchorInfo?.offsetFromTop || 0
-      // Сохраняем только если есть хоть что-то полезное (anchor или atBottom).
-      if (anchorMsgId || nearBottom) {
-        // v0.92.4: closed-loop guard — Virtuoso DOM scroll события не должны портить save.
-        const blocked = !!isRestoringRef?.current
-        if (!blocked) {
-          scrollPosByChatRef.current.set(viewKey, { anchorMsgId, atBottom: nearBottom, offsetFromTop })
-          saveScrollPositions(scrollPosByChatRef.current)
-        }
-        scrollDiag?.logEvent('scroll-save', {
-          viewKey, anchorMsgId, atBottom: nearBottom, offsetFromTop,
-          scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
-          isRestoring: blocked,
-        })
+      // v0.92.4: closed-loop guard — programmatic scroll от restore не должен
+      // перезаписывать сохранённую позицию (MDN: scroll event fires for programmatic too).
+      const blocked = !!isRestoringRef?.current
+      if (!blocked) {
+        scrollPosByChatRef.current.set(viewKey, { scrollTop: el.scrollTop, atBottom: nearBottom })
+        saveScrollPositions(scrollPosByChatRef.current)
       }
+      scrollDiag?.logEvent('scroll-save', {
+        viewKey, scrollTop: el.scrollTop, atBottom: nearBottom,
+        scrollHeight: el.scrollHeight, isRestoring: blocked,
+      })
     }
 
     // v0.87.49: лог переходов atBottom (для диагностики useForceReadAtBottom)
@@ -97,20 +83,38 @@ export default function useInboxScroll({
     if (nearBottom) setNewBelow(0)
     scrollDiag.observeScroll(nearBottom, loadingOlderRef.current)
 
-    // v0.92.5: ВСЕ infinite scroll триггеры УДАЛЕНЫ из handleScroll.
-    //
-    // СТАРОЕ (react-window паттерн до v0.92.0):
-    //   - newerPrefetch.maybeTrigger(...) для load-newer
-    //   - if (scrollTop < 100) → loadOlderMessages + ручная scrollTop коррекция
-    //
-    // ПРОБЛЕМА: эти триггеры дублировали Virtuoso startReached/endReached callbacks
-    // (handleStartReached/handleEndReached в InboxMode v0.92.0+). Каждое достижение
-    // верха/низа → ДВА вызова load-older/load-newer → race условия + ручная
-    // scrollTop коррекция перекрывала Virtuoso firstItemIndex auto-positioning.
-    //
-    // ТЕПЕРЬ (v0.92.5): handleScroll занимается ТОЛЬКО save (anchor + snapshot)
-    // и диагностикой (atBottom, scroll-anomaly). Все infinite scroll триггеры —
-    // через Virtuoso callbacks (startReached/endReached в InboxMode).
+    // v0.94.0: load-newer вниз (Telegram-style). overflow-anchor:auto держит позицию.
+    newerPrefetch.maybeTrigger({
+      el, viewKey,
+      initialScrollDoneKey: initialScrollDoneRef.current,
+      loadingNewerRef, setLoadingNewer,
+    })
+
+    // v0.94.0: load-older вверх. БЕЗ ручной scrollTop коррекции — overflow-anchor:auto
+    // в DOM-контейнере (VirtualMessageList) сам держит видимую позицию при prepend.
+    if (loadingOlderRef.current) return
+    // v0.92.4: не грузим во время restore (programmatic scroll ставит scrollTop≈saved).
+    if (isRestoringRef?.current) return
+    // v0.87.48: блокируем авто-load-older пока initial-scroll не закончился
+    if (initialScrollDoneRef.current !== viewKey) {
+      scrollDiag.logEvent('load-older-skip-initial', { scrollTop: el.scrollTop, chatId: store.activeChatId, viewKey })
+      return
+    }
+    if (el.scrollTop < 100 && activeMessages.length > 0) {
+      loadingOlderRef.current = true
+      const oldest = activeMessages[0]
+      const chatAtStart = store.activeChatId
+      scrollDiag.logEvent('load-older-trigger', {
+        beforeId: oldest.id, messages: activeMessages.length, unread: activeUnread,
+      })
+      const result = await store.loadOlderMessages(chatAtStart, oldest.id, 50)
+      scrollDiag.logEvent('load-older-result', {
+        beforeId: oldest.id, ok: result?.ok, hasMore: result?.hasMore,
+      })
+      // v0.94.0: НЕТ ручной scrollTop = scrollHeight - prevHeight. overflow-anchor:auto
+      // браузера держит позицию автоматически при добавлении контента выше viewport.
+      setTimeout(() => { loadingOlderRef.current = false }, 100)
+    }
   }
 
   return { handleScroll }
