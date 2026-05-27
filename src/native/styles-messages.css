@@ -199,6 +199,12 @@
   overflow: hidden;
   z-index: 3;
   pointer-events: none;
+  opacity: 1;
+  transition: opacity 200ms ease;  /* v0.94.3: плавное гашение полосы */
+}
+/* v0.94.3: класс гашения — полоса плавно исчезает (минимум 400мс показа держим в JS) */
+.native-msg-overlay--leaving {
+  opacity: 0;
 }
 .native-msg-overlay-shimmer {
   position: absolute;

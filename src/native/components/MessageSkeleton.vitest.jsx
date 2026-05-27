@@ -1,6 +1,6 @@
 // v0.87.36: vitest для MessageSkeleton / MessageListOverlay.
 import { describe, it, expect } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, waitFor } from '@testing-library/react'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 
 describe('MessageSkeleton', () => {
@@ -43,12 +43,32 @@ describe('MessageListOverlay', () => {
     cleanup()
   })
 
-  it('видим при show=true с spinner + текстом', () => {
+  // v0.94.3: без кэша (hasContent=false) полоса показывается сразу, БЕЗ spinner/текста-пилюли
+  it('v0.94.3: при show=true без кэша — тонкая полоса сразу, без spinner/текста', () => {
     const { container } = render(<MessageListOverlay show={true} />)
     expect(container.querySelector('.native-msg-overlay')).toBeTruthy()
     expect(container.querySelector('.native-msg-overlay-shimmer')).toBeTruthy()
-    expect(container.querySelector('.native-spinner')).toBeTruthy()
-    expect(container.textContent).toContain('Обновляю сообщения')
+    // пилюля «Обновляю сообщения...» убрана
+    expect(container.querySelector('.native-spinner')).toBeNull()
+    expect(container.textContent).not.toContain('Обновляю')
+    cleanup()
+  })
+
+  // v0.94.3: с кэшем (hasContent=true) полоса ОТЛОЖЕНА на 250мс — мгновенно её нет
+  // (быстрая загрузка <250мс не покажет полосу → нет мигания).
+  it('v0.94.3: при hasContent полоса НЕ появляется мгновенно (задержка 250мс)', () => {
+    const { container } = render(<MessageListOverlay show={true} hasContent={true} />)
+    expect(container.querySelector('.native-msg-overlay')).toBeNull()
+    cleanup()
+  })
+
+  // v0.94.3: при долгой загрузке полоса всё же появляется после задержки
+  it('v0.94.3: при hasContent и долгой загрузке полоса появляется после задержки', async () => {
+    const { container } = render(<MessageListOverlay show={true} hasContent={true} />)
+    await waitFor(
+      () => expect(container.querySelector('.native-msg-overlay')).toBeTruthy(),
+      { timeout: 1000 }
+    )
     cleanup()
   })
 })

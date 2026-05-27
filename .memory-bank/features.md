@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.94.2 (27 мая 2026)
+## Текущая версия: v0.94.4 (27 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -21,6 +21,53 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.94.4 — Пилюля прогресса непрочитанных у кнопки ↓ (вместо широкого блока)
+
+Юзер: плашка «Загружена часть непрочитанных сообщений 100 из 1005» была **широким блоком сверху**, двигала ленту. Нужно: облачко (не блок), в другом месте, кликабельное, авто-исчезающее; и чтобы прогресс шёл дальше.
+
+#### Что сделано (#1 место + #2 авто-скрытие + #4 клик)
+
+- **#1** Блок `native-unread-window-status` (между закреплённым и лентой) убран → **пилюля-облачко `.native-unread-pill`** над кнопкой ↓ (`absolute; right:20px; bottom:70px`). Не двигает ленту (floating поверх).
+- **#2** Авто-скрытие при 100% (`loadedIncoming >= total` → `showFreshUnreadWindowInfo=false`) через CSS-класс `.native-unread-pill--hidden` (opacity 0 + pointer-events:none, transition 250мс). Плавно гаснет, **без JS-таймеров** (пилюля всегда в DOM, переключается класс).
+- **#4** Клик по пилюле → к первому непрочитанному. Reuse `scrollToBottom` = `handleScrollButtonClick` ([InboxMode.jsx:469-475](src/native/modes/InboxMode.jsx#L469)) — он уже прыгает к `firstUnreadId`.
+
+#### #3 Вариант A (по прокрутке) — без изменений кода
+
+Число `loadedIncoming` уже растёт при прокрутке к непрочитанным ([nativeStore.js:97-103](src/native/store/nativeStore.js#L97)). Это как у Telegram/RocketChat. **Фоновую дозагрузку всех 1005 НЕ делали**: после удаления виртуализации (v0.94.0) это 1005 DOM-узлов → лаги (тот же баг тормозит даже Telegram — [tdesktop #17504](https://github.com/telegramdesktop/tdesktop/issues/17504)). При желании «само бежит» — отдельная задача с потолком ~300-400 (Вариант B).
+
+#### Изменено
+
+[InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) — блок → пилюля-кнопка с `onClick={scrollToBottom}` + класс `--hidden` по `showFreshUnreadWindowInfo`. [styles-overlays.css](src/native/styles-overlays.css) — `.native-unread-pill` (+`__dot`, `--hidden`). Логика счётчика `loadedIncoming`/`unreadWindow` **не тронута** (ловушка #30 не повторяется). Старый CSS `.native-unread-window-status` остаётся (не используется, безвреден).
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅. Прокрутка (v0.94.2) и индикатор (v0.94.3) не затронуты.
+
+---
+
+### v0.94.3 — «Спокойная загрузка»: убрано мигание индикатора при открытии чата (советы 1+2+3)
+
+Юзер: при открытии чата сверху мигает синяя полоса + пилюля «Обновляю сообщения...»; skeleton-эффекта не видно.
+
+#### Причина (код)
+
+`MessageListOverlay` ([MessageSkeleton.jsx](src/native/components/MessageSkeleton.jsx)) показывался мгновенно при `(!chatReady) || messagesLoading` ([InboxChatPanel.jsx:161](src/native/components/InboxChatPanel.jsx#L161)) и мигал «вкл-выкл» на быстрых загрузках. Skeleton-плашки (серые бабблы) видны редко — только при ПУСТОМ кэше, т.к. IndexedDB обычно отдаёт сообщения мгновенно (`visibleMessages.length > 0` → skeleton пропускается, показывается overlay-полоса).
+
+#### Решение (советы 1+2+3 — паттерн «отложенный + минимальная длительность» индикатор)
+
+По React docs [«Synchronizing with Effects»](https://react.dev/learn/synchronizing-with-effects) (setTimeout в useEffect + cleanup):
+1. **Задержка 250мс** перед показом, НО только при `hasContent` (виден кэш). Быстрая загрузка <250мс полосу не покажет → нет мигания. При `!hasContent` (контент скрыт, первый вход) — показ СРАЗУ (иначе чёрный экран, регрессия v0.89.37).
+2. **Минимум 400мс** на экране + **плавное гашение** (CSS `.native-msg-overlay--leaving`, opacity 200мс) — конец мигания «вкл-выкл за 50мс».
+3. **Убрана текст-пилюля «Обновляю...»** — осталась только тонкая полоса (меньше визуального шума).
+
+**Изменено:** [MessageSkeleton.jsx](src/native/components/MessageSkeleton.jsx) (`MessageListOverlay` → state-machine с задержкой/мин.длительностью), [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) (проп `hasContent`), [styles-messages.css](src/native/styles-messages.css) (transition + `--leaving`). Тесты overlay обновлены (+2).
+
+#### Совет 4 (прятать контент до конца загрузки) — НЕ внедрён
+
+Пересмотр выявил конфликт: задержка полосы (совет 1) + скрытый контент = **чёрный экран** на 250мс. А прятать уже видимый кэш — спорно (теряется мгновенный показ, как в Telegram). Плюс reveal-флаг живёт рядом с `chatReady`, завязанным на прокрутку (фикс скачков v0.94.2) → риск. Это UX-решение, отложено до явного выбора пользователя.
+
+**Регрессия**: lint 0, vitest 663/663, fileSizeLimits, check-memory ✅. Прокрутка (v0.94.2) и точность restore не затронуты.
 
 ---
 
@@ -49,6 +96,8 @@
 +1 регрессионный ([VirtualMessageList.vitest.jsx](src/native/components/VirtualMessageList.vitest.jsx)): scroll-контейнер обязан иметь `overflow-anchor: none` (защита от возврата к `auto`).
 
 **Регрессия**: lint 0, vitest 661/661, fileSizeLimits, check-memory ✅. Точность restore при смене чатов (v0.94.0) не затронута.
+
+**✅ Подтверждение пользователя (27 мая 2026)**: после v0.94.0–v0.94.2 скачки прокрутки прекратились — и при прокрутке вверх (load-older), и при возврате в чат. Сага scroll restore (v0.91.1 → v0.94.2) считается закрытой. Осталось 2 косметических вопроса (НЕ скачки): мерцание при первичном формировании списка (staged setState + overlay) и отсутствие skeleton при наличии кэша (показывается overlay-полоса вместо skeleton) — разбор и варианты улучшения предложены, код пока не трогали.
 
 ---
 

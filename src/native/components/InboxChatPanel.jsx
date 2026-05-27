@@ -139,26 +139,14 @@ export default function InboxChatPanel({
         </div>
       )}
       {/* v0.87.36: wrapper relative — кнопка ↓ вне scroll-контейнера + overlay-shimmer */}
-      {showFreshUnreadWindowInfo && (
-        <div className="native-unread-window-status">
-          <span className="native-unread-window-status__dot" />
-          <span>
-            {unreadWindow.unreadWindowLoading
-              ? 'Загружаю непрочитанные сообщения'
-              : 'Загружена часть непрочитанных сообщений'}
-          </span>
-          {unreadTotal > 0 && (
-            <strong>{formatUnreadCount(Math.min(unreadLoaded, unreadTotal), { exactUntil: 9999 })} из {formatUnreadCount(unreadTotal, { exactUntil: 9999 })}</strong>
-          )}
-        </div>
-      )}
+      {/* v0.94.4: широкий блок «N из M» убран — перенесён в пилюлю-облачко у кнопки ↓ (см. ниже) */}
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {/* v0.87.66: overlay-shimmer пока !chatReady — initial-scroll прыжок не виден */}
         {/* v0.87.118: overlay также при загрузке поверх кэша (1 старое сообщение → синяя полоска) */}
         {/* v0.89.37: убрано visibleMessages.length>0 — на первой загрузке топика */}
         {/* messages=0, overlay не показывался → юзер видел чёрный фон 500-600мс. */}
         {/* Теперь skeleton-overlay показывается сразу при клике (как Telegram/WhatsApp). */}
-        <MessageListOverlay show={(!chatReady) || !!messagesLoading} />
+        <MessageListOverlay show={(!chatReady) || !!messagesLoading} hasContent={visibleMessages.length > 0} />
         {/* v0.89.0: виртуализация рендера через react-window. msgsScrollRef
             синхронизируется с listRef.current.element через useEffect выше. */}
         <div style={{
@@ -233,6 +221,21 @@ export default function InboxChatPanel({
             )}
           </button>
         )}
+        {/* v0.94.4: облачко прогресса непрочитанных НАД кнопкой ↓ (вместо широкого блока сверху).
+            Клик → к первому непрочитанному (reuse scrollToBottom). Авто-гаснет при 100% через
+            CSS-класс --hidden (opacity transition), без JS-таймеров. Число растёт по мере
+            прокрутки к непрочитанным (Вариант A — как в Telegram/RocketChat). */}
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          className={'native-unread-pill' + (showFreshUnreadWindowInfo ? '' : ' native-unread-pill--hidden')}
+          title="Перейти к первому непрочитанному"
+        >
+          <span className="native-unread-pill__dot" />
+          {unreadTotal > 0 && (
+            <span>{formatUnreadCount(Math.min(unreadLoaded, unreadTotal), { exactUntil: 9999 })} / {formatUnreadCount(unreadTotal, { exactUntil: 9999 })}</span>
+          )}
+        </button>
       </div>
       {/* Input + Reply/Edit панель → InboxMessageInput (v0.87.83) */}
       <InboxMessageInput
