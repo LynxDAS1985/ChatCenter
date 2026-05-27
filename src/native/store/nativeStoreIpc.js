@@ -315,9 +315,19 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
       const existing = s.messages[chatId] || []
       // Дедупликация: если msg с таким id уже есть — обновляем на месте
       const isDup = existing.some(m => m.id === message.id)
+      // v0.95.0: держим загруженный список НЕПРЕРЫВНЫМ. Если окно стоит на старом блоке
+      // (читаем бэклог), а свежее сообщение далеко за концом загруженного (разрыв >~200
+      // сообщений) — НЕ вклеиваем: иначе массив рвётся → каскад markRead / застрявший
+      // счётчик (см. v0.94.7, mistakes/native-scroll-unread.md). Бейдж/превью/«↓N»
+      // обновляются всё равно (useNewBelowCounter слушает событие напрямую), сообщение
+      // подгрузится при прокрутке вниз непрерывно. Паттерн Telegram/Discord/Slack:
+      // live-append только когда окно «у низа». TDLib message_id = server_id << 20.
+      const GAP_LIMIT_IDS = 200 * 1048576
+      const newestLoaded = existing.length ? Number(existing[existing.length - 1].id) : 0
+      const isContiguous = !newestLoaded || (Number(message.id) - newestLoaded) <= GAP_LIMIT_IDS
       const nextMsgs = isDup
         ? existing.map(m => m.id === message.id ? message : m)
-        : [...existing, message]
+        : (isContiguous ? [...existing, message] : existing)
       return {
         ...s,
         messages: { ...s.messages, [chatId]: nextMsgs },
