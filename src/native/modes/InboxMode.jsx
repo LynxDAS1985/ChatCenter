@@ -542,18 +542,14 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       loadedIncoming, chatLastMessageId, loadedLastId, gapMessages, unreadVsLoaded,
     })
 
-    // v0.95.12: JUMP-TO-END-OF-CHAT (Telegram Desktop style). Когда непрочитанные за
-    // пределами загруженного окна (unread > loadedIncoming, gap большой) — клик ↓
-    // должен загрузить ОКНО ВОКРУГ chat.lastMessageId, а не просто крутить в низ
-    // уже загруженного (там старые сообщения, без свежих unread).
-    // Эталон: tdesktop getHistory(from=peer.last_message.id), tweb getHistory(top_message),
-    // WhatsApp Web reload around chat.lastMessageKey.
+    // v0.95.12-v0.95.14: JUMP-TO-END-OF-CHAT (Telegram Desktop style). Когда unread > loadedIncoming
+    // юзер у низа загруженного, но свежих сообщений в DOM нет → клик ↓ должен загрузить ОКНО
+    // ВОКРУГ chat.lastMessageId. См. .memory-bank/jump-to-end-saga.md — полная история итераций.
+    // v0.95.14: aroundId=lastMessageId, addOffset=-50 (context-window). Гарантирует что
+    // lastMessageId в результате (v0.95.12 offset=0 пропускал X, v0.95.13 aroundId=0
+    // подменялся TDLib на read_cursor для чатов с unread — issue #740).
+    // Эталон: Telegram Desktop getHistory(peer.last_message.id, offset=-N).
     // Гейт: chat.lastMessageId есть, unreadVsLoaded > 50, не идёт другая загрузка.
-    // v0.95.13: aroundId=0 (НЕ lastMessageId!). По TDLib spec:
-    // «If from_message_id == 0, the last message in the chat is used» — самый чистый
-    // способ захватить ИМЕННО последнее сообщение в результат. С aroundId=lastMessageId
-    // (как было v0.95.12) TDLib грузил сообщения СТРОГО СТАРШЕ X, не включая сам X →
-    // загружалось предпоследнее, не последнее (юзер видел unread=1 после reload).
     const loading = !!store.loadingMessages?.[viewKey]
     if (chatLastMessageId && unreadVsLoaded > 50 && !loading) {
       scrollDiag.logEvent('button-scroll-jump-to-end', {
@@ -561,27 +557,39 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         loadedIncoming, activeUnread,
       })
       store.loadMessages(viewKey, 100, {
-        aroundId: 0, force: true,  // v0.95.13: TDLib from=0 = last_message включительно
+        // v0.95.14: aroundId=lastMessageId + addOffset=-50 → context-window вокруг X.
+        // По TDLib spec: «negative offset → additionally newer messages» —
+        // 50 newer (нет, X последний) + X сам + 49 older = X включён в результат.
+        aroundId: chatLastMessageId,
+        addOffset: -50,
+        force: true,
       }).then(() => {
-        const elNow = msgsScrollRef.current
-        if (!elNow) return
-        // После reload state.messages[chatId] = свежие 100 сообщений. Прыжок к низу
-        // (instant — нет смысла в smooth когда виден совсем новый DOM).
-        elNow.scrollTo({ top: elNow.scrollHeight, behavior: 'instant' })
-        if (viewKey) scrollPosByChatRef.current.set(viewKey, {
-          scrollTop: elNow.scrollHeight, atBottom: true,
-        })
-        setAtBottom(true)
-        setNewBelow(0)
-        // mark-read до lastMessageId (range-ack ВСЕ непрочитанные ≤ maxId).
-        // Bypass-gate (v0.95.8) разрешает 'button-scroll' даже при unreadWindowIncomplete.
-        const lastIdNum = Number(chatLastMessageId) || 0
-        if (lastIdNum > 0 && lastIdNum > (maxEverSentRef.current || 0)) {
-          maxEverSentRef.current = lastIdNum
-          markReadCurrentView(viewKey, lastIdNum, { source: 'button-scroll' })
-        }
-        scrollDiag.logEvent('button-scroll-jump-to-end-done', {
-          chatLastMessageId, scrollTop: elNow.scrollTop, scrollHeight: elNow.scrollHeight,
+        // v0.95.14: rAF×2 — гарантия что React commit + первый paint завершились.
+        // Без этого scrollHeight может быть устаревшим (старые 100 сообщений) →
+        // scrollTo по неполному DOM → дёрг когда новые картинки догружаются.
+        // Двойной rAF: первый ждёт commit, второй ждёт layout/paint новой ленты.
+        // Эталон: tweb microtask + scroll в onLoaded callback.
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const elNow = msgsScrollRef.current
+            if (!elNow) return
+            elNow.scrollTo({ top: elNow.scrollHeight, behavior: 'instant' })
+            if (viewKey) scrollPosByChatRef.current.set(viewKey, {
+              scrollTop: elNow.scrollHeight, atBottom: true,
+            })
+            setAtBottom(true)
+            setNewBelow(0)
+            // mark-read до lastMessageId (range-ack ВСЕ непрочитанные ≤ maxId).
+            // Bypass-gate (v0.95.8) разрешает 'button-scroll' даже при unreadWindowIncomplete.
+            const lastIdNum = Number(chatLastMessageId) || 0
+            if (lastIdNum > 0 && lastIdNum > (maxEverSentRef.current || 0)) {
+              maxEverSentRef.current = lastIdNum
+              markReadCurrentView(viewKey, lastIdNum, { source: 'button-scroll' })
+            }
+            scrollDiag.logEvent('button-scroll-jump-to-end-done', {
+              chatLastMessageId, scrollTop: elNow.scrollTop, scrollHeight: elNow.scrollHeight,
+            })
+          })
         })
       }).catch((err) => {
         scrollDiag.logEvent('button-scroll-jump-to-end-error', {

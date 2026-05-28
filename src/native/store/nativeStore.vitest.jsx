@@ -313,10 +313,13 @@ describe('Telegram-like unread opening windows', () => {
     })
   })
 
-  it('v0.95.13: loadMessages с options.aroundId=0 + force — TDLib spec from=0 = last_message', async () => {
-    // По TDLib spec: from_message_id=0 → используется last_message in chat (включительно!).
-    // v0.95.12 передавал aroundId=lastMessageId → TDLib грузил СТРОГО СТАРШЕ X (не включая) →
-    // последнее сообщение пропускалось → юзер видел unread=1 после reload.
+  it('v0.95.14: jump-to-end — aroundId=lastMessageId + addOffset=-50 (context-window)', async () => {
+    // Сага v0.95.12→14 (см. .memory-bank/jump-to-end-saga.md):
+    // - v0.95.12: aroundId=lastMessageId, offset=0 → TDLib грузил СТРОГО СТАРШЕ X (баг spec)
+    // - v0.95.13: aroundId=0 → TDLib подменял на last_read_inbox_message_id (issue #740)
+    // - v0.95.14: aroundId=lastMessageId + addOffset=-50 → context-window (как tdesktop)
+    // По TDLib spec: «negative offset → additionally newer messages».
+    // from=X, offset=-50, limit=100 → 50 newer + X + 49 older = X включён.
     invokeMock.mockImplementation((channel) => {
       if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
       if (channel === 'tg:get-messages') return Promise.resolve({ ok: true, messages: [] })
@@ -334,12 +337,43 @@ describe('Telegram-like unread opening windows', () => {
     })
 
     await act(async () => {
-      // aroundId=0 — валидное значение (нужен явный != null check, не truthy).
+      // aroundId=lastMessageId явно + addOffset=-50 → context-window вокруг X.
+      await result.current.loadMessages('chat1', 100, {
+        aroundId: '9999', addOffset: -50, force: true,
+      })
+    })
+
+    // КОНТРАКТ: aroundId=9999 (явно, не 0 — TDLib не подменит), addOffset=-50 (context-window).
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-messages', {
+      chatId: 'chat1',
+      limit: 100,
+      aroundId: 9999,
+      addOffset: -50,
+    })
+  })
+
+  it('v0.95.14: backward compat — aroundId=0 без addOffset → addOffset=0 (старое поведение v0.95.13)', async () => {
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-messages') return Promise.resolve({ ok: true, messages: [] })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{
+          id: 'chat1', accountId: 'acc1', title: 'T',
+          unreadCount: 0, readInboxMaxId: 0,
+        }],
+      })
+    })
+
+    await act(async () => {
       await result.current.loadMessages('chat1', 100, { aroundId: 0, force: true })
     })
 
-    // КОНТРАКТ: aroundId=0 проходит как override (НЕ baseParams.aroundId=readInboxMaxId).
-    // addOffset=0 (force отключает unread-окно).
+    // Без addOffset → 0 (старое поведение). Override работает (aroundId=0, не readInboxMaxId).
     expect(invokeMock).toHaveBeenCalledWith('tg:get-messages', {
       chatId: 'chat1',
       limit: 100,

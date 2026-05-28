@@ -48,8 +48,8 @@ module.exports = {
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,
   // bulk-sync — разбивать дальше нет смысла, они одного домена (read/unread state).
   'src/native/store/nativeStore.vitest.jsx': {
-    ceiling: 580,
-    reason: 'v0.95.12: +2 теста для loadMessages с options.aroundId/force (jump-to-end) и без options (backward compat). v0.89.37 история: race protection для selectForumTopic. Дальнейшее разбиение — отдельный плановый шаг.'
+    ceiling: 600,
+    reason: 'v0.95.14: +1 тест для context-window (aroundId+addOffset). v0.95.12 история: jump-to-end тесты. v0.89.37 история: race protection для selectForumTopic. Дальнейшее разбиение — отдельный плановый шаг.'
   },
   // v0.89.25 (ловушка #24 forum is_forum): добавлены supergroupCache + updateSupergroup handler + getSupergroup
   // метод (~15 строк). Файл уже был на 499 при стандартном лимите 500. Минимальное превышение, разбивать

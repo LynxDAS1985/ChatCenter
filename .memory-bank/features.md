@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.13 (28 мая 2026)
+## Текущая версия: v0.95.14 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -25,6 +25,135 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.14 — Финал jump-to-end: context-window `from=lastMessageId, offset=-50` + rAF×2 для плавности
+
+**Третья и итоговая итерация саги.** Полная история в [`.memory-bank/jump-to-end-saga.md`](./jump-to-end-saga.md).
+
+#### Лог провала v0.95.13 (чат «База Темщика»)
+
+```
+chat-open  lastMessageId=3406823424  readInboxMaxId=2543845376  unread=814
+button-scroll-jump-to-end (aroundId=0, force=true)
+jump-to-end-done bottomGap=0    ← scroll к низу OK
+badge unread=814 → 0            ← mark-read сработал ✅
+
+// 4 секунды спустя — юзер кликает ↓ ещё раз:
+loadedLastId=2742026240         ← TDLib вернул окно около read_cursor (~2543M),
+chatLastMessageId=3406823424    ← а реальный последний далеко выше
+gapMessages=634                 ← gap всё ещё 634 сообщений
+```
+
+#### Новый корень — недокументированное поведение TDLib `from_message_id=0`
+
+По [TDLib issue #740](https://github.com/tdlib/td/issues/740): когда есть непрочитанные, TDLib **подменяет** `from_message_id=0` на **`last_read_inbox_message_id`** (не на `last_message`, как обещает spec). Цитата из логов TDLib: `"offset_id = 38884" (last read message)` — это видно изнутри.
+
+В нашем случае: `readInboxMaxId=2543845376` → TDLib интерпретировал `from=0` как `from=2543845376` → окно около старого read cursor.
+
+**TDLib spec врёт** в этом сценарии (или Telegram изменил поведение, не обновив docs).
+
+#### Решение v0.95.14 — context-window как Telegram Desktop
+
+```js
+loadMessages(viewKey, 100, {
+  aroundId: chatLastMessageId,    // ЯВНО передаём lastMessageId (не 0!)
+  addOffset: -50,                  // context-window: 50 newer + X + 49 older
+  force: true,
+})
+```
+
+По [TDLib spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html): «specify negative offset up to -99 to get additionally newer messages». При `from=lastMessageId, offset=-50, limit=100`:
+- 50 newer than lastMessageId (нет — он самый последний) → 0 messages
+- + lastMessageId сам (включительно)
+- + 49 older = ~50 total с lastMessageId
+
+**Главное**: `from=lastMessageId` (не 0) → TDLib **не сможет** подменить на read_cursor.
+
+#### Эталон — Telegram Desktop
+
+[Telegram Desktop](https://github.com/telegramdesktop/tdesktop) при click ↓:
+```cpp
+api->requestHistory(peer, peer.last_message.id, offset=-some_offset)
+```
+Точно тот же паттерн — `from=last_message.id` с отрицательным offset.
+
+#### Плавность — `requestAnimationFrame × 2`
+
+Сейчас `loadMessages.then(() => scrollTo)` — Promise resolved до того как React закончил commit + первый paint. `scrollHeight` мог быть устаревшим → дёрг.
+
+Решение:
+```js
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    el.scrollTo({ top: el.scrollHeight, behavior: 'instant' })
+  })
+})
+```
+
+Первый rAF ждёт React commit (new DOM mounted). Второй ждёт layout/paint (картинки/видео measured). После — scrollHeight гарантированно точный.
+
+Эталон: [Telegram Web K](https://github.com/morethanwords/tweb) делает то же через microtask + scroll в `onLoaded` callback.
+
+#### Изменения
+
+**1. [nativeStore.loadMessages](src/native/store/nativeStore.js)** — поддержка `options.addOffset`:
+```js
+const overrideAddOffset = options?.addOffset != null ? Number(options.addOffset) : null
+const unreadParams = (hasOverride && force)
+  ? {
+      limit,
+      aroundId: overrideAroundId,
+      addOffset: overrideAddOffset != null ? overrideAddOffset : 0,
+      requested: false,
+    }
+  : baseParams
+```
+
+**2. [InboxMode.scrollToBottom](src/native/modes/InboxMode.jsx)** — изменён jump-to-end:
+- `aroundId: chatLastMessageId` (НЕ 0!)
+- `addOffset: -50` (context-window)
+- `requestAnimationFrame × 2` перед `scrollTo`
+
+**3. Лог `store-load-messages`** — `override: hasOverride` (не `!!overrideAroundId`) и добавлен `addOffset`. Прошлый баг лога: `!!0=false` показывал override=false когда aroundId=0.
+
+#### Конфликты — все проверены ✅
+
+См. [jump-to-end-saga.md](./jump-to-end-saga.md):
+- Backward compat: `loadMessages` без options или без addOffset → старое поведение (`addOffset=0`)
+- `useReadByVisibility` cascade guard (v0.94.7) — не задействуется
+- `useForceReadAtBottom` threshold 30 (v0.91.13) — не задействуется
+- `unreadWindowIncomplete` gate — `source='button-scroll'` в whitelist (v0.95.8)
+- `useInitialScroll` reload → `followupRef++` без restore (v0.95.4)
+- `tg:messages` full replace — норма (юзер сам кликнул)
+
+#### Тесты
+
+[nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx):
+- **«v0.95.14: jump-to-end — aroundId=lastMessageId + addOffset=-50»** — контракт context-window
+- **«backward compat: aroundId=0 без addOffset → addOffset=0»** — старое поведение (v0.95.13 fallback)
+
+#### Сага документирована
+
+Новый файл [`.memory-bank/jump-to-end-saga.md`](./jump-to-end-saga.md) — полная история 3-х итераций (v0.95.12-14), включая:
+- Что пробовали
+- Почему не сработало
+- Что в итоге нашли
+- TDLib spec vs реальное поведение
+- Уроки для будущей работы со скроллом / `getChatHistory`
+
+#### Файлы
+
+| Файл | Что |
+|---|---|
+| [nativeStore.js](src/native/store/nativeStore.js) | `options.addOffset` поддержка + улучшен лог |
+| [InboxMode.jsx](src/native/modes/InboxMode.jsx) | jump-to-end ветка: `aroundId=lastMessageId, addOffset=-50, rAF×2` |
+| [nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) | +1 тест (context-window), обновлён backward-compat |
+| [jump-to-end-saga.md](.memory-bank/jump-to-end-saga.md) (новый) | Документация саги v0.95.12-14 |
+| [fileSizeLimitsExceptions.cjs](src/__tests__/fileSizeLimitsExceptions.cjs) | nativeStore.vitest 580→600 |
+
+**Регрессия**: lint 0, vitest 724/724 (+1 новый), fileSizeLimits 283/283, check-memory ✅.
 
 ---
 

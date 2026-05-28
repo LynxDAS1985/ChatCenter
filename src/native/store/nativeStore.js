@@ -566,17 +566,27 @@ export default function useNativeStore() {
 
   const loadMessages = useCallback(async (chatId, limit = 50, options = {}) => {
     const chat = stateRef.current.chats.find(c => c.id === chatId)
-    // v0.95.12: jump-to-end-of-chat (как Telegram Desktop). При click ↓ когда
-    // unread > loadedIncoming — реload вокруг chat.lastMessageId. options.aroundId
-    // перебивает unreadParams.aroundId. options.force отключает unread-окно.
-    // v0.95.13: aroundId=0 — валидное значение (TDLib spec: from_message_id=0 →
-    // last_message in chat). Проверка `!= null`, не truthy — иначе 0 терялся.
+    // v0.95.12-v0.95.14: jump-to-end-of-chat. См. .memory-bank/jump-to-end-saga.md
+    // v0.95.12: aroundId=lastMessageId — TDLib грузил СТРОГО СТАРШЕ X, пропуская X.
+    // v0.95.13: aroundId=0 (TDLib spec: from=0 → last_message) — НЕ сработало!
+    //   TDLib issue #740: from=0 подменяется на last_read_inbox_message_id когда есть
+    //   непрочитанные. Возвращалось окно вокруг старого read cursor, не lastMessageId.
+    // v0.95.14: aroundId=lastMessageId + addOffset=-Math.floor(limit/2) — context-window.
+    //   По TDLib spec: «negative offset up to -99 → additionally newer messages».
+    //   from=lastMessageId, offset=-50, limit=100 → 50 newer (нет, X последний) + X + 49 older
+    //   = X включён в результат. Эталон: Telegram Desktop getHistory(peer.last_message.id, -N).
     const hasOverride = options?.aroundId != null
     const overrideAroundId = hasOverride ? Number(options.aroundId) : null
+    const overrideAddOffset = options?.addOffset != null ? Number(options.addOffset) : null
     const force = !!options?.force
     const baseParams = unreadWindowRequestParams(chat?.unreadCount, chat?.readInboxMaxId, limit)
     const unreadParams = (hasOverride && force)
-      ? { limit, aroundId: overrideAroundId, addOffset: 0, requested: false }
+      ? {
+          limit,
+          aroundId: overrideAroundId,
+          addOffset: overrideAddOffset != null ? overrideAddOffset : 0,
+          requested: false,
+        }
       : baseParams
     const cachedPreview = (!stateRef.current.messages[chatId] && !force) ? loadChatCache(chatId) : null
     logNativeScroll('store-load-messages', {
@@ -586,7 +596,9 @@ export default function useNativeStore() {
       cached: cachedPreview?.length || 0,
       unread: chat?.unreadCount || 0,
       aroundId: unreadParams.aroundId,
-      override: !!overrideAroundId,
+      addOffset: unreadParams.addOffset,
+      // v0.95.14: hasOverride (true для aroundId=0 — `!! 0 = false` это баг v0.95.13 лога).
+      override: hasOverride,
       force,
     })
     // v0.89.40: IndexedDB optimistic render для обычных чатов — параллельно
