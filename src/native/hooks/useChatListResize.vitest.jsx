@@ -44,22 +44,33 @@ describe('clampChatListWidth — границы [60, 600]', () => {
   })
 })
 
-describe('isChatListCompact — порог < 200', () => {
+describe('isChatListCompact — порог < 160 (v0.95.8: 200→160)', () => {
   it('< COMPACT_THRESHOLD → true', () => {
     expect(isChatListCompact(60)).toBe(true)
-    expect(isChatListCompact(150)).toBe(true)
-    expect(isChatListCompact(199)).toBe(true)
+    expect(isChatListCompact(100)).toBe(true)
+    expect(isChatListCompact(159)).toBe(true)
   })
 
   it('>= COMPACT_THRESHOLD → false', () => {
     expect(isChatListCompact(CHAT_LIST_COMPACT_THRESHOLD)).toBe(false)
+    expect(isChatListCompact(170)).toBe(false)
     expect(isChatListCompact(340)).toBe(false)
     expect(isChatListCompact(600)).toBe(false)
+  })
+
+  it('v0.95.8: 161-199 теперь НЕ compact (был < 200, стал < 160)', () => {
+    expect(isChatListCompact(161)).toBe(false)
+    expect(isChatListCompact(180)).toBe(false)
+    expect(isChatListCompact(199)).toBe(false)
   })
 
   it('NaN → false (safe default — обычный режим)', () => {
     expect(isChatListCompact(NaN)).toBe(false)
     expect(isChatListCompact(undefined)).toBe(false)
+  })
+
+  it('CHAT_LIST_COMPACT_THRESHOLD === 160', () => {
+    expect(CHAT_LIST_COMPACT_THRESHOLD).toBe(160)
   })
 })
 
@@ -196,6 +207,41 @@ describe('useChatListResize — startResize / move / up', () => {
     const { result } = setupHook()
     act(() => { result.current.api.onPointerMove({ clientX: 9999 }) })
     expect(result.current.chatListWidthRef.current).toBe(CHAT_LIST_DEFAULT_WIDTH)
+  })
+
+  it('v0.95.8: live compact toggle ВО ВРЕМЯ drag — setState при пересечении threshold', () => {
+    const { result } = setupHook()
+    // Старт с 340px (compact=false)
+    act(() => {
+      result.current.api.startResize({
+        clientX: 500, pointerId: 1,
+        currentTarget: { setPointerCapture: vi.fn() }, preventDefault: vi.fn(),
+      })
+    })
+    expect(result.current.chatListWidth).toBe(CHAT_LIST_DEFAULT_WIDTH)
+    // Drag влево на -200 → newW = 140 (< 160 threshold) → setState срабатывает (compact toggle)
+    act(() => { result.current.api.onPointerMove({ clientX: 300 }) })
+    expect(result.current.chatListWidthRef.current).toBe(140)
+    expect(result.current.chatListWidth).toBe(140)  // state ОБНОВЛЁН — compact mode сразу
+    // Drag вправо на +20 — обратно в обычный режим (180 >= 160 → НЕ compact)
+    act(() => { result.current.api.onPointerMove({ clientX: 340 }) })
+    expect(result.current.chatListWidthRef.current).toBe(180)
+    expect(result.current.chatListWidth).toBe(180)  // state снова обновлён
+  })
+
+  it('v0.95.8: drag БЕЗ пересечения threshold НЕ обновляет state (60fps контракт)', () => {
+    const { result } = setupHook()
+    // Старт 340, drag к 300 (всё ещё > 160 — нет пересечения)
+    act(() => {
+      result.current.api.startResize({
+        clientX: 500, pointerId: 1,
+        currentTarget: { setPointerCapture: vi.fn() }, preventDefault: vi.fn(),
+      })
+    })
+    act(() => { result.current.api.onPointerMove({ clientX: 460 }) })
+    expect(result.current.chatListWidthRef.current).toBe(300)
+    // state НЕ обновлён — нет пересечения threshold
+    expect(result.current.chatListWidth).toBe(CHAT_LIST_DEFAULT_WIDTH)
   })
 
   it('onPointerUp до startResize — no-op (guard)', () => {

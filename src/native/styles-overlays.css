@@ -100,6 +100,25 @@
   to { transform: translateX(0); opacity: 1; }
 }
 
+/* v0.95.8: плавное появление/исчезновение кнопки ↓ (как Telegram Web K
+   .bubbles-corner-button). Появление — bouncy spring (overshoot 1.4) для UX-радости,
+   исчезновение — smooth fade-down с translateY+scale. pointer-events:none
+   на --leaving защищает от accidental clicks во время анимации.
+   Базовый стиль кнопки .native-scroll-bottom-btn — выше в этом файле. */
+.native-scroll-bottom-btn--entering {
+  animation: native-scroll-btn-in 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.native-scroll-bottom-btn--leaving {
+  opacity: 0;
+  transform: translateY(20px) scale(0.85);
+  pointer-events: none;
+  transition: opacity 220ms ease-out, transform 220ms ease-out;
+}
+@keyframes native-scroll-btn-in {
+  from { opacity: 0; transform: translateY(20px) scale(0.85); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* v0.95.7: drag-to-resize divider между chat-list и окном чата.
    Стили inline в ChatListResizeHandle.jsx — здесь только keyframes для подсветки. */
 .native-chat-list-resize-handle--pulse {

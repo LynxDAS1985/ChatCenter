@@ -11,9 +11,32 @@ import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
 import VirtualMessageList from './VirtualMessageList.jsx'
 import PinnedMessageBar from './PinnedMessageBar.jsx'
+import useDelayedUnmount from '../hooks/useDelayedUnmount.js'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
 import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
+
+// v0.95.8: кнопка ↓ с плавным появлением/исчезновением (bouncy spring on enter,
+// smooth fade-down on leave). useDelayedUnmount задерживает реальный unmount
+// на 220мс чтобы CSS-keyframes успели проиграть.
+function ScrollBottomButton({ visible, onClick, activeUnread, newBelow }) {
+  const { mounted, leaving } = useDelayedUnmount(visible, 220)
+  if (!mounted) return null
+  return (
+    <button
+      onClick={onClick}
+      className={`native-scroll-bottom-btn ${leaving ? 'native-scroll-bottom-btn--leaving' : 'native-scroll-bottom-btn--entering'}`}
+      title={activeUnread > 0 ? `К последнему сообщению (${activeUnread} непрочитано)` : 'К последнему сообщению'}
+    >
+      ↓
+      {(activeUnread > 0 || newBelow > 0) && (
+        <span className="native-scroll-bottom-badge">
+          {formatUnreadCount(activeUnread > 0 ? activeUnread : newBelow, { exactUntil: 9999 })}
+        </span>
+      )}
+    </button>
+  )
+}
 
 export default function InboxChatPanel({
   // chat data
@@ -186,24 +209,17 @@ export default function InboxChatPanel({
         </div>
         {/* v0.87.35/36: кнопка ↓ ВНЕ scroll-контейнера */}
         {/* v0.87.51: бейдж = activeUnread (сырой Telegram API, как в ChatListItem) */}
-        {/* v0.95.6: один клик = всегда в самый низ (Telegram-style). Убран onDoubleClick
-            (раньше был как костыль «обойти возврат к firstUnread» — теперь не нужен). */}
-        {(!atBottom || activeUnread > 0) && (
-          <button
-            onClick={scrollToBottom}
-            className="native-scroll-bottom-btn"
-            title={activeUnread > 0 ? `К последнему сообщению (${activeUnread} непрочитано)` : 'К последнему сообщению'}
-          >
-            ↓
-            {(activeUnread > 0 || newBelow > 0) && (
-              <span className="native-scroll-bottom-badge">
-                {formatUnreadCount(activeUnread > 0 ? activeUnread : newBelow, { exactUntil: 9999 })}
-              </span>
-            )}
-          </button>
-        )}
-        {/* v0.95.2: UnreadProgressPill удалён — дублировал бейдж кнопки ↓, без пользы.
-            Бейдж кнопки (activeUnread) достаточно показывает число непрочитанных. */}
+        {/* v0.95.6: один клик = всегда в самый низ (Telegram-style). Убран onDoubleClick. */}
+        {/* v0.95.8: useDelayedUnmount → плавная exit-анимация (как Telegram Web K
+            .bubbles-corner-button). visible=false → класс --leaving (opacity:0 +
+            translateY+scale) на 220мс → unmount. На появление — bouncy spring overshoot. */}
+        <ScrollBottomButton
+          visible={!atBottom || activeUnread > 0}
+          onClick={scrollToBottom}
+          activeUnread={activeUnread}
+          newBelow={newBelow}
+        />
+        {/* v0.95.2: UnreadProgressPill удалён — бейдж кнопки достаточен. */}
       </div>
       {/* Input + Reply/Edit панель → InboxMessageInput (v0.87.83) */}
       <InboxMessageInput

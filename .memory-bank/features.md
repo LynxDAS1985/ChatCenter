@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.7 (28 мая 2026)
+## Текущая версия: v0.95.8 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -23,6 +23,68 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.8 — Счётчик ↓ обнуляется + плавная анимация кнопки + live compact + порог 200→160
+
+Юзер: скрин чата «Вайбкодинг», после клика ↓ счётчик 289 остался, кнопка исчезла без анимации. Плюс по drag-resize (v0.95.7): compact срабатывает только после mouse-up + слишком рано (при ~200px).
+
+#### Fix 1 — счётчик обнуляется (gate bypass для button-scroll)
+
+В [InboxMode.jsx markReadCurrentView](src/native/modes/InboxMode.jsx#L233-L290) расширен whitelist гейта `unreadWindowIncomplete` — добавлен `'button-scroll'` в `ACTIVE_USER_SOURCES`:
+```js
+const ACTIVE_USER_SOURCES = new Set(['visibility', 'button-scroll'])
+if (unreadWindowIncomplete && !ACTIVE_USER_SOURCES.has(source)) { skip }
+```
+
+**Безопасность — 100% проверена** (audit на 6 направлениях):
+- ✅ Кнопка ↓ = **active** user intent, не **passive** (защиты v0.94.7/v0.91.13 от passive остаются нетронутыми)
+- ✅ [TDLib viewMessages spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1view_messages.html) — range-ack штатное API: «marks all messages ≤ maxId as viewed»
+- ✅ [Telegram Desktop bug c/5792](https://bugs.telegram.org/c/5792) — клик ↓ всегда mass-ack ВСЕХ непрочитанных
+- ✅ v0.95.0 закрыл root cause "дыры" — гейт срабатывает редко
+- ✅ Гейты в `useReadByVisibility` (v0.94.7 caskade guard) и `useForceReadAtBottom` (v0.91.13 threshold 30) независимые — защищают от автоматических mass-ack, не от явных кликов
+- ✅ Edge cases: forum chat → отдельная ветка `markTopicRead`; повторные клики → `maxId > maxEverSent` гейт
+
+Добавлен лог `mark-read-bypass-gate-button-scroll` для transparency — видно когда явный клик обходит гейт.
+
+#### Fix 2 — плавная анимация кнопки ↓ (useDelayedUnmount)
+
+React не имеет встроенной exit-animation при `{cond && <X/>}` — элемент удаляется мгновенно, CSS transitions не успевают. Решение — задержка реального unmount.
+
+Новый хук [useDelayedUnmount.js](src/native/hooks/useDelayedUnmount.js):
+- При `visible=false` → ставится `leaving=true` → ждём 220мс → реальный unmount
+- При `visible=true` во время leaving → snap back (отмена timer)
+- Cleanup на unmount хука → timer не зависает
+
+Новый компонент `ScrollBottomButton` в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) — обёртка над `<button>` с классами `--entering` / `--leaving` по состоянию.
+
+CSS [styles-overlays.css](src/native/styles-overlays.css):
+- **Появление**: `cubic-bezier(0.34, 1.4, 0.64, 1)` overshoot 220мс — `opacity 0→1`, `translateY 20px→0`, `scale 0.85→1`
+- **Исчезновение**: `ease-out` 220мс — `opacity 1→0`, `translateY 0→20px`, `scale 1→0.85`, `pointer-events: none` (защита от accidental clicks)
+
+Эталон: [Telegram Web K bubbles-corner-button](https://github.com/morethanwords/tweb) — тот же паттерн `transition: opacity .2s, transform .2s + translateY/scale`.
+
+#### Bonus 1 — live compact во время drag (без отпускания мыши)
+
+В [useChatListResize.js onPointerMove](src/native/hooks/useChatListResize.js) добавлен `setState` ТОЛЬКО при пересечении threshold:
+```js
+const wasCompact = isChatListCompact(prevW)
+const isCompact = isChatListCompact(newW)
+if (wasCompact !== isCompact) setChatListWidth(newW)
+```
+60fps сохраняется — React re-render 1 раз когда compact toggle, не каждый pixel. Юзер видит переход в значки **сразу во время drag**, не после mouse-up.
+
+#### Bonus 2 — порог 200 → 160 (на 20% позже)
+
+По запросу юзера «слишком рано схлопывается в значки». Compact теперь включается при `width < 160` (было `< 200`).
+
+#### Тесты — 10 новых unit-тестов
+
+- [useDelayedUnmount.vitest.jsx](src/native/hooks/useDelayedUnmount.vitest.jsx) — 6 тестов (initial visible/invisible, true→false leave→unmount timing, false→true snap-back, custom delay, cleanup)
+- [useChatListResize.vitest.jsx](src/native/hooks/useChatListResize.vitest.jsx) — 4 новых теста (порог 160 константа, 161-199 НЕ compact, live compact toggle при пересечении, drag без пересечения НЕ обновляет state)
+
+**Регрессия**: lint 0, vitest 721/721 (+10), fileSizeLimits 283/283 (+1 новый файл), check-memory ✅.
 
 ---
 

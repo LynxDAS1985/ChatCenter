@@ -20,7 +20,9 @@ import { useCallback } from 'react'
 export const CHAT_LIST_MIN_WIDTH = 60
 export const CHAT_LIST_MAX_WIDTH = 600
 export const CHAT_LIST_DEFAULT_WIDTH = 340
-export const CHAT_LIST_COMPACT_THRESHOLD = 200
+// v0.95.8: порог 200 → 160 по запросу юзера (слишком рано схлопывалось в значки).
+// Compact включается когда юзер сжал до ~160px — раньше было ~200px.
+export const CHAT_LIST_COMPACT_THRESHOLD = 160
 
 export function clampChatListWidth(w) {
   if (!Number.isFinite(w)) return CHAT_LIST_DEFAULT_WIDTH
@@ -40,11 +42,21 @@ export default function useChatListResize({
     // Drag вправо — увеличиваем ширину (handle на правом краю chat-list'а).
     const delta = e.clientX - resizeStartRef.current.x
     const newW = clampChatListWidth(resizeStartRef.current.w + delta)
+    const prevW = chatListWidthRef.current
     chatListWidthRef.current = newW
     if (chatListRef.current) {
       chatListRef.current.style.width = `${newW}px`
     }
-  }, [isResizingRef, resizeStartRef, chatListWidthRef, chatListRef])
+    // v0.95.8: live compact toggle ВО ВРЕМЯ drag. setState только при пересечении
+    // threshold (не каждый pixel) — 60fps сохраняется, React re-render лишь 1 раз
+    // когда compact ON или OFF переключается. Юзер видит переход сразу, не после
+    // отпускания мыши.
+    const wasCompact = isChatListCompact(prevW)
+    const isCompact = isChatListCompact(newW)
+    if (wasCompact !== isCompact) {
+      setChatListWidth(newW)
+    }
+  }, [isResizingRef, resizeStartRef, chatListWidthRef, chatListRef, setChatListWidth])
 
   const onPointerUp = useCallback((e) => {
     if (!isResizingRef.current) return

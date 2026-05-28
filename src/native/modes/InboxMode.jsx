@@ -267,7 +267,14 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     && activeMessageWindow?.unreadWindowComplete === false
   const markReadCurrentView = async (viewKey, maxId, options = {}) => {
     const source = options?.source || 'unknown'
-    if (unreadWindowIncomplete && source !== 'visibility') {
+    // v0.95.8: whitelist для bypass гейта unreadWindowIncomplete.
+    // - 'visibility': IntersectionObserver per-msg (защита от каскада в v0.94.7 useReadByVisibility)
+    // - 'button-scroll': явный клик юзера ↓ "к последнему" = эквивалент Telegram Desktop
+    //   scroll-to-bottom + mark-all-as-read. TDLib viewMessages range-ack — штатное API.
+    //   Mass-ack guards в useReadByVisibility (v0.94.7) и useForceReadAtBottom (v0.91.13)
+    //   защищают от passive scroll-trigger, тут — active user intent.
+    const ACTIVE_USER_SOURCES = new Set(['visibility', 'button-scroll'])
+    if (unreadWindowIncomplete && !ACTIVE_USER_SOURCES.has(source)) {
       scrollDiag.logEvent('mark-read-skip-unread-window', {
         viewKey,
         unread: activeUnread,
@@ -276,6 +283,12 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         maxId,
       })
       return { ok: true, skipped: true, reason: 'unread-window-incomplete' }
+    }
+    // v0.95.8: лог для transparency — видно когда явный клик ↓ обходит гейт.
+    if (unreadWindowIncomplete && source === 'button-scroll') {
+      scrollDiag.logEvent('mark-read-bypass-gate-button-scroll', {
+        viewKey, maxId, unread: activeUnread, loadedIncoming: loadedIncomingCount,
+      })
     }
     if (activeChat?.isForum) {
       if (!activeTopic) return { ok: true, skipped: true }
