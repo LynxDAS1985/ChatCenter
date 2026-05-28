@@ -520,12 +520,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // - setAtBottom(true), setNewBelow(0), сохранение позиции — как в старом scrollToAbsoluteBottom.
   // Удалены: scrollToAbsoluteBottom, handleScrollButtonClick (220мс double-click timer),
   // handleScrollButtonDoubleClick — больше не нужны (один клик = один результат).
-  // v0.95.9: пользователь жмёт ↓ "хочу в самый низ". Mark-intent ref сохраняется
-  // на 4 секунды — пока активен, useEffect ниже отслеживает scrollHeight и при
-  // дозагрузке load-newer повторно прокручивает к низу (юзер видит loading-pulse
-  // на кнопке + продолжение скролла без дёрга).
-  const scrollIntentRef = useRef({ active: false, expiresAt: 0 })
-
   const scrollToBottom = () => {
     const el = msgsScrollRef.current
     if (!el) return
@@ -535,9 +529,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       activeUnread, deltaPx, behavior, messages: activeMessages.length,
     })
     el.scrollTo({ top: el.scrollHeight, behavior })
-    // v0.95.9: ставим intent. expiresAt 4s — этого достаточно для нескольких load-newer
-    // батчей при unread > загруженного. Reset при user-scroll (см. useEffect ниже).
-    scrollIntentRef.current = { active: true, expiresAt: Date.now() + 4000 }
     const viewKey = activeViewKey || store.activeChatId
     if (viewKey) scrollPosByChatRef.current.set(viewKey, { scrollTop: el.scrollHeight, atBottom: true })
     setAtBottom(true)
@@ -549,29 +540,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       markReadCurrentView(viewKey, lastId, { source: 'button-scroll' })
     }
   }
-
-  // v0.95.9: после клика ↓ продолжаем скролл вниз когда подгружается новое окно
-  // (load-newer). Без этого юзер видит дёрг: scroll встал, появилось "Загружаю ещё...",
-  // 100 сообщений добавились но scroll не сдвинулся. Теперь — autoscroll после load.
-  useLayoutEffect(() => {
-    const intent = scrollIntentRef.current
-    if (!intent.active) return
-    if (Date.now() > intent.expiresAt) {
-      scrollIntentRef.current = { active: false, expiresAt: 0 }
-      return
-    }
-    const el = msgsScrollRef.current
-    if (!el) return
-    const bottomGap = el.scrollHeight - el.scrollTop - el.clientHeight
-    // Если ещё не у низа после load-newer → довинтить мгновенно
-    if (bottomGap > 4) {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'instant' })
-    }
-    // Если loading закончился и мы внизу — снимаем intent
-    if (!loadingNewer && bottomGap <= 4) {
-      scrollIntentRef.current = { active: false, expiresAt: 0 }
-    }
-  }, [activeMessages.length, loadingNewer])
 
   // v0.87.27: клик по reply-цитате — скроллим к оригиналу + 1.5с жёлтое мерцание.
   // v0.89.0: при виртуализации reply-target может быть вне видимого DOM →
