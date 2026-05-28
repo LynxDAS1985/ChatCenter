@@ -161,6 +161,24 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
     }
     return r
   })
+  // v0.95.15: ИТЕРАТИВНЫЙ fetch для jump-to-end-of-chat.
+  // TDLib намеренно возвращает меньше limit (issue #740) → итерируем пока не наберём
+  // targetCount ИЛИ не получим untilMessageId. См. .memory-bank/jump-to-end-saga.md.
+  handle('tg:get-messages-iterate', async (params = {}) => {
+    const r = await backend.messages.getIterativeUntil(params)
+    if (r?.ok && Array.isArray(r.messages)) {
+      sendToRenderer('tg:messages', {
+        chatId: params.chatId,
+        messages: r.messages,
+        append: false,
+        appendNewer: false,
+        readUpTo: 0,
+        aroundId: 0,
+        afterId: 0,
+      })
+    }
+    return r
+  })
   handle('tg:get-topic-messages', async (params = {}) => {
     const r = await backend.messages.getTopic(params)
     if (r?.ok && Array.isArray(r.messages)) {

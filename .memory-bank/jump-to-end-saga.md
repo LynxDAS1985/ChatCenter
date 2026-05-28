@@ -97,7 +97,135 @@ loadedLastId=2742026240  chatLastMessageId=3406823424  gapMessages=634
 
 ---
 
-### v0.95.14 — попытка #3: `aroundId=lastMessageId, offset=-50` (context-window)
+### v0.95.14 — попытка #3: `aroundId=lastMessageId, offset=-50` (context-window) — **ПРОВАЛ**
+
+**Гипотеза:** context-window вокруг lastMessageId через `from=X, offset=-50, limit=100` (паттерн как `afterId` в load-newer).
+
+**Результат:** ❌ **Не сработало** — TDLib вернул **только 1 сообщение** (сам lastMessageId).
+
+**Лог чата «Компьютерная IT, Digital» (17:00:03):**
+```
+store-load-messages aroundId=9132048384 addOffset=-50 force=true
+[get-msgs] from=9132048384 offset=-50 count=1 first=9132048384 last=9132048384 hasMore=false
+                                              ↑
+                                       Один! Не 100!
+```
+
+После reload `state.messages[chatId] = [lastMessageId]` — массив из 1 элемента. Юзер видит **одно** сообщение, потом докручивает colorom скролл-колесом и каждый load-newer добавляет по 1-2 сообщения.
+
+---
+
+## 🎯 КОРНЕВОЙ ОТВЕТ ОТ АВТОРА TDLib (levlam)
+
+[TDLib issue #740 comment](https://github.com/tdlib/td/issues/740) — официальный ответ автора TDLib:
+
+> «This is expected and described in the method description: **`For optimal performance the number of returned messages is chosen by the library`**. See https://core.telegram.org/tdlib/getting-started#getting-chat-messages for more details.»
+
+**TDLib НАМЕРЕННО возвращает меньше чем `limit`** — это не баг. Это оптимизация для performance.
+
+[TDLib getting-started — Getting chat messages](https://core.telegram.org/tdlib/getting-started#getting-chat-messages):
+
+> «To get more messages than can be returned in one response, the Application needs to pass the identifier of the last message it has received as `from_message_id` to next request.»
+
+**Официальный паттерн — ИТЕРАТИВНЫЕ вызовы**. Один invoke не гарантирует limit messages.
+
+### Из того же issue — пример официального паттерна (от ivanstepanovftw)
+
+```cpp
+void send_history_query(chat_id, from_message_id, offset, history_size, ...) {
+    send_query(getChatHistory(chat_id, from_message_id, offset, history_size, ...),
+      [...](auto messages) {
+        ssize_t next_from_message_id = messages->messages_.back()->id_;
+        ssize_t remaining = history_size - messages->messages_.size();
+        on_messages_received(messages);
+        if (remaining > 0 && !messages->empty()) {
+            send_history_query(chat_id, next_from_message_id, offset, remaining, ...);
+            //                          ↑ next from_message_id = последний полученный
+        }
+      });
+}
+```
+
+**Это рекурсивный/итеративный fetch пока не наберём желаемое количество.**
+
+---
+
+## 🔑 ВЫВОДЫ И УРОКИ ДЛЯ БУДУЩЕГО
+
+### 1. TDLib `getChatHistory` НЕ гарантирует `limit` messages в одном вызове
+
+По [официальному getting-started](https://core.telegram.org/tdlib/getting-started#getting-chat-messages): «**number of returned messages is chosen by the library**». Может вернуть 1, 5, 50, 100 — на усмотрение TDLib.
+
+**Никогда не предполагай что один invoke `getChatHistory` вернёт `limit` сообщений.**
+
+### 2. Для load N messages — итеративный паттерн
+
+```
+collected = []
+cursor = from_message_id
+while collected.length < N:
+  result = getChatHistory(from=cursor, offset, limit)
+  if result.empty: break
+  collected += result.messages
+  cursor = result.messages.last().id  // продолжаем от последнего полученного
+```
+
+### 3. У нас уже есть похожий паттерн в **load-newer** ([useInboxNewerPrefetch.js](../src/native/hooks/useInboxNewerPrefetch.js))
+
+Юзер прокручивает вниз → `maybeTrigger` запускает `loadNewerMessages(afterId, 100)` → когда DOM рендерит → если ещё не у низа → следующий trigger → итерация.
+
+Это **именно** тот паттерн что рекомендует TDLib. Просто триггерится через user-scroll.
+
+### 4. Для **jump-to-end-of-chat** правильно делать **scroll trigger**, не reload
+
+Telegram Web K не делает reload вокруг lastMessageId — у них **SlicedArray** с lazy iterations. Каждый visible-out-of-data slot триггерит fetch.
+
+### 5. `from_message_id=0` — рабочий по TDLib spec
+
+По getting-started: «**from_message_id == 0 to get messages from the last message**». Это **правильно**. Просто TDLib может вернуть **мало**.
+
+Возможный сценарий v0.95.13 (Архиватор IT, `loadedLast=5632950272 < lastMessageId=5633998848`):
+- TDLib local cache имел старые messages
+- `from=0` вернул что было в cache (limited by library optimization)
+- lastMessageId был ещё не sync'ан → не в результате
+
+Это **race condition** с TDLib state, не «подмена на read_cursor» как я предполагал.
+
+---
+
+## ✅ Правильный подход — v0.95.15
+
+**Вариант A (рекомендованный) — итеративный fetch с `from=0`**:
+1. mark-read до chatLastMessageId сразу (счётчик 0 на сервере)
+2. loadMessages с `aroundId=0, force=true` (TDLib spec для last)
+3. Если result.messages.length < ~50 — повторить с `aroundId=last_received.id, offset=0` чтобы догрузить older
+4. После накопления — scroll to bottom
+
+**Вариант B (через scroll-triggered iteration)**:
+1. mark-read до chatLastMessageId
+2. loadMessages с `aroundId=0, force=true` (получить какие-то messages у конца)
+3. `scrollTo(scrollHeight)` (юзер у конца загруженного)
+4. Существующий load-newer через `handleScroll` будет догружать пока юзер у низа
+
+**Вариант C (НЕ делать reload вообще)**:
+- При unread > loadedIncoming → много раз вызывать `loadNewerMessages(afterId, 100)` пока не достигнем lastMessageId
+- Этот паттерн уже есть в `useInboxNewerPrefetch` — переиспользовать
+
+---
+
+## 🔥 КЛЮЧЕВЫЕ ВЫВОДЫ ДЛЯ MEMORY BANK
+
+### TDLib `getChatHistory` known behaviors
+
+| Параметры | Реальное поведение | Документ-ссылка |
+|---|---|---|
+| `from=0, offset=0, limit=N` | Возвращает **до N** последних сообщений. Может вернуть **сильно меньше** N (TDLib optimization) | [getting-started](https://core.telegram.org/tdlib/getting-started#getting-chat-messages) |
+| `from=X, offset=0, limit=N` | Возвращает **до N** сообщений **строго старше** X, **БЕЗ X**. Реально может вернуть меньше | [class ref](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html) |
+| `from=X, offset=-K, limit=N` (K>0) | Возвращает **до K** newer than X + X + до (N-K-1) older. Если newer нет, может вернуть **только X** | TDLib library optimization |
+
+### ВСЕГДА используй итеративный fetch для гарантированного `N` messages
+
+**Никогда не предполагай** что один invoke `getChatHistory` достаточен. Это **критически важное** правило при работе с TDLib.
 
 **Гипотеза:** Передать `lastMessageId` явно + использовать **отрицательный offset** для context-window. По TDLib spec: `offset=-50, limit=100` → 50 messages newer than X + X itself + 49 older = ~100 total.
 

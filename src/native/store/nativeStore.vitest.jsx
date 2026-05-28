@@ -352,6 +352,37 @@ describe('Telegram-like unread opening windows', () => {
     })
   })
 
+  it('v0.95.15: loadMessagesUntil → IPC tg:get-messages-iterate с untilMessageId+targetCount', async () => {
+    // TDLib не гарантирует limit в одном invoke (issue #740). Iterative fetch.
+    // См. .memory-bank/jump-to-end-saga.md — почему НЕ работают одиночные invokes.
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-messages-iterate') return Promise.resolve({
+        ok: true, iterations: 2, messages: [],
+      })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'T', unreadCount: 1000, lastMessageId: '9999' }],
+      })
+    })
+
+    await act(async () => {
+      await result.current.loadMessagesUntil('chat1', '9999', 100)
+    })
+
+    // КОНТРАКТ: вызов tg:get-messages-iterate с untilMessageId, targetCount, maxIterations
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-messages-iterate', {
+      chatId: 'chat1',
+      untilMessageId: '9999',
+      targetCount: 100,
+      maxIterations: 5,
+    })
+  })
+
   it('v0.95.14: backward compat — aroundId=0 без addOffset → addOffset=0 (старое поведение v0.95.13)', async () => {
     invokeMock.mockImplementation((channel) => {
       if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })

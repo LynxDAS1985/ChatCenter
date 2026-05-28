@@ -261,6 +261,72 @@ export function createTdlibBackend(opts = {}) {
         try { const m = r?.messages || []; console.log('[get-msgs] chat=' + params.chatId + ' afterId=' + Number(params.afterId || 0) + ' from=' + fromMessageId + ' offset=' + offset + ' count=' + m.length + ' first=' + (m[0]?.id || '-') + ' last=' + (m[m.length - 1]?.id || '-') + ' hasMore=' + r?.hasMore) } catch (_) {}
         return r
       },
+      // v0.95.15: ИТЕРАТИВНЫЙ fetch для jump-to-end-of-chat.
+      // КРИТИЧЕСКИ ВАЖНО: TDLib `getChatHistory` намеренно возвращает МЕНЬШЕ чем `limit`
+      // («For optimal performance the number of returned messages is chosen by the library»,
+      // [official issue #740](https://github.com/tdlib/td/issues/740) — ответ levlam).
+      // Официальный паттерн ([getting-started](https://core.telegram.org/tdlib/getting-started#getting-chat-messages)):
+      // «To get more messages than can be returned in one response, the Application needs to
+      //  pass the identifier of the last message it has received as from_message_id to next request.»
+      // Делаем итерации:
+      //   - Iter 1: from=0 (TDLib spec: last_message) → получаем какое-то количество свежих
+      //   - Iter N: from=oldest_collected.id, offset=0 → ещё older чем оlдест
+      // Останавливаемся когда: набрали targetCount ИЛИ untilMessageId уже в collected ИЛИ
+      //   пустой ответ ИЛИ достигли maxIterations (защита от бесконечного цикла).
+      // См. .memory-bank/jump-to-end-saga.md — полная история 4 итераций v0.95.12-15.
+      async getIterativeUntil(params) {
+        const ctx = getClientForChat(manager, params?.chatId)
+        if (ctx.error) return { ...ctx.error, messages: [], hasMore: false }
+        const targetCount = Math.min(Math.max(Number(params.targetCount) || 100, 1), 100)
+        const untilMessageId = params?.untilMessageId ? String(params.untilMessageId) : null
+        const maxIterations = Math.min(Math.max(Number(params.maxIterations) || 5, 1), 10)
+        const extras = makeExtras(manager, ctx.accountId)
+
+        let collected = []
+        let cursor = 0  // iter 1: from=0 (TDLib spec → last_message)
+        let iterations = 0
+        let lastError = null
+
+        for (let i = 0; i < maxIterations; i++) {
+          iterations = i + 1
+          const r = await getChatHistory(ctx.client, ctx.rawId, {
+            limit: 100,
+            fromMessageId: cursor,
+            offset: 0,
+            chatIdStr: params.chatId,
+            extras,
+          })
+          if (!r?.ok) { lastError = r; break }
+          const incoming = r.messages || []
+          if (incoming.length === 0) break
+          // Dedup: фильтруем уже собранные
+          const existingIds = new Set(collected.map(m => String(m.id)))
+          const newMessages = incoming.filter(m => m?.id && !existingIds.has(String(m.id)))
+          if (newMessages.length === 0) break  // все дубли — TDLib не даёт больше
+          // Merge + sort по id ASC (от старого к новому, как ожидает UI)
+          collected = [...collected, ...newMessages].sort((a, b) => {
+            const aId = Number(a.id), bId = Number(b.id)
+            return aId - bId
+          })
+          // Достигли untilMessageId? → готово
+          if (untilMessageId && collected.some(m => String(m.id) === untilMessageId)) break
+          // Достаточно? → готово
+          if (collected.length >= targetCount) break
+          // Следующая итерация: продолжаем от старейшего полученного (older)
+          cursor = String(collected[0].id)
+        }
+
+        try {
+          console.log('[get-msgs-iter] chat=' + params.chatId
+            + ' iterations=' + iterations + ' collected=' + collected.length
+            + ' target=' + targetCount + ' until=' + (untilMessageId || '-')
+            + ' first=' + (collected[0]?.id || '-')
+            + ' last=' + (collected[collected.length - 1]?.id || '-'))
+        } catch (_) {}
+
+        if (lastError && collected.length === 0) return lastError
+        return { ok: true, messages: collected, hasMore: false, iterations }
+      },
       // v0.89.30 (ловушка #29): isGeneral → getChatHistory, иначе
       // getMessageThreadHistory(threadMessageId) — РЕАЛЬНЫЙ message_thread_id (int53).
       async getTopic(params) {

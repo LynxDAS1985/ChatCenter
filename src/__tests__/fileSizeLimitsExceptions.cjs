@@ -41,22 +41,22 @@ module.exports = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 1080,
-    reason: 'v0.95.12: loadMessages options.aroundId/force override для jump-to-end-of-chat (+15 строк). v0.89.40 история: IndexedDB cache + loadOlder/Newer + TTL cleanup. Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
+    ceiling: 1150,
+    reason: 'v0.95.15: loadMessagesUntil итеративный fetch для jump-to-end (+47 строк). v0.95.12 история: loadMessages options.aroundId/force. v0.89.40: IndexedDB cache + loadOlder/Newer + TTL cleanup. Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
   },
   // v0.88.x: профильные тесты v0.88.x вынесены в nativeStoreUnreadPrefetch.vitest.jsx (218 строк).
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,
   // bulk-sync — разбивать дальше нет смысла, они одного домена (read/unread state).
   'src/native/store/nativeStore.vitest.jsx': {
-    ceiling: 600,
-    reason: 'v0.95.14: +1 тест для context-window (aroundId+addOffset). v0.95.12 история: jump-to-end тесты. v0.89.37 история: race protection для selectForumTopic. Дальнейшее разбиение — отдельный плановый шаг.'
+    ceiling: 640,
+    reason: 'v0.95.15: +1 тест для loadMessagesUntil (IPC tg:get-messages-iterate). v0.95.14: context-window. v0.95.12: jump-to-end. v0.89.37: race protection. Дальнейшее разбиение — отдельный плановый шаг.'
   },
   // v0.89.25 (ловушка #24 forum is_forum): добавлены supergroupCache + updateSupergroup handler + getSupergroup
   // метод (~15 строк). Файл уже был на 499 при стандартном лимите 500. Минимальное превышение, разбивать
   // tdlibBackend (auth/chats/messages/media/forum в одном модуле) — отдельная архитектурная задача.
   'main/native/backends/tdlibBackend.js': {
-    ceiling: 550,
-    reason: 'v0.89.25: один backend для auth/chats/messages/media/forum/storage. Разбивать требует extract по доменам (отдельная плановая задача).'
+    ceiling: 640,
+    reason: 'v0.95.15: getIterativeUntil — итеративный fetch для jump-to-end (+65 строк, см. .memory-bank/jump-to-end-saga.md). v0.89.25 история: один backend для auth/chats/messages/media/forum/storage. Разбивать требует extract по доменам (отдельная плановая задача).'
   },
   'main/native/backends/tdlibClient.js': {
     ceiling: 550,

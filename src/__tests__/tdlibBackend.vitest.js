@@ -150,6 +150,115 @@ describe('backend.messages', () => {
     expect(r.messages[0].senderName).toBe('Иван')
   })
 
+  // v0.95.15: ИТЕРАТИВНЫЙ fetch для jump-to-end. См. .memory-bank/jump-to-end-saga.md.
+  // TDLib namerenno возвращает меньше чем limit (issue #740). Backend делает
+  // несколько вызовов с обновляющимся from_message_id пока не наберём targetCount
+  // ИЛИ не получим untilMessageId.
+  describe('messages.getIterativeUntil (v0.95.15)', () => {
+    function makeMsg(id, content = 'msg') {
+      return {
+        '@type': 'message', id: Number(id), chat_id: -1001,
+        sender_id: { '@type': 'messageSenderUser', user_id: 42 },
+        is_outgoing: false, date: 1715000000, media_album_id: '0',
+        content: { '@type': 'messageText', text: { text: content, entities: [] } },
+      }
+    }
+
+    it('итерирует пока не наберёт targetCount', async () => {
+      const { backend, mockClient } = makeBackend()
+      // Iter 1: возвращает 30 messages (TDLib chose less than 100)
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: Array.from({ length: 30 }, (_, i) => makeMsg(100 - i)),
+      })
+      // Iter 2: возвращает ещё 30 (older)
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: Array.from({ length: 30 }, (_, i) => makeMsg(70 - i)),
+      })
+      // Iter 3: возвращает ещё 30 — теперь набрали 90
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: Array.from({ length: 30 }, (_, i) => makeMsg(40 - i)),
+      })
+      // Iter 4: ещё 30 → 120 → достаточно
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: Array.from({ length: 30 }, (_, i) => makeMsg(10 - i)),
+      })
+
+      const r = await backend.messages.getIterativeUntil({
+        chatId: 'tg_main:-1001',
+        targetCount: 100,
+        maxIterations: 5,
+      })
+      expect(r.ok).toBe(true)
+      expect(r.messages.length).toBeGreaterThanOrEqual(100)
+      expect(r.iterations).toBeGreaterThan(1)  // multi-iteration работает
+    })
+
+    it('останавливается когда untilMessageId в collected', async () => {
+      const { backend, mockClient } = makeBackend()
+      // Iter 1: возвращает messages 100, 99, ..., 80 (включая until=95)
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: Array.from({ length: 21 }, (_, i) => makeMsg(100 - i)),
+      })
+
+      const r = await backend.messages.getIterativeUntil({
+        chatId: 'tg_main:-1001',
+        untilMessageId: '95',
+        targetCount: 100,
+        maxIterations: 5,
+      })
+      expect(r.ok).toBe(true)
+      expect(r.iterations).toBe(1)  // нашли after first iter
+      expect(r.messages.some(m => String(m.id) === '95')).toBe(true)
+    })
+
+    it('останавливается при пустом ответе (конец истории)', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({ messages: [makeMsg(50)] })
+      mockClient.invoke.mockResolvedValueOnce({ messages: [] })  // empty → stop
+
+      const r = await backend.messages.getIterativeUntil({
+        chatId: 'tg_main:-1001',
+        targetCount: 100,
+      })
+      expect(r.ok).toBe(true)
+      expect(r.messages.length).toBe(1)
+      expect(r.iterations).toBe(2)  // 1 iter с данными + 1 empty
+    })
+
+    it('защита от бесконечного цикла — maxIterations clamp [1, 10]', async () => {
+      const { backend, mockClient } = makeBackend()
+      // Всегда возвращает дубль одного и того же — TDLib stuck
+      mockClient.invoke.mockResolvedValue({ messages: [makeMsg(50)] })
+
+      const r = await backend.messages.getIterativeUntil({
+        chatId: 'tg_main:-1001',
+        targetCount: 100,
+        maxIterations: 999,  // попытка переопределить clamp
+      })
+      expect(r.ok).toBe(true)
+      // 1 первая iter с msg=50, потом vsё дубли → стоп. Меньше 10 итераций.
+      expect(r.iterations).toBeLessThanOrEqual(10)
+    })
+
+    it('возвращает messages отсортированные по id ASC', async () => {
+      const { backend, mockClient } = makeBackend()
+      // TDLib возвращает в reverse-chrono (от нового к старому), наш getChatHistory
+      // делает reverse → ASC. Iterative должен сохранить ASC после merge.
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: [makeMsg(100), makeMsg(99), makeMsg(98)],
+      })
+
+      const r = await backend.messages.getIterativeUntil({
+        chatId: 'tg_main:-1001',
+        targetCount: 100,
+        maxIterations: 1,
+      })
+      expect(r.ok).toBe(true)
+      const ids = r.messages.map(m => Number(m.id))
+      expect(ids).toEqual([...ids].sort((a, b) => a - b))
+    })
+  })
+
   it('send корректно парсит chatId и вызывает sendMessage', async () => {
     const { backend, mockClient } = makeBackend()
     mockClient.invoke.mockResolvedValueOnce({

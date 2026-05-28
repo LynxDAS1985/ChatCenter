@@ -690,6 +690,53 @@ export default function useNativeStore() {
     return result
   }, [])
 
+  // v0.95.15: ИТЕРАТИВНЫЙ fetch до untilMessageId (для jump-to-end-of-chat).
+  // Использует backend handler `tg:get-messages-iterate` (itetative fetch с maxIter=5).
+  // tg:messages event придёт автоматически и обновит state.messages[chatId].
+  // См. .memory-bank/jump-to-end-saga.md — почему НЕ работают одиночные invokes.
+  const loadMessagesUntil = useCallback(async (chatId, untilMessageId, targetCount = 100) => {
+    const chat = stateRef.current.chats.find(c => c.id === chatId)
+    logNativeScroll('store-load-messages-iterate', {
+      chatId,
+      untilMessageId: untilMessageId ? String(untilMessageId) : null,
+      targetCount,
+      hadMessages: !!stateRef.current.messages[chatId],
+      unread: chat?.unreadCount || 0,
+    })
+    setState(s => ({ ...s, loadingMessages: { ...s.loadingMessages, [chatId]: true } }))
+    const result = await window.api?.invoke('tg:get-messages-iterate', {
+      chatId,
+      untilMessageId: untilMessageId ? String(untilMessageId) : null,
+      targetCount,
+      maxIterations: 5,
+    })
+    if (!result?.ok) {
+      setState(s => { const lm = { ...s.loadingMessages }; delete lm[chatId]; return { ...s, loadingMessages: lm } })
+    } else {
+      setState(s => ({
+        ...s,
+        messageWindows: {
+          ...(s.messageWindows || {}),
+          [chatId]: buildUnreadWindowMeta({
+            messages: result.messages || [],
+            unreadCount: chat?.unreadCount || 0,
+            readInboxMaxId: chat?.readInboxMaxId || 0,
+            requested: false,
+            aroundId: 0,
+            loading: false,
+          }),
+        },
+      }))
+      if (Array.isArray(result.messages)) {
+        saveCacheMessages(chatId, null, result.messages, {
+          unreadCount: chat?.unreadCount || 0,
+          readInboxMaxId: chat?.readInboxMaxId || 0,
+        }).catch(() => {})
+      }
+    }
+    return result
+  }, [])
+
   const loadForumTopics = useCallback(async (chatId, limit = 50) => {
     if (!chatId) return { ok: false, isForum: false, topics: [] }
     setState(s => ({ ...s, forumTopicsLoading: { ...(s.forumTopicsLoading || {}), [chatId]: true } }))
@@ -1070,7 +1117,7 @@ export default function useNativeStore() {
     ...state,
     setMode, setActiveAccount, setActiveChat, setChatFilter, closeForumTopics,
     startLogin, submitCode, submitPassword, cancelLogin,
-    loadChats, loadCachedChats, checkConnection, loadMessages, loadForumTopics, selectForumTopic, loadOlderMessages, loadNewerMessages,
+    loadChats, loadCachedChats, checkConnection, loadMessages, loadMessagesUntil, loadForumTopics, selectForumTopic, loadOlderMessages, loadNewerMessages,
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
     getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, markTopicRead, setTyping,

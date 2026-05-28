@@ -542,33 +542,26 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       loadedIncoming, chatLastMessageId, loadedLastId, gapMessages, unreadVsLoaded,
     })
 
-    // v0.95.12-v0.95.14: JUMP-TO-END-OF-CHAT (Telegram Desktop style). Когда unread > loadedIncoming
-    // юзер у низа загруженного, но свежих сообщений в DOM нет → клик ↓ должен загрузить ОКНО
-    // ВОКРУГ chat.lastMessageId. См. .memory-bank/jump-to-end-saga.md — полная история итераций.
-    // v0.95.14: aroundId=lastMessageId, addOffset=-50 (context-window). Гарантирует что
-    // lastMessageId в результате (v0.95.12 offset=0 пропускал X, v0.95.13 aroundId=0
-    // подменялся TDLib на read_cursor для чатов с unread — issue #740).
-    // Эталон: Telegram Desktop getHistory(peer.last_message.id, offset=-N).
-    // Гейт: chat.lastMessageId есть, unreadVsLoaded > 50, не идёт другая загрузка.
+    // v0.95.12-v0.95.15: JUMP-TO-END-OF-CHAT через ИТЕРАТИВНЫЙ fetch.
+    // См. .memory-bank/jump-to-end-saga.md — полная история провалов v0.95.12-14.
+    // КОРЕНЬ: TDLib `getChatHistory` намеренно возвращает меньше `limit` (issue #740,
+    //   ответ levlam: «For optimal performance the number of returned messages is
+    //   chosen by the library»). Один invoke возвращает 1-50 messages, не 100.
+    // ОФИЦИАЛЬНЫЙ ПАТТЕРН (getting-started/getting-chat-messages): итеративный fetch
+    //   с from=last_received.id пока не набрали targetCount.
+    // v0.95.15: store.loadMessagesUntil → backend `tg:get-messages-iterate` (до 5 итераций).
+    //   Гарантирует untilMessageId=chatLastMessageId в результате.
+    // Эталон: TDLib official issue #740 рекомендованный паттерн.
     const loading = !!store.loadingMessages?.[viewKey]
     if (chatLastMessageId && unreadVsLoaded > 50 && !loading) {
       scrollDiag.logEvent('button-scroll-jump-to-end', {
         chatLastMessageId, loadedLastId, gapMessages, unreadVsLoaded,
         loadedIncoming, activeUnread,
       })
-      store.loadMessages(viewKey, 100, {
-        // v0.95.14: aroundId=lastMessageId + addOffset=-50 → context-window вокруг X.
-        // По TDLib spec: «negative offset → additionally newer messages» —
-        // 50 newer (нет, X последний) + X сам + 49 older = X включён в результат.
-        aroundId: chatLastMessageId,
-        addOffset: -50,
-        force: true,
-      }).then(() => {
+      store.loadMessagesUntil(viewKey, chatLastMessageId, 100).then((result) => {
         // v0.95.14: rAF×2 — гарантия что React commit + первый paint завершились.
         // Без этого scrollHeight может быть устаревшим (старые 100 сообщений) →
         // scrollTo по неполному DOM → дёрг когда новые картинки догружаются.
-        // Двойной rAF: первый ждёт commit, второй ждёт layout/paint новой ленты.
-        // Эталон: tweb microtask + scroll в onLoaded callback.
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             const elNow = msgsScrollRef.current
@@ -587,7 +580,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
               markReadCurrentView(viewKey, lastIdNum, { source: 'button-scroll' })
             }
             scrollDiag.logEvent('button-scroll-jump-to-end-done', {
-              chatLastMessageId, scrollTop: elNow.scrollTop, scrollHeight: elNow.scrollHeight,
+              chatLastMessageId,
+              iterations: result?.iterations || 0,
+              messagesLoaded: result?.messages?.length || 0,
+              scrollTop: elNow.scrollTop,
+              scrollHeight: elNow.scrollHeight,
             })
           })
         })

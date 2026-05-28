@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.14 (28 мая 2026)
+## Текущая версия: v0.95.15 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.8-9.md`](./archive/features-v0.95.8-9.md) | v0.95.8 – v0.95.9 (счётчик ↓ обнуляется + анимация + live compact + порог 128) | ~14 КБ |
 | [`archive/features-v0.95.5-7.md`](./archive/features-v0.95.5-7.md) | v0.95.5 – v0.95.7 (sticky pinned overlay, кнопка ↓ Telegram-style, drag-to-resize) | ~24 КБ |
 | [`archive/features-v0.95.0-3.md`](./archive/features-v0.95.0-3.md) | v0.95.0 – v0.95.3 (контигуити-фикс, afterId load-newer, мигание ↓ Schmitt trigger, диагностика «дёрг») | ~13 КБ |
 | [`archive/features-v0.94.1-7.md`](./archive/features-v0.94.1-7.md) | v0.94.1 – v0.94.7 (TDLib listener leak, scroll caskade, спокойная загрузка, пилюля прогресса — стабилизированы v0.95.0-2) | ~24 КБ |
@@ -25,6 +26,128 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.15 — Итеративный fetch для jump-to-end (по TDLib официальному паттерну)
+
+**Четвёртая и финальная итерация саги** (v0.95.12-15). Полная история в [`.memory-bank/jump-to-end-saga.md`](./jump-to-end-saga.md).
+
+#### Корень провала v0.95.14 — найден в логе
+
+Чат «Компьютерная IT, Digital» с `unread=725`, `lastMessageId=9132048384`:
+```
+store-load-messages aroundId=9132048384 addOffset=-50 force=true
+[get-msgs] from=9132048384 offset=-50 count=1 first=9132048384 last=9132048384 hasMore=false
+                                              ↑
+                                       TDLib вернул count=1
+```
+
+State.messages[chatId] = [lastMessageId] — массив из **1 элемента**. Юзер видит одно сообщение, потом докручивает колесом, каждый load-newer добавляет по 1-2 сообщения. Очень медленно.
+
+#### Корневой ответ от автора TDLib (levlam)
+
+[TDLib issue #740](https://github.com/tdlib/td/issues/740) — официальный ответ:
+
+> «This is expected and described in the method description: **«For optimal performance the number of returned messages is chosen by the library»**.»
+
+TDLib **намеренно** возвращает меньше `limit` для optimization. **Один invoke `getChatHistory` НЕ гарантирует limit messages.**
+
+[TDLib getting-started](https://core.telegram.org/tdlib/getting-started#getting-chat-messages):
+> «To get more messages than can be returned in one response, the Application needs to pass the identifier of the **last message it has received** as `from_message_id` to next request.»
+
+**Официальный паттерн — итеративные вызовы**.
+
+#### Решение v0.95.15 — итеративный backend handler
+
+**Новый метод** [`backend.messages.getIterativeUntil`](main/native/backends/tdlibBackend.js):
+```js
+async getIterativeUntil(params) {
+  let collected = []
+  let cursor = 0  // iter 1: from=0 (TDLib spec → last_message)
+  for (let i = 0; i < maxIterations; i++) {
+    const r = await getChatHistory(client, rawId, {
+      limit: 100, fromMessageId: cursor, offset: 0, ...
+    })
+    if (!r?.ok || !r.messages?.length) break
+    const newMessages = r.messages.filter(m => !collected.some(c => c.id === m.id))
+    if (newMessages.length === 0) break  // дубли — конец
+    collected = [...collected, ...newMessages].sort((a, b) => Number(a.id) - Number(b.id))
+    if (untilMessageId && collected.some(m => String(m.id) === untilMessageId)) break
+    if (collected.length >= targetCount) break
+    cursor = String(collected[0].id)  // продолжаем от старейшего
+  }
+  return { ok: true, messages: collected, iterations: ... }
+}
+```
+
+**Новый IPC канал** `tg:get-messages-iterate` в [tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js) → emit `tg:messages` в renderer.
+
+**Новый метод store** [`loadMessagesUntil(chatId, untilMessageId, targetCount)`](src/native/store/nativeStore.js) — вызывает IPC, обновляет state.
+
+**InboxMode.scrollToBottom** — заменён `loadMessages` на `loadMessagesUntil` для jump-to-end ветки:
+```js
+if (chatLastMessageId && unreadVsLoaded > 50 && !loading) {
+  store.loadMessagesUntil(viewKey, chatLastMessageId, 100).then((result) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      el.scrollTo({ top: scrollHeight, behavior: 'instant' })
+      markReadCurrentView(viewKey, chatLastMessageId, { source: 'button-scroll' })
+      setAtBottom(true); setNewBelow(0)
+    }))
+  })
+}
+```
+
+#### Безопасность — 4 защиты
+
+1. **`maxIterations` clamp [1, 10]** — защита от бесконечного цикла
+2. **Detect duplicates** — если TDLib возвращает только дубли → stop (TDLib stuck)
+3. **Empty response** → stop (конец истории)
+4. **`untilMessageId` short-circuit** — если получили нужное сообщение → готово сразу
+
+#### Тесты — 5 новых (4 backend + 1 store)
+
+[tdlibBackend.vitest.js](src/__tests__/tdlibBackend.vitest.js):
+1. **«итерирует пока не наберёт targetCount»** — multi-iteration работает
+2. **«останавливается при untilMessageId в collected»** — short-circuit
+3. **«останавливается при пустом ответе»** — stop on empty
+4. **«защита от бесконечного цикла — maxIterations clamp [1, 10]»** — safety
+5. **«возвращает messages отсортированные по id ASC»** — порядок для UI
+
+[nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx):
+6. **«loadMessagesUntil → IPC tg:get-messages-iterate с untilMessageId+targetCount»** — контракт IPC
+
+#### Конфликты — все проверены ✅
+
+- Backward compat: `loadMessages` без options остался без изменений
+- `useReadByVisibility` cascade guard (v0.94.7) не задействуется
+- `useForceReadAtBottom` threshold 30 (v0.91.13) не задействуется
+- `unreadWindowIncomplete` gate — `source='button-scroll'` в whitelist (v0.95.8)
+- `useInitialScroll` reload → `followupRef++` без restore (v0.95.4)
+- mark-read range-ack ([viewMessages spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1view_messages.html))
+
+#### Зафиксированные правила в memory bank
+
+В [`.memory-bank/jump-to-end-saga.md`](./jump-to-end-saga.md) добавлены:
+- Цитаты из TDLib official docs (levlam, getting-started)
+- Таблица known behaviors TDLib `getChatHistory`
+- 5 уроков для будущей работы со скроллом
+- **Главное правило**: «никогда не предполагай что один invoke `getChatHistory` вернёт `limit` сообщений»
+
+#### Файлы
+
+| Файл | Что |
+|---|---|
+| [tdlibBackend.js](main/native/backends/tdlibBackend.js) | новый `messages.getIterativeUntil` (+65 строк) |
+| [tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js) | новый IPC канал `tg:get-messages-iterate` |
+| [nativeStore.js](src/native/store/nativeStore.js) | новый `loadMessagesUntil` (+47 строк) + экспорт |
+| [InboxMode.jsx](src/native/modes/InboxMode.jsx) | scrollToBottom использует `loadMessagesUntil` для jump-to-end |
+| [tdlibBackend.vitest.js](src/__tests__/tdlibBackend.vitest.js) | +5 unit-тестов для getIterativeUntil |
+| [nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) | +1 тест для loadMessagesUntil |
+| [jump-to-end-saga.md](.memory-bank/jump-to-end-saga.md) | обновлено: v0.95.14 провал + v0.95.15 решение + TDLib known behaviors |
+| [fileSizeLimitsExceptions.cjs](src/__tests__/fileSizeLimitsExceptions.cjs) | nativeStore.js 1080→1150, tdlibBackend.js 550→640, vitest 600→640 |
+
+**Регрессия**: lint 0, vitest 730/730 (+6 новых), fileSizeLimits 283/283, check-memory ✅.
 
 ---
 
@@ -341,118 +464,6 @@ if (chatLastMessageId && unreadVsLoaded > 50 && !loading) {
 Юзер видит: кликнул ↓ → кнопка пульсирует пока идёт «Загружаю ещё…» (визуальный feedback есть). Но scroll НЕ продолжается автоматически — это поведение по-умолчанию (один scroll по клику, как в v0.95.6).
 
 **Регрессия**: lint 0, vitest 721/721, fileSizeLimits 283/283, check-memory ✅.
-
----
-
-### v0.95.9 — Compact: аватар 53px, порог 128, плавный переход + кнопка ↓ loading state
-
-По 3 запросам юзера (скрины чатов «Диджитальная», AI-ML):
-
-#### 1. Аватарки в compact — те же 53px (не 44)
-
-Юзер: «надо чтобы размеры значков не меняли когда оставляю одни значки, были такой же большие как в полном списке». В [ChatListItem.jsx compact branch](src/native/components/ChatListItem.jsx) аватар возвращён к **53px** (был 44px). Шрифт инициалов 16→19. Юзер видит одинаковые «большие» значки и в полном, и в compact-режиме — нет визуального уменьшения.
-
-#### 2. Порог 160 → 128 (юзер: «уменьшить ещё на 20%»)
-
-В [useChatListResize.js](src/native/hooks/useChatListResize.js): `CHAT_LIST_COMPACT_THRESHOLD = 128`. Цепочка: 200 (v0.95.7) → 160 (v0.95.8) → 128 (v0.95.9). Compact включается ещё позже — нужно сжать почти до самого края (60px минимум).
-
-#### 3. Плавный переход compact ↔ full (без дёрга)
-
-В [InboxChatListSidebar.jsx](src/native/components/InboxChatListSidebar.jsx) добавлен `transition: width 200ms ease-out` на root `<div>`. Включается только когда `isResizing === false` — во время активного drag (direct DOM mutation для 60fps) transition выключен. После mouse-up или при пересечении threshold внутри drag — React re-render с transition → плавная анимация ширины. Юзер видит как лента «плавно сжимается» а не резко прыгает.
-
-`isResizingChatList` пробрасывается из [InboxMode.jsx](src/native/modes/InboxMode.jsx) в Sidebar для управления transition.
-
-#### 4. Кнопка ↓ — loading state + продолжение scroll (без дёрга)
-
-Юзер (скрин «AI/ML Ready», unread=1168): «нажимаю ↓, пролистывает 100 штук потом загружает ещё, надо чтоб блок со стрелочкой был в hover-эффектах по цвету как “Загружаю ещё...”, без дёрга».
-
-**4a — visual loading state** (`ScrollBottomButton` в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) + CSS в [styles-overlays.css](src/native/styles-overlays.css)):
-- Новый класс `.native-scroll-bottom-btn--loading` когда `loadingNewer=true`
-- Accent border + animated **pulse** через `box-shadow` (1.4s infinite) — тот же accent цвет что у индикатора «Загружаю ещё...»
-- Tooltip меняется: «Подгружаю свежие сообщения…»
-- Юзер визуально понимает «идёт работа», нет ощущения «зависло»
-
-**4b — продолжение scroll после load-newer** (новый `scrollIntentRef` + `useLayoutEffect` в [InboxMode.jsx](src/native/modes/InboxMode.jsx)):
-- При клике ↓ ставится `scrollIntentRef.current = { active: true, expiresAt: now + 4000 }`
-- `useLayoutEffect` слушает `activeMessages.length` и `loadingNewer` — при дозагрузке new messages довинчивает scroll к низу `behavior: 'instant'`
-- Reset intent когда `loadingNewer=false && bottomGap <= 4` (достигли дна)
-- 4-секундный timeout защищает от вечного intent если load-newer застрял
-
-#### Конфликты — проверены ✅
-
-- ✅ `useLayoutEffect` на `activeMessages.length` — синхронно с DOM, корректно перед paint
-- ✅ Direct DOM `style.width` в drag НЕ перебивает transition — transition выключен через `chatListRef.current.style.transition = 'none'` в startResize, восстанавливается в onPointerUp
-- ✅ Loading pulse animation НЕ конфликтует с entering/leaving (разные keyframes, последовательное применение через composed `animation:` rule)
-- ✅ `scrollIntentRef` НЕ перебивает user wheel-scroll — useLayoutEffect срабатывает только при изменении `activeMessages.length`/`loadingNewer`, а user-scroll такие зависимости не меняет
-- ✅ Тесты useChatListResize обновлены под новый порог 128 (3 теста), full vitest 721/721
-
-#### Тесты
-
-Обновлены тесты [useChatListResize.vitest.jsx](src/native/hooks/useChatListResize.vitest.jsx) под новый порог 128 — 3 теста: пороги в обе стороны (60..127 compact, 128..199 не compact), live toggle при пересечении 128, no-cross no-update.
-
-**Регрессия**: lint 0, vitest 721/721, fileSizeLimits 283/283, check-memory ✅.
-
----
-
-### v0.95.8 — Счётчик ↓ обнуляется + плавная анимация кнопки + live compact + порог 200→160
-
-Юзер: скрин чата «Вайбкодинг», после клика ↓ счётчик 289 остался, кнопка исчезла без анимации. Плюс по drag-resize (v0.95.7): compact срабатывает только после mouse-up + слишком рано (при ~200px).
-
-#### Fix 1 — счётчик обнуляется (gate bypass для button-scroll)
-
-В [InboxMode.jsx markReadCurrentView](src/native/modes/InboxMode.jsx#L233-L290) расширен whitelist гейта `unreadWindowIncomplete` — добавлен `'button-scroll'` в `ACTIVE_USER_SOURCES`:
-```js
-const ACTIVE_USER_SOURCES = new Set(['visibility', 'button-scroll'])
-if (unreadWindowIncomplete && !ACTIVE_USER_SOURCES.has(source)) { skip }
-```
-
-**Безопасность — 100% проверена** (audit на 6 направлениях):
-- ✅ Кнопка ↓ = **active** user intent, не **passive** (защиты v0.94.7/v0.91.13 от passive остаются нетронутыми)
-- ✅ [TDLib viewMessages spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1view_messages.html) — range-ack штатное API: «marks all messages ≤ maxId as viewed»
-- ✅ [Telegram Desktop bug c/5792](https://bugs.telegram.org/c/5792) — клик ↓ всегда mass-ack ВСЕХ непрочитанных
-- ✅ v0.95.0 закрыл root cause "дыры" — гейт срабатывает редко
-- ✅ Гейты в `useReadByVisibility` (v0.94.7 caskade guard) и `useForceReadAtBottom` (v0.91.13 threshold 30) независимые — защищают от автоматических mass-ack, не от явных кликов
-- ✅ Edge cases: forum chat → отдельная ветка `markTopicRead`; повторные клики → `maxId > maxEverSent` гейт
-
-Добавлен лог `mark-read-bypass-gate-button-scroll` для transparency — видно когда явный клик обходит гейт.
-
-#### Fix 2 — плавная анимация кнопки ↓ (useDelayedUnmount)
-
-React не имеет встроенной exit-animation при `{cond && <X/>}` — элемент удаляется мгновенно, CSS transitions не успевают. Решение — задержка реального unmount.
-
-Новый хук [useDelayedUnmount.js](src/native/hooks/useDelayedUnmount.js):
-- При `visible=false` → ставится `leaving=true` → ждём 220мс → реальный unmount
-- При `visible=true` во время leaving → snap back (отмена timer)
-- Cleanup на unmount хука → timer не зависает
-
-Новый компонент `ScrollBottomButton` в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) — обёртка над `<button>` с классами `--entering` / `--leaving` по состоянию.
-
-CSS [styles-overlays.css](src/native/styles-overlays.css):
-- **Появление**: `cubic-bezier(0.34, 1.4, 0.64, 1)` overshoot 220мс — `opacity 0→1`, `translateY 20px→0`, `scale 0.85→1`
-- **Исчезновение**: `ease-out` 220мс — `opacity 1→0`, `translateY 0→20px`, `scale 1→0.85`, `pointer-events: none` (защита от accidental clicks)
-
-Эталон: [Telegram Web K bubbles-corner-button](https://github.com/morethanwords/tweb) — тот же паттерн `transition: opacity .2s, transform .2s + translateY/scale`.
-
-#### Bonus 1 — live compact во время drag (без отпускания мыши)
-
-В [useChatListResize.js onPointerMove](src/native/hooks/useChatListResize.js) добавлен `setState` ТОЛЬКО при пересечении threshold:
-```js
-const wasCompact = isChatListCompact(prevW)
-const isCompact = isChatListCompact(newW)
-if (wasCompact !== isCompact) setChatListWidth(newW)
-```
-60fps сохраняется — React re-render 1 раз когда compact toggle, не каждый pixel. Юзер видит переход в значки **сразу во время drag**, не после mouse-up.
-
-#### Bonus 2 — порог 200 → 160 (на 20% позже)
-
-По запросу юзера «слишком рано схлопывается в значки». Compact теперь включается при `width < 160` (было `< 200`).
-
-#### Тесты — 10 новых unit-тестов
-
-- [useDelayedUnmount.vitest.jsx](src/native/hooks/useDelayedUnmount.vitest.jsx) — 6 тестов (initial visible/invisible, true→false leave→unmount timing, false→true snap-back, custom delay, cleanup)
-- [useChatListResize.vitest.jsx](src/native/hooks/useChatListResize.vitest.jsx) — 4 новых теста (порог 160 константа, 161-199 НЕ compact, live compact toggle при пересечении, drag без пересечения НЕ обновляет state)
-
-**Регрессия**: lint 0, vitest 721/721 (+10), fileSizeLimits 283/283 (+1 новый файл), check-memory ✅.
 
 ---
 
