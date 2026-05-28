@@ -20,7 +20,7 @@
 // isRestoringRef: ставим true перед программным scrollTop= и сбрасываем через 500мс —
 // closed-loop guard (programmatic scroll триггерит onScroll → handleScroll save).
 
-import { useEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { logNativeScroll, getScrollMetrics } from '../utils/scrollDiagnostics.js'
 
 const MAX_ATTEMPTS = 30
@@ -41,7 +41,14 @@ export function useInitialScroll({
   const followupRef = useRef(0)
   const restoreStartRef = useRef(0)
 
-  useEffect(() => {
+  // v0.95.4: useLayoutEffect (а не useEffect) — restore выполняется ДО paint, поэтому
+  // юзер не видит «дёрг» (флэш чужой позиции при переключении seen-чатов).
+  // Подтверждено диагностикой v0.95.3: msSinceEffectStart=0 + attempts=0 → restore
+  // синхронный и сразу находит scrollEl → useLayoutEffect не блокирует paint значимо.
+  // Та же ОЗ работа что в InboxMode useLayoutEffect (load-older re-pin, v0.94.2).
+  // КРИТИЧНО: внутри ТОЛЬКО micro-операция scrollTop=N (микросекунды), не добавлять
+  // тяжёлую работу/fetch — иначе useLayoutEffect станет узким местом (React docs).
+  useLayoutEffect(() => {
     if (!activeChatId) return
 
     // Помечаем «restore идёт» — programmatic scrollTop= не должен портить save.

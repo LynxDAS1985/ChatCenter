@@ -84,8 +84,8 @@ module.exports = {
   // на под-хуки (3-4 файла useInitialScrollAnchor/Bottom/FirstUnread) — отдельная задача
   // после стабилизации v0.91.22 фикса (нужны логи юзера что closed-loop ушёл).
   'src/native/hooks/useInitialScroll.js': {
-    ceiling: 160,
-    reason: 'v0.92.0: исторический корневой хук восстановления позиции (saved scrollTop / firstUnread / atBottom). При Virtuoso режиме restore callbacks no-op, остаётся retry-loop scrollRef + setChatReady. Доменное разбиение — отдельная плановая задача.'
+    ceiling: 170,
+    reason: 'v0.95.4: useEffect→useLayoutEffect (фикс «дёрг при повторном открытии seen-чата») + 7 строк комментария-предупреждения «КРИТИЧНО: только micro-операция scrollTop=N внутри, не добавлять fetch/тяжёлую работу — иначе useLayoutEffect блокирует paint (React docs)». v0.92.0 history: исторический корневой хук восстановления позиции (saved scrollTop / firstUnread / atBottom). CLAUDE.md запрещает резать комментарии. Доменное разбиение — отдельная плановая задача.'
   },
   // v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers (tg:chat-last-message,
   // tg:sender-avatar, tg:chat-avatar) добавил ~60 строк. Корень — Проблема 3 Maximum
