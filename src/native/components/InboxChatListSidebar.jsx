@@ -104,6 +104,8 @@ export default function InboxChatListSidebar({
   width = 340,
   compact = false,
   panelRef = null,
+  // v0.95.9: isResizing — отключаем transition во время drag (для 60fps)
+  isResizing = false,
 }) {
   const listRef = useRef(null)
   const containerRef = useRef(null)
@@ -157,6 +159,7 @@ export default function InboxChatListSidebar({
         borderRight: '1px solid var(--amoled-border)',
         background: 'var(--amoled-surface)',
         display: 'flex', flexDirection: 'column',
+        transition: isResizing ? 'none' : 'width 200ms ease-out',
       }}>
         <div style={{
           height: 58, display: 'flex', alignItems: 'center', gap: 10,
@@ -242,6 +245,9 @@ export default function InboxChatListSidebar({
       borderRight: '1px solid var(--amoled-border)',
       background: 'var(--amoled-surface)',
       display: 'flex', flexDirection: 'column',
+      // v0.95.9: плавный переход compact↔full (только когда НЕ идёт drag — drag даёт
+      // direct style.width мутацию, transition сломал бы 60fps).
+      transition: isResizing ? 'none' : 'width 200ms ease-out',
     }}>
       {/* v0.87.106: Поиск ПЕРВЫЙ (был после фильтра) */}
       {/* v0.95.7: в compact mode поиск скрыт (нет места для input) */}

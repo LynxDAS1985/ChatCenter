@@ -20,9 +20,9 @@ import { useCallback } from 'react'
 export const CHAT_LIST_MIN_WIDTH = 60
 export const CHAT_LIST_MAX_WIDTH = 600
 export const CHAT_LIST_DEFAULT_WIDTH = 340
-// v0.95.8: порог 200 → 160 по запросу юзера (слишком рано схлопывалось в значки).
-// Compact включается когда юзер сжал до ~160px — раньше было ~200px.
-export const CHAT_LIST_COMPACT_THRESHOLD = 160
+// v0.95.9: порог 160 → 128 (вторая итерация —20% от 160). Юзер: "слишком рано".
+// Compact включается когда юзер сжал до ~128px. Цепочка: 200 (v0.95.7) → 160 (v0.95.8) → 128.
+export const CHAT_LIST_COMPACT_THRESHOLD = 128
 
 export function clampChatListWidth(w) {
   if (!Number.isFinite(w)) return CHAT_LIST_DEFAULT_WIDTH

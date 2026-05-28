@@ -19,14 +19,25 @@ import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.
 // v0.95.8: кнопка ↓ с плавным появлением/исчезновением (bouncy spring on enter,
 // smooth fade-down on leave). useDelayedUnmount задерживает реальный unmount
 // на 220мс чтобы CSS-keyframes успели проиграть.
-function ScrollBottomButton({ visible, onClick, activeUnread, newBelow }) {
+// v0.95.9: --loading класс когда идёт load-newer (юзер кликнул ↓ при unread > загруженного,
+// и теперь lazy-load догружает 100+). Подсветка accent-цветом (как «Загружаю ещё...»
+// индикатор) — юзер видит «работа идёт», нет ощущения дёрга.
+function ScrollBottomButton({ visible, onClick, activeUnread, newBelow, loading }) {
   const { mounted, leaving } = useDelayedUnmount(visible, 220)
   if (!mounted) return null
+  const stateClass = leaving
+    ? 'native-scroll-bottom-btn--leaving'
+    : 'native-scroll-bottom-btn--entering'
+  const loadingClass = loading && !leaving ? 'native-scroll-bottom-btn--loading' : ''
   return (
     <button
       onClick={onClick}
-      className={`native-scroll-bottom-btn ${leaving ? 'native-scroll-bottom-btn--leaving' : 'native-scroll-bottom-btn--entering'}`}
-      title={activeUnread > 0 ? `К последнему сообщению (${activeUnread} непрочитано)` : 'К последнему сообщению'}
+      className={`native-scroll-bottom-btn ${stateClass} ${loadingClass}`}
+      title={
+        loading ? 'Подгружаю свежие сообщения…'
+        : activeUnread > 0 ? `К последнему сообщению (${activeUnread} непрочитано)`
+        : 'К последнему сообщению'
+      }
     >
       ↓
       {(activeUnread > 0 || newBelow > 0) && (
@@ -218,6 +229,7 @@ export default function InboxChatPanel({
           onClick={scrollToBottom}
           activeUnread={activeUnread}
           newBelow={newBelow}
+          loading={!!loadingNewer}
         />
         {/* v0.95.2: UnreadProgressPill удалён — бейдж кнопки достаточен. */}
       </div>

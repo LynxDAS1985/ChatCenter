@@ -44,22 +44,23 @@ describe('clampChatListWidth — границы [60, 600]', () => {
   })
 })
 
-describe('isChatListCompact — порог < 160 (v0.95.8: 200→160)', () => {
+describe('isChatListCompact — порог < 128 (v0.95.9: 200→160→128)', () => {
   it('< COMPACT_THRESHOLD → true', () => {
     expect(isChatListCompact(60)).toBe(true)
     expect(isChatListCompact(100)).toBe(true)
-    expect(isChatListCompact(159)).toBe(true)
+    expect(isChatListCompact(127)).toBe(true)
   })
 
   it('>= COMPACT_THRESHOLD → false', () => {
     expect(isChatListCompact(CHAT_LIST_COMPACT_THRESHOLD)).toBe(false)
-    expect(isChatListCompact(170)).toBe(false)
+    expect(isChatListCompact(140)).toBe(false)
     expect(isChatListCompact(340)).toBe(false)
     expect(isChatListCompact(600)).toBe(false)
   })
 
-  it('v0.95.8: 161-199 теперь НЕ compact (был < 200, стал < 160)', () => {
-    expect(isChatListCompact(161)).toBe(false)
+  it('v0.95.9: 128-199 теперь НЕ compact (порог 128, не 160 и не 200)', () => {
+    expect(isChatListCompact(128)).toBe(false)
+    expect(isChatListCompact(160)).toBe(false)
     expect(isChatListCompact(180)).toBe(false)
     expect(isChatListCompact(199)).toBe(false)
   })
@@ -69,8 +70,8 @@ describe('isChatListCompact — порог < 160 (v0.95.8: 200→160)', () => {
     expect(isChatListCompact(undefined)).toBe(false)
   })
 
-  it('CHAT_LIST_COMPACT_THRESHOLD === 160', () => {
-    expect(CHAT_LIST_COMPACT_THRESHOLD).toBe(160)
+  it('CHAT_LIST_COMPACT_THRESHOLD === 128', () => {
+    expect(CHAT_LIST_COMPACT_THRESHOLD).toBe(128)
   })
 })
 
@@ -209,7 +210,7 @@ describe('useChatListResize — startResize / move / up', () => {
     expect(result.current.chatListWidthRef.current).toBe(CHAT_LIST_DEFAULT_WIDTH)
   })
 
-  it('v0.95.8: live compact toggle ВО ВРЕМЯ drag — setState при пересечении threshold', () => {
+  it('v0.95.9: live compact toggle ВО ВРЕМЯ drag — setState при пересечении threshold 128', () => {
     const { result } = setupHook()
     // Старт с 340px (compact=false)
     act(() => {
@@ -219,27 +220,27 @@ describe('useChatListResize — startResize / move / up', () => {
       })
     })
     expect(result.current.chatListWidth).toBe(CHAT_LIST_DEFAULT_WIDTH)
-    // Drag влево на -200 → newW = 140 (< 160 threshold) → setState срабатывает (compact toggle)
+    // Drag влево на -240 → newW = 100 (< 128 threshold) → setState срабатывает (compact toggle)
+    act(() => { result.current.api.onPointerMove({ clientX: 260 }) })
+    expect(result.current.chatListWidthRef.current).toBe(100)
+    expect(result.current.chatListWidth).toBe(100)  // state ОБНОВЛЁН — compact mode сразу
+    // Drag вправо на +40 — обратно в обычный режим (140 >= 128 → НЕ compact)
     act(() => { result.current.api.onPointerMove({ clientX: 300 }) })
     expect(result.current.chatListWidthRef.current).toBe(140)
-    expect(result.current.chatListWidth).toBe(140)  // state ОБНОВЛЁН — compact mode сразу
-    // Drag вправо на +20 — обратно в обычный режим (180 >= 160 → НЕ compact)
-    act(() => { result.current.api.onPointerMove({ clientX: 340 }) })
-    expect(result.current.chatListWidthRef.current).toBe(180)
-    expect(result.current.chatListWidth).toBe(180)  // state снова обновлён
+    expect(result.current.chatListWidth).toBe(140)  // state снова обновлён
   })
 
-  it('v0.95.8: drag БЕЗ пересечения threshold НЕ обновляет state (60fps контракт)', () => {
+  it('v0.95.9: drag БЕЗ пересечения threshold 128 НЕ обновляет state (60fps контракт)', () => {
     const { result } = setupHook()
-    // Старт 340, drag к 300 (всё ещё > 160 — нет пересечения)
+    // Старт 340, drag к 200 (всё ещё > 128 — нет пересечения)
     act(() => {
       result.current.api.startResize({
         clientX: 500, pointerId: 1,
         currentTarget: { setPointerCapture: vi.fn() }, preventDefault: vi.fn(),
       })
     })
-    act(() => { result.current.api.onPointerMove({ clientX: 460 }) })
-    expect(result.current.chatListWidthRef.current).toBe(300)
+    act(() => { result.current.api.onPointerMove({ clientX: 360 }) })
+    expect(result.current.chatListWidthRef.current).toBe(200)
     // state НЕ обновлён — нет пересечения threshold
     expect(result.current.chatListWidth).toBe(CHAT_LIST_DEFAULT_WIDTH)
   })

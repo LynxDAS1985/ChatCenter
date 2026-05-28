@@ -52,9 +52,9 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
   }
   const tooltip = tooltipParts.join('\n')
 
-  // v0.95.7: compact mode (chat-list width < 200px) — только аватар + бейдж
-  // как уголок (Telegram Desktop two-column mode). Tooltip с названием чата
-  // показывается на hover (юзер не теряет информацию).
+  // v0.95.9: compact mode — аватар того же размера (53px) что и в полном (юзер просил
+  // «размеры значков не меняли»). Бейдж переезжает в угол аватарки. Текст уходит через
+  // CSS transition (плавно). Tooltip с названием на hover — юзер не теряет инфо.
   if (compact) {
     const compactTooltip = [chat.title || '?', chat.lastMessage].filter(Boolean).join('\n')
     return (
@@ -62,6 +62,7 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
         onClick={onClick}
         onContextMenu={onContextMenu}
         title={compactTooltip}
+        className="native-chat-list-item native-chat-list-item--compact"
         style={{
           position: 'relative',
           padding: '8px 0',
@@ -85,16 +86,18 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
         }}
       >
         <div style={{ position: 'relative', flexShrink: 0 }}>
+          {/* v0.95.9: аватар 53px (как в обычном режиме). Был 44 — юзер: «размеры значков
+              не меняли когда оставляю одни значки, были такой же большие как в полносм». */}
           <div style={{
-            width: 44, height: 44, borderRadius: '50%',
+            width: 53, height: 53, borderRadius: '50%',
             background: chat.avatar ? `url("${chat.avatar}") center/cover no-repeat` : bgColor,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontSize: 16, fontWeight: 600,
+            color: '#fff', fontSize: 19, fontWeight: 600,
             filter: chat.isMuted ? 'brightness(0.5) saturate(0.4)' : 'none',
           }}>
             {!chat.avatar && (initials || '?')}
           </div>
-          {/* Бейдж непрочитанных — в правом нижнем углу аватарки */}
+          {/* Бейдж непрочитанных — в правом верхнем углу аватарки */}
           {badgeCount > 0 && (
             <div style={{
               position: 'absolute', top: -4, right: -8,
