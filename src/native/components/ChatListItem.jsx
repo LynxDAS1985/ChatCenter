@@ -25,7 +25,7 @@ function typeIcon(type, isBot) {
   return null
 }
 
-export default function ChatListItem({ chat, active, onClick, onContextMenu, account, hoveredAccountId, multiAccount }) {
+export default function ChatListItem({ chat, active, onClick, onContextMenu, account, hoveredAccountId, multiAccount, compact = false }) {
   const bgColor = AVATAR_COLORS[hashString(chat.title || '?') % AVATAR_COLORS.length]
   const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('')
@@ -51,6 +51,74 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
     tooltipParts.push('Чат принадлежит этому аккаунту')
   }
   const tooltip = tooltipParts.join('\n')
+
+  // v0.95.7: compact mode (chat-list width < 200px) — только аватар + бейдж
+  // как уголок (Telegram Desktop two-column mode). Tooltip с названием чата
+  // показывается на hover (юзер не теряет информацию).
+  if (compact) {
+    const compactTooltip = [chat.title || '?', chat.lastMessage].filter(Boolean).join('\n')
+    return (
+      <div
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+        title={compactTooltip}
+        style={{
+          position: 'relative',
+          padding: '8px 0',
+          cursor: 'pointer',
+          borderBottom: '1px solid var(--amoled-border)',
+          background: active ? 'rgba(42, 171, 238, 0.2)'
+            : highlighted ? 'rgba(42, 171, 238, 0.05)'
+            : 'transparent',
+          transition: 'background 0.1s, opacity 0.15s',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: 74,
+          boxSizing: 'border-box',
+          opacity: dimmed ? 0.35 : 1,
+        }}
+        onMouseEnter={e => { if (!active && !highlighted) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+        onMouseLeave={e => {
+          if (active) return
+          e.currentTarget.style.background = highlighted ? 'rgba(42, 171, 238, 0.05)' : 'transparent'
+        }}
+      >
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: chat.avatar ? `url("${chat.avatar}") center/cover no-repeat` : bgColor,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontSize: 16, fontWeight: 600,
+            filter: chat.isMuted ? 'brightness(0.5) saturate(0.4)' : 'none',
+          }}>
+            {!chat.avatar && (initials || '?')}
+          </div>
+          {/* Бейдж непрочитанных — в правом нижнем углу аватарки */}
+          {badgeCount > 0 && (
+            <div style={{
+              position: 'absolute', top: -4, right: -8,
+              background: chat.isMuted ? 'rgba(128,128,128,0.85)' : 'var(--amoled-accent)',
+              color: '#fff', fontSize: 10, fontWeight: 700,
+              padding: '1px 6px', borderRadius: 10, minWidth: 18, textAlign: 'center',
+              border: '2px solid var(--amoled-surface)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+            }}>{formatUnreadCount(badgeCount)}</div>
+          )}
+          {chat.isMuted && (
+            <div style={{
+              position: 'absolute', bottom: -1, left: -1,
+              width: 14, height: 14, borderRadius: '50%',
+              background: 'var(--amoled-surface)',
+              border: '1px solid var(--amoled-border)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 8,
+            }}>🔕</div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div

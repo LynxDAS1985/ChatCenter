@@ -99,3 +99,13 @@
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* v0.95.7: drag-to-resize divider между chat-list и окном чата.
+   Стили inline в ChatListResizeHandle.jsx — здесь только keyframes для подсветки. */
+.native-chat-list-resize-handle--pulse {
+  animation: native-resize-handle-pulse 1.5s ease-in-out infinite;
+}
+@keyframes native-resize-handle-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}

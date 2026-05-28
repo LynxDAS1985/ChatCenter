@@ -100,6 +100,10 @@ export default function InboxChatListSidebar({
   search, setSearch,
   listHeight, setListHeight,
   hoveredAccountId,
+  // v0.95.7: width/compact/panelRef для drag-to-resize
+  width = 340,
+  compact = false,
+  panelRef = null,
 }) {
   const listRef = useRef(null)
   const containerRef = useRef(null)
@@ -148,8 +152,9 @@ export default function InboxChatListSidebar({
 
   if (forumChat) {
     return (
-      <div className={`native-forum-topic-panel ${forumClosing ? 'native-forum-topic-panel--closing' : ''}`} style={{
-        width: 340, borderRight: '1px solid var(--amoled-border)',
+      <div ref={panelRef} className={`native-forum-topic-panel ${forumClosing ? 'native-forum-topic-panel--closing' : ''}`} style={{
+        width, flexShrink: 0,
+        borderRight: '1px solid var(--amoled-border)',
         background: 'var(--amoled-surface)',
         display: 'flex', flexDirection: 'column',
       }}>
@@ -232,21 +237,25 @@ export default function InboxChatListSidebar({
   }
 
   return (
-    <div className="native-chat-list-panel" style={{
-      width: 340, borderRight: '1px solid var(--amoled-border)',
+    <div ref={panelRef} className="native-chat-list-panel" style={{
+      width, flexShrink: 0,
+      borderRight: '1px solid var(--amoled-border)',
       background: 'var(--amoled-surface)',
       display: 'flex', flexDirection: 'column',
     }}>
       {/* v0.87.106: Поиск ПЕРВЫЙ (был после фильтра) */}
-      <div style={{ padding: 10, borderBottom: '1px solid var(--amoled-border)', flexShrink: 0 }}>
-        <input
-          type="text"
-          placeholder="🔍 Поиск по чатам..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ width: '100%', fontSize: 13 }}
-        />
-      </div>
+      {/* v0.95.7: в compact mode поиск скрыт (нет места для input) */}
+      {!compact && (
+        <div style={{ padding: 10, borderBottom: '1px solid var(--amoled-border)', flexShrink: 0 }}>
+          <input
+            type="text"
+            placeholder="🔍 Поиск по чатам..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ width: '100%', fontSize: 13 }}
+          />
+        </div>
+      )}
       {/* v0.87.106: Фильтр ПОД поиском (был СВЕРХУ). Показываем при 2+ аккаунтах. */}
       {showFilters && (
         <div style={{
@@ -323,6 +332,8 @@ export default function InboxChatListSidebar({
               hoveredAccountId,
               // v0.87.109: ПКМ → меню заглушения
               onContextMenu: handleContextMenu,
+              // v0.95.7: compact mode когда chat-list width < 200px
+              compact,
             }}
             style={{ height: listHeight, width: '100%' }}
           />

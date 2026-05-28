@@ -5,7 +5,7 @@ import ChatListItem from './ChatListItem.jsx'
 
 export default function ChatRow({
   index, style, chats, activeChatId, setActiveChat,
-  accounts, showAccountBadge, hoveredAccountId, onContextMenu,
+  accounts, showAccountBadge, hoveredAccountId, onContextMenu, compact,
 }) {
   const c = chats[index]
   if (!c) return null
@@ -20,6 +20,7 @@ export default function ChatRow({
         account={account}
         multiAccount={showAccountBadge}
         hoveredAccountId={hoveredAccountId}
+        compact={compact}
       />
     </div>
   )

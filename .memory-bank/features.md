@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.6 (28 мая 2026)
+## Текущая версия: v0.95.7 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -23,6 +23,86 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.7 — Drag-to-resize разделителя chat-list ↔ окно чата (Telegram Desktop-style)
+
+Запрос юзера: «надо чтобы я мог двигать разделитель окна чатов и окна диалога». Стандартная фича — Telegram Desktop / VS Code / Discord / Slack.
+
+#### Что сделано
+
+Новый хук [useChatListResize.js](src/native/hooks/useChatListResize.js) (~85 строк) — эталон [useAIPanelResize](src/hooks/useAIPanelResize.js):
+- **Pointer Events API + setPointerCapture** (W3C 2018, [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events))
+- Direct DOM mutation на `style.width` во время drag — НЕТ re-render React'а на каждый pointermove → 60fps
+- setState + settings:save только на pointerup (финальная фиксация)
+- Clamp [60, 600] через `clampChatListWidth(w)`
+- Default 340px (как было)
+- Compact threshold < 200px через `isChatListCompact(w)`
+
+Новый компонент [ChatListResizeHandle.jsx](src/native/components/ChatListResizeHandle.jsx) (~30 строк):
+- 6px divider между chat-list и окном чата
+- `cursor: col-resize` + accent-подсветка hover (`#2AABEE66`) / active (`#2AABEE88`)
+- `onDoubleClick` → reset к default 340px (стандарт VS Code, Slack)
+- `aria-label` + `title` для accessibility
+- `touchAction: 'none'` (стандарт Pointer Events для touch/pen)
+
+[ChatListItem.jsx](src/native/components/ChatListItem.jsx) — режим compact (когда width < 200):
+- Скрыт текст: название / превью / микро-строка аккаунта
+- Аватар уменьшен 53px → 44px
+- Бейдж непрочитанных — **абсолютным позиционированием в правом верхнем углу аватарки** (как Telegram Desktop two-column mode)
+- Tooltip `title={chat.title + lastMessage}` на hover — юзер не теряет инфо
+- 🔕 значок mute сохранён
+
+[InboxChatListSidebar.jsx](src/native/components/InboxChatListSidebar.jsx):
+- Принимает props `width`, `compact`, `panelRef`
+- Поле поиска **скрыто в compact mode** (нет места для input)
+- Compact пробрасывается через rowProps в ChatRow → ChatListItem
+- Применено к ОБЕИМ панелям (chat list + forum topic panel)
+
+[InboxMode.jsx](src/native/modes/InboxMode.jsx):
+- 7 useRef/useState для drag state + settings
+- `useEffect` — загрузка `settings.chatListWidth` из IPC `settings:get` при mount
+- Хук `useChatListResize` + render `<ChatListResizeHandle />` справа от sidebar
+- Глобальный `data-cc-chat-list-resize-overlay` (z:999998) во время drag — pointerup не застрянет в дочерних webview
+
+#### Конфликты — все проверены ✅
+
+- ✅ **`useAIPanelResize`** (правый край AI panel) — мой drag **левый** край, разные оси, не пересекаются
+- ✅ **`overflow-anchor: none`** (v0.94.2) — меняется ширина контейнера, не scroll position
+- ✅ **`MessageListOverlay` shimmer** — внутри scroll-wrapper'а, не пересекается с handle
+- ✅ **Кнопка ↓** z-index:5 — тоже внутри scroll-wrapper'а
+- ✅ **Pinned overlay** z-index:4 (v0.95.5) — то же
+- ✅ **react-window List** — пересчитает row positions при resize контейнера (норма)
+- ✅ **AI panel ref** в App.jsx — мой `chatListPanelRef` отдельный, нет конфликта
+
+#### Тесты — 15 unit-тестов
+
+[useChatListResize.vitest.jsx](src/native/hooks/useChatListResize.vitest.jsx):
+- `clampChatListWidth` границы [60, 600] + NaN fallback + экстремумы (5 тестов)
+- `isChatListCompact` порог 200 + NaN safe default (3 теста)
+- `startResize`: refs + cursor + setPointerCapture + preventDefault
+- `onPointerMove`: ref + style.width напрямую, БЕЗ setState (60fps контракт)
+- `onPointerMove`: clamp до MAX/MIN
+- `onPointerUp`: setState + settings:save с сохранением other-props + releasePointerCapture
+- `resetToDefault`: 340 + settings:save
+- Guards: onPointerMove/Up до startResize → no-op
+
+#### UX-улучшения (5 шт. реализованы по запросу юзера)
+
+⭐⭐⭐⭐⭐ **Двойной клик** на handle → reset 340px (`onDoubleClick={resetChatListWidth}`)
+⭐⭐⭐⭐ **Auto-compact при width < 200px** (`isChatListCompact`)
+⭐⭐⭐⭐ **Подсветка handle на hover** — accent `#2AABEE66` (transition 0.15s)
+⭐⭐⭐ **Сохранение в settings.json** — через IPC `settings:save`, ключ `chatListWidth`
+⭐⭐⭐ **Активное состояние при drag** — `#2AABEE88` + `data-cc-chat-list-resize-overlay` (cursor: col-resize на всём окне)
+
+#### Эталоны (3 факта)
+
+🥇 [MDN Pointer Events + setPointerCapture](https://developer.mozilla.org/en-US/docs/Web/API/Element/setPointerCapture) — W3C-стандарт 2018, заменил mouse events для dragging
+🥇 [Telegram Desktop](https://github.com/telegramdesktop/tdesktop) — drag handle + two-column mode (compact на узких ширинах)
+🥈 [Наш useAIPanelResize.js](src/hooks/useAIPanelResize.js) — production-tested паттерн drag-resize в проекте, мой хук следует ровно ему
+
+**Регрессия**: lint 0, vitest 711/711 (+15 новых), fileSizeLimits 281/281 (+2 новых файла), check-memory ✅.
 
 ---
 

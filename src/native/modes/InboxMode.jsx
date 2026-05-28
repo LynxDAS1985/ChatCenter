@@ -17,6 +17,10 @@ import useReadByVisibility from '../hooks/useReadByVisibility.js'
 import useInboxScroll from '../hooks/useInboxScroll.js'
 import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostics.js'
 import { computeScrollBehavior } from '../utils/scrollBehavior.js'
+import useChatListResize, {
+  CHAT_LIST_DEFAULT_WIDTH, clampChatListWidth, isChatListCompact,
+} from '../hooks/useChatListResize.js'
+import ChatListResizeHandle from '../components/ChatListResizeHandle.jsx'
 import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
 import { useScrollPositionAutosave } from '../hooks/useScrollPositionAutosave.js'
 
@@ -32,6 +36,37 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
   const [listHeight, setListHeight] = useState(600)
+  // v0.95.7: drag-to-resize chat-list ↔ окно чата. Default 340px, [60, 600]. Compact <200.
+  const [chatListWidth, setChatListWidth] = useState(CHAT_LIST_DEFAULT_WIDTH)
+  const [isResizingChatList, setIsResizingChatList] = useState(false)
+  const chatListWidthRef = useRef(CHAT_LIST_DEFAULT_WIDTH)
+  const chatListPanelRef = useRef(null)
+  const chatListResizeStartRef = useRef({ x: 0, w: CHAT_LIST_DEFAULT_WIDTH })
+  const chatListIsResizingRef = useRef(false)
+  const chatListSettingsRef = useRef(null)
+  // Подгрузка сохранённой ширины из settings:get (один раз при mount).
+  useEffect(() => {
+    let cancelled = false
+    window.api?.invoke?.('settings:get').then(s => {
+      if (cancelled || !s) return
+      chatListSettingsRef.current = s
+      const saved = clampChatListWidth(s.chatListWidth || CHAT_LIST_DEFAULT_WIDTH)
+      chatListWidthRef.current = saved
+      setChatListWidth(saved)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+  const { startResize: startChatListResize, onPointerMove: onChatListPointerMove,
+    onPointerUp: onChatListPointerUp, resetToDefault: resetChatListWidth } = useChatListResize({
+    isResizingRef: chatListIsResizingRef,
+    resizeStartRef: chatListResizeStartRef,
+    chatListWidthRef,
+    chatListRef: chatListPanelRef,
+    settingsRef: chatListSettingsRef,
+    setIsResizing: setIsResizingChatList,
+    setChatListWidth,
+  })
+  const chatListCompact = isChatListCompact(chatListWidth)
   // v0.87.66: chatReady=true только после завершения initial-scroll. Пока false —
   // scroll-container невидим (opacity 0) + MessageListOverlay (shimmer) показан.
   // v0.87.67: shimmer ТОЛЬКО для чатов открываемых ВПЕРВЫЕ. Повторное открытие — мгновенно.
@@ -591,7 +626,29 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         search={search} setSearch={setSearch}
         listHeight={listHeight} setListHeight={setListHeight}
         hoveredAccountId={hoveredAccountId}
+        width={chatListWidth}
+        compact={chatListCompact}
+        panelRef={chatListPanelRef}
       />
+      {/* v0.95.7: drag-to-resize divider между chat-list и окном чата */}
+      <ChatListResizeHandle
+        onPointerDown={startChatListResize}
+        onPointerMove={onChatListPointerMove}
+        onPointerUp={onChatListPointerUp}
+        onDoubleClick={resetChatListWidth}
+        isResizing={isResizingChatList}
+      />
+      {/* Глобальный overlay поверх ВСЕГО окна во время drag — pointerup не застрянет
+          в дочерних webview/iframe (см. App.jsx data-cc-resize-overlay паттерн). */}
+      {isResizingChatList && (
+        <div
+          data-cc-chat-list-resize-overlay="true"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 999998,
+            cursor: 'col-resize', userSelect: 'none',
+          }}
+        />
+      )}
 
       {/* Окно чата → InboxChatPanel (v0.87.103) */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
