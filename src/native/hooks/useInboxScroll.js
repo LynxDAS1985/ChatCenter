@@ -9,6 +9,16 @@ import { useRef } from 'react'
 import useInboxNewerPrefetch from './useInboxNewerPrefetch.js'
 import { saveScrollPositions } from '../utils/scrollPositionsCache.js'
 
+// v0.95.2: гистерезис «у низа» — два порога, чтобы кнопка ↓ не дрожала.
+// prev=true (в atBottom) → выходим только при bottomGap > 120.
+// prev=false → входим только при bottomGap < 40.
+// prev=null (первый замер) → единый порог 80 (как было раньше).
+export function computeNearBottom(bottomGap, prevNearBottom) {
+  if (prevNearBottom === true) return bottomGap < 120
+  if (prevNearBottom === false) return bottomGap < 40
+  return bottomGap < 80
+}
+
 export default function useInboxScroll({
   store,
   scrollKey,
@@ -37,7 +47,12 @@ export default function useInboxScroll({
 
   const handleScroll = async (e) => {
     const el = e.target
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    const bottomGap = el.scrollHeight - el.scrollTop - el.clientHeight
+    // v0.95.2: ГИСТЕРЕЗИС (Schmitt trigger) против дребезга кнопки ↓.
+    // Раньше один порог <80 → bottomGap колебался 60-100 → atBottom тоггл true↔false
+    // → кнопка ↓ мигала (исчезает/появляется). Теперь: ВОЙТИ в atBottom при <40,
+    // ВЫЙТИ при >120; в полосе 40-120 сохраняется предыдущее состояние → нет дребезга.
+    const nearBottom = computeNearBottom(bottomGap, prevNearBottomRef.current)
 
     // v0.94.0: сохраняем pixel scrollTop. Без виртуализации scrollHeight стабилен,
     // scrollTop не деградирует при ремаунте. Это самый простой и точный restore.

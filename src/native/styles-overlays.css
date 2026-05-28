@@ -32,39 +32,6 @@
   min-width: 18px; text-align: center;
 }
 
-/* v0.94.4: облачко прогресса непрочитанных — НАД кнопкой ↓, кликабельно, авто-гаснет при 100%.
-   Заменяет широкий блок .native-unread-window-status (двигал ленту). */
-.native-unread-pill {
-  position: absolute;
-  right: 20px; bottom: 70px;   /* над кнопкой ↓ (она bottom:20px, высота 42px) */
-  display: flex; align-items: center; gap: 6px;
-  background: rgba(20,20,20,0.9);
-  backdrop-filter: blur(8px);
-  color: var(--amoled-text-dim);
-  font-size: 11px;
-  padding: 5px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,184,77,0.25);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  cursor: pointer;
-  white-space: nowrap;
-  z-index: 5;
-  opacity: 1;
-  transition: opacity 250ms ease;  /* плавное появление/гашение */
-}
-.native-unread-pill:hover { border-color: #ffb84d; }
-.native-unread-pill__dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: #ffb84d;
-  box-shadow: 0 0 0 4px rgba(255,184,77,0.12);
-  flex-shrink: 0;
-}
-/* авто-скрытие при 100% (loadedIncoming >= total): плавно гаснет, не кликается */
-.native-unread-pill--hidden {
-  opacity: 0;
-  pointer-events: none;
-}
-
 /* v0.87.27: PhotoViewer — полноэкранный просмотр */
 .native-photo-viewer {
   position: fixed; inset: 0;

@@ -10,14 +10,13 @@ import { useEffect, useRef, useState } from 'react'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
 import VirtualMessageList from './VirtualMessageList.jsx'
-import UnreadProgressPill from './UnreadProgressPill.jsx'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
 import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
 
 export default function InboxChatPanel({
   // chat data
-  store, activeChat, activeTopic, activeMessages, activeUnread, visibleMessages, renderItems, isTyping, messagesLoading, unreadWindow,
+  store, activeChat, activeTopic, activeMessages, activeUnread, visibleMessages, renderItems, isTyping, messagesLoading,
   // v0.88.0: prefetch новых сообщений вниз (Telegram-style infinite scroll down)
   loadingNewer,
   // search/pin/toast/forward
@@ -50,16 +49,8 @@ export default function InboxChatPanel({
       if (msgsScrollRef && msgsScrollRef.current === el) msgsScrollRef.current = null
     }
   }, [renderItems.length, effectiveListRef, msgsScrollRef])
-  const showUnreadWindowInfo = !!unreadWindow?.unreadWindowRequested
-    && unreadWindow?.unreadWindowComplete === false
-  const unreadLoaded = Math.max(0, Number(unreadWindow?.loadedIncoming || 0))
-  const freshUnreadTotal = activeTopic
-    ? Number(activeTopic.unreadCount || 0)
-    : Number(activeChat?.unreadCount || 0)
-  const unreadTotal = Math.max(0, Number.isFinite(freshUnreadTotal)
-    ? freshUnreadTotal
-    : Number(unreadWindow?.unreadCount || 0))
-  const showFreshUnreadWindowInfo = showUnreadWindowInfo && unreadLoaded < unreadTotal
+  // v0.95.2: переменные showFreshUnreadWindowInfo/unreadLoaded/unreadTotal удалены
+  // вместе с UnreadProgressPill. Кнопка ↓ с бейджем activeUnread достаточна.
 
   if (!activeChat) {
     return (
@@ -222,17 +213,8 @@ export default function InboxChatPanel({
             )}
           </button>
         )}
-        {/* v0.94.4: облачко прогресса непрочитанных НАД кнопкой ↓ (вместо широкого блока сверху).
-            Клик → к первому непрочитанному (reuse scrollToBottom). Авто-гаснет при 100% через
-            CSS-класс --hidden (opacity transition), без JS-таймеров. Число растёт по мере
-            прокрутки к непрочитанным (Вариант A — как в Telegram/RocketChat).
-            v0.94.5: вынесено в UnreadProgressPill (тестируемый компонент). */}
-        <UnreadProgressPill
-          show={showFreshUnreadWindowInfo}
-          loaded={unreadLoaded}
-          total={unreadTotal}
-          onClick={scrollToBottom}
-        />
+        {/* v0.95.2: UnreadProgressPill удалён — дублировал бейдж кнопки ↓, без пользы.
+            Бейдж кнопки (activeUnread) достаточно показывает число непрочитанных. */}
       </div>
       {/* Input + Reply/Edit панель → InboxMessageInput (v0.87.83) */}
       <InboxMessageInput

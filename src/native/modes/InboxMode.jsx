@@ -640,7 +640,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         <InboxChatPanel
           store={store} activeChat={activeChat} activeTopic={activeTopic} activeMessages={activeMessages}
           activeUnread={activeUnread} visibleMessages={visibleMessages} renderItems={renderItems}
-          unreadWindow={activeMessageWindow}
           loadingNewer={loadingNewer}
           isTyping={isTyping} messagesLoading={!!store.loadingMessages?.[activeMessageKey]}
           pinnedMsg={pinnedMsg} setPinnedMsg={setPinnedMsg}

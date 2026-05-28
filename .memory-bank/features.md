@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.1 (27 мая 2026)
+## Текущая версия: v0.95.2 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -21,6 +21,28 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.2 — Фикс мигания кнопки ↓ (гистерезис) + удаление пилюли «N/M»
+
+**Симптом 1** (мигание ↓): после определённого количества прокрутки кнопка-стрелка со счётчиком исчезает на 1-2с и появляется снова. **Симптом 2**: пилюля «100/802» рядом с кнопкой бесполезна (дублирует бейдж).
+
+#### Мигание ↓ — корень и фикс
+
+Лог `bottom-state-change` показал **8 переходов `atBottom` true↔false подряд**, причём `bottomGap` колебался около единого порога: `64 → 105 → 48 → 92 → 55 → 110 → 70 → 85`. Код [useInboxScroll.js](src/native/hooks/useInboxScroll.js): `nearBottom = scrollHeight - scrollTop - clientHeight < 80` — **один порог 80px** → дребезг → кнопка `{(!atBottom || activeUnread>0)}` мигает (когда `activeUnread===0`).
+
+**Решение** (стандартный приём из UX — [Schmitt trigger](https://en.wikipedia.org/wiki/Schmitt_trigger), используется в кнопках scroll-to-top, sticky headers): **два порога**. ВОЙТИ в `atBottom` при `bottomGap < 40`, ВЫЙТИ при `bottomGap > 120`. Полоса 40-120 сохраняет предыдущее состояние → колебания 60-100 не дрожат.
+
+Чистая функция `computeNearBottom(bottomGap, prevNearBottom)` в [useInboxScroll.js](src/native/hooks/useInboxScroll.js), используется в `handleScroll`. +4 теста [useInboxScroll.vitest.jsx](src/native/hooks/useInboxScroll.vitest.jsx) (пороги в обе стороны + реальный сценарий дребезга 60-100).
+
+#### Удаление пилюли «N/M прогресса непрочитанных»
+
+Пилюля (v0.94.4-5) дублировала бейдж кнопки ↓ и больше путала, чем помогала. Бейдж `activeUnread` на кнопке ↓ достаточно показывает число непрочитанных.
+
+Удалено: `UnreadProgressPill.jsx`, `UnreadProgressPill.vitest.jsx`, CSS `.native-unread-pill*` в [styles-overlays.css](src/native/styles-overlays.css), импорт + проп + вычисления `showFreshUnreadWindowInfo/unreadLoaded/unreadTotal` в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx), `unreadWindow={activeMessageWindow}` в [InboxMode.jsx](src/native/modes/InboxMode.jsx). Логика `unreadWindowIncomplete` для markRead-guard в InboxMode **не тронута** (нужна для защиты от каскада).
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅.
 
 ---
 
@@ -134,7 +156,7 @@ isContiguous = !newestLoaded || (message.id − newestLoaded) ≤ 200×2^20
 
 #### Тест на облачко (#3)
 
-Пилюля прогресса непрочитанных была инлайном в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) — нетестируема в изоляции. Вынесена в presentational-компонент [UnreadProgressPill.jsx](src/native/components/UnreadProgressPill.jsx) (props: `show`, `loaded`, `total`, `onClick`) — как `MessageSkeleton`. Регресс-тест [UnreadProgressPill.vitest.jsx](src/native/components/UnreadProgressPill.vitest.jsx): видимость при show=true, класс `--hidden` при show=false (авто-гашение), клик→onClick (переход к первому непрочитанному), total=0 → только точка. Поведение и вид не изменились (тот же markup/CSS).
+Пилюля прогресса непрочитанных была инлайном в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) — нетестируема в изоляции. Вынесена в presentational-компонент `UnreadProgressPill.jsx` (props: `show`, `loaded`, `total`, `onClick`) — как `MessageSkeleton`. Регресс-тест `UnreadProgressPill.vitest.jsx`: видимость при show=true, класс `--hidden` при show=false (авто-гашение), клик→onClick, total=0 → только точка. **Удалён в v0.95.2** (дублировал бейдж кнопки ↓).
 
 #### Аудит «дыры» счётчика непрочитанных (8624 → 88)
 
