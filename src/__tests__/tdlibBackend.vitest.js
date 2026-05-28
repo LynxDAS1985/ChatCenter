@@ -193,11 +193,17 @@ describe('backend.messages', () => {
       expect(r.iterations).toBeGreaterThan(1)  // multi-iteration работает
     })
 
-    it('останавливается когда untilMessageId в collected', async () => {
+    it('v0.95.17: НЕ останавливается на untilMessageId — продолжает до targetCount', async () => {
+      // Регрессия v0.95.16: TDLib часто возвращает в iter 1 ТОЛЬКО X →
+      // если break на untilMessageId, юзер видит 1 сообщение. Issue #740 quirk.
+      // Официальный паттерн: итерировать пока remaining > 0 && !empty.
       const { backend, mockClient } = makeBackend()
-      // Iter 1: возвращает messages 100, 99, ..., 80 (включая until=95)
-      mockClient.invoke.mockResolvedValueOnce({
-        messages: Array.from({ length: 21 }, (_, i) => makeMsg(100 - i)),
+      mockClient.invoke.mockResolvedValueOnce({ messages: [makeMsg(95)] })  // iter 1: только X
+      mockClient.invoke.mockResolvedValueOnce({  // iter 2: older
+        messages: Array.from({ length: 50 }, (_, i) => makeMsg(94 - i)),
+      })
+      mockClient.invoke.mockResolvedValueOnce({  // iter 3: ещё older
+        messages: Array.from({ length: 50 }, (_, i) => makeMsg(44 - i)),
       })
 
       const r = await backend.messages.getIterativeUntil({
@@ -207,8 +213,9 @@ describe('backend.messages', () => {
         maxIterations: 5,
       })
       expect(r.ok).toBe(true)
-      expect(r.iterations).toBe(1)  // нашли after first iter
-      expect(r.messages.some(m => String(m.id) === '95')).toBe(true)
+      expect(r.iterations).toBeGreaterThan(1)  // НЕ break после iter 1
+      expect(r.messages.length).toBeGreaterThanOrEqual(100)
+      expect(r.messages.some(m => String(m.id) === '95')).toBe(true)  // X всё равно в результате
     })
 
     it('останавливается при пустом ответе (конец истории)', async () => {
@@ -329,11 +336,15 @@ describe('backend.messages', () => {
       expect(r.error).toMatch(/threadMessageId required/)
     })
 
-    it('останавливается когда untilMessageId в collected', async () => {
+    it('v0.95.17: НЕ останавливается на untilMessageId для топика — продолжает до targetCount', async () => {
+      // Та же регрессия что в getIterativeUntil. Untilbase НЕ short-circuit.
       const { backend, mockClient } = makeBackend()
-      // Iter 1: messages 100..80 (включая until=95)
+      mockClient.invoke.mockResolvedValueOnce({ messages: [makeMsg(95)] })  // iter 1: только X
       mockClient.invoke.mockResolvedValueOnce({
-        messages: Array.from({ length: 21 }, (_, i) => makeMsg(100 - i)),
+        messages: Array.from({ length: 50 }, (_, i) => makeMsg(94 - i)),
+      })
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: Array.from({ length: 50 }, (_, i) => makeMsg(44 - i)),
       })
 
       const r = await backend.messages.getIterativeUntilTopic({
@@ -344,7 +355,8 @@ describe('backend.messages', () => {
         targetCount: 100,
       })
       expect(r.ok).toBe(true)
-      expect(r.iterations).toBe(1)
+      expect(r.iterations).toBeGreaterThan(1)
+      expect(r.messages.length).toBeGreaterThanOrEqual(100)
       expect(r.messages.some(m => String(m.id) === '95')).toBe(true)
     })
 

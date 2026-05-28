@@ -308,8 +308,11 @@ export function createTdlibBackend(opts = {}) {
             const aId = Number(a.id), bId = Number(b.id)
             return aId - bId
           })
-          // Достигли untilMessageId? → готово
-          if (untilMessageId && collected.some(m => String(m.id) === untilMessageId)) break
+          // v0.95.17: УБРАН early break на untilMessageId. TDLib часто возвращает в
+          // iter 1 ТОЛЬКО X (issue #740 quirk), и break на until → возвращали [X]
+          // → юзер видит 1 сообщение. Официальный паттерн ivanstepanovftw
+          // (https://github.com/tdlib/td/issues/740#comment) — итерировать пока
+          // `remaining > 0 && !empty`, untilMessageId НЕ short-circuit'ит.
           // Достаточно? → готово
           if (collected.length >= targetCount) break
           // Следующая итерация: продолжаем от старейшего полученного (older)
@@ -412,7 +415,8 @@ export function createTdlibBackend(opts = {}) {
             if (newMessages.length === 0) break
             // Merge + sort ASC
             collected = [...collected, ...newMessages].sort((a, b) => Number(a.id) - Number(b.id))
-            if (untilMessageId && collected.some(m => String(m.id) === untilMessageId)) break
+            // v0.95.17: УБРАН untilMessageId short-circuit (тот же баг что в getIterativeUntil).
+            // TDLib quirk: iter 1 может вернуть только X → break слишком рано.
             if (collected.length >= targetCount) break
             cursor = String(collected[0].id)
           } catch (e) {
