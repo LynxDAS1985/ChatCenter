@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.2 (28 мая 2026)
+## Текущая версия: v0.95.3 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.93.0.md`](./archive/features-v0.93.0.md) | v0.93.0 (pixel-perfect scroll restore через LocationOptions.offset, superseded v0.94.0) | ~7 КБ |
 | [`archive/features-v0.92.0-6.md`](./archive/features-v0.92.0-6.md) | v0.92.0 – v0.92.6 (сага Virtuoso scroll restore, superseded v0.94.0) | ~37 КБ |
 | [`archive/features-v0.91.11-24.md`](./archive/features-v0.91.11-24.md) | v0.91.11 – v0.91.24 (сага scroll restore: 13 версий → миграция на virtuoso) | ~47 КБ |
 | [`archive/features-v0.91.1-10.md`](./archive/features-v0.91.1-10.md) | v0.91.1 – v0.91.10 (initial-load, scroll-jump, newBelow, forum topics, updateChatLastMessage) | ~12 КБ |
@@ -24,7 +25,27 @@
 
 ---
 
+### v0.95.3 — Диагностика «дёрг при повторном открытии чата» (без смены поведения)
+
+Перед точным фиксом (useEffect → useLayoutEffect, или альтернатива) — диагностика, чтобы 100% подтвердить корень. Поведение **не изменено**, только логи.
+
+В [useInitialScroll.js](src/native/hooks/useInitialScroll.js) ветка 2 (already-seen):
+- В событии `restore-applied` добавлены поля: **`scrollTopBefore`** (что видел юзер ДО restore — если 0 при `saved≠0`, значит был flash «верх ленты»), **`msSinceEffectStart`** (время от запуска эффекта до scrollTop=), **`attempts`** (число rAF-retry если scrollEl не был готов).
+- Новое событие **`restore-followup-render`** (`followupCount`, `messagesCount`) считает ре-раны эффекта ДЛЯ ТОГО ЖЕ чата ПОСЛЕ restore (staged setState из v0.91.6 — IDB→server→prefetch×2). Покажет, сколько ре-рендеров происходит после восстановления позиции (могут давать мелкие сдвиги).
+
+**Зачем:** на реальной сессии (повторное открытие seen-чата) лог покажет:
+1. `scrollTopBefore=0` + `saved.scrollTop>0` → подтверждение post-paint flash → фикс через useLayoutEffect / chatReady-гейт.
+2. `followupCount>1` после restore → корень в staged setState → другой подход (батчинг или re-pin на каждое изменение).
+
+Также исправлен рассинхрон в `package-lock.json` (root=0.95.2, packages=0.95.1 → оба 0.95.3).
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅. Тесты useInitialScroll 14/14 (поведение не менялось).
+
+---
+
 ### v0.95.2 — Фикс мигания кнопки ↓ (гистерезис) + удаление пилюли «N/M»
+
+**✅ Подтверждение пользователя (28 мая 2026)**: фикс работает — кнопка ↓ больше не мигает, пилюля убрана.
 
 **Симптом 1** (мигание ↓): после определённого количества прокрутки кнопка-стрелка со счётчиком исчезает на 1-2с и появляется снова. **Симптом 2**: пилюля «100/802» рядом с кнопкой бесполезна (дублирует бейдж).
 
@@ -309,104 +330,9 @@ isContiguous = !newestLoaded || (message.id − newestLoaded) ≤ 200×2^20
 
 ---
 
-### v0.93.0 — Pixel-perfect scroll restore через `LocationOptions.offset` (включая середину длинных постов)
+### v0.93.0 — заархивирован
 
-После v0.92.6 (rollback сломанного snapshot mechanism) юзер показал скрины РБК Крипто: открыл длинный пост по середине, при возврате видна шапка. Анализ — Virtuoso `align: 'end'` для post > viewport clamping → нижняя часть не помещается → юзер видит верх. Аудит [`audit-2026-05-26-scroll-architecture.md`](.memory-bank/audit-2026-05-26-scroll-architecture.md) подтвердил что 8 ломаных связей (A-H) НЕ являются причиной — это мусор кода.
-
-**Реальное решение** найдено в Virtuoso TS-типах локально (`node_modules/react-virtuoso/dist/index.d.ts:765`):
-
-```ts
-LocationOptions {
-  align?: 'center' | 'end' | 'start'
-  behavior?: 'auto' | 'smooth'
-  offset?: number  // "The offset to scroll"
-}
-
-initialTopMostItemIndex?: IndexLocationWithAlign | number
-```
-
-`initialTopMostItemIndex` принимает объект с **`offset`** — pixel offset. Это позволяет восстанавливать **СЕРЕДИНУ длинного поста** через `{index, align: 'start', offset: N}`.
-
-#### Что изменено
-
-**1. [`scrollPositionsCache.js`](src/native/utils/scrollPositionsCache.js)**:
-- `findVisibleAnchorMsgId` теперь возвращает **`{anchorMsgId, offsetFromTop}`** вместо просто msgId
-- Изменена логика: теперь берётся **ВЕРХНИЙ visible msg** (первый row чей `bottom > scrollTop`), не нижний
-- `offsetFromTop = scrollTop - anchorRow.offsetTop` — pixel offset внутри anchor row
-- Storage version 2 → 3 (с offsetFromTop), backward compat для v2 saves (offset=0)
-
-**2. [`useInboxScroll.handleScroll`](src/native/hooks/useInboxScroll.js)** + **[`useScrollPositionAutosave`](src/native/hooks/useScrollPositionAutosave.js)**:
-- Используют новый объектный формат `findVisibleAnchorMsgId`
-- Сохраняют `{anchorMsgId, atBottom, offsetFromTop}` в Map
-- Лог `scroll-save` / `autosave-save` имеет поле `offsetFromTop`
-
-**3. [`InboxMode.jsx`](src/native/modes/InboxMode.jsx)**:
-- `initialTopMostItemIndex` для savedAnchor → `{index, align: 'start', offset: saved.offsetFromTop || 0}`
-- Раньше было `{index, align: 'end'}` (clamping для длинных постов)
-- `scrollToAbsoluteBottom` теперь пишет `{anchorMsgId: null, atBottom: true, offsetFromTop: 0}`
-
-#### Как работает (объяснение простым языком)
-
-**Save** (когда юзер на середине поста):
-- anchor row = заголовок поста (top, частично выше viewport)
-- offsetFromTop = 400 (scrollTop на 400px ниже top заголовка)
-- Сохраняем: `{anchorMsgId: 'X', atBottom: false, offsetFromTop: 400}`
-
-**Restore** (юзер возвращается):
-- Находим index заголовка в renderItems
-- Virtuoso `initialTopMostItemIndex={index, align: 'start', offset: 400}`
-- Virtuoso ставит scrollTop = anchorRow.top + 400 → **точно куда было**
-- Длинный пост → видна середина (как при save)
-
-Это **pixel-perfect anchor-mode restore БЕЗ snapshot mechanism**. Работает с `key={cacheKey}` ремаунтом Virtuoso (offset stable, не зависит от ranges).
-
-#### 3+ факта
-
-🥇 [Virtuoso 4.18.7 TS-типы локально:761-766](file:///c:/Projects/ChatCenter/node_modules/react-virtuoso/dist/index.d.ts) — `LocationOptions.offset?: number`
-🥇 [Virtuoso 4.18.7 TS-типы локально:1258](file:///c:/Projects/ChatCenter/node_modules/react-virtuoso/dist/index.d.ts) — `initialTopMostItemIndex?: IndexLocationWithAlign | number`
-🥈 Наш `scrollPositionsCache.js:108` — раньше сохранял только msgId, теперь объект
-🥈 Скриншоты юзера РБК Крипто — длинный пост, align='end' clamping → видна верхушка
-
-#### Граничные случаи (учтены)
-
-| Случай | Решение |
-|---|---|
-| Старые saves в localStorage (v2 формат без offset) | `loadScrollPositions` принимает v2, ставит `offsetFromTop=0` |
-| anchor msg удалён (`findRenderItemIndex=-1`) | Fallback на firstUnreadId → renderItems.length-1 |
-| `offsetFromTop` отрицательный (anchor row выше scrollTop полностью) | `Math.max(0, scrollTop - rowTop)` |
-| Очень большой offset (anchor row меньше offset) | Virtuoso clamps — будет в начале следующего row |
-| `el.offsetHeight=0` (row не отрендерен) | `bottom > scrollTop` false → перебираем следующий msg |
-
-#### Что НЕ трогали
-
-8 ломаных связей A-H из аудита — это мусор кода, не функциональная проблема. Cleanup отложен до v0.93.1+ (отдельная задача).
-
-#### Регрессия
-
-- lint 0
-- vitest должен пройти (новый формат backward compat)
-- fileSizeLimits ✅
-
-#### Откат
-
-```bash
-git revert <этот hash>
-```
-
-Вернёт v0.92.6 (align='end' для anchor → clamping длинных постов → юзер видит верхушку).
-
-#### Как проверить
-
-1. Программа лог `=== ChatCenter v0.93.0 start ===`
-2. Открыть РБК Крипто (или другой чат с длинным постом)
-3. Прокрутить в **середину** длинного поста
-4. Переключиться на B → вернуться на A
-5. **Позиция должна быть точно где была** (та же середина post)
-6. В логе `scroll-save offsetFromTop=N` (N = pixel offset, не 0)
-7. В логе при возврате не должно быть прыжков
-
----
-
+Pixel-perfect scroll restore через `LocationOptions.offset` Virtuoso API. Полностью superseded в **v0.94.0** (виртуализация удалена). Детали: [`archive/features-v0.93.0.md`](./archive/features-v0.93.0.md).
 ### v0.92.0 – v0.92.6 — заархивированы
 
 Сага Virtuoso scroll restore (6 версий). Полностью superseded в **v0.94.0** (виртуализация удалена, restore через простой pixel scrollTop). Детали: [`archive/features-v0.92.0-6.md`](./archive/features-v0.92.0-6.md).

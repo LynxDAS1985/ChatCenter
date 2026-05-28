@@ -36,6 +36,10 @@ export function useInitialScroll({
   const doneRef = useRef(null)
   // Различение «реальная смена activeChatId» vs «messagesCount изменился в том же чате».
   const lastActiveChatIdRef = useRef(null)
+  // v0.95.3: диагностика «дёрг при повторном открытии» — счётчик ре-ранов эффекта
+  // для ОДНОГО открытия (staged setState из v0.91.6: IDB→server→prefetch×2) и тайминг.
+  const followupRef = useRef(0)
+  const restoreStartRef = useRef(0)
 
   useEffect(() => {
     if (!activeChatId) return
@@ -53,10 +57,17 @@ export function useInitialScroll({
       const isReturning = lastActiveChatIdRef.current !== activeChatId
       if (!isReturning) {
         // Тот же чат, просто messagesCount изменился (push/prefetch) — не трогаем scroll.
+        // v0.95.3: диагностика — считаем ре-раны эффекта ПОСЛЕ restore (staged setState).
+        followupRef.current += 1
+        logNativeScroll('restore-followup-render', {
+          chatId: activeChatId, followupCount: followupRef.current, messagesCount,
+        })
         try { onDone?.(activeChatId) } catch (_) {}
         return
       }
       lastActiveChatIdRef.current = activeChatId
+      followupRef.current = 0  // новый чат — сбросить счётчик
+      restoreStartRef.current = Date.now()  // тайминг от запуска эффекта до scrollTop=
       let cancelled = false
       let attempts = 0
       const restore = () => {
@@ -69,15 +80,19 @@ export function useInitialScroll({
           return
         }
         const saved = getSavedScrollTop?.(activeChatId)
+        // v0.95.3: захват scrollTop ДО записи — что видел юзер до restore?
+        // Если 0 при saved≠0 — был flash «верх ленты», подтверждение post-paint гипотезы.
+        const scrollTopBefore = el.scrollTop
+        const msSinceEffectStart = Date.now() - restoreStartRef.current
         markRestoring()
         if (saved?.atBottom) {
           el.scrollTop = el.scrollHeight
-          logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'bottom', scrollTop: el.scrollTop, scrollHeight: el.scrollHeight })
+          logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'bottom', scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
         } else if (saved && Number.isFinite(saved.scrollTop)) {
           el.scrollTop = saved.scrollTop
-          logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'pixel', requested: saved.scrollTop, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight })
+          logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'pixel', requested: saved.scrollTop, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
         } else {
-          logNativeScroll('restore-skip', { chatId: activeChatId, reason: 'no-saved' })
+          logNativeScroll('restore-skip', { chatId: activeChatId, reason: 'no-saved', scrollTopBefore })
         }
       }
       restore()
