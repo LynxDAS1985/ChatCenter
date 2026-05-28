@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
 import VirtualMessageList from './VirtualMessageList.jsx'
+import PinnedMessageBar from './PinnedMessageBar.jsx'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
 import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
@@ -106,23 +107,10 @@ export default function InboxChatPanel({
           title="Поиск в чате (Ctrl+F)"
         >🔍</button>
       </div>
-      {/* v0.87.17: закреплённое сообщение */}
-      {pinnedMsg && (
-        <div style={{
-          padding: '8px 16px', borderBottom: '1px solid var(--amoled-border)',
-          background: 'rgba(42,171,238,0.08)', display: 'flex', gap: 10, alignItems: 'center',
-        }}>
-          <span style={{ fontSize: 14 }}>📌</span>
-          <div style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <div style={{ color: 'var(--amoled-accent)', fontWeight: 600 }}>Закреплённое</div>
-            <div style={{ color: 'var(--amoled-text-dim)' }}>{pinnedMsg.text?.slice(0, 100) || '[медиа]'}</div>
-          </div>
-          <button onClick={() => setPinnedMsg(null)} style={{
-            background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)',
-            cursor: 'pointer', fontSize: 14,
-          }} title="Скрыть">✕</button>
-        </div>
-      )}
+      {/* v0.95.5: pinned-блок перенесён в overlay внутри scroll-wrapper'а (см. ниже).
+          Был flex-child над лентой — async загрузка через getPinnedMessage (50-500мс)
+          толкала ленту вниз при появлении блока → «дёрг». Теперь position:absolute
+          поверх верха ленты (как Telegram Web K _chatPinned.scss, WhatsApp Web). */}
       {showMsgSearch && (
         <div style={{ padding: 8, borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-surface)' }}>
           <input type="text" placeholder="Поиск в этом чате..." value={msgSearch}
@@ -139,6 +127,9 @@ export default function InboxChatPanel({
         {/* messages=0, overlay не показывался → юзер видел чёрный фон 500-600мс. */}
         {/* Теперь skeleton-overlay показывается сразу при клике (как Telegram/WhatsApp). */}
         <MessageListOverlay show={(!chatReady) || !!messagesLoading} hasContent={visibleMessages.length > 0} />
+        {/* v0.95.5: pinned overlay (см. PinnedMessageBar.jsx). Виден только при
+            chatReady — не наслаивается на shimmer overlay. */}
+        {chatReady && <PinnedMessageBar pinnedMsg={pinnedMsg} onClose={() => setPinnedMsg(null)} />}
         {/* v0.89.0: виртуализация рендера через react-window. msgsScrollRef
             синхронизируется с listRef.current.element через useEffect выше. */}
         <div style={{
