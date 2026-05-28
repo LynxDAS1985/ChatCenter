@@ -313,6 +313,75 @@ describe('Telegram-like unread opening windows', () => {
     })
   })
 
+  it('v0.95.12: loadMessages с options.aroundId+force — реload вокруг lastMessageId (jump-to-end)', async () => {
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-messages') return Promise.resolve({
+        ok: true,
+        aroundId: 9999,
+        messages: Array.from({ length: 100 }, (_, i) => ({
+          id: String(9900 + i),
+          isOutgoing: false,
+          timestamp: Date.now() + i,
+        })),
+      })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{
+          id: 'chat1', accountId: 'acc1', title: 'T',
+          unreadCount: 724, readInboxMaxId: 1000, lastMessageId: '9999',
+        }],
+      })
+    })
+
+    await act(async () => {
+      // options.aroundId override + force=true → invoke c lastMessageId, БЕЗ unread-окна
+      await result.current.loadMessages('chat1', 100, { aroundId: '9999', force: true })
+    })
+
+    // КОНТРАКТ: aroundId = 9999 (override), addOffset = 0 (force отключает unread-окно)
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-messages', {
+      chatId: 'chat1',
+      limit: 100,
+      aroundId: 9999,
+      addOffset: 0,
+    })
+  })
+
+  it('v0.95.12: loadMessages БЕЗ options.aroundId — старое поведение (unread окно)', async () => {
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-messages') return Promise.resolve({ ok: true, messages: [] })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{
+          id: 'chat1', accountId: 'acc1', title: 'T',
+          unreadCount: 76, readInboxMaxId: 1000, lastMessageId: '9999',
+        }],
+      })
+    })
+
+    await act(async () => {
+      await result.current.loadMessages('chat1')  // без options
+    })
+
+    // Без options: aroundId = readInboxMaxId (старое поведение), addOffset=-90 (unread-окно)
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-messages', {
+      chatId: 'chat1',
+      limit: 100,
+      aroundId: 1000,
+      addOffset: -90,
+    })
+  })
+
   it('selectForumTopic requests a bounded topic window around topic readInboxMaxId', async () => {
     const topic = { id: '10', topicId: '10', topMessageId: '10', title: 'OZON', unreadCount: 458, readInboxMaxId: 2000 }
     invokeMock.mockImplementation((channel) => {

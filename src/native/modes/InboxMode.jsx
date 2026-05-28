@@ -523,32 +523,71 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const scrollToBottom = () => {
     const el = msgsScrollRef.current
     if (!el) return
+    const viewKey = activeViewKey || store.activeChatId
     const deltaPx = el.scrollHeight - el.scrollTop - el.clientHeight
     const behavior = computeScrollBehavior(deltaPx, el.clientHeight)
-    // v0.95.11: РАСШИРЕННАЯ ДИАГНОСТИКА (без смены поведения!). Корень жалобы юзера
-    // «не грузит дальше при unread > загруженного»: лог покажет gap между chat.lastMessageId
-    // (на сервере) и activeMessages[last].id (загружено). Если gap большой — нужно
-    // jump-to-end (v0.95.12, после анализа реальных значений). Сейчас поведение НЕ меняется.
+    // v0.95.11 диагностика: gap между chat.lastMessageId (сервер) и activeMessages[last] (DOM).
     const loadedIncoming = activeMessages.filter(m => !m.isOutgoing).length
-    const chatObj = store.chats.find(c => c.id === (activeViewKey || store.activeChatId))
+    const chatObj = store.chats.find(c => c.id === viewKey)
     const chatLastMessageId = chatObj?.lastMessageId || null
     const loadedLastMsg = activeMessages[activeMessages.length - 1]
     const loadedLastId = loadedLastMsg?.id ? String(loadedLastMsg.id) : null
-    // gap в количестве сообщений: TDLib id-шаг ≈ 2^20 на сообщение (server_id << 20).
     const MSG_ID_STEP = 1048576
     const gapMessages = (chatLastMessageId && loadedLastId)
       ? Math.round((Number(chatLastMessageId) - Number(loadedLastId)) / MSG_ID_STEP)
       : null
+    const unreadVsLoaded = activeUnread - loadedIncoming
     scrollDiag.logEvent('button-scroll-bottom', {
       activeUnread, deltaPx, behavior, messages: activeMessages.length,
-      loadedIncoming,
-      chatLastMessageId,
-      loadedLastId,
-      gapMessages,
-      unreadVsLoaded: activeUnread - loadedIncoming,
+      loadedIncoming, chatLastMessageId, loadedLastId, gapMessages, unreadVsLoaded,
     })
+
+    // v0.95.12: JUMP-TO-END-OF-CHAT (Telegram Desktop style). Когда непрочитанные за
+    // пределами загруженного окна (unread > loadedIncoming, gap большой) — клик ↓
+    // должен загрузить ОКНО ВОКРУГ chat.lastMessageId, а не просто крутить в низ
+    // уже загруженного (там старые сообщения, без свежих unread).
+    // Эталон: tdesktop getHistory(from=peer.last_message.id), tweb getHistory(top_message),
+    // WhatsApp Web reload around chat.lastMessageKey.
+    // Гейт: chat.lastMessageId есть, unreadVsLoaded > 50, не идёт другая загрузка.
+    const loading = !!store.loadingMessages?.[viewKey]
+    if (chatLastMessageId && unreadVsLoaded > 50 && !loading) {
+      scrollDiag.logEvent('button-scroll-jump-to-end', {
+        chatLastMessageId, loadedLastId, gapMessages, unreadVsLoaded,
+        loadedIncoming, activeUnread,
+      })
+      store.loadMessages(viewKey, 100, {
+        aroundId: chatLastMessageId, force: true,
+      }).then(() => {
+        const elNow = msgsScrollRef.current
+        if (!elNow) return
+        // После reload state.messages[chatId] = свежие 100 сообщений. Прыжок к низу
+        // (instant — нет смысла в smooth когда виден совсем новый DOM).
+        elNow.scrollTo({ top: elNow.scrollHeight, behavior: 'instant' })
+        if (viewKey) scrollPosByChatRef.current.set(viewKey, {
+          scrollTop: elNow.scrollHeight, atBottom: true,
+        })
+        setAtBottom(true)
+        setNewBelow(0)
+        // mark-read до lastMessageId (range-ack ВСЕ непрочитанные ≤ maxId).
+        // Bypass-gate (v0.95.8) разрешает 'button-scroll' даже при unreadWindowIncomplete.
+        const lastIdNum = Number(chatLastMessageId) || 0
+        if (lastIdNum > 0 && lastIdNum > (maxEverSentRef.current || 0)) {
+          maxEverSentRef.current = lastIdNum
+          markReadCurrentView(viewKey, lastIdNum, { source: 'button-scroll' })
+        }
+        scrollDiag.logEvent('button-scroll-jump-to-end-done', {
+          chatLastMessageId, scrollTop: elNow.scrollTop, scrollHeight: elNow.scrollHeight,
+        })
+      }).catch((err) => {
+        scrollDiag.logEvent('button-scroll-jump-to-end-error', {
+          error: String(err?.message || err),
+        })
+      })
+      return  // ранний выход — fallback ниже не запускается
+    }
+
+    // === Обычное поведение (gap маленький ИЛИ нет lastMessageId ИЛИ идёт загрузка) ===
     el.scrollTo({ top: el.scrollHeight, behavior })
-    const viewKey = activeViewKey || store.activeChatId
     if (viewKey) scrollPosByChatRef.current.set(viewKey, { scrollTop: el.scrollHeight, atBottom: true })
     setAtBottom(true)
     setNewBelow(0)

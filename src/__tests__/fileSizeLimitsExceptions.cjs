@@ -41,15 +41,15 @@ module.exports = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 1050,
-    reason: 'v0.89.40: расширили IndexedDB cache на обычные чаты + loadOlder/Newer + TTL cleanup (~30 строк). Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
+    ceiling: 1080,
+    reason: 'v0.95.12: loadMessages options.aroundId/force override для jump-to-end-of-chat (+15 строк). v0.89.40 история: IndexedDB cache + loadOlder/Newer + TTL cleanup. Доменное разбиение store — отдельный плановый шаг (handoff-code-limits.md).'
   },
   // v0.88.x: профильные тесты v0.88.x вынесены в nativeStoreUnreadPrefetch.vitest.jsx (218 строк).
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,
   // bulk-sync — разбивать дальше нет смысла, они одного домена (read/unread state).
   'src/native/store/nativeStore.vitest.jsx': {
-    ceiling: 500,
-    reason: 'v0.89.37: добавлен race protection тест для selectForumTopic (+48 строк). Тесты по доменам read/unread + load + race — единый домен. Дальнейшее разбиение — отдельный плановый шаг.'
+    ceiling: 580,
+    reason: 'v0.95.12: +2 теста для loadMessages с options.aroundId/force (jump-to-end) и без options (backward compat). v0.89.37 история: race protection для selectForumTopic. Дальнейшее разбиение — отдельный плановый шаг.'
   },
   // v0.89.25 (ловушка #24 forum is_forum): добавлены supergroupCache + updateSupergroup handler + getSupergroup
   // метод (~15 строк). Файл уже был на 499 при стандартном лимите 500. Минимальное превышение, разбивать

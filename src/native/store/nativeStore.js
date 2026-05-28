@@ -564,10 +564,20 @@ export default function useNativeStore() {
     return window.api?.invoke('tg:set-typing', { chatId })
   }, [])
 
-  const loadMessages = useCallback(async (chatId, limit = 50) => {
+  const loadMessages = useCallback(async (chatId, limit = 50, options = {}) => {
     const chat = stateRef.current.chats.find(c => c.id === chatId)
-    const unreadParams = unreadWindowRequestParams(chat?.unreadCount, chat?.readInboxMaxId, limit)
-    const cachedPreview = !stateRef.current.messages[chatId] ? loadChatCache(chatId) : null
+    // v0.95.12: jump-to-end-of-chat (как Telegram Desktop). При click ↓ когда
+    // unread > loadedIncoming — реload вокруг chat.lastMessageId (а не вокруг
+    // readInboxMaxId как обычно). options.aroundId перебивает unreadParams.aroundId.
+    // options.force отключает unread-окно (limit=baseLimit без оффсета —
+    // ровно стандартный getChatHistory от точки aroundId).
+    const overrideAroundId = options?.aroundId ? Number(options.aroundId) : null
+    const force = !!options?.force
+    const baseParams = unreadWindowRequestParams(chat?.unreadCount, chat?.readInboxMaxId, limit)
+    const unreadParams = (overrideAroundId && force)
+      ? { limit, aroundId: overrideAroundId, addOffset: 0, requested: false }
+      : baseParams
+    const cachedPreview = (!stateRef.current.messages[chatId] && !force) ? loadChatCache(chatId) : null
     logNativeScroll('store-load-messages', {
       chatId,
       limit: unreadParams.limit,
@@ -575,6 +585,8 @@ export default function useNativeStore() {
       cached: cachedPreview?.length || 0,
       unread: chat?.unreadCount || 0,
       aroundId: unreadParams.aroundId,
+      override: !!overrideAroundId,
+      force,
     })
     // v0.89.40: IndexedDB optimistic render для обычных чатов — параллельно
     // с invoke загружаем последние сообщения из IDB. Если localStorage cache
@@ -584,14 +596,19 @@ export default function useNativeStore() {
     // кэша при будущей оптимизации (расширение TTL, лимита и т.д.).
     // v0.89.45: агрегатор — одна строка `idb-cache-window` каждые 30 секунд
     // вместо сотен индивидуальных. См. idbCacheMetrics.js.
-    loadCacheMessages(chatId, null).then(cached => {
-      recordIdbCache('loadMessages', !!cached?.messages?.length)
-      if (!cached) return
-      setState(s => {
-        if ((s.messages[chatId] || []).length > 0) return s
-        return { ...s, messages: { ...s.messages, [chatId]: cached.messages } }
-      })
-    }).catch(() => {})
+    // v0.95.12: при force=true (jump-to-end) НЕ применяем IDB-кеш — иначе юзер
+    // на 200-500мс увидит старый stale-window (вокруг unread cursor) вместо
+    // ожидаемого «прыжка к концу». Дождёмся свежих сообщений от backend.
+    if (!force) {
+      loadCacheMessages(chatId, null).then(cached => {
+        recordIdbCache('loadMessages', !!cached?.messages?.length)
+        if (!cached) return
+        setState(s => {
+          if ((s.messages[chatId] || []).length > 0) return s
+          return { ...s, messages: { ...s.messages, [chatId]: cached.messages } }
+        })
+      }).catch(() => {})
+    }
     // v0.87.36: поднимаем флаг загрузки (для shimmer overlay) + пытаемся мгновенно
     // подставить кэш из localStorage
     setState(s => {
