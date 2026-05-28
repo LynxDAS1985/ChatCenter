@@ -525,8 +525,27 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     if (!el) return
     const deltaPx = el.scrollHeight - el.scrollTop - el.clientHeight
     const behavior = computeScrollBehavior(deltaPx, el.clientHeight)
+    // v0.95.11: РАСШИРЕННАЯ ДИАГНОСТИКА (без смены поведения!). Корень жалобы юзера
+    // «не грузит дальше при unread > загруженного»: лог покажет gap между chat.lastMessageId
+    // (на сервере) и activeMessages[last].id (загружено). Если gap большой — нужно
+    // jump-to-end (v0.95.12, после анализа реальных значений). Сейчас поведение НЕ меняется.
+    const loadedIncoming = activeMessages.filter(m => !m.isOutgoing).length
+    const chatObj = store.chats.find(c => c.id === (activeViewKey || store.activeChatId))
+    const chatLastMessageId = chatObj?.lastMessageId || null
+    const loadedLastMsg = activeMessages[activeMessages.length - 1]
+    const loadedLastId = loadedLastMsg?.id ? String(loadedLastMsg.id) : null
+    // gap в количестве сообщений: TDLib id-шаг ≈ 2^20 на сообщение (server_id << 20).
+    const MSG_ID_STEP = 1048576
+    const gapMessages = (chatLastMessageId && loadedLastId)
+      ? Math.round((Number(chatLastMessageId) - Number(loadedLastId)) / MSG_ID_STEP)
+      : null
     scrollDiag.logEvent('button-scroll-bottom', {
       activeUnread, deltaPx, behavior, messages: activeMessages.length,
+      loadedIncoming,
+      chatLastMessageId,
+      loadedLastId,
+      gapMessages,
+      unreadVsLoaded: activeUnread - loadedIncoming,
     })
     el.scrollTo({ top: el.scrollHeight, behavior })
     const viewKey = activeViewKey || store.activeChatId

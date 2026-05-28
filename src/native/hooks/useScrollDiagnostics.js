@@ -26,7 +26,16 @@ export function useScrollDiagnostics({ activeChatId, activeChat, activeMessages,
     lastUserRef.current = { at: 0, type: 'none' }
     lastTopLogRef.current = 0
     bottomStateRef.current = null
-    if (activeChatId) logEvent('chat-open', { title: activeChat?.title || '', unread: activeUnread, messages: activeMessages.length, loading: !!loading })
+    // v0.95.11: добавлен lastMessageId + readInboxMaxId для диагностики "gap между
+    // загруженным и сервером" (юзер: «не грузит дальше при unread > loaded»).
+    if (activeChatId) logEvent('chat-open', {
+      title: activeChat?.title || '',
+      unread: activeUnread,
+      messages: activeMessages.length,
+      loading: !!loading,
+      lastMessageId: activeChat?.lastMessageId || null,
+      readInboxMaxId: activeChat?.readInboxMaxId || 0,
+    })
   }, [activeChatId])
 
   useEffect(() => {

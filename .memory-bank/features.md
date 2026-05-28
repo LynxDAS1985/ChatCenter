@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.10 (28 мая 2026)
+## Текущая версия: v0.95.11 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -24,6 +24,39 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.11 — Диагностика «не грузит дальше при unread > загруженного» (БЕЗ смены поведения)
+
+Юзер жалоба + лог анализ: чат «Компьютерная | IT, Digital», unread=724, загружено 394 сообщения, юзер в самом низу (`bottomGap=0`). Клик ↓ — no-op (уже у низа загруженного). Load-newer не срабатывает потому что юзер не двигает scroll. Остальные ~330 непрочитанных — за пределами окна загрузки. **Корневой ответ — jump-to-end-of-chat** (как Telegram Desktop: при unread>0 reload вокруг `chat.lastMessage.id`). Прежде чем менять поведение — собираю реальные числа на live-сессии.
+
+#### Что добавлено (только логи, поведение не изменено)
+
+1. [tdlibMapper.js mapChat](main/native/backends/tdlibMapper.js) — новое поле `lastMessageId` (id последнего сообщения чата на сервере по TDLib).
+2. [InboxMode.jsx scrollToBottom](src/native/modes/InboxMode.jsx) — `button-scroll-bottom` лог расширен полями:
+   - `loadedIncoming` — число incoming в `activeMessages`
+   - `chatLastMessageId` — id последнего на сервере
+   - `loadedLastId` — id последнего загруженного
+   - `gapMessages` — оценка количества пропущенных сообщений между loaded и server (TDLib msg_id step = 2^20)
+   - `unreadVsLoaded` — `activeUnread - loadedIncoming` (сколько непрочитанных вне DOM)
+3. [useScrollDiagnostics.js chat-open](src/native/hooks/useScrollDiagnostics.js) — добавлены `lastMessageId` + `readInboxMaxId`.
+
+#### Что покажет лог на реальной сессии
+
+- `chat-open lastMessageId=X readInboxMaxId=Y unread=Z messages=N` — сразу видно настройку gap'а
+- При клике ↓: `button-scroll-bottom gapMessages=K unreadVsLoaded=M` — K показывает «насколько ВПЕРЁД сервер от загруженного», M — «сколько непрочитанных НЕ в DOM»
+
+#### Что НЕ изменено
+
+- `scrollToBottom` — поведение то же: `el.scrollTo(scrollHeight)` + mark-read до loadedLast + load-newer через handleScroll
+- Без изменений: drag-resize, gate bypass mark-read (v0.95.8), loading-pulse кнопки (v0.95.9 Fix 4a), все защиты v0.94.7/v0.91.13
+
+#### Следующий шаг
+
+После запуска v0.95.11 юзером и анализа лога — если `gapMessages>50` и `unreadVsLoaded>0` подтвердятся → точный фикс v0.95.12 (jump-to-end через `loadMessages(chatId, { aroundId: chat.lastMessageId, force: true })` + scroll вниз + markRead до lastMessageId).
+
+**Регрессия**: lint 0, vitest 721/721, check-memory ✅. Поведение не менялось — тесты не обновлялись.
 
 ---
 

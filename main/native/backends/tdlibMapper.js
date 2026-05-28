@@ -224,6 +224,9 @@ export function mapChat(tdChat, accountId, extras = {}) {
     type: chatKind,
     lastMessage: messagePreview(tdChat.last_message),
     lastMessageTs: tdChat.last_message?.date ? Number(tdChat.last_message.date) * 1000 : 0,
+    // v0.95.11: lastMessageId — id последнего сообщения чата на сервере (для диагностики
+    // gap между загруженным и сервером + потенциальный jump-to-end-of-chat).
+    lastMessageId: tdChat.last_message?.id ? String(tdChat.last_message.id) : null,
     unreadCount: Number(tdChat.unread_count) || 0,
     readInboxMaxId: Number(tdChat.last_read_inbox_message_id) || 0,
     rawId,
