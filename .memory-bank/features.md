@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.12 (28 мая 2026)
+## Текущая версия: v0.95.13 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -25,6 +25,52 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.13 — Фикс jump-to-end: aroundId=0 (TDLib spec last_message включительно)
+
+Юзер скрин (Архиватор | IT): после клика ↓ при unread=1260 — счётчик 1260→1 (mark-read сработал), НО видно «Learning Angular» (предпоследнее), а самое последнее «iOS 18 Programming» не показано. Лог:
+```
+button-scroll-jump-to-end chatLastMessageId=5633998848 ...   ← server last
+button-scroll-jump-to-end-done scrollTop=78858 scrollHeight=79428 bottomGap=0  ← у низа
+badge-state unread=1260 → 1
+```
+Через 30с юзер кликает ↓ ещё раз: `loadedLastId=5632950272, chatLastMessageId=5633998848, gapMessages=1` — последнее сообщение пропущено.
+
+#### Корень
+
+[TDLib `getChatHistory` spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html):
+- `from_message_id=X, offset=0, limit=N` → возвращает N сообщений **СТРОГО СТАРШЕ X** (не включая X)
+- **`from_message_id=0`** → «the last message in the chat is used» — захватывает ИМЕННО последнее
+
+v0.95.12 передавал `aroundId=chatLastMessageId` → backend → `from=lastMessageId, offset=0` → TDLib грузил сообщения СТАРШЕ lastMessageId → **самое последнее пропускалось**.
+
+#### Решение (1 строка изменения)
+
+В [InboxMode.jsx scrollToBottom](src/native/modes/InboxMode.jsx) jump-to-end ветка: `aroundId: 0` (НЕ `chatLastMessageId`). По TDLib spec backend сам подставит `last_message` и захватит его.
+
+Также фикс в [nativeStore.loadMessages](src/native/store/nativeStore.js): `options.aroundId != null` (вместо truthy `options?.aroundId`) — иначе `0` интерпретировалось как «нет override» → терялся.
+
+#### Что изменится для юзера
+
+| До (v0.95.12) | После (v0.95.13) |
+|---|---|
+| Клик ↓ → видно предпоследнее, unread=1 остаётся | Клик ↓ → видно ВСЕ последние сообщения, unread=0 |
+| Нужно кликнуть ↓ второй раз | Один клик |
+
+#### Тест обновлён
+
+[nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx): тест переименован под v0.95.13, проверяет `aroundId: 0` → invoke с `aroundId: 0, addOffset: 0` (TDLib `from=0=last_message` semantics).
+
+#### Конфликты — все проверены ✅
+
+- ✅ Override через `!= null` не ломает старые вызовы (`options=undefined` → `hasOverride=false`)
+- ✅ `addOffset=0` корректно для TDLib `from=0` (грузит ровно последние limit сообщений)
+- ✅ Mark-read до `chatLastMessageId` остаётся (bypass-gate v0.95.8) — обнуляет счётчик
+- ✅ Backward compat: тест «без options → старое поведение» по-прежнему проходит
+
+**Регрессия**: lint 0, vitest 723/723, fileSizeLimits 283/283, check-memory ✅.
 
 ---
 

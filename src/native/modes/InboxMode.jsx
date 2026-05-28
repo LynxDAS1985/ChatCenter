@@ -549,6 +549,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     // Эталон: tdesktop getHistory(from=peer.last_message.id), tweb getHistory(top_message),
     // WhatsApp Web reload around chat.lastMessageKey.
     // Гейт: chat.lastMessageId есть, unreadVsLoaded > 50, не идёт другая загрузка.
+    // v0.95.13: aroundId=0 (НЕ lastMessageId!). По TDLib spec:
+    // «If from_message_id == 0, the last message in the chat is used» — самый чистый
+    // способ захватить ИМЕННО последнее сообщение в результат. С aroundId=lastMessageId
+    // (как было v0.95.12) TDLib грузил сообщения СТРОГО СТАРШЕ X, не включая сам X →
+    // загружалось предпоследнее, не последнее (юзер видел unread=1 после reload).
     const loading = !!store.loadingMessages?.[viewKey]
     if (chatLastMessageId && unreadVsLoaded > 50 && !loading) {
       scrollDiag.logEvent('button-scroll-jump-to-end', {
@@ -556,7 +561,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         loadedIncoming, activeUnread,
       })
       store.loadMessages(viewKey, 100, {
-        aroundId: chatLastMessageId, force: true,
+        aroundId: 0, force: true,  // v0.95.13: TDLib from=0 = last_message включительно
       }).then(() => {
         const elNow = msgsScrollRef.current
         if (!elNow) return

@@ -567,14 +567,15 @@ export default function useNativeStore() {
   const loadMessages = useCallback(async (chatId, limit = 50, options = {}) => {
     const chat = stateRef.current.chats.find(c => c.id === chatId)
     // v0.95.12: jump-to-end-of-chat (как Telegram Desktop). При click ↓ когда
-    // unread > loadedIncoming — реload вокруг chat.lastMessageId (а не вокруг
-    // readInboxMaxId как обычно). options.aroundId перебивает unreadParams.aroundId.
-    // options.force отключает unread-окно (limit=baseLimit без оффсета —
-    // ровно стандартный getChatHistory от точки aroundId).
-    const overrideAroundId = options?.aroundId ? Number(options.aroundId) : null
+    // unread > loadedIncoming — реload вокруг chat.lastMessageId. options.aroundId
+    // перебивает unreadParams.aroundId. options.force отключает unread-окно.
+    // v0.95.13: aroundId=0 — валидное значение (TDLib spec: from_message_id=0 →
+    // last_message in chat). Проверка `!= null`, не truthy — иначе 0 терялся.
+    const hasOverride = options?.aroundId != null
+    const overrideAroundId = hasOverride ? Number(options.aroundId) : null
     const force = !!options?.force
     const baseParams = unreadWindowRequestParams(chat?.unreadCount, chat?.readInboxMaxId, limit)
-    const unreadParams = (overrideAroundId && force)
+    const unreadParams = (hasOverride && force)
       ? { limit, aroundId: overrideAroundId, addOffset: 0, requested: false }
       : baseParams
     const cachedPreview = (!stateRef.current.messages[chatId] && !force) ? loadChatCache(chatId) : null

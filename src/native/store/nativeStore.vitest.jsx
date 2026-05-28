@@ -313,18 +313,13 @@ describe('Telegram-like unread opening windows', () => {
     })
   })
 
-  it('v0.95.12: loadMessages с options.aroundId+force — реload вокруг lastMessageId (jump-to-end)', async () => {
+  it('v0.95.13: loadMessages с options.aroundId=0 + force — TDLib spec from=0 = last_message', async () => {
+    // По TDLib spec: from_message_id=0 → используется last_message in chat (включительно!).
+    // v0.95.12 передавал aroundId=lastMessageId → TDLib грузил СТРОГО СТАРШЕ X (не включая) →
+    // последнее сообщение пропускалось → юзер видел unread=1 после reload.
     invokeMock.mockImplementation((channel) => {
       if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
-      if (channel === 'tg:get-messages') return Promise.resolve({
-        ok: true,
-        aroundId: 9999,
-        messages: Array.from({ length: 100 }, (_, i) => ({
-          id: String(9900 + i),
-          isOutgoing: false,
-          timestamp: Date.now() + i,
-        })),
-      })
+      if (channel === 'tg:get-messages') return Promise.resolve({ ok: true, messages: [] })
       return Promise.resolve({ ok: true })
     })
     const { result } = renderHook(() => useNativeStore())
@@ -339,15 +334,16 @@ describe('Telegram-like unread opening windows', () => {
     })
 
     await act(async () => {
-      // options.aroundId override + force=true → invoke c lastMessageId, БЕЗ unread-окна
-      await result.current.loadMessages('chat1', 100, { aroundId: '9999', force: true })
+      // aroundId=0 — валидное значение (нужен явный != null check, не truthy).
+      await result.current.loadMessages('chat1', 100, { aroundId: 0, force: true })
     })
 
-    // КОНТРАКТ: aroundId = 9999 (override), addOffset = 0 (force отключает unread-окно)
+    // КОНТРАКТ: aroundId=0 проходит как override (НЕ baseParams.aroundId=readInboxMaxId).
+    // addOffset=0 (force отключает unread-окно).
     expect(invokeMock).toHaveBeenCalledWith('tg:get-messages', {
       chatId: 'chat1',
       limit: 100,
-      aroundId: 9999,
+      aroundId: 0,
       addOffset: 0,
     })
   })
