@@ -16,6 +16,7 @@ import { useScrollDiagnostics } from '../hooks/useScrollDiagnostics.js'
 import useReadByVisibility from '../hooks/useReadByVisibility.js'
 import useInboxScroll from '../hooks/useInboxScroll.js'
 import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostics.js'
+import { computeScrollBehavior } from '../utils/scrollBehavior.js'
 import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
 import { useScrollPositionAutosave } from '../hooks/useScrollPositionAutosave.js'
 
@@ -221,7 +222,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // Сбрасывается только при смене activeViewKey.
   // Фиксируется на ПЕРВОМ НЕНУЛЕВОМ значении (до этого данные ещё не пришли).
   const frozenReadCursorRef = useRef({ viewKey: null, cursor: 0 })
-  const scrollButtonClickTimerRef = useRef(null)
   const scrollDiag = useScrollDiagnostics({
     activeChatId: activeViewKey, activeChat, activeMessages, activeUnread,
     loading: store.loadingMessages?.[activeMessageKey],
@@ -463,34 +463,25 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   })
 
   // v0.87.35: «к последнему непрочитанному» (Telegram-style).
+  // v0.95.6: кнопка ↓ — Telegram-style: ВСЕГДА в самый низ. Не возвращает к firstUnread
+  // (старое поведение было сбивающим — юзер пролистал unread, кнопка возвращала к уже
+  // прочитанному; см. Telegram bug.telegram.org/c/5792).
+  // - delta > 5 × viewport → behavior: 'instant' (нет 10-сек smooth-анимации при unread=619)
+  // - delta меньше → behavior: 'smooth'
+  // - mark-read до lastMessageId (счётчик сразу 0)
+  // - setAtBottom(true), setNewBelow(0), сохранение позиции — как в старом scrollToAbsoluteBottom.
+  // Удалены: scrollToAbsoluteBottom, handleScrollButtonClick (220мс double-click timer),
+  // handleScrollButtonDoubleClick — больше не нужны (один клик = один результат).
   const scrollToBottom = () => {
     const el = msgsScrollRef.current
     if (!el) return
-    const firstUnread = firstUnreadIdRef.current
-    scrollDiag.logEvent('button-scroll', { activeUnread, firstUnread })
-    if (firstUnread) {
-      const target = el.querySelector(`[data-msg-id="${firstUnread}"]`)
-      if (target) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        scrollDiag.logEvent('button-scroll-target', { firstUnread })
-        target.classList.add('native-msg-last-read-highlight')
-        setTimeout(() => target.classList.remove('native-msg-last-read-highlight'), 2500)
-        setNewBelow(0)
-        return
-      }
-    }
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    scrollDiag.logEvent('button-scroll-bottom', { activeUnread, firstUnread })
-    setNewBelow(0)
-  }
-
-  const scrollToAbsoluteBottom = () => {
-    const el = msgsScrollRef.current
-    if (!el) return
-    scrollDiag.logEvent('button-scroll-absolute-bottom', { activeUnread, messages: activeMessages.length })
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    const deltaPx = el.scrollHeight - el.scrollTop - el.clientHeight
+    const behavior = computeScrollBehavior(deltaPx, el.clientHeight)
+    scrollDiag.logEvent('button-scroll-bottom', {
+      activeUnread, deltaPx, behavior, messages: activeMessages.length,
+    })
+    el.scrollTo({ top: el.scrollHeight, behavior })
     const viewKey = activeViewKey || store.activeChatId
-    // v0.94.0: формат {scrollTop, atBottom} — простой пиксельный scrollTop.
     if (viewKey) scrollPosByChatRef.current.set(viewKey, { scrollTop: el.scrollHeight, atBottom: true })
     setAtBottom(true)
     setNewBelow(0)
@@ -498,24 +489,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     const lastId = Number(lastMsg?.id) || 0
     if (lastId > 0 && activeUnread > 0 && lastId > (maxEverSentRef.current || 0)) {
       maxEverSentRef.current = lastId
-      markReadCurrentView(viewKey, lastId, { source: 'absolute-bottom' })
+      markReadCurrentView(viewKey, lastId, { source: 'button-scroll' })
     }
-  }
-
-  const handleScrollButtonClick = () => {
-    if (scrollButtonClickTimerRef.current) clearTimeout(scrollButtonClickTimerRef.current)
-    scrollButtonClickTimerRef.current = setTimeout(() => {
-      scrollButtonClickTimerRef.current = null
-      scrollToBottom()
-    }, 220)
-  }
-
-  const handleScrollButtonDoubleClick = () => {
-    if (scrollButtonClickTimerRef.current) {
-      clearTimeout(scrollButtonClickTimerRef.current)
-      scrollButtonClickTimerRef.current = null
-    }
-    scrollToAbsoluteBottom()
   }
 
   // v0.87.27: клик по reply-цитате — скроллим к оригиналу + 1.5с жёлтое мерцание.
@@ -652,7 +627,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           msgsScrollRef={msgsScrollRef} virtualListRef={virtualListRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
-          scrollToBottom={handleScrollButtonClick} scrollToAbsoluteBottom={handleScrollButtonDoubleClick} scrollToMessage={scrollToMessage}
+          scrollToBottom={scrollToBottom} scrollToMessage={scrollToMessage}
           handleDelete={handleDelete} handleForward={handleForward} handlePin={handlePin}
           openPhotoWindow={openPhotoWindow} getMessage={getMessage} readByVisibility={readByVisibility}
         />

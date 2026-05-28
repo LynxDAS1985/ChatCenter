@@ -27,7 +27,7 @@ export default function InboxChatPanel({
   handleInputChange, handleReplySend, handlePaste,
   // scroll
   msgsScrollRef, handleScroll, scrollDiag, dragOver, handleDragOver, handleDragLeave, handleDrop,
-  chatReady, atBottom, newBelow, scrollToBottom, scrollToAbsoluteBottom, scrollToMessage,
+  chatReady, atBottom, newBelow, scrollToBottom, scrollToMessage,
   // v0.94.0: imperative API (scrollToRow + getter element) — теперь обычный DOM scroll
   virtualListRef,
   // v0.94.0: virtuoso* props УДАЛЕНЫ — виртуализация убрана.
@@ -186,15 +186,13 @@ export default function InboxChatPanel({
         </div>
         {/* v0.87.35/36: кнопка ↓ ВНЕ scroll-контейнера */}
         {/* v0.87.51: бейдж = activeUnread (сырой Telegram API, как в ChatListItem) */}
+        {/* v0.95.6: один клик = всегда в самый низ (Telegram-style). Убран onDoubleClick
+            (раньше был как костыль «обойти возврат к firstUnread» — теперь не нужен). */}
         {(!atBottom || activeUnread > 0) && (
           <button
             onClick={scrollToBottom}
-            onDoubleClick={(e) => {
-              e.preventDefault()
-              scrollToAbsoluteBottom?.()
-            }}
             className="native-scroll-bottom-btn"
-            title={activeUnread > 0 ? `К первому непрочитанному (${activeUnread})` : 'К последнему сообщению'}
+            title={activeUnread > 0 ? `К последнему сообщению (${activeUnread} непрочитано)` : 'К последнему сообщению'}
           >
             ↓
             {(activeUnread > 0 || newBelow > 0) && (

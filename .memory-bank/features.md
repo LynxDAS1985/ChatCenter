@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.5 (28 мая 2026)
+## Текущая версия: v0.95.6 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -23,6 +23,68 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.6 — Кнопка ↓ работает как в Telegram Desktop (всегда в самый низ + instant/smooth)
+
+Симптом (юзер, скрин чата PlayMods.net, 619 непрочитанных): клик по ↓ ведёт **не в низ**, а к старому первому-непрочитанному, которое юзер давно пролистал. Чтобы попасть в самый низ — нужен второй клик. Раздражает.
+
+#### Корень (доказан кодом)
+
+[InboxMode.jsx scrollToBottom (старый)](src/native/modes/InboxMode.jsx) — ветка `if (firstUnread) → к нему в block:'center'`. `firstUnreadIdRef.current` рассчитывался через [`frozenReadCursorRef`](src/native/modes/InboxMode.jsx#L354-L366) — snapshot позиции readInboxMaxId в момент **открытия чата** (специально не обновляется чтобы divider «НОВЫЕ СООБЩЕНИЯ» не дрожал, v0.89.33). Тот же ref **ошибочно** использовался для navigation target кнопки ↓ → юзер видит уже прочитанное.
+
+#### Эталон Telegram (3 факта)
+
+🥇 [Telegram Desktop bug c/5792](https://bugs.telegram.org/c/5792): кнопка ↓ ведёт **в самый низ**. Second-tap возвращает к origin только если был tap по internal link (у нас этой фичи нет → удаляем double-click).
+
+🥇 [MDN ScrollToOptions](https://developer.mozilla.org/en-US/docs/Web/API/ScrollToOptions): `behavior: 'instant'` — Baseline Widely Available с 2015, Chrome/Edge/Electron Chromium. Мгновенный jump в один кадр.
+
+🥈 Наш [`useReadByVisibility`](src/native/hooks/useReadByVisibility.js) с `rootMargin: '-48% 0px -48% 0px'` — mark-read срабатывает в центре viewport. При `instant` jump промежуточные сообщения не становятся видимы → нужна явная `markReadCurrentView(viewKey, lastId)` после прокрутки. Эта логика уже была в старом `scrollToAbsoluteBottom` — перенесена в новый объединённый `scrollToBottom`.
+
+#### Решение (одна функция, Telegram-style)
+
+Новый [`computeScrollBehavior(deltaPx, clientHeight)`](src/native/utils/scrollBehavior.js) — чистая функция: `> 5 × viewport` → `'instant'`, иначе `'smooth'`. Подобран по UX-тесту: 4 экрана smooth ≈ 1.5 сек (приятно), 50000px (619 непрочитанных) → instant (нет 5-10сек анимации с просадкой Chromium).
+
+В [InboxMode.jsx](src/native/modes/InboxMode.jsx):
+- Удалена ветка `if (firstUnread)` — навигация **всегда в самый низ**
+- Объединены `scrollToBottom` + `scrollToAbsoluteBottom` → один `scrollToBottom`
+- Удалены: `handleScrollButtonClick`, `handleScrollButtonDoubleClick`, `scrollButtonClickTimerRef` (220мс double-click timer)
+- `behavior` динамический через `computeScrollBehavior(deltaPx, clientHeight)`
+- markRead до lastMessageId сохранён → счётчик 619→0 сразу при клике
+
+В [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx):
+- Удалён `onDoubleClick` handler
+- Tooltip: `«К последнему сообщению (619 непрочитано)»` (раньше было «К первому непрочитанному» — теперь некорректно)
+
+`firstUnreadIdRef` **остаётся в коде** — он нужен для [useInitialScroll](src/native/hooks/useInitialScroll.js) (auto-scroll к unread при первом открытии чата) и [groupMessages](src/native/utils/messageGrouping.js) (divider «НОВЫЕ СООБЩЕНИЯ»). Это **разные сценарии** от кнопки ↓.
+
+#### Что юзер увидит
+
+| Сценарий | До (v0.95.5) | После (v0.95.6) |
+|---|---|---|
+| Клик ↓ с 619 unread | К старому firstUnread в центр (= уже прочитанное) | В самый низ instant + счётчик 619→0 |
+| Клик ↓ без unread | В низ smooth | В низ smooth |
+| Реакция на клик | Задержка 220мс (double-click timer) | Мгновенно |
+| Двойной клик | scrollToAbsoluteBottom | Игнорируется (нет handler'а) |
+
+#### Регрессионная защита
+
+[scrollBehavior.vitest.js](src/native/utils/scrollBehavior.vitest.js) — 11 unit-тестов:
+- Малая/средняя/пороговая/большая дельта → корректный behavior
+- Реальный сценарий «619 непрочитанных, 50000px от низа» → instant
+- Защита от NaN/undefined/clientHeight=0 → smooth fallback
+
+#### Конфликты — все проверены
+
+- ✅ `useInitialScroll` — не затронут (firstUnreadIdRef остаётся для auto-scroll)
+- ✅ `groupMessages` divider — не затронут (firstUnreadIdRef остаётся)
+- ✅ `useReadByVisibility` IntersectionObserver — markRead до lastId компенсирует промежуточные при instant jump
+- ✅ MDN — `behavior: 'instant'` поддержан widely
+- ✅ Тесты `useInitialScroll.vitest.jsx` — не затронуты (другой firstUnreadIdRef use-case)
+- ✅ Tooltip — обновлён под новое поведение
+
+**Регрессия**: lint 0, vitest 696/696 (+11 новых), fileSizeLimits 278/278 (+1 новый файл), check-memory ✅.
 
 ---
 
