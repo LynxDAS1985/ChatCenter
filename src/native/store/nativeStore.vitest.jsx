@@ -352,6 +352,49 @@ describe('Telegram-like unread opening windows', () => {
     })
   })
 
+  it('v0.95.16: loadTopicMessagesUntil → IPC tg:get-topic-messages-iterate (jump-to-end для форум-топиков)', async () => {
+    // Зеркало loadMessagesUntil для топиков. См. .memory-bank/jump-to-end-saga.md.
+    invokeMock.mockImplementation((channel) => {
+      if (channel === 'tg:get-accounts') return Promise.resolve({ ok: true, accounts: [] })
+      if (channel === 'tg:get-topic-messages-iterate') return Promise.resolve({
+        ok: true, iterations: 2, messages: [],
+      })
+      return Promise.resolve({ ok: true })
+    })
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'Forum', isForum: true, unreadCount: 0 }],
+      })
+    })
+
+    const topic = {
+      id: '5', topicId: '5', topMessageId: '5',
+      threadMessageId: '123',
+      title: 'Bugs',
+      isGeneral: false,
+      unreadCount: 1000,
+      readInboxMaxId: 100,
+      lastMessageId: '9999',
+    }
+
+    await act(async () => {
+      await result.current.loadTopicMessagesUntil('chat1', topic, '9999', 100)
+    })
+
+    // КОНТРАКТ: tg:get-topic-messages-iterate с правильными параметрами
+    expect(invokeMock).toHaveBeenCalledWith('tg:get-topic-messages-iterate', {
+      chatId: 'chat1',
+      topicId: '5',
+      threadMessageId: '123',
+      isGeneral: false,
+      untilMessageId: '9999',
+      targetCount: 100,
+      maxIterations: 5,
+    })
+  })
+
   it('v0.95.15: loadMessagesUntil → IPC tg:get-messages-iterate с untilMessageId+targetCount', async () => {
     // TDLib не гарантирует limit в одном invoke (issue #740). Iterative fetch.
     // См. .memory-bank/jump-to-end-saga.md — почему НЕ работают одиночные invokes.

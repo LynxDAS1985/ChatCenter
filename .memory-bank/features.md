@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.15 (28 мая 2026)
+## Текущая версия: v0.95.16 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -26,6 +26,112 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.16 — Jump-to-end в ФОРУМ-ТОПИКАХ + плавная анимация scroll (easeOutCubic)
+
+Юзер: «в форумах jump-to-end не работает счётчик не сбросился» + «надо красивый эффект разгона и остановки».
+
+#### Часть А — Форум-топики (расширение v0.95.15 на форумы)
+
+Лог чата `tg_611696632:-1002182060939:topic:1`:
+```
+button-scroll-bottom chatLastMessageId=null gapMessages=null unreadVsLoaded=1978
+                                      ↑
+                              Гейт jump-to-end НЕ срабатывает
+```
+
+**Корень**: `chat.lastMessageId` — для основного **чата**, не для **топика**. Топик имеет свой `forumTopic.last_message.id` который у нас не маппился.
+
+**Решение**:
+1. **[tdlibBackend.js forum.getTopics](main/native/backends/tdlibBackend.js)** — добавлен `lastMessageId: t.last_message?.id` в topic object
+2. **Новый метод** [`backend.messages.getIterativeUntilTopic`](main/native/backends/tdlibBackend.js) — зеркало `getIterativeUntil` через `getMessageThreadHistory` (для не-General) или `getChatHistory` (для General топика)
+3. **Новый IPC канал** `tg:get-topic-messages-iterate` в [tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js)
+4. **Новый store метод** [`loadTopicMessagesUntil(chatId, topic, untilMessageId, targetCount)`](src/native/store/nativeStore.js) — обновляет `state.messages[topicMessageKey]`
+5. **[InboxMode.scrollToBottom](src/native/modes/InboxMode.jsx)** — расширен jump-to-end:
+   ```js
+   const isForumTopic = !!(activeChat?.isForum && activeTopic)
+   const topicLastMessageId = isForumTopic ? activeTopic.lastMessageId : null
+   const effectiveLastMessageId = isForumTopic ? topicLastMessageId : chatLastMessageId
+   const loadPromise = isForumTopic
+     ? store.loadTopicMessagesUntil(chatId, activeTopic, lastMessageId, 100)
+     : store.loadMessagesUntil(viewKey, lastMessageId, 100)
+   ```
+
+**TDLib подтверждение**: [`getMessageThreadHistory` spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_message_thread_history.html) — «number of returned messages is chosen by TDLib and can be smaller than limit» — ТОТ ЖЕ quirk что `getChatHistory` → итеративный паттерн обязателен.
+
+#### Часть Б — Плавная анимация scroll (easeOutCubic)
+
+Заменил `el.scrollTo({behavior: 'instant'})` на новый util [`smoothScrollTo`](src/native/utils/smoothScroll.js) с `easeOutCubic` (быстрый разгон + плавное приземление).
+
+**Эталоны (research 2026)**:
+- **`easeOutCubic`** — production best practice для UX scroll: «feels responsive (fast initially) then settles smoothly»
+- **`requestAnimationFrame`** — стандарт 60fps анимации, синхронизирован с paint
+- **`prefers-reduced-motion`** — accessibility fallback (W3C WCAG)
+
+**Защиты в smoothScrollTo**:
+1. `distance < 1px` → no-op
+2. `prefers-reduced-motion` → instant (accessibility)
+3. `distance > 8 viewport` → instant (нет смысла в анимации > 5сек)
+4. `duration` default 500мс (быстро + красиво)
+5. Финальный snap к точному `targetTop` (защита от float drift)
+6. `cancel()` функция для прерывания
+
+**Длительность 500мс** — баланс «не медленно, красиво»:
+- < 4 viewport (~3000px) → 500мс анимация с easeOutCubic
+- > 8 viewport → instant
+- Между 4-8 → 500мс (на быстром scrollHeight юзер видит «разгон + торможение»)
+
+#### Тесты — 12 новых
+
+[smoothScroll.vitest.js](src/native/utils/smoothScroll.vitest.js) — **7 unit-тестов**:
+1. easeOutCubic математически корректен (0→0, 0.5→0.875, 1→1)
+2. easeOutCubic монотонно возрастает
+3. easeOutQuint сильнее замедляется в конце чем cubic
+4. distance < 1px → no-op
+5. distance > 8 viewport → instant
+6. Обычная дистанция → RAF + easing + onComplete
+7. cancel() прерывает анимацию
+8. Custom easing работает
+9. null el → no-op
+10. prefersReducedMotion возвращает false если matchMedia недоступен
+11. prefersReducedMotion возвращает true при matches=true
+
+[tdlibBackend.vitest.js](src/__tests__/tdlibBackend.vitest.js) — **4 теста для getIterativeUntilTopic**:
+12. не-General topic: getMessageThreadHistory
+13. General topic: getChatHistory
+14. не-General БЕЗ threadMessageId → error
+15. untilMessageId short-circuit
+16. maxIterations clamp защита
+
+[nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) — **1 тест**:
+17. loadTopicMessagesUntil → IPC tg:get-topic-messages-iterate контракт
+
+#### Конфликты — все проверены ✅
+
+- ✅ Backward compat: existing topic-messages пути не затронуты
+- ✅ smoothScroll fallback: prefers-reduced-motion → instant, > 8 viewport → instant
+- ✅ `useReadByVisibility` cascade guard (v0.94.7) не задействуется
+- ✅ `useInitialScroll` topic reload → followupRef++ без restore
+- ✅ mark-read до topic.lastMessageId — TDLib range-ack для топиков (через `markTopicRead` ветка)
+- ✅ IDB cache отдельный для топика (topicId передаётся в saveCacheMessages)
+
+#### Файлы
+
+| Файл | Что |
+|---|---|
+| [tdlibBackend.js](main/native/backends/tdlibBackend.js) | `messages.getIterativeUntilTopic` (+60 строк) + `lastMessageId` в forum.getTopics |
+| [tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js) | новый IPC `tg:get-topic-messages-iterate` |
+| [nativeStore.js](src/native/store/nativeStore.js) | `loadTopicMessagesUntil` (+55 строк) + экспорт |
+| [InboxMode.jsx](src/native/modes/InboxMode.jsx) | jump-to-end ветка для форумов + smoothScroll интеграция |
+| [smoothScroll.js](src/native/utils/smoothScroll.js) (новый) | easeOutCubic/Quint + smoothScrollTo + prefersReducedMotion |
+| [smoothScroll.vitest.js](src/native/utils/smoothScroll.vitest.js) (новый) | 7 unit-тестов |
+| [tdlibBackend.vitest.js](src/__tests__/tdlibBackend.vitest.js) | +4 теста getIterativeUntilTopic |
+| [nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) | +1 тест loadTopicMessagesUntil |
+| [fileSizeLimitsExceptions.cjs](src/__tests__/fileSizeLimitsExceptions.cjs) | nativeStore.js 1150→1220, tdlibBackend.js 640→720, vitest 640→700, new tdlibBackend.vitest 480 |
+
+**Регрессия**: lint 0, vitest 747/747 (+17 новых), fileSizeLimits 285/285, check-memory ✅.
 
 ---
 

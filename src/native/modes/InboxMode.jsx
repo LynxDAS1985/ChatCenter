@@ -17,6 +17,7 @@ import useReadByVisibility from '../hooks/useReadByVisibility.js'
 import useInboxScroll from '../hooks/useInboxScroll.js'
 import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostics.js'
 import { computeScrollBehavior } from '../utils/scrollBehavior.js'
+import { smoothScrollTo } from '../utils/smoothScroll.js'
 import useChatListResize, {
   CHAT_LIST_DEFAULT_WIDTH, clampChatListWidth, isChatListCompact,
 } from '../hooks/useChatListResize.js'
@@ -542,49 +543,56 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       loadedIncoming, chatLastMessageId, loadedLastId, gapMessages, unreadVsLoaded,
     })
 
-    // v0.95.12-v0.95.15: JUMP-TO-END-OF-CHAT через ИТЕРАТИВНЫЙ fetch.
-    // См. .memory-bank/jump-to-end-saga.md — полная история провалов v0.95.12-14.
-    // КОРЕНЬ: TDLib `getChatHistory` намеренно возвращает меньше `limit` (issue #740,
-    //   ответ levlam: «For optimal performance the number of returned messages is
-    //   chosen by the library»). Один invoke возвращает 1-50 messages, не 100.
-    // ОФИЦИАЛЬНЫЙ ПАТТЕРН (getting-started/getting-chat-messages): итеративный fetch
-    //   с from=last_received.id пока не набрали targetCount.
-    // v0.95.15: store.loadMessagesUntil → backend `tg:get-messages-iterate` (до 5 итераций).
-    //   Гарантирует untilMessageId=chatLastMessageId в результате.
-    // Эталон: TDLib official issue #740 рекомендованный паттерн.
+    // v0.95.12-v0.95.16: JUMP-TO-END через ИТЕРАТИВНЫЙ fetch.
+    // См. .memory-bank/jump-to-end-saga.md — полная история v0.95.12-15 + v0.95.16 форумы.
+    // TDLib `getChatHistory` / `getMessageThreadHistory` возвращают меньше limit
+    // (issue #740, ответ levlam). Решение — итерации до untilMessageId.
+    // v0.95.15: store.loadMessagesUntil для обычных чатов.
+    // v0.95.16: store.loadTopicMessagesUntil для форум-топиков (getMessageThreadHistory)
+    //   + smoothScroll с easeOutCubic для красивого «приземления».
+    const isForumTopic = !!(activeChat?.isForum && activeTopic)
+    const topicLastMessageId = isForumTopic ? (activeTopic.lastMessageId || null) : null
+    const effectiveLastMessageId = isForumTopic ? topicLastMessageId : chatLastMessageId
     const loading = !!store.loadingMessages?.[viewKey]
-    if (chatLastMessageId && unreadVsLoaded > 50 && !loading) {
+    if (effectiveLastMessageId && unreadVsLoaded > 50 && !loading) {
       scrollDiag.logEvent('button-scroll-jump-to-end', {
-        chatLastMessageId, loadedLastId, gapMessages, unreadVsLoaded,
+        chatLastMessageId, topicLastMessageId,
+        effectiveLastMessageId, isForumTopic,
+        loadedLastId, gapMessages, unreadVsLoaded,
         loadedIncoming, activeUnread,
       })
-      store.loadMessagesUntil(viewKey, chatLastMessageId, 100).then((result) => {
-        // v0.95.14: rAF×2 — гарантия что React commit + первый paint завершились.
-        // Без этого scrollHeight может быть устаревшим (старые 100 сообщений) →
-        // scrollTo по неполному DOM → дёрг когда новые картинки догружаются.
+      const loadPromise = isForumTopic
+        ? store.loadTopicMessagesUntil(store.activeChatId, activeTopic, effectiveLastMessageId, 100)
+        : store.loadMessagesUntil(viewKey, effectiveLastMessageId, 100)
+      loadPromise.then((result) => {
+        // rAF×2 — React commit + первый paint завершились → scrollHeight точный.
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             const elNow = msgsScrollRef.current
             if (!elNow) return
-            elNow.scrollTo({ top: elNow.scrollHeight, behavior: 'instant' })
-            if (viewKey) scrollPosByChatRef.current.set(viewKey, {
-              scrollTop: elNow.scrollHeight, atBottom: true,
-            })
-            setAtBottom(true)
-            setNewBelow(0)
-            // mark-read до lastMessageId (range-ack ВСЕ непрочитанные ≤ maxId).
-            // Bypass-gate (v0.95.8) разрешает 'button-scroll' даже при unreadWindowIncomplete.
-            const lastIdNum = Number(chatLastMessageId) || 0
-            if (lastIdNum > 0 && lastIdNum > (maxEverSentRef.current || 0)) {
-              maxEverSentRef.current = lastIdNum
-              markReadCurrentView(viewKey, lastIdNum, { source: 'button-scroll' })
-            }
-            scrollDiag.logEvent('button-scroll-jump-to-end-done', {
-              chatLastMessageId,
-              iterations: result?.iterations || 0,
-              messagesLoaded: result?.messages?.length || 0,
-              scrollTop: elNow.scrollTop,
-              scrollHeight: elNow.scrollHeight,
+            // v0.95.16: smoothScroll с easeOutCubic (быстрый разгон + плавное приземление).
+            // Эталон research 2026: easeOutCubic — «feels responsive (fast initially)
+            // then settles smoothly». На дельте > 8 viewport util fallback на instant.
+            smoothScrollTo(elNow, elNow.scrollHeight, {
+              duration: 500,
+              onComplete: () => {
+                if (viewKey) scrollPosByChatRef.current.set(viewKey, {
+                  scrollTop: elNow.scrollHeight, atBottom: true,
+                })
+                setAtBottom(true)
+                setNewBelow(0)
+                const lastIdNum = Number(effectiveLastMessageId) || 0
+                if (lastIdNum > 0 && lastIdNum > (maxEverSentRef.current || 0)) {
+                  maxEverSentRef.current = lastIdNum
+                  markReadCurrentView(viewKey, lastIdNum, { source: 'button-scroll' })
+                }
+                scrollDiag.logEvent('button-scroll-jump-to-end-done', {
+                  effectiveLastMessageId, isForumTopic,
+                  iterations: result?.iterations || 0,
+                  messagesLoaded: result?.messages?.length || 0,
+                  scrollTop: elNow.scrollTop, scrollHeight: elNow.scrollHeight,
+                })
+              },
             })
           })
         })

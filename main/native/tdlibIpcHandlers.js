@@ -179,6 +179,12 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
     }
     return r
   })
+  // v0.95.16: ИТЕРАТИВНЫЙ fetch для топика (jump-to-end в форум-топике).
+  // Зеркало tg:get-messages-iterate, но через getMessageThreadHistory.
+  // Возвращает result.messages напрямую (как tg:get-topic-messages) — store
+  // обновит state.messages[viewKey] через setState в .then(). См. саге.
+  handle('tg:get-topic-messages-iterate', async (params = {}) =>
+    backend.messages.getIterativeUntilTopic(params))
   handle('tg:get-topic-messages', async (params = {}) => {
     const r = await backend.messages.getTopic(params)
     if (r?.ok && Array.isArray(r.messages)) {

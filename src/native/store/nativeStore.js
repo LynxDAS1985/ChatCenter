@@ -893,6 +893,62 @@ export default function useNativeStore() {
     return result
   }, [])
 
+  // v0.95.16: ИТЕРАТИВНЫЙ fetch для топика (jump-to-end в форумах).
+  // Зеркало loadMessagesUntil для основных чатов. Использует
+  // tg:get-topic-messages-iterate → backend.messages.getIterativeUntilTopic
+  // (getMessageThreadHistory для не-General или getChatHistory для General).
+  // Аналогично selectForumTopic — обновляет state.messages[key] напрямую через setState.
+  const loadTopicMessagesUntil = useCallback(async (chatId, topic, untilMessageId, targetCount = 100) => {
+    if (!chatId || !topic) return { ok: false, error: 'нет chatId/topic' }
+    const key = topicMessageKey(chatId, topic)
+    logNativeScroll('store-load-topic-messages-iterate', {
+      chatId, key,
+      untilMessageId: untilMessageId ? String(untilMessageId) : null,
+      targetCount,
+      isGeneral: !!topic.isGeneral,
+      threadMessageId: topic.threadMessageId || null,
+    })
+    setState(s => ({ ...s, loadingMessages: { ...s.loadingMessages, [key]: true } }))
+    const result = await window.api?.invoke('tg:get-topic-messages-iterate', {
+      chatId,
+      topicId: topic.topicId || topic.id,
+      threadMessageId: topic.threadMessageId || null,
+      isGeneral: !!topic.isGeneral,
+      untilMessageId: untilMessageId ? String(untilMessageId) : null,
+      targetCount,
+      maxIterations: 5,
+    })
+    setState(s => {
+      const loadingCopy = { ...s.loadingMessages }
+      delete loadingCopy[key]
+      if (!result?.ok) return { ...s, loadingMessages: loadingCopy }
+      return {
+        ...s,
+        messages: { ...s.messages, [key]: result.messages || [] },
+        messageWindows: {
+          ...(s.messageWindows || {}),
+          [key]: buildUnreadWindowMeta({
+            messages: result.messages || [],
+            unreadCount: topic.unreadCount || 0,
+            readInboxMaxId: topic.readInboxMaxId || 0,
+            requested: false,
+            aroundId: 0,
+            loading: false,
+          }),
+        },
+        loadingMessages: loadingCopy,
+      }
+    })
+    if (result?.ok && Array.isArray(result.messages)) {
+      const topicIdForCache = topic.topicId || topic.id
+      saveCacheMessages(chatId, topicIdForCache, result.messages, {
+        unreadCount: topic.unreadCount || 0,
+        readInboxMaxId: topic.readInboxMaxId || 0,
+      }).catch(() => {})
+    }
+    return result
+  }, [])
+
   const sendMessage = useCallback(async (chatId, text, replyTo) => {
     return window.api?.invoke('tg:send-message', { chatId, text, replyTo })
   }, [])
@@ -1117,7 +1173,7 @@ export default function useNativeStore() {
     ...state,
     setMode, setActiveAccount, setActiveChat, setChatFilter, closeForumTopics,
     startLogin, submitCode, submitPassword, cancelLogin,
-    loadChats, loadCachedChats, checkConnection, loadMessages, loadMessagesUntil, loadForumTopics, selectForumTopic, loadOlderMessages, loadNewerMessages,
+    loadChats, loadCachedChats, checkConnection, loadMessages, loadMessagesUntil, loadTopicMessagesUntil, loadForumTopics, selectForumTopic, loadOlderMessages, loadNewerMessages,
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
     getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, markTopicRead, setTyping,

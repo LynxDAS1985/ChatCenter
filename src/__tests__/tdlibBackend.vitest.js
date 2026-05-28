@@ -259,6 +259,111 @@ describe('backend.messages', () => {
     })
   })
 
+  // v0.95.16: ИТЕРАТИВНЫЙ fetch для форум-ТОПИКА. Зеркало getIterativeUntil
+  // но через getMessageThreadHistory (для не-General) или getChatHistory (General).
+  // TDLib spec: getMessageThreadHistory имеет ТОТ ЖЕ quirk: «number of returned messages
+  // is chosen by TDLib and can be smaller than limit».
+  describe('messages.getIterativeUntilTopic (v0.95.16)', () => {
+    function makeMsg(id) {
+      return {
+        '@type': 'message', id: Number(id), chat_id: -1001,
+        sender_id: { '@type': 'messageSenderUser', user_id: 42 },
+        is_outgoing: false, date: 1715000000, media_album_id: '0',
+        content: { '@type': 'messageText', text: { text: 'topic msg', entities: [] } },
+      }
+    }
+
+    it('не-General topic: использует getMessageThreadHistory', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: Array.from({ length: 50 }, (_, i) => makeMsg(100 - i)),
+      })
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: Array.from({ length: 50 }, (_, i) => makeMsg(50 - i)),
+      })
+
+      const r = await backend.messages.getIterativeUntilTopic({
+        chatId: 'tg_main:-1001',
+        threadMessageId: '999',
+        isGeneral: false,
+        targetCount: 100,
+        maxIterations: 5,
+      })
+      expect(r.ok).toBe(true)
+      expect(r.messages.length).toBeGreaterThanOrEqual(100)
+      // Первый invoke — getMessageThreadHistory (НЕ getChatHistory)
+      expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+        '@type': 'getMessageThreadHistory',
+        chat_id: -1001,
+        message_id: 999,
+      }))
+    })
+
+    it('General topic: использует getChatHistory (не getMessageThreadHistory)', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({ messages: [makeMsg(50)] })
+      mockClient.invoke.mockResolvedValueOnce({ messages: [] })  // empty → stop
+
+      const r = await backend.messages.getIterativeUntilTopic({
+        chatId: 'tg_main:-1001',
+        isGeneral: true,
+        targetCount: 100,
+      })
+      expect(r.ok).toBe(true)
+      // General → getChatHistory, не getMessageThreadHistory
+      expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+        '@type': 'getChatHistory',
+        chat_id: -1001,
+      }))
+    })
+
+    it('не-General БЕЗ threadMessageId → error', async () => {
+      const { backend } = makeBackend()
+      const r = await backend.messages.getIterativeUntilTopic({
+        chatId: 'tg_main:-1001',
+        isGeneral: false,
+        // threadMessageId отсутствует
+        targetCount: 100,
+      })
+      expect(r.ok).toBe(false)
+      expect(r.error).toMatch(/threadMessageId required/)
+    })
+
+    it('останавливается когда untilMessageId в collected', async () => {
+      const { backend, mockClient } = makeBackend()
+      // Iter 1: messages 100..80 (включая until=95)
+      mockClient.invoke.mockResolvedValueOnce({
+        messages: Array.from({ length: 21 }, (_, i) => makeMsg(100 - i)),
+      })
+
+      const r = await backend.messages.getIterativeUntilTopic({
+        chatId: 'tg_main:-1001',
+        threadMessageId: '1',
+        isGeneral: false,
+        untilMessageId: '95',
+        targetCount: 100,
+      })
+      expect(r.ok).toBe(true)
+      expect(r.iterations).toBe(1)
+      expect(r.messages.some(m => String(m.id) === '95')).toBe(true)
+    })
+
+    it('защита maxIterations clamp [1, 10] — дубли → stop рано', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValue({ messages: [makeMsg(50)] })  // всегда дубль
+
+      const r = await backend.messages.getIterativeUntilTopic({
+        chatId: 'tg_main:-1001',
+        threadMessageId: '1',
+        isGeneral: false,
+        targetCount: 100,
+        maxIterations: 999,  // попытка обойти clamp
+      })
+      expect(r.ok).toBe(true)
+      expect(r.iterations).toBeLessThanOrEqual(10)
+    })
+  })
+
   it('send корректно парсит chatId и вызывает sendMessage', async () => {
     const { backend, mockClient } = makeBackend()
     mockClient.invoke.mockResolvedValueOnce({

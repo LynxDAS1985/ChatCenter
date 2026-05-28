@@ -365,6 +365,74 @@ export function createTdlibBackend(opts = {}) {
           return { ok: false, error: e?.message || String(e), messages: [] }
         }
       },
+      // v0.95.16: ИТЕРАТИВНЫЙ fetch для jump-to-end в ФОРУМ-ТОПИКЕ.
+      // Зеркало messages.getIterativeUntil но через getMessageThreadHistory
+      // (для не-General топиков) или getChatHistory (для General).
+      // КРИТИЧНО: TDLib `getMessageThreadHistory` имеет ТОТ ЖЕ quirk что getChatHistory:
+      // «number of returned messages is chosen by TDLib and can be smaller than limit»
+      // ([docs](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_message_thread_history.html)).
+      // См. .memory-bank/jump-to-end-saga.md — v0.95.16 расширение на форумы.
+      async getIterativeUntilTopic(params) {
+        const ctx = getClientForChat(manager, params?.chatId)
+        if (ctx.error) return { ...ctx.error, messages: [], hasMore: false }
+        const targetCount = Math.min(Math.max(Number(params.targetCount) || 100, 1), 100)
+        const untilMessageId = params?.untilMessageId ? String(params.untilMessageId) : null
+        const maxIterations = Math.min(Math.max(Number(params.maxIterations) || 5, 1), 10)
+        const isGeneral = !!params?.isGeneral
+        const threadMessageId = params?.threadMessageId ? Number(params.threadMessageId) : null
+        if (!isGeneral && !threadMessageId) {
+          return { ok: false, error: 'threadMessageId required for non-General topic', messages: [] }
+        }
+        const extras = makeExtras(manager, ctx.accountId)
+        const chatIdStr = String(params.chatId)
+
+        let collected = []
+        let cursor = 0  // iter 1: from=0 → last_message топика
+        let iterations = 0
+        let lastError = null
+
+        for (let i = 0; i < maxIterations; i++) {
+          iterations = i + 1
+          try {
+            const invokeParams = isGeneral
+              ? { '@type': 'getChatHistory', chat_id: ctx.rawId, from_message_id: cursor, offset: 0, limit: 100, only_local: false }
+              : { '@type': 'getMessageThreadHistory', chat_id: ctx.rawId, message_id: threadMessageId, from_message_id: cursor, offset: 0, limit: 100 }
+            const tdResult = await ctx.client.invoke(invokeParams)
+            const tdMessages = tdResult?.messages || []
+            if (tdMessages.length === 0) break
+            const mapped = tdMessages.map((m) => {
+              const senderId = m.sender_id
+              const senderName = extras.getSenderName ? extras.getSenderName(senderId) || '' : ''
+              const senderAvatar = extras.getSenderAvatar ? extras.getSenderAvatar(senderId) || null : null
+              return tdlibMapMessageDirect(m, chatIdStr, { senderName, senderAvatar })
+            }).filter(Boolean)
+            // Dedup
+            const existingIds = new Set(collected.map(m => String(m.id)))
+            const newMessages = mapped.filter(m => m?.id && !existingIds.has(String(m.id)))
+            if (newMessages.length === 0) break
+            // Merge + sort ASC
+            collected = [...collected, ...newMessages].sort((a, b) => Number(a.id) - Number(b.id))
+            if (untilMessageId && collected.some(m => String(m.id) === untilMessageId)) break
+            if (collected.length >= targetCount) break
+            cursor = String(collected[0].id)
+          } catch (e) {
+            lastError = { ok: false, error: e?.message || String(e), messages: [] }
+            break
+          }
+        }
+
+        try {
+          console.log('[topic-iter] chat=' + chatIdStr
+            + ' isGeneral=' + isGeneral + ' threadMsgId=' + (threadMessageId || '-')
+            + ' iterations=' + iterations + ' collected=' + collected.length
+            + ' target=' + targetCount + ' until=' + (untilMessageId || '-')
+            + ' first=' + (collected[0]?.id || '-')
+            + ' last=' + (collected[collected.length - 1]?.id || '-'))
+        } catch (_) {}
+
+        if (lastError && collected.length === 0) return lastError
+        return { ok: true, messages: collected, hasMore: false, iterations }
+      },
       async send(chatId, text, replyTo) {
         const ctx = getClientForChat(manager, chatId)
         if (ctx.error) return ctx.error
@@ -589,6 +657,9 @@ export function createTdlibBackend(opts = {}) {
               readInboxMaxId: Number(t.last_read_inbox_message_id) || 0,
               lastMessage: extractTopicPreview(t.last_message), // v0.91.4
               lastMessageTs: Number(t.last_message?.date) || 0, // v0.91.4
+              // v0.95.16: id последнего сообщения топика — нужен для jump-to-end
+              // в форумах (как chat.lastMessageId для обычных чатов).
+              lastMessageId: t.last_message?.id ? String(t.last_message.id) : null,
             }
           })
           // v0.91.4: диагностика chatUnreadCount vs sumTopicUnread (TDLib агрегирует или нет).
