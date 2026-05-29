@@ -109,6 +109,10 @@ export default function InboxChatListSidebar({
 }) {
   const listRef = useRef(null)
   const containerRef = useRef(null)
+  // v0.95.22: ref форум-панели для autofocus → Escape закрывает через focus-pattern,
+  // без глобального window.addEventListener (избегаем конфликта с AccountContextMenu/
+  // AddMessengerModal/SettingsPanel — все слушают Escape на document).
+  const forumPanelRef = useRef(null)
   // v0.87.109: состояние меню заглушения { chat, x, y } или null
   const [muteMenu, setMuteMenu] = useState(null)
   const [visibleForumChatId, setVisibleForumChatId] = useState(null)
@@ -119,6 +123,8 @@ export default function InboxChatListSidebar({
     setMuteMenu({ chat, x: e.clientX, y: e.clientY })
   }, [])
 
+  // v0.95.22: убрана зависимость forumTopicPanelChatId — wrapper-контейнер больше
+  // не размонтируется при открытии форум-overlay, RO не нужно пересоздавать.
   useEffect(() => {
     if (!containerRef.current) return
     const el = containerRef.current
@@ -127,7 +133,7 @@ export default function InboxChatListSidebar({
     const ro = new ResizeObserver(update)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [setListHeight, store.forumTopicPanelChatId])
+  }, [setListHeight])
 
   useEffect(() => {
     if (store.forumTopicPanelChatId) {
@@ -152,95 +158,22 @@ export default function InboxChatListSidebar({
   const forumTopics = forumChatId ? (store.forumTopics?.[forumChatId] || []) : []
   const selectedTopic = forumChatId ? store.activeForumTopic?.[forumChatId] : null
 
-  if (forumChat) {
-    return (
-      <div ref={panelRef} className={`native-forum-topic-panel ${forumClosing ? 'native-forum-topic-panel--closing' : ''}`} style={{
-        width, flexShrink: 0,
-        borderRight: '1px solid var(--amoled-border)',
-        background: 'var(--amoled-surface)',
-        display: 'flex', flexDirection: 'column',
-        transition: isResizing ? 'none' : 'width 200ms ease-out',
-      }}>
-        <div style={{
-          height: 58, display: 'flex', alignItems: 'center', gap: 10,
-          padding: '0 12px', borderBottom: '1px solid var(--amoled-border)',
-          background: 'var(--amoled-bg)', flexShrink: 0,
-        }}>
-          <button
-            onClick={() => store.closeForumTopics?.()}
-            title="Закрыть темы"
-            style={{
-              width: 34, height: 34, borderRadius: 6,
-              border: '1px solid var(--amoled-border)',
-              background: 'transparent',
-              color: 'var(--amoled-text)',
-              fontSize: 20,
-              cursor: 'pointer',
-            }}
-          >×</button>
-          <div style={{ minWidth: 0 }}>
-            <div style={{
-              color: 'var(--amoled-text)', fontWeight: 700, fontSize: 15,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>{forumChat.title}</div>
-            <div style={{ color: 'var(--amoled-text-muted)', fontSize: 12 }}>Темы группы</div>
-          </div>
-        </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-          {store.forumTopicsLoading?.[forumChatId] && forumTopics.length === 0 ? (
-            <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>
-              Загрузка тем...
-            </div>
-          ) : forumTopics.length === 0 ? (
-            <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>
-              Темы не найдены
-            </div>
-          ) : [...forumTopics].sort(sortForumTopics).map(topic => {
-            const active = selectedTopic?.id === topic.id
-            return (
-              <div
-                className={`native-forum-topic-row ${active ? 'native-forum-topic-row--active' : ''}`}
-                key={topic.id}
-                onClick={() => store.selectForumTopic?.(forumChatId, topic)}
-                style={{
-                  height: 66,
-                  padding: '9px 12px',
-                  borderBottom: '1px solid var(--amoled-border)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                }}
-              >
-                <ForumTopicIcon topic={topic} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{
-                    color: 'var(--amoled-text)', fontWeight: 700, fontSize: 14,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>{topic.title}{topic.isClosed ? ' 🔇' : ''}</div>
-                  <div style={{
-                    color: 'var(--amoled-text-dim)', fontSize: 12,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>{topic.lastMessage || 'Нет предпросмотра'}</div>
-                </div>
-                {topic.unreadCount > 0 && (
-                  <span style={{
-                    minWidth: 30, padding: '3px 7px', borderRadius: 12,
-                    background: 'rgba(255,255,255,0.28)',
-                    color: '#fff', fontSize: 12, fontWeight: 700, textAlign: 'center',
-                    flexShrink: 0,
-                  }}>{formatUnreadCount(topic.unreadCount)}</span>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
+  // v0.95.22: autofocus форум-overlay при открытии (для Escape через focus-pattern).
+  // Срабатывает один раз когда форум появляется — focus уйдёт если юзер кликнет в input,
+  // тогда Escape там очистит ввод (стандарт Telegram Web K).
+  useEffect(() => {
+    if (forumChat && !forumClosing && forumPanelRef.current) {
+      try { forumPanelRef.current.focus() } catch (_) {}
+    }
+  }, [forumChat?.id, forumClosing])
 
   return (
     <div ref={panelRef} className="native-chat-list-panel" style={{
+      // v0.95.22: position:relative — для абсолютного позиционирования форум-overlay.
+      // Раньше форум был полной заменой списка чатов (early return) → react-window List
+      // размонтировался → scroll сбрасывался при возврате. Теперь список ВСЕГДА в DOM,
+      // форум-панель появляется поверх как overlay (паттерн Telegram Web K / Desktop).
+      position: 'relative',
       width, flexShrink: 0,
       borderRight: '1px solid var(--amoled-border)',
       background: 'var(--amoled-surface)',
@@ -348,6 +281,101 @@ export default function InboxChatListSidebar({
           />
         )}
       </div>
+      {/* v0.95.22: ФОРУМ-OVERLAY — появляется поверх списка чатов через position:absolute
+          + inset:0, list никогда не размонтируется. Слайд-анимация CSS (translateX 100%→0)
+          уже была рассчитана под overlay. tabIndex={-1} + onKeyDown — Escape закрывает
+          форум-панель ТОЛЬКО когда фокус на ней (избегаем конфликта с другими Escape-
+          обработчиками: AccountContextMenu, AddMessengerModal, SettingsPanel, MuteMenu —
+          все слушают document.keydown). */}
+      {forumChat && (
+        <div
+          ref={forumPanelRef}
+          tabIndex={-1}
+          onKeyDown={(e) => { if (e.key === 'Escape') store.closeForumTopics?.() }}
+          className={`native-forum-topic-panel ${forumClosing ? 'native-forum-topic-panel--closing' : ''}`}
+          style={{
+            position: 'absolute', inset: 0, zIndex: 1,
+            background: 'var(--amoled-surface)',
+            display: 'flex', flexDirection: 'column',
+            outline: 'none',  // убрать default focus outline (focus задан программно)
+          }}
+        >
+          <div style={{
+            height: 58, display: 'flex', alignItems: 'center', gap: 10,
+            padding: '0 12px', borderBottom: '1px solid var(--amoled-border)',
+            background: 'var(--amoled-bg)', flexShrink: 0,
+          }}>
+            <button
+              onClick={() => store.closeForumTopics?.()}
+              title="Закрыть темы (Esc)"
+              style={{
+                width: 34, height: 34, borderRadius: 6,
+                border: '1px solid var(--amoled-border)',
+                background: 'transparent',
+                color: 'var(--amoled-text)',
+                fontSize: 20,
+                cursor: 'pointer',
+              }}
+            >×</button>
+            <div style={{ minWidth: 0 }}>
+              <div style={{
+                color: 'var(--amoled-text)', fontWeight: 700, fontSize: 15,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>{forumChat.title}</div>
+              <div style={{ color: 'var(--amoled-text-muted)', fontSize: 12 }}>Темы группы</div>
+            </div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            {store.forumTopicsLoading?.[forumChatId] && forumTopics.length === 0 ? (
+              <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>
+                Загрузка тем...
+              </div>
+            ) : forumTopics.length === 0 ? (
+              <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>
+                Темы не найдены
+              </div>
+            ) : [...forumTopics].sort(sortForumTopics).map(topic => {
+              const active = selectedTopic?.id === topic.id
+              return (
+                <div
+                  className={`native-forum-topic-row ${active ? 'native-forum-topic-row--active' : ''}`}
+                  key={topic.id}
+                  onClick={() => store.selectForumTopic?.(forumChatId, topic)}
+                  style={{
+                    height: 66,
+                    padding: '9px 12px',
+                    borderBottom: '1px solid var(--amoled-border)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}
+                >
+                  <ForumTopicIcon topic={topic} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{
+                      color: 'var(--amoled-text)', fontWeight: 700, fontSize: 14,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{topic.title}{topic.isClosed ? ' 🔇' : ''}</div>
+                    <div style={{
+                      color: 'var(--amoled-text-dim)', fontSize: 12,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{topic.lastMessage || 'Нет предпросмотра'}</div>
+                  </div>
+                  {topic.unreadCount > 0 && (
+                    <span style={{
+                      minWidth: 30, padding: '3px 7px', borderRadius: 12,
+                      background: 'rgba(255,255,255,0.28)',
+                      color: '#fff', fontSize: 12, fontWeight: 700, textAlign: 'center',
+                      flexShrink: 0,
+                    }}>{formatUnreadCount(topic.unreadCount)}</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
       {/* v0.87.109: меню заглушения по ПКМ (position: fixed — не влияет на layout) */}
       {muteMenu && (
         <MuteMenu

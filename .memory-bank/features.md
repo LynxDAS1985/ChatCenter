@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.21 (29 мая 2026)
+## Текущая версия: v0.95.22 (29 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -28,6 +28,60 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.22 — Форум-панель как overlay (scroll списка чатов сохраняется) + Escape
+
+Юзер: «когда переходу в форум и закрываю потом, список чатов оказался в самом верху, а надо чтобы не двигался» (скрины: до/после открытия панели тем).
+
+**Корень**: в [InboxChatListSidebar.jsx:155](src/native/components/InboxChatListSidebar.jsx) был `if (forumChat) { return <forum-panel/> }` — early return полностью заменял список чатов на форум-панель. При свитче React размонтировал `react-window List` (нет stable reconciliation между разными root divs), внутренний scrollable div пересоздавался со `scrollTop=0`. При закрытии форум-панели — List создавался **с нуля** → юзер видел верх списка.
+
+**Решение** (overlay-паттерн, как Telegram Web K / Desktop / iOS): убрать early return, рендерить список чатов **всегда** внутри общего wrapper `<div style={position:relative}>`, форум-панель — поверх как `position: absolute; inset: 0; zIndex: 1`. List **никогда не размонтируется** — его внутренний scrollTop сохраняется автоматически в DOM.
+
+CSS-анимация `native-panel-slide-in` (transform translateX 100%→0) уже была рассчитана под overlay — изначально была эта задумка, но JSX делал замену. Теперь совпало.
+
+**Дополнительно — Escape через focus-pattern**: форум-overlay получает `tabIndex={-1}` + `onKeyDown` (Escape → `closeForumTopics`) + autofocus при mount через `useEffect(forumPanelRef.current.focus)`. Это локальный обработчик — срабатывает ТОЛЬКО когда фокус на форум-панели. Глобальный `window.addEventListener('keydown')` создал бы конфликт с уже существующими Escape-handlers ([AccountContextMenu](src/native/components/AccountContextMenu.jsx), [MuteMenu](src/native/components/MuteMenu.jsx), [AddMessengerModal](src/components/AddMessengerModal.jsx), [SettingsPanel](src/components/SettingsPanel.jsx)). Если юзер открыл модалку поверх форума — Escape закроет её, не форум (стандарт Telegram Web K).
+
+**Эталоны** (production messengers 2026):
+- Telegram Web K (`tweb`) — `ForumTab` рендерится как secondary tab внутри left-column, dialog-list всегда в DOM
+- Telegram Desktop — `Window::Forum` overlay layer над `DialogsWidget`
+- iOS Telegram — Forum overlay через UINavigationController push
+- WhatsApp Web / Discord — те же overlay-паттерны для подобных тематических панелей
+
+**Связанные саги** (научили нас НЕ ремаунтить виртуальный список):
+- [native-scroll-restore-saga.md](.memory-bank/native-scroll-restore-saga.md) — 13 итераций v0.91.12-24, сохранение `scrollTop` через ref всегда ломалось при ремаунте
+- [audit-2026-05-26-scroll-architecture.md](.memory-bank/audit-2026-05-26-scroll-architecture.md) — 6 ошибок при попытках restore. Главный урок: «restore работает только когда DOM stable»
+
+**Что НЕ менялось**:
+- `forumClosing` exit-анимация 180мс — работает на overlay идентично (CSS transform работает с position:absolute)
+- `panelRef` для drag-to-resize — теперь на wrapper, width применяется ко всему контейнеру, оба child (список + overlay) follow
+- `useChatListResize` direct DOM-mutation `chatListRef.current.style.width` — wrapper подхватит, overlay через `inset:0` растягивается
+- MuteMenu (ПКМ на чате) — рендерится в общем wrapper, доступен независимо от форума (хотя при открытом overlay чаты не кликабельны — невозможно вызвать ПКМ)
+- compact mode (`width < 128`) — не задевается, форум-overlay имеет свой layout
+- Поиск / фильтр аккаунтов / search highlight — список всегда live
+- `ResizeObserver` для `listHeight` — wrapper больше не размонтируется, RO стабилен (убрана лишняя зависимость `store.forumTopicPanelChatId` из effect)
+
+**Что НЕ сделано (решено отдельно)**:
+- ❌ Persist scroll позиции списка чатов между запусками — Telegram сам этого не делает, юзер не просил явно (его проблема была про одну сессию — решена overlay-фиксом)
+
+**Тесты**: 11 unit-тестов в [InboxChatListSidebar.vitest.jsx](src/native/components/InboxChatListSidebar.vitest.jsx) — регрессионная защита overlay-архитектуры (static analysis):
+- НЕТ early return для форум-панели
+- wrapper имеет `position:relative`
+- форум-overlay имеет `position:absolute + inset:0`
+- conditional render `{forumChat && (...)}`
+- `tabIndex={-1}` + `onKeyDown` Escape + autofocus useEffect
+- CSS-классы slide-in/out
+- UX: title="Закрыть темы (Esc)"
+
+**Регрессия**: lint 0, vitest +11 новых, fileSizeLimits, check-memory ✅.
+
+**Файлы**:
+| Файл | Что |
+|---|---|
+| [InboxChatListSidebar.jsx](src/native/components/InboxChatListSidebar.jsx) | Удалён early return, реструктура на wrapper + overlay, новый forumPanelRef + autofocus useEffect, onKeyDown Escape, tabIndex={-1} |
+| [InboxChatListSidebar.vitest.jsx](src/native/components/InboxChatListSidebar.vitest.jsx) (новый) | 11 регрессионных тестов overlay-архитектуры |
+| [styles-animations.css](src/native/styles-animations.css) | НЕ менялось — slide-in/out keyframes уже работают с overlay (transform translateX) |
 
 ---
 
