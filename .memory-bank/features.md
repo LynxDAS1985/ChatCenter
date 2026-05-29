@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.20 (29 мая 2026)
+## Текущая версия: v0.95.21 (29 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.15-18.md`](./archive/features-v0.95.15-18.md) | v0.95.15 – v0.95.18 (итеративный fetch + форум-топики + двухфазный scroll + ForumTopicEmptyState; стабилизировано v0.95.20-21) | ~8 КБ |
 | [`archive/features-v0.95.12-14.md`](./archive/features-v0.95.12-14.md) | v0.95.12 – v0.95.14 (3 итерации jump-to-end до итеративного fetch v0.95.15, полная сага в jump-to-end-saga.md) | ~32 КБ |
 | [`archive/features-v0.95.8-9.md`](./archive/features-v0.95.8-9.md) | v0.95.8 – v0.95.9 (счётчик ↓ обнуляется + анимация + live compact + порог 128) | ~14 КБ |
 | [`archive/features-v0.95.5-7.md`](./archive/features-v0.95.5-7.md) | v0.95.5 – v0.95.7 (sticky pinned overlay, кнопка ↓ Telegram-style, drag-to-resize) | ~24 КБ |
@@ -27,6 +28,24 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.21 — Бейдж форум-группы: число тем с непрочитанным (как Telegram Desktop)
+
+Юзер: бейдж форум-чата «Un1c4d3 Support» у нас = `6.2K`, в Telegram Web того же чата = `2`. Темы Q/D=3, General=7, остальные 0.
+
+**Корень**: для форум-групп TDLib `chat.unread_count` агрегирует ВСЮ историю по всем темам (включая никогда не открытые) — огромные числа без UX-смысла. Telegram Desktop / Web показывают **число тем с unread > 0**.
+
+**Решение** (UI-override, без правки store-state): новый чистый util [`displayUnread.js`](src/native/utils/displayUnread.js) — `getDisplayUnreadCount(chat, forumTopics)`. Для `isForum=true` считает `topics.filter(t => t.unreadCount > 0).length` из `store.forumTopics[chatId]` (живой массив). Для обычных чатов — `chat.unreadCount` как раньше. Темы не загружены → 0 (Telegram Desktop тоже так делает до первого открытия).
+
+**Где**: [ChatListItem](src/native/components/ChatListItem.jsx) новый prop `displayUnreadCount` (fallback на `chat.unreadCount`). [ChatRow](src/native/components/ChatRow.jsx) вызывает util. [InboxChatListSidebar](src/native/components/InboxChatListSidebar.jsx) пробрасывает `store.forumTopics`. [NativeApp.jsx](src/native/NativeApp.jsx) `unreadByAccount` — корректная сумма.
+
+**НЕ менялось**: `chat.unreadCount` остаётся как TDLib aggregate — markRead / `tg:chat-unread-sync` / `useForceReadAtBottom` работают как раньше. `topic.unreadCount` для форум-топика в [InboxMode.jsx:179](src/native/modes/InboxMode.jsx) уже использовался — не задействуется.
+
+**Тесты**: 12 unit в [displayUnread.vitest.js](src/native/utils/displayUnread.vitest.js) — обычный/форум, с темами/без, edge cases (null/NaN/строки), реальный сценарий юзера. Регрессия: lint 0, vitest, fileSizeLimits, check-memory ✅.
+
+**Отложено (отдельная задача)**: иконки тем форум-чатов — у нас буква (G у General) вместо custom emoji. См. [tdlibForumEmoji.js](main/native/backends/tdlibForumEmoji.js) — `resolveTopicEmojis` иногда не срабатывает.
 
 ---
 
@@ -102,387 +121,9 @@ oldestNext/newestNext — диапазон после применения
 
 ---
 
-### v0.95.18 — Двухфазный scroll + empty state форума + не мигать shimmer в форуме
+### v0.95.15 – v0.95.18 — заархивированы
 
-Три задачи по запросу юзера: (1) видимый эффект пролистывания, (2) красивый empty state форума без темы, (3) убрать бегущую полосу shimmer когда форум открыт но тема не выбрана.
-
-#### Часть А — Двухфазный smoothScroll (Вариант B)
-
-**Проблема**: Лог `bottomGap=0` и distance ≈ 66622px (110 viewport) после jump-to-end. В [smoothScroll.js](src/native/utils/smoothScroll.js) порог `VIEWPORT_THRESHOLD_INSTANT=8` → distance > 8 viewport → **instant fallback** → юзер не видел анимацию.
-
-**Решение — twoPhase option** в [smoothScrollTo](src/native/utils/smoothScroll.js):
-```
-Distance > 1 viewport + twoPhase:true:
-  1. INSTANT prelude: el.scrollTop = target - clientHeight (или + при scroll вверх)
-  2. SMOOTH последний viewport с easeOutCubic (350мс)
-```
-
-Юзер ВСЕГДА видит «приземление» последнего экрана, независимо от distance (100, 10000, 100000px).
-
-В [InboxMode.scrollToBottom jump-to-end](src/native/modes/InboxMode.jsx):
-```js
-smoothScrollTo(elNow, elNow.scrollHeight, {
-  duration: 350,
-  twoPhase: true,
-  onComplete: () => { /* markRead + setAtBottom */ },
-})
-```
-
-Эталон: Telegram Desktop, iOS jump-to-bottom — instant + smooth last screen.
-
-#### Часть Б — Empty state для форума без выбранной темы
-
-Раньше: пустой чёрный экран + малозаметный текст в input поле «Сначала выберите тему слева».
-
-Теперь — новый компонент [ForumTopicEmptyState.jsx](src/native/components/ForumTopicEmptyState.jsx):
-- Иконка 📚 (64px, drop-shadow accent)
-- Заголовок «Это форум-чат»
-- Подсказка «Слева выберите тему форума...»
-- `position: absolute, inset: 0, pointer-events: none` — не блокирует клики
-
-Используется в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) когда `activeChat?.isForum && !activeTopic && visibleMessages.length === 0`.
-
-#### Часть В — Не мигать shimmer overlay в форуме без темы
-
-**Проблема**: лог показывал `[forum-map] unread_count=561` каждые 5-10с → `messagesLoading` мерцал → shimmer overlay постоянно показывался хотя юзер не открыл тему.
-
-**Фикс** в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx):
-```js
-<MessageListOverlay
-  show={!(activeChat?.isForum && !activeTopic) && ((!chatReady) || !!messagesLoading)}
-  ...
-/>
-```
-
-Когда форум открыт без темы — overlay скрыт, юзер видит `ForumTopicEmptyState`.
-
-#### Часть Г — Проблема несоответствия unread (не баг!)
-
-Лог `[forum-map] unread_count=561` стабильно, но сумма тем меньше. **Это TDLib feature** (не баг):
-- `chat.unread_count` включает скрытые/архивные темы
-- Sum of `topic.unread_count` — только видимые
-
-Telegram Desktop имеет ту же особенность. У нас уже есть fallback `Math.max(chat.unreadCount, sumTopicUnread)`. Изменений нет.
-
-#### Тесты — 9 новых
-
-[smoothScroll.vitest.js](src/native/utils/smoothScroll.vitest.js) — **+5 тестов twoPhase**:
-1. distance > viewport + twoPhase → instant prelude + smooth последний viewport
-2. distance ≤ viewport + twoPhase → обычный smooth без prelude
-3. 50 viewport + twoPhase → не падает на edge case 8 viewport
-4. scroll вверх + twoPhase → prelude target + viewport
-5. distance < 1 + twoPhase → onComplete сразу (no-op)
-
-[ForumTopicEmptyState.vitest.jsx](src/native/components/ForumTopicEmptyState.vitest.jsx) — **+4 теста**:
-6. Рендерит 📚 + заголовок + подсказку
-7. position: absolute inset:0
-8. pointer-events: none
-9. display: flex column
-
-#### Конфликты — все проверены ✅
-
-- ✅ Backward compat smoothScroll: без `twoPhase` опции — старое поведение (instant fallback при > 8 viewport)
-- ✅ `distance < 1` теперь вызывает `onComplete` (исправлено для twoPhase, но не нарушает старые вызовы — caller не теряет «готово»)
-- ✅ ForumTopicEmptyState `pointer-events: none` — клики проходят насквозь к layer'у ниже (но в forum-без-темы там пусто, так что OK)
-- ✅ MessageListOverlay условие — не показывает overlay только для форума **без** темы (с темой — работает как раньше)
-- ✅ `markRead` вызывается через `onComplete` — даже при no-op (distance<1) markRead отработает
-
-#### Файлы
-
-| Файл | Что |
-|---|---|
-| [smoothScroll.js](src/native/utils/smoothScroll.js) | `twoPhase` option (instant prelude + smooth last viewport) + fix onComplete на distance<1 |
-| [smoothScroll.vitest.js](src/native/utils/smoothScroll.vitest.js) | +5 тестов twoPhase |
-| [ForumTopicEmptyState.jsx](src/native/components/ForumTopicEmptyState.jsx) (новый) | empty state с 📚 + заголовком + подсказкой |
-| [ForumTopicEmptyState.vitest.jsx](src/native/components/ForumTopicEmptyState.vitest.jsx) (новый) | +4 теста |
-| [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) | условный overlay (`!isForumWithoutTopic`) + использует ForumTopicEmptyState |
-| [InboxMode.jsx](src/native/modes/InboxMode.jsx) | `twoPhase: true` + duration 350мс в jump-to-end |
-
-**Регрессия**: lint 0, vitest 756/756 (+9 новых), fileSizeLimits 287/287, check-memory ✅.
-
----
-
-### v0.95.17 — Регрессия v0.95.16: убран untilMessageId early break в iterative fetch
-
-Юзер: «теперь чаты не доводят до конца что все прочитали».
-
-#### Лог провала v0.95.16
-
-Чат `tg_611696632:-1001307778786`, unread=274, lastMessageId=35629563904:
-```
-get-msgs-iter iterations=1 collected=1 target=100 until=35629563904 first=X last=X
-                                       ↑
-                       TDLib вернул в iter 1 только 1 сообщение (X)
-                       Мой break на «untilMessageId in collected» → return [X]
-                       Юзер видит 1 сообщение
-```
-
-То же для unread=7869: `iterations=1 collected=1`. Не догружало.
-
-#### Корень регрессии
-
-В v0.95.16 я добавил early break когда `untilMessageId in collected`. Но TDLib часто возвращает в iter 1 **ТОЛЬКО** `untilMessageId` (это issue #740 quirk — TDLib `from=0` может вернуть 1 messages). Break срабатывает → возвращается `[X]` → state.messages = 1 элемент.
-
-#### Решение — официальный паттерн TDLib
-
-[ivanstepanovftw в issue #740](https://github.com/tdlib/td/issues/740) показал правильный паттерн:
-```cpp
-ssize_t remaining = history_size - messages->messages_.size();
-if (remaining > 0 && !empty()) {
-  send_history_query(chat_id, next_from_message_id, ...);
-}
-```
-
-**Итерации только по `remaining > 0 && !empty`. БЕЗ untilMessageId short-circuit.**
-
-`untilMessageId` остаётся как **информационный** параметр (для логирования), но НЕ short-circuit'ит итерации.
-
-#### Изменения
-
-[tdlibBackend.js getIterativeUntil](main/native/backends/tdlibBackend.js) и [getIterativeUntilTopic](main/native/backends/tdlibBackend.js):
-- Удалена строка `if (untilMessageId && collected.some(...)) break`
-- Остаются защиты: `collected.length >= targetCount`, empty response → break, duplicate response → break, maxIterations clamp
-
-#### Тесты обновлены
-
-2 теста переписаны под новое поведение:
-- **«НЕ останавливается на untilMessageId — продолжает до targetCount»** (для getIterativeUntil)
-- То же для getIterativeUntilTopic
-- Mock returns iter 1: only X → iter 2-3: 50+50 older → проверка `messages.length >= 100` И `iterations > 1`
-
-#### Результат
-
-После клика ↓ юзер увидит **~100 сообщений** (а не 1), счётчик обнулится корректно.
-
-**Регрессия**: lint 0, vitest 747/747, fileSizeLimits ✅, check-memory ✅.
-
----
-
-### v0.95.16 — Jump-to-end в ФОРУМ-ТОПИКАХ + плавная анимация scroll (easeOutCubic)
-
-Юзер: «в форумах jump-to-end не работает счётчик не сбросился» + «надо красивый эффект разгона и остановки».
-
-#### Часть А — Форум-топики (расширение v0.95.15 на форумы)
-
-Лог чата `tg_611696632:-1002182060939:topic:1`:
-```
-button-scroll-bottom chatLastMessageId=null gapMessages=null unreadVsLoaded=1978
-                                      ↑
-                              Гейт jump-to-end НЕ срабатывает
-```
-
-**Корень**: `chat.lastMessageId` — для основного **чата**, не для **топика**. Топик имеет свой `forumTopic.last_message.id` который у нас не маппился.
-
-**Решение**:
-1. **[tdlibBackend.js forum.getTopics](main/native/backends/tdlibBackend.js)** — добавлен `lastMessageId: t.last_message?.id` в topic object
-2. **Новый метод** [`backend.messages.getIterativeUntilTopic`](main/native/backends/tdlibBackend.js) — зеркало `getIterativeUntil` через `getMessageThreadHistory` (для не-General) или `getChatHistory` (для General топика)
-3. **Новый IPC канал** `tg:get-topic-messages-iterate` в [tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js)
-4. **Новый store метод** [`loadTopicMessagesUntil(chatId, topic, untilMessageId, targetCount)`](src/native/store/nativeStore.js) — обновляет `state.messages[topicMessageKey]`
-5. **[InboxMode.scrollToBottom](src/native/modes/InboxMode.jsx)** — расширен jump-to-end:
-   ```js
-   const isForumTopic = !!(activeChat?.isForum && activeTopic)
-   const topicLastMessageId = isForumTopic ? activeTopic.lastMessageId : null
-   const effectiveLastMessageId = isForumTopic ? topicLastMessageId : chatLastMessageId
-   const loadPromise = isForumTopic
-     ? store.loadTopicMessagesUntil(chatId, activeTopic, lastMessageId, 100)
-     : store.loadMessagesUntil(viewKey, lastMessageId, 100)
-   ```
-
-**TDLib подтверждение**: [`getMessageThreadHistory` spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_message_thread_history.html) — «number of returned messages is chosen by TDLib and can be smaller than limit» — ТОТ ЖЕ quirk что `getChatHistory` → итеративный паттерн обязателен.
-
-#### Часть Б — Плавная анимация scroll (easeOutCubic)
-
-Заменил `el.scrollTo({behavior: 'instant'})` на новый util [`smoothScrollTo`](src/native/utils/smoothScroll.js) с `easeOutCubic` (быстрый разгон + плавное приземление).
-
-**Эталоны (research 2026)**:
-- **`easeOutCubic`** — production best practice для UX scroll: «feels responsive (fast initially) then settles smoothly»
-- **`requestAnimationFrame`** — стандарт 60fps анимации, синхронизирован с paint
-- **`prefers-reduced-motion`** — accessibility fallback (W3C WCAG)
-
-**Защиты в smoothScrollTo**:
-1. `distance < 1px` → no-op
-2. `prefers-reduced-motion` → instant (accessibility)
-3. `distance > 8 viewport` → instant (нет смысла в анимации > 5сек)
-4. `duration` default 500мс (быстро + красиво)
-5. Финальный snap к точному `targetTop` (защита от float drift)
-6. `cancel()` функция для прерывания
-
-**Длительность 500мс** — баланс «не медленно, красиво»:
-- < 4 viewport (~3000px) → 500мс анимация с easeOutCubic
-- > 8 viewport → instant
-- Между 4-8 → 500мс (на быстром scrollHeight юзер видит «разгон + торможение»)
-
-#### Тесты — 12 новых
-
-[smoothScroll.vitest.js](src/native/utils/smoothScroll.vitest.js) — **7 unit-тестов**:
-1. easeOutCubic математически корректен (0→0, 0.5→0.875, 1→1)
-2. easeOutCubic монотонно возрастает
-3. easeOutQuint сильнее замедляется в конце чем cubic
-4. distance < 1px → no-op
-5. distance > 8 viewport → instant
-6. Обычная дистанция → RAF + easing + onComplete
-7. cancel() прерывает анимацию
-8. Custom easing работает
-9. null el → no-op
-10. prefersReducedMotion возвращает false если matchMedia недоступен
-11. prefersReducedMotion возвращает true при matches=true
-
-[tdlibBackend.vitest.js](src/__tests__/tdlibBackend.vitest.js) — **4 теста для getIterativeUntilTopic**:
-12. не-General topic: getMessageThreadHistory
-13. General topic: getChatHistory
-14. не-General БЕЗ threadMessageId → error
-15. untilMessageId short-circuit
-16. maxIterations clamp защита
-
-[nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) — **1 тест**:
-17. loadTopicMessagesUntil → IPC tg:get-topic-messages-iterate контракт
-
-#### Конфликты — все проверены ✅
-
-- ✅ Backward compat: existing topic-messages пути не затронуты
-- ✅ smoothScroll fallback: prefers-reduced-motion → instant, > 8 viewport → instant
-- ✅ `useReadByVisibility` cascade guard (v0.94.7) не задействуется
-- ✅ `useInitialScroll` topic reload → followupRef++ без restore
-- ✅ mark-read до topic.lastMessageId — TDLib range-ack для топиков (через `markTopicRead` ветка)
-- ✅ IDB cache отдельный для топика (topicId передаётся в saveCacheMessages)
-
-#### Файлы
-
-| Файл | Что |
-|---|---|
-| [tdlibBackend.js](main/native/backends/tdlibBackend.js) | `messages.getIterativeUntilTopic` (+60 строк) + `lastMessageId` в forum.getTopics |
-| [tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js) | новый IPC `tg:get-topic-messages-iterate` |
-| [nativeStore.js](src/native/store/nativeStore.js) | `loadTopicMessagesUntil` (+55 строк) + экспорт |
-| [InboxMode.jsx](src/native/modes/InboxMode.jsx) | jump-to-end ветка для форумов + smoothScroll интеграция |
-| [smoothScroll.js](src/native/utils/smoothScroll.js) (новый) | easeOutCubic/Quint + smoothScrollTo + prefersReducedMotion |
-| [smoothScroll.vitest.js](src/native/utils/smoothScroll.vitest.js) (новый) | 7 unit-тестов |
-| [tdlibBackend.vitest.js](src/__tests__/tdlibBackend.vitest.js) | +4 теста getIterativeUntilTopic |
-| [nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) | +1 тест loadTopicMessagesUntil |
-| [fileSizeLimitsExceptions.cjs](src/__tests__/fileSizeLimitsExceptions.cjs) | nativeStore.js 1150→1220, tdlibBackend.js 640→720, vitest 640→700, new tdlibBackend.vitest 480 |
-
-**Регрессия**: lint 0, vitest 747/747 (+17 новых), fileSizeLimits 285/285, check-memory ✅.
-
----
-
-### v0.95.15 — Итеративный fetch для jump-to-end (по TDLib официальному паттерну)
-
-**Четвёртая и финальная итерация саги** (v0.95.12-15). Полная история в [`.memory-bank/jump-to-end-saga.md`](./jump-to-end-saga.md).
-
-#### Корень провала v0.95.14 — найден в логе
-
-Чат «Компьютерная IT, Digital» с `unread=725`, `lastMessageId=9132048384`:
-```
-store-load-messages aroundId=9132048384 addOffset=-50 force=true
-[get-msgs] from=9132048384 offset=-50 count=1 first=9132048384 last=9132048384 hasMore=false
-                                              ↑
-                                       TDLib вернул count=1
-```
-
-State.messages[chatId] = [lastMessageId] — массив из **1 элемента**. Юзер видит одно сообщение, потом докручивает колесом, каждый load-newer добавляет по 1-2 сообщения. Очень медленно.
-
-#### Корневой ответ от автора TDLib (levlam)
-
-[TDLib issue #740](https://github.com/tdlib/td/issues/740) — официальный ответ:
-
-> «This is expected and described in the method description: **«For optimal performance the number of returned messages is chosen by the library»**.»
-
-TDLib **намеренно** возвращает меньше `limit` для optimization. **Один invoke `getChatHistory` НЕ гарантирует limit messages.**
-
-[TDLib getting-started](https://core.telegram.org/tdlib/getting-started#getting-chat-messages):
-> «To get more messages than can be returned in one response, the Application needs to pass the identifier of the **last message it has received** as `from_message_id` to next request.»
-
-**Официальный паттерн — итеративные вызовы**.
-
-#### Решение v0.95.15 — итеративный backend handler
-
-**Новый метод** [`backend.messages.getIterativeUntil`](main/native/backends/tdlibBackend.js):
-```js
-async getIterativeUntil(params) {
-  let collected = []
-  let cursor = 0  // iter 1: from=0 (TDLib spec → last_message)
-  for (let i = 0; i < maxIterations; i++) {
-    const r = await getChatHistory(client, rawId, {
-      limit: 100, fromMessageId: cursor, offset: 0, ...
-    })
-    if (!r?.ok || !r.messages?.length) break
-    const newMessages = r.messages.filter(m => !collected.some(c => c.id === m.id))
-    if (newMessages.length === 0) break  // дубли — конец
-    collected = [...collected, ...newMessages].sort((a, b) => Number(a.id) - Number(b.id))
-    if (untilMessageId && collected.some(m => String(m.id) === untilMessageId)) break
-    if (collected.length >= targetCount) break
-    cursor = String(collected[0].id)  // продолжаем от старейшего
-  }
-  return { ok: true, messages: collected, iterations: ... }
-}
-```
-
-**Новый IPC канал** `tg:get-messages-iterate` в [tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js) → emit `tg:messages` в renderer.
-
-**Новый метод store** [`loadMessagesUntil(chatId, untilMessageId, targetCount)`](src/native/store/nativeStore.js) — вызывает IPC, обновляет state.
-
-**InboxMode.scrollToBottom** — заменён `loadMessages` на `loadMessagesUntil` для jump-to-end ветки:
-```js
-if (chatLastMessageId && unreadVsLoaded > 50 && !loading) {
-  store.loadMessagesUntil(viewKey, chatLastMessageId, 100).then((result) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      el.scrollTo({ top: scrollHeight, behavior: 'instant' })
-      markReadCurrentView(viewKey, chatLastMessageId, { source: 'button-scroll' })
-      setAtBottom(true); setNewBelow(0)
-    }))
-  })
-}
-```
-
-#### Безопасность — 4 защиты
-
-1. **`maxIterations` clamp [1, 10]** — защита от бесконечного цикла
-2. **Detect duplicates** — если TDLib возвращает только дубли → stop (TDLib stuck)
-3. **Empty response** → stop (конец истории)
-4. **`untilMessageId` short-circuit** — если получили нужное сообщение → готово сразу
-
-#### Тесты — 5 новых (4 backend + 1 store)
-
-[tdlibBackend.vitest.js](src/__tests__/tdlibBackend.vitest.js):
-1. **«итерирует пока не наберёт targetCount»** — multi-iteration работает
-2. **«останавливается при untilMessageId в collected»** — short-circuit
-3. **«останавливается при пустом ответе»** — stop on empty
-4. **«защита от бесконечного цикла — maxIterations clamp [1, 10]»** — safety
-5. **«возвращает messages отсортированные по id ASC»** — порядок для UI
-
-[nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx):
-6. **«loadMessagesUntil → IPC tg:get-messages-iterate с untilMessageId+targetCount»** — контракт IPC
-
-#### Конфликты — все проверены ✅
-
-- Backward compat: `loadMessages` без options остался без изменений
-- `useReadByVisibility` cascade guard (v0.94.7) не задействуется
-- `useForceReadAtBottom` threshold 30 (v0.91.13) не задействуется
-- `unreadWindowIncomplete` gate — `source='button-scroll'` в whitelist (v0.95.8)
-- `useInitialScroll` reload → `followupRef++` без restore (v0.95.4)
-- mark-read range-ack ([viewMessages spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1view_messages.html))
-
-#### Зафиксированные правила в memory bank
-
-В [`.memory-bank/jump-to-end-saga.md`](./jump-to-end-saga.md) добавлены:
-- Цитаты из TDLib official docs (levlam, getting-started)
-- Таблица known behaviors TDLib `getChatHistory`
-- 5 уроков для будущей работы со скроллом
-- **Главное правило**: «никогда не предполагай что один invoke `getChatHistory` вернёт `limit` сообщений»
-
-#### Файлы
-
-| Файл | Что |
-|---|---|
-| [tdlibBackend.js](main/native/backends/tdlibBackend.js) | новый `messages.getIterativeUntil` (+65 строк) |
-| [tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js) | новый IPC канал `tg:get-messages-iterate` |
-| [nativeStore.js](src/native/store/nativeStore.js) | новый `loadMessagesUntil` (+47 строк) + экспорт |
-| [InboxMode.jsx](src/native/modes/InboxMode.jsx) | scrollToBottom использует `loadMessagesUntil` для jump-to-end |
-| [tdlibBackend.vitest.js](src/__tests__/tdlibBackend.vitest.js) | +5 unit-тестов для getIterativeUntil |
-| [nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) | +1 тест для loadMessagesUntil |
-| [jump-to-end-saga.md](.memory-bank/jump-to-end-saga.md) | обновлено: v0.95.14 провал + v0.95.15 решение + TDLib known behaviors |
-| [fileSizeLimitsExceptions.cjs](src/__tests__/fileSizeLimitsExceptions.cjs) | nativeStore.js 1080→1150, tdlibBackend.js 550→640, vitest 600→640 |
-
-**Регрессия**: lint 0, vitest 730/730 (+6 новых), fileSizeLimits 283/283, check-memory ✅.
+Cм. [`archive/features-v0.95.15-18.md`](./archive/features-v0.95.15-18.md): итеративный fetch (v0.95.15), jump-to-end в форум-топиках + smoothScroll easeOutCubic (v0.95.16), регрессия untilMessageId early break (v0.95.17), двухфазный scroll + ForumTopicEmptyState + не мигать shimmer (v0.95.18). Стабилизировано через v0.95.20–21.
 
 ---
 

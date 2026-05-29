@@ -25,12 +25,16 @@ function typeIcon(type, isBot) {
   return null
 }
 
-export default function ChatListItem({ chat, active, onClick, onContextMenu, account, hoveredAccountId, multiAccount, compact = false }) {
+export default function ChatListItem({ chat, active, onClick, onContextMenu, account, hoveredAccountId, multiAccount, compact = false, displayUnreadCount }) {
   const bgColor = AVATAR_COLORS[hashString(chat.title || '?') % AVATAR_COLORS.length]
   const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('')
   const icon = typeIcon(chat.type, chat.isBot)
-  const badgeCount = chat.unreadCount
+  // v0.95.21: для форум-групп используем число тем с непрочитанным (Telegram Desktop
+  // поведение), для обычных — chat.unreadCount как и раньше. См. getDisplayUnreadCount
+  // в utils/displayUnread.js. Если displayUnreadCount не задан (старые места вызова) —
+  // fallback на chat.unreadCount (обратная совместимость).
+  const badgeCount = displayUnreadCount !== undefined ? displayUnreadCount : (chat.unreadCount || 0)
 
   // v0.87.106: данные мессенджера/аккаунта для меток
   const messenger = account?.messenger || 'telegram'

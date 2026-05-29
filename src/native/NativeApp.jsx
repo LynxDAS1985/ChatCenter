@@ -13,6 +13,7 @@ import InboxMode from './modes/InboxMode.jsx'
 import AccountContextMenu from './components/AccountContextMenu.jsx'
 import ConnectionStatusDot from '../components/ConnectionStatusDot.jsx'
 import { formatUnreadCount } from './utils/unreadFormat.js'
+import { getDisplayUnreadCount } from './utils/displayUnread.js'
 import {
   createPendingHealth,
   markHealthError,
@@ -190,14 +191,16 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
   const [hoveredAccountId, setHoveredAccountId] = useState(null)
 
   // v0.87.106: подсчёт непрочитанных по аккаунтам (для бейджей)
+  // v0.95.21: для форум-групп считаем через getDisplayUnreadCount (число тем
+  // с непрочитанным, Telegram Desktop), иначе TDLib aggregate раздувает сумму.
   const unreadByAccount = useMemo(() => {
     const map = {}
     for (const c of store.chats) {
       if (!c.accountId) continue
-      map[c.accountId] = (map[c.accountId] || 0) + (c.unreadCount || 0)
+      map[c.accountId] = (map[c.accountId] || 0) + getDisplayUnreadCount(c, store.forumTopics)
     }
     return map
-  }, [store.chats])
+  }, [store.chats, store.forumTopics])
 
   const chatsByAccount = useMemo(() => {
     const map = {}

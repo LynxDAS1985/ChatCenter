@@ -338,6 +338,9 @@ export default function InboxChatListSidebar({
               hoveredAccountId,
               // v0.87.109: ПКМ → меню заглушения
               onContextMenu: handleContextMenu,
+              // v0.95.21: для форум-групп бейдж = число тем с непрочитанным (Telegram
+              // Desktop), не TDLib aggregate. См. utils/displayUnread.js.
+              forumTopics: store.forumTopics,
               // v0.95.7: compact mode когда chat-list width < 200px
               compact,
             }}
