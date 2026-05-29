@@ -18,6 +18,7 @@ import useInboxScroll from '../hooks/useInboxScroll.js'
 import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostics.js'
 import { computeScrollBehavior } from '../utils/scrollBehavior.js'
 import { smoothScrollTo } from '../utils/smoothScroll.js'
+import { computeJumpToEndGate } from '../utils/jumpToEndGate.js'
 import useChatListResize, {
   CHAT_LIST_DEFAULT_WIDTH, clampChatListWidth, isChatListCompact,
 } from '../hooks/useChatListResize.js'
@@ -538,9 +539,25 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       ? Math.round((Number(chatLastMessageId) - Number(loadedLastId)) / MSG_ID_STEP)
       : null
     const unreadVsLoaded = activeUnread - loadedIncoming
+    // v0.95.20: гейт «грузить-потом-скроллить» — computeJumpToEndGate.
+    // Раньше (v0.95.12-v0.95.19): `unreadVsLoaded > 50`. Если у юзера 10 непрочитанных
+    // но они в 200 сообщениях от загруженного окна — fallback прыгал сразу, сообщения
+    // дописывались после («эффект появления»). Теперь — любой gap → load-first.
+    // Эталон: Telegram Desktop `_history->isReadyFor()` перед scroll.
+    const isForumTopic = !!(activeChat?.isForum && activeTopic)
+    const topicLastMessageId = isForumTopic ? (activeTopic.lastMessageId || null) : null
+    const effectiveLastMessageId = isForumTopic ? topicLastMessageId : chatLastMessageId
+    const loading = !!store.loadingMessages?.[viewKey]
+    const shouldLoadFirst = computeJumpToEndGate({
+      lastMessageId: effectiveLastMessageId,
+      gapMessages,
+      loading,
+    })
     scrollDiag.logEvent('button-scroll-bottom', {
       activeUnread, deltaPx, behavior, messages: activeMessages.length,
       loadedIncoming, chatLastMessageId, loadedLastId, gapMessages, unreadVsLoaded,
+      branch: shouldLoadFirst ? 'load-first' : 'direct-scroll',
+      isForumTopic, effectiveLastMessageId, loading,
     })
 
     // v0.95.12-v0.95.16: JUMP-TO-END через ИТЕРАТИВНЫЙ fetch.
@@ -550,11 +567,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     // v0.95.15: store.loadMessagesUntil для обычных чатов.
     // v0.95.16: store.loadTopicMessagesUntil для форум-топиков (getMessageThreadHistory)
     //   + smoothScroll с easeOutCubic для красивого «приземления».
-    const isForumTopic = !!(activeChat?.isForum && activeTopic)
-    const topicLastMessageId = isForumTopic ? (activeTopic.lastMessageId || null) : null
-    const effectiveLastMessageId = isForumTopic ? topicLastMessageId : chatLastMessageId
-    const loading = !!store.loadingMessages?.[viewKey]
-    if (effectiveLastMessageId && unreadVsLoaded > 50 && !loading) {
+    if (shouldLoadFirst) {
       scrollDiag.logEvent('button-scroll-jump-to-end', {
         chatLastMessageId, topicLastMessageId,
         effectiveLastMessageId, isForumTopic,

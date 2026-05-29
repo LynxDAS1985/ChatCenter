@@ -1,6 +1,8 @@
-# Сага «jump-to-end-of-chat» (v0.95.11 — v0.95.14)
+# Сага «jump-to-end-of-chat» (v0.95.11 — v0.95.20) — ЗАКРЫТА
 
-История пяти итераций решения проблемы «кнопка ↓ не подгружает свежие сообщения когда unread больше загруженного окна». Каждая итерация раскрывала новое скрытое поведение TDLib API. Документ-предупреждение для будущей работы со скроллом / TDLib `getChatHistory`.
+История пяти итераций решения проблемы «кнопка ↓ не подгружает свежие сообщения когда unread больше загруженного окна» + финал-фикс гейта v0.95.20. Каждая итерация раскрывала новое скрытое поведение TDLib API. Документ-предупреждение для будущей работы со скроллом / TDLib `getChatHistory`.
+
+**Финальное решение** (v0.95.20): гейт `gapMessages > 0` через [computeJumpToEndGate](../src/native/utils/jumpToEndGate.js) — load-first при любом разрыве, не только при `unreadVsLoaded > 50`. См. секцию «v0.95.20» внизу.
 
 ## Корневая проблема (как у юзера видно)
 
@@ -299,3 +301,86 @@ Spec: «specify 0 to get results from exactly the from_message_id, or a negative
 🥇 [Telegram Desktop](https://github.com/telegramdesktop/tdesktop) — `getHistory(peer.last_message.id, offset=-N)` паттерн
 🥇 [TDLib issue #740](https://github.com/tdlib/td/issues/740) — undocumented поведение `from=0`
 🥈 Наш [computeHistoryParams](../main/native/backends/tdlibMessages.js) — load-newer уже использует negative offset (`afterId>0 → offset=-(limit-1)`)
+
+---
+
+## v0.95.20 — ФИНАЛ САГИ: load-first гейт «грузить-потом-скроллить»
+
+### Запрос юзера
+
+> «надо что бы точно все загрузило а потом перешло вниз... тупь будет задержка, это не страшно, объём работы не важен»
+
+### Корень
+
+В [InboxMode.scrollToBottom](../src/native/modes/InboxMode.jsx) гейт был `effectiveLastMessageId && unreadVsLoaded > 50 && !loading` — load-first срабатывал **только** при большом числе непрочитанных. Если в чате 10 непрочитанных, но между загруженным окном и сервером пропуск в 200 сообщений (`gapMessages=200`) — `unreadVsLoaded=10` → гейт `false` → fallback `el.scrollTo(scrollHeight)` мгновенно → юзер видит «дёрг» (сообщения дописываются через секунду через `load-newer`).
+
+Диагностика v0.95.19 (`tg-messages-applied action=appended-newer` после `button-scroll-bottom`) это и показывала: новые сообщения **прибывали после** скролла, а не до.
+
+### Решение
+
+Новый чистый util [`src/native/utils/jumpToEndGate.js`](../src/native/utils/jumpToEndGate.js):
+
+```js
+export function computeJumpToEndGate({ lastMessageId, gapMessages, loading } = {}) {
+  if (loading) return false
+  if (!lastMessageId) return false
+  if (!Number.isFinite(gapMessages)) return false
+  return gapMessages > 0
+}
+```
+
+Замена inline `unreadVsLoaded > 50` → вызов `computeJumpToEndGate(...)`. В лог `button-scroll-bottom` добавлены `branch: 'load-first'|'direct-scroll'`, `isForumTopic`, `effectiveLastMessageId`, `loading` — для прозрачности.
+
+### Эталоны (production messengers 2026)
+
+| Мессенджер | Паттерн |
+|---|---|
+| Telegram Desktop | `HistoryWidget::cornerButtonsShowAtPosition` → `_history->isReadyFor()` → `historyLoaded()` или `firstLoadMessages()` ПЕРЕД scroll |
+| Telegram Web K | `ChatBubbles.onGoDownClick` → `ProgressivePreloader.attach()` → `getHistory()` → only then `scrollToEnd()` |
+| WhatsApp Web | `getChatHistory` → resolve → `scrollIntoView` |
+| Discord | message store hydration → scroll |
+
+Все четыре **никогда** не скроллят до проверки готовности данных.
+
+### Что юзер увидит при 5000 непрочитанных
+
+| Шаг | Что | Время |
+|---|---|---|
+| 1 | Клик ↓ | 0 сек |
+| 2 | `getIterativeUntil`: 1–N итераций `getChatHistory` до 100 сообщений | ~0.2–2 сек |
+| 3 | `requestAnimationFrame × 2` + `smoothScrollTo` twoPhase | 0.35 сек |
+| 4 | mark-read до `lastMessageId` → счётчик 5000 → 0 | мгновенно |
+
+Остальные 4900 **не** грузятся (правильно — как у Telegram Desktop / Web / WhatsApp / Discord). Загрузятся через `load-older` если юзер крутит вверх.
+
+### Защита от зацикливания (уже была в инфраструктуре v0.95.15–17)
+
+- `maxIterations: 10` в [getIterativeUntil](../main/native/backends/tdlibBackend.js)
+- `targetCount: 100` (не грузим всю историю)
+- Empty response → stop
+- Duplicate detect → stop
+
+### Что НЕ менялось
+
+- [loadMessagesUntil](../src/native/store/nativeStore.js) (v0.95.15)
+- [loadTopicMessagesUntil](../src/native/store/nativeStore.js) (v0.95.16)
+- [getIterativeUntil](../main/native/backends/tdlibBackend.js) / `getIterativeUntilTopic`
+- [smoothScrollTo](../src/native/utils/smoothScroll.js) twoPhase (v0.95.18)
+- mark-read bypass gate для `source='button-scroll'` (v0.95.8)
+- Contiguity check в `tg:new-message` (v0.95.0)
+
+### Тесты (14 unit в jumpToEndGate.vitest.js)
+
+- Большой gap (1021) → true (реальный лог)
+- Минимальный gap (1) → true
+- Gap=0 → false
+- Отрицательный gap → false
+- lastMessageId=null/0 → false
+- loading=true → false
+- gapMessages=NaN/null/undefined → false
+- Пустые аргументы → false
+- Реальный сценарий v0.95.19 (30 непрочитанных, gap=200) → true (раньше `false`)
+
+### Главный урок саги
+
+**TDLib `getChatHistory` НЕ гарантирует `limit` messages в одном вызове** (issue #740, ответ levlam). Любой fetch до конкретного `lastMessageId` — **итеративный** через `getIterativeUntil`. Гейт «load-first» должен быть на **любой** разрыв (gapMessages > 0), не на «много непрочитанных».

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.19 (29 мая 2026)
+## Текущая версия: v0.95.20 (29 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -27,6 +27,28 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.20 — Load-first гейт для кнопки ↓ (финал саги jump-to-end)
+
+Юзер: «надо что бы точно все загрузило а потом перешло вниз... тупь будет задержка, это не страшно».
+
+**Корень**: в [InboxMode.scrollToBottom](src/native/modes/InboxMode.jsx) был гейт `unreadVsLoaded > 50` — load-first ветка ([loadMessagesUntil](src/native/store/nativeStore.js)) срабатывала только при большом числе непрочитанных. Если у юзера 10 непрочитанных, но gap=200 — `unreadVsLoaded=10` → fallback `scrollTo(scrollHeight)` → сообщения дописывались после (диагностика v0.95.19 `tg-messages-applied action=appended-newer` после `button-scroll-bottom` это и показывала).
+
+**Решение**: новый чистый util [`jumpToEndGate.js`](src/native/utils/jumpToEndGate.js) — `computeJumpToEndGate({lastMessageId, gapMessages, loading})` возвращает `true` если `gapMessages > 0` (любой разрыв) + не идёт загрузка + есть lastMessageId. Замена inline `unreadVsLoaded > 50` на вызов в `scrollToBottom`. Эталон — Telegram Desktop `HistoryWidget::cornerButtonsShowAtPosition` (`_history->isReadyFor()` ПЕРЕД scroll), Telegram Web K `ChatBubbles.onGoDownClick` (ProgressivePreloader.attach → getHistory → scrollToEnd).
+
+**Сценарий 5000 непрочитанных**: клик ↓ → ~0.2–2 сек итеративный fetch 100 последних ([getIterativeUntil](main/native/backends/tdlibBackend.js)) → rAF×2 → twoPhase smoothScroll (v0.95.18) 0.35 сек → mark-read до lastMessageId → счётчик 0. Остальные 4900 НЕ грузятся (как у Telegram Desktop), подгрузятся через load-older если юзер крутит вверх.
+
+**Защита от циклов** (уже была): `maxIterations: 10`, `targetCount: 100`, empty/duplicate stop.
+
+**НЕ менялось**: loadMessagesUntil (v0.95.15), loadTopicMessagesUntil (v0.95.16), getIterativeUntil, smoothScrollTo twoPhase (v0.95.18), mark-read bypass для `button-scroll` (v0.95.8), contiguity check в `tg:new-message` (v0.95.0). Гейт лишь расширяет уже работающую ветку.
+
+**Дополнительно**: в лог `button-scroll-bottom` добавлены `branch: 'load-first' | 'direct-scroll'`, `isForumTopic`, `effectiveLastMessageId`, `loading` — для прозрачности.
+
+**Тесты**: 14 unit в [jumpToEndGate.vitest.js](src/native/utils/jumpToEndGate.vitest.js) — gap 0/1/200/1021, lastMessageId null/0, loading true, NaN/null/undefined, реальный сценарий v0.95.19.
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅. Сага закрыта — полная история v0.95.11→v0.95.20 в [jump-to-end-saga.md](.memory-bank/jump-to-end-saga.md).
 
 ---
 
