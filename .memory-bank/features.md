@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.18 (28 мая 2026)
+## Текущая версия: v0.95.19 (29 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -27,6 +27,56 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.19 — Диагностика «новые сообщения не приходят» (без смены поведения)
+
+Юзер: «в TG есть новые сообщения, а у нас старые видно». Гипотезы (см. v0.95.18 разбор): (1) contiguity check в `tg:new-message` блокирует новые с gap > 200 messages, (2) после jump-to-end старые не в DOM, (3) скриншоты разных моментов.
+
+Чтобы **точно** найти корень — добавил **полную диагностику** входящих сообщений. Без смены поведения.
+
+#### Новые события в логе
+
+**`tg-new-message`** (каждое сообщение через push):
+```
+chatId, msgId, action ('inserted' | 'updated' | 'skipped-non-contiguous'),
+existing — сколько было в DOM,
+newestLoaded — id последнего в DOM,
+gapMessages — оценка gap в сообщениях (Δid / 2^20),
+isContiguous, isDup, isActiveChat, isOutgoing, mediaType, ts
+```
+
+**`tg-messages-applied`** (каждый batch от backend — load/jump-to-end):
+```
+chatId, action ('replaced' | 'prepended-old' | 'appended-newer' | 'appendNewer-empty-noop'),
+incoming, existingBefore, nextLen,
+oldestIncoming/newestIncoming — диапазон того что пришло,
+oldestNext/newestNext — диапазон после применения
+```
+
+#### Что покажет лог на реальной сессии
+
+Если **юзер реально не видит новые** (а в TG видит):
+- `tg-new-message action=skipped-non-contiguous gapMessages=N` — найдём что блокирует
+- Сравним `newestLoaded` (у нас) и `message.id` (новое от TG) — узнаем размер пропуска
+
+Если **отображаются только последние 100 после jump-to-end**:
+- `tg-messages-applied action=replaced nextLen=100` после кнопки ↓
+- При scroll up — `tg-messages-applied action=prepended-old` (load-older)
+
+#### Что НЕ изменено
+
+- `tg:new-message` поведение (вклеивание/skip по gap-limit) то же
+- `tg:messages` обработка (replace/prepend/append) то же
+- Все защиты v0.94.7/v0.95.0 остаются
+- Никаких новых invokes или setState
+
+**Регрессия**: lint 0, vitest 756/756, fileSizeLimits 287/287, check-memory ✅. Тесты НЕ менялись — только новые лог-точки.
+
+#### Следующий шаг
+
+После сессии юзера с этой версией — посмотрим лог `tg-new-message action=skipped-non-contiguous` и `tg-messages-applied` для проблемного чата → точный фикс по реальным данным.
 
 ---
 

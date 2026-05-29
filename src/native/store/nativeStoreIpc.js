@@ -259,6 +259,14 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   })
 
   addHandler('tg:messages', ({ chatId, messages, append, appendNewer }) => {
+    // v0.95.19: ПОЛНАЯ ДИАГНОСТИКА tg:messages — фиксируем что пришло и как обработано.
+    let diagAction = 'replaced'
+    let diagExistingBefore = 0
+    let diagNextLen = 0
+    let diagOldestIncoming = null
+    let diagNewestIncoming = null
+    let diagOldestNext = null
+    let diagNewestNext = null
     setState(s => {
       const existing = s.messages[chatId] || []
       const chat = s.chats.find(c => c.id === chatId)
@@ -272,6 +280,7 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         const existingIds = new Set(existing.map(m => m.id))
         const newOld = messages.filter(m => !existingIds.has(m.id))
         next = [...newOld, ...existing]
+        diagAction = 'prepended-old'
       } else if (appendNewer) {
         // v0.88.0: дозагрузка новых вниз — добавляем в конец, убираем дубли.
         // Сохраняем сортировку по id (на случай если backend вернул что-то не по порядку).
@@ -280,13 +289,30 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         // v0.88.1: если ничего нового — НЕ меняем state (избегаем лишнего рендера/«дёрга» UI).
         // Backend в v0.88.1 уже не эмитит пустые afterId-ответы, но на случай старого кода — защита здесь.
         if (newNewer.length === 0) {
+          diagAction = 'appendNewer-empty-noop'
+          diagExistingBefore = existing.length
+          diagNextLen = existing.length
           const loadingCopy = { ...s.loadingMessages }
           delete loadingCopy[chatId]
           return { ...s, loadingMessages: loadingCopy }
         }
         next = [...existing, ...newNewer]
+        diagAction = 'appended-newer'
       } else {
         next = messages
+        diagAction = 'replaced'
+      }
+      // v0.95.19: фиксируем диапазоны для лога
+      diagExistingBefore = existing.length
+      diagNextLen = next.length
+      const incomingArr = messages || []
+      if (incomingArr.length) {
+        diagOldestIncoming = String(incomingArr[0].id)
+        diagNewestIncoming = String(incomingArr[incomingArr.length - 1].id)
+      }
+      if (next.length) {
+        diagOldestNext = String(next[0].id)
+        diagNewestNext = String(next[next.length - 1].id)
       }
       // v0.87.36: сохраняем в localStorage для мгновенного показа при следующем открытии
       saveChatCache(chatId, next)
@@ -294,6 +320,20 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
       delete loadingCopy[chatId]
       return { ...s, messages: { ...s.messages, [chatId]: next }, loadingMessages: loadingCopy }
     })
+    // v0.95.19: лог результата — что в state после обработки.
+    try {
+      logNativeScroll('tg-messages-applied', {
+        chatId,
+        action: diagAction,              // 'replaced' | 'prepended-old' | 'appended-newer' | 'appendNewer-empty-noop'
+        incoming: messages?.length || 0,
+        existingBefore: diagExistingBefore,
+        nextLen: diagNextLen,
+        oldestIncoming: diagOldestIncoming,
+        newestIncoming: diagNewestIncoming,
+        oldestNext: diagOldestNext,
+        newestNext: diagNewestNext,
+      })
+    } catch (_) {}
   })
 
   addHandler('tg:new-message', ({ chatId, message }) => {
@@ -311,6 +351,15 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
       : message.mediaType === 'poll' ? '📊 Опрос'
       : message.mediaType ? '📎 вложение' : ''
     const preview = message.text || mediaPreview || ''
+    // v0.95.19: ПОЛНАЯ ДИАГНОСТИКА tg:new-message — фиксируем КАЖДОЕ событие.
+    // Сохраним переменные ВНЕ setState для лога после.
+    let diagAction = 'unknown'
+    let diagExisting = 0
+    let diagNewestLoaded = 0
+    let diagIsContiguous = false
+    let diagIsDup = false
+    let diagGapMessages = 0
+    let diagIsActiveChat = false
     setState(s => {
       const existing = s.messages[chatId] || []
       // Дедупликация: если msg с таким id уже есть — обновляем на месте
@@ -328,6 +377,14 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
       const nextMsgs = isDup
         ? existing.map(m => m.id === message.id ? message : m)
         : (isContiguous ? [...existing, message] : existing)
+      // v0.95.19: записываем диагностику
+      diagAction = isDup ? 'updated' : (isContiguous ? 'inserted' : 'skipped-non-contiguous')
+      diagExisting = existing.length
+      diagNewestLoaded = newestLoaded
+      diagIsContiguous = isContiguous
+      diagIsDup = isDup
+      diagGapMessages = newestLoaded ? Math.round((Number(message.id) - newestLoaded) / 1048576) : 0
+      diagIsActiveChat = s.activeChatId === chatId
       return {
         ...s,
         messages: { ...s.messages, [chatId]: nextMsgs },
@@ -341,6 +398,24 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
           : c)
       }
     })
+    // v0.95.19: ВНЕ setState логируем результат — для setState callback логи запрещены
+    // (могут вызваться 2+ раза в StrictMode). После setState вызывается ровно один раз.
+    try {
+      logNativeScroll('tg-new-message', {
+        chatId,
+        msgId: String(message.id),
+        action: diagAction,                  // 'inserted' | 'updated' | 'skipped-non-contiguous'
+        existing: diagExisting,              // сколько уже было в state.messages[chatId]
+        newestLoaded: diagNewestLoaded,      // id последнего сообщения в DOM
+        gapMessages: diagGapMessages,        // ~оценка gap в сообщениях (TDLib id << 20)
+        isContiguous: diagIsContiguous,      // прошло gap-limit или нет
+        isDup: diagIsDup,
+        isActiveChat: diagIsActiveChat,      // открыт ли сейчас этот чат у юзера
+        isOutgoing: !!message.isOutgoing,
+        mediaType: message.mediaType || 'text',
+        ts: message.timestamp,
+      })
+    } catch (_) {}
     // v0.87.14: Toast через MessengerRibbon (только входящие, не для активного чата)
     if (!message.isOutgoing && stateRef.current.activeChatId !== chatId) {
       const chat = stateRef.current.chats.find(c => c.id === chatId)
