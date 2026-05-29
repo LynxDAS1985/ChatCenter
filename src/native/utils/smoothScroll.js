@@ -45,8 +45,12 @@ export function smoothScrollTo(el, targetTop, options = {}) {
   const clientHeight = el.clientHeight || 600
   const absDistance = Math.abs(distance)
 
-  // Edge case 1: уже у target → ничего не делать
-  if (absDistance < 1) return () => {}
+  // Edge case 1: уже у target → ничего не делать (но onComplete вызываем,
+  // иначе caller потеряет «готово» — например markRead не сработает).
+  if (absDistance < 1) {
+    options.onComplete?.()
+    return () => {}
+  }
 
   // Edge case 2: prefers-reduced-motion → instant (accessibility)
   if (prefersReducedMotion()) {
@@ -55,7 +59,30 @@ export function smoothScrollTo(el, targetTop, options = {}) {
     return () => {}
   }
 
-  // Edge case 3: дистанция > 8 viewport → instant (анимация будет слишком долгой)
+  // v0.95.18: ДВУХФАЗНЫЙ режим (option twoPhase: true). На больших дистанциях
+  // (> 1 viewport) делаем мгновенный прыжок к (target - 1 viewport), потом
+  // smoothScroll последний viewport. Юзер видит «приземление» ленты независимо
+  // от того насколько далеко скроллили (100, 1000, 10000px — всегда видно
+  // плавный последний экран). Эталон: Telegram Desktop, iOS jump-to-bottom.
+  const twoPhase = !!options.twoPhase
+  if (twoPhase && absDistance > clientHeight) {
+    // Direction: вниз (distance>0) — prelude scrollTop = target - clientHeight.
+    // Direction: вверх (distance<0) — prelude scrollTop = target + clientHeight.
+    const preludeTarget = distance > 0
+      ? targetTop - clientHeight
+      : targetTop + clientHeight
+    el.scrollTop = preludeTarget  // INSTANT — мгновенно к "почти target"
+    // Далее запускаем smooth на оставшийся 1 viewport.
+    // Рекурсивно вызываем без twoPhase + переопределяем duration на короткий.
+    return smoothScrollTo(el, targetTop, {
+      ...options,
+      twoPhase: false,
+      duration: Math.max(Number(options.duration) || DEFAULT_DURATION, 100),
+    })
+  }
+
+  // Edge case 3: дистанция > 8 viewport БЕЗ twoPhase → instant (анимация
+  // будет слишком долгой). twoPhase активирован выше — это не задействуется.
   if (absDistance > VIEWPORT_THRESHOLD_INSTANT * clientHeight) {
     el.scrollTop = targetTop
     options.onComplete?.()
@@ -67,13 +94,16 @@ export function smoothScrollTo(el, targetTop, options = {}) {
   let cancelled = false
   let rafId = null
   const startTime = performance.now()
+  // Восстанавливаем startTop ПОСЛЕ возможного prelude из twoPhase ветки.
+  const phaseStartTop = el.scrollTop
+  const phaseDistance = targetTop - phaseStartTop
 
   function step(now) {
     if (cancelled) return
     const elapsed = now - startTime
     const progress = Math.min(elapsed / duration, 1)
     const eased = easing(progress)
-    el.scrollTop = startTop + distance * eased
+    el.scrollTop = phaseStartTop + phaseDistance * eased
     if (progress < 1) {
       rafId = requestAnimationFrame(step)
     } else {

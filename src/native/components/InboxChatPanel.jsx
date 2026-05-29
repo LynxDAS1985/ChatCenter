@@ -11,6 +11,7 @@ import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
 import VirtualMessageList from './VirtualMessageList.jsx'
 import PinnedMessageBar from './PinnedMessageBar.jsx'
+import ForumTopicEmptyState from './ForumTopicEmptyState.jsx'
 import useDelayedUnmount from '../hooks/useDelayedUnmount.js'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
@@ -160,7 +161,13 @@ export default function InboxChatPanel({
         {/* v0.89.37: убрано visibleMessages.length>0 — на первой загрузке топика */}
         {/* messages=0, overlay не показывался → юзер видел чёрный фон 500-600мс. */}
         {/* Теперь skeleton-overlay показывается сразу при клике (как Telegram/WhatsApp). */}
-        <MessageListOverlay show={(!chatReady) || !!messagesLoading} hasContent={visibleMessages.length > 0} />
+        {/* v0.95.18: НЕ показывать shimmer overlay в форуме без выбранной темы —
+            юзер видел бы бегущую полосу при каждом TDLib update [forum-map]. Вместо
+            shimmer показываем ForumTopicEmptyState (см. ниже). */}
+        <MessageListOverlay
+          show={!(activeChat?.isForum && !activeTopic) && ((!chatReady) || !!messagesLoading)}
+          hasContent={visibleMessages.length > 0}
+        />
         {/* v0.95.5: pinned overlay (см. PinnedMessageBar.jsx). Виден только при
             chatReady — не наслаивается на shimmer overlay. */}
         {chatReady && <PinnedMessageBar pinnedMsg={pinnedMsg} onClose={() => setPinnedMsg(null)} />}
@@ -181,11 +188,15 @@ export default function InboxChatPanel({
             }}>📎 Отпустите файл для отправки</div>
           )}
           {visibleMessages.length === 0 ? (
-            messagesLoading ? (
+            // v0.95.18: для форум-чата без выбранной темы — красивый empty state с иконкой
+            // 📚 и подсказкой в центре окна (вместо тонкого «Выберите тему слева»).
+            activeChat?.isForum && !activeTopic ? (
+              <ForumTopicEmptyState />
+            ) : messagesLoading ? (
               <MessageSkeleton count={5} />
             ) : (
               <div style={{ color: 'var(--amoled-text-dim)', textAlign: 'center', padding: 20 }}>
-                {msgSearch ? 'Ничего не найдено' : (activeChat.isForum && !activeTopic ? 'Выберите тему слева' : 'Нет сообщений')}
+                {msgSearch ? 'Ничего не найдено' : 'Нет сообщений'}
               </div>
             )
           ) : (

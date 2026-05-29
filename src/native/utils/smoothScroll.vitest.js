@@ -125,6 +125,80 @@ describe('smoothScrollTo — главные сценарии', () => {
   it('null el → no-op', () => {
     expect(() => smoothScrollTo(null, 100)).not.toThrow()
   })
+
+  // v0.95.18: ДВУХФАЗНЫЙ режим — instant до (target - 1 viewport) + smooth последний viewport.
+  // Эффект «приземления» виден всегда независимо от distance.
+  describe('twoPhase mode (v0.95.18)', () => {
+    it('distance > viewport + twoPhase → instant prelude + smooth последний viewport', () => {
+      el.scrollTop = 0
+      el.clientHeight = 600
+      const onComplete = vi.fn()
+      // distance = 5000 (большой), но twoPhase активен → instant до 4400, потом smooth 600px
+      smoothScrollTo(el, 5000, { duration: 300, twoPhase: true, onComplete })
+
+      // После prelude (instant) — scrollTop = target - clientHeight = 4400
+      expect(el.scrollTop).toBe(4400)
+      // smooth-фаза только начинается. RAF поставлен.
+      expect(rafCallbacks.length).toBe(1)
+
+      // 50% → easeOutCubic(0.5) = 0.875 → smooth от 4400 на расстояние 600 → 4400 + 525 = 4925
+      tick(150)
+      expect(el.scrollTop).toBeCloseTo(4925, 0)
+
+      // 100% → точно target
+      tick(150)
+      expect(el.scrollTop).toBe(5000)
+      expect(onComplete).toHaveBeenCalledTimes(1)
+    })
+
+    it('distance <= viewport + twoPhase → обычный smoothScroll без prelude', () => {
+      el.scrollTop = 0
+      el.clientHeight = 600
+      // distance = 400 (меньше viewport) → prelude не нужен
+      smoothScrollTo(el, 400, { duration: 300, twoPhase: true })
+
+      // RAF поставлен сразу (no instant prelude)
+      expect(rafCallbacks.length).toBe(1)
+      // scrollTop ещё не двинулся (анимация не запустилась)
+      expect(el.scrollTop).toBe(0)
+
+      tick(300)
+      expect(el.scrollTop).toBe(400)
+    })
+
+    it('twoPhase ОЧЕНЬ большая дистанция (50 viewport) → не падает на edge case 8 viewport', () => {
+      el.scrollTop = 0
+      el.clientHeight = 600
+      const onComplete = vi.fn()
+      // distance = 30000 (50 viewport). БЕЗ twoPhase было бы instant.
+      // С twoPhase → instant до 29400, потом smooth 600.
+      smoothScrollTo(el, 30000, { duration: 300, twoPhase: true, onComplete })
+
+      expect(el.scrollTop).toBe(29400)  // instant prelude
+      tick(300)  // smooth phase
+      expect(el.scrollTop).toBe(30000)
+      expect(onComplete).toHaveBeenCalledTimes(1)
+    })
+
+    it('twoPhase + scroll вверх (target меньше startTop) → prelude target + viewport', () => {
+      el.scrollTop = 5000
+      el.clientHeight = 600
+      // distance = -4800 (вверх), |distance| > viewport → prelude до 600 (target+viewport)
+      smoothScrollTo(el, 0, { duration: 300, twoPhase: true })
+
+      expect(el.scrollTop).toBe(600)  // target + clientHeight
+      tick(300)
+      expect(el.scrollTop).toBe(0)
+    })
+
+    it('twoPhase + distance < 1 → onComplete сразу (no-op)', () => {
+      el.scrollTop = 100
+      const onComplete = vi.fn()
+      smoothScrollTo(el, 100.5, { twoPhase: true, onComplete })
+      expect(onComplete).toHaveBeenCalledTimes(1)
+      expect(rafCallbacks.length).toBe(0)
+    })
+  })
 })
 
 describe('prefersReducedMotion', () => {

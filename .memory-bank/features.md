@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.17 (28 мая 2026)
+## Текущая версия: v0.95.18 (28 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -27,6 +27,106 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.18 — Двухфазный scroll + empty state форума + не мигать shimmer в форуме
+
+Три задачи по запросу юзера: (1) видимый эффект пролистывания, (2) красивый empty state форума без темы, (3) убрать бегущую полосу shimmer когда форум открыт но тема не выбрана.
+
+#### Часть А — Двухфазный smoothScroll (Вариант B)
+
+**Проблема**: Лог `bottomGap=0` и distance ≈ 66622px (110 viewport) после jump-to-end. В [smoothScroll.js](src/native/utils/smoothScroll.js) порог `VIEWPORT_THRESHOLD_INSTANT=8` → distance > 8 viewport → **instant fallback** → юзер не видел анимацию.
+
+**Решение — twoPhase option** в [smoothScrollTo](src/native/utils/smoothScroll.js):
+```
+Distance > 1 viewport + twoPhase:true:
+  1. INSTANT prelude: el.scrollTop = target - clientHeight (или + при scroll вверх)
+  2. SMOOTH последний viewport с easeOutCubic (350мс)
+```
+
+Юзер ВСЕГДА видит «приземление» последнего экрана, независимо от distance (100, 10000, 100000px).
+
+В [InboxMode.scrollToBottom jump-to-end](src/native/modes/InboxMode.jsx):
+```js
+smoothScrollTo(elNow, elNow.scrollHeight, {
+  duration: 350,
+  twoPhase: true,
+  onComplete: () => { /* markRead + setAtBottom */ },
+})
+```
+
+Эталон: Telegram Desktop, iOS jump-to-bottom — instant + smooth last screen.
+
+#### Часть Б — Empty state для форума без выбранной темы
+
+Раньше: пустой чёрный экран + малозаметный текст в input поле «Сначала выберите тему слева».
+
+Теперь — новый компонент [ForumTopicEmptyState.jsx](src/native/components/ForumTopicEmptyState.jsx):
+- Иконка 📚 (64px, drop-shadow accent)
+- Заголовок «Это форум-чат»
+- Подсказка «Слева выберите тему форума...»
+- `position: absolute, inset: 0, pointer-events: none` — не блокирует клики
+
+Используется в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) когда `activeChat?.isForum && !activeTopic && visibleMessages.length === 0`.
+
+#### Часть В — Не мигать shimmer overlay в форуме без темы
+
+**Проблема**: лог показывал `[forum-map] unread_count=561` каждые 5-10с → `messagesLoading` мерцал → shimmer overlay постоянно показывался хотя юзер не открыл тему.
+
+**Фикс** в [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx):
+```js
+<MessageListOverlay
+  show={!(activeChat?.isForum && !activeTopic) && ((!chatReady) || !!messagesLoading)}
+  ...
+/>
+```
+
+Когда форум открыт без темы — overlay скрыт, юзер видит `ForumTopicEmptyState`.
+
+#### Часть Г — Проблема несоответствия unread (не баг!)
+
+Лог `[forum-map] unread_count=561` стабильно, но сумма тем меньше. **Это TDLib feature** (не баг):
+- `chat.unread_count` включает скрытые/архивные темы
+- Sum of `topic.unread_count` — только видимые
+
+Telegram Desktop имеет ту же особенность. У нас уже есть fallback `Math.max(chat.unreadCount, sumTopicUnread)`. Изменений нет.
+
+#### Тесты — 9 новых
+
+[smoothScroll.vitest.js](src/native/utils/smoothScroll.vitest.js) — **+5 тестов twoPhase**:
+1. distance > viewport + twoPhase → instant prelude + smooth последний viewport
+2. distance ≤ viewport + twoPhase → обычный smooth без prelude
+3. 50 viewport + twoPhase → не падает на edge case 8 viewport
+4. scroll вверх + twoPhase → prelude target + viewport
+5. distance < 1 + twoPhase → onComplete сразу (no-op)
+
+[ForumTopicEmptyState.vitest.jsx](src/native/components/ForumTopicEmptyState.vitest.jsx) — **+4 теста**:
+6. Рендерит 📚 + заголовок + подсказку
+7. position: absolute inset:0
+8. pointer-events: none
+9. display: flex column
+
+#### Конфликты — все проверены ✅
+
+- ✅ Backward compat smoothScroll: без `twoPhase` опции — старое поведение (instant fallback при > 8 viewport)
+- ✅ `distance < 1` теперь вызывает `onComplete` (исправлено для twoPhase, но не нарушает старые вызовы — caller не теряет «готово»)
+- ✅ ForumTopicEmptyState `pointer-events: none` — клики проходят насквозь к layer'у ниже (но в forum-без-темы там пусто, так что OK)
+- ✅ MessageListOverlay условие — не показывает overlay только для форума **без** темы (с темой — работает как раньше)
+- ✅ `markRead` вызывается через `onComplete` — даже при no-op (distance<1) markRead отработает
+
+#### Файлы
+
+| Файл | Что |
+|---|---|
+| [smoothScroll.js](src/native/utils/smoothScroll.js) | `twoPhase` option (instant prelude + smooth last viewport) + fix onComplete на distance<1 |
+| [smoothScroll.vitest.js](src/native/utils/smoothScroll.vitest.js) | +5 тестов twoPhase |
+| [ForumTopicEmptyState.jsx](src/native/components/ForumTopicEmptyState.jsx) (новый) | empty state с 📚 + заголовком + подсказкой |
+| [ForumTopicEmptyState.vitest.jsx](src/native/components/ForumTopicEmptyState.vitest.jsx) (новый) | +4 теста |
+| [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) | условный overlay (`!isForumWithoutTopic`) + использует ForumTopicEmptyState |
+| [InboxMode.jsx](src/native/modes/InboxMode.jsx) | `twoPhase: true` + duration 350мс в jump-to-end |
+
+**Регрессия**: lint 0, vitest 756/756 (+9 новых), fileSizeLimits 287/287, check-memory ✅.
 
 ---
 

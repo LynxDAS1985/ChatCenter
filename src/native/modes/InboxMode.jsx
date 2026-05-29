@@ -571,10 +571,14 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
             const elNow = msgsScrollRef.current
             if (!elNow) return
             // v0.95.16: smoothScroll с easeOutCubic (быстрый разгон + плавное приземление).
-            // Эталон research 2026: easeOutCubic — «feels responsive (fast initially)
-            // then settles smoothly». На дельте > 8 viewport util fallback на instant.
+            // v0.95.18: ДВУХФАЗНЫЙ режим (twoPhase:true). При distance > 1 viewport —
+            // instant prelude к (target-viewport) + smooth последний viewport.
+            // Юзер видит «приземление» ленты ВСЕГДА, независимо от distance
+            // (jump-to-end после reload часто даёт 50+ viewport, без twoPhase
+            // smoothScroll fallback на instant и юзер не видит анимацию).
             smoothScrollTo(elNow, elNow.scrollHeight, {
-              duration: 500,
+              duration: 350,
+              twoPhase: true,
               onComplete: () => {
                 if (viewKey) scrollPosByChatRef.current.set(viewKey, {
                   scrollTop: elNow.scrollHeight, atBottom: true,
