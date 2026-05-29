@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.22 (29 мая 2026)
+## Текущая версия: v0.95.23 (29 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -28,6 +28,33 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.23 — Курсор остаётся в поле ввода после отправки сообщения
+
+Юзер: «когда отправляю сообщения в чат, курсор из поля где сообщения вводит пропадает, неудобно, надо чтобы был в этом поле».
+
+**Корень**: в [InboxMessageInput.jsx](src/native/components/InboxMessageInput.jsx) input имел `disabled={sending || disabled}`. По [HTML5 spec](https://html.spec.whatwg.org/multipage/interaction.html#focus) браузер **снимает фокус** с disabled-элемента. Цепочка: Enter → `setSending(true)` → input становится disabled → браузер убирает фокус → `await sendMessage` ~300мс → `setSending(false)` → input снова enabled, **но фокус никто не возвращает** → юзеру надо снова кликнуть в поле.
+
+**Решение**: убрать `sending` из `disabled` input. Кнопка «Отпр.» имеет свой `disabled={disabled || sending || !input.trim()}` — она корректно блокируется. Enter-отправка защищена `&& !sending` в onKeyDown. Фокус никогда не теряется.
+
+**Эталоны** (production messengers 2026):
+- Telegram Web K — input НЕ disabled во время send
+- Telegram Desktop — то же
+- WhatsApp Web — то же
+- Discord — то же
+
+Никто из мессенджеров не дизаблит input — это анти-паттерн.
+
+**НЕ сломалось**:
+- Двойная отправка одного текста? Нет — после успешной отправки `setInput('')`
+- Если юзер успел набрать новый текст пока шла предыдущая отправка → новый текст просто набирается в поле, кнопка все ещё disabled пока `sending=true`. Когда `sending=false` — нажмёт «Отпр.» и отправит новый текст.
+- Editing (Ctrl+↑) → защищён `&& !input.trim()` — не задевается
+
+**Файл**: 1 строка изменения в [InboxMessageInput.jsx](src/native/components/InboxMessageInput.jsx) (`disabled={sending || disabled}` → `disabled={disabled}`) + защита Enter (`&& !sending`).
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅.
 
 ---
 

@@ -39,7 +39,7 @@ export default function InboxMessageInput({
           value={input}
           onChange={e => handleInputChange(e.target.value)}
           onKeyDown={e => {
-            if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim()) handleReplySend()
+            if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim() && !sending) handleReplySend()
             // v0.87.27: Ctrl+↑ — редактируем последнее своё сообщение
             if (e.key === 'ArrowUp' && e.ctrlKey && !input.trim() && !editTarget) {
               e.preventDefault()
@@ -54,7 +54,12 @@ export default function InboxMessageInput({
             : replyTo ? 'Ответ...'
             : 'Введите сообщение... (перетащите файл / Ctrl+V фото)'
           }
-          disabled={sending || disabled}
+          // v0.95.23: НЕ дизаблим во время sending — иначе браузер по HTML5 spec
+          // снимает фокус с disabled input → курсор пропадает, юзер должен снова
+          // кликать в поле. Кнопка «Отпр.» дизаблится отдельно (см. ниже), Enter-
+          // отправка защищена `&& !sending` в onKeyDown. Это паттерн Telegram Web K /
+          // Desktop / WhatsApp / Discord — никто не дизаблит input во время отправки.
+          disabled={disabled}
           style={{ flex: 1 }}
         />
         <button className="native-btn" onClick={handleReplySend} disabled={disabled || sending || !input.trim()}>
