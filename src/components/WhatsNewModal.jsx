@@ -27,8 +27,12 @@ export default function WhatsNewModal({ prevVersion, currentVersion, onClose }) 
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 99999,
-        background: 'rgba(0,0,0,0.55)',
-        backdropFilter: 'blur(8px)',
+        // v0.95.32: убран backdrop-filter: blur(8px) — Chromium пересчитывал blur
+        // ВСЕХ пикселей под overlay на каждый кадр скролла внутри модалки
+        // → тормоза 30-60мс на кадр. Заменено на чуть более тёмный фон 0.75 —
+        // визуально схожий эффект «глубины», но без GPU-нагрузки.
+        // Эталон: Telegram Web K modal overlay (нет blur), Discord modal (нет blur).
+        background: 'rgba(0,0,0,0.75)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 20,
       }}
@@ -43,7 +47,11 @@ export default function WhatsNewModal({ prevVersion, currentVersion, onClose }) 
           maxHeight: '85vh',
           overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+          // v0.95.32: shadow blur 40 → 16. 40px blur пересчитывался на каждый кадр
+          // → дополнительные тормоза. 16px достаточно для визуального отделения.
+          // isolation: isolate — создаёт новый stacking context, repaint не «протекает» за модалку.
+          boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+          isolation: 'isolate',
         }}
       >
         {/* Header */}
@@ -75,9 +83,14 @@ export default function WhatsNewModal({ prevVersion, currentVersion, onClose }) 
         </div>
 
         {/* Содержимое — список changelog */}
+        {/* v0.95.32: contain: layout style paint — изолирует браузерный repaint
+            внутри скроллируемой области. overscroll-behavior: contain — scroll
+            не «утекает» на overlay (нет случайных закрытий). Эталон Linear modals. */}
         <div style={{
           flex: 1, overflow: 'auto', padding: '16px 24px',
           color: 'var(--amoled-text, #fff)',
+          contain: 'layout style paint',
+          overscrollBehavior: 'contain',
         }}>
           {entries.map((entry, i) => (
             <div key={entry.version} style={{
