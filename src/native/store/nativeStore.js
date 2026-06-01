@@ -4,6 +4,7 @@
 // v0.87.103: IPC listeners + кэш сообщений вынесены в nativeStoreIpc.js.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { logNativeScroll } from '../utils/scrollDiagnostics.js'
+import { shouldTriggerInitialBackfill } from '../utils/initialBackfillGate.js'
 import { attachTelegramIpcListeners, loadChatCache } from './nativeStoreIpc.js'
 import { saveMessages as saveCacheMessages, loadMessages as loadCacheMessages, cleanupExpired as cleanupExpiredCache } from '../utils/messagesCache.js'
 import { recordIdbCache } from '../utils/idbCacheMetrics.js'
@@ -685,6 +686,42 @@ export default function useNativeStore() {
           unreadCount: chat?.unreadCount || 0,
           readInboxMaxId: chat?.readInboxMaxId || 0,
         }).catch(() => {})
+      }
+      // v0.95.24: INITIAL BACKFILL — догрузка истории при первом открытии чата.
+      // Корень (лог чата tg_611696632:5006720692, 17:58:10):
+      //   [get-msgs] from=0 offset=0 count=3 hasMore=false
+      // TDLib local cache содержит всего 1-3 cached. История на сервере есть, но
+      // TDLib НЕ догружает automatically (issue #740 — «number of returned messages
+      // is chosen by the library»). Когда юзер прокручивает вверх — load-older
+      // успешно тянет 50 older. Делаем это ЗА юзера: при got < 30 → автоматически
+      // итеративный backfill через offsetId=oldest_received → tg:messages event
+      // придёт с append:true → prepend (как load-older через scroll).
+      const got = Array.isArray(result.messages) ? result.messages.length : 0
+      if (shouldTriggerInitialBackfill({ got, force, hasOverride })) {
+        const oldestId = result.messages[0]?.id
+        if (oldestId) {
+          logNativeScroll('initial-backfill-trigger', {
+            chatId, got, threshold: 30, oldestId: String(oldestId),
+          })
+          // Fire-and-forget итерация по offsetId (load-older паттерн)
+          ;(async () => {
+            let cursor = String(oldestId)
+            for (let i = 0; i < 3; i++) {
+              const r = await window.api?.invoke('tg:get-messages', {
+                chatId, offsetId: cursor, limit: 50,
+              })
+              if (!r?.ok || !Array.isArray(r.messages) || r.messages.length === 0) break
+              const totalNow = stateRef.current.messages[chatId]?.length || 0
+              logNativeScroll('initial-backfill-iter', {
+                chatId, iter: i + 1, got: r.messages.length, totalNow,
+              })
+              if (totalNow >= 30) break
+              const nextOldest = r.messages[0]?.id
+              if (!nextOldest || String(nextOldest) === cursor) break  // защита от цикла
+              cursor = String(nextOldest)
+            }
+          })().catch(() => {})
+        }
       }
     }
     return result

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.23 (29 мая 2026)
+## Текущая версия: v0.95.24 (29 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -28,6 +28,56 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.24 — Initial backfill истории при первом открытии чата (TDLib local cache quirk)
+
+Юзер: «нет истории старых сообщений, мы с ним давно общаемся, они в Telegram есть у нас нет» (скрин чата «Страховая Компания» — видны 3 сообщения, прокрутил вниз страница, разговор с человеком давно).
+
+**Корень** (доказан в логе `chatcenter.log` 17:58:10):
+```
+[get-msgs] chat=tg_611696632:5006720692 from=0 offset=0 count=3
+           first=690255560704 last=690257657856 hasMore=false
+```
+
+TDLib **local cache** для давних чатов содержит всего 1-3 cached сообщения. `getChatHistory(from=0, limit=50)` возвращает count=3, `hasMore=false`. История на сервере **есть** (когда юзер прокрутил вверх позже — `count=46` догрузилось), но TDLib **НЕ догружает automatically** при первом invoke.
+
+[TDLib spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html): «**For users with many chats, getChatHistory might not return any messages, if the chat history is not loaded yet**».
+
+Та же quirk что в jump-to-end saga ([issue #740](https://github.com/tdlib/td/issues/740) — ответ levlam): «**number of returned messages is chosen by the library**». Решение знаем — **итеративный fetch**.
+
+**Решение**: новый чистый util [`shouldTriggerInitialBackfill`](src/native/utils/initialBackfillGate.js) — `{got, force, hasOverride, threshold=30} → boolean`. В [nativeStore.loadMessages](src/native/store/nativeStore.js) после первого invoke если результат < 30 → автоматический backfill через `offsetId=oldest_received` (fire-and-forget). До 3 итераций. Каждая итерация вызывает `tg:get-messages` с `offsetId` → IPC handler emit `tg:messages` с `append: true` → prepend в state.messages (тот же путь что load-older через scroll, тестированный годами).
+
+**Защита от циклов**: maxIterations=3, stop на пустом ответе, stop при `nextOldest === cursor` (TDLib stuck), stop при totalNow >= 30.
+
+**НЕ срабатывает при**:
+- `force=true` (jump-to-end ветка с loadMessagesUntil)
+- `hasOverride=true` (явный aroundId)
+- got >= 30 (уже достаточно)
+- got=0 (TDLib пустой ответ — backfill тоже вернёт пусто)
+
+**Эталоны** (production messengers 2026):
+- Telegram Web K — ProgressivePreloader триггерит догрузку при малом окне
+- Telegram Desktop — `_history->loadMessages()` повторяется пока `messagesIsEmpty` или достаточно загружено
+- WhatsApp Web — то же через cursor-based pagination
+- Discord — backfill через `before=` query param пока scroll окно не заполнено
+
+**Что НЕ менялось**:
+- Логика unread окна (`unreadWindowRequestParams`) — для чатов с unread > 0 работает как раньше
+- Existing IPC `tg:get-messages` с `offsetId` (он уже эмитит append:true) — НЕ трогаем
+- jump-to-end ветка через `loadMessagesUntil` — отдельный путь (v0.95.15-20)
+- IDB cache (v0.89.40) — заполняется первым result, backfill не задевает
+
+**Дополнительный лог для прозрачности**:
+- `initial-backfill-trigger` (chatId, got, threshold, oldestId)
+- `initial-backfill-iter` (chatId, iter, got, totalNow)
+
+После реального теста юзер сразу увидит при открытии давнего чата 30+ сообщений (вместо 3). Пауза 200-500мс пока идёт backfill — приемлемая (юзер уже принял такой UX в jump-to-end v0.95.20: «тупь будет задержка, это не страшно»).
+
+**Тесты**: 14 unit в [initialBackfillGate.vitest.js](src/native/utils/initialBackfillGate.vitest.js) — границы порога (1-29 → true, 30+ → false), edge cases (force/hasOverride/got=0/NaN), реальный сценарий «Страховая Компания» (got=3 → true).
+
+**Регрессия**: lint 0, vitest 807/807 (+14), fileSizeLimits ✅, check-memory ✅.
 
 ---
 
