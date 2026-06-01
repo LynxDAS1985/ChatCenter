@@ -462,6 +462,39 @@ export function createTdlibBackend(opts = {}) {
         if (ctx.error) return ctx.error
         return editMessageText(ctx.client, ctx.rawId, msgId, text)
       },
+      // v0.95.29: установить/снять реакцию на сообщение.
+      // TDLib API: addMessageReaction (поставить), removeMessageReaction (снять).
+      // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1add_message_reaction.html
+      // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1remove_message_reaction.html
+      // params: { chatId, msgId, emoji, action: 'add'|'remove' }
+      async setReaction({ chatId, msgId, emoji, action = 'add' }) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        if (!emoji || !msgId) return { ok: false, error: 'emoji + msgId required' }
+        try {
+          const reactionType = { '@type': 'reactionTypeEmoji', emoji: String(emoji) }
+          if (action === 'remove') {
+            await ctx.client.invoke({
+              '@type': 'removeMessageReaction',
+              chat_id: Number(ctx.rawId),
+              message_id: Number(msgId),
+              reaction_type: reactionType,
+            })
+          } else {
+            await ctx.client.invoke({
+              '@type': 'addMessageReaction',
+              chat_id: Number(ctx.rawId),
+              message_id: Number(msgId),
+              reaction_type: reactionType,
+              is_big: false,
+              update_recent_reactions: true,
+            })
+          }
+          return { ok: true }
+        } catch (e) {
+          return { ok: false, error: e?.message || String(e) }
+        }
+      },
       // v0.89.0 / Этап 3.13: TDLib forwardMessages
       async forwardMessage(fromChatId, toChatId, msgId) {
         const fromCtx = getClientForChat(manager, fromChatId)

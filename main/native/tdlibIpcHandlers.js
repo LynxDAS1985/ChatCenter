@@ -196,6 +196,9 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
     backend.messages.send(chatId, text, replyTo))
   handle('tg:edit-message', ({ chatId, messageId, text } = {}) =>
     backend.messages.editMessage(chatId, messageId, text))
+  // v0.95.29: установка/снятие реакции на сообщение (emoji 👍 ❤️ 🔥 и др.)
+  handle('tg:set-reaction', ({ chatId, messageId, emoji, action } = {}) =>
+    backend.messages.setReaction({ chatId, msgId: messageId, emoji, action }))
   handle('tg:delete-message', ({ chatId, messageId, forAll } = {}) =>
     backend.messages.deleteMessage(chatId, messageId, forAll))
   handle('tg:forward', ({ fromChatId, toChatId, messageId } = {}) =>

@@ -7,6 +7,7 @@ import FormattedText from './FormattedText.jsx'
 import LinkPreview from './LinkPreview.jsx'
 import VideoTile from './VideoTile.jsx'
 import VoicePlayer from './VoicePlayer.jsx'
+import MessageReactions, { ReactionPicker } from './MessageReactions.jsx'
 import { useReadOnScrollAway } from '../hooks/useReadOnScrollAway.js'
 
 // v0.87.118: цвета отправителей — детерминированы по senderId (как в Telegram).
@@ -16,14 +17,48 @@ function getSenderColor(senderId) {
   return SENDER_COLORS[Math.abs(parseInt(senderId) || 0) % SENDER_COLORS.length]
 }
 
+// v0.95.29: глобальный счётчик render'ов MessageBubble по m.id.
+// Если один и тот же id рендерится >1 раз В ОДНОЙ КОММИТНОЙ ФАЗЕ → значит дубль
+// в state.messages (несколько копий одного сообщения) или в renderItems map.
+// Лог отправляется через app:log → chatcenter.log → видим в реальном времени.
+// Это решающий тест для понимания «дубль в state vs дубль в render».
+const __ccBubbleRenderCount = new Map()
+function __ccLogBubbleRender(m) {
+  try {
+    const id = String(m?.id || '')
+    if (!id) return
+    const prev = __ccBubbleRenderCount.get(id) || 0
+    const next = prev + 1
+    __ccBubbleRenderCount.set(id, next)
+    // Логируем только когда count > 1 — это дубль. Иначе не шумим.
+    if (next > 1 && window.api?.send) {
+      window.api.send('app:log', {
+        level: 'WARN',
+        message: '[bubble-render-dup] msgId=' + id
+          + ' renderCount=' + next
+          + ' isOutgoing=' + !!m.isOutgoing
+          + ' textPreview=' + String(m.text || '').slice(0, 40),
+      })
+    }
+    // Очищаем Map каждые 1000 records чтобы не утекать память.
+    if (__ccBubbleRenderCount.size > 1000) __ccBubbleRenderCount.clear()
+  } catch (_) {}
+}
+
 export default function MessageBubble({
   m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible,
   downloadMedia, getMessage, onPhotoOpen, onReplyClick, readRoot,
+  // v0.95.29: реакции (Telegram-style)
+  onSetReaction,
 }) {
+  // v0.95.29: счётчик render'ов для дубля.
+  __ccLogBubbleRender(m)
   const [menu, setMenu] = useState(false)
   const [mediaUrl, setMediaUrl] = useState(null)
   const [mediaLoading, setMediaLoading] = useState(false)
   const [replyHover, setReplyHover] = useState(false)  // v0.87.118: тултип цитаты
+  // v0.95.29: открыто ли меню реакций (popup с 8 emoji выше action-bar)
+  const [reactionPickerOpen, setReactionPickerOpen] = useState(false)
   const ref = useRef(null)
   // v0.95.25: таймер для отложенного скрытия action-bar при mouseleave.
   // Стандарт Discord/Slack — 250мс между leave bubble и hide buttons. Юзер
@@ -123,12 +158,32 @@ export default function MessageBubble({
             borderRadius: 8, padding: '3px 4px',
             boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
           }}>
+          {/* v0.95.29: кнопка 😀 — открыть picker реакций (8 emoji popup) */}
+          {onSetReaction && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setReactionPickerOpen(v => !v) }}
+              title="Реакция"
+              style={miniBtn}
+            >😀</button>
+          )}
           <button onClick={() => onReply?.(m)} title="Ответить" style={miniBtn}>↪</button>
           {onForward && <button onClick={() => onForward(m)} title="Переслать" style={miniBtn}>➥</button>}
           {onPin && <button onClick={() => onPin(m)} title="Закрепить" style={miniBtn}>📌</button>}
           {m.isOutgoing && onEdit && <button onClick={() => onEdit(m)} title="Редактировать" style={miniBtn}>✏️</button>}
           {m.isOutgoing && onDelete && <button onClick={() => onDelete(m)} title="Удалить" style={{...miniBtn, color: 'var(--amoled-danger)'}}>🗑</button>}
         </div>
+      )}
+      {/* v0.95.29: popup быстрых реакций (8 emoji) — над action-bar */}
+      {menu && reactionPickerOpen && onSetReaction && (
+        <ReactionPicker
+          isOutgoing={m.isOutgoing}
+          onSelect={(emoji) => {
+            const existing = m.reactions?.find(r => r.emoji === emoji)
+            onSetReaction(m.id, emoji, existing?.chosen ? 'remove' : 'add')
+            setReactionPickerOpen(false)
+          }}
+          onClose={() => setReactionPickerOpen(false)}
+        />
       )}
 
       <div style={{
@@ -314,6 +369,14 @@ export default function MessageBubble({
               </span>
             )}
           </div>
+        )}
+        {/* v0.95.29: реакции на сообщение (Telegram-style) — под текстом bubble */}
+        {m.reactions && m.reactions.length > 0 && (
+          <MessageReactions
+            message={m}
+            isOutgoing={m.isOutgoing}
+            onSetReaction={onSetReaction}
+          />
         )}
       </div>
     </div>

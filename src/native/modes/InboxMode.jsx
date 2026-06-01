@@ -843,6 +843,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
           scrollToBottom={scrollToBottom} scrollToMessage={scrollToMessage}
           handleDelete={handleDelete} handleForward={handleForward} handlePin={handlePin}
+          onSetReaction={store.setReaction}
           openPhotoWindow={openPhotoWindow} getMessage={getMessage} readByVisibility={readByVisibility}
         />
       </div>

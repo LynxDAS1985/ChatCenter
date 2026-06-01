@@ -41,8 +41,16 @@ module.exports = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 1240,
-    reason: 'v0.95.27: лог store-send-message-invoke в sendMessage (+11 строк) — диагностика «двойной отправки». v0.95.16: loadTopicMessagesUntil для jump-to-end в форум-топиках (+55 строк). v0.95.15: loadMessagesUntil для обычных чатов. v0.95.12: options.aroundId/force. v0.89.40: IndexedDB cache + loadOlder/Newer. Доменное разбиение store — плановый шаг (handoff-code-limits.md).'
+    ceiling: 1260,
+    reason: 'v0.95.29: setReaction store method + расширенный dump outgoing в sendMessage (+15 строк). v0.95.27: лог store-send-message-invoke. v0.95.16: loadTopicMessagesUntil. v0.89.40: IndexedDB cache. Доменное разбиение store — плановый шаг.'
+  },
+  'main/native/backends/tdlibBackend.js': {
+    ceiling: 740,
+    reason: 'v0.95.29: setReaction method (+35 строк) — addMessageReaction/removeMessageReaction TDLib. v0.95.16: getIterativeUntilTopic. v0.95.15: getIterativeUntil. v0.89.25: один backend для auth/chats/messages/media/forum.'
+  },
+  'main/native/backends/tdlibClient.js': {
+    ceiling: 570,
+    reason: 'v0.95.29: user объект в getAccountChats для user.status (+5 строк). v0.89.25: TdlibClientManager — единый клиент.'
   },
   // v0.88.x: профильные тесты v0.88.x вынесены в nativeStoreUnreadPrefetch.vitest.jsx (218 строк).
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,
@@ -54,18 +62,12 @@ module.exports = {
   // v0.89.25 (ловушка #24 forum is_forum): добавлены supergroupCache + updateSupergroup handler + getSupergroup
   // метод (~15 строк). Файл уже был на 499 при стандартном лимите 500. Минимальное превышение, разбивать
   // tdlibBackend (auth/chats/messages/media/forum в одном модуле) — отдельная архитектурная задача.
-  'main/native/backends/tdlibBackend.js': {
-    ceiling: 720,
-    reason: 'v0.95.16: getIterativeUntilTopic для форум-топиков (+60 строк). v0.95.15: getIterativeUntil для обычных чатов. v0.89.25: один backend для auth/chats/messages/media/forum/storage. Разбивать требует extract по доменам (плановая задача).'
-  },
+  // tdlibBackend.js exception перенесён выше (см. v0.95.29 запись)
   'src/__tests__/tdlibBackend.vitest.js': {
     ceiling: 480,
     reason: 'v0.95.16: +4 теста getIterativeUntilTopic (форум-топики). v0.95.15: +5 тестов getIterativeUntil. Один backend covered одним тест-файлом. Разбивать по доменам — плановый шаг.'
   },
-  'main/native/backends/tdlibClient.js': {
-    ceiling: 550,
-    reason: 'v0.89.25: TdlibClientManager — единый клиент для accounts/auth/updates routing/caches (user/chat/supergroup/avatars). Разбивать требует архитектурного решения.'
-  },
+  // tdlibClient.js exception перенесён выше (см. v0.95.29 запись)
   // v0.89.33: snapshot readInboxMaxId для divider «Новые сообщения» (Telegram Desktop UX-стандарт)
   // добавил frozenReadCursorRef + сброс по viewKey + фиксация на ненулевом cursor (~15 строк к 596).
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).

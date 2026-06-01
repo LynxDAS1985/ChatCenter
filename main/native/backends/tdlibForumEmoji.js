@@ -101,7 +101,11 @@ function stickerMime(format) {
  */
 export async function resolveTopicEmojis(topics, ctx) {
   if (!Array.isArray(topics) || topics.length === 0) return topics
-  if (!ctx?.client || !ctx?.manager || !ctx?.accountId) return topics
+  if (!ctx?.client || !ctx?.manager || !ctx?.accountId) {
+    // v0.95.29: лог если контекст невалиден — иначе будет silent fail.
+    try { console.log('[forum-emoji] SKIP — no ctx.client/manager/accountId') } catch (_) {}
+    return topics
+  }
 
   // v0.91.8: при первом вызове подхватываем кэш с диска (instant emoji после рестарта).
   if (ctx.userDataDir) loadCacheFromDisk(ctx.userDataDir)
@@ -109,13 +113,28 @@ export async function resolveTopicEmojis(topics, ctx) {
   // Собираем unique IDs которых нет в кэше.
   const idsToFetch = []
   const seen = new Set()
+  let topicsWithCustomId = 0
+  let topicsAlreadyCached = 0
   for (const t of topics) {
     const id = t.iconCustomEmojiId
     if (!id) continue
+    topicsWithCustomId++
     if (seen.has(id)) continue
     seen.add(id)
-    if (!emojiCache.has(id)) idsToFetch.push(id)
+    if (emojiCache.has(id)) { topicsAlreadyCached++; continue }
+    idsToFetch.push(id)
   }
+  // v0.95.29: лог сводки — для диагностики «у меня G вместо emoji» (юзер).
+  // Если topicsWithCustomId=0 → у тем нет custom_emoji_id (General и т.п. — норма).
+  // Если topicsAlreadyCached === seen.size → все из cache, ничего фетчить не нужно.
+  // Если idsToFetch.length > 0 → реально идём в TDLib.
+  try {
+    console.log('[forum-emoji] resolve summary: topics=' + topics.length
+      + ' withCustomId=' + topicsWithCustomId
+      + ' uniqueIds=' + seen.size
+      + ' alreadyCached=' + topicsAlreadyCached
+      + ' toFetch=' + idsToFetch.length)
+  } catch (_) {}
 
   // Если есть что загрузить — invoke getCustomEmojiStickers.
   if (idsToFetch.length > 0) {
@@ -125,6 +144,11 @@ export async function resolveTopicEmojis(topics, ctx) {
         custom_emoji_ids: idsToFetch.map(id => String(id)),
       })
       const stickers = result?.stickers || []
+      // v0.95.29: лог что вернулось от TDLib.
+      try {
+        console.log('[forum-emoji] getCustomEmojiStickers returned ' + stickers.length
+          + ' stickers for ' + idsToFetch.length + ' ids')
+      } catch (_) {}
       for (const sticker of stickers) {
         const emojiId = String(sticker?.full_type?.custom_emoji_id ?? '')
         if (!emojiId) continue
@@ -160,15 +184,34 @@ export async function resolveTopicEmojis(topics, ctx) {
   }
 
   // Применяем к topics.
+  let appliedUrl = 0
+  let appliedAltOnly = 0
+  let appliedDefault = 0
   for (const t of topics) {
-    const id = t.iconCustomEmojiId
-    if (!id) continue
-    const cached = emojiCache.get(id)
+    // v0.95.29: для General-темы (без custom_emoji_id) ставим дефолтную иконку
+    // 📢 (как в Telegram Desktop SVG-домик). Раньше показывалась буква "G".
+    if (!t.iconCustomEmojiId) {
+      if (t.isGeneral && !t.iconEmoji) {
+        t.iconEmoji = '📢'  // дефолтная иконка для General топика
+        appliedDefault++
+      }
+      continue
+    }
+    const cached = emojiCache.get(t.iconCustomEmojiId)
     if (!cached) continue
     t.iconEmojiUrl = cached.url || null
     t.iconEmojiMimeType = cached.mime || ''
     t.iconEmoji = cached.alt || ''
+    if (cached.url) appliedUrl++
+    else if (cached.alt) appliedAltOnly++
   }
+  // v0.95.29: итоговая сводка применения.
+  try {
+    console.log('[forum-emoji] applied: url=' + appliedUrl
+      + ' alt-only=' + appliedAltOnly
+      + ' default-general=' + appliedDefault
+      + ' / topics=' + topics.length)
+  } catch (_) {}
   // v0.91.8: персистим кэш на диск (debounce 2с — чтобы не писать слишком часто).
   if (ctx.userDataDir && idsToFetch.length > 0) saveCacheToDisk(ctx.userDataDir)
   return topics

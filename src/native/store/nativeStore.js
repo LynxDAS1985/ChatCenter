@@ -986,17 +986,34 @@ export default function useNativeStore() {
     return result
   }, [])
 
+  // v0.95.29: установка/снятие реакции на сообщение. action: 'add' | 'remove'.
+  // Сама реакция (в state.messages[].reactions) обновится через TDLib events
+  // (updateMessageInteractionInfo → tg:messages — пока не реализовано отдельно,
+  // но при следующем reload сообщений придёт обновлённое поле reactions).
+  const setReaction = useCallback(async (chatId, messageId, emoji, action = 'add') => {
+    return window.api?.invoke('tg:set-reaction', { chatId, messageId, emoji, action })
+  }, [])
+
   const sendMessage = useCallback(async (chatId, text, replyTo) => {
-    // v0.95.27: лог перед IPC — для диагностики «двойной отправки». В логе видели
-    // 2 send-start с разными len, но юзер говорит что отправил один раз. Логируем
-    // КАЖДЫЙ IPC invoke с textPreview + длиной + replyTo, чтобы сопоставить
-    // с send-start (из UI) и tg-new-message (из backend).
+    // v0.95.27: лог перед IPC.
+    // v0.95.29: ДОПОЛНИТЕЛЬНЫЙ DUMP всех outgoing сообщений в state.messages для
+    // диагностики «дубля». Если в state УЖЕ 2 копии с похожим текстом — баг в state.
+    // Если 1 копия — баг в render (см. MessageBubble.jsx __ccLogBubbleRender).
     const textStr = String(text || '')
+    const stateMsgs = stateRef.current.messages[chatId] || []
+    const outgoingDump = stateMsgs
+      .filter(m => m.isOutgoing)
+      .slice(-6)  // последние 6 для логичности
+      .map(m => ({ id: String(m.id), text: String(m.text || '').slice(0, 30) }))
     logNativeScroll('store-send-message-invoke', {
       chatId,
       len: textStr.length,
       textPreview: textStr.slice(0, 40),
       replyTo: replyTo || null,
+      // Dump последних 6 outgoing сообщений из state — для диагностики
+      outgoingDumpJson: JSON.stringify(outgoingDump),
+      totalMessages: stateMsgs.length,
+      totalOutgoing: stateMsgs.filter(m => m.isOutgoing).length,
     })
     return window.api?.invoke('tg:send-message', { chatId, text, replyTo })
   }, [])
@@ -1222,7 +1239,7 @@ export default function useNativeStore() {
     setMode, setActiveAccount, setActiveChat, setChatFilter, closeForumTopics,
     startLogin, submitCode, submitPassword, cancelLogin,
     loadChats, loadCachedChats, checkConnection, loadMessages, loadMessagesUntil, loadTopicMessagesUntil, loadForumTopics, selectForumTopic, loadOlderMessages, loadNewerMessages,
-    sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage,
+    sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage, setReaction,
     getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, markTopicRead, setTyping,
     getCleanupStats, setMute,

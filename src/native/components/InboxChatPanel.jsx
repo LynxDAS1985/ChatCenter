@@ -16,6 +16,40 @@ import useDelayedUnmount from '../hooks/useDelayedUnmount.js'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
 import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
+// v0.95.29: Telegram-style header — аватарка + статус «в сети / был(а) в HH:MM».
+import { formatChatStatus } from '../utils/formatChatStatus.js'
+
+// v0.95.29: аватарка в заголовке чата (40x40 круг). Telegram-style.
+const HEADER_AVATAR_COLORS = ['#e17076', '#eda86c', '#a695e7', '#7bc862', '#65aadd', '#ee7aae', '#6ec9cb']
+function hashString(s) {
+  let h = 0
+  for (let i = 0; i < (s || '').length; i++) h = (h + s.charCodeAt(i)) & 0xffffffff
+  return Math.abs(h)
+}
+function ChatHeaderAvatar({ chat }) {
+  const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
+    .map(w => w[0]?.toUpperCase() || '').join('')
+  const bgColor = HEADER_AVATAR_COLORS[hashString(chat.title || '?') % HEADER_AVATAR_COLORS.length]
+  return (
+    <div style={{
+      width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+      background: chat.avatar ? `url("${chat.avatar}") center/cover no-repeat` : bgColor,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#fff', fontSize: 15, fontWeight: 600, marginRight: 12,
+      position: 'relative',
+    }}>
+      {!chat.avatar && (initials || '?')}
+      {chat.isOnline && chat.type === 'user' && (
+        <div style={{
+          position: 'absolute', bottom: 0, right: 0,
+          width: 11, height: 11, borderRadius: '50%',
+          background: 'var(--amoled-success, #4caf50)',
+          border: '2px solid var(--amoled-surface)',
+        }} />
+      )}
+    </div>
+  )
+}
 
 // v0.95.8: кнопка ↓ с плавным появлением/исчезновением (bouncy spring on enter,
 // smooth fade-down on leave). useDelayedUnmount задерживает реальный unmount
@@ -68,6 +102,8 @@ export default function InboxChatPanel({
   // v0.94.0: virtuoso* props УДАЛЕНЫ — виртуализация убрана.
   // message actions
   handleDelete, handleForward, handlePin, openPhotoWindow, getMessage, readByVisibility,
+  // v0.95.29: реакции
+  onSetReaction,
 }) {
   // v0.89.0: react-window держит scroll-контейнер сам. msgsScrollRef нужен внешним
   // хукам (useInitialScroll, useReadOnScrollAway, scrollPos save) — синхронизируем
@@ -99,21 +135,33 @@ export default function InboxChatPanel({
   return (
     <>
       <div style={{
-        padding: '12px 16px', borderBottom: '1px solid var(--amoled-border)',
+        padding: '10px 16px', borderBottom: '1px solid var(--amoled-border)',
         background: 'var(--amoled-surface)', fontWeight: 600,
         display: 'flex', alignItems: 'center',
       }}>
-        <div style={{ flex: 1 }}>
+        {/* v0.95.29: Telegram-style — аватарка чата 40x40 + статус под именем */}
+        <ChatHeaderAvatar chat={activeChat} />
+        <div style={{ flex: 1, minWidth: 0 }}>
           {activeTopic ? (
             <>
-              <div>{activeTopic.title}</div>
+              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTopic.title}</div>
               <div style={{ color: 'var(--amoled-text-muted)', fontSize: 12, fontWeight: 400 }}>в {activeChat.title}</div>
             </>
-          ) : activeChat.title}
-          {isTyping
-            ? <span style={{ color: 'var(--amoled-accent)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>✍️ печатает...</span>
-            : activeChat.isOnline && <span style={{ color: 'var(--amoled-success)', fontSize: 11, marginLeft: 10, fontWeight: 400 }}>● онлайн</span>
-          }
+          ) : (
+            <>
+              <div style={{
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>{activeChat.title}</div>
+              {/* v0.95.29: статус под именем — «в сети» / «был(а) в HH:MM» / «N участников» */}
+              <div style={{
+                color: isTyping ? 'var(--amoled-accent)' : 'var(--amoled-text-muted)',
+                fontSize: 12, fontWeight: 400, marginTop: 1,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {formatChatStatus(activeChat, { isTyping })}
+              </div>
+            </>
+          )}
         </div>
         {/* v0.87.106: маркер мессенджера+аккаунта в шапке (Бонус). Показываем при 2+ аккаунтах. */}
         {(() => {
@@ -208,6 +256,7 @@ export default function InboxChatPanel({
                 setReplyTo, setEditTarget, setInput,
                 handleDelete, handleForward, handlePin,
                 openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
+                onSetReaction,  // v0.95.29
               }}
               onScroll={handleScroll}
               onWheel={() => scrollDiag.markUserScroll('wheel')}

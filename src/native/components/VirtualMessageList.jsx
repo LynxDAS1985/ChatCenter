@@ -100,6 +100,7 @@ function MessageRow({ item, rowContext }) {
     setReplyTo, setEditTarget, setInput,
     handleDelete, handleForward, handlePin,
     openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
+    onSetReaction,  // v0.95.29
   } = rowContext
   const senderBg = senderColorFor(item.senderId)
   const senderAvatar = !item.isOutgoing ? item.senderAvatar : null
@@ -155,6 +156,7 @@ function MessageRow({ item, rowContext }) {
                 readRoot={readRoot}
                 onPhotoOpen={openPhotoWindow}
                 onReplyClick={scrollToMessage}
+                onSetReaction={onSetReaction}
               />
             )
           ))}

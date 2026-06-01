@@ -535,7 +535,11 @@ export class TdlibClientManager extends EventEmitter {
       // TDLib хранит is_forum в supergroup, НЕ в chatTypeSupergroup.
       const sgId = tdChat?.type?.supergroup_id
       const supergroup = sgId != null ? record.supergroupCache.get(Number(sgId)) : null
-      const mapped = mapChat(tdChat, accountId, { avatar, supergroup })
+      // v0.95.29: user объект для статуса (в сети / был(а) в X:XX) — для chatTypePrivate.
+      // Status из user.status['@type'] = userStatusOnline | userStatusOffline | userStatusRecently...
+      const userId = tdChat?.type?.user_id
+      const user = userId != null ? record.userCache.get(Number(userId)) : null
+      const mapped = mapChat(tdChat, accountId, { avatar, supergroup, user })
       if (mapped) result.push(mapped)
     }
     return result

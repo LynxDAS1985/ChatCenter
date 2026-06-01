@@ -127,6 +127,37 @@ function extractFwdFrom(tdMsg) {
  * @param {object} [extras] — { senderName, senderAvatar } из user/chat cache
  * @returns {object} NativeMessage
  */
+// v0.95.29: извлекает реакции из tdMsg.interaction_info.reactions.
+// TDLib reactionType: reactionTypeEmoji (unicode) | reactionTypeCustomEmoji (premium).
+// Возвращает массив {emoji: '👍', count: 3, chosen: true} для UI. null если нет реакций.
+function extractReactions(tdMsg) {
+  const reactions = tdMsg?.interaction_info?.reactions?.reactions
+  if (!Array.isArray(reactions) || reactions.length === 0) return null
+  const out = []
+  for (const r of reactions) {
+    const t = r?.type
+    if (!t) continue
+    let emoji = ''
+    let customEmojiId = null
+    if (t['@type'] === 'reactionTypeEmoji') {
+      emoji = String(t.emoji || '')
+    } else if (t['@type'] === 'reactionTypeCustomEmoji') {
+      // Premium custom emoji — пока показываем placeholder. Для полной поддержки
+      // надо resolveTopicEmojis-аналог. Отложено.
+      customEmojiId = String(t.custom_emoji_id || '')
+      emoji = '⭐'  // placeholder для custom premium emoji
+    }
+    if (!emoji) continue
+    out.push({
+      emoji,
+      customEmojiId,
+      count: Number(r.total_count) || 0,
+      chosen: !!r.is_chosen,
+    })
+  }
+  return out.length > 0 ? out : null
+}
+
 export function mapMessage(tdMsg, chatId, extras = {}) {
   if (!tdMsg) return null
   const content = tdMsg.content || {}
@@ -165,6 +196,11 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
     // v0.95.25: waveform base64-строка для voice (100 sample'ов по 5 бит).
     // Используется в VoicePlayer.jsx для красивых столбиков как у Telegram.
     waveform: media.info.waveform || null,
+    // v0.95.29: реакции от других юзеров.
+    // TDLib spec: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message_reactions.html
+    // Структура: { reactions: [{ type: {emoji:'👍'} | {custom_emoji_id:...}, total_count, is_chosen, recent_sender_ids[] }] }
+    // Маппим в простой массив {emoji, count, chosen} для UI.
+    reactions: extractReactions(tdMsg),
     groupedId,
     replyToId: extractReplyToId(tdMsg),
     fwdFrom: extractFwdFrom(tdMsg),
@@ -220,6 +256,34 @@ export function mapChat(tdChat, accountId, extras = {}) {
   const muteFor = Number(tdChat.notification_settings?.mute_for || 0)
   const muteUntil = muteFor > 0 ? Math.floor(Date.now() / 1000) + muteFor : 0
 
+  // v0.95.29: статус пользователя (в сети / был(а) в X:XX) — из user.status.
+  // TDLib spec: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1user_status.html
+  // userStatusOnline.expires — unix timestamp когда онлайн истекает
+  // userStatusOffline.was_online — unix timestamp последнего онлайна
+  // userStatusRecently / LastWeek / LastMonth / Empty — приватные статусы (юзер скрыл)
+  let isOnline = false
+  let lastSeenAt = null
+  let userStatusType = null
+  if (chatKind === 'user' && extras.user?.status) {
+    const status = extras.user.status
+    userStatusType = status['@type'] || null
+    if (userStatusType === 'userStatusOnline') {
+      isOnline = true
+    } else if (userStatusType === 'userStatusOffline' && status.was_online) {
+      lastSeenAt = Number(status.was_online) * 1000
+    }
+    // userStatusRecently / LastWeek / LastMonth — без точного времени (юзер скрыл)
+  } else if (extras.isOnline) {
+    isOnline = true  // legacy fallback
+  }
+
+  // v0.95.29: число участников/подписчиков — для групп и каналов из supergroup объекта.
+  // basicGroup.member_count также есть, но basicGroup — старый формат TDLib, мало используется.
+  let memberCount = null
+  if (extras.supergroup && (chatKind === 'group' || chatKind === 'channel')) {
+    memberCount = Number(extras.supergroup.member_count) || null
+  }
+
   return {
     id: `${accountId}:${rawId}`,
     accountId,
@@ -235,7 +299,13 @@ export function mapChat(tdChat, accountId, extras = {}) {
     rawId,
     hasPhoto: !!tdChat.photo,
     avatar: extras.avatar || null,
-    isOnline: !!extras.isOnline,
+    isOnline,
+    // v0.95.29: lastSeenAt + userStatusType — для Telegram-style header
+    // «был(а) в HH:MM» или «был(а) недавно».
+    lastSeenAt,
+    userStatusType,
+    // v0.95.29: memberCount — для групп/каналов в Telegram-style header.
+    memberCount,
     isBot: !!extras.isBot,
     verified: !!extras.verified,
     isMuted: muteUntil > Math.floor(Date.now() / 1000),
