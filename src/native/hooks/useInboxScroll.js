@@ -13,10 +13,26 @@ import { saveScrollPositions } from '../utils/scrollPositionsCache.js'
 // prev=true (в atBottom) → выходим только при bottomGap > 120.
 // prev=false → входим только при bottomGap < 40.
 // prev=null (первый замер) → единый порог 80 (как было раньше).
+//
+// Этот результат используется ТОЛЬКО для UI визуала кнопки ↓ (стабильность).
+// Для логики «auto-scroll к новому» и счётчика ↓N — отдельный physically-at-bottom
+// флаг (см. PHYSICAL_BOTTOM_THRESHOLD ниже), без Schmitt-зоны 40-120.
 export function computeNearBottom(bottomGap, prevNearBottom) {
   if (prevNearBottom === true) return bottomGap < 120
   if (prevNearBottom === false) return bottomGap < 40
   return bottomGap < 80
+}
+
+// v0.95.28: physically at bottom — БЕЗ Schmitt-trigger, по физическому bottomGap.
+// Используется для:
+//   1. Auto-scroll при новом incoming сообщении (Telegram-style — точно у низа → прокрутка)
+//   2. Skip счётчика ↓N (если юзер точно у низа, новое сразу видно — счётчик не нужен)
+// Порог 30px — стандарт Telegram Web K / Desktop (юзер «у низа» если в 30px от scrollMax).
+// Раньше эти 2 логики шли через Schmitt-trigger 40/120 → в зоне 40-120 atBottom=true
+// ложно → счётчик не рос, auto-scroll не делали, юзер видел «дыру».
+const PHYSICAL_BOTTOM_THRESHOLD = 30
+export function isPhysicallyAtBottom(bottomGap) {
+  return Number.isFinite(bottomGap) && bottomGap <= PHYSICAL_BOTTOM_THRESHOLD
 }
 
 export default function useInboxScroll({
@@ -33,6 +49,9 @@ export default function useInboxScroll({
   setLoadingNewer,
   scrollDiag,
   setAtBottom,
+  // v0.95.28: physically at bottom (БЕЗ Schmitt-trigger, для Telegram-style
+  // auto-scroll + точного счётчика ↓N без «слепой зоны» 40-120px).
+  setPhysicallyAtBottom,
   setNewBelow,
   // v0.92.4: guard от closed-loop save при programmatic restore.
   isRestoringRef,
@@ -98,6 +117,11 @@ export default function useInboxScroll({
     prevScrollStateRef.current = { top: el.scrollTop, height: el.scrollHeight, t: now }
 
     setAtBottom(nearBottom)
+    // v0.95.28: физический atBottom — для useNewBelowCounter auto-scroll логики.
+    // Schmitt-trigger даёт ложный nearBottom=true в зоне 40-120px → юзер не точно
+    // у низа, но новые сообщения «не считаются» в счётчике ↓N → юзер их не видит.
+    // Physical порог 30px устраняет эту слепую зону (Telegram-style).
+    setPhysicallyAtBottom?.(isPhysicallyAtBottom(bottomGap))
     if (nearBottom) setNewBelow(0)
     scrollDiag.observeScroll(nearBottom, loadingOlderRef.current)
 

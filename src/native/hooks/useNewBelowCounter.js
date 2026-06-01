@@ -25,12 +25,15 @@
 //
 // API:
 //   activeChatId — какой чат сейчас активен (фильтр)
-//   atBottom    — если true, не копим (юзер видит новое сам)
-//   onAdded({ added, messageId, fromEvent }) — реальное новое сообщение
-//   onSkip({ reason, ...info })              — диагностика (other-chat, outgoing, at-bottom)
+//   atBottom    — physically at bottom (≤30px от низа, БЕЗ Schmitt-trigger).
+//                 Если true → НЕ копим counter, вместо этого вызываем onAutoScroll
+//                 (Telegram-style: юзер у низа → auto-scroll к новому сообщению).
+//   onAdded({ added, messageId, fromEvent })       — incoming + НЕ atBottom
+//   onAutoScroll({ messageId })                    — incoming + atBottom (v0.95.28)
+//   onSkip({ reason, ...info })                    — диагностика (other-chat, outgoing)
 import { useEffect, useRef } from 'react'
 
-export function useNewBelowCounter({ activeChatId, atBottom, onAdded, onSkip }) {
+export function useNewBelowCounter({ activeChatId, atBottom, onAdded, onSkip, onAutoScroll }) {
   // Ref для atBottom — иначе зависимость useEffect от atBottom переподписывала
   // event handler каждый раз когда юзер достигает/уходит со дна (десятки раз в сек).
   // Стандартный React паттерн для stable handlers — см. react.dev/reference/react/useRef.
@@ -55,9 +58,16 @@ export function useNewBelowCounter({ activeChatId, atBottom, onAdded, onSkip }) 
         onSkip?.({ reason: 'outgoing', messageId: message.id })
         return
       }
-      // Фильтр 3: юзер уже на дне — не копим бейдж (увидит сам)
+      // v0.95.28: юзер physically у низа → Telegram-style auto-scroll к новому,
+      // НЕ инкрементируем counter. Если onAutoScroll не передан — fallback на
+      // старое поведение (skip). Это backward-compatible — старый код продолжит
+      // работать без auto-scroll.
       if (atBottomRef.current) {
-        onSkip?.({ reason: 'at-bottom', messageId: message?.id })
+        if (onAutoScroll) {
+          onAutoScroll({ messageId: message?.id })
+        } else {
+          onSkip?.({ reason: 'at-bottom', messageId: message?.id })
+        }
         return
       }
       onAdded?.({ added: 1, messageId: message?.id, fromEvent: true })

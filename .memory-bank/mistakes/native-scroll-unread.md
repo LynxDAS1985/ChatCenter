@@ -8,6 +8,68 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: Schmitt-trigger atBottom 40/120 создавал «слепую зону» для счётчика ↓N (v0.95.28)
+
+### Симптом
+
+Юзер пишет сообщение, остаётся ~91px от низа (после auto-scroll send). Приходит новое сообщение от собеседника. **Счётчик ↓N не растёт** и **auto-scroll не происходит** — юзер не понимает что пришли новые.
+
+### Прямое доказательство (chatcenter.log 16:19:15 → 16:19:57)
+
+```
+16:19:15  send-scroll-done bottomGap=91 atBottom=true   ← Schmitt 40/120: 91 в зоне false→true exit?
+16:19:57  tg-new-message msgId=41491103744 isOutgoing=false
+                                                       ← useNewBelowCounter skip 'at-bottom'
+          new-below counter остаётся 0
+          auto-scroll НЕ происходит (мы его и не делаем)
+```
+
+### Корень
+
+Schmitt-trigger в [useInboxScroll.computeNearBottom](../../src/native/hooks/useInboxScroll.js) (v0.95.2, добавлен от **дребезга кнопки ↓**):
+- enter atBottom при bottomGap < 40
+- exit atBottom при bottomGap > 120
+- между 40-120 — **сохраняется предыдущее значение** (защита от дребезга)
+
+В зоне 40-120px `atBottom=true` ложно → `useNewBelowCounter` срабатывает `if (atBottomRef.current) return` → счётчик не растёт.
+
+И **auto-scroll у нас вообще не было** реализовано — Telegram-style «юзер у низа → прокрутить к новому» отсутствовал.
+
+### Эталоны (production messengers 2026)
+
+| Клиент | Паттерн |
+|---|---|
+| **Telegram Web K** `bubbles.ts` | `isAtBottom()` через `scrollTop >= scrollMax - threshold` + `scrollToEnd()` при новом |
+| **Telegram Desktop** `history_widget.cpp` | `_scroll->scrollTop() >= _scroll->scrollTopMax() - X` → scrollToEnd |
+| **WhatsApp Web** | Тот же паттерн через IntersectionObserver на последнем сообщении |
+
+🟢 Все используют **физический** atBottom (бинарный по фактическому bottomGap) для логики, **БЕЗ** Schmitt-trigger.
+
+### Решение (v0.95.28) — разделение на 2 флага
+
+1. **`atBottom`** (Schmitt-trigger 40/120) — остаётся **только** для UI визуала кнопки ↓ (стабильность v0.95.2 НЕ сломана).
+2. **`physicallyAtBottom`** (bottomGap ≤ 30, без Schmitt) — для логики счётчика ↓N + auto-scroll. **Новый** state в InboxMode.
+
+Новый `onAutoScroll` callback в [useNewBelowCounter](../../src/native/hooks/useNewBelowCounter.js): при `atBottomRef.current=true` + incoming → вместо `onSkip` зовём `onAutoScroll` → `requestAnimationFrame` + `el.scrollTo({behavior:'smooth'})`.
+
+### Почему НЕ просто убрать Schmitt-trigger
+
+Дребезг кнопки ↓ (v0.95.2) при колебании bottomGap 60-100 → atBottom тоггл true↔false → кнопка мигала. Schmitt был добавлен **специально**. Если убрать — дребезг вернётся.
+
+Решение: **два параллельных флага**, каждый для своей цели:
+- Schmitt → UI визуал (стабильность)
+- Physical → логика (точность)
+
+### Правило (заносим в Memory Bank)
+
+При работе с `atBottom`-логикой различай:
+- **UI visibility** (кнопка ↓, бейдж, шиммер) — использует Schmitt-trigger для стабильности
+- **Event logic** (auto-scroll, ↓N counter, markRead trigger) — использует physical bottomGap (≤30px без Schmitt)
+
+Один флаг для двух задач — **антипаттерн**, создаёт «слепые зоны».
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: `tg:new-message` для активного чата НЕ должен обнулять `unreadCount` локально (v0.95.26)
 
 ### Симптом

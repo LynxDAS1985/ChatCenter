@@ -250,6 +250,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // v0.87.44: default false! Иначе useForceReadAtBottom срабатывал СРАЗУ при открытии
   // → сервер возвращал unread=1 вместо 7. Баг «было 7, стало 1 за секунду».
   const [atBottom, setAtBottom] = useState(false)
+  // v0.95.28: physically at bottom (bottomGap ≤ 30, БЕЗ Schmitt-trigger).
+  // Используется для Telegram-style auto-scroll к новому сообщению + счётчик ↓N
+  // без «слепой зоны» 40-120px. Schmitt-trigger (atBottom выше) остаётся для UI
+  // визуала кнопки ↓ (стабильность от дребезга, фикс v0.95.2).
+  const [physicallyAtBottom, setPhysicallyAtBottom] = useState(false)
   const [newBelow, setNewBelow] = useState(0)
   const [firstUnreadId, setFirstUnreadId] = useState(null)
   const firstUnreadIdRef = useRef(null)
@@ -452,6 +457,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     msgsScrollRef, scrollPosByChatRef, initialScrollDoneRef, loadingOlderRef,
     loadingNewerRef, setLoadingNewer,
     scrollDiag, setAtBottom, setNewBelow,
+    setPhysicallyAtBottom,  // v0.95.28: physical (без Schmitt) для auto-scroll + ↓N
     isRestoringRef,  // v0.92.4: guard от closed-loop save при programmatic restore
     prependAnchorRef,  // v0.94.2: якорь для re-pin после load-older
   })
@@ -484,14 +490,30 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.91.3: event-based newBelow — подписка на tg:new-message (server push),
   // вместо отслеживания массива. См. useNewBelowCounter.js (полная история бага).
+  // v0.95.28: atBottom теперь PHYSICAL (≤30px, без Schmitt-trigger) — счётчик ↓N
+  // больше не «пропадает» в зоне 40-120px (старая слепая зона Schmitt-trigger).
+  // Если physicallyAtBottom=true + incoming → onAutoScroll вместо инкремента
+  // счётчика (Telegram-style: юзер у низа → плавная прокрутка к новому).
   useNewBelowCounter({
     activeChatId: activeViewKey,
-    atBottom,
+    atBottom: physicallyAtBottom,
     onAdded: ({ added, messageId, fromEvent }) => {
       scrollDiag.logEvent('new-below', { added, messageId, fromEvent })
       setNewBelow(n => n + added)
     },
     onSkip: (info) => scrollDiag.logEvent('new-below-skip', info),
+    // v0.95.28: Telegram-style auto-scroll. Юзер у низа + новое incoming → плавная
+    // прокрутка к нему. Эталоны: Telegram Web K (bubbles.ts isAtBottom + scrollToEnd),
+    // Telegram Desktop (history_widget.cpp scrollTop >= scrollTopMax - X → scrollToEnd).
+    // requestAnimationFrame — даём React закоммитить новое сообщение в DOM до scroll.
+    onAutoScroll: ({ messageId }) => {
+      scrollDiag.logEvent('auto-scroll-new-message', { messageId })
+      requestAnimationFrame(() => {
+        const el = msgsScrollRef.current
+        if (!el) return
+        try { el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) } catch (_) {}
+      })
+    },
   })
 
   // v0.91.3: сброс newBelow когда сервер подтвердил «всё прочитано» (unreadCount=0).

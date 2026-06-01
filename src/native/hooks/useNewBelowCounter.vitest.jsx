@@ -81,7 +81,9 @@ describe('useNewBelowCounter — event-based (v0.91.3)', () => {
     expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'outgoing' }))
   })
 
-  it('atBottom=true → НЕ считается + onSkip({ reason: "at-bottom" })', () => {
+  it('atBottom=true + НЕТ onAutoScroll → fallback onSkip({ reason: "at-bottom" })', () => {
+    // v0.95.28: backward compatibility — если onAutoScroll не передан,
+    // продолжаем работать как раньше (skip с at-bottom).
     const onAdded = vi.fn()
     const onSkip = vi.fn()
     renderHook(() => useNewBelowCounter({
@@ -90,6 +92,60 @@ describe('useNewBelowCounter — event-based (v0.91.3)', () => {
     emitNewMessage('chat-A', { id: '103', isOutgoing: false })
     expect(onAdded).not.toHaveBeenCalled()
     expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'at-bottom' }))
+  })
+
+  // v0.95.28: НОВОЕ — Telegram-style auto-scroll callback при atBottom + incoming
+  it('v0.95.28: atBottom=true + incoming → onAutoScroll({ messageId }) (НЕ skip)', () => {
+    const onAdded = vi.fn()
+    const onSkip = vi.fn()
+    const onAutoScroll = vi.fn()
+    renderHook(() => useNewBelowCounter({
+      activeChatId: 'chat-A', atBottom: true, onAdded, onSkip, onAutoScroll,
+    }))
+    emitNewMessage('chat-A', { id: '500', isOutgoing: false })
+    // Counter НЕ растёт (юзер сам видит сообщение)
+    expect(onAdded).not.toHaveBeenCalled()
+    // Auto-scroll callback вызван (плавная прокрутка к новому, Telegram-style)
+    expect(onAutoScroll).toHaveBeenCalledTimes(1)
+    expect(onAutoScroll).toHaveBeenCalledWith({ messageId: '500' })
+    // onSkip НЕ вызывается когда есть onAutoScroll
+    expect(onSkip).not.toHaveBeenCalled()
+  })
+
+  it('v0.95.28: atBottom=true + OUTGOING → ни onAutoScroll, ни onAdded (skip outgoing)', () => {
+    // Outgoing проверяется ДО atBottom — не должно срабатывать auto-scroll
+    const onAutoScroll = vi.fn()
+    const onSkip = vi.fn()
+    renderHook(() => useNewBelowCounter({
+      activeChatId: 'chat-A', atBottom: true, onAdded: vi.fn(), onSkip, onAutoScroll,
+    }))
+    emitNewMessage('chat-A', { id: '501', isOutgoing: true })
+    expect(onAutoScroll).not.toHaveBeenCalled()
+    expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'outgoing' }))
+  })
+
+  it('v0.95.28: atBottom=true + ДРУГОЙ ЧАТ → ни onAutoScroll, ни onAdded (skip other-chat)', () => {
+    // other-chat фильтр срабатывает ДО atBottom — нет auto-scroll
+    const onAutoScroll = vi.fn()
+    const onSkip = vi.fn()
+    renderHook(() => useNewBelowCounter({
+      activeChatId: 'chat-A', atBottom: true, onAdded: vi.fn(), onSkip, onAutoScroll,
+    }))
+    emitNewMessage('chat-B', { id: '502', isOutgoing: false })
+    expect(onAutoScroll).not.toHaveBeenCalled()
+    expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'other-chat' }))
+  })
+
+  it('v0.95.28: atBottom=false + incoming → onAdded (как раньше), onAutoScroll НЕ зовётся', () => {
+    // Когда юзер НЕ у низа — счётчик растёт, auto-scroll не нужен.
+    const onAdded = vi.fn()
+    const onAutoScroll = vi.fn()
+    renderHook(() => useNewBelowCounter({
+      activeChatId: 'chat-A', atBottom: false, onAdded, onAutoScroll,
+    }))
+    emitNewMessage('chat-A', { id: '503', isOutgoing: false })
+    expect(onAdded).toHaveBeenCalledTimes(1)
+    expect(onAutoScroll).not.toHaveBeenCalled()
   })
 
   it('⭐ atBottom меняется в realtime через ref — НЕ пересоздаёт подписку', () => {
