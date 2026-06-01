@@ -55,6 +55,8 @@ const NotifLogModal = lazy(() => import('./components/NotifLogModal.jsx'))
 const ConfirmCloseModal = lazy(() => import('./components/ConfirmCloseModal.jsx'))
 const LogModal = lazy(() => import('./components/LogModal.jsx'))
 const ConnectionsPanel = lazy(() => import('./components/ConnectionsPanel.jsx'))
+// v0.95.25: модалка «Что нового» — показывается при первом запуске после обновления.
+const WhatsNewModal = lazy(() => import('./components/WhatsNewModal.jsx'))
 
 // v0.87.0: специальный "виртуальный" мессенджер — рендерит NativeApp вместо <webview>
 const NATIVE_CC_ID = 'native_cc'
@@ -115,6 +117,8 @@ export default function App() {
   const [settings, setSettings] = useState({ soundEnabled: true, minimizeToTray: true, theme: 'dark' })
   const [monitorPreloadUrl, setMonitorPreloadUrl] = useState(null)
   const [appReady, setAppReady] = useState(false)
+  // v0.95.25: «Что нового» — модалка с changelog при первом запуске после обновления.
+  const [whatsNew, setWhatsNew] = useState(null)  // {prevVersion, currentVersion} | null
   const [lastMessage, setLastMessage] = useState(null)
   const [aiWidth, setAiWidth] = useState(300)
   const [chatHistory, setChatHistory] = useState([])
@@ -350,6 +354,33 @@ export default function App() {
   // ── v0.86.5-6: WebView lifecycle (вынесено в useWebViewLifecycle.js для лимита 600 строк)
   // Ловушка 64: forced resize + warm-up + health-check
   useWebViewLifecycle({ activeId, messengers, appReady, webviewRefs, setActiveId })
+
+  // ── v0.95.25: Проверка «Что нового» при первом запуске после обновления версии.
+  // Сравниваем settings.lastSeenVersion с реальной версией app:info → показываем модалку.
+  // Запускается ОДИН раз после appReady (settings уже загружены).
+  useEffect(() => {
+    if (!appReady) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const info = await window.api?.invoke?.('app:info')
+        const currentVersion = info?.data?.version || info?.version || null
+        if (!currentVersion || cancelled) return
+        const lastSeen = settings.lastSeenVersion || null
+        if (lastSeen === currentVersion) return  // юзер уже видел changelog этой версии
+        setWhatsNew({ prevVersion: lastSeen, currentVersion })
+      } catch (_) { /* silent — модалка не блокирует приложение */ }
+    })()
+    return () => { cancelled = true }
+  }, [appReady])
+
+  const handleWhatsNewClose = useCallback(() => {
+    if (!whatsNew) return
+    const next = { ...settings, lastSeenVersion: whatsNew.currentVersion }
+    setSettings(next)
+    try { window.api?.invoke('settings:save', next) } catch (_) {}
+    setWhatsNew(null)
+  }, [whatsNew, settings])
 
   // ── Добавление / сохранение мессенджера ────────────────────────────────
   const addMessenger = useCallback((m) => {
@@ -726,6 +757,16 @@ export default function App() {
           content={logContent}
           onClose={() => setShowLogModal(false)}
           onRefresh={() => window.api?.invoke('app:read-log').then(c => setLogContent(c || 'Лог пуст'))}
+        />}
+      </Suspense>
+
+      {/* v0.95.25: «Что нового» — модалка с changelog при первом запуске после
+          обновления версии. Lazy-loaded; не блокирует appReady. */}
+      <Suspense fallback={null}>
+        {whatsNew && <WhatsNewModal
+          prevVersion={whatsNew.prevVersion}
+          currentVersion={whatsNew.currentVersion}
+          onClose={handleWhatsNewClose}
         />}
       </Suspense>
 

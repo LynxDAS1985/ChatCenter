@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import FormattedText from './FormattedText.jsx'
 import LinkPreview from './LinkPreview.jsx'
 import VideoTile from './VideoTile.jsx'
+import VoicePlayer from './VoicePlayer.jsx'
 import { useReadOnScrollAway } from '../hooks/useReadOnScrollAway.js'
 
 // v0.87.118: цвета отправителей — детерминированы по senderId (как в Telegram).
@@ -24,6 +25,26 @@ export default function MessageBubble({
   const [mediaLoading, setMediaLoading] = useState(false)
   const [replyHover, setReplyHover] = useState(false)  // v0.87.118: тултип цитаты
   const ref = useRef(null)
+  // v0.95.25: таймер для отложенного скрытия action-bar при mouseleave.
+  // Стандарт Discord/Slack — 250мс между leave bubble и hide buttons. Юзер
+  // успевает перевести курсор на кнопки без их исчезновения.
+  const menuHideTimerRef = useRef(null)
+  const cancelMenuHide = () => {
+    if (menuHideTimerRef.current) {
+      clearTimeout(menuHideTimerRef.current)
+      menuHideTimerRef.current = null
+    }
+  }
+  const scheduleMenuHide = () => {
+    cancelMenuHide()
+    menuHideTimerRef.current = setTimeout(() => {
+      setMenu(false)
+      setReplyHover(false)
+      menuHideTimerRef.current = null
+    }, 250)
+  }
+  // Cleanup при unmount — защита от утечки таймера.
+  useEffect(() => () => cancelMenuHide(), [])
 
   // v0.87.43: Вариант 5 — Msg помечается прочитанным ТОЛЬКО когда:
   //   1. Полностью виден (≥95%) → помечен seen
@@ -80,21 +101,28 @@ export default function MessageBubble({
         width: 'auto',
         position: 'relative',
       }}
-      onMouseEnter={() => setMenu(true)}
-      onMouseLeave={() => { setMenu(false); setReplyHover(false) }}
+      onMouseEnter={() => { cancelMenuHide(); setMenu(true) }}
+      onMouseLeave={scheduleMenuHide}
     >
-      {/* v0.87.118: кнопки НАД сообщением — не закрывают текст */}
+      {/* v0.95.25: кнопки ПОД сообщением (top: calc(100% + 3px)) — не закрывают
+          имя отправителя сверху, как просил юзер. Mouse-handlers на самом баре
+          (cancelMenuHide / scheduleMenuHide) гарантируют что юзер успеет до них
+          дотянуться при переходе с bubble — задержка 250мс перед скрытием
+          (стандарт Discord/Slack). */}
       {menu && (onReply || onEdit || onDelete) && (
-        <div style={{
-          position: 'absolute', bottom: 'calc(100% + 3px)',
-          [m.isOutgoing ? 'left' : 'right']: 0,
-          display: 'flex', gap: 2, zIndex: 20,
-          background: 'rgba(18,18,18,0.92)',
-          backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 8, padding: '3px 4px',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
-        }}>
+        <div
+          onMouseEnter={cancelMenuHide}
+          onMouseLeave={scheduleMenuHide}
+          style={{
+            position: 'absolute', top: 'calc(100% + 3px)',
+            [m.isOutgoing ? 'right' : 'left']: 0,
+            display: 'flex', gap: 2, zIndex: 20,
+            background: 'rgba(18,18,18,0.92)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 8, padding: '3px 4px',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+          }}>
           <button onClick={() => onReply?.(m)} title="Ответить" style={miniBtn}>↪</button>
           {onForward && <button onClick={() => onForward(m)} title="Переслать" style={miniBtn}>➥</button>}
           {onPin && <button onClick={() => onPin(m)} title="Закрепить" style={miniBtn}>📌</button>}
@@ -219,6 +247,12 @@ export default function MessageBubble({
           <div onClick={handleDownload} style={{ cursor: 'pointer', fontSize: 12, opacity: 0.85, marginBottom: 4 }}>
             🎵 {m.mediaPreview || 'аудио'}
           </div>
+        )}
+        {/* v0.95.25: voice (голосовое сообщение) — кастомный плеер с waveform
+            в стиле Telegram. Decode TDLib waveform → 50 столбиков → progress
+            закрашивает слева направо. Скорость 1x / 1.5x / 2x. */}
+        {m.mediaType === 'voice' && (
+          <VoicePlayer m={m} chatId={chatId} downloadMedia={downloadMedia} />
         )}
         {m.mediaType === 'file' && (
           <div onClick={handleDownload} style={{ cursor: 'pointer', fontSize: 12, opacity: 0.85, marginBottom: 4 }}>

@@ -90,6 +90,11 @@ export function extractMediaInfo(content) {
     out.mediaType = 'voice'
     out.info.duration = Number(content.voice_note?.duration) || null
     out.info.fileSize = Number(content.voice_note?.voice?.size) || null
+    // v0.95.25: waveform — base64-кодированная байтовая строка с 100 sample'ами
+    // по 5 бит каждый. TDLib сам сэмплирует аудио → нам нужно только декодировать
+    // и рисовать в canvas. Decode в src/native/utils/voiceWaveform.js.
+    // По TDLib spec: `bytes waveform` в `voiceNote`.
+    out.info.waveform = content.voice_note?.waveform || null
     return out
   }
 

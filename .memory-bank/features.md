@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.24 (29 мая 2026)
+## Текущая версия: v0.95.25 (29 мая 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -28,6 +28,82 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.25 — Voice player (waveform) + Spellcheck (RU/EN) + Action-bar под bubble + «Что нового»
+
+Большой UX-релиз по запросу юзера:
+1. Иконки действий над сообщением исчезали слишком быстро + закрывали имя отправителя
+2. Голосовые сообщения не воспроизводились
+3. Нет проверки орфографии при наборе
+4. + Бонус: уведомление о новых функциях после обновления
+
+#### Часть А — Action-bar (Reply / Forward / Pin) под bubble + 250мс задержка
+
+**Корень**: в [MessageBubble.jsx:89](src/native/components/MessageBubble.jsx) action-bar был `bottom: 'calc(100% + 3px)'` (НАД bubble — закрывал имя отправителя на скрине юзера «Капуста в законе»). `onMouseLeave={() => setMenu(false)}` мгновенно скрывал — между bubble и кнопками gap 3px → курсор переезжая → leave → меню исчезает.
+
+**Решение**: `top: 'calc(100% + 3px)'` (ПОД bubble) + `setTimeout(setMenu(false), 250)` на mouseleave + `onMouseEnter/Leave` на самом баре для cancel/schedule. Стандарт Discord/Slack (250мс) — юзер успевает дотянуться до кнопок.
+
+#### Часть Б — Voice player (Telegram-style с waveform)
+
+**Корень**: backend [tdlibMapperMedia.js](main/native/backends/tdlibMapperMedia.js) маппит `messageVoiceNote → mediaType='voice'` с duration/fileSize, но в [MessageBubble.jsx](src/native/components/MessageBubble.jsx) НЕТ ветки `voice` — голосовые молча игнорировались.
+
+**Решение**:
+- В backend добавлен `info.waveform` (TDLib `voice_note.waveform` — base64 байтовая строка с 100 sample'ами по 5 бит каждый).
+- Новый чистый util [`voiceWaveform.js`](src/native/utils/voiceWaveform.js) — `decodeWaveform(waveform, targetCount=50)` → массив амплитуд 0..1. Cross-byte 5-bit extraction + resample (downsample группа-усреднение, upsample повторение).
+- Новый компонент [`VoicePlayer.jsx`](src/native/components/VoicePlayer.jsx) в стиле Telegram Web K:
+  - 50 столбиков waveform высотой = амплитуда × 24px
+  - Прогресс закрашивает столбики слева направо (current/duration)
+  - Play/Pause + duration mm:ss + кнопка скорости 1x/1.5x/2x
+  - Click по waveform → seek в эту точку (audio.currentTime)
+  - Lazy download через `downloadMedia` (cc-media:// path) — `<audio>` создаётся только при первом play
+- Интеграция в [MessageBubble.jsx](src/native/components/MessageBubble.jsx) `mediaType === 'voice'`.
+
+**Эталоны**: Telegram Web K `tweb/src/components/audio.ts` AudioElement, Telegram Desktop, WhatsApp Web.
+
+#### Часть В — Spellcheck RU + EN с ПКМ-меню
+
+**Корень**: в [windowManager.js:136-143](main/utils/windowManager.js) `webPreferences.spellcheck` НЕ задан → Electron default = `true`, но только английский. ПКМ не показывал варианты.
+
+**Решение** (стандарт [Electron Spellchecker docs](https://www.electronjs.org/docs/latest/tutorial/spellchecker)):
+- `webPreferences.spellcheck: true` + `session.setSpellCheckerLanguages(['ru', 'en-US'])` (Hunspell словари встроены в Chromium).
+- Новый [`spellcheckHandler.js`](main/handlers/spellcheckHandler.js) — `attachSpellcheckContextMenu({Menu, MenuItem, webContents})`. Обработчик `context-menu` event строит Menu с `params.dictionarySuggestions[]` (max 5) → `replaceMisspelling` + «Добавить в словарь» (`addWordToSpellCheckerDictionary`) + стандартные Copy/Paste/Cut/Select All.
+- Интеграция в [windowManager.js](main/utils/windowManager.js) — вызов после создания BrowserWindow.
+
+**Эталоны**: Slack, Discord, VS Code, Notion — все используют этот же API.
+
+#### Часть Г — «Что нового» модалка (бонус)
+
+**Решение**: новые [`utils/changelogData.js`](src/utils/changelogData.js) (данные последних 6 версий простым языком) + [`WhatsNewModal.jsx`](src/components/WhatsNewModal.jsx) (модалка с Esc-закрытием, backdrop blur, gradient header). В [App.jsx](src/App.jsx) — `useEffect(appReady)` → читает `app:info` version, сравнивает с `settings.lastSeenVersion` → показывает модалку → onClose сохраняет version в settings. Стандарт Slack / VS Code / Discord.
+
+#### Тесты — 30 новых
+
+- [voiceWaveform.vitest.js](src/native/utils/voiceWaveform.vitest.js) — 13 тестов decoder (null/empty, Uint8Array, base64, амплитуды 0..1, downsample/upsample, реальный TDLib сценарий)
+- [VoicePlayer.vitest.jsx](src/native/components/VoicePlayer.vitest.jsx) — 8 тестов компонента (рендер, переключение скорости 1x→1.5x→2x→1x, click play вызывает downloadMedia, fallback waveform, duration format)
+- [changelogData.vitest.js](src/utils/changelogData.vitest.js) — 8 тестов getChangelogSince (первая установка, одна версия назад, несколько, equal, null, DESC sort)
+- ВСЕ существующие тесты (807) проходят без изменений
+
+#### Файлы
+
+| Файл | Тип | Описание |
+|---|---|---|
+| [main/utils/windowManager.js](main/utils/windowManager.js) | M | spellcheck: true + setSpellCheckerLanguages + attach context menu |
+| [main/handlers/spellcheckHandler.js](main/handlers/spellcheckHandler.js) | A | новый — context-menu обработчик |
+| [main/main.js](main/main.js) | M | пробрасывает Menu/MenuItem в createWindow |
+| [main/native/backends/tdlibMapperMedia.js](main/native/backends/tdlibMapperMedia.js) | M | возвращает `info.waveform` для voice |
+| [main/native/backends/tdlibMapper.js](main/native/backends/tdlibMapper.js) | M | прокидывает `waveform` в финальный message |
+| [src/native/utils/voiceWaveform.js](src/native/utils/voiceWaveform.js) | A | новый — decoder 5-bit waveform |
+| [src/native/utils/voiceWaveform.vitest.js](src/native/utils/voiceWaveform.vitest.js) | A | 13 тестов decoder |
+| [src/native/components/VoicePlayer.jsx](src/native/components/VoicePlayer.jsx) | A | новый — плеер в стиле Telegram |
+| [src/native/components/VoicePlayer.vitest.jsx](src/native/components/VoicePlayer.vitest.jsx) | A | 8 тестов компонента |
+| [src/native/components/MessageBubble.jsx](src/native/components/MessageBubble.jsx) | M | action-bar под bubble + 250мс delay + voice интеграция |
+| [src/components/WhatsNewModal.jsx](src/components/WhatsNewModal.jsx) | A | новый — модалка changelog |
+| [src/utils/changelogData.js](src/utils/changelogData.js) | A | новый — данные changelog |
+| [src/utils/changelogData.vitest.js](src/utils/changelogData.vitest.js) | A | 8 тестов |
+| [src/App.jsx](src/App.jsx) | M | проверка lastSeenVersion + render модалки |
+
+**Регрессия**: lint 0, vitest +29 новых, fileSizeLimits ✅, check-memory ✅.
 
 ---
 

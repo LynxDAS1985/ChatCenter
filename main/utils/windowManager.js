@@ -5,6 +5,9 @@
 //   - Issue #44934: App crashes when adding child view to WebContentsView on Windows 11
 //   - Issue #45367: addChildView(WebContentsView) is not rendering properly
 //   - Issue #44897: preload не загружается в child WebContentsView
+// v0.95.25: spellcheck RU + EN + context-menu suggestions через spellcheckHandler.
+
+import { attachSpellcheckContextMenu } from '../handlers/spellcheckHandler.js'
 
 let _deps = null
 
@@ -139,9 +142,33 @@ export function createWindow(deps) {
       nodeIntegration: false,
       webviewTag: true,
       sandbox: false,
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      // v0.95.25: spellcheck для input/textarea в renderer.
+      // По умолчанию Electron включает spellcheck, но язык — только en-US.
+      // Русский включается через session.setSpellCheckerLanguages (см. ниже).
+      spellcheck: true,
     }
   })
+
+  // v0.95.25: настраиваем языки spellchecker (RU + EN) + контекстное меню с
+  // предложениями вариантов через handleSpellcheckContextMenu. Chromium встроен
+  // Hunspell + словари для обоих языков — без внешних зависимостей.
+  // См. [Electron Spellchecker docs](https://www.electronjs.org/docs/latest/tutorial/spellchecker)
+  // и .memory-bank/decisions.md (ADR-XX spellcheck).
+  try {
+    mainWindow.webContents.session.setSpellCheckerLanguages(['ru', 'en-US'])
+  } catch (err) {
+    console.warn('[spellcheck] setSpellCheckerLanguages failed:', err?.message)
+  }
+  // ПКМ-меню с вариантами правильных слов + «Добавить в словарь».
+  try {
+    const { Menu, MenuItem } = deps
+    if (Menu && MenuItem) {
+      attachSpellcheckContextMenu({ Menu, MenuItem, webContents: mainWindow.webContents })
+    }
+  } catch (err) {
+    console.warn('[spellcheck] attach context menu failed:', err?.message)
+  }
 
   // Отключаем throttling JS при свёрнутом/скрытом окне —
   // без этого MutationObserver, Notification hooks и IPC в WebView замораживаются

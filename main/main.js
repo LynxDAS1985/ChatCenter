@@ -3,7 +3,7 @@
 // v0.87.135 — Added Windows installer packaging into root dist/
 // v0.87.134 — Added start:prodlike script for production-like startup comparison
 // v0.87.103 — Refactored: setupIPC вынесен в handlers/mainIpcHandlers.js (~230 строк)
-import { app, BrowserWindow, session, nativeImage, screen, ipcMain } from 'electron'
+import { app, BrowserWindow, session, nativeImage, screen, ipcMain, Menu, MenuItem } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import https from 'node:https'
@@ -229,6 +229,8 @@ app.whenReady().then(() => {
   __slog('createWindowFromManager start')
   createWindowFromManager({
     BrowserWindow,
+    Menu,         // v0.95.25: spellcheck context-menu
+    MenuItem,     // v0.95.25
     path,
     isDev,
     __dirname,
@@ -268,6 +270,8 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindowFromManager({
         BrowserWindow,
+        Menu,         // v0.95.25
+        MenuItem,     // v0.95.25
         path,
         isDev,
         __dirname,

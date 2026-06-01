@@ -162,6 +162,9 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
     webPage: media.info.webPage || null,
     duration: media.info.duration || null,
     fileSize: media.info.fileSize || null,
+    // v0.95.25: waveform base64-строка для voice (100 sample'ов по 5 бит).
+    // Используется в VoicePlayer.jsx для красивых столбиков как у Telegram.
+    waveform: media.info.waveform || null,
     groupedId,
     replyToId: extractReplyToId(tdMsg),
     fwdFrom: extractFwdFrom(tdMsg),

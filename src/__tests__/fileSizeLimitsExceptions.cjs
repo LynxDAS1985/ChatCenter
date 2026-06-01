@@ -15,8 +15,8 @@ module.exports = {
   // Разбиение требует архитектурного решения (вынос layout/providers в отдельные компоненты)
   // — отдельный плановый шаг рефактора. Пока exception с обоснованием.
   'src/App.jsx': {
-    ceiling: 800,
-    reason: 'v0.88.x: Корневой компонент с providers, top-level state, routing между native/webview режимами. Разбиение требует архитектурного рефакторинга.'
+    ceiling: 850,
+    reason: 'v0.95.25: добавлен WhatsNewModal (lazy import + state + useEffect версии + JSX rendering — ~30 строк). v0.88.x: Корневой компонент с providers, top-level state, routing между native/webview режимами. Разбиение требует архитектурного рефакторинга.'
   },
   'src/utils/messengerConfigs.js': {
     ceiling: 400,
