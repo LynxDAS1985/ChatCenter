@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { List } from 'react-window'
 import ChatRow from './ChatRow.jsx'
 import MuteMenu from './MuteMenu.jsx'
+import ChatTypesDropdown from './ChatTypesDropdown.jsx'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 
 const ITEM_HEIGHT = 74
@@ -106,6 +107,9 @@ export default function InboxChatListSidebar({
   panelRef = null,
   // v0.95.9: isResizing — отключаем transition во время drag (для 60fps)
   isResizing = false,
+  // v0.95.30: режимы (Чаты/Клиенты/Доска) переехали из шапки правой панели
+  // в dropdown слева ВВЕРХУ списка (как Telegram Desktop folder switch).
+  modes = null,
 }) {
   const listRef = useRef(null)
   const containerRef = useRef(null)
@@ -182,6 +186,17 @@ export default function InboxChatListSidebar({
       // direct style.width мутацию, transition сломал бы 60fps).
       transition: isResizing ? 'none' : 'width 200ms ease-out',
     }}>
+      {/* v0.95.30: Dropdown «Чаты/Клиенты/Доска» ВВЕРХУ списка (раньше был справа
+          в header окна чата). Скрыт в compact mode (нет места для текста). */}
+      {!compact && modes && (
+        <div style={{ padding: '10px 10px 6px', flexShrink: 0 }}>
+          <ChatTypesDropdown
+            modes={modes}
+            activeId={store.mode}
+            onSelect={(id) => store.setMode(id)}
+          />
+        </div>
+      )}
       {/* v0.87.106: Поиск ПЕРВЫЙ (был после фильтра) */}
       {/* v0.95.7: в compact mode поиск скрыт (нет места для input) */}
       {!compact && (

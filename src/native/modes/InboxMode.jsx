@@ -23,8 +23,10 @@ import useChatListResize, {
   CHAT_LIST_DEFAULT_WIDTH, clampChatListWidth, isChatListCompact,
 } from '../hooks/useChatListResize.js'
 import ChatListResizeHandle from '../components/ChatListResizeHandle.jsx'
+import ThemePickerModal from '../components/ThemePickerModal.jsx'
 import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
 import { useScrollPositionAutosave } from '../hooks/useScrollPositionAutosave.js'
+import { loadTheme } from '../utils/themeColor.js'
 
 try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
 
@@ -38,6 +40,9 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
   const [listHeight, setListHeight] = useState(600)
+  // v0.95.30: модалка выбора цвета bubble (🎨). Открывается из header.
+  const [themePickerOpen, setThemePickerOpen] = useState(false)
+  const [activeThemeId, setActiveThemeId] = useState(() => loadTheme().id)
   // v0.95.7: drag-to-resize chat-list ↔ окно чата. Default 340px, [60, 600]. Compact <200.
   const [chatListWidth, setChatListWidth] = useState(CHAT_LIST_DEFAULT_WIDTH)
   const [isResizingChatList, setIsResizingChatList] = useState(false)
@@ -508,10 +513,14 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     // requestAnimationFrame — даём React закоммитить новое сообщение в DOM до scroll.
     onAutoScroll: ({ messageId }) => {
       scrollDiag.logEvent('auto-scroll-new-message', { messageId })
+      // v0.95.30: smoothScrollTo с easeOutCubic 250мс + twoPhase (как Telegram Web K).
+      // Раньше: el.scrollTo({behavior:'smooth'}) — браузерный default ~500мс linear-ish,
+      // дёргает на больших дистанциях. smoothScrollTo делает мгновенный prelude к
+      // (target - 1 viewport) + плавный последний экран.
       requestAnimationFrame(() => {
         const el = msgsScrollRef.current
         if (!el) return
-        try { el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) } catch (_) {}
+        try { smoothScrollTo(el, el.scrollHeight, { duration: 250, twoPhase: true }) } catch (_) {}
       })
     },
   })
@@ -756,10 +765,12 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         setInput(text)  // возвращаем текст в поле
       } else {
         // v0.87.65: smooth scroll после отправки
+        // v0.95.30: заменён browser scrollTo({behavior:'smooth'}) на smoothScrollTo
+        // (easeOutCubic 250мс + twoPhase) — единый стиль анимации с onAutoScroll.
         setTimeout(() => {
           const el = msgsScrollRef.current
           if (!el) return
-          el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+          smoothScrollTo(el, el.scrollHeight, { duration: 250, twoPhase: true })
           scrollDiag.logEvent('send-scroll-done', {
             top: el.scrollTop, height: el.scrollHeight,
             bottomGap: el.scrollHeight - el.scrollTop - el.clientHeight,
@@ -786,6 +797,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         compact={chatListCompact}
         panelRef={chatListPanelRef}
         isResizing={isResizingChatList}
+        modes={modes}
       />
       {/* v0.95.7: drag-to-resize divider между chat-list и окном чата */}
       <ChatListResizeHandle
@@ -809,23 +821,22 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
       {/* Окно чата → InboxChatPanel (v0.87.103) */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* v0.87.108: переключатель режимов перенесён в шапку правой панели */}
-        {modes && (
-          <div style={{
-            height: 48, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-            padding: '0 16px',
-            borderBottom: '1px solid var(--amoled-border)',
-            background: 'var(--amoled-surface)', flexShrink: 0, gap: 4,
-          }}>
-            {modes.map(m => (
-              <button
-                key={m.id}
-                className={`native-mode-switcher__btn ${store.mode === m.id ? 'native-mode-switcher__btn--active' : ''}`}
-                onClick={() => store.setMode(m.id)}
-              >{m.label}</button>
-            ))}
-          </div>
-        )}
+        {/* v0.95.30: режимы переехали в dropdown слева вверху списка чатов.
+            Здесь остаётся только кнопка 🎨 для смены цвета bubble сообщений
+            (как Telegram Settings → Color theme). */}
+        <div style={{
+          height: 48, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+          padding: '0 16px',
+          borderBottom: '1px solid var(--amoled-border)',
+          background: 'var(--amoled-surface)', flexShrink: 0, gap: 4,
+        }}>
+          <button
+            onClick={() => setThemePickerOpen(true)}
+            className="native-mode-switcher__btn"
+            title="Цвет сообщений"
+            style={{ fontSize: 16, padding: '6px 10px' }}
+          >🎨</button>
+        </div>
         <InboxChatPanel
           store={store} activeChat={activeChat} activeTopic={activeTopic} activeMessages={activeMessages}
           activeUnread={activeUnread} visibleMessages={visibleMessages} renderItems={renderItems}
@@ -858,6 +869,14 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       {/* v0.87.17: toast */}
       {toast && (
         <div className={`native-toast native-toast--${toast.type}`}>{toast.message}</div>
+      )}
+      {/* v0.95.30: модалка выбора цветовой темы */}
+      {themePickerOpen && (
+        <ThemePickerModal
+          activeThemeId={activeThemeId}
+          onSelect={(id) => setActiveThemeId(id)}
+          onClose={() => setThemePickerOpen(false)}
+        />
       )}
     </div>
   )

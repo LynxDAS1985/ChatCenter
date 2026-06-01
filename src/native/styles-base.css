@@ -2,6 +2,9 @@
    База: AMOLED тема, header, sidebar, аккаунты, main area, empty state. */
 
 /* v0.87.0: AMOLED тема для Native режима — чистый #000 + синий акцент */
+/* v0.95.30: --amoled-accent / --amoled-accent-hover / --amoled-accent-shadow
+   и --bubble-opacity управляются из themeColor.js applyTheme() — юзер выбирает
+   цвет в ThemePickerModal (🎨 в правом header). Defaults — Telegram blue. */
 .native-mode {
   --amoled-bg: #000000;
   --amoled-surface: #0a0a0a;
@@ -12,6 +15,8 @@
   --amoled-text-muted: #606060;
   --amoled-accent: #2AABEE;
   --amoled-accent-hover: #1e8fc7;
+  --amoled-accent-shadow: rgba(42,171,238,0.15);
+  --bubble-opacity: 0.95;
   --amoled-danger: #ff3b30;
   --amoled-success: #34c759;
   --amoled-warning: #ff9500;

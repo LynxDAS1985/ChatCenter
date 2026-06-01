@@ -18,13 +18,20 @@ import {
   createPendingHealth,
   markHealthError,
 } from '../utils/connectionHealth.js'
+import { loadTheme, applyTheme } from './utils/themeColor.js'
 
 try { window.__ccStartupMark?.('module:NativeApp', 'module evaluated after native static imports') } catch {}
 
+// v0.95.30: применяем сохранённую тему ДО первого рендера, чтобы bubble сразу
+// отрисовались с правильным цветом (без вспышки default-blue → indigo).
+try { applyTheme(loadTheme()) } catch (_) {}
+
+// v0.95.30: добавлены emoji-иконки для отображения в dropdown
+// «Чаты/Клиенты/Доска» (см. ChatTypesDropdown — слева вверху списка чатов).
 const MODES = [
-  { id: 'inbox', label: 'Чаты' },
-  { id: 'contacts', label: 'Клиенты' },
-  { id: 'kanban', label: 'Доска' },
+  { id: 'inbox', label: 'Чаты', icon: '💬' },
+  { id: 'contacts', label: 'Клиенты', icon: '👥' },
+  { id: 'kanban', label: 'Доска', icon: '📋' },
 ]
 
 // v0.87.106: фирменные цвета мессенджеров (ADR-016).

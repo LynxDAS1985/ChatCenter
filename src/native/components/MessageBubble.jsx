@@ -192,7 +192,10 @@ export default function MessageBubble({
         color: m.isOutgoing ? '#fff' : 'var(--amoled-text)',
         fontSize: 14, wordBreak: 'break-word',
         border: m.isOutgoing ? 'none' : '1px solid rgba(255,255,255,0.06)',
-        boxShadow: m.isOutgoing ? '0 0 12px rgba(42,171,238,0.15)' : 'none',
+        // v0.95.30: shadow читает CSS-переменную — меняется вместе с цветом темы.
+        boxShadow: m.isOutgoing ? '0 0 12px var(--amoled-accent-shadow, rgba(42,171,238,0.15))' : 'none',
+        // v0.95.30: opacity 0.95 — мягче выглядит, не «пластиково». Эталон Telegram Desktop.
+        opacity: 'var(--bubble-opacity, 1)',
       }}>
         {/* v0.87.118: пересланное сообщение — красивый заголовок как в Telegram */}
         {m.fwdFrom && (
