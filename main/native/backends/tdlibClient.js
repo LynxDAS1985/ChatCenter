@@ -330,10 +330,18 @@ export class TdlibClientManager extends EventEmitter {
         if (update.sender_id?.['@type'] === 'messageSenderUser') {
           const actionType = update.action?.['@type'] || null
           const isTyping = actionType === 'chatActionTyping'
+          // v0.95.31: добавлен senderName для multi-user typing-индикатора в header.
+          // Telegram-style: «Иван печатает...» / «Иван и Маша печатают...» / «3 печатают...»
+          const senderId = String(update.sender_id.user_id)
+          const userObj = record.userCache?.get(Number(senderId))
+          const senderName = userObj
+            ? [userObj.first_name, userObj.last_name].filter(Boolean).join(' ').trim()
+            : ''
           this.emit('chat:typing', {
             accountId,
             chatId: `${accountId}:${update.chat_id}`,
-            userId: String(update.sender_id.user_id),
+            userId: senderId,
+            senderName,
             typing: isTyping,
           })
         }

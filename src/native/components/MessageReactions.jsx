@@ -8,7 +8,8 @@
 //
 // Эталон: Telegram Web K (chat/reactionElement.ts), Telegram Desktop (reactions.cpp).
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { createReactionThrottler } from '../utils/reactionThrottle.js'
 
 // Стандартный набор быстрых реакций Telegram (топ-8 популярных).
 export const QUICK_REACTIONS = ['👍', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🤯']
@@ -110,9 +111,14 @@ export function ReactionPicker({ onSelect, onClose, isOutgoing }) {
 export default function MessageReactions({ message, isOutgoing, onSetReaction }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const reactions = message?.reactions
+  // v0.95.31: leading-edge throttle 200мс на повторные клики одной реакции.
+  // Защита от спама (5 кликов за 500мс → 1 вызов backend). Per-emoji ключ —
+  // юзер может ставить разные emoji параллельно без задержки.
+  const throttleRef = useRef(createReactionThrottler(200))
 
   const handleToggle = (emoji, action) => {
-    onSetReaction?.(message.id, emoji, action)
+    const key = `${message?.id || 'x'}:${emoji}`
+    throttleRef.current(key, () => onSetReaction?.(message.id, emoji, action))
     setPickerOpen(false)
   }
 

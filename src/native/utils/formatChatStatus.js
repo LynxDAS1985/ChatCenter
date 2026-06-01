@@ -62,8 +62,12 @@ function formatLastSeen(lastSeenMs, nowMs) {
   return `был(а) ${day}.${month}.${seen.getFullYear()}`
 }
 
-export function formatChatStatus(chat, { isTyping = false, nowMs = Date.now() } = {}) {
+// v0.95.31: добавлена опция typingText — готовая строка от formatTypingUsers
+// (множественный typing: «Иван и Маша печатают...»). Если передан typingText (string),
+// он перебивает isTyping. Backward compat: isTyping=true → 'печатает...'.
+export function formatChatStatus(chat, { isTyping = false, typingText = null, nowMs = Date.now() } = {}) {
   if (!chat) return ''
+  if (typingText && typeof typingText === 'string') return typingText
   if (isTyping) return 'печатает...'
   if (chat.type === 'user') {
     if (chat.isOnline) return 'в сети'

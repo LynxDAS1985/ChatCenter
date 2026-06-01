@@ -69,8 +69,9 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
     channel: 'tg:chat-last-message', data: { chatId, lastMessage, lastMessageTs },
   }))
   // v0.89.4: typing-индикатор (UI nativeStoreIpc.js:266 ждёт {chatId, userId, typing}).
-  subscribe('chat:typing', ({ chatId, userId, typing }) => ({
-    channel: 'tg:typing', data: { chatId, userId, typing },
+  // v0.95.31: добавлен senderName для multi-user typing (formatTypingUsers).
+  subscribe('chat:typing', ({ chatId, userId, senderName, typing }) => ({
+    channel: 'tg:typing', data: { chatId, userId, senderName, typing },
   }))
   // v0.89.4: outgoing read-receipts (UI ждёт {chatId, outgoing:true, maxId}).
   subscribe('chat:read-outbox', ({ chatId, maxId }) => ({

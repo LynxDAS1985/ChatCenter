@@ -19,6 +19,9 @@ import {
   markHealthError,
 } from '../utils/connectionHealth.js'
 import { loadTheme, applyTheme } from './utils/themeColor.js'
+import {
+  loadAccountOrder, saveAccountOrder, applyAccountOrder, moveAccount,
+} from './utils/accountOrder.js'
 
 try { window.__ccStartupMark?.('module:NativeApp', 'module evaluated after native static imports') } catch {}
 
@@ -196,6 +199,11 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
   const [logoutToast, setLogoutToast] = useState(null)
   // v0.87.106 Улучшение 1: hover на аккаунте → подсвечиваем его чаты в списке
   const [hoveredAccountId, setHoveredAccountId] = useState(null)
+  // v0.95.31: drag-n-drop порядка аккаунтов. accountOrder — массив id из localStorage,
+  // applyAccountOrder применяется к store.accounts. Новые аккаунты идут в конец.
+  const [accountOrder, setAccountOrder] = useState(() => loadAccountOrder())
+  const [dragSrcIdx, setDragSrcIdx] = useState(null)
+  const [dragOverIdx, setDragOverIdx] = useState(null)
 
   // v0.87.106: подсчёт непрочитанных по аккаунтам (для бейджей)
   // v0.95.21: для форум-групп считаем через getDisplayUnreadCount (число тем
@@ -309,6 +317,32 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
     setAccountMenu({ account, x: e.clientX, y: e.clientY })
   }
 
+  // v0.95.31: применяем сохранённый порядок аккаунтов. Новые (не в order) — в конец.
+  // Эталон: Telegram Desktop multi-account sidebar, Slack workspace switcher.
+  const orderedAccounts = useMemo(
+    () => applyAccountOrder(store.accounts, accountOrder),
+    [store.accounts, accountOrder]
+  )
+
+  // v0.95.31: HTML5 native drag-n-drop. Минимум кода, работает везде, не требует библиотек.
+  const handleAccountDragStart = (e, idx) => {
+    setDragSrcIdx(idx)
+    try { e.dataTransfer.effectAllowed = 'move' } catch (_) {}
+  }
+  const handleAccountDragOver = (e, idx) => {
+    e.preventDefault()
+    if (dragOverIdx !== idx) setDragOverIdx(idx)
+  }
+  const handleAccountDragEnd = () => {
+    if (dragSrcIdx != null && dragOverIdx != null && dragSrcIdx !== dragOverIdx) {
+      const newOrderIds = moveAccount(orderedAccounts, dragSrcIdx, dragOverIdx)
+      setAccountOrder(newOrderIds)
+      saveAccountOrder(newOrderIds)
+    }
+    setDragSrcIdx(null)
+    setDragOverIdx(null)
+  }
+
   // v0.87.95: после удаления аккаунта показываем toast «Освобождено N МБ»
   // store.lastWipe устанавливается в handler tg:account-update {removed:true}
   useEffect(() => {
@@ -325,26 +359,51 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
   return (
     <div className="native-mode">
       <div className="native-content">
-        <div className="native-sidebar" style={{ width: 76 }}>
-          {/* v0.87.106: круглые аватарки + ✈️ + точка онлайн + бейдж непрочит. БЕЗ яркой подсветки активного. */}
-          {store.accounts.map(acc => (
-            <AccountAvatar
+        {/* v0.95.31: sidebar теперь flex-column с spacer наверху — аккаунты прижаты ВНИЗ
+            (как Telegram Desktop multi-account, Slack workspace, Discord servers).
+            Добавлен HTML5 drag-n-drop для пересортировки порядка. */}
+        <div
+          className="native-sidebar"
+          style={{ width: 76, display: 'flex', flexDirection: 'column' }}
+        >
+          {/* Spacer — толкает аккаунты вниз */}
+          <div style={{ flex: 1 }} />
+          {orderedAccounts.map((acc, idx) => (
+            <div
               key={acc.id}
-              account={acc}
-              unreadCount={unreadByAccount[acc.id] || 0}
-              health={accountHealth[acc.id]}
-              onClick={() => store.setActiveAccount(acc.id)}
-              onContextMenu={(e) => handleAccountContextMenu(e, acc)}
-              onMouseEnter={() => setHoveredAccountId(acc.id)}
-              onMouseLeave={() => setHoveredAccountId(null)}
-              onOpenConnections={onOpenConnections}
-            />
+              draggable
+              onDragStart={(e) => handleAccountDragStart(e, idx)}
+              onDragOver={(e) => handleAccountDragOver(e, idx)}
+              onDragEnd={handleAccountDragEnd}
+              onDrop={handleAccountDragEnd}
+              style={{
+                // Визуальная подсветка: тащимый — полупрозрачный, drop target — accent border
+                opacity: dragSrcIdx === idx ? 0.4 : 1,
+                outline: dragOverIdx === idx && dragSrcIdx !== idx
+                  ? '2px dashed var(--amoled-accent)' : 'none',
+                outlineOffset: -2,
+                borderRadius: 8,
+                transition: 'opacity 0.15s, outline 0.1s',
+                cursor: dragSrcIdx === idx ? 'grabbing' : 'grab',
+              }}
+            >
+              <AccountAvatar
+                account={acc}
+                unreadCount={unreadByAccount[acc.id] || 0}
+                health={accountHealth[acc.id]}
+                onClick={() => store.setActiveAccount(acc.id)}
+                onContextMenu={(e) => handleAccountContextMenu(e, acc)}
+                onMouseEnter={() => setHoveredAccountId(acc.id)}
+                onMouseLeave={() => setHoveredAccountId(null)}
+                onOpenConnections={onOpenConnections}
+              />
+            </div>
           ))}
           <div
             className="native-account native-account__add"
             onClick={() => setShowLogin(true)}
             title="Добавить аккаунт"
-            style={{ width: 48, height: 48, margin: '0 auto' }}
+            style={{ width: 48, height: 48, margin: '0 auto 12px' }}
           >+</div>
         </div>
 

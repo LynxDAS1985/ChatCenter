@@ -102,8 +102,8 @@ module.exports = {
   // события одного кадра в один setState. Доменное разбиение IPC handlers — отдельная
   // плановая задача (handoff-code-limits.md).
   'src/native/store/nativeStoreIpc.js': {
-    ceiling: 620,
-    reason: 'v0.95.26: добавлен подробный комментарий-предупреждение в tg:new-message handler про правило v0.87.41 — НЕ обнулять unreadCount локально (~10 строк, защита от регрессии 47-дневного бага). v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers (~60 строк). Доменное разбиение IPC handlers (chats / messages / topics / metadata) — отдельный плановый шаг.'
+    ceiling: 660,
+    reason: 'v0.95.31: множественный typing — Map<userId, {senderName, at}> в state.typing[chatId] (раньше один юзер). Расширен tg:typing handler (~30 строк добавлено). v0.95.26: комментарий-предупреждение в tg:new-message про правило v0.87.41. v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers. Доменное разбиение IPC handlers — отдельный плановый шаг.'
   },
   'src/native/store/nativeStore.vitest.jsx': {
     ceiling: 800,

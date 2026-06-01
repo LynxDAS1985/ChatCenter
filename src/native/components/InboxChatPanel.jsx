@@ -86,7 +86,7 @@ function ScrollBottomButton({ visible, onClick, activeUnread, newBelow, loading 
 
 export default function InboxChatPanel({
   // chat data
-  store, activeChat, activeTopic, activeMessages, activeUnread, visibleMessages, renderItems, isTyping, messagesLoading,
+  store, activeChat, activeTopic, activeMessages, activeUnread, visibleMessages, renderItems, isTyping, typingText, messagesLoading,
   // v0.88.0: prefetch новых сообщений вниз (Telegram-style infinite scroll down)
   loadingNewer,
   // search/pin/toast/forward
@@ -158,7 +158,9 @@ export default function InboxChatPanel({
                 fontSize: 12, fontWeight: 400, marginTop: 1,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
-                {formatChatStatus(activeChat, { isTyping })}
+                {/* v0.95.31: typingText (если есть) перебивает isTyping —
+                    показываем «Иван печатает...» вместо общего «печатает...». */}
+                {formatChatStatus(activeChat, { isTyping, typingText })}
               </div>
             </>
           )}

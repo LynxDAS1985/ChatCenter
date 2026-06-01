@@ -523,20 +523,47 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   })
 
   // v0.87.14: typing-индикатор
-  addHandler('tg:typing', ({ chatId, userId, typing }) => {
-    setState(s => ({
-      ...s,
-      typing: typing
-        ? { ...s.typing, [chatId]: { userId, at: Date.now() } }
-        : (() => { const t = { ...s.typing }; delete t[chatId]; return t })()
-    }))
-    // Автоматически истекает через 6 сек
+  // v0.95.31: множественный typing — state.typing[chatId] теперь Map<userId, {senderName, at}>.
+  // Эталоны: Telegram Web K / Desktop — «Иван печатает...» (1) / «Иван и Маша печатают...» (2-3) /
+  // «3 человека печатают...» (4+). Раньше хранили ОДНОГО юзера → теряли информацию когда
+  // в чате печатают сразу несколько (TDLib эмитит updateChatAction для каждого отдельно).
+  addHandler('tg:typing', ({ chatId, userId, senderName, typing }) => {
+    setState(s => {
+      const prevForChat = s.typing?.[chatId] || {}
+      if (typing) {
+        return {
+          ...s,
+          typing: {
+            ...s.typing,
+            [chatId]: {
+              ...prevForChat,
+              [userId]: { senderName: senderName || '', at: Date.now() },
+            },
+          },
+        }
+      } else {
+        // Удаляем конкретного userId из Map
+        const next = { ...prevForChat }
+        delete next[userId]
+        const nextTyping = { ...s.typing }
+        if (Object.keys(next).length === 0) delete nextTyping[chatId]
+        else nextTyping[chatId] = next
+        return { ...s, typing: nextTyping }
+      }
+    })
+    // Автоматически истекает через 6.5 сек (как formatTypingUsers TYPING_TIMEOUT_MS).
+    // TDLib re-эмитит updateChatAction каждые 5-6с, если давно нет — юзер закончил.
     if (typing) {
       setTimeout(() => setState(s => {
-        const t = { ...s.typing }
-        if (t[chatId]?.userId === userId) delete t[chatId]
-        return { ...s, typing: t }
-      }), 6000)
+        const prevForChat = s.typing?.[chatId]
+        if (!prevForChat || !prevForChat[userId]) return s
+        const next = { ...prevForChat }
+        delete next[userId]
+        const nextTyping = { ...s.typing }
+        if (Object.keys(next).length === 0) delete nextTyping[chatId]
+        else nextTyping[chatId] = next
+        return { ...s, typing: nextTyping }
+      }), 6500)
     }
   })
 

@@ -41,7 +41,9 @@ function setup(opts = {}) {
 }
 
 describe('tg:typing — updateChatAction bridge', () => {
-  it('chatActionTyping → tg:typing {chatId, userId, typing:true}', () => {
+  it('chatActionTyping → tg:typing {chatId, userId, senderName, typing:true}', () => {
+    // v0.95.31: добавлен senderName для multi-user typing-индикатора.
+    // userCache пустой в моке → senderName=''. С реальным userCache имя резолвится.
     const { mockClient, sendToRenderer } = setup()
     mockClient.emit('update', {
       '@type': 'updateChatAction', chat_id: -1001,
@@ -49,7 +51,7 @@ describe('tg:typing — updateChatAction bridge', () => {
       action: { '@type': 'chatActionTyping' },
     })
     expect(sendToRenderer).toHaveBeenCalledWith('tg:typing', {
-      chatId: 'tg_main:-1001', userId: '42', typing: true,
+      chatId: 'tg_main:-1001', userId: '42', senderName: '', typing: true,
     })
   })
   it('chatActionCancel → tg:typing {typing:false}', () => {

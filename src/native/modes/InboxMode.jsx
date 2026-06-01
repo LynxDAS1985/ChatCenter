@@ -27,6 +27,7 @@ import ThemePickerModal from '../components/ThemePickerModal.jsx'
 import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
 import { useScrollPositionAutosave } from '../hooks/useScrollPositionAutosave.js'
 import { loadTheme } from '../utils/themeColor.js'
+import { formatTypingUsers } from '../utils/formatTypingUsers.js'
 
 try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
 
@@ -225,7 +226,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     }
   }
 
-  const isTyping = store.typing?.[store.activeChatId]
+  // v0.95.31: множественный typing — Map<userId, {senderName, at}> → строка
+  // «Иван и Маша печатают...». formatTypingUsers сам отфильтровывает истёкшие (>6.5с).
+  const typingMap = store.typing?.[store.activeChatId]
+  const typingText = formatTypingUsers(typingMap)
+  const isTyping = !!typingText  // backward-compat для остальных потребителей
 
   // v0.87.15: reply / edit / search / scroll-up
   const [replyTo, setReplyTo] = useState(null)
@@ -841,7 +846,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           store={store} activeChat={activeChat} activeTopic={activeTopic} activeMessages={activeMessages}
           activeUnread={activeUnread} visibleMessages={visibleMessages} renderItems={renderItems}
           loadingNewer={loadingNewer}
-          isTyping={isTyping} messagesLoading={!!store.loadingMessages?.[activeMessageKey]}
+          isTyping={isTyping} typingText={typingText}
+          messagesLoading={!!store.loadingMessages?.[activeMessageKey]}
           pinnedMsg={pinnedMsg} setPinnedMsg={setPinnedMsg}
           showMsgSearch={showMsgSearch} setShowMsgSearch={setShowMsgSearch}
           msgSearch={msgSearch} setMsgSearch={setMsgSearch}
