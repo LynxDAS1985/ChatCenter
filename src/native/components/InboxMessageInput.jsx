@@ -39,7 +39,11 @@ export default function InboxMessageInput({
           value={input}
           onChange={e => handleInputChange(e.target.value)}
           onKeyDown={e => {
-            if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim() && !sending) handleReplySend()
+            // v0.95.27: лог источника отправки (keyboard Enter) — для диагностики
+            // дубля. См. mistakes/native-scroll-unread.md «двойная отправка».
+            if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim() && !sending) {
+              handleReplySend({ source: 'keyboard:Enter', ctrlKey: e.ctrlKey, shiftKey: e.shiftKey })
+            }
             // v0.87.27: Ctrl+↑ — редактируем последнее своё сообщение
             if (e.key === 'ArrowUp' && e.ctrlKey && !input.trim() && !editTarget) {
               e.preventDefault()
@@ -62,7 +66,7 @@ export default function InboxMessageInput({
           disabled={disabled}
           style={{ flex: 1 }}
         />
-        <button className="native-btn" onClick={handleReplySend} disabled={disabled || sending || !input.trim()}>
+        <button className="native-btn" onClick={() => handleReplySend({ source: 'click:button' })} disabled={disabled || sending || !input.trim()}>
           {sending ? '...' : editTarget ? '✓' : 'Отпр.'}
         </button>
       </div>

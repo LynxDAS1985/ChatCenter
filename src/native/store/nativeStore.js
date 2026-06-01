@@ -987,6 +987,17 @@ export default function useNativeStore() {
   }, [])
 
   const sendMessage = useCallback(async (chatId, text, replyTo) => {
+    // v0.95.27: лог перед IPC — для диагностики «двойной отправки». В логе видели
+    // 2 send-start с разными len, но юзер говорит что отправил один раз. Логируем
+    // КАЖДЫЙ IPC invoke с textPreview + длиной + replyTo, чтобы сопоставить
+    // с send-start (из UI) и tg-new-message (из backend).
+    const textStr = String(text || '')
+    logNativeScroll('store-send-message-invoke', {
+      chatId,
+      len: textStr.length,
+      textPreview: textStr.slice(0, 40),
+      replyTo: replyTo || null,
+    })
     return window.api?.invoke('tg:send-message', { chatId, text, replyTo })
   }, [])
 

@@ -41,8 +41,8 @@ module.exports = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 1220,
-    reason: 'v0.95.16: loadTopicMessagesUntil для jump-to-end в форум-топиках (+55 строк). v0.95.15: loadMessagesUntil для обычных чатов. v0.95.12: options.aroundId/force. v0.89.40: IndexedDB cache + loadOlder/Newer. Доменное разбиение store — плановый шаг (handoff-code-limits.md).'
+    ceiling: 1240,
+    reason: 'v0.95.27: лог store-send-message-invoke в sendMessage (+11 строк) — диагностика «двойной отправки». v0.95.16: loadTopicMessagesUntil для jump-to-end в форум-топиках (+55 строк). v0.95.15: loadMessagesUntil для обычных чатов. v0.95.12: options.aroundId/force. v0.89.40: IndexedDB cache + loadOlder/Newer. Доменное разбиение store — плановый шаг (handoff-code-limits.md).'
   },
   // v0.88.x: профильные тесты v0.88.x вынесены в nativeStoreUnreadPrefetch.vitest.jsx (218 строк).
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,

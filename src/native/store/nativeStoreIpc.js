@@ -422,6 +422,13 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         isOutgoing: !!message.isOutgoing,
         mediaType: message.mediaType || 'text',
         ts: message.timestamp,
+        // v0.95.27: textPreview — для диагностики «дубля сообщений». Юзер видит 2
+        // одинаковых исходящих, но в логе только 1 send-start. Если приходит 2
+        // tg-new-message с РАЗНЫМИ id но ОДИНАКОВЫМ текстом — это сигнал что
+        // TDLib эмитит updateNewMessage дважды (provisional + final id).
+        // См. mistakes/native-scroll-unread.md.
+        textPreview: (message.text || '').slice(0, 40),
+        replyToId: message.replyToId || null,
       })
     } catch (_) {}
     // v0.87.14: Toast через MessengerRibbon (только входящие, не для активного чата)

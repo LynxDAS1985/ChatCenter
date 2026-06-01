@@ -666,10 +666,18 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     store, setForwardTarget, setPinnedMsg, showToast, forwardTarget,
   })
 
-  const handleReplySend = async () => {
+  const handleReplySend = async (sendOpts = {}) => {
+    // v0.95.27: лог источника вызова (keyboard / click / unknown) — для диагностики
+    // «двойной отправки». Юзер настаивает что отправил один раз, но в логе 2 send-start
+    // с lastUserType=wheel (между ними юзер только скроллил, не нажимал). Нужно
+    // понять что вызвало второй handleReplySend. Источник пробрасывается из
+    // InboxMessageInput.onKeyDown (keyboard:Enter) или onClick (click:button).
+    const callSource = sendOpts?.source || 'unknown'
     // v0.87.55: логи + error-toast для "ввёл текст → Отпр. → ничего"
     if (!input.trim() || sending) {
-      scrollDiag.logEvent('send-skip', { hasText: !!input.trim(), sending, chatId: store.activeChatId })
+      scrollDiag.logEvent('send-skip', {
+        hasText: !!input.trim(), sending, chatId: store.activeChatId, callSource,
+      })
       return
     }
     if (activeChat?.isForum) {
@@ -687,9 +695,29 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       client: scrollElBefore.clientHeight,
       bottomGap: scrollElBefore.scrollHeight - scrollElBefore.scrollTop - scrollElBefore.clientHeight,
     } : null
+    // v0.95.27: расширенная диагностика send-start.
+    // - callSource: keyboard:Enter / click:button / unknown (если unknown — кто-то
+    //   ещё programmatic вызывал handleReplySend → нужно искать)
+    // - textPreview: первые 40 символов (для сопоставления с возможными дублями)
+    // - outgoingCount: сколько уже своих сообщений в DOM до отправки
+    // - lastOutgoing: время последнего своего сообщения (если оно <2с назад → подозрительно)
+    const activeMsgsBeforeSend = store.messages[store.activeChatId] || []
+    const outgoingBefore = activeMsgsBeforeSend.filter(m => m.isOutgoing)
+    const lastOutgoing = outgoingBefore[outgoingBefore.length - 1]
+    const msSinceLastOutgoing = lastOutgoing?.timestamp
+      ? Date.now() - Number(lastOutgoing.timestamp)
+      : null
     scrollDiag.logEvent('send-start', {
       chatId: store.activeChatId, len: text.length,
+      textPreview: text.slice(0, 40),
       isEdit: !!editTarget, replyTo: replyTo?.id, scrollBefore: before,
+      callSource,
+      outgoingCountBefore: outgoingBefore.length,
+      lastOutgoingId: lastOutgoing?.id || null,
+      lastOutgoingTextPreview: lastOutgoing?.text?.slice(0, 40) || null,
+      msSinceLastOutgoing,
+      // Stack trace первой пары фреймов — поможет если callSource=unknown.
+      stackHint: (() => { try { return (new Error()).stack?.split('\n').slice(1, 4).join(' | ').slice(0, 300) } catch { return null } })(),
     })
     try {
       let result
@@ -700,7 +728,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         result = await store.sendMessage(store.activeChatId, text, replyTo?.id)
         setReplyTo(null)
       }
-      scrollDiag.logEvent('send-result', { ok: result?.ok, messageId: result?.messageId, error: result?.error })
+      scrollDiag.logEvent('send-result', { ok: result?.ok, messageId: result?.messageId, error: result?.error, callSource })
       if (!result?.ok) {
         showToast(`Ошибка отправки: ${result?.error || 'неизвестно'}`, 'error')
         setInput(text)  // возвращаем текст в поле
