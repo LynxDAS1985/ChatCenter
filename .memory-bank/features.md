@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.25 (29 мая 2026)
+## Текущая версия: v0.95.26 (1 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.19-22.md`](./archive/features-v0.95.19-22.md) | v0.95.19 – v0.95.22 (диагностика tg-new-message, финал jump-to-end, бейдж форум-группы, форум-overlay; стабилизировано) | ~6 КБ |
 | [`archive/features-v0.95.15-18.md`](./archive/features-v0.95.15-18.md) | v0.95.15 – v0.95.18 (итеративный fetch + форум-топики + двухфазный scroll + ForumTopicEmptyState; стабилизировано v0.95.20-21) | ~8 КБ |
 | [`archive/features-v0.95.12-14.md`](./archive/features-v0.95.12-14.md) | v0.95.12 – v0.95.14 (3 итерации jump-to-end до итеративного fetch v0.95.15, полная сага в jump-to-end-saga.md) | ~32 КБ |
 | [`archive/features-v0.95.8-9.md`](./archive/features-v0.95.8-9.md) | v0.95.8 – v0.95.9 (счётчик ↓ обнуляется + анимация + live compact + порог 128) | ~14 КБ |
@@ -28,6 +29,69 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.26 — Фикс: tg:new-message обнулял unreadCount для активного чата (47-дневный баг)
+
+Юзер: открыл чат «Вайбкодинг комьюнити» с unread=48, прокручен вверх, листает → counter не убирается → **резко 0**, но можно ещё листать вниз.
+
+**Прямое доказательство** (chatcenter.log 15:00:33-34):
+```
+15:00:33  store-unread-sync unread=48 active=true   ← server ВСЁ ЕЩЁ 48
+15:00:33  tg-new-message msgId=118640082944
+          action=skipped-non-contiguous gapMessages=3758 isActiveChat=true
+15:00:34  badge-state unread=0 prevUnread=48        ← 💥 ЛОКАЛЬНОЕ обнуление
+15:00:34  bottomGap=2056                            ← юзер НЕ у низа
+```
+
+**Корень**: в [nativeStoreIpc.js:396](src/native/store/nativeStoreIpc.js) (с **15 апреля 2026**, v0.87.14 — **47 дней не ловили**) была строка:
+
+```js
+unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
+```
+
+Это нарушало правило **v0.87.41** (документировано для функции `markRead`, но НЕ применялось к другим handlers):
+> «Локально unreadCount обновляется ТОЛЬКО из server sync».
+
+**Решение** (1 строка):
+```js
+// БЫЛО:  unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1)
+// СТАЛО: unreadCount: (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1)
+```
+
+Decrement остаётся **ТОЛЬКО** через `tg:chat-unread-sync` (3 server-driven handlers: sync, bulk-sync, read).
+
+**Эталоны** (research-агент проверил исходники):
+- **Telegram Web K** [appMessagesManager.ts:7577](https://github.com/morethanwords/tweb): `++dialog.unread_count` БЕЗУСЛОВНО. Decrement только в `onUpdateReadHistoryInbox`.
+- **Telegram Desktop** [history_widget.cpp:3946](https://github.com/telegramdesktop/tdesktop): atBottom guard ПЕРЕД `readInboxOnNewMessage` — если НЕ в низу, не трогает counter.
+- **WhatsApp Web / Discord**: ACK только при `isActive && focused && atBottom`.
+
+Наш фикс = tweb pattern (самый простой, decrement только server).
+
+**Почему 47 дней не ловили** (7 факторов — полный анализ в [mistakes/native-scroll-unread.md](.memory-bank/mistakes/native-scroll-unread.md)):
+1. `useReadByVisibility` маскировал — для большинства сообщений server обновлял правильно, локальное обнуление совпадало по значению
+2. Тест-пробел: проверяли только `tg:chat-unread-sync`, не `tg:new-message`
+3. Сага v0.87.41 затронула только `markRead`, никто не сопоставил с `tg:new-message`
+4. Code review v0.87.103 (разбиение файлов) был архитектурным, не функциональным
+5. В логах не виден — оба events валидны по отдельности
+6. Невозможно поймать в jsdom (нужны scroll + push + server delay)
+7. Два параллельных «unread» счётчика путали (chat.unreadCount + useNewBelowCounter)
+
+**3 уровня защиты** (чтобы НИКОГДА не вернулось):
+1. **4 регресс-теста** в [nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) — `tg:new-message для активного чата +1`, `outgoing не меняет`, `decrement через server sync`
+2. **Static-test** в [modernPatternsGuard.test.cjs](src/__tests__/modernPatternsGuard.test.cjs) — regex проверка что строка не вернётся
+3. **Запись** в [mistakes/native-scroll-unread.md](.memory-bank/mistakes/native-scroll-unread.md) — полный разбор + правило для будущих сессий
+
+**Что юзер увидит**:
+| Сценарий | Раньше | После фикса |
+|---|---|---|
+| Чат активен, юзер atBottom, новое сообщение | 48 → 0 (моментально) | 48 → 49 → 0 (~500мс через server) — точно как Telegram |
+| Чат активен, юзер НЕ atBottom | 48 → 0 ❌ **БАГ** | 48 → 49 (остаётся пока не дочитает) |
+| Чат неактивен | +1 (без изменений) | +1 (без изменений) |
+| Своё сообщение | без изменений | без изменений |
+
+**Регрессия**: lint 0, vitest 840/840 (+4 новых), modernPatternsGuard 16/16 (+1), check-memory ✅.
 
 ---
 
@@ -184,147 +248,9 @@ TDLib **local cache** для давних чатов содержит всего
 
 ---
 
-### v0.95.22 — Форум-панель как overlay (scroll списка чатов сохраняется) + Escape
+### v0.95.19 – v0.95.22 — заархивированы
 
-Юзер: «когда переходу в форум и закрываю потом, список чатов оказался в самом верху, а надо чтобы не двигался» (скрины: до/после открытия панели тем).
-
-**Корень**: в [InboxChatListSidebar.jsx:155](src/native/components/InboxChatListSidebar.jsx) был `if (forumChat) { return <forum-panel/> }` — early return полностью заменял список чатов на форум-панель. При свитче React размонтировал `react-window List` (нет stable reconciliation между разными root divs), внутренний scrollable div пересоздавался со `scrollTop=0`. При закрытии форум-панели — List создавался **с нуля** → юзер видел верх списка.
-
-**Решение** (overlay-паттерн, как Telegram Web K / Desktop / iOS): убрать early return, рендерить список чатов **всегда** внутри общего wrapper `<div style={position:relative}>`, форум-панель — поверх как `position: absolute; inset: 0; zIndex: 1`. List **никогда не размонтируется** — его внутренний scrollTop сохраняется автоматически в DOM.
-
-CSS-анимация `native-panel-slide-in` (transform translateX 100%→0) уже была рассчитана под overlay — изначально была эта задумка, но JSX делал замену. Теперь совпало.
-
-**Дополнительно — Escape через focus-pattern**: форум-overlay получает `tabIndex={-1}` + `onKeyDown` (Escape → `closeForumTopics`) + autofocus при mount через `useEffect(forumPanelRef.current.focus)`. Это локальный обработчик — срабатывает ТОЛЬКО когда фокус на форум-панели. Глобальный `window.addEventListener('keydown')` создал бы конфликт с уже существующими Escape-handlers ([AccountContextMenu](src/native/components/AccountContextMenu.jsx), [MuteMenu](src/native/components/MuteMenu.jsx), [AddMessengerModal](src/components/AddMessengerModal.jsx), [SettingsPanel](src/components/SettingsPanel.jsx)). Если юзер открыл модалку поверх форума — Escape закроет её, не форум (стандарт Telegram Web K).
-
-**Эталоны** (production messengers 2026):
-- Telegram Web K (`tweb`) — `ForumTab` рендерится как secondary tab внутри left-column, dialog-list всегда в DOM
-- Telegram Desktop — `Window::Forum` overlay layer над `DialogsWidget`
-- iOS Telegram — Forum overlay через UINavigationController push
-- WhatsApp Web / Discord — те же overlay-паттерны для подобных тематических панелей
-
-**Связанные саги** (научили нас НЕ ремаунтить виртуальный список):
-- [native-scroll-restore-saga.md](.memory-bank/native-scroll-restore-saga.md) — 13 итераций v0.91.12-24, сохранение `scrollTop` через ref всегда ломалось при ремаунте
-- [audit-2026-05-26-scroll-architecture.md](.memory-bank/audit-2026-05-26-scroll-architecture.md) — 6 ошибок при попытках restore. Главный урок: «restore работает только когда DOM stable»
-
-**Что НЕ менялось**:
-- `forumClosing` exit-анимация 180мс — работает на overlay идентично (CSS transform работает с position:absolute)
-- `panelRef` для drag-to-resize — теперь на wrapper, width применяется ко всему контейнеру, оба child (список + overlay) follow
-- `useChatListResize` direct DOM-mutation `chatListRef.current.style.width` — wrapper подхватит, overlay через `inset:0` растягивается
-- MuteMenu (ПКМ на чате) — рендерится в общем wrapper, доступен независимо от форума (хотя при открытом overlay чаты не кликабельны — невозможно вызвать ПКМ)
-- compact mode (`width < 128`) — не задевается, форум-overlay имеет свой layout
-- Поиск / фильтр аккаунтов / search highlight — список всегда live
-- `ResizeObserver` для `listHeight` — wrapper больше не размонтируется, RO стабилен (убрана лишняя зависимость `store.forumTopicPanelChatId` из effect)
-
-**Что НЕ сделано (решено отдельно)**:
-- ❌ Persist scroll позиции списка чатов между запусками — Telegram сам этого не делает, юзер не просил явно (его проблема была про одну сессию — решена overlay-фиксом)
-
-**Тесты**: 11 unit-тестов в [InboxChatListSidebar.vitest.jsx](src/native/components/InboxChatListSidebar.vitest.jsx) — регрессионная защита overlay-архитектуры (static analysis):
-- НЕТ early return для форум-панели
-- wrapper имеет `position:relative`
-- форум-overlay имеет `position:absolute + inset:0`
-- conditional render `{forumChat && (...)}`
-- `tabIndex={-1}` + `onKeyDown` Escape + autofocus useEffect
-- CSS-классы slide-in/out
-- UX: title="Закрыть темы (Esc)"
-
-**Регрессия**: lint 0, vitest +11 новых, fileSizeLimits, check-memory ✅.
-
-**Файлы**:
-| Файл | Что |
-|---|---|
-| [InboxChatListSidebar.jsx](src/native/components/InboxChatListSidebar.jsx) | Удалён early return, реструктура на wrapper + overlay, новый forumPanelRef + autofocus useEffect, onKeyDown Escape, tabIndex={-1} |
-| [InboxChatListSidebar.vitest.jsx](src/native/components/InboxChatListSidebar.vitest.jsx) (новый) | 11 регрессионных тестов overlay-архитектуры |
-| [styles-animations.css](src/native/styles-animations.css) | НЕ менялось — slide-in/out keyframes уже работают с overlay (transform translateX) |
-
----
-
-### v0.95.21 — Бейдж форум-группы: число тем с непрочитанным (как Telegram Desktop)
-
-Юзер: бейдж форум-чата «Un1c4d3 Support» у нас = `6.2K`, в Telegram Web того же чата = `2`. Темы Q/D=3, General=7, остальные 0.
-
-**Корень**: для форум-групп TDLib `chat.unread_count` агрегирует ВСЮ историю по всем темам (включая никогда не открытые) — огромные числа без UX-смысла. Telegram Desktop / Web показывают **число тем с unread > 0**.
-
-**Решение** (UI-override, без правки store-state): новый чистый util [`displayUnread.js`](src/native/utils/displayUnread.js) — `getDisplayUnreadCount(chat, forumTopics)`. Для `isForum=true` считает `topics.filter(t => t.unreadCount > 0).length` из `store.forumTopics[chatId]` (живой массив). Для обычных чатов — `chat.unreadCount` как раньше. Темы не загружены → 0 (Telegram Desktop тоже так делает до первого открытия).
-
-**Где**: [ChatListItem](src/native/components/ChatListItem.jsx) новый prop `displayUnreadCount` (fallback на `chat.unreadCount`). [ChatRow](src/native/components/ChatRow.jsx) вызывает util. [InboxChatListSidebar](src/native/components/InboxChatListSidebar.jsx) пробрасывает `store.forumTopics`. [NativeApp.jsx](src/native/NativeApp.jsx) `unreadByAccount` — корректная сумма.
-
-**НЕ менялось**: `chat.unreadCount` остаётся как TDLib aggregate — markRead / `tg:chat-unread-sync` / `useForceReadAtBottom` работают как раньше. `topic.unreadCount` для форум-топика в [InboxMode.jsx:179](src/native/modes/InboxMode.jsx) уже использовался — не задействуется.
-
-**Тесты**: 12 unit в [displayUnread.vitest.js](src/native/utils/displayUnread.vitest.js) — обычный/форум, с темами/без, edge cases (null/NaN/строки), реальный сценарий юзера. Регрессия: lint 0, vitest, fileSizeLimits, check-memory ✅.
-
-**Отложено (отдельная задача)**: иконки тем форум-чатов — у нас буква (G у General) вместо custom emoji. См. [tdlibForumEmoji.js](main/native/backends/tdlibForumEmoji.js) — `resolveTopicEmojis` иногда не срабатывает.
-
----
-
-### v0.95.20 — Load-first гейт для кнопки ↓ (финал саги jump-to-end)
-
-Юзер: «надо что бы точно все загрузило а потом перешло вниз... тупь будет задержка, это не страшно».
-
-**Корень**: в [InboxMode.scrollToBottom](src/native/modes/InboxMode.jsx) был гейт `unreadVsLoaded > 50` — load-first ветка ([loadMessagesUntil](src/native/store/nativeStore.js)) срабатывала только при большом числе непрочитанных. Если у юзера 10 непрочитанных, но gap=200 — `unreadVsLoaded=10` → fallback `scrollTo(scrollHeight)` → сообщения дописывались после (диагностика v0.95.19 `tg-messages-applied action=appended-newer` после `button-scroll-bottom` это и показывала).
-
-**Решение**: новый чистый util [`jumpToEndGate.js`](src/native/utils/jumpToEndGate.js) — `computeJumpToEndGate({lastMessageId, gapMessages, loading})` возвращает `true` если `gapMessages > 0` (любой разрыв) + не идёт загрузка + есть lastMessageId. Замена inline `unreadVsLoaded > 50` на вызов в `scrollToBottom`. Эталон — Telegram Desktop `HistoryWidget::cornerButtonsShowAtPosition` (`_history->isReadyFor()` ПЕРЕД scroll), Telegram Web K `ChatBubbles.onGoDownClick` (ProgressivePreloader.attach → getHistory → scrollToEnd).
-
-**Сценарий 5000 непрочитанных**: клик ↓ → ~0.2–2 сек итеративный fetch 100 последних ([getIterativeUntil](main/native/backends/tdlibBackend.js)) → rAF×2 → twoPhase smoothScroll (v0.95.18) 0.35 сек → mark-read до lastMessageId → счётчик 0. Остальные 4900 НЕ грузятся (как у Telegram Desktop), подгрузятся через load-older если юзер крутит вверх.
-
-**Защита от циклов** (уже была): `maxIterations: 10`, `targetCount: 100`, empty/duplicate stop.
-
-**НЕ менялось**: loadMessagesUntil (v0.95.15), loadTopicMessagesUntil (v0.95.16), getIterativeUntil, smoothScrollTo twoPhase (v0.95.18), mark-read bypass для `button-scroll` (v0.95.8), contiguity check в `tg:new-message` (v0.95.0). Гейт лишь расширяет уже работающую ветку.
-
-**Дополнительно**: в лог `button-scroll-bottom` добавлены `branch: 'load-first' | 'direct-scroll'`, `isForumTopic`, `effectiveLastMessageId`, `loading` — для прозрачности.
-
-**Тесты**: 14 unit в [jumpToEndGate.vitest.js](src/native/utils/jumpToEndGate.vitest.js) — gap 0/1/200/1021, lastMessageId null/0, loading true, NaN/null/undefined, реальный сценарий v0.95.19.
-
-**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅. Сага закрыта — полная история v0.95.11→v0.95.20 в [jump-to-end-saga.md](.memory-bank/jump-to-end-saga.md).
-
----
-
-### v0.95.19 — Диагностика «новые сообщения не приходят» (без смены поведения)
-
-Юзер: «в TG есть новые сообщения, а у нас старые видно». Гипотезы (см. v0.95.18 разбор): (1) contiguity check в `tg:new-message` блокирует новые с gap > 200 messages, (2) после jump-to-end старые не в DOM, (3) скриншоты разных моментов.
-
-Чтобы **точно** найти корень — добавил **полную диагностику** входящих сообщений. Без смены поведения.
-
-#### Новые события в логе
-
-**`tg-new-message`** (каждое сообщение через push):
-```
-chatId, msgId, action ('inserted' | 'updated' | 'skipped-non-contiguous'),
-existing — сколько было в DOM,
-newestLoaded — id последнего в DOM,
-gapMessages — оценка gap в сообщениях (Δid / 2^20),
-isContiguous, isDup, isActiveChat, isOutgoing, mediaType, ts
-```
-
-**`tg-messages-applied`** (каждый batch от backend — load/jump-to-end):
-```
-chatId, action ('replaced' | 'prepended-old' | 'appended-newer' | 'appendNewer-empty-noop'),
-incoming, existingBefore, nextLen,
-oldestIncoming/newestIncoming — диапазон того что пришло,
-oldestNext/newestNext — диапазон после применения
-```
-
-#### Что покажет лог на реальной сессии
-
-Если **юзер реально не видит новые** (а в TG видит):
-- `tg-new-message action=skipped-non-contiguous gapMessages=N` — найдём что блокирует
-- Сравним `newestLoaded` (у нас) и `message.id` (новое от TG) — узнаем размер пропуска
-
-Если **отображаются только последние 100 после jump-to-end**:
-- `tg-messages-applied action=replaced nextLen=100` после кнопки ↓
-- При scroll up — `tg-messages-applied action=prepended-old` (load-older)
-
-#### Что НЕ изменено
-
-- `tg:new-message` поведение (вклеивание/skip по gap-limit) то же
-- `tg:messages` обработка (replace/prepend/append) то же
-- Все защиты v0.94.7/v0.95.0 остаются
-- Никаких новых invokes или setState
-
-**Регрессия**: lint 0, vitest 756/756, fileSizeLimits 287/287, check-memory ✅. Тесты НЕ менялись — только новые лог-точки.
-
-#### Следующий шаг
-
-После сессии юзера с этой версией — посмотрим лог `tg-new-message action=skipped-non-contiguous` и `tg-messages-applied` для проблемного чата → точный фикс по реальным данным.
+См. [`archive/features-v0.95.19-22.md`](./archive/features-v0.95.19-22.md): диагностика tg-new-message + tg-messages-applied (v0.95.19), финал саги jump-to-end через gapMessages > 0 (v0.95.20), бейдж форум-группы как Telegram Desktop (v0.95.21), форум-overlay + Escape focus-pattern (v0.95.22). Стабилизировано.
 
 ---
 

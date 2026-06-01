@@ -100,7 +100,11 @@ module.exports = {
   // события одного кадра в один setState. Доменное разбиение IPC handlers — отдельная
   // плановая задача (handoff-code-limits.md).
   'src/native/store/nativeStoreIpc.js': {
-    ceiling: 600,
-    reason: 'v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers (~60 строк). Доменное разбиение IPC handlers (chats / messages / topics / metadata) — отдельный плановый шаг.'
+    ceiling: 620,
+    reason: 'v0.95.26: добавлен подробный комментарий-предупреждение в tg:new-message handler про правило v0.87.41 — НЕ обнулять unreadCount локально (~10 строк, защита от регрессии 47-дневного бага). v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers (~60 строк). Доменное разбиение IPC handlers (chats / messages / topics / metadata) — отдельный плановый шаг.'
+  },
+  'src/native/store/nativeStore.vitest.jsx': {
+    ceiling: 800,
+    reason: 'v0.95.26: +4 регресс-теста на tg:new-message handler — защита от 47-дневного бага «обнуление unreadCount для активного чата» (~85 строк). Все 4 теста критичны — отдельно проверяют активный/неактивный чат, outgoing, server sync.'
   }
 }

@@ -150,6 +150,39 @@ test('trayManager.js: log viewer окно подключает preload', () => {
 // `webContentsViewPatterns.test.cjs` удалены. См. mistakes/electron-core.md.
 // ──────────────────────────────────────────────────────────────────
 
+// ──────────────────────────────────────────────────────────────────
+// v0.95.26: ЗАЩИТА от возврата бага «tg:new-message обнуляет unreadCount
+// локально для активного чата».
+//
+// Корень бага (15 апреля 2026 → 1 июня 2026, 47 дней не ловили):
+//   nativeStoreIpc.js:396 раньше было:
+//     unreadCount: s.activeChatId === chatId ? 0 : ...
+//
+// Это нарушало правило v0.87.41 «decrement unreadCount ТОЛЬКО через
+// tg:chat-unread-sync (server)». См. mistakes/native-scroll-unread.md
+// и features.md v0.95.26.
+//
+// Эта проверка падает если кто-то (или AI) вернёт паттерн обратно.
+// ──────────────────────────────────────────────────────────────────
+
+test('nativeStoreIpc.js: tg:new-message НЕ обнуляет unreadCount локально (v0.95.26)', () => {
+  const abs = path.resolve(process.cwd(), 'src/native/store/nativeStoreIpc.js')
+  const content = fs.readFileSync(abs, 'utf8')
+  // Снимаем комментарии чтобы не паниковать на упоминание в комментариях
+  const stripped = content
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+  // Запрещённый паттерн: `unreadCount: ... activeChatId ... ? 0 : ...`
+  // Это означает локальное обнуление при активном чате — нарушение v0.87.41.
+  const badPattern = /unreadCount\s*:\s*[^,]*activeChatId[^,]*\?\s*0\s*:/
+  assert(!badPattern.test(stripped),
+    'НАЙДЕН ЗАПРЕЩЁННЫЙ ПАТТЕРН: tg:new-message обнуляет unreadCount локально!\n' +
+    '   Правило v0.87.41: decrement unreadCount ТОЛЬКО через tg:chat-unread-sync.\n' +
+    '   Эталоны: Telegram Web K (++dialog.unread_count всегда),\n' +
+    '            Telegram Desktop (atBottom guard).\n' +
+    '   См. mistakes/native-scroll-unread.md и features.md v0.95.26.')
+})
+
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) {
   console.log('\n❌ Регрессионная защита сломана. Это означает возврат устаревшего паттерна.')

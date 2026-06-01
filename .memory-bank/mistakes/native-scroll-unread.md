@@ -8,6 +8,133 @@
 
 ---
 
+## 🔴 КРИТИЧЕСКОЕ: `tg:new-message` для активного чата НЕ должен обнулять `unreadCount` локально (v0.95.26)
+
+### Симптом
+
+Юзер открыт чат с 48 непрочитанных, прокручен ВВЕРХ (не дочитал). Приходит новое сообщение от собеседника. Badge **резко** прыгает: `48 → 0`. Юзер видит «всё прочитано», хотя может ещё листать вниз и видеть непрочитанные.
+
+### Прямое доказательство (chatcenter.log 15:00:33-34, чат «Вайбкодинг комьюнити»)
+
+```
+15:00:33  store-unread-sync unread=48 active=true      ← server ВСЁ ЕЩЁ 48
+15:00:33  tg-new-message msgId=118640082944
+          action=skipped-non-contiguous gapMessages=3758
+          isActiveChat=true                            ← активный чат
+15:00:34  badge-state unread=0 prevUnread=48           ← 💥 ЛОКАЛЬНОЕ обнуление
+15:00:34  bottomGap=2056                               ← юзер НЕ у низа
+15:00:34  force-read-skip reason=not-at-bottom         ← useForceReadAtBottom не сработал
+```
+
+### Корень
+
+В [`nativeStoreIpc.js:396`](../../src/native/store/nativeStoreIpc.js) (с **15 апреля 2026**, v0.87.14) была строка:
+
+```js
+unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
+```
+
+Это нарушало правило **v0.87.41** (документировано в [nativeStore.js:385-390](../../src/native/store/nativeStore.js#L385)):
+> «v0.87.41: НЕ вычитаем локально (Telegram-style). Локально unreadCount обновляется ТОЛЬКО из server sync».
+
+Правило было прокламировано **только для функции `markRead`**, но `tg:new-message` handler **нарушал** его. Никто 47 дней не сопоставил.
+
+### Цепочка
+
+1. Юзер открыл чат с unread=48, прокручен вверх (bottomGap=2056, **НЕ atBottom**)
+2. Листает → `read-batch-send` идут на server, но TDLib ещё не подтвердил
+3. Counter висит на 48 (это **правильно** — server-driven)
+4. Приходит **новое 49-е сообщение** через `tg:new-message`, `isActiveChat=true`
+5. Строка 396 срабатывает: `s.activeChatId === chatId ? 0 : ...` → `unreadCount = 0`
+6. Badge моментально: 48 → 0
+7. **Server всё ещё думает 48** (sync ещё не пришёл)
+8. Юзер может листать вниз — там ещё непрочитанные
+
+### Решение (v0.95.26)
+
+Убрать локальное обнуление полностью — оставить **только +1 для входящих**:
+
+```js
+// БЫЛО:
+unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
+
+// СТАЛО:
+unreadCount: (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
+```
+
+**Логика**:
+- Своё сообщение → +0 (никогда не считаем своё непрочитанным)
+- Чужое → +1 **всегда** (даже в активном чате)
+- Decrement только через `tg:chat-unread-sync` от server
+
+### Почему это работает
+
+Когда юзер atBottom + пришло новое сообщение:
+1. `tg:new-message` → counter +1 (например 48 → 49)
+2. [`useForceReadAtBottom`](../../src/native/hooks/useForceReadAtBottom.js) видит `atBottom=true && activeUnread > 0` → таймер 400мс → `markRead`
+3. `markRead` → IPC `tg:mark-read` → TDLib `viewMessages`
+4. Server → `updateChatReadInbox` → `tg:chat-unread-sync` с `unreadCount=0`
+5. Counter 49 → 0 через ~500мс
+
+Юзер видит **плавное** мерцание `48 → 49 → 0` за полсекунды. **Точно как Telegram Web K / Desktop**.
+
+Когда юзер НЕ atBottom + пришло новое:
+1. Counter +1 (48 → 49)
+2. `useForceReadAtBottom` skip (`reason=not-at-bottom`)
+3. Counter остаётся 49, пока юзер сам не дочитает
+
+### Эталоны (research-агент проверил исходники)
+
+| Клиент | Их паттерн |
+|---|---|
+| **Telegram Web K** [appMessagesManager.ts:7577](https://github.com/morethanwords/tweb) | `++dialog.unread_count` БЕЗУСЛОВНО. Decrement ТОЛЬКО в `onUpdateReadHistoryInbox` |
+| **Telegram Desktop** [history_widget.cpp:3946](https://github.com/telegramdesktop/tdesktop) | `if (_scroll->scrollTop() < _scroll->scrollTopMax()) return;` — atBottom guard ПЕРЕД markRead |
+| **WhatsApp Web / Discord** | ACK только при `isActive && isFocused && atBottom` |
+
+🟢 Наш фикс соответствует tweb pattern (самый простой, decrement только server).
+
+### Почему 47 дней не ловили (7 факторов)
+
+1. **Маскирующий `useReadByVisibility`**: для большинства сообщений server сам обновляет unread через `updateChatReadInbox` — локальное обнуление просто «успевает раньше», но попадает в то же значение (0). Расхождение незаметно.
+
+2. **Тест-пробел**: в [nativeStore.vitest.jsx:45](../../src/native/store/nativeStore.vitest.jsx) есть тест «unreadCount обновляется ТОЛЬКО из tg:chat-unread-sync», но он проверяет **только sync handler**. Параллельный тест на `tg:new-message` отсутствовал — добавлен в v0.95.26.
+
+3. **Сага v0.87.41 затронула только markRead**: правило документировано в комментарии к `markRead` функции, но не для других handlers. Никто не grep'нул по «unreadCount: 0» во всём файле.
+
+4. **Code review v0.87.103** (28 апреля, разбиение nativeStore.js → nativeStoreIpc.js) был **архитектурным**, не **функциональным**. Баг скопирован дословно с правильным комментарием «v0.87.41: НЕ вычитать».
+
+5. **В логах не виден как ошибка**: `store-unread-sync unread=48` и `badge-state unread=0` — оба валидны индивидуально. Аномалия видна только при сопоставлении timestamp'ов.
+
+6. **Невозможно поймать в jsdom unit-тестах**: баг требует scroll position + push timing + server delay. Только E2E.
+
+7. **Два параллельных «unread» счётчика**: `chat.unreadCount` (badge) и `useNewBelowCounter.newBelow` (↓N). Прошлые саги путали их и фиксили один — не проверяли другой.
+
+### Защиты (3 уровня, v0.95.26)
+
+1. **Регресс-тесты** [nativeStore.vitest.jsx](../../src/native/store/nativeStore.vitest.jsx) — 4 новых теста:
+   - `tg:new-message для АКТИВНОГО чата +1 (НЕ обнуляет до 0)`
+   - `tg:new-message для НЕактивного чата +1 (как было)`
+   - `outgoing сообщение НЕ меняет unreadCount`
+   - `tg:chat-unread-sync ОБНУЛЯЕТ когда нужно (decrement через server)`
+
+2. **Static-test** [modernPatternsGuard.test.cjs](../../src/__tests__/modernPatternsGuard.test.cjs) — regex поиск:
+   ```js
+   const badPattern = /unreadCount\s*:\s*[^,]*activeChatId[^,]*\?\s*0\s*:/
+   ```
+   Падает в pre-commit hook если кто-то вернёт паттерн.
+
+3. **Эта запись** в mistakes — чтобы будущие сессии знали про правило.
+
+### Правило (заносим в Memory Bank)
+
+**Любое локальное изменение `chat.unreadCount` обязано:**
+- Быть **только** в server-driven handlers: `tg:chat-unread-sync`, `tg:unread-bulk-sync`, `tg:read`
+- В `tg:new-message` — **только инкремент** (+0 для outgoing, +1 для incoming)
+- НИКАКИХ условий вроде `activeChatId === chatId ? 0`
+- Decrement до 0 — **только** через server confirmation
+
+---
+
 ## 🔴 КРИТИЧЕСКОЕ: load-older стартует через 30мс после chat-open, ВО ВРЕМЯ restore → массив +50 msgs → targetIdx сдвигается с 7 на 107 → юзера выкидывает (v0.91.24)
 
 ### Симптом

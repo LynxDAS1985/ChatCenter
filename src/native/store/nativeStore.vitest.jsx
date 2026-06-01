@@ -93,6 +93,116 @@ describe('v0.87.41: markRead Telegram-style (no local subtraction)', () => {
       readInboxMaxId: 3700,
     })
   })
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // v0.95.26 РЕГРЕСС: tg:new-message НЕ должен обнулять unreadCount локально
+  //
+  // Корень бага (15 апреля 2026 → 1 июня 2026, 47 дней не ловили):
+  //   nativeStoreIpc.js:396 раньше было:
+  //     unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount||0) + (isOutgoing?0:1)
+  //
+  // Это нарушало правило v0.87.41 «уменьшение unreadCount ТОЛЬКО через
+  // tg:chat-unread-sync (server)». Когда юзер открыт чат с 48 непрочитанных,
+  // прокручен ВВЕРХ (не дочитал), и приходило новое сообщение — badge мгновенно
+  // становился 0 (вместо 49). Server позже sync'ал с реальным числом, но
+  // визуальный прыжок 48→0→48 был заметен юзеру.
+  //
+  // Эталоны: Telegram Web K (++dialog.unread_count всегда), Telegram Desktop
+  // (atBottom guard перед readInbox). Decrement локально — антипаттерн.
+  //
+  // ВАЖНО: тесты с invokeMock зависят от того что invokeMock возвращает {ok:false}
+  // для большинства каналов — поэтому начальный loadCachedChats и пр. не работают.
+  // Но tg:chats event handler работает напрямую — используем его для setup.
+  // ────────────────────────────────────────────────────────────────────────────
+
+  it('v0.95.26: tg:new-message для АКТИВНОГО чата +1 (НЕ обнуляет до 0)', async () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'T', unreadCount: 48 }],
+      })
+      result.current.setActiveChat('chat1')
+    })
+    expect(result.current.chats.find(c => c.id === 'chat1').unreadCount).toBe(48)
+    // Приходит новое сообщение для активного чата — counter должен стать 49,
+    // а НЕ обнулиться до 0 (старый баг)
+    act(() => {
+      onHandlers['tg:new-message']?.({
+        chatId: 'chat1',
+        message: {
+          id: '999', text: 'new msg', isOutgoing: false, timestamp: Date.now(),
+        },
+      })
+    })
+    const chat = result.current.chats.find(c => c.id === 'chat1')
+    expect(chat.unreadCount).toBe(49)  // ← КЛЮЧЕВОЙ assert (раньше было 0)
+  })
+
+  it('v0.95.26: tg:new-message для НЕактивного чата +1 (как было)', async () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [
+          { id: 'chat1', accountId: 'acc1', title: 'A', unreadCount: 10 },
+          { id: 'chat2', accountId: 'acc1', title: 'B', unreadCount: 20 },
+        ],
+      })
+      result.current.setActiveChat('chat1')  // активный — chat1
+    })
+    // Новое сообщение приходит в chat2 (НЕ активный)
+    act(() => {
+      onHandlers['tg:new-message']?.({
+        chatId: 'chat2',
+        message: { id: '999', text: 'new', isOutgoing: false, timestamp: Date.now() },
+      })
+    })
+    expect(result.current.chats.find(c => c.id === 'chat2').unreadCount).toBe(21)
+  })
+
+  it('v0.95.26: outgoing сообщение НЕ меняет unreadCount (даже в активном чате)', async () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'T', unreadCount: 48 }],
+      })
+      result.current.setActiveChat('chat1')
+    })
+    act(() => {
+      onHandlers['tg:new-message']?.({
+        chatId: 'chat1',
+        message: { id: '999', text: 'мой ответ', isOutgoing: true, timestamp: Date.now() },
+      })
+    })
+    expect(result.current.chats.find(c => c.id === 'chat1').unreadCount).toBe(48)
+  })
+
+  it('v0.95.26: server sync tg:chat-unread-sync ОБНУЛЯЕТ когда нужно (decrement через server)', async () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      onHandlers['tg:chats']?.({
+        accountId: 'acc1',
+        chats: [{ id: 'chat1', accountId: 'acc1', title: 'T', unreadCount: 48 }],
+      })
+      result.current.setActiveChat('chat1')
+    })
+    // Пришло новое сообщение — counter 48 → 49 (НЕ 0)
+    act(() => {
+      onHandlers['tg:new-message']?.({
+        chatId: 'chat1',
+        message: { id: '999', text: 'new', isOutgoing: false, timestamp: Date.now() },
+      })
+    })
+    expect(result.current.chats.find(c => c.id === 'chat1').unreadCount).toBe(49)
+    // useForceReadAtBottom отправил markRead → server → tg:chat-unread-sync с 0
+    act(() => {
+      onHandlers['tg:chat-unread-sync']?.({ chatId: 'chat1', unreadCount: 0 })
+    })
+    // Только теперь counter становится 0 — через правильный путь
+    expect(result.current.chats.find(c => c.id === 'chat1').unreadCount).toBe(0)
+  })
 })
 
 describe('Telegram forum topics: unread counters come from Telegram refresh', () => {

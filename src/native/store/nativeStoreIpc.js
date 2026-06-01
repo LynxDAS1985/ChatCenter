@@ -393,7 +393,15 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
               ...c,
               lastMessage: preview,
               lastMessageTs: message.timestamp,
-              unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
+              // v0.95.26 ФИКС: НЕ обнуляем локально для активного чата (это нарушало
+              // правило v0.87.41 «уменьшение ТОЛЬКО через tg:chat-unread-sync»).
+              // Раньше: `s.activeChatId === chatId ? 0 : ...` — при активном чате
+              // badge мгновенно становился 0, даже если юзер в середине истории
+              // (не дочитал) → визуальный прыжок 48 → 0 + рассинхрон с сервером.
+              // Эталоны: Telegram Web K (`++dialog.unread_count` всегда), Telegram
+              // Desktop (atBottom guard). Decrement приходит ТОЛЬКО от server через
+              // `tg:chat-unread-sync` (обработчик ниже). См. mistakes/native-scroll-unread.md.
+              unreadCount: (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
             }
           : c)
       }
