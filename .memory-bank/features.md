@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.33 (2 июня 2026)
+## Текущая версия: v0.95.34 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.29.md`](./archive/features-v0.95.29.md) | v0.95.29 (реакции 👍❤️🔥 + Telegram-style header + General 📢 + render-counter; стабилизировано v0.95.31-34) | ~5 КБ |
 | [`archive/features-v0.95.28.md`](./archive/features-v0.95.28.md) | v0.95.28 (Telegram-style auto-scroll к новому + ↓N без «слепой зоны» Schmitt; стабилизировано v0.95.31) | ~4 КБ |
 | [`archive/features-v0.95.27.md`](./archive/features-v0.95.27.md) | v0.95.27 (расширенная диагностика send pipeline; стабилизировано v0.95.29) | ~3 КБ |
 | [`archive/features-v0.95.23-26.md`](./archive/features-v0.95.23-26.md) | v0.95.23 – v0.95.26 (курсор в input, initial backfill, voice/spellcheck/action-bar/WhatsNew, фикс 47-дневного бага unreadCount; стабилизировано) | ~15 КБ |
@@ -32,6 +33,31 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.34 — Темовые переменные в :root + вспышка bubble при смене темы
+
+Продолжение фикса v0.95.33 — устранение причины бага архитектурно + UX-обратная связь.
+
+**(1) Тематические переменные перенесены `.native-mode` → `:root`** ([styles-base.css](src/native/styles-base.css)):
+`--amoled-accent`, `--amoled-accent-hover`, `--amoled-accent-shadow`, `--bubble-opacity` теперь в `:root { ... }`. Из `.native-mode { ... }` удалены (там остались только специфичные `--amoled-bg/surface/border/text/danger` и `--mess-*`). CSS specificity ловушка v0.95.33 устранена **архитектурно** — теперь `documentElement.style.setProperty` работает напрямую без конкуренции от `.native-mode`. WhatsNewModal (рендерится вне `.native-mode`) тоже подхватывает.
+
+**`applyTheme()` упрощён** ([themeColor.js](src/native/utils/themeColor.js)): основной таргет — `documentElement` (надёжно после v0.95.34 переноса в `:root`). Дополнительно применяется к `.native-mode` элементам как страховка на случай если кто-то снова добавит переопределение в `.native-mode`. Сложная логика с querySelectorAll-only удалена.
+
+**(2) Визуальная вспышка outgoing bubble при смене темы** ([themeColor.js](src/native/utils/themeColor.js) `flashOutgoingBubbles()`):
+- Новая экспортируемая функция — querySelectorAll(`[data-cc-outgoing="true"]`), добавляет класс `.cc-theme-flash` на 550мс, форс reflow для перезапуска animation при повторных кликах.
+- CSS keyframes `cc-theme-flash` в styles-base.css — пульсация box-shadow через `--amoled-accent`/`--amoled-accent-shadow` (цвет автоматически = новая тема). 3 фазы: начало (нет shadow) → 40% (плотная рамка 4px accent) → 100% (мягкое свечение 12px shadow).
+- Атрибут `data-cc-outgoing="true"` добавлен в bubble div [MessageBubble.jsx](src/native/components/MessageBubble.jsx) для outgoing сообщений (для incoming — undefined, атрибут отсутствует).
+- [ThemePickerModal.jsx](src/native/components/ThemePickerModal.jsx) handleSelect вызывает `flashOutgoingBubbles()` после `applyTheme`+`saveTheme`. Юзер мгновенно видит что выбранный цвет применился.
+
+**Эталоны** (production 2026): Telegram при смене wallpaper — короткая пульсация bubble. Slack при смене темы — fade-in новых цветов 300мс. Аналогичный UX-приём.
+
+**Тесты** обновлены: [themeColor.vitest.js](src/native/utils/themeColor.vitest.js) — applyTheme теперь ставит на documentElement (по-новому, основной путь). Существующие тесты `.native-mode` элементов остались (страховка). 916/916 ✅.
+
+**(3) WhatsNewModal — hover + «Полная история»** (по запросу): подкомпонент `PrimaryButton` с `useState(hover)` (inline `:hover` не работает в React) — затемнение accent, `translateY(-1px)`, shadow. Левая кнопка `HistoryToggleButton` переключает `showAll` → весь `CHANGELOG` / только новое. Эталон: VS Code Release Notes.
+
+**Регрессия**: lint 0, vitest 916/916, fileSizeLimits 316/316, check-memory ✅.
 
 ---
 
@@ -180,48 +206,9 @@ UX-релиз (renderer-only, низкий риск) — 4 фичи по зап�
 
 ---
 
-### v0.95.29 — Реакции 👍❤️🔥 + Telegram-style header + дефолтная иконка General + render-counter для дубля
+### v0.95.29 — Реакции + Telegram-style header + General иконка + render-counter
 
-Большой UX-релиз — 4 фичи по запросу юзера.
-
-**1. Реакции на сообщениях (полные)** — backend+UI+IPC:
-- В [tdlibMapper.js](main/native/backends/tdlibMapper.js) функция `extractReactions(tdMsg)` мапит `interaction_info.reactions` → `[{emoji, count, chosen, customEmojiId?}]`. Premium custom emoji пока placeholder ⭐.
-- В [tdlibBackend.js](main/native/backends/tdlibBackend.js) метод `messages.setReaction({chatId, msgId, emoji, action})` — TDLib `addMessageReaction` / `removeMessageReaction`.
-- Новый IPC `tg:set-reaction` в [tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js).
-- Новый store метод [`setReaction(chatId, messageId, emoji, action)`](src/native/store/nativeStore.js).
-- Новый компонент [MessageReactions.jsx](src/native/components/MessageReactions.jsx) — `ReactionsList` (показ реакций под bubble, click → toggle) + `ReactionPicker` (popup с 8 стандартными emoji: 👍 ❤️ 🔥 🥰 👏 😁 🤔 🤯).
-- Интеграция в [MessageBubble.jsx](src/native/components/MessageBubble.jsx) — кнопка 😀 в action-bar открывает picker, реакции рендерятся под текстом, chosen реакции подсвечены.
-
-**2. Telegram-style header** — аватарка + статус под именем чата:
-- В backend [tdlibClient.getAccountChats](main/native/backends/tdlibClient.js) пробрасываем `user` объект в `mapChat` для chatTypePrivate.
-- В [tdlibMapper.js](main/native/backends/tdlibMapper.js) добавлены поля `lastSeenAt`, `userStatusType`, `memberCount` (для групп/каналов через supergroup.member_count).
-- Новый чистый util [`formatChatStatus.js`](src/native/utils/formatChatStatus.js) — Telegram-style строки: «в сети» / «был(а) в 14:25» / «был(а) вчера в 17:15» / «был(а) 15 мин назад» / «N участников» / «N подписчиков». Правила склонения (1 участник / 2 участника / 5 участников). Локализация русская.
-- В [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) header: новый `ChatHeaderAvatar` 40x40px (с зелёной точкой онлайн), `formatChatStatus(activeChat)` под именем.
-
-**3. Дефолтная иконка General форум-темы** — раньше показывалась буква «G»:
-- В [tdlibForumEmoji.js](main/native/backends/tdlibForumEmoji.js) для тем с `isGeneral=true` и без custom_emoji_id ставим `iconEmoji='📢'` (Telegram Desktop использует SVG-домик, у нас emoji-placeholder).
-
-**4. Расширенные логи для дубля сообщений + custom emoji**:
-- В [MessageBubble.jsx](src/native/components/MessageBubble.jsx) глобальный `__ccBubbleRenderCount` Map — лог `[bubble-render-dup]` при renderCount > 1 для одного msg.id.
-- В [nativeStore.sendMessage](src/native/store/nativeStore.js) dump последних 6 outgoing из state.messages + общее число.
-- В [tdlibForumEmoji.js](main/native/backends/tdlibForumEmoji.js) детальные логи `[forum-emoji] resolve summary` (topics / withCustomId / cached / toFetch / applied url/alt/default).
-
-**Тесты** (+27 unit):
-- [formatChatStatus.vitest.js](src/native/utils/formatChatStatus.vitest.js) — 19 тестов (онлайн / offline / typing / разные временные диапазоны / склонение участников)
-- [MessageReactions.vitest.jsx](src/native/components/MessageReactions.vitest.jsx) — 8 тестов (QUICK_REACTIONS, рендер с count, chosen подсветка, toggle add/remove, outgoing-стиль, пустые reactions)
-
-**Эталоны** (production messengers 2026):
-- Telegram Web K — `reactionElement.ts`, `chatBar` header с avatar + status
-- Telegram Desktop — `reactions.cpp`, `info_top_bar.cpp` (avatar + name + status)
-- WhatsApp Web — те же паттерны
-
-**НЕ менялось** (стабильность):
-- Schmitt-trigger atBottom (v0.95.2)
-- markRead логика (v0.87.41, v0.95.26)
-- useNewBelowCounter + auto-scroll (v0.95.28)
-- contiguity check tg:new-message (v0.95.0)
-
-**Регрессия**: lint 0, vitest 871/871 (+27 новых), fileSizeLimits, check-memory ✅.
+Реакции 👍❤️🔥🥰👏😁🤔🤯 (backend+IPC+UI), Telegram-style header (аватар + статус «в сети»/«был(а) в HH:MM»/«N участников»), дефолтная 📢 для General форум-темы, render-counter для диагностики дубля сообщений. +27 unit-тестов. Полный текст: [`archive/features-v0.95.29.md`](./archive/features-v0.95.29.md).
 
 ---
 

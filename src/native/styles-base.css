@@ -2,9 +2,19 @@
    База: AMOLED тема, header, sidebar, аккаунты, main area, empty state. */
 
 /* v0.87.0: AMOLED тема для Native режима — чистый #000 + синий акцент */
-/* v0.95.30: --amoled-accent / --amoled-accent-hover / --amoled-accent-shadow
-   и --bubble-opacity управляются из themeColor.js applyTheme() — юзер выбирает
-   цвет в ThemePickerModal (🎨 в правом header). Defaults — Telegram blue. */
+/* v0.95.34: ТЕМАТИЧЕСКИЕ переменные (accent / accent-hover / accent-shadow /
+   bubble-opacity) перенесены из .native-mode в :root. Причина — applyTheme
+   в themeColor.js теперь может ставить их через `documentElement.style`
+   без конфликта CSS specificity. Раньше `.native-mode { --amoled-accent }`
+   ПЕРЕБИВАЛ inline-стиль на html → выбор цвета не применялся (см. v0.95.33).
+   Defaults — Telegram blue. WhatsNewModal (вне .native-mode) тоже подхватит. */
+:root {
+  --amoled-accent: #2AABEE;
+  --amoled-accent-hover: #1e8fc7;
+  --amoled-accent-shadow: rgba(42,171,238,0.15);
+  --bubble-opacity: 0.95;
+}
+
 .native-mode {
   --amoled-bg: #000000;
   --amoled-surface: #0a0a0a;
@@ -13,10 +23,6 @@
   --amoled-text: #ffffff;
   --amoled-text-dim: #a0a0a0;
   --amoled-text-muted: #606060;
-  --amoled-accent: #2AABEE;
-  --amoled-accent-hover: #1e8fc7;
-  --amoled-accent-shadow: rgba(42,171,238,0.15);
-  --bubble-opacity: 0.95;
   --amoled-danger: #ff3b30;
   --amoled-success: #34c759;
   --amoled-warning: #ff9500;
@@ -34,6 +40,19 @@
   display: flex;
   flex-direction: column;
   font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* v0.95.34: визуальная обратная связь после выбора темы в ThemePickerModal.
+   На outgoing bubble (data-cc-outgoing="true") применяется класс .cc-theme-flash
+   на 500мс — короткая пульсация рамки текущим accent-цветом. Юзер сразу видит
+   что выбранная тема применилась. Эталон: Telegram при изменении wallpaper. */
+@keyframes cc-theme-flash {
+  0%   { box-shadow: 0 0 0 0 var(--amoled-accent-shadow, rgba(42,171,238,0.15)); }
+  40%  { box-shadow: 0 0 0 4px var(--amoled-accent, #2AABEE); }
+  100% { box-shadow: 0 0 12px var(--amoled-accent-shadow, rgba(42,171,238,0.15)); }
+}
+.cc-theme-flash {
+  animation: cc-theme-flash 500ms ease-out;
 }
 
 .native-mode * {

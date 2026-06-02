@@ -7,11 +7,15 @@
 //
 // Стандарт UX как у Slack / VS Code / Discord — простая модалка с changelog.
 
-import { useEffect } from 'react'
-import { getChangelogSince } from '../utils/changelogData.js'
+import { useEffect, useState } from 'react'
+import { getChangelogSince, CHANGELOG } from '../utils/changelogData.js'
 
 export default function WhatsNewModal({ prevVersion, currentVersion, onClose }) {
-  const entries = getChangelogSince(prevVersion, currentVersion)
+  // v0.95.34: showAll — переключение между «новые с прошлого запуска» и «вся история».
+  // По умолчанию показываем только новое (компактно), кнопка «Полная история» снизу
+  // переключает на весь CHANGELOG. Эталон: VS Code → Release Notes (полная история отдельно).
+  const [showAll, setShowAll] = useState(false)
+  const entries = showAll ? CHANGELOG : getChangelogSince(prevVersion, currentVersion)
 
   // Закрытие по Escape
   useEffect(() => {
@@ -126,22 +130,71 @@ export default function WhatsNewModal({ prevVersion, currentVersion, onClose }) 
         </div>
 
         {/* Footer */}
+        {/* v0.95.34: добавлена кнопка «Полная история» слева — показывает весь CHANGELOG.
+            Hover-эффект на кнопке «Понятно» через onMouseEnter/Leave (inline-стили не
+            поддерживают :hover напрямую). Эталон Telegram / VS Code Release Notes. */}
         <div style={{
           padding: '14px 24px',
           borderTop: '1px solid var(--amoled-border, rgba(255,255,255,0.1))',
           background: 'rgba(0,0,0,0.2)',
-          display: 'flex', justifyContent: 'flex-end',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 12,
         }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '8px 20px', borderRadius: 8,
-              border: 'none', background: 'var(--amoled-accent, #2AABEE)',
-              color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-            }}
-          >Понятно</button>
+          {/* Слева — переключатель «Полная история» / «Только новое». Скрыт если уже showAll. */}
+          {!showAll ? (
+            <HistoryToggleButton onClick={() => setShowAll(true)} label="Полная история" />
+          ) : (
+            <HistoryToggleButton onClick={() => setShowAll(false)} label="← Только новое" />
+          )}
+          <PrimaryButton onClick={onClose} label="Понятно" />
         </div>
       </div>
     </div>
+  )
+}
+
+// v0.95.34: вспомогательная кнопка-ссылка «Полная история» / «Только новое».
+// Слева в футере, нейтральный текстовый стиль, hover — лёгкая подсветка фона.
+function HistoryToggleButton({ onClick, label }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: '8px 12px', borderRadius: 8,
+        border: '1px solid transparent',
+        background: hover ? 'var(--amoled-surface-hover, rgba(255,255,255,0.06))' : 'transparent',
+        color: hover ? 'var(--amoled-text, #fff)' : 'var(--amoled-text-dim, rgba(255,255,255,0.7))',
+        fontSize: 13, fontWeight: 500, cursor: 'pointer',
+        transition: 'background 0.15s, color 0.15s',
+      }}
+    >{label}</button>
+  )
+}
+
+// v0.95.34: основная кнопка «Понятно» с hover-эффектом (затемнение accent-цвета).
+function PrimaryButton({ onClick, label }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: '8px 20px', borderRadius: 8,
+        border: 'none',
+        background: hover
+          ? 'var(--amoled-accent-hover, #1e8fc7)'
+          : 'var(--amoled-accent, #2AABEE)',
+        color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+        transition: 'background 0.15s, transform 0.1s',
+        transform: hover ? 'translateY(-1px)' : 'translateY(0)',
+        boxShadow: hover
+          ? '0 4px 12px var(--amoled-accent-shadow, rgba(42,171,238,0.35))'
+          : 'none',
+      }}
+    >{label}</button>
   )
 }

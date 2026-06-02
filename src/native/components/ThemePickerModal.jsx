@@ -8,7 +8,7 @@
 // Эталоны: Telegram Settings → Color theme, Discord User Settings → Appearance.
 
 import { useEffect } from 'react'
-import { THEMES, applyTheme, saveTheme } from '../utils/themeColor.js'
+import { THEMES, applyTheme, saveTheme, flashOutgoingBubbles } from '../utils/themeColor.js'
 
 export default function ThemePickerModal({ activeThemeId, onSelect, onClose }) {
   // Escape закрывает модалку (как все наши модалки)
@@ -21,6 +21,9 @@ export default function ThemePickerModal({ activeThemeId, onSelect, onClose }) {
   const handleSelect = (theme) => {
     applyTheme(theme)
     saveTheme(theme.id)
+    // v0.95.34: визуальная вспышка outgoing bubble — юзер сразу видит
+    // что выбранный цвет применился (эталон Telegram при смене wallpaper).
+    flashOutgoingBubbles()
     onSelect?.(theme.id)
   }
 

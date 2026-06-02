@@ -74,19 +74,17 @@ export function saveTheme(id) {
   } catch (_) {}
 }
 
-// Применяет CSS-переменные к элементам с классом `.native-mode`.
+// Применяет CSS-переменные `--amoled-accent` / `-hover` / `-shadow`.
 //
-// КРИТИЧНО (v0.95.33 — корень бага «выбор цвета не применяется»):
-// styles-base.css объявляет переменные в селекторе `.native-mode { --amoled-accent: ... }`.
-// CSS specificity — `.native-mode` (class) **выигрывает** у `:root`/`html` (inherited
-// declarations). Поэтому установка `document.documentElement.style.setProperty()`
-// НЕ перебивает локальное определение в `.native-mode { ... }`.
+// v0.95.34: упрощено — теперь основной таргет это `document.documentElement` (:root).
+// В styles-base.css темовые переменные перенесены из `.native-mode` в `:root` (v0.95.34),
+// поэтому конфликт specificity v0.95.33 устранён — `documentElement.style.setProperty`
+// надёжно работает.
 //
-// Правильно: ставить на все элементы с классом `.native-mode` (обычно один — корневой
-// контейнер native режима). Fallback на documentElement сохранён — на случай если
-// в момент module-load .native-mode элемента ещё нет (применяется при последующем
-// mount через querySelectorAll). MessageBubble использует `var(--amoled-accent)` —
-// автоматически подхватит изменение без React re-render.
+// Также дополнительно применяем к `.native-mode` элементам — двойная страховка
+// на случай если в будущем кто-то вернёт переопределение в `.native-mode` selector.
+// MessageBubble и другие используют `var(--amoled-accent)` — обновляются мгновенно
+// без React re-render.
 export function applyTheme(theme) {
   if (!theme || typeof document === 'undefined') return
   const setVars = (el) => {
@@ -94,16 +92,33 @@ export function applyTheme(theme) {
     el.style.setProperty('--amoled-accent-hover', theme.accentHover)
     el.style.setProperty('--amoled-accent-shadow', theme.shadow)
   }
-  // Основная цель — все .native-mode контейнеры (выигрывают по specificity).
-  let appliedToAny = false
+  // Основной таргет — :root (документ). Работает после v0.95.34 переноса
+  // переменных в :root в styles-base.css.
+  if (document.documentElement) setVars(document.documentElement)
+  // Страховка — `.native-mode` элементы (если кто-то снова добавит переопределение).
   try {
-    const targets = document.querySelectorAll('.native-mode')
-    targets.forEach((el) => { setVars(el); appliedToAny = true })
+    document.querySelectorAll('.native-mode').forEach(setVars)
   } catch (_) {}
-  // Fallback — documentElement, для случая когда .native-mode ещё не в DOM
-  // (вызов applyTheme на module-load до первого рендера NativeApp).
-  // Когда .native-mode появится — useEffect в NativeApp вызовет applyTheme повторно.
-  if (!appliedToAny && document.documentElement) {
-    setVars(document.documentElement)
-  }
+}
+
+// v0.95.34: визуальная вспышка outgoing bubble после смены темы.
+// Применяет класс `.cc-theme-flash` (CSS keyframe в styles-base.css) на 550мс,
+// затем убирает. Запускается из ThemePickerModal.handleSelect.
+//
+// Эталон: Telegram при изменении wallpaper — короткая пульсация bubble.
+export function flashOutgoingBubbles(durationMs = 550) {
+  if (typeof document === 'undefined') return
+  try {
+    const bubbles = document.querySelectorAll('[data-cc-outgoing="true"]')
+    if (bubbles.length === 0) return
+    bubbles.forEach((el) => {
+      el.classList.remove('cc-theme-flash')  // на случай если класс уже стоит
+      // Принудительный reflow, чтобы перезапустить animation если flash идёт повторно.
+      void el.offsetWidth
+      el.classList.add('cc-theme-flash')
+    })
+    setTimeout(() => {
+      bubbles.forEach((el) => el.classList.remove('cc-theme-flash'))
+    }, durationMs)
+  } catch (_) {}
 }

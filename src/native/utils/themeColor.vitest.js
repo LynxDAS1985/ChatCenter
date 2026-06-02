@@ -64,22 +64,22 @@ describe('themeColor (v0.95.30)', () => {
     expect(document.documentElement.style.getPropertyValue('--amoled-accent-shadow')).toBe('rgba(59,91,169,0.18)')
   })
 
-  // v0.95.33: фикс корня бага «выбор цвета не применяется» — applyTheme должен
-  // таргетить элементы с классом .native-mode (CSS specificity .native-mode > :root).
-  it('applyTheme — с .native-mode элементом → ставит CSS vars на него (НЕ documentElement)', () => {
-    // Сброс html, чтобы видеть что fallback НЕ сработал
+  // v0.95.34: после переноса темовых переменных в :root applyTheme ВСЕГДА ставит
+  // на documentElement (основной путь — нет конкуренции specificity). Дополнительно
+  // также на .native-mode элементы (страховка от будущего возврата переопределения).
+  it('applyTheme — с .native-mode элементом → ставит CSS vars на ОБА (documentElement и .native-mode)', () => {
     document.documentElement.style.removeProperty('--amoled-accent')
     const nativeRoot = document.createElement('div')
     nativeRoot.className = 'native-mode'
     document.body.appendChild(nativeRoot)
     try {
       applyTheme(getThemeById('violet'))
-      // Главная проверка — переменная на .native-mode
+      // Основной путь — documentElement
+      expect(document.documentElement.style.getPropertyValue('--amoled-accent')).toBe('#5B5FE2')
+      // Страховка — .native-mode элемент тоже получил
       expect(nativeRoot.style.getPropertyValue('--amoled-accent')).toBe('#5B5FE2')
       expect(nativeRoot.style.getPropertyValue('--amoled-accent-hover')).toBe('#4549c4')
       expect(nativeRoot.style.getPropertyValue('--amoled-accent-shadow')).toBe('rgba(91,95,226,0.18)')
-      // Fallback на documentElement НЕ должен сработать, т.к. .native-mode найден
-      expect(document.documentElement.style.getPropertyValue('--amoled-accent')).toBe('')
     } finally {
       document.body.removeChild(nativeRoot)
     }

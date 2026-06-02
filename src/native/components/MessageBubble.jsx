@@ -186,7 +186,11 @@ export default function MessageBubble({
         />
       )}
 
-      <div style={{
+      <div
+        // v0.95.34: data-атрибут для вспышки .cc-theme-flash при смене цветовой темы
+        // (ThemePickerModal handleSelect → querySelectorAll('[data-cc-outgoing="true"]')).
+        data-cc-outgoing={m.isOutgoing ? 'true' : undefined}
+        style={{
         padding: hasMedia ? 4 : '8px 12px', borderRadius: 12,
         background: m.isOutgoing ? 'var(--amoled-accent)' : 'var(--amoled-surface-hover)',
         color: m.isOutgoing ? '#fff' : 'var(--amoled-text)',
