@@ -30,9 +30,10 @@ export default function ThemePickerModal({ activeThemeId, onSelect, onClose }) {
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 100000,
-        background: 'rgba(0,0,0,0.7)',
+        // v0.95.33: убран backdrop-filter: blur(6px) — Chromium пересчитывает blur
+        // на каждый кадр (то же что в WhatsNewModal v0.95.32). Заменено на 0.75 фон.
+        background: 'rgba(0,0,0,0.75)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        backdropFilter: 'blur(6px)',
       }}
     >
       <div

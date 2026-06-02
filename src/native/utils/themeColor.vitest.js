@@ -56,12 +56,50 @@ describe('themeColor (v0.95.30)', () => {
     expect(() => applyTheme(undefined)).not.toThrow()
   })
 
-  it('applyTheme — ставит CSS variables на :root', () => {
+  it('applyTheme — без .native-mode элементов → fallback на documentElement', () => {
     const theme = getThemeById('indigo')
     applyTheme(theme)
     expect(document.documentElement.style.getPropertyValue('--amoled-accent')).toBe('#3B5BA9')
     expect(document.documentElement.style.getPropertyValue('--amoled-accent-hover')).toBe('#2d4685')
     expect(document.documentElement.style.getPropertyValue('--amoled-accent-shadow')).toBe('rgba(59,91,169,0.18)')
+  })
+
+  // v0.95.33: фикс корня бага «выбор цвета не применяется» — applyTheme должен
+  // таргетить элементы с классом .native-mode (CSS specificity .native-mode > :root).
+  it('applyTheme — с .native-mode элементом → ставит CSS vars на него (НЕ documentElement)', () => {
+    // Сброс html, чтобы видеть что fallback НЕ сработал
+    document.documentElement.style.removeProperty('--amoled-accent')
+    const nativeRoot = document.createElement('div')
+    nativeRoot.className = 'native-mode'
+    document.body.appendChild(nativeRoot)
+    try {
+      applyTheme(getThemeById('violet'))
+      // Главная проверка — переменная на .native-mode
+      expect(nativeRoot.style.getPropertyValue('--amoled-accent')).toBe('#5B5FE2')
+      expect(nativeRoot.style.getPropertyValue('--amoled-accent-hover')).toBe('#4549c4')
+      expect(nativeRoot.style.getPropertyValue('--amoled-accent-shadow')).toBe('rgba(91,95,226,0.18)')
+      // Fallback на documentElement НЕ должен сработать, т.к. .native-mode найден
+      expect(document.documentElement.style.getPropertyValue('--amoled-accent')).toBe('')
+    } finally {
+      document.body.removeChild(nativeRoot)
+    }
+  })
+
+  it('applyTheme — два .native-mode элемента → оба получают CSS vars', () => {
+    const a = document.createElement('div')
+    a.className = 'native-mode'
+    const b = document.createElement('div')
+    b.className = 'native-mode'
+    document.body.appendChild(a)
+    document.body.appendChild(b)
+    try {
+      applyTheme(getThemeById('teal'))
+      expect(a.style.getPropertyValue('--amoled-accent')).toBe('#1A6B8C')
+      expect(b.style.getPropertyValue('--amoled-accent')).toBe('#1A6B8C')
+    } finally {
+      document.body.removeChild(a)
+      document.body.removeChild(b)
+    }
   })
 
   it('saveTheme — defensive (null/undefined → DEFAULT_THEME_ID)', () => {

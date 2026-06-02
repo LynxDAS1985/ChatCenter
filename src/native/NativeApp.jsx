@@ -310,6 +310,11 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
       )
       window.__ccStartupSummary?.('NativeApp-mounted')
     } catch {}
+    // v0.95.33: применяем тему ПОСЛЕ mount, когда .native-mode уже в DOM.
+    // CSS specificity: `.native-mode { --amoled-accent }` перебивает `:root`/`html`,
+    // поэтому module-load applyTheme (на documentElement) не работает. См. themeColor.js
+    // applyTheme — теперь таргетит querySelectorAll('.native-mode').
+    try { applyTheme(loadTheme()) } catch (_) {}
   }, [])
 
   const handleAccountContextMenu = (e, account) => {

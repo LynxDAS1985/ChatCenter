@@ -183,6 +183,43 @@ test('nativeStoreIpc.js: tg:new-message НЕ обнуляет unreadCount лок
     '   См. mistakes/native-scroll-unread.md и features.md v0.95.26.')
 })
 
+// ──────────────────────────────────────────────────────────────────
+// E. backdrop-filter: blur() запрещён в модальных окнах (v0.95.33).
+//    Причина: Chromium пересчитывает blur ВСЕХ пикселей под overlay на
+//    каждый кадр скролла внутри модалки → 30-60мс/кадр (см. Chrome bug
+//    #40632921). Эталон: Telegram Web K, Discord — нет blur в modals.
+//    Список модальных файлов с full-screen overlay со скроллом внутри.
+//    Не-модальные blur (PinnedMessageBar, MessageReactions popup,
+//    AccountContextMenu, MediaAlbum, VideoTile) допустимы — там нет
+//    скролла внутри размытой области.
+// ──────────────────────────────────────────────────────────────────
+
+const MODAL_FILES_NO_BLUR = [
+  'src/components/WhatsNewModal.jsx',
+  'src/native/components/ThemePickerModal.jsx',
+]
+
+MODAL_FILES_NO_BLUR.forEach((file) => {
+  test('E. ' + file + ' — нет backdrop-filter (тормоза скролла)', () => {
+    const fp = path.join(__dirname, '..', '..', file)
+    if (!fs.existsSync(fp)) return  // файл может быть удалён — guard не падает
+    const src = fs.readFileSync(fp, 'utf-8')
+    // Снимаем JS-комментарии (как и в проверке про unreadCount), чтобы
+    // строки вида «// убран backdrop-filter» не триггерили.
+    const stripped = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '')
+    // Ищем активный CSS-property: либо JSX `backdropFilter:`, либо CSS `backdrop-filter:`.
+    const jsxPattern = /backdropFilter\s*:\s*['"`]?blur/i
+    const cssPattern = /backdrop-filter\s*:\s*blur/i
+    assert(!jsxPattern.test(stripped) && !cssPattern.test(stripped),
+      'НАЙДЕН backdrop-filter: blur() в модалке!\n' +
+      '   Это вызывает тормоза скролла (см. features.md v0.95.32/33).\n' +
+      '   Эталон: Telegram Web K / Discord modals — без blur.\n' +
+      '   Используй непрозрачный фон rgba(0,0,0,0.75) вместо blur.')
+  })
+})
+
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) {
   console.log('\n❌ Регрессионная защита сломана. Это означает возврат устаревшего паттерна.')

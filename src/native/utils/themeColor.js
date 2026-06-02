@@ -74,12 +74,36 @@ export function saveTheme(id) {
   } catch (_) {}
 }
 
-// Применяет CSS-переменные к :root. MessageBubble и другие компоненты,
-// читающие var(--amoled-accent) — автоматически обновятся без React-ре-рендера.
+// Применяет CSS-переменные к элементам с классом `.native-mode`.
+//
+// КРИТИЧНО (v0.95.33 — корень бага «выбор цвета не применяется»):
+// styles-base.css объявляет переменные в селекторе `.native-mode { --amoled-accent: ... }`.
+// CSS specificity — `.native-mode` (class) **выигрывает** у `:root`/`html` (inherited
+// declarations). Поэтому установка `document.documentElement.style.setProperty()`
+// НЕ перебивает локальное определение в `.native-mode { ... }`.
+//
+// Правильно: ставить на все элементы с классом `.native-mode` (обычно один — корневой
+// контейнер native режима). Fallback на documentElement сохранён — на случай если
+// в момент module-load .native-mode элемента ещё нет (применяется при последующем
+// mount через querySelectorAll). MessageBubble использует `var(--amoled-accent)` —
+// автоматически подхватит изменение без React re-render.
 export function applyTheme(theme) {
   if (!theme || typeof document === 'undefined') return
-  const root = document.documentElement
-  root.style.setProperty('--amoled-accent', theme.accent)
-  root.style.setProperty('--amoled-accent-hover', theme.accentHover)
-  root.style.setProperty('--amoled-accent-shadow', theme.shadow)
+  const setVars = (el) => {
+    el.style.setProperty('--amoled-accent', theme.accent)
+    el.style.setProperty('--amoled-accent-hover', theme.accentHover)
+    el.style.setProperty('--amoled-accent-shadow', theme.shadow)
+  }
+  // Основная цель — все .native-mode контейнеры (выигрывают по specificity).
+  let appliedToAny = false
+  try {
+    const targets = document.querySelectorAll('.native-mode')
+    targets.forEach((el) => { setVars(el); appliedToAny = true })
+  } catch (_) {}
+  // Fallback — documentElement, для случая когда .native-mode ещё не в DOM
+  // (вызов applyTheme на module-load до первого рендера NativeApp).
+  // Когда .native-mode появится — useEffect в NativeApp вызовет applyTheme повторно.
+  if (!appliedToAny && document.documentElement) {
+    setVars(document.documentElement)
+  }
 }

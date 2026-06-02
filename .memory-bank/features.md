@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.32 (1 июня 2026)
+## Текущая версия: v0.95.33 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.28.md`](./archive/features-v0.95.28.md) | v0.95.28 (Telegram-style auto-scroll к новому + ↓N без «слепой зоны» Schmitt; стабилизировано v0.95.31) | ~4 КБ |
 | [`archive/features-v0.95.27.md`](./archive/features-v0.95.27.md) | v0.95.27 (расширенная диагностика send pipeline; стабилизировано v0.95.29) | ~3 КБ |
 | [`archive/features-v0.95.23-26.md`](./archive/features-v0.95.23-26.md) | v0.95.23 – v0.95.26 (курсор в input, initial backfill, voice/spellcheck/action-bar/WhatsNew, фикс 47-дневного бага unreadCount; стабилизировано) | ~15 КБ |
 | [`archive/features-v0.95.19-22.md`](./archive/features-v0.95.19-22.md) | v0.95.19 – v0.95.22 (диагностика tg-new-message, финал jump-to-end, бейдж форум-группы, форум-overlay; стабилизировано) | ~6 КБ |
@@ -31,6 +32,38 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.33 — Фикс «выбор цвета не применяется» + регресс-тест на blur в модалках + деловой changelog
+
+Фикс по жалобе юзера v0.95.32 + перепроверка остальных модалок + регресс-тест + перевод changelog v0.95.20-29 в деловой стиль.
+
+**(1) Корень бага «выбор цвета не применяется»** ([themeColor.js](src/native/utils/themeColor.js)):
+[styles-base.css](src/native/styles-base.css) объявляет переменные в селекторе `.native-mode { --amoled-accent: ... }`. CSS specificity: `.native-mode` (class) **перебивает** `:root`/`html` (inherited). Поэтому `document.documentElement.style.setProperty('--amoled-accent', ...)` НЕ применялся к bubble — на `<html>` ставилось, но `.native-mode` своим scope **переопределял** обратно к `#2AABEE`. Доказательство: юзер выбрал «Индиго» (галочка стояла), но bubble остались Telegram-blue.
+
+**Решение**: `applyTheme(theme)` теперь ищет все элементы с классом `.native-mode` через `querySelectorAll('.native-mode')` и применяет CSS-переменные к каждому (выигрывают по specificity). Fallback на `documentElement` оставлен для случая когда `.native-mode` ещё не в DOM (module-load до первого рендера) — при mount [NativeApp.jsx](src/native/NativeApp.jsx) вызывает `applyTheme(loadTheme())` повторно (в useEffect после первого рендера, когда `.native-mode` уже в DOM).
+
+**(2) Перепроверка модалок на backdrop-filter**:
+- ✅ [WhatsNewModal.jsx](src/components/WhatsNewModal.jsx) — уже убран в v0.95.32
+- ❌ [ThemePickerModal.jsx](src/native/components/ThemePickerModal.jsx) — был `backdropFilter: 'blur(6px)'`. Заменён на `rgba(0,0,0,0.75)` фон (как в WhatsNewModal).
+- ✅ Остальные blur в коде — это **не модалки со скроллом**, а popup/tooltip/overlay без скроллируемой области внутри (AccountContextMenu, ReactionPicker, MediaAlbum, VideoTile, PinnedMessageBar). Тормоза не возникают.
+
+**(3) Регресс-тест отсутствия backdrop-filter в модалках** ([modernPatternsGuard.test.cjs](src/__tests__/modernPatternsGuard.test.cjs)):
+Новый раздел «E. backdrop-filter blur запрещён в модалках». Список `MODAL_FILES_NO_BLUR` (`WhatsNewModal.jsx`, `ThemePickerModal.jsx`) — на этих файлах падает если кто-то вернёт blur. Снимает комментарии перед поиском (комментарии «// убран blur» не триггерят).
+
+**(4) Деловой стиль changelog v0.95.20-29** ([changelogData.js](src/utils/changelogData.js)):
+Переписаны 8 записей в едином деловом тоне. Убраны эмодзи в начале каждого пункта (заголовки разделов прежние), разговорные обороты типа «теперь умеет», «появилась», «прыгает», «больше не пропадает» заменены на нейтральные формулировки. Терминология приведена к деловому стилю: «дозагрузка», «прокрутка», «агрегированное значение», «область действия CSS-переменных».
+
+**Тесты** (+3 unit + 2 регрессионных):
+- [themeColor.vitest.js](src/native/utils/themeColor.vitest.js) +2 теста: applyTheme с .native-mode элементом (главная проверка), два .native-mode элемента.
+- modernPatternsGuard +2 проверки на отсутствие backdrop-filter в WhatsNewModal и ThemePickerModal.
+- Обновлён existing тест applyTheme — теперь проверяет fallback (без .native-mode → documentElement).
+- changelogData.vitest.js обновлён под '0.95.33'.
+
+**НЕ менялось**: backend, store, реакции, typing, drag-n-drop — структурных изменений нет.
+
+**Регрессия**: lint 0, vitest +3 unit, fileSizeLimits ✅, check-memory ✅.
 
 ---
 
@@ -192,71 +225,9 @@ UX-релиз (renderer-only, низкий риск) — 4 фичи по зап�
 
 ---
 
-### v0.95.28 — Telegram-style auto-scroll к новому + счётчик ↓N без «слепой зоны»
+### v0.95.28 — Telegram-style auto-scroll + счётчик ↓N без «слепой зоны»
 
-Юзер: «не показывает новые сообщения на стрелки что появились когда написали». Лог v0.95.26 показал: после отправки `bottomGap=91`, `atBottom=true` через Schmitt-trigger 40/120, но новые incoming не попадали в счётчик `↓N` (потому что `atBottom=true`) и не было auto-scroll (потому что у нас его не было вовсе).
-
-**Корень**: до v0.95.28 у нас **один** atBottom-флаг через Schmitt-trigger (порог вход 40px, выход 120px, был добавлен в v0.95.2 от дребезга кнопки ↓). В зоне 40–120px `atBottom=true` ложно → счётчик ↓N не растёт + auto-scroll отсутствует → **юзер не видит новых сообщений** и **не понимает что они появились**.
-
-**Эталоны** (Telegram Web K / Desktop / WhatsApp Web):
-- Юзер **точно** у низа (bottomGap ≈ 0-30px) + incoming → **auto-scroll** к новому (smooth)
-- Юзер НЕ у низа (bottomGap > 30) + incoming → счётчик **↓N** растёт
-- НИКАКОГО Schmitt-trigger для этой логики — только физический порог
-- Schmitt используется только для **визуальной стабильности кнопки ↓** (отдельно)
-
-**Решение** (разделение на 2 независимых флага):
-1. **`atBottom` через Schmitt-trigger 40/120** — остаётся **только** для UI кнопки ↓ (стабильность, фикс v0.95.2 не сломан)
-2. **Новый `physicallyAtBottom`** — `bottomGap <= 30`, **БЕЗ** Schmitt — для логики auto-scroll и счётчика ↓N
-
-**Изменения** (3 файла):
-
-**[useInboxScroll.js](src/native/hooks/useInboxScroll.js)**:
-- Новая чистая функция `isPhysicallyAtBottom(bottomGap)` с константой `PHYSICAL_BOTTOM_THRESHOLD = 30`
-- Новый optional prop `setPhysicallyAtBottom` — вызывается параллельно с `setAtBottom` (Schmitt)
-
-**[useNewBelowCounter.js](src/native/hooks/useNewBelowCounter.js)**:
-- Новый optional callback `onAutoScroll({ messageId })`
-- При `atBottomRef.current=true` + incoming:
-  - Если `onAutoScroll` передан → вызывается (Telegram-style auto-scroll)
-  - Иначе → fallback на старый `onSkip` (backward compatibility)
-
-**[InboxMode.jsx](src/native/modes/InboxMode.jsx)**:
-- Новый state `[physicallyAtBottom, setPhysicallyAtBottom] = useState(false)`
-- Передан в `useInboxScroll` → setter
-- Передан в `useNewBelowCounter` как `atBottom` (теперь physical, не Schmitt)
-- Новый `onAutoScroll` handler — `requestAnimationFrame` + `el.scrollTo({behavior:'smooth'})`
-
-**Что юзер увидит**:
-
-| Сценарий | До v0.95.28 | После v0.95.28 |
-|---|---|---|
-| Юзер у низа (bottomGap=10), пришло сообщение | Тихо добавляется в DOM — юзер может не заметить | **Auto-scroll** к нему (smooth) — видит сразу |
-| Юзер на 91px от низа, пришло сообщение | atBottom=true (Schmitt 40/120) → counter не растёт → юзер не знает | counter **+1** → видит «↓ 1» |
-| Юзер вверху, пришло сообщение | counter +1 (как раньше) | counter +1 (без изменений) |
-| Юзер сам отправил → атBottom после auto-scroll | atBottom=true, новое incoming → counter 0 | atBottom (physical) проверяется в момент incoming — если scrollHeight вырос и юзер не у низа → +1 |
-
-**Что НЕ менялось** (стабильность):
-- Schmitt-trigger 40/120 для **кнопки ↓** — фикс v0.95.2 (дребезг) НЕ сломан
-- `useForceReadAtBottom` использует Schmitt `atBottom` — для markRead — НЕ задевается
-- `scroll save` через Schmitt `nearBottom` — НЕ задевается
-- `handleReplySend` свой `el.scrollTo` после send — НЕ задевается
-- `tg:new-message` handler в nativeStoreIpc — НЕ задевается
-- v0.95.26 фикс обнуления unreadCount — НЕ задевается
-
-**Эталоны проверены**:
-- Telegram Web K `bubbles.ts` — `isAtBottom()` + `scrollToEnd()` при новом сообщении
-- Telegram Desktop `history_widget.cpp` — `scrollTop >= scrollTopMax - threshold` → `scrollToEnd`
-- WhatsApp Web — тот же паттерн через IntersectionObserver
-- Порог 30px — стандарт всех клиентов
-
-**Тесты** (4 новых в [useNewBelowCounter.vitest.jsx](src/native/hooks/useNewBelowCounter.vitest.jsx)):
-- `atBottom=true + incoming → onAutoScroll({ messageId })` (НЕ skip)
-- `atBottom=true + outgoing → skip outgoing` (auto-scroll НЕ зовётся для своих)
-- `atBottom=true + другой чат → skip other-chat` (фильтр чата первичнее)
-- `atBottom=false + incoming → onAdded (как раньше)`, `onAutoScroll НЕ зовётся`
-- Backward compat: если `onAutoScroll` не передан → fallback на старый `onSkip`
-
-**Регрессия**: lint 0, vitest 844/844 (+4 новых), fileSizeLimits 302/302, check-memory ✅.
+Разделение на 2 флага: `atBottom` через Schmitt-trigger 40/120 (только для UI кнопки ↓, не сломан фикс v0.95.2) + новый `physicallyAtBottom` (порог 30px без Schmitt) для логики auto-scroll и счётчика ↓N. Закрыта «слепая зона» 40-120px, где счётчик не рос и не было auto-scroll. Эталоны: Telegram Web K `isAtBottom() + scrollToEnd()`, Telegram Desktop `scrollTop >= scrollTopMax - threshold`. Полный текст: [`archive/features-v0.95.28.md`](./archive/features-v0.95.28.md).
 
 ---
 
