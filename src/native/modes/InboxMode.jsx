@@ -534,18 +534,25 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         return
       }
       lastAutoScrollAtRef.current = now
-      // v0.95.37: диагностический флаг — outgoing+!isSending = пришло с другого устройства.
-      // Если юзер скажет «снова не работает», лог покажет fromOtherDevice=true и тип события.
       const fromOtherDevice = !!isOutgoing && !isSending
       scrollDiag.logEvent('auto-scroll-new-message', { messageId, fromOtherDevice })
-      // v0.95.30: smoothScrollTo с easeOutCubic 250мс + twoPhase (как Telegram Web K).
-      // Раньше: el.scrollTo({behavior:'smooth'}) — браузерный default ~500мс linear-ish,
-      // дёргает на больших дистанциях. smoothScrollTo делает мгновенный prelude к
-      // (target - 1 viewport) + плавный последний экран.
+      // v0.95.39: УБРАН twoPhase + duration 250→350мс + requestAnimationFrame × 2.
+      // Юзер видел дёрганье — корни:
+      // (1) twoPhase делает INSTANT prelude (`el.scrollTop = preludeTarget`) когда
+      //     distance > 1 viewport (бывает на больших bubble с reply-цитатой+медиа).
+      //     Это правильно для jump-to-end из далека, но НЕ для auto-scroll к новому
+      //     (там atBottom=true → distance мал, prelude не нужен и вреден — даёт рывок).
+      // (2) Одиночный rAF — React commit мог НЕ завершиться → scrollHeight «старый» →
+      //     scroll к неверной цели → визуальное смещение. RAF×2 гарантирует
+      //     layout + первый paint.
+      // (3) 250мс мало для distance 200+px (большой bubble с медиа). 350мс — стандарт
+      //     Telegram Web K bubbles.ts scrollToEnd, Telegram Desktop _scrollDown.
       requestAnimationFrame(() => {
-        const el = msgsScrollRef.current
-        if (!el) return
-        try { smoothScrollTo(el, el.scrollHeight, { duration: 250, twoPhase: true }) } catch (_) {}
+        requestAnimationFrame(() => {
+          const el = msgsScrollRef.current
+          if (!el) return
+          try { smoothScrollTo(el, el.scrollHeight, { duration: 350 }) } catch (_) {}
+        })
       })
     },
   })
@@ -790,15 +797,15 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         setInput(text)  // возвращаем текст в поле
       } else {
         // v0.87.65: smooth scroll после отправки
-        // v0.95.30: заменён browser scrollTo({behavior:'smooth'}) на smoothScrollTo
-        // (easeOutCubic 250мс + twoPhase) — единый стиль анимации с onAutoScroll.
-        // v0.95.36: фиксируем lastAutoScrollAtRef — onAutoScroll увидит и пропустит
-        // дубль scroll, если outgoing с другого устройства придёт в этот же момент.
+        // v0.95.39: убран twoPhase + duration 250→350мс — единый стиль с onAutoScroll
+        // (Telegram Web K bubbles.ts scrollToEnd, Telegram Desktop _scrollDown). twoPhase
+        // создавал INSTANT prelude когда сообщение с reply/медиа давало distance >
+        // 1 viewport — это и было «дёрганьем» при отправке/получении.
         setTimeout(() => {
           const el = msgsScrollRef.current
           if (!el) return
           lastAutoScrollAtRef.current = Date.now()
-          smoothScrollTo(el, el.scrollHeight, { duration: 250, twoPhase: true })
+          smoothScrollTo(el, el.scrollHeight, { duration: 350 })
           scrollDiag.logEvent('send-scroll-done', {
             top: el.scrollTop, height: el.scrollHeight,
             bottomGap: el.scrollHeight - el.scrollTop - el.clientHeight,
