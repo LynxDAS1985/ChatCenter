@@ -55,6 +55,18 @@
   animation: cc-theme-flash 500ms ease-out;
 }
 
+/* v0.95.35: fade-in анимация при переключении «Полная история» в WhatsNewModal.
+   React пересоздаёт div с key={showAll} → animation запускается на mount.
+   320мс — короче чем 500мс (не утомляет при повторных кликах), достаточно длинно
+   чтобы юзер заметил переход. Эталон: VS Code Release Notes при переключении. */
+@keyframes cc-changelog-fadein {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.cc-changelog-fade {
+  animation: cc-changelog-fadein 320ms ease-out;
+}
+
 .native-mode * {
   box-sizing: border-box;
 }

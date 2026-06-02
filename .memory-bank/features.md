@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.34 (2 июня 2026)
+## Текущая версия: v0.95.35 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -36,26 +36,23 @@
 
 ---
 
-### v0.95.34 — Темовые переменные в :root + вспышка bubble при смене темы
+### v0.95.35 — Fade-in для «Полная история» + диагностика outgoing auto-scroll
 
-Продолжение фикса v0.95.33 — устранение причины бага архитектурно + UX-обратная связь.
+**(1)** WhatsNewModal: inner div получает `key={showAll}` + `className="cc-changelog-fade"`. CSS keyframe `cc-changelog-fadein` (320мс fade + slideY 8px) при переключении. Эталон: VS Code Release Notes.
 
-**(1) Тематические переменные перенесены `.native-mode` → `:root`** ([styles-base.css](src/native/styles-base.css)):
-`--amoled-accent`, `--amoled-accent-hover`, `--amoled-accent-shadow`, `--bubble-opacity` теперь в `:root { ... }`. Из `.native-mode { ... }` удалены (там остались только специфичные `--amoled-bg/surface/border/text/danger` и `--mess-*`). CSS specificity ловушка v0.95.33 устранена **архитектурно** — теперь `documentElement.style.setProperty` работает напрямую без конкуренции от `.native-mode`. WhatsNewModal (рендерится вне `.native-mode`) тоже подхватывает.
+**(2)** Диагностика TODO: фильтр `!isOutgoing` v0.95.28 в [useNewBelowCounter.js](src/native/hooks/useNewBelowCounter.js) защищает от двойного scroll при `handleReplySend` с этой машины, но **блокирует** auto-scroll для своих сообщений с другого устройства (телефон/Telegram Web). План: `window.__ccLastSelfSendAt` timestamp в sendMessage + проверка > 1500мс в counter. Эталон: tweb `messageOptions.fromUpdate`.
 
-**`applyTheme()` упрощён** ([themeColor.js](src/native/utils/themeColor.js)): основной таргет — `documentElement` (надёжно после v0.95.34 переноса в `:root`). Дополнительно применяется к `.native-mode` элементам как страховка на случай если кто-то снова добавит переопределение в `.native-mode`. Сложная логика с querySelectorAll-only удалена.
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅.
 
-**(2) Визуальная вспышка outgoing bubble при смене темы** ([themeColor.js](src/native/utils/themeColor.js) `flashOutgoingBubbles()`):
-- Новая экспортируемая функция — querySelectorAll(`[data-cc-outgoing="true"]`), добавляет класс `.cc-theme-flash` на 550мс, форс reflow для перезапуска animation при повторных кликах.
-- CSS keyframes `cc-theme-flash` в styles-base.css — пульсация box-shadow через `--amoled-accent`/`--amoled-accent-shadow` (цвет автоматически = новая тема). 3 фазы: начало (нет shadow) → 40% (плотная рамка 4px accent) → 100% (мягкое свечение 12px shadow).
-- Атрибут `data-cc-outgoing="true"` добавлен в bubble div [MessageBubble.jsx](src/native/components/MessageBubble.jsx) для outgoing сообщений (для incoming — undefined, атрибут отсутствует).
-- [ThemePickerModal.jsx](src/native/components/ThemePickerModal.jsx) handleSelect вызывает `flashOutgoingBubbles()` после `applyTheme`+`saveTheme`. Юзер мгновенно видит что выбранный цвет применился.
+---
 
-**Эталоны** (production 2026): Telegram при смене wallpaper — короткая пульсация bubble. Slack при смене темы — fade-in новых цветов 300мс. Аналогичный UX-приём.
+### v0.95.34 — Темовые переменные в :root + вспышка bubble + WhatsNewModal UX
 
-**Тесты** обновлены: [themeColor.vitest.js](src/native/utils/themeColor.vitest.js) — applyTheme теперь ставит на documentElement (по-новому, основной путь). Существующие тесты `.native-mode` элементов остались (страховка). 916/916 ✅.
+**(1) Темовые vars `.native-mode` → `:root`** ([styles-base.css](src/native/styles-base.css)): `--amoled-accent/-hover/-shadow/--bubble-opacity` теперь в `:root`. CSS specificity ловушка v0.95.33 устранена архитектурно — `documentElement.style.setProperty` работает напрямую. `applyTheme()` упрощён ([themeColor.js](src/native/utils/themeColor.js)): основной таргет documentElement, `.native-mode` элементы — страховка.
 
-**(3) WhatsNewModal — hover + «Полная история»** (по запросу): подкомпонент `PrimaryButton` с `useState(hover)` (inline `:hover` не работает в React) — затемнение accent, `translateY(-1px)`, shadow. Левая кнопка `HistoryToggleButton` переключает `showAll` → весь `CHANGELOG` / только новое. Эталон: VS Code Release Notes.
+**(2) Вспышка outgoing bubble при смене темы** ([themeColor.js](src/native/utils/themeColor.js) `flashOutgoingBubbles()`): querySelectorAll `[data-cc-outgoing="true"]`, класс `.cc-theme-flash` 550мс. CSS keyframes 3 фазы (нет → 4px accent → 12px shadow). Атрибут в [MessageBubble.jsx](src/native/components/MessageBubble.jsx) outgoing. [ThemePickerModal.jsx](src/native/components/ThemePickerModal.jsx) handleSelect зовёт после applyTheme+saveTheme. Эталон: Telegram wallpaper change.
+
+**(3) WhatsNewModal hover + «Полная история»**: `PrimaryButton` с `useState(hover)` (inline `:hover` не работает в React) — затемнение accent + `translateY(-1px)` + shadow. `HistoryToggleButton` переключает `showAll` → весь `CHANGELOG`. Эталон: VS Code Release Notes.
 
 **Регрессия**: lint 0, vitest 916/916, fileSizeLimits 316/316, check-memory ✅.
 

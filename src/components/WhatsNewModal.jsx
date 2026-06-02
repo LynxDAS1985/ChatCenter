@@ -89,13 +89,17 @@ export default function WhatsNewModal({ prevVersion, currentVersion, onClose }) 
         {/* Содержимое — список changelog */}
         {/* v0.95.32: contain: layout style paint — изолирует браузерный repaint
             внутри скроллируемой области. overscroll-behavior: contain — scroll
-            не «утекает» на overlay (нет случайных закрытий). Эталон Linear modals. */}
+            не «утекает» на overlay (нет случайных закрытий). Эталон Linear modals.
+            v0.95.35: key={showAll ? 'all' : 'new'} + className 'cc-changelog-fade' —
+            React пересоздаёт inner div при переключении showAll, CSS keyframe
+            cc-changelog-fadein (320мс fade+slide) запускается на mount. */}
         <div style={{
           flex: 1, overflow: 'auto', padding: '16px 24px',
           color: 'var(--amoled-text, #fff)',
           contain: 'layout style paint',
           overscrollBehavior: 'contain',
         }}>
+          <div key={showAll ? 'all' : 'new'} className="cc-changelog-fade">
           {entries.map((entry, i) => (
             <div key={entry.version} style={{
               marginBottom: i < entries.length - 1 ? 24 : 0,
@@ -127,6 +131,7 @@ export default function WhatsNewModal({ prevVersion, currentVersion, onClose }) 
               </ul>
             </div>
           ))}
+          </div>
         </div>
 
         {/* Footer */}
