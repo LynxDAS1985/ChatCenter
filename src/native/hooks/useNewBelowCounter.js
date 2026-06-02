@@ -39,10 +39,17 @@ export function useNewBelowCounter({ activeChatId, atBottom, onAdded, onSkip, on
   // Стандартный React паттерн для stable handlers — см. react.dev/reference/react/useRef.
   const atBottomRef = useRef(atBottom)
   atBottomRef.current = atBottom
+  // v0.95.37: память id outgoing-pending — защита от повторных событий после
+  // updateMessageSendSucceeded (TDLib меняет id с provisional на финальный).
+  // Set очищается при unmount/смене чата (новый useEffect для каждого activeChatId).
+  const seenOutgoingIdsRef = useRef(new Set())
 
   useEffect(() => {
     if (!activeChatId) return
     if (typeof window === 'undefined' || !window.api?.on) return
+    // v0.95.37: чистим Set при смене активного чата (id из старого чата не должны
+    // влиять на новый, теоретически id уникальны но защита тут.)
+    seenOutgoingIdsRef.current = new Set()
 
     const unsub = window.api.on('tg:new-message', (payload) => {
       const chatId = payload?.chatId
@@ -60,22 +67,49 @@ export function useNewBelowCounter({ activeChatId, atBottom, onAdded, onSkip, on
       // (другое устройство), pending/failed для локальных echo (своя машина).
       // Эталон: Telegram Web K pendingByRandomId, Telegram Desktop MessageFlag::FromUpdate.
       if (message?.isOutgoing && message?.isSending) {
+        // v0.95.37: запоминаем id — если позже придёт повторное событие для того же
+        // сообщения (например после updateMessageSendSucceeded с финальным id, или
+        // backend пере-эмитит) → НЕ дёргаем auto-scroll. Set ограничен 50 элементами
+        // (FIFO), чтобы не расти бесконечно.
+        if (seenOutgoingIdsRef.current.size >= 50) {
+          const first = seenOutgoingIdsRef.current.values().next().value
+          seenOutgoingIdsRef.current.delete(first)
+        }
+        seenOutgoingIdsRef.current.add(String(message.id))
         onSkip?.({ reason: 'outgoing-pending', messageId: message.id })
+        return
+      }
+      // v0.95.37: повторное событие для outgoing, уже пройденного (TDLib id mutation).
+      if (message?.isOutgoing && seenOutgoingIdsRef.current.has(String(message?.id))) {
+        onSkip?.({ reason: 'outgoing-already-seen', messageId: message.id })
         return
       }
       // v0.95.28: юзер physically у низа → Telegram-style auto-scroll к новому,
       // НЕ инкрементируем counter. Если onAutoScroll не передан — fallback на
       // старое поведение (skip). Это backward-compatible — старый код продолжит
       // работать без auto-scroll.
+      // v0.95.37: добавлены поля isOutgoing/isSending для диагностики — потребитель
+      // (InboxMode.onAutoScroll) логирует «outgoing-from-other-device» если
+      // isOutgoing=true (т.е. это «своё с другого устройства»).
       if (atBottomRef.current) {
         if (onAutoScroll) {
-          onAutoScroll({ messageId: message?.id })
+          onAutoScroll({
+            messageId: message?.id,
+            isOutgoing: !!message?.isOutgoing,
+            isSending: !!message?.isSending,
+          })
         } else {
           onSkip?.({ reason: 'at-bottom', messageId: message?.id })
         }
         return
       }
-      onAdded?.({ added: 1, messageId: message?.id, fromEvent: true })
+      onAdded?.({
+        added: 1,
+        messageId: message?.id,
+        fromEvent: true,
+        isOutgoing: !!message?.isOutgoing,
+        isSending: !!message?.isSending,
+      })
     })
 
     return unsub

@@ -103,8 +103,43 @@ describe('useNewBelowCounter — event-based (v0.91.3)', () => {
     }))
     emitNewMessage('chat-A', { id: '301', isOutgoing: true, isSending: false })
     expect(onAutoScroll).toHaveBeenCalledTimes(1)
-    expect(onAutoScroll).toHaveBeenCalledWith({ messageId: '301' })
+    // v0.95.37: payload расширен полями isOutgoing/isSending для диагностики
+    expect(onAutoScroll).toHaveBeenCalledWith({
+      messageId: '301', isOutgoing: true, isSending: false,
+    })
     expect(onAdded).not.toHaveBeenCalled()
+  })
+
+  // v0.95.37: тест updateMessageSendSucceeded — переход sending_state pending → null
+  // НЕ должен повторно дёргать onAutoScroll. Сохранённый seenOutgoingIdsRef защищает.
+  it('v0.95.37: outgoing+isSending=true (свой echo) → потом тот же id+isSending=false → skip (НЕ auto-scroll)', () => {
+    const onAutoScroll = vi.fn()
+    const onSkip = vi.fn()
+    renderHook(() => useNewBelowCounter({
+      activeChatId: 'chat-A', atBottom: true, onAdded: vi.fn(), onSkip, onAutoScroll,
+    }))
+    // Событие 1: provisional с pending — skip как outgoing-pending
+    emitNewMessage('chat-A', { id: '700', isOutgoing: true, isSending: true })
+    expect(onAutoScroll).not.toHaveBeenCalled()
+    expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'outgoing-pending' }))
+    onSkip.mockClear()
+    // Событие 2: тот же id, но sending_state=null (имитируем повторный emit после
+    // updateMessageSendSucceeded). Должен быть skip как already-seen, НЕ onAutoScroll.
+    emitNewMessage('chat-A', { id: '700', isOutgoing: true, isSending: false })
+    expect(onAutoScroll).not.toHaveBeenCalled()
+    expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'outgoing-already-seen' }))
+  })
+
+  it('v0.95.37: разные outgoing id — не блокируют друг друга (память per-id)', () => {
+    const onAutoScroll = vi.fn()
+    renderHook(() => useNewBelowCounter({
+      activeChatId: 'chat-A', atBottom: true, onAdded: vi.fn(), onAutoScroll,
+    }))
+    // Отправили 3 разных сообщения с других устройств подряд — каждое auto-scroll
+    emitNewMessage('chat-A', { id: '801', isOutgoing: true, isSending: false })
+    emitNewMessage('chat-A', { id: '802', isOutgoing: true, isSending: false })
+    emitNewMessage('chat-A', { id: '803', isOutgoing: true, isSending: false })
+    expect(onAutoScroll).toHaveBeenCalledTimes(3)
   })
 
   it('atBottom=true + НЕТ onAutoScroll → fallback onSkip({ reason: "at-bottom" })', () => {
@@ -121,7 +156,8 @@ describe('useNewBelowCounter — event-based (v0.91.3)', () => {
   })
 
   // v0.95.28: НОВОЕ — Telegram-style auto-scroll callback при atBottom + incoming
-  it('v0.95.28: atBottom=true + incoming → onAutoScroll({ messageId }) (НЕ skip)', () => {
+  // v0.95.37: payload расширен полями isOutgoing/isSending для диагностики.
+  it('v0.95.28/37: atBottom=true + incoming → onAutoScroll с полями диагностики', () => {
     const onAdded = vi.fn()
     const onSkip = vi.fn()
     const onAutoScroll = vi.fn()
@@ -129,12 +165,13 @@ describe('useNewBelowCounter — event-based (v0.91.3)', () => {
       activeChatId: 'chat-A', atBottom: true, onAdded, onSkip, onAutoScroll,
     }))
     emitNewMessage('chat-A', { id: '500', isOutgoing: false })
-    // Counter НЕ растёт (юзер сам видит сообщение)
     expect(onAdded).not.toHaveBeenCalled()
-    // Auto-scroll callback вызван (плавная прокрутка к новому, Telegram-style)
     expect(onAutoScroll).toHaveBeenCalledTimes(1)
-    expect(onAutoScroll).toHaveBeenCalledWith({ messageId: '500' })
-    // onSkip НЕ вызывается когда есть onAutoScroll
+    // v0.95.37: payload теперь содержит isOutgoing/isSending для логирования
+    // fromOtherDevice (см. InboxMode.onAutoScroll scrollDiag).
+    expect(onAutoScroll).toHaveBeenCalledWith({
+      messageId: '500', isOutgoing: false, isSending: false,
+    })
     expect(onSkip).not.toHaveBeenCalled()
   })
 

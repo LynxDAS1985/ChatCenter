@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.36 (2 июня 2026)
+## Текущая версия: v0.95.37 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.30.md`](./archive/features-v0.95.30.md) | v0.95.30 (плавная auto-scroll + 5 цветовых тем + dropdown + opacity 0.95; стабилизировано v0.95.33-34) | ~3 КБ |
 | [`archive/features-v0.95.29.md`](./archive/features-v0.95.29.md) | v0.95.29 (реакции 👍❤️🔥 + Telegram-style header + General 📢 + render-counter; стабилизировано v0.95.31-34) | ~5 КБ |
 | [`archive/features-v0.95.28.md`](./archive/features-v0.95.28.md) | v0.95.28 (Telegram-style auto-scroll к новому + ↓N без «слепой зоны» Schmitt; стабилизировано v0.95.31) | ~4 КБ |
 | [`archive/features-v0.95.27.md`](./archive/features-v0.95.27.md) | v0.95.27 (расширенная диагностика send pipeline; стабилизировано v0.95.29) | ~3 КБ |
@@ -33,6 +34,21 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.37 — sending_state polish + лог fromOtherDevice + защита re-emit + анализ дубля
+
+**(1)** Edit скрыт пока `isSending=true` ([MessageBubble.jsx](src/native/components/MessageBubble.jsx)) — TDLib откажет без финального id.
+**(2)** Лог `fromOtherDevice` ([InboxMode.jsx](src/native/modes/InboxMode.jsx) onAutoScroll/onAdded) — payload расширен `isOutgoing/isSending` ([useNewBelowCounter.js](src/native/hooks/useNewBelowCounter.js)). Диагностика на будущее.
+**(3)** Защита от re-emit: `seenOutgoingIdsRef` Set FIFO-50 в useNewBelowCounter — id, прошедшие как outgoing-pending, при повторном emit (теоретическом) skip как `outgoing-already-seen`.
+**(4) Анализ дубля (TODO)**: в [tdlibClient.js](main/native/backends/tdlibClient.js) switch **НЕ** обрабатывает `updateMessageSendSucceeded` → после server ACK id меняется provisional→финальный, store не знает → следующий loadNewerMessages добавит вторую копию (dedup по id, а id разные). План: emit `message:send-succeeded` → store заменяет по oldId. Полностью документировано в [`mistakes/outgoing-two-cases.md`](.memory-bank/mistakes/outgoing-two-cases.md).
+
+**Новый файл документации**: [`mistakes/outgoing-two-cases.md`](.memory-bank/mistakes/outgoing-two-cases.md) — хронология v0.95.28→37, эталоны 4 мессенджеров, антипаттерны, TDLib spec. Добавлен в CLAUDE.md.
+
+**Тесты** (+2 unit): re-emit с тем же id → `outgoing-already-seen` / разные id не блокируют. Обновлён v0.95.36 тест (payload).
+
+**Регрессия**: lint 0, vitest 923/923, fileSizeLimits 316/316, check-memory ✅.
 
 ---
 
@@ -171,48 +187,9 @@
 
 ---
 
-### v0.95.30 — Плавная auto-scroll + цветовая тема bubble + dropdown режимов + opacity 0.95
+### v0.95.30 — Плавная auto-scroll + цветовая тема + dropdown + opacity 0.95
 
-UX-релиз (renderer-only, низкий риск) — 4 фичи по запросу юзера. Никаких структурных изменений main/backend.
-
-**1. Плавная auto-scroll к новым сообщениям** — заменён браузерный `el.scrollTo({behavior:'smooth'})` на наш `smoothScrollTo()` (easeOutCubic 250мс + twoPhase) в 2-х местах [InboxMode.jsx](src/native/modes/InboxMode.jsx):
-- `onAutoScroll` (incoming новое + юзер у низа) — теперь анимация на 250мс быстрее и стабильнее. Раньше `behavior:'smooth'` дёргал на больших дистанциях (>5×viewport), `smoothScrollTo` делает мгновенный prelude к (target − 1 viewport) + плавный последний экран. Эталон: Telegram Web K `bubbles.ts scrollToEnd` (cubic-bezier 250мс).
-- `send-scroll-done` (после отправки своего сообщения) — единый стиль с onAutoScroll.
-
-**2. Цветовая тема bubble (5 вариантов)** — новый модуль [themeColor.js](src/native/utils/themeColor.js) + модалка [ThemePickerModal.jsx](src/native/components/ThemePickerModal.jsx):
-- 5 тем: Telegram (#2AABEE), Индиго #3B5BA9 (Discord/Signal), Тёмно-бирюзовый #1A6B8C (Slack DM), Premium #229ED9 (Telegram Premium), Фиолетовый #5B5FE2 (Discord Nitro).
-- Применяется через CSS-переменные `--amoled-accent`, `--amoled-accent-hover`, `--amoled-accent-shadow` на `document.documentElement.style` — MessageBubble и другие компоненты подхватывают мгновенно без React re-render.
-- Persistence: `localStorage['cc-native-theme']`. На старте [NativeApp.jsx](src/native/NativeApp.jsx) вызывает `applyTheme(loadTheme())` ДО первого рендера (без вспышки default-blue → выбранный цвет).
-- Кнопка 🎨 в правом верхнем header (на месте старого mode-switcher).
-
-**3. Dropdown «Чаты/Клиенты/Доска»** — новый компонент [ChatTypesDropdown.jsx](src/native/components/ChatTypesDropdown.jsx):
-- Раньше: 3 кнопки tab-bar в шапке правой панели (над сообщениями).
-- Теперь: dropdown ВВЕРХУ списка чатов слева (как Telegram Desktop folder switch / Slack workspace).
-- Иконки emoji 💬👥📋 рядом с label, текущий режим в закрытом состоянии, выпадающее меню при клике, закрытие по Escape / click мимо.
-- В compact mode (узкий sidebar < 128px) dropdown скрыт (нет места).
-
-**4. Opacity 0.95 на bubble** — CSS-переменная `--bubble-opacity: 0.95` в [styles-base.css](src/native/styles-base.css) применяется через `opacity: var(--bubble-opacity, 1)` в bubble div [MessageBubble.jsx](src/native/components/MessageBubble.jsx). Мягче выглядит, не «пластиково». Эталон Telegram Desktop.
-
-**Эталоны** (production 2026):
-- **Telegram Web K** [bubbles.ts](https://github.com/morethanwords/tweb/blob/master/src/components/chat/bubbles.ts) — `scrollToEnd` использует RAF + cubic-bezier ~250мс.
-- **Telegram Desktop** [history_widget.cpp](https://github.com/telegramdesktop/tdesktop) — `_scrollDown` Qt animator easeOutQuart 200мс.
-- **Telegram Settings → Color theme** — модалка с превью + сохранение в settings.
-- **Slack workspace switcher** — dropdown слева вверху с иконкой+текстом.
-
-**Тесты** (+9 новых unit):
-- [themeColor.vitest.js](src/native/utils/themeColor.vitest.js) — 10 тестов (THEMES структура, getThemeById валидация, save/load round-trip, applyTheme CSS-переменные, защита от мусора)
-- [changelogData.vitest.js](src/utils/changelogData.vitest.js) — обновлён prevVersion=null → '0.95.30'
-
-**НЕ менялось** (стабильность):
-- Backend (TDLib client / mapper / handlers) — НЕТ изменений
-- main процесс — НЕТ изменений
-- Schmitt-trigger atBottom (v0.95.2)
-- markRead логика (v0.87.41, v0.95.26)
-- useNewBelowCounter + auto-scroll логика (v0.95.28) — только реализация scrollTo внутри
-- contiguity check tg:new-message (v0.95.0)
-- Реакции (v0.95.29)
-
-**Регрессия**: lint 0, vitest +9 (themeColor + обновлённый changelog), fileSizeLimits ✅, check-memory ✅.
+UX-релиз renderer-only: smoothScrollTo easeOutCubic 250мс, 5 цветовых тем (Telegram/Индиго/Teal/Premium/Violet), ChatTypesDropdown, `--bubble-opacity: 0.95`. Цветовая тема в v0.95.30 НЕ работала (CSS specificity ловушка — фикс v0.95.33+v0.95.34). Полный текст: [`archive/features-v0.95.30.md`](./archive/features-v0.95.30.md).
 
 ---
 

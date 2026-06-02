@@ -169,7 +169,9 @@ export default function MessageBubble({
           <button onClick={() => onReply?.(m)} title="Ответить" style={miniBtn}>↪</button>
           {onForward && <button onClick={() => onForward(m)} title="Переслать" style={miniBtn}>➥</button>}
           {onPin && <button onClick={() => onPin(m)} title="Закрепить" style={miniBtn}>📌</button>}
-          {m.isOutgoing && onEdit && <button onClick={() => onEdit(m)} title="Редактировать" style={miniBtn}>✏️</button>}
+          {/* v0.95.37: edit недоступен пока сообщение sending (нет финального id для editMessageText).
+              Эталон Telegram Desktop: edit-кнопка скрыта пока msg.sendingState == pending. */}
+          {m.isOutgoing && !m.isSending && onEdit && <button onClick={() => onEdit(m)} title="Редактировать" style={miniBtn}>✏️</button>}
           {m.isOutgoing && onDelete && <button onClick={() => onDelete(m)} title="Удалить" style={{...miniBtn, color: 'var(--amoled-danger)'}}>🗑</button>}
         </div>
       )}

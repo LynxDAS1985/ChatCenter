@@ -511,8 +511,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   useNewBelowCounter({
     activeChatId: activeViewKey,
     atBottom: physicallyAtBottom,
-    onAdded: ({ added, messageId, fromEvent }) => {
-      scrollDiag.logEvent('new-below', { added, messageId, fromEvent })
+    onAdded: ({ added, messageId, fromEvent, isOutgoing, isSending }) => {
+      // v0.95.37: диагностируем счётчик ↓N для outgoing-from-other-device.
+      const fromOtherDevice = !!isOutgoing && !isSending
+      scrollDiag.logEvent('new-below', { added, messageId, fromEvent, fromOtherDevice })
       setNewBelow(n => n + added)
     },
     onSkip: (info) => scrollDiag.logEvent('new-below-skip', info),
@@ -520,7 +522,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     // прокрутка к нему. Эталоны: Telegram Web K (bubbles.ts isAtBottom + scrollToEnd),
     // Telegram Desktop (history_widget.cpp scrollTop >= scrollTopMax - X → scrollToEnd).
     // requestAnimationFrame — даём React закоммитить новое сообщение в DOM до scroll.
-    onAutoScroll: ({ messageId }) => {
+    onAutoScroll: ({ messageId, isOutgoing, isSending }) => {
       // v0.95.36: guard от двойного scroll. Если handleReplySend только что
       // сделал `send-scroll-done` (свой sendMessage), и одновременно пришло
       // outgoing-from-other-device → 2 scroll за <600мс. Защита: дедуп через
@@ -532,7 +534,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         return
       }
       lastAutoScrollAtRef.current = now
-      scrollDiag.logEvent('auto-scroll-new-message', { messageId })
+      // v0.95.37: диагностический флаг — outgoing+!isSending = пришло с другого устройства.
+      // Если юзер скажет «снова не работает», лог покажет fromOtherDevice=true и тип события.
+      const fromOtherDevice = !!isOutgoing && !isSending
+      scrollDiag.logEvent('auto-scroll-new-message', { messageId, fromOtherDevice })
       // v0.95.30: smoothScrollTo с easeOutCubic 250мс + twoPhase (как Telegram Web K).
       // Раньше: el.scrollTo({behavior:'smooth'}) — браузерный default ~500мс linear-ish,
       // дёргает на больших дистанциях. smoothScrollTo делает мгновенный prelude к
