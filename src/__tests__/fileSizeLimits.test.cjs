@@ -266,12 +266,13 @@ console.log('── Статистика: ──')
 var totalSrc = 0
 var srcFiles = allFiles.filter(function (f) { return f.startsWith('src/') && !/\.(test|vitest)\./.test(f) })
 srcFiles.forEach(function (f) { totalSrc += countLines(f) })
-// v0.95.37: лимит поднят 20900 → 21000 — sending_state полировка, seenOutgoingIds
-// Set + защита re-emit + диагностические поля fromOtherDevice (~25 строк).
-// v0.95.34: лимит был 20900 для WhatsNewModal hover/PrimaryButton + bubble flash.
+// v0.95.40: лимит поднят 21000 → 21200 — большие emoji (isLargeEmoji + regex
+// в tdlibMapper + рендер в MessageBubble), useStickyBottomOnMedia (ResizeObserver
+// hook), auto-scroll-completed метрика (~150 строк).
+// v0.95.37: лимит был 21000 для sending_state polish.
 // Дальнейшее разбиение — плановая задача (handoff-code-limits.md).
-test('Общий renderer код (src/ без тестов) < 21000 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 21000, totalSrc + ' > 21000')
+test('Общий renderer код (src/ без тестов) < 21200 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 21200, totalSrc + ' > 21200')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

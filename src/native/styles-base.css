@@ -67,6 +67,22 @@
   animation: cc-changelog-fadein 320ms ease-out;
 }
 
+/* v0.95.40: accessibility — глобально отключаем все анимации/переходы для юзеров
+   с включённым «уменьшать движение» в системе (W3C WCAG 2.2 Animation from
+   Interactions, MDN prefers-reduced-motion). Раньше respect был только в
+   smoothScroll.js, но CSS keyframes (cc-theme-flash, cc-changelog-fadein,
+   theme dropdown transitions, scroll-bottom button enter/leave) НЕ респектили.
+   0.01ms — нативный «нулевой» интервал, который анимация всё равно «выполняет»
+   (для onComplete callbacks), но визуально незаметен. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 .native-mode * {
   box-sizing: border-box;
 }

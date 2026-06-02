@@ -22,6 +22,7 @@ import { computeJumpToEndGate } from '../utils/jumpToEndGate.js'
 import useChatListResize, {
   CHAT_LIST_DEFAULT_WIDTH, clampChatListWidth, isChatListCompact,
 } from '../hooks/useChatListResize.js'
+import { useStickyBottomOnMedia } from '../hooks/useStickyBottomOnMedia.js'
 import ChatListResizeHandle from '../components/ChatListResizeHandle.jsx'
 import ThemePickerModal from '../components/ThemePickerModal.jsx'
 import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
@@ -238,7 +239,15 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const msgsScrollRef = useRef(null)
+  // v0.95.40: ref для useStickyBottomOnMedia. Объявлен ЗДЕСЬ (до использования
+  // в хуке ниже) — value синхронизируется через useEffect когда state
+  // physicallyAtBottom меняется (см. ниже). Изначально false.
+  const physicallyAtBottomRef = useRef(false)
   useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef, isRestoringRef })  // v0.91.17 + v0.92.4
+  // v0.95.40: удерживает scroll у низа при lazy-load медиа (картинки/видео
+  // расширяют scrollHeight ПОСЛЕ auto-scroll → юзер визуально выше низа).
+  // Эталон: Telegram Web K ResizeObserver на scrollContainer + scrollToEnd.
+  useStickyBottomOnMedia(msgsScrollRef, physicallyAtBottomRef)
   // v0.89.0: imperative API виртуализации react-window (scrollToRow, get element).
   // Используется как fallback когда querySelector('[data-msg-id]') промахивается
   // (элемент не в видимом виртуальном DOM).
@@ -265,6 +274,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // без «слепой зоны» 40-120px. Schmitt-trigger (atBottom выше) остаётся для UI
   // визуала кнопки ↓ (стабильность от дребезга, фикс v0.95.2).
   const [physicallyAtBottom, setPhysicallyAtBottom] = useState(false)
+  // v0.95.40: sync state → ref для useStickyBottomOnMedia (ref объявлен выше,
+  // до хука useStickyBottomOnMedia). ResizeObserver читает свежее значение
+  // БЕЗ переподписки. State не годится — useEffect перевешивал бы ResizeObserver.
+  useEffect(() => { physicallyAtBottomRef.current = physicallyAtBottom }, [physicallyAtBottom])
   const [newBelow, setNewBelow] = useState(0)
   // v0.95.36: guard от двойного auto-scroll. Обновляется и в onAutoScroll
   // (incoming + outgoing-from-other-device), и в send-scroll-done (свой sendMessage).
@@ -535,6 +548,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       }
       lastAutoScrollAtRef.current = now
       const fromOtherDevice = !!isOutgoing && !isSending
+      const startTs = Date.now()
       scrollDiag.logEvent('auto-scroll-new-message', { messageId, fromOtherDevice })
       // v0.95.39: УБРАН twoPhase + duration 250→350мс + requestAnimationFrame × 2.
       // Юзер видел дёрганье — корни:
@@ -551,7 +565,24 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         requestAnimationFrame(() => {
           const el = msgsScrollRef.current
           if (!el) return
-          try { smoothScrollTo(el, el.scrollHeight, { duration: 350 }) } catch (_) {}
+          // v0.95.40: distance + onComplete для метрики реальной длительности.
+          // distance — фактическая дельта (показывает был ли scroll промахом из-за
+          // несвоевременного scrollHeight). actualMs — реальное время анимации
+          // (с учётом prefers-reduced-motion = ~0мс).
+          const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+          try {
+            smoothScrollTo(el, el.scrollHeight, {
+              duration: 350,
+              onComplete: () => {
+                scrollDiag.logEvent('auto-scroll-completed', {
+                  messageId,
+                  distance,
+                  actualMs: Date.now() - startTs,
+                  finalBottomGap: el.scrollHeight - el.scrollTop - el.clientHeight,
+                })
+              },
+            })
+          } catch (_) {}
         })
       })
     },

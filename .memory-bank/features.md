@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.39 (2 июня 2026)
+## Текущая версия: v0.95.40 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.32.md`](./archive/features-v0.95.32.md) | v0.95.32 (производительность WhatsNewModal: убран backdrop-filter + contain + деловой стиль changelog) | ~2 КБ |
 | [`archive/features-v0.95.31.md`](./archive/features-v0.95.31.md) | v0.95.31 (аккаунты вниз + drag-n-drop + multi-user typing + throttle реакций; стабилизировано v0.95.34+) | ~3 КБ |
 | [`archive/features-v0.95.30.md`](./archive/features-v0.95.30.md) | v0.95.30 (плавная auto-scroll + 5 цветовых тем + dropdown + opacity 0.95; стабилизировано v0.95.33-34) | ~3 КБ |
 | [`archive/features-v0.95.29.md`](./archive/features-v0.95.29.md) | v0.95.29 (реакции 👍❤️🔥 + Telegram-style header + General 📢 + render-counter; стабилизировано v0.95.31-34) | ~5 КБ |
@@ -35,6 +36,24 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.40 — Большие emoji + a11y reduced-motion + sticky bottom on media + scroll metric
+
+**(1) messageAnimatedEmoji + isLargeEmoji** ([tdlibMapper.js](main/native/backends/tdlibMapper.js)): Юзер видел ПУСТОЕ сообщение вместо ☺️. Корень — `messageAnimatedEmoji` content type не маппился (нет .text, только .emoji). Fallback `formattedText = {text: content.emoji}`. Новый флаг `isLargeEmoji` — true если messageAnimatedEmoji ИЛИ regex (Unicode TR51, 1-3 emoji подряд). [MessageBubble.jsx](src/native/components/MessageBubble.jsx) рендерит font-size 56px + прозрачный фон + без shadow. messagePreview тоже маппит. Эталоны: tweb bubbles.ts `isAllEmojiBlocks`, WhatsApp jumbo, iMessage tapback.
+
+**(2) auto-scroll-completed метрика** ([InboxMode.jsx](src/native/modes/InboxMode.jsx)): onComplete в smoothScrollTo → лог `{messageId, distance, actualMs, finalBottomGap}`. Диагностика будущих жалоб.
+
+**(3) prefers-reduced-motion global** ([styles-base.css](src/native/styles-base.css)): глобальный `@media (prefers-reduced-motion: reduce)` отключает все CSS анимации/transitions (cc-theme-flash, cc-changelog-fadein, theme dropdown). Раньше respect был только в smoothScroll.js. W3C WCAG 2.2 standard pattern.
+
+**(4) useStickyBottomOnMedia** ([useStickyBottomOnMedia.js](src/native/hooks/useStickyBottomOnMedia.js)): ResizeObserver на scrollContainer + `physicallyAtBottomRef`. Если delta > 4px и юзер был у низа → instant `scrollTop = scrollHeight` (без анимации, throttle rAF). Решает sticky bottom при lazy-load картинок. Эталоны: tweb ResizeObserver+scrollToEnd, Discord MutationObserver+onload, Slack onload+scrollIntoView.
+
+**Конфликты ✅**: smoothScroll twoPhase (v0.95.18 кнопка ↓), lastAutoScrollAtRef guard (v0.95.36), Schmitt-trigger, seenOutgoingIdsRef (v0.95.37) — не задевается. Производительность: regex 1×/сообщение, ResizeObserver fires только при layout change + rAF throttle.
+
+**Тесты** (+12): tdlibMapper +6 (animatedEmoji/1emoji/3emoji/text/emoji+text/4emoji), useStickyBottomOnMedia +6 (atBottom true/false, delta<4, unmount, null ref, throttle).
+
+**Регрессия**: lint 0, vitest 942/942, fileSizeLimits 316/316, check-memory ✅.
 
 ---
 
@@ -177,31 +196,7 @@
 
 ### v0.95.32 — Производительность WhatsNewModal + деловой стиль changelog
 
-Точечный фикс по жалобе юзера: «тормозит скролл в WhatsNewModal, тексты написаны как ребёнок».
-
-**Корень тормозов** (доказан анализом кода [WhatsNewModal.jsx](src/components/WhatsNewModal.jsx)):
-1. **`backdrop-filter: blur(8px)` на overlay** — Chromium пересчитывает blur ВСЕХ пикселей под полупрозрачным overlay на каждый кадр скролла внутри модалки. При full-screen overlay и 8px радиусе — 30-60мс на кадр (≤16мс для 60fps). [chrome bug Issue 749421](https://issues.chromium.org/issues/40632921) известен с 2017.
-2. **`box-shadow: 0 12px 40px` (40px blur)** — каждый кадр перерисовывает shadow вокруг модалки.
-3. **Нет `contain`/`isolation`** — repaint скроллируемой области протекает на parent → весь viewport repaint.
-
-**Решение** (4 правки в [WhatsNewModal.jsx](src/components/WhatsNewModal.jsx)):
-- Убран `backdrop-filter: blur(8px)`. Заменён на `rgba(0,0,0,0.75)` (был 0.55) — визуально схожий эффект «глубины» без GPU-нагрузки. Эталоны: Telegram Web K, Discord (нет blur в modals).
-- `box-shadow` blur уменьшен 40 → 16px (достаточно для визуального отделения).
-- Добавлено `isolation: isolate` на modal card — новый stacking context, repaint не «протекает».
-- Скроллируемый список получил `contain: layout style paint` (изоляция repaint) + `overscroll-behavior: contain` (scroll не утекает на overlay, нет случайных закрытий). Эталон Linear modals.
-
-**Деловой стиль changelog** ([changelogData.js](src/utils/changelogData.js)):
-- Записи v0.95.30 и v0.95.31 переписаны без неформальной лексики («захвати — потащи — отпусти», «как ребёнок»).
-- Сохранён прежний объём информации и emoji-структура; убраны разговорные обороты, фраза «теперь можно!» и т.п.
-- Терминология приведена к деловому стилю: «непрозрачность», «выпадающее меню», «дистанция», «активные участники», «временные ограничения со стороны сервера».
-- Добавлен entry v0.95.32 описывающий саму производительностную правку и редактуру.
-
-**НЕ менялось**:
-- Логика WhatsNewModal (показ/скрытие, getChangelogSince, lastSeenVersion)
-- Структура CHANGELOG entry (version/date/title/features)
-- Любые другие компоненты, backend, store
-
-**Регрессия**: lint 0, vitest 914/914 (1 тест обновлён под '0.95.32'), fileSizeLimits ✅, check-memory ✅.
+Убран `backdrop-filter: blur(8px)` на overlay (Chromium пересчитывал blur каждый кадр скролла → 30-60мс/кадр), box-shadow blur 40→16px, добавлены `isolation: isolate` + `contain: layout style paint` + `overscroll-behavior: contain`. Эталоны: Telegram Web K / Discord / Linear modals. Полный текст: [`archive/features-v0.95.32.md`](./archive/features-v0.95.32.md).
 
 ---
 

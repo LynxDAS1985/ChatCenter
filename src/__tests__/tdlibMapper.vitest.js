@@ -132,6 +132,52 @@ describe('mapMessage — текст и базовые поля', () => {
     expect(r.isSending).toBe(false)
   })
 
+  // v0.95.40: messageAnimatedEmoji + isLargeEmoji флаг.
+  it('v0.95.40: messageAnimatedEmoji → text=emoji + isLargeEmoji=true', () => {
+    const r = mapMessage({
+      '@type': 'message',
+      id: 100, chat_id: -1001,
+      sender_id: { '@type': 'messageSenderUser', user_id: 42 },
+      is_outgoing: false, date: 1715000000, media_album_id: '0',
+      content: { '@type': 'messageAnimatedEmoji', emoji: '☺️', animated_emoji: {} },
+    }, 'tg_1:2')
+    expect(r.text).toBe('☺️')
+    expect(r.isLargeEmoji).toBe(true)
+  })
+
+  it('v0.95.40: текст из 1 emoji → isLargeEmoji=true', () => {
+    const r = mapMessage(tdMsgText({
+      content: { '@type': 'messageText', text: { '@type': 'formattedText', text: '🔥', entities: [] } },
+    }), 'tg_1:2')
+    expect(r.isLargeEmoji).toBe(true)
+  })
+
+  it('v0.95.40: текст из 3 emoji → isLargeEmoji=true', () => {
+    const r = mapMessage(tdMsgText({
+      content: { '@type': 'messageText', text: { '@type': 'formattedText', text: '🎉🔥💯', entities: [] } },
+    }), 'tg_1:2')
+    expect(r.isLargeEmoji).toBe(true)
+  })
+
+  it('v0.95.40: обычный текст «Привет» → isLargeEmoji=false', () => {
+    const r = mapMessage(tdMsgText(), 'tg_1:2')
+    expect(r.isLargeEmoji).toBe(false)
+  })
+
+  it('v0.95.40: emoji + текст («🔥 круто») → isLargeEmoji=false', () => {
+    const r = mapMessage(tdMsgText({
+      content: { '@type': 'messageText', text: { '@type': 'formattedText', text: '🔥 круто', entities: [] } },
+    }), 'tg_1:2')
+    expect(r.isLargeEmoji).toBe(false)
+  })
+
+  it('v0.95.40: 4+ emoji подряд → isLargeEmoji=false (защита от спама)', () => {
+    const r = mapMessage(tdMsgText({
+      content: { '@type': 'messageText', text: { '@type': 'formattedText', text: '🔥🔥🔥🔥🔥', entities: [] } },
+    }), 'tg_1:2')
+    expect(r.isLargeEmoji).toBe(false)
+  })
+
   it('senderId извлекается из messageSenderChat', () => {
     const r = mapMessage(tdMsgText({ sender_id: { '@type': 'messageSenderChat', chat_id: -123456 } }), 'tg_1:2')
     expect(r.senderId).toBe('-123456')

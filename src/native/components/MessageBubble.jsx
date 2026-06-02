@@ -193,13 +193,17 @@ export default function MessageBubble({
         // (ThemePickerModal handleSelect → querySelectorAll('[data-cc-outgoing="true"]')).
         data-cc-outgoing={m.isOutgoing ? 'true' : undefined}
         style={{
-        padding: hasMedia ? 4 : '8px 12px', borderRadius: 12,
-        background: m.isOutgoing ? 'var(--amoled-accent)' : 'var(--amoled-surface-hover)',
+        // v0.95.40: для emoji-only bubble прозрачный фон + меньший padding (Telegram-style).
+        padding: m.isLargeEmoji ? '2px 4px' : (hasMedia ? 4 : '8px 12px'),
+        borderRadius: 12,
+        background: m.isLargeEmoji
+          ? 'transparent'
+          : (m.isOutgoing ? 'var(--amoled-accent)' : 'var(--amoled-surface-hover)'),
         color: m.isOutgoing ? '#fff' : 'var(--amoled-text)',
         fontSize: 14, wordBreak: 'break-word',
-        border: m.isOutgoing ? 'none' : '1px solid rgba(255,255,255,0.06)',
+        border: (m.isLargeEmoji || m.isOutgoing) ? 'none' : '1px solid rgba(255,255,255,0.06)',
         // v0.95.30: shadow читает CSS-переменную — меняется вместе с цветом темы.
-        boxShadow: m.isOutgoing ? '0 0 12px var(--amoled-accent-shadow, rgba(42,171,238,0.15))' : 'none',
+        boxShadow: (m.isOutgoing && !m.isLargeEmoji) ? '0 0 12px var(--amoled-accent-shadow, rgba(42,171,238,0.15))' : 'none',
         // v0.95.30: opacity 0.95 — мягче выглядит, не «пластиково». Эталон Telegram Desktop.
         opacity: 'var(--bubble-opacity, 1)',
       }}>
@@ -328,9 +332,17 @@ export default function MessageBubble({
         {m.mediaType === 'poll' && <div style={{ fontSize: 12, opacity: 0.7 }}>📊 опрос</div>}
 
         {/* v0.87.116: время СБОКУ — для текстовых сообщений (без фото/видео) flex-row */}
+        {/* v0.95.40: isLargeEmoji — текст состоит из 1-3 emoji ИЛИ TDLib
+            messageAnimatedEmoji → рендерим font-size 56px (Telegram-style).
+            Эталоны: Telegram Web K bubbles.ts isAllEmojiBlocks, WhatsApp Web jumbo. */}
         {m.text && !hasMedia ? (
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-            <div style={{ flex: 1, whiteSpace: 'pre-wrap' }}>
+            <div style={{
+              flex: 1, whiteSpace: 'pre-wrap',
+              fontSize: m.isLargeEmoji ? 56 : undefined,
+              lineHeight: m.isLargeEmoji ? '1.1' : undefined,
+              padding: m.isLargeEmoji ? '4px 0' : undefined,
+            }}>
               <FormattedText text={m.text} entities={m.entities} />
             </div>
             <div style={{ fontSize: 10, opacity: 0.7, flexShrink: 0, whiteSpace: 'nowrap', marginBottom: 1 }}>

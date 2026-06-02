@@ -158,14 +158,38 @@ function extractReactions(tdMsg) {
   return out.length > 0 ? out : null
 }
 
+// v0.95.40: regex для проверки «текст состоит ТОЛЬКО из 1-3 emoji» → большой рендер.
+// Pattern u-flag + Extended_Pictographic + ZWJ + variation selectors + skin tones.
+// Эталоны: Telegram Web K bubbles.ts (`isAllEmojiBlocks`), WhatsApp Web jumbo, iMessage tapback.
+// Source: Unicode TR51 Emoji.
+const EMOJI_ONLY_REGEX = /^[\s‍️]*(?:\p{Extended_Pictographic}(?:\u{e0020}-\u{e007f})?(?:\u{1f3fb}-\u{1f3ff})?[\s‍️]*){1,3}$/u
+
+function isEmojiOnlyText(text) {
+  if (!text || typeof text !== 'string') return false
+  const trimmed = text.trim()
+  if (!trimmed || trimmed.length > 24) return false  // 3 emoji + selectors + skin → max ~20 chars
+  try { return EMOJI_ONLY_REGEX.test(trimmed) } catch (_) { return false }
+}
+
 export function mapMessage(tdMsg, chatId, extras = {}) {
   if (!tdMsg) return null
   const content = tdMsg.content || {}
 
   // Текст / caption
-  const formattedText = content.text || content.caption || null
+  // v0.95.40: messageAnimatedEmoji (одиночный анимированный emoji) — отдельный
+  // content type БЕЗ поля .text. У него есть .emoji string (для fallback) и
+  // .animated_emoji.sticker (tgs/lottie — мы не рендерим, как с forum-emoji).
+  // TDLib spec: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message_animated_emoji.html
+  // Без обработки юзер видит ПУСТОЕ сообщение (баг найден по скрину 2 июня 2026).
+  let formattedText = content.text || content.caption || null
+  if (!formattedText && content['@type'] === 'messageAnimatedEmoji') {
+    formattedText = { text: String(content.emoji || ''), entities: [] }
+  }
   const text = formattedText?.text || ''
   const entities = mapEntities(formattedText?.entities)
+  // v0.95.40: флаг для рендера в MessageBubble.jsx с font-size 56px (Telegram-style).
+  // true если messageAnimatedEmoji ИЛИ текст состоит ТОЛЬКО из 1-3 emoji.
+  const isLargeEmoji = content['@type'] === 'messageAnimatedEmoji' || isEmojiOnlyText(text)
 
   const media = extractMediaInfo(content)
   const strippedThumb = extractMinithumbnail(content)
@@ -191,6 +215,8 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
     // Используется в useNewBelowCounter для auto-scroll outgoing с другого устройства.
     // TDLib spec: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message.html
     isSending: !!tdMsg.sending_state,
+    // v0.95.40: рендер большим шрифтом для одиночных/малочисленных emoji.
+    isLargeEmoji,
     isEdited: !!(tdMsg.edit_date && Number(tdMsg.edit_date) > 0),
     mediaType: media.mediaType,
     mediaPreview: media.info.mediaPreview || null,
@@ -340,6 +366,9 @@ export function messagePreview(tdMsg) {
   // Текстовое сообщение или сообщение с caption
   const ftext = content.text || content.caption
   if (ftext?.text) return ftext.text
+
+  // v0.95.40: messageAnimatedEmoji — preview = сам emoji (для списка чатов).
+  if (cn === 'messageAnimatedEmoji' && content.emoji) return String(content.emoji)
 
   // Media-сообщения
   if (cn === 'messagePhoto') return '🖼 Фото'

@@ -73,8 +73,8 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 920,
-    reason: 'v0.95.36: lastAutoScrollAtRef + guard в onAutoScroll + обновление в send-scroll-done (~10 строк) для предотвращения двойного scroll при outgoing с других устройств. v0.95.30: ThemePickerModal state. v0.92.0-v0.92.5: Virtuoso initialTopMostItemIndex + firstItemIndex + handleStartReached/EndReached + tg:messages listener + isRestoringRef. Доменное разбиение — отдельная задача.'
+    ceiling: 960,
+    reason: 'v0.95.40: physicallyAtBottomRef + useStickyBottomOnMedia hook + auto-scroll-completed метрика (~30 строк). v0.95.36: lastAutoScrollAtRef. v0.95.30: ThemePickerModal. v0.92.0-v0.92.5: Virtuoso. Доменное разбиение — отдельная задача.'
   },
   // v0.92.0: useInboxScroll вернулся в стандартный лимит 150 после удаления
   // isRestoringRef guards. Текущий размер 139.
