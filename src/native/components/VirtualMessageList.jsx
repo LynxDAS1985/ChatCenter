@@ -102,6 +102,10 @@ function MessageRow({ item, rowContext }) {
     openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
     onSetReaction,  // v0.95.29
   } = rowContext
+  // v0.95.41: custom emoji premium кэш — извлекаем из store (state.customEmojis)
+  // и пробрасываем в MessageBubble/MessageReactions.
+  const customEmojiCache = store?.customEmojis
+  const onResolveCustomEmojis = store?.resolveCustomEmojis
   const senderBg = senderColorFor(item.senderId)
   const senderAvatar = !item.isOutgoing ? item.senderAvatar : null
   return (
@@ -157,6 +161,8 @@ function MessageRow({ item, rowContext }) {
                 onPhotoOpen={openPhotoWindow}
                 onReplyClick={scrollToMessage}
                 onSetReaction={onSetReaction}
+                customEmojiCache={customEmojiCache}
+                onResolveCustomEmojis={onResolveCustomEmojis}
               />
             )
           ))}

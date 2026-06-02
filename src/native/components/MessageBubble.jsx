@@ -8,6 +8,7 @@ import LinkPreview from './LinkPreview.jsx'
 import VideoTile from './VideoTile.jsx'
 import VoicePlayer from './VoicePlayer.jsx'
 import MessageReactions, { ReactionPicker } from './MessageReactions.jsx'
+import CustomEmojiRenderer from './CustomEmojiRenderer.jsx'
 import { useReadOnScrollAway } from '../hooks/useReadOnScrollAway.js'
 
 // v0.87.118: цвета отправителей — детерминированы по senderId (как в Telegram).
@@ -50,9 +51,20 @@ export default function MessageBubble({
   downloadMedia, getMessage, onPhotoOpen, onReplyClick, readRoot,
   // v0.95.29: реакции (Telegram-style)
   onSetReaction,
+  // v0.95.41: custom emoji premium для реакций и messageAnimatedEmoji.
+  // customEmojiCache — store.customEmojis (Map<id, {url, mime, alt}>).
+  // onResolveCustomEmojis — store.resolveCustomEmojis (batch IPC invoke).
+  customEmojiCache, onResolveCustomEmojis,
 }) {
   // v0.95.29: счётчик render'ов для дубля.
   __ccLogBubbleRender(m)
+  // v0.95.41: для messageAnimatedEmoji с premium-sticker — резолвим один раз при mount.
+  // Если customEmojiId уже в кэше — onResolveCustomEmojis сам отфильтрует (dedup внутри store).
+  useEffect(() => {
+    if (m.animatedEmojiInfo?.customEmojiId && onResolveCustomEmojis) {
+      onResolveCustomEmojis([m.animatedEmojiInfo.customEmojiId])
+    }
+  }, [m.animatedEmojiInfo?.customEmojiId, onResolveCustomEmojis])
   const [menu, setMenu] = useState(false)
   const [mediaUrl, setMediaUrl] = useState(null)
   const [mediaLoading, setMediaLoading] = useState(false)
@@ -343,7 +355,19 @@ export default function MessageBubble({
               lineHeight: m.isLargeEmoji ? '1.1' : undefined,
               padding: m.isLargeEmoji ? '4px 0' : undefined,
             }}>
-              <FormattedText text={m.text} entities={m.entities} />
+              {/* v0.95.41: если messageAnimatedEmoji premium (есть animatedEmojiInfo.customEmojiId)
+                  И custom sticker уже загружен (cache содержит url) — рендерим WebM/WebP 64px.
+                  Иначе fallback на v0.95.40 — обычный текст 56px (FormattedText). */}
+              {m.animatedEmojiInfo?.customEmojiId && customEmojiCache?.[m.animatedEmojiInfo.customEmojiId]?.url ? (
+                <CustomEmojiRenderer
+                  customEmojiId={m.animatedEmojiInfo.customEmojiId}
+                  cache={customEmojiCache}
+                  fallbackEmoji={m.text}
+                  size={64}
+                />
+              ) : (
+                <FormattedText text={m.text} entities={m.entities} />
+              )}
             </div>
             <div style={{ fontSize: 10, opacity: 0.7, flexShrink: 0, whiteSpace: 'nowrap', marginBottom: 1 }}>
               {m.isEdited && <span style={{ marginRight: 3 }}>ред.</span>}
@@ -401,11 +425,15 @@ export default function MessageBubble({
           </div>
         )}
         {/* v0.95.29: реакции на сообщение (Telegram-style) — под текстом bubble */}
+        {/* v0.95.41: пробрасываем customEmojiCache + onResolveCustomEmojis для
+            premium-реакций (reactionTypeCustomEmoji). */}
         {m.reactions && m.reactions.length > 0 && (
           <MessageReactions
             message={m}
             isOutgoing={m.isOutgoing}
             onSetReaction={onSetReaction}
+            customEmojiCache={customEmojiCache}
+            onResolveCustomEmojis={onResolveCustomEmojis}
           />
         )}
       </div>

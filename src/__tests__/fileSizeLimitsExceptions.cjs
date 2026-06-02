@@ -41,12 +41,12 @@ module.exports = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 1260,
-    reason: 'v0.95.29: setReaction store method + расширенный dump outgoing в sendMessage (+15 строк). v0.95.27: лог store-send-message-invoke. v0.95.16: loadTopicMessagesUntil. v0.89.40: IndexedDB cache. Доменное разбиение store — плановый шаг.'
+    ceiling: 1290,
+    reason: 'v0.95.41: resolveCustomEmojis action + state.customEmojis кэш (+25 строк) для premium custom emoji реакций/animated. v0.95.29: setReaction + dump outgoing. v0.95.27: лог store-send-message-invoke. v0.95.16: loadTopicMessagesUntil. v0.89.40: IndexedDB cache. Доменное разбиение store — плановый шаг.'
   },
   'main/native/backends/tdlibBackend.js': {
-    ceiling: 740,
-    reason: 'v0.95.29: setReaction method (+35 строк) — addMessageReaction/removeMessageReaction TDLib. v0.95.16: getIterativeUntilTopic. v0.95.15: getIterativeUntil. v0.89.25: один backend для auth/chats/messages/media/forum.'
+    ceiling: 770,
+    reason: 'v0.95.41: customEmoji.resolve метод (+25 строк) — резолв premium custom emoji через resolveCustomEmojiIds. v0.95.29: setReaction. v0.95.16: getIterativeUntilTopic. v0.95.15: getIterativeUntil.'
   },
   'main/native/backends/tdlibClient.js': {
     ceiling: 650,

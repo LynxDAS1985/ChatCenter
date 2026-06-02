@@ -217,4 +217,57 @@ describe('prefersReducedMotion', () => {
       globalThis.window.matchMedia = originalMatch
     }
   })
+
+  // v0.95.41: расширенные интеграционные тесты — полный поток smoothScrollTo
+  // при включённом prefers-reduced-motion. Помечает W3C WCAG 2.2 Animation from
+  // Interactions standard. Эталон: MDN mock matchMedia pattern (vi.spyOn).
+  describe('v0.95.41: smoothScrollTo интеграция с reduced-motion', () => {
+    let originalMatchMedia
+    beforeEach(() => { originalMatchMedia = globalThis.window?.matchMedia })
+    afterEach(() => {
+      if (globalThis.window && originalMatchMedia) {
+        globalThis.window.matchMedia = originalMatchMedia
+      }
+    })
+
+    function mockMatchMedia(matches) {
+      globalThis.window.matchMedia = vi.fn().mockImplementation((query) => ({
+        matches: !!matches, media: query, onchange: null,
+        addEventListener: vi.fn(), removeEventListener: vi.fn(),
+        addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
+      }))
+    }
+
+    it('reduce=true → smoothScrollTo делает INSTANT scroll + onComplete', () => {
+      mockMatchMedia(true)
+      const onComplete = vi.fn()
+      const el = { scrollHeight: 2000, clientHeight: 600, scrollTop: 0 }
+      smoothScrollTo(el, 1000, { duration: 500, onComplete })
+      expect(el.scrollTop).toBe(1000)  // instant, без анимации
+      expect(onComplete).toHaveBeenCalledOnce()
+    })
+
+    it('reduce=true + большая дистанция + twoPhase → всё равно instant', () => {
+      mockMatchMedia(true)
+      const el = { scrollHeight: 10000, clientHeight: 600, scrollTop: 0 }
+      smoothScrollTo(el, 9000, { duration: 1000, twoPhase: true })
+      // reduce срабатывает ДО twoPhase ветки → instant
+      expect(el.scrollTop).toBe(9000)
+    })
+
+    it('reduce=false → smoothScrollTo НЕ делает instant (анимация запущена через rAF)', () => {
+      mockMatchMedia(false)
+      const el = { scrollHeight: 2000, clientHeight: 600, scrollTop: 0 }
+      const cancel = smoothScrollTo(el, 1000, { duration: 200 })
+      // scrollTop пока 0 — rAF не запускается синхронно
+      expect(el.scrollTop).toBe(0)
+      cancel()  // защита от висящих rAF
+    })
+
+    it('matchMedia бросает исключение → не падает, smoothScrollTo продолжает работать', () => {
+      globalThis.window.matchMedia = vi.fn(() => { throw new Error('forbidden') })
+      const el = { scrollHeight: 2000, clientHeight: 600, scrollTop: 0 }
+      expect(() => smoothScrollTo(el, 1000)).not.toThrow()
+    })
+  })
 })

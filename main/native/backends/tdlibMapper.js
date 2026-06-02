@@ -142,10 +142,11 @@ function extractReactions(tdMsg) {
     if (t['@type'] === 'reactionTypeEmoji') {
       emoji = String(t.emoji || '')
     } else if (t['@type'] === 'reactionTypeCustomEmoji') {
-      // Premium custom emoji — пока показываем placeholder. Для полной поддержки
-      // надо resolveTopicEmojis-аналог. Отложено.
+      // v0.95.41: Premium custom emoji — customEmojiId извлекаем, UI резолвит
+      // через tg:resolve-custom-emojis IPC → CustomEmojiRenderer (video/img/alt).
+      // emoji = '⭐' остаётся как fallback пока сticker не загрузился.
       customEmojiId = String(t.custom_emoji_id || '')
-      emoji = '⭐'  // placeholder для custom premium emoji
+      emoji = '⭐'
     }
     if (!emoji) continue
     out.push({
@@ -190,6 +191,19 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
   // v0.95.40: флаг для рендера в MessageBubble.jsx с font-size 56px (Telegram-style).
   // true если messageAnimatedEmoji ИЛИ текст состоит ТОЛЬКО из 1-3 emoji.
   const isLargeEmoji = content['@type'] === 'messageAnimatedEmoji' || isEmojiOnlyText(text)
+  // v0.95.41: для messageAnimatedEmoji вытаскиваем sticker file_id + customEmojiId.
+  // UI после рендера резолвит через tg:resolve-custom-emojis → CustomEmojiRenderer.
+  // sticker.full_type.custom_emoji_id — если premium-emoji (есть sticker).
+  // Для обычных Unicode emoji у TDLib animated_emoji.sticker присутствует sticker
+  // но без custom_emoji_id (TGS preview). Пока fallback на static (v0.95.40).
+  let animatedEmojiInfo = null
+  if (content['@type'] === 'messageAnimatedEmoji') {
+    const sticker = content.animated_emoji?.sticker
+    const customEmojiId = sticker?.full_type?.custom_emoji_id
+    if (customEmojiId) {
+      animatedEmojiInfo = { customEmojiId: String(customEmojiId) }
+    }
+  }
 
   const media = extractMediaInfo(content)
   const strippedThumb = extractMinithumbnail(content)
@@ -217,6 +231,8 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
     isSending: !!tdMsg.sending_state,
     // v0.95.40: рендер большим шрифтом для одиночных/малочисленных emoji.
     isLargeEmoji,
+    // v0.95.41: info для CustomEmojiRenderer (premium animated emoji).
+    animatedEmojiInfo,
     isEdited: !!(tdMsg.edit_date && Number(tdMsg.edit_date) > 0),
     mediaType: media.mediaType,
     mediaPreview: media.info.mediaPreview || null,

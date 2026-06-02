@@ -328,6 +328,14 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
     return result
   })
 
+  // v0.95.41: резолв custom emoji premium для реакций и messageAnimatedEmoji.
+  // Renderer вызывает после получения сообщений с reaction.customEmojiId.
+  // Возвращает {ok, emojis: {[id]: {url, mime, alt}}} — UI рендерит через
+  // CustomEmojiRenderer.jsx (video/img/fallback).
+  handle('tg:resolve-custom-emojis', async ({ emojiIds, accountId } = {}) => {
+    return await backend.customEmoji.resolve({ emojiIds, accountId })
+  })
+
   // ────────────────────────────────────────────────────────────────────
   // EVENT BRIDGE — вынесено в tdlibIpcBridge.js (v0.89.34)
   // ────────────────────────────────────────────────────────────────────

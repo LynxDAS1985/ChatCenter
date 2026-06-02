@@ -8,15 +8,26 @@
 //
 // Эталон: Telegram Web K (chat/reactionElement.ts), Telegram Desktop (reactions.cpp).
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createReactionThrottler } from '../utils/reactionThrottle.js'
+import CustomEmojiRenderer from './CustomEmojiRenderer.jsx'
 
 // Стандартный набор быстрых реакций Telegram (топ-8 популярных).
 export const QUICK_REACTIONS = ['👍', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🤯']
 
 // Отображение существующих реакций под сообщением.
-// reactions: [{ emoji, count, chosen }]
-export function ReactionsList({ reactions, onToggle, isOutgoing }) {
+// reactions: [{ emoji, count, chosen, customEmojiId? }]
+// v0.95.41: customEmojiCache + onResolve — если у реакции есть customEmojiId,
+// рендерим через CustomEmojiRenderer (video/img/fallback), а не unicode '⭐'.
+export function ReactionsList({ reactions, onToggle, isOutgoing, customEmojiCache, onResolveCustomEmojis }) {
+  // v0.95.41: при первом mount/изменении reactions резолвим missing customEmojiIds.
+  // useEffect — батч-вызов raз, кэш в store предотвращает повторные invokes.
+  useEffect(() => {
+    if (!Array.isArray(reactions) || !onResolveCustomEmojis) return
+    const ids = reactions.map(r => r.customEmojiId).filter(Boolean)
+    if (ids.length > 0) onResolveCustomEmojis(ids)
+  }, [reactions, onResolveCustomEmojis])
+
   if (!Array.isArray(reactions) || reactions.length === 0) return null
 
   return (
@@ -27,7 +38,7 @@ export function ReactionsList({ reactions, onToggle, isOutgoing }) {
     }}>
       {reactions.map((r) => (
         <button
-          key={r.emoji}
+          key={r.customEmojiId || r.emoji}
           onClick={(e) => {
             e.stopPropagation()
             onToggle?.(r.emoji, r.chosen ? 'remove' : 'add')
@@ -50,7 +61,17 @@ export function ReactionsList({ reactions, onToggle, isOutgoing }) {
             userSelect: 'none',
           }}
         >
-          <span style={{ fontSize: 14, lineHeight: 1 }}>{r.emoji}</span>
+          {/* v0.95.41: customEmojiId → CustomEmojiRenderer, иначе unicode */}
+          {r.customEmojiId ? (
+            <CustomEmojiRenderer
+              customEmojiId={r.customEmojiId}
+              cache={customEmojiCache}
+              fallbackEmoji={r.emoji}
+              size={16}
+            />
+          ) : (
+            <span style={{ fontSize: 14, lineHeight: 1 }}>{r.emoji}</span>
+          )}
           {r.count > 0 && <span>{r.count}</span>}
         </button>
       ))}
@@ -108,7 +129,9 @@ export function ReactionPicker({ onSelect, onClose, isOutgoing }) {
 }
 
 // Объединённый default export — компонент, который ставит обе вещи.
-export default function MessageReactions({ message, isOutgoing, onSetReaction }) {
+// v0.95.41: customEmojiCache + onResolveCustomEmojis пробрасываются из MessageBubble
+// через props (store.customEmojis + store.resolveCustomEmojis).
+export default function MessageReactions({ message, isOutgoing, onSetReaction, customEmojiCache, onResolveCustomEmojis }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const reactions = message?.reactions
   // v0.95.31: leading-edge throttle 200мс на повторные клики одной реакции.
@@ -128,6 +151,8 @@ export default function MessageReactions({ message, isOutgoing, onSetReaction })
         reactions={reactions}
         onToggle={handleToggle}
         isOutgoing={isOutgoing}
+        customEmojiCache={customEmojiCache}
+        onResolveCustomEmojis={onResolveCustomEmojis}
       />
       {pickerOpen && (
         <ReactionPicker

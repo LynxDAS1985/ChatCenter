@@ -21,6 +21,7 @@ import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccou
 import { cleanupTgMedia } from './tgMediaCleanup.js'
 import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.4
 import { resolveTopicEmojis } from './tdlibForumEmoji.js'  // v0.91.6
+import { resolveCustomEmojiIds } from './tdlibCustomEmoji.js'  // v0.95.41
 
 // Wrapper для invoke: возвращает { ok, result?, error?, code? } вместо throw.
 // `code` сохраняем как есть — потребители различают «404=end-of-list» от других.
@@ -714,6 +715,34 @@ export function createTdlibBackend(opts = {}) {
       // Возвращаем NOT_IMPL чтобы было ясно если кто-то его дёрнет.
       async getTopicMessages(_params) {
         return { ok: false, error: 'forum.getTopicMessages: use messages.getTopic instead', messages: [] }
+      },
+    },
+    // v0.95.41: резолв custom emoji premium для реакций и messageAnimatedEmoji.
+    // Паттерн идентичен forum.getTopics → resolveTopicEmojis, но возвращает Map
+    // (не мутирует topics). UI вызывает после получения сообщений с customEmojiId.
+    // ОБЯЗАТЕЛЬНО прочитать перед правкой: .memory-bank/mistakes/outgoing-two-cases.md
+    customEmoji: {
+      async resolve(params) {
+        const ids = Array.isArray(params?.emojiIds) ? params.emojiIds : []
+        if (ids.length === 0) return { ok: true, emojis: {} }
+        // Если accountId не указан — берём первый активный (custom emoji одинаковы
+        // для всех аккаунтов на сервере Telegram).
+        let accountId = params?.accountId
+        if (!accountId) {
+          const accs = manager.listAccounts ? manager.listAccounts() : []
+          accountId = accs[0]
+        }
+        if (!accountId) return { ok: false, error: 'no account', emojis: {} }
+        const client = manager.getClient ? manager.getClient(accountId) : null
+        if (!client) return { ok: false, error: 'no client', emojis: {} }
+        try {
+          const emojis = await resolveCustomEmojiIds(ids, {
+            client, manager, accountId, userDataDir,
+          })
+          return { ok: true, emojis }
+        } catch (e) {
+          return { ok: false, error: e?.message || String(e), emojis: {} }
+        }
       },
     },
     _cancelDownload: (params) => cancelDownload({ manager, ...params }),

@@ -1234,6 +1234,35 @@ export default function useNativeStore() {
     return r
   }, [])
 
+  // v0.95.41: резолв custom emoji premium (реакции + messageAnimatedEmoji).
+  // Хранит in-memory кэш в state.customEmojis: {[id]: {url, mime, alt}}.
+  // UI вызывает resolveCustomEmojis([id1, id2, ...]) → after-resolve кэш обновлён,
+  // CustomEmojiRenderer читает кэш через useStore. Дедуп уже-в-кэше внутри.
+  // ОБЯЗАТЕЛЬНО прочитать перед правкой: .memory-bank/mistakes/outgoing-two-cases.md
+  const resolveCustomEmojis = useCallback(async (ids) => {
+    if (!Array.isArray(ids) || ids.length === 0) return
+    const current = stateRef.current.customEmojis || {}
+    // Фильтруем те что уже в кэше — экономит batch invoke
+    const missing = []
+    const seen = new Set()
+    for (const rawId of ids) {
+      const id = String(rawId || '')
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      if (!current[id]) missing.push(id)
+    }
+    if (missing.length === 0) return
+    try {
+      const r = await window.api?.invoke('tg:resolve-custom-emojis', { emojiIds: missing })
+      if (r?.ok && r.emojis) {
+        setState(s => ({
+          ...s,
+          customEmojis: { ...(s.customEmojis || {}), ...r.emojis },
+        }))
+      }
+    } catch (_) {}
+  }, [])
+
   return {
     ...state,
     setMode, setActiveAccount, setActiveChat, setChatFilter, closeForumTopics,
@@ -1242,6 +1271,6 @@ export default function useNativeStore() {
     sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage, setReaction,
     getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, markTopicRead, setTyping,
-    getCleanupStats, setMute,
+    getCleanupStats, setMute, resolveCustomEmojis,
   }
 }
