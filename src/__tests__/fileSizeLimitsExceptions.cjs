@@ -49,8 +49,8 @@ module.exports = {
     reason: 'v0.95.29: setReaction method (+35 строк) — addMessageReaction/removeMessageReaction TDLib. v0.95.16: getIterativeUntilTopic. v0.95.15: getIterativeUntil. v0.89.25: один backend для auth/chats/messages/media/forum.'
   },
   'main/native/backends/tdlibClient.js': {
-    ceiling: 570,
-    reason: 'v0.95.29: user объект в getAccountChats для user.status (+5 строк). v0.89.25: TdlibClientManager — единый клиент.'
+    ceiling: 650,
+    reason: 'v0.95.38: case updateMessageSendSucceeded + updateMessageSendFailed (~40 строк) — фикс дубля сообщений через emit message:send-succeeded. ОБЯЗАТЕЛЬНО прочитать mistakes/outgoing-two-cases.md перед правкой. v0.95.29: user объект в getAccountChats. v0.89.25: TdlibClientManager — единый клиент.'
   },
   // v0.88.x: профильные тесты v0.88.x вынесены в nativeStoreUnreadPrefetch.vitest.jsx (218 строк).
   // Здесь остались регрессионные тесты markRead Telegram-style, forum topics refresh, unread windows,
@@ -102,11 +102,11 @@ module.exports = {
   // события одного кадра в один setState. Доменное разбиение IPC handlers — отдельная
   // плановая задача (handoff-code-limits.md).
   'src/native/store/nativeStoreIpc.js': {
-    ceiling: 660,
-    reason: 'v0.95.31: множественный typing — Map<userId, {senderName, at}> в state.typing[chatId] (раньше один юзер). Расширен tg:typing handler (~30 строк добавлено). v0.95.26: комментарий-предупреждение в tg:new-message про правило v0.87.41. v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers. Доменное разбиение IPC handlers — отдельный плановый шаг.'
+    ceiling: 700,
+    reason: 'v0.95.38: новый addHandler("tg:send-succeeded") — фикс дубля сообщений (~25 строк). v0.95.31: множественный typing handler. v0.95.26: комментарий-предупреждение про правило v0.87.41. v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers. Доменное разбиение IPC handlers — отдельный плановый шаг.'
   },
   'src/native/store/nativeStore.vitest.jsx': {
-    ceiling: 800,
-    reason: 'v0.95.26: +4 регресс-теста на tg:new-message handler — защита от 47-дневного бага «обнуление unreadCount для активного чата» (~85 строк). Все 4 теста критичны — отдельно проверяют активный/неактивный чат, outgoing, server sync.'
+    ceiling: 900,
+    reason: 'v0.95.38: +5 регресс-тестов tg:send-succeeded handler + tg:new-message dedup (~100 строк) — критичная защита от регрессии дубля сообщений. См. mistakes/outgoing-two-cases.md. v0.95.26: +4 теста на 47-дневный баг unreadCount.'
   }
 }

@@ -53,6 +53,12 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
   subscribe('message:new', ({ chatId, message }) => ({
     channel: 'tg:new-message', data: { chatId, message },
   }))
+  // v0.95.38: server ACK после отправки — заменяем provisional message на финальный
+  // (TDLib меняет id). Корень исправления «дубля сообщений» — см.
+  // .memory-bank/mistakes/outgoing-two-cases.md (Известная незакрытая проблема).
+  subscribe('message:send-succeeded', ({ chatId, oldId, newMessage }) => ({
+    channel: 'tg:send-succeeded', data: { chatId, oldId, newMessage },
+  }))
   subscribe('message:edited', ({ chatId, messageId, editDate }) => ({
     channel: 'tg:message-edited', data: { chatId, messageId, editDate },
   }))

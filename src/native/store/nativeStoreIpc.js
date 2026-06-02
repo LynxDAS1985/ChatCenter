@@ -612,6 +612,34 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     }))
   })
 
+  // v0.95.38: фикс «дубля сообщений после отправки».
+  // TDLib шлёт updateMessageSendSucceeded когда сервер подтвердил отправку —
+  // меняет id с provisional (огромное число) на финальный. БЕЗ этого handler:
+  // - state.messages содержит сообщение с provisional id
+  // - При loadNewerMessages backend приносит финальную копию с другим id
+  // - dedup по id не срабатывает (id разные) → ДУБЛЬ виден юзеру
+  // ОБЯЗАТЕЛЬНО ПРОЧИТАТЬ: .memory-bank/mistakes/outgoing-two-cases.md
+  // Эталон: Telegram Web K applyMessageUpdate, Telegram Desktop History::idChanged().
+  addHandler('tg:send-succeeded', ({ chatId, oldId, newMessage }) => {
+    setState(s => {
+      const list = s.messages[chatId]
+      if (!list) return s
+      const idx = list.findIndex(m => String(m.id) === String(oldId))
+      if (idx === -1) return s
+      const next = [...list]
+      next[idx] = newMessage
+      return { ...s, messages: { ...s.messages, [chatId]: next } }
+    })
+    try {
+      logNativeScroll('store-send-succeeded', {
+        chatId,
+        oldId: String(oldId),
+        newId: newMessage?.id != null ? String(newMessage.id) : null,
+        sendingState: newMessage?.isSending ? 'sending' : 'sent',
+      })
+    } catch (_) {}
+  })
+
   addHandler('tg:read', ({ chatId, outgoing, stillUnread, maxId }) => {
     if (outgoing) {
       // v0.87.17: собеседник прочитал наши сообщения до maxId → ставим isRead=true

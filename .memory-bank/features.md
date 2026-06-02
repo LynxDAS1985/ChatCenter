@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.37 (2 июня 2026)
+## Текущая версия: v0.95.38 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.31.md`](./archive/features-v0.95.31.md) | v0.95.31 (аккаунты вниз + drag-n-drop + multi-user typing + throttle реакций; стабилизировано v0.95.34+) | ~3 КБ |
 | [`archive/features-v0.95.30.md`](./archive/features-v0.95.30.md) | v0.95.30 (плавная auto-scroll + 5 цветовых тем + dropdown + opacity 0.95; стабилизировано v0.95.33-34) | ~3 КБ |
 | [`archive/features-v0.95.29.md`](./archive/features-v0.95.29.md) | v0.95.29 (реакции 👍❤️🔥 + Telegram-style header + General 📢 + render-counter; стабилизировано v0.95.31-34) | ~5 КБ |
 | [`archive/features-v0.95.28.md`](./archive/features-v0.95.28.md) | v0.95.28 (Telegram-style auto-scroll к новому + ↓N без «слепой зоны» Schmitt; стабилизировано v0.95.31) | ~4 КБ |
@@ -34,6 +35,49 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.38 — Фикс дубля сообщений + ⏳ индикатор отправки + регресс-тесты dedup
+
+КРИТИЧНЫЙ production-фикс «дубля сообщений после отправки» (видел юзер на скриншоте v0.95.37). Корень был доказан в v0.95.37 анализе (`mistakes/outgoing-two-cases.md`).
+
+**(1) updateMessageSendSucceeded handler** — корень дубля устранён ([tdlibClient.js](main/native/backends/tdlibClient.js)):
+- Раньше: `_handleUpdate()` switch НЕ обрабатывал `'updateMessageSendSucceeded'`. После server ACK TDLib менял id с provisional (~100_000_000_000) на финальный (~12_345). Store оставался с provisional, при следующем `loadNewerMessages` backend приносил финальную копию с другим id → dedup по id не срабатывал → **дубль**.
+- Решение: добавлены case `'updateMessageSendSucceeded'` и `'updateMessageSendFailed'`. Эмитят `'message:send-succeeded'` event с `{accountId, chatId, oldId, newMessage}`. senderName извлекается из cache как в `_handleNewMessage` для UI consistency.
+- [tdlibIpcBridge.js](main/native/tdlibIpcBridge.js): subscribe → канал `'tg:send-succeeded'`.
+- [nativeStoreIpc.js](src/native/store/nativeStoreIpc.js): handler `addHandler('tg:send-succeeded')` — `setState` с `findIndex(m => m.id === oldId)` + replace на newMessage. No-op если oldId не найден или chatId не существует (защита от race condition).
+- Лог `store-send-succeeded` для диагностики (oldId / newId / sendingState).
+- Эталоны: Telegram Web K `applyMessageUpdate`, Telegram Desktop `History::idChanged()`.
+
+**(2) ⏳ Индикатор «отправляется»** ([MessageBubble.jsx](src/native/components/MessageBubble.jsx)) — 3 состояния check-mark:
+- `isSending=true` → `⏳` (opacity 0.6, title «Отправляется...»)
+- `isRead=true` → `✓✓` (как раньше)
+- иначе → `✓` (как раньше)
+- Юзер видит что сообщение в процессе отправки, не «застряло». После updateMessageSendSucceeded → state обновлён → isSending=false → перерисовка → `⏳` → `✓`. Эталон: Telegram Desktop часики, Telegram Web K rotating circle.
+
+**(3) Регресс-тесты dedup** ([nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) +5 тестов):
+- `tg:send-succeeded` заменяет provisional → финальный, длина списка не меняется
+- `oldId не найден` → no-op (state не меняется)
+- `chatId ghost` → не падает + state не меняется
+- `tg:new-message` dedup: повторный emit с тем же id → обновляет, НЕ дублирует
+- `3 события одного id` → длина списка остаётся 1
+- [tdlibEmitContracts.vitest.js](src/__tests__/tdlibEmitContracts.vitest.js) +2: bridge updateMessageSendSucceeded и SendFailed → правильный emit.
+
+**(4) Static guard на ссылки в mistakes/outgoing-two-cases.md** ([modernPatternsGuard.test.cjs](src/__tests__/modernPatternsGuard.test.cjs) F.):
+- 4 файла-handler'а (`useNewBelowCounter.js`, `nativeStoreIpc.js`, `tdlibClient.js`, `tdlibIpcBridge.js`) ОБЯЗАНЫ содержать в комментариях ссылку на `outgoing-two-cases.md`.
+- Защита: если кто-то правит outgoing-логику и удаляет ссылку — тест падает с инструкцией прочитать mistakes-файл. Гарантирует что будущий разработчик/агент увидит ловушку «2 разных случая outgoing».
+
+**Конфликты проверены** ✅:
+- contiguity check tg:new-message (v0.95.0) — send-succeeded не вставляет, только заменяет. OK.
+- unreadCount (v0.95.26) — outgoing никогда не инкрементит. send-succeeded не трогает unreadCount. OK.
+- useNewBelowCounter seenOutgoingIdsRef (v0.95.37) — send-succeeded в РАЗНОМ канале (tg:send-succeeded), не задевает counter. OK.
+- handleReplySend send-scroll-done (50мс) — без изменений, продолжает работать. OK.
+- React re-render — 1 setState на 1 сообщение, минимально.
+
+**Производительность**: 0 overhead (1 setState на ~300мс при отправке, не на каждый кадр).
+
+**Регрессия**: lint 0, vitest 930/930 (+7), modernPatternsGuard 22/22 (+4), fileSizeLimits 316/316, check-memory ✅.
 
 ---
 
@@ -151,39 +195,7 @@
 
 ### v0.95.31 — Аккаунты вниз + Drag-n-drop + множественный typing + throttle реакций
 
-Структурный релиз — 3 фичи по запросу юзера. Изменения в main (tdlibClient.js, tdlibIpcBridge.js) минимальные — добавлено поле senderName в event chat:typing.
-
-**1. Аккаунты вниз левой колонки + Drag-n-drop** — новый модуль [accountOrder.js](src/native/utils/accountOrder.js):
-- `loadAccountOrder/saveAccountOrder` — localStorage `cc-account-order` (массив id).
-- `applyAccountOrder(accounts, order)` — переставляет аккаунты по сохранённому порядку. Новые (не в order) — В КОНЕЦ (как Telegram Desktop / Slack workspace).
-- `moveAccount(accounts, from, to)` — immutable перестановка, возвращает новый порядок ids.
-- В [NativeApp.jsx](src/native/NativeApp.jsx) `.native-sidebar` теперь flex-column с `<div flex:1>` spacer наверху — аккаунты прижаты ВНИЗ (стандарт Telegram Desktop multi-account, Slack workspace switcher, Discord servers).
-- HTML5 native drag-n-drop: `draggable + onDragStart/onDragOver/onDragEnd` без библиотек. Тащимый аккаунт — opacity 0.4, drop target — dashed accent outline. Cursor: grab → grabbing.
-
-**2. Множественный typing-индикатор в header** — новый чистый util [formatTypingUsers.js](src/native/utils/formatTypingUsers.js):
-- Принимает `{[userId]: {senderName, at}}` Map → возвращает строку «Иван печатает...» (1) / «Иван и Маша печатают...» (2) / «Иван, Маша и Петя печатают...» (3) / «N человек печатают...» (4+).
-- TYPING_TIMEOUT_MS = 6.5с — отфильтровывает истёкшие записи (TDLib шлёт updateChatAction каждые 5-6с).
-- Backend [tdlibClient.js](main/native/backends/tdlibClient.js) — в event `chat:typing` добавлен `senderName` через userCache.
-- IPC [tdlibIpcBridge.js](main/native/tdlibIpcBridge.js) — пробрасывает senderName до renderer.
-- Store [nativeStoreIpc.js](src/native/store/nativeStoreIpc.js) — handler `tg:typing` теперь хранит Map по userId (`state.typing[chatId][userId] = {senderName, at}`). Раньше — один юзер. Истечение 6.5с с очисткой только своего userId (другие не страдают).
-- [formatChatStatus.js](src/native/utils/formatChatStatus.js) расширен опцией `typingText` — перебивает старый bool `isTyping` если передана строка. Backward compat: `isTyping=true` без `typingText` → 'печатает...'.
-- [InboxMode.jsx](src/native/modes/InboxMode.jsx) — `typingText = formatTypingUsers(typingMap)`, прокидывается в InboxChatPanel.
-- [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx) — `formatChatStatus(activeChat, { isTyping, typingText })`.
-
-**3. Throttle быстрых реакций (200мс leading-edge)** — новый util [reactionThrottle.js](src/native/utils/reactionThrottle.js):
-- `createReactionThrottler(intervalMs=200)` → `throttle(key, fn)`. Первый клик идёт МГНОВЕННО (UX-feedback), последующие в течение 200мс на тот же key — игнорируются.
-- Key = `${msgId}:${emoji}` — независимая блокировка для каждой комбинации (разные emoji ставятся параллельно).
-- Защита от FLOOD_WAIT (TDLib rate-limit на addMessageReaction/removeMessageReaction).
-- Эталоны: Discord leading throttle 250мс, Slack 200мс, Telegram Desktop guard в reactions.cpp.
-- [MessageReactions.jsx](src/native/components/MessageReactions.jsx) `handleToggle` оборачивает `onSetReaction` через `throttleRef.current(key, () => ...)`.
-
-**Эталоны** (2026): Telegram Desktop multi-account (info_top_bar.cpp), Slack workspace switcher, Discord servers, Telegram Web K chatBubbles.ts (typing aggregation), Telegram Desktop reactions.cpp (FLOOD_WAIT guard).
-
-**Тесты** (+32 unit): accountOrder (13: load/save/applyOrder/moveAccount/clamp), formatTypingUsers (11: 1/2/3/4+ user, истёкшие, пустое имя), reactionThrottle (8: leading-edge, разные key, спам→1 вызов).
-
-**НЕ менялось**: backends/tdlibBackend.js, tdlibMapper.js, main процесс остальное, реакции v0.95.29 (throttle wrapper), тема v0.95.30, markRead (v0.87.41/v0.95.26), Schmitt-trigger (v0.95.2), useNewBelowCounter (v0.95.28).
-
-**Регрессия**: lint 0, vitest +32, fileSizeLimits ✅, check-memory ✅.
+Структурный UX-релиз: аккаунты вниз левой колонки (Telegram Desktop / Slack паттерн) с HTML5 drag-n-drop через localStorage, множественный typing «Иван и Маша печатают...» (расширение `state.typing[chatId]` до Map<userId>), throttle реакций 200мс leading-edge (защита от FLOOD_WAIT). +32 unit-теста (accountOrder/formatTypingUsers/reactionThrottle). Полный текст: [`archive/features-v0.95.31.md`](./archive/features-v0.95.31.md).
 
 ---
 

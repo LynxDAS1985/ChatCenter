@@ -95,6 +95,64 @@ describe('tg:read — updateChatReadOutbox bridge', () => {
   })
 })
 
+// v0.95.38: фикс «дубля сообщений после server ACK».
+// Корень: tdlibClient.js не обрабатывал updateMessageSendSucceeded — TDLib менял
+// id с provisional на финальный, но store не знал → следующий loadNewerMessages
+// приносил финал → дубль (dedup по id, id разные). См. mistakes/outgoing-two-cases.md
+describe('tg:send-succeeded — updateMessageSendSucceeded bridge (v0.95.38)', () => {
+  it('updateMessageSendSucceeded → emit "tg:send-succeeded" с oldId + newMessage', () => {
+    const { mockClient, sendToRenderer } = setup()
+    sendToRenderer.mockClear()
+    mockClient.emit('update', {
+      '@type': 'updateMessageSendSucceeded',
+      old_message_id: 100000000001,
+      message: {
+        '@type': 'message',
+        id: 12345,
+        chat_id: -1001,
+        sender_id: { '@type': 'messageSenderUser', user_id: 42 },
+        is_outgoing: true,
+        date: 1715000000,
+        content: { '@type': 'messageText', text: { text: 'test' } },
+      },
+    })
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:send-succeeded', expect.objectContaining({
+      chatId: 'tg_main:-1001',
+      oldId: '100000000001',
+    }))
+    // newMessage содержит финальный id и isSending=false (sending_state отсутствует)
+    const call = sendToRenderer.mock.calls.find(c => c[0] === 'tg:send-succeeded')
+    expect(call[1].newMessage.id).toBe('12345')
+    expect(call[1].newMessage.isSending).toBe(false)
+    expect(call[1].newMessage.isOutgoing).toBe(true)
+  })
+
+  it('updateMessageSendFailed → тоже emit "tg:send-succeeded" (UI обновляет статус)', () => {
+    const { mockClient, sendToRenderer } = setup()
+    sendToRenderer.mockClear()
+    mockClient.emit('update', {
+      '@type': 'updateMessageSendFailed',
+      old_message_id: 100000000002,
+      message: {
+        '@type': 'message',
+        id: 100000000002,
+        chat_id: -1001,
+        sender_id: { '@type': 'messageSenderUser', user_id: 42 },
+        is_outgoing: true,
+        sending_state: { '@type': 'messageSendingStateFailed' },
+        date: 1715000000,
+        content: { '@type': 'messageText', text: { text: 'failed' } },
+      },
+    })
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:send-succeeded', expect.objectContaining({
+      oldId: '100000000002',
+    }))
+    // sending_state=Failed → isSending=true (наш mapper маппит !!sending_state)
+    const call = sendToRenderer.mock.calls.find(c => c[0] === 'tg:send-succeeded')
+    expect(call[1].newMessage.isSending).toBe(true)
+  })
+})
+
 describe('tg:sender-avatar — user:avatar bridge (без chatId)', () => {
   it('emit формата {senderId, avatarUrl} — UI iterates все чаты', () => {
     const { mgr, sendToRenderer } = setup()

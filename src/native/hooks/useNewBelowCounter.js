@@ -1,6 +1,12 @@
 // v0.87.42: считал «новые сообщения снизу» через изменение lastMsgId массива.
 // v0.91.3: ПЕРЕПИСАНО на event-based подход.
 //
+// ⚠ ОБЯЗАТЕЛЬНО ПРОЧИТАТЬ ПЕРЕД ПРАВКОЙ:
+// .memory-bank/mistakes/outgoing-two-cases.md — outgoing-сообщения бывают
+// «свой echo (sending_state=pending)» и «своё с другого устройства
+// (sending_state=null)». НЕ блокируй ВСЕ outgoing — это критичный production-баг
+// (v0.95.36 фикс).
+//
 // Старая проблема (v0.87.42 → v0.91.2):
 //   Hook реагировал на массив `messages`. Любое изменение массива (replace при
 //   initial-load, prepend при load-older, append-newer при prefetch) могло

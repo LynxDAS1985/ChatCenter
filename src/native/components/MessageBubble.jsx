@@ -336,7 +336,16 @@ export default function MessageBubble({
             <div style={{ fontSize: 10, opacity: 0.7, flexShrink: 0, whiteSpace: 'nowrap', marginBottom: 1 }}>
               {m.isEdited && <span style={{ marginRight: 3 }}>ред.</span>}
               {new Date(m.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
-              {m.isOutgoing && <span style={{ marginLeft: 3, fontSize: 11 }} title={m.isRead ? 'Прочитано' : 'Отправлено'}>{m.isRead ? '✓✓' : '✓'}</span>}
+              {/* v0.95.38: 3 состояния для outgoing — ⏳ pending / ✓ sent / ✓✓ read.
+                  ⏳ показывается пока TDLib sending_state != null (свой локальный echo
+                  до server ACK). Эталон: Telegram Desktop часики, Telegram Web K
+                  rotating circle. После updateMessageSendSucceeded → isSending=false → ✓. */}
+              {m.isOutgoing && (
+                <span style={{ marginLeft: 3, fontSize: 11, opacity: m.isSending ? 0.6 : 1 }}
+                  title={m.isSending ? 'Отправляется...' : (m.isRead ? 'Прочитано' : 'Отправлено')}>
+                  {m.isSending ? '⏳' : (m.isRead ? '✓✓' : '✓')}
+                </span>
+              )}
             </div>
           </div>
         ) : (

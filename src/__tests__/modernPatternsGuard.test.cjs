@@ -220,6 +220,34 @@ MODAL_FILES_NO_BLUR.forEach((file) => {
   })
 })
 
+// ──────────────────────────────────────────────────────────────────
+// F. message handler файлы должны ссылаться на mistakes/outgoing-two-cases.md
+//    в комментариях — чтобы при правке агент/разработчик гарантированно прочитал
+//    ловушку «outgoing — 2 разных случая» (свой echo vs другое устройство).
+//    История: v0.95.28 → v0.95.37, 8 итераций исправлений outgoing-логики.
+// ──────────────────────────────────────────────────────────────────
+
+const MESSAGE_HANDLER_FILES_MUST_REF_MISTAKES = [
+  'src/native/hooks/useNewBelowCounter.js',
+  'src/native/store/nativeStoreIpc.js',
+  'main/native/backends/tdlibClient.js',
+  'main/native/tdlibIpcBridge.js',
+]
+
+MESSAGE_HANDLER_FILES_MUST_REF_MISTAKES.forEach((file) => {
+  test('F. ' + file + ' содержит ссылку на mistakes/outgoing-two-cases.md', () => {
+    const fp = path.join(__dirname, '..', '..', file)
+    if (!fs.existsSync(fp)) return
+    const src = fs.readFileSync(fp, 'utf-8')
+    assert(src.includes('outgoing-two-cases.md'),
+      'В файле НЕТ ссылки на mistakes/outgoing-two-cases.md.\n' +
+      '   Этот файл содержит логику обработки outgoing-сообщений и имеет\n' +
+      '   тонкую разницу «свой локальный echo» vs «своё с другого устройства».\n' +
+      '   Добавь комментарий со ссылкой на mistakes/outgoing-two-cases.md перед\n' +
+      '   правкой message handler — там полная хронология v0.95.28-37 + эталоны.')
+  })
+})
+
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) {
   console.log('\n❌ Регрессионная защита сломана. Это означает возврат устаревшего паттерна.')

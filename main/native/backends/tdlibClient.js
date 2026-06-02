@@ -351,6 +351,54 @@ export class TdlibClientManager extends EventEmitter {
         this._handleNewMessage(record, update.message)
         return
 
+      // v0.95.38: после server ACK TDLib шлёт updateMessageSendSucceeded с
+      // {old_message_id, message: {id: <финальный>, sending_state: null}}.
+      // БЕЗ обработки — provisional остаётся в state с огромным id, при следующем
+      // loadNewerMessages backend приносит финальную копию с новым id → дубль.
+      // ОБЯЗАТЕЛЬНО ПРОЧИТАТЬ перед правкой: .memory-bank/mistakes/outgoing-two-cases.md
+      // Эталон: Telegram Web K applyMessageUpdate, Telegram Desktop History::idChanged().
+      case 'updateMessageSendSucceeded': {
+        const newTdMsg = update.message
+        if (!newTdMsg) return
+        const chatIdStr = `${accountId}:${newTdMsg.chat_id}`
+        // Извлекаем senderName/senderAvatar так же как в _handleNewMessage (для UI consistency).
+        const senderId = newTdMsg.sender_id
+        let senderName = ''
+        if (senderId?.['@type'] === 'messageSenderUser') {
+          const user = record.userCache.get(Number(senderId.user_id))
+          senderName = userDisplayName(user)
+        } else if (senderId?.['@type'] === 'messageSenderChat') {
+          const chat = record.chatCache.get(Number(senderId.chat_id))
+          senderName = chatDisplayName(chat)
+        }
+        const newMessage = mapMessage(newTdMsg, chatIdStr, { senderName, senderAvatar: null })
+        this.emit('message:send-succeeded', {
+          accountId,
+          chatId: chatIdStr,
+          oldId: String(update.old_message_id),
+          newMessage,
+        })
+        return
+      }
+
+      // v0.95.38: TDLib шлёт updateMessageSendFailed когда сервер отверг отправку
+      // (FLOOD_WAIT, banned in chat, network). sending_state становится Failed.
+      // Эмитим как send-succeeded чтобы UI мог обновить статус (failed badge).
+      // Не критично для дубля — failed остаётся как provisional с тем же id.
+      case 'updateMessageSendFailed': {
+        const newTdMsg = update.message
+        if (!newTdMsg) return
+        const chatIdStr = `${accountId}:${newTdMsg.chat_id}`
+        const newMessage = mapMessage(newTdMsg, chatIdStr, { senderName: '', senderAvatar: null })
+        this.emit('message:send-succeeded', {
+          accountId,
+          chatId: chatIdStr,
+          oldId: String(update.old_message_id),
+          newMessage,
+        })
+        return
+      }
+
       case 'updateMessageEdited': {
         const cached = record.chatCache.get(Number(update.chat_id))
         this.emit('message:edited', {

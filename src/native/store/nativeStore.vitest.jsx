@@ -771,3 +771,107 @@ describe('v0.89.37: selectForumTopic race protection (Discord-style)', () => {
     expect(result.current.messages[keyB]?.length).toBe(1)
   })
 })
+
+// v0.95.38: handler tg:send-succeeded — фикс «дубля сообщений после отправки».
+// TDLib шлёт updateMessageSendSucceeded когда сервер подтвердил отправку.
+// Replace provisional message (с огромным id) на финальный (с реальным id).
+// См. .memory-bank/mistakes/outgoing-two-cases.md
+describe('v0.95.38: tg:send-succeeded handler заменяет provisional → финальный', () => {
+  it('заменяет message по oldId на newMessage, длина списка не меняется', () => {
+    const { result } = renderHook(() => useNativeStore())
+    const chatId = 'chat1'
+    const provisional = {
+      id: '100000000001', text: 'привет', isOutgoing: true, isSending: true, timestamp: 1000,
+    }
+    // Подкладываем provisional через tg:new-message
+    act(() => {
+      onHandlers['tg:new-message']?.({ chatId, message: provisional })
+    })
+    expect(result.current.messages[chatId]?.length).toBe(1)
+    expect(result.current.messages[chatId][0].id).toBe('100000000001')
+    expect(result.current.messages[chatId][0].isSending).toBe(true)
+
+    // Сервер подтвердил — id меняется на финальный, isSending=false
+    const finalMsg = {
+      id: '12345', text: 'привет', isOutgoing: true, isSending: false, timestamp: 1000,
+    }
+    act(() => {
+      onHandlers['tg:send-succeeded']?.({ chatId, oldId: '100000000001', newMessage: finalMsg })
+    })
+    // Длина 1 (не дубль), id обновлён, isSending=false
+    expect(result.current.messages[chatId].length).toBe(1)
+    expect(result.current.messages[chatId][0].id).toBe('12345')
+    expect(result.current.messages[chatId][0].isSending).toBe(false)
+  })
+
+  it('если oldId не найден → state не меняется (no-op)', () => {
+    const { result } = renderHook(() => useNativeStore())
+    const chatId = 'chat1'
+    act(() => {
+      onHandlers['tg:new-message']?.({ chatId, message: { id: 'A', text: 'X', isOutgoing: true } })
+    })
+    const before = result.current.messages[chatId]
+    act(() => {
+      onHandlers['tg:send-succeeded']?.({
+        chatId,
+        oldId: 'NONEXISTENT',
+        newMessage: { id: 'Z', text: 'Z', isOutgoing: true },
+      })
+    })
+    // Список не изменён — A остался, Z не добавлен
+    expect(result.current.messages[chatId].length).toBe(1)
+    expect(result.current.messages[chatId][0].id).toBe('A')
+  })
+
+  it('если chatId не существует → state не меняется', () => {
+    const { result } = renderHook(() => useNativeStore())
+    expect(() => {
+      act(() => {
+        onHandlers['tg:send-succeeded']?.({
+          chatId: 'ghost-chat',
+          oldId: 'X',
+          newMessage: { id: 'Y', isOutgoing: true },
+        })
+      })
+    }).not.toThrow()
+    expect(result.current.messages['ghost-chat']).toBeUndefined()
+  })
+})
+
+// v0.95.38: регресс-тест дедупликации в tg:new-message handler.
+// Защита от регрессии — если кто-то удалит `existing.some(m => m.id === message.id)`,
+// этот тест упадёт. Тоже см. .memory-bank/mistakes/outgoing-two-cases.md
+describe('v0.95.38: tg:new-message dedup по id (защита от дубля)', () => {
+  it('повторный tg:new-message с тем же id → обновляет, НЕ дублирует', () => {
+    const { result } = renderHook(() => useNativeStore())
+    const chatId = 'chat1'
+    const msg1 = { id: '777', text: 'первая версия', isOutgoing: false, timestamp: 1000 }
+    const msg2 = { id: '777', text: 'обновлённый текст', isOutgoing: false, timestamp: 1000 }
+    act(() => {
+      onHandlers['tg:new-message']?.({ chatId, message: msg1 })
+    })
+    expect(result.current.messages[chatId].length).toBe(1)
+
+    // Второй emit с тем же id — должен обновить, не добавить
+    act(() => {
+      onHandlers['tg:new-message']?.({ chatId, message: msg2 })
+    })
+    expect(result.current.messages[chatId].length).toBe(1)
+    expect(result.current.messages[chatId][0].text).toBe('обновлённый текст')
+  })
+
+  it('3 события с одним id → длина списка остаётся 1', () => {
+    const { result } = renderHook(() => useNativeStore())
+    const chatId = 'chat1'
+    for (let i = 0; i < 3; i++) {
+      act(() => {
+        onHandlers['tg:new-message']?.({
+          chatId,
+          message: { id: '999', text: `v${i}`, isOutgoing: false, timestamp: 1000 },
+        })
+      })
+    }
+    expect(result.current.messages[chatId].length).toBe(1)
+    expect(result.current.messages[chatId][0].text).toBe('v2')
+  })
+})
