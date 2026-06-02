@@ -70,15 +70,41 @@ describe('useNewBelowCounter — event-based (v0.91.3)', () => {
     expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'other-chat' }))
   })
 
-  it('outgoing сообщение → НЕ считается + onSkip({ reason: "outgoing" })', () => {
+  // v0.95.36: skip только когда outgoing + isSending=true (свой sendMessage, локальный echo).
+  // Outgoing без isSending (с другого устройства) идёт дальше для auto-scroll.
+  it('v0.95.36: outgoing + isSending=true (свой ПК) → onSkip({ reason: "outgoing-pending" })', () => {
     const onAdded = vi.fn()
     const onSkip = vi.fn()
     renderHook(() => useNewBelowCounter({
       activeChatId: 'chat-A', atBottom: false, onAdded, onSkip,
     }))
-    emitNewMessage('chat-A', { id: '102', isOutgoing: true })
+    emitNewMessage('chat-A', { id: '102', isOutgoing: true, isSending: true })
     expect(onAdded).not.toHaveBeenCalled()
-    expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'outgoing' }))
+    expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'outgoing-pending' }))
+  })
+
+  it('v0.95.36: outgoing БЕЗ isSending (другое устройство) + atBottom=false → onAdded (counter)', () => {
+    const onAdded = vi.fn()
+    const onSkip = vi.fn()
+    renderHook(() => useNewBelowCounter({
+      activeChatId: 'chat-A', atBottom: false, onAdded, onSkip,
+    }))
+    emitNewMessage('chat-A', { id: '300', isOutgoing: true, isSending: false })
+    expect(onAdded).toHaveBeenCalledTimes(1)
+    expect(onAdded).toHaveBeenCalledWith(expect.objectContaining({ added: 1, messageId: '300' }))
+  })
+
+  it('v0.95.36: outgoing БЕЗ isSending (другое устройство) + atBottom=true → onAutoScroll', () => {
+    const onAdded = vi.fn()
+    const onAutoScroll = vi.fn()
+    const onSkip = vi.fn()
+    renderHook(() => useNewBelowCounter({
+      activeChatId: 'chat-A', atBottom: true, onAdded, onSkip, onAutoScroll,
+    }))
+    emitNewMessage('chat-A', { id: '301', isOutgoing: true, isSending: false })
+    expect(onAutoScroll).toHaveBeenCalledTimes(1)
+    expect(onAutoScroll).toHaveBeenCalledWith({ messageId: '301' })
+    expect(onAdded).not.toHaveBeenCalled()
   })
 
   it('atBottom=true + НЕТ onAutoScroll → fallback onSkip({ reason: "at-bottom" })', () => {
@@ -112,16 +138,17 @@ describe('useNewBelowCounter — event-based (v0.91.3)', () => {
     expect(onSkip).not.toHaveBeenCalled()
   })
 
-  it('v0.95.28: atBottom=true + OUTGOING → ни onAutoScroll, ни onAdded (skip outgoing)', () => {
-    // Outgoing проверяется ДО atBottom — не должно срабатывать auto-scroll
+  it('v0.95.28/36: atBottom=true + OUTGOING+isSending (свой ПК) → ни onAutoScroll', () => {
+    // Outgoing с этой машины (isSending=true) проверяется ДО atBottom — не должно
+    // срабатывать auto-scroll (handleReplySend сам делает send-scroll-done).
     const onAutoScroll = vi.fn()
     const onSkip = vi.fn()
     renderHook(() => useNewBelowCounter({
       activeChatId: 'chat-A', atBottom: true, onAdded: vi.fn(), onSkip, onAutoScroll,
     }))
-    emitNewMessage('chat-A', { id: '501', isOutgoing: true })
+    emitNewMessage('chat-A', { id: '501', isOutgoing: true, isSending: true })
     expect(onAutoScroll).not.toHaveBeenCalled()
-    expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'outgoing' }))
+    expect(onSkip).toHaveBeenCalledWith(expect.objectContaining({ reason: 'outgoing-pending' }))
   })
 
   it('v0.95.28: atBottom=true + ДРУГОЙ ЧАТ → ни onAutoScroll, ни onAdded (skip other-chat)', () => {

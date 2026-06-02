@@ -266,6 +266,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // визуала кнопки ↓ (стабильность от дребезга, фикс v0.95.2).
   const [physicallyAtBottom, setPhysicallyAtBottom] = useState(false)
   const [newBelow, setNewBelow] = useState(0)
+  // v0.95.36: guard от двойного auto-scroll. Обновляется и в onAutoScroll
+  // (incoming + outgoing-from-other-device), и в send-scroll-done (свой sendMessage).
+  // Если разница < 600мс — пропускаем повторный scroll.
+  const lastAutoScrollAtRef = useRef(0)
   const [firstUnreadId, setFirstUnreadId] = useState(null)
   const firstUnreadIdRef = useRef(null)
   // v0.89.33: snapshot readInboxMaxId на момент открытия чата/топика.
@@ -517,6 +521,17 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     // Telegram Desktop (history_widget.cpp scrollTop >= scrollTopMax - X → scrollToEnd).
     // requestAnimationFrame — даём React закоммитить новое сообщение в DOM до scroll.
     onAutoScroll: ({ messageId }) => {
+      // v0.95.36: guard от двойного scroll. Если handleReplySend только что
+      // сделал `send-scroll-done` (свой sendMessage), и одновременно пришло
+      // outgoing-from-other-device → 2 scroll за <600мс. Защита: дедуп через
+      // lastAutoScrollAtRef. 600мс — достаточно для завершения предыдущей
+      // smoothScrollTo (250мс) + reserve. Не блокирует следующий incoming.
+      const now = Date.now()
+      if (now - lastAutoScrollAtRef.current < 600) {
+        scrollDiag.logEvent('auto-scroll-skip-recent', { messageId, sinceLastMs: now - lastAutoScrollAtRef.current })
+        return
+      }
+      lastAutoScrollAtRef.current = now
       scrollDiag.logEvent('auto-scroll-new-message', { messageId })
       // v0.95.30: smoothScrollTo с easeOutCubic 250мс + twoPhase (как Telegram Web K).
       // Раньше: el.scrollTo({behavior:'smooth'}) — браузерный default ~500мс linear-ish,
@@ -772,9 +787,12 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         // v0.87.65: smooth scroll после отправки
         // v0.95.30: заменён browser scrollTo({behavior:'smooth'}) на smoothScrollTo
         // (easeOutCubic 250мс + twoPhase) — единый стиль анимации с onAutoScroll.
+        // v0.95.36: фиксируем lastAutoScrollAtRef — onAutoScroll увидит и пропустит
+        // дубль scroll, если outgoing с другого устройства придёт в этот же момент.
         setTimeout(() => {
           const el = msgsScrollRef.current
           if (!el) return
+          lastAutoScrollAtRef.current = Date.now()
           smoothScrollTo(el, el.scrollHeight, { duration: 250, twoPhase: true })
           scrollDiag.logEvent('send-scroll-done', {
             top: el.scrollTop, height: el.scrollHeight,

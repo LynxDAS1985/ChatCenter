@@ -110,6 +110,28 @@ describe('mapMessage — текст и базовые поля', () => {
     expect(r.isEdited).toBe(true)
   })
 
+  // v0.95.36: isSending различает «свой локальный echo» vs «своё с другого устройства».
+  // Используется в useNewBelowCounter для auto-scroll outgoing с других устройств.
+  it('v0.95.36: sending_state присутствует → isSending=true (свой локальный echo)', () => {
+    const r = mapMessage(tdMsgText({
+      is_outgoing: true,
+      sending_state: { '@type': 'messageSendingStatePending', sending_id: 42 },
+    }), 'tg_1:2')
+    expect(r.isOutgoing).toBe(true)
+    expect(r.isSending).toBe(true)
+  })
+
+  it('v0.95.36: sending_state отсутствует → isSending=false (на сервере, другое устройство)', () => {
+    const r = mapMessage(tdMsgText({ is_outgoing: true }), 'tg_1:2')
+    expect(r.isOutgoing).toBe(true)
+    expect(r.isSending).toBe(false)
+  })
+
+  it('v0.95.36: incoming сообщение всегда isSending=false', () => {
+    const r = mapMessage(tdMsgText({ is_outgoing: false }), 'tg_1:2')
+    expect(r.isSending).toBe(false)
+  })
+
   it('senderId извлекается из messageSenderChat', () => {
     const r = mapMessage(tdMsgText({ sender_id: { '@type': 'messageSenderChat', chat_id: -123456 } }), 'tg_1:2')
     expect(r.senderId).toBe('-123456')

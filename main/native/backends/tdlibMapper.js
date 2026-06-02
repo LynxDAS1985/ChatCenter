@@ -184,6 +184,13 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
     entities,
     timestamp: (Number(tdMsg.date) || 0) * 1000,
     isOutgoing: !!tdMsg.is_outgoing,
+    // v0.95.36: sending_state присутствует ТОЛЬКО для сообщений, отправленных
+    // ЭТИМ tdlib клиентом и ожидающих server ACK (messageSendingStatePending) или
+    // упавших (messageSendingStateFailed). Сообщения с других устройств приходят
+    // сразу без sending_state (т.к. уже на сервере) → isSending=false.
+    // Используется в useNewBelowCounter для auto-scroll outgoing с другого устройства.
+    // TDLib spec: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message.html
+    isSending: !!tdMsg.sending_state,
     isEdited: !!(tdMsg.edit_date && Number(tdMsg.edit_date) > 0),
     mediaType: media.mediaType,
     mediaPreview: media.info.mediaPreview || null,

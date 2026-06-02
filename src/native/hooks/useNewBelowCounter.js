@@ -53,9 +53,14 @@ export function useNewBelowCounter({ activeChatId, atBottom, onAdded, onSkip, on
         onSkip?.({ reason: 'other-chat', chatId, activeChatId, messageId: message?.id })
         return
       }
-      // Фильтр 2: только входящие (наши отправленные себе не считаем)
-      if (message?.isOutgoing) {
-        onSkip?.({ reason: 'outgoing', messageId: message.id })
+      // Фильтр 2: outgoing с ЭТОЙ машины (handleReplySend сам делает scroll
+      // через send-scroll-done) → skip. Outgoing с ДРУГОГО устройства (телефон /
+      // Telegram Web) проходим дальше — для них тоже нужен auto-scroll.
+      // v0.95.36: различаем через TDLib sending_state — null для уже-на-сервере
+      // (другое устройство), pending/failed для локальных echo (своя машина).
+      // Эталон: Telegram Web K pendingByRandomId, Telegram Desktop MessageFlag::FromUpdate.
+      if (message?.isOutgoing && message?.isSending) {
+        onSkip?.({ reason: 'outgoing-pending', messageId: message.id })
         return
       }
       // v0.95.28: юзер physically у низа → Telegram-style auto-scroll к новому,

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.35 (2 июня 2026)
+## Текущая версия: v0.95.36 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -33,6 +33,19 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.36 — Auto-scroll для outgoing с других устройств (TDLib sending_state)
+
+Юзер пишет с телефона/Telegram Web → сообщения приходят с `isOutgoing=true`, но фильтр в useNewBelowCounter (v0.95.28) блокировал ВСЕ outgoing → auto-scroll не работал → сообщения «застревали» не у низа. Корень: фильтр не различал «свой echo» vs «своё с другого устройства».
+
+**Решение** — TDLib `sending_state`: присутствует только для локальных echo (pending/failed), null для уже-на-сервере (другое устройство).
+- [tdlibMapper.js](main/native/backends/tdlibMapper.js): `isSending: !!tdMsg.sending_state`
+- [useNewBelowCounter.js](src/native/hooks/useNewBelowCounter.js): фильтр `outgoing && isSending` (был `outgoing`). Outgoing без isSending идёт дальше — auto-scroll если atBottom, counter если нет.
+- [InboxMode.jsx](src/native/modes/InboxMode.jsx): `lastAutoScrollAtRef` guard < 600мс в onAutoScroll + send-scroll-done — защита от двойного scroll.
+
+**Эталоны**: tweb `pendingByRandomId`, tdesktop `MessageFlag::FromUpdate`, WhatsApp `PushName`, Discord `nonce`. **Конфликты ✅**: contiguity / unreadCount / markRead / Schmitt — не задействуются для outgoing. **Тесты** +5 (useNewBelowCounter +3, tdlibMapper +3). **Регрессия**: 921/921 ✅.
 
 ---
 
