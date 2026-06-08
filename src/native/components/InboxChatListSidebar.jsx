@@ -9,6 +9,7 @@ import ChatRow from './ChatRow.jsx'
 import MuteMenu from './MuteMenu.jsx'
 import ChatTypesDropdown from './ChatTypesDropdown.jsx'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
+import { loadSearchHistory, removeFromHistory, clearHistory } from '../utils/searchHistory.js'
 
 const ITEM_HEIGHT = 74
 
@@ -99,6 +100,8 @@ export default function InboxChatListSidebar({
   store,
   activeAccountChats,
   search, setSearch,
+  // v0.95.42: commit при Enter → добавление query в историю
+  onSearchCommit,
   listHeight, setListHeight,
   hoveredAccountId,
   // v0.95.7: width/compact/panelRef для drag-to-resize
@@ -126,6 +129,59 @@ export default function InboxChatListSidebar({
     e.preventDefault()
     setMuteMenu({ chat, x: e.clientX, y: e.clientY })
   }, [])
+
+  // v0.95.42: dropdown истории поисков при фокусе пустого input.
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [history, setHistory] = useState(() => loadSearchHistory())
+  const searchInputRef = useRef(null)
+  const searchDropdownRef = useRef(null)
+
+  // Обновляем историю при коммите (Enter) — родитель уже сохранил, перечитываем.
+  // Перечитка через requestAnimationFrame чтобы успело сохраниться.
+  const refreshHistory = useCallback(() => {
+    requestAnimationFrame(() => setHistory(loadSearchHistory()))
+  }, [])
+
+  const handleSearchKeyDown = useCallback((e) => {
+    if (e.key === 'Enter' && search && search.trim()) {
+      onSearchCommit?.(search.trim())
+      refreshHistory()
+    } else if (e.key === 'Escape') {
+      setSearch('')
+      setSearchFocused(false)
+    }
+  }, [search, onSearchCommit, refreshHistory, setSearch])
+
+  const handleHistoryClick = useCallback((q) => {
+    setSearch(q)
+    setSearchFocused(false)
+    onSearchCommit?.(q)
+    refreshHistory()
+  }, [setSearch, onSearchCommit, refreshHistory])
+
+  const handleRemoveHistoryItem = useCallback((e, q) => {
+    e.stopPropagation()
+    removeFromHistory(q)
+    refreshHistory()
+  }, [refreshHistory])
+
+  const handleClearAllHistory = useCallback((e) => {
+    e.stopPropagation()
+    clearHistory()
+    refreshHistory()
+  }, [refreshHistory])
+
+  // Закрываем dropdown по клику вне input/dropdown
+  useEffect(() => {
+    if (!searchFocused) return undefined
+    const onMouseDown = (e) => {
+      const inInput = searchInputRef.current?.contains(e.target)
+      const inDropdown = searchDropdownRef.current?.contains(e.target)
+      if (!inInput && !inDropdown) setSearchFocused(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [searchFocused])
 
   // v0.95.22: убрана зависимость forumTopicPanelChatId — wrapper-контейнер больше
   // не размонтируется при открытии форум-overlay, RO не нужно пересоздавать.
@@ -199,15 +255,97 @@ export default function InboxChatListSidebar({
       )}
       {/* v0.87.106: Поиск ПЕРВЫЙ (был после фильтра) */}
       {/* v0.95.7: в compact mode поиск скрыт (нет места для input) */}
+      {/* v0.95.42: восстановление query из localStorage (в InboxMode useState init),
+          кнопка ✕ при length > 0, dropdown с историей при фокусе пустого input,
+          Enter → добавление в историю (через onSearchCommit). */}
       {!compact && (
-        <div style={{ padding: 10, borderBottom: '1px solid var(--amoled-border)', flexShrink: 0 }}>
-          <input
-            type="text"
-            placeholder="🔍 Поиск по чатам..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ width: '100%', fontSize: 13 }}
-          />
+        <div style={{
+          padding: 10, borderBottom: '1px solid var(--amoled-border)',
+          flexShrink: 0, position: 'relative',
+        }}>
+          <div style={{ position: 'relative' }}>
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="🔍 Поиск по чатам..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onKeyDown={handleSearchKeyDown}
+              style={{ width: '100%', fontSize: 13, paddingRight: search ? 28 : undefined }}
+            />
+            {/* v0.95.42: кнопка ✕ для очистки query (стандарт UX) */}
+            {search && search.length > 0 && (
+              <button
+                onClick={() => { setSearch(''); searchInputRef.current?.focus() }}
+                title="Очистить (Esc)"
+                style={{
+                  position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: 'var(--amoled-text-dim)', fontSize: 14, padding: '2px 6px',
+                  borderRadius: 4, lineHeight: 1,
+                }}
+              >✕</button>
+            )}
+          </div>
+          {/* v0.95.42: dropdown с историей при фокусе И пустом input (стандарт Telegram Web K) */}
+          {searchFocused && !search && history.length > 0 && (
+            <div
+              ref={searchDropdownRef}
+              style={{
+                position: 'absolute', top: '100%', left: 10, right: 10,
+                background: 'var(--amoled-surface)',
+                border: '1px solid var(--amoled-border)',
+                borderRadius: 8,
+                marginTop: 4,
+                padding: 4,
+                zIndex: 50,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                maxHeight: 320, overflowY: 'auto',
+              }}
+            >
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '6px 8px 4px', fontSize: 10, color: 'var(--amoled-text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.05em',
+              }}>
+                <span>Недавние</span>
+                <button
+                  onClick={handleClearAllHistory}
+                  title="Очистить всю историю"
+                  style={{
+                    background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)',
+                    fontSize: 10, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em',
+                  }}
+                >очистить</button>
+              </div>
+              {history.map((q) => (
+                <div
+                  key={q}
+                  onClick={() => handleHistoryClick(q)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '6px 8px', borderRadius: 6, cursor: 'pointer',
+                    fontSize: 13, color: 'var(--amoled-text)',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'var(--amoled-surface-hover)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+                  }}>🕘 {q}</span>
+                  <button
+                    onClick={(e) => handleRemoveHistoryItem(e, q)}
+                    title="Удалить из истории"
+                    style={{
+                      background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)',
+                      fontSize: 12, cursor: 'pointer', padding: '0 6px',
+                    }}
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
       {/* v0.87.106: Фильтр ПОД поиском (был СВЕРХУ). Показываем при 2+ аккаунтах. */}
@@ -291,6 +429,8 @@ export default function InboxChatListSidebar({
               forumTopics: store.forumTopics,
               // v0.95.7: compact mode когда chat-list width < 200px
               compact,
+              // v0.95.42: подсветка совпадений с query в title/lastMessage
+              highlightQuery: search,
             }}
             style={{ height: listHeight, width: '100%' }}
           />

@@ -9,6 +9,7 @@
 
 import { getMessengerColor, getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
+import HighlightedText from './HighlightedText.jsx'
 
 const AVATAR_COLORS = ['#e17076', '#eda86c', '#a695e7', '#7bc862', '#65aadd', '#ee7aae', '#6ec9cb']
 
@@ -25,7 +26,7 @@ function typeIcon(type, isBot) {
   return null
 }
 
-export default function ChatListItem({ chat, active, onClick, onContextMenu, account, hoveredAccountId, multiAccount, compact = false, displayUnreadCount }) {
+export default function ChatListItem({ chat, active, onClick, onContextMenu, account, hoveredAccountId, multiAccount, compact = false, displayUnreadCount, highlightQuery }) {
   const bgColor = AVATAR_COLORS[hashString(chat.title || '?') % AVATAR_COLORS.length]
   const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('')
@@ -208,7 +209,8 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
             fontWeight: 600, fontSize: 14, flex: 1,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
           }}>
-            {chat.title}
+            {/* v0.95.42: подсветка совпадений при активном поиске */}
+            <HighlightedText text={chat.title} query={highlightQuery} />
             {chat.verified && <span style={{ color: 'var(--amoled-accent)', marginLeft: 4 }}>✓</span>}
           </div>
           {/* v0.87.110: заглушён — серый бейдж (иконка теперь на аватарке) */}
@@ -241,7 +243,10 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
           fontSize: 12, color: 'var(--amoled-text-dim)',
           marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
         }}>
-          {chat.lastMessage || '—'}
+          {/* v0.95.42: подсветка совпадений в preview lastMessage */}
+          {chat.lastMessage
+            ? <HighlightedText text={chat.lastMessage} query={highlightQuery} />
+            : '—'}
         </div>
       </div>
     </div>

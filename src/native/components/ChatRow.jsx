@@ -9,6 +9,8 @@ export default function ChatRow({
   index, style, chats, activeChatId, setActiveChat,
   accounts, showAccountBadge, hoveredAccountId, onContextMenu, compact,
   forumTopics,
+  // v0.95.42: query для подсветки совпадений в title/lastMessage
+  highlightQuery,
 }) {
   const c = chats[index]
   if (!c) return null
@@ -26,6 +28,7 @@ export default function ChatRow({
         hoveredAccountId={hoveredAccountId}
         compact={compact}
         displayUnreadCount={displayUnreadCount}
+        highlightQuery={highlightQuery}
       />
     </div>
   )

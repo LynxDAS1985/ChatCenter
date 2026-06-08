@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.41 (2 июня 2026)
+## Текущая версия: v0.95.42 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.34.md`](./archive/features-v0.95.34.md) | v0.95.34 (темовые vars в :root, вспышка bubble, WhatsNewModal UX; стабилизировано v0.95.40+) | ~2 КБ |
 | [`archive/features-v0.95.33.md`](./archive/features-v0.95.33.md) | v0.95.33 (фикс «цвет не применяется» через querySelectorAll, регресс-тест blur, деловой стиль; финал в v0.95.34) | ~2 КБ |
 | [`archive/features-v0.95.32.md`](./archive/features-v0.95.32.md) | v0.95.32 (производительность WhatsNewModal: убран backdrop-filter + contain + деловой стиль changelog) | ~2 КБ |
 | [`archive/features-v0.95.31.md`](./archive/features-v0.95.31.md) | v0.95.31 (аккаунты вниз + drag-n-drop + multi-user typing + throttle реакций; стабилизировано v0.95.34+) | ~3 КБ |
@@ -37,6 +38,23 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.42 — Сохранение поиска + история + ✕ + подсветка совпадений
+
+4 фичи поиска. UI-only (без backend/store/scroll). Эталоны: tweb appSearchManager, Slack global search, VS Code Find.
+
+- **Сохранение query** ([searchHistory.js](src/native/utils/searchHistory.js) NEW): `localStorage['cc-chat-search']`. [InboxMode.jsx](src/native/modes/InboxMode.jsx) `useState(() => loadCurrentSearch())` + debounced save 300мс.
+- **Кнопка ✕** [InboxChatListSidebar.jsx](src/native/components/InboxChatListSidebar.jsx): absolute справа при `length > 0`. Escape → clear.
+- **История 20 запросов**: `localStorage['cc-chat-search-history']`. `addToHistory` дедуп case-insensitive + FIFO. Enter → commit. Dropdown при focus+empty. ✕ на элементе → removeFromHistory. «Очистить» → clearHistory.
+- **Подсветка совпадений** ([searchHighlight.js](src/native/utils/searchHighlight.js) NEW + [HighlightedText.jsx](src/native/components/HighlightedText.jsx) NEW): regex `gi` с escape, `<mark>` с accent. [ChatListItem.jsx](src/native/components/ChatListItem.jsx) использует для title/lastMessage.
+
+**Конфликты ✅**: UI-only, 0 изменений backend/store. **Граничные случаи ✅**: пустой → нет mark / >200 chars → trim / ReDoS → escape / private mode → try/catch / дубль → dedup / overflow → FIFO 20 / невалидный JSON → [].
+
+**Тесты** (+24): searchHistory +13, searchHighlight +11.
+
+**Регрессия**: lint 0, vitest 975/975, fileSizeLimits 325/325, check-memory ✅.
 
 ---
 
@@ -175,13 +193,7 @@
 
 ### v0.95.34 — Темовые переменные в :root + вспышка bubble + WhatsNewModal UX
 
-**(1) Темовые vars `.native-mode` → `:root`** ([styles-base.css](src/native/styles-base.css)): `--amoled-accent/-hover/-shadow/--bubble-opacity` теперь в `:root`. CSS specificity ловушка v0.95.33 устранена архитектурно — `documentElement.style.setProperty` работает напрямую. `applyTheme()` упрощён ([themeColor.js](src/native/utils/themeColor.js)): основной таргет documentElement, `.native-mode` элементы — страховка.
-
-**(2) Вспышка outgoing bubble при смене темы** ([themeColor.js](src/native/utils/themeColor.js) `flashOutgoingBubbles()`): querySelectorAll `[data-cc-outgoing="true"]`, класс `.cc-theme-flash` 550мс. CSS keyframes 3 фазы (нет → 4px accent → 12px shadow). Атрибут в [MessageBubble.jsx](src/native/components/MessageBubble.jsx) outgoing. [ThemePickerModal.jsx](src/native/components/ThemePickerModal.jsx) handleSelect зовёт после applyTheme+saveTheme. Эталон: Telegram wallpaper change.
-
-**(3) WhatsNewModal hover + «Полная история»**: `PrimaryButton` с `useState(hover)` (inline `:hover` не работает в React) — затемнение accent + `translateY(-1px)` + shadow. `HistoryToggleButton` переключает `showAll` → весь `CHANGELOG`. Эталон: VS Code Release Notes.
-
-**Регрессия**: lint 0, vitest 916/916, fileSizeLimits 316/316, check-memory ✅.
+Архитектурное решение: переменные `.native-mode` → `:root` устранило CSS specificity ловушку v0.95.33. Вспышка outgoing bubble при смене темы (.cc-theme-flash 550мс). WhatsNewModal hover-эффект на «Понятно» + кнопка «Полная история». Полный текст: [`archive/features-v0.95.34.md`](./archive/features-v0.95.34.md).
 
 ---
 

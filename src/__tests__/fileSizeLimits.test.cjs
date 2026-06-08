@@ -266,12 +266,12 @@ console.log('── Статистика: ──')
 var totalSrc = 0
 var srcFiles = allFiles.filter(function (f) { return f.startsWith('src/') && !/\.(test|vitest)\./.test(f) })
 srcFiles.forEach(function (f) { totalSrc += countLines(f) })
-// v0.95.41: лимит поднят 21200 → 21400 — CustomEmojiRenderer.jsx, resolveCustomEmojis
-// store action, расширенный MessageReactions/MessageBubble props (~150 строк).
-// v0.95.40: лимит был 21200 для большие emoji + useStickyBottomOnMedia.
+// v0.95.42: лимит поднят 21400 → 21700 — searchHistory.js + searchHighlight.js +
+// HighlightedText.jsx + расширенный InboxChatListSidebar (dropdown, ✕, focus) (~250 строк).
+// v0.95.41: лимит был 21400 для CustomEmojiRenderer.
 // Дальнейшее разбиение — плановая задача (handoff-code-limits.md).
-test('Общий renderer код (src/ без тестов) < 21400 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 21400, totalSrc + ' > 21400')
+test('Общий renderer код (src/ без тестов) < 21700 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 21700, totalSrc + ' > 21700')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

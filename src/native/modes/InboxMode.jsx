@@ -29,6 +29,7 @@ import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
 import { useScrollPositionAutosave } from '../hooks/useScrollPositionAutosave.js'
 import { loadTheme } from '../utils/themeColor.js'
 import { formatTypingUsers } from '../utils/formatTypingUsers.js'
+import { loadCurrentSearch, saveCurrentSearch, addToHistory } from '../utils/searchHistory.js'
 
 try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
 
@@ -40,7 +41,16 @@ function topicMessageKey(chatId, topic) {
 export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [search, setSearch] = useState('')
+  // v0.95.42: восстанавливаем последний поисковый запрос при mount.
+  // Сохранение делается в InboxChatListSidebar (debounced) + при Enter в history.
+  const [search, setSearch] = useState(() => loadCurrentSearch())
+  // Save при изменении (debounced 300мс — не на каждое нажатие)
+  useEffect(() => {
+    const t = setTimeout(() => saveCurrentSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+  // При Enter добавляем в историю — обработчик прокидывается в Sidebar.
+  const handleSearchCommit = (query) => { addToHistory(query) }
   const [listHeight, setListHeight] = useState(600)
   // v0.95.30: модалка выбора цвета bubble (🎨). Открывается из header.
   const [themePickerOpen, setThemePickerOpen] = useState(false)
@@ -857,6 +867,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         store={store}
         activeAccountChats={activeAccountChats}
         search={search} setSearch={setSearch}
+        onSearchCommit={handleSearchCommit}
         listHeight={listHeight} setListHeight={setListHeight}
         hoveredAccountId={hoveredAccountId}
         width={chatListWidth}
