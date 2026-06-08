@@ -37,6 +37,9 @@ export function initNotifHandlers(deps) {
           messengerId: item.messengerId,
           senderName: item.senderName || item.title || '',
           chatTag: item.chatTag || '',
+          // v0.95.46: messageId для scroll к конкретному сообщению (native режим).
+          // Webview hook игнорирует это поле (backward-compat).
+          messageId: item.messageId || null,
         })
       }
     }

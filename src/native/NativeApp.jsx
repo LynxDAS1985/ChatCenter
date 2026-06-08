@@ -318,16 +318,20 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
   }, [])
 
   // v0.95.45: переход к чату по клику «→ Перейти к чату» в уведомлении (native режим).
-  // Корень: useNotifyNavigation.js (webview hook) не находил webview ref для
-  // messengerId='native_cc' → silent return. Native режим должен обрабатывать
-  // notify:clicked через store actions. См. mistakes/notifications-ribbon.md.
+  // v0.95.46: расширено для scroll к КОНКРЕТНОМУ сообщению (messageId в payload).
   //
-  // payload: { messengerId, senderName, chatTag } — chatTag = наш chatId (формат
-  // 'accountId:rawId'). main process в notifHandlers.js:33-34 уже делает
-  // mainWindow.show()+focus() ПЕРЕД emit — окно к моменту наш handler уже видимо.
+  // payload: { messengerId, senderName, chatTag, messageId }
+  //   - chatTag = наш chatId (формат 'accountId:rawId')
+  //   - messageId = id сообщения которое вызвало уведомление (добавлено v0.95.46)
+  //
+  // Поток: setActiveAccount → setActiveChat → requestScrollToMessage.
+  // InboxMode useEffect слушает store.pendingScrollToMessage и при совпадении
+  // chatId с activeChatId вызывает scrollToMessage(messageId).
+  //
+  // Эталон: Telegram Web K appImManager.setInnerPeer({peerId, lastMsgId}).
   useEffect(() => {
     if (!window.api?.on) return undefined
-    const unsub = window.api.on('notify:clicked', ({ messengerId, chatTag }) => {
+    const unsub = window.api.on('notify:clicked', ({ messengerId, chatTag, messageId }) => {
       if (messengerId !== 'native_cc') return
       if (!chatTag) return
       try {
@@ -338,10 +342,15 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
           if (accountId && store.setActiveAccount) store.setActiveAccount(accountId)
         }
         if (store.setActiveChat) store.setActiveChat(chatTag)
+        // v0.95.46: scroll к КОНКРЕТНОМУ сообщению (если messageId передан).
+        // InboxMode useEffect выполнит scroll после mount чата + загрузки messages.
+        if (messageId && store.requestScrollToMessage) {
+          store.requestScrollToMessage(chatTag, messageId)
+        }
       } catch (_) {}
     })
     return unsub
-  }, [store.setActiveAccount, store.setActiveChat])
+  }, [store.setActiveAccount, store.setActiveChat, store.requestScrollToMessage])
 
   const handleAccountContextMenu = (e, account) => {
     e.preventDefault()

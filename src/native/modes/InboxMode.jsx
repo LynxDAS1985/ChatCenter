@@ -806,6 +806,30 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     showToast('Исходное сообщение не загружено — прокрутите вверх', 'info')
   }
 
+  // v0.95.46: scroll к конкретному сообщению при клике «→ Перейти к чату» в
+  // уведомлении (см. NativeApp.jsx + store.requestScrollToMessage).
+  // useEffect срабатывает после: 1) setActiveChat → activeChatId сменился,
+  // 2) tg:messages пришло → activeMessages.length > 0. Только тогда scrollToMessage
+  // найдёт элемент через querySelector. clearPendingScrollToMessage после scroll
+  // защищает от повторного срабатывания при дальнейших ререндерах.
+  useEffect(() => {
+    const pending = store.pendingScrollToMessage
+    if (!pending) return
+    if (pending.chatId !== store.activeChatId) return  // юзер переключился — не скроллим чужой чат
+    if (!activeMessages || activeMessages.length === 0) return  // ждём загрузки messages
+    // Защита от orphan: если timestamp старше 10с — просто очищаем (юзер не дождался).
+    if (Date.now() - (pending.ts || 0) > 10000) {
+      store.clearPendingScrollToMessage?.()
+      return
+    }
+    // Запускаем scroll с микро-delay чтобы React успел отрендерить bubble'ы.
+    const t = setTimeout(() => {
+      try { scrollToMessage(pending.messageId) } catch (_) {}
+      store.clearPendingScrollToMessage?.()
+    }, 100)
+    return () => clearTimeout(t)
+  }, [store.pendingScrollToMessage, store.activeChatId, activeMessages.length])
+
   // v0.87.36: action-handlers (delete/forward/pin) — вынесено в хук
   const { handleDelete, handleForward, handleForwardSelect, handlePin } = useMessageActions({
     store, setForwardTarget, setPinnedMsg, showToast, forwardTarget,

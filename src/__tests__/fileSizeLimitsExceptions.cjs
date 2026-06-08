@@ -41,8 +41,8 @@ module.exports = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 1290,
-    reason: 'v0.95.41: resolveCustomEmojis action + state.customEmojis кэш (+25 строк) для premium custom emoji реакций/animated. v0.95.29: setReaction + dump outgoing. v0.95.27: лог store-send-message-invoke. v0.95.16: loadTopicMessagesUntil. v0.89.40: IndexedDB cache. Доменное разбиение store — плановый шаг.'
+    ceiling: 1320,
+    reason: 'v0.95.46: requestScrollToMessage + clearPendingScrollToMessage actions (~20 строк) для navigation из уведомления. v0.95.43: sendAlbum action. v0.95.41: resolveCustomEmojis. v0.95.29: setReaction. v0.89.40: IndexedDB cache. Доменное разбиение store — плановый шаг.'
   },
   'main/native/backends/tdlibBackend.js': {
     ceiling: 770,
@@ -77,8 +77,8 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 1030,
-    reason: 'v0.95.43: useFileAttach hook + handleAttachSend (~40 строк) + проброс attach* props в InboxChatPanel. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. v0.95.36: lastAutoScrollAtRef. Доменное разбиение — отдельная задача.'
+    ceiling: 1060,
+    reason: 'v0.95.46: useEffect для pendingScrollToMessage из уведомления (~20 строк). v0.95.43: useFileAttach + handleAttachSend. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. Доменное разбиение — отдельная задача.'
   },
   // v0.92.0: useInboxScroll вернулся в стандартный лимит 150 после удаления
   // isRestoringRef guards. Текущий размер 139.
@@ -106,8 +106,8 @@ module.exports = {
   // события одного кадра в один setState. Доменное разбиение IPC handlers — отдельная
   // плановая задача (handoff-code-limits.md).
   'src/native/store/nativeStoreIpc.js': {
-    ceiling: 700,
-    reason: 'v0.95.38: новый addHandler("tg:send-succeeded") — фикс дубля сообщений (~25 строк). v0.95.31: множественный typing handler. v0.95.26: комментарий-предупреждение про правило v0.87.41. v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers. Доменное разбиение IPC handlers — отдельный плановый шаг.'
+    ceiling: 720,
+    reason: 'v0.95.46: messageId в payload app:custom-notify (+5 строк) для scroll к конкретному сообщению. v0.95.44: tg:upload-progress handler. v0.95.38: tg:send-succeeded handler. v0.95.31: typing handler. Доменное разбиение IPC handlers — плановый шаг.'
   },
   'src/native/store/nativeStore.vitest.jsx': {
     ceiling: 900,

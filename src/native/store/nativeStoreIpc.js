@@ -448,6 +448,11 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
           dismissMs: 7000,
           senderName: message.senderName || chat?.title || '',
           chatTag: chatId,
+          // v0.95.46: messageId для перехода к КОНКРЕТНОМУ сообщению (а не просто
+          // к чату). Эталон: Telegram Web K appNotificationsManager.onclick →
+          // setInnerPeer({peerId, lastMsgId}). См. NativeApp.jsx + InboxMode.jsx
+          // через store.requestScrollToMessage.
+          messageId: message?.id != null ? String(message.id) : null,
         })
       } catch(_) {}
     }

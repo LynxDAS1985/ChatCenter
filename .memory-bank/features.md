@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.45 (2 июня 2026)
+## Текущая версия: v0.95.46 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.38.md`](./archive/features-v0.95.38.md) | v0.95.38 (фикс дубля сообщений через updateMessageSendSucceeded, ⏳ индикатор, mistakes static guard) | ~2 КБ |
 | [`archive/features-v0.95.35-37.md`](./archive/features-v0.95.35-37.md) | v0.95.35-37 (fade-in changelog, auto-scroll outgoing-other-device, sending_state polish, mistakes/outgoing-two-cases.md; стабилизировано v0.95.38+) | ~3 КБ |
 | [`archive/features-v0.95.34.md`](./archive/features-v0.95.34.md) | v0.95.34 (темовые vars в :root, вспышка bubble, WhatsNewModal UX; стабилизировано v0.95.40+) | ~2 КБ |
 | [`archive/features-v0.95.33.md`](./archive/features-v0.95.33.md) | v0.95.33 (фикс «цвет не применяется» через querySelectorAll, регресс-тест blur, деловой стиль; финал в v0.95.34) | ~2 КБ |
@@ -39,6 +40,21 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.46 — Переход к конкретному сообщению из уведомления
+
+Расширение v0.95.45: click «→ Перейти к чату» открывает чат **и скроллит к тому самому сообщению**.
+
+Поток (5 файлов): nativeStoreIpc + messageId в payload `app:custom-notify` → notificationManager сохраняет в notifItems → notifHandlers передаёт в `notify:clicked` payload → nativeStore новые actions `requestScrollToMessage/clearPendingScrollToMessage` + state `pendingScrollToMessage` → NativeApp вызывает request после setActiveChat → InboxMode useEffect ловит pendingScrollToMessage и при совпадении chatId+messages.length>0 → existing `scrollToMessage()` (с `.native-msg-flash` подсветкой 1.5с) → clear. setTimeout 100мс для React render. Orphan > 10с → auto-clear.
+
+**Эталон**: tweb [appImManager.setInnerPeer({peerId, lastMsgId})](https://github.com/morethanwords/tweb).
+
+**Конфликты ✅**: webview не задет (игнорирует messageId), reply-click scrollToMessage не задет.
+**Граничные ✅**: messageId null → fallback v0.95.45, удалено/вне окна → toast, юзер переключился → chatId mismatch skip, messages не загружены → ждём.
+
+**Регрессия**: lint 0, vitest 1016/1016, fileSizeLimits 334/334, check-memory ✅.
 
 ---
 
@@ -167,18 +183,9 @@
 
 ---
 
-### v0.95.38 — Фикс дубля сообщений + ⏳ индикатор + регресс-тесты dedup
+### v0.95.38 — Фикс дубля сообщений + ⏳ индикатор + dedup тесты
 
-Корень: tdlibClient НЕ обрабатывал `updateMessageSendSucceeded` → после ACK provisional id (huge) и финальный (12345) → 2 копии в DOM. Добавлены case `updateMessageSendSucceeded` + `updateMessageSendFailed` → emit `message:send-succeeded` → IPC `tg:send-succeeded` → store.handler `findIndex(m.id === oldId)` + replace. Эталоны: tweb applyMessageUpdate, Telegram Desktop History::idChanged().
-
-⏳ индикатор: 3 состояния check-mark — `isSending=true` → ⏳ / `isRead=true` → ✓✓ / иначе → ✓ (MessageBubble.jsx).
-
-Static guard F. в modernPatternsGuard: 4 handler-файла ОБЯЗАНЫ ссылаться на mistakes/outgoing-two-cases.md.
-
-**Тесты** +7: send-succeeded replace, oldId not found no-op, ghost chatId, dedup tg:new-message, bridge emit.
-**Конфликты ✅**: contiguity / unreadCount / seenOutgoingIds / send-scroll-done не задевается.
-
-**Регрессия**: lint 0, vitest 930/930, fileSizeLimits 316/316, check-memory ✅.
+Корень: `updateMessageSendSucceeded` не обрабатывался в tdlibClient → после server ACK provisional id (huge) → финал (12345) → 2 копии в DOM. Решение: emit `message:send-succeeded` → store replaces по oldId. ⏳ pending / ✓ sent / ✓✓ read в MessageBubble. Static guard F. в modernPatternsGuard для 4 message-handler файлов. +7 тестов. Полный текст: [`archive/features-v0.95.38.md`](./archive/features-v0.95.38.md).
 
 ---
 

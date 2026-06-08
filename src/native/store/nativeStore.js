@@ -1241,6 +1241,31 @@ export default function useNativeStore() {
     return r
   }, [])
 
+  // v0.95.46: запрос scroll к конкретному сообщению (используется при клике
+  // «Перейти к чату» в уведомлении — после setActiveChat нужно проскроллить до
+  // того самого сообщения которое вызвало уведомление, а не просто открыть чат).
+  // InboxMode useEffect слушает state.pendingScrollToMessage и при совпадении
+  // chatId с activeChatId вызывает scrollToMessage(messageId) + clear.
+  // Эталон: Telegram Web K appImManager.setInnerPeer({peerId, lastMsgId}).
+  const requestScrollToMessage = useCallback((chatId, messageId) => {
+    if (!chatId || !messageId) return
+    setState(s => ({
+      ...s,
+      pendingScrollToMessage: {
+        chatId: String(chatId),
+        messageId: String(messageId),
+        ts: Date.now(),
+      },
+    }))
+  }, [])
+
+  const clearPendingScrollToMessage = useCallback(() => {
+    setState(s => {
+      if (!s.pendingScrollToMessage) return s
+      return { ...s, pendingScrollToMessage: null }
+    })
+  }, [])
+
   // v0.95.41: резолв custom emoji premium (реакции + messageAnimatedEmoji).
   // Хранит in-memory кэш в state.customEmojis: {[id]: {url, mime, alt}}.
   // UI вызывает resolveCustomEmojis([id1, id2, ...]) → after-resolve кэш обновлён,
@@ -1279,5 +1304,6 @@ export default function useNativeStore() {
     getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, markTopicRead, setTyping,
     getCleanupStats, setMute, resolveCustomEmojis,
+    requestScrollToMessage, clearPendingScrollToMessage,
   }
 }
