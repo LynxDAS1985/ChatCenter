@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.42 (2 июня 2026)
+## Текущая версия: v0.95.43 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -38,6 +38,25 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.43 — Скрепка 📎 + альбомы sendMessageAlbum + превью + caption + DnD overlay
+
+5 фич отправки файлов. TDLib spec sendMessageAlbum (10 файлов max), Telegram Web K SendMessage, Discord upload preview.
+
+- **📎 кнопка** [FileAttachButton.jsx](src/native/components/FileAttachButton.jsx) NEW: hidden `<input multiple>` + paperclip → file picker.
+- **Превью + caption** [FilePreviewBar.jsx](src/native/components/FilePreviewBar.jsx) NEW: thumbnails 72×72 через URL.createObjectURL (revoke в cleanup), ✕ на каждом, caption input + Отправить. Заменяет input в [InboxMessageInput.jsx](src/native/components/InboxMessageInput.jsx) при hasAttachedFiles.
+- **Альбомы** [tdlibAlbum.js](main/native/backends/tdlibAlbum.js) NEW: `sendMessageAlbum` через TDLib, split на батчи 10 при > 10 файлах. albumCaption на первом, replyTo только в первом батче. IPC `tg:send-album`, store action `sendAlbum`.
+- **DnD overlay** [DragDropOverlay.jsx](src/native/components/DragDropOverlay.jsx) NEW: dashed accent border + 📎 64px + текст. Заменяет inline старый.
+- **useFileAttach hook** [useFileAttach.js](src/native/hooks/useFileAttach.js) NEW: state + addFiles/removeFile/clear, защита >2GB. [InboxMode.jsx](src/native/modes/InboxMode.jsx) handleAttachSend — 1 файл → sendFile, 2+ → sendAlbum.
+
+**Конфликты ✅**: tdlibSend.sendFile, handleReplySend, useDropAndPaste, lastAutoScrollAtRef — не задевается.
+**Граничные ✅**: пусто→noop, >10→split, >2GB→фильтр, нет file.path→toast.
+**Тесты** (+19): tdlibAlbum +12 (buildContent типы, split 11/21, caption, replyTo, errors), useFileAttach +7.
+**Не сделано**: прогресс % через updateFile — отложено в v0.95.44+ (spinner на кнопке достаточно для MVP).
+
+**Регрессия**: lint 0, vitest 994/994 (+19), fileSizeLimits 332/332, check-memory ✅.
 
 ---
 
@@ -110,46 +129,18 @@
 
 ---
 
-### v0.95.38 — Фикс дубля сообщений + ⏳ индикатор отправки + регресс-тесты dedup
+### v0.95.38 — Фикс дубля сообщений + ⏳ индикатор + регресс-тесты dedup
 
-КРИТИЧНЫЙ production-фикс «дубля сообщений после отправки» (видел юзер на скриншоте v0.95.37). Корень был доказан в v0.95.37 анализе (`mistakes/outgoing-two-cases.md`).
+Корень: tdlibClient НЕ обрабатывал `updateMessageSendSucceeded` → после ACK provisional id (huge) и финальный (12345) → 2 копии в DOM. Добавлены case `updateMessageSendSucceeded` + `updateMessageSendFailed` → emit `message:send-succeeded` → IPC `tg:send-succeeded` → store.handler `findIndex(m.id === oldId)` + replace. Эталоны: tweb applyMessageUpdate, Telegram Desktop History::idChanged().
 
-**(1) updateMessageSendSucceeded handler** — корень дубля устранён ([tdlibClient.js](main/native/backends/tdlibClient.js)):
-- Раньше: `_handleUpdate()` switch НЕ обрабатывал `'updateMessageSendSucceeded'`. После server ACK TDLib менял id с provisional (~100_000_000_000) на финальный (~12_345). Store оставался с provisional, при следующем `loadNewerMessages` backend приносил финальную копию с другим id → dedup по id не срабатывал → **дубль**.
-- Решение: добавлены case `'updateMessageSendSucceeded'` и `'updateMessageSendFailed'`. Эмитят `'message:send-succeeded'` event с `{accountId, chatId, oldId, newMessage}`. senderName извлекается из cache как в `_handleNewMessage` для UI consistency.
-- [tdlibIpcBridge.js](main/native/tdlibIpcBridge.js): subscribe → канал `'tg:send-succeeded'`.
-- [nativeStoreIpc.js](src/native/store/nativeStoreIpc.js): handler `addHandler('tg:send-succeeded')` — `setState` с `findIndex(m => m.id === oldId)` + replace на newMessage. No-op если oldId не найден или chatId не существует (защита от race condition).
-- Лог `store-send-succeeded` для диагностики (oldId / newId / sendingState).
-- Эталоны: Telegram Web K `applyMessageUpdate`, Telegram Desktop `History::idChanged()`.
+⏳ индикатор: 3 состояния check-mark — `isSending=true` → ⏳ / `isRead=true` → ✓✓ / иначе → ✓ (MessageBubble.jsx).
 
-**(2) ⏳ Индикатор «отправляется»** ([MessageBubble.jsx](src/native/components/MessageBubble.jsx)) — 3 состояния check-mark:
-- `isSending=true` → `⏳` (opacity 0.6, title «Отправляется...»)
-- `isRead=true` → `✓✓` (как раньше)
-- иначе → `✓` (как раньше)
-- Юзер видит что сообщение в процессе отправки, не «застряло». После updateMessageSendSucceeded → state обновлён → isSending=false → перерисовка → `⏳` → `✓`. Эталон: Telegram Desktop часики, Telegram Web K rotating circle.
+Static guard F. в modernPatternsGuard: 4 handler-файла ОБЯЗАНЫ ссылаться на mistakes/outgoing-two-cases.md.
 
-**(3) Регресс-тесты dedup** ([nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) +5 тестов):
-- `tg:send-succeeded` заменяет provisional → финальный, длина списка не меняется
-- `oldId не найден` → no-op (state не меняется)
-- `chatId ghost` → не падает + state не меняется
-- `tg:new-message` dedup: повторный emit с тем же id → обновляет, НЕ дублирует
-- `3 события одного id` → длина списка остаётся 1
-- [tdlibEmitContracts.vitest.js](src/__tests__/tdlibEmitContracts.vitest.js) +2: bridge updateMessageSendSucceeded и SendFailed → правильный emit.
+**Тесты** +7: send-succeeded replace, oldId not found no-op, ghost chatId, dedup tg:new-message, bridge emit.
+**Конфликты ✅**: contiguity / unreadCount / seenOutgoingIds / send-scroll-done не задевается.
 
-**(4) Static guard на ссылки в mistakes/outgoing-two-cases.md** ([modernPatternsGuard.test.cjs](src/__tests__/modernPatternsGuard.test.cjs) F.):
-- 4 файла-handler'а (`useNewBelowCounter.js`, `nativeStoreIpc.js`, `tdlibClient.js`, `tdlibIpcBridge.js`) ОБЯЗАНЫ содержать в комментариях ссылку на `outgoing-two-cases.md`.
-- Защита: если кто-то правит outgoing-логику и удаляет ссылку — тест падает с инструкцией прочитать mistakes-файл. Гарантирует что будущий разработчик/агент увидит ловушку «2 разных случая outgoing».
-
-**Конфликты проверены** ✅:
-- contiguity check tg:new-message (v0.95.0) — send-succeeded не вставляет, только заменяет. OK.
-- unreadCount (v0.95.26) — outgoing никогда не инкрементит. send-succeeded не трогает unreadCount. OK.
-- useNewBelowCounter seenOutgoingIdsRef (v0.95.37) — send-succeeded в РАЗНОМ канале (tg:send-succeeded), не задевает counter. OK.
-- handleReplySend send-scroll-done (50мс) — без изменений, продолжает работать. OK.
-- React re-render — 1 setState на 1 сообщение, минимально.
-
-**Производительность**: 0 overhead (1 setState на ~300мс при отправке, не на каждый кадр).
-
-**Регрессия**: lint 0, vitest 930/930 (+7), modernPatternsGuard 22/22 (+4), fileSizeLimits 316/316, check-memory ✅.
+**Регрессия**: lint 0, vitest 930/930, fileSizeLimits 316/316, check-memory ✅.
 
 ---
 

@@ -22,6 +22,7 @@ import { cleanupTgMedia } from './tgMediaCleanup.js'
 import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.4
 import { resolveTopicEmojis } from './tdlibForumEmoji.js'  // v0.91.6
 import { resolveCustomEmojiIds } from './tdlibCustomEmoji.js'  // v0.95.41
+import { sendMessageAlbum } from './tdlibAlbum.js'  // v0.95.43
 
 // Wrapper для invoke: возвращает { ok, result?, error?, code? } вместо throw.
 // `code` сохраняем как есть — потребители различают «404=end-of-list» от других.
@@ -452,6 +453,13 @@ export function createTdlibBackend(opts = {}) {
         return sendFile(ctx.client, ctx.rawId, filePath, {
           caption, chatIdStr: chatId,
         })
+      },
+      // v0.95.43: отправка альбома (до 10 файлов одним сообщением, остальное split на батчи).
+      // ОБЯЗАТЕЛЬНО прочитать перед правкой: .memory-bank/mistakes/outgoing-two-cases.md
+      async sendAlbum(chatId, files, opts = {}) {
+        const ctx = getClientForChat(manager, chatId)
+        if (ctx.error) return ctx.error
+        return sendMessageAlbum(ctx.client, ctx.rawId, files, opts)
       },
       async deleteMessage(chatId, msgId, forAll = true) {
         const ctx = getClientForChat(manager, chatId)

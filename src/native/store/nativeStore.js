@@ -498,6 +498,13 @@ export default function useNativeStore() {
     return window.api?.invoke('tg:send-file', { chatId, filePath, caption })
   }, [])
 
+  // v0.95.43: отправка нескольких файлов одним альбомом (TDLib sendMessageAlbum).
+  // files: [{path, caption?}], albumCaption — общий caption на первом элементе.
+  // > 10 файлов → backend split на батчи по 10 (TDLib limit).
+  const sendAlbum = useCallback(async (chatId, files, albumCaption, replyTo) => {
+    return window.api?.invoke('tg:send-album', { chatId, files, albumCaption, replyTo })
+  }, [])
+
   const forwardMessage = useCallback(async (fromChatId, toChatId, messageId) => {
     return window.api?.invoke('tg:forward', { fromChatId, toChatId, messageId })
   }, [])
@@ -1268,7 +1275,7 @@ export default function useNativeStore() {
     setMode, setActiveAccount, setActiveChat, setChatFilter, closeForumTopics,
     startLogin, submitCode, submitPassword, cancelLogin,
     loadChats, loadCachedChats, checkConnection, loadMessages, loadMessagesUntil, loadTopicMessagesUntil, loadForumTopics, selectForumTopic, loadOlderMessages, loadNewerMessages,
-    sendMessage, sendFile, deleteMessage, editMessage, forwardMessage, pinMessage, setReaction,
+    sendMessage, sendFile, sendAlbum, deleteMessage, editMessage, forwardMessage, pinMessage, setReaction,
     getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, markTopicRead, setTyping,
     getCleanupStats, setMute, resolveCustomEmojis,

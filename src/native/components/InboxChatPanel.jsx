@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
 import InboxMessageInput from './InboxMessageInput.jsx'
+import DragDropOverlay from './DragDropOverlay.jsx'
 import VirtualMessageList from './VirtualMessageList.jsx'
 import PinnedMessageBar from './PinnedMessageBar.jsx'
 import ForumTopicEmptyState from './ForumTopicEmptyState.jsx'
@@ -104,6 +105,9 @@ export default function InboxChatPanel({
   handleDelete, handleForward, handlePin, openPhotoWindow, getMessage, readByVisibility,
   // v0.95.29: реакции
   onSetReaction,
+  // v0.95.43: скрепка — выбор файлов, превью, отправка альбомом
+  attachFiles, attachCaption, attachSending,
+  onAttachAdd, onAttachRemove, onAttachClear, onAttachCaptionChange, onAttachSend,
 }) {
   // v0.89.0: react-window держит scroll-контейнер сам. msgsScrollRef нужен внешним
   // хукам (useInitialScroll, useReadOnScrollAway, scrollPos save) — синхронизируем
@@ -230,13 +234,9 @@ export default function InboxChatPanel({
           opacity: chatReady ? 1 : 0,
           transition: 'opacity 200ms ease-out',
         }}>
-          {dragOver && (
-            <div style={{
-              position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--amoled-accent)', fontSize: 18, fontWeight: 600, pointerEvents: 'none',
-              background: 'rgba(0,0,0,0.4)', zIndex: 2,
-            }}>📎 Отпустите файл для отправки</div>
-          )}
+          {/* v0.95.43: расширенный overlay-подсказка с иконкой и описанием
+              (раньше тонкая надпись). Эталоны: Telegram Web K, Discord, Slack. */}
+          <DragDropOverlay visible={dragOver} />
           {visibleMessages.length === 0 ? (
             // v0.95.18: для форум-чата без выбранной темы — красивый empty state с иконкой
             // 📚 и подсказкой в центре окна (вместо тонкого «Выберите тему слева»).
@@ -296,6 +296,7 @@ export default function InboxChatPanel({
         {/* v0.95.2: UnreadProgressPill удалён — бейдж кнопки достаточен. */}
       </div>
       {/* Input + Reply/Edit панель → InboxMessageInput (v0.87.83) */}
+      {/* v0.95.43: прокидываем скрепку state/handlers */}
       <InboxMessageInput
         input={input} setInput={setInput} sending={sending}
         replyTo={replyTo} editTarget={editTarget}
@@ -306,6 +307,14 @@ export default function InboxChatPanel({
         handlePaste={handlePaste}
         disabled={activeChat.isForum}
         disabledText={activeTopic ? 'Отправка в темы будет следующим этапом' : 'Сначала выберите тему слева'}
+        attachFiles={attachFiles}
+        attachCaption={attachCaption}
+        attachSending={attachSending}
+        onAttachAdd={onAttachAdd}
+        onAttachRemove={onAttachRemove}
+        onAttachClear={onAttachClear}
+        onAttachCaptionChange={onAttachCaptionChange}
+        onAttachSend={onAttachSend}
       />
     </>
   )

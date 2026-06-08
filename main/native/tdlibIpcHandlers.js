@@ -253,6 +253,10 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
   })
   handle('tg:send-file', ({ chatId, filePath, caption } = {}) =>
     backend.messages.sendFile(chatId, filePath, caption))
+  // v0.95.43: отправка альбома (до 10 файлов одним сообщением). См. tdlibAlbum.js.
+  // files: [{path, caption?}], opts: {albumCaption?, replyTo?}.
+  handle('tg:send-album', ({ chatId, files, albumCaption, replyTo } = {}) =>
+    backend.messages.sendAlbum(chatId, files, { albumCaption, replyTo }))
   // v0.89.4: clipboard-paste картинки (UI useDropAndPaste.js шлёт Uint8Array).
   // Пишем во временный файл userDataDir/tdlib-tmp/paste-X.ext + backend.messages.sendFile.
   // После отправки запланирована очистка (background — не блокируем).
