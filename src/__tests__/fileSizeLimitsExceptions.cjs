@@ -41,8 +41,8 @@ module.exports = {
   // loadMessages/loadOlderMessages/loadNewerMessages. Разбиение по доменам — отдельная
   // плановая задача после Этапа 2 (виртуализация). До этой работы файл уже был 764 строки.
   'src/native/store/nativeStore.js': {
-    ceiling: 1320,
-    reason: 'v0.95.46: requestScrollToMessage + clearPendingScrollToMessage actions (~20 строк) для navigation из уведомления. v0.95.43: sendAlbum action. v0.95.41: resolveCustomEmojis. v0.95.29: setReaction. v0.89.40: IndexedDB cache. Доменное разбиение store — плановый шаг.'
+    ceiling: 1340,
+    reason: 'v0.95.48: markPendingScrollLoadAttempted action + loadAttempted флаг в pendingScrollToMessage (~15 строк) — защита от петли при jump-to-message из notification (target вне окна → 2-я попытка fail → toast). v0.95.46: requestScrollToMessage + clearPendingScrollToMessage actions. v0.95.43: sendAlbum action. v0.95.41: resolveCustomEmojis. v0.95.29: setReaction. v0.89.40: IndexedDB cache. Доменное разбиение store — плановый шаг.'
   },
   'main/native/backends/tdlibBackend.js': {
     ceiling: 770,
@@ -77,8 +77,8 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 1060,
-    reason: 'v0.95.46: useEffect для pendingScrollToMessage из уведомления (~20 строк). v0.95.43: useFileAttach + handleAttachSend. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. Доменное разбиение — отдельная задача.'
+    ceiling: 1120,
+    reason: 'v0.95.49: userScrolledRef для followup re-apply restore (паттерн Telegram Web K _isJumping) + reset при смене activeViewKey + проброс в useInitialScroll/InboxChatPanel (~10 строк). v0.95.48: loadMessages aroundId+addOffset=-49 для jump-to-message. v0.95.47: диагностические логи. v0.95.46: useEffect для pendingScrollToMessage. v0.95.43: useFileAttach. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. Доменное разбиение — отдельная задача.'
   },
   // v0.92.0: useInboxScroll вернулся в стандартный лимит 150 после удаления
   // isRestoringRef guards. Текущий размер 139.
@@ -94,8 +94,8 @@ module.exports = {
   // на под-хуки (3-4 файла useInitialScrollAnchor/Bottom/FirstUnread) — отдельная задача
   // после стабилизации v0.91.22 фикса (нужны логи юзера что closed-loop ушёл).
   'src/native/hooks/useInitialScroll.js': {
-    ceiling: 170,
-    reason: 'v0.95.4: useEffect→useLayoutEffect (фикс «дёрг при повторном открытии seen-чата») + 7 строк комментария-предупреждения «КРИТИЧНО: только micro-операция scrollTop=N внутри, не добавлять fetch/тяжёлую работу — иначе useLayoutEffect блокирует paint (React docs)». v0.92.0 history: исторический корневой хук восстановления позиции (saved scrollTop / firstUnread / atBottom). CLAUDE.md запрещает резать комментарии. Доменное разбиение — отдельная плановая задача.'
+    ceiling: 220,
+    reason: 'v0.95.49: followup re-apply ветка branch 2 !isReturning (~40 строк с комментариями) — фикс «возврат в чат прыгает вверх». MDN clamp scrollTop + staged loadMessages → re-apply на каждом messagesCount росте пока followupCount<=5 И !userScrolledRef. Эталон Telegram Web K _isJumping. v0.95.4: useEffect→useLayoutEffect + 7 строк предупреждения. v0.92.0 history: корневой хук восстановления позиции. CLAUDE.md запрещает резать комментарии. Доменное разбиение — отдельная плановая задача.'
   },
   // v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers (tg:chat-last-message,
   // tg:sender-avatar, tg:chat-avatar) добавил ~60 строк. Корень — Проблема 3 Maximum
@@ -106,11 +106,22 @@ module.exports = {
   // события одного кадра в один setState. Доменное разбиение IPC handlers — отдельная
   // плановая задача (handoff-code-limits.md).
   'src/native/store/nativeStoreIpc.js': {
-    ceiling: 720,
-    reason: 'v0.95.46: messageId в payload app:custom-notify (+5 строк) для scroll к конкретному сообщению. v0.95.44: tg:upload-progress handler. v0.95.38: tg:send-succeeded handler. v0.95.31: typing handler. Доменное разбиение IPC handlers — плановый шаг.'
+    ceiling: 730,
+    reason: 'v0.95.47: диагностический лог notify-emit (~10 строк, временный — удалить после нахождения корня). v0.95.46: messageId в payload app:custom-notify. v0.95.44: tg:upload-progress handler. v0.95.38: tg:send-succeeded handler. v0.95.31: typing handler. Доменное разбиение IPC handlers — плановый шаг.'
   },
   'src/native/store/nativeStore.vitest.jsx': {
-    ceiling: 900,
-    reason: 'v0.95.38: +5 регресс-тестов tg:send-succeeded handler + tg:new-message dedup (~100 строк) — критичная защита от регрессии дубля сообщений. См. mistakes/outgoing-two-cases.md. v0.95.26: +4 теста на 47-дневный баг unreadCount.'
+    ceiling: 970,
+    reason: 'v0.95.48: +4 теста для pendingScrollToMessage/markPendingScrollLoadAttempted/clearPendingScrollToMessage (~50 строк) — защита jump-to-message паттерна tdesktop/tweb. v0.95.38: +5 регресс-тестов tg:send-succeeded handler + tg:new-message dedup. См. mistakes/outgoing-two-cases.md. v0.95.26: +4 теста на 47-дневный баг unreadCount.'
+  },
+  // v0.95.49: changelog содержит 19 entries для модалки «Что нового», копится со
+  // временем при каждом minor релизе. Архивация старых — отдельная задача.
+  'src/utils/changelogData.js': {
+    ceiling: 350,
+    reason: 'v0.95.49: добавлен entry v0.95.49 (fix scroll-restore «прыжок вверх»). Файл копит changelog для WhatsNewModal — растёт ~15 строк за minor релиз. Архивация старых — отдельная задача.'
+  },
+  // v0.95.49: +3 теста для followup re-apply scrollTop. Тесты сложные (renderHook + fakeEl).
+  'src/native/hooks/useInitialScroll.vitest.jsx': {
+    ceiling: 500,
+    reason: 'v0.95.49: +3 теста для followup re-apply saved.scrollTop (возврат + messagesCount растёт / abort при user-scroll / MAX=5 защита от петли). Эталон Telegram Web K _isJumping retry pattern.'
   }
 }

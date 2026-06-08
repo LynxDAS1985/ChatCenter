@@ -357,6 +357,92 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
   })
 })
 
+// v0.95.49: regression — followup re-apply saved.scrollTop когда юзер вернулся
+// в seen-чат и messagesCount меняется (staged IDB→server→prefetch). MDN scrollTop
+// clamp к [0, scrollHeight-clientHeight] портит позицию когда scrollHeight ещё
+// маленький (cached msgs). Решение — re-apply на КАЖДОМ followup-render пока
+// followupCount<=5 И !userScrolledRef.
+describe('v0.95.49: followup re-apply saved.scrollTop для seen-чата', () => {
+  it('возврат + messagesCount растёт → scrollTop ре-применяется', async () => {
+    const fakeEl = { scrollTop: 0, scrollHeight: 5000, clientHeight: 500 }
+    const userScrolledRef = { current: false }
+    const isRestoringRef = { current: false }
+    const getSavedScrollTop = vi.fn(() => ({ scrollTop: 3000, atBottom: false }))
+
+    const { rerender } = renderHook(({ chatId, messagesCount }) => {
+      const scrollRef = useRef(fakeEl)
+      const firstUnreadIdRef = useRef(null)
+      return useInitialScroll({
+        activeChatId: chatId, messagesCount, scrollRef,
+        firstUnreadIdRef, activeUnread: 0, loading: false,
+        getSavedScrollTop, isRestoringRef, userScrolledRef,
+        onDone: () => {},
+      })
+    }, { initialProps: { chatId: 'chat-A', messagesCount: 50 } })
+
+    // Первое открытие → ветка 1 → restore saved.scrollTop=3000
+    await new Promise(r => setTimeout(r, 250))
+    expect(fakeEl.scrollTop).toBe(3000)
+
+    // Переключение на B
+    rerender({ chatId: 'chat-B', messagesCount: 50 })
+    await new Promise(r => setTimeout(r, 50))
+
+    // Возврат на A — isReturning=true → restore saved.scrollTop=3000
+    fakeEl.scrollTop = 100
+    rerender({ chatId: 'chat-A', messagesCount: 50 })
+    await new Promise(r => setTimeout(r, 50))
+    expect(fakeEl.scrollTop).toBe(3000)
+
+    // followup-render #1: messagesCount растёт (staged setState) → re-apply
+    fakeEl.scrollTop = 200
+    fakeEl.scrollHeight = 8000
+    rerender({ chatId: 'chat-A', messagesCount: 100 })
+    await new Promise(r => setTimeout(r, 50))
+    expect(fakeEl.scrollTop).toBe(3000)
+
+    // followup-render #2 (prefetch×2)
+    fakeEl.scrollTop = 150
+    rerender({ chatId: 'chat-A', messagesCount: 120 })
+    await new Promise(r => setTimeout(r, 50))
+    expect(fakeEl.scrollTop).toBe(3000)
+  })
+
+  it('юзер начал листать → followup re-apply ABORT (не перезаписывает позицию)', async () => {
+    const fakeEl = { scrollTop: 0, scrollHeight: 5000, clientHeight: 500 }
+    const userScrolledRef = { current: false }
+    const isRestoringRef = { current: false }
+    const getSavedScrollTop = vi.fn(() => ({ scrollTop: 3000, atBottom: false }))
+
+    const { rerender } = renderHook(({ chatId, messagesCount }) => {
+      const scrollRef = useRef(fakeEl)
+      const firstUnreadIdRef = useRef(null)
+      return useInitialScroll({
+        activeChatId: chatId, messagesCount, scrollRef,
+        firstUnreadIdRef, activeUnread: 0, loading: false,
+        getSavedScrollTop, isRestoringRef, userScrolledRef,
+        onDone: () => {},
+      })
+    }, { initialProps: { chatId: 'chat-A', messagesCount: 50 } })
+
+    await new Promise(r => setTimeout(r, 250))
+    rerender({ chatId: 'chat-B', messagesCount: 50 })
+    await new Promise(r => setTimeout(r, 50))
+    rerender({ chatId: 'chat-A', messagesCount: 50 })
+    await new Promise(r => setTimeout(r, 50))
+    expect(fakeEl.scrollTop).toBe(3000)
+
+    // Юзер начал листать — поставил флаг (имитация wheel/touch/pointer)
+    userScrolledRef.current = true
+    fakeEl.scrollTop = 1234  // юзер сейчас здесь, читает
+
+    // Followup-render не должен перезаписывать позицию юзера
+    rerender({ chatId: 'chat-A', messagesCount: 100 })
+    await new Promise(r => setTimeout(r, 50))
+    expect(fakeEl.scrollTop).toBe(1234)
+  })
+})
+
 // v0.91.14: регрессия для retry-loop в ветке already-seen. Корень бага
 // (chatcenter.log 14:54:35): scrollEl=null при первом срабатывании → silent skip +
 // lastActiveChatIdRef обновлён → следующее isReturning=false → restore никогда.

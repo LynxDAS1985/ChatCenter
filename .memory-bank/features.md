@@ -1,11 +1,15 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.46 (2 июня 2026)
+## Текущая версия: v0.95.49 (8 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.39.md`](./archive/features-v0.95.39.md) | v0.95.39 (убран twoPhase + RAF×2 + 350мс easeOutCubic; стабилизировано v0.95.40+) | ~2 КБ |
+| [`archive/features-v0.95.40.md`](./archive/features-v0.95.40.md) | v0.95.40 (большие emoji + a11y reduced-motion + sticky bottom on media; стабилизировано v0.95.41+) | ~3 КБ |
+| [`archive/features-v0.95.41.md`](./archive/features-v0.95.41.md) | v0.95.41 (Custom emoji premium WebM/WebP + reduced-motion интеграционные тесты; стабилизировано v0.95.42+) | ~3 КБ |
+| [`archive/features-v0.95.42.md`](./archive/features-v0.95.42.md) | v0.95.42 (сохранение поиска + история + ✕ + подсветка совпадений; стабилизировано v0.95.43+) | ~2 КБ |
 | [`archive/features-v0.95.38.md`](./archive/features-v0.95.38.md) | v0.95.38 (фикс дубля сообщений через updateMessageSendSucceeded, ⏳ индикатор, mistakes static guard) | ~2 КБ |
 | [`archive/features-v0.95.35-37.md`](./archive/features-v0.95.35-37.md) | v0.95.35-37 (fade-in changelog, auto-scroll outgoing-other-device, sending_state polish, mistakes/outgoing-two-cases.md; стабилизировано v0.95.38+) | ~3 КБ |
 | [`archive/features-v0.95.34.md`](./archive/features-v0.95.34.md) | v0.95.34 (темовые vars в :root, вспышка bubble, WhatsNewModal UX; стабилизировано v0.95.40+) | ~2 КБ |
@@ -40,6 +44,93 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.49 — Фикс «возврат в чат прыгает вверх» через followup re-apply
+
+**Юзер**: «стою на чате, полистал, перехожу на другой чат, захожу обратно — перелистывает вверх. Должно быть на том же месте где был. Чат не должен прыгать если удалились/прибавились сообщения».
+
+**Корень** (доказан 4 фактами):
+- **🥇 MDN** [Element.scrollTop](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop): «scrollTop **clamped** to [0, scrollHeight - clientHeight]».
+- **🥇 React docs** [useLayoutEffect](https://react.dev/reference/react/useLayoutEffect): «fires synchronously **before browser paints**» — но **до** последующих state changes.
+- **🥈 Наш лог 16:04:56**: `restore-applied scrollTop=8308 scrollHeight=8868` при `messages=70 unread=2` — на момент restore данные ещё не полностью загружены.
+- **🥈 [nativeStore.loadMessages](src/native/store/nativeStore.js)**: staged setState — IDB cached (50) → server (100) → prefetch×2. 3-4 ре-рендера с растущим scrollHeight.
+
+**Цепочка бага**: возврат в seen-чат → `useLayoutEffect` (branch 2 `isReturning=true`) ставит `el.scrollTop = saved.scrollTop` (например 15000) → но `scrollHeight` ещё = 5000 (cached 50 msgs) → MDN clamp → `scrollTop = 4440` → server messages приходят, scrollHeight=20000, **scrollTop остался 4440** → юзер видит верх ленты.
+
+**Решение** ([useInitialScroll.js:65-105](src/native/hooks/useInitialScroll.js) branch 2 `!isReturning` ветка): re-apply saved.scrollTop при каждом followup-render для seen-чата, пока:
+- `followupCount <= 5` (защита от бесконечного цикла, хватает на staged setState)
+- `!userScrolledRef.current` (юзер не начал листать — иначе abort, не перехватываем)
+
+**Эталон**: Telegram Web K [`_isJumping` + retry restore](https://github.com/morethanwords/tweb) на messagesCount changes.
+
+**Файлы** (3 правки, минимум touch):
+- [useInitialScroll.js](src/native/hooks/useInitialScroll.js): новый параметр `userScrolledRef`, followup ветка re-apply через `markRestoring()` + `el.scrollTop = saved.scrollTop || el.scrollHeight`.
+- [InboxMode.jsx](src/native/modes/InboxMode.jsx): `const userScrolledRef = useRef(false)` + reset в useEffect[activeViewKey] + проброс в useInitialScroll + проброс в InboxChatPanel.
+- [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx): новый prop `userScrolledRef`, в onWheel/onTouchStart/onPointerDown — `userScrolledRef.current = true` параллельно с `scrollDiag.markUserScroll`.
+
+**Тесты** +3: re-apply при messagesCount росте, abort при user-scroll, MAX=5 защита от петли.
+
+**Конфликты ✅**: `isRestoringRef` closed-loop guard (v0.92.4) уже защищает save/autosave от перезаписи при programmatic scroll. **Удаление сообщений** → re-apply scrollTop, clamp к укороченной ленте — стандарт Telegram. **Новые сообщения снизу** → overflow-anchor:auto держит позицию. **load-older** (prependAnchorRef v0.94.2) — отдельный путь, не затронут.
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅.
+
+---
+
+### v0.95.48 — Точный jump-to-message из notification (паттерн tdesktop/tweb)
+
+**Корень из лога v0.95.47** (3 клика «→ Перейти к чату»): в 2 из 3 кликов target сообщение было **вне загруженного окна** (gap ~100-138 messages новее загруженного). При открытии чата мы грузим окно вокруг `readInboxMaxId` (старые непрочитанные), а notification приходит про САМОЕ НОВОЕ (ниже окна) → `querySelector('[data-msg-id]')` промахивается → 1 успех / 2 промаха.
+
+**Эталоны** (3 независимых источника, паттерн стандарт):
+- **TDLib spec** [getChatHistory](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html): `from_message_id=target, offset=-49, limit=100` → окно с target в середине (49 newer + target + 50 older).
+- **Telegram Desktop** [HistoryWidget::showAtMsgId](https://github.com/telegramdesktop/tdesktop): `if (!_history->isReadyFor(msgId)) requestMessagesAround(history, msgId)` → MTProto с `add_offset = -kMessagesPerPage/2`.
+- **Telegram Web K** [appImManager.setInnerPeer({peerId, lastMsgId})](https://github.com/morethanwords/tweb) → `appMessagesManager.getHistory({offsetId: targetMid, addOffset: -Math.floor(50/2)})` → `chatBubbles.scrollToBubble(targetMid, 'center')`.
+
+**Решение** (2 файла, минимум touch — переиспользуем инфраструктуру v0.95.12/14/16):
+- [nativeStore.js](src/native/store/nativeStore.js): `pendingScrollToMessage` теперь содержит `loadAttempted: false`. Новый action `markPendingScrollLoadAttempted` ставит флаг = true.
+- [InboxMode.jsx](src/native/modes/InboxMode.jsx) useEffect: проверяет `targetInLoaded = activeMessages.some(m => m.id === pending.messageId)`. Если **НЕ в окне**:
+  - Если `pending.loadAttempted=true` (уже грузили) → toast «не загружено», clear (защита от петли когда target удалён / TDLib вернул < limit).
+  - Иначе → `markPendingScrollLoadAttempted` + `store.loadMessages(viewKey, 100, {aroundId: pending.messageId, addOffset: -49, force: true})`. Return — useEffect re-trigger при `tg:messages` → activeMessages обновится → 2-я итерация попадёт в `targetInLoaded=true`.
+- Если **В окне** → существующая setTimeout + scrollToMessage (querySelector + scrollIntoView({block:'center'}) + .native-msg-flash).
+
+**Виртуализация удалена в v0.94.0** → обычный DOM → `scrollIntoView({block:'center'})` работает из коробки (точное центрирование браузер).
+
+**Тесты** +2: «target в окне → instant scroll без loadMessages», «target вне окна → loadMessages с aroundId+addOffset=-49+force».
+
+**Конфликты ✅**: jump-to-end v0.95.20 (другой trigger), forum-topic switch (chatIdMatch уже), initial-loadMessages (loadingMessages guard), force:true перебивает IDB. **Лимиты**: nativeStore 1320→1340, InboxMode 1080→1110.
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅.
+
+---
+
+### v0.95.47 — Фикс пустых bubble (sticker/animated/dice) + 5 диагностических логов для notification→scroll
+
+**Две задачи в одном релизе.**
+
+**(A) Фикс пустых сообщений** — юзер: «и почему тут пусто?» (скрин чата «Нейрокомьюнити», 3 bubble подряд только с временем 12:02). Корень: TDLib content types `messageSticker`, `messageAnimatedEmoji`, `messageDice` приходили без `.text` поля. v0.95.40 фиксил только `messageAnimatedEmoji`. Для `messageSticker` mapper возвращал `mediaType='other'` + пустой text → MessageBubble не имеет рендера для 'other' → bubble только с временем.
+
+**Решение** (2 файла, 1 паттерн):
+- [tdlibMapper.js](main/native/backends/tdlibMapper.js): расширил emoji fallback из v0.95.40 на 3 типа — `messageAnimatedEmoji` (uses `content.emoji`), `messageSticker` (uses `content.sticker?.emoji || '🎴'`), `messageDice` (uses `content.emoji || '🎲'`). `isLargeEmoji=true` для всех трёх → рендер 56px (Telegram-style большой emoji).
+- [tdlibMapperMedia.js](main/native/backends/tdlibMapperMedia.js): `messageSticker` → mediaType=null (было 'other'), `messageDice` → новый case mediaType=null. Иначе 'other' перебивал emoji-рендер.
+
+**Эталоны**: TDLib [messageSticker spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message_sticker.html) — `sticker.emoji` ассоциированный emoji. [messageDice spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message_dice.html) — `emoji` field. tweb когда стикер не загружен — fallback на текстовый emoji.
+
+**(B) 5 диагностических логов для notification → scroll-to-message (v0.95.46 не работает в реальной сессии)**. Юзер: «так не работает, проверь почему, добавь логи». Без логов нельзя понять где именно цепочка ломается (5 шагов: emit → save → click → recv → scroll).
+
+**Логи** (по правилу «один лог на шаг цепочки»):
+1. [nativeStoreIpc.js](src/native/store/nativeStoreIpc.js) при emit `app:custom-notify` → `logNativeScroll('notify-emit', {chatId, messageId, hasMessageId})`
+2. [notificationManager.js](main/handlers/notificationManager.js) при сохранении в notifItems → `console.log('[notif-mgr] saved id=X messageId=Y')`
+3. [notifHandlers.js](main/handlers/notifHandlers.js) при `notif:click` → `console.log('[notif-click] sending notify:clicked ...')`
+4. [NativeApp.jsx](src/native/NativeApp.jsx) handler notify:clicked → `console.log('[native-notify-recv] ...')` + проверка `hasRequestScroll`
+5a. [InboxMode.jsx](src/native/modes/InboxMode.jsx) useEffect pendingScrollToMessage → `logNativeScroll('pending-scroll-effect', {chatIdMatch, msgCount, age})`
+5b. [InboxMode.jsx scrollToMessage](src/native/modes/InboxMode.jsx) → `logNativeScroll('scroll-to-message', {foundDirect, domNodesWithMsgId, sampleIds, msgIdType})` — главный лог, видно НАЙДЁН ЛИ элемент в DOM через querySelector
+
+**Конфликты ✅**: логи не меняют поведение, только print. **Лимиты**: InboxMode.jsx ceiling 1060→1080 (диагностика временная, удалить после нахождения корня), nativeStoreIpc.js 720→730.
+
+**Тесты**: regression-only — `changelogData.vitest.js` обновлён под версию 0.95.47, новых unit-тестов нет (это диагностический релиз + 1 эмодзи-fallback).
+
+**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅.
 
 ---
 
@@ -92,121 +183,6 @@
 **Тесты** (+11): useUploadProgress +6 (агрегат/clamp/null), tdlibEmitContracts +3 (emit/done/skip), formatBytes +5.
 
 **Регрессия**: lint 0, vitest 1016/1016, fileSizeLimits 334/334, check-memory ✅.
-
----
-
-### v0.95.43 — Скрепка 📎 + альбомы sendMessageAlbum + превью + caption + DnD overlay
-
-5 фич отправки файлов. TDLib spec sendMessageAlbum (10 файлов max), Telegram Web K SendMessage, Discord upload preview.
-
-- **📎 кнопка** [FileAttachButton.jsx](src/native/components/FileAttachButton.jsx) NEW: hidden `<input multiple>` + paperclip → file picker.
-- **Превью + caption** [FilePreviewBar.jsx](src/native/components/FilePreviewBar.jsx) NEW: thumbnails 72×72 через URL.createObjectURL (revoke в cleanup), ✕ на каждом, caption input + Отправить. Заменяет input в [InboxMessageInput.jsx](src/native/components/InboxMessageInput.jsx) при hasAttachedFiles.
-- **Альбомы** [tdlibAlbum.js](main/native/backends/tdlibAlbum.js) NEW: `sendMessageAlbum` через TDLib, split на батчи 10 при > 10 файлах. albumCaption на первом, replyTo только в первом батче. IPC `tg:send-album`, store action `sendAlbum`.
-- **DnD overlay** [DragDropOverlay.jsx](src/native/components/DragDropOverlay.jsx) NEW: dashed accent border + 📎 64px + текст. Заменяет inline старый.
-- **useFileAttach hook** [useFileAttach.js](src/native/hooks/useFileAttach.js) NEW: state + addFiles/removeFile/clear, защита >2GB. [InboxMode.jsx](src/native/modes/InboxMode.jsx) handleAttachSend — 1 файл → sendFile, 2+ → sendAlbum.
-
-**Конфликты ✅**: tdlibSend.sendFile, handleReplySend, useDropAndPaste, lastAutoScrollAtRef — не задевается.
-**Граничные ✅**: пусто→noop, >10→split, >2GB→фильтр, нет file.path→toast.
-**Тесты** (+19): tdlibAlbum +12 (buildContent типы, split 11/21, caption, replyTo, errors), useFileAttach +7.
-**Не сделано**: прогресс % через updateFile — отложено в v0.95.44+ (spinner на кнопке достаточно для MVP).
-
-**Регрессия**: lint 0, vitest 994/994 (+19), fileSizeLimits 332/332, check-memory ✅.
-
----
-
-### v0.95.42 — Сохранение поиска + история + ✕ + подсветка совпадений
-
-4 фичи поиска. UI-only (без backend/store/scroll). Эталоны: tweb appSearchManager, Slack global search, VS Code Find.
-
-- **Сохранение query** ([searchHistory.js](src/native/utils/searchHistory.js) NEW): `localStorage['cc-chat-search']`. [InboxMode.jsx](src/native/modes/InboxMode.jsx) `useState(() => loadCurrentSearch())` + debounced save 300мс.
-- **Кнопка ✕** [InboxChatListSidebar.jsx](src/native/components/InboxChatListSidebar.jsx): absolute справа при `length > 0`. Escape → clear.
-- **История 20 запросов**: `localStorage['cc-chat-search-history']`. `addToHistory` дедуп case-insensitive + FIFO. Enter → commit. Dropdown при focus+empty. ✕ на элементе → removeFromHistory. «Очистить» → clearHistory.
-- **Подсветка совпадений** ([searchHighlight.js](src/native/utils/searchHighlight.js) NEW + [HighlightedText.jsx](src/native/components/HighlightedText.jsx) NEW): regex `gi` с escape, `<mark>` с accent. [ChatListItem.jsx](src/native/components/ChatListItem.jsx) использует для title/lastMessage.
-
-**Конфликты ✅**: UI-only, 0 изменений backend/store. **Граничные случаи ✅**: пустой → нет mark / >200 chars → trim / ReDoS → escape / private mode → try/catch / дубль → dedup / overflow → FIFO 20 / невалидный JSON → [].
-
-**Тесты** (+24): searchHistory +13, searchHighlight +11.
-
-**Регрессия**: lint 0, vitest 975/975, fileSizeLimits 325/325, check-memory ✅.
-
----
-
-### v0.95.41 — Custom emoji premium + reduced-motion интеграционные тесты
-
-3 задачи. Эталоны: tweb/Telegram Desktop/WhatsApp/Discord. Все по TDLib spec.
-
-**(1+2) Custom emoji premium + animatedEmojiInfo** — Premium custom emoji в реакциях/animated теперь WebM/WebP вместо `⭐`:
-- Backend [tdlibCustomEmoji.js](main/native/backends/tdlibCustomEmoji.js) (NEW): `resolveCustomEmojiIds(ids[], ctx)` паттерн tdlibForumEmoji (v0.91.6). Batch `getCustomEmojiStickers` + `downloadFile` + `stabilizeForPlayback` → cc-media://. Кэш + persist `custom-emoji-meta.json`.
-- [tdlibBackend.js](main/native/backends/tdlibBackend.js) `customEmoji.resolve()`. IPC `tg:resolve-custom-emojis` ([tdlibIpcHandlers.js](main/native/tdlibIpcHandlers.js)).
-- Store [nativeStore.js](src/native/store/nativeStore.js) action `resolveCustomEmojis(ids)` + state `customEmojis`. Дедуп.
-- [tdlibMapper.js](main/native/backends/tdlibMapper.js): `messageAnimatedEmoji.animated_emoji.sticker.full_type.custom_emoji_id` → поле `animatedEmojiInfo: {customEmojiId}`.
-- Renderer [CustomEmojiRenderer.jsx](src/native/components/CustomEmojiRenderer.jsx) (NEW): WebM → `<video autoplay loop muted>`, WebP/PNG → `<img>`, TGS/нет URL → alt unicode.
-- [MessageReactions.jsx](src/native/components/MessageReactions.jsx) + [MessageBubble.jsx](src/native/components/MessageBubble.jsx) + [VirtualMessageList.jsx](src/native/components/VirtualMessageList.jsx) интегрированы (useEffect resolve + проброс store.customEmojis).
-
-Покрытие ~50-60% (Telegram Premium перешёл на WebM с 2023). TGS lottie — отдельная задача (+260KB lottie-web).
-
-**(3) prefers-reduced-motion интеграционные тесты** [smoothScroll.vitest.js](src/native/utils/smoothScroll.vitest.js): +4 теста через mockMatchMedia (Object.defineProperty + vi.fn). reduce=true → instant + onComplete, reduce=true+twoPhase+большая дистанция → instant, reduce=false → rAF, exception → no-crash. W3C WCAG 2.2.
-
-**Конфликты ✅**: тот же паттерн что resolveTopicEmojis (v0.91.6), отдельный кэш. **Производительность**: in-memory + persist → 1 invoke/сессию, batch 10-50 ids.
-
-**Регрессия**: lint 0, vitest 946+ (+4), fileSizeLimits 320/320, check-memory ✅.
-
----
-
-### v0.95.40 — Большие emoji + a11y reduced-motion + sticky bottom on media + scroll metric
-
-**(1) messageAnimatedEmoji + isLargeEmoji** ([tdlibMapper.js](main/native/backends/tdlibMapper.js)): Юзер видел ПУСТОЕ сообщение вместо ☺️. Корень — `messageAnimatedEmoji` content type не маппился (нет .text, только .emoji). Fallback `formattedText = {text: content.emoji}`. Новый флаг `isLargeEmoji` — true если messageAnimatedEmoji ИЛИ regex (Unicode TR51, 1-3 emoji подряд). [MessageBubble.jsx](src/native/components/MessageBubble.jsx) рендерит font-size 56px + прозрачный фон + без shadow. messagePreview тоже маппит. Эталоны: tweb bubbles.ts `isAllEmojiBlocks`, WhatsApp jumbo, iMessage tapback.
-
-**(2) auto-scroll-completed метрика** ([InboxMode.jsx](src/native/modes/InboxMode.jsx)): onComplete в smoothScrollTo → лог `{messageId, distance, actualMs, finalBottomGap}`. Диагностика будущих жалоб.
-
-**(3) prefers-reduced-motion global** ([styles-base.css](src/native/styles-base.css)): глобальный `@media (prefers-reduced-motion: reduce)` отключает все CSS анимации/transitions (cc-theme-flash, cc-changelog-fadein, theme dropdown). Раньше respect был только в smoothScroll.js. W3C WCAG 2.2 standard pattern.
-
-**(4) useStickyBottomOnMedia** ([useStickyBottomOnMedia.js](src/native/hooks/useStickyBottomOnMedia.js)): ResizeObserver на scrollContainer + `physicallyAtBottomRef`. Если delta > 4px и юзер был у низа → instant `scrollTop = scrollHeight` (без анимации, throttle rAF). Решает sticky bottom при lazy-load картинок. Эталоны: tweb ResizeObserver+scrollToEnd, Discord MutationObserver+onload, Slack onload+scrollIntoView.
-
-**Конфликты ✅**: smoothScroll twoPhase (v0.95.18 кнопка ↓), lastAutoScrollAtRef guard (v0.95.36), Schmitt-trigger, seenOutgoingIdsRef (v0.95.37) — не задевается. Производительность: regex 1×/сообщение, ResizeObserver fires только при layout change + rAF throttle.
-
-**Тесты** (+12): tdlibMapper +6 (animatedEmoji/1emoji/3emoji/text/emoji+text/4emoji), useStickyBottomOnMedia +6 (atBottom true/false, delta<4, unmount, null ref, throttle).
-
-**Регрессия**: lint 0, vitest 942/942, fileSizeLimits 316/316, check-memory ✅.
-
----
-
-### v0.95.39 — Плавный auto-scroll к новому (убран twoPhase + RAF×2 + 350мс)
-
-Юзер: «когда приходит новое — дёрганием, надо плавно». Корень в [InboxMode.jsx](src/native/modes/InboxMode.jsx) `onAutoScroll` и `send-scroll-done`: `twoPhase: true` делал INSTANT prelude при distance > 1 viewport (большие bubble с reply+медиа) — это правильно для jump-to-end из далека, но **избыточно** для auto-scroll к новому (atBottom=true, distance мал). `requestAnimationFrame` одиночный — React commit мог не успеть → scrollHeight «старый». `duration: 250` мало для distance 200+px.
-
-**Решение**: `requestAnimationFrame × 2` + `smoothScrollTo({ duration: 350 })` **БЕЗ twoPhase** в обеих точках. Эталоны: Telegram Web K `bubbles.ts scrollToEnd` (RAF×2 + cubic-bezier 350мс), Telegram Desktop `_scrollDown` (easeOutQuart 300мс).
-
-**НЕ менялось**: smoothScroll.js (twoPhase остаётся для кнопки ↓ v0.95.18), guard 600мс (v0.95.36), Schmitt (v0.95.2/28), useNewBelowCounter (v0.95.37).
-
-**Регрессия**: lint 0, vitest 930/930, fileSizeLimits 316/316, check-memory ✅.
-
----
-
-### v0.95.38 — Фикс дубля сообщений + ⏳ индикатор + dedup тесты
-
-Корень: `updateMessageSendSucceeded` не обрабатывался в tdlibClient → после server ACK provisional id (huge) → финал (12345) → 2 копии в DOM. Решение: emit `message:send-succeeded` → store replaces по oldId. ⏳ pending / ✓ sent / ✓✓ read в MessageBubble. Static guard F. в modernPatternsGuard для 4 message-handler файлов. +7 тестов. Полный текст: [`archive/features-v0.95.38.md`](./archive/features-v0.95.38.md).
-
----
-
-### v0.95.35-37 — Путь к фиксу дубля сообщений (диагностика + sending_state)
-
-v0.95.35: fade-in для «Полная история» + диагностика TODO (outgoing с других устройств).
-v0.95.36: фикс auto-scroll outgoing-from-other-device через TDLib sending_state (tdlibMapper isSending + useNewBelowCounter фильтр + lastAutoScrollAtRef guard).
-v0.95.37: sending_state polish (Edit скрыт пока isSending), лог fromOtherDevice, защита re-emit (seenOutgoingIdsRef Set), анализ дубля (TODO → реализовано в v0.95.38). Новый файл `mistakes/outgoing-two-cases.md`.
-Полный текст: [`archive/features-v0.95.35-37.md`](./archive/features-v0.95.35-37.md).
-
----
-
-### v0.95.34 — Темовые переменные в :root + вспышка bubble + WhatsNewModal UX
-
-Архитектурное решение: переменные `.native-mode` → `:root` устранило CSS specificity ловушку v0.95.33. Вспышка outgoing bubble при смене темы (.cc-theme-flash 550мс). WhatsNewModal hover-эффект на «Понятно» + кнопка «Полная история». Полный текст: [`archive/features-v0.95.34.md`](./archive/features-v0.95.34.md).
-
----
-
-### v0.95.33 — Фикс «выбор цвета не применяется» + регресс-тест на blur в модалках
-
-Корень: CSS specificity — `.native-mode { --amoled-accent }` (class) перебивал inline на html → applyTheme не работал. Промежуточное решение querySelectorAll(.native-mode), финал в v0.95.34 (перенос в :root). Регресс-тест modernPatternsGuard E. — blur запрещён в модалках. Деловой стиль changelog v0.95.20-29. Полный текст: [`archive/features-v0.95.33.md`](./archive/features-v0.95.33.md).
 
 ---
 

@@ -434,6 +434,17 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     // v0.87.14: Toast через MessengerRibbon (только входящие, не для активного чата)
     if (!message.isOutgoing && stateRef.current.activeChatId !== chatId) {
       const chat = stateRef.current.chats.find(c => c.id === chatId)
+      // v0.95.47: лог №1 в цепочке notification → scroll к сообщению.
+      // Чтобы понять почему v0.95.46 переход не работает в реальной сессии.
+      try {
+        logNativeScroll('notify-emit', {
+          chatId,
+          messageId: message?.id != null ? String(message.id) : null,
+          hasMessageId: message?.id != null,
+          hasChat: !!chat,
+          senderName: message.senderName || chat?.title || '',
+        })
+      } catch (_) {}
       try {
         window.api?.invoke('app:custom-notify', {
           title: chat?.title || 'Telegram',

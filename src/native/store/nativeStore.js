@@ -1255,8 +1255,25 @@ export default function useNativeStore() {
         chatId: String(chatId),
         messageId: String(messageId),
         ts: Date.now(),
+        // v0.95.48: флаг что мы УЖЕ инициировали loadMessages вокруг target.
+        // Защита от петли: если 2-я попытка scroll тоже промахнётся (target
+        // удалён/не в кэше TDLib) — показываем toast и очищаем pending.
+        loadAttempted: false,
       },
     }))
+  }, [])
+
+  // v0.95.48: пометить что loadMessages aroundId уже вызван — InboxMode проверит
+  // флаг во 2-й итерации useEffect (после tg:messages → activeMessages обновится).
+  const markPendingScrollLoadAttempted = useCallback(() => {
+    setState(s => {
+      if (!s.pendingScrollToMessage) return s
+      if (s.pendingScrollToMessage.loadAttempted) return s
+      return {
+        ...s,
+        pendingScrollToMessage: { ...s.pendingScrollToMessage, loadAttempted: true },
+      }
+    })
   }, [])
 
   const clearPendingScrollToMessage = useCallback(() => {
@@ -1304,6 +1321,6 @@ export default function useNativeStore() {
     getPinnedMessage, refreshAvatar, rescanUnread,
     downloadMedia, removeAccount, markRead, markTopicRead, setTyping,
     getCleanupStats, setMute, resolveCustomEmojis,
-    requestScrollToMessage, clearPendingScrollToMessage,
+    requestScrollToMessage, clearPendingScrollToMessage, markPendingScrollLoadAttempted,
   }
 }

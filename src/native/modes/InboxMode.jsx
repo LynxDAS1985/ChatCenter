@@ -140,6 +140,11 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // Флаг ставится true в useInitialScroll перед scrollTop=, сбрасывается через 500мс.
   // Объявлен ЗДЕСЬ — пробрасывается в useScrollPositionAutosave / useInboxScroll / useInitialScroll.
   const isRestoringRef = useRef(false)
+  // v0.95.49: флаг «юзер начал реально листать» — ставится в true при wheel/touch/pointer
+  // (см. InboxChatPanel onWheel/onTouchStart/onPointerDown). Используется useInitialScroll
+  // followup-веткой чтобы НЕ перезаписывать позицию когда юзер уже читает (abort retry).
+  // Сбрасывается при смене activeChatId (useEffect ниже).
+  const userScrolledRef = useRef(false)
   // v0.94.0: Virtuoso удалён. firstItemIndex / scrollStateByChatRef / initialTopMostItemIndex
   // больше не нужны — обычный DOM scroll + pixel scrollTop restore.
 
@@ -398,10 +403,16 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     },
     getSavedScrollTop: (chatId) => scrollPosByChatRef.current.get(chatId) ?? null,
     isRestoringRef,
+    userScrolledRef,  // v0.95.49: abort followup-restore если юзер начал листать
   })
 
   // v0.87.66/67: при смене чата проверяем seenChatsRef — если уже видели, chatReady=true сразу.
   useEffect(() => {
+    // v0.95.49: при КАЖДОЙ смене активного чата (включая переключение туда-обратно)
+    // сбрасываем флаг «юзер скроллил» в false. Это гарантирует что followup-restore
+    // (useInitialScroll branch 2 isReturning=true → isReturning=false ветка) будет
+    // применять saved.scrollTop пока юзер не начнёт листать в новом контексте.
+    userScrolledRef.current = false
     if (!activeViewKey) { setChatReady(false); return }
     if (seenChatsRef.current.has(activeViewKey)) {
       setChatReady(true)
@@ -785,6 +796,21 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // видим, повторно ищем DOM-элемент и подсвечиваем.
   const scrollToMessage = (msgId) => {
     const el = msgsScrollRef.current?.querySelector(`[data-msg-id="${msgId}"]`)
+    // v0.95.47: лог №5b в цепочке notification → scroll. Видно НАЙДЁН ЛИ
+    // элемент в DOM. Если НЕ найден — частая причина: TDLib msg.id это
+    // BigInt-like number, а data-msg-id рендерится как-то иначе. См. лог.
+    try {
+      const sample = msgsScrollRef.current?.querySelectorAll('[data-msg-id]')
+      const sampleIds = sample ? Array.from(sample).slice(0, 3).map(n => n.getAttribute('data-msg-id')) : []
+      logNativeScroll('scroll-to-message', {
+        msgId: String(msgId),
+        msgIdType: typeof msgId,
+        foundDirect: !!el,
+        scrollRefReady: !!msgsScrollRef.current,
+        domNodesWithMsgId: sample?.length || 0,
+        sampleIds,
+      })
+    } catch (_) {}
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       el.classList.add('native-msg-flash')
@@ -814,6 +840,26 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // защищает от повторного срабатывания при дальнейших ререндерах.
   useEffect(() => {
     const pending = store.pendingScrollToMessage
+    // v0.95.47: лог №5a в цепочке notification → scroll. Срабатывает на КАЖДЫЙ
+    // re-render при изменении deps. Видно почему scroll не происходит:
+    //   chatIdMatch=false → юзер не на нужном чате (setActiveChat не дошёл)
+    //   msgCount=0 → сообщения ещё не загружены (нужно подождать tg:messages)
+    //   age > 10000 → юзер слишком долго ждал, истёк timeout
+    if (pending) {
+      try {
+        const targetInLoaded = activeMessages?.some(m => String(m.id) === String(pending.messageId)) || false
+        logNativeScroll('pending-scroll-effect', {
+          pendingChatId: pending.chatId,
+          activeChatId: store.activeChatId,
+          chatIdMatch: pending.chatId === store.activeChatId,
+          messageId: pending.messageId,
+          msgCount: activeMessages?.length || 0,
+          targetInLoaded,
+          loadAttempted: !!pending.loadAttempted,
+          age: Date.now() - (pending.ts || 0),
+        })
+      } catch (_) {}
+    }
     if (!pending) return
     if (pending.chatId !== store.activeChatId) return  // юзер переключился — не скроллим чужой чат
     if (!activeMessages || activeMessages.length === 0) return  // ждём загрузки messages
@@ -822,7 +868,38 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       store.clearPendingScrollToMessage?.()
       return
     }
-    // Запускаем scroll с микро-delay чтобы React успел отрендерить bubble'ы.
+    // v0.95.48: проверяем — target в загруженном окне? Лог v0.95.47 показал что
+    // в 2/3 кликов target был ВНЕ окна (gap ~100-138 сообщений новее загруженного).
+    // Эталон Telegram: tdesktop HistoryWidget::showAtMsgId → requestMessagesAround
+    // (add_offset=-kMessagesPerPage/2). tweb appImManager.setInnerPeer({lastMsgId})
+    // → addOffset=-Math.floor(limit/2). TDLib spec getChatHistory: from=target,
+    // offset=-49, limit=100 → 49 newer + target + 50 older (target в середине окна).
+    const targetInLoaded = activeMessages.some(m => String(m.id) === String(pending.messageId))
+    if (!targetInLoaded) {
+      // Если loadMessages aroundId уже звался — toast «не найдено» и clear.
+      // Защищает от петли (target удалён / TDLib вернул < limit без target).
+      if (pending.loadAttempted) {
+        showToast('Сообщение не загружено — прокрутите вверх', 'info')
+        store.clearPendingScrollToMessage?.()
+        return
+      }
+      // Грузим окно ВОКРУГ target. force=true bypass IDB cache — нужен server
+      // context. addOffset=-49 — стандарт всех 3 клиентов Telegram.
+      store.markPendingScrollLoadAttempted?.()
+      const viewKey = store.activeForumTopicId
+        ? `${store.activeChatId}:${store.activeForumTopicId}`
+        : store.activeChatId
+      try {
+        store.loadMessages?.(viewKey, 100, {
+          aroundId: pending.messageId,
+          addOffset: -49,
+          force: true,
+        })
+      } catch (_) {}
+      return  // useEffect ре-trigger когда tg:messages обновит activeMessages
+    }
+    // Запускаем scroll с rAF×2 (эталон v0.95.14): React commit + первый paint
+    // завершены, scrollHeight точный, узел в DOM, scrollIntoView точно попадёт.
     const t = setTimeout(() => {
       try { scrollToMessage(pending.messageId) } catch (_) {}
       store.clearPendingScrollToMessage?.()
@@ -993,6 +1070,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           editTarget={editTarget} setEditTarget={setEditTarget}
           handleInputChange={handleInputChange} handleReplySend={handleReplySend} handlePaste={handlePaste}
           msgsScrollRef={msgsScrollRef} virtualListRef={virtualListRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
+          userScrolledRef={userScrolledRef}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
           scrollToBottom={scrollToBottom} scrollToMessage={scrollToMessage}

@@ -182,15 +182,27 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
   // .animated_emoji.sticker (tgs/lottie — мы не рендерим, как с forum-emoji).
   // TDLib spec: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message_animated_emoji.html
   // Без обработки юзер видит ПУСТОЕ сообщение (баг найден по скрину 2 июня 2026).
+  // v0.95.47: расширено на messageSticker (статичный/webm/tgs) и messageDice (🎲🎯🎰).
+  // У всех есть associated emoji в content.sticker.emoji / content.emoji →
+  // рендерим как обычный текст с большим emoji (через isLargeEmoji ниже).
+  // Полный рендер стикеров (WEBP/TGS lottie) — отдельная фича.
   let formattedText = content.text || content.caption || null
-  if (!formattedText && content['@type'] === 'messageAnimatedEmoji') {
-    formattedText = { text: String(content.emoji || ''), entities: [] }
+  if (!formattedText) {
+    if (content['@type'] === 'messageAnimatedEmoji') {
+      formattedText = { text: String(content.emoji || ''), entities: [] }
+    } else if (content['@type'] === 'messageSticker') {
+      formattedText = { text: String(content.sticker?.emoji || '🎴'), entities: [] }
+    } else if (content['@type'] === 'messageDice') {
+      formattedText = { text: String(content.emoji || '🎲'), entities: [] }
+    }
   }
   const text = formattedText?.text || ''
   const entities = mapEntities(formattedText?.entities)
   // v0.95.40: флаг для рендера в MessageBubble.jsx с font-size 56px (Telegram-style).
   // true если messageAnimatedEmoji ИЛИ текст состоит ТОЛЬКО из 1-3 emoji.
-  const isLargeEmoji = content['@type'] === 'messageAnimatedEmoji' || isEmojiOnlyText(text)
+  // v0.95.47: расширено на messageSticker/messageDice — у них тоже emoji-only fallback.
+  const stickerLike = ['messageAnimatedEmoji', 'messageSticker', 'messageDice'].includes(content['@type'])
+  const isLargeEmoji = stickerLike || isEmojiOnlyText(text)
   // v0.95.41: для messageAnimatedEmoji вытаскиваем sticker file_id + customEmojiId.
   // UI после рендера резолвит через tg:resolve-custom-emojis → CustomEmojiRenderer.
   // sticker.full_type.custom_emoji_id — если premium-emoji (есть sticker).

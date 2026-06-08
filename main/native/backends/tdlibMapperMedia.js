@@ -127,9 +127,20 @@ export function extractMediaInfo(content) {
   }
 
   if (cn === 'messageSticker') {
-    out.mediaType = 'other'  // UI не имеет специального рендера для стикеров — общий
+    // v0.95.47: mediaType=null чтобы text-ветка с emoji fallback из tdlibMapper.js
+    // отрисовала большой emoji (isLargeEmoji=true). Раньше mediaType='other' плюс
+    // пустой text давал ПОЛНОСТЬЮ ПУСТОЙ bubble (баг найден по скрину 8 июня 2026).
+    // Полный рендер WEBP/TGS lottie — отдельная фича.
+    out.mediaType = null
     out.info.mediaWidth = Number(content.sticker?.width) || null
     out.info.mediaHeight = Number(content.sticker?.height) || null
+    return out
+  }
+
+  // v0.95.47: messageDice (🎲🎯🎰🏀⚽🎳) — emoji-anim тоже падал в пустой bubble.
+  // TDLib spec: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message_dice.html
+  if (cn === 'messageDice') {
+    out.mediaType = null
     return out
   }
 

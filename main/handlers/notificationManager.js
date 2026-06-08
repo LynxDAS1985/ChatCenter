@@ -208,6 +208,10 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   // сообщению при click «Перейти к чату» (см. notifHandlers.js notif:click → notify:clicked).
   const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null }
 
+  // v0.95.47: лог №2 в цепочке notification → scroll. Видно ДОШЁЛ ЛИ messageId
+  // из renderer в main (если пусто — проблема в IPC payload `app:custom-notify`).
+  console.log('[notif-mgr] saved id=' + id + ' messengerId=' + messengerId + ' chatTag=' + (chatTag || '(empty)') + ' messageId=' + (messageId || '(none)'))
+
   // FIFO — удаляем старые из трекинга (v0.63.2: увеличен до 30, стэк может иметь 10+ сообщений)
   if (notifItems.length >= 30) {
     notifItems.shift()

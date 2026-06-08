@@ -33,6 +33,11 @@ export function initNotifHandlers(deps) {
       mainWindow.show()
       mainWindow.focus()
       if (item?.messengerId) {
+        // v0.95.47: лог №3 в цепочке notification → scroll. Видно ОТПРАВЛЕН ЛИ
+        // messageId из main в renderer (если пусто — проблема в notif-mgr storage).
+        console.log('[notif-click] sending notify:clicked messengerId=' + item.messengerId +
+          ' chatTag=' + (item.chatTag || '(empty)') +
+          ' messageId=' + (item.messageId || '(none)'))
         mainWindow.webContents.send('notify:clicked', {
           messengerId: item.messengerId,
           senderName: item.senderName || item.title || '',

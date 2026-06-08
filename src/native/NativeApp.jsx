@@ -332,6 +332,17 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
   useEffect(() => {
     if (!window.api?.on) return undefined
     const unsub = window.api.on('notify:clicked', ({ messengerId, chatTag, messageId }) => {
+      // v0.95.47: лог №4 в цепочке notification → scroll. Видно ДОШЁЛ ЛИ event
+      // до renderer и БУДЕТ ЛИ вызван requestScrollToMessage. Если log есть но
+      // messageId=(none) — проблема выше в цепочке (см. notif-click).
+      try {
+        console.log('[native-notify-recv] messengerId=' + messengerId +
+          ' chatTag=' + (chatTag || '(empty)') +
+          ' messageId=' + (messageId || '(none)') +
+          ' hasSetActiveAccount=' + (!!store.setActiveAccount) +
+          ' hasSetActiveChat=' + (!!store.setActiveChat) +
+          ' hasRequestScroll=' + (!!store.requestScrollToMessage))
+      } catch (_) {}
       if (messengerId !== 'native_cc') return
       if (!chatTag) return
       try {

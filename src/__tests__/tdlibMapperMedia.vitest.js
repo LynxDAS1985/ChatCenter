@@ -155,12 +155,39 @@ describe('mapMessage — медиа', () => {
     expect(r.duration).toBe(5)
   })
 
-  it('messageSticker → other (общий рендер)', () => {
+  // v0.95.47: messageSticker → mediaType=null + emoji fallback в text (isLargeEmoji=true).
+  // Раньше был 'other' но MessageBubble не имел рендера → пустой bubble (баг 8 июня 2026).
+  it('messageSticker → text=emoji + mediaType=null + isLargeEmoji', () => {
+    const r = mapMessage(tdMsgBase({
+      '@type': 'messageSticker',
+      sticker: { width: 512, height: 512, emoji: '🎉' },
+    }), 'tg_1:2')
+    expect(r.mediaType).toBe(null)
+    expect(r.text).toBe('🎉')
+    expect(r.isLargeEmoji).toBe(true)
+  })
+
+  // v0.95.47: messageSticker БЕЗ associated emoji → fallback '🎴'.
+  it('messageSticker без emoji → text=🎴 fallback', () => {
     const r = mapMessage(tdMsgBase({
       '@type': 'messageSticker',
       sticker: { width: 512, height: 512 },
     }), 'tg_1:2')
-    expect(r.mediaType).toBe('other')
+    expect(r.mediaType).toBe(null)
+    expect(r.text).toBe('🎴')
+    expect(r.isLargeEmoji).toBe(true)
+  })
+
+  // v0.95.47: messageDice (🎲🎯🎰🏀⚽🎳) — emoji-anim тоже падал в пустой bubble.
+  it('messageDice → text=emoji + mediaType=null + isLargeEmoji', () => {
+    const r = mapMessage(tdMsgBase({
+      '@type': 'messageDice',
+      emoji: '🎲',
+      value: 5,
+    }), 'tg_1:2')
+    expect(r.mediaType).toBe(null)
+    expect(r.text).toBe('🎲')
+    expect(r.isLargeEmoji).toBe(true)
   })
 
   it('messageLocation', () => {

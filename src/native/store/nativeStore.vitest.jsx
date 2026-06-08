@@ -875,3 +875,58 @@ describe('v0.95.38: tg:new-message dedup по id (защита от дубля)'
     expect(result.current.messages[chatId][0].text).toBe('v2')
   })
 })
+
+// v0.95.48: jump-to-message из notification — паттерн tdesktop/tweb.
+describe('v0.95.48: pendingScrollToMessage + markPendingScrollLoadAttempted', () => {
+  it('requestScrollToMessage сохраняет pending с loadAttempted=false', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      result.current.requestScrollToMessage('chat1', '12345')
+    })
+    const p = result.current.pendingScrollToMessage
+    expect(p).toBeTruthy()
+    expect(p.chatId).toBe('chat1')
+    expect(p.messageId).toBe('12345')
+    expect(p.loadAttempted).toBe(false)
+    expect(typeof p.ts).toBe('number')
+  })
+
+  it('markPendingScrollLoadAttempted ставит loadAttempted=true (защита от петли)', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      result.current.requestScrollToMessage('chat1', '12345')
+    })
+    expect(result.current.pendingScrollToMessage.loadAttempted).toBe(false)
+    act(() => {
+      result.current.markPendingScrollLoadAttempted()
+    })
+    expect(result.current.pendingScrollToMessage.loadAttempted).toBe(true)
+    // Идемпотентность: повторный вызов не меняет state-объект (return s)
+    const beforeRef = result.current.pendingScrollToMessage
+    act(() => {
+      result.current.markPendingScrollLoadAttempted()
+    })
+    expect(result.current.pendingScrollToMessage).toBe(beforeRef)
+  })
+
+  it('clearPendingScrollToMessage обнуляет pending', () => {
+    const { result } = renderHook(() => useNativeStore())
+    act(() => {
+      result.current.requestScrollToMessage('chat1', '12345')
+    })
+    expect(result.current.pendingScrollToMessage).toBeTruthy()
+    act(() => {
+      result.current.clearPendingScrollToMessage()
+    })
+    expect(result.current.pendingScrollToMessage).toBe(null)
+  })
+
+  it('markPendingScrollLoadAttempted без pending → no-op (не падает)', () => {
+    const { result } = renderHook(() => useNativeStore())
+    expect(result.current.pendingScrollToMessage).toBeFalsy()
+    act(() => {
+      result.current.markPendingScrollLoadAttempted()
+    })
+    expect(result.current.pendingScrollToMessage).toBeFalsy()
+  })
+})
