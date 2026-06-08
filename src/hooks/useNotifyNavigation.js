@@ -31,6 +31,11 @@ export default function useNotifyNavigation({
     return window.api?.on('notify:clicked', ({ messengerId, senderName, chatTag }) => {
       devLog('[GoChat] notify:clicked', { messengerId, senderName, chatTag })
       if (!messengerId) return
+      // v0.95.45: native режим (TDLib) — обрабатывается отдельно в NativeApp.jsx
+      // через store.setActiveAccount + store.setActiveChat. Webview hook
+      // НЕ должен пытаться найти webview ref для native_cc (раньше silent
+      // fail на `webviewRefs.current['native_cc']` = undefined).
+      if (messengerId === 'native_cc') return
       setActiveId(messengerId)
       if (senderName || chatTag) {
         const tryNavigate = (attempt) => {

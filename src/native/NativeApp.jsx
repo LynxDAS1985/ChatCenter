@@ -317,6 +317,32 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
     try { applyTheme(loadTheme()) } catch (_) {}
   }, [])
 
+  // v0.95.45: переход к чату по клику «→ Перейти к чату» в уведомлении (native режим).
+  // Корень: useNotifyNavigation.js (webview hook) не находил webview ref для
+  // messengerId='native_cc' → silent return. Native режим должен обрабатывать
+  // notify:clicked через store actions. См. mistakes/notifications-ribbon.md.
+  //
+  // payload: { messengerId, senderName, chatTag } — chatTag = наш chatId (формат
+  // 'accountId:rawId'). main process в notifHandlers.js:33-34 уже делает
+  // mainWindow.show()+focus() ПЕРЕД emit — окно к моменту наш handler уже видимо.
+  useEffect(() => {
+    if (!window.api?.on) return undefined
+    const unsub = window.api.on('notify:clicked', ({ messengerId, chatTag }) => {
+      if (messengerId !== 'native_cc') return
+      if (!chatTag) return
+      try {
+        // Извлекаем accountId из chatId формата 'accountId:rawId' (см. nativeStoreIpc).
+        const colonIdx = String(chatTag).indexOf(':')
+        if (colonIdx > 0) {
+          const accountId = String(chatTag).slice(0, colonIdx)
+          if (accountId && store.setActiveAccount) store.setActiveAccount(accountId)
+        }
+        if (store.setActiveChat) store.setActiveChat(chatTag)
+      } catch (_) {}
+    })
+    return unsub
+  }, [store.setActiveAccount, store.setActiveChat])
+
   const handleAccountContextMenu = (e, account) => {
     e.preventDefault()
     setAccountMenu({ account, x: e.clientX, y: e.clientY })

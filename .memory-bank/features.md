@@ -1,11 +1,12 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.44 (2 июня 2026)
+## Текущая версия: v0.95.45 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
 | Архив | Содержимое | Размер |
 |---|---|---|
+| [`archive/features-v0.95.35-37.md`](./archive/features-v0.95.35-37.md) | v0.95.35-37 (fade-in changelog, auto-scroll outgoing-other-device, sending_state polish, mistakes/outgoing-two-cases.md; стабилизировано v0.95.38+) | ~3 КБ |
 | [`archive/features-v0.95.34.md`](./archive/features-v0.95.34.md) | v0.95.34 (темовые vars в :root, вспышка bubble, WhatsNewModal UX; стабилизировано v0.95.40+) | ~2 КБ |
 | [`archive/features-v0.95.33.md`](./archive/features-v0.95.33.md) | v0.95.33 (фикс «цвет не применяется» через querySelectorAll, регресс-тест blur, деловой стиль; финал в v0.95.34) | ~2 КБ |
 | [`archive/features-v0.95.32.md`](./archive/features-v0.95.32.md) | v0.95.32 (производительность WhatsNewModal: убран backdrop-filter + contain + деловой стиль changelog) | ~2 КБ |
@@ -38,6 +39,22 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.45 — Фикс «Перейти к чату» в уведомлениях для native режима
+
+Юзер: «кнопка "Перейти к чату" в native НЕ работает, в webview работает».
+
+Корень: [useNotifyNavigation.js:38-39](src/hooks/useNotifyNavigation.js) `webviewRefs.current['native_cc']=undefined → silent return`. Native не имел отдельного слушателя `notify:clicked`. nativeStoreIpc шлёт уведомления с `messengerId='native_cc'`, `chatTag=chatId`.
+
+Решение (2 файла):
+- [useNotifyNavigation.js](src/hooks/useNotifyNavigation.js): early return `if (messengerId === 'native_cc') return`.
+- [NativeApp.jsx](src/native/NativeApp.jsx): новый useEffect для `notify:clicked` native_cc → парсит chatTag (`accountId:rawId`) → `store.setActiveAccount + setActiveChat`.
+
+**Конфликты ✅**: webview hook не задет, mainWindow.show()+focus() в notifHandlers уже делается ПЕРЕД emit.
+**Граничные ✅**: chatTag null→return, без ':'→fallback без setActiveAccount, удалённый chatId→естественный fallback, идемпотентно.
+**Регрессия**: lint 0, vitest 1016/1016, fileSizeLimits 334/334, check-memory ✅.
 
 ---
 
@@ -165,41 +182,12 @@ Static guard F. в modernPatternsGuard: 4 handler-файла ОБЯЗАНЫ сс
 
 ---
 
-### v0.95.37 — sending_state polish + лог fromOtherDevice + защита re-emit + анализ дубля
+### v0.95.35-37 — Путь к фиксу дубля сообщений (диагностика + sending_state)
 
-**(1)** Edit скрыт пока `isSending=true` ([MessageBubble.jsx](src/native/components/MessageBubble.jsx)) — TDLib откажет без финального id.
-**(2)** Лог `fromOtherDevice` ([InboxMode.jsx](src/native/modes/InboxMode.jsx) onAutoScroll/onAdded) — payload расширен `isOutgoing/isSending` ([useNewBelowCounter.js](src/native/hooks/useNewBelowCounter.js)). Диагностика на будущее.
-**(3)** Защита от re-emit: `seenOutgoingIdsRef` Set FIFO-50 в useNewBelowCounter — id, прошедшие как outgoing-pending, при повторном emit (теоретическом) skip как `outgoing-already-seen`.
-**(4) Анализ дубля (TODO)**: в [tdlibClient.js](main/native/backends/tdlibClient.js) switch **НЕ** обрабатывает `updateMessageSendSucceeded` → после server ACK id меняется provisional→финальный, store не знает → следующий loadNewerMessages добавит вторую копию (dedup по id, а id разные). План: emit `message:send-succeeded` → store заменяет по oldId. Полностью документировано в [`mistakes/outgoing-two-cases.md`](.memory-bank/mistakes/outgoing-two-cases.md).
-
-**Новый файл документации**: [`mistakes/outgoing-two-cases.md`](.memory-bank/mistakes/outgoing-two-cases.md) — хронология v0.95.28→37, эталоны 4 мессенджеров, антипаттерны, TDLib spec. Добавлен в CLAUDE.md.
-
-**Тесты** (+2 unit): re-emit с тем же id → `outgoing-already-seen` / разные id не блокируют. Обновлён v0.95.36 тест (payload).
-
-**Регрессия**: lint 0, vitest 923/923, fileSizeLimits 316/316, check-memory ✅.
-
----
-
-### v0.95.36 — Auto-scroll для outgoing с других устройств (TDLib sending_state)
-
-Юзер пишет с телефона/Telegram Web → сообщения приходят с `isOutgoing=true`, но фильтр в useNewBelowCounter (v0.95.28) блокировал ВСЕ outgoing → auto-scroll не работал → сообщения «застревали» не у низа. Корень: фильтр не различал «свой echo» vs «своё с другого устройства».
-
-**Решение** — TDLib `sending_state`: присутствует только для локальных echo (pending/failed), null для уже-на-сервере (другое устройство).
-- [tdlibMapper.js](main/native/backends/tdlibMapper.js): `isSending: !!tdMsg.sending_state`
-- [useNewBelowCounter.js](src/native/hooks/useNewBelowCounter.js): фильтр `outgoing && isSending` (был `outgoing`). Outgoing без isSending идёт дальше — auto-scroll если atBottom, counter если нет.
-- [InboxMode.jsx](src/native/modes/InboxMode.jsx): `lastAutoScrollAtRef` guard < 600мс в onAutoScroll + send-scroll-done — защита от двойного scroll.
-
-**Эталоны**: tweb `pendingByRandomId`, tdesktop `MessageFlag::FromUpdate`, WhatsApp `PushName`, Discord `nonce`. **Конфликты ✅**: contiguity / unreadCount / markRead / Schmitt — не задействуются для outgoing. **Тесты** +5 (useNewBelowCounter +3, tdlibMapper +3). **Регрессия**: 921/921 ✅.
-
----
-
-### v0.95.35 — Fade-in для «Полная история» + диагностика outgoing auto-scroll
-
-**(1)** WhatsNewModal: inner div получает `key={showAll}` + `className="cc-changelog-fade"`. CSS keyframe `cc-changelog-fadein` (320мс fade + slideY 8px) при переключении. Эталон: VS Code Release Notes.
-
-**(2)** Диагностика TODO: фильтр `!isOutgoing` v0.95.28 в [useNewBelowCounter.js](src/native/hooks/useNewBelowCounter.js) защищает от двойного scroll при `handleReplySend` с этой машины, но **блокирует** auto-scroll для своих сообщений с другого устройства (телефон/Telegram Web). План: `window.__ccLastSelfSendAt` timestamp в sendMessage + проверка > 1500мс в counter. Эталон: tweb `messageOptions.fromUpdate`.
-
-**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅.
+v0.95.35: fade-in для «Полная история» + диагностика TODO (outgoing с других устройств).
+v0.95.36: фикс auto-scroll outgoing-from-other-device через TDLib sending_state (tdlibMapper isSending + useNewBelowCounter фильтр + lastAutoScrollAtRef guard).
+v0.95.37: sending_state polish (Edit скрыт пока isSending), лог fromOtherDevice, защита re-emit (seenOutgoingIdsRef Set), анализ дубля (TODO → реализовано в v0.95.38). Новый файл `mistakes/outgoing-two-cases.md`.
+Полный текст: [`archive/features-v0.95.35-37.md`](./archive/features-v0.95.35-37.md).
 
 ---
 
