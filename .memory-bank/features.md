@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.43 (2 июня 2026)
+## Текущая версия: v0.95.44 (2 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -38,6 +38,27 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v0.95.44 — Прогресс % загрузки файлов через TDLib updateFile
+
+Расширяет v0.95.43 (скрепка) — % загрузки больших файлов.
+
+- TDLib spec [`updateFile`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1update_file.html): эмитится при изменении файла. `remote.uploaded_size / size + is_uploading_active/_completed`.
+- [tdlibClient.js](main/native/backends/tdlibClient.js) `'updateFile'` case **расширен** (download path v0.94.1 не задет): если `remote && size > 0 && (isActive || isCompleted)` → emit `'upload:progress'`.
+- [tdlibIpcBridge.js](main/native/tdlibIpcBridge.js): channel `'tg:upload-progress'`. **Throttle Math.floor(percent)** — emit только при изменении целого %.
+- [nativeStoreIpc.js](src/native/store/nativeStoreIpc.js): handler обновляет `state.uploads[fileId]`. `done` → удалить. **Auto-cleanup 60с** (orphan защита).
+- [useUploadProgress.js](src/native/hooks/useUploadProgress.js) NEW: агрегатный прогресс всех uploads.
+- [FilePreviewBar.jsx](src/native/components/FilePreviewBar.jsx): прогресс-bar 4px + текст «Загрузка... 5.2 МБ / 10.3 МБ». Кнопка показывает `{percent}%`.
+
+Эталоны: tweb appDownloadManager (throttle 1%), Discord upload bar.
+
+**Конфликты ✅**: file:update (v0.94.1) — отдельный emit, не задет. **Граничные ✅**: size=0/uploaded>total/без remote/cancel/parallel uploads.
+**Производительность**: throttle ~100/upload вместо ~100/сек.
+**Тесты** (+11): useUploadProgress +6 (агрегат/clamp/null), tdlibEmitContracts +3 (emit/done/skip), formatBytes +5.
+
+**Регрессия**: lint 0, vitest 1016/1016, fileSizeLimits 334/334, check-memory ✅.
 
 ---
 

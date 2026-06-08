@@ -67,6 +67,10 @@ module.exports = {
     ceiling: 480,
     reason: 'v0.95.16: +4 теста getIterativeUntilTopic (форум-топики). v0.95.15: +5 тестов getIterativeUntil. Один backend covered одним тест-файлом. Разбивать по доменам — плановый шаг.'
   },
+  'src/__tests__/tdlibEmitContracts.vitest.js': {
+    ceiling: 500,
+    reason: 'v0.95.44: +3 теста tg:upload-progress (updateFile bridge с throttle). v0.95.38: +2 теста tg:send-succeeded bridge. Один файл — emit-direction IPC контракт-тесты для всех manager events.'
+  },
   // tdlibClient.js exception перенесён выше (см. v0.95.29 запись)
   // v0.89.33: snapshot readInboxMaxId для divider «Новые сообщения» (Telegram Desktop UX-стандарт)
   // добавил frozenReadCursorRef + сброс по viewKey + фиксация на ненулевом cursor (~15 строк к 596).

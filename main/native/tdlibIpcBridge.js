@@ -53,6 +53,22 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
   subscribe('message:new', ({ chatId, message }) => ({
     channel: 'tg:new-message', data: { chatId, message },
   }))
+  // v0.95.44: прогресс загрузки файлов (sendFile / sendAlbum). Throttle по Math.floor(%)
+  // здесь же — иначе на быстром upload летит 100+ events/сек → React perf.
+  // Кэш `lastPercent` per fileId; emit ТОЛЬКО при изменении целого %.
+  // Эталон: Telegram Web K appDownloadManager throttle на 1%.
+  const _uploadLastPercent = new Map()
+  subscribe('upload:progress', ({ fileId, uploaded, total, done }) => {
+    const percent = total > 0 ? Math.min(100, Math.floor((uploaded / total) * 100)) : 0
+    const prev = _uploadLastPercent.get(fileId)
+    if (!done && prev === percent) return null  // skip — целый % не изменился
+    if (done) _uploadLastPercent.delete(fileId)
+    else _uploadLastPercent.set(fileId, percent)
+    return {
+      channel: 'tg:upload-progress',
+      data: { fileId, uploaded, total, percent, done: !!done },
+    }
+  })
   // v0.95.38: server ACK после отправки — заменяем provisional message на финальный
   // (TDLib меняет id). Корень исправления «дубля сообщений» — см.
   // .memory-bank/mistakes/outgoing-two-cases.md (Известная незакрытая проблема).

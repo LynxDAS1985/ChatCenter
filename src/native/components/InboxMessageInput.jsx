@@ -13,6 +13,8 @@ export default function InboxMessageInput({
   // v0.95.43: пропсы для скрепки и альбомов
   attachFiles, attachCaption, attachSending,
   onAttachAdd, onAttachRemove, onAttachClear, onAttachCaptionChange, onAttachSend,
+  // v0.95.44: store.uploads для прогресс-bar
+  uploads,
 }) {
   // v0.95.43: если есть выбранные файлы — вместо обычного input показываем FilePreviewBar
   const hasAttachedFiles = Array.isArray(attachFiles) && attachFiles.length > 0
@@ -48,6 +50,7 @@ export default function InboxMessageInput({
           onCancel={onAttachClear}
           onSend={onAttachSend}
           sending={attachSending}
+          uploads={uploads}
         />
       ) : (
         <div style={{

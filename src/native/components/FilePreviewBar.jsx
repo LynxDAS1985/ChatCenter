@@ -1,20 +1,15 @@
 // v0.95.43: панель превью выбранных файлов перед отправкой.
+// v0.95.44: прогресс % через store.uploads (TDLib updateFile event).
 //
 // Эталоны:
 //   - Telegram Web K MediaPreviewPanel — фото/видео thumbnails + caption + send
 //   - WhatsApp Web — fullscreen modal с фото + caption
 //   - Discord — inline превью перед отправкой
 //
-// У нас inline-режим (между textarea и областью сообщений) — компактно.
-//
-// Состояния:
-//   - 1 фото/видео → preview 80px высотой
-//   - 2+ фото/видео → горизонтальный scroll, можно удалить отдельно
-//   - Документы (.pdf/.zip/.docx) → иконка 📎 + имя + размер
-//
 // Caption — общий для всех выбранных файлов (для альбома → caption на первом элементе).
 
 import { useState, useEffect } from 'react'
+import { useUploadProgress, formatBytes } from '../hooks/useUploadProgress.js'
 
 function fileSizeLabel(bytes) {
   if (!bytes || bytes < 1024) return (bytes || 0) + ' Б'
@@ -82,10 +77,14 @@ function FileThumb({ file, url, onRemove }) {
  * @param {() => void} onCancel — отменить выбор (очистить всё)
  * @param {() => void} onSend — отправить
  * @param {boolean} sending — идёт отправка (блокирует кнопку)
+ * @param {object} uploads — v0.95.44: store.uploads для прогресс-bar
  */
 export default function FilePreviewBar({
   files, caption, onCaptionChange, onRemoveFile, onCancel, onSend, sending,
+  uploads,
 }) {
+  // v0.95.44: агрегатный прогресс всех активных uploads
+  const progress = useUploadProgress(uploads)
   const [urls, setUrls] = useState([])
 
   // Создаём object URLs для превью (revoke при unmount)
@@ -164,9 +163,43 @@ export default function FilePreviewBar({
           disabled={sending}
           style={{ minWidth: 90 }}
         >
-          {sending ? 'Отправка...' : 'Отправить'}
+          {sending && progress.hasActive
+            ? `${progress.percent}%`
+            : sending ? 'Отправка...' : 'Отправить'}
         </button>
       </div>
+      {/* v0.95.44: прогресс-bar (только при активной загрузке) */}
+      {sending && progress.hasActive && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 4,
+          padding: '2px 0',
+        }}>
+          <div style={{
+            height: 4, borderRadius: 2,
+            background: 'var(--amoled-surface-hover)',
+            overflow: 'hidden',
+            position: 'relative',
+          }}>
+            <div style={{
+              width: `${progress.percent}%`,
+              height: '100%',
+              background: 'var(--amoled-accent, #2AABEE)',
+              transition: 'width 200ms ease-out',
+            }} />
+          </div>
+          <div style={{
+            fontSize: 10, color: 'var(--amoled-text-dim)',
+            display: 'flex', justifyContent: 'space-between',
+          }}>
+            <span>
+              {progress.active > 1 ? `Загрузка ${progress.active} файлов...` : 'Загрузка...'}
+            </span>
+            <span>
+              {formatBytes(progress.uploaded)} / {formatBytes(progress.total)}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -983,6 +983,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           onAttachClear={attach.clear}
           onAttachCaptionChange={attach.setCaption}
           onAttachSend={handleAttachSend}
+          uploads={store.uploads}
         />
       </div>
       {/* v0.87.17: forward-модалка */}

@@ -108,6 +108,8 @@ export default function InboxChatPanel({
   // v0.95.43: скрепка — выбор файлов, превью, отправка альбомом
   attachFiles, attachCaption, attachSending,
   onAttachAdd, onAttachRemove, onAttachClear, onAttachCaptionChange, onAttachSend,
+  // v0.95.44: прогресс upload через store.uploads
+  uploads,
 }) {
   // v0.89.0: react-window держит scroll-контейнер сам. msgsScrollRef нужен внешним
   // хукам (useInitialScroll, useReadOnScrollAway, scrollPos save) — синхронизируем
@@ -315,6 +317,7 @@ export default function InboxChatPanel({
         onAttachClear={onAttachClear}
         onAttachCaptionChange={onAttachCaptionChange}
         onAttachSend={onAttachSend}
+        uploads={uploads}
       />
     </>
   )

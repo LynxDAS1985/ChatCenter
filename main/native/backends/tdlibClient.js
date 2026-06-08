@@ -477,6 +477,27 @@ export class TdlibClientManager extends EventEmitter {
         this.emit('file:update', { accountId, file: update.file })
         // v0.89.0 / Этап 3.9: если это аватарка из _pendingAvatars и она готова — эмитим
         handleAvatarReady(this, record, update.file)
+        // v0.95.44: отдельный emit для UPLOAD прогресса (отправка наших файлов через
+        // sendFile/sendAlbum). TDLib spec: remote.is_uploading_active=true пока идёт
+        // upload, completion → uploaded_size >= size ИЛИ is_uploading_completed=true.
+        // Throttle через Math.floor(percent) делается в IPC bridge — здесь сырой emit.
+        try {
+          const f = update.file
+          const remote = f?.remote
+          if (remote && f.size > 0) {
+            const uploaded = Number(remote.uploaded_size) || 0
+            const isActive = !!remote.is_uploading_active
+            const isCompleted = !!remote.is_uploading_completed || uploaded >= f.size
+            if (isActive || isCompleted) {
+              this.emit('upload:progress', {
+                accountId,
+                fileId: String(f.id),
+                uploaded, total: Number(f.size) || 0,
+                done: isCompleted,
+              })
+            }
+          }
+        } catch (_) {}
         return
 
       default:

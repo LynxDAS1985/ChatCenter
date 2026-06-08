@@ -153,6 +153,61 @@ describe('tg:send-succeeded — updateMessageSendSucceeded bridge (v0.95.38)', (
   })
 })
 
+// v0.95.44: прогресс UPLOAD через updateFile.remote.uploaded_size.
+// throttle на Math.floor(%) в IPC bridge: emit только при изменении целого %.
+describe('tg:upload-progress — updateFile bridge (v0.95.44)', () => {
+  it('updateFile с remote.uploaded_size + size → emit tg:upload-progress', () => {
+    const { mockClient, sendToRenderer } = setup()
+    sendToRenderer.mockClear()
+    mockClient.emit('update', {
+      '@type': 'updateFile',
+      file: {
+        '@type': 'file', id: 100, size: 1000,
+        local: { downloaded_size: 0 },
+        remote: { uploaded_size: 250, is_uploading_active: true, is_uploading_completed: false },
+      },
+    })
+    const calls = sendToRenderer.mock.calls.filter(c => c[0] === 'tg:upload-progress')
+    expect(calls.length).toBeGreaterThan(0)
+    expect(calls[0][1]).toEqual(expect.objectContaining({
+      fileId: '100', uploaded: 250, total: 1000, percent: 25, done: false,
+    }))
+  })
+
+  it('updateFile с is_uploading_completed → emit done:true', () => {
+    const { mockClient, sendToRenderer } = setup()
+    sendToRenderer.mockClear()
+    mockClient.emit('update', {
+      '@type': 'updateFile',
+      file: {
+        '@type': 'file', id: 101, size: 1000,
+        local: { downloaded_size: 0 },
+        remote: { uploaded_size: 1000, is_uploading_active: false, is_uploading_completed: true },
+      },
+    })
+    const calls = sendToRenderer.mock.calls.filter(c => c[0] === 'tg:upload-progress')
+    expect(calls.length).toBeGreaterThan(0)
+    expect(calls[0][1].done).toBe(true)
+    expect(calls[0][1].percent).toBe(100)
+  })
+
+  it('updateFile БЕЗ remote.uploaded — НЕ emit tg:upload-progress', () => {
+    const { mockClient, sendToRenderer } = setup()
+    sendToRenderer.mockClear()
+    // updateFile только с local (download path) — upload events нет
+    mockClient.emit('update', {
+      '@type': 'updateFile',
+      file: {
+        '@type': 'file', id: 200, size: 0,
+        local: { downloaded_size: 500 },
+        remote: { uploaded_size: 0, is_uploading_active: false },
+      },
+    })
+    const calls = sendToRenderer.mock.calls.filter(c => c[0] === 'tg:upload-progress')
+    expect(calls.length).toBe(0)  // file.size = 0 → skip
+  })
+})
+
 describe('tg:sender-avatar — user:avatar bridge (без chatId)', () => {
   it('emit формата {senderId, avatarUrl} — UI iterates все чаты', () => {
     const { mgr, sendToRenderer } = setup()

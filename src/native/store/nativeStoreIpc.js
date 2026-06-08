@@ -640,6 +640,36 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     } catch (_) {}
   })
 
+  // v0.95.44: прогресс UPLOAD файлов (sendFile / sendAlbum). State.uploads —
+  // Map по fileId с {uploaded, total, percent}. done:true → удаляем из state.
+  // Throttle уже сделан в tdlibIpcBridge (только при изменении целого %).
+  // Auto-cleanup через 60с — защита от orphan записей (cancel / network drop).
+  addHandler('tg:upload-progress', ({ fileId, uploaded, total, percent, done }) => {
+    setState(s => {
+      const current = s.uploads || {}
+      if (done) {
+        if (!current[fileId]) return s
+        const next = { ...current }
+        delete next[fileId]
+        return { ...s, uploads: next }
+      }
+      return {
+        ...s,
+        uploads: { ...current, [fileId]: { uploaded, total, percent } },
+      }
+    })
+    // Защита от orphan — auto-cleanup через 60с (если done не пришёл — cancel/network).
+    if (!done) {
+      setTimeout(() => setState(s => {
+        const cur = s.uploads || {}
+        if (!cur[fileId]) return s
+        const next = { ...cur }
+        delete next[fileId]
+        return { ...s, uploads: next }
+      }), 60000)
+    }
+  })
+
   addHandler('tg:read', ({ chatId, outgoing, stillUnread, maxId }) => {
     if (outgoing) {
       // v0.87.17: собеседник прочитал наши сообщения до maxId → ставим isRead=true
