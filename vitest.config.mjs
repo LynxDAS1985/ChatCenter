@@ -7,7 +7,8 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     globals: true,
-    include: ['src/**/*.vitest.jsx', 'src/**/*.vitest.js'],
+    // v0.97.0 (Phase 1): main/**/*.vitest.js — для AI adapter тестов в main/ai/
+    include: ['src/**/*.vitest.jsx', 'src/**/*.vitest.js', 'main/**/*.vitest.js'],
     css: false,
     // v0.87.32: фиксируем UTC для toLocaleTimeString/DateString в snapshot-тестах
     setupFiles: ['./vitest.setup.js'],

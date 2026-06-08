@@ -33,17 +33,15 @@ export function initNotifHandlers(deps) {
       mainWindow.show()
       mainWindow.focus()
       if (item?.messengerId) {
-        // v0.95.47: лог №3 в цепочке notification → scroll. Видно ОТПРАВЛЕН ЛИ
-        // messageId из main в renderer (если пусто — проблема в notif-mgr storage).
-        console.log('[notif-click] sending notify:clicked messengerId=' + item.messengerId +
-          ' chatTag=' + (item.chatTag || '(empty)') +
-          ' messageId=' + (item.messageId || '(none)'))
         mainWindow.webContents.send('notify:clicked', {
           messengerId: item.messengerId,
           senderName: item.senderName || item.title || '',
+          // v0.96.0 (Phase 0 M0.4): source — полный NotificationSource паспорт.
+          // App.jsx читает source.accountId/chatId/messageId напрямую.
+          source: item.source || null,
+          // v0.95.46 legacy: chatTag/messageId оставлены для backward compat
+          // (если source отсутствует — App.jsx fallback на парсинг chatTag).
           chatTag: item.chatTag || '',
-          // v0.95.46: messageId для scroll к конкретному сообщению (native режим).
-          // Webview hook игнорирует это поле (backward-compat).
           messageId: item.messageId || null,
         })
       }

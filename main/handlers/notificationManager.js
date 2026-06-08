@@ -139,7 +139,7 @@ function repositionNotifWin() {
   if (!notifWin.isVisible()) notifWin.showInactive()
 }
 
-async function showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl: preDataUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs, senderName, chatTag, messageId }) {
+async function showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl: preDataUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs, senderName, chatTag, messageId, source }) {
   const { storage, screen } = _deps
   // Защита: пустой, невидимый или timestamp-only body → не показываем ribbon
   let cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
@@ -206,11 +206,9 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   const showMessageTime = settings.showMessageTime !== false // v0.63.8: по умолчанию включено
   // v0.95.46: messageId сохраняется в notifItem для последующего scroll к конкретному
   // сообщению при click «Перейти к чату» (см. notifHandlers.js notif:click → notify:clicked).
-  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null }
-
-  // v0.95.47: лог №2 в цепочке notification → scroll. Видно ДОШЁЛ ЛИ messageId
-  // из renderer в main (если пусто — проблема в IPC payload `app:custom-notify`).
-  console.log('[notif-mgr] saved id=' + id + ' messengerId=' + messengerId + ' chatTag=' + (chatTag || '(empty)') + ' messageId=' + (messageId || '(none)'))
+  // v0.96.0 (Phase 0 M0.4): source — NotificationSource паспорт сообщения.
+  // Сохраняется в notifItems вместе с другими полями → передаётся при notif:click.
+  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null, source: source || null }
 
   // FIFO — удаляем старые из трекинга (v0.63.2: увеличен до 30, стэк может иметь 10+ сообщений)
   if (notifItems.length >= 30) {

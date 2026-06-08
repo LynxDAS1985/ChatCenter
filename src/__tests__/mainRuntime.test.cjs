@@ -37,7 +37,8 @@ test('src/__tests__/mainImports.test.cjs существует', () => {
 })
 
 // Проверяем что все модули из main/ можно распарсить как ESM синтаксически
-const files = walk('main').filter(f => !f.includes('node_modules') && !f.includes('.test.'))
+// v0.97.0: исключаем .vitest. (test файлы Phase 1 в main/ai/, main/handlers/)
+const files = walk('main').filter(f => !f.includes('node_modules') && !f.includes('.test.') && !f.includes('.vitest.'))
 console.log(`  Найдено ${files.length} .js файлов в main/`)
 
 for (const file of files) {

@@ -182,7 +182,12 @@ function buildNativeAccountHealth(account, unreadCount, chatsCount) {
   return createPendingHealth(base)
 }
 
-export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onConnectionActionsReady, onActiveNativeAccountChange }) {
+export default function NativeApp({
+  onOpenConnections, onConnectionSnapshot, onConnectionActionsReady, onActiveNativeAccountChange,
+  // v0.96.0 (Phase 0 M0.3): payload приходит от App.jsx cross-tab listener.
+  // App.jsx переключил activeId на native_cc → NativeApp mount → этот prop читается.
+  pendingNotify, clearPendingNotify,
+}) {
   try {
     if (!window.__ccNativeAppFirstRenderLogged) {
       window.__ccNativeAppFirstRenderLogged = true
@@ -317,51 +322,51 @@ export default function NativeApp({ onOpenConnections, onConnectionSnapshot, onC
     try { applyTheme(loadTheme()) } catch (_) {}
   }, [])
 
-  // v0.95.45: переход к чату по клику «→ Перейти к чату» в уведомлении (native режим).
-  // v0.95.46: расширено для scroll к КОНКРЕТНОМУ сообщению (messageId в payload).
+  // v0.96.0 (Phase 0 M0.3): обработка `notify:clicked` теперь в КОРНЕВОМ App.jsx
+  // (см. App.jsx useEffect cross-tab listener). App.jsx переключает activeId
+  // на native_cc → NativeApp монтируется → этот useEffect читает pendingNotify.
   //
-  // payload: { messengerId, senderName, chatTag, messageId }
-  //   - chatTag = наш chatId (формат 'accountId:rawId')
-  //   - messageId = id сообщения которое вызвало уведомление (добавлено v0.95.46)
+  // Источник payload — App.jsx cross-tab listener:
+  //   pendingNotify = { messengerId, chatTag, messageId, source?, senderName, ... }
   //
-  // Поток: setActiveAccount → setActiveChat → requestScrollToMessage.
-  // InboxMode useEffect слушает store.pendingScrollToMessage и при совпадении
-  // chatId с activeChatId вызывает scrollToMessage(messageId).
+  // Backward compat: payload поддерживает старый chatTag/messageId (до M0.4) И
+  // новый source объект (после M0.4 — NotificationSource паспорт).
   //
   // Эталон: Telegram Web K appImManager.setInnerPeer({peerId, lastMsgId}).
   useEffect(() => {
-    if (!window.api?.on) return undefined
-    const unsub = window.api.on('notify:clicked', ({ messengerId, chatTag, messageId }) => {
-      // v0.95.47: лог №4 в цепочке notification → scroll. Видно ДОШЁЛ ЛИ event
-      // до renderer и БУДЕТ ЛИ вызван requestScrollToMessage. Если log есть но
-      // messageId=(none) — проблема выше в цепочке (см. notif-click).
-      try {
-        console.log('[native-notify-recv] messengerId=' + messengerId +
-          ' chatTag=' + (chatTag || '(empty)') +
-          ' messageId=' + (messageId || '(none)') +
-          ' hasSetActiveAccount=' + (!!store.setActiveAccount) +
-          ' hasSetActiveChat=' + (!!store.setActiveChat) +
-          ' hasRequestScroll=' + (!!store.requestScrollToMessage))
-      } catch (_) {}
-      if (messengerId !== 'native_cc') return
-      if (!chatTag) return
-      try {
-        // Извлекаем accountId из chatId формата 'accountId:rawId' (см. nativeStoreIpc).
+    if (!pendingNotify) return
+    try {
+      // M0.4 (новый формат): source — паспорт NotificationSource
+      const source = pendingNotify.source
+      let accountId, chatId, messageId
+
+      if (source && source.accountId && source.chatId) {
+        // Новый формат — source паспорт
+        accountId = source.accountId
+        // chatTag в state.activeChatId формате 'accountId:rawId'
+        chatId = `${source.accountId}:${source.chatId}`
+        messageId = source.messageId || null
+      } else {
+        // Backward compat (до M0.4) — chatTag + messageId raw
+        const chatTag = pendingNotify.chatTag
+        if (!chatTag) { clearPendingNotify?.(); return }
         const colonIdx = String(chatTag).indexOf(':')
         if (colonIdx > 0) {
-          const accountId = String(chatTag).slice(0, colonIdx)
-          if (accountId && store.setActiveAccount) store.setActiveAccount(accountId)
+          accountId = String(chatTag).slice(0, colonIdx)
         }
-        if (store.setActiveChat) store.setActiveChat(chatTag)
-        // v0.95.46: scroll к КОНКРЕТНОМУ сообщению (если messageId передан).
-        // InboxMode useEffect выполнит scroll после mount чата + загрузки messages.
-        if (messageId && store.requestScrollToMessage) {
-          store.requestScrollToMessage(chatTag, messageId)
-        }
-      } catch (_) {}
-    })
-    return unsub
-  }, [store.setActiveAccount, store.setActiveChat, store.requestScrollToMessage])
+        chatId = chatTag
+        messageId = pendingNotify.messageId || null
+      }
+
+      if (accountId && store.setActiveAccount) store.setActiveAccount(accountId)
+      if (chatId && store.setActiveChat) store.setActiveChat(chatId)
+      if (messageId && store.requestScrollToMessage) {
+        store.requestScrollToMessage(chatId, messageId)
+      }
+    } catch (_) {}
+    // Очищаем pending чтобы prop не триггерил handler повторно при ре-рендерах
+    clearPendingNotify?.()
+  }, [pendingNotify])
 
   const handleAccountContextMenu = (e, account) => {
     e.preventDefault()

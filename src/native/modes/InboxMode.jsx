@@ -785,21 +785,16 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // видим, повторно ищем DOM-элемент и подсвечиваем.
   const scrollToMessage = (msgId) => {
     const el = msgsScrollRef.current?.querySelector(`[data-msg-id="${msgId}"]`)
-    // v0.95.47: лог №5b в цепочке notification → scroll. Видно НАЙДЁН ЛИ
-    // элемент в DOM. Если НЕ найден — частая причина: TDLib msg.id это
-    // BigInt-like number, а data-msg-id рендерится как-то иначе. См. лог.
-    try {
-      const sample = msgsScrollRef.current?.querySelectorAll('[data-msg-id]')
-      const sampleIds = sample ? Array.from(sample).slice(0, 3).map(n => n.getAttribute('data-msg-id')) : []
-      logNativeScroll('scroll-to-message', {
-        msgId: String(msgId),
-        msgIdType: typeof msgId,
-        foundDirect: !!el,
-        scrollRefReady: !!msgsScrollRef.current,
-        domNodesWithMsgId: sample?.length || 0,
-        sampleIds,
-      })
-    } catch (_) {}
+    // v0.96.0: упрощённый лог scrollToMessage (v0.95.47 диагностика удалена
+    // после фикса в v0.95.48 + v0.96.0). Оставлен короткий WARN если не найдено.
+    if (!el && msgsScrollRef.current) {
+      try {
+        logNativeScroll('scroll-to-message-miss', {
+          msgId: String(msgId),
+          domNodesWithMsgId: msgsScrollRef.current?.querySelectorAll('[data-msg-id]')?.length || 0,
+        })
+      } catch (_) {}
+    }
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       el.classList.add('native-msg-flash')
@@ -829,26 +824,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // защищает от повторного срабатывания при дальнейших ререндерах.
   useEffect(() => {
     const pending = store.pendingScrollToMessage
-    // v0.95.47: лог №5a в цепочке notification → scroll. Срабатывает на КАЖДЫЙ
-    // re-render при изменении deps. Видно почему scroll не происходит:
-    //   chatIdMatch=false → юзер не на нужном чате (setActiveChat не дошёл)
-    //   msgCount=0 → сообщения ещё не загружены (нужно подождать tg:messages)
-    //   age > 10000 → юзер слишком долго ждал, истёк timeout
-    if (pending) {
-      try {
-        const targetInLoaded = activeMessages?.some(m => String(m.id) === String(pending.messageId)) || false
-        logNativeScroll('pending-scroll-effect', {
-          pendingChatId: pending.chatId,
-          activeChatId: store.activeChatId,
-          chatIdMatch: pending.chatId === store.activeChatId,
-          messageId: pending.messageId,
-          msgCount: activeMessages?.length || 0,
-          targetInLoaded,
-          loadAttempted: !!pending.loadAttempted,
-          age: Date.now() - (pending.ts || 0),
-        })
-      } catch (_) {}
-    }
+    // v0.96.0: подробная диагностика v0.95.47 удалена (фикс в v0.95.48 принят).
     if (!pending) return
     if (pending.chatId !== store.activeChatId) return  // юзер переключился — не скроллим чужой чат
     if (!activeMessages || activeMessages.length === 0) return  // ждём загрузки messages

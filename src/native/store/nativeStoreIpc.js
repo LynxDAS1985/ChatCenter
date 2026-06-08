@@ -3,6 +3,8 @@
 // tg:chat-avatar, tg:typing, tg:chat-unread-sync, tg:unread-bulk-sync, tg:read.
 // Возвращает функцию-отписку (для useEffect cleanup).
 import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostics.js'
+// v0.96.0 (Phase 0 M0.4): NotificationSource — паспорт сообщения для уведомлений.
+import { createNotificationSource } from '../../shared/notificationSource.js'
 
 // v0.87.36: localStorage-кэш сообщений (общая утилита, экспортируется для nativeStore)
 const CACHE_KEY_PREFIX = 'chat-messages:'
@@ -434,17 +436,33 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     // v0.87.14: Toast через MessengerRibbon (только входящие, не для активного чата)
     if (!message.isOutgoing && stateRef.current.activeChatId !== chatId) {
       const chat = stateRef.current.chats.find(c => c.id === chatId)
-      // v0.95.47: лог №1 в цепочке notification → scroll к сообщению.
-      // Чтобы понять почему v0.95.46 переход не работает в реальной сессии.
+      // v0.96.0 (Phase 0 M0.4): NotificationSource — паспорт сообщения.
+      // Создаётся ОДИН раз здесь, несётся через ВСЕ слои без потерь.
+      // См. .memory-bank/ai-agent-plan/architecture.md (Уровень 1).
+      //
+      // chatId имеет формат 'accountId:rawId' (например 'tg_611696632:-1001229486988').
+      let source = null
       try {
-        logNativeScroll('notify-emit', {
-          chatId,
-          messageId: message?.id != null ? String(message.id) : null,
-          hasMessageId: message?.id != null,
-          hasChat: !!chat,
-          senderName: message.senderName || chat?.title || '',
-        })
-      } catch (_) {}
+        const colonIdx = String(chatId).indexOf(':')
+        const accountId = colonIdx > 0 ? String(chatId).slice(0, colonIdx) : ''
+        const rawChatId = colonIdx > 0 ? String(chatId).slice(colonIdx + 1) : String(chatId)
+        if (accountId && rawChatId && message?.id != null) {
+          source = createNotificationSource({
+            messengerId: 'native_cc',
+            accountId,
+            chatId: rawChatId,
+            messageId: String(message.id),
+            threadId: message.threadId || null,
+            senderId: message.senderId || null,
+            senderName: message.senderName || chat?.title || '',
+            chatTitle: chat?.title || '',
+            timestamp: message.timestamp || Date.now(),
+            textPreview: preview || '',
+            mediaType: message.mediaType || null,
+            isOutgoing: false,
+          })
+        }
+      } catch (_) { source = null }
       try {
         window.api?.invoke('app:custom-notify', {
           title: chat?.title || 'Telegram',
@@ -458,11 +476,11 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
           messengerId: 'native_cc',
           dismissMs: 7000,
           senderName: message.senderName || chat?.title || '',
+          // v0.96.0: основной формат — полный source паспорт
+          source,
+          // v0.95.46 legacy: chatTag/messageId оставлены для backward compat
+          // (App.jsx cross-tab handler читает source ИЛИ chatTag в зависимости от формата)
           chatTag: chatId,
-          // v0.95.46: messageId для перехода к КОНКРЕТНОМУ сообщению (а не просто
-          // к чату). Эталон: Telegram Web K appNotificationsManager.onclick →
-          // setInnerPeer({peerId, lastMsgId}). См. NativeApp.jsx + InboxMode.jsx
-          // через store.requestScrollToMessage.
           messageId: message?.id != null ? String(message.id) : null,
         })
       } catch(_) {}

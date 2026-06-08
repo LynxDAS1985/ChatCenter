@@ -35,6 +35,10 @@ import useWebViewLifecycle from './hooks/useWebViewLifecycle.js'
 import useAppBootstrap from './hooks/useAppBootstrap.js'
 import useConsoleErrorLogger from './hooks/useConsoleErrorLogger.js'
 import useAppIPCListeners from './hooks/useAppIPCListeners.js'
+// v0.96.0 (Phase 0): cross-tab notify:clicked listener в корневом App.jsx.
+// До v0.96.0 listener был внутри NativeApp.jsx, но NativeApp монтируется
+// только при activeId === NATIVE_CC_ID — если юзер на webview-вкладке,
+// событие терялось. См. .memory-bank/ai-agent-plan/problems.md P-01.
 
 try { window.__ccStartupMark?.('module:App', 'module evaluated after static imports') } catch {}
 
@@ -105,6 +109,10 @@ export default function App() {
   const [messengers, setMessengers] = useState([])
   const [activeId, setActiveId] = useState(null)
   const [accountInfo, setAccountInfo] = useState({})
+  // v0.96.0 (Phase 0 M0.3): pendingNativeNotify — payload передаётся в NativeApp
+  // через prop. NativeApp при mount читает и выполняет setActiveAccount + setActiveChat
+  // + requestScrollToMessage, потом вызывает clearPendingNativeNotify().
+  const [pendingNativeNotify, setPendingNativeNotify] = useState(null)
   const [unreadCounts, setUnreadCounts] = useState({})
   const [unreadSplit, setUnreadSplit] = useState({})       // { [id]: { personal, channels } }
   const [connectionHealth, setConnectionHealth] = useState({}) // { [id]: connection quality/status }
@@ -188,6 +196,30 @@ export default function App() {
       window.__ccStartupSummary?.('App-mounted')
     } catch {}
   }, [])
+
+  // v0.96.0 (Phase 0 M0.3): cross-tab listener для native_cc уведомлений.
+  // Слушает в КОРНЕВОМ App.jsx — работает с ЛЮБОЙ активной вкладки
+  // (включая webview). Если юзер на Telega/Макс/etc и пришло уведомление от
+  // native_cc — переключаем на ЦентрЧатов + передаём payload в NativeApp.
+  //
+  // Для webview уведомлений → ничего не делаем (обрабатывает useNotifyNavigation).
+  useEffect(() => {
+    if (!window.api?.on) return undefined
+    const unsub = window.api?.on('notify:clicked', (payload) => {
+      if (!payload || payload.messengerId !== NATIVE_CC_ID) return
+      try {
+        // Переключить активную вкладку на ЦентрЧатов
+        setActiveId(NATIVE_CC_ID)
+        // Передать payload — NativeApp при mount/update выполнит навигацию
+        setPendingNativeNotify(payload)
+      } catch (e) {
+        devError('[App] cross-tab notify:clicked handler error', e)
+      }
+    })
+    return unsub
+  }, [])
+
+  const clearPendingNativeNotify = useCallback(() => setPendingNativeNotify(null), [])
 
   // bumpStats обновляется каждый рендер
   bumpStatsRef.current = (delta) => {
@@ -625,6 +657,8 @@ export default function App() {
                       onConnectionSnapshot={handleNativeConnectionSnapshot}
                       onConnectionActionsReady={(actions) => { nativeConnectionActionsRef.current = actions }}
                       onActiveNativeAccountChange={setActiveNativeAccountId}
+                      pendingNotify={pendingNativeNotify}
+                      clearPendingNotify={clearPendingNativeNotify}
                     />
                   </Suspense>
                 ) : (

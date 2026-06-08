@@ -80,6 +80,7 @@
 | IPC / каналы / контракты | [`.memory-bank/api.md`](.memory-bank/api.md) |
 | WebView / мессенджеры / DOM | [`.memory-bank/messengers.md`](.memory-bank/messengers.md) |
 | AI / промпты / провайдеры | [`.memory-bank/ai-integration.md`](.memory-bank/ai-integration.md) |
+| 🤖 **AI-агент** (планирование/реализация tool use + cross-tab notify + permissions) | [`.memory-bank/ai-agent-plan/README.md`](.memory-bank/ai-agent-plan/README.md) — **читать обязательно** перед задачами по AI-агенту, NotificationSource, Action Bus, tool use. Внутри: план 5 фаз + checkpoints workflow (без подтверждения юзера НЕ двигаться). |
 | Автоответы | [`.memory-bank/autoreply.md`](.memory-bank/autoreply.md) |
 | UI / внешний вид | [`.memory-bank/ui-components.md`](.memory-bank/ui-components.md) |
 | Архитектурные причины старых решений | [`.memory-bank/decisions.md`](.memory-bank/decisions.md) |
@@ -278,7 +279,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.95.50 (8 июня 2026)
+**Текущая версия**: v0.97.0 (8 июня 2026)
 
 ---
 
@@ -762,6 +763,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.95.50 (8 июня 2026)
+**Версия проекта**: v0.97.0 (8 июня 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + фиксы скролла/загрузки/счётчика (v0.94.1-7, v0.95.0-1) + фикс мигания кнопки ↓ + удаление пилюли (v0.95.2) + диагностика «дёрг при повторном открытии» (v0.95.3) + фикс «дёрг» useLayoutEffect + Windows CI testTimeout (v0.95.4) + фикс «дёрг в чате с закреплённым сообщением» (sticky overlay, v0.95.5) + кнопка ↓ Telegram-style: всегда в низ + instant/smooth (v0.95.6) + drag-to-resize разделителя chat-list (v0.95.7) + счётчик ↓ обнуляется + плавная анимация + live compact + порог 160 (v0.95.8) + compact 53px+порог 128+плавный переход+↓ loading state (v0.95.9) + откат scroll-continuation, loading-pulse остаётся (v0.95.10) + диагностика «не грузит дальше» (v0.95.11) + jump-to-end (v0.95.12) + aroundId=0 (v0.95.13) + context-window+rAF×2 (v0.95.14) + итеративный fetch обычных чатов (v0.95.15) + jump-to-end форум-топики + smoothScroll easeOutCubic (v0.95.16) + двухфазный smoothScroll + ForumTopicEmptyState + не мигать shimmer (v0.95.18) + диагностика tg-new-message и tg-messages-applied (v0.95.19) + load-first гейт «грузить-потом-скроллить» при любом gap (v0.95.20) + бейдж форум-группы: число тем с непрочитанным как Telegram Desktop (v0.95.21) + форум-панель overlay + Escape (scroll списка чатов сохраняется, v0.95.22) + курсор остаётся в поле ввода после отправки (v0.95.23) + initial backfill истории при первом открытии чата — TDLib local cache quirk (v0.95.24) + Voice player (waveform/Telegram-style) + Spellcheck RU/EN + action-bar под bubble + «Что нового» модалка (v0.95.25) + фикс tg:new-message обнулял unreadCount для активного чата (47-дневный баг, v0.95.26) + расширенная диагностика send pipeline для ловли «двойной отправки» (v0.95.27) + Telegram-style auto-scroll + ↓N без слепой зоны Schmitt-trigger (v0.95.28) + **реакции 👍❤️🔥 + Telegram-style header (аватарка+статус+memberCount) + дефолтная иконка General + render-counter для дубля (v0.95.29)**
 **Последнее обновление**: 8 июня 2026 — **v0.95.50**: Откат v0.95.49 (followup re-apply scrollTop + userScrolledRef) по запросу юзера «убери это, откатай и забудь пока что». Возвращена прежняя логика useInitialScroll branch 2 !isReturning (no-op в followup). Удалён userScrolledRef из InboxMode/InboxChatPanel. Лимиты откатаны: useInitialScroll.js 220→170, InboxMode.jsx 1120→1110, renderer total 22600→22500. 2 unit-теста v0.95.49 удалены. v0.95.47 (emoji fallback + диагностические логи) и v0.95.48 (jump-to-message паттерн) НЕ откатаны — работают. Регрессия: lint 0, vitest, fileSizeLimits, check-memory ✅.
