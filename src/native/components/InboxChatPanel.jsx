@@ -97,10 +97,6 @@ export default function InboxChatPanel({
   handleInputChange, handleReplySend, handlePaste,
   // scroll
   msgsScrollRef, handleScroll, scrollDiag, dragOver, handleDragOver, handleDragLeave, handleDrop,
-  // v0.95.49: ref «юзер начал листать» — ставится true при реальном wheel/touch/pointer.
-  // useInitialScroll followup-ветка проверяет этот флаг и НЕ перезаписывает позицию
-  // когда юзер уже читает (защита от перехвата scroll'а юзера).
-  userScrolledRef,
   chatReady, atBottom, newBelow, scrollToBottom, scrollToMessage,
   // v0.94.0: imperative API (scrollToRow + getter element) — теперь обычный DOM scroll
   virtualListRef,
@@ -267,9 +263,9 @@ export default function InboxChatPanel({
                 onSetReaction,  // v0.95.29
               }}
               onScroll={handleScroll}
-              onWheel={() => { scrollDiag.markUserScroll('wheel'); if (userScrolledRef) userScrolledRef.current = true }}
-              onTouchStart={() => { scrollDiag.markUserScroll('touch'); if (userScrolledRef) userScrolledRef.current = true }}
-              onPointerDown={() => { scrollDiag.markUserScroll('pointer'); if (userScrolledRef) userScrolledRef.current = true }}
+              onWheel={() => scrollDiag.markUserScroll('wheel')}
+              onTouchStart={() => scrollDiag.markUserScroll('touch')}
+              onPointerDown={() => scrollDiag.markUserScroll('pointer')}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}

@@ -266,14 +266,13 @@ console.log('── Статистика: ──')
 var totalSrc = 0
 var srcFiles = allFiles.filter(function (f) { return f.startsWith('src/') && !/\.(test|vitest)\./.test(f) })
 srcFiles.forEach(function (f) { totalSrc += countLines(f) })
-// v0.95.49: лимит поднят 22500 → 22600 — followup re-apply restore ветка
-// (~40 строк) + userScrolledRef + reset при смене чата + проброс в InboxChatPanel.
+// v0.95.50: лимит откатан 22600 → 22500 (v0.95.49 followup re-apply откатан).
 // v0.95.48: лимит был 22500 — jump-to-message useEffect расширен.
 // v0.95.44: лимит был 22400 — useUploadProgress hook + прогресс-bar в FilePreviewBar.
 // v0.95.43: лимит был 22200 для скрепки.
 // Дальнейшее разбиение — плановая задача (handoff-code-limits.md).
-test('Общий renderer код (src/ без тестов) < 22600 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 22600, totalSrc + ' > 22600')
+test('Общий renderer код (src/ без тестов) < 22500 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 22500, totalSrc + ' > 22500')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

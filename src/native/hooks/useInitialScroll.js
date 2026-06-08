@@ -30,10 +30,6 @@ export function useInitialScroll({
   onDone,
   getSavedScrollTop,  // (chatId) => { scrollTop, atBottom } | null
   isRestoringRef,     // v0.92.4: closed-loop guard
-  // v0.95.49: ref сбрасывается в false при смене activeChatId, ставится в true
-  // при реальном wheel/touch/pointer ввода юзера. Защита от перезаписи позиции
-  // когда юзер уже начал читать и листать.
-  userScrolledRef,
 }) {
   // Set chatIds где initial-scroll УЖЕ выполнен. Повторное открытие — restore, не initial.
   const doneSetRef = useRef(new Set())
@@ -67,50 +63,12 @@ export function useInitialScroll({
       doneRef.current = activeChatId
       const isReturning = lastActiveChatIdRef.current !== activeChatId
       if (!isReturning) {
-        // Тот же чат, messagesCount изменился (IDB cached → server → prefetch×2).
-        // v0.95.49: КОРЕНЬ БАГА «прыжок вверх» — useLayoutEffect при isReturning=true
-        // ставит scrollTop=saved.scrollTop сразу, но scrollHeight ещё маленький
-        // (cached 50 msgs из IDB). MDN: scrollTop clamped to [0, scrollHeight-clientHeight].
-        // Когда saved.scrollTop=15000 а scrollHeight на момент restore=5000 — scrollTop
-        // клампится до scrollMax≈4440. Через 200мс приходят server messages →
-        // scrollHeight растёт до 20000, но scrollTop остался 4440 → юзер видит ВЕРХ
-        // ленты вместо запомненной позиции.
-        // Решение — re-apply saved.scrollTop на КАЖДОМ followup-render пока:
-        //   - followupCount < 5 (защита от бесконечного цикла, хватит для staged setState)
-        //   - юзер НЕ начал скроллить вручную (userScrolledRef)
-        // Эталон: Telegram Web K `_isJumping` + retry restore на messagesCount changes.
+        // Тот же чат, просто messagesCount изменился (push/prefetch) — не трогаем scroll.
+        // v0.95.3: диагностика — считаем ре-раны эффекта ПОСЛЕ restore (staged setState).
         followupRef.current += 1
-        const MAX_FOLLOWUP_RESTORES = 5
-        const userScrolled = !!userScrolledRef?.current
-        if (followupRef.current <= MAX_FOLLOWUP_RESTORES && !userScrolled) {
-          const saved = getSavedScrollTop?.(activeChatId)
-          const el = scrollRef.current
-          if (el && saved) {
-            const scrollTopBefore = el.scrollTop
-            markRestoring()
-            if (saved.atBottom) {
-              el.scrollTop = el.scrollHeight
-            } else if (Number.isFinite(saved.scrollTop)) {
-              el.scrollTop = saved.scrollTop
-            }
-            logNativeScroll('restore-followup-applied', {
-              chatId: activeChatId, followupCount: followupRef.current,
-              messagesCount, mode: saved.atBottom ? 'bottom' : 'pixel',
-              requestedScrollTop: saved.scrollTop, requestedAtBottom: !!saved.atBottom,
-              scrollTopBefore, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
-            })
-          } else {
-            logNativeScroll('restore-followup-render', {
-              chatId: activeChatId, followupCount: followupRef.current, messagesCount,
-              skipped: el ? 'no-saved' : 'no-scrollEl',
-            })
-          }
-        } else {
-          logNativeScroll('restore-followup-render', {
-            chatId: activeChatId, followupCount: followupRef.current, messagesCount,
-            aborted: userScrolled ? 'user-scrolled' : 'max-reached',
-          })
-        }
+        logNativeScroll('restore-followup-render', {
+          chatId: activeChatId, followupCount: followupRef.current, messagesCount,
+        })
         try { onDone?.(activeChatId) } catch (_) {}
         return
       }

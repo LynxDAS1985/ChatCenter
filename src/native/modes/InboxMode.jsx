@@ -140,11 +140,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // Флаг ставится true в useInitialScroll перед scrollTop=, сбрасывается через 500мс.
   // Объявлен ЗДЕСЬ — пробрасывается в useScrollPositionAutosave / useInboxScroll / useInitialScroll.
   const isRestoringRef = useRef(false)
-  // v0.95.49: флаг «юзер начал реально листать» — ставится в true при wheel/touch/pointer
-  // (см. InboxChatPanel onWheel/onTouchStart/onPointerDown). Используется useInitialScroll
-  // followup-веткой чтобы НЕ перезаписывать позицию когда юзер уже читает (abort retry).
-  // Сбрасывается при смене activeChatId (useEffect ниже).
-  const userScrolledRef = useRef(false)
   // v0.94.0: Virtuoso удалён. firstItemIndex / scrollStateByChatRef / initialTopMostItemIndex
   // больше не нужны — обычный DOM scroll + pixel scrollTop restore.
 
@@ -403,16 +398,10 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     },
     getSavedScrollTop: (chatId) => scrollPosByChatRef.current.get(chatId) ?? null,
     isRestoringRef,
-    userScrolledRef,  // v0.95.49: abort followup-restore если юзер начал листать
   })
 
   // v0.87.66/67: при смене чата проверяем seenChatsRef — если уже видели, chatReady=true сразу.
   useEffect(() => {
-    // v0.95.49: при КАЖДОЙ смене активного чата (включая переключение туда-обратно)
-    // сбрасываем флаг «юзер скроллил» в false. Это гарантирует что followup-restore
-    // (useInitialScroll branch 2 isReturning=true → isReturning=false ветка) будет
-    // применять saved.scrollTop пока юзер не начнёт листать в новом контексте.
-    userScrolledRef.current = false
     if (!activeViewKey) { setChatReady(false); return }
     if (seenChatsRef.current.has(activeViewKey)) {
       setChatReady(true)
@@ -1070,7 +1059,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           editTarget={editTarget} setEditTarget={setEditTarget}
           handleInputChange={handleInputChange} handleReplySend={handleReplySend} handlePaste={handlePaste}
           msgsScrollRef={msgsScrollRef} virtualListRef={virtualListRef} handleScroll={handleScroll} scrollDiag={scrollDiag}
-          userScrolledRef={userScrolledRef}
           dragOver={dragOver} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave} handleDrop={handleDrop}
           chatReady={chatReady} atBottom={atBottom} newBelow={newBelow}
           scrollToBottom={scrollToBottom} scrollToMessage={scrollToMessage}

@@ -77,8 +77,8 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 1120,
-    reason: 'v0.95.49: userScrolledRef для followup re-apply restore (паттерн Telegram Web K _isJumping) + reset при смене activeViewKey + проброс в useInitialScroll/InboxChatPanel (~10 строк). v0.95.48: loadMessages aroundId+addOffset=-49 для jump-to-message. v0.95.47: диагностические логи. v0.95.46: useEffect для pendingScrollToMessage. v0.95.43: useFileAttach. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. Доменное разбиение — отдельная задача.'
+    ceiling: 1110,
+    reason: 'v0.95.48: loadMessages aroundId+addOffset=-49 для jump-to-message из notification (target вне окна) — паттерн tdesktop HistoryWidget::showAtMsgId + tweb setInnerPeer (~25 строк). v0.95.47: диагностические логи pending-scroll-effect + scroll-to-message (временные). v0.95.46: useEffect для pendingScrollToMessage. v0.95.43: useFileAttach + handleAttachSend. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. Доменное разбиение — отдельная задача.'
   },
   // v0.92.0: useInboxScroll вернулся в стандартный лимит 150 после удаления
   // isRestoringRef guards. Текущий размер 139.
@@ -94,8 +94,8 @@ module.exports = {
   // на под-хуки (3-4 файла useInitialScrollAnchor/Bottom/FirstUnread) — отдельная задача
   // после стабилизации v0.91.22 фикса (нужны логи юзера что closed-loop ушёл).
   'src/native/hooks/useInitialScroll.js': {
-    ceiling: 220,
-    reason: 'v0.95.49: followup re-apply ветка branch 2 !isReturning (~40 строк с комментариями) — фикс «возврат в чат прыгает вверх». MDN clamp scrollTop + staged loadMessages → re-apply на каждом messagesCount росте пока followupCount<=5 И !userScrolledRef. Эталон Telegram Web K _isJumping. v0.95.4: useEffect→useLayoutEffect + 7 строк предупреждения. v0.92.0 history: корневой хук восстановления позиции. CLAUDE.md запрещает резать комментарии. Доменное разбиение — отдельная плановая задача.'
+    ceiling: 170,
+    reason: 'v0.95.4: useEffect→useLayoutEffect (фикс «дёрг при повторном открытии seen-чата») + 7 строк комментария-предупреждения «КРИТИЧНО: только micro-операция scrollTop=N внутри, не добавлять fetch/тяжёлую работу — иначе useLayoutEffect блокирует paint (React docs)». v0.92.0 history: исторический корневой хук восстановления позиции (saved scrollTop / firstUnread / atBottom). CLAUDE.md запрещает резать комментарии. Доменное разбиение — отдельная плановая задача.'
   },
   // v0.91.22: rAF-батчинг для 3-х тяжёлых IPC handlers (tg:chat-last-message,
   // tg:sender-avatar, tg:chat-avatar) добавил ~60 строк. Корень — Проблема 3 Maximum
@@ -113,15 +113,10 @@ module.exports = {
     ceiling: 970,
     reason: 'v0.95.48: +4 теста для pendingScrollToMessage/markPendingScrollLoadAttempted/clearPendingScrollToMessage (~50 строк) — защита jump-to-message паттерна tdesktop/tweb. v0.95.38: +5 регресс-тестов tg:send-succeeded handler + tg:new-message dedup. См. mistakes/outgoing-two-cases.md. v0.95.26: +4 теста на 47-дневный баг unreadCount.'
   },
-  // v0.95.49: changelog содержит 19 entries для модалки «Что нового», копится со
-  // временем при каждом minor релизе. Архивация старых — отдельная задача.
+  // v0.95.50: changelog копит entries для модалки «Что нового», ~15 строк за minor релиз.
+  // Архивация старых — отдельная задача.
   'src/utils/changelogData.js': {
     ceiling: 350,
-    reason: 'v0.95.49: добавлен entry v0.95.49 (fix scroll-restore «прыжок вверх»). Файл копит changelog для WhatsNewModal — растёт ~15 строк за minor релиз. Архивация старых — отдельная задача.'
-  },
-  // v0.95.49: +3 теста для followup re-apply scrollTop. Тесты сложные (renderHook + fakeEl).
-  'src/native/hooks/useInitialScroll.vitest.jsx': {
-    ceiling: 500,
-    reason: 'v0.95.49: +3 теста для followup re-apply saved.scrollTop (возврат + messagesCount растёт / abort при user-scroll / MAX=5 защита от петли). Эталон Telegram Web K _isJumping retry pattern.'
+    reason: 'v0.95.50: 19+ entries для WhatsNewModal — растёт ~15 строк за minor релиз. Архивация старых — отдельная задача.'
   }
 }

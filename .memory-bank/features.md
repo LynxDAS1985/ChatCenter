@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v0.95.49 (8 июня 2026)
+## Текущая версия: v0.95.50 (8 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -47,34 +47,19 @@
 
 ---
 
-### v0.95.49 — Фикс «возврат в чат прыгает вверх» через followup re-apply
+### v0.95.50 — Откат v0.95.49 (followup re-apply restore)
 
-**Юзер**: «стою на чате, полистал, перехожу на другой чат, захожу обратно — перелистывает вверх. Должно быть на том же месте где был. Чат не должен прыгать если удалились/прибавились сообщения».
+**Юзер**: «убери это, откатай и забудь пока что».
 
-**Корень** (доказан 4 фактами):
-- **🥇 MDN** [Element.scrollTop](https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTop): «scrollTop **clamped** to [0, scrollHeight - clientHeight]».
-- **🥇 React docs** [useLayoutEffect](https://react.dev/reference/react/useLayoutEffect): «fires synchronously **before browser paints**» — но **до** последующих state changes.
-- **🥈 Наш лог 16:04:56**: `restore-applied scrollTop=8308 scrollHeight=8868` при `messages=70 unread=2` — на момент restore данные ещё не полностью загружены.
-- **🥈 [nativeStore.loadMessages](src/native/store/nativeStore.js)**: staged setState — IDB cached (50) → server (100) → prefetch×2. 3-4 ре-рендера с растущим scrollHeight.
+Откат всех изменений v0.95.49 (followup re-apply scrollTop + userScrolledRef):
+- [useInitialScroll.js](src/native/hooks/useInitialScroll.js): убран параметр userScrolledRef + followup re-apply ветка → возвращена прежняя логика (no-op в followup).
+- [InboxMode.jsx](src/native/modes/InboxMode.jsx): убран userScrolledRef + reset + проброс.
+- [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx): убран prop + убраны изменения в onWheel/onTouchStart/onPointerDown.
+- 2 unit-теста v0.95.49 удалены. Лимиты возвращены к прежним значениям.
 
-**Цепочка бага**: возврат в seen-чат → `useLayoutEffect` (branch 2 `isReturning=true`) ставит `el.scrollTop = saved.scrollTop` (например 15000) → но `scrollHeight` ещё = 5000 (cached 50 msgs) → MDN clamp → `scrollTop = 4440` → server messages приходят, scrollHeight=20000, **scrollTop остался 4440** → юзер видит верх ленты.
+**Что НЕ откатано**: v0.95.47 (emoji fallback + диагностические логи) и v0.95.48 (jump-to-message паттерн) остаются в коде — они в текущей версии работают.
 
-**Решение** ([useInitialScroll.js:65-105](src/native/hooks/useInitialScroll.js) branch 2 `!isReturning` ветка): re-apply saved.scrollTop при каждом followup-render для seen-чата, пока:
-- `followupCount <= 5` (защита от бесконечного цикла, хватает на staged setState)
-- `!userScrolledRef.current` (юзер не начал листать — иначе abort, не перехватываем)
-
-**Эталон**: Telegram Web K [`_isJumping` + retry restore](https://github.com/morethanwords/tweb) на messagesCount changes.
-
-**Файлы** (3 правки, минимум touch):
-- [useInitialScroll.js](src/native/hooks/useInitialScroll.js): новый параметр `userScrolledRef`, followup ветка re-apply через `markRestoring()` + `el.scrollTop = saved.scrollTop || el.scrollHeight`.
-- [InboxMode.jsx](src/native/modes/InboxMode.jsx): `const userScrolledRef = useRef(false)` + reset в useEffect[activeViewKey] + проброс в useInitialScroll + проброс в InboxChatPanel.
-- [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx): новый prop `userScrolledRef`, в onWheel/onTouchStart/onPointerDown — `userScrolledRef.current = true` параллельно с `scrollDiag.markUserScroll`.
-
-**Тесты** +3: re-apply при messagesCount росте, abort при user-scroll, MAX=5 защита от петли.
-
-**Конфликты ✅**: `isRestoringRef` closed-loop guard (v0.92.4) уже защищает save/autosave от перезаписи при programmatic scroll. **Удаление сообщений** → re-apply scrollTop, clamp к укороченной ленте — стандарт Telegram. **Новые сообщения снизу** → overflow-anchor:auto держит позицию. **load-older** (prependAnchorRef v0.94.2) — отдельный путь, не затронут.
-
-**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅.
+**Регрессия**: lint, vitest, fileSizeLimits, check-memory ✅.
 
 ---
 
