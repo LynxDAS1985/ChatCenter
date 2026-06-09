@@ -86,7 +86,7 @@ describe('useAIAgent', () => {
       result.current.cancel()
     })
 
-    expect(invokeMock).toHaveBeenCalledWith('ai:agent:cancel', expect.objectContaining({
+    expect(globalThis.window.api.send).toHaveBeenCalledWith('ai:agent:cancel', expect.objectContaining({
       requestId: expect.any(String),
     }))
     expect(result.current.state.isRunning).toBe(false)
@@ -121,7 +121,7 @@ describe('useAIAgent', () => {
       result.current.confirmStep({ text: 'Изменённый текст' })
     })
 
-    expect(invokeMock).toHaveBeenCalledWith('ai:agent:confirm-response', expect.objectContaining({
+    expect(globalThis.window.api.send).toHaveBeenCalledWith('ai:agent:confirm-response', expect.objectContaining({
       confirmed: true,
       updatedArgs: { text: 'Изменённый текст' },
     }))
@@ -142,7 +142,7 @@ describe('useAIAgent', () => {
       result.current.cancelStep()
     })
 
-    expect(invokeMock).toHaveBeenCalledWith('ai:agent:confirm-response', expect.objectContaining({
+    expect(globalThis.window.api.send).toHaveBeenCalledWith('ai:agent:confirm-response', expect.objectContaining({
       confirmed: false,
     }))
   })
