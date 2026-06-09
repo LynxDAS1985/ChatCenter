@@ -116,7 +116,7 @@ module.exports = {
   // v0.95.50: changelog копит entries для модалки «Что нового», ~15 строк за minor релиз.
   // Архивация старых — отдельная задача.
   'src/utils/changelogData.js': {
-    ceiling: 350,
-    reason: 'v0.95.50: 19+ entries для WhatsNewModal — растёт ~15 строк за minor релиз. Архивация старых — отдельная задача.'
+    ceiling: 400,
+    reason: 'v1.0.0: 22 entries для WhatsNewModal — релиз 1.0 (AI агент + Tasks + Reminders). Архивация старых записей < v0.95 — отдельная задача.'
   }
 }

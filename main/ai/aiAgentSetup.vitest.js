@@ -9,16 +9,21 @@ import {
 } from './aiAgentSetup.js'
 
 describe('initToolRegistry', () => {
-  it('возвращает registry с 5 tools', () => {
+  it('возвращает registry с 8 tools (5 Phase 1-2 + 3 Phase 4)', () => {
     const reg = initToolRegistry()
     const tools = reg.list()
-    expect(tools.length).toBe(5)
+    expect(tools.length).toBe(8)
     const ids = tools.map(t => t.id)
+    // Phase 1 + 2
     expect(ids).toContain('goto_message')
     expect(ids).toContain('get_chat_history')
     expect(ids).toContain('search_messages')
     expect(ids).toContain('reply_to_message')
     expect(ids).toContain('mark_as_read')
+    // Phase 4
+    expect(ids).toContain('create_task')
+    expect(ids).toContain('list_tasks')
+    expect(ids).toContain('schedule_reminder')
   })
 
   it('идемпотентен — повторный вызов возвращает тот же registry', () => {

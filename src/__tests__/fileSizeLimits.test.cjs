@@ -266,15 +266,15 @@ console.log('── Статистика: ──')
 var totalSrc = 0
 var srcFiles = allFiles.filter(function (f) { return f.startsWith('src/') && !/\.(test|vitest)\./.test(f) })
 srcFiles.forEach(function (f) { totalSrc += countLines(f) })
-// v0.99.0 (Phase 3): лимит 24000 → 24400 — useAIAgent hook, AISidebarAgent UI,
-// «🤖 AI» кнопка в notification, listener в App.jsx, минимальная интеграция в AISidebar.
-// v0.98.0 (Phase 2): был 24000 — Permission Guard, write handlers, AIConfirmModal, audit.
+// v1.0.0 (Phase 4): лимит 24400 → 25200 — Tasks store + IPC + UI, Reminders store +
+// scheduler + UI, AI Activity Dashboard, 3 новых tools (create_task / list_tasks /
+// schedule_reminder), changelog data растёт.
+// v0.99.0 (Phase 3): был 24400.
+// v0.98.0 (Phase 2): был 24000.
 // v0.97.0 (Phase 0+1): был 23300.
-// v0.96.0 (Phase 0): был 22800.
-// v0.95.50: лимит был 22500.
 // Дальнейшее разбиение — плановая задача (handoff-code-limits.md).
-test('Общий renderer код (src/ без тестов) < 24400 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 24400, totalSrc + ' > 24400')
+test('Общий renderer код (src/ без тестов) < 25200 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 25200, totalSrc + ' > 25200')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

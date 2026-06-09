@@ -14,6 +14,10 @@ import { getChatHistoryTool } from '../../src/shared/tools/handlers/getChatHisto
 import { searchMessagesTool } from '../../src/shared/tools/handlers/searchMessages.js'
 import { replyToMessageTool } from '../../src/shared/tools/handlers/replyToMessage.js'
 import { markAsReadTool } from '../../src/shared/tools/handlers/markAsRead.js'
+// v1.0.0 (Phase 4): tools для Tasks + Reminders.
+import { createTaskTool } from '../../src/shared/tools/handlers/createTask.js'
+import { listTasksTool } from '../../src/shared/tools/handlers/listTasks.js'
+import { scheduleReminderTool } from '../../src/shared/tools/handlers/scheduleReminder.js'
 
 let _registry = null
 let _deps = null
@@ -34,6 +38,11 @@ export function initToolRegistry() {
   // Write tools (Phase 2) — permission=confirm hardcoded
   reg.register(replyToMessageTool.id, replyToMessageTool)
   reg.register(markAsReadTool.id, markAsReadTool)
+
+  // Phase 4 tools: Tasks + Reminders
+  reg.register(createTaskTool.id, createTaskTool)
+  reg.register(listTasksTool.id, listTasksTool)
+  reg.register(scheduleReminderTool.id, scheduleReminderTool)
 
   _registry = reg
   return _registry
@@ -126,6 +135,27 @@ export function getHandlerContext() {
       } catch (e) {
         return { ok: false, error: e?.message }
       }
+    },
+
+    // v1.0.0 (Phase 4): createTask — создать задачу через taskStore
+    createTask: async (taskParams) => {
+      const ts = _deps?.taskStore
+      if (!ts || typeof ts.create !== 'function') return { ok: false, error: 'no_taskStore' }
+      try { return await ts.create(taskParams) } catch (e) { return { ok: false, error: e?.message } }
+    },
+
+    // listTasks — список задач через taskStore
+    listTasks: async (filter) => {
+      const ts = _deps?.taskStore
+      if (!ts || typeof ts.list !== 'function') return { ok: false, tasks: [] }
+      try { return await ts.list(filter) } catch (e) { return { ok: false, error: e?.message, tasks: [] } }
+    },
+
+    // scheduleReminder — запланировать напоминание
+    scheduleReminder: async (reminderParams) => {
+      const rs = _deps?.reminderStore
+      if (!rs || typeof rs.schedule !== 'function') return { ok: false, error: 'no_reminderStore' }
+      try { return await rs.schedule(reminderParams) } catch (e) { return { ok: false, error: e?.message } }
     },
   }
 }
