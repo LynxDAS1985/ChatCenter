@@ -63,7 +63,16 @@ export const replyToMessageTool = {
   id: 'reply_to_message',
   permission: 'confirm',
   category: 'writing',
-  revertable: false,  // отправленное сообщение можно удалить, но получатель уже видел
-  description: 'Отправить ответ на сообщение в чат',
+  revertable: false,
+  description: 'Отправить текстовый ответ на сообщение в чат',
+  schema: {
+    type: 'object',
+    required: ['source', 'text'],
+    properties: {
+      source: { type: 'object' },
+      text: { type: 'string', minLength: 1, maxLength: 4000 },
+      parseMode: { type: 'string', enum: ['plain', 'markdown', 'html'], default: 'plain' },
+    },
+  },
   handler: replyToMessageHandler,
 }

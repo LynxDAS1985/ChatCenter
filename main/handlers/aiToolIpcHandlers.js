@@ -27,7 +27,7 @@ export function initAiToolIpcHandlers(deps) {
   const { getRegistry, getHandlerContext, getCallProvider } = deps || {}
 
   ipcMain.handle('ai:agent:run', async (event, params) => {
-    const { requestId, source, provider, model, recentMessages, extraInstructions } = params || {}
+    const { requestId, source, provider, model, recentMessages, extraInstructions, userSettings } = params || {}
 
     if (!requestId) return { ok: false, error: 'missing_requestId' }
 
@@ -47,6 +47,37 @@ export function initAiToolIpcHandlers(deps) {
     const callProvider = getCallProvider?.(provider, model)
     if (typeof callProvider !== 'function') {
       return { ok: false, error: `provider_not_available: ${provider}` }
+    }
+
+    // v0.99.1 (Phase 3.5): onConfirmRequest callback — main отправляет в renderer
+    // ai:agent:confirm-request и ждёт ai:agent:confirm-response через Promise.
+    // Renderer показывает AIConfirmModal → юзер подтверждает / отменяет.
+    const onConfirmRequest = (confirmParams) => {
+      return new Promise((resolve) => {
+        const run = activeRuns.get(requestId)
+        if (!run) {
+          resolve({ confirmed: false })
+          return
+        }
+        run.confirmResolver = resolve
+        try {
+          if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('ai:agent:confirm-request', {
+              requestId,
+              ...confirmParams,
+            })
+          }
+        } catch (_) {
+          resolve({ confirmed: false })
+        }
+        // Таймаут 60 секунд — если юзер не ответил, считаем отказ
+        setTimeout(() => {
+          if (run.confirmResolver) {
+            run.confirmResolver({ confirmed: false })
+            run.confirmResolver = null
+          }
+        }, 60000)
+      })
     }
 
     // Build context
@@ -87,6 +118,10 @@ export function initAiToolIpcHandlers(deps) {
         handlerContext,
         initialMessages,
         onStep,
+        // v0.99.1 (Phase 3.5): callback для confirm-tier tools (reply / markAsRead).
+        // Main → renderer → AIConfirmModal → юзер → renderer → main.
+        onConfirmRequest,
+        userSettings: userSettings || {},
       })
 
       return result

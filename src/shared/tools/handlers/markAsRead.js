@@ -56,5 +56,13 @@ export const markAsReadTool = {
   category: 'writing',
   revertable: true,
   description: 'Отметить сообщения как прочитанные до указанного messageId',
+  schema: {
+    type: 'object',
+    required: ['source'],
+    properties: {
+      source: { type: 'object' },
+      upToMessageId: { type: 'string' },
+    },
+  },
   handler: markAsReadHandler,
 }
