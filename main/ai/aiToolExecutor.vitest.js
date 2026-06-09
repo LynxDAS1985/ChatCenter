@@ -133,15 +133,22 @@ describe('runAgentLoop — permission guard', () => {
     expect(r.audit[0].result.error).toBe('permission_denied')
   })
 
-  it('confirm tool в Phase 1 → confirm_not_implemented', async () => {
+  it('confirm tool без onConfirmRequest → confirm_required_no_handler', async () => {
     const registry = makeRegistry()
+    // Регистрируем confirm-tool с известным id (Permission Guard знает default для get_chat_history)
+    registry.register('mark_as_read', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => ({ ok: true }),
+      permission: 'confirm',
+      description: 'mark',
+    })
     let call = 0
     const callProvider = vi.fn(async () => {
       call++
       if (call === 1) {
         return {
           stop_reason: 'tool_use',
-          content: [{ type: 'tool_use', id: 'tu_1', name: 'confirm_tool', input: {} }],
+          content: [{ type: 'tool_use', id: 'tu_1', name: 'mark_as_read', input: { upToMessageId: 'x' } }],
         }
       }
       return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Понятно' }] }
@@ -154,9 +161,110 @@ describe('runAgentLoop — permission guard', () => {
       callProvider,
       handlerContext: {},
       initialMessages: [],
+      // НЕТ onConfirmRequest
     })
 
-    expect(r.audit[0].result.error).toBe('confirm_not_implemented_in_phase1')
+    expect(r.audit[0].result.error).toBe('confirm_required_no_handler')
+  })
+
+  it('Phase 2: confirm tool + onConfirmRequest(confirmed) → выполняется', async () => {
+    const registry = makeRegistry()
+    registry.register('mark_as_read', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => ({ ok: true, result: { marked: true } }),
+      permission: 'confirm',
+      description: 'mark',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return {
+          stop_reason: 'tool_use',
+          content: [{ type: 'tool_use', id: 'tu_1', name: 'mark_as_read', input: { upToMessageId: 'x' } }],
+        }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Готово' }] }
+    })
+    const onConfirmRequest = vi.fn(async () => ({ confirmed: true }))
+
+    const r = await runAgentLoop({
+      source: SOURCE,
+      provider: 'anthropic',
+      registry,
+      callProvider,
+      handlerContext: {},
+      initialMessages: [],
+      onConfirmRequest,
+    })
+
+    expect(onConfirmRequest).toHaveBeenCalledWith(expect.objectContaining({
+      toolId: 'mark_as_read',
+      tier: 'confirm',
+    }))
+    expect(r.ok).toBe(true)
+    expect(r.audit[0].result.ok).toBe(true)
+  })
+
+  it('Phase 2: onConfirmRequest(confirmed:false) → denied_by_user', async () => {
+    const registry = makeRegistry()
+    registry.register('mark_as_read', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => ({ ok: true }),
+      permission: 'confirm',
+      description: 'mark',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return {
+          stop_reason: 'tool_use',
+          content: [{ type: 'tool_use', id: 'tu_1', name: 'mark_as_read', input: { upToMessageId: 'x' } }],
+        }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Понятно' }] }
+    })
+    const onConfirmRequest = vi.fn(async () => ({ confirmed: false }))
+
+    const r = await runAgentLoop({
+      source: SOURCE,
+      provider: 'anthropic',
+      registry,
+      callProvider,
+      handlerContext: {},
+      initialMessages: [],
+      onConfirmRequest,
+    })
+
+    expect(r.audit[0].result.error).toBe('denied_by_user')
+  })
+
+  it('Phase 2: webview messengerId → permission_denied scope', async () => {
+    const registry = makeRegistry()
+    const webviewSource = { messengerId: 'webview-telegram', accountId: 'wv', chatId: 'c', messageId: 'm' }
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return {
+          stop_reason: 'tool_use',
+          content: [{ type: 'tool_use', id: 'tu_1', name: 'get_chat_history', input: { chatId: 'X' } }],
+        }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'cant' }] }
+    })
+
+    const r = await runAgentLoop({
+      source: webviewSource,
+      provider: 'anthropic',
+      registry,
+      callProvider,
+      handlerContext: {},
+      initialMessages: [],
+    })
+
+    expect(r.audit[0].result.reason).toBe('webview_messenger_not_supported')
   })
 })
 

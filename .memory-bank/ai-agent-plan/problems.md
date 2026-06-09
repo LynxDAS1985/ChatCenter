@@ -276,28 +276,35 @@ Write tools (reply/markRead) — Phase 2.
 
 ---
 
-### [P-08] vitest нестабильный (flaky) — иногда падает с TypeError: config undefined (2026-06-09)
+### [P-08] vitest нестабильный (flaky) — наблюдение (2026-06-09)
 
-**Статус**: 🔴 OPEN
+**Статус**: 🟡 WATCHING (не воспроизводится сейчас)
 **Фаза**: not in plan (infrastructure)
-**Severity**: major (CI/CD риск)
+**Severity**: minor (если вернётся — major для CI)
 
-**Симптом**: `npm run test:vitest` иногда возвращает «86 файлов упали, 0 тестов выполнено» с ошибкой
-`TypeError: Cannot read properties of undefined (reading 'config')` на каждом `describe()`. Повторный
-запуск через 1-2 минуты — всё проходит (1142/1142).
+**Симптом** (когда воспроизводится): `npm run test:vitest` возвращает «86 файлов упали, 0 тестов
+выполнено» с ошибкой `TypeError: Cannot read properties of undefined (reading 'config')` на каждом
+`describe()`. Повторный запуск через 1-2 минуты — всё проходит (1142/1142).
 
-**Корень**: подозреваю несовместимость vitest 4.1.4 + Node 24 + happy-dom. Cold-start environment
-не успевает инициализировать suite контекст. На Windows стабильнее не воспроизводится с retry.
+**Воспроизведение 2026-06-09**: запущен 3 раза подряд — 3/3 прошли (1142/1142 каждый). НЕ
+воспроизводится. По правилам ИИ-агента (Time-box 2-3 попытки → СТОП) — не делаю слепой фикс.
 
-**Решение**: пока не определено. Варианты:
-- A) Откатить vitest до 3.x
-- B) Обновить happy-dom
-- C) Добавить retry: 2 в vitest.config.mjs
-- D) Расследовать race condition в setup
+**Подозрения** (без подтверждения):
+- vitest 4.1.4 + Node 24.10 + happy-dom 20.9 — потенциальная race condition при cold-start
+- Возможно был temporary memory pressure / фоновые процессы
 
-**Тест**: `for i in {1..10}; do npm run test:vitest 2>&1 | tail -3; done` — проверить процент пройденных.
+**Версии**: vitest@^4.1.4, happy-dom@^20.9.0, @vitejs/plugin-react@^5.2.0, Node 24.10.0
 
-**Когда решено**: TBD
+**Что делать если вернётся**:
+1. Поймать ПОЛНЫЙ stack trace (не tail) — нужно для GitHub issue search
+2. Найти соответствующий issue в [vitest-dev/vitest](https://github.com/vitest-dev/vitest/issues)
+   или [capricorn86/happy-dom](https://github.com/capricorn86/happy-dom/issues)
+3. Применить рекомендованный workaround (НЕ слепой фикс)
+4. Варианты на случай: retry в config / downgrade vitest 3.x / переход на jsdom
+
+**Тест на flaky**: `for i in {1..10}; do npm run test:vitest 2>&1 | tail -3; done`
+
+**Когда решено**: TBD (когда воспроизведём + найдём корень). Не блокирует Phase 2.
 
 ---
 

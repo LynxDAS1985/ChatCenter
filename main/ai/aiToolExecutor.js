@@ -14,6 +14,7 @@
 import * as anthropic from './adapters/anthropicAdapter.js'
 import * as openai from './adapters/openaiAdapter.js'
 import * as gigachat from './adapters/gigachatAdapter.js'
+import { checkPermission } from './aiPermissionGuard.js'
 
 const DEFAULT_MAX_ITERATIONS = 10
 
@@ -142,16 +143,43 @@ export async function runAgentLoop(params) {
         audit.push({ toolUseId: tc.id, name: tc.name, result: { ok: false, error: 'unknown_tool' } })
         return { id: tc.id, name: tc.name, result: { ok: false, error: 'unknown_tool' } }
       }
-      // Permission: deny → error
-      if (def.permission === 'deny') {
-        audit.push({ toolUseId: tc.id, name: tc.name, result: { ok: false, error: 'permission_denied' } })
-        return { id: tc.id, name: tc.name, result: { ok: false, error: 'permission_denied' } }
+      // v0.98.0 (Phase 2): Permission Guard вместо def.permission.
+      // Учитывает hardcoded confirm/deny + user overrides + scope (только native_*).
+      const userSettings = params.userSettings || {}
+      const permCheck = checkPermission(tc.name, source, tc.input, userSettings)
+      if (!permCheck.allowed) {
+        const err = { ok: false, error: 'permission_denied', reason: permCheck.reason }
+        audit.push({ toolUseId: tc.id, name: tc.name, result: err, permissionResult: 'denied' })
+        return { id: tc.id, name: tc.name, result: err }
       }
-      // Phase 1: confirm tier пока не реализован (UI confirmation в Phase 2).
-      // Если AI пытается вызвать confirm-tool — возвращаем ошибку.
-      if (def.permission === 'confirm') {
-        audit.push({ toolUseId: tc.id, name: tc.name, result: { ok: false, error: 'confirm_not_implemented_in_phase1' } })
-        return { id: tc.id, name: tc.name, result: { ok: false, error: 'confirm_not_implemented_in_phase1' } }
+      if (permCheck.requiresConfirm) {
+        // Phase 2: запрос подтверждения у юзера через onConfirmRequest callback.
+        if (typeof params.onConfirmRequest === 'function') {
+          let confirmResult
+          try {
+            confirmResult = await params.onConfirmRequest({
+              toolId: tc.name,
+              source,
+              args: tc.input,
+              tier: permCheck.tier,
+            })
+          } catch (e) {
+            confirmResult = { confirmed: false, error: e?.message || 'confirm_threw' }
+          }
+          if (!confirmResult || !confirmResult.confirmed) {
+            const err = { ok: false, error: 'denied_by_user' }
+            audit.push({ toolUseId: tc.id, name: tc.name, result: err, permissionResult: 'denied_by_user' })
+            return { id: tc.id, name: tc.name, result: err }
+          }
+          // Юзер мог отредактировать args (например текст ответа)
+          if (confirmResult.updatedArgs) {
+            tc.input = confirmResult.updatedArgs
+          }
+        } else {
+          const err = { ok: false, error: 'confirm_required_no_handler' }
+          audit.push({ toolUseId: tc.id, name: tc.name, result: err, permissionResult: 'no_handler' })
+          return { id: tc.id, name: tc.name, result: err }
+        }
       }
 
       onStep?.({ type: 'tool_call', name: tc.name, input: tc.input })
