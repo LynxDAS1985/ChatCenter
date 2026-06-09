@@ -99,8 +99,8 @@ export default function useAIAgent() {
   const cancel = useCallback(() => {
     const requestId = requestIdRef.current
     if (!requestId) return
-    if (window.api?.invoke) {
-      window.api.invoke('ai:agent:cancel', { requestId }).catch(() => {})
+    if (window.api?.send) {
+      window.api.send('ai:agent:cancel', { requestId })
     }
     setState(s => ({ ...s, isRunning: false }))
     requestIdRef.current = null
@@ -109,12 +109,12 @@ export default function useAIAgent() {
   const confirmStep = useCallback((updatedArgs) => {
     const requestId = requestIdRef.current
     if (!requestId) return
-    if (window.api?.invoke) {
-      window.api.invoke('ai:agent:confirm-response', {
+    if (window.api?.send) {
+      window.api.send('ai:agent:confirm-response', {
         requestId,
         confirmed: true,
         updatedArgs,
-      }).catch(() => {})
+      })
     }
     setState(s => ({ ...s, pendingConfirm: null }))
   }, [])
@@ -122,11 +122,11 @@ export default function useAIAgent() {
   const cancelStep = useCallback(() => {
     const requestId = requestIdRef.current
     if (!requestId) return
-    if (window.api?.invoke) {
-      window.api.invoke('ai:agent:confirm-response', {
+    if (window.api?.send) {
+      window.api.send('ai:agent:confirm-response', {
         requestId,
         confirmed: false,
-      }).catch(() => {})
+      })
     }
     setState(s => ({ ...s, pendingConfirm: null }))
   }, [])

@@ -105,6 +105,19 @@ export function initAiToolIpcHandlers(deps) {
       activeRuns.delete(requestId)
     }
   })
+
+  // v0.99.0 (Phase 3): юзер подтвердил/отклонил confirm-tier tool через UI.
+  // Phase 3 UI вызывает confirmStep/cancelStep в useAIAgent → отправляет это событие.
+  // Handler пересылает результат через activeRuns.confirmResolvers (для будущей
+  // интеграции с onConfirmRequest callback в aiToolExecutor).
+  ipcMain.on('ai:agent:confirm-response', (_event, params) => {
+    const { requestId, confirmed, updatedArgs } = params || {}
+    const run = activeRuns.get(requestId)
+    if (run && typeof run.confirmResolver === 'function') {
+      try { run.confirmResolver({ confirmed: !!confirmed, updatedArgs }) } catch (_) {}
+      run.confirmResolver = null
+    }
+  })
 }
 
 /**

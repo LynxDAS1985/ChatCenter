@@ -21,6 +21,10 @@ import { ruError } from './utils/ruError.js'
 import { initTdlibBackendStartup } from './native/backends/tdlibStartup.js'
 import { registerCcMediaScheme, registerCcMediaHandler } from './native/ccMediaProtocol.js'
 import { initNotifHandlers } from './handlers/notifHandlers.js'
+// v0.99.0 (Phase 3): IPC handlers для AI-агента (ai:agent:run / cancel / confirm-response).
+import { initAiToolIpcHandlers } from './handlers/aiToolIpcHandlers.js'
+// v0.98.0 (Phase 2): IPC handlers для audit log (JSONL persistent storage).
+import { initAuditIpcHandlers } from './handlers/auditIpcHandlers.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
 // v0.91.0: WebContentsView откачен — Issue #44934/45367 (Windows 11 crash на addChildView).
 // import { initWebContentsViewIpcHandlers } from './handlers/webContentsViewIpcHandlers.js'
@@ -95,6 +99,25 @@ function setupNotifIPC() {
     setNotifItems: (items) => notifManager.setNotifItems(items),
     getNotifWin: () => notifManager.getNotifWin(),
     getMainWindow: () => mainWindow,
+  })
+
+  // v0.99.0 (Phase 3): регистрация AI-агента IPC handlers (ai:agent:run/cancel/confirm-response).
+  // Минимальный stub deps — полная интеграция с registry/callProvider в Phase 3.1+ (UI готов,
+  // но agent loop пока запускается только когда юзер кликает «🤖 AI» и реальные tools
+  // вызовут TDLib через handlerContext). Для запуска агента в production нужно:
+  //   1) Заполнить registry tools (gotoMessage, getChatHistory, etc.)
+  //   2) Передать handlerContext (store, sendMessage, getMessages, etc.)
+  //   3) Передать callProvider (вызов aiHandlers через IPC)
+  // Сейчас агент НЕ полностью функционален в production — нужна доработка.
+  initAiToolIpcHandlers({
+    getRegistry: () => null,
+    getHandlerContext: () => ({}),
+    getCallProvider: () => null,
+  })
+
+  // v0.98.0 (Phase 2): регистрация audit log IPC handlers.
+  initAuditIpcHandlers({
+    userDataPath: app.getPath('userData'),
   })
 
   // v0.82.5: Dock/Pin/Timer система вынесена в main/handlers/dockPinHandlers.js
