@@ -117,7 +117,10 @@ const ALLOWED = {
     // v0.87.2: arrow params в useEffect
     'loadedList',
     // v0.89.38: useAIPanelResize теперь возвращает pointer event handlers + 'events' из текста комментария
-    'onPointerMove', 'onPointerUp', 'events'],
+    'onPointerMove', 'onPointerUp', 'events',
+    // v1.0.1: prop name TasksPanel/RemindersPanel + destructured-with-rename из useAppCounters.
+    // `{tasks: tasksCount, reminders: remindersCount}` парсер не ловит как локальную переменную.
+    'onGoToSource', 'tasksCount', 'remindersCount'],
 }
 
 for (const comp of components) {

@@ -18,6 +18,8 @@ try { window.__ccStartupMark?.('module:TabBar', 'module evaluated') } catch {}
  * - handleTabContextAction, handleContextMenuClose
  * - changeZoom, zoomEditing, setZoomEditing, zoomInputValue, setZoomInputValue, zoomInputRef
  * - statusBarMsg, stats, totalUnread
+ * - v1.0.1: showTasks, setShowTasks, showReminders, setShowReminders, showActivity,
+ *   setShowActivity, tasksCount, remindersCount — для иконок 📋 ⏰ 📊 в шапке.
  */
 export default function TabBar({
   messengers, activeId, accountInfo, settings, unreadCounts, unreadSplit,
@@ -34,6 +36,8 @@ export default function TabBar({
   changeZoom, zoomEditing, setZoomEditing, zoomInputValue, setZoomInputValue, zoomInputRef,
   statusBarMsg, stats, totalUnread,
   onOpenConnections,
+  showTasks, setShowTasks, showReminders, setShowReminders, showActivity, setShowActivity,
+  tasksCount = 0, remindersCount = 0,
 }) {
   const pinnedTabs = settings.pinnedTabs || {}
 
@@ -111,6 +115,10 @@ export default function TabBar({
           <HeaderButton active={showAI} color="#2AABEE" onClick={() => setShowAI(!showAI)} title="ИИ-помощник">🤖</HeaderButton>
           <HeaderButton active={showTemplates} color="#22c55e" onClick={() => setShowTemplates(!showTemplates)} title="Шаблоны ответов">📋</HeaderButton>
           <HeaderButton active={showAutoReply} color="#a855f7" onClick={() => setShowAutoReply(!showAutoReply)} title="Авто-ответчик">⚡</HeaderButton>
+          {/* v1.0.1: Задачи / Напоминания / AI Activity — модалки. Badge с количеством активных. */}
+          <HeaderButton active={showTasks} color="#f59e0b" onClick={() => setShowTasks?.(!showTasks)} title="Задачи" badge={tasksCount}>📝</HeaderButton>
+          <HeaderButton active={showReminders} color="#eab308" onClick={() => setShowReminders?.(!showReminders)} title="Напоминания" badge={remindersCount}>⏰</HeaderButton>
+          <HeaderButton active={showActivity} color="#ec4899" onClick={() => setShowActivity?.(!showActivity)} title="AI Activity">📊</HeaderButton>
           <HeaderButton onClick={() => handleSettingsChange({ ...settings, theme: theme === 'dark' ? 'light' : 'dark' })} title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}>
             {theme === 'dark' ? '☀️' : '🌙'}
           </HeaderButton>
@@ -197,19 +205,34 @@ export default function TabBar({
 }
 
 // ── HeaderButton sub-component ──
-function HeaderButton({ active, color, onClick, title, children }) {
+// v1.0.1: добавлен опциональный `badge` — красный кружок с числом справа-сверху.
+function HeaderButton({ active, color, onClick, title, badge, children }) {
+  const showBadge = typeof badge === 'number' && badge > 0
   return (
     <button
       onClick={onClick}
-      title={title}
-      className="flex items-center justify-center w-[30px] h-[30px] rounded-lg text-[15px] transition-all duration-150 cursor-pointer"
+      title={badge ? `${title} (${badge})` : title}
+      className="relative flex items-center justify-center w-[30px] h-[30px] rounded-lg text-[15px] transition-all duration-150 cursor-pointer"
       style={{
         backgroundColor: active ? `${color || 'var(--cc-icon)'}26` : 'transparent',
         color: active ? (color || 'var(--cc-icon)') : 'var(--cc-icon)',
       }}
       onMouseEnter={e => { if (!active) { e.currentTarget.style.backgroundColor = 'var(--cc-hover)'; e.currentTarget.style.color = 'var(--cc-icon-hover)' } }}
       onMouseLeave={e => { if (!active) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' } }}
-    >{children}</button>
+    >
+      {children}
+      {showBadge && (
+        <span style={{
+          position: 'absolute', top: 1, right: 1,
+          minWidth: 14, height: 14, padding: '0 3px',
+          background: '#ef4444', color: '#fff',
+          fontSize: 9, fontWeight: 700, lineHeight: '14px',
+          textAlign: 'center', borderRadius: 7,
+          boxShadow: '0 0 0 1.5px var(--cc-surface, #1a1a1a)',
+          pointerEvents: 'none',
+        }}>{badge > 99 ? '99+' : badge}</span>
+      )}
+    </button>
   )
 }
 

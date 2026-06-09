@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.0.0 (9 июня 2026)
+## Текущая версия: v1.0.1 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -47,19 +47,22 @@
 
 ---
 
-### v0.95.50 — Откат v0.95.49 (followup re-apply restore)
+### v0.95.50 — заархивирована
 
-**Юзер**: «убери это, откатай и забудь пока что».
+Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
 
-Откат всех изменений v0.95.49 (followup re-apply scrollTop + userScrolledRef):
-- [useInitialScroll.js](src/native/hooks/useInitialScroll.js): убран параметр userScrolledRef + followup re-apply ветка → возвращена прежняя логика (no-op в followup).
-- [InboxMode.jsx](src/native/modes/InboxMode.jsx): убран userScrolledRef + reset + проброс.
-- [InboxChatPanel.jsx](src/native/components/InboxChatPanel.jsx): убран prop + убраны изменения в onWheel/onTouchStart/onPointerDown.
-- 2 unit-теста v0.95.49 удалены. Лимиты возвращены к прежним значениям.
+---
 
-**Что НЕ откатано**: v0.95.47 (emoji fallback + диагностические логи) и v0.95.48 (jump-to-message паттерн) остаются в коде — они в текущей версии работают.
+### v1.0.1 — UI интеграция Phase 4 панелей (Задачи / Напоминания / AI Activity)
 
-**Регрессия**: lint, vitest, fileSizeLimits, check-memory ✅.
+3 иконки справа в TabBar открывают модалки с панелями Phase 4 (созданы в v1.0.0, не подключены к UI):
+📝 Задачи (#f59e0b) + badge активных · ⏰ Напоминания (#eab308) + badge pending · 📊 AI Activity (#ec4899).
+
+**Новое**: `src/hooks/useAppCounters.js` (опрос tasks:list/reminders:list каждые 30 сек + событие `tasks:changed`/`reminders:changed`), `src/components/PanelModal.jsx` (overlay + ✕ обёртка). `TabBar.jsx` HeaderButton поддерживает `badge` prop (красный кружок 14×14, "99+" max).
+
+**Поведение**: клик по записи задачи/напоминания с source → handleGoToSource → закрывает модалку + setActiveId(NATIVE_CC) + setPendingNativeNotify (тот же путь что notify:clicked).
+
+**Лимиты**: App.jsx exception 880→940. Регрессия: lint, vitest, fileSizeLimits ✅.
 
 ---
 

@@ -35,6 +35,8 @@ import useWebViewLifecycle from './hooks/useWebViewLifecycle.js'
 import useAppBootstrap from './hooks/useAppBootstrap.js'
 import useConsoleErrorLogger from './hooks/useConsoleErrorLogger.js'
 import useAppIPCListeners from './hooks/useAppIPCListeners.js'
+// v1.0.1: счётчики для badge на иконках 📝 ⏰ в шапке.
+import useAppCounters from './hooks/useAppCounters.js'
 // v0.96.0 (Phase 0): cross-tab notify:clicked listener в корневом App.jsx.
 // До v0.96.0 listener был внутри NativeApp.jsx, но NativeApp монтируется
 // только при activeId === NATIVE_CC_ID — если юзер на webview-вкладке,
@@ -61,6 +63,11 @@ const LogModal = lazy(() => import('./components/LogModal.jsx'))
 const ConnectionsPanel = lazy(() => import('./components/ConnectionsPanel.jsx'))
 // v0.95.25: модалка «Что нового» — показывается при первом запуске после обновления.
 const WhatsNewModal = lazy(() => import('./components/WhatsNewModal.jsx'))
+// v1.0.1: 3 панели — Задачи / Напоминания / AI Activity (Phase 4).
+const PanelModal = lazy(() => import('./components/PanelModal.jsx'))
+const TasksPanel = lazy(() => import('./components/TasksPanel.jsx'))
+const RemindersPanel = lazy(() => import('./components/RemindersPanel.jsx'))
+const AIActivityDashboard = lazy(() => import('./components/AIActivityDashboard.jsx'))
 
 // v0.87.0: специальный "виртуальный" мессенджер — рендерит NativeApp вместо <webview>
 const NATIVE_CC_ID = 'native_cc'
@@ -152,6 +159,11 @@ export default function App() {
   const [logContent, setLogContent] = useState('')
   const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
   const [activeNativeAccountId, setActiveNativeAccountId] = useState(null)
+  // v1.0.1: модалки Phase 4 — Задачи / Напоминания / AI Activity.
+  const [showTasks, setShowTasks] = useState(false)
+  const [showReminders, setShowReminders] = useState(false)
+  const [showActivity, setShowActivity] = useState(false)
+  const { tasks: tasksCount, reminders: remindersCount } = useAppCounters()
 
   const webviewRefs = useRef({})
   const notifReadyRef = useRef({})
@@ -244,6 +256,21 @@ export default function App() {
   }, [])
 
   const clearPendingAiInvocation = useCallback(() => setPendingAiInvocation(null), [])
+
+  // v1.0.1: переход к источнику (сообщению) из TasksPanel / RemindersPanel / AIActivityDashboard.
+  // source = NotificationSource паспорт (messengerId/chatId/messageId/accountId/...).
+  // Для native_cc — переключаем активную вкладку + кладём в pendingNativeNotify
+  // (тот же путь что и для notify:clicked). Для webview мессенджеров пока silent skip.
+  const handleGoToSource = useCallback((source) => {
+    if (!source) return
+    setShowTasks(false)
+    setShowReminders(false)
+    setShowActivity(false)
+    if (source.messengerId === NATIVE_CC_ID) {
+      setActiveId(NATIVE_CC_ID)
+      setPendingNativeNotify({ ...source })
+    }
+  }, [])
 
   // bumpStats обновляется каждый рендер
   bumpStatsRef.current = (delta) => {
@@ -638,6 +665,10 @@ export default function App() {
         zoomInputValue={zoomInputValue} setZoomInputValue={setZoomInputValue} zoomInputRef={zoomInputRef}
         statusBarMsg={statusBarMsg} stats={stats} totalUnread={totalUnread}
         onOpenConnections={openConnectionsPanel}
+        showTasks={showTasks} setShowTasks={setShowTasks}
+        showReminders={showReminders} setShowReminders={setShowReminders}
+        showActivity={showActivity} setShowActivity={setShowActivity}
+        tasksCount={tasksCount} remindersCount={remindersCount}
       />
 
       {/* ── Основной layout ── */}
@@ -828,6 +859,27 @@ export default function App() {
           currentVersion={whatsNew.currentVersion}
           onClose={handleWhatsNewClose}
         />}
+      </Suspense>
+
+      {/* v1.0.1: Phase 4 модалки — Задачи / Напоминания / AI Activity.
+          Открываются по клику на иконки 📝 ⏰ 📊 в шапке. PanelModal — overlay + ✕.
+          onGoToSource (для Tasks/Reminders) переключает на ЦентрЧатов + scroll to message. */}
+      <Suspense fallback={null}>
+        {showTasks && (
+          <PanelModal title="📝 Задачи" onClose={() => setShowTasks(false)} width={760}>
+            <TasksPanel onGoToSource={handleGoToSource} />
+          </PanelModal>
+        )}
+        {showReminders && (
+          <PanelModal title="⏰ Напоминания" onClose={() => setShowReminders(false)} width={680}>
+            <RemindersPanel onGoToSource={handleGoToSource} />
+          </PanelModal>
+        )}
+        {showActivity && (
+          <PanelModal title="📊 AI Activity" onClose={() => setShowActivity(false)} width={900}>
+            <AIActivityDashboard />
+          </PanelModal>
+        )}
       </Suspense>
 
       {/* ── Тултип для ячеек таблицы лога ── */}
