@@ -414,6 +414,98 @@ describe('backend.messages', () => {
     }))
   })
 
+  // v1.0.2: messages.search для AI tool search_messages.
+  describe('messages.search (v1.0.2)', () => {
+    it('chatId указан → searchChatMessages', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({
+        '@type': 'messages',
+        total_count: 1,
+        messages: [{
+          '@type': 'message', id: 555, chat_id: -1001,
+          sender_id: { '@type': 'messageSenderUser', user_id: 1 },
+          is_outgoing: false, date: 1715000000, media_album_id: '0',
+          content: { '@type': 'messageText', text: { text: 'hello', entities: [] } },
+        }],
+      })
+      const r = await backend.messages.search({ chatId: 'tg_main:-1001', query: 'hello', limit: 10 })
+      expect(r.ok).toBe(true)
+      expect(r.messages.length).toBe(1)
+      expect(r.totalCount).toBe(1)
+      expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+        '@type': 'searchChatMessages',
+        chat_id: -1001,
+        query: 'hello',
+        limit: 10,
+      }))
+    })
+
+    it('chatId с битым accountId → ctx error + messages:[]', async () => {
+      const { backend } = makeBackend()
+      const r = await backend.messages.search({ chatId: 'tg_nope:-1', query: 'x' })
+      expect(r.ok).toBe(false)
+      expect(r.error).toContain('account not found')
+      expect(r.messages).toEqual([])
+    })
+
+    it('без chatId → searchMessages (глобальный, accountId=первый)', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({
+        '@type': 'foundMessages',
+        total_count: 2,
+        messages: [
+          {
+            '@type': 'message', id: 1, chat_id: -10,
+            sender_id: { '@type': 'messageSenderUser', user_id: 5 },
+            is_outgoing: false, date: 1715000000, media_album_id: '0',
+            content: { '@type': 'messageText', text: { text: 'a', entities: [] } },
+          },
+          {
+            '@type': 'message', id: 2, chat_id: -20,
+            sender_id: { '@type': 'messageSenderUser', user_id: 5 },
+            is_outgoing: false, date: 1715000001, media_album_id: '0',
+            content: { '@type': 'messageText', text: { text: 'b', entities: [] } },
+          },
+        ],
+      })
+      const r = await backend.messages.search({ query: 'q', limit: 10 })
+      expect(r.ok).toBe(true)
+      expect(r.messages.length).toBe(2)
+      // chatId сшит из accountId + raw
+      expect(r.messages[0].chatId).toBe('tg_main:-10')
+      expect(r.messages[1].chatId).toBe('tg_main:-20')
+      expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+        '@type': 'searchMessages',
+        query: 'q',
+        limit: 10,
+      }))
+    })
+
+    it('пустой query → ok:false, error:query required', async () => {
+      const { backend } = makeBackend()
+      const r = await backend.messages.search({ query: '' })
+      expect(r.ok).toBe(false)
+      expect(r.error).toBe('query required')
+      expect(r.messages).toEqual([])
+    })
+
+    it('limit зажимается [1,100]', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({ '@type': 'messages', total_count: 0, messages: [] })
+      await backend.messages.search({ chatId: 'tg_main:-1001', query: 'x', limit: 999 })
+      expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }))
+    })
+
+    it('throw в invoke → ok:false', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockRejectedValueOnce(new Error('boom'))
+      const r = await backend.messages.search({ chatId: 'tg_main:-1001', query: 'x' })
+      expect(r.ok).toBe(false)
+      expect(r.error).toBe('boom')
+      expect(r.messages).toEqual([])
+    })
+  })
+
   it('deleteMessage — оборачивает в массив', async () => {
     const { backend, mockClient } = makeBackend()
     await backend.messages.deleteMessage('tg_main:-1001', 50, true)

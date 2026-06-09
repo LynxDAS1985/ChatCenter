@@ -45,8 +45,8 @@ module.exports = {
     reason: 'v0.95.48: markPendingScrollLoadAttempted action + loadAttempted флаг в pendingScrollToMessage (~15 строк) — защита от петли при jump-to-message из notification (target вне окна → 2-я попытка fail → toast). v0.95.46: requestScrollToMessage + clearPendingScrollToMessage actions. v0.95.43: sendAlbum action. v0.95.41: resolveCustomEmojis. v0.95.29: setReaction. v0.89.40: IndexedDB cache. Доменное разбиение store — плановый шаг.'
   },
   'main/native/backends/tdlibBackend.js': {
-    ceiling: 770,
-    reason: 'v0.95.41: customEmoji.resolve метод (+25 строк) — резолв premium custom emoji через resolveCustomEmojiIds. v0.95.29: setReaction. v0.95.16: getIterativeUntilTopic. v0.95.15: getIterativeUntil.'
+    ceiling: 840,
+    reason: 'v1.0.2: messages.search для AI tool search_messages (~70 строк) — searchChatMessages (с chatId) + глобальный searchMessages (без chatId). v0.95.41: customEmoji.resolve метод. v0.95.29: setReaction. v0.95.16: getIterativeUntilTopic. v0.95.15: getIterativeUntil.'
   },
   'main/native/backends/tdlibClient.js': {
     ceiling: 650,
@@ -64,8 +64,8 @@ module.exports = {
   // tdlibBackend (auth/chats/messages/media/forum в одном модуле) — отдельная архитектурная задача.
   // tdlibBackend.js exception перенесён выше (см. v0.95.29 запись)
   'src/__tests__/tdlibBackend.vitest.js': {
-    ceiling: 480,
-    reason: 'v0.95.16: +4 теста getIterativeUntilTopic (форум-топики). v0.95.15: +5 тестов getIterativeUntil. Один backend covered одним тест-файлом. Разбивать по доменам — плановый шаг.'
+    ceiling: 560,
+    reason: 'v1.0.2: +6 тестов messages.search (chat/global/limit-clamp/error). v0.95.16: +4 теста getIterativeUntilTopic (форум-топики). v0.95.15: +5 тестов getIterativeUntil. Один backend covered одним тест-файлом. Разбивать по доменам — плановый шаг.'
   },
   'src/__tests__/tdlibEmitContracts.vitest.js': {
     ceiling: 500,

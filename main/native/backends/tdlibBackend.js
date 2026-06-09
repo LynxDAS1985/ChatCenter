@@ -525,6 +525,75 @@ export function createTdlibBackend(opts = {}) {
         // отметит всё ниже. Этого достаточно для UI-level mark-read.
         return viewMessages(ctx.client, ctx.rawId, [maxId])
       },
+      // v1.0.2: поиск по тексту сообщений для AI tool search_messages.
+      // Если chatId указан → TDLib searchChatMessages (в конкретном чате).
+      // Если только accountId → TDLib searchMessages (глобально по аккаунту).
+      // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1search_chat_messages.html
+      // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1search_messages.html
+      async search({ query, chatId, accountId, limit = 20 } = {}) {
+        if (!query) return { ok: false, error: 'query required', messages: [] }
+        const cappedLimit = Math.min(Math.max(Number(limit) || 20, 1), 100)
+        try {
+          if (chatId) {
+            // Поиск внутри конкретного чата
+            const ctx = getClientForChat(manager, chatId)
+            if (ctx.error) return { ...ctx.error, messages: [] }
+            const result = await ctx.client.invoke({
+              '@type': 'searchChatMessages',
+              chat_id: ctx.rawId,
+              query: String(query),
+              sender_id: null,
+              from_message_id: 0,
+              offset: 0,
+              limit: cappedLimit,
+              filter: { '@type': 'searchMessagesFilterEmpty' },
+              message_thread_id: 0,
+            })
+            const extras = makeExtras(manager, ctx.accountId)
+            const messages = (result?.messages || []).map((tdMsg) => {
+              const senderId = tdMsg.sender_id
+              const senderName = extras.getSenderName(senderId)
+              const senderAvatar = extras.getSenderAvatar(senderId)
+              return tdlibMapMessageDirect(tdMsg, chatId, { senderName, senderAvatar })
+            }).filter(Boolean)
+            return { ok: true, messages, totalCount: Number(result?.total_count) || messages.length }
+          }
+          // Глобальный поиск — нужен accountId (или первый активный)
+          let aid = accountId
+          if (!aid) {
+            const list = manager.listAccounts ? manager.listAccounts() : []
+            aid = list[0]
+          }
+          if (!aid) return { ok: false, error: 'no account', messages: [] }
+          const client = manager.getClient(aid)
+          if (!client) return { ok: false, error: 'account not found: ' + aid, messages: [] }
+          const result = await client.invoke({
+            '@type': 'searchMessages',
+            chat_list: { '@type': 'chatListMain' },
+            query: String(query),
+            offset_date: 0,
+            offset_chat_id: 0,
+            offset_message_id: 0,
+            limit: cappedLimit,
+            filter: { '@type': 'searchMessagesFilterEmpty' },
+            min_date: 0,
+            max_date: 0,
+          })
+          const extras = makeExtras(manager, aid)
+          const messages = (result?.messages || []).map((tdMsg) => {
+            const chatIdStr = aid + ':' + String(tdMsg.chat_id)
+            const senderId = tdMsg.sender_id
+            const senderName = extras.getSenderName(senderId)
+            const senderAvatar = extras.getSenderAvatar(senderId)
+            const mapped = tdlibMapMessageDirect(tdMsg, chatIdStr, { senderName, senderAvatar })
+            if (mapped) mapped.chatId = chatIdStr
+            return mapped
+          }).filter(Boolean)
+          return { ok: true, messages, totalCount: Number(result?.total_count) || messages.length }
+        } catch (e) {
+          return { ok: false, error: e?.message || String(e), messages: [] }
+        }
+      },
       // v0.89.31 (ловушка #30): по TDLib spec viewMessages для форум-топика
       // требует source: messageSourceForumTopicHistory. Без source TDLib
       // угадывает по состоянию чата → в форумах угадывание не обновляет

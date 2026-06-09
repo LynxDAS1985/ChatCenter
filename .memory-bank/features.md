@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.0.1 (9 июня 2026)
+## Текущая версия: v1.0.2 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,17 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.0.2 — TDLib backend для AI tools (реальная интеграция)
+
+До v1.0.2 AI агент работал **«в никуда»**: `setAgentDeps` передавал `tdlibBackend` напрямую (домены `messages.get/send/markRead`), а `aiAgentSetup` ожидал плоский интерфейс. Сигнатуры не совпадали → fallback.
+
+- **`main/ai/aiAgentBackendAdapter.js`** — адаптер, оборачивает домен-объект. Конвертирует `beforeMessageId` → `offsetId`, `replyToMessageId` → 3-й арг send, `messageId` → `id`. Graceful fallback.
+- **`tdlibBackend.messages.search`** — TDLib `searchChatMessages` (с chatId) / `searchMessages` (глобальный). Лимит [1, 100]. Для глобального автосшивка `chatId = accountId:rawId`.
+- **`main/main.js`** — `setAgentDeps({ tdlibBackend: createAiAgentBackendAdapter(r.backend), ... })`.
+- **+30 тестов** (24 адаптер + 6 search). Регрессия: lint, vitest 1285 ✅, fileSizeLimits 392/392 ✅.
 
 ---
 

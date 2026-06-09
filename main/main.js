@@ -27,6 +27,8 @@ import { initAiToolIpcHandlers } from './handlers/aiToolIpcHandlers.js'
 import { initAuditIpcHandlers } from './handlers/auditIpcHandlers.js'
 // v0.99.1 (Phase 3.5): полная инициализация AI агента (registry + context + callProvider).
 import { initToolRegistry, getHandlerContext, setAgentDeps } from './ai/aiAgentSetup.js'
+// v1.0.2: адаптер плоского интерфейса для AI tools.
+import { createAiAgentBackendAdapter } from './ai/aiAgentBackendAdapter.js'
 import { createCallProvider } from './ai/aiProviderCaller.js'
 // v1.0.0 (Phase 4): Tasks + Reminders persistent stores.
 import { initTaskIpcHandlers } from './handlers/taskIpcHandlers.js'
@@ -301,14 +303,14 @@ app.whenReady().then(() => {
     } else {
       console.error('[main] TDLib startup failed:', r.error)
     }
-    // v0.99.1 (Phase 3.5): передаём TDLib backend в AI agent handlerContext.
-    // backend? — объект с методами getMessages / sendMessage / markRead / searchMessages.
-    // ВАЖНО: текущая структура tdlibStartup может не предоставлять эти методы напрямую —
-    // это интеграционная точка для будущей доработки. Сейчас передаём mainWindow для
-    // dispatchUI, а TDLib методы будут резолвиться при наличии (fallback в handler).
+    // v1.0.2: AI agent handlerContext получает ПЛОСКИЙ адаптер вместо домен-объекта.
+    // tdlibBackend (r.backend) имеет structure {messages: {get/send/markRead}, ...},
+    // а AI tool handlers ждут плоский {getMessages, sendMessage, markAsRead, searchMessages}.
+    // Без адаптера срабатывал fallback в aiAgentSetup → AI работал «в никуда».
+    // См. main/ai/aiAgentBackendAdapter.js — конвертация сигнатур и форматов.
     setAgentDeps({
       mainWindow: () => mainWindow,
-      tdlibBackend: r.backend || null,
+      tdlibBackend: createAiAgentBackendAdapter(r.backend),
       // v1.0.0 (Phase 4): прямой вызов IPC handlers без renderer round-trip.
       // taskStore / reminderStore оборачивают main-side таски (см. taskIpcHandlers).
       // ipcMain.handle channels вызываются через main-side helper.
