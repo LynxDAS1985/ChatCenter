@@ -5,6 +5,68 @@
 
 ---
 
+## 🟡 ЛОВУШКА #30 (v0.98.0, 9 июня 2026): «Уведомление не пришло в ЦентрЧатов» — `isOutgoing=true` для cross-session сообщений того же аккаунта
+
+### Симптом
+
+Юзер открыл **один Telegram-аккаунт** в двух местах одновременно:
+- Вкладка webview (например «Telegram БНК» через web.telegram.org)
+- Вкладка native_cc «ЦентрЧатов» (наш TDLib)
+
+Юзер пишет сообщение через webview-вкладку. В ЦентрЧатов **не приходит уведомление**. Выглядит как баг.
+
+### Это **правильное поведение** TDLib — НЕ баг
+
+Подтверждение из лога (`chatcenter.log`):
+
+```
+13:42:29 tg-new-message chatId=tg_611696632:638454350 msgId=690856394752
+  textPreview=444 isOutgoing=true
+```
+
+`isOutgoing` — поле от **самого TDLib** (🥇 [TDLib message spec](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1message.html)): «True, if the message is outgoing».
+
+TDLib ставит `is_outgoing=true` **когда sender_id == current_user**, **независимо от того с какой сессии** отправлено (webview / mobile / desktop / TDLib).
+
+### Где фильтр в коде
+
+[src/native/store/nativeStoreIpc.js:437](../../src/native/store/nativeStoreIpc.js):
+
+```js
+if (!message.isOutgoing && stateRef.current.activeChatId !== chatId) {
+  // показать уведомление
+}
+```
+
+При `isOutgoing=true` ветка не выполняется. **Уведомление НЕ показывается о своих же сообщениях** — это правильно (стандарт всех Telegram клиентов).
+
+### Как отличить от настоящего бага
+
+1. Спросить юзера: **сообщение от тебя или от другого человека?**
+2. Проверка: **попросить другого человека написать** в чат. Уведомление **должно** прийти если:
+   - Юзер не стоит на этом чате в native_cc
+   - TDLib подключён
+
+### Эталон
+
+Telegram Desktop, Telegram mobile, web.telegram.org — никто не показывает уведомление о собственных исходящих, даже с другой сессии.
+
+### Кратко (matrix)
+
+| Кто отправил | TDLib `isOutgoing` | Уведомление в ЦентрЧатов |
+|---|---|---|
+| Другой человек | `false` | ✅ Покажет |
+| Я сам через ЦентрЧатов | `true` | ❌ Не покажет |
+| **Я сам через webview/mobile того же аккаунта** | **`true`** | **❌ Не покажет (правильно)** |
+
+### Связанные секции кода
+
+- [src/native/store/nativeStoreIpc.js:437](../../src/native/store/nativeStoreIpc.js)
+- [main/native/backends/tdlibClient.js:350](../../main/native/backends/tdlibClient.js)
+- [main/native/backends/tdlibMapper.js](../../main/native/backends/tdlibMapper.js)
+
+---
+
 ## 📌 КАРТА СЕРИИ v0.89.18-v0.89.27 + КОРНЕВЫЕ ФИКСЫ v0.89.35-v0.89.36 (19 мая 2026)
 
 За 4 дня (18-19 мая) — 7 связанных багов в notification BrowserWindow. Серия **изначально закрыта в v0.89.23**, но через сутки проблема снова появилась (id=17 застрял с translateX=380px). Корневая причина #28 (Chromium throttling) найдена в v0.89.35. Через час после фикса — снова «пустая полоса» (race с пакетом одновременных нотификаций) → ловушка #29 закрыта в v0.89.36 force-transform fallback.

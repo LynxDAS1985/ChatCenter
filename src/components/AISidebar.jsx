@@ -2,6 +2,8 @@
 import { useState, useRef, useEffect } from 'react'
 import AIConfigPanel from './AIConfigPanel.jsx'
 import AIProviderTabs from './AIProviderTabs.jsx'
+// v0.99.0 (Phase 3): UI AI-агента (показывается когда юзер кликнул «🤖 AI» в уведомлении).
+import AISidebarAgent from './AISidebarAgent.jsx'
 import {
   looksLikeApiKey, DEFAULT_SYSTEM_PROMPT, PROVIDERS, DEFAULT_WEBVIEW_URLS,
   MODEL_HINTS, PROVIDER_URLS, BILLING_URLS, isBillingError,
@@ -30,7 +32,7 @@ function StepRow({ num, title, extra, numDone }) {
   )
 }
 
-export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle, width = 300, panelRef, chatHistory = [], activeMessengerId = null }) {
+export default function AISidebar({ settings, onSettingsChange, lastMessage, visible, onToggle, width = 300, panelRef, chatHistory = [], activeMessengerId = null, pendingAiInvocation = null, clearPendingAiInvocation = null }) {
 
   // ── Состояния API-режима ──────────────────────────────────────────────────
   const [input, setInput] = useState('')
@@ -297,6 +299,18 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
       }}
     >
       <div style={{ width: `${width}px`, minWidth: `${width}px` }} className="flex flex-col h-full">
+
+        {/* v0.99.0 (Phase 3): AI Агент UI — показывается когда юзер кликнул «🤖 AI» в уведомлении. */}
+        {pendingAiInvocation && (
+          <div style={{ padding: 8, borderBottom: '1px solid var(--cc-border)' }}>
+            <AISidebarAgent
+              pendingInvocation={pendingAiInvocation}
+              provider={provider}
+              recentMessages={chatHistory}
+              onDone={() => clearPendingAiInvocation?.()}
+            />
+          </div>
+        )}
 
         {/* ── Заголовок ── */}
         <div

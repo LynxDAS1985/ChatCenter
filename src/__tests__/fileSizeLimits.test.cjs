@@ -266,18 +266,15 @@ console.log('── Статистика: ──')
 var totalSrc = 0
 var srcFiles = allFiles.filter(function (f) { return f.startsWith('src/') && !/\.(test|vitest)\./.test(f) })
 srcFiles.forEach(function (f) { totalSrc += countLines(f) })
-// v0.98.0 (Phase 2): лимит 23300 → 24000 — Permission Guard (main/ai/aiPermissionGuard.js),
-// write handlers (reply_to_message, mark_as_read), AIConfirmModal (UI), audit store +
-// IPC handlers, AIPermissionsSettings UI. См. .memory-bank/ai-agent-plan/.
+// v0.99.0 (Phase 3): лимит 24000 → 24400 — useAIAgent hook, AISidebarAgent UI,
+// «🤖 AI» кнопка в notification, listener в App.jsx, минимальная интеграция в AISidebar.
+// v0.98.0 (Phase 2): был 24000 — Permission Guard, write handlers, AIConfirmModal, audit.
 // v0.97.0 (Phase 0+1): был 23300.
 // v0.96.0 (Phase 0): был 22800.
 // v0.95.50: лимит был 22500.
-// v0.95.48: лимит был 22500 — jump-to-message useEffect расширен.
-// v0.95.44: лимит был 22400.
-// v0.95.43: лимит был 22200 для скрепки.
 // Дальнейшее разбиение — плановая задача (handoff-code-limits.md).
-test('Общий renderer код (src/ без тестов) < 24000 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 24000, totalSrc + ' > 24000')
+test('Общий renderer код (src/ без тестов) < 24400 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 24400, totalSrc + ' > 24400')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

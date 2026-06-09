@@ -77,6 +77,27 @@ export function initNotifHandlers(deps) {
     }
   })
 
+  // v0.99.0 (Phase 3 M3.1): запуск AI-агента из уведомления.
+  // Юзер кликнул «🤖 AI» в notification ribbon → закрываем уведомление,
+  // показываем главное окно + AI sidebar, отправляем event с source паспортом.
+  // Главное окно ловит ai:agent:invoke-from-notify → запускает agent loop через
+  // useAIAgent hook (renderer-side в AISidebar Phase 3 M3.5).
+  ipcMain.on('notif:ai-process', (_event, id) => {
+    const notifItems = getNotifItems()
+    const item = notifItems.find(n => n.id === id)
+    setNotifItems(notifItems.filter(n => n.id !== id))
+    hideIfEmpty()
+    const mainWindow = getMainWindow()
+    if (!mainWindow || mainWindow.isDestroyed() || !item?.source) return
+    mainWindow.show()
+    mainWindow.focus()
+    mainWindow.webContents.send('ai:agent:invoke-from-notify', {
+      source: item.source,
+      title: item.title,
+      senderName: item.senderName || item.title || '',
+    })
+  })
+
   ipcMain.on('notif:dismiss', (_event, id) => {
     const notifItems = getNotifItems()
     setNotifItems(notifItems.filter(n => n.id !== id))

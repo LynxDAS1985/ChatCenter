@@ -526,6 +526,28 @@
     })
     actionRow.appendChild(readBtn2)
 
+    // v0.99.0 (Phase 3 M3.1): кнопка «🤖 AI» — обработать сообщение через AI-агент.
+    // Только для Native режима (messengerId='native_*' и source.messageId есть).
+    if (data.messengerId && data.messengerId.startsWith('native_') && data.source && data.source.messageId) {
+      const aiBtn = document.createElement('button')
+      aiBtn.className = 'action-btn ai-process'
+      aiBtn.textContent = '🤖 AI'
+      aiBtn.title = 'Обработать через AI'
+      aiBtn.style.background = 'rgba(168, 85, 247, 0.2)'
+      aiBtn.style.borderColor = 'rgba(168, 85, 247, 0.4)'
+      aiBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        if (window.notifApi.aiProcess) {
+          window.notifApi.aiProcess(data.id)
+        }
+        aiBtn.textContent = '🤖 Запуск...'
+        aiBtn.style.background = 'rgba(168, 85, 247, 0.4)'
+        aiBtn.style.pointerEvents = 'none'
+        setTimeout(() => dismissItem(data.id, false), 600)
+      })
+      actionRow.appendChild(aiBtn)
+    }
+
     textWrap.appendChild(actionRow)
     el.appendChild(textWrap)
 

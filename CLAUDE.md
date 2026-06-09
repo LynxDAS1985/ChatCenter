@@ -279,7 +279,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v0.98.0 (9 июня 2026)
+**Текущая версия**: v0.99.0 (9 июня 2026)
 
 ---
 
@@ -763,6 +763,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v0.98.0 (9 июня 2026)
+**Версия проекта**: v0.99.0 (9 июня 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
 **Последнее обновление**: 8 июня 2026 — **v0.95.50**: Откат v0.95.49 (followup re-apply scrollTop + userScrolledRef) по запросу юзера «убери это, откатай и забудь пока что». Возвращена прежняя логика useInitialScroll branch 2 !isReturning (no-op в followup). Удалён userScrolledRef из InboxMode/InboxChatPanel. Лимиты откатаны: useInitialScroll.js 220→170, InboxMode.jsx 1120→1110, renderer total 22600→22500. 2 unit-теста v0.95.49 удалены. v0.95.47 (emoji fallback + диагностические логи) и v0.95.48 (jump-to-message паттерн) НЕ откатаны — работают. Регрессия: lint 0, vitest, fileSizeLimits, check-memory ✅.

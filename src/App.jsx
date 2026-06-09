@@ -113,6 +113,10 @@ export default function App() {
   // через prop. NativeApp при mount читает и выполняет setActiveAccount + setActiveChat
   // + requestScrollToMessage, потом вызывает clearPendingNativeNotify().
   const [pendingNativeNotify, setPendingNativeNotify] = useState(null)
+  // v0.99.0 (Phase 3): payload от кнопки «🤖 AI» в уведомлении.
+  // App.jsx ловит ai:agent:invoke-from-notify, ставит в state.
+  // AISidebar при наличии этого payload показывает AISidebarAgent.
+  const [pendingAiInvocation, setPendingAiInvocation] = useState(null)
   const [unreadCounts, setUnreadCounts] = useState({})
   const [unreadSplit, setUnreadSplit] = useState({})       // { [id]: { personal, channels } }
   const [connectionHealth, setConnectionHealth] = useState({}) // { [id]: connection quality/status }
@@ -220,6 +224,26 @@ export default function App() {
   }, [])
 
   const clearPendingNativeNotify = useCallback(() => setPendingNativeNotify(null), [])
+
+  // v0.99.0 (Phase 3 M3.1): слушатель «🤖 AI» из уведомления.
+  // Юзер кликнул кнопку → main отправил ai:agent:invoke-from-notify с source.
+  // Открываем AI sidebar + ставим pendingAiInvocation для AISidebarAgent.
+  useEffect(() => {
+    if (!window.api?.on) return undefined
+    const unsub = window.api?.on('ai:agent:invoke-from-notify', (payload) => {
+      if (!payload || !payload.source) return
+      try {
+        setActiveId(NATIVE_CC_ID)  // переключаемся на ЦентрЧатов
+        setShowAI(true)             // открываем AI sidebar
+        setPendingAiInvocation(payload)
+      } catch (e) {
+        devError('[App] ai:agent:invoke-from-notify error', e)
+      }
+    })
+    return unsub
+  }, [])
+
+  const clearPendingAiInvocation = useCallback(() => setPendingAiInvocation(null), [])
 
   // bumpStats обновляется каждый рендер
   bumpStatsRef.current = (delta) => {
@@ -718,6 +742,8 @@ export default function App() {
               panelRef={aiPanelRef}
               chatHistory={chatHistory}
               activeMessengerId={activeId}
+              pendingAiInvocation={pendingAiInvocation}
+              clearPendingAiInvocation={clearPendingAiInvocation}
             />
           </Suspense>
         </ErrorBoundary>

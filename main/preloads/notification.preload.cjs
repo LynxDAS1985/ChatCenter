@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('notifApi', {
   click: (id) => ipcRenderer.send('notif:click', id),
   // Notification window → Main: пометить как прочитанное (скрыть без перехода)
   markRead: (id) => ipcRenderer.send('notif:mark-read', id),
+  // v0.99.0 (Phase 3 M3.1): Notification window → Main: запустить AI-агента для этого сообщения
+  aiProcess: (id) => ipcRenderer.send('notif:ai-process', id),
   // Notification window → Main: уведомление закрыто (таймер или крестик)
   dismiss: (id) => ipcRenderer.send('notif:dismiss', id),
   // Notification window → Main: сообщить новую высоту.
