@@ -60,8 +60,21 @@
 
 См. [progress.md](./progress.md) — там всегда актуальное состояние.
 
-На момент создания: **Phase 0 НЕ начата**. Папка создана, документация написана.
-Следующий шаг: ждать «делай Phase 0» от юзера.
+**На 2026-06-08 (v0.97.0)**: Phase 0 + Phase 1 **завершены и выгружены** (commit `ce994ce`).
+- 14 milestones done (5 Phase 0 + 9 Phase 1)
+- 117 новых unit-тестов
+- 1142/1142 vitest passed
+
+**Следующий шаг**: ждать «делай Phase 2» от юзера. Phase 2 = write actions (reply / mark-read через AI) + Permissions UI + Audit Log.
+
+## 🎯 Scope (зафиксировано в v0.97.0)
+
+**AI-агент работает ТОЛЬКО для Native режима**:
+- Сейчас Native = `messengerId='native_cc'` (TDLib для Telegram)
+- В будущем Native расширится на другие мессенджеры через native API (WhatsApp Business, VK, Viber)
+
+**WebView мессенджеры** (Telegram БНК / Telega Avtoliberty / ВК / WhatsApp Web / Макс) и
+**AI WebView mode в AISidebar** (chat.openai.com / claude.ai) — **остаются как есть**, AI агент их не трогает.
 
 ## ❓ Кто читает эту папку
 

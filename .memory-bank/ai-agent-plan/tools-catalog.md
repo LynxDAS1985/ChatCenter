@@ -3,6 +3,15 @@
 Все действия которые могут вызывать **юзер** (через UI) и **AI** (через tool_call).
 Используется единый JSON Schema формат — совместим с Anthropic / OpenAI / DeepSeek.
 
+## 🎯 Scope: только Native режим
+
+Все tools работают **только** с `source.messengerId='native_*'`:
+- ✅ `'native_cc'` (TDLib) — поддерживается сейчас
+- 🔜 `'native_wa_business'`, `'native_vk_api'`, etc. — в Phase 5+
+
+Если AI попытается вызвать tool с `messengerId='webview-*'` — handler возвращает
+`{ ok: false, error: 'webview_messenger_not_supported' }` (защита от ошибочного scope).
+
 ## Группы инструментов
 
 | Группа | Tools | Permission по умолчанию |

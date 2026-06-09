@@ -1,5 +1,11 @@
 # Phase 1 — Tools каркас (детально)
 
+> ## ✅ ЗАВЕРШЕНО (v0.97.0, commit `ce994ce`, 2026-06-08)
+>
+> Все 9 milestones (M1.1-M1.9) выполнены. 87 unit-тестов passed.
+> 4 provider adapters (Anthropic / OpenAI / DeepSeek / ГигаЧат) готовы.
+> См. [progress.md](../progress.md) и [changelog.md](../changelog.md).
+
 > **Цель**: Каркас Tool Use. AI может вызывать функции через JSON Schema.
 > Только **read-only** tools (безопасно). Write tools — в Phase 2.
 

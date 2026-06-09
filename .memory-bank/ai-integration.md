@@ -275,3 +275,63 @@ setProviderProp('contextMode', 'last')
 - Никогда не передавать ключи в renderer или WebView
 - Логировать только ошибки, не тексты сообщений клиентов
 - Опционально: режим без логов (для конфиденциальности)
+
+---
+
+## AI-агент Tool Use (v0.97.0+, Phase 0+1)
+
+**Новый уровень над классическим AI-помощником.** Не заменяет существующее.
+
+### Что добавилось в v0.97.0
+
+Tool Use API — AI не просто генерирует текст, а **вызывает функции**:
+- `goto_message` — открыть конкретное сообщение в чате (навигация)
+- `get_chat_history` — прочитать N предыдущих сообщений для контекста
+- `search_messages` — поиск по сообщениям
+
+В Phase 2 добавятся write actions (`reply_to_message`, `mark_as_read`) с UI подтверждением.
+
+### Scope: только Native режим
+
+Tool Use работает **только** для сообщений из Native режима (TDLib). Сейчас это:
+- `messengerId='native_cc'` (наш Telegram client через TDLib)
+
+**В будущем** Native расширится на другие мессенджеры через их native API:
+- WhatsApp Business API → `messengerId='native_wa_business'`
+- VK API → `messengerId='native_vk_api'`
+- и т.д.
+
+**WebView мессенджеры (Telegram БНК / Telega Avtoliberty / ВК / WhatsApp Web / Макс)** —
+Tool Use НЕ применяется. Юзер общается с клиентами через обычный AISidebar
+(API mode или WebView mode — оба остаются как раньше).
+
+### Связь с существующим AI-помощником
+
+| Что | Где | Когда срабатывает |
+|---|---|---|
+| Классический AISidebar (Per-Provider API/WebView) | `AISidebar.jsx` | Юзер открыл правую панель → пишет вручную / получает 3 варианта ответа |
+| Tool Use агент (v0.97.0+) | `main/ai/aiToolExecutor.js` через IPC `ai:agent:run` | Юзер кликает «🤖 Обработать» в Native уведомлении (UI в Phase 3) |
+
+Оба используют **одних и тех же 4 провайдеров** (Anthropic / OpenAI / DeepSeek / ГигаЧат).
+Tool Use требует `supportsTools: true` (в Phase 1 — все 4 поддерживают).
+
+### Архитектура tool calls
+
+См. [.memory-bank/ai-agent-plan/architecture.md](./ai-agent-plan/architecture.md) — три уровня:
+1. **NotificationSource** — паспорт сообщения (откуда / от кого / messageId)
+2. **Action Bus** — централизованный диспетчер в App.jsx (cross-tab listener)
+3. **Tool Registry + Handlers** — реестр + реализация tools
+
+### IPC каналы
+
+См. [.memory-bank/api.md](./api.md) → раздел «AI-агент IPC (v0.97.0+, Phase 0+1)»:
+- `ai:agent:run` — invoke с source, provider, model
+- `ai:agent:cancel` — abort active loop
+- `ai:agent:step` — streaming прогресса
+
+### Что НЕ изменилось
+
+- AISidebar.jsx, AIConfigPanel, AIProviderTabs — работают как раньше
+- `ai:generate-stream` для классической генерации — работает как раньше
+- `aiWebviewContext.js` для WebView mode передачи контекста — работает как раньше
+- `partition="persist:ai-webview"` — работает как раньше

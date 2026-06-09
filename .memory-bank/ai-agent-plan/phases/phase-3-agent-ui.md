@@ -1,6 +1,16 @@
 # Phase 3 — UI агента (детально)
 
 > **Цель**: Юзер кликает «🤖 Обработать» — агент делает всё. Multi-turn AI с streaming UI.
+>
+> ## 🎯 Scope (v0.97.0+)
+>
+> Кнопка «🤖 Обработать» появляется **только в Native уведомлениях**
+> (`messengerId='native_*'`). Для webview-уведомлений (Telegram БНК / Telega / ВК / WhatsApp / Макс)
+> кнопки нет — там работает классический AISidebar как раньше.
+>
+> AISidebar разбивается на под-компоненты, но остаются ОБА режима:
+> - API mode (с Tool Use для Native) — расширение
+> - WebView mode (chat.openai.com / claude.ai) — без изменений
 
 ## Что делаем
 

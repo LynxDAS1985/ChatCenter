@@ -334,7 +334,62 @@ Rule for future work: do not silently show forum group messages as if a concrete
 - `notif:mark-read` — NotifWin→Main: "прочитано" → скрыть без перехода (v0.44.0)
 - `notif:dismiss` — NotifWin→Main: закрыто (таймер/крестик)
 - `notif:resize` — NotifWin→Main: новая высота окна
-- `notify:clicked` — Main→Renderer: `{messengerId, senderName, chatTag}` → переключить вкладку + навигация к чату
+- `notify:clicked` — Main→Renderer: `{messengerId, senderName, chatTag, messageId?, source?}` → переключить вкладку + навигация к чату
+  - **v0.95.46**: добавлено опциональное `messageId` для перехода к КОНКРЕТНОМУ сообщению (а не просто к чату)
+  - **v0.97.0 (Phase 0 M0.4)**: добавлено опциональное `source: NotificationSource` — полный паспорт сообщения для AI-агента и cross-tab навигации. Backward compat: старые поля `messengerId/senderName/chatTag/messageId` остаются.
+  - Слушатель **корневой** App.jsx (v0.97.0 M0.3) — работает с ЛЮБОЙ активной вкладки (включая webview).
+
+### AI-агент IPC (v0.97.0+, Phase 0+1)
+
+**Каналы для Tool Use API** (см. `.memory-bank/ai-agent-plan/`).
+Действуют для Native режима (TDLib сейчас, будущие native API мессенджеров позже).
+WebView мессенджеры — НЕ обрабатываются AI агентом (только текстовые помощники через `ai:generate-stream`).
+
+#### `ai:agent:run` — запуск AI агента (invoke, request → response)
+- **Тип**: `ipcMain.handle` (Renderer→Main, async response)
+- **Request**: `{ requestId: string, source: NotificationSource, provider: string, model?: string, recentMessages?: Array, extraInstructions?: string }`
+- **Response**: `{ ok: boolean, finalAnswer?: string, error?: string, iterations: number, audit: Array<{toolUseId, name, result}> }`
+- **Назначение**: Запустить multi-turn agent loop. AI читает source паспорт сообщения, вызывает tools (через Action Bus), возвращает финальный ответ + audit действий.
+- **Max iterations**: 10 (защита от cost runaway)
+
+#### `ai:agent:cancel` — отмена in-flight агента (send, event)
+- **Тип**: `ipcMain.on` (Renderer→Main)
+- **Данные**: `{ requestId: string }`
+- **Назначение**: Прервать активный agent loop. Используется AbortController.
+
+#### `ai:agent:step` — стриминг прогресса агента (Main→Renderer)
+- **Тип**: `webContents.send` (Main→Renderer)
+- **Данные**: `{ requestId: string, step: { type: 'response'|'tool_call'|'tool_result', ...payload } }`
+- **Назначение**: UI показывает прогресс агента (какой tool сейчас, какой результат) — для будущей UI кнопки «🤖 Обработать» в Phase 3.
+
+#### NotificationSource — паспорт сообщения (v0.97.0)
+
+Передаётся в `app:custom-notify` и `notify:clicked` payload. **Frozen** объект.
+
+```js
+NotificationSource = {
+  // Обязательные — однозначная идентификация
+  messengerId: string,  // 'native_cc' сейчас. В будущем: 'native_wa_business', 'native_vk_api', etc.
+  accountId:   string,  // TDLib account id, например 'tg_611696632'
+  chatId:      string,  // TDLib chat id
+  messageId:   string,  // TDLib message id
+
+  // Опциональные — контекст
+  threadId:    string|null,  // forum topic id
+  senderId:    string,
+  senderName:  string,
+  chatTitle:   string,
+  timestamp:   number,       // unix ms
+  textPreview: string,       // max 200 chars
+  mediaType:   string|null,
+  replyToId:   string|null,
+  isOutgoing:  boolean,
+}
+```
+
+**Создаётся**: один раз в `nativeStoreIpc.js` при `tg:new-message` event.
+**Где живёт**: notifItems в main, IPC payload, AI tool inputs, audit log.
+**Точность 100% «откуда сообщение»**: TDLib гарантирует уникальность тройки `accountId+chatId+messageId`.
 
 ### `window-state` — событие: состояние окна (Main → Renderer, v0.42.0)
 - **Тип**: send (событие)

@@ -2,7 +2,7 @@
 
 Это единственный источник истины для проекта ЦентрЧатов / ChatCenter.
 
-**Версия**: v0.87.135 (7 мая 2026)
+**Версия**: v0.97.0 (8 июня 2026)
 
 ---
 
@@ -32,6 +32,7 @@
 | `group-topic-investigation.md` | Расследование Telegram forum/group topics: нет меню тем в native, неясно откуда грузятся сообщения | При задачах про Telegram-группы с темами / forum topics |
 | `phase-2-visual-test.md` | Живой чек-лист визуальной проверки Phase 2 виртуализации (v0.89.0): 12 пунктов + журнал найденных проблем | Пока виртуализация проверяется вживую, после закрытия — в архив |
 | `tdlib-migration-plan.md` | План миграции backend с GramJS на TDLib (5 этапов, ~5 недель) | При работе над переходом на TDLib backend |
+| `ai-agent-plan/` (папка) | 🤖 **AI-агент**: план 5 фаз (Phase 0+1 done в v0.97.0, Phase 2-4 ahead) — NotificationSource паспорт, Tool Use API, permissions. Архитектура для Native режима (TDLib + будущие native API мессенджеров) | При задачах по AI-агенту, Tool Use, NotificationSource, Action Bus. **Читать через `ai-agent-plan/README.md`** |
 
 ### 📚 Детализация ловушек — `.memory-bank/mistakes/`
 

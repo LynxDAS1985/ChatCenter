@@ -1,9 +1,28 @@
 # Обзор доработки — AI-агент
 
+## 🎯 Scope (важно — зафиксировано в v0.97.0)
+
+**AI-агент = только Native режим.** Это **расширяемая концепция**:
+
+| Native режим | Статус |
+|---|---|
+| `messengerId='native_cc'` (TDLib для Telegram) | ✅ Готово (v0.97.0 Phase 0+1) |
+| `messengerId='native_wa_business'` (WhatsApp Business API) | 📋 План Phase 5+ |
+| `messengerId='native_vk_api'` (VK API) | 📋 План Phase 5+ |
+| `messengerId='native_viber'` (Viber REST API) | 📋 План Phase 6+ |
+
+**WebView мессенджеры (Telegram БНК / Telega Avtoliberty / ВК / WhatsApp Web / Макс)** —
+AI агент НЕ обрабатывает. Они продолжают работать как раньше (юзер общается вручную).
+
+**AI WebView mode в AISidebar (chat.openai.com / claude.ai)** — остаётся как раньше для
+юзеров без API ключа. Это **классический AI-помощник**, не агент.
+
+Подробности расширения Native: [phases/phase-5-native-extension.md](./phases/phase-5-native-extension.md).
+
 ## Цель
 
 Сделать так чтобы AI **не только давал советы по тексту**, а **сам выполнял действия** с
-уведомлениями и сообщениями:
+уведомлениями и сообщениями из Native режима:
 
 - Точно определял источник сообщения (аккаунт + чат + сообщение + отправитель)
 - Мог переходить к нужному сообщению

@@ -179,6 +179,89 @@ ChatCenter — Electron-приложение. Одно окно, несколь�
 
 ---
 
+## AI-агент архитектура (v0.97.0+, Phase 0+1)
+
+Параллельный слой над основной архитектурой. Действует **только для Native режима**
+(messengerId='native_cc' сейчас, в будущем — другие native API мессенджеров).
+WebView мессенджеры — AI агент не обрабатывает (только текстовые подсказки через классический AISidebar).
+
+### Три уровня (см. .memory-bank/ai-agent-plan/architecture.md)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ УРОВЕНЬ 1: SOURCE — паспорт сообщения (NotificationSource)   │
+│ src/shared/notificationSource.js                              │
+│ Frozen объект: messengerId/accountId/chatId/messageId        │
+│ Создаётся ОДИН раз в nativeStoreIpc.js, несётся через IPC   │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ УРОВЕНЬ 2: ACTION BUS — диспетчер в App.jsx (корневой)       │
+│ src/hooks/useNotifyDispatcher.js                              │
+│ Cross-tab listener notify:clicked — работает с ЛЮБОЙ вкладки│
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ УРОВЕНЬ 3: TOOLS + ADAPTERS                                   │
+│ src/shared/tools/         — Registry + Schemas + Handlers    │
+│ main/ai/aiToolExecutor.js — multi-turn agent loop             │
+│ main/ai/aiContextBuilder.js — system prompt + source + history│
+│ main/ai/adapters/         — anthropic/openai/deepseek/gigachat│
+│ main/handlers/aiToolIpcHandlers.js — ai:agent:run/cancel      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Папка `main/ai/` (новая в v0.97.0)
+
+```
+main/ai/
+├── aiToolExecutor.js       ← multi-turn agent loop (max 10 iterations)
+├── aiContextBuilder.js     ← собирает context (system + source + recent)
+└── adapters/
+    ├── anthropicAdapter.js ← Anthropic Tool Use API
+    ├── openaiAdapter.js    ← OpenAI Function Calling
+    ├── deepseekAdapter.js  ← OpenAI-compatible (re-export)
+    └── gigachatAdapter.js  ← старый OpenAI format (functions, не tools)
+```
+
+### Папка `src/shared/` (новая в v0.97.0)
+
+```
+src/shared/
+├── notificationSource.js   ← Factory + validation паспорта
+└── tools/
+    ├── toolRegistry.js     ← Реестр tools (auto/confirm/deny tiers)
+    ├── toolSchemas.js      ← JSON Schema 3 read-only tools
+    └── handlers/
+        ├── gotoMessage.js
+        ├── getChatHistory.js
+        └── searchMessages.js
+```
+
+### Native режим — расширяемая концепция
+
+Сейчас Native = только TDLib (Telegram). В будущем — другие native API мессенджеров:
+- WhatsApp Business API → `messengerId='native_wa_business'`
+- VK API → `messengerId='native_vk_api'`
+- Viber API → `messengerId='native_viber'`
+
+Архитектура `messengerId: string` уже **extensible** — никаких изменений в коде не нужно
+для добавления нового native мессенджера. Tool handlers получат соответствующий backend
+через `handlerContext` (TDLib store / будущий WhatsApp store / etc.).
+
+**WebView мессенджеры остаются как есть** — это отдельный слой, не затронут AI агентом.
+
+### Интеграция с существующим AISidebar
+
+AISidebar.jsx (классический AI-помощник через `ai:generate-stream`) **продолжает работать**:
+- API mode (4 провайдера) — работает как раньше + появилась дополнительная возможность Tool Use в Native режиме
+- WebView mode (chat.openai.com / claude.ai через `<webview>`) — работает как раньше для юзеров без API ключа
+
+Tool Use API (v0.97.0+) — это **новый уровень над классическим AI-помощником**, не замена.
+
+---
+
 ## Версия архитектуры
 
+v0.97.0 — 8 июня 2026 (AI-агент фундамент Phase 0+1: NotificationSource + Tool Use)
 v0.85.4 — 30 марта 2026 (полное обновление после рефакторинга)

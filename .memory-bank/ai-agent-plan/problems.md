@@ -29,7 +29,7 @@
 
 ### [P-01] Уведомления не работают cross-tab
 
-**Статус**: 🔴 OPEN
+**Статус**: 🟢 RESOLVED (2026-06-08, commit `ce994ce`, M0.3)
 **Фаза**: Phase 0 (фикс на старте)
 **Severity**: blocker для AI-агента
 
@@ -50,7 +50,7 @@
 
 ### [P-02] AI не знает источник сообщения
 
-**Статус**: 🔴 OPEN
+**Статус**: 🟢 RESOLVED (2026-06-08, commit `ce994ce`, M0.4)
 **Фаза**: Phase 0
 **Severity**: blocker для AI-агента
 
@@ -70,7 +70,8 @@
 
 ### [P-03] AI не может выполнять действия
 
-**Статус**: 🔴 OPEN
+**Статус**: 🟢 RESOLVED для read-only tools (2026-06-08, commit `ce994ce`, Phase 1).
+Write tools (reply/markRead) — Phase 2.
 **Фаза**: Phase 1
 **Severity**: blocker для AI-агента
 
@@ -257,22 +258,46 @@
 
 ---
 
-### [P-A5] WebView режим vs API режим конфликт
+### [P-A5] AI WebView mode vs Tool Use — scope clarification
 
-**Статус**: ⚫ DEFERRED
+**Статус**: 🟢 RESOLVED (2026-06-08, scope decision)
 **Фаза**: Phase 3
 **Severity**: minor
 
-**Симптом**: Юзер в settings выбрал WebView для Claude, но кликает «🤖 Обработать» — должно ли работать?
+**Симптом**: Юзер в settings выбрал WebView mode для Claude, кликает «🤖 Обработать» — что происходит?
 
-**Корень**: WebView режим не поддерживает tool use.
+**Решение (зафиксировано)**:
+- AI WebView mode (chat.openai.com / claude.ai через `<webview>`) **остаётся** для классической генерации (3 варианта ответа)
+- Tool Use агент работает **только в API mode**
+- В Phase 3 UI: кнопка «🤖 Обработать» проверяет провайдер. Если WebView mode → подсказка «Переключитесь на API mode или другой провайдер с tool use»
+- НЕ удаляем WebView mode — это полезная фича для юзеров с подпиской
 
-**Решение**: 
-- Кнопка «🤖 Обработать» disabled если WebView режим
-- Сообщение «Переключитесь на API mode для агента»
-- Или авто-переключение на другой API провайдер (если есть)
+**Тест**: ручной (Phase 3).
 
-**Тест**: ручной.
+---
+
+### [P-08] vitest нестабильный (flaky) — иногда падает с TypeError: config undefined (2026-06-09)
+
+**Статус**: 🔴 OPEN
+**Фаза**: not in plan (infrastructure)
+**Severity**: major (CI/CD риск)
+
+**Симптом**: `npm run test:vitest` иногда возвращает «86 файлов упали, 0 тестов выполнено» с ошибкой
+`TypeError: Cannot read properties of undefined (reading 'config')` на каждом `describe()`. Повторный
+запуск через 1-2 минуты — всё проходит (1142/1142).
+
+**Корень**: подозреваю несовместимость vitest 4.1.4 + Node 24 + happy-dom. Cold-start environment
+не успевает инициализировать suite контекст. На Windows стабильнее не воспроизводится с retry.
+
+**Решение**: пока не определено. Варианты:
+- A) Откатить vitest до 3.x
+- B) Обновить happy-dom
+- C) Добавить retry: 2 в vitest.config.mjs
+- D) Расследовать race condition в setup
+
+**Тест**: `for i in {1..10}; do npm run test:vitest 2>&1 | tail -3; done` — проверить процент пройденных.
+
+**Когда решено**: TBD
 
 ---
 
@@ -300,7 +325,19 @@
 
 ## История решений
 
-(пусто — будет наполняться по ходу работы)
+### 2026-06-08 — Phase 0+1 done (v0.97.0, commit ce994ce)
+
+- **P-01 Cross-tab notify** → RESOLVED. App.jsx listener в корневом компоненте, NativeApp принимает payload пропом.
+- **P-02 AI не знает источник** → RESOLVED. NotificationSource (паспорт) создаётся в nativeStoreIpc и несётся через все IPC.
+- **P-03 AI не может выполнять действия** → RESOLVED для read-only tools. Tool Registry + 3 handlers (goto/get_history/search) + 4 provider adapters. Write tools — Phase 2.
+
+### 2026-06-08 — Scope decision
+
+- **P-A5 AI WebView mode vs Tool Use** → RESOLVED. Зафиксировано: WebView mode остаётся для классической генерации, Tool Use — только API mode + Native режим. Никаких удалений.
+
+### 2026-06-09 — Обнаружена новая проблема
+
+- **P-08 vitest flaky** → OPEN. Не связано с Phase 0+1, инфраструктурный риск.
 
 ---
 

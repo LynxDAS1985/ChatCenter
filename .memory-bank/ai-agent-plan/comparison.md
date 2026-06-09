@@ -1,5 +1,16 @@
 # Сравнение с конкурентами
 
+## 🎯 Контекст (v0.97.0)
+
+ChatCenter — **гибридный мессенджер-агрегатор**:
+- **WebView вкладки** (5 мессенджеров: Telegram, WhatsApp, VK, MAX, Viber) — классический подход
+- **Native режим** (через TDLib) — расширяемая концепция, AI-агент работает здесь
+- **AI**: 4 провайдера + WebView mode (chat.openai.com / claude.ai через subscription)
+
+В будущем Native расширится на другие мессенджеры через их native API
+(WhatsApp Business, VK API, Viber REST) — каждый получит AI-агента автоматически.
+
+
 ## Таблица сравнения
 
 | Свойство | ChatCenter (план) | Slack AI | Teams Copilot | Cursor / Cline | Claude Desktop MCP |

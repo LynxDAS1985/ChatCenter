@@ -2,6 +2,14 @@
 
 > **Цель**: AI может выполнять write actions (отправка, mark-read, create-task) с
 > подтверждением юзера. Permission система + audit log + undo.
+>
+> ## 🎯 Scope (v0.97.0+)
+>
+> Write actions работают **только** для Native режима (`messengerId='native_*'`).
+> Сейчас это `native_cc` (TDLib). В будущем — другие native API мессенджеров.
+>
+> WebView мессенджеры (Telegram БНК / Telega / ВК / WhatsApp Web / Макс) и
+> AI WebView mode (chat.openai.com / claude.ai) — **не затрагиваются**, работают как есть.
 
 ## Что делаем
 

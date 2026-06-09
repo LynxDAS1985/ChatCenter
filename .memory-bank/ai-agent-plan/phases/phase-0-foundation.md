@@ -1,5 +1,10 @@
 # Phase 0 — Foundation (детально)
 
+> ## ✅ ЗАВЕРШЕНО (v0.97.0, commit `ce994ce`, 2026-06-08)
+>
+> Все 5 milestones (M0.1-M0.5) выполнены. 30 unit-тестов passed.
+> См. [progress.md](../progress.md) и [changelog.md](../changelog.md).
+
 > **Цель**: Создать фундамент для AI-агента. Без этой фазы остальное не работает.
 
 ## Что делаем

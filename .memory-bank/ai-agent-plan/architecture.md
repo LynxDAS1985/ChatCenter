@@ -1,5 +1,19 @@
 # Архитектура — 3 уровня
 
+## 🎯 Scope
+
+**AI-агент работает только для Native режима** (см. [overview.md](./overview.md)).
+
+`messengerId` в NotificationSource:
+- ✅ `'native_cc'` — AI агент работает (TDLib)
+- 🔜 `'native_wa_business'`, `'native_vk_api'`, etc. — AI агент будет работать (Phase 5+)
+- ❌ `'webview-telegram'`, `'webview-whatsapp'`, `'webview-vk'`, `'webview-max'`, `'webview-viber'` —
+  AI агент НЕ обрабатывает. Эти мессенджеры остаются с классическим AI-помощником через AISidebar.
+
+Архитектура **уже extensible** — никаких изменений в коде не нужно для добавления
+нового native мессенджера. Tool handlers получают backend через `handlerContext`
+(сейчас TDLib store, в будущем — WhatsApp store / VK store / etc).
+
 ## Общий принцип
 
 Архитектура разбита на **3 уровня**. Каждый уровень — отдельная ответственность.
