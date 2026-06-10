@@ -21,7 +21,7 @@
 | `CHANGELOG.md` | Журнал изменений структуры Memory Bank | При правках структуры памяти |
 | `startup-load-investigation.md` | Живой документ расследования долгой загрузки Telegram при старте | Пока расследуем старт/загрузку; после фикса уйдёт в архив |
 | `prodlike-webview-investigation.md` | Закрытая памятка: слабый интернет может выглядеть как баг `start:prodlike`/WebView | При подозрении на медленную загрузку VK/MAX/Telegram WebView |
-| `native-scroll-diagnostics-handoff.md` | Диагностика скролла native | При расследовании native-scroll |
+| ~~`native-scroll-*.md`~~ | ✅ CLOSED 2026-06-09 — заархивированы в `archive/*-CLOSED.md` | НЕ открывать (тема закрыта юзером) |
 | `decisions.md` | Ключевые архитектурные решения (ADR) | При принятии решений |
 | `api.md` | IPC-каналы, форматы сообщений, DTO | При работе с IPC |
 | `messengers.md` | Интеграция мессенджеров: селекторы DOM | При работе с WebView |

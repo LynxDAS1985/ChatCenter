@@ -85,7 +85,11 @@ function checkComponent(filePath, componentName) {
   for (const m of code.matchAll(/=\{(\b[a-zA-Z_]\w*)\s/gm)) refs.add(m[1])
 
   // Дополнительные safe: async, await, стилевые
-  const extraSafe = new Set(['async','await','scale','gradient','translateX','translateY','translate','rotate','steps','entry','tab','tooltip','description','label','cat','preset','color','personal','enrichment'])
+  const extraSafe = new Set(['async','await','scale','gradient','translateX','translateY','translate','rotate','steps','entry','tab','tooltip','description','label','cat','preset','color','personal','enrichment',
+    // v1.1.5: browser globals из новых useEffect для ai-webview diagnostics
+    'cancelAnimationFrame','requestAnimationFrame',
+    // v1.1.5: 'webview' это HTML tag name, не JS variable — парсер ошибочно считает refs
+    'webview'])
   const undefined_refs = [...refs].filter(r => !defined.has(r) && !SAFE.has(r) && !extraSafe.has(r) && r.length > 2 && /^[a-z]/.test(r))
   return { props, imports, locals, undefined: undefined_refs }
 }

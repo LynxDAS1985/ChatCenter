@@ -13,6 +13,8 @@ import { createStreamingHandler } from '../utils/aiStreamingHandler.js'
 import { runProviderChecks as runProviderChecksUtil } from '../utils/aiProviderChecker.js'
 import { createLoginHandler } from '../utils/aiLoginHandler.js'
 import { sendContextToAiWebview as sendContextToAiWebviewUtil } from '../utils/aiWebviewContext.js'
+// v1.1.5: диагностические логи для AI WebView (DeepSeek/ГигаЧат не работают — разбираемся).
+import { attachAiWebviewDiagnostics } from '../utils/aiWebviewDiagnostics.js'
 
 // Вспомогательный компонент — заголовок шага
 function StepRow({ num, title, extra, numDone }) {
@@ -228,7 +230,33 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   useEffect(() => {
     const interval = setInterval(() => runChecksRef.current?.('hourly'), 60 * 60 * 1000)
     return () => clearInterval(interval)
-  }, []) 
+  }, [])
+
+  // v1.1.5: ВРЕМЕННЫЕ диагностические логи для AI webview (DeepSeek / ГигаЧат
+  // не показывают логин-страницу — разбираемся почему). Удалить после
+  // нахождения корня. Срабатывает когда монтируется <webview> в режиме webview.
+  useEffect(() => {
+    if (providerMode !== 'webview') return undefined
+    if (!webviewUrl) return undefined
+    // requestAnimationFrame — ref может быть ещё null в момент эффекта
+    // (особенно после переключения mode → webview). Ждём один кадр.
+    let detacher = null
+    const rafId = requestAnimationFrame(() => {
+      const el = aiWebviewRef.current
+      if (!el) {
+        console.warn('[ai-webview] WARN [no-ref] провайдер=' + provider + ' url=' + webviewUrl + ' — webview ref пустой при mount, listener не повешен')
+        return
+      }
+      detacher = attachAiWebviewDiagnostics(el, provider, webviewUrl)
+    })
+    return () => {
+      cancelAnimationFrame(rafId)
+      if (detacher && typeof detacher.detach === 'function') {
+        try { detacher.detach() } catch (_) {}
+      }
+    }
+  }, [providerMode, webviewUrl, provider])
+
   const openLoginWindow = createLoginHandler({
     waitingForKey, pollingRef, unsubLoginRef, setWaitingForKey,
     provider, providerInfo, setKeyFoundMsg, set, windowApi: window.api,

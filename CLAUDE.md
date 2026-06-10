@@ -90,11 +90,10 @@
 
 | Когда читать | Файл |
 |------|------|
-| Расследование бага скролла native | [`.memory-bank/native-scroll-diagnostics-handoff.md`](.memory-bank/native-scroll-diagnostics-handoff.md) |
-| 🟡 Сага восстановления позиции (v0.91.12-24, фиксы реализованы, осталось архитектурное ограничение react-window) | [`.memory-bank/native-scroll-restore-saga.md`](.memory-bank/native-scroll-restore-saga.md) — читать ОБЯЗАТЕЛЬНО перед любой правкой restore логики |
+| ✅ Сага скролл-restore (CLOSED 9 июня 2026) — заархивирована по решению юзера | [`.memory-bank/archive/native-scroll-restore-saga-CLOSED.md`](.memory-bank/archive/native-scroll-restore-saga-CLOSED.md) — читать ТОЛЬКО при явной просьбе юзера (тема закрыта, не открывать) |
 | 🟡 Сага jump-to-end-of-chat (v0.95.12-14, 3 итерации до фикса) — TDLib `getChatHistory` имеет недокументированные edge cases | [`.memory-bank/jump-to-end-saga.md`](.memory-bank/jump-to-end-saga.md) — читать перед изменениями кнопки ↓ / context-window load / `from_message_id` параметра |
 | 🟡 План миграции react-window → react-virtuoso (Day 1-4, нач. v0.91.24, финал v0.92.0) | [`.memory-bank/virtuoso-migration-plan.md`](.memory-bank/virtuoso-migration-plan.md) — читать перед изменениями VirtualMessageList / useInboxScroll / useInitialScroll |
-| 🔴 Аудит scroll-архитектуры 26 мая (23 версии саги, 6 моих ошибок, 8 ломаных связей) | [`.memory-bank/audit-2026-05-26-scroll-architecture.md`](.memory-bank/audit-2026-05-26-scroll-architecture.md) — читать перед v0.93.0 cleanup |
+| ✅ Аудит scroll-архитектуры (CLOSED) | [`.memory-bank/archive/audit-2026-05-26-scroll-architecture-CLOSED.md`](.memory-bank/archive/audit-2026-05-26-scroll-architecture-CLOSED.md) — заархивирован вместе с сагой |
 | Большой план native-режима | [`.memory-bank/native-mode-plan.md`](.memory-bank/native-mode-plan.md) |
 | Расследование Telegram-групп с темами / forum topics в native | [`.memory-bank/group-topic-investigation.md`](.memory-bank/group-topic-investigation.md) |
 | Чек-лист визуальной проверки Phase 2 виртуализации (v0.89.0) | [`.memory-bank/phase-2-visual-test.md`](.memory-bank/phase-2-visual-test.md) |
@@ -279,7 +278,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v1.1.4 (9 июня 2026)
+**Текущая версия**: v1.1.5 (9 июня 2026)
 
 ---
 
@@ -731,7 +730,6 @@ Auto-memory — постоянная память Claude между сессия
 | `handoff-code-limits.md` | 8 КБ |
 | `messengers.md` | 14 КБ |
 | `native-mode-plan.md` | 22 КБ |
-| `native-scroll-diagnostics-handoff.md` | 18 КБ |
 | `startup-load-investigation.md` | 7 КБ |
 | `ui-components.md` | 14 КБ |
 | `workflow.md` | 8 КБ |
@@ -763,6 +761,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v1.1.4 (9 июня 2026)
+**Версия проекта**: v1.1.5 (9 июня 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
 **Последнее обновление**: 9 июня 2026 — **v1.0.2**: TDLib backend методы для AI tools — реальная интеграция. Создан `main/ai/aiAgentBackendAdapter.js` — плоский интерфейс ({getMessages, searchMessages, sendMessage, markAsRead}) над `tdlibBackend.messages` (домен .get/.send/.markRead/.search). До v1.0.2 setAgentDeps передавал tdlibBackend напрямую → fallback в aiAgentSetup → AI работал «в никуда». Добавлен `tdlibBackend.messages.search` (searchChatMessages для chatId, глобальный searchMessages без chatId). 30 новых unit-тестов (24 на адаптер + 6 на search). Регрессия: lint 0, vitest 1285 passed, fileSizeLimits 392/392 ✅. **v1.0.1**: UI интеграция Phase 4 панелей. 3 иконки 📝 ⏰ 📊 справа в шапке TabBar открывают модалки `PanelModal` (overlay + ✕) с TasksPanel / RemindersPanel / AIActivityDashboard. Badge с числом активных задач/напоминаний (опрос tasks:list + reminders:list через `useAppCounters` каждые 30 сек + по событиям `tasks:changed`/`reminders:changed`). `handleGoToSource` в App.jsx закрывает модалку + переключает на ЦентрЧатов + кладёт source в pendingNativeNotify (тот же путь что notify:clicked). Лимит App.jsx 880→940. Лимит TabBar.jsx стандартный 700 (фактически 338). v1.0.0 фундамент (NotificationSource + ActionBus + Tool Use + Permission Guard + AISidebarAgent + Tasks/Reminders/AuditLog stores) — без изменений.

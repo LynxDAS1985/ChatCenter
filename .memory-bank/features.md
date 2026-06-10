@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.4 (9 июня 2026)
+## Текущая версия: v1.1.5 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,20 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.5 — Диагностика «Веб-интерфейс DeepSeek/ГигаЧат» + закрытие скролл-саги
+
+Новый `src/utils/aiWebviewDiagnostics.js`: `attachAiWebviewDiagnostics(wv, provider, url)` подписывается на 11 событий webview (did-fail-load, **console-message** (видны CSP сайта), did-navigate, render-process-gone, ...). Префикс `[ai-webview]`. Idempotent.
+
+`AISidebar.jsx`: useEffect привязывает диагностику при `providerMode==='webview' && webviewUrl`. RAF защита от пустого ref. Cleanup при unmount.
+
+`aiWebviewContext.js`: extended injection script возвращает diag (matched/dom counts) + лог `[inject-result]`.
+
++12 тестов. Всего 1470 ✅. Лимит renderer 26200 → 26400.
+
+**Скролл-сага CLOSED** (юзер: «забудь, пометь как решена»): 3 файла → `archive/*-CLOSED.md`. CLAUDE.md ссылки обновлены — `✅ CLOSED, НЕ ОТКРЫВАТЬ`.
 
 ---
 
@@ -415,23 +429,9 @@ Cм. [`archive/features-v0.95.15-18.md`](./archive/features-v0.95.15-18.md): и�
 
 ---
 
-### v0.95.4 — Фикс «дёрг при повторном открытии seen-чата» (useLayoutEffect) + Windows CI timeout
+### v0.95.4 — заархивирована
 
-**Корень** (подтверждён диагностикой v0.95.3): в [useInitialScroll.js](src/native/hooks/useInitialScroll.js) ветка 2 (already-seen) использовала `useEffect` — он выполняется **ПОСЛЕ paint** ([React docs](https://react.dev/reference/react/useEffect): «After every render with changed dependencies»). При смене seen-чата React сначала рисует новый кадр (где scrollContainer показывает позицию ПРЕДЫДУЩЕГО чата — это общий persistent DOM-контейнер), потом выполняется effect и ставит `scrollTop=saved` → юзер на 1 кадр видит чужую позицию = «дёрг».
-
-**Решение** ([React docs useLayoutEffect](https://react.dev/reference/react/useLayoutEffect): «fires synchronously after all DOM mutations but BEFORE the browser paints»): `useEffect` → `useLayoutEffect` в [useInitialScroll.js](src/native/hooks/useInitialScroll.js). Restore выполняется до paint → юзер видит сразу правильную позицию, без вспышки.
-
-**Что критически важно** (по той же React-доке — useLayoutEffect блокирует paint): внутри ТОЛЬКО micro-операция `scrollTop=N` (микросекунды), никаких fetch/тяжёлой работы. Это уже соблюдено — диагностика v0.95.3 подтвердила `msSinceEffectStart=0` + `attempts=0` (restore синхронный, scrollEl сразу готов). Та же паттерн уже работает в [InboxMode load-older re-pin](src/native/modes/InboxMode.jsx) (v0.94.2). Поведение ветки 1 (initial scroll первого открытия) НЕ менялось — там `setTimeout 150ms` остаётся.
-
-#### Windows CI timeout fix
-
-Симптом: GitHub Actions `test-and-build (windows-latest)` упал — `AccountContextMenu.vitest.jsx` первый тест «показывает имя аккаунта» 5671мс при дефолтном vitest `testTimeout=5000` (остальные 18 тестов файла прошли за 13-36мс). Ubuntu прошёл.
-
-Корень — **cold-start первого теста файла** на медленном Windows CI runner-е: загрузка модуля `AccountContextMenu.jsx` (большие inline styles) + первый рендер React 19 в happy-dom + первый `useEffect` с `setTimeout(0)`. На локальной машине и Ubuntu это 50-100мс, на Windows runner-е — 5-6с.
-
-Решение ([vitest docs testTimeout](https://vitest.dev/config/#testtimeout)): глобальный `testTimeout: 15000` в [vitest.config.mjs](vitest.config.mjs). Это **потолок**, не фиксированное ожидание — нормальные тесты не замедляются, только cold-start не упирается в 5с.
-
-**Регрессия**: lint 0, vitest, fileSizeLimits, check-memory ✅.
+Фикс «дёрг при повторном открытии seen-чата» (useLayoutEffect) + Windows CI timeout. Детали: [archive/features-v0.95.4.md](./archive/features-v0.95.4.md).
 
 ---
 
