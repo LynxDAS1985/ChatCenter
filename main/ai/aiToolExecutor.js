@@ -98,6 +98,12 @@ export async function runAgentLoop(params) {
     signal,  // AbortSignal — если aborted, выходим из цикла
     confirmTimeoutMs = DEFAULT_CONFIRM_TIMEOUT_MS,
     readRetryCount = DEFAULT_READ_RETRY_COUNT,
+    // v1.1.1 (Phase 4.3 integration): auto-reply mode.
+    // Когда actor='ai_auto' + autoConfirm=true — confirm-required tools
+    // выполняются без UI модалки (autoConfirm logged в audit). Безопасно
+    // только для запусков из autoReplyDispatcher (rule уже одобрена юзером).
+    actor,  // 'ai' | 'ai_auto' | 'user' — попадает в audit
+    autoConfirm = false,
   } = params
 
   if (!provider) return { ok: false, error: 'missing_provider', iterations: 0 }
@@ -168,8 +174,12 @@ export async function runAgentLoop(params) {
         return { id: tc.id, name: tc.name, result: err }
       }
       if (permCheck.requiresConfirm) {
-        // Phase 2: запрос подтверждения у юзера через onConfirmRequest callback.
-        if (typeof params.onConfirmRequest === 'function') {
+        // v1.1.1: autoConfirm bypass для auto-reply rules (actor='ai_auto').
+        // Confirm-required tools выполняются сразу. В audit идёт пометка
+        // permissionResult: 'auto_confirmed' для отслеживания.
+        if (autoConfirm && actor === 'ai_auto') {
+          // skip confirm — продолжаем к handler. permissionResult пометим после.
+        } else if (typeof params.onConfirmRequest === 'function') {
           // v1.0.4: confirm timeout — auto-deny если юзер не среагировал за N мс.
           // Защита от зависшего агента (юзер ушёл, модалка висит — loop держит ресурсы).
           const confirmResult = await runWithTimeout(
@@ -223,7 +233,13 @@ export async function runAgentLoop(params) {
         }
       }
       if (!result) result = lastErr || { ok: false, error: 'unknown_handler_failure' }
-      audit.push({ toolUseId: tc.id, name: tc.name, result, attempts: maxAttempts })
+      // v1.1.1: actor + auto_confirmed pometka в audit для auto-reply.
+      const auditEntry = { toolUseId: tc.id, name: tc.name, result, attempts: maxAttempts }
+      if (actor) auditEntry.actor = actor
+      if (permCheck.requiresConfirm && autoConfirm && actor === 'ai_auto') {
+        auditEntry.permissionResult = 'auto_confirmed'
+      }
+      audit.push(auditEntry)
       onStep?.({ type: 'tool_result', name: tc.name, result })
       return { id: tc.id, name: tc.name, result }
     }))

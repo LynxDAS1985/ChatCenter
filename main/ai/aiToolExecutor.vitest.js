@@ -543,6 +543,149 @@ describe('runAgentLoop — v1.0.4 stability', () => {
   })
 })
 
+// v1.1.1: autoConfirm + actor для auto-reply.
+describe('runAgentLoop — v1.1.1 autoConfirm bypass (ai_auto actor)', () => {
+  it('actor=ai_auto + autoConfirm=true → confirm-tool ВЫПОЛНЯЕТСЯ без onConfirmRequest', async () => {
+    const registry = createToolRegistry()
+    let handlerCalls = 0
+    // mark_as_read = DEFAULT confirm. С autoConfirm должен выполниться сразу.
+    registry.register('mark_as_read', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => { handlerCalls++; return { ok: true } },
+      permission: 'confirm',
+      description: 'mark',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'mark_as_read', input: {} }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      actor: 'ai_auto',
+      autoConfirm: true,
+      // onConfirmRequest НЕ передаём
+    })
+
+    expect(r.ok).toBe(true)
+    expect(handlerCalls).toBe(1)  // вызван несмотря на confirm-required
+    expect(r.audit[0].result.ok).toBe(true)
+    expect(r.audit[0].actor).toBe('ai_auto')
+    expect(r.audit[0].permissionResult).toBe('auto_confirmed')
+  })
+
+  it('actor=ai (обычный) + autoConfirm=true → НЕ bypass (защита)', async () => {
+    const registry = createToolRegistry()
+    let handlerCalls = 0
+    registry.register('mark_as_read', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => { handlerCalls++; return { ok: true } },
+      permission: 'confirm',
+      description: 'mark',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'mark_as_read', input: {} }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      actor: 'ai',  // не ai_auto
+      autoConfirm: true,
+      // onConfirmRequest нет → confirm_required_no_handler
+    })
+
+    expect(handlerCalls).toBe(0)
+    expect(r.audit[0].result.error).toBe('confirm_required_no_handler')
+  })
+
+  it('actor=ai_auto + autoConfirm=false → НЕ bypass', async () => {
+    const registry = createToolRegistry()
+    let handlerCalls = 0
+    registry.register('mark_as_read', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => { handlerCalls++; return { ok: true } },
+      permission: 'confirm',
+      description: 'mark',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'mark_as_read', input: {} }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      actor: 'ai_auto',
+      autoConfirm: false,
+    })
+
+    expect(handlerCalls).toBe(0)
+    expect(r.audit[0].result.error).toBe('confirm_required_no_handler')
+  })
+
+  it('autoConfirm НЕ обходит HARDCODED_DENY', async () => {
+    const registry = createToolRegistry()
+    let handlerCalls = 0
+    registry.register('delete_message', {  // HARDCODED_DENY
+      schema: { type: 'object', properties: {} },
+      handler: async () => { handlerCalls++; return { ok: true } },
+      permission: 'confirm',
+      description: 'delete',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'delete_message', input: {} }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      actor: 'ai_auto', autoConfirm: true,
+    })
+
+    expect(handlerCalls).toBe(0)
+    expect(r.audit[0].result.error).toBe('permission_denied')
+  })
+
+  it('actor=ai → audit.actor=ai (без auto_confirmed pometki)', async () => {
+    const registry = makeRegistry()
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'get_chat_history', input: { chatId: 'X' } }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      actor: 'ai',
+    })
+    expect(r.audit[0].actor).toBe('ai')
+    expect(r.audit[0].permissionResult).toBeUndefined()
+  })
+})
+
 import { _internal } from './aiToolExecutor.js'
 
 describe('runWithTimeout helper (v1.0.4)', () => {

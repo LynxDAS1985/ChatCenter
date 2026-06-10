@@ -16,16 +16,24 @@
 - AI **сам** реагирует — без участия юзера.
 - Защиты: cooldown, исключение ботов/каналов/своих сообщений.
 
-### 1.3 Что НЕ сделано в v1.1.0 (deferred)
-**Integration с реальным TDLib message stream**. Правила сохраняются, engine работает в тестах, UI готов — но `manager.on('message')` пока не подписан на engine. То есть в v1.1.0 правила **не срабатывают автоматически** при входящих сообщениях. Это вынесено в отдельный коммит (v1.1.1) чтобы не сломать стабильность.
+### 1.3 Что СДЕЛАНО в v1.1.1 (integration)
 
-**Почему отдельно**: integration требует:
-- Hook в `nativeStoreIpc.js` или `tdlibStartup.js` на event `tg:new-message`.
-- Безопасное связывание с `aiToolExecutor` (текущий executor требует UI confirm — нужен флаг `autoConfirm: true` для `ai_auto` actor).
-- Loop protection — кэш отправленных автоответов в памяти.
-- E2E тесты что AI реально отвечает на mock TDLib message.
+**Integration с TDLib message stream подключена.** В v1.1.0 была foundation (модель/хранилище/engine/UI), v1.1.1 — реальный pipeline.
 
-В v1.1.0 — только **foundation**: модель + хранилище + engine + UI.
+Новые компоненты:
+- `main/ai/autoReplyDispatcher.js` — подписан на `manager.on('message:new')`. Pipeline: payload → buildEngineMessage → findMatchingRules → ai_reply/mark_read.
+- `aiToolExecutor.runAgentLoop`: новые параметры `actor` + `autoConfirm`. При `actor='ai_auto' && autoConfirm=true` обходит UI confirm для confirm-required tools (HARDCODED_DENY всё равно блокирует).
+- main.js: `initAutoReplyDispatcher` подключается после tdlib startup. callProvider пока null — провайдер выбирается в renderer (TODO v1.1.2 — пробросить из settings.ai в main).
+
+Защиты от петель (3 уровня):
+1. `excludeOutgoing` в engine matchRule + ранний exit в processNewMessage до загрузки rules.
+2. `rule.cooldownMinutes` (default 60 мин) — между срабатываниями того же rule.
+3. Dispatcher loop protection: 30 сек между ai_reply для одного chatId + global rate limit 10 в минуту.
+
+### 1.4 Что осталось (deferred v1.1.2)
+- **callProvider integration**: dispatcher запускает runAgent с `callProvider: null` — фактическая AI работа не происходит до конфигурации провайдера в renderer. Нужно: пробросить provider+apiKey из settings.ai в main и в dispatcher.
+- **Audit streaming в renderer**: actor='ai_auto' уже идёт в audit log, но AIActivityDashboard может не различать UI-инициированные vs auto.
+- **UI «выкл/вкл все правила»** — глобальный switch в Settings.
 
 ---
 

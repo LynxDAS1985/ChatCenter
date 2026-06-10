@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.0 (9 июня 2026)
+## Текущая версия: v1.1.1 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,27 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.1 — Phase 4.3 integration: dispatcher подключён к TDLib message:new
+
+**`main/ai/autoReplyDispatcher.js`**: подписывается на `manager.on('message:new')`. Для каждого сообщения: `getCachedRules()` → `buildEngineMessage(payload)` → `findMatchingRules` → если match: `mark_read` напрямую через `context.markAsRead` либо `ai_reply` через `runAgent({actor:'ai_auto', autoConfirm:true, initialMessages: prompt+hint})` → `markRuleMatched(rule.id)`.
+
+3 уровня защиты от петель:
+- `excludeOutgoing` в engine (default true) + ранний exit в dispatcher до загрузки rules.
+- `cooldownMinutes` на rule level.
+- Loop protection в dispatcher: 30 сек между ai_reply для того же chatId + global rate limit 10 в минуту.
+
+**Executor расширен** (`main/ai/aiToolExecutor.js`): `actor` + `autoConfirm` параметры. Когда `actor='ai_auto' && autoConfirm=true` — confirm-required tools выполняются без UI модалки. HARDCODED_DENY всё равно блокирует. В audit: `actor: 'ai_auto'` + `permissionResult: 'auto_confirmed'`.
+
+**main.js**: `initAutoReplyDispatcher` после tdlibStartup. callProvider пока null (TODO v1.1.2 — вытащить из settings.ai).
+
+**Тесты**: +24 dispatcher (canAutoReply rate limit, buildEngineMessage, processNewMessage flow с rules/cooldown/markRead/aiReply/error handling) + +5 executor autoConfirm = **29 новых**, всего **1416 ✅**.
+
+**Лимиты**: aiToolExecutor.js exception 300 → 350, .vitest.js 650 → 800.
+
+Полная документация: [.memory-bank/ai-agent-plan/phases/phase-4-3-auto-reply-impl.md](./ai-agent-plan/phases/phase-4-3-auto-reply-impl.md) (раздел «v1.1.1»).
 
 ---
 

@@ -34,7 +34,10 @@ import { createCallProvider } from './ai/aiProviderCaller.js'
 import { initTaskIpcHandlers } from './handlers/taskIpcHandlers.js'
 import { initReminderIpcHandlers } from './handlers/reminderIpcHandlers.js'
 // v1.1.0 (Phase 4.3): auto-reply rules storage.
-import { initAutoReplyRulesIpcHandlers } from './handlers/autoReplyRulesIpcHandlers.js'
+import { initAutoReplyRulesIpcHandlers, getCachedRules, markRuleMatched } from './handlers/autoReplyRulesIpcHandlers.js'
+// v1.1.1 (Phase 4.3 integration): диспетчер auto-reply.
+import { initAutoReplyDispatcher } from './ai/autoReplyDispatcher.js'
+import { runAgentLoop } from './ai/aiToolExecutor.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
 // v0.91.0: WebContentsView откачен — Issue #44934/45367 (Windows 11 crash на addChildView).
 // import { initWebContentsViewIpcHandlers } from './handlers/webContentsViewIpcHandlers.js'
@@ -350,6 +353,46 @@ app.whenReady().then(() => {
         schedule: async (r) => ({ ok: true, reminder: r }),
       },
     })
+
+    // v1.1.1 (Phase 4.3 integration): подписка auto-reply dispatcher
+    // на TDLib message:new. Без manager (r.backend._manager) — пропускаем.
+    try {
+      const tdManager = r.backend?._manager
+      if (tdManager?.on) {
+        const adapter = createAiAgentBackendAdapter(r.backend)
+        const registry = initToolRegistry()
+        const dispatcherResult = initAutoReplyDispatcher({
+          manager: tdManager,
+          getRules: () => getCachedRules(),
+          markMatched: (ruleId) => { try { markRuleMatched(ruleId) } catch (_) {} },
+          handlerContext: {
+            // Только markAsRead для action='mark_read' — без AI.
+            markAsRead: adapter.markAsRead,
+          },
+          // runAgent оборачивает runAgentLoop с пред-настроенными registry +
+          // callProvider + handlerContext. callProvider пока null — provider
+          // выбирается из settings.ai в renderer. Для v1.1.1 MVP: если provider
+          // не сконфигурен — auto-reply пропускается с ошибкой 'no_callProvider'.
+          runAgent: async (params) => {
+            // Используем getHandlerContext чтобы получить полный context
+            // (включая sendMessage через адаптер).
+            const fullContext = getHandlerContext()
+            return runAgentLoop({
+              ...params,
+              registry,
+              handlerContext: fullContext,
+              callProvider: null,  // TODO v1.1.2: вытаскивать из settings.ai
+            })
+          },
+          log: (level, msg) => __slog(`[auto-reply] ${level}: ${msg}`),
+        })
+        if (dispatcherResult.ok) {
+          __slog('[auto-reply] dispatcher subscribed to TDLib message:new')
+        }
+      }
+    } catch (e) {
+      console.error('[main] auto-reply dispatcher init failed:', e.message)
+    }
   } catch (e) {
     console.error('[main] TDLib init exception:', e.message)
     setAgentDeps({ mainWindow: () => mainWindow, tdlibBackend: null, taskStore: null, reminderStore: null })
