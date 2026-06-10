@@ -59,6 +59,7 @@
 | [phases/phase-4a-tasks-reminders-impl.md](./phases/phase-4a-tasks-reminders-impl.md) | v1.0.0 | **Tasks + Reminders + Activity Dashboard**. Persistent JSON store с atomic write, reminder scheduler (setTimeout), audit JSONL, 3 UI панели. |
 | [phases/phase-4b-ui-integration-impl.md](./phases/phase-4b-ui-integration-impl.md) | v1.0.1 | **UI интеграция Phase 4**. 3 иконки 📝 ⏰ 📊 в шапке TabBar, PanelModal обёртка, useAppCounters hook для badge, handleGoToSource. |
 | [phases/phase-4c-tdlib-real-backend-impl.md](./phases/phase-4c-tdlib-real-backend-impl.md) | v1.0.2 | **TDLib backend adapter**. aiAgentBackendAdapter — плоский интерфейс над tdlibBackend.messages.*. Добавлен messages.search через TDLib API. Реальная отправка/чтение/поиск (было — fallback). |
+| [phases/phase-4-3-auto-reply-impl.md](./phases/phase-4-3-auto-reply-impl.md) | v1.1.0 | **AI auto-reply правила (foundation)**. autoReplyEngine (pure functions matchRule + checkKeywords/Schedule/Cooldown). Persistent storage. UI AIAutoReplyRules с формой. Iconа 🤖⚡ в шапке. Integration с tg:new-message — deferred. |
 
 ## 🔁 Порядок работы (workflow)
 

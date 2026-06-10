@@ -37,6 +37,7 @@ export default function TabBar({
   statusBarMsg, stats, totalUnread,
   onOpenConnections,
   showTasks, setShowTasks, showReminders, setShowReminders, showActivity, setShowActivity,
+  showAutoReplyRules, setShowAutoReplyRules,
   tasksCount = 0, remindersCount = 0,
 }) {
   const pinnedTabs = settings.pinnedTabs || {}
@@ -119,6 +120,8 @@ export default function TabBar({
           <HeaderButton active={showTasks} color="#f59e0b" onClick={() => setShowTasks?.(!showTasks)} title="Задачи" badge={tasksCount}>📝</HeaderButton>
           <HeaderButton active={showReminders} color="#eab308" onClick={() => setShowReminders?.(!showReminders)} title="Напоминания" badge={remindersCount}>⏰</HeaderButton>
           <HeaderButton active={showActivity} color="#ec4899" onClick={() => setShowActivity?.(!showActivity)} title="AI Activity">📊</HeaderButton>
+          {/* v1.1.0 (Phase 4.3): кнопка правил автоответа */}
+          <HeaderButton active={showAutoReplyRules} color="#8b5cf6" onClick={() => setShowAutoReplyRules?.(!showAutoReplyRules)} title="Правила автоответа AI">🤖⚡</HeaderButton>
           <HeaderButton onClick={() => handleSettingsChange({ ...settings, theme: theme === 'dark' ? 'light' : 'dark' })} title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}>
             {theme === 'dark' ? '☀️' : '🌙'}
           </HeaderButton>

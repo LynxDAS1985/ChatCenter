@@ -33,6 +33,8 @@ import { createCallProvider } from './ai/aiProviderCaller.js'
 // v1.0.0 (Phase 4): Tasks + Reminders persistent stores.
 import { initTaskIpcHandlers } from './handlers/taskIpcHandlers.js'
 import { initReminderIpcHandlers } from './handlers/reminderIpcHandlers.js'
+// v1.1.0 (Phase 4.3): auto-reply rules storage.
+import { initAutoReplyRulesIpcHandlers } from './handlers/autoReplyRulesIpcHandlers.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
 // v0.91.0: WebContentsView откачен — Issue #44934/45367 (Windows 11 crash на addChildView).
 // import { initWebContentsViewIpcHandlers } from './handlers/webContentsViewIpcHandlers.js'
@@ -136,6 +138,11 @@ function setupNotifIPC() {
   initReminderIpcHandlers({
     userDataPath: app.getPath('userData'),
     getMainWindow: () => mainWindow,
+  })
+
+  // v1.1.0 (Phase 4.3): auto-reply rules.
+  initAutoReplyRulesIpcHandlers({
+    userDataPath: app.getPath('userData'),
   })
 
   // v0.82.5: Dock/Pin/Timer система вынесена в main/handlers/dockPinHandlers.js

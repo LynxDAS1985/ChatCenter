@@ -68,6 +68,8 @@ const PanelModal = lazy(() => import('./components/PanelModal.jsx'))
 const TasksPanel = lazy(() => import('./components/TasksPanel.jsx'))
 const RemindersPanel = lazy(() => import('./components/RemindersPanel.jsx'))
 const AIActivityDashboard = lazy(() => import('./components/AIActivityDashboard.jsx'))
+// v1.1.0 (Phase 4.3): AI auto-reply rules.
+const AIAutoReplyRules = lazy(() => import('./components/AIAutoReplyRules.jsx'))
 
 // v0.87.0: специальный "виртуальный" мессенджер — рендерит NativeApp вместо <webview>
 const NATIVE_CC_ID = 'native_cc'
@@ -160,14 +162,17 @@ export default function App() {
   const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
   const [activeNativeAccountId, setActiveNativeAccountId] = useState(null)
   // v1.0.1: модалки Phase 4 — Задачи / Напоминания / AI Activity.
-  // v1.0.3: mutually-exclusive — одна модалка за раз. openPanel('tasks'|'reminders'|'activity'|null).
+  // v1.0.3: mutually-exclusive — одна модалка за раз.
+  // v1.1.0: добавлена 'autoreply' (Phase 4.3) — правила автоответа.
   const [openPanel, setOpenPanel] = useState(null)
   const showTasks = openPanel === 'tasks'
   const showReminders = openPanel === 'reminders'
   const showActivity = openPanel === 'activity'
+  const showAutoReplyRules = openPanel === 'autoreply'
   const setShowTasks = useCallback((v) => setOpenPanel(v ? 'tasks' : null), [])
   const setShowReminders = useCallback((v) => setOpenPanel(v ? 'reminders' : null), [])
   const setShowActivity = useCallback((v) => setOpenPanel(v ? 'activity' : null), [])
+  const setShowAutoReplyRules = useCallback((v) => setOpenPanel(v ? 'autoreply' : null), [])
   const { tasks: tasksCount, reminders: remindersCount } = useAppCounters()
 
   const webviewRefs = useRef({})
@@ -671,6 +676,7 @@ export default function App() {
         showTasks={showTasks} setShowTasks={setShowTasks}
         showReminders={showReminders} setShowReminders={setShowReminders}
         showActivity={showActivity} setShowActivity={setShowActivity}
+        showAutoReplyRules={showAutoReplyRules} setShowAutoReplyRules={setShowAutoReplyRules}
         tasksCount={tasksCount} remindersCount={remindersCount}
       />
 
@@ -881,6 +887,11 @@ export default function App() {
         {showActivity && (
           <PanelModal title="📊 AI Activity" onClose={() => setShowActivity(false)} width={900}>
             <AIActivityDashboard />
+          </PanelModal>
+        )}
+        {showAutoReplyRules && (
+          <PanelModal title="🤖 Правила автоответа" onClose={() => setShowAutoReplyRules(false)} width={760}>
+            <AIAutoReplyRules />
           </PanelModal>
         )}
       </Suspense>
