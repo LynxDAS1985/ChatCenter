@@ -35,7 +35,7 @@
 | [changelog.md](./changelog.md) | Детальный лог изменений по коммитам (файлы, строки, что именно) |
 | [checkpoints.md](./checkpoints.md) | Чеклисты проверки для каждой фазы. **Главный workflow-файл.** |
 
-### Детализация по фазам
+### Детализация по фазам — ПЛАН (что задумывалось)
 
 | Файл | Что внутри |
 |---|---|
@@ -44,6 +44,21 @@
 | [phases/phase-2-permissions.md](./phases/phase-2-permissions.md) | Phase 2: Write actions + permission система + audit |
 | [phases/phase-3-agent-ui.md](./phases/phase-3-agent-ui.md) | Phase 3: UI агента (multi-turn, streaming, confirmations) |
 | [phases/phase-4-extensions.md](./phases/phase-4-extensions.md) | Phase 4: Tasks / Reminders / AI auto-reply / Ollama local |
+| [phases/phase-5-native-extension.md](./phases/phase-5-native-extension.md) | Phase 5: Native API для других мессенджеров |
+
+### 📘 Детализация по фазам — РЕАЛЬНАЯ РЕАЛИЗАЦИЯ (что сделано на самом деле)
+
+> **Главные файлы документации**: подробно описывают каждую фазу — что было сделано, зачем, как работает, какие потоки данных, подводные камни. Читать когда нужно понять конкретную доработку или найти причину поведения.
+
+| Файл | Версия | О чём |
+|---|---|---|
+| [phases/phase-0-notification-source-impl.md](./phases/phase-0-notification-source-impl.md) | v0.96.0 | **NotificationSource паспорт + Action Bus + cross-tab fix**. Унифицированный формат паспорта сообщения, frozen объект, listener в корне App.jsx (не в NativeApp), передача через IPC. |
+| [phases/phase-1-tools-impl.md](./phases/phase-1-tools.md) | v0.97.0 | **8 tools + 3 провайдера**. Tool Registry, JSON Schema 2020-12, handlers, Anthropic/OpenAI/DeepSeek/ГигаЧат adapters, executor с max iterations 10. |
+| [phases/phase-2-permissions-write-impl.md](./phases/phase-2-permissions-write-impl.md) | v0.98.0 | **Permission Guard + Write tools**. HARDCODED_CONFIRM_TOOLS, AIConfirmModal с 3-сек задержкой, scope check (только native), audit log JSONL. |
+| [phases/phase-3-agent-ui-impl.md](./phases/phase-3-agent-ui-impl.md) | v0.99.0+v0.99.1 | **«🤖 AI» кнопка + AISidebarAgent**. Кнопка в notification ribbon, streaming шагов через IPC events, deferred id для confirm. |
+| [phases/phase-4a-tasks-reminders-impl.md](./phases/phase-4a-tasks-reminders-impl.md) | v1.0.0 | **Tasks + Reminders + Activity Dashboard**. Persistent JSON store с atomic write, reminder scheduler (setTimeout), audit JSONL, 3 UI панели. |
+| [phases/phase-4b-ui-integration-impl.md](./phases/phase-4b-ui-integration-impl.md) | v1.0.1 | **UI интеграция Phase 4**. 3 иконки 📝 ⏰ 📊 в шапке TabBar, PanelModal обёртка, useAppCounters hook для badge, handleGoToSource. |
+| [phases/phase-4c-tdlib-real-backend-impl.md](./phases/phase-4c-tdlib-real-backend-impl.md) | v1.0.2 | **TDLib backend adapter**. aiAgentBackendAdapter — плоский интерфейс над tdlibBackend.messages.*. Добавлен messages.search через TDLib API. Реальная отправка/чтение/поиск (было — fallback). |
 
 ## 🔁 Порядок работы (workflow)
 

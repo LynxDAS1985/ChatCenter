@@ -80,7 +80,7 @@
 | IPC / каналы / контракты | [`.memory-bank/api.md`](.memory-bank/api.md) |
 | WebView / мессенджеры / DOM | [`.memory-bank/messengers.md`](.memory-bank/messengers.md) |
 | AI / промпты / провайдеры | [`.memory-bank/ai-integration.md`](.memory-bank/ai-integration.md) |
-| 🤖 **AI-агент** (планирование/реализация tool use + cross-tab notify + permissions) | [`.memory-bank/ai-agent-plan/README.md`](.memory-bank/ai-agent-plan/README.md) — **читать обязательно** перед задачами по AI-агенту, NotificationSource, Action Bus, tool use. Внутри: план 5 фаз + checkpoints workflow (без подтверждения юзера НЕ двигаться). |
+| 🤖 **AI-агент** (планирование/реализация tool use + cross-tab notify + permissions) | [`.memory-bank/ai-agent-plan/README.md`](.memory-bank/ai-agent-plan/README.md) — **читать обязательно** перед задачами по AI-агенту, NotificationSource, Action Bus, tool use. Внутри: план 5 фаз + checkpoints workflow + **подробная документация реальных реализаций по фазам** (`phases/phase-N-*-impl.md`) — что было сделано, зачем, как работает, потоки данных, ловушки. |
 | Автоответы | [`.memory-bank/autoreply.md`](.memory-bank/autoreply.md) |
 | UI / внешний вид | [`.memory-bank/ui-components.md`](.memory-bank/ui-components.md) |
 | Архитектурные причины старых решений | [`.memory-bank/decisions.md`](.memory-bank/decisions.md) |
