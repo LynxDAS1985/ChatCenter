@@ -40,6 +40,8 @@ import { initAutoReplyDispatcher } from './ai/autoReplyDispatcher.js'
 import { runAgentLoop } from './ai/aiToolExecutor.js'
 // v1.1.2: прямой append audit (без IPC).
 import { appendAuditRecord } from './handlers/auditIpcHandlers.js'
+// v1.1.3: multi-provider fallback.
+import { createCallProviderWithFallback } from './ai/aiProviderFallback.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
 // v0.91.0: WebContentsView откачен — Issue #44934/45367 (Windows 11 crash на addChildView).
 // import { initWebContentsViewIpcHandlers } from './handlers/webContentsViewIpcHandlers.js'
@@ -385,24 +387,36 @@ app.whenReady().then(() => {
           // v1.1.2: audit log запись прямо в файл audit-log/*.jsonl.
           appendAudit: (record) => { appendAuditRecord(record) },
           runAgent: async (params) => {
-            // v1.1.2: реальный callProvider через storage. Если provider не
-            // сконфигурен (нет apiKey / aiProvider) — runAgent вернёт
-            // ошибку provider_call_failed.
+            // v1.1.2 + v1.1.3: callProvider с multi-provider fallback.
+            // Активный provider — primary, остальные сконфигурованные — fallback chain.
             const settings = storage?.get('settings', {}) || {}
             const activeProvider = settings.aiProvider
             if (!activeProvider) {
               return { ok: false, error: 'no_active_provider', iterations: 0, audit: [] }
             }
+            // v1.1.3: chain = [active] + остальные провайдеры у которых есть apiKey.
+            // Порядок: active первый, остальные по алфавиту для стабильности.
+            const providerKeys = settings.aiProviderKeys || {}
+            const FALLBACK_ORDER = ['anthropic', 'openai', 'deepseek']  // не включаем gigachat (нет tool use)
+            const chain = [{ provider: activeProvider, model: settings.aiModel }]
+            for (const p of FALLBACK_ORDER) {
+              if (p === activeProvider) continue
+              const hasKey = providerKeys[p]?.apiKey
+              if (hasKey) chain.push({ provider: p })
+            }
+            const callProviderWithFallback = createCallProviderWithFallback({
+              baseCallProvider: callProviderFn,
+              getProviderChain: () => chain,
+              onFallback: (failed, next, err, action) => {
+                __slog(`[auto-reply] fallback ${failed}→${next || 'X'} action=${action} reason="${err?.message?.slice(0, 100) || ''}"`)
+              },
+            })
             return runAgentLoop({
               ...params,
               registry,
               handlerContext: getHandlerContext(),
-              callProvider: ({ messages, tools, signal }) => callProviderFn({
-                provider: activeProvider,
-                messages,
-                tools,
-                model: settings.aiModel,
-                signal,
+              callProvider: ({ messages, tools, signal }) => callProviderWithFallback({
+                messages, tools, signal,
               }),
             })
           },

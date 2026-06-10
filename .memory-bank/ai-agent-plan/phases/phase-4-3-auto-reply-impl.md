@@ -46,12 +46,32 @@
   - Опция «AI авто» в фильтре actor.
   - `actorColor(actor)` / `actorLabel(actor)` — helpers для цвета полоски + лейбла «⚡ AI авто».
 
-### 1.5 Что осталось (deferred v1.1.3+)
+### 1.5 Что сделано в v1.1.3 (hardening)
 
-- **Multi-provider fallback** — если Anthropic упал → попробовать OpenAI.
-- **Streaming ai_auto в AISidebar** — сейчас auto-reply работает тихо. Если открыт AISidebar — можно показывать прогресс.
-- **Per-rule analytics** — графики срабатываний по правилу за неделю/месяц.
-- **Smart cooldown** — учитывать когда юзер сам ответил (mark cooldown active).
+**Smart cooldown** — `autoReplyDispatcher.js`:
+- `markUserReplied(chatId, now)` — экспортируется + автоматически вызывается из processNewMessage при `isOutgoing=true`.
+- `_userRepliedAt: Map<chatId, ts>` — in-memory, default cooldown 10 минут (`USER_REPLY_COOLDOWN_MS`).
+- `canAutoReply` — 4-я проверка после loop_protection. Если юзер отвечал в этом чате за последние 10 мин → `reason: 'user_replied_recently'`.
+- Защита от race: AI 8 сек ждёт LLM → юзер сам ответил за 2 сек → AI шлёт дубль поверх юзера. Теперь — нет.
+
+**Multi-provider fallback** — новый `main/ai/aiProviderFallback.js`:
+- `createCallProviderWithFallback({baseCallProvider, getProviderChain, onFallback})` — обёртка.
+- `isFallbackWorthy(err)` — различает retry-worthy (network/HTTP 5xx/429/overloaded/socket/timeout) vs content errors (HTTP 400/401/403).
+- При worthy → пробует следующего провайдера в chain. При не-worthy → fail сразу.
+- `onFallback(failed, next, err, action)` для логирования.
+- main.js: chain = `[active] + остальные провайдеры с apiKey` в порядке anthropic/openai/deepseek (gigachat НЕ включён — нет tool use).
+- Один провайдер у юзера → нормальная работа без накладных (chain=[active], 1 итерация).
+- Два+ настроены → защита от Anthropic 503 / временного outage.
+
+**Тесты**: +22 (5 smart cooldown + 17 fallback). Всего 1446.
+
+### 1.6 Что осталось (deferred, необязательно для функциональности)
+
+| ⭐ | Что | Почему пропущено |
+|---|---|---|
+| ⭐⭐ | Streaming ai_auto в AISidebar | Auto-reply задуман **тихим**. Стриминг каждого ответа может раздражать. Нужна отдельная панель «лента авто-ответов», не общий sidebar. |
+| ⭐ | Per-rule analytics графики | Юзер видит matchedCount + lastMatchedAt уже сейчас в карточке правила. Графики требуют новой зависимости (chart.js) в bundle. |
+| ⭐ | Multi-account fan-out в search | Уже реализовано в v1.0.6 — параметр `fanOut: true` в search_messages tool. AI может использовать по запросу. |
 
 ---
 

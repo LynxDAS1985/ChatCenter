@@ -6,6 +6,7 @@ import {
   buildEngineMessage,
   processNewMessage,
   initAutoReplyDispatcher,
+  markUserReplied,
   _resetForTests,
   _internal,
 } from './autoReplyDispatcher.js'
@@ -13,6 +14,53 @@ import {
 beforeEach(() => { _resetForTests() })
 
 // ─── canAutoReply ───────────────────────────────────────────────────────────
+
+// ─── v1.1.3: smart cooldown (markUserReplied) ──────────────────────────────
+
+describe('markUserReplied + smart cooldown (v1.1.3)', () => {
+  it('после markUserReplied — canAutoReply возвращает user_replied_recently', () => {
+    const now = Date.now()
+    markUserReplied('chat_x', now)
+    expect(canAutoReply('chat_x', now + 1000).reason).toBe('user_replied_recently')
+  })
+
+  it('10 минут прошло после markUserReplied → можно снова', () => {
+    const now = Date.now()
+    markUserReplied('chat_x', now)
+    expect(canAutoReply('chat_x', now + 10 * 60 * 1000 + 1).ok).toBe(true)
+  })
+
+  it('markUserReplied не влияет на ДРУГИЕ чаты', () => {
+    const now = Date.now()
+    markUserReplied('chat_a', now)
+    expect(canAutoReply('chat_b', now + 1000).ok).toBe(true)
+  })
+
+  it('markUserReplied с пустым chatId — silent', () => {
+    expect(() => markUserReplied('', Date.now())).not.toThrow()
+    expect(() => markUserReplied(null, Date.now())).not.toThrow()
+  })
+
+  it('processNewMessage с outgoing → markUserReplied вызван (для будущих incoming)', async () => {
+    const rules = [{ id: 'r', enabled: true, triggers: { keywords: [], excludeOutgoing: true, schedule: { enabled: false }, excludeBots: true, excludeChannels: true }, action: { type: 'ai_reply' }, cooldownMinutes: 0 }]
+    const runAgent = vi.fn().mockResolvedValue({ ok: true })
+    const deps = { getRules: () => rules, runAgent }
+    const now = Date.now()
+    // Outgoing — markUserReplied должен сработать.
+    await processNewMessage(
+      { accountId: 'tg', chatId: 'chat_y', message: { id: '1', text: 'мой ответ', isOutgoing: true, senderId: 'me' } },
+      deps, now,
+    )
+    expect(_internal._userRepliedAt.get('chat_y')).toBe(now)
+    // Сразу incoming в тот же чат — должен быть skip из-за user_replied_recently
+    const r = await processNewMessage(
+      { accountId: 'tg', chatId: 'chat_y', message: { id: '2', text: 'нужен счёт', isOutgoing: false, senderId: 'other' } },
+      deps, now + 1000,
+    )
+    expect(r.reason).toBe('user_replied_recently')
+    expect(runAgent).not.toHaveBeenCalled()
+  })
+})
 
 describe('canAutoReply', () => {
   it('первый вызов → ok:true', () => {

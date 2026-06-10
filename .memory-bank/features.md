@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.2 (9 июня 2026)
+## Текущая версия: v1.1.3 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,16 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.3 — Phase 4.3 hardening: smart cooldown + multi-provider fallback
+
+**Smart cooldown** в `autoReplyDispatcher.js`: Map `_userRepliedAt: chatId → ts`, `markUserReplied()` срабатывает на `isOutgoing=true`. `canAutoReply` 4-я проверка — если юзер отвечал за 10 мин → skip. Защита от дубля когда AI 8 сек ждёт LLM а юзер сам ответил за 2 сек.
+
+**Multi-provider fallback** (новый `aiProviderFallback.js`): `createCallProviderWithFallback`. Chain = active + остальные провайдеры с apiKey. `isFallbackWorthy(err)` различает network/5xx/429 (retry) vs HTTP 4xx (fail). main.js строит chain в порядке anthropic/openai/deepseek. Один провайдер → без накладных. Два+ → защита от outage.
+
++22 теста (5 cooldown + 17 fallback). Всего 1446 ✅. Лимиты dispatcher 300→380, .vitest.js 400→500. Полная документация: [phase-4-3-auto-reply-impl.md](./ai-agent-plan/phases/phase-4-3-auto-reply-impl.md) (раздел v1.1.3).
 
 ---
 
@@ -207,40 +217,15 @@ PanelModal: `useEffect` с `window.keydown` listener → Esc вызывает on
 
 ---
 
-### v0.95.45 — Фикс «Перейти к чату» в уведомлениях для native режима
+### v0.95.45 — заархивирована
 
-Юзер: «кнопка "Перейти к чату" в native НЕ работает, в webview работает».
-
-Корень: [useNotifyNavigation.js:38-39](src/hooks/useNotifyNavigation.js) `webviewRefs.current['native_cc']=undefined → silent return`. Native не имел отдельного слушателя `notify:clicked`. nativeStoreIpc шлёт уведомления с `messengerId='native_cc'`, `chatTag=chatId`.
-
-Решение (2 файла):
-- [useNotifyNavigation.js](src/hooks/useNotifyNavigation.js): early return `if (messengerId === 'native_cc') return`.
-- [NativeApp.jsx](src/native/NativeApp.jsx): новый useEffect для `notify:clicked` native_cc → парсит chatTag (`accountId:rawId`) → `store.setActiveAccount + setActiveChat`.
-
-**Конфликты ✅**: webview hook не задет, mainWindow.show()+focus() в notifHandlers уже делается ПЕРЕД emit.
-**Граничные ✅**: chatTag null→return, без ':'→fallback без setActiveAccount, удалённый chatId→естественный fallback, идемпотентно.
-**Регрессия**: lint 0, vitest 1016/1016, fileSizeLimits 334/334, check-memory ✅.
+Фикс «Перейти к чату» для native режима. Детали: [archive/features-v0.95.45.md](./archive/features-v0.95.45.md).
 
 ---
 
-### v0.95.44 — Прогресс % загрузки файлов через TDLib updateFile
+### v0.95.44 — заархивирована
 
-Расширяет v0.95.43 (скрепка) — % загрузки больших файлов.
-
-- TDLib spec [`updateFile`](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1update_file.html): эмитится при изменении файла. `remote.uploaded_size / size + is_uploading_active/_completed`.
-- [tdlibClient.js](main/native/backends/tdlibClient.js) `'updateFile'` case **расширен** (download path v0.94.1 не задет): если `remote && size > 0 && (isActive || isCompleted)` → emit `'upload:progress'`.
-- [tdlibIpcBridge.js](main/native/tdlibIpcBridge.js): channel `'tg:upload-progress'`. **Throttle Math.floor(percent)** — emit только при изменении целого %.
-- [nativeStoreIpc.js](src/native/store/nativeStoreIpc.js): handler обновляет `state.uploads[fileId]`. `done` → удалить. **Auto-cleanup 60с** (orphan защита).
-- [useUploadProgress.js](src/native/hooks/useUploadProgress.js) NEW: агрегатный прогресс всех uploads.
-- [FilePreviewBar.jsx](src/native/components/FilePreviewBar.jsx): прогресс-bar 4px + текст «Загрузка... 5.2 МБ / 10.3 МБ». Кнопка показывает `{percent}%`.
-
-Эталоны: tweb appDownloadManager (throttle 1%), Discord upload bar.
-
-**Конфликты ✅**: file:update (v0.94.1) — отдельный emit, не задет. **Граничные ✅**: size=0/uploaded>total/без remote/cancel/parallel uploads.
-**Производительность**: throttle ~100/upload вместо ~100/сек.
-**Тесты** (+11): useUploadProgress +6 (агрегат/clamp/null), tdlibEmitContracts +3 (emit/done/skip), formatBytes +5.
-
-**Регрессия**: lint 0, vitest 1016/1016, fileSizeLimits 334/334, check-memory ✅.
+Прогресс % загрузки файлов через TDLib updateFile. Детали: [archive/features-v0.95.44.md](./archive/features-v0.95.44.md).
 
 ---
 

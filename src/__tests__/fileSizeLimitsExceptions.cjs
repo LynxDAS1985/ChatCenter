@@ -81,6 +81,15 @@ module.exports = {
     ceiling: 350,
     reason: 'v1.1.1: + autoConfirm + actor параметры для auto-reply integration (~25 строк). v1.0.4: + signal/confirmTimeoutMs/readRetryCount + runWithTimeout helper. Логически цельный agent loop — разбиение требует архитектурного шага.'
   },
+  // v1.1.3: + smart cooldown (markUserReplied + _userRepliedAt Map) + audit writeAudit
+  'main/ai/autoReplyDispatcher.js': {
+    ceiling: 380,
+    reason: 'v1.1.3: + smart cooldown (markUserReplied + _userRepliedAt). v1.1.2: + writeAudit helper. v1.1.1: + processNewMessage с 3 уровнями защиты, mark_read/ai_reply ветки. Логически цельный диспетчер — разбиение по уровням защиты возможно отдельно (v1.2+).'
+  },
+  'main/ai/autoReplyDispatcher.vitest.js': {
+    ceiling: 500,
+    reason: 'v1.1.3: +5 тестов smart cooldown. v1.1.2: +7 тестов master switch + audit. v1.1.1: 24 базовых теста. Один dispatcher — один test-файл.'
+  },
   // tdlibClient.js exception перенесён выше (см. v0.95.29 запись)
   // v0.89.33: snapshot readInboxMaxId для divider «Новые сообщения» (Telegram Desktop UX-стандарт)
   // добавил frozenReadCursorRef + сброс по viewKey + фиксация на ненулевом cursor (~15 строк к 596).

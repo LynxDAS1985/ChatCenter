@@ -26,10 +26,14 @@ import { findMatchingRules, describeRuleMatch } from './autoReplyEngine.js'
 const LOOP_PROTECTION_MS = 30 * 1000     // 30 секунд между ai_reply для того же chatId
 const GLOBAL_RATE_LIMIT_PER_MIN = 10     // max ai_reply per минуту глобально
 const RATE_LIMIT_WINDOW_MS = 60 * 1000
+// v1.1.3: smart cooldown — после ответа юзера AI молчит N минут в этом чате.
+const USER_REPLY_COOLDOWN_MS = 10 * 60 * 1000  // 10 минут
 
 let _deps = null
 const _lastReplyByChat = new Map()  // chatId → ts (последний ai_reply)
 const _recentReplies = []           // массив ts всех ai_reply за последнюю минуту
+// v1.1.3: chatId → ts последнего OUTGOING сообщения (юзер сам отправил).
+const _userRepliedAt = new Map()
 
 function trimRateLimit(now) {
   const cutoff = now - RATE_LIMIT_WINDOW_MS
@@ -40,7 +44,7 @@ function trimRateLimit(now) {
 
 /**
  * Проверить — можно ли auto-reply для этого chatId прямо сейчас.
- * Учитывает loop protection (per chat) + global rate limit.
+ * Учитывает loop protection (per chat) + global rate limit + smart cooldown (юзер сам ответил).
  * @returns {{ok: boolean, reason?: string}}
  */
 export function canAutoReply(chatId, now) {
@@ -53,7 +57,23 @@ export function canAutoReply(chatId, now) {
   if (lastTs && (now - lastTs) < LOOP_PROTECTION_MS) {
     return { ok: false, reason: 'chat_loop_protection' }
   }
+  // v1.1.3: smart cooldown — если юзер сам отвечал в этом чате за последние 10 мин,
+  // AI не должен дублировать его ответ. Без этого: AI 8 сек думает, а юзер
+  // за 2 сек написал — AI отвечает повторно поверх юзера.
+  const userTs = _userRepliedAt.get(chatId)
+  if (userTs && (now - userTs) < USER_REPLY_COOLDOWN_MS) {
+    return { ok: false, reason: 'user_replied_recently' }
+  }
   return { ok: true }
+}
+
+/**
+ * v1.1.3: пометить chatId как «юзер только что ответил» — для smart cooldown.
+ * Вызывается из manager.on('message:new') когда payload.message.isOutgoing=true.
+ */
+export function markUserReplied(chatId, now) {
+  if (!chatId) return
+  _userRepliedAt.set(chatId, now)
 }
 
 /**
@@ -128,8 +148,13 @@ export async function processNewMessage(payload, deps = _deps, now = Date.now())
   const msg = buildEngineMessage(payload)
   if (!msg) return { matched: 0, fired: 0, reason: 'invalid_payload' }
 
-  // Защита #1 — excludeOutgoing уже в engine, но также рано отсекаем здесь.
-  if (msg.isOutgoing) return { matched: 0, fired: 0, reason: 'outgoing' }
+  // v1.1.3: outgoing → помечаем для smart cooldown + рано выходим.
+  // excludeOutgoing в engine matchRule всё равно бы отсёк, но здесь мы ДО
+  // того + регистрируем факт что юзер ответил (нужно для следующих incoming).
+  if (msg.isOutgoing) {
+    markUserReplied(msg.chatId, now)
+    return { matched: 0, fired: 0, reason: 'outgoing' }
+  }
 
   // Получаем rules
   const rules = typeof deps.getRules === 'function' ? deps.getRules() : []
@@ -282,12 +307,15 @@ function writeAudit(deps, partial) {
 export function _resetForTests() {
   _lastReplyByChat.clear()
   _recentReplies.length = 0
+  _userRepliedAt.clear()
 }
 
 export const _internal = {
   LOOP_PROTECTION_MS,
   GLOBAL_RATE_LIMIT_PER_MIN,
   RATE_LIMIT_WINDOW_MS,
+  USER_REPLY_COOLDOWN_MS,
   _lastReplyByChat,
   _recentReplies,
+  _userRepliedAt,
 }
