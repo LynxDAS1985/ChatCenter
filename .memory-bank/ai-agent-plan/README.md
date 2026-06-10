@@ -30,6 +30,8 @@
 
 | Файл | Что внутри |
 |---|---|
+| **[phase-ai-bridge-plan.md](./phase-ai-bridge-plan.md)** ⭐ NEW | **План v1.2.0** — AI Bridge архитектура. Полный цикл клиент → AI → клиент. 33 ч работы, 11 этапов. ОЖИДАЕТ КОМАНДЫ ЮЗЕРА. |
+| **[phase-ai-bridge-providers.md](./phase-ai-bridge-providers.md)** ⭐ NEW | **Конкретные hook configs** для chat.openai.com / chat.deepseek.com / claude.ai / giga.chat. Селекторы DOM + правила обновления. |
 | **[current-state-v1.1.4.md](./current-state-v1.1.4.md)** ⭐ | **Текущая картина (v1.1.4)** — что готово, метрики, безопасность, потоки, файлы. **Читай ПЕРВЫМ после перерыва.** |
 | **[roadmap-deferred.md](./roadmap-deferred.md)** ⭐ | **Что отложено** — Phase 4.4 (Ollama), Phase 5 (другие мессенджеры), мелкие задачи. Чтобы вернуться позже. |
 | **[testing-checklist-v1.1.4.md](./testing-checklist-v1.1.4.md)** ⭐ | **Чек-лист ручного тестирования** — для проверки после релиза. |
