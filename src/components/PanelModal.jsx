@@ -1,7 +1,23 @@
 // v1.0.1: универсальная обёртка-модалка для панелей (Tasks/Reminders/AIActivity).
 // Overlay + header c title + ✕ + body слот.
+// v1.0.3: Esc для закрытия + блокировка скролла body пока модалка открыта.
+
+import { useEffect } from 'react'
 
 export default function PanelModal({ title, onClose, children, width = 720 }) {
+  // v1.0.3: Esc → onClose. Удаляем listener при unmount.
+  useEffect(() => {
+    if (typeof onClose !== 'function') return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    globalThis.window?.addEventListener('keydown', onKey)
+    return () => globalThis.window?.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
     <div
       onClick={onClose}

@@ -17,6 +17,9 @@ import * as gigachat from './adapters/gigachatAdapter.js'
 import { checkPermission } from './aiPermissionGuard.js'
 
 const DEFAULT_MAX_ITERATIONS = 10
+// v1.0.4: defaults для AI стабильности.
+const DEFAULT_CONFIRM_TIMEOUT_MS = 5 * 60 * 1000  // 5 минут — если юзер не реагирует, auto-deny
+const DEFAULT_READ_RETRY_COUNT = 1  // read-only tools — 1 ретрай при throw (read-only безопасно ретраить)
 
 /**
  * Сводный список adapters по provider id.
@@ -91,6 +94,10 @@ export async function runAgentLoop(params) {
     initialMessages,
     maxIterations = DEFAULT_MAX_ITERATIONS,
     onStep,
+    // v1.0.4: новые опции
+    signal,  // AbortSignal — если aborted, выходим из цикла
+    confirmTimeoutMs = DEFAULT_CONFIRM_TIMEOUT_MS,
+    readRetryCount = DEFAULT_READ_RETRY_COUNT,
   } = params
 
   if (!provider) return { ok: false, error: 'missing_provider', iterations: 0 }
@@ -111,12 +118,20 @@ export async function runAgentLoop(params) {
   let iterations = 0
 
   while (iterations < maxIterations) {
+    // v1.0.4: проверка abort signal на каждой итерации
+    if (signal?.aborted) {
+      return { ok: false, error: 'aborted', iterations, audit }
+    }
     iterations++
 
     let response
     try {
-      response = await callProvider({ messages, tools, provider })
+      response = await callProvider({ messages, tools, provider, signal })
     } catch (e) {
+      // v1.0.4: AbortError — отдельный кейс (не path → выходим тихо)
+      if (e?.name === 'AbortError' || signal?.aborted) {
+        return { ok: false, error: 'aborted', iterations, audit }
+      }
       return { ok: false, error: `provider_call_failed: ${e?.message || e}`, iterations, audit }
     }
 
@@ -155,20 +170,24 @@ export async function runAgentLoop(params) {
       if (permCheck.requiresConfirm) {
         // Phase 2: запрос подтверждения у юзера через onConfirmRequest callback.
         if (typeof params.onConfirmRequest === 'function') {
-          let confirmResult
-          try {
-            confirmResult = await params.onConfirmRequest({
+          // v1.0.4: confirm timeout — auto-deny если юзер не среагировал за N мс.
+          // Защита от зависшего агента (юзер ушёл, модалка висит — loop держит ресурсы).
+          const confirmResult = await runWithTimeout(
+            () => params.onConfirmRequest({
               toolId: tc.name,
               source,
               args: tc.input,
               tier: permCheck.tier,
-            })
-          } catch (e) {
-            confirmResult = { confirmed: false, error: e?.message || 'confirm_threw' }
-          }
+              signal,
+            }),
+            confirmTimeoutMs,
+            'confirm_timeout',
+            signal,
+          )
           if (!confirmResult || !confirmResult.confirmed) {
-            const err = { ok: false, error: 'denied_by_user' }
-            audit.push({ toolUseId: tc.id, name: tc.name, result: err, permissionResult: 'denied_by_user' })
+            const reason = confirmResult?.error === 'confirm_timeout' ? 'confirm_timeout' : 'denied_by_user'
+            const err = { ok: false, error: reason }
+            audit.push({ toolUseId: tc.id, name: tc.name, result: err, permissionResult: reason })
             return { id: tc.id, name: tc.name, result: err }
           }
           // Юзер мог отредактировать args (например текст ответа)
@@ -184,16 +203,29 @@ export async function runAgentLoop(params) {
 
       onStep?.({ type: 'tool_call', name: tc.name, input: tc.input })
 
-      try {
-        const result = await def.handler(source, tc.input, handlerContext)
-        audit.push({ toolUseId: tc.id, name: tc.name, result })
-        onStep?.({ type: 'tool_result', name: tc.name, result })
-        return { id: tc.id, name: tc.name, result }
-      } catch (e) {
-        const errResult = { ok: false, error: e?.message || 'handler_threw' }
-        audit.push({ toolUseId: tc.id, name: tc.name, result: errResult })
-        return { id: tc.id, name: tc.name, result: errResult }
+      // v1.0.4: re-try только для read-only tools (idempotent). Write tools
+      // (reply/markAsRead) НЕ ретраить — риск дубля сообщения / повторной отметки.
+      const isRetryable = def.category === 'reading' && readRetryCount > 0
+      const maxAttempts = isRetryable ? 1 + readRetryCount : 1
+      let result, lastErr
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (signal?.aborted) {
+          result = { ok: false, error: 'aborted' }
+          break
+        }
+        try {
+          result = await def.handler(source, tc.input, handlerContext)
+          if (result?.ok || !isRetryable) break  // успех или не retry-able → выходим
+          lastErr = result
+        } catch (e) {
+          lastErr = { ok: false, error: e?.message || 'handler_threw' }
+          if (attempt === maxAttempts) result = lastErr
+        }
       }
+      if (!result) result = lastErr || { ok: false, error: 'unknown_handler_failure' }
+      audit.push({ toolUseId: tc.id, name: tc.name, result, attempts: maxAttempts })
+      onStep?.({ type: 'tool_result', name: tc.name, result })
+      return { id: tc.id, name: tc.name, result }
     }))
 
     // Сформировать tool_result messages для AI
@@ -219,3 +251,37 @@ export async function runAgentLoop(params) {
 
   return { ok: false, error: 'max_iterations_reached', iterations, audit }
 }
+
+/**
+ * v1.0.4: Promise.race с таймаутом + поддержкой AbortSignal.
+ * @returns {Promise} либо результат fnPromise(), либо `{confirmed: false, error: timeoutError}`.
+ */
+async function runWithTimeout(fn, timeoutMs, timeoutError, signal) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    // Без timeout — обычный await
+    try { return await fn() } catch (e) { return { confirmed: false, error: e?.message || 'threw' } }
+  }
+  let timer
+  const timeoutPromise = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ confirmed: false, error: timeoutError }), timeoutMs)
+  })
+  const abortPromise = signal
+    ? new Promise((resolve) => {
+        signal.addEventListener('abort', () => resolve({ confirmed: false, error: 'aborted' }), { once: true })
+      })
+    : null
+  const racers = [
+    Promise.resolve()
+      .then(() => fn())
+      .catch((e) => ({ confirmed: false, error: e?.message || 'threw' })),
+    timeoutPromise,
+  ]
+  if (abortPromise) racers.push(abortPromise)
+  try {
+    return await Promise.race(racers)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export const _internal = { runWithTimeout, DEFAULT_CONFIRM_TIMEOUT_MS, DEFAULT_READ_RETRY_COUNT }

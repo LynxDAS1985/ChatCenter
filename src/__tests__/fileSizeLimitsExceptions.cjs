@@ -71,6 +71,11 @@ module.exports = {
     ceiling: 500,
     reason: 'v0.95.44: +3 теста tg:upload-progress (updateFile bridge с throttle). v0.95.38: +2 теста tg:send-succeeded bridge. Один файл — emit-direction IPC контракт-тесты для всех manager events.'
   },
+  // v1.0.4: +13 тестов AbortSignal/confirmTimeout/readRetry/runWithTimeout в aiToolExecutor.
+  'main/ai/aiToolExecutor.vitest.js': {
+    ceiling: 650,
+    reason: 'v1.0.4: +13 unit-тестов на AbortSignal + confirm timeout + read retry + runWithTimeout helper (~230 строк). Один executor covered одним test-файлом. Разбивать по доменам — плановый шаг после Phase 4.4.'
+  },
   // tdlibClient.js exception перенесён выше (см. v0.95.29 запись)
   // v0.89.33: snapshot readInboxMaxId для divider «Новые сообщения» (Telegram Desktop UX-стандарт)
   // добавил frozenReadCursorRef + сброс по viewKey + фиксация на ненулевом cursor (~15 строк к 596).

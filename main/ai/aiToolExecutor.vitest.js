@@ -357,3 +357,234 @@ describe('runAgentLoop — границы', () => {
     expect(r.error).toMatch(/provider_call_failed/)
   })
 })
+
+// v1.0.4: AbortSignal + confirm timeout + read-only re-try.
+describe('runAgentLoop — v1.0.4 stability', () => {
+  it('AbortSignal aborted ДО старта → возвращает {error:aborted, iterations:0}', async () => {
+    const registry = makeRegistry()
+    const callProvider = vi.fn()
+    const ac = new AbortController()
+    ac.abort()
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [], signal: ac.signal,
+    })
+    expect(r.error).toBe('aborted')
+    expect(callProvider).not.toHaveBeenCalled()
+  })
+
+  it('AbortSignal — провайдер throws AbortError → выходим тихо', async () => {
+    const registry = makeRegistry()
+    const callProvider = vi.fn(async () => { const e = new Error('aborted'); e.name = 'AbortError'; throw e })
+    const ac = new AbortController()
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [], signal: ac.signal,
+    })
+    expect(r.error).toBe('aborted')
+    expect(r.iterations).toBe(1)
+  })
+
+  it('confirm timeout — onConfirmRequest зависает >timeout → confirm_timeout в audit', async () => {
+    const registry = makeRegistry()
+    registry.register('mark_as_read', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => ({ ok: true }),
+      permission: 'confirm',
+      description: 'mark',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'mark_as_read', input: {} }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+    const onConfirmRequest = vi.fn(() => new Promise(() => {}))  // зависает навсегда
+
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      onConfirmRequest,
+      confirmTimeoutMs: 50,  // 50мс для быстрого теста
+    })
+
+    expect(r.ok).toBe(true)
+    expect(r.audit[0].result.error).toBe('confirm_timeout')
+    expect(r.audit[0].permissionResult).toBe('confirm_timeout')
+  })
+
+  it('confirm timeout=0 (off) — ждёт до конца', async () => {
+    const registry = makeRegistry()
+    registry.register('mark_as_read', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => ({ ok: true }),
+      permission: 'confirm',
+      description: 'mark',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'mark_as_read', input: {} }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+    const onConfirmRequest = vi.fn(async () => ({ confirmed: true }))
+
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      onConfirmRequest,
+      confirmTimeoutMs: 0,  // off
+    })
+
+    expect(r.ok).toBe(true)
+    expect(r.audit[0].result.ok).toBe(true)
+  })
+
+  it('read-only retry — handler первый раз падает, второй раз ок → success', async () => {
+    const registry = createToolRegistry()
+    let handlerCalls = 0
+    registry.register('get_chat_history', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => {
+        handlerCalls++
+        if (handlerCalls === 1) throw new Error('transient_error')
+        return { ok: true, result: { messages: [] } }
+      },
+      permission: 'auto',
+      category: 'reading',  // ВАЖНО — только reading ретраится
+      description: 'get history',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'get_chat_history', input: {} }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      readRetryCount: 1,
+    })
+
+    expect(r.ok).toBe(true)
+    expect(handlerCalls).toBe(2)  // первый throw + второй успех
+    expect(r.audit[0].result.ok).toBe(true)
+    expect(r.audit[0].attempts).toBe(2)
+  })
+
+  it('non-reading tool НЕ ретраится при throw (writing/navigation опасно)', async () => {
+    const registry = createToolRegistry()
+    let handlerCalls = 0
+    // Используем известный tool 'goto_message' (Permission Guard: default auto).
+    // category=navigation — Не reading → не ретраится.
+    registry.register('goto_message', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => {
+        handlerCalls++
+        throw new Error('send_failed')
+      },
+      permission: 'auto',
+      category: 'navigation',  // НЕ reading → НЕ retry
+      description: 'goto',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'goto_message', input: {} }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      readRetryCount: 3,  // даже с большим retryCount — не должен ретраить writing
+    })
+
+    expect(handlerCalls).toBe(1)  // только один раз
+    expect(r.audit[0].result.ok).toBe(false)
+  })
+
+  it('readRetryCount=0 → нет ретраев даже для reading', async () => {
+    const registry = createToolRegistry()
+    let handlerCalls = 0
+    registry.register('get_chat_history', {
+      schema: { type: 'object', properties: {} },
+      handler: async () => { handlerCalls++; throw new Error('fail') },
+      permission: 'auto',
+      category: 'reading',
+      description: 'get',
+    })
+    let call = 0
+    const callProvider = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'get_chat_history', input: {} }] }
+      }
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    })
+
+    const r = await runAgentLoop({
+      source: SOURCE, provider: 'anthropic', registry, callProvider,
+      handlerContext: {}, initialMessages: [],
+      readRetryCount: 0,
+    })
+
+    expect(handlerCalls).toBe(1)
+    expect(r.audit[0].result.error).toBe('fail')
+  })
+})
+
+import { _internal } from './aiToolExecutor.js'
+
+describe('runWithTimeout helper (v1.0.4)', () => {
+  it('успех до таймаута → возвращает результат', async () => {
+    const r = await _internal.runWithTimeout(
+      () => Promise.resolve({ confirmed: true }),
+      1000, 'timeout', null,
+    )
+    expect(r.confirmed).toBe(true)
+  })
+
+  it('зависает > timeout → возвращает {confirmed:false, error:timeout}', async () => {
+    const r = await _internal.runWithTimeout(
+      () => new Promise(() => {}),
+      30, 'my_timeout', null,
+    )
+    expect(r).toEqual({ confirmed: false, error: 'my_timeout' })
+  })
+
+  it('throw → {confirmed:false, error}', async () => {
+    const r = await _internal.runWithTimeout(
+      () => { throw new Error('boom') },
+      1000, 'timeout', null,
+    )
+    expect(r).toEqual({ confirmed: false, error: 'boom' })
+  })
+
+  it('timeoutMs=0 → без timeout, ждём результат', async () => {
+    const r = await _internal.runWithTimeout(
+      () => Promise.resolve({ confirmed: true, x: 1 }),
+      0, 'timeout', null,
+    )
+    expect(r.confirmed).toBe(true)
+  })
+
+  it('AbortSignal aborted → {confirmed:false, error:aborted}', async () => {
+    const ac = new AbortController()
+    setTimeout(() => ac.abort(), 20)
+    const r = await _internal.runWithTimeout(
+      () => new Promise(() => {}),
+      1000, 'timeout', ac.signal,
+    )
+    expect(r.error).toBe('aborted')
+  })
+})

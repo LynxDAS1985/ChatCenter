@@ -160,9 +160,14 @@ export default function App() {
   const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
   const [activeNativeAccountId, setActiveNativeAccountId] = useState(null)
   // v1.0.1: модалки Phase 4 — Задачи / Напоминания / AI Activity.
-  const [showTasks, setShowTasks] = useState(false)
-  const [showReminders, setShowReminders] = useState(false)
-  const [showActivity, setShowActivity] = useState(false)
+  // v1.0.3: mutually-exclusive — одна модалка за раз. openPanel('tasks'|'reminders'|'activity'|null).
+  const [openPanel, setOpenPanel] = useState(null)
+  const showTasks = openPanel === 'tasks'
+  const showReminders = openPanel === 'reminders'
+  const showActivity = openPanel === 'activity'
+  const setShowTasks = useCallback((v) => setOpenPanel(v ? 'tasks' : null), [])
+  const setShowReminders = useCallback((v) => setOpenPanel(v ? 'reminders' : null), [])
+  const setShowActivity = useCallback((v) => setOpenPanel(v ? 'activity' : null), [])
   const { tasks: tasksCount, reminders: remindersCount } = useAppCounters()
 
   const webviewRefs = useRef({})
@@ -263,9 +268,7 @@ export default function App() {
   // (тот же путь что и для notify:clicked). Для webview мессенджеров пока silent skip.
   const handleGoToSource = useCallback((source) => {
     if (!source) return
-    setShowTasks(false)
-    setShowReminders(false)
-    setShowActivity(false)
+    setOpenPanel(null)  // v1.0.3: единая точка закрытия любой панели
     if (source.messengerId === NATIVE_CC_ID) {
       setActiveId(NATIVE_CC_ID)
       setPendingNativeNotify({ ...source })
