@@ -54,9 +54,11 @@ export default function AIActivityDashboard() {
 
   useEffect(() => { reload() }, [reload])
 
+  // v1.1.2: разделение ai (ручной) vs ai_auto (auto-reply правило)
   const stats = {
     total: records.length,
     aiActions: records.filter(r => r.actor === 'ai').length,
+    aiAutoActions: records.filter(r => r.actor === 'ai_auto').length,
     userActions: records.filter(r => r.actor === 'user').length,
     errors: records.filter(r => r.executionResult === 'error').length,
   }
@@ -68,7 +70,8 @@ export default function AIActivityDashboard() {
       {/* Статистика */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <StatCard label="Всего" value={stats.total} />
-        <StatCard label="AI действий" value={stats.aiActions} color="#a855f7" />
+        <StatCard label="AI (ручной)" value={stats.aiActions} color="#a855f7" />
+        <StatCard label="AI авто" value={stats.aiAutoActions} color="#f97316" />
         <StatCard label="Юзер" value={stats.userActions} color="#22c55e" />
         <StatCard label="Ошибок" value={stats.errors} color="#ef4444" />
         <StatCard label="Можно откатить" value={revertable.length} color="#eab308" />
@@ -82,7 +85,8 @@ export default function AIActivityDashboard() {
           style={selectStyle()}
         >
           <option value="all">Все актёры</option>
-          <option value="ai">Только AI</option>
+          <option value="ai">AI (ручной)</option>
+          <option value="ai_auto">AI авто</option>
           <option value="user">Только юзер</option>
         </select>
         <select
@@ -114,7 +118,7 @@ export default function AIActivityDashboard() {
               padding: 10,
               background: 'var(--cc-panel, #1a1a1a)',
               border: '1px solid var(--cc-border, #333)',
-              borderLeft: `3px solid ${r.actor === 'ai' ? '#a855f7' : '#22c55e'}`,
+              borderLeft: `3px solid ${actorColor(r.actor)}`,
               borderRadius: 6,
               fontSize: 13,
             }}
@@ -125,10 +129,10 @@ export default function AIActivityDashboard() {
                 <span style={{ fontWeight: 600 }}>{ACTION_LABELS[r.actionId] || r.actionId}</span>
                 <span style={{
                   fontSize: 10, padding: '2px 6px', borderRadius: 4,
-                  background: r.actor === 'ai' ? '#a855f733' : '#22c55e33',
-                  color: r.actor === 'ai' ? '#c084fc' : '#4ade80',
+                  background: actorColor(r.actor) + '33',
+                  color: actorColor(r.actor),
                 }}>
-                  {r.actor === 'ai' ? 'AI' : 'юзер'}
+                  {actorLabel(r.actor)}
                 </span>
               </div>
               <span style={{ fontSize: 11, color: 'var(--cc-text-dim, #888)' }}>
@@ -156,6 +160,18 @@ export default function AIActivityDashboard() {
       </div>
     </div>
   )
+}
+
+// v1.1.2: цвет полоски + лейбл badge по actor.
+function actorColor(actor) {
+  if (actor === 'ai_auto') return '#f97316'  // оранжевый — AI авто
+  if (actor === 'ai') return '#a855f7'        // фиолетовый — AI ручной
+  return '#22c55e'                            // зелёный — user (default)
+}
+function actorLabel(actor) {
+  if (actor === 'ai_auto') return '⚡ AI авто'
+  if (actor === 'ai') return '🤖 AI'
+  return '👤 юзер'
 }
 
 function StatCard({ label, value, color }) {

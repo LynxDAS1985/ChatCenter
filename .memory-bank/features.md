@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.1 (9 июня 2026)
+## Текущая версия: v1.1.2 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,18 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.2 — Phase 4.3 финал: реальный AI provider + master switch + audit + actor split
+
+В v1.1.1 dispatcher работал, но `callProvider: null` → ai_reply падал. v1.1.2 — реальная AI отправка + 3 UX-фичи.
+
+`main.js` dispatcher.runAgent читает `settings.aiProvider/aiModel` из storage на КАЖДЫЙ запрос (свежие настройки) и оборачивает callProviderFn. Master switch `settings.aiAutoReplyMasterEnabled` (default true) проверяется ПЕРВЫМ в processNewMessage до загрузки rules. UI master switch в AIAutoReplyRules.jsx — зелёная/красная панель + кнопка. Audit log: `appendAuditRecord` export (без IPC) — для mark_read 1 entry, для ai_reply per-tool + summary с iterations, все actor='ai_auto'+ruleId/ruleName. AIActivityDashboard: новая категория «AI авто» (#f97316), фильтр actor=ai_auto, actorColor/actorLabel helpers.
+
++7 тестов dispatcher (master + audit). Всего 1423 ✅. Лимит renderer 26000→26200.
+
+Полная документация: [phase-4-3-auto-reply-impl.md](./ai-agent-plan/phases/phase-4-3-auto-reply-impl.md).
 
 ---
 

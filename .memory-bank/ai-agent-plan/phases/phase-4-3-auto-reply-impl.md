@@ -30,10 +30,28 @@
 2. `rule.cooldownMinutes` (default 60 мин) — между срабатываниями того же rule.
 3. Dispatcher loop protection: 30 сек между ai_reply для одного chatId + global rate limit 10 в минуту.
 
-### 1.4 Что осталось (deferred v1.1.2)
-- **callProvider integration**: dispatcher запускает runAgent с `callProvider: null` — фактическая AI работа не происходит до конфигурации провайдера в renderer. Нужно: пробросить provider+apiKey из settings.ai в main и в dispatcher.
-- **Audit streaming в renderer**: actor='ai_auto' уже идёт в audit log, но AIActivityDashboard может не различать UI-инициированные vs auto.
-- **UI «выкл/вкл все правила»** — глобальный switch в Settings.
+### 1.4 Что сделано в v1.1.2
+
+**Phase 4.3 полностью функциональна**:
+
+- **Реальный callProvider**: `main/main.js` dispatcher.runAgent на каждый вызов читает `storage.get('settings').aiProvider` + `aiModel` и оборачивает `callProviderFn` (тот же что для UI агента). API ключ читается из storage в момент вызова — всегда свежий. Если provider не задан → `{ok:false, error:'no_active_provider'}` без crash.
+- **Master switch**: settings.aiAutoReplyMasterEnabled (default true). `dispatcher.processNewMessage` проверяет ПЕРВЫМ — до загрузки rules. Если false → `{reason: 'master_disabled'}`. Экономит работу и даёт явный лог.
+- **UI master switch** в `AIAutoReplyRules.jsx`: зелёная/красная панель сверху + кнопка «🔴 Выключить всё / 🟢 Включить». Optimistic update + откат при IPC failure.
+- **Audit log integration**: dispatcher пишет через `appendAuditRecord` (новый export из `auditIpcHandlers.js`, без IPC round-trip — прямой fs append).
+  - Для `mark_read` — 1 entry: actor='ai_auto', actionId='mark_as_read', ruleId, ruleName, executionResult, durationMs.
+  - Для `ai_reply` — per-tool entries (по одной за каждый tool call из `r.audit`) + 1 summary entry (`actionId='ai_reply_summary'` + iterations).
+  - Если appendAudit throws (disk full и т.п.) → silent — dispatcher не падает.
+- **AIActivityDashboard** в renderer:
+  - Новая категория «AI авто» в статистике (color `#f97316` оранжевый).
+  - Опция «AI авто» в фильтре actor.
+  - `actorColor(actor)` / `actorLabel(actor)` — helpers для цвета полоски + лейбла «⚡ AI авто».
+
+### 1.5 Что осталось (deferred v1.1.3+)
+
+- **Multi-provider fallback** — если Anthropic упал → попробовать OpenAI.
+- **Streaming ai_auto в AISidebar** — сейчас auto-reply работает тихо. Если открыт AISidebar — можно показывать прогресс.
+- **Per-rule analytics** — графики срабатываний по правилу за неделю/месяц.
+- **Smart cooldown** — учитывать когда юзер сам ответил (mark cooldown active).
 
 ---
 

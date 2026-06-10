@@ -21,11 +21,36 @@ const DAYS = [
 export default function AIAutoReplyRules() {
   const [rules, setRules] = useState([])
   const [editing, setEditing] = useState(null)  // { id, ... } или 'new'
+  // v1.1.2: master switch — глобальный kill-switch для всех правил.
+  // Хранится в settings.aiAutoReplyMasterEnabled. По умолчанию true.
+  const [masterEnabled, setMasterEnabled] = useState(true)
+  const [masterLoaded, setMasterLoaded] = useState(false)
 
   const reload = useCallback(async () => {
     const r = await listRules()
     if (r?.ok) setRules(r.rules || [])
   }, [])
+
+  // v1.1.2: загрузка master switch из settings.
+  useEffect(() => {
+    if (!globalThis.window?.api?.invoke) return
+    globalThis.window.api.invoke('settings:get').then(s => {
+      setMasterEnabled(s?.aiAutoReplyMasterEnabled !== false)
+      setMasterLoaded(true)
+    }).catch(() => setMasterLoaded(true))
+  }, [])
+
+  const handleMasterToggle = async () => {
+    if (!globalThis.window?.api?.invoke) return
+    const next = !masterEnabled
+    setMasterEnabled(next)  // оптимистично
+    try {
+      const s = await globalThis.window.api.invoke('settings:get')
+      await globalThis.window.api.invoke('settings:save', { ...(s || {}), aiAutoReplyMasterEnabled: next })
+    } catch (_) {
+      setMasterEnabled(!next)  // откат при ошибке
+    }
+  }
 
   useEffect(() => { reload() }, [reload])
 
@@ -77,6 +102,40 @@ export default function AIAutoReplyRules() {
           }}
         >+ Новое правило</button>
       </div>
+
+      {/* v1.1.2: master switch — kill-switch для всех правил. */}
+      {masterLoaded && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 12, marginBottom: 12, padding: '10px 14px',
+          background: masterEnabled ? '#22c55e15' : '#ef444415',
+          border: `1px solid ${masterEnabled ? '#22c55e55' : '#ef444455'}`,
+          borderRadius: 8,
+        }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>
+              {masterEnabled ? '🟢 Авто-ответ ВКЛ' : '🔴 Авто-ответ ВЫКЛ'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--cc-text-dim, #888)', marginTop: 2 }}>
+              {masterEnabled
+                ? 'Все включённые правила могут срабатывать на входящие сообщения.'
+                : 'Все правила заблокированы. Ни одно не сработает, даже если включено.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleMasterToggle}
+            style={{
+              padding: '8px 16px', fontSize: 12, fontWeight: 600,
+              background: masterEnabled ? '#ef4444' : '#22c55e', color: '#fff',
+              border: 'none', borderRadius: 6, cursor: 'pointer',
+              minWidth: 130,
+            }}
+          >
+            {masterEnabled ? '🔴 Выключить всё' : '🟢 Включить'}
+          </button>
+        </div>
+      )}
 
       <div style={{ fontSize: 12, color: 'var(--cc-text-dim, #888)', marginBottom: 12 }}>
         AI автоматически отвечает когда подходит правило (триггеры + расписание + cooldown).

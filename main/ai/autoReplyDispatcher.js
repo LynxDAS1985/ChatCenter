@@ -117,6 +117,14 @@ export function initAutoReplyDispatcher(deps) {
  */
 export async function processNewMessage(payload, deps = _deps, now = Date.now()) {
   if (!deps) return { matched: 0, fired: 0, reason: 'no_deps' }
+
+  // v1.1.2: master switch — глобальный kill-switch. Проверяется ПЕРВЫМ
+  // (до загрузки сообщения и rules) — экономит работу + чётко видно
+  // в логах что причина "master_disabled".
+  if (typeof deps.isMasterEnabled === 'function' && !deps.isMasterEnabled()) {
+    return { matched: 0, fired: 0, reason: 'master_disabled' }
+  }
+
   const msg = buildEngineMessage(payload)
   if (!msg) return { matched: 0, fired: 0, reason: 'invalid_payload' }
 
@@ -170,6 +178,7 @@ export async function processNewMessage(payload, deps = _deps, now = Date.now())
     if (typeof deps.handlerContext?.markAsRead !== 'function') {
       return { matched: matched.length, fired: 0, reason: 'no_markAsRead' }
     }
+    const t0 = now
     try {
       const r = await deps.handlerContext.markAsRead({
         accountId: payload.accountId,
@@ -177,8 +186,24 @@ export async function processNewMessage(payload, deps = _deps, now = Date.now())
         upToMessageId: msg.messageId,
       })
       if (typeof deps.markMatched === 'function') deps.markMatched(rule.id)
+      // v1.1.2: audit entry для auto-mark_read.
+      writeAudit(deps, {
+        actor: 'ai_auto',
+        actionId: 'mark_as_read',
+        ruleId: rule.id,
+        ruleName: rule.name,
+        source,
+        executionResult: r?.ok ? 'ok' : 'error',
+        errorMessage: r?.error,
+        durationMs: Date.now() - t0,
+      })
       return { matched: matched.length, fired: 1, action: 'mark_read', ruleId: rule.id, result: r, ...desc }
     } catch (e) {
+      writeAudit(deps, {
+        actor: 'ai_auto', actionId: 'mark_as_read',
+        ruleId: rule.id, ruleName: rule.name, source,
+        executionResult: 'error', errorMessage: e?.message,
+      })
       return { matched: matched.length, fired: 0, error: e?.message }
     }
   }
@@ -192,6 +217,7 @@ export async function processNewMessage(payload, deps = _deps, now = Date.now())
     const userPrompt = hint
       ? `Юзер настроил правило автоответа для этого чата. Подсказка: "${hint}".\nОтветь клиенту по контексту переписки и подсказке. Используй reply_to_message tool.`
       : 'Юзер настроил auto-reply правило для этого чата. Ответь клиенту по контексту переписки. Используй reply_to_message tool.'
+    const t0 = now
     try {
       const r = await deps.runAgent({
         source,
@@ -200,13 +226,54 @@ export async function processNewMessage(payload, deps = _deps, now = Date.now())
         initialMessages: [{ role: 'user', content: userPrompt }],
       })
       if (typeof deps.markMatched === 'function') deps.markMatched(rule.id)
+      // v1.1.2: audit для каждого tool из runAgent.audit + summary entry.
+      if (Array.isArray(r?.audit)) {
+        for (const entry of r.audit) {
+          writeAudit(deps, {
+            actor: 'ai_auto',
+            actionId: entry.name,
+            ruleId: rule.id,
+            ruleName: rule.name,
+            source,
+            executionResult: entry.result?.ok ? 'ok' : (entry.permissionResult || 'error'),
+            errorMessage: entry.result?.error,
+            output: entry.result,
+          })
+        }
+      }
+      writeAudit(deps, {
+        actor: 'ai_auto', actionId: 'ai_reply_summary',
+        ruleId: rule.id, ruleName: rule.name, source,
+        executionResult: r?.ok ? 'ok' : 'error',
+        errorMessage: r?.error,
+        durationMs: Date.now() - t0,
+        iterations: r?.iterations,
+      })
       return { matched: matched.length, fired: 1, action: 'ai_reply', ruleId: rule.id, result: r, ...desc }
     } catch (e) {
+      writeAudit(deps, {
+        actor: 'ai_auto', actionId: 'ai_reply_summary',
+        ruleId: rule.id, ruleName: rule.name, source,
+        executionResult: 'error', errorMessage: e?.message,
+      })
       return { matched: matched.length, fired: 0, error: e?.message }
     }
   }
 
   return { matched: matched.length, fired: 0, reason: 'unknown_action' }
+}
+
+// v1.1.2: запись audit entry. Использует deps.appendAudit если задан,
+// иначе molчаливо пропускает (тесты без audit).
+function writeAudit(deps, partial) {
+  if (typeof deps?.appendAudit !== 'function') return
+  try {
+    deps.appendAudit({
+      id: 'audit_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      timestamp: Date.now(),
+      ...partial,
+    })
+  } catch (_) { /* never block dispatcher on audit failure */ }
 }
 
 /**

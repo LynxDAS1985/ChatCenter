@@ -149,4 +149,16 @@ export function initAuditIpcHandlers(deps) {
   })
 }
 
+// v1.1.2: экспорт для использования main-side (без IPC round-trip).
+// dispatcher.processNewMessage пишет audit entries после auto-reply.
+export function appendAuditRecord(record) {
+  if (!record || typeof record !== 'object') return false
+  try {
+    appendRecord(record)
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
 export const _internal = { getMonthFile, getAuditDir }

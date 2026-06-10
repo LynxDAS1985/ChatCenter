@@ -139,6 +139,24 @@ describe('processNewMessage', () => {
     expect(r.reason).toBe('no_deps')
   })
 
+  // v1.1.2: master switch
+  it('master switch выключен → reason:master_disabled (rules даже не читаются)', async () => {
+    const getRules = vi.fn().mockReturnValue([makeRule()])
+    const deps = { getRules, runAgent: vi.fn(), isMasterEnabled: () => false }
+    const r = await processNewMessage(basePayload(), deps, NOW)
+    expect(r.reason).toBe('master_disabled')
+    expect(r.fired).toBe(0)
+    expect(getRules).not.toHaveBeenCalled()  // rules даже не запрошены
+  })
+
+  it('master switch включен или не задан → нормальный flow', async () => {
+    const rules = [makeRule()]
+    const runAgent = vi.fn().mockResolvedValue({ ok: true })
+    const deps = { getRules: () => rules, runAgent, isMasterEnabled: () => true }
+    const r = await processNewMessage(basePayload(), deps, NOW)
+    expect(r.fired).toBe(1)
+  })
+
   it('outgoing → reason:outgoing (защита #1, без вызова rules)', async () => {
     const getRules = vi.fn().mockReturnValue([makeRule()])
     const deps = { getRules, runAgent: vi.fn() }
@@ -243,6 +261,81 @@ describe('processNewMessage', () => {
     const deps = { getRules: () => rules, runAgent, markMatched }
     await processNewMessage(basePayload(), deps, NOW)
     expect(markMatched).toHaveBeenCalledWith('r1')
+  })
+
+  // v1.1.2: audit log integration
+  it('audit entry пишется для mark_read auto-action', async () => {
+    const rules = [makeRule({ action: { type: 'mark_read' } })]
+    const markAsRead = vi.fn().mockResolvedValue({ ok: true })
+    const appendAudit = vi.fn()
+    const deps = {
+      getRules: () => rules,
+      handlerContext: { markAsRead },
+      runAgent: vi.fn(),
+      appendAudit,
+    }
+    await processNewMessage(basePayload(), deps, NOW)
+    expect(appendAudit).toHaveBeenCalledTimes(1)
+    expect(appendAudit).toHaveBeenCalledWith(expect.objectContaining({
+      actor: 'ai_auto',
+      actionId: 'mark_as_read',
+      ruleId: 'r1',
+      ruleName: 'X',
+      executionResult: 'ok',
+    }))
+  })
+
+  it('audit entries пишутся для ai_reply (per-tool + summary)', async () => {
+    const rules = [makeRule()]
+    const runAgent = vi.fn().mockResolvedValue({
+      ok: true,
+      iterations: 2,
+      audit: [
+        { name: 'get_chat_history', result: { ok: true } },
+        { name: 'reply_to_message', result: { ok: true, id: '500' }, permissionResult: 'auto_confirmed' },
+      ],
+    })
+    const appendAudit = vi.fn()
+    const deps = { getRules: () => rules, runAgent, appendAudit }
+    await processNewMessage(basePayload(), deps, NOW)
+    // 2 per-tool + 1 summary = 3
+    expect(appendAudit).toHaveBeenCalledTimes(3)
+    const calls = appendAudit.mock.calls.map(c => c[0])
+    expect(calls[0].actionId).toBe('get_chat_history')
+    expect(calls[1].actionId).toBe('reply_to_message')
+    expect(calls[2].actionId).toBe('ai_reply_summary')
+    expect(calls[2].iterations).toBe(2)
+    // Все ai_auto
+    expect(calls.every(c => c.actor === 'ai_auto')).toBe(true)
+  })
+
+  it('audit ошибки в ai_reply → summary с error', async () => {
+    const rules = [makeRule()]
+    const runAgent = vi.fn().mockResolvedValue({ ok: false, error: 'no_active_provider', audit: [] })
+    const appendAudit = vi.fn()
+    const deps = { getRules: () => rules, runAgent, appendAudit }
+    await processNewMessage(basePayload(), deps, NOW)
+    const summary = appendAudit.mock.calls.find(c => c[0].actionId === 'ai_reply_summary')
+    expect(summary).toBeTruthy()
+    expect(summary[0].executionResult).toBe('error')
+    expect(summary[0].errorMessage).toBe('no_active_provider')
+  })
+
+  it('audit не падает если appendAudit throws', async () => {
+    const rules = [makeRule({ action: { type: 'mark_read' } })]
+    const markAsRead = vi.fn().mockResolvedValue({ ok: true })
+    const appendAudit = vi.fn(() => { throw new Error('disk full') })
+    const deps = { getRules: () => rules, handlerContext: { markAsRead }, runAgent: vi.fn(), appendAudit }
+    const r = await processNewMessage(basePayload(), deps, NOW)
+    expect(r.fired).toBe(1)  // mark_read всё равно сработал
+  })
+
+  it('appendAudit не задан → no-op (тесты без audit)', async () => {
+    const rules = [makeRule({ action: { type: 'mark_read' } })]
+    const markAsRead = vi.fn().mockResolvedValue({ ok: true })
+    const deps = { getRules: () => rules, handlerContext: { markAsRead }, runAgent: vi.fn() }
+    const r = await processNewMessage(basePayload(), deps, NOW)
+    expect(r.fired).toBe(1)
   })
 })
 

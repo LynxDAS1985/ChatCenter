@@ -38,6 +38,8 @@ import { initAutoReplyRulesIpcHandlers, getCachedRules, markRuleMatched } from '
 // v1.1.1 (Phase 4.3 integration): диспетчер auto-reply.
 import { initAutoReplyDispatcher } from './ai/autoReplyDispatcher.js'
 import { runAgentLoop } from './ai/aiToolExecutor.js'
+// v1.1.2: прямой append audit (без IPC).
+import { appendAuditRecord } from './handlers/auditIpcHandlers.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
 // v0.91.0: WebContentsView откачен — Issue #44934/45367 (Windows 11 crash на addChildView).
 // import { initWebContentsViewIpcHandlers } from './handlers/webContentsViewIpcHandlers.js'
@@ -354,8 +356,11 @@ app.whenReady().then(() => {
       },
     })
 
-    // v1.1.1 (Phase 4.3 integration): подписка auto-reply dispatcher
+    // v1.1.1+1.1.2 (Phase 4.3 integration): подписка auto-reply dispatcher
     // на TDLib message:new. Без manager (r.backend._manager) — пропускаем.
+    // v1.1.2: callProvider реален — берётся из settings.ai через тот же
+    // callProviderFn что и для UI агента (читает settings.aiProvider /
+    // aiApiKey из electron-store).
     try {
       const tdManager = r.backend?._manager
       if (tdManager?.on) {
@@ -365,23 +370,40 @@ app.whenReady().then(() => {
           manager: tdManager,
           getRules: () => getCachedRules(),
           markMatched: (ruleId) => { try { markRuleMatched(ruleId) } catch (_) {} },
+          // v1.1.2: master switch — из settings.aiAutoReplyMasterEnabled.
+          // Default true (если поле не задано) — поведение совместимо с v1.1.1.
+          isMasterEnabled: () => {
+            try {
+              const s = storage?.get('settings', {}) || {}
+              return s.aiAutoReplyMasterEnabled !== false
+            } catch (_) { return true }
+          },
           handlerContext: {
-            // Только markAsRead для action='mark_read' — без AI.
+            // markAsRead для action='mark_read' — без AI.
             markAsRead: adapter.markAsRead,
           },
-          // runAgent оборачивает runAgentLoop с пред-настроенными registry +
-          // callProvider + handlerContext. callProvider пока null — provider
-          // выбирается из settings.ai в renderer. Для v1.1.1 MVP: если provider
-          // не сконфигурен — auto-reply пропускается с ошибкой 'no_callProvider'.
+          // v1.1.2: audit log запись прямо в файл audit-log/*.jsonl.
+          appendAudit: (record) => { appendAuditRecord(record) },
           runAgent: async (params) => {
-            // Используем getHandlerContext чтобы получить полный context
-            // (включая sendMessage через адаптер).
-            const fullContext = getHandlerContext()
+            // v1.1.2: реальный callProvider через storage. Если provider не
+            // сконфигурен (нет apiKey / aiProvider) — runAgent вернёт
+            // ошибку provider_call_failed.
+            const settings = storage?.get('settings', {}) || {}
+            const activeProvider = settings.aiProvider
+            if (!activeProvider) {
+              return { ok: false, error: 'no_active_provider', iterations: 0, audit: [] }
+            }
             return runAgentLoop({
               ...params,
               registry,
-              handlerContext: fullContext,
-              callProvider: null,  // TODO v1.1.2: вытаскивать из settings.ai
+              handlerContext: getHandlerContext(),
+              callProvider: ({ messages, tools, signal }) => callProviderFn({
+                provider: activeProvider,
+                messages,
+                tools,
+                model: settings.aiModel,
+                signal,
+              }),
             })
           },
           log: (level, msg) => __slog(`[auto-reply] ${level}: ${msg}`),
