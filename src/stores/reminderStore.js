@@ -57,4 +57,14 @@ export async function cancelReminder(reminderId) {
   }
 }
 
+// v1.0.5: snooze — отложить напоминание на minutes минут (создаёт новый pending reminder).
+export async function snoozeReminder(reminderId, minutes) {
+  if (!globalThis.window?.api?.invoke) return { ok: false, error: 'no_ipc' }
+  try {
+    return await globalThis.window.api.invoke('reminders:snooze', { reminderId, minutes })
+  } catch (e) {
+    return { ok: false, error: e?.message }
+  }
+}
+
 export const _internal = { NOTE_MAX, generateId }

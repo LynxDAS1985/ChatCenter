@@ -75,4 +75,29 @@ export async function deleteTask(taskId) {
   }
 }
 
+// v1.0.5: bulk операции.
+export async function bulkCompleteTasks(taskIds) {
+  if (!globalThis.window?.api?.invoke) return { ok: false, error: 'no_ipc', updated: 0 }
+  if (!Array.isArray(taskIds) || taskIds.length === 0) {
+    return { ok: false, error: 'missing_taskIds', updated: 0 }
+  }
+  try {
+    return await globalThis.window.api.invoke('tasks:bulk-complete', { taskIds })
+  } catch (e) {
+    return { ok: false, error: e?.message, updated: 0 }
+  }
+}
+
+export async function bulkDeleteTasks(taskIds) {
+  if (!globalThis.window?.api?.invoke) return { ok: false, error: 'no_ipc', removed: 0 }
+  if (!Array.isArray(taskIds) || taskIds.length === 0) {
+    return { ok: false, error: 'missing_taskIds', removed: 0 }
+  }
+  try {
+    return await globalThis.window.api.invoke('tasks:bulk-delete', { taskIds })
+  } catch (e) {
+    return { ok: false, error: e?.message, removed: 0 }
+  }
+}
+
 export const _internal = { TITLE_MAX, DETAILS_MAX, generateId }

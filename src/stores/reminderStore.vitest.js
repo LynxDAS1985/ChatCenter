@@ -1,7 +1,7 @@
 // v1.0.0 (Phase 4.2): тесты reminderStore.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createReminderRecord, scheduleReminder, listReminders, cancelReminder } from './reminderStore.js'
+import { createReminderRecord, scheduleReminder, listReminders, cancelReminder, snoozeReminder } from './reminderStore.js'
 
 describe('createReminderRecord', () => {
   it('создаёт reminder с обязательными полями', () => {
@@ -66,5 +66,28 @@ describe('IPC functions', () => {
   it('cancelReminder invokes reminders:cancel', async () => {
     await cancelReminder('rem_123')
     expect(invokeMock).toHaveBeenCalledWith('reminders:cancel', { reminderId: 'rem_123' })
+  })
+
+  // v1.0.5: snooze.
+  it('snoozeReminder invokes reminders:snooze с reminderId+minutes', async () => {
+    invokeMock.mockResolvedValueOnce({ ok: true, reminder: { id: 'rem_new' } })
+    const r = await snoozeReminder('rem_old', 10)
+    expect(invokeMock).toHaveBeenCalledWith('reminders:snooze', { reminderId: 'rem_old', minutes: 10 })
+    expect(r.ok).toBe(true)
+    expect(r.reminder.id).toBe('rem_new')
+  })
+
+  it('snoozeReminder без window.api → ok:false', async () => {
+    delete globalThis.window.api
+    const r = await snoozeReminder('rem_x', 5)
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('no_ipc')
+  })
+
+  it('snoozeReminder IPC throw → ok:false', async () => {
+    invokeMock.mockRejectedValueOnce(new Error('boom'))
+    const r = await snoozeReminder('rem_x', 5)
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('boom')
   })
 })

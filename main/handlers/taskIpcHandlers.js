@@ -100,6 +100,39 @@ export function initTaskIpcHandlers(deps) {
     saveTasks()
     return { ok: true, removed: before - _cache.length }
   })
+
+  // v1.0.5: bulk операции. Принимают { taskIds: string[] }.
+  // Возвращают { ok, updated/removed: number } — сколько реально применилось.
+  ipcMain.handle('tasks:bulk-complete', async (_event, { taskIds } = {}) => {
+    if (!Array.isArray(taskIds) || taskIds.length === 0) {
+      return { ok: false, error: 'missing_taskIds', updated: 0 }
+    }
+    loadTasks()
+    const idSet = new Set(taskIds.map(String))
+    const now = Date.now()
+    let updated = 0
+    for (let i = 0; i < _cache.length; i++) {
+      if (idSet.has(String(_cache[i].id)) && _cache[i].status !== 'done') {
+        _cache[i] = { ..._cache[i], status: 'done', completedAt: now }
+        updated++
+      }
+    }
+    if (updated > 0) saveTasks()
+    return { ok: true, updated }
+  })
+
+  ipcMain.handle('tasks:bulk-delete', async (_event, { taskIds } = {}) => {
+    if (!Array.isArray(taskIds) || taskIds.length === 0) {
+      return { ok: false, error: 'missing_taskIds', removed: 0 }
+    }
+    loadTasks()
+    const idSet = new Set(taskIds.map(String))
+    const before = _cache.length
+    _cache = _cache.filter(t => !idSet.has(String(t.id)))
+    const removed = before - _cache.length
+    if (removed > 0) saveTasks()
+    return { ok: true, removed }
+  })
 }
 
 export const _internal = { getTasksFile, loadTasks, saveTasks }

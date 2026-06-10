@@ -1,7 +1,7 @@
 // v1.0.0 (Phase 4.1): тесты taskStore.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createTaskRecord, createTask, listTasks, completeTask, deleteTask, _internal } from './taskStore.js'
+import { createTaskRecord, createTask, listTasks, completeTask, deleteTask, bulkCompleteTasks, bulkDeleteTasks, _internal } from './taskStore.js'
 
 describe('createTaskRecord', () => {
   it('создаёт task с обязательными полями + defaults', () => {
@@ -71,5 +71,60 @@ describe('IPC functions', () => {
     const r = await createTask({ title: 'x' })
     expect(r.ok).toBe(false)
     expect(r.error).toBe('no_ipc')
+  })
+})
+
+// v1.0.5: bulk операции.
+describe('bulkCompleteTasks / bulkDeleteTasks (v1.0.5)', () => {
+  let invokeMock
+
+  beforeEach(() => {
+    invokeMock = vi.fn().mockResolvedValue({ ok: true, updated: 3 })
+    globalThis.window = { api: { invoke: invokeMock } }
+  })
+
+  afterEach(() => {
+    delete globalThis.window
+  })
+
+  it('bulkCompleteTasks → invoke tasks:bulk-complete с массивом id', async () => {
+    const r = await bulkCompleteTasks(['t1', 't2', 't3'])
+    expect(invokeMock).toHaveBeenCalledWith('tasks:bulk-complete', { taskIds: ['t1', 't2', 't3'] })
+    expect(r.ok).toBe(true)
+    expect(r.updated).toBe(3)
+  })
+
+  it('bulkCompleteTasks с пустым массивом → ok:false без IPC вызова', async () => {
+    const r = await bulkCompleteTasks([])
+    expect(invokeMock).not.toHaveBeenCalled()
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('missing_taskIds')
+  })
+
+  it('bulkCompleteTasks с не-массивом → ok:false', async () => {
+    const r = await bulkCompleteTasks('not-array')
+    expect(invokeMock).not.toHaveBeenCalled()
+    expect(r.ok).toBe(false)
+  })
+
+  it('bulkDeleteTasks → invoke tasks:bulk-delete', async () => {
+    invokeMock.mockResolvedValueOnce({ ok: true, removed: 2 })
+    const r = await bulkDeleteTasks(['x', 'y'])
+    expect(invokeMock).toHaveBeenCalledWith('tasks:bulk-delete', { taskIds: ['x', 'y'] })
+    expect(r.removed).toBe(2)
+  })
+
+  it('bulkDeleteTasks без window.api → ok:false', async () => {
+    delete globalThis.window.api
+    const r = await bulkDeleteTasks(['x'])
+    expect(r.ok).toBe(false)
+    expect(r.removed).toBe(0)
+  })
+
+  it('IPC throw → ok:false c error', async () => {
+    invokeMock.mockRejectedValueOnce(new Error('ipc_failed'))
+    const r = await bulkCompleteTasks(['x'])
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('ipc_failed')
   })
 })

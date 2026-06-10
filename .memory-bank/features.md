@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.0.4 (9 июня 2026)
+## Текущая версия: v1.0.5 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,15 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.0.5 — Tasks bulk + Reminders snooze
+
+- `tasks:bulk-complete` / `tasks:bulk-delete` — массовые операции (Set lookup, save один раз, возвращают `updated`/`removed` count).
+- `reminders:snooze` — создаёт НОВЫЙ pending reminder с +N минут, помечает оригинал `snoozedAt`/`snoozedToId`. Валидация minutes ∈ (0, 1440].
+- Renderer store wrappers: `bulkCompleteTasks`, `bulkDeleteTasks`, `snoozeReminder`.
+- Тесты: +15 main-side (с vi.hoisted мок fs/ipcMain) + +9 renderer-store. Всего 1328 ✅.
 
 ---
 

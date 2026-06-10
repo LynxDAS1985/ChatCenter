@@ -113,6 +113,39 @@ export function initReminderIpcHandlers(deps) {
     cancelTimer(reminderId)
     return { ok: true }
   })
+
+  // v1.0.5: snooze — отложить ВЫШЕДШЕЕ напоминание на N минут.
+  // Создаёт НОВЫЙ reminder (новый id) с теми же source/note + новый remindAt.
+  // Старый помечается snoozedAt. Новый таймер заводится автоматически.
+  ipcMain.handle('reminders:snooze', async (_event, { reminderId, minutes } = {}) => {
+    if (!reminderId) return { ok: false, error: 'missing_reminderId' }
+    const min = Number(minutes)
+    if (!Number.isFinite(min) || min <= 0 || min > 24 * 60) {
+      return { ok: false, error: 'invalid_minutes' }
+    }
+    loadReminders()
+    const orig = _cache.find(r => r.id === reminderId)
+    if (!orig) return { ok: false, error: 'reminder_not_found' }
+    const now = Date.now()
+    const newReminder = {
+      id: 'rem_' + now + '_' + Math.random().toString(36).slice(2, 8),
+      source: orig.source || null,
+      remindAt: now + min * 60 * 1000,
+      note: orig.note || '',
+      status: 'pending',
+      createdAt: now,
+      firedAt: null,
+      createdBy: orig.createdBy || 'user',
+      snoozedFrom: orig.id,
+    }
+    // помечаем оригинал snoozed (status остаётся fired чтобы было видно в истории)
+    const origIdx = _cache.findIndex(r => r.id === reminderId)
+    _cache[origIdx] = { ..._cache[origIdx], snoozedAt: now, snoozedToId: newReminder.id }
+    _cache.push(newReminder)
+    saveReminders()
+    scheduleTimer(newReminder)
+    return { ok: true, reminder: newReminder }
+  })
 }
 
 export function _shutdownReminders() {
