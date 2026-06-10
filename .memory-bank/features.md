@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.3 (9 июня 2026)
+## Текущая версия: v1.1.4 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,18 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.4 — ГигаЧат tool use (4-й полноправный провайдер)
+
+OAuth + SSL bypass были готовы (`main/utils/gigachat.js` с v0.87.81), адаптер с v0.97.0, UI с полями clientId+clientSecret — НЕ подключено только к новому tool-use каркасу. Подключено.
+
+`main/ai/aiProviderCaller.js`: новая `callGigaChat({storage,messages,tools,model})` использует existing `getGigaChatToken` + `httpsPostSkipSsl`. Body: `functions`+`function_call:'auto'` (старый OpenAI формат). System извлекается. Trim() от пробелов. Понятные ошибки.
+
+`main/main.js`: FALLBACK_ORDER += 'gigachat'. Проверка creds: для gigachat — apiKey+clientSecret.
+
++11 тестов с vi.hoisted mocks. Всего 1458 ✅. Полная документация: [phase-gigachat-tool-use-impl.md](./ai-agent-plan/phases/phase-gigachat-tool-use-impl.md).
 
 ---
 

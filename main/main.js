@@ -397,12 +397,18 @@ app.whenReady().then(() => {
             // v1.1.3: chain = [active] + остальные провайдеры у которых есть apiKey.
             // Порядок: active первый, остальные по алфавиту для стабильности.
             const providerKeys = settings.aiProviderKeys || {}
-            const FALLBACK_ORDER = ['anthropic', 'openai', 'deepseek']  // не включаем gigachat (нет tool use)
+            // v1.1.4: gigachat включён в fallback chain (callProvider теперь
+            // поддерживает gigachat через OAuth + SSL bypass + старый functions API).
+            const FALLBACK_ORDER = ['anthropic', 'openai', 'deepseek', 'gigachat']
             const chain = [{ provider: activeProvider, model: settings.aiModel }]
             for (const p of FALLBACK_ORDER) {
               if (p === activeProvider) continue
-              const hasKey = providerKeys[p]?.apiKey
-              if (hasKey) chain.push({ provider: p })
+              const cfg = providerKeys[p] || {}
+              // gigachat требует apiKey (clientId) И clientSecret.
+              const hasCreds = p === 'gigachat'
+                ? (cfg.apiKey && cfg.clientSecret)
+                : !!cfg.apiKey
+              if (hasCreds) chain.push({ provider: p })
             }
             const callProviderWithFallback = createCallProviderWithFallback({
               baseCallProvider: callProviderFn,
