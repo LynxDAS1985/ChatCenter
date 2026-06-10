@@ -1,13 +1,21 @@
 // v1.0.0 (Phase 4.2): UI для управления напоминаниями.
+// v1.0.7: snooze UI — кнопки 10м/30м/1ч/2ч для status='fired' напоминаний.
 
 import { useState, useEffect, useCallback } from 'react'
-import { listReminders, cancelReminder } from '../stores/reminderStore.js'
+import { listReminders, cancelReminder, snoozeReminder } from '../stores/reminderStore.js'
 
 const STATUS_LABELS = {
   pending: '⏰ Ждёт',
   fired: '✅ Сработало',
   cancelled: '❌ Отменено',
 }
+
+const SNOOZE_OPTIONS = [
+  { label: '10м', minutes: 10 },
+  { label: '30м', minutes: 30 },
+  { label: '1ч', minutes: 60 },
+  { label: '2ч', minutes: 120 },
+]
 
 export default function RemindersPanel({ onGoToSource }) {
   const [reminders, setReminders] = useState([])
@@ -25,6 +33,16 @@ export default function RemindersPanel({ onGoToSource }) {
     if (!confirm('Отменить напоминание?')) return
     await cancelReminder(id)
     reload()
+  }
+
+  // v1.0.7: snooze отложенное (fired) напоминание на N минут.
+  const handleSnooze = async (id, minutes) => {
+    const r = await snoozeReminder(id, minutes)
+    if (r?.ok) {
+      reload()
+    } else {
+      alert('Не удалось отложить: ' + (r?.error || 'unknown error'))
+    }
   }
 
   return (
@@ -98,6 +116,26 @@ export default function RemindersPanel({ onGoToSource }) {
                 >
                   ✗
                 </button>
+              )}
+              {/* v1.0.7: snooze кнопки для сработавшего напоминания */}
+              {r.status === 'fired' && !r.snoozedAt && (
+                <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
+                  {SNOOZE_OPTIONS.map(opt => (
+                    <button
+                      key={opt.minutes}
+                      type="button"
+                      onClick={() => handleSnooze(r.id, opt.minutes)}
+                      title={`Отложить на ${opt.label}`}
+                      style={{
+                        padding: '4px 6px', fontSize: 10,
+                        background: 'transparent', color: '#eab308',
+                        border: '1px solid #eab30855', borderRadius: 4, cursor: 'pointer',
+                      }}
+                    >
+                      💤 {opt.label}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           </div>
