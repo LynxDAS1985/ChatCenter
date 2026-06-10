@@ -244,7 +244,13 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     const rafId = requestAnimationFrame(() => {
       const el = aiWebviewRef.current
       if (!el) {
-        console.warn('[ai-webview] WARN [no-ref] провайдер=' + provider + ' url=' + webviewUrl + ' — webview ref пустой при mount, listener не повешен')
+        // v1.1.6: через штатный логгер (НЕ console.warn).
+        try {
+          window.api?.send?.('app:log', {
+            level: 'WARN',
+            message: '[ai-webview] [no-ref] провайдер=' + provider + ' url=' + webviewUrl + ' — webview ref пустой при mount, listener не повешен',
+          })
+        } catch (_) {}
         return
       }
       detacher = attachAiWebviewDiagnostics(el, provider, webviewUrl)

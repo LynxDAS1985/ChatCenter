@@ -1,4 +1,5 @@
 // v1.1.5: тесты диагностических логов AI WebView.
+// v1.1.6: ИСПРАВЛЕНО — логи через window.api.send('app:log'), не console.*.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { attachAiWebviewDiagnostics } from './aiWebviewDiagnostics.js'
@@ -22,30 +23,53 @@ function makeWebviewMock() {
   }
 }
 
-let logSpy, warnSpy, errSpy
+let sendMock
 
 beforeEach(() => {
-  logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-  warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-  errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  sendMock = vi.fn()
+  globalThis.window = { api: { send: sendMock } }
 })
 afterEach(() => {
-  logSpy.mockRestore()
-  warnSpy.mockRestore()
-  errSpy.mockRestore()
+  delete globalThis.window
 })
 
-describe('attachAiWebviewDiagnostics', () => {
+// Helper: ищет лог по level + содержимому в message
+function findLog(level, contains) {
+  const calls = sendMock.mock.calls
+  return calls.find(c => {
+    const [channel, data] = c
+    if (channel !== 'app:log') return false
+    if (data?.level !== level) return false
+    if (typeof contains === 'string') return (data.message || '').includes(contains)
+    if (contains instanceof RegExp) return contains.test(data.message || '')
+    return true
+  })
+}
+
+describe('attachAiWebviewDiagnostics — v1.1.6 (штатный логгер app:log)', () => {
   it('null webview → null', () => {
     expect(attachAiWebviewDiagnostics(null, 'deepseek', 'https://x')).toBeNull()
+    expect(sendMock).not.toHaveBeenCalled()
   })
 
-  it('attach пишет [attach] лог', () => {
+  it('attach пишет [attach] INFO в app:log', () => {
     const wv = makeWebviewMock()
     attachAiWebviewDiagnostics(wv, 'deepseek', 'https://chat.deepseek.com')
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[ai-webview] INFO [attach]'))
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('provider=deepseek'))
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('url=https://chat.deepseek.com'))
+    const log = findLog('INFO', '[attach]')
+    expect(log).toBeDefined()
+    expect(log[1].message).toContain('provider=deepseek')
+    expect(log[1].message).toContain('url=https://chat.deepseek.com')
+  })
+
+  it('все логи идут через канал app:log (НЕ console.*)', () => {
+    const wv = makeWebviewMock()
+    attachAiWebviewDiagnostics(wv, 'deepseek', 'https://x')
+    expect(sendMock).toHaveBeenCalled()
+    for (const call of sendMock.mock.calls) {
+      expect(call[0]).toBe('app:log')
+      expect(call[1]).toHaveProperty('level')
+      expect(call[1]).toHaveProperty('message')
+    }
   })
 
   it('подписывается на все ожидаемые события', () => {
@@ -62,7 +86,7 @@ describe('attachAiWebviewDiagnostics', () => {
     }
   })
 
-  it('did-fail-load → ERROR лог с code/desc/url', () => {
+  it('did-fail-load → ERROR с code/desc/url', () => {
     const wv = makeWebviewMock()
     attachAiWebviewDiagnostics(wv, 'deepseek', 'https://chat.deepseek.com')
     wv._emit('did-fail-load', {
@@ -71,13 +95,14 @@ describe('attachAiWebviewDiagnostics', () => {
       validatedURL: 'https://chat.deepseek.com/login',
       isMainFrame: true,
     })
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('[did-fail-load]'))
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('code=-3'))
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('ERR_ABORTED'))
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('failedUrl=https://chat.deepseek.com/login'))
+    const log = findLog('ERROR', '[did-fail-load]')
+    expect(log).toBeDefined()
+    expect(log[1].message).toContain('code=-3')
+    expect(log[1].message).toContain('ERR_ABORTED')
+    expect(log[1].message).toContain('failedUrl=https://chat.deepseek.com/login')
   })
 
-  it('console-message с level=2 → ERROR лог (видим CSP/JS errors сайта)', () => {
+  it('console-message level=2 → ERROR (CSP errors)', () => {
     const wv = makeWebviewMock()
     attachAiWebviewDiagnostics(wv, 'gigachat', 'https://giga.chat')
     wv._emit('console-message', {
@@ -86,8 +111,9 @@ describe('attachAiWebviewDiagnostics', () => {
       sourceId: 'https://giga.chat/main.js',
       line: 42,
     })
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('[site-console]'))
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Refused to display in frame'))
+    const log = findLog('ERROR', 'Refused to display')
+    expect(log).toBeDefined()
+    expect(log[1].message).toContain('[site-console]')
   })
 
   it('console-message level=1 → WARN, level=0 → INFO', () => {
@@ -95,23 +121,26 @@ describe('attachAiWebviewDiagnostics', () => {
     attachAiWebviewDiagnostics(wv, 'deepseek', 'https://x')
     wv._emit('console-message', { level: 1, message: 'deprecated API', sourceId: '?', line: 0 })
     wv._emit('console-message', { level: 0, message: 'info from site', sourceId: '?', line: 0 })
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('deprecated API'))
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('info from site'))
+    expect(findLog('WARN', 'deprecated API')).toBeDefined()
+    expect(findLog('INFO', 'info from site')).toBeDefined()
   })
 
-  it('did-navigate → лог с новым URL', () => {
+  it('did-navigate → INFO с новым URL', () => {
     const wv = makeWebviewMock()
     attachAiWebviewDiagnostics(wv, 'deepseek', 'https://chat.deepseek.com')
     wv._emit('did-navigate', { url: 'https://chat.deepseek.com/login' })
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[did-navigate] provider=deepseek url=https://chat.deepseek.com → https://chat.deepseek.com/login'))
+    const log = findLog('INFO', '[did-navigate]')
+    expect(log).toBeDefined()
+    expect(log[1].message).toContain('→ https://chat.deepseek.com/login')
   })
 
   it('render-process-gone → ERROR с reason+exitCode', () => {
     const wv = makeWebviewMock()
     attachAiWebviewDiagnostics(wv, 'deepseek', 'https://x')
     wv._emit('render-process-gone', { reason: 'crashed', exitCode: -1 })
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('reason=crashed'))
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('exitCode=-1'))
+    const log = findLog('ERROR', 'reason=crashed')
+    expect(log).toBeDefined()
+    expect(log[1].message).toContain('exitCode=-1')
   })
 
   it('detach снимает все listeners + помечает webview', () => {
@@ -121,7 +150,7 @@ describe('attachAiWebviewDiagnostics', () => {
     r.detach()
     expect(wv.__ccDiagAttached).toBeUndefined()
     expect(wv.removeEventListener).toHaveBeenCalled()
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[detach]'))
+    expect(findLog('INFO', '[detach]')).toBeDefined()
   })
 
   it('повторный attach на тот же элемент → не дублирует listeners', () => {
@@ -129,16 +158,8 @@ describe('attachAiWebviewDiagnostics', () => {
     attachAiWebviewDiagnostics(wv, 'deepseek', 'https://x')
     const firstCallCount = wv.addEventListener.mock.calls.length
     const r2 = attachAiWebviewDiagnostics(wv, 'deepseek', 'https://x')
-    expect(wv.addEventListener.mock.calls.length).toBe(firstCallCount)  // не вырос
+    expect(wv.addEventListener.mock.calls.length).toBe(firstCallCount)
     expect(r2.detach).toBeDefined()
-  })
-
-  it('console-message без sourceId → лог без указания файла', () => {
-    const wv = makeWebviewMock()
-    attachAiWebviewDiagnostics(wv, 'gigachat', 'https://giga.chat')
-    wv._emit('console-message', { level: 2, message: 'CSP violation' })
-    const calls = errSpy.mock.calls.map(c => c[0])
-    expect(calls.some(c => c.includes('CSP violation'))).toBe(true)
   })
 
   it('long message обрезается до 500 символов', () => {
@@ -146,9 +167,44 @@ describe('attachAiWebviewDiagnostics', () => {
     attachAiWebviewDiagnostics(wv, 'deepseek', 'https://x')
     const longMsg = 'A'.repeat(1000)
     wv._emit('console-message', { level: 2, message: longMsg, sourceId: '?' })
-    const lastCall = errSpy.mock.calls[errSpy.mock.calls.length - 1][0]
-    // 500 'A' + остальное от шаблона лога
-    expect(lastCall).toContain('A'.repeat(500))
-    expect(lastCall).not.toContain('A'.repeat(501))
+    const log = findLog('ERROR', 'A')
+    expect(log).toBeDefined()
+    // msg в логе содержит 500 'A', но НЕ 501
+    expect(log[1].message).toContain('A'.repeat(500))
+    expect(log[1].message).not.toContain('A'.repeat(501))
+  })
+
+  it('window.api отсутствует → silent (не падает)', () => {
+    const wv = makeWebviewMock()
+    delete globalThis.window.api
+    expect(() => attachAiWebviewDiagnostics(wv, 'deepseek', 'https://x')).not.toThrow()
+    // События тоже не должны падать
+    expect(() => wv._emit('did-fail-load', { errorCode: -3 })).not.toThrow()
+  })
+
+  it('window полностью отсутствует → silent', () => {
+    const wv = makeWebviewMock()
+    delete globalThis.window
+    expect(() => attachAiWebviewDiagnostics(wv, 'deepseek', 'https://x')).not.toThrow()
+  })
+
+  it('НИ ОДНОГО console.log/warn/error не вызвано (всё через app:log)', () => {
+    const wv = makeWebviewMock()
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      attachAiWebviewDiagnostics(wv, 'deepseek', 'https://x')
+      wv._emit('did-fail-load', { errorCode: -3, errorDescription: 'err', validatedURL: 'https://x' })
+      wv._emit('console-message', { level: 2, message: 'css', sourceId: '?' })
+      wv._emit('render-process-gone', { reason: 'crashed' })
+      expect(logSpy).not.toHaveBeenCalled()
+      expect(warnSpy).not.toHaveBeenCalled()
+      expect(errSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+      warnSpy.mockRestore()
+      errSpy.mockRestore()
+    }
   })
 })

@@ -80,18 +80,27 @@ export async function sendContextToAiWebview(deps) {
         inserted = !!result
       }
     } catch (e) {
-      try { console.error('[ai-webview] ERROR [inject-throw] url=' + diagInfo.url + ' err=' + (e?.message || e)) } catch (_) {}
+      // v1.1.6: через штатный логгер вместо console.*.
+      try {
+        globalThis.window?.api?.send?.('app:log', {
+          level: 'ERROR',
+          message: '[ai-webview] [inject-throw] url=' + diagInfo.url + ' err=' + (e?.message || e),
+        })
+      } catch (_) {}
     }
   }
-  // v1.1.5: лог результата injection
+  // v1.1.6: лог результата injection — через штатный логгер.
   try {
     const status = inserted ? 'sent' : 'fallback-clipboard'
-    console.log('[ai-webview] INFO [inject-result] status=' + status
-      + ' url=' + diagInfo.url
-      + ' matched=' + (diagInfo.matched || 'none')
-      + ' dom.textarea=' + diagInfo.dom.textarea
-      + ' dom.contenteditable=' + diagInfo.dom.contenteditable
-      + ' dom.all=' + diagInfo.dom.all)
+    globalThis.window?.api?.send?.('app:log', {
+      level: 'INFO',
+      message: '[ai-webview] [inject-result] status=' + status
+        + ' url=' + diagInfo.url
+        + ' matched=' + (diagInfo.matched || 'none')
+        + ' dom.textarea=' + diagInfo.dom.textarea
+        + ' dom.contenteditable=' + diagInfo.dom.contenteditable
+        + ' dom.all=' + diagInfo.dom.all,
+    })
   } catch (_) {}
   if (!inserted) {
     try { await navigator.clipboard.writeText(contextText) } catch {}

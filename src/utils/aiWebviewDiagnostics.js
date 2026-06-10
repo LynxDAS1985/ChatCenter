@@ -1,10 +1,14 @@
 // v1.1.5: диагностические логи для AI WebView (режим «Веб-интерфейс»).
+// v1.1.6: ИСПРАВЛЕНО — раньше писали в console.* (попадало в DevTools).
+// Теперь шлём через window.api.send('app:log') → main → chatcenter.log →
+// видимы в штатном лог-вьюере «📒 Логи ChatCenter» (фильтры Все/Ошибки/
+// Предупр/Инфо/Trace/Debug/Native).
 //
 // Цель: понять почему DeepSeek (https://chat.deepseek.com) и ГигаЧат
 // (https://giga.chat) не показывают login страницу / падают в webview.
 //
-// Хук подписывается на ВСЕ важные события <webview> и пишет в консоль
-// с префиксом [ai-webview] чтобы юзер мог фильтровать в DevTools.
+// Хук подписывается на ВСЕ важные события <webview> и шлёт в штатный
+// логгер с префиксом [ai-webview] для фильтрации.
 //
 // События которые ловим:
 //   - did-start-loading       — начало загрузки URL
@@ -33,6 +37,9 @@ const PREFIX = '[ai-webview]'
  * Привязать диагностические event listeners к <webview> элементу.
  * Idempotent — повторный вызов на том же элементе не дублирует.
  *
+ * v1.1.6: логи идут через window.api.send('app:log') в штатный лог-вьюер
+ * (НЕ через console.*). Если window.api отсутствует (тесты) — silent.
+ *
  * @param {HTMLElement|null} webview — DOM элемент <webview>
  * @param {string} provider — 'openai' | 'anthropic' | 'deepseek' | 'gigachat'
  * @param {string} url — фактический webviewUrl
@@ -47,14 +54,14 @@ export function attachAiWebviewDiagnostics(webview, provider, url) {
   }
 
   const ctx = `provider=${provider} url=${url}`
+  // v1.1.6: штатный логгер вместо console.*.
+  // level: 'ERROR' | 'WARN' | 'INFO' | 'TRACE' | 'DEBUG' (как в логгер UI).
   const log = (level, event, extra = '') => {
-    const tag = `${PREFIX} ${level} [${event}]`
-    const msg = `${tag} ${ctx}${extra ? ' ' + extra : ''}`
+    const tag = `${PREFIX} [${event}]`
+    const message = `${tag} ${ctx}${extra ? ' ' + extra : ''}`
     try {
-      if (level === 'ERROR') console.error(msg)
-      else if (level === 'WARN') console.warn(msg)
-      else console.log(msg)
-    } catch (_) { /* ignore */ }
+      globalThis.window?.api?.send?.('app:log', { level, message })
+    } catch (_) { /* ignore — IPC недоступен (например в vitest без mock) */ }
   }
 
   log('INFO', 'attach', `(diagnostics attached)`)

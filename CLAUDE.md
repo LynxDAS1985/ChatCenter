@@ -214,6 +214,11 @@
 6. **Не меняй структуру проекта** (переименования, удаления файлов) без явной причины и подтверждения
 7. **Не внедряй код в WebView мессенджеров** способами, нарушающими ToS — только через `preload` и подготовленные строки `executeJavaScript`
 8. **Не делай долгих операций** — коротко, быстро, по делу
+9. **🚫 НИКАКИХ `console.log/warn/error` в renderer (src/) для новых логов**. У проекта свой UI лог-вьюер «📒 Логи ChatCenter» который читает файл `chatcenter.log`. console.* в renderer попадает ТОЛЬКО в DevTools — юзер их не видит.
+   - **Правильно (renderer)**: `try { window.api?.send?.('app:log', { level: 'INFO\|WARN\|ERROR\|TRACE\|DEBUG', message: '...' }) } catch (_) {}`
+   - **Правильно (main)**: `console.log/warn/error` — main процесс переопределяет их в `main/utils/logger.js` → пишут в `chatcenter.log` автоматически.
+   - **Тест-страж**: `src/__tests__/rendererConsoleGuard.test.cjs` (baseline + регрессия). Падает при добавлении `console.*` в новый файл `src/`. Запускается в pre-commit + pre-push.
+   - **Запрещено**: «открой DevTools и посмотри логи». DevTools для разработчика. Все логи которые нужно показывать юзеру — через `app:log`.
 
 ---
 
@@ -278,7 +283,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v1.1.5 (9 июня 2026)
+**Текущая версия**: v1.1.6 (9 июня 2026)
 
 ---
 
@@ -761,6 +766,6 @@ _Регенерировано: 2026-04-27_
 
 ---
 
-**Версия проекта**: v1.1.5 (9 июня 2026)
+**Версия проекта**: v1.1.6 (9 июня 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
 **Последнее обновление**: 9 июня 2026 — **v1.0.2**: TDLib backend методы для AI tools — реальная интеграция. Создан `main/ai/aiAgentBackendAdapter.js` — плоский интерфейс ({getMessages, searchMessages, sendMessage, markAsRead}) над `tdlibBackend.messages` (домен .get/.send/.markRead/.search). До v1.0.2 setAgentDeps передавал tdlibBackend напрямую → fallback в aiAgentSetup → AI работал «в никуда». Добавлен `tdlibBackend.messages.search` (searchChatMessages для chatId, глобальный searchMessages без chatId). 30 новых unit-тестов (24 на адаптер + 6 на search). Регрессия: lint 0, vitest 1285 passed, fileSizeLimits 392/392 ✅. **v1.0.1**: UI интеграция Phase 4 панелей. 3 иконки 📝 ⏰ 📊 справа в шапке TabBar открывают модалки `PanelModal` (overlay + ✕) с TasksPanel / RemindersPanel / AIActivityDashboard. Badge с числом активных задач/напоминаний (опрос tasks:list + reminders:list через `useAppCounters` каждые 30 сек + по событиям `tasks:changed`/`reminders:changed`). `handleGoToSource` в App.jsx закрывает модалку + переключает на ЦентрЧатов + кладёт source в pendingNativeNotify (тот же путь что notify:clicked). Лимит App.jsx 880→940. Лимит TabBar.jsx стандартный 700 (фактически 338). v1.0.0 фундамент (NotificationSource + ActionBus + Tool Use + Permission Guard + AISidebarAgent + Tasks/Reminders/AuditLog stores) — без изменений.

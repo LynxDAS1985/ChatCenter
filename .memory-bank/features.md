@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.5 (9 июня 2026)
+## Текущая версия: v1.1.6 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,31 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.6 — Fix: ai-webview логи через app:log + страж от console.* в renderer
+
+В v1.1.5 я (агент) **ошибся**: логи `[ai-webview]` шли через `console.log/warn/error` → попадали ТОЛЬКО в DevTools. У проекта свой UI лог-вьюер «📒 Логи ChatCenter» который читает файл `chatcenter.log` через IPC канал `app:log`. Юзер этих логов в нативном UI **не видел**.
+
+**Исправлено в 3 файлах**:
+- `src/utils/aiWebviewDiagnostics.js` — `console.log/warn/error` → `window.api?.send?.('app:log', {level, message})`
+- `src/utils/aiWebviewContext.js` — `console.error/log` → app:log
+- `src/components/AISidebar.jsx` — `console.warn` → app:log
+
+**Тесты переделаны** (`aiWebviewDiagnostics.vitest.js`): mock `window.api.send` вместо `console.*` spy. +1 регресс-тест «ни одного console.* не вызвано». 15 тестов всего.
+
+**Страж от повторения** — новый `src/__tests__/rendererConsoleGuard.test.cjs`:
+- Сканирует все `src/**/*.{js,jsx}` (без тестов).
+- BASELINE: счётчик `console.*` на каждый legacy-файл на момент v1.1.6 (18 файлов).
+- Падает если **новый** файл вне baseline содержит `console.*`.
+- Падает если файл в baseline увеличил счётчик (анти-регрессия).
+- Уменьшение OK (постепенный рефакторинг).
+- Подключён в pre-commit + pre-push.
+
+**Правило в CLAUDE.md** (Критические запреты #9): «🚫 НИКАКИХ console.log/warn/error в renderer для новых логов». Правильный паттерн с примером.
+
+Регрессия: lint 0, vitest 1473/1473 ✅ (+3 от v1.1.5), rendererConsoleGuard ✅.
 
 ---
 
