@@ -88,7 +88,23 @@ describe('adapter.searchMessages', () => {
     const a = createAiAgentBackendAdapter({ messages: { search } })
     const r = await a.searchMessages({ query: 'hi', chatId: 'tg_main:-1', accountId: 'tg_main', limit: 99 })
     expect(r).toEqual([{ id: 1, text: 'hi' }])
-    expect(search).toHaveBeenCalledWith({ query: 'hi', chatId: 'tg_main:-1', accountId: 'tg_main', limit: 50 })
+    // v1.0.6: добавлены filter/fromMessageId/fanOut (undefined/false по умолчанию)
+    expect(search).toHaveBeenCalledWith({
+      query: 'hi', chatId: 'tg_main:-1', accountId: 'tg_main', limit: 50,
+      filter: undefined, fromMessageId: undefined, fanOut: false,
+    })
+  })
+
+  it('v1.0.6: filter/fromMessageId/fanOut пробрасываются в backend.messages.search', async () => {
+    const search = vi.fn().mockResolvedValue({ ok: true, messages: [] })
+    const a = createAiAgentBackendAdapter({ messages: { search } })
+    await a.searchMessages({ query: 'q', filter: 'photo', fromMessageId: '88', fanOut: true })
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'q',
+      filter: 'photo',
+      fromMessageId: '88',
+      fanOut: true,
+    }))
   })
 
   it('пустой query → не вызывает backend, пустой массив', async () => {

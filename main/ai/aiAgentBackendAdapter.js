@@ -54,9 +54,10 @@ export function createAiAgentBackendAdapter(tdlibBackend) {
 
     /**
      * Поиск по тексту сообщений (в чате или глобально).
+     * v1.0.6: добавлены filter (тип медиа), fromMessageId (pagination), fanOut (все аккаунты).
      * @returns {Promise<Array>}
      */
-    searchMessages: async ({ query, chatId, accountId, limit } = {}) => {
+    searchMessages: async ({ query, chatId, accountId, limit, filter, fromMessageId, fanOut } = {}) => {
       if (!query || typeof m.search !== 'function') return []
       try {
         const r = await m.search({
@@ -64,6 +65,9 @@ export function createAiAgentBackendAdapter(tdlibBackend) {
           chatId: chatId || null,
           accountId: accountId || null,
           limit: clampLimit(limit, 20, 50),
+          filter: filter || undefined,
+          fromMessageId: fromMessageId || undefined,
+          fanOut: fanOut === true,
         })
         if (!r || r.ok === false) return []
         return Array.isArray(r.messages) ? r.messages : []

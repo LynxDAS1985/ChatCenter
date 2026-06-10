@@ -504,6 +504,115 @@ describe('backend.messages', () => {
       expect(r.error).toBe('boom')
       expect(r.messages).toEqual([])
     })
+
+    // v1.0.6: filter + pagination + fanOut
+    it('filter:photo → searchMessagesFilterPhoto в invoke', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({ '@type': 'messages', total_count: 0, messages: [] })
+      await backend.messages.search({ chatId: 'tg_main:-1001', query: 'x', filter: 'photo' })
+      expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+        '@type': 'searchChatMessages',
+        filter: { '@type': 'searchMessagesFilterPhoto' },
+      }))
+    })
+
+    it('filter:video, document, url, mention — все маппятся', async () => {
+      const { backend, mockClient } = makeBackend()
+      const cases = [
+        ['video', 'searchMessagesFilterVideo'],
+        ['document', 'searchMessagesFilterDocument'],
+        ['url', 'searchMessagesFilterUrl'],
+        ['mention', 'searchMessagesFilterMention'],
+        ['voice', 'searchMessagesFilterVoiceNote'],
+        ['pinned', 'searchMessagesFilterPinned'],
+      ]
+      for (const [filterArg, expectedType] of cases) {
+        mockClient.invoke.mockResolvedValueOnce({ '@type': 'messages', total_count: 0, messages: [] })
+        await backend.messages.search({ chatId: 'tg_main:-1001', query: 'x', filter: filterArg })
+        const lastCall = mockClient.invoke.mock.calls[mockClient.invoke.mock.calls.length - 1][0]
+        expect(lastCall.filter['@type']).toBe(expectedType)
+      }
+    })
+
+    it('filter:unknown → fallback к searchMessagesFilterEmpty', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({ '@type': 'messages', total_count: 0, messages: [] })
+      await backend.messages.search({ chatId: 'tg_main:-1001', query: 'x', filter: 'evil_inject' })
+      expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+        filter: { '@type': 'searchMessagesFilterEmpty' },
+      }))
+    })
+
+    it('pagination: fromMessageId → передаётся в from_message_id', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({ '@type': 'messages', total_count: 0, messages: [] })
+      await backend.messages.search({ chatId: 'tg_main:-1001', query: 'x', fromMessageId: '99' })
+      expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({
+        from_message_id: 99,
+      }))
+    })
+
+    it('hasMore:true + nextFromMessageId если result.length=limit', async () => {
+      const { backend, mockClient } = makeBackend()
+      const msgs = Array.from({ length: 5 }, (_, i) => ({
+        '@type': 'message', id: 100 + i, chat_id: -1001,
+        sender_id: { '@type': 'messageSenderUser', user_id: 1 },
+        is_outgoing: false, date: 1715000000 + i, media_album_id: '0',
+        content: { '@type': 'messageText', text: { text: 'x' + i, entities: [] } },
+      }))
+      mockClient.invoke.mockResolvedValueOnce({ '@type': 'messages', total_count: 100, messages: msgs })
+      const r = await backend.messages.search({ chatId: 'tg_main:-1001', query: 'x', limit: 5 })
+      expect(r.hasMore).toBe(true)
+      expect(r.nextFromMessageId).toBeTruthy()
+    })
+
+    it('hasMore:false если получено < limit', async () => {
+      const { backend, mockClient } = makeBackend()
+      mockClient.invoke.mockResolvedValueOnce({
+        '@type': 'messages', total_count: 1,
+        messages: [{
+          '@type': 'message', id: 100, chat_id: -1001,
+          sender_id: { '@type': 'messageSenderUser', user_id: 1 },
+          is_outgoing: false, date: 1, media_album_id: '0',
+          content: { '@type': 'messageText', text: { text: 'x', entities: [] } },
+        }],
+      })
+      const r = await backend.messages.search({ chatId: 'tg_main:-1001', query: 'x', limit: 20 })
+      expect(r.hasMore).toBe(false)
+      expect(r.nextFromMessageId).toBe(null)
+    })
+
+    it('fanOut:true без accountId → Promise.all по всем аккаунтам', async () => {
+      const { backend, mockClient, mgr } = makeBackend()
+      mgr.createAccount('tg_second', {})
+      // mgr возвращает clientFactory'ный mockClient на оба аккаунта (он global)
+      // По два аккаунта получим 2 invoke. Возвращаем по одному сообщению.
+      mockClient.invoke
+        .mockResolvedValueOnce({
+          '@type': 'foundMessages', total_count: 1,
+          messages: [{
+            '@type': 'message', id: 10, chat_id: -100,
+            sender_id: { '@type': 'messageSenderUser', user_id: 1 },
+            is_outgoing: false, date: 1, media_album_id: '0',
+            content: { '@type': 'messageText', text: { text: 'a', entities: [] } },
+          }],
+        })
+        .mockResolvedValueOnce({
+          '@type': 'foundMessages', total_count: 1,
+          messages: [{
+            '@type': 'message', id: 20, chat_id: -200,
+            sender_id: { '@type': 'messageSenderUser', user_id: 2 },
+            is_outgoing: false, date: 2, media_album_id: '0',
+            content: { '@type': 'messageText', text: { text: 'b', entities: [] } },
+          }],
+        })
+      const r = await backend.messages.search({ query: 'q', fanOut: true, limit: 10 })
+      expect(r.ok).toBe(true)
+      expect(r.fanOut).toBe(true)
+      expect(r.accountsSearched).toBeGreaterThanOrEqual(2)
+      // 2 invoke вызвано (по одному на аккаунт)
+      expect(mockClient.invoke).toHaveBeenCalledTimes(2)
+    })
   })
 
   it('deleteMessage — оборачивает в массив', async () => {

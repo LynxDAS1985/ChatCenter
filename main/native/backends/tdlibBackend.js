@@ -31,6 +31,30 @@ async function safeInvoke(client, request) {
   catch (e) { return { ok: false, error: e?.message || String(e), code: e?.code } }
 }
 
+// v1.0.6: маппинг наших filter тегов в TDLib searchMessagesFilter*.
+// Поддерживаемые: 'photo', 'video', 'document', 'audio', 'voice', 'url', 'mention',
+// 'pinned', 'unread-mention', 'empty' (default).
+// https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1search_messages_filter.html
+const SEARCH_FILTER_MAP = {
+  photo: 'searchMessagesFilterPhoto',
+  video: 'searchMessagesFilterVideo',
+  'photo-video': 'searchMessagesFilterPhotoAndVideo',
+  document: 'searchMessagesFilterDocument',
+  audio: 'searchMessagesFilterAudio',
+  voice: 'searchMessagesFilterVoiceNote',
+  'video-note': 'searchMessagesFilterVideoNote',
+  url: 'searchMessagesFilterUrl',
+  mention: 'searchMessagesFilterMention',
+  pinned: 'searchMessagesFilterPinned',
+  'unread-mention': 'searchMessagesFilterUnreadMention',
+  empty: 'searchMessagesFilterEmpty',
+}
+function mapSearchFilter(filter) {
+  if (!filter || filter === 'empty') return { '@type': 'searchMessagesFilterEmpty' }
+  const tdType = SEARCH_FILTER_MAP[String(filter)] || 'searchMessagesFilterEmpty'
+  return { '@type': tdType }
+}
+
 /** Парсит наш составной id 'accountId:rawId' → { accountId, rawId (число) } */
 function parseChatId(chatId) {
   const s = String(chatId || '')
@@ -528,11 +552,15 @@ export function createTdlibBackend(opts = {}) {
       // v1.0.2: поиск по тексту сообщений для AI tool search_messages.
       // Если chatId указан → TDLib searchChatMessages (в конкретном чате).
       // Если только accountId → TDLib searchMessages (глобально по аккаунту).
+      // v1.0.6: добавлены filter (тип медиа), offset (пагинация), fanOut (все аккаунты).
       // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1search_chat_messages.html
       // https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1search_messages.html
-      async search({ query, chatId, accountId, limit = 20 } = {}) {
+      async search({ query, chatId, accountId, limit = 20, filter, fromMessageId, fanOut } = {}) {
         if (!query) return { ok: false, error: 'query required', messages: [] }
         const cappedLimit = Math.min(Math.max(Number(limit) || 20, 1), 100)
+        const tdFilter = mapSearchFilter(filter)
+        const offsetMessageId = fromMessageId ? Number(fromMessageId) : 0
+
         try {
           if (chatId) {
             // Поиск внутри конкретного чата
@@ -543,10 +571,10 @@ export function createTdlibBackend(opts = {}) {
               chat_id: ctx.rawId,
               query: String(query),
               sender_id: null,
-              from_message_id: 0,
+              from_message_id: offsetMessageId,
               offset: 0,
               limit: cappedLimit,
-              filter: { '@type': 'searchMessagesFilterEmpty' },
+              filter: tdFilter,
               message_thread_id: 0,
             })
             const extras = makeExtras(manager, ctx.accountId)
@@ -556,8 +584,64 @@ export function createTdlibBackend(opts = {}) {
               const senderAvatar = extras.getSenderAvatar(senderId)
               return tdlibMapMessageDirect(tdMsg, chatId, { senderName, senderAvatar })
             }).filter(Boolean)
-            return { ok: true, messages, totalCount: Number(result?.total_count) || messages.length }
+            const nextFromMessageId = result?.next_from_message_id != null
+              ? String(result.next_from_message_id)
+              : (messages.length === cappedLimit && messages.length > 0 ? String(messages[messages.length - 1].id) : null)
+            return {
+              ok: true,
+              messages,
+              totalCount: Number(result?.total_count) || messages.length,
+              nextFromMessageId,
+              hasMore: !!nextFromMessageId,
+            }
           }
+
+          // v1.0.6: fan-out — глобальный поиск по ВСЕМ аккаунтам параллельно.
+          if (fanOut && !accountId) {
+            const accountIds = manager.listAccounts ? manager.listAccounts() : []
+            if (accountIds.length === 0) return { ok: false, error: 'no accounts', messages: [] }
+            const per = Math.max(1, Math.floor(cappedLimit / accountIds.length))
+            const results = await Promise.all(accountIds.map(async (aid) => {
+              const client = manager.getClient(aid)
+              if (!client) return { messages: [], totalCount: 0 }
+              try {
+                const r = await client.invoke({
+                  '@type': 'searchMessages',
+                  chat_list: { '@type': 'chatListMain' },
+                  query: String(query),
+                  offset_date: 0,
+                  offset_chat_id: 0,
+                  offset_message_id: 0,
+                  limit: per,
+                  filter: tdFilter,
+                  min_date: 0,
+                  max_date: 0,
+                })
+                const extras = makeExtras(manager, aid)
+                const mapped = (r?.messages || []).map((tdMsg) => {
+                  const chatIdStr = aid + ':' + String(tdMsg.chat_id)
+                  const senderId = tdMsg.sender_id
+                  const senderName = extras.getSenderName(senderId)
+                  const senderAvatar = extras.getSenderAvatar(senderId)
+                  const m = tdlibMapMessageDirect(tdMsg, chatIdStr, { senderName, senderAvatar })
+                  if (m) { m.chatId = chatIdStr; m.accountId = aid }
+                  return m
+                }).filter(Boolean)
+                return { messages: mapped, totalCount: Number(r?.total_count) || 0 }
+              } catch (_) { return { messages: [], totalCount: 0 } }
+            }))
+            const allMessages = results.flatMap(r => r.messages)
+            // Сортировка DESC по date (новые сверху) + ограничение до cappedLimit.
+            allMessages.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0))
+            return {
+              ok: true,
+              messages: allMessages.slice(0, cappedLimit),
+              totalCount: results.reduce((sum, r) => sum + r.totalCount, 0),
+              fanOut: true,
+              accountsSearched: accountIds.length,
+            }
+          }
+
           // Глобальный поиск — нужен accountId (или первый активный)
           let aid = accountId
           if (!aid) {
@@ -573,9 +657,9 @@ export function createTdlibBackend(opts = {}) {
             query: String(query),
             offset_date: 0,
             offset_chat_id: 0,
-            offset_message_id: 0,
+            offset_message_id: offsetMessageId,
             limit: cappedLimit,
-            filter: { '@type': 'searchMessagesFilterEmpty' },
+            filter: tdFilter,
             min_date: 0,
             max_date: 0,
           })
@@ -589,7 +673,16 @@ export function createTdlibBackend(opts = {}) {
             if (mapped) mapped.chatId = chatIdStr
             return mapped
           }).filter(Boolean)
-          return { ok: true, messages, totalCount: Number(result?.total_count) || messages.length }
+          const nextFromMessageId = result?.next_offset_message_id != null
+            ? String(result.next_offset_message_id)
+            : (messages.length === cappedLimit && messages.length > 0 ? String(messages[messages.length - 1].id) : null)
+          return {
+            ok: true,
+            messages,
+            totalCount: Number(result?.total_count) || messages.length,
+            nextFromMessageId,
+            hasMore: !!nextFromMessageId,
+          }
         } catch (e) {
           return { ok: false, error: e?.message || String(e), messages: [] }
         }

@@ -95,6 +95,22 @@ export const searchMessagesSchema = {
       chatId:    { type: 'string', description: 'Если не указан — глобальный поиск' },
       accountId: { type: 'string', description: 'TDLib account id (для глобального поиска внутри аккаунта)' },
       limit:     { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+      // v1.0.6: тип медиа.
+      filter: {
+        type: 'string',
+        enum: ['empty', 'photo', 'video', 'photo-video', 'document', 'audio', 'voice', 'video-note', 'url', 'mention', 'pinned', 'unread-mention'],
+        description: 'Фильтр по типу медиа (default: empty = все)',
+      },
+      // v1.0.6: пагинация.
+      fromMessageId: {
+        type: 'string',
+        description: 'ID сообщения для продолжения с того места (next_from_message_id из предыдущего ответа)',
+      },
+      // v1.0.6: fan-out на все аккаунты.
+      fanOut: {
+        type: 'boolean',
+        description: 'Если true и chatId/accountId не указаны — искать по ВСЕМ аккаунтам параллельно',
+      },
     },
     additionalProperties: false,
   },

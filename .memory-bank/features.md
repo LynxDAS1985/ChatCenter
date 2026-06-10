@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.0.5 (9 июня 2026)
+## Текущая версия: v1.0.6 (9 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,19 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.0.6 — Search: filter (тип медиа) + pagination + fan-out по аккаунтам
+
+`tdlibBackend.messages.search` расширен:
+- **filter**: `photo/video/document/audio/voice/url/mention/pinned/...` — мап в TDLib `searchMessagesFilter*`. Unknown → fallback `searchMessagesFilterEmpty`.
+- **fromMessageId**: пагинация через `next_from_message_id` от TDLib. Возврат: `{nextFromMessageId, hasMore}`.
+- **fanOut**: при отсутствии chatId/accountId — параллельный invoke по ВСЕМ аккаунтам (Promise.all), результаты merged + sorted DESC по timestamp.
+
+`searchMessagesSchema` (tool schema): добавлены `filter` (enum), `fromMessageId` (string), `fanOut` (boolean). Адаптер `aiAgentBackendAdapter.searchMessages` пробрасывает эти опции в backend.
+
+Тесты: +7 на messages.search (filter маппинги, pagination, fanOut, hasMore) + +2 на adapter. Всего 1339 ✅.
 
 ---
 
