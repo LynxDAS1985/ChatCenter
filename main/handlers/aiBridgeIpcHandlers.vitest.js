@@ -144,6 +144,40 @@ describe('registerAiBridgeIpcHandlers', () => {
   })
 })
 
+describe('handleSend chain (Этап 9 fallback)', () => {
+  it('payload.chain используется вместо single bridge', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    // Используем factoryApi через deps чтобы fallback использовал наш mock
+    const ask = vi.fn().mockResolvedValue({
+      version: 1, ok: true, text: 'OK', providerId: 'anthropic', mode: 'api', latencyMs: 1,
+    })
+    const factoryApi = vi.fn(() => ({ ask }))
+    const out = await r.handleSend(
+      {
+        chain: [{ mode: 'api', config: { providerId: 'anthropic' } }],
+        question: baseQuestion,
+      },
+      { factoryApi, callProvider: vi.fn() }
+    )
+    expect(out.ok).toBe(true)
+    expect(out.text).toBe('OK')
+  })
+
+  it('chain без question → config_invalid', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const out = await r.handleSend({ chain: [{ mode: 'api' }] }, {})
+    expect(out.ok).toBe(false)
+    expect(out.error.code).toBe('config_invalid')
+  })
+
+  it('пустой chain → используется обычный mode (single bridge ветка)', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const out = await r.handleSend({ chain: [], mode: 'api', question: baseQuestion }, {})
+    // Поскольку нет config.providerId → config_invalid (как раньше для api без provider)
+    expect(out.error.code).toBe('config_invalid')
+  })
+})
+
 describe('handleRegisterWebview / handleUnregisterWebview (Этап 7)', () => {
   it('register без providerId → error', async () => {
     const r = await import('./aiBridgeIpcHandlers.js')

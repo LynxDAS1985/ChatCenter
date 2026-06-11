@@ -17,6 +17,8 @@ import { createApiBridge } from '../ai/bridge/apiBridge.js'
 // v1.2.0 (Этап 4): WebUI Bridge — общение с preload в AI webview.
 import { createWebUiBridge, deliverAnswer, deliverError, registerWebview } from '../ai/bridge/webUiBridge.js'
 import { createAiBridgeRouter } from '../ai/bridge/router.js'
+// v1.1.18 (Этап 9): fallback chain — авто-переключение на резервный bridge.
+import { createFallbackChain } from '../ai/bridge/fallbackChain.js'
 import { AI_BRIDGE_CONTRACT_VERSION } from '../../src/utils/aiBridge/contracts.js'
 
 const IPC_CHANNEL_SEND = 'ai-bridge:send'
@@ -169,6 +171,28 @@ export async function handleSend(payload, deps = {}) {
   const mode = payload?.mode
   const question = payload?.question
   const config = payload?.config || {}
+  const chain = payload?.chain  // v1.1.18 (Этап 9): опциональный fallback chain
+
+  // v1.1.18: если задана fallback chain — используем её вместо single bridge.
+  if (Array.isArray(chain) && chain.length > 0) {
+    if (!question) {
+      return {
+        version: AI_BRIDGE_CONTRACT_VERSION,
+        ok: false, text: '', providerId: 'openai', mode: 'api',
+        latencyMs: Date.now() - t0,
+        error: { code: 'config_invalid', message: 'question обязателен', retryable: false },
+      }
+    }
+    const factories = {
+      createLocalBridge: deps.factoryLocal || createLocalBridge,
+      createApiBridge: deps.factoryApi || createApiBridge,
+      createWebUiBridge: deps.factoryWebUi || createWebUiBridge,
+      callProvider: deps.callProvider,
+      fetch: deps.fetch,
+    }
+    const fallback = createFallbackChain(chain, factories)
+    return fallback.ask(question)
+  }
 
   if (!mode || !question) {
     return {
@@ -180,7 +204,7 @@ export async function handleSend(payload, deps = {}) {
       latencyMs: Date.now() - t0,
       error: {
         code: 'config_invalid',
-        message: 'mode и question обязательны',
+        message: 'mode и question обязательны (или используйте chain)',
         retryable: false,
       },
     }

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.17 (11 июня 2026)
+## Текущая версия: v1.1.18 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,87 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.18 — AI Bridge Этап 9: fallback chain (авто-переключение на резерв)
+
+**Зачем**: если основной AI временно недоступен (OpenAI лежит, у вас закончились DeepSeek кредиты, Anthropic 429 throttle) — программа автоматически пробует следующий AI из цепочки. Юзер получает ответ от первого работающего вместо ошибки.
+
+**Что готово**:
+
+- [`main/ai/bridge/fallbackChain.js`](main/ai/bridge/fallbackChain.js) (~140 стр.) — `createFallbackChain(steps, factories)`:
+  - `steps`: массив `{mode: 'api'|'local'|'webui', config: {providerId, baseUrl, ...}}`.
+  - `factories`: `{createApiBridge, createLocalBridge, createWebUiBridge, callProvider, fetch}` — DI.
+  - `ask(question)` пробует steps по очереди:
+    1. Если `signal.aborted` — стоп с `code:'aborted'`.
+    2. Строит bridge для текущего step (`buildBridgeForStep`).
+    3. Вызывает `bridge.ask(question)`.
+    4. Если `ok=true` → возврат + `debug.attemptedFallbacks` + `successfulStepIndex` (если что-то было попробовано).
+    5. Если ошибка — анализ кода:
+       - `aborted` / `unsupported_mode` → стоп.
+       - `auth_required` БЕЗ «missing key» в message → стоп (нужен фикс юзером).
+       - `auth_required` С «missing key» → пробуем следующий (может ключ есть для другого провайдера).
+       - Любая другая ошибка + `retryable=true` → пробуем следующий.
+       - `retryable=false` (не одна из выше) → стоп.
+    6. Если все steps закончились → возврат последнего answer + `debug.exhausted=true`.
+  - throw из `bridge.ask` → ловится → `{ok:false, code:'unknown', retryable:true}` → пробуется следующий.
+
+- [`main/handlers/aiBridgeIpcHandlers.js`](main/handlers/aiBridgeIpcHandlers.js) — `handleSend` расширен:
+  - Если `payload.chain` есть и не пустой → используется fallback chain вместо single bridge.
+  - Иначе работает как раньше (single mode).
+  - Все факторы из `deps` пробрасываются в fallback factories.
+
+### Какие ошибки fallback пробует дальше
+
+| `error.code` | retryable | Следующий шаг? |
+|---|---|---|
+| `network_error` | ✅ | ✅ да |
+| `server_error` (5xx) | ✅ | ✅ да |
+| `rate_limited` (429) | ✅ | ✅ да |
+| `streaming_timeout` | ✅ | ✅ да |
+| `auth_required` (missing key) | ❌ | ✅ да (у другого провайдера может быть ключ) |
+| `auth_required` (неверный ключ) | ❌ | ❌ стоп (юзер должен сам поправить) |
+| `config_invalid` | ❌ | ❌ стоп |
+| `aborted` | ❌ | ❌ стоп (юзер сам отменил) |
+| `unsupported_mode` | ❌ | ❌ стоп (системная проблема) |
+| `no_answer` | ❌ | ❌ стоп (AI ответил пусто, повтор не поможет) |
+
+### Пример использования из renderer
+
+```js
+const r = await window.api.invoke('ai-bridge:send', {
+  chain: [
+    { mode: 'api',   config: { providerId: 'anthropic' } },
+    { mode: 'api',   config: { providerId: 'openai' } },
+    { mode: 'local', config: { baseUrl: 'http://127.0.0.1:11434' } },
+  ],
+  question: { version: 1, text: 'Привет!', source: { messengerId: 'native_cc' } },
+})
+
+// r.ok === true → r.text = ответ от первого успешного
+// r.debug.attemptedFallbacks = [{mode, providerId, errorCode}, ...]
+// r.debug.successfulStepIndex = индекс успешного step
+// Если все упали: r.debug.exhausted = true
+```
+
+### Тесты (+17)
+- `fallbackChain.vitest.js` (14): валидация (пустой steps / без factories) / first ok / retryable + ok / все retryable упали → exhausted / auth_required без missing → стоп / missing key → следующий / aborted → стоп / unsupported_mode → стоп / api → local смешанные / api → webui смешанные / step без providerId → unsupported и далее / signal.aborted сразу → нет вызовов / throw в ask → ловится + следующий.
+- `aiBridgeIpcHandlers.vitest.js` (+3): payload.chain используется вместо single / chain без question → config_invalid / пустой chain → обычный mode.
+
+### Регрессия
+lint 0, vitest 1736 → 1753 ✅ (+17), fileSizeLimits 442 → 444 ✅, check-memory ✅.
+
+### UI пока без галочки «использовать резерв»
+Подключение из UI добавится в следующей версии (для AiBridgeCheck — галочка «авто-резерв» + автоматический подбор chain из доступных провайдеров). Сейчас chain доступен только программно через IPC (например для AI Agent v1.1.3 fallback который уже работает).
+
+### Безопасность
+- Каждый bridge в chain создаётся отдельно — изоляция между провайдерами.
+- API ключи для каждого читаются из своих настроек.
+- Errors не утекают в успешный ответ — debug.attemptedFallbacks даёт информацию что было попробовано.
+
+### Rollback
+`git revert <commit>` — fallbackChain.js новый файл, payload.chain опциональная ветка в handleSend (если её нет — всё работает как раньше).
 
 ---
 
@@ -200,79 +281,9 @@ lint 0, vitest 1708 → 1725 ✅ (+17), fileSizeLimits 437 → 439 ✅, check-me
 
 ---
 
-### v1.1.15 — Кнопка проверки AI перенесена из лог-вьюера в AISidebar
+### v1.1.14 – v1.1.15 — заархивированы
 
-**Юзер**: «я не понял, ты тесты добавил в логи??? кнопки которые делают тесты?» Слово «Тест» сбило с толку — он подумал что речь про unit-тесты. И вообще не место кнопкам-фичам в окне логов.
-
-**Что сделано**:
-
-1. **Файл переименован**: `AiBridgeTester.jsx` → [`AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx). Слово «тест» убрано чтобы не было путаницы с unit-тестами.
-
-2. **Кнопка убрана из** [`LogModal.jsx`](src/components/LogModal.jsx) — логи теперь чистые, только просмотр + копирование + фильтры (как было до моей ошибки).
-
-3. **Кнопка добавлена в** [`AISidebar.jsx`](src/components/AISidebar.jsx) — иконка 🤖 в шапке рядом с ⚙️ настройками. Открывает ту же модалку проверки.
-
-4. **Заголовок модалки**: «🧪 Тест AI Bridge» → «🤖 Проверка AI».
-
-5. **Подсказка внутри модалки**: убрана фраза про «инструменты разработчика», заменена на «задайте AI вопрос и получите ответ».
-
-6. **Префикс в логах**: `[ai-bridge-tester]` → `[ai-bridge-check]`.
-
-**Логика та же**:
-- 3 режима: Локальный (Ollama) / API провайдер / Веб-интерфейс.
-- 4 провайдера для API/WebUI: Claude / ChatGPT / DeepSeek / ГигаЧат.
-- Поля URL Ollama (default `http://127.0.0.1:11434`) + Модель (опц).
-- Textarea + кнопка «📤 Спросить» → invoke `ai-bridge:send` → результат.
-- Все этапы через `app:log` → попадают в стандартный лог-вьюер «📒 Логи ChatCenter».
-
-**Регрессия**: lint 0, vitest 1708/1708 ✅ (переименование импортов в тесте без изменения логики), fileSizeLimits 437/437 ✅, check-memory ✅.
-
-**Почему это не unit-тесты**:
-- Unit-тесты — это `*.vitest.jsx` файлы, запускаются `npm run test:vitest`, считают регрессию (сейчас 1708 штук).
-- «🤖 Проверка AI» в AISidebar — это **функциональный экран** для ручной отправки вопроса в AI и получения ответа. То же что обычный чат, только в форме «один вопрос → один ответ» для проверки что bridge работает.
-
----
-
-### v1.1.14 — UI-тестер AI Bridge без «инструментов разработчика»
-
-**Корректировка**: в предыдущих записях changelog я (агент) ошибочно писал «можно проверить через инструменты разработчика». У проекта правило #9 в CLAUDE.md прямо запрещает это — всё должно быть в нашем UI лог-вьюере. Юзер ответил: «я запретил связывать что-то с этим инструментом, все должно быть в логах, не хуй там смотреть, если ты что-то сделал с ним, переноси в логи, или в нашу программную среду».
-
-**Что сделано в коде**:
-- `src/components/AiBridgeTester.jsx` (в v1.1.15 переименован в [`AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx)) — модалка тестера AI Bridge:
-  - Выбор режима: Локальный (Ollama) / API провайдер / Веб-интерфейс.
-  - Выбор провайдера: Claude / ChatGPT / DeepSeek / ГигаЧат (для API/WebUI).
-  - Опциональные поля: URL Ollama (по умолчанию `http://127.0.0.1:11434`), модель (если пусто — берётся из настроек провайдера).
-  - Textarea для вопроса (по умолчанию демо-вопрос «Привет! Скажи коротко что ты можешь делать.»).
-  - Кнопка «📤 Спросить» → `window.api.invoke('ai-bridge:send', ...)` → отображение ответа (зелёная карточка с providerId/latencyMs/model) или ошибки (красная карточка с code/message/retryable).
-  - Все логи: `window.api.send('app:log', {level, message:'[ai-bridge-tester] ...'})` → попадают в стандартный лог-вьюер.
-
-- [`src/components/LogModal.jsx`](src/components/LogModal.jsx) — добавлена кнопка «🧪 Тест AI Bridge» в шапку (рядом с «Auto»/«Копировать»):
-  - Открывает `AiBridgeTester` поверх лог-вьюера (z-index 10001 > 9999).
-  - Закрытие тестера — через ✕ или клик по overlay.
-
-**Почему так**: проект имеет свой UI лог-вьюер «📒 Логи ChatCenter» (компонент `LogModal`), который читает `chatcenter.log`. Все события должны идти туда. Юзер не должен открывать «инструменты разработчика» — это для разработчиков, а программа должна показывать всё нужное в своём интерфейсе.
-
-**Поправлены формулировки в документации**:
-- [`changelogData.js`](src/utils/changelogData.js) — записи v1.1.10/v1.1.11: убраны «можно вызвать только из консоли разработчика», заменены на «проверить через 📒 Логи ChatCenter → 🧪 Тест AI Bridge».
-- [`progress-v1.1.7-v1.1.10.md`](.memory-bank/ai-agent-plan/progress-v1.1.7-v1.1.10.md) — раздел «Юзер ещё НЕ увидит в UI» переписан под новый тестер.
-- [`progress-v1.1.7-v1.1.13.md`](.memory-bank/ai-agent-plan/progress-v1.1.7-v1.1.13.md) — раздел «Что юзер может делать» переписан под UI-тестер.
-
-**Как пользоваться** (с этой версии):
-1. Открыть стандартный лог-вьюер ChatCenter (📒 Логи ChatCenter).
-2. Нажать «🧪 Тест AI Bridge» в шапке.
-3. Выбрать режим: Локальный (если есть Ollama) / API (если есть ключи провайдеров) / Веб-интерфейс (заработает с Этапа 7).
-4. Ввести вопрос → «📤 Спросить».
-5. Ответ появится в зелёной карточке. Все этапы (start / result) попадают в основной лог.
-
-**Тесты** (+11): `AiBridgeTester.vitest.jsx`:
-- UI рендер: заголовок + 3 кнопки режима, дефолт=local (без селектора провайдера), переключение на API → появляется select, клик ✕ → onClose.
-- Отправка: пустой вопрос → ошибка без IPC; happy path local → invoke + show answer; mode=api → invoke с providerId; ошибка → code+message; retryable=true → «(можно повторить)»; IPC throws → unknown error; логи через `app:log` (НЕ console.\*).
-
-**Регрессия**: lint 0, vitest 1697 → 1708 ✅ (+11), fileSizeLimits 435 → 437 ✅, check-memory ✅.
-
-**Что НЕ менялось**: код AI Bridge (router/bridges/preload/hooks) — без изменений. Это чисто UI добавление + чистка документации.
-
-**Rollback**: `git revert` — AiBridgeTester новый отдельный файл, кнопка в LogModal — 1 import + 1 кнопка + 1 модалка. Удаление не ломает существующий лог-вьюер.
+UI-проверка AI Bridge (v1.1.14 первый вариант в LogModal → v1.1.15 переехал в AISidebar после замечания юзера про путаницу со словом «Тест»). Сейчас кнопка 🤖 «Проверка AI» в шапке AISidebar, файл [`AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx). Подробно: [`archive/features-v1.1.14-1.1.15.md`](./archive/features-v1.1.14-1.1.15.md).
 
 ---
 
