@@ -31,13 +31,12 @@ import { loadTheme } from '../utils/themeColor.js'
 import { formatTypingUsers } from '../utils/formatTypingUsers.js'
 import { loadCurrentSearch, saveCurrentSearch, addToHistory } from '../utils/searchHistory.js'
 import { useFileAttach } from '../hooks/useFileAttach.js'
+// v1.1.9: дублирующий локальный topicMessageKey удалён — используем общий из nativeStoreHelpers.
+import { topicMessageKey } from '../store/nativeStoreHelpers.js'
+// v1.1.9: handleAttachSend вынесен в utils/inboxAttachSend.js (~36 строк).
+import { runAttachSend } from '../utils/inboxAttachSend.js'
 
 try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
-
-function topicMessageKey(chatId, topic) {
-  const topicId = topic?.topicId || topic?.id || topic?.topMessageId
-  return topicId ? `${chatId}:topic:${topicId}` : chatId
-}
 
 export default function InboxMode({ store, hoveredAccountId, modes }) {
   const [input, setInput] = useState('')
@@ -60,41 +59,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // useFileAttach управляет state (files / caption / sending). Обработчик
   // отправки делает invoke tg:send-file (для 1 файла) или tg:send-album (2+).
   const attach = useFileAttach()
-  const handleAttachSend = async () => {
-    if (!attach.files || attach.files.length === 0) return
-    if (attach.sending) return
-    attach.setSending(true)
-    try {
-      // Получаем path для каждого файла — Electron File API возвращает path
-      // через `file.path` (доступно в drag/file picker). Browser File API без path.
-      const files = attach.files.map(f => ({
-        path: f.path || f.name,  // file.path — в Electron, fallback на name
-        // caption на каждом — для альбома пустой, общий идёт через albumCaption
-      }))
-      const validFiles = files.filter(f => f.path && typeof f.path === 'string' && f.path.includes('/') || f.path?.includes('\\'))
-      if (validFiles.length === 0) {
-        showToast('Не удалось получить путь к файлам (Electron file.path required)', 'error')
-        attach.setSending(false)
-        return
-      }
-      let result
-      if (validFiles.length === 1) {
-        result = await store.sendFile(store.activeChatId, validFiles[0].path, attach.caption)
-      } else {
-        result = await store.sendAlbum(store.activeChatId, validFiles, attach.caption, replyTo?.id)
-      }
-      if (result?.ok) {
-        attach.clear()
-        setReplyTo(null)
-      } else {
-        showToast(`Ошибка отправки: ${result?.error || 'неизвестно'}`, 'error')
-      }
-    } catch (e) {
-      showToast(`Сбой отправки: ${e?.message || e}`, 'error')
-    } finally {
-      attach.setSending(false)
-    }
-  }
+  const handleAttachSend = () => runAttachSend({ store, attach, replyTo, showToast, setReplyTo })
   const [activeThemeId, setActiveThemeId] = useState(() => loadTheme().id)
   // v0.95.7: drag-to-resize chat-list ↔ окно чата. Default 340px, [60, 600]. Compact <200.
   const [chatListWidth, setChatListWidth] = useState(CHAT_LIST_DEFAULT_WIDTH)

@@ -72,41 +72,12 @@ const AIActivityDashboard = lazy(() => import('./components/AIActivityDashboard.
 const AIAutoReplyRules = lazy(() => import('./components/AIAutoReplyRules.jsx'))
 
 // v0.87.0: специальный "виртуальный" мессенджер — рендерит NativeApp вместо <webview>
-const NATIVE_CC_ID = 'native_cc'
-const NATIVE_CC_TAB = {
-  id: NATIVE_CC_ID,
-  name: 'ЦентрЧатов',
-  url: 'about:blank',
-  color: '#2AABEE',
-  partition: 'persist:native-cc',
-  emoji: '💬',
-  isDefault: true,
-  isNative: true,
-}
-
-function AISidebarFallback({ visible, width, panelRef }) {
-  if (!visible) return null
-  return (
-    <aside
-      ref={panelRef}
-      className="shrink-0"
-      style={{
-        width,
-        backgroundColor: 'var(--cc-panel)',
-        borderLeft: '1px solid var(--cc-border)',
-      }}
-    />
-  )
-}
+// v1.1.9: NATIVE_CC_ID/TAB + AISidebarFallback + NativeAppFallback вынесены
+// в appFallbacks.jsx (App.jsx был на пределе exception 940).
+import { NATIVE_CC_ID, NATIVE_CC_TAB, AISidebarFallback, NativeAppFallback } from './appFallbacks.jsx'
 
 // Навигация → src/utils/navigateToChat.js | Звук → src/utils/sound.js | Вкладка → components/MessengerTab.jsx
-
 // ─── Главный компонент ────────────────────────────────────────────────────
-
-function NativeAppFallback() {
-  try { window.__ccStartupMark?.('component:NativeApp', 'fallback render') } catch {}
-  return <div className="w-full h-full" style={{ backgroundColor: '#000' }} />
-}
 
 export default function App() {
   try {

@@ -6,24 +6,11 @@ import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostic
 // v0.96.0 (Phase 0 M0.4): NotificationSource — паспорт сообщения для уведомлений.
 import { createNotificationSource } from '../../shared/notificationSource.js'
 
-// v0.87.36: localStorage-кэш сообщений (общая утилита, экспортируется для nativeStore)
-const CACHE_KEY_PREFIX = 'chat-messages:'
-const CACHE_MAX_MSG = 50
-export function saveChatCache(chatId, messages) {
-  try {
-    if (!chatId || !Array.isArray(messages)) return
-    const keep = messages.slice(-CACHE_MAX_MSG)
-    localStorage.setItem(CACHE_KEY_PREFIX + chatId, JSON.stringify(keep))
-  } catch(_) { /* quota / disabled / etc — silent */ }
-}
-export function loadChatCache(chatId) {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY_PREFIX + chatId)
-    if (!raw) return null
-    const arr = JSON.parse(raw)
-    return Array.isArray(arr) ? arr : null
-  } catch(_) { return null }
-}
+// v1.1.9: localStorage cache вынесен в nativeStoreCache.js. Импортируем для
+// внутреннего использования + re-export для обратной совместимости (внешние
+// импорты из './nativeStoreIpc.js' продолжают работать).
+import { saveChatCache, loadChatCache } from './nativeStoreCache.js'
+export { saveChatCache, loadChatCache }
 
 // Регистрация IPC слушателей. setState — обычный setter useState.
 // stateRef — ref на текущий state (для чтения внутри listeners).

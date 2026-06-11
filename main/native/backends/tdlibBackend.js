@@ -31,37 +31,9 @@ async function safeInvoke(client, request) {
   catch (e) { return { ok: false, error: e?.message || String(e), code: e?.code } }
 }
 
-// v1.0.6: маппинг наших filter тегов в TDLib searchMessagesFilter*.
-// Поддерживаемые: 'photo', 'video', 'document', 'audio', 'voice', 'url', 'mention',
-// 'pinned', 'unread-mention', 'empty' (default).
-// https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1search_messages_filter.html
-const SEARCH_FILTER_MAP = {
-  photo: 'searchMessagesFilterPhoto',
-  video: 'searchMessagesFilterVideo',
-  'photo-video': 'searchMessagesFilterPhotoAndVideo',
-  document: 'searchMessagesFilterDocument',
-  audio: 'searchMessagesFilterAudio',
-  voice: 'searchMessagesFilterVoiceNote',
-  'video-note': 'searchMessagesFilterVideoNote',
-  url: 'searchMessagesFilterUrl',
-  mention: 'searchMessagesFilterMention',
-  pinned: 'searchMessagesFilterPinned',
-  'unread-mention': 'searchMessagesFilterUnreadMention',
-  empty: 'searchMessagesFilterEmpty',
-}
-function mapSearchFilter(filter) {
-  if (!filter || filter === 'empty') return { '@type': 'searchMessagesFilterEmpty' }
-  const tdType = SEARCH_FILTER_MAP[String(filter)] || 'searchMessagesFilterEmpty'
-  return { '@type': tdType }
-}
-
-/** Парсит наш составной id 'accountId:rawId' → { accountId, rawId (число) } */
-function parseChatId(chatId) {
-  const s = String(chatId || '')
-  const colon = s.indexOf(':')
-  if (colon < 0) return { accountId: null, rawId: null }
-  return { accountId: s.slice(0, colon), rawId: Number(s.slice(colon + 1)) }
-}
+// v1.1.9: SEARCH_FILTER_MAP / mapSearchFilter / parseChatId вынесены
+// в tdlibBackendHelpers.js (pure helpers, легко тестируемые без TDLib мока).
+import { mapSearchFilter, parseChatId } from './tdlibBackendHelpers.js'
 
 /**
  * Возвращает client для chatId или null + готовый error-ответ.

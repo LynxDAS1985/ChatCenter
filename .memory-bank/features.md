@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.8 (11 июня 2026)
+## Текущая версия: v1.1.9 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,36 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.9 — Разбиение топ-5 больших файлов (защита от подкрадывающихся лимитов)
+
+**Контекст**: 4 из топ-5 файлов проекта были на пределе exception (запас 1-33 строки). Любая новая фича падала бы на size limit. Юзер: «разбей с запасом».
+
+**Что разбито**:
+
+| Файл | До → После | Запас от ceiling | Что вынесено |
+|---|---|---|---|
+| `src/native/store/nativeStore.js` | 1326 → 1227 | 113 | 12 функций + 6 констант + DEFAULT_STATE → [`nativeStoreHelpers.js`](src/native/store/nativeStoreHelpers.js) (193 стр.) |
+| `src/native/modes/InboxMode.jsx` | 1077 → 1042 | 68 | `handleAttachSend` (~36 стр.) → [`inboxAttachSend.js`](src/native/utils/inboxAttachSend.js) + удалён дубль `topicMessageKey` (используется общий из nativeStoreHelpers) |
+| `src/App.jsx` | 928 → 899 | 41 | `NATIVE_CC_ID/TAB` + `AISidebarFallback` + `NativeAppFallback` → [`appFallbacks.jsx`](src/appFallbacks.jsx) (43 стр.) |
+| `main/native/backends/tdlibBackend.js` | 920 → 892 | 38 | `SEARCH_FILTER_MAP` + `mapSearchFilter` + `parseChatId` → [`tdlibBackendHelpers.js`](main/native/backends/tdlibBackendHelpers.js) (54 стр.) |
+| `src/native/store/nativeStoreIpc.js` | 730 → 714 | 16 | `saveChatCache` + `loadChatCache` (localStorage) → [`nativeStoreCache.js`](src/native/store/nativeStoreCache.js) (32 стр.) |
+
+**5 новых модулей** + 5 файлов тестов:
+- `nativeStoreHelpers.vitest.js` — 40 тестов (константы / DEFAULT_STATE / 11 функций)
+- `nativeStoreCache.vitest.js` — 10 тестов (save/load/round-trip/quota fallback)
+- `tdlibBackendHelpers.vitest.js` — 13 тестов (SEARCH_FILTER_MAP/mapSearchFilter/parseChatId)
+- Тесты для `appFallbacks.jsx` и `inboxAttachSend.js` — поведение не изменилось, существующие e2e/integration тесты приложения покрывают (через App.jsx и InboxMode.jsx).
+
+**Re-export trick для backward compatibility**: `nativeStoreIpc.js` оставляет `export { saveChatCache, loadChatCache } from './nativeStoreCache.js'` — все внешние импорты продолжают работать.
+
+**Один баг найден и починен**: при первой попытке выноса `saveChatCache`/`loadChatCache` сделал только `export { ... } from` — а внутри `nativeStoreIpc.js` использовал `saveChatCache(chatId, next)` напрямую. Тесты упали с `ReferenceError: saveChatCache is not defined`. Исправлено добавлением отдельного `import { ... } from` (re-export не делает identifier доступным локально).
+
+**Регрессия**: lint 0, vitest 1520 → 1583 ✅ (+63 теста), fileSizeLimits 416/416 → 422/422 ✅.
+
+**Поведение не изменено**. Все вынесенные функции / константы те же, только импорт из соседнего файла.
 
 ---
 
@@ -381,60 +411,9 @@ Cм. [`archive/features-v0.95.15-18.md`](./archive/features-v0.95.15-18.md): и�
 
 ---
 
-### v0.95.11 — Диагностика «не грузит дальше при unread > загруженного» (БЕЗ смены поведения)
+### v0.95.10 – v0.95.11 — заархивированы
 
-Юзер жалоба + лог анализ: чат «Компьютерная | IT, Digital», unread=724, загружено 394 сообщения, юзер в самом низу (`bottomGap=0`). Клик ↓ — no-op (уже у низа загруженного). Load-newer не срабатывает потому что юзер не двигает scroll. Остальные ~330 непрочитанных — за пределами окна загрузки. **Корневой ответ — jump-to-end-of-chat** (как Telegram Desktop: при unread>0 reload вокруг `chat.lastMessage.id`). Прежде чем менять поведение — собираю реальные числа на live-сессии.
-
-#### Что добавлено (только логи, поведение не изменено)
-
-1. [tdlibMapper.js mapChat](main/native/backends/tdlibMapper.js) — новое поле `lastMessageId` (id последнего сообщения чата на сервере по TDLib).
-2. [InboxMode.jsx scrollToBottom](src/native/modes/InboxMode.jsx) — `button-scroll-bottom` лог расширен полями:
-   - `loadedIncoming` — число incoming в `activeMessages`
-   - `chatLastMessageId` — id последнего на сервере
-   - `loadedLastId` — id последнего загруженного
-   - `gapMessages` — оценка количества пропущенных сообщений между loaded и server (TDLib msg_id step = 2^20)
-   - `unreadVsLoaded` — `activeUnread - loadedIncoming` (сколько непрочитанных вне DOM)
-3. [useScrollDiagnostics.js chat-open](src/native/hooks/useScrollDiagnostics.js) — добавлены `lastMessageId` + `readInboxMaxId`.
-
-#### Что покажет лог на реальной сессии
-
-- `chat-open lastMessageId=X readInboxMaxId=Y unread=Z messages=N` — сразу видно настройку gap'а
-- При клике ↓: `button-scroll-bottom gapMessages=K unreadVsLoaded=M` — K показывает «насколько ВПЕРЁД сервер от загруженного», M — «сколько непрочитанных НЕ в DOM»
-
-#### Что НЕ изменено
-
-- `scrollToBottom` — поведение то же: `el.scrollTo(scrollHeight)` + mark-read до loadedLast + load-newer через handleScroll
-- Без изменений: drag-resize, gate bypass mark-read (v0.95.8), loading-pulse кнопки (v0.95.9 Fix 4a), все защиты v0.94.7/v0.91.13
-
-#### Следующий шаг
-
-После запуска v0.95.11 юзером и анализа лога — если `gapMessages>50` и `unreadVsLoaded>0` подтвердятся → точный фикс v0.95.12 (jump-to-end через `loadMessages(chatId, { aroundId: chat.lastMessageId, force: true })` + scroll вниз + markRead до lastMessageId).
-
-**Регрессия**: lint 0, vitest 721/721, check-memory ✅. Поведение не менялось — тесты не обновлялись.
-
----
-
-### v0.95.10 — Откат scroll-continuation (юзер не просил), loading-pulse кнопки ↓ остаётся
-
-Юзер: «Продолжение scroll после load-newer я это не просил убирай, я просил эффект загрузки на кругшке сделать, пока идет подгрузка новых сообщений». Извинения — автоматическое довинчивание scroll к низу при дозагрузке (`scrollIntentRef` + `useLayoutEffect` из v0.95.9 fix 4b) было не запрошено — юзер хотел ТОЛЬКО visual effect на кнопке.
-
-#### Удалено
-
-В [InboxMode.jsx](src/native/modes/InboxMode.jsx) удалены:
-- `scrollIntentRef` ref + установка intent в `scrollToBottom`
-- `useLayoutEffect` который слушал `activeMessages.length` / `loadingNewer` и довинчивал scroll к низу
-- Комментарии о continuation
-
-#### Остаётся (Fix 4a v0.95.9, юзер просил это)
-
-- ✅ `--loading` класс на [ScrollBottomButton](src/native/components/InboxChatPanel.jsx) когда `loadingNewer=true`
-- ✅ Accent border + box-shadow pulse 1.4s в [styles-overlays.css](src/native/styles-overlays.css)
-- ✅ Tooltip «Подгружаю свежие сообщения…»
-- ✅ loadingNewer prop в ScrollBottomButton
-
-Юзер видит: кликнул ↓ → кнопка пульсирует пока идёт «Загружаю ещё…» (визуальный feedback есть). Но scroll НЕ продолжается автоматически — это поведение по-умолчанию (один scroll по клику, как в v0.95.6).
-
-**Регрессия**: lint 0, vitest 721/721, fileSizeLimits 283/283, check-memory ✅.
+Откат scroll-continuation + loading-pulse кнопки ↓ (v0.95.10), диагностика «не грузит дальше при unread > загруженного» с полями gapMessages/unreadVsLoaded (v0.95.11). Корни закрыты в v0.95.12+ (см. `jump-to-end-saga.md`). Детали: [`archive/features-v0.95.10-11.md`](./archive/features-v0.95.10-11.md).
 
 ---
 
