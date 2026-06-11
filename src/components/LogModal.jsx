@@ -1,8 +1,7 @@
 // v0.84.2: Модальное окно лога — фильтры по уровням, копирование, авто-обновление
-// v1.1.14: добавлена кнопка «🧪 Тест AI Bridge» — открывает встроенный тестер
-// чтобы юзер мог проверить AI Bridge не открывая инструменты разработчика.
+// v1.1.15: кнопка проверки AI Bridge перенесена отсюда в AISidebar (юзер просил —
+// в логах не должно быть кнопок-фич).
 import { useState, useEffect, useRef } from 'react'
-import AiBridgeTester from './AiBridgeTester.jsx'
 
 const LEVEL_COLORS = {
   ERROR: '#ff4444',
@@ -24,7 +23,6 @@ export default function LogModal({ content, onClose, onRefresh }) {
   const [filter, setFilter] = useState('all')
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [testerOpen, setTesterOpen] = useState(false)  // v1.1.14: AI Bridge тестер
   const scrollRef = useRef(null)
 
   const lines = (content || '').split('\n').map(parseLogLine).filter(Boolean)
@@ -76,17 +74,6 @@ export default function LogModal({ content, onClose, onRefresh }) {
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--cc-text, #e0e0e0)', flex: 1 }}>
             📋 Логи ChatCenter
           </span>
-          <button
-            onClick={() => setTesterOpen(true)}
-            title="Открыть тестер AI Bridge (Local/API/WebUI без инструментов разработчика)"
-            style={{
-              padding: '4px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer',
-              backgroundColor: '#2AABEE22', color: '#2AABEE',
-              border: '1px solid #2AABEE55',
-            }}
-          >
-            🧪 Тест AI Bridge
-          </button>
           <button
             onClick={() => { setAutoRefresh(!autoRefresh); if (!autoRefresh && onRefresh) onRefresh() }}
             style={{
@@ -160,9 +147,6 @@ export default function LogModal({ content, onClose, onRefresh }) {
           <span>{new Date().toLocaleTimeString()}</span>
         </div>
       </div>
-
-      {/* v1.1.14: модалка тестера AI Bridge поверх лог-вьюера */}
-      {testerOpen && <AiBridgeTester onClose={() => setTesterOpen(false)} />}
     </div>
   )
 }

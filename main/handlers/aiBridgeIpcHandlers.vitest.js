@@ -144,6 +144,88 @@ describe('registerAiBridgeIpcHandlers', () => {
   })
 })
 
+describe('handleRegisterWebview / handleUnregisterWebview (Этап 7)', () => {
+  it('register без providerId → error', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const out = await r.handleRegisterWebview({ webContentsId: 5 }, {})
+    expect(out.ok).toBe(false)
+    expect(out.error).toContain('providerId')
+  })
+
+  it('register с невалидным webContentsId → error', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const out = await r.handleRegisterWebview({ providerId: 'openai' }, {})
+    expect(out.ok).toBe(false)
+  })
+
+  it('register когда webContents.fromId возвращает null → error', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const out = await r.handleRegisterWebview(
+      { providerId: 'openai', webContentsId: 99 },
+      { webContentsFromId: () => null, webviewUnregisterByProvider: new Map() }
+    )
+    expect(out.ok).toBe(false)
+    expect(out.error).toContain('не найден')
+  })
+
+  it('register успешный → ok:true + сохранена unregister функция', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const fakeWc = { send: vi.fn() }
+    const map = new Map()
+    const out = await r.handleRegisterWebview(
+      { providerId: 'openai', webContentsId: 5 },
+      { webContentsFromId: () => fakeWc, webviewUnregisterByProvider: map }
+    )
+    expect(out.ok).toBe(true)
+    expect(map.get('openai')).toBeTypeOf('function')
+  })
+
+  it('повторный register для того же providerId → старый unregister вызван', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const fakeWc1 = { send: vi.fn() }
+    const fakeWc2 = { send: vi.fn() }
+    const map = new Map()
+    await r.handleRegisterWebview(
+      { providerId: 'openai', webContentsId: 1 },
+      { webContentsFromId: () => fakeWc1, webviewUnregisterByProvider: map }
+    )
+    const firstUnreg = map.get('openai')
+    expect(firstUnreg).toBeTypeOf('function')
+
+    await r.handleRegisterWebview(
+      { providerId: 'openai', webContentsId: 2 },
+      { webContentsFromId: () => fakeWc2, webviewUnregisterByProvider: map }
+    )
+    // Старый unreg больше не в map
+    expect(map.get('openai')).not.toBe(firstUnreg)
+  })
+
+  it('unregister без providerId → error', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const out = r.handleUnregisterWebview({}, {})
+    expect(out.ok).toBe(false)
+  })
+
+  it('unregister известного providerId → ok + map очищена', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const fakeWc = { send: vi.fn() }
+    const map = new Map()
+    await r.handleRegisterWebview(
+      { providerId: 'openai', webContentsId: 5 },
+      { webContentsFromId: () => fakeWc, webviewUnregisterByProvider: map }
+    )
+    const out = r.handleUnregisterWebview({ providerId: 'openai' }, { webviewUnregisterByProvider: map })
+    expect(out.ok).toBe(true)
+    expect(map.has('openai')).toBe(false)
+  })
+
+  it('unregister неизвестного providerId → ok (без throw)', async () => {
+    const r = await import('./aiBridgeIpcHandlers.js')
+    const out = r.handleUnregisterWebview({ providerId: 'unknown' }, { webviewUnregisterByProvider: new Map() })
+    expect(out.ok).toBe(true)
+  })
+})
+
 describe('AI_BRIDGE_IPC_CHANNELS', () => {
   it('SEND = ai-bridge:send', () => {
     expect(AI_BRIDGE_IPC_CHANNELS.SEND).toBe('ai-bridge:send')

@@ -4,6 +4,10 @@ import AIConfigPanel from './AIConfigPanel.jsx'
 import AIProviderTabs from './AIProviderTabs.jsx'
 // v0.99.0 (Phase 3): UI AI-агента (показывается когда юзер кликнул «🤖 AI» в уведомлении).
 import AISidebarAgent from './AISidebarAgent.jsx'
+// v1.1.15: проверка AI Bridge (вместо DevTools, открывается кнопкой 🤖 рядом с настройками).
+import AiBridgeCheck from './AiBridgeCheck.jsx'
+// v1.1.16 (Этап 7): подключение webview к WebUI Bridge — preload + registerWebview.
+import { useAiWebviewBridge } from '../native/hooks/useAiWebviewBridge.js'
 import {
   looksLikeApiKey, DEFAULT_SYSTEM_PROMPT, PROVIDERS, DEFAULT_WEBVIEW_URLS,
   MODEL_HINTS, PROVIDER_URLS, BILLING_URLS, isBillingError,
@@ -45,6 +49,8 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const [error, setError] = useState('')
   const [showConfig, setShowConfig] = useState(false)
   const [showAddProvider, setShowAddProvider] = useState(false)
+  // v1.1.15: модалка проверки AI Bridge (Local/API/WebUI без DevTools).
+  const [bridgeCheckOpen, setBridgeCheckOpen] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState(null)
   const [showKey, setShowKey] = useState(false)
   const [showSecret, setShowSecret] = useState(false)
@@ -92,6 +98,10 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const aiCfg = { provider, systemPrompt: settings.aiSystemPrompt || DEFAULT_SYSTEM_PROMPT, ...providerCfg }
   const isGigaChat = provider === 'gigachat'
   const configured = isProviderConnected(settings, provider)
+
+  // v1.1.16 (Этап 7): подключение webview к WebUI Bridge — preload + registerWebview.
+  // Срабатывает только когда providerMode='webview' и URL распознан как AI сайт.
+  useAiWebviewBridge(aiWebviewRef, webviewUrl, providerMode)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [suggestions, error])
 
@@ -413,6 +423,12 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
               style={{ color: 'var(--cc-text-dimmer)' }}
             >{refreshing ? '⏳' : '🔄'}</button>
             <button
+              onClick={() => setBridgeCheckOpen(true)}
+              title="Проверка AI Bridge — задать AI вопрос и получить ответ"
+              className="text-sm w-6 h-6 rounded flex items-center justify-center cursor-pointer"
+              style={{ color: 'var(--cc-text-dimmer)' }}
+            >🤖</button>
+            <button
               onClick={() => { setShowConfig(!showConfig); setShowAddProvider(false) }}
               title="Настройки ИИ-помощника"
               className="text-sm w-6 h-6 rounded flex items-center justify-center cursor-pointer"
@@ -420,6 +436,9 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
             >⚙️</button>
           </div>
         </div>
+
+        {/* v1.1.15: модалка проверки AI Bridge */}
+        {bridgeCheckOpen && <AiBridgeCheck onClose={() => setBridgeCheckOpen(false)} />}
 
         {/* ── Панель провайдеров (вынесена в AIProviderTabs.jsx) ── */}
         <AIProviderTabs

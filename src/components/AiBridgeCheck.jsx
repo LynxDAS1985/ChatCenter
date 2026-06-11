@@ -1,13 +1,11 @@
-// v1.1.14: UI-тестер AI Bridge.
+// v1.1.15: проверка AI Bridge через UI (не unit-тесты, не DevTools).
 //
-// Зачем: до Этапа 7 (AIBridgePanel) AI Bridge можно было вызвать только через
-// IPC напрямую. Юзер не должен открывать инструменты разработчика — у нас своя
-// программная среда. Этот компонент даёт нажимающуюся кнопку «Спросить»
-// для проверки 3 режимов (local/api/webui) без касания инструментов разработчика.
+// Открывает форму «задай AI вопрос → получи ответ». Используется до Этапа 7
+// (постоянная панель в AISidebar) чтобы юзер мог проверить что bridge работает.
 //
 // Все логи идут через window.api.send('app:log', ...) → попадают в «📒 Логи ChatCenter».
 //
-// Открывается из LogModal по кнопке «🧪 Тест AI Bridge».
+// Открывается из AISidebar по кнопке 🤖 рядом с настройками.
 
 import { useState } from 'react'
 
@@ -26,11 +24,11 @@ const PROVIDERS = [
 
 function log(level, message) {
   try {
-    window.api?.send?.('app:log', { level, message: '[ai-bridge-tester] ' + message })
-  } catch (_) { /* лог-вьюер не работает — это сам тестер, фолбэк не нужен */ }
+    window.api?.send?.('app:log', { level, message: '[ai-bridge-check] ' + message })
+  } catch (_) { /* лог-вьюер не работает — это сам проверочный экран, фолбэк не нужен */ }
 }
 
-export default function AiBridgeTester({ onClose }) {
+export default function AiBridgeCheck({ onClose }) {
   const [mode, setMode] = useState('local')
   const [providerId, setProviderId] = useState('anthropic')
   const [text, setText] = useState('Привет! Скажи коротко что ты можешь делать.')
@@ -111,7 +109,7 @@ export default function AiBridgeTester({ onClose }) {
           borderBottom: '1px solid var(--cc-border, #2a2b3e)',
         }}>
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--cc-text, #e0e0e0)', flex: 1 }}>
-            🧪 Тест AI Bridge
+            🤖 Проверка AI
           </span>
           <button onClick={onClose} style={{
             width: 28, height: 28, borderRadius: 6, border: 'none', cursor: 'pointer',
@@ -121,8 +119,8 @@ export default function AiBridgeTester({ onClose }) {
 
         <div style={{ padding: 16, overflow: 'auto' }}>
           <div style={{ fontSize: 11, color: 'var(--cc-text-dimmer, #777)', marginBottom: 12 }}>
-            Отправляет вопрос в AI Bridge напрямую — без открытия «инструментов разработчика».
-            Логи попадают в этот же лог-вьюер (закройте окно тестера, чтобы их увидеть).
+            Задайте AI вопрос и получите ответ. Все этапы пишутся в стандартный лог
+            (📒 Логи ChatCenter — откройте после закрытия этого окна).
           </div>
 
           <label style={labelStyle}>Режим</label>

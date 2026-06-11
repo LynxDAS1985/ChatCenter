@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.14 (11 июня 2026)
+## Текущая версия: v1.1.16 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -53,12 +53,119 @@
 
 ---
 
+### v1.1.16 — AI Bridge Этап 7: webview AI подключился к WebUI Bridge
+
+**Что готово**: когда юзер открывает AI сайт в боковой панели в режиме «Веб-интерфейс» — webview автоматически подключается к WebUI Bridge. После этого 🤖 «Проверка AI» в режиме «Веб-интерфейс» реально отправит вопрос в открытый сайт и заберёт ответ.
+
+**Файлы**:
+
+- [`src/native/hooks/useAiWebviewBridge.js`](src/native/hooks/useAiWebviewBridge.js) (~90 строк) — React hook:
+  - Активен только при `providerMode === 'webview'` + URL распознан через `detectAiProvider(url)`.
+  - Получает путь к `ai-monitor.preload` через `await window.api.invoke('app:get-paths')`.
+  - Устанавливает `webview.setAttribute('preload', 'file:///' + path)` — Electron webview принимает preload как URL.
+  - Слушает `did-attach` event → `webview.getWebContentsId()` → IPC `ai-bridge:webui:register-webview {providerId, webContentsId}`.
+  - При unmount или смене провайдера → IPC `ai-bridge:webui:unregister-webview {providerId}`.
+  - Все логи через `app:log` (префикс `[ai-webview-bridge]`).
+
+- [`main/handlers/aiBridgeIpcHandlers.js`](main/handlers/aiBridgeIpcHandlers.js) — расширено:
+  - Новые каналы: `ai-bridge:webui:register-webview` + `ai-bridge:webui:unregister-webview` (invoke).
+  - `handleRegisterWebview(payload, deps)` — резолвит `webContents.fromId(webContentsId)` через DI (для тестов) или динамический `import('electron')`. Сохраняет unregister функцию в `Map<providerId, unreg>`. Повторный register отписывает старый.
+  - `handleUnregisterWebview(payload, deps)` — вызывает сохранённый unreg + чистит map.
+  - При unsubscribe register handler — отписываются ВСЕ webview (защита от утечки).
+
+- [`src/components/AISidebar.jsx`](src/components/AISidebar.jsx) — подключён hook:
+  ```jsx
+  useAiWebviewBridge(aiWebviewRef, webviewUrl, providerMode)
+  ```
+
+### Как работает (полная цепочка с Этапа 7)
+
+1. Юзер настраивает в AI Sidebar: провайдер ChatGPT, режим «Веб-интерфейс», URL `https://chat.openai.com/`.
+2. AISidebar рендерит `<webview src={chat.openai.com}>`.
+3. Hook `useAiWebviewBridge` срабатывает:
+   - `detectAiProvider('https://chat.openai.com/')` → `{id: 'openai', ...}`.
+   - `invoke('app:get-paths')` → `{aiMonitorPreload: '...'}`.
+   - `webview.setAttribute('preload', 'file:///...ai-monitor.preload.cjs')`.
+4. Webview грузится → preload запускается → загружает `openai.hook.js` (Этап 5) → инжектирует через `<script>` → hook регистрирует `setInjectHandler`.
+5. Webview `did-attach` event → hook берёт `webContentsId` → IPC `register-webview` → main `webContents.fromId` → `registerWebview('openai', wc)` в WebUI Bridge.
+6. Юзер нажимает 🤖 «Проверка AI» → выбирает «Веб-интерфейс» + ChatGPT → вводит вопрос → «📤 Спросить».
+7. Renderer `sendQuestion({mode:'webui', config:{providerId:'openai'}, question})` → IPC `ai-bridge:send`.
+8. main `handleSend` → `createWebUiBridge({providerId:'openai'})` → router → `bridge.ask(question)`.
+9. Bridge берёт зарегистрированный webContents → `wc.send('ai-bridge:webui:inject', {questionId, text})`.
+10. Preload в webview получает → `<script>window.__ccAiBridge._enqueueInject(...)</script>`.
+11. `openai.hook.handleInject` → finds input → setInputValue → click submit → waitForAnswer (polling streaming indicator).
+12. ChatGPT отвечает → hook `window.__ccAiBridge.answer(questionId, text)` → postMessage → preload → IPC `answer-received` → `deliverAnswer` → resolve Promise → AiBridgeAnswer.
+13. UI показывает ответ в зелёной карточке.
+
+### Тесты (+17)
+- `useAiWebviewBridge.vitest.jsx` (9): providerMode !== webview / пустой URL / null ref / неизвестный сайт → лог + не подключать / chat.openai.com → setAttribute preload + did-attach listener / did-attach → IPC register с правильными args / unmount → removeEventListener + IPC unregister / app:get-paths без aiMonitorPreload → не падает / логи через app:log (НЕ console.\*).
+- `aiBridgeIpcHandlers.vitest.js` (+8): handleRegisterWebview без providerId/webContentsId → error / webContents.fromId возвращает null → error / успешный → ok + map / повторный register отписывает старый / handleUnregisterWebview без providerId → error / известный → ok + map очищена / неизвестный → ok без throw.
+
+### Регрессия
+lint 0, vitest 1708 → 1725 ✅ (+17), fileSizeLimits 437 → 439 ✅, check-memory ✅.
+
+### Что юзер увидит
+1. Откройте боковую панель AI.
+2. Выберите провайдера (ChatGPT/DeepSeek/Claude/ГигаЧат), переключите режим на «Веб-интерфейс».
+3. Залогиньтесь на сайте AI (одноразово, в этой webview сессии).
+4. Нажмите 🤖 «Проверка AI» в шапке → режим «Веб-интерфейс» → введите вопрос → «📤 Спросить».
+5. Программа автоматически вставит вопрос в сайт, дождётся ответа, покажет его в зелёной карточке.
+
+### Безопасность
+- Preload по-прежнему в изолированном sandbox.
+- Hook в main world только с доступом к DOM сайта (не к Electron API).
+- API ключи AI **не** нужны — юзер залогинен сам в webview сессии.
+- Регистрация webview только для 4 распознанных AI сайтов — кастомные URL не подключаются.
+
+### Известные риски
+- Если AI сайт обновит DOM — селекторы по умолчанию могут сломаться. Этап 8 (UI Custom Selectors) даст возможность настроить руками.
+- Webview перезагружается при смене URL — preload перезагрузится, hook повторно зарегистрирует webContents.
+- Если юзер выберет НЕ-AI сайт в URL — hook не подключится (нет провайдера), но обычный webview работает.
+
+### Rollback
+`git revert <commit>` — hook опциональный, существующий webview без preload работает как раньше (без AI Bridge).
+
+---
+
+### v1.1.15 — Кнопка проверки AI перенесена из лог-вьюера в AISidebar
+
+**Юзер**: «я не понял, ты тесты добавил в логи??? кнопки которые делают тесты?» Слово «Тест» сбило с толку — он подумал что речь про unit-тесты. И вообще не место кнопкам-фичам в окне логов.
+
+**Что сделано**:
+
+1. **Файл переименован**: `AiBridgeTester.jsx` → [`AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx). Слово «тест» убрано чтобы не было путаницы с unit-тестами.
+
+2. **Кнопка убрана из** [`LogModal.jsx`](src/components/LogModal.jsx) — логи теперь чистые, только просмотр + копирование + фильтры (как было до моей ошибки).
+
+3. **Кнопка добавлена в** [`AISidebar.jsx`](src/components/AISidebar.jsx) — иконка 🤖 в шапке рядом с ⚙️ настройками. Открывает ту же модалку проверки.
+
+4. **Заголовок модалки**: «🧪 Тест AI Bridge» → «🤖 Проверка AI».
+
+5. **Подсказка внутри модалки**: убрана фраза про «инструменты разработчика», заменена на «задайте AI вопрос и получите ответ».
+
+6. **Префикс в логах**: `[ai-bridge-tester]` → `[ai-bridge-check]`.
+
+**Логика та же**:
+- 3 режима: Локальный (Ollama) / API провайдер / Веб-интерфейс.
+- 4 провайдера для API/WebUI: Claude / ChatGPT / DeepSeek / ГигаЧат.
+- Поля URL Ollama (default `http://127.0.0.1:11434`) + Модель (опц).
+- Textarea + кнопка «📤 Спросить» → invoke `ai-bridge:send` → результат.
+- Все этапы через `app:log` → попадают в стандартный лог-вьюер «📒 Логи ChatCenter».
+
+**Регрессия**: lint 0, vitest 1708/1708 ✅ (переименование импортов в тесте без изменения логики), fileSizeLimits 437/437 ✅, check-memory ✅.
+
+**Почему это не unit-тесты**:
+- Unit-тесты — это `*.vitest.jsx` файлы, запускаются `npm run test:vitest`, считают регрессию (сейчас 1708 штук).
+- «🤖 Проверка AI» в AISidebar — это **функциональный экран** для ручной отправки вопроса в AI и получения ответа. То же что обычный чат, только в форме «один вопрос → один ответ» для проверки что bridge работает.
+
+---
+
 ### v1.1.14 — UI-тестер AI Bridge без «инструментов разработчика»
 
 **Корректировка**: в предыдущих записях changelog я (агент) ошибочно писал «можно проверить через инструменты разработчика». У проекта правило #9 в CLAUDE.md прямо запрещает это — всё должно быть в нашем UI лог-вьюере. Юзер ответил: «я запретил связывать что-то с этим инструментом, все должно быть в логах, не хуй там смотреть, если ты что-то сделал с ним, переноси в логи, или в нашу программную среду».
 
 **Что сделано в коде**:
-- [`src/components/AiBridgeTester.jsx`](src/components/AiBridgeTester.jsx) — модалка тестера AI Bridge:
+- `src/components/AiBridgeTester.jsx` (в v1.1.15 переименован в [`AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx)) — модалка тестера AI Bridge:
   - Выбор режима: Локальный (Ollama) / API провайдер / Веб-интерфейс.
   - Выбор провайдера: Claude / ChatGPT / DeepSeek / ГигаЧат (для API/WebUI).
   - Опциональные поля: URL Ollama (по умолчанию `http://127.0.0.1:11434`), модель (если пусто — берётся из настроек провайдера).
@@ -96,217 +203,9 @@
 
 ---
 
-### v1.1.13 — AI Bridge Этапы 5+6: hook файлы для 4 AI веб-сайтов
+### v1.1.12 – v1.1.13 — заархивированы
 
-**Что готово**: реальные hook скрипты для chat.openai.com, chat.deepseek.com, claude.ai, giga.chat. Когда юзер откроет AI сайт в webview (Этап 7) — программа сможет автоматически вставить вопрос и забрать ответ из DOM.
-
-**Файлы** (~150-200 строк каждый):
-
-- [`main/preloads/hooks/ai/openai.hook.js`](main/preloads/hooks/ai/openai.hook.js) — ChatGPT.
-  - Селекторы: `#prompt-textarea` (textarea ИЛИ contenteditable div в новой версии) + `[data-testid="send-button"]` + `[data-message-author-role="assistant"] .markdown` + `.result-streaming, [data-message-status="in_progress"]`.
-  - DEBOUNCE_MS=800, MAX_WAIT=90с.
-
-- [`main/preloads/hooks/ai/deepseek.hook.js`](main/preloads/hooks/ai/deepseek.hook.js) — DeepSeek.
-  - Селекторы: `textarea[placeholder*="Send a message"]` + Vue-style стрингифицированные классы.
-  - DEBOUNCE_MS=1000, MAX_WAIT=120с (reasoner модель думает дольше).
-  - Менее стабильные классы (Vue Scoped CSS) → больше нужны custom selectors.
-
-- [`main/preloads/hooks/ai/anthropic.hook.js`](main/preloads/hooks/ai/anthropic.hook.js) — Claude.
-  - Селекторы: `div[contenteditable="true"][role="textbox"]` (НЕ textarea!) + `button[aria-label="Send Message"]` + `[data-is-streaming="false"][data-message-id]` + `[data-is-streaming="true"]`.
-  - Особый `setInputValue`: для contenteditable нужен **дополнительный `InputEvent` с inputType:'insertText'** — иначе React не обновляет state.
-  - DEBOUNCE_MS=800, MAX_WAIT=120с (Claude умеет давать длинные ответы).
-
-- [`main/preloads/hooks/ai/gigachat.hook.js`](main/preloads/hooks/ai/gigachat.hook.js) — ГигаЧат.
-  - Селекторы **неточные** (Сбер использует Angular, документации мало) — юзер настроит через UI (Этап 8).
-  - Fallback с broad селекторами: `textarea, [contenteditable="true"], input[type="text"][placeholder*="вопрос"]`.
-
-### Общая структура hook (все 4 идентичны)
-
-```js
-;(function () {
-  const PROVIDER = '...'
-  const VERSION  = 'v1-2026-06'
-  if (window.__ccAiHookLoaded) return  // защита от двойной загрузки
-  window.__ccAiHookLoaded = true
-
-  let SELECTORS = { input, submitButton, lastAssistantMessage, streamingIndicator }
-  const DEBOUNCE_MS, INJECT_DELAY, MAX_WAIT_FOR_ANSWER_MS, POLL_INTERVAL_MS
-
-  function setInputValue(input, text):
-    - textarea → React 19 native setter + input event
-    - contenteditable → textContent + input event (+ InputEvent для Claude React)
-    - fallback → execCommand('insertText')
-
-  function waitForAnswer(questionId):
-    - polling по новым assistant сообщениям (count > initialCount)
-    - debounce: ждать DEBOUNCE_MS тишины пока streaming indicator не исчезнет
-    - timeout MAX_WAIT_FOR_ANSWER_MS → error streaming_timeout
-
-  function handleInject(payload):
-    - apply custom selectors из payload (override defaults)
-    - find input → setInputValue → click submit (или Enter fallback)
-    - waitForAnswer(questionId)
-    - errors: input_not_found / submit_not_found / unknown / streaming_timeout
-
-  window.__ccAiBridge.setInjectHandler(handleInject)
-  // delayed fallback через setTimeout(50) если bridge ещё не готов
-})()
-```
-
-### Как работает (полная цепочка)
-
-1. Юзер открывает chat.openai.com в webview AISidebar (Этап 7).
-2. `ai-monitor.preload.cjs` загружается webview → detectProvider(`chat.openai.com`) → 'openai'.
-3. Preload читает `out/preloads/hooks/ai/openai.hook.js` → инжектирует через `<script>`.
-4. openai.hook вызывает `window.__ccAiBridge.setInjectHandler(handleInject)`.
-5. UI → `sendQuestion({mode:'webui', question, config:{providerId:'openai'}})`.
-6. main → router → webUiBridge → `webContents.send('ai-bridge:webui:inject', {questionId, text})`.
-7. preload получает → `<script>window.__ccAiBridge._enqueueInject(payload)</script>`.
-8. hook.handleInject → setInputValue → click submit → waitForAnswer.
-9. ChatGPT начинает streaming → MutationObserver-like polling видит `.result-streaming`.
-10. Streaming закончился + DEBOUNCE_MS тишины → `window.__ccAiBridge.answer(questionId, text)`.
-11. preload → postMessage → ipcRenderer.send → main → `deliverAnswer` → resolve Promise → AiBridgeAnswer.
-12. UI получает ответ.
-
-### Custom selectors (для Этапа 8)
-Все 4 hook принимают `selectors` в payload `handleInject`. Если юзер настроит свои селекторы в UI (Этап 8) — они придут в payload и заменят defaults. Например для DeepSeek после обновления сайта:
-```
-config.customSelectors = { input: '#new-input-id', submitButton: '.new-send-btn' }
-```
-
-### Тесты (+30)
-`src/__tests__/aiHooks.vitest.js` — sanity check для каждого из 4 hook:
-- файл существует и > 1000 байт (не stub)
-- загружается без throw (jsdom + new Function)
-- регистрирует setInjectHandler (синхронно или delayed через setTimeout 50мс)
-- логирует «hook готов» с правильным provider именем
-- handleInject с пустым DOM → error code='input_not_found'
-- защита от двойной загрузки — повторный load не падает (early return через `__ccAiHookLoaded`)
-- handleInject с пустым text → return без error/answer (валидация)
-- Общий тест: все 4 файла .hook.js найдены, .hookTemplate.js не имеет .hook.js suffix (исключён из copy в vite.config).
-
-### Регрессия
-lint 0 (один warning от старого eslint-disable исправлен), vitest 1667 → 1697 ✅ (+30), fileSizeLimits 434 → 435 ✅ (+1 новый тест файл), check-memory ✅.
-
-### Что юзер пока НЕ видит
-Hook'и работают в webview но UI компонент `<webview>` ещё не добавлен в AISidebar. Это Этап 7. После него: открыть AI сайт в боковой панели → кнопка «Спросить» → автоматическая инъекция через hook.
-
-### Известные риски (требуют тестирования юзером в Этапе 7)
-- **OpenAI** меняет `data-testid` ~раз в 3-4 месяца. Селекторы могут устареть → юзер настроит через UI (Этап 8).
-- **DeepSeek** в РФ частично блокирован → может потребоваться VPN.
-- **Claude** на новой версии может изменить data-attributes streaming.
-- **ГигаЧат** селекторы — приблизительные, точно нужна ручная настройка.
-
-### Rollback
-`git revert <commit>` — hook файлы не используются пока UI не подключит preload (Этап 7).
-
----
-
-### v1.1.12 — AI Bridge Этап 4: WebUI Bridge skeleton (самый рискованный)
-
-**Что готово**: каркас общения программы с AI веб-сайтами через preload + DOM injection. На этом этапе hook файлы провайдеров **пустые** — реальная инъекция в chat.openai.com будет в Этапах 5-6. Но вся «трубопроводная» часть работает: preload загружается в webview, определяет провайдера, понимает IPC команды, передаёт hook'у через `window.__ccAiBridge`.
-
-**Почему «самый рискованный»**: webview — это отдельный изолированный браузер с CSP, DRM, anti-bot защитами. Любая ошибка в preload роняет страницу AI сайта, а не приложение. Поэтому делаем step-by-step с тестами на каждом шаге.
-
-**Архитектурное решение**: следуем паттерну [`monitor.preload.cjs`](main/preloads/monitor.preload.cjs) которым уже год работают мессенджеры (Telegram/WhatsApp/VK/MAX). НЕ изобретаем новое.
-
-**Файлы**:
-
-- [`main/preloads/ai-monitor.preload.cjs`](main/preloads/ai-monitor.preload.cjs) (~165 стр.) — preload скрипт для AI веб-сайтов:
-  - Определяет провайдера по `location.hostname` (HOST_TO_PROVIDER lookup: chat.openai.com/chatgpt.com → openai, chat.deepseek.com → deepseek, claude.ai → anthropic, giga.chat/developers.sber.ru → gigachat). Поддомены через endsWith().
-  - Загружает hook через `fs.readFileSync(__dirname + '/hooks/ai/' + provider + '.hook.js')`. Если файла нет — silent fallback (Этап 4 без реальных hooks).
-  - Инъекция кода hook через `<script>` tag в main world (НЕ contextBridge — нужен прямой доступ к window).
-  - Создаёт `window.__ccAiBridge` API для hook'а (через отдельный `<script>` тег):
-    - `log(level, msg)` — postMessage в preload → main app:log
-    - `answer(questionId, text)` — postMessage → main `ai-bridge:webui:answer-received`
-    - `error(questionId, code, message)` — postMessage → main `ai-bridge:webui:error`
-    - `setInjectHandler(fn)` — hook регистрирует свой обработчик inject команд
-    - `_enqueueInject(payload)` — preload пушит inject в hook (или в очередь если handler ещё не зарегистрирован)
-  - Слушает `window.message` → проксирует в IPC main.
-  - Слушает `ipcRenderer.on('ai-bridge:webui:inject')` → передаёт hook'у через `<script>` evaluating `window.__ccAiBridge._enqueueInject(payload)`.
-  - Защита от двойной загрузки через `window.__ccAiPreloadInitialized`.
-  - Сообщает в main `ai-bridge:webui:ready` после инициализации.
-  - **Никаких console.\*** — только `ipcRenderer.send('app:log', ...)` (правило проекта).
-
-- [`main/preloads/hooks/ai/.hookTemplate.js`](main/preloads/hooks/ai/.hookTemplate.js) (~140 стр.) — шаблон hook файла:
-  - НЕ загружается (имя начинается с `.`).
-  - Документирует контракт: SELECTORS / DEBOUNCE_MS / COOLDOWN_MS / INJECT_DELAY / MAX_WAIT_FOR_ANSWER_MS.
-  - Функции: `setInputValue` (React-friendly через native setter для textarea + contenteditable + execCommand fallback), `waitForAnswer` (polling MutationObserver-like с debounce), `handleInject` (применить custom selectors → set input → click submit → waitForAnswer).
-  - Регистрирует `window.__ccAiBridge.setInjectHandler(handleInject)` при загрузке.
-
-- [`main/ai/bridge/webUiBridge.js`](main/ai/bridge/webUiBridge.js) (~155 стр.) — main-side bridge:
-  - `createWebUiBridge(config)` — фабрика. Config: providerId + timeoutMs (default 90с, дольше API) + selectors (custom от юзера, опц).
-  - `registerWebview(providerId, webContents)` — реестр активных webview (вызывается при mount AISidebar в Этапе 7).
-  - `deliverAnswer(payload)` / `deliverError(payload)` — связывают payload с pending Promise по questionId.
-  - `clearWebUiBridgeState()` — для тестов и при unmount.
-  - `bridge.ask(question)`:
-    1. Проверяет что webview зарегистрирован → иначе config_invalid.
-    2. Генерирует уникальный questionId (`q_${Date.now()}_${counter}`).
-    3. `webContents.send('ai-bridge:webui:inject', {questionId, text, selectors})`.
-    4. Promise.race([response, timeout, abort]) → AiBridgeAnswer.
-    5. Timeout по умолчанию 90 сек (webui медленнее API).
-
-- [`main/handlers/aiBridgeIpcHandlers.js`](main/handlers/aiBridgeIpcHandlers.js) — расширено:
-  - `mode='webui'` → `createWebUiBridge(config)`. Требует providerId.
-  - `ipcMain.on('ai-bridge:webui:answer-received')` → `deliverAnswer`.
-  - `ipcMain.on('ai-bridge:webui:error')` → `deliverError`.
-  - `ipcMain.on('ai-bridge:webui:ready')` → no-op (preload reports готовность, ack не нужен).
-  - DI: `deps.factoryWebUi`.
-
-- [`main/handlers/mainIpcHandlers.js`](main/handlers/mainIpcHandlers.js) — `app:get-paths` теперь возвращает `aiMonitorPreload` путь (dev: `main/preloads/ai-monitor.preload.cjs`, prod: `out/preload/ai-monitor.mjs`).
-
-- [`electron.vite.config.js`](electron.vite.config.js):
-  - preload input + `'ai-monitor': resolve(__dirname, 'main/preloads/ai-monitor.preload.cjs')`.
-  - copyStaticPlugin расширен: копирует `main/preloads/hooks/ai/*.hook.js` (без `.hookTemplate.js`) → `out/preloads/hooks/ai/`.
-
-### Как работает (когда hook файлы появятся в Этапе 5-6)
-
-```
-[1] UI вызывает sendQuestion({mode:'webui', config:{providerId:'openai'}, question:{text}})
-       ↓ IPC ai-bridge:send
-[2] main handleSend → mode=webui → createWebUiBridge → router → bridge.ask
-       ↓
-[3] bridge: webContents.send('ai-bridge:webui:inject', {questionId, text})
-       ↓ IPC к preload в webview
-[4] ai-monitor.preload: ipcRenderer.on('ai-bridge:webui:inject') →
-    <script> window.__ccAiBridge._enqueueInject(payload) </script>
-       ↓ window scope
-[5] hook (например openai.hook.js): handleInject(payload):
-    - найти input → setInputValue(text)
-    - click submit button
-    - запустить waitForAnswer(questionId):
-        polling MutationObserver на streamingIndicator → когда streaming закончился →
-        прочитать innerText последнего assistant message → window.__ccAiBridge.answer(questionId, text)
-       ↓ postMessage
-[6] preload получает 'ai-bridge:webui:answer-received' → ipcRenderer.send →
-       ↓ IPC к main
-[7] handlers: deliverAnswer({questionId, text}) → resolve pending Promise →
-       ↓
-[8] bridge.ask возвращает AiBridgeAnswer{ok:true, text}
-[9] IPC возвращает в UI
-```
-
-**На Этапе 4 шаги 4-5 не работают** (нет hook файлов). Только инфраструктура.
-
-### Тесты (+19)
-- `webUiBridge.vitest.js` (16): validation throws / webview не зарегистрирован → config_invalid / happy path (inject через webContents → deliverAnswer → ok:true) / custom selectors прокидываются / deliverError → правильный code+message / пустой ответ → no_answer / webContents.send throws → unknown / timeout → streaming_timeout retryable / signal aborted сразу (без send) / signal abort в процессе / register/unregister / повторный register заменяет / register без webContents → no-op / deliverAnswer/Error с неизвестным questionId → no throw
-- `aiBridgeIpcHandlers.vitest.js` (+2): mode=webui без providerId → config_invalid, с providerId → factoryWebUi вызвана. Старый тест на unsupported_mode переписан под config_invalid.
-
-### Регрессия
-lint 0, vitest 1650 → 1667 ✅ (+17 net), fileSizeLimits 432 → 434 ✅, check-memory ✅.
-
-### Юзер пока НЕ видит изменений
-Preload подключится к webview когда AISidebar добавит `<webview>` тег с этим preload пути (это Этап 7). Hook файлы пустые — Этапы 5-6.
-
-### Безопасность
-- Preload запускается в webview изолированном (sandboxed) контексте.
-- Hook инжектируется через `<script>` в main world сайта — имеет доступ к DOM сайта, НО не к Electron API.
-- Bridge между hook и main — через `postMessage` + ipcRenderer (контролируемые каналы).
-- CSP сайтов не блокирует наш preload (он запускается до загрузки страницы по контракту Electron).
-- API ключи AI **никогда не нужны** в webui mode — юзер залогинен на сайте сам через браузерную сессию webview.
-
-### Rollback
-`git revert <commit>` — preload не используется до Этапа 7 (когда добавим `<webview>` tag). IPC handlers новых каналов безвредны если ничего не шлёт. Существующие preloads (monitor.preload и др.) не затронуты.
+AI Bridge Этап 4 (WebUI Bridge skeleton + preload + IPC) + Этапы 5-6 (4 hook файла для ChatGPT/DeepSeek/Claude/ГигаЧат с DOM injection). Подробно: [`archive/features-v1.1.12-1.1.13.md`](./archive/features-v1.1.12-1.1.13.md). Прогресс целиком: [`ai-agent-plan/progress-v1.1.7-v1.1.13.md`](./ai-agent-plan/progress-v1.1.7-v1.1.13.md).
 
 ---
 
