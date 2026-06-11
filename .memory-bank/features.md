@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.16 (11 июня 2026)
+## Текущая версия: v1.1.17 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,79 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.17 — AI Bridge Этап 8: настройка CSS селекторов AI сайтов вручную
+
+**Зачем**: AI сайты (ChatGPT/DeepSeek/Claude/ГигаЧат) обновляют DOM ~раз в 3-4 месяца. Когда это происходит — встроенные селекторы перестают работать (нельзя найти «поле ввода» или «кнопку отправки»). Раньше пришлось бы ждать обновления программы. Теперь юзер сам может задать актуальные селекторы и продолжать пользоваться.
+
+**Что готово**:
+
+- [`src/components/AiSelectorsEditor.jsx`](src/components/AiSelectorsEditor.jsx) (~190 стр.) — модалка редактора:
+  - Выбор провайдера: ChatGPT / DeepSeek / Claude / ГигаЧат.
+  - Показывается дефолтный URL провайдера (для справки).
+  - 4 поля селекторов (моноширинный шрифт):
+    - Поле ввода (input/textarea) — например `#prompt-textarea` для ChatGPT.
+    - Кнопка отправки — например `[data-testid="send-button"]`.
+    - Контейнер ответа AI — например `[data-message-author-role="assistant"] .markdown`.
+    - Индикатор «AI печатает» — элемент существует во время генерации (`.result-streaming`).
+  - Каждое поле имеет placeholder = встроенный селектор + подсказку «по умолчанию: ...».
+  - Кнопки:
+    - **💾 Сохранить** — записывает в `settings.aiBridgeSelectors[providerId]`. Пустые поля = удаляются (использовать default). Если все 4 пустые → провайдер удаляется из настроек.
+    - **📋 Заполнить из встроенных** — копирует defaults в инпуты (можно подредактировать).
+    - **♻️ Сбросить** — очищает все поля.
+  - Логи через `app:log` с префиксом `[ai-selectors-editor]`.
+
+- [`src/components/AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx) — расширено:
+  - Принимает props `settings` + `onSettingsChange` (опц).
+  - При `mode='webui'` показывает кнопку «🔧 Настроить селекторы AI сайтов» (с пометкой «✓ есть кастомные» если уже настроены).
+  - При вызове `sendQuestion` для webui mode добавляет `config.selectors = settings.aiBridgeSelectors[providerId]` (если есть).
+
+- [`src/components/AISidebar.jsx`](src/components/AISidebar.jsx) — пробрасывает `settings`/`onSettingsChange` в `AiBridgeCheck` (раньше открывался без них).
+
+### Как работает
+
+1. Юзер открывает 🤖 «Проверка AI» в боковой панели AI.
+2. Выбирает режим «Веб-интерфейс» + провайдер ChatGPT.
+3. Нажимает «🔧 Настроить селекторы AI сайтов» → открывается редактор.
+4. Юзер берёт DevTools браузера (у себя на стороне — не в нашей программе!), смотрит актуальные CSS селекторы chat.openai.com и вставляет в поля.
+5. «💾 Сохранить» → запись в `settings.aiBridgeSelectors.openai = {input: '...', ...}`.
+6. Возвращается в форму проверки → нажимает «📤 Спросить» → webUiBridge получает `config.selectors` → передаёт в payload `inject` → hook применяет: `SELECTORS = {...defaults, ...payload.selectors}`.
+7. Программа использует свежие селекторы → вопрос успешно вставляется → ответ возвращается.
+
+### Структура хранилища
+
+```
+settings.aiBridgeSelectors:
+  {
+    openai:    { input: '#new-id', submitButton: '.new-send-btn' },    // частично — остальное defaults
+    deepseek:  { input: 'textarea.custom' },                            // только один поправлен
+    // anthropic — нет (используются все defaults)
+    // gigachat  — нет
+  }
+```
+
+### Тесты (+11)
+`AiSelectorsEditor.vitest.jsx`:
+- UI: заголовок + select + 4 поля + кнопка ✕.
+- initialProviderId — селект показывает указанного / fallback на первого при unknown.
+- Существующие кастомные значения загружаются в инпуты.
+- Сохранение: с заполненными → onSettingsChange с aiBridgeSelectors / с пустыми → провайдер удалён из settings / пробелы trim-аются.
+- Сброс → все инпуты пустые.
+- Заполнить из встроенных → инпуты получают defaults.
+- Логи через `app:log` (НЕ console.*).
+
+### Регрессия
+lint 0, vitest 1725 → 1736 ✅ (+11), fileSizeLimits 439 → 442 ✅, check-memory ✅.
+
+### Безопасность
+- Селекторы — это просто CSS строки, хранятся локально в settings.json.
+- Никаких eval/innerHTML/script injection — селекторы передаются как **строки** в `document.querySelector(selectorString)` внутри hook (та же безопасность что у дефолтных).
+- Юзер не может через эти селекторы получить доступ к данным других сайтов или Electron API.
+
+### Rollback
+`git revert <commit>` — `AiSelectorsEditor.jsx` новый файл, кнопка в `AiBridgeCheck` опциональная (`mode='webui' && onSettingsChange`). Удаление не ломает существующее.
 
 ---
 

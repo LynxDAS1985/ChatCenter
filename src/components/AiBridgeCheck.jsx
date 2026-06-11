@@ -8,6 +8,8 @@
 // Открывается из AISidebar по кнопке 🤖 рядом с настройками.
 
 import { useState } from 'react'
+// v1.1.17 (Этап 8): редактор кастомных селекторов для AI сайтов.
+import AiSelectorsEditor from './AiSelectorsEditor.jsx'
 
 const MODES = [
   { id: 'local',  label: 'Локальный (Ollama)',  needsProvider: false },
@@ -28,8 +30,9 @@ function log(level, message) {
   } catch (_) { /* лог-вьюер не работает — это сам проверочный экран, фолбэк не нужен */ }
 }
 
-export default function AiBridgeCheck({ onClose }) {
+export default function AiBridgeCheck({ onClose, settings, onSettingsChange }) {
   const [mode, setMode] = useState('local')
+  const [selectorsEditorOpen, setSelectorsEditorOpen] = useState(false)  // v1.1.17
   const [providerId, setProviderId] = useState('anthropic')
   const [text, setText] = useState('Привет! Скажи коротко что ты можешь делать.')
   const [model, setModel] = useState('')
@@ -53,6 +56,10 @@ export default function AiBridgeCheck({ onClose }) {
     if (needsProvider) config.providerId = providerId
     if (mode === 'local' && baseUrl) config.baseUrl = baseUrl
     if (model.trim()) config.model = model.trim()
+    // v1.1.17: для webui передаём кастомные селекторы из settings (если юзер настроил).
+    if (mode === 'webui' && settings?.aiBridgeSelectors?.[providerId]) {
+      config.selectors = settings.aiBridgeSelectors[providerId]
+    }
     try {
       const r = await window.api.invoke('ai-bridge:send', {
         mode,
@@ -154,6 +161,23 @@ export default function AiBridgeCheck({ onClose }) {
             </>
           )}
 
+          {mode === 'webui' && onSettingsChange && (
+            <button
+              onClick={() => setSelectorsEditorOpen(true)}
+              title="Настроить CSS селекторы для AI сайтов (если сайт обновился)"
+              style={{
+                marginTop: 8, padding: '6px 10px', fontSize: 11, borderRadius: 6, cursor: 'pointer',
+                backgroundColor: 'var(--cc-hover, #2a2b3e)',
+                color: 'var(--cc-text-dim, #aaa)',
+                border: '1px solid var(--cc-border, #333)',
+                width: '100%',
+              }}
+            >
+              🔧 Настроить селекторы AI сайтов
+              {settings?.aiBridgeSelectors?.[providerId] ? ' ✓ есть кастомные' : ''}
+            </button>
+          )}
+
           {mode === 'local' && (
             <>
               <label style={labelStyle}>URL Ollama (необязательно)</label>
@@ -233,6 +257,16 @@ export default function AiBridgeCheck({ onClose }) {
           )}
         </div>
       </div>
+
+      {/* v1.1.17 (Этап 8): редактор кастомных селекторов AI сайтов */}
+      {selectorsEditorOpen && onSettingsChange && (
+        <AiSelectorsEditor
+          settings={settings || {}}
+          onSettingsChange={onSettingsChange}
+          onClose={() => setSelectorsEditorOpen(false)}
+          initialProviderId={needsProvider ? providerId : undefined}
+        />
+      )}
     </div>
   )
 }

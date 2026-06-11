@@ -438,7 +438,13 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         </div>
 
         {/* v1.1.15: модалка проверки AI Bridge */}
-        {bridgeCheckOpen && <AiBridgeCheck onClose={() => setBridgeCheckOpen(false)} />}
+        {bridgeCheckOpen && (
+          <AiBridgeCheck
+            onClose={() => setBridgeCheckOpen(false)}
+            settings={settings}
+            onSettingsChange={onSettingsChange}
+          />
+        )}
 
         {/* ── Панель провайдеров (вынесена в AIProviderTabs.jsx) ── */}
         <AIProviderTabs
