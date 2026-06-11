@@ -77,6 +77,8 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   const settingsRef = useRef(settings)
   // Ref на функцию runProviderChecks (стабильный, не устаревает)
   const runChecksRef = useRef(null)
+  // v1.1.7: ref для one-time миграции legacy settings (mode/webviewUrl/contextMode)
+  const migrationDoneRef = useRef(false)
 
   // ── Настройки (shortcuts) ─────────────────────────────────────────────────
   const provider = settings.aiProvider || 'openai'
@@ -164,6 +166,38 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     pKeys[pid] = { ...(pKeys[pid] || {}), [key]: val }
     onSettingsChange({ ...settings, aiProviderKeys: pKeys })
   }
+
+  // v1.1.7: миграция legacy settings — поля mode/webviewUrl/contextMode из v1.1.5
+  // ошибочно записывались в корень settings (из-за бага в set()). Перекладываем
+  // в aiProviderKeys[pid] чтобы providerCfg видел их. Запускается ОДИН раз при
+  // монтировании AISidebar. Не удаляем legacy сразу — оставляем 1-2 версии для
+  // безопасного отката.
+  useEffect(() => {
+    if (!settings || migrationDoneRef.current) return
+    const legacyFields = ['mode', 'webviewUrl', 'contextMode']
+    const pid = settings.aiProvider || 'openai'
+    const pKeys = { ...(settings.aiProviderKeys || {}) }
+    const pData = { ...(pKeys[pid] || {}) }
+    let migrated = false
+    for (const f of legacyFields) {
+      // Если в корне есть значение, а в aiProviderKeys[pid] его НЕТ → переложить
+      if (settings[f] !== undefined && pData[f] === undefined) {
+        pData[f] = settings[f]
+        migrated = true
+        try {
+          window.api?.send?.('app:log', {
+            level: 'INFO',
+            message: '[ai-config-migrate] перенесено legacy settings.' + f + ' → aiProviderKeys.' + pid + '.' + f,
+          })
+        } catch (_) {}
+      }
+    }
+    if (migrated) {
+      pKeys[pid] = pData
+      onSettingsChange({ ...settings, aiProviderKeys: pKeys })
+    }
+    migrationDoneRef.current = true
+  }, [settings])
 
   const testConnection = async () => {
     if (!configured) return
@@ -398,7 +432,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
         />
 
         {/* v0.83.2: Конфиг-панель вынесена в AIConfigPanel.jsx */}
-        <AIConfigPanel showConfig={showConfig} setShowConfig={setShowConfig} providerMode={providerMode} aiCfg={aiCfg} set={set} showKey={showKey} setShowKey={setShowKey} showSecret={showSecret} setShowSecret={setShowSecret} testing={testing} testStatus={testStatus} justSaved={justSaved} waitingForKey={waitingForKey} keyFoundMsg={keyFoundMsg} providerInfo={providerInfo} openProviderUrl={openProviderUrl} openLoginWindow={openLoginWindow} testConnection={testConnection} />
+        <AIConfigPanel showConfig={showConfig} setShowConfig={setShowConfig} providerMode={providerMode} aiCfg={aiCfg} set={set} setProviderProp={setProviderProp} showKey={showKey} setShowKey={setShowKey} showSecret={showSecret} setShowSecret={setShowSecret} testing={testing} testStatus={testStatus} justSaved={justSaved} waitingForKey={waitingForKey} keyFoundMsg={keyFoundMsg} providerInfo={providerInfo} openProviderUrl={openProviderUrl} openLoginWindow={openLoginWindow} testConnection={testConnection} />
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* ── РЕЖИМ WEBVIEW (основной контент) ── */}
