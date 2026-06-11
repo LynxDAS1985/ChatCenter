@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.10 (11 июня 2026)
+## Текущая версия: v1.1.11 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,83 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.11 — AI Bridge Этап 3: API Bridge (обёртка aiProviderCaller)
+
+**Что готово**: программа умеет отправить вопрос в платный API провайдер (Anthropic / OpenAI / DeepSeek / ГигаЧат) через тот же IPC канал `ai-bridge:send`, что и Local Bridge.
+
+**Файлы**:
+
+- [`main/ai/bridge/apiBridge.js`](main/ai/bridge/apiBridge.js) (~205 строк) — `createApiBridge(config, deps)`:
+  - Конфиг: `providerId` (обязательно: anthropic/openai/deepseek/gigachat) + `model` (опц) + `timeoutMs` (опц, default 60с).
+  - Deps: `callProvider` (функция из `aiProviderCaller.js`).
+  - Сборка `messages`: `systemPrompt` → первый `{role:'system'}`, потом `history` (с валидацией), последний `{role:'user', content:text}`.
+  - Вызов `callProvider({provider, messages, model})` — БЕЗ tools (Bridge только текст, tool use — для AI Agent).
+  - Парсинг ответа разный по провайдерам:
+    - **Anthropic**: `data.content[].type='text'` → возвращает первый text-блок (пропускает tool_use блоки).
+    - **OpenAI/DeepSeek/GigaChat**: `data.choices[0].message.content`.
+  - **`Promise.race(callProvider, timeout, abort)`** — без AbortSignal в fetch, потому что callProvider — внутренний модуль без signal API.
+  - Возврат всегда `AiBridgeAnswer` — никаких throw.
+
+- **Маппинг ошибок** `callProvider` → `AiBridgeErrorCode`:
+
+  | Сообщение от callProvider | AiBridgeErrorCode | Retryable |
+  |---|---|---|
+  | `missing API key for X` | `auth_required` | ❌ |
+  | `HTTP 401` / `HTTP 403` | `auth_required` | ❌ |
+  | `HTTP 429` | `rate_limited` | ✅ |
+  | `HTTP 5xx` | `server_error` | ✅ |
+  | `HTTP 4xx` (кроме 401/403/429) | `config_invalid` | ❌ |
+  | `network error` / `ENOTFOUND` / `ECONNREFUSED` | `network_error` | ✅ |
+  | `unsupported provider` | `config_invalid` | ❌ |
+  | `invalid JSON response` | `server_error` | ✅ |
+  | прочее | `unknown` | ❌ |
+
+  Это используется fallback chain (Этап 9) — `retryable=true` означает «попробуй другой провайдер».
+
+- [`main/handlers/aiBridgeIpcHandlers.js`](main/handlers/aiBridgeIpcHandlers.js) расширен:
+  - `mode='api'` теперь подключает `createApiBridge(config, {callProvider: deps.callProvider})`.
+  - Валидация: config.providerId обязателен → `config_invalid`. callProvider не передан в register → `config_invalid` («API Bridge не настроен на main стороне»).
+  - DI: `deps.factoryApi` для замены `createApiBridge` в тестах.
+
+- [`main/main.js`](main/main.js) — `registerAiBridgeIpcHandlers(ipcMain, {callProvider: callProviderFn})` теперь передаёт callProvider. callProviderFn использует тот же storage что и AI Agent (читает API ключи из `settings.aiProviderKeys`).
+
+**Почему API Bridge без tool use**:
+- Bridge — это «отправь вопрос, получи текст». Tool use (вызов функций программы) — это AI Agent.
+- AI Agent уже работает с `aiToolExecutor` (Phase 1-4 в v0.97-v1.1.4) — там multi-turn loop с инструментами.
+- Bridge — простой один HTTP request → один ответ. Юзер видит сообщение клиента → AI отвечает текстом → программа вставляет ответ.
+- Если в будущем понадобится Bridge + tools — это будет Этап 12+ или новый компонент.
+
+### Как работает
+
+1. Renderer вызывает `sendQuestion({mode:'api', question:{...}, config:{providerId:'anthropic', model:'claude-haiku-4-5-20251001'}})`.
+2. IPC → `handleSend` → проверяет providerId + callProvider → `createApiBridge(config, {callProvider})`.
+3. `router.ask(question)` → `apiBridge.ask(question)`.
+4. apiBridge собирает messages → вызывает `callProvider({provider, messages, model})`.
+5. callProvider читает API ключ из storage → fetch к API → возвращает raw response.
+6. apiBridge парсит response по providerId → возвращает `AiBridgeAnswer{ok:true, text, providerId, mode:'api', latencyMs, model}`.
+7. При ошибке — маппинг exception → AiBridgeError с правильным code + retryable.
+
+**Тесты** (+33):
+- `apiBridge.vitest.js` (28): validation (throws без providerId/callProvider) / Anthropic happy path + правильный model / Anthropic пропускает не-text блоки / OpenAI+DeepSeek+GigaChat parsing / messages: один user / system первым / history правильный порядок / невалидные turn-ы игнорируются / 8 error mappings (missing-key/401/429/500/400/network/unknown/empty) / no_answer для Anthropic + OpenAI / timeout → streaming_timeout / signal aborted сразу / signal abort в процессе / все 4 providerId принимаются.
+- `aiBridgeIpcHandlers.vitest.js` (+5): mode=api без providerId → config_invalid, без callProvider в deps → config_invalid, с callProvider → factoryApi вызвана + ответ пробрасывается, webui → unsupported_mode.
+
+**Регрессия**: lint 0, vitest 1620 → 1650 ✅ (+30 unique, +5 уже учтены), fileSizeLimits 430 → 432 ✅.
+
+**Юзер через DevTools может теперь**:
+```js
+await window.api.invoke('ai-bridge:send', {
+  mode: 'api',
+  question: { version:1, text:'Привет!', source:{messengerId:'native_cc'} },
+  config: { providerId: 'anthropic' }  // или 'openai'/'deepseek'/'gigachat'
+})
+```
+
+API ключ берётся автоматически из `settings.aiProviderKeys[providerId].apiKey` (там где юзер уже ввёл их для AI Agent).
+
+**Rollback**: `git revert` — никакой существующий код callProvider/aiProviderFallback не изменялся, только новые файлы + 1 строка передачи deps.
 
 ---
 
@@ -313,36 +390,9 @@ Phase 4 hardening + UI bulk + Reminders snooze + AbortSignal + confirm timeout +
 
 ---
 
-### v0.97.0 — AI-агент фундамент (Phase 0 + Phase 1)
+### v0.97.0 — заархивирована
 
-**Цель**: Превратить пассивный AI-помощник (генерация текста) в активного агента который вызывает функции (Tool Use API). См. полный план: [.memory-bank/ai-agent-plan/](./ai-agent-plan/README.md).
-
-**Phase 0 — фундамент уведомлений** (5 milestones):
-- M0.1 **NotificationSource** ([src/shared/notificationSource.js](src/shared/notificationSource.js)) — паспорт сообщения (messengerId/accountId/chatId/messageId/...). Frozen объект, факторная функция, валидация. **21 unit-тест**.
-- M0.2 **useNotifyDispatcher** ([src/hooks/useNotifyDispatcher.js](src/hooks/useNotifyDispatcher.js)) — Action Bus hook. register/unregister/dispatch + debounce 500ms. **9 unit-тестов**.
-- M0.3 **Cross-tab notify:clicked** ([src/App.jsx](src/App.jsx) + [src/native/NativeApp.jsx](src/native/NativeApp.jsx)): подписка перенесена из NativeApp (unmount при не-native_cc) в корневой App.jsx. NativeApp принимает payload пропом pendingNotify. **Решена проблема P-01** из .memory-bank/ai-agent-plan/problems.md.
-- M0.4 **NotificationSource через IPC**: [nativeStoreIpc.js](src/native/store/nativeStoreIpc.js) создаёт source, [notificationManager.js](main/handlers/notificationManager.js) хранит, [notifHandlers.js](main/handlers/notifHandlers.js) передаёт в notify:clicked. Backward compat: legacy chatTag/messageId остались. **Удалены диагностические логи v0.95.47** (notify-emit / notif-mgr saved / notif-click sending / native-notify-recv / pending-scroll-effect / scroll-to-message).
-- M0.5 финал — проверки.
-
-**Phase 1 — Tool Use каркас** (9 milestones):
-- M1.1 **Tool Registry** ([src/shared/tools/toolRegistry.js](src/shared/tools/toolRegistry.js)) — реестр с register/lookup/list/schemas. Permission tiers (auto/confirm/deny). **19 unit-тестов**.
-- M1.2 **Tool Schemas** ([src/shared/tools/toolSchemas.js](src/shared/tools/toolSchemas.js)) — JSON Schema для goto_message/get_chat_history/search_messages + notificationSourceSchema. **11 unit-тестов**.
-- M1.3 **Handlers** ([src/shared/tools/handlers/](src/shared/tools/handlers/)): gotoMessage/getChatHistory/searchMessages. **12 unit-тестов**.
-- M1.4 **Anthropic Adapter** ([main/ai/adapters/anthropicAdapter.js](main/ai/adapters/anthropicAdapter.js)): toAnthropicTools/parseAnthropicToolUse/formatToolResult.
-- M1.5 **OpenAI + DeepSeek Adapter** ([main/ai/adapters/openaiAdapter.js](main/ai/adapters/openaiAdapter.js)) — DeepSeek полностью OpenAI-compatible.
-- M1.6 **ГигаЧат Adapter** ([main/ai/adapters/gigachatAdapter.js](main/ai/adapters/gigachatAdapter.js)) — старый OpenAI format (functions, не tools). **16 unit-тестов на все adapters**.
-- M1.7 **aiToolExecutor** ([main/ai/aiToolExecutor.js](main/ai/aiToolExecutor.js)) — main-side agent loop с max iterations 10, permission guards (deny → permission_denied, confirm → not_implemented_in_phase1), audit array. **11 unit-тестов**.
-- M1.8 **aiContextBuilder** ([main/ai/aiContextBuilder.js](main/ai/aiContextBuilder.js)) — системный prompt + source паспорт + recent messages с XML-обёрткой (защита от prompt injection). **10 unit-тестов**.
-- M1.9 **IPC bridge** ([main/handlers/aiToolIpcHandlers.js](main/handlers/aiToolIpcHandlers.js)) — ai:agent:run/cancel + ai:agent:step стриминг. **8 unit-тестов**.
-
-**Эталоны** (3 источника официальной документации):
-- [Anthropic Tool Use](https://docs.anthropic.com/claude/docs/tool-use) — нативный tool_use API.
-- [OpenAI Function Calling](https://platform.openai.com/docs/guides/function-calling) — JSON Schema standard.
-- [DeepSeek Function Calling](https://api-docs.deepseek.com/guides/function_calling) — OpenAI-compatible.
-
-**Тесты** +117 (Phase 0: 30 + Phase 1: 87). Регрессия: lint 0, vitest **1142/1142**, fileSizeLimits, check-memory ✅.
-
-**ВАЖНО**: AI-агент UI кнопка «🤖 Обработать» появится в Phase 3 (см. план). Сейчас агент доступен только через консоль для разработки. AI write-actions (reply_to_message) — в Phase 2 (требует permission UI).
+Фундамент AI-агента: Phase 0 (NotificationSource + Action Bus + cross-tab fix) + Phase 1 (Tool Use каркас — 8 milestones + 4 провайдера-адаптера + executor + IPC). +117 тестов. Подробно: [`archive/features-v0.97.0.md`](./archive/features-v0.97.0.md). Реализация по фазам — [`ai-agent-plan/phases/`](./ai-agent-plan/phases/).
 
 ---
 

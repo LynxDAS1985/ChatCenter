@@ -39,12 +39,39 @@ describe('handleSend (Этап 2)', () => {
     expect(r.text).toBe('pong')
   })
 
-  it('mode=api на Этапе 2 → unsupported_mode (api bridge ещё не подключён)', async () => {
+  it('mode=api без providerId → config_invalid', async () => {
     const r = await handleSend({ mode: 'api', question: baseQuestion })
-    expect(r.error.code).toBe('unsupported_mode')
+    expect(r.error.code).toBe('config_invalid')
+    expect(r.error.message).toContain('providerId')
   })
 
-  it('mode=webui на Этапе 2 → unsupported_mode', async () => {
+  it('mode=api с providerId, но без callProvider в deps → config_invalid', async () => {
+    const r = await handleSend(
+      { mode: 'api', question: baseQuestion, config: { providerId: 'anthropic' } }
+    )
+    expect(r.error.code).toBe('config_invalid')
+    expect(r.error.message).toContain('callProvider')
+  })
+
+  it('mode=api с callProvider → factoryApi вызвана + answer пробрасывается', async () => {
+    const fakeAsk = vi.fn().mockResolvedValue({
+      version: 1, ok: true, text: 'api ok', providerId: 'anthropic', mode: 'api', latencyMs: 3,
+    })
+    const factoryApi = vi.fn(() => ({ ask: fakeAsk }))
+    const callProvider = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'x' }] })
+    const r = await handleSend(
+      { mode: 'api', question: baseQuestion, config: { providerId: 'anthropic', model: 'm' } },
+      { factoryApi, callProvider }
+    )
+    expect(factoryApi).toHaveBeenCalledWith(
+      { providerId: 'anthropic', model: 'm' },
+      { callProvider }
+    )
+    expect(fakeAsk).toHaveBeenCalledWith(baseQuestion)
+    expect(r.text).toBe('api ok')
+  })
+
+  it('mode=webui → unsupported_mode (Этап 4-6 подключит)', async () => {
     const r = await handleSend({ mode: 'webui', question: baseQuestion })
     expect(r.error.code).toBe('unsupported_mode')
   })

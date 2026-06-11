@@ -135,7 +135,7 @@ module.exports = {
   // v0.95.50: changelog копит entries для модалки «Что нового», ~15 строк за minor релиз.
   // Архивация старых — отдельная задача.
   'src/utils/changelogData.js': {
-    ceiling: 550,
-    reason: 'v1.1.6: 32 entries — каждый minor/patch релиз добавляет ~12 строк (title + features array). v1.0.0: 22. Архивация старых < v0.95 — отдельная задача.'
+    ceiling: 700,
+    reason: 'v1.1.11: 36 entries — каждый minor/patch релиз добавляет ~12 строк (title + features array). За сессию 11.06 добавилось 5 записей (v1.1.7 - v1.1.11 AI Bridge). Лимит 550 → 700 с запасом на остальные 8 этапов AI Bridge + Этап 11 release v1.2.0. Архивация старых < v0.95 — отдельная задача после v1.2.0.'
   }
 }

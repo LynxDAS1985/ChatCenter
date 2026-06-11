@@ -133,9 +133,12 @@ function setupNotifIPC() {
     getCallProvider: () => callProviderFn,
   })
 
-  // v1.2.0 Этап 2: AI Bridge — Local Bridge (Ollama HTTP) подключён через ai-bridge:send.
-  // Config (baseUrl/model/timeoutMs) приходит из renderer (settings), не хранится в main.
-  registerAiBridgeIpcHandlers(ipcMain)
+  // v1.2.0 AI Bridge: подключаем bridges через единый IPC канал ai-bridge:send.
+  //  - Этап 2 (Local Bridge): Ollama HTTP — без deps, fetch берётся из globalThis.
+  //  - Этап 3 (API Bridge):    callProviderFn передан → API Bridge для всех 4 провайдеров.
+  //  - Этап 4-6 (WebUI Bridge): подключится позже.
+  // Config (baseUrl/model/providerId) приходит из renderer (settings), не хранится в main.
+  registerAiBridgeIpcHandlers(ipcMain, { callProvider: callProviderFn })
 
   // setAgentDeps будет вызвано после инициализации mainWindow и TDLib backend
   // (см. ниже после createWindow + initTdlibBackendStartup).
