@@ -136,3 +136,86 @@ describe('AiBridgeCheck — отправка', () => {
     })
   })
 })
+
+// v1.2.1: тесты для авто-резерва.
+describe('AiBridgeCheck — авто-резерв (v1.2.1)', () => {
+  it('галочка авто-резерва видна', () => {
+    render(<AiBridgeCheck onClose={() => {}} />)
+    expect(screen.getByText(/Использовать авто-резерв/)).toBeTruthy()
+  })
+
+  it('включена галочка → payload содержит chain[] вместо mode', async () => {
+    window.api.invoke.mockResolvedValue({
+      ok: true, text: 'OK', providerId: 'anthropic', mode: 'api', latencyMs: 1,
+    })
+    const settings = {
+      aiProviderKeys: {
+        anthropic: { apiKey: 'sk-a' },
+        openai: { apiKey: 'sk-o' },
+      },
+    }
+    render(<AiBridgeCheck onClose={() => {}} settings={settings} onSettingsChange={() => {}} />)
+    fireEvent.click(screen.getByText('API провайдер'))
+    // Включить чекбокс
+    const checkbox = document.querySelector('input[type="checkbox"]')
+    fireEvent.click(checkbox)
+    fireEvent.click(screen.getByText(/Спросить/))
+    await waitFor(() => {
+      const call = window.api.invoke.mock.calls[0][1]
+      expect(call.chain).toBeDefined()
+      expect(Array.isArray(call.chain)).toBe(true)
+      expect(call.chain.length).toBeGreaterThan(1)
+      expect(call.mode).toBeUndefined()
+    })
+  })
+
+  it('галочка выключена → payload содержит mode (без chain)', async () => {
+    window.api.invoke.mockResolvedValue({
+      ok: true, text: 'OK', providerId: 'local', mode: 'local', latencyMs: 1,
+    })
+    render(<AiBridgeCheck onClose={() => {}} settings={{}} onSettingsChange={() => {}} />)
+    fireEvent.click(screen.getByText(/Спросить/))
+    await waitFor(() => {
+      const call = window.api.invoke.mock.calls[0][1]
+      expect(call.chain).toBeUndefined()
+      expect(call.mode).toBe('local')
+    })
+  })
+
+  it('ответ с debug.attemptedFallbacks → показывается список попыток', async () => {
+    window.api.invoke.mockResolvedValue({
+      ok: true, text: 'Привет!', providerId: 'openai', mode: 'api', latencyMs: 100,
+      debug: {
+        attemptedFallbacks: [
+          { mode: 'api', providerId: 'anthropic', errorCode: 'rate_limited', message: '429' },
+        ],
+        successfulStepIndex: 1,
+      },
+    })
+    render(<AiBridgeCheck onClose={() => {}} settings={{}} onSettingsChange={() => {}} />)
+    fireEvent.click(screen.getByText(/Спросить/))
+    await waitFor(() => {
+      expect(screen.getByText(/Авто-резерв сработал/)).toBeTruthy()
+      expect(screen.getByText(/rate_limited/)).toBeTruthy()
+    })
+  })
+
+  it('ошибка с debug.attemptedFallbacks → показываются опробованные провайдеры', async () => {
+    window.api.invoke.mockResolvedValue({
+      ok: false, text: '',
+      error: { code: 'server_error', message: 'все упали', retryable: true },
+      debug: {
+        attemptedFallbacks: [
+          { mode: 'api', providerId: 'anthropic', errorCode: 'rate_limited' },
+          { mode: 'api', providerId: 'openai', errorCode: 'server_error' },
+        ],
+        exhausted: true,
+      },
+    })
+    render(<AiBridgeCheck onClose={() => {}} settings={{}} onSettingsChange={() => {}} />)
+    fireEvent.click(screen.getByText(/Спросить/))
+    await waitFor(() => {
+      expect(screen.getByText(/Все варианты опробованы/)).toBeTruthy()
+    })
+  })
+})

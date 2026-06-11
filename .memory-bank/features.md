@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.0 (11 июня 2026)
+## Текущая версия: v1.2.1 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,70 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.2.1 — UI «авто-резерв» (закрытие отложенного пункта v1.2.0)
+
+**Контекст**: в v1.2.0 fallback chain работал, но только программно через IPC `payload.chain[]`. В UI «🤖 Проверка AI» галочки не было — этот пункт был обозначен как «не входит в v1.2.0». Закрываем gap.
+
+**Что готово**:
+
+- [`src/utils/aiBridge/buildAutoChain.js`](src/utils/aiBridge/buildAutoChain.js) (~55 стр.) — pure helper:
+  - `buildAutoChain(settings, primary)` → массив `[primary, ...rest]`.
+  - **Первый** — текущий выбор юзера (mode + providerId + config).
+  - **Затем** — все API провайдеры (anthropic/openai/deepseek/gigachat) у которых есть ключ (`apiKey` для первых трёх, `clientSecret` для gigachat).
+  - **В конце** — Ollama local с `settings.aiOllamaBaseUrl` (default `http://127.0.0.1:11434`).
+  - Дедупликация по `mode:providerId` ключу (primary не дублируется).
+
+- [`src/components/AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx) — добавлен:
+  - Чекбокс «🔁 Использовать авто-резерв» рядом с textarea вопроса.
+  - При включении — `payload.chain = buildAutoChain(settings, {mode, providerId, config})` вместо `payload.mode`.
+  - В карточке ответа при наличии `answer.debug.attemptedFallbacks` — жёлтая строка:
+    ```
+    🔁 Авто-резерв сработал. Опробовано до успеха:
+       api:anthropic (rate_limited) → api:openai (server_error) → api:deepseek
+    ```
+  - В карточке ошибки при наличии `error._debug.attemptedFallbacks` — жёлтая строка:
+    ```
+    🔁 Все варианты опробованы: api:anthropic (rate_limited), api:openai (server_error)
+    ```
+
+### Как работает (юзер сценарий)
+
+1. Юзер настроил 3 провайдера: Anthropic + OpenAI + DeepSeek (есть API ключи).
+2. Откройте 🤖 «Проверка AI» в боковой панели.
+3. Выберите режим «API провайдер» + Anthropic.
+4. **Включите галочку «🔁 Использовать авто-резерв»**.
+5. Введите вопрос → «📤 Спросить».
+6. Программа собирает chain: `[anthropic → openai → deepseek → local]`.
+7. Если Anthropic вернул 429 → автоматически пробует OpenAI → ответ.
+8. В зелёной карточке: ответ от OpenAI + жёлтая строка «🔁 Авто-резерв сработал: anthropic (rate_limited) → openai».
+9. Все этапы в стандартном лог-вьюере «📒 Логи ChatCenter».
+
+### Что собирается в chain
+
+| Провайдер | Условие добавления |
+|---|---|
+| anthropic / openai / deepseek | `settings.aiProviderKeys[id].apiKey` непустой |
+| gigachat | `settings.aiProviderKeys.gigachat.clientSecret` непустой (apiKey не обязателен) |
+| local Ollama | Всегда (с URL из `settings.aiOllamaBaseUrl` или default) |
+| webui | Только если primary = webui (вручную не добавляется) |
+
+### Тесты (+20)
+- `buildAutoChain.vitest.js` (15): без primary → [] / primary без mode → [] / primary mode=api/local/webui первым / провайдер с/без apiKey / gigachat clientSecret / primary не дублируется / local в конце / custom Ollama URL / local не дублируется если primary=local / порядок primary первым + local последний / полный сценарий с 3 провайдерами → 4 шага.
+- `AiBridgeCheck.vitest.jsx` (+5): чекбокс виден / включён → payload.chain без mode / выключен → payload.mode без chain / ответ с attemptedFallbacks → «Авто-резерв сработал» / ошибка с attemptedFallbacks → «Все варианты опробованы».
+
+### Регрессия
+lint 0, vitest 1753 → 1773 ✅ (+20), fileSizeLimits 446/446 ✅, check-memory ✅.
+
+### Безопасность
+- chain строится в renderer из settings — без API ключей (передаются только providerId).
+- API ключи всё равно резолвятся в main (как в single mode).
+- Custom селекторы из settings.aiBridgeSelectors не передаются автоматически в авто-резерв — только при mode=webui вручную.
+
+### Rollback
+`git revert <commit>` — buildAutoChain.js новый файл, чекбокс опциональный (default off → старое поведение).
 
 ---
 

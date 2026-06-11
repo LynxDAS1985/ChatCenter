@@ -10,6 +10,8 @@
 import { useState } from 'react'
 // v1.1.17 (Этап 8): редактор кастомных селекторов для AI сайтов.
 import AiSelectorsEditor from './AiSelectorsEditor.jsx'
+// v1.2.1: сборка fallback chain из настроек.
+import { buildAutoChain } from '../utils/aiBridge/buildAutoChain.js'
 
 const MODES = [
   { id: 'local',  label: 'Локальный (Ollama)',  needsProvider: false },
@@ -33,6 +35,7 @@ function log(level, message) {
 export default function AiBridgeCheck({ onClose, settings, onSettingsChange }) {
   const [mode, setMode] = useState('local')
   const [selectorsEditorOpen, setSelectorsEditorOpen] = useState(false)  // v1.1.17
+  const [useFallbackChain, setUseFallbackChain] = useState(false)  // v1.2.1
   const [providerId, setProviderId] = useState('anthropic')
   const [text, setText] = useState('Привет! Скажи коротко что ты можешь делать.')
   const [model, setModel] = useState('')
@@ -51,7 +54,7 @@ export default function AiBridgeCheck({ onClose, settings, onSettingsChange }) {
     setSending(true)
     setAnswer(null)
     setError(null)
-    log('INFO', `start mode=${mode}` + (needsProvider ? ` providerId=${providerId}` : '') + ` text.length=${text.length}`)
+    log('INFO', `start mode=${mode}` + (needsProvider ? ` providerId=${providerId}` : '') + ` text.length=${text.length}` + (useFallbackChain ? ' chain=auto' : ''))
     const config = {}
     if (needsProvider) config.providerId = providerId
     if (mode === 'local' && baseUrl) config.baseUrl = baseUrl
@@ -60,21 +63,34 @@ export default function AiBridgeCheck({ onClose, settings, onSettingsChange }) {
     if (mode === 'webui' && settings?.aiBridgeSelectors?.[providerId]) {
       config.selectors = settings.aiBridgeSelectors[providerId]
     }
-    try {
-      const r = await window.api.invoke('ai-bridge:send', {
+    // v1.2.1: если включён авто-резерв — собираем chain из доступных провайдеров.
+    const payload = {
+      question: {
+        version: 1,
+        text,
+        source: { messengerId: 'native_cc' },
+      },
+    }
+    if (useFallbackChain) {
+      payload.chain = buildAutoChain(settings, {
         mode,
-        question: {
-          version: 1,
-          text,
-          source: { messengerId: 'native_cc' },
-        },
+        providerId: needsProvider ? providerId : undefined,
         config,
       })
+      log('INFO', `chain length=${payload.chain.length}`)
+    } else {
+      payload.mode = mode
+      payload.config = config
+    }
+    try {
+      const r = await window.api.invoke('ai-bridge:send', payload)
       log('INFO', `result ok=${r?.ok} latencyMs=${r?.latencyMs}` + (r?.error ? ` errorCode=${r.error.code}` : ''))
       if (r?.ok) {
         setAnswer(r)
       } else {
-        setError(r?.error || { code: 'unknown', message: 'неизвестная ошибка' })
+        // v1.2.1: при ошибке тоже передаём debug.attemptedFallbacks в state для отображения.
+        setError({ ...(r?.error || { code: 'unknown', message: 'неизвестная ошибка' }),
+                   _debug: r?.debug })
       }
     } catch (e) {
       log('ERROR', 'IPC throw: ' + (e?.message || String(e)))
@@ -200,6 +216,16 @@ export default function AiBridgeCheck({ onClose, settings, onSettingsChange }) {
             style={inputStyle}
           />
 
+          <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={useFallbackChain}
+              onChange={e => setUseFallbackChain(e.target.checked)}
+              style={{ margin: 0 }}
+            />
+            🔁 Использовать авто-резерв (если основной AI не ответит — попробуй следующий)
+          </label>
+
           <label style={labelStyle}>Вопрос</label>
           <textarea
             value={text}
@@ -233,6 +259,24 @@ export default function AiBridgeCheck({ onClose, settings, onSettingsChange }) {
                 ✅ Ответ ({answer.providerId}, {answer.latencyMs} мс
                 {answer.model ? `, модель ${answer.model}` : ''})
               </div>
+              {/* v1.2.1: если был fallback — показать список попыток */}
+              {answer.debug?.attemptedFallbacks?.length > 0 && (
+                <div style={{ fontSize: 10, color: '#eab308', marginBottom: 6 }}>
+                  🔁 Авто-резерв сработал. Опробовано до успеха:{' '}
+                  {answer.debug.attemptedFallbacks.map((a, i) => (
+                    <span key={i}>
+                      {i > 0 ? ' → ' : ''}
+                      <span style={{ color: '#ff8a8a' }}>
+                        {a.mode}{a.providerId ? `:${a.providerId}` : ''} ({a.errorCode})
+                      </span>
+                    </span>
+                  ))}
+                  {' → '}
+                  <span style={{ color: '#22c55e' }}>
+                    {answer.mode}{answer.providerId ? `:${answer.providerId}` : ''}
+                  </span>
+                </div>
+              )}
               <div style={{
                 fontSize: 12, color: 'var(--cc-text, #e0e0e0)',
                 whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 300, overflow: 'auto',
@@ -253,6 +297,18 @@ export default function AiBridgeCheck({ onClose, settings, onSettingsChange }) {
               <div style={{ fontSize: 12, color: 'var(--cc-text, #e0e0e0)', whiteSpace: 'pre-wrap' }}>
                 {error.message}
               </div>
+              {/* v1.2.1: если был запущен fallback chain и все упали — показать список попыток */}
+              {error._debug?.attemptedFallbacks?.length > 0 && (
+                <div style={{ fontSize: 10, color: '#eab308', marginTop: 8 }}>
+                  🔁 Все варианты опробованы:{' '}
+                  {error._debug.attemptedFallbacks.map((a, i) => (
+                    <span key={i}>
+                      {i > 0 ? ', ' : ''}
+                      {a.mode}{a.providerId ? `:${a.providerId}` : ''} ({a.errorCode})
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
