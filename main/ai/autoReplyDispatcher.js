@@ -233,7 +233,13 @@ export async function processNewMessage(payload, deps = _deps, now = Date.now())
     }
   }
 
-  // Action: ai_reply — запускаем runAgentLoop с auto-confirm.
+  // Action: ai_reply — два пути:
+  //  1) v1.2.3: rule.action.useBridge === true → через AI Bridge (с auto-резервом + Ollama)
+  //  2) default: runAgentLoop с tool use (как было с v1.1.2)
+  if (rule.action?.type === 'ai_reply' && rule.action?.useBridge === true) {
+    return await dispatchAiReplyViaBridge({ rule, source, msg, payload, deps, matched, desc, now })
+  }
+
   if (rule.action?.type === 'ai_reply') {
     if (typeof deps.runAgent !== 'function') {
       return { matched: matched.length, fired: 0, reason: 'no_runAgent' }
@@ -299,6 +305,126 @@ function writeAudit(deps, partial) {
       ...partial,
     })
   } catch (_) { /* never block dispatcher on audit failure */ }
+}
+
+/**
+ * v1.2.3: ai_reply через AI Bridge (вместо runAgentLoop с tool use).
+ *
+ * Поток:
+ *   1. Собрать question (text — последнее incoming, history — recent up to 10)
+ *   2. deps.bridgeSend(payload) → AiBridgeAnswer
+ *   3. Если ok → deps.handlerContext.sendMessage отправить text в чат
+ *   4. Audit запись
+ *
+ * Преимущества над runAgent: работает с Ollama (бесплатно), общий резерв с UI.
+ * Ограничения: нет tool use (AI не может «искать», «помечать» — только генерирует текст).
+ */
+async function dispatchAiReplyViaBridge({ rule, source, msg, payload, deps, matched, desc, now }) {
+  if (typeof deps.bridgeSend !== 'function') {
+    return { matched: matched.length, fired: 0, reason: 'no_bridgeSend' }
+  }
+  if (typeof deps.handlerContext?.sendMessage !== 'function') {
+    return { matched: matched.length, fired: 0, reason: 'no_sendMessage' }
+  }
+
+  const hint = rule.action?.aiPromptHint || ''
+  const systemPrompt = hint
+    ? `Ты помощник менеджера. Подсказка от менеджера: "${hint}". Сформулируй короткий вежливый ответ клиенту.`
+    : 'Ты помощник менеджера. Сформулируй короткий вежливый ответ клиенту по контексту.'
+
+  const text = msg.text || ''
+  // Recent history (если deps.getRecentMessages есть) — для контекста
+  let history
+  try {
+    if (typeof deps.getRecentMessages === 'function') {
+      const recent = await deps.getRecentMessages({ chatId: msg.chatId, limit: 10 })
+      if (Array.isArray(recent)) {
+        history = recent.slice(0, -1)
+          .filter(m => m && typeof m.text === 'string')
+          .map(m => ({ role: m.isOutgoing ? 'assistant' : 'user', text: m.text }))
+      }
+    }
+  } catch (_) { /* history опциональна */ }
+
+  const question = {
+    version: 1,
+    text,
+    source: {
+      messengerId: source.messengerId,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      messageId: source.messageId,
+    },
+    history,
+    systemPrompt,
+  }
+
+  // Bridge config — chain из rule.action.bridgeChain если задан, иначе single mode.
+  const bridgePayload = rule.action?.bridgeChain && Array.isArray(rule.action.bridgeChain) && rule.action.bridgeChain.length > 0
+    ? { chain: rule.action.bridgeChain, question }
+    : { mode: rule.action?.bridgeMode || 'local', config: rule.action?.bridgeConfig || {}, question }
+
+  const t0 = now
+  let r
+  try {
+    r = await deps.bridgeSend(bridgePayload)
+  } catch (e) {
+    writeAudit(deps, {
+      actor: 'ai_auto', actionId: 'ai_reply_bridge_summary',
+      ruleId: rule.id, ruleName: rule.name, source,
+      executionResult: 'error', errorMessage: e?.message,
+    })
+    return { matched: matched.length, fired: 0, error: e?.message }
+  }
+
+  if (!r?.ok || !r?.text) {
+    writeAudit(deps, {
+      actor: 'ai_auto', actionId: 'ai_reply_bridge_summary',
+      ruleId: rule.id, ruleName: rule.name, source,
+      executionResult: r?.error?.code || 'no_answer',
+      errorMessage: r?.error?.message,
+      durationMs: Date.now() - t0,
+    })
+    return { matched: matched.length, fired: 0, error: r?.error?.message || 'bridge_no_answer' }
+  }
+
+  // Отправить ответ в чат через handlerContext.sendMessage
+  let sendResult
+  try {
+    sendResult = await deps.handlerContext.sendMessage({
+      chatId: msg.chatId,
+      text: r.text,
+      replyToMessageId: msg.messageId,
+    })
+  } catch (e) {
+    sendResult = { ok: false, error: e?.message || 'send_threw' }
+  }
+
+  if (typeof deps.markMatched === 'function') deps.markMatched(rule.id)
+
+  writeAudit(deps, {
+    actor: 'ai_auto', actionId: 'ai_reply_bridge_summary',
+    ruleId: rule.id, ruleName: rule.name, source,
+    executionResult: sendResult?.ok ? 'ok' : 'send_failed',
+    errorMessage: sendResult?.error,
+    durationMs: Date.now() - t0,
+    output: {
+      bridgeProviderId: r.providerId,
+      bridgeMode: r.mode,
+      bridgeLatencyMs: r.latencyMs,
+      attemptedFallbacks: r.debug?.attemptedFallbacks || [],
+      sentMessageId: sendResult?.id,
+    },
+  })
+
+  return {
+    matched: matched.length,
+    fired: sendResult?.ok ? 1 : 0,
+    action: 'ai_reply_bridge',
+    ruleId: rule.id,
+    result: { bridge: r, send: sendResult },
+    ...desc,
+  }
 }
 
 /**

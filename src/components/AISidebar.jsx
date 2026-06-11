@@ -386,6 +386,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
               provider={provider}
               recentMessages={chatHistory}
               onDone={() => clearPendingAiInvocation?.()}
+              settings={settings}
             />
           </div>
         )}

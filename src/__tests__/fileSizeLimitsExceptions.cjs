@@ -83,12 +83,12 @@ module.exports = {
   },
   // v1.1.3: + smart cooldown (markUserReplied + _userRepliedAt Map) + audit writeAudit
   'main/ai/autoReplyDispatcher.js': {
-    ceiling: 380,
-    reason: 'v1.1.3: + smart cooldown (markUserReplied + _userRepliedAt). v1.1.2: + writeAudit helper. v1.1.1: + processNewMessage с 3 уровнями защиты, mark_read/ai_reply ветки. Логически цельный диспетчер — разбиение по уровням защиты возможно отдельно (v1.2+).'
+    ceiling: 500,
+    reason: 'v1.2.3: +dispatchAiReplyViaBridge (~95 строк) — отдельная ветка для rule.action.useBridge через AI Bridge. v1.1.3: + smart cooldown (markUserReplied + _userRepliedAt). v1.1.2: + writeAudit helper. v1.1.1: + processNewMessage с 3 уровнями защиты, mark_read/ai_reply ветки. Логически цельный диспетчер — разбиение по уровням защиты возможно отдельно (v1.3+).'
   },
   'main/ai/autoReplyDispatcher.vitest.js': {
-    ceiling: 500,
-    reason: 'v1.1.3: +5 тестов smart cooldown. v1.1.2: +7 тестов master switch + audit. v1.1.1: 24 базовых теста. Один dispatcher — один test-файл.'
+    ceiling: 650,
+    reason: 'v1.2.3: +10 тестов Bridge ветки (useBridge=true, payload, chain, ok/sendMessage failed, audit, useBridge=false → runAgent). v1.1.3: +5 тестов smart cooldown. v1.1.2: +7 тестов master switch + audit. v1.1.1: 24 базовых теста. Один dispatcher — один test-файл.'
   },
   // tdlibClient.js exception перенесён выше (см. v0.95.29 запись)
   // v0.89.33: snapshot readInboxMaxId для divider «Новые сообщения» (Telegram Desktop UX-стандарт)
@@ -134,8 +134,15 @@ module.exports = {
   },
   // v0.95.50: changelog копит entries для модалки «Что нового», ~15 строк за minor релиз.
   // Архивация старых — отдельная задача.
+  // v1.2.2: AI Agent через Bridge — добавлена ветка useBridge (40+ строк logic).
+  // runViaBridge уже вынесен в utils/aiBridge/agentBridgeRunner.js (91 строка).
+  // Дальнейшее разбиение — отдельная задача (вынести listeners в use-эффект-хуки).
+  'src/hooks/useAIAgent.js': {
+    ceiling: 200,
+    reason: 'v1.2.2: добавлена Bridge-ветка (useBridge=true). runViaBridge уже вынесен в agentBridgeRunner.js. Сам hook: state + 2 streaming listeners + start + cancel + confirmStep + cancelStep + reset — целостный узел, дальнейшее разбиение требует архитектурного шага.'
+  },
   'src/utils/changelogData.js': {
-    ceiling: 700,
-    reason: 'v1.1.11: 36 entries — каждый minor/patch релиз добавляет ~12 строк (title + features array). За сессию 11.06 добавилось 5 записей (v1.1.7 - v1.1.11 AI Bridge). Лимит 550 → 700 с запасом на остальные 8 этапов AI Bridge + Этап 11 release v1.2.0. Архивация старых < v0.95 — отдельная задача после v1.2.0.'
+    ceiling: 900,
+    reason: 'v1.2.4: 47 entries — за сессию 11.06 добавилось 17 записей AI Bridge (v1.1.7 → v1.2.4). Лимит 700 → 900 с запасом. Архивация старых < v0.95 — отдельная задача после v1.2.0.'
   }
 }

@@ -154,3 +154,137 @@ describe('useAIAgent', () => {
     expect(result.current.state.steps).toEqual([])
   })
 })
+
+// v1.2.2: Bridge-режим — простой Q&A через AI Bridge с auto-резервом.
+describe('useAIAgent — Bridge режим (v1.2.2)', () => {
+  it('useBridge=true → не вызывает ai:agent:run, вместо вызывает ai-bridge:send', async () => {
+    invokeMock.mockResolvedValue({
+      version: 1, ok: true, text: 'Bridge ответил', providerId: 'anthropic', mode: 'api', latencyMs: 50,
+    })
+    const { result } = renderHook(() => useAIAgent())
+
+    await act(async () => {
+      await result.current.start({
+        source: { messengerId: 'native_cc', chatId: 'c1', messageId: 'm1' },
+        provider: 'anthropic',
+        recentMessages: [
+          { text: 'Привет, есть вопрос', isOutgoing: false },
+        ],
+        useBridge: true,
+        settings: { aiProviderKeys: { anthropic: { apiKey: 'sk-a' } } },
+      })
+    })
+
+    expect(invokeMock).toHaveBeenCalledTimes(1)
+    expect(invokeMock.mock.calls[0][0]).toBe('ai-bridge:send')
+    // НЕ ai:agent:run
+    const call = invokeMock.mock.calls[0]
+    expect(call[0]).not.toBe('ai:agent:run')
+    // chain включает primary (anthropic)
+    expect(call[1].chain).toBeDefined()
+    expect(call[1].chain[0].config.providerId).toBe('anthropic')
+    expect(result.current.state.finalAnswer).toBe('Bridge ответил')
+    expect(result.current.state.isRunning).toBe(false)
+  })
+
+  it('Bridge: text вопроса берётся из последнего incoming сообщения', async () => {
+    invokeMock.mockResolvedValue({ ok: true, text: 'X', providerId: 'openai', mode: 'api', latencyMs: 1 })
+    const { result } = renderHook(() => useAIAgent())
+    await act(async () => {
+      await result.current.start({
+        source: { messengerId: 'native_cc' },
+        provider: 'openai',
+        recentMessages: [
+          { text: 'Старое', isOutgoing: false },
+          { text: 'Новое — главный вопрос', isOutgoing: false },
+        ],
+        useBridge: true,
+        settings: {},
+      })
+    })
+    const payload = invokeMock.mock.calls[0][1]
+    expect(payload.question.text).toBe('Новое — главный вопрос')
+  })
+
+  it('Bridge: history собирается из recentMessages (без последнего)', async () => {
+    invokeMock.mockResolvedValue({ ok: true, text: 'X', providerId: 'openai', mode: 'api', latencyMs: 1 })
+    const { result } = renderHook(() => useAIAgent())
+    await act(async () => {
+      await result.current.start({
+        source: { messengerId: 'native_cc' },
+        provider: 'openai',
+        recentMessages: [
+          { text: 'M1', isOutgoing: false },
+          { text: 'A1', isOutgoing: true },
+          { text: 'M2', isOutgoing: false },
+        ],
+        useBridge: true,
+        settings: {},
+      })
+    })
+    const payload = invokeMock.mock.calls[0][1]
+    expect(payload.question.history).toEqual([
+      { role: 'user', text: 'M1' },
+      { role: 'assistant', text: 'A1' },
+    ])
+    expect(payload.question.text).toBe('M2')
+  })
+
+  it('Bridge: streaming шаги (bridge_start + tool_result bridge_answer)', async () => {
+    invokeMock.mockResolvedValue({
+      ok: true, text: 'Ответ', providerId: 'openai', mode: 'api', latencyMs: 100,
+      debug: { attemptedFallbacks: [{ mode: 'api', providerId: 'anthropic', errorCode: 'rate_limited' }] },
+    })
+    const { result } = renderHook(() => useAIAgent())
+    await act(async () => {
+      await result.current.start({
+        source: { messengerId: 'native_cc' },
+        provider: 'anthropic',
+        recentMessages: [{ text: 'Привет', isOutgoing: false }],
+        useBridge: true,
+        settings: { aiProviderKeys: { anthropic: { apiKey: 'a' }, openai: { apiKey: 'b' } } },
+      })
+    })
+    const steps = result.current.state.steps
+    expect(steps[0].type).toBe('bridge_start')
+    expect(steps[0].primary).toBe('anthropic')
+    expect(steps[1].type).toBe('tool_result')
+    expect(steps[1].name).toBe('bridge_answer')
+    expect(steps[1].result.providerId).toBe('openai')
+    expect(steps[1].result.attemptedFallbacks).toHaveLength(1)
+  })
+
+  it('Bridge: ошибка → finalAnswer=null + error', async () => {
+    invokeMock.mockResolvedValue({
+      ok: false, text: '',
+      error: { code: 'network_error', message: 'нет сети', retryable: true },
+    })
+    const { result } = renderHook(() => useAIAgent())
+    await act(async () => {
+      await result.current.start({
+        source: { messengerId: 'native_cc' },
+        provider: 'anthropic',
+        recentMessages: [{ text: 'Q', isOutgoing: false }],
+        useBridge: true,
+        settings: {},
+      })
+    })
+    expect(result.current.state.finalAnswer).toBeNull()
+    expect(result.current.state.error).toContain('нет сети')
+  })
+
+  it('Bridge: invoke throws → error в state', async () => {
+    invokeMock.mockRejectedValue(new Error('IPC сломан'))
+    const { result } = renderHook(() => useAIAgent())
+    await act(async () => {
+      await result.current.start({
+        source: { messengerId: 'native_cc' },
+        provider: 'anthropic',
+        recentMessages: [{ text: 'Q', isOutgoing: false }],
+        useBridge: true,
+        settings: {},
+      })
+    })
+    expect(result.current.state.error).toContain('IPC сломан')
+  })
+})

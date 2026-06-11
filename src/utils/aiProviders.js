@@ -34,11 +34,37 @@ export const DEFAULT_WEBVIEW_URLS = {
   gigachat:  'https://giga.chat',
 }
 
+// v1.2.5: расширенный список моделей для dropdown в AIConfigPanel.
+// Источник: actual model IDs у каждого провайдера на 11 июня 2026.
+// Юзер сможет выбрать из списка или ввести свою (custom).
 export const MODEL_HINTS = {
-  openai:    ['gpt-4o-mini', 'gpt-4o'],
-  anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
-  deepseek:  ['deepseek-chat', 'deepseek-reasoner'],
-  gigachat:  ['GigaChat', 'GigaChat-Plus', 'GigaChat-Pro'],
+  openai: [
+    'gpt-4o-mini',
+    'gpt-4o',
+    'gpt-4-turbo',
+    'gpt-3.5-turbo',
+    'o1',
+    'o1-mini',
+    'o3-mini',
+  ],
+  anthropic: [
+    'claude-haiku-4-5-20251001',
+    'claude-sonnet-4-6',
+    'claude-opus-4-8',
+    'claude-opus-4-7',
+    'claude-fable-5',
+  ],
+  deepseek: [
+    'deepseek-chat',
+    'deepseek-reasoner',
+    'deepseek-coder',
+  ],
+  gigachat: [
+    'GigaChat',
+    'GigaChat-Plus',
+    'GigaChat-Pro',
+    'GigaChat-Max',
+  ],
 }
 
 export const PROVIDER_URLS = {

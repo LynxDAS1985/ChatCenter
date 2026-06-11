@@ -424,3 +424,188 @@ describe('initAutoReplyDispatcher', () => {
     expect(log).toHaveBeenCalledWith('error', expect.stringContaining('processNewMessage threw'))
   })
 })
+
+// v1.2.3: ai_reply через Bridge (rule.action.useBridge=true).
+describe('processNewMessage — ai_reply через Bridge (v1.2.3)', () => {
+  beforeEach(() => { _resetForTests() })
+
+  const ruleViaBridge = {
+    id: 'r-bridge',
+    name: 'Test Bridge',
+    enabled: true,
+    triggers: { chatIds: [] },  // matches all
+    action: {
+      type: 'ai_reply',
+      useBridge: true,
+      aiPromptHint: 'Ответь дружелюбно',
+    },
+  }
+
+  // Формат для buildEngineMessage: payload = {accountId, chatId, message:{...}}.
+  const baseMsg = {
+    accountId: 'a1',
+    chatId: 'a1:42',
+    message: {
+      id: '100',
+      text: 'Здравствуйте',
+      isOutgoing: false,
+      senderId: 's1',
+      chatType: 'private',
+      chatTitle: 'Тест',
+      senderName: 'Клиент',
+      timestamp: Date.now(),
+    },
+  }
+
+  it('useBridge=true → bridgeSend вызван (НЕ runAgent)', async () => {
+    const runAgent = vi.fn()
+    const bridgeSend = vi.fn().mockResolvedValue({
+      ok: true, text: 'Здравствуйте! Чем могу помочь?',
+      providerId: 'local', mode: 'local', latencyMs: 50,
+    })
+    const sendMessage = vi.fn().mockResolvedValue({ ok: true, id: '101' })
+
+    const r = await processNewMessage(baseMsg, {
+      getRules: () => [ruleViaBridge],
+      runAgent,
+      bridgeSend,
+      handlerContext: { sendMessage },
+    })
+
+    expect(runAgent).not.toHaveBeenCalled()
+    expect(bridgeSend).toHaveBeenCalled()
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      chatId: 'a1:42',
+      text: 'Здравствуйте! Чем могу помочь?',
+      replyToMessageId: '100',
+    }))
+    expect(r.fired).toBe(1)
+    expect(r.action).toBe('ai_reply_bridge')
+  })
+
+  it('bridgeSend получает question с text + source + systemPrompt с hint', async () => {
+    const bridgeSend = vi.fn().mockResolvedValue({ ok: true, text: 'ok', providerId: 'l', mode: 'local', latencyMs: 1 })
+    await processNewMessage(baseMsg, {
+      getRules: () => [ruleViaBridge],
+      bridgeSend,
+      handlerContext: { sendMessage: vi.fn().mockResolvedValue({ ok: true }) },
+    })
+    const payload = bridgeSend.mock.calls[0][0]
+    expect(payload.question.text).toBe('Здравствуйте')
+    expect(payload.question.source.chatId).toBe('a1:42')
+    expect(payload.question.systemPrompt).toContain('Ответь дружелюбно')
+  })
+
+  it('rule.action.bridgeChain → используется payload.chain (fallback)', async () => {
+    const bridgeSend = vi.fn().mockResolvedValue({ ok: true, text: 'x', providerId: 'a', mode: 'api', latencyMs: 1 })
+    const rule = {
+      ...ruleViaBridge,
+      action: {
+        ...ruleViaBridge.action,
+        bridgeChain: [
+          { mode: 'api', config: { providerId: 'anthropic' } },
+          { mode: 'local', config: {} },
+        ],
+      },
+    }
+    await processNewMessage(baseMsg, {
+      getRules: () => [rule],
+      bridgeSend,
+      handlerContext: { sendMessage: vi.fn().mockResolvedValue({ ok: true }) },
+    })
+    const payload = bridgeSend.mock.calls[0][0]
+    expect(payload.chain).toHaveLength(2)
+    expect(payload.mode).toBeUndefined()
+  })
+
+  it('без bridgeChain → payload.mode=local по умолчанию', async () => {
+    const bridgeSend = vi.fn().mockResolvedValue({ ok: true, text: 'x', providerId: 'l', mode: 'local', latencyMs: 1 })
+    await processNewMessage(baseMsg, {
+      getRules: () => [ruleViaBridge],
+      bridgeSend,
+      handlerContext: { sendMessage: vi.fn().mockResolvedValue({ ok: true }) },
+    })
+    const payload = bridgeSend.mock.calls[0][0]
+    expect(payload.mode).toBe('local')
+  })
+
+  it('bridge ok=false → fired=0, error', async () => {
+    const bridgeSend = vi.fn().mockResolvedValue({
+      ok: false, error: { code: 'network_error', message: 'нет сети' },
+    })
+    const sendMessage = vi.fn()
+    const r = await processNewMessage(baseMsg, {
+      getRules: () => [ruleViaBridge],
+      bridgeSend,
+      handlerContext: { sendMessage },
+    })
+    expect(r.fired).toBe(0)
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('sendMessage упал → fired=0', async () => {
+    const bridgeSend = vi.fn().mockResolvedValue({ ok: true, text: 'ответ', providerId: 'l', mode: 'local', latencyMs: 1 })
+    const sendMessage = vi.fn().mockResolvedValue({ ok: false, error: 'TDLib offline' })
+    const r = await processNewMessage(baseMsg, {
+      getRules: () => [ruleViaBridge],
+      bridgeSend,
+      handlerContext: { sendMessage },
+    })
+    expect(r.fired).toBe(0)
+  })
+
+  it('без bridgeSend в deps → reason=no_bridgeSend', async () => {
+    const r = await processNewMessage(baseMsg, {
+      getRules: () => [ruleViaBridge],
+      handlerContext: { sendMessage: vi.fn() },
+    })
+    expect(r.reason).toBe('no_bridgeSend')
+  })
+
+  it('без sendMessage → reason=no_sendMessage', async () => {
+    const r = await processNewMessage(baseMsg, {
+      getRules: () => [ruleViaBridge],
+      bridgeSend: vi.fn(),
+      handlerContext: {},
+    })
+    expect(r.reason).toBe('no_sendMessage')
+  })
+
+  it('audit пишется с правильными полями', async () => {
+    const bridgeSend = vi.fn().mockResolvedValue({
+      ok: true, text: 'ответ', providerId: 'openai', mode: 'api', latencyMs: 42,
+      debug: { attemptedFallbacks: [{ mode: 'api', providerId: 'anthropic', errorCode: 'rate_limited' }] },
+    })
+    const sendMessage = vi.fn().mockResolvedValue({ ok: true, id: '999' })
+    const appendAudit = vi.fn()
+    await processNewMessage(baseMsg, {
+      getRules: () => [ruleViaBridge],
+      bridgeSend,
+      handlerContext: { sendMessage },
+      appendAudit,
+    })
+    expect(appendAudit).toHaveBeenCalled()
+    const auditEntry = appendAudit.mock.calls[0][0]
+    expect(auditEntry.actionId).toBe('ai_reply_bridge_summary')
+    expect(auditEntry.executionResult).toBe('ok')
+    expect(auditEntry.output.bridgeProviderId).toBe('openai')
+    expect(auditEntry.output.attemptedFallbacks).toHaveLength(1)
+  })
+
+  it('rule.useBridge=false → старый путь runAgent (НЕ bridge)', async () => {
+    const runAgent = vi.fn().mockResolvedValue({ ok: true, iterations: 1, audit: [] })
+    const bridgeSend = vi.fn()
+    const ruleStandard = {
+      ...ruleViaBridge,
+      action: { type: 'ai_reply', aiPromptHint: 'x' },  // НЕТ useBridge
+    }
+    await processNewMessage(baseMsg, {
+      getRules: () => [ruleStandard],
+      runAgent,
+      bridgeSend,
+      handlerContext: { sendMessage: vi.fn() },
+    })
+    expect(runAgent).toHaveBeenCalled()
+    expect(bridgeSend).not.toHaveBeenCalled()
+  })
+})

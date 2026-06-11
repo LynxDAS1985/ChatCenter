@@ -7,6 +7,8 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   listRules, createRule, updateRule, deleteRule, toggleRule,
 } from '../stores/autoReplyRulesStore.js'
+// v1.2.8: импорт/экспорт правил.
+import { exportRulesToJson, parseImportJson } from '../utils/rulesImportExport.js'
 
 const ACTION_LABELS = {
   ai_reply: '🤖 AI отвечает',
@@ -80,6 +82,70 @@ export default function AIAutoReplyRules() {
     reload()
   }
 
+  // v1.2.8: экспорт правил в JSON файл (скачивается через invisible <a download>).
+  const handleExport = (rulesArr) => {
+    try {
+      const json = exportRulesToJson(rulesArr, '1.2.8')
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const stamp = new Date().toISOString().slice(0, 10)
+      a.download = `chatcenter-rules-${stamp}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      try {
+        globalThis.window?.api?.send?.('app:log', { level: 'INFO',
+          message: `[auto-reply-export] exported ${rulesArr.length} rules to chatcenter-rules-${stamp}.json` })
+      } catch (_) {}
+    } catch (e) {
+      alert('Не удалось экспортировать: ' + (e?.message || e))
+    }
+  }
+
+  // v1.2.8: импорт — открывает file picker, парсит JSON, создаёт правила.
+  const handleImportClick = (reloadFn) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json,.json'
+    input.onchange = async (e) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const parsed = parseImportJson(text)
+        if (!parsed.ok) {
+          alert('Ошибка импорта: ' + parsed.error)
+          return
+        }
+        let warningText = ''
+        if (parsed.warnings?.length > 0) {
+          warningText = '\n\nПредупреждения:\n' + parsed.warnings.join('\n')
+        }
+        if (!confirm(`Импортировать ${parsed.rules.length} правил?${warningText}\n\nСтарые правила остаются — новые добавятся.`)) {
+          return
+        }
+        let added = 0
+        let failed = 0
+        for (const r of parsed.rules) {
+          const res = await createRule(r)
+          if (res?.ok) added++; else failed++
+        }
+        try {
+          globalThis.window?.api?.send?.('app:log', { level: 'INFO',
+            message: `[auto-reply-import] added ${added} of ${parsed.rules.length} rules${failed > 0 ? `, failed ${failed}` : ''}` })
+        } catch (_) {}
+        reloadFn()
+        alert(`Импортировано: ${added} из ${parsed.rules.length}` + (failed > 0 ? ` (${failed} ошибок)` : ''))
+      } catch (e) {
+        alert('Не удалось прочитать файл: ' + (e?.message || e))
+      }
+    }
+    input.click()
+  }
+
   if (editing) {
     return <RuleForm
       initial={editing === 'new' ? null : editing}
@@ -90,17 +156,44 @@ export default function AIAutoReplyRules() {
 
   return (
     <div style={{ padding: 16, color: 'var(--cc-text, #fff)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ margin: 0, fontSize: 20 }}>🤖 Правила автоответа</h2>
-        <button
-          type="button"
-          onClick={() => setEditing('new')}
-          style={{
-            padding: '8px 14px', fontSize: 13,
-            background: 'var(--cc-accent, #2AABEE)', color: '#fff',
-            border: 'none', borderRadius: 6, cursor: 'pointer',
-          }}
-        >+ Новое правило</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {/* v1.2.8: импорт/экспорт правил */}
+          <button
+            type="button"
+            onClick={() => handleExport(rules)}
+            disabled={rules.length === 0}
+            title="Скачать все правила в JSON файл (бэкап)"
+            style={{
+              padding: '8px 12px', fontSize: 12,
+              background: 'var(--cc-hover, #2a2b3e)', color: 'var(--cc-text-dim, #aaa)',
+              border: '1px solid var(--cc-border, #333)', borderRadius: 6,
+              cursor: rules.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: rules.length === 0 ? 0.5 : 1,
+            }}
+          >📤 Экспорт</button>
+          <button
+            type="button"
+            onClick={() => handleImportClick(reload)}
+            title="Загрузить правила из JSON файла"
+            style={{
+              padding: '8px 12px', fontSize: 12,
+              background: 'var(--cc-hover, #2a2b3e)', color: 'var(--cc-text-dim, #aaa)',
+              border: '1px solid var(--cc-border, #333)', borderRadius: 6,
+              cursor: 'pointer',
+            }}
+          >📥 Импорт</button>
+          <button
+            type="button"
+            onClick={() => setEditing('new')}
+            style={{
+              padding: '8px 14px', fontSize: 13,
+              background: 'var(--cc-accent, #2AABEE)', color: '#fff',
+              border: 'none', borderRadius: 6, cursor: 'pointer',
+            }}
+          >+ Новое правило</button>
+        </div>
       </div>
 
       {/* v1.1.2: master switch — kill-switch для всех правил. */}
@@ -225,6 +318,8 @@ function RuleForm({ initial, onSave, onCancel }) {
   const [actionType, setActionType] = useState(initial?.action?.type || 'ai_reply')
   const [aiPromptHint, setAiPromptHint] = useState(initial?.action?.aiPromptHint || '')
   const [cooldownMinutes, setCooldownMinutes] = useState(initial?.cooldownMinutes || 60)
+  // v1.2.3: через AI Bridge (бесплатный Ollama + общий резерв) вместо tool use.
+  const [useBridge, setUseBridge] = useState(!!initial?.action?.useBridge)
 
   const toggleDay = (d) => {
     setScheduleDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort())
@@ -252,7 +347,12 @@ function RuleForm({ initial, onSave, onCancel }) {
         excludeChannels: initial?.triggers?.excludeChannels !== false,
         excludeOutgoing: initial?.triggers?.excludeOutgoing !== false,
       },
-      action: { type: actionType, aiPromptHint },
+      action: {
+        type: actionType,
+        aiPromptHint,
+        // v1.2.3: useBridge → ai_reply через AI Bridge (с auto-резервом + Ollama)
+        ...(actionType === 'ai_reply' && useBridge ? { useBridge: true } : {}),
+      },
       cooldownMinutes: Number(cooldownMinutes) || 60,
       matchedCount: initial?.matchedCount || 0,
       lastMatchedAt: initial?.lastMatchedAt || null,
@@ -329,17 +429,41 @@ function RuleForm({ initial, onSave, onCancel }) {
       </div>
 
       {actionType === 'ai_reply' && (
-        <div style={{ marginBottom: 12 }}>
-          <label style={labelStyle}>Подсказка для AI (что отвечать)</label>
-          <textarea
-            value={aiPromptHint}
-            onChange={e => setAiPromptHint(e.target.value)}
-            maxLength={500}
-            rows={3}
-            placeholder="Ответь профессионально что счёт в работе и будет готов сегодня к 18:00"
-            style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
-          />
-        </div>
+        <>
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Подсказка для AI (что отвечать)</label>
+            <textarea
+              value={aiPromptHint}
+              onChange={e => setAiPromptHint(e.target.value)}
+              maxLength={500}
+              rows={3}
+              placeholder="Ответь профессионально что счёт в работе и будет готов сегодня к 18:00"
+              style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </div>
+
+          {/* v1.2.3: через AI Bridge (с auto-резервом + Ollama) */}
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer' }}
+              title="Использует AI Bridge: общий резерв провайдеров + локальный Ollama. Без tool use (AI только пишет ответ, не делает других действий)."
+            >
+              <input
+                type="checkbox"
+                checked={useBridge}
+                onChange={e => setUseBridge(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <div>
+                <div style={{ color: 'var(--cc-text, #fff)' }}>🔁 Через AI Bridge (с резервом + Ollama)</div>
+                <div style={{ fontSize: 11, color: 'var(--cc-text-dim, #888)', marginTop: 2 }}>
+                  Если основной провайдер упал — автоматический резерв.
+                  Работает с бесплатным Ollama. Без умных действий (только текст-ответ).
+                </div>
+              </div>
+            </label>
+          </div>
+        </>
       )}
 
       <div style={{ marginBottom: 12 }}>

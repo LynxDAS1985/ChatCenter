@@ -7,10 +7,16 @@
 //   - Confirm (показывает AIConfirmModal для confirm-tier tool)
 //   - Done (показывает final answer)
 //   - Error (показывает ошибку)
+//
+// v1.2.2: добавлен переключатель «🔁 Через Bridge» — отправляет вопрос через AI Bridge
+// с auto-резервом + Ollama. Без tool use (нет умных действий), но доступ к бесплатному
+// локальному AI и автоматическое переключение на резерв если основной упал.
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import useAIAgent from '../hooks/useAIAgent.js'
 import AIConfirmModal from './AIConfirmModal.jsx'
+// v1.2.6: «печатающий» эффект для отображения ответа AI постепенно.
+import TypewriterText from './TypewriterText.jsx'
 
 /**
  * @param {object} props
@@ -18,9 +24,12 @@ import AIConfirmModal from './AIConfirmModal.jsx'
  * @param {string} provider — 'anthropic' / 'openai' / etc
  * @param {Array} recentMessages — для context builder
  * @param {function} onDone — callback когда агент закончил
+ * @param {object} [settings] — settings объект (для buildAutoChain в Bridge-режиме)
  */
-export default function AISidebarAgent({ pendingInvocation, provider, recentMessages, onDone }) {
+export default function AISidebarAgent({ pendingInvocation, provider, recentMessages, onDone, settings }) {
   const { state, start, cancel, confirmStep, cancelStep } = useAIAgent()
+  // v1.2.2: переключатель Bridge-режима. Default из settings.aiAgentUseBridge (sticky).
+  const [useBridge, setUseBridge] = useState(() => Boolean(settings?.aiAgentUseBridge))
 
   // Автоматически запускаем при появлении pendingInvocation
   useEffect(() => {
@@ -29,8 +38,11 @@ export default function AISidebarAgent({ pendingInvocation, provider, recentMess
       source: pendingInvocation.source,
       provider: provider || 'anthropic',
       recentMessages: recentMessages || [],
+      // v1.2.2:
+      useBridge,
+      settings,
     })
-  }, [pendingInvocation, provider])
+  }, [pendingInvocation, provider, useBridge])
 
   // Если финальный ответ — вызвать onDone
   useEffect(() => {
@@ -77,6 +89,25 @@ export default function AISidebarAgent({ pendingInvocation, provider, recentMess
         )}
       </div>
 
+      {/* v1.2.2: переключатель Bridge-режима */}
+      <label
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          fontSize: 11, color: 'var(--cc-text-dim, #888)',
+          marginBottom: 10, cursor: state.isRunning ? 'not-allowed' : 'pointer',
+        }}
+        title="Через Bridge: простой Q&A без умных действий, но с резервом и поддержкой Ollama"
+      >
+        <input
+          type="checkbox"
+          checked={useBridge}
+          disabled={state.isRunning}
+          onChange={e => setUseBridge(e.target.checked)}
+          style={{ margin: 0 }}
+        />
+        🔁 Через Bridge (с резервом, без tool use)
+      </label>
+
       {/* Streaming прогресса */}
       {state.steps.length > 0 && (
         <div style={{ marginBottom: 12 }}>
@@ -100,7 +131,7 @@ export default function AISidebarAgent({ pendingInvocation, provider, recentMess
         </div>
       )}
 
-      {/* Final answer */}
+      {/* Final answer — v1.2.6: с typewriter эффектом */}
       {state.finalAnswer && (
         <div style={{
           marginTop: 12,
@@ -113,7 +144,7 @@ export default function AISidebarAgent({ pendingInvocation, provider, recentMess
           <div style={{ fontSize: 11, color: 'var(--cc-text-dim, #888)', marginBottom: 6 }}>
             ✓ Завершено:
           </div>
-          {state.finalAnswer}
+          <TypewriterText text={state.finalAnswer} speed={12} />
         </div>
       )}
 
@@ -156,9 +187,21 @@ function StepRow({ step }) {
   } else if (step.type === 'tool_result') {
     icon = step.result?.ok === false ? '✗' : '✓'
     label = `Результат: ${step.name}`
+    // v1.2.2: показать список fallback'ов для bridge_answer
+    if (step.name === 'bridge_answer' && step.result?.attemptedFallbacks?.length > 0) {
+      const tried = step.result.attemptedFallbacks
+        .map(a => `${a.providerId || a.mode}(${a.errorCode})`).join(' → ')
+      label = `Через резерв: ${tried} → ${step.result.providerId || step.result.mode}`
+    } else if (step.name === 'bridge_answer' && step.result?.ok) {
+      label = `Bridge ответил (${step.result.providerId || step.result.mode}, ${step.result.latencyMs}мс)`
+    }
   } else if (step.type === 'response') {
     icon = '💬'
     label = `Iteration ${step.iteration || ''}`
+  } else if (step.type === 'bridge_start') {
+    // v1.2.2:
+    icon = '🔁'
+    label = `Через Bridge (резерв ${step.chainSize} пров., начинаем с ${step.primary})`
   }
 
   return (

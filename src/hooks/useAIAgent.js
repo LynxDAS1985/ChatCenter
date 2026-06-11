@@ -3,12 +3,17 @@
 // Запускает агента через IPC ai:agent:run, слушает streaming через ai:agent:step,
 // показывает confirmation modal для confirm-tier tools, возвращает финальный ответ.
 //
-// Использование:
+// Использование (tool-режим — умный AI с действиями):
 //   const { state, start, cancel, confirmStep, cancelStep } = useAIAgent()
 //   await start({ source, provider, recentMessages })
 //   state.isRunning / state.steps / state.finalAnswer / state.pendingConfirm
+//
+// v1.2.2: добавлен Bridge-режим (простой Q&A без tools, с auto-резервом + Ollama):
+//   await start({ source, provider, recentMessages, useBridge: true, settings })
+//   — отправит вопрос через AI Bridge с auto-chain. Нет tool calls, только текст.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { runAiAgentViaBridge } from '../utils/aiBridge/agentBridgeRunner.js'
 
 /**
  * @returns {{
@@ -74,6 +79,27 @@ export default function useAIAgent() {
       error: null,
       pendingConfirm: null,
     })
+
+    // v1.2.2: Bridge-режим — простой Q&A через AI Bridge с auto-резервом.
+    // Не использует tool use (для умных действий — обычный режим).
+    if (params?.useBridge) {
+      try {
+        const result = await runAiAgentViaBridge(params, requestId, setState)
+        setState(s => ({
+          ...s,
+          isRunning: false,
+          finalAnswer: result.ok ? result.text : null,
+          error: result.ok ? null : (result.error?.message || result.error?.code || 'bridge_error'),
+        }))
+      } catch (e) {
+        setState(s => ({
+          ...s,
+          isRunning: false,
+          error: e?.message || 'bridge_failed',
+        }))
+      }
+      return
+    }
 
     try {
       const result = await window.api.invoke('ai:agent:run', {

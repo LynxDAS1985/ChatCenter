@@ -393,6 +393,19 @@ app.whenReady().then(() => {
           handlerContext: {
             // markAsRead для action='mark_read' — без AI.
             markAsRead: adapter.markAsRead,
+            // v1.2.3: sendMessage для ai_reply через Bridge (отправка text без tool use).
+            sendMessage: adapter.sendMessage,
+          },
+          // v1.2.3: bridgeSend для ai_reply через AI Bridge.
+          //   payload = { mode, chain, config, question } (см. handleSend в aiBridgeIpcHandlers).
+          bridgeSend: async (payload) => {
+            const { handleSend } = await import('./handlers/aiBridgeIpcHandlers.js')
+            return handleSend(payload, { callProvider: callProviderFn })
+          },
+          // v1.2.3: getRecentMessages — опционально, для контекста в Bridge.
+          getRecentMessages: async ({ chatId, limit }) => {
+            try { return await adapter.getMessages({ chatId, limit: Number(limit) || 10 }) }
+            catch (_) { return [] }
           },
           // v1.1.2: audit log запись прямо в файл audit-log/*.jsonl.
           appendAudit: (record) => { appendAuditRecord(record) },

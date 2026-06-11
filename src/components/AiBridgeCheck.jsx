@@ -12,6 +12,10 @@ import { useState } from 'react'
 import AiSelectorsEditor from './AiSelectorsEditor.jsx'
 // v1.2.1: сборка fallback chain из настроек.
 import { buildAutoChain } from '../utils/aiBridge/buildAutoChain.js'
+// v1.2.5: dropdown выбора модели для провайдера.
+import ModelSelector from './ModelSelector.jsx'
+// v1.2.6: «печатающий» эффект для отображения ответа.
+import TypewriterText from './TypewriterText.jsx'
 
 const MODES = [
   { id: 'local',  label: 'Локальный (Ollama)',  needsProvider: false },
@@ -208,13 +212,24 @@ export default function AiBridgeCheck({ onClose, settings, onSettingsChange }) {
           )}
 
           <label style={labelStyle}>Модель (необязательно)</label>
-          <input
-            type="text"
-            value={model}
-            onChange={e => setModel(e.target.value)}
-            placeholder={mode === 'local' ? 'llama3.1' : 'оставьте пустым — возьмётся из настроек провайдера'}
-            style={inputStyle}
-          />
+          {/* v1.2.5: ModelSelector для API провайдеров (с dropdown известных).
+              Local Ollama — просто input (модели зависят от установленных у юзера). */}
+          {needsProvider && mode === 'api' ? (
+            <ModelSelector
+              provider={providerId}
+              value={model}
+              onChange={setModel}
+              placeholder="оставьте пустым — возьмётся из настроек провайдера"
+            />
+          ) : (
+            <input
+              type="text"
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              placeholder={mode === 'local' ? 'llama3.1' : 'оставьте пустым — возьмётся из настроек провайдера'}
+              style={inputStyle}
+            />
+          )}
 
           <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
             <input
@@ -280,7 +295,10 @@ export default function AiBridgeCheck({ onClose, settings, onSettingsChange }) {
               <div style={{
                 fontSize: 12, color: 'var(--cc-text, #e0e0e0)',
                 whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 300, overflow: 'auto',
-              }}>{answer.text}</div>
+              }}>
+                {/* v1.2.6: typewriter эффект — ответ «печатается» по символу */}
+                <TypewriterText text={answer.text} speed={10} />
+              </div>
             </div>
           )}
 

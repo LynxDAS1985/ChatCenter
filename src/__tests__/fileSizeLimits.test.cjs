@@ -282,11 +282,13 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v0.98.0 (Phase 2): был 24000.
 // v0.97.0 (Phase 0+1): был 23300.
 // Дальнейшее разбиение — плановая задача (handoff-code-limits.md).
-// v1.1.16 (Этап 7 AI Bridge): лимит 27200 → 28000 — useAiWebviewBridge (~90 строк) +
-// AiBridgeCheck (~210 строк) + AiBridgeTester→Check переименование + изменения AISidebar/LogModal
-// (~50 строк). Запас на Этап 8 (Selectors Config UI ~200 строк).
-test('Общий renderer код (src/ без тестов) < 28000 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 28000, totalSrc + ' > 28000')
+// v1.2.5: лимит 28000 → 29500 — ModelSelector (~110) + TypewriterText (~75) +
+// AutoReplyChart (~150) + autoReplyStats (~85) + rulesImportExport (~135) + UI
+// расширения в AIAutoReplyRules/AIActivityDashboard/AiBridgeCheck/AISidebarAgent
+// (~150 суммарно). Запас на следующие UX мини-фичи.
+// v1.1.16: лимит 27200 → 28000 — useAiWebviewBridge + AiBridgeCheck + ...
+test('Общий renderer код (src/ без тестов) < 29500 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 29500, totalSrc + ' > 29500')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

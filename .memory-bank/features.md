@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.1 (11 июня 2026)
+## Текущая версия: v1.2.5 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -53,67 +53,114 @@
 
 ---
 
-### v1.2.1 — UI «авто-резерв» (закрытие отложенного пункта v1.2.0)
+### v1.2.5 — 4 мелких UX-фичи (Dropdown моделей, Typewriter, Графики, Import/Export)
 
-**Контекст**: в v1.2.0 fallback chain работал, но только программно через IPC `payload.chain[]`. В UI «🤖 Проверка AI» галочки не было — этот пункт был обозначен как «не входит в v1.2.0». Закрываем gap.
+Закрытие отложенных мелких задач из roadmap. Все четыре — отдельные модули, лимиты не задели.
 
-**Что готово**:
+---
 
-- [`src/utils/aiBridge/buildAutoChain.js`](src/utils/aiBridge/buildAutoChain.js) (~55 стр.) — pure helper:
-  - `buildAutoChain(settings, primary)` → массив `[primary, ...rest]`.
-  - **Первый** — текущий выбор юзера (mode + providerId + config).
-  - **Затем** — все API провайдеры (anthropic/openai/deepseek/gigachat) у которых есть ключ (`apiKey` для первых трёх, `clientSecret` для gigachat).
-  - **В конце** — Ollama local с `settings.aiOllamaBaseUrl` (default `http://127.0.0.1:11434`).
-  - Дедупликация по `mode:providerId` ключу (primary не дублируется).
+#### 1. 🔽 Dropdown моделей AI провайдеров
 
-- [`src/components/AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx) — добавлен:
-  - Чекбокс «🔁 Использовать авто-резерв» рядом с textarea вопроса.
-  - При включении — `payload.chain = buildAutoChain(settings, {mode, providerId, config})` вместо `payload.mode`.
-  - В карточке ответа при наличии `answer.debug.attemptedFallbacks` — жёлтая строка:
-    ```
-    🔁 Авто-резерв сработал. Опробовано до успеха:
-       api:anthropic (rate_limited) → api:openai (server_error) → api:deepseek
-    ```
-  - В карточке ошибки при наличии `error._debug.attemptedFallbacks` — жёлтая строка:
-    ```
-    🔁 Все варианты опробованы: api:anthropic (rate_limited), api:openai (server_error)
-    ```
+**Зачем**: до v1.2.5 в AiBridgeCheck приходилось вводить ID модели руками (легко опечататься: «gtp-4» вместо «gpt-4»). Теперь — выпадающий список + custom input.
 
-### Как работает (юзер сценарий)
+**Файлы**:
+- [`src/components/ModelSelector.jsx`](src/components/ModelSelector.jsx) (~110 стр.) — combobox: input + кнопка ▼ + dropdown с известными моделями. Если value не из списка — показывает «Своя модель: X» внизу dropdown. Закрытие при клике вне.
+- [`src/utils/aiProviders.js`](src/utils/aiProviders.js) — `MODEL_HINTS` расширен:
+  - openai: +5 моделей (gpt-4o-mini, gpt-4o, gpt-4-turbo, gpt-3.5-turbo, o1, o1-mini, o3-mini)
+  - anthropic: +3 (claude-haiku-4-5-20251001, sonnet-4-6, opus-4-8, opus-4-7, fable-5)
+  - deepseek: +1 (deepseek-coder)
+  - gigachat: +1 (GigaChat-Max)
+- [`src/components/AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx) — при `mode='api' && needsProvider` используется ModelSelector вместо обычного input. Для Local mode остался input (модели зависят от установленных у юзера Ollama).
 
-1. Юзер настроил 3 провайдера: Anthropic + OpenAI + DeepSeek (есть API ключи).
-2. Откройте 🤖 «Проверка AI» в боковой панели.
-3. Выберите режим «API провайдер» + Anthropic.
-4. **Включите галочку «🔁 Использовать авто-резерв»**.
-5. Введите вопрос → «📤 Спросить».
-6. Программа собирает chain: `[anthropic → openai → deepseek → local]`.
-7. Если Anthropic вернул 429 → автоматически пробует OpenAI → ответ.
-8. В зелёной карточке: ответ от OpenAI + жёлтая строка «🔁 Авто-резерв сработал: anthropic (rate_limited) → openai».
-9. Все этапы в стандартном лог-вьюере «📒 Логи ChatCenter».
+**Тесты (+17)**: рендер + placeholder + выбор + custom value + закрытие по клику вне + 4 провайдера.
 
-### Что собирается в chain
+---
 
-| Провайдер | Условие добавления |
-|---|---|
-| anthropic / openai / deepseek | `settings.aiProviderKeys[id].apiKey` непустой |
-| gigachat | `settings.aiProviderKeys.gigachat.clientSecret` непустой (apiKey не обязателен) |
-| local Ollama | Всегда (с URL из `settings.aiOllamaBaseUrl` или default) |
-| webui | Только если primary = webui (вручную не добавляется) |
+#### 2. ⌨️ Typewriter эффект (визуальный streaming)
 
-### Тесты (+20)
-- `buildAutoChain.vitest.js` (15): без primary → [] / primary без mode → [] / primary mode=api/local/webui первым / провайдер с/без apiKey / gigachat clientSecret / primary не дублируется / local в конце / custom Ollama URL / local не дублируется если primary=local / порядок primary первым + local последний / полный сценарий с 3 провайдерами → 4 шага.
-- `AiBridgeCheck.vitest.jsx` (+5): чекбокс виден / включён → payload.chain без mode / выключен → payload.mode без chain / ответ с attemptedFallbacks → «Авто-резерв сработал» / ошибка с attemptedFallbacks → «Все варианты опробованы».
+**Зачем**: ответ AI раньше появлялся одним блоком — юзер не понимал «думает» или «уже всё». Теперь текст печатается посимвольно с мигающим курсором.
 
-### Регрессия
-lint 0, vitest 1753 → 1773 ✅ (+20), fileSizeLimits 446/446 ✅, check-memory ✅.
+**Файлы**:
+- [`src/components/TypewriterText.jsx`](src/components/TypewriterText.jsx) (~75 стр.) — компонент:
+  - Props: text + speed (default 15мс/символ) + onComplete + instant + style.
+  - useRef для onComplete — иначе новая функция на rerender инвалидирует useEffect (бесконечный цикл cleanup-setup).
+  - При смене text → reset displayed → новая анимация.
+  - Курсор `█` через CSS `@keyframes cc-typewriter-blink` (injection в document.head один раз).
+- [`src/components/AISidebarAgent.jsx`](src/components/AISidebarAgent.jsx) — finalAnswer через TypewriterText speed=12.
+- [`src/components/AiBridgeCheck.jsx`](src/components/AiBridgeCheck.jsx) — answer.text через TypewriterText speed=10.
 
-### Безопасность
-- chain строится в renderer из settings — без API ключей (передаются только providerId).
-- API ключи всё равно резолвятся в main (как в single mode).
-- Custom селекторы из settings.aiBridgeSelectors не передаются автоматически в авто-резерв — только при mode=webui вручную.
+**Это визуальный эффект**, не реальный API streaming (последний для Bridge с резервом не имеет смысла — нужен полный ответ чтобы понять упал/нет).
 
-### Rollback
-`git revert <commit>` — buildAutoChain.js новый файл, чекбокс опциональный (default off → старое поведение).
+**Тесты (+10)**: пустой → пустой displayed, instant → text сразу, анимация (waitFor с real timers), onComplete, курсор только пока печатает, реinit при смене text.
+
+---
+
+#### 3. 📊 Графики авто-ответов в AI Activity Dashboard
+
+**Зачем**: до v1.2.7 в Activity Dashboard были только списком + статкарточки. Не видно «когда AI отвечал больше, когда меньше». Теперь — bar chart за 7 дней.
+
+**Файлы**:
+- [`src/utils/autoReplyStats.js`](src/utils/autoReplyStats.js) (~85 стр.) — pure helpers:
+  - `groupAutoReplyByDay(auditEntries, days=7)` — группирует записи `actor='ai_auto'` по дням локального TZ. Возвращает `[{date, total, byAction:{markRead, aiReply, aiReplyBridge, other}, errors}]`.
+  - `summarizeStats(grouped)` → `{total, max, errors, errorRate, hasData}`.
+  - `shortDayLabel(dateStr)` → `'Пн'/'Вт'/...`.
+- [`src/components/AutoReplyChart.jsx`](src/components/AutoReplyChart.jsx) (~150 стр.) — SVG bar chart без зависимостей:
+  - Каждый день — столбец 32px шириной, gap 8px.
+  - Зелёный segment (#22c55e) — успешные, красный (#ef4444) — ошибки.
+  - Над столбцом — total (если > 0).
+  - Под — `Пн 06-08`.
+  - Header: «Всего: N · Ошибок: M (X%)».
+  - Empty state: «📊 За последние 7 дней авто-ответов не было».
+- [`src/components/AIActivityDashboard.jsx`](src/components/AIActivityDashboard.jsx) — `<AutoReplyChart auditEntries={records} days={7} />` над фильтрами.
+
+**Тесты (+22)**: 14 для autoReplyStats (группировка, byAction классификация errors, диапазон дней, summarize) + 8 для AutoReplyChart (рендер, empty state, header, цвета rect, days=14, игнор не-ai_auto).
+
+---
+
+#### 4. 📤📥 Импорт/экспорт правил авто-ответов в JSON
+
+**Зачем**: бэкап правил (если переустанавливаешь систему) + перенос между ПК.
+
+**Файлы**:
+- [`src/utils/rulesImportExport.js`](src/utils/rulesImportExport.js) (~135 стр.):
+  - `exportRulesToJson(rules, appVersion='1.2.8')` — сериализует в JSON `{ccVersion, exportedAt, rules:[...]}`. Убирает runtime поля (id/matchedCount/lastMatchedAt).
+  - `parseImportJson(json)` → `{ok, rules?, error?, warnings?}`. Мягкая валидация: каждое правило проверяется отдельно — невалидные пропускаются с warning, валидные сохраняются. Старая версия → warning «может содержать несовместимые поля». Backward compat для всех v1.1.0+.
+- [`src/components/AIAutoReplyRules.jsx`](src/components/AIAutoReplyRules.jsx) — кнопки в шапке:
+  - **📤 Экспорт** — `handleExport(rules)` → создаёт Blob → invisible `<a download>` → скачивает `chatcenter-rules-YYYY-MM-DD.json`. Логи через app:log.
+  - **📥 Импорт** — `handleImportClick(reload)` → invisible file input → читает file.text() → parseImportJson → confirm dialog с warnings → создаёт через createRule по очереди → reload + alert «Импортировано X из Y».
+  - Защита: 📤 disabled если rules.length === 0. Старые правила НЕ перезаписываются — новые добавляются.
+
+**Тесты (+22)**: export validation/structure/без runtime/round-trip. Import: empty/invalid JSON/no rules/невалидное name/неизвестный action/старая версия→warning/runtime поля стираются/keywordsMode normalize/cooldown default.
+
+---
+
+### Регрессия v1.2.5
+
+| Метрика | До | После |
+|---|---|---|
+| Lint | 0 | 0 ✅ |
+| Vitest | 1795 | 1866 (+71) ✅ |
+| fileSizeLimits | 453 | 459 ✅ |
+| check-memory | ✅ | ✅ |
+
+### Что юзер увидит
+
+1. **🔽 Dropdown моделей**: открыть 🤖 «Проверка AI» → mode=API + provider → поле «Модель» теперь combobox с ▼.
+2. **⌨️ Typewriter**: задал вопрос → ответ AI печатается посимвольно с курсором (как живая печать).
+3. **📊 Графики**: открыть AI Activity Dashboard (📊 в шапке) → сверху bar chart 7 дней с зелёными/красными столбиками.
+4. **📤📥 Бэкап правил**: AI Auto Reply Rules (🤖⚡) → в шапке кнопки 📤 Экспорт и 📥 Импорт. Экспорт → файл `chatcenter-rules-2026-06-11.json`. Импорт → выбрать файл → подтвердить → новые правила добавились.
+
+---
+
+### v1.2.3 – v1.2.4 — заархивированы
+
+Авто-ответы через Bridge (v1.2.3) + финал документация AI Bridge (v1.2.4). Подробно: [`archive/features-v1.2.3-1.2.4.md`](./archive/features-v1.2.3-1.2.4.md).
+
+---
+
+### v1.2.1 – v1.2.2 — заархивированы
+
+UI «авто-резерв» в AiBridgeCheck (v1.2.1) + AI Agent через Bridge (v1.2.2). Оба закрывают отложенные пункты v1.2.0. Подробно: [`archive/features-v1.2.1-1.2.2.md`](./archive/features-v1.2.1-1.2.2.md).
 
 ---
 

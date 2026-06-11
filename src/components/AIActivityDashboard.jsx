@@ -4,6 +4,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { listAuditEvents, getRecentRevertableActions } from '../stores/auditStore.js'
+// v1.2.7: график активности AI авто-ответов за 7 дней.
+import AutoReplyChart from './AutoReplyChart.jsx'
 
 const ACTION_LABELS = {
   goto_message: '→ Переход к сообщению',
@@ -75,6 +77,11 @@ export default function AIActivityDashboard() {
         <StatCard label="Юзер" value={stats.userActions} color="#22c55e" />
         <StatCard label="Ошибок" value={stats.errors} color="#ef4444" />
         <StatCard label="Можно откатить" value={revertable.length} color="#eab308" />
+      </div>
+
+      {/* v1.2.7: график авто-ответов за 7 дней — виден всегда (если есть данные) */}
+      <div style={{ marginBottom: 16 }}>
+        <AutoReplyChart auditEntries={records} days={7} />
       </div>
 
       {/* Фильтры */}
