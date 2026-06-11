@@ -83,27 +83,20 @@
 - ⏳ **Этап 10**: Документация — обновление CLAUDE.md / .memory-bank / changelog / README.
 - ⏳ **Этап 11**: Release v1.2.0 — финальный bump + проверка end-to-end + создание installer.
 
-### Что юзер может делать ПРЯМО СЕЙЧАС через DevTools
+### Что юзер может делать ПРЯМО СЕЙЧАС (с v1.1.14 — без инструментов разработчика)
 
-```js
-// Local mode — Ollama (требует ollama serve + ollama pull llama3.1)
-await window.api.invoke('ai-bridge:send', {
-  mode: 'local',
-  question: { version:1, text:'Привет!', source:{messengerId:'native_cc'} },
-  config: { baseUrl: 'http://127.0.0.1:11434', model: 'llama3.1' }
-})
+Открыть «📒 Логи ChatCenter» → нажать «🧪 Тест AI Bridge». Появится окно с:
+- выбором режима (Локальный / API / Веб-интерфейс)
+- выбором провайдера (для API/WebUI)
+- полями URL / Модель (опционально)
+- текстовым полем для вопроса
+- кнопкой «📤 Спросить»
 
-// API mode — Anthropic/OpenAI/DeepSeek/GigaChat
-// API ключ берётся из settings.aiProviderKeys[providerId].apiKey
-await window.api.invoke('ai-bridge:send', {
-  mode: 'api',
-  question: { version:1, text:'Привет!', source:{messengerId:'native_cc'} },
-  config: { providerId: 'anthropic' }
-})
+Все логи попадают в основной лог-вьюер (через `app:log`). Никаких «инструментов разработчика» открывать не нужно.
 
-// WebUI mode — пока возвращает 'config_invalid' (webview не открыт)
-// будет работать в Этапе 7 после интеграции с AISidebar
-```
+**Local mode** — требует Ollama: `ollama serve` + `ollama pull llama3.1`.
+**API mode** — API ключи берутся из `settings.aiProviderKeys[providerId].apiKey` (тех что юзер уже ввёл для AI Agent).
+**WebUI mode** — пока возвращает `config_invalid` (webview не открыт). Заработает в Этапе 7 после интеграции с AISidebar.
 
 ---
 

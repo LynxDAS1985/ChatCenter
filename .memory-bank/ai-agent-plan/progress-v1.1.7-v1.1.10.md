@@ -174,14 +174,11 @@ Local Bridge — самый простой bridge:
 ### Один баг найден и исправлен
 В `registerAiBridgeIpcHandlers` искали `deps.createLocalBridge` вместо `deps.factoryLocal` — handler не получал mock в тесте. Поправили на правильный ключ.
 
-### Юзер ещё НЕ увидит в UI
-Local Bridge подключён на main стороне, но UI компонент (AIBridgePanel) — это Этап 7. Сейчас доступ только через DevTools console:
-```js
-await window.api.invoke('ai-bridge:send', {
-  mode: 'local',
-  question: { version:1, text:'Привет', source:{messengerId:'native_cc'} }
-})
-```
+### Юзер видит и проверяет (с v1.1.14)
+Постоянная видимая интеграция (AIBridgePanel в боковой панели) — это Этап 7.
+Для проверки сейчас открыть «📒 Логи ChatCenter» → кнопка «🧪 Тест AI Bridge»: окно
+с выбором режима, провайдера, ввода вопроса и кнопкой «📤 Спросить». Все логи
+идут в основной лог-вьюер.
 
 ---
 
