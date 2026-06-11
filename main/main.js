@@ -23,6 +23,9 @@ import { registerCcMediaScheme, registerCcMediaHandler } from './native/ccMediaP
 import { initNotifHandlers } from './handlers/notifHandlers.js'
 // v0.99.0 (Phase 3): IPC handlers для AI-агента (ai:agent:run / cancel / confirm-response).
 import { initAiToolIpcHandlers } from './handlers/aiToolIpcHandlers.js'
+// v1.2.0 (Этап 2 AI Bridge): IPC handler для bridge — Local Bridge (Ollama) подключен,
+// API/WebUI bridges подключатся на Этапах 3-6.
+import { registerAiBridgeIpcHandlers } from './handlers/aiBridgeIpcHandlers.js'
 // v0.98.0 (Phase 2): IPC handlers для audit log (JSONL persistent storage).
 import { initAuditIpcHandlers } from './handlers/auditIpcHandlers.js'
 // v0.99.1 (Phase 3.5): полная инициализация AI агента (registry + context + callProvider).
@@ -129,6 +132,10 @@ function setupNotifIPC() {
     getHandlerContext: () => getHandlerContext(),
     getCallProvider: () => callProviderFn,
   })
+
+  // v1.2.0 Этап 2: AI Bridge — Local Bridge (Ollama HTTP) подключён через ai-bridge:send.
+  // Config (baseUrl/model/timeoutMs) приходит из renderer (settings), не хранится в main.
+  registerAiBridgeIpcHandlers(ipcMain)
 
   // setAgentDeps будет вызвано после инициализации mainWindow и TDLib backend
   // (см. ниже после createWindow + initTdlibBackendStartup).

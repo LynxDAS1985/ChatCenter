@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.9 (11 июня 2026)
+## Текущая версия: v1.1.10 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,52 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.10 — AI Bridge Этап 2: Local Bridge (Ollama HTTP)
+
+**Что готово**: программа теперь умеет отправить вопрос в локальный Ollama сервер и получить ответ — через одну IPC команду.
+
+**Файлы**:
+- [`main/ai/bridge/localBridge.js`](main/ai/bridge/localBridge.js) (172 строки) — фабрика `createLocalBridge(config, deps)`:
+  - POST `${baseUrl}/api/chat` с `{ model, messages, stream:false }` (OpenAI-compatible Ollama API)
+  - Конфиг: `baseUrl` (default `http://127.0.0.1:11434`) + `model` (default `llama3.1`) + `timeoutMs` (60с)
+  - Поддержка `systemPrompt` (первый message role=system) + `history` (turn-ы между system и финальным user)
+  - AbortController с собственным timeout + проброс внешнего `question.signal`
+  - Парсинг ответа: `data.message.content` (новый /api/chat) или `data.response` (старый /api/generate)
+  - Возвращает `AiBridgeAnswer` всегда — без throw (даже при ECONNREFUSED → `network_error` с подсказкой «Ollama не запущена»)
+  - Коды ошибок: `config_invalid` (404/неправильный path), `server_error` (5xx, retryable), `streaming_timeout`, `aborted`, `network_error` (retryable), `no_answer` (пустой ответ)
+  - DI через `deps.fetch` — для тестирования без сетевых вызовов
+
+- [`main/handlers/aiBridgeIpcHandlers.js`](main/handlers/aiBridgeIpcHandlers.js) (90 строк) — IPC канал `ai-bridge:send`:
+  - `registerAiBridgeIpcHandlers(ipcMain, deps)` → unsubscribe
+  - `handleSend(payload, deps)` — экспортируется отдельно для тестирования без mock ipcMain
+  - `mode='local'` → создаёт createLocalBridge через factory из deps (для DI) → передаёт router'у
+  - `mode='api'/'webui'` → unsupported_mode (добавятся на Этапах 3-6)
+  - Возврат: всегда `AiBridgeAnswer`. Никаких throw.
+  - DI: `deps.factoryLocal` для замены createLocalBridge в тестах, `deps.fetch` для проброса
+  - `AI_BRIDGE_IPC_CHANNELS = Object.freeze({ SEND: 'ai-bridge:send' })`
+
+- [`src/utils/aiBridge/index.js`](src/utils/aiBridge/index.js) (75 строк) — renderer-side wrapper:
+  - `sendQuestion({ mode, question, config })` → `Promise<AiBridgeAnswer>`
+  - Валидация payload (mode + question обязательны) + проверка `window.api.invoke` доступности
+  - Любые throws ловятся → `AiBridgeAnswer{ok:false, code:'unknown'}`
+
+- [`main/main.js`](main/main.js) подключает `registerAiBridgeIpcHandlers(ipcMain)` рядом с `initAiToolIpcHandlers`.
+
+**Тесты** (+37):
+- `localBridge.vitest.js` (17): happy path / URL construction / body структура (messages, systemPrompt, history) / HTTP ошибки 404/500 / no_answer / ECONNREFUSED → network_error / fetch undefined → config_invalid / timeout / external abort / старый формат `response`
+- `aiBridgeIpcHandlers.vitest.js` (12): handleSend без mode/question → config_invalid / mode=local → factoryLocal + router / mode=api/webui → unsupported_mode / register создаёт handler / unsubscribe вызывает removeHandler / handler пробрасывает payload
+- `aiBridge/index.vitest.js` (8): без mode/question → config_invalid / нет invoke → config_invalid / invoke вызван с правильным каналом + payload / возврат invoke / throws → catched
+
+**Один баг найден и исправлен**: в `registerAiBridgeIpcHandlers` искал `deps.createLocalBridge` вместо `deps.factoryLocal` — тест handler не получал mock. Поправлен на правильный ключ.
+
+**Регрессия**: lint 0 warn, vitest 1583 → 1620 ✅, fileSizeLimits 422/422 → 430/430 ✅, check-memory ✅.
+
+**Юзер ещё не увидит** Local Bridge в UI — это будет в Этапе 7 (AIBridgePanel). Сейчас можно тестировать только через DevTools console: `await window.api.invoke('ai-bridge:send', { mode:'local', question:{ version:1, text:'Привет', source:{ messengerId:'native_cc' } } })`.
+
+**Rollback**: `git revert <commit>` — никакой существующий код не задет, только новые файлы + 1 строка в main.js (registerAiBridgeIpcHandlers подключение).
 
 ---
 
@@ -423,31 +469,9 @@ Cм. [`archive/features-v0.95.15-18.md`](./archive/features-v0.95.15-18.md): и�
 
 ---
 
-### v0.94.0 — ПОЛНОЕ УДАЛЕНИЕ виртуализации (react-virtuoso) → простой DOM + pixel scrollTop
+### v0.94.0 — заархивирована
 
-**Корень всей саги scroll restore (v0.91.1 – v0.93.0, ~30 версий)**: виртуализация (сначала react-window, потом react-virtuoso) фундаментально несовместима с точным восстановлением позиции. Обе библиотеки пересчитывают высоты строк при ремаунте `key={cacheKey}` → `scrollHeight` скачет → restore промахивается. Virtuoso работает с **дискретными индексами строк + alignment** (`align: 'start'/'end'`) → отсюда «прилипание» к картинкам/видео и «выравнивание» которое юзер видел на скринах. Никакой `offset`, `anchorMsgId`, `StateSnapshot` не лечит это полностью — это архитектурное ограничение.
-
-**Решение** (как у Telegram Web K, который НЕ виртуализирует): рендерим **все сообщения обычным DOM**, сохраняем **простой пиксельный `scrollTop`** (число). При ремаунте `scrollHeight` стабилен → `el.scrollTop = saved` восстанавливает позицию ТОЧНО. Типичный чат 100–300 сообщений в памяти — без проблем с производительностью.
-
-#### Что изменено
-
-**1. [`scrollPositionsCache.js`](src/native/utils/scrollPositionsCache.js)** — формат `Map<chatId, {scrollTop:number, atBottom:boolean}>`. Удалён `findVisibleAnchorMsgId`. Storage version → 4 (старые v2/v3 anchor-форматы игнорируются — возвращается пустая Map).
-
-**2. [`VirtualMessageList.jsx`](src/native/components/VirtualMessageList.jsx)** — удалён `import { Virtuoso }`. Теперь обычный `<div>` со `overflow-y:auto` + `overflow-anchor:auto` (браузер сам держит позицию при подгрузке старых сообщений сверху) + `renderItems.map(...)`. `listRef` через `useImperativeHandle`: `element` getter + `scrollToRow({index, align})` через `scrollIntoView`.
-
-**3. [`useInitialScroll.js`](src/native/hooks/useInitialScroll.js)** — restore через `el.scrollTop = saved.scrollTop` (или `el.scrollHeight` если `atBottom`). Ветка 1 (первое открытие): saved.scrollTop → firstUnread (querySelector data-msg-id) → низ. Ветка 2 (возврат): pixel scrollTop. `isRestoringRef` closed-loop guard сохранён (500мс).
-
-**4. [`useInboxScroll.js`](src/native/hooks/useInboxScroll.js)** — сохраняет `{scrollTop: el.scrollTop, atBottom}` с guard `isRestoringRef`. Вернул load-older (`scrollTop < 100`) и load-newer (`maybeTrigger`) БЕЗ ручной коррекции scrollTop — `overflow-anchor:auto` держит позицию при prepend.
-
-**5. [`useScrollPositionAutosave.js`](src/native/hooks/useScrollPositionAutosave.js)** — interval 1.5с сохраняет `{scrollTop, atBottom}`, пропуск при `isRestoringRef`.
-
-**6. [`InboxMode.jsx`](src/native/modes/InboxMode.jsx)** + **[`InboxChatPanel.jsx`](src/native/components/InboxChatPanel.jsx)** — удалены `initialTopMostItemIndex`, `firstItemIndex` state, 2 useEffect (reset firstItemIndex + tg:messages append decrement), `handleStartReached`, `handleEndReached`, `findRenderItemIndex`. `scrollToVirtualRow` переписан на querySelector `[data-msg-id]`. `scrollToAbsoluteBottom` сохраняет `{scrollTop: el.scrollHeight, atBottom: true}`.
-
-**Удалено**: `useInitialScrollDiag.js` (git rm). Пакет `react-virtuoso` удалён (`npm uninstall`).
-
-**Регрессия**: lint 0, vitest 658/658, fileSizeLimits 272/272, check-memory ✅. 3 теста `useInitialScroll.vitest.jsx` переписаны под pixel API (были на `onRestoreAnchor`/`onMissingTarget`/`{anchorMsgId}`).
-
-**Проверить визуально** (просьба юзеру): открыть чат → пролистать на середину → перейти в другой чат → вернуться → позиция должна быть РОВНО где оставил, без выравнивания и прилипания к картинкам.
+**Финал саги scroll restore** (~30 версий v0.91-v0.93): полное удаление react-virtuoso + переход на простой DOM + pixel scrollTop. Подробно: [`archive/features-v0.94.0.md`](./archive/features-v0.94.0.md).
 
 ---
 
