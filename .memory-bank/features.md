@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.7 (11 июня 2026)
+## Текущая версия: v1.1.8 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,31 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.8 — AI Bridge Этап 1 (Контракты + папки + типы)
+
+**Цель v1.2.0**: единый цикл «клиент написал → AI обработал → отправили клиенту» через 3 источника: webui (DOM injection) + api (HTTP) + local (Ollama). План разбит на 11 этапов, см. [`.memory-bank/ai-agent-plan/phase-ai-bridge-plan.md`](./ai-agent-plan/phase-ai-bridge-plan.md).
+
+**Этап 1 = каркас без логики**:
+- Новые папки: `src/utils/aiBridge/`, `main/ai/bridge/`, `main/preloads/hooks/ai/`
+- `src/utils/aiBridge/contracts.js` — JSDoc типы: `AiBridgeQuestion` / `AiBridgeAnswer` / `AiBridgeSource` / `AiBridgeTurn` / `AiWebviewProviderConfig` / `AiWebviewSelectors` / `AiBridgeError` (+ закрытый перечень `AiBridgeErrorCode`). Константа `AI_BRIDGE_CONTRACT_VERSION = 1` — для обратной совместимости IPC.
+- `src/utils/aiWebviewConfigs.js` — `DEFAULT_WEBVIEW_PROVIDERS` (массив frozen, 4 провайдера: openai/deepseek/anthropic/gigachat) + чистые функции: `detectAiProvider(urlOrHost)` (host → конфиг через hostPatterns, поддомены, lowercase, www-стрип) / `getProviderConfig(id)` / `getDefaultSelectors(id)` / `extractHost(urlOrHost)` / `listProviderIds()`.
+- `main/ai/bridge/router.js` — `createAiBridgeRouter(mode, deps)` каркас с 3 ветками (api/webui/local). На Этапе 1 все возвращают `{ok:false, error.code:'unsupported_mode'}` — bridges будут добавлены поэтапно.
+- `main/preloads/hooks/ai/.gitkeep` — заглушка под будущие preload hooks (Этапы 4-6).
+
+**Селекторы DOM** для 4 сайтов (chat.openai.com / chat.deepseek.com / claude.ai / giga.chat) — на основе раздела 2-5 в [`phase-ai-bridge-providers.md`](./ai-agent-plan/phase-ai-bridge-providers.md), проверены на 9 июня 2026.
+
+**Тесты** (+30): `aiWebviewConfigs.vitest.js` (22 теста: extractHost, detectAiProvider для 4 провайдеров + поддомены + неизвестные сайты + immutability) + `router.vitest.js` (8 тестов: unsupported_mode, маршрутизация в правильный bridge, throw → catch, latencyMs). Плюс smoke `aiBridgeContracts.test.cjs` для cjs-suite.
+
+**Лимит файлов**: renderer 26400 → 27200 строк (запас на Этапы 2-3, ~600 строк ещё предстоит).
+
+**Регрессия**: lint 0 warn, vitest 1490 → 1520 ✅, fileSizeLimits 410/410 → 416/416 ✅, check-memory ✅.
+
+**Существующий код прода не затронут**. Текущий AI WebView mode (v1.1.5-v1.1.7) и Phase 0-4 (v0.96.0-v1.0.7) работают как раньше.
+
+**Rollback**: `git revert <commit>` — никакой существующий код не задет, только новые файлы + лимит.
 
 ---
 
@@ -269,39 +294,9 @@ Phase 4 hardening + UI bulk + Reminders snooze + AbortSignal + confirm timeout +
 
 ---
 
-### v0.95.32 — Производительность WhatsNewModal + деловой стиль changelog
+### v0.95.27 – v0.95.32 — заархивированы
 
-Убран `backdrop-filter: blur(8px)` на overlay (Chromium пересчитывал blur каждый кадр скролла → 30-60мс/кадр), box-shadow blur 40→16px, добавлены `isolation: isolate` + `contain: layout style paint` + `overscroll-behavior: contain`. Эталоны: Telegram Web K / Discord / Linear modals. Полный текст: [`archive/features-v0.95.32.md`](./archive/features-v0.95.32.md).
-
----
-
-### v0.95.31 — Аккаунты вниз + Drag-n-drop + множественный typing + throttle реакций
-
-Структурный UX-релиз: аккаунты вниз левой колонки (Telegram Desktop / Slack паттерн) с HTML5 drag-n-drop через localStorage, множественный typing «Иван и Маша печатают...» (расширение `state.typing[chatId]` до Map<userId>), throttle реакций 200мс leading-edge (защита от FLOOD_WAIT). +32 unit-теста (accountOrder/formatTypingUsers/reactionThrottle). Полный текст: [`archive/features-v0.95.31.md`](./archive/features-v0.95.31.md).
-
----
-
-### v0.95.30 — Плавная auto-scroll + цветовая тема + dropdown + opacity 0.95
-
-UX-релиз renderer-only: smoothScrollTo easeOutCubic 250мс, 5 цветовых тем (Telegram/Индиго/Teal/Premium/Violet), ChatTypesDropdown, `--bubble-opacity: 0.95`. Цветовая тема в v0.95.30 НЕ работала (CSS specificity ловушка — фикс v0.95.33+v0.95.34). Полный текст: [`archive/features-v0.95.30.md`](./archive/features-v0.95.30.md).
-
----
-
-### v0.95.29 — Реакции + Telegram-style header + General иконка + render-counter
-
-Реакции 👍❤️🔥🥰👏😁🤔🤯 (backend+IPC+UI), Telegram-style header (аватар + статус «в сети»/«был(а) в HH:MM»/«N участников»), дефолтная 📢 для General форум-темы, render-counter для диагностики дубля сообщений. +27 unit-тестов. Полный текст: [`archive/features-v0.95.29.md`](./archive/features-v0.95.29.md).
-
----
-
-### v0.95.28 — Telegram-style auto-scroll + счётчик ↓N без «слепой зоны»
-
-Разделение на 2 флага: `atBottom` через Schmitt-trigger 40/120 (только для UI кнопки ↓, не сломан фикс v0.95.2) + новый `physicallyAtBottom` (порог 30px без Schmitt) для логики auto-scroll и счётчика ↓N. Закрыта «слепая зона» 40-120px, где счётчик не рос и не было auto-scroll. Эталоны: Telegram Web K `isAtBottom() + scrollToEnd()`, Telegram Desktop `scrollTop >= scrollTopMax - threshold`. Полный текст: [`archive/features-v0.95.28.md`](./archive/features-v0.95.28.md).
-
----
-
-### v0.95.27 — Расширенная диагностика send pipeline
-
-Логи `callSource` / `textPreview` / `outgoingCountBefore` / `lastOutgoingId` в `InboxMessageInput` / `InboxMode.handleReplySend` / `store.sendMessage` / `tg:new-message` handler — ловим «двойную отправку». Стабилизировано v0.95.29 (логи использованы). Полный текст: [`archive/features-v0.95.27.md`](./archive/features-v0.95.27.md).
+Расширенная диагностика send pipeline (v0.95.27), Telegram-style auto-scroll без слепой зоны (v0.95.28), реакции + header (v0.95.29), плавная auto-scroll + темы (v0.95.30), drag-n-drop аккаунты (v0.95.31), оптимизация WhatsNewModal (v0.95.32). Все стабильны. Полный текст: [`archive/features-v0.95.27-32.md`](./archive/features-v0.95.27-32.md).
 
 ---
 

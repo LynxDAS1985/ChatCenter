@@ -64,6 +64,7 @@ var IGNORED_EXT = [
   '.mp3', '.mp4', '.webm', '.wav', '.ogg',    // медиа
   '.pem', '.crt', '.key',                     // ключи
   '.map',                                     // source maps
+  '.gitkeep',                                 // маркеры пустых директорий
 ]
 
 function getExt(name) {
@@ -266,6 +267,9 @@ console.log('── Статистика: ──')
 var totalSrc = 0
 var srcFiles = allFiles.filter(function (f) { return f.startsWith('src/') && !/\.(test|vitest)\./.test(f) })
 srcFiles.forEach(function (f) { totalSrc += countLines(f) })
+// v1.2.0-alpha.1 (Этап 1 AI Bridge): лимит 26400 → 27200 — aiBridge/contracts.js (~95 строк) +
+//   aiWebviewConfigs.js (~140 строк) + запас на Этапы 2-3 (Local Bridge, API Bridge wrapper ~200-300 строк).
+//   На Этапах 7-8 (UI AIBridgePanel + Selectors Config) лимит снова поднимется.
 // v1.1.5: лимит 26200 → 26400 — aiWebviewDiagnostics (~150 строк) + расширение в aiWebviewContext.js (diag injection).
 // v1.1.2: лимит 26000 → 26200 — master switch UI в AIAutoReplyRules + actor color helpers в AIActivityDashboard.
 // v1.1.0 (Phase 4.3): лимит 25600 → 26000 — AIAutoReplyRules компонент (~280 строк) + autoReplyRulesStore + интеграция.
@@ -278,8 +282,8 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v0.98.0 (Phase 2): был 24000.
 // v0.97.0 (Phase 0+1): был 23300.
 // Дальнейшее разбиение — плановая задача (handoff-code-limits.md).
-test('Общий renderer код (src/ без тестов) < 26400 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 26400, totalSrc + ' > 26400')
+test('Общий renderer код (src/ без тестов) < 27200 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 27200, totalSrc + ' > 27200')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

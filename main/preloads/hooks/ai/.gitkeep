@@ -1,0 +1,9 @@
+v1.2.0 AI Bridge: место для preload hook'ов AI веб-сайтов.
+
+Будут добавлены на Этапах 4-6:
+- openai.hook.js     — для chat.openai.com / chatgpt.com
+- deepseek.hook.js   — для chat.deepseek.com
+- anthropic.hook.js  — для claude.ai
+- gigachat.hook.js   — для giga.chat
+
+См. .memory-bank/ai-agent-plan/phase-ai-bridge-plan.md (Этапы 4-6).
