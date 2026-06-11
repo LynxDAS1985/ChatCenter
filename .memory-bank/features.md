@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.12 (11 июня 2026)
+## Текущая версия: v1.1.13 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,112 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.13 — AI Bridge Этапы 5+6: hook файлы для 4 AI веб-сайтов
+
+**Что готово**: реальные hook скрипты для chat.openai.com, chat.deepseek.com, claude.ai, giga.chat. Когда юзер откроет AI сайт в webview (Этап 7) — программа сможет автоматически вставить вопрос и забрать ответ из DOM.
+
+**Файлы** (~150-200 строк каждый):
+
+- [`main/preloads/hooks/ai/openai.hook.js`](main/preloads/hooks/ai/openai.hook.js) — ChatGPT.
+  - Селекторы: `#prompt-textarea` (textarea ИЛИ contenteditable div в новой версии) + `[data-testid="send-button"]` + `[data-message-author-role="assistant"] .markdown` + `.result-streaming, [data-message-status="in_progress"]`.
+  - DEBOUNCE_MS=800, MAX_WAIT=90с.
+
+- [`main/preloads/hooks/ai/deepseek.hook.js`](main/preloads/hooks/ai/deepseek.hook.js) — DeepSeek.
+  - Селекторы: `textarea[placeholder*="Send a message"]` + Vue-style стрингифицированные классы.
+  - DEBOUNCE_MS=1000, MAX_WAIT=120с (reasoner модель думает дольше).
+  - Менее стабильные классы (Vue Scoped CSS) → больше нужны custom selectors.
+
+- [`main/preloads/hooks/ai/anthropic.hook.js`](main/preloads/hooks/ai/anthropic.hook.js) — Claude.
+  - Селекторы: `div[contenteditable="true"][role="textbox"]` (НЕ textarea!) + `button[aria-label="Send Message"]` + `[data-is-streaming="false"][data-message-id]` + `[data-is-streaming="true"]`.
+  - Особый `setInputValue`: для contenteditable нужен **дополнительный `InputEvent` с inputType:'insertText'** — иначе React не обновляет state.
+  - DEBOUNCE_MS=800, MAX_WAIT=120с (Claude умеет давать длинные ответы).
+
+- [`main/preloads/hooks/ai/gigachat.hook.js`](main/preloads/hooks/ai/gigachat.hook.js) — ГигаЧат.
+  - Селекторы **неточные** (Сбер использует Angular, документации мало) — юзер настроит через UI (Этап 8).
+  - Fallback с broad селекторами: `textarea, [contenteditable="true"], input[type="text"][placeholder*="вопрос"]`.
+
+### Общая структура hook (все 4 идентичны)
+
+```js
+;(function () {
+  const PROVIDER = '...'
+  const VERSION  = 'v1-2026-06'
+  if (window.__ccAiHookLoaded) return  // защита от двойной загрузки
+  window.__ccAiHookLoaded = true
+
+  let SELECTORS = { input, submitButton, lastAssistantMessage, streamingIndicator }
+  const DEBOUNCE_MS, INJECT_DELAY, MAX_WAIT_FOR_ANSWER_MS, POLL_INTERVAL_MS
+
+  function setInputValue(input, text):
+    - textarea → React 19 native setter + input event
+    - contenteditable → textContent + input event (+ InputEvent для Claude React)
+    - fallback → execCommand('insertText')
+
+  function waitForAnswer(questionId):
+    - polling по новым assistant сообщениям (count > initialCount)
+    - debounce: ждать DEBOUNCE_MS тишины пока streaming indicator не исчезнет
+    - timeout MAX_WAIT_FOR_ANSWER_MS → error streaming_timeout
+
+  function handleInject(payload):
+    - apply custom selectors из payload (override defaults)
+    - find input → setInputValue → click submit (или Enter fallback)
+    - waitForAnswer(questionId)
+    - errors: input_not_found / submit_not_found / unknown / streaming_timeout
+
+  window.__ccAiBridge.setInjectHandler(handleInject)
+  // delayed fallback через setTimeout(50) если bridge ещё не готов
+})()
+```
+
+### Как работает (полная цепочка)
+
+1. Юзер открывает chat.openai.com в webview AISidebar (Этап 7).
+2. `ai-monitor.preload.cjs` загружается webview → detectProvider(`chat.openai.com`) → 'openai'.
+3. Preload читает `out/preloads/hooks/ai/openai.hook.js` → инжектирует через `<script>`.
+4. openai.hook вызывает `window.__ccAiBridge.setInjectHandler(handleInject)`.
+5. UI → `sendQuestion({mode:'webui', question, config:{providerId:'openai'}})`.
+6. main → router → webUiBridge → `webContents.send('ai-bridge:webui:inject', {questionId, text})`.
+7. preload получает → `<script>window.__ccAiBridge._enqueueInject(payload)</script>`.
+8. hook.handleInject → setInputValue → click submit → waitForAnswer.
+9. ChatGPT начинает streaming → MutationObserver-like polling видит `.result-streaming`.
+10. Streaming закончился + DEBOUNCE_MS тишины → `window.__ccAiBridge.answer(questionId, text)`.
+11. preload → postMessage → ipcRenderer.send → main → `deliverAnswer` → resolve Promise → AiBridgeAnswer.
+12. UI получает ответ.
+
+### Custom selectors (для Этапа 8)
+Все 4 hook принимают `selectors` в payload `handleInject`. Если юзер настроит свои селекторы в UI (Этап 8) — они придут в payload и заменят defaults. Например для DeepSeek после обновления сайта:
+```
+config.customSelectors = { input: '#new-input-id', submitButton: '.new-send-btn' }
+```
+
+### Тесты (+30)
+`src/__tests__/aiHooks.vitest.js` — sanity check для каждого из 4 hook:
+- файл существует и > 1000 байт (не stub)
+- загружается без throw (jsdom + new Function)
+- регистрирует setInjectHandler (синхронно или delayed через setTimeout 50мс)
+- логирует «hook готов» с правильным provider именем
+- handleInject с пустым DOM → error code='input_not_found'
+- защита от двойной загрузки — повторный load не падает (early return через `__ccAiHookLoaded`)
+- handleInject с пустым text → return без error/answer (валидация)
+- Общий тест: все 4 файла .hook.js найдены, .hookTemplate.js не имеет .hook.js suffix (исключён из copy в vite.config).
+
+### Регрессия
+lint 0 (один warning от старого eslint-disable исправлен), vitest 1667 → 1697 ✅ (+30), fileSizeLimits 434 → 435 ✅ (+1 новый тест файл), check-memory ✅.
+
+### Что юзер пока НЕ видит
+Hook'и работают в webview но UI компонент `<webview>` ещё не добавлен в AISidebar. Это Этап 7. После него: открыть AI сайт в боковой панели → кнопка «Спросить» → автоматическая инъекция через hook.
+
+### Известные риски (требуют тестирования юзером в Этапе 7)
+- **OpenAI** меняет `data-testid` ~раз в 3-4 месяца. Селекторы могут устареть → юзер настроит через UI (Этап 8).
+- **DeepSeek** в РФ частично блокирован → может потребоваться VPN.
+- **Claude** на новой версии может изменить data-attributes streaming.
+- **ГигаЧат** селекторы — приблизительные, точно нужна ручная настройка.
+
+### Rollback
+`git revert <commit>` — hook файлы не используются пока UI не подключит preload (Этап 7).
 
 ---
 
@@ -161,126 +267,15 @@ Preload подключится к webview когда AISidebar добавит `<
 
 ---
 
-### v1.1.11 — AI Bridge Этап 3: API Bridge (обёртка aiProviderCaller)
+### v1.1.11 — заархивирована
 
-**Что готово**: программа умеет отправить вопрос в платный API провайдер (Anthropic / OpenAI / DeepSeek / ГигаЧат) через тот же IPC канал `ai-bridge:send`, что и Local Bridge.
-
-**Файлы**:
-
-- [`main/ai/bridge/apiBridge.js`](main/ai/bridge/apiBridge.js) (~205 строк) — `createApiBridge(config, deps)`:
-  - Конфиг: `providerId` (обязательно: anthropic/openai/deepseek/gigachat) + `model` (опц) + `timeoutMs` (опц, default 60с).
-  - Deps: `callProvider` (функция из `aiProviderCaller.js`).
-  - Сборка `messages`: `systemPrompt` → первый `{role:'system'}`, потом `history` (с валидацией), последний `{role:'user', content:text}`.
-  - Вызов `callProvider({provider, messages, model})` — БЕЗ tools (Bridge только текст, tool use — для AI Agent).
-  - Парсинг ответа разный по провайдерам:
-    - **Anthropic**: `data.content[].type='text'` → возвращает первый text-блок (пропускает tool_use блоки).
-    - **OpenAI/DeepSeek/GigaChat**: `data.choices[0].message.content`.
-  - **`Promise.race(callProvider, timeout, abort)`** — без AbortSignal в fetch, потому что callProvider — внутренний модуль без signal API.
-  - Возврат всегда `AiBridgeAnswer` — никаких throw.
-
-- **Маппинг ошибок** `callProvider` → `AiBridgeErrorCode`:
-
-  | Сообщение от callProvider | AiBridgeErrorCode | Retryable |
-  |---|---|---|
-  | `missing API key for X` | `auth_required` | ❌ |
-  | `HTTP 401` / `HTTP 403` | `auth_required` | ❌ |
-  | `HTTP 429` | `rate_limited` | ✅ |
-  | `HTTP 5xx` | `server_error` | ✅ |
-  | `HTTP 4xx` (кроме 401/403/429) | `config_invalid` | ❌ |
-  | `network error` / `ENOTFOUND` / `ECONNREFUSED` | `network_error` | ✅ |
-  | `unsupported provider` | `config_invalid` | ❌ |
-  | `invalid JSON response` | `server_error` | ✅ |
-  | прочее | `unknown` | ❌ |
-
-  Это используется fallback chain (Этап 9) — `retryable=true` означает «попробуй другой провайдер».
-
-- [`main/handlers/aiBridgeIpcHandlers.js`](main/handlers/aiBridgeIpcHandlers.js) расширен:
-  - `mode='api'` теперь подключает `createApiBridge(config, {callProvider: deps.callProvider})`.
-  - Валидация: config.providerId обязателен → `config_invalid`. callProvider не передан в register → `config_invalid` («API Bridge не настроен на main стороне»).
-  - DI: `deps.factoryApi` для замены `createApiBridge` в тестах.
-
-- [`main/main.js`](main/main.js) — `registerAiBridgeIpcHandlers(ipcMain, {callProvider: callProviderFn})` теперь передаёт callProvider. callProviderFn использует тот же storage что и AI Agent (читает API ключи из `settings.aiProviderKeys`).
-
-**Почему API Bridge без tool use**:
-- Bridge — это «отправь вопрос, получи текст». Tool use (вызов функций программы) — это AI Agent.
-- AI Agent уже работает с `aiToolExecutor` (Phase 1-4 в v0.97-v1.1.4) — там multi-turn loop с инструментами.
-- Bridge — простой один HTTP request → один ответ. Юзер видит сообщение клиента → AI отвечает текстом → программа вставляет ответ.
-- Если в будущем понадобится Bridge + tools — это будет Этап 12+ или новый компонент.
-
-### Как работает
-
-1. Renderer вызывает `sendQuestion({mode:'api', question:{...}, config:{providerId:'anthropic', model:'claude-haiku-4-5-20251001'}})`.
-2. IPC → `handleSend` → проверяет providerId + callProvider → `createApiBridge(config, {callProvider})`.
-3. `router.ask(question)` → `apiBridge.ask(question)`.
-4. apiBridge собирает messages → вызывает `callProvider({provider, messages, model})`.
-5. callProvider читает API ключ из storage → fetch к API → возвращает raw response.
-6. apiBridge парсит response по providerId → возвращает `AiBridgeAnswer{ok:true, text, providerId, mode:'api', latencyMs, model}`.
-7. При ошибке — маппинг exception → AiBridgeError с правильным code + retryable.
-
-**Тесты** (+33):
-- `apiBridge.vitest.js` (28): validation (throws без providerId/callProvider) / Anthropic happy path + правильный model / Anthropic пропускает не-text блоки / OpenAI+DeepSeek+GigaChat parsing / messages: один user / system первым / history правильный порядок / невалидные turn-ы игнорируются / 8 error mappings (missing-key/401/429/500/400/network/unknown/empty) / no_answer для Anthropic + OpenAI / timeout → streaming_timeout / signal aborted сразу / signal abort в процессе / все 4 providerId принимаются.
-- `aiBridgeIpcHandlers.vitest.js` (+5): mode=api без providerId → config_invalid, без callProvider в deps → config_invalid, с callProvider → factoryApi вызвана + ответ пробрасывается, webui → unsupported_mode.
-
-**Регрессия**: lint 0, vitest 1620 → 1650 ✅ (+30 unique, +5 уже учтены), fileSizeLimits 430 → 432 ✅.
-
-**Юзер через DevTools может теперь**:
-```js
-await window.api.invoke('ai-bridge:send', {
-  mode: 'api',
-  question: { version:1, text:'Привет!', source:{messengerId:'native_cc'} },
-  config: { providerId: 'anthropic' }  // или 'openai'/'deepseek'/'gigachat'
-})
-```
-
-API ключ берётся автоматически из `settings.aiProviderKeys[providerId].apiKey` (там где юзер уже ввёл их для AI Agent).
-
-**Rollback**: `git revert` — никакой существующий код callProvider/aiProviderFallback не изменялся, только новые файлы + 1 строка передачи deps.
+AI Bridge Этап 3: API Bridge (обёртка aiProviderCaller для 4 провайдеров). `main/ai/bridge/apiBridge.js` (~205 стр.) + расширение IPC handler + main.js передача callProvider. Маппинг ошибок callProvider → AiBridgeError (9 кодов с retryable). +33 unit-теста. Подробно: см. progress документ в [`ai-agent-plan/progress-v1.1.7-v1.1.10.md`](./ai-agent-plan/progress-v1.1.7-v1.1.10.md) (будет дополнен ссылкой на это в Этапе 10).
 
 ---
 
-### v1.1.10 — AI Bridge Этап 2: Local Bridge (Ollama HTTP)
+### v1.1.10 — заархивирована
 
-**Что готово**: программа теперь умеет отправить вопрос в локальный Ollama сервер и получить ответ — через одну IPC команду.
-
-**Файлы**:
-- [`main/ai/bridge/localBridge.js`](main/ai/bridge/localBridge.js) (172 строки) — фабрика `createLocalBridge(config, deps)`:
-  - POST `${baseUrl}/api/chat` с `{ model, messages, stream:false }` (OpenAI-compatible Ollama API)
-  - Конфиг: `baseUrl` (default `http://127.0.0.1:11434`) + `model` (default `llama3.1`) + `timeoutMs` (60с)
-  - Поддержка `systemPrompt` (первый message role=system) + `history` (turn-ы между system и финальным user)
-  - AbortController с собственным timeout + проброс внешнего `question.signal`
-  - Парсинг ответа: `data.message.content` (новый /api/chat) или `data.response` (старый /api/generate)
-  - Возвращает `AiBridgeAnswer` всегда — без throw (даже при ECONNREFUSED → `network_error` с подсказкой «Ollama не запущена»)
-  - Коды ошибок: `config_invalid` (404/неправильный path), `server_error` (5xx, retryable), `streaming_timeout`, `aborted`, `network_error` (retryable), `no_answer` (пустой ответ)
-  - DI через `deps.fetch` — для тестирования без сетевых вызовов
-
-- [`main/handlers/aiBridgeIpcHandlers.js`](main/handlers/aiBridgeIpcHandlers.js) (90 строк) — IPC канал `ai-bridge:send`:
-  - `registerAiBridgeIpcHandlers(ipcMain, deps)` → unsubscribe
-  - `handleSend(payload, deps)` — экспортируется отдельно для тестирования без mock ipcMain
-  - `mode='local'` → создаёт createLocalBridge через factory из deps (для DI) → передаёт router'у
-  - `mode='api'/'webui'` → unsupported_mode (добавятся на Этапах 3-6)
-  - Возврат: всегда `AiBridgeAnswer`. Никаких throw.
-  - DI: `deps.factoryLocal` для замены createLocalBridge в тестах, `deps.fetch` для проброса
-  - `AI_BRIDGE_IPC_CHANNELS = Object.freeze({ SEND: 'ai-bridge:send' })`
-
-- [`src/utils/aiBridge/index.js`](src/utils/aiBridge/index.js) (75 строк) — renderer-side wrapper:
-  - `sendQuestion({ mode, question, config })` → `Promise<AiBridgeAnswer>`
-  - Валидация payload (mode + question обязательны) + проверка `window.api.invoke` доступности
-  - Любые throws ловятся → `AiBridgeAnswer{ok:false, code:'unknown'}`
-
-- [`main/main.js`](main/main.js) подключает `registerAiBridgeIpcHandlers(ipcMain)` рядом с `initAiToolIpcHandlers`.
-
-**Тесты** (+37):
-- `localBridge.vitest.js` (17): happy path / URL construction / body структура (messages, systemPrompt, history) / HTTP ошибки 404/500 / no_answer / ECONNREFUSED → network_error / fetch undefined → config_invalid / timeout / external abort / старый формат `response`
-- `aiBridgeIpcHandlers.vitest.js` (12): handleSend без mode/question → config_invalid / mode=local → factoryLocal + router / mode=api/webui → unsupported_mode / register создаёт handler / unsubscribe вызывает removeHandler / handler пробрасывает payload
-- `aiBridge/index.vitest.js` (8): без mode/question → config_invalid / нет invoke → config_invalid / invoke вызван с правильным каналом + payload / возврат invoke / throws → catched
-
-**Один баг найден и исправлен**: в `registerAiBridgeIpcHandlers` искал `deps.createLocalBridge` вместо `deps.factoryLocal` — тест handler не получал mock. Поправлен на правильный ключ.
-
-**Регрессия**: lint 0 warn, vitest 1583 → 1620 ✅, fileSizeLimits 422/422 → 430/430 ✅, check-memory ✅.
-
-**Юзер ещё не увидит** Local Bridge в UI — это будет в Этапе 7 (AIBridgePanel). Сейчас можно тестировать только через DevTools console: `await window.api.invoke('ai-bridge:send', { mode:'local', question:{ version:1, text:'Привет', source:{ messengerId:'native_cc' } } })`.
-
-**Rollback**: `git revert <commit>` — никакой существующий код не задет, только новые файлы + 1 строка в main.js (registerAiBridgeIpcHandlers подключение).
+AI Bridge Этап 2: Local Bridge (Ollama HTTP). `main/ai/bridge/localBridge.js` (172 стр.) + IPC handler + renderer wrapper + main.js регистрация. +37 unit-тестов. Подробно: см. progress документ в [`ai-agent-plan/progress-v1.1.7-v1.1.10.md`](./ai-agent-plan/progress-v1.1.7-v1.1.10.md).
 
 ---
 
