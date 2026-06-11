@@ -24,7 +24,7 @@ function copyStaticPlugin() {
         { from: 'main/pin-dock.css', to: 'out/main/pin-dock.css' },
         { from: 'main/pin-dock.js', to: 'out/main/pin-dock.js' },
       ]
-      // Hooks directory
+      // Hooks directory (messenger hooks)
       const hooksDir = 'main/preloads/hooks'
       if (fs.existsSync(hooksDir)) {
         const outHooksDir = 'out/preloads/hooks'
@@ -32,6 +32,18 @@ function copyStaticPlugin() {
         for (const f of fs.readdirSync(hooksDir)) {
           if (f.endsWith('.hook.js')) {
             copies.push({ from: `${hooksDir}/${f}`, to: `${outHooksDir}/${f}` })
+          }
+        }
+      }
+      // v1.2.0 Этап 4: AI hooks directory (ai-monitor.preload.cjs ищет тут)
+      const aiHooksDir = 'main/preloads/hooks/ai'
+      if (fs.existsSync(aiHooksDir)) {
+        const outAiHooksDir = 'out/preloads/hooks/ai'
+        fs.mkdirSync(outAiHooksDir, { recursive: true })
+        for (const f of fs.readdirSync(aiHooksDir)) {
+          // .hookTemplate.js не копируется — только реальные provider hooks
+          if (f.endsWith('.hook.js') && !f.startsWith('.')) {
+            copies.push({ from: `${aiHooksDir}/${f}`, to: `${outAiHooksDir}/${f}` })
           }
         }
       }
@@ -69,6 +81,8 @@ export default defineConfig({
           photoViewer: resolve(__dirname, 'main/preloads/photoViewer.preload.cjs'),
           videoPlayer: resolve(__dirname, 'main/preloads/videoPlayer.preload.cjs'),
           'log-viewer': resolve(__dirname, 'main/preloads/log-viewer.preload.cjs'),
+          // v1.2.0 (Этап 4 AI Bridge): preload для AI веб-сайтов.
+          'ai-monitor': resolve(__dirname, 'main/preloads/ai-monitor.preload.cjs'),
         },
         output: {
           // Production paths expect .js not .mjs

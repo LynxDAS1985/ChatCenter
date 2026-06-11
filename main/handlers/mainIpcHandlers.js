@@ -184,7 +184,11 @@ export function registerMainIpcHandlers(deps) {
   ipcMain.handle('app:get-paths', () => ({
     monitorPreload: isDev
       ? path.join(__dirname, '../../main/preloads/monitor.preload.cjs')
-      : path.join(__dirname, '../preload/monitor.mjs')
+      : path.join(__dirname, '../preload/monitor.mjs'),
+    // v1.2.0 (Этап 4 AI Bridge): preload для AI веб-сайтов (chat.openai.com / etc).
+    aiMonitorPreload: isDev
+      ? path.join(__dirname, '../../main/preloads/ai-monitor.preload.cjs')
+      : path.join(__dirname, '../preload/ai-monitor.mjs'),
   }))
 
   // Смена цвета нативного titlebar при переключении темы

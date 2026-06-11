@@ -14,10 +14,15 @@
 import { createLocalBridge } from '../ai/bridge/localBridge.js'
 // v1.2.0 (Этап 3): API Bridge — обёртка callProvider под единый интерфейс.
 import { createApiBridge } from '../ai/bridge/apiBridge.js'
+// v1.2.0 (Этап 4): WebUI Bridge — общение с preload в AI webview.
+import { createWebUiBridge, deliverAnswer, deliverError } from '../ai/bridge/webUiBridge.js'
 import { createAiBridgeRouter } from '../ai/bridge/router.js'
 import { AI_BRIDGE_CONTRACT_VERSION } from '../../src/utils/aiBridge/contracts.js'
 
 const IPC_CHANNEL_SEND = 'ai-bridge:send'
+const IPC_CHANNEL_WEBUI_ANSWER = 'ai-bridge:webui:answer-received'
+const IPC_CHANNEL_WEBUI_ERROR = 'ai-bridge:webui:error'
+const IPC_CHANNEL_WEBUI_READY = 'ai-bridge:webui:ready'
 
 /**
  * Регистрирует IPC handler. Возвращает функцию-отписку.
@@ -43,10 +48,28 @@ export function registerAiBridgeIpcHandlers(ipcMain, deps = {}) {
 
   ipcMain.handle(IPC_CHANNEL_SEND, handler)
 
+  // v1.2.0 (Этап 4): one-way события от preload → main для WebUI Bridge.
+  // Bridge ждёт ответ через Promise registered в pending map; эти handlers
+  // его резолвят / реджектят.
+  const answerListener = (_event, payload) => { try { deliverAnswer(payload) } catch (_) {} }
+  const errorListener  = (_event, payload) => { try { deliverError(payload) } catch (_) {} }
+  const readyListener  = (_event, _payload) => { /* лог через app:log из preload, тут ничего не делаем */ }
+
+  if (typeof ipcMain.on === 'function') {
+    ipcMain.on(IPC_CHANNEL_WEBUI_ANSWER, answerListener)
+    ipcMain.on(IPC_CHANNEL_WEBUI_ERROR, errorListener)
+    ipcMain.on(IPC_CHANNEL_WEBUI_READY, readyListener)
+  }
+
   return () => {
     try {
       if (typeof ipcMain.removeHandler === 'function') {
         ipcMain.removeHandler(IPC_CHANNEL_SEND)
+      }
+      if (typeof ipcMain.removeListener === 'function') {
+        ipcMain.removeListener(IPC_CHANNEL_WEBUI_ANSWER, answerListener)
+        ipcMain.removeListener(IPC_CHANNEL_WEBUI_ERROR, errorListener)
+        ipcMain.removeListener(IPC_CHANNEL_WEBUI_READY, readyListener)
       }
     } catch (_) { /* ignore */ }
   }
@@ -87,6 +110,27 @@ export async function handleSend(payload, deps = {}) {
   if (mode === 'local') {
     const localBridge = (deps.factoryLocal || createLocalBridge)(config, { fetch: deps.fetch })
     routerDeps.localBridge = localBridge
+  } else if (mode === 'webui') {
+    // v1.2.0 Этап 4: WebUI Bridge — общение с preload в AI webview.
+    // Webview должен быть зарегистрирован через registerWebview из main.js
+    // (это делает AISidebar при mount webview tag для AI сайта).
+    if (!config.providerId) {
+      return {
+        version: AI_BRIDGE_CONTRACT_VERSION,
+        ok: false,
+        text: '',
+        providerId: 'openai',
+        mode: 'webui',
+        latencyMs: Date.now() - t0,
+        error: {
+          code: 'config_invalid',
+          message: 'WebUI mode требует config.providerId (anthropic/openai/deepseek/gigachat)',
+          retryable: false,
+        },
+      }
+    }
+    const webUiBridge = (deps.factoryWebUi || createWebUiBridge)(config)
+    routerDeps.webUiBridge = webUiBridge
   } else if (mode === 'api') {
     // API Bridge требует providerId в config + callProvider из deps.
     if (!config.providerId) {

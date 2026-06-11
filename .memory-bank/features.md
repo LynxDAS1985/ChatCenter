@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.1.11 (11 июня 2026)
+## Текущая версия: v1.1.12 (11 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -50,6 +50,114 @@
 ### v0.95.50 — заархивирована
 
 Откат v0.95.49 (followup re-apply restore). Детали: [archive/features-v0.95.50.md](./archive/features-v0.95.50.md).
+
+---
+
+### v1.1.12 — AI Bridge Этап 4: WebUI Bridge skeleton (самый рискованный)
+
+**Что готово**: каркас общения программы с AI веб-сайтами через preload + DOM injection. На этом этапе hook файлы провайдеров **пустые** — реальная инъекция в chat.openai.com будет в Этапах 5-6. Но вся «трубопроводная» часть работает: preload загружается в webview, определяет провайдера, понимает IPC команды, передаёт hook'у через `window.__ccAiBridge`.
+
+**Почему «самый рискованный»**: webview — это отдельный изолированный браузер с CSP, DRM, anti-bot защитами. Любая ошибка в preload роняет страницу AI сайта, а не приложение. Поэтому делаем step-by-step с тестами на каждом шаге.
+
+**Архитектурное решение**: следуем паттерну [`monitor.preload.cjs`](main/preloads/monitor.preload.cjs) которым уже год работают мессенджеры (Telegram/WhatsApp/VK/MAX). НЕ изобретаем новое.
+
+**Файлы**:
+
+- [`main/preloads/ai-monitor.preload.cjs`](main/preloads/ai-monitor.preload.cjs) (~165 стр.) — preload скрипт для AI веб-сайтов:
+  - Определяет провайдера по `location.hostname` (HOST_TO_PROVIDER lookup: chat.openai.com/chatgpt.com → openai, chat.deepseek.com → deepseek, claude.ai → anthropic, giga.chat/developers.sber.ru → gigachat). Поддомены через endsWith().
+  - Загружает hook через `fs.readFileSync(__dirname + '/hooks/ai/' + provider + '.hook.js')`. Если файла нет — silent fallback (Этап 4 без реальных hooks).
+  - Инъекция кода hook через `<script>` tag в main world (НЕ contextBridge — нужен прямой доступ к window).
+  - Создаёт `window.__ccAiBridge` API для hook'а (через отдельный `<script>` тег):
+    - `log(level, msg)` — postMessage в preload → main app:log
+    - `answer(questionId, text)` — postMessage → main `ai-bridge:webui:answer-received`
+    - `error(questionId, code, message)` — postMessage → main `ai-bridge:webui:error`
+    - `setInjectHandler(fn)` — hook регистрирует свой обработчик inject команд
+    - `_enqueueInject(payload)` — preload пушит inject в hook (или в очередь если handler ещё не зарегистрирован)
+  - Слушает `window.message` → проксирует в IPC main.
+  - Слушает `ipcRenderer.on('ai-bridge:webui:inject')` → передаёт hook'у через `<script>` evaluating `window.__ccAiBridge._enqueueInject(payload)`.
+  - Защита от двойной загрузки через `window.__ccAiPreloadInitialized`.
+  - Сообщает в main `ai-bridge:webui:ready` после инициализации.
+  - **Никаких console.\*** — только `ipcRenderer.send('app:log', ...)` (правило проекта).
+
+- [`main/preloads/hooks/ai/.hookTemplate.js`](main/preloads/hooks/ai/.hookTemplate.js) (~140 стр.) — шаблон hook файла:
+  - НЕ загружается (имя начинается с `.`).
+  - Документирует контракт: SELECTORS / DEBOUNCE_MS / COOLDOWN_MS / INJECT_DELAY / MAX_WAIT_FOR_ANSWER_MS.
+  - Функции: `setInputValue` (React-friendly через native setter для textarea + contenteditable + execCommand fallback), `waitForAnswer` (polling MutationObserver-like с debounce), `handleInject` (применить custom selectors → set input → click submit → waitForAnswer).
+  - Регистрирует `window.__ccAiBridge.setInjectHandler(handleInject)` при загрузке.
+
+- [`main/ai/bridge/webUiBridge.js`](main/ai/bridge/webUiBridge.js) (~155 стр.) — main-side bridge:
+  - `createWebUiBridge(config)` — фабрика. Config: providerId + timeoutMs (default 90с, дольше API) + selectors (custom от юзера, опц).
+  - `registerWebview(providerId, webContents)` — реестр активных webview (вызывается при mount AISidebar в Этапе 7).
+  - `deliverAnswer(payload)` / `deliverError(payload)` — связывают payload с pending Promise по questionId.
+  - `clearWebUiBridgeState()` — для тестов и при unmount.
+  - `bridge.ask(question)`:
+    1. Проверяет что webview зарегистрирован → иначе config_invalid.
+    2. Генерирует уникальный questionId (`q_${Date.now()}_${counter}`).
+    3. `webContents.send('ai-bridge:webui:inject', {questionId, text, selectors})`.
+    4. Promise.race([response, timeout, abort]) → AiBridgeAnswer.
+    5. Timeout по умолчанию 90 сек (webui медленнее API).
+
+- [`main/handlers/aiBridgeIpcHandlers.js`](main/handlers/aiBridgeIpcHandlers.js) — расширено:
+  - `mode='webui'` → `createWebUiBridge(config)`. Требует providerId.
+  - `ipcMain.on('ai-bridge:webui:answer-received')` → `deliverAnswer`.
+  - `ipcMain.on('ai-bridge:webui:error')` → `deliverError`.
+  - `ipcMain.on('ai-bridge:webui:ready')` → no-op (preload reports готовность, ack не нужен).
+  - DI: `deps.factoryWebUi`.
+
+- [`main/handlers/mainIpcHandlers.js`](main/handlers/mainIpcHandlers.js) — `app:get-paths` теперь возвращает `aiMonitorPreload` путь (dev: `main/preloads/ai-monitor.preload.cjs`, prod: `out/preload/ai-monitor.mjs`).
+
+- [`electron.vite.config.js`](electron.vite.config.js):
+  - preload input + `'ai-monitor': resolve(__dirname, 'main/preloads/ai-monitor.preload.cjs')`.
+  - copyStaticPlugin расширен: копирует `main/preloads/hooks/ai/*.hook.js` (без `.hookTemplate.js`) → `out/preloads/hooks/ai/`.
+
+### Как работает (когда hook файлы появятся в Этапе 5-6)
+
+```
+[1] UI вызывает sendQuestion({mode:'webui', config:{providerId:'openai'}, question:{text}})
+       ↓ IPC ai-bridge:send
+[2] main handleSend → mode=webui → createWebUiBridge → router → bridge.ask
+       ↓
+[3] bridge: webContents.send('ai-bridge:webui:inject', {questionId, text})
+       ↓ IPC к preload в webview
+[4] ai-monitor.preload: ipcRenderer.on('ai-bridge:webui:inject') →
+    <script> window.__ccAiBridge._enqueueInject(payload) </script>
+       ↓ window scope
+[5] hook (например openai.hook.js): handleInject(payload):
+    - найти input → setInputValue(text)
+    - click submit button
+    - запустить waitForAnswer(questionId):
+        polling MutationObserver на streamingIndicator → когда streaming закончился →
+        прочитать innerText последнего assistant message → window.__ccAiBridge.answer(questionId, text)
+       ↓ postMessage
+[6] preload получает 'ai-bridge:webui:answer-received' → ipcRenderer.send →
+       ↓ IPC к main
+[7] handlers: deliverAnswer({questionId, text}) → resolve pending Promise →
+       ↓
+[8] bridge.ask возвращает AiBridgeAnswer{ok:true, text}
+[9] IPC возвращает в UI
+```
+
+**На Этапе 4 шаги 4-5 не работают** (нет hook файлов). Только инфраструктура.
+
+### Тесты (+19)
+- `webUiBridge.vitest.js` (16): validation throws / webview не зарегистрирован → config_invalid / happy path (inject через webContents → deliverAnswer → ok:true) / custom selectors прокидываются / deliverError → правильный code+message / пустой ответ → no_answer / webContents.send throws → unknown / timeout → streaming_timeout retryable / signal aborted сразу (без send) / signal abort в процессе / register/unregister / повторный register заменяет / register без webContents → no-op / deliverAnswer/Error с неизвестным questionId → no throw
+- `aiBridgeIpcHandlers.vitest.js` (+2): mode=webui без providerId → config_invalid, с providerId → factoryWebUi вызвана. Старый тест на unsupported_mode переписан под config_invalid.
+
+### Регрессия
+lint 0, vitest 1650 → 1667 ✅ (+17 net), fileSizeLimits 432 → 434 ✅, check-memory ✅.
+
+### Юзер пока НЕ видит изменений
+Preload подключится к webview когда AISidebar добавит `<webview>` тег с этим preload пути (это Этап 7). Hook файлы пустые — Этапы 5-6.
+
+### Безопасность
+- Preload запускается в webview изолированном (sandboxed) контексте.
+- Hook инжектируется через `<script>` в main world сайта — имеет доступ к DOM сайта, НО не к Electron API.
+- Bridge между hook и main — через `postMessage` + ipcRenderer (контролируемые каналы).
+- CSP сайтов не блокирует наш preload (он запускается до загрузки страницы по контракту Electron).
+- API ключи AI **никогда не нужны** в webui mode — юзер залогинен на сайте сам через браузерную сессию webview.
+
+### Rollback
+`git revert <commit>` — preload не используется до Этапа 7 (когда добавим `<webview>` tag). IPC handlers новых каналов безвредны если ничего не шлёт. Существующие preloads (monitor.preload и др.) не затронуты.
 
 ---
 
@@ -278,109 +386,15 @@ API ключ берётся автоматически из `settings.aiProvider
 
 ---
 
-### v1.1.6 — Fix: ai-webview логи через app:log + страж от console.* в renderer
+### v1.1.4 – v1.1.6 — заархивированы
 
-В v1.1.5 я (агент) **ошибся**: логи `[ai-webview]` шли через `console.log/warn/error` → попадали ТОЛЬКО в DevTools. У проекта свой UI лог-вьюер «📒 Логи ChatCenter» который читает файл `chatcenter.log` через IPC канал `app:log`. Юзер этих логов в нативном UI **не видел**.
-
-**Исправлено в 3 файлах**:
-- `src/utils/aiWebviewDiagnostics.js` — `console.log/warn/error` → `window.api?.send?.('app:log', {level, message})`
-- `src/utils/aiWebviewContext.js` — `console.error/log` → app:log
-- `src/components/AISidebar.jsx` — `console.warn` → app:log
-
-**Тесты переделаны** (`aiWebviewDiagnostics.vitest.js`): mock `window.api.send` вместо `console.*` spy. +1 регресс-тест «ни одного console.* не вызвано». 15 тестов всего.
-
-**Страж от повторения** — новый `src/__tests__/rendererConsoleGuard.test.cjs`:
-- Сканирует все `src/**/*.{js,jsx}` (без тестов).
-- BASELINE: счётчик `console.*` на каждый legacy-файл на момент v1.1.6 (18 файлов).
-- Падает если **новый** файл вне baseline содержит `console.*`.
-- Падает если файл в baseline увеличил счётчик (анти-регрессия).
-- Уменьшение OK (постепенный рефакторинг).
-- Подключён в pre-commit + pre-push.
-
-**Правило в CLAUDE.md** (Критические запреты #9): «🚫 НИКАКИХ console.log/warn/error в renderer для новых логов». Правильный паттерн с примером.
-
-Регрессия: lint 0, vitest 1473/1473 ✅ (+3 от v1.1.5), rendererConsoleGuard ✅.
+ГигаЧат tool use (v1.1.4) → диагностика ai-webview (v1.1.5) → fix логи через app:log + страж от console.* (v1.1.6). Все стабильны. Подробно: [`archive/features-v1.1.4-1.1.6.md`](./archive/features-v1.1.4-1.1.6.md).
 
 ---
 
-### v1.1.5 — Диагностика «Веб-интерфейс DeepSeek/ГигаЧат» + закрытие скролл-саги
+### v1.1.0 – v1.1.3 — заархивированы
 
-Новый `src/utils/aiWebviewDiagnostics.js`: `attachAiWebviewDiagnostics(wv, provider, url)` подписывается на 11 событий webview (did-fail-load, **console-message** (видны CSP сайта), did-navigate, render-process-gone, ...). Префикс `[ai-webview]`. Idempotent.
-
-`AISidebar.jsx`: useEffect привязывает диагностику при `providerMode==='webview' && webviewUrl`. RAF защита от пустого ref. Cleanup при unmount.
-
-`aiWebviewContext.js`: extended injection script возвращает diag (matched/dom counts) + лог `[inject-result]`.
-
-+12 тестов. Всего 1470 ✅. Лимит renderer 26200 → 26400.
-
-**Скролл-сага CLOSED** (юзер: «забудь, пометь как решена»): 3 файла → `archive/*-CLOSED.md`. CLAUDE.md ссылки обновлены — `✅ CLOSED, НЕ ОТКРЫВАТЬ`.
-
----
-
-### v1.1.4 — ГигаЧат tool use (4-й полноправный провайдер)
-
-OAuth + SSL bypass были готовы (`main/utils/gigachat.js` с v0.87.81), адаптер с v0.97.0, UI с полями clientId+clientSecret — НЕ подключено только к новому tool-use каркасу. Подключено.
-
-`main/ai/aiProviderCaller.js`: новая `callGigaChat({storage,messages,tools,model})` использует existing `getGigaChatToken` + `httpsPostSkipSsl`. Body: `functions`+`function_call:'auto'` (старый OpenAI формат). System извлекается. Trim() от пробелов. Понятные ошибки.
-
-`main/main.js`: FALLBACK_ORDER += 'gigachat'. Проверка creds: для gigachat — apiKey+clientSecret.
-
-+11 тестов с vi.hoisted mocks. Всего 1458 ✅. Полная документация: [phase-gigachat-tool-use-impl.md](./ai-agent-plan/phases/phase-gigachat-tool-use-impl.md).
-
----
-
-### v1.1.3 — Phase 4.3 hardening: smart cooldown + multi-provider fallback
-
-**Smart cooldown** в `autoReplyDispatcher.js`: Map `_userRepliedAt: chatId → ts`, `markUserReplied()` срабатывает на `isOutgoing=true`. `canAutoReply` 4-я проверка — если юзер отвечал за 10 мин → skip. Защита от дубля когда AI 8 сек ждёт LLM а юзер сам ответил за 2 сек.
-
-**Multi-provider fallback** (новый `aiProviderFallback.js`): `createCallProviderWithFallback`. Chain = active + остальные провайдеры с apiKey. `isFallbackWorthy(err)` различает network/5xx/429 (retry) vs HTTP 4xx (fail). main.js строит chain в порядке anthropic/openai/deepseek. Один провайдер → без накладных. Два+ → защита от outage.
-
-+22 теста (5 cooldown + 17 fallback). Всего 1446 ✅. Лимиты dispatcher 300→380, .vitest.js 400→500. Полная документация: [phase-4-3-auto-reply-impl.md](./ai-agent-plan/phases/phase-4-3-auto-reply-impl.md) (раздел v1.1.3).
-
----
-
-### v1.1.2 — Phase 4.3 финал: реальный AI provider + master switch + audit + actor split
-
-В v1.1.1 dispatcher работал, но `callProvider: null` → ai_reply падал. v1.1.2 — реальная AI отправка + 3 UX-фичи.
-
-`main.js` dispatcher.runAgent читает `settings.aiProvider/aiModel` из storage на КАЖДЫЙ запрос (свежие настройки) и оборачивает callProviderFn. Master switch `settings.aiAutoReplyMasterEnabled` (default true) проверяется ПЕРВЫМ в processNewMessage до загрузки rules. UI master switch в AIAutoReplyRules.jsx — зелёная/красная панель + кнопка. Audit log: `appendAuditRecord` export (без IPC) — для mark_read 1 entry, для ai_reply per-tool + summary с iterations, все actor='ai_auto'+ruleId/ruleName. AIActivityDashboard: новая категория «AI авто» (#f97316), фильтр actor=ai_auto, actorColor/actorLabel helpers.
-
-+7 тестов dispatcher (master + audit). Всего 1423 ✅. Лимит renderer 26000→26200.
-
-Полная документация: [phase-4-3-auto-reply-impl.md](./ai-agent-plan/phases/phase-4-3-auto-reply-impl.md).
-
----
-
-### v1.1.1 — Phase 4.3 integration: dispatcher подключён к TDLib message:new
-
-**`main/ai/autoReplyDispatcher.js`**: подписывается на `manager.on('message:new')`. Для каждого сообщения: `getCachedRules()` → `buildEngineMessage(payload)` → `findMatchingRules` → если match: `mark_read` напрямую через `context.markAsRead` либо `ai_reply` через `runAgent({actor:'ai_auto', autoConfirm:true, initialMessages: prompt+hint})` → `markRuleMatched(rule.id)`.
-
-3 уровня защиты от петель:
-- `excludeOutgoing` в engine (default true) + ранний exit в dispatcher до загрузки rules.
-- `cooldownMinutes` на rule level.
-- Loop protection в dispatcher: 30 сек между ai_reply для того же chatId + global rate limit 10 в минуту.
-
-**Executor расширен** (`main/ai/aiToolExecutor.js`): `actor` + `autoConfirm` параметры. Когда `actor='ai_auto' && autoConfirm=true` — confirm-required tools выполняются без UI модалки. HARDCODED_DENY всё равно блокирует. В audit: `actor: 'ai_auto'` + `permissionResult: 'auto_confirmed'`.
-
-**main.js**: `initAutoReplyDispatcher` после tdlibStartup. callProvider пока null (TODO v1.1.2 — вытащить из settings.ai).
-
-**Тесты**: +24 dispatcher (canAutoReply rate limit, buildEngineMessage, processNewMessage flow с rules/cooldown/markRead/aiReply/error handling) + +5 executor autoConfirm = **29 новых**, всего **1416 ✅**.
-
-**Лимиты**: aiToolExecutor.js exception 300 → 350, .vitest.js 650 → 800.
-
-Полная документация: [.memory-bank/ai-agent-plan/phases/phase-4-3-auto-reply-impl.md](./ai-agent-plan/phases/phase-4-3-auto-reply-impl.md) (раздел «v1.1.1»).
-
----
-
-### v1.1.0 — Phase 4.3: AI auto-reply правила (foundation)
-
-Структура правила: триггеры (chatIds/keywords any|all/schedule/excludeBots/Channels/Outgoing) + action (ai_reply|mark_read + aiPromptHint) + cooldownMinutes. autoReplyEngine — 4 pure functions: matchRule (8 проверок), checkKeywords, checkSchedule (с поддержкой через полночь), checkCooldown. AIAutoReplyRules UI с формой и переключателями дней недели. Иконка 🤖⚡ #8b5cf6 в шапке. +51 unit-теста.
-
-**НЕ сделано** (deferred v1.1.1): integration `tg:new-message` → engine → runAgentLoop. Сейчас правила сохраняются и engine тестируется, но автоматически не срабатывают.
-
-Полная документация: [.memory-bank/ai-agent-plan/phases/phase-4-3-auto-reply-impl.md](./ai-agent-plan/phases/phase-4-3-auto-reply-impl.md).
-
-Регрессия: lint 0, vitest 1387 ✅, fileSizeLimits 401/401 ✅.
+Phase 4.3 AI auto-reply правила (полный цикл): foundation (v1.1.0) → integration с TDLib message:new (v1.1.1) → реальный AI provider + master switch + audit (v1.1.2) → smart cooldown + multi-provider fallback (v1.1.3). Все стабильны. Подробно: [`archive/features-v1.1.0-1.1.3.md`](./archive/features-v1.1.0-1.1.3.md). Реализация: [`ai-agent-plan/phases/phase-4-3-auto-reply-impl.md`](./ai-agent-plan/phases/phase-4-3-auto-reply-impl.md).
 
 ---
 
@@ -426,66 +440,9 @@ Phase 4 hardening + UI bulk + Reminders snooze + AbortSignal + confirm timeout +
 
 ---
 
-### v0.95.26 — Фикс: tg:new-message обнулял unreadCount для активного чата (47-дневный баг)
+### v0.95.26 — заархивирована (учебный пример 47-дневного бага)
 
-Юзер: открыл чат «Вайбкодинг комьюнити» с unread=48, прокручен вверх, листает → counter не убирается → **резко 0**, но можно ещё листать вниз.
-
-**Прямое доказательство** (chatcenter.log 15:00:33-34):
-```
-15:00:33  store-unread-sync unread=48 active=true   ← server ВСЁ ЕЩЁ 48
-15:00:33  tg-new-message msgId=118640082944
-          action=skipped-non-contiguous gapMessages=3758 isActiveChat=true
-15:00:34  badge-state unread=0 prevUnread=48        ← 💥 ЛОКАЛЬНОЕ обнуление
-15:00:34  bottomGap=2056                            ← юзер НЕ у низа
-```
-
-**Корень**: в [nativeStoreIpc.js:396](src/native/store/nativeStoreIpc.js) (с **15 апреля 2026**, v0.87.14 — **47 дней не ловили**) была строка:
-
-```js
-unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1),
-```
-
-Это нарушало правило **v0.87.41** (документировано для функции `markRead`, но НЕ применялось к другим handlers):
-> «Локально unreadCount обновляется ТОЛЬКО из server sync».
-
-**Решение** (1 строка):
-```js
-// БЫЛО:  unreadCount: s.activeChatId === chatId ? 0 : (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1)
-// СТАЛО: unreadCount: (c.unreadCount || 0) + (message.isOutgoing ? 0 : 1)
-```
-
-Decrement остаётся **ТОЛЬКО** через `tg:chat-unread-sync` (3 server-driven handlers: sync, bulk-sync, read).
-
-**Эталоны** (research-агент проверил исходники):
-- **Telegram Web K** [appMessagesManager.ts:7577](https://github.com/morethanwords/tweb): `++dialog.unread_count` БЕЗУСЛОВНО. Decrement только в `onUpdateReadHistoryInbox`.
-- **Telegram Desktop** [history_widget.cpp:3946](https://github.com/telegramdesktop/tdesktop): atBottom guard ПЕРЕД `readInboxOnNewMessage` — если НЕ в низу, не трогает counter.
-- **WhatsApp Web / Discord**: ACK только при `isActive && focused && atBottom`.
-
-Наш фикс = tweb pattern (самый простой, decrement только server).
-
-**Почему 47 дней не ловили** (7 факторов — полный анализ в [mistakes/native-scroll-unread.md](.memory-bank/mistakes/native-scroll-unread.md)):
-1. `useReadByVisibility` маскировал — для большинства сообщений server обновлял правильно, локальное обнуление совпадало по значению
-2. Тест-пробел: проверяли только `tg:chat-unread-sync`, не `tg:new-message`
-3. Сага v0.87.41 затронула только `markRead`, никто не сопоставил с `tg:new-message`
-4. Code review v0.87.103 (разбиение файлов) был архитектурным, не функциональным
-5. В логах не виден — оба events валидны по отдельности
-6. Невозможно поймать в jsdom (нужны scroll + push + server delay)
-7. Два параллельных «unread» счётчика путали (chat.unreadCount + useNewBelowCounter)
-
-**3 уровня защиты** (чтобы НИКОГДА не вернулось):
-1. **4 регресс-теста** в [nativeStore.vitest.jsx](src/native/store/nativeStore.vitest.jsx) — `tg:new-message для активного чата +1`, `outgoing не меняет`, `decrement через server sync`
-2. **Static-test** в [modernPatternsGuard.test.cjs](src/__tests__/modernPatternsGuard.test.cjs) — regex проверка что строка не вернётся
-3. **Запись** в [mistakes/native-scroll-unread.md](.memory-bank/mistakes/native-scroll-unread.md) — полный разбор + правило для будущих сессий
-
-**Что юзер увидит**:
-| Сценарий | Раньше | После фикса |
-|---|---|---|
-| Чат активен, юзер atBottom, новое сообщение | 48 → 0 (моментально) | 48 → 49 → 0 (~500мс через server) — точно как Telegram |
-| Чат активен, юзер НЕ atBottom | 48 → 0 ❌ **БАГ** | 48 → 49 (остаётся пока не дочитает) |
-| Чат неактивен | +1 (без изменений) | +1 (без изменений) |
-| Своё сообщение | без изменений | без изменений |
-
-**Регрессия**: lint 0, vitest 840/840 (+4 новых), modernPatternsGuard 16/16 (+1), check-memory ✅.
+Фикс `tg:new-message` обнулял unreadCount для активного чата. Локальное обнуление вместо server sync — 1 строка в nativeStoreIpc, 47 дней незамеченным. 3 уровня защиты + 7 факторов почему не ловили. Подробно: [`archive/features-v0.95.26.md`](./archive/features-v0.95.26.md). Учебный разбор: [`mistakes/native-scroll-unread.md`](./mistakes/native-scroll-unread.md).
 
 ---
 

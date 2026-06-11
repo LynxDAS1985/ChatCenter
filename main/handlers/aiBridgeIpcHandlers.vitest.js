@@ -71,9 +71,25 @@ describe('handleSend (Этап 2)', () => {
     expect(r.text).toBe('api ok')
   })
 
-  it('mode=webui → unsupported_mode (Этап 4-6 подключит)', async () => {
+  it('mode=webui без providerId → config_invalid (Этап 4)', async () => {
     const r = await handleSend({ mode: 'webui', question: baseQuestion })
-    expect(r.error.code).toBe('unsupported_mode')
+    expect(r.error.code).toBe('config_invalid')
+    expect(r.error.message).toContain('providerId')
+  })
+
+  it('mode=webui с providerId → factoryWebUi вызвана', async () => {
+    const fakeAsk = vi.fn().mockResolvedValue({
+      version: 1, ok: false, text: '', providerId: 'openai', mode: 'webui', latencyMs: 1,
+      error: { code: 'config_invalid', message: 'webview не открыт', retryable: false },
+    })
+    const factoryWebUi = vi.fn(() => ({ ask: fakeAsk }))
+    const r = await handleSend(
+      { mode: 'webui', question: baseQuestion, config: { providerId: 'openai' } },
+      { factoryWebUi }
+    )
+    expect(factoryWebUi).toHaveBeenCalledWith({ providerId: 'openai' })
+    expect(fakeAsk).toHaveBeenCalledWith(baseQuestion)
+    expect(r.error.code).toBe('config_invalid')
   })
 
   it('пустой config → factory вызывается с {}', async () => {
