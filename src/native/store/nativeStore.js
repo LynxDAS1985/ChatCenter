@@ -14,30 +14,28 @@ import {
   markHealthPending,
 } from '../../utils/connectionHealth.js'
 
-const NATIVE_SLOW_MS = 10000
-const TOPIC_READ_REFRESH_DELAYS_MS = [0, 700, 1500, 3000]
-// v0.88.0: лимит = жёсткий потолок Telegram MTProto messages.getHistory (100).
-// Источник: core.telegram.org/api/offsets. Просить больше бесполезно — API всё равно отдаст 100.
-// Раньше было 500 → баннер «100 из 138» застревал, т.к. код ждал страницу которая никогда не придёт.
-const UNREAD_WINDOW_MAX_MESSAGES = 100
-const UNREAD_WINDOW_EXTRA_MESSAGES = 30
-// v0.88.0: догрузка вниз пачками по 100 (Telegram-style infinite scroll).
-const NEWER_PAGE_SIZE = 100
-// v0.88.0: минимальный интервал между пачками вниз — защита от FLOOD_WAIT.
-const NEWER_PAGE_MIN_INTERVAL_MS = 300
-
-function logNativeLoad(event, data = {}) {
-  const text = Object.entries(data)
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => `${key}=${value}`)
-    .join(' ')
-  try {
-    window.api?.send?.('app:log', {
-      level: 'INFO',
-      message: `[startup-native] ${event}${text ? ' ' + text : ''}`,
-    })
-  } catch(_) {}
-}
+// v1.1.9: pure helpers + константы вынесены в nativeStoreHelpers.js (1326 → ~1180 строк).
+import {
+  NATIVE_SLOW_MS,
+  TOPIC_READ_REFRESH_DELAYS_MS,
+  UNREAD_WINDOW_MAX_MESSAGES,
+  UNREAD_WINDOW_EXTRA_MESSAGES,
+  NEWER_PAGE_SIZE,
+  NEWER_PAGE_MIN_INTERVAL_MS,
+  DEFAULT_STATE,
+  logNativeLoad,
+  topicMessageKey,
+  topicIdentity,
+  countIncoming,
+  buildUnreadWindowMeta,
+  unreadWindowRequestParams,
+  nativeAccountLabel,
+  nativeAccountDetails,
+  updateNativeHealthForAccounts,
+  accountIdsForRequest,
+  healthErrorText,
+  accountStatById,
+} from './nativeStoreHelpers.js'
 
 /**
  * @typedef {Object} NativeAccount
@@ -61,103 +59,6 @@ function logNativeLoad(event, data = {}) {
  * @property {'user'|'group'|'channel'} type
  * @property {string} [avatar]
  */
-
-const DEFAULT_STATE = {
-  mode: 'inbox',
-  accounts: [],
-  activeAccountId: null,   // активный для нового login + подсветка в sidebar
-  chatFilter: 'all',       // v0.87.105 (ADR-016): фильтр чатов в едином списке. 'all' | accountId
-  chats: [],
-  activeChatId: null,
-  messages: {},
-  forumTopics: {},        // { [chatId]: Topic[] } — Telegram forum groups
-  forumTopicsLoading: {},
-  forumTopicPanelChatId: null,
-  activeForumTopic: {},   // { [chatId]: Topic }
-  loginFlow: null,
-  messageWindows: {},
-  typing: {},             // v0.87.14: { [chatId]: { userId, at } } — таймер через 5 сек истекает
-  loadingMessages: {},    // v0.87.36: { [chatId]: true } — флаг идущей загрузки (для shimmer overlay)
-  nativeConnectionHealth: {}, // { [accountId]: connectionHealth } — реальные замеры Telegram API
-}
-
-function topicMessageKey(chatId, topic) {
-  const topicId = topic?.topicId || topic?.id || topic?.topMessageId
-  return topicId ? `${chatId}:topic:${topicId}` : chatId
-}
-
-function topicIdentity(topic) {
-  return String(topic?.topicId || topic?.id || topic?.topMessageId || '')
-}
-
-function countIncoming(messages) {
-  return (Array.isArray(messages) ? messages : []).filter(m => !m.isOutgoing).length
-}
-
-function buildUnreadWindowMeta({ messages, unreadCount, readInboxMaxId, requested, aroundId, loading = false }) {
-  const loadedIncoming = countIncoming(messages)
-  const unread = Number(unreadCount || 0)
-  return {
-    unreadWindowRequested: !!requested,
-    unreadWindowComplete: !unread || !requested || loadedIncoming >= unread,
-    unreadWindowLoading: !!loading,
-    loadedIncoming,
-    unreadCount: unread,
-    readInboxMaxId: Number(readInboxMaxId || 0),
-    aroundId: Number(aroundId || 0),
-    updatedAt: Date.now(),
-  }
-}
-
-function unreadWindowRequestParams(unreadCount, readInboxMaxId, baseLimit = 50) {
-  const unread = Number(unreadCount || 0)
-  const cursor = Number(readInboxMaxId || 0)
-  if (!unread || !cursor) return { limit: baseLimit, aroundId: 0, addOffset: 0, requested: false }
-  const limit = Math.min(Math.max(Number(baseLimit) || 50, unread + UNREAD_WINDOW_EXTRA_MESSAGES), UNREAD_WINDOW_MAX_MESSAGES)
-  // v0.88.0: умный addOffset.
-  // При большом числе непрочитанных (>30) — окно почти всё после курсора (~90%), оставляем
-  // только небольшой контекст сверху. При маленьком (<30) — больше контекста (~25%).
-  // Это даёт первое окно ближе к первому непрочитанному, остальное догружаем через loadNewerMessages.
-  const addOffset = unread > 30
-    ? -Math.floor(limit * 0.9)
-    : -Math.floor(limit / 4)
-  return { limit, aroundId: cursor, addOffset, requested: true }
-}
-
-function nativeAccountLabel(account) {
-  return `${account?.messenger || 'telegram'} · ${account?.name || account?.id || 'аккаунт'}`
-}
-
-function nativeAccountDetails(account, chats, prefix) {
-  const accountChats = chats.filter(c => c.accountId === account.id)
-  const unread = accountChats.reduce((sum, c) => sum + (c.unreadCount || 0), 0)
-  return `${prefix}; чаты: ${accountChats.length}; непрочитано: ${unread}`
-}
-
-function updateNativeHealthForAccounts(state, accountIds, buildHealth) {
-  const ids = new Set(accountIds || [])
-  if (!ids.size) return state
-  const nextHealth = { ...state.nativeConnectionHealth }
-  for (const account of state.accounts) {
-    if (!ids.has(account.id)) continue
-    nextHealth[account.id] = buildHealth(account, nextHealth[account.id])
-  }
-  return { ...state, nativeConnectionHealth: nextHealth }
-}
-
-function accountIdsForRequest(state, accountId) {
-  if (accountId) return [accountId]
-  return state.accounts.map(a => a.id)
-}
-
-function healthErrorText(result, fallback = 'Ошибка Telegram API') {
-  return result?.error || result?.message || fallback
-}
-
-function accountStatById(result, accountId) {
-  const stats = Array.isArray(result?.accountStats) ? result.accountStats : []
-  return stats.find(s => s?.accountId === accountId) || null
-}
 
 export default function useNativeStore() {
   const [state, setState] = useState(DEFAULT_STATE)
