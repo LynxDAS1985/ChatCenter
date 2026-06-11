@@ -3,7 +3,9 @@
 > **Цель**: единый цикл «клиент написал → AI обработал → ответ юзеру» через 3 источника:
 > локальный Ollama, платный API (Anthropic/OpenAI/DeepSeek/ГигаЧат) или веб-сайт AI с DOM injection.
 >
-> Релиз: **v1.2.0** (объединение этапов 1-9, реализованных в v1.1.8 – v1.1.18).
+> Базовый релиз: **v1.2.0** (этапы 1-9, реализованные в v1.1.8 – v1.1.18).
+> Текущая версия: **v1.2.5** (+ UI авто-резерв v1.2.1 + Agent через Bridge v1.2.2 + Авто-ответы через Bridge v1.2.3 + 4 UX-фичи v1.2.5).
+> См. также: [`ai-agent-plan/progress-final-v1.2.5.md`](./ai-agent-plan/progress-final-v1.2.5.md).
 
 ---
 
@@ -36,7 +38,7 @@ JSDoc типы для всего цикла:
 - **`AiBridgeQuestion`** — вход: `{version, text, source, history?, systemPrompt?, contextMode?, timeoutMs?, signal?}`
 - **`AiBridgeAnswer`** — выход: `{version, ok, text, providerId, mode, latencyMs, model?, error?, debug?}`
 - **`AiBridgeError`** — `{code, message, detail?, retryable?}`
-- **`AiBridgeErrorCode`** — закрытый список 11 кодов
+- **`AiBridgeErrorCode`** — закрытый список 12 кодов (см. раздел «Коды ошибок» ниже)
 - **`AiWebviewProviderConfig` / `AiWebviewSelectors`** — для webui
 - Константа **`AI_BRIDGE_CONTRACT_VERSION = 1`** — для совместимости IPC
 
@@ -166,7 +168,7 @@ await window.api.invoke('ai-bridge:send', {
 
 ---
 
-## 📊 Покрытие тестами (на v1.2.0)
+## 📊 Покрытие тестами (на v1.2.5)
 
 | Модуль | Тесты |
 |---|---|
@@ -204,11 +206,24 @@ await window.api.invoke('ai-bridge:send', {
 | v1.1.17 | 8 | Selectors Config UI |
 | v1.1.18 | 9 | Fallback chain |
 | **v1.2.0** | 10+11 | Документация + Release |
+| v1.2.1 | deferred 1 | UI «авто-резерв» в AiBridgeCheck (галочка 🔁) |
+| v1.2.2 | deferred 2 | AI Agent через Bridge (галочка 🔁 в карточке агента) |
+| v1.2.3 | deferred 3 | Авто-ответы через Bridge (галочка 🔁 в правилах) |
+| **v1.2.4** | docs | Финал — единая карта в `progress-final-v1.2.3.md` |
+| **v1.2.5** | UX | Dropdown моделей + Typewriter + Графики + Import/Export |
 
 ---
 
-## 🔜 Что НЕ входит в v1.2.0 (отложено)
+## 🔜 Что НЕ входит в v1.2.5 (отложено на v2.0+)
 
+- **Native API не-Telegram мессенджеров** (WhatsApp Business / VK / Viber / MAX) — требует платные API и месяцы работы.
+- **Реальный SSE streaming** (chunks через IPC, не визуальный TypewriterText) — для Bridge с резервом не критично.
+- **Per-rule analytics** — графики на отдельное правило (есть общий за 7 дней в v1.2.5).
+- ~~AI Agent + Bridge composition~~ — закрыто в v1.2.2.
+- ~~UI авто-резерв~~ — закрыто в v1.2.1.
+- ~~AI auto-reply через Bridge~~ — закрыто в v1.2.3.
+
+**Бывшая запись (теперь устарела) о Не входит в v1.2.0**:
 - **AI Agent + Bridge composition**: Bridge не использует tool use. AI Agent отдельный путь (`aiToolExecutor`). Объединение — после v1.2.0.
 - **UI «авто-резерв»**: fallback chain доступен только программно. UI галочка в AiBridgeCheck для построения цепочки из доступных провайдеров — будущая фича.
 - **AI auto-reply через Bridge**: текущий `autoReplyDispatcher` использует `callProvider` напрямую. Переключение на Bridge — после v1.2.0.

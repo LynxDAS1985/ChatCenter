@@ -80,14 +80,24 @@
 
 ## 📌 Текущий статус
 
-См. [progress.md](./progress.md) — там всегда актуальное состояние.
+**На 2026-06-11 (v1.2.5)** — AI Bridge **полностью закрыт**, включая все 4 UX-фичи и все «отложенные» из v1.2.0.
 
-**На 2026-06-08 (v0.97.0)**: Phase 0 + Phase 1 **завершены и выгружены** (commit `ce994ce`).
-- 14 milestones done (5 Phase 0 + 9 Phase 1)
-- 117 новых unit-тестов
-- 1142/1142 vitest passed
+Свежие документы (читать в этом порядке):
+1. ⭐ [`progress-final-v1.2.5.md`](./progress-final-v1.2.5.md) — **главный итог сессии**: 22 релиза, аудит подтвердил все 10 пунктов, что юзер видит в UI.
+2. ⭐ [`../ai-bridge.md`](../ai-bridge.md) — техническая документация: архитектура / 12 кодов ошибок / IPC каналы / 3 источника / fallback chain.
+3. [`progress-final-v1.2.3.md`](./progress-final-v1.2.3.md) — снапшот после v1.2.3 (auto-reply via Bridge).
+4. [`progress-v1.1.7-v1.1.13.md`](./progress-v1.1.7-v1.1.13.md) — снапшот после Этапа 6.
+5. [`progress-v1.1.7-v1.1.10.md`](./progress-v1.1.7-v1.1.10.md) — снапшот после Этапа 2.
 
-**Следующий шаг**: ждать «делай Phase 2» от юзера. Phase 2 = write actions (reply / mark-read через AI) + Permissions UI + Audit Log.
+**Что работает на v1.2.5**:
+- AI Agent (tool use) — `aiToolExecutor` Phase 1-4.
+- AI Bridge (3 mode: local/api/webui) — Этапы 1-9.
+- 3 UI входа с галочкой 🔁 Bridge: «🤖 Проверка AI» / AI Agent в уведомлении / Авто-ответы (правила).
+- Fallback chain с auto-резервом.
+- UX: Dropdown моделей / Typewriter / 7-дневный график / Импорт-экспорт правил.
+- 1866/1866 vitest, lint 0.
+
+**Не сделано (на v2.0+)**: Native API не-Telegram мессенджеров (WhatsApp Business / VK / Viber).
 
 ## 🎯 Scope (зафиксировано в v0.97.0)
 

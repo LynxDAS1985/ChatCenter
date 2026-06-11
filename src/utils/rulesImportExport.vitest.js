@@ -1,4 +1,4 @@
-// v1.2.8: тесты импорта/экспорта правил.
+// v1.2.5: тесты импорта/экспорта правил.
 
 import { describe, it, expect } from 'vitest'
 import { exportRulesToJson, parseImportJson } from './rulesImportExport.js'
@@ -36,9 +36,9 @@ describe('exportRulesToJson', () => {
   })
 
   it('содержит ccVersion и exportedAt', () => {
-    const json = exportRulesToJson([sampleRule], '1.2.8')
+    const json = exportRulesToJson([sampleRule], '1.2.5')
     const obj = JSON.parse(json)
-    expect(obj.ccVersion).toBe('1.2.8')
+    expect(obj.ccVersion).toBe('1.2.5')
     expect(obj.exportedAt).toBeTruthy()
     expect(new Date(obj.exportedAt).getTime()).toBeGreaterThan(0)
   })
@@ -150,9 +150,9 @@ describe('parseImportJson — валидация правил', () => {
     expect(r.warnings.some(w => w.includes('1.0.0'))).toBe(true)
   })
 
-  it('текущая версия v1.2.8 → нет warning', () => {
+  it('текущая версия v1.2.5 → нет warning', () => {
     const r = parseImportJson(JSON.stringify({
-      ccVersion: '1.2.8',
+      ccVersion: '1.2.5',
       rules: [{ name: 'x', action: { type: 'ai_reply' }, triggers: {} }],
     }))
     expect(r.ok).toBe(true)

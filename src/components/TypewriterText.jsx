@@ -1,6 +1,6 @@
-// v1.2.6: «Печатающий» эффект для отображения ответа AI постепенно.
+// v1.2.5: «Печатающий» эффект для отображения ответа AI постепенно.
 //
-// Зачем: до v1.2.6 ответ AI появлялся одним блоком — юзер не понимал «думает ли»
+// Зачем: до v1.2.5 ответ AI появлялся одним блоком — юзер не понимал «думает ли»
 // или «вообще получили ответ». Теперь текст появляется посимвольно (как печатает
 // человек) — даёт ощущение живой работы.
 //
@@ -38,7 +38,7 @@ export default function TypewriterText({ text, speed = 15, onComplete, instant =
   const [displayed, setDisplayed] = useState(instant ? text : '')
   const timerRef = useRef(null)
   const lastTextRef = useRef(text)
-  // v1.2.6 fix: onComplete через ref — иначе новая функция на rerender инвалидирует
+  // v1.2.5 fix: onComplete через ref — иначе новая функция на rerender инвалидирует
   // useEffect → бесконечный cleanup-new-setup без advancing displayed.
   const onCompleteRef = useRef(onComplete)
   useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])

@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   listRules, createRule, updateRule, deleteRule, toggleRule,
 } from '../stores/autoReplyRulesStore.js'
-// v1.2.8: импорт/экспорт правил.
+// v1.2.5: импорт/экспорт правил.
 import { exportRulesToJson, parseImportJson } from '../utils/rulesImportExport.js'
 
 const ACTION_LABELS = {
@@ -82,10 +82,10 @@ export default function AIAutoReplyRules() {
     reload()
   }
 
-  // v1.2.8: экспорт правил в JSON файл (скачивается через invisible <a download>).
+  // v1.2.5: экспорт правил в JSON файл (скачивается через invisible <a download>).
   const handleExport = (rulesArr) => {
     try {
-      const json = exportRulesToJson(rulesArr, '1.2.8')
+      const json = exportRulesToJson(rulesArr, '1.2.5')
       const blob = new Blob([json], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -105,7 +105,7 @@ export default function AIAutoReplyRules() {
     }
   }
 
-  // v1.2.8: импорт — открывает file picker, парсит JSON, создаёт правила.
+  // v1.2.5: импорт — открывает file picker, парсит JSON, создаёт правила.
   const handleImportClick = (reloadFn) => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -159,7 +159,7 @@ export default function AIAutoReplyRules() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ margin: 0, fontSize: 20 }}>🤖 Правила автоответа</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          {/* v1.2.8: импорт/экспорт правил */}
+          {/* v1.2.5: импорт/экспорт правил */}
           <button
             type="button"
             onClick={() => handleExport(rules)}
