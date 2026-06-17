@@ -59,10 +59,20 @@ describe('buildAutoChain — добавление API провайдеров с 
     expect(chain.find(s => s.config.providerId === 'deepseek')).toBeFalsy()
   })
 
-  it('gigachat с clientSecret (без apiKey) → добавлен', () => {
+  it('gigachat with only clientSecret is not added', () => {
     const settings = {
       aiProviderKeys: {
         gigachat: { clientSecret: 'secret-x' },
+      },
+    }
+    const chain = buildAutoChain(settings, { mode: 'api', providerId: 'anthropic' })
+    expect(chain.find(s => s.config.providerId === 'gigachat')).toBeFalsy()
+  })
+
+  it('gigachat with apiKey + clientSecret is added', () => {
+    const settings = {
+      aiProviderKeys: {
+        gigachat: { apiKey: 'client-id', clientSecret: 'secret-x' },
       },
     }
     const chain = buildAutoChain(settings, { mode: 'api', providerId: 'anthropic' })

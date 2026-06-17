@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.5 (11 июня 2026)
+## Текущая версия: v1.2.7 (17 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -44,6 +44,50 @@
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
+
+---
+
+### v1.2.7 — WhatsApp: защита от фантомных ribbon при входе в чат
+
+**Зачем**: при входе в WhatsApp-чат sidebar watcher мог отправлять фантомные уведомления `ic-expand-more` и старое preview `Фото`. Факты из `chatcenter.log` 17 июня 2026: `wa-open: chat="Виноградов Александр" picked="ic-expand-more"` → `Источник: ic-expand-more | __CC_NOTIF__` → `Ribbon: ic-expand-more | отправлен`; через секунду аналогично `Фото`. Это совпало с ранее задокументированной Ловушкой 62 (`archive/features-pre-v0.87.md` v0.86.2-v0.86.4): `ic-expand-more` бывает SVG title без `data-icon`, поэтому старый фильтр `closest('[data-icon]')` не срабатывал.
+
+**Что изменено**:
+- [`main/preloads/hooks/whatsapp.hook.js`](main/preloads/hooks/whatsapp.hook.js) — добавлен фильтр служебных SVG/UI-текстов: `svg title`, `ic-*`, `wds-ic-*`, `status-*`, `default-user`, `down-context`, `x`.
+- Открытая строка чата без unread badge теперь только обновляет `_lastSidebarTexts` и пишет DIAG `skip open chat`, но не шлёт `__CC_NOTIF__`.
+- [`src/__tests__/notifHooks.test.cjs`](src/__tests__/notifHooks.test.cjs) — guard-тесты на SVG title без `data-icon`, icon-name тексты и `isOpen && !badge` skip.
+
+**Почему так**: Memory Bank прямо предупреждает, что `MutationObserver/getLastMessageText` не отличает новое сообщение от старого DOM при смене/открытии чата (`mistakes/notifications-ribbon.md`). Полностью выключать watcher нельзя: для WhatsApp/MAX/VK он нужен, когда Notification API или unread count не дают отдельный ribbon. Поэтому выбран минимальный фильтр доказанных служебных фантомов + блок только открытой строки без badge.
+
+---
+
+### v1.2.6 — AI Agent автоматически использует WebView Bridge
+
+**Зачем**: при выбранном `ГигаЧат free` нижний ИИ-помощник работал как WebView, но верхний AI Agent мог идти в API-путь и падал с ошибкой `gigachat needs both clientId (apiKey) and clientSecret`. Пользователь выбирал бесплатный WebView-режим, а агент всё равно просил API-секреты.
+
+**Что изменено**:
+- [`src/components/AISidebarAgent.jsx`](src/components/AISidebarAgent.jsx) — если активный провайдер в `mode='webview'`, Agent сам включает Bridge и показывает «Авто: через Bridge/WebView».
+- [`src/components/AISidebar.jsx`](src/components/AISidebar.jsx) — Agent получает `onSettingsChange`, ручной Bridge-toggle для API-провайдеров сохраняется.
+- [`src/utils/aiBridge/agentBridgeRunner.js`](src/utils/aiBridge/agentBridgeRunner.js) — первый шаг chain теперь строится по режиму провайдера: `webview → webui`, `api → api`.
+- [`src/utils/aiBridge/buildAutoChain.js`](src/utils/aiBridge/buildAutoChain.js) — GigaChat API добавляется в резерв только если есть оба значения: `apiKey/clientId` и `clientSecret`.
+- [`src/utils/aiBridge/agentBridgeErrors.js`](src/utils/aiBridge/agentBridgeErrors.js) — технические ошибки WebView Bridge переводятся в понятные сообщения для пользователя.
+
+**Как теперь работает**:
+```
+ГигаЧат free / WebView
+        ↓
+AI Agent сам включает Bridge
+        ↓
+Первый шаг: mode='webui'
+        ↓
+Запрос идёт в открытый сайт ГигаЧат
+        ↓
+API clientId/clientSecret не требуются
+```
+
+**Тесты (+9)**:
+- Новый [`src/components/AISidebarAgent.vitest.jsx`](src/components/AISidebarAgent.vitest.jsx): авто-Bridge для WebView и сохранение ручного Bridge для API.
+- Обновлены `agentBridgeRunner.vitest.js`, `buildAutoChain.vitest.js`, `useAIAgent.vitest.jsx`.
+- Точечная проверка: `npm.cmd run test:vitest -- buildAutoChain agentBridgeRunner AISidebarAgent useAIAgent agentBridgeErrors`.
 
 ---
 

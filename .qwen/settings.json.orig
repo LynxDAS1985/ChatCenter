@@ -11,8 +11,16 @@
       "WebSearch(*)",
       "Agent(*)",
       "TodoWrite(*)",
-      "NotebookEdit(*)"
+      "NotebookEdit(*)",
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push)",
+      "Bash(dir *)",
+      "Bash(findstr *)",
+      "Bash(node *)"
     ],
     "deny": []
-  }
+  },
+  "$version": 3
 }

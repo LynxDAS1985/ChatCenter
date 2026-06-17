@@ -4,8 +4,8 @@
 > локальный Ollama, платный API (Anthropic/OpenAI/DeepSeek/ГигаЧат) или веб-сайт AI с DOM injection.
 >
 > Базовый релиз: **v1.2.0** (этапы 1-9, реализованные в v1.1.8 – v1.1.18).
-> Текущая версия: **v1.2.5** (+ UI авто-резерв v1.2.1 + Agent через Bridge v1.2.2 + Авто-ответы через Bridge v1.2.3 + 4 UX-фичи v1.2.5).
-> См. также: [`ai-agent-plan/progress-final-v1.2.5.md`](./ai-agent-plan/progress-final-v1.2.5.md).
+> Текущая версия: **v1.2.6** (+ UI авто-резерв v1.2.1 + Agent через Bridge v1.2.2 + Авто-ответы через Bridge v1.2.3 + 4 UX-фичи v1.2.5 + автоматический Agent WebView routing v1.2.6).
+> См. также: [`ai-agent-plan/progress-final-v1.2.5.md`](./ai-agent-plan/progress-final-v1.2.5.md), [`features.md`](./features.md).
 
 ---
 
@@ -168,7 +168,7 @@ await window.api.invoke('ai-bridge:send', {
 
 ---
 
-## 📊 Покрытие тестами (на v1.2.5)
+## 📊 Покрытие тестами (на v1.2.6)
 
 | Модуль | Тесты |
 |---|---|
@@ -211,10 +211,11 @@ await window.api.invoke('ai-bridge:send', {
 | v1.2.3 | deferred 3 | Авто-ответы через Bridge (галочка 🔁 в правилах) |
 | **v1.2.4** | docs | Финал — единая карта в `progress-final-v1.2.3.md` |
 | **v1.2.5** | UX | Dropdown моделей + Typewriter + Графики + Import/Export |
+| **v1.2.6** | routing fix | AI Agent автоматически использует WebUI Bridge для WebView/free провайдеров |
 
 ---
 
-## 🔜 Что НЕ входит в v1.2.5 (отложено на v2.0+)
+## 🔜 Что НЕ входит в v1.2.6 (отложено на v2.0+)
 
 - **Native API не-Telegram мессенджеров** (WhatsApp Business / VK / Viber / MAX) — требует платные API и месяцы работы.
 - **Реальный SSE streaming** (chunks через IPC, не визуальный TypewriterText) — для Bridge с резервом не критично.
@@ -228,3 +229,64 @@ await window.api.invoke('ai-bridge:send', {
 - **UI «авто-резерв»**: fallback chain доступен только программно. UI галочка в AiBridgeCheck для построения цепочки из доступных провайдеров — будущая фича.
 - **AI auto-reply через Bridge**: текущий `autoReplyDispatcher` использует `callProvider` напрямую. Переключение на Bridge — после v1.2.0.
 - **Native API мессенджеров (не Telegram)**: AI Bridge работает только в Native режиме (сейчас Telegram через TDLib). WhatsApp/VK native расширения — другой проект.
+---
+
+## v1.2.6 — AI Agent automatic WebView routing
+
+Дата: 2026-06-17
+Нашел и исправил: Codex
+Краткая запись в changelog: [`features.md`](./features.md)
+
+### Проблема
+
+AI Sidebar хранил режим провайдера в `settings.aiProviderKeys[provider].mode`, но AI Agent не использовал этот режим автоматически. При выбранном `ГигаЧат free` (`mode="webview"`) агент мог идти в API-путь и падал с ошибкой:
+
+```text
+provider_call_failed: callProvider: gigachat needs both clientId (apiKey) and clientSecret
+```
+
+Причина: `AISidebarAgent` зависел от ручной галочки Bridge, а `agentBridgeRunner` всегда строил первый шаг chain как `mode="api"`.
+
+### Решение
+
+Теперь режим провайдера является источником правды для AI Agent:
+
+```text
+provider mode = webview → AI Agent uses Bridge → primary chain step mode=webui
+provider mode = api     → old API/tool path or manual Bridge API path
+```
+
+Измененные файлы:
+
+- `src/components/AISidebarAgent.jsx` — автоматический `effectiveUseBridge` для WebView-провайдеров.
+- `src/components/AISidebar.jsx` — передача `onSettingsChange` в Agent.
+- `src/utils/aiBridge/agentBridgeRunner.js` — primary chain step строится как `webui` для `mode="webview"` и как `api` для `mode="api"`.
+- `src/utils/aiBridge/buildAutoChain.js` — GigaChat API добавляется только при наличии `apiKey/clientId + clientSecret`.
+- `src/components/AISidebarAgent.vitest.jsx` — новые UI-тесты Agent routing.
+- `src/utils/aiBridge/agentBridgeRunner.vitest.js` — тесты primary step.
+- `src/utils/aiBridge/buildAutoChain.vitest.js` — тесты GigaChat credential gate.
+
+### Поведение после исправления
+
+Для `ГигаЧат free` пользователь ничего не настраивает дополнительно:
+
+```text
+Выбран ГигаЧат free / WebView
+        ↓
+AI Agent сам включает Bridge
+        ↓
+Bridge использует зарегистрированный GigaChat webview
+        ↓
+clientId/clientSecret не требуются
+```
+
+Для GigaChat API поведение строгое: API-шаг считается доступным только при наличии обоих секретов.
+
+### Проверка
+
+```text
+npm.cmd run test:vitest -- aiProviders buildAutoChain agentBridgeRunner AISidebarAgent useAIAgent useAiWebviewBridge aiBridgeIpcHandlers agentBridgeErrors
+
+Test Files  7 passed
+Tests       77 passed
+```

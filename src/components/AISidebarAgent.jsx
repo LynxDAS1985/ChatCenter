@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react'
 import useAIAgent from '../hooks/useAIAgent.js'
 import AIConfirmModal from './AIConfirmModal.jsx'
+import { getProviderCfg } from '../utils/aiProviders.js'
 // v1.2.6: «печатающий» эффект для отображения ответа AI постепенно.
 import TypewriterText from './TypewriterText.jsx'
 
@@ -25,24 +26,42 @@ import TypewriterText from './TypewriterText.jsx'
  * @param {Array} recentMessages — для context builder
  * @param {function} onDone — callback когда агент закончил
  * @param {object} [settings] — settings объект (для buildAutoChain в Bridge-режиме)
+ * @param {function} [onSettingsChange] — сохранение sticky Bridge-настройки
  */
-export default function AISidebarAgent({ pendingInvocation, provider, recentMessages, onDone, settings }) {
+export default function AISidebarAgent({ pendingInvocation, provider, recentMessages, onDone, settings, onSettingsChange }) {
   const { state, start, cancel, confirmStep, cancelStep } = useAIAgent()
   // v1.2.2: переключатель Bridge-режима. Default из settings.aiAgentUseBridge (sticky).
   const [useBridge, setUseBridge] = useState(() => Boolean(settings?.aiAgentUseBridge))
+  const providerId = provider || 'anthropic'
+  const providerCfg = getProviderCfg(settings || {}, providerId)
+  const autoWebviewBridge = providerCfg.mode === 'webview'
+  const effectiveUseBridge = autoWebviewBridge || useBridge
+
+  useEffect(() => {
+    setUseBridge(Boolean(settings?.aiAgentUseBridge))
+  }, [settings?.aiAgentUseBridge])
+
+  const handleBridgeChange = (e) => {
+    if (autoWebviewBridge) return
+    const next = e.target.checked
+    setUseBridge(next)
+    if (typeof onSettingsChange === 'function') {
+      onSettingsChange({ ...(settings || {}), aiAgentUseBridge: next })
+    }
+  }
 
   // Автоматически запускаем при появлении pendingInvocation
   useEffect(() => {
     if (!pendingInvocation || !pendingInvocation.source) return
     start({
       source: pendingInvocation.source,
-      provider: provider || 'anthropic',
+      provider: providerId,
       recentMessages: recentMessages || [],
       // v1.2.2:
-      useBridge,
+      useBridge: effectiveUseBridge,
       settings,
     })
-  }, [pendingInvocation, provider, useBridge])
+  }, [pendingInvocation, provider, effectiveUseBridge])
 
   // Если финальный ответ — вызвать onDone
   useEffect(() => {
@@ -100,12 +119,14 @@ export default function AISidebarAgent({ pendingInvocation, provider, recentMess
       >
         <input
           type="checkbox"
-          checked={useBridge}
-          disabled={state.isRunning}
-          onChange={e => setUseBridge(e.target.checked)}
+          checked={effectiveUseBridge}
+          disabled={state.isRunning || autoWebviewBridge}
+          onChange={handleBridgeChange}
           style={{ margin: 0 }}
         />
-        🔁 Через Bridge (с резервом, без tool use)
+        {autoWebviewBridge
+          ? '🔁 Авто: через Bridge/WebView (без API-ключей)'
+          : '🔁 Через Bridge (с резервом, без tool use)'}
       </label>
 
       {/* Streaming прогресса */}

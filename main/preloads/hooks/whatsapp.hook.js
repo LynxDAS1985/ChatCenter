@@ -153,14 +153,18 @@
                 text: t.slice(0, 40)
               });
             }
-            // v0.86.4 ШАГ 1: отсекаем SVG-title фантомы (status-dblcheck, ic-expand-more, default-user).
+            // v1.2.7 / Ловушка 62: отсекаем SVG/UI-фантомы WhatsApp.
             // WhatsApp рендерит иконку как <span data-icon="NAME"><svg><title>NAME</title></svg></span>.
-            // span.textContent внутри SVG возвращает содержимое <title> = имя иконки. Если textContent
-            // буквально равен значению data-icon (собственного или ближайшего родителя) — это SVG-title,
-            // НЕ пользовательский текст. Отсекаем.
+            // Иногда data-icon отсутствует: <span><svg><title>ic-expand-more</title></svg></span>.
+            // Поэтому проверяем и data-icon, и svg title, и известный нейминг служебных иконок.
             var iconParent = sp.closest('[data-icon]');
             var iconName = iconParent ? iconParent.getAttribute('data-icon') : '';
+            var svgTitle = '';
+            try { var svgTitleEl = sp.querySelector('svg title'); svgTitle = svgTitleEl ? (svgTitleEl.textContent || '').trim() : ''; } catch(e) {}
+            var looksLikeIcon = /^(ic-|wds-ic-|status-|default-user$|down-context$|x$)/i.test(t);
             if (iconName && t === iconName) continue;
+            if (svgTitle && t === svgTitle) continue;
+            if (looksLikeIcon) continue;
             if (t.length >= 2 && t.length <= 200 && t !== chatName) {
               if (!lastMsg) lastMsg = t;
             }
@@ -177,6 +181,10 @@
           var prev = _lastSidebarTexts[chatName] || '';
           if (lastMsg !== prev) {
             _lastSidebarTexts[chatName] = lastMsg;
+            if (isOpen && !badge) {
+              try { console.log('__CC_DIAG__wa-sidebar: skip open chat "' + chatName.slice(0,20) + '" text="' + lastMsg.slice(0,30) + '" badge=false'); } catch(e) {}
+              continue;
+            }
             if (prev) {
               _lastEmitTs = now;
               var icon = '';

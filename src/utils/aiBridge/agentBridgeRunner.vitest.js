@@ -115,4 +115,53 @@ describe('runAiAgentViaBridge', () => {
     }, 'r', makeSetState())
     expect(invokeMock.mock.calls[0][1].question.systemPrompt).toContain('помощник менеджера')
   })
+
+  it('provider mode=webview makes webui the primary chain step', async () => {
+    invokeMock.mockResolvedValue({ ok: true, text: 'x', providerId: 'gigachat', mode: 'webui', latencyMs: 1 })
+    await runAiAgentViaBridge({
+      source: {},
+      provider: 'gigachat',
+      recentMessages: [{ text: 'Q', isOutgoing: false }],
+      settings: {
+        aiProvider: 'gigachat',
+        aiProviderKeys: {
+          gigachat: { mode: 'webview', webviewUrl: 'https://giga.chat' },
+        },
+        aiBridgeSelectors: {
+          gigachat: { input: '#prompt' },
+        },
+      },
+    }, 'r', makeSetState())
+    const chain = invokeMock.mock.calls[0][1].chain
+    expect(chain[0]).toEqual({
+      mode: 'webui',
+      config: {
+        providerId: 'gigachat',
+        selectors: { input: '#prompt' },
+      },
+    })
+  })
+
+  it('provider mode=api keeps api as the primary chain step with model', async () => {
+    invokeMock.mockResolvedValue({ ok: true, text: 'x', providerId: 'openai', mode: 'api', latencyMs: 1 })
+    await runAiAgentViaBridge({
+      source: {},
+      provider: 'openai',
+      recentMessages: [{ text: 'Q', isOutgoing: false }],
+      settings: {
+        aiProvider: 'openai',
+        aiProviderKeys: {
+          openai: { mode: 'api', apiKey: 'sk-test', model: 'gpt-4o-mini' },
+        },
+      },
+    }, 'r', makeSetState())
+    const chain = invokeMock.mock.calls[0][1].chain
+    expect(chain[0]).toEqual({
+      mode: 'api',
+      config: {
+        providerId: 'openai',
+        model: 'gpt-4o-mini',
+      },
+    })
+  })
 })

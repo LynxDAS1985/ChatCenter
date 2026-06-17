@@ -5,6 +5,56 @@
 
 ---
 
+## 🟡 ЛОВУШКА #31 (v1.2.7, 17 июня 2026): WhatsApp `ic-expand-more` / `wds-ic-*` — SVG/UI текст прошёл как новое сообщение
+
+### Симптом
+
+При входе в WhatsApp-чат появляется ribbon с несуществующим сообщением:
+
+```text
+14:40 ic-expand-more
+14:40 Фото
+```
+
+Реальный лог пользователя:
+
+```text
+wa-open: chat="Виноградов Александр" picked="ic-expand-more"
+Источник: ic-expand-more | __CC_NOTIF__
+Ribbon: ic-expand-more | отправлен
+wa-open: chat="Виноградов Александр" picked="Фото"
+Ribbon: Фото | отправлен
+```
+
+### Причина
+
+WhatsApp sidebar watcher читает DOM строки чата через широкий селектор `span[dir], span[class]`. При открытии чата WhatsApp перерисовывает sidebar, и watcher может выбрать не текст сообщения, а служебный текст иконки (`ic-expand-more`, `wds-ic-*`) или старое preview открытого чата (`Фото`).
+
+Это продолжение Ловушки 62 из `archive/features-pre-v0.87.md`:
+- `dir="auto"` уже проверяли и откатили — для открытого WhatsApp-чата preview не всегда лежит в `span[dir="auto"]`.
+- `closest('[data-icon]')` недостаточно — `ic-expand-more` бывает как `<span><svg><title>ic-expand-more</title></svg></span>` без `data-icon`.
+
+### Решение v1.2.7
+
+Точечный фикс в `main/preloads/hooks/whatsapp.hook.js`:
+
+1. Отсекать SVG title без `data-icon`: `svg title` + `t === svgTitle`.
+2. Отсекать служебные icon-name тексты: `ic-*`, `wds-ic-*`, `status-*`, `default-user`, `down-context`, `x`.
+3. Если строка чата открыта (`isOpen === true`) и unread badge нет — обновить `_lastSidebarTexts`, но не слать `__CC_NOTIF__`.
+
+### Почему не выключаем WhatsApp watcher целиком
+
+Watcher нужен для WhatsApp/MAX/VK сценариев, где Notification API или unread count не дают отдельный ribbon, особенно при активной вкладке. Полное отключение уменьшит фантомы, но может пропустить реальные сообщения. Поэтому выбран узкий фильтр доказанных UI-фантомов и только открытой строки без badge.
+
+### Регрессионная защита
+
+`src/__tests__/notifHooks.test.cjs` проверяет:
+- SVG title без `data-icon`;
+- `wds-ic-*`/`status-*` icon-name фильтр;
+- `isOpen && !badge` skip для открытой строки.
+
+---
+
 ## 🟡 ЛОВУШКА #30 (v0.98.0, 9 июня 2026): «Уведомление не пришло в ЦентрЧатов» — `isOutgoing=true` для cross-session сообщений того же аккаунта
 
 ### Симптом
@@ -1218,4 +1268,3 @@ style={{
 **Ключевой урок**: SPA-мессенджеры используют виртуальный скроллинг. `querySelectorAll` находит только ВИДИМЫЕ элементы. Для навигации к невидимому чату нужен альтернативный метод через peer ID формат.
 
 ---
-

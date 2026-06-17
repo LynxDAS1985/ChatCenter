@@ -4,6 +4,7 @@
 // Pure-ish — зависит только от window.api + setState (передаётся).
 
 import { buildAutoChain } from './buildAutoChain.js'
+import { getProviderCfg } from '../aiProviders.js'
 
 /**
  * Запустить AI Agent через Bridge (простой Q&A, без tool use).
@@ -34,12 +35,26 @@ export async function runAiAgentViaBridge(params, requestId, setState) {
 
   const settings = params?.settings || {}
   const provider = params?.provider || 'anthropic'
+  const providerCfg = getProviderCfg(settings, provider)
+  const primary = providerCfg.mode === 'webview'
+    ? {
+        mode: 'webui',
+        providerId: provider,
+        config: {
+          providerId: provider,
+          selectors: settings?.aiBridgeSelectors?.[provider],
+        },
+      }
+    : {
+        mode: 'api',
+        providerId: provider,
+        config: {
+          providerId: provider,
+          model: providerCfg.model,
+        },
+      }
 
-  const chain = buildAutoChain(settings, {
-    mode: 'api',
-    providerId: provider,
-    config: { providerId: provider },
-  })
+  const chain = buildAutoChain(settings, primary)
 
   // Stream шаг: старт
   setState(s => ({

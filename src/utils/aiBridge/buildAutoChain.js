@@ -37,8 +37,9 @@ export function buildAutoChain(settings, primary) {
   for (const providerId of ALL_API_PROVIDERS) {
     const pk = providerKeys[providerId]
     if (!pk) continue
-    const hasKey = (pk.apiKey && String(pk.apiKey).trim()) ||
-                   (providerId === 'gigachat' && pk.clientSecret && String(pk.clientSecret).trim())
+    const hasKey = providerId === 'gigachat'
+      ? Boolean(pk.apiKey && String(pk.apiKey).trim() && pk.clientSecret && String(pk.clientSecret).trim())
+      : Boolean(pk.apiKey && String(pk.apiKey).trim())
     if (!hasKey) continue
     const step = { mode: 'api', config: { providerId } }
     const k = stepKey(step)

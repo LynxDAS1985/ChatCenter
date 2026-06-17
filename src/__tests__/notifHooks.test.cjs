@@ -74,6 +74,10 @@ test('WA: sidebar observer attached', () => assert(waCode.includes('observer att
 test('WA: sidebar DIAG логирует открытый чат', () => assert(waCode.includes('__CC_DIAG__wa-open'), 'WhatsApp sidebar должен логировать DOM активной строки через __CC_DIAG__wa-open'))
 // v0.86.4 ШАГ 1: SVG-title фантомы (status-dblcheck, ic-expand-more) — textContent === data-icon значит это SVG <title>.
 test('WA: sidebar отсекает SVG-title фантомы (textContent === data-icon)', () => assert(waCode.includes('t === iconName'), 'WhatsApp sidebar должен отсекать span где textContent совпадает с data-icon родителя (Ловушка 62, Шаг 1)'))
+// v1.2.7: Шаг 1b — ic-expand-more бывает без data-icon, только как svg <title>.
+test('WA: sidebar отсекает SVG-title фантомы без data-icon', () => assert(waCode.includes('svg title') && waCode.includes('t === svgTitle'), 'WhatsApp sidebar должен отсекать svg title без data-icon (ic-expand-more)'))
+test('WA: sidebar отсекает служебные icon-name тексты', () => assert(waCode.includes('looksLikeIcon') && waCode.includes('wds-ic-') && waCode.includes('status-'), 'WhatsApp sidebar должен блокировать служебные icon-name тексты'))
+test('WA: sidebar не шлёт ribbon из открытой строки без unread badge', () => assert(waCode.includes('isOpen && !badge') && waCode.includes('skip open chat'), 'WhatsApp sidebar должен подавлять открытую строку без badge, чтобы не слать старое preview'))
 
 // ── v0.85.7: _isSpam НЕ блокирует 1-символьные сообщения ──
 console.log('\n── _isSpam: 1-символьные сообщения (ловушка 56): ──')

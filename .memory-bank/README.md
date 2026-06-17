@@ -26,6 +26,7 @@
 | `api.md` | IPC-каналы, форматы сообщений, DTO | При работе с IPC |
 | `messengers.md` | Интеграция мессенджеров: селекторы DOM | При работе с WebView |
 | `ai-integration.md` | Провайдеры ИИ, промпты | При работе с ИИ |
+| `ai-bridge.md` | AI Bridge: Local/API/WebUI, fallback chain, WebView Bridge, Agent через Bridge | При работе с AI Bridge, WebView/free провайдерами, `ai-bridge:*` IPC |
 | `autoreply.md` | Логика авто-ответчика | При работе с авто-ответом |
 | `ui-components.md` | UI-компоненты, цвета, стили | При работе с UI |
 | `native-mode-plan.md` | План нативного режима (в разработке) | При работе над native |

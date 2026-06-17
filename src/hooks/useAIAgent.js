@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { runAiAgentViaBridge } from '../utils/aiBridge/agentBridgeRunner.js'
+import { formatAiAgentBridgeError } from '../utils/aiBridge/agentBridgeErrors.js'
 
 /**
  * @returns {{
@@ -89,7 +90,7 @@ export default function useAIAgent() {
           ...s,
           isRunning: false,
           finalAnswer: result.ok ? result.text : null,
-          error: result.ok ? null : (result.error?.message || result.error?.code || 'bridge_error'),
+          error: result.ok ? null : formatAiAgentBridgeError(result),
         }))
       } catch (e) {
         setState(s => ({

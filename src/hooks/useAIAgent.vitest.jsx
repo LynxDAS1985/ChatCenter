@@ -273,6 +273,31 @@ describe('useAIAgent — Bridge режим (v1.2.2)', () => {
     expect(result.current.state.error).toContain('нет сети')
   })
 
+  it('Bridge: webview не готов → понятная ошибка для пользователя', async () => {
+    invokeMock.mockResolvedValue({
+      ok: false, text: '',
+      providerId: 'gigachat',
+      mode: 'webui',
+      error: {
+        code: 'config_invalid',
+        message: 'WebView для gigachat не открыт',
+        retryable: false,
+      },
+    })
+    const { result } = renderHook(() => useAIAgent())
+    await act(async () => {
+      await result.current.start({
+        source: { messengerId: 'native_cc' },
+        provider: 'gigachat',
+        recentMessages: [{ text: 'Q', isOutgoing: false }],
+        useBridge: true,
+        settings: { aiProviderKeys: { gigachat: { mode: 'webview' } } },
+      })
+    })
+    expect(result.current.state.error).toContain('ГигаЧат открыт как сайт')
+    expect(result.current.state.error).toContain('мост ещё не готов')
+  })
+
   it('Bridge: invoke throws → error в state', async () => {
     invokeMock.mockRejectedValue(new Error('IPC сломан'))
     const { result } = renderHook(() => useAIAgent())

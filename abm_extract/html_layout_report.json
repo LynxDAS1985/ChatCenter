@@ -1,0 +1,50 @@
+[
+  {
+    "page": 8,
+    "scale": 0.55,
+    "src": "d. Minimize breast pump usage.",
+    "ru": "д. Сведите к минимуму использование молокоотсоса."
+  },
+  {
+    "page": 8,
+    "scale": 0.59,
+    "src": "e. Avoid the use of nipple shields.",
+    "ru": "е. Избегайте использования накладок на соски."
+  },
+  {
+    "page": 9,
+    "scale": 0.6,
+    "src": "f. Wear an appropriately fitting supportive bra.",
+    "ru": "ф. Носите поддерживающий бюстгальтер подходящего размера."
+  },
+  {
+    "page": 10,
+    "scale": 0.57,
+    "src": "b. Treat associated nipple blebs and avoid unroofing.",
+    "ru": "б. Обработайте связанные с ними пузырьки на сосках и избегайте их снятия."
+  },
+  {
+    "page": 11,
+    "scale": 0.61,
+    "src": "d. Utilize therapeutic ultrasound.",
+    "ru": "д. Используйте терапевтический ультразвук."
+  },
+  {
+    "page": 14,
+    "scale": 0.55,
+    "src": "Summary",
+    "ru": "Краткое содержание"
+  },
+  {
+    "page": 15,
+    "scale": 0.55,
+    "src": "Disclosure Statement",
+    "ru": "Заявление о раскрытии информации"
+  },
+  {
+    "page": 15,
+    "scale": 0.6,
+    "src": "Funding Information",
+    "ru": "Информация о финансировании"
+  }
+]

@@ -1,0 +1,1380 @@
+
+
+===== PAGE 1 =====
+ABM Protocol
+Open camera or QR reader and
+scan code to access this article
+and other resources online.
+Academy of Breastfeeding Medicine Clinical Protocol #36:
+The Mastitis Spectrum, Revised 2022
+Katrina B. Mitchell,1 Helen M. Johnson,2 Juan Miguel Rodrı´guez,3 Anne Eglash,4
+Charlotte Scherzinger,5 Irena Zakarija-Grkovic,6 Kyle Widmer Cash,7 Pamela Berens,8
+Brooke Miller,9 and the Academy of Breastfeeding Medicine
+Abstract
+A central goal of the Academy of Breastfeeding Medicine is the development of clinical protocols for managing
+common medical problems that may impact breastfeeding success. These protocols serve only as guidelines for the
+care of breastfeeding mothers and infants and do not delineate an exclusive course of treatment or serve as standards
+of medical care. Variations in treatment may be appropriate according to the needs of an individual patient. The
+Academy of Breastfeeding Medicine recognizes that not all lactating individuals identify as women. Using gender-
+inclusive language, however, is not possible in all languages and all countries and for all readers. The position of the
+Academy of Breastfeeding Medicine (https://doi.org/10.1089/bfm.2021.29188.abm) is to interpret clinical protocols
+within the framework of inclusivity of all breastfeeding, chestfeeding, and human milk-feeding individuals.
+Keywords: abscess, breastfeeding, dysbiosis, engorgement, galactocele, lactation, mastitis, phlegmon
+Introduction
+M
+astitis is a common maternal complication of lac-
+tation and contributes to early cessation of breast-
+feeding.1 In the past, mastitis has been regarded as a single
+pathological entity in the lactating breast.2 However, scien-
+tiﬁc evidence now demonstrates that mastitis encompasses a
+spectrum of conditions resulting from ductal inﬂammation and
+stromal edema (Fig. 1). If ductal narrowing and alveolar con-
+gestion are worsened by overstimulation of milk production,
+then inﬂammatory mastitis can develop, and acute bacterial
+mastitis may follow (Fig. 2). This can progress to phlegmon or
+abscess, particularly in the setting of tissue trauma from ag-
+gressive breast massage. Galactoceles, which can result from
+unresolved hyperlactation, can become infected. Subacute
+mastitis occurs in the setting of chronic mammary dysbiosis,
+with bacterial bioﬁlms narrowing ductal lumens.
+The pathophysiology, diagnosis, and management of each
+condition in the mastitis spectrum (ductal narrowing, inﬂam-
+matory mastitis, bacterial mastitis, phlegmon, abscess, gal-
+actocele, and subacute mastitis) will be discussed hereunder.
+Early postpartum engorgement, a distinct condition that can
+share some clinical features with mastitis spectrum disorders,
+will also be reviewed.
+Note that this protocol now replaces ABM Protocols #4,
+Mastitis, and #20, Engorgement, which will both be re-
+tired. ABM Protocols #32 (Management of Hyperlacta-
+tion)3 and #35 (Supporting Breastfeeding During Maternal or
+Child Hospitalization)4 may serve as useful adjuncts to this
+protocol.
+1Department of Breast Surgery, Ridley-Tree Cancer Center, Sansum Clinic, Santa Barbara, California, USA.
+2Department of Surgery, East Carolina University Brody School of Medicine, Greenville, North Carolina, USA.
+3Department of Nutrition and Food Science, Complutense University of Madrid, Madrid, Spain.
+4Department of Family Medicine and Community Health, University of Wisconsin School of Medicine and Public Health, Madison,
+Wisconsin, USA.
+5Department of Gynaecology and Obstetrics at Klinikum Forchheim, Forchheim, Germany.
+6Department of Clinical Skills, University of Split School of Medicine, Split, Croatia.
+7Department of Medicine, Tulane University School of Medicine, Southeast, Louisiana Veterans Health Care System, New Orleans,
+Louisiana, USA.
+8Department of Obstetrics and Gynecology, University of Texas, Houston, Texas, USA.
+9Department of Family Medicine, University of Calgary, Calgary, Alberta, Canada.
+BREASTFEEDING MEDICINE
+Volume 17, Number 5, 2022
+ª Mary Ann Liebert, Inc.
+DOI: 10.1089/bfm.2022.29207.kbm
+360
+
+
+===== PAGE 2 =====
+Key Information: Pathophysiology of Mastitis
+Spectrum Conditions
+General principles
+Mastitis is inﬂammation of the mammary gland that most
+often presents in a segmental distribution of ducts, alveoli,
+and surrounding connective tissue (Fig. 3). Ductal lumens
+can be narrowed by edema and hyperemia associated with
+hyperlactation as well as mammary dysbiosis5 (Fig. 2).
+Mammary dysbiosis, or disruption of the milk microbiome,
+results from a complex interplay of factors, including ma-
+ternal genetics and medical conditions, exposure to antibi-
+otics, use of probiotics, regular use of breast pumps, and
+Cesarean births.6
+Basic science research has demonstrated that multiple fac-
+tors contribute to the development of mastitis (Fig. 4).6 These
+include host factors such as hyperlactation, microbial factors
+such as diversity of the milk microbiome, and medical factors
+such as antibiotic and probiotic use. Milk stasis has been
+postulated to be a potential instigating factor for mastitis,
+although scientiﬁc evidence has not proven a causation. No
+evidence exists that speciﬁc foods cause mastitis, although
+dietary choices may reﬂect the underlying health and micro-
+biome of an individual. The lactating breast is a dynamic gland
+that responds to internal and external hormonal stimulation.
+Compared with a static repository such as the urinary blad-
+der, the breast requires feedback inhibition to regulate milk
+production. Reducing milk removal may transiently increase
+pain and erythema from alveolar distention and vascular con-
+gestion; however, it ultimately prevents future episodes as
+feedback inhibitor of lactation (FIL) and other regulatory hor-
+mones activate and decrease milk production.7 Mothers who
+experience persistent high milk production despite eliminating
+iatrogenic causes of excessive milk removal may require ad-
+ditional pharmacological treatment of hyperlactation.3 These
+concepts will be expanded upon throughout this protocol.
+FIG. 2.
+Compared with a healthy lactiferous duct (A), ductal inﬂammation can result in narrowed lumens, stromal edema,
+dysbiosis, nipple bleb formation, and mastitis (B).
+FIG. 1.
+Spectrum of inﬂammatory conditions in the lac-
+tating breast.
+ABM PROTOCOL
+361
+
+
+===== PAGE 3 =====
+Engorgement
+Some symptoms of early postpartum engorgement may be
+similar to those of ductal narrowing and early inﬂammatory
+mastitis. However, postpartum engorgement that results from
+secretory activation (lactogenesis II) is a distinct clinical
+entity related to interstitial edema and hyperemia (Fig. 5).
+It presents as bilateral breast pain, ﬁrmness, and swelling
+that usually occurs between days 3 and 5 postpartum.8 Onset
+may be as late as 9–10 days, although this is less common
+in multiparous mothers.8 Cesarean birth is associated with
+delayed lactogenesis II and, therefore, delayed presentation
+FIG. 3.
+Right breast upper inner
+quadrant mastitis with ultrasound
+showing
+hyperemia
+and
+edema
+without ﬂuid collection.
+FIG. 4.
+Factors that may play a role in the composition of the human milk microbiota and in protecting or predisposing to
+mastitis.
+362
+ABM PROTOCOL
+
+
+===== PAGE 4 =====
+of engorgement.9 If engorgement is managed appropriately,
+it should not progress to other conditions on the mastitis
+spectrum such as bacterial mastitis, phlegmon, or galactocele.
+Ductal narrowing (e.g., ‘‘plugging’’)
+‘‘Plugging’’ is a colloquial term for microscopic ductal
+inﬂammation and narrowing (Fig. 2) that is related to alveolar
+distension and/or mammary dysbiosis.
+Ducts in the breast are innumerable and interlacing
+(Figs. 6–8) and it is not physiologically or anatomically pos-
+sible for a single duct to become obstructed with a macro-
+scopic milk ‘‘plug.’’ It should be noted that ultrasound studies
+documenting a small number of oriﬁces approaching the
+nipple10 reﬂect limitations of radiographic images as com-
+pared with histological anatomy.
+Ductal narrowing presents as a focal area of induration or
+more globally congested breast tissue that is tender. It may be
+mildly erythematous from lymphatic congestion and alveolar
+edema, and does not have associated systemic symptoms
+(Fig. 9). This may resolve spontaneously, but patients can
+experience transient residual pain. Patients may feel relief
+of a ‘‘plug’’ with breastfeeding because this decreases alve-
+olar distension. However, repeated feeding in an attempt
+to relieve the ‘‘plug’’ will suppress FIL, increase milk pro-
+duction, and ultimately exacerbate inﬂammation and ductal
+narrowing. Therefore, physiological breastfeeding and anti-
+inﬂammatory measures as described hereunder are most
+efﬁcacious. Attempts to extrude a ‘‘plug’’ or milk precipitate
+by squeezing or aggressively massaging the breast are inef-
+fective and result in tissue trauma.
+Inﬂammatory mastitis
+When ductal narrowing persists or worsens and surround-
+ing inﬂammation progresses, inﬂammatory mastitis develops.
+Inﬂammatory mastitis presents as an increasingly erythem-
+atous, edematous, and painful region of the breast (Fig. 10)
+with systemic signs and symptoms such as fever, chills, and
+tachycardia. It should be emphasized that systemic inﬂam-
+matory response syndrome may occur in the absence of
+infection.
+Bacterial mastitis
+Bacterial mastitis represents a progression from ductal
+narrowing and inﬂammatory mastitis to an entity necessi-
+tating antibiotics or probiotics to resolve. Common organ-
+isms in lactational mastitis include Staphylococcus (e.g.,
+S. aureus, S. epidermidis, S. lugdunensis, and S. hominis) and
+Streptococcus (e.g., S. mitis, S. salivarius, S. pyogenes, and
+S. agalactiae). Despite the common perception that yeasts
+cause ‘‘candida mastitis,’’ no scientiﬁc evidence exists to
+support this diagnosis and sterilization of pump parts or infant
+toys is not recommended to ‘‘eradicate’’ yeast.5,11
+Bacterial mastitis is not a contagious entity and does not
+pose a risk to the infant nor require an interruption in
+breastfeeding. There is no evidence to support poor hygiene
+as a cause of bacterial mastitis or the need for routine ster-
+ilization of pumps. Handwashing before milk expression and
+basic pump cleaning practices should be followed.
+Although nipple trauma is associated with mastitis, the
+data are limited by confounding and bias.1 New evidence
+about the composition of the human milk microbiome dem-
+onstrates that mastitis is not caused by retrograde spread of
+pathogenic bacteria from visible nipple trauma, as bacteria
+and fungi identiﬁed on the nipple-areolar-complex in the
+presence of nipple pain and damage are regularly identiﬁed
+in healthy human milk microbiomes.12 Infection may not
+occur in the event of a low concentration of the pathogen,
+presence of nonvirulent or weakly virulent strains, presence
+of a competitive microbiota, or adequate immunological and
+nutritional status of the host.13 Therefore, two patients who
+host the same pathogen may express different levels of
+symptomatology.
+Bacterial mastitis presents as cellulitis (worsening ery-
+thema and induration) in a speciﬁc region of the breast that
+may spread to different quadrants (Fig. 11). An evaluation
+by a medical professional should be performed if there are
+persistent systemic symptoms (>24 hours) such as fever and
+tachycardia. In the absence of systemic signs and symptoms,
+diagnosis should be considered if the breast is not responding
+to conservative measures described hereunder. Laboratory
+FIG. 5.
+Day 5 postpartum breast engorgement showing
+edematous nipple areolar complex and dependent lymphe-
+dema with overlying erythema.
+FIG. 6.
+Cross section of nipple areolar complex with ar-
+rows demonstrating extremely small interlacing ducts in the
+retroareolar region.
+ABM PROTOCOL
+363
+
+
+===== PAGE 5 =====
+testing such as C-reactive protein or a white blood cell count
+are of limited utility in diagnosing bacterial mastitis as these
+are markers of inﬂammation and not speciﬁc for infection.
+Phlegmon
+Phlegmons are heterogeneous, complex, and ill-deﬁned
+ﬂuid collections that can occur throughout the body in the
+setting of inﬂammation. Excessive deep tissue massage in the
+setting of ductal narrowing and inﬂammatory mastitis may
+propagate phlegmon formation because deep massage
+potentiates worsened edema and microvascular injury.14
+Phlegmon should be suspected with a history of mastitis
+that worsens into a ﬁrm, mass-like area without ﬂuctuance
+(Fig. 12). It can be conﬁrmed on ultrasound (Fig. 12).
+Abscess
+Lactational abscesses represent a progression from bacte-
+rial mastitis or phlegmon to an infected ﬂuid collection that
+necessitates drainage. Approximately 3–11% of women with
+acute mastitis will develop an abscess.15
+Abscess presents as a progressive induration and erythema,
+and often a palpable ﬂuid collection in a well-deﬁned area of
+the breast (Fig. 13).16 The initial systemic symptoms and
+FIG. 7.
+Histology image demon-
+strating
+functional
+lobular
+units
+with small central duct, surround-
+ing fat, and ﬁbrous stroma (con-
+nective tissue).
+FIG. 8.
+Histology image demon-
+strating innumerable small ducts
+draining into larger ductal systems
+that have complex architecture.
+364
+ABM PROTOCOL
+
+
+===== PAGE 6 =====
+fever may resolve as the body walls off the infectious pro-
+cess, or may resolve and then recur. Alternatively, symptoms
+may continue to worsen until the infected ﬂuid collection
+is drained. Although the diagnosis of abscess is often made by
+history and clinical examination, ultrasound also may be
+utilized (Fig. 14).17
+Galactocele and infected galactocele
+A galactocele develops when ductal narrowing obstructs
+the ﬂow of milk to the extent that a signiﬁcant volume of
+obstructed milk collects in a cyst-like cavity.18 Galactoceles
+can range in size from small (1–2 cm) to very large (>10 cm).
+Galactoceles present as a moderately ﬁrm mass that
+gradually or rapidly increases in size over time. The size may
+ﬂuctuate throughout the day, with a temporary decrease after
+breastfeeding. It may be uncomfortable, but is generally not
+as overtly painful as an abscess and does not have associated
+erythema or systemic symptoms unless it becomes infected
+(Fig. 15). Ultrasound will show a simple or loculated cystic
+ﬂuid collection (Fig. 16). On occasion, image-guided aspi-
+ration may be utilized to conﬁrm the diagnosis.
+Recurrent mastitis
+There is no consensus on the deﬁnition of recurrent mas-
+titis. Patients may describe having mastitis symptoms such as
+fever, breast redness, breast swelling, and/or breast pain that
+occur every 2–4 weeks, or less often. Risk factors include
+waxing and waning episodes of hyperlactation, dysbiosis,
+inadequate treatment of prior mastitis, and failure to address
+the underlying etiology of prior episodes.
+Subacute mastitis
+Subacute mastitis occurs when ductal lumens become nar-
+rowed by bacterial bioﬁlms in the setting of chronic mammary
+dysbiosis.5 Dysbiosis is deﬁned as changes in the quantitative
+and qualitative composition of a host microbiome that con-
+tributetoinﬂammatory diseasebothacutely andchronically.As
+in other organs, when the mammary microbiome loses bacterial
+diversity and the number of anti-inﬂammatory organisms de-
+clines, an increase in pathogenic bacteria occurs.19,20
+Under physiological conditions, coagulase-negative Sta-
+phylococci (CoNS) and viridans Streptococci (i.e., S. mitis
+and S. salivarius) form thin bioﬁlms that line the epithelium
+of the mammary ducts, allowing a normal milk ﬂow.21 In the
+setting of dysbiosis, these species proliferate and function
+under opportunistic circumstances whereby they are able to
+form thick bioﬁlms inside the ducts, inﬂaming the mammary
+epithelium and forcing milk to pass through an increasingly
+narrower lumen (Fig. 17). CoNS and viridans Streptococci
+do not produce toxins responsible for acute bacterial masti-
+tis; therefore, systemic symptoms are uncommon and local
+breast symptoms are milder than in acute mastitis.
+With subacute mastitis, patients may report a history of
+previously treated acute bacterial mastitis. Other pertinent
+history includes Cesarean birth, exclusive pumping, nip-
+ple shield use, and other circumstances that alter the milk
+microbiome.6 Patients may have needle-like, burning breast
+pain, nipple blebs, recurrent areas of induration or congestion,
+and may have unresolved hyperlactation.22 Sterile milk cul-
+ture and sensitivities can be performed23 as noted hereunder.
+Recommendations
+For each recommendation, the quality of evidence (levels
+of evidence 1, 2, and 3) and the strength of recommendation
+(A, B, and C) are noted as deﬁned by the strength of rec-
+ommendation taxonomy criteria.24
+Management of mastitis spectrum disorders includes
+general strategies that apply to the entire spectrum, as well as
+condition-speciﬁc interventions. Prompt and effective treat-
+ment will halt progression in the spectrum. Many of these
+measures provide not only treatment, but prevention as well.
+Spectrum-wide management strategies will be delineated
+ﬁrst, followed by speciﬁc recommendations for particular
+FIG. 9.
+Patient with unilateral left breast ‘‘plug’’ in upper
+outer quadrant who worsened milk obstruction by repeat-
+edly pumping.
+FIG. 10.
+Patient with early in-
+ﬂammatory
+mastitis.
+Lymphatic
+congestion is noted by arrow. The
+patient was treated with ice, ibu-
+profen, acetaminophen, and feed-
+ing ﬁrst off the left, less congested
+breast ﬁrst to avoid overstimulation
+of the affected right breast. The
+patient’s symptoms resolved within
+48 hours.
+ABM PROTOCOL
+365
+
+
+===== PAGE 7 =====
+conditions (ductal narrowing, inﬂammatory mastitis, bacterial
+mastitis, phlegmon, abscess, galactocele, subacute mastitis,
+and recurrent mastitis). Recommendations for management of
+early postpartum engorgement are also included hereunder.
+Spectrum-wide recommendations
+1. Anticipatory guidance and behavioral interventions
+a. Reassure mothers that many mastitis symptoms will
+resolve with conservative care and psychosocial sup-
+port.
+A Swedish study noted that most women with in-
+ﬂammatory mastitis had complete resolution of
+symptoms without need for antibiotics or other inter-
+ventions. The authors attributed this ﬁnding to a focus
+on symptomatic control, appreciation of the physio-
+logical anti-inﬂammatory response, and regular com-
+munication between patient and clinician25 (Fig. 10).
+Support patients in continuation of breastfeeding and
+ascertain what resources they may need to prevent
+early weaning. Assist mothers in identifying ways to
+decrease stress, increase opportunities to rest, and help
+resolve early signs of inﬂammatory mastitis. Fourth-
+trimester care programs represent a holistic approach
+to postpartum care, including mental health, psycho-
+social needs, and breastfeeding counseling.26
+Level of evidence: 3. Strength of recommendation: C.
+b. Educate patients on normal breast anatomy and
+postpartum physiology in lactation.
+Many patients experience breast fullness or palpate
+normal lactational glandular tissue and misinterpret
+this as ‘‘plugging.’’ They should be reassured that
+lactating breasts can feel ‘‘lumpy’’ and even painful at
+times. Although this is uncomfortable, it is not ab-
+normal. Patients should be educated about early
+postpartum hormonal shifts and a low estrogen state
+that predisposes patients to sweating and hot ﬂashes
+that may mimic fevers. In addition, patients should be
+reassured that infection does not develop in the period
+of several hours. The pain and redness they may ex-
+perience in mornings after a long stretch of sleep
+represents alveolar distention, edema, and inﬂamma-
+tion rather than infection.
+Level of evidence: 3. Strength of recommendation: C.
+c. Feed the infant on demand, and do not aim to
+‘‘empty’’ breasts.
+FIG. 12.
+Clinical appearance of
+left breast upper inner quadrant
+phlegmon. Ultrasound showing in-
+distinct ﬂuid collection with sur-
+rounding hyperemia and edema.
+FIG. 11.
+Bacterial mastitis that progressed from early
+inﬂammation in the inner quadrant to all quadrants being
+affected. This patient also pumped and continually fed the
+infant on the right breast in an attempt to prevent ‘‘milk
+stasis.’’ This approach resulted in worsened ductal inﬂam-
+mation and bacterial overgrowth as well as milk obstruction.
+366
+ABM PROTOCOL
+
+
+===== PAGE 8 =====
+Milk volume depends on a feedback mechanism
+whereby increased milk removal increases produc-
+tion.7 Overfeeding from the affected breast or
+‘‘pumping to empty’’ perpetuates a cycle of hy-
+perlactation and is a major risk factor for worsening
+tissue edema and inﬂammation (Fig. 18). Mothers can
+hand express small volumes of milk for comfort until
+their milk production downregulates to match the
+infant’s needs.27 Mothers using breast pumps should
+express only the volume their infant consumes.
+In some instances, in which the retroareolar region
+is so edematous and inﬂamed that no milk is ex-
+pressible by infant breastfeeding or hand expres-
+sion, the mother should not continue to attempt
+feeding from the affected breast during the acute
+phase (Fig. 19). She can feed from the contralateral
+breast and return to feeding from the affected breast
+when edema and inﬂammation subsides. Edema
+may resolve more quickly with ice and lymphatic
+drainage. She should be counseled that a decrease in
+milk production is expected, but can later be aug-
+mented.
+No evidence exists to support ‘‘dangle feeding’’
+(i.e., feeding an infant on the ﬂoor with the mother
+hovering above) or other unsafe infant positions.
+Patients may consider safe variations on standard
+feeding positions, with the understanding that this
+may improve comfort. However, this does not ad-
+dress underlying inﬂammation.
+Levels of evidence: 2–3. Strength of recommendation:
+C.
+d. Minimize breast pump usage.
+Mechanical breast pumps stimulate breast milk pro-
+duction without physiologically extracting milk as an
+infant will. Pumping does not provide the opportu-
+nity for bacterial exchange between the infant’s mouth
+and mother’s breast, and may, therefore, predispose to
+dysbiosis.6 Breast pumps also can cause trauma to
+breast parenchyma and the nipple areolar complex if
+improper ﬂange sizes are used, suction is too high,
+or the mother is pumping for an excessive duration
+of time. Milk expression should be limited to when
+mother is separated from her infant or requires pump-
+ing for other medically indicated reasons for herself or
+her infant. Women should not be instructed to express
+and discard their milk, as bacterial mastitis is not a
+contraindication to breastfeeding. Women using a
+breast pump should express milk at a frequency and
+volume that mimics physiological breastfeeding.
+Levels of evidence: 2–3. Strength of recommendation:
+C.
+e. Avoid the use of nipple shields.
+Available evidence does not support the use of
+nipple shields. Neither safety nor effectiveness has
+been demonstrated. Similar to pumping, nipple
+FIG. 14.
+Ultrasound image showing ﬂuid collection
+(black) with needle entering (white).
+FIG. 13.
+Patient with right breast
+upper outer quadrant abscess who
+underwent
+ofﬁce
+drainage
+with
+Penrose drain stent that was re-
+moved after 3 days. At 1 week
+follow-up, the right breast was re-
+solved and the 1 mm stab incision
+site closed.
+ABM PROTOCOL
+367
+
+
+===== PAGE 9 =====
+shields represent nonphysiological breastfeeding
+and result in inadequate breast milk extraction.28
+Infants often passively drink milk from the shield
+repository without latching to the parenchyma of
+the breast.
+Level of evidence: 3. Strength of recommendation:
+C.
+f. Wear an appropriately ﬁtting supportive bra.
+Lactating breasts are highly vascular and require
+support to avoid dependent lymphedema as well as
+progressive back and neck pain.
+Level of evidence: 3. Strength of recommendation:
+C.
+g. Avoid deep massage of the lactating breast.
+Deep massage causes increased inﬂammation, tissue
+edema, and microvascular injury. Avoid electric
+toothbrushes and other commercial vibrating or
+massaging devices. A systematic review concluded
+that although breast massage may reduce pain, it
+should not be recommended as standard of care
+because it requires extensive training to master
+atraumatic approach.29 The most successful tech-
+nique approximates manual lymphatic drainage
+with light sweeping of the skin rather than deep
+tissue massage.30,31 It should be noted that gentle
+compressions during breast pump usage, often
+termed ‘‘hands on pumping,’’ provide an effect
+similar to hand expression and is safe if excessive
+manual force is avoided.
+Levels of evidence: 1–2. Strength of recommenda-
+tion: B.
+h. Avoid saline soaks, castor oil, and other topical
+products.
+Mastitis is inﬂammation and/or infection in a deep
+organ space, and should be managed as such.
+Topical products such as castor oil will not treat
+this condition and may in fact cause tissue dam-
+age32 particularly if they are combined with
+massage.14 Silicone breast pumps ﬁlled with Ep-
+som salt can macerate skin33 and further contrib-
+ute to localized hyperemia and edema, and should
+be avoided. Published evidence and best practice
+for general wound care do not support the use of
+saline soaking for pain or nipple trauma. Princi-
+ples of wound management include handling tis-
+sue delicately to minimize further trauma and
+consideration of ointments and dermal matrices to
+enhance wound closure.33
+Level of evidence: 3. Strength of recommendation:
+C.
+i. Avoid routine sterilization of pumps and household
+items.
+Mastitis is not contagious and does not result from
+unhygienic
+practices.
+Pump
+parts
+should
+be
+cleaned appropriately after each use, but routine
+sterilization of pumps and other household items
+is not necessary to prevent mastitis.34 Avoid
+cleaning of nipple as this may cause skin macer-
+ation and pain. Ascending infection is not sup-
+ported by the highly vascular nature of nipple
+physiology and anatomy.35 Similar to other open
+sites of trauma in the body (e.g., tracheostomies
+and gastric tube entrance sites), external commu-
+nication prevents deep tissue infection rather than
+promotes it.
+FIG. 16.
+Mammogram showing
+galactocele adjacent to nipple are-
+olar
+complex
+and
+ultrasound
+showing septation within galacto-
+cele.
+FIG. 15.
+Galactocele that was repeatedly drained with a
+needle and subsequently became infected.
+368
+ABM PROTOCOL
+
+
+===== PAGE 10 =====
+Level of evidence: 3. Strength of recommendation:
+C.
+2. Medical interventions
+a. Decrease inﬂammation and pain.
+Ice
+and
+nonsteroidal
+anti-inﬂammatory
+drugs
+(NSAIDs) can reduce edema and inﬂammation
+and provide symptomatic relief (Figs. 10 and 19),
+and acetaminophen/paracetamol can provide anal-
+gesia.36 For example, ice can be applied every hour
+or more frequently if desired. Ibuprofen can be
+dosed 800 mg every 8 hours37 and acetamino-
+phen/paracetamol 1,000 mg every 8 hours38 in the
+acute setting.
+Although heat will vasodilate and may worsen
+symptoms, it also may provide comfort for some
+patients.39 The use of warm showers and antipy-
+retics did not improve mastitis outcomes in a ran-
+domized controlled trial.25
+Sunﬂower or soy lecithin 5–10 g daily by mouth
+may be taken to reduce inﬂammation in ducts and
+emulsify milk.22,40
+Levels of evidence: 1–3. Strength of recommenda-
+tion: C.
+b. Treat associated nipple blebs and avoid unrooﬁng.
+If a nipple bleb, which represents ductal inﬂam-
+matory cells propagating to the surface and lodging
+(Figs. 2 and 20), is present, do not unroof the bleb as
+this will cause trauma and further luminal narrow-
+ing. Oral lecithin and application of a topical
+moderate potency steroid cream such as 0.1% tri-
+amcinolone may be used to reduce inﬂammation on
+the surface of the nipple.22 This is safe with
+breastfeeding and can be wiped off with a tissue or
+towel before feeding the infant.41
+Levels of evidence: 2–3. Strength of recommenda-
+tions: C.
+c. Treat hyperlactation, or breast milk ‘‘oversupply.’’
+Hyperlactation
+predisposes
+patients
+to
+luminal
+congestion and inﬂammation, which in turn facili-
+tates mammary dysbiosis. This may potentiate a
+vicious cycle, as dysbiosis is a cause of ductal
+narrowing and inﬂammation. See ABM Protocol 32,
+Management of Hyperlactation.3
+Level of evidence: 2. Strength of recommendation:
+C.
+FIG. 18.
+Patient with history of
+right breast mastitis who was in-
+structed to pump every 2 hours to
+‘‘keep the breast empty.’’ This re-
+sulted in severe upregulation of
+milk production in her right breast
+and a continued cycle of mastitis.
+After being instructed to feed from
+the less full (left) breast ﬁrst, she
+downregulated the right breast and
+experienced no recurrent episodes
+of mastitis.
+FIG. 17.
+Electron microscopy showing normal mam-
+mary ducts compared with mammary ducts with bioﬁlm
+formation.
+ABM PROTOCOL
+369
+
+
+===== PAGE 11 =====
+d. Utilize therapeutic ultrasound.
+Therapeutic ultrasound, or TUS, uses thermal energy
+to reduce inﬂammation and relieve edema. TUS may
+be an effective treatment for conditions arising in the
+mastitis spectrum.42 TUS can be performed under the
+supervision of a trained physician or physiotherapist
+on a daily basis until relief is achieved. The breast
+treatment setting is 1 MHz, intensity 2.0 W/cm2 for
+5 minutes.43 If a patient has persistent symptoms
+despite several days of treatment, health care pro-
+viders should consider additional investigations.
+Levelsofevidence: 2–3.Strengthofrecommendation:
+C.
+e. Reserve antibiotics for bacterial mastitis.
+Use of antibiotics for inﬂammatory mastitis disrupts
+the breast microbiome and increases the risk of
+progression
+to
+bacterial
+mastitis.
+Furthermore,
+nonselective use of antibiotics promotes develop-
+ment of resistant pathogens. Prophylactic antibiotics
+have not been shown to be effective in the pre-
+vention of mastitis.44 It should be noted that many
+antibiotics and antifungal medications have anti-
+inﬂammatory properties, and this may explain why
+women experience relief when taking these.
+Level of evidence: 2. Strength of recommendation:
+B.
+f. Consider probiotics.
+Data regarding probiotics are mixed.44–47 A sys-
+tematic review suggested that probiotics may be
+effective for both treatment and prevention of mas-
+titis, but a strong recommendation could not be
+made due to limitations of the studied trials.47 If
+FIG. 20.
+Examples of different
+presentations of nipple blebs.
+FIG. 19.
+Ducts can become
+narrowed secondary to alve-
+olar distention and conges-
+ted vessels and lymphatics.
+Ice and decreased removal
+of breast milk reduce duc-
+tal
+narrowing
+and
+breast
+swelling.
+370
+ABM PROTOCOL
+
+
+===== PAGE 12 =====
+utilized, the probiotic should contain Limosilacto-
+bacillus fermentum (formerly classiﬁed as Lactoba-
+cillus fermentum) or, preferably, Ligilactobacillus
+salivarius (formerly classiﬁed as Lactobacillus sal-
+ivarius) strains.48,49 Note that only selected strains
+of these bacterial species may be effective against
+mastitis pathogens. Therefore, clinical trial out-
+comes cannot be generalized to an entire species in
+the same way that antibiotics may be efﬁcacious
+against one strain of a pathological bacteria but not
+another.
+Levelsofevidence: 1–2.Strengthofrecommendation:
+B.
+g. Evaluate for perinatal mood and anxiety disorders
+(PMADs).
+Women with a history of anxiety and depression
+experience higher rates of mastitis symptoms,50 and
+PMADs are increased in any patient experiencing
+breastfeeding complications. Although any clini-
+cians contacting postpartum patients should screen
+for PMADs,26 particular attention should be paid to
+patients feeling defeated and/or withdrawn as a
+result of challenges with breastfeeding. Further-
+more, patients who express signiﬁcant worry about
+potential recurrence and are unable to stop pumping
+despite recommendations may be suffering from
+anxiety. Extreme pain out of proportion to exam
+may also point to alterations in sensitivity to stim-
+ulation as a result of PMADs and, therefore, should
+be considered in the differential diagnosis.51 Care-
+ful exploration of Dysphoric Milk Ejection Reﬂex
+and/or nursing aversion may also be warranted if
+the patient does not report traditional symptoms of
+PMADs.52
+Level of evidence: 3. Strength of recommendation: C.
+Condition-speciﬁc recommendations
+a. Recommendations for postpartum engorgement in
+lactogenesis II
+ Minimize intravenous ﬂuids during labor, as inter-
+stitial ﬂuid accumulation exacerbates edema and
+engorgement.53
+ Promote
+‘‘rooming
+in’’
+to
+allow
+physiological
+breastfeeding and avoidance of pumping.54
+ Instruct mothers on hand expression to relieve
+symptoms and provide breast milk for infants who
+may not transfer milk effectively or are separated
+from their mothers.55
+ Perform reverse pressure softening of the areola,56
+and manual pump or hand expression to remove
+small volumes of milk before infant latch and facil-
+itate physiological milk transfer.
+FIG. 21.
+Technique of lymphatic drainage.
+ABM PROTOCOL
+371
+
+
+===== PAGE 13 =====
+ Consider lymphatic drainage to alleviate interstitial
+edema31 (Fig. 21).
+ Consider ice for symptomatic relief. Studies have not
+demonstrated cabbage leaves to be more effective
+than ice,57 suggesting that the therapeutic beneﬁt is
+related to vasoconstriction from cold rather than a
+property of cabbage itself. Importantly, cabbage may
+carry Listeria bacteria.
+Levels of evidence: 2–3. Strength of recommenda-
+tions: B–C.
+b. Recommendations for ductal narrowing and inﬂam-
+matory mastitis
+ Follow spectrum-wide recommendations mentioned
+earlier.
+c. Recommendations for bacterial mastitis
+ Antibiotic selection, dosage, and duration for bacte-
+rial mastitis are outlined in Box 1.
+ It is safe for children to consume milk from a breast
+with bacterial mastitis.58
+ Routine hospital admission and IV antibiotics are not
+necessary unless known multidrug-resistant organ-
+ism (MDRO) or clinical presentation mandates (e.g.,
+evidence of severe sepsis and inability to tolerate
+oral medication or ﬂuid). Of note, some MDRO may
+be treatable using oral antibiotics. Antibiotic choice
+should be driven by culture data or local anti-
+biogram. If hospital admission is necessary, mother
+and infant should be kept rooming in together and
+allowed to continue to breastfeed on demand. ABM
+Protocol #35, Supporting Breastfeeding During Ma-
+ternal or Child Hospitalization, refers to other rec-
+ommendations in detail.4
+ Consider intravenous ﬂuid administration if patient’s
+oral intake of ﬂuids is suboptimal as this may alle-
+viate tachycardia and improve symptomatology.
+ If there is no symptomatic improvement after 48
+hours of ﬁrst-line therapy, consider a milk culture to
+evaluate for resistant and/or less common pathogens
+such as methicillin-resistant Staphylococcus aureus
+(MRSA).58 Consider local susceptibility and resis-
+tance patterns and proceed to empiric therapy. Other
+situations in which to consider early milk culture
+include mothers expressing breast milk for an im-
+munocompromised infant in the neonatal intensive
+care unit, health care workers in areas with a high
+prevalence of MRSA, and patients with recurrent
+infections.
+ Data regarding the roleof probiotics in bacterial mastitis
+continue to emerge. Probiotics have been shown not to
+alter composition of human milk microbiome.44–47
+Levels of evidence: 2–3. Strength of recommenda-
+tions: C.
+d. Recommendations for phlegmon
+ Lactational phlegmon may require extended antibi-
+otics for complete resolution, but cases should be
+considered individually.14
+ A phlegmon may coalesce into a drainable abscess
+and, therefore, patients should be followed carefully
+for this development. Interval examination and im-
+aging is warranted until complete resolution.14
+Level of evidence: 2. Strength of recommendations:
+C.
+FIG. 22.
+Options for drainage of
+lactational ﬂuid collections.
+Box 1. Empiric Antibiotic Management58,74
+First line
+ Dicloxacillin or ﬂucloxacillin 500 mg QID for 10–14
+days
+ Where dicloxacillin and ﬂucloxacillin are not available,
+cloxacillin can be used alternatively; however, oral
+bioavailability is more variable with cloxacillin.75 All
+drugs have low Relative Infant Dose of the drug.76
+Cephalexin 500 mg QID for 10–14 days
+ Broader coverage including gram negative rods; does
+not need to be taken separately from meals
+Second line
+ Clindamycin 300 mg four times daily for 10–14 days
+ Trimethoprim-sulfamethoxazole DS BID for 10–14
+days
+B Not recommended for mothers of children with
+G6PD deﬁciency. Use with caution in mothers with
+premature infants or infants with
+hyperbilirubinemia, especially under 30 days old.77
+372
+ABM PROTOCOL
+
+
+===== PAGE 14 =====
+e. Recommendations for abscess
+ Drain the abscess to achieve source control. Needle
+aspiration with ﬂuid culture and sensitivity is often
+recommended as the ﬁrst-line intervention for lacta-
+tional abscess.59 However, patients most often require
+recurrentaspirationsfor deﬁnitiveresolution.Repeated
+aspirations may be stressful and discouraging for the
+patient, and risk breastfeeding discontinuation.60–62
+ Drain placement as the initial intervention should
+be considered for deﬁnitive management at the
+time of the index procedure. Ofﬁce drainage is
+demonstrated in published videos63,64 and illus-
+trated in Figure 13. Patients also can be referred to
+interventional
+radiology
+for
+drain
+placement.
+Drains or skin stents should be placed to gravity
+rather than suction (Fig. 22). If formal drain is not
+available, adaptations using supplies such as Foley
+catheters or glove ﬁngers can be used based on
+local resources. Strictly avoid vacuum-assisted
+wound devices on a lactating breast.
+ After aspiration or drain placement, mothers should
+continue breastfeeding from the affected breast. Milk
+ﬁstula rate is <2%, but lactation must be managed
+appropriately and hyperlactation treated if present.65
+ Antibiotic duration is commonly 10–14 days58;
+however, a shorter course may be appropriate if there
+is rapid resolution of surrounding cellulitis.
+ Tissue inﬂammation and phlegmonous changes may
+take several weeks to resolve and patients may feel
+the presence of a small mass-like area. They should
+undergo interval examination and imaging to ensure
+resolution.14
+Levels of evidence: 2–3. Strength of recommenda-
+tions: C.
+f.
+Recommendations
+for
+galactocele
+and
+infected
+galactocele
+ For
+symptomatic
+galactoceles,
+drainage
+is
+recommended for symptom relief, conﬁrmation of
+diagnosis, and to decrease mass effect to facilitate
+latch. Aspiration almost always results in incomplete
+drainage and/or recurrence, and repeated aspirations
+risk converting a sterile galactocele into an infected
+galactocele. Therefore, drain placement as described
+earlier is recommended.
+ An infected galactocele requires drainage as well as
+antibiotics (Fig. 15).66
+Level of evidence: 3. Strength of recommendations:
+C.
+g. Recommendations for recurrent mastitis
+ Examine patients and obtain milk culture to establish a
+diagnosis of true recurrent mastitis, rather than treating
+empirically. Breast milk culture23 (Box 2) can identify
+and provide sensitivities of uncommon pathogens and
+resistantbacteria.Forexample,althoughCoNSarecom-
+monly present in breast milk, they have also been
+identiﬁed as opportunistic pathogens in mastitis.67
+MRSA and resistant CoNS will not respond to typical
+antibiotics used for acute mastitis such as dicloxacillin
+or cephalexin.
+ Ensure resolution of bacterial mastitis, as earlier,
+with follow-up examination of patients.
+ Evaluate breastfeeding and/or pumping for potential
+risk factors for mastitis (e.g., excessive massage and
+unnecessary pumping).
+ Consider daily probiotic use with L. fermentum or,
+preferably, L. salivarius for prevention,48,49 recog-
+nizing the limitations of different strains of the same
+species having different efﬁcacies.
+ Prophylactic antibiotics have not been shown to be
+effective in the prevention of mastitis and may select
+antibiotic-resistant strains.44
+ Multiple recurrences in the same location warrants radi-
+ology evaluation to rule out an underlying mass or other
+abnormality such as granulomatous mastitis.68 Inﬂam-
+matory breast cancer is an aggressive subtype of malig-
+nant tumors that presents with progressive erythema,
+breast retraction, and peau d’orange appearance of the
+breast. Any concern for inﬂammatory breast cancer war-
+rants urgent referral to breast surgery and oncology.69
+Levels of evidence: 1–3. Strength of recommenda-
+tions: B–C.
+h. Recommendations for subacute mastitis
+ Individual mammary microbiomes have different
+environmental thresholds at which opportunistic
+bacterial pathogens become symptomatic. Further,
+milk culture may not grow a dominant organism.
+Therefore, treatment should be individualized based
+on clinical history and level of suspicion for subacute
+mastitis.70,71 Antibiotics in the macrolide class may
+have the best efﬁcacy in this clinical scenario due to
+the intracellular mechanism of action, though more
+studies are needed.72
+ Probiotics containing L. salivarius or L. fermentum
+strains represent a treatment option, although more
+studies are required.48,49
+Levels of evidence: 2–3. Strength of recommenda-
+tions: B–C.
+Summary
+Overall, conditions occurring in the mastitis pathophysi-
+ological spectrum can be prevented and treated by reducing
+iatrogenic interventions and utilizing simple management
+principles such as ice, NSAIDs, and physiological breast-
+feeding. Attention should be given to appropriate treatment
+Box 2. How to Perform a Sterile Breast
+Milk Culture
+1. Clean the nipple and areola: Both a topical antiseptic
+solution and washing with warm water and soap with
+air-drying have been proposed. There are no data to
+determine which is better to remove skin ﬂora while
+preserving the integrity of the nipple and areolar skin.
+2. Use sterile gloves to express milk.
+3. Collect 5–10 mL milk in a sterile container.
+4. No contact should be made between nipple and sterile
+container.
+5. Send as ‘‘body ﬂuid culture’’ rather than ‘‘wound
+culture.’’
+ABM PROTOCOL
+373
+
+
+===== PAGE 15 =====
+of hyperlactation as an primary underlying risk factor for
+mastitis. Similarly, given the importance of a healthy breast
+milk microbiome in preventing mastitis, risk factors for dys-
+biosis should be addressed. Understanding the pathophysi-
+ology of ductal narrowing and inﬂammation allows clinicians
+to select targeted effective treatments for mastitis.
+Traditional recommendations to augment milk removal to
+counteract milk stasis and to massage breast tissue to relieve
+ductal obstruction from milk ‘‘plugs’’ lack physiological
+validity. Frequent stimulation of breasts with congested al-
+veolar cells worsens hyperemia and edema, causing increa-
+sed pain, swelling, and redness. This not only worsens pain
+and edema, but also decreases the ability of an infant to obtain
+an atraumatic latch and effectively withdraw milk from the
+breast. Frequent pumping also disrupts the milk microbiome,
+potentiating the development of mammary dysbiosis and
+increasing the risk for bacterial mastitis. In addition, massage
+of the mammary gland causes capillary injury and tissue
+necrosis, and is a primary risk factor for phlegmon and
+abscess development.
+Areas for Future Research
+Clinical studies on mastitis and related disorders are lim-
+ited by study design and confounding factors. For example,
+nipple trauma appearing to be a cause of mastitis likely
+represents an association rather than a causation. Nipple
+trauma is extremely frequent in hyperlactation, which is a risk
+factor for mastitis. Future studies should carefully control for
+potential confounding factors as well as explore diverse
+cultures and practices throughout the world. In addition,
+higher quality studies are needed to determine precise rec-
+ommendations regarding antibiotics as the presence of even
+small quantities of antibiotics in human milk alters the
+diversity and resilience of the human milk microbiome.73
+Because antibiotics are often prescribed through telephone
+triage in many countries, studies to clarify prevalence of
+bacterial mastitis as opposed to engorgement and/or inﬂam-
+matory mastitis are necessary. The use of probiotics warrants
+further research as well. As women in the peripartum period
+are at their lifetime highest risk for developing an anxiety or
+mood disorder, the distinction between symptoms of mood
+and anxiety disorders versus mastitis should also be explored.
+Disclosure Statement
+J.M.R. has been the PI of research projects and clinical
+assays funded by Puleva/Biosearch Life (Granada, Spain) or
+Nutricia (Utrecht, The Netherlands), involving the charac-
+terization, safety, and efﬁcacy of probiotic strains for the
+mastitis target. He and his research group have never received
+any payment or royalty related to the commercialization of
+probiotic strains.
+Funding Information
+No funding was received for this article.
+References
+1. Wilson E, Woodd SL, Benova L. Incidence of and risk
+factors for lactational mastitis: A systematic review. J Hum
+Lact 2020;36:673–686.
+2. Kvist LJ. Toward a clariﬁcation of the concept of mastitis
+as used in empirical studies of breast inﬂammation during
+lactation. J Hum Lact 2010;26:53–59.
+3. Johnson HM, Eglash A, Mitchell KB, et al. ABM clinical
+protocol #32: Management of hyperlactation. Breastfeed
+Med 2020;15:129–134.
+4. Bartick M, Herna´ndez-Aguilar MT, Wight N, et al. ABM
+clinical protocol #35: Supporting breastfeeding during mater-
+nal or child hospitalization. Breastfeed Med 2021;16:664–674.
+5. Jimenez E, Arroyo R, Cardenas N, et al. Mammary can-
+didiasis: A medical condition without scientiﬁc evidence?
+PLoS One 2017;12:e0181071.
+6. Ferna´ndez L, Pannaraj PS, Rautava S, et al. The microbiota
+of the human mammary ecosystem. Front Cell Infect
+Microbiol 2020;10:586667.
+7. Weaver SR, Hernandez LL. Autocrine-paracrine regulation
+of the mammary gland. J Dairy Sci 2016;99:842–853.
+8. Hill PD, Humenick SS. The occurrence of breast en-
+gorgement. J Hum Lact 1994;10:79–86.
+9. Scott JA, Binns CW, Oddy WH. Predictors of delayed
+onset of lactation. Matern Child Nutr 2007;3:186–193.
+10. Ramsay DT, Kent JC, Hartmann RA, et al. Anatomy of the
+lactating human breast redeﬁned with ultrasound imaging.
+J Anat 2005;206:525–534.
+11. Betts RC, Johnson HM, Eglash A, et al. It’s not yeast: Ret-
+rospective cohort study of lactating women with persistent
+nipple and breast pain. Breastfeed Med 2021;16:318–324.
+12. Kim SY, Yi DY. Analysis of the human breast milk mi-
+crobiome and bacterial extracellular vesicles in healthy
+mothers. Exp Mol Med 2020;52:1288–1297.
+13. Evans AS. Causation and disease: The Henle-Koch postu-
+lates revisited. Yale J Biol Med 1976;49:175–195.
+14. Johnson HM, Mitchell KB. Lactational phlegmon: A dis-
+tinct clinical entity affecting breastfeeding women within
+the mastitis-abscess spectrum. Breast J 2019;doi:10.1111/
+tbj.13624
+15. Amir LH, Forster D, McLachlan H, et al. Incidence of
+breast abscess in lactating women: Report from an Aus-
+tralian cohort. BJOG 2004;111:1378–1381.
+16. Patani N, MacAskill F, Eshelby S, et al. Best-practice care
+pathway for improving management of mastitis and breast
+abscess. Br J Surg 2018;105:1615–1622.
+17. Lepori D. Inﬂammatory breast disease: The radiologist’s
+role. Diagn Interv Imaging 2015;96:1045–1064.
+18. Sabate JM, Clotet M, Torrubia S, et al. Radiologic evalu-
+ation of breast disorders related to pregnancy and lactation.
+Radiographics 2007;27 Suppl 1:S101–S124.
+19. Jime´nez E, de Andre´s J, Manrique M, et al. Metagenomic
+analysis of milk of healthy and mastitis-suffering women.
+J Hum Lact 2015;31:406–415.
+20. Patel SH, Vaidya YH, Patel RJ, et al. Culture independent
+assessment of human milk microbial community in lacta-
+tional mastitis. Sci Rep 2017;7:7804.
+21. Rodrı´guez J, Ferna´ndez L. Infectious mastitis during lac-
+tation: A mammary dysbiosis model. In: Prebiotics and
+Probiotics in Human Milk, McGuire M, McGuire M, Bode
+L, eds. London: Academic Press, 2017, pp. 401–428.
+22. Mitchell KB, Johnson HM. Breast pathology that contrib-
+utes to dysfunction of human lactation: A spotlight on
+nipple blebs. J Mammary Gland Biol Neoplasia 2020;25:
+79–83.
+23. Berens P, Eglash A, Malloy M, et al. ABM clinical protocol
+#26: Persistent pain with breastfeeding. Breastfeed Med
+2016;11:46–53.
+374
+ABM PROTOCOL
+
+
+===== PAGE 16 =====
+24. Ebell MH, Siwek J, Weiss BD, et al. Strength of recom-
+mendation taxonomy (SORT): A patient-centered approach
+to grading evidence in the medical literature. J Am Board
+Fam Pract 2004;17:59–67.
+25. Kvist
+LJ,
+Hall-Lord
+ML,
+Rydhstroem
+H,
+et
+al.
+A randomised-controlled trial in Sweden of acupuncture
+and care interventions for the relief of inﬂammatory
+symptoms of the breast during lactation. Midwifery 2007;
+23:184–195.
+26. ACOG committee opinion no. 736: Optimizing postpartum
+care. Obstet Gynecol 2018;131:e140-e150.
+27. Kuehnl JM, Connelly MK, Dzidic A, et al. The effects of
+incomplete milking and increased milking frequency on
+milk production rate and milk composition1. J Anim Sci
+2019;97:2424–2432.
+28. McKechnie AC, Eglash A. Nipple shields: A review of the
+literature. Breastfeed Med 2010;5:309–314.
+29. Anderson L, Kynoch K, Kildea S, et al. Effectiveness of
+breast massage for the treatment of women with breast-
+feeding problems: A systematic review. JBI Database
+System Rev Implement Rep 2019;17:1668–1694.
+30. Witt AM, Bolman M, Kredit S, et al. Therapeutic breast
+massage in lactation for the management of engorgement,
+plugged ducts, and mastitis. J Hum Lact 2016;32:123–131.
+31. Ezzo J, Manheimer E, McNeely ML, et al. Manual lym-
+phatic drainage for lymphedema following breast cancer
+treatment. Cochrane Database Syst Rev 2015;CD003475.
+32. Drugs and Lactation Database (LactMed). Bethesda, MD:
+National Library of Medicine (US), 2006. Castor. Updated
+2021. Available at https://www.ncbi.nlm.nih.gov/books/
+NBK501875 (accessed March 5, 2022).
+33. Dabiri G, Damstetter E, Phillips T. Choosing a wound
+dressing based on common wound characteristics. Adv
+Wound Care (New Rochelle) 2016;5:32–41.
+34. Centers for Disease Control and Prevention. How to clean
+your breast pump kit clean: The essentials. Updated 2020.
+Available
+at
+https://www.cdc.gov/healthywater/hygiene/
+healthychildcare/infantfeeding/breastpump.html
+(accessed
+September 1, 2021).
+35. Stone K, Wheeler A. A review of anatomy, physiology, and
+benign pathology of the nipple. Ann Surg Oncol 2015;22:
+3236–3240.
+36. Martin E, Vickers B, Landau R, et al. ABM clinical pro-
+tocol #28, peripartum analgesia and anesthesia for the
+breastfeeding mother. Breastfeed Med 2018;13:164–171.
+37. Bushra R, Aslam N. An overview of clinical pharmacology
+of Ibuprofen. Oman Med J 2010;25:155–1661.
+38. Freo U, Ruocco C, Valerio A, et al. Paracetamol: A review
+of guideline recommendations. J Clin Med 2021;10:3420.
+39. Wessinger L, Marotta R, Kelechi TJ. Hot or cold? Treating
+cellulitis. Nursing 2011;41:46–48.
+40. Chan MM, Nohara M, Chan BR, et al. Lecithin decreases
+human milk fat loss during enteral pumping. J Pediatr
+Gastroenterol Nutr 2003;36:613–615.
+41. Drugs and Lactation Database (LactMed). Bethesda, MD:
+National Library of Medicine (US), 2006. Triamcinolone,
+topical. Updated 2021. Available at https://www.ncbi.nlm
+.nih.gov/books/NBK501123/
+(accessed
+September
+27,
+2021).
+42. Mogensen N, Portman A, Mitchell K. Nonpharmacologic
+approaches to pain, engorgement, and plugging in lacta-
+tion: Applying physical therapy techniques from breast
+cancer care to breastfeeding patients. Clin Lact 2020;11:
+35–42.
+43. Cooper B, Kowalsky D. Physical therapy intervention for
+treatment of blocked milk ducts in lactating women.
+J Womens Health Phys Ther 2015;39:115–126.
+44. Crepinsek MA, Taylor EA, Michener K, et al. Interventions
+for preventing mastitis after childbirth. Cochrane Database
+Syst Rev 2020;9:CD007239.
+45. Oikonomou G, Addis MF, Chassard C. Milk microbiota:
+What are we exactly talking about? Front Microbiol 2020;
+11:60.
+46. Amir LH, Grifﬁn L, Cullinane M, et al. Probiotics and
+mastitis: Evidence-based marketing? Int Breastfeed J 2016;
+11:19.
+47. Barker M, Adelson P, Peters MDJ, et al. Probiotics and
+human lactational mastitis: A scoping review. Women Birth
+2020;33:e483–e491.
+48. Ferna´ndez L, Ca´rdenas N, Arroyo R, et al. Prevention of
+infectious mastitis by oral administration of lactobacillus
+salivarius PS2 during late pregnancy. Clin Infect Dis 2016;
+62:568–573.
+49. Hurtado JA, Fonolla´ J. Response to Paricio-Talayero and
+Baeza re: ‘‘Oral administration to nursing women of lac-
+tobacillus
+fermentum
+CECT5716
+prevents
+lactational
+mastitis development: A randomized controlled trial’’.
+Breastfeed Med 2018;13:454–456.
+50. Dagla M, Dagla C, Mrvoljak-Theodoropoulou I, et al. Do
+maternal stress and depressive symptoms in perinatal pe-
+riod predict the lactation mastitis occurrence? A retro-
+spective longitudinal study in Greek women. Diagnostics
+(Basel) 2021;11:1524.
+51. Urits I, Peck J, Orhurhu MS, et al. Off-label antidepressant
+use for treatment and management of chronic pain: Evol-
+ving understanding and comprehensive review. Curr Pain
+Headache Rep 2019;23:66.
+52. Morns MA, Steel AE, Burns E, et al. Women who
+experience feelings of aversion while breastfeeding: A
+meta-ethnographic review. Women Birth 2021;34:128–
+135.
+53. Kujawa-Myles S, Noel-Weiss J, Dunn S, et al. Maternal
+intravenous ﬂuids and postpartum breast changes: A pilot
+observational study. Int Breastfeed J 2015;10:18.
+54. World Health Organization. Guideline: Protecting, Pro-
+moting, and Supporting Breastfeeding in Facilities: Pro-
+viding Maternity and Newborn Services. Geneva: World
+Health Organization, 2017.
+55. Becker GE, Cooney F, Smith HA. Methods of milk
+expression for lactating women. Cochrane Database Syst
+Rev 2011;CD006170. DOI: 10.1002/14651858.CD006170
+.pub3.
+56. Cotterman KJ. Reverse pressure softening: A simple tool to
+prepare areola for easier latching during engorgement.
+J Hum Lact 2004;20:227–237.
+57. Zakarija-Grkovic I, Stewart F. Treatments for breast en-
+gorgement during lactation. Cochrane Database Syst Rev
+2020;9:CD006946.
+58. WHO. Mastitis: Causes and Management. Publication No.
+WHO/FCH/CAH/00.13. 2000.
+59. Trop I, Dugas A, David J, et al. Breast abscesses: Evidence-
+based algorithms for diagnosis, management, and follow-
+up. Radiographics 2011;31:1683–1699.
+60. Dixon JM. Repeated aspiration of breast abscesses in lac-
+tating women. Br Med J 1988;297:1517–1518.
+61. Ulitzsch D, Nyman MKG, Carlson RA. Breast abscess in
+lactating women: US-guided treatment. Radiology 2004;
+232:904–909.
+ABM PROTOCOL
+375
+
+
+===== PAGE 17 =====
+62. Christensen
+AF,
+Al-Suliman
+N,
+Nielson
+KR,
+et
+al.
+Ultrasound-guided drainage of breast abscesses: Results in
+151 patients. Br J Radiol 2005;78:186–188.
+63. Mitchell K. In-ofﬁce drainage of lactational abscesses:
+Utilization of stab incision and penrose drain. Presented at
+the American Society of Breast Surgeons 22nd Annual
+Meeting, April 30, 2021.
+64. Kornfeld H, Johnson A, Soares M, et al. Management of
+infected galactocele and breast implant with uninterrupted
+breastfeeding. Plast Reconstr Surg Glob Open 2021;9:
+e3943.
+65. Johnson HM, Mitchell KB. Low incidence of milk ﬁstula
+with continued breastfeeding following radiologic and
+surgical interventions on the lactating breast. Breast Dis
+2021;40:183–189.
+66. Ghosh K, Morton MJ, Whaley DH, et al. Infected galac-
+tocele: A perplexing problem. Breast J 2004;10:159.
+67. Arroyo R, Martı´n V, Maldonado A, et al. Treatment of
+infectious mastitis during lactation: Antibiotics versus oral
+administration of lactobacilli isolated from breast milk.
+Clin Infect Dis 2010;50:1551–1558.
+68. Mitchell KB, Johnson HM, Eglash A. ABM clinical pro-
+tocol #30: Breast masses, breast complaints, and diagnostic
+breast imaging in the lactating woman. Breastfeed Med
+2019;14:208–214.
+69. Dawood S, Merajver SD, Viens P, et al. International expert
+panel on inﬂammatory breast cancer: Consensus statement
+for standardized diagnosis and treatment. Ann Oncol 2011;
+22:515–523.
+70. Anderson PO. Drugs in lactation. Pharm Res 2018;35:45.
+71. Geng N, Liu K, Lu J, et al. Autophagy of bovine mammary
+epithelial cell induced by intracellular Staphylococcus au-
+reus. J Microbiol 2020;58:320–329.
+72. Parnham MJ, Erakovic Haber V, Giamarellos-Bourboulis
+EJ, et al. Azithromycin: Mechanisms of action and their
+relevance for clinical applications. Pharmacol Ther 2014;
+143:225–245.
+73. Soto A, Martin V, Jimenez E, et al. Lactobacilli and biﬁ-
+dobacteria in human breast milk: Inﬂuence of anti-
+biotherapy and other host and clinical factors. J Pediatr
+Gastroenterol Nutr 2014;59:78–88.
+74. Mitchell K, Johnson H. Breast conditions in the breast-
+feeding mother. In: Breastfeeding: A Guide for the Medical
+Profession, 9 ed., Lawrence R, Lawrence R, eds. Elsevier,
+2021, pp. 572–593.
+75. Nauta EH, Mattie H. Dicloxacillin and cloxacillin: Phar-
+macokinetics in healthy and hemodialysis subjects. Clin
+Pharmacol Ther 1976;20:98–108.
+76. Hale T. Hale’s Medications & Mother’s Milk: A Manual of
+Lactational Pharmacology, 19th ed. New York, NY: Springer,
+2021.
+77. Drugs and Lactation Database (LactMed). Bethesda, MD:
+National Library of Medicine (US), 2006. Trimethoprim-
+sulfamethoxazole. Updated 2021. Available at https://
+www.ncbi.nlm.nih.gov/books/NBK501289/
+(accessed
+September 2, 2021).
+ABM protocols expire in 5 years from the date of publica-
+tion. Content of this protocol is up to date at the time of pub-
+lication. Evidence-based revisions are made within 5 years or
+sooner if there are signiﬁcant changes in the evidence.
+Katrina B. Mitchell, MD, FACS, lead author
+Helen M. Johnson, MD
+Juan Miguel Rodrı´guez, PhD
+Anne Eglash, MD, FABM
+Charlotte Scherzinger, MD
+Irena Zakarija-Grkovic, MD, FRACGP, PhD, FABM
+Kyle Widmer Cash, MD
+Pamela Berens, MD, FACOG, FABM
+Brooke Miller, MD, CCFP
+The Academy of Breastfeeding Medicine Protocol
+Committee Members:
+Elizabeth Stehel, MD, Chair
+Lawrence Noble, MD, FABM, Translations Chair
+Melissa C. Bartick, MD, MS, FABM
+Sarah Calhoun, MD
+Laura Kair, MD, MAS, FABM
+Susan Lappin, MD, FABM
+Ilse Larson, MD
+Yvonne LeFort, MD, FABM
+Nicole Marshall, MD, MCR
+Katrina B. Mitchell, MD
+Susan Rothenberg, MD, FABM
+Tomoko Seo, MD, FABM
+Gina Weissman, DMD
+Nancy Wight, MD, FABM
+Lori Feldman-Winter, MD, MPH
+Adora Okogbule-Wonodi, MD
+Michal Young, MD, FABM
+Deena Zimmerman, MD, MPH
+For correspondence: abm@bfmed.org
+376
+ABM PROTOCOL
