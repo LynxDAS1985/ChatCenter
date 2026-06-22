@@ -145,9 +145,9 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   let cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
   // Убираем trailing timestamps (Telegram ServiceWorker приклеивает "15:57" или "15:5715:57" к body)
   cleanBody = cleanBody.replace(/(\d{1,2}:\d{2}(:\d{2})?)+\s*$/g, '').trim()
-  if (!cleanBody) return null
+  if (!cleanBody) { console.log('[NotifManager] skip empty-body messenger=' + (messengerId || '') + ' title=' + String(title || '').slice(0, 40) + ' raw=' + String(body || '').slice(0, 80)); return null }
   // MAX и другие мессенджеры могут слать Notification с body = "12:40" (только время)
-  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) return null
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) { console.log('[NotifManager] skip timestamp-only messenger=' + (messengerId || '') + ' sender=' + String(senderName || title || '').slice(0, 40) + ' body=' + cleanBody); return null }
   // Используем очищенный body для отображения
   body = cleanBody
 
@@ -157,6 +157,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   const dedupKey = messengerId + ':' + (normalizedBody || (body || '')).slice(0, 60)
   const now = Date.now()
   if (notifDedupMap.has(dedupKey) && now - notifDedupMap.get(dedupKey) < 8000) {
+    console.log('[NotifManager] skip dedup messenger=' + (messengerId || '') + ' key=' + dedupKey.slice(0, 90) + ' age=' + (now - notifDedupMap.get(dedupKey)))
     return null
   }
   notifDedupMap.set(dedupKey, now)
@@ -225,6 +226,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
     notifWin.showInactive()
   }
   notifWin.webContents.send('notif:show', data)
+  console.log('[NotifManager] show id=' + id + ' messenger=' + (messengerId || '') + ' sender=' + String(senderName || title || '').slice(0, 40) + ' body=' + String(body || '').slice(0, 80) + ' icon=' + !!iconDataUrl)
   // HTML пришлёт notif:resize с точной высотой и окно скорректируется.
   // Двойной setBounds (reposition + resize) вызывал дёрг первого уведомления на Windows.
 

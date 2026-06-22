@@ -21,6 +21,10 @@ try {
     if (f.endsWith('.js')) appCode += '\n' + fs.readFileSync(hooksDir + '/' + f, 'utf8')
   })
 } catch(e) {}
+// v1.2.8: system diagnostics modal owns new IPC calls.
+try {
+  appCode += '\n' + fs.readFileSync('src/components/SystemDiagnosticsModal.jsx', 'utf8')
+} catch(e) {}
 var preloadCode = fs.readFileSync('main/preloads/app.preload.cjs', 'utf8')
 
 var passed = 0, failed = 0
@@ -49,7 +53,7 @@ test('on каналов > 15', function() { assert(onChannels.length > 15, 'coun
 
 // Проверяем ключевые каналы
 console.log('\\n── Ключевые каналы: ──')
-var requiredHandle = ['settings:get', 'settings:save', 'app:custom-notify', 'tray:set-badge', 'app:get-paths']
+var requiredHandle = ['settings:get', 'settings:save', 'app:custom-notify', 'tray:set-badge', 'app:get-paths', 'app:diagnostics-snapshot', 'app:diagnostics-save-report']
 requiredHandle.forEach(function(ch) {
   test('handle: ' + ch, function() { assert(handleChannels.indexOf(ch) >= 0) })
 })

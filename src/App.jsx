@@ -61,6 +61,7 @@ const NotifLogModal = lazy(() => import('./components/NotifLogModal.jsx'))
 const ConfirmCloseModal = lazy(() => import('./components/ConfirmCloseModal.jsx'))
 const LogModal = lazy(() => import('./components/LogModal.jsx'))
 const ConnectionsPanel = lazy(() => import('./components/ConnectionsPanel.jsx'))
+const SystemDiagnosticsModal = lazy(() => import('./components/SystemDiagnosticsModal.jsx'))
 // v0.95.25: модалка «Что нового» — показывается при первом запуске после обновления.
 const WhatsNewModal = lazy(() => import('./components/WhatsNewModal.jsx'))
 // v1.0.1: 3 панели — Задачи / Напоминания / AI Activity (Phase 4).
@@ -131,6 +132,7 @@ export default function App() {
   const [showLogModal, setShowLogModal] = useState(false)
   const [logContent, setLogContent] = useState('')
   const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
+  const [showSystemDiagnostics, setShowSystemDiagnostics] = useState(false)
   const [activeNativeAccountId, setActiveNativeAccountId] = useState(null)
   // v1.0.1: модалки Phase 4 — Задачи / Напоминания / AI Activity.
   // v1.0.3: mutually-exclusive — одна модалка за раз.
@@ -787,6 +789,7 @@ export default function App() {
             messengers={messengers} settings={settings}
             onMessengersChange={setMessengers} onSettingsChange={handleSettingsChange}
             onClose={() => setShowSettings(false)}
+            onOpenSystemDiagnostics={() => setShowSystemDiagnostics(true)}
           /></ErrorBoundary>
         )}
 
@@ -821,6 +824,27 @@ export default function App() {
           traceNotif, handleNewMessage, pipelineTraceRef
         }} /></ErrorBoundary>}
       </Suspense>
+      <Suspense fallback={null}>
+        {showSystemDiagnostics && <ErrorBoundary name="SystemDiagnostics"><SystemDiagnosticsModal
+          runtimeContext={{
+            messengers,
+            activeId,
+            activeNativeAccountId,
+            connectionHealth,
+            webviewLoading,
+            unreadCounts,
+            unreadSplit,
+            pipelineTrace: pipelineTraceRef.current,
+            appReady,
+            showAI,
+            tasksCount,
+            remindersCount,
+          }}
+          onRunDeepCheck={refreshProblematicConnections}
+          onClose={() => setShowSystemDiagnostics(false)}
+        /></ErrorBoundary>}
+      </Suspense>
+
 
       {/* ── v0.84.2: Модальное окно системного лога ── */}
       <Suspense fallback={null}>

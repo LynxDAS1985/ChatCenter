@@ -1,7 +1,254 @@
 # Ловушки: кастомные уведомления (Messenger Ribbon)
 
+---
+
+## 🔴 MAX: фантомные даты, нет аватарки, двойной звук и «пик без ribbon» (2026-06-19)
+
+**Нашёл**: Codex, 19 июня 2026.
+
+**Симптомы от пользователя**:
+- В MAX появлялись ribbon-уведомления с текстом `12:56`, `13:21`, `13:24` или датой, хотя клиент такого сообщения не писал.
+- Иногда был звук, но визуального ribbon не было.
+- На ribbon не было аватарки, хотя в списке MAX аватар виден.
+- При одном входящем MAX-событии звук мог проигрываться два раза.
+- В групповых/сложных строках MAX нужно понимать не только чат, но и автора сообщения.
+
+**Что показали логи**:
+
+1. `title +1` у MAX был только сигналом роста unread, а не источником текста сообщения:
+
+```text
+[Макс] Источник: title +1 | MAX title-fallback scheduled
+```
+
+2. Старый fallback брал rich-данные из sidebar и выбирал последний короткий текстовый leaf. В DOM MAX последним leaf часто является время (`meta`):
+
+```text
+selectedText=13:22
+selectedSender=Дугин Алексей Сергеевич
+chosenLeafs=... 1@...:badgeIcon ... Ыыча@...:text ... 13:22@...:meta
+```
+
+Фактическое сообщение `Ыыча` было в DOM, но алгоритм выбрал `13:22`, потому что шёл с конца массива текстов.
+
+3. Для группового/канального случая строка содержала автора и badge, но body снова выбирался как время:
+
+```text
+selectedText=12:56
+selectedSender=А.Х. как вкусно
+chosenLeafs=... 6@...:badgeIcon ... Евгешка :@...:author ... 12:56@...:meta
+```
+
+4. Аватарка физически была в DOM строки MAX, но extractor её не отдавал:
+
+```text
+imgs[0:96x96:img avatarImage ... https://i.oneme.ru/...]
+avatar=""
+icon=false
+```
+
+Причина: старый `avatarFrom()` искал слишком узкий набор селекторов и пропускал нормальный `img.avatarImage` / `img[src]` внутри строки.
+
+5. Двойной звук был подтверждён двумя независимыми шагами pipeline:
+
+```text
+Звук: title +1 | звук title-update
+Звук: 13:22 | звук воспроизведён
+```
+
+6. «Пик без ribbon» объяснился связкой renderer + main:
+- renderer проигрывал звук сразу на `title +1`;
+- затем fallback передавал `body=13:24`;
+- main `notificationManager` уже имел защиту от timestamp-only body:
+
+```js
+if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanBody)) return null
+```
+
+Итог: звук уже был, но main законно не показывал ribbon, потому что body был только временем.
+
+**Почему нельзя было чинить блокировкой слов**:
+- Клиент реально может написать `13:24`, `18 июн.`, `12:56` или похожий текст.
+- Блокировка по словам/regex скрывает симптом и может пропустить настоящее важное сообщение.
+- Правильный критерий не текстовый, а структурный: `meta`/badge/title/name/author не являются body; preview message находится в отдельном `text`-leaf ниже имени.
+
+**Что изменено в коде**:
+
+1. [`src/utils/maxTitleFallback.js`](../../src/utils/maxTitleFallback.js)
+   - Добавлен структурный разбор leaf-элементов (`leafItems`) с текстом, className и геометрией.
+   - `rowParts()` теперь выделяет роли:
+     - `title/name` → название чата или sender для личного чата;
+     - `author` → автор внутри групповой строки, если есть;
+     - `meta` → время/дата, никогда не body;
+     - `badge/indicator` → unread badge, никогда не body;
+     - `text/message/preview` ниже имени → body сообщения.
+   - Для группового случая возвращается `sender=author`, `chatTag=chatTitle`.
+   - `avatarFrom()` теперь берёт `img.avatarImage` / нормальный `img[src]` из выбранной строки, но игнорирует emoji-картинки (`st.max.ru/emojis`), чтобы не подставить emoji вместо аватара.
+   - Если в строке нет валидного preview/body, fallback возвращает `null` и не запускает уведомление.
+
+2. [`src/utils/webviewSetup.js`](../../src/utils/webviewSetup.js)
+   - Ранний `title-update` звук пропускается только для `web.max.ru`.
+   - Для других мессенджеров поведение сохранено: WhatsApp/VK/Telegram не менялись.
+   - MAX `title +1` теперь только запускает fallback-проверку, а не считается готовым уведомлением.
+
+3. [`src/utils/webviewHandleNewMessage.js`](../../src/utils/webviewHandleNewMessage.js)
+   - Для `extra.fromTitleFallback` звук откладывается до фактического результата main-process `app:custom-notify`.
+   - Если main вернул `ok=true`, играется один звук: `звук после подтверждённого ribbon`.
+   - Если main вернул `ok=false/null` (например timestamp-only, dedup, empty body), звука нет. Это устраняет «пик без уведомления».
+   - Добавлен renderer trace результата main:
+
+```text
+Ribbon: ... | invoke app:custom-notify ...
+Ribbon: ... | main-result ok=true id=...
+Ribbon: ... | main-result ok=false id=нет ...
+```
+
+4. [`main/handlers/notificationManager.js`](../../main/handlers/notificationManager.js)
+   - Добавлены диагностические причины фактического показа/непоказа ribbon:
+
+```text
+[NotifManager] skip empty-body ...
+[NotifManager] skip timestamp-only ...
+[NotifManager] skip dedup ...
+[NotifManager] show id=... messenger=... sender=... body=... icon=...
+```
+
+Эти логи нужны, потому что renderer-строка «invoke app:custom-notify» означает только IPC-вызов, а не гарантирует, что main реально показал окно.
+
+**Принятое решение**:
+- Не использовать `title +1` как источник текста.
+- Не выбирать body по принципу «последний короткий текст».
+- Для MAX читать структуру sidebar: `title/name`, `author`, `badge`, `meta`, `text`.
+- Звук MAX title fallback привязать к фактически показанному ribbon (`main-result ok=true`), а не к unread title.
+- Аватар брать из выбранной строки, а не из глобального header/случайной картинки.
+
+**Почему это безопаснее**:
+- Не блокирует реальные сообщения с датами/временем, если они находятся в preview/body.
+- Не ломает WhatsApp/VK/Telegram: ранний title-звук отключён только для URL `web.max.ru`.
+- Main-side timestamp guard сохранён; он продолжает защищать от пустых timestamp-only уведомлений.
+- Если MAX DOM не содержит preview/body, уведомление не создаётся и звук не играет.
+- Если main не показывает ribbon, звук не играет.
+- Если main показывает ribbon, звук играет один раз.
+
+**Проверки после правки**:
+
+```powershell
+node src\__tests__\maxTitleFallback.test.cjs      # 6/6 OK
+node src\__tests__\handleNewMessage.test.cjs      # 25/25 OK
+node src\__tests__\appStructure.test.cjs          # 45/45 OK
+node src\__tests__\memoryLeaks.test.cjs           # 31/31 OK
+node src\__tests__\integrationChains.test.cjs     # 18/18 OK
+npm.cmd run lint                                  # OK
+npm.cmd run test:vitest                           # 131 files / 1874 tests passed
+node src\__tests__\memoryBankSizeLimits.test.cjs # 38/38 OK
+```
+
+**Оставшиеся ограничения**:
+- Если MAX поменяет DOM-классы (`meta`, `author`, `avatarImage`, `text`) после обновления сайта, потребуется новая диагностика по `topRows/chosenLeafs`.
+- Одновременные сообщения из нескольких чатов всё ещё зависят от порядка unread/sidebar MAX. Текущий фикс убирает выбор `meta` вместо preview и не должен создавать timestamp-фантомы, но полноценный snapshot-diff sidebar можно делать отдельным этапом, если MAX начнёт часто переставлять строки неоднозначно.
+
+**Ключевой урок**: для MAX нельзя чинить уведомления фильтрами слов. Нужно читать DOM-структуру строки и привязывать звук к фактическому показу ribbon, иначе появляются фантомы, двойной звук и «пик без окна».
+
 **Извлечено из** `common-mistakes.md` 24 апреля 2026 (v0.87.54).
 **Темы**: Messenger Ribbon BrowserWindow, Notification API перехват, ServiceWorker дубли, enrichment addedNodes, CSS fade-out, FIFO deadlock, Emoji regex, startup ribbon.
+
+---
+
+## 🟡 ЛОВУШКА #32 (v1.2.7, 18 июня 2026): MAX title-update дал звук, но не дал ribbon
+
+### Симптом
+
+По MAX слышен звук или растет счетчик, но визуальная карточка Messenger Ribbon не появляется. В `chatcenter.log` виден `title +1 | звук title-update`, но рядом нет `Источник/Ribbon` для MAX.
+
+### Причина
+
+`page-title-updated` в `webviewSetup.js` исторически делает только unread count + звук. Ribbon намеренно не создавался в этом пути, потому что полноценный ribbon должен иметь sender/text/avatar и приходить через `__CC_NOTIF__` или `new-message`.
+
+Для MAX это недостаточно:
+- MAX не всегда вызывает `Notification/showNotification` на каждое сообщение.
+- `quickNewMsgCheck()` зависит от текущего DOM MAX и может не привязаться, если Svelte-классы/контейнеры изменились.
+- `body-fallback` для MAX отключен из-за фантомов.
+- `Path 2` для MAX отключен из-за фантомов при навигации между чатами.
+
+### Неправильные решения
+
+1. Включить `body-fallback` для MAX — вернет фантомы из sidebar/system DOM.
+2. Вернуть `Path 2` для MAX — вернет фантомы при смене чата.
+3. Показывать generic `"Новое сообщение в Макс"` без текста и отправителя — пользователь теряет главный смысл ribbon и невозможно нормально перейти/пометить чат.
+4. Парсить active-chat всегда — unread/title может относиться к другому чату в sidebar.
+
+### Решение v1.2.7
+
+Добавлен MAX-only rich title-fallback:
+
+1. Только для URL `web.max.ru`.
+2. Только после роста `title/unread`.
+3. Ждет `700мс`, чтобы приоритет остался у обычных путей `__CC_NOTIF__` и `__CC_MSG__`.
+4. Если обычный путь уже показал ribbon, fallback отменяется.
+5. Если обычного пути нет, запускает DOM snapshot внутри MAX WebView.
+6. Snapshot сначала ищет непрочитанный sidebar row (`wrapper--withActions`, role listitem/presentation, unread badge/aria/class signals), достает preview text, sender, avatar.
+7. Active-chat snapshot используется только как резерв.
+8. Результат идет через обычный `handleNewMessage()`, поэтому внешний вид ribbon не меняется.
+9. Если text не найден или результат не имеет достаточной структуры, уведомление не показывается. Сообщения не блокируются по словам: клиент может реально написать дату, время, `ред.` или любой похожий текст.
+
+### Уточнение 18 июня 2026, 18:26: почему не пришло `Наличка`
+
+Факт из `chatcenter.log`:
+
+```text
+[2026-06-18 18:25:14] [Макс] MAX title-fallback max-title-sidebar | sender="Марейченко Вячеслав " → Ribbon: Заказываем лузар
+[2026-06-18 18:26:11] [Макс] Источник: title +1 | MAX title-fallback scheduled
+[2026-06-18 18:26:12] [Макс] Обогащение: title +1 | MAX title-fallback no rich message
+```
+
+Значит первый вариант fallback работал для sidebar (`Заказываем лузар`), но не достал сообщение из уже открытого чата (`Наличка`). Причина: текущая верстка MAX после перехода в чат не попала в старые селекторы `.history/.openedChat/.messageWrapper`; диагностика рядом показывала `probe[column-center]: null`, `probe[bubbles]: null`. Notification UI не ломался — `Ribbon` просто не создавался, потому что extractor вернул пустой результат.
+
+Дополнение: попытка добавить третий резерв `visibleIncomingSnapshot()` оказалась неверной. Он смотрел не событие нового сообщения, а текущие видимые leaf-тексты в открытом MAX-чате. Это помогло поймать часть сообщений в активном чате, но источник был неавторитетным: `title +N` доказывает только рост unread, а не то, какой именно DOM-текст является новым сообщением.
+
+### Уточнение 19 июня 2026, 09:27: visible fallback начал слать даты как сообщения
+
+Факт из `chatcenter.log` после добавления `visibleIncomingSnapshot()`:
+
+```text
+[2026-06-19 09:26:56] [Макс] Обогащение: 18 июн. | MAX title-fallback max-title-visible | sender="" icon=false
+[2026-06-19 09:27:08] [Макс] Ribbon: 18 июн. | отправлен | sender="Цывилько Дмитрий Ник" iconUrl=нет iconData=нет
+[2026-06-19 09:28:45] [Макс] Ribbon: 06:48 ред. | отправлен | sender="Журавлёв Владимир Ев" iconUrl=нет iconData=нет
+```
+
+Причина: третий резерв `visibleIncomingSnapshot()` был слишком широким. Он сканировал видимые leaf-тексты в открытом MAX-чате и мог принять separator/date (`18 июн.`), edited-marker (`06:48 ред.`) или старую строку с inline-time (`Спасибо 18:34`) за новое сообщение. Дополнительно он мог показать ribbon без аватарки (`icon=false`). Это нарушает главное правило MAX fallback: rich ribbon можно строить только из авторитетного события (`__CC_NOTIF__`/`__CC_MSG__`) или из DOM-узла, который появился как новая message mutation, а не из произвольного текста, который уже виден на экране.
+
+Коррекция 19 июня 2026: словесные блоки для `18 июн.`, `ред.`, inline-time и похожих строк сняты, потому что клиент реально может написать такой текст. Исправление теперь не в запрете слов, а в удалении неверного источника: `visibleIncomingSnapshot()` отключен из цепочки fallback. Parser больше не блокирует сообщения по содержимому, кроме пустого/слишком длинного результата. Оставшийся fallback: `sidebarSnapshot()` → `activeChatSnapshot()`. Следующий надежный этап для активного чата MAX должен идти через авторитетный источник: payload `ServiceWorkerRegistration.showNotification`/`new Notification` или MutationObserver только на реально добавленный message-node с sender/avatar, baseline и структурными признаками.
+Файлы:
+- `src/utils/maxTitleFallback.js`
+- `src/utils/webviewSetup.js`
+- `src/utils/consoleMessageHandler.js` — исправлена опечатка `senderNotifTsRef` → `notifSenderTsRef`
+- `src/__tests__/maxTitleFallback.test.cjs`
+
+### Как диагностировать
+
+Искать в `chatcenter.log`:
+
+```text
+[Макс] Звук: title +N
+MAX title-fallback scheduled
+MAX title-fallback skip | normal path already handled
+MAX title-fallback no rich message
+MAX title-fallback max-title-sidebar | sender="..."
+MAX title-fallback max-title-active | sender="..."
+```
+
+Если `scheduled` есть, но rich result нет — MAX поменял DOM, обновлять selectors в `maxTitleFallback.js`.
+Если rich result есть, но ribbon нет — смотреть `handleNewMessage` dedup/viewing/spam и `notificationManager.showCustomNotification` body-фильтры.
+
+### Регресс-тесты
+
+```bash
+node src/__tests__/maxTitleFallback.test.cjs
+node src/__tests__/handleNewMessage.test.cjs
+node src/__tests__/consoleMessageParser.test.cjs
+node src/__tests__/notifHooks.test.cjs
+node src/__tests__/monitorPreload.test.cjs
+```
 
 ---
 
@@ -1268,3 +1515,52 @@ style={{
 **Ключевой урок**: SPA-мессенджеры используют виртуальный скроллинг. `querySelectorAll` находит только ВИДИМЫЕ элементы. Для навигации к невидимому чату нужен альтернативный метод через peer ID формат.
 
 ---
+---
+
+## 🔴 MAX title-fallback: битый regex внутри injected WebView script (2026-06-19)
+
+### Симптом
+В логах появилось:
+
+```text
+[2026-06-19 14:55:55] [ERROR] Error occurred in handler for 'GUEST_VIEW_MANAGER_CALL': Error: Script failed to execute
+[Макс] debug: wv-runtime: Uncaught SyntaxError: Invalid regular expression
+[Макс] MAX title-fallback error: Error invoking remote method 'GUEST_VIEW_MANAGER_CALL'
+```
+
+Уведомления MAX могли пищать или ждать fallback, но fallback не мог достать текст, отправителя и аватарку из DOM, потому что injected script падал ещё на этапе компиляции внутри WebView.
+
+### Что нашли
+Источник ошибки — `buildMaxTitleFallbackScript()` в `src/utils/maxTitleFallback.js`. Функция возвращает JS-код строкой для `webview.executeJavaScript()`. Внутри такой template string нельзя писать regex с одинарными backslash так же, как в обычном JS-коде.
+
+Проблемные места:
+
+```js
+/st\.max\.ru\/emojis/i
+/[:：]\s*$/
+/^[1-9]\d{0,3}$/
+```
+
+В исходном файле regex выглядел корректно, но при сборке строки backslash частично терялся. В WebView уходила уже другая строка, где `/` внутри regex мог стать реальным разделителем regex. Итог — `Invalid regular expression` и падение `executeJavaScript`.
+
+### Почему lint/build не поймали
+`eslint` и `electron-vite build` проверяют исходный файл проекта. Они не компилируют строку, которую мы генерируем и отправляем в MAX WebView через `executeJavaScript`. Поэтому исходный модуль был валиден, а runtime-строка внутри WebView — нет.
+
+### Решение
+1. В `src/utils/maxTitleFallback.js` double-escaped regex внутри template string:
+   - `st.max.ru/emojis` теперь уходит в WebView как валидный `/st\.max\.ru\/emojis/i`.
+   - `\s` и `\d` теперь сохраняются в runtime-скрипте как regex whitespace/digit, а не ломаются при сборке строки.
+2. В `src/__tests__/maxTitleFallback.test.cjs` добавлен тест `script: generated WebView script compiles`.
+3. Тест делает `new Function(buildMaxTitleFallbackScript())` и ловит именно тот тип ошибки, который был в логе: синтаксически битый generated script. Дополнительно проверяется, что runtime-строка сохраняет regex escapes `\\s`, `\\d` и `\\/`, а не только компилируется.
+
+### Как проверяли
+- `node src\__tests__\maxTitleFallback.test.cjs` — 8/8 passed.
+- Отдельная runtime-проверка: `new Function(buildMaxTitleFallbackScript())` — compiled.
+- `npm.cmd run lint` — passed.
+- `npm.cmd run build` — passed.
+
+### Ожидаемое поведение после фикса
+При росте unread/title в MAX, если обычный `__CC_NOTIF__/__CC_MSG__` не пришёл, title-fallback больше не падает на `GUEST_VIEW_MANAGER_CALL`. Он снова может прочитать DOM списка чатов, собрать текст, отправителя, chatTag и аватарку, затем передать это в обычный путь `handleNewMessage()`.
+
+### Важный урок
+Любой код, который возвращается строкой для `executeJavaScript`, надо тестировать как уже сгенерированную строку. Обычный build/lint недостаточен: template string может испортить regex и escape-последовательности только на runtime-этапе.

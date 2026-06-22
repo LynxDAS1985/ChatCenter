@@ -83,10 +83,17 @@ export function createHandleNewMessage(deps) {
     // Per-messenger ribbon: messengerNotifs[id].ribbon > notificationsEnabled (глобальный)
     const ribbonOn = mNotifs.ribbon !== undefined ? mNotifs.ribbon : true
     const mInfo = messengersRef.current.find(x => x.id === messengerId)
-    if (settingsRef.current.soundEnabled !== false && soundOn) {
+    const deferSoundUntilRibbon = !!extra?.fromTitleFallback
+    const canPlaySound = settingsRef.current.soundEnabled !== false && soundOn
+    const playAcceptedSound = (reason) => {
       playNotificationSound(mInfo?.color)
       lastSoundTsRef.current[messengerId] = Date.now()
-      traceNotif('sound', 'pass', messengerId, text, 'звук воспроизведён')
+      traceNotif('sound', 'pass', messengerId, text, reason)
+    }
+    if (canPlaySound && !deferSoundUntilRibbon) {
+      playAcceptedSound('звук воспроизведён')
+    } else if (canPlaySound && deferSoundUntilRibbon) {
+      traceNotif('sound', 'info', messengerId, text, 'MAX title-fallback: звук отложен до main-result ok=true')
     } else {
       traceNotif('sound', 'block', messengerId, text, `global=${settingsRef.current.soundEnabled !== false} muted=${messengerMuted} perMsg=${mNotifs.sound}`)
     }
@@ -108,8 +115,13 @@ export function createHandleNewMessage(deps) {
         messengerId: messengerId,
         senderName: senderName || '',
         chatTag: extra?.chatTag || '',
-      }).catch(() => {})
-      traceNotif('ribbon', 'pass', messengerId, text, `отправлен | sender="${senderName.slice(0,20)}" iconUrl=${(extra?.iconUrl||'нет').slice(0,30)} iconData=${(extra?.iconDataUrl||'нет').slice(0,30)}`)
+      }).then(result => {
+        traceNotif('ribbon', result?.ok ? 'pass' : 'warn', messengerId, text, `main-result ok=${!!result?.ok} id=${result?.id || 'нет'} error=${result?.error || ''} sender="${senderName.slice(0,20)}" iconUrl=${(extra?.iconUrl||'нет').slice(0,30)} iconData=${(extra?.iconDataUrl||'нет').slice(0,30)}`)
+        if (result?.ok && deferSoundUntilRibbon && canPlaySound) playAcceptedSound('звук после подтверждённого ribbon')
+      }).catch(err => {
+        traceNotif('ribbon', 'warn', messengerId, text, `main-result error=${err?.message || err}`)
+      })
+      traceNotif('ribbon', 'info', messengerId, text, `invoke app:custom-notify | sender="${senderName.slice(0,20)}" iconUrl=${(extra?.iconUrl||'нет').slice(0,30)} iconData=${(extra?.iconDataUrl||'нет').slice(0,30)}`)
     } else {
       traceNotif('ribbon', 'block', messengerId, text, `выключен | global=${settingsRef.current.notificationsEnabled !== false} perMsg=${ribbonOn}`)
     }

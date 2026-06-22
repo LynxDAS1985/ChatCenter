@@ -15,6 +15,18 @@
 
 ---
 
+## System Diagnostics (v1.2.8)
+
+Отдельная системная диагностика в настройках. Не заменяет `ai-errors.log` и не очищает `chatcenter.log`.
+
+| Канал | Payload | Ответ | Назначение |
+|---|---|---|---|
+| `app:diagnostics-snapshot` | — | `{ ok, app, paths, files, logText, aiErrorsText, collectedAt }` | Read-only снимок: версия приложения, пути, статусы файлов, хвост `chatcenter.log` и `ai-errors.log` с маскированием секретов. |
+| `app:diagnostics-save-report` | `report` | `{ ok, path, bytes }` или `{ ok:false, error }` | Сохраняет JSON-отчёт в `userData/system-diagnostics-report.json`, чтобы Codex/другой ИИ мог прочитать диагностику без ручного копирования из UI. |
+
+Правило безопасности: `Очистить экран` в `SystemDiagnosticsModal` не вызывает `app:clear-log` и не трогает `ai:clear-error-log`; очищается только состояние модалки.
+
+---
 ## Native Telegram (`tg:*`) — TDLib backend
 
 Все каналы зарегистрированы в [`main/native/tdlibIpcHandlers.js`](../main/native/tdlibIpcHandlers.js). UI вызывает через [`window.api.invoke('tg:*', payload)`](../src/native/store/nativeStore.js) — preload [bridge](../main/preload.cjs).

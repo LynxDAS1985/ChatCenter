@@ -91,7 +91,7 @@ function playTestSound(color) {
   } catch {}
 }
 
-export default function SettingsPanel({ messengers, settings, onMessengersChange, onSettingsChange, onClose }) {
+export default function SettingsPanel({ messengers, settings, onMessengersChange, onSettingsChange, onClose, onOpenSystemDiagnostics }) {
   const [errorLog, setErrorLog] = useState(null)        // null = не загружен, '' = пуст, 'текст' = есть записи
   const [logLoading, setLogLoading] = useState(false)
   const [logClearing, setLogClearing] = useState(false)
@@ -461,6 +461,19 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
 
               <p className="text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>
                 Файл: <code style={{ color: 'var(--cc-text-dim)' }}>userData/ai-errors.log</code> · Показаны последние 30 строк
+              </p>
+
+              <button
+                onClick={onOpenSystemDiagnostics}
+                className="w-full py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer"
+                style={{ backgroundColor: 'rgba(56,189,248,0.12)', color: '#7dd3fc', border: '1px solid rgba(56,189,248,0.35)' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.2)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.12)'}
+              >
+                🩺 Диагностика системы
+              </button>
+              <p className="text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>
+                Отдельный отчёт по приложению: цепочки событий, системный лог, подключения и WebView. Очистка внутри него не трогает chatcenter.log.
               </p>
 
               {/* v0.91.0: кнопка cleanup WebContentsView убрана (откат WCV) */}

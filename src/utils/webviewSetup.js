@@ -12,6 +12,7 @@ import { createConsoleMessageHandler } from './consoleMessageHandler.js'
 import { logGeometry, runDomProbe, attachRuntimeErrorCatcher } from './webviewDiagnostics.js'
 import { createHandleNewMessage } from './webviewHandleNewMessage.js'
 import { probeWebviewHealth } from './webviewHealthProbe.js'
+import { scheduleMaxTitleFallback } from './maxTitleFallback.js'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 import {
   markHealthError,
@@ -134,6 +135,7 @@ export function createWebviewSetup(deps) {
   // v0.60.2: per-messengerId dedup — если __CC_NOTIF__ от этого messengerId был <3 сек назад,
   // блокируем __CC_MSG__ целиком (sender name может отличаться из-за разного enrichment)
   const notifMidTsRef = { current: {} } // { [messengerId]: timestamp }
+  const maxTitleFallbackTimers = { current: {} } // { [messengerId]: timer }
 
   // ── Pipeline Trace Logger (v0.55.0) ──────────────────────────────────────────
   // Записывает КАЖДЫЙ шаг pipeline уведомлений для диагностики
@@ -158,7 +160,8 @@ export function createWebviewSetup(deps) {
       const icon = _traceTypeLabels[type] || '·'
       const label = _traceLabels[step] || step
       const shortText = (text || '').slice(0, 60)
-      const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, 250) : ''}`
+      const detailLimit = detail && (/MAX title-fallback|max-title-|topRows=|chosenLeafs=/.test(detail)) ? 1600 : 250
+      const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, detailLimit) : ''}`
       try { window.api?.send('app:log', { level: 'TRACE', message: msg }) } catch {}
     }
   }
@@ -382,21 +385,39 @@ export function createWebviewSetup(deps) {
           setUnreadCounts(prev => {
             if (prev[messengerId] === count) return prev
             const prevCount = prev[messengerId] || 0
-            // v0.86.0: Звук при увеличении — разрешаем даже при activeId=messengerId
-            // WhatsApp не шлёт __CC_NOTIF__ при активной вкладке, title-update = единственный канал для звука
-            // Ribbon НЕ отправляем здесь — он приходит через __CC_NOTIF__ с именем и текстом
+            // v0.86.0: title-update остаётся звуковым fallback для мессенджеров без rich-event.
+            // v1.2.7: MAX (web.max.ru) исключён — звук играет только после подтверждённого ribbon,
+            // чтобы не было timestamp-фантомов, двойного звука и "пик без уведомления".
             if (count > prevCount && notifReadyRef.current[messengerId]) {
+              const titleUpdateUrl = (() => { try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' } })()
+              const isMaxTitleFallback = /web\.max\.ru/.test(titleUpdateUrl)
+              scheduleMaxTitleFallback({
+                el,
+                messengerId,
+                delta: count - prevCount,
+                messengerUrl: titleUpdateUrl,
+                notifReadyRef,
+                lastRibbonTsRef,
+                notifMidTsRef,
+                timersRef: maxTitleFallbackTimers,
+                senderCacheRef,
+                cleanupSenderCache,
+                handleNewMessage,
+                traceNotif,
+              })
               const s = settingsRef.current
               const mn = (s.messengerNotifs || {})[messengerId] || {}
               const muted = !!(s.mutedMessengers || {})[messengerId]
               const sndOn = mn.sound !== undefined ? mn.sound : !muted
               const lastSnd = lastSoundTsRef.current[messengerId] || 0
               const sinceLast = Date.now() - lastSnd
-              if (s.soundEnabled !== false && sndOn && sinceLast > 3000) {
+              if (!isMaxTitleFallback && s.soundEnabled !== false && sndOn && sinceLast > 3000) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
                 lastSoundTsRef.current[messengerId] = Date.now()
                 traceNotif('sound', 'pass', messengerId, `title +${count - prevCount}`, 'звук title-update')
+              } else if (isMaxTitleFallback) {
+                traceNotif('sound', 'info', messengerId, `title +${count - prevCount}`, 'MAX: title-update звук пропущен, ждём подтверждённый ribbon')
               }
             }
             return { ...prev, [messengerId]: count }

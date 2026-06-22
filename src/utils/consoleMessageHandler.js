@@ -382,7 +382,7 @@ export function createConsoleMessageHandler(deps) {
                 }
                 if (extra.senderName) senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconDataUrl || '', ts: Date.now() }; cleanupSenderCache(senderCacheRef.current)
                 extra.fromNotifAPI = true
-                senderNotifTsRef.current[extra.senderName] = Date.now()
+                notifSenderTsRef.current[messengerId + ':' + extra.senderName.slice(0, 30).toLowerCase()] = Date.now()
                 notifMidTsRef.current[messengerId] = Date.now()
                 handleNewMessage(messengerId, text, extra)
               }).catch(() => {

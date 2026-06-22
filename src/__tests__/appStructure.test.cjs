@@ -46,6 +46,7 @@ test('NativeApp controlled lazy import (A1 startup split)', () => {
   assert(code.includes('lazy import requested') && code.includes('lazy import resolved'), 'NativeApp lazy import should be visible in startup logs')
 })
 test('LogModal lazy import', () => assert(code.includes("import('./components/LogModal.jsx')")))
+test('SystemDiagnosticsModal lazy import', () => assert(code.includes("import('./components/SystemDiagnosticsModal.jsx')")))
 test('ConfirmCloseModal lazy import', () => assert(code.includes("import('./components/ConfirmCloseModal.jsx')")))
 
 // ── Нет дублирования (inline код удалён) ──
@@ -114,6 +115,7 @@ console.log('\\n── Компоненты: ──')
 test('NotifLogModal используется', () => assert(code.includes('<NotifLogModal')))
 test('MessengerTab используется', () => assert(allAppCode.includes('<MessengerTab')))
 test('SettingsPanel используется', () => assert(code.includes('<SettingsPanel')))
+test('SystemDiagnosticsModal используется', () => assert(code.includes('<SystemDiagnosticsModal')))
 test('AISidebar используется', () => assert(code.includes('<AISidebar')))
 test('Условные панели грузятся через lazy()', () =>
   assert(code.includes('lazy(() => import') && code.includes('<Suspense fallback={null}>')))

@@ -9,6 +9,7 @@ import path from 'node:path'
 import { setupSession } from '../utils/sessionSetup.js'
 import { readLogFile, clearLogFile, getLogFilePath } from '../utils/logger.js'
 import { createOverlayIcon } from '../utils/overlayIcon.js'
+import { collectSystemDiagnostics, saveSystemDiagnosticsReport } from '../utils/systemDiagnostics.js'
 import { initAILoginHandler } from './aiLoginHandler.js'
 import { registerWindowHandlers } from './windowHandlers.js'
 import { registerPhotoViewerHandler } from './photoViewerHandler.js'
@@ -29,6 +30,8 @@ export function registerMainIpcHandlers(deps) {
   // v0.84.2: Чтение лога для модального окна
   ipcMain.handle('app:read-log', () => readLogFile(500))
   ipcMain.handle('app:clear-log', () => { clearLogFile(); return 'ok' })
+  ipcMain.handle('app:diagnostics-snapshot', () => collectSystemDiagnostics({ app, readLogFile, getLogFilePath }))
+  ipcMain.handle('app:diagnostics-save-report', (_, report) => saveSystemDiagnosticsReport({ app, report }))
   ipcMain.handle('app:open-external', (_, url) => { try { shell.openExternal(url) } catch(_) {} return { ok: true } })
   // v0.84.2: Renderer логирование — пишет в тот же файл лога
   ipcMain.on('app:log', (event, { level, message }) => {
