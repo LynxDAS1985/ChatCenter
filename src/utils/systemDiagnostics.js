@@ -20,16 +20,17 @@ export function parseLogLine(line) {
 }
 
 export function parseLogLines(logText) {
-  return String(logText || '')
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map(parseLogLine)
+  return String(logText || '').split(/\r?\n/).filter(Boolean).map(parseLogLine)
 }
 
 export function classifyLogLine(line) {
   const text = typeof line === 'string' ? line : line?.raw || line?.text || ''
   const s = text.toLowerCase()
-  if (s.includes('[error]') || s.includes(' error') || s.includes('ошибка') || s.includes('failed')) return 'error'
+  const level = typeof line === 'object' ? String(line?.level || '').toUpperCase() : ''
+  const errorField = s.match(/\berror\s*=\s*([^\]|,}]*)/i)
+  const errorValue = (errorField?.[1] || '').trim()
+  const hasErrorField = !!(errorValue && !/^[a-z_][\w-]*\s*=/.test(errorValue))
+  if (level.includes('ERROR') || s.includes('[error]') || hasErrorField || s.includes('ошибка') || s.includes('failed')) return 'error'
   if (s.includes('notify') || s.includes('notif') || s.includes('ribbon') || s.includes('звук')) return 'notification'
   if (s.includes('webview') || s.includes('executejavascript') || s.includes('dom-ready')) return 'webview'
   if (s.includes('tdlib') || s.includes('tg:') || s.includes('native')) return 'native'
@@ -70,43 +71,44 @@ function countByState(items) {
   }, {})
 }
 
+function findNotificationSignals(lines) {
+  const noIcon = lines.filter(line => /Ribbon:|NotifManager|custom-notify/i.test(line.raw || line.text || '') && /(iconUrl=нет iconData=нет|icon=false|iconType=none)/i.test(line.raw || line.text || ''))
+  const grouped = lines.filter(line => /addNotification/i.test(line.raw || line.text || '') && /grouping=true/i.test(line.raw || line.text || '') && /itemsBefore=[1-9]/i.test(line.raw || line.text || ''))
+  return { noIcon, grouped }
+}
+
+function addProblem(problems, severity, title, detail, advice, source) {
+  problems.push({ severity, title, detail, advice, source })
+}
+
 export function analyzeSystemDiagnostics({ snapshot = {}, runtimeContext = {} } = {}) {
   const lines = parseLogLines(snapshot.logText || '')
   const errors = lines.filter(line => classifyLogLine(line) === 'error')
   const warnings = lines.filter(line => line.level.includes('WARN') || classifyLogLine(line) === 'warning')
   const healthItems = Object.values(runtimeContext.connectionHealth || {})
   const healthByState = countByState(healthItems)
+  const notifSignals = findNotificationSignals(lines)
   const problems = []
 
   if (errors.length) {
-    problems.push({
-      severity: 'critical',
-      title: `В журнале есть ошибки: ${errors.length}`,
-      detail: errors.slice(-3).map(x => x.raw).join('\n'),
-      advice: 'Открыть цепочки ниже и смотреть последний ERROR рядом с нужным модулем.',
-      source: 'chatcenter.log',
-    })
+    addProblem(problems, 'critical', `В журнале есть ошибки: ${errors.length}`, errors.slice(-3).map(x => x.raw).join('\n'), 'Открыть цепочки ниже и смотреть последний ERROR рядом с нужным модулем.', 'chatcenter.log')
   }
 
   const badConnections = healthItems.filter(x => ['slow', 'error'].includes(x?.state))
   if (badConnections.length) {
-    problems.push({
-      severity: 'warning',
-      title: `Проблемные подключения: ${badConnections.length}`,
-      detail: badConnections.map(x => `${x.label || x.id || 'unknown'}: ${x.state}${x.details ? `, ${x.details}` : ''}`).join('\n'),
-      advice: 'Включить глубокую WebView-проверку вручную и обновить диагностику.',
-      source: 'connectionHealth',
-    })
+    addProblem(problems, 'warning', `Проблемные подключения: ${badConnections.length}`, badConnections.map(x => `${x.label || x.id || 'unknown'}: ${x.state}${x.details ? `, ${x.details}` : ''}`).join('\n'), 'Включить глубокую WebView-проверку вручную и обновить диагностику.', 'connectionHealth')
   }
 
   if (snapshot.aiErrorsText) {
-    problems.push({
-      severity: 'info',
-      title: 'Есть записи в AI errors',
-      detail: redactText(snapshot.aiErrorsText).split(/\r?\n/).filter(Boolean).slice(-3).join('\n'),
-      advice: 'Это отдельный AI-журнал; он не означает поломку системных уведомлений.',
-      source: 'ai-errors.log',
-    })
+    addProblem(problems, 'info', 'Есть записи в AI errors', redactText(snapshot.aiErrorsText).split(/\r?\n/).filter(Boolean).slice(-3).join('\n'), 'Это отдельный AI-журнал; он не означает поломку системных уведомлений.', 'ai-errors.log')
+  }
+
+  if (notifSignals.noIcon.length) {
+    addProblem(problems, 'warning', `Уведомления без аватарки: ${notifSignals.noIcon.length}`, notifSignals.noIcon.slice(-5).map(x => x.raw).join('\n'), 'Проверить источник sender/avatar до renderer: hook/fallback должен передать iconUrl или iconDataUrl.', 'notification-avatar')
+  }
+
+  if (notifSignals.grouped.length) {
+    addProblem(problems, 'info', `Есть сгруппированные уведомления: ${notifSignals.grouped.length}`, notifSignals.grouped.slice(-5).map(x => x.raw).join('\n'), 'Если пользователь слышит звук, но не видит отдельную карточку, проверить отображение каждого элемента внутри группы.', 'notification-grouping')
   }
 
   const chains = buildNotificationChains(lines)
