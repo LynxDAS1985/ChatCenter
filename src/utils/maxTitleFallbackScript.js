@@ -49,6 +49,7 @@ export function buildMaxTitleFallbackScript() {
           if (img.tagName === 'CANVAS' && img.width > 10) return img.toDataURL('image/png');
           if (img.tagName !== 'IMG' || !img.src) return '';
           if (img.src.startsWith('data:')) return img.src;
+          if (img.src.startsWith('http')) return img.src;
           if (img.complete && img.naturalWidth > 5) {
             var c = document.createElement('canvas');
             c.width = Math.min(img.naturalWidth || img.width || 40, 80);
@@ -56,7 +57,6 @@ export function buildMaxTitleFallbackScript() {
             c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
             return c.toDataURL('image/jpeg', 0.7);
           }
-          if (img.src.startsWith('http')) return img.src;
         } catch(e) {}
         return '';
       }

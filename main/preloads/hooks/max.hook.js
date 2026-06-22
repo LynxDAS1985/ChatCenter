@@ -50,6 +50,7 @@
       if (media.tagName === 'CANVAS' && media.width > 10) { try { return media.toDataURL('image/png'); } catch(e) {} }
       if (media.tagName !== 'IMG' || !media.src) return '';
       if (media.src.startsWith('data:')) return media.src;
+      if (media.src.startsWith('http')) return media.src;
       if (media.complete && media.naturalWidth > 10) {
         try {
           var c = document.createElement('canvas');
@@ -59,7 +60,6 @@
           return c.toDataURL('image/jpeg', 0.7);
         } catch(e2) {}
       }
-      if (media.src.startsWith('http')) return media.src;
     } catch(e) {}
     return '';
   }

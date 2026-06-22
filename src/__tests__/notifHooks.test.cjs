@@ -53,6 +53,7 @@ test('MAX: enrichNotif/findSender', () => assert(maxCode.includes('_enrichNotif'
 test('MAX: _appTitles regex', () => assert(maxCode.includes('_appTitles'), 'MAX должен проверять title = название приложения'))
 test('MAX: sticker extraction', () => assert(maxCode.includes('_extractSticker') || maxCode.includes('sticker'), 'MAX должен извлекать стикеры'))
 test('MAX: avatar extraction supports data/canvas fallback', () => assert(maxCode.includes("media.src.startsWith('data:')") && maxCode.includes("toDataURL('image/jpeg'"), 'MAX должен передавать data/canvas avatar, а не только http'))
+test('MAX: http avatar is returned before canvas export', () => assert(maxCode.indexOf("media.src.startsWith('http')") < maxCode.indexOf("drawImage(media"), 'MAX должен возвращать http avatar до canvas, чтобы CORS не терял URL'))
 
 const tgCode = fs.readFileSync(path.join(hooksDir, 'telegram.hook.js'), 'utf8')
 test('TG: НЕ содержит _maxPhantom', () => assert(!tgCode.includes('_maxPhantom'), 'Telegram НЕ должен иметь MAX-фильтры'))

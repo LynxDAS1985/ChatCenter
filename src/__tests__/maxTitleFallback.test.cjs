@@ -81,6 +81,15 @@ function test(name, fn) {
     assert(script.includes('emojis'))
   })
 
+  test('script: returns http avatar before canvas export', () => {
+    const script = mod.buildMaxTitleFallbackScript()
+    const httpPos = script.indexOf("if (img.src.startsWith('http')) return img.src;")
+    const canvasPos = script.indexOf("c.getContext('2d').drawImage")
+    assert(httpPos > -1, 'http avatar fallback must exist')
+    assert(canvasPos > -1, 'canvas export path must still exist')
+    assert(httpPos < canvasPos, 'http avatar URL must not be lost when canvas export is blocked by CORS')
+  })
+
 
   test('script: generated regex escapes keep runtime meaning', () => {
     const script = mod.buildMaxTitleFallbackScript()
