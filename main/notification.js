@@ -131,9 +131,9 @@
 
     // v0.63.0: если это хост стэка — очистить дочерние
     if (item.messengerId) {
-      const stack = stacks.get(item.messengerId)
+      const stack = stacks.get(item.stackKey || item.messengerId)
       if (stack && stack.hostId === id) {
-        cleanupStack(item.messengerId)
+        cleanupStack(item.stackKey || item.messengerId)
       }
     }
 
@@ -174,7 +174,7 @@
       setTimeout(() => {
         el.remove()
         items.delete(id)
-        if (groupingEnabled && item.messengerId) cleanupStack(item.messengerId)
+        if (groupingEnabled && item.messengerId) cleanupStack(item.stackKey || item.messengerId)
         // v0.89.20: финальный reportHeight — должен прийти с calcH=0.
         try { window.notifApi.log('INFO', 'dismiss final-report id=' + id + ' itemsAfter=' + items.size + ' calcH=' + calcHeight()) } catch (_) {}
         reportHeight()
@@ -263,7 +263,7 @@
     stackContainer.scrollTop = stackContainer.scrollHeight
 
     // Обновляем стэк
-    const stack = stacks.get(data.messengerId)
+    const stack = stacks.get(data.stackKey || data.messengerId)
     if (stack) {
       stack.childIds.push(data.id)
     }
@@ -288,8 +288,8 @@
   }
 
   // Очистка стэка при dismiss хоста
-  function cleanupStack(messengerId) {
-    const stack = stacks.get(messengerId)
+  function cleanupStack(stackKey) {
+    const stack = stacks.get(stackKey)
     if (!stack) return
     // Dismiss все child items (скрытые, без DOM)
     stack.childIds.forEach(id => {
@@ -301,7 +301,7 @@
         items.delete(id)
       }
     })
-    stacks.delete(messengerId)
+    stacks.delete(stackKey)
   }
 
   // v0.60.7: мгновенное удаление для FIFO (без анимации)
@@ -350,7 +350,7 @@
 
     // v0.63.0: стэковая группировка — складываем в существующую карточку
     if (groupingEnabled && data.messengerId) {
-      const stack = stacks.get(data.messengerId)
+      const stack = stacks.get(data.stackKey || data.messengerId)
       if (stack && items.has(stack.hostId) && !items.get(stack.hostId).dismissing) {
         // Складываем в хост-карточку как дополнительную строку
         const stacked = stackMessageIntoHost(stack.hostId, data)
@@ -365,6 +365,7 @@
             dismissMs: 0,
             paused: false,
             messengerId: data.messengerId,
+            stackKey: data.stackKey || data.messengerId,
             messengerName: data.messengerName || '',
             senderName: data.title || '',
             bodyText: data.body || '',
@@ -499,7 +500,7 @@
           setTimeout(() => {
             el.remove()
             items.delete(data.id)
-            if (groupingEnabled && item.messengerId) cleanupStack(item.messengerId)
+            if (groupingEnabled && item.messengerId) cleanupStack(item.stackKey || item.messengerId)
             reportHeight()
           }, 190)
         }, 320)
@@ -661,6 +662,7 @@
       dismissMs: thisDismissMs,
       paused: false,
       messengerId: data.messengerId || '',
+      stackKey: data.stackKey || data.messengerId || '',
       messengerName: data.messengerName || '',
       senderName: data.title || '',
       bodyText: data.body || '',
@@ -670,8 +672,8 @@
     reportHeight()
 
     // v0.63.0: обновляем стэк — запоминаем эту карточку как хост для мессенджера
-    if (groupingEnabled && data.messengerId && !stacks.has(data.messengerId)) {
-      stacks.set(data.messengerId, { hostId: data.id, childIds: [] })
+    if (groupingEnabled && data.messengerId && !stacks.has(data.stackKey || data.messengerId)) {
+      stacks.set(data.stackKey || data.messengerId, { hostId: data.id, childIds: [] })
     }
   }
 

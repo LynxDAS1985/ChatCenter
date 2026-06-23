@@ -203,11 +203,22 @@
   // === BADGE API BLOCK ===
   if (navigator.setAppBadge) { navigator.setAppBadge = function(n) { console.log('__CC_BADGE_BLOCKED__:' + n); return Promise.resolve(); }; }
   if (navigator.clearAppBadge) { navigator.clearAppBadge = function() { return Promise.resolve(); }; }
-  // === SERVICE WORKER BLOCK ===
-  if (navigator.serviceWorker) {
-    navigator.serviceWorker.register = function() { console.log('__CC_SW_BLOCKED__'); return Promise.reject(new Error('blocked')); };
-    navigator.serviceWorker.getRegistrations().then(function(r) { r.forEach(function(s) { s.unregister(); }); if (r.length) console.log('__CC_SW_UNREGISTERED__:' + r.length); }).catch(function() {});
-  }
+  // === SERVICE WORKER: РАЗРЕШАЕМ (v1.2.10) ===
+  // У MAX единственный путь уведомлений — ServiceWorkerRegistration.showNotification (перехват выше, "MAX основной метод").
+  // Раньше здесь SW блокировался и удалялся (register→reject + getRegistrations→unregister). Но без живого SW
+  // navigator.serviceWorker.ready не резолвится → MAX не может вызвать showNotification → __CC_NOTIF__ ни разу
+  // не приходил → каждое сообщение ловил только костыль по заголовку вкладки. А заголовок MAX считает
+  // непрочитанные ЧАТЫ, а не сообщения → второе/третье сообщение в одном чате терялось (баг v1.2.9-).
+  // Поэтому SW MAX НЕ трогаем: пусть регистрируется. Тогда наш перехват showNotification срабатывает на КАЖДОЕ
+  // сообщение и НЕ даёт показать системное уведомление (оригинал не вызывается). Костыль-заголовок остаётся
+  // аварийным fallback'ом (maxTitleFallback.js), как и задумано.
+  // Чтобы при живом SW не полезли ФОНОВЫЕ системные уведомления MAX (push при свёрнутом окне) —
+  // блокируем только подписку на push, сам SW (кэш/офлайн/foreground showNotification) работает штатно.
+  try {
+    if (window.PushManager && window.PushManager.prototype && window.PushManager.prototype.subscribe) {
+      window.PushManager.prototype.subscribe = function() { try { console.log('__CC_PUSH_BLOCKED__'); } catch(e) {} return Promise.reject(new Error('push blocked')); };
+    }
+  } catch(e) {}
   // === AUDIO MUTE ===
   var _A = window.Audio;
   window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
@@ -215,5 +226,53 @@
   var _ce = document.createElement.bind(document);
   document.createElement = function(tag) { var el = _ce.apply(document, arguments); if (tag && tag.toLowerCase() === 'audio') { el.volume = 0; el.muted = true; } return el; };
   ['AudioContext','webkitAudioContext'].forEach(function(n) { var _C = window[n]; if (!_C) return; var _g = _C.prototype.createGain; _C.prototype.createGain = function() { var g = _g.call(this); g.gain.value = 0; return g; }; });
+  // === SIDEBAR WATCHER (v1.2.11) ===
+  // У MAX нет рабочего ServiceWorker в Electron-webview (офиц. док.: webview нестабилен, SW не регистрируется,
+  // в журнале 222× "Operation has been aborted"). Значит showNotification не вызывается и __CC_NOTIF__ не приходит,
+  // а заголовок вкладки считает непрочитанные ЧАТЫ, не сообщения → 2-е/3-е сообщение в одном чате терялось.
+  // Решение (как у whatsapp.hook.js _sidebarObserver): следим за списком чатов и на изменение превью шлём
+  // __CC_NOTIF__ на КАЖДОЕ сообщение. Дедуп и warm-up делает пайплайн (consoleMessageHandler). Заголовок-fallback
+  // остаётся аварийным (его guard сам пропускает себя, если ribbon уже показан этим путём).
+  var _maxLastList = {};
+  function _maxRowInfo(row) {
+    var leaves = row.querySelectorAll('span, div, p'), sender = '', body = '';
+    for (var i = 0; i < leaves.length; i++) {
+      var n = leaves[i]; if (n.children && n.children.length > 2) continue;
+      var t = (n.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t.length < 2 || t.length > 200) continue;
+      var c = (typeof n.className === 'string' ? n.className : '');
+      if (/badge|indicator|meta|counter/i.test(c)) continue;        // бейдж/время — не имя и не тело
+      if (!sender && /title|name/i.test(c)) { sender = t; continue; }
+      if (/title|name/i.test(c)) continue;                          // прочие варианты имени
+      if (!body && /text|message|preview/i.test(c) && t !== sender && !/^\d{1,4}$/.test(t)) body = t;
+    }
+    return { sender: sender, body: body };
+  }
+  function _maxScanList(root, emit) {
+    var rows = root.querySelectorAll('[class*="wrapper--withActions"], [role="listitem"], [role="presentation"]');
+    for (var i = 0; i < rows.length && i < 60; i++) {
+      var info = _maxRowInfo(rows[i]);
+      if (!info.sender || !info.body || info.body === info.sender) continue;
+      if (_isSpam(info.body)) continue;
+      var prev = _maxLastList[info.sender];
+      if (info.body === prev) continue;
+      var firstSeen = (prev === undefined);
+      _maxLastList[info.sender] = info.body;
+      if (firstSeen || !emit) continue;                             // первый проход — не шумим существующими чатами
+      var icon = _findAvatarIn(rows[i]);
+      _log('passed', info.sender, info.body, '', icon, '', info.sender);
+      console.log('__CC_NOTIF__' + JSON.stringify({ t: info.sender, b: info.body, i: icon || '', g: '' }));
+    }
+  }
+  setTimeout(function() {
+    function _root() { return document.querySelector('[class*="scrollListContent" i]') || document.querySelector('nav, aside, [class*="sidebar" i]') || document.body; }
+    try { _maxScanList(_root(), false); } catch(e) {}              // первичная заливка _maxLastList без уведомлений
+    var _dt = 0;
+    try {
+      new MutationObserver(function() { clearTimeout(_dt); _dt = setTimeout(function() { try { _maxScanList(_root(), true); } catch(e) {} }, 350); })
+        .observe(document.body, { childList: true, subtree: true, characterData: true });
+      console.log('__CC_DIAG__max-sidebar: observer attached');
+    } catch(e) {}
+  }, 8000);
   console.log('__CC_NOTIF_HOOK_OK__');
 })()

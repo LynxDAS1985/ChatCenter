@@ -5,20 +5,27 @@
  */
 
 // Копии функций (для автономного запуска без ESM)
-function isDuplicateExact(messengerId, text, recentMap, ttlMs) {
+function buildMessageDedupScope(senderName, chatTag, messageId) {
+  if (messageId) return 'mid:' + String(messageId).slice(0, 80)
+  var sender = String(senderName || '').trim().replace(/\s+/g, ' ').toLowerCase()
+  var chat = String(chatTag || '').trim().replace(/\s+/g, ' ').toLowerCase()
+  return sender ? 'sender:' + (chat || sender) + ':' + sender : ''
+}
+
+function isDuplicateExact(messengerId, text, recentMap, ttlMs, scope) {
   ttlMs = ttlMs || 10000
-  const key = messengerId + ':' + text.slice(0, 60)
+  const key = messengerId + ':' + (scope ? scope + ':' : '') + text.slice(0, 60)
   const now = Date.now()
   const prev = recentMap.get(key)
   if (prev && now - prev < ttlMs) return { blocked: true, age: now - prev }
   return { blocked: false, key, now }
 }
 
-function isDuplicateSubstring(messengerId, text, recentMap, ttlMs) {
+function isDuplicateSubstring(messengerId, text, recentMap, ttlMs, scope) {
   ttlMs = ttlMs || 5000
   const textShort = text.slice(0, 80)
   const now = Date.now()
-  const prefix = messengerId + ':'
+  const prefix = messengerId + ':' + (scope ? scope + ':' : '')
   for (const [k, ts] of recentMap) {
     if (now - ts > ttlMs || !k.startsWith(prefix)) continue
     const prevText = k.slice(prefix.length)
@@ -226,10 +233,31 @@ test('Пустое → пустое', function() { assert(cleanSenderStatus('') 
 
 // ── Структура модуля ──
 console.log('\\n── Структура модуля: ──')
+console.log('\\n-- scoped dedup regression: --')
+
+test('Scoped exact dedup keeps same text from another sender', function() {
+  var m = new Map()
+  var scopeIvan = buildMessageDedupScope('Ivan', 'chat-a')
+  var scopeMaria = buildMessageDedupScope('Maria', 'chat-b')
+  m.set('max:' + scopeIvan + ':Hello', Date.now())
+  assert(isDuplicateExact('max', 'Hello', m, 10000, scopeMaria).blocked === false)
+  assert(isDuplicateExact('max', 'Hello', m, 10000, scopeIvan).blocked === true)
+})
+
+test('Scoped substring dedup keeps similar text from another sender', function() {
+  var m = new Map()
+  var scopeIvan = buildMessageDedupScope('Ivan', 'chat-a')
+  var scopeMaria = buildMessageDedupScope('Maria', 'chat-b')
+  m.set('max:' + scopeIvan + ':Hello from order 123', Date.now())
+  assert(isDuplicateSubstring('max', 'Hello from order 123', m, 5000, scopeMaria).blocked === false)
+  assert(isDuplicateSubstring('max', 'Hello from order 123', m, 5000, scopeIvan).blocked === true)
+})
+
 var fs = require('fs')
 var code = fs.readFileSync('src/utils/messageProcessing.js', 'utf8')
 test('Файл существует', function() { assert(code.length > 100) })
 test('export isDuplicateExact', function() { assert(code.includes('export function isDuplicateExact')) })
+test('export buildMessageDedupScope', function() { assert(code.includes('export function buildMessageDedupScope')) })
 test('export isDuplicateSubstring', function() { assert(code.includes('export function isDuplicateSubstring')) })
 test('export stripSenderFromText', function() { assert(code.includes('export function stripSenderFromText')) })
 test('export isOwnMessage', function() { assert(code.includes('export function isOwnMessage')) })

@@ -20,7 +20,6 @@ import {
   markHealthPending,
   markHealthSlow,
 } from './connectionHealth.js'
-
 try { window.__ccStartupMark?.('module:webviewSetup', 'module evaluated') } catch {}
 
 // v0.83.1: Sender cache cleanup — удаляем записи старше 5 мин, лимит 50 записей
@@ -100,7 +99,6 @@ export function createWebviewSetup(deps) {
       ? defaultM.accountScript
       : messenger?.accountScript
     if (!wv || !script) return
-
     wv.executeJavaScript(script)
       .then(result => {
         devLog(`[tryExtractAccount] ${messengerId} attempt=${attempt} result=`, JSON.stringify(result), typeof result)
@@ -153,14 +151,17 @@ export function createWebviewSetup(deps) {
     pipelineTraceRef.current.push({
       ts: Date.now(), step, type, mid: messengerId || '', mName, text: (text || '').slice(0, 200), detail: detail || '',
     })
-    if (pipelineTraceRef.current.length > 300) pipelineTraceRef.current.splice(0, 100)
+    // v1.2.9: буфер трассировки в памяти увеличен 300→5000 (выкидываем 1000 старых при переполнении).
+    // Причина: maxFallbackEvents для диагностики строится ИЗ этого буфера, а не из лога. При 300 шагах
+    // быстрая пачка MAX-сообщений вытеснялась за минуты и не попадала в отчёт. Полный архив всё равно в chatcenter.log.
+    if (pipelineTraceRef.current.length > 5000) pipelineTraceRef.current.splice(0, 1000)
     // v0.86.0: Пишем в chatcenter.log (кроме badge_blocked и notif_hook_ok спама)
     const _skipDetail = detail && (detail.includes('badge_blocked') || detail.includes('notif_hook_ok'))
     if (!_skipDetail) {
       const icon = _traceTypeLabels[type] || '·'
       const label = _traceLabels[step] || step
       const shortText = (text || '').slice(0, 60)
-      const detailLimit = detail && (/MAX title-fallback|max-title-|topRows=|chosenLeafs=/.test(detail)) ? 1600 : 250
+      const detailLimit = detail && (/MAX title-fallback|max-title-|topRows=|chosenLeafs=|\[MAX-|MAX page-title-updated|\[IPC-MAX\]/.test(detail)) ? 3500 : 250
       const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, detailLimit) : ''}`
       try { window.api?.send('app:log', { level: 'TRACE', message: msg }) } catch {}
     }
@@ -385,6 +386,7 @@ export function createWebviewSetup(deps) {
           setUnreadCounts(prev => {
             if (prev[messengerId] === count) return prev
             const prevCount = prev[messengerId] || 0
+            const titleUpdateUrlForDiag = (() => { try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' } })(); if (/web\.max\.ru/.test(titleUpdateUrlForDiag)) traceNotif('debug', 'info', messengerId, `title-count ${count}`, `MAX page-title-updated raw="${String(e.title || '').slice(0, 120)}" prevUnread=${prevCount} delta=${count - prevCount} notifRef=${notifCountRef.current[messengerId] || 0} activeId=${activeIdRef.current} focused=${windowFocusedRef.current} url=${titleUpdateUrlForDiag.slice(0, 120)}`)
             // v0.86.0: title-update остаётся звуковым fallback для мессенджеров без rich-event.
             // v1.2.7: MAX (web.max.ru) исключён — звук играет только после подтверждённого ribbon,
             // чтобы не было timestamp-фантомов, двойного звука и "пик без уведомления".
@@ -446,6 +448,7 @@ export function createWebviewSetup(deps) {
         if (messengerId === 'whatsapp' && e.channel !== 'unread-count' && e.channel !== 'unread-split') {
           try { window.api?.send('app:log', { level: 'TRACE', message: '[IPC-WA] channel=' + e.channel + ' args=' + JSON.stringify(e.args).slice(0,100) }) } catch {}
         }
+        const ipcDiagUrl = (() => { try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' } })(); if (/web\.max\.ru/.test(ipcDiagUrl)) try { window.api?.send('app:log', { level: 'TRACE', message: '[IPC-MAX] channel=' + e.channel + ' activeId=' + activeIdRef.current + ' focused=' + windowFocusedRef.current + ' args=' + JSON.stringify(e.args).slice(0, 700) }) } catch {}
         if (e.channel === 'zoom-change') {
           const delta = e.args[0]?.delta || 0
           const cur = zoomLevelsRef.current[messengerId] || 100
@@ -535,22 +538,24 @@ export function createWebviewSetup(deps) {
             try { if (new RegExp(customSpamIpc, 'i').test(msgText)) { traceNotif('spam', 'block', messengerId, msgText, 'пользовательский спам-фильтр IPC'); return } } catch (e) { devError('[spam-regex]', e.message) }
           }
           // v0.60.2: per-messengerId dedup
-          const midTsIpc = notifMidTsRef.current[messengerId]
-          if (midTsIpc && Date.now() - midTsIpc < 3000) {
+          const midTsIpc = notifMidTsRef.current[messengerId], ipcUrl = (() => { try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' } })(), isMaxIpc = /web\.max\.ru/.test(ipcUrl)
+          if (!isMaxIpc && midTsIpc && Date.now() - midTsIpc < 3000) {
             traceNotif('dedup', 'block', messengerId, msgText, `mid-dedup IPC | __CC_NOTIF__ от ${messengerId} был ${Date.now()-midTsIpc}мс назад`)
             return
           }
           traceNotif('source', 'info', messengerId, msgText, 'IPC new-message | ожидание 500мс для __CC_NOTIF__')
           setTimeout(() => {
-            const dedupKey = messengerId + ':' + msgText.slice(0, 60)
-            if (!recentNotifsRef.current.has(dedupKey)) {
+            const dedupText = msgText.slice(0, 60)
+            const nowIpcFallback = Date.now()
+            const alreadyHandled = Array.from(recentNotifsRef.current).some(([k, ts]) => nowIpcFallback - ts <= 1500 && k.startsWith(messengerId + ':') && k.endsWith(':' + dedupText))
+            if (!alreadyHandled) {
               traceNotif('source', 'warn', messengerId, msgText, 'IPC fallback | __CC_NOTIF__ не пришёл за 500мс')
               // Кэш sender fallback для IPC path
-              const cached = senderCacheRef.current[messengerId]
-              const extra = cached && Date.now() - cached.ts < 300000
+              const ipcExtra = e.args[1] && typeof e.args[1] === 'object' ? e.args[1] : null, cached = senderCacheRef.current[messengerId]
+              const extra = ipcExtra || (cached && Date.now() - cached.ts < 300000
                 ? { senderName: cached.name, ...(cached.avatar ? (cached.avatar.startsWith('data:') ? { iconDataUrl: cached.avatar } : { iconUrl: cached.avatar }) : {}) }
-                : undefined
-              if (extra) {
+                : undefined)
+              if (extra && cached && !ipcExtra) {
                 traceNotif('enrich', 'info', messengerId, msgText, `senderCache fallback IPC | "${cached.name.slice(0,20)}"`)
                 // v0.60.0 Решение #2: sender-based dedup
                 const senderKey = messengerId + ':' + cached.name.slice(0, 30).toLowerCase()

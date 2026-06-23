@@ -62,7 +62,9 @@ export function collectSystemDiagnostics({ app, readLogFile, getLogFilePath }) {
       aiErrors: statFile(aiErrorsPath),
       report: statFile(reportPath),
     },
-    logText: redactText(readLogFile(1000)),
+    // v1.2.9: читаем весь лог целиком (Infinity), а не последние 1000 строк — иначе ранние события
+    // MAX-пачки не попадали в снимок. Файл chatcenter.log ограничен ротацией (2 МБ), поэтому это безопасно.
+    logText: redactText(readLogFile(Infinity)),
     aiErrorsText: redactText(tailFile(aiErrorsPath, 200)),
     collectedAt: new Date().toISOString(),
   }

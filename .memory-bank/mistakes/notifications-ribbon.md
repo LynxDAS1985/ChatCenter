@@ -2,6 +2,53 @@
 
 ---
 
+## 🔴🔴 MAX: уведомление только на ПЕРВОЕ сообщение пачки, остальные молчат (2026-06-23) — САГА с разбором неверных решений
+
+**Симптом (от пользователя)**: в MAX первое сообщение даёт ribbon+звук, а следующие в быстрой серии (в т.ч. в том же чате) — нет ни уведомления, ни звука. Повторялось стабильно (Ввпр/Ааап/Увмрр; Цыч/Тцыы/Оцыя; Уус/Фям/Ввси/Вам).
+
+### Как искали (инструмент важнее догадок)
+Сначала **сняли ограничения диагностики** (v1.2.9), потому что баг вытеснялся из буфера до сохранения отчёта:
+- буфер трассировки в памяти 300→5000 шагов ([webviewSetup.js](../../src/utils/webviewSetup.js) `traceNotif`) — **главное**, т.к. `maxFallbackEvents` строится из него;
+- снимок читает весь `chatcenter.log` (было 1000 строк) — [main/utils/systemDiagnostics.js](../../main/utils/systemDiagnostics.js);
+- срезы анализа подняты — [src/utils/systemDiagnostics.js](../../src/utils/systemDiagnostics.js).
+Только после этого в отчёте стало видно реальную пачку.
+
+### ❌ Неверное решение №1 — «debounce/clearTimeout схлопывает пачку»
+Первая версия причины: `scheduleMaxTitleFallback` отменяет предыдущую проверку (`clearTimeout`), поэтому из пачки выживает одна. **Это было ДОПУЩЕНИЕ, опровергнуто живыми данными**: в журнале на пачку было всего 2-3 строки `MAX title-fallback scheduled`, а не «много подряд». Урок: не выдавать гипотезу за факт — проверять трассировкой.
+
+### Корень (доказан данными)
+- Заголовок вкладки MAX = **«N непрочитанных ЧАТОВ»**, не сообщений (`chatcenter.log`: `MAX page-title-updated raw="2 непрочитанных чата"`).
+- Вся ловля MAX завязана на рост этого числа ([webviewSetup.js](../../src/utils/webviewSetup.js), `page-title-updated`, `if (count > prevCount)`).
+- 2-е/3-е сообщение в **уже непрочитанном** чате число не меняет → проверки нет → теряется. Проверка к тому же берёт **один** чат (верхний) из `sidebarSnapshot`. Доказательства: «Цыч» 0 раз во всём журнале; «Оцыя» показано только после КЛИКА пользователя по чату (клик заново дёрнул заголовок).
+
+### ❌ Неверное решение №2 — «оживить ServiceWorker» (v1.2.10)
+Задумка: MAX уведомляет через `ServiceWorkerRegistration.showNotification`, а хук сам же убивал ServiceWorker → перехват не срабатывал. Сняли блок SW (разрешили регистрацию) + блок только push.
+**Провал, подтверждён запуском + официальной докой**: SW в Electron-`<webview>` **не регистрируется в принципе** — отчёт: 222× «Operation has been aborted», `__CC_NOTIF__` от MAX = **0**, маркер push-блока 0. Документация:
+- Electron официально рекомендует **не использовать `<webview>`** ([webview-tag](https://www.electronjs.org/docs/latest/api/webview-tag));
+- баг класса [electron #9529](https://github.com/electron/electron/issues/9529): перемещение webview в DOM пересоздаёт гостя → прерывает SW;
+- MDN: `showNotification` требует активного SW.
+Изменение оставлено инертным (безвредно: SW мёртв в любом случае) — переписывать обратно не стали, чтобы не трогать заработавшую конфигурацию.
+
+### ✅ Верное решение (v1.2.11) — наблюдатель за списком чатов
+Раз SW недоступен — единственный надёжный источник «новое сообщение» = **DOM списка чатов**. И это **уже есть в проекте** у WhatsApp ([whatsapp.hook.js](../../main/preloads/hooks/whatsapp.hook.js) `_sidebarObserver`). Добавили то же в [max.hook.js](../../main/preloads/hooks/max.hook.js):
+- `_maxRowInfo` — структурный разбор строки (имя из `title/name`, тело из `text/message/preview`, отсев бейджей-чисел и повтора имени — нюансы из живых данных);
+- `_maxScanList` — дедуп по `_maxLastList[sender]`, шлёт `__CC_NOTIF__` на изменение превью;
+- `MutationObserver` на `document.body`, дебаунс 350мс, старт через 8с; первый проход — молча; корень списка ре-запрашивается (переживает ре-рендер SvelteKit);
+- переиспользует `_isSpam`/`_findAvatarIn`. Дедуп с заголовком-fallback — пайплайн + его собственный guard.
+
+Подтверждено пользователем: **«получилось»** — уведомления приходят на каждое сообщение.
+
+### Остаточные ограничения (честно)
+- Фоновая сверхбыстрая пачка в один чат (быстрее ~350мс) может слиться — список хранит только последнее превью. 100% дал бы лишь перехват WebSocket MAX (непрозрачный протокол, хуже по надёжности — не делаем).
+- Зависимость от вёрстки MAX — селекторы структурные, риск снижен, не убран.
+
+### Уроки на будущее
+1. Не выдавать гипотезу за факт — сначала трассировка (для этого и сняли лимиты диагностики).
+2. У `<webview>` нет рабочего ServiceWorker — для мессенджеров без рабочего notification-API источник = DOM-наблюдатель (паттерн WhatsApp), а не SW.
+3. Заголовок MAX считает чаты, не сообщения — он годится только как аварийный сигнал, не как источник текста.
+
+---
+
 ## 🔴 MAX: фантомные даты, нет аватарки, двойной звук и «пик без ribbon» (2026-06-19)
 
 **Нашёл**: Codex, 19 июня 2026.
@@ -1564,3 +1611,222 @@ style={{
 
 ### Важный урок
 Любой код, который возвращается строкой для `executeJavaScript`, надо тестировать как уже сгенерированную строку. Обычный build/lint недостаточен: template string может испортить regex и escape-последовательности только на runtime-этапе.
+
+---
+
+## 🔴 MAX: аватарки, повторные уведомления и неверная группировка ribbon (2026-06-22)
+
+### Кто нашёл
+Проблему нашёл пользователь во время ручной проверки MAX:
+- часть уведомлений приходила без аватарки;
+- второе уведомление от того же или другого клиента могло не выглядеть как отдельное уведомление;
+- одинаковый текст от разных людей мог попадать под общий dedup;
+- после прежних попыток исправления стало ясно, что нельзя решать это блокировкой слов вроде даты/времени: клиент реально может написать такой текст.
+
+### Что было видно по фактам
+1. В диагностике были случаи, где MAX отдавал `avatar=https://i.oneme.ru/...`, и тогда в pipeline было `icon=true`.
+2. Были другие случаи, где для той же зоны MAX приходило `avatar=""`, `imgs=0`, `chosenAvatar=false`, и ribbon показывался без аватарки.
+3. Значит аватарка не терялась в `notification.js`; иногда MAX просто не отдавал картинку в текущем DOM-срезе.
+4. MAX использует виртуализированные/динамические строки: видимая строка списка чатов может быть перерисована, а картинка в момент чтения может отсутствовать.
+5. Старый sender cache был слишком широким: фактически мог хранить данные на уровне `messengerId`, то есть "на весь MAX".
+6. Старый dedup частично строился как `messengerId + text`, поэтому одинаковое сообщение от двух разных клиентов могло считаться дублем.
+7. Renderer ribbon группировал карточки только по `messengerId`; для MAX это означает "все уведомления MAX в одну стопку", даже если отправители разные.
+8. Из-за группировки второе уведомление могло не появиться как отдельная карточка, а добавиться строкой внутрь уже открытого ribbon.
+9. IPC fallback проверял старый ключ dedup и мог не понимать новые sender-aware ключи.
+10. Проблема не в словах сообщения, а в identity события: нужно правильно понимать "кто написал", "в каком чате" и "это то же событие или другое".
+
+### Корень проблемы
+У уведомления было недостаточно точное имя события.
+
+Раньше часть логики считала, что `messengerId=max` почти достаточно для кеша, dedup и группировки. Для MAX это неверно: внутри одного `messengerId` одновременно живут разные клиенты, разные чаты и одинаковые тексты. Поэтому общий ключ уровня MAX мог:
+- подставить не ту аватарку;
+- скрыть реальное второе сообщение как дубль;
+- сложить разные уведомления в одну карточку;
+- создать ощущение, что "пик был, а уведомления нет".
+
+### Что сделано
+1. В `src/utils/maxTitleFallback.js` добавлены sender-aware helpers:
+   - `buildSenderCacheKey()`;
+   - `rememberSenderAvatar()`;
+   - `getSenderCacheEntry()`;
+   - `applySenderAvatarFallback()`.
+2. Кеш аватарки теперь строится по ключу:
+   `messengerId + chatTag/senderName + senderName`.
+3. Если MAX отдаёт свежую аватарку, она обновляет кеш.
+4. Если MAX отдаёт пустую аватарку, старая не стирается.
+5. Если новое событие пришло без аватарки, но sender/chat совпали с кешем, берётся последняя известная аватарка этого же отправителя/чата.
+6. В `src/utils/consoleMessageHandler.js` старый общий кеш по `messengerId` оставлен только для legacy-сценария, когда нет `senderName`; для событий с отправителем используется новый точный кеш.
+7. В `src/utils/messageProcessing.js` добавлен `buildMessageDedupScope()`.
+8. `isDuplicateExact()` и `isDuplicateSubstring()` теперь могут принимать scope отправителя/чата.
+9. В `src/utils/webviewHandleNewMessage.js` dedup перенесён после очистки имени отправителя, чтобы ключ строился уже по нормальному sender.
+10. В `src/utils/webviewSetup.js` IPC fallback теперь проверяет recent-notifs с учётом scoped ключей.
+11. В `main/handlers/notificationManager.js` добавлен `buildNotificationScope()` для main-process dedup.
+12. В payload ribbon добавлен `stackKey`.
+13. В `main/notification.js` renderer группирует карточки по `stackKey || messengerId`, а не только по `messengerId`.
+
+### Как должно работать после переделки
+1. Если клиент MAX прислал сообщение и MAX отдал аватарку, ribbon показывает эту аватарку.
+2. Если тот же клиент позже прислал сообщение, но MAX временно не отдал картинку, ribbon берёт последнюю известную аватарку этого же клиента/чата.
+3. Если клиент поменял аватарку, новая картинка сразу перезаписывает старую в кеше.
+4. Пустой avatar не затирает рабочую аватарку.
+5. Одинаковый текст от разных клиентов не должен блокироваться dedup.
+6. Повтор того же сообщения от того же клиента в коротком интервале всё ещё блокируется как дубль.
+7. Два разных клиента MAX не должны попадать в одну ribbon-карточку только потому, что оба из MAX.
+8. Второе сообщение от того же клиента может группироваться с первым, если это тот же sender/chat и включена группировка.
+9. Звук и ribbon должны идти через обычный pipeline; fix не добавляет отдельный новый источник сообщений.
+10. Слова вроде `18 июн.`, `Спасибо`, `Наличка`, `09:27` не блокируются сами по себе. Решение не фильтрует контент, а уточняет источник и identity.
+
+### Почему выбрано именно это решение
+Это минимальное исправление корня, а не маскировка симптомов.
+
+Нельзя блокировать даты/время/короткие слова, потому что клиент действительно может написать `18 июн.`, `09:27`, `Спасибо`, `Ок`, `1`, `+`. Такой фильтр сломает реальные сообщения. Правильнее не гадать по тексту, а строить ключ события по отправителю/чату и использовать аватарку только от того же отправителя/чата.
+
+### Риски после ремонта
+1. Если MAX вообще не отдавал аватарку этого sender/chat ни разу, показывать будет нечего — это нормальный fallback, не ошибка кеша.
+2. Если MAX изменит DOM и перестанет отдавать senderName/chatTag, точность снова упадёт до legacy-уровня; тогда нужны новые логи DOM.
+3. Если два разных клиента имеют одинаковое имя и нет chatTag, они могут попасть в один sender scope. Поэтому chatTag используется первым, когда он есть.
+4. Если MAX отдаст старую картинку из своего кеша, приложение честно сохранит то, что пришло от MAX.
+5. Если группировка ribbon выключена настройками, `stackKey` не будет визуально складывать карточки, но dedup всё равно останется sender-aware.
+
+### Что проверено тестами
+- `src/__tests__/maxTitleFallback.test.cjs`:
+  - кеш аватарки разделён по messenger/chat/sender;
+  - новая аватарка заменяет старую;
+  - пустая аватарка не стирает старую;
+  - fallback подставляет аватарку только тому же sender/chat.
+- `src/__tests__/messageProcessing.test.cjs`:
+  - одинаковый текст от разных sender не считается дублем;
+  - substring-dedup тоже учитывает sender/chat scope;
+  - `buildMessageDedupScope` экспортируется и доступен в рабочем коде.
+- `src/__tests__/notificationIdentity.test.cjs`:
+  - main dedup использует sender/chat scope;
+  - main payload передаёт `stackKey`;
+  - renderer группирует по `stackKey`;
+  - webview dedup использует `buildMessageDedupScope`;
+  - console enrichment использует sender-aware avatar cache.
+
+### Команды проверки 2026-06-22
+```text
+node src/__tests__/maxTitleFallback.test.cjs       -> 12/12 passed
+node src/__tests__/messageProcessing.test.cjs      -> 48/48 passed
+node src/__tests__/notificationIdentity.test.cjs   -> 5/5 passed
+node src/__tests__/mainProcess.test.cjs            -> 38/38 passed
+npm run lint                                      -> passed
+npm run build                                     -> passed
+npm test                                          -> passed
+Vitest inside npm test                            -> 131 files, 1874 tests passed
+Electron E2E inside npm test                      -> 17/17 + UI 9/9 passed
+```
+
+### Важный урок для следующего ИИ
+Для MAX нельзя считать `messengerId` достаточной идентичностью уведомления. Любой кеш, dedup или grouping должен по возможности учитывать sender/chat/messageId. Контент сообщения нельзя использовать как главный фильтр фантомов: короткие слова, даты и время могут быть реальными сообщениями клиента.
+
+### Дополнение 22 июня 2026 — усилена диагностика MAX fallback
+После ручной проверки стало ясно, что старый экран диагностики показывал `dedup/block`, но не выводил сразу корень: при `title +2` MAX fallback выбирал один sidebar-кандидат, а второй реальный текст оставался только внутри длинного `topRows`.
+
+Что добавлено:
+- `src/utils/systemDiagnostics.js` строит `maxFallbackEvents` из `pipelineTrace`;
+- отчёт теперь видит `title +N`, `source`, выбранный текст, sender, количество кандидатов, `dedupBlocked`, `ribbonOk`, `soundOk`;
+- если `title +N > 1`, выбранный текст ушёл в dedup, а в `topRows` есть другие body — диагностика пишет проблему `MAX fallback потерял кандидатов`;
+- если `max-title-active` отдаёт `text="Сообщение"` или sender с дублем/статусом `В сети`, диагностика пишет `MAX active fallback подозрителен`;
+- `SystemDiagnosticsModal` получил отдельную секцию `MAX fallback анализ`;
+- в отчёт сохраняется последние 300 trace-событий вместо 120, чтобы важная цепочка не вылетала из JSON слишком быстро.
+
+Назначение: перед ремонтом логики уведомлений видеть не только итоговый блок (`dedup`), но и весь выбор fallback-кандидатов. Это должно предотвращать ошибочные выводы вроде "клиент прислал одинаковый текст", когда фактически extractor выбрал один дубль и не дошёл до другого нового сообщения.
+
+### Дополнение 23 июня 2026 — проверка живого MAX-сообщения
+При проверке пользователь отправил сообщения в MAX. Лог показал, что `Дугин Алексей Сергеевич` с текстами `Яыы` и `Сспн` прошёл полный pipeline: `MAX title-fallback`, `icon=true`, `NotifManager show`, `notif-renderer addNotification`, `ribbon ok`, `sound ok`.
+
+Дополнительно найден дефект самой диагностики: сообщение `Антон Х : Спасибо за отзыв.` после этапа `sender-strip` в pipeline стало текстом `: Спасибо за отзыв.`, поэтому `maxFallbackEvents` раньше ошибочно показывал `ribbonOk=false` и `soundOk=false`, хотя реальный лог имел `NotifManager show id=15`, `Ribbon main-result ok=true` и звук.
+
+Что исправлено:
+- `src/utils/systemDiagnostics.js` теперь сопоставляет MAX fallback-событие не только с исходным текстом, но и с вариантом после удаления имени отправителя в начале;
+- это не меняет доставку уведомлений, dedup, звук или WebView, а только делает диагностический отчёт честнее;
+- добавлен тест в `src/__tests__/systemDiagnostics.test.cjs` на сценарий `Антон Х : Спасибо...` -> `: Спасибо...`.
+
+Проверки:
+```text
+node src/__tests__/systemDiagnostics.test.cjs -> passed
+node src/__tests__/fileSizeLimits.test.cjs    -> 475/475 passed
+npm run lint                                  -> passed
+```
+
+### Дополнение 23 июня 2026 — пачка сообщений в открытом MAX-чате
+Пользователь отправил несколько сообщений подряд в открытый MAX-чат: `Сспн`, затем `Аква`, `Роога`, `Аввпнр`. В UI MAX они были видны, но `chatcenter.log` показал pipeline только для `Сспн`: `title +1`, `MAX title-fallback`, `NotifManager show`, `ribbon ok`, `sound ok`. Для `Аква`, `Роога`, `Аввпнр` не было ни `title +1`, ни `__CC_MSG__`, ни `IPC new-message`, ни `NotifManager`.
+
+Корень: для открытого MAX-чата нельзя полагаться только на `title/unread`. MAX увеличил unread/title один раз на первое непрочитанное, а следующие bubble в уже открытом чате не дали новых title-событий. При этом активный `Path 2` для MAX был отключён из-за прошлых фантомов, а `quickNewMsgCheck` имел общий ранний cooldown 3000 мс и режим "одно сообщение за callback". Для пачки сообщений это означает: одно событие могло пройти, остальные разные тексты в той же короткой пачке терялись.
+
+Что исправлено:
+- `main/preloads/monitor.preload.cjs`: ранний `COOLDOWN_MSG` больше не глушит MAX до разбора текста;
+- для MAX `quickNewMsgCheck` собирает несколько разных текстов из одного callback, а не возвращается после первого;
+- для MAX `chatObserver` слушает `characterData`, потому что Svelte может сначала добавить bubble, а текст проставить после;
+- MAX observer передаёт `senderName` и avatar во втором аргументе `new-message`, чтобы активная вкладка не блокировала событие как "нет extra";
+- для MAX IPC отключён старый `mid-dedup` после `__CC_NOTIF__`, а `__CC_MSG__` не блокируется по одному sender в течение 3 секунд, потому что разные быстрые сообщения одного клиента должны проходить;
+- body-fallback для MAX остался отключённым, чтобы не вернуть старые фантомы из sidebar/страницы;
+- `Path 2` для MAX остался отключённым, чтобы не возвращать старый ненадёжный last-message polling.
+
+Ожидаемое поведение: если в открытый MAX-чат подряд пришли `Аква`, `Роога`, `Аввпнр`, каждая новая bubble должна попасть в `new-message`/`__CC_MSG__`, пройти DOM enrichment, получить sender/avatar активного чата и вызвать обычный `NotifManager` + звук. Это не фильтрует слова и не блокирует реальные короткие сообщения.
+
+Проверки:
+```text
+node src/__tests__/monitorPreload.test.cjs -> 89/89 passed
+node src/__tests__/fileSizeLimits.test.cjs -> 475/475 passed
+npm run lint                               -> passed
+npm test                                   -> passed
+```
+
+### Дополнение 23 июня 2026 — полная диагностика MAX перед новым ремонтом
+После повторной проверки пачки сообщений в MAX пользователь показал кейс: в sidebar у чата `Дугин Алексей Сергеевич` был badge `5`, в открытом чате были видны несколько сообщений (`Ццыв`, `Ыьв`, `Ыь`, `Вчву`), но в `chatcenter.log` прошёл только один pipeline для `Рошшыцв`.
+
+Фактический вывод: это не была поломка ribbon/звука. Для пропавших текстов не было `IPC new-message`, `__CC_MSG__`, `__CC_NOTIF__`, `NotifManager show`. Значит, приложение не видело эти сообщения как новые события. До правки логов нельзя было доказать, где именно они теряются: в MAX ServiceWorker/Notification hook, в title/sidebar fallback, в active chat MutationObserver, в snapshot-фильтре или в renderer IPC.
+
+Что добавлено только для диагностики:
+- `main/preloads/monitor.preload.cjs`:
+  - `sendMonitorDiag()` — единый канал в `ipcRenderer.sendToHost('monitor-diag')`, потому что `console.log` из isolated preload в Electron 41 может не попадать в `chatcenter.log`;
+  - `[MAX-COUNT]` — каждое изменение unread/count: старое число, новое число, personal/channels, increased, ready, hidden, title;
+  - `[MAX-OBSERVER]` — привязка chatObserver, retry, отсутствие контейнера, отключение body fallback, mutation count, snapshot-skip;
+  - `[MAX-QUICK]` — разбор каждой MAX-мутации: target, raw text, причина пропуска (`sidebar`, `outside cached container`, `no text`, local dedup) или успешная отправка `new-message` с sender/avatar;
+  - `[MAX-NAV]` — SPA-навигация, сбросы dedup и состояние после grace-end;
+  - `[MAX-RUN-DIAG]` — ручной запуск диагностики.
+- `main/preloads/utils/maxDiagnostics.js`:
+  - новый модуль для `[MAX-SNAPSHOT]`: URL, title, `document.hidden`, readiness, observer target, cached chat container, `countUnread('max')`, header, header media, top sidebar rows с badge/avatar/text/media, последние видимые active messages;
+  - вынесен отдельно, чтобы `monitor.preload.cjs` остался ниже лимита 600 строк.
+- `src/utils/webviewSetup.js`:
+  - `[IPC-MAX]` — лог всех IPC-каналов от MAX с `activeId`, `focused`, args;
+  - `MAX page-title-updated` — raw title, prevUnread, delta, notifRef, activeId, focused, URL;
+  - увеличен detailLimit trace для MAX-диагностики до 3500 символов.
+- `src/utils/maxTitleFallback.js`:
+  - raw результат `MAX title-fallback` теперь пишется до 3500 символов, чтобы не терять хвост `topRows`.
+- `src/utils/systemDiagnostics.js`:
+  - `[MAX-*]`, `[IPC-MAX]`, `[MONITOR]` классифицируются как `webview`, чтобы попадать в цепочки диагностики.
+
+Важно: это не меняет бизнес-логику уведомлений и не должно само чинить или ломать доставку. Цель — следующий прогон должен показать точное место потери: MAX не отдаёт отдельные события, sidebar содержит только один preview, observer не привязан, snapshot принял новые bubble за старые, или renderer заблокировал событие.
+
+Как проверять следующий кейс:
+1. Перезапустить приложение, чтобы новый `monitor.preload.cjs` загрузился в WebView.
+2. Открыть MAX и включить/обновить диагностику системы.
+3. Отправить пачку сообщений подряд.
+4. Сразу собрать `chatcenter.log` / `system-diagnostics-report.json`.
+5. Искать строки `[MAX-COUNT]`, `[MAX-SNAPSHOT]`, `[MAX-OBSERVER]`, `[MAX-QUICK]`, `[IPC-MAX]`, `MAX page-title-updated`.
+
+Ожидаемые факты для анализа:
+- если есть `[MAX-COUNT] ... -> 5`, но в `[MAX-SNAPSHOT] rows=` только один preview — MAX sidebar не раскрывает тексты всех сообщений;
+- если `[MAX-OBSERVER] bound` есть, но нет `[MAX-OBSERVER] mutation` — активный чат не обновлял DOM в момент прихода;
+- если mutation есть, но `[MAX-QUICK] no text` или `snapshot-skip` — проблема в extraction/snapshot;
+- если `[MAX-QUICK] send new-message` есть, но нет `NotifManager show` — проблема уже в renderer/dedup/handleNewMessage;
+- если `[IPC-MAX] channel=new-message` есть, но потом `dedup/spam/block` — точная причина будет в pipeline trace.
+
+Проверки, добавленные под диагностику:
+```text
+src/__tests__/monitorPreload.test.cjs:
+- MAX diagnostics sends full DOM snapshots through monitor-diag
+- MAX quick observer logs found/skipped/sent decisions
+- MAX observer logs binding, mutations, snapshot skips, and disabled fallback
+- MAX count/navigation/manual diagnostics are visible
+
+src/__tests__/notificationIdentity.test.cjs:
+- MAX renderer diagnostics log IPC and title deltas
+
+src/__tests__/systemDiagnostics.test.cjs:
+- [MAX-SNAPSHOT] и [IPC-MAX] классифицируются как webview
+```

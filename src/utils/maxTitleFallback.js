@@ -27,6 +27,33 @@ export function parseMaxTitleFallbackResult(result) {
   }
 }
 
+export const normalizeSenderCachePart = value => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+
+export function buildSenderCacheKey(messengerId, senderName, chatTag = '') {
+  const sender = normalizeSenderCachePart(senderName)
+  return !messengerId || sender.length < 2 ? '' : `${messengerId}:sender:${normalizeSenderCachePart(chatTag) || sender}:${sender}`
+}
+
+export function getSenderCacheEntry(cache, messengerId, senderName, chatTag = '', maxAgeMs = 300000) {
+  const key = buildSenderCacheKey(messengerId, senderName, chatTag), entry = cache?.[key]
+  return key && entry && Date.now() - (entry.ts || 0) <= maxAgeMs ? entry : null
+}
+
+export function rememberSenderAvatar(cache, messengerId, senderName, chatTag = '', avatar = '') {
+  const key = buildSenderCacheKey(messengerId, senderName, chatTag)
+  if (!key || !avatar) return ''
+  return cache[key] = { name: String(senderName || '').trim(), chatTag: String(chatTag || '').trim(), avatar, ts: Date.now() }, key
+}
+
+export function applySenderAvatarFallback(extra, cache, messengerId, traceNotif, text) {
+  if (!extra?.senderName || extra.iconUrl || extra.iconDataUrl) return extra
+  const cached = getSenderCacheEntry(cache, messengerId, extra.senderName, extra.chatTag)
+  if (!cached?.avatar) return extra
+  if (cached.avatar.startsWith('data:')) extra.iconDataUrl = cached.avatar; else extra.iconUrl = cached.avatar
+  traceNotif?.('enrich', 'info', messengerId, text || '', `sender avatar cache-hit | key=${buildSenderCacheKey(messengerId, extra.senderName, extra.chatTag).slice(0, 80)} age=${Math.round((Date.now() - cached.ts) / 1000)}s`)
+  return extra
+}
+
 export function scheduleMaxTitleFallback({
   el,
   messengerId,
@@ -56,7 +83,7 @@ export function scheduleMaxTitleFallback({
     }
     el.executeJavaScript(buildMaxTitleFallbackScript())
       .then(result => {
-        traceNotif('debug', 'info', messengerId, `title +${delta}`, `MAX title-fallback raw | ${String(result || '').slice(0, 1500)}`)
+        traceNotif('debug', 'info', messengerId, `title +${delta}`, `MAX title-fallback raw | ${String(result || '').slice(0, 3500)}`)
         const rich = parseMaxTitleFallbackResult(result)
         if (!rich) {
           traceNotif('enrich', 'warn', messengerId, `title +${delta}`, 'MAX title-fallback no rich message')
@@ -69,14 +96,12 @@ export function scheduleMaxTitleFallback({
           ...(rich.iconUrl ? { iconUrl: rich.iconUrl } : {}),
           ...(rich.chatTag ? { chatTag: rich.chatTag } : {}),
         }
-        if (rich.senderName || rich.iconDataUrl || rich.iconUrl) {
-          senderCacheRef.current[messengerId] = {
-            name: rich.senderName || '',
-            avatar: rich.iconDataUrl || rich.iconUrl || '',
-            ts: Date.now(),
-          }
+        if (rich.senderName && (rich.iconDataUrl || rich.iconUrl)) {
+          const cacheKey = rememberSenderAvatar(senderCacheRef.current, messengerId, rich.senderName, rich.chatTag, rich.iconDataUrl || rich.iconUrl)
           cleanupSenderCache(senderCacheRef.current)
+          traceNotif('enrich', 'info', messengerId, rich.text, `sender avatar cache-update | key=${cacheKey.slice(0, 80)}`)
         }
+        applySenderAvatarFallback(extra, senderCacheRef.current, messengerId, traceNotif, rich.text)
         traceNotif('enrich', rich.senderName ? 'pass' : 'warn', messengerId, rich.text, `MAX title-fallback ${rich.source} | sender="${(rich.senderName || '').slice(0, 40)}" icon=${!!(rich.iconDataUrl || rich.iconUrl)} text="${rich.text.slice(0, 80)}"${rich.diag ? ' | ' + rich.diag : ''}`)
         handleNewMessage(messengerId, rich.text, extra)
       })

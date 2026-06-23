@@ -20,7 +20,8 @@ const messageExtractorCode = fs.existsSync(path.join(utilsDir, 'messageExtractor
 const domSelectorsCode = fs.existsSync(path.join(utilsDir, 'domSelectors.js')) ? fs.readFileSync(path.join(utilsDir, 'domSelectors.js'), 'utf8') : ''
 const diagnosticsCode = fs.existsSync(path.join(utilsDir, 'diagnostics.js')) ? fs.readFileSync(path.join(utilsDir, 'diagnostics.js'), 'utf8') : ''
 const messageRetrievalCode = fs.existsSync(path.join(utilsDir, 'messageRetrieval.js')) ? fs.readFileSync(path.join(utilsDir, 'messageRetrieval.js'), 'utf8') : ''
-const allPreloadCode = code + '\n' + unreadCode + '\n' + chatMetadataCode + '\n' + messageExtractorCode + '\n' + domSelectorsCode + '\n' + diagnosticsCode + '\n' + messageRetrievalCode
+const maxDiagnosticsCode = fs.existsSync(path.join(utilsDir, 'maxDiagnostics.js')) ? fs.readFileSync(path.join(utilsDir, 'maxDiagnostics.js'), 'utf8') : ''
+const allPreloadCode = code + '\n' + unreadCode + '\n' + chatMetadataCode + '\n' + messageExtractorCode + '\n' + domSelectorsCode + '\n' + diagnosticsCode + '\n' + messageRetrievalCode + '\n' + maxDiagnosticsCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -168,6 +169,18 @@ test('Path 2 отключён для MAX (v0.81.1)', () => {
   const path2Line = code.match(/monitorReady\s*&&\s*type\s*!==\s*'telegram'[^{]+\{/)
   assert(path2Line && path2Line[0].includes("'max'"), 'Path 2 должен быть отключён для MAX')
 })
+test('MAX quick observer не глушится ранним cooldown (v1.2.8)', () => {
+  assert(code.includes("if (type !== 'max' && now - lastQuickMsgTime < COOLDOWN_MSG) return"), 'cooldown до разбора текста должен обходить MAX')
+})
+test('MAX chatObserver слушает characterData (v1.2.8)', () => {
+  assert(code.includes("characterData: type === 'max'"), 'MAX должен ловить появление текста внутри уже добавленной bubble')
+})
+test('MAX quick observer собирает несколько текстов за callback (v1.2.8)', () => {
+  assert(code.includes('foundTexts.push(text)') && code.includes("if (type !== 'max' && i > 0) break"), 'MAX должен пропускать несколько разных сообщений из одной пачки')
+})
+test('MAX quick observer передаёт sender/avatar в IPC (v1.2.8)', () => {
+  assert(code.includes('getActiveChatSender()') && code.includes("ipcRenderer.sendToHost('new-message', text, extra)"), 'MAX должен отправлять extra вторым аргументом new-message')
+})
 test('getVKLastIncomingText фильтрует исходящие out/own (v0.81.1)', () => {
   assert(allPreloadCode.includes('out|own|self|sent') && allPreloadCode.includes('getVKLastIncomingText'), 'должен фильтровать исходящие')
 })
@@ -255,4 +268,18 @@ test('extractMsgText определена', () => assert(allPreloadCode.includes
 test('runDiagnostics определена', () => assert(allPreloadCode.includes('function runDiagnostics(')))
 
 console.log(`\\n📊 Результат: ${passed} ✅ / ${failed} ❌ из ${passed + failed}`)
+test('MAX diagnostics sends full DOM snapshots through monitor-diag', () => {
+  assert(allPreloadCode.includes('function sendMaxSnapshot') && allPreloadCode.includes('[MAX-SNAPSHOT]') && allPreloadCode.includes('maxSidebarRows') && allPreloadCode.includes('maxActiveMessages'), 'MAX diagnostics must include sidebar rows and active messages')
+})
+test('MAX quick observer logs found/skipped/sent decisions', () => {
+  assert(code.includes('[MAX-QUICK] start') && code.includes('[MAX-QUICK] no text') && code.includes('[MAX-QUICK] send new-message'), 'MAX quick path must log why each mutation was accepted or skipped')
+})
+test('MAX observer logs binding, mutations, snapshot skips, and disabled fallback', () => {
+  assert(code.includes('[MAX-OBSERVER] bound') && code.includes('[MAX-OBSERVER] mutation') && code.includes('[MAX-OBSERVER] snapshot-skip') && code.includes('[MAX-OBSERVER] body-fallback-disabled'), 'MAX observer lifecycle must be visible in chatcenter.log')
+})
+test('MAX count/navigation/manual diagnostics are visible', () => {
+  assert(code.includes('[MAX-COUNT]') && code.includes('[MAX-NAV]') && code.includes('[MAX-RUN-DIAG]'), 'MAX count changes, navigation and manual diagnostics must be logged')
+})
+
+console.log(`FINAL monitorPreload result: ${passed} passed / ${failed} failed / ${passed + failed} total`)
 if (failed > 0) process.exit(1)

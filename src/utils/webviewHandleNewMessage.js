@@ -1,7 +1,7 @@
 // v0.87.97: вынесено из webviewSetup.js при разбиении.
 // Функция handleNewMessage — обработка ОДНОГО входящего сообщения:
 // дедуп → strip-sender → viewing-фильтр → звук + ribbon → preview + history + auto-reply.
-import { isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './messageProcessing.js'
+import { buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './messageProcessing.js'
 import { playNotificationSound } from './sound.js'
 
 export function createHandleNewMessage(deps) {
@@ -22,24 +22,24 @@ export function createHandleNewMessage(deps) {
     if (!text) return
     traceNotif('handle', 'info', messengerId, text, `extra=${extra ? `{s:"${(extra.senderName||'').slice(0,20)}",icon:${!!(extra.iconUrl||extra.iconDataUrl)}}` : 'нет'}`)
 
-    // v0.79.2: Дедупликация из messageProcessing.js
-    const exactDedup = isDuplicateExact(messengerId, text, recentNotifsRef.current)
-    if (exactDedup.blocked) {
-      traceNotif('dedup', 'block', messengerId, text, `recentNotifs | age=${exactDedup.age}мс`)
-      return
-    }
-    const subDedup = isDuplicateSubstring(messengerId, text, recentNotifsRef.current)
-    if (subDedup.blocked) {
-      traceNotif('dedup', 'block', messengerId, text, `substring-dedup | prevLen=${subDedup.prevLen} age=${subDedup.age}мс`)
-      return
-    }
-    recentNotifsRef.current.set(exactDedup.key, exactDedup.now)
-    cleanupRecentMap(recentNotifsRef.current)
-
     // v0.80.2: Sender clean + strip + own-msg
     const rawSender = extra?.senderName || ''
     const senderName = cleanSenderStatus(rawSender)
     if (rawSender !== senderName) traceNotif('handle', 'info', messengerId, text, `cleanSender: "${rawSender.slice(0,30)}" → "${senderName.slice(0,30)}"`)
+
+    const dedupScope = buildMessageDedupScope(senderName, extra?.chatTag || '', extra?.messageId || '')
+    const exactDedup = isDuplicateExact(messengerId, text, recentNotifsRef.current, 10000, dedupScope)
+    if (exactDedup.blocked) {
+      traceNotif('dedup', 'block', messengerId, text, `recentNotifs | scope=${dedupScope || 'messenger'} age=${exactDedup.age}ms`)
+      return
+    }
+    const subDedup = isDuplicateSubstring(messengerId, text, recentNotifsRef.current, 5000, dedupScope)
+    if (subDedup.blocked) {
+      traceNotif('dedup', 'block', messengerId, text, `substring-dedup | scope=${dedupScope || 'messenger'} prevLen=${subDedup.prevLen} age=${subDedup.age}ms`)
+      return
+    }
+    recentNotifsRef.current.set(exactDedup.key, exactDedup.now)
+    cleanupRecentMap(recentNotifsRef.current)
 
     const stripped = stripSenderFromText(text, senderName)
     if (stripped.stripped) {

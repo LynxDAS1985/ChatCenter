@@ -1,6 +1,7 @@
 // v0.84.3: Extracted from webviewSetup.js — console-message event handler
 // Contains: __CC_BADGE_BLOCKED__, __CC_ACCOUNT__, __CC_MSG__ (with DOM enrichment), __CC_NOTIF__ (with blob icon conversion)
 import { markHealthOk } from './connectionHealth.js'
+import { applySenderAvatarFallback, rememberSenderAvatar } from './maxTitleFallback.js'
 
 try { window.__ccStartupMark?.('module:consoleMessageHandler', 'module evaluated') } catch {}
 
@@ -17,6 +18,12 @@ export function createConsoleMessageHandler(deps) {
     cleanupSenderCache,
     setAccountInfo, setUnreadCounts, setConnectionHealth, notifCountRef,
   } = deps
+
+  const rememberExtraAvatar = (messengerId, extra, text) => {
+    if (!extra.senderName || !(extra.iconUrl || extra.iconDataUrl)) return
+    const cacheKey = rememberSenderAvatar(senderCacheRef.current, messengerId, extra.senderName, extra.chatTag, extra.iconUrl || extra.iconDataUrl)
+    cleanupSenderCache(senderCacheRef.current); traceNotif('enrich', 'info', messengerId, text, `sender avatar cache-update | key=${cacheKey.slice(0,80)}`)
+  }
 
   const updateConnectionOk = (messengerId, el, details) => {
     if (!setConnectionHealth) return
@@ -266,22 +273,19 @@ export function createConsoleMessageHandler(deps) {
               } catch {}
             }
             // Кэш sender (улучшение #3) — сохраняем при успехе, используем при неудаче
-            if (extra.senderName) {
-              senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }; cleanupSenderCache(senderCacheRef.current)
-            } else {
+            if (extra.senderName && (extra.iconUrl || extra.iconDataUrl)) rememberExtraAvatar(messengerId, extra, text)
+            else if (!extra.senderName) {
               const cached = senderCacheRef.current[messengerId]
               if (cached && Date.now() - cached.ts < 300000) { // 5 мин
                 extra.senderName = cached.name
-                if (cached.avatar && !extra.iconUrl && !extra.iconDataUrl) {
-                  if (cached.avatar.startsWith('data:')) extra.iconDataUrl = cached.avatar
-                  else extra.iconUrl = cached.avatar
-                }
+                if (cached.avatar && !extra.iconUrl && !extra.iconDataUrl) { if (cached.avatar.startsWith('data:')) extra.iconDataUrl = cached.avatar; else extra.iconUrl = cached.avatar }
                 traceNotif('enrich', 'info', messengerId, text, `senderCache fallback | "${cached.name.slice(0,20)}" age=${Math.round((Date.now()-cached.ts)/1000)}с`)
               }
             }
+            applySenderAvatarFallback(extra, senderCacheRef.current, messengerId, traceNotif, text)
             traceNotif('enrich', extra.senderName ? 'pass' : 'warn', messengerId, text, `__CC_MSG__ enriched | sender="${(extra.senderName||'нет').slice(0,20)}" icon=${!!(extra.iconUrl||extra.iconDataUrl)}`)
             // v0.60.0 Решение #2: sender-based dedup — если __CC_NOTIF__ уже обработан для этого sender
-            if (extra.senderName) {
+            const isMaxMsg = /макс|max/i.test(messengersRef.current.find(x => x.id === messengerId)?.name || messengerId); if (extra.senderName && !isMaxMsg) {
               const senderKey = messengerId + ':' + extra.senderName.slice(0, 30).toLowerCase()
               const senderTs = notifSenderTsRef.current[senderKey]
               if (senderTs && Date.now() - senderTs < 3000) {
@@ -342,7 +346,8 @@ export function createConsoleMessageHandler(deps) {
         // Дедупликация: Telegram шлёт Notification + ServiceWorker.showNotification → 2 __CC_NOTIF__
         // Нормализуем body: убираем trailing timestamps (вида "15:57" или "15:5715:57")
         const normalizedText = text.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()
-        const dedupKey = messengerId + ':' + (normalizedText || text).slice(0, 40)
+        const senderScope = String(data.g || data.t || '').trim().replace(/\s+/g, ' ').toLowerCase()
+        const dedupKey = messengerId + ':' + (senderScope ? senderScope + ':' : '') + (normalizedText || text).slice(0, 40)
         const now = Date.now()
         if (notifDedupRef.current.has(dedupKey) && now - notifDedupRef.current.get(dedupKey) < 5000) {
           traceNotif('dedup', 'block', messengerId, text, `notifDedup | age=${now - notifDedupRef.current.get(dedupKey)}мс`)
@@ -374,15 +379,13 @@ export function createConsoleMessageHandler(deps) {
                 if (dataUrl) extra.iconDataUrl = dataUrl
                 else {
                   // Кэш fallback
-                  const cached = senderCacheRef.current[messengerId]
-                  if (cached?.avatar) {
-                    if (cached.avatar.startsWith('data:')) extra.iconDataUrl = cached.avatar
-                    else extra.iconUrl = cached.avatar
-                  }
+                  const cached = extra.senderName ? null : senderCacheRef.current[messengerId]
+                  if (cached?.avatar) { if (cached.avatar.startsWith('data:')) extra.iconDataUrl = cached.avatar; else extra.iconUrl = cached.avatar }
                 }
-                if (extra.senderName) senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconDataUrl || '', ts: Date.now() }; cleanupSenderCache(senderCacheRef.current)
+                rememberExtraAvatar(messengerId, extra, text)
+                applySenderAvatarFallback(extra, senderCacheRef.current, messengerId, traceNotif, text)
                 extra.fromNotifAPI = true
-                notifSenderTsRef.current[messengerId + ':' + extra.senderName.slice(0, 30).toLowerCase()] = Date.now()
+                if (extra.senderName) notifSenderTsRef.current[messengerId + ':' + extra.senderName.slice(0, 30).toLowerCase()] = Date.now()
                 notifMidTsRef.current[messengerId] = Date.now()
                 handleNewMessage(messengerId, text, extra)
               }).catch(() => {
@@ -403,9 +406,8 @@ export function createConsoleMessageHandler(deps) {
           }
         }
         // Кэш sender
-        if (extra.senderName) {
-          senderCacheRef.current[messengerId] = { name: extra.senderName, avatar: extra.iconUrl || extra.iconDataUrl || '', ts: Date.now() }; cleanupSenderCache(senderCacheRef.current)
-        }
+        rememberExtraAvatar(messengerId, extra, text)
+        applySenderAvatarFallback(extra, senderCacheRef.current, messengerId, traceNotif, text)
         // v0.58.0: fromNotifAPI=true → пропускаем viewing-блок
         // Если мессенджер сам вызвал showNotification — пользователь НЕ видит этот чат
         extra.fromNotifAPI = true

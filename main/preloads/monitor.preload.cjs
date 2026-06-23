@@ -47,6 +47,7 @@ const { EXTRACT_SPAM, QUICK_MSG_SELECTORS, extractMsgText } = require('./utils/m
 const { CHAT_CONTAINER_SELECTORS, findChatContainer, isSidebarNode, getChatContainerEl, setChatContainerEl } = require('./utils/domSelectors')
 const { runDiagnostics, resetDiagnostics } = require('./utils/diagnostics')
 const { getLastMessageText, getVKLastIncomingText } = require('./utils/messageRetrieval')
+const { createMaxSnapshotSender, maxNodeLabel, shortText } = require('./utils/maxDiagnostics')
 
 // v0.83.0: Timing constants (вместо magic numbers)
 const GRACE_PERIOD = 15000        // Grace period после навигации (VK Virtual Scroll медленный)
@@ -67,6 +68,11 @@ let lastActiveMessageText = null  // для детекции сообщений 
 let lastActiveMessageTime = 0     // cooldown: не спамить уведомлениями
 let observer = null
 
+function sendMonitorDiag(message) {
+  try { ipcRenderer.sendToHost('monitor-diag', String(message || '').slice(0, 3500)) } catch(e) {}
+}
+
+
 // ── Quick addedNodes detection (v0.46.3) ─────────────────────────────────────
 // MAX и другие мессенджеры НЕ вызывают Notification для каждого сообщения,
 // И unread count НЕ растёт когда чат открыт в WebView.
@@ -77,7 +83,8 @@ let lastQuickMsgTime = 0
 
 function quickNewMsgCheck(mutations, type) {
   const now = Date.now()
-  if (now - lastQuickMsgTime < COOLDOWN_MSG) return // cooldown — не спамить
+  if (type === 'max') sendMonitorDiag('[MAX-QUICK] start mutations=' + mutations.length + ' lastQuick="' + shortText(lastQuickMsgText, 40) + '" lastSent="' + shortText(lastSentText, 40) + '" active="' + shortText(lastActiveMessageText, 40) + '" observer=' + (chatObserverTarget || 'unset'))
+  if (type !== 'max' && now - lastQuickMsgTime < COOLDOWN_MSG) return // cooldown — не спамить
 
   // v0.60.0 Решение #3: Обновить кэш контейнера чата если он потерялся (SPA навигация)
   let _chatContainerEl = getChatContainerEl()
@@ -86,10 +93,13 @@ function quickNewMsgCheck(mutations, type) {
     setChatContainerEl(_chatContainerEl)
   }
 
-  for (let mi = mutations.length - 1; mi >= 0; mi--) {
+  const foundTexts = []
+  for (let mi = 0; mi < mutations.length; mi++) {
     const m = mutations[mi]
-    if (m.type !== 'childList' || !m.addedNodes.length) continue
-    for (const node of m.addedNodes) {
+    const addedNodes = m.type === 'childList' ? Array.from(m.addedNodes || []) : (type === 'max' && m.type === 'characterData' && m.target?.parentElement ? [m.target.parentElement] : [])
+    if (type === 'max' && addedNodes.length) sendMonitorDiag('[MAX-QUICK] mutation type=' + m.type + ' added=' + addedNodes.length + ' target=' + maxNodeLabel(m.target) + ' targetText="' + shortText(m.target && m.target.textContent, 120) + '"')
+    if (!addedNodes.length) continue
+    for (const node of addedNodes) {
       if (node.nodeType !== 1) continue
       // Пропускаем UI-элементы: кнопки, инпуты, иконки, стили, скрипты
       const tag = node.tagName
@@ -99,10 +109,11 @@ function quickNewMsgCheck(mutations, type) {
       // Если chatObserver на body fallback — фильтруем sidebar и внешние ноды
       if (chatObserverTarget === 'body-fallback') {
         // v0.76.8: ВСЕГДА проверяем isSidebarNode при body-fallback
-        if (isSidebarNode(node)) continue
+        if (isSidebarNode(node)) { if (type === 'max') sendMonitorDiag('[MAX-QUICK] skip sidebar node=' + maxNodeLabel(node) + ' text="' + shortText(node.textContent, 120) + '"'); continue }
         // Если контейнер чата известен — пропускаем ноды вне него
-        if (_chatContainerEl && !_chatContainerEl.contains(node)) continue
+        if (_chatContainerEl && !_chatContainerEl.contains(node)) { if (type === 'max') sendMonitorDiag('[MAX-QUICK] skip outside body-fallback container node=' + maxNodeLabel(node)); continue }
       }
+      if (type === 'max' && _chatContainerEl && !_chatContainerEl.contains(node) && !_chatContainerEl.contains(m.target)) { sendMonitorDiag('[MAX-QUICK] skip outside cached container node=' + maxNodeLabel(node) + ' target=' + maxNodeLabel(m.target)); continue }
 
       let text = ''
       const childCount = node.querySelectorAll ? node.querySelectorAll('*').length : 0
@@ -139,25 +150,40 @@ function quickNewMsgCheck(mutations, type) {
         continue // >200 children — слишком сложный контейнер (модалки, целые страницы)
       }
 
-      if (!text) continue
+      if (!text) { if (type === 'max') sendMonitorDiag('[MAX-QUICK] no text node=' + maxNodeLabel(node) + ' childCount=' + childCount + ' raw="' + shortText(node.textContent, 140) + '"'); continue }
       // Dedup: не повторяем тот же текст
-      if (text === lastQuickMsgText || text === lastSentText || text === lastActiveMessageText) continue
+      if (text === lastQuickMsgText || text === lastSentText || text === lastActiveMessageText) { if (type === 'max') sendMonitorDiag('[MAX-QUICK] dedup local text="' + shortText(text, 120) + '"'); continue }
+      if (foundTexts.includes(text)) continue
       // v0.76.8: Дедуп по подстроке — VK parent содержит "ИмяТекст", child содержит "Текст"
-      if (lastQuickMsgText && (lastQuickMsgText.includes(text) || text.includes(lastQuickMsgText))) continue
+      if (type !== 'max' && lastQuickMsgText && (lastQuickMsgText.includes(text) || text.includes(lastQuickMsgText))) continue
 
-      // Это новый DOM-элемент с текстом → вероятно новое сообщение
-      lastQuickMsgText = text
-      lastQuickMsgTime = now
-      lastSentText = text
-      lastActiveMessageText = text
-      lastActiveMessageTime = now
-      try { ipcRenderer.sendToHost('new-message', text) } catch {}
-      // Эмиттим __CC_MSG__ — App.jsx обогатит через executeJavaScript (v0.55.1)
-      // НЕ эмиттим __CC_NOTIF__ — чтобы не задедупить enriched версию из showNotification override
-      try { console.log('__CC_DIAG__msg-src: CO | "' + text.slice(0,30) + '"') } catch {}
-      try { console.log('__CC_MSG__' + text) } catch {}
-      return // одно сообщение за callback — не спамить
+      foundTexts.push(text)
+      if (type === 'max') sendMonitorDiag('[MAX-QUICK] found text="' + shortText(text, 180) + '" node=' + maxNodeLabel(node))
+      if (type !== 'max') break
     }
+    if (foundTexts.length && type !== 'max') break
+  }
+  for (let i = 0; i < foundTexts.length; i++) {
+    const text = foundTexts[i]
+    if (type !== 'max' && i > 0) break
+    // Это новый DOM-элемент с текстом → вероятно новое сообщение
+    lastQuickMsgText = text
+    lastQuickMsgTime = now
+    lastSentText = text
+    lastActiveMessageText = text
+    lastActiveMessageTime = now
+    let extra = null
+    if (type === 'max') {
+      const senderName = getActiveChatSender()
+      const avatar = getActiveChatAvatar()
+      extra = { ...(senderName ? { senderName } : {}), ...(avatar ? (avatar.startsWith('data:') ? { iconDataUrl: avatar } : { iconUrl: avatar }) : {}) }
+      sendMonitorDiag('[MAX-QUICK] send new-message text="' + shortText(text, 180) + '" sender="' + shortText(senderName, 80) + '" avatar=' + !!avatar + ' extraKeys=' + Object.keys(extra).join(','))
+    }
+    try { extra ? ipcRenderer.sendToHost('new-message', text, extra) : ipcRenderer.sendToHost('new-message', text) } catch {}
+    // Эмиттим __CC_MSG__ — App.jsx обогатит через executeJavaScript (v0.55.1)
+    // НЕ эмиттим __CC_NOTIF__ — чтобы не задедупить enriched версию из showNotification override
+    try { console.log('__CC_DIAG__msg-src: CO | "' + text.slice(0,30) + '"') } catch {}
+    try { console.log('__CC_MSG__' + text) } catch {}
   }
 }
 
@@ -174,6 +200,10 @@ setTimeout(() => {
       const text = getLastMessageText(type)
       if (text) { lastActiveMessageText = text; lastSentText = text }
     } catch {}
+    if (type === 'max') {
+      sendMonitorDiag('[MAX-WARMUP] ready=true lastActive="' + shortText(lastActiveMessageText, 120) + '" lastSent="' + shortText(lastSentText, 120) + '"')
+      sendMaxSnapshot('warmup-ready', true)
+    }
   }
 }, WARMUP_DELAY)
 
@@ -182,6 +212,8 @@ function sendUpdate(type) {
   // v0.86.0: диагностика WhatsApp — при КАЖДОМ изменении count (не первые 5)
   if (allTotal !== lastCount) {
     const increased = total > lastCount && lastCount >= 0 && monitorReady
+    if (type === 'max') sendMonitorDiag('[MAX-COUNT] ' + lastCount + '->' + allTotal + ' total=' + total + ' personal=' + personal + ' channels=' + channels + ' increased=' + increased + ' ready=' + monitorReady + ' hidden=' + document.hidden + ' title=' + shortText(document.title, 80))
+    if (type === 'max') sendMaxSnapshot('count-change', true)
     // v0.86.0: WhatsApp — логируем КАЖДОЕ изменение count
     if (type === 'whatsapp') {
       try { ipcRenderer.sendToHost('monitor-diag', 'wa-count: ' + lastCount + '→' + allTotal + ' inc=' + increased + ' rdy=' + monitorReady) } catch(e) {}
@@ -240,6 +272,14 @@ let chatObserver = null
 let chatObserverTarget = null // 'container' | 'body' — для диагностики
 let chatObserverRetries = 0
 const CHAT_OBSERVER_MAX_RETRIES = 5 // 5 попыток × 3 сек = 15 сек
+const sendMaxSnapshot = createMaxSnapshotSender({
+  sendMonitorDiag,
+  getMessengerType,
+  getChatContainerEl,
+  countUnread,
+  getObserverTarget: () => chatObserverTarget,
+  isMonitorReady: () => monitorReady,
+})
 
 function startChatObserver(type) {
   if (chatObserver) { chatObserver.disconnect(); chatObserver = null }
@@ -271,6 +311,8 @@ function startChatObserver(type) {
         var addedCount = 0
         for (var mi = 0; mi < mutations.length; mi++) { addedCount += mutations[mi].addedNodes ? mutations[mi].addedNodes.length : 0 }
         if (addedCount > 0) {
+          if (type === 'max') sendMonitorDiag('[MAX-OBSERVER] mutation +' + elapsed + 's added=' + addedCount + ' ready=' + monitorReady + ' target=' + chatObserverTarget)
+          if (type === 'max') sendMaxSnapshot('observer-mutation', false)
           try { console.log('__CC_DIAG__chatObserver: mutation +' + elapsed + 'с | added=' + addedCount + ' | ready=' + monitorReady) } catch(e) {}
         }
       }
@@ -291,6 +333,8 @@ function startChatObserver(type) {
           if (!isOld) filtered.push(m)
         }
         if (filtered.length === 0) {
+          if (type === 'max') sendMonitorDiag('[MAX-OBSERVER] snapshot-skip all-old snapshot=' + _snapshotTexts.size + ' mutations=' + mutations.length)
+          if (type === 'max') sendMaxSnapshot('snapshot-skip', true)
           try { console.log('__CC_DIAG__chatObserver: snapshot-skip | все мутации = старые пузыри') } catch(e) {}
           return
         }
@@ -300,7 +344,9 @@ function startChatObserver(type) {
 
       quickNewMsgCheck(mutations, type)
     })
-    chatObserver.observe(container, { childList: true, subtree: true })
+    chatObserver.observe(container, { childList: true, subtree: true, characterData: type === 'max' })
+    if (type === 'max') sendMonitorDiag('[MAX-OBSERVER] bound target=' + chatObserverTarget + ' retry=' + chatObserverRetries + ' snapshot=' + _snapshotTexts.size + ' ts=' + _bindTs + ' characterData=true')
+    if (type === 'max') sendMaxSnapshot('observer-bound', true)
     // Логируем в Pipeline
     try { console.log('__CC_DIAG__chatObserver: привязан к контейнеру | ' + chatObserverTarget + ' | попытка ' + chatObserverRetries + ' | snapshot=' + _snapshotTexts.size + ' | ts=' + _bindTs) } catch(e) {}
     return
@@ -309,6 +355,8 @@ function startChatObserver(type) {
   if (chatObserverRetries < CHAT_OBSERVER_MAX_RETRIES) {
     // Контейнер не найден — retry через 3 сек
     try { console.log('__CC_DIAG__chatObserver: контейнер не найден, retry ' + chatObserverRetries + '/' + CHAT_OBSERVER_MAX_RETRIES) } catch {}
+    if (type === 'max') sendMonitorDiag('[MAX-OBSERVER] container-not-found retry=' + chatObserverRetries + '/' + CHAT_OBSERVER_MAX_RETRIES)
+    if (type === 'max') sendMaxSnapshot('container-not-found', false)
     setTimeout(() => startChatObserver(type), RETRY_SHORT)
     return
   }
@@ -319,6 +367,8 @@ function startChatObserver(type) {
   var noBodyFallbackTypes = ['vk', 'max']
   if (noBodyFallbackTypes.indexOf(type) !== -1) {
     chatObserverTarget = 'none'
+    if (type === 'max') sendMonitorDiag('[MAX-OBSERVER] body-fallback-disabled target=none retries=' + chatObserverRetries)
+    if (type === 'max') sendMaxSnapshot('body-fallback-disabled', true)
     try { console.log('__CC_DIAG__chatObserver: ' + type + ' — body-fallback ОТКЛЮЧЁН (фантомы). Ждём навигацию в чат.') } catch(e) {}
     return
   }
@@ -367,6 +417,8 @@ function setupNavigationWatcher(type) {
     const newUrl = location.href
     if (newUrl === lastUrl) return
     try { console.log('__CC_DIAG__nav: ' + lastUrl.slice(-30) + ' → ' + newUrl.slice(-30) + ' | a="' + (lastActiveMessageText||'').slice(0,25) + '" q="' + (lastQuickMsgText||'').slice(0,25) + '"') } catch {}
+    if (type === 'max') sendMonitorDiag('[MAX-NAV] ' + lastUrl.slice(-80) + ' -> ' + newUrl.slice(-80) + ' active="' + shortText(lastActiveMessageText, 80) + '" quick="' + shortText(lastQuickMsgText, 80) + '"')
+    if (type === 'max') sendMaxSnapshot('nav-before-reset', true)
     lastUrl = newUrl
 
     // v0.80.9: Сброс dedup при навигации — текст предыдущего чата не должен влиять
@@ -385,6 +437,8 @@ function setupNavigationWatcher(type) {
         if (curText) { lastActiveMessageText = curText; lastSentText = curText; lastQuickMsgText = curText }
       } catch(e) {}
       monitorReady = true
+      if (type === 'max') sendMonitorDiag('[MAX-NAV] grace-end active="' + shortText(lastActiveMessageText, 120) + '" quick="' + shortText(lastQuickMsgText, 120) + '"')
+      if (type === 'max') sendMaxSnapshot('nav-grace-end', true)
       try { console.log('__CC_DIAG__grace-end | a="' + (lastActiveMessageText||'').slice(0,25) + '"') } catch(e) {}
     }, GRACE_PERIOD)
 
@@ -401,6 +455,7 @@ function startMonitor() {
   // Используем ipcRenderer.sendToHost для диагностики
   try { ipcRenderer.sendToHost('monitor-diag', 'monitor-start: type=' + type + ' host=' + location.hostname) } catch(e) {}
   if (!type) return
+  if (type === 'max') sendMaxSnapshot('monitor-start', true)
 
   sendUpdate(type)
 
@@ -442,6 +497,10 @@ if (document.readyState === 'loading') {
 ipcRenderer.on('run-diagnostics', () => {
   resetDiagnostics()
   const type = getMessengerType()
+  if (type === 'max') {
+    sendMonitorDiag('[MAX-RUN-DIAG] manual diagnostics requested')
+    sendMaxSnapshot('manual-run-diagnostics', true)
+  }
   if (type) runDiagnostics(type, { getVKLastIncomingText })
 })
 

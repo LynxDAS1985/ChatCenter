@@ -14,6 +14,17 @@ const ICON_CACHE_TTL = 30 * 60 * 1000 // 30 минут
 
 let _deps = null
 
+function normalizeScopePart(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function buildNotificationScope({ messengerId, senderName, title, chatTag, messageId }) {
+  if (messageId) return 'mid:' + String(messageId).slice(0, 80)
+  const sender = normalizeScopePart(senderName || title)
+  const chat = normalizeScopePart(chatTag)
+  return sender ? `${messengerId || ''}:sender:${chat || sender}:${sender}` : String(messengerId || '')
+}
+
 function getNotifPreloadPath() {
   const { isDev, __dirname, path } = _deps
   if (isDev) {
@@ -154,7 +165,8 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   // Дедупликация: один и тот же текст от того же мессенджера за 8 сек → skip
   // Нормализуем body: убираем timestamps (Telegram/SW шлют body с приклеенным временем)
   const normalizedBody = (body || '').replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()
-  const dedupKey = messengerId + ':' + (normalizedBody || (body || '')).slice(0, 60)
+  const dedupScope = buildNotificationScope({ messengerId, senderName, title, chatTag, messageId })
+  const dedupKey = dedupScope + ':' + (normalizedBody || (body || '')).slice(0, 60)
   const now = Date.now()
   if (notifDedupMap.has(dedupKey) && now - notifDedupMap.get(dedupKey) < 8000) {
     console.log('[NotifManager] skip dedup messenger=' + (messengerId || '') + ' key=' + dedupKey.slice(0, 90) + ' age=' + (now - notifDedupMap.get(dedupKey)))
@@ -209,7 +221,8 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   // сообщению при click «Перейти к чату» (см. notifHandlers.js notif:click → notify:clicked).
   // v0.96.0 (Phase 0 M0.4): source — NotificationSource паспорт сообщения.
   // Сохраняется в notifItems вместе с другими полями → передаётся при notif:click.
-  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null, source: source || null }
+  const stackKey = buildNotificationScope({ messengerId, senderName, title, chatTag, messageId: null })
+  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, stackKey, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null, source: source || null }
 
   // FIFO — удаляем старые из трекинга (v0.63.2: увеличен до 30, стэк может иметь 10+ сообщений)
   if (notifItems.length >= 30) {

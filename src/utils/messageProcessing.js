@@ -7,10 +7,15 @@
  * Проверяет дедупликацию по точному ключу.
  * @returns {boolean} true = дубль, блокировать
  */
-export function isDuplicateExact(messengerId, text, recentMap, ttlMs = 10000) {
-  const key = messengerId + ':' + text.slice(0, 60)
-  const now = Date.now()
-  const prev = recentMap.get(key)
+export function buildMessageDedupScope(senderName = '', chatTag = '', messageId = '') {
+  if (messageId) return 'mid:' + String(messageId).slice(0, 80)
+  const norm = v => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase()
+  const sender = norm(senderName), chat = norm(chatTag)
+  return sender ? `sender:${chat || sender}:${sender}` : ''
+}
+
+export function isDuplicateExact(messengerId, text, recentMap, ttlMs = 10000, scope = '') {
+  const key = messengerId + ':' + (scope ? scope + ':' : '') + text.slice(0, 60), now = Date.now(), prev = recentMap.get(key)
   if (prev && now - prev < ttlMs) return { blocked: true, age: now - prev }
   return { blocked: false, key, now }
 }
@@ -20,10 +25,8 @@ export function isDuplicateExact(messengerId, text, recentMap, ttlMs = 10000) {
  * "Елена ДугинаТекст" (parent) + "Текст" (child) → дубль.
  * @returns {{ blocked: boolean, prevLen?: number, age?: number }}
  */
-export function isDuplicateSubstring(messengerId, text, recentMap, ttlMs = 5000) {
-  const textShort = text.slice(0, 80)
-  const now = Date.now()
-  const prefix = messengerId + ':'
+export function isDuplicateSubstring(messengerId, text, recentMap, ttlMs = 5000, scope = '') {
+  const textShort = text.slice(0, 80), now = Date.now(), prefix = messengerId + ':' + (scope ? scope + ':' : '')
   for (const [k, ts] of recentMap) {
     if (now - ts > ttlMs || !k.startsWith(prefix)) continue
     const prevText = k.slice(prefix.length)

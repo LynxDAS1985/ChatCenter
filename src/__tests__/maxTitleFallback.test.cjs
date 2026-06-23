@@ -49,6 +49,37 @@ function test(name, fn) {
     assert.strictEqual(mod.parseMaxTitleFallbackResult('{bad json'), null)
   })
 
+  test('cache: avatar is scoped by messenger, chat and sender', () => {
+    const cache = {}
+    const k1 = mod.rememberSenderAvatar(cache, 'max', 'Ivan Petrov', 'chat-a', 'https://cdn/old.jpg')
+    const k2 = mod.rememberSenderAvatar(cache, 'max', 'Ivan Petrov', 'chat-b', 'https://cdn/other.jpg')
+    assert.notStrictEqual(k1, k2)
+    assert.strictEqual(mod.getSenderCacheEntry(cache, 'max', 'Ivan Petrov', 'chat-a').avatar, 'https://cdn/old.jpg')
+    assert.strictEqual(mod.getSenderCacheEntry(cache, 'max', 'Ivan Petrov', 'chat-b').avatar, 'https://cdn/other.jpg')
+  })
+
+  test('cache: fresh avatar replaces old avatar, empty avatar does not erase it', () => {
+    const cache = {}
+    mod.rememberSenderAvatar(cache, 'max', 'Ivan Petrov', 'chat-a', 'https://cdn/old.jpg')
+    mod.rememberSenderAvatar(cache, 'max', 'Ivan Petrov', 'chat-a', '')
+    assert.strictEqual(mod.getSenderCacheEntry(cache, 'max', 'Ivan Petrov', 'chat-a').avatar, 'https://cdn/old.jpg')
+    mod.rememberSenderAvatar(cache, 'max', 'Ivan Petrov', 'chat-a', 'https://cdn/new.jpg')
+    assert.strictEqual(mod.getSenderCacheEntry(cache, 'max', 'Ivan Petrov', 'chat-a').avatar, 'https://cdn/new.jpg')
+  })
+
+  test('cache: fallback fills only missing avatar for same sender', () => {
+    const cache = {}
+    const logs = []
+    mod.rememberSenderAvatar(cache, 'max', 'Ivan Petrov', 'chat-a', 'https://cdn/new.jpg')
+    const extra = { senderName: 'Ivan Petrov', chatTag: 'chat-a' }
+    mod.applySenderAvatarFallback(extra, cache, 'max', (...args) => logs.push(args), 'hello')
+    assert.strictEqual(extra.iconUrl, 'https://cdn/new.jpg')
+    const other = { senderName: 'Maria', chatTag: 'chat-a' }
+    mod.applySenderAvatarFallback(other, cache, 'max', () => {}, 'hello')
+    assert.strictEqual(other.iconUrl, undefined)
+    assert(logs.length === 1)
+  })
+
 
   test('script: uses MAX sidebar first and active chat second only', () => {
     const script = mod.buildMaxTitleFallbackScript()
