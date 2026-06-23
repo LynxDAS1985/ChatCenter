@@ -104,29 +104,36 @@ test('notificationManager.js: notifWin имеет backgroundThrottling: false', 
 // быстрый путь, но НЕ закрывает race с одновременным batch. Force transform
 // в fallback — единственная гарантия final state.
 test('notification.js: slideIn force transform — в helper для обоих путей', () => {
-  const abs = path.resolve(process.cwd(), 'main/notification.js')
-  const content = fs.readFileSync(abs, 'utf8')
+  // v1.2.12: forceFinalSlideInState вынесена в main/notification-helpers.js
+  // как чистая функция forceFinalSlideInState(el). В notification.js остался
+  // локальный wrapper `const forceFinalSlideInState = () => window.__ccNotifHelpers...`
+  // Проверяем И wrapper в notification.js, И тело функции в helpers — оба обязательны.
+  const notifAbs = path.resolve(process.cwd(), 'main/notification.js')
+  const helperAbs = path.resolve(process.cwd(), 'main/notification-helpers.js')
+  const notifContent = fs.readFileSync(notifAbs, 'utf8')
+  const helperContent = fs.readFileSync(helperAbs, 'utf8')
   // v0.89.38: единый helper forceFinalSlideInState вызывается из:
   //   1. onSlideInEnd (нормальный animationend)
   //   2. setTimeout 600мс (fallback)
   // Раньше force был только в fallback (v0.89.36) — но animationend может
   // сработать нормально при частично прерванной анимации, transform застрянет.
-  assert(/forceFinalSlideInState/.test(content),
+  assert(/forceFinalSlideInState/.test(notifContent),
     'helper forceFinalSlideInState УДАЛЁН из notification.js!\n' +
     '   Без него force transform применяется только в fallback path (через 600мс).\n' +
     '   Если animationend сработал нормально — translateX(380px) застревает.\n' +
     '   См. ловушка #29 v0.89.38 в mistakes/notifications-ribbon.md.')
-  const helperIdx = content.indexOf('const forceFinalSlideInState')
-  assert(helperIdx > 0, 'definition helper не найдено')
-  const helperBlock = content.slice(helperIdx, helperIdx + 400)
+  // v1.2.12: тело функции теперь в helpers — ищем там.
+  const helperIdx = helperContent.indexOf('function forceFinalSlideInState')
+  assert(helperIdx > 0, 'definition forceFinalSlideInState не найдена в notification-helpers.js')
+  const helperBlock = helperContent.slice(helperIdx, helperIdx + 400)
   assert(/transform\s*=\s*['"`]translateX\(0\)/.test(helperBlock),
     'force transform=translateX(0) УДАЛЁН из helper')
   assert(/style\.animation\s*=\s*['"`]none['"`]/.test(helperBlock),
     'force animation=none УДАЛЁН из helper — анимация может продолжить выполнение')
   assert(/style\.opacity\s*=\s*['"`]1['"`]/.test(helperBlock),
     'force opacity=1 УДАЛЁН из helper')
-  // Проверка вызовов helper в обоих путях
-  const calls = (content.match(/forceFinalSlideInState\s*\(\s*\)/g) || []).length
+  // Проверка вызовов helper в обоих путях (через wrapper)
+  const calls = (notifContent.match(/forceFinalSlideInState\s*\(\s*\)/g) || []).length
   assert(calls >= 2,
     'forceFinalSlideInState() должен вызываться минимум 2 раза: в onSlideInEnd и в fallback.\n' +
     '   Найдено вызовов: ' + calls + '. Один из путей пропускает force → element застрянет.')

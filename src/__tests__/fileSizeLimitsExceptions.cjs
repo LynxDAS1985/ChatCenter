@@ -27,13 +27,13 @@ module.exports = {
     reason: 'Большой парсер console-message. Логически цельный.'
   },
   // v0.87.78: notification разбит на html/css/js. JS превышает default 300.
-  // v1.2.12: createPinBtn вынесена в notification-helpers.js, файл уменьшен 700→686.
-  // Ceiling 700 → 700 пока (запас 14 строк). Дальнейшее разбиение требует обёртки в IIFE
-  // и параметризации функций dismissItem/stackMessageIntoHost (замыкают локальный state).
-  // TODO в code-todo.md → разбить calcHeight/reportHeight/cleanupStack в notification-helpers.
+  // v1.2.12: createPinBtn вынесена 700→686, потом calcHeight/pauseItem/resumeItem/
+  // forceFinalSlideInState вынесены 686→644 (запас 56 строк). Дальнейшее разбиение
+  // (dismissItem/stackMessageIntoHost/cleanupStack) требует параметризации — замыкают
+  // локальный state (items/stacks/container/window.notifApi).
   'main/notification.js': {
     ceiling: 700,
-    reason: 'Renderer-код для notification BrowserWindow. v1.2.12: createPinBtn вынесена в notification-helpers.js (запас 14 строк). Дальнейшее разбиение требует параметризации функций — TODO в code-todo.md.'
+    reason: 'Renderer-код для notification BrowserWindow. v1.2.12: createPinBtn + calcHeight + pauseItem + resumeItem + forceFinalSlideInState вынесены в notification-helpers.js (запас 56 строк). Дальнейшее разбиение dismissItem/stackMessageIntoHost требует параметризации.'
   },
   // v0.87.97: pin-dock разбит на html/css/js. JS превышает default 300.
   'main/pin-dock.js': {

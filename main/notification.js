@@ -10,23 +10,9 @@
   let cascadeQueue = 0
   let cascadeTimer = null
 
-  function calcHeight() {
-    let h = 0
-    for (const child of container.children) {
-      // Пропускаем элементы в процессе dismiss (opacity=0 или height=0)
-      if (child.style.pointerEvents === 'none') continue
-      // v0.89.23 (Баг #1): пропускаем элементы в процессе slideIn animation.
-      // offsetHeight уже = финальное значение СРАЗУ после appendChild,
-      // НО visually element находится на transform: translateX(380px) до конца
-      // animation (300ms). Если включить его в height — main расширит окно,
-      // а element будет ещё за правым краем → видна «пустая полоса».
-      // См. ловушка #22 в mistakes/notifications-ribbon.md.
-      if (child.dataset.slideInDone === 'false') continue
-      const ch = child.offsetHeight
-      if (ch > 0) h += ch + 4
-    }
-    return h > 0 ? h + 4 : 0
-  }
+  // v1.2.12: calcHeight вынесена в notification-helpers.js (потолок 700).
+  // Локальная обёртка передаёт `container` — единый глобал этого файла.
+  function calcHeight() { return window.__ccNotifHelpers.calcHeight(container) }
 
   function reportHeight() {
     setTimeout(() => {
@@ -66,29 +52,10 @@
     }, 60)
   }
 
-  // ── Per-item hover (v0.60.3) ──
-  function pauseItem(item) {
-    if (item.paused || !item.dismissMs || item.dismissMs <= 0) return
-    item.remainingMs -= (Date.now() - item.startTs)
-    if (item.remainingMs < 0) item.remainingMs = 0
-    clearTimeout(item.timer)
-    item.timer = null
-    item.paused = true
-    const progress = item.el.querySelector('.progress-bar')
-    if (progress) progress.style.animationPlayState = 'paused'
-    item.el.classList.add('hovered')
-  }
-
-  function resumeItem(item) {
-    if (!item.paused || !item.dismissMs || item.dismissMs <= 0) return
-    item.paused = false
-    item.startTs = Date.now()
-    const progress = item.el.querySelector('.progress-bar')
-    if (progress) progress.style.animationPlayState = 'running'
-    const id = item.el.dataset.id
-    item.timer = setTimeout(() => dismissItem(id, false), item.remainingMs || 3000)
-    item.el.classList.remove('hovered')
-  }
+  // ── Per-item hover (v0.60.3) — функции вынесены в notification-helpers.js v1.2.12 ──
+  // resumeItem замыкает локальный dismissItem через колбэк (он не вынесен — слишком много state).
+  function pauseItem(item) { window.__ccNotifHelpers.pauseItem(item) }
+  function resumeItem(item) { window.__ccNotifHelpers.resumeItem(item, dismissItem) }
 
   container.addEventListener('mousemove', (e) => {
     const target = e.target.closest('.notif-item')
@@ -581,19 +548,10 @@
     cascadeTimer = setTimeout(() => { cascadeQueue = 0 }, 600)
 
     // v0.89.23 (Баг #1): помечаем что element в процессе slideIn — calcHeight
-    // его НЕ учитывает пока CSS animation не завершится. Иначе окно расширится
-    // раньше чем element выехал в видимую зону (видна «пустая полоса»).
-    // v0.89.38: helper для финального состояния slideIn keyframe 100%.
-    // Вызывается ИЗ ОБОИХ путей (animationend + fallback timeout) — это правка
-    // ловушки #29 (v0.89.36 ставил force только в fallback path). Из лога 13:35
-    // 19 мая видно: animationend срабатывает нормально (slid=true), но CSS
-    // animation forwards может частично прерваться — translateX застрял на 380.
-    // Force в обоих путях = гарантия final state.
-    const forceFinalSlideInState = () => {
-      el.style.animation = 'none'
-      el.style.transform = 'translateX(0) scale(1)'
-      el.style.opacity = '1'
-    }
+    // его НЕ учитывает пока CSS animation не завершится.
+    // v0.89.38: forceFinalSlideInState гарантирует финальное состояние keyframe 100%
+    // (CSS animation forwards может прерваться). Вынесена в notification-helpers.js v1.2.12.
+    const forceFinalSlideInState = () => window.__ccNotifHelpers.forceFinalSlideInState(el)
     el.dataset.slideInDone = 'false'
     const onSlideInEnd = (e) => {
       // Только событие slideIn (не другие animations типа goChatPulse)

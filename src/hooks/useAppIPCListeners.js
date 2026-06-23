@@ -30,28 +30,14 @@ export default function useAppIPCListeners({
     })
   }, [])
 
-  // 2. messenger:badge — счётчики + звук
-  useEffect(() => {
-    return window.api?.on('messenger:badge', ({ id, count }) => {
-      setUnreadCounts(prev => {
-        const prev_count = prev[id] || 0
-        if (count > prev_count && settingsRef.current.soundEnabled !== false) {
-          const messengerMuted = !!(settingsRef.current.mutedMessengers || {})[id]
-          const lastSnd = lastSoundTsRef.current[id] || 0
-          const sinceLast = Date.now() - lastSnd
-          if (!messengerMuted && sinceLast > 3000) {
-            const m = messengersRef.current.find(x => x.id === id)
-            playNotificationSound(m?.color)
-            lastSoundTsRef.current[id] = Date.now()
-            traceNotif('sound', 'pass', id, `badge +${count - prev_count}`, 'звук badge')
-          } else if (!messengerMuted) {
-            traceNotif('sound', 'block', id, `badge +${count - prev_count}`, `dedup badge ${sinceLast}мс назад`)
-          }
-        }
-        return { ...prev, [id]: count }
-      })
-    })
-  }, [])
+  // 2. v1.2.12: УДАЛЁН listener `messenger:badge` — мёртвый код.
+  //    В api.md был помечен «будет использован ChatMonitor в Фазе 3», но Фаза 3
+  //    давно прошла (мы в v1.2.12+), канал так и не получил эмиттера. Звук для
+  //    WebView режимов играется напрямую в renderer:
+  //    - webviewHandleNewMessage.js:89 (новое сообщение)
+  //    - webviewSetup.js:418, 494 (title-fallback + unread-count рост)
+  //    Звук для Native — через listener `notif:play-sound` (пункт 5 ниже).
+  //    Полное удаление документировано в .memory-bank/api.md.
 
   // 3. Автообновление лога уведомлений (если NotifLogModal открыт)
   useEffect(() => {

@@ -296,10 +296,18 @@ Rule for future work: do not silently show forum group messages as if a concrete
 ### `window:minimize` — свернуть
 - **Тип**: invoke → `{ ok }`
 
-### `messenger:badge` — событие: обновление бейджа (Main → Renderer)
+### ~~`messenger:badge`~~ — УДАЛЁН в v1.2.12 (мёртвый код)
+- Был помечен «будет использован ChatMonitor в Фазе 3», но Фаза 3 прошла, канал так и не получил эмиттера.
+- Listener в `useAppIPCListeners.js` удалён, документация снята.
+- Звук для WebView режимов теперь играется напрямую в renderer (см. `webviewHandleNewMessage.js:89`, `webviewSetup.js:418,494`).
+- Для Native — через канал `notif:play-sound` (см. ниже).
+
+### `notif:play-sound` — событие: играть звук уведомления (Main → Renderer, v1.2.12)
 - **Тип**: send (событие от main к renderer)
-- **Данные**: `{ id: string, count: number }`
-- **Примечание**: будет использован ChatMonitor в Фазе 3
+- **Данные**: `{ messengerId: string, color: string }`
+- **Когда**: после показа окна уведомления для `messengerId.startsWith('native_')` — main посылает renderer чтобы тот сыграл звук с проверками `soundEnabled` + `mutedMessengers[id]` + `messengerNotifs[id].sound` + throttle 3 сек.
+- **Listener**: `useAppIPCListeners.js` (пункт 5)
+- **Эмиттер**: `mainIpcHandlers.js` handler `app:custom-notify`
 
 ---
 
