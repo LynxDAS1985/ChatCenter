@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.11 (23 июня 2026)
+## Текущая версия: v1.2.12 (23 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -46,6 +46,101 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v1.2.12 — уведомления Native Telegram по стандарту мессенджеров (TDLib мьют + локальные настройки + звук)
+
+23 июня 2026: приведена в порядок логика уведомлений Native Telegram (ЦентрЧатов) — по стандарту мессенджеров. До правки: уведомления приходили **для всех** чатов без проверки TDLib мьюта (🔕) и **без локальных настроек** ChatCenter; **звук** не играл вообще.
+
+#### Стандарт мессенджеров (теперь работает в Native)
+
+```
+chat.isMuted (TDLib серверный мьют) → ДА → ничего. Конец.
+                                      ↓ НЕТ
+mutedMessengers[id] локальный мьют   → ДА → ничего. Конец.
+                                      ↓ НЕТ
+notificationsEnabled + ribbon включён → НЕТ → нет окна
+                                      ↓ ДА → показать окно
+soundEnabled + sound + throttle 3s    → НЕТ → нет звука
+                                      ↓ ДА → сыграть звук
+```
+
+Звук и окно — **независимы**. Эталон логики — `webviewHandleNewMessage.js:79-103` (тот же что в WebView).
+
+#### Что сделано
+
+**1. TDLib мьют (`chat.isMuted`) — двусторонний серверный**:
+- В [`nativeStoreIpc.js`](../src/native/store/nativeStoreIpc.js) handler `tg:new-message` фильтрует ribbon при `chat.isMuted=true` (skip-лог уровня TRACE — не шумит).
+- Поле `isMuted` из [`tdlibMapper.js`](../main/native/backends/tdlibMapper.js) через `ChatNotificationSettings.mute_for` ([офиц. дока TDLib](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1chat_notification_settings.html)).
+- Двусторонняя связь: правый клик «🔕 На час» в ChatCenter → `setMute` → TDLib `setChatNotificationSettings` → синхронизация на все устройства Telegram.
+
+**2. Локальный ribbon — НОВОЕ**:
+- В [`mainIpcHandlers.js`](../main/handlers/mainIpcHandlers.js) handler `app:custom-notify` — для `messengerId.startsWith('native_')` добавлена проверка:
+  - `mutedMessengers[id]` (legacy + backwards compat)
+  - `settings.notificationsEnabled !== false` (глобальный тоггл)
+  - `messengerNotifs[id].ribbon !== false` (per-messenger в Settings)
+- Если ribbon выключен → `return { ok:false, skipped:'local-ribbon-disabled' }` ДО показа окна.
+- WebView не затронут (фильтр `startsWith('native_')`).
+
+**3. Звук Native — НОВОЕ (никогда не работал)**:
+- В [`useAppIPCListeners.js`](../src/hooks/useAppIPCListeners.js) добавлен 5-й useEffect — listener `notif:play-sound`:
+  - Триггер из main: `mainIpcHandlers.js` шлёт `webContents.send('notif:play-sound', {messengerId, color})`.
+  - Фильтр `messengerId.startsWith('native_')` — защита от дубля с WebView звуком.
+  - Проверки: `settings.soundEnabled !== false` + `!mutedMessengers[id]` + `messengerNotifs[id].sound !== false`.
+  - Throttle 3 сек через общий `lastSoundTsRef` (тот же что у WebView).
+
+**4. 5 точек диагностики пути уведомления** (добавлены отдельно):
+- `[native-notif] emit` в `nativeStoreIpc.js`
+- `[notif-ipc] custom-notify recv` в `mainIpcHandlers.js`
+- `[notif-window] event=show/hide/move/blur/focus` в `notificationManager.js`
+- `slideIn done id=N` в `notification.js` (success path)
+- Расширен `[NotifManager] show` — `dismissMs`, `grouping`, `expanded`, `winVisible`
+
+**5. Удалён мёртвый диагностический логгер** (отдельный фикс):
+- В [`MessageBubble.jsx`](../src/native/components/MessageBubble.jsx) функция `__ccLogBubbleRender(m)` (v0.95.29, диагностика дубля исходящих) слала `app:log` на КАЖДЫЙ рендер — 168508 IPC за 30 мин юзер-сессии. Бага дубля закрыт в v0.95.31-34, логгер забыли удалить (паттерн проекта — TODO-9 в `code-todo.md`).
+
+**6. Разбиение файлов** (превысили лимиты):
+- [`nativeStoreIpc.js`](../src/native/store/nativeStoreIpc.js) 734 → 643 строк: handlers `tg:typing`/`tg:send-succeeded`/`tg:upload-progress` вынесены в [`nativeStoreSendIpc.js`](../src/native/store/nativeStoreSendIpc.js) (123 стр). Ceiling 730→660.
+- [`notification.js`](../main/notification.js) 700 → 686 строк: `createPinBtn` вынесена в [`notification-helpers.js`](../main/notification-helpers.js) (34 стр). Подключается через `<script>` в `notification.html`. Копирование в `electron.vite.config.js`.
+
+#### Неверные шаги — для будущих
+
+**❌ Шаг №1** — гипотеза «спам-логгер блокирует уведомления».
+
+Я связал три факта (168k IPC, успешный `[NotifManager] show` в логе, юзер не видит окно) в причинную цепочку без доказательств. Нарушение правила «3 факта, 1 уровень 1». После удаления логгера юзер всё равно не видел уведомления — потому что **не было звука**, а юзер ассоциировал «нет звука» с «нет уведомления». Удаление логгера было полезным (диагностика отслужила), но **не корнем**.
+
+**❌ Шаг №2** — предложение отката `chat?.isMuted` фильтра.
+
+Я предложил откатить TDLib мьют, увидев что 63% уведомлений блокируются. Юзер остановил: «Я ожидаю что уведомления будут для чатов которые **не заглушены**. Это **стандарт мессенджеров**». Я неправильно интерпретировал — думал юзер хочет уведомления для всех. На самом деле — по стандарту: TDLib мьют + локальные настройки.
+
+**✅ Верный шаг** — после уточнения у юзера:
+- TDLib мьют (двусторонний с сервером) **сохранён** — это «заглушить совсем»
+- Локальные настройки ChatCenter **добавлены** — это «как программа реагирует на не-заглушённые»
+- Звук в Native **добавлен впервые** через IPC `notif:play-sound`
+
+#### Тесты — 31 unit-тест защиты от регрессии
+
+1. [`nativeStoreMutedNotify.vitest.jsx`](../src/native/store/nativeStoreMutedNotify.vitest.jsx) — **7 тестов** на TDLib мьют (сохранён)
+2. [`notifPlaySound.test.cjs`](../src/__tests__/notifPlaySound.test.cjs) — **13 тестов** на listener звука (WebView пропускается, throttle, settings)
+3. [`customNotifyLocal.test.cjs`](../src/__tests__/customNotifyLocal.test.cjs) — **11 тестов** на main фильтр Native ribbon
+
+#### Регрессия
+
+- `npm run lint` — 0 warnings ✅
+- `npx vitest run` — все Vitest тесты ✅
+- `fileSizeLimits.test.cjs` — 479/479 ✅
+- `npm run check-memory` — 4/4 версии согласованы ✅
+
+#### Требует проверки запуском
+
+1. **TDLib мьют**: правый клик на чате → «🔕 На час» → 🔕 встанет в списке + перестанет показывать уведомления. На телефоне в Telegram тоже встанет 🔕.
+2. **Локальный ribbon выкл**: Settings → ЦентрЧатов → выключить «Ribbon» → новые сообщения не показывают окно, но звук может играть.
+3. **Локальный звук выкл**: Settings → ЦентрЧатов → выключить «Звук» → окно показывается, звука нет.
+4. **Всё включено + чат не заглушён**: окно + звук.
+
+#### Что **не закрывает** v1.2.12
+
+- Глобальный мьют TDLib скоупа через `use_default_mute_for=true` — отдельная задача
+- `messenger:badge` listener в `useAppIPCListeners.js:33-54` — никем не эмитится (мёртвый код), не удалён в этой задаче
 
 ### v1.2.11 — наблюдатель за списком чатов MAX (настоящее решение)
 

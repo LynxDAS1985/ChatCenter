@@ -2,6 +2,160 @@
 
 ---
 
+## 🔴🔴 Диагностический логгер в горячем render-пути → IPC спам → тихая потеря уведомлений (v1.2.12)
+
+**Симптом**: `[NotifManager] show id=N` есть в `chatcenter.log`, но уведомление **не появляется на экране** (или мелькает доли секунды). Native Telegram, не заглушённые чаты. Юзер уверен «я не мог не заметить».
+
+**Сценарий воспроизведения**:
+- Открыть Native Telegram, начать скроллить активный чат
+- В другой чат приходит новое сообщение
+- Главное окно показывает `[NotifManager] show id=N sender=… body=…` в логе ✅
+- Окно ribbon в правом нижнем углу — НЕ появляется ❌
+
+**Корень**: в [`MessageBubble.jsx`](../../src/native/components/MessageBubble.jsx) была функция-счётчик `__ccLogBubbleRender(m)` (v0.95.29, диагностика дубля исходящих сообщений). Она вызывалась на КАЖДЫЙ рендер компонента сообщения. React virtuoso перерендеривает сотни сообщений при скролле. За 30 мин юзер-сессии — **168 508 IPC `app:log`** (≈93/сек).
+
+**Цепочка отказа**:
+```
+renderer: __ccLogBubbleRender → window.api.send('app:log', ...)
+  → preload: ipcRenderer.send (асинхронный, очередь)
+    → main: ipcMain.on('app:log') → fs.appendFile('chatcenter.log')
+      [168 508 раз — главный поток main захлёбывается]
+        → notifWin.webContents.send('notif:show', data) ЗАСТРЕВАЕТ в очереди
+          → окно уведомления не получает данные / получает после dismissMs
+            → 🚨 юзер не видит ribbon
+```
+
+**Доказательства**:
+- `grep -cE "render-dup" chatcenter.log` = 168508 (≈93/сек)
+- `[NotifManager] show id=22 sender=Faradei body=А для чего это?` есть в логе
+- Этот же лог показывает что [notif-window event=show] (или другие events окна) **не приходили** после `show`
+
+**Фикс v1.2.12**:
+1. Полное удаление функции `__ccLogBubbleRender` из `MessageBubble.jsx` (строки 21-47 + вызов на стр. 60)
+2. Обновлён комментарий-ссылка в [`nativeStore.js:909`](../../src/native/store/nativeStore.js)
+3. 5 точек диагностики **по пути уведомления** добавлены (НЕ в горячем рендере) — `[native-notif] emit` / `[notif-ipc] recv` / `[notif-window] event=*` / `slideIn done` / расширенный `[NotifManager] show`
+
+**Правило (золотое)**:
+- **НИКОГДА** не вызывать `window.api.send('app:log', ...)` из render-функций React-компонентов или из callback'ов которые срабатывают на каждый кадр (`onScroll`, `MutationObserver` без throttle).
+- Если **обязательно** нужен render-side лог для расследования — ОБЯЗАТЕЛЬНО:
+  - Локальный rate-limit (счётчик в `useRef`, не Map в module scope)
+  - Уровень `TRACE` (не пишется в файл при стандартной диагностике)
+  - **Запись в `code-todo.md`** с deadline удаления (отвечать на вопрос «когда?»)
+- Похожий случай — IPC burst tracker v0.91.21 (TODO-9 в `code-todo.md`). Это **повторяющийся паттерн** в проекте — диагностика добавляется, баг исследуют, баг закрывают, диагностику забывают удалить.
+
+**Тест-страж**: пока нет прямого теста «не должно быть `app:log` в render». Идея на будущее — `grep` тест что `MessageBubble.jsx` / `MessageList.jsx` / `useReadByVisibility.js` не содержат `window.api?.send.*app:log`.
+
+**Затронутые файлы**:
+- [`src/native/components/MessageBubble.jsx`](../../src/native/components/MessageBubble.jsx) — функция удалена
+- [`src/native/store/nativeStore.js`](../../src/native/store/nativeStore.js) — комментарий обновлён
+- [`src/native/store/nativeStoreIpc.js`](../../src/native/store/nativeStoreIpc.js) — +emit диагностика
+- [`main/handlers/mainIpcHandlers.js`](../../main/handlers/mainIpcHandlers.js) — +recv диагностика
+- [`main/handlers/notificationManager.js`](../../main/handlers/notificationManager.js) — +5 window events
+- [`main/notification.js`](../../main/notification.js) — +slideIn success log
+
+---
+
+## 🟠 Native Telegram: уведомления (ribbon + звук + TDLib мьют) — стандарт мессенджеров v1.2.12
+
+**Контекст**: до v1.2.12 в Native режиме (ЦентрЧатов = TDLib Telegram) уведомления **показывались для всех** чатов, **без проверки** TDLib мьюта (🔕 в Telegram) и **без локальных настроек** ChatCenter (Settings → тоггл «Звук» / «Ribbon»). Это нарушало стандарт мессенджеров.
+
+### Стандарт мессенджеров (как сделано в v1.2.12)
+
+```
+chat.isMuted (TDLib серверный мьют)?  → ДА → ничего (ни окна, ни звука). Конец.
+                                        ↓ НЕТ
+mutedMessengers[id] (локальный мьют)? → ДА → ничего. Конец.
+                                        ↓ НЕТ
+notificationsEnabled + ribbon включён? → НЕТ → нет окна
+                                        ↓ ДА → показать окно
+soundEnabled + sound включён + throttle 3s? → НЕТ → нет звука
+                                        ↓ ДА → сыграть звук
+```
+
+Звук и окно независимы. Можно включить только окно (без звука) или только звук (без окна).
+
+### 📌 Что прошёл путь правильно
+
+| Слой | Где проверка | Файл |
+|---|---|---|
+| **1. TDLib мьют** (`chat.isMuted`) — двусторонний серверный мьют | renderer перед `invoke('app:custom-notify')` | [`nativeStoreIpc.js:458-467`](../../src/native/store/nativeStoreIpc.js) |
+| **2. Локальный ribbon** (`mutedMessengers` + `notificationsEnabled` + `messengerNotifs[id].ribbon`) | main `app:custom-notify` handler (только для `messengerId.startsWith('native_')`) | [`mainIpcHandlers.js:171`](../../main/handlers/mainIpcHandlers.js) |
+| **3. Звук** (`soundEnabled` + `mutedMessengers` + `messengerNotifs[id].sound` + throttle 3s) | renderer listener на `notif:play-sound` (фильтр `native_*` чтобы не дублировать с WebView) | [`useAppIPCListeners.js`](../../src/hooks/useAppIPCListeners.js) |
+
+Эталон логики **взят из WebView** ([`webviewHandleNewMessage.js:79-103`](../../src/utils/webviewHandleNewMessage.js)) — те же поля настроек, тот же default, тот же throttle.
+
+### 📜 История правильных и неверных шагов
+
+**❌ Неверный шаг №1 (v1.2.12-draft)** — «удалил спам-логгер `__ccLogBubbleRender` и считал что это фиксит уведомления».
+
+Гипотеза: 168k IPC `app:log` за сессию забивают main → `webContents.send('notif:show')` застревает → окно не появляется. **Доказательств не было** — связал три факта (количество логов, успешный `[NotifManager] show` в логе, юзер не видит окно) в причинную цепочку без проверки. Это нарушение правила «3 факта, 1 уровень 1». Удаление логгера было полезным (диагностика v0.95.29 отслужила), но **не корень**.
+
+Что показал свежий лог после правки: `[NotifManager] show` → `[notif-window] event=show` → `slideIn done` → окно **показывается** по данным Electron. То есть IPC не был проблемой. Юзер всё равно не видел — потому что **не было звука**, и юзер ассоциировал «нет звука» с «нет уведомления».
+
+**❌ Неверный шаг №2 (моё предложение отката)** — «откатить `chat?.isMuted` фильтр».
+
+Я предложил откатить TDLib мьют фильтр, потому что 112 из 178 уведомлений (63%) блокировались. Юзер сразу остановил: «я ожидаю что уведомления будут для чатов которые **не заглушены**, не для всех! это **стандарт мессенджеров**». Я неправильно интерпретировал — думал юзер хочет уведомления для всех, на самом деле он хочет **по стандарту**.
+
+**✅ Верный шаг (v1.2.12)** — **сохранить** TDLib мьют + **добавить** локальные настройки + **добавить** звук.
+
+После уточнения у юзера стало ясно: TDLib мьют (двусторонний с сервером Telegram) — это «заглушить навсегда», локальные настройки ChatCenter — это «как программа реагирует на не-заглушённые чаты». Оба слоя нужны. Звук — отдельная функция, никогда не было в Native.
+
+### 📂 Изменения в коде v1.2.12
+
+**Renderer:**
+- [`src/native/store/nativeStoreIpc.js`](../../src/native/store/nativeStoreIpc.js):
+  - **СОХРАНЁН** `if (chat?.isMuted)` фильтр (правильно по стандарту мессенджеров)
+  - Skip-лог уровня TRACE — не шумит при потоке muted-каналов
+- [`src/hooks/useAppIPCListeners.js`](../../src/hooks/useAppIPCListeners.js):
+  - **ДОБАВЛЕН** listener `notif:play-sound`:
+    - Фильтр `messengerId.startsWith('native_')` (защита от дубля с WebView звуком)
+    - Проверки: `soundEnabled` + `!mutedMessengers[id]` + `messengerNotifs[id].sound`
+    - Throttle 3 секунды через общий `lastSoundTsRef`
+
+**Main:**
+- [`main/handlers/mainIpcHandlers.js`](../../main/handlers/mainIpcHandlers.js) handler `app:custom-notify`:
+  - **ДОБАВЛЕНА** проверка локального ribbon для Native: `!mutedMessengers[id] && notificationsEnabled !== false && messengerNotifs[id].ribbon`
+  - Если ribbon выключен → `return { ok: false, skipped: 'local-ribbon-disabled' }` ДО показа окна
+  - Если ribbon разрешён → `webContents.send('notif:play-sound', { messengerId, color })` параллельно с показом окна
+
+### 🧪 Защита от регрессии
+
+**Тесты (24 unit-теста)**:
+
+1. [`nativeStoreMutedNotify.vitest.jsx`](../../src/native/store/nativeStoreMutedNotify.vitest.jsx) — 7 тестов на TDLib мьют (правильное поведение):
+   - `isMuted=true` → `app:custom-notify` НЕ вызывается
+   - `isMuted=false` → вызывается
+   - `isMuted=true` → `unreadCount` всё равно растёт
+   - `isMuted=undefined`/`chat=undefined` → fallback показывает (безопасно)
+   - Активный чат — отдельный фильтр
+2. [`notifPlaySound.test.cjs`](../../src/__tests__/notifPlaySound.test.cjs) — 13 тестов на listener звука Native:
+   - WebView (whatsapp/vk) → НЕ играет (защита от дубля)
+   - Все локальные настройки (`soundEnabled`/`mutedMessengers`/`messengerNotifs[id].sound`)
+   - Throttle 3 секунды
+   - Граничные случаи (`settings=null`, `undefined` поля)
+3. [`customNotifyLocal.test.cjs`](../../src/__tests__/customNotifyLocal.test.cjs) — 11 тестов на main фильтр Native ribbon:
+   - WebView пропускается (логика в renderer)
+   - Default settings → показать
+   - Все локальные настройки (`mutedMessengers`/`notificationsEnabled`/`messengerNotifs[id].ribbon`)
+   - Будущие `native_*` мессенджеры работают по префиксу
+
+### ⚠️ ВАЖНЫЕ ПРАВИЛА — НЕ нарушать
+
+1. **НИКОГДА не использовать `chat.isMuted` как ЕДИНСТВЕННЫЙ фильтр** — это серверный мьют (TDLib), он отвечает только на вопрос «заглушил ли юзер чат в Telegram». Локальные настройки ChatCenter — **отдельный слой** через `messengerNotifs[id]` / `mutedMessengers[id]`.
+
+2. **НИКОГДА не добавлять звук Native в `nativeStoreIpc.js`** — там нет `settingsRef` и `lastSoundTsRef`, прокидывание через 4 уровня DI = техдолг. Звук играется в `useAppIPCListeners.js` через IPC `notif:play-sound` от main.
+
+3. **НИКОГДА не дублировать ribbon-проверки** — для WebView они в renderer (`webviewHandleNewMessage.js`), для Native в main (`mainIpcHandlers.js`). Filter `messengerId.startsWith('native_')` в main защищает от двойной проверки WebView.
+
+4. **НИКОГДА не делать звук «всегда»** — без throttle. WebView имеет 3-секундный throttle (`lastSoundTsRef`). Native использует тот же ref — пакет в 5 сообщений за 100мс даст 1 звук, не 5.
+
+### 🚫 Что **не закрывает** v1.2.12
+
+- Глобальный мьют скоупа TDLib через `use_default_mute_for=true` (scope chat settings) — отдельная задача, для большинства юзеров не нужна
+- `messenger:badge` listener в `useAppIPCListeners.js:33-54` — никем не эмитится во всём проекте (мёртвый код), но не удалён в этой задаче — отдельная задача в `code-todo.md`
+
+---
+
 ## 🔴🔴 MAX: уведомление только на ПЕРВОЕ сообщение пачки, остальные молчат (2026-06-23) — САГА с разбором неверных решений
 
 **Симптом (от пользователя)**: в MAX первое сообщение даёт ribbon+звук, а следующие в быстрой серии (в т.ч. в том же чате) — нет ни уведомления, ни звука. Повторялось стабильно (Ввпр/Ааап/Увмрр; Цыч/Тцыы/Оцыя; Уус/Фям/Ввси/Вам).

@@ -72,6 +72,31 @@ export default function useAppIPCListeners({
     return () => clearInterval(interval)
   }, [notifLogModal?.messengerId])
 
+  // 5. v1.2.12-fix: notif:play-sound — звук для Native-режимов.
+  //    WebView (ВК/WhatsApp/Telega/MAX) играют звук сами в renderer
+  //    (webviewHandleNewMessage.js:89) — мы фильтруем по `native_*` чтобы не дублировать.
+  //    Триггер: mainIpcHandlers.js → app:custom-notify → если Native и ribbon
+  //    разрешён → шлёт `notif:play-sound { messengerId, color }`.
+  //    Логика проверок такая же как в WebView (см. webviewHandleNewMessage.js:79-99):
+  //    soundEnabled (глобальный) + !mutedMessengers[id] + messengerNotifs[id].sound +
+  //    throttle 3 сек (общий lastSoundTsRef для всех мессенджеров).
+  //    Подробности — .memory-bank/mistakes/notifications-ribbon.md.
+  useEffect(() => {
+    return window.api?.on('notif:play-sound', ({ messengerId, color }) => {
+      if (!messengerId || !String(messengerId).startsWith('native_')) return
+      const s = settingsRef.current || {}
+      if (s.soundEnabled === false) return
+      if ((s.mutedMessengers || {})[messengerId]) return
+      const mNotifs = (s.messengerNotifs || {})[messengerId] || {}
+      if (mNotifs.sound === false) return
+      const lastSnd = lastSoundTsRef.current[messengerId] || 0
+      if (Date.now() - lastSnd < 3000) return  // throttle 3s (как WebView)
+      playNotificationSound(color)
+      lastSoundTsRef.current[messengerId] = Date.now()
+      try { traceNotif?.('sound', 'pass', messengerId, '', 'native ribbon sound') } catch (_) {}
+    })
+  }, [])
+
   // 4. v0.75.5: Автосброс notifCountRef при переключении на вкладку
   useEffect(() => {
     if (!activeId) return

@@ -18,33 +18,11 @@ function getSenderColor(senderId) {
   return SENDER_COLORS[Math.abs(parseInt(senderId) || 0) % SENDER_COLORS.length]
 }
 
-// v0.95.29: глобальный счётчик render'ов MessageBubble по m.id.
-// Если один и тот же id рендерится >1 раз В ОДНОЙ КОММИТНОЙ ФАЗЕ → значит дубль
-// в state.messages (несколько копий одного сообщения) или в renderItems map.
-// Лог отправляется через app:log → chatcenter.log → видим в реальном времени.
-// Это решающий тест для понимания «дубль в state vs дубль в render».
-const __ccBubbleRenderCount = new Map()
-function __ccLogBubbleRender(m) {
-  try {
-    const id = String(m?.id || '')
-    if (!id) return
-    const prev = __ccBubbleRenderCount.get(id) || 0
-    const next = prev + 1
-    __ccBubbleRenderCount.set(id, next)
-    // Логируем только когда count > 1 — это дубль. Иначе не шумим.
-    if (next > 1 && window.api?.send) {
-      window.api.send('app:log', {
-        level: 'WARN',
-        message: '[bubble-render-dup] msgId=' + id
-          + ' renderCount=' + next
-          + ' isOutgoing=' + !!m.isOutgoing
-          + ' textPreview=' + String(m.text || '').slice(0, 40),
-      })
-    }
-    // Очищаем Map каждые 1000 records чтобы не утекать память.
-    if (__ccBubbleRenderCount.size > 1000) __ccBubbleRenderCount.clear()
-  } catch (_) {}
-}
+// v1.2.12: удалён диагностический логгер __ccLogBubbleRender (v0.95.29).
+// Бага «дубль исходящих» был закрыт в v0.95.31-34, логгер остался временным.
+// Симптом: 168508 IPC `app:log` за 30 мин → захлёбывается IPC main процесса →
+// `webContents.send('notif:show')` застревает → уведомления не появляются.
+// Урок зафиксирован в mistakes/notifications-ribbon.md (ловушка про hot-path логи).
 
 export default function MessageBubble({
   m, chatId, onReply, onEdit, onDelete, onForward, onPin, onVisible,
@@ -56,8 +34,6 @@ export default function MessageBubble({
   // onResolveCustomEmojis — store.resolveCustomEmojis (batch IPC invoke).
   customEmojiCache, onResolveCustomEmojis,
 }) {
-  // v0.95.29: счётчик render'ов для дубля.
-  __ccLogBubbleRender(m)
   // v0.95.41: для messageAnimatedEmoji с premium-sticker — резолвим один раз при mount.
   // Если customEmojiId уже в кэше — onResolveCustomEmojis сам отфильтрует (dedup внутри store).
   useEffect(() => {

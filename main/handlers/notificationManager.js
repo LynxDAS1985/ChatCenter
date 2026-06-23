@@ -119,6 +119,36 @@ function createNotifWindow() {
     console.error('[NotifManager] Failed to load notification.html:', err)
   })
 
+  // v1.2.12: диагностический лог №3 — реальные события окна от ОС.
+  // Без этих подписок нельзя отличить «окно не показалось» от «появилось и сразу скрылось».
+  // Парная точка к [NotifManager] show. Win11 после safeHide может оставить окно
+  // в OFFSCREEN_BOUNDS до следующего setBounds — здесь видно это глазами.
+  try {
+    notifWin.on('show', () => {
+      try {
+        const b = notifWin.getBounds()
+        console.log('[notif-window] event=show bounds=' + JSON.stringify(b)
+          + ' onTop=' + notifWin.isAlwaysOnTop()
+          + ' opacity=' + notifWin.getOpacity())
+      } catch (_) {}
+    })
+    notifWin.on('hide', () => {
+      try {
+        const b = notifWin.getBounds()
+        console.log('[notif-window] event=hide bounds=' + JSON.stringify(b))
+      } catch (_) {}
+    })
+    notifWin.on('move', () => {
+      try {
+        const b = notifWin.getBounds()
+        console.log('[notif-window] event=move bounds=' + JSON.stringify(b)
+          + ' visible=' + notifWin.isVisible())
+      } catch (_) {}
+    })
+    notifWin.on('blur', () => { try { console.log('[notif-window] event=blur') } catch (_) {} })
+    notifWin.on('focus', () => { try { console.log('[notif-window] event=focus') } catch (_) {} })
+  } catch (_) {}
+
   notifWin.on('closed', () => {
     notifWin = null
     notifItems = []
@@ -239,7 +269,9 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
     notifWin.showInactive()
   }
   notifWin.webContents.send('notif:show', data)
-  console.log('[NotifManager] show id=' + id + ' messenger=' + (messengerId || '') + ' sender=' + String(senderName || title || '').slice(0, 40) + ' body=' + String(body || '').slice(0, 80) + ' icon=' + !!iconDataUrl)
+  // v1.2.12: диагностический лог №5 — параметры показа (dismissMs/grouping/expanded).
+  // Без них нельзя отличить «окно мелькнуло потому что dismissMs=500мс» от «настройки норм».
+  console.log('[NotifManager] show id=' + id + ' messenger=' + (messengerId || '') + ' sender=' + String(senderName || title || '').slice(0, 40) + ' body=' + String(body || '').slice(0, 80) + ' icon=' + !!iconDataUrl + ' dismissMs=' + dismissMs + ' grouping=' + grouping + ' expanded=' + expandedByDefault + ' winVisible=' + (notifWin && !notifWin.isDestroyed() ? notifWin.isVisible() : false))
   // HTML пришлёт notif:resize с точной высотой и окно скорректируется.
   // Двойной setBounds (reposition + resize) вызывал дёрг первого уведомления на Windows.
 

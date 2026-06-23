@@ -18,8 +18,10 @@ function copyStaticPlugin() {
         { from: 'main/photo-viewer.html', to: 'out/main/photo-viewer.html' },
         { from: 'main/video-player.html', to: 'out/main/video-player.html' },
         // v0.87.78: notification.html разбит на html/css/js — копируем все три
+        // v1.2.12: + notification-helpers.js (createPinBtn вынесена при разбиении файла)
         { from: 'main/notification.css', to: 'out/main/notification.css' },
         { from: 'main/notification.js', to: 'out/main/notification.js' },
+        { from: 'main/notification-helpers.js', to: 'out/main/notification-helpers.js' },
         // v0.87.97: pin-dock.html разбит на html/css/js
         { from: 'main/pin-dock.css', to: 'out/main/pin-dock.css' },
         { from: 'main/pin-dock.js', to: 'out/main/pin-dock.js' },

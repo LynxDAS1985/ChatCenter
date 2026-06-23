@@ -27,9 +27,13 @@ module.exports = {
     reason: 'Большой парсер console-message. Логически цельный.'
   },
   // v0.87.78: notification разбит на html/css/js. JS превышает default 300.
+  // v1.2.12: createPinBtn вынесена в notification-helpers.js, файл уменьшен 700→686.
+  // Ceiling 700 → 700 пока (запас 14 строк). Дальнейшее разбиение требует обёртки в IIFE
+  // и параметризации функций dismissItem/stackMessageIntoHost (замыкают локальный state).
+  // TODO в code-todo.md → разбить calcHeight/reportHeight/cleanupStack в notification-helpers.
   'main/notification.js': {
     ceiling: 700,
-    reason: 'Renderer-код для notification BrowserWindow. Извлечён из inline <script>. Разбиение на 2 модуля — low priority, файл логически цельный (DOM render + animations + IPC).'
+    reason: 'Renderer-код для notification BrowserWindow. v1.2.12: createPinBtn вынесена в notification-helpers.js (запас 14 строк). Дальнейшее разбиение требует параметризации функций — TODO в code-todo.md.'
   },
   // v0.87.97: pin-dock разбит на html/css/js. JS превышает default 300.
   'main/pin-dock.js': {
@@ -125,8 +129,8 @@ module.exports = {
   // события одного кадра в один setState. Доменное разбиение IPC handlers — отдельная
   // плановая задача (handoff-code-limits.md).
   'src/native/store/nativeStoreIpc.js': {
-    ceiling: 730,
-    reason: 'v0.95.47: диагностический лог notify-emit (~10 строк, временный — удалить после нахождения корня). v0.95.46: messageId в payload app:custom-notify. v0.95.44: tg:upload-progress handler. v0.95.38: tg:send-succeeded handler. v0.95.31: typing handler. Доменное разбиение IPC handlers — плановый шаг.'
+    ceiling: 660,
+    reason: 'v1.2.12: handlers статуса отправки (tg:typing / tg:send-succeeded / tg:upload-progress) вынесены в nativeStoreSendIpc.js. Файл 643/660 (запас 17 строк). v0.95.47: диагностический лог notify-emit. v0.95.46: messageId в payload app:custom-notify. Доменное разбиение остальных IPC handlers — плановый шаг.'
   },
   'src/native/store/nativeStore.vitest.jsx': {
     ceiling: 970,

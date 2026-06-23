@@ -904,9 +904,9 @@ export default function useNativeStore() {
 
   const sendMessage = useCallback(async (chatId, text, replyTo) => {
     // v0.95.27: лог перед IPC.
-    // v0.95.29: ДОПОЛНИТЕЛЬНЫЙ DUMP всех outgoing сообщений в state.messages для
-    // диагностики «дубля». Если в state УЖЕ 2 копии с похожим текстом — баг в state.
-    // Если 1 копия — баг в render (см. MessageBubble.jsx __ccLogBubbleRender).
+    // v0.95.29: DUMP всех outgoing сообщений в state.messages для диагностики «дубля».
+    // Если в state УЖЕ 2 копии с похожим текстом — баг в state. (render-side проверка
+    // удалена в v1.2.12 — см. MessageBubble.jsx, бага дубля был закрыт в v0.95.31-34.)
     const textStr = String(text || '')
     const stateMsgs = stateRef.current.messages[chatId] || []
     const outgoingDump = stateMsgs

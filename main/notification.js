@@ -604,6 +604,7 @@
       // CSS animation forwards не гарантирует translateX(0) при частичной
       // прерванной анимации.
       forceFinalSlideInState()
+      try { window.notifApi.log('INFO', 'slideIn done id=' + data.id + ' h=' + el.offsetHeight) } catch (_) {} // v1.2.12: success-лог №4
       reportHeight()
     }
     el.addEventListener('animationend', onSlideInEnd)
@@ -677,22 +678,8 @@
     }
   }
 
-  // ── v0.65.0: Создание кнопки 📌 для закрепления сообщения ──
-  function createPinBtn(senderName, fullText, time, color, messengerId) {
-    const btn = document.createElement('button')
-    btn.className = 'pin-msg-btn'
-    btn.textContent = '\u{1F4CC}'
-    btn.title = '\u0417\u0430\u043A\u0440\u0435\u043F\u0438\u0442\u044C'
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      window.notifApi.pinMessage({ sender: senderName, text: fullText, time: time, color: color, messengerId: messengerId || '' })
-      btn.textContent = '\u2713'
-      btn.style.color = '#4ade80'
-      btn.style.background = 'rgba(34,197,94,0.2)'
-      setTimeout(() => { btn.textContent = '\u{1F4CC}'; btn.style.color = ''; btn.style.background = '' }, 1000)
-    })
-    return btn
-  }
+  // v1.2.12: createPinBtn вынесена в notification-helpers.js
+  // (подключается ДО notification.js в notification.html → global scope).
 
   // IPC listeners
   window.notifApi.onNotification((data) => addNotification(data))

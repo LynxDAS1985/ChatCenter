@@ -169,6 +169,46 @@ export function registerMainIpcHandlers(deps) {
 
   // Кастомное уведомление (Messenger Ribbon — v0.39.0)
   ipcMain.handle('app:custom-notify', async (event, payload) => {
+    // v1.2.12: диагностический лог №2 — IPC handler вход.
+    try {
+      console.log('[notif-ipc] custom-notify recv'
+        + ' messenger=' + (payload?.messengerId || '?')
+        + ' sender=' + String(payload?.senderName || payload?.title || '?').slice(0, 30)
+        + ' bodyLen=' + String(payload?.body || '').length
+        + ' dismissMs=' + (payload?.dismissMs ?? 'default')
+        + ' hasIcon=' + (!!payload?.iconDataUrl || !!payload?.iconUrl))
+    } catch (_) {}
+
+    // v1.2.12-fix: локальные настройки для Native режимов (messengerId='native_*').
+    // WebView режимы (ВК/WhatsApp/Telega/MAX) свои проверки делают в renderer
+    // (webviewHandleNewMessage.js:79-103) — мы их пропускаем чтобы не дублировать.
+    // Эталон логики: тот же что в WebView (mNotifs.ribbon !== undefined ? mNotifs.ribbon : true).
+    // Подробности — .memory-bank/mistakes/notifications-ribbon.md «Звук + локальные настройки Native».
+    if (payload?.messengerId && String(payload.messengerId).startsWith('native_')) {
+      const settings = storage.get('settings', {})
+      const mid = payload.messengerId
+      const mNotifs = (settings.messengerNotifs || {})[mid] || {}
+      const mMuted = !!(settings.mutedMessengers || {})[mid]
+      const ribbonOn = mNotifs.ribbon !== undefined ? mNotifs.ribbon : true
+      const canShow = !mMuted && settings.notificationsEnabled !== false && ribbonOn
+      if (!canShow) {
+        try {
+          console.log('[notif-ipc] skip local-ribbon-disabled messenger=' + mid
+            + ' mMuted=' + mMuted + ' ribbonOn=' + ribbonOn
+            + ' globalEnabled=' + (settings.notificationsEnabled !== false))
+        } catch (_) {}
+        return { ok: false, skipped: 'local-ribbon-disabled' }
+      }
+      // Сигнал в renderer играть звук (там lastSoundTsRef + throttle 3s + проверки sound).
+      // WebView не получает (filter messengerId.startsWith('native_') в useAppIPCListeners.js).
+      try {
+        const mainWin = getMainWindow()
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('notif:play-sound', { messengerId: mid, color: payload.color })
+        }
+      } catch (_) {}
+    }
+
     try {
       const result = await getNotifManager().showCustomNotification(payload)
       return { ok: !!result, id: result }
