@@ -7,7 +7,7 @@
 
 import { useEffect } from 'react'
 import { devLog } from '../utils/devLog.js'
-import { playNotificationSound } from '../utils/sound.js'
+import { playNativeNotificationSound } from '../utils/sound.js'
 
 export default function useAppIPCListeners({
   windowFocusedRef,
@@ -68,7 +68,7 @@ export default function useAppIPCListeners({
   //    throttle 3 сек (общий lastSoundTsRef для всех мессенджеров).
   //    Подробности — .memory-bank/mistakes/notifications-ribbon.md.
   useEffect(() => {
-    return window.api?.on('notif:play-sound', ({ messengerId, color }) => {
+    return window.api?.on('notif:play-sound', ({ messengerId /* , color */ }) => {
       if (!messengerId || !String(messengerId).startsWith('native_')) return
       const s = settingsRef.current || {}
       if (s.soundEnabled === false) return
@@ -77,9 +77,12 @@ export default function useAppIPCListeners({
       if (mNotifs.sound === false) return
       const lastSnd = lastSoundTsRef.current[messengerId] || 0
       if (Date.now() - lastSnd < 3000) return  // throttle 3s (как WebView)
-      playNotificationSound(color)
+      // v1.2.13: специальный «Бамбук+» звук для Native (выбран юзером из 25 вариантов).
+      // Низкие тёплые ноты + лёгкий sparkle — технологичный, мягкий, не напрягает.
+      // WebView режимы используют playNotificationSound(color) — color-based система.
+      playNativeNotificationSound()
       lastSoundTsRef.current[messengerId] = Date.now()
-      try { traceNotif?.('sound', 'pass', messengerId, '', 'native ribbon sound') } catch (_) {}
+      try { traceNotif?.('sound', 'pass', messengerId, '', 'native bamboo-plus sound') } catch (_) {}
     })
   }, [])
 

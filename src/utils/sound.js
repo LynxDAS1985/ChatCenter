@@ -53,3 +53,32 @@ export function playNotificationSound(color) {
     osc2.stop(t + 0.23)
   } catch {}
 }
+
+// v1.2.13: специальный звук для Native режимов (ЦентрЧатов / TDLib).
+// «Бамбук+» — низкие тёплые ноты D4+A4 (как деревянный гонг) + лёгкий
+// sparkle F5 для технологичного оттенка. Плавный appear, длинное затухание.
+// Не пронзительный, не дёргает при пачке уведомлений.
+// Выбран юзером из 25 вариантов прослушивания (см. sound-preview.html, удалён после выбора).
+function softOsc(ctx, { freq, type = 'sine', startOffset = 0, duration, volume, attackMs = 20 }) {
+  const t = ctx.currentTime + startOffset
+  const o = ctx.createOscillator()
+  const g = ctx.createGain()
+  o.type = type
+  o.frequency.value = freq
+  o.connect(g)
+  g.connect(ctx.destination)
+  g.gain.setValueAtTime(0, t)
+  g.gain.linearRampToValueAtTime(volume, t + attackMs / 1000)
+  g.gain.exponentialRampToValueAtTime(0.001, t + duration)
+  o.start(t)
+  o.stop(t + duration + 0.05)
+}
+
+export function playNativeNotificationSound() {
+  try {
+    const ctx = new AudioContext()
+    softOsc(ctx, { freq: 294, duration: 0.9,  volume: 0.13, attackMs: 40 })  // D4 — основной бас
+    softOsc(ctx, { freq: 440, startOffset: 0.08, duration: 0.85, volume: 0.11, attackMs: 40 })  // A4 — тёплая средняя
+    softOsc(ctx, { freq: 698, startOffset: 0.05, duration: 0.7,  volume: 0.04, attackMs: 80 })  // F5 — тонкий sparkle
+  } catch {}
+}
