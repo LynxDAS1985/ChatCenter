@@ -94,3 +94,39 @@ export function attachRuntimeErrorCatcher(el) {
     if (el.executeJavaScript) el.executeJavaScript(catcher).catch(() => {})
   } catch(_) {}
 }
+
+/**
+ * v1.2.12: Диагностика «чёрного экрана» webview — снимок состояния отрисовки в chatcenter.log.
+ * Запускается при did-stop-loading (после перезагрузки) и при активации вкладки (переключился — а там чёрный).
+ * Пишет 2 строки [blackscreen]:
+ *  - host: размер/видимость/прозрачность элемента <webview> + что в центре (не перекрыт ли нашим UI);
+ *  - guest: visibilityState/hidden (страница «спит»?), фон body, число детей, полноэкранный оверлей
+ *    (экран-объявление MAX?), что в центре страницы, число «больших» canvas (рисует ли вообще).
+ * Лог через app:log (стандартный путь renderer → chatcenter.log), без console.* в renderer.
+ */
+export function probeBlackScreen(el, messengerId) {
+  const log = (level, message) => { try { window.api?.send?.('app:log', { level, message: '[blackscreen] ' + (messengerId || '?') + ' ' + message }) } catch (_) {} }
+  setTimeout(() => {
+    try {
+      const r = el.getBoundingClientRect?.(), cs = getComputedStyle(el)
+      let cover = 'none'
+      try { const cx = (r?.left || 0) + (r?.width || 0) / 2, cy = (r?.top || 0) + (r?.height || 0) / 2, t = document.elementFromPoint(cx, cy); cover = t ? `${t.tagName}.${(t.className || '').toString().slice(0, 30)}` : 'none' } catch (_) {}
+      const bad = (r?.width || 0) < 5 || (r?.height || 0) < 5 || cs.visibility !== 'visible' || cs.opacity === '0'
+      let url = ''; try { url = el.getURL?.() || '' } catch (_) {}
+      log(bad ? 'WARN' : 'INFO', `host wv=${Math.round(r?.width || 0)}x${Math.round(r?.height || 0)} vis=${cs.visibility} disp=${cs.display} op=${cs.opacity} cover@center=${cover} url=${url.slice(0, 60)}`)
+    } catch (e) { log('WARN', 'host err=' + (e?.message || e)) }
+    try {
+      if (!el.executeJavaScript) return
+      el.executeJavaScript(`(function(){try{
+        var b=document.body,bs=b?getComputedStyle(b):null,W=innerWidth,H=innerHeight;
+        var all=document.querySelectorAll('div,section,main,dialog'),ov='none',n=0;
+        for(var i=0;i<all.length&&n<1;i++){var e=all[i],s=getComputedStyle(e);if(s.position==='fixed'||s.position==='absolute'){var rr=e.getBoundingClientRect();if(rr.width>=W*0.9&&rr.height>=H*0.9&&s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0'){ov=e.tagName+'.'+(e.className||'').toString().slice(0,24)+' bg='+s.backgroundColor+' z='+s.zIndex;n++}}}
+        var t=document.elementFromPoint(Math.round(W/2),Math.round(H/2)),cnv=document.querySelectorAll('canvas'),cb=0;
+        for(var k=0;k<cnv.length;k++){if(cnv[k].width>50&&cnv[k].height>50)cb++}
+        return 'vis='+document.visibilityState+' hidden='+document.hidden+' ready='+document.readyState+' bodyBg='+(bs?bs.backgroundColor:'?')+' children='+(b?b.childElementCount:0)+' innerLen='+(b?(b.innerHTML||'').length:0)+' center='+(t?(t.tagName+'.'+(t.className||'').toString().slice(0,24)):'none')+' fullOverlay='+ov+' canvasBig='+cb;
+      }catch(e){return 'guest-script-err='+(e&&e.message||e)}})()`)
+        .then(res => log('INFO', 'guest ' + String(res || '').slice(0, 400)))
+        .catch(e => log('WARN', 'guest exec err=' + (e?.message || e)))
+    } catch (e) { log('WARN', 'guest err=' + (e?.message || e)) }
+  }, 1200)
+}

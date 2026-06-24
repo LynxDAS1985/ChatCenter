@@ -9,7 +9,7 @@ import { parseConsoleMessage } from './consoleMessageParser.js'
 import { devLog, devError } from './devLog.js'
 import { playNotificationSound } from './sound.js'
 import { createConsoleMessageHandler } from './consoleMessageHandler.js'
-import { logGeometry, runDomProbe, attachRuntimeErrorCatcher } from './webviewDiagnostics.js'
+import { logGeometry, runDomProbe, attachRuntimeErrorCatcher, probeBlackScreen } from './webviewDiagnostics.js'
 import { createHandleNewMessage } from './webviewHandleNewMessage.js'
 import { probeWebviewHealth } from './webviewHealthProbe.js'
 import { scheduleMaxTitleFallback } from './maxTitleFallback.js'
@@ -216,6 +216,8 @@ export function createWebviewSetup(deps) {
         }))
         scheduleHealthProbe(el, messengerId, 'Проверка после завершения загрузки', 150)
         setWebviewLoading(prev => ({ ...prev, [messengerId]: false }))
+        // v1.2.12: снимок состояния отрисовки после загрузки/перезагрузки (диагностика чёрного экрана)
+        probeBlackScreen(el, messengerId)
       })
 
       // v0.85.5: WebView crash/unresponsive → логируем + статус error

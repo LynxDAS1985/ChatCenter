@@ -8,6 +8,7 @@ import { buildChatNavigateScript } from './utils/navigateToChat.js'
 import { createWebviewSetup } from './utils/webviewSetup.js'
 import { markHealthPending } from './utils/connectionHealth.js'
 import { probeWebviewHealth } from './utils/webviewHealthProbe.js'
+import { probeBlackScreen } from './utils/webviewDiagnostics.js'
 import {
   HEALTH_SCHEDULER_TICK_MS,
   selectConnectionHealthJobs,
@@ -189,6 +190,14 @@ export default function App() {
   useEffect(() => { connectionHealthRef.current = connectionHealth }, [connectionHealth])
   useEffect(() => { webviewLoadingRef.current = webviewLoading }, [webviewLoading])
   useEffect(() => { activeNativeAccountIdRef.current = activeNativeAccountId }, [activeNativeAccountId])
+  // v1.2.12: при переключении на webview-вкладку — снимок состояния отрисовки в лог (диагностика чёрного экрана)
+  useEffect(() => {
+    if (!activeId) return undefined
+    const m = messengersRef.current.find(x => x.id === activeId)
+    if (!m || m.isNative) return undefined
+    const t = setTimeout(() => { const wv = webviewRefs.current[activeId]; if (wv) probeBlackScreen(wv, activeId) }, 500)
+    return () => clearTimeout(t)
+  }, [activeId])
   useEffect(() => {
     try {
       window.__ccStartupMark?.('component:App', `mounted messengers=${messengers.length} active=${activeId || 'none'} nativeTab=${messengers.some(m => m.isNative)}`)

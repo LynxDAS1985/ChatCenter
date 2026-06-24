@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.13 (23 июня 2026)
+## Текущая версия: v1.2.16 (24 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -46,6 +46,34 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v1.2.16 — обновление стека (Стадия 1, безопасная — в пределах мажоров)
+
+24 июня 2026: выполнено `npm update` — обновление зависимостей **в пределах текущих мажоров** (без рискованных мажор-прыжков). Запускал после полного закрытия приложения (иначе `EBUSY` на занятых файлах Electron).
+
+**Обновлено:** Electron 41.1.0→**41.9.0** (включает фиксы краша `addChildView`), React/react-dom 19.2.4→**19.2.7**, Vite 7.3.1→**7.3.5**, electron-builder 26.8.1→**26.15.3**, vitest 4.1.4→**4.1.9**, lucide-react 1.7→1.21 + патчи jsdom/happy-dom/postcss/autoprefixer/libphonenumber/globals/@playwright/test.
+
+**Стадия 2 (мажоры):** **eslint 9→10.5.0** — сделан (node 24 ок, `npm run lint` чист без правок конфига, vitest 1881/1881, build OK; влияет только на линт, не на приложение). **Vite 8 / @vitejs/plugin-react 6 — НЕЛЬЗЯ:** `electron-vite@5` (наш сборщик) поддерживает только `vite ^5/^6/^7`, а plugin-react 6 требует vite 8 → vite 8 сломал бы `npm run build`. Ждём поддержку vite 8 в electron-vite.
+
+**НЕ тронуто (нужна проверка запуском/глазами, отдельно):** Electron **42** (риск ABI/TDLib — проверить может только запуск приложения), Tailwind **4** (миграция: отдельный `@tailwindcss/postcss` + переписать конфиг, стили проверять визуально). **TDLib** (`prebuilt-tdlib`/`tdl`) **не тронут** — ABI цел, Native Telegram не сломается.
+
+**Проверки (мой уровень):** lint 0, vitest **1881/1881**, `npm run build` OK (3.7с — lucide 1.7→1.21 и Vite 7.3.5 ничего не сломали). **Финальная проверка «работает» — за пользователем** (запуск приложения мне запрещён): особенно проверить **Native Telegram/TDLib** (загрузился ли) и стили.
+
+**Откат:** `git checkout package-lock.json && npm install` (вернёт прежние версии) или `git revert` коммита.
+
+### v1.2.15 — логи диагностики «чёрного экрана» webview
+
+24 июня 2026: добавлена запись в `chatcenter.log`, чтобы понять причину чёрного экрана webview (MAX и др.), когда страница **жива, но картинка не рисуется**.
+
+Новая функция `probeBlackScreen(el, messengerId)` в [`src/utils/webviewDiagnostics.js`](../src/utils/webviewDiagnostics.js) пишет 2 строки `[blackscreen]`:
+- **host**: размер / `visibility` / `opacity` элемента `<webview>` + что в центре (`elementFromPoint`) — не перекрыт ли он нашим UI;
+- **guest** (через `executeJavaScript`): `visibilityState` / `hidden` (страница «спит»/throttled?), фон `body`, число детей body, полноэкранный fixed/absolute оверлей (экран-объявление мессенджера?), что в центре страницы, число «больших» canvas (рисует ли вообще).
+
+Триггеры — **автоматические, не модалка**: `did-stop-loading` в [`webviewSetup.js`](../src/utils/webviewSetup.js) (ловит «перезагрузил — всё равно чёрный») + `useEffect` на смену `activeId` в [`App.jsx`](../src/App.jsx) (ловит «переключился на вкладку — а там чёрный»). Лог через `app:log` (без `console.*` в renderer).
+
+Поведение **не изменено** — только добавлены логи. Назначение — отличить причины: «страница спит» (`vis=hidden`) vs «оверлей мессенджера» (`fullOverlay`) vs «перекрыто нашим UI» (`cover@center=DIV`) vs «пустой body» (`children=0`). Чёрный экран — проявление нестабильности отрисовки `<webview>`, которую Electron официально [не рекомендует](https://www.electronjs.org/docs/latest/tutorial/web-embeds).
+
+**Проверка issue Electron (по запросу, офиц. источники)**: краш WebContentsView на Win11 [#44934](https://github.com/electron/electron/issues/44934) — ЗАКРЫТ (был Electron 33.2.0; фикс addChildView влит в 36-38; у нас 41 → вероятно уже неактуален). Реальное текущее ограничение WebContentsView — **нет прозрачности** ([#45105](https://github.com/electron/electron/issues/45105), закрыт «as not planned») + нет `destroy()` ([#42884](https://github.com/electron/electron/issues/42884), открыт). Вывод по миграции пересмотрен: не «падает на Win11», а «большая работа + решить наложение окон».
 
 ### v1.2.13 — звук Native «Бамбук+» (выбран юзером из 25 вариантов)
 

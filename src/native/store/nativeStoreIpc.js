@@ -477,6 +477,11 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         // v1.2.12: emit-лог №1 — пара к [notif-ipc] recv в mainIpcHandlers.js.
         try { window.api?.send?.('app:log', { level: 'INFO', message: '[native-notif] emit chatId=' + chatId + ' sender=' + String(message.senderName || chat?.title || '?').slice(0, 30) + ' bodyLen=' + (preview || '').length }) } catch (_) {}
         try {
+          // v1.2.14: НЕ ДОБАВЛЯТЬ dismissMs hardcoded в payload!
+          // notificationManager.showCustomNotification (main) автоматически читает
+          // settings.notifDismissSec — единое поведение для WebView и Native.
+          // Если хочешь подкрутить время показа — это per-user настройка в Settings,
+          // а не hardcoded в коде. См. mistakes/notifications-ribbon.md «hardcoded dismissMs».
           window.api?.invoke('app:custom-notify', {
             title: chat?.title || 'Telegram',
             body: preview || '[медиа]',
@@ -487,7 +492,6 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             emoji: '✈️',
             messengerName: 'Telegram',
             messengerId: 'native_cc',
-            dismissMs: 7000,
             senderName: message.senderName || chat?.title || '',
             // v0.96.0: основной формат — полный source паспорт
             source,
