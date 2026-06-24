@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "1.2.17",
+  "version": "1.2.18",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",
@@ -81,7 +81,7 @@
     "@vitejs/plugin-react": "^5.2.0",
     "@vitest/ui": "^4.1.4",
     "autoprefixer": "^10.4.27",
-    "electron": "^41.1.0",
+    "electron": "^42.5.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "eslint": "^10.5.0",

@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.17 (24 июня 2026)
+## Текущая версия: v1.2.18 (24 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -46,6 +46,25 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v1.2.18 — Electron 42 (финал обновления стека)
+
+24 июня 2026: Electron **41.9.0 → 42.5.0** (Chromium 148, Node 24.17). Это завершает полное обновление стека.
+
+**Pre-flight по официальным breaking-changes Electron 42** (проверено против нашего кода):
+- macOS-уведомления (`NSUserNotification`→`UNNotification`) — мы на Windows, не задеты.
+- OSR (offscreen) — не используем.
+- `Session.clearStorageData` убрали опцию `quotas` — у нас `storages: ['serviceworkers','cachestorage']` ([sessionSetup.js:32](../main/utils/sessionSetup.js)), `quotas` не используем → не задеты.
+- **N-API/ABI в Electron 42 НЕ менялся** → нативный модуль **TDLib** (`prebuilt-tdlib`/`tdl`) должен работать.
+- Особенность 42: бинарник Electron качается «при первом запуске bin», а не в postinstall — скачался через `electron --version` (232 МБ), `node_modules/electron/dist` на месте.
+
+**Проверки (мой уровень):** lint 0, vitest **1881/1881**, `npm run build` OK (electron-vite собрал).
+
+⚠️ **Требует проверки запуском пользователем** (запуск мне запрещён): главное — **загрузился ли Native Telegram (TDLib)** + общее поведение (уведомления, трей, вкладки).
+
+**Откат:** `git checkout package.json package-lock.json && npm install` (приложение закрыть).
+
+**Итог обновления стека (v1.2.16-18):** Electron 42.5, React 19.2.7, Vite 7.3.5, electron-builder 26.15.3, vitest 4.1.9, eslint 10.5, Tailwind 4.3.1, lucide 1.21. **Заблокировано:** Vite 8 / @vitejs/plugin-react 6 (electron-vite 5 поддерживает только vite ≤7 — ждём обновления electron-vite). **Не трогали:** prebuilt-tdlib (ABI-риск без нужды), 1 low-severity esbuild (dev-сервер, уйдёт с обновлением vite).
 
 ### v1.2.17 — миграция на Tailwind 4
 

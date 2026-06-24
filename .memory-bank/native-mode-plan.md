@@ -130,7 +130,7 @@ Hotkeys: `Ctrl+1` Чаты, `Ctrl+2` Клиенты, `Ctrl+3` Доска.
 | Что | Чем | Почему |
 |---|---|---|
 | Оболочка | Electron (то что есть) | Не переписываем то что работает |
-| Renderer | React 19 + Tailwind 3 + custom CSS | Уже в проекте |
+| Renderer | React 19 + Tailwind 4 + custom CSS | Уже в проекте |
 | Локальный store | React hooks + IPC (не Zustand) | Минимум зависимостей, легче на start |
 | База данных | better-sqlite3 | Sync, быстрая, файл локально |
 | Telegram API | `telegram` npm (GramJS) v2.26.22 | Единственная зрелая JS-библиотека MTProto |

@@ -157,10 +157,10 @@ ChatCenter — Electron-приложение. Одно окно, несколь�
 
 | Компонент | Инструмент |
 |-----------|-----------|
-| Runtime | Electron 41 + Node 22 |
-| UI | React 19 + Tailwind 3 |
-| Build | Vite 7 + electron-vite 5 |
-| Lint | ESLint 9 (0 warnings) |
+| Runtime | Electron 42 (42.5.0) + Node 24 |
+| UI | React 19 (19.2.7) + Tailwind 4 (4.3.1) |
+| Build | Vite 7 (7.3.5) + electron-vite 5 |
+| Lint | ESLint 10 (10.5.0, 0 warnings) |
 | Tests | 25 файлов, 850+ assertions |
 | CI | GitHub Actions (Ubuntu + Windows) |
 | Pre-commit | ESLint hook |
