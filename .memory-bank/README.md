@@ -19,6 +19,8 @@
 | `common-mistakes.md` | **Индекс** ловушек (детали в `mistakes/`) | При ошибках/отладке |
 | `features.md` | Changelog активных версий (старое в архиве) | При добавлении функций |
 | `CHANGELOG.md` | Журнал изменений структуры Memory Bank | При правках структуры памяти |
+| `STRUCTURE.md` | Авто-список файлов памяти (вынесен из CLAUDE.md в v1.2.19, регенерируется) | Когда нужен полный перечень файлов памяти |
+| `webcontentsview-migration-plan.md` | План миграции на WebContentsView ради ServiceWorker-уведомлений (цель, факты, 6 фаз, откат) | Перед работой по «оживлению ServiceWorker» / переходу с `<webview>` |
 | `startup-load-investigation.md` | Живой документ расследования долгой загрузки Telegram при старте | Пока расследуем старт/загрузку; после фикса уйдёт в архив |
 | `prodlike-webview-investigation.md` | Закрытая памятка: слабый интернет может выглядеть как баг `start:prodlike`/WebView | При подозрении на медленную загрузку VK/MAX/Telegram WebView |
 | ~~`native-scroll-*.md`~~ | ✅ CLOSED 2026-06-09 — заархивированы в `archive/*-CLOSED.md` | НЕ открывать (тема закрыта юзером) |
@@ -95,7 +97,7 @@
 - `node src/__tests__/memoryBankSizeLimits.test.cjs` — автотест лимитов размера
 - `node src/__tests__/featuresReferences.test.cjs` — автотест валидности ссылок в последних 10 версиях features.md
 - `bash scripts/check-memory.sh` (или `npm run check-memory`) — ручная проверка здоровья
-- `bash scripts/regen-claude-structure.sh` (или `npm run regen-claude-structure`) — регенерация таблицы «Структура памяти» в CLAUDE.md
+- `bash scripts/regen-claude-structure.sh` (или `npm run regen-claude-structure`) — регенерация таблицы «Структура памяти» в `.memory-bank/STRUCTURE.md` (вынесена из CLAUDE.md в v1.2.19)
 - **Pre-commit hook** (`scripts/hooks/pre-commit`) — запускает `check-memory.sh` если коммит трогает `.memory-bank/` или `CLAUDE.md`
 
 **Примеры разбиения**:

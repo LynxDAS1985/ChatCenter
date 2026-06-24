@@ -286,14 +286,17 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // AutoReplyChart (~150) + autoReplyStats (~85) + rulesImportExport (~135) + UI
 // расширения в AIAutoReplyRules/AIActivityDashboard/AiBridgeCheck/AISidebarAgent
 // (~150 суммарно). Запас на следующие UX мини-фичи.
+// v1.2.20: лимит 29800 → 30400 — Фаза 0 миграции на WebContentsView: восстановлен
+// renderer-модуль webContentsViewBridge.js (~168 стр., изолированный мост renderer↔main,
+// пока НЕ подключён в живой путь). Запас ~300 строк на Фазы 1-2 (WebContentsViewSlot и т.п.).
 // v1.2.11: лимит 29600 → 29800 — накопленная работа над уведомлениями MAX
 // (sender-aware identity, диагностика, dedup scope) перевалила агрегат на пару строк;
 // каждый отдельный файл в пределах своего лимита. Восстановлен запас ~200 строк.
 // v1.2.8: лимит 29500 → 29600 — sender-aware identity для MAX ribbon:
 // cache avatar по sender/chat, dedup scope и IPC fallback guard.
 // v1.1.16: лимит 27200 → 28000 — useAiWebviewBridge + AiBridgeCheck + ...
-test('Общий renderer код (src/ без тестов) < 29800 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 29800, totalSrc + ' > 29800')
+test('Общий renderer код (src/ без тестов) < 30400 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 30400, totalSrc + ' > 30400')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

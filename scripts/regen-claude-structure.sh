@@ -1,7 +1,8 @@
 #!/bin/bash
 # scripts/regen-claude-structure.sh
 #
-# Автоматически регенерирует блок "Структура памяти" в CLAUDE.md,
+# Автоматически регенерирует блок "Структура памяти" в .memory-bank/STRUCTURE.md
+# (вынесено из CLAUDE.md в v1.2.19, чтобы CLAUDE.md не рос — он грузится каждую сессию),
 # сканируя .memory-bank/ директорию. Меняет контент ТОЛЬКО между
 # маркерами <!-- STRUCTURE-AUTO-START --> и <!-- STRUCTURE-AUTO-END -->.
 #
@@ -12,7 +13,8 @@
 
 set -u
 
-CLAUDE_MD="CLAUDE.md"
+# Целевой файл (переменная названа CLAUDE_MD исторически; теперь указывает на STRUCTURE.md).
+CLAUDE_MD=".memory-bank/STRUCTURE.md"
 START_MARKER="<!-- STRUCTURE-AUTO-START -->"
 END_MARKER="<!-- STRUCTURE-AUTO-END -->"
 

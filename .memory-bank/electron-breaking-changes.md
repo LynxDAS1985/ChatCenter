@@ -78,7 +78,16 @@
 
 ### Вердикт по стеку
 
-`WebContentsView` + методы `View` (`setVisible`/`setBounds`/`removeChildView`/`setBackgroundColor`/`setBorderRadius`) есть с **Electron 30** (май 2024). У нас уже **42.5.0** → **стек ПОЛНОСТЬЮ поддерживает API миграции, версионного барьера НЕТ.** Остаётся только работа: «дирижирование» окошком (прятать/двигать при оверлеях из-за #45105) + перенос перехвата уведомлений в main.
+`WebContentsView` + методы `View` (`setVisible`/`setBounds`/`removeChildView`/`setBackgroundColor`/`setBorderRadius`) есть с **Electron 30** (май 2024). У нас уже **42.5.0** → **API для миграции в стеке есть, версионного барьера НЕТ.** Остаётся работа: «дирижирование» окошком (прятать/двигать при оверлеях из-за #45105) + перенос перехвата уведомлений в main.
+
+#### ⚠️ Чего официальная документация НЕ гарантирует (честно, проверено 24 июня 2026)
+
+Главная цель миграции — оживить **ServiceWorker**, чтобы уведомления шли штатно. Но:
+- 🟡 **Прямого утверждения «ServiceWorker работает в WebContentsView» в офиц. доке Electron НЕТ.** Это **сильный вывод по аналогии** (WebContentsView = обычный WebContents, как у `BrowserWindow`; Electron поддерживает SW на уровне сессии — [ServiceWorkers](https://www.electronjs.org/docs/latest/api/service-workers)), но **не documented-факт**. Прямой статьи «SW в WebContentsView» нет.
+- 🟢 Косвенно «за»: нет ни одного issue «SW не работает в WebContentsView» (если бы было сломано — была бы жалоба); webview — отдельный проблемный случай, а WebContentsView — стандартный рендерер.
+- 🟡 Остаточные quirks WebContentsView (часть закрыта, часть открыта): preload в дочернем view [#44897](https://github.com/electron/electron/issues/44897) (закрыт — нас может не касаться, мы инжектим через `executeJavaScript`, не preload), `fromWebContents` [#42060](https://github.com/electron/electron/issues/42060), нет прозрачности [#45105](https://github.com/electron/electron/issues/45105), нет `destroy()` [#42884](https://github.com/electron/electron/issues/42884).
+
+**Вывод:** по официальной доке миграция — **самый плаузибельный путь, но НЕ гарантия**. Единственное доказательство уровня 1, что «уведомления реально заработают» — **пилот** (включить WCV для одного мессенджера, не блокировать SW, увидеть `__CC_NOTIF__` в журнале). До этого пилота нельзя обещать «проблема решена» — только «вероятно решится». Поэтому в плане миграции Фаза 2 = «доказать SW пилотом» обязательна и стоит ДО полной раскатки.
 
 ---
 

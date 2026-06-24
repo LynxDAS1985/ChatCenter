@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.18 (24 июня 2026)
+## Текущая версия: v1.2.20 (24 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -46,6 +46,35 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v1.2.20 — Фаза 0 миграции на WebContentsView (фундамент за флагом, ничего не подключено)
+
+24 июня 2026: первый шаг по [плану миграции](./webcontentsview-migration-plan.md) ради штатных ServiceWorker-уведомлений. **Только фундамент — живой путь НЕ затронут (`<webview>` работает как раньше, нулевой риск регрессии).**
+
+**Что сделано:**
+- Восстановлены из git (87b3316^, до отката v0.91.0) изолированные main-процесс модули пилота — это **прямой код** (Electron 42, краш #44934 уже исправлен), не реставрация архитектуры:
+  - [`main/utils/webContentsViewManager.js`](../main/utils/webContentsViewManager.js) (292 стр.) — менеджер WebContentsView: create/setBounds/loadURL/destroy + EventEmitter (find: partition-изоляция, `sandbox:false`, `backgroundThrottling:false`, защита preload через `fs.existsSync`, условный `require('electron')` для unit-тестов).
+  - [`main/handlers/webContentsViewIpcHandlers.js`](../main/handlers/webContentsViewIpcHandlers.js) (108 стр.) — IPC `wcv:*`.
+  - [`src/utils/webContentsViewBridge.js`](../src/utils/webContentsViewBridge.js) (168 стр.) — мост renderer↔main.
+- Восстановлены unit-тесты: `webContentsViewManager.vitest.js` + `webContentsViewBridge.vitest.js` → **39/39 ✅** на текущем коде.
+- **Удалён** старый `webContentsViewPatterns.test.cjs` (397 стр.): он требовал **всё-или-ничего** миграцию v0.90.0 (убрать `<webview>`, заменить главное окно на BaseWindow) — это та, что крашила, и она **несовместима с безопасным фазовым планом** (у нас `<webview>` остаётся за флагом).
+
+**НЕ сделано (следующие фазы, требуют запуска приложения пользователем):**
+- Фаза 1 — флаг `useWebContentsView` + подключение в App.jsx/main.js (один мессенджер) + решение наложения окон.
+- Фаза 2 — доказать, что ServiceWorker реально регистрируется в WebContentsView (критический гейт).
+
+**Проверки:** lint 0, vitest **1920/1920** (1881 + 39 новых), fileSizeLimits **487/487** (агрегатный renderer-лимит 29800→30400 — добавлен `webContentsViewBridge.js` 168 стр., запас на Фазы 1-2). Код приложения (живой путь) не затронут.
+
+### v1.2.19 — CLAUDE.md облегчён (99→56 КБ) + создан план миграции на WebContentsView
+
+24 июня 2026: CLAUDE.md грузится в контекст **каждую сессию**, а вырос до 99 КБ. Облегчил без потери информации:
+- **Авто-список файлов памяти** (таблица «Структура памяти», ~120 строк) вынесен из CLAUDE.md в новый [`.memory-bank/STRUCTURE.md`](./STRUCTURE.md). Регген-скрипт ([scripts/regen-claude-structure.sh](../scripts/regen-claude-structure.sh)) перенацелен на STRUCTURE.md. В CLAUDE.md — короткий указатель.
+- **Дубль changelog-подвала** (4 гигантские строки «Последнее/Предыдущее обновление», ~35 КБ) убран — он дублировал этот features.md (канонический changelog). В CLAUDE.md осталась 1 строка-сводка + указатель сюда.
+- Итог: **CLAUDE.md 99 КБ → 56 КБ (−43%)**, информация не потеряна (полная структура в STRUCTURE.md, полный changelog здесь).
+
+Также ранее в этой сессии создан [`webcontentsview-migration-plan.md`](./webcontentsview-migration-plan.md) — полный план + аудит миграции на WebContentsView ради SW-уведомлений (с честной оговоркой: SW-в-WCV не гарантирован докой, доказывается пилотом). И добавлена оговорка в [`electron-breaking-changes.md`](./electron-breaking-changes.md).
+
+Проверки: check-memory ✅, регген пишет в STRUCTURE.md ✅, ссылки/размеры памяти ✅. Код приложения не затронут.
 
 ### v1.2.18 — Electron 42 (финал обновления стека)
 
