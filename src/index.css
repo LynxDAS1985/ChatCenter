@@ -1,10 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* v1.2.17: Tailwind 4 — единый импорт вместо трёх @tailwind директив. */
+/* @config указывает на legacy JS-конфиг (content-пути), чтобы сканирование классов осталось прежним. */
+@import "tailwindcss";
+@config "../tailwind.config.js";
 
 /* ─── Reset ─────────────────────────────────────────────────────────────── */
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
+/* v1.2.17: в Tailwind 4 утилиты лежат в @layer utilities. Незалёрный глобальный сброс
+   перебивал бы их (unlayered > layered в CSS-каскаде), убивая отступы от классов
+   (px-*, py-*, gap-*, space-* и т.п.). Поэтому сброс держим в @layer base — тогда
+   утилиты побеждают и отступы работают. */
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+}
 
 html, body, #root { height: 100%; width: 100%; overflow: hidden; }
 
