@@ -305,7 +305,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v1.2.24 (29 июня 2026)
+**Текущая версия**: v1.2.25 (29 июня 2026)
 
 ---
 
@@ -744,6 +744,6 @@ Auto-memory — постоянная память Claude между сессия
 
 ---
 
-**Версия проекта**: v1.2.24 (29 июня 2026)
+**Версия проекта**: v1.2.25 (29 июня 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
-**Последнее обновление**: 29 июня 2026 — **v1.2.24 (MAX: защита от фантомов sidebar-preview)**: `max-title-sidebar` больше не повторяет старый preview из списка чатов как новое уведомление при переходах по MAX-чатам. Добавлен fingerprint на messenger/chat/sender/text, сверка с `recentNotifs`, TTL 10 минут и диагностическая строка `MAX title-fallback stale sidebar`. Реальные пути `__CC_NOTIF__`, `MAX-QUICK`, `max-notification`, avatar и звук не тронуты. **v1.2.23 (фоновая диагностическая сессия)**: `🩺 Диагностика системы` теперь запускает запись независимо от большой модалки. **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.
+**Последнее обновление**: 29 июня 2026 — **v1.2.25 (MAX: cold-start baseline старых непрочитанных)**: первый MAX title-count после запуска теперь считается синхронизацией уже существующего состояния (`MAX title baseline only`), а не новым сообщением. Это убирает фантом старого preview после перезапуска приложения. **v1.2.24 (MAX: защита от фантомов sidebar-preview)**: `max-title-sidebar` больше не повторяет старый preview из списка чатов как новое уведомление при переходах по MAX-чатам. Реальные пути `__CC_NOTIF__`, `MAX-QUICK`, `max-notification`, avatar и звук не тронуты. **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.

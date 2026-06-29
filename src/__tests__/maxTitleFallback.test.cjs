@@ -20,6 +20,7 @@ function test(name, fn) {
 (async () => {
   console.log('\n🧪 Тесты MAX title fallback\n')
   const mod = await import(pathToFileURL(path.resolve(process.cwd(), 'src/utils/maxTitleFallback.js')).href)
+  const titleBaseline = await import(pathToFileURL(path.resolve(process.cwd(), 'src/utils/titleUnreadBaseline.js')).href)
 
   test('parse: rich result keeps text, sender and data avatar', () => {
     const r = mod.parseMaxTitleFallbackResult(JSON.stringify({
@@ -143,6 +144,28 @@ function test(name, fn) {
     assert.strictEqual(notif.blocked, false)
   })
 
+
+  test('title baseline: first MAX unread count after startup is not a new-message trigger', () => {
+    const state = {}
+    assert.strictEqual(titleBaseline.shouldUseTitleUnreadAsBaseline({
+      state,
+      messengerId: 'max',
+      messengerUrl: 'https://web.max.ru/198405888',
+      count: 2,
+    }), true)
+    assert.strictEqual(titleBaseline.shouldUseTitleUnreadAsBaseline({
+      state,
+      messengerId: 'max',
+      messengerUrl: 'https://web.max.ru/263515239',
+      count: 3,
+    }), false)
+    assert.strictEqual(titleBaseline.shouldUseTitleUnreadAsBaseline({
+      state: {},
+      messengerId: 'wa',
+      messengerUrl: 'https://web.whatsapp.com/',
+      count: 1,
+    }), false)
+  })
 
   test('script: uses MAX sidebar only for title fallback', () => {
     const script = mod.buildMaxTitleFallbackScript()
