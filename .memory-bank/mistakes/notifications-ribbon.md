@@ -16,6 +16,119 @@
 
 **Цепочка отказа**:
 ```
+```
+
+### Дополнение 29 июня 2026 — MAX: не было уведомлений на несколько сообщений подряд
+
+Кто нашел: Codex, по запросу пользователя после кейса с MAX-чатом `Дугин Алексей Сергеевич`.
+
+Что было видно пользователю: в открытом MAX-чате подряд пришли несколько разных сообщений (`Выпп`, `Ввпр`, `Ааап`, `Увмрр`), в списке чатов badge вырос до `4`, но уведомление/звук были не на каждое сообщение.
+
+Что показали факты:
+- для пропавших сообщений в `chatcenter.log` не было `IPC new-message`, `__CC_MSG__`, `__CC_NOTIF__`, `NotifManager show`;
+- значит проблема была не в отрисовке ribbon и не в звуке, а раньше: сообщение не входило в pipeline приложения;
+- `MAX title/unread fallback` надежно дает только первое/сводное событие, но не каждую bubble в уже открытом чате;
+- для открытого MAX-чата правильный источник — `MutationObserver` на контейнере сообщений;
+- в диагностике WebView текущий DOM MAX показывал `DIV.messageWrapper ...`, а старый `findChatContainer()` искал в основном `.history`, `.openedChat` и `.message.svelte...`;
+- body fallback для MAX оставлен выключенным намеренно: он раньше давал фантомы из sidebar/страницы;
+- фильтровать слова нельзя: клиент может реально написать `18 июн.`, `Спасибо`, короткий текст или случайный набор букв.
+
+Корень проблемы: observer открытого MAX-чата мог не привязаться к реальному контейнеру сообщений, потому что MAX изменил/использовал DOM с `messageWrapper`, а старый поиск контейнера этого не учитывал. Когда observer не привязан, следующие сообщения видны в MAX UI, но приложение их не получает как `new-message`.
+
+Что сделано:
+- `main/preloads/utils/domSelectors.js`: добавлен `findMaxMessageWrapperContainer()`;
+- поиск MAX-контейнера теперь умеет находить видимые `messageWrapper` в правой области чата;
+- observer ставится не на один пузырек, а на общего родителя нескольких message wrappers;
+- sidebar отсекается через `isSidebarNode()`;
+- body fallback для MAX не включался;
+- старый `.message.svelte...` fallback сохранен как запасной;
+- добавлен diagnostic log `__CC_DIAG__findChatContainer: MAX messageWrapper ancestor`.
+
+Как должно работать после правки:
+1. При открытии MAX-чата preload ищет контейнер сообщений.
+2. Если старые selectors не сработали, он ищет текущие `messageWrapper`.
+3. Находит общего родителя сообщений и привязывает `MutationObserver`.
+4. Новая bubble вызывает `[MAX-OBSERVER] mutation`.
+5. `quickNewMsgCheck()` извлекает текст, sender/avatar активного чата и отправляет `new-message`.
+6. Renderer пишет `[IPC-MAX] channel=new-message`.
+7. `handleNewMessage()` проходит dedup/viewing rules.
+8. `NotifManager` показывает ribbon и запускает звук.
+
+Куда смотреть следующему ИИ:
+- `C:\Users\Директор\AppData\Roaming\ЦентрЧатов\chatcenter.log`;
+- `C:\Users\Директор\AppData\Roaming\ЦентрЧатов\system-diagnostics-report.json`;
+- цепочка должна быть такой: `findChatContainer MAX messageWrapper ancestor` -> `[MAX-OBSERVER] bound` -> `[MAX-QUICK] send new-message` -> `[IPC-MAX] channel=new-message` -> `NotifManager show` -> `[notif-renderer] addNotification`.
+- если есть `MAX title-fallback`, но нет `[MAX-QUICK]`, значит снова проблема в active-chat observer/container или приложение не перезапустили после preload-правки.
+
+Проверки:
+- `node src/__tests__/monitorPreload.test.cjs` должен проверять наличие `findMaxMessageWrapperContainer`, `messageWrapper` и наблюдения общего ancestor, а не одиночного bubble.
+- После изменения preload обязателен полный перезапуск приложения, иначе старый preload останется внутри WebView.
+
+### Дополнение 29 июня 2026 — MAX: фантом `Сообщение` от `max-title-active`
+
+Кто нашел: Codex, по свежим логам пользователя и `system-diagnostics-report.json`.
+
+Симптом: когда пользователь переходил в MAX-чат, приложение показывало ribbon со словом `Сообщение`, хотя клиент такого текста не писал. При этом рядом реальные короткие сообщения (`11`, `%""`, `"*₽`, `₽_`, `3₽"`, `#₽_`) отображались корректно с sender/avatar.
+
+Факты из `chatcenter.log`:
+- реальные сообщения шли через нормальный путь `__CC_NOTIF__ -> custom-notify -> NotifManager show -> звук`;
+- фантом `Сообщение` шёл другим путём: `title +1 -> MAX title-fallback -> max-title-active`;
+- `max-title-active` в логе встретился 4 раза и все 4 раза вернул `text="Сообщение"`;
+- sender у этих 4 событий был грязный: имя дублировалось и дописывался статус `В сети`, `Только что`, `Был(-а) вчера`;
+- `system-diagnostics-report.json` сам отметил проблему как `MAX active fallback подозрителен`.
+
+Корень: `activeChatSnapshot()` внутри `src/utils/maxTitleFallbackScript.js` искал текст слишком широко: `[class*="messageWrapper"], [class*="message"], [class*="bubble"], p, span, div`. Из-за `p/span/div` он мог взять не реальную bubble клиента, а служебный текст интерфейса активного чата: поле ввода, header, статус, placeholder или общий контейнер. Сегодня это было `Сообщение`, завтра могло быть другое слово. Поэтому блокировка конкретного слова была бы неверным ремонтом.
+
+Почему решение именно такое:
+- нельзя блокировать слово `Сообщение` глобально, потому что клиент может реально написать это слово;
+- нельзя доверять `max-title-active` без строгого структурного доказательства, что текст взят именно из входящей message bubble;
+- `__CC_NOTIF__` уже доказал работоспособность на реальных коротких сообщениях;
+- `max-title-sidebar` остаётся полезным fallback: он берёт preview из строки списка чатов с badge/avatar и score;
+- отключение `max-title-active` не трогает основной путь уведомлений, observer, sidebar fallback, звук, avatar cache и dedup.
+
+Что сделано:
+- `src/utils/maxTitleFallback.js`: `parseMaxTitleFallbackResult()` теперь отбрасывает `source="max-title-active"`;
+- `src/utils/maxTitleFallbackScript.js`: `title fallback` теперь возвращает только `sidebarSnapshot()`;
+- `activeChatSnapshot()` оставлен как безопасная заглушка `return null`, чтобы не создавать фантомы и не ломать структуру скрипта;
+- `src/__tests__/maxTitleFallback.test.cjs`: добавлен тест, что `max-title-active` блокируется как ненадёжный источник; старый тест обновлён на правило `sidebar only`.
+
+Как должно работать после ремонта:
+1. Если MAX сам отдаёт notification/hook событие (`__CC_NOTIF__`) — уведомление показывается как раньше.
+2. Если сработал title/unread fallback — сначала проверяется, не обработал ли событие нормальный путь.
+3. Если нормального события нет, fallback пытается взять сообщение только из sidebar preview (`max-title-sidebar`).
+4. Если sidebar не дал надёжный preview — уведомление не показывается, вместо попытки угадать текст из активного чата.
+5. Переход в открытый чат не должен создавать ribbon `Сообщение` из header/input/status.
+
+Куда смотреть следующему ИИ:
+- если снова есть фантом, искать `MAX title-fallback raw`;
+- безопасный результат должен иметь `source="max-title-sidebar"`;
+- `source="max-title-active"` не должен попадать дальше `parseMaxTitleFallbackResult()`;
+- реальные сообщения должны идти через `__CC_NOTIF__`, `[MAX-QUICK] send new-message`, `[IPC-MAX] channel=new-message` или sidebar preview.
+
+Проверки:
+- `node src/__tests__/maxTitleFallback.test.cjs`;
+- `node src/__tests__/systemDiagnostics.test.cjs`;
+- `node src/__tests__/monitorPreload.test.cjs`;
+- `npm run lint`.
+
+### Дополнение 29 июня 2026 — диагностика не должна зависеть от большой модалки
+
+Кто нашел: пользователь и Codex во время разбора MAX-уведомлений.
+
+Симптом: чтобы воспроизвести проблему, пользователю нужно было переходить по вкладкам и чатам. Большая модалка диагностики мешала работе, а при закрытии модалки автообновление прекращалось. В результате часть событий могла не попасть в отчёт, особенно если проблема появлялась именно при переходе в чат.
+
+Корень: `SystemDiagnosticsModal` одновременно была и просмотрщиком, и механизмом сбора. Это неверная архитектура для расследования живых проблем: UI просмотра можно закрыть, а сбор должен продолжаться.
+
+Решение v1.2.23:
+- сбор вынесен в фоновую сессию `useDiagnosticsSession`;
+- события складываются в отдельный ring-buffer, а не в бесконечный UI-список;
+- маленькая плавающая панель остаётся поверх приложения и показывает статус;
+- большая модалка стала просмотрщиком/панелью управления;
+- `Очистить` очищает только буфер диагностики, не `chatcenter.log` и не `ai-errors.log`;
+- при `Стоп` отчёт сохраняется в `system-diagnostics-report.json` вместе с `diagnosticsSession.events`.
+
+Как должно работать: пользователь открывает `🩺 Диагностика системы`, закрывает большую модалку, воспроизводит проблему в MAX/WhatsApp/Telegram/VK, нажимает `Стоп`, после чего другой ИИ читает JSON-отчёт и видит цепочку `source -> enrich -> handle -> dedup -> ribbon -> sound -> avatar`.
+```
 renderer: __ccLogBubbleRender → window.api.send('app:log', ...)
   → preload: ipcRenderer.send (асинхронный, очередь)
     → main: ipcMain.on('app:log') → fs.appendFile('chatcenter.log')

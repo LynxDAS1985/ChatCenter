@@ -305,7 +305,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v1.2.20 (24 июня 2026)
+**Текущая версия**: v1.2.23 (29 июня 2026)
 
 ---
 
@@ -744,6 +744,6 @@ Auto-memory — постоянная память Claude между сессия
 
 ---
 
-**Версия проекта**: v1.2.20 (24 июня 2026)
+**Версия проекта**: v1.2.23 (29 июня 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
-**Последнее обновление**: 24 июня 2026 — **v1.2.20 (Фаза 0 миграции на WebContentsView)**: восстановлены изолированные main-модули пилота (`webContentsViewManager.js` 292стр, `webContentsViewIpcHandlers.js` 108стр, `webContentsViewBridge.js` 168стр) + 39 unit-тестов (manager+bridge). НЕ подключены в живой путь (`<webview>` остаётся, нулевой риск). Старый patterns-тест (требовал всё-или-ничего v0.90.0) удалён — несовместим с фазовым планом. Цель — оживить ServiceWorker-уведомления; план: [webcontentsview-migration-plan.md](.memory-bank/webcontentsview-migration-plan.md). Проверки: lint 0, vitest 1920/1920, fileSizeLimits 487/487. v1.2.19 (CLAUDE.md облегчён 99→56 КБ: авто-список файлов вынесен в [STRUCTURE.md](.memory-bank/STRUCTURE.md), дубль-changelog убран — он грузится каждую сессию), v1.2.18 (Electron 42), v1.2.17 (Tailwind 4), v1.2.16 (обновление стека: React 19.2.7 / Vite 7.3.5 / vitest 4.1.9 / eslint 10.5), v1.2.11-15 (уведомления MAX + диагностика чёрного экрана). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)** (он канонический; CLAUDE.md держим лёгким).
+**Последнее обновление**: 29 июня 2026 — **v1.2.23 (фоновая диагностическая сессия)**: `🩺 Диагностика системы` теперь запускает запись независимо от большой модалки. Добавлены `useDiagnosticsSession`, ring-buffer событий, маленькая плавающая панель с `Пауза/Стоп/Развернуть/Сохранить/Скопировать/Очистить`, live-лента `__CC_NOTIF__`/title-fallback/`NotifManager`/звук/avatar и сохранение `diagnosticsSession.events` в `system-diagnostics-report.json`. Большая модалка стала просмотрщиком и управлением, закрытие модалки не останавливает запись. **v1.2.22 (Вариант A — Макс в ОТДЕЛЬНОМ окне вместо WebContentsView внутри главного)**: тумблер «🧪 Макс в отдельном окне» открывает Макс обычным `BrowserWindow` (`main/handlers/maxTestWindowHandler.js`, IPC `max-test:open/close`), а НЕ child WebContentsView внутри главного окна — тот крашит Electron нативно на Win11 (#44934/#47247). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.

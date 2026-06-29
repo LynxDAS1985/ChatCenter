@@ -6,6 +6,8 @@ import { devLog, devError } from './utils/devLog.js'
 import { playNotificationSound } from './utils/sound.js'
 import { buildChatNavigateScript } from './utils/navigateToChat.js'
 import { createWebviewSetup } from './utils/webviewSetup.js'
+// v1.2.22: Вариант A — тумблер useWebContentsView открывает Макс в ОТДЕЛЬНОМ окне (main: max-test:*),
+// а не WebContentsView внутри главного окна (тот крашил Electron на Win11 — Issue #44934/#47247).
 import { markHealthPending } from './utils/connectionHealth.js'
 import { probeWebviewHealth } from './utils/webviewHealthProbe.js'
 import { probeBlackScreen } from './utils/webviewDiagnostics.js'
@@ -62,7 +64,7 @@ const NotifLogModal = lazy(() => import('./components/NotifLogModal.jsx'))
 const ConfirmCloseModal = lazy(() => import('./components/ConfirmCloseModal.jsx'))
 const LogModal = lazy(() => import('./components/LogModal.jsx'))
 const ConnectionsPanel = lazy(() => import('./components/ConnectionsPanel.jsx'))
-const SystemDiagnosticsModal = lazy(() => import('./components/SystemDiagnosticsModal.jsx'))
+const DiagnosticsSessionHost = lazy(() => import('./components/DiagnosticsSessionHost.jsx'))
 // v0.95.25: модалка «Что нового» — показывается при первом запуске после обновления.
 const WhatsNewModal = lazy(() => import('./components/WhatsNewModal.jsx'))
 // v1.0.1: 3 панели — Задачи / Напоминания / AI Activity (Phase 4).
@@ -134,6 +136,7 @@ export default function App() {
   const [logContent, setLogContent] = useState('')
   const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
   const [showSystemDiagnostics, setShowSystemDiagnostics] = useState(false)
+  const [diagnosticsHostMounted, setDiagnosticsHostMounted] = useState(false)
   const [activeNativeAccountId, setActiveNativeAccountId] = useState(null)
   // v1.0.1: модалки Phase 4 — Задачи / Напоминания / AI Activity.
   // v1.0.3: mutually-exclusive — одна модалка за раз.
@@ -294,6 +297,19 @@ export default function App() {
     setConnectionHealth, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
     setWebviewLoading, setZoomLevels, monitorPreloadUrl,
   })
+
+  // v1.2.22: Вариант A — флаг useWebContentsView открывает Макс в ОТДЕЛЬНОМ окне Electron
+  // (проверка ServiceWorker-уведомлений). Главное окно не трогаем (Макс остаётся в <webview>).
+  // Отдельное окно = обычный WebContents, где SW работает; и краша из Issue #44934 там нет.
+  useEffect(() => {
+    const list = messengersRef.current || []
+    const max = list.find(m => /web\.max\.ru/.test(m.url || ''))
+    if (settings.useWebContentsView && max) {
+      try { window.api?.invoke('max-test:open', { url: max.url, partition: max.partition }) } catch (_) {}
+    } else {
+      try { window.api?.invoke('max-test:close') } catch (_) {}
+    }
+  }, [settings.useWebContentsView])
 
   // ── Hooks ──────────────────────────────────────────────────────────────
 
@@ -626,6 +642,11 @@ export default function App() {
     window.api?.invoke('app:read-log').then(c => setLogContent(c || 'Лог пуст')).catch(() => setLogContent('Не удалось прочитать лог'))
   }, [])
 
+  const openSystemDiagnostics = useCallback(() => {
+    setDiagnosticsHostMounted(true)
+    setShowSystemDiagnostics(true)
+  }, [])
+
   // ── Computed values ────────────────────────────────────────────────────
   const pinnedTabs = settings.pinnedTabs || {}
   const theme = settings.theme || 'dark'
@@ -708,8 +729,9 @@ export default function App() {
                     />
                   </Suspense>
                 ) : (
-                  /* v0.91.0: откат к <webview> тегу. WebContentsView миграция
-                     невозможна на Windows 11 (Electron Issue #44934/45367). */
+                  /* v1.2.22: Вариант A — Макс ВСЕГДА через <webview> в главном окне (как раньше).
+                     Тумблер useWebContentsView теперь открывает Макс в ОТДЕЛЬНОМ окне (main: max-test:*),
+                     а не внутри главного — child WebContentsView крашит Electron на Win11 (Issue #44934). */
                   <webview
                     ref={el => setWebviewRef(el, m.id)}
                     src={m.url}
@@ -798,7 +820,7 @@ export default function App() {
             messengers={messengers} settings={settings}
             onMessengersChange={setMessengers} onSettingsChange={handleSettingsChange}
             onClose={() => setShowSettings(false)}
-            onOpenSystemDiagnostics={() => setShowSystemDiagnostics(true)}
+            onOpenSystemDiagnostics={openSystemDiagnostics}
           /></ErrorBoundary>
         )}
 
@@ -834,7 +856,9 @@ export default function App() {
         }} /></ErrorBoundary>}
       </Suspense>
       <Suspense fallback={null}>
-        {showSystemDiagnostics && <ErrorBoundary name="SystemDiagnostics"><SystemDiagnosticsModal
+        {diagnosticsHostMounted && <ErrorBoundary name="SystemDiagnostics"><DiagnosticsSessionHost
+          open={showSystemDiagnostics}
+          onOpen={openSystemDiagnostics}
           runtimeContext={{
             messengers,
             activeId,

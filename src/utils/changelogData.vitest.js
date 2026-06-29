@@ -5,13 +5,13 @@ import { getChangelogSince, CHANGELOG } from './changelogData.js'
 
 describe('getChangelogSince (v0.95.25)', () => {
   it('первая установка (prevVersion=null) → только последний changelog', () => {
-    const result = getChangelogSince(null, '1.2.8')
+    const result = getChangelogSince(null, CHANGELOG[0].version)
     expect(result).toHaveLength(1)
-    expect(result[0].version).toBe('1.2.8')
+    expect(result[0].version).toBe(CHANGELOG[0].version)
   })
 
   it('первая установка (prevVersion=undefined) → только последний', () => {
-    const result = getChangelogSince(undefined, '1.2.8')
+    const result = getChangelogSince(undefined, CHANGELOG[0].version)
     expect(result).toHaveLength(1)
   })
 

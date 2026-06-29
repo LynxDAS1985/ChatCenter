@@ -122,6 +122,20 @@ addHandler('tg:chat-avatar', ({chatId, avatarPath}) => {
 
 ### Статус: 🔴 ПИЛОТ ОТКАЧЕН, остался `<webview>` тег как ЕДИНСТВЕННАЯ работающая архитектура для multi-messenger UI на Windows 11
 
+### 🔁 ОБНОВЛЕНИЕ 24 июня 2026 (v1.2.20-1.2.21, Electron 42) — баг ПОДТВЕРЖДЁН снова, тупик воскрешён по ошибке
+
+**Что произошло**: в сессии 24 июня были восстановлены удалённые файлы пилота (`main/utils/webContentsViewManager.js`, `src/components/WebContentsViewSlot.jsx`, `src/utils/webContentsViewBridge.js`, `main/handlers/webContentsViewIpcHandlers.js`) и заново подключён тумблер `useWebContentsView` (v1.2.20 Фаза 0 + v1.2.21 Фаза 1) — **без сверки с этой записью**. Это ровно та же мёртвая архитектура: `BrowserWindow{webviewTag:true}.contentView.addChildView(WebContentsView)` + `loadURL(https://web.max.ru/)`.
+
+**Результат**: тумблер крашит программу **100%** (проверено 3 раза подряд, журнал каждый раз обрывается на `[wcv-mgr] start-loading`, нет JS-ошибки, нет события `render-process-gone` → нативный крах самого main-процесса). Идентично v0.89.46-v0.91.0.
+
+**Конфликт «память vs реальность»**: ранее в этой же сессии считалось, что #44934 пофикшен в Electron 36-38, и стек обновлён до **Electron 42** в т.ч. ради этого. НО на 42 краш остался → фикс наш случай (child WebContentsView в окне с `webviewTag:true`) НЕ покрывает. Реальность подтвердила пессимизм записи.
+
+**Вопрос «виноват ли preload?» (Вариант C)** — повторно НЕ требовался: уже доказано в v0.89.53 («Краш без preload остался») + [Issue #44897](https://github.com/electron/electron/issues/44897) («preload не грузится в child WebContentsView»). **Preload НЕ виноват.**
+
+**Вывод (повтор)**: in-window child WebContentsView на Windows 11 не работает и на Electron 42. Рабочий путь для сосуществования `<webview>` + WebContentsView — **ОТДЕЛЬНЫЕ ОКНА** (см. правило в конце записи). Тумблер `useWebContentsView` в текущем виде нужно убрать или переделать на отдельное окно.
+
+**v1.2.22 (сделано + закрытие темы)**: тумблер переделан на **Вариант A** — Макс открывается в ОТДЕЛЬНОМ обычном окне (`main/handlers/maxTestWindowHandler.js`), краша больше нет. И главный вывод расследования: **SW мёртв НЕ из-за webview, а потому что мы САМИ его глушим** + запрещаем `notifications` в `sessionSetup.js` (намеренно, у нас своя система уведомлений). Доказано: в отдельном нормальном окне SW падает с тем же `Operation has been aborted`. Полная причина → [decisions.md](../decisions.md) ADR «Почему родные уведомления и ServiceWorker выключены». Цель «оживить SW через WebContentsView» **закрыта как нецелесообразная** (см. [webcontentsview-migration-plan.md](../webcontentsview-migration-plan.md) → «ИТОГ РАССЛЕДОВАНИЯ»).
+
 ### Что хотели сделать
 
 Электрон в [официальной документации](https://www.electronjs.org/docs/latest/api/webview-tag) написал (verbatim):

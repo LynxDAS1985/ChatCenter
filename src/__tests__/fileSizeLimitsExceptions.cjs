@@ -15,7 +15,7 @@ module.exports = {
   // Разбиение требует архитектурного решения (вынос layout/providers в отдельные компоненты)
   // — отдельный плановый шаг рефактора. Пока exception с обоснованием.
   'src/App.jsx': {
-    ceiling: 940,
+    ceiling: 960,
     reason: 'v1.0.1: 3 Phase 4 модалки (TasksPanel/RemindersPanel/AIActivityDashboard) подключены через PanelModal обёртку + state + handleGoToSource + useAppCounters + props в TabBar (~50 строк). v0.95.25: WhatsNewModal. v0.88.x: Корневой компонент с providers, top-level state, routing между native/webview режимами. Разбиение требует архитектурного рефакторинга.'
   },
   'src/utils/messengerConfigs.js': {

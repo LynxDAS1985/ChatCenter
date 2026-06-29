@@ -46,8 +46,9 @@ import { appendAuditRecord } from './handlers/auditIpcHandlers.js'
 // v1.1.3: multi-provider fallback.
 import { createCallProviderWithFallback } from './ai/aiProviderFallback.js'
 import { initDockPinSystem } from './handlers/dockPinHandlers.js'
-// v0.91.0: WebContentsView откачен — Issue #44934/45367 (Windows 11 crash на addChildView).
-// import { initWebContentsViewIpcHandlers } from './handlers/webContentsViewIpcHandlers.js'
+// v1.2.22: Вариант A — Макс в ОТДЕЛЬНОМ окне (обычный BrowserWindow). В главном окне child
+// WebContentsView крашит Electron на Win11 (#44934/#47247) — см. mistakes/electron-core.md.
+import { initMaxTestWindowHandler } from './handlers/maxTestWindowHandler.js'
 import { initNotificationManager } from './handlers/notificationManager.js'
 import { initBackupNotifHandler } from './handlers/backupNotifHandler.js'
 import { createWindow as createWindowFromManager } from './utils/windowManager.js'
@@ -139,6 +140,11 @@ function setupNotifIPC() {
   //  - Этап 4-6 (WebUI Bridge): подключится позже.
   // Config (baseUrl/model/providerId) приходит из renderer (settings), не хранится в main.
   registerAiBridgeIpcHandlers(ipcMain, { callProvider: callProviderFn })
+
+  // v1.2.22: Вариант A — тумблер useWebContentsView открывает Макс в ОТДЕЛЬНОМ окне
+  // (обычный BrowserWindow), а не child WebContentsView внутри главного окна — тот крашит
+  // Electron на Win11 (#44934/#47247). Отдельное окно = нормальный WebContents, SW работает.
+  initMaxTestWindowHandler({ ipcMain, BrowserWindow, path, isDev, __dirname })
 
   // setAgentDeps будет вызвано после инициализации mainWindow и TDLib backend
   // (см. ниже после createWindow + initTdlibBackendStartup).

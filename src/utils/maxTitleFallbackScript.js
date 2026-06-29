@@ -242,22 +242,9 @@ export function buildMaxTitleFallbackScript() {
         return { text: body, sender: info.sender, chatTag: info.chatTag, avatar: avatar, source: 'max-title-sidebar', score: bestScore, diag: 'rows=' + rows.length + ' scored=' + scored + ' cand=' + candidates.length + ' selectedText=' + body.slice(0, 80).replace(/[|~]/g, ' ') + ' selectedSender=' + info.sender.slice(0, 80).replace(/[|~]/g, ' ') + ' chatTag=' + info.chatTag.slice(0, 80).replace(/[|~]/g, ' ') + ' bodyClass=' + info.bodyClass.slice(0, 60).replace(/[|~]/g, ' ') + ' chosenLeafs=' + partsDiag(best) + ' topRows=' + topDiag.join('~') + ' chosenAvatar=' + (!!avatar) + ' ' + avatarDiag(best) };
       }
       function activeChatSnapshot() {
-        var meta = activeHeader();
-        var container = document.querySelector('.history, [class*="history"][class*="svelte"], .openedChat, [class*="openedChat"], [class*="messageWrapper"], [class*="message"]');
-        if (!container) return null;
-        if (!meta.avatar) return null;
-        var nodes = Array.prototype.slice.call(container.querySelectorAll('[class*="messageWrapper"], [class*="message"], [class*="bubble"], p, span, div'));
-        for (var i = nodes.length - 1; i >= Math.max(0, nodes.length - 80); i--) {
-          var c = cls(nodes[i]);
-          if (/out|own|self|right|outgoing/i.test(c)) continue;
-          var t = txt(nodes[i]);
-          if (!badText(t) && t.length >= 1 && t.length <= 300 && t !== meta.sender) {
-            return { text: t, sender: meta.sender, avatar: meta.avatar, source: 'max-title-active', score: 1, diag: 'active avatar=' + (!!meta.avatar) + ' ' + avatarDiag(document.querySelector('.topbar') || document.querySelector('header')) };
-          }
-        }
         return null;
       }
-      var result = sidebarSnapshot() || activeChatSnapshot();
+      var result = sidebarSnapshot();
       return JSON.stringify(result || {});
     } catch(e) {
       return JSON.stringify({ error: e.message || String(e) });

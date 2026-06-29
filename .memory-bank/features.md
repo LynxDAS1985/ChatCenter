@@ -1,6 +1,6 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.20 (24 июня 2026)
+## Текущая версия: v1.2.23 (29 июня 2026)
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 
@@ -46,6 +46,56 @@
 **До рефакторинга v0.87.57** файл был 445 КБ (3371 строк, 323 версии). После — ~100 КБ в корне.
 
 ---
+
+### v1.2.23 — Фоновая диагностическая сессия + плавающая панель
+
+29 июня 2026: системная диагностика перестала зависеть от большой модалки. Теперь кнопка `🩺 Диагностика системы` запускает фоновую сессию, которая продолжает собирать данные, даже если окно диагностики закрыто.
+
+Что добавлено:
+- отдельный `diagnosticsSession` ring-buffer в памяти, ограниченный по размеру, чтобы UI не дёргался от тысяч строк;
+- маленькая плавающая панель поверх приложения: статус, последние события, `Пауза`, `Продолжить`, `Стоп`, `Развернуть`, `Сохранить`, `Скопировать`, `Очистить`;
+- большая модалка стала просмотрщиком и управлением сессии, а не единственным механизмом записи;
+- live-лента показывает события по цепочке уведомлений: `__CC_NOTIF__`, title fallback, `NotifManager`, ribbon, звук, avatar/icon;
+- проблемные события получают маркеры `critical/warning/info`, чтобы сразу видеть подозрительные места;
+- отчёт сессии сохраняется в `userData/system-diagnostics-report.json`, включая `diagnosticsSession.events`;
+- глубокая WebView-проверка осталась ручной и не включается постоянно.
+
+Зачем: при поиске проблем MAX/WhatsApp/уведомлений пользователь может открыть диагностику, закрыть большую модалку, перейти по чатам, воспроизвести проблему, остановить запись и дать ИИ готовый JSON-отчёт без пересказа и скриншотов.
+
+Проверки: добавлен `diagnosticsSession.test.cjs`; обновлён `appStructure.test.cjs`; новая проверка включена в `npm test`.
+
+### v1.2.22 — Вариант A: Макс в ОТДЕЛЬНОМ окне (отказ от WebContentsView внутри главного)
+
+25 июня 2026: тумблер `useWebContentsView` переделан. **Причина**: подключение v1.2.21 (child `WebContentsView` внутри главного окна) крашило Electron нативно **100%** при загрузке Макса — подтверждено 3 раза подряд на Electron 42. Это [известный баг Electron на Windows 11](https://github.com/electron/electron/issues/44934) (#44934/#47247, «not planned») — мы это уже проходили в v0.89.41-v0.91.0 (см. [mistakes/electron-core.md](mistakes/electron-core.md)). Preload НЕ виноват (доказано ещё в v0.89.53 + Issue #44897).
+
+**Что сделано (Вариант A — документированный рабочий путь «отдельные окна»)**:
+- Новый `main/handlers/maxTestWindowHandler.js` — открывает Макс в обычном `BrowserWindow` (не `<webview>`, не child WebContentsView) с тем же partition (логин сохраняется) + monitor preload. IPC `max-test:open` / `max-test:close`.
+- `App.jsx`: Макс ВСЕГДА рендерится через `<webview>` в главном окне (как раньше, нулевой риск). Убран условный рендер `WebContentsViewSlot` + его импорты. Новый `useEffect`: флаг ВКЛ → `max-test:open`, ВЫКЛ → `max-test:close`.
+- `main.js`: `wcv:*` отключён, вместо него `initMaxTestWindowHandler`.
+- `SettingsPanel.jsx`: тумблер переименован «🧪 Макс в отдельном окне (тест уведомлений)», перезапуск не нужен.
+- Диагностика: console-сообщения окна с `service worker`/`notification`/`__CC_NOTIF__`/`push` пишутся в `chatcenter.log` с префиксом `[max-test]`.
+
+**Изоляция**: если Макс упадёт в отдельном окне — закроется ТОЛЬКО оно, главная программа продолжит работать. Цель — проверить, оживают ли SW-уведомления в нормальном WebContents.
+
+**Требует проверки запуском пользователем**: включить тумблер → откроется окно Макс → проверить, грузится ли + приходят ли уведомления.
+
+Проверки: lint 0, vitest 1920/1920, fileSizeLimits 489/489, appStructure 47/47.
+
+### v1.2.21 — Фаза 1 миграции WebContentsView (тумблер за флагом, подключение MAX)
+
+24 июня 2026: появился **рабочий тумблер** для теста ServiceWorker-уведомлений. Всё за флагом `useWebContentsView` (**default OFF** → поведение как раньше, нулевой риск).
+
+**Что подключено:**
+- [`SettingsPanel.jsx`](../src/components/SettingsPanel.jsx): тумблер **«🧪 WebContentsView для Макс (тест уведомлений)»** (`settings.useWebContentsView`).
+- [`App.jsx`](../src/App.jsx): условный рендер — при ВКЛ флаге И мессенджер = Макс (`web.max.ru`) рендерится `WebContentsViewSlot` вместо `<webview>`; иначе/выкл → старый `<webview>`. `onCreated` → `createWebContentsViewBridge` → `setWebviewRef` (мост подключает слот к пайплайну уведомлений, как обычный webview). Восстановлен [`WebContentsViewSlot.jsx`](../src/components/WebContentsViewSlot.jsx) (216 стр.).
+- [`main.js`](../main/main.js): `initWebContentsViewIpcHandlers` зарегистрированы (IPC `wcv:create/set-bounds/load-url/destroy/...`). View создаётся ТОЛЬКО когда renderer включил флаг.
+- App.jsx ceiling 940→960 (исключение).
+
+**Проверки (мой уровень):** lint 0, vitest **1920/1920**, `npm run build` OK (App.jsx + SettingsPanel + слот собрались), fileSizeLimits **488/488**.
+
+⚠️ **Требует проверки запуском пользователем** (запуск мне запрещён). Инструкция: Настройки → включить тумблер → перезапустить приложение → открыть вкладку Макс → проверить: загрузился ли Макс в новом окне, приходят ли уведомления (это и есть **Фаза 2 — доказать SW**), видны ли панель ИИ/модалки поверх (наложение окон). Если сломалось — выключить тумблер + перезапуск → вернётся `<webview>`.
+
+**Остаточные риски:** SW-в-WCV не гарантирован докой (доказывается этим запуском); наложение окон (если панели прячутся — это ожидаемо, фикс в следующем шаге); код слота 8-мес давности (но build/тесты зелёные).
 
 ### v1.2.20 — Фаза 0 миграции на WebContentsView (фундамент за флагом, ничего не подключено)
 
@@ -400,3 +450,17 @@ API clientId/clientSecret не требуются
 **Файлы**: `src/utils/maxTitleFallback.js`, `src/utils/consoleMessageHandler.js`, `src/utils/messageProcessing.js`, `src/utils/webviewHandleNewMessage.js`, `src/utils/webviewSetup.js`, `main/handlers/notificationManager.js`, `main/notification.js`.
 
 **Проверки**: добавлены/обновлены `maxTitleFallback.test.cjs`, `messageProcessing.test.cjs`, `notificationIdentity.test.cjs`. Проверяют смену аватарки, запрет затирать кеш пустым avatar, раздельные ключи разных отправителей, sender-aware dedup и grouping по `stackKey`.
+
+## 2026-06-29 — MAX notification container detection by messageWrapper
+
+Добавлено в поддержку уведомлений MAX: если старые selectors (`.history`, `.openedChat`, `.message.svelte...`) не находят актуальный контейнер открытого чата, preload ищет видимые `messageWrapper` в правой области чата и ставит observer на их общего родителя.
+
+Зачем: в логах по кейсу пользователя сообщения были видны в MAX UI и badge рос, но в `chatcenter.log` не было `IPC new-message`/`NotifManager show`. Это означает, что сообщения не попадали в pipeline, а не ломались на этапе ribbon/звука.
+
+Важно: body fallback для MAX не включался, чтобы не вернуть фантомы из sidebar/страницы. Старый fallback `.message.svelte...` сохранен как запасной.
+
+## 2026-06-29 — MAX title fallback: отключён ненадёжный active-chat источник
+
+Зафиксирован и исправлен фантом `Сообщение` при переходе в MAX-чат. Логи показали, что реальные сообщения приходили через `__CC_NOTIF__`, а фантом создавал `MAX title-fallback max-title-active`: он брал текст из активной области слишком широко (`p/span/div`) и путал служебный UI с сообщением клиента.
+
+Решение: `max-title-active` больше не используется для показа уведомлений. `parseMaxTitleFallbackResult()` отбрасывает `source="max-title-active"`, а generated fallback script возвращает только `sidebarSnapshot()`. Это не блокирует слово `Сообщение` и не режет реальные клиентские тексты; блокируется только ненадёжный источник.

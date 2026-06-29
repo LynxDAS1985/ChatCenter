@@ -280,6 +280,12 @@ test('MAX observer logs binding, mutations, snapshot skips, and disabled fallbac
 test('MAX count/navigation/manual diagnostics are visible', () => {
   assert(code.includes('[MAX-COUNT]') && code.includes('[MAX-NAV]') && code.includes('[MAX-RUN-DIAG]'), 'MAX count changes, navigation and manual diagnostics must be logged')
 })
+test('MAX container finder knows current messageWrapper DOM', () => {
+  assert(allPreloadCode.includes('findMaxMessageWrapperContainer') && allPreloadCode.includes('messageWrapper'), 'MAX must find the chat container through current messageWrapper DOM')
+})
+test('MAX messageWrapper finder observes an ancestor, not one bubble', () => {
+  assert(allPreloadCode.includes('wrapper.parentElement') && allPreloadCode.includes('countVisibleMaxMessages'), 'MAX must observe the common message container, not a single bubble')
+})
 
 console.log(`FINAL monitorPreload result: ${passed} passed / ${failed} failed / ${passed + failed} total`)
 if (failed > 0) process.exit(1)

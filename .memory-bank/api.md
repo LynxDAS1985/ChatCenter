@@ -15,7 +15,7 @@
 
 ---
 
-## System Diagnostics (v1.2.8)
+## System Diagnostics (v1.2.23)
 
 Отдельная системная диагностика в настройках. Не заменяет `ai-errors.log` и не очищает `chatcenter.log`.
 
@@ -25,6 +25,12 @@
 | `app:diagnostics-save-report` | `report` | `{ ok, path, bytes }` или `{ ok:false, error }` | Сохраняет JSON-отчёт в `userData/system-diagnostics-report.json`, чтобы Codex/другой ИИ мог прочитать диагностику без ручного копирования из UI. |
 
 Правило безопасности: `Очистить экран` в `SystemDiagnosticsModal` не вызывает `app:clear-log` и не трогает `ai:clear-error-log`; очищается только состояние модалки.
+
+С v1.2.23 диагностика работает как фоновая сессия в renderer:
+- `useDiagnosticsSession` раз в 3 секунды вызывает `app:diagnostics-snapshot`, анализирует снимок и кладёт важные события в ограниченный ring-buffer;
+- большая модалка только показывает/управляет сессией, закрытие модалки не останавливает запись;
+- маленькая плавающая панель показывает последние события и кнопки `Пауза`, `Стоп`, `Развернуть`, `Сохранить`, `Скопировать`, `Очистить`;
+- `app:diagnostics-save-report` сохраняет не только обычный отчёт, но и `diagnosticsSession.events`, чтобы ИИ мог восстановить цепочку.
 
 ---
 ## Native Telegram (`tg:*`) — TDLib backend

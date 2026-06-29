@@ -28,7 +28,7 @@ function ToggleButton({ value, onChange, label, title }) {
   return <ActionButton active={value} onClick={() => onChange(!value)} title={title}>{label}: {value ? 'вкл' : 'выкл'}</ActionButton>
 }
 
-export default function SystemDiagnosticsModal({ onClose, runtimeContext, onRunDeepCheck }) {
+export default function SystemDiagnosticsModal({ onClose, runtimeContext, onRunDeepCheck, diagnosticsSession, diagnosticsActions }) {
   const [snapshot, setSnapshot] = useState(null), [report, setReport] = useState(null), [loading, setLoading] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(false), [deepWebview, setDeepWebview] = useState(false), [message, setMessage] = useState('')
   const contextRef = useRef(runtimeContext || {}), deepRef = useRef(false), runDeepRef = useRef(onRunDeepCheck)
@@ -53,18 +53,40 @@ export default function SystemDiagnosticsModal({ onClose, runtimeContext, onRunD
   useEffect(() => { if (!autoRefresh) return undefined; const timer = setInterval(() => load(), 3000); return () => clearInterval(timer) }, [autoRefresh, load])
 
   const copyReport = async () => { try { await navigator.clipboard.writeText(JSON.stringify(report || {}, null, 2)); setMessage('Отчёт скопирован в буфер обмена') } catch { setMessage('Не удалось скопировать отчёт') } }
-  const clearScreen = () => { setSnapshot(null); setReport(null); setMessage('Экран диагностики очищен. Файлы логов не тронуты.') }
+  const clearScreen = () => { setSnapshot(null); setReport(null); diagnosticsActions?.clear?.(); setMessage('Экран и буфер диагностики очищены. Файлы логов не тронуты.') }
   const summary = report?.summary || {}, problems = report?.problems || [], chains = report?.chains || [], recentErrors = report?.recent?.errors || [], maxFallbackEvents = report?.maxFallbackEvents || []
+  const session = diagnosticsSession || {}
+  const sessionEvents = session.events || []
+  const sessionStatus = session.active ? (session.paused ? 'пауза' : 'запись') : 'остановлена'
 
   return (
     <div style={css.overlay} onClick={onClose}><div style={css.modal} onClick={e => e.stopPropagation()}>
       <div style={css.header}><b style={{ fontSize: 17 }}>Диагностика системы</b><span style={{ ...css.muted, marginRight: 'auto' }}>цепочки, логи, подключения, WebView</span><ActionButton kind="primary" minWidth={112} onClick={() => load({ deep: true })} disabled={loading}>{loading ? 'Проверка...' : 'Обновить'}</ActionButton><ActionButton minWidth={38} onClick={onClose}>×</ActionButton></div>
       <div style={css.body}>
+        <div style={{ ...css.card, display: 'grid', gap: 10 }}>
+          <div style={{ fontWeight: 700 }}>Фоновая диагностическая сессия</div>
+          <div style={css.row}>
+            {!session.active && <ActionButton kind="primary" onClick={diagnosticsActions?.start}>Начать запись</ActionButton>}
+            {session.active && !session.paused && <ActionButton onClick={diagnosticsActions?.pause}>Пауза</ActionButton>}
+            {session.active && session.paused && <ActionButton kind="primary" onClick={diagnosticsActions?.resume}>Продолжить</ActionButton>}
+            {session.active && <ActionButton kind="danger" onClick={diagnosticsActions?.stop}>Стоп и сохранить</ActionButton>}
+            <ActionButton active={!!session.deepWebview} onClick={diagnosticsActions?.toggleDeep}>Глубокая WebView: {session.deepWebview ? 'вкл' : 'выкл'}</ActionButton>
+            <ActionButton onClick={diagnosticsActions?.save}>Сохранить сессию</ActionButton>
+            <ActionButton onClick={diagnosticsActions?.copy}>Скопировать сессию</ActionButton>
+          </div>
+          <div style={css.muted}>
+            Статус: {sessionStatus}. Буфер: {sessionEvents.length} событий. Большую модалку можно закрыть: маленькая панель останется и запись продолжится.
+          </div>
+          <div style={{ ...css.muted, color: session.lastError ? '#f87171' : '#93c5fd' }}>
+            {session.lastError || session.lastSavedPath || 'Отчёт сессии сохраняется вручную или автоматически при остановке.'}
+          </div>
+        </div>
         <div style={{ ...css.card, display: 'grid', gap: 10, minHeight: 116 }}><div style={css.row}><ToggleButton value={autoRefresh} onChange={setAutoRefresh} label="Автообновление 3 сек" title="Когда включено, окно само обновляет снимок каждые 3 секунды." /><ToggleButton value={deepWebview} onChange={setDeepWebview} label="Глубокая WebView проверка" title="Когда включено, следующее обновление дополнительно проверяет WebView-подключения." /><ActionButton onClick={copyReport} disabled={!report} minWidth={132}>Копировать отчёт</ActionButton><ActionButton kind="danger" onClick={clearScreen} minWidth={118}>Очистить экран</ActionButton></div><div style={css.muted}>Обычное обновление читает логи и состояние приложения. Глубокая WebView проверка дополнительно опрашивает вкладки; включайте её только когда ищем проблему с мессенджерами.</div><div style={{ ...css.muted, color: '#93c5fd', minHeight: 18 }}>{message || 'Отчёт сохраняется в файл для разбора ИИ после каждого обновления.'}</div></div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>{[['ошибок в логе', summary.errors], ['предупреждений', summary.warnings], ['цепочек событий', summary.chains], ['мессенджеров', summary.messengers]].map(([label, value]) => <div key={label} style={css.card}><b>{value || 0}</b><div style={css.muted}>{label}</div></div>)}</div>
         <Section title="Что сейчас подозрительно">{problems.length ? problems.map((p, i) => <div key={`${p.title}-${i}`} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div style={{ color: severityColor(p.severity), fontWeight: 700 }}>{p.title}</div><div style={{ ...css.mono, marginTop: 5 }}>{p.detail || 'деталей нет'}</div><div style={{ ...css.muted, marginTop: 5 }}>Что делать: {p.advice}</div></div>) : <div style={css.muted}>Явных проблем по текущему снимку нет.</div>}</Section>
         <Section title="MAX fallback анализ">{maxFallbackEvents.length ? maxFallbackEvents.slice(-100).map((e, i) => <MaxFallbackEvent key={`${e.ts}-${i}`} event={e} index={i} />) : <div style={css.muted}>MAX fallback событий в текущем снимке нет.</div>}</Section>
         <Section title="Цепочки событий">{chains.length ? chains.slice(-200).map((c, i) => <div key={c.id || i} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div><b>{c.title}</b> <span style={css.muted}>{c.ts} · {c.type}</span></div><div style={css.mono}>{c.detail}</div></div>) : <div style={css.muted}>Пока нет событий уведомлений/WebView/native в последних строках лога.</div>}</Section>
+        <Section title="Live-лента сессии">{sessionEvents.length ? sessionEvents.slice(-120).reverse().map((e, i) => <div key={e.id || i} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div style={{ color: severityColor(e.severity), fontWeight: 700 }}>{e.title || e.kind}</div><div style={css.mono}>{e.text || e.detail || 'нет деталей'}</div></div>) : <div style={css.muted}>Фоновая сессия пока не накопила событий.</div>}</Section>
         <Section title="Файл для ИИ"><div style={css.mono}>{report?.paths?.reportPath || snapshot?.paths?.reportPath || 'Отчёт появится после обновления диагностики'}</div><div style={{ ...css.muted, marginTop: 6 }}>Когда диагностика открыта или обновлена, приложение сохраняет JSON-отчёт сюда. Его можно читать без ручного копирования текста из интерфейса.</div></Section>
         <Section title="Последние ошибки">{recentErrors.length ? <div style={css.mono}>{recentErrors.join('\n')}</div> : <div style={css.muted}>Ошибок в последних строках нет.</div>}</Section>
       </div>

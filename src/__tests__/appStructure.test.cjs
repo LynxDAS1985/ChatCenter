@@ -15,7 +15,8 @@ const handleNewMessageCode = fs.existsSync('src/utils/webviewHandleNewMessage.js
 const hooksDir = 'src/hooks'
 const hooksCode = fs.existsSync(hooksDir) ? fs.readdirSync(hooksDir).map(f => fs.readFileSync(path.join(hooksDir, f), 'utf8')).join('\n') : ''
 const tabBarCode = fs.existsSync('src/components/TabBar.jsx') ? fs.readFileSync('src/components/TabBar.jsx', 'utf8') : ''
-const allAppCode = code + '\n' + webviewCode + '\n' + handleNewMessageCode + '\n' + hooksCode + '\n' + tabBarCode
+const diagnosticsHostCode = fs.existsSync('src/components/DiagnosticsSessionHost.jsx') ? fs.readFileSync('src/components/DiagnosticsSessionHost.jsx', 'utf8') : ''
+const allAppCode = code + '\n' + webviewCode + '\n' + handleNewMessageCode + '\n' + hooksCode + '\n' + tabBarCode + '\n' + diagnosticsHostCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -46,7 +47,7 @@ test('NativeApp controlled lazy import (A1 startup split)', () => {
   assert(code.includes('lazy import requested') && code.includes('lazy import resolved'), 'NativeApp lazy import should be visible in startup logs')
 })
 test('LogModal lazy import', () => assert(code.includes("import('./components/LogModal.jsx')")))
-test('SystemDiagnosticsModal lazy import', () => assert(code.includes("import('./components/SystemDiagnosticsModal.jsx')")))
+test('DiagnosticsSessionHost lazy import', () => assert(code.includes("import('./components/DiagnosticsSessionHost.jsx')")))
 test('ConfirmCloseModal lazy import', () => assert(code.includes("import('./components/ConfirmCloseModal.jsx')")))
 
 // ── Нет дублирования (inline код удалён) ──
@@ -78,6 +79,10 @@ test('tabContextMenuDiag отключён из startup graph (A2.1)', () => {
   assert(hooksCode.includes('manual WebView diagnostics disabled'), 'disabled diagnostic status should be explicit')
 })
 test('traceNotif определена', () => assert(code.includes('traceNotif')))
+test('Фоновая diagnostics session подключена', () => {
+  assert(allAppCode.includes('useDiagnosticsSession'), 'DiagnosticsSessionHost должен подключать фоновую diagnostics session')
+  assert(allAppCode.includes('<DiagnosticsFloatingPanel'), 'маленькая diagnostics panel должна быть в diagnostics host')
+})
 
 // ── Использует модульные функции ──
 console.log('\\n── Использует модульные функции: ──')
@@ -115,7 +120,8 @@ console.log('\\n── Компоненты: ──')
 test('NotifLogModal используется', () => assert(code.includes('<NotifLogModal')))
 test('MessengerTab используется', () => assert(allAppCode.includes('<MessengerTab')))
 test('SettingsPanel используется', () => assert(code.includes('<SettingsPanel')))
-test('SystemDiagnosticsModal используется', () => assert(code.includes('<SystemDiagnosticsModal')))
+test('SystemDiagnosticsModal используется', () => assert(allAppCode.includes('<SystemDiagnosticsModal')))
+test('DiagnosticsFloatingPanel используется', () => assert(allAppCode.includes('<DiagnosticsFloatingPanel')))
 test('AISidebar используется', () => assert(code.includes('<AISidebar')))
 test('Условные панели грузятся через lazy()', () =>
   assert(code.includes('lazy(() => import') && code.includes('<Suspense fallback={null}>')))

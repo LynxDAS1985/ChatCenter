@@ -368,13 +368,13 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="Сворачивать в трей" description="Закрытие скрывает в трей">
                 <Toggle value={settings.minimizeToTray !== false} onChange={v => set('minimizeToTray', v)} />
               </SettingRow>
-              {/* v0.89.42 (Phase 2.1): пилот WebContentsView. По умолчанию OFF —
-                  старый <webview> тег работает как раньше. Включение требует
-                  перезапуска приложения. Пилот без ChatMonitor (без перехвата
-                  сообщений) — для проверки UX-улучшений (разделитель не залипает). */}
-              {/* v0.91.0: тумблер useWebContentsView полностью убран. WCV миграция
-                  откачена из-за Electron Issue #44934 (Windows 11 crash). См. урок
-                  в .memory-bank/mistakes/electron-core.md. */}
+              {/* v1.2.22: Вариант A — тумблер открывает Макс в ОТДЕЛЬНОМ окне Electron (обычный
+                  BrowserWindow) для проверки ServiceWorker-уведомлений. ВНУТРИ главного окна
+                  WebContentsView крашит Electron на Win11 (#44934) — поэтому отдельное окно.
+                  Перезапуск НЕ нужен: окно открывается/закрывается сразу при переключении. */}
+              <SettingRow label="🧪 Макс в отдельном окне (тест уведомлений)" description="Открывает Макс в отдельном окне Electron, чтобы проверить, приходят ли уведомления (ServiceWorker). Главное окно работает как обычно. Перезапуск не нужен — окно появится сразу. Чтобы закрыть — выключите тумблер.">
+                <Toggle value={!!settings.useWebContentsView} onChange={v => set('useWebContentsView', v)} />
+              </SettingRow>
               <SettingRow label="Бейдж на иконке (overlay)" description="Что показывать на иконке в панели задач Windows">
                 <select
                   value={settings.overlayMode || 'personal'}

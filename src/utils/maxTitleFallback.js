@@ -13,6 +13,7 @@ export function parseMaxTitleFallbackResult(result) {
     const data = typeof result === 'string' ? JSON.parse(result) : result
     const text = String(data.text || '').trim()
     if (!text || text.length > 500) return null
+    if (String(data.source || '') === 'max-title-active') return null
     return {
       text,
       senderName: String(data.sender || '').trim(),

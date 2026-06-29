@@ -49,6 +49,15 @@ function test(name, fn) {
     assert.strictEqual(mod.parseMaxTitleFallbackResult('{bad json'), null)
   })
 
+  test('parse: max-title-active is blocked as unreliable notification source', () => {
+    assert.strictEqual(mod.parseMaxTitleFallbackResult({
+      text: 'Сообщение',
+      sender: 'Ivan Ivan В сети',
+      avatar: 'https://max.ru/a.jpg',
+      source: 'max-title-active',
+    }), null)
+  })
+
   test('cache: avatar is scoped by messenger, chat and sender', () => {
     const cache = {}
     const k1 = mod.rememberSenderAvatar(cache, 'max', 'Ivan Petrov', 'chat-a', 'https://cdn/old.jpg')
@@ -81,11 +90,12 @@ function test(name, fn) {
   })
 
 
-  test('script: uses MAX sidebar first and active chat second only', () => {
+  test('script: uses MAX sidebar only for title fallback', () => {
     const script = mod.buildMaxTitleFallbackScript()
     assert(script.includes('function sidebarSnapshot()'))
     assert(script.includes('function activeChatSnapshot()'))
-    assert(script.includes('sidebarSnapshot() || activeChatSnapshot()'))
+    assert(script.includes('var result = sidebarSnapshot();'))
+    assert(!script.includes("source: 'max-title-active'"))
     assert(!script.includes('visibleIncomingSnapshot'))
     assert(!script.includes('max-title-visible'))
     assert(script.includes('wrapper--withActions'))
@@ -93,7 +103,7 @@ function test(name, fn) {
 
   test('script: keeps structural outgoing filters without word blacklist', () => {
     const script = mod.buildMaxTitleFallbackScript()
-    assert(script.includes('out|own|self|right|outgoing'))
+    assert(!script.includes("source: 'max-title-active'"))
     assert(!script.includes('18 июн'))
     assert(!script.includes('Спасибо 18:34'))
     assert(!script.includes('isBlockedMaxTitleFallbackText'))

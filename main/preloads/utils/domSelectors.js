@@ -42,6 +42,69 @@ let _chatContainerEl = null
 function getChatContainerEl() { return _chatContainerEl }
 function setChatContainerEl(el) { _chatContainerEl = el }
 
+function isVisibleMaxMessageNode(el) {
+  try {
+    if (!el || isSidebarNode(el)) return false
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null
+    if (!rect || rect.width < 20 || rect.height < 12) return false
+    const vw = window.innerWidth || 0
+    if (vw > 700 && rect.left < vw * 0.22) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
+function countVisibleMaxMessages(root) {
+  if (!root || !root.querySelectorAll) return 0
+  try {
+    return Array.from(root.querySelectorAll('[class*="messageWrapper" i], .message[class*="svelte"], [class*="message"][class*="svelte"]'))
+      .filter(isVisibleMaxMessageNode).length
+  } catch {
+    return 0
+  }
+}
+
+function findMaxMessageWrapperContainer() {
+  try {
+    const wrappers = Array.from(document.querySelectorAll('[class*="messageWrapper" i], .message[class*="svelte"], [class*="message"][class*="svelte"]'))
+      .filter(isVisibleMaxMessageNode)
+    if (!wrappers.length) return null
+
+    let best = null
+    let bestCount = 0
+    let bestDepth = 99
+    const requiredCount = Math.min(2, wrappers.length)
+
+    for (const wrapper of wrappers) {
+      let el = wrapper.parentElement
+      let depth = 0
+      while (el && depth < 8 && el !== document.body && el !== document.documentElement) {
+        if (isSidebarNode(el)) break
+        const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null
+        const vw = window.innerWidth || 0
+        const looksLikeChatArea = rect && rect.width >= 240 && rect.height >= 120 && (!vw || rect.left >= vw * 0.18)
+        const count = looksLikeChatArea ? countVisibleMaxMessages(el) : 0
+        if (count >= requiredCount && (count > bestCount || (count === bestCount && depth < bestDepth))) {
+          best = el
+          bestCount = count
+          bestDepth = depth
+        }
+        el = el.parentElement
+        depth += 1
+      }
+    }
+
+    if (best) {
+      try { console.log('__CC_DIAG__findChatContainer: MAX messageWrapper ancestor | class=' + (best.className || '').slice(0, 80) + ' | msgs=' + bestCount) } catch {}
+      return best
+    }
+  } catch (e) {
+    try { console.log('__CC_DIAG__findChatContainer: MAX messageWrapper error | ' + (e && e.message ? e.message : e)) } catch {}
+  }
+  return null
+}
+
 function findChatContainer(type) {
   const sels = CHAT_CONTAINER_SELECTORS[type] || []
   for (const sel of sels) {
@@ -54,6 +117,10 @@ function findChatContainer(type) {
   // DOM Inspector показал: .message.svelte-fxkkld — отдельное сообщение.
   // Его parent = контейнер сообщений (то что нам нужно).
   // Проверяем: parent должен содержать ≥3 .message (чтобы не поймать случайный .message из sidebar)
+  if (type === 'max') {
+    const wrapperContainer = findMaxMessageWrapperContainer()
+    if (wrapperContainer) return wrapperContainer
+  }
   if (type === 'max' || type === 'generic') {
     try {
       const msgEl = document.querySelector('.message[class*="svelte"]')
