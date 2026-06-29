@@ -2,6 +2,45 @@
 
 ---
 
+## 🔴 MAX: скрытый reset title-state после v1.2.26 снова запускал старый sidebar-preview (v1.2.27)
+
+**Кто нашёл**: Codex, 29 июня 2026, после повторной жалобы пользователя “опять показало уведомление” и проверки свежего `chatcenter.log`.
+
+**Симптом**: после фикса v1.2.26 старое MAX-сообщение `Ууа` всё равно один раз появилось как новое уведомление после перезагрузки/переходов по чатам.
+
+**Факты из свежей диагностики**:
+- `system-diagnostics-report.json` был версии `1.2.26`;
+- в `chatcenter.log` было `MAX title baseline only | reason=baseline`, значит v1.2.26 реально загрузился и первый baseline отработал;
+- позже снова было `MAX page-title-updated raw="1 непрочитанный чат" prevUnread=0 delta=1`;
+- сразу после этого был `MAX title-fallback scheduled`;
+- `MAX title-fallback raw` вернул `source="max-title-sidebar"`, `text="Ууа"`, sender `Дугин Алексей Сергеевич`, avatar из sidebar;
+- `NotifManager show` показал это как новое уведомление, а затем сыграл звук.
+
+**Почему предыдущее решение было неполным**: v1.2.26 сравнивал MAX title-count с прошлым MAX title-count, но в ветке title без числа оставался `resetMaxTitleUnread()`. Этот reset не логировался. После скрытого reset старый title-count `1` снова выглядел как новый.
+
+**Корень**: `page-title-updated` у MAX — это событие заголовка страницы и счётчика чатов, а не событие новой message bubble. `max-title-sidebar` читает список чатов, где лежит последний preview, и при навигации может снова вернуть старый текст. Значит title fallback нельзя считать источником уведомления для MAX.
+
+**Решение v1.2.27**:
+- для MAX `decideMaxTitleUnread()` всегда возвращает `schedule=false`;
+- даже рост title-count помечается как `increased-title-only`, но не запускает ribbon;
+- скрытый reset убран: `resetMaxTitleUnread()` для MAX больше не сбрасывает состояние;
+- в `webviewSetup.js` добавлена строка диагностики `MAX title reset skipped`;
+- строка диагностики для title-события стала `MAX title-only no-ribbon`;
+- реальные пути `__CC_NOTIF__`, `MAX-QUICK`, `max-notification`, sender/text/avatar/sound не отключались.
+
+**Что НЕ делать дальше**:
+- не возвращать `max-title-sidebar` как полноценный источник уведомлений для MAX без структурного доказательства новой bubble;
+- не блокировать слова (`Сообщение`, даты, `Ууа`, короткие тексты);
+- не считать `prevUnread=0 delta=1` фактом нового сообщения, если источник только title.
+
+**Как проверять**:
+1. Перезапустить приложение, оставить в MAX старый непрочитанный чат.
+2. Переходить по MAX-чатам.
+3. В логе должны быть `MAX title-only no-ribbon` и/или `MAX title reset skipped`.
+4. Не должно быть `MAX title-fallback scheduled` из-за MAX title.
+5. Не должно быть `NotifManager show` на старый sidebar-preview.
+6. Реальное новое сообщение должно проходить через `__CC_NOTIF__`, `[MAX-QUICK]`/`[IPC-MAX] channel=new-message` или другой подтверждённый источник message bubble.
+
 ## 🔴 MAX: React unread сбрасывался в 0 и превращал старый title-count в новый фантом (v1.2.26)
 
 **Кто нашёл**: Codex, 29 июня 2026, по свежей фоновой диагностике после жалобы пользователя: “опять фантом сообщения пришло после перезагрузки”.

@@ -171,16 +171,24 @@ function test(name, fn) {
     const state = {}
     let res = titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/1', count: 1 })
     assert.strictEqual(res.schedule, false)
-    assert.strictEqual(res.reason, 'baseline')
+    assert.strictEqual(res.reason, 'baseline-title-only')
     res = titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/2', count: 1 })
     assert.strictEqual(res.schedule, false)
     assert(res.reason.includes('not-increased'))
     res = titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/2', count: 2 })
-    assert.strictEqual(res.schedule, true)
-    assert(res.reason.includes('increased'))
+    assert.strictEqual(res.schedule, false)
+    assert(res.reason.includes('increased-title-only'))
     titleBaseline.resetMaxTitleUnread(state, 'max', 'https://web.max.ru/2')
     res = titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/2', count: 1 })
-    assert.strictEqual(res.schedule, true)
+    assert.strictEqual(res.schedule, false)
+    assert(res.reason.includes('not-increased'))
+  })
+
+  test('title baseline: MAX title count never becomes a ribbon source by itself', () => {
+    const state = {}
+    assert.strictEqual(titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/', count: 1 }).schedule, false)
+    assert.strictEqual(titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/1', count: 2 }).schedule, false)
+    assert.strictEqual(titleBaseline.decideMaxTitleUnread({ state, messengerId: 'vk', messengerUrl: 'https://vk.com/im', count: 1 }).schedule, true)
   })
 
   test('script: uses MAX sidebar only for title fallback', () => {

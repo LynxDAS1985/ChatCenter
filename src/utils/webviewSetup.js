@@ -398,7 +398,7 @@ export function createWebviewSetup(deps) {
             const titleUpdateUrl = (() => { try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' } })()
             const isMaxTitleFallback = /web\.max\.ru/.test(titleUpdateUrl)
             const titleDecision = decideMaxTitleUnread({ state: titleUnreadBaselineRef.current, messengerId, messengerUrl: titleUpdateUrl, count })
-            if (isMaxTitleFallback && !titleDecision.schedule) traceNotif('debug', 'info', messengerId, `title-count ${count}`, `MAX title baseline only | reason=${titleDecision.reason} raw="${String(e.title || '').slice(0, 120)}" count=${count} prevUnread=${prevCount} url=${titleUpdateUrl.slice(0, 120)}`)
+            if (isMaxTitleFallback && !titleDecision.schedule) traceNotif('debug', 'info', messengerId, `title-count ${count}`, `MAX title-only no-ribbon | reason=${titleDecision.reason} raw="${String(e.title || '').slice(0, 120)}" count=${count} prevUnread=${prevCount} url=${titleUpdateUrl.slice(0, 120)}`)
             if (titleDecision.schedule && count > prevCount && notifReadyRef.current[messengerId]) {
               const titleDelta = isMaxTitleFallback && titleDecision.prevCount !== null ? Math.max(1, count - titleDecision.prevCount) : count - prevCount
               scheduleMaxTitleFallback({
@@ -445,7 +445,7 @@ export function createWebviewSetup(deps) {
         } else if (activeIdRef.current === messengerId && windowFocusedRef.current) {
           // v0.74.0: Title без числа (например "MAX") — пользователь смотрит и всё прочитал
           notifCountRef.current[messengerId] = 0
-          try { resetMaxTitleUnread(titleUnreadBaselineRef.current, messengerId, el?.getURL?.() || '') } catch {}
+          try { const u = el?.getURL?.() || ''; if (/web\.max\.ru/.test(u)) traceNotif('debug', 'info', messengerId, '', `MAX title reset skipped | title="${String(e.title || '').slice(0, 120)}" url=${u.slice(0, 120)} kept=true`); else resetMaxTitleUnread(titleUnreadBaselineRef.current, messengerId, u) } catch {}
           setUnreadCounts(prev => {
             if ((prev[messengerId] || 0) === 0) return prev
             return { ...prev, [messengerId]: 0 }

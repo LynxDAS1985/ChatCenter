@@ -14,13 +14,12 @@ export function decideMaxTitleUnread({ state, messengerId, messengerUrl, count }
   const next = Number(count) || 0
   const prev = state[messengerId]?.count
   state[messengerId] = { count: next, ts: Date.now() }
-  if (prev === undefined) return { schedule: false, reason: 'baseline', prevCount: 0 }
+  if (prev === undefined) return { schedule: false, reason: 'baseline-title-only', prevCount: 0 }
   if (next <= prev) return { schedule: false, reason: `not-increased prev=${prev}`, prevCount: prev }
-  return { schedule: true, reason: `increased prev=${prev}`, prevCount: prev }
+  return { schedule: false, reason: `increased-title-only prev=${prev}`, prevCount: prev }
 }
 
 export function resetMaxTitleUnread(state, messengerId, messengerUrl) {
   if (!state || !messengerId || !isMaxUrl(messengerUrl)) return false
-  state[messengerId] = { count: 0, ts: Date.now() }
-  return true
+  return false
 }
