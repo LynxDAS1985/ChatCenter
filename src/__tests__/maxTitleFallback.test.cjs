@@ -167,6 +167,22 @@ function test(name, fn) {
     }), false)
   })
 
+  test('title baseline: repeated MAX unread count after navigation is not a new-message trigger', () => {
+    const state = {}
+    let res = titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/1', count: 1 })
+    assert.strictEqual(res.schedule, false)
+    assert.strictEqual(res.reason, 'baseline')
+    res = titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/2', count: 1 })
+    assert.strictEqual(res.schedule, false)
+    assert(res.reason.includes('not-increased'))
+    res = titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/2', count: 2 })
+    assert.strictEqual(res.schedule, true)
+    assert(res.reason.includes('increased'))
+    titleBaseline.resetMaxTitleUnread(state, 'max', 'https://web.max.ru/2')
+    res = titleBaseline.decideMaxTitleUnread({ state, messengerId: 'max', messengerUrl: 'https://web.max.ru/2', count: 1 })
+    assert.strictEqual(res.schedule, true)
+  })
+
   test('script: uses MAX sidebar only for title fallback', () => {
     const script = mod.buildMaxTitleFallbackScript()
     assert(script.includes('function sidebarSnapshot()'))

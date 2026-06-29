@@ -13,7 +13,7 @@ import { logGeometry, runDomProbe, attachRuntimeErrorCatcher, probeBlackScreen }
 import { createHandleNewMessage } from './webviewHandleNewMessage.js'
 import { probeWebviewHealth } from './webviewHealthProbe.js'
 import { scheduleMaxTitleFallback } from './maxTitleFallback.js'
-import { shouldUseTitleUnreadAsBaseline } from './titleUnreadBaseline.js'
+import { decideMaxTitleUnread, resetMaxTitleUnread } from './titleUnreadBaseline.js'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 import {
   markHealthError,
@@ -136,7 +136,7 @@ export function createWebviewSetup(deps) {
   const notifMidTsRef = { current: {} } // { [messengerId]: timestamp }
   const maxTitleFallbackTimers = { current: {} } // { [messengerId]: timer }
   const maxTitleFallbackStateRef = { current: { seen: {} } } // long-lived sidebar preview fingerprints
-  const titleUnreadBaselineRef = { current: {} } // first MAX title count after startup/load is baseline, not a new message
+  const titleUnreadBaselineRef = { current: {} }
 
   // ── Pipeline Trace Logger (v0.55.0) ──────────────────────────────────────────
   // Записывает КАЖДЫЙ шаг pipeline уведомлений для диагностики
@@ -397,15 +397,14 @@ export function createWebviewSetup(deps) {
             // чтобы не было timestamp-фантомов, двойного звука и "пик без уведомления".
             const titleUpdateUrl = (() => { try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' } })()
             const isMaxTitleFallback = /web\.max\.ru/.test(titleUpdateUrl)
-            const useAsBaseline = shouldUseTitleUnreadAsBaseline({ state: titleUnreadBaselineRef.current, messengerId, messengerUrl: titleUpdateUrl, count })
-            if (useAsBaseline) {
-              traceNotif('debug', 'info', messengerId, `title-count ${count}`, `MAX title baseline only | raw="${String(e.title || '').slice(0, 120)}" count=${count} prevUnread=${prevCount} url=${titleUpdateUrl.slice(0, 120)}`)
-            }
-            if (!useAsBaseline && count > prevCount && notifReadyRef.current[messengerId]) {
+            const titleDecision = decideMaxTitleUnread({ state: titleUnreadBaselineRef.current, messengerId, messengerUrl: titleUpdateUrl, count })
+            if (isMaxTitleFallback && !titleDecision.schedule) traceNotif('debug', 'info', messengerId, `title-count ${count}`, `MAX title baseline only | reason=${titleDecision.reason} raw="${String(e.title || '').slice(0, 120)}" count=${count} prevUnread=${prevCount} url=${titleUpdateUrl.slice(0, 120)}`)
+            if (titleDecision.schedule && count > prevCount && notifReadyRef.current[messengerId]) {
+              const titleDelta = isMaxTitleFallback && titleDecision.prevCount !== null ? Math.max(1, count - titleDecision.prevCount) : count - prevCount
               scheduleMaxTitleFallback({
                 el,
                 messengerId,
-                delta: count - prevCount,
+                delta: titleDelta,
                 messengerUrl: titleUpdateUrl,
                 notifReadyRef,
                 lastRibbonTsRef,
@@ -428,9 +427,9 @@ export function createWebviewSetup(deps) {
                 const mi = messengersRef.current.find(x => x.id === messengerId)
                 playNotificationSound(mi?.color)
                 lastSoundTsRef.current[messengerId] = Date.now()
-                traceNotif('sound', 'pass', messengerId, `title +${count - prevCount}`, 'звук title-update')
+                traceNotif('sound', 'pass', messengerId, `title +${titleDelta}`, 'звук title-update')
               } else if (isMaxTitleFallback) {
-                traceNotif('sound', 'info', messengerId, `title +${count - prevCount}`, 'MAX: title-update звук пропущен, ждём подтверждённый ribbon')
+                traceNotif('sound', 'info', messengerId, `title +${titleDelta}`, 'MAX: title-update звук пропущен, ждём подтверждённый ribbon')
               }
             }
             return { ...prev, [messengerId]: count }
@@ -446,6 +445,7 @@ export function createWebviewSetup(deps) {
         } else if (activeIdRef.current === messengerId && windowFocusedRef.current) {
           // v0.74.0: Title без числа (например "MAX") — пользователь смотрит и всё прочитал
           notifCountRef.current[messengerId] = 0
+          try { resetMaxTitleUnread(titleUnreadBaselineRef.current, messengerId, el?.getURL?.() || '') } catch {}
           setUnreadCounts(prev => {
             if ((prev[messengerId] || 0) === 0) return prev
             return { ...prev, [messengerId]: 0 }
