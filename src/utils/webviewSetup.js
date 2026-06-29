@@ -134,6 +134,7 @@ export function createWebviewSetup(deps) {
   // блокируем __CC_MSG__ целиком (sender name может отличаться из-за разного enrichment)
   const notifMidTsRef = { current: {} } // { [messengerId]: timestamp }
   const maxTitleFallbackTimers = { current: {} } // { [messengerId]: timer }
+  const maxTitleFallbackStateRef = { current: { seen: {} } } // long-lived sidebar preview fingerprints
 
   // ── Pipeline Trace Logger (v0.55.0) ──────────────────────────────────────────
   // Записывает КАЖДЫЙ шаг pipeline уведомлений для диагностики
@@ -404,6 +405,8 @@ export function createWebviewSetup(deps) {
                 lastRibbonTsRef,
                 notifMidTsRef,
                 timersRef: maxTitleFallbackTimers,
+                fallbackStateRef: maxTitleFallbackStateRef,
+                recentNotifsRef,
                 senderCacheRef,
                 cleanupSenderCache,
                 handleNewMessage,

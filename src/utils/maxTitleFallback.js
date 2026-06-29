@@ -4,6 +4,7 @@
 export const MAX_TITLE_FALLBACK_DELAY = 700
 
 import { buildMaxTitleFallbackScript } from './maxTitleFallbackScript.js'
+import { buildMessageDedupScope } from './messageProcessing.js'
 
 export { buildMaxTitleFallbackScript }
 
@@ -55,6 +56,56 @@ export function applySenderAvatarFallback(extra, cache, messengerId, traceNotif,
   return extra
 }
 
+export const MAX_TITLE_FALLBACK_SEEN_TTL_MS = 10 * 60 * 1000
+
+export function buildMaxTitleFallbackFingerprint(messengerId, rich) {
+  const norm = value => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+  const sender = norm(rich?.senderName)
+  const chat = norm(rich?.chatTag)
+  const text = norm(rich?.text).slice(0, 120)
+  const badge = norm(rich?.badge || '')
+  return !messengerId || !text ? '' : `${messengerId}:${chat || sender}:${sender}:${text}:${badge}`
+}
+
+export function hasRecentMessageForRich(recentMap, messengerId, rich, now = Date.now(), ttlMs = MAX_TITLE_FALLBACK_SEEN_TTL_MS) {
+  if (!recentMap || !rich?.text) return false
+  const scope = buildMessageDedupScope(rich.senderName || '', rich.chatTag || '', rich.messageId || '')
+  const key = messengerId + ':' + (scope ? scope + ':' : '') + rich.text.slice(0, 60)
+  const ts = recentMap.get(key)
+  return !!ts && now - ts <= ttlMs
+}
+
+export function shouldBlockKnownMaxSidebarFallback(state, recentMap, messengerId, rich, now = Date.now()) {
+  if (!rich || rich.source !== 'max-title-sidebar') return { blocked: false, reason: '' }
+  const fingerprint = buildMaxTitleFallbackFingerprint(messengerId, rich)
+  if (!fingerprint) return { blocked: false, reason: '' }
+  const seen = state?.seen || {}
+  const prev = seen[fingerprint]
+  if (prev && now - (prev.ts || 0) <= MAX_TITLE_FALLBACK_SEEN_TTL_MS) {
+    return { blocked: true, reason: `known-sidebar-preview age=${now - (prev.ts || 0)}ms`, fingerprint }
+  }
+  if (hasRecentMessageForRich(recentMap, messengerId, rich, now)) {
+    return { blocked: true, reason: 'already-seen-in-recentNotifs', fingerprint }
+  }
+  return { blocked: false, reason: '', fingerprint }
+}
+
+export function rememberMaxSidebarFallback(state, messengerId, rich, now = Date.now()) {
+  const fingerprint = buildMaxTitleFallbackFingerprint(messengerId, rich)
+  if (!fingerprint || !state) return ''
+  if (!state.seen) state.seen = {}
+  state.seen[fingerprint] = { ts: now }
+  const keys = Object.keys(state.seen)
+  for (const key of keys) {
+    if (now - (state.seen[key]?.ts || 0) > MAX_TITLE_FALLBACK_SEEN_TTL_MS) delete state.seen[key]
+  }
+  if (Object.keys(state.seen).length > 200) {
+    const ordered = Object.keys(state.seen).sort((a, b) => (state.seen[a]?.ts || 0) - (state.seen[b]?.ts || 0))
+    for (let i = 0; i < ordered.length - 200; i++) delete state.seen[ordered[i]]
+  }
+  return fingerprint
+}
+
 export function scheduleMaxTitleFallback({
   el,
   messengerId,
@@ -64,6 +115,8 @@ export function scheduleMaxTitleFallback({
   lastRibbonTsRef,
   notifMidTsRef,
   timersRef,
+  fallbackStateRef,
+  recentNotifsRef,
   senderCacheRef,
   cleanupSenderCache,
   handleNewMessage,
@@ -90,6 +143,13 @@ export function scheduleMaxTitleFallback({
           traceNotif('enrich', 'warn', messengerId, `title +${delta}`, 'MAX title-fallback no rich message')
           return
         }
+        const now = Date.now()
+        const known = shouldBlockKnownMaxSidebarFallback(fallbackStateRef?.current, recentNotifsRef?.current, messengerId, rich, now)
+        if (known.blocked) {
+          if (known.fingerprint && fallbackStateRef?.current) rememberMaxSidebarFallback(fallbackStateRef.current, messengerId, rich, now)
+          traceNotif('dedup', 'block', messengerId, rich.text, `MAX title-fallback stale sidebar | ${known.reason}`)
+          return
+        }
         const extra = {
           fromTitleFallback: true,
           ...(rich.senderName ? { senderName: rich.senderName } : {}),
@@ -104,6 +164,7 @@ export function scheduleMaxTitleFallback({
         }
         applySenderAvatarFallback(extra, senderCacheRef.current, messengerId, traceNotif, rich.text)
         traceNotif('enrich', rich.senderName ? 'pass' : 'warn', messengerId, rich.text, `MAX title-fallback ${rich.source} | sender="${(rich.senderName || '').slice(0, 40)}" icon=${!!(rich.iconDataUrl || rich.iconUrl)} text="${rich.text.slice(0, 80)}"${rich.diag ? ' | ' + rich.diag : ''}`)
+        rememberMaxSidebarFallback(fallbackStateRef?.current, messengerId, rich, now)
         handleNewMessage(messengerId, rich.text, extra)
       })
       .catch(err => {

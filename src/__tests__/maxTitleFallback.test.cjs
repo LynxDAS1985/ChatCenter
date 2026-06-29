@@ -89,6 +89,60 @@ function test(name, fn) {
     assert(logs.length === 1)
   })
 
+  test('stale guard: blocks sidebar preview already seen through normal notification path', () => {
+    const state = { seen: {} }
+    const rich = {
+      source: 'max-title-sidebar',
+      text: 'Ууа',
+      senderName: 'Дугин Алексей Сергеевич',
+      chatTag: '',
+    }
+    const recent = new Map()
+    recent.set('max:sender:дугин алексей сергеевич:дугин алексей сергеевич:Ууа', 1000)
+    const res = mod.shouldBlockKnownMaxSidebarFallback(state, recent, 'max', rich, 5000)
+    assert.strictEqual(res.blocked, true)
+    assert.strictEqual(res.reason, 'already-seen-in-recentNotifs')
+  })
+
+  test('stale guard: remembers sidebar preview and blocks repeat navigation fallback', () => {
+    const state = { seen: {} }
+    const rich = {
+      source: 'max-title-sidebar',
+      text: 'Ууа',
+      senderName: 'Дугин Алексей Сергеевич',
+      chatTag: '',
+    }
+    const key = mod.rememberMaxSidebarFallback(state, 'max', rich, 1000)
+    assert(key.includes('дугин алексей сергеевич'))
+    const res = mod.shouldBlockKnownMaxSidebarFallback(state, new Map(), 'max', rich, 9000)
+    assert.strictEqual(res.blocked, true)
+    assert(res.reason.includes('known-sidebar-preview'))
+  })
+
+  test('stale guard: allows changed sidebar preview or non-sidebar source', () => {
+    const state = { seen: {} }
+    mod.rememberMaxSidebarFallback(state, 'max', {
+      source: 'max-title-sidebar',
+      text: 'Ууа',
+      senderName: 'Дугин Алексей Сергеевич',
+      chatTag: '',
+    }, 1000)
+    const changed = mod.shouldBlockKnownMaxSidebarFallback(state, new Map(), 'max', {
+      source: 'max-title-sidebar',
+      text: 'Новое сообщение',
+      senderName: 'Дугин Алексей Сергеевич',
+      chatTag: '',
+    }, 2000)
+    assert.strictEqual(changed.blocked, false)
+    const notif = mod.shouldBlockKnownMaxSidebarFallback(state, new Map(), 'max', {
+      source: 'max-notification',
+      text: 'Ууа',
+      senderName: 'Дугин Алексей Сергеевич',
+      chatTag: '',
+    }, 2000)
+    assert.strictEqual(notif.blocked, false)
+  })
+
 
   test('script: uses MAX sidebar only for title fallback', () => {
     const script = mod.buildMaxTitleFallbackScript()
