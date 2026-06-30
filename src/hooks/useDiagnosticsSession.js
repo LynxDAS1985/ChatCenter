@@ -64,7 +64,21 @@ export default function useDiagnosticsSession({ getRuntimeContext, onRunDeepChec
   const pause = useCallback(() => setSession(prev => pauseDiagnosticsSession(prev)), [])
   const resume = useCallback(() => setSession(prev => resumeDiagnosticsSession(prev)), [])
   const clear = useCallback(() => setSession(prev => clearDiagnosticsScreen(prev)), [])
-  const close = useCallback(() => setSession(() => resetDiagnosticsSession()), [])
+  const close = useCallback(async () => {
+    const current = sessionRef.current
+    if (!current.active && !(current.events || []).length) {
+      setSession(() => resetDiagnosticsSession())
+      return
+    }
+    const closing = current.active ? stopDiagnosticsSession(current) : current
+    setSession(closing)
+    try {
+      await saveReport(closing)
+      setSession(() => resetDiagnosticsSession())
+    } catch (e) {
+      setSession(prev => markDiagnosticsError(prev, e))
+    }
+  }, [saveReport])
 
   const stop = useCallback(async () => {
     const stopped = stopDiagnosticsSession(sessionRef.current)

@@ -80,3 +80,19 @@ export function saveSystemDiagnosticsReport({ app, report }) {
     return { ok: false, error: e.message }
   }
 }
+
+export function readSystemDiagnosticsReport({ app }) {
+  try {
+    const reportPath = getReportPath(app)
+    if (!fs.existsSync(reportPath)) return { ok: true, path: reportPath, report: null }
+    const text = fs.readFileSync(reportPath, 'utf8')
+    return {
+      ok: true,
+      path: reportPath,
+      bytes: Buffer.byteLength(text, 'utf8'),
+      report: JSON.parse(redactText(text)),
+    }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+}

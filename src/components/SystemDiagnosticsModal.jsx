@@ -30,8 +30,24 @@ export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeCon
   const contextRef = useRef(runtimeContext || {}), runDeepRef = useRef(onRunDeepCheck)
   const session = diagnosticsSession || {}, sessionEvents = session.events || []
   const sessionStatus = session.active ? (session.paused ? 'пауза' : 'запись') : 'выключена'
-  const canUseReport = !!report || !!sessionEvents.length || !!session.active
+  const savedSessionEvents = report?.diagnosticsSession?.events || []
+  const visibleSessionEvents = sessionEvents.length ? sessionEvents : savedSessionEvents
+  const canUseReport = !!report || !!visibleSessionEvents.length || !!session.active
   useEffect(() => { contextRef.current = runtimeContext || {}; runDeepRef.current = onRunDeepCheck }, [runtimeContext, onRunDeepCheck])
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const saved = await window.api?.invoke('app:diagnostics-read-report')
+        if (!alive || !saved?.ok || !saved.report) return
+        setReport(saved.report)
+        const count = saved.report?.diagnosticsSession?.events?.length || 0
+        setMessage(count ? `Последний сохранённый отчёт загружен: ${count} событий` : `Последний сохранённый отчёт загружен: ${saved.path}`)
+      } catch (_) {}
+    })()
+    return () => { alive = false }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true); setMessage('')
@@ -68,8 +84,8 @@ export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeCon
         <Section title="Что сейчас подозрительно">{problems.length ? problems.map((p, i) => <div key={`${p.title}-${i}`} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div style={{ color: severityColor(p.severity), fontWeight: 700 }}>{p.title}</div><div style={{ ...css.mono, marginTop: 5 }}>{p.detail || 'деталей нет'}</div><div style={{ ...css.muted, marginTop: 5 }}>Что делать: {p.advice}</div></div>) : <div style={css.muted}>Явных проблем по текущему снимку нет.</div>}</Section>
         <Section title="MAX fallback анализ">{maxFallbackEvents.length ? maxFallbackEvents.slice(-100).map((e, i) => <MaxFallbackEvent key={`${e.ts}-${i}`} event={e} index={i} />) : <div style={css.muted}>MAX fallback событий в текущем снимке нет.</div>}</Section>
         <Section title="Цепочки событий">{chains.length ? chains.slice(-200).map((c, i) => <div key={c.id || i} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div><b>{c.title}</b> <span style={css.muted}>{c.ts} · {c.type}</span></div><div style={css.mono}>{c.detail}</div></div>) : <div style={css.muted}>Нажмите "Обновить снимок" или включите фоновую запись, чтобы увидеть события.</div>}</Section>
-        <Section title="Live-лента сессии">{sessionEvents.length ? sessionEvents.slice(-120).reverse().map((e, i) => <div key={e.id || i} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div style={{ color: severityColor(e.severity), fontWeight: 700 }}>{e.title || e.kind}</div><div style={css.mono}>{e.text || e.detail || 'нет деталей'}</div></div>) : <div style={css.muted}>Фоновая сессия выключена или пока не накопила событий.</div>}</Section>
-        <Section title="Файл для ИИ"><div style={css.mono}>{report?.paths?.reportPath || snapshot?.paths?.reportPath || session.lastSavedPath || 'Путь появится после сохранения отчёта или остановки сессии'}</div><div style={{ ...css.muted, marginTop: 6 }}>Другой ИИ может открыть JSON-отчёт и восстановить цепочку: источник события, ribbon, звук, avatar, dedup и ошибки.</div></Section>
+        <Section title="Live-лента сессии">{visibleSessionEvents.length ? visibleSessionEvents.slice(-120).reverse().map((e, i) => <div key={e.id || i} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div style={{ color: severityColor(e.severity), fontWeight: 700 }}>{e.title || e.kind}</div><div style={css.mono}>{e.text || e.detail || 'нет деталей'}</div></div>) : <div style={css.muted}>Фоновая сессия выключена или пока не накопила событий.</div>}</Section>
+        <Section title="Файл для ИИ"><div style={css.mono}>{report?.paths?.reportPath || snapshot?.paths?.reportPath || session.lastSavedPath || 'Путь появится после сохранения отчёта или остановки сессии'}</div><div style={{ ...css.muted, marginTop: 6 }}>Другой ИИ может открыть JSON-отчёт и восстановить цепочку: источник события, ribbon, звук, avatar, dedup и ошибки. Если текущая запись закрыта, здесь показывается последний сохранённый отчёт.</div></Section>
         <Section title="Последние ошибки">{recentErrors.length ? <div style={css.mono}>{recentErrors.join('\n')}</div> : <div style={css.muted}>Ошибок в последних строках нет.</div>}</Section>
       </div>
     </div></div>

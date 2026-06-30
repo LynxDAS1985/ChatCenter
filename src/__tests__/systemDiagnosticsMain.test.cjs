@@ -38,6 +38,10 @@ async function main() {
   const text = fs.readFileSync(saved.path, 'utf8')
   assert.ok(text.includes('token'))
   assert.ok(!text.includes('abc'))
+  const read = mod.readSystemDiagnosticsReport({ app })
+  assert.strictEqual(read.ok, true)
+  assert.strictEqual(read.report.token, '***')
+  assert.strictEqual(read.report.nested.ok, true)
 
   fs.rmSync(dir, { recursive: true, force: true })
 }

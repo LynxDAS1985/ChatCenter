@@ -53,7 +53,7 @@ test('on каналов > 15', function() { assert(onChannels.length > 15, 'coun
 
 // Проверяем ключевые каналы
 console.log('\\n── Ключевые каналы: ──')
-var requiredHandle = ['settings:get', 'settings:save', 'app:custom-notify', 'tray:set-badge', 'app:get-paths', 'app:diagnostics-snapshot', 'app:diagnostics-save-report']
+var requiredHandle = ['settings:get', 'settings:save', 'app:custom-notify', 'tray:set-badge', 'app:get-paths', 'app:diagnostics-snapshot', 'app:diagnostics-save-report', 'app:diagnostics-read-report']
 requiredHandle.forEach(function(ch) {
   test('handle: ' + ch, function() { assert(handleChannels.indexOf(ch) >= 0) })
 })

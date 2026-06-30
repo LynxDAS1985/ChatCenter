@@ -1,6 +1,103 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.30 (30 июня 2026)
+## Текущая версия: v1.2.33 (30 июня 2026)
+
+### v1.2.33 — MAX не теряет первое сообщение после роста счётчика
+
+Дата: 30 июня 2026.
+Кто нашёл: пользователь по живому кейсу "на первое сообщение нет уведомления и модалки, на второе есть"; Codex по `chatcenter.log`, `system-diagnostics-report.json`, `src/utils/webviewSetup.js`, `src/utils/titleUnreadBaseline.js` и `main/preloads/hooks/max.hook.js`.
+
+Проблема: после v1.2.32 первое реальное MAX-сообщение могло не дать звук и ribbon. В логе на первом сообщении была только строка `MAX page-title-updated raw="1 непрочитанный чат" prevUnread=0 delta=1`, затем `MAX title-only no-ribbon | reason=baseline-title-only`. Полного pipeline не было: не было `__CC_NOTIF__`, `custom-notify`, `NotifManager show` и звука. Второе сообщение через несколько секунд уже проходило как `__CC_NOTIF__ src=max-sidebar` и показывалось нормально.
+
+Корень: v1.2.32 правильно запретила `max-sidebar` шуметь на первом неизвестном проходе, чтобы не показывать старые и свои preview. Но у MAX иногда первое новое сообщение после навигации видно сначала только как рост title-unread, а sidebar-строка для этого отправителя ещё не была в baseline. Получилась дырка между двумя защитами: голый title мы не показываем, а первый sidebar-row мы тоже пропускали.
+
+Что изменено:
+- `main/preloads/hooks/max.hook.js`: hook запоминает свежий рост title-unread MAX по `document.title`;
+- первый неизвестный sidebar-row с unread теперь разрешается только если одновременно есть свежий рост title-unread за последние 3 секунды;
+- старый первый проход без такого подтверждения остаётся тихим;
+- добавлена диагностика `max-sidebar: title-correlated first unread`;
+- `src/__tests__/notifHooks.test.cjs`: добавлен регрессионный тест на правило `title growth + sidebar unread`.
+
+Почему это безопасно: MAX title сам по себе не создаёт уведомление. Нужны два независимых признака: сайт поднял счётчик непрочитанных и конкретная sidebar-строка имеет unread. Поиск MAX всё ещё отключает emit, preview без роста unread всё ещё блокируется, свои исходящие без unread не проходят.
+
+Как должно работать:
+1. Первое новое MAX-сообщение после роста счётчика должно дать звук и ribbon, если sidebar показывает unread у этого чата.
+2. Второе и следующие сообщения продолжают идти через обычный `max-sidebar` pipeline.
+3. Старые unread после запуска/навигации не должны показываться без свежего роста title.
+4. В диагностике для исправленного случая должна появиться строка `title-correlated first unread`.
+
+Проверки: `node src/__tests__/notifHooks.test.cjs`, `node src/__tests__/maxTitleFallback.test.cjs`, `node src/__tests__/integration.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `npm run lint`, `npm run build`.
+
+### v1.2.32 — MAX sidebar больше не принимает исходящее/старое превью за новое входящее
+
+Дата: 30 июня 2026.
+Кто нашёл: пользователь по живому кейсу с собственным MAX-сообщением; Codex по `system-diagnostics-report.json`, `chatcenter.log`, `main/preloads/hooks/max.hook.js` и `src/utils/consoleMessageHandler.js`.
+
+Проблема: пользователь сам отправил MAX-сообщение клиенту (`перезвонить или случайно набрал?`), а ChatCenter показал это как входящее уведомление. В диагностике цепочка была нормальной уже после входа в pipeline: `__CC_NOTIF__ -> звук -> app:custom-notify -> NotifManager show`. Ошибка была раньше: источник `src=max-sidebar` взял изменившееся preview из списка чатов и пометил его как новое событие.
+
+Что показали факты:
+- в логе было `Источник: ... | __CC_NOTIF__ | ... src=max-sidebar`;
+- дальше renderer ставил `fromNotifAPI=true`;
+- `max-sidebar` не является Notification API MAX, а DOM-наблюдателем за списком чатов;
+- список чатов не знает направление сообщения и раньше сравнивал только текст preview;
+- собственная отправка или переотрисовка старой строки могла выглядеть как новое входящее.
+
+Что изменено:
+- `main/preloads/hooks/max.hook.js`: `_maxRowInfo()` теперь возвращает `unread`;
+- `max-sidebar` хранит baseline `{ body, unread }` по строке чата;
+- `__CC_NOTIF__ src=max-sidebar` отправляется только если unread-бейдж строки вырос;
+- если preview изменился, но unread не вырос, baseline обновляется, а диагностика пишет `max-sidebar: skip no unread increase`;
+- `src/utils/consoleMessageHandler.js`: `src=max-sidebar` больше не получает `fromNotifAPI=true`.
+
+Почему так безопаснее: проблема не в словах, телефонах, PDF или тексте клиента. Клиент может написать любой текст. Надёжный признак для sidebar fallback — не изменение preview, а рост непрочитанного бейджа в этой строке. Основные пути MAX Notification API, SW showNotification, активный chat observer, звук, ribbon и аватарки не отключались.
+
+Как должно работать:
+1. Свои исходящие MAX-сообщения обновляют preview, но не создают ribbon/звук, если unread не вырос.
+2. Реальные входящие, которые MAX отдаёт через Notification API/SW/active observer, проходят как раньше.
+3. Sidebar остаётся запасным путём только для строк, где реально появился новый unread.
+4. В диагностике видно причину пропуска: `max-sidebar: skip no unread increase`.
+
+Проверки: `node src/__tests__/notifHooks.test.cjs`, `node src/__tests__/integration.test.cjs`, `npm run lint`, `node src/__tests__/fileSizeLimits.test.cjs`.
+
+### v1.2.31 — диагностика сохраняет отчёт при закрытии и открывает последний сохранённый отчёт
+
+Дата: 30 июня 2026.
+Кто нашёл: пользователь по проверке настройки "Диагностика" после закрытия маленькой панели; Codex по файлам `useDiagnosticsSession.js`, `SystemDiagnosticsModal.jsx`, `main/utils/systemDiagnostics.js` и фактическому `userData/system-diagnostics-report.json`.
+
+Проблема: пользователь закрывал маленькую панель диагностики кнопкой `Закрыть`, потом открывал диагностику в настройках и видел `выключена · 0` и пустую live-ленту. Это выглядело как потеря отчёта. На диске при этом мог лежать сохранённый `system-diagnostics-report.json`, но UI показывал только текущую память React-сессии, а она сбрасывалась через `resetDiagnosticsSession()`. Вторая часть проблемы: большая модалка не читала последний сохранённый отчёт с диска при открытии.
+
+Что увидели в проверке:
+- `system-diagnostics-report.json` существовал и содержал `diagnosticsSession` с 210 событиями;
+- `ai-errors.log` был пустой, значит проблема не в AI-логе;
+- `useDiagnosticsSession.close()` сбрасывал сессию без сохранения;
+- `SystemDiagnosticsModal` умел сохранять новый снимок, но не умел подгружать последний сохранённый JSON;
+- настройки показывали только текущий буфер, поэтому после reset было `0`.
+
+Что изменено:
+- `useDiagnosticsSession.js`: `close()` теперь перед полным закрытием сохраняет активную или накопленную сессию; если сохранение упало, сессия не сбрасывается и ошибка остаётся на экране;
+- `main/utils/systemDiagnostics.js`: добавлено чтение последнего `system-diagnostics-report.json`;
+- `main/handlers/mainIpcHandlers.js`: добавлен IPC `app:diagnostics-read-report`;
+- `SystemDiagnosticsModal.jsx`: при открытии читает последний сохранённый отчёт и показывает его live-ленту, если текущая сессия пустая;
+- `SettingsPanel.jsx`: исправлена отображаемая версия приложения на `v1.2.31`;
+- тесты IPC/UI/main diagnostics обновлены под новый сценарий.
+
+Как должно работать:
+1. Пользователь включает запись диагностики.
+2. Диагностика собирает события в маленькой панели.
+3. Если пользователь нажимает `Закрыть`, приложение сначала сохраняет отчёт, потом скрывает панель.
+4. Если пользователь снова открывает `🩺 Диагностика системы`, окно подгружает последний сохранённый отчёт.
+5. Live-лента показывает сохранённые события, даже если текущая фоновая запись уже выключена.
+6. `Очистить экран` по-прежнему чистит только экран/буфер, не `chatcenter.log` и не `ai-errors.log`.
+
+Почему так безопаснее: исправление не меняет уведомления, MAX fallback, звук, dedup, WebView hooks и native backend. Оно меняет только жизненный цикл диагностического отчёта: перед закрытием не теряем буфер и при повторном открытии показываем файл с диска.
+
+Проверки:
+- `node src/__tests__/diagnosticsSession.test.cjs`;
+- `node src/__tests__/systemDiagnosticsMain.test.cjs`;
+- `node src/__tests__/systemDiagnosticsUi.test.cjs`;
+- `node src/__tests__/ipcChannels.test.cjs`;
+- `npm run lint`;
+- `npm run check-memory`.
 
 ### v1.2.30 — диагностика упрощена: один блок управления, глубокая проверка всегда включена
 

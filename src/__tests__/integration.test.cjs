@@ -159,6 +159,11 @@ test('Telegram: сообщение от __CC_NOTIF__ → pass (fromNotifAPI)', f
   assert(r.finalText === 'Привет')
 })
 
+test('MAX sidebar: __CC_NOTIF__ не считается Notification API', function() {
+  var handlerCode = fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8')
+  assert(handlerCode.includes("data.src !== 'max-sidebar'"), 'max-sidebar должен идти как DOM fallback, а не trusted Notification API')
+})
+
 test('WhatsApp: alt-текст "default-contact-refreshed" (msg) → spam', function() {
   var r = processMessage('wa', 'default-contact-refreshed', null)
   assert(r.action === 'spam')

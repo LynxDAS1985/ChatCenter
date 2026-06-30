@@ -1,5 +1,9 @@
 # Ловушки: кастомные уведомления (Messenger Ribbon)
 
+## 🔴 MAX: sidebar preview принимал своё исходящее сообщение за входящее (v1.2.32)
+
+Кейс: своё MAX-сообщение пришло как ribbon, потому что `__CC_NOTIF__ src=max-sidebar` считался `fromNotifAPI=true`. Решение: `max-sidebar` хранит `{ body, unread }`, шлёт уведомление только при росте unread и пишет `max-sidebar: skip no unread increase` на preview без роста unread. Слова не блокируются; Notification API/SW/active observer, звук, avatar и другие мессенджеры не отключались. Подробно: `.memory-bank/features.md` v1.2.32.
+
 ---
 
 ## 🔴 MAX: скрытый reset title-state после v1.2.26 снова запускал старый sidebar-preview (v1.2.27)

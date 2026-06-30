@@ -4,7 +4,7 @@
 (function() {
   if (window.__cc_notif_hooked) return;
   window.__cc_notif_hooked = true;
-  window.__cc_notif_log = window.__cc_notif_log || [];
+  window.__cc_notif_log = window.__cc_notif_log || []; var _maxLastTitleUnread = 0, _maxRecentTitleGrowTs = 0;
   function _log(status, title, body, tag, icon, reason, enrichedTitle) {
     var e = { ts: Date.now(), status: status, title: title || '', body: (body || '').slice(0, 200), tag: tag || '', reason: reason || '', enrichedTitle: enrichedTitle || '' };
     if (icon) e.hasIcon = true;
@@ -63,6 +63,7 @@
     } catch(e) {}
     return '';
   }
+  function _maxTrackTitleUnread() { var m = String(document.title || '').match(/^(\d{1,3})\s+/), c = m ? (parseInt(m[1], 10) || 0) : 0; if (c > _maxLastTitleUnread) _maxRecentTitleGrowTs = Date.now(); if (c || _maxLastTitleUnread) _maxLastTitleUnread = c; }
   function _findAvatar(name) {
     if (!name) return '';
     try {
@@ -226,13 +227,7 @@
   var _ce = document.createElement.bind(document);
   document.createElement = function(tag) { var el = _ce.apply(document, arguments); if (tag && tag.toLowerCase() === 'audio') { el.volume = 0; el.muted = true; } return el; };
   ['AudioContext','webkitAudioContext'].forEach(function(n) { var _C = window[n]; if (!_C) return; var _g = _C.prototype.createGain; _C.prototype.createGain = function() { var g = _g.call(this); g.gain.value = 0; return g; }; });
-  // === SIDEBAR WATCHER (v1.2.11) ===
-  // У MAX нет рабочего ServiceWorker в Electron-webview (офиц. док.: webview нестабилен, SW не регистрируется,
-  // в журнале 222× "Operation has been aborted"). Значит showNotification не вызывается и __CC_NOTIF__ не приходит,
-  // а заголовок вкладки считает непрочитанные ЧАТЫ, не сообщения → 2-е/3-е сообщение в одном чате терялось.
-  // Решение (как у whatsapp.hook.js _sidebarObserver): следим за списком чатов и на изменение превью шлём
-  // __CC_NOTIF__ на КАЖДОЕ сообщение. Дедуп и warm-up делает пайплайн (consoleMessageHandler). Заголовок-fallback
-  // остаётся аварийным (его guard сам пропускает себя, если ribbon уже показан этим путём).
+  // === SIDEBAR WATCHER === запасной путь: preview + рост unread, не просто изменение текста.
   var _maxLastList = {};
   function _maxSearchState() {
     try {
@@ -242,13 +237,21 @@
         if (!value) continue;
         var style = window.getComputedStyle ? window.getComputedStyle(n) : null;
         if (style && (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')) continue;
-        var ph = ((n.getAttribute && (n.getAttribute('placeholder') || n.getAttribute('aria-label') || n.getAttribute('data-placeholder'))) || '').toLowerCase(),
-            role = ((n.getAttribute && n.getAttribute('role')) || '').toLowerCase(), box = n.getBoundingClientRect ? n.getBoundingClientRect() : null;
+        var ph = ((n.getAttribute && (n.getAttribute('placeholder') || n.getAttribute('aria-label') || n.getAttribute('data-placeholder'))) || '').toLowerCase(), role = ((n.getAttribute && n.getAttribute('role')) || '').toLowerCase(), box = n.getBoundingClientRect ? n.getBoundingClientRect() : null;
         if (box && (box.width < 20 || box.height < 10)) continue;
         var leftSide = !box || box.left < Math.max(520, window.innerWidth * 0.45), looksSearch = role === 'searchbox' || /search|поиск|найти/.test(ph) || leftSide;
         if (looksSearch) return { active: true, value: value.slice(0, 40) };
       }
     } catch(e) {} return { active: false, value: '' };
+  }
+  function _maxUnreadInfo(row) {
+    var best = 0;
+    try { var nodes = [row].concat(Array.prototype.slice.call(row.querySelectorAll('span, div, p, [class*="badge" i], [class*="counter" i], [class*="unread" i]')));
+      for (var i = 0; i < nodes.length && i < 80; i++) { var n = nodes[i], c = (typeof n.className === 'string' ? n.className : ''), t = (n.textContent || '').replace(/\s+/g, ' ').trim();
+        if (/badge|counter|unread|indicator/i.test(c) && /^\d{1,3}$/.test(t)) best = Math.max(best, parseInt(t, 10) || 0);
+        else if (/badge|unread|indicator/i.test(c) && !t) best = Math.max(best, 1);
+      } } catch(e) {}
+    return best;
   }
   function _maxRowInfo(row) {
     var leaves = row.querySelectorAll('span, div, p'), sender = '', body = '';
@@ -257,32 +260,30 @@
       var t = (n.textContent || '').replace(/\s+/g, ' ').trim();
       if (t.length < 2 || t.length > 200) continue;
       var c = (typeof n.className === 'string' ? n.className : '');
-      if (/badge|indicator|meta|counter/i.test(c)) continue;        // бейдж/время — не имя и не тело
+      if (/badge|indicator|meta|counter/i.test(c)) continue;
       if (!sender && /title|name/i.test(c)) { sender = t; continue; }
-      if (/title|name/i.test(c)) continue;                          // прочие варианты имени
+      if (/title|name/i.test(c)) continue;
       if (!body && /text|message|preview/i.test(c) && t !== sender && !/^\d{1,4}$/.test(t)) body = t;
     }
-    return { sender: sender, body: body };
+    return { sender: sender, body: body, unread: _maxUnreadInfo(row) };
   }
-  function _maxScanList(root, emit) {
-    var search = _maxSearchState();
-    if (search.active && emit) {
-      console.log('__CC_DIAG__max-sidebar: search active skip emit | value="' + search.value + '"');
-      emit = false;
-    }
+  function _maxScanList(root, emit) { _maxTrackTitleUnread(); var search = _maxSearchState();
+    if (search.active && emit) { console.log('__CC_DIAG__max-sidebar: search active skip emit | value="' + search.value + '"'); emit = false; }
     var rows = root.querySelectorAll('[class*="wrapper--withActions"], [role="listitem"], [role="presentation"]');
     for (var i = 0; i < rows.length && i < 60; i++) {
       var info = _maxRowInfo(rows[i]);
       if (!info.sender || !info.body || info.body === info.sender) continue;
       if (_isSpam(info.body)) continue;
-      var prev = _maxLastList[info.sender];
-      if (info.body === prev) continue;
-      var firstSeen = (prev === undefined);
-      _maxLastList[info.sender] = info.body;
-      if (firstSeen || !emit) continue;                             // первый проход — не шумим существующими чатами
+      var prev = _maxLastList[info.sender], prevBody = (prev && typeof prev === 'object') ? prev.body : prev, prevUnread = (prev && typeof prev === 'object') ? (prev.unread || 0) : 0;
+      var firstSeen = (prev === undefined), unreadIncreased = info.unread > prevUnread, bodyChanged = info.body !== prevBody;
+      if (!bodyChanged && !unreadIncreased) continue;
+      _maxLastList[info.sender] = { body: info.body, unread: info.unread };
+      var titleCorrelatedFirst = firstSeen && unreadIncreased && (Date.now() - _maxRecentTitleGrowTs < 3000);
+      if ((firstSeen && !titleCorrelatedFirst) || !emit) continue; if (titleCorrelatedFirst) console.log('__CC_DIAG__max-sidebar: title-correlated first unread | sender="' + info.sender.slice(0,30) + '" unread=' + info.unread + ' body="' + info.body.slice(0,40) + '"');
+      if (!unreadIncreased) { console.log('__CC_DIAG__max-sidebar: skip no unread increase | sender="' + info.sender.slice(0,30) + '" unread=' + info.unread + ' prev=' + prevUnread + ' body="' + info.body.slice(0,40) + '"'); continue; }
       var icon = _findAvatarIn(rows[i]);
       _log('passed', info.sender, info.body, '', icon, '', info.sender);
-      console.log('__CC_NOTIF__' + JSON.stringify({ t: info.sender, b: info.body, i: icon || '', g: '', src: 'max-sidebar' }));
+      console.log('__CC_NOTIF__' + JSON.stringify({ t: info.sender, b: info.body, i: icon || '', g: '', src: 'max-sidebar', u: info.unread }));
     }
   }
   setTimeout(function() {
@@ -290,8 +291,7 @@
     try { _maxScanList(_root(), false); } catch(e) {}              // первичная заливка _maxLastList без уведомлений
     var _dt = 0;
     try {
-      new MutationObserver(function() { clearTimeout(_dt); _dt = setTimeout(function() { try { _maxScanList(_root(), true); } catch(e) {} }, 350); })
-        .observe(document.body, { childList: true, subtree: true, characterData: true });
+      new MutationObserver(function() { clearTimeout(_dt); _dt = setTimeout(function() { try { _maxScanList(_root(), true); } catch(e) {} }, 350); }).observe(document.body, { childList: true, subtree: true, characterData: true });
       console.log('__CC_DIAG__max-sidebar: observer attached');
     } catch(e) {}
   }, 8000);

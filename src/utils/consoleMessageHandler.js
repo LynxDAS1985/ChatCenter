@@ -385,12 +385,13 @@ export function createConsoleMessageHandler(deps) {
                 }
                 rememberExtraAvatar(messengerId, extra, text)
                 applySenderAvatarFallback(extra, senderCacheRef.current, messengerId, traceNotif, text)
-                extra.fromNotifAPI = true
+                extra.fromNotifAPI = data.src !== 'max-sidebar'
+                traceNotif('source', 'info', messengerId, text, `notif trust | src=${data.src || 'legacy'} fromNotifAPI=${extra.fromNotifAPI}`)
                 if (extra.senderName) notifSenderTsRef.current[messengerId + ':' + extra.senderName.slice(0, 30).toLowerCase()] = Date.now()
                 notifMidTsRef.current[messengerId] = Date.now()
                 handleNewMessage(messengerId, text, extra)
               }).catch(() => {
-                extra.fromNotifAPI = true
+                extra.fromNotifAPI = data.src !== 'max-sidebar'
                 handleNewMessage(messengerId, text, extra)
               })
             return // НЕ вызываем handleNewMessage синхронно — ждём конвертации
@@ -409,9 +410,11 @@ export function createConsoleMessageHandler(deps) {
         // Кэш sender
         rememberExtraAvatar(messengerId, extra, text)
         applySenderAvatarFallback(extra, senderCacheRef.current, messengerId, traceNotif, text)
-        // v0.58.0: fromNotifAPI=true → пропускаем viewing-блок
-        // Если мессенджер сам вызвал showNotification — пользователь НЕ видит этот чат
-        extra.fromNotifAPI = true
+        // v1.2.32: max-sidebar — это DOM fallback списка чатов, а не Notification API.
+        // Ему нельзя давать абсолютное доверие showNotification: он может видеть исходящее
+        // или старый preview после перестройки списка.
+        extra.fromNotifAPI = data.src !== 'max-sidebar'
+        traceNotif('source', 'info', messengerId, text, `notif trust | src=${data.src || 'legacy'} fromNotifAPI=${extra.fromNotifAPI}`)
         // v0.60.0 Решение #2: записываем sender+timestamp — блокируем __CC_MSG__ от того же sender
         if (extra.senderName) {
           notifSenderTsRef.current[messengerId + ':' + extra.senderName.slice(0, 30).toLowerCase()] = Date.now()
