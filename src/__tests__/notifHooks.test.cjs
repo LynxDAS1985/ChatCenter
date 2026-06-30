@@ -54,6 +54,8 @@ test('MAX: _appTitles regex', () => assert(maxCode.includes('_appTitles'), 'MAX 
 test('MAX: sticker extraction', () => assert(maxCode.includes('_extractSticker') || maxCode.includes('sticker'), 'MAX должен извлекать стикеры'))
 test('MAX: avatar extraction supports data/canvas fallback', () => assert(maxCode.includes("media.src.startsWith('data:')") && maxCode.includes("toDataURL('image/jpeg'"), 'MAX должен передавать data/canvas avatar, а не только http'))
 test('MAX: http avatar is returned before canvas export', () => assert(maxCode.indexOf("media.src.startsWith('http')") < maxCode.indexOf("drawImage(media"), 'MAX должен возвращать http avatar до canvas, чтобы CORS не терял URL'))
+test('MAX: __CC_NOTIF__ помечает внутренний source', () => assert(maxCode.includes("src: 'max-notification-api'") && maxCode.includes("src: 'max-sw-showNotification'") && maxCode.includes("src: 'max-sidebar'"), 'MAX должен разделять notification-api / sw / sidebar'))
+test('MAX: sidebar не шлёт ribbon при активном поиске', () => assert(maxCode.includes('function _maxSearchState') && maxCode.includes('search active skip emit') && maxCode.includes('emit = false'), 'MAX sidebar должен обновлять baseline без __CC_NOTIF__ во время поиска'))
 
 const tgCode = fs.readFileSync(path.join(hooksDir, 'telegram.hook.js'), 'utf8')
 test('TG: НЕ содержит _maxPhantom', () => assert(!tgCode.includes('_maxPhantom'), 'Telegram НЕ должен иметь MAX-фильтры'))

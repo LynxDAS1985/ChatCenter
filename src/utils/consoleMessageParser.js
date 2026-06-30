@@ -35,7 +35,7 @@ export function parseConsoleMessage(msg) {
   if (msg.startsWith('__CC_NOTIF__')) {
     try {
       const data = JSON.parse(msg.slice(12))
-      return { type: 'notification', title: data.t || '', body: data.b || '', icon: data.i || '', tag: data.g || '' }
+      return { type: 'notification', title: data.t || '', body: data.b || '', icon: data.i || '', tag: data.g || '', source: data.src || '' }
     } catch (e) {
       return { type: 'notification_error', error: e.message }
     }

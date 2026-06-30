@@ -18,7 +18,7 @@ function parseConsoleMessage(msg) {
   if (msg.startsWith('__CC_SW_UNREGISTERED__:')) return { type: 'sw_unregistered', count: parseInt(msg.split(':')[1], 10) || 0 }
   if (msg.startsWith('__CC_NOTIF_HOOK_OK__')) return { type: 'notif_hook_ok' }
   if (msg.startsWith('__CC_NOTIF__')) {
-    try { var d = JSON.parse(msg.slice(12)); return { type: 'notification', title: d.t||'', body: d.b||'', icon: d.i||'', tag: d.g||'' } }
+    try { var d = JSON.parse(msg.slice(12)); return { type: 'notification', title: d.t||'', body: d.b||'', icon: d.i||'', tag: d.g||'', source: d.src||'' } }
     catch(e) { return { type: 'notification_error', error: e.message } }
   }
   if (msg.startsWith('__CC_MSG__')) return { type: 'message', text: msg.slice(10).trim() }
@@ -60,6 +60,10 @@ console.log('\\n── NOTIF: ──')
 test('JSON уведомление', function() {
   var r = parseConsoleMessage('__CC_NOTIF__{"t":"Елена","b":"Привет","i":"blob:...","g":"tag123"}')
   assert(r.type === 'notification' && r.title === 'Елена' && r.body === 'Привет' && r.tag === 'tag123')
+})
+test('NOTIF source маркер', function() {
+  var r = parseConsoleMessage('__CC_NOTIF__{"t":"MAX","b":"Hi","src":"max-sidebar"}')
+  assert(r.type === 'notification' && r.source === 'max-sidebar')
 })
 test('Битый JSON', function() { var r = parseConsoleMessage('__CC_NOTIF__{broken}'); assert(r.type === 'notification_error') })
 

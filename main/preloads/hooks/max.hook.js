@@ -164,7 +164,7 @@
         return;
       }
       _log('passed', title, body, tag, icon, '', enriched.title);
-      console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon || '', g: tag }));
+      console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon || '', g: tag, src: 'max-notification-api' }));
     } catch(e) {}
   };
   window.Notification.permission = 'granted';
@@ -195,7 +195,7 @@
           return Promise.resolve();
         }
         _log('passed', title, body, tag, icon, '', enriched.title);
-        console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon || '', g: tag }));
+        console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon || '', g: tag, src: 'max-sw-showNotification' }));
       } catch(e) {}
       return Promise.resolve();
     };
@@ -234,6 +234,22 @@
   // __CC_NOTIF__ на КАЖДОЕ сообщение. Дедуп и warm-up делает пайплайн (consoleMessageHandler). Заголовок-fallback
   // остаётся аварийным (его guard сам пропускает себя, если ribbon уже показан этим путём).
   var _maxLastList = {};
+  function _maxSearchState() {
+    try {
+      var nodes = document.querySelectorAll('input, textarea, [contenteditable="true"], [role="searchbox"]');
+      for (var i = 0; i < nodes.length && i < 40; i++) {
+        var n = nodes[i], value = ((n.value !== undefined ? n.value : n.textContent) || '').replace(/\s+/g, ' ').trim();
+        if (!value) continue;
+        var style = window.getComputedStyle ? window.getComputedStyle(n) : null;
+        if (style && (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')) continue;
+        var ph = ((n.getAttribute && (n.getAttribute('placeholder') || n.getAttribute('aria-label') || n.getAttribute('data-placeholder'))) || '').toLowerCase(),
+            role = ((n.getAttribute && n.getAttribute('role')) || '').toLowerCase(), box = n.getBoundingClientRect ? n.getBoundingClientRect() : null;
+        if (box && (box.width < 20 || box.height < 10)) continue;
+        var leftSide = !box || box.left < Math.max(520, window.innerWidth * 0.45), looksSearch = role === 'searchbox' || /search|поиск|найти/.test(ph) || leftSide;
+        if (looksSearch) return { active: true, value: value.slice(0, 40) };
+      }
+    } catch(e) {} return { active: false, value: '' };
+  }
   function _maxRowInfo(row) {
     var leaves = row.querySelectorAll('span, div, p'), sender = '', body = '';
     for (var i = 0; i < leaves.length; i++) {
@@ -249,6 +265,11 @@
     return { sender: sender, body: body };
   }
   function _maxScanList(root, emit) {
+    var search = _maxSearchState();
+    if (search.active && emit) {
+      console.log('__CC_DIAG__max-sidebar: search active skip emit | value="' + search.value + '"');
+      emit = false;
+    }
     var rows = root.querySelectorAll('[class*="wrapper--withActions"], [role="listitem"], [role="presentation"]');
     for (var i = 0; i < rows.length && i < 60; i++) {
       var info = _maxRowInfo(rows[i]);
@@ -261,7 +282,7 @@
       if (firstSeen || !emit) continue;                             // первый проход — не шумим существующими чатами
       var icon = _findAvatarIn(rows[i]);
       _log('passed', info.sender, info.body, '', icon, '', info.sender);
-      console.log('__CC_NOTIF__' + JSON.stringify({ t: info.sender, b: info.body, i: icon || '', g: '' }));
+      console.log('__CC_NOTIF__' + JSON.stringify({ t: info.sender, b: info.body, i: icon || '', g: '', src: 'max-sidebar' }));
     }
   }
   setTimeout(function() {

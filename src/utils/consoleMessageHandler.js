@@ -331,7 +331,7 @@ export function createConsoleMessageHandler(deps) {
     try {
       const data = JSON.parse(msg.slice(12)) // после '__CC_NOTIF__'
       const text = (data.b || '').trim()
-      traceNotif('source', 'info', messengerId, text, `__CC_NOTIF__ | t="${(data.t||'').slice(0,20)}" icon=${!!data.i} tag=${!!data.g}`)
+      traceNotif('source', 'info', messengerId, text, `__CC_NOTIF__ | t="${(data.t||'').slice(0,20)}" icon=${!!data.i} tag=${!!data.g} src=${data.src || ''}`)
       // v0.79.0: Спам-фильтр из messengerConfigs.js (единый для всех путей)
       if (isSpamText(text, 'notif')) {
         traceNotif('spam', 'block', messengerId, text, 'спам-фильтр __CC_NOTIF__')
@@ -370,6 +370,7 @@ export function createConsoleMessageHandler(deps) {
         const extra = {}
         if (data.t) extra.senderName = data.t
         if (data.g) extra.chatTag = data.g
+        if (data.src) extra.notifSource = data.src
         // v0.77.2: blob icon → конвертируем ПЕРЕД handleNewMessage
         if (data.i && data.i.startsWith('blob:')) {
           const wv = webviewRefs.current[messengerId]
