@@ -45,7 +45,7 @@ function markerColor(event) {
   return '#7dd3fc'
 }
 
-export default function DiagnosticsFloatingPanel({ session, onPause, onResume, onStop, onExpand, onSave, onCopy, onClear, onToggleDeep }) {
+export default function DiagnosticsFloatingPanel({ session, onPause, onResume, onStop, onExpand, onSave, onCopy, onClear, onCloseAll, onToggleDeep }) {
   if (!session?.active && !session?.events?.length) return null
   const status = session.active ? (session.paused ? 'пауза' : 'запись') : 'остановлена'
   const latest = (session.events || []).slice(-5).reverse()
@@ -56,6 +56,7 @@ export default function DiagnosticsFloatingPanel({ session, onPause, onResume, o
         <b style={{ fontSize: 14 }}>Диагностика</b>
         <span style={{ ...css.muted, marginRight: 'auto' }}>{status} · {session.summary?.events || 0}</span>
         <Button onClick={onExpand}>Развернуть</Button>
+        <Button kind="danger" onClick={onCloseAll} title="Остановить и скрыть диагностику полностью">Закрыть</Button>
       </div>
       <div style={css.body}>
         <div style={css.row}>

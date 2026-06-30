@@ -305,7 +305,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v1.2.28 (30 июня 2026)
+**Текущая версия**: v1.2.29 (30 июня 2026)
 
 ---
 
@@ -744,6 +744,6 @@ Auto-memory — постоянная память Claude между сессия
 
 ---
 
-**Версия проекта**: v1.2.28 (30 июня 2026)
+**Версия проекта**: v1.2.29 (30 июня 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
-**Последнее обновление**: 30 июня 2026 — **v1.2.28 (MAX: sidebar не создаёт фантомы при поиске)**: `__CC_NOTIF__` теперь несёт внутренний `src`, а MAX sidebar watcher во время активного поиска только обновляет baseline и пишет `max-sidebar: search active skip emit`, не создавая ribbon/звук из старого preview. Основные пути `max-notification-api`, `max-sw-showNotification`, `MAX-QUICK`, sender/text/avatar и звук для реальных сообщений не отключались. **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.
+**Последнее обновление**: 30 июня 2026 — **v1.2.29 (диагностика запускается только вручную)**: подтверждён текущий контроль v1.2.28 по MAX search phantom, а окно `Диагностика системы` приведено к явному управлению: открытие больше не стартует запись, дубли кнопок убраны, есть `Включить запись`, `Свернуть в фон`, `Развернуть` и `Закрыть` в маленькой панели. Общие логи `chatcenter.log` и `ai-errors.log` не очищаются этой диагностикой. **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.

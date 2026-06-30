@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import SystemDiagnosticsModal from './SystemDiagnosticsModal.jsx'
 import DiagnosticsFloatingPanel from './DiagnosticsFloatingPanel.jsx'
 import useDiagnosticsSession from '../hooks/useDiagnosticsSession.js'
@@ -9,10 +8,6 @@ export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeC
     onRunDeepCheck,
   })
 
-  useEffect(() => {
-    if (open) diagnostics.start()
-  }, [open])
-
   return (
     <>
       {open && <SystemDiagnosticsModal
@@ -21,16 +16,18 @@ export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeC
         diagnosticsSession={diagnostics.session}
         diagnosticsActions={diagnostics}
         onClose={onClose}
+        onMinimize={onClose}
       />}
       <DiagnosticsFloatingPanel
         session={diagnostics.session}
         onPause={diagnostics.pause}
         onResume={diagnostics.resume}
         onStop={diagnostics.stop}
-        onExpand={() => { diagnostics.start(); onOpen?.() }}
+        onExpand={() => onOpen?.()}
         onSave={diagnostics.save}
         onCopy={diagnostics.copy}
         onClear={diagnostics.clear}
+        onCloseAll={diagnostics.close}
         onToggleDeep={diagnostics.toggleDeep}
       />
     </>

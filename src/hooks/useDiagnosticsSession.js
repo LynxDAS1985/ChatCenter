@@ -9,6 +9,7 @@ import {
   markDiagnosticsError,
   markDiagnosticsSaved,
   pauseDiagnosticsSession,
+  resetDiagnosticsSession,
   resumeDiagnosticsSession,
   startDiagnosticsSession,
   stopDiagnosticsSession,
@@ -64,6 +65,7 @@ export default function useDiagnosticsSession({ getRuntimeContext, onRunDeepChec
   const pause = useCallback(() => setSession(prev => pauseDiagnosticsSession(prev)), [])
   const resume = useCallback(() => setSession(prev => resumeDiagnosticsSession(prev)), [])
   const clear = useCallback(() => setSession(prev => clearDiagnosticsScreen(prev)), [])
+  const close = useCallback(() => setSession(() => resetDiagnosticsSession()), [])
   const toggleDeep = useCallback(() => setSession(prev => toggleDiagnosticsDeepWebview(prev)), [])
 
   const stop = useCallback(async () => {
@@ -82,5 +84,5 @@ export default function useDiagnosticsSession({ getRuntimeContext, onRunDeepChec
     return text
   }, [])
 
-  return { session, start, pause, resume, stop, save, copy, clear, toggleDeep, refresh }
+  return { session, start, pause, resume, stop, save, copy, clear, close, toggleDeep, refresh }
 }

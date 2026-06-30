@@ -52,6 +52,12 @@ async function main() {
   s = mod.stopDiagnosticsSession(s)
   assert.strictEqual(s.active, false)
   assert.ok(s.stoppedAt)
+
+  s = mod.resetDiagnosticsSession(s)
+  assert.strictEqual(s.active, false)
+  assert.strictEqual(s.events.length, 0)
+  assert.strictEqual(s.sessionId, '')
+  assert.strictEqual(s.deepWebview, false)
 }
 
 main().catch(err => {

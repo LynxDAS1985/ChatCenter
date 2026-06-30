@@ -49,6 +49,10 @@ export function clearDiagnosticsScreen(session) {
   return { ...session, events: [], seenKeys: [], summary: { ...session.summary, events: 0, problems: 0, errors: 0, warnings: 0 } }
 }
 
+export function resetDiagnosticsSession() {
+  return createInitialDiagnosticsSession()
+}
+
 export function toggleDiagnosticsDeepWebview(session) {
   return { ...session, deepWebview: !session.deepWebview }
 }

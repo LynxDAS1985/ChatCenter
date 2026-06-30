@@ -83,6 +83,11 @@ test('Фоновая diagnostics session подключена', () => {
   assert(allAppCode.includes('useDiagnosticsSession'), 'DiagnosticsSessionHost должен подключать фоновую diagnostics session')
   assert(allAppCode.includes('<DiagnosticsFloatingPanel'), 'маленькая diagnostics panel должна быть в diagnostics host')
 })
+test('Diagnostics session не стартует сама при открытии модалки', () => {
+  assert(!diagnosticsHostCode.includes('if (open) diagnostics.start()'), 'открытие окна не должно включать запись автоматически')
+  assert(!diagnosticsHostCode.includes('diagnostics.start(); onOpen'), 'разворачивание маленькой панели не должно перезапускать запись')
+  assert(diagnosticsHostCode.includes('onCloseAll={diagnostics.close}'), 'маленькая панель должна уметь закрыть диагностику полностью')
+})
 
 // ── Использует модульные функции ──
 console.log('\\n── Использует модульные функции: ──')
