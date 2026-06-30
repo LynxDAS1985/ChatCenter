@@ -13,7 +13,6 @@ import {
   resumeDiagnosticsSession,
   startDiagnosticsSession,
   stopDiagnosticsSession,
-  toggleDiagnosticsDeepWebview,
 } from '../utils/diagnosticsSession.js'
 
 const DIAGNOSTICS_TICK_MS = 3000
@@ -66,7 +65,6 @@ export default function useDiagnosticsSession({ getRuntimeContext, onRunDeepChec
   const resume = useCallback(() => setSession(prev => resumeDiagnosticsSession(prev)), [])
   const clear = useCallback(() => setSession(prev => clearDiagnosticsScreen(prev)), [])
   const close = useCallback(() => setSession(() => resetDiagnosticsSession()), [])
-  const toggleDeep = useCallback(() => setSession(prev => toggleDiagnosticsDeepWebview(prev)), [])
 
   const stop = useCallback(async () => {
     const stopped = stopDiagnosticsSession(sessionRef.current)
@@ -84,5 +82,5 @@ export default function useDiagnosticsSession({ getRuntimeContext, onRunDeepChec
     return text
   }, [])
 
-  return { session, start, pause, resume, stop, save, copy, clear, close, toggleDeep, refresh }
+  return { session, start, pause, resume, stop, save, copy, clear, close, refresh }
 }

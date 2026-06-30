@@ -22,7 +22,7 @@ echo ""
 # удалены вместе с GramJS-интеграцией.
 TESTS=(
   isSpamText navigateToChat messengerConfigs monitorPreload overlayIcon
-  handleNewMessage messageProcessing mainProcess appStructure projectHealth
+  handleNewMessage messageProcessing mainProcess systemDiagnosticsUi appStructure projectHealth
   aiProviders consoleMessageParser ipcChannels fileSizeLimits memoryBankSizeLimits
   featuresReferences memoryLeaks notifHooks componentScope hookOrder
   mainImports mainRuntime unitRuntime buildContract

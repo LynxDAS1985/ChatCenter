@@ -1,12 +1,23 @@
+import { useEffect } from 'react'
 import SystemDiagnosticsModal from './SystemDiagnosticsModal.jsx'
 import DiagnosticsFloatingPanel from './DiagnosticsFloatingPanel.jsx'
 import useDiagnosticsSession from '../hooks/useDiagnosticsSession.js'
 
-export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeContext, onRunDeepCheck }) {
+export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeContext, onRunDeepCheck, onStatusChange }) {
   const diagnostics = useDiagnosticsSession({
     getRuntimeContext: () => runtimeContext || {},
     onRunDeepCheck,
   })
+  const eventCount = diagnostics.session.events?.length || 0
+
+  useEffect(() => {
+    onStatusChange?.({
+      active: !!diagnostics.session.active,
+      paused: !!diagnostics.session.paused,
+      events: eventCount,
+      lastSavedPath: diagnostics.session.lastSavedPath || '',
+    })
+  }, [onStatusChange, diagnostics.session.active, diagnostics.session.paused, diagnostics.session.lastSavedPath, eventCount])
 
   return (
     <>
@@ -20,6 +31,7 @@ export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeC
       />}
       <DiagnosticsFloatingPanel
         session={diagnostics.session}
+        onStart={diagnostics.start}
         onPause={diagnostics.pause}
         onResume={diagnostics.resume}
         onStop={diagnostics.stop}
@@ -28,7 +40,6 @@ export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeC
         onCopy={diagnostics.copy}
         onClear={diagnostics.clear}
         onCloseAll={diagnostics.close}
-        onToggleDeep={diagnostics.toggleDeep}
       />
     </>
   )

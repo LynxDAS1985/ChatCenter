@@ -6,6 +6,7 @@ async function main() {
 
   let s = mod.createInitialDiagnosticsSession()
   assert.strictEqual(s.active, false)
+  assert.strictEqual(s.deepWebview, true)
   s = mod.startDiagnosticsSession(s)
   assert.strictEqual(s.active, true)
   assert.strictEqual(s.paused, false)
@@ -57,7 +58,7 @@ async function main() {
   assert.strictEqual(s.active, false)
   assert.strictEqual(s.events.length, 0)
   assert.strictEqual(s.sessionId, '')
-  assert.strictEqual(s.deepWebview, false)
+  assert.strictEqual(s.deepWebview, true)
 }
 
 main().catch(err => {

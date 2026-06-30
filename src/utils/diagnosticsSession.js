@@ -5,7 +5,7 @@ export function createInitialDiagnosticsSession() {
   return {
     active: false,
     paused: false,
-    deepWebview: false,
+    deepWebview: true,
     sessionId: '',
     startedAt: '',
     stoppedAt: '',
@@ -24,7 +24,7 @@ export function startDiagnosticsSession(prev = createInitialDiagnosticsSession()
   const now = new Date().toISOString()
   return {
     ...createInitialDiagnosticsSession(),
-    deepWebview: !!prev.deepWebview,
+    deepWebview: true,
     active: true,
     paused: false,
     sessionId: `diag_${Date.now().toString(36)}`,
@@ -54,7 +54,7 @@ export function resetDiagnosticsSession() {
 }
 
 export function toggleDiagnosticsDeepWebview(session) {
-  return { ...session, deepWebview: !session.deepWebview }
+  return { ...session, deepWebview: true }
 }
 
 export function markDiagnosticsSaved(session, path) {

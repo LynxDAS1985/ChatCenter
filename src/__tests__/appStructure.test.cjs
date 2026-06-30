@@ -87,6 +87,9 @@ test('Diagnostics session не стартует сама при открытии
   assert(!diagnosticsHostCode.includes('if (open) diagnostics.start()'), 'открытие окна не должно включать запись автоматически')
   assert(!diagnosticsHostCode.includes('diagnostics.start(); onOpen'), 'разворачивание маленькой панели не должно перезапускать запись')
   assert(diagnosticsHostCode.includes('onCloseAll={diagnostics.close}'), 'маленькая панель должна уметь закрыть диагностику полностью')
+  assert(diagnosticsHostCode.includes('onStart={diagnostics.start}'), 'маленькая панель должна уметь снова запустить запись после стопа')
+  assert(!diagnosticsHostCode.includes('onToggleDeep'), 'глубокая WebView-проверка больше не должна быть ручным переключателем')
+  assert(code.includes('diagnosticsStatus') && code.includes('onStatusChange={setDiagnosticsStatus}'), 'настройки должны видеть статус фоновой диагностики')
 })
 
 // ── Использует модульные функции ──

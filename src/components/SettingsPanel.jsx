@@ -91,7 +91,7 @@ function playTestSound(color) {
   } catch {}
 }
 
-export default function SettingsPanel({ messengers, settings, onMessengersChange, onSettingsChange, onClose, onOpenSystemDiagnostics }) {
+export default function SettingsPanel({ messengers, settings, onMessengersChange, onSettingsChange, onClose, onOpenSystemDiagnostics, diagnosticsStatus }) {
   const [errorLog, setErrorLog] = useState(null)        // null = не загружен, '' = пуст, 'текст' = есть записи
   const [logLoading, setLogLoading] = useState(false)
   const [logClearing, setLogClearing] = useState(false)
@@ -140,6 +140,8 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
   }
 
   const theme = settings.theme || 'dark'
+  const diag = diagnosticsStatus || { active: false, paused: false, events: 0 }
+  const diagLabel = diag.active ? (diag.paused ? 'пауза' : 'включена') : 'выключена'
 
   return (
     <div
@@ -463,15 +465,15 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                 Файл: <code style={{ color: 'var(--cc-text-dim)' }}>userData/ai-errors.log</code> · Показаны последние 30 строк
               </p>
 
-              <button
-                onClick={onOpenSystemDiagnostics}
-                className="w-full py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer"
-                style={{ backgroundColor: 'rgba(56,189,248,0.12)', color: '#7dd3fc', border: '1px solid rgba(56,189,248,0.35)' }}
-                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.2)'}
-                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.12)'}
-              >
-                🩺 Диагностика системы
-              </button>
+              <div className="flex gap-2 items-stretch">
+                <button onClick={onOpenSystemDiagnostics} className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer" style={{ backgroundColor: 'rgba(56,189,248,0.12)', color: '#7dd3fc', border: '1px solid rgba(56,189,248,0.35)' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.2)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.12)'}>
+                  🩺 Диагностика системы
+                </button>
+                <div className="min-w-[96px] rounded-xl px-2.5 py-1.5 text-[10px] leading-tight" style={{ backgroundColor: diag.active ? 'rgba(34,197,94,0.12)' : 'var(--cc-hover)', color: diag.active ? '#86efac' : 'var(--cc-text-dimmer)', border: `1px solid ${diag.active ? 'rgba(34,197,94,0.35)' : 'var(--cc-border)'}` }} title="Статус фоновой записи диагностики">
+                  <div>Статус записи</div>
+                  <div className="font-semibold">{diagLabel} · {diag.events || 0}</div>
+                </div>
+              </div>
               <p className="text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>
                 Отдельный отчёт по приложению: цепочки событий, системный лог, подключения и WebView. Очистка внутри него не трогает chatcenter.log.
               </p>

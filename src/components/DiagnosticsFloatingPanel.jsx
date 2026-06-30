@@ -45,7 +45,7 @@ function markerColor(event) {
   return '#7dd3fc'
 }
 
-export default function DiagnosticsFloatingPanel({ session, onPause, onResume, onStop, onExpand, onSave, onCopy, onClear, onCloseAll, onToggleDeep }) {
+export default function DiagnosticsFloatingPanel({ session, onStart, onPause, onResume, onStop, onExpand, onSave, onCopy, onClear, onCloseAll }) {
   if (!session?.active && !session?.events?.length) return null
   const status = session.active ? (session.paused ? 'пауза' : 'запись') : 'остановлена'
   const latest = (session.events || []).slice(-5).reverse()
@@ -60,6 +60,7 @@ export default function DiagnosticsFloatingPanel({ session, onPause, onResume, o
       </div>
       <div style={css.body}>
         <div style={css.row}>
+          {!session.active && <Button kind="primary" onClick={onStart}>Запустить</Button>}
           {session.active && !session.paused && <Button onClick={onPause}>Пауза</Button>}
           {session.active && session.paused && <Button kind="primary" onClick={onResume}>Продолжить</Button>}
           {session.active && <Button kind="danger" onClick={onStop}>Стоп</Button>}
@@ -68,8 +69,7 @@ export default function DiagnosticsFloatingPanel({ session, onPause, onResume, o
           <Button onClick={onClear}>Очистить</Button>
         </div>
         <div style={css.row}>
-          <Button kind={session.deepWebview ? 'primary' : undefined} onClick={onToggleDeep}>Глубокая WebView: {session.deepWebview ? 'вкл' : 'выкл'}</Button>
-          <span style={css.muted}>{session.lastSavedPath ? 'отчёт сохранён' : 'автосохранение при стопе'}</span>
+          <span style={css.muted}>Глубокая WebView включена всегда · {session.lastSavedPath ? 'отчёт сохранён' : 'автосохранение при стопе'}</span>
         </div>
         {session.lastError && <div style={{ color: '#f87171', fontSize: 12 }}>{session.lastError}</div>}
         <div>
