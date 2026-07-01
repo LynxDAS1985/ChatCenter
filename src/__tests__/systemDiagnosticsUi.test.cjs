@@ -46,6 +46,9 @@ test('Настройки показывают статус записи рядо
   assert(settings.includes('Статус записи'), 'нет подписи статуса')
   assert(settings.includes('diagLabel'), 'нет вычисления статуса')
   assert(settings.includes('diagnosticsStatus'), 'SettingsPanel не принимает статус')
+  assert(settings.includes('savedDiagnosticsCount'), 'SettingsPanel должен помнить счётчик последнего сохранённого отчёта')
+  assert(settings.includes('app:diagnostics-read-report'), 'SettingsPanel должен читать последний diagnostics report')
+  assert(settings.includes('последний отчёт'), 'индикатор должен объяснять, что число взято из сохранённого отчёта')
 })
 
 test('MAX sidebar диагностика не режет полный decision payload', () => {
