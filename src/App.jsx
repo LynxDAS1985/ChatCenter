@@ -11,6 +11,7 @@ import { createWebviewSetup } from './utils/webviewSetup.js'
 import { markHealthPending } from './utils/connectionHealth.js'
 import { probeWebviewHealth } from './utils/webviewHealthProbe.js'
 import { probeBlackScreen } from './utils/webviewDiagnostics.js'
+import { runSelectedDiagnosticsDeepCheck } from './utils/runSelectedDiagnosticsDeepCheck.js'
 import {
   HEALTH_SCHEDULER_TICK_MS,
   selectConnectionHealthJobs,
@@ -561,9 +562,10 @@ export default function App() {
     nativeConnectionActionsRef.current?.refreshAll?.()
   }, [runWebviewHealthProbe])
 
-  const refreshProblematicConnections = useCallback(() => {
+  const refreshProblematicConnections = useCallback((target) => {
     const nativeProblemIds = []
     const webviewChecks = []
+    if (runSelectedDiagnosticsDeepCheck({ target, webviewRefs, messengersRef, runWebviewHealthProbe, traceNotif })) return
     setConnectionHealth(prev => {
       const next = { ...prev }
       for (const [id, item] of Object.entries(prev)) {
@@ -599,7 +601,7 @@ export default function App() {
     if (nativeProblemIds.length) {
       for (const id of nativeProblemIds) runNativeHealthCheck(id)
     }
-  }, [runNativeHealthCheck, runWebviewHealthProbe])
+  }, [runNativeHealthCheck, runWebviewHealthProbe, traceNotif])
 
   useEffect(() => {
     const runSchedulerTick = () => {

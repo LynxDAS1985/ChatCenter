@@ -43,7 +43,7 @@ export default function useDiagnosticsSession({ getRuntimeContext, onRunDeepChec
     const current = sessionRef.current
     if (!current.active || current.paused) return null
     try {
-      if ((opts.deep || current.deepWebview) && deepCheckRef.current) await Promise.resolve(deepCheckRef.current())
+      if ((opts.deep || current.deepWebview) && deepCheckRef.current) await Promise.resolve(deepCheckRef.current(current.target))
       const snapshot = await window.api?.invoke('app:diagnostics-snapshot')
       const report = analyzeSystemDiagnostics({ snapshot: snapshot || {}, runtimeContext: contextRef.current?.() || {} })
       setSession(prev => appendDiagnosticsReport(prev, report))

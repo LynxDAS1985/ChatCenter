@@ -7,6 +7,11 @@ const webviewSetup = fs.readFileSync('src/utils/webviewSetup.js', 'utf8')
 const consoleHandler = fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8')
 const diagnosticsSession = fs.readFileSync('src/utils/diagnosticsSession.js', 'utf8')
 const diagnosticsTargets = fs.readFileSync('src/utils/diagnosticsTargets.js', 'utf8')
+const diagnosticsHook = fs.readFileSync('src/hooks/useDiagnosticsSession.js', 'utf8')
+const webviewDiagnostics = fs.readFileSync('src/utils/webviewDiagnostics.js', 'utf8')
+const app = fs.readFileSync('src/App.jsx', 'utf8')
+const systemDiagnostics = fs.readFileSync('src/utils/systemDiagnostics.js', 'utf8')
+const selectedDeepCheck = fs.readFileSync('src/utils/runSelectedDiagnosticsDeepCheck.js', 'utf8')
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -78,4 +83,18 @@ test('MAX sidebar диагностика не режет полный decision p
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
+test('VK live diagnostics uses selected WebView deep-check path', () => {
+  assert(diagnosticsHook.includes('deepCheckRef.current(current.target)'), 'background diagnostics must pass selected target to deep check')
+  assert(app.includes('runSelectedDiagnosticsDeepCheck') && selectedDeepCheck.includes('const targetId = target?.tabId || target?.id') && selectedDeepCheck.includes('runDomProbe(webview, targetId, traceNotif)'), 'App must deep-probe the selected WebView, not only problematic connections')
+  assert(webviewDiagnostics.includes('export function runVkFullProbe') && webviewDiagnostics.includes('__CC_DIAG__vkFull'), 'VK full snapshot must be emitted through console-message diagnostics')
+  assert(webviewDiagnostics.includes('containerSelector') && webviewDiagnostics.includes('outgoing') && webviewDiagnostics.includes('header') && webviewDiagnostics.includes('sidebar'), 'vkFull must include container, outgoing flag, header/avatar and sidebar evidence')
+})
+
+test('VK diagnostic payload is kept full in report pipeline', () => {
+  assert(webviewSetup.includes('VK-DIAG|vkFull'), 'webviewSetup must keep full VK diagnostic text')
+  assert(diagnosticsSession.includes('VK-DIAG|vkFull'), 'diagnosticsSession must keep VK diagnostic events visible')
+  assert(systemDiagnostics.includes('vkfull'), 'systemDiagnostics must classify vkFull as WebView')
+})
+
+console.log('\nDiagnostics UI result: ' + passed + ' passed / ' + failed + ' failed / ' + (passed + failed) + ' total')
 if (failed > 0) process.exit(1)

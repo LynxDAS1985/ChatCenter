@@ -139,7 +139,7 @@ function traceEvent(row, index) {
   const text = row.text || ''
   const source = /MAX title-fallback/i.test(detail) ? 'title-fallback' : row.step || 'trace'
   const severity = row.type === 'block' || /max-title-active|icon=false|iconUrl=нет|iconData=нет/i.test(detail) ? 'warning' : 'info'
-  const maxLen = /max-sidebar/i.test(`${detail} ${text}`) ? 7000 : 700
+  const maxLen = /max-sidebar|VK-DIAG|vkFull/i.test(`${detail} ${text}`) ? 12000 : 700
   return {
     kind: row.step || 'trace',
     ts: row.ts || '',
@@ -190,7 +190,7 @@ export function buildDiagnosticsSessionEvents(report = {}, target = null) {
   }
   ;(report.chains || []).slice(-160).forEach((c, i) => events.push(chainEvent(c, i)))
   ;(report.runtime?.pipelineTrace || []).slice(-220)
-    .filter(row => /source|enrich|handle|dedup|ribbon|sound|error/i.test(row?.step || '') || /__CC_NOTIF__|MAX title-fallback|max-sidebar|NotifManager|avatar|icon|sound|звук/i.test(`${row?.detail || ''} ${row?.text || ''}`))
+    .filter(row => /source|enrich|handle|dedup|ribbon|sound|error/i.test(row?.step || '') || /__CC_NOTIF__|MAX title-fallback|max-sidebar|VK-DIAG|vkFull|NotifManager|avatar|icon|sound|звук/i.test(`${row?.detail || ''} ${row?.text || ''}`))
     .forEach((row, i) => events.push(traceEvent(row, i)))
   return events.filter(event => eventMatchesTarget(event, target))
 }

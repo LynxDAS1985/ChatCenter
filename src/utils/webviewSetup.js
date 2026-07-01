@@ -162,9 +162,9 @@ export function createWebviewSetup(deps) {
     if (!_skipDetail) {
       const icon = _traceTypeLabels[type] || '·'
       const label = _traceLabels[step] || step
-      const fullLogText = /max-sidebar/i.test(`${text || ''} ${detail || ''}`)
+      const fullLogText = /max-sidebar|VK-DIAG|vkFull/i.test(`${text || ''} ${detail || ''}`)
       const shortText = fullLogText ? (text || '') : (text || '').slice(0, 60)
-      const detailLimit = detail && (/MAX title-fallback|max-title-|max-sidebar|topRows=|chosenLeafs=|\[MAX-|MAX page-title-updated|\[IPC-MAX\]/.test(detail)) ? 7000 : 250
+      const detailLimit = detail && (/MAX title-fallback|max-title-|max-sidebar|topRows=|chosenLeafs=|\[MAX-|MAX page-title-updated|\[IPC-MAX\]|VK-DIAG|vkFull/.test(detail)) ? 12000 : 250
       const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, detailLimit) : ''}`
       try { window.api?.send('app:log', { level: 'TRACE', message: msg }) } catch {}
     }

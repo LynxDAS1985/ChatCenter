@@ -1,6 +1,51 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.40 (1 июля 2026)
+## Текущая версия: v1.2.41 (1 июля 2026)
+
+### v1.2.41 — VK: диагностика подключена к реальному renderer/WebView deep-check пути
+
+Дата: 1 июля 2026.
+Кто нашёл: пользователь по повторному VK-кейсу, где после перезапуска сообщения `Да хоть два`, `Раз`, `Два` были видны в VK-чате, но в сохранённой диагностике не было ни `[VK-DIAG]`, ни `vkFull`; Codex по сравнению `system-diagnostics-report.json`, `chatcenter.log` и кода `monitor.preload.cjs` / `webviewDiagnostics.js`.
+
+Проблема: v1.2.40 добавила подробную VK-диагностику в `monitor.preload.cjs`, но свежие отчёты показали, что реальная фоновая диагностика пользователя пишет старые строки `health/probe/blackscreen` из renderer `executeJavaScript`, а не строки `monitor-start`, `[VK-DIAG]` или `vkFull` из preload. То есть диагностика была правильной по идее, но подключена не к тому пути, который реально работал во время записи.
+
+Что было видно по фактам:
+- отчёт и `chatcenter.log` обновлялись после перезапуска приложения;
+- в них были VK `healthCheck`, `probe[doc]`, `probe[url]`, `probe[bubbles]`, `blackscreen`;
+- в них не было `[VK-DIAG]`, `vkFull`, `monitor-start: type=vk`;
+- сообщения пользователя на экране VK были видны, но диагностический JSON не показывал контейнер сообщений, incoming/outgoing, header/avatar и DOM-узлы;
+- значит чинить уведомления VK дальше было рискованно: не было доказательства, на каком участке теряется первое сообщение.
+
+Что изменено:
+- `src/utils/webviewDiagnostics.js`: добавлен `runVkFullProbe()`, который запускается через тот же renderer `executeJavaScript` путь, что уже писал `health/probe`;
+- `runDomProbe()` теперь дополнительно вызывает VK full snapshot для VK-вкладки;
+- `src/hooks/useDiagnosticsSession.js`: фоновая запись передаёт выбранную цель диагностики в deep-check;
+- `src/App.jsx`: deep-check теперь, если выбрана конкретная вкладка, проверяет именно её WebView, запускает `runDomProbe()` и отправляет `run-diagnostics` в WebView;
+- `src/utils/webviewSetup.js`: `VK-DIAG` и `vkFull` не режутся в `traceNotif` / `chatcenter.log`;
+- `src/utils/diagnosticsSession.js`: `VK-DIAG` и `vkFull` попадают в live-ленту и сохраняются длинным payload;
+- `src/utils/systemDiagnostics.js`: `vkFull` классифицируется как WebView-событие;
+- `src/__tests__/systemDiagnosticsUi.test.cjs`: добавлены проверки, что выбранная вкладка передаётся в deep-check, VK пишет `__CC_DIAG__vkFull`, а payload не режется.
+
+Почему выбрано именно так:
+1. Мы не меняем уведомления VK, звук, dedup и ribbon, пока не увидим точную цепочку.
+2. Реально работающий путь уже доказан логами: `health/probe/blackscreen` приходили именно от renderer `executeJavaScript`.
+3. Preload-путь мог быть старым, неактивным или не тем, который использует текущая запись; поэтому полагаться только на него нельзя.
+4. Выбранная вкладка теперь проверяется явно, а не только если она случайно попала в список проблемных подключений.
+5. `vkFull` пишет контейнер, header/avatar, sidebar, последние сообщения, `outgoing` и `outerHTML`, чтобы следующий разбор видел не догадку, а факты.
+6. Снимок не эмитит `new-message`, `__CC_MSG__` или `__CC_NOTIF__`, поэтому сам не создаёт фантомные уведомления.
+7. Полные строки нужны, потому что раньше обрезание скрывало именно те данные, по которым можно отличить bubble от header/sidebar.
+8. Сохранённый JSON теперь должен показать разрыв: VK DOM увидел сообщение, hook/console/pipeline его не передал, либо наоборот.
+9. Изменение изолировано в диагностике и не трогает рабочие пути MAX/Telegram/WhatsApp.
+10. Это закрывает ошибку v1.2.40: "диагностика добавлена, но в реальном отчёте её нет".
+
+Как должно работать:
+1. Пользователь открывает `Диагностика системы`, выбирает `ВКонтакте / VK WebView` и включает запись.
+2. Каждые 3 секунды запись запускает deep-check именно выбранной VK-вкладки.
+3. В `chatcenter.log`, live-ленте и `system-diagnostics-report.json` появляются строки `vkFull`.
+4. В `vkFull` должны быть `containerFound`, `containerSelector`, `header.sender`, `header.avatar`, `messages[]`, `outgoing`, `sidebar[]`, `outerHTML`.
+5. Если первое VK-сообщение снова не даст уведомление, следующий ИИ должен смотреть: есть ли это сообщение в `vkFull.messages`; если есть, дальше проверять `__CC_NOTIF__`, `__CC_MSG__`, `source`, `dedup`, `ribbon`, `sound`.
+
+Проверки: `node src/__tests__/systemDiagnosticsUi.test.cjs`, `node src/__tests__/systemDiagnostics.test.cjs`, `node src/__tests__/monitorPreload.test.cjs`, `npm run lint`, `npm run build`, `npm test`.
 
 ### v1.2.40 — VK: полная диагностика активного чата без изменения уведомлений
 
