@@ -14,6 +14,7 @@ import {
   startDiagnosticsSession,
   stopDiagnosticsSession,
 } from '../utils/diagnosticsSession.js'
+import { normalizeDiagnosticsTarget } from '../utils/diagnosticsTargets.js'
 
 const DIAGNOSTICS_TICK_MS = 3000
 
@@ -60,7 +61,10 @@ export default function useDiagnosticsSession({ getRuntimeContext, onRunDeepChec
     return () => clearInterval(timer)
   }, [session.active, session.paused, refresh])
 
-  const start = useCallback(() => setSession(prev => startDiagnosticsSession(prev)), [])
+  const start = useCallback((target) => setSession(prev => startDiagnosticsSession(prev, target || prev.target)), [])
+  const setTarget = useCallback((target) => {
+    setSession(prev => prev.active ? prev : { ...prev, target: normalizeDiagnosticsTarget(target) })
+  }, [])
   const pause = useCallback(() => setSession(prev => pauseDiagnosticsSession(prev)), [])
   const resume = useCallback(() => setSession(prev => resumeDiagnosticsSession(prev)), [])
   const clear = useCallback(() => setSession(prev => clearDiagnosticsScreen(prev)), [])
@@ -96,5 +100,5 @@ export default function useDiagnosticsSession({ getRuntimeContext, onRunDeepChec
     return text
   }, [])
 
-  return { session, start, pause, resume, stop, save, copy, clear, close, refresh }
+  return { session, start, setTarget, pause, resume, stop, save, copy, clear, close, refresh }
 }

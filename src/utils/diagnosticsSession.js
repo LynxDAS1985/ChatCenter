@@ -1,3 +1,5 @@
+import { diagnosticsTargetTitle, normalizeDiagnosticsTarget } from './diagnosticsTargets.js'
+
 export const DIAGNOSTICS_RING_LIMIT = 1200
 export const DIAGNOSTICS_SEEN_LIMIT = 2400
 
@@ -12,6 +14,7 @@ export function createInitialDiagnosticsSession() {
     lastTickAt: '',
     lastSavedPath: '',
     lastError: '',
+    target: null,
     events: [],
     seenKeys: [],
     latestReport: null,
@@ -19,14 +22,16 @@ export function createInitialDiagnosticsSession() {
   }
 }
 
-export function startDiagnosticsSession(prev = createInitialDiagnosticsSession()) {
+export function startDiagnosticsSession(prev = createInitialDiagnosticsSession(), target = null) {
   if (prev.active) return { ...prev, paused: false, lastError: '' }
   const now = new Date().toISOString()
+  const normalizedTarget = normalizeDiagnosticsTarget(target || prev.target)
   return {
     ...createInitialDiagnosticsSession(),
     deepWebview: true,
     active: true,
     paused: false,
+    target: normalizedTarget,
     sessionId: `diag_${Date.now().toString(36)}`,
     startedAt: now,
     lastTickAt: now,
@@ -148,20 +153,51 @@ function traceEvent(row, index) {
   }
 }
 
-export function buildDiagnosticsSessionEvents(report = {}) {
+function eventMatchesTarget(event, target) {
+  const t = normalizeDiagnosticsTarget(target)
+  if (!t) return true
+  if (event.kind === 'problem') return true
+  const raw = `${event.source || ''} ${event.title || ''} ${event.text || ''} ${event.detail || ''}`.toLowerCase()
+  const needles = [t.id, t.tabId, t.tabTitle, t.messengerType, t.messengerLabel]
+    .filter(Boolean)
+    .map(v => String(v).toLowerCase())
+  if (t.messengerType === 'telegram_web') needles.push('telegram')
+  if (t.messengerType === 'native_api') needles.push('tdlib', 'native', 'api', 'центрчатов')
+  return needles.some(n => n && raw.includes(n))
+}
+
+function makeReportSections(report, events, target) {
+  const t = normalizeDiagnosticsTarget(target)
+  return {
+    target: t,
+    notificationPipeline: events.filter(e => /notification|source|enrich|handle|dedup|ribbon|sound/i.test(`${e.kind} ${e.source}`)),
+    webview: events.filter(e => /webview|chain|native|startup|health/i.test(`${e.kind} ${e.source} ${e.title}`)),
+    messengerSpecific: {
+      [t?.messengerType || 'unknown']: events.filter(e => eventMatchesTarget(e, t)),
+    },
+    errors: [
+      ...(report.recent?.errors || []),
+      ...events.filter(e => e.severity === 'critical').map(e => e.detail || e.text || e.title),
+    ].filter(Boolean).slice(-200),
+  }
+}
+
+export function buildDiagnosticsSessionEvents(report = {}, target = null) {
   const events = []
   ;(report.problems || []).forEach((p, i) => events.push(problemEvent(p, i)))
-  ;(report.maxFallbackEvents || []).slice(-80).forEach((e, i) => events.push(maxFallbackEvent(e, i)))
+  if (!target || normalizeDiagnosticsTarget(target)?.messengerType === 'max') {
+    ;(report.maxFallbackEvents || []).slice(-80).forEach((e, i) => events.push(maxFallbackEvent(e, i)))
+  }
   ;(report.chains || []).slice(-160).forEach((c, i) => events.push(chainEvent(c, i)))
   ;(report.runtime?.pipelineTrace || []).slice(-220)
     .filter(row => /source|enrich|handle|dedup|ribbon|sound|error/i.test(row?.step || '') || /__CC_NOTIF__|MAX title-fallback|max-sidebar|NotifManager|avatar|icon|sound|звук/i.test(`${row?.detail || ''} ${row?.text || ''}`))
     .forEach((row, i) => events.push(traceEvent(row, i)))
-  return events
+  return events.filter(event => eventMatchesTarget(event, target))
 }
 
 export function appendDiagnosticsReport(session, report) {
   if (!session.active) return session
-  const incoming = buildDiagnosticsSessionEvents(report)
+  const incoming = buildDiagnosticsSessionEvents(report, session.target)
   const seen = new Set(session.seenKeys || [])
   const fresh = []
   const freshKeys = []
@@ -195,18 +231,23 @@ export function appendDiagnosticsReport(session, report) {
 }
 
 export function buildDiagnosticsSessionReport(session) {
+  const target = normalizeDiagnosticsTarget(session.target)
+  const events = session.events || []
   return {
     ...(session.latestReport || {}),
+    diagnosticsTarget: target,
+    sections: makeReportSections(session.latestReport || {}, events, target),
     diagnosticsSession: {
       sessionId: session.sessionId,
       active: session.active,
       paused: session.paused,
       deepWebview: session.deepWebview,
+      target,
       startedAt: session.startedAt,
       stoppedAt: session.stoppedAt,
       lastTickAt: session.lastTickAt,
       summary: session.summary,
-      events: session.events || [],
+      events,
     },
   }
 }
@@ -216,6 +257,7 @@ export function diagnosticsSessionToText(session) {
     `Диагностическая сессия: ${session.sessionId || 'нет'}`,
     `Статус: ${session.active ? (session.paused ? 'пауза' : 'пишет') : 'остановлена'}`,
     `Старт: ${session.startedAt || 'нет'}`,
+    `Цель: ${diagnosticsTargetTitle(session.target)}`,
     `Последний снимок: ${session.lastTickAt || 'нет'}`,
     `Событий в буфере: ${session.events?.length || 0}`,
   ]

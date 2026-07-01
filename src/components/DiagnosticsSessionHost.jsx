@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import SystemDiagnosticsModal from './SystemDiagnosticsModal.jsx'
 import DiagnosticsFloatingPanel from './DiagnosticsFloatingPanel.jsx'
 import useDiagnosticsSession from '../hooks/useDiagnosticsSession.js'
+import { buildDiagnosticsTargets } from '../utils/diagnosticsTargets.js'
 
 export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeContext, onRunDeepCheck, onStatusChange }) {
   const diagnostics = useDiagnosticsSession({
@@ -9,6 +10,8 @@ export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeC
     onRunDeepCheck,
   })
   const eventCount = diagnostics.session.events?.length || 0
+  const { targets, preferred } = buildDiagnosticsTargets(runtimeContext || {})
+  const selectedTarget = diagnostics.session.target || preferred
 
   useEffect(() => {
     onStatusChange?.({
@@ -16,14 +19,17 @@ export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeC
       paused: !!diagnostics.session.paused,
       events: eventCount,
       lastSavedPath: diagnostics.session.lastSavedPath || '',
+      target: selectedTarget || null,
     })
-  }, [onStatusChange, diagnostics.session.active, diagnostics.session.paused, diagnostics.session.lastSavedPath, eventCount])
+  }, [onStatusChange, diagnostics.session.active, diagnostics.session.paused, diagnostics.session.lastSavedPath, eventCount, selectedTarget])
 
   return (
     <>
       {open && <SystemDiagnosticsModal
         runtimeContext={runtimeContext}
         onRunDeepCheck={onRunDeepCheck}
+        diagnosticsTargets={targets}
+        selectedTarget={selectedTarget}
         diagnosticsSession={diagnostics.session}
         diagnosticsActions={diagnostics}
         onClose={onClose}
@@ -31,7 +37,8 @@ export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeC
       />}
       <DiagnosticsFloatingPanel
         session={diagnostics.session}
-        onStart={diagnostics.start}
+        selectedTarget={selectedTarget}
+        onStart={() => diagnostics.start(selectedTarget)}
         onPause={diagnostics.pause}
         onResume={diagnostics.resume}
         onStop={diagnostics.stop}

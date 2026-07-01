@@ -288,6 +288,7 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // (~150 суммарно). Запас на следующие UX мини-фичи.
 // v1.2.20: лимит 29800 → 30400 — Фаза 0 миграции на WebContentsView: восстановлен
 // v1.2.31: 30750 -> 30850 for saved diagnostics report reload; App.jsx stays under 960.
+// v1.2.38: 30850 -> 31050 for diagnosticsTargets.js: isolated target selection for VK/MAX/TG/WA/API reports.
 // renderer-модуль webContentsViewBridge.js (~168 стр., изолированный мост renderer↔main,
 // пока НЕ подключён в живой путь). Запас ~300 строк на Фазы 1-2 (WebContentsViewSlot и т.п.).
 // v1.2.11: лимит 29600 → 29800 — накопленная работа над уведомлениями MAX
@@ -296,8 +297,8 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v1.2.8: лимит 29500 → 29600 — sender-aware identity для MAX ribbon:
 // cache avatar по sender/chat, dedup scope и IPC fallback guard.
 // v1.1.16: лимит 27200 → 28000 — useAiWebviewBridge + AiBridgeCheck + ...
-test('Общий renderer код (src/ без тестов) < 30850 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 30850, totalSrc + ' > 30850')
+test('Общий renderer код (src/ без тестов) < 31050 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 31050, totalSrc + ' > 31050')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

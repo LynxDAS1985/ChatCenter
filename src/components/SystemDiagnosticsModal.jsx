@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { diagnosticsTargetTitle } from '../utils/diagnosticsTargets.js'
 
 const css = {
   overlay: { position: 'fixed', inset: 0, zIndex: 1000001, background: 'rgba(0,0,0,0.58)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 },
@@ -13,6 +14,7 @@ const css = {
   status: { borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', padding: '8px 10px', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   muted: { color: 'var(--cc-text-dimmer)', fontSize: 12 },
   mono: { whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: 11, lineHeight: 1.55 },
+  targetBtn: { width: '100%', textAlign: 'left', borderRadius: 9, border: '1px solid var(--cc-border)', background: 'rgba(255,255,255,0.05)', color: 'var(--cc-text)', padding: '9px 10px', cursor: 'pointer', display: 'grid', gap: 3 },
 }
 
 const severityColor = (v) => v === 'critical' ? '#f87171' : v === 'warning' ? '#fbbf24' : '#7dd3fc'
@@ -26,14 +28,17 @@ function ActionButton({ kind = 'button', active = false, disabled = false, minWi
   return <button type="button" title={title} disabled={disabled} onClick={onClick} onMouseEnter={() => setState('hover')} onMouseLeave={() => setState('')} onMouseDown={() => setState('down')} onMouseUp={() => setState('hover')} onFocus={() => setState('hover')} onBlur={() => setState('')} style={{ ...base, ...extra, minWidth, transition: 'transform 120ms ease, filter 120ms ease, background 120ms ease' }}>{children}</button>
 }
 
-export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeContext, onRunDeepCheck, diagnosticsSession, diagnosticsActions }) {
+export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeContext, onRunDeepCheck, diagnosticsTargets = [], selectedTarget, diagnosticsSession, diagnosticsActions }) {
   const [report, setReport] = useState(null)
   const [message, setMessage] = useState('')
+  const [selectedTargetId, setSelectedTargetId] = useState(selectedTarget?.id || '')
   const contextRef = useRef(runtimeContext || {})
   const runDeepRef = useRef(onRunDeepCheck)
   const session = diagnosticsSession || {}
   const sessionEvents = session.events || []
   const savedSessionEvents = report?.diagnosticsSession?.events || []
+  const reportTarget = report?.diagnosticsSession?.target || report?.diagnosticsTarget || null
+  const currentTarget = session.target || diagnosticsTargets.find(t => t.id === selectedTargetId) || selectedTarget || reportTarget || diagnosticsTargets[0] || null
   const visibleSessionEvents = sessionEvents.length ? sessionEvents : savedSessionEvents
   const canUseReport = !!report || !!visibleSessionEvents.length || !!session.active
   const sessionStatus = session.active ? (session.paused ? 'пауза' : 'запись') : 'выключена'
@@ -43,6 +48,9 @@ export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeCon
     : 'Глубокая WebView-проверка включена всегда. Запись выключена: показан последний сохранённый отчёт, если он есть.'
 
   useEffect(() => { contextRef.current = runtimeContext || {}; runDeepRef.current = onRunDeepCheck }, [runtimeContext, onRunDeepCheck])
+  useEffect(() => {
+    if (!session.active && selectedTarget?.id && !selectedTargetId) setSelectedTargetId(selectedTarget.id)
+  }, [selectedTarget?.id, selectedTargetId, session.active])
 
   useEffect(() => {
     let alive = true
@@ -66,6 +74,12 @@ export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeCon
     } catch (e) { setMessage(`Не удалось сохранить отчёт: ${e.message}`) }
   }
   const clearScreen = () => { setReport(null); diagnosticsActions?.clear?.(); setMessage('Экран и буфер диагностики очищены. chatcenter.log и ai-errors.log не тронуты.') }
+  const chooseTarget = (target) => {
+    if (session.active) return
+    setSelectedTargetId(target.id)
+    diagnosticsActions?.setTarget?.(target)
+  }
+  const startSelected = () => diagnosticsActions?.start?.(currentTarget)
   const summary = report?.summary || {}, problems = report?.problems || [], chains = report?.chains || []
   const recentErrors = report?.recent?.errors || [], maxFallbackEvents = report?.maxFallbackEvents || []
 
@@ -74,9 +88,39 @@ export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeCon
       <div style={css.header}><b style={{ fontSize: 17 }}>Диагностика системы</b><span style={{ ...css.muted, marginRight: 'auto' }}>цепочки, логи, подключения, WebView</span>{(session.active || sessionEvents.length > 0) && <ActionButton minWidth={116} onClick={onMinimize || onClose}>Свернуть в фон</ActionButton>}<ActionButton minWidth={38} onClick={onClose} title="Закрыть только большое окно. Если запись включена, она продолжится в маленькой панели.">×</ActionButton></div>
       <div style={css.body}>
         <div style={{ ...css.card, display: 'grid', gap: 10 }}>
+          <div style={{ fontWeight: 700 }}>Что диагностируем</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {(diagnosticsTargets || []).map(target => {
+              const active = currentTarget?.id === target.id
+              return (
+                <button
+                  key={target.id}
+                  type="button"
+                  disabled={!!session.active}
+                  onClick={() => chooseTarget(target)}
+                  style={{
+                    ...css.targetBtn,
+                    borderColor: active ? 'rgba(56,189,248,0.65)' : 'var(--cc-border)',
+                    background: active ? 'rgba(56,189,248,0.13)' : 'rgba(255,255,255,0.05)',
+                    opacity: session.active && !active ? 0.55 : 1,
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 999, background: target.color || '#38bdf8', flex: '0 0 auto' }} />
+                    <b>{target.tabTitle}</b>
+                    <span style={css.muted}>{target.messengerLabel} · {target.runtimeLabel}</span>
+                  </span>
+                  <span style={css.muted}>{target.url || 'Наша API-разработка'}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ ...css.muted, color: '#93c5fd' }}>
+            Отчёт будет сохранён только по выбранной вкладке: {diagnosticsTargetTitle(currentTarget)}.
+          </div>
           <div style={{ fontWeight: 700 }}>Фоновая диагностическая сессия</div>
           <div style={css.status}><b style={{ color: statusColor }}>Статус: {sessionStatus}</b><span>Буфер: {sessionEvents.length} событий</span><span style={css.muted}>{statusHint}</span></div>
-          <div style={css.row}>{!session.active && <ActionButton kind="primary" onClick={diagnosticsActions?.start}>Включить запись</ActionButton>}{session.active && !session.paused && <ActionButton onClick={diagnosticsActions?.pause}>Пауза</ActionButton>}{session.active && session.paused && <ActionButton kind="primary" onClick={diagnosticsActions?.resume}>Продолжить</ActionButton>}{session.active && <ActionButton kind="danger" onClick={diagnosticsActions?.stop}>Отключить и сохранить</ActionButton>}<ActionButton onClick={saveForAi} disabled={!canUseReport} minWidth={132}>Сохранить для ИИ</ActionButton><ActionButton onClick={copyForAi} disabled={!canUseReport} minWidth={132}>Скопировать для ИИ</ActionButton><ActionButton kind="danger" onClick={clearScreen} minWidth={154}>Очистить экран, не логи</ActionButton></div>
+          <div style={css.row}>{!session.active && <ActionButton kind="primary" onClick={startSelected}>Включить запись выбранной вкладки</ActionButton>}{session.active && !session.paused && <ActionButton onClick={diagnosticsActions?.pause}>Пауза</ActionButton>}{session.active && session.paused && <ActionButton kind="primary" onClick={diagnosticsActions?.resume}>Продолжить</ActionButton>}{session.active && <ActionButton kind="danger" onClick={diagnosticsActions?.stop}>Отключить и сохранить</ActionButton>}<ActionButton onClick={saveForAi} disabled={!canUseReport} minWidth={132}>Сохранить для ИИ</ActionButton><ActionButton onClick={copyForAi} disabled={!canUseReport} minWidth={132}>Скопировать для ИИ</ActionButton><ActionButton kind="danger" onClick={clearScreen} minWidth={154}>Очистить экран, не логи</ActionButton></div>
           <div style={{ ...css.muted, color: session.lastError ? '#f87171' : '#93c5fd' }}>{message || session.lastError || session.lastSavedPath || 'Свернуть в фон — только прячет большое окно, запись продолжится. В маленькой панели "Стоп" сохраняет и оставляет отчёт на экране, "Стоп и закрыть" сохраняет и убирает диагностику полностью.'}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>{[['ошибок в логе', summary.errors], ['предупреждений', summary.warnings], ['цепочек событий', summary.chains], ['мессенджеров', summary.messengers]].map(([label, value]) => <div key={label} style={css.card}><b>{value || 0}</b><div style={css.muted}>{label}</div></div>)}</div>

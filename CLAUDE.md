@@ -305,7 +305,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v1.2.37 (1 июля 2026)
+**Текущая версия**: v1.2.38 (1 июля 2026)
 
 ---
 
@@ -744,6 +744,6 @@ Auto-memory — постоянная память Claude между сессия
 
 ---
 
-**Версия проекта**: v1.2.37 (1 июля 2026)
+**Версия проекта**: v1.2.38 (1 июля 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
-**Последнее обновление**: 1 июля 2026 — **v1.2.37 (упрощение диагностики)**: в диагностике убраны дублирующие действия, ручной "Обновить снимок" заменён понятным автообновлением фоновой записи, а маленькая панель теперь явно показывает "Стоп" и "Стоп и закрыть". История v1.2.27 и старше перенесена в [.memory-bank/archive/features-v1.2.27-and-older.md](.memory-bank/archive/features-v1.2.27-and-older.md). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.
+**Последнее обновление**: 1 июля 2026 — **v1.2.38 (целевая диагностика вкладки)**: диагностика теперь запускается по выбранной вкладке WebView/API, отчёт сохраняет паспорт цели (`diagnosticsTarget`, `diagnosticsSession.target`) и секции для разбора другим ИИ; старая отдельная плашка статуса в настройках убрана. История v1.2.27 и старше перенесена в [.memory-bank/archive/features-v1.2.27-and-older.md](.memory-bank/archive/features-v1.2.27-and-older.md). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.

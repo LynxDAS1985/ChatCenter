@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { diagnosticsTargetTitle } from '../utils/diagnosticsTargets.js'
 
 const css = {
   panel: {
@@ -45,10 +46,11 @@ function markerColor(event) {
   return '#7dd3fc'
 }
 
-export default function DiagnosticsFloatingPanel({ session, onStart, onPause, onResume, onStop, onExpand, onSave, onCopy, onClear, onCloseAll }) {
+export default function DiagnosticsFloatingPanel({ session, selectedTarget, onStart, onPause, onResume, onStop, onExpand, onSave, onCopy, onClear, onCloseAll }) {
   if (!session?.active && !session?.events?.length) return null
   const status = session.active ? (session.paused ? 'пауза' : 'запись') : 'остановлена'
   const latest = (session.events || []).slice(-3).reverse()
+  const targetTitle = diagnosticsTargetTitle(session.target || selectedTarget)
 
   return (
     <div style={css.panel}>
@@ -68,6 +70,7 @@ export default function DiagnosticsFloatingPanel({ session, onStart, onPause, on
           <Button onClick={onCopy}>Скопировать</Button>
           <Button onClick={onClear} title="Очистить только экран диагностики, не chatcenter.log и не ai-errors.log">Очистить</Button>
         </div>
+        <div style={css.muted}>Цель: {targetTitle}</div>
         <div style={css.row}>
           <span style={css.muted}>Глубокая WebView включена всегда · {session.lastSavedPath ? 'отчёт сохранён' : 'автосохранение при стопе'}</span>
         </div>

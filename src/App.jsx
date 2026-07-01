@@ -137,7 +137,6 @@ export default function App() {
   const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
   const [showSystemDiagnostics, setShowSystemDiagnostics] = useState(false)
   const [diagnosticsHostMounted, setDiagnosticsHostMounted] = useState(false)
-  const [diagnosticsStatus, setDiagnosticsStatus] = useState({ active: false, paused: false, events: 0, lastSavedPath: '' })
   const [activeNativeAccountId, setActiveNativeAccountId] = useState(null)
   // v1.0.1: модалки Phase 4 — Задачи / Напоминания / AI Activity.
   // v1.0.3: mutually-exclusive — одна модалка за раз.
@@ -822,7 +821,6 @@ export default function App() {
             onMessengersChange={setMessengers} onSettingsChange={handleSettingsChange}
             onClose={() => setShowSettings(false)}
             onOpenSystemDiagnostics={openSystemDiagnostics}
-            diagnosticsStatus={diagnosticsStatus}
           /></ErrorBoundary>
         )}
 
@@ -876,7 +874,6 @@ export default function App() {
             remindersCount,
           }}
           onRunDeepCheck={refreshProblematicConnections}
-          onStatusChange={setDiagnosticsStatus}
           onClose={() => setShowSystemDiagnostics(false)}
         /></ErrorBoundary>}
       </Suspense>

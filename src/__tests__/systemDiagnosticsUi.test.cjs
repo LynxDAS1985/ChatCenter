@@ -6,6 +6,7 @@ const settings = fs.readFileSync('src/components/SettingsPanel.jsx', 'utf8')
 const webviewSetup = fs.readFileSync('src/utils/webviewSetup.js', 'utf8')
 const consoleHandler = fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8')
 const diagnosticsSession = fs.readFileSync('src/utils/diagnosticsSession.js', 'utf8')
+const diagnosticsTargets = fs.readFileSync('src/utils/diagnosticsTargets.js', 'utf8')
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -17,7 +18,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || 'fail') }
 console.log('\n🧪 Тест UI диагностики\n')
 
 test('Большая диагностика содержит один блок управления записью и отчётом', () => {
-  ;['Включить запись', 'Отключить и сохранить', 'Свернуть в фон', 'Сохранить для ИИ', 'Скопировать для ИИ', 'Очистить экран'].forEach(text => {
+  ;['Что диагностируем', 'Включить запись выбранной вкладки', 'Отключить и сохранить', 'Свернуть в фон', 'Сохранить для ИИ', 'Скопировать для ИИ', 'Очистить экран'].forEach(text => {
     assert(modal.includes(text), `нет кнопки: ${text}`)
   })
   assert(!modal.includes('Отчёт для разбора'), 'дублирующий блок отчёта должен быть убран')
@@ -47,13 +48,23 @@ test('Маленькая панель умеет снова запустить �
   assert(floating.includes('slice(-3)'), 'маленькая панель должна показывать короткую live-ленту без перегруза')
 })
 
-test('Настройки показывают статус записи рядом с кнопкой диагностики', () => {
-  assert(settings.includes('Статус записи'), 'нет подписи статуса')
-  assert(settings.includes('diagLabel'), 'нет вычисления статуса')
-  assert(settings.includes('diagnosticsStatus'), 'SettingsPanel не принимает статус')
-  assert(settings.includes('savedDiagnosticsCount'), 'SettingsPanel должен помнить счётчик последнего сохранённого отчёта')
-  assert(settings.includes('app:diagnostics-read-report'), 'SettingsPanel должен читать последний diagnostics report')
-  assert(settings.includes('последний отчёт'), 'индикатор должен объяснять, что число взято из сохранённого отчёта')
+test('Настройки не показывают отдельную плашку статуса диагностики', () => {
+  assert(!settings.includes('Статус записи'), 'старую плашку статуса нужно убрать из настроек')
+  assert(!settings.includes('diagLabel'), 'старый вычисляемый статус не должен оставаться')
+  assert(!settings.includes('diagnosticsStatus'), 'SettingsPanel больше не должен принимать diagnosticsStatus')
+  assert(!settings.includes('savedDiagnosticsCount'), 'SettingsPanel не должен хранить отдельный счётчик отчёта')
+  assert(settings.includes('Диагностика системы'), 'кнопка открытия диагностики должна остаться')
+})
+
+test('Диагностика выбирает конкретную вкладку и сохраняет target в отчёт', () => {
+  assert(modal.includes('diagnosticsTargets'), 'модалка должна получать список диагностируемых вкладок')
+  assert(modal.includes('selectedTarget'), 'модалка должна знать выбранную цель')
+  assert(modal.includes('diagnosticsTargetTitle'), 'модалка должна показывать цель отчёта')
+  assert(diagnosticsSession.includes('diagnosticsTarget'), 'JSON-отчёт должен иметь верхний diagnosticsTarget')
+  assert(diagnosticsSession.includes('diagnosticsSession') && diagnosticsSession.includes('target,'), 'diagnosticsSession должен сохранять target')
+  assert(diagnosticsSession.includes('sections') && diagnosticsSession.includes('messengerSpecific'), 'отчёт должен делиться на секции выбранного мессенджера')
+  assert(diagnosticsTargets.includes('buildDiagnosticsTargets'), 'нужен построитель списка целей диагностики')
+  assert(diagnosticsTargets.includes('native_api'), 'в списке целей должен быть API-режим ЦентрЧатов')
 })
 
 test('MAX sidebar диагностика не режет полный decision payload', () => {

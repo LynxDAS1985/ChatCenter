@@ -91,11 +91,10 @@ function playTestSound(color) {
   } catch {}
 }
 
-export default function SettingsPanel({ messengers, settings, onMessengersChange, onSettingsChange, onClose, onOpenSystemDiagnostics, diagnosticsStatus }) {
+export default function SettingsPanel({ messengers, settings, onMessengersChange, onSettingsChange, onClose, onOpenSystemDiagnostics }) {
   const [errorLog, setErrorLog] = useState(null)        // null = не загружен, '' = пуст, 'текст' = есть записи
   const [logLoading, setLogLoading] = useState(false)
   const [logClearing, setLogClearing] = useState(false)
-  const [savedDiagnosticsCount, setSavedDiagnosticsCount] = useState(0)
   // v0.91.0: wcvCleanup state удалён (откат WCV миграции)
   const previewTimerRef = useRef(null)
 
@@ -128,20 +127,6 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
-  useEffect(() => {
-    let alive = true
-    ;(async () => {
-      try {
-        const saved = await window.api?.invoke('app:diagnostics-read-report')
-        const count = saved?.report?.diagnosticsSession?.events?.length || 0
-        if (alive) setSavedDiagnosticsCount(count)
-      } catch {
-        if (alive) setSavedDiagnosticsCount(0)
-      }
-    })()
-    return () => { alive = false }
-  }, [])
-
   const removeMessenger = (id) => {
     onMessengersChange(messengers.filter(m => m.id !== id))
   }
@@ -155,11 +140,6 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
   }
 
   const theme = settings.theme || 'dark'
-  const diag = diagnosticsStatus || { active: false, paused: false, events: 0 }
-  const diagLabel = diag.active ? (diag.paused ? 'пауза' : 'включена') : 'выключена'
-  const diagEvents = diag.events || (!diag.active ? savedDiagnosticsCount : 0)
-  const diagHint = diag.active ? 'текущая запись' : savedDiagnosticsCount ? 'последний отчёт' : 'нет отчёта'
-
   return (
     <div
       className="fixed inset-0 flex justify-end z-50"
@@ -482,16 +462,9 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
                 Файл: <code style={{ color: 'var(--cc-text-dim)' }}>userData/ai-errors.log</code> · Показаны последние 30 строк
               </p>
 
-              <div className="flex gap-2 items-stretch">
-                <button onClick={onOpenSystemDiagnostics} className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer" style={{ backgroundColor: 'rgba(56,189,248,0.12)', color: '#7dd3fc', border: '1px solid rgba(56,189,248,0.35)' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.2)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.12)'}>
-                  🩺 Диагностика системы
-                </button>
-                <div className="min-w-[96px] rounded-xl px-2.5 py-1.5 text-[10px] leading-tight" style={{ backgroundColor: diag.active ? 'rgba(34,197,94,0.12)' : 'var(--cc-hover)', color: diag.active ? '#86efac' : 'var(--cc-text-dimmer)', border: `1px solid ${diag.active ? 'rgba(34,197,94,0.35)' : 'var(--cc-border)'}` }} title="Статус фоновой записи диагностики">
-                  <div>Статус записи</div>
-                  <div className="font-semibold">{diagLabel} · {diagEvents}</div>
-                  <div>{diagHint}</div>
-                </div>
-              </div>
+              <button onClick={onOpenSystemDiagnostics} className="w-full py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer" style={{ backgroundColor: 'rgba(56,189,248,0.12)', color: '#7dd3fc', border: '1px solid rgba(56,189,248,0.35)' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.2)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(56,189,248,0.12)'}>
+                🩺 Диагностика системы
+              </button>
               <p className="text-[10px]" style={{ color: 'var(--cc-text-dimmer)' }}>
                 Отдельный отчёт по приложению: цепочки событий, системный лог, подключения и WebView. Очистка внутри него не трогает chatcenter.log.
               </p>
@@ -508,7 +481,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
               {[
                 ['Название', 'ЦентрЧатов / ChatCenter'],
-                ['Версия', 'v1.2.36'],
+                ['Версия', 'v1.2.38'],
                 ['Платформа', window.navigator.platform || 'Windows'],
                 ['Стек', 'Electron + React + Tailwind'],
               ].map(([label, value], i, arr) => (

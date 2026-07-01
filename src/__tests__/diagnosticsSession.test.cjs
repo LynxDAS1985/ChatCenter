@@ -7,10 +7,12 @@ async function main() {
   let s = mod.createInitialDiagnosticsSession()
   assert.strictEqual(s.active, false)
   assert.strictEqual(s.deepWebview, true)
-  s = mod.startDiagnosticsSession(s)
+  const target = { id: 'max', tabId: 'max', tabTitle: 'Макс', messengerType: 'max', runtimeType: 'webview', url: 'https://web.max.ru/' }
+  s = mod.startDiagnosticsSession(s, target)
   assert.strictEqual(s.active, true)
   assert.strictEqual(s.paused, false)
   assert.ok(s.sessionId)
+  assert.strictEqual(s.target.messengerType, 'max')
 
   const report = {
     problems: [{ severity: 'critical', title: 'Нет звука', detail: 'sound missing', source: 'sound' }],
@@ -42,6 +44,10 @@ async function main() {
 
   const savedReport = mod.buildDiagnosticsSessionReport(s)
   assert.strictEqual(savedReport.diagnosticsSession.sessionId, s.sessionId)
+  assert.strictEqual(savedReport.diagnosticsSession.target.messengerType, 'max')
+  assert.strictEqual(savedReport.diagnosticsTarget.tabId, 'max')
+  assert.ok(savedReport.sections.target)
+  assert.ok(savedReport.sections.messengerSpecific.max)
   assert.ok(savedReport.diagnosticsSession.events.length)
 
   s = mod.pauseDiagnosticsSession(s)
