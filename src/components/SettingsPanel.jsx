@@ -490,7 +490,7 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
               {[
                 ['Название', 'ЦентрЧатов / ChatCenter'],
-                ['Версия', 'v1.2.34'],
+                ['Версия', 'v1.2.35'],
                 ['Платформа', window.navigator.platform || 'Windows'],
                 ['Стек', 'Electron + React + Tailwind'],
               ].map(([label, value], i, arr) => (

@@ -1,6 +1,38 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.34 (1 июля 2026)
+## Текущая версия: v1.2.35 (1 июля 2026)
+
+### v1.2.35 — MAX первое сообщение в уже unread-чате больше не глохнет
+
+Дата: 1 июля 2026.
+Кто нашёл: пользователь по живому кейсу "первое MAX-сообщение без уведомления, второе с уведомлением"; Codex по полной диагностике v1.2.34 и `chatcenter.log`.
+
+Что не помогло раньше: v1.2.33 разрешила первое неизвестное sidebar-сообщение только при свежем росте title-unread и росте unread-бейджа строки. Это закрыло часть случаев, но не закрыло кейс, где чат уже был непрочитанным. В свежей диагностике было: `body="Иит"`, `prevBody="Ыйы"`, `unread=1`, `prevUnread=1`, `firstSeen=false`, `bodyChanged=true`, `unreadIncreased=false`, `freshTitleMs=1`, `search.active=false`, `emit=true`, `action="skip-no-unread-increase"`. То есть MAX реально поменял preview на новое сообщение, но unread строки остался `1`.
+
+Корень: MAX sidebar не всегда увеличивает unread-бейдж на каждое новое сообщение внутри уже непрочитанного чата. Для такого чата новое входящее может выглядеть как `bodyChanged=true` при стабильном `unread=1`. Старое правило "показывать только если unread вырос" было слишком строгим.
+
+Что изменено:
+- `main/preloads/hooks/max.hook.js`: добавлен флаг `stableUnreadBodyChanged`;
+- `stableUnreadBodyChanged` срабатывает только если строка уже была в baseline (`firstSeen=false`), preview изменился (`bodyChanged=true`), у строки есть unread (`info.unread > 0`) и рядом был свежий рост title-unread (`freshTitleMs < 3000`);
+- `max-sidebar` теперь показывает ribbon при `unreadIncreased=true` или при `stableUnreadBodyChanged=true`;
+- старый широкий вариант `bodyChanged + unread > 0` не используется, чтобы не вернуть фантомы от исходящих/старых preview;
+- диагностика пишет `stableUnreadBodyChanged` и action `show-stable-unread-body` или `skip-no-confirmed-unread-change`.
+
+Почему это безопаснее:
+1. Первый baseline после запуска остаётся тихим: `firstSeen=true` не проходит через `stableUnreadBodyChanged`.
+2. Поиск MAX остаётся тихим: `search.active` переводит `emit=false`.
+3. Голый title MAX сам по себе не создаёт уведомление.
+4. Просто изменение preview без свежего title growth не проходит.
+5. Просто старый unread без изменения body не проходит.
+6. Основные пути Notification API/SW/showNotification, звук, ribbon, аватарки и общий `handleNewMessage` не менялись.
+
+Как должно работать:
+1. Если MAX прислал первое новое сообщение в уже непрочитанный чат и sidebar preview изменился рядом со свежим ростом title-unread, будет `__CC_NOTIF__`, звук и ribbon.
+2. Если пользователь открыл поиск или приложение делает первичную заливку baseline, уведомления не будет.
+3. Если preview старый или изменился без свежего подтверждения title-unread, уведомления не будет.
+4. В диагностике для нового исправленного случая будет `action="show-stable-unread-body"` и `stableUnreadBodyChanged=true`.
+
+Проверки: `node src/__tests__/notifHooks.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `npm run lint`, `npm run build`.
 
 ### v1.2.34 — MAX диагностика пишет полный sidebar decision без обрезания
 

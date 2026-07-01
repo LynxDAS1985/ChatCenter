@@ -11,6 +11,10 @@
 //   - features: массив строк (то что юзер увидит — простым языком, без техно-жаргона)
 
 export const CHANGELOG = [
+  { version: '1.2.35',
+    date: '1 июля 2026', title: 'Обновление системы: MAX не глушит первое сообщение в уже непрочитанном чате',
+    features: ['Исправлен случай, когда MAX менял preview на новое сообщение, но unread строки оставался прежним.', 'Новый fallback срабатывает только при строгом подтверждении: строка уже известна, есть unread, текст изменился и рядом был свежий рост title-unread.', 'Поиск, первичный baseline, старые preview, звук, ribbon, аватарки и основные Notification API пути не менялись.', 'В диагностике видно новое поле stableUnreadBodyChanged и action show-stable-unread-body.'],
+  },
   { version: '1.2.34',
     date: '1 июля 2026', title: 'Обновление системы: полная диагностика MAX уведомлений',
     features: ['Диагностика MAX sidebar теперь пишет полный decision payload без обрезания.', 'В отчёте видно action, sender, body, prevBody, unread, prevUnread, firstSeen, bodyChanged, unreadIncreased, freshTitleMs, search, title и url.', 'Исправлена потеря строк, когда max-sidebar находился в text, а detail был коротким.', 'Поведение уведомлений не менялось: это диагностическое усиление для точного исправления первого MAX-сообщения без догадок.'],
