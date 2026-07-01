@@ -32,7 +32,7 @@ export function classifyLogLine(line) {
   const hasErrorField = !!(errorValue && !/^[a-z_][\w-]*\s*=/.test(errorValue))
   if (level.includes('ERROR') || s.includes('[error]') || hasErrorField || s.includes('ошибка') || s.includes('failed')) return 'error'
   if (s.includes('notify') || s.includes('notif') || s.includes('ribbon') || s.includes('звук')) return 'notification'
-  if (s.includes('webview') || s.includes('executejavascript') || s.includes('dom-ready') || s.includes('[max-') || s.includes('[ipc-max]') || s.includes('[monitor]')) return 'webview'
+  if (s.includes('webview') || s.includes('executejavascript') || s.includes('dom-ready') || s.includes('[max-') || s.includes('[ipc-max]') || s.includes('[vk-diag]') || s.includes('[monitor]')) return 'webview'
   if (s.includes('tdlib') || s.includes('tg:') || s.includes('native')) return 'native'
   if (s.includes('[warn') || s.includes('warning') || s.includes('skip') || s.includes('timeout')) return 'warning'
   if (s.includes('ai:') || s.includes('provider') || s.includes('gigachat') || s.includes('openai')) return 'ai'

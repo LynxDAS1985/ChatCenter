@@ -48,6 +48,7 @@ const { CHAT_CONTAINER_SELECTORS, findChatContainer, isSidebarNode, getChatConta
 const { runDiagnostics, resetDiagnostics } = require('./utils/diagnostics')
 const { getLastMessageText, getVKLastIncomingText } = require('./utils/messageRetrieval')
 const { createMaxSnapshotSender, maxNodeLabel, shortText } = require('./utils/maxDiagnostics')
+const { createVkDiagnostics } = require('./utils/vkDiagnostics')
 
 // v0.83.0: Timing constants (вместо magic numbers)
 const GRACE_PERIOD = 15000        // Grace period после навигации (VK Virtual Scroll медленный)
@@ -69,7 +70,18 @@ let lastActiveMessageTime = 0     // cooldown: не спамить уведом�
 let observer = null
 
 function sendMonitorDiag(message) {
-  try { ipcRenderer.sendToHost('monitor-diag', String(message || '').slice(0, 3500)) } catch(e) {}
+  const text = String(message || '')
+  const chunkSize = 12000
+  try {
+    if (text.length <= chunkSize) {
+      ipcRenderer.sendToHost('monitor-diag', text)
+      return
+    }
+    const total = Math.ceil(text.length / chunkSize)
+    for (let i = 0; i < total; i++) {
+      ipcRenderer.sendToHost('monitor-diag', `[DIAG-CHUNK ${i + 1}/${total}] ${text.slice(i * chunkSize, (i + 1) * chunkSize)}`)
+    }
+  } catch(e) {}
 }
 
 
@@ -280,11 +292,15 @@ const sendMaxSnapshot = createMaxSnapshotSender({
   getObserverTarget: () => chatObserverTarget,
   isMonitorReady: () => monitorReady,
 })
+const vkDiagnostics = createVkDiagnostics({
+  sendMonitorDiag,
+  isMonitorReady: () => monitorReady,
+})
 
 function startChatObserver(type) {
   if (chatObserver) { chatObserver.disconnect(); chatObserver = null }
   if (type === 'telegram') return // TG работает через __CC_NOTIF__
-  if (type === 'vk') return // v0.81.2: VK работает через unread-count (UC), chatObserver создаёт фантомы
+  if (type === 'vk') { vkDiagnostics.start('startChatObserver-vk-diagnostic-only'); return } // v0.81.2: old VK chatObserver is disabled; this starts diagnostics only
 
   const container = findChatContainer(type)
   chatObserverRetries++
@@ -418,6 +434,7 @@ function setupNavigationWatcher(type) {
     if (newUrl === lastUrl) return
     try { console.log('__CC_DIAG__nav: ' + lastUrl.slice(-30) + ' → ' + newUrl.slice(-30) + ' | a="' + (lastActiveMessageText||'').slice(0,25) + '" q="' + (lastQuickMsgText||'').slice(0,25) + '"') } catch {}
     if (type === 'max') sendMonitorDiag('[MAX-NAV] ' + lastUrl.slice(-80) + ' -> ' + newUrl.slice(-80) + ' active="' + shortText(lastActiveMessageText, 80) + '" quick="' + shortText(lastQuickMsgText, 80) + '"')
+    if (type === 'vk') vkDiagnostics.onNavigation(lastUrl, newUrl)
     if (type === 'max') sendMaxSnapshot('nav-before-reset', true)
     lastUrl = newUrl
 
@@ -438,6 +455,7 @@ function setupNavigationWatcher(type) {
       } catch(e) {}
       monitorReady = true
       if (type === 'max') sendMonitorDiag('[MAX-NAV] grace-end active="' + shortText(lastActiveMessageText, 120) + '" quick="' + shortText(lastQuickMsgText, 120) + '"')
+      if (type === 'vk') vkDiagnostics.runManual()
       if (type === 'max') sendMaxSnapshot('nav-grace-end', true)
       try { console.log('__CC_DIAG__grace-end | a="' + (lastActiveMessageText||'').slice(0,25) + '"') } catch(e) {}
     }, GRACE_PERIOD)
@@ -456,6 +474,7 @@ function startMonitor() {
   try { ipcRenderer.sendToHost('monitor-diag', 'monitor-start: type=' + type + ' host=' + location.hostname) } catch(e) {}
   if (!type) return
   if (type === 'max') sendMaxSnapshot('monitor-start', true)
+  if (type === 'vk') vkDiagnostics.start('monitor-start')
 
   sendUpdate(type)
 
@@ -501,6 +520,7 @@ ipcRenderer.on('run-diagnostics', () => {
     sendMonitorDiag('[MAX-RUN-DIAG] manual diagnostics requested')
     sendMaxSnapshot('manual-run-diagnostics', true)
   }
+  if (type === 'vk') vkDiagnostics.runManual()
   if (type) runDiagnostics(type, { getVKLastIncomingText })
 })
 

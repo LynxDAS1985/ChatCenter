@@ -79,6 +79,62 @@ function runDiagnostics(type, deps) {
       if (type === 'vk') {
         diag.countSource = countUnreadVK._lastSource || 'unknown'
         diag.genericLastMsg = getVKLastIncomingText()
+        diag.vkFull = {
+          url: location.href,
+          title: document.title,
+          containers: [],
+          messages: [],
+          headers: [],
+          counters: [],
+          links: [],
+        }
+        document.querySelectorAll('.ConvoMain__history, [class*="ConvoMain__history"], [class*="im-page--chat-body"], [class*="im_msg_list"], [class*="ChatBody"], [class*="im-history"], [class*="ConversationBody"], [class*="chat-body"], [class*="im-page--chat"], [class*="HistoryMessages"]').forEach(el => {
+          const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null
+          diag.vkFull.containers.push({
+            tag: el.tagName,
+            id: el.id || '',
+            cls: typeof el.className === 'string' ? el.className : '',
+            text: el.textContent || '',
+            outerHTML: el.outerHTML || '',
+            childCount: el.children ? el.children.length : 0,
+            rect: rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null,
+          })
+        })
+        document.querySelectorAll('[data-msgid], [data-message-id], [class*="ConvoMessage"], [class*="im-mess"], [class*="im_msg"], [class*="im-mes"], [class*="Message"], [class*="message"]').forEach(el => {
+          const cls = typeof el.className === 'string' ? el.className : ''
+          const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null
+          diag.vkFull.messages.push({
+            tag: el.tagName,
+            id: el.id || '',
+            cls,
+            msgId: el.getAttribute?.('data-msgid') || el.getAttribute?.('data-message-id') || el.getAttribute?.('data-id') || '',
+            dataOut: el.getAttribute?.('data-out') || el.getAttribute?.('data-outgoing') || el.getAttribute?.('data-own') || '',
+            outgoingByClass: /out|own|self|sent|ConvoMessage--out|im-mess_out|message_out/i.test(cls),
+            aria: el.getAttribute?.('aria-label') || '',
+            text: el.textContent || '',
+            outerHTML: el.outerHTML || '',
+            rect: rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null,
+          })
+        })
+        document.querySelectorAll('[class*="ConvoHeader"], [class*="im-page--title"], h1, h2, img[src]').forEach(el => {
+          diag.vkFull.headers.push({
+            tag: el.tagName,
+            id: el.id || '',
+            cls: typeof el.className === 'string' ? el.className : '',
+            text: el.textContent || '',
+            src: el.src || '',
+            aria: el.getAttribute?.('aria-label') || '',
+          })
+        })
+        document.querySelectorAll('[class*="counter"], [class*="unread"], [class*="badge"], [class*="Counter"]').forEach(el => {
+          diag.vkFull.counters.push({
+            tag: el.tagName,
+            id: el.id || '',
+            cls: typeof el.className === 'string' ? el.className : '',
+            text: el.textContent || '',
+            aria: el.getAttribute?.('aria-label') || '',
+          })
+        })
         // Элементы с "mes"/"msg" в классах (показать какие вообще есть)
         diag.chatElements = []
         let ci = 0
@@ -90,6 +146,7 @@ function runDiagnostics(type, deps) {
         diag.imLinks = []
         document.querySelectorAll('a[href*="/im"]').forEach(a => {
           diag.imLinks.push({ href: (a.getAttribute('href') || '').substring(0, 40), text: (a.textContent || '').trim().substring(0, 40) })
+          diag.vkFull.links.push({ href: a.getAttribute('href') || '', text: a.textContent || '', aria: a.getAttribute?.('aria-label') || '' })
         })
       }
     }

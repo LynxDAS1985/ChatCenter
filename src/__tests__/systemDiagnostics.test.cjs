@@ -43,6 +43,7 @@ async function main() {
   assert.ok(parsed.raw.includes('token=***'))
   assert.strictEqual(mod.classifyLogLine('[2026-06-23 09:40:00] [TRACE] [MONITOR] [Макс] [MAX-SNAPSHOT] reason=count-change'), 'webview')
   assert.strictEqual(mod.classifyLogLine('[2026-06-23 09:40:00] [TRACE] [IPC-MAX] channel=new-message'), 'webview')
+  assert.strictEqual(mod.classifyLogLine('[2026-07-01 13:00:00] [R:TRACE] [TRACE] · [ВКонтакте] debug: [VK-DIAG] candidate-new-incoming {"text":"Привет"}'), 'webview')
 
   const maxReport = mod.analyzeSystemDiagnostics({
     snapshot: { logText: '', app: { version: '1.2.8' } },

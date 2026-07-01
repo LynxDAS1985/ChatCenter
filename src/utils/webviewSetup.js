@@ -151,7 +151,7 @@ export function createWebviewSetup(deps) {
 
   const traceNotif = (step, type, messengerId, text, detail) => {
     const mName = messengerId ? (messengersRef.current.find(x => x.id === messengerId)?.name || '') : ''
-    const rawTraceText = text || '', keepFullTraceText = /max-sidebar/i.test(`${rawTraceText} ${detail || ''}`)
+    const rawTraceText = text || '', keepFullTraceText = /max-sidebar|VK-DIAG|vkFull/i.test(`${rawTraceText} ${detail || ''}`)
     pipelineTraceRef.current.push({ ts: Date.now(), step, type, mid: messengerId || '', mName, text: keepFullTraceText ? rawTraceText : rawTraceText.slice(0, 200), detail: detail || '' })
     // v1.2.9: буфер трассировки в памяти увеличен 300→5000 (выкидываем 1000 старых при переполнении).
     // Причина: maxFallbackEvents для диагностики строится ИЗ этого буфера, а не из лога. При 300 шагах
@@ -526,7 +526,7 @@ export function createWebviewSetup(deps) {
         } else if (e.channel === 'monitor-diag') {
           // v0.79.8: Диагностика DOM — трассировка в pipeline вместо state
           const diag = e.args[0]
-          const diagStr = typeof diag === 'string' ? diag : JSON.stringify(diag).slice(0, 200)
+          const diagStr = typeof diag === 'string' ? diag : JSON.stringify(diag)
           traceNotif('debug', 'info', messengerId, diagStr, 'monitor-diag')
           // v0.86.0: Прямой лог в файл для диагностики monitor
           try { window.api?.send('app:log', { level: 'TRACE', message: '[MONITOR] [' + (messengersRef.current.find(x=>x.id===messengerId)?.name||messengerId) + '] ' + diagStr }) } catch {}

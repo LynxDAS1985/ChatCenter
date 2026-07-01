@@ -21,7 +21,8 @@ const domSelectorsCode = fs.existsSync(path.join(utilsDir, 'domSelectors.js')) ?
 const diagnosticsCode = fs.existsSync(path.join(utilsDir, 'diagnostics.js')) ? fs.readFileSync(path.join(utilsDir, 'diagnostics.js'), 'utf8') : ''
 const messageRetrievalCode = fs.existsSync(path.join(utilsDir, 'messageRetrieval.js')) ? fs.readFileSync(path.join(utilsDir, 'messageRetrieval.js'), 'utf8') : ''
 const maxDiagnosticsCode = fs.existsSync(path.join(utilsDir, 'maxDiagnostics.js')) ? fs.readFileSync(path.join(utilsDir, 'maxDiagnostics.js'), 'utf8') : ''
-const allPreloadCode = code + '\n' + unreadCode + '\n' + chatMetadataCode + '\n' + messageExtractorCode + '\n' + domSelectorsCode + '\n' + diagnosticsCode + '\n' + messageRetrievalCode + '\n' + maxDiagnosticsCode
+const vkDiagnosticsCode = fs.existsSync(path.join(utilsDir, 'vkDiagnostics.js')) ? fs.readFileSync(path.join(utilsDir, 'vkDiagnostics.js'), 'utf8') : ''
+const allPreloadCode = code + '\n' + unreadCode + '\n' + chatMetadataCode + '\n' + messageExtractorCode + '\n' + domSelectorsCode + '\n' + diagnosticsCode + '\n' + messageRetrievalCode + '\n' + maxDiagnosticsCode + '\n' + vkDiagnosticsCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -163,7 +164,7 @@ test('Path 2 отключён для VK (v0.81.0)', () => {
   assert(path2Line && path2Line[0].includes("'vk'"), 'Path 2 должен быть отключён для VK')
 })
 test('chatObserver отключён для VK (v0.81.2)', () => {
-  assert(code.includes("if (type === 'vk') return") && code.includes('startChatObserver'), 'chatObserver должен быть отключён для VK')
+  assert(code.includes("if (type === 'vk') { vkDiagnostics.start") && code.includes('startChatObserver'), 'старый chatObserver должен быть отключён для VK, разрешена только диагностика')
 })
 test('Path 2 отключён для MAX (v0.81.1)', () => {
   const path2Line = code.match(/monitorReady\s*&&\s*type\s*!==\s*'telegram'[^{]+\{/)
@@ -248,6 +249,21 @@ test('grace-end логирует lastActiveMessageText', () => {
 })
 test('lastActive-chg логирует тихую перезапись', () => {
   assert(code.includes('__CC_DIAG__lastActive-chg'), 'lastActive-chg должен существовать')
+})
+test('VK deep diagnostics подключена к preload', () => {
+  assert(code.includes("require('./utils/vkDiagnostics')") && code.includes('createVkDiagnostics'), 'VK diagnostics module must be loaded by monitor preload')
+})
+test('VK diagnostics logs active chat evidence', () => {
+  assert(allPreloadCode.includes('[VK-DIAG]') && allPreloadCode.includes('candidate-new-incoming') && allPreloadCode.includes('baselineFingerprints'), 'VK diagnostics must log baseline and candidate decisions')
+})
+test('VK diagnostics does not emit notifications', () => {
+  assert(!vkDiagnosticsCode.includes("sendToHost('new-message'") && !vkDiagnosticsCode.includes('__CC_MSG__') && !vkDiagnosticsCode.includes('__CC_NOTIF__'), 'VK diagnostics must not create notification events')
+})
+test('VK diagnostics observes only chat container', () => {
+  assert(vkDiagnosticsCode.includes('findVkChatContainer') && vkDiagnosticsCode.includes('observer.observe(boundContainer'), 'VK diagnostics must observe only the active chat container')
+})
+test('VK diagnostics records outgoing and baseline reasons', () => {
+  assert(vkDiagnosticsCode.includes('outgoing-own-message') && vkDiagnosticsCode.includes('baseline-existing-message') && vkDiagnosticsCode.includes('new-incoming-candidate-no-emit'), 'VK diagnostics must explain every important decision')
 })
 
 // ── Структура файла ──
