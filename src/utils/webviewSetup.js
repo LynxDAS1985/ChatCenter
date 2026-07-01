@@ -151,9 +151,8 @@ export function createWebviewSetup(deps) {
 
   const traceNotif = (step, type, messengerId, text, detail) => {
     const mName = messengerId ? (messengersRef.current.find(x => x.id === messengerId)?.name || '') : ''
-    pipelineTraceRef.current.push({
-      ts: Date.now(), step, type, mid: messengerId || '', mName, text: (text || '').slice(0, 200), detail: detail || '',
-    })
+    const rawTraceText = text || '', keepFullTraceText = /max-sidebar/i.test(`${rawTraceText} ${detail || ''}`)
+    pipelineTraceRef.current.push({ ts: Date.now(), step, type, mid: messengerId || '', mName, text: keepFullTraceText ? rawTraceText : rawTraceText.slice(0, 200), detail: detail || '' })
     // v1.2.9: буфер трассировки в памяти увеличен 300→5000 (выкидываем 1000 старых при переполнении).
     // Причина: maxFallbackEvents для диагностики строится ИЗ этого буфера, а не из лога. При 300 шагах
     // быстрая пачка MAX-сообщений вытеснялась за минуты и не попадала в отчёт. Полный архив всё равно в chatcenter.log.
@@ -163,8 +162,9 @@ export function createWebviewSetup(deps) {
     if (!_skipDetail) {
       const icon = _traceTypeLabels[type] || '·'
       const label = _traceLabels[step] || step
-      const shortText = (text || '').slice(0, 60)
-      const detailLimit = detail && (/MAX title-fallback|max-title-|topRows=|chosenLeafs=|\[MAX-|MAX page-title-updated|\[IPC-MAX\]/.test(detail)) ? 3500 : 250
+      const fullLogText = /max-sidebar/i.test(`${text || ''} ${detail || ''}`)
+      const shortText = fullLogText ? (text || '') : (text || '').slice(0, 60)
+      const detailLimit = detail && (/MAX title-fallback|max-title-|max-sidebar|topRows=|chosenLeafs=|\[MAX-|MAX page-title-updated|\[IPC-MAX\]/.test(detail)) ? 7000 : 250
       const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, detailLimit) : ''}`
       try { window.api?.send('app:log', { level: 'TRACE', message: msg }) } catch {}
     }

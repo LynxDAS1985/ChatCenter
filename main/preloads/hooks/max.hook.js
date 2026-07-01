@@ -63,7 +63,7 @@
     } catch(e) {}
     return '';
   }
-  function _maxTrackTitleUnread() { var m = String(document.title || '').match(/^(\d{1,3})\s+/), c = m ? (parseInt(m[1], 10) || 0) : 0; if (c > _maxLastTitleUnread) _maxRecentTitleGrowTs = Date.now(); if (c || _maxLastTitleUnread) _maxLastTitleUnread = c; }
+  function _maxTrackTitleUnread() { var m = String(document.title || '').match(/^(\d{1,3})\s+/), c = m ? (parseInt(m[1], 10) || 0) : 0; if (c > _maxLastTitleUnread) { console.log('__CC_DIAG__max-sidebar-title: ' + JSON.stringify({ prev:_maxLastTitleUnread, next:c, title:document.title||'', ts:Date.now() })); _maxRecentTitleGrowTs = Date.now(); } if (c || _maxLastTitleUnread) _maxLastTitleUnread = c; }
   function _findAvatar(name) {
     if (!name) return '';
     try {
@@ -269,18 +269,18 @@
   }
   function _maxScanList(root, emit) { _maxTrackTitleUnread(); var search = _maxSearchState();
     if (search.active && emit) { console.log('__CC_DIAG__max-sidebar: search active skip emit | value="' + search.value + '"'); emit = false; }
-    var rows = root.querySelectorAll('[class*="wrapper--withActions"], [role="listitem"], [role="presentation"]');
-    for (var i = 0; i < rows.length && i < 60; i++) {
+    var rows = root.querySelectorAll('[class*="wrapper--withActions"], [role="listitem"], [role="presentation"]'); for (var i = 0; i < rows.length && i < 60; i++) {
       var info = _maxRowInfo(rows[i]);
       if (!info.sender || !info.body || info.body === info.sender) continue;
       if (_isSpam(info.body)) continue;
       var prev = _maxLastList[info.sender], prevBody = (prev && typeof prev === 'object') ? prev.body : prev, prevUnread = (prev && typeof prev === 'object') ? (prev.unread || 0) : 0;
-      var firstSeen = (prev === undefined), unreadIncreased = info.unread > prevUnread, bodyChanged = info.body !== prevBody;
+      var firstSeen = (prev === undefined), unreadIncreased = info.unread > prevUnread, bodyChanged = info.body !== prevBody, freshTitleMs = Date.now() - _maxRecentTitleGrowTs;
       if (!bodyChanged && !unreadIncreased) continue;
       _maxLastList[info.sender] = { body: info.body, unread: info.unread };
-      var titleCorrelatedFirst = firstSeen && unreadIncreased && (Date.now() - _maxRecentTitleGrowTs < 3000);
-      if ((firstSeen && !titleCorrelatedFirst) || !emit) continue; if (titleCorrelatedFirst) console.log('__CC_DIAG__max-sidebar: title-correlated first unread | sender="' + info.sender.slice(0,30) + '" unread=' + info.unread + ' body="' + info.body.slice(0,40) + '"');
-      if (!unreadIncreased) { console.log('__CC_DIAG__max-sidebar: skip no unread increase | sender="' + info.sender.slice(0,30) + '" unread=' + info.unread + ' prev=' + prevUnread + ' body="' + info.body.slice(0,40) + '"'); continue; }
+      var titleCorrelatedFirst = firstSeen && unreadIncreased && freshTitleMs < 3000, action = (!emit ? 'skip-emit-false' : (firstSeen && !titleCorrelatedFirst) ? 'skip-first-seen' : !unreadIncreased ? 'skip-no-unread-increase' : 'show');
+      console.log('__CC_DIAG__max-sidebar-decision: ' + JSON.stringify({ action:action, sender:info.sender, body:info.body, prevBody:prevBody||'', unread:info.unread, prevUnread:prevUnread, firstSeen:firstSeen, bodyChanged:bodyChanged, unreadIncreased:unreadIncreased, freshTitleMs:freshTitleMs, emit:!!emit, search:search, title:document.title||'', url:location.href||'', ts:Date.now() }));
+      if ((firstSeen && !titleCorrelatedFirst) || !emit) continue; if (titleCorrelatedFirst) console.log('__CC_DIAG__max-sidebar: title-correlated first unread | sender="' + info.sender + '" unread=' + info.unread + ' body="' + info.body + '"');
+      if (!unreadIncreased) { console.log('__CC_DIAG__max-sidebar: skip no unread increase | sender="' + info.sender + '" unread=' + info.unread + ' prev=' + prevUnread + ' body="' + info.body + '" prevBody="' + (prevBody || '') + '" freshTitleMs=' + freshTitleMs); continue; }
       var icon = _findAvatarIn(rows[i]);
       _log('passed', info.sender, info.body, '', icon, '', info.sender);
       console.log('__CC_NOTIF__' + JSON.stringify({ t: info.sender, b: info.body, i: icon || '', g: '', src: 'max-sidebar', u: info.unread }));

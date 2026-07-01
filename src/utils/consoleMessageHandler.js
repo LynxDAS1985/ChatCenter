@@ -87,7 +87,9 @@ export function createConsoleMessageHandler(deps) {
         return
       }
       const ready = !!notifReadyRef.current[messengerId]
-      traceNotif('debug', 'info', messengerId, (parsed.text || parsed.body || parsed.value || '').toString().slice(0, 200), `${parsed.prefix || parsed.type} | ready=${ready}`)
+      const diagText = (parsed.text || parsed.body || parsed.value || '').toString()
+      const diagDetail = `${parsed.prefix || parsed.type} | ready=${ready}${/max-sidebar/i.test(diagText) ? ' | ' + diagText : ''}`
+      traceNotif('debug', 'info', messengerId, diagText, diagDetail)
       // Любой __CC_ ответ (кроме badge_blocked) подтверждает, что страница отвечает.
       updateConnectionOk(messengerId, el, `${parsed.prefix || parsed.type} ответил`)
     }

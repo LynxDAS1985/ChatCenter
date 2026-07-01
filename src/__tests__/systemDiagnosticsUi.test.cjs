@@ -3,6 +3,9 @@ const fs = require('fs')
 const modal = fs.readFileSync('src/components/SystemDiagnosticsModal.jsx', 'utf8')
 const floating = fs.readFileSync('src/components/DiagnosticsFloatingPanel.jsx', 'utf8')
 const settings = fs.readFileSync('src/components/SettingsPanel.jsx', 'utf8')
+const webviewSetup = fs.readFileSync('src/utils/webviewSetup.js', 'utf8')
+const consoleHandler = fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8')
+const diagnosticsSession = fs.readFileSync('src/utils/diagnosticsSession.js', 'utf8')
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -43,6 +46,14 @@ test('Настройки показывают статус записи рядо
   assert(settings.includes('Статус записи'), 'нет подписи статуса')
   assert(settings.includes('diagLabel'), 'нет вычисления статуса')
   assert(settings.includes('diagnosticsStatus'), 'SettingsPanel не принимает статус')
+})
+
+test('MAX sidebar диагностика не режет полный decision payload', () => {
+  assert(webviewSetup.includes('keepFullTraceText') && webviewSetup.includes('max-sidebar'), 'trace buffer должен хранить полный max-sidebar text')
+  assert(webviewSetup.includes('fullLogText') && webviewSetup.includes('detailLimit'), 'chatcenter.log должен писать полный max-sidebar detail')
+  assert(consoleHandler.includes('diagDetail') && consoleHandler.includes('max-sidebar'), 'console handler должен переносить полный __CC_DIAG__ в detail')
+  assert(diagnosticsSession.includes('maxLen') && diagnosticsSession.includes('max-sidebar'), 'diagnostics session должна держать длинный max-sidebar payload')
+  assert(diagnosticsSession.includes("`${row?.detail || ''} ${row?.text || ''}`"), 'filter должен проверять detail и text одновременно')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

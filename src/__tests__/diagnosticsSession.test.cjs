@@ -20,6 +20,7 @@ async function main() {
       pipelineTrace: [
         { ts: 2, step: 'ribbon', type: 'pass', mName: 'Макс', text: 'hi', detail: 'NotifManager show icon=true' },
         { ts: 3, step: 'sound', type: 'pass', mName: 'Макс', text: 'hi', detail: 'звук после ribbon' },
+        { ts: 4, step: 'debug', type: 'info', mName: 'Макс', text: '__CC_DIAG__max-sidebar-decision: ' + 'x'.repeat(1200), detail: 'diagnostic | ready=true' },
       ],
     },
   }
@@ -37,6 +38,7 @@ async function main() {
   const text = mod.diagnosticsSessionToText(s)
   assert.ok(text.includes('Диагностическая сессия'))
   assert.ok(text.includes('MAX fallback') || text.includes('max-title-active'))
+  assert.ok(s.events.some(e => String(e.text || '').includes('x'.repeat(1000))), 'max-sidebar diagnostics should not be cut at the old 700-char limit')
 
   const savedReport = mod.buildDiagnosticsSessionReport(s)
   assert.strictEqual(savedReport.diagnosticsSession.sessionId, s.sessionId)

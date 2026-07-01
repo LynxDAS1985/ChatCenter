@@ -1,6 +1,39 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.33 (30 июня 2026)
+## Текущая версия: v1.2.34 (1 июля 2026)
+
+### v1.2.34 — MAX диагностика пишет полный sidebar decision без обрезания
+
+Дата: 1 июля 2026.
+Кто нашёл: пользователь по повторному живому кейсу "первое MAX-сообщение без уведомления, второе показывает"; Codex по диагностике, `chatcenter.log`, `main/preloads/hooks/max.hook.js`, `src/utils/consoleMessageHandler.js`, `src/utils/webviewSetup.js` и `src/utils/diagnosticsSession.js`.
+
+Проблема: после v1.2.33 живой кейс не был решён. Диагностика показывала общий факт (`MAX page-title-updated`, `title-only no-ribbon`, `max-sidebar skip/no-ribbon`), но не давала полную строку решения по sidebar. Из-за этого нельзя было доказать, почему первое сообщение пропущено: строка могла быть уже в baseline, мог быть `bodyChanged=true` без `unreadIncreased`, мог мешать поиск, или мог быть другой `prevUnread`. Часть этих полей терялась из-за обрезания на нескольких уровнях.
+
+Где именно обрезало:
+- `main/preloads/hooks/max.hook.js`: старые строки `skip no unread increase` резали `sender` и `body` через `slice`;
+- `src/utils/consoleMessageHandler.js`: parsed `__CC_DIAG__` резался до 200 символов;
+- `src/utils/webviewSetup.js`: `pipelineTrace` хранил `text` максимум 200 символов, а `chatcenter.log` показывал `text` максимум 60 символов;
+- `src/utils/diagnosticsSession.js`: live-сессия брала максимум 700 символов и могла вообще не включить строку, если `max-sidebar` был в `text`, а короткий `detail` был заполнен.
+
+Что изменено:
+- `max.hook.js`: добавлен полный JSON `__CC_DIAG__max-sidebar-decision` для каждой изменившейся sidebar-строки MAX;
+- в decision теперь пишутся `action`, `sender`, `body`, `prevBody`, `unread`, `prevUnread`, `firstSeen`, `bodyChanged`, `unreadIncreased`, `freshTitleMs`, `emit`, `search`, `title`, `url`, `ts`;
+- добавлен `__CC_DIAG__max-sidebar-title`, чтобы видеть момент роста title-unread;
+- `consoleMessageHandler.js`: для `max-sidebar` полный diagnostic payload переносится в `detail`, чтобы общий лог не терял поля;
+- `webviewSetup.js`: `pipelineTrace` и `chatcenter.log` сохраняют полный `max-sidebar` payload до 7000 символов;
+- `diagnosticsSession.js`: session report фильтрует одновременно `detail + text` и хранит длинный `max-sidebar` payload до 7000 символов;
+- добавлены тесты, что диагностика MAX sidebar больше не режет полный decision payload.
+
+Почему это решение сейчас правильное: мы не меняем правила уведомлений вслепую и не добавляем фильтры по словам. Сначала убираем потерю фактов в диагностике. Следующий отчёт должен показать точную причину пропуска первого сообщения: какое было действие `action`, был ли рост unread, был ли первый проход, изменился ли текст, был ли активен поиск, какой был предыдущий body/unread и сколько миллисекунд прошло после роста title.
+
+Как должно работать после изменения:
+1. При включённой диагностике и новом MAX-сообщении в отчёте должна появиться строка `__CC_DIAG__max-sidebar-decision`.
+2. Эта строка должна быть полной, без `...` и без потери `sender/body/prevBody`.
+3. Если первое сообщение пропущено, в `action` будет видно точную причину: `skip-first-seen`, `skip-no-unread-increase`, `skip-emit-false` или другое состояние.
+4. Если сообщение показано, рядом будет `show` и далее обычная цепочка `__CC_NOTIF__ -> sound -> NotifManager`.
+5. Общая логика уведомлений MAX, аватарки, звук и ribbon этим изменением не менялись.
+
+Проверки: `node src/__tests__/systemDiagnosticsUi.test.cjs`, `node src/__tests__/diagnosticsSession.test.cjs`, `node src/__tests__/consoleMessageParser.test.cjs`, `node src/__tests__/notifHooks.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `npm run lint`, `npm run build`.
 
 ### v1.2.33 — MAX не теряет первое сообщение после роста счётчика
 
