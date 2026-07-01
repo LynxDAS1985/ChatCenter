@@ -3,10 +3,22 @@ const { pathToFileURL } = require('url')
 
 async function main() {
   const mod = await import(pathToFileURL('src/utils/diagnosticsSession.js').href)
+  const targetsMod = await import(pathToFileURL('src/utils/diagnosticsTargets.js').href)
 
   let s = mod.createInitialDiagnosticsSession()
   assert.strictEqual(s.active, false)
   assert.strictEqual(s.deepWebview, true)
+
+  const builtTargets = targetsMod.buildDiagnosticsTargets({
+    activeId: 'center',
+    messengers: [
+      { id: 'vk', name: 'ВКонтакте', url: 'https://vk.com/im', color: '#4C75A3' },
+      { id: 'center', name: 'ЦентрЧатов', url: 'about:blank', color: '#38bdf8' },
+    ],
+  })
+  assert.ok(builtTargets.targets.some(t => t.id === 'vk'), 'real VK WebView target must be present')
+  assert.ok(!builtTargets.targets.some(t => t.id === 'center'), 'about:blank service tab must not become diagnostics target')
+  assert.ok(builtTargets.targets.some(t => t.id === 'native_api'), 'native API target must stay present')
   const target = { id: 'max', tabId: 'max', tabTitle: 'Макс', messengerType: 'max', runtimeType: 'webview', url: 'https://web.max.ru/' }
   s = mod.startDiagnosticsSession(s, target)
   assert.strictEqual(s.active, true)

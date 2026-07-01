@@ -14,7 +14,7 @@ const css = {
   status: { borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', padding: '8px 10px', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   muted: { color: 'var(--cc-text-dimmer)', fontSize: 12 },
   mono: { whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: 11, lineHeight: 1.55 },
-  targetBtn: { width: '100%', textAlign: 'left', borderRadius: 9, border: '1px solid var(--cc-border)', background: 'rgba(255,255,255,0.05)', color: 'var(--cc-text)', padding: '9px 10px', cursor: 'pointer', display: 'grid', gap: 3 },
+  select: { minWidth: 240, maxWidth: 'min(360px, 100%)', borderRadius: 9, border: '1px solid rgba(56,189,248,0.45)', background: 'rgba(15,23,42,0.92)', color: 'var(--cc-text)', padding: '8px 10px', cursor: 'pointer', fontSize: 13, outline: 'none' },
 }
 
 const severityColor = (v) => v === 'critical' ? '#f87171' : v === 'warning' ? '#fbbf24' : '#7dd3fc'
@@ -79,6 +79,10 @@ export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeCon
     setSelectedTargetId(target.id)
     diagnosticsActions?.setTarget?.(target)
   }
+  const chooseTargetId = (id) => {
+    const target = diagnosticsTargets.find(t => t.id === id)
+    if (target) chooseTarget(target)
+  }
   const startSelected = () => diagnosticsActions?.start?.(currentTarget)
   const summary = report?.summary || {}, problems = report?.problems || [], chains = report?.chains || []
   const recentErrors = report?.recent?.errors || [], maxFallbackEvents = report?.maxFallbackEvents || []
@@ -88,39 +92,21 @@ export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeCon
       <div style={css.header}><b style={{ fontSize: 17 }}>Диагностика системы</b><span style={{ ...css.muted, marginRight: 'auto' }}>цепочки, логи, подключения, WebView</span>{(session.active || sessionEvents.length > 0) && <ActionButton minWidth={116} onClick={onMinimize || onClose}>Свернуть в фон</ActionButton>}<ActionButton minWidth={38} onClick={onClose} title="Закрыть только большое окно. Если запись включена, она продолжится в маленькой панели.">×</ActionButton></div>
       <div style={css.body}>
         <div style={{ ...css.card, display: 'grid', gap: 10 }}>
-          <div style={{ fontWeight: 700 }}>Что диагностируем</div>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {(diagnosticsTargets || []).map(target => {
-              const active = currentTarget?.id === target.id
-              return (
-                <button
-                  key={target.id}
-                  type="button"
-                  disabled={!!session.active}
-                  onClick={() => chooseTarget(target)}
-                  style={{
-                    ...css.targetBtn,
-                    borderColor: active ? 'rgba(56,189,248,0.65)' : 'var(--cc-border)',
-                    background: active ? 'rgba(56,189,248,0.13)' : 'rgba(255,255,255,0.05)',
-                    opacity: session.active && !active ? 0.55 : 1,
-                  }}
-                >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 999, background: target.color || '#38bdf8', flex: '0 0 auto' }} />
-                    <b>{target.tabTitle}</b>
-                    <span style={css.muted}>{target.messengerLabel} · {target.runtimeLabel}</span>
-                  </span>
-                  <span style={css.muted}>{target.url || 'Наша API-разработка'}</span>
-                </button>
-              )
-            })}
-          </div>
+          <div style={{ fontWeight: 700 }}>Фоновая диагностическая сессия</div>
+          <div style={css.status}><b style={{ color: statusColor }}>Статус: {sessionStatus}</b><span>Буфер: {sessionEvents.length} событий</span><span style={css.muted}>{statusHint}</span></div>
+          <div style={css.row}>
+            {!session.active && <label style={{ display: 'grid', gap: 4 }}>
+              <span style={css.muted}>Что диагностируем</span>
+              <select value={currentTarget?.id || ''} disabled={!!session.active} onChange={e => chooseTargetId(e.target.value)} style={css.select}>
+                {(diagnosticsTargets || []).map(target => (
+                  <option key={target.id} value={target.id}>{target.tabTitle} · {target.messengerLabel} · {target.runtimeLabel}</option>
+                ))}
+              </select>
+            </label>}
+            {!session.active && <ActionButton kind="primary" onClick={startSelected}>Включить запись</ActionButton>}{session.active && !session.paused && <ActionButton onClick={diagnosticsActions?.pause}>Пауза</ActionButton>}{session.active && session.paused && <ActionButton kind="primary" onClick={diagnosticsActions?.resume}>Продолжить</ActionButton>}{session.active && <ActionButton kind="danger" onClick={diagnosticsActions?.stop}>Отключить и сохранить</ActionButton>}<ActionButton onClick={saveForAi} disabled={!canUseReport} minWidth={132}>Сохранить для ИИ</ActionButton><ActionButton onClick={copyForAi} disabled={!canUseReport} minWidth={132}>Скопировать для ИИ</ActionButton><ActionButton kind="danger" onClick={clearScreen} minWidth={154}>Очистить экран, не логи</ActionButton></div>
           <div style={{ ...css.muted, color: '#93c5fd' }}>
             Отчёт будет сохранён только по выбранной вкладке: {diagnosticsTargetTitle(currentTarget)}.
           </div>
-          <div style={{ fontWeight: 700 }}>Фоновая диагностическая сессия</div>
-          <div style={css.status}><b style={{ color: statusColor }}>Статус: {sessionStatus}</b><span>Буфер: {sessionEvents.length} событий</span><span style={css.muted}>{statusHint}</span></div>
-          <div style={css.row}>{!session.active && <ActionButton kind="primary" onClick={startSelected}>Включить запись выбранной вкладки</ActionButton>}{session.active && !session.paused && <ActionButton onClick={diagnosticsActions?.pause}>Пауза</ActionButton>}{session.active && session.paused && <ActionButton kind="primary" onClick={diagnosticsActions?.resume}>Продолжить</ActionButton>}{session.active && <ActionButton kind="danger" onClick={diagnosticsActions?.stop}>Отключить и сохранить</ActionButton>}<ActionButton onClick={saveForAi} disabled={!canUseReport} minWidth={132}>Сохранить для ИИ</ActionButton><ActionButton onClick={copyForAi} disabled={!canUseReport} minWidth={132}>Скопировать для ИИ</ActionButton><ActionButton kind="danger" onClick={clearScreen} minWidth={154}>Очистить экран, не логи</ActionButton></div>
           <div style={{ ...css.muted, color: session.lastError ? '#f87171' : '#93c5fd' }}>{message || session.lastError || session.lastSavedPath || 'Свернуть в фон — только прячет большое окно, запись продолжится. В маленькой панели "Стоп" сохраняет и оставляет отчёт на экране, "Стоп и закрыть" сохраняет и убирает диагностику полностью.'}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>{[['ошибок в логе', summary.errors], ['предупреждений', summary.warnings], ['цепочек событий', summary.chains], ['мессенджеров', summary.messengers]].map(([label, value]) => <div key={label} style={css.card}><b>{value || 0}</b><div style={css.muted}>{label}</div></div>)}</div>

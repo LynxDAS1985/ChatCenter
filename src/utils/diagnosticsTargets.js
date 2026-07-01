@@ -21,8 +21,15 @@ export function diagnosticsMessengerLabel(type) {
   return 'WebView'
 }
 
+function isRealDiagnosticsWebviewTarget(messenger = {}) {
+  const url = String(messenger.url || '').trim().toLowerCase()
+  if (!url || url === 'about:blank') return false
+  if (url.startsWith('about:') || url.startsWith('devtools:')) return false
+  return true
+}
+
 export function buildDiagnosticsTargets({ messengers = [], activeId = '', activeNativeAccountId = '' } = {}) {
-  const webviewTargets = (messengers || []).map(m => {
+  const webviewTargets = (messengers || []).filter(isRealDiagnosticsWebviewTarget).map(m => {
     const messengerType = inferDiagnosticsMessengerType(m.url, m.id)
     return {
       id: m.id,
