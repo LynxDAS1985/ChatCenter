@@ -48,7 +48,7 @@ function markerColor(event) {
 export default function DiagnosticsFloatingPanel({ session, onStart, onPause, onResume, onStop, onExpand, onSave, onCopy, onClear, onCloseAll }) {
   if (!session?.active && !session?.events?.length) return null
   const status = session.active ? (session.paused ? 'пауза' : 'запись') : 'остановлена'
-  const latest = (session.events || []).slice(-5).reverse()
+  const latest = (session.events || []).slice(-3).reverse()
 
   return (
     <div style={css.panel}>
@@ -56,7 +56,7 @@ export default function DiagnosticsFloatingPanel({ session, onStart, onPause, on
         <b style={{ fontSize: 14 }}>Диагностика</b>
         <span style={{ ...css.muted, marginRight: 'auto' }}>{status} · {session.summary?.events || 0}</span>
         <Button onClick={onExpand}>Развернуть</Button>
-        <Button kind="danger" onClick={onCloseAll} title="Остановить и скрыть диагностику полностью">Закрыть</Button>
+        <Button kind="danger" onClick={onCloseAll} title="Остановить запись, сохранить отчёт и скрыть диагностику полностью">Стоп и закрыть</Button>
       </div>
       <div style={css.body}>
         <div style={css.row}>
@@ -66,7 +66,7 @@ export default function DiagnosticsFloatingPanel({ session, onStart, onPause, on
           {session.active && <Button kind="danger" onClick={onStop}>Стоп</Button>}
           <Button onClick={onSave}>Сохранить</Button>
           <Button onClick={onCopy}>Скопировать</Button>
-          <Button onClick={onClear}>Очистить</Button>
+          <Button onClick={onClear} title="Очистить только экран диагностики, не chatcenter.log и не ai-errors.log">Очистить</Button>
         </div>
         <div style={css.row}>
           <span style={css.muted}>Глубокая WebView включена всегда · {session.lastSavedPath ? 'отчёт сохранён' : 'автосохранение при стопе'}</span>

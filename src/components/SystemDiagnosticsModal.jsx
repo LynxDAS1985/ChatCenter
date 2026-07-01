@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { analyzeSystemDiagnostics } from '../utils/systemDiagnostics.js'
+import { useEffect, useRef, useState } from 'react'
 
 const css = {
   overlay: { position: 'fixed', inset: 0, zIndex: 1000001, background: 'rgba(0,0,0,0.58)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 },
@@ -11,9 +10,11 @@ const css = {
   button: { borderRadius: 9, border: '1px solid var(--cc-border)', background: 'rgba(255,255,255,0.06)', color: 'var(--cc-text)', padding: '8px 10px', cursor: 'pointer', fontSize: 13 },
   primary: { borderRadius: 9, border: '1px solid rgba(56,189,248,0.5)', background: 'rgba(56,189,248,0.14)', color: '#7dd3fc', padding: '8px 10px', cursor: 'pointer', fontSize: 13 },
   danger: { borderRadius: 9, border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.08)', color: '#fca5a5', padding: '8px 10px', cursor: 'pointer', fontSize: 13 },
+  status: { borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', padding: '8px 10px', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   muted: { color: 'var(--cc-text-dimmer)', fontSize: 12 },
   mono: { whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: 11, lineHeight: 1.55 },
 }
+
 const severityColor = (v) => v === 'critical' ? '#f87171' : v === 'warning' ? '#fbbf24' : '#7dd3fc'
 const hoverStyle = { transform: 'translateY(-1px)', filter: 'brightness(1.14)' }
 const activeStyle = { transform: 'translateY(1px)', filter: 'brightness(0.92)' }
@@ -26,13 +27,21 @@ function ActionButton({ kind = 'button', active = false, disabled = false, minWi
 }
 
 export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeContext, onRunDeepCheck, diagnosticsSession, diagnosticsActions }) {
-  const [snapshot, setSnapshot] = useState(null), [report, setReport] = useState(null), [loading, setLoading] = useState(false), [message, setMessage] = useState('')
-  const contextRef = useRef(runtimeContext || {}), runDeepRef = useRef(onRunDeepCheck)
-  const session = diagnosticsSession || {}, sessionEvents = session.events || []
-  const sessionStatus = session.active ? (session.paused ? 'пауза' : 'запись') : 'выключена'
+  const [report, setReport] = useState(null)
+  const [message, setMessage] = useState('')
+  const contextRef = useRef(runtimeContext || {})
+  const runDeepRef = useRef(onRunDeepCheck)
+  const session = diagnosticsSession || {}
+  const sessionEvents = session.events || []
   const savedSessionEvents = report?.diagnosticsSession?.events || []
   const visibleSessionEvents = sessionEvents.length ? sessionEvents : savedSessionEvents
   const canUseReport = !!report || !!visibleSessionEvents.length || !!session.active
+  const sessionStatus = session.active ? (session.paused ? 'пауза' : 'запись') : 'выключена'
+  const statusColor = session.active ? (session.paused ? '#fbbf24' : '#34d399') : '#94a3b8'
+  const statusHint = session.active
+    ? (session.paused ? 'Глубокая WebView-проверка включена всегда. Автообновление остановлено на паузе.' : 'Глубокая WebView-проверка включена всегда. Автообновление включено: диагностика сама собирает снимок каждые 3 секунды.')
+    : 'Глубокая WebView-проверка включена всегда. Запись выключена: показан последний сохранённый отчёт, если он есть.'
+
   useEffect(() => { contextRef.current = runtimeContext || {}; runDeepRef.current = onRunDeepCheck }, [runtimeContext, onRunDeepCheck])
 
   useEffect(() => {
@@ -49,43 +58,33 @@ export default function SystemDiagnosticsModal({ onClose, onMinimize, runtimeCon
     return () => { alive = false }
   }, [])
 
-  const load = useCallback(async () => {
-    setLoading(true); setMessage('')
-    try {
-      if (runDeepRef.current) await Promise.resolve(runDeepRef.current())
-      const data = await window.api?.invoke('app:diagnostics-snapshot')
-      const nextReport = analyzeSystemDiagnostics({ snapshot: data || {}, runtimeContext: contextRef.current })
-      const saved = await window.api?.invoke('app:diagnostics-save-report', nextReport)
-      if (saved?.ok) { nextReport.paths = { ...(nextReport.paths || {}), reportPath: saved.path }; setMessage(`Текущий снимок сохранён: ${saved.path}`) }
-      else if (saved?.error) setMessage(`Снимок не сохранён: ${saved.error}`)
-      setSnapshot(data); setReport(nextReport)
-    } catch (e) {
-      setReport({ createdAt: new Date().toISOString(), summary: { errors: 1, warnings: 0, chains: 0 }, problems: [{ severity: 'critical', title: 'Диагностика не запустилась', detail: e.message, advice: 'Проверить IPC app:diagnostics-snapshot/app:diagnostics-save-report.', source: 'SystemDiagnosticsModal' }], chains: [], recent: { errors: [], warnings: [] } })
-    } finally { setLoading(false) }
-  }, [])
-
   const copyForAi = async () => { try { if (sessionEvents.length || session.active) await diagnosticsActions?.copy?.(); else await navigator.clipboard.writeText(JSON.stringify(report || {}, null, 2)); setMessage('Отчёт скопирован для ИИ') } catch { setMessage('Не удалось скопировать отчёт') } }
   const saveForAi = async () => {
     try {
       if (sessionEvents.length || session.active) { await diagnosticsActions?.save?.(); setMessage('Сессия сохранена для ИИ'); return }
-      if (report) { const saved = await window.api?.invoke('app:diagnostics-save-report', report); setMessage(saved?.ok ? `Текущий снимок сохранён: ${saved.path}` : `Снимок не сохранён: ${saved?.error || 'нет ответа IPC'}`) }
+      if (report) { const saved = await window.api?.invoke('app:diagnostics-save-report', report); setMessage(saved?.ok ? `Текущий отчёт сохранён: ${saved.path}` : `Отчёт не сохранён: ${saved?.error || 'нет ответа IPC'}`) }
     } catch (e) { setMessage(`Не удалось сохранить отчёт: ${e.message}`) }
   }
-  const clearScreen = () => { setSnapshot(null); setReport(null); diagnosticsActions?.clear?.(); setMessage('Экран и буфер диагностики очищены. chatcenter.log и ai-errors.log не тронуты.') }
-
+  const clearScreen = () => { setReport(null); diagnosticsActions?.clear?.(); setMessage('Экран и буфер диагностики очищены. chatcenter.log и ai-errors.log не тронуты.') }
   const summary = report?.summary || {}, problems = report?.problems || [], chains = report?.chains || []
   const recentErrors = report?.recent?.errors || [], maxFallbackEvents = report?.maxFallbackEvents || []
+
   return (
     <div style={css.overlay} onClick={onClose}><div style={css.modal} onClick={e => e.stopPropagation()}>
-      <div style={css.header}><b style={{ fontSize: 17 }}>Диагностика системы</b><span style={{ ...css.muted, marginRight: 'auto' }}>цепочки, логи, подключения, WebView</span><ActionButton kind="primary" minWidth={132} onClick={load} disabled={loading}>{loading ? 'Проверка...' : 'Обновить снимок'}</ActionButton>{(session.active || sessionEvents.length > 0) && <ActionButton minWidth={116} onClick={onMinimize || onClose}>Свернуть в фон</ActionButton>}<ActionButton minWidth={38} onClick={onClose} title="Закрыть окно. Если запись включена, она продолжится в маленькой панели.">×</ActionButton></div>
+      <div style={css.header}><b style={{ fontSize: 17 }}>Диагностика системы</b><span style={{ ...css.muted, marginRight: 'auto' }}>цепочки, логи, подключения, WebView</span>{(session.active || sessionEvents.length > 0) && <ActionButton minWidth={116} onClick={onMinimize || onClose}>Свернуть в фон</ActionButton>}<ActionButton minWidth={38} onClick={onClose} title="Закрыть только большое окно. Если запись включена, она продолжится в маленькой панели.">×</ActionButton></div>
       <div style={css.body}>
-        <div style={{ ...css.card, display: 'grid', gap: 10 }}><div style={{ fontWeight: 700 }}>Фоновая диагностическая сессия</div><div style={css.row}>{!session.active && <ActionButton kind="primary" onClick={diagnosticsActions?.start}>Включить запись</ActionButton>}{session.active && !session.paused && <ActionButton onClick={diagnosticsActions?.pause}>Пауза</ActionButton>}{session.active && session.paused && <ActionButton kind="primary" onClick={diagnosticsActions?.resume}>Продолжить</ActionButton>}{session.active && <ActionButton kind="danger" onClick={diagnosticsActions?.stop}>Отключить и сохранить</ActionButton>}{(session.active || sessionEvents.length > 0) && <ActionButton onClick={onMinimize || onClose}>Свернуть в фон</ActionButton>}<ActionButton onClick={saveForAi} disabled={!canUseReport} minWidth={132}>Сохранить для ИИ</ActionButton><ActionButton onClick={copyForAi} disabled={!canUseReport} minWidth={132}>Скопировать для ИИ</ActionButton><ActionButton kind="danger" onClick={clearScreen} minWidth={118}>Очистить экран</ActionButton></div><div style={css.muted}>Статус: {sessionStatus}. Буфер: {sessionEvents.length} событий. Глубокая WebView-проверка включена всегда; запись запускается только кнопкой "Включить запись".</div><div style={{ ...css.muted, color: session.lastError ? '#f87171' : '#93c5fd' }}>{message || session.lastError || session.lastSavedPath || 'При сворачивании запись продолжится в маленькой панели. Кнопка "Закрыть" на маленькой панели выключает диагностику полностью. Общий chatcenter.log и ai-errors.log эта панель не очищает.'}</div></div>
+        <div style={{ ...css.card, display: 'grid', gap: 10 }}>
+          <div style={{ fontWeight: 700 }}>Фоновая диагностическая сессия</div>
+          <div style={css.status}><b style={{ color: statusColor }}>Статус: {sessionStatus}</b><span>Буфер: {sessionEvents.length} событий</span><span style={css.muted}>{statusHint}</span></div>
+          <div style={css.row}>{!session.active && <ActionButton kind="primary" onClick={diagnosticsActions?.start}>Включить запись</ActionButton>}{session.active && !session.paused && <ActionButton onClick={diagnosticsActions?.pause}>Пауза</ActionButton>}{session.active && session.paused && <ActionButton kind="primary" onClick={diagnosticsActions?.resume}>Продолжить</ActionButton>}{session.active && <ActionButton kind="danger" onClick={diagnosticsActions?.stop}>Отключить и сохранить</ActionButton>}<ActionButton onClick={saveForAi} disabled={!canUseReport} minWidth={132}>Сохранить для ИИ</ActionButton><ActionButton onClick={copyForAi} disabled={!canUseReport} minWidth={132}>Скопировать для ИИ</ActionButton><ActionButton kind="danger" onClick={clearScreen} minWidth={154}>Очистить экран, не логи</ActionButton></div>
+          <div style={{ ...css.muted, color: session.lastError ? '#f87171' : '#93c5fd' }}>{message || session.lastError || session.lastSavedPath || 'Свернуть в фон — только прячет большое окно, запись продолжится. В маленькой панели "Стоп" сохраняет и оставляет отчёт на экране, "Стоп и закрыть" сохраняет и убирает диагностику полностью.'}</div>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>{[['ошибок в логе', summary.errors], ['предупреждений', summary.warnings], ['цепочек событий', summary.chains], ['мессенджеров', summary.messengers]].map(([label, value]) => <div key={label} style={css.card}><b>{value || 0}</b><div style={css.muted}>{label}</div></div>)}</div>
-        <Section title="Что сейчас подозрительно">{problems.length ? problems.map((p, i) => <div key={`${p.title}-${i}`} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div style={{ color: severityColor(p.severity), fontWeight: 700 }}>{p.title}</div><div style={{ ...css.mono, marginTop: 5 }}>{p.detail || 'деталей нет'}</div><div style={{ ...css.muted, marginTop: 5 }}>Что делать: {p.advice}</div></div>) : <div style={css.muted}>Явных проблем по текущему снимку нет.</div>}</Section>
-        <Section title="MAX fallback анализ">{maxFallbackEvents.length ? maxFallbackEvents.slice(-100).map((e, i) => <MaxFallbackEvent key={`${e.ts}-${i}`} event={e} index={i} />) : <div style={css.muted}>MAX fallback событий в текущем снимке нет.</div>}</Section>
-        <Section title="Цепочки событий">{chains.length ? chains.slice(-200).map((c, i) => <div key={c.id || i} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div><b>{c.title}</b> <span style={css.muted}>{c.ts} · {c.type}</span></div><div style={css.mono}>{c.detail}</div></div>) : <div style={css.muted}>Нажмите "Обновить снимок" или включите фоновую запись, чтобы увидеть события.</div>}</Section>
+        <Section title="Что сейчас подозрительно">{problems.length ? problems.map((p, i) => <div key={`${p.title}-${i}`} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div style={{ color: severityColor(p.severity), fontWeight: 700 }}>{p.title}</div><div style={{ ...css.mono, marginTop: 5 }}>{p.detail || 'деталей нет'}</div><div style={{ ...css.muted, marginTop: 5 }}>Что делать: {p.advice}</div></div>) : <div style={css.muted}>Явных проблем по текущему отчёту нет.</div>}</Section>
+        <Section title="MAX fallback анализ">{maxFallbackEvents.length ? maxFallbackEvents.slice(-100).map((e, i) => <MaxFallbackEvent key={`${e.ts}-${i}`} event={e} index={i} />) : <div style={css.muted}>MAX fallback событий в текущем отчёте нет.</div>}</Section>
+        <Section title="Цепочки событий">{chains.length ? chains.slice(-200).map((c, i) => <div key={c.id || i} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div><b>{c.title}</b> <span style={css.muted}>{c.ts} · {c.type}</span></div><div style={css.mono}>{c.detail}</div></div>) : <div style={css.muted}>Включите фоновую запись, чтобы накопить новые события. Если запись уже останавливали, здесь показывается последний сохранённый отчёт.</div>}</Section>
         <Section title="Live-лента сессии">{visibleSessionEvents.length ? visibleSessionEvents.slice(-120).reverse().map((e, i) => <div key={e.id || i} style={{ borderTop: i ? '1px solid var(--cc-border)' : 0, paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}><div style={{ color: severityColor(e.severity), fontWeight: 700 }}>{e.title || e.kind}</div><div style={css.mono}>{e.text || e.detail || 'нет деталей'}</div></div>) : <div style={css.muted}>Фоновая сессия выключена или пока не накопила событий.</div>}</Section>
-        <Section title="Файл для ИИ"><div style={css.mono}>{report?.paths?.reportPath || snapshot?.paths?.reportPath || session.lastSavedPath || 'Путь появится после сохранения отчёта или остановки сессии'}</div><div style={{ ...css.muted, marginTop: 6 }}>Другой ИИ может открыть JSON-отчёт и восстановить цепочку: источник события, ribbon, звук, avatar, dedup и ошибки. Если текущая запись закрыта, здесь показывается последний сохранённый отчёт.</div></Section>
+        <Section title="Файл для ИИ"><div style={css.mono}>{report?.paths?.reportPath || session.lastSavedPath || 'Путь появится после сохранения отчёта или остановки сессии'}</div><div style={{ ...css.muted, marginTop: 6 }}>Другой ИИ может открыть JSON-отчёт и восстановить цепочку: источник события, ribbon, звук, avatar, dedup и ошибки. Если текущая запись закрыта, здесь показывается последний сохранённый отчёт.</div></Section>
         <Section title="Последние ошибки">{recentErrors.length ? <div style={css.mono}>{recentErrors.join('\n')}</div> : <div style={css.muted}>Ошибок в последних строках нет.</div>}</Section>
       </div>
     </div></div>
