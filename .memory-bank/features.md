@@ -1,6 +1,33 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.46 (2 июля 2026)
+## Текущая версия: v1.2.47 (2 июля 2026)
+
+### v1.2.47 — VK: active-chat guard для резервного VK-EXEC fallback
+
+Дата: 2 июля 2026.
+Кто нашёл: пользователь по VK-чату `Artem Artem`, где при входе в чат и фокусе поля ввода появились карточки старых сообщений; Codex по `system-diagnostics-report.json`, `chatcenter.log`, `shared/vkExecFallback.js` и `webviewHandleNewMessage.js`.
+
+Проблема: v1.2.46 добавила резервный `VK-EXEC` observer, но VK Web при входе в чат и фокусе поля ввода заново вставляет старые сообщения в DOM через виртуальный список. `VK-EXEC` видел `MutationObserver addedNodes`, находил message node и ошибочно отправлял старую историю в `handleNewMessage`.
+
+Факты: в отчёте были `VK preload missing heartbeat`, `VK-EXEC injected`, затем фантомы как `VK-EXEC kind=new-message`; старые тексты `У тебя всегда хорошие идеи приходят`, `Фартовый)`, `Нет`, `Буду рецепты сейчас эти разбивать по одному`, `Ох этот Иван` дошли до `app:custom-notify`, `main-result ok=true` и `[NotifManager] show`. Значит модалку создал общий путь после ошибочного source-события fallback.
+
+Что изменено:
+- `src/utils/webviewHandleNewMessage.js`: если `source === 'vk-exec-fallback'`, окно в фокусе и активна вкладка VK, событие блокируется как видимый текущий чат;
+- фоновые уведомления не отключены: когда окно не в фокусе или активна другая вкладка, `VK-EXEC` продолжает идти в общий путь уведомлений;
+- `src/__tests__/integration.test.cjs`: добавлен сценарий `VK-EXEC fallback: на активной VK-вкладке -> блокируем старые DOM-вставки текущего чата`;
+- `src/__tests__/vkExecFallback.test.cjs`: зафиксировано, что fallback передаёт `source:'vk-exec-fallback'`, иначе guard не сможет отличить его от других источников;
+- версия обновлена до `v1.2.47`.
+
+Почему безопасно: нет блокировки слов или времени; не трогаются штатный `vk-dom-observer`, Notification API, MAX, WhatsApp, Telegram и API-вкладки; блокируется только рискованный `vk-exec-fallback` и только когда пользователь уже смотрит VK-вкладку. В фоне fallback остаётся рабочим. В диагностике будет `Видимость: ... VK-EXEC active visible chat`, а не молчаливый пропуск.
+
+Как должно работать после исправления:
+1. Пользователь открывает VK-чат и кликает в поле ввода.
+2. VK может заново вставить старые сообщения в DOM.
+3. `VK-EXEC` может увидеть мутацию, но `handleNewMessage` видит `source:'vk-exec-fallback'`, активную VK-вкладку и фокус окна.
+4. Событие блокируется на шаге `viewing`; звук и модалка для старой истории не появляются.
+5. Если VK не активен или окно не в фокусе, резервный `VK-EXEC` продолжает показывать фоновые уведомления.
+
+Проверки: `node src/__tests__/integration.test.cjs`, `node src/__tests__/vkExecFallback.test.cjs`, `node src/__tests__/handleNewMessage.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `node src/__tests__/memoryBankSizeLimits.test.cjs`, `node src/__tests__/featuresReferences.test.cjs`, `npm run lint`, `npm run build`, `npm test`.
 
 ### v1.2.46 — VK: fallback live-observer, если monitor preload не запустился
 

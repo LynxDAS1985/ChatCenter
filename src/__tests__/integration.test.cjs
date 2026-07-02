@@ -92,6 +92,9 @@ function processMessage(mid, text, extra, ctx) {
   if (isViewingThisTab && !extra) {
     result.action = 'viewing-block'; result.steps.push('viewing-block'); return result
   }
+  if (isViewingThisTab && extra && extra.source === 'vk-exec-fallback') {
+    result.action = 'viewing-block-vk-exec'; result.steps.push('viewing-block-vk-exec'); return result
+  }
   if (isViewingThisTab && extra) result.steps.push('viewing-pass')
   else result.steps.push('viewing-na')
 
@@ -200,6 +203,12 @@ test('VK: на вкладке + extra (MutationObserver) → НЕ блокиру
   var r = processMessage('vk', 'Привет', { senderName: 'Сергей' }, { focused: true, activeId: 'vk' })
   assert(r.action === 'pass', 'action=' + r.action)
   assert(r.steps.includes('viewing-pass'))
+})
+
+test('VK-EXEC fallback: на активной VK-вкладке → блокируем старые DOM-вставки текущего чата', function() {
+  var r = processMessage('vk', 'Старое сообщение', { senderName: 'Artem Artem', source: 'vk-exec-fallback' }, { focused: true, activeId: 'vk' })
+  assert(r.action === 'viewing-block-vk-exec', 'action=' + r.action)
+  assert(r.steps.includes('viewing-block-vk-exec'))
 })
 
 test('VK: на вкладке + NO extra (мусор) → блокируем', function() {

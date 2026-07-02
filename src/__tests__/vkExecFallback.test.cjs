@@ -54,5 +54,10 @@ test('sender and avatar are passed to the common notification path', () => {
   assert(code.includes('iconUrl'), 'missing iconUrl payload')
 })
 
+test('host receives vk-exec-fallback source for active-chat viewing guard', () => {
+  assert(code.includes("source: 'vk-exec-fallback'"), 'handleNewMessage must receive vk-exec-fallback source')
+  assert(code.includes("source:'vk-exec-fallback'"), 'page payload must mark vk-exec-fallback source')
+})
+
 console.log(`\nVK exec fallback: ${passed} passed, ${failed} failed\n`)
 if (failed) process.exit(1)

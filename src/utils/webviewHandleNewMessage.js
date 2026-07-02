@@ -58,6 +58,7 @@ export function createHandleNewMessage(deps) {
     //    значит текущий чат ≠ чат сообщения → ПРОПУСКАЕМ (не блокируем)
     // Итого: viewing блокирует ТОЛЬКО если НЕТ extra (нет sender, нет source — мусор)
     const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
+    if (isViewingThisTab && extra?.source === 'vk-exec-fallback') { traceNotif('viewing', 'block', messengerId, text, 'VK-EXEC active visible chat: block virtualized old DOM nodes'); return }
     if (isViewingThisTab && !extra) {
       traceNotif('viewing', 'block', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
       return
