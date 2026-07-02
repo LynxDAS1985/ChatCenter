@@ -1,6 +1,40 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.44 (2 июля 2026)
+## Текущая версия: v1.2.45 (2 июля 2026)
+
+### v1.2.45 — VK: DOM observer подключён к модалке уведомлений
+
+Дата: 2 июля 2026.
+Кто нашёл: пользователь по VK-чату `Artem Artem`, где входящее сообщение было видно в открытом чате, но модалка не появилась; Codex по `chatcenter.log`, `vkDiagnostics.js`, `monitor.preload.cjs`, `webviewHandleNewMessage.js` и цепочке `app:custom-notify`.
+
+Проблема: модалка уведомлений у VK была подключена к общему механизму, но до неё не доходил сигнал. В логе за `12:00–12:03` были `vkFull` снимки активного VK-чата и входящие сообщения с `outgoing:false`, но не было `__CC_NOTIF__`, `new-message`, `app:custom-notify`, `[notif-ipc]`, `[NotifManager] show`, `sound` и `ribbon` для VK. Причина в коде: `startChatObserver('vk')` запускал `vkDiagnostics.start('startChatObserver-vk-diagnostic-only')`, а `vkDiagnostics` писал `candidate-new-incoming`, но специально ставил `new-incoming-candidate-no-emit` и не отправлял событие в `handleNewMessage`.
+
+Что изменено:
+- `main/preloads/utils/vkDiagnostics.js`: новый входящий VK-кандидат теперь получает `new-incoming-candidate-emit`, `wouldEmit:true` и путь `vk-dom-observer -> IPC new-message -> app:custom-notify`;
+- `vkDiagnostics.js`: после проверки `не baseline`, `есть текст`, `не исходящее` вызывается `sendNewMessage(info.text, extra)`;
+- `main/preloads/monitor.preload.cjs`: в `createVkDiagnostics` передан безопасный мост `ipcRenderer.sendToHost('new-message', text, extra)`;
+- `extra` содержит `senderName`, `iconUrl`, `chatTag`, `messageId`, `source:'vk-dom-observer'`, чтобы модалка получила отправителя, аватарку и переход в чат;
+- `src/__tests__/monitorPreload.test.cjs`: старый тест `diagnostic-only` заменён на проверку, что VK emits только verified DOM incoming, без прямого `__CC_NOTIF__` и без фейкового Notification API.
+
+Почему это безопасно:
+1. Эмит включён только в ветке нового входящего кандидата.
+2. Старые сообщения из baseline не эмитятся.
+3. Свои исходящие сообщения не эмитятся.
+4. Пустые DOM-узлы и кнопки действий не эмитятся.
+5. VK util не вызывает IPC напрямую: IPC остаётся только в `monitor.preload.cjs`.
+6. Общий `handleNewMessage` сохраняет дедуп, настройки звука, настройки ribbon, историю и автопереключение.
+7. Другие мессенджеры не затронуты.
+
+Как должно работать:
+1. Клиент пишет в открытый VK-чат.
+2. VK DOM observer видит новый message node.
+3. Если сообщение не старое, не пустое и не исходящее, в диагностике появляется `candidate-new-incoming` и `emit-new-message`.
+4. Renderer получает IPC `new-message`.
+5. `handleNewMessage` делает звук и вызывает `app:custom-notify`.
+6. В `chatcenter.log` должны появиться `[notif-ipc] custom-notify recv` и `[NotifManager] show`.
+7. На экране должна появиться модалка с отправителем, текстом и аватаркой VK.
+
+Проверки: `node src/__tests__/monitorPreload.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `node src/__tests__/featuresReferences.test.cjs`, `node src/__tests__/memoryBankSizeLimits.test.cjs`, `npm test`, `npm run lint`, `npm run build`.
 
 ### v1.2.44 — VK: `withoutBubbles` больше не считается исходящим сообщением
 
@@ -71,7 +105,7 @@
 2. Диагностика теперь отвечает на главный вопрос: кто остановил уведомление.
 3. Если причина `outgoing-own-message`, будет видно, какой именно класс/data/aria сработал.
 4. Если причина `baseline-existing-message`, будет видно, что сообщение уже было в baseline.
-5. Если причина `diagnostic-read-only`, это значит: диагностика увидела нового входящего кандидата, но сама не имеет права отправлять `__CC_NOTIF__`.
+5. До v1.2.45 причина `diagnostic-read-only` означала: диагностика увидела нового входящего кандидата, но сама не имела права отправлять уведомление. С v1.2.45 новый входящий кандидат идёт через `vk-dom-observer -> IPC new-message -> app:custom-notify`.
 6. `vkFull` и `[VK-DIAG]` теперь дают одинаковые доказательства, поэтому не нужно гадать по двум разным форматам.
 7. Это изменение не создаёт фантомные уведомления: `vkDiagnostics.js` по-прежнему не эмитит `new-message`, `__CC_MSG__` или `__CC_NOTIF__`.
 
@@ -167,7 +201,7 @@
 Что изменено:
 - `main/preloads/utils/vkDiagnostics.js`: добавлена отдельная VK-only диагностика активного чата. Она не отправляет `new-message`, `__CC_MSG__` или `__CC_NOTIF__`, а только пишет `[VK-DIAG]` в monitor diagnostics;
 - `main/preloads/monitor.preload.cjs`: для VK старый общий `chatObserver` не используется как источник уведомлений; вместо него запускается диагностический observer активного контейнера VK;
-- VK observer пишет `observer-bound`, baseline существующих сообщений, `mutation-start`, `candidate-skip`, `candidate-new-incoming`, `manual-snapshot`, `navigation` и причины решений: `outside-container`, `no-message-node`, `no-text`, `baseline-existing-message`, `outgoing-own-message`, `new-incoming-candidate-no-emit`;
+- VK observer пишет `observer-bound`, baseline существующих сообщений, `mutation-start`, `candidate-skip`, `candidate-new-incoming`, `emit-new-message`, `manual-snapshot`, `navigation` и причины решений: `outside-container`, `no-message-node`, `no-text`, `baseline-existing-message`, `outgoing-own-message`, `new-incoming-candidate-emit`;
 - в каждый VK-кандидат добавлены `text`, сырые `nodeTextRaw`, `messageTextRaw`, `messageOuterHTML`, `outgoing`, `baselineHit`, `fingerprint`, `messageId`, `parentChain`, `headerSender`, `headerAvatar`, `title`, `url`;
 - `main/preloads/utils/diagnostics.js`: ручной VK-снимок `vkFull` теперь сохраняет контейнеры, сообщения, заголовки, счётчики и ссылки, включая полный `outerHTML` контейнеров и сообщений;
 - `src/utils/webviewSetup.js`: диагностические записи `VK-DIAG` и `vkFull` больше не режутся короткой строкой в renderer trace;

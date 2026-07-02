@@ -267,21 +267,22 @@ test('VK deep diagnostics подключена к preload', () => {
 test('VK diagnostics logs active chat evidence', () => {
   assert(allPreloadCode.includes('[VK-DIAG]') && allPreloadCode.includes('candidate-new-incoming') && allPreloadCode.includes('baselineFingerprints'), 'VK diagnostics must log baseline and candidate decisions')
 })
-test('VK diagnostics does not emit notifications', () => {
-  assert(!vkDiagnosticsCode.includes("sendToHost('new-message'") && !vkDiagnosticsCode.includes('__CC_MSG__') && !vkDiagnosticsCode.includes('__CC_NOTIF__'), 'VK diagnostics must not create notification events')
+test('VK diagnostics emits only verified DOM incoming messages (v1.2.45)', () => {
+  assert(code.includes('sendNewMessage: (text, extra)') && vkDiagnosticsCode.includes('sendNewMessage(info.text, extra)'), 'VK diagnostics must pass verified incoming DOM messages to new-message IPC')
+  assert(!vkDiagnosticsCode.includes("sendToHost('new-message'") && !vkDiagnosticsCode.includes('__CC_MSG__') && !vkDiagnosticsCode.includes('__CC_NOTIF__'), 'VK diagnostics util must not talk to IPC or fake Notification API directly')
 })
 test('VK diagnostics observes only chat container', () => {
   assert(vkDiagnosticsCode.includes('findVkChatContainer') && vkDiagnosticsCode.includes('observer.observe(boundContainer'), 'VK diagnostics must observe only the active chat container')
 })
 test('VK diagnostics records outgoing and baseline reasons', () => {
-  assert(vkDiagnosticsCode.includes('outgoing-own-message') && vkDiagnosticsCode.includes('baseline-existing-message') && vkDiagnosticsCode.includes('new-incoming-candidate-no-emit'), 'VK diagnostics must explain every important decision')
+  assert(vkDiagnosticsCode.includes('outgoing-own-message') && vkDiagnosticsCode.includes('baseline-existing-message') && vkDiagnosticsCode.includes('new-incoming-candidate-emit'), 'VK diagnostics must explain every important decision')
 })
 test('VK diagnostics records notification decision evidence', () => {
   assert(vkDiagnosticsCode.includes('notify-decision'), 'VK diagnostics must log a short decision marker')
   assert(vkDiagnosticsCode.includes('outgoingEvidence') && vkDiagnosticsCode.includes('classExactVkOutgoing'), 'VK diagnostics must show which exact outgoing rule matched')
   assert(vkDiagnosticsCode.includes('ConvoStack--out') && !vkDiagnosticsCode.includes('/out|own|self|sent|ConvoMessage--out'), 'VK diagnostics must not treat withoutBubbles as outgoing')
   assert(vkDiagnosticsCode.includes('authorFromMessage') && vkDiagnosticsCode.includes('emitBlockedBy') && vkDiagnosticsCode.includes('wouldEmit'), 'VK diagnostics must include author and emit decision fields')
-  assert(vkDiagnosticsCode.includes('notification event is not emitted by vkDiagnostics'), 'VK diagnostics must stay read-only and explain missing notification event')
+  assert(vkDiagnosticsCode.includes('vk-dom-observer -> IPC new-message -> app:custom-notify'), 'VK diagnostics must document the notification path')
 })
 
 // ── Структура файла ──

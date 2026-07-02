@@ -295,6 +295,7 @@ const sendMaxSnapshot = createMaxSnapshotSender({
 const vkDiagnostics = createVkDiagnostics({
   sendMonitorDiag,
   isMonitorReady: () => monitorReady,
+  sendNewMessage: (text, extra) => { try { ipcRenderer.sendToHost('new-message', text, extra) } catch {} },
 })
 
 function startChatObserver(type) {

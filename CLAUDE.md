@@ -305,7 +305,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v1.2.44 (2 июля 2026)
+**Текущая версия**: v1.2.45 (2 июля 2026)
 
 ---
 
@@ -744,6 +744,6 @@ Auto-memory — постоянная память Claude между сессия
 
 ---
 
-**Версия проекта**: v1.2.44 (2 июля 2026)
+**Версия проекта**: v1.2.45 (2 июля 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
-**Последнее обновление**: 2 июля 2026 — **v1.2.44 (VK больше не путает `withoutBubbles` с исходящим сообщением)**: входящие VK-сообщения без bubble больше не блокируются как свои исходящие из-за подстроки `out`; направление определяется только по точным признакам `ConvoStack--out`, `ConvoMessage--out`, `im-mess_out`, `message_out`, `data-outgoing/data-own` или aria отправки. История v1.2.27 и старше перенесена в [.memory-bank/archive/features-v1.2.27-and-older.md](.memory-bank/archive/features-v1.2.27-and-older.md). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.
+**Последнее обновление**: 2 июля 2026 — **v1.2.45 (VK DOM observer подключён к модалке уведомлений)**: проверенные новые входящие VK-сообщения теперь идут из `vkDiagnostics` в общий путь `new-message → handleNewMessage → app:custom-notify`, поэтому модалка и звук не зависят только от VK Notification API. Старые baseline-сообщения и свои исходящие не эмитятся. История v1.2.27 и старше перенесена в [.memory-bank/archive/features-v1.2.27-and-older.md](.memory-bank/archive/features-v1.2.27-and-older.md). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.

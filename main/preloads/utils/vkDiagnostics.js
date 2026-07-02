@@ -1,5 +1,4 @@
-// VK-only deep diagnostics for the active chat DOM.
-// This module does not emit notifications. It only writes evidence to monitor-diag.
+// VK DOM observer for active chat notifications + diagnostics.
 
 const VK_CHAT_CONTAINER_SELECTORS = [
   '.ConvoMain__history',
@@ -217,8 +216,8 @@ function buildNotifyDecision(info) {
     decision.emitBlockedBy = 'outgoing-own-message'
     return decision
   }
-  decision.emitBlockedBy = 'diagnostic-read-only'
-  decision.expectedNext = 'notification event is not emitted by vkDiagnostics'
+  decision.wouldEmit = true
+  decision.expectedNext = 'vk-dom-observer -> IPC new-message -> app:custom-notify'
   return decision
 }
 
@@ -320,6 +319,7 @@ function stringifyDetails(obj) {
 
 function createVkDiagnostics(options = {}) {
   const sendMonitorDiag = options.sendMonitorDiag || function() {}
+  const sendNewMessage = options.sendNewMessage || function() {}
   const isMonitorReady = options.isMonitorReady || function() { return false }
   let observer = null
   let baseline = new Set()
@@ -446,13 +446,15 @@ function createVkDiagnostics(options = {}) {
           baseline.add(info.fingerprint)
           continue
         }
-        info.reason = 'new-incoming-candidate-no-emit'
+        info.reason = 'new-incoming-candidate-emit'
         info.notifyDecision = buildNotifyDecision(info)
         info.wouldEmit = info.notifyDecision.wouldEmit
         info.emitBlockedBy = info.notifyDecision.emitBlockedBy
         log('notify-decision', info.notifyDecision)
         log('candidate-new-incoming', info)
         if (info.fingerprint) baseline.add(info.fingerprint)
+        const extra = { senderName: info.authorFromMessage || info.headerSender || '', iconUrl: info.headerAvatar || '', chatTag: info.url || '', messageId: info.messageId || info.fingerprint || '', source: 'vk-dom-observer' }
+        try { sendNewMessage(info.text, extra); log('emit-new-message', { text: info.text, extra: { senderName: extra.senderName, hasIcon: !!extra.iconUrl, chatTag: extra.chatTag, messageId: extra.messageId } }) } catch (e) { log('emit-error', { message: e?.message || String(e) }) }
       }
     })
     observer.observe(boundContainer, { childList: true, subtree: true, characterData: true })
