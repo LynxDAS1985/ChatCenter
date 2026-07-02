@@ -182,8 +182,19 @@ test('MAX quick observer собирает несколько текстов за
 test('MAX quick observer передаёт sender/avatar в IPC (v1.2.8)', () => {
   assert(code.includes('getActiveChatSender()') && code.includes("ipcRenderer.sendToHost('new-message', text, extra)"), 'MAX должен отправлять extra вторым аргументом new-message')
 })
-test('getVKLastIncomingText фильтрует исходящие out/own (v0.81.1)', () => {
-  assert(allPreloadCode.includes('out|own|self|sent') && allPreloadCode.includes('getVKLastIncomingText'), 'должен фильтровать исходящие')
+test('getVKLastIncomingText filters only exact VK outgoing markers (v1.2.44)', () => {
+  assert(messageRetrievalCode.includes('isVKOutgoingMessage') && messageRetrievalCode.includes('ConvoStack--out') && messageRetrievalCode.includes('withoutBubbles'), 'VK outgoing detection must be exact and documented against withoutBubbles')
+})
+test('VK outgoing helper does not treat withoutBubbles as outgoing (v1.2.44)', () => {
+  const { isVKOutgoingMessage } = require('../../main/preloads/utils/messageRetrieval.js')
+  const node = { className: 'ConvoHistory__messageBlock ConvoHistory__messageBlock--withoutBubbles', parentElement: null, getAttribute: () => '' }
+  assert(!isVKOutgoingMessage(node), 'incoming withoutBubbles message must not be outgoing')
+})
+test('VK outgoing helper accepts parent ConvoStack--out marker (v1.2.44)', () => {
+  const { isVKOutgoingMessage } = require('../../main/preloads/utils/messageRetrieval.js')
+  const parent = { className: 'ConvoStack ConvoStack--out ConvoStack--withoutBubbles', parentElement: null, getAttribute: () => '' }
+  const node = { className: 'ConvoMessageWithoutBubble', parentElement: parent, getAttribute: () => '' }
+  assert(isVKOutgoingMessage(node), 'real outgoing VK message must be detected through parent ConvoStack--out')
 })
 test('extractMsgText ищет leaf-элемент для обёрток (v0.81.1)', () => {
   assert(allPreloadCode.includes('node.children.length > 2') && allPreloadCode.includes('leaves'), 'должен искать leaf в обёртках')
@@ -267,7 +278,8 @@ test('VK diagnostics records outgoing and baseline reasons', () => {
 })
 test('VK diagnostics records notification decision evidence', () => {
   assert(vkDiagnosticsCode.includes('notify-decision'), 'VK diagnostics must log a short decision marker')
-  assert(vkDiagnosticsCode.includes('outgoingEvidence') && vkDiagnosticsCode.includes('classBroadOutOwnSelfSent'), 'VK diagnostics must show which outgoing rule matched')
+  assert(vkDiagnosticsCode.includes('outgoingEvidence') && vkDiagnosticsCode.includes('classExactVkOutgoing'), 'VK diagnostics must show which exact outgoing rule matched')
+  assert(vkDiagnosticsCode.includes('ConvoStack--out') && !vkDiagnosticsCode.includes('/out|own|self|sent|ConvoMessage--out'), 'VK diagnostics must not treat withoutBubbles as outgoing')
   assert(vkDiagnosticsCode.includes('authorFromMessage') && vkDiagnosticsCode.includes('emitBlockedBy') && vkDiagnosticsCode.includes('wouldEmit'), 'VK diagnostics must include author and emit decision fields')
   assert(vkDiagnosticsCode.includes('notification event is not emitted by vkDiagnostics'), 'VK diagnostics must stay read-only and explain missing notification event')
 })

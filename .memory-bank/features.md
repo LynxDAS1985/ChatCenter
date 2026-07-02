@@ -1,6 +1,46 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.43 (2 июля 2026)
+## Текущая версия: v1.2.44 (2 июля 2026)
+
+### v1.2.44 — VK: `withoutBubbles` больше не считается исходящим сообщением
+
+Дата: 2 июля 2026.
+Кто нашёл: пользователь по VK-кейсу, где входящее сообщение `Это пример` было видно в чате, но не давало модалку и звук; Codex по фоновой диагностике, `system-diagnostics-report.json`, `chatcenter.log`, `messageRetrieval.js`, `vkDiagnostics.js` и `webviewDiagnostics.js`.
+
+Проблема: VK иногда показывает входящие сообщения в DOM с классами вроде `ConvoMessageWithoutBubble` / `ConvoHistory__messageBlock--withoutBubbles`. Старый фильтр исходящих искал слишком широко: любую подстроку `out|own|self|sent`. Из-за этого слово `withoutBubbles` содержало `out`, входящее сообщение ошибочно считалось исходящим, и цепочка уведомления останавливалась до `__CC_NOTIF__`, модалки и звука.
+
+Что было видно по фактам:
+1. Сообщение `Это пример` было найдено в VK-чате и диагностике.
+2. Автор в DOM был клиентом, не оператором.
+3. Аватарка клиента была найдена.
+4. В отчёте не было `__CC_NOTIF__`, `NotifManager show`, `sound` и `ribbon` для этого сообщения.
+5. Диагностика показывала `outgoing=true`.
+6. `outgoingEvidence.reason` указывал на `class:out`, хотя реальный класс был `withoutBubbles`.
+7. Значит проблема была не в звуке, не в модалке и не в аватарке, а в неверном определении направления сообщения.
+
+Что изменено:
+- `main/preloads/utils/messageRetrieval.js`: добавлен `isVKOutgoingMessage`, который признаёт исходящим только точные VK-маркеры: `ConvoStack--out`, `ConvoMessage--out`, `im-mess_out`, `message_out`, `data-out/data-outgoing/data-own=true`, aria `вы отправили / you sent / исходящ`;
+- `main/preloads/utils/vkDiagnostics.js`: `outgoingEvidence` больше не ловит голую подстроку `out`, а пишет точный `classExactVkOutgoing`;
+- `main/preloads/utils/diagnostics.js`: подробная диагностика VK использует тот же точный механизм исходящих;
+- `src/utils/webviewDiagnostics.js`: renderer deep-check VK приведён к той же логике, чтобы отчёт и рабочий preload не расходились;
+- `src/__tests__/monitorPreload.test.cjs` и `src/__tests__/systemDiagnosticsUi.test.cjs`: добавлены проверки, что `withoutBubbles` не считается исходящим, а реальный `ConvoStack--out` считается.
+
+Почему выбрано именно так:
+1. Мы не блокируем текст сообщения и не вводим словари запрещённых слов.
+2. Мы не отключаем VK fallback и не ломаем другие мессенджеры.
+3. Исправлен корень проблемы: направление сообщения определяется по структуре VK, а не по случайной подстроке.
+4. Реальные исходящие сообщения оператора всё ещё отсекаются по точным VK-маркерам.
+5. Входящие сообщения без bubble теперь могут пройти дальше к уведомлению, звуку и модалке.
+6. Диагностика и рабочий код используют одинаковые правила, поэтому следующий отчёт будет проверяемым.
+7. Тесты защищают от возврата старого широкого `/out|own|self|sent/` подхода.
+
+Как должно работать после исправления:
+1. Если клиент пишет сообщение в VK, а DOM содержит `withoutBubbles`, приложение не считает его исходящим только из-за `out`.
+2. Если сообщение реально отправлено оператором и VK пометил его `ConvoStack--out` или аналогичным точным маркером, уведомление не создаётся.
+3. В диагностике по VK надо смотреть `outgoingEvidence.reason` и `classExactVkOutgoing`: там будет видно, какой точный признак сработал.
+4. Для входящего `withoutBubbles` ожидается `outgoing=false`, дальше должны появиться рабочие события уведомления.
+
+Проверки: `node src/__tests__/monitorPreload.test.cjs`, `node src/__tests__/systemDiagnosticsUi.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `node src/__tests__/featuresReferences.test.cjs`, `node src/__tests__/memoryBankSizeLimits.test.cjs`, `npm test`, `npm run lint`, `npm run build`.
 
 ### v1.2.43 — VK: диагностика показывает причину пропуска уведомления
 

@@ -77,6 +77,20 @@ function runDiagnostics(type, deps) {
 
       // VK-специфика: источник счётчика, generic текст сообщения, классы чат-области
       if (type === 'vk') {
+        const vkOutgoing = (el) => {
+          let cur = el
+          for (let i = 0; i < 8 && cur; i++) {
+            const c = typeof cur.className === 'string' ? cur.className : ''
+            const dataOut = cur.getAttribute?.('data-out') || cur.getAttribute?.('data-outgoing') || cur.getAttribute?.('data-own') || ''
+            const aria = cur.getAttribute?.('aria-label') || ''
+            const classMatch = c.match(/(^|\s)(ConvoStack--out|ConvoMessage--out|im-mess_out|message_out)(\s|$)/i)
+            if (classMatch) return { result: true, reason: `class:${classMatch[2]}`, className: c }
+            if (/^(1|true|yes)$/i.test(dataOut)) return { result: true, reason: 'data-outgoing', className: c }
+            if (/вы отправили|you sent|исходящ/i.test(aria)) return { result: true, reason: 'aria-outgoing', className: c }
+            cur = cur.parentElement
+          }
+          return { result: false, reason: '', className: '' }
+        }
         diag.countSource = countUnreadVK._lastSource || 'unknown'
         diag.genericLastMsg = getVKLastIncomingText()
         diag.vkFull = {
@@ -102,6 +116,7 @@ function runDiagnostics(type, deps) {
         })
         document.querySelectorAll('[data-msgid], [data-message-id], [class*="ConvoMessage"], [class*="im-mess"], [class*="im_msg"], [class*="im-mes"], [class*="Message"], [class*="message"]').forEach(el => {
           const cls = typeof el.className === 'string' ? el.className : ''
+          const out = vkOutgoing(el)
           const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null
           diag.vkFull.messages.push({
             tag: el.tagName,
@@ -109,7 +124,9 @@ function runDiagnostics(type, deps) {
             cls,
             msgId: el.getAttribute?.('data-msgid') || el.getAttribute?.('data-message-id') || el.getAttribute?.('data-id') || '',
             dataOut: el.getAttribute?.('data-out') || el.getAttribute?.('data-outgoing') || el.getAttribute?.('data-own') || '',
-            outgoingByClass: /out|own|self|sent|ConvoMessage--out|im-mess_out|message_out/i.test(cls),
+            outgoingByClass: out.result,
+            outgoingReason: out.reason,
+            outgoingClassName: out.className,
             aria: el.getAttribute?.('aria-label') || '',
             text: el.textContent || '',
             outerHTML: el.outerHTML || '',

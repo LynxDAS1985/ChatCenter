@@ -33,6 +33,21 @@ function attr(el, name) {
   try { return el?.getAttribute?.(name) || '' } catch { return '' }
 }
 
+function vkOutgoingMarker(el) {
+  let cur = el
+  for (let i = 0; i < 8 && cur; i++) {
+    const c = cls(cur)
+    const dataOut = attr(cur, 'data-out') || attr(cur, 'data-outgoing') || attr(cur, 'data-own')
+    const aria = attr(cur, 'aria-label')
+    const classMatch = c.match(/(^|\s)(ConvoStack--out|ConvoMessage--out|im-mess_out|message_out)(\s|$)/i)
+    if (classMatch) return { result: true, reason: `class:${classMatch[2]}`, className: c }
+    if (/^(1|true|yes)$/i.test(dataOut)) return { result: true, reason: 'data-outgoing', className: c, dataOut }
+    if (/вы отправили|you sent|исходящ/i.test(aria)) return { result: true, reason: 'aria-outgoing', className: c, aria }
+    cur = cur.parentElement
+  }
+  return { result: false, reason: '', className: '' }
+}
+
 function rectInfo(el) {
   try {
     const r = el?.getBoundingClientRect?.()
@@ -131,30 +146,26 @@ function extractLeafText(root) {
 }
 
 function isOutgoingMessage(el) {
-  const c = cls(el)
-  const dataOut = attr(el, 'data-out') || attr(el, 'data-outgoing') || attr(el, 'data-own')
-  const aria = attr(el, 'aria-label')
-  if (/out|own|self|sent|ConvoMessage--out|im-mess_out|message_out/i.test(c)) return true
-  if (/^(1|true|yes)$/i.test(dataOut)) return true
-  if (/вы отправили|you sent|исходящ/i.test(aria)) return true
-  return false
+  return vkOutgoingMarker(el).result
 }
 
 function outgoingEvidence(el) {
-  const c = cls(el)
+  const marker = vkOutgoingMarker(el)
+  const c = marker.className || cls(el)
   const dataOut = attr(el, 'data-out') || attr(el, 'data-outgoing') || attr(el, 'data-own')
   const aria = attr(el, 'aria-label')
-  const classMatch = c.match(/out|own|self|sent|ConvoMessage--out|im-mess_out|message_out/i)
+  const classMatch = marker.reason.startsWith('class:') ? marker.reason.slice(6) : ''
   const dataMatch = /^(1|true|yes)$/i.test(dataOut)
-  const ariaMatch = /you sent/i.test(aria) || /РІС‹ РѕС‚РїСЂР°РІРёР»Рё|РёСЃС…РѕРґСЏС‰/i.test(aria)
+  const ariaMatch = /you sent/i.test(aria) || /вы отправили|исходящ/i.test(aria)
   return {
-    result: !!(classMatch || dataMatch || ariaMatch),
-    reason: classMatch ? `class:${classMatch[0]}` : dataMatch ? 'data-outgoing' : ariaMatch ? 'aria-outgoing' : '',
+    result: !!(marker.result || dataMatch || ariaMatch),
+    reason: marker.reason || (dataMatch ? 'data-outgoing' : ariaMatch ? 'aria-outgoing' : ''),
     className: c,
     dataOut,
     aria,
     checks: {
       classBroadOutOwnSelfSent: !!classMatch,
+      classExactVkOutgoing: !!classMatch,
       dataOutTrue: dataMatch,
       ariaOutgoing: ariaMatch,
     },

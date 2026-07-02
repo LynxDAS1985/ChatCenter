@@ -88,7 +88,8 @@ test('VK live diagnostics uses selected WebView deep-check path', () => {
   assert(app.includes('runSelectedDiagnosticsDeepCheck') && selectedDeepCheck.includes('const targetId = target?.tabId || target?.id') && selectedDeepCheck.includes('runDomProbe(webview, targetId, traceNotif)'), 'App must deep-probe the selected WebView, not only problematic connections')
   assert(webviewDiagnostics.includes('export function runVkFullProbe') && webviewDiagnostics.includes('__CC_DIAG__vkFull'), 'VK full snapshot must be emitted through console-message diagnostics')
   assert(webviewDiagnostics.includes('containerSelector') && webviewDiagnostics.includes('outgoing') && webviewDiagnostics.includes('header') && webviewDiagnostics.includes('sidebar'), 'vkFull must include container, outgoing flag, header/avatar and sidebar evidence')
-  assert(webviewDiagnostics.includes('outgoingEvidence') && webviewDiagnostics.includes('classBroadOutOwnSelfSent') && webviewDiagnostics.includes('authorFromMessage'), 'vkFull must explain outgoing detection and message author evidence')
+  assert(webviewDiagnostics.includes('outgoingEvidence') && webviewDiagnostics.includes('classExactVkOutgoing') && webviewDiagnostics.includes('authorFromMessage'), 'vkFull must explain exact outgoing detection and message author evidence')
+  assert(webviewDiagnostics.includes('ConvoStack--out') && !webviewDiagnostics.includes('/out|own|self|sent|ConvoMessage--out'), 'VK outgoing detection must not treat withoutBubbles as out')
 })
 
 test('VK diagnostic payload is kept full in report pipeline', () => {
