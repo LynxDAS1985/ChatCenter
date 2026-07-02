@@ -211,6 +211,12 @@ test('VK-EXEC fallback: на активной VK-вкладке → блокир
   assert(r.steps.includes('viewing-block-vk-exec'))
 })
 
+test('VK sidebar unread: на активной VK-вкладке → показываем другой чат из sidebar', function() {
+  var r = processMessage('vk', 'Видеосообщение', { senderName: 'Елена Дугина', source: 'vk-sidebar-unread' }, { focused: true, activeId: 'vk' })
+  assert(r.action === 'pass', 'action=' + r.action)
+  assert(r.steps.includes('viewing-pass'))
+})
+
 test('VK: на вкладке + NO extra (мусор) → блокируем', function() {
   var r = processMessage('vk', 'мусор', null, { focused: true, activeId: 'vk' })
   assert(r.action === 'viewing-block')

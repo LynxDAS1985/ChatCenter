@@ -55,8 +55,22 @@ test('sender and avatar are passed to the common notification path', () => {
 })
 
 test('host receives vk-exec-fallback source for active-chat viewing guard', () => {
-  assert(code.includes("source: 'vk-exec-fallback'"), 'handleNewMessage must receive vk-exec-fallback source')
+  assert(code.includes("source: payload.source || 'vk-exec-fallback'"), 'handleNewMessage must preserve fallback source')
   assert(code.includes("source:'vk-exec-fallback'"), 'page payload must mark vk-exec-fallback source')
+})
+
+test('sidebar unread preview emits a separate source for chats outside active history', () => {
+  assert(code.includes('bindSidebar'), 'missing VK sidebar observer')
+  assert(code.includes('scanSidebar'), 'missing VK sidebar scanner')
+  assert(code.includes("source:'vk-sidebar-unread'"), 'sidebar unread must use a separate source')
+  assert(code.includes("d.count>0"), 'sidebar notifications must require unread badge')
+  assert(code.includes('ConvoListItem__message'), 'sidebar preview must read VK chat-list preview')
+})
+
+test('sidebar baseline prevents old unread rows from firing on bind', () => {
+  assert(code.includes("scanSidebar('baseline-'+reason,false)"), 'sidebar bind must baseline without notifications')
+  assert(code.includes('prev&&d.count>0'), 'sidebar emit must require a previous row state')
+  assert(code.includes('d.count>(prev.count||0)||d.preview!==prev.preview'), 'sidebar emit must require unread increase or preview change')
 })
 
 console.log(`\nVK exec fallback: ${passed} passed, ${failed} failed\n`)

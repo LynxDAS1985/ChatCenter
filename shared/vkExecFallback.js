@@ -49,7 +49,7 @@ export function createVkExecFallbackRuntime(options) {
           ...(payload.iconUrl ? { iconUrl: payload.iconUrl } : {}),
           chatTag: payload.chatTag || payload.url || '',
           messageId: payload.messageId || '',
-          source: 'vk-exec-fallback',
+          source: payload.source || 'vk-exec-fallback',
         })
       }
       return true
@@ -71,7 +71,7 @@ export function buildVkExecFallbackScript() {
   function emit(payload){try{console.log(PREFIX+JSON.stringify(Object.assign({url:location.href,ts:Date.now()},payload)));}catch(e){}}
   function one(sel,root){try{return (root||document).querySelector(sel);}catch(e){return null;}}
   function all(sel,root){try{return Array.from((root||document).querySelectorAll(sel));}catch(e){return [];}}
-  var currentUrl='',currentContainer=null,currentObserver=null;
+  var currentUrl='',currentContainer=null,currentObserver=null,sidebarObserver=null,sidebarTimer=0,sidebarSeen={};
   function findContainer(){
     var selectors=['.ConvoMain__history','[class*="ConvoMain__history"]','[class*="im-page--chat-body"]','[class*="im_msg_list"]','[class*="im-history"]','[class*="ConversationBody"]','[class*="HistoryMessages"]'];
     for(var i=0;i<selectors.length;i++){var el=one(selectors[i]);if(el)return{el:el,selector:selectors[i]};}
@@ -130,6 +130,38 @@ export function buildVkExecFallbackScript() {
     var img=one('img[src]',msg)||one('[class*="ConvoHeader"] img[src], img[src*="userapi"], img[src*="vkuser"]');
     return img&&img.src||'';
   }
+  function rowText(row,sel){var n=one(sel,row);return clean(n&&n.textContent);}
+  function rowData(row){
+    var title=rowText(row,'[class*="ConvoListItem__header"], [class*="ConvoListItem__title"], [class*="PeerTitle"], [class*="title"]');
+    var preview=rowText(row,'[class*="ConvoListItem__message"] [class*="ConvoListItem__text"], [class*="ConvoListItem__message"], [class*="message"]');
+    var unread=clean((one('[class*="ConvoListItem__icons"] [class*="Counter"], [class*="ConvoListItem__icons"], [class*="unread"], [class*="Unread"], [class*="counter"]',row)||{}).textContent);
+    var count=parseInt((unread.match(/\\d+/)||['0'])[0],10)||0, img=one('[class*="ConvoListItem__avatar"] img[src], img[src]',row), selected=/ConvoListItem--selected/i.test(cls(row));
+    preview=preview.replace(/^Вы:\\s*/i,'').replace(/\\s*·\\s*\\S+$/,'').trim();
+    var key=clean(title+'|'+(img&&img.src||'')).slice(0,240);
+    return{title:title,preview:preview,count:count,avatar:img&&img.src||'',selected:selected,key:key,fp:key+'|'+count+'|'+preview};
+  }
+  function findSidebarRoot(){
+    var item=one('[class*="ConvoListItem"]');
+    return (item&&item.closest&&item.closest('[class*="ConvoList"], [role="list"]'))||one('[class*="Messenger"], [class*="messenger"]')||document.body;
+  }
+  function scanSidebar(reason,notify){
+    var rows=all('[class*="ConvoListItem"]'), n=0;
+    rows.forEach(function(row){
+      var d=rowData(row); if(!d.key||d.selected||!d.preview)return;
+      var prev=sidebarSeen[d.key]; sidebarSeen[d.key]=d;
+      if(notify&&prev&&d.count>0&&(d.count>(prev.count||0)||d.preview!==prev.preview)){
+        n++; emit({kind:'new-message',source:'vk-sidebar-unread',reason:reason,text:d.preview,senderName:d.title,iconUrl:d.avatar,chatTag:d.key,messageId:d.fp});
+      }
+    });
+    emit({kind:'sidebar-scan',reason:reason,rows:rows.length,emitted:n});
+  }
+  function bindSidebar(reason){
+    if(sidebarObserver){try{sidebarObserver.disconnect();}catch(e){}}
+    var root=findSidebarRoot(); scanSidebar('baseline-'+reason,false);
+    sidebarObserver=new MutationObserver(function(){clearTimeout(sidebarTimer);sidebarTimer=setTimeout(function(){scanSidebar('mutation',true);},120);});
+    sidebarObserver.observe(root,{childList:true,subtree:true,characterData:true});
+    emit({kind:'sidebar-bound',reason:reason});
+  }
   function bind(reason){
     var found=findContainer();
     if(!found.el){emit({kind:'container-not-found',reason:reason,title:document.title});return false;}
@@ -159,6 +191,7 @@ export function buildVkExecFallbackScript() {
       });
     });
     currentObserver.observe(container,{childList:true,subtree:true,characterData:true});
+    bindSidebar(reason);
     return true;
   }
   if(!bind('initial'))setTimeout(function(){bind('retry-3s');},3000);
