@@ -12,7 +12,6 @@ export function createHandleNewMessage(deps) {
     setNewMessageIds, setStatusBarMsg, setUnreadCounts,
     previewTimers, statusBarMsgTimer, bumpStatsRef, traceNotif,
   } = deps
-
   // ── Обработка входящего сообщения (общая для ipc-message и console-message) ──
   // extra = { senderName, iconUrl } — опционально, из перехваченного Notification
   // Если extra есть → из __CC_NOTIF__ (Notification API) — надёжный источник

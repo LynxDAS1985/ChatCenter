@@ -1,6 +1,20 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.49 (2 июля 2026)
+## Текущая версия: v1.2.50 (2 июля 2026)
+
+### v1.2.50 — VK: свежие unread в sidebar не теряются при spa-rebind
+
+Дата: 2 июля 2026. Кто нашёл: пользователь по VK-сценарию, где открыта одна переписка, а слева у другого VK-чата уже появился свежий badge `1/2`, но модалки и звука не было; Codex по `chatcenter.log`, диагностике VK и коду `shared/vkExecFallback.js`.
+
+Проблема: v1.2.49 починила реальные новые сообщения в уже открытом VK-чате, но оставался другой сценарий. После перезагрузки/SPA-перепривязки VK sidebar observer мог увидеть уже видимый свежий unread-badge как стартовый baseline (`reason=baseline-spa-rebind`). Из-за этого строка чата попадала в `sidebarSeen`, но не шла дальше в `handleNewMessage`, `sound`, `ribbon` и модалку. В диагностике это выглядело так: есть `VK-EXEC kind=sidebar-scan reason=baseline-spa-rebind`, но нет `source:'vk-sidebar-unread'` и нет цепочки уведомления.
+
+Решение: для `baseline-spa-rebind` добавлено ограниченное восстановление только свежих unread-строк. Если строка VK sidebar имеет `count > 0`, preview и свежий возраст (`только что`, `1м`, `2м` и до 10 минут), она отправляется как `source:'vk-sidebar-unread'` с `reason:'baseline-fresh-unread'`. Старые строки с часами/днями остаются baseline, чтобы не вернуть фантомы старой истории. Добавлена память `sidebarNotified`, чтобы одна и та же свежая строка не дублировалась при повторной перепривязке.
+
+Диагностика: `VK-EXEC` теперь пишет `rows` и `emitted` для `sidebar-scan`, чтобы было видно, сколько строк sidebar проверено и сколько уведомлений реально отправлено. Для проверки нужно смотреть связку `sidebar-scan ... rows=N emitted=1`, затем `vk-sidebar-unread`, затем `handle -> sound -> ribbon`.
+
+Как должно работать: если в другом VK-чате слева появился свежий unread-badge с preview, уведомление должно появиться даже если observer подключился после появления badge. Если unread старый (`1ч`, `2д`, дата) или строка уже была обработана, уведомление не создаётся повторно. MAX/WhatsApp/Telegram/API не затронуты.
+
+Проверки: `node src/__tests__/vkExecFallback.test.cjs`, `node src/__tests__/integration.test.cjs`, `node src/__tests__/handleNewMessage.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `node src/__tests__/memoryBankSizeLimits.test.cjs`, `node src/__tests__/featuresReferences.test.cjs`, `npm test`.
 
 ### v1.2.49 — VK: новые сообщения в уже открытом чате
 
@@ -39,7 +53,7 @@
 
 ### v1.2.46 — VK: fallback live-observer, если monitor preload не запустился
 
-Дата: 2 июля 2026. Проблема: VK WebView иногда не запускал штатный `monitor.preload.cjs`, поэтому ручная глубокая диагностика видела DOM-сообщения, а live-цепочка `new-message -> sound -> ribbon` не срабатывала. Решение: добавлен heartbeat `monitor-ready`; если heartbeat нет, renderer ставит резервный `VK-EXEC` через `executeJavaScript`, который требует структурный DOM-узел сообщения, baseline и не-исходящее направление. Общий путь `handleNewMessage` сохранён. Подробная история была закрыта в v1.2.46; последующие уточнения VK см. v1.2.47-v1.2.49.
+Дата: 2 июля 2026. Проблема: VK WebView иногда не запускал штатный `monitor.preload.cjs`, поэтому ручная глубокая диагностика видела DOM-сообщения, а live-цепочка `new-message -> sound -> ribbon` не срабатывала. Решение: добавлен heartbeat `monitor-ready`; если heartbeat нет, renderer ставит резервный `VK-EXEC` через `executeJavaScript`, который требует структурный DOM-узел сообщения, baseline и не-исходящее направление. Общий путь `handleNewMessage` сохранён. Подробная история была закрыта в v1.2.46; последующие уточнения VK см. v1.2.47-v1.2.50.
 
 Проверки: `node src/__tests__/vkExecFallback.test.cjs`, `node src/__tests__/monitorPreload.test.cjs`, `npm run lint`, `npm run build`, `npm test`.
 ### v1.2.45 — VK: DOM observer подключён к модалке уведомлений

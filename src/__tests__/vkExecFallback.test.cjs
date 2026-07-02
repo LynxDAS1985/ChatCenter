@@ -24,7 +24,7 @@ test('script stays in page world and does not depend on ipcRenderer', () => {
 })
 
 test('script can upgrade an already injected page runtime', () => {
-  assert(code.includes("SCRIPT_VERSION='1.2.49-active-unread'"), 'missing versioned runtime marker')
+  assert(code.includes("SCRIPT_VERSION='1.2.50-sidebar-fresh-rebind'"), 'missing versioned runtime marker')
   assert(code.includes('__ccVkExecFallbackObserver'), 'missing active observer handle')
   assert(code.includes('__ccVkSidebarObserver'), 'missing sidebar observer handle')
   assert(code.includes('__ccVkExecFallbackInstalled===SCRIPT_VERSION'), 'already-installed must be version-specific')
@@ -86,6 +86,17 @@ test('sidebar baseline prevents old unread rows from firing on bind', () => {
   assert(code.includes("scanSidebar('baseline-'+reason,false)"), 'sidebar bind must baseline without notifications')
   assert(code.includes('prev&&d.count>0'), 'sidebar emit must require a previous row state')
   assert(code.includes('d.count>(prev.count||0)||d.preview!==prev.preview'), 'sidebar emit must require unread increase or preview change')
+})
+
+test('sidebar rebind can recover fresh unread rows without old-history phantoms', () => {
+  assert(code.includes('shouldEmitSidebarBaseline'), 'missing fresh baseline recovery')
+  assert(code.includes("reason!=='baseline-spa-rebind'"), 'fresh baseline recovery must be limited to spa rebind')
+  assert(code.includes('rowFreshMinutes'), 'missing sidebar freshness parser')
+  assert(code.includes("reason:baselineFresh?'baseline-fresh-unread':reason"), 'missing explicit fresh unread reason')
+  assert(code.includes('sidebarNotified'), 'missing sidebar notification memory')
+  assert(code.includes('minutes!==null&&minutes<=10'), 'fresh unread window must be bounded')
+  assert(code.includes('rows=${payload.rows'), 'diagnostics must include sidebar row count')
+  assert(code.includes('emitted=${payload.emitted'), 'diagnostics must include sidebar emitted count')
 })
 
 console.log(`\nVK exec fallback: ${passed} passed, ${failed} failed\n`)

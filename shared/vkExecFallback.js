@@ -41,7 +41,7 @@ export function createVkExecFallbackRuntime(options) {
       const payload = parseVkExecFallbackMessage(msg)
       if (!payload) return false
       const text = String(payload.text || '').trim()
-      const detail = `VK-EXEC kind=${payload.kind || ''} reason=${payload.reason || ''} seq=${payload.seq || ''} sender=${payload.senderName || ''} icon=${!!payload.iconUrl} activeUnread=${!!payload.vkActiveUnread} msgId=${payload.messageId || ''} url=${String(payload.url || '').slice(0, 180)}`
+      const detail = `VK-EXEC kind=${payload.kind || ''} reason=${payload.reason || ''} seq=${payload.seq || ''} sender=${payload.senderName || ''} icon=${!!payload.iconUrl} activeUnread=${!!payload.vkActiveUnread} rows=${payload.rows ?? ''} emitted=${payload.emitted ?? ''} msgId=${payload.messageId || ''} url=${String(payload.url || '').slice(0, 180)}`
       traceNotif(payload.kind === 'new-message' ? 'source' : 'debug', payload.kind === 'new-message' ? 'info' : 'warn', messengerId, text || 'VK exec fallback', detail)
       if (payload.kind === 'new-message' && text) {
         handleNewMessage(messengerId, text, {
@@ -61,7 +61,7 @@ export function createVkExecFallbackRuntime(options) {
 export function buildVkExecFallbackScript() {
   return `;(function(){
   var PREFIX='${PREFIX}';
-  var SCRIPT_VERSION='1.2.49-active-unread';
+  var SCRIPT_VERSION='1.2.50-sidebar-fresh-rebind';
   if(window.__ccVkExecFallbackInstalled===SCRIPT_VERSION){
     try{console.log(PREFIX+JSON.stringify({kind:'already-installed',version:SCRIPT_VERSION,url:location.href,ts:Date.now()}));}catch(e){}
     return 'already-installed';
@@ -75,7 +75,7 @@ export function buildVkExecFallbackScript() {
   function emit(payload){try{console.log(PREFIX+JSON.stringify(Object.assign({url:location.href,ts:Date.now()},payload)));}catch(e){}}
   function one(sel,root){try{return (root||document).querySelector(sel);}catch(e){return null;}}
   function all(sel,root){try{return Array.from((root||document).querySelectorAll(sel));}catch(e){return [];}}
-  var currentUrl='',currentContainer=null,currentObserver=null,sidebarObserver=null,sidebarTimer=0,sidebarSeen={};
+  var currentUrl='',currentContainer=null,currentObserver=null,sidebarObserver=null,sidebarTimer=0,sidebarSeen={},sidebarNotified={};
   function findContainer(){
     var selectors=['.ConvoMain__history','[class*="ConvoMain__history"]','[class*="im-page--chat-body"]','[class*="im_msg_list"]','[class*="im-history"]','[class*="ConversationBody"]','[class*="HistoryMessages"]'];
     for(var i=0;i<selectors.length;i++){var el=one(selectors[i]);if(el)return{el:el,selector:selectors[i]};}
@@ -151,7 +151,19 @@ export function buildVkExecFallbackScript() {
     var count=parseInt((unread.match(/\\d+/)||['0'])[0],10)||0, img=one('[class*="ConvoListItem__avatar"] img[src], img[src]',row), selected=/ConvoListItem--selected/i.test(cls(row));
     preview=preview.replace(/^Вы:\\s*/i,'').replace(/\\s*·\\s*\\S+$/,'').trim();
     var key=clean(title+'|'+(img&&img.src||'')).slice(0,240);
-    return{title:title,preview:preview,count:count,avatar:img&&img.src||'',selected:selected,key:key,fp:key+'|'+count+'|'+preview};
+    return{title:title,preview:preview,count:count,avatar:img&&img.src||'',selected:selected,key:key,fp:key+'|'+count+'|'+preview,raw:clean(row.textContent)};
+  }
+  function rowFreshMinutes(raw){
+    raw=clean(raw);
+    if(/(С‚РѕР»СЊРєРѕ С‡С‚Рѕ|сейчас|just now)/i.test(raw))return 0;
+    var m=raw.match(/(?:^|\\s)(\\d{1,2})\\s*(Рј|РјРёРЅ|мин|min|m)(?:\\s|$|\\.)/i);
+    if(m)return parseInt(m[1],10);
+    return null;
+  }
+  function shouldEmitSidebarBaseline(reason,d){
+    if(reason!=='baseline-spa-rebind'||!d.count||!d.preview)return false;
+    var minutes=rowFreshMinutes(d.raw);
+    return minutes!==null&&minutes<=10&&!sidebarNotified[d.fp];
   }
   function findSidebarRoot(){
     var item=one('[class*="ConvoListItem"]'), cur=item&&item.parentElement;
@@ -165,9 +177,10 @@ export function buildVkExecFallbackScript() {
     var rows=all('[class*="ConvoListItem"]'), n=0;
     rows.forEach(function(row){
       var d=rowData(row); if(!d.key||d.selected||!d.preview)return;
-      var prev=sidebarSeen[d.key]; sidebarSeen[d.key]=d;
-      if(notify&&prev&&d.count>0&&(d.count>(prev.count||0)||d.preview!==prev.preview)){
-        n++; emit({kind:'new-message',source:'vk-sidebar-unread',reason:reason,text:d.preview,senderName:d.title,iconUrl:d.avatar,chatTag:d.key,messageId:d.fp});
+      var prev=sidebarSeen[d.key], baselineFresh=shouldEmitSidebarBaseline(reason,d); sidebarSeen[d.key]=d;
+      if((baselineFresh||notify&&prev&&d.count>0&&(d.count>(prev.count||0)||d.preview!==prev.preview))&&!sidebarNotified[d.fp]){
+        sidebarNotified[d.fp]=Date.now();
+        n++; emit({kind:'new-message',source:'vk-sidebar-unread',reason:baselineFresh?'baseline-fresh-unread':reason,text:d.preview,senderName:d.title,iconUrl:d.avatar,chatTag:d.key,messageId:d.fp});
       }
     });
     emit({kind:'sidebar-scan',reason:reason,rows:rows.length,emitted:n});
