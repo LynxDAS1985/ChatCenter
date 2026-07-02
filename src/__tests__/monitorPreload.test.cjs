@@ -265,6 +265,12 @@ test('VK diagnostics observes only chat container', () => {
 test('VK diagnostics records outgoing and baseline reasons', () => {
   assert(vkDiagnosticsCode.includes('outgoing-own-message') && vkDiagnosticsCode.includes('baseline-existing-message') && vkDiagnosticsCode.includes('new-incoming-candidate-no-emit'), 'VK diagnostics must explain every important decision')
 })
+test('VK diagnostics records notification decision evidence', () => {
+  assert(vkDiagnosticsCode.includes('notify-decision'), 'VK diagnostics must log a short decision marker')
+  assert(vkDiagnosticsCode.includes('outgoingEvidence') && vkDiagnosticsCode.includes('classBroadOutOwnSelfSent'), 'VK diagnostics must show which outgoing rule matched')
+  assert(vkDiagnosticsCode.includes('authorFromMessage') && vkDiagnosticsCode.includes('emitBlockedBy') && vkDiagnosticsCode.includes('wouldEmit'), 'VK diagnostics must include author and emit decision fields')
+  assert(vkDiagnosticsCode.includes('notification event is not emitted by vkDiagnostics'), 'VK diagnostics must stay read-only and explain missing notification event')
+})
 
 // ── Структура файла ──
 console.log('\\n── Структура файла: ──')

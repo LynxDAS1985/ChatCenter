@@ -1,6 +1,49 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.42 (2 июля 2026)
+## Текущая версия: v1.2.43 (2 июля 2026)
+
+### v1.2.43 — VK: диагностика показывает причину пропуска уведомления
+
+Дата: 2 июля 2026.
+Кто нашёл: пользователь по кейсу VK, где сообщение `Ну плакал конечно когда пальчик прокололи` было видно в чате и в диагностике, но не было модалки и звука; Codex по `system-diagnostics-report.json`, `chatcenter.log`, `vkDiagnostics.js` и `webviewDiagnostics.js`.
+
+Проблема: диагностика уже видела VK DOM, текст сообщения, чат и аватарку, но не показывала короткое решение: почему это DOM-событие не стало уведомлением. В отчёте были длинные `vkFull` и `candidate-skip`, но не было отдельного маркера, который прямо отвечает: `wouldEmit`, `emitBlockedBy`, какой признак сделал сообщение `outgoing`, кто автор сообщения по DOM.
+
+Что было видно по фактам:
+1. Сообщение было найдено в отчёте и `chatcenter.log`.
+2. URL чата VK совпадал с активным чатом пользователя.
+3. Аватарка в DOM была.
+4. В момент сообщения не было `__CC_NOTIF__`.
+5. Не было `app:custom-notify`, `NotifManager show`, `sound` и `ribbon`.
+6. В `vkFull` сообщение выглядело как `outgoing:true`, но отчёт не показывал, какой именно признак дал этот результат.
+
+Что изменено:
+- `main/preloads/utils/vkDiagnostics.js`: добавлен `outgoingEvidence` с полями `reason`, `className`, `dataOut`, `aria`, `checks`;
+- `vkDiagnostics.js`: добавлен `authorFromMessage`, чтобы рядом с текстом было видно автора из DOM сообщения;
+- `vkDiagnostics.js`: добавлен `notifyDecision` / `wouldEmit` / `emitBlockedBy` / `expectedNext`;
+- `vkDiagnostics.js`: добавлен короткий лог-маркер `[VK-DIAG] notify-decision`, который можно искать в отчёте без чтения огромного HTML;
+- `src/utils/webviewDiagnostics.js`: `vkFull.messages[]` теперь тоже содержит `outgoingEvidence` и `authorFromMessage`;
+- `src/__tests__/monitorPreload.test.cjs`: добавлен тест, что VK-диагностика пишет решение и остаётся read-only;
+- `src/__tests__/systemDiagnosticsUi.test.cjs`: добавлен тест, что `vkFull` сохраняет доказательства направления и автора.
+
+Почему выбрано именно так:
+1. Уведомления VK пока не менялись, чтобы не сломать рабочие пути.
+2. Диагностика теперь отвечает на главный вопрос: кто остановил уведомление.
+3. Если причина `outgoing-own-message`, будет видно, какой именно класс/data/aria сработал.
+4. Если причина `baseline-existing-message`, будет видно, что сообщение уже было в baseline.
+5. Если причина `diagnostic-read-only`, это значит: диагностика увидела нового входящего кандидата, но сама не имеет права отправлять `__CC_NOTIF__`.
+6. `vkFull` и `[VK-DIAG]` теперь дают одинаковые доказательства, поэтому не нужно гадать по двум разным форматам.
+7. Это изменение не создаёт фантомные уведомления: `vkDiagnostics.js` по-прежнему не эмитит `new-message`, `__CC_MSG__` или `__CC_NOTIF__`.
+
+Как должно работать:
+1. Пользователь включает диагностику VK и воспроизводит проблему.
+2. В отчёте надо искать `[VK-DIAG] notify-decision`.
+3. По `emitBlockedBy` видно точную причину пропуска.
+4. По `outgoingEvidence.reason` видно, какой признак сделал сообщение исходящим.
+5. По `authorFromMessage`, `headerSender`, `headerAvatar`, `messageTextRaw` видно, кто написал сообщение и из какого чата оно пришло.
+6. После следующего воспроизведения можно чинить уже конкретную причину, а не менять фильтры вслепую.
+
+Проверки: `node src/__tests__/monitorPreload.test.cjs`, `node src/__tests__/systemDiagnosticsUi.test.cjs`, `npm run lint`, `npm run build`.
 
 ### v1.2.42 — UI диагностики: длинные payload больше не ломают маленькую панель
 

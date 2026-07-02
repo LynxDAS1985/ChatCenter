@@ -140,6 +140,77 @@ function isOutgoingMessage(el) {
   return false
 }
 
+function outgoingEvidence(el) {
+  const c = cls(el)
+  const dataOut = attr(el, 'data-out') || attr(el, 'data-outgoing') || attr(el, 'data-own')
+  const aria = attr(el, 'aria-label')
+  const classMatch = c.match(/out|own|self|sent|ConvoMessage--out|im-mess_out|message_out/i)
+  const dataMatch = /^(1|true|yes)$/i.test(dataOut)
+  const ariaMatch = /you sent/i.test(aria) || /РІС‹ РѕС‚РїСЂР°РІРёР»Рё|РёСЃС…РѕРґСЏС‰/i.test(aria)
+  return {
+    result: !!(classMatch || dataMatch || ariaMatch),
+    reason: classMatch ? `class:${classMatch[0]}` : dataMatch ? 'data-outgoing' : ariaMatch ? 'aria-outgoing' : '',
+    className: c,
+    dataOut,
+    aria,
+    checks: {
+      classBroadOutOwnSelfSent: !!classMatch,
+      dataOutTrue: dataMatch,
+      ariaOutgoing: ariaMatch,
+    },
+  }
+}
+
+function authorFromMessage(el) {
+  if (!el) return ''
+  const selectors = [
+    '[class*="ConvoMessageHeader"] [class*="PeerTitle"]',
+    '[class*="ConvoMessageHeader"] [class*="author"]',
+    '[class*="ConvoMessageHeader"] a',
+    '[class*="PeerTitle"]',
+    '[class*="author"]',
+  ]
+  for (const selector of selectors) {
+    try {
+      const node = el.querySelector?.(selector)
+      const text = cleanText(node?.textContent)
+      if (text && text.length < 120) return text
+    } catch {}
+  }
+  const raw = cleanText(el.textContent)
+  const leaf = extractLeafText(el)
+  if (raw && leaf && raw !== leaf && raw.endsWith(leaf)) return cleanText(raw.slice(0, raw.length - leaf.length))
+  return ''
+}
+
+function buildNotifyDecision(info) {
+  const decision = {
+    source: 'vk-dom-diagnostics',
+    wouldEmit: false,
+    emitBlockedBy: '',
+    expectedNext: '',
+  }
+  if (info.reason === 'outside-container' || info.reason === 'no-message-node') {
+    decision.emitBlockedBy = info.reason
+    return decision
+  }
+  if (!info.text) {
+    decision.emitBlockedBy = 'no-text'
+    return decision
+  }
+  if (info.baselineHit) {
+    decision.emitBlockedBy = 'baseline-existing-message'
+    return decision
+  }
+  if (info.outgoing) {
+    decision.emitBlockedBy = 'outgoing-own-message'
+    return decision
+  }
+  decision.emitBlockedBy = 'diagnostic-read-only'
+  decision.expectedNext = 'notification event is not emitted by vkDiagnostics'
+  return decision
+}
+
 function messageId(el) {
   return attr(el, 'data-msgid') || attr(el, 'data-message-id') || attr(el, 'data-id') || ''
 }
@@ -202,16 +273,19 @@ function collectBaseline(container) {
 
 function describeCandidate(node, messageEl, container, baseline, reason) {
   const text = extractLeafText(messageEl || node)
-  const outgoing = !!(messageEl && isOutgoingMessage(messageEl))
+  const outgoingInfo = messageEl ? outgoingEvidence(messageEl) : outgoingEvidence(node)
+  const outgoing = !!(messageEl && outgoingInfo.result)
   const fp = messageEl ? fingerprintMessage(messageEl) : ''
   const header = getHeaderSnapshot()
-  return {
+  const info = {
     reason,
     text,
+    authorFromMessage: authorFromMessage(messageEl),
     nodeTextRaw: node?.textContent || '',
     messageTextRaw: messageEl?.textContent || '',
     messageOuterHTML: messageEl?.outerHTML || '',
     outgoing,
+    outgoingEvidence: outgoingInfo,
     baselineHit: !!(fp && baseline?.has(fp)),
     fingerprint: fp,
     messageId: messageEl ? messageId(messageEl) : '',
@@ -223,6 +297,10 @@ function describeCandidate(node, messageEl, container, baseline, reason) {
     title: header.title,
     url: header.url,
   }
+  info.notifyDecision = buildNotifyDecision(info)
+  info.wouldEmit = info.notifyDecision.wouldEmit
+  info.emitBlockedBy = info.notifyDecision.emitBlockedBy
+  return info
 }
 
 function stringifyDetails(obj) {
@@ -316,32 +394,52 @@ function createVkDiagnostics(options = {}) {
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i]
         if (!boundContainer || !boundContainer.contains(node)) {
-          log('candidate-skip', describeCandidate(node, null, boundContainer, baseline, 'outside-container'))
+          const info = describeCandidate(node, null, boundContainer, baseline, 'outside-container')
+          log('notify-decision', info.notifyDecision)
+          log('candidate-skip', info)
           continue
         }
         const msg = findMessageEl(node, boundContainer)
         if (!msg) {
-          log('candidate-skip', describeCandidate(node, null, boundContainer, baseline, 'no-message-node'))
+          const info = describeCandidate(node, null, boundContainer, baseline, 'no-message-node')
+          log('notify-decision', info.notifyDecision)
+          log('candidate-skip', info)
           continue
         }
         const info = describeCandidate(node, msg, boundContainer, baseline, 'candidate')
         if (!info.text) {
           info.reason = 'no-text'
+          info.notifyDecision = buildNotifyDecision(info)
+          info.wouldEmit = info.notifyDecision.wouldEmit
+          info.emitBlockedBy = info.notifyDecision.emitBlockedBy
+          log('notify-decision', info.notifyDecision)
           log('candidate-skip', info)
           continue
         }
         if (info.baselineHit) {
           info.reason = 'baseline-existing-message'
+          info.notifyDecision = buildNotifyDecision(info)
+          info.wouldEmit = info.notifyDecision.wouldEmit
+          info.emitBlockedBy = info.notifyDecision.emitBlockedBy
+          log('notify-decision', info.notifyDecision)
           log('candidate-skip', info)
           continue
         }
         if (info.outgoing) {
           info.reason = 'outgoing-own-message'
+          info.notifyDecision = buildNotifyDecision(info)
+          info.wouldEmit = info.notifyDecision.wouldEmit
+          info.emitBlockedBy = info.notifyDecision.emitBlockedBy
+          log('notify-decision', info.notifyDecision)
           log('candidate-skip', info)
           baseline.add(info.fingerprint)
           continue
         }
         info.reason = 'new-incoming-candidate-no-emit'
+        info.notifyDecision = buildNotifyDecision(info)
+        info.wouldEmit = info.notifyDecision.wouldEmit
+        info.emitBlockedBy = info.notifyDecision.emitBlockedBy
+        log('notify-decision', info.notifyDecision)
         log('candidate-new-incoming', info)
         if (info.fingerprint) baseline.add(info.fingerprint)
       }

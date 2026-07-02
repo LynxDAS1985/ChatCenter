@@ -305,7 +305,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v1.2.42 (2 июля 2026)
+**Текущая версия**: v1.2.43 (2 июля 2026)
 
 ---
 
@@ -744,6 +744,6 @@ Auto-memory — постоянная память Claude между сессия
 
 ---
 
-**Версия проекта**: v1.2.42 (2 июля 2026)
+**Версия проекта**: v1.2.43 (2 июля 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
-**Последнее обновление**: 2 июля 2026 — **v1.2.42 (UI диагностики не ломается от длинных payload)**: маленькая панель диагностики теперь держит длинные VK/HTML-события внутри прокручиваемого блока, кнопки остаются видимыми, большое окно переносит длинные mono-строки, а полный JSON-отчёт для ИИ не обрезается. История v1.2.27 и старше перенесена в [.memory-bank/archive/features-v1.2.27-and-older.md](.memory-bank/archive/features-v1.2.27-and-older.md). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.
+**Последнее обновление**: 2 июля 2026 — **v1.2.43 (VK-диагностика показывает причину пропуска уведомления)**: в отчёте появились `notify-decision`, `outgoingEvidence`, `authorFromMessage`, `wouldEmit` и `emitBlockedBy`, чтобы следующий разбор VK видел, почему DOM-сообщение не стало модалкой/звуком. Уведомления VK этим обновлением не менялись. История v1.2.27 и старше перенесена в [.memory-bank/archive/features-v1.2.27-and-older.md](.memory-bank/archive/features-v1.2.27-and-older.md). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.
