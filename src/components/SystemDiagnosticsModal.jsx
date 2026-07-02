@@ -14,7 +14,7 @@ const css = {
   danger: { borderRadius: 9, border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.08)', color: '#fca5a5', padding: '8px 10px', cursor: 'pointer', fontSize: 13 },
   status: { borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', padding: '8px 10px', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   muted: { color: 'var(--cc-text-dimmer)', fontSize: 12 },
-  mono: { whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: 11, lineHeight: 1.55 },
+  mono: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: 11, lineHeight: 1.55 },
   select: { minWidth: 240, maxWidth: 'min(360px, 100%)', borderRadius: 9, border: '1px solid rgba(56,189,248,0.45)', background: 'rgba(15,23,42,0.92)', color: 'var(--cc-text)', padding: '8px 10px', cursor: 'pointer', fontSize: 13, outline: 'none' },
   buttonBaseline: { paddingTop: 20, display: 'flex' },
 }

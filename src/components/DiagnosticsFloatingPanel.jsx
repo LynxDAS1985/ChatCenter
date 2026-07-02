@@ -25,6 +25,7 @@ const css = {
   danger: { border: '1px solid rgba(248,113,113,0.45)', borderRadius: 8, background: 'rgba(248,113,113,0.1)', color: '#fca5a5', padding: '6px 8px', fontSize: 12, cursor: 'pointer' },
   muted: { color: 'var(--cc-text-dimmer)', fontSize: 12 },
   event: { borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 6, fontSize: 12, lineHeight: 1.35 },
+  eventList: { maxHeight: 260, overflowY: 'auto', overscrollBehavior: 'contain', paddingRight: 4 }, eventText: { color: 'var(--cc-text-dimmer)', fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word', maxHeight: 96, overflowY: 'auto' },
 }
 
 function Button({ kind, onClick, children, title }) {
@@ -42,15 +43,13 @@ function Button({ kind, onClick, children, title }) {
 
 function markerColor(event) {
   if (event.marker === 'red' || event.severity === 'critical') return '#f87171'
-  if (event.marker === 'yellow' || event.severity === 'warning') return '#fbbf24'
-  return '#7dd3fc'
+  return event.marker === 'yellow' || event.severity === 'warning' ? '#fbbf24' : '#7dd3fc'
 }
 
 export default function DiagnosticsFloatingPanel({ session, selectedTarget, onStart, onPause, onResume, onStop, onExpand, onSave, onCopy, onClear, onCloseAll }) {
   if (!session?.active && !session?.events?.length) return null
   const status = session.active ? (session.paused ? 'пауза' : 'запись') : 'остановлена'
   const latest = (session.events || []).slice(-3).reverse()
-  const targetTitle = diagnosticsTargetTitle(session.target || selectedTarget)
 
   return (
     <div style={css.panel}>
@@ -70,16 +69,16 @@ export default function DiagnosticsFloatingPanel({ session, selectedTarget, onSt
           <Button onClick={onCopy}>Скопировать</Button>
           <Button onClick={onClear} title="Очистить только экран диагностики, не chatcenter.log и не ai-errors.log">Очистить</Button>
         </div>
-        <div style={css.muted}>Цель: {targetTitle}</div>
+        <div style={css.muted}>Цель: {diagnosticsTargetTitle(session.target || selectedTarget)}</div>
         <div style={css.row}>
           <span style={css.muted}>Глубокая WebView включена всегда · {session.lastSavedPath ? 'отчёт сохранён' : 'автосохранение при стопе'}</span>
         </div>
         {session.lastError && <div style={{ color: '#f87171', fontSize: 12 }}>{session.lastError}</div>}
-        <div>
+        <div style={css.eventList}>
           {latest.length ? latest.map(event => (
             <div key={event.id || `${event.ts}-${event.title}`} style={css.event}>
               <div style={{ color: markerColor(event), fontWeight: 700 }}>{event.title || event.kind}</div>
-              <div style={css.muted}>{event.text || event.detail || 'без текста'}</div>
+              <div style={css.eventText}>{event.text || event.detail || 'без текста'}</div>
             </div>
           )) : <div style={css.muted}>Жду первые события: __CC_NOTIF__, fallback, ribbon, звук, avatar.</div>}
         </div>

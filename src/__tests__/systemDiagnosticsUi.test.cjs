@@ -96,5 +96,12 @@ test('VK diagnostic payload is kept full in report pipeline', () => {
   assert(systemDiagnostics.includes('vkfull'), 'systemDiagnostics must classify vkFull as WebView')
 })
 
+test('Diagnostics floating panel keeps long payload inside scrollable event area', () => {
+  assert(floating.includes('eventList') && floating.includes('maxHeight: 260') && floating.includes("overflowY: 'auto'"), 'floating panel must cap live event list height')
+  assert(floating.includes('eventText') && floating.includes("overflowWrap: 'anywhere'") && floating.includes("wordBreak: 'break-word'"), 'long diagnostic payload must wrap inside one event')
+  assert(floating.includes('style={css.eventList}') && floating.includes('style={css.eventText}'), 'floating panel must apply bounded styles to live events')
+  assert(modal.includes("overflowWrap: 'anywhere'") && modal.includes("wordBreak: 'break-word'"), 'large modal mono text must not stretch layout horizontally')
+})
+
 console.log('\nDiagnostics UI result: ' + passed + ' passed / ' + failed + ' failed / ' + (passed + failed) + ' total')
 if (failed > 0) process.exit(1)
