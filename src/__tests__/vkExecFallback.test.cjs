@@ -1,6 +1,7 @@
 const fs = require('fs')
 
 const code = fs.readFileSync('shared/vkExecFallback.js', 'utf8')
+const handlerCode = fs.readFileSync('src/utils/webviewHandleNewMessage.js', 'utf8')
 
 let passed = 0
 let failed = 0
@@ -20,6 +21,13 @@ test('uses a dedicated console marker for host routing', () => {
 test('script stays in page world and does not depend on ipcRenderer', () => {
   assert(!code.includes('ipcRenderer'), 'fallback must not use ipcRenderer')
   assert(code.includes('console.log(PREFIX+'), 'page script must communicate through console-message')
+})
+
+test('script can upgrade an already injected page runtime', () => {
+  assert(code.includes("SCRIPT_VERSION='1.2.49-active-unread'"), 'missing versioned runtime marker')
+  assert(code.includes('__ccVkExecFallbackObserver'), 'missing active observer handle')
+  assert(code.includes('__ccVkSidebarObserver'), 'missing sidebar observer handle')
+  assert(code.includes('__ccVkExecFallbackInstalled===SCRIPT_VERSION'), 'already-installed must be version-specific')
 })
 
 test('baseline prevents old VK messages from becoming notifications', () => {
@@ -46,6 +54,8 @@ test('only structured VK message nodes can emit new-message', () => {
   assert(code.includes('no-message-node'), 'missing no-message-node skip')
   assert(code.includes("kind:'new-message'"), 'missing new-message emit')
   assert(code.includes("source:'vk-exec-fallback'"), 'missing source marker')
+  assert(code.includes('isAfterNewMessagesMarker(msg,container)'), 'active VK messages must carry unread marker evidence')
+  assert(code.includes('vkActiveUnread'), 'missing active unread evidence payload')
 })
 
 test('sender and avatar are passed to the common notification path', () => {
@@ -57,6 +67,9 @@ test('sender and avatar are passed to the common notification path', () => {
 test('host receives vk-exec-fallback source for active-chat viewing guard', () => {
   assert(code.includes("source: payload.source || 'vk-exec-fallback'"), 'handleNewMessage must preserve fallback source')
   assert(code.includes("source:'vk-exec-fallback'"), 'page payload must mark vk-exec-fallback source')
+  assert(code.includes('vkActiveUnread: !!payload.vkActiveUnread'), 'host must pass active unread evidence to handler')
+  assert(handlerCode.includes("extra?.source === 'vk-exec-fallback' && !extra?.vkActiveUnread"), 'handler must block only VK-EXEC without unread evidence')
+  assert(handlerCode.includes("extra?.source === 'vk-exec-fallback' && extra?.vkActiveUnread"), 'handler must pass VK-EXEC with unread evidence')
 })
 
 test('sidebar unread preview emits a separate source for chats outside active history', () => {
@@ -65,6 +78,8 @@ test('sidebar unread preview emits a separate source for chats outside active hi
   assert(code.includes("source:'vk-sidebar-unread'"), 'sidebar unread must use a separate source')
   assert(code.includes("d.count>0"), 'sidebar notifications must require unread badge')
   assert(code.includes('ConvoListItem__message'), 'sidebar preview must read VK chat-list preview')
+  assert(code.includes("querySelectorAll('[class*=\"ConvoListItem\"]').length>=2"), 'sidebar root must be a list parent, not one row')
+  assert(!code.includes("closest('[class*=\"ConvoList\""), 'sidebar root must not use broad closest that matches ConvoListItem itself')
 })
 
 test('sidebar baseline prevents old unread rows from firing on bind', () => {

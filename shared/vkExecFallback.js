@@ -41,7 +41,7 @@ export function createVkExecFallbackRuntime(options) {
       const payload = parseVkExecFallbackMessage(msg)
       if (!payload) return false
       const text = String(payload.text || '').trim()
-      const detail = `VK-EXEC kind=${payload.kind || ''} reason=${payload.reason || ''} seq=${payload.seq || ''} sender=${payload.senderName || ''} icon=${!!payload.iconUrl} msgId=${payload.messageId || ''} url=${String(payload.url || '').slice(0, 180)}`
+      const detail = `VK-EXEC kind=${payload.kind || ''} reason=${payload.reason || ''} seq=${payload.seq || ''} sender=${payload.senderName || ''} icon=${!!payload.iconUrl} activeUnread=${!!payload.vkActiveUnread} msgId=${payload.messageId || ''} url=${String(payload.url || '').slice(0, 180)}`
       traceNotif(payload.kind === 'new-message' ? 'source' : 'debug', payload.kind === 'new-message' ? 'info' : 'warn', messengerId, text || 'VK exec fallback', detail)
       if (payload.kind === 'new-message' && text) {
         handleNewMessage(messengerId, text, {
@@ -50,6 +50,7 @@ export function createVkExecFallbackRuntime(options) {
           chatTag: payload.chatTag || payload.url || '',
           messageId: payload.messageId || '',
           source: payload.source || 'vk-exec-fallback',
+          vkActiveUnread: !!payload.vkActiveUnread,
         })
       }
       return true
@@ -60,11 +61,14 @@ export function createVkExecFallbackRuntime(options) {
 export function buildVkExecFallbackScript() {
   return `;(function(){
   var PREFIX='${PREFIX}';
-  if(window.__ccVkExecFallbackInstalled){
-    try{console.log(PREFIX+JSON.stringify({kind:'already-installed',url:location.href,ts:Date.now()}));}catch(e){}
+  var SCRIPT_VERSION='1.2.49-active-unread';
+  if(window.__ccVkExecFallbackInstalled===SCRIPT_VERSION){
+    try{console.log(PREFIX+JSON.stringify({kind:'already-installed',version:SCRIPT_VERSION,url:location.href,ts:Date.now()}));}catch(e){}
     return 'already-installed';
   }
-  window.__ccVkExecFallbackInstalled=true;
+  if(window.__ccVkExecFallbackObserver){try{window.__ccVkExecFallbackObserver.disconnect();}catch(e){}}
+  if(window.__ccVkSidebarObserver){try{window.__ccVkSidebarObserver.disconnect();}catch(e){}}
+  window.__ccVkExecFallbackInstalled=SCRIPT_VERSION;
   function clean(v){return String(v||'').replace(/\\s+/g,' ').trim();}
   function attr(el,n){try{return el&&el.getAttribute&&el.getAttribute(n)||'';}catch(e){return '';}}
   function cls(el){return typeof(el&&el.className)==='string'?el.className:'';}
@@ -130,6 +134,15 @@ export function buildVkExecFallbackScript() {
     var img=one('img[src]',msg)||one('[class*="ConvoHeader"] img[src], img[src*="userapi"], img[src*="vkuser"]');
     return img&&img.src||'';
   }
+  function isAfterNewMessagesMarker(msg,container){
+    var nodes=all('div,section,article,span',container), seen=false;
+    for(var i=0;i<nodes.length;i++){
+      var el=nodes[i], t=clean(el.textContent);
+      if(t&&t.length<=80&&/(^|\\s)(Новые сообщения|New messages)(\\s|$)/i.test(t))seen=true;
+      if(el===msg||el.contains&&el.contains(msg)||msg.contains&&msg.contains(el))return seen;
+    }
+    return false;
+  }
   function rowText(row,sel){var n=one(sel,row);return clean(n&&n.textContent);}
   function rowData(row){
     var title=rowText(row,'[class*="ConvoListItem__header"], [class*="ConvoListItem__title"], [class*="PeerTitle"], [class*="title"]');
@@ -141,8 +154,12 @@ export function buildVkExecFallbackScript() {
     return{title:title,preview:preview,count:count,avatar:img&&img.src||'',selected:selected,key:key,fp:key+'|'+count+'|'+preview};
   }
   function findSidebarRoot(){
-    var item=one('[class*="ConvoListItem"]');
-    return (item&&item.closest&&item.closest('[class*="ConvoList"], [role="list"]'))||one('[class*="Messenger"], [class*="messenger"]')||document.body;
+    var item=one('[class*="ConvoListItem"]'), cur=item&&item.parentElement;
+    for(var i=0;i<8&&cur;i++){
+      try{if(cur.querySelectorAll('[class*="ConvoListItem"]').length>=2)return cur;}catch(e){}
+      cur=cur.parentElement;
+    }
+    return one('[class*="Messenger"], [class*="messenger"]')||document.body;
   }
   function scanSidebar(reason,notify){
     var rows=all('[class*="ConvoListItem"]'), n=0;
@@ -160,6 +177,7 @@ export function buildVkExecFallbackScript() {
     var root=findSidebarRoot(); scanSidebar('baseline-'+reason,false);
     sidebarObserver=new MutationObserver(function(){clearTimeout(sidebarTimer);sidebarTimer=setTimeout(function(){scanSidebar('mutation',true);},120);});
     sidebarObserver.observe(root,{childList:true,subtree:true,characterData:true});
+    window.__ccVkSidebarObserver=sidebarObserver;
     emit({kind:'sidebar-bound',reason:reason});
   }
   function bind(reason){
@@ -187,10 +205,11 @@ export function buildVkExecFallbackScript() {
         if(baseline.has(fp))return emit({kind:'skip',reason:'baseline-existing-message',seq:seq,text:text,fingerprint:fp});
         baseline.add(fp);
         if(outgoing)return emit({kind:'skip',reason:'outgoing-own-message',seq:seq,text:text,fingerprint:fp});
-        emit({kind:'new-message',source:'vk-exec-fallback',seq:seq,text:text,senderName:senderFromMsg(msg),iconUrl:avatarFrom(msg),chatTag:location.href,messageId:fp});
+        emit({kind:'new-message',source:'vk-exec-fallback',seq:seq,text:text,senderName:senderFromMsg(msg),iconUrl:avatarFrom(msg),chatTag:location.href,messageId:fp,vkActiveUnread:isAfterNewMessagesMarker(msg,container)});
       });
     });
     currentObserver.observe(container,{childList:true,subtree:true,characterData:true});
+    window.__ccVkExecFallbackObserver=currentObserver;
     bindSidebar(reason);
     return true;
   }

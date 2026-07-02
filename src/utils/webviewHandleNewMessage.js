@@ -3,7 +3,6 @@
 // дедуп → strip-sender → viewing-фильтр → звук + ribbon → preview + history + auto-reply.
 import { buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './messageProcessing.js'
 import { playNotificationSound } from './sound.js'
-
 export function createHandleNewMessage(deps) {
   const {
     recentNotifsRef, lastRibbonTsRef, lastSoundTsRef, notifCountRef,
@@ -50,7 +49,6 @@ export function createHandleNewMessage(deps) {
       traceNotif('dedup', 'block', messengerId, text, `own-msg | sender="${senderName}" textStart="${text.slice(0,20)}"`)
       return
     }
-
     // v0.80.3: Подавляем ribbon только если:
     // 1. fromNotifAPI=false (MutationObserver) — НЕ блокируем (VK не шлёт Notification API,
     //    мы не знаем открыт ли конкретный чат — лучше показать лишний раз чем пропустить)
@@ -58,7 +56,8 @@ export function createHandleNewMessage(deps) {
     //    значит текущий чат ≠ чат сообщения → ПРОПУСКАЕМ (не блокируем)
     // Итого: viewing блокирует ТОЛЬКО если НЕТ extra (нет sender, нет source — мусор)
     const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
-    if (isViewingThisTab && extra?.source === 'vk-exec-fallback') { traceNotif('viewing', 'block', messengerId, text, 'VK-EXEC active visible chat: block virtualized old DOM nodes'); return }
+    if (isViewingThisTab && extra?.source === 'vk-exec-fallback' && !extra?.vkActiveUnread) { traceNotif('viewing', 'block', messengerId, text, 'VK-EXEC active visible chat: block virtualized old DOM nodes'); return }
+    if (isViewingThisTab && extra?.source === 'vk-exec-fallback' && extra?.vkActiveUnread) traceNotif('viewing', 'pass', messengerId, text, 'VK-EXEC active visible chat: pass confirmed unread marker')
     if (isViewingThisTab && !extra) {
       traceNotif('viewing', 'block', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
       return

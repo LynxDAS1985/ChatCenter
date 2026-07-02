@@ -92,9 +92,10 @@ function processMessage(mid, text, extra, ctx) {
   if (isViewingThisTab && !extra) {
     result.action = 'viewing-block'; result.steps.push('viewing-block'); return result
   }
-  if (isViewingThisTab && extra && extra.source === 'vk-exec-fallback') {
+  if (isViewingThisTab && extra && extra.source === 'vk-exec-fallback' && !extra.vkActiveUnread) {
     result.action = 'viewing-block-vk-exec'; result.steps.push('viewing-block-vk-exec'); return result
   }
+  if (isViewingThisTab && extra && extra.source === 'vk-exec-fallback' && extra.vkActiveUnread) result.steps.push('viewing-pass-vk-active-unread')
   if (isViewingThisTab && extra) result.steps.push('viewing-pass')
   else result.steps.push('viewing-na')
 
