@@ -91,4 +91,20 @@
 **Решение (v0.62.4)**: Полностью переписан MAX-блок в `buildChatNavigateScript`: nav→a[href] exact/icase/partial → all a[href] → TreeWalker → scroll fallback.
 
 ---
+## 🔴 VK: ручная диагностика видит DOM, но live-уведомления нет (v1.2.46)
+
+Дата: 2 июля 2026.
+
+Симптом: глубокая диагностика VK через `executeJavaScript` видит активный чат, новые сообщения, sender и avatar, но пользователь не получает модалку/звук. В логе нет `monitor-start`, `monitor-ready`, `[VK-DIAG] observer-bound`, `new-message`, `app:custom-notify`, `[NotifManager] show`.
+
+Причина: ручная диагностика и live-monitor — разные механизмы. Если `monitor.preload.cjs` не дал heartbeat в host, код внутри `vkDiagnostics` может быть правильным, но он не запущен как live-источник событий.
+
+Правило: перед изменением фильтров, текста, sender/avatar или `notificationManager` сначала проверить цепочку:
+1. есть ли `monitor-ready` от WebView;
+2. если нет, включился ли `VK-EXEC`;
+3. есть ли `VK-EXEC kind=bound`;
+4. есть ли `VK-EXEC kind=new-message` или `skip reason=...`;
+5. только после этого менять парсер DOM.
+
+Решение v1.2.46: `monitor.preload.cjs` отправляет heartbeat `monitor-ready`, а `webviewSetup.js` включает резервный `VK-EXEC` observer только если heartbeat не пришёл. Резервный путь не использует словарные блокировки и не доверяет “последнему тексту страницы”: нужен DOM-узел сообщения, baseline, не исходящее направление, sender/avatar.
 

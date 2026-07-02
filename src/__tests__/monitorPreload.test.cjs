@@ -196,6 +196,12 @@ test('VK outgoing helper accepts parent ConvoStack--out marker (v1.2.44)', () =>
   const node = { className: 'ConvoMessageWithoutBubble', parentElement: parent, getAttribute: () => '' }
   assert(isVKOutgoingMessage(node), 'real outgoing VK message must be detected through parent ConvoStack--out')
 })
+test('monitor preload sends heartbeat so host can detect a broken VK live observer (v1.2.46)', () => {
+  assert(code.includes("function sendMonitorReady(stage)"), 'monitor-ready helper is missing')
+  assert(code.includes("ipcRenderer.sendToHost('monitor-ready'"), 'monitor-ready IPC is missing')
+  assert(code.includes("sendMonitorReady('start')"), 'start heartbeat is missing')
+  assert(code.includes("sendMonitorReady('started')"), 'started heartbeat is missing')
+})
 test('extractMsgText ищет leaf-элемент для обёрток (v0.81.1)', () => {
   assert(allPreloadCode.includes('node.children.length > 2') && allPreloadCode.includes('leaves'), 'должен искать leaf в обёртках')
 })

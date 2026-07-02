@@ -14,13 +14,9 @@ import { createHandleNewMessage } from './webviewHandleNewMessage.js'
 import { probeWebviewHealth } from './webviewHealthProbe.js'
 import { scheduleMaxTitleFallback } from './maxTitleFallback.js'
 import { decideMaxTitleUnread, resetMaxTitleUnread } from './titleUnreadBaseline.js'
+import { createVkExecFallbackRuntime } from '../../shared/vkExecFallback.js'
 import { DEFAULT_MESSENGERS } from '../constants.js'
-import {
-  markHealthError,
-  markHealthOk,
-  markHealthPending,
-  markHealthSlow,
-} from './connectionHealth.js'
+import { markHealthError, markHealthOk, markHealthPending, markHealthSlow } from './connectionHealth.js'
 try { window.__ccStartupMark?.('module:webviewSetup', 'module evaluated') } catch {}
 
 // v0.83.1: Sender cache cleanup — удаляем записи старше 5 мин, лимит 50 записей
@@ -56,23 +52,13 @@ export function createWebviewSetup(deps) {
   }
   const updateHealth = (messengerId, updater) => {
     if (!setConnectionHealth) return
-    setConnectionHealth(prev => ({
-      ...prev,
-      [messengerId]: updater(prev[messengerId]),
-    }))
+    setConnectionHealth(prev => ({ ...prev, [messengerId]: updater(prev[messengerId]) }))
   }
   const scheduleHealthProbe = (el, messengerId, details = 'Проверка вкладки', delay = 0) => {
     if (!setConnectionHealth || !el) return
     clearTimeout(webviewProbeTimers[messengerId])
     webviewProbeTimers[messengerId] = setTimeout(() => {
-      probeWebviewHealth({
-        webview: el,
-        id: messengerId,
-        label: healthLabel(messengerId),
-        url: healthUrl(el, messengerId),
-        setConnectionHealth,
-        details,
-      })
+      probeWebviewHealth({ webview: el, id: messengerId, label: healthLabel(messengerId), url: healthUrl(el, messengerId), setConnectionHealth, details })
     }, delay)
   }
   const startupWebviewLog = (messengerId, message) => {
@@ -137,6 +123,8 @@ export function createWebviewSetup(deps) {
   const maxTitleFallbackTimers = { current: {} } // { [messengerId]: timer }
   const maxTitleFallbackStateRef = { current: { seen: {} } } // long-lived sidebar preview fingerprints
   const titleUnreadBaselineRef = { current: {} }
+  const monitorReadyRef = { current: {} }
+  const vkFallbackTimers = { current: {} }
 
   // ── Pipeline Trace Logger (v0.55.0) ──────────────────────────────────────────
   // Записывает КАЖДЫЙ шаг pipeline уведомлений для диагностики
@@ -151,7 +139,7 @@ export function createWebviewSetup(deps) {
 
   const traceNotif = (step, type, messengerId, text, detail) => {
     const mName = messengerId ? (messengersRef.current.find(x => x.id === messengerId)?.name || '') : ''
-    const rawTraceText = text || '', keepFullTraceText = /max-sidebar|VK-DIAG|vkFull/i.test(`${rawTraceText} ${detail || ''}`)
+    const rawTraceText = text || '', keepFullTraceText = /max-sidebar|VK-DIAG|vkFull|VK-EXEC/i.test(`${rawTraceText} ${detail || ''}`)
     pipelineTraceRef.current.push({ ts: Date.now(), step, type, mid: messengerId || '', mName, text: keepFullTraceText ? rawTraceText : rawTraceText.slice(0, 200), detail: detail || '' })
     // v1.2.9: буфер трассировки в памяти увеличен 300→5000 (выкидываем 1000 старых при переполнении).
     // Причина: maxFallbackEvents для диагностики строится ИЗ этого буфера, а не из лога. При 300 шагах
@@ -162,13 +150,15 @@ export function createWebviewSetup(deps) {
     if (!_skipDetail) {
       const icon = _traceTypeLabels[type] || '·'
       const label = _traceLabels[step] || step
-      const fullLogText = /max-sidebar|VK-DIAG|vkFull/i.test(`${text || ''} ${detail || ''}`)
+      const fullLogText = /max-sidebar|VK-DIAG|vkFull|VK-EXEC/i.test(`${text || ''} ${detail || ''}`)
       const shortText = fullLogText ? (text || '') : (text || '').slice(0, 60)
-      const detailLimit = detail && (/MAX title-fallback|max-title-|max-sidebar|topRows=|chosenLeafs=|\[MAX-|MAX page-title-updated|\[IPC-MAX\]|VK-DIAG|vkFull/.test(detail)) ? 12000 : 250
+      const detailLimit = detail && (/MAX title-fallback|max-title-|max-sidebar|topRows=|chosenLeafs=|\[MAX-|MAX page-title-updated|\[IPC-MAX\]|VK-DIAG|vkFull|VK-EXEC/.test(detail)) ? 12000 : 250
       const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, detailLimit) : ''}`
       try { window.api?.send('app:log', { level: 'TRACE', message: msg }) } catch {}
     }
   }
+
+  const isVkWebview = (el, messengerId) => detectMessengerType(healthUrl(el, messengerId)) === 'vk'
 
   // ── Обработка входящего сообщения (вынесена в webviewHandleNewMessage.js) ──
   const handleNewMessage = createHandleNewMessage({
@@ -181,6 +171,7 @@ export function createWebviewSetup(deps) {
   })
 
   // ── Инициализация WebView ─────────────────────────────────────────────────
+  const vkExecFallback = createVkExecFallbackRuntime({ isVkWebview, traceNotif, handleNewMessage, monitorReadyRef, timersRef: vkFallbackTimers })
   const setWebviewRef = (el, messengerId) => {
     if (el && !el._chatcenterInit) {
       el._chatcenterInit = true
@@ -200,12 +191,7 @@ export function createWebviewSetup(deps) {
       addListener('did-start-loading', () => {
         startupWebviewLog(messengerId, 'did-start-loading')
         webviewLoadStartedAt[messengerId] = Date.now()
-        updateHealth(messengerId, prev => markHealthPending(prev, {
-          id: messengerId,
-          type: 'webview',
-          label: healthLabel(messengerId),
-          url: healthUrl(el, messengerId),
-        }))
+        updateHealth(messengerId, prev => markHealthPending(prev, { id: messengerId, type: 'webview', label: healthLabel(messengerId), url: healthUrl(el, messengerId) }))
         setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       })
       addListener('did-stop-loading', () => {
@@ -286,6 +272,8 @@ export function createWebviewSetup(deps) {
       // ── СЕКЦИЯ: DOM-ready — инициализация монитора ──
       addListener('dom-ready', () => {
         startupWebviewLog(messengerId, 'dom-ready')
+        delete monitorReadyRef.current[messengerId]
+        vkExecFallback.schedule(el, messengerId, 'dom-ready')
         updateHealth(messengerId, prev => markHealthOk(prev, {
           id: messengerId,
           type: 'webview',
@@ -460,7 +448,12 @@ export function createWebviewSetup(deps) {
           try { window.api?.send('app:log', { level: 'TRACE', message: '[IPC-WA] channel=' + e.channel + ' args=' + JSON.stringify(e.args).slice(0,100) }) } catch {}
         }
         const ipcDiagUrl = (() => { try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' } })(); if (/web\.max\.ru/.test(ipcDiagUrl)) try { window.api?.send('app:log', { level: 'TRACE', message: '[IPC-MAX] channel=' + e.channel + ' activeId=' + activeIdRef.current + ' focused=' + windowFocusedRef.current + ' args=' + JSON.stringify(e.args).slice(0, 700) }) } catch {}
-        if (e.channel === 'zoom-change') {
+        if (e.channel === 'monitor-ready') {
+          const payload = e.args[0] && typeof e.args[0] === 'object' ? e.args[0] : {}
+          monitorReadyRef.current[messengerId] = { ...payload, ts: Date.now() }
+          traceNotif('debug', 'info', messengerId, 'monitor-ready', `stage=${payload.stage || ''} type=${payload.type || ''} ready=${payload.ready || ''} url=${String(payload.url || '').slice(0, 180)}`)
+          return
+        } else if (e.channel === 'zoom-change') {
           const delta = e.args[0]?.delta || 0
           const cur = zoomLevelsRef.current[messengerId] || 100
           const clamped = Math.max(25, Math.min(200, Math.round((cur + delta) / 5) * 5))
@@ -592,7 +585,11 @@ export function createWebviewSetup(deps) {
         cleanupSenderCache,
         setAccountInfo, setUnreadCounts, setConnectionHealth, notifCountRef,
       })
-      addListener('console-message', consoleHandler(el, messengerId))
+      const boundConsoleHandler = consoleHandler(el, messengerId)
+      addListener('console-message', (e) => {
+        if (vkExecFallback.handleConsole(e, messengerId)) return
+        boundConsoleHandler(e)
+      })
     }
   }
   return { setWebviewRef, handleNewMessage, traceNotif, recentNotifsRef, lastRibbonTsRef, lastSoundTsRef, notifSenderTsRef, notifMidTsRef, notifCountRef, pendingMarkReadsRef }

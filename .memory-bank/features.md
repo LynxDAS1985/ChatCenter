@@ -1,6 +1,60 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.45 (2 июля 2026)
+## Текущая версия: v1.2.46 (2 июля 2026)
+
+### v1.2.46 — VK: fallback live-observer, если monitor preload не запустился
+
+Дата: 2 июля 2026.
+Кто нашёл: пользователь по VK-чату, где входящие сообщения были видны в VK Web, но не было карточки уведомления/модалки; Codex по фоновой диагностике, `chatcenter.log`, `system-diagnostics-report.json`, `webviewSetup.js`, `monitor.preload.cjs`, `vkDiagnostics.js` и `webviewHandleNewMessage.js`.
+
+Проблема: v1.2.45 включила эмит из `vkDiagnostics`, но это помогало только если сам `monitor.preload.cjs` реально запущен в VK WebView. В свежей диагностике была другая картина: ручная глубокая диагностика VK видела DOM, сообщения, sender и avatar, но live-цепочки не было. В логе отсутствовали `monitor-start`, `monitor-diag`, `[VK-DIAG] observer-bound`, `[VK-DIAG] emit-new-message`, IPC `new-message`, `app:custom-notify`, `[NotifManager] show`, `sound` и `ribbon` для проблемного VK-сообщения. Значит корень был не в модалке и не в фильтре текста, а в том, что штатный live-monitor мог не дать сигнал в host.
+
+Почему предыдущее решение не помогло полностью:
+1. v1.2.45 исправила только участок `vkDiagnostics -> new-message`.
+2. Она не проверяла, что `monitor.preload.cjs` вообще живой в конкретном VK WebView.
+3. Если preload не стартовал или не прислал IPC, `vkDiagnostics.start()` не мог создать уведомление.
+4. Ручной deep-check через `executeJavaScript` работал отдельно и поэтому показывал DOM, но не был live-источником уведомлений.
+
+Что изменено:
+- `main/preloads/monitor.preload.cjs`: добавлен heartbeat `monitor-ready` на старте и после подключения наблюдателей;
+- `src/utils/webviewSetup.js`: renderer хранит `monitor-ready` по вкладке и понимает, жив ли штатный preload;
+- `src/utils/webviewSetup.js`: для VK через 3.5 секунды после `dom-ready` включается резервный observer только если heartbeat не пришёл;
+- `shared/vkExecFallback.js`: добавлен page-world fallback через `webview.executeJavaScript`, который пишет события в host через `console-message` с маркером `__CC_VK_EXEC_FALLBACK__`;
+- fallback требует структурное подтверждение: контейнер VK-чата, DOM-узел сообщения, baseline, текст, не исходящее направление;
+- fallback не блокирует слова вроде `Сообщение`, даты, телефоны или любой пользовательский текст. Решение основано на источнике и структуре DOM;
+- `handleNewMessage` остаётся единым местом для звука, ribbon, дедупа, настроек и истории;
+- добавлены тесты `vkExecFallback.test.cjs` и проверка heartbeat в `monitorPreload.test.cjs`;
+- `package.json` включает новый тест в общий `npm test`;
+- версия обновлена до `v1.2.46`.
+
+Почему это безопасно:
+1. Ничего не меняется для MAX, WhatsApp, Telegram и API-вкладок.
+2. Штатный preload остаётся главным путём.
+3. Резервный VK observer включается только при отсутствии `monitor-ready`.
+4. Старые сообщения из baseline не становятся уведомлениями.
+5. Свои исходящие VK-сообщения отсекаются по точным маркерам `ConvoStack--out`, `ConvoMessage--out`, `data-outgoing`, aria outgoing.
+6. Нет глобальных словарных блокировок, поэтому клиент может написать любое слово.
+7. Резервный скрипт не использует `ipcRenderer` внутри страницы VK, связь идёт через уже существующий `console-message` путь.
+8. Уведомление всё равно проходит через общий `handleNewMessage`, где уже есть дедуп, звук, ribbon и настройки.
+9. Диагностика показывает, какой путь сработал: `monitor-ready` или `VK-EXEC`.
+10. Если VK снова изменит DOM, в отчёте будет видно `container-not-found`, `no-message-node`, `baseline-existing-message`, `outgoing-own-message` или `new-message`.
+
+Как должно работать:
+1. VK WebView грузится.
+2. Если `monitor.preload.cjs` живой, он отправляет `monitor-ready`, а fallback не включается.
+3. Если heartbeat не пришёл, renderer пишет `VK preload missing heartbeat` и инжектит `VK-EXEC`.
+4. При новом входящем VK-сообщении fallback проверяет, что это новый DOM-узел сообщения, не baseline и не исходящее.
+5. В диагностике появляется `VK-EXEC kind=new-message`.
+6. Renderer вызывает `handleNewMessage(messengerId, text, extra)`.
+7. Дальше как у всех WebView: звук, модалка, sender, avatar, переход в чат и история.
+
+Как проверять:
+- В диагностике VK сначала смотреть `monitor-ready`. Если он есть, работает основной preload.
+- Если `monitor-ready` нет, смотреть строки `VK-EXEC injected`, `VK-EXEC kind=bound`, `VK-EXEC kind=mutation`, `VK-EXEC kind=new-message`.
+- Для реального уведомления должны появиться `Источник`, `Звук`, `Ribbon`, затем main log `app:custom-notify` и `[NotifManager] show`.
+- Если уведомления нет, смотреть `VK-EXEC kind=skip` и `reason`: это точная причина пропуска.
+
+Проверки: `node src/__tests__/monitorPreload.test.cjs`, `node src/__tests__/vkExecFallback.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `node src/__tests__/featuresReferences.test.cjs`, `node src/__tests__/memoryBankSizeLimits.test.cjs`, `npm run lint`, `npm run build`, `npm test`.
 
 ### v1.2.45 — VK: DOM observer подключён к модалке уведомлений
 

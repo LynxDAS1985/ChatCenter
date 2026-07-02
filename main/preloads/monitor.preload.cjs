@@ -90,6 +90,18 @@ function sendMonitorDiag(message) {
 // И unread count НЕ растёт когда чат открыт в WebView.
 // Решение: наблюдаем addedNodes в MutationObserver — при появлении нового
 // DOM-элемента с текстом → считаем как новое сообщение → new-message IPC.
+function sendMonitorReady(stage) {
+  try {
+    ipcRenderer.sendToHost('monitor-ready', {
+      stage,
+      type: getMessengerType(),
+      url: location.href,
+      ready: document.readyState,
+      ts: Date.now(),
+    })
+  } catch(e) {}
+}
+
 let lastQuickMsgText = ''
 let lastQuickMsgTime = 0
 
@@ -470,6 +482,7 @@ function setupNavigationWatcher(type) {
 
 function startMonitor() {
   const type = getMessengerType()
+  sendMonitorReady('start')
   // v0.86.0: preload console.log НЕ попадает в console-message (Electron 41 isolated world)
   // Используем ipcRenderer.sendToHost для диагностики
   try { ipcRenderer.sendToHost('monitor-diag', 'monitor-start: type=' + type + ' host=' + location.hostname) } catch(e) {}
@@ -505,6 +518,7 @@ function startMonitor() {
 
   // v0.60.0 Решение #1: Слежение за навигацией (SPA) для переподключения chatObserver
   setupNavigationWatcher(type)
+  sendMonitorReady('started')
 }
 
 if (document.readyState === 'loading') {
