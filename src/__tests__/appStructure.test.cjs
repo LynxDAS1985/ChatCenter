@@ -100,6 +100,12 @@ test('isDuplicateSubstring() из messageProcessing', () => assert(allAppCode.in
 test('stripSenderFromText() из messageProcessing', () => assert(allAppCode.includes('stripSenderFromText(')))
 test('isOwnMessage() из messageProcessing', () => assert(allAppCode.includes('isOwnMessage(')))
 test('WebView setup в отдельном файле (v0.82.6)', () => assert(webviewCode.length > 100 && code.includes('createWebviewSetup'), 'webviewSetup.js должен существовать'))
+test('VK WebView muted at host level, app notification sound kept separate', () => {
+  assert(webviewCode.includes('enforceVkWebviewMute'), 'missing VK host mute helper')
+  assert(webviewCode.includes('setAudioMuted(true)'), 'VK WebView must be muted through Electron host API')
+  assert(webviewCode.includes('isVkWebview(el, messengerId)'), 'mute must target VK WebView only')
+  assert(allAppCode.includes('playNotificationSound('), 'app notification sound pipeline must remain present')
+})
 // v0.87.82: playNotificationSound вызов теперь в useAppIPCListeners.js (был в App.jsx)
 test('playNotificationSound() из sound', () => assert(allAppCode.includes('playNotificationSound(')))
 test('buildChatNavigateScript() из navigateToChat', () => assert(allAppCode.includes('buildChatNavigateScript(')))

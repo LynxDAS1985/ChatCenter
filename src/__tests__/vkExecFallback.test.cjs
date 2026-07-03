@@ -24,7 +24,7 @@ test('script stays in page world and does not depend on ipcRenderer', () => {
 })
 
 test('script can upgrade an already injected page runtime', () => {
-  assert(code.includes("SCRIPT_VERSION='1.2.51-sidebar-diagnostics'"), 'missing versioned runtime marker')
+  assert(code.includes("SCRIPT_VERSION='1.2.52-sidebar-typing-status'"), 'missing versioned runtime marker')
   assert(code.includes('__ccVkExecFallbackObserver'), 'missing active observer handle')
   assert(code.includes('__ccVkSidebarObserver'), 'missing sidebar observer handle')
   assert(code.includes('__ccVkExecFallbackInstalled===SCRIPT_VERSION'), 'already-installed must be version-specific')
@@ -110,6 +110,10 @@ test('sidebar diagnostics explain every relevant unread decision', () => {
   assert(code.includes('raw:String(d.raw'), 'sidebar row payload must include raw row text')
   assert(code.includes('decision=${payload.decision'), 'host trace must expose sidebar decision')
   assert(code.includes('preview=${String(payload.preview'), 'host trace must expose sidebar preview')
+  assert(code.includes('isSidebarTypingStatus'), 'missing structural typing status detector')
+  assert(code.includes('печатает'), 'typing status detector must use real UTF-8 Russian text')
+  assert(code.includes('block-typing-status'), 'typing status must have a separate diagnostic decision')
+  assert(code.includes('rawCompact===compact'), 'typing status must compare row structure, not only words')
 })
 
 console.log(`\nVK exec fallback: ${passed} passed, ${failed} failed\n`)

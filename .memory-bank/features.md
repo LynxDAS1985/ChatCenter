@@ -1,6 +1,16 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.51 (3 июля 2026)
+## Текущая версия: v1.2.52 (3 июля 2026)
+
+### v1.2.52 — VK: структурный typing-status и отключение внутреннего звука WebView
+
+Дата: 3 июля 2026. Кто нашёл: пользователь по VK-проверке “сообщение пришло с первого раза, но слышен внутренний звук VK и появляется фантом `печатает`”; Codex по `chatcenter.log`, diagnostics report, `shared/vkExecFallback.js`, `src/utils/webviewSetup.js`.
+
+Факты: реальные сообщения прошли `VK-EXEC kind=new-message -> custom-notify recv -> NotifManager show`. Статус набора шёл иначе: активная история давала `reason=no-message-node`, sidebar давал `count=0`, `preview=печатает`, `raw=Алексей Дёминпечатает`. Значит это не message bubble, а служебная строка VK.
+
+Решение: добавлен `isSidebarTypingStatus()` и `decision=block-typing-status`. Это не глобальная блокировка слова: правило работает только для VK sidebar-строки без unread badge, где `rawCompact === title+preview`. VK WebView глушится через Electron `setAudioMuted(true)`, чтобы убрать внутренний звук VK; системный звук ChatCenter через `playNotificationSound` остаётся. Ограничение: звук видео/аудио внутри VK WebView тоже будет отключён.
+
+Как должно работать: входящее VK-сообщение даёт модалку, аватар и один системный звук ChatCenter. Статус “печатает” не даёт модалку и в диагностике виден как `decision=block-typing-status`.
 
 ### v1.2.51 — VK: подробная sidebar-диагностика перед ремонтом уведомлений
 
@@ -65,7 +75,7 @@
 
 ### v1.2.46 — VK: fallback live-observer, если monitor preload не запустился
 
-Дата: 2 июля 2026. Проблема: VK WebView иногда не запускал штатный `monitor.preload.cjs`, поэтому ручная глубокая диагностика видела DOM-сообщения, а live-цепочка `new-message -> sound -> ribbon` не срабатывала. Решение: добавлен heartbeat `monitor-ready`; если heartbeat нет, renderer ставит резервный `VK-EXEC` через `executeJavaScript`, который требует структурный DOM-узел сообщения, baseline и не-исходящее направление. Общий путь `handleNewMessage` сохранён. Подробная история была закрыта в v1.2.46; последующие уточнения VK см. v1.2.47-v1.2.51.
+Дата: 2 июля 2026. Проблема: VK WebView иногда не запускал штатный `monitor.preload.cjs`, поэтому ручная глубокая диагностика видела DOM-сообщения, а live-цепочка `new-message -> sound -> ribbon` не срабатывала. Решение: добавлен heartbeat `monitor-ready`; если heartbeat нет, renderer ставит резервный `VK-EXEC` через `executeJavaScript`, который требует структурный DOM-узел сообщения, baseline и не-исходящее направление. Общий путь `handleNewMessage` сохранён. Подробная история была закрыта в v1.2.46; последующие уточнения VK см. v1.2.47-v1.2.52.
 
 Проверки: `node src/__tests__/vkExecFallback.test.cjs`, `node src/__tests__/monitorPreload.test.cjs`, `npm run lint`, `npm run build`, `npm test`.
 ### v1.2.45 — VK: DOM observer подключён к модалке уведомлений

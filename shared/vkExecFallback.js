@@ -61,7 +61,7 @@ export function createVkExecFallbackRuntime(options) {
 export function buildVkExecFallbackScript() {
   return `;(function(){
   var PREFIX='${PREFIX}';
-  var SCRIPT_VERSION='1.2.51-sidebar-diagnostics';
+  var SCRIPT_VERSION='1.2.52-sidebar-typing-status';
   if(window.__ccVkExecFallbackInstalled===SCRIPT_VERSION){
     try{console.log(PREFIX+JSON.stringify({kind:'already-installed',version:SCRIPT_VERSION,url:location.href,ts:Date.now()}));}catch(e){}
     return 'already-installed';
@@ -165,11 +165,20 @@ export function buildVkExecFallbackScript() {
     var minutes=rowFreshMinutes(d.raw);
     return minutes!==null&&minutes<=10&&!sidebarNotified[d.fp];
   }
+  function isSidebarTypingStatus(d){
+    if(!d||d.count>0||!d.preview)return false;
+    var raw=clean(d.raw), title=clean(d.title), preview=clean(d.preview);
+    if(!title||!preview)return false;
+    var compact=clean((title+preview).replace(/\\s+/g,''));
+    var rawCompact=raw.replace(/\\s+/g,'');
+    return rawCompact===compact&&/^(печатает|typing)$/i.test(preview);
+  }
   function sidebarDecision(reason,notify,d,prev,baselineFresh){
     var minutes=rowFreshMinutes(d.raw), decision='block-unknown';
     if(!d.key)decision='block-no-key';
     else if(d.selected)decision='block-selected';
     else if(!d.preview)decision='block-no-preview';
+    else if(isSidebarTypingStatus(d))decision='block-typing-status';
     else if(baselineFresh)decision='emit-baseline-fresh';
     else if(!notify)decision='block-baseline';
     else if(!prev)decision='block-no-prev';
