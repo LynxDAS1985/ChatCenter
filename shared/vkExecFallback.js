@@ -41,7 +41,7 @@ export function createVkExecFallbackRuntime(options) {
       const payload = parseVkExecFallbackMessage(msg)
       if (!payload) return false
       const text = String(payload.text || '').trim()
-      const detail = `VK-EXEC kind=${payload.kind || ''} reason=${payload.reason || ''} seq=${payload.seq || ''} sender=${payload.senderName || ''} icon=${!!payload.iconUrl} activeUnread=${!!payload.vkActiveUnread} rows=${payload.rows ?? ''} emitted=${payload.emitted ?? ''} msgId=${payload.messageId || ''} url=${String(payload.url || '').slice(0, 180)}`
+      const detail = `VK-EXEC kind=${payload.kind || ''} reason=${payload.reason || ''} seq=${payload.seq || ''} sender=${payload.senderName || ''} icon=${!!payload.iconUrl} activeUnread=${!!payload.vkActiveUnread} rows=${payload.rows ?? ''} emitted=${payload.emitted ?? ''} row=${payload.row ?? ''} count=${payload.count ?? ''} selected=${payload.selected ?? ''} freshMin=${payload.freshMin ?? ''} decision=${payload.decision || ''} title=${String(payload.rowTitle || '').slice(0, 80)} preview=${String(payload.preview || '').slice(0, 120)} raw=${String(payload.raw || '').slice(0, 180)} msgId=${payload.messageId || ''} url=${String(payload.url || '').slice(0, 180)}`
       traceNotif(payload.kind === 'new-message' ? 'source' : 'debug', payload.kind === 'new-message' ? 'info' : 'warn', messengerId, text || 'VK exec fallback', detail)
       if (payload.kind === 'new-message' && text) {
         handleNewMessage(messengerId, text, {
@@ -61,7 +61,7 @@ export function createVkExecFallbackRuntime(options) {
 export function buildVkExecFallbackScript() {
   return `;(function(){
   var PREFIX='${PREFIX}';
-  var SCRIPT_VERSION='1.2.50-sidebar-fresh-rebind';
+  var SCRIPT_VERSION='1.2.51-sidebar-diagnostics';
   if(window.__ccVkExecFallbackInstalled===SCRIPT_VERSION){
     try{console.log(PREFIX+JSON.stringify({kind:'already-installed',version:SCRIPT_VERSION,url:location.href,ts:Date.now()}));}catch(e){}
     return 'already-installed';
@@ -165,6 +165,26 @@ export function buildVkExecFallbackScript() {
     var minutes=rowFreshMinutes(d.raw);
     return minutes!==null&&minutes<=10&&!sidebarNotified[d.fp];
   }
+  function sidebarDecision(reason,notify,d,prev,baselineFresh){
+    var minutes=rowFreshMinutes(d.raw), decision='block-unknown';
+    if(!d.key)decision='block-no-key';
+    else if(d.selected)decision='block-selected';
+    else if(!d.preview)decision='block-no-preview';
+    else if(baselineFresh)decision='emit-baseline-fresh';
+    else if(!notify)decision='block-baseline';
+    else if(!prev)decision='block-no-prev';
+    else if(!d.count)decision='block-no-unread';
+    else if(sidebarNotified[d.fp])decision='block-already-notified';
+    else if(d.count>(prev.count||0)||d.preview!==prev.preview)decision='emit-mutation-change';
+    else decision='block-no-change';
+    return{decision:decision,freshMin:minutes};
+  }
+  function shouldLogSidebarRow(reason,notify,d,prev,decision,index){
+    if(reason==='baseline-spa-rebind'&&index<40)return true;
+    if(d.count>0||decision.indexOf('emit-')===0)return true;
+    if(prev&&(d.preview!==prev.preview||d.count!==(prev.count||0)))return true;
+    return false;
+  }
   function findSidebarRoot(){
     var item=one('[class*="ConvoListItem"]'), cur=item&&item.parentElement;
     for(var i=0;i<8&&cur;i++){
@@ -175,9 +195,13 @@ export function buildVkExecFallbackScript() {
   }
   function scanSidebar(reason,notify){
     var rows=all('[class*="ConvoListItem"]'), n=0;
-    rows.forEach(function(row){
-      var d=rowData(row); if(!d.key||d.selected||!d.preview)return;
-      var prev=sidebarSeen[d.key], baselineFresh=shouldEmitSidebarBaseline(reason,d); sidebarSeen[d.key]=d;
+    rows.forEach(function(row,index){
+      var d=rowData(row), prev=d.key&&sidebarSeen[d.key], baselineFresh=shouldEmitSidebarBaseline(reason,d), diag=sidebarDecision(reason,notify,d,prev,baselineFresh);
+      if(shouldLogSidebarRow(reason,notify,d,prev,diag.decision,index)){
+        emit({kind:'sidebar-row',reason:reason,row:index,rowTitle:d.title,preview:d.preview,count:d.count,selected:!!d.selected,decision:diag.decision,freshMin:diag.freshMin,prevCount:prev&&prev.count||0,prevPreview:prev&&prev.preview||'',raw:String(d.raw||'').slice(0,260),avatar:!!d.avatar});
+      }
+      if(!d.key||d.selected||!d.preview)return;
+      sidebarSeen[d.key]=d;
       if((baselineFresh||notify&&prev&&d.count>0&&(d.count>(prev.count||0)||d.preview!==prev.preview))&&!sidebarNotified[d.fp]){
         sidebarNotified[d.fp]=Date.now();
         n++; emit({kind:'new-message',source:'vk-sidebar-unread',reason:baselineFresh?'baseline-fresh-unread':reason,text:d.preview,senderName:d.title,iconUrl:d.avatar,chatTag:d.key,messageId:d.fp});

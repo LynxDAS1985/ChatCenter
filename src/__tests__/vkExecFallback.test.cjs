@@ -24,7 +24,7 @@ test('script stays in page world and does not depend on ipcRenderer', () => {
 })
 
 test('script can upgrade an already injected page runtime', () => {
-  assert(code.includes("SCRIPT_VERSION='1.2.50-sidebar-fresh-rebind'"), 'missing versioned runtime marker')
+  assert(code.includes("SCRIPT_VERSION='1.2.51-sidebar-diagnostics'"), 'missing versioned runtime marker')
   assert(code.includes('__ccVkExecFallbackObserver'), 'missing active observer handle')
   assert(code.includes('__ccVkSidebarObserver'), 'missing sidebar observer handle')
   assert(code.includes('__ccVkExecFallbackInstalled===SCRIPT_VERSION'), 'already-installed must be version-specific')
@@ -97,6 +97,19 @@ test('sidebar rebind can recover fresh unread rows without old-history phantoms'
   assert(code.includes('minutes!==null&&minutes<=10'), 'fresh unread window must be bounded')
   assert(code.includes('rows=${payload.rows'), 'diagnostics must include sidebar row count')
   assert(code.includes('emitted=${payload.emitted'), 'diagnostics must include sidebar emitted count')
+})
+
+test('sidebar diagnostics explain every relevant unread decision', () => {
+  assert(code.includes("kind:'sidebar-row'"), 'missing per-row sidebar diagnostics')
+  assert(code.includes('sidebarDecision'), 'missing sidebar decision helper')
+  assert(code.includes('shouldLogSidebarRow'), 'missing sidebar diagnostic throttle')
+  assert(code.includes("reason==='baseline-spa-rebind'&&index<40"), 'baseline rebind must log visible rows for diagnosis')
+  assert(code.includes('decision:diag.decision'), 'sidebar row payload must include decision')
+  assert(code.includes('freshMin'), 'sidebar row payload must include freshness result')
+  assert(code.includes('prevPreview'), 'sidebar row payload must include previous preview')
+  assert(code.includes('raw:String(d.raw'), 'sidebar row payload must include raw row text')
+  assert(code.includes('decision=${payload.decision'), 'host trace must expose sidebar decision')
+  assert(code.includes('preview=${String(payload.preview'), 'host trace must expose sidebar preview')
 })
 
 console.log(`\nVK exec fallback: ${passed} passed, ${failed} failed\n`)
