@@ -80,6 +80,18 @@ function downloadIcon(url) {
   })
 }
 
+function updateNotificationIconLater(id, iconUrl) {
+  if (!iconUrl || (!iconUrl.startsWith('https://') && !iconUrl.startsWith('http://'))) return
+  downloadIcon(iconUrl).then((icon) => {
+    if (!icon || !notifWin || notifWin.isDestroyed()) return
+    const iconDataUrl = icon.toDataURL()
+    if (!iconDataUrl) return
+    notifWin.webContents.send('notif:update-icon', { id, iconDataUrl })
+  }).catch((e) => {
+    console.warn('[NotifManager] Icon async update error:', e.message)
+  })
+}
+
 function createNotifWindow() {
   const { BrowserWindow, screen } = _deps
   if (notifWin && !notifWin.isDestroyed()) return
@@ -226,13 +238,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   const id = String(++notifIdCounter)
 
   // Аватарка: если уже data URL — используем напрямую, иначе скачиваем
-  let iconDataUrl = preDataUrl || null
-  if (!iconDataUrl && iconUrl && (iconUrl.startsWith('https://') || iconUrl.startsWith('http://'))) {
-    try {
-      const icon = await downloadIcon(iconUrl)
-      if (icon) iconDataUrl = icon.toDataURL()
-    } catch (e) { console.warn('[NotifManager] Icon download error:', e.message) }
-  }
+  const iconDataUrl = preDataUrl || null
 
   // Время показа уведомления из настроек (по умолчанию 5 сек, 0 = бесконечно)
   const settings = storage.get('settings', {})
@@ -269,6 +275,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
     notifWin.showInactive()
   }
   notifWin.webContents.send('notif:show', data)
+  if (!iconDataUrl) updateNotificationIconLater(id, iconUrl)
   // v1.2.12: диагностический лог №5 — параметры показа (dismissMs/grouping/expanded).
   // Без них нельзя отличить «окно мелькнуло потому что dismissMs=500мс» от «настройки норм».
   console.log('[NotifManager] show id=' + id + ' messenger=' + (messengerId || '') + ' sender=' + String(senderName || title || '').slice(0, 40) + ' body=' + String(body || '').slice(0, 80) + ' icon=' + !!iconDataUrl + ' dismissMs=' + dismissMs + ' grouping=' + grouping + ' expanded=' + expandedByDefault + ' winVisible=' + (notifWin && !notifWin.isDestroyed() ? notifWin.isVisible() : false))

@@ -1,16 +1,86 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.52 (3 июля 2026)
+## Текущая версия: v1.2.57 (7 июля 2026)
 
-### v1.2.52 — VK: структурный typing-status и отключение внутреннего звука WebView
+### v1.2.57 — VK: уведомления из внутреннего тоста на любой странице VK
 
-Дата: 3 июля 2026. Кто нашёл: пользователь по VK-проверке “сообщение пришло с первого раза, но слышен внутренний звук VK и появляется фантом `печатает`”; Codex по `chatcenter.log`, diagnostics report, `shared/vkExecFallback.js`, `src/utils/webviewSetup.js`.
+Дата: 7 июля 2026. Кто нашёл: пользователь по VK-сценарию на странице профиля `https://vk.com/lynxdas`; Codex по `system-diagnostics-report.json`, `chatcenter.log`, `shared/vkExecFallback.js`.
 
-Факты: реальные сообщения прошли `VK-EXEC kind=new-message -> custom-notify recv -> NotifManager show`. Статус набора шёл иначе: активная история давала `reason=no-message-node`, sidebar давал `count=0`, `preview=печатает`, `raw=Алексей Дёминпечатает`. Значит это не message bubble, а служебная строка VK.
+Проблема: когда пользователь был не в мессенджере VK, а на странице профиля, VK сам показывал маленький тост `Новое сообщение / Алексей Дёмин / Ага`, но ChatCenter не показывал свою модалку. Диагностика показала точную причину: `url=https://vk.com/lynxdas`, `containerFound=false`, `messageCount=0`, `sidebar=[]`, `VK-EXEC kind=container-not-found-sidebar-bound`, `sidebar-scan rows=0 emitted=0`. То есть текущие источники VK (`vk-exec-fallback` для открытой истории и `vk-sidebar-unread` для списка диалогов) физически не видели ни контейнер сообщений, ни список чатов.
 
-Решение: добавлен `isSidebarTypingStatus()` и `decision=block-typing-status`. Это не глобальная блокировка слова: правило работает только для VK sidebar-строки без unread badge, где `rawCompact === title+preview`. VK WebView глушится через Electron `setAudioMuted(true)`, чтобы убрать внутренний звук VK; системный звук ChatCenter через `playNotificationSound` остаётся. Ограничение: звук видео/аудио внутри VK WebView тоже будет отключён.
+Решение: добавлен третий источник `source:'vk-toast'` в `shared/vkExecFallback.js`. Он наблюдает DOM всей страницы VK и ищет только компактный видимый внутренний тост VK с системной меткой `Новое сообщение` / `New message`. Если в тосте есть отдельный отправитель и текст, событие отправляется в обычный `handleNewMessage`, дальше идут те же звук, Ribbon, dedup, история и статусбар. Если отправителя или текста нет, событие остаётся диагностикой `block-incomplete-toast` и карточку не создаёт.
 
-Как должно работать: входящее VK-сообщение даёт модалку, аватар и один системный звук ChatCenter. Статус “печатает” не даёт модалку и в диагностике виден как `decision=block-typing-status`.
+Почему так безопаснее: старые пути не заменены и не ослаблены. `vk-exec-fallback` по-прежнему защищает активную историю от старых DOM-вставок, `vk-sidebar-unread` по-прежнему требует unread badge и fresh/preview правила. Новый `vk-toast` нужен только для страниц VK без `/im`, где сам VK уже подтвердил событие своим тостом, но у нас нет sidebar/history DOM.
+
+Как должно работать после исправления:
+- на странице профиля, ленты, фото и других страницах VK внутренний тост `Новое сообщение` должен превращаться в обычную карточку ChatCenter;
+- в диагностике должна появиться цепочка `toast-candidate decision=emit-toast` -> `VK-EXEC kind=new-message source=vk-toast` -> `handle` -> `sound` -> `ribbon`;
+- неполные тосты без текста/отправителя пишутся как `block-incomplete-toast` и не создают фантом;
+- один и тот же тост не повторяется в течение короткого окна благодаря `toastSeen` и `messageId='vk-toast:...'`;
+- остальные мессенджеры и старые VK-источники не менялись.
+
+Проверки: `node --check shared\vkExecFallback.js`, `node --check src\__tests__\vkExecFallback.test.cjs`, `node src\__tests__\vkExecFallback.test.cjs`, `node src\__tests__\notificationIdentity.test.cjs`, `node src\__tests__\handleNewMessage.test.cjs`, `node src\__tests__\fileSizeLimits.test.cjs`, `node src\__tests__\memoryBankSizeLimits.test.cjs`, `node src\__tests__\featuresReferences.test.cjs`, `npm run lint`, `npm run build`.
+
+### v1.2.56 — VK: sidebar-preview очищается от хвоста времени
+
+Кто нашёл: пользователь по VK-кейсу `Елена Дугина / Скинь 1500`; Codex по `chatcenter.log`, `shared/vkExecFallback.js`, `src/__tests__/vkExecFallback.test.cjs`.
+
+Что было сделано:
+- `shared/vkExecFallback.js`: `bindSidebar(reason)` теперь запускается до проверки активного контейнера чата. Если справа нет открытого чата, лог пишет `container-not-found-sidebar-bound`, но список VK слева всё равно сканируется.
+- `shared/vkExecFallback.js`: в sidebar-диагностику добавлены `badgeText`, `badgeSource`, `badgeCandidates`, чтобы видеть реальный unread badge и не гадать по тексту строки.
+- `shared/vkExecFallback.js`: `rowFreshMinutes()` научен понимать текущие VK-форматы `8м8 минут назад`, `9м9 минут назад`, `1 минута назад`, `2 минуты назад`, `сейчас`.
+- `shared/vkExecFallback.js`: добавлен `cleanSidebarPreview()`. Он убирает из текста карточки только VK-хвост времени после разделителя `·`: `4м4 минуты назад`, `сейчас`, `23 фев`, но не режет обычный текст клиента с `·`.
+- `src/__tests__/vkExecFallback.test.cjs`: добавлены проверки, что sidebar работает без открытого активного чата и что fresh-парсер пропускает только минуты, но не часы, дни и даты.
+- `src/__tests__/vkExecFallback.test.cjs`: добавлена проверка `Скинь 1500 · 4м4 минуты назад` -> `Скинь 1500`, чтобы карточка больше не выглядела как старый фантом из-за времени внутри preview.
+
+Факт из лога 6 июля 2026: карточка `Скинь 1500 · 4м4 минуты назад` была создана в 15:51:12, до исходящего сообщения пользователя `я скинул` в 15:51:49. Цепочка была такая: `VK-EXEC kind=sidebar-row reason=baseline-spa-rebind count=1 freshMin=4 decision=emit-baseline-fresh` -> `VK-EXEC kind=new-message reason=baseline-fresh-unread sender=Елена Дугина`. После открытия чата строка стала `selected=true`, badge исчез, а старые DOM-вставки активной истории блокировались как `VK-EXEC active visible chat: block virtualized old DOM nodes`.
+
+Как защита от фантомов работает сейчас:
+- старые строки без unread не уведомляют: `count=0` -> `block-no-unread` или `block-baseline`;
+- старые часы/дни/даты не считаются свежими: `54м` уже выше окна 10 минут, `6д`, `2н`, даты вроде `23 фев` остаются baseline;
+- выбранный чат не уведомляет сам себя из sidebar: `selected=true` -> `block-selected`;
+- активная история VK не показывает переиспользованные старые DOM-узлы без маркера новых сообщений: `source=vk-exec-fallback` без `vkActiveUnread` блокируется в `webviewHandleNewMessage`;
+- один и тот же fresh unread не должен дублироваться при повторной перепривязке благодаря `sidebarNotified`.
+
+Что исправлено сейчас: preview из VK sidebar больше не должен включать хвост времени (`Скинь 1500 · 4м4 минуты назад`). Уведомление продолжает создаваться только по тем же правилам `count/freshMin/selected/vkActiveUnread`; изменилась только строка, которую видит пользователь в карточке.
+
+Проверки: `node src\__tests__\vkExecFallback.test.cjs`, `node --check shared\vkExecFallback.js`, `node --check src\__tests__\vkExecFallback.test.cjs`, `node src\__tests__\notificationIdentity.test.cjs`, `node src\__tests__\handleNewMessage.test.cjs`, `node src\__tests__\fileSizeLimits.test.cjs`, `npm run lint`, `git diff --check`.
+
+### v1.2.55 — MAX: одинаковые входящие сообщения не блокируются dedup
+
+Дата: 3 июля 2026. Кто нашёл: пользователь по MAX-чату с повторяющимися короткими сообщениями; Codex по `chatcenter.log`, `main/preloads/hooks/max.hook.js`, `src/utils/consoleMessageHandler.js`, `src/utils/webviewHandleNewMessage.js`, `main/handlers/notificationManager.js`.
+
+Проблема: MAX реально отправлял новые события `max-sidebar` при росте `unread`, но renderer гасил одинаковый текст как дубль по ключу `messenger + sender + text`. В логе было `body="Выы"`, `prevBody="Выы"`, `unread=7 prevUnread=6`, затем `unread=8 prevUnread=7`, `action="show"`, после чего `notifDedup age=2581мс/4009мс` блокировал модалку и звук.
+
+Решение: для `src=max-sidebar` в dedup-key добавлен номер unread (`u:N`), а в `extra.messageId` передаётся `max-sidebar:<sender>:<unread>`. `webviewHandleNewMessage` теперь отдаёт `messageId/source` в `app:custom-notify`, чтобы main dedup отличал реальные новые одинаковые сообщения. Dedup не отключён: повтор того же unread всё ещё блокируется.
+
+Как должно работать: если клиент MAX прислал несколько одинаковых сообщений подряд и у строки чата вырос unread, каждое сообщение даёт звук и ribbon. Если сайт повторно прислал тот же самый unread/event, дубль остаётся тихим. `__CC_NOTIF__`, Notification API/SW, VK/Telegram/WhatsApp, avatar и общий Ribbon не менялись.
+
+### v1.2.54 — Messenger Ribbon: окно уведомлений больше не уезжает за экран
+
+Дата: 3 июля 2026. Кто нашёл: пользователь по сценарию “звук есть, модалки нет или модалки приходят пачкой позже”; Codex по `chatcenter.log`, `main/handlers/notifHandlers.js`, `main/notification.js`, `main/notification.css`, `main/handlers/notificationManager.js`.
+
+Проблема: это оказалась не VK-проблема, а общий дефект Messenger Ribbon. При настройке `notifDismissSec=0` карточки не закрываются автоматически. Если включено раскрытие карточек и приходит несколько длинных уведомлений, renderer отправлял высоту вроде `1003`, `1275`, `1683`, а main ставил окно по формуле `y = workArea.height - height - 10`. Когда `height` больше экрана, `y` становился отрицательным, окно уходило выше экрана. Пользователь слышал звук, но не видел модалку, либо видел пачку позже в странном месте. Отдельно найдено, что скачивание avatar URL выполнялось до `notif:show`, поэтому медленная аватарка могла задержать показ карточки.
+
+Решение: main теперь ограничивает высоту notification window рабочей областью экрана и никогда не ставит `y` выше верхней границы. Renderer получил внутреннюю прокрутку `#container`, поэтому уведомления остаются доступны, но окно не растёт бесконечно. Карточки не ужимаются по высоте: `.notif-item` закреплён как `flex: 0 0 auto`, а скролл включается на списке. Найден отдельный дефект этой же зоны: в `main/notification.js` оставался общий `MAX_ITEMS = 6`, который удалял старые карточки даже при `dismissMs=0`. Теперь лимит 6 применяется только к временным auto-dismiss уведомлениям, а режим "не закрывать автоматически" держит полный tracked-список до 30 карточек и прокручивает список. Новые карточки автоматически прокручиваются в видимую область. Аватарка больше не блокирует показ: уведомление отправляется сразу, а картинка догружается отдельным `notif:update-icon`.
+
+Как должно работать: если пользователь поставил уведомления “не закрывать автоматически”, карточки продолжают копиться внутри прокручиваемого окна и не исчезают на шестой штуке. Модалка должна быть видна сразу после `NotifManager show`, не уезжать за экран и не зависеть от скорости скачивания аватарки. Звук, кнопки “Перейти к чату”, “Прочитано”, AI, dedup и источники VK/MAX/Telegram/WhatsApp не менялись.
+
+Факт 3 июля 2026 по MAX-тесту: в `chatcenter.log` сообщения `Sdc/Sdg/Xxb/Zcg/Zxc/Sef` прошли `custom-notify recv -> NotifManager show` с `dismissMs=0`, но renderer показывал `items=6 containerChildren=6`. Значит потеря была не в MAX и не в звуке, а в старом лимите карточек окна уведомлений.
+
+Проверки: `node src/__tests__/notificationWindowBounds.test.cjs`, `node src/__tests__/transparentWindowGuard.test.cjs`, `node src/__tests__/notifHooks.test.cjs`, `node src/__tests__/appStructure.test.cjs`, `npm run lint`, `npm test`.
+
+### v1.2.53 — VK: отмена глобального mute WebView, медиа VK снова со звуком
+
+Дата: 3 июля 2026. Кто нашёл: пользователь по VK-проверке; Codex по `chatcenter.log`, diagnostics report, `shared/vkExecFallback.js`, `src/utils/webviewSetup.js`.
+
+Факты: реальные сообщения прошли `VK-EXEC kind=new-message -> custom-notify recv -> NotifManager show`. Статус набора шёл иначе: `reason=no-message-node`, sidebar `count=0`, `preview=печатает`, `raw=title+preview`. Значит это служебная строка VK. Отдельно пользователь указал: `setAudioMuted(true)` глушит не только уведомление, но и видео/аудио VK.
+
+Решение: `isSidebarTypingStatus()` и `decision=block-typing-status` оставлены. Правило работает только для VK sidebar-строки без unread badge, где `rawCompact === title+preview`. Глобальное глушение VK WebView через Electron `setAudioMuted(true)` удалено: по документации Electron это mute всей guest page. Из VK hook убран общий mute `window.Audio`, `document.createElement('audio')` и `AudioContext.createGain()`.
+
+Как должно работать: входящее VK-сообщение даёт модалку, аватар и системный звук ChatCenter. `Печатает` не даёт модалку и видно как `decision=block-typing-status`. Видео/аудио/голосовые внутри VK WebView должны звучать нормально.
+
+Почему предыдущее решение не подходит: `setAudioMuted(true)` убирал внутренний звук VK, но одновременно отключал весь звук сайта VK. Это ухудшало обычные функции пользователя и поэтому отменено.
 
 ### v1.2.51 — VK: подробная sidebar-диагностика перед ремонтом уведомлений
 
@@ -372,292 +442,15 @@
 
 Проверки: `node src/__tests__/systemDiagnosticsUi.test.cjs`, `node src/__tests__/memoryBankSizeLimits.test.cjs`, `node src/__tests__/featuresReferences.test.cjs`, `npm run lint`, `npm run build`, `npm test`.
 
-### v1.2.36 — счётчик диагностики в настройках показывает последний отчёт
+### v1.2.36-v1.2.30 — диагностика MAX/системы (архив)
 
-Дата: 1 июля 2026.
-Кто нашёл: пользователь по скриншоту настроек, где рядом с кнопкой "Диагностика системы" было `Статус записи выключена · 0`, хотя диагностика уже использовалась для разбора MAX.
+Полные записи перенесены в [archive/features-v1.2.30-36.md](./archive/features-v1.2.30-36.md), чтобы active features.md оставался меньше лимита memory-bank. Суть: диагностика стала ручной, фоновой, с последним отчётом, полной MAX/VK-цепочкой и понятными кнопками; pipeline уведомлений этим блоком не менялся, кроме описанных в соответствующих версиях точечных MAX/VK исправлений.
+### v1.2.29 — диагностика запускается только вручную и не мешает работе (архив)
 
-Проблема: индикатор в настройках показывал только текущий live-буфер `DiagnosticsSessionHost`. Этот host создаётся после открытия диагностики и может быть сброшен через `resetDiagnosticsSession()`. Поэтому после полной остановки/закрытия диагностики настройки получали `active=false` и `events=0`. Последний сохранённый `system-diagnostics-report.json` в этот счётчик не попадал.
+Полная запись перенесена в [archive/features-v1.2.29.md](./archive/features-v1.2.29.md), чтобы активный features.md оставался меньше лимита memory-bank. Суть: большая модалка диагностики больше не стартует запись сама, управление записью стало явным, общий лог не очищается.
+### v1.2.28 — MAX: sidebar watcher не создаёт фантомы во время поиска (архив)
 
-Что изменено:
-- `src/components/SettingsPanel.jsx`: при открытии настроек читается `app:diagnostics-read-report`;
-- если фоновая запись активна, индикатор показывает текущий live-буфер;
-- если запись выключена, индикатор показывает количество событий из последнего сохранённого отчёта;
-- под числом добавлена подпись `текущая запись`, `последний отчёт` или `нет отчёта`, чтобы было понятно, откуда взято число.
-
-Почему это безопасно: изменение только UI-индикатора в настройках. Оно не запускает диагностику автоматически, не очищает отчёты, не трогает `chatcenter.log`, не меняет MAX/WhatsApp/Telegram notification pipeline и не влияет на запись событий.
-
-Как должно работать:
-1. Пока запись включена, рядом с кнопкой видно число событий текущей live-сессии.
-2. Если запись выключена, но есть сохранённый отчёт, видно число событий из последнего отчёта.
-3. Если отчёта нет, остаётся `выключена · 0` и подпись `нет отчёта`.
-
-Проверки: `node src/__tests__/systemDiagnosticsUi.test.cjs`, `node src/__tests__/memoryBankSizeLimits.test.cjs`, `node src/__tests__/featuresReferences.test.cjs`, `npm run lint`, `npm run build`.
-
-### v1.2.35 — MAX первое сообщение в уже unread-чате больше не глохнет
-
-Дата: 1 июля 2026.
-Кто нашёл: пользователь по живому кейсу "первое MAX-сообщение без уведомления, второе с уведомлением"; Codex по полной диагностике v1.2.34 и `chatcenter.log`.
-
-Что не помогло раньше: v1.2.33 разрешила первое неизвестное sidebar-сообщение только при свежем росте title-unread и росте unread-бейджа строки. Это закрыло часть случаев, но не закрыло кейс, где чат уже был непрочитанным. В свежей диагностике было: `body="Иит"`, `prevBody="Ыйы"`, `unread=1`, `prevUnread=1`, `firstSeen=false`, `bodyChanged=true`, `unreadIncreased=false`, `freshTitleMs=1`, `search.active=false`, `emit=true`, `action="skip-no-unread-increase"`. То есть MAX реально поменял preview на новое сообщение, но unread строки остался `1`.
-
-Корень: MAX sidebar не всегда увеличивает unread-бейдж на каждое новое сообщение внутри уже непрочитанного чата. Для такого чата новое входящее может выглядеть как `bodyChanged=true` при стабильном `unread=1`. Старое правило "показывать только если unread вырос" было слишком строгим.
-
-Что изменено:
-- `main/preloads/hooks/max.hook.js`: добавлен флаг `stableUnreadBodyChanged`;
-- `stableUnreadBodyChanged` срабатывает только если строка уже была в baseline (`firstSeen=false`), preview изменился (`bodyChanged=true`), у строки есть unread (`info.unread > 0`) и рядом был свежий рост title-unread (`freshTitleMs < 3000`);
-- `max-sidebar` теперь показывает ribbon при `unreadIncreased=true` или при `stableUnreadBodyChanged=true`;
-- старый широкий вариант `bodyChanged + unread > 0` не используется, чтобы не вернуть фантомы от исходящих/старых preview;
-- диагностика пишет `stableUnreadBodyChanged` и action `show-stable-unread-body` или `skip-no-confirmed-unread-change`.
-
-Почему это безопаснее:
-1. Первый baseline после запуска остаётся тихим: `firstSeen=true` не проходит через `stableUnreadBodyChanged`.
-2. Поиск MAX остаётся тихим: `search.active` переводит `emit=false`.
-3. Голый title MAX сам по себе не создаёт уведомление.
-4. Просто изменение preview без свежего title growth не проходит.
-5. Просто старый unread без изменения body не проходит.
-6. Основные пути Notification API/SW/showNotification, звук, ribbon, аватарки и общий `handleNewMessage` не менялись.
-
-Как должно работать:
-1. Если MAX прислал первое новое сообщение в уже непрочитанный чат и sidebar preview изменился рядом со свежим ростом title-unread, будет `__CC_NOTIF__`, звук и ribbon.
-2. Если пользователь открыл поиск или приложение делает первичную заливку baseline, уведомления не будет.
-3. Если preview старый или изменился без свежего подтверждения title-unread, уведомления не будет.
-4. В диагностике для нового исправленного случая будет `action="show-stable-unread-body"` и `stableUnreadBodyChanged=true`.
-
-Результат живой проверки:
-- 1 июля 2026 пользователь проверил v1.2.35 на реальном MAX-сценарии и сообщил: "вроде помогло";
-- это подтверждает, что предыдущая причина `skip-no-unread-increase` была выбрана правильно для наблюдаемого кейса;
-- статус: исправление считается предварительно подтверждённым на живом сценарии, но при новых MAX-фантомах или пропусках нужно снова смотреть `max-sidebar-decision`, а не добавлять фильтры по словам.
-
-Проверки: `node src/__tests__/notifHooks.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `npm run lint`, `npm run build`.
-
-### v1.2.34 — MAX диагностика пишет полный sidebar decision без обрезания
-
-Дата: 1 июля 2026.
-Кто нашёл: пользователь по повторному живому кейсу "первое MAX-сообщение без уведомления, второе показывает"; Codex по диагностике, `chatcenter.log`, `main/preloads/hooks/max.hook.js`, `src/utils/consoleMessageHandler.js`, `src/utils/webviewSetup.js` и `src/utils/diagnosticsSession.js`.
-
-Проблема: после v1.2.33 живой кейс не был решён. Диагностика показывала общий факт (`MAX page-title-updated`, `title-only no-ribbon`, `max-sidebar skip/no-ribbon`), но не давала полную строку решения по sidebar. Из-за этого нельзя было доказать, почему первое сообщение пропущено: строка могла быть уже в baseline, мог быть `bodyChanged=true` без `unreadIncreased`, мог мешать поиск, или мог быть другой `prevUnread`. Часть этих полей терялась из-за обрезания на нескольких уровнях.
-
-Где именно обрезало:
-- `main/preloads/hooks/max.hook.js`: старые строки `skip no unread increase` резали `sender` и `body` через `slice`;
-- `src/utils/consoleMessageHandler.js`: parsed `__CC_DIAG__` резался до 200 символов;
-- `src/utils/webviewSetup.js`: `pipelineTrace` хранил `text` максимум 200 символов, а `chatcenter.log` показывал `text` максимум 60 символов;
-- `src/utils/diagnosticsSession.js`: live-сессия брала максимум 700 символов и могла вообще не включить строку, если `max-sidebar` был в `text`, а короткий `detail` был заполнен.
-
-Что изменено:
-- `max.hook.js`: добавлен полный JSON `__CC_DIAG__max-sidebar-decision` для каждой изменившейся sidebar-строки MAX;
-- в decision теперь пишутся `action`, `sender`, `body`, `prevBody`, `unread`, `prevUnread`, `firstSeen`, `bodyChanged`, `unreadIncreased`, `freshTitleMs`, `emit`, `search`, `title`, `url`, `ts`;
-- добавлен `__CC_DIAG__max-sidebar-title`, чтобы видеть момент роста title-unread;
-- `consoleMessageHandler.js`: для `max-sidebar` полный diagnostic payload переносится в `detail`, чтобы общий лог не терял поля;
-- `webviewSetup.js`: `pipelineTrace` и `chatcenter.log` сохраняют полный `max-sidebar` payload до 7000 символов;
-- `diagnosticsSession.js`: session report фильтрует одновременно `detail + text` и хранит длинный `max-sidebar` payload до 7000 символов;
-- добавлены тесты, что диагностика MAX sidebar больше не режет полный decision payload.
-
-Почему это решение сейчас правильное: мы не меняем правила уведомлений вслепую и не добавляем фильтры по словам. Сначала убираем потерю фактов в диагностике. Следующий отчёт должен показать точную причину пропуска первого сообщения: какое было действие `action`, был ли рост unread, был ли первый проход, изменился ли текст, был ли активен поиск, какой был предыдущий body/unread и сколько миллисекунд прошло после роста title.
-
-Как должно работать после изменения:
-1. При включённой диагностике и новом MAX-сообщении в отчёте должна появиться строка `__CC_DIAG__max-sidebar-decision`.
-2. Эта строка должна быть полной, без `...` и без потери `sender/body/prevBody`.
-3. Если первое сообщение пропущено, в `action` будет видно точную причину: `skip-first-seen`, `skip-no-unread-increase`, `skip-emit-false` или другое состояние.
-4. Если сообщение показано, рядом будет `show` и далее обычная цепочка `__CC_NOTIF__ -> sound -> NotifManager`.
-5. Общая логика уведомлений MAX, аватарки, звук и ribbon этим изменением не менялись.
-
-Проверки: `node src/__tests__/systemDiagnosticsUi.test.cjs`, `node src/__tests__/diagnosticsSession.test.cjs`, `node src/__tests__/consoleMessageParser.test.cjs`, `node src/__tests__/notifHooks.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `npm run lint`, `npm run build`.
-
-### v1.2.33 — MAX не теряет первое сообщение после роста счётчика
-
-Дата: 30 июня 2026.
-Кто нашёл: пользователь по живому кейсу "на первое сообщение нет уведомления и модалки, на второе есть"; Codex по `chatcenter.log`, `system-diagnostics-report.json`, `src/utils/webviewSetup.js`, `src/utils/titleUnreadBaseline.js` и `main/preloads/hooks/max.hook.js`.
-
-Проблема: после v1.2.32 первое реальное MAX-сообщение могло не дать звук и ribbon. В логе на первом сообщении была только строка `MAX page-title-updated raw="1 непрочитанный чат" prevUnread=0 delta=1`, затем `MAX title-only no-ribbon | reason=baseline-title-only`. Полного pipeline не было: не было `__CC_NOTIF__`, `custom-notify`, `NotifManager show` и звука. Второе сообщение через несколько секунд уже проходило как `__CC_NOTIF__ src=max-sidebar` и показывалось нормально.
-
-Корень: v1.2.32 правильно запретила `max-sidebar` шуметь на первом неизвестном проходе, чтобы не показывать старые и свои preview. Но у MAX иногда первое новое сообщение после навигации видно сначала только как рост title-unread, а sidebar-строка для этого отправителя ещё не была в baseline. Получилась дырка между двумя защитами: голый title мы не показываем, а первый sidebar-row мы тоже пропускали.
-
-Что изменено:
-- `main/preloads/hooks/max.hook.js`: hook запоминает свежий рост title-unread MAX по `document.title`;
-- первый неизвестный sidebar-row с unread теперь разрешается только если одновременно есть свежий рост title-unread за последние 3 секунды;
-- старый первый проход без такого подтверждения остаётся тихим;
-- добавлена диагностика `max-sidebar: title-correlated first unread`;
-- `src/__tests__/notifHooks.test.cjs`: добавлен регрессионный тест на правило `title growth + sidebar unread`.
-
-Почему это безопасно: MAX title сам по себе не создаёт уведомление. Нужны два независимых признака: сайт поднял счётчик непрочитанных и конкретная sidebar-строка имеет unread. Поиск MAX всё ещё отключает emit, preview без роста unread всё ещё блокируется, свои исходящие без unread не проходят.
-
-Как должно работать:
-1. Первое новое MAX-сообщение после роста счётчика должно дать звук и ribbon, если sidebar показывает unread у этого чата.
-2. Второе и следующие сообщения продолжают идти через обычный `max-sidebar` pipeline.
-3. Старые unread после запуска/навигации не должны показываться без свежего роста title.
-4. В диагностике для исправленного случая должна появиться строка `title-correlated first unread`.
-
-Проверки: `node src/__tests__/notifHooks.test.cjs`, `node src/__tests__/maxTitleFallback.test.cjs`, `node src/__tests__/integration.test.cjs`, `node src/__tests__/fileSizeLimits.test.cjs`, `npm run lint`, `npm run build`.
-
-### v1.2.32 — MAX sidebar больше не принимает исходящее/старое превью за новое входящее
-
-Дата: 30 июня 2026.
-Кто нашёл: пользователь по живому кейсу с собственным MAX-сообщением; Codex по `system-diagnostics-report.json`, `chatcenter.log`, `main/preloads/hooks/max.hook.js` и `src/utils/consoleMessageHandler.js`.
-
-Проблема: пользователь сам отправил MAX-сообщение клиенту (`перезвонить или случайно набрал?`), а ChatCenter показал это как входящее уведомление. В диагностике цепочка была нормальной уже после входа в pipeline: `__CC_NOTIF__ -> звук -> app:custom-notify -> NotifManager show`. Ошибка была раньше: источник `src=max-sidebar` взял изменившееся preview из списка чатов и пометил его как новое событие.
-
-Что показали факты:
-- в логе было `Источник: ... | __CC_NOTIF__ | ... src=max-sidebar`;
-- дальше renderer ставил `fromNotifAPI=true`;
-- `max-sidebar` не является Notification API MAX, а DOM-наблюдателем за списком чатов;
-- список чатов не знает направление сообщения и раньше сравнивал только текст preview;
-- собственная отправка или переотрисовка старой строки могла выглядеть как новое входящее.
-
-Что изменено:
-- `main/preloads/hooks/max.hook.js`: `_maxRowInfo()` теперь возвращает `unread`;
-- `max-sidebar` хранит baseline `{ body, unread }` по строке чата;
-- `__CC_NOTIF__ src=max-sidebar` отправляется только если unread-бейдж строки вырос;
-- если preview изменился, но unread не вырос, baseline обновляется, а диагностика пишет `max-sidebar: skip no unread increase`;
-- `src/utils/consoleMessageHandler.js`: `src=max-sidebar` больше не получает `fromNotifAPI=true`.
-
-Почему так безопаснее: проблема не в словах, телефонах, PDF или тексте клиента. Клиент может написать любой текст. Надёжный признак для sidebar fallback — не изменение preview, а рост непрочитанного бейджа в этой строке. Основные пути MAX Notification API, SW showNotification, активный chat observer, звук, ribbon и аватарки не отключались.
-
-Как должно работать:
-1. Свои исходящие MAX-сообщения обновляют preview, но не создают ribbon/звук, если unread не вырос.
-2. Реальные входящие, которые MAX отдаёт через Notification API/SW/active observer, проходят как раньше.
-3. Sidebar остаётся запасным путём только для строк, где реально появился новый unread.
-4. В диагностике видно причину пропуска: `max-sidebar: skip no unread increase`.
-
-Проверки: `node src/__tests__/notifHooks.test.cjs`, `node src/__tests__/integration.test.cjs`, `npm run lint`, `node src/__tests__/fileSizeLimits.test.cjs`.
-
-### v1.2.31 — диагностика сохраняет отчёт при закрытии и открывает последний сохранённый отчёт
-
-Дата: 30 июня 2026.
-Кто нашёл: пользователь по проверке настройки "Диагностика" после закрытия маленькой панели; Codex по файлам `useDiagnosticsSession.js`, `SystemDiagnosticsModal.jsx`, `main/utils/systemDiagnostics.js` и фактическому `userData/system-diagnostics-report.json`.
-
-Проблема: пользователь закрывал маленькую панель диагностики кнопкой `Закрыть`, потом открывал диагностику в настройках и видел `выключена · 0` и пустую live-ленту. Это выглядело как потеря отчёта. На диске при этом мог лежать сохранённый `system-diagnostics-report.json`, но UI показывал только текущую память React-сессии, а она сбрасывалась через `resetDiagnosticsSession()`. Вторая часть проблемы: большая модалка не читала последний сохранённый отчёт с диска при открытии.
-
-Что увидели в проверке:
-- `system-diagnostics-report.json` существовал и содержал `diagnosticsSession` с 210 событиями;
-- `ai-errors.log` был пустой, значит проблема не в AI-логе;
-- `useDiagnosticsSession.close()` сбрасывал сессию без сохранения;
-- `SystemDiagnosticsModal` умел сохранять новый снимок, но не умел подгружать последний сохранённый JSON;
-- настройки показывали только текущий буфер, поэтому после reset было `0`.
-
-Что изменено:
-- `useDiagnosticsSession.js`: `close()` теперь перед полным закрытием сохраняет активную или накопленную сессию; если сохранение упало, сессия не сбрасывается и ошибка остаётся на экране;
-- `main/utils/systemDiagnostics.js`: добавлено чтение последнего `system-diagnostics-report.json`;
-- `main/handlers/mainIpcHandlers.js`: добавлен IPC `app:diagnostics-read-report`;
-- `SystemDiagnosticsModal.jsx`: при открытии читает последний сохранённый отчёт и показывает его live-ленту, если текущая сессия пустая;
-- `SettingsPanel.jsx`: исправлена отображаемая версия приложения на `v1.2.31`;
-- тесты IPC/UI/main diagnostics обновлены под новый сценарий.
-
-Как должно работать:
-1. Пользователь включает запись диагностики.
-2. Диагностика собирает события в маленькой панели.
-3. Если пользователь нажимает `Закрыть`, приложение сначала сохраняет отчёт, потом скрывает панель.
-4. Если пользователь снова открывает `🩺 Диагностика системы`, окно подгружает последний сохранённый отчёт.
-5. Live-лента показывает сохранённые события, даже если текущая фоновая запись уже выключена.
-6. `Очистить экран` по-прежнему чистит только экран/буфер, не `chatcenter.log` и не `ai-errors.log`.
-
-Почему так безопаснее: исправление не меняет уведомления, MAX fallback, звук, dedup, WebView hooks и native backend. Оно меняет только жизненный цикл диагностического отчёта: перед закрытием не теряем буфер и при повторном открытии показываем файл с диска.
-
-Проверки:
-- `node src/__tests__/diagnosticsSession.test.cjs`;
-- `node src/__tests__/systemDiagnosticsMain.test.cjs`;
-- `node src/__tests__/systemDiagnosticsUi.test.cjs`;
-- `node src/__tests__/ipcChannels.test.cjs`;
-- `npm run lint`;
-- `npm run check-memory`.
-
-### v1.2.30 — диагностика упрощена: один блок управления, глубокая проверка всегда включена
-
-Дата: 30 июня 2026.
-Кто нашёл: пользователь по UX-проверке окна и маленькой панели "Диагностика"; Codex по коду `SystemDiagnosticsModal`, `DiagnosticsFloatingPanel`, `DiagnosticsSessionHost`, `SettingsPanel`, `useDiagnosticsSession`.
-
-Проблема: после v1.2.29 диагностика уже не запускалась сама, но интерфейс всё ещё выглядел перегруженным. В большой модалке были два смысловых блока с похожими действиями, `Глубокая WebView` выглядела как ручной режим, хотя для поиска проблем MAX её логичнее держать включённой постоянно. В маленькой панели после `Стоп` оставались события, но не было кнопки снова начать запись. В настройках не было видно, включена ли фоновая запись, пока пользователь не откроет окно диагностики.
-
-Что изменено:
-- `diagnosticsSession.js`: `deepWebview` теперь всегда `true`; старый toggle оставлен безопасным no-op, чтобы случайный старый вызов не выключил глубокую проверку;
-- `useDiagnosticsSession.js`: из публичных actions убран `toggleDeep`;
-- `SystemDiagnosticsModal.jsx`: все действия сведены в один блок `Фоновая диагностическая сессия`; отдельный дублирующий блок `Отчёт для разбора` убран;
-- `SystemDiagnosticsModal.jsx`: ручная кнопка `Глубокая WebView` удалена, вместо неё текстовое состояние "Глубокая WebView-проверка включена всегда";
-- `DiagnosticsFloatingPanel.jsx`: добавлена кнопка `Запустить`, чтобы после `Стоп` можно было сразу включить запись заново;
-- `DiagnosticsSessionHost.jsx` + `App.jsx` + `SettingsPanel.jsx`: статус фоновой записи передаётся в настройки и показывается рядом с кнопкой `🩺 Диагностика системы`;
-- `features.md`: история v1.2.27 и старше вынесена в `archive/features-v1.2.27-and-older.md`, чтобы активная память не разрасталась.
-
-Как должно работать:
-1. В настройках видно: запись выключена/включена/пауза и сколько событий в буфере.
-2. Большая модалка не запускает запись сама.
-3. Для старта пользователь нажимает `Включить запись`.
-4. Глубокая WebView-проверка работает всегда, без отдельного переключателя.
-5. Все главные действия находятся в одном блоке: старт, пауза, стоп+сохранение, свернуть, сохранить/копировать для ИИ, очистить экран.
-6. Если запись остановлена, маленькая панель остаётся с накопленными фактами и даёт кнопку `Запустить`.
-7. `Очистить экран` чистит только экран/буфер диагностики, не `chatcenter.log` и не `ai-errors.log`.
-
-Почему так безопаснее: изменение не меняет pipeline уведомлений MAX/WhatsApp/Telegram, не фильтрует тексты, не меняет правила dedup и не трогает общий лог. Оно только делает диагностический инструмент понятнее и уменьшает риск, что пользователь забудет включить нужный режим или не поймёт статус записи.
-
-Проверки:
-- `node src/__tests__/diagnosticsSession.test.cjs`;
-- `node src/__tests__/systemDiagnosticsUi.test.cjs`;
-- `node src/__tests__/appStructure.test.cjs`;
-- `npm run lint`;
-- `npm run check-memory`;
-- `npm run pre-push`.
-
-### v1.2.29 — диагностика запускается только вручную и не мешает работе
-
-Дата: 30 июня 2026.
-Кто нашёл: пользователь по UX-проверке окна "Диагностика системы"; Codex по коду `DiagnosticsSessionHost`, `SystemDiagnosticsModal`, `DiagnosticsFloatingPanel`, `useDiagnosticsSession`.
-
-Что зафиксировано по MAX: после v1.2.28 пользователь сообщил, что явных проблем с исправленным поисковым фантомом не видит. Это не закрывает все будущие MAX-кейсы, но подтверждает, что конкретный сценарий "поиск номера в MAX -> старый sidebar preview как новое уведомление" больше не воспроизводится в текущей проверке.
-
-Проблема диагностики: окно диагностики само запускало фоновую запись при открытии (`if (open) diagnostics.start()`), из-за этого пользователь видел активную сессию без явного включения. В интерфейсе были дубли кнопок: две глубокие WebView-проверки, два сценария сохранения/копирования, отдельное автообновление и фоновая запись рядом. Закрытие большой модалки выглядело как "закрыть", но фактически оставляло маленькую панель и запись в фоне, что путало.
-
-Что изменено:
-- `DiagnosticsSessionHost.jsx`: открытие большой модалки больше не вызывает `diagnostics.start()`;
-- разворачивание маленькой панели больше не перезапускает запись;
-- `useDiagnosticsSession.js` и `diagnosticsSession.js`: добавлен полный reset/close сессии;
-- `DiagnosticsFloatingPanel.jsx`: добавлена кнопка `Закрыть`, которая выключает и скрывает диагностику полностью;
-- `SystemDiagnosticsModal.jsx`: оставлен один понятный блок управления: `Включить запись`, `Пауза`, `Продолжить`, `Отключить и сохранить`, `Свернуть в фон`, одна `Глубокая WebView`;
-- сохранение/копирование сведены к понятным действиям `Сохранить для ИИ` и `Скопировать для ИИ`;
-- автообновление большой модалки убрано: непрерывная запись теперь только через ручное включение фоновой сессии;
-- `Очистить экран` по-прежнему чистит только экран/буфер диагностики, не `chatcenter.log` и не `ai-errors.log`.
-
-Как должно работать:
-1. Пользователь открывает настройки -> диагностику, но запись сама не начинается.
-2. Если нужно поймать проблему, пользователь нажимает `Включить запись`.
-3. Можно свернуть большую модалку в фон и ходить по чатам; маленькая панель остаётся поверх и показывает последние события.
-4. В маленькой панели `Развернуть` открывает большую модалку без нового старта записи.
-5. `Закрыть` в маленькой панели выключает диагностику полностью и убирает буфер с экрана.
-6. `Отключить и сохранить` сохраняет отчёт с накопленной цепочкой для Codex/другого ИИ.
-
-Почему так безопаснее: исправление не меняет MAX notification pipeline, не трогает фильтры уведомлений, не очищает общие логи и не меняет `chatcenter.log`. Оно только убирает самопроизвольный старт диагностической сессии и делает управление явным.
-
-Проверки:
-- `node src/__tests__/diagnosticsSession.test.cjs`;
-- `node src/__tests__/appStructure.test.cjs`;
-- `npm run lint`.
-
-### v1.2.28 — MAX: sidebar watcher не создаёт фантомы во время поиска
-
-Дата: 30 июня 2026.
-Кто нашёл: пользователь по кейсу MAX-поиска номера телефона и Codex по `chatcenter.log` / `system-diagnostics-report.json`.
-
-Проблема: при вводе номера в поиск MAX список чатов перестраивался, а MAX sidebar watcher мог принять старый preview из строки чата за новое сообщение. В логах это выглядело как нормальный `__CC_NOTIF__`, затем `Звук`, `custom-notify` и `NotifManager show`, хотя клиент нового сообщения не писал.
-
-Что изменено:
-- `main/preloads/hooks/max.hook.js`: все MAX `__CC_NOTIF__` получили поле `src`: `max-notification-api`, `max-sw-showNotification` или `max-sidebar`;
-- `main/preloads/hooks/max.hook.js`: добавлен `_maxSearchState()`;
-- `max-sidebar` при активном поиске больше не отправляет уведомление, а только обновляет baseline `_maxLastList`;
-- в диагностике появляется `__CC_DIAG__max-sidebar: search active skip emit`;
-- `src/utils/consoleMessageParser.js` теперь сохраняет `source`;
-- `src/utils/consoleMessageHandler.js` пишет `src` в trace и передаёт `extra.notifSource`.
-
-Почему так: проблема не в словах, PDF или имени клиента. Старый DOM preview становится похож на новое событие из-за перестройки списка. Поэтому блокировка сделана по источнику и состоянию UI: только `max-sidebar` + активный поиск. Основные пути MAX notification/showNotification не отключались.
-
-Как должно работать:
-- реальное входящее MAX-сообщение через `max-notification-api` / `max-sw-showNotification` показывает ribbon, звук, отправителя и аватарку как раньше;
-- при поиске номера/текста в MAX старые строки списка не создают фантомные ribbon;
-- в диагностике видно, какой подпуть создал событие: `src=max-sidebar`, `src=max-notification-api` или `src=max-sw-showNotification`;
-- если во время поиска sidebar нашёл старый preview, он пишет diagnostic skip, но не вызывает `NotifManager show`.
-
-Проверки:
-- `node src/__tests__/notifHooks.test.cjs`;
-- `node src/__tests__/consoleMessageParser.test.cjs`;
-- `npm run lint`;
-- `npm run check-memory`.
+Полная запись перенесена в [archive/features-v1.2.28.md](./archive/features-v1.2.28.md), чтобы активный features.md оставался меньше лимита memory-bank. Суть: `max-sidebar` при активном поиске MAX обновляет baseline, но не создаёт ribbon из старого preview; реальные `max-notification-api` и `max-sw-showNotification` не отключались.
 
 **Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
 

@@ -103,18 +103,12 @@
       return Promise.resolve();
     };
   } catch(e) {}
-  // === BADGE + SW + AUDIO BLOCK ===
+  // === BADGE + SW BLOCK ===
   if (navigator.setAppBadge) { navigator.setAppBadge = function(n) { console.log('__CC_BADGE_BLOCKED__:' + n); return Promise.resolve(); }; }
   if (navigator.clearAppBadge) { navigator.clearAppBadge = function() { return Promise.resolve(); }; }
   if (navigator.serviceWorker) {
     navigator.serviceWorker.register = function() { console.log('__CC_SW_BLOCKED__'); return Promise.reject(new Error('blocked')); };
     navigator.serviceWorker.getRegistrations().then(function(r) { r.forEach(function(s) { s.unregister(); }); if (r.length) console.log('__CC_SW_UNREGISTERED__:' + r.length); }).catch(function() {});
   }
-  var _A = window.Audio;
-  window.Audio = function(src) { var a = new _A(src); a.volume = 0; return a; };
-  window.Audio.prototype = _A.prototype;
-  var _ce = document.createElement.bind(document);
-  document.createElement = function(tag) { var el = _ce.apply(document, arguments); if (tag && tag.toLowerCase() === 'audio') { el.volume = 0; el.muted = true; } return el; };
-  ['AudioContext','webkitAudioContext'].forEach(function(n) { var _C = window[n]; if (!_C) return; var _g = _C.prototype.createGain; _C.prototype.createGain = function() { var g = _g.call(this); g.gain.value = 0; return g; }; });
   console.log('__CC_NOTIF_HOOK_OK__');
 })()

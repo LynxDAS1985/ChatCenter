@@ -1,4 +1,5 @@
-  const MAX_ITEMS = 6
+  const MAX_AUTO_DISMISS_ITEMS = 6
+  const MAX_PERSISTENT_ITEMS = 30
   const container = document.getElementById('container')
   const items = new Map() // id → { el, timer, expanded, remainingMs, startTs, dismissMs, paused }
   // v0.63.0: стэк — messengerId → hostItemId (id карточки, в которую складываются сообщения)
@@ -13,6 +14,12 @@
   // v1.2.12: calcHeight вынесена в notification-helpers.js (потолок 700).
   // Локальная обёртка передаёт `container` — единый глобал этого файла.
   function calcHeight() { return window.__ccNotifHelpers.calcHeight(container) }
+
+  function scrollContainerToLatest() {
+    requestAnimationFrame(() => {
+      try { container.scrollTop = container.scrollHeight } catch (_) {}
+    })
+  }
 
   function reportHeight() {
     setTimeout(() => {
@@ -228,6 +235,7 @@
     stackContainer.appendChild(msgDiv)
     // Автоскролл вниз к новому сообщению
     stackContainer.scrollTop = stackContainer.scrollHeight
+    scrollContainerToLatest()
 
     // Обновляем стэк
     const stack = stacks.get(data.stackKey || data.messengerId)
@@ -345,7 +353,8 @@
       }
     }
 
-    while (items.size >= MAX_ITEMS) {
+    const maxItems = data.dismissMs === 0 ? MAX_PERSISTENT_ITEMS : MAX_AUTO_DISMISS_ITEMS
+    while (items.size >= maxItems) {
       const firstKey = items.keys().next().value
       forceRemoveItem(firstKey)
     }
@@ -582,6 +591,7 @@
     }, 600)
 
     container.appendChild(el)
+    scrollContainerToLatest()
 
     const thisDismissMs = data.dismissMs
     let timer = null
@@ -642,3 +652,14 @@
   // IPC listeners
   window.notifApi.onNotification((data) => addNotification(data))
   window.notifApi.onDismiss((id) => dismissItem(id, true))
+  window.notifApi.onUpdateIcon((data) => {
+    const item = items.get(String(data?.id || ''))
+    if (!item || item.isStackChild || !data?.iconDataUrl) return
+    const avatarWrap = item.el.querySelector('.avatar-wrap')
+    if (!avatarWrap) return
+    const img = document.createElement('img')
+    img.src = data.iconDataUrl
+    img.onerror = () => { img.remove() }
+    avatarWrap.textContent = ''
+    avatarWrap.appendChild(img)
+  })

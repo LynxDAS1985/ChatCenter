@@ -348,8 +348,8 @@ export function createConsoleMessageHandler(deps) {
         // Дедупликация: Telegram шлёт Notification + ServiceWorker.showNotification → 2 __CC_NOTIF__
         // Нормализуем body: убираем trailing timestamps (вида "15:57" или "15:5715:57")
         const normalizedText = text.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()
-        const senderScope = String(data.g || data.t || '').trim().replace(/\s+/g, ' ').toLowerCase()
-        const dedupKey = messengerId + ':' + (senderScope ? senderScope + ':' : '') + (normalizedText || text).slice(0, 40)
+        const senderScope = String(data.g || data.t || '').trim().replace(/\s+/g, ' ').toLowerCase(), maxSidebarUnread = data.src === 'max-sidebar' && data.u != null ? String(data.u).trim() : ''
+        const dedupKey = messengerId + ':' + (senderScope ? senderScope + ':' : '') + (maxSidebarUnread ? `u:${maxSidebarUnread}:` : '') + (normalizedText || text).slice(0, 40)
         const now = Date.now()
         if (notifDedupRef.current.has(dedupKey) && now - notifDedupRef.current.get(dedupKey) < 5000) {
           traceNotif('dedup', 'block', messengerId, text, `notifDedup | age=${now - notifDedupRef.current.get(dedupKey)}мс`)
@@ -372,7 +372,7 @@ export function createConsoleMessageHandler(deps) {
         const extra = {}
         if (data.t) extra.senderName = data.t
         if (data.g) extra.chatTag = data.g
-        if (data.src) extra.notifSource = data.src
+        if (data.src) extra.notifSource = data.src; if (maxSidebarUnread) extra.messageId = `max-sidebar:${senderScope || messengerId}:${maxSidebarUnread}`
         // v0.77.2: blob icon → конвертируем ПЕРЕД handleNewMessage
         if (data.i && data.i.startsWith('blob:')) {
           const wv = webviewRefs.current[messengerId]

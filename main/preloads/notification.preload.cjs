@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld('notifApi', {
   onNotification: (callback) => {
     ipcRenderer.on('notif:show', (_event, data) => callback(data))
   },
+  onUpdateIcon: (callback) => {
+    ipcRenderer.on('notif:update-icon', (_event, data) => callback(data))
+  },
   // Main → Notification window: убрать конкретное уведомление
   onDismiss: (callback) => {
     ipcRenderer.on('notif:remove', (_event, id) => callback(id))

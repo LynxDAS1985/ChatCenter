@@ -38,7 +38,15 @@ for (const m of messengers) {
   test(`${m}: showNotification override`, () => assert(code.includes('showNotification'), 'должен перехватывать showNotification'))
   test(`${m}: __CC_NOTIF__ output`, () => assert(code.includes('__CC_NOTIF__'), 'должен отправлять __CC_NOTIF__'))
   test(`${m}: __CC_NOTIF_HOOK_OK__ marker`, () => assert(code.includes('__CC_NOTIF_HOOK_OK__'), 'должен отправлять OK маркер'))
-  test(`${m}: Audio mute`, () => assert(code.includes('window.Audio'), 'должен глушить Audio'))
+  if (m === 'vk') {
+    test(`${m}: не глушит весь Audio/WebAudio`, () => {
+      assert(!code.includes('window.Audio ='), 'VK hook не должен глушить весь window.Audio: это ломает видео/аудио внутри VK')
+      assert(!code.includes('createElement = function(tag)'), 'VK hook не должен глушить все audio elements')
+      assert(!code.includes('createGain = function()'), 'VK hook не должен глушить весь AudioContext')
+    })
+  } else {
+    test(`${m}: Audio mute`, () => assert(code.includes('window.Audio'), 'должен глушить Audio'))
+  }
   test(`${m}: _isSpam function`, () => assert(code.includes('_isSpam'), 'должен иметь спам-фильтр'))
   test(`${m}: _log function`, () => assert(code.includes('__cc_notif_log'), 'должен логировать'))
 }

@@ -159,7 +159,6 @@ export function createWebviewSetup(deps) {
   }
 
   const isVkWebview = (el, messengerId) => detectMessengerType(healthUrl(el, messengerId)) === 'vk'
-  const enforceVkWebviewMute = (el, messengerId, reason = 'init') => { if (!isVkWebview(el, messengerId) || typeof el?.setAudioMuted !== 'function') return; try { if (el.isAudioMuted?.() !== true) el.setAudioMuted(true); traceNotif('debug', 'info', messengerId, 'VK WebView audio muted', `reason=${reason}`) } catch (e) { traceNotif('debug', 'warn', messengerId, 'VK WebView audio mute failed', `reason=${reason} error=${e?.message || e}`) } }
 
   // ── Обработка входящего сообщения (вынесена в webviewHandleNewMessage.js) ──
   const handleNewMessage = createHandleNewMessage({
@@ -179,7 +178,7 @@ export function createWebviewSetup(deps) {
       el._chatcenterListeners = []
       webviewRefs.current[messengerId] = el
       const addListener = (event, fn) => { el.addEventListener(event, fn); el._chatcenterListeners.push([event, fn]) }
-      startupWebviewLog(messengerId, 'ref-init'); enforceVkWebviewMute(el, messengerId, 'ref-init')
+      startupWebviewLog(messengerId, 'ref-init')
       webviewLoadStartedAt[messengerId] = Date.now()
       updateHealth(messengerId, prev => markHealthPending(prev, {
         id: messengerId,
@@ -190,13 +189,13 @@ export function createWebviewSetup(deps) {
       // ── СЕКЦИЯ: События загрузки страницы ──
       setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       addListener('did-start-loading', () => {
-        startupWebviewLog(messengerId, 'did-start-loading'); enforceVkWebviewMute(el, messengerId, 'did-start-loading')
+        startupWebviewLog(messengerId, 'did-start-loading')
         webviewLoadStartedAt[messengerId] = Date.now()
         updateHealth(messengerId, prev => markHealthPending(prev, { id: messengerId, type: 'webview', label: healthLabel(messengerId), url: healthUrl(el, messengerId) }))
         setWebviewLoading(prev => ({ ...prev, [messengerId]: true }))
       })
       addListener('did-stop-loading', () => {
-        startupWebviewLog(messengerId, 'did-stop-loading'); enforceVkWebviewMute(el, messengerId, 'did-stop-loading')
+        startupWebviewLog(messengerId, 'did-stop-loading')
         updateHealth(messengerId, prev => markHealthOk(prev, {
           id: messengerId,
           type: 'webview',
@@ -272,7 +271,7 @@ export function createWebviewSetup(deps) {
 
       // ── СЕКЦИЯ: DOM-ready — инициализация монитора ──
       addListener('dom-ready', () => {
-        startupWebviewLog(messengerId, 'dom-ready'); enforceVkWebviewMute(el, messengerId, 'dom-ready')
+        startupWebviewLog(messengerId, 'dom-ready')
         delete monitorReadyRef.current[messengerId]
         vkExecFallback.schedule(el, messengerId, 'dom-ready')
         updateHealth(messengerId, prev => markHealthOk(prev, {

@@ -3,6 +3,11 @@
 import { ipcMain, screen } from 'electron'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
+const NOTIF_WINDOW_WIDTH = 370
+const NOTIF_RIGHT_OFFSET = 380
+const NOTIF_SCREEN_MARGIN = 10
+const NOTIF_MIN_HEIGHT = 90
+
 export function initNotifHandlers(deps) {
   // deps передаются из main.js — мутабельные ссылки
   const { getNotifItems, setNotifItems, getNotifWin, getMainWindow } = deps
@@ -143,14 +148,22 @@ export function initNotifHandlers(deps) {
       return
     }
     const { workArea } = screen.getPrimaryDisplay()
-    const x = workArea.x + workArea.width - 380
-    const y = workArea.y + workArea.height - height - 10
-    if (lastNotifBounds && lastNotifBounds.x === x && lastNotifBounds.y === y && lastNotifBounds.h === height) {
+    const maxHeight = Math.max(NOTIF_MIN_HEIGHT, workArea.height - NOTIF_SCREEN_MARGIN * 2)
+    const displayHeight = Math.min(height, maxHeight)
+    const x = workArea.x + workArea.width - NOTIF_RIGHT_OFFSET
+    const y = Math.max(
+      workArea.y + NOTIF_SCREEN_MARGIN,
+      workArea.y + workArea.height - displayHeight - NOTIF_SCREEN_MARGIN
+    )
+    if (displayHeight !== height) {
+      console.log('[notif-resize] CLAMP rawHeight=' + height + ' displayHeight=' + displayHeight + ' workAreaH=' + workArea.height)
+    }
+    if (lastNotifBounds && lastNotifBounds.x === x && lastNotifBounds.y === y && lastNotifBounds.h === displayHeight) {
       if (!notifWin.isVisible()) notifWin.showInactive()
       return
     }
-    lastNotifBounds = { x, y, h: height }
-    notifWin.setBounds({ x, y, width: 370, height })
+    lastNotifBounds = { x, y, h: displayHeight }
+    notifWin.setBounds({ x, y, width: NOTIF_WINDOW_WIDTH, height: displayHeight })
     if (!notifWin.isVisible()) notifWin.showInactive()
   })
 }

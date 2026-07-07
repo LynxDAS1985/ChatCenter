@@ -37,6 +37,17 @@ test('webview dedup uses sender/chat scope', () => {
   assert(webviewHandleCode.includes('dedupScope'))
 })
 
+test('MAX sidebar unread becomes notification identity for same-text messages', () => {
+  assert(consoleHandlerCode.includes("data.src === 'max-sidebar' && data.u != null"))
+  assert(consoleHandlerCode.includes("(maxSidebarUnread ? `u:${maxSidebarUnread}:` : '') + (normalizedText || text).slice(0, 40)"))
+  assert(consoleHandlerCode.includes('extra.messageId = `max-sidebar:${senderScope || messengerId}:${maxSidebarUnread}`'))
+})
+
+test('webview passes notification messageId/source to main dedup', () => {
+  assert(webviewHandleCode.includes('messageId: extra?.messageId || null'))
+  assert(webviewHandleCode.includes('source: extra?.notifSource || extra?.source || null'))
+})
+
 test('console enrichment uses sender-aware avatar cache', () => {
   assert(consoleHandlerCode.includes('rememberSenderAvatar'))
   assert(consoleHandlerCode.includes('applySenderAvatarFallback'))

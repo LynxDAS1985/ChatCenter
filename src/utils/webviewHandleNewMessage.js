@@ -114,6 +114,7 @@ export function createHandleNewMessage(deps) {
         messengerId: messengerId,
         senderName: senderName || '',
         chatTag: extra?.chatTag || '',
+        messageId: extra?.messageId || null, source: extra?.notifSource || extra?.source || null,
       }).then(result => {
         traceNotif('ribbon', result?.ok ? 'pass' : 'warn', messengerId, text, `main-result ok=${!!result?.ok} id=${result?.id || 'нет'} error=${result?.error || ''} sender="${senderName.slice(0,20)}" iconUrl=${(extra?.iconUrl||'нет').slice(0,30)} iconData=${(extra?.iconDataUrl||'нет').slice(0,30)}`)
         if (result?.ok && deferSoundUntilRibbon && canPlaySound) playAcceptedSound('звук после подтверждённого ribbon')
