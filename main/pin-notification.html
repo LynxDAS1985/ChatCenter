@@ -53,6 +53,15 @@
     margin-right: 6px;
     color: rgba(99,102,241,0.7);
   }
+  /* v1.2.60: аватар отправителя в шапке карточки */
+  .pin-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: 6px;
+    flex-shrink: 0;
+  }
   .pin-sender {
     flex: 1;
     font-size: 13px;
@@ -314,6 +323,7 @@
   <div class="color-bar" id="colorBar"></div>
   <div class="pin-header">
     <span class="pin-indicator">📌</span>
+    <img class="pin-avatar" id="avatar" style="display:none" alt="">
     <span class="pin-sender" id="sender"></span>
     <button class="pin-copy-name" id="copyNameBtn" title="Копировать ФИО">📋</button>
     <span class="pin-messenger" id="messengerName"></span>
@@ -357,6 +367,7 @@
 <script>
   const card = document.getElementById('card')
   const colorBar = document.getElementById('colorBar')
+  const avatarEl = document.getElementById('avatar')
   const senderEl = document.getElementById('sender')
   const timeEl = document.getElementById('time')
   const messengerNameEl = document.getElementById('messengerName')
@@ -456,9 +467,15 @@
     senderEl.textContent = data.sender || ''
     messengerNameEl.textContent = data.messengerName || ''
     timeEl.textContent = data.time || ''
-    bodyEl.textContent = data.text || ''
+    // v1.2.59: у сообщений-картинок без подписи текст пустой — показываем
+    // «📷 Фото», чтобы закреплённая карточка не выглядела пустой.
+    const hasText = !!(data.text && data.text.trim())
+    bodyEl.textContent = hasText ? data.text : '📷 Фото'
     messageText = data.text || ''
     colorBar.style.background = data.color || '#2AABEE'
+    // v1.2.60: аватар отправителя, если пришёл; иначе остаётся эмодзи-индикатор
+    if (data.icon) { avatarEl.src = data.icon; avatarEl.style.display = '' }
+    else { avatarEl.style.display = 'none' }
     pinMessengerId = data.messengerId || ''
     // Показать кнопку "В чат" если есть messengerId
     if (pinMessengerId) chatBtn.style.display = ''

@@ -2229,3 +2229,23 @@ src/__tests__/systemDiagnostics.test.cjs:
 - `node src/__tests__/consoleMessageParser.test.cjs`;
 - `npm run lint`;
 - `npm run check-memory`.
+
+## 🔴 Pin/Dock: после safeHide окно нельзя показывать простым show() — вернётся ЗА экран (v1.2.59)
+
+**Симптом**: пользователь свернул закреплённую карточку в док, кликает по задаче — появляется «пустое поле», карточка не открывается.
+
+**Корень**: `safeHideTransparentWindow(win)` ([main/utils/transparentWindowGuard.js](../../main/utils/transparentWindowGuard.js)) намеренно уводит прозрачное frameless-окно в `{x:-30000,y:-30000,width:1,height:1}` перед `hide()` (защита от ghost hit-region на Win11, ловушки #20/#21). А `dock:show-pin` показывал окно простым `item.win.show()`. По документации Electron `win.show()` показывает окно **на текущих координатах** и размер не меняет → окно «показывается», но за краем экрана в 1×1. Для пользователя = пустота.
+
+**Правило**: любое место, которое `show()`-ит окно, ранее скрытое через `safeHideTransparentWindow`, ОБЯЗАНО сначала вернуть видимые bounds. В v1.2.59: `pin:minimize-to-dock` сохраняет `item.savedBounds = win.getBounds()` ДО safeHide, `dock:show-pin` перед показом делает `setBounds(savedBounds)` (или центр экрана как fallback). Файл: [main/handlers/dockPinHandlers.js](../../main/handlers/dockPinHandlers.js).
+
+**Закрыто в v1.2.60**: тот же корень был в `startTimerForItem` ([main/handlers/dockPinUtils.js](../../main/handlers/dockPinUtils.js)) — таймер свёрнутой задачи звал `item.win.show()` напрямую. Вынесен общий помощник `restorePinBounds(item)` (возврат `savedBounds` или центр экрана), используется и в таймере, и в `dock:show-pin`.
+
+## 🔴 Прозрачное окно НЕ пропускает клики через прозрачные пиксели (v1.2.60)
+
+**Симптом**: пустая (прозрачная) область над полоской дока не даёт кликнуть в приложение под ней.
+
+**Ложное предположение (было в комментарии [pin-dock.js](../../main/pin-dock.js))**: «`transparent:true` окно автоматически пропускает клики через непокрашенные пиксели». Это НЕВЕРНО.
+
+**Факт (🥇 Electron docs, `setIgnoreMouseEvents`)**: окно ловит мышь по ВСЕМУ своему прямоугольнику; `transparent` влияет только на отрисовку, не на hit-test. Клик-насквозь возможен лишь через `setIgnoreMouseEvents(true)` — а он в проекте убран (ломал `-webkit-app-region: drag`, ловушки #21/#27).
+
+**Правило**: не держать большие прозрачные «резервные» зоны в frameless-окне — они молча ловят клики. Если нужно место под всплывашку — растить окно ПО ТРЕБОВАНИЮ и сжимать обратно (`DOCK_PREVIEW_RESERVE=0` + `dock:ctx-menu-space`/`dock:preview-space` в [dockPinHandlers.js](../../main/handlers/dockPinHandlers.js)), а не резервировать статически.

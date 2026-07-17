@@ -61,6 +61,8 @@
   // ── Контекстное меню ──
   function hideCtxMenu(instant) {
     if (!ctxMenuEl) return
+    // v1.2.60: вернуть окно к высоте полоски (резерв 0 — окно росло под меню)
+    try { window.dockApi.requestCtxMenuSpace(0) } catch (_) {}
     // Убираем подсветку таба
     if (ctxActiveTab) { ctxActiveTab.classList.remove('ctx-active'); ctxActiveTab = null }
     if (instant) {
@@ -113,22 +115,26 @@
     // Позиционируем в body — НЕ внутри таба (чтобы не обрезалось)
     document.body.appendChild(ctxMenuEl)
 
-    // DOCK_PREVIEW_RESERVE=420 — меню всегда помещается БЕЗ resize окна (нет дёрганья)
-    // Позиционируем сразу, без IPC resize
+    // v1.2.60: резерв окна теперь 0 — сначала растим окно вверх под меню,
+    // затем позиционируем (иначе меню окажется за верхней границей окна).
     requestAnimationFrame(() => {
       if (!ctxMenuEl) return
       const menuH = ctxMenuEl.offsetHeight
       const menuW = ctxMenuEl.offsetWidth
-      const tabRect2 = tabEl.getBoundingClientRect()
-      let x = tabRect2.left
-      let y = tabRect2.top - menuH - 4
-      if (y < 4) y = 4
-      if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 4
-      if (x < 4) x = 4
-      ctxMenuEl.style.left = x + 'px'
-      ctxMenuEl.style.top = y + 'px'
-      // Показать ПОСЛЕ позиционирования — плавный fade-in через CSS transition
-      requestAnimationFrame(() => { if (ctxMenuEl) ctxMenuEl.classList.add('visible') })
+      window.dockApi.requestCtxMenuSpace(menuH + 12)
+      setTimeout(() => {
+        if (!ctxMenuEl) return
+        const tabRect2 = tabEl.getBoundingClientRect()
+        let x = tabRect2.left
+        let y = tabRect2.top - menuH - 4
+        if (y < 4) y = 4
+        if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 4
+        if (x < 4) x = 4
+        ctxMenuEl.style.left = x + 'px'
+        ctxMenuEl.style.top = y + 'px'
+        // Показать ПОСЛЕ позиционирования — плавный fade-in через CSS transition
+        requestAnimationFrame(() => { if (ctxMenuEl) ctxMenuEl.classList.add('visible') })
+      }, 30)
     })
   }
 
@@ -228,18 +234,13 @@
     })
     tab.addEventListener('mouseleave', () => hidePreview())
 
-    // Одинарный клик — показать карточку, двойной — перейти в чат
-    let clickTimer = null
+    // v1.2.59: любой клик по табу разворачивает нашу карточку.
+    // Переход в чат мессенджера по двойному клику убран (он открывал Telegram
+    // вместо карточки). «В чат» остаётся в правом клике и в самой карточке.
     tab.addEventListener('click', () => {
       hidePreview()
       hideCtxMenu()
-      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; return }
-      clickTimer = setTimeout(() => { clickTimer = null; window.dockApi.showPin(data.pinId) }, 250)
-    })
-    tab.addEventListener('dblclick', () => {
-      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
-      if (data.messengerId) window.dockApi.goToChat(data.pinId)
-      else window.dockApi.showPin(data.pinId)
+      window.dockApi.showPin(data.pinId)
     })
 
     // Контекстное меню (ПКМ)

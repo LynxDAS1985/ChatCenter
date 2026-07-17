@@ -66,6 +66,34 @@ export function createPinBrowserWindow(deps, offset) {
 }
 
 /**
+ * v1.2.60: вернуть pin-окно на экран перед показом.
+ * При сворачивании safeHideTransparentWindow уводит окно за экран в 1×1
+ * (защита от ghost hit-region на Win11). Любое место, которое потом делает
+ * show() (клик по задаче ИЛИ срабатывание таймера), обязано сначала вернуть
+ * видимые размеры/позицию — иначе окно «покажется» за краем экрана.
+ * @param {object} item - элемент pinItems (в нём item.savedBounds от minimize)
+ */
+export function restorePinBounds(item) {
+  const win = item && item.win
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return
+  try {
+    const b = item.savedBounds
+    if (b && b.width > 50 && b.height > 20) {
+      win.setBounds(b)
+    } else {
+      // Нет сохранённых bounds (напр. после перезапуска) — по центру экрана.
+      const { workArea } = screen.getPrimaryDisplay()
+      const w = 300, h = 160
+      win.setBounds({
+        x: Math.round(workArea.x + workArea.width / 2 - w / 2),
+        y: Math.round(workArea.y + workArea.height / 2 - h / 2),
+        width: w, height: h,
+      })
+    }
+  } catch (_) {}
+}
+
+/**
  * Запустить таймер для pin-задачи (общая логика для restorePin, pin:start-timer, dock:start-timer)
  * @param {object} item - элемент pinItems (мутируется)
  * @param {number} pinId - ID пина
@@ -83,7 +111,8 @@ export function startTimerForItem(item, pinId, ms, ctx) {
     item.timerEnd = null
     // Показать pin-окно если скрыто
     if (item.win && !item.win.isDestroyed()) {
-      if (!item.win.isVisible()) item.win.show()
+      // v1.2.60: свёрнутое окно было уведено за экран — вернуть перед показом.
+      if (!item.win.isVisible()) { restorePinBounds(item); item.win.show() }
       item.win.webContents.send('pin:timer-alert')
     }
     // Мигнуть в dock

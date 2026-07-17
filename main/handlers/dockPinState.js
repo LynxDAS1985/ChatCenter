@@ -6,7 +6,15 @@ import { BrowserWindow, screen } from 'electron'
 import { getPinHtmlPath, getDockPreloadPath, getDockHtmlPath, createPinBrowserWindow, startTimerForItem } from './dockPinUtils.js'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
-export const DOCK_PREVIEW_RESERVE = 420 // пространство для тултипа + контекстного меню
+// v1.2.60: было 420 (статический прозрачный резерв над полоской дока).
+// Проблема: прозрачное окно Electron НЕ пропускает клики через прозрачные
+// пиксели — `transparent:true` влияет только на отрисовку, а не на hit-test;
+// клик-насквозь возможен лишь через setIgnoreMouseEvents (убран — ломал drag,
+// ловушка #27). Поэтому пустые 420px входили в прямоугольник окна и ловили
+// мышь → пользователь не мог кликнуть в программу под доком.
+// Теперь резерв 0: окно = только полоска, а меню/подсказка растят окно вверх
+// ПО ТРЕБОВАНИЮ (dock:ctx-menu-space / dock:preview-space) и сжимают обратно.
+export const DOCK_PREVIEW_RESERVE = 0
 
 export function createDockPinState(deps) {
   const { getMainWindow, storage, isDev, __dirname, path } = deps

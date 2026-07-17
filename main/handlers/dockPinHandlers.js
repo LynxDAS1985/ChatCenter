@@ -2,7 +2,7 @@
 // v0.87.97: state и helper функции вынесены в dockPinState.js (~230 строк).
 // Здесь — только IPC handlers (pin:* и dock:*).
 import { ipcMain, BrowserWindow, screen } from 'electron'
-import { getPinHtmlPath, createPinBrowserWindow, startTimerForItem } from './dockPinUtils.js'
+import { getPinHtmlPath, createPinBrowserWindow, startTimerForItem, restorePinBounds } from './dockPinUtils.js'
 import { createDockPinState, DOCK_PREVIEW_RESERVE } from './dockPinState.js'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
@@ -106,6 +106,10 @@ ipcMain.on('pin:minimize-to-dock', (event) => {
     addToDock(pinId, item.data)
     savePinItems()
   }
+  // v1.2.59: запомнить видимые размеры/позицию ДО ухода за экран.
+  // Без этого разворот (dock:show-pin) покажет окно за экраном в 1×1 —
+  // пользователь видит «пустоту» вместо карточки.
+  try { item.savedBounds = win.getBounds() } catch (_) {}
   // v0.89.18: safeHide — transparent pin window иначе оставляет ghost на Win11
   safeHideTransparentWindow(win)
 })
@@ -152,6 +156,9 @@ ipcMain.on('dock:show-pin', (_event, pinId) => {
   if (item.win.isVisible()) {
     item.win.focus()
   } else {
+    // v1.2.59/60: safeHide увёл окно за экран в 1×1 при сворачивании —
+    // вернуть на экран перед показом (иначе окно «покажется» за краем).
+    restorePinBounds(item)
     item.win.show()
     item.win.focus()
   }
@@ -239,9 +246,22 @@ ipcMain.on('dock:resize', (_event, width, height) => {
   }
 })
 
-// ── Dock: preview-space — теперь no-op (пространство предвыделено) ──
-ipcMain.on('dock:preview-space', () => {
-  // v0.70.0: пространство для тултипа предвыделено, ресайз не нужен
+// ── Dock: preview-space — вырастить окно вверх под подсказку (v1.2.60) ──
+ipcMain.on('dock:preview-space', (_event, extraH) => {
+  // v1.2.60: резерв теперь 0 — растим окно под тултип по требованию, потом сжимаем.
+  if (!dockState.win || dockState.win.isDestroyed()) return
+  const bounds = dockState.win.getBounds()
+  const dockBottomY = bounds.y + bounds.height
+  if (!extraH || extraH <= 0) {
+    const normalH = dockState.baseHeight + DOCK_PREVIEW_RESERVE
+    if (bounds.height !== normalH) {
+      dockState.win.setBounds({ x: bounds.x, y: dockBottomY - normalH, width: bounds.width, height: normalH })
+    }
+    return
+  }
+  const neededH = dockState.baseHeight + Math.max(DOCK_PREVIEW_RESERVE, extraH)
+  if (neededH <= bounds.height) return
+  dockState.win.setBounds({ x: bounds.x, y: dockBottomY - neededH, width: bounds.width, height: neededH })
 })
 
 // ── Dock: ctx-menu-space — временно расширить окно вверх для контекстного меню ──
