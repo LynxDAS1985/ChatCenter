@@ -61,6 +61,9 @@ check('hideTooltip', state.includes('function hideTooltip'))
 check('positionTooltipAndShow (позиция НАД вкладкой)', state.includes('function positionTooltipAndShow'))
 check('показ без кражи фокуса showInactive', state.includes('showInactive'))
 check('скрытие через safeHideTransparentWindow', /hideTooltip[\s\S]*safeHideTransparentWindow/.test(state))
+// v1.2.73: перед замером окну возвращается нормальная ширина (иначе после
+// safeHide карточка мерится в окне 1px → узкая высокая подсказка)
+check('перед замером окну возвращается ширина (setBounds width:300 — не мерить в 1px)', /setBounds\(\{[^}]*width:\s*300/.test(state))
 
 // ── IPC handlers ──
 console.log('\n── IPC: ──')

@@ -330,6 +330,11 @@ export function createDockPinState(deps) {
     tooltipState.anchorTabTop = db.y + Math.round((rect && rect.top) || 0)
     tooltipState.pendingShow = true
     const win = ensureTooltipWindow()
+    // v1.2.73: ВЕРНУТЬ окну нормальную ширину ПЕРЕД замером. После hide
+    // (safeHide уводит окно в 1×1) карточка иначе меряется в окне шириной 1px →
+    // текст переносится по одному символу → узкая высокая подсказка. Ставим
+    // просторный офскрин-бокс, renderer замерит карточку по её max-width.
+    try { win.setBounds({ x: -32000, y: -32000, width: 300, height: 400 }) } catch (_) {}
     const d = item.data
     const payload = {
       sender: d.sender || '', text: d.text || '', time: d.time || '',
