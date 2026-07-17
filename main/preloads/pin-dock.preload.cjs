@@ -39,4 +39,7 @@ contextBridge.exposeInMainWorld('dockApi', {
   setNote: (id, text) => ipcRenderer.send('dock:set-note', id, text),
   // v0.72.0: Main → Dock: обновить заметку на табе
   onUpdateNote: (cb) => ipcRenderer.on('dock:update-note', (_e, id, text) => cb(id, text)),
+  // v1.2.70: Dock → Main: показать/скрыть окно-подсказку задачи при наведении
+  showTooltip: (id, rect) => ipcRenderer.send('dock:tooltip-show', id, rect),
+  hideTooltip: () => ipcRenderer.send('dock:tooltip-hide'),
 })

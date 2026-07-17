@@ -228,11 +228,23 @@
     })
     tab.appendChild(close)
 
-    // Hover — превью (не показывать если открыто контекстное меню)
+    // v1.2.70: подсказка при наведении — ОТДЕЛЬНОЕ окно (не ресайзит док → нет
+    // петли/прыжков). Наведение с задержкой ~0.4с шлёт show с прямоугольником
+    // вкладки; уход — hide. Само окно-подсказка «сквозное» (не ловит мышь).
+    let tooltipTimer = null
     tab.addEventListener('mouseenter', () => {
-      if (!ctxMenuEl) showPreview(data.pinId, tab)
+      if (ctxMenuEl) return
+      if (tooltipTimer) clearTimeout(tooltipTimer)
+      tooltipTimer = setTimeout(() => {
+        tooltipTimer = null
+        const r = tab.getBoundingClientRect()
+        window.dockApi.showTooltip(data.pinId, { left: r.left, top: r.top, width: r.width, height: r.height })
+      }, 400)
     })
-    tab.addEventListener('mouseleave', () => hidePreview())
+    tab.addEventListener('mouseleave', () => {
+      if (tooltipTimer) { clearTimeout(tooltipTimer); tooltipTimer = null }
+      window.dockApi.hideTooltip()
+    })
 
     // v1.2.59: любой клик по табу разворачивает нашу карточку.
     // Переход в чат мессенджера по двойному клику убран (он открывал Telegram
@@ -240,6 +252,7 @@
     tab.addEventListener('click', () => {
       hidePreview()
       hideCtxMenu()
+      window.dockApi.hideTooltip()
       window.dockApi.showPin(data.pinId)
     })
 
@@ -284,61 +297,19 @@
     saveTabOrder()
   }
 
-  function showPreview(pinId, tabEl) {
-    if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null }
-    hidePreview()
-    const entry = tabs.get(pinId)
-    if (!entry || !entry.data) return
+  // v1.2.69: showPreview УДАЛЕНА вместе с hover-подсказкой — она единственная
+  // растила окно дока на наведение и порождала петлю дёрга (см. комментарий выше
+  // у вкладки). Контент задачи открывается кликом (разворот карточки).
 
-    previewTimeout = setTimeout(() => {
-      previewEl = document.createElement('div')
-      previewEl.className = 'dock-preview'
-
-      const sender = document.createElement('div')
-      sender.className = 'preview-sender'
-      sender.textContent = entry.data.sender || ''
-      previewEl.appendChild(sender)
-      if (entry.data.messengerName) {
-        const mName = document.createElement('div')
-        mName.style.cssText = 'font-size:9px;color:rgba(99,102,241,0.6);margin-bottom:3px;'
-        mName.textContent = entry.data.messengerName
-        previewEl.appendChild(mName)
-      }
-
-      if (entry.data.text) {
-        const text = document.createElement('div')
-        text.className = 'preview-text'
-        text.textContent = entry.data.text
-        previewEl.appendChild(text)
-      }
-      if (entry.data.time) {
-        const time = document.createElement('div')
-        time.className = 'preview-time'
-        time.textContent = entry.data.time
-        previewEl.appendChild(time)
-      }
-      if (entry.data.note) {
-        const noteDiv = document.createElement('div')
-        noteDiv.className = 'preview-note'
-        noteDiv.textContent = '📝 ' + entry.data.note
-        previewEl.appendChild(noteDiv)
-      }
-      if (entry.data.category && CATEGORIES[entry.data.category]) {
-        const cat = CATEGORIES[entry.data.category]
-        const catDiv = document.createElement('div')
-        catDiv.style.cssText = 'font-size:9px;margin-top:3px;color:' + cat.color
-        catDiv.textContent = entry.data.category === 'urgent' ? '🔴 Срочно' : entry.data.category === 'work' ? '🟡 В работе' : '🟢 На потом'
-        previewEl.appendChild(catDiv)
-      }
-
-      tabEl.appendChild(previewEl)
-      window.dockApi.requestPreviewSpace(previewEl.offsetHeight + 12)
-    }, 250)
-  }
-
+  // v1.2.69: hidePreview оставлена как безопасная очистка (вызывается на клике/
+  // правом клике/удалении вкладки). Т.к. подсказка больше не показывается,
+  // previewEl всегда null и тело — no-op; оставлено, чтобы не трогать вызовы.
   function hidePreview() {
     if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null }
-    if (previewEl) { previewEl.remove(); previewEl = null; window.dockApi.requestPreviewSpace(0) }
+    if (previewEl) {
+      previewEl.remove(); previewEl = null
+      window.dockApi.requestPreviewSpace(0)
+    }
   }
 
   function removeTab(pinId) {

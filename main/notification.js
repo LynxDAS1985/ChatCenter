@@ -4,6 +4,10 @@
   const items = new Map() // id → { el, timer, expanded, remainingMs, startTs, dismissMs, paused }
   // v0.63.0: стэк — messengerId → hostItemId (id карточки, в которую складываются сообщения)
   const stacks = new Map() // messengerId → { hostId, childIds: [id,...] }
+  // v1.2.66: альбомы (media group) — album.id → hostItemId. «Живая карточка»:
+  // первая часть создаёт карточку с сеткой, следующие с тем же id дорисовывают
+  // плитку в неё (без таймера-угадывания). См. notification-helpers.js addAlbumTileToHost.
+  const albumHosts = new Map()
   let groupingEnabled = false
   let showTimeEnabled = true // v0.63.8: показ времени перед текстом (настройка из settings)
   let hoveredItemId = null
@@ -101,6 +105,12 @@
     if (item.isStackChild) {
       items.delete(id)
       return
+    }
+
+    // v1.2.66: хост альбома закрывается — убираем из реестра. Поздняя часть того же
+    // альбома (после закрытия карточки) создаст новую карточку — это честно.
+    if (item.album && item.album.id && albumHosts.get(item.album.id) === id) {
+      albumHosts.delete(item.album.id)
     }
 
     // v0.63.0: если это хост стэка — очистить дочерние
@@ -297,6 +307,10 @@
       window.notifApi.dismiss(id)
       return
     }
+    // v1.2.66: хост альбома удаляется — убираем из реестра albumHosts.
+    if (item.album && item.album.id && albumHosts.get(item.album.id) === id) {
+      albumHosts.delete(item.album.id)
+    }
     item.el.remove()
     items.delete(id)
     window.notifApi.dismiss(id)
@@ -322,6 +336,20 @@
     if (data.grouping !== undefined) groupingEnabled = !!data.grouping
     // v0.63.8: сохраняем флаг показа времени
     if (data.showMessageTime !== undefined) showTimeEnabled = !!data.showMessageTime
+
+    // v1.2.66: альбом (media group) — «живая карточка». Если карточка этого album.id
+    // уже показана и жива → дорисовываем плитку в неё + продлеваем жизнь, НЕ создаём
+    // новую. Работает всегда (независимо от настройки группировки). Ghost-item нужен
+    // чтобы main-notifItems FIFO/cleanup видел этот id (как в стэке).
+    if (data.album && data.album.id) {
+      const hostId = albumHosts.get(data.album.id)
+      const host = hostId != null ? items.get(hostId) : null
+      if (host && host.album && !host.dismissing) {
+        window.__ccNotifHelpers.addAlbumTileToHost(host, data, dismissItem, reportHeight)
+        items.set(data.id, { el: host.el, timer: null, dismissMs: 0, isStackChild: true, albumHostId: hostId })
+        return
+      }
+    }
 
     // v0.63.0: стэковая группировка — складываем в существующую карточку
     if (groupingEnabled && data.messengerId) {
@@ -424,6 +452,23 @@
       bodyText.textContent = data.body || ''
     }
     textWrap.appendChild(bodyText)
+
+    // v1.2.66: альбом — накопительное состояние карточки (thumbs ≤4 для сетки,
+    // messageIds — все для смотрелки, count — общий счётчик для «+N»). Первая часть
+    // рисует сетку из 1 плитки; следующие дорисовывают через addAlbumTileToHost.
+    const albumState = (data.album && data.album.id) ? {
+      id: data.album.id,
+      chatId: data.album.chatId,
+      thumbs: data.album.tileThumb ? [data.album.tileThumb] : [],
+      messageIds: data.album.tileMessageId ? [data.album.tileMessageId] : [],
+      count: 1,
+      // v1.2.66 (Совет 5): подпись уже показана, если первая часть несёт текст.
+      // Иначе поздняя часть с tileText обновит body карточки (addAlbumTileToHost).
+      hasCaption: !!(data.album.tileText),
+    } : null
+    if (albumState) {
+      textWrap.appendChild(window.__ccNotifHelpers.renderAlbumGrid(albumState))
+    }
 
     // v0.65.0: кнопка 📌 для закрепления host-сообщения
     const hostFullText = data.fullBody || data.body || ''
@@ -635,7 +680,8 @@
       messengerName: data.messengerName || '',
       senderName: data.title || '',
       bodyText: data.body || '',
-      color: data.color || '#2AABEE'
+      color: data.color || '#2AABEE',
+      album: albumState // v1.2.66: накопительное состояние альбома (null для обычных)
     })
 
     reportHeight()
@@ -644,6 +690,9 @@
     if (groupingEnabled && data.messengerId && !stacks.has(data.stackKey || data.messengerId)) {
       stacks.set(data.stackKey || data.messengerId, { hostId: data.id, childIds: [] })
     }
+    // v1.2.66: регистрируем карточку как хост альбома — следующие части того же
+    // album.id будут дорисовываться в неё (см. ветку живой карточки в начале функции).
+    if (albumState) albumHosts.set(albumState.id, data.id)
   }
 
   // v1.2.12: createPinBtn вынесена в notification-helpers.js

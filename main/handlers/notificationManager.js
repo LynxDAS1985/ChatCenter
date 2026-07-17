@@ -192,7 +192,7 @@ function repositionNotifWin() {
   if (!notifWin.isVisible()) notifWin.showInactive()
 }
 
-async function showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl: preDataUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs, senderName, chatTag, messageId, source }) {
+async function showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl: preDataUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs, senderName, chatTag, messageId, source, album }) {
   const { storage, screen } = _deps
   // Защита: пустой, невидимый или timestamp-only body → не показываем ribbon
   let cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
@@ -258,7 +258,9 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   // v0.96.0 (Phase 0 M0.4): source — NotificationSource паспорт сообщения.
   // Сохраняется в notifItems вместе с другими полями → передаётся при notif:click.
   const stackKey = buildNotificationScope({ messengerId, senderName, title, chatTag, messageId: null })
-  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, stackKey, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null, source: source || null }
+  // v1.2.66: album — метка «живой карточки» альбома (media group). Проброс без
+  // изменений: окно уведомления группирует части по album.id. null для обычных.
+  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, stackKey, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null, source: source || null, album: album || null }
 
   // FIFO — удаляем старые из трекинга (v0.63.2: увеличен до 30, стэк может иметь 10+ сообщений)
   if (notifItems.length >= 30) {

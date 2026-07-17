@@ -37,13 +37,18 @@
     padding: 0 2px;
   }
   .dock-label { font-size: 10px; color: rgba(99,102,241,0.6); }
+  /* v1.2.66: сдержанный счётчик в стиле вкладок дока — светлая читаемая цифра
+     на лёгком полупрозрачном чипе (как .dock-tab). Раньше был бледно-фиолетовый
+     на бледно-фиолетовом (плохо видно). Панель тёмная (#1a1a2e), поэтому светлый
+     текст читается на любом фоне под прозрачным окном. Без жирной заливки. */
   .dock-count {
-    font-size: 9px; font-weight: 700;
-    color: rgba(99,102,241,0.8);
-    background: rgba(99,102,241,0.12);
-    border-radius: 8px; padding: 0 5px;
+    font-size: 11px; font-weight: 600;
+    color: #e2e8f0;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 8px; padding: 0 6px;
     min-width: 16px; text-align: center;
-    line-height: 16px; height: 16px;
+    line-height: 14px; height: 16px;
   }
   .dock-count.zero { display: none; }
   .dock-tab {

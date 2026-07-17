@@ -329,3 +329,37 @@
     background: rgba(99,102,241,0.2);
     transform: scale(1.1);
   }
+  /* ── v1.2.65: сетка миниатюр альбома (media group) ── */
+  .album-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: 84px;
+    gap: 2px;
+    margin-top: 6px;
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 240px;
+  }
+  .album-tile {
+    position: relative;
+    width: 100%;
+    height: 84px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: rgba(255,255,255,0.05);
+    cursor: zoom-in;
+    transition: filter 0.15s;
+  }
+  .album-tile:hover { filter: brightness(1.12); }
+  .album-more {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    font-size: 20px;
+    font-weight: 600;
+  }

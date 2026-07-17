@@ -109,6 +109,16 @@ export function initNotifHandlers(deps) {
     hideIfEmpty()
   })
 
+  // v1.2.65: клик по фото альбома в карточке уведомления. Само окно уведомления
+  // изолировано (нет доступа к движку TDLib), поэтому пересылаем запрос главному
+  // окну — оно качает полноразмеры (downloadMedia) и открывает существующую
+  // смотрелку (photo:open). payload: { chatId, messageIds:[...], index }.
+  ipcMain.on('notif:open-photo', (_event, payload) => {
+    const mainWindow = getMainWindow()
+    if (!mainWindow || mainWindow.isDestroyed() || !payload) return
+    mainWindow.webContents.send('notify:open-album', payload)
+  })
+
   let lastNotifBounds = null
   ipcMain.on('notif:resize', (_event, height, meta) => {
     const notifWin = getNotifWin()

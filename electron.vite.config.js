@@ -25,6 +25,8 @@ function copyStaticPlugin() {
         // v0.87.97: pin-dock.html разбит на html/css/js
         { from: 'main/pin-dock.css', to: 'out/main/pin-dock.css' },
         { from: 'main/pin-dock.js', to: 'out/main/pin-dock.js' },
+        // v1.2.70: окно-подсказка задачи (Вариант 4)
+        { from: 'main/pin-tooltip.html', to: 'out/main/pin-tooltip.html' },
       ]
       // Hooks directory (messenger hooks)
       const hooksDir = 'main/preloads/hooks'
@@ -80,6 +82,7 @@ export default defineConfig({
           notification: resolve(__dirname, 'main/preloads/notification.preload.cjs'),
           pin: resolve(__dirname, 'main/preloads/pin.preload.cjs'),
           'pin-dock': resolve(__dirname, 'main/preloads/pin-dock.preload.cjs'),
+          'pin-tooltip': resolve(__dirname, 'main/preloads/pin-tooltip.preload.cjs'),
           photoViewer: resolve(__dirname, 'main/preloads/photoViewer.preload.cjs'),
           videoPlayer: resolve(__dirname, 'main/preloads/videoPlayer.preload.cjs'),
           'log-viewer': resolve(__dirname, 'main/preloads/log-viewer.preload.cjs'),

@@ -499,6 +499,10 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             // (App.jsx cross-tab handler читает source ИЛИ chatTag в зависимости от формата)
             chatTag: chatId,
             messageId: message?.id != null ? String(message.id) : null,
+            // v1.2.66: метка альбома (media group). Каждое сообщение альбома шлётся сразу;
+            // окно группирует их в одну «живую карточку» по album.id (update-on-arrival).
+            // tileText — подпись части (может быть не у первого фото). null для обычных.
+            album: message.groupedId ? { id: String(message.groupedId), chatId, tileThumb: message.strippedThumb || null, tileMessageId: message?.id != null ? String(message.id) : null, tileText: message.text || null } : null,
           })
         } catch(_) {}
       }

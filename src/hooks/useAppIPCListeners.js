@@ -86,6 +86,24 @@ export default function useAppIPCListeners({
     })
   }, [])
 
+  // 6. v1.2.65: открыть фото альбома из карточки уведомления в смотрелке.
+  //    Окно уведомления шлёт notif:open-photo → main пересылает notify:open-album.
+  //    Качаем полноразмеры всех фото альбома (thumb:false) и открываем ту же смотрелку
+  //    (photo:open) что и в чате. Граничные: нет интернета/файл не скачался → фото
+  //    отфильтровываются, смотрелка откроется только с успешными (пусто → не открываем).
+  useEffect(() => {
+    return window.api?.on('notify:open-album', async ({ chatId, messageIds, index }) => {
+      if (!chatId || !Array.isArray(messageIds) || !messageIds.length) return
+      const results = await Promise.all(messageIds.map(mid =>
+        window.api.invoke('tg:download-media', { chatId, messageId: mid, thumb: false }).catch(() => null)
+      ))
+      const srcs = results.map(r => (r && r.ok) ? r.path : null).filter(Boolean)
+      if (!srcs.length) return
+      const safeIndex = Math.max(0, Math.min(srcs.length - 1, index || 0))
+      try { window.api.invoke('photo:open', { srcs, index: safeIndex }) } catch (_) {}
+    })
+  }, [])
+
   // 4. v0.75.5: Автосброс notifCountRef при переключении на вкладку
   useEffect(() => {
     if (!activeId) return

@@ -33,6 +33,47 @@ export function getDockHtmlPath(isDev, path, __dirname) {
   return path.join(__dirname, '../main/pin-dock.html')
 }
 
+// v1.2.70: окно-подсказка задачи (Вариант 4) — отдельное переиспользуемое окно.
+export function getTooltipPreloadPath(isDev, path, __dirname) {
+  if (isDev) return path.join(__dirname, '../../main/preloads/pin-tooltip.preload.cjs')
+  return path.join(__dirname, '../preload/pin-tooltip.mjs')
+}
+export function getTooltipHtmlPath(isDev, path, __dirname) {
+  if (isDev) return path.join(__dirname, '../../main/pin-tooltip.html')
+  return path.join(__dirname, '../main/pin-tooltip.html')
+}
+/**
+ * v1.2.70: окно-подсказка. `focusable:false` + `setIgnoreMouseEvents(true)` →
+ * окно «сквозное»: не ловит мышь, не крадёт фокус, не порождает hover-событий.
+ * Создаётся ОДИН раз и переиспользуется (не новое окно на каждый ховер).
+ */
+export function createTooltipBrowserWindow(deps) {
+  const { isDev, path, __dirname } = deps
+  const win = new BrowserWindow({
+    width: 260,
+    height: 120,
+    x: -32000, // за экраном до первого показа
+    y: -32000,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    focusable: false,
+    show: false,
+    webPreferences: {
+      preload: getTooltipPreloadPath(isDev, path, __dirname),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    }
+  })
+  win.setAlwaysOnTop(true, 'screen-saver', 1)
+  try { win.setIgnoreMouseEvents(true) } catch (_) {} // «сквозное» — мышь проходит насквозь
+  return win
+}
+
 /**
  * Создать BrowserWindow для pin-окна
  * @param {object} deps - { isDev, path, __dirname }

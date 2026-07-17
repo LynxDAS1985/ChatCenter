@@ -3,7 +3,7 @@
 // savePinItems, loadPinItems, restorePin, ensureDockWindow, addToDock, removeFromDock,
 // removePin, checkDockVisibility, findPinIdByWin, getShowDockEmpty, getDockCenterExpand.
 import { BrowserWindow, screen } from 'electron'
-import { getPinHtmlPath, getDockPreloadPath, getDockHtmlPath, createPinBrowserWindow, startTimerForItem } from './dockPinUtils.js'
+import { getPinHtmlPath, getDockPreloadPath, getDockHtmlPath, createPinBrowserWindow, startTimerForItem, createTooltipBrowserWindow, getTooltipHtmlPath } from './dockPinUtils.js'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
 // v1.2.60: было 420 (статический прозрачный резерв над полоской дока).
@@ -17,11 +17,13 @@ import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 export const DOCK_PREVIEW_RESERVE = 0
 
 export function createDockPinState(deps) {
-  const { getMainWindow, storage, isDev, __dirname, path } = deps
+  const { getMainWindow, storage, isDev, __dirname, path, isQuitting } = deps
 
   const pinItems = new Map() // pinId → { win, data, timerEnd, timerTimeout, inDock, category, note }
   const counter = { value: 0 }
   const dockState = { win: null, baseHeight: 48 }
+  // v1.2.70: окно-подсказка задачи (одно, переиспользуемое).
+  const tooltipState = { win: null, anchorX: 0, anchorTabTop: 0, pendingShow: false }
 
   function getShowDockEmpty() {
     const s = storage.get('settings', {})
@@ -277,6 +279,9 @@ export function createDockPinState(deps) {
     }
 
     pinWin.on('closed', () => {
+      // v1.2.65: на выходе из приложения НЕ удаляем пин из storage —
+      // иначе восстановленное закреплённое снова стирается при перезапуске.
+      if (isQuitting && isQuitting()) return
       const closedItem = pinItems.get(pinId)
       if (closedItem) {
         if (closedItem.timerTimeout) clearTimeout(closedItem.timerTimeout)
@@ -300,11 +305,71 @@ export function createDockPinState(deps) {
     }
   }
 
+  // ── v1.2.70: окно-подсказка задачи (Вариант 4) ──
+  // Создаётся один раз, переиспользуется. Показывается НАД вкладкой, «сквозное»
+  // (не ловит мышь) → не ресайзит док и не порождает петлю дёрга.
+  function ensureTooltipWindow() {
+    if (tooltipState.win && !tooltipState.win.isDestroyed()) return tooltipState.win
+    const win = createTooltipBrowserWindow({ isDev, path, __dirname })
+    tooltipState.win = win
+    win.loadFile(getTooltipHtmlPath(isDev, path, __dirname)).catch(err => {
+      console.error('[Tooltip] Failed to load pin-tooltip.html:', err)
+    })
+    win.on('closed', () => { tooltipState.win = null })
+    return win
+  }
+
+  // Наведение на вкладку → показать подсказку. rect — прямоугольник вкладки
+  // относительно окна дока (renderer прислал getBoundingClientRect).
+  function showTooltip(pinId, rect) {
+    const item = pinItems.get(pinId)
+    if (!item || !item.data) return
+    if (!dockState.win || dockState.win.isDestroyed()) return
+    const db = dockState.win.getBounds()
+    tooltipState.anchorX = db.x + Math.round((rect && rect.left) || 0)
+    tooltipState.anchorTabTop = db.y + Math.round((rect && rect.top) || 0)
+    tooltipState.pendingShow = true
+    const win = ensureTooltipWindow()
+    const d = item.data
+    const payload = {
+      sender: d.sender || '', text: d.text || '', time: d.time || '',
+      color: d.color || '#2AABEE', messengerName: d.messengerName || '',
+      category: item.category || '', note: item.note || '',
+    }
+    const send = () => { if (win && !win.isDestroyed()) win.webContents.send('tooltip:data', payload) }
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+    else send()
+  }
+
+  // Tooltip прислал свой размер → ставим окно НАД вкладкой и показываем.
+  function positionTooltipAndShow(w, h) {
+    const win = tooltipState.win
+    if (!win || win.isDestroyed() || !tooltipState.pendingShow) return
+    const wa = screen.getPrimaryDisplay().workArea
+    const width = Math.round(w) + 2
+    const height = Math.round(h) + 2
+    let x = tooltipState.anchorX
+    if (x + width > wa.x + wa.width) x = wa.x + wa.width - width
+    if (x < wa.x) x = wa.x
+    let y = tooltipState.anchorTabTop - height - 8 // над вкладкой
+    if (y < wa.y) y = wa.y
+    win.setBounds({ x, y, width, height })
+    if (!win.isVisible()) win.showInactive() // показываем БЕЗ кражи фокуса
+  }
+
+  function hideTooltip() {
+    tooltipState.pendingShow = false
+    if (tooltipState.win && !tooltipState.win.isDestroyed()) {
+      safeHideTransparentWindow(tooltipState.win)
+    }
+  }
+
   return {
-    pinItems, counter, dockState,
+    pinItems, counter, dockState, tooltipState,
     savePinItems, loadPinItems, restorePin,
     ensureDockWindow, addToDock, removeFromDock, removePin,
     checkDockVisibility, findPinIdByWin,
     getShowDockEmpty, getDockCenterExpand,
+    showTooltip, positionTooltipAndShow, hideTooltip,
   }
 }

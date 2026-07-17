@@ -297,8 +297,12 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v1.2.8: лимит 29500 → 29600 — sender-aware identity для MAX ribbon:
 // cache avatar по sender/chat, dedup scope и IPC fallback guard.
 // v1.1.16: лимит 27200 → 28000 — useAiWebviewBridge + AiBridgeCheck + ...
-test('Общий renderer код (src/ без тестов) < 31050 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 31050, totalSrc + ' > 31050')
+// v1.2.66: 31050 → 31150 — альбомы в уведомлениях (механизм «живая карточка»):
+// listener notify:open-album в useAppIPCListeners.js + метка album в nativeStoreIpc.js.
+// Прежний таймер-буфер albumNotifyBuffer.js удалён (логика живой карточки — в main/
+// notification*.js, вне renderer-бюджета). Запас ~70 строк.
+test('Общий renderer код (src/ без тестов) < 31150 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 31150, totalSrc + ' > 31150')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

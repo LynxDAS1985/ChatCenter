@@ -32,8 +32,8 @@ module.exports = {
   // (dismissItem/stackMessageIntoHost/cleanupStack) требует параметризации — замыкают
   // локальный state (items/stacks/container/window.notifApi).
   'main/notification.js': {
-    ceiling: 700,
-    reason: 'Renderer-код для notification BrowserWindow. v1.2.12: createPinBtn + calcHeight + pauseItem + resumeItem + forceFinalSlideInState вынесены в notification-helpers.js (запас 56 строк). Дальнейшее разбиение dismissItem/stackMessageIntoHost требует параметризации.'
+    ceiling: 730,
+    reason: 'v1.2.66: «живая карточка» альбома (media group) — albumHosts Map + ветка группировки по album.id + albumState + очистка в dismiss/forceRemove (~35 строк). Тяжёлые функции (extendHostLife, addAlbumTileToHost, renderAlbumGrid) вынесены в notification-helpers.js. v1.2.12: createPinBtn/calcHeight/pauseItem/resumeItem/forceFinalSlideInState тоже вынесены туда. Дальнейшее разбиение dismissItem/stackMessageIntoHost требует параметризации (замыкают items/stacks/albumHosts/container).'
   },
   // v0.87.97: pin-dock разбит на html/css/js. JS превышает default 300.
   'main/pin-dock.js': {
@@ -130,7 +130,7 @@ module.exports = {
   // плановая задача (handoff-code-limits.md).
   'src/native/store/nativeStoreIpc.js': {
     ceiling: 660,
-    reason: 'v1.2.12: handlers статуса отправки (tg:typing / tg:send-succeeded / tg:upload-progress) вынесены в nativeStoreSendIpc.js. Файл 643/660 (запас 17 строк). v0.95.47: диагностический лог notify-emit. v0.95.46: messageId в payload app:custom-notify. Доменное разбиение остальных IPC handlers — плановый шаг.'
+    reason: 'v1.2.66: метка album в payload app:custom-notify (media group → «живая карточка» в окне уведомления, компактной строкой ~654/660). v1.2.12: handlers статуса отправки вынесены в nativeStoreSendIpc.js. v0.95.47: лог notify-emit. v0.95.46: messageId в payload. Доменное разбиение остальных IPC handlers — плановый шаг.'
   },
   'src/native/store/nativeStore.vitest.jsx': {
     ceiling: 970,

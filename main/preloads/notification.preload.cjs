@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('notifApi', {
   resize: (height, meta) => ipcRenderer.send('notif:resize', height, meta),
   // Notification window → Main: закрепить сообщение в отдельном окне
   pinMessage: (data) => ipcRenderer.send('notif:pin-message', data),
+  // v1.2.65: Notification window → Main: открыть фото альбома в смотрелке.
+  // data: { chatId, messageIds:[...], index }. Main пересылает главному окну,
+  // оно качает полноразмеры и зовёт существующий photo:open.
+  openPhoto: (data) => ipcRenderer.send('notif:open-photo', data),
   // v0.89.20: diagnostic log в chatcenter.log через main process app:log IPC.
   // Используется для расследования бага «остаётся видимая полоска после dismiss».
   log: (level, message) => {

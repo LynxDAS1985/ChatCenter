@@ -1,7 +1,7 @@
 // v0.82.5: Dock/Pin/Timer система — вынесена из main.js
 // v0.87.97: state и helper функции вынесены в dockPinState.js (~230 строк).
 // Здесь — только IPC handlers (pin:* и dock:*).
-import { ipcMain, BrowserWindow, screen } from 'electron'
+import { ipcMain, BrowserWindow, screen, app } from 'electron'
 import { getPinHtmlPath, createPinBrowserWindow, startTimerForItem, restorePinBounds } from './dockPinUtils.js'
 import { createDockPinState, DOCK_PREVIEW_RESERVE } from './dockPinState.js'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
@@ -9,14 +9,28 @@ import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 export function initDockPinSystem(deps) {
 const { getMainWindow, storage, isDev, __dirname, path, DEFAULT_MESSENGERS } = deps
 
-const state = createDockPinState({ getMainWindow, storage, isDev, __dirname, path })
+// v1.2.65: при ВЫХОДЕ из приложения Electron закрывает окна закрепа →
+// их 'closed'-обработчики иначе удаляли пины и перезаписывали storage пустым
+// списком → закреплённое не переживало перезапуск. Флаг отключает это удаление
+// на выходе (последнее сохранение с пинами остаётся в storage).
+let isQuitting = false
+app.on('before-quit', () => { isQuitting = true })
+
+const state = createDockPinState({ getMainWindow, storage, isDev, __dirname, path, isQuitting: () => isQuitting })
 const {
   pinItems, counter, dockState,
   savePinItems, loadPinItems, restorePin,
   ensureDockWindow, addToDock, removeFromDock, removePin,
   checkDockVisibility, findPinIdByWin,
   getShowDockEmpty, getDockCenterExpand,
+  showTooltip, positionTooltipAndShow, hideTooltip,
 } = state
+
+// v1.2.70: IPC окна-подсказки задачи (Вариант 4). Наведение с задержкой в
+// pin-dock.js шлёт show/hide; окно-подсказка «сквозное» и НЕ ресайзит док.
+ipcMain.on('dock:tooltip-show', (_event, pinId, rect) => { showTooltip(pinId, rect) })
+ipcMain.on('dock:tooltip-hide', () => { hideTooltip() })
+ipcMain.on('tooltip:resize', (_event, w, h) => { positionTooltipAndShow(w, h) })
 
 // ── Создание pin-окна ──
 ipcMain.on('notif:pin-message', (_event, data) => {
@@ -44,6 +58,9 @@ ipcMain.on('notif:pin-message', (_event, data) => {
   savePinItems()
 
   pinWin.on('closed', () => {
+    // v1.2.65: на выходе из приложения НЕ удаляем пин из storage — иначе
+    // закреплённое не переживёт перезапуск (окна закрываются Electron'ом).
+    if (isQuitting) return
     const closedItem = pinItems.get(pinId)
     if (closedItem) {
       if (closedItem.timerTimeout) clearTimeout(closedItem.timerTimeout)
@@ -234,7 +251,15 @@ ipcMain.on('dock:resize', (_event, width, height) => {
   if (x < fullBounds.x) x = fullBounds.x
   const dockBottomY = bounds.y + bounds.height
   const newY = dockBottomY - totalH
-  dockState.win.setBounds({ x, y: newY, width, height: totalH })
+  const nbResize = { x, y: newY, width, height: totalH }
+  // v1.2.69: дед-бэнд — при микро-изменениях (тик таймера/мутации давали ±1-2px
+  // дрейф и дрожание) окно НЕ трогаем. Ресайзим только при заметном изменении.
+  const tiny = Math.abs(nbResize.width - bounds.width) <= 6 &&
+               Math.abs(nbResize.height - bounds.height) <= 4 &&
+               Math.abs(nbResize.x - bounds.x) <= 6 &&
+               Math.abs(nbResize.y - bounds.y) <= 4
+  if (tiny && dockState.win.isVisible()) return
+  dockState.win.setBounds(nbResize)
   if (!dockState.win.isVisible()) {
     let hasDocked = false
     for (const [, item] of pinItems) {
@@ -255,13 +280,15 @@ ipcMain.on('dock:preview-space', (_event, extraH) => {
   if (!extraH || extraH <= 0) {
     const normalH = dockState.baseHeight + DOCK_PREVIEW_RESERVE
     if (bounds.height !== normalH) {
-      dockState.win.setBounds({ x: bounds.x, y: dockBottomY - normalH, width: bounds.width, height: normalH })
+      const nb = { x: bounds.x, y: dockBottomY - normalH, width: bounds.width, height: normalH }
+      dockState.win.setBounds(nb)
     }
     return
   }
   const neededH = dockState.baseHeight + Math.max(DOCK_PREVIEW_RESERVE, extraH)
   if (neededH <= bounds.height) return
-  dockState.win.setBounds({ x: bounds.x, y: dockBottomY - neededH, width: bounds.width, height: neededH })
+  const nb = { x: bounds.x, y: dockBottomY - neededH, width: bounds.width, height: neededH }
+  dockState.win.setBounds(nb)
 })
 
 // ── Dock: ctx-menu-space — временно расширить окно вверх для контекстного меню ──
@@ -272,15 +299,15 @@ ipcMain.on('dock:ctx-menu-space', (_event, extraH) => {
   if (extraH <= 0) {
     const normalH = dockState.baseHeight + DOCK_PREVIEW_RESERVE
     if (bounds.height !== normalH) {
-      const newY = dockBottomY - normalH
-      dockState.win.setBounds({ x: bounds.x, y: newY, width: bounds.width, height: normalH })
+      const nb = { x: bounds.x, y: dockBottomY - normalH, width: bounds.width, height: normalH }
+      dockState.win.setBounds(nb)
     }
     return
   }
   const neededH = dockState.baseHeight + Math.max(DOCK_PREVIEW_RESERVE, extraH)
   if (neededH <= bounds.height) return
-  const newY = dockBottomY - neededH
-  dockState.win.setBounds({ x: bounds.x, y: newY, width: bounds.width, height: neededH })
+  const nb = { x: bounds.x, y: dockBottomY - neededH, width: bounds.width, height: neededH }
+  dockState.win.setBounds(nb)
 })
 
 // ── Dock: закрыть/скрыть панель ──

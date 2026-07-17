@@ -10,9 +10,14 @@ var mainCode = fs.readFileSync('main/main.js', 'utf8')
 // v0.87.97: dockPinState вынесен из dockPinHandlers
 // v0.87.103: mainIpcHandlers вынесен из main.js (~230 строк IPC)
 var handlersDir = 'main/handlers/'
-;['aiHandlers.js', 'aiToolIpcHandlers.js', 'auditIpcHandlers.js', 'taskIpcHandlers.js', 'reminderIpcHandlers.js', 'autoReplyRulesIpcHandlers.js', 'notifHandlers.js', 'dockPinHandlers.js', 'dockPinState.js', 'mainIpcHandlers.js', 'maxTestWindowHandler.js'].forEach(function(f) {
+// v1.2.65: + photoViewerHandler.js (photo:open) — альбом в уведомлении открывает
+// фото через этот handler из useAppIPCListeners.js (hook сканируется тестом ниже).
+;['aiHandlers.js', 'aiToolIpcHandlers.js', 'auditIpcHandlers.js', 'taskIpcHandlers.js', 'reminderIpcHandlers.js', 'autoReplyRulesIpcHandlers.js', 'notifHandlers.js', 'dockPinHandlers.js', 'dockPinState.js', 'mainIpcHandlers.js', 'maxTestWindowHandler.js', 'photoViewerHandler.js'].forEach(function(f) {
   try { mainCode += '\n' + fs.readFileSync(handlersDir + f, 'utf8') } catch(e) {}
 })
+// v1.2.65: tdlibIpcHandlers.js (main/native/) регистрирует tg:* через обёртку handle().
+// Нужен т.к. useAppIPCListeners.js теперь вызывает tg:download-media (открытие фото альбома).
+try { mainCode += '\n' + fs.readFileSync('main/native/tdlibIpcHandlers.js', 'utf8') } catch(e) {}
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
 // v0.87.82: часть IPC вызовов переехала в hooks (useAppBootstrap, useAppIPCListeners и т.п.)
 var hooksDir = 'src/hooks'

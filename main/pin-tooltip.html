@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    background: transparent;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-app-region: no-drag;
+  }
+  /* v1.2.70: подсказка задачи (Вариант 4 — категория + заметка). Отдельное окно,
+     «сквозное» (setIgnoreMouseEvents в main) — не ловит мышь и не ресайзит док. */
+  .tt-card {
+    position: relative;
+    background: #1a1a2e;
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+    overflow: hidden;
+    color: #e2e8f0;
+    padding: 10px 12px 10px 14px;
+    max-width: 258px;
+  }
+  .tt-bar { position:absolute; left:0; top:0; bottom:0; width:3px; border-radius:10px 0 0 10px; background:#2AABEE; }
+  .tt-catrow { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .tt-cat { font-size:9px; font-weight:700; padding:1px 7px; border-radius:5px; flex-shrink:0; display:none; }
+  .tt-cat.urgent { color:#f87171; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); }
+  .tt-cat.work   { color:#fbbf24; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.4); }
+  .tt-cat.later  { color:#4ade80; background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.4); }
+  .tt-meta { font-size:9px; color:rgba(165,180,252,0.75); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .tt-sender { font-size:12.5px; font-weight:700; color:#e2e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tt-text { font-size:12px; color:rgba(255,255,255,0.82); line-height:1.45; margin-top:2px; white-space:pre-wrap; word-break:break-word; max-height:160px; overflow:hidden; }
+  .tt-note { margin-top:6px; font-size:11px; color:rgba(165,180,252,0.85); font-style:italic; border-top:1px solid rgba(255,255,255,0.08); padding-top:5px; white-space:pre-wrap; word-break:break-word; max-height:48px; overflow:hidden; }
+</style>
+</head>
+<body>
+<div class="tt-card" id="card">
+  <div class="tt-bar" id="bar"></div>
+  <div class="tt-catrow"><span class="tt-cat" id="cat"></span><span class="tt-meta" id="meta"></span></div>
+  <div class="tt-sender" id="sender"></div>
+  <div class="tt-text" id="text"></div>
+  <div class="tt-note" id="note" style="display:none"></div>
+</div>
+<script>
+  const card = document.getElementById('card')
+  const bar = document.getElementById('bar')
+  const catEl = document.getElementById('cat')
+  const metaEl = document.getElementById('meta')
+  const senderEl = document.getElementById('sender')
+  const textEl = document.getElementById('text')
+  const noteEl = document.getElementById('note')
+  const CAT = { urgent: '🔴 Срочно', work: '🟡 В работе', later: '🟢 На потом' }
+
+  window.tooltipApi.onData((d) => {
+    bar.style.background = d.color || '#2AABEE'
+    senderEl.textContent = d.sender || ''
+    // v1.2.70: у картинки без подписи текст пустой → показываем «📷 Фото»
+    textEl.textContent = (d.text && d.text.trim()) ? d.text : '📷 Фото'
+    // категория
+    catEl.className = 'tt-cat'
+    if (d.category && CAT[d.category]) { catEl.classList.add(d.category); catEl.textContent = CAT[d.category]; catEl.style.display = '' }
+    else { catEl.style.display = 'none' }
+    // мессенджер · время
+    const parts = []
+    if (d.messengerName) parts.push(d.messengerName)
+    if (d.time) parts.push(d.time)
+    metaEl.textContent = parts.join(' · ')
+    // заметка
+    if (d.note) { noteEl.textContent = '📝 ' + d.note; noteEl.style.display = '' }
+    else { noteEl.style.display = 'none' }
+    // сообщить main фактический размер → main спозиционирует окно НАД вкладкой и покажет
+    requestAnimationFrame(() => {
+      try { window.tooltipApi.resize(card.offsetWidth, card.offsetHeight) } catch (_) {}
+    })
+  })
+</script>
+</body>
+</html>
