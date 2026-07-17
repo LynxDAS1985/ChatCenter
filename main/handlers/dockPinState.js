@@ -143,7 +143,17 @@ export function createDockPinState(deps) {
       storage.set('dockPosition', { x: finalX, y: finalDockY })
     })
 
-    dockWin.on('closed', () => { dockState.win = null })
+    // v1.2.62: периодический реассерт «поверх всех». Проблема (Win11): при клике
+    // по панели задач / фокусе другого окна Windows опускает наш topmost-док, а
+    // реассерт был только на blur САМОГО дока (не срабатывал, когда фокус ушёл
+    // на панель задач). setAlwaysOnTop заново поднимает окно над всеми и НЕ
+    // крадёт фокус. Работает только пока док видим (иначе пропускаем).
+    const topmostTimer = setInterval(() => {
+      if (!dockState.win || dockState.win.isDestroyed()) { clearInterval(topmostTimer); return }
+      try { if (dockState.win.isVisible()) dockState.win.setAlwaysOnTop(true, 'screen-saver', 1) } catch (_) {}
+    }, 1000)
+
+    dockWin.on('closed', () => { clearInterval(topmostTimer); dockState.win = null })
     return dockWin
   }
 
