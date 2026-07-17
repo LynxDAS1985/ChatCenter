@@ -1,6 +1,24 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.74 (17 июля 2026)
+## Текущая версия: v1.2.75 (17 июля 2026)
+
+### v1.2.75 — Telegram: аватар отправителя + источник в уведомлении и подсказке
+
+Дата: 17 июля 2026. По согласованному макету («Станет»): у нативного Telegram (TDLib) в карточке уведомления и в подсказке задачи теперь показываются аватар и источник. «Срочно» уже работало (метка закреплённой задачи).
+
+**Аватар (уведомление + подсказка):** фото профиля TDLib уже скачивается в `cc-media://avatars/…` ([tdlibAvatars.js](../main/native/backends/tdlibAvatars.js)). Раньше оно клалось в `iconUrl`, но конвейер уведомлений принимает только http/data-url и отбрасывал `cc-media://`. Теперь в [nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js) аватар кладётся прямо в `iconDataUrl` — окно уведомления рисует `cc-media://` напрямую (protocol глобальный). Пусто (фото ещё не скачано) → прежняя эмодзи-заглушка ✈️. Через `createPinBtn` (`icon`) аватар доходит и до закрепа, а `showTooltip` теперь прокидывает `icon` в подсказку — там рисуется кружок-аватар (или буква имени, если фото нет).
+
+**Источник «Telegram» (подсказка):** раньше в подсказке для native_cc было пусто (его нет в списке мессенджеров, откуда бралось имя). Теперь `createPinBtn` передаёт `messengerName` (для native — «Telegram», приходит из уведомления, [nativeStoreIpc.js:495](../src/native/store/nativeStoreIpc.js)) в закреп → подсказка показывает «Telegram · время». В самой карточке уведомления «Telegram» показывался и раньше.
+
+**Вёрстка подсказки** ([pin-tooltip.html](../main/pin-tooltip.html)): шапка = аватар + (отправитель / «источник · время»), ниже категория, текст, заметка (Вариант 4 из макета).
+
+Файлы: `src/native/store/nativeStoreIpc.js`, `main/notification-helpers.js` (createPinBtn +messengerName), `main/notification.js` (2 вызова createPinBtn), `main/handlers/dockPinState.js` (showTooltip +icon), `main/pin-tooltip.html` (вёрстка + аватар).
+
+Тест: [pinTooltip.test.cjs](../src/__tests__/pinTooltip.test.cjs) → 46 (+ аватар в подсказке, icon в payload, messengerName в createPinBtn, cc-media аватар в native payload).
+
+Проверки: `node --check` всех, `pinTooltip` 46/46, `npm run lint`, `npm run check-memory`, pre-push. **Требует визуальной проверки**: у Telegram-уведомления/подсказки виден аватар (если фото скачано) и «Telegram» как источник.
+
+Откат: `git checkout -- src/native/store/nativeStoreIpc.js main/notification-helpers.js main/notification.js main/handlers/dockPinState.js main/pin-tooltip.html`.
 
 ### v1.2.74 — Альбом в уведомлении: листание страницами + чёткие плитки + быстрое открытие
 

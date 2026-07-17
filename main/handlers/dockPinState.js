@@ -340,6 +340,7 @@ export function createDockPinState(deps) {
       sender: d.sender || '', text: d.text || '', time: d.time || '',
       color: d.color || '#2AABEE', messengerName: d.messengerName || '',
       category: item.category || '', note: item.note || '',
+      icon: d.icon || '', // v1.2.75: аватар для подсказки (cc-media:// или data-url)
     }
     const send = () => { if (win && !win.isDestroyed()) win.webContents.send('tooltip:data', payload) }
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)

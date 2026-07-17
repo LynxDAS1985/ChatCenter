@@ -488,8 +488,8 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             title: chat?.title || 'Telegram',
             body: preview || '[медиа]',
             fullBody: preview || '[медиа]',
-            iconUrl: chat?.avatar || '',
-            iconDataUrl: '',
+            iconUrl: '',
+            iconDataUrl: chat?.avatar || '', // v1.2.75: аватар TDLib (cc-media://) сразу как src картинки — конвейер http-загрузки его не трогает, окно уведомления рисует напрямую (protocol глобальный). Пусто → эмодзи-заглушка.
             color: '#2AABEE',
             emoji: '✈️',
             messengerName: 'Telegram',

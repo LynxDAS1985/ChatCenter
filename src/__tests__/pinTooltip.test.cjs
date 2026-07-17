@@ -30,6 +30,8 @@ const handlers = read('main/handlers/dockPinHandlers.js')
 const dockPreload = read('main/preloads/pin-dock.preload.cjs')
 const dockJs = read('main/pin-dock.js')
 const viteCfg = read('electron.vite.config.js')
+const notifHelpers = read('main/notification-helpers.js')
+const nativeIpc = read('src/native/store/nativeStoreIpc.js')
 
 // ── HTML: Вариант 4 (категория + заметка) ──
 console.log('\n── HTML (Вариант 4): ──')
@@ -96,6 +98,15 @@ check('backgroundThrottling:false (rAF/таймеры живут у скрыто
 check('размер сообщается БЕЗ requestAnimationFrame-вызова (прямой вызов)', !html.includes('requestAnimationFrame('))
 check('мёртвый обработчик dock:preview-space удалён', !handlers.includes("ipcMain.on('dock:preview-space'"))
 check('мёртвый requestPreviewSpace удалён из preload дока', !dockPreload.includes('requestPreviewSpace'))
+
+// ── v1.2.75: источник «Telegram» + аватар отправителя ──
+console.log('\n── v1.2.75 источник + аватар: ──')
+check('подсказка: элемент аватара (.tt-av)', html.includes('tt-av'))
+check('подсказка: рендерит аватар из d.icon', html.includes('d.icon'))
+check('подсказка: показывает источник (messengerName)', html.includes('messengerName'))
+check('showTooltip прокидывает icon в подсказку', /icon:\s*d\.icon/.test(state))
+check('createPinBtn передаёт messengerName (источник)', notifHelpers.includes('messengerName'))
+check('native TG кладёт аватар в iconDataUrl (cc-media)', /iconDataUrl:\s*chat\?\.avatar/.test(nativeIpc))
 
 // ── Сборка (prod) ──
 console.log('\n── Сборка: ──')
