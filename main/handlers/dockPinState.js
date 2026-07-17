@@ -33,6 +33,45 @@ export function createDockPinState(deps) {
     return s.dockCenterExpand === true
   }
 
+  let mainWinReassertHooked = false
+  // v1.2.63 (Совет 1): немедленно вернуть док «поверх всех» (не ждать таймер 1с).
+  // setAlwaysOnTop не крадёт фокус; работает только пока док видим.
+  function reassertDockTop() {
+    if (dockState.win && !dockState.win.isDestroyed() && dockState.win.isVisible()) {
+      try { dockState.win.setAlwaysOnTop(true, 'screen-saver', 1) } catch (_) {}
+    }
+  }
+  // v1.2.63 (Совет 1): реассерт по событиям ГЛАВНОГО окна (клик по панели задач =
+  // main теряет фокус → мгновенно поднимаем док). Вешаем один раз, когда главное
+  // окно уже создано (getMainWindow — ленивый геттер).
+  function hookMainWindowReassertOnce() {
+    if (mainWinReassertHooked) return
+    const mw = getMainWindow()
+    if (!mw || mw.isDestroyed()) return
+    mainWinReassertHooked = true
+    mw.on('blur', reassertDockTop)
+    mw.on('focus', reassertDockTop)
+    mw.on('minimize', reassertDockTop)
+    mw.on('restore', reassertDockTop)
+  }
+  // v1.2.63 (Совет 2): смена монитора/разрешения/масштаба — вернуть док в рабочую
+  // область (над панелью задач) и поднять поверх всех. Регистрируется один раз.
+  screen.on('display-metrics-changed', () => {
+    if (!dockState.win || dockState.win.isDestroyed()) return
+    try {
+      const wa = screen.getPrimaryDisplay().workArea
+      const b = dockState.win.getBounds()
+      let x = b.x, y = b.y
+      const maxY = wa.y + wa.height - b.height
+      if (y > maxY) y = maxY
+      if (y < wa.y) y = wa.y
+      if (x + b.width > wa.x + wa.width) x = wa.x + wa.width - b.width
+      if (x < wa.x) x = wa.x
+      if (x !== b.x || y !== b.y) dockState.win.setBounds({ x, y, width: b.width, height: b.height })
+      reassertDockTop()
+    } catch (_) {}
+  })
+
   // v0.72.1: Персистентность задач — сохранение/загрузка из storage
   function savePinItems() {
     const arr = []
@@ -154,12 +193,14 @@ export function createDockPinState(deps) {
     }, 1000)
 
     dockWin.on('closed', () => { clearInterval(topmostTimer); dockState.win = null })
+    hookMainWindowReassertOnce() // v1.2.63 (Совет 1)
     return dockWin
   }
 
   // Добавить таб в dock
   function addToDock(pinId, data) {
     const dock = ensureDockWindow()
+    hookMainWindowReassertOnce() // v1.2.63 (Совет 1): на случай если при создании дока главное окно ещё не было готово
     const item = pinItems.get(pinId)
     const sendAdd = () => {
       dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '', note: item ? item.note || '' : '', messengerName: data.messengerName || '' })
