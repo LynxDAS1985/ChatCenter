@@ -61,15 +61,22 @@ export function createDockPinState(deps) {
     if (dockState.win && !dockState.win.isDestroyed()) return dockState.win
 
     const display = screen.getPrimaryDisplay()
-    const fullBounds = display.bounds
+    // v1.2.61: workArea = рабочая область БЕЗ панели задач (офиц. Electron
+    // Display.workArea). Раньше брали display.bounds (весь экран, включая зону
+    // панели задач) → док уходил ЗА панель задач.
+    const wa = display.workArea
     const initW = 120
     const dockH = 48
     const totalH = dockH + DOCK_PREVIEW_RESERVE
     // Восстановить позицию из storage (y — нижняя граница dock)
     const saved = storage.get('dockPosition', null)
-    const startX = saved ? saved.x : Math.round(fullBounds.x + (fullBounds.width - initW) / 2)
-    // y хранит позицию нижнего края dock — по умолчанию внизу экрана (поверх таскбара)
-    const baseY = saved ? saved.y : fullBounds.y + fullBounds.height - dockH
+    const startX = saved ? saved.x : Math.round(wa.x + (wa.width - initW) / 2)
+    // По умолчанию — прямо НАД панелью задач (низ рабочей области)
+    let baseY = saved ? saved.y : wa.y + wa.height - dockH
+    // Страховка: не опускать док ниже рабочей области (за панель задач),
+    // в т.ч. если в storage осталась старая «нижняя» позиция.
+    const maxBaseY = wa.y + wa.height - dockH
+    if (baseY > maxBaseY) baseY = maxBaseY
     const startY = baseY - DOCK_PREVIEW_RESERVE
 
     const dockWin = new BrowserWindow({
@@ -114,7 +121,6 @@ export function createDockPinState(deps) {
       const bounds = dockState.win.getBounds()
       const display = screen.getPrimaryDisplay()
       const wa = display.workArea
-      const fullBounds = display.bounds
       const SNAP = 20
       let snapped = false
       const dockY = bounds.y + DOCK_PREVIEW_RESERVE
@@ -123,11 +129,15 @@ export function createDockPinState(deps) {
       if (Math.abs(bounds.x - wa.x) < SNAP) { sx = wa.x; snapped = true }
       if (Math.abs((bounds.x + bounds.width) - (wa.x + wa.width)) < SNAP) { sx = wa.x + wa.width - bounds.width; snapped = true }
       if (Math.abs(dockY - wa.y) < SNAP) { sy = wa.y; snapped = true }
-      if (Math.abs((dockY + dockState.baseHeight) - (fullBounds.y + fullBounds.height)) < SNAP) { sy = fullBounds.y + fullBounds.height - dockState.baseHeight; snapped = true }
+      // v1.2.61: снап только к низу РАБОЧЕЙ области (над панелью задач).
+      // Прежний снап к самому низу экрана (display.bounds) утаскивал док ЗА панель задач — убран.
       if (Math.abs((dockY + dockState.baseHeight) - (wa.y + wa.height)) < SNAP) { sy = wa.y + wa.height - dockState.baseHeight; snapped = true }
 
       const finalX = snapped ? sx : bounds.x
-      const finalDockY = snapped ? sy : dockY
+      // v1.2.61: не сохранять позицию ниже рабочей области (за панель задач)
+      const maxDockY = wa.y + wa.height - dockState.baseHeight
+      let finalDockY = snapped ? sy : dockY
+      if (finalDockY > maxDockY) finalDockY = maxDockY
       const finalWinY = finalDockY - DOCK_PREVIEW_RESERVE
       if (snapped) dockState.win.setPosition(finalX, finalWinY)
       storage.set('dockPosition', { x: finalX, y: finalDockY })
