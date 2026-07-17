@@ -271,25 +271,8 @@ ipcMain.on('dock:resize', (_event, width, height) => {
   }
 })
 
-// ── Dock: preview-space — вырастить окно вверх под подсказку (v1.2.60) ──
-ipcMain.on('dock:preview-space', (_event, extraH) => {
-  // v1.2.60: резерв теперь 0 — растим окно под тултип по требованию, потом сжимаем.
-  if (!dockState.win || dockState.win.isDestroyed()) return
-  const bounds = dockState.win.getBounds()
-  const dockBottomY = bounds.y + bounds.height
-  if (!extraH || extraH <= 0) {
-    const normalH = dockState.baseHeight + DOCK_PREVIEW_RESERVE
-    if (bounds.height !== normalH) {
-      const nb = { x: bounds.x, y: dockBottomY - normalH, width: bounds.width, height: normalH }
-      dockState.win.setBounds(nb)
-    }
-    return
-  }
-  const neededH = dockState.baseHeight + Math.max(DOCK_PREVIEW_RESERVE, extraH)
-  if (neededH <= bounds.height) return
-  const nb = { x: bounds.x, y: dockBottomY - neededH, width: bounds.width, height: neededH }
-  dockState.win.setBounds(nb)
-})
+// v1.2.71: обработчик dock:preview-space УДАЛЁН — старое всплывающее превью,
+// которое растило окно дока, заменено отдельным окном-подсказкой (v1.2.70).
 
 // ── Dock: ctx-menu-space — временно расширить окно вверх для контекстного меню ──
 ipcMain.on('dock:ctx-menu-space', (_event, extraH) => {

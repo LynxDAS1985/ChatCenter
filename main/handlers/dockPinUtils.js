@@ -67,6 +67,10 @@ export function createTooltipBrowserWindow(deps) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // v1.2.71 (ловушка #28): у СКРЫТОГО окна Electron засыпают rAF/таймеры →
+      // после первого показа+скрытия тултип не мог сообщить размер и не
+      // показывался снова. false = renderer работает и в hidden state.
+      backgroundThrottling: false,
     }
   })
   win.setAlwaysOnTop(true, 'screen-saver', 1)

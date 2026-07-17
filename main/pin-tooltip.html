@@ -70,10 +70,10 @@
     // заметка
     if (d.note) { noteEl.textContent = '📝 ' + d.note; noteEl.style.display = '' }
     else { noteEl.style.display = 'none' }
-    // сообщить main фактический размер → main спозиционирует окно НАД вкладкой и покажет
-    requestAnimationFrame(() => {
-      try { window.tooltipApi.resize(card.offsetWidth, card.offsetHeight) } catch (_) {}
-    })
+    // v1.2.71: сообщаем размер СРАЗУ (чтение offsetHeight форсит раскладку),
+    // без requestAnimationFrame — у скрытого окна rAF засыпает и подсказка
+    // не показывалась повторно. Прямой вызов работает и когда окно скрыто.
+    try { window.tooltipApi.resize(card.offsetWidth, card.offsetHeight) } catch (_) {}
   })
 </script>
 </body>

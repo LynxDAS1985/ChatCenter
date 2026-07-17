@@ -11,7 +11,6 @@
   const catUrgentEl = document.getElementById('catUrgent')
   const catWorkEl = document.getElementById('catWork')
   const catLaterEl = document.getElementById('catLater')
-  let previewEl = null
   let previewTimeout = null
   let dragSrcTab = null
   let ctxMenuEl = null
@@ -301,15 +300,11 @@
   // растила окно дока на наведение и порождала петлю дёрга (см. комментарий выше
   // у вкладки). Контент задачи открывается кликом (разворот карточки).
 
-  // v1.2.69: hidePreview оставлена как безопасная очистка (вызывается на клике/
-  // правом клике/удалении вкладки). Т.к. подсказка больше не показывается,
-  // previewEl всегда null и тело — no-op; оставлено, чтобы не трогать вызовы.
+  // v1.2.71: hidePreview — безвредная очистка (зовётся на клике/правом клике/
+  // удалении вкладки). Старое всплывающее превью убрано (подсказка теперь —
+  // отдельное окно), поэтому тело сведено к очистке таймера.
   function hidePreview() {
     if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null }
-    if (previewEl) {
-      previewEl.remove(); previewEl = null
-      window.dockApi.requestPreviewSpace(0)
-    }
   }
 
   function removeTab(pinId) {

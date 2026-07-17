@@ -84,6 +84,13 @@ console.log('\n── Анти-дёрг: ──')
 check('showPreview удалён (не растит окно дока на hover)', !dockJs.includes('function showPreview'))
 check('диагностический лог [dock-bounds] убран', !handlers.includes('dock-bounds'))
 
+// ── v1.2.71: показ повторно (не «один раз») + чистка мёртвого кода ──
+console.log('\n── Повторный показ + чистка: ──')
+check('backgroundThrottling:false (rAF/таймеры живут у скрытого окна)', /createTooltipBrowserWindow[\s\S]*backgroundThrottling:\s*false/.test(utils))
+check('размер сообщается БЕЗ requestAnimationFrame-вызова (прямой вызов)', !html.includes('requestAnimationFrame('))
+check('мёртвый обработчик dock:preview-space удалён', !handlers.includes("ipcMain.on('dock:preview-space'"))
+check('мёртвый requestPreviewSpace удалён из preload дока', !dockPreload.includes('requestPreviewSpace'))
+
 // ── Сборка (prod) ──
 console.log('\n── Сборка: ──')
 check('копирование pin-tooltip.html в out/', viteCfg.includes('pin-tooltip.html'))

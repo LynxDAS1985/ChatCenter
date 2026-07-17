@@ -22,8 +22,6 @@ contextBridge.exposeInMainWorld('dockApi', {
   resize: (w, h) => ipcRenderer.send('dock:resize', w, h),
   // Dock → Main: закрыть/скрыть dock
   closeDock: () => ipcRenderer.send('dock:close'),
-  // Dock → Main: запросить место для превью тултипа
-  requestPreviewSpace: (extraH) => ipcRenderer.send('dock:preview-space', extraH),
   // Dock → Main: сохранить порядок табов
   saveTabOrder: (order) => ipcRenderer.send('dock:save-tab-order', order),
   // v0.71.0: Dock → Main: перейти в чат из dock
