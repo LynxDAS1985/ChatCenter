@@ -78,6 +78,9 @@ console.log('\n── Наведение (задержка ~0.4с): ──')
 check('mouseenter с задержкой 400мс', /mouseenter[\s\S]*setTimeout[\s\S]*400/.test(dockJs))
 check('передаёт прямоугольник вкладки (getBoundingClientRect)', dockJs.includes('getBoundingClientRect') && dockJs.includes('showTooltip'))
 check('mouseleave → hideTooltip', /mouseleave[\s\S]*hideTooltip/.test(dockJs))
+// v1.2.72: грация скрытия ~150мс (не мигает при переходе между вкладками)
+check('скрытие с грацией ~150мс (mouseleave setTimeout 150)', /mouseleave[\s\S]{0,400}setTimeout[\s\S]{0,200}150/.test(dockJs))
+check('возврат мыши отменяет скрытие (tooltipHideTimer)', dockJs.includes('tooltipHideTimer'))
 
 // ── Нет ресайза дока на наведение (нет старого requestPreviewSpace-роста) ──
 console.log('\n── Анти-дёрг: ──')

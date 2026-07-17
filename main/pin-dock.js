@@ -12,6 +12,8 @@
   const catWorkEl = document.getElementById('catWork')
   const catLaterEl = document.getElementById('catLater')
   let previewTimeout = null
+  // v1.2.72: общий таймер отложенного скрытия подсказки (грация ~150мс).
+  let tooltipHideTimer = null
   let dragSrcTab = null
   let ctxMenuEl = null
   let ctxPinId = null
@@ -233,6 +235,9 @@
     let tooltipTimer = null
     tab.addEventListener('mouseenter', () => {
       if (ctxMenuEl) return
+      // v1.2.72: мышь вернулась/перешла на другую вкладку → отменяем отложенное
+      // скрытие (иначе подсказка мигнёт).
+      if (tooltipHideTimer) { clearTimeout(tooltipHideTimer); tooltipHideTimer = null }
       if (tooltipTimer) clearTimeout(tooltipTimer)
       tooltipTimer = setTimeout(() => {
         tooltipTimer = null
@@ -242,7 +247,11 @@
     })
     tab.addEventListener('mouseleave', () => {
       if (tooltipTimer) { clearTimeout(tooltipTimer); tooltipTimer = null }
-      window.dockApi.hideTooltip()
+      // v1.2.72: прячем не сразу, а через ~150мс. Если за это время мышь вернулась
+      // (или перешла на другую вкладку — там сработает mouseenter) — скрытие
+      // отменяется, подсказка не мигает.
+      if (tooltipHideTimer) clearTimeout(tooltipHideTimer)
+      tooltipHideTimer = setTimeout(() => { tooltipHideTimer = null; window.dockApi.hideTooltip() }, 150)
     })
 
     // v1.2.59: любой клик по табу разворачивает нашу карточку.
