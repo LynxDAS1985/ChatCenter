@@ -94,13 +94,23 @@ export default function useAppIPCListeners({
   useEffect(() => {
     return window.api?.on('notify:open-album', async ({ chatId, messageIds, index }) => {
       if (!chatId || !Array.isArray(messageIds) || !messageIds.length) return
-      const results = await Promise.all(messageIds.map(mid =>
-        window.api.invoke('tg:download-media', { chatId, messageId: mid, thumb: false }).catch(() => null)
+      const ids = messageIds.filter(m => m != null)
+      if (!ids.length) return
+      const clicked = Math.max(0, Math.min(ids.length - 1, index || 0))
+      // v1.2.74 (B1): нажатое фото — открываем смотрелку СРАЗУ, не ждём остальные.
+      const one = await window.api.invoke('tg:download-media', { chatId, messageId: ids[clicked], thumb: false }).catch(() => null)
+      if (one && one.ok) { try { window.api.invoke('photo:open', { srcs: [one.path], index: 0 }) } catch (_) {} }
+      // Остальные фото — в фоне, затем обновляем список в уже открытой смотрелке
+      // (photo:open переиспользует окно через photo:set-srcs — см. photoViewerHandler.js).
+      const results = await Promise.all(ids.map((mid, i) =>
+        i === clicked ? Promise.resolve(one)
+          : window.api.invoke('tg:download-media', { chatId, messageId: mid, thumb: false }).catch(() => null)
       ))
       const srcs = results.map(r => (r && r.ok) ? r.path : null).filter(Boolean)
-      if (!srcs.length) return
-      const safeIndex = Math.max(0, Math.min(srcs.length - 1, index || 0))
-      try { window.api.invoke('photo:open', { srcs, index: safeIndex }) } catch (_) {}
+      if (srcs.length <= 1) return
+      const clickedSrc = one && one.ok ? one.path : null
+      const newIndex = clickedSrc ? Math.max(0, srcs.indexOf(clickedSrc)) : 0
+      try { window.api.invoke('photo:open', { srcs, index: newIndex }) } catch (_) {}
     })
   }, [])
 

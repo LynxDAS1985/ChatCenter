@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('notifApi', {
   // data: { chatId, messageIds:[...], index }. Main пересылает главному окну,
   // оно качает полноразмеры и зовёт существующий photo:open.
   openPhoto: (data) => ipcRenderer.send('notif:open-photo', data),
+  // v1.2.74 (A1): Main → Notification window: чёткое превью плитки альбома догрузилось.
+  // data: { albumId, messageId, src }. Окно заменяет мутную плитку на чёткую.
+  onAlbumThumb: (callback) => { ipcRenderer.on('notif:album-thumb', (_event, data) => callback(data)) },
   // v0.89.20: diagnostic log в chatcenter.log через main process app:log IPC.
   // Используется для расследования бага «остаётся видимая полоска после dismiss».
   log: (level, message) => {

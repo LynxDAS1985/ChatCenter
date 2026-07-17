@@ -119,6 +119,15 @@ export function initNotifHandlers(deps) {
     mainWindow.webContents.send('notify:open-album', payload)
   })
 
+  // v1.2.74 (A1): чёткое превью плитки альбома догрузилось в главном окне —
+  // пересылаем его в окно уведомления, чтобы заменить мутную заглушку.
+  // payload: { albumId, messageId, src }.
+  ipcMain.on('notif:album-thumb', (_event, payload) => {
+    const notifWin = getNotifWin()
+    if (!notifWin || notifWin.isDestroyed() || !payload) return
+    notifWin.webContents.send('notif:album-thumb', payload)
+  })
+
   let lastNotifBounds = null
   ipcMain.on('notif:resize', (_event, height, meta) => {
     const notifWin = getNotifWin()

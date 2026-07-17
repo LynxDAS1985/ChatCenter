@@ -2250,22 +2250,12 @@ src/__tests__/systemDiagnostics.test.cjs:
 
 **Правило**: не держать большие прозрачные «резервные» зоны в frameless-окне — они молча ловят клики. Если нужно место под всплывашку — растить окно ПО ТРЕБОВАНИЮ и сжимать обратно (`DOCK_PREVIEW_RESERVE=0` + `dock:ctx-menu-space`/`dock:preview-space` в [dockPinHandlers.js](../../main/handlers/dockPinHandlers.js)), а не резервировать статически.
 
-## ✅ Альбом Telegram (медиа-группа) в ОДНОЙ карточке — «живая карточка» (v1.2.66, 17 июля 2026)
+## ✅ Альбом Telegram (медиа-группа) в ОДНОЙ карточке (v1.2.66→v1.2.74)
 
-**Симптом** (пользователь со скриншотом): один пост-альбом из Telegram (текст + 3 фото) приходил как **4 отдельные карточки** уведомлений — одна с текстом и три «📷 Фото».
+**Симптом**: пост-альбом (текст + N фото) приходил как **N отдельных карточек**. Корень — TDLib шлёт **отдельный** `updateNewMessage` на каждую часть альбома (общий `media_album_id`), а путь уведомлений (`app:custom-notify` на каждое) шёл мимо склейки, которая есть в чате (`collapseAlbums`/`MediaAlbum.jsx`).
 
-**Корень — устройство Telegram/TDLib API.** Альбом (медиа-группа) на сервере — это **не одно сообщение, а несколько отдельных**, связанных общим `media_album_id`. TDLib шлёт **отдельный** `updateNewMessage` на каждое → `message:new` на каждое → `app:custom-notify` на каждое ([nativeStoreIpc.js](../../src/native/store/nativeStoreIpc.js), [tdlibClient.js:577](../../main/native/backends/tdlibClient.js#L577)). В списке чата альбом склеивается (`collapseAlbums`/`MediaAlbum.jsx`), а путь уведомлений шёл мимо.
+**Почему НЕ таймер-буфер**: 🥇 у альбома **нет** признака «конец» и «сколько всего» — *«this never needed by Telegram apps»* ([tdlib/td#2523](https://github.com/tdlib/td/issues/2523)). Любой таймер = угадывание. Первая попытка (буфер 600мс `albumNotifyBuffer.js`, v1.2.65) удалена.
 
-**Почему НЕ таймер-буфер (важно).** 🥇 Автор TDLib прямо пишет: у альбома **нет** поля «сколько всего» и **нет** сигнала «конец» — *«There is no way to be absolutely sure that there are no other album messages, but this never needed by Telegram apps»* ([tdlib/td#2523](https://github.com/tdlib/td/issues/2523)). Значит **любой таймер ожидания = угадывание** by design: либо ждёт лишнее, либо режет «хвост» на медленной сети. (Первая попытка v1.2.65 — таймер-буфер 600мс `albumNotifyBuffer.js` — по этой причине **удалена**.)
+**Решение — «живая карточка» + листание**: каждое сообщение альбома шлётся сразу с меткой `album:{id,chatId,tileThumb,tileMessageId,tileText}`; окно группирует по `album.id` (`albumHosts` Map), дорисовывает плитку и продлевает жизнь карточки (`addAlbumTileToHost`/`extendHostLife`). v1.2.74: сетка листается **страницами по 4** (`renderAlbumGrid` пагинация), высота **фиксирована** (`.album-grid height`) → карточка не прыгает; неполная страница ровная (`.album-tile.wide`); чёткие плитки — `applyAlbumSharp` + `albumThumbPreload.js` (канал `notif:album-thumb`); быстрое открытие смотрелки — `photo:open` reuse.
 
-**Решение v1.2.66 — «живая карточка» (update-on-arrival), как в Telegram Desktop/Web:**
-1. Каждое альбомное сообщение шлётся **сразу** (как одиночное), но с меткой `album: {id, chatId, tileThumb, tileMessageId}` → [nativeStoreIpc.js](../../src/native/store/nativeStoreIpc.js) (`message.groupedId`).
-2. Окно уведомления группирует по `album.id`: первая часть создаёт карточку с сеткой, каждая следующая **дорисовывает плитку** в неё и **продлевает жизнь** (сброс таймера автозакрытия) → [notification.js](../../main/notification.js) (`albumHosts` Map, ветка в `addNotification`), функции `addAlbumTileToHost`/`extendHostLife` в [notification-helpers.js](../../main/notification-helpers.js).
-3. Сетка максимум **2×2**, на 4-й плитке бейдж «+N» (высота карточки фиксирована — снимает риск роста окна). thumbs = `strippedThumb` (мгновенные встроенные превью, без загрузки). `messageIds` копятся **все** — для смотрелки.
-4. Клик по плитке → `notifApi.openPhoto` → `notif:open-photo` → main пересылает `notify:open-album` главному окну → оно качает полноразмеры (`tg:download-media`) → существующая смотрелка `photo:open` ([useAppIPCListeners.js](../../src/hooks/useAppIPCListeners.js), [notifHandlers.js](../../main/handlers/notifHandlers.js)).
-
-**Почему «живая карточка» = «ровно сколько надо»:** карточка отражает то, что реально пришло на текущий момент, и дополняется когда бы части ни прилетели (пока карточка видна). Если карточка уже закрылась — поздний «хвост» создаст новую (честно). Звук — один на альбом (существующий throttle 3 сек гасит повторы).
-
-**Ловушки при правке:** переиспользован механизм ghost-item/cleanup стэка (`isStackChild`); при закрытии хоста альбома — очистка `albumHosts` в `dismissItem`/`forceRemoveItem` (иначе поздняя часть попадёт в мёртвую карточку). Тесты: `src/__tests__/albumLiveCard.vitest.js`.
-
-**Статус**: ✅ реализовано в v1.2.66.
+**Ловушки**: переиспользован ghost-item/cleanup стэка; при закрытии хоста — очистка `albumHosts` в `dismissItem`/`forceRemoveItem`. Тесты: `albumLiveCard.vitest.js`. Детали → features.md v1.2.74. **Файл у лимита 200 КБ — кандидат на разбиение.**

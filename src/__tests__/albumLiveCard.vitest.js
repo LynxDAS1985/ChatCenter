@@ -1,114 +1,140 @@
-// v1.2.66: тесты «живой карточки» альбома (update-on-arrival, без таймера).
+// v1.2.66→v1.2.74: тесты карточки альбома в уведомлении.
 // @vitest-environment jsdom
 //
-// Проверяем чистую логику дорисовки плитки в notification-helpers.js:
-// addAlbumTileToHost накапливает messageIds/thumbs/count и перерисовывает сетку.
-// Механизм заменил прежний таймер-буфер (albumNotifyBuffer) — угадывание времени
-// убрано, карточка отражает реально пришедшие части. См. TDLib issue #2523.
+// Покрывают чистую логику notification-helpers.js:
+//   - renderAlbumGrid: листание страницами по 4, фикс-высота, ровная неполная страница;
+//   - addAlbumTileToHost: накопление ВСЕХ частей альбома (для листания);
+//   - applyAlbumSharp: замена мутной плитки на чёткое превью (A1);
+//   - подпись из поздней части (Совет 5).
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 
-// notification-helpers.js — не ES-модуль (global script), при импорте вешает
-// функции в window.__ccNotifHelpers. Импортируем ради сайд-эффекта.
 beforeAll(async () => {
+  window.notifApi = { openPhoto: vi.fn() }
   await import('../../main/notification-helpers.js')
 })
 
-function makeHost(hasCaption = false, bodyText = '🖼 Фото') {
-  const el = document.createElement('div')
-  el.dataset.id = 'h1'
-  const grid = document.createElement('div')
-  grid.className = 'album-grid'
-  el.appendChild(grid)
-  // body-text со span (как рисует notification.js при showMessageTime)
-  const bt = document.createElement('div')
-  bt.className = 'body-text'
-  const span = document.createElement('span')
-  span.className = 'msg-text-content'
-  span.textContent = bodyText
-  bt.appendChild(span)
-  el.appendChild(bt)
-  return {
-    el,
-    album: { id: 'g1', chatId: 'c1', thumbs: ['data:t0'], messageIds: ['1'], count: 1, hasCaption },
-    dismissMs: 0,
-    timer: null,
-  }
+function makeAlbum(n, extra) {
+  const thumbs = [], ids = []
+  for (let i = 1; i <= n; i++) { thumbs.push('data:thumb' + i); ids.push(String(i)) }
+  return Object.assign({ id: 'g1', chatId: 'tg_1:-100', thumbs: thumbs, messageIds: ids, count: n, page: 0, sharpThumbs: {} }, extra || {})
 }
 
-describe('addAlbumTileToHost — живая карточка альбома', () => {
-  it('добавляет плитку: count++, messageIds и thumbs накапливаются', () => {
+// host с уже отрисованным .album-container (как в реальной карточке)
+function makeHost(album, dismissMs) {
+  const H = window.__ccNotifHelpers
+  const el = document.createElement('div')
+  el.dataset.id = 'h1'
+  const bt = document.createElement('div'); bt.className = 'body-text'
+  const span = document.createElement('span'); span.className = 'msg-text-content'; span.textContent = '🖼 Фото'
+  bt.appendChild(span); el.appendChild(bt)
+  el.appendChild(H.renderAlbumGrid(album))
+  return { el, album: album, dismissMs: dismissMs || 0, timer: null }
+}
+
+describe('renderAlbumGrid — листание страницами по 4', () => {
+  it('4 фото → одна страница, стрелки скрыты, 4 плитки', () => {
     const H = window.__ccNotifHelpers
-    const host = makeHost()
-    const ok = H.addAlbumTileToHost(host, { album: { tileThumb: 'data:t1', tileMessageId: '2' } }, () => {}, null)
-    expect(ok).toBe(true)
-    expect(host.album.count).toBe(2)
-    expect(host.album.messageIds).toEqual(['1', '2'])
-    expect(host.album.thumbs).toEqual(['data:t0', 'data:t1'])
+    const c = H.renderAlbumGrid(makeAlbum(4))
+    expect(c.querySelectorAll('.album-tile').length).toBe(4)
+    expect(c.querySelector('.album-count').textContent).toBe('1–4 / 4')
+    expect(c.querySelectorAll('.album-dots .d').length).toBe(0) // одна страница — точек нет
   })
 
-  it('не больше 4 миниатюр в сетке, но messageIds — ВСЕ (для смотрелки)', () => {
+  it('6 фото → 2 страницы; стрелка вперёд показывает 2 фото и счётчик 5–6 / 6', () => {
     const H = window.__ccNotifHelpers
-    const host = makeHost()
+    const album = makeAlbum(6)
+    const c = H.renderAlbumGrid(album)
+    expect(c.querySelectorAll('.album-tile').length).toBe(4) // стр.1 = 4
+    expect(c.querySelectorAll('.album-dots .d').length).toBe(2)
+    c.querySelector('.album-arrow.r').click() // листаем вперёд
+    expect(c.querySelectorAll('.album-tile').length).toBe(2) // стр.2 = 2
+    expect(c.querySelector('.album-count').textContent).toBe('5–6 / 6')
+  })
+
+  it('неполная страница из 2 фото → один ряд (grid-template-rows: 1fr)', () => {
+    const H = window.__ccNotifHelpers
+    const album = makeAlbum(6); album.page = 1
+    const c = H.renderAlbumGrid(album)
+    expect(c.querySelector('.album-grid').style.gridTemplateRows).toBe('1fr')
+  })
+
+  it('страница из 3 фото → нижняя плитка широкая (без «дырки»)', () => {
+    const H = window.__ccNotifHelpers
+    const album = makeAlbum(7); album.page = 1 // стр.2 = фото 5,6,7 → 3 плитки
+    const c = H.renderAlbumGrid(album)
+    const tiles = c.querySelectorAll('.album-tile')
+    expect(tiles.length).toBe(3)
+    expect(tiles[2].classList.contains('wide')).toBe(true) // 3-я широкая
+  })
+
+  it('клик по плитке открывает смотрелку с глобальным индексом', () => {
+    const H = window.__ccNotifHelpers
+    window.notifApi.openPhoto.mockClear()
+    const album = makeAlbum(6); album.page = 1
+    const c = H.renderAlbumGrid(album)
+    c.querySelectorAll('.album-tile')[0].click() // первое на стр.2 = глобальный индекс 4
+    expect(window.notifApi.openPhoto).toHaveBeenCalledWith(expect.objectContaining({ chatId: 'tg_1:-100', index: 4 }))
+  })
+
+  it('плитка без чёткого превью — мутная с крутилкой (blur+loading)', () => {
+    const H = window.__ccNotifHelpers
+    const c = H.renderAlbumGrid(makeAlbum(4))
+    const t = c.querySelector('.album-tile')
+    expect(t.classList.contains('blur')).toBe(true)
+    expect(t.classList.contains('loading')).toBe(true)
+  })
+})
+
+describe('addAlbumTileToHost — накопление частей альбома', () => {
+  it('добавляет части: messageIds/thumbs накапливаются ВСЕ, count растёт', () => {
+    const H = window.__ccNotifHelpers
+    const host = makeHost(makeAlbum(1))
     for (let i = 2; i <= 6; i++) {
-      H.addAlbumTileToHost(host, { album: { tileThumb: 'data:t' + i, tileMessageId: '' + i } }, () => {}, null)
+      H.addAlbumTileToHost(host, { album: { tileThumb: 'data:t' + i, tileMessageId: String(i) } }, () => {}, null)
     }
-    expect(host.album.thumbs.length).toBe(4)
     expect(host.album.messageIds.length).toBe(6)
+    expect(host.album.thumbs.length).toBe(6)
     expect(host.album.count).toBe(6)
+    // контейнер перерисован — на стр.1 снова 4 плитки, появились точки (2 страницы)
+    expect(host.el.querySelectorAll('.album-tile').length).toBe(4)
+    expect(host.el.querySelectorAll('.album-dots .d').length).toBe(2)
+  })
+})
+
+describe('applyAlbumSharp — чёткое превью (A1)', () => {
+  it('сохраняет чёткое превью и заменяет мутную плитку', () => {
+    const H = window.__ccNotifHelpers
+    const host = makeHost(makeAlbum(4))
+    H.applyAlbumSharp(host, '1', 'cc-media://sharp1')
+    expect(host.album.sharpThumbs['1']).toBe('cc-media://sharp1')
+    const tile = host.el.querySelector('.album-tile[data-mid="1"]')
+    expect(tile.style.backgroundImage).toContain('cc-media://sharp1')
+    expect(tile.classList.contains('blur')).toBe(false)
+    expect(tile.classList.contains('loading')).toBe(false)
   })
 
-  it('сетка перерисовывается (в гриде появляются плитки)', () => {
+  it('чёткое превью для плитки с другой страницы сохраняется и применяется при листании', () => {
     const H = window.__ccNotifHelpers
-    const host = makeHost()
-    H.addAlbumTileToHost(host, { album: { tileThumb: 'data:t1', tileMessageId: '2' } }, () => {}, null)
-    const grid = host.el.querySelector('.album-grid')
-    expect(grid).toBeTruthy()
-    expect(grid.querySelectorAll('.album-tile').length).toBe(2)
+    const album = makeAlbum(6)
+    const host = makeHost(album)
+    H.applyAlbumSharp(host, '5', 'cc-media://sharp5') // фото 5 — на стр.2
+    expect(album.sharpThumbs['5']).toBe('cc-media://sharp5')
+    // перелистываем на стр.2 — плитка уже чёткая
+    host.el.querySelector('.album-arrow.r').click()
+    const tile = host.el.querySelector('.album-tile[data-mid="5"]')
+    expect(tile.classList.contains('blur')).toBe(false)
   })
+})
 
-  it('перерисовка показывает максимум 4 плитки + бейдж «+N»', () => {
+describe('подпись из поздней части (Совет 5)', () => {
+  it('подпись подставляется, если её ещё не было; повторно не перетирается', () => {
     const H = window.__ccNotifHelpers
-    const host = makeHost()
-    for (let i = 2; i <= 7; i++) {
-      H.addAlbumTileToHost(host, { album: { tileThumb: 'data:t' + i, tileMessageId: '' + i } }, () => {}, null)
-    }
-    const grid = host.el.querySelector('.album-grid')
-    expect(grid.querySelectorAll('.album-tile').length).toBe(4)
-    const more = grid.querySelector('.album-more')
-    expect(more).toBeTruthy()
-    expect(more.textContent).toBe('+3') // всего 7, показано 4 → +3
-  })
-
-  it('extendHostLife вызывается через переданный dismissItem-колбэк', () => {
-    const H = window.__ccNotifHelpers
-    const host = makeHost()
-    host.dismissMs = 5000 // чтобы extendHostLife реально перезапустил таймер
-    const dismissItem = vi.fn()
-    H.addAlbumTileToHost(host, { album: { tileThumb: 'data:t1', tileMessageId: '2' } }, dismissItem, null)
-    // таймер выставлен (не null) — жизнь продлена
-    expect(host.timer).not.toBeNull()
-  })
-
-  it('нет host.album — no-op, возвращает false', () => {
-    const H = window.__ccNotifHelpers
-    const el = document.createElement('div')
-    const ok = H.addAlbumTileToHost({ el, dismissMs: 0 }, { album: { tileMessageId: '2' } }, () => {}, null)
-    expect(ok).toBe(false)
-  })
-
-  // v1.2.66 (Совет 5): подпись из поздней части альбома
-  it('подпись из поздней части подставляется в body, если её ещё не было', () => {
-    const H = window.__ccNotifHelpers
-    const host = makeHost(false, '🖼 Фото') // подписи нет
+    const album = makeAlbum(1); album.hasCaption = false
+    const host = makeHost(album)
     H.addAlbumTileToHost(host, { album: { tileMessageId: '2', tileText: 'Подпись поста' } }, () => {}, null)
     expect(host.el.querySelector('.msg-text-content').textContent).toBe('Подпись поста')
     expect(host.album.hasCaption).toBe(true)
-  })
-
-  it('если подпись уже есть — поздняя часть её НЕ перезаписывает', () => {
-    const H = window.__ccNotifHelpers
-    const host = makeHost(true, 'Первая подпись') // подпись уже показана
-    H.addAlbumTileToHost(host, { album: { tileMessageId: '2', tileText: 'Вторая подпись' } }, () => {}, null)
-    expect(host.el.querySelector('.msg-text-content').textContent).toBe('Первая подпись')
+    H.addAlbumTileToHost(host, { album: { tileMessageId: '3', tileText: 'Другая' } }, () => {}, null)
+    expect(host.el.querySelector('.msg-text-content').textContent).toBe('Подпись поста')
   })
 })

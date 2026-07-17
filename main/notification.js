@@ -453,15 +453,17 @@
     }
     textWrap.appendChild(bodyText)
 
-    // v1.2.66: альбом — накопительное состояние карточки (thumbs ≤4 для сетки,
-    // messageIds — все для смотрелки, count — общий счётчик для «+N»). Первая часть
-    // рисует сетку из 1 плитки; следующие дорисовывают через addAlbumTileToHost.
+    // v1.2.66→v1.2.74: альбом — накопительное состояние карточки. thumbs/messageIds —
+    // ВСЕ пришедшие части (для листания страницами по 4). page — текущая страница.
+    // sharpThumbs — чёткие превью по messageId (A1, догружаются отдельно).
     const albumState = (data.album && data.album.id) ? {
       id: data.album.id,
       chatId: data.album.chatId,
-      thumbs: data.album.tileThumb ? [data.album.tileThumb] : [],
-      messageIds: data.album.tileMessageId ? [data.album.tileMessageId] : [],
+      thumbs: data.album.tileThumb ? [data.album.tileThumb] : [''],
+      messageIds: [data.album.tileMessageId != null ? data.album.tileMessageId : null],
       count: 1,
+      page: 0,
+      sharpThumbs: {},
       // v1.2.66 (Совет 5): подпись уже показана, если первая часть несёт текст.
       // Иначе поздняя часть с tileText обновит body карточки (addAlbumTileToHost).
       hasCaption: !!(data.album.tileText),
@@ -701,6 +703,15 @@
   // IPC listeners
   window.notifApi.onNotification((data) => addNotification(data))
   window.notifApi.onDismiss((id) => dismissItem(id, true))
+  // v1.2.74 (A1): пришло чёткое превью плитки альбома — заменяем мутную заглушку.
+  if (window.notifApi.onAlbumThumb) {
+    window.notifApi.onAlbumThumb((data) => {
+      if (!data || !data.albumId) return
+      const hostId = albumHosts.get(data.albumId)
+      const host = hostId != null ? items.get(hostId) : null
+      if (host) window.__ccNotifHelpers.applyAlbumSharp(host, data.messageId, data.src)
+    })
+  }
   window.notifApi.onUpdateIcon((data) => {
     const item = items.get(String(data?.id || ''))
     if (!item || item.isStackChild || !data?.iconDataUrl) return

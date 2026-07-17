@@ -5,6 +5,8 @@
 import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostics.js'
 // v0.96.0 (Phase 0 M0.4): NotificationSource — паспорт сообщения для уведомлений.
 import { createNotificationSource } from '../../shared/notificationSource.js'
+// v1.2.74 (A1): фоновая догрузка чёткого превью плиток альбома в окно уведомления.
+import { preloadAlbumThumb } from '../utils/albumThumbPreload.js'
 
 // v1.1.9: localStorage cache вынесен в nativeStoreCache.js. Импортируем для
 // внутреннего использования + re-export для обратной совместимости (внешние
@@ -504,6 +506,8 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             // tileText — подпись части (может быть не у первого фото). null для обычных.
             album: message.groupedId ? { id: String(message.groupedId), chatId, tileThumb: message.strippedThumb || null, tileMessageId: message?.id != null ? String(message.id) : null, tileText: message.text || null } : null,
           })
+          // v1.2.74 (A1): фоновая догрузка чёткого превью для плитки альбома.
+          if (message.groupedId) preloadAlbumThumb(message, chatId)
         } catch(_) {}
       }
     }

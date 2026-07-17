@@ -86,31 +86,85 @@ function forceFinalSlideInState(el) {
 // плитке открывает ТУ ЖЕ смотрелку что и в программе: window.notifApi.openPhoto
 // → notif:open-photo → main → главное окно качает полноразмеры → photo:open.
 // thumbs — strippedThumb (крошечные встроенные превью TDLib, мгновенно, без загрузки).
+// v1.2.74: сетка альбома с ЛИСТАНИЕМ страницами по 4 (вместо «+N»).
+// - высота области фиксирована (CSS .album-grid height) → карточка не прыгает;
+// - неполная последняя страница раскладывается ровно (1 фото — на всю ширину,
+//   3 фото — нижнее широкое) без «дырки»;
+// - плитка чёткая, если чёткое превью уже догружено (album.sharpThumbs[mid]),
+//   иначе мутная заглушка (strippedThumb) + крутилка (A1, applyAlbumSharp);
+// - клик по плитке открывает смотрелку на весь экран (B1).
+const ALBUM_PAGE = 4
 function renderAlbumGrid(album) {
-  const grid = document.createElement('div')
-  grid.className = 'album-grid'
+  const ids = Array.isArray(album && album.messageIds) ? album.messageIds : []
   const thumbs = Array.isArray(album && album.thumbs) ? album.thumbs : []
-  const total = (album && album.count) || thumbs.length
-  const shown = Math.min(thumbs.length, 4)
-  for (let i = 0; i < shown; i++) {
-    const tile = document.createElement('div')
-    tile.className = 'album-tile'
-    tile.style.backgroundImage = 'url("' + thumbs[i] + '")'
-    if (i === 3 && total > 4) {
-      const more = document.createElement('div')
-      more.className = 'album-more'
-      more.textContent = '+' + (total - 4)
-      tile.appendChild(more)
+  const total = ids.length || thumbs.length
+  const pages = Math.max(1, Math.ceil(total / ALBUM_PAGE))
+  if (typeof album.page !== 'number') album.page = 0
+  if (album.page >= pages) album.page = pages - 1
+  if (album.page < 0) album.page = 0
+
+  const container = document.createElement('div')
+  container.className = 'album-container'
+  const wrap = document.createElement('div'); wrap.className = 'album-wrap'
+  const grid = document.createElement('div'); grid.className = 'album-grid'
+  const prev = document.createElement('button'); prev.className = 'album-arrow l'; prev.textContent = '‹'; prev.title = 'Предыдущие 4'
+  const next = document.createElement('button'); next.className = 'album-arrow r'; next.textContent = '›'; next.title = 'Следующие 4'
+  const count = document.createElement('div'); count.className = 'album-count'
+  wrap.appendChild(grid); wrap.appendChild(prev); wrap.appendChild(next); wrap.appendChild(count)
+  const dots = document.createElement('div'); dots.className = 'album-dots'
+  container.appendChild(wrap); container.appendChild(dots)
+
+  function renderPage() {
+    grid.innerHTML = ''
+    const start = album.page * ALBUM_PAGE
+    const end = Math.min(start + ALBUM_PAGE, total)
+    const cnt = end - start
+    grid.style.gridTemplateRows = (cnt <= 2) ? '1fr' : 'repeat(2, 1fr)'
+    for (let i = start; i < end; i++) {
+      const localIdx = i - start
+      const mid = ids[i]
+      const sharp = album.sharpThumbs && mid != null ? album.sharpThumbs[mid] : null
+      const tile = document.createElement('div')
+      tile.className = 'album-tile' + (sharp ? '' : ' blur loading')
+      if (cnt === 1 || (cnt === 3 && localIdx === 2)) tile.classList.add('wide')
+      if (mid != null) tile.dataset.mid = String(mid)
+      tile.style.backgroundImage = 'url("' + (sharp || thumbs[i] || '') + '")'
+      const spin = document.createElement('div'); spin.className = 'tile-spin'; tile.appendChild(spin)
+      const gi = i
+      tile.addEventListener('click', (e) => {
+        e.stopPropagation()
+        try { window.notifApi.openPhoto({ chatId: album.chatId, messageIds: ids, index: gi }) } catch (_) {}
+      })
+      grid.appendChild(tile)
     }
-    tile.addEventListener('click', (e) => {
-      e.stopPropagation()
-      try {
-        window.notifApi.openPhoto({ chatId: album.chatId, messageIds: album.messageIds || [], index: i })
-      } catch (_) {}
-    })
-    grid.appendChild(tile)
+    count.textContent = (start + 1) + (cnt > 1 ? '–' + end : '') + ' / ' + total
+    prev.classList.toggle('disabled', album.page === 0)
+    next.classList.toggle('disabled', album.page >= pages - 1)
+    dots.innerHTML = ''
+    if (pages > 1) {
+      for (let p = 0; p < pages; p++) {
+        const d = document.createElement('div'); d.className = 'd' + (p === album.page ? ' on' : '')
+        ;(function (k) { d.addEventListener('click', function () { album.page = k; renderPage() }) })(p)
+        dots.appendChild(d)
+      }
+    }
   }
-  return grid
+  prev.addEventListener('click', (e) => { e.stopPropagation(); if (album.page > 0) { album.page--; renderPage() } })
+  next.addEventListener('click', (e) => { e.stopPropagation(); if (album.page < pages - 1) { album.page++; renderPage() } })
+  if (pages <= 1) { prev.style.display = 'none'; next.style.display = 'none' }
+  renderPage()
+  return container
+}
+
+// v1.2.74 (A1): применить догруженное ЧЁТКОЕ превью к плитке альбома по messageId.
+// Сохраняет в album.sharpThumbs (чтобы не потерять при листании), и если плитка
+// сейчас видна — сразу заменяет фон и убирает крутилку.
+function applyAlbumSharp(host, mid, src) {
+  if (!host || !host.album || !src || mid == null) return
+  if (!host.album.sharpThumbs) host.album.sharpThumbs = {}
+  host.album.sharpThumbs[String(mid)] = src
+  const tile = host.el.querySelector('.album-tile[data-mid="' + String(mid) + '"]')
+  if (tile) { tile.style.backgroundImage = 'url("' + src + '")'; tile.classList.remove('blur', 'loading') }
 }
 
 // v1.2.66: продление жизни карточки-хоста альбома. При приходе новой части альбома
@@ -141,11 +195,12 @@ function extendHostLife(host, dismissItem) {
 function addAlbumTileToHost(host, data, dismissItem, reportHeight) {
   if (!host || !host.album || !data.album) return false
   const a = host.album
-  if (data.album.tileMessageId) a.messageIds.push(data.album.tileMessageId)
-  a.count++
-  if (a.thumbs.length < 4 && data.album.tileThumb) a.thumbs.push(data.album.tileThumb)
-  const oldGrid = host.el.querySelector('.album-grid')
-  if (oldGrid) oldGrid.replaceWith(renderAlbumGrid(a))
+  // v1.2.74: храним ВСЕ превью и id (не только 4) — нужно для листания страницами.
+  a.messageIds.push(data.album.tileMessageId != null ? data.album.tileMessageId : null)
+  a.thumbs.push(data.album.tileThumb || '')
+  a.count = a.messageIds.length
+  const oldC = host.el.querySelector('.album-container')
+  if (oldC) oldC.replaceWith(renderAlbumGrid(a))
   // v1.2.66 (Совет 5): подпись альбома может прийти в поздней части (не в первой).
   // Если карточка ещё без подписи, а у этой части есть текст — подставляем его в body.
   if (!a.hasCaption && data.album.tileText) {
@@ -165,4 +220,4 @@ function addAlbumTileToHost(host, data, dismissItem, reportHeight) {
 // Экспорт в global scope (browser <script> и так делает это автоматически,
 // но явно фиксируем через window для тестов и линта).
 window.createPinBtn = createPinBtn
-window.__ccNotifHelpers = { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, renderAlbumGrid, extendHostLife, addAlbumTileToHost }
+window.__ccNotifHelpers = { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, renderAlbumGrid, extendHostLife, addAlbumTileToHost, applyAlbumSharp }
