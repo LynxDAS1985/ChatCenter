@@ -87,7 +87,7 @@ ServiceWorker — фоновый «сторож» сайта: через нег�
 | F2 | Electron официально: **«We do not recommend you to use WebViews»**, + «не гарантируем, что WebView API останется» | [web-embeds](https://www.electronjs.org/docs/latest/tutorial/web-embeds), [webview-tag](https://www.electronjs.org/docs/latest/api/webview-tag) | 1 |
 | F3 | Electron поддерживает ServiceWorker **на уровне сессии** (`session.serviceWorkers`, регистрация после `navigator.serviceWorker.register`) | [ServiceWorkers](https://www.electronjs.org/docs/latest/api/service-workers) | 1 |
 | F4 | `WebContentsView` — официальная замена `BrowserView`, обычный WebContents (не проблемный `<webview>`-гость) | [PR #35658](https://github.com/electron/electron/pull/35658), [web-contents-view](https://www.electronjs.org/docs/latest/api/web-contents-view) | 1 |
-| F5 | Краш на Win11 при `addChildView` (#44934) — **закрыт**, был на Electron 33, фикс влит в 36-38; у нас **42.5** → блокер снят | [#44934](https://github.com/electron/electron/issues/44934) | 1 |
+| F5 | 🔴 **ОПРОВЕРГНУТО (25 июня, см. «ИТОГ» вверху)**: считалось, что #44934 пофикшен в 36-38 и на 42.5 блокер снят. РЕАЛЬНОСТЬ: на Electron 42 краш повторился 100% (3 раза). Блокер НЕ снят для нашего случая (child WebContentsView в окне с webviewTag). | [#44934](https://github.com/electron/electron/issues/44934) + живой запуск v1.2.20-22 | 1 + данные |
 | F6 | Методы `View` для «дирижирования» окном есть: `setVisible`/`setBounds`/`removeChildView`/`setBackgroundColor`/`setBorderRadius` | [View](https://www.electronjs.org/docs/latest/api/view) | 1 |
 | F7 | 🟡 **Прямого утверждения «SW работает в WebContentsView» в доке НЕТ** — это сильный вывод по аналогии (F3+F4), не documented-факт. Доказывается только пилотом | (отсутствие источника) | честный пробел |
 | F8 | WebContentsView **непрозрачен** и не будет (#45105 «as not planned») → наши плашки/панели/модалки спрячутся за окном → их надо прятать/двигать (F6) | [#45105](https://github.com/electron/electron/issues/45105) | 1 |
@@ -98,7 +98,9 @@ ServiceWorker — фоновый «сторож» сайта: через нег�
 | F13 | Нативная вкладка «ЦентрЧатов» (TDLib) — это **React, не webview** → миграция её **НЕ затрагивает** (риск для TDLib минимален) | [src/native/](../src/native/) | 2 |
 | F14 | Текущий стек: Electron 42.5.0, React 19.2.7, Vite 7.3.5, electron-vite 5.0.0, Tailwind 4.3.1, eslint 10.5 (сверено с node_modules) | [package-lock.json](../package-lock.json) | 2 |
 
-**Вывод из фактов:** SW в `<webview>` мёртв (F1, доказано). Путь к SW = WebContentsView (F3, F4), блокер снят на Electron 42 (F5). Но решение **не гарантировано докой** (F7) и есть боль наложения окон (F8). Значит — поэтапно, за флагом, с обязательным пилотом-доказательством.
+**Вывод из фактов (ИСХОДНЫЙ, 24 июня — позже ОПРОВЕРГНУТ):** SW в `<webview>` мёртв (F1), путь к SW = WebContentsView (F3, F4), блокер снят (F5) → поэтапная миграция за флагом.
+
+🔴 **АКТУАЛЬНЫЙ вывод (25 июня, см. «ИТОГ РАССЛЕДОВАНИЯ» вверху)**: этот исходный вывод НЕВЕРЕН. (1) Блокер #44934 НЕ снят — краш на Electron 42 (F5 опровергнут). (2) SW мёртв НЕ из-за webview, а потому что мы САМИ его глушим в `sessionSetup.js` (см. [decisions.md](./decisions.md)) — доказано Вариантом A: SW падает и в отдельном нормальном окне. → Смена движка задачу НЕ решает. Тема закрыта.
 
 ---
 

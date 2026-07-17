@@ -1,6 +1,30 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.57 (7 июля 2026)
+## Текущая версия: v1.2.58 (7 июля 2026)
+
+### v1.2.58 — VK: внутренний тост подключён к основному hook, а не только к fallback
+
+Дата: 7 июля 2026. Кто нашёл: пользователь по кейсу VK-профиля `https://vk.com/lynxdas`; Codex по `system-diagnostics-report.json`, `chatcenter.log`, `main/preloads/hooks/vk.hook.js`, `shared/vkExecFallback.js`.
+
+Что было видно пользователю: VK показал свою внутреннюю плашку `Новое сообщение / Елена Дугина прислала вам личное сообщение`, но модалки ChatCenter не было.
+
+Что показала диагностика: `vkFull` видел текст VK-плашки в `bodyTextSample`, но в сохранённой диагностике было `0` событий `vk-toast`, `toast-candidate`, `toast-scan`, `emit-toast`, `source=vk-toast`. На странице профиля также было `containerFound=false`, `messageCount=0`, `sidebar=[]`, поэтому активная история и sidebar физически не могли создать уведомление. В логе был риск `VK-EXEC inject failed`, а код `shared/vkExecFallback.js` дополнительно показал, что `VK-EXEC` пропускается при живом `monitor-ready` (`VK preload alive -> VK-EXEC skip`).
+
+Почему v1.2.57 не закрыла проблему полностью: идея `source:'vk-toast'` была правильной, но наблюдатель был добавлен только в резервный `VK-EXEC fallback`. Этот fallback не является основным путём: он запускается только когда preload не подал heartbeat, и ещё может упасть на `executeJavaScript`. Значит при нормальном живом preload VK-плашка могла быть видна диагностике, но не попадала в рабочую цепочку уведомления.
+
+Что исправлено сейчас: `main/preloads/hooks/vk.hook.js` получил основной `__ccVkPrimaryToastObserver`. Он ставится вместе с VK notification hook на любой странице `vk.com`, наблюдает DOM за компактной видимой плашкой `Новое сообщение` / `New message`, извлекает отправителя, текст плашки и аватарку, затем отправляет обычный `__CC_NOTIF__` с `src:'vk-toast'` и стабильным `g:'vk-toast:<hash>'`.
+
+Почему это безопасно:
+- `VK-EXEC`, `vk-sidebar-unread` и active-history guard не удалены и не ослаблены;
+- старые DOM-сообщения активной истории по-прежнему блокируются через `source:'vk-exec-fallback'` без `vkActiveUnread`;
+- sidebar по-прежнему требует unread badge и fresh/selected правила;
+- новый путь реагирует только на собственную VK-плашку с меткой `Новое сообщение`, а не на произвольный текст страницы;
+- неполный тост остаётся диагностикой `block-incomplete-toast` и не создаёт карточку;
+- MAX, Telegram, WhatsApp и API-источники не затронуты.
+
+Как должно работать после исправления: если пользователь находится на профиле/ленте/фото VK и VK показывает внутреннюю плашку нового личного сообщения, в диагностике должна появиться цепочка `__CC_DIAG__vk-toast primary-bound` -> `__CC_DIAG__vk-toast candidate decision=emit-toast` -> `__CC_NOTIF__ src=vk-toast` -> `handle` -> `sound` -> `ribbon`. Если VK в плашке не отдаёт настоящий текст сообщения, ChatCenter не должен выдумывать его: карточка показывает ровно тело VK-плашки, например `прислала вам личное сообщение`.
+
+Проверки: `node --check main\preloads\hooks\vk.hook.js`, `node src\__tests__\notifHooks.test.cjs`, `node src\__tests__\vkExecFallback.test.cjs`, `node src\__tests__\notificationIdentity.test.cjs`, `node src\__tests__\handleNewMessage.test.cjs`, `node src\__tests__\fileSizeLimits.test.cjs`, `node src\__tests__\memoryBankSizeLimits.test.cjs`, `node src\__tests__\featuresReferences.test.cjs`, `npm run lint`, `npm run build`.
 
 ### v1.2.57 — VK: уведомления из внутреннего тоста на любой странице VK
 

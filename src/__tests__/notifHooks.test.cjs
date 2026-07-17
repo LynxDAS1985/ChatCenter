@@ -77,6 +77,19 @@ test('TG: .chatlist-chat для аватарки', () => assert(tgCode.includes(
 const vkCode = fs.readFileSync(path.join(hooksDir, 'vk.hook.js'), 'utf8')
 test('VK: ConvoListItem selector', () => assert(vkCode.includes('ConvoListItem'), 'VK должен искать в ConvoListItem'))
 test('VK: _appTitles с vk/вконтакте', () => assert(vkCode.includes('вконтакте') || vkCode.includes('вк'), 'VK _appTitles должен содержать VK названия'))
+test('VK: primary hook observes native VK toast outside fallback', () => {
+  assert(vkCode.includes('__ccVkPrimaryToastObserver'), 'VK primary hook must own the toast observer')
+  assert(vkCode.includes('__CC_DIAG__vk-toast primary-bound'), 'VK toast observer must expose a bound diagnostic')
+  assert(vkCode.includes("src: 'vk-toast'"), 'VK toast must emit a distinct source through __CC_NOTIF__')
+  assert(vkCode.includes("g: 'vk-toast:' + fp"), 'VK toast must use a stable tag for dedup')
+  assert(vkCode.includes('block-incomplete-toast'), 'VK toast must keep incomplete payloads diagnostic-only')
+  assert(vkCode.includes('primary-mutation'), 'VK toast must react to runtime DOM mutations')
+})
+test('VK: toast parser uses real line breaks before compacting text', () => {
+  const rootCheck = vkCode.slice(vkCode.indexOf('function _toastRootOk'), vkCode.indexOf('function _parseVkToast'))
+  assert(rootCheck.includes("split(/\\n+/)"), 'toast root check must inspect first visual line')
+  assert(!rootCheck.includes("raw.split(/\\n+/)"), 'toast root check must not split already compacted raw text')
+})
 
 const waCode = fs.readFileSync(path.join(hooksDir, 'whatsapp.hook.js'), 'utf8')
 test('WA: span[title] для аватарки', () => assert(waCode.includes('span[title]'), 'WhatsApp ищет аватарку по span[title]'))

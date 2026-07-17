@@ -305,7 +305,7 @@
 
 **Целевая аудитория**: Операторы и менеджеры, работающие с клиентами через несколько мессенджеров (Telegram, WhatsApp, VK, Viber, MAX и др.).
 
-**Текущая версия**: v1.2.57 (7 июля 2026)
+**Текущая версия**: v1.2.58 (7 июля 2026)
 
 ---
 
@@ -744,6 +744,6 @@ Auto-memory — постоянная память Claude между сессия
 
 ---
 
-**Версия проекта**: v1.2.57 (7 июля 2026)
+**Версия проекта**: v1.2.58 (7 июля 2026)
 **Статус**: 🟢 Фазы 1-4+ + TDLib миграция + виртуализация удалена (v0.94.0) + scroll-restore стабилизирован (v0.95.0-50) + **AI-агент фундамент Phase 0+1 (v0.97.0)**: NotificationSource (паспорт сообщения) + Action Bus (cross-tab notify:clicked) + Tool Use API (4 провайдера: Anthropic/OpenAI/DeepSeek/ГигаЧат) + 3 read-only tools (goto_message/get_chat_history/search_messages). AI агент работает в Native режиме (сейчас TDLib, в будущем — другие native API мессенджеров). WebView режимы (5 мессенджеров + AI WebView mode для chat.openai.com/claude.ai) — продолжают работать как раньше, не затронуты. Phase 2 (write actions + permissions UI) — ожидает.
-**Последнее обновление**: 7 июля 2026 — **v1.2.57 (VK: уведомления из внутреннего тоста)**: VK теперь ловит внутренний тост `Новое сообщение` даже на странице профиля/ленты, где нет контейнера чата и списка диалогов (`containerFound=false`, `sidebar=[]`). Новый источник `source:'vk-toast'` не заменяет `vk-exec-fallback` и `vk-sidebar-unread`: он добавляет недостающий путь и отправляет событие в обычный `handleNewMessage` только если есть отправитель и текст. История v1.2.27 и старше перенесена в [.memory-bank/archive/features-v1.2.27-and-older.md](.memory-bank/archive/features-v1.2.27-and-older.md). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.
+**Последнее обновление**: 7 июля 2026 — **v1.2.58 (VK: внутренний тост подключён к основному hook)**: v1.2.57 добавила `source:'vk-toast'`, но только в резервный `VK-EXEC fallback`; диагностика показала, что на странице профиля VK тост был виден в `bodyTextSample`, а событий `vk-toast` не было. Теперь `main/preloads/hooks/vk.hook.js` ставит `__ccVkPrimaryToastObserver` всегда вместе с основным VK hook и отправляет `__CC_NOTIF__ src=vk-toast`; fallback, sidebar unread, active-history guard, MAX, Telegram и WhatsApp не ослаблены. История v1.2.27 и старше перенесена в [.memory-bank/archive/features-v1.2.27-and-older.md](.memory-bank/archive/features-v1.2.27-and-older.md). **Полный changelog со всеми версиями → [.memory-bank/features.md](.memory-bank/features.md)**.
