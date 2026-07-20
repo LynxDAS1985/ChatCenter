@@ -369,6 +369,8 @@ export function createDockPinState(deps) {
       category: item.category || '', note: item.note || '',
       icon: d.icon || '', // v1.2.75: аватар для подсказки (cc-media:// или data-url)
     }
+    // v1.2.86 (ДИАГНОСТИКА имя аккаунта): что уходит в подсказку. Удалить после.
+    try { console.log('[dock-diag] showTooltip pin=' + pinId + ' accountName=' + (payload.accountName || '<none>') + ' messengerName=' + (payload.messengerName || '?') + ' cat=' + (payload.category || '?')) } catch (_) {}
     const send = () => { if (win && !win.isDestroyed()) win.webContents.send('tooltip:data', payload) }
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
     else send()

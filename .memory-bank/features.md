@@ -1,6 +1,23 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.85 (20 июля 2026)
+## Текущая версия: v1.2.86 (20 июля 2026)
+
+### v1.2.86 — ДИАГНОСТИКА: имя аккаунта — трассировка всей цепочки
+
+Дата: 20 июля 2026. Только логи, фикс НЕ делался (по просьбе пользователя — «не гадать, добавь логи»).
+
+Имя аккаунта проходит цепочку: уведомление → `createPinBtn` → закреп (`item.data`) → `showTooltip` → подсказка. Чтобы точно найти, где оно теряется, добавлены логи в 3 точки:
+- **(A) уведомление** ([nativeStoreIpc.js:480](../src/native/store/nativeStoreIpc.js#L480)): `[native-notif] emit … chatAcc=<chat.accountId> accs=<[{id,name}]> resolvedAcct=<найденное имя или <none>>` — нашлось ли имя при поиске по аккаунтам.
+- **(B) создание закрепа** ([dockPinHandlers.js](../main/handlers/dockPinHandlers.js), `notif:pin-message`): `[dock-diag] pin-message in accountName=…` — что реально пришло в закреп.
+- **(C) подсказка** ([dockPinState.js](../main/handlers/dockPinState.js), `showTooltip`): `[dock-diag] showTooltip pin=… accountName=…` — что ушло в подсказку.
+
+Логика диагноза: если A `resolvedAcct=<none>` → ломается поиск по аккаунтам (accs покажет реальные id/имена vs chatAcc). Если A нашёл, но B пусто → теряется в `createPinBtn`/`pinMessage`. Если B есть, а C пусто → теряется в `showTooltip`.
+
+Файлы: `src/native/store/nativeStoreIpc.js` (расширен лог, без роста файла), `main/handlers/dockPinHandlers.js`, `main/handlers/dockPinState.js`.
+
+**Что проверить:** v1.2.86 → закрепить сообщение + навести на вкладку дока → прислать строки `[native-notif] emit`, `[dock-diag] pin-message`, `[dock-diag] showTooltip` из журнала.
+
+Откат: `git checkout -- src/native/store/nativeStoreIpc.js main/handlers/dockPinHandlers.js main/handlers/dockPinState.js`.
 
 ### v1.2.85 — ДИАГНОСТИКА: имя аккаунта в уведомлении не находится
 

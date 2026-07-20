@@ -38,6 +38,8 @@ ipcMain.on('dock:diag', (_event, msg) => { try { console.log('[dock-diag] R ' + 
 
 // ── Создание pin-окна ──
 ipcMain.on('notif:pin-message', (_event, data) => {
+  // v1.2.86 (ДИАГНОСТИКА имя аккаунта): что реально пришло в закреп. Удалить после.
+  try { console.log('[dock-diag] pin-message in accountName=' + (data.accountName || '<none>') + ' messengerName=' + (data.messengerName || '?')) } catch (_) {}
   if (data.messengerId && !data.messengerName) {
     const messengers = storage.get('messengers', DEFAULT_MESSENGERS)
     const found = messengers.find(m => m.id === data.messengerId)
