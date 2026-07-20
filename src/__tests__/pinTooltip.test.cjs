@@ -108,6 +108,12 @@ check('showTooltip прокидывает icon в подсказку', /icon:\s*
 check('createPinBtn передаёт messengerName (источник)', notifHelpers.includes('messengerName'))
 check('native TG кладёт аватар в iconDataUrl (cc-media)', /iconDataUrl:\s*chat\?\.avatar/.test(nativeIpc))
 
+// ── v1.2.76: док возвращается на экран после safeHide (не пропадает) ──
+console.log('\n── v1.2.76 док после «Свернуть»: ──')
+check('restoreDockBounds есть (возврат окна в workArea)', state.includes('function restoreDockBounds'))
+check('restoreDockBounds позиционирует по workArea', /restoreDockBounds[\s\S]*workArea/.test(state))
+check('addToDock вызывает restoreDockBounds перед показом', /restoreDockBounds\(dock\)[\s\S]{0,40}showInactive/.test(state))
+
 // ── Сборка (prod) ──
 console.log('\n── Сборка: ──')
 check('копирование pin-tooltip.html в out/', viteCfg.includes('pin-tooltip.html'))

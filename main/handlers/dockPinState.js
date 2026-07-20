@@ -199,6 +199,28 @@ export function createDockPinState(deps) {
     return dockWin
   }
 
+  // v1.2.76: вернуть окно дока в рабочую область перед показом.
+  // Корень бага «после Свернуть дока нет»: checkDockVisibility при 0 задач прячет
+  // окно через safeHide → уводит в {x:-30000,y:-30000,1×1}. При повторном показе
+  // (новая/возвращённая задача) addToDock звал showInactive() по СТАРЫМ офскрин-
+  // координатам, а dock:resize считает Y от текущих bounds (−30000) и клампит
+  // только X → окно «видимо», но за верхней кромкой экрана. Здесь ставим низ
+  // рабочей области (над панелью задач), как в ensureDockWindow, честно из workArea.
+  function restoreDockBounds(dock) {
+    const display = screen.getPrimaryDisplay()
+    const wa = display.workArea
+    const dockH = dockState.baseHeight || 48
+    const totalH = dockH + DOCK_PREVIEW_RESERVE
+    const saved = storage.get('dockPosition', null)
+    const w = 120 // резервная ширина; dock:resize уточнит по контенту
+    const x = saved ? saved.x : Math.round(wa.x + (wa.width - w) / 2)
+    let baseY = saved ? saved.y : wa.y + wa.height - dockH
+    const maxBaseY = wa.y + wa.height - dockH
+    if (baseY > maxBaseY) baseY = maxBaseY
+    const y = baseY - DOCK_PREVIEW_RESERVE
+    try { dock.setBounds({ x, y, width: w, height: totalH }) } catch (_) {}
+  }
+
   // Добавить таб в dock
   function addToDock(pinId, data) {
     const dock = ensureDockWindow()
@@ -206,7 +228,7 @@ export function createDockPinState(deps) {
     const item = pinItems.get(pinId)
     const sendAdd = () => {
       dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '', note: item ? item.note || '' : '', messengerName: data.messengerName || '' })
-      if (!dock.isVisible()) dock.showInactive()
+      if (!dock.isVisible()) { restoreDockBounds(dock); dock.showInactive() }
       if (item && item.timerEnd) {
         dock.webContents.send('dock:update-timer', pinId, item.timerEnd)
       }
