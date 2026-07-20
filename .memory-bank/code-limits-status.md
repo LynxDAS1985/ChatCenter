@@ -37,23 +37,38 @@
 
 ---
 
-## 🟡 Близко к лимиту (80%+ от базового, но в пределах)
+## 🟡 Близко к лимиту (80%+ от базового) — снапшот 20 июля 2026 (v1.2.79, Совет 5)
 
-Эти файлы ещё не в исключениях, но стоят к ним близко.
+Свежий скан `fileSizeLimits.test.cjs`: **24 файла** на 80%+. Тест НЕ падает (это предупреждения), но файлы на 100% заблокируют СЛЕДУЮЩУЮ правку в них.
 
-| Файл | Сейчас | Лимит | % | Срочность |
+### 🔥 Приоритет — на 100% / на волосок (следующая правка = блок коммита)
+
+| Файл | Сейчас | Лимит | % | Как безопасно разбить |
 |---|---|---|---|---|
-| `main/preloads/utils/unreadCounters.js` | 495 | 500 | **99%** 🔥 | ⭐⭐⭐ |
-| `src/__tests__/integration.test.cjs` | 391 | 400 | **98%** 🔥 | ⭐⭐⭐ |
-| `src/native/modes/InboxMode.jsx` | 567 | 600 | 95% | ⭐⭐ |
-| `main/native/telegramChats.js` | 461 | 500 | 92% | ⭐⭐ |
-| `main/pin-dock.html` | 717 | 800 | 90% | ⭐ |
-| `src/native/styles.css` | 704 | 800 | 88% | ⭐ |
-| `src/native/store/nativeStore.js` | 428 | 500 | 86% | ⭐ |
-| `src/hooks/useTabContextMenu.js` | 127 | 150 | 85% | ⭐ |
-| `main/main.js` | 484 | 600 | 81% | ⭐ |
+| `main/preloads/hooks/max.hook.js` | 300 | 300 | **100%** | Инъекция в WebView — РИСК. Вынести чистые хелперы (`_findSender`/`_findAvatar`/`_isSpam`/`_extractSticker`) в отдельный `.js`, импортировать. Проверять визуально в MAX. |
+| `shared/vkExecFallback.js` | 300 | 300 | **100%** | `buildVkExecFallbackScript` (скрипт-строка для инъекции) вынести в `shared/vkExecFallbackScript.js`. РИСК: строка завязана на `PREFIX` — проверить VK. |
+| `src/native/store/nativeStoreIpc.js` | 659 | 660* | **99.8%** | Исключение. Крупный конвейер сообщений. Вынести группу аватар-хендлеров (`flushPendingChatAvatar`/`flushPendingSenderAvatar`) в отдельный модуль. РИСК: hot-path. |
+| `main/preloads/utils/vkDiagnostics.js` | 494 | 500 | **99%** | Диагностика (не инъекция реактивная) — ниже риск. Вынести группу независимых проверок. |
+| `main/utils/webContentsViewManager.js` | 293 | 300 | **98%** | Вынести создание/настройку view в подфайл. |
+| `main/preloads/monitor.preload.cjs` | 569 | 600 | 95% | Preload-монитор. Вынести группу observer-хелперов. РИСК: инъекция. |
 
-⚠ Top-2 (`unreadCounters` и `integration.test`) — **следующий** коммит может вывести за лимит.
+\* исключение в `KNOWN_EXCEPTIONS`.
+
+### ⭐⭐ Средний приоритет (90–95%)
+
+`src/components/AISidebar.jsx` 652/700 · `src/native/components/InboxChatListSidebar.jsx` 550/600 · `src/native/NativeApp.jsx` 542/600 · `src/utils/diagnosticsSession.js` 270/300 · `src/hooks/useAppIPCListeners.js` 133/150
+
+### ⭐ Низкий (80–89%)
+
+`main/native/backends/tdlibMapper.js` 432/500 · `main/native/backends/tdlibMedia.js` 405/500 · `main/main.js` 497/600 · `main/utils/windowManager.js` 248/300 · `src/utils/maxTitleFallbackScript.js` 255/300 · `main/ai/aiProviderCaller.js` 242/300 · `src/native/hooks/useInboxNewerPrefetch.js` 122/150 · `src/native/hooks/useNewBelowCounter.js` 124/150
+
+### 🧪 Тесты (80%+, лимит 400)
+
+`useInitialScroll.vitest.jsx` 384 · `tdlibMapper.vitest.js` 369 · `InboxMode.vitest.jsx` 351 · `monitorPreload.test.cjs` 333 · `aiProviderCaller.vitest.js` 323
+
+### ⚠️ ВАЖНО — почему НЕ режем массово
+
+Разбиение рабочих файлов кода — это перемещение логики + правка импортов. Приложение агент **не запускает**, а инъекционные файлы (`*.hook.js`, `*.preload.cjs`, `vkExecFallback`) работают внутри WebView — ошибка не ловится тестами, только глазами в живом мессенджере. Поэтому: **режем по ОДНОМУ файлу под конкретную задачу, с визуальной проверкой пользователем**, а не пачкой. Сейчас ни один файл не за лимитом — срочности нет, только профилактика перед следующей правкой в файле на 100%.
 
 ---
 
