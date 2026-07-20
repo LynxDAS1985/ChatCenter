@@ -119,6 +119,9 @@ export function createDockPinState(deps) {
     const maxBaseY = wa.y + wa.height - dockH
     if (baseY > maxBaseY) baseY = maxBaseY
     const startY = baseY - DOCK_PREVIEW_RESERVE
+    // v1.2.81 (ВРЕМЕННАЯ ДИАГНОСТИКА «док за панелью задач после старта»):
+    // wa (вкл. y) + сохранённая позиция + вычисленный startY. Удалить после диагноза.
+    try { console.log('[dock-diag] ensureDockWindow saved=' + JSON.stringify(saved) + ' wa=' + JSON.stringify(wa) + ' dockH=' + dockH + ' maxBaseY=' + maxBaseY + ' baseY=' + baseY + ' startY=' + startY) } catch (_) {}
 
     const dockWin = new BrowserWindow({
       width: initW,
@@ -186,6 +189,9 @@ export function createDockPinState(deps) {
       if (finalDockY > maxDockY) finalDockY = maxDockY
       const finalWinY = finalDockY - DOCK_PREVIEW_RESERVE
       if (snapped) dockState.win.setPosition(finalX, finalWinY)
+      // v1.2.81 (ВРЕМЕННАЯ ДИАГНОСТИКА): что реально сохраняем при перетаскивании +
+      // геометрия. baseHeight = высота окна дока (влияет на кламп «над панелью задач»).
+      try { console.log('[dock-diag] moved bounds=' + JSON.stringify(bounds) + ' wa=' + JSON.stringify(wa) + ' baseHeight=' + dockState.baseHeight + ' dockY=' + dockY + ' snapped=' + snapped + ' maxDockY=' + maxDockY + ' save={x:' + finalX + ',y:' + finalDockY + '}') } catch (_) {}
       storage.set('dockPosition', { x: finalX, y: finalDockY })
     })
 
