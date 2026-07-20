@@ -88,12 +88,15 @@
 
     // категория
     catEl.className = 'tt-cat'
-    if (d.category && CAT[d.category]) { catEl.classList.add(d.category); catEl.textContent = CAT[d.category]; catEl.style.display = '' }
+    // v1.2.83: display:'inline-block' (НЕ ''), иначе пустая строка = взять из CSS,
+    // а в CSS у .tt-cat стоит display:none → категория оставалась скрытой (баг «Срочно»).
+    if (d.category && CAT[d.category]) { catEl.classList.add(d.category); catEl.textContent = CAT[d.category]; catEl.style.display = 'inline-block' }
     else { catEl.style.display = 'none' }
 
     // источник: мессенджер · время
     const parts = []
     if (d.messengerName) parts.push(d.messengerName)
+    if (d.accountName) parts.push(d.accountName) // v1.2.83: имя аккаунта (напр. «БНК»)
     if (d.time) parts.push(d.time)
     metaEl.textContent = parts.join(' · ')
 

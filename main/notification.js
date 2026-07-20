@@ -240,7 +240,7 @@
     msgDiv.appendChild(bodyDiv)
 
     // v0.65.0: кнопка 📌 для закрепления стэкированного сообщения
-    msgDiv.appendChild(createPinBtn(host.senderName || host.messengerName || '', data.body || '', stackTime, host.color || '#2AABEE', data.messengerId, data.iconDataUrl || '', data.messengerName || host.messengerName || ''))
+    msgDiv.appendChild(createPinBtn(host.senderName || host.messengerName || '', data.body || '', stackTime, host.color || '#2AABEE', data.messengerId, data.iconDataUrl || '', data.messengerName || host.messengerName || '', data.accountName || ''))
 
     stackContainer.appendChild(msgDiv)
     // Автоскролл вниз к новому сообщению
@@ -474,7 +474,7 @@
 
     // v0.65.0: кнопка 📌 для закрепления host-сообщения
     const hostFullText = data.fullBody || data.body || ''
-    textWrap.appendChild(createPinBtn(senderName || mName, hostFullText, nowTime, data.color || '#2AABEE', data.messengerId, data.iconDataUrl || '', data.messengerName || mName || ''))
+    textWrap.appendChild(createPinBtn(senderName || mName, hostFullText, nowTime, data.color || '#2AABEE', data.messengerId, data.iconDataUrl || '', data.messengerName || mName || '', data.accountName || ''))
 
     const hint = document.createElement('div')
     hint.className = 'expand-hint'

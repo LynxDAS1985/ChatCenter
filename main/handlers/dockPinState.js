@@ -386,6 +386,7 @@ export function createDockPinState(deps) {
     const payload = {
       sender: d.sender || '', text: d.text || '', time: d.time || '',
       color: d.color || '#2AABEE', messengerName: d.messengerName || '',
+      accountName: d.accountName || '', // v1.2.83: имя аккаунта в источник подсказки
       category: item.category || '', note: item.note || '',
       icon: d.icon || '', // v1.2.75: аватар для подсказки (cc-media:// или data-url)
     }

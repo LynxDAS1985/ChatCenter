@@ -13,7 +13,7 @@
 
 // ── v0.65.0: Создание кнопки 📌 для закрепления сообщения ──
 // Не замыкает state — все данные через параметры + window.notifApi.
-function createPinBtn(senderName, fullText, time, color, messengerId, iconDataUrl, messengerName) {
+function createPinBtn(senderName, fullText, time, color, messengerId, iconDataUrl, messengerName, accountName) {
   const btn = document.createElement('button')
   btn.className = 'pin-msg-btn'
   btn.textContent = '\u{1F4CC}'
@@ -23,7 +23,7 @@ function createPinBtn(senderName, fullText, time, color, messengerId, iconDataUr
     // v1.2.60: передаём аватар (icon), чтобы карточка закрепа его показала
     // v1.2.75: + messengerName (источник, напр. «Telegram») — иначе для native_cc
     // подсказка не знала «откуда» (в списке мессенджеров его нет).
-    window.notifApi.pinMessage({ sender: senderName, text: fullText, time: time, color: color, messengerId: messengerId || '', icon: iconDataUrl || '', messengerName: messengerName || '' })
+    window.notifApi.pinMessage({ sender: senderName, text: fullText, time: time, color: color, messengerId: messengerId || '', icon: iconDataUrl || '', messengerName: messengerName || '', accountName: accountName || '' })
     btn.textContent = '✓'
     btn.style.color = '#4ade80'
     btn.style.background = 'rgba(34,197,94,0.2)'

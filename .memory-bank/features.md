@@ -1,6 +1,22 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.82 (20 июля 2026)
+## Текущая версия: v1.2.83 (20 июля 2026)
+
+### v1.2.83 — Подсказка: «Срочно» показывается + имя аккаунта в источнике
+
+Дата: 20 июля 2026. Два фикса карточки-подсказки задачи (по скриншотам пользователя).
+
+**Баг 1 — «Срочно» (категория) не показывалась в подсказке, хотя выставлена в карточке закрепа.** КОРЕНЬ (CSS/JS): `.tt-cat` спрятана правилом В CSS-стиле (`display:none`, [pin-tooltip.html:35](../main/pin-tooltip.html#L35)), а код показывал её через `catEl.style.display = ''` — пустая строка означает «взять значение из таблицы стилей», а там `display:none` → категория оставалась скрытой. Заметка при этом работала, потому что её `display:none` прописан В HTML-теге (inline), и `style.display=''` его снимает. Симметрия обработчиков категории/заметки была верной — баг чисто в вёрстке. Фикс: `catEl.style.display = 'inline-block'` (явное значение перекрывает CSS).
+
+**Баг 2 — имя аккаунта («БНК») не показывалось в источнике.** Оно НИГДЕ не передавалось (источник = только `messengerName + time`). Фикс: новое поле `accountName` берётся из `stateRef.current.accounts.find(a => a.id === chat.accountId).name` в момент уведомления и прокидывается через всю цепочку: уведомление → `createPinBtn` → закреп (`pinMessage`) → `showTooltip` → подсказка рисует источник «Telegram · БНК · время».
+
+Файлы: `main/pin-tooltip.html` (оба фикса), `main/handlers/dockPinState.js` (showTooltip +accountName), `main/notification-helpers.js` (createPinBtn +accountName), `main/notification.js` (2 вызова createPinBtn), `src/native/store/nativeStoreIpc.js` (payload +accountName — файл у лимита 660, комментарий сжат чтобы влезть).
+
+Тест: [pinTooltip.test.cjs](../src/__tests__/pinTooltip.test.cjs) → 57 (+5 проверок).
+
+**Требует визуальной проверки:** выставить «🔴 Срочно» в карточке → навести на вкладку дока → в подсказке виден значок «🔴 Срочно» И источник «Telegram · <аккаунт> · время».
+
+Откат: `git checkout -- main/pin-tooltip.html main/handlers/dockPinState.js main/notification-helpers.js main/notification.js src/native/store/nativeStoreIpc.js`.
 
 ### v1.2.82 — Док: можно держать НА панели задач Windows (не поднимается вверх после старта)
 

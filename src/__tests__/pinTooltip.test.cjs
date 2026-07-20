@@ -125,6 +125,14 @@ const _rsEnd = dockJsFull.indexOf('dockApi.resize', _rsStart)
 const _rsSeg = (_rsStart >= 0 && _rsEnd > _rsStart) ? dockJsFull.slice(_rsStart, _rsEnd) : ''
 check('reportSize шлёт размер напрямую (без вызова requestAnimationFrame)', _rsSeg.length > 0 && !_rsSeg.includes('requestAnimationFrame('))
 
+// ── v1.2.83: «Срочно» в подсказке (CSS-баг) + имя аккаунта в источнике ──
+console.log('\n── v1.2.83 категория + имя аккаунта: ──')
+check('категория показывается через display:inline-block (перекрывает CSS display:none)', html.includes("catEl.style.display = 'inline-block'"))
+check('подсказка добавляет имя аккаунта в источник (d.accountName)', html.includes('d.accountName'))
+check('showTooltip передаёт accountName', /accountName:\s*d\.accountName/.test(state))
+check('createPinBtn принимает и шлёт accountName', notifHelpers.includes('accountName') && /pinMessage\([^)]*accountName/.test(notifHelpers))
+check('native уведомление кладёт имя аккаунта (accounts.find по accountId)', /accountName:\s*\(stateRef\.current\.accounts\.find/.test(nativeIpc))
+
 // ── Сборка (prod) ──
 console.log('\n── Сборка: ──')
 check('копирование pin-tooltip.html в out/', viteCfg.includes('pin-tooltip.html'))

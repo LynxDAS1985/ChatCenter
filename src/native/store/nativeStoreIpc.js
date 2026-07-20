@@ -489,12 +489,12 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             body: preview || '[медиа]',
             fullBody: preview || '[медиа]',
             iconUrl: '',
-            // v1.2.75 аватар cc-media как src; v1.2.77 (Совет 1) fallback pendingChatAvatar — свежий аватар до
-            // rAF-flush в state (ключ chatId). Битый/пустой URL ловит img.onerror → эмодзи. См. features.md v1.2.77.
+            // v1.2.75 cc-media аватар; v1.2.77 fallback pendingChatAvatar (свежий до rAF-flush). onerror→эмодзи. См. features.md.
             iconDataUrl: chat?.avatar || pendingChatAvatar.get(chatId) || '',
             color: '#2AABEE',
             emoji: '✈️',
             messengerName: 'Telegram',
+            accountName: ((stateRef.current.accounts || []).find(a => a.id === chat?.accountId)?.name) || '', // v1.2.83 имя аккаунта (|| [] — chat/accounts могут быть undefined при race)
             messengerId: 'native_cc',
             senderName: message.senderName || chat?.title || '',
             // v0.96.0: основной формат — полный source паспорт
