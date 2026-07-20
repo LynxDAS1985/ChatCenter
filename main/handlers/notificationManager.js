@@ -192,7 +192,7 @@ function repositionNotifWin() {
   if (!notifWin.isVisible()) notifWin.showInactive()
 }
 
-async function showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl: preDataUrl, color, emoji, messengerName, messengerId, dismissMs: overrideDismissMs, senderName, chatTag, messageId, source, album }) {
+async function showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl: preDataUrl, color, emoji, messengerName, messengerId, accountName, dismissMs: overrideDismissMs, senderName, chatTag, messageId, source, album }) {
   const { storage, screen } = _deps
   // Защита: пустой, невидимый или timestamp-only body → не показываем ribbon
   let cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
@@ -260,7 +260,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   const stackKey = buildNotificationScope({ messengerId, senderName, title, chatTag, messageId: null })
   // v1.2.66: album — метка «живой карточки» альбома (media group). Проброс без
   // изменений: окно уведомления группирует части по album.id. null для обычных.
-  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, stackKey, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null, source: source || null, album: album || null }
+  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, emoji, messengerName, messengerId, accountName: accountName || '', stackKey, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null, source: source || null, album: album || null }
 
   // FIFO — удаляем старые из трекинга (v0.63.2: увеличен до 30, стэк может иметь 10+ сообщений)
   if (notifItems.length >= 30) {

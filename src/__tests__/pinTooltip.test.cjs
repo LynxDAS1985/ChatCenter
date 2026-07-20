@@ -132,6 +132,10 @@ check('подсказка добавляет имя аккаунта в исто
 check('showTooltip передаёт accountName', /accountName:\s*d\.accountName/.test(state))
 check('createPinBtn принимает и шлёт accountName', notifHelpers.includes('accountName') && /pinMessage\([^)]*accountName/.test(notifHelpers))
 check('native уведомление кладёт имя аккаунта (accounts.find по accountId)', nativeIpc.includes('(stateRef.current.accounts || []).find'))
+// v1.2.87: конвейер уведомления должен ПРОБРАСЫВАТЬ accountName в окно (иначе кнопка 📌 теряет его)
+const notifMgr = read('main/handlers/notificationManager.js')
+check('showCustomNotification принимает accountName', /showCustomNotification\(\{[^}]*accountName/.test(notifMgr))
+check('data-объект уведомления содержит accountName', /const data = \{[\s\S]*?accountName/.test(notifMgr))
 
 // ── v1.2.84: прилипание дока к краям экрана убрано ──
 console.log('\n── v1.2.84 без прилипания: ──')

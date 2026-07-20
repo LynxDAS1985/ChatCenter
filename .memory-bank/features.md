@@ -1,6 +1,30 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.86 (20 июля 2026)
+## Текущая версия: v1.2.87 (20 июля 2026)
+
+### v1.2.87 — Фикс: имя аккаунта доходит до закрепа/подсказки
+
+Дата: 20 июля 2026. Фикс по точным данным диагностики v1.2.86 (не гадание).
+
+**Диагноз из логов:**
+```
+A. [native-notif] emit … chatAcc=tg_611696632 accs=[{id:tg_611696632,name:БНК}] resolvedAcct=БНК  ← имя НАЙДЕНО
+B. [dock-diag] pin-message in accountName=<none>   ← имя ПОТЕРЯНО
+C. [dock-diag] showTooltip accountName=<none>      ← пусто (следствие B)
+```
+Имя терялось между уведомлением (A) и закрепом (B).
+
+**Корень:** `showCustomNotification` ([notificationManager.js:195,263](../main/handlers/notificationManager.js#L195)) — конвейер окна уведомления — НЕ пробрасывала `accountName`: поля не было ни в деструктуризации входных параметров, ни в объекте `data`, который уходит в окно уведомления. Поэтому в `notification.js` `data.accountName` был `undefined`, кнопка 📌 (`createPinBtn`) передавала в закреп пустую строку.
+
+**Фикс:** добавлен `accountName` в оба места — в список принимаемых полей и в объект `data`. Цепочка целая: уведомление → окно → 📌 → `createPinBtn` → закреп → `showTooltip` → подсказка «Telegram · БНК · время».
+
+Диагностические логи (`resolvedAcct`, `[dock-diag] pin-message/showTooltip`) ОСТАВЛЕНЫ для подтверждения — удалить после проверки пользователем (вместе с ранними `[dock-diag]`).
+
+Файл: `main/handlers/notificationManager.js`. Тест: [pinTooltip.test.cjs](../src/__tests__/pinTooltip.test.cjs) → 61 (+2 проверки на проброс accountName).
+
+**Что проверить:** закрепить свежее уведомление Telegram → в подсказке источник «Telegram · <аккаунт> · время». В логе: `pin-message accountName=БНК`.
+
+Откат: `git checkout -- main/handlers/notificationManager.js`.
 
 ### v1.2.86 — ДИАГНОСТИКА: имя аккаунта — трассировка всей цепочки
 
