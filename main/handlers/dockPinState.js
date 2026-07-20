@@ -61,10 +61,12 @@ export function createDockPinState(deps) {
   screen.on('display-metrics-changed', () => {
     if (!dockState.win || dockState.win.isDestroyed()) return
     try {
-      const wa = screen.getPrimaryDisplay().workArea
+      const disp = screen.getPrimaryDisplay()
+      const wa = disp.workArea
       const b = dockState.win.getBounds()
       let x = b.x, y = b.y
-      const maxY = wa.y + wa.height - b.height
+      // v1.2.82: низ ЭКРАНА (разрешаем на панели задач), не рабочей области.
+      const maxY = disp.bounds.y + disp.bounds.height - b.height
       if (y > maxY) y = maxY
       if (y < wa.y) y = wa.y
       if (x + b.width > wa.x + wa.width) x = wa.x + wa.width - b.width
@@ -106,17 +108,20 @@ export function createDockPinState(deps) {
     // Display.workArea). Раньше брали display.bounds (весь экран, включая зону
     // панели задач) → док уходил ЗА панель задач.
     const wa = display.workArea
+    const fullB = display.bounds // v1.2.82: весь экран, включая зону панели задач
     const initW = 120
     const dockH = 48
     const totalH = dockH + DOCK_PREVIEW_RESERVE
     // Восстановить позицию из storage (y — нижняя граница dock)
     const saved = storage.get('dockPosition', null)
     const startX = saved ? saved.x : Math.round(wa.x + (wa.width - initW) / 2)
-    // По умолчанию — прямо НАД панелью задач (низ рабочей области)
+    // По умолчанию (ПЕРВЫЙ запуск, нет сохранённой) — над панелью задач.
     let baseY = saved ? saved.y : wa.y + wa.height - dockH
-    // Страховка: не опускать док ниже рабочей области (за панель задач),
-    // в т.ч. если в storage осталась старая «нижняя» позиция.
-    const maxBaseY = wa.y + wa.height - dockH
+    // v1.2.82: разрешаем док НА панели задач Windows (по желанию пользователя — он
+    // «поверх всех» + реассерт z-order держат его видимым). Ограничиваем только низом
+    // ЭКРАНА, а не рабочей области — иначе сохранённая «на панели» позиция поднималась
+    // вверх при старте (баг: перетащил на панель → после перезапуска ушёл выше неё).
+    const maxBaseY = fullB.y + fullB.height - dockH
     if (baseY > maxBaseY) baseY = maxBaseY
     const startY = baseY - DOCK_PREVIEW_RESERVE
     // v1.2.81 (ВРЕМЕННАЯ ДИАГНОСТИКА «док за панелью задач после старта»):
@@ -180,11 +185,15 @@ export function createDockPinState(deps) {
       if (Math.abs(dockY - wa.y) < SNAP) { sy = wa.y; snapped = true }
       // v1.2.61: снап только к низу РАБОЧЕЙ области (над панелью задач).
       // Прежний снап к самому низу экрана (display.bounds) утаскивал док ЗА панель задач — убран.
-      if (Math.abs((dockY + dockState.baseHeight) - (wa.y + wa.height)) < SNAP) { sy = wa.y + wa.height - dockState.baseHeight; snapped = true }
+      // v1.2.82: снап к низу ЭКРАНА (на панель задач Windows), а не рабочей области —
+      // пользователь хочет держать полоску на панели Windows (она «поверх всех», видна).
+      const screenBottom = display.bounds.y + display.bounds.height
+      if (Math.abs((dockY + dockState.baseHeight) - screenBottom) < SNAP) { sy = screenBottom - dockState.baseHeight; snapped = true }
 
       const finalX = snapped ? sx : bounds.x
-      // v1.2.61: не сохранять позицию ниже рабочей области (за панель задач)
-      const maxDockY = wa.y + wa.height - dockState.baseHeight
+      // v1.2.82: ограничиваем только низом ЭКРАНА (не рабочей области) → сохранённая
+      // «на панели задач» позиция больше НЕ поднимается вверх при следующем старте.
+      const maxDockY = screenBottom - dockState.baseHeight
       let finalDockY = snapped ? sy : dockY
       if (finalDockY > maxDockY) finalDockY = maxDockY
       const finalWinY = finalDockY - DOCK_PREVIEW_RESERVE
@@ -226,7 +235,8 @@ export function createDockPinState(deps) {
     const w = 120 // резервная ширина; dock:resize уточнит по контенту
     const x = saved ? saved.x : Math.round(wa.x + (wa.width - w) / 2)
     let baseY = saved ? saved.y : wa.y + wa.height - dockH
-    const maxBaseY = wa.y + wa.height - dockH
+    // v1.2.82: низ ЭКРАНА (разрешаем док на панели задач), не рабочей области.
+    const maxBaseY = display.bounds.y + display.bounds.height - dockH
     if (baseY > maxBaseY) baseY = maxBaseY
     const y = baseY - DOCK_PREVIEW_RESERVE
     // v1.2.80 (ВРЕМЕННАЯ ДИАГНОСТИКА): что реально ставим и из какой сохранённой позиции.
