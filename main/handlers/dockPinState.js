@@ -169,39 +169,18 @@ export function createDockPinState(deps) {
       }
     })
 
-    // Snap к краям + сохранение позиции при перемещении
+    // v1.2.84: только СОХРАНЕНИЕ позиции при перемещении. Прилипание (snap) к краям
+    // экрана УБРАНО по просьбе пользователя (мешало). Кламп — только по низу экрана,
+    // чтобы окно не ушло ниже нижнего края (позиция «на панели задач» сохраняется).
     dockWin.on('moved', () => {
       if (!dockState.win || dockState.win.isDestroyed()) return
       const bounds = dockState.win.getBounds()
       const display = screen.getPrimaryDisplay()
-      const wa = display.workArea
-      const SNAP = 20
-      let snapped = false
       const dockY = bounds.y + DOCK_PREVIEW_RESERVE
-      let sx = bounds.x, sy = dockY
-
-      if (Math.abs(bounds.x - wa.x) < SNAP) { sx = wa.x; snapped = true }
-      if (Math.abs((bounds.x + bounds.width) - (wa.x + wa.width)) < SNAP) { sx = wa.x + wa.width - bounds.width; snapped = true }
-      if (Math.abs(dockY - wa.y) < SNAP) { sy = wa.y; snapped = true }
-      // v1.2.61: снап только к низу РАБОЧЕЙ области (над панелью задач).
-      // Прежний снап к самому низу экрана (display.bounds) утаскивал док ЗА панель задач — убран.
-      // v1.2.82: снап к низу ЭКРАНА (на панель задач Windows), а не рабочей области —
-      // пользователь хочет держать полоску на панели Windows (она «поверх всех», видна).
-      const screenBottom = display.bounds.y + display.bounds.height
-      if (Math.abs((dockY + dockState.baseHeight) - screenBottom) < SNAP) { sy = screenBottom - dockState.baseHeight; snapped = true }
-
-      const finalX = snapped ? sx : bounds.x
-      // v1.2.82: ограничиваем только низом ЭКРАНА (не рабочей области) → сохранённая
-      // «на панели задач» позиция больше НЕ поднимается вверх при следующем старте.
-      const maxDockY = screenBottom - dockState.baseHeight
-      let finalDockY = snapped ? sy : dockY
-      if (finalDockY > maxDockY) finalDockY = maxDockY
-      const finalWinY = finalDockY - DOCK_PREVIEW_RESERVE
-      if (snapped) dockState.win.setPosition(finalX, finalWinY)
-      // v1.2.81 (ВРЕМЕННАЯ ДИАГНОСТИКА): что реально сохраняем при перетаскивании +
-      // геометрия. baseHeight = высота окна дока (влияет на кламп «над панелью задач»).
-      try { console.log('[dock-diag] moved bounds=' + JSON.stringify(bounds) + ' wa=' + JSON.stringify(wa) + ' baseHeight=' + dockState.baseHeight + ' dockY=' + dockY + ' snapped=' + snapped + ' maxDockY=' + maxDockY + ' save={x:' + finalX + ',y:' + finalDockY + '}') } catch (_) {}
-      storage.set('dockPosition', { x: finalX, y: finalDockY })
+      const maxDockY = (display.bounds.y + display.bounds.height) - dockState.baseHeight
+      const finalDockY = dockY > maxDockY ? maxDockY : dockY
+      try { console.log('[dock-diag] moved (snap off) save={x:' + bounds.x + ',y:' + finalDockY + '}') } catch (_) {}
+      storage.set('dockPosition', { x: bounds.x, y: finalDockY })
     })
 
     // v1.2.62: периодический реассерт «поверх всех». Проблема (Win11): при клике

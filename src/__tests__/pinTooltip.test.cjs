@@ -131,7 +131,12 @@ check('категория показывается через display:inline-blo
 check('подсказка добавляет имя аккаунта в источник (d.accountName)', html.includes('d.accountName'))
 check('showTooltip передаёт accountName', /accountName:\s*d\.accountName/.test(state))
 check('createPinBtn принимает и шлёт accountName', notifHelpers.includes('accountName') && /pinMessage\([^)]*accountName/.test(notifHelpers))
-check('native уведомление кладёт имя аккаунта (accounts.find по accountId)', /accountName:\s*\(stateRef\.current\.accounts\.find/.test(nativeIpc))
+check('native уведомление кладёт имя аккаунта (accounts.find по accountId)', nativeIpc.includes('(stateRef.current.accounts || []).find'))
+
+// ── v1.2.84: прилипание дока к краям экрана убрано ──
+console.log('\n── v1.2.84 без прилипания: ──')
+check('snap к краям убран из moved (нет SNAP=20)', !state.includes('SNAP = 20'))
+check('moved только сохраняет позицию', /dockWin\.on\('moved'[\s\S]*?storage\.set\('dockPosition'/.test(state))
 
 // ── Сборка (prod) ──
 console.log('\n── Сборка: ──')
