@@ -1,6 +1,25 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.87 (20 июля 2026)
+## Текущая версия: v1.2.88 (20 июля 2026)
+
+### v1.2.88 — Чистка: убраны временные диагностические логи
+
+Дата: 20 июля 2026. По просьбе пользователя после подтверждения фиксов.
+
+Убраны все временные диагностические логи `[dock-diag]`, добавленные в v1.2.80–1.2.86 для поиска причин (полоска дока не видна / за панелью задач / имя аккаунта теряется). 10 точек в 5 файлах:
+- `dockPinState.js`: `ensureDockWindow`, `moved`, `restoreDockBounds`, `addToDock`, `showTooltip`.
+- `dockPinHandlers.js`: канал `dock:diag`, `pin-message`, `dock:resize`.
+- `pin-dock.js`: `reportSize` (вызов diag) — вернулся к прямому `resize`.
+- `pin-dock.preload.cjs`: метод `diag`.
+- `nativeStoreIpc.js`: строка `[native-notif] emit` откачена к базовому виду (убраны `chatAcc`/`accs`/`resolvedAcct`).
+
+**Все ФИКСЫ сохранены** (не тронуты): проброс `accountName` (v1.2.87), `backgroundThrottling:false` окну дока (v1.2.80), прямой `reportSize` без rAF (v1.2.80), кламп по низу экрана / на панели задач (v1.2.82), снятие snap-прилипания (v1.2.84), «Срочно» через `display:inline-block` (v1.2.83).
+
+Файлы: `main/handlers/dockPinState.js`, `main/handlers/dockPinHandlers.js`, `main/pin-dock.js`, `main/preloads/pin-dock.preload.cjs`, `src/native/store/nativeStoreIpc.js`. Тест pinTooltip: 61 (проверяет фиксы, не диагностику).
+
+**Что проверить:** уведомления/подсказка/док работают как в v1.2.87, лог `chatcenter.log` больше не засоряется строками `[dock-diag]`.
+
+Откат: `git revert` коммита v1.2.88 (вернёт диагностику).
 
 ### v1.2.87 — Фикс: имя аккаунта доходит до закрепа/подсказки
 

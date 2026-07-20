@@ -124,9 +124,6 @@ export function createDockPinState(deps) {
     const maxBaseY = fullB.y + fullB.height - dockH
     if (baseY > maxBaseY) baseY = maxBaseY
     const startY = baseY - DOCK_PREVIEW_RESERVE
-    // v1.2.81 (ВРЕМЕННАЯ ДИАГНОСТИКА «док за панелью задач после старта»):
-    // wa (вкл. y) + сохранённая позиция + вычисленный startY. Удалить после диагноза.
-    try { console.log('[dock-diag] ensureDockWindow saved=' + JSON.stringify(saved) + ' wa=' + JSON.stringify(wa) + ' dockH=' + dockH + ' maxBaseY=' + maxBaseY + ' baseY=' + baseY + ' startY=' + startY) } catch (_) {}
 
     const dockWin = new BrowserWindow({
       width: initW,
@@ -179,7 +176,6 @@ export function createDockPinState(deps) {
       const dockY = bounds.y + DOCK_PREVIEW_RESERVE
       const maxDockY = (display.bounds.y + display.bounds.height) - dockState.baseHeight
       const finalDockY = dockY > maxDockY ? maxDockY : dockY
-      try { console.log('[dock-diag] moved (snap off) save={x:' + bounds.x + ',y:' + finalDockY + '}') } catch (_) {}
       storage.set('dockPosition', { x: bounds.x, y: finalDockY })
     })
 
@@ -218,8 +214,6 @@ export function createDockPinState(deps) {
     const maxBaseY = display.bounds.y + display.bounds.height - dockH
     if (baseY > maxBaseY) baseY = maxBaseY
     const y = baseY - DOCK_PREVIEW_RESERVE
-    // v1.2.80 (ВРЕМЕННАЯ ДИАГНОСТИКА): что реально ставим и из какой сохранённой позиции.
-    try { console.log('[dock-diag] restoreDockBounds saved=' + JSON.stringify(saved) + ' set={x:' + x + ',y:' + y + ',w:' + w + ',h:' + totalH + '} wa=' + JSON.stringify(wa)) } catch (_) {}
     try { dock.setBounds({ x, y, width: w, height: totalH }) } catch (_) {}
   }
 
@@ -231,8 +225,6 @@ export function createDockPinState(deps) {
     const sendAdd = () => {
       dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '', note: item ? item.note || '' : '', messengerName: data.messengerName || '' })
       if (!dock.isVisible()) { restoreDockBounds(dock); dock.showInactive() }
-      // v1.2.80 (ВРЕМЕННАЯ ДИАГНОСТИКА): состояние окна дока сразу после показа.
-      try { console.log('[dock-diag] addToDock afterShow bounds=' + JSON.stringify(dock.getBounds()) + ' visible=' + dock.isVisible() + ' loading=' + dock.webContents.isLoading()) } catch (_) {}
       if (item && item.timerEnd) {
         dock.webContents.send('dock:update-timer', pinId, item.timerEnd)
       }
@@ -369,8 +361,6 @@ export function createDockPinState(deps) {
       category: item.category || '', note: item.note || '',
       icon: d.icon || '', // v1.2.75: аватар для подсказки (cc-media:// или data-url)
     }
-    // v1.2.86 (ДИАГНОСТИКА имя аккаунта): что уходит в подсказку. Удалить после.
-    try { console.log('[dock-diag] showTooltip pin=' + pinId + ' accountName=' + (payload.accountName || '<none>') + ' messengerName=' + (payload.messengerName || '?') + ' cat=' + (payload.category || '?')) } catch (_) {}
     const send = () => { if (win && !win.isDestroyed()) win.webContents.send('tooltip:data', payload) }
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
     else send()

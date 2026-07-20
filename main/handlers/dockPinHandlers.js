@@ -32,14 +32,8 @@ ipcMain.on('dock:tooltip-show', (_event, pinId, rect) => { showTooltip(pinId, re
 ipcMain.on('dock:tooltip-hide', () => { hideTooltip() })
 ipcMain.on('tooltip:resize', (_event, w, h) => { positionTooltipAndShow(w, h) })
 
-// v1.2.80 (ВРЕМЕННАЯ ДИАГНОСТИКА): строка из renderer дока в chatcenter.log.
-// Ищем причину «полоска дока не видна». Удалить после диагноза.
-ipcMain.on('dock:diag', (_event, msg) => { try { console.log('[dock-diag] R ' + String(msg)) } catch (_) {} })
-
 // ── Создание pin-окна ──
 ipcMain.on('notif:pin-message', (_event, data) => {
-  // v1.2.86 (ДИАГНОСТИКА имя аккаунта): что реально пришло в закреп. Удалить после.
-  try { console.log('[dock-diag] pin-message in accountName=' + (data.accountName || '<none>') + ' messengerName=' + (data.messengerName || '?')) } catch (_) {}
   if (data.messengerId && !data.messengerName) {
     const messengers = storage.get('messengers', DEFAULT_MESSENGERS)
     const found = messengers.find(m => m.id === data.messengerId)
@@ -264,8 +258,6 @@ ipcMain.on('dock:resize', (_event, width, height) => {
                Math.abs(nbResize.height - bounds.height) <= 4 &&
                Math.abs(nbResize.x - bounds.x) <= 6 &&
                Math.abs(nbResize.y - bounds.y) <= 4
-  // v1.2.80 (ВРЕМЕННАЯ ДИАГНОСТИКА): вход, текущие bounds, вычисленное окно, дед-бэнд.
-  try { console.log('[dock-diag] resize in=' + Math.round(width) + '×' + Math.round(totalH) + ' before=' + JSON.stringify(bounds) + ' nb=' + JSON.stringify(nbResize) + ' tiny=' + tiny + ' vis=' + dockState.win.isVisible()) } catch (_) {}
   if (tiny && dockState.win.isVisible()) return
   dockState.win.setBounds(nbResize)
   if (!dockState.win.isVisible()) {
