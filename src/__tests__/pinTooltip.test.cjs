@@ -116,6 +116,15 @@ check('restoreDockBounds есть (возврат окна в workArea)', state.
 check('restoreDockBounds позиционирует по workArea', /restoreDockBounds[\s\S]*workArea/.test(state))
 check('addToDock вызывает restoreDockBounds перед показом', /restoreDockBounds\(dock\)[\s\S]{0,40}showInactive/.test(state))
 
+// ── v1.2.80: окно дока не «засыпает» скрытым + прямой размер ──
+console.log('\n── v1.2.80 док rAF/throttling: ──')
+const dockJsFull = read('main/pin-dock.js')
+check('окно дока: backgroundThrottling:false', /new BrowserWindow\([\s\S]*?getDockPreloadPath[\s\S]*?backgroundThrottling:\s*false/.test(state) || /backgroundThrottling:\s*false/.test(state))
+const _rsStart = dockJsFull.indexOf('function reportSize()')
+const _rsEnd = dockJsFull.indexOf('dockApi.resize', _rsStart)
+const _rsSeg = (_rsStart >= 0 && _rsEnd > _rsStart) ? dockJsFull.slice(_rsStart, _rsEnd) : ''
+check('reportSize шлёт размер напрямую (без вызова requestAnimationFrame)', _rsSeg.length > 0 && !_rsSeg.includes('requestAnimationFrame('))
+
 // ── Сборка (prod) ──
 console.log('\n── Сборка: ──')
 check('копирование pin-tooltip.html в out/', viteCfg.includes('pin-tooltip.html'))

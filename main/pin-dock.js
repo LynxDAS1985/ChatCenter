@@ -330,9 +330,14 @@
   }
 
   function reportSize() {
-    requestAnimationFrame(() => {
-      window.dockApi.resize(dock.offsetWidth, dock.offsetHeight)
-    })
+    // v1.2.80 (ФИКС): слать размер НАПРЯМУЮ, без requestAnimationFrame — у скрытого
+    // окна rAF засыпает (ловушка #28), из-за чего размер полоски не уходил в main и
+    // полоска не показывалась/была не того размера. Как уже сделано у окна-подсказки
+    // (v1.2.71). Пара к backgroundThrottling:false у окна дока (dockPinState).
+    // diag — временный лог (chatcenter.log), удалить после подтверждения.
+    const w = dock.offsetWidth, h = dock.offsetHeight
+    try { window.dockApi.diag && window.dockApi.diag('reportSize w=' + w + ' h=' + h) } catch (_) {}
+    window.dockApi.resize(w, h)
   }
 
   dockCloseBtn.addEventListener('click', () => { hidePreview(); hideCtxMenu(); window.dockApi.closeDock() })

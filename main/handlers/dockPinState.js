@@ -138,6 +138,11 @@ export function createDockPinState(deps) {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,
+        // v1.2.80 (ловушка #28): у СКРЫТОГО окна Electron засыпают rAF/таймеры →
+        // renderer не успевал сообщить размер полоски после показа и полоска была
+        // не видна / не того размера. false = renderer работает и в hidden state
+        // (как у окна-подсказки dockPinUtils и окна уведомлений).
+        backgroundThrottling: false,
       }
     })
     dockState.win = dockWin
@@ -218,6 +223,8 @@ export function createDockPinState(deps) {
     const maxBaseY = wa.y + wa.height - dockH
     if (baseY > maxBaseY) baseY = maxBaseY
     const y = baseY - DOCK_PREVIEW_RESERVE
+    // v1.2.80 (ВРЕМЕННАЯ ДИАГНОСТИКА): что реально ставим и из какой сохранённой позиции.
+    try { console.log('[dock-diag] restoreDockBounds saved=' + JSON.stringify(saved) + ' set={x:' + x + ',y:' + y + ',w:' + w + ',h:' + totalH + '} wa=' + JSON.stringify(wa)) } catch (_) {}
     try { dock.setBounds({ x, y, width: w, height: totalH }) } catch (_) {}
   }
 
@@ -229,6 +236,8 @@ export function createDockPinState(deps) {
     const sendAdd = () => {
       dock.webContents.send('dock:add', { pinId, sender: data.sender, color: data.color, text: data.text, time: data.time, category: item ? item.category : '', messengerId: data.messengerId || '', note: item ? item.note || '' : '', messengerName: data.messengerName || '' })
       if (!dock.isVisible()) { restoreDockBounds(dock); dock.showInactive() }
+      // v1.2.80 (ВРЕМЕННАЯ ДИАГНОСТИКА): состояние окна дока сразу после показа.
+      try { console.log('[dock-diag] addToDock afterShow bounds=' + JSON.stringify(dock.getBounds()) + ' visible=' + dock.isVisible() + ' loading=' + dock.webContents.isLoading()) } catch (_) {}
       if (item && item.timerEnd) {
         dock.webContents.send('dock:update-timer', pinId, item.timerEnd)
       }

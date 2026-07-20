@@ -1,6 +1,24 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.79 (20 июля 2026)
+## Текущая версия: v1.2.80 (20 июля 2026)
+
+### v1.2.80 — Док: полоска не видна после «Свернуть» — фикс rAF/throttling + диагностика
+
+Дата: 20 июля 2026. Баг вернулся после «фикса» v1.2.76 (не помог).
+
+**Аудит (2 стороны):**
+- Сохранённая позиция дока на диске (`chatcenter.json`) ВАЛИДНА: `dockPosition {x:46, y:779}`. Прошлая гипотеза про «отравленную позицию −30000» ОПРОВЕРГНУТА реальным фактом (важно: проверил файл, а не поверил догадке).
+- Реальный дефект: окно дока — **единственное** из окон закрепа/уведомлений БЕЗ `backgroundThrottling:false` ([dockPinState.js](../main/handlers/dockPinState.js) vs подсказка [dockPinUtils.js:73](../main/handlers/dockPinUtils.js#L73)). А `reportSize` слал размер полоски через `requestAnimationFrame` ([pin-dock.js](../main/pin-dock.js)). У скрытого окна rAF засыпает (ловушка #28) → размер не уходил в main после показа → полоска не того размера / не видна.
+
+**Фикс:** (1) `backgroundThrottling:false` окну дока; (2) `reportSize` шлёт размер НАПРЯМУЮ, без rAF (как у окна-подсказки v1.2.71).
+
+**Временная диагностика `[dock-diag]`** (удалить после подтверждения): renderer — сработал ли `reportSize`; main — `bounds`/`isVisible` дока после показа (`addToDock`), что ставит `restoreDockBounds`, что приходит в `dock:resize`. Канал `dock:diag` в preload → `console.log` в main → `chatcenter.log`.
+
+Файлы: `main/handlers/dockPinState.js`, `main/pin-dock.js`, `main/preloads/pin-dock.preload.cjs`, `main/handlers/dockPinHandlers.js`. Тест pinTooltip → 52.
+
+**Требует визуальной проверки:** закрепить сообщение → «Свернуть» → полоска дока видна внизу. Если нет — прислать строки `[dock-diag]` из журнала (📒 Логи ЦентрЧатов), они покажут точную причину.
+
+Откат: `git checkout -- main/handlers/dockPinState.js main/pin-dock.js main/preloads/pin-dock.preload.cjs main/handlers/dockPinHandlers.js`.
 
 ### v1.2.79 — План разбиения файлов у лимита
 

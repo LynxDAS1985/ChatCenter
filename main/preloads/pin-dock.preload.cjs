@@ -40,4 +40,7 @@ contextBridge.exposeInMainWorld('dockApi', {
   // v1.2.70: Dock → Main: показать/скрыть окно-подсказку задачи при наведении
   showTooltip: (id, rect) => ipcRenderer.send('dock:tooltip-show', id, rect),
   hideTooltip: () => ipcRenderer.send('dock:tooltip-hide'),
+  // v1.2.80 (ВРЕМЕННАЯ ДИАГНОСТИКА): Dock → Main строка в chatcenter.log.
+  // Нужна для поиска причины «полоска дока не видна». Удалить после диагноза.
+  diag: (msg) => ipcRenderer.send('dock:diag', msg),
 })
