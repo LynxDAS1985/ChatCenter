@@ -63,6 +63,7 @@
 - CSS fade-out мигание, FIFO deadlock
 - Emoji regex, пустой body = стикер
 - Startup ribbon, "Перейти к чату", ribbonExpandedByDefault
+- 📦 Старые ловушки (#28–#32, v0.89.35–v1.2.7) вынесены в [`mistakes/notifications-ribbon-history.md`](./mistakes/notifications-ribbon-history.md) (v1.2.78, разгрузка)
 
 ### 4. [`mistakes/electron-core.md`](./mistakes/electron-core.md)
 **Когда читать**: Electron-инфраструктура, IPC, WebView core, настройки, AI.

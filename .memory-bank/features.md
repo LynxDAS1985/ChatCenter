@@ -1,6 +1,16 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.77 (20 июля 2026)
+## Текущая версия: v1.2.78 (20 июля 2026)
+
+### v1.2.78 — Разгрузка памяти: notifications-ribbon.md
+
+Дата: 20 июля 2026. Совет 3 из сессии. Только Memory Bank, код не тронут.
+
+Файл `mistakes/notifications-ribbon.md` был у лимита (198/200 КБ) — следующее дополнение заблокировало бы коммит. Старые ловушки (#28–#32, версии v0.89.35–v1.2.7, а также «карта серии v0.89.18-27») вынесены в новый файл `mistakes/notifications-ribbon-history.md` (~139 КБ). Все они РЕШЕНЫ — нужны только при работе со старым кодом BrowserWindow-уведомлений (rAF throttling в скрытом окне, MAX title-update, WhatsApp SVG-текст, cross-session isOutgoing).
+
+Основной `notifications-ribbon.md` сжат до ~59 КБ и содержит свежие ловушки (v1.2.x: VK-тосты, MAX-дубли, Native Telegram стандарт, MAX-сага пачки сообщений). Указатели на историю добавлены: в конце основного файла, в индексе `common-mistakes.md` и в таблице `mistakes/` в CLAUDE.md.
+
+Откат: `git checkout -- .memory-bank/mistakes/notifications-ribbon.md .memory-bank/common-mistakes.md CLAUDE.md && rm .memory-bank/mistakes/notifications-ribbon-history.md`.
 
 ### v1.2.77 — Аватар в уведомлении: кэш-проверка до сброса состояния
 
