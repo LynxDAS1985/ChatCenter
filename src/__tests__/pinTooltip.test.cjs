@@ -107,6 +107,8 @@ check('подсказка: показывает источник (messengerName)
 check('showTooltip прокидывает icon в подсказку', /icon:\s*d\.icon/.test(state))
 check('createPinBtn передаёт messengerName (источник)', notifHelpers.includes('messengerName'))
 check('native TG кладёт аватар в iconDataUrl (cc-media)', /iconDataUrl:\s*chat\?\.avatar/.test(nativeIpc))
+// v1.2.77 (Совет 1): fallback на свежий аватар из pendingChatAvatar до сброса состояния
+check('уведомление берёт аватар из pendingChatAvatar (кэш до flush)', /chat\?\.avatar\s*\|\|\s*pendingChatAvatar\.get\(chatId\)/.test(nativeIpc))
 
 // ── v1.2.76: док возвращается на экран после safeHide (не пропадает) ──
 console.log('\n── v1.2.76 док после «Свернуть»: ──')

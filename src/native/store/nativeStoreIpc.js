@@ -489,7 +489,9 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             body: preview || '[медиа]',
             fullBody: preview || '[медиа]',
             iconUrl: '',
-            iconDataUrl: chat?.avatar || '', // v1.2.75: аватар TDLib (cc-media://) сразу как src картинки — конвейер http-загрузки его не трогает, окно уведомления рисует напрямую (protocol глобальный). Пусто → эмодзи-заглушка.
+            // v1.2.75 аватар cc-media как src; v1.2.77 (Совет 1) fallback pendingChatAvatar — свежий аватар до
+            // rAF-flush в state (ключ chatId). Битый/пустой URL ловит img.onerror → эмодзи. См. features.md v1.2.77.
+            iconDataUrl: chat?.avatar || pendingChatAvatar.get(chatId) || '',
             color: '#2AABEE',
             emoji: '✈️',
             messengerName: 'Telegram',
