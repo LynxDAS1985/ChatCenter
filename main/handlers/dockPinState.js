@@ -21,9 +21,23 @@ export function createDockPinState(deps) {
 
   const pinItems = new Map() // pinId → { win, data, timerEnd, timerTimeout, inDock, category, note }
   const counter = { value: 0 }
-  const dockState = { win: null, baseHeight: 48 }
+  // v1.2.89: baselineTopY — СТАБИЛЬНЫЙ якорь верхней кромки полоски (экранный Y).
+  // Меняется ТОЛЬКО при реальном перетаскивании мышью. dock:resize берёт вертикаль
+  // из него, а НЕ из живой высоты окна — иначе разница «высота окна vs контент»
+  // сдвигала полоску вниз при добавлении/удалении вкладок (см. features.md v1.2.89).
+  // suppressMoved — флаг: программный setBounds не должен считаться drag'ом.
+  const dockState = { win: null, baseHeight: 48, baselineTopY: null, suppressMoved: false }
   // v1.2.70: окно-подсказка задачи (одно, переиспользуемое).
   const tooltipState = { win: null, anchorX: 0, anchorTabTop: 0, pendingShow: false }
+
+  // v1.2.89: программный setBounds окна дока — с флагом, чтобы обработчик 'moved'
+  // НЕ принял его за перетаскивание пользователем (иначе якорь/сохранёнка сползают).
+  function setDockBoundsSilent(b) {
+    if (!dockState.win || dockState.win.isDestroyed()) return
+    dockState.suppressMoved = true
+    try { dockState.win.setBounds(b) } catch (_) {}
+    setTimeout(() => { dockState.suppressMoved = false }, 40)
+  }
 
   function getShowDockEmpty() {
     const s = storage.get('settings', {})
@@ -71,7 +85,7 @@ export function createDockPinState(deps) {
       if (y < wa.y) y = wa.y
       if (x + b.width > wa.x + wa.width) x = wa.x + wa.width - b.width
       if (x < wa.x) x = wa.x
-      if (x !== b.x || y !== b.y) dockState.win.setBounds({ x, y, width: b.width, height: b.height })
+      if (x !== b.x || y !== b.y) { setDockBoundsSilent({ x, y, width: b.width, height: b.height }); dockState.baselineTopY = y }
       reassertDockTop()
     } catch (_) {}
   })
@@ -124,6 +138,7 @@ export function createDockPinState(deps) {
     const maxBaseY = fullB.y + fullB.height - dockH
     if (baseY > maxBaseY) baseY = maxBaseY
     const startY = baseY - DOCK_PREVIEW_RESERVE
+    dockState.baselineTopY = startY // v1.2.89: стабильный якорь верха при создании
 
     const dockWin = new BrowserWindow({
       width: initW,
@@ -171,11 +186,15 @@ export function createDockPinState(deps) {
     // чтобы окно не ушло ниже нижнего края (позиция «на панели задач» сохраняется).
     dockWin.on('moved', () => {
       if (!dockState.win || dockState.win.isDestroyed()) return
+      // v1.2.89: сохраняем позицию ТОЛЬКО на реальный drag.
+      if (dockState.suppressMoved) return               // программный setBounds — пропускаем
       const bounds = dockState.win.getBounds()
+      if (bounds.x <= -1000 || bounds.y <= -1000) return // офскрин (safeHide) — не сохраняем
       const display = screen.getPrimaryDisplay()
       const dockY = bounds.y + DOCK_PREVIEW_RESERVE
       const maxDockY = (display.bounds.y + display.bounds.height) - dockState.baseHeight
       const finalDockY = dockY > maxDockY ? maxDockY : dockY
+      dockState.baselineTopY = finalDockY               // якорь двигается только здесь (реальный drag)
       storage.set('dockPosition', { x: bounds.x, y: finalDockY })
     })
 
@@ -214,7 +233,8 @@ export function createDockPinState(deps) {
     const maxBaseY = display.bounds.y + display.bounds.height - dockH
     if (baseY > maxBaseY) baseY = maxBaseY
     const y = baseY - DOCK_PREVIEW_RESERVE
-    try { dock.setBounds({ x, y, width: w, height: totalH }) } catch (_) {}
+    dockState.baselineTopY = y // v1.2.89: якорь верха при показе
+    setDockBoundsSilent({ x, y, width: w, height: totalH })
   }
 
   // Добавить таб в dock
@@ -396,5 +416,6 @@ export function createDockPinState(deps) {
     checkDockVisibility, findPinIdByWin,
     getShowDockEmpty, getDockCenterExpand,
     showTooltip, positionTooltipAndShow, hideTooltip,
+    setDockBoundsSilent,
   }
 }

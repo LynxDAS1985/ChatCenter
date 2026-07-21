@@ -142,6 +142,15 @@ console.log('\n── v1.2.84 без прилипания: ──')
 check('snap к краям убран из moved (нет SNAP=20)', !state.includes('SNAP = 20'))
 check('moved только сохраняет позицию', /dockWin\.on\('moved'[\s\S]*?storage\.set\('dockPosition'/.test(state))
 
+// ── v1.2.89: стабильный якорь верха дока (не сползает при add/remove) ──
+console.log('\n── v1.2.89 якорь дока: ──')
+check('dockState имеет baselineTopY + suppressMoved', state.includes('baselineTopY') && state.includes('suppressMoved'))
+check('setDockBoundsSilent (программный setBounds без сохранения)', state.includes('function setDockBoundsSilent') && state.includes('setDockBoundsSilent,'))
+check('moved: пропуск программного setBounds (suppressMoved)', /dockWin\.on\('moved'[\s\S]*?suppressMoved/.test(state))
+check('moved: игнор офскрин позиции (safeHide)', /dockWin\.on\('moved'[\s\S]*?bounds\.x <= -1000/.test(state))
+check('dock:resize вертикаль по baselineTopY, НЕ из живой высоты', handlers.includes('dockState.baselineTopY') && !handlers.includes('bounds.y + bounds.height'))
+check('dock:resize: кламп Y по низу экрана', handlers.includes('newY + totalH > scrBottom'))
+
 // ── Сборка (prod) ──
 console.log('\n── Сборка: ──')
 check('копирование pin-tooltip.html в out/', viteCfg.includes('pin-tooltip.html'))

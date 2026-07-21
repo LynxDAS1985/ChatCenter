@@ -24,6 +24,7 @@ const {
   checkDockVisibility, findPinIdByWin,
   getShowDockEmpty, getDockCenterExpand,
   showTooltip, positionTooltipAndShow, hideTooltip,
+  setDockBoundsSilent,
 } = state
 
 // v1.2.70: IPC окна-подсказки задачи (Вариант 4). Наведение с задержкой в
@@ -249,8 +250,14 @@ ipcMain.on('dock:resize', (_event, width, height) => {
     x = fullBounds.x + fullBounds.width - width
   }
   if (x < fullBounds.x) x = fullBounds.x
-  const dockBottomY = bounds.y + bounds.height
-  const newY = dockBottomY - totalH
+  // v1.2.89: вертикаль — по СТАБИЛЬНОМУ якорю верха (dockState.baselineTopY), а НЕ
+  // из живой высоты окна. Иначе разница «высота окна vs реальный контент» на каждом
+  // add/remove сдвигала полоску вниз (см. features.md v1.2.89). Верх фиксирован →
+  // при постоянной высоте (один ряд) низ тоже на месте; двигается только правый край.
+  let newY = (dockState.baselineTopY != null) ? dockState.baselineTopY : bounds.y
+  const scrBottom = fullBounds.y + fullBounds.height
+  if (newY + totalH > scrBottom) newY = scrBottom - totalH   // не ниже низа экрана
+  if (newY < display.workArea.y) newY = display.workArea.y   // не выше рабочей области
   const nbResize = { x, y: newY, width, height: totalH }
   // v1.2.69: дед-бэнд — при микро-изменениях (тик таймера/мутации давали ±1-2px
   // дрейф и дрожание) окно НЕ трогаем. Ресайзим только при заметном изменении.
@@ -259,7 +266,7 @@ ipcMain.on('dock:resize', (_event, width, height) => {
                Math.abs(nbResize.x - bounds.x) <= 6 &&
                Math.abs(nbResize.y - bounds.y) <= 4
   if (tiny && dockState.win.isVisible()) return
-  dockState.win.setBounds(nbResize)
+  setDockBoundsSilent(nbResize)
   if (!dockState.win.isVisible()) {
     let hasDocked = false
     for (const [, item] of pinItems) {
@@ -278,19 +285,20 @@ ipcMain.on('dock:resize', (_event, width, height) => {
 ipcMain.on('dock:ctx-menu-space', (_event, extraH) => {
   if (!dockState.win || dockState.win.isDestroyed()) return
   const bounds = dockState.win.getBounds()
-  const dockBottomY = bounds.y + bounds.height
+  // v1.2.89: низ полоски = стабильный якорь (baselineTopY + baseHeight), а НЕ из живых
+  // bounds — иначе открытие/закрытие меню возвращало вертикальный дрейф.
+  const anchorTop = (dockState.baselineTopY != null) ? dockState.baselineTopY : bounds.y
+  const stripBottom = anchorTop + dockState.baseHeight
   if (extraH <= 0) {
     const normalH = dockState.baseHeight + DOCK_PREVIEW_RESERVE
     if (bounds.height !== normalH) {
-      const nb = { x: bounds.x, y: dockBottomY - normalH, width: bounds.width, height: normalH }
-      dockState.win.setBounds(nb)
+      setDockBoundsSilent({ x: bounds.x, y: stripBottom - normalH, width: bounds.width, height: normalH })
     }
     return
   }
   const neededH = dockState.baseHeight + Math.max(DOCK_PREVIEW_RESERVE, extraH)
   if (neededH <= bounds.height) return
-  const nb = { x: bounds.x, y: dockBottomY - neededH, width: bounds.width, height: neededH }
-  dockState.win.setBounds(nb)
+  setDockBoundsSilent({ x: bounds.x, y: stripBottom - neededH, width: bounds.width, height: neededH })
 })
 
 // ── Dock: закрыть/скрыть панель ──
