@@ -477,7 +477,7 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         } catch (_) {}
       } else {
         // v1.2.12: emit-лог №1 — пара к [notif-ipc] recv в mainIpcHandlers.js.
-        try { window.api?.send?.('app:log', { level: 'INFO', message: '[native-notif] emit chatId=' + chatId + ' sender=' + String(message.senderName || chat?.title || '?').slice(0, 30) + ' bodyLen=' + (preview || '').length }) } catch (_) {}
+        try { window.api?.send?.('app:log', { level: 'INFO', message: '[native-notif] emit chatId=' + chatId + ' sender=' + String(message.senderName || chat?.title || '?').slice(0, 30) + ' bodyLen=' + (preview || '').length + ' media=' + (message.mediaType || 'text') + ' thumb=' + (message.strippedThumb ? 'Y' : 'n') + ' wp=' + (message.webPage ? 'Y' : 'n') + ' grp=' + (message.groupedId ? 'Y' : 'n') }) } catch (_) {}
         try {
           // v1.2.14: НЕ ДОБАВЛЯТЬ dismissMs hardcoded в payload!
           // notificationManager.showCustomNotification (main) автоматически читает
