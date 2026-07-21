@@ -50,6 +50,20 @@ describe('createTdlibBackend', () => {
   })
 })
 
+// v1.2.103: видео может прийти как ДОКУМЕНТ (mime video/*). downloadVideo должен найти
+// файл в content.document (через extractVideoFileId), а не выдать «no video file».
+describe('backend.media.downloadVideo — видео-как-документ (v1.2.103)', () => {
+  it('видео-документ (mime video/*) → доходит до скачивания file_id документа, не «no video file»', async () => {
+    const { backend, mockClient } = makeBackend()
+    mockClient.invoke.mockImplementation((req) => req['@type'] === 'getMessage'
+      ? Promise.resolve({ content: { '@type': 'messageDocument', document: { mime_type: 'video/mp4', document: { id: 555 } } } })
+      : Promise.resolve({ '@type': 'ok' }))
+    backend.media.downloadVideo({ chatId: 'tg_main:1', msgId: 5 }).catch(() => {})
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mockClient.invoke).toHaveBeenCalledWith(expect.objectContaining({ '@type': 'downloadFile', file_id: 555 }))
+  })
+})
+
 // ──────────────────────────────────────────────────────────────────────
 // chats — getChats из cache (без сетевого запроса в тесте)
 // ──────────────────────────────────────────────────────────────────────

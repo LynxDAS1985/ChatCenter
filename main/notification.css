@@ -402,6 +402,10 @@
   /* Одиночное фото — вариант «размытый фон»: фото целиком (contain), поля заполнены
      размытой растянутой копией. Media-group грид 2×2 не трогаем. */
   .notif-item.single-photo .album-grid { grid-template-columns: 1fr; height: auto; aspect-ratio: 3 / 2; }
+  /* v1.2.101: значок ▶ поверх постера видео (клик открывает видео-плеер). */
+  .album-tile .tile-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 5; width: 54px; height: 54px; border-radius: 50%; background: rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.85); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 20px; padding-left: 4px; pointer-events: none; }
+  /* v1.2.102: видео — курсор «палец» (у видео не приближение, а проигрывание), не лупа zoom-in. */
+  .album-tile.is-video { cursor: pointer; }
   .album-tile.single { position: relative; background: #000; }
   .album-tile.single .sp-blur { position: absolute; inset: 0; background-size: cover; background-position: center; background-repeat: no-repeat; filter: blur(20px) brightness(0.55); transform: scale(1.2); }
   .album-tile.single .sp-main { position: absolute; inset: 0; background-size: contain; background-position: center; background-repeat: no-repeat; }

@@ -158,6 +158,21 @@ export function extractThumbnailFileId(content) {
   return null
 }
 
+// v1.2.103: file_id ВИДЕО для проигрывания. Видео приходит как messageVideo, GIF
+// (messageAnimation) ИЛИ как ДОКУМЕНТ (файл с mime video/*, напр. «отправить как файл»
+// или пересылка). Раньше downloadVideo смотрел только content.video → у видео-документа
+// была ошибка «no video file» (не играло ни в чате, ни в уведомлении).
+export function extractVideoFileId(content) {
+  if (!content) return null
+  const cn = content['@type']
+  if (cn === 'messageVideo') return content.video?.video?.id ?? null
+  if (cn === 'messageAnimation') return content.animation?.animation?.id ?? null
+  if (cn === 'messageDocument' && (content.document?.mime_type || '').startsWith('video/')) {
+    return content.document?.document?.id ?? null
+  }
+  return null
+}
+
 /**
  * v0.89.7: конвертирует абсолютный путь к файлу TDLib в cc-media:// URL.
  *

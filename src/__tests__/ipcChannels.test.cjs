@@ -12,7 +12,9 @@ var mainCode = fs.readFileSync('main/main.js', 'utf8')
 var handlersDir = 'main/handlers/'
 // v1.2.65: + photoViewerHandler.js (photo:open) — альбом в уведомлении открывает
 // фото через этот handler из useAppIPCListeners.js (hook сканируется тестом ниже).
-;['aiHandlers.js', 'aiToolIpcHandlers.js', 'auditIpcHandlers.js', 'taskIpcHandlers.js', 'reminderIpcHandlers.js', 'autoReplyRulesIpcHandlers.js', 'notifHandlers.js', 'dockPinHandlers.js', 'dockPinState.js', 'mainIpcHandlers.js', 'maxTestWindowHandler.js', 'photoViewerHandler.js'].forEach(function(f) {
+// v1.2.104: + videoPlayerHandler.js (video:open) — видео из уведомления открывает
+// плеер через этот handler из useAppIPCListeners.js (тот же путь, что и фото).
+;['aiHandlers.js', 'aiToolIpcHandlers.js', 'auditIpcHandlers.js', 'taskIpcHandlers.js', 'reminderIpcHandlers.js', 'autoReplyRulesIpcHandlers.js', 'notifHandlers.js', 'dockPinHandlers.js', 'dockPinState.js', 'mainIpcHandlers.js', 'maxTestWindowHandler.js', 'photoViewerHandler.js', 'videoPlayerHandler.js'].forEach(function(f) {
   try { mainCode += '\n' + fs.readFileSync(handlersDir + f, 'utf8') } catch(e) {}
 })
 // v1.2.65: tdlibIpcHandlers.js (main/native/) регистрирует tg:* через обёртку handle().

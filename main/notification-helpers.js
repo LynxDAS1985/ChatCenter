@@ -146,10 +146,18 @@ function renderAlbumGrid(album) {
       // v1.2.100: страховка от «вечной» крутилки у одиночного фото — если чёткое превью
       // не пришло за 8с (сбой загрузки), снимаем крутилку (остаётся фото целиком из strippedThumb).
       if (isSingle && !sharp) setTimeout(() => tile.classList.remove('loading'), 8000)
+      // v1.2.101: видео — значок ▶ поверх постера; клик открывает видео-плеер (как в чате).
+      // v1.2.102: класс is-video → курсор «палец» (не лупа zoom-in, как у фото).
+      if (album.isVideo) { tile.classList.add('is-video'); const pl = document.createElement('div'); pl.className = 'tile-play'; pl.textContent = '▶'; tile.appendChild(pl) }
       const gi = i
       tile.addEventListener('click', (e) => {
         e.stopPropagation()
-        try { window.notifApi.openPhoto({ chatId: album.chatId, messageIds: ids, index: gi }) } catch (_) {}
+        if (album.isVideo) {
+          try { window.notifApi.openVideo({ chatId: album.chatId, messageId: ids[gi] }) } catch (_) {}
+          // v1.2.102: видимый отклик — видео качается целиком перед открытием (может быть не мгновенно).
+          tile.classList.add('loading'); setTimeout(() => tile.classList.remove('loading'), 20000)
+        }
+        else { try { window.notifApi.openPhoto({ chatId: album.chatId, messageIds: ids, index: gi }) } catch (_) {} }
       })
       grid.appendChild(tile)
     }

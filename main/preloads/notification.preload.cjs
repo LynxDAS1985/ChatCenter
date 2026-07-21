@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('notifApi', {
   // data: { chatId, messageIds:[...], index }. Main пересылает главному окну,
   // оно качает полноразмеры и зовёт существующий photo:open.
   openPhoto: (data) => ipcRenderer.send('notif:open-photo', data),
+  // v1.2.101: Notification window → Main: открыть ВИДЕО в видео-плеере (как в чате).
+  // data: { chatId, messageId }. Main пересылает главному окну → tg:download-video → video:open.
+  openVideo: (data) => ipcRenderer.send('notif:open-video', data),
   // v1.2.74 (A1): Main → Notification window: чёткое превью плитки альбома догрузилось.
   // data: { albumId, messageId, src }. Окно заменяет мутную плитку на чёткую.
   onAlbumThumb: (callback) => { ipcRenderer.on('notif:album-thumb', (_event, data) => callback(data)) },
@@ -39,4 +42,15 @@ contextBridge.exposeInMainWorld('notifApi', {
   log: (level, message) => {
     try { ipcRenderer.send('app:log', { level, message: '[notif-renderer] ' + message }) } catch (_) {}
   },
+})
+
+// v1.2.104: главное окно сообщило, что видео открылось (или не удалось) → снять крутилку
+// с плитки этого сообщения. Работает с DOM напрямую (preload имеет доступ к document),
+// поэтому notification.js трогать не нужно (он на лимите размера).
+ipcRenderer.on('notif:video-done', (_event, data) => {
+  try {
+    const mid = data && data.messageId != null ? String(data.messageId) : null
+    const tile = mid && document.querySelector('.album-tile[data-mid="' + mid + '"]')
+    if (tile) tile.classList.remove('loading')
+  } catch (_) {}
 })

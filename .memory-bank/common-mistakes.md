@@ -66,6 +66,7 @@
 - Док (полоска задач): вертикаль по стабильному якорю, не из живой `getBounds()`; сползание вниз; на панели задач (v1.2.80–89, см. [[ADR-018]])
 - Уведомление теряет поля payload (accountName) — добавлять в `showCustomNotification` (v1.2.87)
 - CSS `display:none` в правиле нельзя перекрыть `style.display=''` (v1.2.83)
+- Карточка «Стопка» (аватар+имя сверху) + одиночное фото «размытый фон» (`cover` режет → `contain`+blur двумя слоями); «вечная» крутилка при сбое превью → таймаут (v1.2.96–100, см. [[ADR-020]])
 - 📦 Старые ловушки (#28–#32, v0.89.35–v1.2.7) вынесены в [`mistakes/notifications-ribbon-history.md`](./mistakes/notifications-ribbon-history.md) (v1.2.78, разгрузка)
 
 ### 4. [`mistakes/electron-core.md`](./mistakes/electron-core.md)

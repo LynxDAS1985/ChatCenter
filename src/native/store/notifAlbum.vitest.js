@@ -10,12 +10,13 @@ describe('buildNotifAlbum', () => {
 
   it('ОДИНОЧНОЕ фото с мини-картинкой → album c id = single_<id> (главный фикс v1.2.95)', () => {
     const a = buildNotifAlbum({ id: 42, mediaType: 'photo', strippedThumb: 'data:xxx', text: '1111' }, 'tg_1:9')
-    expect(a).toEqual({ id: 'single_42', chatId: 'tg_1:9', tileThumb: 'data:xxx', tileMessageId: '42', tileText: '1111' })
+    expect(a).toEqual({ id: 'single_42', chatId: 'tg_1:9', tileThumb: 'data:xxx', tileMessageId: '42', tileText: '1111', isVideo: false })
   })
 
-  it('одиночное видео с мини-картинкой → album', () => {
+  it('одиночное видео с мини-картинкой → album + isVideo:true (v1.2.101)', () => {
     const a = buildNotifAlbum({ id: 7, mediaType: 'video', strippedThumb: 'data:v' }, 'tg_1:3')
     expect(a && a.id).toBe('single_7')
+    expect(a.isVideo).toBe(true)
   })
 
   it('одиночное фото БЕЗ мини-картинки → null (нечего показать)', () => {

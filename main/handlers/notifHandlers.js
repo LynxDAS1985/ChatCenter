@@ -119,6 +119,15 @@ export function initNotifHandlers(deps) {
     mainWindow.webContents.send('notify:open-album', payload)
   })
 
+  // v1.2.101: клик по ВИДЕО в карточке уведомления. Пересылаем главному окну — оно
+  // качает видео (tg:download-video) и открывает видео-плеер (video:open), как в чате.
+  // payload: { chatId, messageId }.
+  ipcMain.on('notif:open-video', (_event, payload) => {
+    const mainWindow = getMainWindow()
+    if (!mainWindow || mainWindow.isDestroyed() || !payload) return
+    mainWindow.webContents.send('notify:open-video', payload)
+  })
+
   // v1.2.74 (A1): чёткое превью плитки альбома догрузилось в главном окне —
   // пересылаем его в окно уведомления, чтобы заменить мутную заглушку.
   // payload: { albumId, messageId, src }.
@@ -126,6 +135,14 @@ export function initNotifHandlers(deps) {
     const notifWin = getNotifWin()
     if (!notifWin || notifWin.isDestroyed() || !payload) return
     notifWin.webContents.send('notif:album-thumb', payload)
+  })
+
+  // v1.2.104: главное окно сообщило, что видео открыто/не удалось → снять крутилку с плитки.
+  // payload: { messageId }.
+  ipcMain.on('notif:video-done', (_event, payload) => {
+    const notifWin = getNotifWin()
+    if (!notifWin || notifWin.isDestroyed() || !payload) return
+    notifWin.webContents.send('notif:video-done', payload)
   })
 
   let lastNotifBounds = null

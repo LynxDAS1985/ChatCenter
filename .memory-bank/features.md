@@ -1,6 +1,82 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.100 (21 июля 2026)
+## Текущая версия: v1.2.104 (21 июля 2026)
+
+### v1.2.104 — Доводка видео: крутилка по реальной загрузке + чистка + тест связки
+
+Дата: 21 июля 2026. Три улучшения по итогам ревью v1.2.103.
+
+**1. Крутилка на плитке видео снимается по ФАКТУ (а не по «тупому» таймеру 20с).** После клика по видео главное окно скачивает файл и открывает плеер (`video:open`), затем шлёт `notif:video-done { messageId }` ([useAppIPCListeners.js]). `notifHandlers.js` пересылает это окну уведомления, а слушатель в **preload** окна (`notification.preload.cjs`) убирает класс `loading` с плитки по `data-mid`. Слушатель именно в preload (у него есть доступ к DOM), потому что `notification.js` на лимите размера (730). 20-секундный таймаут остался как страховка (если сигнал не придёт).
+
+**2. Косметика:** `extractVideoFileId` переставлена в `tdlibMedia.js` ПОД `extractThumbnailFileId` — при первой вставке (v1.2.103) она вклинилась между JSDoc-описанием и функцией `extractThumbnailFileId`, «уводя» описание не к той функции. Теперь описания на своих местах.
+
+**3. Тест связки:** `tdlibBackend.vitest.js` — видео-документ (`messageDocument` mime video/*) через `downloadVideo` доходит до скачивания file_id документа (проверяется вызов `downloadFile` с нужным id), а не возвращает «no video file». Защищает от отката фикса v1.2.103.
+
+**Проверки:** `npm run test:vitest`; линт 0; лимиты — tdlibBackend.vitest 668/670, hook 142/150, preload 56/600. **Требует визуальной проверки:** крутилка на видео исчезает, когда плеер открылся.
+
+Файлы: `src/hooks/useAppIPCListeners.js`, `main/handlers/notifHandlers.js`, `main/preloads/notification.preload.cjs`, `main/native/backends/tdlibMedia.js`, `src/__tests__/tdlibBackend.vitest.js`.
+
+Откат: `git revert` коммита v1.2.104.
+
+### v1.2.103 — Видео-как-файл (документ) теперь проигрывается (чат + уведомление)
+
+Дата: 21 июля 2026. Корень найден по скриншоту ЧАТА — там прямо «no video file».
+
+**Проблема.** Видео не играло ни в уведомлении, ни в самом чате. Причина: сообщение — это видео, присланное как ДОКУМЕНТ (файл с mime `video/*`; в списке чатов подпись `document_...`), а не как обычное «видео» Telegram. Функция `downloadVideo` ([tdlibBackend.js]) искала файл только в `content.video.video.id` → у видео-документа его нет → возвращалась ошибка `'no video file'`. Ломалось и в чате (VideoTile показывал ⚠️ «no video file»), и в уведомлении (клик → `download-video` → `ok:false` → плеер не открывался, крутилка висела).
+
+Это **опровергло** прошлую гипотезу (v1.2.102) про «несобранный мост уведомления»: чат мостом не пользуется, а видео тоже не играл → значит корень в общей функции `downloadVideo`, а не в мосте.
+
+**Фикс.** Выбор file_id для видео вынесен в чистую `extractVideoFileId(content)` ([tdlibMedia.js], рядом с `extractMediaFileId`/`extractThumbnailFileId`): `messageVideo` → `video.video.id`; GIF `messageAnimation` → `animation.animation.id`; `messageDocument` с mime `video/*` → `document.document.id`. `downloadVideo` теперь использует её. Один фикс лечит и чат, и уведомление.
+
+**Крайние случаи (юнит-тест `tdlibMedia.vitest.js`, +5):** video/animation/video-документ → id; документ-НЕ-видео (pdf) → null; фото → null; null → null.
+
+**Проверки:** `npm run test:vitest`; линт 0; лимиты — tdlibMedia.js 415/500, tdlibBackend.js ~893/930. **Требует визуальной проверки:** прислать видео как файл → играет в чате и открывается из уведомления. (Возможный следующий шаг: если конкретный кодек не поддержан плеером — кнопка «открыть во внешнем» уже есть.)
+
+Файлы: `main/native/backends/tdlibMedia.js`, `main/native/backends/tdlibBackend.js`, `src/__tests__/tdlibMedia.vitest.js`.
+
+Откат: `git revert` коммита v1.2.103.
+
+### v1.2.102 — Видео в уведомлении: курсор-палец + отклик на клик
+
+Дата: 21 июля 2026. Доводка v1.2.101 (постер видео уже показывается).
+
+**Проблемы:** (1) курсор над видео — «лупа» (`.album-tile { cursor: zoom-in }` — стиль для приближения фото); (2) по клику нет видимого отклика — видео качается целиком перед открытием плеера (v0.89.15, `downloadVideo` ждёт полной загрузки), а карточка ничего не показывает → кажется «не нажимается».
+
+**Фиксы:**
+- Плитке видео добавлен класс `.is-video` → CSS `cursor: pointer` (перебивает `zoom-in`). [main/notification-helpers.js], [main/notification.css].
+- По клику на видео плитка получает `loading` (крутилка) + страховочный таймаут 20с → видно, что клик принят и идёт загрузка.
+
+**Не изменено:** клик по-прежнему открывает готовый плеер `video:open` (как в чате). Фото/альбомы не затронуты.
+
+**Открытый вопрос (не воспроизвести без запуска):** если после ПОЛНОЙ пересборки плеер всё равно не открывается — вероятно, правки главного процесса (`notifHandlers.js`) и preload (`notification.preload.cjs`) из v1.2.101 не попали в запущенную сборку (постер обновляется отдельной частью — renderer/сырые скрипты). Тогда следующий шаг — диагностический лог по цепочке клик→main→video:open.
+
+**Проверки:** `npm run test:vitest` (`albumLiveCard.vitest.js` — видео-плитка имеет класс `is-video` + ▶ + клик зовёт `openVideo`); линт 0. **Требует визуальной проверки.**
+
+Файлы: `main/notification-helpers.js`, `main/notification.css`, тест `src/__tests__/albumLiveCard.vitest.js`.
+
+Откат: `git revert` коммита v1.2.102.
+
+### v1.2.101 — Видео в уведомлении: постер + проигрыватель как в чате
+
+Дата: 21 июля 2026. Пришло видео → чёрный прямоугольник вместо кадра + не проигрывалось.
+
+**Две причины (найдены по коду, не по логам — запуск приложения запрещён):**
+1. **Чёрный постер.** Превью качалось каналом `tg:download-media` с `thumb:true`, но метод `media.download({ chatId, msgId, onProgress })` ([main/native/backends/tdlibBackend.js:730]) параметр `thumb` **не принимает** (в сигнатуре его нет) → для видео `extractMediaFileId` даёт файл САМОГО видео ([tdlibMedia.js:99]) → скачивался видеофайл и подставлялся в CSS `background-image`, который видео не рисует → чёрное. (Для фото не видно: полное фото — всё равно картинка.)
+2. **Не проигрывалось.** Клик по плитке открывал фото-смотрелку (`photo:open`, окно с `<img>`) — `<img>` видео не играет.
+
+**Решение (переиспользуем то, что уже есть в чате):**
+- Постер: для видео качаем `tg:download-thumbnail` (постер-JPEG, тот же канал, что VideoTile.jsx) — [albumThumbPreload.js]. Фото не тронуто.
+- Проигрывание: плитка видео помечена флагом `isVideo` (в `buildNotifAlbum`, [shared/notifAlbum.js]) → рисуется значок ▶ поверх постера; клик вызывает `window.notifApi.openVideo({chatId, messageId})` вместо `openPhoto`. Мост: `notif:open-video` (preload) → `notify:open-video` (notifHandlers) → главное окно `tg:download-video` → `video:open` (готовое окно-плеер со стримингом/перемоткой, [videoPlayerHandler.js]).
+
+**Не затронуто:** одиночное фото и медиа-группы (ветка `isVideo`/видео-канал включается только при `mediaType==='video'` и `single_*`).
+
+**Крайние случаи:** видео без постера → значок ▶ на тёмном фоне (не «дырка»); видео не скачалось/нет сети → плеер не откроется (тихо, как у фото); кодек не поддержан (HEVC) → у плеера уже есть кнопка «открыть во внешнем» ([videoPlayerHandler.js:195]).
+
+**Проверки:** `npm run test:vitest` (`notifAlbum.vitest.js` — `isVideo:true` для видео; `albumLiveCard.vitest.js` — плитка видео с ▶ + клик зовёт `openVideo`); линт 0. **Требует визуальной проверки** — видео показывает кадр + ▶, клик открывает плеер.
+
+Файлы: `shared/notifAlbum.js`, `src/native/utils/albumThumbPreload.js`, `main/notification-helpers.js`, `main/notification.css`, `main/preloads/notification.preload.cjs`, `main/handlers/notifHandlers.js`, `src/hooks/useAppIPCListeners.js`, `main/notification.js`, тесты `notifAlbum.vitest.js`/`albumLiveCard.vitest.js`.
+
+Откат: `git revert` коммита v1.2.101.
 
 ### v1.2.100 — Фикс по ревью: страховка от «вечной» крутилки у одиночного фото
 

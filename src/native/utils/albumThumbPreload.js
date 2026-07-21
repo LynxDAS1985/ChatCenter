@@ -29,7 +29,13 @@ export function preloadAlbumThumb(message, chatId, albumId) {
   const aid = albumId || (message.groupedId ? String(message.groupedId) : null)
   if (!aid) return
   try {
-    window.api?.invoke('tg:download-media', { chatId, messageId: message.id, thumb: true })
+    // v1.2.101: у ВИДЕО постер-кадр качаем каналом tg:download-thumbnail. Канал
+    // tg:download-media (media.download) параметр thumb ИГНОРИРУЕТ и для видео тянет
+    // сам файл → в фон-картинку попадал видеофайл (не рисуется) = чёрный кадр.
+    // Для фото оставляем как было (thumb → полноразмер, но это картинка, показывается).
+    const isVid = t === 'video'
+    window.api?.invoke(isVid ? 'tg:download-thumbnail' : 'tg:download-media',
+      isVid ? { chatId, messageId: message.id } : { chatId, messageId: message.id, thumb: true })
       .then((r) => {
         if (r && r.ok && r.path) {
           try {

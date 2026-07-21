@@ -11,6 +11,16 @@
 
 **Итоговое архитектурное решение**: НИ ОДИН файл TDLib плеер напрямую не читает. Любой скачанный файл копируется в `userData/tg-media/<fileId>_<size>.<ext>` и плеер получает только `cc-media://media/...`. См. ловушки #8, #9.
 
+## 🟡 Дополнение (2026-07-21, v1.2.103–104): видео может прийти как ДОКУМЕНТ
+
+Симптом: видео не играло ни в чате, ни в уведомлении; в чате — ⚠️ «no video file».
+
+Корень: сообщение было видео, присланным как ФАЙЛ (`messageDocument` с mime `video/*`; в списке чатов подпись `document_...`), а не как `messageVideo`. `downloadVideo` брал file_id только из `content.video.video` → у документа его нет → возвращалась ошибка `'no video file'`. При этом маппер помечает такой документ как `mediaType='video'` (`messageDocument` + mime `video/*` в [tdlibMapperMedia.js](../../main/native/backends/tdlibMapperMedia.js)), поэтому UI показывал его как видео, а скачать не мог.
+
+**Правило: медиа могут приходить как документ.** Функции, читающие только `content.video`/`content.photo`, пропустят видео/фото-как-файл. Для видео теперь чистая `extractVideoFileId(content)` ([tdlibMedia.js](../../main/native/backends/tdlibMedia.js)): `messageVideo` → `video.video.id`; GIF `messageAnimation` → `animation.animation.id`; `messageDocument` с mime `video/*` → `document.document.id`. Тесты: `tdlibMedia.vitest.js` (чистая функция) + `tdlibBackend.vitest.js` (связка `downloadVideo`↔функция).
+
+Побочно (v1.2.104): крутилка на плитке видео в уведомлении снимается ПО ФАКТУ открытия плеера (главное окно шлёт `notif:video-done` → слушатель в `notification.preload.cjs` убирает `loading` по `data-mid`; в preload, а не в notification.js — тот на лимите 730). Связано: features.md v1.2.101–104, [[ADR-020]].
+
 ## 📋 Сводка всех 10 ловушек серии
 
 | # | Ловушка | Версия добавления | Версия фикса | Корневая причина |

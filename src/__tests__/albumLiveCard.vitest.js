@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 
 beforeAll(async () => {
-  window.notifApi = { openPhoto: vi.fn() }
+  window.notifApi = { openPhoto: vi.fn(), openVideo: vi.fn() }
   await import('../../main/notification-helpers.js')
 })
 
@@ -104,6 +104,16 @@ describe('renderAlbumGrid — одиночное фото (вариант «ра
     const tile = host.el.querySelector('.album-tile[data-mid="7"]')
     expect(tile.querySelector('.sp-main').style.backgroundImage).toContain('cc-media://sharp7')
     expect(tile.querySelector('.sp-blur').style.backgroundImage).toContain('cc-media://sharp7')
+  })
+  it('видео (isVideo) → плитка с ▶, клик открывает видео-плеер openVideo (v1.2.101)', () => {
+    const H = window.__ccNotifHelpers
+    window.notifApi.openVideo.mockClear()
+    const c = H.renderAlbumGrid({ id: 'single_55', chatId: 'tg_1:2', thumbs: ['data:v'], messageIds: ['55'], count: 1, page: 0, sharpThumbs: {}, isVideo: true })
+    const tile = c.querySelector('.album-tile')
+    expect(tile.querySelector('.tile-play')).toBeTruthy()
+    expect(tile.classList.contains('is-video')).toBe(true) // v1.2.102: курсор-палец, не лупа
+    tile.click()
+    expect(window.notifApi.openVideo).toHaveBeenCalledWith(expect.objectContaining({ chatId: 'tg_1:2', messageId: '55' }))
   })
   it('крутилка снимается по таймауту, если чёткое превью не пришло (v1.2.100)', () => {
     vi.useFakeTimers()

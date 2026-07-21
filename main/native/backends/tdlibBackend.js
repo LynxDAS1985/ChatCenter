@@ -11,7 +11,7 @@ import {
 } from './tdlibMessages.js'
 import {
   downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
-  tdlibPathToCcMediaUrl, stabilizeForPlayback, extractThumbnailFileId,
+  tdlibPathToCcMediaUrl, stabilizeForPlayback, extractThumbnailFileId, extractVideoFileId,
   getStorageStatistics, optimizeStorage,
 } from './tdlibMedia.js'
 import { TdlibAuthFlow } from './tdlibAuth.js'
@@ -753,7 +753,8 @@ export function createTdlibBackend(opts = {}) {
       async downloadVideo({ chatId, msgId, onProgress }) {
         const { ctx, tdMsg } = await fetchMessage(chatId, msgId)
         if (ctx.error) return ctx.error
-        const fileId = tdMsg?.content?.video?.video?.id
+        // v1.2.103: видео = messageVideo / GIF / документ с mime video/* (см. extractVideoFileId).
+        const fileId = extractVideoFileId(tdMsg?.content)
         if (!fileId) return { ok: false, error: 'no video file' }
         // v0.89.15: НИКАКОГО progressive — ждём полной загрузки, потом stabilize.
         return dlAndStabilize(ctx.accountId, fileId, 24, onProgress)

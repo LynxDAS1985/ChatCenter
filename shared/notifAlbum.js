@@ -36,5 +36,6 @@ export function buildNotifAlbum(message, chatId) {
     tileThumb: message.strippedThumb || null,
     tileMessageId: String(message.id),
     tileText: message.text || null,
+    isVideo: message.mediaType === 'video', // v1.2.101: видео → постер + ▶ + видео-плеер
   }
 }

@@ -467,6 +467,7 @@
       // v1.2.66 (Совет 5): подпись уже показана, если первая часть несёт текст.
       // Иначе поздняя часть с tileText обновит body карточки (addAlbumTileToHost).
       hasCaption: !!(data.album.tileText),
+      isVideo: !!data.album.isVideo, // v1.2.101: видео → постер + ▶ + видео-плеер
     } : null
     if (albumState) {
       textWrap.appendChild(window.__ccNotifHelpers.renderAlbumGrid(albumState))

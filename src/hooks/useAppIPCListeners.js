@@ -114,6 +114,15 @@ export default function useAppIPCListeners({
     })
   }, [])
 
+  // v1.2.101: клик по ВИДЕО в уведомлении → скачать и открыть видео-плеер (как в чате).
+  useEffect(() => {
+    return window.api?.on('notify:open-video', async ({ chatId, messageId }) => {
+      if (!chatId || messageId == null) return
+      const r = await window.api.invoke('tg:download-video', { chatId, messageId }).catch(() => null)
+      try { if (r && r.ok && r.path) window.api.invoke('video:open', { src: r.path }); window.api.send('notif:video-done', { messageId: String(messageId) }) } catch (_) {} // v1.2.104: плеер + снять крутилку по факту
+    })
+  }, [])
+
   // 4. v0.75.5: Автосброс notifCountRef при переключении на вкладку
   useEffect(() => {
     if (!activeId) return

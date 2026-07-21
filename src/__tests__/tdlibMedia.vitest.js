@@ -6,7 +6,7 @@ import { EventEmitter } from 'node:events'
 import { TdlibClientManager } from '../../main/native/backends/tdlibClient.js'
 import {
   downloadFile, cancelDownload, extractMediaFileId, getCachedFilePath,
-  tdlibPathToCcMediaUrl, getStorageStatistics, optimizeStorage,
+  tdlibPathToCcMediaUrl, getStorageStatistics, optimizeStorage, extractVideoFileId,
 } from '../../main/native/backends/tdlibMedia.js'
 
 function makeMockClient() {
@@ -22,6 +22,25 @@ function makeManager() {
   mgr.createAccount('tg_a', {})
   return { mgr, mockClient }
 }
+
+describe('extractVideoFileId (v1.2.103 — видео-как-документ)', () => {
+  it('messageVideo → id видео', () => {
+    expect(extractVideoFileId({ '@type': 'messageVideo', video: { video: { id: 7 } } })).toBe(7)
+  })
+  it('messageAnimation (GIF) → id анимации', () => {
+    expect(extractVideoFileId({ '@type': 'messageAnimation', animation: { animation: { id: 8 } } })).toBe(8)
+  })
+  it('messageDocument с mime video/* → id документа (видео прислано как файл)', () => {
+    expect(extractVideoFileId({ '@type': 'messageDocument', document: { mime_type: 'video/mp4', document: { id: 9 } } })).toBe(9)
+  })
+  it('messageDocument НЕ видео (pdf) → null', () => {
+    expect(extractVideoFileId({ '@type': 'messageDocument', document: { mime_type: 'application/pdf', document: { id: 10 } } })).toBe(null)
+  })
+  it('фото → null; null → null', () => {
+    expect(extractVideoFileId({ '@type': 'messagePhoto', photo: {} })).toBe(null)
+    expect(extractVideoFileId(null)).toBe(null)
+  })
+})
 
 describe('extractMediaFileId', () => {
   it('messagePhoto → fileId максимального размера', () => {
