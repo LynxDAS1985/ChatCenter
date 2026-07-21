@@ -47,7 +47,7 @@
 | `mistakes/webview-injection.md` | Ядро: injection, IPC, звук, mark-read, MAX sidebar DOM | ~9 КБ |
 | `mistakes/webview-navigation-ui.md` | Навигация между чатами, MAX SvelteKit, ribbon CSS/UI | ~31 КБ |
 | `mistakes/webview-stack-grouping.md` | Стековая группировка, ghost-items, cleanupStack | ~125 КБ |
-| `mistakes/notifications-ribbon.md` | Кастомные уведомления, ribbon BrowserWindow | ~50 КБ |
+| `mistakes/notifications-ribbon.md` | Кастомные уведомления, ribbon BrowserWindow, позиционирование дока/подсказки | ~66 КБ |
 | `mistakes/electron-core.md` | Electron, IPC, Settings, AI, авто-ответ | ~56 КБ |
 
 **Правило чтения**: сначала индекс (`common-mistakes.md`) → по теме выбираешь файл → читаешь только его.

@@ -85,6 +85,38 @@ describe('renderAlbumGrid — листание страницами по 4', () 
   })
 })
 
+describe('renderAlbumGrid — одиночное фото (вариант «размытый фон», v1.2.99)', () => {
+  it('single_ id → плитка .single с двумя слоями (размытый фон + фото целиком), без общего блюра', () => {
+    const H = window.__ccNotifHelpers
+    const c = H.renderAlbumGrid({ id: 'single_42', chatId: 'tg_1:9', thumbs: ['data:x'], messageIds: ['42'], count: 1, page: 0, sharpThumbs: {} })
+    const tile = c.querySelector('.album-tile')
+    expect(tile.classList.contains('single')).toBe(true)
+    expect(tile.querySelector('.sp-blur')).toBeTruthy()
+    expect(tile.querySelector('.sp-main')).toBeTruthy()
+    expect(tile.classList.contains('blur')).toBe(false) // общий блюр тайла не ставится
+    expect(tile.classList.contains('loading')).toBe(true) // крутилка до чёткого превью
+  })
+  it('applyAlbumSharp для одиночного фото обновляет ОБА слоя', () => {
+    const H = window.__ccNotifHelpers
+    const album = { id: 'single_7', chatId: 'tg_1:3', thumbs: ['data:t'], messageIds: ['7'], count: 1, page: 0, sharpThumbs: {} }
+    const host = makeHost(album)
+    H.applyAlbumSharp(host, '7', 'cc-media://sharp7')
+    const tile = host.el.querySelector('.album-tile[data-mid="7"]')
+    expect(tile.querySelector('.sp-main').style.backgroundImage).toContain('cc-media://sharp7')
+    expect(tile.querySelector('.sp-blur').style.backgroundImage).toContain('cc-media://sharp7')
+  })
+  it('крутилка снимается по таймауту, если чёткое превью не пришло (v1.2.100)', () => {
+    vi.useFakeTimers()
+    const H = window.__ccNotifHelpers
+    const c = H.renderAlbumGrid({ id: 'single_99', chatId: 'tg_1:1', thumbs: ['data:x'], messageIds: ['99'], count: 1, page: 0, sharpThumbs: {} })
+    const tile = c.querySelector('.album-tile')
+    expect(tile.classList.contains('loading')).toBe(true)
+    vi.advanceTimersByTime(8000)
+    expect(tile.classList.contains('loading')).toBe(false)
+    vi.useRealTimers()
+  })
+})
+
 describe('addAlbumTileToHost — накопление частей альбома', () => {
   it('добавляет части: messageIds/thumbs накапливаются ВСЕ, count растёт', () => {
     const H = window.__ccNotifHelpers

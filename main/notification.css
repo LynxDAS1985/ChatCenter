@@ -383,6 +383,28 @@
   .album-dots { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
   .album-dots .d { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.28); cursor: pointer; transition: background 0.15s, transform 0.15s; }
   .album-dots .d.on { background: #2aabee; transform: scale(1.3); }
+  /* ── v1.2.97→v1.2.98: раскладка «Стопка» для ВСЕХ карточек уведомлений ──
+     Шапка .notif-head — флекс-ряд: КРУПНЫЙ аватар (50px) + колонка (имя + источник
+     «Мессенджер · Аккаунт», как в подсказке закрепа). Контент — на всю ширину ниже.
+     Шапка собирается в notification-helpers.js buildStackHeader. Старую мелкую метку
+     мессенджера сверху прячем — источник теперь в шапке. Медиа-группа — сетка 2×2 во
+     всю ширину; полноширинное ОДНО фото — только под .single-photo. */
+  .notif-item.layout-stack { align-items: stretch; }
+  .notif-item.layout-stack.has-mname { padding-top: 0; }
+  .notif-item.layout-stack .messenger-name { display: none; }
+  .notif-item.layout-stack .text-wrap { padding: 10px 12px 12px 12px; }
+  .notif-head { display: flex; align-items: center; gap: 11px; padding-right: 26px; }
+  .notif-head-col { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+  .notif-item.layout-stack .avatar-wrap { width: 50px; height: 50px; margin: 0; flex-shrink: 0; font-size: 24px; }
+  .notif-item.layout-stack .sender { padding: 0; line-height: 1.25; }
+  .notif-source { margin-top: 2px; font-size: 12px; line-height: 1.3; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .notif-item.layout-stack .body-text { margin-top: 8px; }
+  /* Одиночное фото — вариант «размытый фон»: фото целиком (contain), поля заполнены
+     размытой растянутой копией. Media-group грид 2×2 не трогаем. */
+  .notif-item.single-photo .album-grid { grid-template-columns: 1fr; height: auto; aspect-ratio: 3 / 2; }
+  .album-tile.single { position: relative; background: #000; }
+  .album-tile.single .sp-blur { position: absolute; inset: 0; background-size: cover; background-position: center; background-repeat: no-repeat; filter: blur(20px) brightness(0.55); transform: scale(1.2); }
+  .album-tile.single .sp-main { position: absolute; inset: 0; background-size: contain; background-position: center; background-repeat: no-repeat; }
   .album-more {
     position: absolute;
     inset: 0;

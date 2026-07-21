@@ -100,6 +100,8 @@ function renderAlbumGrid(album) {
   const ids = Array.isArray(album && album.messageIds) ? album.messageIds : []
   const thumbs = Array.isArray(album && album.thumbs) ? album.thumbs : []
   const total = ids.length || thumbs.length
+  // v1.2.99: одиночное фото (album.id 'single_*') — вариант «размытый фон» (фото целиком).
+  const isSingle = String((album && album.id) || '').startsWith('single_')
   const pages = Math.max(1, Math.ceil(total / ALBUM_PAGE))
   if (typeof album.page !== 'number') album.page = 0
   if (album.page >= pages) album.page = pages - 1
@@ -127,11 +129,23 @@ function renderAlbumGrid(album) {
       const mid = ids[i]
       const sharp = album.sharpThumbs && mid != null ? album.sharpThumbs[mid] : null
       const tile = document.createElement('div')
-      tile.className = 'album-tile' + (sharp ? '' : ' blur loading')
+      // v1.2.99: у одиночного фото нет общего блюра тайла (его даёт слой .sp-blur), только крутилка.
+      tile.className = 'album-tile' + (isSingle ? ' single' : '') + (sharp ? '' : (isSingle ? ' loading' : ' blur loading'))
       if (cnt === 1 || (cnt === 3 && localIdx === 2)) tile.classList.add('wide')
       if (mid != null) tile.dataset.mid = String(mid)
-      tile.style.backgroundImage = 'url("' + (sharp || thumbs[i] || '') + '")'
+      const tileUrl = 'url("' + (sharp || thumbs[i] || '') + '")'
+      if (isSingle) {
+        // размытая растянутая копия заполняет поля + фото целиком (contain) сверху
+        const b = document.createElement('div'); b.className = 'sp-blur'; b.style.backgroundImage = tileUrl
+        const f = document.createElement('div'); f.className = 'sp-main'; f.style.backgroundImage = tileUrl
+        tile.appendChild(b); tile.appendChild(f)
+      } else {
+        tile.style.backgroundImage = tileUrl
+      }
       const spin = document.createElement('div'); spin.className = 'tile-spin'; tile.appendChild(spin)
+      // v1.2.100: страховка от «вечной» крутилки у одиночного фото — если чёткое превью
+      // не пришло за 8с (сбой загрузки), снимаем крутилку (остаётся фото целиком из strippedThumb).
+      if (isSingle && !sharp) setTimeout(() => tile.classList.remove('loading'), 8000)
       const gi = i
       tile.addEventListener('click', (e) => {
         e.stopPropagation()
@@ -166,7 +180,14 @@ function applyAlbumSharp(host, mid, src) {
   if (!host.album.sharpThumbs) host.album.sharpThumbs = {}
   host.album.sharpThumbs[String(mid)] = src
   const tile = host.el.querySelector('.album-tile[data-mid="' + String(mid) + '"]')
-  if (tile) { tile.style.backgroundImage = 'url("' + src + '")'; tile.classList.remove('blur', 'loading') }
+  if (tile) {
+    const url = 'url("' + src + '")'
+    // v1.2.99: одиночное фото — обновляем ОБА слоя (размытый фон + фото); иначе фон тайла.
+    const f = tile.querySelector('.sp-main'), b = tile.querySelector('.sp-blur')
+    if (f) { f.style.backgroundImage = url; if (b) b.style.backgroundImage = url }
+    else tile.style.backgroundImage = url
+    tile.classList.remove('blur', 'loading')
+  }
 }
 
 // v1.2.66: продление жизни карточки-хоста альбома. При приходе новой части альбома
@@ -219,7 +240,24 @@ function addAlbumTileToHost(host, data, dismissItem, reportHeight) {
   return true
 }
 
+// v1.2.98: шапка карточки — аватар + колонка (имя + источник «Мессенджер · Аккаунт»).
+// Источник в том же формате, что и подсказка закрепа (pin-tooltip.html): messengerName · accountName.
+// Аватар (avWrap) уже создан в notification.js — appendChild ПЕРЕМЕЩАЕТ его в шапку (не копирует, MDN).
+function buildStackHeader(avWrap, sender, messengerName, accountName) {
+  const head = document.createElement('div'); head.className = 'notif-head'
+  const col = document.createElement('div'); col.className = 'notif-head-col'
+  col.appendChild(sender)
+  const parts = [messengerName, accountName].filter(Boolean)
+  if (parts.length) {
+    const src = document.createElement('div'); src.className = 'notif-source'
+    src.textContent = parts.join(' · ')
+    col.appendChild(src)
+  }
+  head.appendChild(avWrap); head.appendChild(col)
+  return head
+}
+
 // Экспорт в global scope (browser <script> и так делает это автоматически,
 // но явно фиксируем через window для тестов и линта).
 window.createPinBtn = createPinBtn
-window.__ccNotifHelpers = { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, renderAlbumGrid, extendHostLife, addAlbumTileToHost, applyAlbumSharp }
+window.__ccNotifHelpers = { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, renderAlbumGrid, extendHostLife, addAlbumTileToHost, applyAlbumSharp, buildStackHeader }

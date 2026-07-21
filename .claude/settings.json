@@ -1,25 +1,32 @@
 {
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
-      "Bash(*)",
-      "PowerShell(*)",
-      "Read(*)",
-      "Write(*)",
-      "Edit(*)",
-      "Glob(*)",
-      "Grep(*)",
-      "WebFetch(*)",
-      "WebSearch(*)",
-      "Agent(*)",
-      "TodoWrite(*)",
-      "NotebookEdit(*)",
-      "AskUserQuestion(*)",
-      "ScheduleWakeup(*)",
-      "Skill(*)",
-      "ToolSearch(*)"
+      "Bash",
+      "PowerShell",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "TodoWrite",
+      "NotebookEdit",
+      "AskUserQuestion",
+      "ScheduleWakeup",
+      "Skill",
+      "ToolSearch"
     ],
-    "deny": []
+    "deny": [],
+    "additionalDirectories": [
+      "C:\\Users\\Директор\\AppData\\Roaming\\chat-center",
+      "C:\\Users\\Директор\\AppData\\Roaming",
+      "C:\\Users\\Директор\\AppData\\Local\\Temp"
+    ]
   },
+  "skipDangerousModePermissionPrompt": true,
   "hooks": {
     "SessionStart": [
       {

@@ -427,7 +427,7 @@
     sender.className = 'sender'
     const senderName = data.title || ''
     sender.textContent = senderName || mName
-    textWrap.appendChild(sender)
+    textWrap.appendChild(window.__ccNotifHelpers.buildStackHeader(avWrap, sender, mName, data.accountName || ''))
 
     const bodyText = document.createElement('div')
     bodyText.className = 'body-text'
@@ -471,6 +471,9 @@
     if (albumState) {
       textWrap.appendChild(window.__ccNotifHelpers.renderAlbumGrid(albumState))
     }
+    // v1.2.97: раскладка «Стопка» для ВСЕХ карточек; одиночное фото — на всю ширину одной плиткой.
+    el.classList.add('layout-stack')
+    if (albumState && String(albumState.id).startsWith('single_')) el.classList.add('single-photo')
 
     // v0.65.0: кнопка 📌 для закрепления host-сообщения
     const hostFullText = data.fullBody || data.body || ''

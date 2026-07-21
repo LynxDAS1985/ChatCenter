@@ -106,12 +106,19 @@
   }
   .dot.active { background: #2AABEE; transform: scale(1.25); }
   .dot:hover { background: rgba(255,255,255,0.6); }
+
+  /* v1.2.76: индикатор загрузки фото (пока картинка декодируется/грузится с диска) */
+  .ph-loader { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 6; pointer-events: none; }
+  .ph-loader.on { display: flex; }
+  .ph-loader::after { content: ""; width: 48px; height: 48px; border-radius: 50%; border: 4px solid rgba(255,255,255,0.22); border-top-color: #fff; animation: ph-rot 0.9s linear infinite; }
+  @keyframes ph-rot { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="stage">
     <img id="photo" draggable="false" alt="photo" />
+    <div id="loader" class="ph-loader" aria-hidden="true"></div>
   </div>
 
   <button id="btn-prev" class="nav-arrow left" title="Предыдущее (←)" aria-label="Предыдущее">‹</button>
