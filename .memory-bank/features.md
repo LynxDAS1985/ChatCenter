@@ -1,6 +1,22 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.90 (21 июля 2026)
+## Текущая версия: v1.2.91 (21 июля 2026)
+
+### v1.2.91 — Док: расчёт вертикали вынесен в чистую функцию + юнит-тест
+
+Дата: 21 июля 2026. Улучшение по итогам ревью фикса v1.2.89 (совет #3). Поведение НЕ изменилось — только тестируемость.
+
+**Зачем.** Тесты `pinTooltip.test.cjs` — статические (проверяют НАЛИЧИЕ строк кода через `.includes`), а не сами числа позиции. Они были зелёными, пока полоску дока сползало вниз (баг v1.2.89). То есть геометрию нельзя было проверить без запуска приложения.
+
+**Что сделано.** Расчёт верхней Y-координаты окна дока вынесен из обработчика `dock:resize` ([dockPinHandlers.js](../main/handlers/dockPinHandlers.js)) в чистую функцию `computeDockTop({ baselineTopY, currentTopY, totalH, workAreaTop, screenBottom })` — новый файл [main/handlers/dockGeometry.js](../main/handlers/dockGeometry.js) БЕЗ зависимости от Electron. `dock:resize` теперь зовёт её. Логика та же: держим верх на якоре `baselineTopY` (ADR-018), кламп по низу экрана и по верху рабочей области.
+
+**Тест.** Новый [main/handlers/dockGeometry.vitest.js](../main/handlers/dockGeometry.vitest.js) — 8 проверок: якорь, фолбэк при null/NaN, кламп низ/верх, «на панели задач», битая геометрия, и **тест-ловушка регрессии**: `baselineTopY=814, totalH=30 → 814` (раньше формула давала 834 — сползание вниз). vitest подхватывает `main/**/*.vitest.js` ([vitest.config.mjs:11](../vitest.config.mjs#L11)).
+
+**Крайние случаи (покрыты тестом):** `baselineTopY` null/NaN/undefined → фолбэк на текущую позицию; все значения не-числа → возвращает конечное число (не падает).
+
+Проверки: `npx vitest run main/handlers/dockGeometry.vitest.js` → 8/8; `pinTooltip` → 69; `fileSizeLimits` 509/509 (новые файлы покрыты правилами); линт 0. Файлы: `main/handlers/dockGeometry.js` (новый), `main/handlers/dockGeometry.vitest.js` (новый), `main/handlers/dockPinHandlers.js` (вызов + импорт).
+
+Откат: `git checkout -- main/handlers/dockPinHandlers.js && rm main/handlers/dockGeometry.js main/handlers/dockGeometry.vitest.js` (+ вернуть проверки в `pinTooltip.test.cjs`).
 
 ### v1.2.90 — ДИАГНОСТИКА: есть ли фото в уведомлении веб-Telegram
 

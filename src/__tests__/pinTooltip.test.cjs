@@ -149,7 +149,11 @@ check('setDockBoundsSilent (программный setBounds без сохран
 check('moved: пропуск программного setBounds (suppressMoved)', /dockWin\.on\('moved'[\s\S]*?suppressMoved/.test(state))
 check('moved: игнор офскрин позиции (safeHide)', /dockWin\.on\('moved'[\s\S]*?bounds\.x <= -1000/.test(state))
 check('dock:resize вертикаль по baselineTopY, НЕ из живой высоты', handlers.includes('dockState.baselineTopY') && !handlers.includes('bounds.y + bounds.height'))
-check('dock:resize: кламп Y по низу экрана', handlers.includes('newY + totalH > scrBottom'))
+// v1.2.91: расчёт вертикали вынесен в чистую computeDockTop (dockGeometry.js) + юнит-тест
+check('dock:resize использует чистую computeDockTop', handlers.includes('computeDockTop'))
+const _dockGeomPath = 'main/handlers/dockGeometry.js'
+check('dockGeometry.js существует + клампит по низу экрана', fs.existsSync(path.join(root, _dockGeomPath)) && read(_dockGeomPath).includes('newY + totalH > screenBottom'))
+check('есть юнит-тест dockGeometry.vitest.js', fs.existsSync(path.join(root, 'main/handlers/dockGeometry.vitest.js')))
 
 // ── Сборка (prod) ──
 console.log('\n── Сборка: ──')

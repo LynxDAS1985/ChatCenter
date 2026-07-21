@@ -4,6 +4,7 @@
 import { ipcMain, BrowserWindow, screen, app } from 'electron'
 import { getPinHtmlPath, createPinBrowserWindow, startTimerForItem, restorePinBounds } from './dockPinUtils.js'
 import { createDockPinState, DOCK_PREVIEW_RESERVE } from './dockPinState.js'
+import { computeDockTop } from './dockGeometry.js'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
 export function initDockPinSystem(deps) {
@@ -250,14 +251,16 @@ ipcMain.on('dock:resize', (_event, width, height) => {
     x = fullBounds.x + fullBounds.width - width
   }
   if (x < fullBounds.x) x = fullBounds.x
-  // v1.2.89: вертикаль — по СТАБИЛЬНОМУ якорю верха (dockState.baselineTopY), а НЕ
-  // из живой высоты окна. Иначе разница «высота окна vs реальный контент» на каждом
-  // add/remove сдвигала полоску вниз (см. features.md v1.2.89). Верх фиксирован →
-  // при постоянной высоте (один ряд) низ тоже на месте; двигается только правый край.
-  let newY = (dockState.baselineTopY != null) ? dockState.baselineTopY : bounds.y
-  const scrBottom = fullBounds.y + fullBounds.height
-  if (newY + totalH > scrBottom) newY = scrBottom - totalH   // не ниже низа экрана
-  if (newY < display.workArea.y) newY = display.workArea.y   // не выше рабочей области
+  // v1.2.89/91: вертикаль — по СТАБИЛЬНОМУ якорю верха (не из живой высоты окна),
+  // иначе разница «высота окна vs контент» сдвигала полоску вниз на каждом add/remove.
+  // Расчёт вынесен в чистую computeDockTop() (dockGeometry.js) + юнит-тест.
+  const newY = computeDockTop({
+    baselineTopY: dockState.baselineTopY,
+    currentTopY: bounds.y,
+    totalH,
+    workAreaTop: display.workArea.y,
+    screenBottom: fullBounds.y + fullBounds.height,
+  })
   const nbResize = { x, y: newY, width, height: totalH }
   // v1.2.69: дед-бэнд — при микро-изменениях (тик таймера/мутации давали ±1-2px
   // дрейф и дрожание) окно НЕ трогаем. Ресайзим только при заметном изменении.
