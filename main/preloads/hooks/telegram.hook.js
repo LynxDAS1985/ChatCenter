@@ -53,9 +53,6 @@
       if (spam) { _log('blocked', title, body, tag, icon, spam, ''); console.log('__CC_DIAG__hook-blocked: ' + spam + ' | "' + (body||'').slice(0,30) + '" t="' + (title||'').slice(0,20) + '"'); return; }
       // Telegram передаёт имя в title — enrichment не нужен, только аватарка
       if (!icon) icon = _findAvatar(title);
-      // v1.2.92 (ВРЕМЕННАЯ ДИАГНОСТИКА): журнал режет ~60 симв → ставим image= ПЕРВЫМ,
-      // «Y »/«N» в первых символах точно уцелеет. Решает: лёгкий фикс (image есть) vs DOM-скрейп.
-      try { console.log('__CC_DIAG__tgimg=' + ((opts&&opts.image)?('Y '+String(opts.image).slice(0,40)):'N')); } catch(e) {}
       _log('passed', title, body, tag, icon, '', title);
       console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: body, i: icon, g: tag }));
     } catch(e) {}
@@ -73,8 +70,6 @@
         var spam = _isSpam(body);
         if (spam) { _log('blocked', title, body, tag, icon, spam, ''); console.log('__CC_DIAG__hook-blocked: ' + spam + ' | "' + (body||'').slice(0,30) + '" t="' + (title||'').slice(0,20) + '"'); return Promise.resolve(); }
         if (!icon) icon = _findAvatar(title);
-        // v1.2.92 (ВРЕМЕННАЯ ДИАГНОСТИКА, путь ServiceWorker): image= первым (журнал режет ~60 симв)
-        try { console.log('__CC_DIAG__tgimg(sw)=' + ((opts&&opts.image)?('Y '+String(opts.image).slice(0,40)):'N')); } catch(e) {}
         _log('passed', title, body, tag, icon, '', title);
         console.log('__CC_NOTIF__' + JSON.stringify({ t: title || '', b: body, i: icon, g: tag }));
       } catch(e) {}
