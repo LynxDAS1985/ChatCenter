@@ -19,17 +19,22 @@
  * @param {object} message — сообщение native-формата (id, groupedId, mediaType, ...)
  * @param {string} chatId — полный chatId ('accountId:rawId')
  */
-export function preloadAlbumThumb(message, chatId) {
-  if (!message || !message.groupedId || message.id == null || !chatId) return
+// v1.2.95: albumId — id карточки-альбома в окне уведомления. По умолчанию = groupedId
+// (media-group, как раньше). Для ОДИНОЧНОГО фото/видео сюда передаётся 'single_<id>',
+// чтобы чёткое превью пришло в ту же карточку (см. notifAlbum.js buildNotifAlbum).
+export function preloadAlbumThumb(message, chatId, albumId) {
+  if (!message || message.id == null || !chatId) return
   const t = message.mediaType
   if (t !== 'photo' && t !== 'video') return // превью есть только у фото/видео
+  const aid = albumId || (message.groupedId ? String(message.groupedId) : null)
+  if (!aid) return
   try {
     window.api?.invoke('tg:download-media', { chatId, messageId: message.id, thumb: true })
       .then((r) => {
         if (r && r.ok && r.path) {
           try {
             window.api?.send('notif:album-thumb', {
-              albumId: String(message.groupedId),
+              albumId: aid,
               messageId: String(message.id),
               src: r.path,
             })

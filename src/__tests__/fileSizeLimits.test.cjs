@@ -301,6 +301,9 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // listener notify:open-album в useAppIPCListeners.js + метка album в nativeStoreIpc.js.
 // Прежний таймер-буфер albumNotifyBuffer.js удалён (логика живой карточки — в main/
 // notification*.js, вне renderer-бюджета). Запас ~70 строк.
+// v1.2.95: чистая функция buildNotifAlbum вынесена в КОРНЕВОЙ shared/notifAlbum.js
+// (вне renderer-бюджета src/), лимит НЕ поднимали — правило проекта: не раздувать
+// renderer, выносить/разбивать. См. decisions.md.
 test('Общий renderer код (src/ без тестов) < 31150 строк (сейчас ' + totalSrc + ')', function () {
   assert(totalSrc < 31150, totalSrc + ' > 31150')
 })

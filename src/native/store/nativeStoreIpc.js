@@ -7,6 +7,7 @@ import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostic
 import { createNotificationSource } from '../../shared/notificationSource.js'
 // v1.2.74 (A1): фоновая догрузка чёткого превью плиток альбома в окно уведомления.
 import { preloadAlbumThumb } from '../utils/albumThumbPreload.js'
+import { buildNotifAlbum } from '../../../shared/notifAlbum.js'
 
 // v1.1.9: localStorage cache вынесен в nativeStoreCache.js. Импортируем для
 // внутреннего использования + re-export для обратной совместимости (внешние
@@ -477,13 +478,14 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         } catch (_) {}
       } else {
         // v1.2.12: emit-лог №1 — пара к [notif-ipc] recv в mainIpcHandlers.js.
-        try { window.api?.send?.('app:log', { level: 'INFO', message: '[native-notif] emit chatId=' + chatId + ' sender=' + String(message.senderName || chat?.title || '?').slice(0, 30) + ' bodyLen=' + (preview || '').length + ' media=' + (message.mediaType || 'text') + ' thumb=' + (message.strippedThumb ? 'Y' : 'n') + ' wp=' + (message.webPage ? 'Y' : 'n') + ' grp=' + (message.groupedId ? 'Y' : 'n') }) } catch (_) {}
+        try { window.api?.send?.('app:log', { level: 'INFO', message: '[native-notif] emit chatId=' + chatId + ' sender=' + String(message.senderName || chat?.title || '?').slice(0, 30) + ' bodyLen=' + (preview || '').length }) } catch (_) {}
         try {
           // v1.2.14: НЕ ДОБАВЛЯТЬ dismissMs hardcoded в payload!
           // notificationManager.showCustomNotification (main) автоматически читает
           // settings.notifDismissSec — единое поведение для WebView и Native.
           // Если хочешь подкрутить время показа — это per-user настройка в Settings,
           // а не hardcoded в коде. См. mistakes/notifications-ribbon.md «hardcoded dismissMs».
+          const notifAlbum = buildNotifAlbum(message, chatId)
           window.api?.invoke('app:custom-notify', {
             title: chat?.title || 'Telegram',
             body: preview || '[медиа]',
@@ -503,13 +505,11 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             // (App.jsx cross-tab handler читает source ИЛИ chatTag в зависимости от формата)
             chatTag: chatId,
             messageId: message?.id != null ? String(message.id) : null,
-            // v1.2.66: метка альбома (media group). Каждое сообщение альбома шлётся сразу;
-            // окно группирует их в одну «живую карточку» по album.id (update-on-arrival).
-            // tileText — подпись части (может быть не у первого фото). null для обычных.
-            album: message.groupedId ? { id: String(message.groupedId), chatId, tileThumb: message.strippedThumb || null, tileMessageId: message?.id != null ? String(message.id) : null, tileText: message.text || null } : null,
+            // v1.2.66/95: карточка-«альбом» — media-group ИЛИ одиночное фото/видео. См. notifAlbum.js.
+            album: notifAlbum,
           })
-          // v1.2.74 (A1): фоновая догрузка чёткого превью для плитки альбома.
-          if (message.groupedId) preloadAlbumThumb(message, chatId)
+          // v1.2.74/95: фоновая догрузка чёткого превью (альбом ИЛИ одиночное фото/видео).
+          if (notifAlbum) preloadAlbumThumb(message, chatId, notifAlbum.id)
         } catch(_) {}
       }
     }

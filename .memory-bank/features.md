@@ -1,6 +1,24 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.94 (21 июля 2026)
+## Текущая версия: v1.2.95 (21 июля 2026)
+
+### v1.2.95 — Одиночное фото/видео показывается в уведомлении native-Telegram
+
+Дата: 21 июля 2026. Фикс по подтверждённой логом причине (v1.2.94: `media=photo thumb=Y grp=n`).
+
+**Корень.** Картинка одиночного фото есть (`strippedThumb`), но поле `album` в payload уведомления строилось только при метке альбома `groupedId` ([nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js)) → одиночное фото шло без картинки.
+
+**Фикс.** Расчёт поля `album` вынесен в чистую функцию `buildNotifAlbum(message, chatId)` — новый КОРНЕВОЙ [shared/notifAlbum.js](../shared/notifAlbum.js) (в `shared/`, а НЕ `src/`, чтобы не входить в общий renderer-бюджет — **лимит не поднимали**, правило проекта «не раздувать renderer»). Она строит карточку-«альбом» из ОДНОЙ плитки не только для media-group, но и для одиночного фото/видео с мини-картинкой (`mediaType` photo/video + `strippedThumb`). Id одиночного: `single_<messageId>`. Ссылки-превью (`mediaType='link'`) НЕ затронуты (картинка внутри web_page не извлекается — [[ADR-019]]). `preloadAlbumThumb` ([albumThumbPreload.js](../src/native/utils/albumThumbPreload.js)) расширен параметром `albumId`, чтобы чёткое превью пришло в карточку одиночного фото (`single_<id>`); media-group поведение прежнее.
+
+**Крайние случаи (юнит-тест):** одиночное фото без мини-картинки → null (текст); текст/ссылка → null; фото без id → null; null-сообщение → null. Media-group даёт тот же объект, что и раньше (без регресса).
+
+**Проверки:** [notifAlbum.vitest.js](../src/native/store/notifAlbum.vitest.js) — 8/8; `albumLiveCard.vitest.js` — 10/10 (рисовалка не тронута); линт 0; общий renderer-лимит `src/` НЕ поднимали (функция в корневом `shared/`, вне бюджета). Диагностика v1.2.94 (`media/thumb/wp/grp`) убрана.
+
+**Требует визуальной проверки:** прислать одиночное фото → в уведомлении видна картинка. (Известно: плитка одиночного фото сейчас в «альбомном» формате — отдельная задача «показать 1 фото красиво в размер».)
+
+Файлы: `shared/notifAlbum.js` (new, вне renderer-бюджета), `src/native/store/notifAlbum.vitest.js` (new), `src/native/store/nativeStoreIpc.js`, `src/native/utils/albumThumbPreload.js`.
+
+Откат: `git revert` коммита v1.2.95.
 
 ### v1.2.94 — ДИАГНОСТИКА: одиночное фото / ссылка-превью в уведомлении native-Telegram
 
