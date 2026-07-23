@@ -71,7 +71,9 @@ export default function useNotifyNavigation({
 
   // notify:mark-read
   useEffect(() => {
-    return window.api?.on('notify:mark-read', ({ messengerId, senderName, chatTag }) => {
+    return window.api?.on('notify:mark-read', ({ messengerId, senderName, chatTag, source }) => {
+      // v1.2.105: native (TDLib) — помечаем по API (tg:mark-read); полный chatId = accountId:chatId.
+      if (messengerId === 'native_cc') { const s = source || {}; if (s.accountId && s.chatId && s.messageId != null) { try { window.api?.invoke('tg:mark-read', { chatId: s.accountId + ':' + s.chatId, maxId: Number(s.messageId) }) } catch (_) {} } return }
       traceNotif('mark-read', 'info', messengerId, senderName || '', `sender="${(senderName||'').slice(0,30)}" tag=${!!chatTag} hidden=${document.hidden}`)
       if (!messengerId) return
       if (document.hidden) {

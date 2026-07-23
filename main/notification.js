@@ -143,7 +143,7 @@
     // v0.89.20: diagnostic — фиксируем старт dismiss (для расследования полоски).
     try { window.notifApi.log('INFO', 'dismiss start id=' + id + ' itemsBefore=' + items.size + ' fromMain=' + !!fromMain) } catch (_) {}
 
-    // Этап 2: пауза 80мс → коллапс высоты 180мс (v0.60.6: естественная задержка)
+    // Этап 2: коллапс высоты 180мс (v1.2.107: старт 330→200мс — «полоса» уходит быстрее).
     setTimeout(() => {
       el.style.transition = 'height 180ms ease-in-out, min-height 180ms ease-in-out, margin-bottom 180ms ease-in-out'
       el.style.height = '0'
@@ -163,7 +163,7 @@
         try { window.notifApi.log('INFO', 'dismiss final-report id=' + id + ' itemsAfter=' + items.size + ' calcH=' + calcHeight()) } catch (_) {}
         reportHeight()
       }, 190)
-    }, 330)
+    }, 200)
   }
 
   function toggleExpand(data, el) {
@@ -550,7 +550,7 @@
       readBtn2.style.color = '#4ade80'
       readBtn2.style.borderColor = 'rgba(34,197,94,0.5)'
       readBtn2.style.pointerEvents = 'none'
-      setTimeout(() => dismissItem(data.id, false), 800)
+      setTimeout(() => dismissItem(data.id, false), 400) // v1.2.107: было 800 — окно/полоса убирается быстрее
     })
     actionRow.appendChild(readBtn2)
 

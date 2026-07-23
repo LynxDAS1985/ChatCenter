@@ -2,6 +2,7 @@
 // Обработка кликов, mark-read, dismiss, resize для Messenger Ribbon
 import { ipcMain, screen } from 'electron'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
+import { decideNotifResize } from './notifResizeDecision.js'
 
 const NOTIF_WINDOW_WIDTH = 370
 const NOTIF_RIGHT_OFFSET = 380
@@ -64,6 +65,7 @@ export function initNotifHandlers(deps) {
       messengerId: item.messengerId,
       senderName: item.senderName || item.title || '',
       chatTag: item.chatTag || '',
+      source: item.source || null, // v1.2.105: нативной пометке нужен chatId/messageId (source)
     }
     if (mainWindow.isMinimized()) {
       mainWindow.setOpacity(0)
@@ -155,33 +157,17 @@ export function initNotifHandlers(deps) {
     const rendererPure = !!meta?.rendererPure
     console.log('[notif-resize] raw=' + rawHeight + ' rounded=' + height +
       ' visible=' + notifWin.isVisible() + ' items=' + itemsCount + ' rendererPure=' + rendererPure)
-    // v0.89.27 (ловушка #26): renderer = source of truth для terminal state.
-    // Если renderer прислал rendererPure=true (items.size=0 + container.children=0)
-    // — это АВТОРИТАТИВНЫЙ сигнал что у него вообще ничего нет. Очищаем main
-    // notifItems[] от мусора (ghost-stacking накопление, FIFO не отправлял
-    // dismiss IPC и т.п.) и гарантированно скрываем окно.
-    if (height <= 0 && rendererPure) {
-      if (itemsCount > 0) {
-        console.log('[notif-resize] CLEAR main notifItems (had ' + itemsCount + ' stale items, renderer pure)')
-        setNotifItems([])
-      }
-      safeHideTransparentWindow(notifWin)
-      lastNotifBounds = null
-      return
+    // v1.2.107: решение вынесено в чистую decideNotifResize (см. файл — там все
+    // ловушки #26 / v0.89.23 / v1.2.106). Здесь только side-effect'ы.
+    const action = decideNotifResize({ height, itemsCount, rendererPure })
+    if (action === 'clear-hide') {
+      if (itemsCount > 0) { console.log('[notif-resize] CLEAR ' + itemsCount + ' stale items (renderer pure)'); setNotifItems([]) }
+      safeHideTransparentWindow(notifWin); lastNotifBounds = null; return
     }
-    // v0.89.23: защита от запоздалого reportHeight(0) от dismiss предыдущего
-    // уведомления — если main УЖЕ имеет new item но renderer ещё не отрендерил.
-    if (height <= 0 && itemsCount > 0) {
-      console.log('[notif-resize] IGNORE stale raw=0 (items=' + itemsCount + ' > 0)')
-      return
-    }
-    if (height <= 0) {
-      // v0.89.18: safeHideTransparentWindow — без этого на Win11 остаётся
-      // невидимый hit-test регион + тонкая линия (см. ловушка v0.39.0 → v0.89.18
-      // в .memory-bank/mistakes/notifications-ribbon.md).
-      safeHideTransparentWindow(notifWin)
-      lastNotifBounds = null
-      return
+    if (action === 'ignore') { console.log('[notif-resize] IGNORE stale 0 (items=' + itemsCount + ')'); return }
+    if (action === 'hide') {
+      console.log('[notif-resize] HIDE height=' + height + ' items=' + itemsCount + ' (0-высота или осиротевший отчёт → пустое окно не показываем)')
+      safeHideTransparentWindow(notifWin); lastNotifBounds = null; return
     }
     const { workArea } = screen.getPrimaryDisplay()
     const maxHeight = Math.max(NOTIF_MIN_HEIGHT, workArea.height - NOTIF_SCREEN_MARGIN * 2)
@@ -202,4 +188,23 @@ export function initNotifHandlers(deps) {
     notifWin.setBounds({ x, y, width: NOTIF_WINDOW_WIDTH, height: displayHeight })
     if (!notifWin.isVisible()) notifWin.showInactive()
   })
+
+  // v1.2.107: «сторож» от «невидимой стены». Если окно уведомления ВИДИМО, но
+  // сообщений в main НЕТ ≥2 тиков подряд (~10с) — оно застряло пустым (потерян
+  // terminal-сигнал, ghost-регион Win11, гонка) → принудительно прячем. Обычное
+  // закрытие (<0.5с) под сторожа не попадает (не переживёт 2 тика). Дешёвая проверка.
+  let notifEmptySeen = false
+  setInterval(() => {
+    try {
+      const w = getNotifWin()
+      const emptyVisible = !!(w && !w.isDestroyed() && w.isVisible() && getNotifItems().length === 0)
+      if (emptyVisible && notifEmptySeen) {
+        console.log('[notif-watchdog] окно пустое и видимо ≥2 тиков → прячу (анти-«невидимая стена»)')
+        safeHideTransparentWindow(w)
+        notifEmptySeen = false
+      } else {
+        notifEmptySeen = emptyVisible
+      }
+    } catch (_) {}
+  }, 5000)
 }
