@@ -16,6 +16,6 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
   if (url.includes('telegram.org')) return buildTelegramScript(senderName, chatTag)
   if (url.includes('max.ru'))       return buildMaxScript(senderName)
   if (url.includes('whatsapp.com')) return buildWhatsAppScript(senderName)
-  if (url.includes('vk.com'))       return buildVkScript(senderName)
+  if (url.includes('vk.com') || url.includes('vk.ru')) return buildVkScript(senderName) // v1.2.109: vk.ru
   return buildGenericScript(senderName)
 }

@@ -1,4 +1,4 @@
-// Навигация к чату в VK (vk.com).
+// Навигация к чату в VK (vk.com / vk.ru).
 
 export function buildVkScript(senderName) {
   const nameJson = JSON.stringify(senderName || '')

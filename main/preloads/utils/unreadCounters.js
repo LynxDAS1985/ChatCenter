@@ -74,7 +74,7 @@ function getMessengerType() {
   const h = location.hostname
   if (h.includes('telegram')) return 'telegram'
   if (h.includes('whatsapp')) return 'whatsapp'
-  if (h.includes('vk.com')) return 'vk'
+  if (h.includes('vk.com') || h.includes('vk.ru')) return 'vk' // v1.2.109: vk.ru
   if (h.includes('max.ru')) return 'max'
   return null
 }

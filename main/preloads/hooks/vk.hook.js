@@ -1,4 +1,4 @@
-// Notification hook для ВКонтакте (vk.com) — v0.82.0
+// Notification hook для ВКонтакте (vk.com / vk.ru) — v0.82.0
 // Файл инжектится в main world через <script> tag (preload)
 // Изменения в этом файле НЕ затрагивают другие мессенджеры (Telegram, MAX, WhatsApp)
 // ВАЖНО: VK НЕ использует Notification API для сообщений (только для online-статусов)
@@ -185,5 +185,100 @@
   } catch(e) {
     console.log('__CC_DIAG__vk-toast primary-bind-error ' + (e && e.message || e));
   }
+  // v1.2.112: детект новых сообщений для нового ВК (vk.ru).
+  // По диагностике v1.2.111: строки списка чатов = ".ConvoListItem", непрочитанные помечены
+  // классом с "unread". Всплывашка "Новое сообщение" на vk.ru отсутствует (toast-наблюдатель
+  // выше даёт 0), поэтому ловим появление непрочитанного прямо в списке чатов.
+  // Первый проход — базовая линия (не уведомляем о том, что уже непрочитано); дальше шлём
+  // только НОВЫЕ строки (или с изменившимся текстом = новое сообщение в том же чате).
+  var _vkPrevUnread = null; // null = базовая линия ещё не снята
+  var _vkListTimer = null;
+  function _vkRowUnread(row) {
+    try {
+      if (/unread/i.test(row.className || '')) return true;
+      return !!row.querySelector('[class*="unread" i], [class*="Counter" i], [class*="counter" i], [class*="Badge" i]');
+    } catch(e) { return false; }
+  }
+  function _vkRowSender(row) {
+    try {
+      var el = row.querySelector('[class*="ConvoListItem__peer" i], [class*="title" i], [class*="name" i], [class*="peer" i], b, strong');
+      var sn = el ? _cleanToastText(el.textContent) : '';
+      return (sn && sn.length >= 2 && sn.length <= 80) ? sn : '';
+    } catch(e) { return ''; }
+  }
+  // v1.2.114: по диагностике vkRow — в строке есть спец-элемент превью
+  // (ChannelPostPreview / *preview*), а также МУСОР: скрытый для скринридера элемент
+  // (vkuiVisuallyHidden = «36 минут назад»), дата (*__date*), счётчик (UnreadCounter).
+  // Берём превью; фолбэк — листья строки, но БЕЗ мусорных классов; в конце режем время.
+  var _vkJunkCls = /visuallyHidden|Hidden|__date|__time|UnreadCounter|Counter|Badge/i;
+  // v1.2.115: срезаем ТОЛЬКО явную метку времени, чтобы не съесть настоящий текст.
+  // «· 36м»/«· 2ч» (лишь после разделителя «·»), «36 минут назад» (обязательно со словом
+  // «назад»), «12:34». Без «·» и без «назад» одиночные м/ч/с НЕ трогаем — иначе превью
+  // «буду через 5 минут» превратилось бы в «буду через».
+  var _vkDateTail = /\s*·\s*\d+\s*(минут\w*|секунд\w*|час\w*|дн\w*|нед\w*|мес\w*|[мчсд])\s*$/i;
+  var _vkAgoTail = /\s*\d+\s*(минут\w*|секунд\w*|час\w*|дн\w*|нед\w*|мес\w*)\s+назад\s*$/i;
+  function _vkRowText(row, sender) {
+    var tx = '';
+    try {
+      var el = row.querySelector('[class*="PostPreview" i], [class*="preview" i], [class*="snippet" i], [class*="ListItem__text" i]');
+      tx = el ? _cleanToastText(el.textContent) : '';
+      if (!tx) {
+        var kids = row.querySelectorAll('*'), parts = [];
+        for (var d = 0; d < kids.length; d++) {
+          if (kids[d].children.length) continue;                 // только листья
+          if (_vkJunkCls.test(String(kids[d].className || ''))) continue; // без времени/счётчика/скрытого
+          var t = _cleanToastText(kids[d].textContent);
+          if (t && t !== sender) parts.push(t);
+        }
+        tx = parts.join(' ');
+      }
+    } catch(e) {}
+    tx = tx.replace(_vkDateTail, '').replace(_vkAgoTail, '').replace(/\s*\d{1,2}:\d{2}\s*$/, '').replace(/\s*·\s*$/, '');
+    return _cleanToastText(tx).slice(0, 220);
+  }
+  function _vkRowAvatar(row) {
+    try { var img = row.querySelector('img[src^="http"]'); return (img && !/emoji/i.test(img.src || '')) ? img.src : ''; }
+    catch(e) { return ''; }
+  }
+  function _scanVkList(reason) {
+    var rows = document.querySelectorAll('[class*="ConvoListItem" i]');
+    var current = {}, cand = [], unread = 0;
+    for (var i = 0; i < rows.length && i < 200; i++) {
+      if (!_vkRowUnread(rows[i])) continue;
+      unread++;
+      var sender = _vkRowSender(rows[i]);
+      var text = _vkRowText(rows[i], sender);
+      if (!sender || !text || _isSpam(text)) continue;
+      var fp = _hashToast(sender + '|' + text);
+      current[fp] = true;
+      cand.push({ fp: fp, sender: sender, text: text, icon: _vkRowAvatar(rows[i]) });
+    }
+    var emitted = 0, sent = {};
+    if (_vkPrevUnread) {
+      for (var k = 0; k < cand.length; k++) {
+        var f = cand[k].fp;
+        if (_vkPrevUnread[f] || sent[f]) continue; // уже было непрочитано ИЛИ уже отправлено в этом проходе
+        sent[f] = true;
+        emitted++;
+        console.log('__CC_NOTIF__' + JSON.stringify({ t: cand[k].sender, b: cand[k].text, i: cand[k].icon, g: 'vk-list:' + f, src: 'vk-list' }));
+      }
+    }
+    // v1.2.115: базовую линию фиксируем ТОЛЬКО на непустом списке — иначе при медленной
+    // загрузке (первый замер на пустом списке) все уже-непрочитанные при догрузке улетят
+    // как «новые» = шторм уведомлений на старте.
+    if (rows.length > 0) _vkPrevUnread = current;
+    if (reason === 'initial' || emitted > 0) console.log('__CC_DIAG__vk-list reason=' + reason + ' rows=' + rows.length + ' unread=' + unread + ' emitted=' + emitted);
+  }
+  function _scheduleVkListScan(reason) {
+    if (_vkListTimer) return;
+    _vkListTimer = setTimeout(function(){ _vkListTimer = null; _scanVkList(reason); }, 500);
+  }
+  try {
+    if (window.__ccVkListObserver) window.__ccVkListObserver.disconnect();
+    var _vkListObs = new MutationObserver(function(){ _scheduleVkListScan('mutation'); });
+    _vkListObs.observe(document.documentElement || document.body, { childList: true, subtree: true, characterData: true });
+    window.__ccVkListObserver = _vkListObs;
+    setTimeout(function(){ _scanVkList('initial'); }, 2500); // базовая линия после загрузки списка
+  } catch(e) { console.log('__CC_DIAG__vk-list bind-error ' + (e && e.message || e)); }
   console.log('__CC_NOTIF_HOOK_OK__');
 })()

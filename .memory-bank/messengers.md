@@ -136,6 +136,7 @@ const input = document.querySelector('.im-chat-input--text [contenteditable]')
 
 ### Особенности
 
+- **ВК переехал с `vk.com` на `vk.ru`** (2026-07, подтверждено диагностикой: webview на `https://vk.ru/im`). Определение мессенджера по URL/host принимает ОБА домена — `detectMessengerType` [messengerConfigs.js], `monitor.preload.cjs`, `unreadCounters.js`, `navigateToChat.js` (v1.2.109). Если добавляешь новую проверку «это ВК?» — учитывай и vk.com, и vk.ru. Симптом при пропуске: наш хук/наблюдатель НЕ грузится → только звук ВК, нашей карточки нет.
 - VK обновляет интерфейс часто — селекторы могут устареть
 - Авторизация через логин/пароль или VK ID
 - **VK шлёт Notification для СВОИХ исходящих** — body начинается с "Вы: " → фильтруем

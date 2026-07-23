@@ -31,6 +31,29 @@ function makeHost(album, dismissMs) {
   return { el, album: album, dismissMs: dismissMs || 0, timer: null }
 }
 
+describe('buildStackHeader — источник + время справа (v1.2.108)', () => {
+  function mkSender(txt) { const s = document.createElement('div'); s.className = 'sender'; s.textContent = txt || ''; return s }
+  function mkAv() { const a = document.createElement('div'); a.className = 'avatar-wrap'; return a }
+  it('«Мессенджер · Аккаунт» слева + время в .notif-source-time', () => {
+    const H = window.__ccNotifHelpers
+    const head = H.buildStackHeader(mkAv(), mkSender('Имя'), 'Telegram', 'БНК', '10:38')
+    expect(head.querySelector('.notif-source-text').textContent).toBe('Telegram · БНК')
+    expect(head.querySelector('.notif-source-time').textContent).toBe('10:38')
+  })
+  it('без источника, но со временем → строка только со временем', () => {
+    const H = window.__ccNotifHelpers
+    const head = H.buildStackHeader(mkAv(), mkSender(''), '', '', '09:00')
+    expect(head.querySelector('.notif-source-time').textContent).toBe('09:00')
+    expect(head.querySelector('.notif-source-text').textContent).toBe('')
+  })
+  it('без времени → строки времени нет (только источник)', () => {
+    const H = window.__ccNotifHelpers
+    const head = H.buildStackHeader(mkAv(), mkSender(''), 'VK', '', '')
+    expect(head.querySelector('.notif-source-time')).toBe(null)
+    expect(head.querySelector('.notif-source-text').textContent).toBe('VK')
+  })
+})
+
 describe('renderAlbumGrid — листание страницами по 4', () => {
   it('4 фото → одна страница, стрелки скрыты, 4 плитки', () => {
     const H = window.__ccNotifHelpers

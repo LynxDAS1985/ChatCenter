@@ -397,7 +397,10 @@
   .notif-head-col { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
   .notif-item.layout-stack .avatar-wrap { width: 50px; height: 50px; margin: 0; flex-shrink: 0; font-size: 24px; }
   .notif-item.layout-stack .sender { padding: 0; line-height: 1.25; }
-  .notif-source { margin-top: 2px; font-size: 12px; line-height: 1.3; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* v1.2.108: строка источника — флекс: «Мессенджер · Аккаунт» слева, время прижато вправо. */
+  .notif-source { margin-top: 2px; font-size: 12px; line-height: 1.3; color: rgba(255,255,255,0.5); display: flex; align-items: baseline; gap: 8px; }
+  .notif-source-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .notif-source-time { margin-left: auto; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .notif-item.layout-stack .body-text { margin-top: 8px; }
   /* Одиночное фото — вариант «размытый фон»: фото целиком (contain), поля заполнены
      размытой растянутой копией. Media-group грид 2×2 не трогаем. */

@@ -14,7 +14,7 @@ export function detectMessengerType(url) {
   if (!url) return 'unknown'
   if (url.includes('web.telegram.org')) return 'telegram'
   if (url.includes('web.whatsapp.com')) return 'whatsapp'
-  if (url.includes('vk.com')) return 'vk'
+  if (url.includes('vk.com') || url.includes('vk.ru')) return 'vk' // v1.2.109: ВК переехал на vk.ru
   if (url.includes('web.max.ru')) return 'max'
   if (url.includes('viber.com')) return 'viber'
   return 'unknown'

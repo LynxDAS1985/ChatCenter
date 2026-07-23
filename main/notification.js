@@ -427,30 +427,21 @@
     sender.className = 'sender'
     const senderName = data.title || ''
     sender.textContent = senderName || mName
-    textWrap.appendChild(window.__ccNotifHelpers.buildStackHeader(avWrap, sender, mName, data.accountName || ''))
+    // v1.2.108: время (по настройке showMessageTime) переехало из начала текста в строку
+    // источника, прижато вправо: «Telegram · БНК          10:38». Единый формат всех уведомлений.
+    const nowTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    textWrap.appendChild(window.__ccNotifHelpers.buildStackHeader(avWrap, sender, mName, data.accountName || '', showTimeEnabled ? nowTime : ''))
 
     const bodyText = document.createElement('div')
     bodyText.className = 'body-text'
     bodyText.dataset.short = data.body || ''
     bodyText.dataset.full = data.fullBody || data.body || ''
-    const nowTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
     bodyText.dataset.ts = nowTime
-    // v0.63.8: время перед текстом (управляется настройкой showMessageTime)
-    if (showTimeEnabled) {
-      const timeSpan = document.createElement('span')
-      timeSpan.className = 'msg-time'
-      timeSpan.textContent = nowTime
-      bodyText.appendChild(timeSpan)
-      bodyText.style.display = 'flex'
-      bodyText.style.alignItems = 'baseline'
-      const textNode = document.createElement('span')
-      textNode.className = 'msg-text-content'
-      textNode.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0'
-      textNode.textContent = data.body || ''
-      bodyText.appendChild(textNode)
-    } else {
-      bodyText.textContent = data.body || ''
-    }
+    // v1.2.108: текст без inline-времени; .msg-text-content всегда есть (нужен toggleExpand/альбому).
+    const textNode = document.createElement('span')
+    textNode.className = 'msg-text-content'
+    textNode.textContent = data.body || ''
+    bodyText.appendChild(textNode)
     textWrap.appendChild(bodyText)
 
     // v1.2.66→v1.2.74: альбом — накопительное состояние карточки. thumbs/messageIds —

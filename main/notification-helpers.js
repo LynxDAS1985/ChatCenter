@@ -249,16 +249,20 @@ function addAlbumTileToHost(host, data, dismissItem, reportHeight) {
 }
 
 // v1.2.98: шапка карточки — аватар + колонка (имя + источник «Мессенджер · Аккаунт»).
+// v1.2.108: + время (по настройке) в строке источника, ПРИЖАТО ВПРАВО (margin-left:auto):
+//   «Telegram · БНК                    10:38». Единый формат всех уведомлений.
 // Источник в том же формате, что и подсказка закрепа (pin-tooltip.html): messengerName · accountName.
 // Аватар (avWrap) уже создан в notification.js — appendChild ПЕРЕМЕЩАЕТ его в шапку (не копирует, MDN).
-function buildStackHeader(avWrap, sender, messengerName, accountName) {
+function buildStackHeader(avWrap, sender, messengerName, accountName, time) {
   const head = document.createElement('div'); head.className = 'notif-head'
   const col = document.createElement('div'); col.className = 'notif-head-col'
   col.appendChild(sender)
   const parts = [messengerName, accountName].filter(Boolean)
-  if (parts.length) {
+  if (parts.length || time) {
     const src = document.createElement('div'); src.className = 'notif-source'
-    src.textContent = parts.join(' · ')
+    const txt = document.createElement('span'); txt.className = 'notif-source-text'; txt.textContent = parts.join(' · ')
+    src.appendChild(txt)
+    if (time) { const t = document.createElement('span'); t.className = 'notif-source-time'; t.textContent = time; src.appendChild(t) }
     col.appendChild(src)
   }
   head.appendChild(avWrap); head.appendChild(col)
