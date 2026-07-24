@@ -220,3 +220,6 @@ r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
 | 2026-05-26 | v0.91.19 | TODO-7 — удалить `restore-start` / `scroll-save` / `autosave-save` | 📋 в очереди |
 | 2026-05-26 | v0.91.20 | TODO-8 — удалить stack capture + multi-step postcheck (тики 50/100/300/500/1000мс) | 📋 в очереди |
 | 2026-05-26 | v0.91.21 | TODO-9 — удалить `ipc-burst` счётчик в attachTelegramIpcListeners | 📋 в очереди |
+| 2026-07-23 | v1.2.120 | TODO-10 — ВК mute-детект `_vkRowMuted`: убрать ветку `getClientRects().length` (лазейка ложного пропуска) | ✅ сделано v1.2.123 |
+| 2026-07-23 | v1.2.120 | TODO-11 — ВК mute-детект: сузить селектор `[class*="muted" i]` → `[class*="mutedIcon" i],[class*="icon--muted" i]` | ✅ сделано v1.2.123 |
+| 2026-07-24 | v1.2.123 | TODO-12 — Разгрузить `vk.hook.js` (300/300). ВНИМАНИЕ: хук — один самодостаточный `<script>` (`monitor.preload.cjs:28` + `app:read-hook` → `webviewSetup.js:362`), импортов нет. Вынос в модуль = менять ОБА пути впрыска (склеивать прелюдию). ОБЯЗАТЕЛЬНА визуальная проверка в приложении (иначе функции станут undefined → ВК-уведомления сломаются). Кандидаты на вынос: мёртвый на vk.ru toast-наблюдатель (`_scanVkToasts`/`_toastRootOk`/`_parseVkToast`) либо «чистые» помощники. | 📋 в очереди (с визуальной проверкой) |

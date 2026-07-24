@@ -33,6 +33,11 @@
   var _outgoing = /^(вы:\s|you:\s)/i;
   var _statusEnd = /\s+(в\s+сети|online|offline|был[аи]?\s+(в\s+сети|недавно|давно))\s*$/i;
   var _sysText = /^(сообщение|пропущенный\s*(вызов|звонок)|входящий\s*(вызов|звонок)|missed\s*call|message)$/i;
+  // v1.2.121: уведомления о сторис (историях) Telegram Web — не показываем. Гасим ТОЛЬКО
+  // системную фразу ЦЕЛИКОМ (тело = «опубликовал(а) историю», имя в title), а не слово
+  // «история» где угодно — проверено на живых примерах, обычные сообщения проходят.
+  var _story = /^(опубликовал|добавил|разместил)\S*\s+(историю|видео\s+в\s+историю|фото\s+в\s+историю)$/i;
+  var _storyEn = /^(posted a story|added (a|to (their|his|her)) story|shared a story)$/i;
   function _isSpam(body) {
     if (!body || !body.trim()) return 'empty';
     var t = body.trim();
@@ -40,6 +45,7 @@
     if (_outgoing.test(t)) return 'outgoing';
     if (_statusEnd.test(t)) return 'status';
     if (_sysText.test(t)) return 'sysText';
+    if (_story.test(t) || _storyEn.test(t)) return 'story';
     return '';
   }
   // === NOTIFICATION OVERRIDE ===

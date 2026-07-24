@@ -116,6 +116,8 @@
   // sessions miss the toast completely.
   var _toastSeen = {};
   function _cleanToastText(v) { return String(v || '').replace(/\s+/g, ' ').trim(); }
+  // v1.2.122: бережная чистилка для ТЕКСТА сообщения — схлопывает пробелы/табы, но СОХРАНЯЕТ переносы строк (списки/абзацы каналов не превращаются в простыню). Не заменяет _cleanToastText (её использует путь тостов).
+  function _cleanMultiline(v) { return String(v || '').replace(/\r\n?/g, '\n').replace(/[^\S\n]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim(); }
   function _hashToast(v) {
     var h = 0, s = String(v || '');
     for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
@@ -199,6 +201,18 @@
       return !!row.querySelector('[class*="unread" i], [class*="Counter" i], [class*="counter" i], [class*="Badge" i]');
     } catch(e) { return false; }
   }
+  // v1.2.120: «беззвучный» чат — по значку 🔕. Реальные классы (диагностика v1.2.118):
+  // личный чат — ConvoTitle__mutedIcon, канал — ChannelTitle__icon--muted (оба содержат "muted").
+  // ЛОВУШКА: элемент есть и у обычных чатов (скрыт), поэтому считаем замьюченным ТОЛЬКО если он ВИДИМ.
+  function _vkRowMuted(row) {
+    try {
+      var m = row.querySelector('[class*="mutedIcon" i], [class*="icon--muted" i]'); // v1.2.123: точные классы (не широкое "muted", ловившее "unmuted")
+      if (!m) return false;
+      var cs = getComputedStyle(m);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity || 1) < 0.1) return false;
+      return m.offsetWidth > 0 || m.offsetHeight > 0; // v1.2.123: убрана лазейка getClientRects (могла дать ложное «виден» у пустого элемента → тихий пропуск)
+    } catch(e) { return false; }
+  }
   function _vkRowSender(row) {
     try {
       var el = row.querySelector('[class*="ConvoListItem__peer" i], [class*="title" i], [class*="name" i], [class*="peer" i], b, strong');
@@ -221,7 +235,7 @@
     var tx = '';
     try {
       var el = row.querySelector('[class*="PostPreview" i], [class*="preview" i], [class*="snippet" i], [class*="ListItem__text" i]');
-      tx = el ? _cleanToastText(el.textContent) : '';
+      tx = el ? _cleanMultiline(el.textContent) : '';
       if (!tx) {
         var kids = row.querySelectorAll('*'), parts = [];
         for (var d = 0; d < kids.length; d++) {
@@ -234,7 +248,7 @@
       }
     } catch(e) {}
     tx = tx.replace(_vkDateTail, '').replace(_vkAgoTail, '').replace(/\s*\d{1,2}:\d{2}\s*$/, '').replace(/\s*·\s*$/, '');
-    return _cleanToastText(tx).slice(0, 220);
+    return tx.trim().slice(0, 4000); // v1.2.122: НЕ схлопываем (переносы сохранены выше); 4000 — только анти-краш, не «мерка» (реальные посты меньше)
   }
   function _vkRowAvatar(row) {
     try { var img = row.querySelector('img[src^="http"]'); return (img && !/emoji/i.test(img.src || '')) ? img.src : ''; }
@@ -242,10 +256,11 @@
   }
   function _scanVkList(reason) {
     var rows = document.querySelectorAll('[class*="ConvoListItem" i]');
-    var current = {}, cand = [], unread = 0;
+    var current = {}, cand = [], unread = 0, muted = 0;
     for (var i = 0; i < rows.length && i < 200; i++) {
       if (!_vkRowUnread(rows[i])) continue;
       unread++;
+      if (_vkRowMuted(rows[i])) { muted++; continue; } // v1.2.120: заглушённый чат (🔕) — не уведомляем
       var sender = _vkRowSender(rows[i]);
       var text = _vkRowText(rows[i], sender);
       if (!sender || !text || _isSpam(text)) continue;
@@ -267,7 +282,7 @@
     // загрузке (первый замер на пустом списке) все уже-непрочитанные при догрузке улетят
     // как «новые» = шторм уведомлений на старте.
     if (rows.length > 0) _vkPrevUnread = current;
-    if (reason === 'initial' || emitted > 0) console.log('__CC_DIAG__vk-list reason=' + reason + ' rows=' + rows.length + ' unread=' + unread + ' emitted=' + emitted);
+    if (reason === 'initial' || emitted > 0) console.log('__CC_DIAG__vk-list reason=' + reason + ' rows=' + rows.length + ' unread=' + unread + ' muted=' + muted + ' emitted=' + emitted);
   }
   function _scheduleVkListScan(reason) {
     if (_vkListTimer) return;
