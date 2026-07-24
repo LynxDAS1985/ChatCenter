@@ -67,6 +67,7 @@
 - Уведомление теряет поля payload (accountName) — добавлять в `showCustomNotification` (v1.2.87)
 - CSS `display:none` в правиле нельзя перекрыть `style.display=''` (v1.2.83)
 - Карточка «Стопка» (аватар+имя сверху) + одиночное фото «размытый фон» (`cover` режет → `contain`+blur двумя слоями); «вечная» крутилка при сбое превью → таймаут (v1.2.96–100, см. [[ADR-020]])
+- «Невидимая стена»: пустое прозрачное окно ловит клики — гасить по ВИДИМОМУ (`calcHeight`), а не по числу записей `items`/`notifItems[]` (копятся фантомы стопки); «поверх всех» через `screen-saver`+reassert (v1.2.106–128)
 - 📦 Старые ловушки (#28–#32, v0.89.35–v1.2.7) вынесены в [`mistakes/notifications-ribbon-history.md`](./mistakes/notifications-ribbon-history.md) (v1.2.78, разгрузка)
 
 ### 4. [`mistakes/electron-core.md`](./mistakes/electron-core.md)

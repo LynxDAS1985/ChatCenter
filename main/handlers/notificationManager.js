@@ -6,6 +6,7 @@ import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 
 let notifWin = null
 let notifItems = [] // [{id, messengerId, ...}]
+let notifTopTimer = null // v1.2.125: «пружина» — периодически возвращаем окно поверх всех
 let notifIdCounter = 0
 const notifDedupMap = new Map() // messengerId:text → timestamp (дедупликация main+renderer)
 
@@ -131,6 +132,20 @@ function createNotifWindow() {
     console.error('[NotifManager] Failed to load notification.html:', err)
   })
 
+  // v1.2.125: как у полоски задач (dockPinState) — САМЫЙ высокий уровень «поверх всех»
+  // (screen-saver), а не простой alwaysOnTop, иначе чужие окна перекрывают уведомление.
+  try { notifWin.setAlwaysOnTop(true, 'screen-saver', 1) } catch (_) {}
+  // «Пружина»: Windows опускает topmost-окно при переключении окон/клике по панели задач.
+  // Пока уведомление ВИДИМО — раз в 1с возвращаем его наверх (setAlwaysOnTop НЕ крадёт фокус).
+  try {
+    if (notifTopTimer) clearInterval(notifTopTimer)
+    notifTopTimer = setInterval(() => {
+      try {
+        if (notifWin && !notifWin.isDestroyed() && notifWin.isVisible()) notifWin.setAlwaysOnTop(true, 'screen-saver', 1)
+      } catch (_) {}
+    }, 1000)
+  } catch (_) {}
+
   // v1.2.12: диагностический лог №3 — реальные события окна от ОС.
   // Без этих подписок нельзя отличить «окно не показалось» от «появилось и сразу скрылось».
   // Парная точка к [NotifManager] show. Win11 после safeHide может оставить окно
@@ -138,6 +153,7 @@ function createNotifWindow() {
   try {
     notifWin.on('show', () => {
       try {
+        notifWin.setAlwaysOnTop(true, 'screen-saver', 1) // v1.2.125: мгновенно наверх при показе
         const b = notifWin.getBounds()
         console.log('[notif-window] event=show bounds=' + JSON.stringify(b)
           + ' onTop=' + notifWin.isAlwaysOnTop()
@@ -162,6 +178,7 @@ function createNotifWindow() {
   } catch (_) {}
 
   notifWin.on('closed', () => {
+    if (notifTopTimer) { clearInterval(notifTopTimer); notifTopTimer = null } // v1.2.125: стоп «пружины»
     notifWin = null
     notifItems = []
   })

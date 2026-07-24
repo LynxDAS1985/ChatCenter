@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('notifApi', {
   // v0.89.27: добавлен второй параметр meta с rendererPure флагом
   // (authoritative signal что у renderer ничего нет — см. ловушка #26).
   resize: (height, meta) => ipcRenderer.send('notif:resize', height, meta),
+  // v1.2.126: Main → Notification window: «переотчитайся о размере» (heartbeat сторожа).
+  onRemeasure: (callback) => { ipcRenderer.on('notif:remeasure', () => callback()) },
   // Notification window → Main: закрепить сообщение в отдельном окне
   pinMessage: (data) => ipcRenderer.send('notif:pin-message', data),
   // v1.2.65: Notification window → Main: открыть фото альбома в смотрелке.

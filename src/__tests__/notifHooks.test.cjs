@@ -77,18 +77,20 @@ test('TG: .chatlist-chat для аватарки', () => assert(tgCode.includes(
 const vkCode = fs.readFileSync(path.join(hooksDir, 'vk.hook.js'), 'utf8')
 test('VK: ConvoListItem selector', () => assert(vkCode.includes('ConvoListItem'), 'VK должен искать в ConvoListItem'))
 test('VK: _appTitles с vk/вконтакте', () => assert(vkCode.includes('вконтакте') || vkCode.includes('вк'), 'VK _appTitles должен содержать VK названия'))
-test('VK: primary hook observes native VK toast outside fallback', () => {
-  assert(vkCode.includes('__ccVkPrimaryToastObserver'), 'VK primary hook must own the toast observer')
-  assert(vkCode.includes('__CC_DIAG__vk-toast primary-bound'), 'VK toast observer must expose a bound diagnostic')
-  assert(vkCode.includes("src: 'vk-toast'"), 'VK toast must emit a distinct source through __CC_NOTIF__')
-  assert(vkCode.includes("g: 'vk-toast:' + fp"), 'VK toast must use a stable tag for dedup')
-  assert(vkCode.includes('block-incomplete-toast'), 'VK toast must keep incomplete payloads diagnostic-only')
-  assert(vkCode.includes('primary-mutation'), 'VK toast must react to runtime DOM mutations')
+// v1.2.124: VK ловит сообщения через наблюдатель списка чатов (vk.ru), а не через
+// всплывашку. Старый toast-наблюдатель удалён как мёртвый на vk.ru (см. features v1.2.124).
+test('VK: детект новых сообщений через наблюдатель списка чатов', () => {
+  assert(vkCode.includes('_scanVkList'), 'VK должен сканировать список чатов')
+  assert(vkCode.includes('__ccVkListObserver'), 'VK должен держать наблюдатель списка чатов')
+  assert(vkCode.includes("src: 'vk-list'"), "VK должен слать __CC_NOTIF__ с src 'vk-list'")
+  assert(vkCode.includes('_vkRowMuted'), 'VK должен пропускать заглушённые чаты')
 })
-test('VK: toast parser uses real line breaks before compacting text', () => {
-  const rootCheck = vkCode.slice(vkCode.indexOf('function _toastRootOk'), vkCode.indexOf('function _parseVkToast'))
-  assert(rootCheck.includes("split(/\\n+/)"), 'toast root check must inspect first visual line')
-  assert(!rootCheck.includes("raw.split(/\\n+/)"), 'toast root check must not split already compacted raw text')
+test('VK: текст собирается с эмодзи-картинками (_vkNodeText)', () => {
+  assert(vkCode.includes('function _vkNodeText'), 'VK должен собирать текст, включая эмодзи-картинки (<img alt>)')
+  assert(vkCode.includes('_cleanMultiline(_vkNodeText(el))'), 'VK _vkRowText должен использовать _vkNodeText')
+})
+test('VK: мёртвый наблюдатель всплывашек удалён (на vk.ru его нет)', () => {
+  assert(!vkCode.includes('__ccVkPrimaryToastObserver'), 'toast-наблюдатель удалён в v1.2.124')
 })
 
 const waCode = fs.readFileSync(path.join(hooksDir, 'whatsapp.hook.js'), 'utf8')

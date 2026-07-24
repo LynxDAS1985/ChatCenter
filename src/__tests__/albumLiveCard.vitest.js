@@ -203,3 +203,31 @@ describe('подпись из поздней части (Совет 5)', () => {
     expect(host.el.querySelector('.msg-text-content').textContent).toBe('Подпись поста')
   })
 })
+
+// v1.2.128: сигнал main «в окне пусто». Ловит регрессию «невидимой стены» — окно должно
+// гаснуть по ВИДИМОМУ (после закрытия), а не только по числу записей.
+describe('computeRendererPure — сигнал «в окне пусто» (v1.2.128)', () => {
+  const P = (args) => window.__ccNotifHelpers.computeRendererPure(args)
+
+  it('ноль записей И ноль DOM-детей → пусто (обычный отчёт)', () => {
+    expect(P({ itemsCount: 0, containerCount: 0 })).toBe(true)
+  })
+
+  it('есть записи, высоты нет, БЕЗ финала закрытия → НЕ пусто (иначе прячет рано при добавлении)', () => {
+    // Карточка ещё выезжает (slideIn): записи есть, видимой высоты нет — гасить нельзя.
+    expect(P({ itemsCount: 1, containerCount: 1, visibleHeight: 0, dismissFinal: false })).toBe(false)
+  })
+
+  it('ФИНАЛ закрытия + видимого не осталось (h=0), но завис невидимый огрызок → ПУСТО', () => {
+    // Ядро фикса: ghost стопки/альбома держит счётчик>0, но на экране пусто → должно гаснуть.
+    expect(P({ itemsCount: 2, containerCount: 2, visibleHeight: 0, dismissFinal: true })).toBe(true)
+  })
+
+  it('ФИНАЛ закрытия, но на экране ещё видимая карточка (h>0) → НЕ пусто (вторая карточка остаётся)', () => {
+    expect(P({ itemsCount: 1, containerCount: 1, visibleHeight: 120, dismissFinal: true })).toBe(false)
+  })
+
+  it('пустой вызов не падает и не считает «пусто» ошибочно', () => {
+    expect(P()).toBe(true) // всё undefined → empty=true (0===0 && 0===0) — безопасно (окно и так закрыто)
+  })
+})

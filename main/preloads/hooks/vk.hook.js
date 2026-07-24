@@ -110,11 +110,8 @@
     navigator.serviceWorker.register = function() { console.log('__CC_SW_BLOCKED__'); return Promise.reject(new Error('blocked')); };
     navigator.serviceWorker.getRegistrations().then(function(r) { r.forEach(function(s) { s.unregister(); }); if (r.length) console.log('__CC_SW_UNREGISTERED__:' + r.length); }).catch(function() {});
   }
-  // v1.2.58: VK can show its own "New message" toast on profile/feed pages
-  // where there is no messenger container or sidebar. This observer must live in
-  // the primary VK hook, not only in VK-EXEC fallback, otherwise healthy preload
-  // sessions miss the toast completely.
-  var _toastSeen = {};
+  // v1.2.124: общие помощники детекта списка чатов. Старый наблюдатель всплывашек
+  // «Новое сообщение» (v1.2.58) удалён в v1.2.124 — на новом vk.ru таких всплывашек нет.
   function _cleanToastText(v) { return String(v || '').replace(/\s+/g, ' ').trim(); }
   // v1.2.122: бережная чистилка для ТЕКСТА сообщения — схлопывает пробелы/табы, но СОХРАНЯЕТ переносы строк (списки/абзацы каналов не превращаются в простыню). Не заменяет _cleanToastText (её использует путь тостов).
   function _cleanMultiline(v) { return String(v || '').replace(/\r\n?/g, '\n').replace(/[^\S\n]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim(); }
@@ -123,69 +120,19 @@
     for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
     return String(Math.abs(h));
   }
-  function _toastLabelOk(v) {
-    return /^(\u043d\u043e\u0432\u043e\u0435\s+\u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435|new\s+message)$/i.test(_cleanToastText(v));
-  }
-  function _toastRootOk(el) {
+  // v1.2.124: собрать текст элемента ВКЛЮЧАЯ эмодзи-картинки. VK рисует эмодзи как <img>,
+  // а textContent их не видит -> смайлик терялся. Берём alt у <img> (там сам символ).
+  // Нет alt (эмодзи фоном) — пропускаем, хуже прежнего не будет.
+  function _vkNodeText(node) {
     try {
-      if (!el || el.nodeType !== 1) return false;
-      var lines = (el.innerText || el.textContent || '').split(/\n+/).map(_cleanToastText).filter(Boolean);
-      if (!_toastLabelOk(lines[0] || '')) return false;
-      var r = el.getBoundingClientRect();
-      if (r.width < 180 || r.width > 520 || r.height < 35 || r.height > 180) return false;
-      if (r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) return false;
-      var cs = getComputedStyle(el);
-      if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity || 1) < 0.2) return false;
-      return /fixed|sticky|absolute/.test(cs.position) || r.left < 80 || r.bottom > innerHeight - 220;
-    } catch(e) { return false; }
-  }
-  function _parseVkToast(root) {
-    var raw = _cleanToastText(root.innerText || root.textContent || '');
-    var lines = (root.innerText || root.textContent || '').split(/\n+/).map(_cleanToastText).filter(Boolean);
-    if (!lines.length || !_toastLabelOk(lines[0])) return null;
-    var sender = '', text = '';
-    if (lines.length >= 3) {
-      sender = lines[1];
-      text = lines.slice(2).join(' ');
-    } else {
-      var m = (lines[1] || '').match(/^(.+?)\s+(\u043f\u0440\u0438\u0441\u043b\u0430\u043b[а-я]*\s+\u0432\u0430\u043c\s+.+)$/i);
-      if (m) { sender = _cleanToastText(m[1]); text = _cleanToastText(m[2]); }
-    }
-    sender = sender.replace(/\s+(online|offline|\u0432\s+\u0441\u0435\u0442\u0438|\u043f\u0435\u0447\u0430\u0442\u0430\u0435\u0442).*$/i, '').trim();
-    var img = root.querySelector('img[src]');
-    var icon = img && !/emoji/i.test(img.src || '') ? img.src : '';
-    if (!sender || !text) return { decision: 'block-incomplete-toast', sender: sender, text: text, icon: icon, raw: raw, lines: lines };
-    if (sender.length > 80 || text.length > 220) return { decision: 'block-invalid-toast', sender: sender, text: text, icon: icon, raw: raw, lines: lines };
-    return { decision: 'emit-toast', sender: sender, text: text, icon: icon, raw: raw, lines: lines };
-  }
-  function _scanVkToasts(reason, notify) {
-    var nodes = document.querySelectorAll('div,section,aside,[role]');
-    var emitted = 0, rows = 0;
-    for (var i = 0; i < nodes.length && i < 800; i++) {
-      var root = nodes[i];
-      if (!_toastRootOk(root)) continue;
-      rows++;
-      var d = _parseVkToast(root);
-      if (!d) continue;
-      var fp = _hashToast(d.sender + '|' + d.text + '|' + d.icon);
-      console.log('__CC_DIAG__vk-toast candidate reason=' + reason + ' decision=' + d.decision + ' sender="' + d.sender.slice(0,80) + '" text="' + d.text.slice(0,160) + '" icon=' + !!d.icon + ' raw="' + String(d.raw || '').slice(0,220) + '"');
-      if (!notify || d.decision !== 'emit-toast' || _toastSeen[fp]) continue;
-      _toastSeen[fp] = Date.now();
-      emitted++;
-      console.log('__CC_NOTIF__' + JSON.stringify({ t: d.sender, b: d.text, i: d.icon, g: 'vk-toast:' + fp, src: 'vk-toast' }));
-    }
-    Object.keys(_toastSeen).forEach(function(k) { if (Date.now() - _toastSeen[k] > 120000) delete _toastSeen[k]; });
-    if (rows) console.log('__CC_DIAG__vk-toast scan reason=' + reason + ' rows=' + rows + ' emitted=' + emitted);
-  }
-  try {
-    if (window.__ccVkPrimaryToastObserver) window.__ccVkPrimaryToastObserver.disconnect();
-    var _vkToastObserver = new MutationObserver(function() { _scanVkToasts('primary-mutation', true); });
-    _vkToastObserver.observe(document.documentElement || document.body, { childList: true, subtree: true, characterData: true });
-    window.__ccVkPrimaryToastObserver = _vkToastObserver;
-    setTimeout(function() { _scanVkToasts('primary-bind', false); }, 500);
-    console.log('__CC_DIAG__vk-toast primary-bound version=1.2.58');
-  } catch(e) {
-    console.log('__CC_DIAG__vk-toast primary-bind-error ' + (e && e.message || e));
+      var out = '', kids = (node && node.childNodes) || [];
+      for (var i = 0; i < kids.length; i++) {
+        var n = kids[i];
+        if (n.nodeType === 3) out += (n.nodeValue || '');
+        else if (n.nodeType === 1) out += (n.tagName === 'IMG' ? (n.getAttribute('alt') || '') : _vkNodeText(n));
+      }
+      return out;
+    } catch(e) { return (node && node.textContent) || ''; }
   }
   // v1.2.112: детект новых сообщений для нового ВК (vk.ru).
   // По диагностике v1.2.111: строки списка чатов = ".ConvoListItem", непрочитанные помечены
@@ -235,7 +182,7 @@
     var tx = '';
     try {
       var el = row.querySelector('[class*="PostPreview" i], [class*="preview" i], [class*="snippet" i], [class*="ListItem__text" i]');
-      tx = el ? _cleanMultiline(el.textContent) : '';
+      tx = el ? _cleanMultiline(_vkNodeText(el)) : '';
       if (!tx) {
         var kids = row.querySelectorAll('*'), parts = [];
         for (var d = 0; d < kids.length; d++) {

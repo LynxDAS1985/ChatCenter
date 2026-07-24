@@ -25,7 +25,7 @@
     })
   }
 
-  function reportHeight() {
+  function reportHeight(heartbeat, dismissFinal) {
     setTimeout(() => {
       const h = calcHeight()
       // v0.89.27: передаём также количество items + containerChildren — main
@@ -34,6 +34,8 @@
       // ghost-stacking накопления). См. ловушка #26.
       const itemsCount = items.size
       const containerCount = container.children.length
+      // v1.2.127: heartbeat-отчёт (по запросу сторожа) — только размер + флаг, БЕЗ диагностики в лог (иначе спам каждый тик).
+      if (heartbeat) { window.notifApi.resize(h, { rendererPure: window.__ccNotifHelpers.computeRendererPure({ itemsCount, containerCount }), heartbeat: true }); return }
       // v0.89.20: diagnostic — что ИМЕННО уходит в main для setBounds.
       try { window.notifApi.log('INFO', 'reportHeight→resize(' + h + ') items=' + itemsCount + ' containerChildren=' + containerCount) } catch (_) {}
       // v0.89.21: ДЕТАЛЬНЫЙ снэпшот ВСЕХ DOM-элементов для диагностики stale state.
@@ -57,9 +59,11 @@
         }
         if (details.length) window.notifApi.log('TRACE', 'DOM snapshot ' + details.join(' '))
       } catch (_) {}
-      // v0.89.27: передаём rendererPure=true когда у renderer ничего нет —
-      // авторитативный terminal signal для main (см. ловушка #26).
-      window.notifApi.resize(h, { rendererPure: itemsCount === 0 && containerCount === 0 })
+      // v0.89.27: rendererPure — terminal signal для main (ловушка #26).
+      // v1.2.128: считаем через чистую computeRendererPure (тестируется). dismissFinal →
+      // «пусто» также по видимой высоте (h===0), см. notification-helpers.js.
+      const rendererPure = window.__ccNotifHelpers.computeRendererPure({ itemsCount, containerCount, visibleHeight: h, dismissFinal })
+      window.notifApi.resize(h, { rendererPure })
     }, 60)
   }
 
@@ -161,7 +165,8 @@
         if (groupingEnabled && item.messengerId) cleanupStack(item.stackKey || item.messengerId)
         // v0.89.20: финальный reportHeight — должен прийти с calcH=0.
         try { window.notifApi.log('INFO', 'dismiss final-report id=' + id + ' itemsAfter=' + items.size + ' calcH=' + calcHeight()) } catch (_) {}
-        reportHeight()
+        // v1.2.128: dismissFinal=true — если видимого не осталось, main скроет окно сразу.
+        reportHeight(false, true)
       }, 190)
     }, 200)
   }
@@ -698,6 +703,7 @@
   // IPC listeners
   window.notifApi.onNotification((data) => addNotification(data))
   window.notifApi.onDismiss((id) => dismissItem(id, true))
+  window.notifApi.onRemeasure?.(() => reportHeight(true)) // v1.2.126: heartbeat сторожа — переотчитаться о размере
   // v1.2.74 (A1): пришло чёткое превью плитки альбома — заменяем мутную заглушку.
   if (window.notifApi.onAlbumThumb) {
     window.notifApi.onAlbumThumb((data) => {

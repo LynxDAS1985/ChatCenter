@@ -37,6 +37,11 @@ const tgIsStory = new Function(
   'return function (b) { b = String(b).trim(); return _story.test(b) || _storyEn.test(b); };'
 )()
 
+// VK _vkNodeText — собирает текст ЭЛЕМЕНТА, включая эмодзи-картинки (<img alt="🧡">)
+const vkNodeText = new Function(
+  grab(vkSrc, /function _vkNodeText\(node\) \{[\s\S]*?\n {2}\}/, '_vkNodeText') + '\nreturn _vkNodeText;'
+)()
+
 describe('VK _cleanMultiline — сохраняет переносы строк (формат постов не «простыня»)', () => {
   it('оставляет переносы, схлопывает пробелы, максимум одна пустая строка', () => {
     const out = vkCleanMultiline('Заголовок\n\n\n✅ раз   (моро);  \n✅ два')
@@ -72,5 +77,20 @@ describe('Telegram — фильтр сторис (историй) не трог�
     expect(tgIsStory('расскажи историю')).toBe(false)
     expect(tgIsStory('это долгая история')).toBe(false)
     expect(tgIsStory('опубликовал новую историю сегодня')).toBe(false)
+  })
+})
+
+describe('VK _vkNodeText — достаёт эмодзи из картинок (VK рисует эмодзи как <img>)', () => {
+  const T = (v) => ({ nodeType: 3, nodeValue: v })
+  const IMG = (alt) => ({ nodeType: 1, tagName: 'IMG', getAttribute: (a) => (a === 'alt' ? alt : null), childNodes: [] })
+  const EL = (kids) => ({ nodeType: 1, tagName: 'SPAN', getAttribute: () => null, childNodes: kids })
+  it('текст + эмодзи-картинка → символ остаётся на месте', () => {
+    expect(vkNodeText(EL([T('Хорошего дня любимка '), IMG('🧡')]))).toBe('Хорошего дня любимка 🧡')
+  })
+  it('вложенные элементы обходятся вглубь', () => {
+    expect(vkNodeText(EL([T('привет '), EL([IMG('😀'), T(' мир')])]))).toBe('привет 😀 мир')
+  })
+  it('картинка без alt (эмодзи фоном) → пропускается, текст не ломается', () => {
+    expect(vkNodeText(EL([T('текст'), IMG(null)]))).toBe('текст')
   })
 })

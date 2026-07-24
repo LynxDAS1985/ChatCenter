@@ -269,7 +269,19 @@ function buildStackHeader(avWrap, sender, messengerName, accountName, time) {
   return head
 }
 
+// v1.2.128: чистое вычисление rendererPure — сигнал main «в окне уведомления пусто».
+// Вынесено из reportHeight (notification.js), чтобы проверять тестом (раньше формула жила
+// инлайн и молча ломала закрытие — «невидимая стена», см. mistakes/notifications-ribbon.md).
+// Обычно «пусто» = ноль записей И ноль DOM-детей. dismissFinal=true — отчёт ПОСЛЕ завершения
+// закрытия карточки: тогда «пусто» также по ВИДИМОЙ высоте (visibleHeight===0), даже если в
+// items/DOM завис невидимый огрызок высотой 0 (ghost стопки/альбома). Флаг ставится ТОЛЬКО в
+// финале закрытия — при добавлении visibleHeight===0 = карточка ещё выезжает (гасить нельзя).
+function computeRendererPure({ itemsCount, containerCount, visibleHeight, dismissFinal } = {}) {
+  const empty = (Number(itemsCount) || 0) === 0 && (Number(containerCount) || 0) === 0
+  return empty || (!!dismissFinal && (Number(visibleHeight) || 0) === 0)
+}
+
 // Экспорт в global scope (browser <script> и так делает это автоматически,
 // но явно фиксируем через window для тестов и линта).
 window.createPinBtn = createPinBtn
-window.__ccNotifHelpers = { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, renderAlbumGrid, extendHostLife, addAlbumTileToHost, applyAlbumSharp, buildStackHeader }
+window.__ccNotifHelpers = { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, renderAlbumGrid, extendHostLife, addAlbumTileToHost, applyAlbumSharp, buildStackHeader, computeRendererPure }

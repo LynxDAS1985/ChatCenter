@@ -148,18 +148,22 @@ export function initNotifHandlers(deps) {
   })
 
   let lastNotifBounds = null
+  let lastNotifResizeTs = 0 // v1.2.126: когда renderer в последний раз сообщил размер
   ipcMain.on('notif:resize', (_event, height, meta) => {
     const notifWin = getNotifWin()
     if (!notifWin || notifWin.isDestroyed()) return
+    lastNotifResizeTs = Date.now()
     const rawHeight = height
     height = Math.round(height)
     const itemsCount = getNotifItems().length
     const rendererPure = !!meta?.rendererPure
-    console.log('[notif-resize] raw=' + rawHeight + ' rounded=' + height +
-      ' visible=' + notifWin.isVisible() + ' items=' + itemsCount + ' rendererPure=' + rendererPure)
-    // v1.2.107: решение вынесено в чистую decideNotifResize (см. файл — там все
-    // ловушки #26 / v0.89.23 / v1.2.106). Здесь только side-effect'ы.
+    // v1.2.107: решение вынесено в чистую decideNotifResize (ловушки #26/v0.89.23/v1.2.106). Здесь только side-effect'ы.
     const action = decideNotifResize({ height, itemsCount, rendererPure })
+    // v1.2.127: heartbeat-переотчёт с 'show' (реальные карточки, no-op) НЕ логируем — иначе спам ~каждые 12с.
+    if (!(meta?.heartbeat && action === 'show')) {
+      console.log('[notif-resize] raw=' + rawHeight + ' rounded=' + height +
+        ' visible=' + notifWin.isVisible() + ' items=' + itemsCount + ' rendererPure=' + rendererPure + (meta?.heartbeat ? ' hb=1' : ''))
+    }
     if (action === 'clear-hide') {
       if (itemsCount > 0) { console.log('[notif-resize] CLEAR ' + itemsCount + ' stale items (renderer pure)'); setNotifItems([]) }
       safeHideTransparentWindow(notifWin); lastNotifBounds = null; return
@@ -194,16 +198,34 @@ export function initNotifHandlers(deps) {
   // terminal-сигнал, ghost-регион Win11, гонка) → принудительно прячем. Обычное
   // закрытие (<0.5с) под сторожа не попадает (не переживёт 2 тика). Дешёвая проверка.
   let notifEmptySeen = false
+  let notifPokedAt = 0 // v1.2.127: когда попросили renderer переотчитаться (для проверки ответа)
   setInterval(() => {
     try {
       const w = getNotifWin()
-      const emptyVisible = !!(w && !w.isDestroyed() && w.isVisible() && getNotifItems().length === 0)
+      if (!w || w.isDestroyed() || !w.isVisible()) { notifEmptySeen = false; return }
+      const items = getNotifItems().length
+      // Пустое и видимо ≥2 тиков → прячем (анти-«невидимая стена»).
+      const emptyVisible = items === 0
       if (emptyVisible && notifEmptySeen) {
         console.log('[notif-watchdog] окно пустое и видимо ≥2 тиков → прячу (анти-«невидимая стена»)')
-        safeHideTransparentWindow(w)
-        notifEmptySeen = false
-      } else {
-        notifEmptySeen = emptyVisible
+        safeHideTransparentWindow(w); notifEmptySeen = false; return
+      }
+      notifEmptySeen = emptyVisible
+      const b = w.getBounds()
+      if (!(b.x > -10000 && b.y > -10000)) return // офскрин (safeHide) — не трогаем
+      const msSinceResize = lastNotifResizeTs ? Date.now() - lastNotifResizeTs : -1
+      // v1.2.127: если недавно просили переотчёт, а renderer НЕ ответил (нет свежего resize) —
+      // окно «зависло» (застрявшая стена / мёртвый renderer). Пишем РЕДКО (не спам).
+      if (notifPokedAt && lastNotifResizeTs < notifPokedAt) {
+        console.log('[notif-watchdog] STUCK: renderer не ответил на remeasure, items=' + items + ' bounds=' + JSON.stringify(b) + ' msSinceResize=' + msSinceResize)
+        notifPokedAt = 0
+      }
+      // v1.2.127: окно на экране и ДАВНО (>12с) молчит → просим переотчитаться (heartbeat).
+      // Живое окно ответит → decideNotifResize поправит размер / скроет (renderer пуст →
+      // rendererPure → clear-hide). Реальные карточки: heartbeat-отчёт = тихий no-op (без лога).
+      // Пока окно активно отчитывается (<12с) — не трогаем, спама нет.
+      if (msSinceResize < 0 || msSinceResize > 12000) {
+        try { w.webContents.send('notif:remeasure'); notifPokedAt = Date.now() } catch (_) {}
       }
     } catch (_) {}
   }, 5000)
