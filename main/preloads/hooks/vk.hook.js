@@ -128,8 +128,15 @@
       var out = '', kids = (node && node.childNodes) || [];
       for (var i = 0; i < kids.length; i++) {
         var n = kids[i];
-        if (n.nodeType === 3) out += (n.nodeValue || '');
-        else if (n.nodeType === 1) out += (n.tagName === 'IMG' ? (n.getAttribute('alt') || '') : _vkNodeText(n));
+        if (n.nodeType === 3) { out += (n.nodeValue || ''); continue; }
+        if (n.nodeType !== 1) continue;
+        if (n.tagName === 'IMG') { out += (n.getAttribute('alt') || ''); continue; } // эмодзи-картинка → символ из alt
+        if (n.tagName === 'BR') { out += '\n'; continue; } // v1.2.129: явный перенос строки
+        // v1.2.129: блочные теги (абзац/список/цитата) дают перенос вокруг текста — иначе
+        // textContent-сбор склеивает абзацы поста в «простыню» (у VK переносы в разметке, не буквами; MDN: textContent их не отражает).
+        var inner = _vkNodeText(n);
+        if (/^(DIV|P|LI|UL|OL|BLOCKQUOTE|PRE|SECTION|ARTICLE)$/.test(n.tagName || '')) out += '\n' + inner + '\n';
+        else out += inner;
       }
       return out;
     } catch(e) { return (node && node.textContent) || ''; }

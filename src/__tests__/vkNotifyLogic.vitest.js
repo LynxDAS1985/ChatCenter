@@ -94,3 +94,24 @@ describe('VK _vkNodeText — достаёт эмодзи из картинок (
     expect(vkNodeText(EL([T('текст'), IMG(null)]))).toBe('текст')
   })
 })
+
+// v1.2.129: переносы строк поста (VK хранит их РАЗМЕТКОЙ — <br>/блоки, не буквами;
+// textContent их не видит → «простыня»). Сборщик должен ставить \n.
+describe('VK _vkNodeText — сохраняет переносы из разметки (абзацы поста не «простыня»)', () => {
+  const T = (v) => ({ nodeType: 3, nodeValue: v })
+  const TAG = (tag, kids) => ({ nodeType: 1, tagName: tag, getAttribute: () => null, childNodes: kids || [] })
+  const BR = () => ({ nodeType: 1, tagName: 'BR', getAttribute: () => null, childNodes: [] })
+
+  it('<br> → перенос строки', () => {
+    expect(vkNodeText(TAG('SPAN', [T('строка 1'), BR(), T('строка 2')]))).toBe('строка 1\nстрока 2')
+  })
+  it('блочные абзацы (DIV/P) → перенос между ними', () => {
+    const out = vkNodeText(TAG('DIV', [TAG('P', [T('Абзац один')]), TAG('P', [T('Абзац два')])]))
+    expect(out.includes('Абзац один')).toBe(true)
+    expect(out.includes('Абзац два')).toBe(true)
+    expect(/Абзац один\s*\n\s*Абзац два/.test(out)).toBe(true)
+  })
+  it('инлайн-тег (SPAN) НЕ добавляет лишних переносов', () => {
+    expect(vkNodeText(TAG('SPAN', [T('а'), TAG('SPAN', [T('б')])]))).toBe('аб')
+  })
+})
