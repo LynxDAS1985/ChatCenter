@@ -9,6 +9,7 @@
 
 import { getMessengerColor, getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
+import { formatChatListTime } from '../utils/formatChatListTime.js'
 import HighlightedText from './HighlightedText.jsx'
 
 const AVATAR_COLORS = ['#e17076', '#eda86c', '#a695e7', '#7bc862', '#65aadd', '#ee7aae', '#6ec9cb']
@@ -19,10 +20,12 @@ function hashString(s) {
   return Math.abs(h)
 }
 
-function typeIcon(type, isBot) {
-  if (isBot) return '🤖'
-  if (type === 'group') return '👥'
-  if (type === 'channel') return '📢'
+// v1.2.130: значок типа чата ПЕРЕД именем. Форум (супергруппа с темами, isForum)
+// получает свой значок 🗂️ — отличается от обычной группы 👥.
+function typeIcon(chat) {
+  if (chat.isBot) return '🤖'
+  if (chat.type === 'channel') return '📢'
+  if (chat.type === 'group') return chat.isForum ? '🗂️' : '👥'
   return null
 }
 
@@ -30,7 +33,9 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
   const bgColor = AVATAR_COLORS[hashString(chat.title || '?') % AVATAR_COLORS.length]
   const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('')
-  const icon = typeIcon(chat.type, chat.isBot)
+  const icon = typeIcon(chat)
+  // v1.2.130: краткое время последнего сообщения (правая колонка на линии имени).
+  const timeLabel = formatChatListTime(chat.lastMessageTs)
   // v0.95.21: для форум-групп используем число тем с непрочитанным (Telegram Desktop
   // поведение), для обычных — chat.unreadCount как и раньше. См. getDisplayUnreadCount
   // в utils/displayUnread.js. Если displayUnreadCount не задан (старые места вызова) —
@@ -213,13 +218,12 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
             <HighlightedText text={chat.title} query={highlightQuery} />
             {chat.verified && <span style={{ color: 'var(--amoled-accent)', marginLeft: 4 }}>✓</span>}
           </div>
-          {/* v0.87.110: заглушён — серый бейдж (иконка теперь на аватарке) */}
-          {badgeCount > 0 && (
-            <div style={{
-              background: chat.isMuted ? 'rgba(128,128,128,0.35)' : 'var(--amoled-accent)',
-              color: chat.isMuted ? 'var(--amoled-text-dim)' : '#fff',
-              fontSize: 11, padding: '1px 7px', borderRadius: 10, minWidth: 20, textAlign: 'center'
-            }}>{formatUnreadCount(badgeCount)}</div>
+          {/* v1.2.130: время последнего сообщения справа на линии имени */}
+          {timeLabel && (
+            <span style={{
+              fontSize: 11, color: 'var(--amoled-text-dim)', flexShrink: 0,
+              fontVariantNumeric: 'tabular-nums',
+            }}>{timeLabel}</span>
           )}
         </div>
         {/* v0.87.106: микро-строка с мессенджером и именем аккаунта (только в multi-account) */}
@@ -239,14 +243,31 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
             {messengerEmoji} {messengerName} · {account.name || account.username || 'аккаунт'}
           </div>
         )}
-        <div style={{
-          fontSize: 12, color: 'var(--amoled-text-dim)',
-          marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-        }}>
-          {/* v0.95.42: подсветка совпадений в preview lastMessage */}
-          {chat.lastMessage
-            ? <HighlightedText text={chat.lastMessage} query={highlightQuery} />
-            : '—'}
+        {/* v1.2.130: строка превью — текст + бейдж непрочитанных справа.
+            Бейдж переехал сюда с линии имени (там теперь время). Для групп/форумов
+            перед текстом — имя отправителя цветом акцента («Мария: …»). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+          <div style={{
+            fontSize: 12, color: 'var(--amoled-text-dim)', flex: 1, minWidth: 0,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+          }}>
+            {chat.lastMessageSenderName && (
+              <span style={{ color: 'var(--amoled-accent)' }}>{chat.lastMessageSenderName}: </span>
+            )}
+            {/* v0.95.42: подсветка совпадений в preview lastMessage */}
+            {chat.lastMessage
+              ? <HighlightedText text={chat.lastMessage} query={highlightQuery} />
+              : '—'}
+          </div>
+          {/* v0.87.110: заглушён — серый бейдж */}
+          {badgeCount > 0 && (
+            <div style={{
+              background: chat.isMuted ? 'rgba(128,128,128,0.35)' : 'var(--amoled-accent)',
+              color: chat.isMuted ? 'var(--amoled-text-dim)' : '#fff',
+              fontSize: 11, padding: '1px 7px', borderRadius: 10, minWidth: 20, textAlign: 'center',
+              flexShrink: 0,
+            }}>{formatUnreadCount(badgeCount)}</div>
+          )}
         </div>
       </div>
     </div>

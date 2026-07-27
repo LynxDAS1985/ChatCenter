@@ -720,3 +720,34 @@ for (const f of files) {
 Юнит-тест `notifResizeDecision.vitest.js` (6 проверок, все ветки); полный `npm run test:vitest` — 1962 зелёные; линт 0; лимиты 513/513. Поведение окна на экране — ожидает визуального подтверждения пользователем.
 
 **Связано**: features.md v1.2.106–v1.2.107; ловушка «Невидимая стена» в mistakes/notifications-ribbon.md; исторические ловушки #20/#21/#26 (ghost-регион, setIgnoreMouseEvents, terminal state) в notifications-ribbon-history.md.
+
+## ADR-022 — Имя автора в превью списка чатов: единое правило в shared/, но с «зеркалом» в живом пути (2026-07-24, v1.2.130–v1.2.131)
+
+**Статус**: ✅ Действующее решение (ожидает визуальной проверки пользователем — строка чата не тестируется без запуска). Код: [shared/chatPreviewSender.js](../shared/chatPreviewSender.js), [main/native/backends/tdlibMapper.js](../main/native/backends/tdlibMapper.js), [src/native/store/nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js), [src/native/components/ChatListItem.jsx](../src/native/components/ChatListItem.jsx).
+
+### Вопрос
+В строке чата надо показывать перед превью имя автора последнего сообщения — «Мария: …» для чужих в группах/форумах и «Вы: …» для своих; в каналах и личке — без префикса. Превью собирается в ДВУХ местах: при первичной загрузке чатов (main-процесс, `mapChat`) и при каждом новом сообщении (renderer, `nativeStoreIpc` обработчик `tg:new-message`). Как не завести две расходящиеся копии правила «кому показывать имя»?
+
+### Что выяснили (факты)
+- TDLib даёт `message.is_outgoing` (своё/чужое) и `sender_id` (`messageSenderUser`/`messageSenderChat`) — офиц. дока message. Имя автора TDLib отдельно НЕ кладёт в сообщение: резолвится из `userCache`/`chatCache` (`userDisplayName`/`chatDisplayName`) в момент маппинга (уровень 2, `tdlibClient.js`).
+- `mapChat` (main) сам справочников имён не имеет — имя автора last_message резолвит caller `getAccountChats` ([tdlibClient.js](../main/native/backends/tdlibClient.js)) и передаёт в `mapChat` через `extras.lastMessageSender` + `extras.lastMessageIsOutgoing`.
+- `type` у чата — `'user' | 'group' | 'channel'`; форум = `type:'group'` + `isForum:true`, то есть под правило «группа» попадает и форум (это верно — у форума есть авторы).
+- `nativeStoreIpc.js` — на потолке размера (660/660, исключение в fileSizeLimitsExceptions.cjs). Добавление строки `import` дало 661 > 660 → тест лимитов упал.
+
+### Решение
+1. **Единый источник правды** — чистая функция `lastSenderLabel(type, senderName, isOutgoing)` в КОРНЕВОМ [shared/chatPreviewSender.js](../shared/chatPreviewSender.js) (паттерн cross-process, как `shared/notifAlbum.js`): `type!=='group'` → `''`; исходящее → `'Вы'`; иначе → `senderName || ''`. Импортируется маппером (main) и покрыта юнит-тестом.
+2. **Осознанное «зеркало» в живом пути** — в `nativeStoreIpc.js` то же правило записано ОДНОЙ inline-строкой (без импорта), т.к. импорт не влезает в потолок файла. Помечено комментарием «правило = shared/chatPreviewSender.js, держать синхронно». Это сознательный компромисс: функцию использует и тестирует маппер, а живой путь дублирует её в одну строку до разгрузки файла.
+3. **Рендер** — [ChatListItem.jsx](../src/native/components/ChatListItem.jsx) рисует `chat.lastMessageSenderName` цветом акцента перед текстом; «Вы» и «Мария» идут одной веткой. Плюс в этом же релизе: время последнего сообщения справа на линии имени (util [formatChatListTime.js](../src/native/utils/formatChatListTime.js)) и отдельный значок 🗂️ для форума (`typeIcon`).
+
+### Почему не импортировать в живой путь (компромисс)
+Файл на потолке и его параллельно правит другой разработчик (`pickNotifTitle`). Разгрузка (вынос части обработчиков) — отдельная задача с риском конфликта. Дешевле оставить 1-строчное зеркало с явным указателем, чем сейчас резать контестируемый файл. Долг зафиксирован как [[code-todo]] TODO-14.
+
+### Крайние случаи / откат
+Нет last_message → префикса нет; входящее без имени → `''` (не рисуем «: »); канал/личка → `''`; форум → как группа. Откат: удалить `shared/chatPreviewSender.js` + вернуть inline-правило в маппере/сторе (в `nativeStoreIpc.js` — вручную, т.к. файл общий с другим разработчиком).
+
+### Как проверено
+Юнит: `chatPreviewSender.vitest.js` (5), `mapChatLastSender.vitest.js` (исходящее→«Вы»), `formatChatListTime.vitest.js` (6), снапшоты `ChatListItem.vitest.jsx` обновлены и объяснены. `node --check` OK; eslint 0; лимиты 520/0 (renderer-бюджет 31150→31300 с обоснованием в v1.2.130). Вид строки на экране — ожидает визуального подтверждения.
+
+**Риск-долг**: правило в двух местах (функция + зеркало) может разъехаться — тест ловит только функцию, не inline-строку. Снять после TODO-14.
+
+**Связано**: features.md v1.2.130–v1.2.131; [[code-todo]] TODO-14; [[ADR-016]] (native Telegram режим).

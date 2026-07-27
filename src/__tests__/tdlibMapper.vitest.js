@@ -322,6 +322,8 @@ describe('mapChat', () => {
     expect(r.avatar).toBe('cc-media://avatars/1.jpg')
     expect(r.isOnline).toBe(true)
   })
+  // v1.2.130: тесты lastMessageSenderName — в отдельном файле mapChatLastSender.vitest.js
+  // (этот файл у лимита 400 строк).
 })
 
 // ──────────────────────────────────────────────────────────────────────

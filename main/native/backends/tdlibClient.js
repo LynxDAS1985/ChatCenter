@@ -616,7 +616,20 @@ export class TdlibClientManager extends EventEmitter {
       // Status из user.status['@type'] = userStatusOnline | userStatusOffline | userStatusRecently...
       const userId = tdChat?.type?.user_id
       const user = userId != null ? record.userCache.get(Number(userId)) : null
-      const mapped = mapChat(tdChat, accountId, { avatar, supergroup, user })
+      // v1.2.130: имя автора последнего сообщения для превью «Имя: текст» (группы/форумы).
+      // Тот же способ резолва, что в _handleNewMessage (userCache/chatCache).
+      const lm = tdChat.last_message
+      let lastMessageSender = ''
+      const sid = lm?.sender_id
+      if (sid?.['@type'] === 'messageSenderUser') {
+        lastMessageSender = userDisplayName(record.userCache.get(Number(sid.user_id)))
+      } else if (sid?.['@type'] === 'messageSenderChat') {
+        lastMessageSender = chatDisplayName(record.chatCache.get(Number(sid.chat_id)))
+      }
+      const mapped = mapChat(tdChat, accountId, {
+        avatar, supergroup, user,
+        lastMessageSender, lastMessageIsOutgoing: !!lm?.is_outgoing,
+      })
       if (mapped) result.push(mapped)
     }
     return result

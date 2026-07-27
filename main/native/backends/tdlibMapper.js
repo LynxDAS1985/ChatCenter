@@ -74,6 +74,8 @@ export function mapEntities(tdEntities) {
 // ──────────────────────────────────────────────────────────────────────────
 
 import { extractMinithumbnail, extractMediaInfo } from './tdlibMapperMedia.js'
+// v1.2.131: единое правило префикса имени автора в превью (см. файл).
+import { lastSenderLabel } from '../../../shared/chatPreviewSender.js'
 
 // ──────────────────────────────────────────────────────────────────────────
 // SENDER + REPLY + FORWARD
@@ -351,6 +353,10 @@ export function mapChat(tdChat, accountId, extras = {}) {
     title: tdChat.title || 'Без названия',
     type: chatKind,
     lastMessage: messagePreview(tdChat.last_message),
+    // v1.2.130/131: имя автора последнего сообщения для превью «Имя: текст» / «Вы: текст».
+    // Единое правило — shared/chatPreviewSender.js (используется и в живом пути
+    // nativeStoreIpc.js). Имя резолвит caller (getAccountChats) через userCache/chatCache.
+    lastMessageSenderName: lastSenderLabel(chatKind, extras.lastMessageSender, extras.lastMessageIsOutgoing),
     lastMessageTs: tdChat.last_message?.date ? Number(tdChat.last_message.date) * 1000 : 0,
     // v0.95.11: lastMessageId — id последнего сообщения чата на сервере (для диагностики
     // gap между загруженным и сервером + потенциальный jump-to-end-of-chat).

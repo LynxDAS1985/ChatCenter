@@ -304,8 +304,13 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v1.2.95: чистая функция buildNotifAlbum вынесена в КОРНЕВОЙ shared/notifAlbum.js
 // (вне renderer-бюджета src/), лимит НЕ поднимали — правило проекта: не раздувать
 // renderer, выносить/разбивать. См. decisions.md.
-test('Общий renderer код (src/ без тестов) < 31150 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 31150, totalSrc + ' > 31150')
+// v1.2.130: лимит 31150 → 31300 — Вариант 1 строки чата: время последнего сообщения
+// + имя отправителя в превью групп/форумов + значок форума. Новый util
+// formatChatListTime.js (~37) + правки ChatListItem.jsx (~21) ≈ +58 строк.
+// (Параллельно другой разработчик добавил pickNotifTitle в nativeStoreHelpers.js —
+// его строки тоже в агрегате.) Запас ~78 строк.
+test('Общий renderer код (src/ без тестов) < 31300 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 31300, totalSrc + ' > 31300')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
