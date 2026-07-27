@@ -20,7 +20,6 @@ import {
   accountIdsForRequest,
   healthErrorText,
   accountStatById,
-  pickNotifTitle,
 } from './nativeStoreHelpers.js'
 
 describe('константы', () => {
@@ -290,20 +289,5 @@ describe('accountStatById', () => {
     expect(accountStatById({ accountStats: [] }, 'x')).toBeNull()
     expect(accountStatById({}, 'x')).toBeNull()
     expect(accountStatById(null, 'x')).toBeNull()
-  })
-})
-
-describe('pickNotifTitle — имя в карточке уведомления (v1.2.130)', () => {
-  it('группа: показывает АВТОРА сообщения, а не название группы', () => {
-    expect(pickNotifTitle({ senderName: 'Иван' }, { title: 'OZONовая Дыра' })).toBe('Иван')
-  })
-  it('автор неизвестен (пусто) → название чата', () => {
-    expect(pickNotifTitle({ senderName: '' }, { title: 'OZONовая Дыра' })).toBe('OZONовая Дыра')
-  })
-  it('чат ещё не загружен (гонка) и автора нет → запасное Telegram', () => {
-    expect(pickNotifTitle({}, undefined)).toBe('Telegram')
-  })
-  it('чат не загружен, но автор есть → автор (а не Telegram)', () => {
-    expect(pickNotifTitle({ senderName: 'Пётр' }, undefined)).toBe('Пётр')
   })
 })

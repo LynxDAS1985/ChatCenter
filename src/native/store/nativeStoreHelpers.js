@@ -190,15 +190,3 @@ export function accountStatById(result, accountId) {
   const stats = Array.isArray(result?.accountStats) ? result.accountStats : []
   return stats.find(s => s?.accountId === accountId) || null
 }
-
-/**
- * v1.2.131: имя для КАРТОЧКИ уведомления. В ГРУППЕ показываем АВТОРА сообщения
- * (message.senderName), а не название группы; для лички/канала senderName совпадает
- * с названием чата. Автор неизвестен → название чата; чат ещё не загружен → 'Telegram'.
- * TDLib 1.8.64: sender_id = messageSenderUser | messageSenderChat → оба в senderName.
- * Та же строка применена inline в nativeStoreIpc.js emit (файл на лимите — импорт нельзя);
- * при изменении правила — синхронно.
- */
-export function pickNotifTitle(message, chat) {
-  return (message && message.senderName) || (chat && chat.title) || 'Telegram'
-}

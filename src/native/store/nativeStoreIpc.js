@@ -8,6 +8,8 @@ import { createNotificationSource } from '../../shared/notificationSource.js'
 // v1.2.74 (A1): фоновая догрузка чёткого превью плиток альбома в окно уведомления.
 import { preloadAlbumThumb } from '../utils/albumThumbPreload.js'
 import { buildNotifAlbum } from '../../../shared/notifAlbum.js'
+import { lastSenderLabel } from '../../../shared/chatPreviewSender.js' // v1.2.133: единое правило префикса имени
+import { attachLastMsgHandlers } from './nativeStoreLastMsgIpc.js' // v1.2.133 (TODO-14): вынесенный блок превью
 
 // v1.1.9: localStorage cache вынесен в nativeStoreCache.js. Импортируем для
 // внутреннего использования + re-export для обратной совместимости (внешние
@@ -37,66 +39,12 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   // Регистрация — тот же addHandler/setState/stateRef, контракт снаружи не меняется.
   attachSendIpcHandlers({ addHandler, setState, stateRef, logNativeScroll })
 
-  // v0.91.9: pending queue для tg:chat-last-message, если event пришёл ДО chat в state.
-  // v0.91.10 (Совет 3): TTL 30с — защита от утечки памяти если чат удалён или TDLib
-  // эмитит для chatId которого никогда не будет в state (например орфанные accountId).
-  const pendingLastMessageRef = new Map()
-  const PENDING_TTL_MS = 30000
-  function pendingSet(chatId, value) {
-    const existing = pendingLastMessageRef.get(chatId)
-    if (existing?._timer) clearTimeout(existing._timer)
-    const timer = setTimeout(() => {
-      const cur = pendingLastMessageRef.get(chatId)
-      if (cur?._timer === timer) pendingLastMessageRef.delete(chatId)
-    }, PENDING_TTL_MS)
-    pendingLastMessageRef.set(chatId, { ...value, _timer: timer })
-  }
-  function pendingTake(chatId) {
-    const v = pendingLastMessageRef.get(chatId)
-    if (!v) return null
-    if (v._timer) clearTimeout(v._timer)
-    pendingLastMessageRef.delete(chatId)
-    return v
-  }
-  function applyPendingLastMessage(list) {
-    if (pendingLastMessageRef.size === 0) return list
-    return list.map(c => {
-      const p = pendingTake(c.id)
-      if (!p) return c
-      // Timestamp guard: применяем только если pending новее
-      if (p.lastMessageTs > 0 && p.lastMessageTs < (c.lastMessageTs || 0)) return c
-      return { ...c, lastMessage: p.lastMessage, lastMessageTs: p.lastMessageTs || (c.lastMessageTs || 0) }
-    })
-  }
-
-  // v0.91.10 (Совет 4): метрика частоты tg:chat-last-message. Агрегатор по 30-секундному окну
-  // (паттерн idbCacheMetrics.js). В супергруппах TDLib может слать это часто — без агрегации
-  // лог зашумится. При 0 событий за окно — лог не пишется.
-  const LAST_MSG_WINDOW_MS = 30000
-  let lastMsgWindowCount = 0
-  let lastMsgWindowStaleSkipped = 0
-  let lastMsgWindowPending = 0
-  let lastMsgWindowTimer = null
-  function recordLastMsgEvent(kind) {
-    if (kind === 'applied') lastMsgWindowCount++
-    else if (kind === 'stale') lastMsgWindowStaleSkipped++
-    else if (kind === 'pending') lastMsgWindowPending++
-    if (lastMsgWindowTimer) return
-    lastMsgWindowTimer = setTimeout(() => {
-      lastMsgWindowTimer = null
-      const total = lastMsgWindowCount + lastMsgWindowStaleSkipped + lastMsgWindowPending
-      if (total === 0) return
-      logNativeScroll('chat-last-msg-window', {
-        windowMs: LAST_MSG_WINDOW_MS,
-        applied: lastMsgWindowCount,
-        staleSkipped: lastMsgWindowStaleSkipped,
-        pending: lastMsgWindowPending,
-      })
-      lastMsgWindowCount = 0
-      lastMsgWindowStaleSkipped = 0
-      lastMsgWindowPending = 0
-    }, LAST_MSG_WINDOW_MS)
-  }
+  // v1.2.133 (TODO-14): блок «превью последнего сообщения» (tg:chat-last-message +
+  // pending-очередь + метрика частоты) вынесен в nativeStoreLastMsgIpc.js — это
+  // освободило место в файле (был на потолке 660) под импорт lastSenderLabel.
+  // Фабрика возвращает applyPendingLastMessage — он нужен обработчику tg:chats ниже
+  // (применяет pending-обновления превью, пришедшие ДО появления чата в state).
+  const { applyPendingLastMessage } = attachLastMsgHandlers({ addHandler, setState, logNativeScroll })
 
   addHandler('tg:account-update', (acc) => {
     // v0.87.95: removed: true → удалить аккаунт.
@@ -209,55 +157,9 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
     })
   })
 
-  // v0.91.9: TDLib шлёт updateChatLastMessage отдельно от updateNewMessage. Без этого
-  // handler'а превью в списке чатов застывало (см. .memory-bank/api.md tg:chat-last-message).
-  // v0.91.22: rAF-батчинг — Проблема 3 (Maximum update depth exceeded). При старте TDLib
-  // эмитит сотни updateChatLastMessage за <2с (лог 12:40:09-10: 280+ events). React 18+
-  // automatic batching НЕ работает между разными macrotask (один IPC event = одна task =
-  // один setState = один render). rAF собирает все события одного кадра в ОДИН setState.
-  // Dedupe по chatId — оставляем последнее значение (более старые перекрыты по логике).
-  let pendingLastMsg = []
-  let lastMsgRafScheduled = false
-  function flushPendingLastMsg() {
-    lastMsgRafScheduled = false
-    if (pendingLastMsg.length === 0) return
-    const batch = pendingLastMsg; pendingLastMsg = []
-    const byChatId = new Map()
-    for (const item of batch) byChatId.set(item.chatId, item)  // dedupe → last wins
-    setState(s => {
-      let chatsChanged = false
-      const nextChats = s.chats.map(chat => {
-        const item = byChatId.get(chat.id)
-        if (!item) return chat
-        byChatId.delete(chat.id)
-        if (item.ts > 0 && item.ts < (chat.lastMessageTs || 0)) {
-          recordLastMsgEvent('stale')
-          return chat
-        }
-        recordLastMsgEvent('applied')
-        chatsChanged = true
-        return { ...chat, lastMessage: item.text, lastMessageTs: item.ts || (chat.lastMessageTs || 0) }
-      })
-      // Оставшиеся (chat нет в state) → pending queue.
-      for (const [chatId, item] of byChatId) {
-        pendingSet(chatId, { lastMessage: item.text, lastMessageTs: item.ts })
-        recordLastMsgEvent('pending')
-      }
-      return chatsChanged ? { ...s, chats: nextChats } : s
-    })
-  }
-  addHandler('tg:chat-last-message', ({ chatId, lastMessage, lastMessageTs }) => {
-    if (!chatId) return
-    pendingLastMsg.push({
-      chatId,
-      ts: Number(lastMessageTs) || 0,
-      text: typeof lastMessage === 'string' ? lastMessage : '',
-    })
-    if (!lastMsgRafScheduled) {
-      lastMsgRafScheduled = true
-      requestAnimationFrame(flushPendingLastMsg)
-    }
-  })
+  // v1.2.133 (TODO-14): обработчик tg:chat-last-message + pending-очередь + метрика
+  // частоты вынесены в nativeStoreLastMsgIpc.js (attachLastMsgHandlers вызван выше).
+  // Там же имя автора превью пересчитывается через lastSenderLabel (фикс залипания, ADR-022).
 
   addHandler('tg:messages', ({ chatId, messages, append, appendNewer }) => {
     // v0.95.19: ПОЛНАЯ ДИАГНОСТИКА tg:messages — фиксируем что пришло и как обработано.
@@ -392,7 +294,7 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         chats: s.chats.map(c => c.id === chatId
           ? {
               ...c,
-              lastMessage: preview, lastMessageSenderName: (c.type === 'group') ? (message.isOutgoing ? 'Вы' : (message.senderName || '')) : '', // v1.2.131: правило = shared/chatPreviewSender.js (импорт нельзя — файл на потолке строк), держать синхронно
+              lastMessage: preview, lastMessageSenderName: lastSenderLabel(c.type, message.senderName, message.isOutgoing), // v1.2.133: единое правило (файл разгружен TODO-14 → импорт есть, зеркало убрано)
               lastMessageTs: message.timestamp,
               // v0.95.26 ФИКС: НЕ обнуляем локально для активного чата (это нарушало
               // правило v0.87.41 «уменьшение ТОЛЬКО через tg:chat-unread-sync»).
@@ -487,7 +389,7 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
           // а не hardcoded в коде. См. mistakes/notifications-ribbon.md «hardcoded dismissMs».
           const notifAlbum = buildNotifAlbum(message, chatId)
           window.api?.invoke('app:custom-notify', {
-            title: message.senderName || chat?.title || 'Telegram', // v1.2.130: имя АВТОРА (в группе — не название группы). Правило+тест: pickNotifTitle в nativeStoreHelpers.js
+            title: message.senderName || chat?.title || 'Telegram', // v1.2.132: имя АВТОРА (в группе — не название группы); тест — nativeStoreMutedNotify.vitest.jsx (title toBe Alice/Двач)
             body: preview || '[медиа]',
             fullBody: preview || '[медиа]',
             iconUrl: '',

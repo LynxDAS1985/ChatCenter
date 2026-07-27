@@ -125,7 +125,7 @@ export const DEFAULT_MESSENGERS = [
   {
     id: 'vk',
     name: 'ВКонтакте',
-    url: 'https://vk.com/im',
+    url: 'https://vk.ru/im', // v1.2.134: основной адрес ВК — vk.ru (vk.com редиректил сюда же)
     color: '#4C75A3',
     partition: 'persist:vk',
     emoji: '🔵',
@@ -176,7 +176,7 @@ export const DEFAULT_MESSENGERS = [
 export const POPULAR_MESSENGERS = [
   { name: 'Telegram',  url: 'https://web.telegram.org/k/', color: '#2AABEE', emoji: '✈️' },
   { name: 'WhatsApp',  url: 'https://web.whatsapp.com/',    color: '#25D366', emoji: '💬' },
-  { name: 'ВКонтакте', url: 'https://vk.com/im',           color: '#4C75A3', emoji: '🔵' },
+  { name: 'ВКонтакте', url: 'https://vk.ru/im',            color: '#4C75A3', emoji: '🔵' },
   { name: 'Макс',      url: 'https://web.max.ru/',          color: '#2688EB', emoji: '💎' },
 ]
 

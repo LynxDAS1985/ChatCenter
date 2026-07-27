@@ -87,8 +87,8 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
   // v0.91.9: TDLib шлёт updateChatLastMessage отдельно от updateNewMessage
   // (например при оптимизации больших супергрупп). Без этого превью в списке
   // чатов застывало на старом значении. См. .memory-bank/api.md.
-  subscribe('chat:last-message', ({ chatId, lastMessage, lastMessageTs }) => ({
-    channel: 'tg:chat-last-message', data: { chatId, lastMessage, lastMessageTs },
+  subscribe('chat:last-message', ({ chatId, lastMessage, lastMessageTs, senderName, isOutgoing }) => ({
+    channel: 'tg:chat-last-message', data: { chatId, lastMessage, lastMessageTs, senderName, isOutgoing },
   }))
   // v0.89.4: typing-индикатор (UI nativeStoreIpc.js:266 ждёт {chatId, userId, typing}).
   // v0.95.31: добавлен senderName для multi-user typing (formatTypingUsers).

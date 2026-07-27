@@ -174,7 +174,7 @@ r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
 
 ---
 
-### TODO-14: Разгрузить `nativeStoreIpc.js` → убрать «зеркало» правила префикса имени
+### TODO-14: Разгрузить `nativeStoreIpc.js` → убрать «зеркало» правила префикса имени — ✅ СДЕЛАНО v1.2.133
 
 **Контекст (v1.2.131):** правило «какое имя автора показать в превью списка чатов» вынесено в чистую функцию `lastSenderLabel` ([shared/chatPreviewSender.js](../shared/chatPreviewSender.js)). Маппер (`tdlibMapper.js`) её импортирует. НО живой путь новых сообщений ([nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js), обработчик `tg:new-message`) импортировать функцию **не смог** — файл ровно на потолке (660/660, исключение), строка `import` даёт 661 > 660 (тест лимитов падает). Поэтому там осталось то же правило одной inline-строкой с пометкой «синхронно». Подробности — [[decisions]] ADR-022.
 
@@ -219,6 +219,32 @@ r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
 
 ---
 
+### TODO-15: Свести резолв имени автора в один хелпер `tdlibClient`
+
+**Контекст (v1.2.133):** после фикса залипания имени резолв автора по `sender_id` (`messageSenderUser` → `userDisplayName`, `messageSenderChat` → `chatDisplayName`) продублирован в ТРЁХ местах [tdlibClient.js](../main/native/backends/tdlibClient.js): `_handleNewMessage` (~строки 586-593), `getAccountChats` (v1.2.131), эмит `updateChatLastMessage` (v1.2.133). Файл при этом упёрся почти в потолок (**649/650**).
+
+**Что сделать:** вынести общий приватный хелпер, напр. `_resolveSenderName(record, senderId)` → строка имени (или ''), и заменить три инлайна на вызов.
+
+**Почему важно:** (1) минус ~10 строк → снимет угрозу потолка 650; (2) одно место правды — правило резолва не разъедется между тремя копиями.
+
+**Осторожно:** файл параллельно правит другой разработчик — согласовать. Проверка: `npm run test:vitest` (соседние тесты стора/клиента), `node --check`.
+
+**Приоритет:** 🟡 средний — не блокирует, но файл на потолке + дублирование.
+
+---
+
+### TODO-16: Контракт-тест на форму события `chat:last-message`
+
+**Контекст (v1.2.133):** событие `chat:last-message` ([tdlibClient.js](../main/native/backends/tdlibClient.js)) теперь несёт `senderName`+`isOutgoing`, а мост [tdlibIpcBridge.js:90-91](../main/native/tdlibIpcBridge.js) пересобирает payload ВРУЧНУЮ (перечисляет поля). Теста на форму этого события в `tdlibEmitContracts.vitest.js` НЕТ (проверено grep'ом).
+
+**Что сделать:** добавить в [tdlibEmitContracts.vitest.js](../src/__tests__/tdlibEmitContracts.vitest.js) проверку, что при `updateChatLastMessage` эмитится `tg:chat-last-message` c полями `senderName`+`isOutgoing`.
+
+**Почему важно:** если кто-то уберёт поле в мосте — имя снова начнёт залипать, а поведенческие тесты (`nativeStoreLastMsgIpc.vitest.jsx`) этого не поймают (они начинаются от renderer-обработчика, не от эмита). Контракт-тест закрывает участок main→bridge.
+
+**Приоритет:** 🟡 средний — защита от тихой регрессии свежего фикса (ADR-022).
+
+---
+
 ## 📋 Что НЕ откладываем (в активной работе)
 
 См. план «LRU-кеш для `tg-media/`» — фиксит сразу проблемы 1, 2, 3 из ревью v0.89.16.
@@ -242,4 +268,6 @@ r.path = stable || tdlibPathToCcMediaUrl(r.file.local.path) || r.file.local.path
 | 2026-07-23 | v1.2.120 | TODO-11 — ВК mute-детект: сузить селектор `[class*="muted" i]` → `[class*="mutedIcon" i],[class*="icon--muted" i]` | ✅ сделано v1.2.123 |
 | 2026-07-24 | v1.2.123 | TODO-12 — Разгрузить `vk.hook.js` (300/300). Решено удалением мёртвого toast-наблюдателя (не выносом в модуль — впрыск одним `<script>`). Файл 300→247. | ✅ сделано v1.2.124 (требует визуальной проверки ВК-уведомлений) |
 | 2026-07-24 | v1.2.128 | TODO-13 — `forceRemoveItem` не шлёт финальный отчёт по видимому, в отличие от `dismissItem`. Проверено (v1.2.128): оба вызова (`notification.js` — дубль-id и FIFO-выброс) находятся ВНУТРИ `addNotification` и ВСЕГДА сопровождаются добавлением карточки следом (новая / плитка в живой альбом / строка в живую стопку) → окно пустым-но-видимым не остаётся, стена по этому пути невозможна by construction. Правка НЕ требуется. См. [[notifications-ribbon]] «Невидимая стена» v1.2.128. | ✅ проверено — не требуется |
-| 2026-07-24 | v1.2.131 | TODO-14 — разгрузить `nativeStoreIpc.js` (660/660) → импортировать `lastSenderLabel` и убрать inline-«зеркало» правила префикса имени. См. [[decisions]] ADR-022. | 📋 в очереди |
+| 2026-07-24 | v1.2.131 | TODO-14 — разгрузить `nativeStoreIpc.js` (660/660) → импортировать `lastSenderLabel` и убрать inline-«зеркало» правила префикса имени. См. [[decisions]] ADR-022. | ✅ сделано v1.2.133 (блок превью вынесен в `nativeStoreLastMsgIpc.js`, зеркало убрано, заодно закрыт баг залипания имени) |
+| 2026-07-27 | v1.2.133 | TODO-15 — свести резолв имени автора в один хелпер `tdlibClient` (сейчас 3 копии, файл 649/650) | 📋 в очереди |
+| 2026-07-27 | v1.2.133 | TODO-16 — контракт-тест на форму события `chat:last-message` (поля `senderName`+`isOutgoing`) | 📋 в очереди |

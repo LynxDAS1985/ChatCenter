@@ -748,6 +748,30 @@ for (const f of files) {
 ### Как проверено
 Юнит: `chatPreviewSender.vitest.js` (5), `mapChatLastSender.vitest.js` (исходящее→«Вы»), `formatChatListTime.vitest.js` (6), снапшоты `ChatListItem.vitest.jsx` обновлены и объяснены. `node --check` OK; eslint 0; лимиты 520/0 (renderer-бюджет 31150→31300 с обоснованием в v1.2.130). Вид строки на экране — ожидает визуального подтверждения.
 
-**Риск-долг**: правило в двух местах (функция + зеркало) может разъехаться — тест ловит только функцию, не inline-строку. Снять после TODO-14.
+**Риск-долг**: ~~правило в двух местах (функция + зеркало) может разъехаться~~ → **снято в v1.2.133** (TODO-14 закрыт): блок превью вынесен в `nativeStoreLastMsgIpc.js`, освободив место под импорт; и живой путь, и вынесенный модуль зовут `lastSenderLabel` — зеркало убрано.
 
-**Связано**: features.md v1.2.130–v1.2.131; [[code-todo]] TODO-14; [[ADR-016]] (native Telegram режим).
+### Обновление v1.2.133 — залипание имени через `tg:chat-last-message` закрыто (полный фикс)
+Ревью v1.2.131 нашло: путь `tg:chat-last-message` (TDLib `updateChatLastMessage` — при смене последнего сообщения, в т.ч. удалении) менял ТЕКСТ превью, но не имя автора → показывался старый автор с новым текстом. Факт уровня 1: [updateChatLastMessage](https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1update_chat_last_message.html) шлётся отдельно от `updateNewMessage`. Фикс: событие теперь несёт `senderName`+`isOutgoing` (резолв в [tdlibClient.js](../main/native/backends/tdlibClient.js), проброс в [tdlibIpcBridge.js](../main/native/tdlibIpcBridge.js)), а обработчик (вынесен в [nativeStoreLastMsgIpc.js](../src/native/store/nativeStoreLastMsgIpc.js)) пересчитывает имя через `lastSenderLabel`. Покрыто тестом `nativeStoreLastMsgIpc.vitest.jsx` (кейс «фикс залипания»).
+
+**Связано**: features.md v1.2.130–v1.2.131, v1.2.133; [[code-todo]] TODO-14 (закрыт); [[ADR-016]] (native Telegram режим).
+
+## ADR-023 — ВК на vk.ru: только основной console-путь; запасной executeJavaScript-впрыск на vk.ru отключён (2026-07-27, v1.2.134)
+
+**Контекст.** У ВК исторически накопилось ТРИ слоя ловли входящих сообщений:
+1. **Основной** — перехватчик списка чатов (`vk-list`, [vk.hook.js](../main/preloads/hooks/vk.hook.js)), впрыск через console-путь, сделан под новый vk.ru (v1.2.112). Работает, доставляет уведомления.
+2. **Запасной** — `executeJavaScript`-впрыск большого наблюдателя `vkExecFallback` ([shared/vkExecFallback.js](../shared/vkExecFallback.js)), сделан в v1.2.46 для СТАРОГО vk.com (toast/sidebar).
+3. **Координатор** — «журнал явки» `monitor-ready` (heartbeat от `monitor.preload.cjs` через ipc `sendToHost`): запасной (2) включается ТОЛЬКО если основной не отметился в журнале за 60с.
+
+**Проблема (диагностика v1.2.134, по логу).** При каждом старте — красная `[ERROR] GUEST_VIEW_MANAGER_CALL: Script failed to execute` + `VK-EXEC inject failed`. Установлено временной диагностикой: `monitor-ready` НЕ приходит НИ ОТ ОДНОГО мессенджера (`journalKeys=(пусто)`, `[IPC-MAX]`/`[IPC-WA]`=0) — служебный ipc-канал preload молчит у всех. → гейт «основной жив» (3) никогда не срабатывает → запасной (2) запускается всегда → на vk.ru его `executeJavaScript` блокирует защита страницы (CSP) → бесполезная красная ошибка. Уведомления ВК при этом идут слоем (1).
+
+**Решение (вариант А, а не Б).** Не запускать запасной впрыск (2) на vk.ru: в `vkExecFallback.schedule` ранний выход при URL `vk.ru`. Обоснование выбора А над Б («починить журнал (3), чтобы он глушил (2)»):
+- (2) на vk.ru всё равно блокируется — как страховка бесполезен там (убрав вызов, ничего не теряем).
+- (3) молчит у ВСЕХ мессенджеров — чинить общий preload-ipc ради глушения одного лишнего слоя = «подпорка к подпорке» + риск сломать мониторинг всех.
+- (1) самодостаточен на vk.ru.
+Для vk.com (если когда-нибудь встретится) поведение (2)+(3) сохранено.
+
+**Факты.** (2 ур., код) слои — vk.hook.js / vkExecFallback.js / monitor.preload.cjs `sendMonitorReady`. (2 ур., лог) `journalKeys=(пусто)`, `monitor-ready`/`[IPC-*]`=0, `vk-list emitted` работает. (1 ур.) MDN/Electron: `<webview>.executeJavaScript` отклоняется, если страница запрещает выполнение (CSP) — отсюда `GUEST_VIEW_MANAGER_CALL` reject.
+
+**Остаток (отдельная задача).** preload-ipc heartbeat (`monitor-ready`, `unread-count` через `sendToHost`) не доходит до host НИ ОТ КОГО — скрытая недоработка; на уведомления не влияет (работают console-пути), но счётчики непрочитанного через этот канал могут быть неточны. Не чинилось (вне задачи, опасная общая зона).
+
+**Связано**: features.md v1.2.134; [[ADR-016]]; ловушка про VK-детект в [[webview-injection]].

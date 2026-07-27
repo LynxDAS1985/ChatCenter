@@ -553,11 +553,17 @@ export class TdlibClientManager extends EventEmitter {
     // null last_message → пустое превью (чат опустошён).
     if (type === 'updateChatLastMessage') {
       const lm = update.last_message
+      const sid = lm?.sender_id
+      // v1.2.133: имя автора превью для «Имя:/Вы:» в списке (фикс залипания, ADR-022).
+      // Резолв как в _handleNewMessage (userCache/chatCache); нет в кэше → ''.
+      const senderName = sid?.['@type'] === 'messageSenderUser' ? userDisplayName(record.userCache.get(Number(sid.user_id)))
+        : sid?.['@type'] === 'messageSenderChat' ? chatDisplayName(record.chatCache.get(Number(sid.chat_id))) : ''
       this.emit('chat:last-message', {
         accountId: record.accountId,
         chatId: `${record.accountId}:${update.chat_id}`,
         lastMessage: lm ? extractTopicPreview(lm) : '',
         lastMessageTs: lm?.date ? Number(lm.date) * 1000 : 0,
+        senderName, isOutgoing: !!lm?.is_outgoing,
       })
     }
     // v0.89.4: outgoing read-receipts (двойная галочка) — собеседник прочитал

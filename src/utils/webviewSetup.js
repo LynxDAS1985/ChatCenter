@@ -273,7 +273,10 @@ export function createWebviewSetup(deps) {
       addListener('dom-ready', () => {
         startupWebviewLog(messengerId, 'dom-ready')
         delete monitorReadyRef.current[messengerId]
-        vkExecFallback.schedule(el, messengerId, 'dom-ready')
+        // v1.2.134 (вариант А, ADR-023): на vk.ru запасной впрыск НЕ нужен — основной путь
+        // (детект списка чатов) работает, а executeJavaScript-впрыск vk.ru блокирует (CSP) →
+        // бесполезная красная GUEST_VIEW_MANAGER_CALL при старте. Запускаем только не на vk.ru (vk.com).
+        if (!/vk\.ru/i.test(healthUrl(el, messengerId) || '')) vkExecFallback.schedule(el, messengerId, 'dom-ready')
         updateHealth(messengerId, prev => markHealthOk(prev, {
           id: messengerId,
           type: 'webview',
