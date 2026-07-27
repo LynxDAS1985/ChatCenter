@@ -392,7 +392,7 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         chats: s.chats.map(c => c.id === chatId
           ? {
               ...c,
-              lastMessage: preview,
+              lastMessage: preview, lastMessageSenderName: (c.type === 'group') ? (message.isOutgoing ? 'Вы' : (message.senderName || '')) : '', // v1.2.131: правило = shared/chatPreviewSender.js (импорт нельзя — файл на потолке строк), держать синхронно
               lastMessageTs: message.timestamp,
               // v0.95.26 ФИКС: НЕ обнуляем локально для активного чата (это нарушало
               // правило v0.87.41 «уменьшение ТОЛЬКО через tg:chat-unread-sync»).
@@ -487,7 +487,7 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
           // а не hardcoded в коде. См. mistakes/notifications-ribbon.md «hardcoded dismissMs».
           const notifAlbum = buildNotifAlbum(message, chatId)
           window.api?.invoke('app:custom-notify', {
-            title: chat?.title || 'Telegram',
+            title: message.senderName || chat?.title || 'Telegram', // v1.2.130: имя АВТОРА (в группе — не название группы). Правило+тест: pickNotifTitle в nativeStoreHelpers.js
             body: preview || '[медиа]',
             fullBody: preview || '[медиа]',
             iconUrl: '',

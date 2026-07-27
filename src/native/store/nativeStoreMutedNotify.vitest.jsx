@@ -64,6 +64,19 @@ describe('tg:new-message — muted чат (v1.2.12 регрессия)', () => {
     fire('tg:new-message', { chatId: 'c1', message: newMsg() })
     const notifyCalls = invokeMock.mock.calls.filter(c => c[0] === 'app:custom-notify')
     expect(notifyCalls).toHaveLength(1)
+    // v1.2.131: заголовок карточки = имя АВТОРА сообщения (в группе — не название чата).
+    // newMsg() даёт senderName:'Alice'. Правило + отдельные кейсы: pickNotifTitle в nativeStoreHelpers.
+    expect(notifyCalls[0][1].title).toBe('Alice')
+  })
+
+  it('senderName пуст → заголовок = название чата (fallback новой логики)', () => {
+    const { fire, invokeMock } = setup({
+      messages: {},
+      chats: [{ id: 'c1', title: 'Двач', unreadCount: 0, isMuted: false }],
+      activeChatId: null,
+    })
+    fire('tg:new-message', { chatId: 'c1', message: newMsg({ senderName: '' }) })
+    const notifyCalls = invokeMock.mock.calls.filter(c => c[0] === 'app:custom-notify')
     expect(notifyCalls[0][1].title).toBe('Двач')
   })
 

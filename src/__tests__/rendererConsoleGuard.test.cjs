@@ -28,7 +28,11 @@ var BASELINE = {
   'src/constants.js':                       8,
   'src/native/components/VideoTile.jsx':    6,
   'src/hooks/useNotifyDispatcher.js':       5,
-  'src/utils/webviewDiagnostics.js':        4,
+  // v1.2.131: 4→6. Все console.* тут — ВНУТРИ строк-скриптов, впрыскиваемых в WebView
+  // мессенджера через el.executeJavaScript (диагностика __CC_DIAG__, ловится console-мостом).
+  // Это НЕ renderer-логи: внутри чужой страницы (web.telegram.org/vk.com) нашего window.api
+  // нет, поэтому app:log неприменим — console единственный канал возврата данных (как в hook-файлах).
+  'src/utils/webviewDiagnostics.js':        6,
   'src/hooks/useWebViewLifecycle.js':       3,
   'src/main.jsx':                           2,
   'src/components/NotifLogModal.jsx':       2,
