@@ -6,7 +6,10 @@ import ChatListItem from './ChatListItem.jsx'
 const baseChat = {
   id: 'tg_self:1', accountId: 'tg_self',
   title: 'Иван Иванов', lastMessage: 'Привет',
-  lastMessageTs: 1712000000000, unreadCount: 0,
+  // v1.2.135: полдень UTC (2024-04-02T12:00:00Z). Прежний 1712000000000 был у полуночи UTC →
+  // снимок даты расходился между поясом разработчика и CI (UTC) на день. Полдень даёт '02.04.24'
+  // в любом разумном поясе (буфер ±12ч от границы суток). См. mistakes/webview-injection (snapshot+TZ).
+  lastMessageTs: 1712059200000, unreadCount: 0,
   type: 'user',
 }
 
