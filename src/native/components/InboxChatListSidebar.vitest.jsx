@@ -79,3 +79,26 @@ describe('InboxChatListSidebar overlay-архитектура (v0.95.22)', () =>
     expect(code).toMatch(/title="Закрыть темы \(Esc\)"/)
   })
 })
+
+// v1.2.161: закреплённые чаты — обычные строки ЕДИНОГО виртуального списка (наверху, в
+// порядке закрепа), а НЕ отдельный «приклеенный» блок сверху. В v1.2.160 их вынесли в
+// отдельный компонент PinnedChatList — из-за этого они не листались вместе со списком;
+// откачено. Эти тесты падают, если кто-то снова разделит список на закреп/обычные.
+describe('InboxChatListSidebar: закреплённые — в ЕДИНОМ списке (v1.2.161)', () => {
+  it('НЕТ отдельного PinnedChatList (закреплённые не должны быть «приклеенным» блоком)', () => {
+    expect(code).not.toMatch(/PinnedChatList/)
+  })
+
+  it('единый <List> получает ВСЕ чаты (activeAccountChats), включая закреплённые', () => {
+    expect(code).toMatch(/chats:\s*activeAccountChats/)
+  })
+
+  it('НЕТ деления списка на закреплённые/обычные (mainChats / pinnedVisible)', () => {
+    expect(code).not.toMatch(/mainChats/)
+    expect(code).not.toMatch(/pinnedVisible/)
+  })
+
+  it('pinnedSet прокинут в список — для значка 📌 и полоски у закреплённых наверху', () => {
+    expect(code).toMatch(/pinnedSet/)
+  })
+})

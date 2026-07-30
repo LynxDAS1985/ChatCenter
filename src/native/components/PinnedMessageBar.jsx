@@ -15,9 +15,11 @@
 // • MessageListOverlay shimmer — не показываем pinned пока !chatReady
 // • IntersectionObserver mark-read (rootMargin -48%/-48% в центре) — pinned в верхних
 //   ~50px НЕ ВЛИЯЕТ на mark-read логику (она в центре viewport)
-// • backdrop-filter blur(8px) — сообщения под pinned размыты, не проступают резко
+// • v1.2.166: фон СПЛОШНОЙ непрозрачный (var(--amoled-surface)) — полностью накрывает
+//   верхнее сообщение (норма Telegram), читаемо на любом фоне. Раньше был blur+8%-прозрачность,
+//   но на светлых сообщениях (чек/таблица) текст полосы сливался. См. features.md v1.2.166.
 
-export default function PinnedMessageBar({ pinnedMsg, onClose }) {
+export default function PinnedMessageBar({ pinnedMsg, onClose, onJump }) {
   if (!pinnedMsg) return null
   return (
     <div
@@ -25,19 +27,29 @@ export default function PinnedMessageBar({ pinnedMsg, onClose }) {
       style={{
         position: 'absolute', top: 0, left: 0, right: 0, zIndex: 4,
         padding: '8px 16px', borderBottom: '1px solid var(--amoled-border)',
-        background: 'rgba(42,171,238,0.08)',
-        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        // v1.2.166: СПЛОШНОЙ непрозрачный фон (был полупрозрачный 8% + blur). Причина: на
+        // светлом сообщении под полосой (чек/таблица/скриншот) текст сливался и не читался.
+        // Непрозрачный панельный фон = читаемо на любом сообщении (как Telegram Desktop).
+        background: 'var(--amoled-surface)',
         display: 'flex', gap: 10, alignItems: 'center',
       }}
     >
-      <span style={{ fontSize: 14 }}>📌</span>
-      <div style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        <div style={{ color: 'var(--amoled-accent)', fontWeight: 600 }}>Закреплённое</div>
-        <div style={{ color: 'var(--amoled-text-dim)' }}>{pinnedMsg.text?.slice(0, 100) || '[медиа]'}</div>
+      {/* v1.2.167: клик по 📌 + тексту = переход к закреплённому сообщению (как в Telegram).
+          Кнопка ✕ — отдельно (её клик не вызывает переход). */}
+      <div
+        onClick={onJump}
+        title={onJump ? 'Перейти к закреплённому сообщению' : undefined}
+        style={{ flex: 1, minWidth: 0, display: 'flex', gap: 10, alignItems: 'center', cursor: onJump ? 'pointer' : 'default' }}
+      >
+        <span style={{ fontSize: 14, flexShrink: 0 }}>📌</span>
+        <div style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ color: 'var(--amoled-accent)', fontWeight: 600 }}>Закреплённое</div>
+          <div style={{ color: 'var(--amoled-text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pinnedMsg.text?.slice(0, 100) || '[медиа]'}</div>
+        </div>
       </div>
       <button onClick={onClose} style={{
         background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)',
-        cursor: 'pointer', fontSize: 14,
+        cursor: 'pointer', fontSize: 14, flexShrink: 0,
       }} title="Скрыть">✕</button>
     </div>
   )

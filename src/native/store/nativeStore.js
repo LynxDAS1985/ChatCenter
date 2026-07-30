@@ -36,6 +36,9 @@ import {
   healthErrorText,
   accountStatById,
 } from './nativeStoreHelpers.js'
+// v1.2.153: локальные цвета-метки аккаунтов (localStorage). Чистая логика — в shared/.
+import { loadAccountColors, saveAccountColors, withAccountColor, assignMissingColors } from './accountColors.js'
+import { loadHiddenAccounts, saveHiddenAccounts, toggleAccountHidden } from './accountFilter.js'
 
 /**
  * @typedef {Object} NativeAccount
@@ -61,7 +64,8 @@ import {
  */
 
 export default function useNativeStore() {
-  const [state, setState] = useState(DEFAULT_STATE)
+  // v1.2.153: цвета аккаунтов подгружаем из localStorage при первом рендере (без «мигания»).
+  const [state, setState] = useState(() => ({ ...DEFAULT_STATE, accountColors: loadAccountColors(), hiddenAccountIds: loadHiddenAccounts() }))
   const stateRef = useRef(state)
   const topicReadRefreshInFlightRef = useRef(new Set())
   // v0.88.0: per-key throttle для loadNewerMessages.
@@ -144,8 +148,23 @@ export default function useNativeStore() {
 
   const setMode = useCallback((mode) => setState(s => ({ ...s, mode })), [])
   const setActiveAccount = useCallback((id) => setState(s => ({ ...s, activeAccountId: id })), [])
-  // v0.87.105 (ADR-016): фильтр чатов — 'all' (по умолчанию) или accountId
-  const setChatFilter = useCallback((filter) => setState(s => ({ ...s, chatFilter: filter || 'all' })), [])
+  // v1.2.163 (ADR-026): фильтр аккаунтов в списке — множественный выбор + «соло».
+  // Одиночный клик по аватарке: показать/скрыть аккаунт (защита — нельзя скрыть последний).
+  const toggleAccountVisible = useCallback((id) => setState(s => {
+    const next = toggleAccountHidden(s.hiddenAccountIds, id, (s.accounts || []).map(a => a.id))
+    if (next === s.hiddenAccountIds) return s
+    saveHiddenAccounts(next)
+    // одиночный клик выходит из «соло» (возвращаемся к режиму галочек)
+    return { ...s, hiddenAccountIds: next, soloAccountId: null }
+  }), [])
+  // Двойной клик: «только этот» (соло). Повторный по тому же — выход из соло.
+  const soloAccount = useCallback((id) => setState(s => ({ ...s, soloAccountId: s.soloAccountId === id ? null : id })), [])
+  // Кнопка «Все»: показать все (снять все скрытия и соло).
+  const showAllAccounts = useCallback(() => setState(s => {
+    if ((!s.hiddenAccountIds || s.hiddenAccountIds.length === 0) && !s.soloAccountId) return s
+    saveHiddenAccounts([])
+    return { ...s, hiddenAccountIds: [], soloAccountId: null }
+  }), [])
   const setActiveChat = useCallback((id) => setState(s => {
     const chat = s.chats.find(c => c.id === id)
     logNativeScroll('store-set-active-chat', { from: s.activeChatId || null, to: id, unread: chat?.unreadCount || 0, hasMessages: !!s.messages[id] })
@@ -189,6 +208,35 @@ export default function useNativeStore() {
     setState(s => ({ ...s, loginFlow: null }))
     return window.api?.invoke('tg:login-cancel', {})
   }, [])
+
+  // v1.2.147: сброс «признака входа» БЕЗ отмены на сервере (в отличие от cancelLogin).
+  // Нужен при закрытии окна входа, чтобы «залипший» success не закрывал сам следующее
+  // открытие модалки и не держал экран входа поверх чатов.
+  const resetLoginFlow = useCallback(() => {
+    setState(s => (s.loginFlow ? { ...s, loginFlow: null } : s))
+  }, [])
+
+  // v1.2.153: задать/снять локальный цвет-метку аккаунта (color пустой → вернётся дефолт).
+  const setAccountColor = useCallback((accountId, color) => {
+    setState(s => {
+      const next = withAccountColor(s.accountColors, accountId, color)
+      saveAccountColors(next)
+      return { ...s, accountColors: next }
+    })
+  }, [])
+
+  // v1.2.154 (по ревью): при появлении аккаунтов назначаем недостающие цвета — первый
+  // СВОБОДНЫЙ цвет палитры (различимо, без коллизий) и сохраняем (стабильно, не «прыгает»).
+  // guard: assignMissingColors вернёт ТОТ ЖЕ объект, если назначать нечего → без ре-рендера,
+  // эффект не зацикливается (не меняет state.accounts, от которого зависит).
+  useEffect(() => {
+    setState(s => {
+      const next = assignMissingColors(s.accountColors, (s.accounts || []).map(a => a.id))
+      if (next === s.accountColors) return s
+      saveAccountColors(next)
+      return { ...s, accountColors: next }
+    })
+  }, [state.accounts])
 
   // ── Data actions ──
   const loadChats = useCallback(async (accountId) => {
@@ -1215,8 +1263,8 @@ export default function useNativeStore() {
 
   return {
     ...state,
-    setMode, setActiveAccount, setActiveChat, setChatFilter, closeForumTopics,
-    startLogin, submitCode, submitPassword, cancelLogin,
+    setMode, setActiveAccount, setActiveChat, toggleAccountVisible, soloAccount, showAllAccounts, closeForumTopics,
+    startLogin, submitCode, submitPassword, cancelLogin, resetLoginFlow, setAccountColor,
     loadChats, loadCachedChats, checkConnection, loadMessages, loadMessagesUntil, loadTopicMessagesUntil, loadForumTopics, selectForumTopic, loadOlderMessages, loadNewerMessages,
     sendMessage, sendFile, sendAlbum, deleteMessage, editMessage, forwardMessage, pinMessage, setReaction,
     getPinnedMessage, refreshAvatar, rescanUnread,

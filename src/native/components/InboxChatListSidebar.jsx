@@ -10,6 +10,7 @@ import MuteMenu from './MuteMenu.jsx'
 import ChatTypesDropdown from './ChatTypesDropdown.jsx'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 import { loadSearchHistory, removeFromHistory, clearHistory } from '../utils/searchHistory.js'
+import { getAccountColor } from '../../../shared/accountColors.js'
 
 const ITEM_HEIGHT = 74
 
@@ -113,6 +114,9 @@ export default function InboxChatListSidebar({
   // v0.95.30: режимы (Чаты/Клиенты/Доска) переехали из шапки правой панели
   // в dropdown слева ВВЕРХУ списка (как Telegram Desktop folder switch).
   modes = null,
+  // v1.2.138: локальные закрепления — Set<chatId> + переключатель (для меню ПКМ).
+  pinnedSet = null,
+  onTogglePin = null,
 }) {
   const listRef = useRef(null)
   const containerRef = useRef(null)
@@ -129,6 +133,17 @@ export default function InboxChatListSidebar({
     e.preventDefault()
     setMuteMenu({ chat, x: e.clientX, y: e.clientY })
   }, [])
+
+  // v1.2.143 (диаг): снимок состояния списка при смене фильтра / числа аккаунтов —
+  // отличаем «пустой фильтр» (данные есть, но отфильтрованы) от «упал экран». Не в
+  // горячем пути (фильтр/число аккаунтов меняются редко, не на каждое сообщение).
+  useEffect(() => {
+    try {
+      const filterState = store.soloAccountId ? 'solo' : (store.hiddenAccountIds?.length ? 'partial' : 'all')
+      window.api?.send?.('app:log', { level: 'INFO',
+        message: `[acct-store] sidebar filter=${filterState} hidden=${store.hiddenAccountIds?.length || 0} accounts=${store.accounts?.length} chatsInStore=${(store.chats || []).length} shown=${activeAccountChats.length} search=${search ? 'y' : 'n'}` })
+    } catch (_) {}
+  }, [store.soloAccountId, store.hiddenAccountIds?.length, store.accounts?.length])
 
   // v0.95.42: dropdown истории поисков при фокусе пустого input.
   const [searchFocused, setSearchFocused] = useState(false)
@@ -211,8 +226,6 @@ export default function InboxChatListSidebar({
   }, [store.forumTopicPanelChatId, visibleForumChatId])
 
   // v0.87.105 (ADR-016): нужны ли фильтр-кнопки — только если 2+ аккаунта.
-  const showFilters = store.accounts.length >= 2
-  const filter = store.chatFilter || 'all'
   const forumChatId = visibleForumChatId || store.forumTopicPanelChatId
   const forumChat = forumChatId ? store.chats.find(c => c.id === forumChatId) : null
   const forumTopics = forumChatId ? (store.forumTopics?.[forumChatId] || []) : []
@@ -226,6 +239,11 @@ export default function InboxChatListSidebar({
       try { forumPanelRef.current.focus() } catch (_) {}
     }
   }, [forumChat?.id, forumClosing])
+
+  // v1.2.161: закреплённые чаты — обычные строки ЕДИНОГО виртуального списка (сверху, в
+  // порядке pinnedIds — так делает filterSortChats в InboxMode). Отдельный «приклеенный»
+  // список (v1.2.160) убран: из-за него закреплённые не листались вместе со списком.
+  const enrichedAccounts = (store.accounts || []).map(a => ({ ...a, color: getAccountColor(store.accountColors, a.id) }))
 
   return (
     <div ref={panelRef} className="native-chat-list-panel" style={{
@@ -348,52 +366,9 @@ export default function InboxChatListSidebar({
           )}
         </div>
       )}
-      {/* v0.87.106: Фильтр ПОД поиском (был СВЕРХУ). Показываем при 2+ аккаунтах. */}
-      {showFilters && (
-        <div style={{
-          display: 'flex', gap: 4, padding: '8px 10px',
-          borderBottom: '1px solid var(--amoled-border)',
-          background: 'var(--amoled-bg)',
-          flexShrink: 0, overflowX: 'auto',
-        }}>
-          <button
-            onClick={() => store.setChatFilter('all')}
-            className="account-filter-btn"
-            style={{
-              padding: '4px 10px',
-              background: filter === 'all' ? 'var(--amoled-accent)' : 'transparent',
-              color: filter === 'all' ? '#fff' : 'var(--amoled-text-dim)',
-              border: '1px solid var(--amoled-border)',
-              borderRadius: 6,
-              fontSize: 12,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >Все ({store.chats.length})</button>
-          {store.accounts.map(acc => {
-            const accChatsCount = store.chats.filter(c => c.accountId === acc.id).length
-            const isActive = filter === acc.id
-            return (
-              <button
-                key={acc.id}
-                onClick={() => store.setChatFilter(acc.id)}
-                className="account-filter-btn"
-                style={{
-                  padding: '4px 10px',
-                  background: isActive ? 'var(--amoled-accent)' : 'transparent',
-                  color: isActive ? '#fff' : 'var(--amoled-text-dim)',
-                  border: '1px solid var(--amoled-border)',
-                  borderRadius: 6,
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-                title={acc.phone || acc.username}
-              >{acc.name || acc.username || acc.id} ({accChatsCount})</button>
-            )
-          })}
-        </div>
-      )}
+      {/* v1.2.163: верхняя строка фильтра «Все / аккаунт» УБРАНА — управление показом чатов
+          по аккаунтам переехало на левую панель аватарок (клик = вкл/выкл, двойной клик = соло,
+          кнопка «Все»). См. NativeApp.jsx / ADR-026. */}
       {search && (
         <div style={{
           padding: '8px 14px', fontSize: 11, color: 'var(--amoled-text-dim)',
@@ -417,20 +392,16 @@ export default function InboxChatListSidebar({
               chats: activeAccountChats,
               activeChatId: store.activeChatId,
               setActiveChat: store.setActiveChat,
-              // v0.87.105: передаём accounts чтобы ChatRow мог отрисовать бейдж аккаунта
-              accounts: store.accounts,
+              // v1.2.153: каждый аккаунт обогащён цветом-меткой (color) — для полоски слева.
+              accounts: enrichedAccounts,
               showAccountBadge: store.accounts.length >= 2,
-              // v0.87.106 Улучшение 1: hover в sidebar → подсветка чатов аккаунта
               hoveredAccountId,
-              // v0.87.109: ПКМ → меню заглушения
               onContextMenu: handleContextMenu,
-              // v0.95.21: для форум-групп бейдж = число тем с непрочитанным (Telegram
-              // Desktop), не TDLib aggregate. См. utils/displayUnread.js.
               forumTopics: store.forumTopics,
-              // v0.95.7: compact mode когда chat-list width < 200px
               compact,
-              // v0.95.42: подсветка совпадений с query в title/lastMessage
               highlightQuery: search,
+              // pinnedSet — для значка 📌/полоски у закреплённых (они наверху списка).
+              pinnedSet,
             }}
             style={{ height: listHeight, width: '100%' }}
           />
@@ -539,6 +510,8 @@ export default function InboxChatListSidebar({
           y={muteMenu.y}
           onClose={() => setMuteMenu(null)}
           onSetMute={store.setMute}
+          isPinned={!!(pinnedSet && pinnedSet.has(muteMenu.chat.id))}
+          onTogglePin={onTogglePin}
         />
       )}
     </div>

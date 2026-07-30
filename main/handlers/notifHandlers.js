@@ -3,6 +3,7 @@
 import { ipcMain, screen } from 'electron'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 import { decideNotifResize } from './notifResizeDecision.js'
+import { shouldDismissForRead } from './notifDismissDecision.js'
 
 const NOTIF_WINDOW_WIDTH = 370
 const NOTIF_RIGHT_OFFSET = 380
@@ -108,6 +109,30 @@ export function initNotifHandlers(deps) {
   ipcMain.on('notif:dismiss', (_event, id) => {
     const notifItems = getNotifItems()
     setNotifItems(notifItems.filter(n => n.id !== id))
+    hideIfEmpty()
+  })
+
+  // v1.2.137: чат прочитан на сервере (другое устройство, напр. телефон) → снять висящие
+  // карточки-уведомления ЭТОГО чата, чьи сообщения уже прочитаны (id <= last_read). Покрывает
+  // и частичное чтение. Сигнал шлёт renderer из tg:chat-unread-sync с { chatId, lastReadInboxId }.
+  // Правило снятия вынесено в чистую shouldDismissForRead (notifDismissDecision.js) — там же тест.
+  // Визуально убираем из окна (notif:remove, как onDismiss), из notifItems, прячем окно если пусто.
+  ipcMain.on('notif:dismiss-chat', (_event, payload) => {
+    const chatId = payload?.chatId
+    const lastReadInboxId = payload?.lastReadInboxId
+    if (!chatId) return
+    const notifItems = getNotifItems()
+    const toRemove = notifItems.filter(n => shouldDismissForRead(n, chatId, lastReadInboxId))
+    if (!toRemove.length) return
+    // v1.2.137: лог снятия (только когда реально сняли — не спам). Помогает разобрать сбой:
+    // видно, сработало ли серверное прочтение и сколько карточек убрано.
+    console.log('[notif-dismiss-chat] снято карточек=' + toRemove.length + ' chatId=' + chatId + ' lastRead=' + lastReadInboxId)
+    const notifWin = getNotifWin()
+    if (notifWin && !notifWin.isDestroyed()) {
+      for (const n of toRemove) { try { notifWin.webContents.send('notif:remove', n.id) } catch (_) {} }
+    }
+    const removeIds = new Set(toRemove.map(n => n.id))
+    setNotifItems(notifItems.filter(n => !removeIds.has(n.id)))
     hideIfEmpty()
   })
 

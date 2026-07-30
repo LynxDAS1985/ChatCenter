@@ -8,11 +8,13 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import './styles.css'
 import useNativeStore from './store/nativeStore.js'
-import LoginModal from './components/LoginModal.jsx'
-import InboxMode from './modes/InboxMode.jsx'
+import NativeMainContent from './components/NativeMainContent.jsx'
+import { shouldShowLoginScreen, shouldResetLoginFlowOnOpen } from '../../shared/loginScreenGate.js'
+import { getAccountColor, ACCOUNT_PALETTE } from '../../shared/accountColors.js'
+import { visibleAccountCount, isAllVisible } from '../../shared/accountFilter.js' // v1.2.163
 import AccountContextMenu from './components/AccountContextMenu.jsx'
-import ConnectionStatusDot from '../components/ConnectionStatusDot.jsx'
-import { formatUnreadCount } from './utils/unreadFormat.js'
+import AccountAvatar from './components/AccountAvatar.jsx' // v1.2.165: вынесен из этого файла
+import useAccountRailResize, { loadRailWidth, RAIL_MAX_WIDTH, isRailNarrow } from './hooks/useAccountRailResize.js'
 import { getDisplayUnreadCount } from './utils/displayUnread.js'
 import {
   createPendingHealth,
@@ -36,135 +38,6 @@ const MODES = [
   { id: 'contacts', label: 'Клиенты', icon: '👥' },
   { id: 'kanban', label: 'Доска', icon: '📋' },
 ]
-
-// v0.87.106: фирменные цвета мессенджеров (ADR-016).
-// Используются для углового маркера на аватарке + полосы слева у чатов.
-const MESSENGER_COLORS = {
-  telegram: '#2AABEE',
-  whatsapp: '#25D366',
-  vk: '#0077FF',
-  max: '#7B3FE4',
-  viber: '#7360F2',
-}
-
-// v0.87.106: emoji-маркер мессенджера для углового бейджа на аватарке
-const MESSENGER_EMOJI = {
-  telegram: '✈️',
-  whatsapp: '💬',
-  vk: '🔵',
-  max: '💎',
-  viber: '🟣',
-}
-
-// v0.87.106: круглый аватар аккаунта в sidebar.
-// 48px фото (или инициалы), угловая иконка мессенджера, зелёная точка онлайн,
-// красный бейдж непрочитанных. Tooltip при hover.
-function AccountAvatar({ account, unreadCount, health, onClick, onContextMenu, onMouseEnter, onMouseLeave, onOpenConnections }) {
-  const initials = (account.name || '?').split(' ').filter(Boolean).slice(0, 2)
-    .map(w => w[0]?.toUpperCase() || '').join('') || '?'
-  const messenger = account.messenger || 'telegram'
-  const color = MESSENGER_COLORS[messenger] || MESSENGER_COLORS.telegram
-  const emoji = MESSENGER_EMOJI[messenger] || '💬'
-  const tooltip = `${emoji} ${messenger.charAt(0).toUpperCase() + messenger.slice(1)} · ${account.name}` +
-    (account.phone ? `\n${account.phone}` : '') +
-    (unreadCount > 0 ? `\n${unreadCount} непрочитанных` : '')
-
-  return (
-    <div
-      className="account-avatar-wrap"
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      title={tooltip}
-      style={{
-        position: 'relative',
-        width: 56,
-        marginBottom: 12,
-        cursor: 'pointer',
-        textAlign: 'center',
-      }}
-    >
-      <div
-        className="account-avatar-circle"
-        style={{
-          position: 'relative',
-          width: 48,
-          height: 48,
-          margin: '0 auto',
-          borderRadius: '50%',
-          background: account.avatar ? `url("${account.avatar}") center/cover no-repeat` : color,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          fontSize: 16,
-          fontWeight: 600,
-          transition: 'transform 0.15s',
-        }}
-      >
-        {!account.avatar && initials}
-        {/* Угловая иконка мессенджера в правом верхнем углу */}
-        <span style={{
-          position: 'absolute',
-          top: -2,
-          right: -2,
-          width: 18,
-          height: 18,
-          borderRadius: '50%',
-          background: 'var(--amoled-bg)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 10,
-          border: `1px solid ${color}`,
-        }}>{emoji}</span>
-        {/* Зелёная точка-индикатор онлайн (правый нижний угол) */}
-        <ConnectionStatusDot
-          health={health}
-          fallbackLabel={`${messenger} · ${account.name}`}
-          size={12}
-          onClick={onOpenConnections}
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            right: 0,
-            border: '2px solid var(--amoled-bg)',
-          }}
-        />
-        {/* Красный бейдж непрочитанных (поверх, левый верхний угол) */}
-        {unreadCount > 0 && (
-          <span style={{
-            position: 'absolute',
-            top: -4,
-            left: -4,
-            minWidth: 18,
-            height: 18,
-            padding: '0 5px',
-            borderRadius: 9,
-            background: 'var(--amoled-danger)',
-            color: '#fff',
-            fontSize: 10,
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid var(--amoled-bg)',
-          }}>{formatUnreadCount(unreadCount)}</span>
-        )}
-      </div>
-      <div style={{
-        marginTop: 4,
-        fontSize: 11,
-        color: 'var(--amoled-text-dim)',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        padding: '0 2px',
-      }}>{account.name}</div>
-    </div>
-  )
-}
 
 function buildNativeAccountHealth(account, unreadCount, chatsCount) {
   const base = {
@@ -204,6 +77,17 @@ export default function NativeApp({
   const [logoutToast, setLogoutToast] = useState(null)
   // v0.87.106 Улучшение 1: hover на аккаунте → подсвечиваем его чаты в списке
   const [hoveredAccountId, setHoveredAccountId] = useState(null)
+  // v1.2.165: ширина левого рейла (перетаскиванием разделителя). Значки масштабируются от
+  // ширины; при узкой панели подписи-имена скрываются. Персист — localStorage.
+  const [railWidth, setRailWidth] = useState(() => loadRailWidth())
+  const [isRailResizing, setIsRailResizing] = useState(false)
+  const railWidthRef = useRef(railWidth)
+  const railResizeStartRef = useRef({ x: 0, w: railWidth })
+  const isRailResizingRef = useRef(false)
+  const { startResize: startRailResize, onPointerMove: onRailPointerMove, onPointerUp: onRailPointerUp, resetToDefault: resetRailWidth } =
+    useAccountRailResize({ isResizingRef: isRailResizingRef, resizeStartRef: railResizeStartRef, railWidthRef, setRailWidth, setIsResizing: setIsRailResizing })
+  const railScale = railWidth / RAIL_MAX_WIDTH
+  const hideRailLabel = isRailNarrow(railWidth)
   // v0.95.31: drag-n-drop порядка аккаунтов. accountOrder — массив id из localStorage,
   // applyAccountOrder применяется к store.accounts. Новые аккаунты идут в конец.
   const [accountOrder, setAccountOrder] = useState(() => loadAccountOrder())
@@ -243,9 +127,13 @@ export default function NativeApp({
   const activeNativeAccountId = useMemo(() => {
     const activeChat = store.chats.find(chat => chat.id === store.activeChatId)
     if (activeChat?.accountId) return activeChat.accountId
-    if (store.chatFilter && store.chatFilter !== 'all') return store.chatFilter
+    // v1.2.163: раньше брали одиночный chatFilter; теперь «текущий» = соло-аккаунт (если включён)
+    if (store.soloAccountId) return store.soloAccountId
+    // v1.2.164: если показан ровно ОДИН аккаунт (остальные скрыты галочкой) — он и «текущий»
+    const visible = (store.accounts || []).filter(a => !(store.hiddenAccountIds || []).includes(a.id))
+    if (visible.length === 1) return visible[0].id
     return null
-  }, [store.activeChatId, store.chatFilter, store.chats])
+  }, [store.activeChatId, store.soloAccountId, store.hiddenAccountIds, store.accounts, store.chats])
 
   useEffect(() => {
     onConnectionSnapshot?.(Object.values(accountHealth))
@@ -305,7 +193,21 @@ export default function NativeApp({
   }, [store.accounts, store.checkConnection])
 
   const hasAccounts = store.accounts.length > 0
-  const showLoginScreen = showLogin || !!store.loginFlow
+  // v1.2.147: завершённый вход (loginFlow.step==='success') НЕ держит экран входа —
+  // иначе после добавления аккаунта поверх чатов оставался пустой экран входа («чёрный
+  // экран»). Логика вынесена в чистую shouldShowLoginScreen (покрыта тестом).
+  const showLoginScreen = shouldShowLoginScreen(showLogin, store.loginFlow)
+
+  // v1.2.149: единая точка открытия окна входа (обе кнопки «+»). Сбрасываем ТОЛЬКО
+  // залипший success (чтобы новое окно не закрылось само); незавершённый вход не трогаем.
+  // Лог по доработке — чтобы сброс залипшего входа был виден в журнале.
+  const openLogin = () => {
+    if (shouldResetLoginFlowOnOpen(store.loginFlow)) {
+      try { window.api?.send?.('app:log', { level: 'INFO', message: '[acct-store] reset stale loginFlow(success) on open-login' }) } catch (_) {}
+      store.resetLoginFlow?.()
+    }
+    setShowLogin(true)
+  }
 
   useEffect(() => {
     try {
@@ -403,6 +305,11 @@ export default function NativeApp({
   // store.lastWipe устанавливается в handler tg:account-update {removed:true}
   useEffect(() => {
     if (!store.lastWipe) return
+    // v1.2.150: после удаления аккаунта НЕ показываем форму нового входа — закрываем её,
+    // чтобы сразу были чаты оставшихся аккаунтов (или «нет подключённых аккаунтов», если
+    // не осталось ни одного). Форма входа появляется только по кнопке «+».
+    setShowLogin(false)
+    store.resetLoginFlow?.()
     const mb = (store.lastWipe.totalBytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')
     setLogoutToast({
       message: `✅ Аккаунт удалён. Освобождено ${mb} МБ`,
@@ -415,15 +322,35 @@ export default function NativeApp({
   return (
     <div className="native-mode">
       <div className="native-content">
-        {/* v0.95.31: sidebar теперь flex-column с spacer наверху — аккаунты прижаты ВНИЗ
-            (как Telegram Desktop multi-account, Slack workspace, Discord servers).
-            Добавлен HTML5 drag-n-drop для пересортировки порядка. */}
+        {/* v1.2.164: блок аккаунтов ВВЕРХУ панели (по просьбе пользователя; раньше был спейсер
+            сверху и аккаунты прижимались вниз). Порядок: «Все» → аватарки → «+».
+            Сохранён HTML5 drag-n-drop для пересортировки порядка. */}
         <div
           className="native-sidebar"
-          style={{ width: 76, display: 'flex', flexDirection: 'column' }}
+          style={{ width: railWidth, display: 'flex', flexDirection: 'column', flexShrink: 0,
+            transition: isRailResizing ? 'none' : 'width 0.1s' }}
         >
-          {/* Spacer — толкает аккаунты вниз */}
-          <div style={{ flex: 1 }} />
+          {/* v1.2.163: кнопка «Все» — над аккаунтами. Горит при показе всех; иначе счётчик N/M.
+              Клик — показать все (снять скрытия и соло). Только при ≥2 аккаунтах.
+              v1.2.165: размеры масштабируются вместе с рейлом (railScale). */}
+          {store.accounts.length >= 2 && (
+            <div
+              onClick={() => store.showAllAccounts()}
+              title="Показать чаты всех аккаунтов"
+              style={{
+                width: Math.round(48 * railScale), minHeight: Math.round(30 * railScale), margin: `0 auto ${Math.round(12 * railScale)}px`,
+                borderRadius: Math.round(12 * railScale), cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: Math.max(9, Math.round(12 * railScale)), fontWeight: 700,
+                background: isAllVisible(store.hiddenAccountIds, store.soloAccountId) ? 'var(--amoled-accent)' : 'var(--amoled-surface)',
+                color: isAllVisible(store.hiddenAccountIds, store.soloAccountId) ? '#fff' : 'var(--amoled-text-dim)',
+                border: '1px solid var(--amoled-border)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >{isAllVisible(store.hiddenAccountIds, store.soloAccountId)
+              ? 'Все'
+              : `${visibleAccountCount(store.accounts.map(a => a.id), store.hiddenAccountIds, store.soloAccountId)}/${store.accounts.length}`}</div>
+          )}
           {orderedAccounts.map((acc, idx) => (
             <div
               key={acc.id}
@@ -445,75 +372,62 @@ export default function NativeApp({
             >
               <AccountAvatar
                 account={acc}
+                // v1.2.153: обводка цветом-меткой только при ≥2 аккаунтах (иначе не нужна).
+                accountColor={store.accounts.length >= 2 ? getAccountColor(store.accountColors, acc.id) : null}
                 unreadCount={unreadByAccount[acc.id] || 0}
                 health={accountHealth[acc.id]}
-                onClick={() => store.setActiveAccount(acc.id)}
+                // v1.2.163: одиночный клик = вкл/выкл аккаунт, двойной = «только этот» (соло).
+                filterActive={store.accounts.length >= 2}
+                hidden={(store.hiddenAccountIds || []).includes(acc.id)}
+                solo={store.soloAccountId === acc.id}
+                dimmed={store.soloAccountId ? store.soloAccountId !== acc.id : (store.hiddenAccountIds || []).includes(acc.id)}
+                onToggleVisible={store.accounts.length >= 2 ? () => store.toggleAccountVisible(acc.id) : undefined}
+                onSolo={store.accounts.length >= 2 ? () => store.soloAccount(acc.id) : undefined}
                 onContextMenu={(e) => handleAccountContextMenu(e, acc)}
                 onMouseEnter={() => setHoveredAccountId(acc.id)}
                 onMouseLeave={() => setHoveredAccountId(null)}
                 onOpenConnections={onOpenConnections}
+                scale={railScale}
+                hideLabel={hideRailLabel}
               />
             </div>
           ))}
           <div
             className="native-account native-account__add"
-            onClick={() => setShowLogin(true)}
+            onClick={openLogin}
             title="Добавить аккаунт"
-            style={{ width: 48, height: 48, margin: '0 auto 12px' }}
+            style={{ width: Math.round(48 * railScale), height: Math.round(48 * railScale),
+              margin: `0 auto ${Math.round(12 * railScale)}px`, fontSize: Math.round(24 * railScale) }}
           >+</div>
         </div>
+        {/* v1.2.165: разделитель для изменения ширины рейла (перетаскивание). Двойной клик — сброс. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Изменить ширину панели аккаунтов (двойной клик — сброс)"
+          title="Перетащите чтобы сузить · Двойной клик — сброс"
+          onPointerDown={startRailResize}
+          onPointerMove={onRailPointerMove}
+          onPointerUp={onRailPointerUp}
+          onDoubleClick={resetRailWidth}
+          onMouseEnter={e => { if (!isRailResizing) e.currentTarget.style.backgroundColor = '#2AABEE66' }}
+          onMouseLeave={e => { if (!isRailResizing) e.currentTarget.style.backgroundColor = 'var(--amoled-border)' }}
+          style={{ width: 5, cursor: 'col-resize', flexShrink: 0, zIndex: 6, touchAction: 'none',
+            backgroundColor: isRailResizing ? '#2AABEE88' : 'var(--amoled-border)',
+            transition: isRailResizing ? 'none' : 'background-color 0.15s' }}
+        />
 
-        <div className="native-main">
-          {showLoginScreen ? (
-            <LoginModal
-              onClose={() => setShowLogin(false)}
-              startLogin={store.startLogin}
-              submitCode={store.submitCode}
-              submitPassword={store.submitPassword}
-              cancelLogin={store.cancelLogin}
-              loginFlow={store.loginFlow}
-            />
-          ) : !hasAccounts ? (
-            <div className="native-empty">
-              <div className="native-empty__icon">💬</div>
-              <div className="native-empty__title">Нет подключённых аккаунтов</div>
-              <div className="native-empty__text">
-                Подключите Telegram чтобы начать работу.<br />
-                Ваши сообщения будут приходить в единый интерфейс с AI-помощником.
-              </div>
-              <button className="native-btn" onClick={() => setShowLogin(true)}>
-                + Подключить Telegram
-              </button>
-            </div>
-          ) : store.mode === 'inbox' ? (
-            <InboxMode store={store} hoveredAccountId={hoveredAccountId} modes={MODES} />
-          ) : (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div style={{
-                height: 48, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-                padding: '0 16px',
-                borderBottom: '1px solid var(--amoled-border)',
-                background: 'var(--amoled-surface)', flexShrink: 0, gap: 4,
-              }}>
-                {MODES.map(m => (
-                  <button
-                    key={m.id}
-                    className={`native-mode-switcher__btn ${store.mode === m.id ? 'native-mode-switcher__btn--active' : ''}`}
-                    onClick={() => store.setMode(m.id)}
-                  >{m.label}</button>
-                ))}
-              </div>
-              <div className="native-empty">
-                <div className="native-empty__icon">🚧</div>
-                <div className="native-empty__title">Режим «{MODES.find(m => m.id === store.mode)?.label}»</div>
-                <div className="native-empty__text">
-                  UI в разработке.<br />
-                  Пока доступен только режим «Чаты».
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* v1.2.148: содержимое главной области вынесено в NativeMainContent (разгрузка). */}
+        <NativeMainContent
+          showLoginScreen={showLoginScreen}
+          store={store}
+          hasAccounts={hasAccounts}
+          hoveredAccountId={hoveredAccountId}
+          modes={MODES}
+          onOpenLogin={openLogin}
+          // v1.2.147: сброс «признака входа» при закрытии окна (не отменяет вход на сервере).
+          onCloseLogin={() => { setShowLogin(false); store.resetLoginFlow?.() }}
+        />
       </div>
 
       {/* v0.87.88: меню аккаунта по ПКМ */}
@@ -525,6 +439,10 @@ export default function NativeApp({
           onClose={() => setAccountMenu(null)}
           onLogout={store.removeAccount}
           getCleanupStats={store.getCleanupStats}
+          // v1.2.153: выбор цвета-метки аккаунта (кнопка 🎨 в углу карточки)
+          color={getAccountColor(store.accountColors, accountMenu.account.id)}
+          palette={ACCOUNT_PALETTE}
+          onPickColor={(c) => store.setAccountColor(accountMenu.account.id, c)}
         />
       )}
 

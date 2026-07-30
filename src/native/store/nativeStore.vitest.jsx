@@ -63,6 +63,39 @@ describe('v0.87.41: markRead Telegram-style (no local subtraction)', () => {
     expect(result.current.markRead.length).toBe(2)
   })
 
+  // v1.2.147: защита фикса «чёрный экран после добавления аккаунта». Окно входа при
+  // закрытии зовёт resetLoginFlow — он ДОЛЖЕН существовать и сбрасывать «залипший»
+  // loginFlow (иначе success держит пустой экран входа поверх чатов).
+  it('resetLoginFlow сбрасывает залипший loginFlow=success', () => {
+    const { result } = renderHook(() => useNativeStore())
+    expect(typeof result.current.resetLoginFlow).toBe('function')
+    // ставим loginFlow через событие входа (как приходит от TDLib на успех)
+    act(() => { onHandlers['tg:login-step']?.({ step: 'success', accountId: 'tg_1' }) })
+    expect(result.current.loginFlow).toEqual({ step: 'success', accountId: 'tg_1' })
+    // закрытие окна входа → сброс
+    act(() => { result.current.resetLoginFlow() })
+    expect(result.current.loginFlow).toBe(null)
+  })
+
+  // v1.2.154: цвета-метки аккаунтов — автоназначение разных цветов + ручная смена.
+  it('accountColors: два аккаунта получают РАЗНЫЕ цвета; setAccountColor меняет', () => {
+    localStorage.clear()
+    const { result } = renderHook(() => useNativeStore())
+    expect(typeof result.current.setAccountColor).toBe('function')
+    // добавляем два аккаунта — эффект в сторе назначит недостающие цвета
+    act(() => {
+      onHandlers['tg:account-update']?.({ id: 'tg_a', messenger: 'telegram', status: 'connected', name: 'A' })
+      onHandlers['tg:account-update']?.({ id: 'tg_b', messenger: 'telegram', status: 'connected', name: 'B' })
+    })
+    const colors = result.current.accountColors
+    expect(colors.tg_a).toBeTruthy()
+    expect(colors.tg_b).toBeTruthy()
+    expect(colors.tg_a).not.toBe(colors.tg_b) // различимы
+    // ручная смена цвета
+    act(() => { result.current.setAccountColor('tg_a', '#123456') })
+    expect(result.current.accountColors.tg_a).toBe('#123456')
+  })
+
   it('нет прыжка 36→25→35 — плавно 36 пока server не ответил', async () => {
     const { result } = renderHook(() => useNativeStore())
     act(() => {

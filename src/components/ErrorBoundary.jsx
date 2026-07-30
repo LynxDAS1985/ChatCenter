@@ -14,6 +14,13 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error('[ErrorBoundary]', this.props.name || 'Unknown', ':', error.message)
+    // v1.2.143 (диаг): пишем ошибку отрисовки в chatcenter.log (иначе видна только в
+    // DevTools). Так падение экрана видно в «Логи ChatCenter», а не «чёрный экран молча».
+    try {
+      const stack = info?.componentStack ? ' | ' + String(info.componentStack).split('\n').slice(0, 4).join(' ⏎ ') : ''
+      window.api?.send?.('app:log', { level: 'ERROR',
+        message: `[ErrorBoundary] ${this.props.name || 'Unknown'}: ${error?.message || error}${stack}` })
+    } catch (_) {}
   }
 
   render() {

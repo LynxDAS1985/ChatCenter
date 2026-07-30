@@ -71,7 +71,7 @@ describe('manager → renderer event bridge', () => {
       chat_id: -1, last_read_inbox_message_id: 100, unread_count: 2,
     })
     expect(sendToRenderer).toHaveBeenCalledWith('tg:chat-unread-sync',
-      { chatId: 'tg_main:-1', unreadCount: 2 })
+      { chatId: 'tg_main:-1', unreadCount: 2, lastReadInboxId: 100 })
   })
 
   it('account:auth-state authorizationStateWaitCode → tg:login-step step=code', async () => {
@@ -92,6 +92,14 @@ describe('manager → renderer event bridge', () => {
     })
     expect(sendToRenderer).toHaveBeenCalledWith('tg:login-step',
       expect.objectContaining({ step: 'success' }))
+  })
+
+  // v1.2.146: переименование временного аккаунта пробрасывается на экран (иначе призрак).
+  it('account:renamed → tg:account-renamed', () => {
+    const { mgr, sendToRenderer } = setup()
+    mgr._renameAccount('tg_main', 'tg_777')
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:account-renamed',
+      { oldId: 'tg_main', newId: 'tg_777' })
   })
 
   it('account:error → tg:account-update status=error', async () => {

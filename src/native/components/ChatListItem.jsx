@@ -29,7 +29,7 @@ function typeIcon(chat) {
   return null
 }
 
-export default function ChatListItem({ chat, active, onClick, onContextMenu, account, hoveredAccountId, multiAccount, compact = false, displayUnreadCount, highlightQuery }) {
+export default function ChatListItem({ chat, active, onClick, onContextMenu, account, hoveredAccountId, multiAccount, compact = false, displayUnreadCount, highlightQuery, isPinned = false }) {
   const bgColor = AVATAR_COLORS[hashString(chat.title || '?') % AVATAR_COLORS.length]
   const initials = (chat.title || '?').split(' ').filter(Boolean).slice(0, 2)
     .map(w => w[0]?.toUpperCase() || '').join('')
@@ -44,7 +44,9 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
 
   // v0.87.106: данные мессенджера/аккаунта для меток
   const messenger = account?.messenger || 'telegram'
-  const stripeColor = multiAccount ? getMessengerColor(messenger) : 'transparent'
+  // v1.2.153: полоска слева = ЦВЕТ-МЕТКА аккаунта (account.color, задаётся в карточке аккаунта);
+  // если цвет почему-то не пришёл — откат к фирменному цвету мессенджера (прежнее поведение).
+  const stripeColor = multiAccount ? (account?.color || getMessengerColor(messenger)) : 'transparent'
   const messengerEmoji = getMessengerEmoji(messenger)
   const messengerName = getMessengerName(messenger)
 
@@ -61,6 +63,32 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
     tooltipParts.push('Чат принадлежит этому аккаунту')
   }
   const tooltip = tooltipParts.join('\n')
+
+  // v1.2.155 (Вариант 4): полоса слева = ЦВЕТ-МЕТКА аккаунта (для multi-account).
+  // Закреплённый чат показывается золотой «скрепкой»-засечкой СВЕРХУ этой полосы,
+  // а НЕ полной золотой полосой (как было в v1.2.138) — так цвет аккаунта не теряется.
+  // Одиночный аккаунт: цвета-метки нет → закреп рисуется полной золотой полосой (как раньше).
+  // Один и тот же элемент используют оба режима (compact/полный).
+  const leftStripe = (multiAccount || isPinned) ? (
+    <>
+      {multiAccount && (
+        <span aria-hidden="true" style={{
+          position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: stripeColor,
+        }} />
+      )}
+      {isPinned && (
+        <span aria-hidden="true" title="Закреплён" style={multiAccount ? {
+          // «скрепка» сверху цветной полосы аккаунта
+          position: 'absolute', left: 0, top: 0, width: 4, height: 16,
+          background: '#f5b301', zIndex: 1, borderRadius: '0 0 3px 0',
+        } : {
+          // один аккаунт → цвета нет, оставляем полную золотую полосу
+          position: 'absolute', left: 0, top: 0, bottom: 0, width: 3,
+          background: '#f5b301', zIndex: 1,
+        }} />
+      )}
+    </>
+  ) : null
 
   // v0.95.9: compact mode — аватар того же размера (53px) что и в полном (юзер просил
   // «размеры значков не меняли»). Бейдж переезжает в угол аватарки. Текст уходит через
@@ -95,6 +123,8 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
           e.currentTarget.style.background = highlighted ? 'rgba(42, 171, 238, 0.05)' : 'transparent'
         }}
       >
+        {/* v1.2.155 (Вариант 4): полоса аккаунта + золотая «скрепка» при закрепе. */}
+        {leftStripe}
         <div style={{ position: 'relative', flexShrink: 0 }}>
           {/* v0.95.9: аватар 53px (как в обычном режиме). Был 44 — юзер: «размеры значков
               не меняли когда оставляю одни значки, были такой же большие как в полносм». */}
@@ -128,6 +158,14 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
               fontSize: 8,
             }}>🔕</div>
           )}
+          {/* v1.2.139 (TODO-17): значок закрепа на аватарке в узком режиме (в широком
+              он у имени, а имени в компактном виде нет). Полоска слева тоже остаётся. */}
+          {isPinned && (
+            <div style={{
+              position: 'absolute', top: -5, left: -6, fontSize: 11, lineHeight: 1,
+              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+            }} title="Закреплён">📌</div>
+          )}
         </div>
       </div>
     )
@@ -159,20 +197,9 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
         e.currentTarget.style.background = highlighted ? 'rgba(42, 171, 238, 0.05)' : 'transparent'
       }}
     >
-      {/* v0.87.106: цветная полоса слева — фирменный цвет мессенджера */}
-      {multiAccount && (
-        <span
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 3,
-            background: stripeColor,
-          }}
-        />
-      )}
+      {/* v1.2.155 (Вариант 4): полоса слева = цвет-метка аккаунта; закреп — золотая
+          «скрепка»-засечка сверху этой полосы (см. leftStripe выше). */}
+      {leftStripe}
       {/* Аватарка 53px (+20% от 44px, v0.87.116) */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <div style={{
@@ -204,6 +231,14 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 9,
           }}>🔕</div>
+        )}
+        {/* v1.2.141: значок закрепа в левом ВЕРХНЕМ углу аватарки (как в узком режиме,
+            по просьбе пользователя) — раньше стоял в строке имени. */}
+        {isPinned && (
+          <div style={{
+            position: 'absolute', top: -5, left: -6, fontSize: 11, lineHeight: 1,
+            filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
+          }} title="Закреплён">📌</div>
         )}
       </div>
       {/* Текст */}

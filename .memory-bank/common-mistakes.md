@@ -26,6 +26,7 @@
 - IntersectionObserver: ratio≥0.95 недостижим для длинных msg (v0.87.47)
 - Гонка авто-load-older + browser scroll anchoring (v0.87.48)
 - State в InboxMode: сброс по activeChatId (v0.87.52-0.87.53)
+- 🟡 Перетаскивание порядка строк ВНУТРИ react-window — тупик + процессный урок «уточни требование до крупной переделки» (v1.2.156–162)
 - Связанный handoff: [`native-scroll-diagnostics-handoff.md`](./native-scroll-diagnostics-handoff.md)
 
 ### 2. [`mistakes/webview-injection.md`](./mistakes/webview-injection.md)
@@ -77,6 +78,8 @@
 - Settings (`SettingsPanel`), AI-панель (`AISidebar`), авто-ответ
 - ИИ-интеграция: 4 провайдера (OpenAI/Anthropic/DeepSeek/GigaChat)
 - Кастомные уведомления (v0.39.0) — общая справка, не ловушки
+- 🟡 Нельзя выводить «объект удалён» из отсутствия в `store.chats` (список неполный: кэш-подмножество + `tg:chats` замена) — теряет постоянные данные (пример: авто-чистка пинов, v1.2.140)
+- 🔴 «Чёрный экран» после добавления аккаунта = залипший `loginFlow=success` держит экран входа поверх чатов (не крэш, данные целы); флаг-процесса нужно сбрасывать в терминальном success (v1.2.147)
 
 ### 5. [`mistakes/tdlib-video-player.md`](./mistakes/tdlib-video-player.md)
 **Когда читать**: задача про воспроизведение видео/фото из TDLib, cc-media protocol, Range requests, MEDIA_ERR_DECODE, прогрессивное воспроизведение, snapshot caches.

@@ -546,7 +546,7 @@ export class TdlibClientManager extends EventEmitter {
       this.emit('chat:unread-sync', {
         accountId: record.accountId,
         chatId: `${record.accountId}:${update.chat_id}`,
-        unreadCount: update.unread_count,
+        unreadCount: update.unread_count, lastReadInboxId: update.last_read_inbox_message_id, // v1.2.137: last_read → снятие прочитанных карточек
       })
     }
     // v0.91.9: эмит при изменении last_message (для превью в списке чатов).

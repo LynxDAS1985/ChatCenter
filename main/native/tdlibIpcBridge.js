@@ -81,8 +81,8 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
   subscribe('message:deleted', ({ chatId, messageIds }) => ({
     channel: 'tg:message-deleted', data: { chatId, messageIds },
   }))
-  subscribe('chat:unread-sync', ({ chatId, unreadCount }) => ({
-    channel: 'tg:chat-unread-sync', data: { chatId, unreadCount },
+  subscribe('chat:unread-sync', ({ chatId, unreadCount, lastReadInboxId }) => ({
+    channel: 'tg:chat-unread-sync', data: { chatId, unreadCount, lastReadInboxId },
   }))
   // v0.91.9: TDLib шлёт updateChatLastMessage отдельно от updateNewMessage
   // (например при оптимизации больших супергрупп). Без этого превью в списке
@@ -99,10 +99,11 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
   subscribe('chat:read-outbox', ({ chatId, maxId }) => ({
     channel: 'tg:read', data: { chatId, outgoing: true, maxId },
   }))
-  subscribe('account:auth-state', ({ accountId, state, payload }) => ({
-    channel: 'tg:login-step',
-    data: stateToLoginStep(state, accountId, payload),
-  }))
+  subscribe('account:auth-state', ({ accountId, state, payload }) => {
+    // v1.2.142 (диаг): каждый переход авторизации (WaitPhone/WaitCode/Ready/Closed…).
+    console.log(`[acct-auth] id=${accountId} state=${state}`)
+    return { channel: 'tg:login-step', data: stateToLoginStep(state, accountId, payload) }
+  })
   subscribe('account:error', ({ accountId, error }) => ({
     channel: 'tg:account-update',
     data: { id: accountId, messenger: 'telegram', status: 'error', error: error?.message || String(error) },
@@ -110,10 +111,18 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
   // v0.89.0 / Этап 3.5: после успешного логина backend.auth._finalizePending
   // эмитит account:update с полным набором полей. Мостим как tg:account-update
   // — UI sidebar добавит аккаунт в список (через nativeStoreIpc.js handler).
-  subscribe('account:update', (data) => ({
-    channel: 'tg:account-update',
-    data,
-  }))
+  subscribe('account:update', (data) => {
+    // v1.2.142 (диаг): что уходит на экран про аккаунт (подключён / удалён / переименован-финал).
+    console.log(`[acct-update] id=${data?.id} status=${data?.status || ''} removed=${!!data?.removed} name=${data?.name || ''}`)
+    return { channel: 'tg:account-update', data }
+  })
+  // v1.2.146: переименование временного аккаунта в настоящий (tg_pending_X → tg_<userId>).
+  // Раньше на экран НЕ пробрасывалось → старая метка временного id могла зависнуть призраком.
+  // Теперь экран убирает осиротевшую запись сразу (см. nativeStoreIpc tg:account-renamed).
+  subscribe('account:renamed', ({ oldId, newId }) => {
+    console.log(`[acct-renamed] ${oldId} -> ${newId}`)
+    return { channel: 'tg:account-renamed', data: { oldId, newId } }
+  })
   subscribe('account:connection', ({ accountId, state }) => ({
     channel: 'tg:account-connection',
     data: { accountId, state },

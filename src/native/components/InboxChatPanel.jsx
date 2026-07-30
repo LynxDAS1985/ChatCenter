@@ -226,7 +226,11 @@ export default function InboxChatPanel({
         />
         {/* v0.95.5: pinned overlay (см. PinnedMessageBar.jsx). Виден только при
             chatReady — не наслаивается на shimmer overlay. */}
-        {chatReady && <PinnedMessageBar pinnedMsg={pinnedMsg} onClose={() => setPinnedMsg(null)} />}
+        {chatReady && <PinnedMessageBar
+          pinnedMsg={pinnedMsg}
+          onClose={() => setPinnedMsg(null)}
+          onJump={pinnedMsg?.id != null ? () => scrollToMessage(pinnedMsg.id) : undefined}
+        />}
         {/* v0.89.0: виртуализация рендера через react-window. msgsScrollRef
             синхронизируется с listRef.current.element через useEffect выше. */}
         <div style={{

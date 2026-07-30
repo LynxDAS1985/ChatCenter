@@ -53,7 +53,8 @@ describe('константы', () => {
 describe('DEFAULT_STATE', () => {
   it('минимальные обязательные поля', () => {
     expect(DEFAULT_STATE.mode).toBe('inbox')
-    expect(DEFAULT_STATE.chatFilter).toBe('all')
+    expect(DEFAULT_STATE.hiddenAccountIds).toEqual([]) // v1.2.163: chatFilter → множественный выбор
+    expect(DEFAULT_STATE.soloAccountId).toBe(null)
     expect(Array.isArray(DEFAULT_STATE.accounts)).toBe(true)
     expect(Array.isArray(DEFAULT_STATE.chats)).toBe(true)
     expect(DEFAULT_STATE.messages).toEqual({})

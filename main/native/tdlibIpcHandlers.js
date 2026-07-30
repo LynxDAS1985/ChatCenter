@@ -55,10 +55,12 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
   // LOGIN
   // ────────────────────────────────────────────────────────────────────
 
-  handle('tg:login-start', ({ phone } = {}) => backend.auth.startLogin(phone))
-  handle('tg:login-code', ({ code } = {}) => backend.auth.submitCode(code))
-  handle('tg:login-password', ({ password } = {}) => backend.auth.submitPassword(password))
-  handle('tg:login-cancel', () => backend.auth.cancelLogin())
+  // v1.2.142 (диаг): точки входа IPC — подтверждают, что клик/шаг дошёл до main.
+  // Секреты (код/пароль) НЕ логируем — только факт вызова канала.
+  handle('tg:login-start', ({ phone } = {}) => { console.log('[acct-ipc] tg:login-start hasPhone=' + !!phone); return backend.auth.startLogin(phone) })
+  handle('tg:login-code', ({ code } = {}) => { console.log('[acct-ipc] tg:login-code'); return backend.auth.submitCode(code) })
+  handle('tg:login-password', ({ password } = {}) => { console.log('[acct-ipc] tg:login-password'); return backend.auth.submitPassword(password) })
+  handle('tg:login-cancel', () => { console.log('[acct-ipc] tg:login-cancel'); return backend.auth.cancelLogin() })
 
   // ────────────────────────────────────────────────────────────────────
   // ACCOUNTS
@@ -102,7 +104,7 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
     return { ok: true, accounts, activeAccountId: accounts[0]?.id || null }
   })
 
-  handle('tg:remove-account', ({ accountId } = {}) => backend.auth.removeAccount(accountId))
+  handle('tg:remove-account', ({ accountId } = {}) => { console.log('[acct-ipc] tg:remove-account id=' + accountId); return backend.auth.removeAccount(accountId) })
 
   // ────────────────────────────────────────────────────────────────────
   // CHATS

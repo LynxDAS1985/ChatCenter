@@ -8,6 +8,8 @@ import { createNotificationSource } from '../../shared/notificationSource.js'
 // v1.2.74 (A1): фоновая догрузка чёткого превью плиток альбома в окно уведомления.
 import { preloadAlbumThumb } from '../utils/albumThumbPreload.js'
 import { buildNotifAlbum } from '../../../shared/notifAlbum.js'
+import { getAccountColor } from './accountColors.js' // v1.2.155: цвет-метка аккаунта для грани уведомления
+import { saveHiddenAccounts } from './accountFilter.js' // v1.2.163: держим скрытые аккаунты в localStorage синхронно
 import { lastSenderLabel } from '../../../shared/chatPreviewSender.js' // v1.2.133: единое правило префикса имени
 import { attachLastMsgHandlers } from './nativeStoreLastMsgIpc.js' // v1.2.133 (TODO-14): вынесенный блок превью
 
@@ -47,6 +49,11 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   const { applyPendingLastMessage } = attachLastMsgHandlers({ addHandler, setState, logNativeScroll })
 
   addHandler('tg:account-update', (acc) => {
+    // v1.2.142 (диаг): что пришло на экран про аккаунт — добавление/удаление/статус.
+    try {
+      window.api?.send?.('app:log', { level: 'INFO',
+        message: `[acct-store] account-update id=${acc?.id} status=${acc?.status || ''} removed=${!!acc?.removed} isLast=${!!acc?.wipeStats?.isLast} name=${acc?.name || ''}` })
+    } catch (_) {}
     // v0.87.95: removed: true → удалить аккаунт.
     // v0.87.105 (ADR-016): при logout одного из нескольких — удаляем ТОЛЬКО его чаты/сообщения,
     // остальные аккаунты остаются. wipeStats.isLast === true → последний → полная очистка.
@@ -55,11 +62,13 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         const isLast = acc.wipeStats?.isLast || s.accounts.length <= 1
         if (isLast) {
           // Полная очистка — последний аккаунт удалили
+          saveHiddenAccounts([]) // v1.2.164: чистим и localStorage, иначе «призраки» скрытых при рестарте
           return {
             ...s,
             accounts: [],
             activeAccountId: null,
-            chatFilter: 'all',
+            hiddenAccountIds: [], // v1.2.163
+            soloAccountId: null,
             activeChatId: null,
             chats: [],
             messages: {},
@@ -93,8 +102,17 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
         }
         // Сброс активного чата если он принадлежал удалённому аккаунту
         const activeStillValid = s.activeChatId && s.activeChatId.split(':')[0] !== acc.id
-        // Сброс фильтра если фильтровали по этому аккаунту
-        const newFilter = s.chatFilter === acc.id ? 'all' : s.chatFilter
+        // v1.2.163: убрать удалённый аккаунт из скрытых.
+        let newHidden = (s.hiddenAccountIds || []).filter(id => id !== acc.id)
+        // v1.2.168 (баг): если после удаления ВСЕ оставшиеся аккаунты оказались скрыты —
+        // показываем всех. Иначе оставшийся аккаунт невидим (список пуст → «Загрузка чатов…»
+        // навсегда, аватарка затемнена), а снять скрытие через UI нельзя (при 1 аккаунте
+        // галочек нет). Пример: скрыли A (виден только B) → удалили B → A остался скрытым.
+        if (newAccounts.length > 0 && newAccounts.every(a => newHidden.includes(a.id))) newHidden = []
+        if (newHidden.length !== (s.hiddenAccountIds || []).length) saveHiddenAccounts(newHidden)
+        // v1.2.168: соло сохраняем, только если соло-аккаунт ещё существует (страховка —
+        // иначе оставшийся не-соло аккаунт был бы затемнён и невидим).
+        const newSolo = (s.soloAccountId && newAccounts.some(a => a.id === s.soloAccountId)) ? s.soloAccountId : null
         // Если активный аккаунт удалили — переключаемся на первый оставшийся
         const newActiveAccountId = s.activeAccountId === acc.id
           ? (newAccounts[0]?.id || null)
@@ -103,7 +121,8 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
           ...s,
           accounts: newAccounts,
           activeAccountId: newActiveAccountId,
-          chatFilter: newFilter,
+          hiddenAccountIds: newHidden,
+          soloAccountId: newSolo,
           activeChatId: activeStillValid ? s.activeChatId : null,
           chats: newChats,
           messages: newMessages,
@@ -127,6 +146,26 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
 
   addHandler('tg:login-step', (step) => {
     setState(s => ({ ...s, loginFlow: step }))
+  })
+
+  // v1.2.146: временный аккаунт переименован в настоящий (tg_pending_X → tg_<userId>).
+  // Убираем осиротевшую запись СТАРОГО (временного) id из списка аккаунтов — иначе она
+  // висит призрачной меткой-фильтром. Настоящий аккаунт приходит отдельно (tg:account-update).
+  addHandler('tg:account-renamed', ({ oldId, newId } = {}) => {
+    if (!oldId || !newId || oldId === newId) return
+    setState(s => {
+      if (!s.accounts.some(a => a.id === oldId)) return s // старого нет — ничего не делаем
+      // v1.2.163: переносим id в скрытых/соло со старого на новый
+      const renamedHidden = (s.hiddenAccountIds || []).map(id => id === oldId ? newId : id)
+      if ((s.hiddenAccountIds || []).includes(oldId)) saveHiddenAccounts(renamedHidden)
+      return {
+        ...s,
+        accounts: s.accounts.filter(a => a.id !== oldId),
+        activeAccountId: s.activeAccountId === oldId ? newId : s.activeAccountId,
+        hiddenAccountIds: renamedHidden,
+        soloAccountId: s.soloAccountId === oldId ? newId : s.soloAccountId,
+      }
+    })
   })
 
   addHandler('tg:chats', ({ accountId, chats, append }) => {
@@ -396,6 +435,12 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             // v1.2.75 cc-media аватар; v1.2.77 fallback pendingChatAvatar (свежий до rAF-flush). onerror→эмодзи. См. features.md.
             iconDataUrl: chat?.avatar || pendingChatAvatar.get(chatId) || '',
             color: '#2AABEE',
+            // v1.2.155: цвет-метка аккаунта → левая грань карточки уведомления.
+            // Только при ≥2 аккаунтах (как полоска в списке); иначе пусто → грань останется
+            // фирменной синей (data.color). Битый/пустой цвет безопасно откатывается в окне.
+            accountColor: (chat?.accountId && (stateRef.current.accounts || []).length >= 2)
+              ? getAccountColor(stateRef.current.accountColors, chat.accountId)
+              : '',
             emoji: '✈️',
             messengerName: 'Telegram',
             accountName: ((stateRef.current.accounts || []).find(a => a.id === chat?.accountId)?.name) || '', // v1.2.83 имя аккаунта (|| [] — chat/accounts могут быть undefined при race)
@@ -491,7 +536,7 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   // v0.87.22: точная синхронизация unread с серверным значением Telegram
   // v0.87.51: удалён clamp groupedUnread — поле groupedUnread больше не используется,
   // UI показывает сырой unreadCount от Telegram API.
-  addHandler('tg:chat-unread-sync', ({ chatId, unreadCount }) => {
+  addHandler('tg:chat-unread-sync', ({ chatId, unreadCount, lastReadInboxId }) => {
     logNativeScroll('store-unread-sync', { chatId, unread: unreadCount, active: stateRef.current.activeChatId === chatId })
     setState(s => ({
       ...s,
@@ -509,6 +554,10 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
           }
         : s.messageWindows,
     }))
+    // v1.2.137: чат прочитан на сервере (например на телефоне) → просим main снять карточки
+    // ЭТОГО чата, чьи сообщения уже прочитаны (id <= last_read). Покрывает и частичное чтение
+    // (прочитал середину). Решение «какие снять» — в main по lastReadInboxId (см. notifDismissDecision).
+    try { if (lastReadInboxId) window.api?.send?.('notif:dismiss-chat', { chatId, lastReadInboxId }) } catch (_) {}
   })
 
   // v0.87.24: bulk sync — rescan всех активных чатов (Комбо D)

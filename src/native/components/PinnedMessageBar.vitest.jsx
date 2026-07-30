@@ -75,16 +75,42 @@ describe('PinnedMessageBar — overlay позиционирование (v0.95.5
     cleanup()
   })
 
-  it('backdrop-filter blur — фон под pinned размыт (читаемость поверх сообщений)', () => {
+  it('v1.2.167: клик по телу полосы вызывает onJump (переход к сообщению)', () => {
+    const onJump = vi.fn()
+    const { container } = render(
+      <PinnedMessageBar pinnedMsg={{ id: 5, text: 'msg' }} onClose={() => {}} onJump={onJump} />
+    )
+    const clickable = container.querySelector('.native-pinned-bar > div') // область 📌+текст
+    fireEvent.click(clickable)
+    expect(onJump).toHaveBeenCalledTimes(1)
+    cleanup()
+  })
+
+  it('v1.2.167: клик по ✕ НЕ вызывает onJump (только закрытие)', () => {
+    const onJump = vi.fn(); const onClose = vi.fn()
+    const { container } = render(
+      <PinnedMessageBar pinnedMsg={{ id: 5, text: 'msg' }} onClose={onClose} onJump={onJump} />
+    )
+    fireEvent.click(container.querySelector('button[title="Скрыть"]'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onJump).not.toHaveBeenCalled()
+    cleanup()
+  })
+
+  it('v1.2.166: фон СПЛОШНОЙ непрозрачный (читаемость на любом сообщении под полосой)', () => {
     const { container } = render(
       <PinnedMessageBar pinnedMsg={{ text: 'msg' }} onClose={() => {}} />
     )
     const bar = container.querySelector('.native-pinned-bar')
-    // happy-dom может вернуть backdropFilter или WebkitBackdropFilter
-    const hasBlur =
+    // Раньше был полупрозрачный фон + blur → текст сливался на светлых сообщениях.
+    // Теперь сплошной панельный фон (var(--amoled-surface)) и БЕЗ размытия.
+    expect(bar.style.background).toContain('--amoled-surface')
+    expect(bar.style.background).not.toContain('rgba') // не полупрозрачный
+    const hasBlur = Boolean(
       (bar.style.backdropFilter && bar.style.backdropFilter.includes('blur')) ||
       (bar.style.WebkitBackdropFilter && bar.style.WebkitBackdropFilter.includes('blur'))
-    expect(hasBlur).toBe(true)
+    )
+    expect(hasBlur).toBe(false) // размытие убрано (непрозрачному не нужно)
     cleanup()
   })
 })

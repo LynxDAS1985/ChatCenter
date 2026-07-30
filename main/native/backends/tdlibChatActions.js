@@ -184,6 +184,26 @@ export function removeAccountSessionFiles(userDataDir, accountId) {
 }
 
 /**
+ * v1.2.146: удаляет дисковый кэш аккаунта `tg-cache-<accountId>.json`, чтобы после
+ * удаления аккаунта не оставалось следа на диске. Это ЛЕГАСИ-файл (текущий кэш живёт
+ * в localStorage/IndexedDB), но у ранее заведённых аккаунтов такой файл может лежать.
+ * Имя — по ТЕКУЩЕМУ id аккаунта (файл называется финальным id, напр. tg-cache-tg_638454350.json),
+ * а не по имени папки сессии. Best-effort: файла может не быть.
+ * @returns {boolean} — true если файл был и удалён
+ */
+export function removeAccountCacheFile(userDataDir, accountId) {
+  if (!userDataDir || !accountId) return false
+  const file = path.join(userDataDir, `tg-cache-${accountId}.json`)
+  try {
+    if (!fs.existsSync(file)) return false
+    fs.rmSync(file, { force: true })
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
+/**
  * Сканирует TDLib session-папки и общую tg-avatars/ папку, возвращает breakdown
  * по категориям совместимый с UI AccountContextMenu предпросмотром logout.
  *

@@ -125,12 +125,13 @@
 | `tg:message-deleted` | `{ chatId, messageIds: string[] }` | ⚠️ orphan |
 | `tg:chats` | `{ accountId, chats, append }` | ✅ |
 | `tg:messages` | `{ chatId, messages, append?, appendNewer?, aroundId?, afterId?, readUpTo? }` | ✅ |
-| `tg:chat-unread-sync` | `{ chatId, unreadCount }` | ✅ |
+| `tg:chat-unread-sync` | `{ chatId, unreadCount, lastReadInboxId }` — v1.2.137: добавлен `lastReadInboxId` (TDLib `last_read_inbox_message_id`) для снятия карточек-уведомлений прочитанных сообщений при чтении на другом устройстве | ✅ |
 | `tg:chat-last-message` | `{ chatId, lastMessage: string, lastMessageTs: number }` — v0.91.9 для TDLib updateChatLastMessage event (синхронизация превью в списке чатов) | ✅ |
 | `tg:chat-avatar` | `{ chatId, avatarPath: 'cc-media://avatars/...' }` | ✅ |
 | **`tg:sender-avatar`** | `{ senderId, avatarUrl }` (v0.89.4 — без chatId/accountId; UI iterates все state.messages по senderId) | ✅ |
 | `tg:login-step` | `{ step, accountId, codeInfo?, passwordInfo?, raw? }` | ✅ |
 | `tg:account-update` | `{ id, messenger, status, name?, phone?, username?, userId? }` + `{removed:true, wipeStats:{totalFiles,totalBytes,isLast}}` для logout | ✅ |
+| `tg:account-renamed` | `{ oldId, newId }` (v1.2.146: переименование временного аккаунта `tg_pending_X → tg_<userId>`; renderer убирает осиротевшую запись `oldId`, иначе призрак-метка) | ✅ |
 | `tg:account-connection` | `{ accountId, state }` | ⚠️ orphan |
 | `tg:user-status` | `{ accountId, userId, online: boolean }` | ⚠️ orphan |
 | **`tg:typing`** (v0.89.4) | `{ chatId, userId, typing }` — TDLib `updateChatAction → chatActionTyping/Cancel` | ✅ |
@@ -366,6 +367,8 @@ Rule for future work: do not silently show forum group messages as if a concrete
 - `notif:mark-read` — NotifWin→Main: "прочитано" → скрыть без перехода (v0.44.0)
 - `notif:dismiss` — NotifWin→Main: закрыто (таймер/крестик)
 - `notif:resize` — NotifWin→Main: новая высота окна
+- `notif:dismiss-chat` — Renderer→Main (v1.2.137): `{ chatId, lastReadInboxId }` — чат прочитан на сервере (другое устройство) → снять карточки этого чата, чьи сообщения уже прочитаны (`id <= last_read`). Правило снятия — чистая `shouldDismissForRead` (`main/handlers/notifDismissDecision.js`, покрыта тестом). Шлётся из обработчика `tg:chat-unread-sync`.
+- `notif:remove` — Main→NotifWin: убрать карточку по `id` (окно `onDismiss`→`dismissItem`). Первое использование ИЗ main — v1.2.137 (снятие по серверному прочтению); ранее канал только слушался в окне.
 - `notify:clicked` — Main→Renderer: `{messengerId, senderName, chatTag, messageId?, source?}` → переключить вкладку + навигация к чату
   - **v0.95.46**: добавлено опциональное `messageId` для перехода к КОНКРЕТНОМУ сообщению (а не просто к чату)
   - **v0.97.0 (Phase 0 M0.4)**: добавлено опциональное `source: NotificationSource` — полный паспорт сообщения для AI-агента и cross-tab навигации. Backward compat: старые поля `messengerId/senderName/chatTag/messageId` остаются.

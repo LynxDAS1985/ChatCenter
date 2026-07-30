@@ -51,7 +51,7 @@ function CleanupRow({ icon, label, data }) {
   )
 }
 
-export default function AccountContextMenu({ account, x, y, onClose, onLogout, getCleanupStats }) {
+export default function AccountContextMenu({ account, x, y, onClose, onLogout, getCleanupStats, color, palette = [], onPickColor }) {
   // Шаг: 'menu' — главное меню с кнопкой «Выйти»
   //      'confirm' — подтверждение «Точно выйти?» с предпросмотром
   //      'progress' — идёт выход (заблокировано)
@@ -59,6 +59,7 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout, g
   const [error, setError] = useState(null)
   const [stats, setStats] = useState(null)  // v0.87.95: предпросмотр
   const [statsLoading, setStatsLoading] = useState(false)
+  const [showColors, setShowColors] = useState(false)  // v1.2.153: палитра цвета аккаунта
   const menuRef = useRef(null)
 
   // Закрытие по Esc и клику вне меню
@@ -83,10 +84,15 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout, g
 
   // Корректировка позиции — не вылезать за край экрана
   // v0.87.95: confirm-блок с предпросмотром — выше (есть таблица категорий)
+  // v1.2.151: карточку подтверждения перекрывала панель задач Windows. Причины: (1) высота
+  // confirm-карточки со списком «что удалится» реально ~500px, а оценка была 360 → недооценка;
+  // (2) не было запаса снизу под панель задач (окно может простираться за неё). Фикс: реальная
+  // оценка высоты + запас TASKBAR_RESERVE снизу + Math.max(8,…) чтобы не уехать за верх экрана.
   const MENU_W = 320
-  const MENU_H = step === 'menu' ? 180 : 360
-  const safeX = Math.min(x, window.innerWidth - MENU_W - 8)
-  const safeY = Math.min(y, window.innerHeight - MENU_H - 8)
+  const MENU_H = step === 'menu' ? 200 : 500
+  const TASKBAR_RESERVE = 56
+  const safeX = Math.max(8, Math.min(x, window.innerWidth - MENU_W - 8))
+  const safeY = Math.max(8, Math.min(y, window.innerHeight - MENU_H - TASKBAR_RESERVE))
 
   // v0.87.95: при переходе в confirm — асинхронно загружаем предпросмотр
   const handleStartConfirm = async () => {
@@ -147,6 +153,48 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout, g
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {/* v1.2.153: кнопка выбора цвета-метки аккаунта (🎨 в правом верхнем углу) + палитра-поповер.
+          Только в шаге «меню» (не в подтверждении выхода). Клик по цвету → onPickColor. */}
+      {onPickColor && step === 'menu' && (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowColors(v => !v) }}
+            title="Цвет аккаунта"
+            style={{
+              position: 'absolute', top: 8, right: 8, zIndex: 3,
+              width: 30, height: 30, borderRadius: 9, padding: 0, cursor: 'pointer',
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
+            }}
+          >
+            🎨
+            <span style={{
+              position: 'absolute', bottom: -2, right: -2, width: 11, height: 11,
+              borderRadius: '50%', background: color || '#888', border: '2px solid #141823',
+            }} />
+          </button>
+          {showColors && (
+            <div style={{
+              position: 'absolute', top: 42, right: 8, zIndex: 4,
+              background: '#20242e', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 10,
+              padding: 8, display: 'flex', gap: 7, flexWrap: 'wrap', maxWidth: 226,
+              boxShadow: '0 12px 30px rgba(0,0,0,0.6)',
+            }}>
+              {palette.map(c => (
+                <button
+                  key={c}
+                  onClick={(e) => { e.stopPropagation(); onPickColor(c); setShowColors(false) }}
+                  title={c}
+                  style={{
+                    width: 24, height: 24, borderRadius: '50%', background: c, cursor: 'pointer', padding: 0,
+                    border: c === color ? '2px solid #fff' : '2px solid transparent',
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
       {/* Шапка: аватарка слева + инфо справа (v0.87.91 — flex layout). */}
       <div style={{
         padding: '8px 10px',
@@ -254,7 +302,12 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout, g
               marginBottom: 10,
             }}>
               {statsLoading ? (
-                <div style={{ textAlign: 'center', padding: 8 }}>Считаем что удалится…</div>
+                // v1.2.150: живой «эффект думания» вместо статичной надписи (казалось,
+                // что зависло). Переиспользуем существующий native-spinner (как «Выходим…»).
+                <div style={{ padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <span className="native-spinner" />
+                  <span>Считаем, что освободится…</span>
+                </div>
               ) : stats ? (
                 <>
                   <div style={{ marginBottom: 6, color: 'var(--amoled-text-dimmer)' }}>Будет удалено:</div>

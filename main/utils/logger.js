@@ -9,6 +9,23 @@ let logFilePath = null
 let _openLogViewer = null // будет установлена из main.js
 let _lastAutoLogOpen = 0
 
+// v1.2.144: маскируем коды подтверждения/входа В ФАЙЛЕ логов. Утечка: веб-Telegram
+// трейсил тело уведомления «Код для входа в Telegram: 51519» → код попадал в chatcenter.log.
+// Узко: цифры (4–7) рядом со словом «код»/«code» ТОЛЬКО в контексте входа
+// (вход/войти/login/telegram/verify/устройство/sign in) — коды ошибок/заказов НЕ трогаем.
+// На само окно-уведомление НЕ влияет (маска только при записи в файл).
+export function maskLogSecrets(s) {
+  if (!s || typeof s !== 'string') return s
+  return s.replace(/((?:код|code)[^\d\n]{0,40}?)(\d{4,7})/gi, (m, pre, digits, offset, whole) => {
+    // Контекст = ~30 символов ПЕРЕД словом «код/code» + сам pre (слова «login»/«sign in»
+    // часто стоят до «code», поэтому смотрим и слева).
+    const ctx = whole.slice(Math.max(0, offset - 30), offset) + pre
+    return /вход|войти|login|telegram|verif|one.?time|устройств|sign.?in/i.test(ctx)
+      ? pre + '*'.repeat(digits.length)
+      : m
+  })
+}
+
 export function setLogViewerOpener(fn) { _openLogViewer = fn }
 export function getLogFilePath() { return logFilePath }
 
@@ -59,7 +76,8 @@ export function initLogger(userDataPath) {
   function writeLog(level, args) {
     // v0.87.38: toLocaleString гарантирует ЛОКАЛЬНОЕ время (getHours мог давать UTC)
     const ts = new Date().toLocaleString('sv-SE').replace('T', ' ')
-    const msg = `[${ts}] [${level}] ${args.map(smartStringify).join(' ')}\n`
+    // v1.2.144: маскируем коды входа перед записью в файл (см. maskLogSecrets).
+    const msg = maskLogSecrets(`[${ts}] [${level}] ${args.map(smartStringify).join(' ')}`) + '\n'
     try { fs.appendFileSync(logFilePath, msg) } catch (e) { origError('[Logger] Write failed:', e.code, logFilePath) }
   }
   function autoOpenLogOnError() {

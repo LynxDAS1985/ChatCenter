@@ -208,15 +208,19 @@
 .native-account__dot--off { background-color: var(--amoled-text-muted); }
 .native-account__dot--err { background-color: var(--amoled-danger); }
 
+/* v1.2.164: базовый вид кнопки «+» = прежний цвет наведения (синий контур + синий плюс). */
 .native-account__add {
-  border: 2px dashed var(--amoled-border);
-  color: var(--amoled-text-muted);
+  border: 2px dashed var(--amoled-accent);
+  color: var(--amoled-accent);
+  background-color: transparent;
   font-size: 24px;
 }
 
+/* v1.2.164: новый эффект наведения — заливка синим (не просто смена контура). */
 .native-account__add:hover {
+  background-color: var(--amoled-accent);
   border-color: var(--amoled-accent);
-  color: var(--amoled-accent);
+  color: #fff;
 }
 
 /* Main area */

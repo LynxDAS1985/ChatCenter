@@ -410,7 +410,8 @@
 
     const bar = document.createElement('div')
     bar.className = 'color-bar'
-    bar.style.background = data.color || '#2AABEE'
+    // v1.2.155: левая грань = цвет-метка аккаунта (при ≥2 аккаунтах); иначе фирменный синий.
+    bar.style.background = data.accountColor || data.color || '#2AABEE'
     el.appendChild(bar)
 
     const avWrap = document.createElement('div')

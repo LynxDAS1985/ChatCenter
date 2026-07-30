@@ -4,6 +4,9 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { TdlibClientManager } from '../../main/native/backends/tdlibClient.js'
 import { createTdlibBackend } from '../../main/native/backends/tdlibBackend.js'
 
@@ -110,6 +113,47 @@ describe('backend.auth', () => {
     const { backend } = makeBackend()
     const r = await backend.auth.removeAccount('tg_main')
     expect(r.ok).toBe(true)
+  })
+
+  // v1.2.145: регресс-тест бага «удалил аккаунт → остаётся папка-призрак».
+  // Папка сессии названа именем СОЗДАНИЯ (accountSubdir), аккаунт потом переименован
+  // (tg_pending_X → tg_realId). removeAccount должен удалить папку по имени создания,
+  // а не по переименованному id (иначе папка остаётся и воскрешает призрака при старте).
+  it('removeAccount удаляет папку по имени создания (accountSubdir), а не по новому id', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-sess-'))
+    const folder = path.join(tmp, 'tdlib-sessions', 'tg_pending_test')
+    fs.mkdirSync(folder, { recursive: true })
+    fs.writeFileSync(path.join(folder, 'db.sqlite'), 'x')
+
+    const mockClient = makeMockClient()
+    const mgr = new TdlibClientManager({ clientFactory: () => mockClient })
+    mgr.createAccount('tg_pending_test', { accountSubdir: 'tg_pending_test' })
+    mgr._renameAccount('tg_pending_test', 'tg_999') // симулируем финализацию логина
+
+    const backend = createTdlibBackend({ manager: mgr, userDataDir: tmp })
+    const r = await backend.auth.removeAccount('tg_999')
+    expect(r.ok).toBe(true)
+    expect(fs.existsSync(folder)).toBe(false) // папка-«времянка» реально удалена
+
+    try { fs.rmSync(tmp, { recursive: true, force: true }) } catch (_) {}
+  })
+
+  // v1.2.146: удаление аккаунта чистит и дисковый кэш-файл tg-cache-<id>.json (по ТЕКУЩЕМУ id).
+  it('removeAccount удаляет кэш-файл tg-cache-<accountId>.json', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-cache-'))
+    const cacheFile = path.join(tmp, 'tg-cache-tg_999.json')
+    fs.writeFileSync(cacheFile, '{"chats":[]}')
+
+    const mockClient = makeMockClient()
+    const mgr = new TdlibClientManager({ clientFactory: () => mockClient })
+    mgr.createAccount('tg_pending_test', { accountSubdir: 'tg_pending_test' })
+    mgr._renameAccount('tg_pending_test', 'tg_999')
+
+    const backend = createTdlibBackend({ manager: mgr, userDataDir: tmp })
+    await backend.auth.removeAccount('tg_999')
+    expect(fs.existsSync(cacheFile)).toBe(false) // кэш-файл (по финальному id) удалён
+
+    try { fs.rmSync(tmp, { recursive: true, force: true }) } catch (_) {}
   })
 })
 

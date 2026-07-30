@@ -13,7 +13,7 @@ const MUTE_OPTIONS = [
   { label: 'Навсегда',   seconds: 2147483647 },
 ]
 
-export default function MuteMenu({ chat, x, y, onClose, onSetMute }) {
+export default function MuteMenu({ chat, x, y, onClose, onSetMute, isPinned = false, onTogglePin = null }) {
   const ref = useRef(null)
   const [step, setStep] = useState('main')
 
@@ -40,6 +40,12 @@ export default function MuteMenu({ chat, x, y, onClose, onSetMute }) {
 
   const handleUnmute = async () => {
     await onSetMute(chat.id, 0)
+    onClose()
+  }
+
+  // v1.2.138: локальное закрепление (только у нас, не в Telegram).
+  const handleTogglePin = () => {
+    onTogglePin?.(chat.id)
     onClose()
   }
 
@@ -71,6 +77,12 @@ export default function MuteMenu({ chat, x, y, onClose, onSetMute }) {
 
       {step === 'main' ? (
         <>
+          {/* v1.2.138: закрепить/открепить (локально) — первым пунктом */}
+          {onTogglePin && (
+            <Item onClick={handleTogglePin}>
+              {isPinned ? '📌 Открепить' : '📌 Закрепить'}
+            </Item>
+          )}
           {chat.isMuted && (
             <Item onClick={handleUnmute} color="var(--amoled-success)">
               🔔 Включить уведомления

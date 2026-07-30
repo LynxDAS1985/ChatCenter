@@ -29,7 +29,11 @@ export const DEFAULT_STATE = {
   mode: 'inbox',
   accounts: [],
   activeAccountId: null,   // активный для нового login + подсветка в sidebar
-  chatFilter: 'all',       // v0.87.105 (ADR-016): фильтр чатов в едином списке. 'all' | accountId
+  // v1.2.163 (ADR-026): фильтр аккаунтов в списке — множественный выбор + «соло»
+  // (заменил одиночный chatFilter). hiddenAccountIds — скрытые (персистентно, localStorage),
+  // soloAccountId — «только этот» (временно, не сохраняется).
+  hiddenAccountIds: [],
+  soloAccountId: null,
   chats: [],
   activeChatId: null,
   messages: {},

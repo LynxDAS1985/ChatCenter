@@ -107,4 +107,23 @@ describe('ChatListItem render', () => {
     expect(container.querySelector('[style*="background: var(--amoled-accent)"]').textContent).toBe('5')
     cleanup()
   })
+
+  // v1.2.155 (Вариант 4): полоса = цвет аккаунта, закреп = короткая золотая «скрепка» сверху.
+  it('v1.2.155: multi-account + закреп → полоса аккаунта + КОРОТКАЯ золотая скрепка (16px)', () => {
+    const { container } = render(<ChatListItem
+      chat={baseChat} multiAccount isPinned
+      account={{ id: 'tg_self', messenger: 'telegram', color: '#f0617a' }} />)
+    const notch = container.querySelector('span[title="Закреплён"]')
+    expect(notch).toBeTruthy()
+    expect(notch.style.height).toBe('16px') // «скрепка» короткая, НЕ во всю высоту
+    cleanup()
+  })
+
+  it('v1.2.155: один аккаунт + закреп → ПОЛНАЯ золотая полоса (как раньше)', () => {
+    const { container } = render(<ChatListItem chat={baseChat} isPinned />)
+    const stripe = container.querySelector('span[title="Закреплён"]')
+    expect(stripe).toBeTruthy()
+    expect(stripe.style.height).toBe('') // высота не задана → во всю высоту (top/bottom:0)
+    cleanup()
+  })
 })

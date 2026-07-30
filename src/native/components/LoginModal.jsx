@@ -202,7 +202,10 @@ export default function LoginModal({ onClose, startLogin, submitCode, submitPass
               </div>
             )}
             <button className="native-btn" onClick={handleCode} disabled={busy || waitingForCode || code.length < 5}>
-              {busy ? <><span className="native-spinner" />Проверка…</> : waitingForCode ? 'Ожидание...' : 'Подтвердить'}
+              {/* v1.2.152: пока код ОТПРАВЛЯЕТСЯ (waitingForCode), спиннер крутится ТОЛЬКО
+                  в верхнем статусе, а кнопка = «Ожидание…» (без второго спиннера). «Проверка…»
+                  со спиннером — только когда реально проверяем введённый код (busy, код пришёл). */}
+              {waitingForCode ? 'Ожидание…' : busy ? <><span className="native-spinner" />Проверка…</> : 'Подтвердить'}
             </button>
             <button className="native-btn native-btn--ghost" onClick={handleCancel} disabled={busy}>
               Отмена

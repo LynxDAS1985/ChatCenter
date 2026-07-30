@@ -309,8 +309,33 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // formatChatListTime.js (~37) + правки ChatListItem.jsx (~21) ≈ +58 строк.
 // (Параллельно другой разработчик добавил pickNotifTitle в nativeStoreHelpers.js —
 // его строки тоже в агрегате.) Запас ~78 строк.
-test('Общий renderer код (src/ без тестов) < 31300 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 31300, totalSrc + ' > 31300')
+// v1.2.138: лимит 31300 → 31450 — локальное закрепление чатов (📌). Чистая логика
+// вынесена в shared/pinnedChats.js (вне бюджета), в renderer остались только
+// неустранимые UI-строки: обёртка localStorage (src/native/store/pinnedChats.js),
+// полоска+значок в ChatListItem.jsx, секция в InboxChatListSidebar.jsx, пункт меню
+// в MuteMenu.jsx, состояние в InboxMode.jsx. Каждый файл — в своём пофайловом лимите.
+// Запас ~86 строк.
+// v1.2.147-148: лимит 31450 → 31500 — фикс «чёрный экран после добавления аккаунта»
+// (гейт shouldShowLoginScreen в shared/ — вне бюджета; в renderer: resetLoginFlow в
+// nativeStore.js + правки NativeApp.jsx) + разгрузка NativeApp.jsx (555→505): блок
+// содержимого вынесен в components/NativeMainContent.jsx — пофайлово стало лучше, но
+// шапка+импорты нового файла добавили ~6 строк в общий агрегат. Запас ~44 строки.
+// v1.2.153: лимит 31500 → 31650 — цвет-метка аккаунта. Чистая логика в shared/accountColors.js
+// (вне бюджета); в renderer — неустранимое: обёртка localStorage (store/accountColors.js),
+// состояние+action в nativeStore.js, палитра-поповер в AccountContextMenu.jsx, обводка в
+// NativeApp.jsx, полоска-цвет в ChatListItem.jsx, обогащение accounts в InboxChatListSidebar.jsx.
+// Каждый файл — в своём пофайловом лимите.
+// v1.2.156: лимит 31650 → 31700 — перетаскивание закреплённых (TODO-20).
+// v1.2.160: лимит 31700 → 31850 — Telegram-style drag: отдельный компонент PinnedChatList.
+// v1.2.161: лимит 31850 → 31650 (назад) — PinnedChatList/drag ОТКАЧЕН.
+// v1.2.163: лимит 31650 → 31750 — фильтр аккаунтов на левой панели (множественный выбор +
+// «соло», ADR-026). Чистая логика — в shared/accountFilter.js (вне бюджета); в renderer
+// неустранимое: обёртка localStorage (store/accountFilter.js), действия в nativeStore.js,
+// кнопка «Все» + галочка/клик-двойной-клик в NativeApp.jsx (взамен удалённых верхних чипов
+// в InboxChatListSidebar.jsx, тот ужался 567→523). Каждый файл — в своём пофайловом лимите
+// (NativeApp.jsx 595/600 — близко к лимиту, кандидат на разбиение).
+test('Общий renderer код (src/ без тестов) < 31750 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 31750, totalSrc + ' > 31750')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

@@ -17,7 +17,7 @@ import {
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
 import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
-import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccountSessionStats, removeAccountSessionFiles } from './tdlibChatActions.js'
+import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccountSessionStats, removeAccountSessionFiles, removeAccountCacheFile } from './tdlibChatActions.js'
 import { cleanupTgMedia } from './tgMediaCleanup.js'
 import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.4
 import { resolveTopicEmojis } from './tdlibForumEmoji.js'  // v0.91.6
@@ -97,7 +97,10 @@ export function createTdlibBackend(opts = {}) {
   // v0.89.2: единая точка финализации — manager.finalizeAccount (tdlibClient.js).
   const _finalizePending = async () => {
     if (!_pendingAccountId) return
+    const before = _pendingAccountId
     const r = await manager.finalizeAccount(_pendingAccountId)
+    // v1.2.142 (диаг): финализация — переименование pending → реальный tg_<userId>.
+    console.log(`[acct-add] finalize ${before} -> ok=${r?.ok} newId=${r?.newAccountId || ''} err=${r?.error || ''}`)
     if (r?.ok && r.newAccountId) _pendingAccountId = r.newAccountId
   }
 
@@ -110,6 +113,8 @@ export function createTdlibBackend(opts = {}) {
         if (!phone) return { ok: false, error: 'phone required' }
         // Создаём временный accountId — после авторизации переименуем по getMe().
         _pendingAccountId = 'tg_pending_' + Date.now()
+        // v1.2.142 (диаг): телефон в лог ТОЛЬКО маской (видны 2 последние цифры) — не секрет.
+        console.log(`[acct-add] startLogin pending=${_pendingAccountId} phone=${String(phone).replace(/.(?=.{2})/g, '*')}`)
         const params = makeClientParams
           ? makeClientParams(_pendingAccountId)
           : { apiId: 0, apiHash: '' }
@@ -118,6 +123,7 @@ export function createTdlibBackend(opts = {}) {
           manager, accountId: _pendingAccountId,
         })
         const r = await _authFlow.startLogin(phone)
+        console.log(`[acct-add] startLogin result pending=${_pendingAccountId} ok=${r?.ok} step=${r?.step || ''} err=${r?.error || ''}`)
         // Если login без 2FA прошёл сразу (step === 'success') — финализируем.
         if (r?.ok && (r.step === 'success' || r.success)) await _finalizePending()
         return r
@@ -125,17 +131,22 @@ export function createTdlibBackend(opts = {}) {
       async submitCode(code) {
         if (!_authFlow) return { ok: false, error: 'no login in progress' }
         const r = await _authFlow.submitCode(code)
+        // v1.2.142 (диаг): САМ код НЕ логируем (секрет) — только факт и результат.
+        console.log(`[acct-add] submitCode pending=${_pendingAccountId} ok=${r?.ok} step=${r?.step || ''} err=${r?.error || ''}`)
         if (r?.ok && (r.step === 'success' || r.success)) await _finalizePending()
         return r
       },
       async submitPassword(password) {
         if (!_authFlow) return { ok: false, error: 'no login in progress' }
         const r = await _authFlow.submitPassword(password)
+        // v1.2.142 (диаг): САМ пароль НЕ логируем (секрет) — только факт и результат.
+        console.log(`[acct-add] submitPassword pending=${_pendingAccountId} ok=${r?.ok} step=${r?.step || ''} err=${r?.error || ''}`)
         if (r?.ok && (r.step === 'success' || r.success)) await _finalizePending()
         return r
       },
       async cancelLogin() {
         if (!_authFlow) return { ok: true }
+        console.log(`[acct-add] cancelLogin pending=${_pendingAccountId}`)
         const r = await _authFlow.cancelLogin()
         _authFlow = null
         if (_pendingAccountId) {
@@ -154,14 +165,32 @@ export function createTdlibBackend(opts = {}) {
       // файлы на диске, autoRestore воскрешал «удалённый» аккаунт.
       async removeAccount(accountId) {
         if (!accountId) return { ok: false, error: 'accountId required' }
-        const wipeStats = userDataDir ? scanAccountSessionStats(userDataDir, accountId) : { totalFiles: 0, totalBytes: 0 }
+        // v1.2.145: папка сессии на диске названа ИМЕНЕМ СОЗДАНИЯ (accountSubdir:
+        // 'tg_pending_<ts>' или 'pending'), а НЕ текущим id — при логине аккаунт
+        // переименовывается в памяти (tg_pending_X → tg_<userId>), но папка НЕ
+        // переименовывается (TDLib держит файлы открытыми). Раньше удаляли по текущему
+        // id → папка-«времянка» оставалась → аккаунт-призрак воскресал при старте.
+        // Берём реальное имя папки из записи (params.accountSubdir), ДО manager.removeAccount
+        // (он удаляет запись из Map). Fallback на accountId для совместимости.
+        const folderName = manager.accounts.get(accountId)?.params?.accountSubdir || accountId
+        const wipeStats = userDataDir ? scanAccountSessionStats(userDataDir, folderName) : { totalFiles: 0, totalBytes: 0 }
         const client = manager.getClient(accountId)
+        // v1.2.142 (диаг): полный путь удаления с таймингами — видно, где задержка.
+        console.log(`[acct-remove] start id=${accountId} folder=${folderName} hasClient=${!!client?.invoke} files=${wipeStats.totalFiles}`)
         if (client?.invoke) {
-          try { await client.invoke({ '@type': 'logOut' }) } catch (_) { /* best effort */ }
+          const t0 = Date.now()
+          try { await client.invoke({ '@type': 'logOut' }); console.log(`[acct-remove] logOut done id=${accountId} ms=${Date.now() - t0}`) }
+          catch (e) { console.warn(`[acct-remove] logOut err id=${accountId} ms=${Date.now() - t0} err=${e?.message || e}`) }
         }
+        const t1 = Date.now()
         const ok = await manager.removeAccount(accountId)
-        const filesRemoved = (ok && userDataDir) ? removeAccountSessionFiles(userDataDir, accountId) : false
+        console.log(`[acct-remove] close+delete id=${accountId} ok=${ok} ms=${Date.now() - t1}`)
+        const filesRemoved = (ok && userDataDir) ? removeAccountSessionFiles(userDataDir, folderName) : false
+        // v1.2.146: чистим и дисковый кэш-файл tg-cache-<accountId>.json (по ТЕКУЩЕМУ id —
+        // файл называется финальным id, не именем папки). Убирает след аккаунта с диска.
+        const cacheRemoved = (ok && userDataDir) ? removeAccountCacheFile(userDataDir, accountId) : false
         const isLast = manager.listAccounts().length === 0
+        console.log(`[acct-remove] emit removed id=${accountId} filesRemoved=${filesRemoved} cacheRemoved=${cacheRemoved} isLast=${isLast}`)
         manager.emit('account:update', {
           id: accountId, messenger: 'telegram', status: 'disconnected',
           removed: true, wipeStats: { ...wipeStats, isLast, filesRemoved },

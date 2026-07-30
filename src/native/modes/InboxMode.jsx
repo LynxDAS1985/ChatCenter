@@ -2,7 +2,7 @@
 // v0.87.27: photoViewer, scroll-to-reply, «новые сообщения» divider, Ctrl+↑ edit.
 // v0.87.83 — Refactored: 4 блока вынесены в hooks/components.
 // v0.87.103 — JSX окна чата вынесен в InboxChatPanel.jsx (~210 строк).
-import { useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback } from 'react'
 import ForwardPicker from '../components/ForwardPicker.jsx'
 import InboxChatListSidebar from '../components/InboxChatListSidebar.jsx'
 import InboxChatPanel from '../components/InboxChatPanel.jsx'
@@ -35,6 +35,9 @@ import { useFileAttach } from '../hooks/useFileAttach.js'
 import { topicMessageKey } from '../store/nativeStoreHelpers.js'
 // v1.1.9: handleAttachSend вынесен в utils/inboxAttachSend.js (~36 строк).
 import { runAttachSend } from '../utils/inboxAttachSend.js'
+// v1.2.138: ЛОКАЛЬНЫЕ закрепления чатов (только у нас, не в Telegram — у нас лимита нет).
+import { loadPinnedIds, savePinnedIds, togglePinnedId, filterSortChats } from '../store/pinnedChats.js'
+import { isAccountVisible } from '../store/accountFilter.js' // v1.2.163: фильтр аккаунтов (множественный + соло)
 
 try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
 
@@ -51,6 +54,21 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   }, [search])
   // При Enter добавляем в историю — обработчик прокидывается в Sidebar.
   const handleSearchCommit = (query) => { addToHistory(query) }
+  // v1.2.138: локальные закрепления чатов. Храним список chat.id в localStorage.
+  // pinnedSet используется и для сортировки, и для значка/полоски в списке.
+  const [pinnedIds, setPinnedIds] = useState(() => loadPinnedIds())
+  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds])
+  const handleTogglePin = useCallback((chatId) => {
+    setPinnedIds(prev => {
+      const next = togglePinnedId(prev, chatId)
+      savePinnedIds(next)
+      return next
+    })
+  }, [])
+  // v1.2.156 (TODO-20): перетаскивание закреплённых для ручного порядка. fromId бросили
+  // на toId → fromId встаёт перед toId. Если порядок не изменился — не пишем/не ре-рендерим.
+  // v1.2.140: авто-чистка «осиротевших» закреплений УБРАНА (теряла данные — см.
+  // shared/pinnedChats.js и [[code-todo]] TODO-21). Осиротевшие пины безвредны.
   const [listHeight, setListHeight] = useState(600)
   // v0.95.30: модалка выбора цвета bubble (🎨). Открывается из header.
   const [themePickerOpen, setThemePickerOpen] = useState(false)
@@ -161,16 +179,14 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     // по мере показа (IntersectionObserver) или scroll в низ.
   }, [store.activeChatId, store.chats.length])
 
-  // v0.87.105 (ADR-016): единая лента всех аккаунтов с возможностью фильтра.
-  // store.chatFilter: 'all' | accountId. По умолчанию 'all' — показываем чаты со всех аккаунтов.
+  // v0.87.105 (ADR-016): единая лента всех аккаунтов.
+  // v1.2.163 (ADR-026): фильтр аккаунтов — множественный выбор + «соло» (заменил одиночный
+  // chatFilter). Сначала отсеиваем чаты СКРЫТЫХ аккаунтов (или показываем только соло-аккаунт),
+  // затем поиск + сортировка «закреплённые наверх» через filterSortChats (filter:'all').
   const activeAccountChats = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const filter = store.chatFilter || 'all'
-    return (store.chats || [])
-      .filter(c => filter === 'all' ? true : c.accountId === filter)
-      .filter(c => !q || (c.title || '').toLowerCase().includes(q) || (c.lastMessage || '').toLowerCase().includes(q))
-      .sort((a, b) => (b.lastMessageTs || 0) - (a.lastMessageTs || 0))
-  }, [store.chats, store.chatFilter, search])
+    const visible = store.chats.filter(c => isAccountVisible(c.accountId, store.hiddenAccountIds, store.soloAccountId))
+    return filterSortChats(visible, { filter: 'all', query: search, pinnedIds })
+  }, [store.chats, store.hiddenAccountIds, store.soloAccountId, search, pinnedIds])
 
   const activeChat = store.chats.find(c => c.id === store.activeChatId)
   const activeTopic = store.activeForumTopic?.[store.activeChatId] || null
@@ -947,6 +963,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
         panelRef={chatListPanelRef}
         isResizing={isResizingChatList}
         modes={modes}
+        pinnedSet={pinnedSet}
+        onTogglePin={handleTogglePin}
       />
       {/* v0.95.7: drag-to-resize divider между chat-list и окном чата */}
       <ChatListResizeHandle
