@@ -167,20 +167,18 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
     expect(scrollEl.scrollTop).toBe(2000)
   })
 
-  // v0.87.70: восстанавливаем сохранённый scrollTop при возврате к виденному чату
-  // (как Telegram Desktop). Регрессия: раньше scrollTop оставался от предыдущего чата —
-  // один div на всё приложение, позиция не per-chat.
-  // v0.94.0: виртуализация удалена → restore через PIXEL scrollTop (число), без anchor msgId.
-  it('⭐ v0.94.0: возврат к виденному чату — восстанавливаем через pixel scrollTop', async () => {
+  // v0.87.70: восстанавливаем позицию при возврате к виденному чату (как Telegram Desktop).
+  // v1.2.186: restore по ЯКОРЮ-сообщению + смещение (placeAnchor), не по пикселю от края.
+  // Мок: контейнер top=0; сообщение-якорь «a1» сейчас на top=300; сохранённое screenTop=100 →
+  // placeAnchor: scrollTop += 300 − 100 = 200.
+  it('⭐ v1.2.186: возврат к виденному чату — восстановление по якорю-сообщению', async () => {
+    const anchorTarget = { getBoundingClientRect: () => ({ top: 300 }) }
     const scrollEl = {
       scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
-      querySelector: () => null,
+      getBoundingClientRect: () => ({ top: 0 }),
+      querySelector: (sel) => sel.includes('data-msg-id="a1"') ? anchorTarget : null,
     }
-    // v0.94.0: формат {scrollTop, atBottom} — простое число пикселей
-    const savedPositions = {
-      'chat-A': { scrollTop: 1234, atBottom: false },
-      'chat-B': { scrollTop: 555, atBottom: false },
-    }
+    const saved = { anchorMsgId: 'a1', screenTop: 100, atBottom: false }
     const onDone = vi.fn()
     const { rerender } = renderHook(({ chatId }) => {
       const scrollRef = useRef(scrollEl)
@@ -189,21 +187,21 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
         activeChatId: chatId, messagesCount: 50, scrollRef,
         firstUnreadIdRef, activeUnread: 0, loading: false,
         onDone,
-        getSavedScrollTop: (id) => savedPositions[id] ?? null,
+        getSavedScrollTop: () => saved,
       })
     }, { initialProps: { chatId: 'chat-A' } })
 
-    // Первое открытие — pixel restore (ветка 1)
+    // Первое открытие — restore по якорю (ветка 1): 300 − 100 = 200
     await new Promise(r => setTimeout(r, 250))
-    expect(scrollEl.scrollTop).toBe(1234)
+    expect(scrollEl.scrollTop).toBe(200)
 
-    // Переключение B → возврат A — ветка 2 (already-seen) тоже pixel restore
+    // Переключение B → возврат A — ветка 2 (already-seen) тоже по якорю
     rerender({ chatId: 'chat-B' })
     await new Promise(r => setTimeout(r, 250))
-    scrollEl.scrollTop = 0  // сбрасываем, чтобы убедиться что restore поставит 1234 заново
+    scrollEl.scrollTop = 0  // сбрасываем, чтобы убедиться что restore поставит 200 заново
     rerender({ chatId: 'chat-A' })
     await new Promise(r => setTimeout(r, 50))
-    expect(scrollEl.scrollTop).toBe(1234)
+    expect(scrollEl.scrollTop).toBe(200)
   })
 
   // v0.91.8 (Совет 1) — regression тест: savedTop на дне → auto-jump к firstUnread.
@@ -223,7 +221,7 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
       return useInitialScroll({
         activeChatId: 'chat-X', messagesCount: 50, scrollRef,
         firstUnreadIdRef, activeUnread: 5, loading: false,
-        getSavedScrollTop: () => ({ scrollTop: 1980, atBottom: true }),  // был на дне
+        getSavedScrollTop: () => ({ anchorMsgId: 'a1', screenTop: 0, atBottom: true }),  // был на дне (atBottom → якорь пропускается)
       })
     })
     await new Promise(r => setTimeout(r, 250))
@@ -236,13 +234,15 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
   // если firstUnread пересчитан (mark-read + push новых) → ветка прыгала посреди активного
   // скролла юзера. Теперь restore = ТОЛЬКО savedScrollTop. firstUnread auto-jump остаётся
   // только при ПЕРВОМ открытии (ветка 1). Поведение Telegram Desktop / WhatsApp / Discord.
-  // v0.94.0: restore через pixel scrollTop (число), без anchor msgId / onMissingTarget.
-  it('⭐ v0.94.0: возврат к чату — pixel scrollTop используется (не firstUnread)', async () => {
+  // v1.2.186: restore по ЯКОРЮ используется (не прыжок к firstUnread) при возврате.
+  it('⭐ v1.2.186: возврат к чату — якорь используется (не firstUnread)', async () => {
     const scrollIntoViewMock = vi.fn()
+    const anchorTarget = { getBoundingClientRect: () => ({ top: 300 }) }
     const scrollEl = {
       scrollTop: 0, scrollHeight: 2000, clientHeight: 500,
-      querySelector: (sel) => sel.includes('data-msg-id="msg-99"')
-        ? { scrollIntoView: scrollIntoViewMock, classList: { add: vi.fn(), remove: vi.fn() } }
+      getBoundingClientRect: () => ({ top: 0 }),
+      querySelector: (sel) => sel.includes('data-msg-id="a1"') ? anchorTarget
+        : sel.includes('data-msg-id="msg-99"') ? { scrollIntoView: scrollIntoViewMock, classList: { add: vi.fn(), remove: vi.fn() } }
         : null,
     }
     const onDone = vi.fn()
@@ -255,13 +255,13 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
         activeChatId: chatId, messagesCount: 50, scrollRef,
         firstUnreadIdRef, activeUnread: unreadId ? 1 : 0, loading: false,
         onDone,
-        getSavedScrollTop: () => ({ scrollTop: 800, atBottom: false }),
+        getSavedScrollTop: () => ({ anchorMsgId: 'a1', screenTop: 100, atBottom: false }),  // 300−100=200
       })
     }, { initialProps: { chatId: 'chat-X', unreadId: null } })
 
-    // Первое открытие — pixel restore (ветка 1)
+    // Первое открытие — restore по якорю (ветка 1): 200, firstUnread НЕ трогаем
     await new Promise(r => setTimeout(r, 250))
-    expect(scrollEl.scrollTop).toBe(800)
+    expect(scrollEl.scrollTop).toBe(200)
 
     // Переход в chat-Y с firstUnread
     firstUnreadIdRefInner.current.current = 'msg-99'
@@ -272,10 +272,10 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
     scrollIntoViewMock.mockClear()
     scrollEl.scrollTop = 0
 
-    // Возврат к chat-X — ветка 2 должна использовать pixel scrollTop БЕЗ прыжка к firstUnread
+    // Возврат к chat-X — ветка 2 должна использовать якорь БЕЗ прыжка к firstUnread
     rerender({ chatId: 'chat-X', unreadId: 'msg-99' })
     await new Promise(r => setTimeout(r, 50))
-    expect(scrollEl.scrollTop).toBe(800)
+    expect(scrollEl.scrollTop).toBe(200)
     expect(scrollIntoViewMock).not.toHaveBeenCalled()
   })
 

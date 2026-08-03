@@ -51,10 +51,12 @@ export default function useNotifyNavigation({
             const log = result?.log || ''
             devLog(`[GoChat] attempt=${attempt} ok=${ok} method=${method}`, result)
             if (ok) {
-              setStatusBarMsg(`>> "${senderName}" (${method})`)
+              // v1.2.181: успех → зелёная строка ✓ в полоске (объект { text, ok:true })
+              setStatusBarMsg({ text: `Перешёл в чат «${senderName}»`, ok: true })
               traceNotif('go-chat', 'pass', messengerId, senderName || '', `method=${method} ${log}`)
             } else if (attempt >= 2 || activeIdRef.current !== messengerId) {
-              setStatusBarMsg(`>> "${senderName}" - не найден в sidebar`)
+              // v1.2.181: провал → красная строка ✗ в полоске (объект { text, ok:false })
+              setStatusBarMsg({ text: `«${senderName}» — не найден в списке`, ok: false })
               traceNotif('go-chat', 'warn', messengerId, senderName || '', `notFound after ${attempt + 1} attempts | ${log}`)
             } else {
               setTimeout(() => tryNavigate(attempt + 1), 1500)

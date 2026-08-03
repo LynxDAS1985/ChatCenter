@@ -8,6 +8,7 @@
 // onScroll/onWheel/onDrag пробрасываются в <List> через VirtualMessageList пропсы.
 import { useEffect, useRef, useState } from 'react'
 import MessageSkeleton, { MessageListOverlay } from './MessageSkeleton.jsx'
+import MessengerIcon from './MessengerIcon.jsx' // v1.2.182: логотип мессенджера (Telegram — картинка)
 import InboxMessageInput from './InboxMessageInput.jsx'
 import DragDropOverlay from './DragDropOverlay.jsx'
 import VirtualMessageList from './VirtualMessageList.jsx'
@@ -17,6 +18,7 @@ import useDelayedUnmount from '../hooks/useDelayedUnmount.js'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
 import { getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
+import { getAccountColor } from '../../../shared/accountColors.js' // v1.2.180: чип аккаунта в его цвете
 // v0.95.29: Telegram-style header — аватарка + статус «в сети / был(а) в HH:MM».
 import { formatChatStatus } from '../utils/formatChatStatus.js'
 
@@ -92,6 +94,8 @@ export default function InboxChatPanel({
   loadingNewer,
   // search/pin/toast/forward
   pinnedMsg, setPinnedMsg, showMsgSearch, setShowMsgSearch, msgSearch, setMsgSearch,
+  // v1.2.176: 🎨 цвет сообщений — кнопка переехала в шапку рядом с 🔍 (была в отдельной полосе сверху)
+  onOpenThemePicker,
   // input
   input, setInput, sending, replyTo, setReplyTo, editTarget, setEditTarget,
   handleInputChange, handleReplySend, handlePaste,
@@ -158,15 +162,25 @@ export default function InboxChatPanel({
               <div style={{
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>{activeChat.title}</div>
-              {/* v0.95.29: статус под именем — «в сети» / «был(а) в HH:MM» / «N участников» */}
+              {/* v0.95.29: статус под именем — «в сети» / «был(а) в HH:MM» / «N участников».
+                  v1.2.180: точка-индикатор (зелёная в сети / серая нет — только для личных
+                  чатов) + ярче текст (был --amoled-text-muted #606060, стало #a0a0a0). */}
               <div style={{
-                color: isTyping ? 'var(--amoled-accent)' : 'var(--amoled-text-muted)',
+                color: isTyping ? 'var(--amoled-accent)' : 'var(--amoled-text-dim)',
                 fontSize: 12, fontWeight: 400, marginTop: 1,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden',
               }}>
+                {activeChat.type === 'user' && !isTyping && (
+                  <span style={{
+                    width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                    background: activeChat.isOnline ? 'var(--amoled-success)' : '#6a6a72',
+                  }} />
+                )}
                 {/* v0.95.31: typingText (если есть) перебивает isTyping —
                     показываем «Иван печатает...» вместо общего «печатает...». */}
-                {formatChatStatus(activeChat, { isTyping, typingText })}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {formatChatStatus(activeChat, { isTyping, typingText })}
+                </span>
               </div>
             </>
           )}
@@ -179,17 +193,22 @@ export default function InboxChatPanel({
           if (!acc) return null
           const emoji = getMessengerEmoji(acc.messenger || 'telegram')
           const name = getMessengerName(acc.messenger || 'telegram')
+          // v1.2.180 (Вариант 1): чип в ЦВЕТЕ аккаунта — фон/грань из цвет-метки, имя
+          // аккаунта тем же цветом жирным. Читаемо + сразу видно, какой аккаунт.
+          const color = getAccountColor(store.accountColors, acc.id)
           return (
             <span
               title={`${emoji} ${name} · ${acc.name}${acc.phone ? '\n' + acc.phone : ''}`}
               style={{
-                marginRight: 12,
-                fontSize: 11,
-                color: 'var(--amoled-text-muted)',
-                fontWeight: 400,
-                whiteSpace: 'nowrap',
+                display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 12,
+                padding: '4px 10px', borderRadius: 8, whiteSpace: 'nowrap', fontSize: 12.5,
+                background: `${color}22`, border: `1px solid ${color}59`,
               }}
-            >{emoji} {name} · {acc.name || acc.username || 'аккаунт'}</span>
+            >
+              <MessengerIcon messenger={acc.messenger || 'telegram'} size={14} />
+              <span style={{ color: 'var(--amoled-text-dim)' }}>{name} ·</span>
+              <span style={{ color, fontWeight: 700 }}>{acc.name || acc.username || 'аккаунт'}</span>
+            </span>
           )
         })()}
         <button
@@ -197,6 +216,14 @@ export default function InboxChatPanel({
           style={{ background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)', cursor: 'pointer', fontSize: 16, padding: '4px 8px' }}
           title="Поиск в чате (Ctrl+F)"
         >🔍</button>
+        {/* v1.2.176: 🎨 цвет сообщений — рядом с 🔍 (раньше был в отдельной полосе сверху, её убрали) */}
+        {onOpenThemePicker && (
+          <button
+            onClick={onOpenThemePicker}
+            style={{ background: 'transparent', border: 'none', color: 'var(--amoled-text-dim)', cursor: 'pointer', fontSize: 16, padding: '4px 8px' }}
+            title="Цвет сообщений"
+          >🎨</button>
+        )}
       </div>
       {/* v0.95.5: pinned-блок перенесён в overlay внутри scroll-wrapper'а (см. ниже).
           Был flex-child над лентой — async загрузка через getPinnedMessage (50-500мс)
@@ -265,6 +292,9 @@ export default function InboxChatPanel({
                 handleDelete, handleForward, handlePin,
                 openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
                 onSetReaction,  // v0.95.29
+                // v1.2.174: имя автора над сообщением нужно только в группах/форумах
+                // (много отправителей). В личном чате ('user') и канале — не показываем.
+                showSenderName: activeChat?.type === 'group',
               }}
               onScroll={handleScroll}
               onWheel={() => scrollDiag.markUserScroll('wheel')}

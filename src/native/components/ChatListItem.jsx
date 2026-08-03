@@ -8,6 +8,7 @@
 //   - Hover в sidebar по аккаунту → этот чат подсвечивается (если accountId совпал)
 
 import { getMessengerColor, getMessengerEmoji, getMessengerName } from '../utils/messengerBranding.js'
+import MessengerIcon from './MessengerIcon.jsx' // v1.2.182: логотип мессенджера (Telegram — картинка)
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 import { formatChatListTime } from '../utils/formatChatListTime.js'
 import HighlightedText from './HighlightedText.jsx'
@@ -166,6 +167,15 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
               filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))',
             }} title="Закреплён">📌</div>
           )}
+          {/* v1.2.172: точка «в сети» и в узком (компактном) режиме списка */}
+          {chat.isOnline && (
+            <div style={{
+              position: 'absolute', bottom: 0, right: 0,
+              width: 12, height: 12, borderRadius: '50%',
+              background: 'var(--amoled-success)',
+              border: '2px solid var(--amoled-surface)',
+            }} />
+          )}
         </div>
       </div>
     )
@@ -212,8 +222,9 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
         }}>
           {!chat.avatar && (initials || '?')}
         </div>
-        {/* Онлайн-статус (только личный чат) */}
-        {chat.isOnline && !multiAccount && (
+        {/* Онлайн-статус (только личный чат). v1.2.172: показываем и при 2+ аккаунтах —
+            значок аккаунта переехал в левую полосу (v1.2.155), низ-право аватарки свободен. */}
+        {chat.isOnline && (
           <div style={{
             position: 'absolute', bottom: 0, right: 0,
             width: 12, height: 12, borderRadius: '50%',
@@ -275,7 +286,7 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
               letterSpacing: '0.02em',
             }}
           >
-            {messengerEmoji} {messengerName} · {account.name || account.username || 'аккаунт'}
+            <MessengerIcon messenger={messenger} size={12} /> {messengerName} · {account.name || account.username || 'аккаунт'}
           </div>
         )}
         {/* v1.2.130: строка превью — текст + бейдж непрочитанных справа.

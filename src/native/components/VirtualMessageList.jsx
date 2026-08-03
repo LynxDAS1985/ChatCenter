@@ -101,6 +101,7 @@ function MessageRow({ item, rowContext }) {
     handleDelete, handleForward, handlePin,
     openPhotoWindow, getMessage, readByVisibility, scrollToMessage,
     onSetReaction,  // v0.95.29
+    showSenderName,  // v1.2.174: имя автора над сообщением — только в группах/форумах
   } = rowContext
   // v0.95.41: custom emoji premium кэш — извлекаем из store (state.customEmojis)
   // и пробрасываем в MessageBubble/MessageReactions.
@@ -127,7 +128,7 @@ function MessageRow({ item, rowContext }) {
           alignItems: item.isOutgoing ? 'flex-end' : 'flex-start',
           display: 'flex', flexDirection: 'column',
         }}>
-          {!item.isOutgoing && item.senderName && (
+          {!item.isOutgoing && item.senderName && showSenderName && (
             <div className="native-msg-author">{item.senderName}</div>
           )}
           {item.msgs.map(m => (

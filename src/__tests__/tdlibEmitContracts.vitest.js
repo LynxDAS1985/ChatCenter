@@ -41,8 +41,8 @@ function setup(opts = {}) {
 }
 
 describe('tg:typing — updateChatAction bridge', () => {
-  it('chatActionTyping → tg:typing {chatId, userId, senderName, typing:true}', () => {
-    // v0.95.31: добавлен senderName для multi-user typing-индикатора.
+  it('chatActionTyping → tg:typing {chatId, userId, senderName, action:"typing"}', () => {
+    // v0.95.31: senderName для multi-user. v1.2.170: action-ключ вместо typing:boolean.
     // userCache пустой в моке → senderName=''. С реальным userCache имя резолвится.
     const { mockClient, sendToRenderer } = setup()
     mockClient.emit('update', {
@@ -51,10 +51,30 @@ describe('tg:typing — updateChatAction bridge', () => {
       action: { '@type': 'chatActionTyping' },
     })
     expect(sendToRenderer).toHaveBeenCalledWith('tg:typing', {
-      chatId: 'tg_main:-1001', userId: '42', senderName: '', typing: true,
+      chatId: 'tg_main:-1001', userId: '42', senderName: '', action: 'typing',
     })
   })
-  it('chatActionCancel → tg:typing {typing:false}', () => {
+  it('v1.2.170: chatActionRecordingVoiceNote → action:"voice"', () => {
+    const { mockClient, sendToRenderer } = setup()
+    mockClient.emit('update', {
+      '@type': 'updateChatAction', chat_id: -1001,
+      sender_id: { '@type': 'messageSenderUser', user_id: 42 },
+      action: { '@type': 'chatActionRecordingVoiceNote' },
+    })
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:typing',
+      expect.objectContaining({ action: 'voice' }))
+  })
+  it('v1.2.170: chatActionUploadingPhoto → action:"photo"', () => {
+    const { mockClient, sendToRenderer } = setup()
+    mockClient.emit('update', {
+      '@type': 'updateChatAction', chat_id: -1001,
+      sender_id: { '@type': 'messageSenderUser', user_id: 42 },
+      action: { '@type': 'chatActionUploadingPhoto' },
+    })
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:typing',
+      expect.objectContaining({ action: 'photo' }))
+  })
+  it('chatActionCancel → tg:typing {action:null} (гасит индикатор)', () => {
     const { mockClient, sendToRenderer } = setup()
     mockClient.emit('update', {
       '@type': 'updateChatAction', chat_id: -1001,
@@ -62,7 +82,17 @@ describe('tg:typing — updateChatAction bridge', () => {
       action: { '@type': 'chatActionCancel' },
     })
     expect(sendToRenderer).toHaveBeenCalledWith('tg:typing',
-      expect.objectContaining({ typing: false }))
+      expect.objectContaining({ action: null }))
+  })
+  it('v1.2.170: неизвестный активный тип → откат к action:"typing"', () => {
+    const { mockClient, sendToRenderer } = setup()
+    mockClient.emit('update', {
+      '@type': 'updateChatAction', chat_id: -1001,
+      sender_id: { '@type': 'messageSenderUser', user_id: 42 },
+      action: { '@type': 'chatActionWatchingAnimations' },
+    })
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:typing',
+      expect.objectContaining({ action: 'typing' }))
   })
   it('messageSenderChat (бот/канал) — не эмитим typing', () => {
     const { mockClient, sendToRenderer } = setup()
@@ -73,6 +103,37 @@ describe('tg:typing — updateChatAction bridge', () => {
     })
     const typingCalls = sendToRenderer.mock.calls.filter(c => c[0] === 'tg:typing')
     expect(typingCalls).toHaveLength(0)
+  })
+})
+
+describe('tg:user-status — updateUserStatus bridge (v1.2.171/172/173)', () => {
+  const emitStatus = (mockClient, user_id, status) =>
+    mockClient.emit('update', { '@type': 'updateUserStatus', user_id, status })
+  it('userStatusOffline с was_online → точный lastSeenAt', () => {
+    const { mockClient, sendToRenderer } = setup()
+    emitStatus(mockClient, 42, { '@type': 'userStatusOffline', was_online: 1717200000 })
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:user-status', {
+      accountId: 'tg_main', userId: '42', isOnline: false, lastSeenAt: 1717200000000, userStatusType: 'userStatusOffline',
+    })
+  })
+  it('userStatusOnline → isOnline:true, без времени', () => {
+    const { mockClient, sendToRenderer } = setup()
+    emitStatus(mockClient, 7, { '@type': 'userStatusOnline', expires: 999 })
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:user-status',
+      expect.objectContaining({ userId: '7', isOnline: true, lastSeenAt: null, userStatusType: 'userStatusOnline' }))
+  })
+  it('userStatusRecently (скрытый) → только тип', () => {
+    const { mockClient, sendToRenderer } = setup()
+    emitStatus(mockClient, 5, { '@type': 'userStatusRecently' })
+    expect(sendToRenderer).toHaveBeenCalledWith('tg:user-status',
+      expect.objectContaining({ userId: '5', isOnline: false, lastSeenAt: null, userStatusType: 'userStatusRecently' }))
+  })
+  it('v1.2.173: updateUserStatus обновляет статус в userCache (refresh не вернёт стале «в сети»)', () => {
+    const { mgr, mockClient } = setup()
+    mockClient.emit('update', { '@type': 'updateUser', user: { '@type': 'user', id: 42, status: { '@type': 'userStatusOnline', expires: 999 } } })
+    expect(mgr.getUserCached('tg_main', 42)?.status?.['@type']).toBe('userStatusOnline')
+    emitStatus(mockClient, 42, { '@type': 'userStatusOffline', was_online: 1717200000 })
+    expect(mgr.getUserCached('tg_main', 42)?.status?.['@type']).toBe('userStatusOffline')
   })
 })
 

@@ -38,7 +38,7 @@ import {
 } from './nativeStoreHelpers.js'
 // v1.2.153: локальные цвета-метки аккаунтов (localStorage). Чистая логика — в shared/.
 import { loadAccountColors, saveAccountColors, withAccountColor, assignMissingColors } from './accountColors.js'
-import { loadHiddenAccounts, saveHiddenAccounts, toggleAccountHidden } from './accountFilter.js'
+import { loadHiddenAccounts, saveHiddenAccounts, toggleAccountHidden, sanitizeHiddenAccounts } from './accountFilter.js'
 
 /**
  * @typedef {Object} NativeAccount
@@ -235,6 +235,30 @@ export default function useNativeStore() {
       if (next === s.accountColors) return s
       saveAccountColors(next)
       return { ...s, accountColors: next }
+    })
+  }, [state.accounts])
+
+  // v1.2.169: самопроверка фильтра при загрузке/смене аккаунтов. Если из localStorage или
+  // после удаления скрыты ВСЕ имеющиеся аккаунты (список чатов был бы пуст, а снять галочку
+  // нельзя при 1 аккаунте) — сбрасываем скрытие; убираем «призраки» (id несуществующих);
+  // снимаем «соло», если тот аккаунт исчез. Guard (тот же объект) → без ре-рендера/цикла;
+  // при незагруженных аккаунтах sanitizeHiddenAccounts не трогает (не сотрёт валидное скрытие).
+  useEffect(() => {
+    setState(s => {
+      const ids = (s.accounts || []).map(a => a.id)
+      const nextHidden = sanitizeHiddenAccounts(s.hiddenAccountIds, ids)
+      const nextSolo = (s.soloAccountId && ids.includes(s.soloAccountId)) ? s.soloAccountId : null
+      if (nextHidden === s.hiddenAccountIds && nextSolo === s.soloAccountId) return s
+      if (nextHidden !== s.hiddenAccountIds) {
+        saveHiddenAccounts(nextHidden)
+        // v1.2.170: не «немой» автосброс — фиксируем в журнале (если сработает не там, где ждём,
+        // будет видно). id аккаунтов не секретны (внутренние tg_<userId>). Только при реальном изменении.
+        try {
+          window.api?.send?.('app:log', { level: 'INFO',
+            message: `[acct-filter] самопроверка сбросила залипшее скрытие: ${JSON.stringify(s.hiddenAccountIds || [])} → ${JSON.stringify(nextHidden)} (аккаунтов=${ids.length})` })
+        } catch (_) {}
+      }
+      return { ...s, hiddenAccountIds: nextHidden, soloAccountId: nextSolo }
     })
   }, [state.accounts])
 

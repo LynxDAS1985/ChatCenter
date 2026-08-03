@@ -7,10 +7,10 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { List } from 'react-window'
 import ChatRow from './ChatRow.jsx'
 import MuteMenu from './MuteMenu.jsx'
-import ChatTypesDropdown from './ChatTypesDropdown.jsx'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 import { loadSearchHistory, removeFromHistory, clearHistory } from '../utils/searchHistory.js'
 import { getAccountColor } from '../../../shared/accountColors.js'
+import { effectiveVisibleAccountIds } from '../store/accountFilter.js' // v1.2.172: пул видимых аккаунтов для счётчика «найдено X из Y»
 
 const ITEM_HEIGHT = 74
 
@@ -113,7 +113,6 @@ export default function InboxChatListSidebar({
   isResizing = false,
   // v0.95.30: режимы (Чаты/Клиенты/Доска) переехали из шапки правой панели
   // в dropdown слева ВВЕРХУ списка (как Telegram Desktop folder switch).
-  modes = null,
   // v1.2.138: локальные закрепления — Set<chatId> + переключатель (для меню ПКМ).
   pinnedSet = null,
   onTogglePin = null,
@@ -260,17 +259,8 @@ export default function InboxChatListSidebar({
       // direct style.width мутацию, transition сломал бы 60fps).
       transition: isResizing ? 'none' : 'width 200ms ease-out',
     }}>
-      {/* v0.95.30: Dropdown «Чаты/Клиенты/Доска» ВВЕРХУ списка (раньше был справа
-          в header окна чата). Скрыт в compact mode (нет места для текста). */}
-      {!compact && modes && (
-        <div style={{ padding: '10px 10px 6px', flexShrink: 0 }}>
-          <ChatTypesDropdown
-            modes={modes}
-            activeId={store.mode}
-            onSelect={(id) => store.setMode(id)}
-          />
-        </div>
-      )}
+      {/* v1.2.175: dropdown «Чаты/Клиенты/Доска» УБРАН отсюда — переехал в рейл аккаунтов
+          (одна иконка внизу, меню вверх, RailModeSwitcher). Список поднялся вверх. */}
       {/* v0.87.106: Поиск ПЕРВЫЙ (был после фильтра) */}
       {/* v0.95.7: в compact mode поиск скрыт (нет места для input) */}
       {/* v0.95.42: восстановление query из localStorage (в InboxMode useState init),
@@ -374,7 +364,13 @@ export default function InboxChatListSidebar({
           padding: '8px 14px', fontSize: 11, color: 'var(--amoled-text-dim)',
           borderBottom: '1px solid var(--amoled-border)', background: 'var(--amoled-bg)', flexShrink: 0,
         }}>
-          найдено {activeAccountChats.length} из {(store.chats || []).filter(c => filter === 'all' ? true : c.accountId === filter).length}
+          найдено {activeAccountChats.length} из {(() => {
+            // v1.2.172: знаменатель = чаты видимых аккаунтов (без учёта поиска).
+            // Раньше здесь была голая переменная filter (удалена в v1.2.163 вместе со
+            // старым фильтром по типам) → ReferenceError «filter is not defined» при поиске.
+            const ids = new Set(effectiveVisibleAccountIds((store.accounts || []).map(a => a.id), store.hiddenAccountIds, store.soloAccountId))
+            return (store.chats || []).filter(c => ids.has(c.accountId)).length
+          })()}
         </div>
       )}
       <div ref={containerRef} style={{ flex: 1, minHeight: 0 }}>

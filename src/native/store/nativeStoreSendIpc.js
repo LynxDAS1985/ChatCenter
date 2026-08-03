@@ -21,17 +21,17 @@ export function attachSendIpcHandlers({ addHandler, setState, stateRef, logNativ
   // Эталоны: Telegram Web K / Desktop — «Иван печатает...» (1) / «Иван и Маша печатают...» (2-3) /
   // «3 человека печатают...» (4+). Раньше хранили ОДНОГО юзера → теряли информацию когда
   // в чате печатают сразу несколько (TDLib эмитит updateChatAction для каждого отдельно).
-  addHandler('tg:typing', ({ chatId, userId, senderName, typing }) => {
+  addHandler('tg:typing', ({ chatId, userId, senderName, action }) => {
     setState(s => {
       const prevForChat = s.typing?.[chatId] || {}
-      if (typing) {
+      if (action) { // v1.2.170: action — ключ действия ('typing'|'voice'|'photo'|…); null → снять
         return {
           ...s,
           typing: {
             ...s.typing,
             [chatId]: {
               ...prevForChat,
-              [userId]: { senderName: senderName || '', at: Date.now() },
+              [userId]: { senderName: senderName || '', at: Date.now(), action },
             },
           },
         }
@@ -47,7 +47,7 @@ export function attachSendIpcHandlers({ addHandler, setState, stateRef, logNativ
     })
     // Автоматически истекает через 6.5 сек (как formatTypingUsers TYPING_TIMEOUT_MS).
     // TDLib re-эмитит updateChatAction каждые 5-6с, если давно нет — юзер закончил.
-    if (typing) {
+    if (action) {
       setTimeout(() => setState(s => {
         const prevForChat = s.typing?.[chatId]
         if (!prevForChat || !prevForChat[userId]) return s
@@ -59,6 +59,33 @@ export function attachSendIpcHandlers({ addHandler, setState, stateRef, logNativ
         return { ...s, typing: nextTyping }
       }), 6500)
     }
+  })
+
+  // v1.2.171: ЖИВОЙ статус собеседника (в сети / был(а) в HH:MM / недавно).
+  // TDLib updateUserStatus → мост tg:user-status → сюда. Раньше этот канал НИКТО не
+  // слушал: статус ставился один раз при загрузке чата (mapChat) и больше не менялся.
+  // Обновляем ВСЕ чаты этого пользователя (userId проставлен в Chat, tdlibMapper).
+  // isOnline/lastSeenAt/userStatusType уже разобраны мостом (mapUserStatus).
+  addHandler('tg:user-status', ({ accountId, userId, isOnline, lastSeenAt, userStatusType } = {}) => {
+    if (userId == null) return
+    const uid = String(userId)
+    setState(s => {
+      // v1.2.172 (ревью #1): updateUserStatus — ОЧЕНЬ частый сигнал (для любого юзера,
+      // в т.ч. без открытого чата). Пересобирать массив chats на каждый = лишние
+      // перерисовки списка. Обновляем только если реально есть совпавший чат И статус
+      // изменился; иначе возвращаем ТОТ ЖЕ объект s → React пропускает ре-рендер.
+      let changed = false
+      const chats = s.chats.map(c => {
+        if (c.accountId !== accountId || c.userId !== uid) return c
+        const nextOnline = !!isOnline
+        const nextSeen = lastSeenAt || null
+        const nextType = userStatusType || null
+        if (c.isOnline === nextOnline && c.lastSeenAt === nextSeen && c.userStatusType === nextType) return c
+        changed = true
+        return { ...c, isOnline: nextOnline, lastSeenAt: nextSeen, userStatusType: nextType }
+      })
+      return changed ? { ...s, chats } : s
+    })
   })
 
   // v0.95.38: фикс «дубля сообщений после отправки».

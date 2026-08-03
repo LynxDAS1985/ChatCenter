@@ -69,6 +69,21 @@ describe('v1.2.163 фильтр аккаунтов — действия стор
     expect(result.current.soloAccountId).toBe(null)
   })
 
+  it('v1.2.169 (страховка): при загрузке ВСЕ аккаунты скрыты в localStorage → скрытие сбрасывается', () => {
+    // имитируем «залипшее» состояние из старой версии: оба аккаунта помечены скрытыми
+    localStorage.setItem('cc-native-hidden-accounts', JSON.stringify(['tg_a', 'tg_b']))
+    const { result } = renderHook(() => useNativeStore())
+    addTwoAccounts(result) // аккаунты пришли → эффект-самопроверка видит «все скрыты» → чистит
+    expect(result.current.hiddenAccountIds).toEqual([])
+  })
+
+  it('v1.2.169: частичное скрытие (1 из 2) при загрузке НЕ сбрасывается', () => {
+    localStorage.setItem('cc-native-hidden-accounts', JSON.stringify(['tg_a']))
+    const { result } = renderHook(() => useNativeStore())
+    addTwoAccounts(result)
+    expect(result.current.hiddenAccountIds).toEqual(['tg_a']) // валидное скрытие сохранено
+  })
+
   it('v1.2.168 (баг): удалили ВИДИМЫЙ аккаунт — оставшийся скрытый становится видимым', () => {
     const { result } = renderHook(() => useNativeStore())
     addTwoAccounts(result)

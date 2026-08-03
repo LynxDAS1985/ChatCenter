@@ -76,6 +76,7 @@ export function mapEntities(tdEntities) {
 import { extractMinithumbnail, extractMediaInfo } from './tdlibMapperMedia.js'
 // v1.2.131: единое правило префикса имени автора в превью (см. файл).
 import { lastSenderLabel } from '../../../shared/chatPreviewSender.js'
+import { mapUserStatus } from '../../../shared/userStatusMap.js' // v1.2.171: разбор статуса собеседника
 
 // ──────────────────────────────────────────────────────────────────────────
 // SENDER + REPLY + FORWARD
@@ -328,14 +329,8 @@ export function mapChat(tdChat, accountId, extras = {}) {
   let lastSeenAt = null
   let userStatusType = null
   if (chatKind === 'user' && extras.user?.status) {
-    const status = extras.user.status
-    userStatusType = status['@type'] || null
-    if (userStatusType === 'userStatusOnline') {
-      isOnline = true
-    } else if (userStatusType === 'userStatusOffline' && status.was_online) {
-      lastSeenAt = Number(status.was_online) * 1000
-    }
-    // userStatusRecently / LastWeek / LastMonth — без точного времени (юзер скрыл)
+    // v1.2.171: единый разбор статуса (тот же, что в live-обновлении tg:user-status)
+    ;({ isOnline, lastSeenAt, userStatusType } = mapUserStatus(extras.user.status))
   } else if (extras.isOnline) {
     isOnline = true  // legacy fallback
   }
@@ -371,6 +366,9 @@ export function mapChat(tdChat, accountId, extras = {}) {
     // «был(а) в HH:MM» или «был(а) недавно».
     lastSeenAt,
     userStatusType,
+    // v1.2.171: userId собеседника — чтобы live-обновление статуса (tg:user-status)
+    // нашло чат по пользователю (updateUserStatus даёт userId, не chatId).
+    userId: chatKind === 'user' && tdChat?.type?.user_id != null ? String(tdChat.type.user_id) : null,
     // v0.95.29: memberCount — для групп/каналов в Telegram-style header.
     memberCount,
     isBot: !!extras.isBot,

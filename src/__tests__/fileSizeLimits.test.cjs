@@ -334,8 +334,26 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // кнопка «Все» + галочка/клик-двойной-клик в NativeApp.jsx (взамен удалённых верхних чипов
 // в InboxChatListSidebar.jsx, тот ужался 567→523). Каждый файл — в своём пофайловом лимите
 // (NativeApp.jsx 595/600 — близко к лимиту, кандидат на разбиение).
-test('Общий renderer код (src/ без тестов) < 31750 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 31750, totalSrc + ' > 31750')
+// v1.2.169: лимит 31750 → 31800 — самопроверка фильтра аккаунтов (эффект-сверка при загрузке
+// в nativeStore.js + страховка в InboxMode). Чистые функции (sanitizeHiddenAccounts,
+// effectiveVisibleAccountIds) — в shared/ (вне бюджета); в renderer неустранимое: эффект + фильтр.
+// v1.2.171: лимит 31800 → 31850 — живой статус собеседника (обработчик tg:user-status в
+// nativeStoreSendIpc.js). Разбор статуса (mapUserStatus) вынесен в shared/ (вне бюджета);
+// в renderer неустранимо только само обновление чатов в сторе (~19 строк с комментариями).
+// v1.2.172: лимит 31850 → 31900 — точка «в сети» в списке чатов (ChatListItem, обе ветки) +
+// почин краха поиска (счётчик «найдено X из Y» в InboxChatListSidebar считает пул видимых
+// аккаунтов вместо удалённой переменной filter). Оба — UI/renderer, вынести некуда.
+// v1.2.175: лимит 31900 → 31950 — переключатель режимов переехал в рейл аккаунтов отдельным
+// компонентом RailModeSwitcher (одна иконка + меню вверх); из InboxChatListSidebar убран
+// верхний дропдаван (список поднялся вверх). Нетто +58 строк UI в renderer, вынести некуда.
+// v1.2.181: лимит 31950 → 32000 — цветная статус-строка ✓/✗ в верхней полоске (TabBar):
+// разбор объекта { text, ok } + цвет/значок по результату. ~10 строк UI в renderer.
+// v1.2.182-183: лимит 32000 → 32050 — логотип Telegram вместо эмодзи (MessengerIcon + messengerLogos
+// data-URI) с onError-страховкой. Компонент значка неустраним в renderer; data-URI вынесен в свой файл.
+// v1.2.186: лимит 32050 → 32100 — восстановление прокрутки по якорю-сообщению (computeScrollAnchor +
+// placeAnchor в scrollPositionsCache.js). DOM-геометрия обязана быть в renderer, вынести некуда.
+test('Общий renderer код (src/ без тестов) < 32100 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 32100, totalSrc + ' > 32100')
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

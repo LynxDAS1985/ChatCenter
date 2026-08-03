@@ -40,3 +40,28 @@ export function visibleAccountCount(allIds, hiddenIds, soloId) {
 export function isAllVisible(hiddenIds, soloId) {
   return !soloId && (!Array.isArray(hiddenIds) || hiddenIds.length === 0)
 }
+
+// v1.2.169: самопроверка списка скрытых при загрузке/смене аккаунтов. Инвариант «хотя бы
+// один аккаунт видим». (1) убирает «призраки» — id, которых нет среди загруженных аккаунтов;
+// (2) если после этого скрыты ВСЕ имеющиеся — сбрасывает скрытие (показать всех). Пока
+// аккаунты НЕ загружены (список пуст) — НИЧЕГО не трогает (иначе сотрёт валидное скрытие
+// до загрузки). Чистая: возвращает ТОТ ЖЕ массив, если менять нечего (для guard в сторе).
+export function sanitizeHiddenAccounts(hiddenIds, accountIds) {
+  const hidden = Array.isArray(hiddenIds) ? hiddenIds : []
+  const all = Array.isArray(accountIds) ? accountIds : []
+  if (all.length === 0) return hidden // аккаунты ещё не загружены — не судим
+  const cleaned = hidden.filter(id => all.includes(id))
+  const result = cleaned.length >= all.length ? [] : cleaned // все скрыты → показать всех
+  if (result.length === hidden.length && result.every((id, i) => id === hidden[i])) return hidden
+  return result
+}
+
+// v1.2.169 (страховка): набор id ВИДИМЫХ аккаунтов для фильтра списка. Никогда не пуст, когда
+// аккаунты есть: если все скрыты (или скрытие «залипло») — показываем всех. Соло перекрывает.
+export function effectiveVisibleAccountIds(accountIds, hiddenIds, soloId) {
+  const all = Array.isArray(accountIds) ? accountIds : []
+  if (soloId && all.includes(soloId)) return [soloId]
+  const hidden = Array.isArray(hiddenIds) ? hiddenIds : []
+  const visible = all.filter(id => !hidden.includes(id))
+  return visible.length > 0 ? visible : all // все скрыты → показать всех (не даём пустой список)
+}

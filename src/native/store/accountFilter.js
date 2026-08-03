@@ -2,6 +2,7 @@
 // Чистая логика — в shared/accountFilter.js. soloAccountId НЕ сохраняется (временный).
 export {
   isAccountVisible, toggleAccountHidden, visibleAccountCount, isAllVisible,
+  sanitizeHiddenAccounts, effectiveVisibleAccountIds,
 } from '../../../shared/accountFilter.js'
 
 const KEY = 'cc-native-hidden-accounts'

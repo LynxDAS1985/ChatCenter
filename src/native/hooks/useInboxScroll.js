@@ -7,7 +7,7 @@
 
 import { useRef } from 'react'
 import useInboxNewerPrefetch from './useInboxNewerPrefetch.js'
-import { saveScrollPositions } from '../utils/scrollPositionsCache.js'
+import { saveScrollPositions, computeScrollAnchor } from '../utils/scrollPositionsCache.js'
 
 // v0.95.2: гистерезис «у низа» — два порога, чтобы кнопка ↓ не дрожала.
 // prev=true (в atBottom) → выходим только при bottomGap > 120.
@@ -73,19 +73,22 @@ export default function useInboxScroll({
     // ВЫЙТИ при >120; в полосе 40-120 сохраняется предыдущее состояние → нет дребезга.
     const nearBottom = computeNearBottom(bottomGap, prevNearBottomRef.current)
 
-    // v0.94.0: сохраняем pixel scrollTop. Без виртуализации scrollHeight стабилен,
-    // scrollTop не деградирует при ремаунте. Это самый простой и точный restore.
+    // v1.2.186: сохраняем ЯКОРЬ — верхнее видимое сообщение + смещение (устойчиво к
+    // догрузке сообщений с обеих сторон; см. scrollPositionsCache.js). bottomGap → atBottom.
     const viewKey = scrollKey || store.activeChatId
     if (viewKey && chatReady) {
       // v0.92.4: closed-loop guard — programmatic scroll от restore не должен
       // перезаписывать сохранённую позицию (MDN: scroll event fires for programmatic too).
       const blocked = !!isRestoringRef?.current
       if (!blocked) {
-        scrollPosByChatRef.current.set(viewKey, { scrollTop: el.scrollTop, atBottom: nearBottom })
+        const anchor = computeScrollAnchor(el)
+        scrollPosByChatRef.current.set(viewKey, {
+          anchorMsgId: anchor?.anchorMsgId ?? null, screenTop: anchor?.screenTop ?? 0, atBottom: nearBottom,
+        })
         saveScrollPositions(scrollPosByChatRef.current)
       }
       scrollDiag?.logEvent('scroll-save', {
-        viewKey, scrollTop: el.scrollTop, atBottom: nearBottom,
+        viewKey, atBottom: nearBottom,
         scrollHeight: el.scrollHeight, isRestoring: blocked,
       })
     }

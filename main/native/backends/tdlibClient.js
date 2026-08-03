@@ -21,27 +21,17 @@ import { EventEmitter } from 'node:events'
 import { mapMessage, mapChat } from './tdlibMapper.js'
 import { scheduleAvatarDownload, handleAvatarReady } from './tdlibAvatars.js'
 import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.9: preview для chat:last-message
+import { normalizeChatAction } from './chatActionKeys.js' // v1.2.170: тип действия собеседника → ключ
+import { userDisplayName, chatDisplayName } from './tdlibNames.js' // v1.2.171: имена (вынесены из этого файла)
 
 // ──────────────────────────────────────────────────────────────────────
 // USER NAME / AVATAR HELPERS
 // ──────────────────────────────────────────────────────────────────────
 
 // TDLib user: { id, first_name, last_name, usernames: { active_usernames }, profile_photo }
-export function userDisplayName(user) {
-  if (!user) return ''
-  const first = user.first_name || ''
-  const last = user.last_name || ''
-  const composed = `${first} ${last}`.trim()
-  if (composed) return composed
-  const uname = user.usernames?.active_usernames?.[0]
-  return uname ? `@${uname}` : ''
-}
-
-// TDLib chat title fallback
-export function chatDisplayName(chat) {
-  if (!chat) return ''
-  return chat.title || ''
-}
+// v1.2.171: userDisplayName/chatDisplayName вынесены в tdlibNames.js (файл был на
+// лимите). Реэкспорт ниже — чтобы tdlibBackend.js (импортирует отсюда) не сломался.
+export { userDisplayName, chatDisplayName }
 
 // ──────────────────────────────────────────────────────────────────────
 // CLIENT MANAGER
@@ -325,13 +315,12 @@ export class TdlibClientManager extends EventEmitter {
         this._patchChat(record, update)
         return
 
-      // v0.89.4: typing-индикатор.
+      // v0.89.4/1.2.170: индикатор действий собеседника (печатает/голосовое/фото/…).
+      // normalizeChatAction: тип TDLib → короткий ключ (см. chatActionKeys.js). null = гасит.
       case 'updateChatAction':
         if (update.sender_id?.['@type'] === 'messageSenderUser') {
-          const actionType = update.action?.['@type'] || null
-          const isTyping = actionType === 'chatActionTyping'
-          // v0.95.31: добавлен senderName для multi-user typing-индикатора в header.
-          // Telegram-style: «Иван печатает...» / «Иван и Маша печатают...» / «3 печатают...»
+          const action = normalizeChatAction(update.action?.['@type'] || null)
+          // v0.95.31: senderName для multi-user индикатора в header.
           const senderId = String(update.sender_id.user_id)
           const userObj = record.userCache?.get(Number(senderId))
           const senderName = userObj
@@ -342,7 +331,7 @@ export class TdlibClientManager extends EventEmitter {
             chatId: `${accountId}:${update.chat_id}`,
             userId: senderId,
             senderName,
-            typing: isTyping,
+            action,
           })
         }
         return
@@ -455,12 +444,21 @@ export class TdlibClientManager extends EventEmitter {
         return
       }
 
-      case 'updateUserStatus':
+      case 'updateUserStatus': {
+        // v1.2.173: ОБЯЗАТЕЛЬНО обновляем статус в userCache. TDLib шлёт смену онлайн/
+        // офлайн отдельным updateUserStatus и НЕ пересылает updateUser → без этого кэш
+        // держит старый 'userStatusOnline', и mapChat при следующем getAccountChats
+        // (refresh списка) снова вернёт «в сети», затирая живое исправление стора.
+        const cachedUser = record.userCache.get(Number(update.user_id))
+        if (cachedUser) cachedUser.status = update.status || null
+        // v1.2.171: форвардим СЫРОЙ объект статуса (в нём и @type, и was_online для
+        // точного «был(а) в HH:MM»). Мост разбирает его через mapUserStatus.
         this.emit('user:status', {
           accountId, userId: String(update.user_id),
-          status: update.status?.['@type'] || null,
+          status: update.status || null,
         })
         return
+      }
 
       case 'updateConnectionState':
         this.emit('account:connection', {

@@ -5,25 +5,33 @@
 //   v0.91.8  — number (scrollTop в пикселях)
 //   v0.91.15 — { anchorMsgId, atBottom } (из-за react-window cacheKey reset → clamping)
 //   v0.93.0  — { anchorMsgId, atBottom, offsetFromTop } (Virtuoso offset)
-//   v0.94.0  — { scrollTop, atBottom } — ОБРАТНО pixel, т.к. виртуализация удалена
+//   v0.94.0  — { scrollTop, atBottom } — pixel ОТ ВЕРХА (после удаления виртуализации)
+//   v1.2.185 — { fromBottom, atBottom } — pixel ОТ НИЗА (расстояние до конца переписки)
+//   v1.2.186 — { anchorMsgId, screenTop, atBottom } — ЯКОРЬ ПО СООБЩЕНИЮ + смещение
 //
-// Почему вернулись к pixel scrollTop:
-//   Виртуализация (react-window / Virtuoso) убрана в v0.94.0 — теперь все msgs
-//   рендерятся обычным DOM (renderItems.map). DOM scrollHeight стабилен между
-//   ремаунтами (не зависит от измерений виртуализатора), поэтому pixel scrollTop
-//   НЕ деградирует. Это самый простой и надёжный способ — как Telegram Web K.
-//
-//   anchorMsgId был нужен ТОЛЬКО из-за виртуализации (scrollHeight скакал при
-//   reset измерений). Без виртуализации это не нужно.
+// Почему ЯКОРЬ ПО СООБЩЕНИЮ (v1.2.186):
+//   Ни «от верха» (v0.94.0), ни «от низа» (v1.2.185) не держат точку: список сообщений
+//   меняется с ОБЕИХ сторон — сверху догружаются старые (prepended-old), снизу окно то
+//   расширяется до 151, то сбрасывается к 50 (высота скачет 23881↔35897↔12268, журнал).
+//   Любая мерка «от края» указывает в разное содержимое. Решение: запоминать КАКОЕ
+//   сообщение было вверху экрана (anchorMsgId по data-msg-id) и на сколько пикселей его
+//   верх был опущен от верха ленты (screenTop; может быть отрицательным, если сообщение
+//   частично уехало вверх — тогда восстановим точь-в-точь, даже посреди сообщения).
+//   Это ТОЧНОЕ место, НЕ «прыжок к сообщению». Приём уже используется в проекте для
+//   re-pin при догрузке старых (useInboxScroll + InboxMode useLayoutEffect, «ScrollSaver»
+//   Telegram Web K). atBottom оставлен для чистого «ровно в конец» (там якорь не нужен).
+//   Если сообщение-якорь не загружено при открытии → мягкий откат в конец (placeAnchor→false).
 //
 // API:
-//   loadScrollPositions() → Map<chatId, { scrollTop:number, atBottom:boolean }>
+//   loadScrollPositions() → Map<chatId, { anchorMsgId:string|null, screenTop:number, atBottom:boolean }>
 //   saveScrollPositions(map)                            (debounced — раз в 1с)
+//   computeScrollAnchor(el) → { anchorMsgId, screenTop } | null  (верхнее видимое сообщение)
+//   placeAnchor(el, anchorMsgId, screenTop) → boolean            (поставить якорь на то же место)
 //
 // Лимит — 100 chatId; при превышении выкидываем самые старые (LRU).
 
 const STORAGE_KEY = 'chat-scroll-positions'
-const STORAGE_VERSION = 4  // v0.94.0: pixel scrollTop (несовместим с v2/v3 anchor форматом)
+const STORAGE_VERSION = 6  // v1.2.186: якорь по сообщению + смещение (несовместим с v5 {fromBottom})
 const MAX_ENTRIES = 100
 const SAVE_DEBOUNCE_MS = 1000
 
@@ -32,8 +40,8 @@ let pendingMap = null
 
 /**
  * Загружает Map позиций из localStorage.
- * Формат v4: { scrollTop: number, atBottom: boolean }
- * Старые форматы (v2/v3 anchor, или number) — игнорируются (вернётся пустой Map).
+ * Формат v6: { anchorMsgId: string|null, screenTop: number, atBottom: boolean }
+ * Старые форматы (пиксельные / anchor без screenTop) — игнорируются (вернётся пустой Map).
  */
 export function loadScrollPositions() {
   try {
@@ -41,22 +49,58 @@ export function loadScrollPositions() {
     if (!raw) return new Map()
     const obj = JSON.parse(raw)
     if (!obj || typeof obj !== 'object') return new Map()
-    // v0.94.0: принимаем ТОЛЬКО v4. Старые anchor-форматы несовместимы.
+    // Принимаем ТОЛЬКО текущую версию. Старые форматы несовместимы.
     const data = obj.__v === STORAGE_VERSION ? obj.entries : null
     if (!data || typeof data !== 'object') return new Map()
     const map = new Map()
     for (const [chatId, value] of Object.entries(data)) {
       if (value && typeof value === 'object') {
-        const scrollTop = Number.isFinite(value.scrollTop) ? value.scrollTop : null
+        const anchorMsgId = typeof value.anchorMsgId === 'string' ? value.anchorMsgId : null
+        const screenTop = Number.isFinite(value.screenTop) ? value.screenTop : 0
         const atBottom = !!value.atBottom
-        // Сохраняем только если есть полезное значение
-        if (scrollTop != null || atBottom) {
-          map.set(chatId, { scrollTop: scrollTop ?? 0, atBottom })
+        // Сохраняем только если есть полезное значение (якорь или «в конце»)
+        if (anchorMsgId != null || atBottom) {
+          map.set(chatId, { anchorMsgId, screenTop, atBottom })
         }
       }
     }
     return map
   } catch (_) { return new Map() }
+}
+
+/**
+ * v1.2.186: вычисляет ЯКОРЬ прокрутки — верхнее ВИДИМОЕ сообщение и его смещение
+ * (в пикселях) от верха ленты. То же, что делает useInboxScroll перед догрузкой старых.
+ * @param {HTMLElement} el — scroll-контейнер ленты сообщений.
+ * @returns {{anchorMsgId:string, screenTop:number}|null} — null если сообщений нет.
+ */
+export function computeScrollAnchor(el) {
+  if (!el || typeof el.querySelectorAll !== 'function') return null
+  try {
+    const scrollerTop = el.getBoundingClientRect().top
+    const rows = el.querySelectorAll('[data-msg-id]')
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect()
+      if (rect.bottom > scrollerTop) {  // первое сообщение, чей низ ниже верха окна = верхнее видимое
+        return { anchorMsgId: row.getAttribute('data-msg-id'), screenTop: rect.top - scrollerTop }
+      }
+    }
+  } catch (_) {}
+  return null
+}
+
+/**
+ * v1.2.186: ставит сообщение-якорь на то же смещение от верха ленты (screenTop).
+ * Та же математика, что re-pin после догрузки старых (InboxMode useLayoutEffect).
+ * @returns {boolean} true — поставлено; false — сообщение-якорь не найдено в DOM.
+ */
+export function placeAnchor(el, anchorMsgId, screenTop) {
+  if (!el || !anchorMsgId || typeof el.querySelector !== 'function') return false
+  const target = el.querySelector(`[data-msg-id="${anchorMsgId}"]`)
+  if (!target) return false
+  const cur = target.getBoundingClientRect().top - el.getBoundingClientRect().top
+  el.scrollTop += cur - (Number.isFinite(screenTop) ? screenTop : 0)
+  return true
 }
 
 /**

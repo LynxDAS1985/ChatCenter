@@ -39,6 +39,7 @@ function buildRowContext(overrides = {}) {
     getMessage: vi.fn(() => null),
     readByVisibility: vi.fn(),
     scrollToMessage: vi.fn(),
+    showSenderName: true,  // v1.2.174: тестовые item'ы = группа → метка автора рисуется
     ...overrides,
   }
 }

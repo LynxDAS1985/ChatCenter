@@ -1,5 +1,6 @@
 // v0.89.34: вынесено из tdlibIpcHandlers.js (был 410 строк, лимит 500).
 // Мост manager.on() события → sendToRenderer('tg:*') каналы.
+import { mapUserStatus } from '../../shared/userStatusMap.js' // v1.2.171: разбор статуса собеседника
 //
 // Используется из tdlibIpcHandlers.js setupEventBridge(manager, sendToRenderer, logFn).
 // Возвращает массив subscriptions для последующей отписки в unregister().
@@ -90,10 +91,10 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
   subscribe('chat:last-message', ({ chatId, lastMessage, lastMessageTs, senderName, isOutgoing }) => ({
     channel: 'tg:chat-last-message', data: { chatId, lastMessage, lastMessageTs, senderName, isOutgoing },
   }))
-  // v0.89.4: typing-индикатор (UI nativeStoreIpc.js:266 ждёт {chatId, userId, typing}).
-  // v0.95.31: добавлен senderName для multi-user typing (formatTypingUsers).
-  subscribe('chat:typing', ({ chatId, userId, senderName, typing }) => ({
-    channel: 'tg:typing', data: { chatId, userId, senderName, typing },
+  // v0.89.4: индикатор действий. v1.2.170: action (типы действий), не только typing:boolean.
+  // v0.95.31: senderName для multi-user (formatTypingUsers).
+  subscribe('chat:typing', ({ chatId, userId, senderName, action }) => ({
+    channel: 'tg:typing', data: { chatId, userId, senderName, action },
   }))
   // v0.89.4: outgoing read-receipts (UI ждёт {chatId, outgoing:true, maxId}).
   subscribe('chat:read-outbox', ({ chatId, maxId }) => ({
@@ -127,8 +128,10 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
     channel: 'tg:account-connection',
     data: { accountId, state },
   }))
+  // v1.2.171: живой статус собеседника (в сети / был(а) …). status — сырой объект TDLib.
+  // mapUserStatus достаёт isOnline + точное lastSeenAt (was_online) + тип статуса.
   subscribe('user:status', ({ accountId, userId, status }) => ({
-    channel: 'tg:user-status', data: { accountId, userId, online: status === 'userStatusOnline' },
+    channel: 'tg:user-status', data: { accountId, userId, ...mapUserStatus(status) },
   }))
   // v0.89.0 / Этап 3.9: аватарки чатов и пользователей (sender)
   subscribe('chat:avatar', ({ chatId, avatarPath }) => ({

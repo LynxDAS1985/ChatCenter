@@ -14,6 +14,7 @@ import { getAccountColor, ACCOUNT_PALETTE } from '../../shared/accountColors.js'
 import { visibleAccountCount, isAllVisible } from '../../shared/accountFilter.js' // v1.2.163
 import AccountContextMenu from './components/AccountContextMenu.jsx'
 import AccountAvatar from './components/AccountAvatar.jsx' // v1.2.165: вынесен из этого файла
+import RailModeSwitcher from './components/RailModeSwitcher.jsx' // v1.2.175: режимы внизу рейла (меню вверх)
 import useAccountRailResize, { loadRailWidth, RAIL_MAX_WIDTH, isRailNarrow } from './hooks/useAccountRailResize.js'
 import { getDisplayUnreadCount } from './utils/displayUnread.js'
 import {
@@ -31,8 +32,9 @@ try { window.__ccStartupMark?.('module:NativeApp', 'module evaluated after nativ
 // отрисовались с правильным цветом (без вспышки default-blue → indigo).
 try { applyTheme(loadTheme()) } catch (_) {}
 
-// v0.95.30: добавлены emoji-иконки для отображения в dropdown
-// «Чаты/Клиенты/Доска» (см. ChatTypesDropdown — слева вверху списка чатов).
+// v0.95.30: emoji-иконки режимов «Чаты/Клиенты/Доска».
+// v1.2.175: переключатель переехал в рейл аккаунтов (см. RailModeSwitcher — иконка внизу
+// рейла, меню вверх). Раньше был верхним дропдауном над списком (ChatTypesDropdown, теперь не используется).
 const MODES = [
   { id: 'inbox', label: 'Чаты', icon: '💬' },
   { id: 'contacts', label: 'Клиенты', icon: '👥' },
@@ -399,6 +401,12 @@ export default function NativeApp({
             style={{ width: Math.round(48 * railScale), height: Math.round(48 * railScale),
               margin: `0 auto ${Math.round(12 * railScale)}px`, fontSize: Math.round(24 * railScale) }}
           >+</div>
+          {/* v1.2.175/176: переключатель режимов (Чаты/Клиенты/Доска) в САМОМ НИЗУ рейла —
+              одна иконка, клик → меню СБОКУ (вправо). Переехал из верхнего дропдауна над
+              списком. marginTop:auto на разделителе прижимает группу (разделитель+иконка)
+              к низу рейла. Разделитель отделяет режимы от аккаунтов. */}
+          <div style={{ width: Math.round(28 * railScale), height: 1, background: 'var(--amoled-border)', margin: `auto auto ${Math.round(10 * railScale)}px` }} />
+          <RailModeSwitcher modes={MODES} activeId={store.mode} onSelect={(id) => store.setMode(id)} scale={railScale} />
         </div>
         {/* v1.2.165: разделитель для изменения ширины рейла (перетаскивание). Двойной клик — сброс. */}
         <div

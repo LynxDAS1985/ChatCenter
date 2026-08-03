@@ -1,17 +1,11 @@
 // v0.87.29: начальный скролл при открытии чата.
 // v0.94.0: ПОЛНОСТЬЮ ПЕРЕПИСАН под обычный DOM (виртуализация удалена).
 //
-// Логика проста:
-//   1. Первое открытие чата (нет в doneSet):
-//      - есть savedScrollTop → el.scrollTop = saved
-//      - есть firstUnread → scroll к нему (data-msg-id querySelector)
-//      - иначе → el.scrollTop = el.scrollHeight (низ, новые сообщения)
-//   2. Возврат в виденный чат (already-seen):
-//      - есть saved.atBottom → el.scrollTop = el.scrollHeight
-//      - есть saved.scrollTop → el.scrollTop = saved.scrollTop (PIXEL-PERFECT)
-//
-// Без виртуализации scrollHeight стабилен → pixel scrollTop восстанавливается ТОЧНО.
-// Нет anchor msgId, нет offset, нет Virtuoso initialTopMostItemIndex. Просто число.
+// Логика (v1.2.186: позиция = ЯКОРЬ ПО СООБЩЕНИЮ + смещение; подробно — scrollPositionsCache.js):
+//   1. Первое открытие: якорь (не на дне) в DOM → placeAnchor; иначе firstUnread; иначе низ.
+//   2. Возврат в виденный: atBottom → низ; якорь в DOM → placeAnchor; якорь не найден → откат в низ.
+// Почему якорь, а не пиксель от края: список растёт/сжимается с ОБЕИХ сторон (догрузка старых
+// сверху, окно 50↔151 снизу) → мерка «от края» уезжает; якорь держит точку точь-в-точь.
 //
 // retry-loop через requestAnimationFrame: DOM scroll-контейнер может быть не готов
 // сразу (chatReady=false → shimmer overlay opacity:0 → scrollRef.current=null).
@@ -22,6 +16,7 @@
 
 import { useLayoutEffect, useRef } from 'react'
 import { logNativeScroll, getScrollMetrics } from '../utils/scrollDiagnostics.js'
+import { placeAnchor } from '../utils/scrollPositionsCache.js' // v1.2.186: восстановление по якорю-сообщению
 
 const MAX_ATTEMPTS = 30
 
@@ -95,9 +90,12 @@ export function useInitialScroll({
         if (saved?.atBottom) {
           el.scrollTop = el.scrollHeight
           logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'bottom', scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
-        } else if (saved && Number.isFinite(saved.scrollTop)) {
-          el.scrollTop = saved.scrollTop
-          logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'pixel', requested: saved.scrollTop, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
+        } else if (placeAnchor(el, saved?.anchorMsgId, saved?.screenTop)) {
+          // v1.2.186: ставим сообщение-якорь на то же смещение (точное место, устойчиво к догрузке).
+          logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'anchor', anchorMsgId: saved.anchorMsgId, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
+        } else if (saved?.anchorMsgId) {
+          el.scrollTop = el.scrollHeight  // якорь не найден в DOM (окно его не подтянуло) → мягкий откат в конец
+          logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'anchor-missing', anchorMsgId: saved.anchorMsgId, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
         } else {
           logNativeScroll('restore-skip', { chatId: activeChatId, reason: 'no-saved', scrollTopBefore })
         }
@@ -135,10 +133,10 @@ export function useInitialScroll({
       markRestoring()
       const firstUnread = firstUnreadIdRef.current
       const saved = getSavedScrollTop?.(activeChatId)
-      // Приоритет: сохранённая позиция (если есть и не на дне).
-      if (saved && Number.isFinite(saved.scrollTop) && !saved.atBottom) {
-        el.scrollTop = saved.scrollTop
-        logNativeScroll('initial-restore-saved', { chatId: activeChatId, scrollTop: el.scrollTop })
+      // Приоритет: сохранённая позиция-якорь (если есть и не на дне).
+      // v1.2.186: якорь по сообщению (не пиксель от края). Якорь не найден → firstUnread/низ.
+      if (saved && !saved.atBottom && placeAnchor(el, saved.anchorMsgId, saved.screenTop)) {
+        logNativeScroll('initial-restore-saved', { chatId: activeChatId, mode: 'anchor', anchorMsgId: saved.anchorMsgId, scrollTop: el.scrollTop })
       } else if (firstUnread) {
         const target = el.querySelector(`[data-msg-id="${firstUnread}"]`)
         if (target) {

@@ -20,6 +20,22 @@ describe('formatTypingUsers (v0.95.31)', () => {
     expect(formatTypingUsers(map, { nowMs: NOW })).toBe('Иван печатает...')
   })
 
+  it('v1.2.170: 1 юзер с действием — конкретный глагол', () => {
+    expect(formatTypingUsers({ '1': { senderName: 'Иван', at: NOW - 100, action: 'voice' } }, { nowMs: NOW }))
+      .toBe('Иван записывает голосовое...')
+    expect(formatTypingUsers({ '1': { senderName: 'Маша', at: NOW - 100, action: 'photo' } }, { nowMs: NOW }))
+      .toBe('Маша отправляет фото...')
+    expect(formatTypingUsers({ '1': { senderName: 'Пётр', at: NOW - 100, action: 'video_note' } }, { nowMs: NOW }))
+      .toBe('Пётр записывает видеосообщение...')
+  })
+
+  it('v1.2.170: неизвестный/пустой action → "печатает..." (откат)', () => {
+    expect(formatTypingUsers({ '1': { senderName: 'Иван', at: NOW - 100, action: 'zzz' } }, { nowMs: NOW }))
+      .toBe('Иван печатает...')
+    expect(formatTypingUsers({ '1': { senderName: 'Иван', at: NOW - 100 } }, { nowMs: NOW }))
+      .toBe('Иван печатает...') // нет поля action → старое поведение
+  })
+
   it('2 юзера → "Иван и Маша печатают..."', () => {
     const map = {
       '111': { senderName: 'Иван', at: NOW - 500 },
@@ -55,6 +71,41 @@ describe('formatTypingUsers (v0.95.31)', () => {
     }
     const result = formatTypingUsers(map, { nowMs: NOW })
     expect(result).toBe('5 человек печатают...')
+  })
+
+  it('v1.2.171: 2 юзера с ОДНИМ действием → общий глагол во мн.ч.', () => {
+    const map = {
+      '1': { senderName: 'Иван', at: NOW, action: 'voice' },
+      '2': { senderName: 'Маша', at: NOW, action: 'voice' },
+    }
+    expect(formatTypingUsers(map, { nowMs: NOW })).toBe('Иван и Маша записывают голосовое...')
+  })
+
+  it('v1.2.171: 2 юзера с РАЗНЫМИ действиями → откат "печатают..."', () => {
+    const map = {
+      '1': { senderName: 'Иван', at: NOW, action: 'voice' },
+      '2': { senderName: 'Маша', at: NOW, action: 'photo' },
+    }
+    expect(formatTypingUsers(map, { nowMs: NOW })).toBe('Иван и Маша печатают...')
+  })
+
+  it('v1.2.171: 3 юзера с одним действием (фото) → общий глагол', () => {
+    const map = {
+      '1': { senderName: 'A', at: NOW, action: 'photo' },
+      '2': { senderName: 'B', at: NOW, action: 'photo' },
+      '3': { senderName: 'C', at: NOW, action: 'photo' },
+    }
+    expect(formatTypingUsers(map, { nowMs: NOW })).toBe('A, B и C отправляют фото...')
+  })
+
+  it('v1.2.171: 4+ юзера с одним действием → "N человек отправляют фото..."', () => {
+    const map = {
+      '1': { senderName: 'A', at: NOW, action: 'photo' },
+      '2': { senderName: 'B', at: NOW, action: 'photo' },
+      '3': { senderName: 'C', at: NOW, action: 'photo' },
+      '4': { senderName: 'D', at: NOW, action: 'photo' },
+    }
+    expect(formatTypingUsers(map, { nowMs: NOW })).toBe('4 человек отправляют фото...')
   })
 
   it('пустое имя → "Кто-то печатает..."', () => {

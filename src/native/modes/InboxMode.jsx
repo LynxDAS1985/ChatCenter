@@ -37,7 +37,7 @@ import { topicMessageKey } from '../store/nativeStoreHelpers.js'
 import { runAttachSend } from '../utils/inboxAttachSend.js'
 // v1.2.138: ЛОКАЛЬНЫЕ закрепления чатов (только у нас, не в Telegram — у нас лимита нет).
 import { loadPinnedIds, savePinnedIds, togglePinnedId, filterSortChats } from '../store/pinnedChats.js'
-import { isAccountVisible } from '../store/accountFilter.js' // v1.2.163: фильтр аккаунтов (множественный + соло)
+import { effectiveVisibleAccountIds } from '../store/accountFilter.js' // v1.2.163/169: фильтр аккаунтов (множественный + соло + страховка)
 
 try { window.__ccStartupMark?.('module:InboxMode', 'module evaluated') } catch {}
 
@@ -184,9 +184,12 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // chatFilter). Сначала отсеиваем чаты СКРЫТЫХ аккаунтов (или показываем только соло-аккаунт),
   // затем поиск + сортировка «закреплённые наверх» через filterSortChats (filter:'all').
   const activeAccountChats = useMemo(() => {
-    const visible = store.chats.filter(c => isAccountVisible(c.accountId, store.hiddenAccountIds, store.soloAccountId))
+    // v1.2.169 (страховка): набор видимых аккаунтов НИКОГДА не пуст, когда аккаунты есть
+    // (если все скрыты/скрытие залипло — показываем всех) → список не «зависает» пустым.
+    const visibleAccs = new Set(effectiveVisibleAccountIds((store.accounts || []).map(a => a.id), store.hiddenAccountIds, store.soloAccountId))
+    const visible = store.chats.filter(c => visibleAccs.has(c.accountId))
     return filterSortChats(visible, { filter: 'all', query: search, pinnedIds })
-  }, [store.chats, store.hiddenAccountIds, store.soloAccountId, search, pinnedIds])
+  }, [store.chats, store.accounts, store.hiddenAccountIds, store.soloAccountId, search, pinnedIds])
 
   const activeChat = store.chats.find(c => c.id === store.activeChatId)
   const activeTopic = store.activeForumTopic?.[store.activeChatId] || null
@@ -364,8 +367,9 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   }
 
   // v0.87.29/40: начальный скролл — ПОСЛЕ загрузки свежих данных.
-  // v0.94.0: useInitialScroll переписан под обычный DOM — restore через el.scrollTop=saved.
-  // onDone → setChatReady(true). getSavedScrollTop отдаёт {scrollTop, atBottom}.
+  // v0.94.0: useInitialScroll переписан под обычный DOM — restore через el.scrollTop.
+  // v1.2.186: getSavedScrollTop отдаёт {anchorMsgId, screenTop, atBottom} (якорь по сообщению).
+  // onDone → setChatReady(true).
   // isRestoringRef — closed-loop guard (programmatic scrollTop= не должен портить save).
   const { doneRef: initialScrollDoneRef } = useInitialScroll({
     activeChatId: activeViewKey,
@@ -720,7 +724,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
               twoPhase: true,
               onComplete: () => {
                 if (viewKey) scrollPosByChatRef.current.set(viewKey, {
-                  scrollTop: elNow.scrollHeight, atBottom: true,
+                  anchorMsgId: null, screenTop: 0, atBottom: true,  // v1.2.186: в конце — якорь не нужен
                 })
                 setAtBottom(true)
                 setNewBelow(0)
@@ -749,7 +753,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
     // === Обычное поведение (gap маленький ИЛИ нет lastMessageId ИЛИ идёт загрузка) ===
     el.scrollTo({ top: el.scrollHeight, behavior })
-    if (viewKey) scrollPosByChatRef.current.set(viewKey, { scrollTop: el.scrollHeight, atBottom: true })
+    if (viewKey) scrollPosByChatRef.current.set(viewKey, { anchorMsgId: null, screenTop: 0, atBottom: true })  // v1.2.186: в конце
     setAtBottom(true)
     setNewBelow(0)
     const lastMsg = activeMessages[activeMessages.length - 1]
@@ -988,22 +992,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
       {/* Окно чата → InboxChatPanel (v0.87.103) */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* v0.95.30: режимы переехали в dropdown слева вверху списка чатов.
-            Здесь остаётся только кнопка 🎨 для смены цвета bubble сообщений
-            (как Telegram Settings → Color theme). */}
-        <div style={{
-          height: 48, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-          padding: '0 16px',
-          borderBottom: '1px solid var(--amoled-border)',
-          background: 'var(--amoled-surface)', flexShrink: 0, gap: 4,
-        }}>
-          <button
-            onClick={() => setThemePickerOpen(true)}
-            className="native-mode-switcher__btn"
-            title="Цвет сообщений"
-            style={{ fontSize: 16, padding: '6px 10px' }}
-          >🎨</button>
-        </div>
+        {/* v1.2.176: 48px-полоса сверху с кнопкой 🎨 УБРАНА — кнопка переехала в шапку
+            переписки рядом с 🔍 (onOpenThemePicker). Переписка стала выше на 48px. */}
         <InboxChatPanel
           store={store} activeChat={activeChat} activeTopic={activeTopic} activeMessages={activeMessages}
           activeUnread={activeUnread} visibleMessages={visibleMessages} renderItems={renderItems}
@@ -1013,6 +1003,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           pinnedMsg={pinnedMsg} setPinnedMsg={setPinnedMsg}
           showMsgSearch={showMsgSearch} setShowMsgSearch={setShowMsgSearch}
           msgSearch={msgSearch} setMsgSearch={setMsgSearch}
+          onOpenThemePicker={() => setThemePickerOpen(true)}
           input={input} setInput={setInput} sending={sending}
           replyTo={replyTo} setReplyTo={setReplyTo}
           editTarget={editTarget} setEditTarget={setEditTarget}

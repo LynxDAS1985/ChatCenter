@@ -1,347 +1,202 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.168 (30 июля 2026)
+## Текущая версия: v1.2.186 (31 июля 2026)
 
-### v1.2.168 — Фикс: после удаления аккаунта оставшийся не грузился (был «скрыт» фильтром) 🔴
+### v1.2.186 — Прокрутка чата: точное место через ЯКОРЬ-сообщение + смещение (не «от края») 🔴
 
-Дата: 2026-07-30. Жалоба: удалил второй аккаунт — оставшийся стал затемнён, список чатов навсегда «Загрузка чатов…», хотя чаты должны показаться.
+Дата: 2026-07-31. Продолжение v1.2.185. Пользователь: «от низа» тоже не то — надо ровно то место, где остановился (в т.ч. посреди сообщения), при переходах и перезапуске.
 
-**Корень (по коду, регрессия фильтра v1.2.163/ADR-026).** Обработчик удаления аккаунта [nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js) (ветка «не последний») убирал удалённый id из `hiddenAccountIds`, но НЕ проверял, что после этого ВСЕ оставшиеся аккаунты остались скрытыми. Сценарий: было 2 аккаунта, один (A) скрыт галочкой (виден только B) → удалили ВИДИМЫЙ B → A остался в `hiddenAccountIds` → `isAccountVisible` для A = false → все его чаты отфильтрованы → список пуст → заглушка «Загрузка чатов…»; аватарка затемнена (`dimmed`=hidden). Снять скрытие через UI нельзя: при 1 аккаунте галочки не показываются (`filterActive` = accounts≥2). Тупик.
+**Корень (по журналу + коду).** Ни «от верха» (v0.94.0), ни «от низа» (v1.2.185) не держат точку: список меняется с ОБЕИХ сторон — сверху догружаются старые (`prepended-old`), снизу окно то 151, то 50 (высота скачет 23881↔35897↔12268, журнал). Любая мерка «от края» указывает в разное содержимое. Нужен якорь по конкретному сообщению.
 
-**Фикс.** В ветке удаления: (1) если после удаления `newAccounts.every(a => newHidden.includes(a.id))` — очищаем `hiddenAccountIds` (показываем всех оставшихся); (2) `soloAccountId` сохраняем, только если соло-аккаунт ещё существует (`newAccounts.some(...)`) — страховка от затемнения не-соло аккаунта, если соло указывал на удалённый/несуществующий.
+**Что сделано.** Позиция теперь = **якорь по сообщению + смещение**: `{anchorMsgId, screenTop, atBottom}`. `anchorMsgId` — верхнее видимое сообщение (по `data-msg-id`), `screenTop` — на сколько пикселей его верх опущен от верха ленты (может быть отрицательным → точное место даже посреди сообщения). Восстановление ставит это сообщение на тот же `screenTop`. Это ТОЧНОЕ место, НЕ «прыжок к сообщению». Переиспользован готовый приём проекта «ScrollSaver» (re-pin при догрузке старых — [useInboxScroll.js](../src/native/hooks/useInboxScroll.js) + [InboxMode.jsx](../src/native/modes/InboxMode.jsx) useLayoutEffect).
 
-**Крайние случаи / проверка.** 1 оставшийся скрытый → показывается. Соло на удалённом → снимается. Тест-ловушка [nativeStoreFilter.vitest.jsx](../src/native/store/nativeStoreFilter.vitest.jsx): «скрыли A, удалили видимый B → A видим, соло null». Проверки: nativeStoreFilter 6/6; ESLint 0. **Требует пересборки + визуальной проверки** (удалить видимый аккаунт при скрытом другом → оставшийся грузит чаты, не затемнён). Откат: `git checkout -- src/native/store/nativeStoreIpc.js src/native/store/nativeStoreFilter.vitest.jsx` + версия на 1.2.167.
+**Новые чистые помощники** в [scrollPositionsCache.js](../src/native/utils/scrollPositionsCache.js): `computeScrollAnchor(el)` (взять якорь) + `placeAnchor(el, id, screenTop)` (поставить на место). Формат хранения версия 5→6. Сохранение — [useScrollPositionAutosave.js](../src/native/hooks/useScrollPositionAutosave.js) + [useInboxScroll.js](../src/native/hooks/useInboxScroll.js); восстановление — [useInitialScroll.js](../src/native/hooks/useInitialScroll.js) (2 ветки).
 
-### v1.2.167 — Клик по полосе «Закреплённое» → переход к самому сообщению
+**Крайние случаи.** Сообщение-якорь не загружено при открытии (окно его выкинуло) → мягкий откат в конец (`placeAnchor→false`, лог `mode=anchor-missing`). Идеал для этого случая (догрузить историю вокруг якоря) — отдельный будущий шаг. atBottom → ровно в конец (якорь не нужен). Пустой чат → в конец. Формат 5→6 → старые сохранённые позиции разово сбросятся (безвредно).
 
-Дата: 2026-07-30. По совету из ревью. Раньше у полосы закреплённого сообщения вверху чата была только кнопка ✕ (скрыть) — добраться до самого сообщения было нельзя.
+**Проверка.** ESLint 0; тесты 36/36 (новый `scrollPositionsCache.vitest.js` — computeScrollAnchor/placeAnchor + **тест-ловушка** «после догрузки старых сверху якорь возвращает на место»; `useInitialScroll`/`useInboxScroll`/`InboxMode` обновлены под якорь); лимиты 549/549 (renderer-ватерлиния 32050→32100; useInitialScroll ужат до 164/170). **Требует пересборки + визуальной проверки:** остановился в любом месте (конец / середина / посреди длинного сообщения) → переход по чатам / перезапуск → открывается ровно там же. Откат: `git checkout -- src/native/utils/scrollPositionsCache.js src/native/hooks/useScrollPositionAutosave.js src/native/hooks/useInboxScroll.js src/native/hooks/useInitialScroll.js src/native/hooks/useInitialScroll.vitest.jsx src/native/modes/InboxMode.jsx src/__tests__/fileSizeLimits.test.cjs` + удалить `scrollPositionsCache.vitest.js` + версия на 1.2.185. См. [[ADR-029]].
 
-**Что сделано.** [PinnedMessageBar.jsx](../src/native/components/PinnedMessageBar.jsx): область 📌+текст стала кликабельной (`onJump`, курсор-палец, подсказка «Перейти к закреплённому сообщению»); кнопка ✕ вынесена отдельно (её клик не вызывает переход). [InboxChatPanel.jsx](../src/native/components/InboxChatPanel.jsx) передаёт `onJump={() => scrollToMessage(pinnedMsg.id)}` — переиспользован готовый `scrollToMessage` (тот же, что для клика по ответу): прокрутка к `[data-msg-id]` + подсветка `native-msg-flash`; если сообщение не загружено — тост «прокрутите вверх».
+### v1.2.185 — Прокрутка чата: точное место запоминается «от НИЗА», а не «от верха» 🔴
 
-**Крайние случаи / проверка.** Нет `pinnedMsg.id` → `onJump` undefined → область не кликабельна (курсор default). Тест [PinnedMessageBar.vitest.jsx](../src/native/components/PinnedMessageBar.vitest.jsx) +2 (клик по телу → onJump; клик по ✕ → только onClose). Проверки: PinnedMessageBar 9/9; ESLint 0; лимиты 540/540. **Требует визуальной проверки.** Откат: `git checkout -- src/native/components/PinnedMessageBar.jsx src/native/components/InboxChatPanel.jsx src/native/components/PinnedMessageBar.vitest.jsx` + версия на 1.2.166.
+Дата: 2026-07-31. Жалоба: был в конце чата → перезапуск/переходы по чатам → чат открывается намного ВЫШЕ, чем оставил.
 
-### v1.2.166 — Полоса «Закреплённое» читается на любом фоне: сплошной непрозрачный фон вместо стекла
+**Корень (по журналу `chatcenter.log` + коду).** Позиция прокрутки сохранялась как `scrollTop` — расстояние ОТ ВЕРХА. Но при открытии чат сам догружает старые сообщения СВЕРХУ (`tg-messages-applied action=prepended-old`), из-за чего высота ленты скачет (в журнале: 23881→35897→12268 px). «От верха» при добавлении сообщений сверху уезжает → восстановление попадало в середину. Журнал прямо показал `restore mode=pixel requested=13972 scrollHeight=35897` — восстановил 13972 от верха в ленте высотой 35897 = ~40% сверху, а не низ. Предположение v0.94.0 «без виртуализации scrollHeight стабилен» журналом ОПРОВЕРГНУТО.
 
-Дата: 2026-07-30. По жалобе пользователя (скриншот): текст полосы закреплённого сообщения вверху чата сливался и не читался, когда под ней светлое сообщение (чек/таблица/скриншот с белым фоном).
+**Что сделано.** Метрика позиции сменена на **расстояние от НИЗА** (`fromBottom = scrollHeight − scrollTop − clientHeight`). Восстановление: `scrollTop = scrollHeight − clientHeight − fromBottom` (кламп ≥ 0). Это по-прежнему pixel-perfect (точное место, не «прыжок к сообщению»), но устойчиво к догрузке старых сверху — как в Telegram (лента привязана к низу). `atBottom` оставлен для чистого «ровно в конец».
 
-**Корень (по коду).** [PinnedMessageBar.jsx](../src/native/components/PinnedMessageBar.jsx) — полоса `position:absolute` поверх верха ленты; фон был полупрозрачный `rgba(42,171,238,0.08)` (8%) + `backdrop-filter: blur(8px)`. Размытие смягчает картинку под полосой, но НЕ создаёт тёмной подложки → на светлом просвете тусклый текст исчезал.
+**Файлы.** [scrollPositionsCache.js](../src/native/utils/scrollPositionsCache.js) (формат `{fromBottom, atBottom}`, версия хранения 4→5), [useScrollPositionAutosave.js](../src/native/hooks/useScrollPositionAutosave.js) + [useInboxScroll.js](../src/native/hooks/useInboxScroll.js) (сохранение fromBottom), [useInitialScroll.js](../src/native/hooks/useInitialScroll.js) (восстановление в 2 ветках), [InboxMode.jsx](../src/native/modes/InboxMode.jsx) (2 «в конец» → `fromBottom:0`).
 
-**Фикс (Вариант 1, согласован).** Фон заменён на СПЛОШНОЙ непрозрачный `var(--amoled-surface)` (панельный цвет приложения), размытие убрано (непрозрачному не нужно). Полоса полностью накрывает верхнее сообщение (норма Telegram Desktop) → текст читается на любом сообщении. Другие варианты (стекло+вуаль, тень у текста, чип) отклонены в пользу самого надёжного.
+**Крайние случаи.** Лента КОРОЧЕ, чем сохранённое fromBottom (окно сбросилось к 50) → кламп в 0 (верх), лучшее из возможного. Новое ВХОДЯЩЕЕ, пока ты вверху читаешь старое → «от низа» держит расстояние до НОВОГО низа (лёгкий сдвиг) — редкий случай, всё равно лучше «от верха». Версия хранения 4→5 → старые сохранённые позиции разово сбросятся (чаты откроются внизу, пока не пересохранятся) — безвредно.
 
-**Крайние случаи / откат.** `pinnedMsg` null → полоса не рисуется (без изменений). Тема (bubble-цвета) — `--amoled-surface` подстраивается токеном. Тест [PinnedMessageBar.vitest.jsx](../src/native/components/PinnedMessageBar.vitest.jsx): проверка «blur есть» заменена на «фон сплошной непрозрачный (содержит --amoled-surface, без rgba, без blur)». Проверки: PinnedMessageBar 7/7; ESLint 0; лимиты 540/540. **Требует пересборки + визуальной проверки** (закрепить сообщение с картинкой/светлым фоном → текст полосы читаем). Откат: `git checkout -- src/native/components/PinnedMessageBar.jsx src/native/components/PinnedMessageBar.vitest.jsx` + версия на 1.2.165.
+**Проверка.** ESLint 0; тесты прокрутки `useInitialScroll` + `useInboxScroll` + `InboxMode` 30/30 (ожидания обновлены под fromBottom); лимиты 548/548. **Требует пересборки + визуальной проверки:** был в конце → открывается в конце; был в середине читая старое → открывается на том же месте после переходов/перезапуска. Откат: `git checkout -- src/native/utils/scrollPositionsCache.js src/native/hooks/useScrollPositionAutosave.js src/native/hooks/useInboxScroll.js src/native/hooks/useInitialScroll.js src/native/hooks/useInitialScroll.vitest.jsx src/native/modes/InboxMode.jsx` + версия на 1.2.184. См. [[ADR-028]].
+
+### v1.2.184 — Логотип в рейле: вернул чёрный кружок-подложку, убрал только цветную рамку
+
+Дата: 2026-07-31. Уточнение к v1.2.183: в прошлой правке у значка мессенджера убрали ВСЁ (фон+рамку+круг), а пользователь просил убрать ТОЛЬКО цветную рамку-обводку. Возвращён чёрный кружок-подложка (`background: var(--amoled-bg)` + `borderRadius: 50%`) — чтобы логотип читался поверх фото аватара; убрана только цветная рамка `border: 1px solid ${color}`. Размеры: коробка px(18), логотип px(12). [AccountAvatar.jsx](../src/native/components/AccountAvatar.jsx). ESLint 0. **Требует пересборки + визуальной проверки:** логотип на чёрном кружке, но без цветной рамки вокруг значка; цветная обводка самого аккаунта на месте. Откат: `git checkout -- src/native/components/AccountAvatar.jsx` + версия на 1.2.183.
+
+### v1.2.183 — Логотип: убран кружок в рейле + страховка битой картинки + тест + дедуп эмодзи + чистка PNG
+
+Дата: 2026-07-31. Доводки к v1.2.182 по просьбе пользователя и советам ревью.
+- **Убран кружок-обводка у логотипа в рейле аккаунтов** ([AccountAvatar.jsx](../src/native/components/AccountAvatar.jsx)): у углового значка мессенджера убраны `background`/`border`/`borderRadius` — теперь только сам логотип, без круглой плашки. Цветная обводка САМОГО аккаунта (accountColor) рисуется отдельно и не тронута. Значок чуть увеличен (px(11)→px(14), т.к. кружок больше не ест место).
+- **Страховка битой картинки** ([MessengerIcon.jsx](../src/native/components/MessengerIcon.jsx)): добавлен `onError` — если data-URI логотипа не загрузился, значок переключается на эмодзи (никогда не покажет иконку-«поломашку»). Через `useState(failed)`.
+- **Мини-тест** ([MessengerIcon.vitest.jsx](../src/native/components/MessengerIcon.vitest.jsx), +3): telegram → `<img>` с `data:image/png;base64,`; whatsapp/неизвестный → эмодзи без картинки.
+- **Дедуп эмодзи** ([AccountAvatar.jsx](../src/native/components/AccountAvatar.jsx)): удалён локальный дубль списка `MESSENGER_EMOJI` — теперь через `getMessengerEmoji` из [messengerBranding.js](../src/native/utils/messengerBranding.js) (единый источник). Локальный `MESSENGER_COLORS` НЕ трогали — у него другой запасной цвет (telegram vs var(--amoled-border)), дедуп изменил бы поведение для неизвестного мессенджера.
+- **Чистка PNG/**: удалены `T.png` (4096×4096, 179 КБ) и `T_50%.jpg` (JPG — неверный формат для логотипа) — не использовались после встраивания data-URI. Остался `T1.png` (7 КБ) как источник логотипа.
+
+Проверки: ESLint 0; лимиты 548/548 (renderer-ватерлиния 32000→32050); MessengerIcon 3/3; ChatListItem-снапшот 16/16; InboxMode 12/12. **Требует пересборки + визуальной проверки:** в рейле логотип Telegram БЕЗ круглой обводки; обводка аккаунта на месте. Откат: `git checkout -- src/native/components/AccountAvatar.jsx src/native/components/MessengerIcon.jsx` + удалить `MessengerIcon.vitest.jsx` + вернуть PNG-файлы (если нужны) + версия на 1.2.182.
+
+### v1.2.182 — Логотип Telegram вместо эмодзи ✈️ (значок мессенджера — картинка)
+
+Дата: 2026-07-31. По просьбе пользователя: заменить эмодзи-самолётик на настоящий логотип Telegram (файл `PNG/T1.png` — 128×128 RGBA, ~7 КБ, подходит).
+
+**Как встроено (3 факта → выбран data-URI).** (1) CSP в [index.html](../index.html) разрешает `img-src … data:` → картинка-строка покажется. (2) В проекте НЕТ папки ассетов и ни одного `import *.png` в renderer — импорт-картинки через сборщик в упакованном Electron рискует сломаться на путях (file://). (3) Логотип крошечный (7 КБ → ~9 КБ base64). Вывод: встроить логотип строкой (data-URI) — не трогая сборку, работает и в dev, и в проде.
+
+**Что сделано.**
+- Новый [messengerLogos.js](../src/native/utils/messengerLogos.js): `MESSENGER_LOGOS = { telegram: 'data:image/png;base64,…' }` + `getMessengerLogo(messenger)` (null если логотипа нет).
+- Новый компонент [MessengerIcon.jsx](../src/native/components/MessengerIcon.jsx): рисует `<img>` если у мессенджера есть логотип, иначе fallback на эмодзи ([messengerBranding.js](../src/native/utils/messengerBranding.js)). Размер через проп `size`.
+- Заменён эмодзи ✈️ в 3 видимых местах: значок на аватарке аккаунта ([AccountAvatar.jsx](../src/native/components/AccountAvatar.jsx)), строка в списке чатов ([ChatListItem.jsx](../src/native/components/ChatListItem.jsx)), чип в шапке ([InboxChatPanel.jsx](../src/native/components/InboxChatPanel.jsx)). Эмодзи в подсказках (`title`) оставлены (в текст картинку не вставить).
+- WhatsApp/ВК/Макс/Viber — по-прежнему эмодзи (логотипов пока нет; добавляются тем же способом).
+
+Опасные зоны не затронуты: сборку/конфиг не менял, новых зависимостей нет. Проверки: ESLint 0 (длинная base64-строка проходит); лимиты 547/547 (renderer 31992/32000); ChatListItem-снапшот 16/16 (эталон не задет — строка мессенджера только при 2+ аккаунтах, в снапшоте её нет); InboxMode 12/12. **Требует пересборки + визуальной проверки:** вместо ✈️ — синий самолётик-логотип на аватарке, в списке и в шапке. Откат: `git checkout -- src/native/components/AccountAvatar.jsx src/native/components/ChatListItem.jsx src/native/components/InboxChatPanel.jsx` + удалить `src/native/utils/messengerLogos.js` и `src/native/components/MessengerIcon.jsx` + версия на 1.2.181.
+
+### v1.2.181 — Цветная статус-строка в верхней полоске: ✓ зелёным (сработало) / ✗ красным (не вышло)
+
+Дата: 2026-07-31. По просьбе пользователя (Вариант 1 из макета): результат фоновых операций в верхней полоске — зелёной строкой с ✓ если сработало, красной с ✗ если нет.
+- **Полоска** [TabBar.jsx](../src/components/TabBar.jsx): `statusBarMsg` теперь может быть строкой (нейтрально, серым 💬 — обратная совместимость) ИЛИ объектом `{ text, ok }`: `ok:true` → зелёная ✓, `ok:false` → красная ✗. Разбор через IIFE, цвет/значок/жирность по результату.
+- **Переход к чату** [useNotifyNavigation.js](../src/hooks/useNotifyNavigation.js): успех → `{ text:'Перешёл в чат «Имя»', ok:true }` (зелёная ✓), провал → `{ text:'«Имя» — не найден в списке', ok:false }` (красная ✗). Раньше обе строки были серым текстом `>> "Имя" …`.
+
+Инфраструктура готова для расширения на другие операции (ловля сообщений, доставка уведомлений, чтение списка) — достаточно передавать объект `{text, ok}`. Пока покрыт переход к чату (пример из макета). Проверки: ESLint 0; лимиты 545/545 (renderer-ватерлиния 31950→32000). **Требует пересборки + визуальной проверки:** клик по уведомлению → в полоске зелёная строка «✓ Перешёл в чат …» или красная «✗ … не найден». Откат: `git checkout -- src/components/TabBar.jsx src/hooks/useNotifyNavigation.js src/__tests__/fileSizeLimits.test.cjs` + версия на 1.2.180.
+
+### v1.2.180 — Шапка чата читаемее: чип аккаунта в его цвете + точка у статуса + ярче текст
+
+Дата: 2026-07-31. Жалоба: метка «Telegram · Avtoliberty» в шапке — тусклая (11px, `--amoled-text-muted` #606060), плохо читалась. Выбран Вариант 1 из макета. Правки в [InboxChatPanel.jsx](../src/native/components/InboxChatPanel.jsx):
+- **Чип в цвете аккаунта:** метка источника стала плашкой с фоном/гранью из цвет-метки аккаунта (`getAccountColor`), имя аккаунта — тем же цветом жирным, мессенджер — светло-серым. Читаемо + сразу видно, какой аккаунт. Цвет берётся динамически (у каждого аккаунта свой из `ACCOUNT_PALETTE`).
+- **Точка у статуса:** перед «в сети / был(а) …» для личных чатов — точка (зелёная `--amoled-success` в сети / серая `#6a6a72` нет). Для групп/каналов точки нет.
+- **Ярче текст:** статус `--amoled-text-muted` (#606060) → `--amoled-text-dim` (#a0a0a0).
+
+Проверки: ESLint 0; лимиты 545/545 (renderer 31941/31950); InboxMode 12/12. **Требует пересборки + визуальной проверки.** Откат: `git checkout -- src/native/components/InboxChatPanel.jsx` + версия на 1.2.179.
+
+### v1.2.179 — Меню режимов: подложка только под курсором, выбор — только галочкой
+
+Дата: 2026-07-31. По просьбе пользователя: у активного пункта убрана постоянная подложка — фон появляется ТОЛЬКО под курсором (наведение на любой пункт, включая активный), а выбранный режим отмечен только галочкой ✓ справа. Правка [RailModeSwitcher.jsx](../src/native/components/RailModeSwitcher.jsx): `background:'transparent'` всегда, ховер (`rgba(255,255,255,0.08)`) снят с гварда `!on` → работает на всех пунктах. ESLint 0. **Требует пересборки + визуальной проверки.**
+
+### v1.2.178 — Меню режимов: читаемый активный пункт (белый текст + галочка ✓)
+
+Дата: 2026-07-31. Жалоба: активный пункт «Чаты» плохо читался — синий текст на синеватом фоне. Выбран Вариант 4 из макета. Фикс в [RailModeSwitcher.jsx](../src/native/components/RailModeSwitcher.jsx): текст пунктов ВСЕГДА белый (`#eef1f6`), активный — лёгкий фон `rgba(255,255,255,0.07)` + полужирный + синяя галочка ✓ справа (текст в синий больше не красим). Шрифт 13→14px. ESLint 0. **Требует пересборки + визуальной проверки.**
+
+### v1.2.177 — Меню режимов: контрастный фон (не сливается со списком)
+
+Дата: 2026-07-31. Жалоба: всплывающее меню «Чаты/Клиенты/Доска» сливалось с фоном списка чатов. Причина: фон меню был `--amoled-surface` (#0a0a0a) — тот же, что у списка. Фикс: «приподнятый» фон `#20242e` + светлая рамка `rgba(255,255,255,0.14)` + сильная тень (как у AccountContextMenu — единый стиль всплывающих меню проекта); наведение 0.05→0.08 под светлый фон. Файл: [RailModeSwitcher.jsx](../src/native/components/RailModeSwitcher.jsx). ESLint 0. **Требует пересборки + визуальной проверки.**
+
+### v1.2.176 — Доводки перекомпоновки: меню режимов сбоку (не обрезается), иконка в самом низу рейла, 🎨 переехал в шапку к 🔍
+
+Дата: 2026-07-31. Три правки по фидбеку пользователя (со скринами) к v1.2.175.
+
+**1. 🔴 Меню режимов обрезалось у левого края — теперь открывается СБОКУ.** Поповер «Чаты/Клиенты/Доска» центрировался на узком рейле (`translateX(-50%)`) и уходил за левый край окна, где его обрезал `.native-content { overflow:hidden }` ([styles-base.css:159](../src/native/styles-base.css)). Фикс в [RailModeSwitcher.jsx](../src/native/components/RailModeSwitcher.jsx): меню открывается вправо от иконки (`left:100%; bottom:0`) — целиком на экране, в области списка. (Эта же дыра была найдена в ревью v1.2.175.)
+
+**2. Иконка режимов — в САМЫЙ НИЗ рейла.** Была сразу под «+». Теперь `marginTop:auto` на разделителе ([NativeApp.jsx](../src/native/NativeApp.jsx)) прижимает группу (разделитель + иконка) к низу рейла.
+
+**3. 🎨 цвет сообщений → в шапку переписки рядом с 🔍; 48px-полоса сверху убрана.** Кнопка 🎨 жила в отдельной полосе высотой 48px над перепиской ([InboxMode.jsx](../src/native/modes/InboxMode.jsx)). Полоса удалена (переписка стала выше на 48px), 🎨 добавлена в шапку [InboxChatPanel.jsx](../src/native/components/InboxChatPanel.jsx) рядом с 🔍 через новый проп `onOpenThemePicker` (открывает тот же ThemePickerModal). Модалка выбора цвета и логика не изменились.
+
+**Проверки:** ESLint 0; лимиты 545/545; InboxMode+VirtualMessageList+фильтр 33/33. **Требует пересборки + визуальной проверки:** меню режимов появляется справа от иконки и видно целиком; иконка внизу рейла; 🎨 рядом с 🔍 в шапке, верхней полосы нет, переписка выше. Откат: `git checkout -- src/native/components/RailModeSwitcher.jsx src/native/NativeApp.jsx src/native/modes/InboxMode.jsx src/native/components/InboxChatPanel.jsx` + версия на 1.2.175.
+
+### v1.2.175 — Переключатель режимов (Чаты/Клиенты/Доска) переехал в рейл аккаунтов; список чатов поднялся вверх
+
+Дата: 2026-07-31. По просьбе пользователя (выбран Вариант 3 из макета «одна иконка → меню вверх»). Цель: убрать верхний блок над списком чатов, чтобы список стал выше.
+
+**Что сделано.**
+- Новый компонент [RailModeSwitcher.jsx](../src/native/components/RailModeSwitcher.jsx): ОДНА иконка внизу рейла аккаунтов (под «+», через разделитель), показывает текущий режим; клик → меню ВВЕРХ с 3 режимами (Чаты 💬 / Клиенты 👥 / Доска 📋). Активный подсвечен. Закрытие по клику вне и Escape. Иконка масштабируется с шириной рейла (`railScale`).
+- [NativeApp.jsx](../src/native/NativeApp.jsx): переключатель добавлен в рейл после «+»; использует `store.mode` / `store.setMode` (те же, что старый дропдаун).
+- [InboxChatListSidebar.jsx](../src/native/components/InboxChatListSidebar.jsx): удалён верхний дропдаун `ChatTypesDropdown` (блок + импорт + неиспользуемый проп `modes`) → поиск и список **поднялись вверх** (освободилось ~44px).
+
+**Улучшение против старого.** Раньше дропдаун был только в режиме «Чаты» (в списке) — из «Клиентов»/«Доски» переключиться было нечем. Теперь переключатель в рейле виден во ВСЕХ режимах.
+
+**Остаток.** `ChatTypesDropdown.jsx` (101 стр.) осталась сиротой (нет импортёров, только упоминание в комментарии) — файлы без подтверждения не удаляю; можно удалить по слову пользователя (тогда вернётся ~101 строка renderer-бюджета). 🎨-кнопку в этой задаче не трогал — отдельный шаг. Проверки: ESLint 0; лимиты 545/545 (renderer-ватерлиния 31900→31950, обоснование в тесте); nativeStoreFilter/InboxMode 20/20. **Требует пересборки + визуальной проверки:** верхний блок исчез, список выше; иконка внизу рейла открывает меню вверх, переключение режимов работает. Откат: `git checkout -- src/native/NativeApp.jsx src/native/components/InboxChatListSidebar.jsx src/__tests__/fileSizeLimits.test.cjs` + удалить `src/native/components/RailModeSwitcher.jsx` + версия на 1.2.174.
+
+### v1.2.174 — Имя собеседника над сообщениями показываем только в группах/форумах (в личном чате — убрано)
+
+Дата: 2026-07-31. Жалоба: в ЛИЧНОМ чате над сообщениями повторно писалось имя учётной записи собеседника (дублировало шапку) — как в группе.
+
+**Корень (по коду).** [VirtualMessageList.jsx:130](../src/native/components/VirtualMessageList.jsx) рисовал метку автора `.native-msg-author` для ЛЮБОГО входящего сообщения с `senderName`, без проверки типа чата. В личном чате имя собеседника тоже попадает в `senderName` → показывалось зря (нужно только в группах/форумах, где несколько отправителей).
+
+**Фикс (минимальный).** В `rowContext` ([InboxChatPanel.jsx](../src/native/components/InboxChatPanel.jsx)) добавлен флаг `showSenderName: activeChat?.type === 'group'` (группы + форумы = много отправителей; личный `'user'` и канал — нет). Метка автора в VirtualMessageList рисуется только при этом флаге. Значения типа: `chatTypePrivate/Secret`→`'user'`, `BasicGroup`/`Supergroup`(не канал)→`'group'`, канал→`'channel'` ([tdlibMapper.js:294-299](../main/native/backends/tdlibMapper.js)).
+
+**Остаток (не трогал, по правилу минимума).** Аватар собеседника сбоку каждого входящего сообщения ([VirtualMessageList.jsx:118](../src/native/components/VirtualMessageList.jsx)) в личном чате тоже показывается (Telegram его в 1-1 не рисует) — если мешает, скажи, повешу на тот же флаг. Тесты: `VirtualMessageList.vitest.js` 13/13 (buildRowContext отдаёт `showSenderName:true`). Проверки: ESLint 0; лимиты 544/544. **Требует пересборки + визуальной проверки:** личный чат — имени над сообщениями НЕТ; группа/форум — имя есть. Откат: `git checkout -- src/native/components/InboxChatPanel.jsx src/native/components/VirtualMessageList.jsx src/native/components/VirtualMessageList.vitest.jsx` + версия на 1.2.173.
+
+### v1.2.173 — Фикс «залипшего в сети»: статус в userCache теперь обновляется (иначе refresh возвращал стале online) 🔴
+
+Дата: 2026-07-31. Жалоба (со скринами): у нас «в сети», а в реальном Telegram «был(а) 14 минут назад» — человек офлайн, а мы показываем онлайн.
+
+**Корень (по коду, 3 факта).** (1) TDLib шлёт смену онлайн/офлайн ОТДЕЛЬНЫМ событием `updateUserStatus` и НЕ пересылает полный `updateUser` (факт ур.1, td_api). (2) Обработчик `updateUserStatus` в [tdlibClient.js](../main/native/backends/tdlibClient.js) только эмитил событие, но **не обновлял `userCache`** — единственный писатель кэша был `updateUser`. (3) `getAccountChats` → `mapChat` берёт статус из `userCache.get(userId).status`. Итог: человек ушёл офлайн → живой обработчик (v1.2.171) поправил стор, НО кэш держал старый `userStatusOnline` → ближайший refresh списка чатов через mapChat снова возвращал «в сети», затирая исправление. (Это латентный баг с v0.95.29 — раньше маскировался тем, что live-обновления статуса вообще не было.)
+
+**Фикс (минимальный).** В `updateUserStatus` перед эмитом обновляем статус в кэше: `const cachedUser = record.userCache.get(Number(update.user_id)); if (cachedUser) cachedUser.status = update.status || null`. Теперь кэш всегда согласован → и live-обновление, и любой refresh дают верный статус. Крайние случаи: юзера ещё нет в кэше (status раньше user) → пропуск записи, live-обработчик обновит стор, полный updateUser придёт позже; status=null → кэш null → mapChat трактует как «не онлайн».
+
+**Тест-ловушка.** [tdlibEmitContracts.vitest.js](../src/__tests__/tdlibEmitContracts.vitest.js): updateUser(online) → кэш online; затем updateUserStatus(offline) → кэш ДОЛЖЕН стать offline (репродюсер бага). Проверки: контракт-тест 31/31; ESLint 0; `node --check` OK; лимит tdlibClient 647/650. **Требует пересборки + визуальной проверки:** собеседник офлайн → «был(а) N минут назад», а не «в сети». Откат: `git checkout -- main/native/backends/tdlibClient.js src/__tests__/tdlibEmitContracts.vitest.js` + версия на 1.2.172.
+
+### v1.2.172 — Почин краха поиска (filter is not defined) + точка «в сети» в списке чатов + доводки статуса по ревью
+
+Дата: 2026-07-31. Жалоба: при вводе в строку поиска Telegram — ошибка `NativeInbox: filter is not defined` (экран падал в ErrorBoundary). Плюс пакет: точка «в сети» в списке, разгрузка features.md, доводки по ревью.
+
+**1. 🔴 Крах поиска (корень по коду).** [InboxChatListSidebar.jsx](../src/native/components/InboxChatListSidebar.jsx) в счётчике «найдено X из Y» использовал ГОЛУЮ переменную `filter` — остаток старого фильтра по типам, удалённого в v1.2.163 (переезд на фильтр аккаунтов). Счётчик рисуется только при активном поиске → `ReferenceError: filter is not defined` ловил ErrorBoundary → весь список падал. (Пользователь думал «из-за 2 аккаунтов» — на самом деле из-за самого факта поиска.) Фикс: знаменатель считается как число чатов ВИДИМЫХ аккаунтов через тот же `effectiveVisibleAccountIds`, что и основной список (единый источник). Не зависит от числа аккаунтов.
+
+**2. Точка «в сети» в списке чатов (и при 2+ аккаунтах).** [ChatListItem.jsx](../src/native/components/ChatListItem.jsx) показывал зелёную точку онлайна только при ОДНОМ аккаунте (`chat.isOnline && !multiAccount`) — а у пользователя два, ветка multiAccount точку гасила. Условие `!multiAccount` — устаревшее: значок аккаунта переехал в левую цвет-полосу (v1.2.155), низ-право аватарки свободен. Убрал guard → точка в основной ветке при любом числе аккаунтов; добавил такую же точку в компактную (узкий рейл) ветку. Данные живые: `chat.isOnline` обновляет обработчик `tg:user-status` (v1.2.171) → точка в списке загорается/гаснет сама.
+
+**3. Скрытые статусы (недавно/на неделе/месяц) — проверено, уже работает.** [formatChatStatus.js:74-79](../src/native/utils/formatChatStatus.js) уже рисует `userStatusRecently`→«был(а) недавно», `LastWeek`→«был(а) на этой неделе», `LastMonth`→«был(а) в этом месяце», `Empty`→«давно не был(а)». Данные доходят (mapChat + live tg:user-status ставят `userStatusType`). Кода не потребовалось.
+
+**4. Ревью прошлой правки (2 находки закрыты).** (#1) Обработчик `tg:user-status` [nativeStoreSendIpc.js](../src/native/store/nativeStoreSendIpc.js) пересобирал массив `chats` на КАЖДЫЙ сигнал статуса (частый, для любого юзера) → лишние перерисовки. Теперь обновляет только при реальном совпадении+изменении, иначе возвращает тот же объект state (React пропускает ре-рендер). (#2) Добавлен контракт-тест канала `tg:user-status` в [tdlibEmitContracts.vitest.js](../src/__tests__/tdlibEmitContracts.vitest.js) (offline+was_online→точное время; online→без времени; recently→только тип).
+
+**5. Разгрузка features.md.** Активный файл дошёл до 90 КБ (лимит 100) → блок v1.2.147–155 (цвет-метки + фиксы входа) вынесен в [archive/features-v1.2.147-155.md](./archive/features-v1.2.147-155.md), активный → 61 КБ.
+
+**Проверки:** ESLint 0; контракт-тест 30/30 (+3 user-status); userStatusMap/typing зелёные; лимиты 544/544 (renderer-ватерлиния 31850→31900, обоснование в тесте); память 41/41. **Требует пересборки + визуальной проверки:** ввод в поиск → список НЕ падает, показывает «найдено X из Y»; онлайн-собеседник в списке → зелёная точка на аватарке (при двух аккаунтах тоже). Откат: `git checkout -- src/native/components/InboxChatListSidebar.jsx src/native/components/ChatListItem.jsx src/native/store/nativeStoreSendIpc.js src/__tests__/tdlibEmitContracts.vitest.js src/__tests__/fileSizeLimits.test.cjs` + версия на 1.2.171.
+
+### v1.2.171 — Живой онлайн-статус собеседника («в сети / был(а) в HH:MM») + общий глагол действий + разгрузка tdlibClient
+
+Дата: 2026-07-31. Три задачи разом: два ⭐⭐ совета из ревью + «статусы тоже делай полностью».
+
+**1. Статусы полностью — живое обновление онлайна (была дыра).** Онлайн-статус показывался ТОЛЬКО при загрузке чата (`mapChat`) и больше НЕ менялся: собеседник заходил/выходил — в шапке висело старое. Корень (по коду + grep): TDLib `updateUserStatus` → мост слал канал `tg:user-status`, но **его никто не слушал** (`grep tg:user-status src/` — пусто), да и слал лишь `online:boolean` (терялось точное «был(а) в HH:MM»). Что сделано:
+- Бэкенд [tdlibClient.js](../main/native/backends/tdlibClient.js): `updateUserStatus` форвардит СЫРОЙ объект статуса (в нём `@type` + `was_online`), а не только тип.
+- Единый разбор статуса вынесен в чистый [shared/userStatusMap.js](../shared/userStatusMap.js) `mapUserStatus(status)` → `{isOnline, lastSeenAt, userStatusType}` — переиспользован в `mapChat` (убран дубль) И в мосте.
+- Мост [tdlibIpcBridge.js](../main/native/tdlibIpcBridge.js): `tg:user-status` теперь шлёт `{accountId, userId, isOnline, lastSeenAt, userStatusType}`.
+- Chat получил поле `userId` ([tdlibMapper.js](../main/native/backends/tdlibMapper.js)) — чтобы обработчик нашёл чат по пользователю (updateUserStatus даёт userId, не chatId).
+- НОВЫЙ обработчик `tg:user-status` в [nativeStoreSendIpc.js](../src/native/store/nativeStoreSendIpc.js) — живо обновляет `isOnline/lastSeenAt/userStatusType` у всех чатов пользователя. Отображение (`formatChatStatus.js`) уже было готово: «в сети / был(а) в 14:32 / был(а) недавно».
+
+**2. ⭐⭐ Общий глагол, когда несколько собеседников делают ОДНО действие.** Раньше 2+ собеседников всегда → «печатают…», даже если оба записывают голосовое. Теперь [formatTypingUsers.js](../src/native/utils/formatTypingUsers.js): `ACTION_VERB_PLURAL` + `pluralVerb(active)` — если действие у ВСЕХ одно → его мн. форма («Иван и Маша записывают голосовое…»); разные действия → безопасный откат «печатают…».
+
+**3. ⭐⭐ Разгрузка tdlibClient.js (был 650/650).** `userDisplayName`/`chatDisplayName` вынесены в новый [tdlibNames.js](../main/native/backends/tdlibNames.js); tdlibClient импортирует их обратно и РЕЭКСПОРТИРУЕТ (tdlibBackend.js берёт `userDisplayName` отсюда — путь сохранён). Файл 649 → 641 (появился запас).
+
+**Тесты:** `shared/userStatusMap.vitest.js` (+6), `formatTypingUsers.vitest.js` (+4 общий глагол). Проверки: node --check 7 файлов OK; линт 0; лимиты 544/544 (renderer-ватерлиния 31800→31850, обоснование в тесте); tdlibMapper/emit-контракты 96/96. **Требует ПОЛНОГО перезапуска + визуальной проверки** (собеседник зашёл/вышел → статус в шапке меняется живо; несколько печатающих с одним действием → общий глагол).
+
+### v1.2.170 — Статус собеседника: не только «печатает», а голосовое/фото/видео/стикер + лог самолечения фильтра
+
+Дата: 2026-07-31. По просьбе пользователя. Показ «печатает…» уже был (v0.89.4/0.95.31), но ЛЮБОЕ действие собеседника отображалось как «печатает» (или гасло) — теперь показываем КОНКРЕТНОЕ действие.
+
+**Корень (по коду).** [tdlibClient.js](../main/native/backends/tdlibClient.js) на `updateChatAction` брал только `chatActionTyping` (`isTyping = actionType === 'chatActionTyping'`), остальные типы TDLib (запись голосового, отправка фото/видео, выбор стикера) → `typing:false` → индикатор не показывался.
+
+**Что сделано (весь конвейер).**
+- Бэкенд: тип действия TDLib нормализуется в короткий ключ — новый [chatActionKeys.js](../main/native/backends/chatActionKeys.js) `normalizeChatAction` (вынесен из tdlibClient — файл был на лимите 650). `chatActionCancel` → null (гасит); неизвестный активный тип → 'typing' (безопасный откат). Эмит `chat:typing` шлёт `action` вместо `typing:boolean`.
+- Мост [tdlibIpcBridge.js](../main/native/tdlibIpcBridge.js) и обработчик [nativeStoreSendIpc.js](../src/native/store/nativeStoreSendIpc.js) проводят `action`; в `store.typing[chatId][userId]` теперь `{senderName, at, action}`.
+- Текст: [formatTypingUsers.js](../src/native/utils/formatTypingUsers.js) для ОДНОГО собеседника показывает глагол по действию: «записывает голосовое…», «отправляет фото…», «записывает видеосообщение…», «отправляет видео/файл…», «выбирает стикер/геопозицию/контакт…», «играет…». Несколько собеседников → «печатают…» (как раньше). Шапка чата (InboxChatPanel) не менялась — берёт готовый текст.
+
+**Плюс (советы из фильтра, приняты):** (1) самолечение фильтра аккаунтов (v1.2.169) теперь пишет в журнал при реальном сбросе (`[acct-filter] самопроверка …`, [nativeStore.js](../src/native/store/nativeStore.js)) — «немой» автосброс стал объяснимым; (2) урок «сверять сохранённое при ЗАГРУЗКЕ, не только при мутации» дописан в [[electron-core]].
+
+**Крайние случаи / проверка.** Неизвестный тип → «печатает» (без падений). Отмена (`chatActionCancel`) → индикатор гаснет. Нет поля `action` (старые данные) → «печатает» (обратная совместимость). Бот/канал (messageSenderChat) — не эмитим (как было). Тесты: [tdlibEmitContracts.vitest.js](../src/__tests__/tdlibEmitContracts.vitest.js) (+voice/photo/cancel→null/unknown→typing) + [formatTypingUsers.vitest.js](../src/native/utils/formatTypingUsers.vitest.js) (+глаголы действий, откат). Проверки: контракт+формат+InboxMode 52/52; `mainRuntime` 99/99; `node --check` OK; ESLint 0; лимиты 541/541 (tdlibClient 650/650 — впритык). **Требует пересборки + визуальной проверки** (собеседник записывает голосовое → «записывает голосовое…»). Откат: `git checkout -- main/native/backends/tdlibClient.js main/native/tdlibIpcBridge.js src/native/store/nativeStoreSendIpc.js src/native/utils/formatTypingUsers.js src/__tests__/tdlibEmitContracts.vitest.js src/native/utils/formatTypingUsers.vitest.js src/native/store/nativeStore.js .memory-bank/mistakes/electron-core.md` + удалить `main/native/backends/chatActionKeys.js` + версия на 1.2.169.
 
 
-### v1.2.165 — Левый рейл аккаунтов: перетаскиванием разделителя сужается, значки уменьшаются, подписи прячутся (TODO-27)
+### v1.2.169-v1.2.161 — Фильтр аккаунтов (мультивыбор+соло) + самолечение + закрепы/ресайз рейла (архив)
 
-Дата: 2026-07-30. По просьбе пользователя. Ширину левой панели с аватарками теперь можно менять перетаскиванием разделителя между рейлом и списком чатов.
-
-**Как работает.**
-- **Разделитель-ресайз** (5px, справа от рейла): тянешь — рейл сужается. МАКСИМУМ = текущая ширина 76px (расширять нельзя, зафиксировано по просьбе), минимум 44px. Двойной клик по разделителю — сброс к 76px. Механика — Pointer Events (`setPointerCapture`), эталон `useChatListResize.js`. Новый хук [useAccountRailResize.js](../src/native/hooks/useAccountRailResize.js).
-- **Значки/аватарки масштабируются** от ширины: коэффициент `railScale = railWidth/76` домножает все размеры (кружок, шрифт, угловые бейджи, галочка, кнопки «Все»/«+»). При сужении всё уменьшается пропорционально.
-- **Подписи-имена прячутся**, когда рейл узкий (< 64px) — остаются только кружки (по решению пользователя «когда узко подписи не надо»).
-- **Ширина сохраняется** в localStorage (`cc-native-rail-width`), переживает перезапуск.
-
-**Рефакторинг (для лимита).** Компонент `AccountAvatar` (+константы `MESSENGER_COLORS`/`MESSENGER_EMOJI`) вынесен из `NativeApp.jsx` в отдельный [AccountAvatar.jsx](../src/native/components/AccountAvatar.jsx) — `NativeApp.jsx` был на 596/600, после выноса 460/600. Поведение не изменилось, добавлены пропсы `scale`/`hideLabel`.
-
-**Крайние случаи.** Битая/пустая сохранённая ширина → clamp к 76. Мин. 44px = уменьшенный кружок ещё читаем. Перетаскивание порядка аккаунтов, клик/двойной-клик фильтра — не затронуты (разделитель отдельно справа). 1 аккаунт — рейл так же можно сузить (аватарка уменьшится).
-
-**Проверка.** ESLint 0; лимиты 540/540 (NativeApp 460/600, AccountAvatar 113/600, хук 62/150; renderer 31710/31750); тесты стор/фильтр/InboxMode 68/68 (не сломаны). **Само перетаскивание и вид при сужении автотестом не проверяются → нужна пересборка + ручная визуальная проверка** (потянуть разделитель: рейл сужается, значки уменьшаются, подписи исчезают; двойной клик — сброс; ширина держится после перезапуска). Откат: `git checkout -- src/native/NativeApp.jsx` + удалить `src/native/components/AccountAvatar.jsx` и `src/native/hooks/useAccountRailResize.js` + версия на 1.2.164.
-
-
-### v1.2.164 — Панель аккаунтов: блок вверх + кнопка «+» синяя + доводки фильтра по ревью
-
-Дата: 2026-07-30. По просьбе пользователя + фиксы из ревью v1.2.163.
-
-- **Блок аккаунтов вверху панели** (был прижат вниз спейсером). Убран верхний `<div flex:1>` в [NativeApp.jsx](../src/native/NativeApp.jsx); порядок: «Все» → аватарки → «+». Перетаскивание порядка сохранено.
-- **Кнопка «+» (добавить аккаунт)**: базовый цвет теперь синий (прежний цвет наведения — синий контур + синий плюс); наведение — НОВЫЙ эффект: заливка синим + белый плюс. [styles-base.css](../src/native/styles-base.css) `.native-account__add` / `:hover`. Факт (MDN CSS-специфичность): `.native-account__add:hover` перебивает `.native-account:hover`.
-- **Fix #1 (баг ревью 🟡):** при удалении ПОСЛЕДНЕГО аккаунта (wipe) теперь чистится и localStorage скрытых (`saveHiddenAccounts([])` в ветке `isLast`, [nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js)) — иначе при рестарте оставались «призраки» скрытых → кнопка «Все» показывала серый счётчик вместо «горит». Тест-ловушка в [nativeStoreFilter.vitest.jsx](../src/native/store/nativeStoreFilter.vitest.jsx).
-- **Fix #3 (ревью 🟡):** «текущий аккаунт» (`activeNativeAccountId`) теперь = единственный видимый, если остальные скрыты галочкой (не только соло/активный чат) — восстановлен полезный сигнал для `onActiveNativeAccountChange`. [NativeApp.jsx](../src/native/NativeApp.jsx).
-
-**НЕ вошло (осознанно):** ресайз левого рейла с уменьшением значков — крупная непроверяемая без запуска правка с неоднозначностью (мин. ширина, скрывать ли подписи), выделена в отдельную задачу ([[code-todo]] TODO-27). Fix #2 (задержка 220мс клика/двойного) оставлен — это подстройка «по ощущениям», решается после ручной проверки.
-
-**Проверка.** accountFilter+store 25/25 (вкл. новый wipe-тест); ESLint 0; лимиты 538/538 (renderer 31671/31750; NativeApp.jsx 596/600 ⚠️). **Требует пересборки + визуальной проверки** (вид «+», расположение блока вверху). Откат: `git checkout -- src/native/NativeApp.jsx src/native/store/nativeStoreIpc.js src/native/styles-base.css src/native/store/nativeStoreFilter.vitest.jsx` + версия на 1.2.163.
-
-
-### v1.2.163 — Фильтр аккаунтов переехал на левую панель: клик=вкл/выкл, двойной клик=соло, кнопка «Все»
-
-Дата: 2026-07-30. По просьбе пользователя (макет согласован в artifact-design). Верхняя строка кнопок «Все / Avtoliberty / БНК» над списком чатов убрана — управление показом чатов по аккаунтам переехало на левую панель с аватарками.
-
-**Модель (заменила одиночный `chatFilter` 'all'|accountId из ADR-016 → ADR-026):** множественный выбор аккаунтов.
-- **Одиночный клик** по аватарке = показать/скрыть этот аккаунт (галочка ✓ в ЛЕВОМ НИЖНЕМ углу; скрытый — серая аватарка). Защита: нельзя скрыть ПОСЛЕДНИЙ видимый (список не станет пустым).
-- **Двойной клик** = «только этот» (соло): в списке чаты одного аккаунта, галочки запоминаются. Повтор двойного (или одиночный клик по другому) — выход из соло.
-- Кнопка **«Все»** над аватарками: горит при показе всех; иначе счётчик «N/M». Клик — показать все (снять скрытия и соло).
-- Правый клик (меню), перетаскивание порядка, «+» — как раньше.
-
-**Данные.** `hiddenAccountIds` (массив скрытых, ПЕРСИСТЕНТНО в localStorage, ключ `cc-native-hidden-accounts`) + `soloAccountId` (ВРЕМЕННЫЙ, не сохраняется). Чистая логика — [shared/accountFilter.js](../shared/accountFilter.js) (`isAccountVisible`/`toggleAccountHidden`/`visibleAccountCount`/`isAllVisible`); обёртка localStorage — [src/native/store/accountFilter.js](../src/native/store/accountFilter.js).
-
-**Файлы.** Стор: `nativeStoreHelpers.js` (DEFAULT_STATE), `nativeStore.js` (действия `toggleAccountVisible`/`soloAccount`/`showAllAccounts`, убран `setChatFilter`), `nativeStoreIpc.js` (при удалении/переименовании аккаунта чистим скрытые/соло; при wipe — сброс). Список: `InboxMode.jsx` (предфильтр по видимости перед `filterSortChats`). UI: `InboxChatListSidebar.jsx` (удалены верхние чипы, 567→523), `NativeApp.jsx` (кнопка «Все» + галочка + клик/двойной клик в `AccountAvatar`, разведены таймером 220мс; `activeNativeAccountId` теперь по `soloAccountId`).
-
-**Крайние случаи.** 1 аккаунт → «Все»/галочки/клики не активны (фильтр не нужен). Удалили аккаунт → он убирается из скрытых, соло снимается. Переименование → id переносится в скрытых/соло. Соло не сохраняется при перезапуске; набор скрытых — сохраняется. Скрытый аккаунт: счётчик непрочитанных на аватарке обновляется, но чаты в списке не показываются.
-
-**«Активный аккаунт для входа»** (`activeAccountId`): клик по аватарке БОЛЬШЕ его не задаёт (теперь клик = фильтр). Он ставится при добавлении/старте как раньше; при желании выбирать вручную — отдельная мелкая доработка (пункт правого клика). Не влияет на кнопку «+» (она создаёт новый вход).
-
-**Тест.** [accountFilter.vitest.js](../src/__tests__/accountFilter.vitest.js) (чистая логика, 20 проверок: видимость, «нельзя скрыть последний», счётчик, load/save) + [nativeStoreFilter.vitest.jsx](../src/native/store/nativeStoreFilter.vitest.jsx) (действия стора: скрыть/показать/соло/Все) + DEFAULT_STATE в `nativeStoreHelpers.vitest`. Проверки: accountFilter+store+InboxMode+сайдбар+ChatListItem 103/103; ESLint 0 (9 файлов); лимиты 538/538 (renderer-метка 31650→31750 с обоснованием; NativeApp.jsx 595/600 ⚠️ близко). **Само взаимодействие мышью (клик/двойной клик/соло) автотестом не проверяется → нужна пересборка + ручная визуальная проверка.**
-
-**Остаточные риски.** (1) NativeApp.jsx 595/600 — близко к лимиту, скоро разбить. (2) Двойной клик разведён таймером 220мс → одиночный клик (вкл/выкл) срабатывает с задержкой ~0.2с (компромисс, чтобы двойной не путался с одиночным). (3) Смена формы состояния стора затрагивает добавление/удаление/переименование аккаунта — покрыто, но требует визуальной проверки этих сценариев. Откат: `git checkout -- shared/accountFilter.js src/native/store/accountFilter.js src/native/store/nativeStore.js src/native/store/nativeStoreHelpers.js src/native/store/nativeStoreIpc.js src/native/modes/InboxMode.jsx src/native/components/InboxChatListSidebar.jsx src/native/NativeApp.jsx src/__tests__/fileSizeLimits.test.cjs src/native/store/nativeStoreHelpers.vitest.js` + удалить `src/__tests__/accountFilter.vitest.js` и `src/native/store/nativeStoreFilter.vitest.jsx` + версия на 1.2.162.
-
-
-### v1.2.162 — Регрессионный мини-тест: закреплённые в ЕДИНОМ списке (защита от повтора ошибки v1.2.160)
-
-Дата: 2026-07-30. По совету из ревью. Ошибку «закреплённые вынесены в отдельный приклеенный блок» (v1.2.160) я уже допускал — автопроверки на неё не было.
-
-**Что сделано.** В [InboxChatListSidebar.vitest.jsx](../src/native/components/InboxChatListSidebar.vitest.jsx) добавлен блок из 4 проверок (в стиле файла — чтение исходника регэкспом, react-window в jsdom строки не рисует): (1) в сайдбаре НЕТ `PinnedChatList`; (2) единый `<List>` получает `chats: activeAccountChats` (все чаты, закреплённые внутри); (3) НЕТ деления `mainChats`/`pinnedVisible`; (4) `pinnedSet` прокинут (значок 📌/полоска у закреплённых). Падает, если кто-то снова разделит список.
-
-**Проверка.** `InboxChatListSidebar.vitest` + `pinnedChats` 31/31; ESLint 0; лимиты 534/534 (тест-файл 105/400). Откат: `git checkout -- src/native/components/InboxChatListSidebar.vitest.jsx` + версия на 1.2.161.
-
-
-### v1.2.161 — Откат «приклеенного» списка закреплённых: они снова обычные строки наверху единого списка
-
-Дата: 2026-07-30. По жалобе пользователя: после v1.2.160 закреплённые чаты стали ОТДЕЛЬНЫМ блоком сверху, который НЕ листается вместе со списком («приклеен»). Нужно было другое — чтобы закреплённые были просто наверху ОБЩЕГО списка чатов, в порядке закрепления, и прокручивались вместе со всеми.
-
-**Корень (по коду).** В v1.2.160 закреплённые выносились из виртуального списка (react-window) в отдельный компонент `PinnedChatList`, который рендерился НАД списком как статический блок вне его прокрутки → не листался. Это была неверная трактовка задачи.
-
-**Что сделано — откат v1.2.156→160 (перетаскивание + вынос).** Закреплённые снова рисуются как обычные строки ЕДИНОГО виртуального списка, наверху, в порядке `pinnedIds` (сортировка `filterSortChats`/`sortWithPinnedFirst` в [InboxMode.jsx](../src/native/modes/InboxMode.jsx) — уже была). Теперь они прокручиваются вместе со списком, как обычные чаты.
-- Удалён компонент `PinnedChatList.jsx` (пальцевое перетаскивание).
-- [InboxChatListSidebar.jsx](../src/native/components/InboxChatListSidebar.jsx): убрано разделение на закреплённые/обычные и расчёт высот — снова один `<List>` со всеми `activeAccountChats` (высота = `listHeight`).
-- [InboxMode.jsx](../src/native/modes/InboxMode.jsx): убраны `handleReorderPinned`/`onReorderPinned`.
-- [ChatRow.jsx](../src/native/components/ChatRow.jsx): комментарий актуализирован (закреплённые снова здесь).
-- Чистая `movePinnedByVisibleOrder` удалена (не нужна) из [shared/pinnedChats.js](../shared/pinnedChats.js) + реэкспорт + её тесты.
-- Метка renderer возвращена 31850→31650 (компонент удалён, `InboxChatListSidebar.jsx` ужался 595→567).
-
-**Сохранено:** порядок закрепа (стабильный, не по времени — v1.2.139); полоска цвета аккаунта + золотая «скрепка» у закреплённых (v1.2.155); строки-заголовка «📌 Закреплённые · N» НЕТ (убран по просьбе); значок 📌 на аватарке.
-
-**Что НЕ вошло (осознанно).** Ручное перетаскивание порядка закреплённых мышью — снято с задачи: оно требует либо «приклеенного» блока (что пользователь отверг), либо замены виртуального списка react-window (крупная работа). Порядок закреплённых = порядок, в котором закрепляли. См. [[code-todo]] TODO-20.
-
-**Крайние случаи.** 0 закреплённых → обычный список. Поиск → как раньше (закреплённые внутри общего списка, значок при совпадении). Тысячи чатов → виртуализация сохранена (быстро). Тест: `pinnedChats.vitest` (перестановочные тесты удалены вместе с функцией) + ChatListItem + InboxMode 44/44; ESLint 0 (6 файлов); лимиты 534/534 (renderer 31593/31650). **Требует пересборки + визуальной проверки:** закреплённые наверху списка, листаются ВМЕСТЕ со списком (не приклеены). Откат: `git checkout -- shared/pinnedChats.js src/native/store/pinnedChats.js src/native/modes/InboxMode.jsx src/native/components/InboxChatListSidebar.jsx src/native/components/ChatRow.jsx src/__tests__/pinnedChats.vitest.js src/__tests__/fileSizeLimits.test.cjs` + вернуть `PinnedChatList.jsx` из git + версия на 1.2.160.
-
+Перенесено в [archive/features-v1.2.161-169.md](./archive/features-v1.2.161-169.md) (2026-07-31, разгрузка под лимит 100 КБ): откат «приклеенного» списка закреплённых (161/162); фильтр аккаунтов на левой панели, клик=вкл/выкл, двойной=соло, кнопка «Все» + доводки (163/164); ресайз левого рейла перетаскиванием (165); полоса «Закреплённое» — читаемый фон + переход к сообщению (166/167); фиксы «после удаления 2-го аккаунта оставшийся не грузился» + самолечение фильтра при старте (168/169).
 
 ### v1.2.160-v1.2.156 — Сага «перетаскивание закреплённых» (ОТКАЧЕНА в v1.2.161, архив)
 
 Перенесено в [archive/features-v1.2.156-160.md](./archive/features-v1.2.156-160.md) (2026-07-30): серия попыток сделать ручное перетаскивание порядка закреплённых чатов (HTML5 drag → свой образ за курсором → живая перестановка → вынос в отдельный не-виртуальный `PinnedChatList` с Pointer Events). **Итог — откачено в v1.2.161**: закреплённые должны листаться в ОБЩЕМ списке, а не быть отдельным блоком; перетаскивание же требует отдельного списка. Урок: drag-порядок и виртуальный список react-window (строки по индексу-слоту) несовместимы без замены движка. Из серии сохранились только НЕ-drag доводки (цвет-грань уведомления по `accountId`, цвет-полоса в узком режиме).
 
-### v1.2.155 — Цвет аккаунта в закреплённых (Вариант 4) + в уведомлении
+### v1.2.155-v1.2.147 — Цвет-метки аккаунтов (различимые цвета/полоса/обводка) + фиксы входа/удаления 2-го аккаунта (архив)
 
-Дата: 2026-07-30. По просьбе пользователя (макет-выбор в artifact-design, выбран Вариант 4).
+Перенесено в [archive/features-v1.2.147-155.md](./archive/features-v1.2.147-155.md) (2026-07-31, разгрузка под лимит 100 КБ): цвет аккаунта в закреплённых/уведомлении (v1.2.155); устойчивые цвет-метки — первый свободный + сохранение вместо хеша (v1.2.154); полоса/обводка/выбор цвета 🎨 (v1.2.153); спиннер ввода кода Telegram (v1.2.152); карточка выхода не заезжает под панель задач + спиннер «думания» (v1.2.150-151); сброс «залипшего success» гейта входа + разгрузка NativeApp (v1.2.148-149); фикс «чёрный экран» после добавления 2-го аккаунта (v1.2.147).
 
-**Проблема.** У закреплённых чатов полоска слева была ЗОЛОТОЙ (признак «закреплён», v1.2.138) и перекрывала цвет-метку аккаунта → снова непонятно, из какого аккаунта закреп. Плюс в карточке уведомления цвета аккаунта не было вовсе.
+### v1.2.146-v1.2.140 — Добавление/удаление аккаунта (диагностика + фиксы следов) + закреп 📌 + маскировка кода в логах (архив)
 
-**Что сделано (Вариант 4 — полоса аккаунта + золотая «скрепка»).**
-- **Список чатов** [ChatListItem.jsx](../src/native/components/ChatListItem.jsx): полоса слева теперь ВСЕГДА = цвет-метка аккаунта (при ≥2 аккаунтах), а закреп показывается КОРОТКОЙ золотой засечкой-«скрепкой» (4×16px, скруглённый угол) СВЕРХУ этой полосы — цвет аккаунта больше не теряется. Общий элемент `leftStripe` используется в обоих режимах (широкий/компактный), поэтому цвет аккаунта теперь виден и в узком режиме списка (раньше там полосы не было). Значок 📌 на аватарке сохранён как есть. Один аккаунт (цвета-метки нет) → закреп рисуется полной золотой полосой, как раньше (поведение не изменилось).
-- **Уведомление**: левая грань карточки (`.color-bar`, 5px во всю высоту) красится в цвет-метку аккаунта. Путь: [nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js) добавляет поле `accountColor` в payload (через `getAccountColor`, только при ≥2 аккаунтах, иначе пусто) → [notificationManager.js](../main/handlers/notificationManager.js) проводит его в `data` → [notification.js](../main/notification.js) `bar.style.background = data.accountColor || data.color`. Один аккаунт → грань остаётся фирменной синей. Аватар-тинт/прогресс/кнопка 📌 не тронуты (остаются синими).
-
-**Крайние случаи.** Цвет берётся из той же карты `accountColors`, что и полоска списка (единый источник) — метка везде одинаковая. Пустой/битый цвет безопасно откатывается (`||` fallback). Снимки `ChatListItem.vitest` НЕ изменились (там нет `multiAccount`/`isPinned` → новая ветка не срабатывает).
-
-**Тест.** [ChatListItem.vitest.jsx](../src/native/components/ChatListItem.vitest.jsx) +2 (multi-account+закреп → скрепка 16px; один аккаунт+закреп → полная полоса). Проверки: ChatListItem+accountColors+nativeStore 66/66; ESLint 0; `node --check` (notification.js, notificationManager.js) OK; лимиты 534/534 (renderer 31603/31650). **Требует пересборки + визуальной проверки:** закреплённый чат — цветная полоса аккаунта с золотой скрепкой сверху; уведомление — левая грань цвета аккаунта. Откат: `git checkout -- src/native/components/ChatListItem.jsx src/native/components/ChatListItem.vitest.jsx src/native/store/nativeStoreIpc.js main/handlers/notificationManager.js main/notification.js` + версия на 1.2.154.
-
-
-### v1.2.154 — Цвет-метка аккаунта: различимые устойчивые цвета (первый свободный + сохранение, взамен хеша)
-
-Дата: 2026-07-30. Правка по придирчивому ревью к v1.2.153 (находка #1).
-
-**Проблема.** Дефолтный цвет аккаунта считался по хешу id `% 8`. Хеш мог совпасть у двух разных аккаунтов → у обоих ОДИНАКОВАЯ полоска и обводка = снова путаница, ровно то, против чего вводилась метка.
-
-**Корень.** «Стабильность по хешу» гарантирует лишь, что у ОДНОГО аккаунта цвет не «прыгает», но НЕ гарантирует РАЗЛИЧИЕ между аккаунтами (два хеша легко попадают в один остаток по модулю 8).
-
-**Что сделано.** Дефолт теперь не по хешу, а «первый свободный цвет палитры» с сохранением:
-- [shared/accountColors.js](../shared/accountColors.js): убран хеш. `getAccountColor(map, id)` = сохранённый цвет ИЛИ `ACCOUNT_PALETTE[0]` (мягкий откат до автоназначения). Новая чистая `assignMissingColors(map, ids)` — каждому аккаунту без цвета выдаёт ПЕРВЫЙ ещё не занятый цвет палитры (ids сортируются для детерминизма), уже назначенные и выбранные пользователем НЕ трогает, при >8 аккаунтах идёт по кругу; если назначать нечего — возвращает ТОТ ЖЕ объект (guard, чтобы стор не крутил лишний сохран). `withAccountColor` без изменений.
-- [nativeStore.js](../src/native/store/nativeStore.js): новый эффект по `state.accounts` — прогоняет `assignMissingColors`, при изменении сохраняет в localStorage и в состояние (same-ref guard = нет лишних сохранов/циклов).
-
-**Различие гарантировано.** Пока аккаунтов ≤ 8 — у всех РАЗНЫЕ цвета (первый свободный никогда не совпадёт). Выбор пользователя (🎨) в приоритете и переживает добавление/удаление других аккаунтов. Порядок цветов стабилен: добавление 3-го аккаунта не перекрашивает первые два.
-
-**Тест.** [accountColors.vitest.js](../src/__tests__/accountColors.vitest.js) переписан (20 проверок: два аккаунта → разные цвета, +3-й не трогает первых двух, не трогает сохранённый выбор, same-ref guard, >8 по кругу, без мутаций, load/save/битый JSON/массив). В [nativeStore.vitest.jsx](../src/native/store/nativeStore.vitest.jsx) — проверка, что два `tg:account-update` дают РАЗНЫЕ цвета через эффект, а `setAccountColor` перекрывает.
-
-**Проверка:** `accountColors + nativeStore` 50/50; ESLint 0 на 4 файлах; лимиты OK. **Требует пересборки + визуальной проверки** (два аккаунта — заведомо разные полоска/обводка). Откат: `git checkout -- shared/accountColors.js src/native/store/accountColors.js src/native/store/nativeStore.js src/__tests__/accountColors.vitest.js src/native/store/nativeStore.vitest.jsx` + версия на 1.2.153.
-
-
-### v1.2.153 — Цвет-метка аккаунта: полоска в списке + обводка аватара + выбор цвета (🎨)
-
-Дата: 2026-07-30. По просьбе пользователя (макеты согласованы в artifact-design): при нескольких подключённых аккаунтах путаешься, чей чат. Решение — свой цвет у каждого аккаунта, видимый и в списке чатов, и на аватаре в панели.
-
-**Что сделано.**
-- **Хранение (локальное, НЕ в Telegram):** чистая логика в [shared/accountColors.js](../shared/accountColors.js) — палитра из 8 цветов `ACCOUNT_PALETTE`, `getAccountColor(map, id)` (сохранённый выбор ИЛИ стабильный дефолт по хешу id — не «прыгает» при добавлении/удалении), `withAccountColor`. Обёртка над localStorage — [src/native/store/accountColors.js](../src/native/store/accountColors.js) (ключ `cc-native-account-colors`).
-- **Стор:** `accountColors` в состоянии (грузится из localStorage при первом рендере, `useState(() => ({...DEFAULT_STATE, accountColors: loadAccountColors()}))`) + действие `setAccountColor(id, color)` ([nativeStore.js](../src/native/store/nativeStore.js)).
-- **Список (полоска слева):** [ChatListItem.jsx:47](../src/native/components/ChatListItem.jsx) — `stripeColor` теперь `account.color` (цвет-метка) с откатом на цвет мессенджера. Цвет обогащается в `accounts` из rowProps сайдбара ([InboxChatListSidebar.jsx](../src/native/components/InboxChatListSidebar.jsx)).
-- **Панель аккаунтов (обводка):** [NativeApp.jsx](../src/native/NativeApp.jsx) `AccountAvatar` — кружок обведён цветом-меткой (`box-shadow` кольцо). Только при ≥2 аккаунтах (иначе рамка не нужна).
-- **Выбор цвета (вариант 2 — 🎨 в углу):** [AccountContextMenu.jsx](../src/native/components/AccountContextMenu.jsx) — в шаге «меню» кнопка 🎨 в правом верхнем углу (с точкой текущего цвета) → поповер палитры из 8 цветов → `onPickColor` → `store.setAccountColor`. Место в карточке не занимает.
-
-**Как работает / крайние случаи.** Цвет по умолчанию — стабильный по хешу id (у двух аккаунтов обычно разный), пользователь меняет кнопкой 🎨. Один аккаунт → метки не показываются (нет путаницы). Карта цветов переживает удаление аккаунта (keyed by id, безвредно). Полоска/обводка включаются при `store.accounts.length >= 2`.
-
-**Тест.** [accountColors.vitest.js](../src/__tests__/accountColors.vitest.js) — 10 проверок (приоритет выбора, стабильный дефолт, разные id → разные цвета, withAccountColor не мутирует, load/save/битый JSON/массив).
-
-**НЕ сделано (осознанно).** Запрос цвета ПРИ добавлении аккаунта — не делал: цвет и так назначается автоматически (по хешу, у 2-го аккаунта другой) и легко меняется кнопкой 🎨; добавление шага в LoginModal — риск для флоу входа. Кандидат на отдельную задачу.
-
-**Проверка:** `accountColors + nativeStore + AccountContextMenu` 63/63; ESLint 0; страж console 0; лимиты 534/534 (renderer 31581/31650; sidebar 584/600, NativeApp 531/600 — оба ⚠️ близко к лимиту). **Требует пересборки + визуальной проверки:** полоска чатов и обводка аватара окрашены по аккаунту; 🎨 в карточке открывает палитру, выбор цвета меняет и полоску, и обводку. Откат: `git checkout -- shared/accountColors.js src/native/store/accountColors.js src/native/store/nativeStore.js src/native/NativeApp.jsx src/native/components/AccountContextMenu.jsx src/native/components/InboxChatListSidebar.jsx src/native/components/ChatListItem.jsx src/__tests__/accountColors.vitest.js src/__tests__/fileSizeLimits.test.cjs` + версия на 1.2.152.
-
-
-### v1.2.152 — Ввод кода Telegram: один спиннер вместо двух («отправка», затем «проверка»)
-
-Дата: 2026-07-30. Жалоба (скриншот): на экране «Введите код» крутились ДВА спиннера сразу — вверху «Отправляем код в Telegram…» и на кнопке «Проверка…».
-
-**Корень (по коду).** Это два РАЗНЫХ момента, но кнопка показывала «Проверка…» по общему флагу `busy`, который включён и во время ОТПРАВКИ кода. В [LoginModal.jsx:204-205](../src/native/components/LoginModal.jsx): `{busy ? <spinner>Проверка… : waitingForCode ? 'Ожидание...' : 'Подтвердить'}` — `busy` имел приоритет над `waitingForCode`. При оптимистичном переходе на шаг «код» сразу после отправки телефона: `busy=true` (запрос телефона в полёте) И `waitingForCode=true` → верхний статус пишет «Отправляем код…» (спиннер), И кнопка «Проверка…» (второй спиннер).
-
-**Что сделано.** Приоритет в кнопке переставлен: `waitingForCode ? 'Ожидание…' : busy ? <spinner>Проверка… : 'Подтвердить'`. Теперь: пока код ОТПРАВЛЯЕТСЯ — спиннер только в верхнем статусе, кнопка = «Ожидание…» (без второго спиннера). После прихода кода и ввода — кнопка «🔄 Проверка…» (спиннер в кнопке). То есть сначала «отправка» вверху, потом «проверка» внизу — как и ожидается.
-
-**Проверка:** `LoginModal + AuthFlow` 12/12; ESLint 0. **Требует пересборки + визуальной проверки:** нажать «Получить код» → крутится только верхний статус (кнопка «Ожидание…»); ввести код → спиннер только на кнопке «Проверка…». Откат: `git checkout -- src/native/components/LoginModal.jsx` + версия на 1.2.151.
-
-
-### v1.2.151 — Карточка выхода не заезжает под панель задач Windows
-
-Дата: 2026-07-30. Жалоба (скриншот): карточка подтверждения выхода со списком «что удалится» нижней частью (кнопка «Выйти») уходила под панель задач Windows.
-
-**Корень (по коду).** Позиция карточки клампится ([AccountContextMenu.jsx:86-89](../src/native/components/AccountContextMenu.jsx)): `safeY = Math.min(y, innerHeight - MENU_H - 8)`. Две проблемы: (1) `MENU_H` для confirm была 360, а реальная карточка со списком категорий ~500px → недооценка высоты → низ вылезал; (2) запаса под панель задач Windows не было, а окно приложения может простираться ЗА панель (тогда `innerHeight` включает область под панелью) → низ карточки прятался под панелью.
-
-**Что сделано.** `MENU_H` confirm 360→500 (реальная высота карточки со stats); добавлен `TASKBAR_RESERVE = 56` px запаса снизу; клампы обёрнуты в `Math.max(8, …)`, чтобы при высокой карточке она не уехала за ВЕРХ экрана. Итог: `safeY = Math.max(8, Math.min(y, innerHeight - 500 - 56))` — низ карточки остаётся выше зоны панели задач.
-
-**Границы.** Оценка высоты статическая (не измеряем реальную) — для типичной карточки (до 5 категорий) хватает; если карточка окажется выше 500px, возможен небольшой заход в запас (56px) — но кнопки всё равно выше панели. Если понадобится идеально — измерять `menuRef.offsetHeight` после загрузки stats (отдельная доработка). Меню-шаг (не confirm) не затронут по сути (180→200, тот же клап).
-
-**Проверка:** `AccountContextMenu` 19/19; ESLint 0; лимиты 531/531 (356/600). **Требует визуальной проверки:** правый клик по аккаунту у нижнего края экрана → «Выйти» → карточка целиком видна над панелью задач. Откат: `git checkout -- src/native/components/AccountContextMenu.jsx` + версия на 1.2.150.
-
-
-### v1.2.150 — Карточка выхода: «эффект думания» (спиннер) + после удаления сразу чаты, а не форма входа
-
-Дата: 2026-07-30. Две UX-правки по просьбе пользователя (макет спиннера согласован в artifact-design).
-
-**1. «Эффект думания» в карточке выхода.** Пока считается «сколько освободится», строка «Считаем что удалится…» была СТАТИЧНОЙ — казалось, что окно зависло. Теперь спиннер + текст «Считаем, что освободится…» ([AccountContextMenu.jsx](../src/native/components/AccountContextMenu.jsx), ветка `statsLoading`). Переиспользован существующий класс `native-spinner` (тот же, что у «Выходим…») — новых стилей не добавляли.
-
-**2. После удаления аккаунта — сразу чаты, а не форма нового входа.** Жалоба (скриншот): удалил аккаунт → показалась форма «Подключить Telegram» (ввод номера), хотя другой аккаунт (БНК) подключён. Причина: форму входа никто не закрывал после удаления (её мог открыть пользователь кнопкой «+»). Теперь в эффекте завершения удаления (`store.lastWipe`, [NativeApp.jsx](../src/native/NativeApp.jsx)) закрываем форму: `setShowLogin(false)` + `resetLoginFlow()`. Итог: после удаления показываются чаты оставшихся аккаунтов; если аккаунтов не осталось — уже существующая надпись «Нет подключённых аккаунтов» (пустое состояние `!hasAccounts` в `NativeMainContent`), а НЕ форма входа. Форма входа появляется только по кнопке «+».
-
-**Проверка:** `AccountContextMenu + loginScreenGate` 26/26; ESLint 0; лимиты 531/531 (AccountContextMenu 351/600, NativeApp 521/600). **Требует пересборки + визуальной проверки:** (а) при выходе строка «Считаем…» крутится (не выглядит зависшей); (б) после удаления аккаунта сразу список чатов / «нет аккаунтов», без формы входа. Откат: `git checkout -- src/native/components/AccountContextMenu.jsx src/native/NativeApp.jsx` + версия на 1.2.149.
-
-
-### v1.2.149 — Доводка фикса входа: сброс «залипшего success» и при ОТКРЫТИИ окна (по ревью)
-
-Дата: 2026-07-30. По придирчивому ревью v1.2.147/148 найдена краевая дыра: `resetLoginFlow` звался только при ЗАКРЫТИИ окна входа ([NativeApp.jsx](../src/native/NativeApp.jsx) `onCloseLogin`), а обе кнопки «+» (панель аккаунтов + пустое состояние) просто открывали окно. Если `success` прилетел, пока окно было закрыто (напр. авто-восстановленный аккаунт финализировался после загрузки экрана), `loginFlow` оставался `success`; при следующем открытии `LoginModal` видел `success` и сам закрывался (0.3с) → окно «мигало». (Самоизлечивалось со 2-й попытки, т.к. авто-закрытие зовёт `onClose`→сброс, поэтому это был 🟡, не 🔴.)
-
-**Что сделано.** Единая точка открытия `openLogin` для ОБЕИХ кнопок «+». Сбрасывает «признак входа» ТОЛЬКО при залипшем завершённом входе — новая чистая `shouldResetLoginFlowOnOpen(loginFlow)` ([shared/loginScreenGate.js](../shared/loginScreenGate.js)) возвращает true лишь для `step==='success'`. Незавершённый вход (phone/code/password) НЕ трогается: панель аккаунтов с кнопкой «+» видна и во время ввода (окно входа рисуется в правой области, не поверх панели), случайный клик не должен обрывать активный вход. При реальном сбросе пишется лог `[acct-store] reset stale loginFlow(success) on open-login` (доработка не «немая»).
-
-**Тест.** [loginScreenGate.vitest.js](../src/__tests__/loginScreenGate.vitest.js) +3 проверки `shouldResetLoginFlowOnOpen` (success→сброс; phone/code/password→нет; null→нет).
-
-**Проверка:** `loginScreenGate + nativeStore` 41/41; ESLint 0; страж console 0; лимиты 531/531 (NativeApp 516/600, renderer 31467/31500). **Требует пересборки + визуальной проверки:** при залипшем success первый клик «+» открывает окно чисто (не мигает). Откат: `git checkout -- shared/loginScreenGate.js src/native/NativeApp.jsx src/__tests__/loginScreenGate.vitest.js` + версия на 1.2.148.
-
-
-### v1.2.148 — Разгрузка NativeApp.jsx + тест сброса loginFlow (доводки к v1.2.147)
-
-Дата: 2026-07-30. Две доработки по советам к v1.2.147.
-
-**Разгрузка `NativeApp.jsx` (был 555/600, 93% — предупреждение «скоро разбивать»).** Блок-переключатель содержимого главной области (экран входа / нет аккаунтов / чаты / заглушка режима) вынесен в новый [components/NativeMainContent.jsx](../src/native/components/NativeMainContent.jsx) (71 строка). Поведение НЕ изменено — только перенос JSX + проброс пропсов (`showLoginScreen, store, hasAccounts, hoveredAccountId, modes, onOpenLogin, onCloseLogin`). Импорты `LoginModal`/`InboxMode`/`ErrorBoundary` переехали в новый файл (в `NativeApp` использовались только в этом блоке). `NativeApp.jsx` 555→**505** (84%). Общий renderer-агрегат поднят 31450→31500 (шапка+импорты нового файла +~6 строк; пофайлово стало лучше).
-
-**Тест `resetLoginFlow` (задача «связка закрыл окно входа → признак сброшен»).** В [nativeStore.vitest.jsx](../src/native/store/nativeStore.vitest.jsx) +1: ставим `loginFlow={step:'success'}` через событие `tg:login-step`, затем `resetLoginFlow()` → `loginFlow` становится `null`. Защищает половину фикса v1.2.147 (экспорт действия + реальный сброс), которую чистый тест гейта не покрывал.
-
-**Проверка:** `nativeStore` + `loginScreenGate` 38/38; ESLint 0; страж console 0; лимиты 531/531 (NativeApp 505/600, NativeMainContent 71/600, renderer 31456/31500). **Требует визуальной проверки** (вынос UI — на глаз): экран входа / пустое состояние / чаты / заглушка режима отображаются как раньше. Откат: `git checkout -- src/native/NativeApp.jsx src/native/components/NativeMainContent.jsx src/native/store/nativeStore.vitest.jsx src/__tests__/fileSizeLimits.test.cjs` + версия на 1.2.147.
-
-
-### v1.2.147 — Фикс «чёрный экран» после добавления 2-го аккаунта (застрявший экран входа)
-
-Дата: 2026-07-30. Жалоба: добавил второй Telegram-аккаунт → «чёрный экран», чатов нет (после перезапуска всё появлялось).
-
-**Корень (по коду + логу + скриншоту, 🟢).** Это НЕ крэш и НЕ потеря данных — застрял экран входа поверх чатов. После успешного входа TDLib шлёт `authorizationStateReady` → мост → `tg:login-step {step:'success'}` → `store.loginFlow = {step:'success'}` ([nativeStoreIpc.js:134](../src/native/store/nativeStoreIpc.js)). Правило показа `showLoginScreen = showLogin || !!store.loginFlow` ([NativeApp.jsx:309](../src/native/NativeApp.jsx)) → при залипшем `success` держит экран входа. `LoginModal` на `success` только закрывает окно (`setShowLogin(false)`), но `loginFlow` НЕ чистит ([LoginModal.jsx:49-54](../src/native/components/LoginModal.jsx)); сброс был только в `cancelLogin` ([nativeStore.js:189](../src/native/store/nativeStore.js)). Доказательства: в `chatcenter.log` НЕТ `[ErrorBoundary]` (не крэш, «аварийная табличка» v1.2.143 молчит); снимок `[acct-store] sidebar` после добавления не появляется (список не рисуется); сообщения БНК продолжают идти (данные целы); маленький тёмный прямоугольник по центру скриншота = карточка `LoginModal`. Почему перезапуск «лечил»: при старте `Ready` для авто-восстановленного аккаунта приходит ДО того, как renderer начинает слушать `tg:login-step`, — `loginFlow` не выставляется. Поэтому баг ловится только при РУЧНОМ добавлении (а оно всегда «2-е+», т.к. БНК авто-восстанавливается).
-
-**Что сделано.** (1) Правило показа вынесено в чистую `shouldShowLoginScreen(showLogin, loginFlow)` ([shared/loginScreenGate.js](../shared/loginScreenGate.js)) — завершённый вход (`step==='success'`) больше НЕ держит экран входа; phone/code/password/ошибка/закрытие — показывают, как раньше. (2) При закрытии окна входа `onClose` теперь зовёт новый `store.resetLoginFlow()` (сброс `loginFlow` БЕЗ отмены на сервере, в отличие от `cancelLogin`) — чтобы залипший `success` не закрывал сам следующее открытие модалки.
-
-**Тест.** [loginScreenGate.vitest.js](../src/__tests__/loginScreenGate.vitest.js) — 8 проверок, включая репродюсер бага (`success` → НЕ показывать вход).
-
-**Проверка:** `loginScreenGate` + `AuthFlow` + `LoginModal` 16/16; ESLint 0; страж console 0; лимиты 530/530 (NativeApp 555/600, renderer 31435/31450). **Требует пересборки + визуальной проверки:** добавить 2-й аккаунт → сразу чаты обоих, без перезапуска; при неверном коде окно входа остаётся. Опасная зона (гейт входа): прячем ТОЛЬКО при `success`. Откат: `git checkout -- shared/loginScreenGate.js src/native/NativeApp.jsx src/native/store/nativeStore.js src/__tests__/loginScreenGate.vitest.js` + версия на 1.2.146.
-
-
-### v1.2.146 — Удаление аккаунта без следов: проброс переименования на экран + чистка кэш-файла (3 из 4 доработок)
-
-Дата: 2026-07-29. Доработки по советам к v1.2.145 (аккаунт-призрак/следы после удаления). Реализовано 3 из 4; №4 (переименование папки) осознанно НЕ сделано (опасно).
-
-**№1 — проброс `account:renamed` на экран.** Раньше событие «временный аккаунт стал настоящим» (`tg_pending_X → tg_<userId>`, `_renameAccount` в [tdlibClient.js](../main/native/backends/tdlibClient.js)) на экран НЕ шло → старая метка временного id могла зависнуть призраком (в т.ч. без перезапуска). Теперь: «мост» ([tdlibIpcBridge.js](../main/native/tdlibIpcBridge.js)) пробрасывает `account:renamed` → новый канал `tg:account-renamed {oldId,newId}`; renderer ([nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js)) удаляет осиротевшую запись `oldId` из списка аккаунтов + чинит `activeAccountId`/`chatFilter`, если они указывали на старый id. Настоящий аккаунт приходит отдельно (`tg:account-update`).
-
-**№2 — чистка кэш-файла при удалении.** `removeAccount` теперь стирает и `tg-cache-<accountId>.json` (по ТЕКУЩЕМУ id — файл называется финальным id, не именем папки) через новый best-effort `removeAccountCacheFile` ([tdlibChatActions.js](../main/native/backends/tdlibChatActions.js)). Это ЛЕГАСИ-файл: текущий кэш живёт в localStorage/IndexedDB ([nativeStoreCache.js](../src/native/store/nativeStoreCache.js)), новые такие файлы не пишутся, но у ранее заведённых аккаунтов они лежат (проверено: `tg-cache-tg_638454350.json` на диске от 16 июля) — теперь при удалении убираются, чтобы не оставалось следа на диске.
-
-**№3 — тесты.** [tdlibBackendAuth.vitest.js](../src/__tests__/tdlibBackendAuth.vitest.js) +1: удаление реально стирает `tg-cache-<id>.json`. [tdlibIpcBridge.vitest.js](../src/__tests__/tdlibIpcBridge.vitest.js) +1: `account:renamed` → `tg:account-renamed {oldId,newId}`. Заодно поправлено стухшее ожидание теста `chat:unread-sync` (мост шлёт ещё `lastReadInboxId` с v1.2.137 — тест не был обновлён тогда, был красным).
-
-**№4 — переименование папки сессии на диске: НЕ сделано (опасная зона).** Идея: переименовать `tdlib-sessions/tg_pending_X` → `tdlib-sessions/tg_<userId>`, чтобы имена совпадали. Почему НЕ делаю: TDLib держит файлы папки ОТКРЫТЫМИ во время работы (по этой причине автор изначально и не переименовывал, см. комментарий в `_renameAccount`). Переименование папки с открытыми хэндлами на Windows → ошибка/повреждение сессии = потеря входа в аккаунт. Безопасно только «закрыть клиент → переименовать → открыть заново», но это сложный и рискованный танец, который нельзя проверить без запуска приложения. Функционально проблема уже решена в v1.2.145 (удаление находит папку по имени создания), так что №4 — лишь косметика имён и риск не оправдан. Оставлено в [[code-todo]] TODO-23.
-
-**Проверка:** `tdlibBackendAuth` 13/13, `tdlibIpcBridge` 13/13; ESLint 0; лимиты 528/528 (tdlibChatActions 268/500, nativeStoreIpc 587/660, tdlibIpcBridge 146/500). **Требует пересборки + визуальной проверки:** добавить аккаунт → призрак временного id не появляется; удалить → на диске не остаётся ни папки, ни `tg-cache-<id>.json`. Откат: `git checkout -- main/native/backends/tdlibChatActions.js main/native/backends/tdlibBackend.js main/native/tdlibIpcBridge.js src/native/store/nativeStoreIpc.js src/__tests__/tdlibBackendAuth.vitest.js src/__tests__/tdlibIpcBridge.vitest.js` + версия на 1.2.145.
-
-
-### v1.2.145 — Фикс: удаление аккаунта оставляло папку сессии → аккаунт-призрак воскресал при старте
-
-Дата: 2026-07-29. Жалоба: удалил Telegram-аккаунт, но остался «след» — в фильтре чатов висел призрак `tg_pending_1785329121471 (0)`.
-
-**Корень (по логу + диску, 🟢 доказано).** Папка сессии на диске названа ИМЕНЕМ СОЗДАНИЯ аккаунта (`tdlib-sessions/<accountSubdir>` — `clientFactory` в [tdlibRuntime.js:74-75](../main/native/backends/tdlibRuntime.js)): при логине это `tg_pending_<ts>`, у давнего аккаунта — `pending`. После входа аккаунт переименовывается В ПАМЯТИ (`tg_pending_X → tg_<userId>`, `_renameAccount`), но папка НЕ переименовывается (TDLib держит файлы открытыми — известное ограничение). `removeAccount` ([tdlibBackend.js](../main/native/backends/tdlibBackend.js)) удалял папку по ТЕКУЩЕМУ id (`tg_638454350`) → такой папки нет → реальная `tg_pending_1785329121471` оставалась. Доказательство из `chatcenter.log`: при удалении `files=0`, `filesRemoved=false`; при следующем старте `auto-restored sessions: pending, tg_pending_1785329121471` → осиротевшая папка (аккаунт разлогинен на сервере, `getMe` не проходит) не финализируется и висит призраком `tg_pending_… (0)`. На диске подтверждены папки `tdlib-sessions/pending` и `tdlib-sessions/tg_pending_1785329121471`.
-
-**Что сделано.** В `removeAccount` реальное имя папки берётся из записи аккаунта `manager.accounts.get(accountId).params.accountSubdir` (сохранено при создании, НЕ меняется при переименовании), fallback на `accountId`. Захват ДО `manager.removeAccount` (он удаляет запись из Map). Это имя идёт и в `scanAccountSessionStats`, и в `removeAccountSessionFiles`. Побочно чинит риск для БНК (его папка — `pending`): удаление БНК тоже нашло бы правильную папку.
-
-**Тест.** [tdlibBackendAuth.vitest.js](../src/__tests__/tdlibBackendAuth.vitest.js) +1: создаём реальную временную папку `tdlib-sessions/tg_pending_test`, аккаунт переименовываем в `tg_999`, `removeAccount('tg_999')` → папка `tg_pending_test` реально удалена (до фикса осталась бы).
-
-**Границы / остаток (НЕ в этом фиксе).** (1) Уже зависший призрак `tg_pending_1785329121471`: удалится корректно, если открепить/выйти из него в приложении ПОСЛЕ пересборки (removeAccount теперь удалит папку). (2) Латентно: событие `account:renamed` не мостится на экран ([tdlibIpcBridge.js](../main/native/tdlibIpcBridge.js)) — может дать призрак и без перезапуска. (3) Лишний кэш-файл `tg-cache-<id>.json` при удалении не чистится. (4) Автоочистку осиротевших папок на старте НЕ добавлял — опасно (если рабочий аккаунт типа БНК с папкой `pending` разово не финализируется из-за сети, автоочистка стёрла бы его сессию = потеря входа). См. [[code-todo]] TODO-23.
-
-**Проверка:** `tdlibBackendAuth` 12/12; ESLint 0; лимиты 528/528 (tdlibBackend 920/930). **Требует пересборки + визуальной проверки:** удалить аккаунт → перезапуск → призрака `tg_pending_… (0)` нет. Откат: `git checkout -- main/native/backends/tdlibBackend.js src/__tests__/tdlibBackendAuth.vitest.js` + версия на 1.2.144.
-
-
-### v1.2.144 — Безопасность: маскируем код входа Telegram в файле логов
-
-Дата: 2026-07-29. По находке из v1.2.143: в `chatcenter.log` попадал код входа Telegram (`Код для входа в Telegram: 51519`) — его писал трейс встроенного webview-Telegram при перехвате уведомления. Код в файле логов = утечка секрета.
-
-**Что сделано.** Новая чистая функция `maskLogSecrets(s)` ([logger.js](../main/utils/logger.js)) вызывается в `writeLog` ПЕРЕД записью в файл. Маскирует последовательность 4–7 цифр рядом со словом «код»/«code» ТОЛЬКО в контексте входа (регэксп проверяет ~30 символов перед словом + сам префикс на `вход|войти|login|telegram|verif|one-time|устройств|sign in`). Коды ошибок/заказов («код ошибки 40001», «код заказа 12345») и обычные числа (`unread=2681`, chatId) НЕ трогаются. Маска только при записи в файл — на само окно-уведомление и на UI не влияет. Покрыта тестом [logMask.vitest.js](../main/utils/logMask.vitest.js) (7 проверок: RU/EN коды входа маскируются; коды ошибок/заказов/обычные числа — нет; пустой/нестроковый вход).
-
-**Граница.** Маскируется в момент записи, поэтому и файл, и просмотрщик «Логи ChatCenter» (читает файл) показывают `*****`. Уже записанные ранее коды в существующем файле не трогаются (только новые записи).
-
-**Проверка:** `logMask.vitest` 7/7; ESLint 0; лимиты 528/528 (logger.js 148/300). Файлы: `main/utils/logger.js`, `main/utils/logMask.vitest.js` (new). Откат: `git checkout -- main/utils/logger.js` + удалить тест + версия на 1.2.143.
-
-**Заметка по чёрному экрану (v1.2.143):** пользователь подтвердил — после ПОЛНОГО перезапуска оба аккаунта и все чаты появились (Все 846 = Avtoliberty 220 + БНК 626). Значит чёрный экран был ВРЕМЕННЫМ сбоем отрисовки в момент живого перехода на мультиаккаунт (свежий mount с 2 аккаунтами рисуется нормально). ErrorBoundary + диагностика (v1.2.143) остаются на месте — поймают сбой, если повторится вживую.
-
-
-### v1.2.143 — ДИАГНОСТИКА+страховка: чёрный экран после добавления 2-го аккаунта
-
-Дата: 2026-07-29. Жалоба: добавил второй Telegram-аккаунт — пропали ВСЕ чаты (и нового, и старого БНК), экран нативного режима стал чёрным целиком (нет даже строки «Чаты» и поиска).
-
-**Что показал реальный лог `chatcenter.log` (по логам v1.2.142).** Добавление прошло ЧИСТО: вход до Ready, `finalize tg_pending_… -> tg_638454350 ok=true`, аккаунт подключён (Avtoliberty). Никакого удаления/сброса/isLast-очистки НЕТ. Ошибок (`ERROR`) — ноль. Данные БНК ЖИВЫЕ (в сторе продолжают идти `tg-new-message`/`store-unread-sync`, forum-map загрузился). «Пустое» второе `account-update` (строка лога) — это всего лишь приход аватарки ([tdlibAvatars.js:99](../main/native/backends/tdlibAvatars.js) шлёт `account:update` только с `avatar`; статус/имя при merge в сторе не затираются). Вывод: **данные не потеряны — сломался ПОКАЗ**.
-
-**Почему причину не видно в логе.** Нативный список чатов (`InboxMode`) НЕ был обёрнут в ErrorBoundary ([NativeApp.jsx](../src/native/NativeApp.jsx), [App.jsx](../src/App.jsx) — ErrorBoundary только вокруг AISidebar/Settings/…). Если отрисовка падает при 2 аккаунтах — React гасит поддерево в чёрное, а `componentDidCatch` писал только `console.error` (renderer → лишь DevTools, НЕ в файл). Поэтому «чёрный экран молча».
-
-**Что сделано (диагностика + страховка, НЕ финальный фикс):**
-- [ErrorBoundary.jsx](../src/components/ErrorBoundary.jsx): `componentDidCatch` теперь ДОП. пишет ошибку в `chatcenter.log` через `app:log` (`[ErrorBoundary] <name>: <message> | <стек 4 строки>`). Помогает всем местам с ErrorBoundary.
-- [NativeApp.jsx](../src/native/NativeApp.jsx): `InboxMode` обёрнут `<ErrorBoundary name="NativeInbox">` — при падении вместо чёрного экрана красная рамка с текстом + запись в лог (экран больше не гаснет целиком).
-- [InboxChatListSidebar.jsx](../src/native/components/InboxChatListSidebar.jsx): снимок `[acct-store] sidebar filter=… accounts=… chatsInStore=… shown=… search=…` при смене фильтра/числа аккаунтов — отличает «пустой фильтр» (данные есть, но `shown=0`) от «упал экран» (будет `[ErrorBoundary]`).
-
-**Гипотезы причины черноты (проверятся логом при повторе):** (1) падение отрисовки при мультиаккаунт-режиме (включаются метка аккаунта/полоска мессенджера/подпись — если у нового аккаунта на миг нет поля, компонент спотыкается); (2) фильтр указывает на аккаунт без загруженных чатов (в логе НЕТ загрузки чатов нового аккаунта). Диагностика различит.
-
-**Проверка:** ESLint 0; rendererConsoleGuard 0 нарушений (новые логи через `app:log`); лимиты 527/527 (InboxChatListSidebar 582/600 — 97%, кандидат на разбиение; NativeApp 548/600); тесты сайдбара 11/11; дымовой 39/39. **Действие пользователя:** повторить добавление 2-го аккаунта → прислать строки `[ErrorBoundary]` и `[acct-store] sidebar …` из «Логи ChatCenter». Диагностика временная ([[code-todo]] TODO-22). Откат: `git checkout -- src/components/ErrorBoundary.jsx src/native/NativeApp.jsx src/native/components/InboxChatListSidebar.jsx` + версия на 1.2.142.
-
-**Отдельно (НЕ чинил, отметка):** в лог попадает код входа Telegram (`Код для входа… 51519`) — его пишет трейс webview-Telegram (`[Telegram] debug: … | notification`), не наши backend-логи. Утечка секрета в файл логов — кандидат на маскировку отдельной задачей.
-
-
-### v1.2.142 — ДИАГНОСТИКА: подробные логи добавления и удаления Telegram-аккаунта
-
-Дата: 2026-07-29. Жалоба: добавил второй Telegram-аккаунт — «подумал», показал что удалится, потом пропал, а после клика по другому аккаунту появился чужой чат. Поведение непонятное → нужны логи ПОЛНОГО пути добавления и удаления, чтобы увидеть, что происходит (а не гадать). Это НЕ фикс, а сбор данных.
-
-**Что добавлено (теги в `chatcenter.log`):**
-- `[acct-add]` ([tdlibBackend.js](../main/native/backends/tdlibBackend.js) auth): `startLogin` (id pending + телефон МАСКОЙ), результат, `submitCode`/`submitPassword` (только факт+результат, БЕЗ значений), `cancelLogin`, `finalize` (переименование `tg_pending_… → tg_<userId>`).
-- `[acct-remove]` (там же, `removeAccount`): старт (есть ли клиент, число файлов), `logOut` с временем (мс) и ошибкой, закрытие+удаление клиента с временем, стирание файлов, эмит `removed` + isLast.
-- `[acct-auth]` ([tdlibIpcBridge.js](../main/native/tdlibIpcBridge.js)): каждый переход авторизации (WaitPhone/WaitCode/Ready/Closed…).
-- `[acct-update]` (там же): что уходит на экран про аккаунт (подключён/удалён/статус/имя).
-- `[acct-ipc]` ([tdlibIpcHandlers.js](../main/native/tdlibIpcHandlers.js)): точки входа IPC (клик реально дошёл до main).
-- `[acct-store]` ([nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js), через `app:log` — renderer): что пришло на экран (`tg:account-update`).
-
-**Безопасность:** телефон логируется только маской (2 последние цифры), код и пароль НЕ логируются никогда. Файл `tdlibClient.js` НЕ трогали (упёрт в потолок 649/650) — весь путь освещён из соседних файлов (мост/backend/обработчики/стор).
-
-**Сильный подозреваемый (по коду, гипотеза, НЕ фикс):** событие `account:renamed` (`tg_pending_… → tg_<userId>`) в мосте на экран НЕ пересылается — вероятно, поэтому на экране остаётся временный `tg_pending_…` и чаты «липнут» не к тому аккаунту. Логи это подтвердят или опровергнут.
-
-**Проверка:** ESLint 0; лимиты 527/527 (tdlibBackend 912/930); rendererConsoleGuard 0 нарушений (renderer-лог через `app:log`); auth/ipc/контракт-тесты 78/78. **Действие пользователя:** воспроизвести добавление+удаление аккаунта → прислать строки `[acct-*]` из логов. Диагностика временная — удалить после разбора ([[code-todo]] TODO-22). Откат: `git checkout -- main/native/backends/tdlibBackend.js main/native/tdlibIpcBridge.js main/native/tdlibIpcHandlers.js src/native/store/nativeStoreIpc.js` + версия на 1.2.141.
-
-
-### v1.2.141 — Закрепление: значок 📌 в левом верхнем углу аватарки (широкий список)
-
-Дата: 2026-07-29. По просьбе пользователя (скриншот): в широком списке чатов значок 📌 стоял в строке имени, а нужно — в левом верхнем углу логотипа/аватарки, как в узком режиме. Перенесён: в [ChatListItem.jsx](../src/native/components/ChatListItem.jsx) значок-спан из строки имени убран, добавлен бейдж `📌` в углу аватарки (`position:absolute; top:-5; left:-6`) — теперь одинаково в обоих режимах (полный/компактный). Полоска слева не тронута. Проверки: ESLint 0; лимиты 527/527. **Требует визуальной проверки.** Откат: `git checkout -- src/native/components/ChatListItem.jsx` + версия на 1.2.140.
-
-
-### v1.2.140 — Фикс по ревью: убрана авто-чистка закреплений (теряла данные)
-
-Дата: 2026-07-29. По итогам придирчивого ревью v1.2.139 найдена ошибка потери данных в чистке «осиротевших» закреплений (TODO-21).
-
-**Проблема (🔴 потеря данных).** `prunePinnedIds` (v1.2.139) удаляла `chat.id` из локального списка закреплений, если чата нет в `store.chats`, а его аккаунт «загружен». Но `store.chats` часто НЕПОЛНЫЙ: `loadCachedChats` кладёт подмножество из кэша ([nativeStore.js:216](../src/native/store/nativeStore.js)), `tg:chats` c `append=false` ЗАМЕНЯЕТ чаты аккаунта пришедшей порцией ([nativeStoreIpc.js:143-156](../src/native/store/nativeStoreIpc.js)), плюс прогрессивная загрузка. Живой закреплённый чат мог временно отсутствовать → эффект `useEffect(...,[store.chats])` срабатывал на первой же неполной порции и сохранял удаление в localStorage НАВСЕГДА. «Нет в списке» ≠ «удалён».
-
-**Решение (вариант А из плана — самый безопасный).** Авто-чистку убрали полностью: удалена функция `prunePinnedIds` ([shared/pinnedChats.js](../shared/pinnedChats.js)), удалён реэкспорт, удалён `useEffect` чистки и импорт в [InboxMode.jsx](../src/native/modes/InboxMode.jsx), удалены 4 теста, закреплявшие опасное поведение. Осиротевшие пины безвредны — `sortWithPinnedFirst`/`isPinnedId` их не находят среди существующих чатов, счётчик секции их не считает. Почему не вариант Б (чистить «виденные-и-пропавшие»): он тоже небезопасен без запуска приложения (та же замена `tg:chats` роняет живой чат), а доказать полноту порций без запуска нельзя → правило «не гадать». Безопасная чистка требует ЯВНОГО события удаления чата от TDLib — отложено ([[code-todo]] TODO-21 переоткрыт).
-
-**Проверка перепроверкой находки #4 (позиция меню ПКМ).** Ложная тревога: `top = innerHeight - 320` рассчитан на самый высокий вид меню (подменю времени, 6 пунктов ≈ 258px); новый пункт «Закрепить» в главном виде даёт ~144px < 320 → клипа нет. Рабочий код НЕ трогали.
-
-**Проверка:** `pinnedChats.vitest` 16/16 (было 20, убраны 4 теста чистки); ESLint 0; лимиты 527/527 (renderer 31371/31450); нет остаточных ссылок на `prunePinnedIds` (grep). Грабля записана в [[electron-core]] (🟡). **Требует визуальной проверки:** закрепить редкий/старый чат → перезапуск → закрепление на месте (раньше могло пропасть). Откат: `git checkout -- shared/pinnedChats.js src/native/store/pinnedChats.js src/native/modes/InboxMode.jsx src/__tests__/pinnedChats.vitest.js` + версия на 1.2.139.
-
+Перенесено в [archive/features-v1.2.140-146.md](./archive/features-v1.2.140-146.md) (2026-07-31, разгрузка под лимит 100 КБ): фикс папки сессии при удалении аккаунта (v1.2.145) + чистка кэш-файла/проброс переименования (v1.2.146); диагностика чёрного экрана и операций с аккаунтом + ErrorBoundary вокруг InboxMode (v1.2.142-143); маскировка кода входа в логах (v1.2.144); значок 📌 в углу аватарки (v1.2.141); откат авто-чистки осиротевших закреплений — теряла данные (v1.2.140).
 
 ### v1.2.139-v1.2.138 — Локальное закрепление чатов (📌): базовая фича + доработки (архив)
 

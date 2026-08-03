@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   isAccountVisible, toggleAccountHidden, visibleAccountCount, isAllVisible,
+  sanitizeHiddenAccounts, effectiveVisibleAccountIds,
   loadHiddenAccounts, saveHiddenAccounts,
 } from '../native/store/accountFilter.js'
 
@@ -57,6 +58,38 @@ describe('isAllVisible', () => {
   it('есть скрытые ИЛИ соло → не все', () => {
     expect(isAllVisible(['a'], null)).toBe(false)
     expect(isAllVisible([], 'a')).toBe(false)
+  })
+})
+
+describe('sanitizeHiddenAccounts (самопроверка при загрузке — v1.2.169)', () => {
+  it('все аккаунты скрыты → сбрасывает в []', () => {
+    expect(sanitizeHiddenAccounts(['a', 'b'], ['a', 'b'])).toEqual([])
+  })
+  it('частичное скрытие (1 из 3) — НЕ трогает', () => {
+    const h = ['b']
+    expect(sanitizeHiddenAccounts(h, ['a', 'b', 'c'])).toBe(h) // тот же массив (guard)
+  })
+  it('убирает «призраки» — id несуществующих аккаунтов', () => {
+    expect(sanitizeHiddenAccounts(['b', 'ghost'], ['a', 'b', 'c'])).toEqual(['b'])
+  })
+  it('аккаунты ещё НЕ загружены (пусто) → не трогает (вернёт вход)', () => {
+    const h = ['a', 'b']
+    expect(sanitizeHiddenAccounts(h, [])).toBe(h) // не сотрёт валидное скрытие до загрузки
+  })
+})
+
+describe('effectiveVisibleAccountIds (страховка от пустого списка — v1.2.169)', () => {
+  it('обычный случай — видны все, кроме скрытых', () => {
+    expect(effectiveVisibleAccountIds(['a', 'b', 'c'], ['b'], null)).toEqual(['a', 'c'])
+  })
+  it('ВСЕ скрыты → показываем всех (не пусто)', () => {
+    expect(effectiveVisibleAccountIds(['a', 'b'], ['a', 'b'], null)).toEqual(['a', 'b'])
+  })
+  it('соло перекрывает', () => {
+    expect(effectiveVisibleAccountIds(['a', 'b'], ['a'], 'a')).toEqual(['a'])
+  })
+  it('соло на несуществующем → падает в обычную логику', () => {
+    expect(effectiveVisibleAccountIds(['a', 'b'], [], 'zzz')).toEqual(['a', 'b'])
   })
 })
 

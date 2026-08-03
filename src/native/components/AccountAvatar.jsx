@@ -9,10 +9,12 @@
 // Разведены таймером 220мс (иначе одиночное действие сработало бы во время двойного).
 import { useRef, useEffect } from 'react'
 import ConnectionStatusDot from '../../components/ConnectionStatusDot.jsx'
+import MessengerIcon from './MessengerIcon.jsx' // v1.2.182: логотип мессенджера (Telegram — картинка)
 import { formatUnreadCount } from '../utils/unreadFormat.js'
+import { getMessengerEmoji } from '../utils/messengerBranding.js' // v1.2.183: единый список эмодзи (убран дубль)
 
 const MESSENGER_COLORS = { telegram: '#2AABEE', whatsapp: '#25D366', vk: '#0077FF', max: '#7B3FE4', viber: '#7360F2' }
-const MESSENGER_EMOJI = { telegram: '✈️', whatsapp: '💬', vk: '🔵', max: '💎', viber: '🟣' }
+// v1.2.183: список эмодзи мессенджеров переехал в messengerBranding.js (был дубль здесь) — см. getMessengerEmoji.
 
 export default function AccountAvatar({
   account, accountColor, unreadCount, health, onContextMenu, onMouseEnter, onMouseLeave, onOpenConnections,
@@ -37,7 +39,7 @@ export default function AccountAvatar({
     .map(w => w[0]?.toUpperCase() || '').join('') || '?'
   const messenger = account.messenger || 'telegram'
   const color = MESSENGER_COLORS[messenger] || MESSENGER_COLORS.telegram
-  const emoji = MESSENGER_EMOJI[messenger] || '💬'
+  const emoji = getMessengerEmoji(messenger)
   const tooltip = `${emoji} ${messenger.charAt(0).toUpperCase() + messenger.slice(1)} · ${account.name}` +
     (account.phone ? `\n${account.phone}` : '') +
     (unreadCount > 0 ? `\n${unreadCount} непрочитанных` : '')
@@ -69,13 +71,15 @@ export default function AccountAvatar({
         }}
       >
         {!account.avatar && initials}
-        {/* Угловая иконка мессенджера (правый верхний угол) */}
+        {/* Угловая иконка мессенджера (правый верхний угол).
+            v1.2.184: убрана ТОЛЬКО цветная рамка-обводка вокруг значка; чёрный кружок-подложка
+            (background var(--amoled-bg) + круг) ОСТАВЛЕН — чтобы логотип читался поверх фото аватара.
+            Цветная обводка САМОГО аккаунта (accountColor) рисуется отдельно и не тронута. */}
         <span style={{
           position: 'absolute', top: -px(2), right: -px(2), width: px(18), height: px(18),
           borderRadius: '50%', background: 'var(--amoled-bg)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: px(10),
-          border: `1px solid ${color}`,
-        }}>{emoji}</span>
+        }}><MessengerIcon messenger={messenger} size={px(12)} /></span>
         {/* Точка онлайн (правый нижний угол) */}
         <ConnectionStatusDot
           health={health} fallbackLabel={`${messenger} · ${account.name}`} size={px(12)} onClick={onOpenConnections}

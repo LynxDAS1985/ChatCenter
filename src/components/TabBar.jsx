@@ -270,12 +270,22 @@ function StatusBar({
           </span>
         </>
       )}
-      {statusBarMsg && (
-        <>
-          <span style={{ opacity: 0.3 }}>·</span>
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap max-w-[300px]" style={{ color: 'var(--cc-text-dim)' }} title={statusBarMsg}>💬 {statusBarMsg}</span>
-        </>
-      )}
+      {statusBarMsg && (() => {
+        // v1.2.181: статус может быть строкой (нейтрально, серым 💬) ИЛИ объектом
+        // { text, ok }: ok===true → зелёная ✓ (сработало), ok===false → красная ✗ (не вышло).
+        const isObj = typeof statusBarMsg === 'object' && statusBarMsg !== null
+        const sbText = isObj ? statusBarMsg.text : statusBarMsg
+        const sbOk = isObj ? statusBarMsg.ok : undefined
+        const icon = sbOk === true ? '✓' : sbOk === false ? '✗' : '💬'
+        const color = sbOk === true ? '#3ecb7c' : sbOk === false ? '#ff5c5c' : 'var(--cc-text-dim)'
+        return (
+          <>
+            <span style={{ opacity: 0.3 }}>·</span>
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap max-w-[300px]"
+              style={{ color, fontWeight: sbOk === undefined ? 400 : 600 }} title={sbText}>{icon} {sbText}</span>
+          </>
+        )
+      })()}
       {activeId && (
         <div className="ml-auto flex items-center gap-0.5" title={`Масштаб окна чата: ${currentZoom}%`}>
           <button
