@@ -87,15 +87,16 @@ export function useInitialScroll({
         const scrollTopBefore = el.scrollTop
         const msSinceEffectStart = Date.now() - restoreStartRef.current
         markRestoring()
-        if (saved?.atBottom) {
-          el.scrollTop = el.scrollHeight
-          logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'bottom', scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
-        } else if (placeAnchor(el, saved?.anchorMsgId, saved?.screenTop)) {
-          // v1.2.186: ставим сообщение-якорь на то же смещение (точное место, устойчиво к догрузке).
+        // v1.2.188: ЯКОРЬ ПЕРВЫМ (корень ② саги скролла). Раньше atBottom проверялся
+        // ДО якоря → при ложном atBottom=true (сохранён во время «дыхания» окна) прыгал
+        // в конец, ВЫБРАСЫВАЯ точную середину. Якорь (сообщение+смещение) всегда точнее
+        // флага, и для реального низа даёт то же место. atBottom → лишь запасной путь,
+        // когда сообщение-якорь не попало в загруженное окно.
+        if (placeAnchor(el, saved?.anchorMsgId, saved?.screenTop)) {
           logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'anchor', anchorMsgId: saved.anchorMsgId, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
-        } else if (saved?.anchorMsgId) {
-          el.scrollTop = el.scrollHeight  // якорь не найден в DOM (окно его не подтянуло) → мягкий откат в конец
-          logNativeScroll('restore-applied', { chatId: activeChatId, mode: 'anchor-missing', anchorMsgId: saved.anchorMsgId, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
+        } else if (saved?.atBottom || saved?.anchorMsgId) {
+          el.scrollTop = el.scrollHeight  // якоря нет в DOM (окно его не подтянуло) → откат в конец
+          logNativeScroll('restore-applied', { chatId: activeChatId, mode: saved?.atBottom ? 'bottom' : 'anchor-missing', anchorMsgId: saved?.anchorMsgId ?? null, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, scrollTopBefore, msSinceEffectStart, attempts })
         } else {
           logNativeScroll('restore-skip', { chatId: activeChatId, reason: 'no-saved', scrollTopBefore })
         }

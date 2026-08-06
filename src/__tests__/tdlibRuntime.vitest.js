@@ -65,6 +65,24 @@ describe('initTdlibRuntime', () => {
     })
   })
 
+  // v1.2.192: в УПАКОВАННОМ приложении getTdjson() даёт путь ВНУТРИ app.asar, но koffi не
+  // грузит нативную .dll из архива (Win32 error 126 при входе в Telegram). Проверяем подмену
+  // на app.asar.unpacked (файл вынесен наружу через asarUnpack).
+  it('v1.2.192: путь app.asar → app.asar.unpacked (нативная .dll вне архива)', () => {
+    const tdl = makeMockTdl()
+    const asarPath = 'C:\\App\\resources\\app.asar\\node_modules\\@prebuilt-tdlib\\win32-x64\\tdjson.dll'
+    initTdlibRuntime({ userDataDir: tmpDir, tdl, prebuiltTdlib: makeMockPrebuilt(asarPath) })
+    expect(tdl.configure).toHaveBeenCalledWith(expect.objectContaining({
+      tdjson: 'C:\\App\\resources\\app.asar.unpacked\\node_modules\\@prebuilt-tdlib\\win32-x64\\tdjson.dll',
+    }))
+  })
+
+  it('v1.2.192: путь БЕЗ app.asar не меняется (dev-режим)', () => {
+    const tdl = makeMockTdl()
+    initTdlibRuntime({ userDataDir: tmpDir, tdl, prebuiltTdlib: makeMockPrebuilt('/usr/lib/libtdjson.so') })
+    expect(tdl.configure).toHaveBeenCalledWith(expect.objectContaining({ tdjson: '/usr/lib/libtdjson.so' }))
+  })
+
   it('verbosityLevel передаётся в configure', () => {
     const tdl = makeMockTdl()
     initTdlibRuntime({

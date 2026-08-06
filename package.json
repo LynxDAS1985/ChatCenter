@@ -1,6 +1,6 @@
 {
   "name": "chat-center",
-  "version": "1.2.186",
+  "version": "1.2.199",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
   "author": "",
@@ -49,6 +49,9 @@
       "main": "out/main/main.js"
     },
     "asar": true,
+    "asarUnpack": [
+      "node_modules/@prebuilt-tdlib/**"
+    ],
     "npmRebuild": false,
     "win": {
       "signAndEditExecutable": false,

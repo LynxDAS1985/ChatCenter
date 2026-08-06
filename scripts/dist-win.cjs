@@ -106,7 +106,10 @@ function verifyPackagedApp() {
     'out/preloads/hooks/max.hook.js',
     'out/preloads/hooks/whatsapp.hook.js',
     'out/preloads/hooks/vk.hook.js',
-    'node_modules/telegram/package.json',
+    // v1.2.191: GramJS ('telegram') удалён при миграции на TDLib — раньше здесь была запись
+    // 'node_modules/telegram/package.json', проверка требовала несуществующий модуль и валила
+    // сборку. TDLib-бэкенд — main/native/backends/tdlib*.js. ('input' — тоже остаток GramJS,
+    // пока в deps, не используется; оставлен в проверке, т.к. установлен и не валит.)
     'node_modules/input/package.json',
     'node_modules/libphonenumber-js/package.json',
   ]
@@ -115,6 +118,20 @@ function verifyPackagedApp() {
     throw new Error(`Packaged app is missing required files:\n  ${missing.join('\n  ')}`)
   }
   console.log(`[dist-win] package contents verified (${required.length} required files)`)
+
+  // v1.2.192: нативная библиотека TDLib (движок Telegram) — tdjson.dll — вынесена ИЗ asar
+  // через asarUnpack (koffi не может загрузить .dll из архива → Win32 error 126 при входе
+  // в Telegram). Проверяем её как РЕАЛЬНЫЙ файл в app.asar.unpacked, а НЕ в списке asar.
+  // Раньше проверка (16 файлов) её не покрывала → давала ложное «всё нормально».
+  const unpackedTdjson = path.join(
+    distDir, 'win-unpacked', 'resources', 'app.asar.unpacked',
+    'node_modules', '@prebuilt-tdlib', 'win32-x64', 'tdjson.dll'
+  )
+  assertInsideRoot(unpackedTdjson)
+  if (!fs.existsSync(unpackedTdjson)) {
+    throw new Error(`Packaged app is missing native TDLib library (tdjson.dll):\n  ${unpackedTdjson}\n  → проверь build.asarUnpack в package.json`)
+  }
+  console.log('[dist-win] native TDLib library present: app.asar.unpacked/.../tdjson.dll')
 }
 
 async function main() {

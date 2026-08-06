@@ -15,12 +15,14 @@ import { logNativeScroll } from '../utils/scrollDiagnostics.js'
 
 const AUTOSAVE_INTERVAL_MS = 1500
 
-export function useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef, isRestoringRef }) {
+export function useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef, isRestoringRef, loadingNewerRef, loadingOlderRef }) {
   useEffect(() => {
     if (!activeViewKey || !chatReady) return
     const interval = setInterval(() => {
       // v0.92.4: не сохраняем во время programmatic scroll от restore.
-      if (isRestoringRef?.current) return
+      // v1.2.188: + churn guard — пока идёт догрузка окна (load-newer/older), позиция
+      // неустойчива → не сохраняем (иначе фиксируем «дышащий» кадр / ложный atBottom).
+      if (isRestoringRef?.current || loadingNewerRef?.current || loadingOlderRef?.current) return
       const el = msgsScrollRef.current
       if (!el) return
       // v1.2.186: сохраняем ЯКОРЬ — верхнее видимое сообщение + его смещение (screenTop).

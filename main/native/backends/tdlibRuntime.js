@@ -46,8 +46,17 @@ export function initTdlibRuntime(opts = {}) {
 
   // Резолвим путь к libtdjson через prebuilt-tdlib.getTdjson() — он сам определяет
   // win32/linux/darwin платформу.
-  const tdjsonPath = prebuiltTdlib.getTdjson()
+  let tdjsonPath = prebuiltTdlib.getTdjson()
   if (!tdjsonPath) throw new Error('initTdlibRuntime: prebuilt-tdlib.getTdjson() returned empty path')
+
+  // v1.2.192: в УПАКОВАННОМ приложении getTdjson() возвращает путь ВНУТРИ app.asar, но
+  // нативную tdjson.dll koffi не может загрузить из архива → Win32 error 126 (модуль не
+  // найден) на экране входа в Telegram. Библиотека вынесена наружу через asarUnpack
+  // (package.json build.asarUnpack) → берём путь в app.asar.unpacked. В dev-режиме
+  // (в пути нет app.asar) — не трогаем. Стандартный приём для нативных библиотек в Electron.
+  if (tdjsonPath.includes('app.asar') && !tdjsonPath.includes('app.asar.unpacked')) {
+    tdjsonPath = tdjsonPath.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
+  }
 
   // Конфигурируем TDLib (один раз на процесс).
   tdl.configure({

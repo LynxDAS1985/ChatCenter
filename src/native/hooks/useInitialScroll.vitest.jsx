@@ -204,6 +204,22 @@ describe('useInitialScroll — контракт doneRef (v0.87.48)', () => {
     expect(scrollEl.scrollTop).toBe(200)
   })
 
+  // v1.2.188 ТЕСТ-ЛОВУШКА (корень ②): возврат в чат с atBottom=true, но якорь в DOM → якорь ПЕРВЫМ (раньше прыгал в конец).
+  it('⭐ v1.2.188: возврат — atBottom=true, но якорь в DOM → берём якорь (не конец)', async () => {
+    const anchor = { getBoundingClientRect: () => ({ top: 300 }) }
+    const scrollEl = { scrollTop: 0, scrollHeight: 9999, clientHeight: 500, getBoundingClientRect: () => ({ top: 0 }), querySelector: (s) => s.includes('data-msg-id="a1"') ? anchor : null }
+    const saved = { anchorMsgId: 'a1', screenTop: 100, atBottom: true }  // atBottom ложный, якорь валиден → 300−100=200
+    const { rerender } = renderHook(({ chatId }) => {
+      const scrollRef = useRef(scrollEl)
+      const firstUnreadIdRef = useRef(null)
+      return useInitialScroll({ activeChatId: chatId, messagesCount: 50, scrollRef, firstUnreadIdRef, activeUnread: 0, loading: false, onDone: vi.fn(), getSavedScrollTop: () => saved })
+    }, { initialProps: { chatId: 'chat-A' } })
+    await new Promise(r => setTimeout(r, 250))
+    rerender({ chatId: 'chat-B' }); await new Promise(r => setTimeout(r, 250))
+    scrollEl.scrollTop = 0; rerender({ chatId: 'chat-A' }); await new Promise(r => setTimeout(r, 50))
+    expect(scrollEl.scrollTop).toBe(200)  // якорь (300−100), а НЕ конец (9999)
+  })
+
   // v0.91.8 (Совет 1) — regression тест: savedTop на дне → auto-jump к firstUnread.
   // Симулирует «юзер читал чат до конца, появились новые сообщения, открыл чат снова».
   // Ожидаем что initial-scroll идёт к firstUnread (а не возвращает на дно).

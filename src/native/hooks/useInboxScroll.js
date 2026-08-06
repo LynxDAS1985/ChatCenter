@@ -35,6 +35,12 @@ export function isPhysicallyAtBottom(bottomGap) {
   return Number.isFinite(bottomGap) && bottomGap <= PHYSICAL_BOTTOM_THRESHOLD
 }
 
+// v1.2.187: сохранение якоря при прокрутке — не чаще раза в этот интервал.
+// Вычисление якоря (computeScrollAnchor) перебирает строки и читает геометрию —
+// не нужно на КАЖДЫЙ кадр прокрутки. Сохранение в localStorage и так дебаунсится 1с,
+// а автосейв каждые 1.5с ловит позицию покоя. 250мс = ~4 обновления/сек при скролле.
+const SCROLL_SAVE_THROTTLE_MS = 250
+
 export default function useInboxScroll({
   store,
   scrollKey,
@@ -61,11 +67,13 @@ export default function useInboxScroll({
 }) {
   const prevNearBottomRef = useRef(null)
   const prevScrollStateRef = useRef({ top: 0, height: 0, t: 0 })
+  const lastAnchorSaveRef = useRef(0)  // v1.2.187: время последнего сохранения якоря (throttle)
   // v0.88.x: prefetch новых сообщений вниз (load-newer).
   const newerPrefetch = useInboxNewerPrefetch({ store, scrollKey, activeMessages, scrollDiag })
 
   const handleScroll = async (e) => {
     const el = e.target
+    const now = Date.now()  // v1.2.187: единый timestamp (throttle сохранения + детектор прыжка ниже)
     const bottomGap = el.scrollHeight - el.scrollTop - el.clientHeight
     // v0.95.2: ГИСТЕРЕЗИС (Schmitt trigger) против дребезга кнопки ↓.
     // Раньше один порог <80 → bottomGap колебался 60-100 → atBottom тоггл true↔false
@@ -75,11 +83,14 @@ export default function useInboxScroll({
 
     // v1.2.186: сохраняем ЯКОРЬ — верхнее видимое сообщение + смещение (устойчиво к
     // догрузке сообщений с обеих сторон; см. scrollPositionsCache.js). bottomGap → atBottom.
+    // v1.2.187: НЕ на каждый кадр — троттлим (computeScrollAnchor читает геометрию строк).
     const viewKey = scrollKey || store.activeChatId
-    if (viewKey && chatReady) {
+    if (viewKey && chatReady && now - lastAnchorSaveRef.current >= SCROLL_SAVE_THROTTLE_MS) {
+      lastAnchorSaveRef.current = now
       // v0.92.4: closed-loop guard — programmatic scroll от restore не должен
       // перезаписывать сохранённую позицию (MDN: scroll event fires for programmatic too).
-      const blocked = !!isRestoringRef?.current
+      // v1.2.188: + churn guard — пока идёт догрузка (load-newer/older), окно «дышит» → не сохраняем.
+      const blocked = !!isRestoringRef?.current || !!loadingNewerRef?.current || !!loadingOlderRef?.current
       if (!blocked) {
         const anchor = computeScrollAnchor(el)
         scrollPosByChatRef.current.set(viewKey, {
@@ -103,8 +114,7 @@ export default function useInboxScroll({
     }
     prevNearBottomRef.current = nearBottom
 
-    // v0.87.49: детектор прыжка scrollTop (>500px за <100мс без user-action)
-    const now = Date.now()
+    // v0.87.49: детектор прыжка scrollTop (>500px за <100мс без user-action). now — сверху.
     const prev = prevScrollStateRef.current
     const dt = now - prev.t
     const deltaTop = el.scrollTop - prev.top

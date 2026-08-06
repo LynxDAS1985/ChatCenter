@@ -82,16 +82,12 @@ function MessageRow({ item, rowContext }) {
     )
   }
   if (item.type === 'unread') {
-    return (
-      <div style={{
-        ...baseRowStyle,
-        paddingTop: 14, paddingBottom: 6,
-        display: 'flex', alignItems: 'center', gap: 10,
-        margin: 0,
-      }} className="native-msg-unread-divider">
-        <span>Новые сообщения</span>
-      </div>
-    )
+    // v1.2.190: разделитель «Новые сообщения» СКРЫТ по просьбе пользователя. Логика
+    // firstUnread/группировки НЕ тронута (нужна для прокрутки к первому непрочитанному
+    // при первом открытии) — элемент остаётся в списке, но НЕ рисуется (0 высоты) →
+    // нет полосы и нет сдвига позиции. Вернуть: восстановить прежний
+    // <div className="native-msg-unread-divider"><span>Новые сообщения</span></div>.
+    return null
   }
 
   // type === 'group'

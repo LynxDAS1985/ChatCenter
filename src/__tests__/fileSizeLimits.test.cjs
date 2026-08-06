@@ -352,8 +352,14 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // data-URI) с onError-страховкой. Компонент значка неустраним в renderer; data-URI вынесен в свой файл.
 // v1.2.186: лимит 32050 → 32100 — восстановление прокрутки по якорю-сообщению (computeScrollAnchor +
 // placeAnchor в scrollPositionsCache.js). DOM-геометрия обязана быть в renderer, вынести некуда.
-test('Общий renderer код (src/ без тестов) < 32100 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 32100, totalSrc + ' > 32100')
+// v1.2.189: лимит 32100 → 32130 — компенсация сдвига от разделителя «Новые сообщения» (InboxMode:
+// захват якоря + useLayoutEffect re-pin, тот же приём что load-older). DOM-геометрия в renderer.
+// v1.2.197: лимит 32130 → 32360 — окно отправки фото PhotoSendModal (крупное превью + зум/поворот/
+// перемещение) + math imageZoomPan. UI-окно неустранимо в renderer; math вынесен в свой файл под тесты.
+// v1.2.199: лимит 32480 → 32520 — логи потока отправки (inboxAttachSend) + прозрачность PNG/лог
+// неудачного поворота (PhotoSendModal). Логи через app:log обязательны для разбора сбоёв отправки.
+test('Общий renderer код (src/ без тестов) < 32520 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 32520, totalSrc + " > 32520")
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

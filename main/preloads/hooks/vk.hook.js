@@ -237,6 +237,19 @@
     // как «новые» = шторм уведомлений на старте.
     if (rows.length > 0) _vkPrevUnread = current;
     if (reason === 'initial' || emitted > 0) console.log('__CC_DIAG__vk-list reason=' + reason + ' rows=' + rows.length + ' unread=' + unread + ' muted=' + muted + ' emitted=' + emitted);
+    // v1.2.196: ДИАГНОСТИКА источника счётчика ВК (главный мир → лог доходит), раз в ~15с.
+    // Показывает ВСЕ кандидаты «фантомной» 1 + что реально хватает «широкий» поиск счётчика
+    // (step3, как в countUnreadVK): значение@класс. Так видно ТОЧНЫЙ источник, без гадания.
+    try { var _n = Date.now(); if (!_scanVkList._srcTs || _n - _scanVkList._srcTs > 15000) { _scanVkList._srcTs = _n;
+      var _mb='нет',_fb='нет',_gb='нет',_nv=document.querySelectorAll('a,[role="link"]');
+      for(var _i=0;_i<_nv.length&&_i<250;_i++){var _tx=(_nv[_i].textContent||'').replace(/\s+/g,' ').trim();
+        if(_mb==='нет'&&/мессенджер|messenger/i.test(_tx)){var _m=_tx.match(/(\d+)/);_mb=_m?_m[1]:'0';}
+        if(_fb==='нет'&&/друз|friend/i.test(_tx)){var _f=_tx.match(/(\d+)/);_fb=_f?_f[1]:'0';}
+        if(_gb==='нет'&&/игр|game/i.test(_tx)){var _g=_tx.match(/(\d+)/);_gb=_g?_g[1]:'0';}}
+      var _s3='нет';try{var _im=document.querySelectorAll('a[href*="/im"]');for(var _j=0;_j<_im.length&&_j<20;_j++){var _p=_im[_j].closest('li,div,[class*="Item"],[class*="item"]')||_im[_j];var _cs=_p.querySelectorAll('[class*="ounter"],[class*="badge"],[class*="Badge"],[class*="counter"]');for(var _k=0;_k<_cs.length;_k++){var _nn=parseInt((_cs[_k].textContent||'').trim(),10);if(!isNaN(_nn)&&_nn>0){_s3=_nn+'@'+String(_cs[_k].className||'').slice(0,18);break;}}if(_s3!=='нет')break;}}catch(e){}
+      var _tt=(document.title||'').match(/\((\d+)\)/);
+      console.log('__CC_DIAG__vk-src titleN='+(_tt?_tt[1]:'нет')+' msgBadge='+_mb+' friends='+_fb+' games='+_gb+' step3='+_s3+' listUnread='+unread);
+    } } catch(e){}
   }
   function _scheduleVkListScan(reason) {
     if (_vkListTimer) return;

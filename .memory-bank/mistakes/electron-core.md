@@ -5,6 +5,44 @@
 
 ---
 
+## 🟡 Отправка прикреплений: два тихих капкана — canvas JPEG стирает прозрачность PNG, а альбом молча выбрасывает файлы без пути (2026-08-05, v1.2.199)
+
+**Контекст.** Окно отправки фото `PhotoSendModal` строит повёрнутую копию на `canvas`, а поток `runAttachSend` ([inboxAttachSend.js](../../src/native/utils/inboxAttachSend.js)) отправляет 1 файл (по пути или байтами) либо альбом (по путям). При ревью v1.2.198 нашлись два неочевидных места, где данные тихо портились/пропадали.
+
+**Капкан 1 — `canvas.toBlob(…, 'image/jpeg')` теряет альфу.** JPEG не хранит прозрачность → у повёрнутого PNG с прозрачным фоном фон становился чёрным. Правило: при экспорте с canvas выбирать MIME по исходнику — PNG → `image/png` (альфа цела), остальное → `image/jpeg`. Расширение и `type` File должны совпадать с MIME (backend `tg:send-clipboard-image` берёт ext из `type`). Фикс: `buildRotatedFile` в [PhotoSendModal.jsx](../../src/native/components/PhotoSendModal.jsx).
+
+**Капкан 2 — альбом принимает ТОЛЬКО пути на диске.** Ветка альбома (2+) в `runAttachSend` фильтрует файлы по наличию `file.path` (Electron), а у файла из буфера обмена / повёрнутой canvas-копии пути НЕТ → он молча выпадал из отправки. Одиночный файл без пути уходит байтами (`tg:send-clipboard-image`), но в альбоме этого пути НЕТ. Полноценная отправка no-path файлов внутри альбома не сделана — сейчас такие файлы пропускаются с предупреждением (тост + `WARN` в лог). Остаток вынесен в `code-todo.md` [[code-todo]] TODO-30.
+
+**Капкан 3 (общий) — молчаливый откат/пропуск в потоке отправки.** До v1.2.199 неудачный поворот молча слал оригинал, а выпавшие файлы исчезали без следа. Правило: любой откат/пропуск в отправке — писать в журнал через `window.api.send('app:log', {level:'WARN', …})` (видно в «📒 Логи ChatCenter»), иначе сбой у пользователя не разобрать. Поток `runAttachSend` теперь логирует старт/ветку/результат (`[attach-send] …`), окно — неудачный поворот (`[photo-modal] …`). Данные файла НЕ логируем, только счётчики/флаги.
+
+**Как проверено.** Тест [inboxAttachSend.vitest.js](../../src/native/utils/inboxAttachSend.vitest.js) (6 проверок: выбор ветки байты/диск/альбом, `overrideFile`-мусор игнорируется, альбом с no-path предупреждает). Прозрачность/чёрный фон — только визуально (happy-dom без layout, canvas не считает). См. features.md v1.2.199.
+
+---
+
+## 🟡 preload `sendToHost('monitor-diag')` НЕ доходит до chatcenter.log — для видимого лога из WebView нужен main-world `console.log('__CC_DIAG__')` (2026-08-03, v1.2.194→195)
+
+**Симптом.** Добавил диагностику через `sendMonitorDiag` (→ `ipcRenderer.sendToHost('monitor-diag', …)`) в [monitor.preload.cjs](../../main/preloads/monitor.preload.cjs) — строки НЕ появились в `chatcenter.log`, хотя код выполнялся. Потрачено время на «почему не видно».
+
+**Корень (по логу).** `monitor-start`/`MAX-COUNT`/`wa-count`/`VK-COUNT` (все из `sendMonitorDiag`) — **0 совпадений за всё время лога**. То есть путь `sendToHost('monitor-diag')` из monitor.preload до файла лога НЕ доходит. Комментарий [monitor.preload.cjs:498](../../main/preloads/monitor.preload.cjs) знает половину: «preload console.log НЕ попадает в console-message (isolated world Electron 41)», но и `sendToHost`-путь тоже не логируется. В файл доходят ТОЛЬКО `console.log('__CC_DIAG__…')` из **ГЛАВНОГО мира** страницы (probe/health из [webviewDiagnostics.js](../../src/utils/webviewDiagnostics.js), `vk-list`/`__CC_NOTIF__` из хуков) — их ловит host через `console-message` + [consoleMessageParser.js](../../src/utils/consoleMessageParser.js).
+
+**Как не повторить.** Для ВИДИМОГО в логе диагностического сообщения из WebView — писать `console.log('__CC_DIAG__<тег> …')` из ГЛАВНОГО мира (в хуке `vk.hook.js`/`max.hook.js` или в injected-script `webviewDiagnostics`), НЕ через `sendMonitorDiag`/`sendToHost` из preload. Появится как `[<Мессенджер>] debug: <тег> …` на уровне **TRACE** (фильтр «Native»/«Все» в лог-вьюере, НЕ «Инфо»). Кейс: v1.2.194 `[VK-COUNT]` через sendMonitorDiag не появился → v1.2.195 перенёс в `vk.hook.js` `_scanVkList` (`vk-src`) → заработало.
+
+---
+
+## 🔴 Нативная библиотека (.dll/.so) ВНУТРИ asar → не грузится в установленной программе, Win32 error 126 (2026-08-03, v1.2.192)
+
+**Симптом.** В dev (`npm start`) вход в Telegram работает; в УСТАНОВЛЕННОЙ (собранной) программе — `Dynamic Loading Error: Win32 error 126` на экране входа.
+
+**Корень.** TDLib — нативная библиотека `tdjson.dll` (`node_modules/@prebuilt-tdlib/win32-x64/`). При `asar: true` она попадает ВНУТРЬ архива `app.asar`, а Windows `LoadLibrary`/koffi не умеют грузить `.dll` из архива → error 126 («модуль не найден»). В dev архива нет — грузится напрямую, поэтому баг виден только после сборки.
+
+**Как отличить от «модуль не найден».** Если бы `node_modules` вообще не попал — была бы ошибка `Cannot find module 'tdl'`. А `Dynamic Loading Error` = JS-обёртка загрузилась, спотыкается именно нативная загрузка → библиотека в пакете есть, но в архиве.
+
+**Фикс (3 части, стандарт Electron для нативных либ):** (1) `build.asarUnpack: ["node_modules/@prebuilt-tdlib/**"]` — вынести наружу в `app.asar.unpacked`; (2) в коде путь от `getTdjson()`: `app.asar` → `app.asar.unpacked` (koffi грузит реальный файл); (3) проверка сборки должна контролировать `.dll` как РЕАЛЬНЫЙ файл в `app.asar.unpacked`, а не в списке asar.
+
+**Грабля процессная.** `verifyPackagedApp` проверял 16 файлов, но НЕ нативную либу → «зелёная галка» врала (установщик собран, а Telegram не работает). Урок: проверка пакета обязана покрывать САМОЕ критичное (движок), а не только JS-файлы. Настройки упаковки (`files`/`asarUnpack`) — из эпохи GramJS (чистый JS, либа не нужна была); при переезде на нативный TDLib их забыли обновить (тот же «хвост», что устаревшая проверка `telegram` в v1.2.191).
+
+---
+
 ## 🔴 Восстановление прокрутки в ленте с догрузкой с ДВУХ сторон: только ЯКОРЬ-по-сообщению, не пиксель «от края» (2026-07-31, v1.2.185→186)
 
 ### Симптом

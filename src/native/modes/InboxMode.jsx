@@ -25,7 +25,7 @@ import useChatListResize, {
 import { useStickyBottomOnMedia } from '../hooks/useStickyBottomOnMedia.js'
 import ChatListResizeHandle from '../components/ChatListResizeHandle.jsx'
 import ThemePickerModal from '../components/ThemePickerModal.jsx'
-import { loadScrollPositions } from '../utils/scrollPositionsCache.js'
+import { loadScrollPositions, computeScrollAnchor } from '../utils/scrollPositionsCache.js'
 import { useScrollPositionAutosave } from '../hooks/useScrollPositionAutosave.js'
 import { loadTheme } from '../utils/themeColor.js'
 import { formatTypingUsers } from '../utils/formatTypingUsers.js'
@@ -77,7 +77,9 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // useFileAttach управляет state (files / caption / sending). Обработчик
   // отправки делает invoke tg:send-file (для 1 файла) или tg:send-album (2+).
   const attach = useFileAttach()
-  const handleAttachSend = () => runAttachSend({ store, attach, replyTo, showToast, setReplyTo })
+  // v1.2.198: overrideFile — повёрнутая копия из PhotoSendModal (см. runAttachSend). Событие
+  // клика (из FilePreviewBar onClick=onSend) не является File → runAttachSend его игнорирует.
+  const handleAttachSend = (overrideFile) => runAttachSend({ store, attach, replyTo, showToast, setReplyTo, overrideFile })
   const [activeThemeId, setActiveThemeId] = useState(() => loadTheme().id)
   // v0.95.7: drag-to-resize chat-list ↔ окно чата. Default 340px, [60, 600]. Compact <200.
   const [chatListWidth, setChatListWidth] = useState(CHAT_LIST_DEFAULT_WIDTH)
@@ -278,7 +280,6 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // в хуке ниже) — value синхронизируется через useEffect когда state
   // physicallyAtBottom меняется (см. ниже). Изначально false.
   const physicallyAtBottomRef = useRef(false)
-  useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef, isRestoringRef })  // v0.91.17 + v0.92.4
   // v0.95.40: удерживает scroll у низа при lazy-load медиа (картинки/видео
   // расширяют scrollHeight ПОСЛЕ auto-scroll → юзер визуально выше низа).
   // Эталон: Telegram Web K ResizeObserver на scrollContainer + scrollToEnd.
@@ -290,10 +291,15 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const loadingOlderRef = useRef(false)
   // v0.94.2: якорь для re-pin после load-older prepend (см. useLayoutEffect ниже).
   const prependAnchorRef = useRef(null)
+  // v1.2.189: якорь для компенсации сдвига от разделителя «Новые сообщения» (см. useLayoutEffect ниже).
+  const unreadDividerAnchorRef = useRef(null)
   // v0.88.0: prefetch новых сообщений вниз (Telegram-style infinite scroll).
   // loadingNewerRef — guard от параллельных запросов, [loadingNewer, setLoadingNewer] — для UI индикатора.
   const loadingNewerRef = useRef(false)
   const [loadingNewer, setLoadingNewer] = useState(false)
+  // v1.2.188: автосейв позиции ПОСЛЕ объявления loadingNewerRef/loadingOlderRef —
+  // churn guard (не сохраняем пока идёт догрузка окна, см. сагу скролла, корень ①).
+  useScrollPositionAutosave({ activeViewKey, chatReady, msgsScrollRef, scrollPosByChatRef, isRestoringRef, loadingNewerRef, loadingOlderRef })  // v0.91.17 + v0.92.4 + v1.2.188
 
   // v0.87.17: forward-модалка + тост + закреплённое
   const [forwardTarget, setForwardTarget] = useState(null)
@@ -481,6 +487,16 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     // (актуально для случая когда чат только открылся и cursor ещё 0).
     const snapshotCursor = frozenReadCursorRef.current.cursor || activeReadInboxMaxId
     const nextFirstUnreadId = findFirstUnreadId(activeMessages, clampedUnread, snapshotCursor)
+    // v1.2.189: разделитель «Новые сообщения» (messageGrouping) вставляется ВЫШЕ первого
+    // непрочитанного, а firstUnreadId приходит null→value АСИНХРОННО уже ПОСЛЕ restore →
+    // толкает сохранённый якорь вниз на высоту разделителя (~46px), место «уползает» при
+    // каждом заходе (сага скролла, канал «Кинотеатр»). Захватываем верхнее видимое
+    // сообщение ДО вставки; useLayoutEffect ниже вернёт его на тот же пиксель ПОСЛЕ вставки.
+    if (firstUnreadIdRef.current == null && nextFirstUnreadId != null) {
+      const el = msgsScrollRef.current
+      const a = el ? computeScrollAnchor(el) : null
+      if (a?.anchorMsgId) unreadDividerAnchorRef.current = { msgId: a.anchorMsgId, screenTop: a.screenTop }
+    }
     firstUnreadIdRef.current = nextFirstUnreadId
     setFirstUnreadId(nextFirstUnreadId)
     scrollDiag.logEvent('first-unread-calc', {
@@ -510,7 +526,9 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.87.34: drag-n-drop файлов + Ctrl+V картинки
   const { dragOver, handleDragOver, handleDragLeave, handleDrop, handlePaste } = useDropAndPaste({
-    activeChatId: store.activeChatId, sendFile: store.sendFile, showToast,
+    // v1.2.198: вставка/перетаскивание фото ведут в превью-окно (attach), а не мгновенно
+    // отправляют. Раньше handlePaste/handleDrop слали сразу мимо окна PhotoSendModal.
+    activeChatId: store.activeChatId, addFiles: attach.addFiles, showToast,
   })
 
   // v0.87.83: handleScroll → useInboxScroll hook.
@@ -550,6 +568,31 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       })
     }
   }, [activeMessages])
+
+  // v1.2.189: КОМПЕНСАЦИЯ сдвига от разделителя «Новые сообщения». Тот же приём, что
+  // load-older re-pin выше (overflow-anchor:none — держим позицию сами). Разделитель
+  // встаёт ВЫШЕ первого непрочитанного асинхронно (firstUnreadId null→value) уже ПОСЛЕ
+  // restore → толкает якорь вниз на ~46px. Здесь, после вставки (useLayoutEffect = до
+  // paint, без мигания), возвращаем захваченное верхнее сообщение на тот же пиксель.
+  // Отдельный ref (не prependAnchorRef) — чтобы не мешать компенсации load-older.
+  // Одноразово: ref очищается на каждый вызов (не «залипает»).
+  useLayoutEffect(() => {
+    const cap = unreadDividerAnchorRef.current
+    unreadDividerAnchorRef.current = null
+    if (!cap) return
+    const el = msgsScrollRef.current
+    if (!el) return
+    const target = el.querySelector(`[data-msg-id="${cap.msgId}"]`)
+    if (!target) return  // якорь ещё не отрисован
+    const newScreenTop = target.getBoundingClientRect().top - el.getBoundingClientRect().top
+    const diff = newScreenTop - cap.screenTop
+    // diff > 0 → разделитель добавлен ВЫШЕ якоря (сдвиг вниз) → возвращаем на место.
+    // diff ≈ 0 → якорь был выше разделителя, сдвига нет → ничего не трогаем.
+    if (diff > 0.5) {
+      el.scrollTop += diff
+      logNativeScroll('unread-divider-compensate', { msgId: cap.msgId, diff: Math.round(diff) })
+    }
+  }, [firstUnreadId])
 
   // v0.91.3: event-based newBelow — подписка на tg:new-message (server push),
   // вместо отслеживания массива. См. useNewBelowCounter.js (полная история бага).

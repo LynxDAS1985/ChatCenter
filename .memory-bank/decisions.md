@@ -655,3 +655,19 @@ for (const f of files) {
 **Как откатить.** См. features.md v1.2.186 (`git checkout` 6 файлов + удалить `scrollPositionsCache.vitest.js` + версия на 1.2.185). Вернуть формат `{fromBottom, atBottom}` (версия 6→5) и восстановление из ADR-028.
 
 **Урок (записан в [[mistakes/electron-core]]).** Для восстановления прокрутки в ленте, которая догружает/выгружает контент с обеих сторон, НЕЛЬЗЯ хранить пиксель «от края» — только якорь по элементу содержимого. Дважды наступили (v0.94.0 от верха, v1.2.185 от низа).
+
+---
+
+## ADR-030 — Нативные библиотеки (.dll/.so) в упаковке: asarUnpack + подмена пути + контроль в проверке сборки (2026-08-03, v1.2.192)
+
+**Контекст.** После перехода Telegram-бэкенда с GramJS (чистый JS) на TDLib (нативная `tdjson.dll` из `prebuilt-tdlib`) установленная программа падала при входе в Telegram: `Dynamic Loading Error: Win32 error 126`. Настройки упаковки остались с эпохи GramJS: `build.files` = только `out/**/*` + `package.json`, `asar: true`, `asarUnpack` пуст. Нативная `.dll` попадала ВНУТРЬ архива `app.asar`, откуда koffi/LoadLibrary её грузить не может.
+
+**Решение.** Для ЛЮБОЙ нативной библиотеки в Electron: (1) `build.asarUnpack` — вынести пакет с `.dll/.so` наружу в `app.asar.unpacked` (у нас `node_modules/@prebuilt-tdlib/**`); (2) в коде путь от резолвера (`prebuilt-tdlib.getTdjson()`, [tdlibRuntime.js](../main/native/backends/tdlibRuntime.js)) в упакованном приложении содержит `app.asar` → подменить на `app.asar.unpacked` (в dev без `app.asar` — не трогать); (3) проверка сборки (`verifyPackagedApp` в [scripts/dist-win.cjs](../scripts/dist-win.cjs)) обязана контролировать саму `.dll` как РЕАЛЬНЫЙ файл в `app.asar.unpacked`, а не только JS-файлы в списке asar.
+
+**Почему.** JS-модули Electron читает из asar прозрачно; нативные `.dll` — нет (их грузит Windows LoadLibrary мимо патча asar). Признак ошибки: `Dynamic Loading Error` (JS-обёртка загрузилась, спотыкается нативная загрузка), а НЕ `Cannot find module` (тогда бы не попал сам пакет).
+
+**Крайние случаи.** dev-режим (нет `app.asar`) — путь не меняется. `prebuilt-tdlib` линкует OpenSSL/zlib статически → отдельные DLL-зависимости не нужны.
+
+**Проверено (ожидает ручной проверки человеком: переустановка → вход в Telegram без ошибки 126).** `tdlibRuntime.vitest.js` +2 (asar→unpacked подмена; dev-путь без изменений) → 26/26; сборка `dist:win` — строка `native TDLib library present` в логе проверки. См. features.md v1.2.192, грабля в [[mistakes/electron-core]].
+
+**Урок.** При добавлении ЛЮБОЙ нативной зависимости — сразу обновить `asarUnpack` + подмену пути + проверку сборки. Настройки упаковки НЕ наследуются автоматически при смене стека (те же «GramJS-хвосты», что устаревшая проверка `telegram` в v1.2.191).

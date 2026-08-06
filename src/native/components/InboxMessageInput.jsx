@@ -3,6 +3,7 @@
 
 import FileAttachButton from './FileAttachButton.jsx'
 import FilePreviewBar from './FilePreviewBar.jsx'
+import PhotoSendModal from './PhotoSendModal.jsx'
 
 export default function InboxMessageInput({
   input, setInput, sending, replyTo, editTarget, setReplyTo, setEditTarget,
@@ -18,6 +19,11 @@ export default function InboxMessageInput({
 }) {
   // v0.95.43: если есть выбранные файлы — вместо обычного input показываем FilePreviewBar
   const hasAttachedFiles = Array.isArray(attachFiles) && attachFiles.length > 0
+  // v1.2.197: ровно ОДНО фото → крупное окно PhotoSendModal (зум/поворот/перемещение +
+  // подпись). Несколько файлов / видео / документы → прежний компактный FilePreviewBar.
+  // Зум/поворот — только вид, отправляется исходный файл (через тот же onAttachSend).
+  const singleImage = hasAttachedFiles && attachFiles.length === 1 &&
+    typeof attachFiles[0]?.type === 'string' && attachFiles[0].type.startsWith('image/')
 
   return (
     <>
@@ -40,8 +46,18 @@ export default function InboxMessageInput({
           >✕</button>
         </div>
       )}
-      {/* v0.95.43: превью выбранных файлов с caption (вместо обычного input) */}
-      {hasAttachedFiles ? (
+      {/* v1.2.197: одиночное фото → крупное окно с зумом/поворотом/перемещением. */}
+      {singleImage ? (
+        <PhotoSendModal
+          file={attachFiles[0]}
+          caption={attachCaption}
+          onCaptionChange={onAttachCaptionChange}
+          onSend={onAttachSend}
+          onCancel={onAttachClear}
+          sending={attachSending}
+        />
+      ) : /* v0.95.43: несколько файлов / видео / документ → компактный превью-бар */
+      hasAttachedFiles ? (
         <FilePreviewBar
           files={attachFiles}
           caption={attachCaption}
