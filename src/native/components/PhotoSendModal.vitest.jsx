@@ -51,4 +51,25 @@ describe('PhotoSendModal (#4)', () => {
     fireEvent.click(screen.getByTitle('Отмена (Esc)'))
     expect(onCancel).toHaveBeenCalled()
   })
+
+  // v1.2.201: поле подписи — растущее (textarea), Enter отправляет, Shift+Enter — новая строка.
+  it('подпись — многострочное поле (textarea)', () => {
+    render(<PhotoSendModal {...baseProps()} />)
+    const cap = screen.getByPlaceholderText(/Подпись/)
+    expect(cap.tagName).toBe('TEXTAREA')
+  })
+
+  it('Enter в подписи зовёт onSend', () => {
+    const onSend = vi.fn()
+    render(<PhotoSendModal {...baseProps()} onSend={onSend} />)
+    fireEvent.keyDown(screen.getByPlaceholderText(/Подпись/), { key: 'Enter' })
+    expect(onSend).toHaveBeenCalled()
+  })
+
+  it('Shift+Enter в подписи НЕ отправляет (перенос строки)', () => {
+    const onSend = vi.fn()
+    render(<PhotoSendModal {...baseProps()} onSend={onSend} />)
+    fireEvent.keyDown(screen.getByPlaceholderText(/Подпись/), { key: 'Enter', shiftKey: true })
+    expect(onSend).not.toHaveBeenCalled()
+  })
 })

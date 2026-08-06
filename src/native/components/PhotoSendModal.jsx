@@ -1,12 +1,16 @@
 // v1.2.197: окно отправки ОДИНОЧНОГО фото с инструментами просмотра.
 // v1.2.198: + настоящий поворот при отправке (#1), сдвиг не за край (#2), размер+«сожмётся» (#3).
 // v1.2.199: поворот PNG сохраняет прозрачность (PNG→PNG); неудачный поворот пишется в журнал (WARN).
+// v1.2.201: дизайн «приподнятая карточка» (не сливается с чёрным фоном) + растущее поле подписи
+//   (textarea, Enter — отправить, Shift+Enter — новая строка) + оптимизация зума/перетаскивания:
+//   убрано дорогое размытие фона (backdrop-filter), размер области кэшируется (без layout thrashing),
+//   перетаскивание сглажено через requestAnimationFrame (один пересчёт на кадр).
 // Показывается вместо компактного FilePreviewBar, когда выбран ровно один image-файл
 // (см. InboxMessageInput.jsx). Инструменты: −/масштаб/+/поворот + мышь (колесо — зум к точке
 // под курсором, двойной клик — сброс к 100%, зажать и тянуть — двигать в пределах кадра).
 // Математика — в imageZoomPan.js (покрыта тестами).
 //
-// ВАЖНО: зум/сдвиг — только вид. ПОВОРОТ теперь настоящий: при отправке, если фото повёрнуто,
+// ВАЖНО: зум/сдвиг — только вид. ПОВОРОТ настоящий: при отправке, если фото повёрнуто,
 // строим повёрнутую копию на canvas и шлём её (без пути на диске → байтами, см. inboxAttachSend).
 
 import { useEffect, useRef, useState, useCallback } from 'react'
@@ -14,16 +18,19 @@ import {
   wheelScale, stepScale, zoomToPoint, resetTransform, nextRotation, clampOffset, fitSize,
 } from '../utils/imageZoomPan.js'
 
+// v1.2.201: затемнение фона без размытия (backdrop-filter дорог — MDN: перерисовывает фон
+// каждый кадр). Просто более плотная «шторка», чтобы окно читалось отдельно от приложения.
 const overlay = {
   position: 'fixed', inset: 0, zIndex: 4000,
-  background: 'rgba(0,0,0,0.66)', backdropFilter: 'blur(2px)',
+  background: 'rgba(3,4,8,0.74)',
   display: 'grid', placeItems: 'center', padding: 20,
 }
+// v1.2.201: «приподнятая карточка» — светлее чёрного фона приложения + видимая рамка + тень.
 const card = {
   width: '100%', maxWidth: 480,
-  background: 'var(--amoled-surface)', border: '1px solid var(--amoled-border)',
+  background: '#1b1e27', border: '1px solid rgba(255,255,255,0.14)',
   borderRadius: 16, overflow: 'hidden',
-  boxShadow: '0 30px 70px -20px rgba(0,0,0,0.75), 0 6px 18px rgba(0,0,0,0.45)',
+  boxShadow: '0 30px 70px -18px rgba(0,0,0,0.82), 0 6px 18px rgba(0,0,0,0.5)',
   display: 'flex', flexDirection: 'column',
 }
 const head = { display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px' }
@@ -32,13 +39,13 @@ const xbtn = {
   color: 'var(--amoled-text-dim)', cursor: 'pointer', fontSize: 15,
 }
 const imgArea = {
-  position: 'relative', background: '#0a0f18', overflow: 'hidden',
+  position: 'relative', background: '#0f1420', overflow: 'hidden',
   height: 340, display: 'grid', placeItems: 'center', userSelect: 'none',
 }
 const pill = {
   position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 3,
   display: 'flex', alignItems: 'center', gap: 2,
-  background: 'rgba(12,16,24,0.82)', border: '1px solid rgba(255,255,255,0.14)',
+  background: 'rgba(12,16,24,0.86)', border: '1px solid rgba(255,255,255,0.16)',
   borderRadius: 12, padding: '4px 6px', color: '#dbe3ef',
   boxShadow: '0 8px 22px rgba(0,0,0,0.5)',
 }
@@ -53,9 +60,20 @@ const hint = {
 }
 const info = {
   padding: '7px 16px', fontSize: 11.5, color: 'var(--amoled-text-dim)',
-  borderTop: '1px solid var(--amoled-border)', display: 'flex', gap: 8, alignItems: 'center',
+  borderTop: '1px solid rgba(255,255,255,0.10)', display: 'flex', gap: 8, alignItems: 'center',
 }
-const foot = { display: 'flex', gap: 8, padding: 12, borderTop: '1px solid var(--amoled-border)' }
+const foot = {
+  display: 'flex', gap: 8, padding: 12, alignItems: 'flex-end',
+  borderTop: '1px solid rgba(255,255,255,0.10)',
+}
+// v1.2.201: растущее поле подписи (textarea) — начинается в одну строку, растёт до ~5 строк.
+const CAP_MAX_H = 120
+const capStyle = {
+  flex: 1, fontSize: 14, lineHeight: 1.4, resize: 'none', overflowY: 'auto',
+  minHeight: 38, maxHeight: CAP_MAX_H, padding: '8px 11px', borderRadius: 10,
+  background: '#12151d', border: '1px solid rgba(255,255,255,0.14)',
+  color: 'var(--amoled-text)', fontFamily: 'inherit',
+}
 
 // Строит ПОВЁРНУТУЮ копию фото на canvas → File (без пути → отправится байтами). rot ∈ {90,180,270}.
 // v1.2.199 (#2): PNG сохраняем как PNG (не теряем прозрачность), остальное — JPEG.
@@ -90,6 +108,12 @@ function buildRotatedFile(file, url, rot) {
   })
 }
 
+// Растущее поле: сбрасываем высоту и подгоняем под содержимое (MDN приём height auto→scrollHeight).
+function autosize(el) {
+  if (!el) return
+  try { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, CAP_MAX_H) + 'px' } catch (_) {}
+}
+
 export default function PhotoSendModal({ file, caption, onCaptionChange, onSend, onCancel, sending }) {
   const [url, setUrl] = useState('')
   const [t, setT] = useState({ scale: 1, x: 0, y: 0 })
@@ -99,9 +123,21 @@ export default function PhotoSendModal({ file, caption, onCaptionChange, onSend,
   const [rotating, setRotating] = useState(false)
   const dragRef = useRef(null)
   const areaRef = useRef(null)
+  const taRef = useRef(null)
+  // v1.2.201: кэш размера области картинки — чтобы НЕ мерить раскладку на каждый кадр
+  // перетаскивания/зума (MDN: частый getBoundingClientRect = layout thrashing = тормоза).
+  const rectRef = useRef(null)
   // refs для обработчиков в useEffect (стабильные deps) — нужны актуальные rot/nat.
   const rotRef = useRef(0); rotRef.current = rot
   const natRef = useRef({ w: 0, h: 0 }); natRef.current = nat
+
+  // Замер области — один раз при загрузке/ресайзе окна/начале жеста, дальше берём из кэша.
+  const measure = useCallback(() => {
+    const el = areaRef.current
+    if (!el) return null
+    try { rectRef.current = el.getBoundingClientRect() } catch (_) {}
+    return rectRef.current
+  }, [])
 
   // object URL для превью (revoke при размонтировании/смене файла)
   useEffect(() => {
@@ -113,20 +149,29 @@ export default function PhotoSendModal({ file, caption, onCaptionChange, onSend,
     return () => { if (u) try { URL.revokeObjectURL(u) } catch (_) {} }
   }, [file])
 
+  // Пере-замер области при изменении размеров окна (кэш перестаёт быть верным).
+  useEffect(() => {
+    const onResize = () => measure()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [measure])
+
+  // Подгоняем высоту поля подписи при внешнем изменении текста (напр. очистка после отправки).
+  useEffect(() => { autosize(taRef.current) }, [caption])
+
   // #2: ограничение сдвига по текущему масштабу/повороту/размеру окна (не утащить за край).
+  // v1.2.201: размер берём из кэша rectRef (замер — только в measure()).
   const clampT = useCallback((next) => {
-    const el = areaRef.current
     const n = natRef.current
-    if (!el || !n.w || !n.h) return next
-    let r; try { r = el.getBoundingClientRect() } catch (_) { return next }
-    if (!r.width || !r.height) return next
+    const r = rectRef.current || measure()
+    if (!r || !n.w || !n.h || !r.width || !r.height) return next
     const fit = fitSize(n.w, n.h, r.width, r.height)
     const swap = (rotRef.current % 180) !== 0
     const cw = (swap ? fit.h : fit.w) * next.scale
     const ch = (swap ? fit.w : fit.h) * next.scale
     const cl = clampOffset(next.x, next.y, cw, ch, r.width, r.height)
     return { scale: next.scale, x: cl.x, y: cl.y }
-  }, [])
+  }, [measure])
 
   // Колесо — зум к точке под курсором. Не-passive, чтобы preventDefault (MDN wheel).
   useEffect(() => {
@@ -134,26 +179,41 @@ export default function PhotoSendModal({ file, caption, onCaptionChange, onSend,
     if (!el) return undefined
     const onWheel = (e) => {
       e.preventDefault()
-      const r = el.getBoundingClientRect()
+      const r = rectRef.current || measure()
+      if (!r) return
       const cx = e.clientX - (r.left + r.width / 2)
       const cy = e.clientY - (r.top + r.height / 2)
       setT(prev => clampT(zoomToPoint(prev, wheelScale(prev.scale, e.deltaY), cx, cy)))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [clampT])
+  }, [clampT, measure])
 
-  // Перетаскивание (pan) на window — тянуть можно и за пределами картинки.
+  // Перетаскивание (pan) на window. v1.2.201: сглаживание через rAF — много событий мыши
+  // в одном кадре экрана схлопываются в ОДИН пересчёт (иначе рывки на больших фото).
   useEffect(() => {
-    const onMove = (e) => {
+    let raf = 0
+    let pending = null
+    const apply = () => {
+      raf = 0
       const d = dragRef.current
-      if (!d) return
-      setT(prev => clampT({ ...prev, x: d.ox + (e.clientX - d.sx), y: d.oy + (e.clientY - d.sy) }))
+      const p = pending
+      if (!d || !p) return
+      setT(prev => clampT({ ...prev, x: d.ox + (p.x - d.sx), y: d.oy + (p.y - d.sy) }))
+    }
+    const onMove = (e) => {
+      if (!dragRef.current) return
+      pending = { x: e.clientX, y: e.clientY }
+      if (!raf) raf = requestAnimationFrame(apply)
     }
     const onUp = () => { if (dragRef.current) { dragRef.current = null; setDragging(false) } }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      if (raf) cancelAnimationFrame(raf)
+    }
   }, [clampT])
 
   // Esc — отмена.
@@ -167,9 +227,10 @@ export default function PhotoSendModal({ file, caption, onCaptionChange, onSend,
   const onImgMouseDown = useCallback((e) => {
     if (t.scale <= 1) return
     e.preventDefault()
+    measure() // свежий размер на старте жеста (окно могли ресайзить)
     dragRef.current = { sx: e.clientX, sy: e.clientY, ox: t.x, oy: t.y }
     setDragging(true)
-  }, [t])
+  }, [t, measure])
 
   const reset = () => { setT(resetTransform()); setRot(0) }
   const pct = Math.round(t.scale * 100)
@@ -195,6 +256,14 @@ export default function PhotoSendModal({ file, caption, onCaptionChange, onSend,
     onSend?.()
   }, [busy, rot, url, file, onSend])
 
+  // Enter — отправить, Shift+Enter — новая строка (как в главном поле ввода программы).
+  const onCaptionKeyDown = useCallback((e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !busy) {
+      e.preventDefault()
+      handleSend()
+    }
+  }, [busy, handleSend])
+
   return (
     <div style={overlay} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel?.() }}>
       <div style={card} onMouseDown={(e) => e.stopPropagation()}>
@@ -214,11 +283,12 @@ export default function PhotoSendModal({ file, caption, onCaptionChange, onSend,
               src={url}
               alt={file?.name || 'фото'}
               draggable={false}
-              onLoad={(e) => setNat({ w: e.target.naturalWidth || 0, h: e.target.naturalHeight || 0 })}
+              onLoad={(e) => { setNat({ w: e.target.naturalWidth || 0, h: e.target.naturalHeight || 0 }); measure() }}
               style={{
                 maxWidth: '100%', maxHeight: '100%', objectFit: 'contain',
                 transform: `translate(${t.x}px, ${t.y}px) rotate(${rot}deg) scale(${t.scale})`,
                 transition: dragging ? 'none' : 'transform 120ms ease-out',
+                willChange: 'transform',
                 userSelect: 'none', pointerEvents: 'none',
               }}
             />
@@ -241,13 +311,15 @@ export default function PhotoSendModal({ file, caption, onCaptionChange, onSend,
         </div>
 
         <div style={foot}>
-          <input
-            type="text"
+          <textarea
+            ref={taRef}
+            rows={1}
             value={caption || ''}
-            onChange={(e) => onCaptionChange?.(e.target.value)}
-            placeholder="Добавьте подпись (необязательно)..."
+            onChange={(e) => { onCaptionChange?.(e.target.value); autosize(e.target) }}
+            onKeyDown={onCaptionKeyDown}
+            placeholder="Подпись (необязательно) · Shift+Enter — новая строка"
             disabled={busy}
-            style={{ flex: 1, fontSize: 14 }}
+            style={capStyle}
           />
           <button className="native-btn" onClick={handleSend} disabled={busy} style={{ minWidth: 96 }}>
             {rotating ? 'Поворот...' : sending ? 'Отправка...' : 'Отправить'}

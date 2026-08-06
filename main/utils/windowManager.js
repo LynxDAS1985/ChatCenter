@@ -7,7 +7,10 @@
 //   - Issue #44897: preload не загружается в child WebContentsView
 // v0.95.25: spellcheck RU + EN + context-menu suggestions через spellcheckHandler.
 
+import { screen } from 'electron'
 import { attachSpellcheckContextMenu } from '../handlers/spellcheckHandler.js'
+// v1.2.202: чистая логика памяти окна (тестируется без Electron) — см. windowBounds.vitest.js.
+import { buildSavedBounds, restorePlan } from './windowBounds.js'
 
 let _deps = null
 
@@ -120,13 +123,18 @@ export function createWindow(deps) {
   const windowStart = Date.now()
   const wlog = (label) => console.log(`[startup-window] +${Date.now() - windowStart}ms ${label}`)
 
-  const bounds = storage.get('windowBounds', { width: 1400, height: 900 })
+  // v1.2.200/202: восстановление размеров/позиции + состояния «развёрнуто». Если сохранённая
+  // позиция вне видимых экранов — x/y не задаются (окно по центру), чтобы не «пропало».
+  const saved = storage.get('windowBounds', { width: 1400, height: 900 })
+  let displays = []
+  try { displays = screen.getAllDisplays() } catch (_) {}
+  const plan = restorePlan(saved, displays)
 
   const mainWindow = new BrowserWindow({
-    width: bounds.width || 1400,
-    height: bounds.height || 900,
-    x: bounds.x,
-    y: bounds.y,
+    width: plan.width,
+    height: plan.height,
+    x: plan.x,
+    y: plan.y,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#1a1a2e',
@@ -174,6 +182,11 @@ export function createWindow(deps) {
   // без этого MutationObserver, Notification hooks и IPC в WebView замораживаются
   mainWindow.webContents.backgroundThrottling = false
 
+  // v1.2.200: восстанавливаем состояние «развёрнуто на весь экран». Раньше сохранялся
+  // только прямоугольник, поэтому развёрнутое окно открывалось большим и съехавшим,
+  // но НЕ развёрнутым. Делаем ДО показа, чтобы не было мигания.
+  if (plan.maximize) { try { mainWindow.maximize() } catch (_) {} }
+
   // v0.85.3: Логируем ВСЕ ошибки renderer в main process (chatcenter.log)
   // Без этого ошибки preload (require is not defined) видны ТОЛЬКО в DevTools
   // v0.85.5: Electron 41 — новый Event API для console-message
@@ -208,12 +221,23 @@ export function createWindow(deps) {
       .catch(err => wlog(`loadFile failed ${err.message}`))
   }
 
-  // Сохраняем размер/позицию при изменении
+  // Сохраняем размер/позицию + состояние «развёрнуто» при изменении.
+  // v1.2.200: когда окно развёрнуто, getBounds() отдаёт «развёрнутый» прямоугольник
+  // (−7,−7, шире экрана). Храним ОБЫЧНЫЙ размер (getNormalBounds) + флаг isMaximized —
+  // иначе при следующем запуске окно открывалось большим и съехавшим, но не развёрнутым,
+  // а после сворачивания из полноэкранного терялся «обычный» размер.
   const saveBounds = () => {
-    if (mainWindow) storage.set('windowBounds', mainWindow.getBounds())
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    storage.set('windowBounds', buildSavedBounds({
+      isMaximized: mainWindow.isMaximized(),
+      normalBounds: mainWindow.getNormalBounds(),
+      bounds: mainWindow.getBounds(),
+    }))
   }
   mainWindow.on('resize', saveBounds)
   mainWindow.on('move', saveBounds)
+  mainWindow.on('maximize', saveBounds)
+  mainWindow.on('unmaximize', saveBounds)
 
   // Свернуть в трей вместо закрытия
   mainWindow.on('close', (e) => {

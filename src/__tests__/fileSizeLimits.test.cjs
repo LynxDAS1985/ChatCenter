@@ -358,8 +358,11 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // перемещение) + math imageZoomPan. UI-окно неустранимо в renderer; math вынесен в свой файл под тесты.
 // v1.2.199: лимит 32480 → 32520 — логи потока отправки (inboxAttachSend) + прозрачность PNG/лог
 // неудачного поворота (PhotoSendModal). Логи через app:log обязательны для разбора сбоёв отправки.
-test('Общий renderer код (src/ без тестов) < 32520 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 32520, totalSrc + " > 32520")
+// v1.2.201: лимит 32520 → 32600 — окно фото PhotoSendModal: растущее поле подписи (textarea +
+// autosize), приподнятая карточка, оптимизация зума/перетаскивания (кэш размера + rAF). UI-окно
+// неустранимо в renderer; математика уже вынесена в imageZoomPan.js.
+test('Общий renderer код (src/ без тестов) < 32600 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 32600, totalSrc + " > 32600")
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
