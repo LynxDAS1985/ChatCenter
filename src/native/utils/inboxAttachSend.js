@@ -10,43 +10,50 @@
 //
 // v1.2.209: sendOpts.splitText — подпись длиннее лимита Telegram (~1024): фото уходит БЕЗ подписи,
 //   затем полный текст следом обычным сообщением (store.sendMessage). Порядок: сперва фото, потом текст.
-// v1.2.211: текст режется на куски ≤4096 (лимит текста Telegram; иначе не доходил), и отправляется
-//   ПОСЛЕ реальной загрузки фото (ждём tg:upload-progress done, таймаут 15с) — иначе лёгкий текст
-//   обгонял тяжёлое фото и вставал выше.
+// v1.2.211: текст режется на куски ≤4096 (лимит текста Telegram; иначе не доходил).
+// v1.2.214: текст отправляется ПОСЛЕ серверного подтверждения фото/альбома (ждём tg:send-succeeded
+//   по всем номерам, таймаут 15с) — иначе лёгкий текст получал более ранний серверный номер, чем
+//   позже «склеенный» альбом, и вставал ВЫШЕ фото у получателя. См. createSendAckWaiter ниже.
 //
 // ВАЖНО: Electron file.path нужен для отправки по пути. File API из буфера/canvas без path —
 // для одиночного идёт «байтами» (tg:send-clipboard-image), для альбома — через временный файл.
 
 import { splitTextForTelegram, TEXT_MAX } from './photoSendUtils.js'
 
-// v1.2.211/212: ждём, пока фото РЕАЛЬНО загрузится, чтобы текст следом встал НИЖЕ фото.
-// v1.2.212: ждём завершения ИМЕННО файла, чей upload мы видели «в процессе» (по fileId) — а не
-// любого `done` (иначе завершение чужой параллельной загрузки могло разблокировать текст раньше).
-// Создавать ДО отправки фото, чтобы поймать его прогресс с самого начала. Слушаем в renderer
-// (window.api.on). Нет api / нет события за timeout → не ждём/идём дальше (текст всё равно отправим).
-function createUploadDoneWaiter() {
-  const active = new Set()   // fileId, которые мы видели грузящимися (done:false)
-  let doneSeen = false
+// v1.2.214: ждём СЕРВЕРНОГО подтверждения по КАЖДОМУ сообщению фото/альбома, а не «загрузки».
+// Почему так (корень бага «у собеседника текст выше фото»): порядок в чате Telegram определяется
+// финальным серверным номером (message.id), который присваивается в updateMessageSendSucceeded
+// (old_message_id → новый id). Альбом из нескольких фото «склеивается» на сервере ПОЗЖЕ, чем
+// улетает лёгкий текст → текст получал более ранний номер и вставал ВЫШЕ фото у получателя.
+// Прошлые версии (v1.2.211-213) ждали лишь `done` ЗАГРУЗКИ первого фото (tg:upload-progress) —
+// загрузка ≠ «сообщение село на сервер с номером», поэтому не спасало.
+// Теперь ждём tg:send-succeeded по ВСЕМ временным номерам (result.messageIds) — только после
+// этого у фото есть финальные номера, и текст следом гарантированно ниже. Этот же канал шлётся
+// и при провале отправки (updateMessageSendFailed, тот же oldId) → на частичном сбое не зависаем.
+// Подписываемся ДО отправки (гонка: ACK может прийти сразу). Слушаем в renderer (window.api.on).
+// Нет api / нет номеров / таймаут → идём дальше (текст всё равно отправляем — не зависаем).
+export function createSendAckWaiter() {
+  const acked = new Set()      // oldId (временный номер), получившие ACK сервера (succeeded ИЛИ failed)
+  let wanted = null            // Set<string> временных номеров, которых ждём (наши сообщения фото)
   let resolveFn = null
   let unsub = null
+  const allAcked = () => !!(wanted && wanted.size > 0 && [...wanted].every((id) => acked.has(id)))
   try {
     if (typeof window !== 'undefined' && typeof window.api?.on === 'function') {
-      unsub = window.api.on('tg:upload-progress', (p) => {
-        if (!p || p.fileId == null) return
-        if (p.done) {
-          // Завершился файл, чей прогресс мы видели → это наш загруженный (фото).
-          if (active.has(p.fileId)) { doneSeen = true; if (resolveFn) resolveFn('done') }
-        } else {
-          active.add(p.fileId)
-        }
+      unsub = window.api.on('tg:send-succeeded', (p) => {
+        if (!p || p.oldId == null) return
+        acked.add(String(p.oldId))               // чужие ACK безвредны — сверяем только свои номера
+        if (resolveFn && allAcked()) resolveFn('acked')
       })
     }
   } catch (_) {}
   return {
-    wait(timeoutMs) {
+    wait(timeoutMs, ids) {
+      wanted = new Set((ids || []).map(String))
       return new Promise((resolve) => {
-        if (!unsub) { resolve('no-api'); return }       // нет подписки (тесты) → не ждём
-        if (doneSeen) { resolve('done-early'); return }
+        if (!unsub) { resolve('no-api'); return }        // нет подписки (тесты) → не ждём
+        if (wanted.size === 0) { resolve('no-ids'); return }
+        if (allAcked()) { resolve('acked-early'); return } // подтверждения успели прийти до wait()
         resolveFn = resolve
         setTimeout(() => resolve('timeout'), timeoutMs)  // запаска: не зависнуть
       })
@@ -113,12 +120,12 @@ export async function runAttachSend({ store, attach, replyTo, showToast, setRepl
     return r?.ok && r.path ? r.path : null
   }
 
-  // v1.2.212: слушатель загрузки создаём ДО отправки фото (splitText), чтобы поймать прогресс
-  // фото с самого начала и ждать завершения именно его. Чистим в finally.
-  let uploadWaiter = null
+  // v1.2.214: слушатель серверных подтверждений создаём ДО отправки (splitText), чтобы не
+  // потерять ранний ACK (гонка). Чистим в finally.
+  let ackWaiter = null
   try {
     let result
-    if (splitText) uploadWaiter = createUploadDoneWaiter()
+    if (splitText) ackWaiter = createSendAckWaiter()
     if (isArray) {
       // v1.2.203: массив фото из окна отправки.
       const items = overrideFile.filter(Boolean)
@@ -200,17 +207,29 @@ export async function runAttachSend({ store, attach, replyTo, showToast, setRepl
     }
 
     if (result?.ok) {
-      log('INFO', 'ok')
+      // v1.2.213: логируем номера сообщений фото/альбома — по возрастанию id виден порядок.
+      log('INFO', `ok msgIds=${JSON.stringify(result.messageIds || result.messageId || null)}`)
       // v1.2.209/211: «отдельными сообщениями» — фото ушло, теперь ПОЛНЫЙ текст следом (после фото),
       // порезанный на куски ≤4096 (лимит текста Telegram). Сначала ждём реальной загрузки фото.
       if (splitText && attach.caption && attach.caption.trim()) {
         try {
-          log('INFO', 'split: жду завершения загрузки фото перед отправкой текста')
-          const how = uploadWaiter ? await uploadWaiter.wait(15000) : 'no-wait'
+          // v1.2.214: временные номера фото/альбома — по ним ждём серверного подтверждения.
+          const provIds = (Array.isArray(result.messageIds) && result.messageIds.length)
+            ? result.messageIds.map(String)
+            : (result.messageId != null ? [String(result.messageId)] : [])
+          log('INFO', `split: жду подтверждения сервера по ${provIds.length} сообщ. фото перед текстом`)
+          const how = ackWaiter ? await ackWaiter.wait(15000, provIds) : 'no-wait'
           const chunks = splitTextForTelegram(attach.caption, TEXT_MAX)
-          log('INFO', `split: фото ${how}; отправляю текст ${chunks.length} сообщ.`)
+          // v1.2.215: таймаут = подтверждение не пришло за 15с → порядок фото/текст мог не
+          // сработать. Это подозрительно → WARN (а не INFO), чтобы выделялось в журнале.
+          log(how === 'timeout' ? 'WARN' : 'INFO',
+            `split: фото ${how}; отправляю текст ${chunks.length} сообщ.` +
+            (how === 'timeout' ? ' (подтверждение сервера не пришло за 15с — порядок мог не сработать)' : ''))
           for (let i = 0; i < chunks.length; i++) {
             const tr = await store.sendMessage(store.activeChatId, chunks[i])
+            // v1.2.213: лог результата КАЖДОГО куска (длина, ok, номер сообщения) — чтобы по
+            // журналу видеть, что реально ушло и в каком порядке (не только при сбое).
+            log('INFO', `split chunk ${i + 1}/${chunks.length} len=${chunks[i].length} ok=${!!tr?.ok} msgId=${tr?.messageId || '?'}`)
             if (!tr?.ok) {
               log('WARN', `split chunk ${i + 1}/${chunks.length} not ok: ${tr?.error || '?'}`)
               showToast('Часть текста не отправилась отдельным сообщением', 'error')
@@ -232,7 +251,7 @@ export async function runAttachSend({ store, attach, replyTo, showToast, setRepl
     log('ERROR', `exception: ${e?.message || e}`)
     showToast(`Сбой отправки: ${e?.message || e}`, 'error')
   } finally {
-    if (uploadWaiter) uploadWaiter.cancel()
+    if (ackWaiter) ackWaiter.cancel()
     attach.setSending(false)
   }
 }

@@ -378,6 +378,8 @@ export class TdlibClientManager extends EventEmitter {
         const newTdMsg = update.message
         if (!newTdMsg) return
         const chatIdStr = `${accountId}:${newTdMsg.chat_id}`
+        // v1.2.213: раньше провал отправки был «немым» — логируем причину сервера (тип/длина/код/текст).
+        try { console.warn(`[send-failed] chat=${chatIdStr} old=${update.old_message_id} type=${newTdMsg.content?.['@type'] || '?'} textLen=${newTdMsg.content?.text?.text?.length ?? ''} code=${update.error?.code ?? update.error_code ?? '?'} err="${update.error?.message || update.error_message || '?'}"`) } catch (_) {}
         const newMessage = mapMessage(newTdMsg, chatIdStr, { senderName: '', senderAvatar: null })
         this.emit('message:send-succeeded', {
           accountId,
