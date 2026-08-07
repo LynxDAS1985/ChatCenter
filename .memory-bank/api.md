@@ -96,8 +96,9 @@
 | `tg:mark-topic-read` | `{ chatId, topicId, maxId }` | `{ ok }` |
 | `tg:get-pinned-message` / `tg:get-pinned` | `{ chatId }` | `{ ok, message?: NativeMessage \| null }` |
 | `tg:pin` | `{ chatId, messageId, unpin? }` | `{ ok }` — закреп/откреп **сообщения** в чате (НЕ закреп чата в Main-list). При `unpin:true` → TDLib `unpinChatMessage`, иначе `pinChatMessage(disable_notification:true, only_for_self:false)`. |
-| `tg:send-file` | `{ chatId, filePath, caption? }` | `{ ok, messageId? }` |
+| `tg:send-file` | `{ chatId, filePath, caption?, asDocument? }` (v1.2.207: `asDocument:true` → без сжатия, inputMessageDocument) | `{ ok, messageId? }` |
 | `tg:send-clipboard-image` | `{ chatId, data: number[], ext, caption? }` (v0.89.4) | `{ ok, messageId? }` — пишет во tmp file + sendFile |
+| `tg:write-temp-file` | `{ data: number[], ext }` (v1.2.203) | `{ ok, path }` — пишет байты во `tdlib-tmp/album-*.ext`, возвращает ПУТЬ (без отправки); чистка через 120с. Для альбома с фото без пути (вставленные/повёрнутые) — окно PhotoSendModal |
 | `tg:set-typing` | `{ chatId }` | `{ ok }` (sendChatAction typing) |
 | `tg:refresh-avatar` | `{ chatId }` | `{ ok }` (noop — TDLib шлёт автоматически) |
 

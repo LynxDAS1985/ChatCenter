@@ -18,6 +18,7 @@
 // Эталон: Telegram Web K SendMessage flow — выбор → preview → caption → send.
 
 import { useState, useCallback } from 'react'
+import { arrayMove } from '../utils/photoSendUtils.js'
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  // 2 GB TDLib limit
 
@@ -45,6 +46,11 @@ export function useFileAttach() {
     setFiles(prev => prev.filter((_, i) => i !== idx))
   }, [])
 
+  // v1.2.207 (#3): переставить фото в ленте (порядок в альбоме) — перетаскиванием миниатюр.
+  const moveFile = useCallback((from, to) => {
+    setFiles(prev => arrayMove(prev, from, to))
+  }, [])
+
   const clear = useCallback(() => {
     setFiles([])
     setCaption('')
@@ -52,7 +58,7 @@ export function useFileAttach() {
 
   return {
     files, caption, sending,
-    addFiles, removeFile, clear,
+    addFiles, removeFile, moveFile, clear,
     setCaption, setSending,
   }
 }

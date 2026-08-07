@@ -55,6 +55,16 @@ describe('tdlibAlbum.buildContent (v0.95.43)', () => {
     const c = buildContent('photo.jpg')
     expect(c.caption).toBeUndefined()
   })
+
+  // v1.2.207 (#1): «Без сжатия» — jpg тоже уходит документом (Telegram не сжимает).
+  it('asDocument=true → jpg как inputMessageDocument (без сжатия)', () => {
+    const c = buildContent('/path/photo.jpg', null, true)
+    expect(c['@type']).toBe('inputMessageDocument')
+    expect(c.document.path).toBe('/path/photo.jpg')
+  })
+  it('asDocument=false → jpg остаётся photo (как раньше)', () => {
+    expect(buildContent('photo.jpg', null, false)['@type']).toBe('inputMessagePhoto')
+  })
 })
 
 describe('tdlibAlbum.sendMessageAlbum (v0.95.43)', () => {
@@ -117,6 +127,13 @@ describe('tdlibAlbum.sendMessageAlbum (v0.95.43)', () => {
     await sendMessageAlbum(client, -1, files, { replyTo: 555 })
     expect(client.invoke.mock.calls[0][0].reply_to).toBeDefined()
     expect(client.invoke.mock.calls[1][0].reply_to).toBeUndefined()
+  })
+
+  it('opts.asDocument → весь альбом документами (без сжатия)', async () => {
+    const client = makeClient({ messages: [{ id: '1' }, { id: '2' }] })
+    await sendMessageAlbum(client, -1, [{ path: '/a.jpg' }, { path: '/b.png' }], { asDocument: true })
+    const contents = client.invoke.mock.calls[0][0].input_message_contents
+    expect(contents.every(c => c['@type'] === 'inputMessageDocument')).toBe(true)
   })
 
   it('пустой массив → error', async () => {

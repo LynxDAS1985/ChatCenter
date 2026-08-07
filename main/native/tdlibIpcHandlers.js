@@ -253,12 +253,12 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
     if (unpin) return backend.messages.unpinMessage(chatId, messageId)
     return backend.messages.pinMessage(chatId, messageId, { disableNotification: true })
   })
-  handle('tg:send-file', ({ chatId, filePath, caption } = {}) =>
-    backend.messages.sendFile(chatId, filePath, caption))
+  handle('tg:send-file', ({ chatId, filePath, caption, asDocument } = {}) =>
+    backend.messages.sendFile(chatId, filePath, caption, asDocument))
   // v0.95.43: отправка альбома (до 10 файлов одним сообщением). См. tdlibAlbum.js.
   // files: [{path, caption?}], opts: {albumCaption?, replyTo?}.
-  handle('tg:send-album', ({ chatId, files, albumCaption, replyTo } = {}) =>
-    backend.messages.sendAlbum(chatId, files, { albumCaption, replyTo }))
+  handle('tg:send-album', ({ chatId, files, albumCaption, replyTo, asDocument } = {}) =>
+    backend.messages.sendAlbum(chatId, files, { albumCaption, replyTo, asDocument }))
   // v0.89.4: clipboard-paste картинки (UI useDropAndPaste.js шлёт Uint8Array).
   // Пишем во временный файл userDataDir/tdlib-tmp/paste-X.ext + backend.messages.sendFile.
   // После отправки запланирована очистка (background — не блокируем).
@@ -278,6 +278,26 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
     // Удаляем tmp с задержкой — TDLib uploads асинхронно из локального пути.
     setTimeout(() => { unlink(tmpPath).catch(() => {}) }, 60_000)
     return r
+  })
+  // v1.2.203: записать байты во временный файл и вернуть ПУТЬ (без отправки). Нужно окну
+  // PhotoSendModal для альбома с фото БЕЗ пути (вставленные / повёрнутая canvas-копия) —
+  // альбом собирается по путям (tg:send-album), поэтому такие фото сперва кладём на диск.
+  // Файл удаляется через 120с (альбом грузится дольше одиночного).
+  let _albumTmpSeq = 0
+  handle('tg:write-temp-file', async ({ data, ext } = {}) => {
+    if (!data || !data.length) return { ok: false, error: 'empty data' }
+    if (!userDataPath) return { ok: false, error: 'userDataPath not configured' }
+    const { writeFile, mkdir, unlink } = await import('node:fs/promises')
+    const path = await import('node:path')
+    const tmpDir = path.join(userDataPath, 'tdlib-tmp')
+    try { await mkdir(tmpDir, { recursive: true }) } catch (_) {}
+    const safeExt = String(ext || 'png').replace(/[^a-z0-9]/gi, '').slice(0, 6) || 'png'
+    _albumTmpSeq = (_albumTmpSeq + 1) % 100000
+    const tmpPath = path.join(tmpDir, `album-${Date.now()}-${_albumTmpSeq}.${safeExt}`)
+    try { await writeFile(tmpPath, Buffer.from(data)) }
+    catch (e) { return { ok: false, error: 'tmp write failed: ' + (e?.message || e) } }
+    setTimeout(() => { unlink(tmpPath).catch(() => {}) }, 120_000)
+    return { ok: true, path: tmpPath }
   })
   // v0.89.3: реальная реализация через fs-скан tdlib-sessions/ + tg-avatars/.
   // Возвращает { totalFiles, totalBytes, byCategory: { session, avatars, cache,

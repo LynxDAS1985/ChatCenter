@@ -25,13 +25,23 @@ const PHOTO_EXT = /^(jpg|jpeg|png|webp)$/
 const VIDEO_EXT = /^(mp4|m4v|mov|webm|avi)$/
 const AUDIO_EXT = /^(mp3|m4a|aac|flac|wav|ogg|opus)$/
 
-function buildContent(filePath, caption) {
+function buildContent(filePath, caption, asDocument = false) {
   const lower = String(filePath).toLowerCase()
   const ext = lower.slice(lower.lastIndexOf('.') + 1)
   const inputFile = { '@type': 'inputFileLocal', path: String(filePath) }
   const captionFt = caption
     ? { '@type': 'formattedText', text: String(caption), entities: [] }
     : null
+
+  // v1.2.207 (#1): «Без сжатия» — весь альбом документами (Telegram не сжимает).
+  if (asDocument) {
+    return {
+      '@type': 'inputMessageDocument',
+      document: inputFile,
+      disable_content_type_detection: false,
+      ...(captionFt ? { caption: captionFt } : {}),
+    }
+  }
 
   if (PHOTO_EXT.test(ext)) {
     return {
@@ -100,7 +110,7 @@ export async function sendMessageAlbum(client, chatId, files, opts = {}) {
       // Caption — на первом элементе батча из opts.albumCaption,
       // либо на каждом из f.caption.
       const cap = (idx === 0 && opts.albumCaption) ? opts.albumCaption : f.caption
-      return buildContent(f.path, cap)
+      return buildContent(f.path, cap, !!opts.asDocument)
     })
 
     try {

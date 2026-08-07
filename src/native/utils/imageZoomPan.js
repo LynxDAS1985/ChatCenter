@@ -54,9 +54,15 @@ export function nextRotation(rot) {
 // больше окна, держим её покрывающей окно (без пустых полей). contentW/H — ЭКРАННЫЙ
 // размер картинки С УЧЁТОМ масштаба и поворота; containerW/H — размер области просмотра.
 // Если картинка меньше/равна окну по оси — сдвиг по этой оси обнуляется (по центру).
-export function clampOffset(x, y, contentW, contentH, containerW, containerH) {
-  const maxX = Math.max(0, ((contentW || 0) - (containerW || 0)) / 2)
-  const maxY = Math.max(0, ((contentH || 0) - (containerH || 0)) / 2)
+export function clampOffset(x, y, contentW, contentH, containerW, containerH, loose = false) {
+  const cW = containerW || 0, cH = containerH || 0
+  // v1.2.204: loose=true — «перетяг»: разрешаем вытянуть край фото до СЕРЕДИНЫ окна
+  // (удобно рассматривать края/углы при зуме) + на неполной по оси стороне тоже можно
+  // двигать. Прибавка = половина окна → maxX ≈ contentW/2 (картинка не теряется целиком).
+  const overX = loose ? cW / 2 : 0
+  const overY = loose ? cH / 2 : 0
+  const maxX = Math.max(0, ((contentW || 0) - cW) / 2 + overX)
+  const maxY = Math.max(0, ((contentH || 0) - cH) / 2 + overY)
   const cx = Number.isFinite(x) ? x : 0
   const cy = Number.isFinite(y) ? y : 0
   return { x: Math.min(maxX, Math.max(-maxX, cx)), y: Math.min(maxY, Math.max(-maxY, cy)) }
@@ -68,4 +74,14 @@ export function fitSize(natW, natH, boxW, boxH) {
   if (!natW || !natH || !boxW || !boxH) return { w: boxW || 0, h: boxH || 0 }
   const ia = natW / natH, ca = boxW / boxH
   return ia > ca ? { w: boxW, h: boxW / ia } : { w: boxH * ia, h: boxH }
+}
+
+// v1.2.207: масштаб «1:1» (реальный размер) — чтобы 1 экранный пиксель = 1 пиксель фото.
+// При масштабе 1 фото показано размером fitSize; чтобы стало натуральным, нужен scale =
+// natW / fitW. Для мелких фото (меньше окна) fit УВЕЛИЧИВАЕТ → natW/fitW < 1 → кламп к 1
+// (100% и есть реальный размер для мелких). Ограничено сверху MAX_SCALE.
+export function actualSizeScale(natW, natH, boxW, boxH) {
+  const fit = fitSize(natW, natH, boxW, boxH)
+  if (!fit.w) return MIN_SCALE
+  return clampScale((natW || 0) / fit.w)
 }

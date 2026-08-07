@@ -13,11 +13,11 @@ beforeAll(() => {
 })
 afterEach(cleanup)
 
-function makeFile() {
-  return new File([new Uint8Array([1, 2, 3, 4])], 'photo.png', { type: 'image/png' })
+function makeFile(name = 'photo.png') {
+  return new File([new Uint8Array([1, 2, 3, 4])], name, { type: 'image/png' })
 }
 const baseProps = () => ({
-  file: makeFile(), caption: '', onCaptionChange: () => {}, onSend: () => {}, onCancel: () => {}, sending: false,
+  files: [makeFile()], caption: '', onCaptionChange: () => {}, onSend: () => {}, onCancel: () => {}, sending: false,
 })
 
 describe('PhotoSendModal (#4)', () => {
@@ -45,11 +45,53 @@ describe('PhotoSendModal (#4)', () => {
     expect(onSend).toHaveBeenCalled()
   })
 
-  it('кнопка «Отмена» (✕) зовёт onCancel', () => {
+  it('✕ показывает подтверждение, «Отменить отправку» зовёт onCancel (#10)', () => {
     const onCancel = vi.fn()
     render(<PhotoSendModal {...baseProps()} onCancel={onCancel} />)
     fireEvent.click(screen.getByTitle('Отмена (Esc)'))
+    expect(onCancel).not.toHaveBeenCalled() // сразу НЕ закрывает
+    expect(screen.getByText(/Отменить отправку 1 фото/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Отменить отправку'))
     expect(onCancel).toHaveBeenCalled()
+  })
+
+  it('переключатель «Без сжатия» → onSend с { asDocument:true } (#1)', () => {
+    const onSend = vi.fn()
+    render(<PhotoSendModal {...baseProps()} onSend={onSend} />)
+    fireEvent.click(screen.getByLabelText(/Без сжатия/))
+    fireEvent.click(screen.getByText('Отправить'))
+    expect(onSend).toHaveBeenCalled()
+    expect(onSend.mock.calls[0][1]).toEqual({ asDocument: true, splitText: false })
+  })
+
+  // v1.2.209 (вариант 1): счётчик подписи + выбор при превышении лимита.
+  it('счётчик подписи показывается', () => {
+    render(<PhotoSendModal {...baseProps()} caption="привет" />)
+    expect(screen.getByText(/6 \/ 1024/)).toBeTruthy()
+  })
+
+  it('подпись сверх лимита → «Отправить» заблокирована + выбор «Сократить»/«отдельно»', () => {
+    const onSend = vi.fn()
+    render(<PhotoSendModal {...baseProps()} caption={'a'.repeat(1100)} onSend={onSend} />)
+    expect(screen.getByText(/1100 \/ 1024/)).toBeTruthy()
+    expect(screen.getByText('Отправить').closest('button').disabled).toBe(true)
+    expect(screen.getByText('Сократить')).toBeTruthy()
+    fireEvent.click(screen.getByText(/Фото, затем текст/))
+    expect(onSend).toHaveBeenCalled()
+    expect(onSend.mock.calls[0][1]).toEqual({ asDocument: false, splitText: true })
+  })
+
+  it('🗑 удаляет текущее фото (#7)', () => {
+    const onRemove = vi.fn()
+    render(<PhotoSendModal {...baseProps()} onRemove={onRemove} />)
+    fireEvent.click(screen.getByTitle('Удалить это фото (Del)'))
+    expect(onRemove).toHaveBeenCalledWith(0)
+  })
+
+  it('кнопки «Вписать» и «1:1» присутствуют (#8)', () => {
+    render(<PhotoSendModal {...baseProps()} />)
+    expect(screen.getByTitle('Вписать в окно')).toBeTruthy()
+    expect(screen.getByTitle('Реальный размер 1:1')).toBeTruthy()
   })
 
   // v1.2.201: поле подписи — растущее (textarea), Enter отправляет, Shift+Enter — новая строка.
@@ -71,5 +113,22 @@ describe('PhotoSendModal (#4)', () => {
     render(<PhotoSendModal {...baseProps()} onSend={onSend} />)
     fireEvent.keyDown(screen.getByPlaceholderText(/Подпись/), { key: 'Enter', shiftKey: true })
     expect(onSend).not.toHaveBeenCalled()
+  })
+
+  // v1.2.203: несколько фото.
+  it('несколько фото: счётчик «1 из N» и кнопка «Отправить (N)»', () => {
+    render(<PhotoSendModal {...baseProps()} files={[makeFile('a.png'), makeFile('b.png'), makeFile('c.png')]} />)
+    expect(screen.getByText(/1 из 3/)).toBeTruthy()
+    expect(screen.getByText('Отправить (3)')).toBeTruthy()
+  })
+
+  it('«Отправить» без поворота зовёт onSend со ВСЕМ массивом фото', () => {
+    const onSend = vi.fn()
+    render(<PhotoSendModal {...baseProps()} files={[makeFile('a.png'), makeFile('b.png')]} onSend={onSend} />)
+    fireEvent.click(screen.getByText('Отправить (2)'))
+    expect(onSend).toHaveBeenCalled()
+    const arg = onSend.mock.calls[0][0]
+    expect(Array.isArray(arg)).toBe(true)
+    expect(arg.length).toBe(2)
   })
 })

@@ -472,11 +472,11 @@ export function createTdlibBackend(opts = {}) {
         })
       },
       // v0.89.0 / Этап 3.13: реальная реализация через TDLib inputMessagePhoto/Video/Document
-      async sendFile(chatId, filePath, caption) {
+      async sendFile(chatId, filePath, caption, asDocument = false) {
         const ctx = getClientForChat(manager, chatId)
         if (ctx.error) return ctx.error
         return sendFile(ctx.client, ctx.rawId, filePath, {
-          caption, chatIdStr: chatId,
+          caption, chatIdStr: chatId, asDocument,
         })
       },
       // v0.95.43: отправка альбома (до 10 файлов одним сообщением, остальное split на батчи).

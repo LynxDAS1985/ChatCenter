@@ -13,17 +13,18 @@ export default function InboxMessageInput({
   disabledText = 'Недоступно',
   // v0.95.43: пропсы для скрепки и альбомов
   attachFiles, attachCaption, attachSending,
-  onAttachAdd, onAttachRemove, onAttachClear, onAttachCaptionChange, onAttachSend,
+  onAttachAdd, onAttachRemove, onAttachMove, onAttachClear, onAttachCaptionChange, onAttachSend,
   // v0.95.44: store.uploads для прогресс-bar
   uploads,
 }) {
   // v0.95.43: если есть выбранные файлы — вместо обычного input показываем FilePreviewBar
   const hasAttachedFiles = Array.isArray(attachFiles) && attachFiles.length > 0
-  // v1.2.197: ровно ОДНО фото → крупное окно PhotoSendModal (зум/поворот/перемещение +
-  // подпись). Несколько файлов / видео / документы → прежний компактный FilePreviewBar.
-  // Зум/поворот — только вид, отправляется исходный файл (через тот же onAttachSend).
-  const singleImage = hasAttachedFiles && attachFiles.length === 1 &&
-    typeof attachFiles[0]?.type === 'string' && attachFiles[0].type.startsWith('image/')
+  // v1.2.203: ЕСЛИ ВСЕ прикреплённые файлы — картинки (1+), показываем крупное окно PhotoSendModal
+  // (зум/поворот/подпись + лента миниатюр для нескольких фото). Видео / документы / смешанное →
+  // прежний компактный FilePreviewBar. Поворот — настоящий (см. PhotoSendModal/inboxAttachSend).
+  const allImages = hasAttachedFiles && attachFiles.every(
+    f => typeof f?.type === 'string' && f.type.startsWith('image/')
+  )
 
   return (
     <>
@@ -46,17 +47,21 @@ export default function InboxMessageInput({
           >✕</button>
         </div>
       )}
-      {/* v1.2.197: одиночное фото → крупное окно с зумом/поворотом/перемещением. */}
-      {singleImage ? (
+      {/* v1.2.203: картинки (1+) → крупное окно с зумом/поворотом/лентой миниатюр. */}
+      {allImages ? (
         <PhotoSendModal
-          file={attachFiles[0]}
+          files={attachFiles}
           caption={attachCaption}
           onCaptionChange={onAttachCaptionChange}
           onSend={onAttachSend}
           onCancel={onAttachClear}
           sending={attachSending}
+          onAdd={onAttachAdd}
+          onRemove={onAttachRemove}
+          onReorder={onAttachMove}
+          uploads={uploads}
         />
-      ) : /* v0.95.43: несколько файлов / видео / документ → компактный превью-бар */
+      ) : /* v0.95.43: видео / документ / смешанное → компактный превью-бар */
       hasAttachedFiles ? (
         <FilePreviewBar
           files={attachFiles}

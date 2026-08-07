@@ -79,7 +79,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   const attach = useFileAttach()
   // v1.2.198: overrideFile — повёрнутая копия из PhotoSendModal (см. runAttachSend). Событие
   // клика (из FilePreviewBar onClick=onSend) не является File → runAttachSend его игнорирует.
-  const handleAttachSend = (overrideFile) => runAttachSend({ store, attach, replyTo, showToast, setReplyTo, overrideFile })
+  const handleAttachSend = (overrideFile, sendOpts) => runAttachSend({ store, attach, replyTo, showToast, setReplyTo, overrideFile, sendOpts })
   const [activeThemeId, setActiveThemeId] = useState(() => loadTheme().id)
   // v0.95.7: drag-to-resize chat-list ↔ окно чата. Default 340px, [60, 600]. Compact <200.
   const [chatListWidth, setChatListWidth] = useState(CHAT_LIST_DEFAULT_WIDTH)
@@ -1063,6 +1063,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
           attachSending={attach.sending}
           onAttachAdd={attach.addFiles}
           onAttachRemove={attach.removeFile}
+          onAttachMove={attach.moveFile}
           onAttachClear={attach.clear}
           onAttachCaptionChange={attach.setCaption}
           onAttachSend={handleAttachSend}

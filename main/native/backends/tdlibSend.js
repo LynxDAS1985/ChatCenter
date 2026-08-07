@@ -50,7 +50,15 @@ export async function sendFile(client, chatId, filePath, opts = {}) {
     : null
 
   let content
-  if (/^(jpg|jpeg|png|webp)$/.test(ext)) {
+  if (opts.asDocument) {
+    // v1.2.207 (#1): «Без сжатия» — принудительно как документ (Telegram НЕ сжимает).
+    content = {
+      '@type': 'inputMessageDocument',
+      document: inputFile,
+      disable_content_type_detection: false,
+      ...(caption ? { caption } : {}),
+    }
+  } else if (/^(jpg|jpeg|png|webp)$/.test(ext)) {
     // Photo — JPEG/PNG/WEBP. HEIC намеренно исключён: TDLib не конвертирует HEIC
     // в Photo, попытка отправить как Photo даёт ошибку «PHOTO_INVALID_DIMENSIONS».
     // Лучше отправить HEIC как Document — клиенты iOS/desktop откроют через preview.

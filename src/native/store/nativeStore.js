@@ -467,15 +467,17 @@ export default function useNativeStore() {
     return r
   }, [])
 
-  const sendFile = useCallback(async (chatId, filePath, caption) => {
-    return window.api?.invoke('tg:send-file', { chatId, filePath, caption })
+  // v1.2.207 (#1): asDocument=true — «без сжатия» (backend шлёт inputMessageDocument).
+  const sendFile = useCallback(async (chatId, filePath, caption, asDocument = false) => {
+    return window.api?.invoke('tg:send-file', { chatId, filePath, caption, asDocument })
   }, [])
 
   // v0.95.43: отправка нескольких файлов одним альбомом (TDLib sendMessageAlbum).
   // files: [{path, caption?}], albumCaption — общий caption на первом элементе.
   // > 10 файлов → backend split на батчи по 10 (TDLib limit).
-  const sendAlbum = useCallback(async (chatId, files, albumCaption, replyTo) => {
-    return window.api?.invoke('tg:send-album', { chatId, files, albumCaption, replyTo })
+  // v1.2.207 (#1): asDocument=true — весь альбом документами (без сжатия).
+  const sendAlbum = useCallback(async (chatId, files, albumCaption, replyTo, asDocument = false) => {
+    return window.api?.invoke('tg:send-album', { chatId, files, albumCaption, replyTo, asDocument })
   }, [])
 
   const forwardMessage = useCallback(async (fromChatId, toChatId, messageId) => {

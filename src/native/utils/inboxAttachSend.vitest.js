@@ -32,7 +32,12 @@ function makeAttach(files, caption = '') {
   }
 }
 const baseArgs = (attach, extra = {}) => ({
-  store: { activeChatId: 'tg_1:100', sendFile: vi.fn(async () => ({ ok: true })), sendAlbum: vi.fn(async () => ({ ok: true })) },
+  store: {
+    activeChatId: 'tg_1:100',
+    sendFile: vi.fn(async () => ({ ok: true })),
+    sendAlbum: vi.fn(async () => ({ ok: true })),
+    sendMessage: vi.fn(async () => ({ ok: true })),
+  },
   attach, replyTo: null, showToast: vi.fn(), setReplyTo: vi.fn(), ...extra,
 })
 
@@ -90,5 +95,93 @@ describe('runAttachSend (#4)', () => {
     await runAttachSend(args)
     expect(invokeMock).not.toHaveBeenCalled()
     expect(args.store.sendFile).not.toHaveBeenCalled()
+  })
+
+  // v1.2.203: окно PhotoSendModal шлёт МАССИВ файлов.
+  it('массив из 2 файлов С путями → альбом по путям, без временных файлов', async () => {
+    const attach = makeAttach([fileLike({ path: 'C:\\a\\1.png' }), fileLike({ path: 'C:\\a\\2.png' })])
+    const arr = [fileLike({ path: 'C:\\a\\1.png' }), fileLike({ path: 'C:\\a\\2.png' })]
+    const args = baseArgs(attach, { overrideFile: arr })
+    await runAttachSend(args)
+    expect(args.store.sendAlbum).toHaveBeenCalled()
+    const passed = args.store.sendAlbum.mock.calls[0][1]
+    expect(passed.map(f => f.path)).toEqual(['C:\\a\\1.png', 'C:\\a\\2.png'])
+    expect(invokeMock).not.toHaveBeenCalled() // временные файлы не понадобились
+  })
+
+  it('массив с фото БЕЗ пути (повёрнутое) → пишем временный файл и шлём альбомом', async () => {
+    invokeMock = vi.fn(async (ch) => ch === 'tg:write-temp-file' ? { ok: true, path: 'C:\\tmp\\album-1.png' } : { ok: true })
+    globalThis.window.api = { invoke: invokeMock, send: () => {} }
+    const attach = makeAttach([fileLike({ path: 'C:\\a\\1.png' }), fileLike({ path: undefined })])
+    const arr = [fileLike({ path: 'C:\\a\\1.png' }), fileLike({ path: undefined, name: 'rot.jpg', type: 'image/jpeg' })]
+    const args = baseArgs(attach, { overrideFile: arr })
+    await runAttachSend(args)
+    expect(invokeMock).toHaveBeenCalledWith('tg:write-temp-file', expect.any(Object))
+    const passed = args.store.sendAlbum.mock.calls[0][1]
+    expect(passed.length).toBe(2)
+    expect(passed[1].path).toBe('C:\\tmp\\album-1.png')
+  })
+
+  it('массив из 1 файла с путём → sendFile (не альбом)', async () => {
+    const attach = makeAttach([fileLike({ path: 'C:\\a\\1.png' })])
+    const args = baseArgs(attach, { overrideFile: [fileLike({ path: 'C:\\a\\1.png' })] })
+    await runAttachSend(args)
+    expect(args.store.sendFile).toHaveBeenCalled()
+    expect(args.store.sendAlbum).not.toHaveBeenCalled()
+  })
+
+  // v1.2.207 (#1): «Без сжатия» протаскивается в отправку.
+  it('sendOpts.asDocument → sendFile с флагом true (одиночный)', async () => {
+    const attach = makeAttach([fileLike({ path: 'C:\\a\\1.png' })])
+    const args = baseArgs(attach, { overrideFile: [fileLike({ path: 'C:\\a\\1.png' })], sendOpts: { asDocument: true } })
+    await runAttachSend(args)
+    expect(args.store.sendFile.mock.calls[0][3]).toBe(true)
+  })
+
+  it('sendOpts.asDocument → sendAlbum с флагом true (альбом)', async () => {
+    const attach = makeAttach([fileLike({ path: 'C:\\a\\1.png' }), fileLike({ path: 'C:\\a\\2.png' })])
+    const arr = [fileLike({ path: 'C:\\a\\1.png' }), fileLike({ path: 'C:\\a\\2.png' })]
+    const args = baseArgs(attach, { overrideFile: arr, sendOpts: { asDocument: true } })
+    await runAttachSend(args)
+    expect(args.store.sendAlbum.mock.calls[0][4]).toBe(true)
+  })
+
+  // v1.2.209: «Фото, затем текст отдельно» — фото БЕЗ подписи + текст отдельным сообщением.
+  it('sendOpts.splitText → фото с пустой подписью, затем sendMessage с полным текстом', async () => {
+    const attach = makeAttach([fileLike({ path: 'C:\\a\\1.png' })], 'очень длинная подпись…')
+    const args = baseArgs(attach, { overrideFile: [fileLike({ path: 'C:\\a\\1.png' })], sendOpts: { splitText: true } })
+    await runAttachSend(args)
+    // фото ушло с ПУСТОЙ подписью
+    expect(args.store.sendFile.mock.calls[0][2]).toBe('')
+    // текст ушёл отдельным сообщением
+    expect(args.store.sendMessage).toHaveBeenCalledWith('tg_1:100', 'очень длинная подпись…')
+  })
+
+  it('без splitText → подпись остаётся на фото, sendMessage НЕ зовётся', async () => {
+    const attach = makeAttach([fileLike({ path: 'C:\\a\\1.png' })], 'подпись')
+    const args = baseArgs(attach, { overrideFile: [fileLike({ path: 'C:\\a\\1.png' })] })
+    await runAttachSend(args)
+    expect(args.store.sendFile.mock.calls[0][2]).toBe('подпись')
+    expect(args.store.sendMessage).not.toHaveBeenCalled()
+  })
+
+  // v1.2.210: splitText работает и для attach-ветки (FilePreviewBar: видео/документ), overrideFile нет.
+  it('attach-ветка (FilePreviewBar) + splitText → файл с пустой подписью + sendMessage с текстом', async () => {
+    const attach = makeAttach([fileLike({ path: 'C:\\a\\v.mp4', type: 'video/mp4' })], 'длинный текст видео')
+    const args = baseArgs(attach, { sendOpts: { splitText: true } }) // overrideFile undefined → attach-ветка
+    await runAttachSend(args)
+    expect(args.store.sendFile.mock.calls[0][2]).toBe('')
+    expect(args.store.sendMessage).toHaveBeenCalledWith('tg_1:100', 'длинный текст видео')
+  })
+
+  // v1.2.211: текст > 4096 → несколько sendMessage (иначе одно сообщение не доходит).
+  it('splitText + текст длиннее 4096 → несколько сообщений', async () => {
+    const long = 'я'.repeat(5000) // без пробелов → жёсткий рез: 4096 + 904
+    const attach = makeAttach([fileLike({ path: 'C:\\a\\1.png' })], long)
+    const args = baseArgs(attach, { overrideFile: [fileLike({ path: 'C:\\a\\1.png' })], sendOpts: { splitText: true } })
+    await runAttachSend(args)
+    expect(args.store.sendMessage.mock.calls.length).toBe(2)
+    // каждый кусок ≤ 4096
+    for (const call of args.store.sendMessage.mock.calls) expect(call[1].length).toBeLessThanOrEqual(4096)
   })
 })

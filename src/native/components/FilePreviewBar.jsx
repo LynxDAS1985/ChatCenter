@@ -10,6 +10,7 @@
 
 import { useState, useEffect } from 'react'
 import { useUploadProgress, formatBytes } from '../hooks/useUploadProgress.js'
+import { CAPTION_MAX, TEXT_MAX, splitTextForTelegram } from '../utils/photoSendUtils.js'  // v1.2.210: лимит подписи
 
 function fileSizeLabel(bytes) {
   if (!bytes || bytes < 1024) return (bytes || 0) + ' Б'
@@ -108,6 +109,10 @@ export default function FilePreviewBar({
   if (!Array.isArray(files) || files.length === 0) return null
 
   const totalSize = files.reduce((s, f) => s + (f.size || 0), 0)
+  // v1.2.210: подпись к медиа тоже ограничена ~1024 (не только у фото). Длиннее — не дойдёт.
+  const capLen = (caption || '').length
+  const capOver = capLen > CAPTION_MAX
+  const textChunks = capOver ? splitTextForTelegram(caption, TEXT_MAX).length : 0  // v1.2.212 (#3)
 
   return (
     <div style={{
@@ -147,6 +152,25 @@ export default function FilePreviewBar({
           />
         ))}
       </div>
+      {/* v1.2.210: счётчик подписи + при превышении «Файл, затем текст отдельно» (как в окне фото) */}
+      {capLen > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, flexWrap: 'wrap' }}>
+          <span style={{ color: capOver ? '#ff9a9a' : 'var(--amoled-text-dim)', fontVariantNumeric: 'tabular-nums' }}>
+            {capLen} / {CAPTION_MAX}{capOver ? ` · −${capLen - CAPTION_MAX}` : ''}
+          </span>
+          {capOver && (
+            <>
+              <span style={{ color: '#f5b74a' }}>⚠ не влезет — текст уйдёт {textChunks} {textChunks === 1 ? 'сообщением' : 'сообщениями'}</span>
+              <button
+                onClick={() => onSend(undefined, { splitText: true })}
+                title="Сначала файл, затем весь текст отдельными сообщениями"
+                style={{ marginLeft: 'auto', background: 'var(--amoled-accent, #2AABEE)', color: '#fff',
+                  border: 'none', borderRadius: 6, padding: '4px 9px', cursor: 'pointer', fontSize: 11 }}
+              >Файл, затем текст ({textChunks})</button>
+            </>
+          )}
+        </div>
+      )}
       {/* Caption + кнопка отправки */}
       <div style={{ display: 'flex', gap: 8 }}>
         <input
@@ -154,13 +178,13 @@ export default function FilePreviewBar({
           value={caption || ''}
           onChange={e => onCaptionChange(e.target.value)}
           placeholder="Добавьте подпись (необязательно)..."
-          style={{ flex: 1, fontSize: 13 }}
+          style={{ flex: 1, fontSize: 13, ...(capOver ? { border: '1px solid rgba(255,107,107,0.55)' } : {}) }}
           disabled={sending}
         />
         <button
           className="native-btn"
-          onClick={onSend}
-          disabled={sending}
+          onClick={() => onSend(undefined, { splitText: false })}
+          disabled={sending || capOver}
           style={{ minWidth: 90 }}
         >
           {sending && progress.hasActive

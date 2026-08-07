@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MIN_SCALE, MAX_SCALE, clampScale, wheelScale, stepScale, zoomToPoint, resetTransform, nextRotation,
-  clampOffset, fitSize,
+  clampOffset, fitSize, actualSizeScale,
 } from '../native/utils/imageZoomPan.js'
 
 describe('imageZoomPan — clampScale', () => {
@@ -93,6 +93,14 @@ describe('imageZoomPan — clampOffset (#2: не утащить за край)',
   it('мусорный сдвиг → 0', () => {
     expect(clampOffset(NaN, undefined, 1000, 1000, 400, 400)).toEqual({ x: 0, y: 0 })
   })
+  // v1.2.204: loose=true — «перетяг» до середины окна (можно рассмотреть край/угол).
+  it('loose=true даёт вытянуть край до середины окна (maxX ≈ contentW/2)', () => {
+    // content 1000, окно 400 → cover=300, loose добавляет 200 → maxX=500 = 1000/2
+    expect(clampOffset(600, 0, 1000, 200, 400, 400, true).x).toBe(500)
+    // неполная по оси сторона (content 200 < окно 400): cover=0, loose даёт maxX=100
+    expect(clampOffset(999, 0, 200, 200, 400, 400, true).x).toBe(100)
+    expect(clampOffset(-999, 0, 200, 200, 400, 400, true).x).toBe(-100)
+  })
 })
 
 describe('imageZoomPan — fitSize (вписать в окно)', () => {
@@ -106,5 +114,19 @@ describe('imageZoomPan — fitSize (вписать в окно)', () => {
   })
   it('нет размеров → возвращает окно', () => {
     expect(fitSize(0, 0, 400, 300)).toEqual({ w: 400, h: 300 })
+  })
+})
+
+describe('imageZoomPan — actualSizeScale (1:1 реальный размер)', () => {
+  it('большое фото → масштаб > 1 (в fit оно ужато)', () => {
+    // 2000×1000 в окне 400×400 → fit.w=400 → scale=2000/400=5
+    expect(actualSizeScale(2000, 1000, 400, 400)).toBe(5)
+  })
+  it('мелкое фото (меньше окна) → 1:1 = 100% (не апскейлим сверх)', () => {
+    // 100×100 в окне 400×400 → fit увеличит до 400 → natW/fitW=100/400=0.25 → кламп к 1
+    expect(actualSizeScale(100, 100, 400, 400)).toBe(MIN_SCALE)
+  })
+  it('очень большое → ограничено MAX_SCALE', () => {
+    expect(actualSizeScale(100000, 100000, 400, 400)).toBe(MAX_SCALE)
   })
 })
