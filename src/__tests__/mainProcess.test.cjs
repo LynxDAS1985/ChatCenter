@@ -21,6 +21,8 @@ const notifMgrCode = fs.existsSync('main/handlers/notificationManager.js') ? fs.
 const aiLoginCode = fs.existsSync('main/handlers/aiLoginHandler.js') ? fs.readFileSync('main/handlers/aiLoginHandler.js', 'utf8') : ''
 const backupNotifCode = fs.existsSync('main/handlers/backupNotifHandler.js') ? fs.readFileSync('main/handlers/backupNotifHandler.js', 'utf8') : ''
 const windowMgrCode = fs.existsSync('main/utils/windowManager.js') ? fs.readFileSync('main/utils/windowManager.js', 'utf8') : ''
+// v1.2.205 (TODO-31): attachDevRequestTiming вынесен из windowManager.js в devRequestTiming.js.
+const devReqCode = fs.existsSync('main/utils/devRequestTiming.js') ? fs.readFileSync('main/utils/devRequestTiming.js', 'utf8') : ''
 const trayMgrCode = fs.existsSync('main/utils/trayManager.js') ? fs.readFileSync('main/utils/trayManager.js', 'utf8') : ''
 // v0.87.81: storage/gigachat/ruError вынесены в main/utils/
 const storageCode = fs.existsSync('main/utils/storage.js') ? fs.readFileSync('main/utils/storage.js', 'utf8') : ''
@@ -51,15 +53,17 @@ test('Импорт path', () => assert(code.includes("import path from")))
 console.log('\\n── Ключевые функции: ──')
 test('createWindow определена', () => assert(allCode.includes('function createWindow')))
 test('dev request timing перед loadURL не прогревает module URLs', () => {
-  assert(windowMgrCode.includes('function attachDevRequestTiming'), 'windowManager должен иметь attachDevRequestTiming')
-  assert(windowMgrCode.includes('webRequest.onBeforeRequest'), 'должен слушать реальные стартовые запросы Chromium')
-  assert(windowMgrCode.includes('webRequest.onCompleted'), 'должен логировать завершение реальных запросов')
-  assert(windowMgrCode.includes('webRequest.onErrorOccurred'), 'должен логировать ошибки реальных запросов')
-  assert(windowMgrCode.includes('dev-request summary'), 'должен писать summary по completed/pending request-ам')
-  assert(windowMgrCode.includes('dev-request pending'), 'должен показывать зависшие pending request-ы')
-  assert(windowMgrCode.includes('dev-request slow'), 'должен выделять медленные request-ы')
-  assert(windowMgrCode.includes("'/src/'"), 'лог должен выделять src module requests')
-  assert(windowMgrCode.includes("'/node_modules/.vite/'"), 'лог должен выделять Vite deps requests')
+  // v1.2.205: функция вынесена в devRequestTiming.js; windowManager её импортирует и вызывает.
+  assert(windowMgrCode.includes('attachDevRequestTiming'), 'windowManager должен импортировать/вызывать attachDevRequestTiming')
+  assert(devReqCode.includes('export function attachDevRequestTiming'), 'devRequestTiming.js должен определять attachDevRequestTiming')
+  assert(devReqCode.includes('webRequest.onBeforeRequest'), 'должен слушать реальные стартовые запросы Chromium')
+  assert(devReqCode.includes('webRequest.onCompleted'), 'должен логировать завершение реальных запросов')
+  assert(devReqCode.includes('webRequest.onErrorOccurred'), 'должен логировать ошибки реальных запросов')
+  assert(devReqCode.includes('dev-request summary'), 'должен писать summary по completed/pending request-ам')
+  assert(devReqCode.includes('dev-request pending'), 'должен показывать зависшие pending request-ы')
+  assert(devReqCode.includes('dev-request slow'), 'должен выделять медленные request-ы')
+  assert(devReqCode.includes("'/src/'"), 'лог должен выделять src module requests')
+  assert(devReqCode.includes("'/node_modules/.vite/'"), 'лог должен выделять Vite deps requests')
   assert(!windowMgrCode.includes('http.get(url'), 'не должно быть предварительного http.get-прогрева URL')
 })
 test('createTray определена', () => assert(allCode.includes('function createTray')))
