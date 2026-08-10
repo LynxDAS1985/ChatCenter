@@ -300,6 +300,12 @@ test('countUnreadTelegram определена', () => assert(allPreloadCode.inc
 test('countUnreadVK определена', () => assert(allPreloadCode.includes('function countUnreadVK()')))
 test('countUnreadMAX определена', () => assert(allPreloadCode.includes('function countUnreadMAX()')))
 test('Unread counters в отдельном файле (v0.82.3)', () => assert(unreadCode.length > 100 && code.includes("require('./utils/unreadCounters')"), 'counters должны быть в unreadCounters.js'))
+// v1.2.219: сторож — счётчик ВК НЕ должен использовать общие приметы бейджей по всей странице.
+// vkuiCounter/vkuiBadge матчат «Друзья 1»/«Игры 1»/колокольчик из левого меню ВК → фантомная «1».
+test('VK unread: нет общих .vkuiCounter/.vkuiBadge (фантомная 1 от Друзья/Игры, v1.2.219)', () => {
+  assert(!unreadCode.includes("'.vkuiCounter'"), 'убери .vkuiCounter из UNREAD_SELECTORS.vk — матчит бейджи по всей странице ВК')
+  assert(!unreadCode.includes("'.vkuiBadge'"), 'убери .vkuiBadge из UNREAD_SELECTORS.vk — матчит бейджи по всей странице ВК')
+})
 test('quickNewMsgCheck определена', () => assert(code.includes('function quickNewMsgCheck(')))
 test('isSidebarNode определена', () => assert(allPreloadCode.includes('function isSidebarNode(')))
 test('startChatObserver определена', () => assert(code.includes('function startChatObserver(')))

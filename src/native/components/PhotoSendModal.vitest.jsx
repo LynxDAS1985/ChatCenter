@@ -70,13 +70,21 @@ describe('PhotoSendModal (#4)', () => {
     expect(screen.getByText(/6 \/ 1024/)).toBeTruthy()
   })
 
-  it('подпись сверх лимита → «Отправить» заблокирована + выбор «Сократить»/«отдельно»', () => {
+  // v1.2.220: подпись сверх лимита — «Отправить» АКТИВНА, лишних кнопок нет, только инфо-строка;
+  // обычная «Отправить» сама шлёт «фото, затем текст отдельно» (splitText:true).
+  it('подпись сверх лимита → «Отправить» активна, нет «Сократить»/«текст отдельно», авто-разбивка', () => {
     const onSend = vi.fn()
     render(<PhotoSendModal {...baseProps()} caption={'a'.repeat(1100)} onSend={onSend} />)
     expect(screen.getByText(/1100 \/ 1024/)).toBeTruthy()
-    expect(screen.getByText('Отправить').closest('button').disabled).toBe(true)
-    expect(screen.getByText('Сократить')).toBeTruthy()
-    fireEvent.click(screen.getByText(/Фото, затем текст/))
+    // кнопка отправки НЕ заблокирована
+    expect(screen.getByText('Отправить').closest('button').disabled).toBe(false)
+    // лишние кнопки убраны
+    expect(screen.queryByText('Сократить')).toBeNull()
+    expect(screen.queryByText(/Фото, затем текст/)).toBeNull()
+    // информационная строка про N сообщений осталась
+    expect(screen.getByText(/уйдёт .* сообщени/)).toBeTruthy()
+    // обычная «Отправить» → авто-разбивка (splitText:true)
+    fireEvent.click(screen.getByText('Отправить'))
     expect(onSend).toHaveBeenCalled()
     expect(onSend.mock.calls[0][1]).toEqual({ asDocument: false, splitText: true })
   })

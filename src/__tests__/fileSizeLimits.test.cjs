@@ -370,8 +370,10 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // в окне фото И в FilePreviewBar (видео/документы). Защита от недоставки длинной подписи.
 // v1.2.211: лимит 33020 → 33090 — длинный текст режется на куски ≤4096 (splitTextForTelegram) +
 // ожидание загрузки фото перед текстом (порядок). Иначе текст >4096 не доходил вовсе.
-test('Общий renderer код (src/ без тестов) < 33090 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 33090, totalSrc + " > 33090")
+// v1.2.216: лимит 33090 → 33110 — искалка «перейти в чат» ВК переучена под vk.ru (гибкие
+// приметы + мягкое сравнение имени, vkNavigate.js) + имя мессенджера в строке-статусе.
+test('Общий renderer код (src/ без тестов) < 33110 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 33110, totalSrc + " > 33110")
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

@@ -159,15 +159,7 @@ export default function FilePreviewBar({
             {capLen} / {CAPTION_MAX}{capOver ? ` · −${capLen - CAPTION_MAX}` : ''}
           </span>
           {capOver && (
-            <>
-              <span style={{ color: '#f5b74a' }}>⚠ не влезет — текст уйдёт {textChunks} {textChunks === 1 ? 'сообщением' : 'сообщениями'}</span>
-              <button
-                onClick={() => onSend(undefined, { splitText: true })}
-                title="Сначала файл, затем весь текст отдельными сообщениями"
-                style={{ marginLeft: 'auto', background: 'var(--amoled-accent, #2AABEE)', color: '#fff',
-                  border: 'none', borderRadius: 6, padding: '4px 9px', cursor: 'pointer', fontSize: 11 }}
-              >Файл, затем текст ({textChunks})</button>
-            </>
+            <span style={{ color: '#f5b74a' }}>⚠ не влезет — уйдёт {textChunks} {textChunks === 1 ? 'сообщением' : 'сообщениями'} (сначала файл, затем текст)</span>
           )}
         </div>
       )}
@@ -183,8 +175,8 @@ export default function FilePreviewBar({
         />
         <button
           className="native-btn"
-          onClick={() => onSend(undefined, { splitText: false })}
-          disabled={sending || capOver}
+          onClick={() => onSend(undefined, { splitText: capOver })}
+          disabled={sending}
           style={{ minWidth: 90 }}
         >
           {sending && progress.hasActive

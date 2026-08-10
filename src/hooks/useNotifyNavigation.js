@@ -37,6 +37,8 @@ export default function useNotifyNavigation({
       // fail на `webviewRefs.current['native_cc']` = undefined).
       if (messengerId === 'native_cc') return
       setActiveId(messengerId)
+      // v1.2.216: человекочитаемое имя мессенджера для строки-статуса (раньше его не показывали).
+      const mName = messengersRef.current?.find(x => x.id === messengerId)?.name || messengerId
       if (senderName || chatTag) {
         const tryNavigate = (attempt) => {
           if (activeIdRef.current !== messengerId) return
@@ -52,11 +54,11 @@ export default function useNotifyNavigation({
             devLog(`[GoChat] attempt=${attempt} ok=${ok} method=${method}`, result)
             if (ok) {
               // v1.2.181: успех → зелёная строка ✓ в полоске (объект { text, ok:true })
-              setStatusBarMsg({ text: `Перешёл в чат «${senderName}»`, ok: true })
+              setStatusBarMsg({ text: `${mName} · перешёл в чат «${senderName}»`, ok: true })
               traceNotif('go-chat', 'pass', messengerId, senderName || '', `method=${method} ${log}`)
             } else if (attempt >= 2 || activeIdRef.current !== messengerId) {
               // v1.2.181: провал → красная строка ✗ в полоске (объект { text, ok:false })
-              setStatusBarMsg({ text: `«${senderName}» — не найден в списке`, ok: false })
+              setStatusBarMsg({ text: `${mName} · «${senderName}» — не найден в списке`, ok: false })
               traceNotif('go-chat', 'warn', messengerId, senderName || '', `notFound after ${attempt + 1} attempts | ${log}`)
             } else {
               setTimeout(() => tryNavigate(attempt + 1), 1500)

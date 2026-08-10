@@ -21,14 +21,17 @@ const UNREAD_SELECTORS = {
     'span[aria-label*="unread"]',
   ],
   vk: [
-    // VK VKUI (2024–2026)
-    '.vkuiCounter',
+    // v1.2.219: УБРАНЫ общие vkuiCounter / vkuiBadge — они матчат бейджи ПО ВСЕЙ странице ВК
+    // (левое меню «Друзья 1», «Игры 1», колокольчик уведомлений), а не только мессенджер →
+    // в счётчик попадала фантомная «1», которой нет в переписке (подтверждено логом vk-src:
+    // titleN=нет msgBadge=0 friends=1 games=1 step3=нет). Реальное непрочитанное ВК берётся из
+    // заголовка вкладки «(N)» (метод 1 в countUnreadVK) и бейджа пункта «Мессенджер» (метод 2).
+    // Здесь оставляем ТОЛЬКО приметы, привязанные к мессенджеру/чатам.
     '.ConversationItem__unread',
     '.im_nav_badge',
     // VK legacy
     '.im-page--chat-unread-count',
     '.MessagesNavItem--unread .MessagesNavItem__unreadCounter',
-    '.vkuiBadge',
   ],
   max: [
     // MAX (бывший VK Мессенджер) — generic селекторы

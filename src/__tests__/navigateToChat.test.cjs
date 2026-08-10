@@ -84,6 +84,9 @@ try {
   console.log('\\n── VK: ──')
   test('VK: ищет ConvoListItem__title', () => assert(code.includes('ConvoListItem__title')))
   test('VK: ищет ConvoListItem', () => assert(code.includes('ConvoListItem')))
+  // v1.2.216: переучено под vk.ru — гибкий поиск строк + мягкое сравнение имени.
+  test('VK: гибкий поиск строк [class*="ConvoListItem" i] (vk.ru)', () => assert(code.includes('[class*="ConvoListItem" i]')))
+  test('VK: мягкое сравнение имени (начинается с, не только точное)', () => assert(code.includes('vk-starts') && code.includes('startsWith(low)')))
 
   console.log('\\n── WhatsApp: ──')
   test('WA: ищет span[title]', () => assert(code.includes('span[title]')))

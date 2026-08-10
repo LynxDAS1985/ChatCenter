@@ -340,12 +340,13 @@ export default function PhotoSendModal({ files, caption, onCaptionChange, onSend
   // v1.2.212 (#3): сколько сообщений уйдёт текстом при «отдельно» (куски ≤4096).
   const textChunks = capOver ? splitTextForTelegram(caption, TEXT_MAX).length : 0
 
-  // Отправка. split=true — «фото, затем текст отдельным сообщением» (подпись не влезла).
-  // Строим массив: повёрнутые фото → новая копия (canvas), остальные — как есть.
-  const handleSend = useCallback(async (split) => {
+  // Отправка. v1.2.220: одна кнопка «Отправить». Если подпись длиннее лимита Telegram (~1024) —
+  // авто-разбивка: фото уходит без подписи, затем весь текст отдельными сообщениями (splitText:true);
+  // иначе подпись идёт под фото. Массив: повёрнутые фото → новая копия (canvas), остальные — как есть.
+  const handleSend = useCallback(async () => {
     if (busy || list.length === 0) return
-    if (!split && capOver) return  // подпись длиннее лимита — обычная отправка заблокирована
-    const opts = { asDocument: asDoc, splitText: !!split }
+    const split = capOver  // подпись длиннее лимита → авто «фото, затем текст отдельно»
+    const opts = { asDocument: asDoc, splitText: split }
     const hasRot = rots.some(r => r % 360 !== 0)
     if (!hasRot) { onSend?.(list, opts); return }
     setRotating(true)
@@ -370,7 +371,7 @@ export default function PhotoSendModal({ files, caption, onCaptionChange, onSend
   }, [busy, list, rots, asDoc, capOver, onSend])
 
   const onCaptionKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !busy) { e.preventDefault(); handleSend(false) }
+    if (e.key === 'Enter' && !e.shiftKey && !busy) { e.preventDefault(); handleSend() }
   }, [busy, handleSend])
 
   const curUrl = urls[idx] || ''
@@ -501,22 +502,17 @@ export default function PhotoSendModal({ files, caption, onCaptionChange, onSend
           </div>
         )}
 
-        {/* v1.2.209 (вариант 1): счётчик подписи; при превышении — выбор «сократить» / «текст отдельно» */}
+        {/* v1.2.220: счётчик подписи + информационная строка при превышении (без кнопок —
+            обычная «Отправить» сама пошлёт фото, затем текст отдельными сообщениями). */}
         {capLen > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', fontSize: 11.5,
             borderTop: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
             <span style={{ color: capOver ? '#ff9a9a' : 'var(--amoled-text-dim)', fontVariantNumeric: 'tabular-nums' }}>
               {capLen} / {CAPTION_MAX}{capOver ? ` · −${capLen - CAPTION_MAX}` : ''}
             </span>
-            {capOver && (<>
-              <span style={{ color: '#f5b74a' }}>⚠ не влезет в подпись — текст уйдёт {textChunks} {textChunks === 1 ? 'сообщением' : 'сообщениями'}</span>
-              <div style={{ flex: 1 }} />
-              <button style={{ ...cbtn, minWidth: 84, fontSize: 11.5, border: '1px solid rgba(255,255,255,0.14)' }}
-                onClick={() => taRef.current?.focus()}>Сократить</button>
-              <button style={{ ...cbtn, minWidth: 150, fontSize: 11.5, background: 'var(--amoled-accent, #7c5cff)', color: '#fff' }}
-                title="Сначала фото, затем весь текст отдельными сообщениями"
-                onClick={() => handleSend(true)}>Фото, затем текст ({textChunks})</button>
-            </>)}
+            {capOver && (
+              <span style={{ color: '#f5b74a' }}>⚠ не влезет в подпись — уйдёт {textChunks} {textChunks === 1 ? 'сообщением' : 'сообщениями'} (сначала фото, затем текст)</span>
+            )}
           </div>
         )}
 
@@ -531,7 +527,7 @@ export default function PhotoSendModal({ files, caption, onCaptionChange, onSend
             disabled={busy}
             style={{ ...capStyle, border: capOver ? '1px solid rgba(255,107,107,0.55)' : '1px solid rgba(255,255,255,0.14)' }}
           />
-          <button className="native-btn" onClick={() => handleSend(false)} disabled={busy || capOver}
+          <button className="native-btn" onClick={() => handleSend()} disabled={busy}
             style={{ minWidth: 110, position: 'relative', overflow: 'hidden' }}>
             {rotating ? 'Поворот...' : sending ? 'Отправка...' : (many ? `Отправить (${list.length})` : 'Отправить')}
             {/* #4: общий прогресс загрузки (по сумме, т.к. TDLib даёт его по fileId) */}
