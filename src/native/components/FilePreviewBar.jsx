@@ -181,10 +181,12 @@ export default function FilePreviewBar({
           value={caption || ''}
           onChange={e => { onCaptionChange(e.target.value); autosize(e.target) }}
           onKeyDown={e => {
-            // v1.2.225: Enter — отправить (без переноса), Shift+Enter — новая строка (как Телеграм).
+            // v1.2.226: Enter — отправить, Shift+Enter — новая строка. Отправляем ТОЛЬКО с непустой
+            // подписью (как главная строка отправки) — чтобы случайный Enter не отправил файл «пустым».
+            // Файл без подписи по-прежнему уходит кнопкой «Отправить».
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              if (!sending) onSend(undefined, { splitText: capOver })
+              if (!sending && (caption || '').trim()) onSend(undefined, { splitText: capOver })
             }
           }}
           placeholder="Добавьте подпись (необязательно)... (Shift+Enter — новая строка)"

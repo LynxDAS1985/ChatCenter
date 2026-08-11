@@ -13,6 +13,11 @@
     flex-direction: column;
     gap: 4px;
     padding: 4px;
+    /* v1.2.227: точка отсчёта для offsetTop карточек — пузырь «↓ N новых» считает,
+       сколько карточек ниже видимой области (offsetTop vs scrollTop+clientHeight).
+       Без position карточки мерились бы от body → счёт был бы неверным. На раскладку
+       не влияет (relative без сдвигов), фикс-пузырь (position:fixed) не затрагивает. */
+    position: relative;
     max-height: 100vh;
     overflow-x: hidden;
     overflow-y: auto;

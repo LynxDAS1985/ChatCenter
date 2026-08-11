@@ -433,3 +433,19 @@ export function messagePreview(tdMsg) {
   if (cn) return '⚙️ служебное сообщение'
   return ''
 }
+
+// v1.2.228: проставляет isRead исходящим сообщениям при ЗАГРУЗКЕ чата.
+// «Прочитано собеседником» = id сообщения ≤ chat.last_read_outbox_message_id. Раньше isRead
+// ставился ТОЛЬКО живым событием updateChatReadOutbox — сообщения, прочитанные ДО открытия
+// чата, оставались с одной галочкой (событие уже прошло). Здесь компенсируем при загрузке.
+// Мутирует переданный массив (сообщения — свежие объекты после mapMessage). Только не-sending
+// (у отправляющихся статус прочтения ещё не важен). Живой updateChatReadOutbox — не тронут.
+export function markOutboxRead(messages, lastReadOutboxId) {
+  const last = Number(lastReadOutboxId) || 0
+  if (last > 0 && Array.isArray(messages)) {
+    for (const m of messages) {
+      if (m && m.isOutgoing && !m.isSending && Number(m.id) <= last) m.isRead = true
+    }
+  }
+  return messages
+}

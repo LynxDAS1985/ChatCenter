@@ -59,7 +59,7 @@ describe('FilePreviewBar (v1.2.220)', () => {
     render(<FilePreviewBar {...baseProps('привет')} />)
     expect(screen.getByRole('textbox').tagName).toBe('TEXTAREA')
   })
-  it('Enter (без Shift) в подписи → отправка', () => {
+  it('Enter (без Shift) при НЕпустой подписи → отправка', () => {
     const onSend = vi.fn()
     render(<FilePreviewBar {...baseProps('привет')} onSend={onSend} />)
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
@@ -69,6 +69,13 @@ describe('FilePreviewBar (v1.2.220)', () => {
     const onSend = vi.fn()
     render(<FilePreviewBar {...baseProps('привет')} onSend={onSend} />)
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', shiftKey: true })
+    expect(onSend).not.toHaveBeenCalled()
+  })
+  // v1.2.226: Enter при пустой/пробельной подписи НЕ отправляет (защита от случайной отправки файла).
+  it('Enter при ПУСТОЙ подписи → НЕ отправляет (файл без подписи — кнопкой)', () => {
+    const onSend = vi.fn()
+    render(<FilePreviewBar {...baseProps('   ')} onSend={onSend} />)
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
     expect(onSend).not.toHaveBeenCalled()
   })
 })

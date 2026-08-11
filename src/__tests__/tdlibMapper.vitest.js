@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest'
 import {
-  mapMessage, mapChat, messagePreview, mapEntities,
+  mapMessage, mapChat, messagePreview, mapEntities, markOutboxRead,
 } from '../../main/native/backends/tdlibMapper.js'
 
 // Хелпер для создания минимального tdMsg — общая база для большинства тестов.
@@ -366,5 +366,32 @@ describe('messagePreview', () => {
 
   it('неизвестный @type → служебное', () => {
     expect(messagePreview({ content: { '@type': 'messageFutureUnknown' } })).toBe('⚙️ служебное сообщение')
+  })
+})
+
+// v1.2.228: проставление «прочитано» исходящим при загрузке по last_read_outbox.
+describe('markOutboxRead', () => {
+  const msgs = () => ([
+    { id: '100', isOutgoing: true, isSending: false },   // прочитано (id ≤ 250)
+    { id: '250', isOutgoing: true, isSending: false },   // прочитано (граница)
+    { id: '300', isOutgoing: true, isSending: false },   // НЕ прочитано (id > 250)
+    { id: '120', isOutgoing: false, isSending: false },  // входящее — не трогаем
+    { id: '130', isOutgoing: true, isSending: true },    // ещё отправляется — не трогаем
+  ])
+  it('ставит isRead исходящим с id ≤ last_read_outbox (не sending)', () => {
+    const r = markOutboxRead(msgs(), 250)
+    expect(r[0].isRead).toBe(true)   // 100
+    expect(r[1].isRead).toBe(true)   // 250 (граница)
+    expect(r[2].isRead).toBeFalsy()  // 300 — новее прочитанного
+    expect(r[3].isRead).toBeFalsy()  // входящее
+    expect(r[4].isRead).toBeFalsy()  // sending
+  })
+  it('last_read_outbox = 0 / пусто → никого не трогает', () => {
+    const r = markOutboxRead(msgs(), 0)
+    expect(r.every(m => !m.isRead)).toBe(true)
+  })
+  it('кривой вход (не массив/undefined) не ломает', () => {
+    expect(() => markOutboxRead(undefined, 250)).not.toThrow()
+    expect(() => markOutboxRead(null, 250)).not.toThrow()
   })
 })

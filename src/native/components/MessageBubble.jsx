@@ -18,6 +18,24 @@ function getSenderColor(senderId) {
   return SENDER_COLORS[Math.abs(parseInt(senderId) || 0) % SENDER_COLORS.length]
 }
 
+// v1.2.228: галочки как в Телеграме (тонкие SVG), стиль «Акцент при прочтении»:
+// отправляется — часики; отправлено — приглушённая ОДИНАРНАЯ; прочитано — ДВОЙНАЯ акцентным цветом.
+function TickIcon({ state }) {
+  if (state === 'sending') {
+    return <span style={{ marginLeft: 3, fontSize: 11, opacity: 0.6 }} title="Отправляется...">⏳</span>
+  }
+  const read = state === 'read'
+  const col = read ? '#6ee7a8' : 'rgba(255,255,255,0.65)'
+  return (
+    <span style={{ marginLeft: 3, display: 'inline-flex', verticalAlign: 'middle' }} title={read ? 'Прочитано' : 'Отправлено'}>
+      <svg width={read ? 18 : 13} height="11" viewBox={read ? '0 0 18 11' : '0 0 13 11'} fill="none" style={{ display: 'block' }}>
+        <path d="M1 6 L4.5 9.5 L11.5 1.5" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        {read && <path d="M6 6 L9.5 9.5 L16.5 1.5" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />}
+      </svg>
+    </span>
+  )
+}
+
 // v1.2.12: удалён диагностический логгер __ccLogBubbleRender (v0.95.29).
 // Бага «дубль исходящих» был закрыт в v0.95.31-34, логгер остался временным.
 // Симптом: 168508 IPC `app:log` за 30 мин → захлёбывается IPC main процесса →
@@ -353,10 +371,7 @@ export default function MessageBubble({
                   до server ACK). Эталон: Telegram Desktop часики, Telegram Web K
                   rotating circle. После updateMessageSendSucceeded → isSending=false → ✓. */}
               {m.isOutgoing && (
-                <span style={{ marginLeft: 3, fontSize: 11, opacity: m.isSending ? 0.6 : 1 }}
-                  title={m.isSending ? 'Отправляется...' : (m.isRead ? 'Прочитано' : 'Отправлено')}>
-                  {m.isSending ? '⏳' : (m.isRead ? '✓✓' : '✓')}
-                </span>
+                <TickIcon state={m.isSending ? 'sending' : (m.isRead ? 'read' : 'sent')} />
               )}
             </div>
           </div>
@@ -394,9 +409,8 @@ export default function MessageBubble({
             {m.isEdited && <span style={{ marginRight: 4 }}>ред.</span>}
             {new Date(m.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
             {m.isOutgoing && (
-              <span style={{ marginLeft: 4, fontSize: 11 }} title={m.isRead ? 'Прочитано' : 'Отправлено'}>
-                {m.isRead ? '✓✓' : '✓'}
-              </span>
+              /* v1.2.228: тот же TickIcon, что у текстовых — иначе у фото/видео галочка была старым белым текстом. */
+              <TickIcon state={m.isSending ? 'sending' : (m.isRead ? 'read' : 'sent')} />
             )}
           </div>
         )}

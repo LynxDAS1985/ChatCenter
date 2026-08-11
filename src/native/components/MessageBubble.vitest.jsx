@@ -29,19 +29,32 @@ describe('MessageBubble render', () => {
     cleanup()
   })
 
-  it('исходящее сообщение (outgoing) с ✓', () => {
+  // v1.2.228: галочки — тонкие SVG (не текст). Отправлено — одинарная (1 path, title «Отправлено»).
+  it('исходящее «отправлено» — одинарная галочка (1 SVG path)', () => {
     const { container } = render(
       <MessageBubble m={{ ...baseMsg, id: '2', isOutgoing: true, isRead: false }} chatId="c1" />
     )
-    expect(container.textContent).toContain('✓')
+    expect(container.querySelector('[title="Отправлено"]')).toBeTruthy()
+    expect(container.querySelectorAll('[title="Отправлено"] svg path').length).toBe(1)
     cleanup()
   })
 
-  it('прочитанное сообщение ✓✓', () => {
+  it('прочитанное — двойная галочка (2 SVG path, title «Прочитано»)', () => {
     const { container } = render(
       <MessageBubble m={{ ...baseMsg, id: '3', isOutgoing: true, isRead: true }} chatId="c1" />
     )
-    expect(container.textContent).toContain('✓✓')
+    expect(container.querySelector('[title="Прочитано"]')).toBeTruthy()
+    expect(container.querySelectorAll('[title="Прочитано"] svg path').length).toBe(2)
+    cleanup()
+  })
+
+  // v1.2.228: у сообщений БЕЗ текста (фото/медиа) галочка рисуется отдельным блоком —
+  // должна быть тем же TickIcon, а не старым белым текстом «✓✓».
+  it('сообщение без текста (фото/медиа) прочитано → тот же TickIcon (2 SVG path)', () => {
+    const { container } = render(
+      <MessageBubble m={{ ...baseMsg, id: '4', text: '', isOutgoing: true, isRead: true }} chatId="c1" />
+    )
+    expect(container.querySelectorAll('[title="Прочитано"] svg path').length).toBe(2)
     cleanup()
   })
 

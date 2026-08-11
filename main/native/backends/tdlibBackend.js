@@ -16,7 +16,7 @@ import {
 } from './tdlibMedia.js'
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
-import { mapMessage as tdlibMapMessageDirect } from './tdlibMapper.js'
+import { mapMessage as tdlibMapMessageDirect, markOutboxRead } from './tdlibMapper.js'
 import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccountSessionStats, removeAccountSessionFiles, removeAccountCacheFile } from './tdlibChatActions.js'
 import { cleanupTgMedia } from './tgMediaCleanup.js'
 import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.4
@@ -284,6 +284,8 @@ export function createTdlibBackend(opts = {}) {
         // v0.95.1: load-newer (afterId) грузит непрерывную страницу НОВЕЕ afterId, а не низ.
         const { fromMessageId, offset } = computeHistoryParams({ afterId: params.afterId, aroundId: params.aroundId, offsetId: params.offsetId, addOffset: params.addOffset, limit })
         const r = await getChatHistory(ctx.client, ctx.rawId, { limit, fromMessageId, offset, chatIdStr: params.chatId, extras: makeExtras(manager, ctx.accountId) })
+        // v1.2.228: проставляем «прочитано» по last_read_outbox чата (иначе прочитанные ДО открытия — одна галочка).
+        markOutboxRead(r?.messages, manager.getChatCached(ctx.accountId, ctx.rawId)?.last_read_outbox_message_id)
         // Диагностика (v0.95.1): грузит ли load-newer непрерывно (first ≈ afterId, не низ чата).
         try { const m = r?.messages || []; console.log('[get-msgs] chat=' + params.chatId + ' afterId=' + Number(params.afterId || 0) + ' from=' + fromMessageId + ' offset=' + offset + ' count=' + m.length + ' first=' + (m[0]?.id || '-') + ' last=' + (m[m.length - 1]?.id || '-') + ' hasMore=' + r?.hasMore) } catch (_) {}
         return r
@@ -355,6 +357,7 @@ export function createTdlibBackend(opts = {}) {
         } catch (_) {}
 
         if (lastError && collected.length === 0) return lastError
+        markOutboxRead(collected, manager.getChatCached(ctx.accountId, ctx.rawId)?.last_read_outbox_message_id) // v1.2.228
         return { ok: true, messages: collected, hasMore: false, iterations }
       },
       // v0.89.30 (ловушка #29): isGeneral → getChatHistory, иначе
@@ -389,6 +392,7 @@ export function createTdlibBackend(opts = {}) {
             // Нет — mapMessage из tdlibMapper. Импортируем в Stage 3.10.
             return tdlibMapMessageDirect(m, params.chatId, { senderName, senderAvatar })
           }).filter(Boolean).reverse()
+          markOutboxRead(messages, manager.getChatCached(ctx.accountId, ctx.rawId)?.last_read_outbox_message_id) // v1.2.228
           return { ok: true, messages, hasMore: messages.length >= limit }
         } catch (e) {
           console.log('[topic-be] invoke ERROR err=' + (e?.message || String(e)))
@@ -462,6 +466,7 @@ export function createTdlibBackend(opts = {}) {
         } catch (_) {}
 
         if (lastError && collected.length === 0) return lastError
+        markOutboxRead(collected, manager.getChatCached(ctx.accountId, ctx.rawId)?.last_read_outbox_message_id) // v1.2.228
         return { ok: true, messages: collected, hasMore: false, iterations }
       },
       async send(chatId, text, replyTo) {
