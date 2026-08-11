@@ -8,7 +8,7 @@
 //
 // Caption — общий для всех выбранных файлов (для альбома → caption на первом элементе).
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useUploadProgress, formatBytes } from '../hooks/useUploadProgress.js'
 import { CAPTION_MAX, TEXT_MAX, splitTextForTelegram } from '../utils/photoSendUtils.js'  // v1.2.210: лимит подписи
 
@@ -106,6 +106,16 @@ export default function FilePreviewBar({
     }
   }, [files])
 
+  // v1.2.225: подпись — многострочное растущее поле (как строка отправки / Телеграм).
+  // Хук ДО раннего return ниже (правило хуков: одинаковый порядок каждый рендер).
+  const taRef = useRef(null)
+  const MAX_CAP_H = 120
+  const autosize = (el) => {
+    if (!el) return
+    try { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, MAX_CAP_H) + 'px' } catch (_) {}
+  }
+  useEffect(() => { autosize(taRef.current) }, [caption])
+
   if (!Array.isArray(files) || files.length === 0) return null
 
   const totalSize = files.reduce((s, f) => s + (f.size || 0), 0)
@@ -165,12 +175,20 @@ export default function FilePreviewBar({
       )}
       {/* Caption + кнопка отправки */}
       <div style={{ display: 'flex', gap: 8 }}>
-        <input
-          type="text"
+        <textarea
+          ref={taRef}
+          rows={1}
           value={caption || ''}
-          onChange={e => onCaptionChange(e.target.value)}
-          placeholder="Добавьте подпись (необязательно)..."
-          style={{ flex: 1, fontSize: 13, ...(capOver ? { border: '1px solid rgba(255,107,107,0.55)' } : {}) }}
+          onChange={e => { onCaptionChange(e.target.value); autosize(e.target) }}
+          onKeyDown={e => {
+            // v1.2.225: Enter — отправить (без переноса), Shift+Enter — новая строка (как Телеграм).
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              if (!sending) onSend(undefined, { splitText: capOver })
+            }
+          }}
+          placeholder="Добавьте подпись (необязательно)... (Shift+Enter — новая строка)"
+          style={{ flex: 1, fontSize: 13, resize: 'none', maxHeight: MAX_CAP_H, overflowY: 'auto', lineHeight: 1.4, ...(capOver ? { border: '1px solid rgba(255,107,107,0.55)' } : {}) }}
           disabled={sending}
         />
         <button

@@ -1,6 +1,7 @@
 // v0.87.83: вынесено из InboxMode.jsx — поле ввода + reply/edit панель.
 // v0.95.43: добавлены FileAttachButton (📎) + FilePreviewBar (превью + caption + send).
 
+import { useRef, useEffect } from 'react'
 import FileAttachButton from './FileAttachButton.jsx'
 import FilePreviewBar from './FilePreviewBar.jsx'
 import PhotoSendModal from './PhotoSendModal.jsx'
@@ -25,6 +26,17 @@ export default function InboxMessageInput({
   const allImages = hasAttachedFiles && attachFiles.every(
     f => typeof f?.type === 'string' && f.type.startsWith('image/')
   )
+
+  // v1.2.224: многострочное растущее поле (как в Телеграм / как подпись в окне фото).
+  // Растёт по мере строк до MAX_INPUT_H, дальше — прокрутка внутри поля.
+  const taRef = useRef(null)
+  const MAX_INPUT_H = 140
+  const autosize = (el) => {
+    if (!el) return
+    try { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, MAX_INPUT_H) + 'px' } catch (_) {}
+  }
+  // Пересчёт высоты при внешней смене текста (вставка ответа ИИ, редактирование, очистка после отправки).
+  useEffect(() => { autosize(taRef.current) }, [input])
 
   return (
     <>
@@ -84,14 +96,19 @@ export default function InboxMessageInput({
           {onAttachAdd && !editTarget && (
             <FileAttachButton onSelect={onAttachAdd} disabled={disabled || sending} />
           )}
-          <input
+          <textarea
+            ref={taRef}
+            rows={1}
             value={input}
-            onChange={e => handleInputChange(e.target.value)}
+            onChange={e => { handleInputChange(e.target.value); autosize(e.target) }}
             onKeyDown={e => {
-              // v0.95.27: лог источника отправки (keyboard Enter) — для диагностики
-              // дубля. См. mistakes/native-scroll-unread.md «двойная отправка».
-              if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey)) && input.trim() && !sending) {
-                handleReplySend({ source: 'keyboard:Enter', ctrlKey: e.ctrlKey, shiftKey: e.shiftKey })
+              // v1.2.224: Enter — отправить (без переноса), Shift+Enter — новая строка (как Телеграм).
+              // v0.95.27: source в лог — диагностика дубля (mistakes/native-scroll-unread.md).
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault() // textarea: не вставлять перенос, а отправить (или ничего, если пусто)
+                if (input.trim() && !sending) {
+                  handleReplySend({ source: 'keyboard:Enter', ctrlKey: e.ctrlKey, shiftKey: e.shiftKey })
+                }
               }
               // v0.87.27: Ctrl+↑ — редактируем последнее своё сообщение
               if (e.key === 'ArrowUp' && e.ctrlKey && !input.trim() && !editTarget) {
@@ -105,15 +122,13 @@ export default function InboxMessageInput({
               disabled ? disabledText
               : editTarget ? 'Отредактируйте сообщение...'
               : replyTo ? 'Ответ...'
-              : 'Введите сообщение... (перетащите файл / Ctrl+V фото)'
+              : 'Введите сообщение... (Shift+Enter — новая строка, Ctrl+V фото)'
             }
-            // v0.95.23: НЕ дизаблим во время sending — иначе браузер по HTML5 spec
-            // снимает фокус с disabled input → курсор пропадает, юзер должен снова
-            // кликать в поле. Кнопка «Отпр.» дизаблится отдельно (см. ниже), Enter-
-            // отправка защищена `&& !sending` в onKeyDown. Это паттерн Telegram Web K /
-            // Desktop / WhatsApp / Discord — никто не дизаблит input во время отправки.
+            // v0.95.23: НЕ дизаблим во время sending — иначе браузер снимает фокус с disabled
+            // поля → курсор пропадает. Кнопка «Отпр.» дизаблится отдельно, Enter-отправка защищена
+            // `&& !sending`. Паттерн Telegram Web K / Desktop / WhatsApp / Discord.
             disabled={disabled}
-            style={{ flex: 1 }}
+            style={{ flex: 1, resize: 'none', maxHeight: MAX_INPUT_H, overflowY: 'auto', lineHeight: 1.4 }}
           />
           <button className="native-btn" onClick={() => handleReplySend({ source: 'click:button' })} disabled={disabled || sending || !input.trim()}>
             {sending ? '...' : editTarget ? '✓' : 'Отпр.'}

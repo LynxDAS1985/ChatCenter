@@ -53,4 +53,22 @@ describe('FilePreviewBar (v1.2.220)', () => {
     expect(onSend).toHaveBeenCalled()
     expect(onSend.mock.calls[0][1]).toEqual({ splitText: true })
   })
+
+  // v1.2.225: подпись — многострочное растущее поле (как строка отправки).
+  it('подпись — textarea (многострочная), а не однострочный input', () => {
+    render(<FilePreviewBar {...baseProps('привет')} />)
+    expect(screen.getByRole('textbox').tagName).toBe('TEXTAREA')
+  })
+  it('Enter (без Shift) в подписи → отправка', () => {
+    const onSend = vi.fn()
+    render(<FilePreviewBar {...baseProps('привет')} onSend={onSend} />)
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    expect(onSend).toHaveBeenCalledTimes(1)
+  })
+  it('Shift+Enter в подписи → НЕ отправляет (новая строка)', () => {
+    const onSend = vi.fn()
+    render(<FilePreviewBar {...baseProps('привет')} onSend={onSend} />)
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', shiftKey: true })
+    expect(onSend).not.toHaveBeenCalled()
+  })
 })

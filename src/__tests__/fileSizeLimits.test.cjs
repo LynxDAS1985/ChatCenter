@@ -372,8 +372,10 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // ожидание загрузки фото перед текстом (порядок). Иначе текст >4096 не доходил вовсе.
 // v1.2.216: лимит 33090 → 33110 — искалка «перейти в чат» ВК переучена под vk.ru (гибкие
 // приметы + мягкое сравнение имени, vkNavigate.js) + имя мессенджера в строке-статусе.
-test('Общий renderer код (src/ без тестов) < 33110 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 33110, totalSrc + " > 33110")
+// v1.2.225: лимит 33110 → 33135 — строка отправки (InboxMessageInput) и подпись к файлу
+// (FilePreviewBar) стали многострочными растущими textarea (авто-рост + Enter/Shift+Enter).
+test('Общий renderer код (src/ без тестов) < 33135 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 33135, totalSrc + " > 33135")
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

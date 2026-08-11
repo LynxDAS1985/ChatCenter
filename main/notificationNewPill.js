@@ -22,6 +22,9 @@ try { window.__ccNewPill = { nextCount: ccNewPillNextCount } } catch (_) {}
     if (!container || typeof MutationObserver === 'undefined') return
     const NEAR = 90
     let count = 0
+    let shown = false
+    // v1.2.223: журнал окна уведомлений — чтобы по chatcenter.log было видно, как отработал пузырь.
+    const log = (lvl, msg) => { try { window.notifApi && window.notifApi.log(lvl, 'new-pill: ' + msg) } catch (_) {} }
 
     const pill = document.createElement('div')
     pill.className = 'new-pill'
@@ -33,12 +36,15 @@ try { window.__ccNewPill = { nextCount: ccNewPillNextCount } } catch (_) {}
     }
     function word(n) { return (n % 10 === 1 && n % 100 !== 11) ? 'новое' : 'новых' }
     function render() {
-      if (count > 0) { pill.textContent = '↓ ' + count + ' ' + word(count); pill.style.display = '' }
+      const vis = count > 0
+      if (vis) { pill.textContent = '↓ ' + count + ' ' + word(count); pill.style.display = '' }
       else pill.style.display = 'none'
+      // Лог только на ПЕРЕХОДЕ видимости (не на каждый инкремент) — чтобы не спамить.
+      if (vis !== shown) { shown = vis; log('INFO', vis ? ('shown count=' + count) : 'hidden') }
     }
     function jumpToLatest() {
       try { container.scrollTop = container.scrollHeight } catch (_) {}
-      count = 0; render()
+      log('INFO', 'jump→bottom'); count = 0; render()
     }
     pill.addEventListener('click', jumpToLatest)
 
@@ -58,5 +64,9 @@ try { window.__ccNewPill = { nextCount: ccNewPillNextCount } } catch (_) {}
         render()
       })
     }).observe(container, { childList: true })
-  } catch (_) {}
+    log('INFO', 'ready')
+  } catch (e) {
+    // v1.2.223: не глотаем ошибку молча — если пузырь не настроился, пишем в журнал окна.
+    try { window.notifApi && window.notifApi.log('WARN', 'new-pill init failed: ' + (e && e.message ? e.message : e)) } catch (_) {}
+  }
 })()
