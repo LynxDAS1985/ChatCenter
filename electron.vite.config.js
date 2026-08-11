@@ -22,6 +22,8 @@ function copyStaticPlugin() {
         { from: 'main/notification.css', to: 'out/main/notification.css' },
         { from: 'main/notification.js', to: 'out/main/notification.js' },
         { from: 'main/notification-helpers.js', to: 'out/main/notification-helpers.js' },
+        // v1.2.222: пузырь «↓ N новых» — независимый модуль
+        { from: 'main/notificationNewPill.js', to: 'out/main/notificationNewPill.js' },
         // v0.87.97: pin-dock.html разбит на html/css/js
         { from: 'main/pin-dock.css', to: 'out/main/pin-dock.css' },
         { from: 'main/pin-dock.js', to: 'out/main/pin-dock.js' },

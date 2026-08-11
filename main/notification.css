@@ -17,11 +17,24 @@
     overflow-x: hidden;
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: rgba(255,255,255,0.22) transparent;
+    scrollbar-color: rgba(255,255,255,0.45) rgba(255,255,255,0.06);
   }
-  #container::-webkit-scrollbar { width: 6px; }
-  #container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); border-radius: 6px; }
-  #container::-webkit-scrollbar-track { background: transparent; }
+  /* v1.2.222: пузырь-подсказка «↓ N новых» (независимый модуль notificationNewPill.js). */
+  .new-pill {
+    position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 100;
+    background: #7c5cff; color: #fff; font-size: 12px; font-weight: 700;
+    padding: 5px 13px; border-radius: 999px; cursor: pointer; user-select: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5); white-space: nowrap;
+  }
+  .new-pill:hover { filter: brightness(1.12); }
+  /* v1.2.221: полоса прокрутки заметнее — сразу видно, что снизу есть ещё карточки. */
+  #container::-webkit-scrollbar { width: 10px; }
+  #container::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.42); border-radius: 8px; min-height: 40px;
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+  #container::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.6); background-clip: padding-box; }
+  #container::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 8px; }
   .notif-item {
     display: flex;
     flex: 0 0 auto;

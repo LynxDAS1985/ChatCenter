@@ -20,8 +20,9 @@
   function calcHeight() { return window.__ccNotifHelpers.calcHeight(container) }
 
   function scrollContainerToLatest() {
+    // v1.2.221: скроллим вниз ТОЛЬКО когда юзер у низа (иначе список дёргает при потоке — клик мимо).
     requestAnimationFrame(() => {
-      try { container.scrollTop = container.scrollHeight } catch (_) {}
+      try { if (window.__ccNotifHelpers.shouldAutoScroll(container)) container.scrollTop = container.scrollHeight } catch (_) {}
     })
   }
 

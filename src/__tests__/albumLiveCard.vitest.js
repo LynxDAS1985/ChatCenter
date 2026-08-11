@@ -54,6 +54,23 @@ describe('buildStackHeader — источник + время справа (v1.2.
   })
 })
 
+describe('shouldAutoScroll — не дёргать список, когда юзер читает (v1.2.221)', () => {
+  const H = () => window.__ccNotifHelpers
+  it('юзер у самого низа → скроллим (true)', () => {
+    expect(H().shouldAutoScroll({ scrollHeight: 1000, scrollTop: 910, clientHeight: 90 })).toBe(true)
+  })
+  it('юзер прокрутил вверх (читает старые) → НЕ скроллим (false)', () => {
+    expect(H().shouldAutoScroll({ scrollHeight: 11000, scrollTop: 100, clientHeight: 796 })).toBe(false)
+  })
+  it('ровно на пороге 90px → скроллим; 91px → нет', () => {
+    expect(H().shouldAutoScroll({ scrollHeight: 1000, scrollTop: 820, clientHeight: 90 })).toBe(true)  // 90
+    expect(H().shouldAutoScroll({ scrollHeight: 1000, scrollTop: 819, clientHeight: 90 })).toBe(false) // 91
+  })
+  it('список НЕ прокручивается (мало карточек) → скроллим (true, уже внизу)', () => {
+    expect(H().shouldAutoScroll({ scrollHeight: 300, scrollTop: 0, clientHeight: 796 })).toBe(true)
+  })
+})
+
 describe('renderAlbumGrid — листание страницами по 4', () => {
   it('4 фото → одна страница, стрелки скрыты, 4 плитки', () => {
     const H = window.__ccNotifHelpers

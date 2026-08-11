@@ -284,4 +284,12 @@ function computeRendererPure({ itemsCount, containerCount, visibleHeight, dismis
 // Экспорт в global scope (browser <script> и так делает это автоматически,
 // но явно фиксируем через window для тестов и линта).
 window.createPinBtn = createPinBtn
-window.__ccNotifHelpers = { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, renderAlbumGrid, extendHostLife, addAlbumTileToHost, applyAlbumSharp, buildStackHeader, computeRendererPure }
+// v1.2.221: авто-скролл к новому уведомлению — ТОЛЬКО если юзер уже у низа списка.
+// Если он прокрутил вверх (читает старые карточки), НЕ дёргаем список вниз: иначе при потоке
+// сообщений кнопки «уезжают» из-под курсора и клик не попадает. Порог 90px (≈край карточки).
+// Факт уровня 1 (MDN): «прокручено до низа» = scrollHeight − scrollTop − clientHeight ≈ 0.
+function shouldAutoScroll({ scrollHeight, scrollTop, clientHeight } = {}) {
+  return ((Number(scrollHeight) || 0) - (Number(scrollTop) || 0) - (Number(clientHeight) || 0)) <= 90
+}
+
+window.__ccNotifHelpers = { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, renderAlbumGrid, extendHostLife, addAlbumTileToHost, applyAlbumSharp, buildStackHeader, computeRendererPure, shouldAutoScroll }
