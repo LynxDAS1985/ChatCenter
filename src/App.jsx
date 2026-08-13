@@ -690,10 +690,14 @@ export default function App() {
       {/* ── Основной layout ── */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* v1.2.244 Этап 1: боковой рейл источников (за флагом; полоска «← Общий чат» — Этап 2). */}
+        {/* v1.2.244 Этап 1 / v1.2.245 Этап 2A: боковой рейл источников (за флагом). Индикаторы —
+            те же данные, что во вкладках. Полоска «← Общий чат», правый клик, перетаскивание — Этап 2B/2C. */}
         {settings.sideRail && (
           <SourceRail messengers={messengers} activeId={activeId} onSelect={handleTabClick}
-            onAdd={() => setShowAddModal(true)} nativeCcId={NATIVE_CC_ID} />
+            onAdd={() => setShowAddModal(true)} nativeCcId={NATIVE_CC_ID}
+            unreadCounts={unreadCounts} unreadSplit={unreadSplit} connectionHealth={connectionHealth}
+            webviewLoading={webviewLoading} newMessageIds={newMessageIds} accountInfo={accountInfo}
+            onOpenConnections={openConnectionsPanel} />
         )}
 
         {/* ── Область WebView ── */}

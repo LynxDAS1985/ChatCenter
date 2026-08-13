@@ -162,6 +162,14 @@ test('SourceRail получает корректные пропсы (связк�
   assert(code.includes('nativeCcId={NATIVE_CC_ID}'), 'нужен id нативной вкладки для разделения API/веб')
   assert(code.includes('onAdd={() => setShowAddModal(true)}'), '«+» должен открывать окно добавления')
 })
+test('SourceRail получает данные индикаторов (Этап 2A — те же, что во вкладках)', () => {
+  // Смоук: рейл должен получать те же per-id данные, что TabBar, иначе бейджи/точка/загрузка будут пустыми
+  assert(code.includes('unreadCounts={unreadCounts}') && code.includes('unreadSplit={unreadSplit}'), 'непрочитанные (+split)')
+  assert(code.includes('connectionHealth={connectionHealth}'), 'здоровье связи для точки')
+  assert(code.includes('webviewLoading={webviewLoading}'), 'состояние загрузки для полоски')
+  assert(code.includes('newMessageIds={newMessageIds}'), 'новые сообщения для пульса')
+  assert(code.includes('onOpenConnections={openConnectionsPanel}'), 'клик по точке → Подключения')
+})
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)
