@@ -76,6 +76,34 @@ describe('ChatListItem render', () => {
     cleanup()
   })
 
+  // v1.2.229: галочка прочтения в списке (Вариант 2 «Акцент при прочтении»).
+  it('последнее сообщение НАШЕ и прочитано → зелёная двойная (2 SVG path, title «Прочитано»)', () => {
+    const { container } = render(<ChatListItem chat={{
+      ...baseChat, lastMessageIsOutgoing: true, lastMessageRead: true, lastMessageId: '10',
+    }} />)
+    expect(container.querySelector('[title="Прочитано"]')).toBeTruthy()
+    expect(container.querySelectorAll('[title="Прочитано"] svg path').length).toBe(2)
+    cleanup()
+  })
+
+  it('последнее сообщение НАШЕ, ещё не прочитано → одинарная (1 SVG path, title «Отправлено»)', () => {
+    const { container } = render(<ChatListItem chat={{
+      ...baseChat, lastMessageIsOutgoing: true, lastMessageRead: false, lastMessageId: '10',
+    }} />)
+    expect(container.querySelector('[title="Отправлено"]')).toBeTruthy()
+    expect(container.querySelectorAll('[title="Отправлено"] svg path').length).toBe(1)
+    cleanup()
+  })
+
+  it('последнее сообщение от собеседника → галочки НЕТ', () => {
+    const { container } = render(<ChatListItem chat={{
+      ...baseChat, lastMessageIsOutgoing: false, lastMessageRead: false,
+    }} />)
+    expect(container.querySelector('[title="Прочитано"]')).toBeFalsy()
+    expect(container.querySelector('[title="Отправлено"]')).toBeFalsy()
+    cleanup()
+  })
+
   it('snapshot: обычный чат с unread', () => {
     const { container } = render(<ChatListItem chat={{ ...baseChat, unreadCount: 3 }} />)
     expect(container.innerHTML).toMatchSnapshot()

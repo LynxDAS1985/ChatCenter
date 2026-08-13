@@ -88,8 +88,9 @@ export function setupEventBridge(manager, sendToRenderer, logFn) {
   // v0.91.9: TDLib шлёт updateChatLastMessage отдельно от updateNewMessage
   // (например при оптимизации больших супергрупп). Без этого превью в списке
   // чатов застывало на старом значении. См. .memory-bank/api.md.
-  subscribe('chat:last-message', ({ chatId, lastMessage, lastMessageTs, senderName, isOutgoing }) => ({
-    channel: 'tg:chat-last-message', data: { chatId, lastMessage, lastMessageTs, senderName, isOutgoing },
+  subscribe('chat:last-message', ({ chatId, lastMessage, lastMessageTs, senderName, isOutgoing, lastMessageId, lastMessageRead, lastMessageSending }) => ({
+    // v1.2.230: + настоящий статус галочки прочтения последнего сообщения в списке чатов.
+    channel: 'tg:chat-last-message', data: { chatId, lastMessage, lastMessageTs, senderName, isOutgoing, lastMessageId, lastMessageRead, lastMessageSending },
   }))
   // v0.89.4: индикатор действий. v1.2.170: action (типы действий), не только typing:boolean.
   // v0.95.31: senderName для multi-user (formatTypingUsers).

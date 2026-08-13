@@ -20,6 +20,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { parseChatId } from './tdlibBackendHelpers.js' // v1.2.232: карточка контакта — резолв accountId:rawId
 
 /**
  * Mute/unmute чат через TDLib setChatNotificationSettings.
@@ -264,4 +265,57 @@ export function getCleanupStats(manager, userDataDir) {
   walkAndCategorize(tgMediaDir, 'media', acc)
 
   return { ok: true, ...acc }
+}
+
+/**
+ * v1.2.232: данные профиля собеседника для «Карточки контакта» (телефон / username / bio).
+ * Только для ЛИЧНОГО чата (у групп/каналов профиля-контакта нет).
+ *
+ * Источники (TDLib):
+ *   - getUser(user_id)          → phone_number (только если Telegram его отдаёт — приватность),
+ *                                 usernames.active_usernames[]
+ *   - getUserFullInfo(user_id)  → bio (formattedText, поле .text)
+ * Дока: https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_user_full_info.html
+ *
+ * Граничные случаи: не личный чат → { ok:false }; сеть/приватность → пустые строки (не ошибка).
+ * @param {object} manager — TdlibClientManager
+ * @param {string} chatId — '{accountId}:{rawId}'
+ * @returns {Promise<{ok:boolean, phone?:string, username?:string, bio?:string, error?:string}>}
+ */
+export async function getContactInfo(manager, chatId) {
+  const { accountId, rawId } = parseChatId(chatId)
+  if (!accountId) return { ok: false, error: 'invalid chatId' }
+  const client = manager.getClient(accountId)
+  if (!client) return { ok: false, error: 'account not found: ' + accountId }
+
+  // user_id: у личного чата id чата == user_id (TDLib). Если в кэше есть тип — берём из него.
+  const chat = manager.getChatCached(accountId, rawId)
+  const kind = chat?.type?.['@type']
+  if (chat && kind && kind !== 'chatTypePrivate' && kind !== 'chatTypeSecret') {
+    return { ok: false, error: 'not a private chat' }
+  }
+  const userId = chat?.type?.user_id || Number(rawId)
+  if (!userId) return { ok: false, error: 'no user id' }
+
+  // Телефон/username: сперва из кэша (updateUser), иначе дозапрос getUser.
+  let user = manager.getUserCached(accountId, userId) || null
+  if (!user || (!user.phone_number && !user.usernames)) {
+    // v1.2.233: сбой логируем (WARN, без личных данных — только userId+ошибка), не глотаем молча.
+    try { user = await client.invoke({ '@type': 'getUser', user_id: userId }) || user }
+    catch (e) { console.warn('[contact-info] getUser failed user_id=' + userId + ' err=' + (e?.message || e)) }
+  }
+  user = user || {}
+
+  // Bio — отдельным запросом (в updateUser его нет). Пусто = валидно (нет bio / приватность).
+  let bio = ''
+  try {
+    const full = await client.invoke({ '@type': 'getUserFullInfo', user_id: userId })
+    bio = full?.bio?.text || ''
+  } catch (e) { console.warn('[contact-info] getUserFullInfo failed user_id=' + userId + ' err=' + (e?.message || e)) }
+
+  const phone = user.phone_number ? `+${user.phone_number}` : ''
+  const username = user.usernames?.active_usernames?.[0] || user.username || ''
+  // v1.2.233: итог-лог БЕЗ личных данных (только флаги наличия — что доработка отработала).
+  console.log('[contact-info] chatId=' + chatId + ' phone=' + (phone ? 'Y' : 'N') + ' username=' + (username ? 'Y' : 'N') + ' bio=' + (bio ? 'Y' : 'N'))
+  return { ok: true, phone, username, bio }
 }

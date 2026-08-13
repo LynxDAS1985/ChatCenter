@@ -417,7 +417,7 @@ export class TdlibClientManager extends EventEmitter {
           this.emit('chat:last-message', {
             accountId, chatId: `${accountId}:${update.chat_id}`,
             lastMessage: extractTopicPreview(chatEdit.last_message),
-            lastMessageTs: chatEdit.last_message?.date ? Number(chatEdit.last_message.date) * 1000 : 0,
+            lastMessageTs: chatEdit.last_message?.date ? Number(chatEdit.last_message.date) * 1000 : 0, isOutgoing: !!chatEdit.last_message?.is_outgoing, lastMessageId: chatEdit.last_message?.id ? String(chatEdit.last_message.id) : null, lastMessageSending: !!chatEdit.last_message?.sending_state, lastMessageRead: !!chatEdit.last_message?.is_outgoing && !chatEdit.last_message?.sending_state && Number(chatEdit.last_message?.id || 0) <= (Number(chatEdit.last_read_outbox_message_id) || 0), // v1.2.230: точный статус галочки
           })
         }
         return
@@ -563,7 +563,7 @@ export class TdlibClientManager extends EventEmitter {
         chatId: `${record.accountId}:${update.chat_id}`,
         lastMessage: lm ? extractTopicPreview(lm) : '',
         lastMessageTs: lm?.date ? Number(lm.date) * 1000 : 0,
-        senderName, isOutgoing: !!lm?.is_outgoing,
+        senderName, isOutgoing: !!lm?.is_outgoing, lastMessageId: lm?.id ? String(lm.id) : null, lastMessageSending: !!lm?.sending_state, lastMessageRead: !!lm?.is_outgoing && !lm?.sending_state && Number(lm?.id || 0) <= (Number(chat.last_read_outbox_message_id) || 0), // v1.2.230: НАСТОЯЩИЙ статус (не «всегда false»)
       })
     }
     // v0.89.4: outgoing read-receipts (двойная галочка) — собеседник прочитал

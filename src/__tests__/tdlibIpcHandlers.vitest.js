@@ -86,6 +86,8 @@ describe('IPC channel registration', () => {
       'tg:send-message', 'tg:edit-message', 'tg:delete-message', 'tg:forward',
       'tg:mark-read', 'tg:mark-topic-read', 'tg:get-pinned-message',
       'tg:download-media', 'tg:download-video', 'tg:get-forum-topics',
+      // v1.2.233: канал профиля для «Карточки контакта» — ловит регрессию «No handler registered».
+      'tg:set-mute', 'tg:get-contact-info',
     ]
     for (const ch of expected) {
       expect(ipcMain.handlers.has(ch)).toBe(true)

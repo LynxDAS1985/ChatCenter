@@ -356,6 +356,14 @@ export function mapChat(tdChat, accountId, extras = {}) {
     // v0.95.11: lastMessageId — id последнего сообщения чата на сервере (для диагностики
     // gap между загруженным и сервером + потенциальный jump-to-end-of-chat).
     lastMessageId: tdChat.last_message?.id ? String(tdChat.last_message.id) : null,
+    // v1.2.229: галочка прочтения в СПИСКЕ чатов (как в Telegram). Показываем только
+    // если последнее сообщение — НАШЕ (is_outgoing). Прочитано ⇔ id ≤ last_read_outbox_message_id
+    // (та же логика, что markOutboxRead для окна чата). isSending → ещё не ушло на сервер.
+    lastMessageIsOutgoing: !!tdChat.last_message?.is_outgoing,
+    lastMessageSending: !!tdChat.last_message?.sending_state,
+    lastMessageRead: !!tdChat.last_message?.is_outgoing
+      && !tdChat.last_message?.sending_state
+      && Number(tdChat.last_message?.id || 0) <= (Number(tdChat.last_read_outbox_message_id) || 0),
     unreadCount: Number(tdChat.unread_count) || 0,
     readInboxMaxId: Number(tdChat.last_read_inbox_message_id) || 0,
     rawId,

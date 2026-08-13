@@ -588,15 +588,32 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
   addHandler('tg:read', ({ chatId, outgoing, stillUnread, maxId }) => {
     if (outgoing) {
       // v0.87.17: собеседник прочитал наши сообщения до maxId → ставим isRead=true
-      setState(s => ({
-        ...s,
-        messages: {
-          ...s.messages,
-          [chatId]: (s.messages[chatId] || []).map(m =>
-            m.isOutgoing && Number(m.id) <= maxId ? { ...m, isRead: true } : m
-          )
+      // v1.2.229: + галочка в СПИСКЕ чатов — если последнее сообщение чата НАШЕ и его
+      // id ≤ maxId, помечаем lastMessageRead=true (зелёная двойная в списке вживую).
+      setState(s => {
+        // v1.2.231: chats пересобираем ТОЛЬКО если реально что-то поменяли — иначе
+        // новый массив зря заставлял список перерисовываться на каждый read-receipt.
+        let chatsChanged = false
+        const nextChats = s.chats.map(c => {
+          // id есть (путь загрузки/живой) → сверяем с maxId; id нет → по факту «последнее — моё».
+          if (c.id === chatId && c.lastMessageIsOutgoing && !c.lastMessageRead
+            && (!c.lastMessageId || Number(c.lastMessageId) <= maxId)) {
+            chatsChanged = true
+            return { ...c, lastMessageRead: true }
+          }
+          return c
+        })
+        return {
+          ...s,
+          messages: {
+            ...s.messages,
+            [chatId]: (s.messages[chatId] || []).map(m =>
+              m.isOutgoing && Number(m.id) <= maxId ? { ...m, isRead: true } : m
+            )
+          },
+          ...(chatsChanged ? { chats: nextChats } : {}),
         }
-      }))
+      })
       return
     }
     logNativeScroll('store-read', { chatId, stillUnread: stillUnread || 0, maxId })

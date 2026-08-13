@@ -245,6 +245,9 @@ export function initTdlibIpcHandlers({ ipcMain, backend, sendToRenderer, userDat
   // «навсегда»). backend.chats.setMute сама конвертирует в TDLib `mute_for = now`.
   handle('tg:set-mute', ({ chatId, muteUntil } = {}) =>
     backend.chats.setMute(chatId, muteUntil))
+  // v1.2.232: профиль собеседника (телефон/username/bio) для «Карточки контакта».
+  handle('tg:get-contact-info', ({ chatId } = {}) =>
+    backend.chats.getContactInfo(chatId))
   // v0.89.3: pin/unpin СООБЩЕНИЯ в чате (TDLib pinChatMessage/unpinChatMessage).
   // Контракт UI (nativeStore.js:473-475): `{ chatId, messageId, unpin }`. Раньше
   // handler был toggleChatIsPinned (закреп ЧАТА в Main-list) — это была регрессия

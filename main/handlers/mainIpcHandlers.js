@@ -157,6 +157,12 @@ export function registerMainIpcHandlers(deps) {
 
   // Чтение буфера обмена через main process (работает независимо от фокуса окна)
   ipcMain.handle('clipboard:read', () => clipboard.readText())
+  // v1.2.232: запись в буфер (Электрон clipboard — надёжнее navigator.clipboard в renderer).
+  // Используется «Карточкой контакта» для копирования имени/телефона/username.
+  ipcMain.handle('clipboard:write-text', (_, text) => {
+    try { clipboard.writeText(String(text ?? '')); return { ok: true } }
+    catch (e) { return { ok: false, error: e?.message || String(e) } }
+  })
 
   // v0.84.4: AI Login handler вынесен в main/handlers/aiLoginHandler.js
   initAILoginHandler({

@@ -55,6 +55,11 @@ export function attachLastMsgHandlers({ addHandler, setState, logNativeScroll })
         lastMessageTs: p.lastMessageTs || (c.lastMessageTs || 0),
         // v1.2.133: имя автора по единому правилу (тип чата — из state c).
         lastMessageSenderName: lastSenderLabel(c.type, p.senderName, p.isOutgoing),
+        // v1.2.229/230: галочка прочтения в списке чатов — настоящий статус (см. flushPendingLastMsg).
+        lastMessageIsOutgoing: p.isOutgoing,
+        lastMessageId: p.lastMessageId,
+        lastMessageRead: p.lastMessageRead,
+        lastMessageSending: p.lastMessageSending,
       }
     })
   }
@@ -116,17 +121,27 @@ export function attachLastMsgHandlers({ addHandler, setState, logNativeScroll })
           lastMessageTs: item.ts || (chat.lastMessageTs || 0),
           // v1.2.133: имя автора по единому правилу (фикс залипания, ADR-022).
           lastMessageSenderName: lastSenderLabel(chat.type, item.senderName, item.isOutgoing),
+          // v1.2.229/230: галочка прочтения в списке чатов. Статус берём НАСТОЯЩИЙ из события
+          // (backend посчитал по last_read_outbox_message_id, как mapChat), а НЕ «всегда false».
+          // Иначе повторные updateChatLastMessage на старте (сотни) гасили зелёную двойную.
+          lastMessageIsOutgoing: item.isOutgoing,
+          lastMessageId: item.lastMessageId,
+          lastMessageRead: item.lastMessageRead,
+          lastMessageSending: item.lastMessageSending,
         }
       })
-      // Оставшиеся (chat нет в state) → pending queue (с именем автора).
+      // Оставшиеся (chat нет в state) → pending queue (с именем автора + статус галочки).
       for (const [chatId, item] of byChatId) {
-        pendingSet(chatId, { lastMessage: item.text, lastMessageTs: item.ts, senderName: item.senderName, isOutgoing: item.isOutgoing })
+        pendingSet(chatId, {
+          lastMessage: item.text, lastMessageTs: item.ts, senderName: item.senderName, isOutgoing: item.isOutgoing,
+          lastMessageId: item.lastMessageId, lastMessageRead: item.lastMessageRead, lastMessageSending: item.lastMessageSending,
+        })
         recordLastMsgEvent('pending')
       }
       return chatsChanged ? { ...s, chats: nextChats } : s
     })
   }
-  addHandler('tg:chat-last-message', ({ chatId, lastMessage, lastMessageTs, senderName, isOutgoing }) => {
+  addHandler('tg:chat-last-message', ({ chatId, lastMessage, lastMessageTs, senderName, isOutgoing, lastMessageId, lastMessageRead, lastMessageSending }) => {
     if (!chatId) return
     pendingLastMsg.push({
       chatId,
@@ -134,6 +149,10 @@ export function attachLastMsgHandlers({ addHandler, setState, logNativeScroll })
       text: typeof lastMessage === 'string' ? lastMessage : '',
       senderName: senderName || '',
       isOutgoing: !!isOutgoing,
+      // v1.2.230: настоящий статус галочки прочтения (посчитан backend по last_read_outbox).
+      lastMessageId: lastMessageId || null,
+      lastMessageRead: !!lastMessageRead,
+      lastMessageSending: !!lastMessageSending,
     })
     if (!lastMsgRafScheduled) {
       lastMsgRafScheduled = true

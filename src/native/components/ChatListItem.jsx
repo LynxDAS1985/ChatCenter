@@ -21,6 +21,27 @@ function hashString(s) {
   return Math.abs(h)
 }
 
+// v1.2.229: галочка прочтения В СПИСКЕ чатов (как в Telegram). Рисуется рядом со
+// временем ТОЛЬКО когда последнее сообщение чата — наше (chat.lastMessageIsOutgoing).
+// Прочитано → зелёная двойная (тот же зелёный, что в окне чата, v1.2.228);
+// отправлено → приглушённая одинарная. Только тонкий SVG (не текст «✓✓»).
+function ListReadTick({ read }) {
+  const col = read ? '#6ee7a8' : 'var(--amoled-text-dim)'
+  if (read) {
+    return (
+      <svg width="18" height="11" viewBox="0 0 19 11" fill="none" style={{ display: 'block', flexShrink: 0 }} aria-hidden="true">
+        <path d="M1.5 6 L5 9.5 L12 1.5" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6.5 6 L10 9.5 L17.5 1.5" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  return (
+    <svg width="14" height="11" viewBox="0 0 15 11" fill="none" style={{ display: 'block', flexShrink: 0 }} aria-hidden="true">
+      <path d="M1.5 6 L5 9.5 L13 1.5" stroke={col} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 // v1.2.130: значок типа чата ПЕРЕД именем. Форум (супергруппа с темами, isForum)
 // получает свой значок 🗂️ — отличается от обычной группы 👥.
 function typeIcon(chat) {
@@ -264,12 +285,22 @@ export default function ChatListItem({ chat, active, onClick, onContextMenu, acc
             <HighlightedText text={chat.title} query={highlightQuery} />
             {chat.verified && <span style={{ color: 'var(--amoled-accent)', marginLeft: 4 }}>✓</span>}
           </div>
-          {/* v1.2.130: время последнего сообщения справа на линии имени */}
-          {timeLabel && (
-            <span style={{
-              fontSize: 11, color: 'var(--amoled-text-dim)', flexShrink: 0,
-              fontVariantNumeric: 'tabular-nums',
-            }}>{timeLabel}</span>
+          {/* v1.2.130: время последнего сообщения справа на линии имени.
+              v1.2.229: перед временем — галочка прочтения, если последнее сообщение наше. */}
+          {(timeLabel || chat.lastMessageIsOutgoing) && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              {chat.lastMessageIsOutgoing && (
+                <span title={chat.lastMessageRead ? 'Прочитано' : 'Отправлено'} style={{ display: 'inline-flex' }}>
+                  <ListReadTick read={!!chat.lastMessageRead} />
+                </span>
+              )}
+              {timeLabel && (
+                <span style={{
+                  fontSize: 11, color: 'var(--amoled-text-dim)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}>{timeLabel}</span>
+              )}
+            </span>
           )}
         </div>
         {/* v0.87.106: микро-строка с мессенджером и именем аккаунта (только в multi-account) */}

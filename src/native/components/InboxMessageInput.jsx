@@ -96,8 +96,10 @@ export default function InboxMessageInput({
           {onAttachAdd && !editTarget && (
             <FileAttachButton onSelect={onAttachAdd} disabled={disabled || sending} />
           )}
+          {/* v1.2.235: id — чтобы «Написать» в карточке контакта ставил курсор в это поле */}
           <textarea
             ref={taRef}
+            id="native-message-composer"
             rows={1}
             value={input}
             onChange={e => { handleInputChange(e.target.value); autosize(e.target) }}

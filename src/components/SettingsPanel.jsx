@@ -374,6 +374,12 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
               <SettingRow label="🧪 Макс в отдельном окне (тест уведомлений)" description="Открывает Макс в отдельном окне Electron, чтобы проверить, приходят ли уведомления (ServiceWorker). Главное окно работает как обычно. Перезапуск не нужен — окно появится сразу. Чтобы закрыть — выключите тумблер.">
                 <Toggle value={!!settings.useWebContentsView} onChange={v => set('useWebContentsView', v)} />
               </SettingRow>
+              {/* v1.2.244 Этап 1: тумблер «Боковой рейл» — вернулся вместе с компонентом SourceRail.
+                  Показывает слева колонку значков источников (API сверху, веб ниже). Верхние вкладки
+                  пока остаются. Костяк: значки + переключение. План: .memory-bank/side-rail-migration-plan.md */}
+              <SettingRow label="🧪 Боковой рейл источников (костяк)" description="Показывает слева колонку значков: API-аккаунты сверху, веб-мессенджеры ниже. Пока это ранняя версия — верхние вкладки остаются. Перезапуск не нужен.">
+                <Toggle value={!!settings.sideRail} onChange={v => set('sideRail', v)} />
+              </SettingRow>
               <SettingRow label="Бейдж на иконке (overlay)" description="Что показывать на иконке в панели задач Windows">
                 <select
                   value={settings.overlayMode || 'personal'}

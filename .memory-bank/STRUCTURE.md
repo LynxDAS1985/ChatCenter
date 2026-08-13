@@ -12,47 +12,49 @@
 | Файл | Размер |
 |------|--------|
 | `CHANGELOG.md` | 90 КБ |
-| `README.md` | 10 КБ |
-| `STRUCTURE.md` | 6 КБ |
+| `README.md` | 11 КБ |
+| `STRUCTURE.md` | 7 КБ |
 | `ai-bridge.md` | 16 КБ |
 | `ai-integration.md` | 13 КБ |
-| `api.md` | 32 КБ |
+| `api.md` | 37 КБ |
 | `architecture.md` | 16 КБ |
 | `autoreply.md` | 6 КБ |
-| `code-limits-status.md` | 4 КБ |
-| `code-todo.md` | 19 КБ |
+| `code-limits-status.md` | 7 КБ |
+| `code-todo.md` | 54 КБ |
 | `coding-rules.md` | 9 КБ |
-| `common-mistakes.md` | 8 КБ |
-| `decisions.md` | 38 КБ |
+| `common-mistakes.md` | 10 КБ |
+| `decisions.md` | 60 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 56 КБ |
+| `features.md` | 98 КБ |
 | `group-topic-investigation.md` | 96 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
-| `messengers.md` | 14 КБ |
+| `messengers.md` | 16 КБ |
 | `native-mode-plan.md` | 30 КБ |
 | `phase-2-visual-test.md` | 16 КБ |
 | `prodlike-webview-investigation.md` | 4 КБ |
+| `side-rail-migration-plan.md` | 12 КБ |
 | `startup-load-investigation.md` | 98 КБ |
 | `tdlib-migration-plan.md` | 27 КБ |
-| `ui-components.md` | 24 КБ |
+| `ui-components.md` | 25 КБ |
 | `virtuoso-migration-plan.md` | 18 КБ |
 | `webcontents-view-pilot-results.md` | 5 КБ |
-| `webcontentsview-migration-plan.md` | 17 КБ |
+| `webcontentsview-migration-plan.md` | 26 КБ |
 | `workflow.md` | 10 КБ |
 
 ### Подпапка `mistakes/` — детали ловушек
 
 | Файл | Размер |
 |------|--------|
-| `mistakes/electron-core.md` | 110 КБ |
-| `mistakes/native-scroll-unread.md` | 118 КБ |
-| `mistakes/notifications-ribbon.md` | 160 КБ |
-| `mistakes/outgoing-two-cases.md` | 7 КБ |
+| `mistakes/electron-core.md` | 157 КБ |
+| `mistakes/native-scroll-unread.md` | 131 КБ |
+| `mistakes/notifications-ribbon-history.md` | 139 КБ |
+| `mistakes/notifications-ribbon.md` | 93 КБ |
+| `mistakes/outgoing-two-cases.md` | 14 КБ |
 | `mistakes/tdlib-forum.md` | 19 КБ |
-| `mistakes/tdlib-video-player.md` | 29 КБ |
-| `mistakes/webview-injection.md` | 9 КБ |
-| `mistakes/webview-navigation-ui.md` | 31 КБ |
+| `mistakes/tdlib-video-player.md` | 31 КБ |
+| `mistakes/webview-injection.md` | 26 КБ |
+| `mistakes/webview-navigation-ui.md` | 39 КБ |
 | `mistakes/webview-stack-grouping.md` | 123 КБ |
 
 ### Подпапка `archive/` — НЕ читать по умолчанию
@@ -62,9 +64,13 @@
 | `archive/2026-04-common-mistakes-resolved.md` | 11 КБ |
 | `archive/2026-04-handoff-telegram-handler-split.md` | 62 КБ |
 | `archive/2026-05-connection-health-plan.md` | 53 КБ |
-| `archive/README.md` | 24 КБ |
+| `archive/2026-06-notifications-ribbon-max-title-control.md` | 6 КБ |
+| `archive/2026-07-notifications-ribbon-max-title-fallback-v1.2.24-27.md` | 16 КБ |
+| `archive/README.md` | 38 КБ |
 | `archive/audit-2026-05-26-scroll-architecture-CLOSED.md` | 19 КБ |
 | `archive/changelog-v0.87.56-68.md` | 18 КБ |
+| `archive/decisions-adr-001-014.md` | 17 КБ |
+| `archive/decisions-adr-015-022.md` | 39 КБ |
 | `archive/features-pre-v0.87.md` | 251 КБ |
 | `archive/features-v0.87-early.md` | 126 КБ |
 | `archive/features-v0.87.106-114.md` | 22 КБ |
@@ -123,9 +129,34 @@
 | `archive/features-v1.1.16-1.1.18.md` | 19 КБ |
 | `archive/features-v1.1.4-1.1.6.md` | 4 КБ |
 | `archive/features-v1.2.1-1.2.2.md` | 11 КБ |
+| `archive/features-v1.2.101-107.md` | 21 КБ |
+| `archive/features-v1.2.108-115.md` | 25 КБ |
+| `archive/features-v1.2.116-121.md` | 15 КБ |
+| `archive/features-v1.2.122-125.md` | 14 КБ |
+| `archive/features-v1.2.126-129.md` | 11 КБ |
+| `archive/features-v1.2.130-133.md` | 7 КБ |
+| `archive/features-v1.2.134-137.md` | 8 КБ |
+| `archive/features-v1.2.138-139.md` | 5 КБ |
+| `archive/features-v1.2.140-146.md` | 4 КБ |
+| `archive/features-v1.2.147-155.md` | 29 КБ |
+| `archive/features-v1.2.156-160.md` | 5 КБ |
+| `archive/features-v1.2.161-169.md` | 30 КБ |
+| `archive/features-v1.2.170-184.md` | 38 КБ |
+| `archive/features-v1.2.185-196.md` | 36 КБ |
+| `archive/features-v1.2.197-204.md` | 29 КБ |
+| `archive/features-v1.2.205-213.md` | 21 КБ |
+| `archive/features-v1.2.27-and-older.md` | 76 КБ |
+| `archive/features-v1.2.28.md` | 3 КБ |
+| `archive/features-v1.2.29.md` | 5 КБ |
 | `archive/features-v1.2.3-1.2.4.md` | 10 КБ |
+| `archive/features-v1.2.30-36.md` | 29 КБ |
+| `archive/features-v1.2.37-45.md` | 42 КБ |
+| `archive/features-v1.2.46-58.md` | 33 КБ |
+| `archive/features-v1.2.59-73.md` | 49 КБ |
+| `archive/features-v1.2.74-89.md` | 40 КБ |
+| `archive/features-v1.2.90-100.md` | 29 КБ |
 | `archive/native-scroll-diagnostics-handoff-CLOSED.md` | 18 КБ |
-| `archive/native-scroll-restore-saga-CLOSED.md` | 31 КБ |
+| `archive/native-scroll-restore-saga-CLOSED.md` | 40 КБ |
 
-_Регенерировано: 2026-06-24_
+_Регенерировано: 2026-08-13_
 <!-- STRUCTURE-AUTO-END -->

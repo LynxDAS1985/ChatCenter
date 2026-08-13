@@ -17,6 +17,8 @@ import {
   selectConnectionHealthJobs,
 } from './utils/connectionHealthScheduler.js'
 import TabBar from './components/TabBar.jsx'
+// v1.2.244 — Этап 1: боковой рейл источников (за флагом settings.sideRail, по умолчанию выкл).
+import SourceRail from './components/SourceRail.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 // v0.89.42 (Phase 2.2): WebContentsView pilot — условный рендер по settings.useWebContentsView.
 // v0.91.0: WebContentsViewSlot откачен (Issue #44934 Windows 11 crash)
@@ -687,6 +689,12 @@ export default function App() {
 
       {/* ── Основной layout ── */}
       <div className="flex flex-1 overflow-hidden">
+
+        {/* v1.2.244 Этап 1: боковой рейл источников (за флагом; полоска «← Общий чат» — Этап 2). */}
+        {settings.sideRail && (
+          <SourceRail messengers={messengers} activeId={activeId} onSelect={handleTabClick}
+            onAdd={() => setShowAddModal(true)} nativeCcId={NATIVE_CC_ID} />
+        )}
 
         {/* ── Область WebView ── */}
         <div className="flex-1 relative overflow-hidden" style={{ backgroundColor: 'var(--cc-bg)', cursor: isResizing ? 'col-resize' : undefined }}>

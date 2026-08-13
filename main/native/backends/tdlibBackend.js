@@ -17,7 +17,7 @@ import {
 import { TdlibAuthFlow } from './tdlibAuth.js'
 import { userDisplayName } from './tdlibClient.js'
 import { mapMessage as tdlibMapMessageDirect, markOutboxRead } from './tdlibMapper.js'
-import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, scanAccountSessionStats, removeAccountSessionFiles, removeAccountCacheFile } from './tdlibChatActions.js'
+import { setMute as setMuteRaw, getCleanupStats as getCleanupStatsRaw, getContactInfo as getContactInfoRaw, scanAccountSessionStats, removeAccountSessionFiles, removeAccountCacheFile } from './tdlibChatActions.js'
 import { cleanupTgMedia } from './tgMediaCleanup.js'
 import { extractTopicPreview } from './tdlibPreview.js'  // v0.91.4
 import { resolveTopicEmojis } from './tdlibForumEmoji.js'  // v0.91.6
@@ -274,6 +274,7 @@ export function createTdlibBackend(opts = {}) {
       async getCleanupStats() {
         return getCleanupStatsRaw(manager, userDataDir)
       },
+      async getContactInfo(chatId) { return getContactInfoRaw(manager, chatId) }, // v1.2.232: профиль для «Карточки контакта»
     },
 
     messages: {

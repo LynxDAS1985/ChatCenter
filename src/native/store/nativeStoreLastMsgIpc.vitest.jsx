@@ -63,6 +63,34 @@ describe('tg:chat-last-message — превью + имя автора', () => {
     expect(get().chats[0].lastMessageSenderName).toBe('')
   })
 
+  // v1.2.230 (регрессия): повторное updateChatLastMessage про УЖЕ прочитанное исходящее
+  // (сотни таких на старте) НЕ должно гасить зелёную двойную в списке. Раньше событие
+  // жёстко ставило lastMessageRead=false → галочка сбивалась на одну серую навсегда.
+  it('повторное событие про прочитанное исходящее → галочка остаётся зелёной (read=true)', () => {
+    const { fire, get } = setup({
+      chats: [groupChat({ type: 'user', lastMessageIsOutgoing: true, lastMessageRead: true, lastMessageId: '90' })],
+      messages: {},
+    })
+    fire('tg:chat-last-message', {
+      chatId: 'a:c1', lastMessage: 'старое', lastMessageTs: 1000, senderName: 'Я', isOutgoing: true,
+      lastMessageId: '90', lastMessageRead: true, lastMessageSending: false,
+    })
+    const c = get().chats[0]
+    expect(c.lastMessageIsOutgoing).toBe(true)
+    expect(c.lastMessageRead).toBe(true)   // не сбилось в false
+  })
+
+  it('новое исходящее (ещё не прочитано) → одна галочка (read=false)', () => {
+    const { fire, get } = setup({ chats: [groupChat({ type: 'user' })], messages: {} })
+    fire('tg:chat-last-message', {
+      chatId: 'a:c1', lastMessage: 'только что', lastMessageTs: 2000, senderName: 'Я', isOutgoing: true,
+      lastMessageId: '200', lastMessageRead: false, lastMessageSending: false,
+    })
+    const c = get().chats[0]
+    expect(c.lastMessageIsOutgoing).toBe(true)
+    expect(c.lastMessageRead).toBe(false)
+  })
+
   it('pending: событие пришло ДО чата в state → имя применяется на tg:chats', () => {
     const { fire, get } = setup({ chats: [], messages: {} })
     // Чата ещё нет — уходит в pending-очередь.

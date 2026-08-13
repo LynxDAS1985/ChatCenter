@@ -14,6 +14,8 @@ import DragDropOverlay from './DragDropOverlay.jsx'
 import VirtualMessageList from './VirtualMessageList.jsx'
 import PinnedMessageBar from './PinnedMessageBar.jsx'
 import ForumTopicEmptyState from './ForumTopicEmptyState.jsx'
+import ContactCardModal from './ContactCardModal.jsx' // v1.2.232: карточка контакта по клику на имя/аватар
+import { getContactNote } from '../utils/contactNotes.js' // v1.2.240: заметка о клиенте в строке статуса шапки
 import useDelayedUnmount from '../hooks/useDelayedUnmount.js'
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 // v0.87.106: фирменный мессенджер-маркер в шапке открытого чата
@@ -122,6 +124,7 @@ export default function InboxChatPanel({
   const innerListRef = useRef(null)
   const effectiveListRef = virtualListRef || innerListRef
   const [scrollElement, setScrollElement] = useState(null)
+  const [showContact, setShowContact] = useState(false) // v1.2.232: карточка контакта (клик по имени/аватару)
 
   useEffect(() => {
     const el = effectiveListRef.current?.element || null
@@ -142,6 +145,11 @@ export default function InboxChatPanel({
     )
   }
 
+  // v1.2.240: заметка о клиенте (из карточки контакта, localStorage) — показываем в строке статуса.
+  // Перечитывается при каждой перерисовке шапки; после правки заметки карточка закрывается
+  // (setShowContact(false)) → шапка перерисовывается → заметка обновляется.
+  const contactNote = getContactNote(activeChat.id)
+
   return (
     <>
       <div style={{
@@ -150,7 +158,10 @@ export default function InboxChatPanel({
         display: 'flex', alignItems: 'center',
       }}>
         {/* v0.95.29: Telegram-style — аватарка чата 40x40 + статус под именем */}
-        <ChatHeaderAvatar chat={activeChat} />
+        {/* v1.2.232: клик по аватару → карточка контакта */}
+        <span onClick={() => setShowContact(true)} style={{ cursor: 'pointer' }} title="Карточка контакта">
+          <ChatHeaderAvatar chat={activeChat} />
+        </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           {activeTopic ? (
             <>
@@ -159,9 +170,13 @@ export default function InboxChatPanel({
             </>
           ) : (
             <>
-              <div style={{
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>{activeChat.title}</div>
+              {/* v1.2.232: клик по имени → карточка контакта (копировать имя/телефон, заметка) */}
+              <div
+                onClick={() => setShowContact(true)}
+                title="Карточка контакта"
+                style={{
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer',
+                }}>{activeChat.title}</div>
               {/* v0.95.29: статус под именем — «в сети» / «был(а) в HH:MM» / «N участников».
                   v1.2.180: точка-индикатор (зелёная в сети / серая нет — только для личных
                   чатов) + ярче текст (был --amoled-text-muted #606060, стало #a0a0a0). */}
@@ -178,9 +193,23 @@ export default function InboxChatPanel({
                 )}
                 {/* v0.95.31: typingText (если есть) перебивает isTyping —
                     показываем «Иван печатает...» вместо общего «печатает...». */}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                   {formatChatStatus(activeChat, { isTyping, typingText })}
                 </span>
+                {/* v1.2.240: заметка о клиенте в строке статуса. Не влезает → «…» + полный
+                    текст во всплывающей подсказке (title). Клик — открыть карточку и править. */}
+                {contactNote && (
+                  <span
+                    title={contactNote}
+                    onClick={(e) => { e.stopPropagation(); setShowContact(true) }}
+                    style={{
+                      color: '#ffd479', overflow: 'hidden', textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap', minWidth: 0, cursor: 'pointer',
+                    }}
+                  >
+                    <span style={{ color: '#6a6a72', marginRight: 5 }}>·</span>📝 {contactNote}
+                  </span>
+                )}
               </div>
             </>
           )}
@@ -353,6 +382,19 @@ export default function InboxChatPanel({
         onAttachSend={onAttachSend}
         uploads={uploads}
       />
+      {/* v1.2.232: карточка контакта (открывается кликом по имени/аватару в шапке) */}
+      {showContact && (() => {
+        const acc = (store.accounts || []).find(a => a.id === activeChat.accountId)
+        return (
+          <ContactCardModal
+            chat={activeChat}
+            onClose={() => setShowContact(false)}
+            onMute={store.setMute}
+            messengerName={getMessengerName(acc?.messenger || 'telegram')}
+            accountName={acc?.name || ''}
+          />
+        )
+      })()}
     </>
   )
 }

@@ -70,6 +70,7 @@
 | `tg:rescan-unread` | — | `{ ok, accountStats: [{accountId, chats, unreadTotal, ms}] }` |
 | `tg:health-check` | — | `{ ok, accountStats: [{accountId, ms, ok, error?}] }` |
 | `tg:set-mute` | `{ chatId, muteUntil }` | `{ ok, error? }` |
+| `tg:get-contact-info` (v1.2.232) | `{ chatId }` | `{ ok, phone, username, bio }` — профиль собеседника для «Карточки контакта». Только личный чат (иначе `{ ok:false }`). Телефон/username/bio приходят НЕ всегда (приватность/сеть) → пустые строки. Источник: TDLib `getUser` + `getUserFullInfo`. Клиентский буфер — канал `clipboard:write-text` (`text` → `{ ok }`, Electron `clipboard.writeText`, mainIpcHandlers.js). |
 | `tg:get-cleanup-stats` | — | `{ ok, totalFiles, totalBytes, byCategory: { session, avatars, cache, media, tmp } }` |
 | `tg:remove-account` | `{ accountId }` | `{ ok, wipeStats: { totalFiles, totalBytes, isLast } }` (v0.89.4: + полный logOut + fs.rmSync + emit `tg:account-update {removed:true}`) |
 

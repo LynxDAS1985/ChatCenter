@@ -282,3 +282,54 @@ describe('updateNewMessage', () => {
   })
 })
 
+// ──────────────────────────────────────────────────────────────────────
+// v1.2.231: updateChatLastMessage → chat:last-message несёт НАСТОЯЩИЙ статус
+// галочки прочтения (lastMessageRead), посчитанный по last_read_outbox_message_id.
+// Ловушка: раньше стор жёстко ставил read=false, и повторные события на старте
+// гасили зелёную двойную в списке (см. mistakes/outgoing-two-cases.md, v1.2.230).
+// ──────────────────────────────────────────────────────────────────────
+
+describe('updateChatLastMessage → статус галочки прочтения в списке', () => {
+  function withChat(over) {
+    const { mgr, mockClient } = makeManager()
+    mgr.createAccount('tg_a', {})
+    mockClient.emit('update', {
+      '@type': 'updateNewChat',
+      chat: {
+        id: -1, type: { '@type': 'chatTypePrivate', user_id: 1 }, title: 'Клиент',
+        unread_count: 0, last_read_outbox_message_id: 100, ...over,
+      },
+    })
+    const ev = vi.fn()
+    mgr.on('chat:last-message', ev)
+    return { mockClient, ev }
+  }
+  function fireLast(mockClient, lastMessage) {
+    mockClient.emit('update', { '@type': 'updateChatLastMessage', chat_id: -1, last_message: lastMessage })
+  }
+
+  it('исходящее прочитано (id ≤ last_read_outbox) → isOutgoing:true, lastMessageRead:true', () => {
+    const { mockClient, ev } = withChat()
+    fireLast(mockClient, { id: 90, is_outgoing: true, date: 1715000000, content: { '@type': 'messageText', text: { text: 'ок', entities: [] } } })
+    expect(ev).toHaveBeenCalledOnce()
+    const p = ev.mock.calls[0][0]
+    expect(p.isOutgoing).toBe(true)
+    expect(p.lastMessageRead).toBe(true)
+    expect(p.lastMessageId).toBe('90')
+  })
+
+  it('исходящее ещё не прочитано (id > last_read_outbox) → lastMessageRead:false', () => {
+    const { mockClient, ev } = withChat()
+    fireLast(mockClient, { id: 200, is_outgoing: true, date: 1715000000, content: { '@type': 'messageText', text: { text: 'новое', entities: [] } } })
+    expect(ev.mock.calls[0][0].lastMessageRead).toBe(false)
+  })
+
+  it('входящее последнее → isOutgoing:false, lastMessageRead:false (галочки нет)', () => {
+    const { mockClient, ev } = withChat()
+    fireLast(mockClient, { id: 90, is_outgoing: false, date: 1715000000, content: { '@type': 'messageText', text: { text: 'привет', entities: [] } } })
+    const p = ev.mock.calls[0][0]
+    expect(p.isOutgoing).toBe(false)
+    expect(p.lastMessageRead).toBe(false)
+  })
+})
+

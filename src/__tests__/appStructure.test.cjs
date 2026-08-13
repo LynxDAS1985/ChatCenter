@@ -145,5 +145,23 @@ test('useWebViewLifecycle hook подключён (Ловушка 64)', () =>
   assert(code.includes('useWebViewLifecycle') && allAppCode.includes('__CC_DIAG__health'),
     'App.jsx должен использовать useWebViewLifecycle — health-check + warm-up (resize/reload откачены, не работают для peer-changed race)'))
 
+// ── v1.2.244 Этап 1: боковой рейл источников (связка в App.jsx) ──
+// Смоук статикой: full App смонтировать в тестах нельзя (грузит настройки через IPC,
+// lazy NativeApp, <webview>), поэтому проверяем исходник — ловим удаление рейла,
+// переименование флага и опечатки в именах пропсов (их юнит-тест SourceRail не видит).
+console.log('\\n── Боковой рейл (Этап 1): ──')
+test('SourceRail импортируется', () => assert(code.includes("import SourceRail from './components/SourceRail.jsx'")))
+test('SourceRail рендерится за флагом settings.sideRail', () => {
+  assert(code.includes('settings.sideRail &&'), 'рейл должен быть за флагом settings.sideRail (по умолчанию выкл)')
+  assert(code.includes('<SourceRail'), 'компонент SourceRail должен рендериться')
+})
+test('SourceRail получает корректные пропсы (связка не разъедется)', () => {
+  assert(code.includes('messengers={messengers}'), 'нужен проп messengers')
+  assert(code.includes('activeId={activeId}'), 'нужен проп activeId')
+  assert(code.includes('onSelect={handleTabClick}'), 'клик по значку = то же переключение, что вкладки')
+  assert(code.includes('nativeCcId={NATIVE_CC_ID}'), 'нужен id нативной вкладки для разделения API/веб')
+  assert(code.includes('onAdd={() => setShowAddModal(true)}'), '«+» должен открывать окно добавления')
+})
+
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)
