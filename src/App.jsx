@@ -697,7 +697,10 @@ export default function App() {
             onAdd={() => setShowAddModal(true)} nativeCcId={NATIVE_CC_ID}
             unreadCounts={unreadCounts} unreadSplit={unreadSplit} connectionHealth={connectionHealth}
             webviewLoading={webviewLoading} newMessageIds={newMessageIds} accountInfo={accountInfo}
-            onOpenConnections={openConnectionsPanel} />
+            onOpenConnections={openConnectionsPanel} overlayMode={settings.overlayMode}
+            onContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}
+            onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+            onDragEnd={handleDragEnd} dragOverId={dragOverId} />
         )}
 
         {/* ── Область WebView ── */}

@@ -169,6 +169,12 @@ test('SourceRail получает данные индикаторов (Этап 
   assert(code.includes('webviewLoading={webviewLoading}'), 'состояние загрузки для полоски')
   assert(code.includes('newMessageIds={newMessageIds}'), 'новые сообщения для пульса')
   assert(code.includes('onOpenConnections={openConnectionsPanel}'), 'клик по точке → Подключения')
+  assert(code.includes('overlayMode={settings.overlayMode}'), 'режим бейджа — чтобы цифра совпадала с вкладкой')
+})
+test('SourceRail: правый клик + перетаскивание (Этап 2B — обработчики вкладок)', () => {
+  assert(code.includes('onContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}'), 'правый клик → то же меню, что у вкладок')
+  assert(code.includes('onDragStart={handleDragStart}') && code.includes('onDrop={handleDrop}'), 'перетаскивание — обработчики вкладок')
+  assert(code.includes('dragOverId={dragOverId}'), 'подсветка цели перетаскивания')
 })
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

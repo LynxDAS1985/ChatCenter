@@ -21,6 +21,9 @@ import ConnectionStatusDot from './ConnectionStatusDot.jsx'
 function RailIcon({
   m, isActive, onSelect,
   unreadCount = 0, unreadSplit, health, isLoading, isNew, accountInfo, onOpenConnections,
+  // v1.2.248 (2B): правый клик + перетаскивание — переиспользуют машинерию вкладок.
+  // v1.2.249 (#2): section ('native'|'web') — перетаскивание разрешено только внутри своей секции.
+  onContextMenu, onDragStart, onDragOver, onDrop, onDragEnd, isDragOver, section,
 }) {
   const color = m.color || '#2AABEE'
   // ✓ «всё прочитано»: показываем 2с после того, как счётчик упал с >0 до 0 (как во вкладке).
@@ -41,18 +44,30 @@ function RailIcon({
     : `Непрочитанных: ${unreadCount}`
   const tip = accountInfo ? `${m.name} — ${accountInfo}` : m.name
 
+  // v1.2.247 (#2): значок — div role="button", а НЕ <button>. Причина: внутри значка есть
+  // кликабельная точка связи (role=button); вкладывать интерактивное в <button> запрещено
+  // стандартом HTML. div (flow content) вкладывать интерактивное разрешено. Клавиатура сохранена
+  // (tabIndex + Enter/Пробел → onSelect).
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
+      draggable
       data-id={m.id}
       aria-current={isActive ? 'true' : undefined}
       title={tip}
       onClick={() => onSelect(m.id)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(m.id) } }}
+      onContextMenu={e => { e.preventDefault(); onContextMenu?.(m.id, e.clientX, e.clientY) }}
+      onDragStart={e => { if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; onDragStart?.(m.id, section) }}
+      onDragOver={e => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; onDragOver?.(m.id, section) }}
+      onDrop={e => { e.preventDefault(); onDrop?.(m.id, section) }}
+      onDragEnd={() => onDragEnd?.()}
       className="relative flex items-center justify-center cursor-pointer transition-all duration-150"
       style={{
         width: 48, height: 48, borderRadius: 14, margin: '3px auto', fontSize: 22, lineHeight: 1,
         backgroundColor: isActive ? `${color}22` : 'transparent',
-        outline: isActive ? `1.5px solid ${color}88` : '1.5px solid transparent',
+        outline: isDragOver ? `2px dashed ${color}` : isActive ? `1.5px solid ${color}88` : '1.5px solid transparent',
       }}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)' }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent' }}
@@ -138,7 +153,7 @@ function RailIcon({
           }} />
         </span>
       )}
-    </button>
+    </div>
   )
 }
 
@@ -156,22 +171,43 @@ function RailIcon({
 export default function SourceRail({
   messengers = [], activeId, onSelect, onAdd, nativeCcId,
   unreadCounts = {}, unreadSplit = {}, connectionHealth = {}, webviewLoading = {},
-  newMessageIds, accountInfo = {}, onOpenConnections,
+  newMessageIds, accountInfo = {}, onOpenConnections, overlayMode,
+  // v1.2.248 (2B): правый клик + перетаскивание (обработчики вкладок).
+  onContextMenu, onDragStart, onDragOver, onDrop, onDragEnd, dragOverId,
 }) {
   const isNativeSrc = m => !!m.isNative || m.id === nativeCcId
   const nativeSources = messengers.filter(isNativeSrc)
   const webSources = messengers.filter(m => !isNativeSrc(m))
 
-  const renderIcon = m => (
+  // v1.2.247 (#1): число на бейдже считаем ТОЧНО как вкладка (TabBar.jsx): в режиме «только личные»
+  // показываем личные, иначе — всего. Иначе цифра рейла расходилась бы с цифрой вкладки.
+  const badgeCount = m =>
+    overlayMode === 'personal' && unreadSplit[m.id]
+      ? (unreadSplit[m.id].personal || 0)
+      : (unreadCounts[m.id] || 0)
+
+  // v1.2.249 (#2): перетаскивание — только внутри своей секции. Запоминаем секцию источника,
+  // с которого начали тащить; события over/drop у чужой секции игнорируем → нет «пустых»
+  // перетаскиваний между API и веб (рейл всё равно делит значки по типу).
+  const draggedSectionRef = useRef(null)
+  const startDrag = (id, sec) => { draggedSectionRef.current = sec; onDragStart?.(id) }
+  const overDrag = (id, sec) => { if (sec === draggedSectionRef.current) onDragOver?.(id) }
+  const dropDrag = (id, sec) => { if (sec === draggedSectionRef.current) onDrop?.(id) }
+  const endDrag = () => { draggedSectionRef.current = null; onDragEnd?.() }
+
+  const renderIcon = (m, section) => (
     <RailIcon
-      key={m.id} m={m} isActive={activeId === m.id} onSelect={onSelect}
-      unreadCount={unreadCounts[m.id] || 0}
+      key={m.id} m={m} section={section} isActive={activeId === m.id} onSelect={onSelect}
+      unreadCount={badgeCount(m)}
       unreadSplit={unreadSplit[m.id]}
       health={connectionHealth[m.id]}
       isLoading={!!webviewLoading[m.id]}
       isNew={!!newMessageIds?.has?.(m.id)}
       accountInfo={accountInfo[m.id]}
       onOpenConnections={onOpenConnections}
+      onContextMenu={onContextMenu}
+      onDragStart={startDrag} onDragOver={overDrag} onDrop={dropDrag} onDragEnd={endDrag}
+      isDragOver={dragOverId === m.id}
     />
   )
 
@@ -185,7 +221,7 @@ export default function SourceRail({
       }}
     >
       {/* API / нативные источники — сверху */}
-      {nativeSources.map(renderIcon)}
+      {nativeSources.map(m => renderIcon(m, 'native'))}
 
       {/* Разделитель — только если есть обе секции */}
       {nativeSources.length > 0 && webSources.length > 0 && (
@@ -195,7 +231,7 @@ export default function SourceRail({
       )}
 
       {/* Веб-мессенджеры — ниже */}
-      {webSources.map(renderIcon)}
+      {webSources.map(m => renderIcon(m, 'web'))}
 
       {/* «+» добавить — внизу */}
       <button

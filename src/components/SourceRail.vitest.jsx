@@ -112,6 +112,74 @@ describe('SourceRail', () => {
     expect(vkBtn.getAttribute('title')).toContain('Иван Петров')
   })
 
+  it('#1 цифра бейджа = как на вкладке: режим «только личные» → показывает личные', () => {
+    const { getByTestId } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={() => {}} onAdd={() => {}}
+        nativeCcId={NATIVE_CC_ID} overlayMode="personal"
+        unreadCounts={{ vk: 10 }} unreadSplit={{ vk: { personal: 3, channels: 7 } }} />
+    )
+    expect(getByTestId('rail-unread-vk').textContent).toBe('3') // личные, не всего
+  })
+
+  it('#1 без режима «личные» → показывает всего', () => {
+    const { getByTestId } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={() => {}} onAdd={() => {}}
+        nativeCcId={NATIVE_CC_ID}
+        unreadCounts={{ vk: 10 }} unreadSplit={{ vk: { personal: 3, channels: 7 } }} />
+    )
+    expect(getByTestId('rail-unread-vk').textContent).toBe('10')
+  })
+
+  it('#2 клавиатура: Enter на значке переключает источник (значок доступен с клавиатуры)', () => {
+    const onSelect = vi.fn()
+    const { getByTitle } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={onSelect} onAdd={() => {}} nativeCcId={NATIVE_CC_ID} />
+    )
+    fireEvent.keyDown(getByTitle('ВКонтакте'), { key: 'Enter' })
+    expect(onSelect).toHaveBeenCalledWith('vk')
+  })
+
+  // ── Этап 2B: правый клик + перетаскивание ──
+  it('#2B правый клик по значку зовёт onContextMenu с id и координатами курсора', () => {
+    const onContextMenu = vi.fn()
+    const { getByTitle } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={() => {}} onAdd={() => {}}
+        nativeCcId={NATIVE_CC_ID} onContextMenu={onContextMenu} />
+    )
+    fireEvent.contextMenu(getByTitle('ВКонтакте'), { clientX: 120, clientY: 240 })
+    expect(onContextMenu).toHaveBeenCalledWith('vk', 120, 240)
+  })
+
+  it('#2B перетаскивание значка вызывает обработчики drag с его id', () => {
+    const onDragStart = vi.fn()
+    const onDragOver = vi.fn()
+    const onDrop = vi.fn()
+    const { getByTitle } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={() => {}} onAdd={() => {}}
+        nativeCcId={NATIVE_CC_ID} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} />
+    )
+    const vk = getByTitle('ВКонтакте')
+    fireEvent.dragStart(vk)
+    fireEvent.dragOver(vk)
+    fireEvent.drop(vk)
+    expect(onDragStart).toHaveBeenCalledWith('vk')
+    expect(onDragOver).toHaveBeenCalledWith('vk')
+    expect(onDrop).toHaveBeenCalledWith('vk')
+  })
+
+  it('#2 перетаскивание между секциями игнорируется (веб → API не срабатывает)', () => {
+    const onDrop = vi.fn()
+    const { getByTitle } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={() => {}} onAdd={() => {}}
+        nativeCcId={NATIVE_CC_ID} onDragStart={() => {}} onDragOver={() => {}} onDrop={onDrop} />
+    )
+    fireEvent.dragStart(getByTitle('ВКонтакте'))   // тащим веб-значок
+    fireEvent.drop(getByTitle('ЦентрЧатов'))        // бросаем на API → должно игнорироваться
+    expect(onDrop).not.toHaveBeenCalled()
+    fireEvent.drop(getByTitle('WhatsApp'))          // бросаем на веб → разрешено
+    expect(onDrop).toHaveBeenCalledWith('whatsapp')
+  })
+
   it('не падает без объектов индикаторов (undefined)', () => {
     // newMessageIds/unreadCounts и т.п. не переданы — гварды внутри должны сработать
     expect(() => render(
