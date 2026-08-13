@@ -158,6 +158,46 @@ function RailIcon({
 }
 
 /**
+ * v1.2.251 (Этап 2C): значок Telegram-аккаунта — круглый АВАТАР (или инициалы, если фото нет),
+ * бейдж непрочитанных, подсветка активного. Клик → показать чаты этого аккаунта (solo в native).
+ * Аватар грузится как background-image (cc-media://…) — тот же приём, что в AccountAvatar.jsx.
+ */
+function AccountRailIcon({ account, isActive, onSelect }) {
+  const color = account.color || '#2AABEE'
+  const initials = (account.name || '?').split(' ').filter(Boolean).slice(0, 2)
+    .map(w => w[0]?.toUpperCase() || '').join('') || '?'
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      data-account-id={account.id}
+      aria-current={isActive ? 'true' : undefined}
+      title={account.name}
+      onClick={() => onSelect?.(account.id)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(account.id) } }}
+      className="relative flex items-center justify-center cursor-pointer transition-all duration-150"
+      style={{
+        width: 48, height: 48, borderRadius: '50%', margin: '3px auto',
+        color: '#fff', fontSize: 15, fontWeight: 600,
+        background: account.avatar ? `url("${account.avatar}") center/cover no-repeat` : color,
+        outline: isActive ? `2px solid ${color}` : '2px solid transparent',
+        boxShadow: isActive ? `0 0 8px ${color}88` : 'none',
+      }}
+    >
+      {!account.avatar && <span aria-hidden="true">{initials}</span>}
+      {account.unread > 0 && (
+        <span style={{
+          position: 'absolute', top: -3, right: -3, minWidth: 17, height: 17, padding: '0 4px',
+          borderRadius: 9, backgroundColor: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
+          boxShadow: '0 0 0 2px var(--cc-bg)',
+        }}>{account.unread > 99 ? '99+' : account.unread}</span>
+      )}
+    </div>
+  )
+}
+
+/**
  * @param {Array} messengers — тот же массив источников, что у вкладок (вкл. native_cc).
  * @param {string} activeId — id активного источника.
  * @param {(id:string)=>void} onSelect — переключение (обычно handleTabClick из App.jsx).
@@ -174,6 +214,8 @@ export default function SourceRail({
   newMessageIds, accountInfo = {}, onOpenConnections, overlayMode,
   // v1.2.248 (2B): правый клик + перетаскивание (обработчики вкладок).
   onContextMenu, onDragStart, onDragOver, onDrop, onDragEnd, dragOverId,
+  // v1.2.251 (2C): отдельные Telegram-аккаунты (аватары) сверху.
+  accounts = [], activeAccountId, onSelectAccount,
 }) {
   const isNativeSrc = m => !!m.isNative || m.id === nativeCcId
   const nativeSources = messengers.filter(isNativeSrc)
@@ -223,8 +265,13 @@ export default function SourceRail({
       {/* API / нативные источники — сверху */}
       {nativeSources.map(m => renderIcon(m, 'native'))}
 
-      {/* Разделитель — только если есть обе секции */}
-      {nativeSources.length > 0 && webSources.length > 0 && (
+      {/* v1.2.251 (2C): отдельные Telegram-аккаунты (аватары) — под «Общим чатом» */}
+      {accounts.map(a => (
+        <AccountRailIcon key={a.id} account={a} isActive={activeAccountId === a.id} onSelect={onSelectAccount} />
+      ))}
+
+      {/* Разделитель — только если есть верхняя (нативное/аккаунты) и веб-секции */}
+      {(nativeSources.length > 0 || accounts.length > 0) && webSources.length > 0 && (
         <span aria-hidden="true" style={{
           width: 28, height: 1, backgroundColor: 'rgba(255,255,255,0.12)', margin: '6px auto',
         }} />

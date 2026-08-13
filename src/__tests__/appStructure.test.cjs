@@ -176,6 +176,18 @@ test('SourceRail: правый клик + перетаскивание (Этап
   assert(code.includes('onDragStart={handleDragStart}') && code.includes('onDrop={handleDrop}'), 'перетаскивание — обработчики вкладок')
   assert(code.includes('dragOverId={dragOverId}'), 'подсветка цели перетаскивания')
 })
+test('SourceRail + NativeApp: отдельные аккаунты (Этап 2C, проводка через хук useSourceRail)', () => {
+  // v1.2.252: проводка рейла вынесена в хук useSourceRail — App.jsx разгружен
+  assert(code.includes('useSourceRail('), 'проводка рейла вынесена в хук useSourceRail')
+  // NativeApp отдаёт наверх список аккаунтов и действие solo (через хук)
+  assert(code.includes('onAccountsChange={rail.onAccountsChange}'), 'список аккаунтов поднимается из NativeApp')
+  assert(code.includes('onAccountActionsReady={rail.onAccountActionsReady}'), 'действия аккаунтов приходят из NativeApp')
+  // рейл получает аккаунты + активный + клик
+  assert(code.includes('accounts={rail.nativeAccounts}'), 'рейл получает список аккаунтов')
+  assert(code.includes('activeAccountId={activeNativeAccountId}'), 'подсветка активного аккаунта')
+  assert(code.includes('onSelectAccount={rail.onSelectAccount}'), 'клик по аккаунту обрабатывает хук')
+  assert(allAppCode.includes('soloAccount'), 'клик по аккаунту → показать его чаты (solo) — в useSourceRail')
+})
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

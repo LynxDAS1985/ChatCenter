@@ -59,6 +59,7 @@ function buildNativeAccountHealth(account, unreadCount, chatsCount) {
 
 export default function NativeApp({
   onOpenConnections, onConnectionSnapshot, onConnectionActionsReady, onActiveNativeAccountChange,
+  onAccountsChange, onAccountActionsReady,
   // v0.96.0 (Phase 0 M0.3): payload приходит от App.jsx cross-tab listener.
   // App.jsx переключил activeId на native_cc → NativeApp mount → этот prop читается.
   pendingNotify, clearPendingNotify,
@@ -283,6 +284,32 @@ export default function NativeApp({
     () => applyAccountOrder(store.accounts, accountOrder),
     [store.accounts, accountOrder]
   )
+
+  // v1.2.251 (боковой рейл, Этап 2C): отдаём список аккаунтов НАВЕРХ (App → SourceRail),
+  // чтобы значки аккаунтов с аватарами можно было показать в общем боковом рейле.
+  // Только чтение из стора — существующий рейл аккаунтов внутри NativeApp не меняется.
+  useEffect(() => {
+    if (!onAccountsChange) return
+    onAccountsChange(orderedAccounts.map(a => ({
+      id: a.id,
+      name: a.name || '',
+      avatar: a.avatar || '',
+      messenger: a.messenger || 'telegram',
+      color: store.accounts.length >= 2 ? getAccountColor(store.accountColors, a.id) : null,
+      unread: unreadByAccount[a.id] || 0,
+      health: accountHealth[a.id],
+    })))
+  }, [onAccountsChange, orderedAccounts, unreadByAccount, accountHealth, store.accountColors, store.accounts.length])
+
+  // v1.2.251 (Этап 2C): отдаём наверх действие «показать чаты аккаунта» (solo) — тем же приёмом,
+  // что onConnectionActionsReady. App зовёт его при клике по значку аккаунта в рейле.
+  useEffect(() => {
+    onAccountActionsReady?.({
+      soloAccount: (id) => { try { store.soloAccount?.(id) } catch (_) {} },
+      setActiveAccount: (id) => { try { store.setActiveAccount?.(id) } catch (_) {} },
+    })
+    return () => onAccountActionsReady?.(null)
+  }, [onAccountActionsReady, store.soloAccount, store.setActiveAccount])
 
   // v0.95.31: HTML5 native drag-n-drop. Минимум кода, работает везде, не требует библиотек.
   const handleAccountDragStart = (e, idx) => {

@@ -180,6 +180,48 @@ describe('SourceRail', () => {
     expect(onDrop).toHaveBeenCalledWith('whatsapp')
   })
 
+  // ── Этап 2C: отдельные аккаунты (аватары) ──
+  const accounts = [
+    { id: 'tg_1', name: 'Иван', avatar: '', color: '#2AABEE', unread: 3 },
+    { id: 'tg_2', name: 'Мария', avatar: 'cc-media://ava', color: '#0077FF', unread: 0 },
+  ]
+
+  it('#2C аккаунты рисуются значками (по имени)', () => {
+    const { getByTitle } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={() => {}} onAdd={() => {}}
+        nativeCcId={NATIVE_CC_ID} accounts={accounts} />
+    )
+    expect(getByTitle('Иван')).toBeTruthy()
+    expect(getByTitle('Мария')).toBeTruthy()
+  })
+
+  it('#2C клик по аккаунту зовёт onSelectAccount с его id', () => {
+    const onSelectAccount = vi.fn()
+    const { getByTitle } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={() => {}} onAdd={() => {}}
+        nativeCcId={NATIVE_CC_ID} accounts={accounts} onSelectAccount={onSelectAccount} />
+    )
+    fireEvent.click(getByTitle('Иван'))
+    expect(onSelectAccount).toHaveBeenCalledWith('tg_1')
+  })
+
+  it('#2C активный аккаунт помечен aria-current + бейдж непрочитанных', () => {
+    const { getByTitle } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={() => {}} onAdd={() => {}}
+        nativeCcId={NATIVE_CC_ID} accounts={accounts} activeAccountId="tg_2" />
+    )
+    expect(getByTitle('Мария').getAttribute('aria-current')).toBe('true')
+    expect(getByTitle('Иван').getAttribute('aria-current')).toBe(null)
+    expect(getByTitle('Иван').textContent).toContain('3') // бейдж непрочитанных
+  })
+
+  it('#2C без аккаунтов значки аккаунтов не рисуются', () => {
+    const { queryByTitle } = render(
+      <SourceRail messengers={messengers} activeId={NATIVE_CC_ID} onSelect={() => {}} onAdd={() => {}} nativeCcId={NATIVE_CC_ID} />
+    )
+    expect(queryByTitle('Иван')).toBe(null)
+  })
+
   it('не падает без объектов индикаторов (undefined)', () => {
     // newMessageIds/unreadCounts и т.п. не переданы — гварды внутри должны сработать
     expect(() => render(

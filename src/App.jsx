@@ -34,6 +34,7 @@ import useAIPanelResize from './hooks/useAIPanelResize.js'
 import useWebViewZoom from './hooks/useWebViewZoom.js'
 import useBadgeSync from './hooks/useBadgeSync.js'
 import useTabManagement from './hooks/useTabManagement.js'
+import useSourceRail from './hooks/useSourceRail.js'
 import useSearch from './hooks/useSearch.js'
 import useTabContextMenu from './hooks/useTabContextMenu.js'
 import useNotifyNavigation from './hooks/useNotifyNavigation.js'
@@ -330,6 +331,8 @@ export default function App() {
     setActiveId, setMessengers, setNewMessageIds, setUnreadCounts,
     searchText, searchVisible,
   })
+  // v1.2.252: проводка бокового рейла (аккаунты 2C) вынесена в хук — разгрузка App.jsx.
+  const rail = useSourceRail({ onSelectSource: handleTabClick, nativeCcId: NATIVE_CC_ID })
 
   const removeMessenger = useCallback((id) => {
     // v0.89.44 (Совет 3): авто-cleanup partition при удалении мессенджера.
@@ -700,7 +703,9 @@ export default function App() {
             onOpenConnections={openConnectionsPanel} overlayMode={settings.overlayMode}
             onContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}
             onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
-            onDragEnd={handleDragEnd} dragOverId={dragOverId} />
+            onDragEnd={handleDragEnd} dragOverId={dragOverId}
+            accounts={rail.nativeAccounts} activeAccountId={activeNativeAccountId}
+            onSelectAccount={rail.onSelectAccount} />
         )}
 
         {/* ── Область WebView ── */}
@@ -741,6 +746,8 @@ export default function App() {
                       onConnectionSnapshot={handleNativeConnectionSnapshot}
                       onConnectionActionsReady={(actions) => { nativeConnectionActionsRef.current = actions }}
                       onActiveNativeAccountChange={setActiveNativeAccountId}
+                      onAccountsChange={rail.onAccountsChange}
+                      onAccountActionsReady={rail.onAccountActionsReady}
                       pendingNotify={pendingNativeNotify}
                       clearPendingNotify={clearPendingNativeNotify}
                     />
