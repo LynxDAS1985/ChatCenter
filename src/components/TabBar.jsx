@@ -1,5 +1,6 @@
 // TabBar.jsx — Tab bar with messenger tabs, header buttons, search bar
 import MessengerTab from './MessengerTab.jsx'
+import { buildTabContextMenuItems } from '../utils/tabContextMenuItems.js'
 
 try { window.__ccStartupMark?.('module:TabBar', 'module evaluated') } catch {}
 
@@ -170,21 +171,11 @@ export default function TabBar({
             style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
           >
             {(() => {
+              // v1.2.250: пункты меню строит чистая функция buildTabContextMenuItems (под тестом).
+              // Нативный источник («Общий чат») прячет веб-only пункты (reload/notifLog/copyUrl).
               const tabPinned = !!pinnedTabs[contextMenuTab?.id]
-              // v1.2.249: для нативного источника («Общий чат») прячем веб-only пункты
-              // (перезагрузка / диагностика webview / копировать URL) — у него нет веб-страницы,
-              // эти действия ничего не делают. Касается и нативной вкладки, и значка рейла.
               const ctxIsNative = !!messengers.find(x => x.id === contextMenuTab?.id)?.isNative
-              return [
-                ...(!ctxIsNative ? [
-                  { action: 'reload', icon: '🔄', label: 'Перезагрузить' },
-                  { action: 'notifLog', icon: '📊', label: 'Диагностика и логи' },
-                  { action: 'copyUrl', icon: '📋', label: 'Копировать URL' },
-                ] : []),
-                { action: 'edit', icon: '✏️', label: 'Изменить вкладку' },
-                { action: 'pin', icon: tabPinned ? '📌' : '🔒', label: tabPinned ? 'Открепить вкладку' : 'Закрепить вкладку' },
-                ...(!tabPinned ? [{ action: 'close', icon: '✕', label: 'Закрыть вкладку', color: '#f87171' }] : []),
-              ].map(item => (
+              return buildTabContextMenuItems({ isNative: ctxIsNative, pinned: tabPinned }).map(item => (
                 <button
                   key={item.action}
                   onClick={() => handleTabContextAction(item.action)}

@@ -382,8 +382,9 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v1.2.245: лимит 33740 → 33840 — Этап 2A: индикаторы на значках рейла (бейдж/точка/пульс/загрузка/✓) в SourceRail.jsx.
 // v1.2.246: лимит 33840 → 33860 — увеличенная кликабельная зона точки связи в рейле (обёртка + a11y).
 // v1.2.248: лимит 33860 → 33890 — Этап 2B: правый клик + перетаскивание на значках рейла.
-test('Общий renderer код (src/ без тестов) < 33890 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 33890, totalSrc + " > 33890")
+// v1.2.250: лимит 33890 → 33920 — вынос пунктов меню в tabContextMenuItems.js (тест логики меню).
+test('Общий renderer код (src/ без тестов) < 33920 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 33920, totalSrc + " > 33920")
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
