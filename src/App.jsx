@@ -734,6 +734,7 @@ export default function App() {
                       onWebContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}
                       onWebDragStart={handleDragStart} onWebDragOver={handleDragOver}
                       onWebDrop={handleDrop} onWebDragEnd={handleDragEnd} webDragOverId={dragOverId}
+                      onAddWeb={() => setShowAddModal(true)}
                       pendingNotify={pendingNativeNotify}
                       clearPendingNotify={clearPendingNativeNotify}
                     />

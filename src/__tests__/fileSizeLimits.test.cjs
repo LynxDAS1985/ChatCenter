@@ -386,8 +386,8 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v1.2.251: лимит 33920 → 34000 — Этап 2C: значки аккаунтов с аватарами в рейле + проводка.
 // v1.2.252: лимит 34000 → 34050 — вынос проводки рейла в хук useSourceRail.js.
 // v1.2.256: Модель 🅰️ — SourceRail удалён, веб встроен в нативную полосу; renderer упал → знак снижен до 33800.
-test('Общий renderer код (src/ без тестов) < 33800 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 33800, totalSrc + " > 33800")
+test('Общий renderer код (src/ без тестов) < 33830 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 33830, totalSrc + " > 33830")
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

@@ -6,16 +6,13 @@
 // зелёная точка-индикатор онлайн, бейдж непрочитанных. БЕЗ яркой подсветки активного.
 // + hover на аккаунте → подсветка его чатов в списке (Улучшение 1).
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import RailWebIcon from './components/RailWebIcon.jsx' // v1.2.256: веб-мессенджеры в единой полосе
+import NativeSidebar from './components/NativeSidebar.jsx' // v1.2.258: боковая полоса (аккаунты+веб)
 import './styles.css'
 import useNativeStore from './store/nativeStore.js'
 import NativeMainContent from './components/NativeMainContent.jsx'
 import { shouldShowLoginScreen, shouldResetLoginFlowOnOpen } from '../../shared/loginScreenGate.js'
 import { getAccountColor, ACCOUNT_PALETTE } from '../../shared/accountColors.js'
-import { visibleAccountCount, isAllVisible } from '../../shared/accountFilter.js' // v1.2.163
 import AccountContextMenu from './components/AccountContextMenu.jsx'
-import AccountAvatar from './components/AccountAvatar.jsx' // v1.2.165: вынесен из этого файла
-import RailModeSwitcher from './components/RailModeSwitcher.jsx' // v1.2.175: режимы внизу рейла (меню вверх)
 import useAccountRailResize, { loadRailWidth, RAIL_MAX_WIDTH, isRailNarrow } from './hooks/useAccountRailResize.js'
 import { getDisplayUnreadCount } from './utils/displayUnread.js'
 import {
@@ -64,6 +61,7 @@ export default function NativeApp({
   webSources = [], activeMessengerId, onSelectSource, webUnread = {}, webHealth = {}, webNew,
   // v1.2.257: функции вкладок на веб-значках (правый клик, перетаскивание, загрузка).
   onWebContextMenu, onWebDragStart, onWebDragOver, onWebDrop, onWebDragEnd, webDragOverId, webLoading = {},
+  onAddWeb, // v1.2.258: «+» добавить веб-мессенджер
   // v0.96.0 (Phase 0 M0.3): payload приходит от App.jsx cross-tab listener.
   // App.jsx переключил activeId на native_cc → NativeApp mount → этот prop читается.
   pendingNotify, clearPendingNotify,
@@ -334,106 +332,20 @@ export default function NativeApp({
         {/* v1.2.164: блок аккаунтов ВВЕРХУ панели (по просьбе пользователя; раньше был спейсер
             сверху и аккаунты прижимались вниз). Порядок: «Все» → аватарки → «+».
             Сохранён HTML5 drag-n-drop для пересортировки порядка. */}
-        <div
-          className="native-sidebar"
-          style={{ width: railWidth, display: 'flex', flexDirection: 'column', flexShrink: 0,
-            transition: isRailResizing ? 'none' : 'width 0.1s' }}
-        >
-          {/* v1.2.163: кнопка «Все» — над аккаунтами. Горит при показе всех; иначе счётчик N/M.
-              Клик — показать все (снять скрытия и соло). Только при ≥2 аккаунтах.
-              v1.2.165: размеры масштабируются вместе с рейлом (railScale). */}
-          {store.accounts.length >= 2 && (
-            <div
-              onClick={() => store.showAllAccounts()}
-              title="Показать чаты всех аккаунтов"
-              style={{
-                width: Math.round(48 * railScale), minHeight: Math.round(30 * railScale), margin: `0 auto ${Math.round(12 * railScale)}px`,
-                borderRadius: Math.round(12 * railScale), cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: Math.max(9, Math.round(12 * railScale)), fontWeight: 700,
-                background: isAllVisible(store.hiddenAccountIds, store.soloAccountId) ? 'var(--amoled-accent)' : 'var(--amoled-surface)',
-                color: isAllVisible(store.hiddenAccountIds, store.soloAccountId) ? '#fff' : 'var(--amoled-text-dim)',
-                border: '1px solid var(--amoled-border)',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >{isAllVisible(store.hiddenAccountIds, store.soloAccountId)
-              ? 'Все'
-              : `${visibleAccountCount(store.accounts.map(a => a.id), store.hiddenAccountIds, store.soloAccountId)}/${store.accounts.length}`}</div>
-          )}
-          {orderedAccounts.map((acc, idx) => (
-            <div
-              key={acc.id}
-              draggable
-              onDragStart={(e) => handleAccountDragStart(e, idx)}
-              onDragOver={(e) => handleAccountDragOver(e, idx)}
-              onDragEnd={handleAccountDragEnd}
-              onDrop={handleAccountDragEnd}
-              style={{
-                // Визуальная подсветка: тащимый — полупрозрачный, drop target — accent border
-                opacity: dragSrcIdx === idx ? 0.4 : 1,
-                outline: dragOverIdx === idx && dragSrcIdx !== idx
-                  ? '2px dashed var(--amoled-accent)' : 'none',
-                outlineOffset: -2,
-                borderRadius: 8,
-                transition: 'opacity 0.15s, outline 0.1s',
-                cursor: dragSrcIdx === idx ? 'grabbing' : 'grab',
-              }}
-            >
-              <AccountAvatar
-                account={acc}
-                // v1.2.153: обводка цветом-меткой только при ≥2 аккаунтах (иначе не нужна).
-                accountColor={store.accounts.length >= 2 ? getAccountColor(store.accountColors, acc.id) : null}
-                unreadCount={unreadByAccount[acc.id] || 0}
-                health={accountHealth[acc.id]}
-                // v1.2.163: одиночный клик = вкл/выкл аккаунт, двойной = «только этот» (соло).
-                filterActive={store.accounts.length >= 2}
-                hidden={(store.hiddenAccountIds || []).includes(acc.id)}
-                solo={store.soloAccountId === acc.id}
-                dimmed={store.soloAccountId ? store.soloAccountId !== acc.id : (store.hiddenAccountIds || []).includes(acc.id)}
-                onToggleVisible={store.accounts.length >= 2 ? () => store.toggleAccountVisible(acc.id) : undefined}
-                onSolo={store.accounts.length >= 2 ? () => store.soloAccount(acc.id) : undefined}
-                onContextMenu={(e) => handleAccountContextMenu(e, acc)}
-                onMouseEnter={() => setHoveredAccountId(acc.id)}
-                onMouseLeave={() => setHoveredAccountId(null)}
-                onOpenConnections={onOpenConnections}
-                scale={railScale}
-                hideLabel={hideRailLabel}
-              />
-            </div>
-          ))}
-          <div
-            className="native-account native-account__add"
-            onClick={openLogin}
-            title="Добавить аккаунт"
-            style={{ width: Math.round(48 * railScale), height: Math.round(48 * railScale),
-              margin: `0 auto ${Math.round(12 * railScale)}px`, fontSize: Math.round(24 * railScale) }}
-          >+</div>
-          {/* v1.2.256 (Модель 🅰️): веб-мессенджеры (ВК/WhatsApp/МАКС) — разделитель + значки, ПОД
-              аккаунтами. Клик по значку → открыть вкладку этого мессенджера (onSelectSource). */}
-          {webSources.length > 0 && (
-            <>
-              <div aria-hidden="true" style={{ width: Math.round(28 * railScale), height: 1,
-                background: 'var(--amoled-border)', margin: `0 auto ${Math.round(12 * railScale)}px` }} />
-              {webSources.map(m => (
-                <RailWebIcon
-                  key={m.id} messenger={m} isActive={activeMessengerId === m.id}
-                  unread={webUnread[m.id] || 0} health={webHealth[m.id]} isNew={!!webNew?.has?.(m.id)}
-                  isLoading={!!webLoading[m.id]}
-                  onSelect={onSelectSource} onOpenConnections={onOpenConnections} scale={railScale}
-                  onContextMenu={onWebContextMenu}
-                  onDragStart={onWebDragStart} onDragOver={onWebDragOver} onDrop={onWebDrop} onDragEnd={onWebDragEnd}
-                  isDragOver={webDragOverId === m.id}
-                />
-              ))}
-            </>
-          )}
-          {/* v1.2.175/176: переключатель режимов (Чаты/Клиенты/Доска) в САМОМ НИЗУ рейла —
-              одна иконка, клик → меню СБОКУ (вправо). Переехал из верхнего дропдауна над
-              списком. marginTop:auto на разделителе прижимает группу (разделитель+иконка)
-              к низу рейла. Разделитель отделяет режимы от аккаунтов. */}
-          <div style={{ width: Math.round(28 * railScale), height: 1, background: 'var(--amoled-border)', margin: `auto auto ${Math.round(10 * railScale)}px` }} />
-          <RailModeSwitcher modes={MODES} activeId={store.mode} onSelect={(id) => store.setMode(id)} scale={railScale} />
-        </div>
+        <NativeSidebar
+          railWidth={railWidth} railScale={railScale} isRailResizing={isRailResizing}
+          store={store} orderedAccounts={orderedAccounts}
+          dragSrcIdx={dragSrcIdx} dragOverIdx={dragOverIdx}
+          handleAccountDragStart={handleAccountDragStart} handleAccountDragOver={handleAccountDragOver} handleAccountDragEnd={handleAccountDragEnd}
+          unreadByAccount={unreadByAccount} accountHealth={accountHealth}
+          handleAccountContextMenu={handleAccountContextMenu} setHoveredAccountId={setHoveredAccountId}
+          onOpenConnections={onOpenConnections} hideRailLabel={hideRailLabel} openLogin={openLogin} modes={MODES}
+          webSources={webSources} activeMessengerId={activeMessengerId} onSelectSource={onSelectSource}
+          webUnread={webUnread} webHealth={webHealth} webNew={webNew} webLoading={webLoading}
+          onWebContextMenu={onWebContextMenu}
+          onWebDragStart={onWebDragStart} onWebDragOver={onWebDragOver} onWebDrop={onWebDrop} onWebDragEnd={onWebDragEnd}
+          webDragOverId={webDragOverId} onAddWeb={onAddWeb}
+        />
         {/* v1.2.165: разделитель для изменения ширины рейла (перетаскивание). Двойной клик — сброс. */}
         <div
           role="separator"

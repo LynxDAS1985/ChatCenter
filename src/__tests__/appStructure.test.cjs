@@ -16,6 +16,8 @@ const hooksDir = 'src/hooks'
 const hooksCode = fs.existsSync(hooksDir) ? fs.readdirSync(hooksDir).map(f => fs.readFileSync(path.join(hooksDir, f), 'utf8')).join('\n') : ''
 const tabBarCode = fs.existsSync('src/components/TabBar.jsx') ? fs.readFileSync('src/components/TabBar.jsx', 'utf8') : ''
 const diagnosticsHostCode = fs.existsSync('src/components/DiagnosticsSessionHost.jsx') ? fs.readFileSync('src/components/DiagnosticsSessionHost.jsx', 'utf8') : ''
+// v1.2.260: NativeApp — для проверки портала боковой полосы.
+const nativeAppCode = fs.existsSync('src/native/NativeApp.jsx') ? fs.readFileSync('src/native/NativeApp.jsx', 'utf8') : ''
 const allAppCode = code + '\n' + webviewCode + '\n' + handleNewMessageCode + '\n' + hooksCode + '\n' + tabBarCode + '\n' + diagnosticsHostCode
 
 let passed = 0, failed = 0
@@ -164,6 +166,14 @@ test('Функции вкладок на веб-значках: правый к�
   assert(code.includes('onWebDragStart={handleDragStart}') && code.includes('onWebDrop={handleDrop}'), 'перетаскивание — обработчики вкладок')
   assert(code.includes('webDragOverId={dragOverId}'), 'подсветка цели перетаскивания')
   assert(code.includes('webLoading={webviewLoading}'), 'полоска загрузки')
+  assert(code.includes('onAddWeb={() => setShowAddModal(true)}'), '«+» добавить веб-мессенджер из полосы')
+})
+// v1.2.261: смоук портала УДАЛЁН — портал (v1.2.260) сломал вёрстку, откачен. Полоса снова
+// внутри вкладки «ЦентрЧатов» (NativeApp), как в v1.2.259. Единственность стора всё равно проверяем:
+test('NativeApp: единственный useNativeStore (без дубля стора/IPC)', () => {
+  assert((nativeAppCode.match(/useNativeStore\(\)/g) || []).length === 1, 'useNativeStore — ровно 1 раз')
+  assert(!nativeAppCode.includes('createPortal'), 'портал полосы откачен (ломал вёрстку)')
+  assert(!code.includes('app-native-rail'), 'слот полосы в App убран')
 })
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
