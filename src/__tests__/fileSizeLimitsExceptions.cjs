@@ -15,7 +15,7 @@ module.exports = {
   // Разбиение требует архитектурного решения (вынос layout/providers в отдельные компоненты)
   // — отдельный плановый шаг рефактора. Пока exception с обоснованием.
   'src/App.jsx': {
-    ceiling: 990,
+    ceiling: 975,
     reason: 'v1.0.1: 3 Phase 4 модалки (TasksPanel/RemindersPanel/AIActivityDashboard) подключены через PanelModal обёртку + state + handleGoToSource + useAppCounters + props в TabBar (~50 строк). v0.95.25: WhatsNewModal. v0.88.x: Корневой компонент с providers, top-level state, routing между native/webview режимами. Разбиение требует архитектурного рефакторинга. v1.2.244: 960→975 (Этап 1 боковой рейл — вставка <SourceRail> за флагом, ~7 строк). v1.2.251: 975→990 (Этап 2C — состояние nativeAccounts + ref + проводка аккаунтов в NativeApp/SourceRail). ВРЕМЕННО: при удалении верхних вкладок (финал миграции side-rail) TabBar со ~30 пропсами уйдёт из App.jsx → потолок вернём вниз. План: .memory-bank/side-rail-migration-plan.md'
   },
   'src/utils/messengerConfigs.js': {

@@ -145,48 +145,25 @@ test('useWebViewLifecycle hook подключён (Ловушка 64)', () =>
   assert(code.includes('useWebViewLifecycle') && allAppCode.includes('__CC_DIAG__health'),
     'App.jsx должен использовать useWebViewLifecycle — health-check + warm-up (resize/reload откачены, не работают для peer-changed race)'))
 
-// ── v1.2.244 Этап 1: боковой рейл источников (связка в App.jsx) ──
-// Смоук статикой: full App смонтировать в тестах нельзя (грузит настройки через IPC,
-// lazy NativeApp, <webview>), поэтому проверяем исходник — ловим удаление рейла,
-// переименование флага и опечатки в именах пропсов (их юнит-тест SourceRail не видит).
-console.log('\\n── Боковой рейл (Этап 1): ──')
-test('SourceRail импортируется', () => assert(code.includes("import SourceRail from './components/SourceRail.jsx'")))
-test('SourceRail рендерится за флагом settings.sideRail', () => {
-  assert(code.includes('settings.sideRail &&'), 'рейл должен быть за флагом settings.sideRail (по умолчанию выкл)')
-  assert(code.includes('<SourceRail'), 'компонент SourceRail должен рендериться')
+// ── v1.2.256 (Модель 🅰️): веб-мессенджеры встроены в ЕДИНУЮ нативную полосу ──
+// SourceRail (отдельная панель) и флаг sideRail УДАЛЕНЫ. Смоук статикой (full App не монтируется):
+// App.jsx не должен ссылаться на SourceRail/sideRail и обязан отдавать веб-мессенджеры в NativeApp.
+console.log('\\n── Единая полоса источников (Модель 🅰️): ──')
+test('SourceRail и флаг sideRail удалены из App.jsx', () => {
+  assert(!code.includes('SourceRail'), 'App.jsx не должен ссылаться на SourceRail (отдельная панель убрана)')
+  assert(!code.includes('settings.sideRail'), 'флаг sideRail убран')
 })
-test('SourceRail получает корректные пропсы (связка не разъедется)', () => {
-  assert(code.includes('messengers={messengers}'), 'нужен проп messengers')
-  assert(code.includes('activeId={activeId}'), 'нужен проп activeId')
-  assert(code.includes('onSelect={handleTabClick}'), 'клик по значку = то же переключение, что вкладки')
-  assert(code.includes('nativeCcId={NATIVE_CC_ID}'), 'нужен id нативной вкладки для разделения API/веб')
-  assert(code.includes('onAdd={() => setShowAddModal(true)}'), '«+» должен открывать окно добавления')
+test('App отдаёт веб-мессенджеры в нативную полосу (единая полоса)', () => {
+  assert(code.includes('webSources={messengers.filter'), 'веб-мессенджеры передаются в NativeApp')
+  assert(code.includes('onSelectSource={handleTabClick}'), 'клик по веб-значку → переключение вкладки')
+  assert(code.includes('activeMessengerId={activeId}'), 'подсветка активного веб-значка')
+  assert(code.includes('webUnread={unreadCounts}') && code.includes('webHealth={connectionHealth}'), 'данные для бейджа/точки')
 })
-test('SourceRail получает данные индикаторов (Этап 2A — те же, что во вкладках)', () => {
-  // Смоук: рейл должен получать те же per-id данные, что TabBar, иначе бейджи/точка/загрузка будут пустыми
-  assert(code.includes('unreadCounts={unreadCounts}') && code.includes('unreadSplit={unreadSplit}'), 'непрочитанные (+split)')
-  assert(code.includes('connectionHealth={connectionHealth}'), 'здоровье связи для точки')
-  assert(code.includes('webviewLoading={webviewLoading}'), 'состояние загрузки для полоски')
-  assert(code.includes('newMessageIds={newMessageIds}'), 'новые сообщения для пульса')
-  assert(code.includes('onOpenConnections={openConnectionsPanel}'), 'клик по точке → Подключения')
-  assert(code.includes('overlayMode={settings.overlayMode}'), 'режим бейджа — чтобы цифра совпадала с вкладкой')
-})
-test('SourceRail: правый клик + перетаскивание (Этап 2B — обработчики вкладок)', () => {
-  assert(code.includes('onContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}'), 'правый клик → то же меню, что у вкладок')
-  assert(code.includes('onDragStart={handleDragStart}') && code.includes('onDrop={handleDrop}'), 'перетаскивание — обработчики вкладок')
-  assert(code.includes('dragOverId={dragOverId}'), 'подсветка цели перетаскивания')
-})
-test('SourceRail + NativeApp: отдельные аккаунты (Этап 2C, проводка через хук useSourceRail)', () => {
-  // v1.2.252: проводка рейла вынесена в хук useSourceRail — App.jsx разгружен
-  assert(code.includes('useSourceRail('), 'проводка рейла вынесена в хук useSourceRail')
-  // NativeApp отдаёт наверх список аккаунтов и действие solo (через хук)
-  assert(code.includes('onAccountsChange={rail.onAccountsChange}'), 'список аккаунтов поднимается из NativeApp')
-  assert(code.includes('onAccountActionsReady={rail.onAccountActionsReady}'), 'действия аккаунтов приходят из NativeApp')
-  // рейл получает аккаунты + активный + клик
-  assert(code.includes('accounts={rail.nativeAccounts}'), 'рейл получает список аккаунтов')
-  assert(code.includes('activeAccountId={activeNativeAccountId}'), 'подсветка активного аккаунта')
-  assert(code.includes('onSelectAccount={rail.onSelectAccount}'), 'клик по аккаунту обрабатывает хук')
-  assert(allAppCode.includes('soloAccount'), 'клик по аккаунту → показать его чаты (solo) — в useSourceRail')
+test('Функции вкладок на веб-значках: правый клик + перетаскивание + загрузка (v1.2.257)', () => {
+  assert(code.includes('onWebContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}'), 'правый клик → то же меню, что у вкладок')
+  assert(code.includes('onWebDragStart={handleDragStart}') && code.includes('onWebDrop={handleDrop}'), 'перетаскивание — обработчики вкладок')
+  assert(code.includes('webDragOverId={dragOverId}'), 'подсветка цели перетаскивания')
+  assert(code.includes('webLoading={webviewLoading}'), 'полоска загрузки')
 })
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

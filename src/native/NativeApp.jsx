@@ -5,7 +5,8 @@
 // v0.87.106 (multi-account UI): круглые аватарки с фото, иконка мессенджера ✈️ в углу,
 // зелёная точка-индикатор онлайн, бейдж непрочитанных. БЕЗ яркой подсветки активного.
 // + hover на аккаунте → подсветка его чатов в списке (Улучшение 1).
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import RailWebIcon from './components/RailWebIcon.jsx' // v1.2.256: веб-мессенджеры в единой полосе
 import './styles.css'
 import useNativeStore from './store/nativeStore.js'
 import NativeMainContent from './components/NativeMainContent.jsx'
@@ -59,7 +60,10 @@ function buildNativeAccountHealth(account, unreadCount, chatsCount) {
 
 export default function NativeApp({
   onOpenConnections, onConnectionSnapshot, onConnectionActionsReady, onActiveNativeAccountChange,
-  onAccountsChange, onAccountActionsReady,
+  // v1.2.256 (Модель 🅰️): веб-мессенджеры в этой же полосе (под аккаунтами).
+  webSources = [], activeMessengerId, onSelectSource, webUnread = {}, webHealth = {}, webNew,
+  // v1.2.257: функции вкладок на веб-значках (правый клик, перетаскивание, загрузка).
+  onWebContextMenu, onWebDragStart, onWebDragOver, onWebDrop, onWebDragEnd, webDragOverId, webLoading = {},
   // v0.96.0 (Phase 0 M0.3): payload приходит от App.jsx cross-tab listener.
   // App.jsx переключил activeId на native_cc → NativeApp mount → этот prop читается.
   pendingNotify, clearPendingNotify,
@@ -204,13 +208,14 @@ export default function NativeApp({
   // v1.2.149: единая точка открытия окна входа (обе кнопки «+»). Сбрасываем ТОЛЬКО
   // залипший success (чтобы новое окно не закрылось само); незавершённый вход не трогаем.
   // Лог по доработке — чтобы сброс залипшего входа был виден в журнале.
-  const openLogin = () => {
+  // v1.2.254: useCallback — стабильная ссылка, чтобы безопасно отдать openLogin наверх (рейл «умный +»).
+  const openLogin = useCallback(() => {
     if (shouldResetLoginFlowOnOpen(store.loginFlow)) {
       try { window.api?.send?.('app:log', { level: 'INFO', message: '[acct-store] reset stale loginFlow(success) on open-login' }) } catch (_) {}
       store.resetLoginFlow?.()
     }
     setShowLogin(true)
-  }
+  }, [store.loginFlow, store.resetLoginFlow])
 
   useEffect(() => {
     try {
@@ -285,31 +290,6 @@ export default function NativeApp({
     [store.accounts, accountOrder]
   )
 
-  // v1.2.251 (боковой рейл, Этап 2C): отдаём список аккаунтов НАВЕРХ (App → SourceRail),
-  // чтобы значки аккаунтов с аватарами можно было показать в общем боковом рейле.
-  // Только чтение из стора — существующий рейл аккаунтов внутри NativeApp не меняется.
-  useEffect(() => {
-    if (!onAccountsChange) return
-    onAccountsChange(orderedAccounts.map(a => ({
-      id: a.id,
-      name: a.name || '',
-      avatar: a.avatar || '',
-      messenger: a.messenger || 'telegram',
-      color: store.accounts.length >= 2 ? getAccountColor(store.accountColors, a.id) : null,
-      unread: unreadByAccount[a.id] || 0,
-      health: accountHealth[a.id],
-    })))
-  }, [onAccountsChange, orderedAccounts, unreadByAccount, accountHealth, store.accountColors, store.accounts.length])
-
-  // v1.2.251 (Этап 2C): отдаём наверх действие «показать чаты аккаунта» (solo) — тем же приёмом,
-  // что onConnectionActionsReady. App зовёт его при клике по значку аккаунта в рейле.
-  useEffect(() => {
-    onAccountActionsReady?.({
-      soloAccount: (id) => { try { store.soloAccount?.(id) } catch (_) {} },
-      setActiveAccount: (id) => { try { store.setActiveAccount?.(id) } catch (_) {} },
-    })
-    return () => onAccountActionsReady?.(null)
-  }, [onAccountActionsReady, store.soloAccount, store.setActiveAccount])
 
   // v0.95.31: HTML5 native drag-n-drop. Минимум кода, работает везде, не требует библиотек.
   const handleAccountDragStart = (e, idx) => {
@@ -428,6 +408,25 @@ export default function NativeApp({
             style={{ width: Math.round(48 * railScale), height: Math.round(48 * railScale),
               margin: `0 auto ${Math.round(12 * railScale)}px`, fontSize: Math.round(24 * railScale) }}
           >+</div>
+          {/* v1.2.256 (Модель 🅰️): веб-мессенджеры (ВК/WhatsApp/МАКС) — разделитель + значки, ПОД
+              аккаунтами. Клик по значку → открыть вкладку этого мессенджера (onSelectSource). */}
+          {webSources.length > 0 && (
+            <>
+              <div aria-hidden="true" style={{ width: Math.round(28 * railScale), height: 1,
+                background: 'var(--amoled-border)', margin: `0 auto ${Math.round(12 * railScale)}px` }} />
+              {webSources.map(m => (
+                <RailWebIcon
+                  key={m.id} messenger={m} isActive={activeMessengerId === m.id}
+                  unread={webUnread[m.id] || 0} health={webHealth[m.id]} isNew={!!webNew?.has?.(m.id)}
+                  isLoading={!!webLoading[m.id]}
+                  onSelect={onSelectSource} onOpenConnections={onOpenConnections} scale={railScale}
+                  onContextMenu={onWebContextMenu}
+                  onDragStart={onWebDragStart} onDragOver={onWebDragOver} onDrop={onWebDrop} onDragEnd={onWebDragEnd}
+                  isDragOver={webDragOverId === m.id}
+                />
+              ))}
+            </>
+          )}
           {/* v1.2.175/176: переключатель режимов (Чаты/Клиенты/Доска) в САМОМ НИЗУ рейла —
               одна иконка, клик → меню СБОКУ (вправо). Переехал из верхнего дропдауна над
               списком. marginTop:auto на разделителе прижимает группу (разделитель+иконка)

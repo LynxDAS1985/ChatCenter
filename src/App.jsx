@@ -17,8 +17,6 @@ import {
   selectConnectionHealthJobs,
 } from './utils/connectionHealthScheduler.js'
 import TabBar from './components/TabBar.jsx'
-// v1.2.244 — Этап 1: боковой рейл источников (за флагом settings.sideRail, по умолчанию выкл).
-import SourceRail from './components/SourceRail.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 // v0.89.42 (Phase 2.2): WebContentsView pilot — условный рендер по settings.useWebContentsView.
 // v0.91.0: WebContentsViewSlot откачен (Issue #44934 Windows 11 crash)
@@ -34,7 +32,6 @@ import useAIPanelResize from './hooks/useAIPanelResize.js'
 import useWebViewZoom from './hooks/useWebViewZoom.js'
 import useBadgeSync from './hooks/useBadgeSync.js'
 import useTabManagement from './hooks/useTabManagement.js'
-import useSourceRail from './hooks/useSourceRail.js'
 import useSearch from './hooks/useSearch.js'
 import useTabContextMenu from './hooks/useTabContextMenu.js'
 import useNotifyNavigation from './hooks/useNotifyNavigation.js'
@@ -331,8 +328,6 @@ export default function App() {
     setActiveId, setMessengers, setNewMessageIds, setUnreadCounts,
     searchText, searchVisible,
   })
-  // v1.2.252: проводка бокового рейла (аккаунты 2C) вынесена в хук — разгрузка App.jsx.
-  const rail = useSourceRail({ onSelectSource: handleTabClick, nativeCcId: NATIVE_CC_ID })
 
   const removeMessenger = useCallback((id) => {
     // v0.89.44 (Совет 3): авто-cleanup partition при удалении мессенджера.
@@ -693,21 +688,6 @@ export default function App() {
       {/* ── Основной layout ── */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* v1.2.244 Этап 1 / v1.2.245 Этап 2A: боковой рейл источников (за флагом). Индикаторы —
-            те же данные, что во вкладках. Полоска «← Общий чат», правый клик, перетаскивание — Этап 2B/2C. */}
-        {settings.sideRail && (
-          <SourceRail messengers={messengers} activeId={activeId} onSelect={handleTabClick}
-            onAdd={() => setShowAddModal(true)} nativeCcId={NATIVE_CC_ID}
-            unreadCounts={unreadCounts} unreadSplit={unreadSplit} connectionHealth={connectionHealth}
-            webviewLoading={webviewLoading} newMessageIds={newMessageIds} accountInfo={accountInfo}
-            onOpenConnections={openConnectionsPanel} overlayMode={settings.overlayMode}
-            onContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}
-            onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
-            onDragEnd={handleDragEnd} dragOverId={dragOverId}
-            accounts={rail.nativeAccounts} activeAccountId={activeNativeAccountId}
-            onSelectAccount={rail.onSelectAccount} />
-        )}
-
         {/* ── Область WebView ── */}
         <div className="flex-1 relative overflow-hidden" style={{ backgroundColor: 'var(--cc-bg)', cursor: isResizing ? 'col-resize' : undefined }}>
           {messengers.length === 0 ? (
@@ -746,8 +726,14 @@ export default function App() {
                       onConnectionSnapshot={handleNativeConnectionSnapshot}
                       onConnectionActionsReady={(actions) => { nativeConnectionActionsRef.current = actions }}
                       onActiveNativeAccountChange={setActiveNativeAccountId}
-                      onAccountsChange={rail.onAccountsChange}
-                      onAccountActionsReady={rail.onAccountActionsReady}
+                      webSources={messengers.filter(m => !m.isNative && m.id !== NATIVE_CC_ID)}
+                      activeMessengerId={activeId}
+                      onSelectSource={handleTabClick}
+                      webUnread={unreadCounts} webHealth={connectionHealth} webNew={newMessageIds}
+                      webLoading={webviewLoading}
+                      onWebContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}
+                      onWebDragStart={handleDragStart} onWebDragOver={handleDragOver}
+                      onWebDrop={handleDrop} onWebDragEnd={handleDragEnd} webDragOverId={dragOverId}
                       pendingNotify={pendingNativeNotify}
                       clearPendingNotify={clearPendingNativeNotify}
                     />
