@@ -6,6 +6,7 @@ import { getPinHtmlPath, createPinBrowserWindow, startTimerForItem, restorePinBo
 import { createDockPinState, DOCK_PREVIEW_RESERVE } from './dockPinState.js'
 import { computeDockTop } from './dockGeometry.js'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
+import { safeSend } from '../utils/safeSend.js' // v1.2.274: гвард от «Render frame disposed» при закрытии окна
 
 export function initDockPinSystem(deps) {
 const { getMainWindow, storage, isDev, __dirname, path, DEFAULT_MESSENGERS } = deps
@@ -53,7 +54,7 @@ ipcMain.on('notif:pin-message', (_event, data) => {
   })
 
   pinWin.webContents.once('did-finish-load', () => {
-    pinWin.webContents.send('pin:data', { ...data, note: item.note })
+    safeSend(pinWin, 'pin:data', { ...data, note: item.note })
   })
 
   addToDock(pinId, data)
@@ -107,7 +108,7 @@ ipcMain.on('pin:go-to-chat', (event, messengerId) => {
       if (item && item.data) senderName = item.data.sender || ''
     }
   }
-  getMainWindow().webContents.send('notify:clicked', { messengerId, senderName })
+  safeSend(getMainWindow(), 'notify:clicked', { messengerId, senderName })
   if (!getMainWindow().isVisible()) getMainWindow().show()
   getMainWindow().focus()
 })
@@ -145,9 +146,9 @@ ipcMain.on('pin:start-timer', (event, minutes) => {
   const ms = minutes * 60000
   startTimerForItem(item, pinId, ms, { dockWin: () => dockState.win, getMainWindow, savePinItems })
 
-  if (!win.isDestroyed()) win.webContents.send('pin:timer-started', item.timerEnd)
+  safeSend(win, 'pin:timer-started', item.timerEnd)
   if (item.inDock && dockState.win && !dockState.win.isDestroyed()) {
-    dockState.win.webContents.send('dock:update-timer', pinId, item.timerEnd)
+    safeSend(dockState.win, 'dock:update-timer', pinId, item.timerEnd)
   }
   savePinItems()
 })
@@ -163,7 +164,7 @@ ipcMain.on('pin:cancel-timer', (event) => {
   if (item.timerTimeout) { clearTimeout(item.timerTimeout); item.timerTimeout = null }
   item.timerEnd = null
   if (item.inDock && dockState.win && !dockState.win.isDestroyed()) {
-    dockState.win.webContents.send('dock:update-timer', pinId, null)
+    safeSend(dockState.win, 'dock:update-timer', pinId, null)
   }
   savePinItems()
 })
@@ -194,7 +195,7 @@ ipcMain.on('dock:go-to-chat', (_event, pinId) => {
   if (!item || !item.data || !item.data.messengerId) return
   if (!getMainWindow() || getMainWindow().isDestroyed()) return
   const senderName = item.data.sender || ''
-  getMainWindow().webContents.send('notify:clicked', { messengerId: item.data.messengerId, senderName })
+  safeSend(getMainWindow(), 'notify:clicked', { messengerId: item.data.messengerId, senderName })
   if (!getMainWindow().isVisible()) getMainWindow().show()
   getMainWindow().focus()
 })
@@ -205,10 +206,10 @@ ipcMain.on('dock:set-category', (_event, pinId, category) => {
   if (!item) return
   item.category = category || ''
   if (dockState.win && !dockState.win.isDestroyed()) {
-    dockState.win.webContents.send('dock:update-category', pinId, item.category)
+    safeSend(dockState.win, 'dock:update-category', pinId, item.category)
   }
   if (item.win && !item.win.isDestroyed()) {
-    item.win.webContents.send('pin:category-updated', item.category)
+    safeSend(item.win, 'pin:category-updated', item.category)
   }
   savePinItems()
 })
@@ -222,10 +223,10 @@ ipcMain.on('dock:start-timer', (_event, pinId, minutes) => {
   startTimerForItem(item, pinId, ms, { dockWin: () => dockState.win, getMainWindow, savePinItems })
 
   if (item.win && !item.win.isDestroyed()) {
-    item.win.webContents.send('pin:timer-started', item.timerEnd)
+    safeSend(item.win, 'pin:timer-started', item.timerEnd)
   }
   if (dockState.win && !dockState.win.isDestroyed()) {
-    dockState.win.webContents.send('dock:update-timer', pinId, item.timerEnd)
+    safeSend(dockState.win, 'dock:update-timer', pinId, item.timerEnd)
   }
   savePinItems()
 })
@@ -327,7 +328,7 @@ ipcMain.on('pin:set-category', (event, category) => {
   if (!item) return
   item.category = category || ''
   if (item.inDock && dockState.win && !dockState.win.isDestroyed()) {
-    dockState.win.webContents.send('dock:update-category', pinId, item.category)
+    safeSend(dockState.win, 'dock:update-category', pinId, item.category)
   }
   savePinItems()
 })
@@ -342,7 +343,7 @@ ipcMain.on('pin:set-note', (event, text) => {
   if (!item) return
   item.note = (text || '').slice(0, 200)
   if (item.inDock && dockState.win && !dockState.win.isDestroyed()) {
-    dockState.win.webContents.send('dock:update-note', pinId, item.note)
+    safeSend(dockState.win, 'dock:update-note', pinId, item.note)
   }
   savePinItems()
 })
@@ -353,10 +354,10 @@ ipcMain.on('dock:set-note', (_event, pinId, text) => {
   if (!item) return
   item.note = (text || '').slice(0, 200)
   if (dockState.win && !dockState.win.isDestroyed()) {
-    dockState.win.webContents.send('dock:update-note', pinId, item.note)
+    safeSend(dockState.win, 'dock:update-note', pinId, item.note)
   }
   if (item.win && !item.win.isDestroyed()) {
-    item.win.webContents.send('pin:note-updated', item.note)
+    safeSend(item.win, 'pin:note-updated', item.note)
   }
   savePinItems()
 })

@@ -1,7 +1,9 @@
 // v1.2.258 — render-смоук боковой полосы (вынесена из NativeApp). Ловит поломку выноса:
 // если проп забыт/неверен — компонент упадёт при рендере с реальными данными.
-import { describe, it, expect, afterEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+// v1.2.264 — две «+» (аккаунт/веб) заменены ОДНОЙ кнопкой «＋ Добавить» (открывает окно
+// «протокол → мессенджер»). Клик сперва зовёт onActivateNative (вернуть API-инбокс), затем onOpenAddSource.
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import { render, cleanup, fireEvent } from '@testing-library/react'
 import NativeSidebar from './NativeSidebar.jsx'
 
 afterEach(() => cleanup())
@@ -13,40 +15,40 @@ const store = {
 const modes = [{ id: 'chats', label: 'Чаты', icon: '💬' }]
 
 describe('NativeSidebar', () => {
-  it('рисуется без падения + «+» добавить веб + веб-значок', () => {
+  it('рисуется без падения + одна кнопка «Добавить» + веб-значок', () => {
     const { getByTestId, getByTitle } = render(
       <NativeSidebar
         railWidth={64} railScale={1} isRailResizing={false} store={store}
         orderedAccounts={[]} modes={modes}
         webSources={[{ id: 'vk', name: 'ВКонтакте', emoji: '🅥', color: '#0077FF' }]}
         webUnread={{ vk: 3 }} activeMessengerId="vk"
-        onAddWeb={() => {}} onSelectSource={() => {}}
+        onOpenAddSource={() => {}} onSelectSource={() => {}}
       />
     )
-    expect(getByTestId('native-rail-add-web')).toBeTruthy()
+    const add = getByTestId('native-rail-add')
+    expect(add).toBeTruthy()
+    expect(add.textContent).toContain('Добавить')
     expect(getByTitle('ВКонтакте')).toBeTruthy()
   })
 
-  it('#1/#2: два «+» РАЗЛИЧНЫ — аккаунт (вход) и веб (разные подписи/testid/title)', () => {
-    const onAddWeb = () => {}
+  it('клик по «Добавить» → сперва возврат к API (onActivateNative), затем открыть окно (onOpenAddSource)', () => {
+    const onActivateNative = vi.fn()
+    const onOpenAddSource = vi.fn()
     const { getByTestId } = render(
       <NativeSidebar railWidth={64} railScale={1} isRailResizing={false} store={store}
-        orderedAccounts={[]} modes={modes} onAddWeb={onAddWeb} />
+        orderedAccounts={[]} modes={modes}
+        onActivateNative={onActivateNative} onOpenAddSource={onOpenAddSource} />
     )
-    const addAccount = getByTestId('native-rail-add-account')
-    const addWeb = getByTestId('native-rail-add-web')
-    expect(addAccount).not.toBe(addWeb)
-    expect(addAccount.getAttribute('title')).toContain('аккаунт')     // вход Telegram
-    expect(addWeb.getAttribute('title')).toContain('веб')             // добавить веб
-    expect(addAccount.textContent).toContain('аккаунт')               // видимая подпись
-    expect(addWeb.textContent).toContain('веб')
+    fireEvent.click(getByTestId('native-rail-add'))
+    expect(onActivateNative).toHaveBeenCalledTimes(1)
+    expect(onOpenAddSource).toHaveBeenCalledTimes(1)
   })
 
-  it('без веб-мессенджеров всё равно рисует «+» добавить веб', () => {
+  it('без веб-мессенджеров всё равно рисует единственную кнопку «Добавить»', () => {
     const { getByTestId } = render(
       <NativeSidebar railWidth={64} railScale={1} isRailResizing={false} store={store}
-        orderedAccounts={[]} modes={modes} onAddWeb={() => {}} />
+        orderedAccounts={[]} modes={modes} onOpenAddSource={() => {}} />
     )
-    expect(getByTestId('native-rail-add-web')).toBeTruthy()
+    expect(getByTestId('native-rail-add')).toBeTruthy()
   })
 })

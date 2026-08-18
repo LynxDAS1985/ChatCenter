@@ -134,16 +134,19 @@ export default function AccountContextMenu({ account, x, y, onClose, onLogout, g
         left: safeX, top: safeY, width: MENU_W,
         // v0.87.89: контрастнее AMOLED-фону — слегка светлее `surface`, чтобы не сливалось с чёрным
         background: 'linear-gradient(180deg, #1a1f2e 0%, #141823 100%)',
-        // v0.87.89: яркая рамка accent-цветом + полупрозрачный outer glow
-        border: '1px solid rgba(255,255,255,0.12)',
+        // v1.2.268: неон-грань как у карточки контакта (ContactCardModal) — голубая рамка + свечение.
+        border: '1px solid rgba(42,171,238,0.55)',
         borderRadius: 12,
         boxShadow: [
-          '0 0 0 1px rgba(42,171,238,0.25)',         // тонкое accent-кольцо
+          '0 0 0 1px rgba(42,171,238,0.22)',         // accent-кольцо
+          '0 0 30px rgba(42,171,238,0.20)',          // мягкое голубое свечение
           '0 16px 48px rgba(0,0,0,0.65)',            // глубокая основная тень
-          '0 4px 12px rgba(42,171,238,0.15)',        // мягкое accent-свечение
           'inset 0 1px 0 rgba(255,255,255,0.06)',    // тонкий highlight сверху
         ].join(', '),
-        zIndex: 1000,
+        // v1.2.270: попап-уровень как у MuteMenu/ForwardPicker (9999) — выше содержимого и
+        // разделителей (zIndex:6), но НИЖЕ полноэкранных модалок (ThemePicker/ContactCard = 100000),
+        // чтобы модалка, открытая поверх, не уходила под карточку. (v1.2.269 100001 был слишком высоко.)
+        zIndex: 9999,
         overflow: 'hidden',
         // v0.87.89: bouncy spring-анимация (overshoot 1.56) — открывается «упруго»
         animation: 'native-menu-popin 220ms cubic-bezier(0.34, 1.56, 0.64, 1)',

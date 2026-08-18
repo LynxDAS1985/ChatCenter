@@ -197,6 +197,31 @@ export default function SettingsPanel({ messengers, settings, onMessengersChange
             </div>
           </section>
 
+          {/* ── Верхние вкладки (v1.2.272) ── */}
+          <section className="px-5 py-4">
+            <SectionTitle>Верхние вкладки мессенджеров</SectionTitle>
+            <div className="rounded-xl px-3 py-3" style={{ backgroundColor: 'var(--cc-hover)' }}>
+              <div className="text-sm mb-2.5" style={{ color: 'var(--cc-text-dim)' }}>Показывать ряд вкладок сверху (переключение источников есть в боковой полосе слева)</div>
+              <div className="flex gap-2">
+                {[[false, '➖ Скрыть'], [true, '➕ Показать']].map(([v, label]) => {
+                  const on = (settings.showTopTabs === true) === v
+                  return (
+                    <button
+                      key={String(v)}
+                      onClick={() => set('showTopTabs', v)}
+                      className="flex-1 py-2 rounded-lg text-sm transition-all cursor-pointer"
+                      style={{
+                        backgroundColor: on ? '#2AABEE22' : 'var(--cc-surface)',
+                        color: on ? '#2AABEE' : 'var(--cc-text-dim)',
+                        border: `1px solid ${on ? '#2AABEE55' : 'var(--cc-border)'}`,
+                      }}
+                    >{label}</button>
+                  )
+                })}
+              </div>
+            </div>
+          </section>
+
           <div className="mx-5" style={{ borderTop: '1px solid var(--cc-border)' }} />
 
           {/* ── Мессенджеры ── */}

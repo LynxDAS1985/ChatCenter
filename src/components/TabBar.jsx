@@ -1,6 +1,5 @@
 // TabBar.jsx — Tab bar with messenger tabs, header buttons, search bar
 import MessengerTab from './MessengerTab.jsx'
-import { buildTabContextMenuItems } from '../utils/tabContextMenuItems.js'
 
 try { window.__ccStartupMark?.('module:TabBar', 'module evaluated') } catch {}
 
@@ -25,7 +24,7 @@ try { window.__ccStartupMark?.('module:TabBar', 'module evaluated') } catch {}
 export default function TabBar({
   messengers, activeId, accountInfo, settings, unreadCounts, unreadSplit,
   messagePreview, zoomLevels, connectionHealth, webviewLoading,
-  newMessageIds, dragOverId, contextMenuTab,
+  newMessageIds, dragOverId,
   showAI, showTemplates, showAutoReply, searchVisible, searchText,
   theme, currentZoom,
   handleTabClick, handleDragStart, handleDragOver, handleDrop, handleDragEnd,
@@ -33,7 +32,6 @@ export default function TabBar({
   toggleSearch, setShowAI, setShowTemplates, setShowAutoReply,
   setShowSettings, handleSettingsChange,
   handleSearch, searchInputRef, webviewRefs, activeIdRef,
-  handleTabContextAction,
   changeZoom, zoomEditing, setZoomEditing, zoomInputValue, setZoomInputValue, zoomInputRef,
   statusBarMsg, stats, totalUnread,
   onOpenConnections,
@@ -42,6 +40,10 @@ export default function TabBar({
   tasksCount = 0, remindersCount = 0,
 }) {
   const pinnedTabs = settings.pinnedTabs || {}
+  // v1.2.272: ряд вкладок мессенджеров можно скрыть (переключение источников есть в боковой полосе).
+  // По умолчанию СКРЫТ (settings.showTopTabs !== true). Вернуть — Настройки → «Верхние вкладки».
+  // Тонкая полоска сверху (лого + перетаскивание окна + кнопки + нижняя строка) остаётся всегда.
+  const showTopTabs = settings.showTopTabs === true
 
   return (
     <>
@@ -68,7 +70,9 @@ export default function TabBar({
           ЦентрЧатов
         </div>
 
-        {/* Tabs — no-drag */}
+        {/* Tabs — no-drag. v1.2.272: скрываются флагом showTopTabs; на их месте — пустая drag-зона
+            (flex-1, наследует WebkitAppRegion:'drag' от шапки → окно можно двигать за середину). */}
+        {showTopTabs ? (
         <div className="flex items-center flex-1 overflow-x-auto h-full min-w-0" style={{ WebkitAppRegion: 'no-drag' }}>
           {messengers.map(m => (
             <MessengerTab
@@ -110,6 +114,9 @@ export default function TabBar({
             onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--cc-icon)' }}
           >+</button>
         </div>
+        ) : (
+          <div className="flex-1" />
+        )}
 
         {/* Right buttons — no-drag */}
         <div className="flex items-center gap-0.5 px-2 shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
@@ -159,39 +166,9 @@ export default function TabBar({
         </div>
       )}
 
-      {/* Context menu */}
-      {contextMenuTab && (
-        <div
-          className="fixed z-[100]"
-          style={{ left: contextMenuTab.x, top: contextMenuTab.y }}
-          onMouseLeave={() => setContextMenuTab(null)}
-        >
-          <div
-            className="rounded-lg py-1 shadow-xl text-[12px] min-w-[180px]"
-            style={{ backgroundColor: 'var(--cc-surface)', border: '1px solid var(--cc-border)', color: 'var(--cc-text)' }}
-          >
-            {(() => {
-              // v1.2.250: пункты меню строит чистая функция buildTabContextMenuItems (под тестом).
-              // Нативный источник («Общий чат») прячет веб-only пункты (reload/notifLog/copyUrl).
-              const tabPinned = !!pinnedTabs[contextMenuTab?.id]
-              const ctxIsNative = !!messengers.find(x => x.id === contextMenuTab?.id)?.isNative
-              return buildTabContextMenuItems({ isNative: ctxIsNative, pinned: tabPinned }).map(item => (
-                <button
-                  key={item.action}
-                  onClick={() => handleTabContextAction(item.action)}
-                  className="w-full px-3 py-1.5 text-left flex items-center gap-2 transition-colors cursor-pointer"
-                  style={{ color: item.color || 'inherit' }}
-                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--cc-hover)' }}
-                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
-                >
-                  <span className="w-[16px] text-center">{item.icon}</span>
-                  <span>{item.label}</span>
-                </button>
-              ))
-            })()}
-          </div>
-        </div>
-      )}
+      {/* v1.2.271: меню правого клика вынесено в <TabContextMenu> (рендерится на уровне App) —
+          чтобы после удаления верхних вкладок правый клик в боковой полосе продолжал работать.
+          Здесь остаётся только ТРИГГЕР: MessengerTab onContextMenu → setContextMenuTab({id,x,y}). */}
 
       {/* Status bar */}
       <StatusBar

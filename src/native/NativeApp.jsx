@@ -5,8 +5,10 @@
 // v0.87.106 (multi-account UI): круглые аватарки с фото, иконка мессенджера ✈️ в углу,
 // зелёная точка-индикатор онлайн, бейдж непрочитанных. БЕЗ яркой подсветки активного.
 // + hover на аккаунте → подсветка его чатов в списке (Улучшение 1).
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom' // v1.2.262: боковая полоса рисуется в слот на уровне App
 import NativeSidebar from './components/NativeSidebar.jsx' // v1.2.258: боковая полоса (аккаунты+веб)
+import AddSourceModal from './components/AddSourceModal.jsx' // v1.2.264: окно «Добавить источник» (протокол→мессенджер)
 import './styles.css'
 import useNativeStore from './store/nativeStore.js'
 import NativeMainContent from './components/NativeMainContent.jsx'
@@ -58,7 +60,8 @@ function buildNativeAccountHealth(account, unreadCount, chatsCount) {
 export default function NativeApp({
   onOpenConnections, onConnectionSnapshot, onConnectionActionsReady, onActiveNativeAccountChange,
   // v1.2.256 (Модель 🅰️): веб-мессенджеры в этой же полосе (под аккаунтами).
-  webSources = [], activeMessengerId, onSelectSource, webUnread = {}, webHealth = {}, webNew,
+  webSources = [], activeMessengerId, onSelectSource, onActivateNative, webUnread = {}, webHealth = {}, webNew,
+  webAccountInfo = {}, // v1.2.273: имя аккаунта под веб-значком полосы
   // v1.2.257: функции вкладок на веб-значках (правый клик, перетаскивание, загрузка).
   onWebContextMenu, onWebDragStart, onWebDragOver, onWebDrop, onWebDragEnd, webDragOverId, webLoading = {},
   onAddWeb, // v1.2.258: «+» добавить веб-мессенджер
@@ -73,9 +76,21 @@ export default function NativeApp({
     }
   } catch {}
   const store = useNativeStore()
+  // v1.2.262: слот боковой полосы на уровне App (#app-native-rail) — рисуем туда порталом,
+  // чтобы полоса была видна ВСЕГДА (даже когда активен веб-мессенджер справа).
+  const [railSlot, setRailSlot] = useState(null)
+  // v1.2.263: useLayoutEffect (не useEffect) — портал вставляется ДО отрисовки кадра,
+  // поэтому полоса не «прыгает» и слоту не нужен фиксированный minWidth.
+  useLayoutEffect(() => {
+    const slot = document.getElementById('app-native-rail')
+    if (!slot) { try { window.api?.send?.('app:log', { level: 'WARN', message: '[native-rail] слот #app-native-rail не найден — полоса не отрисуется' }) } catch (_) {} }
+    setRailSlot(slot)
+  }, [])
   const autoCheckedAccountsRef = useRef(new Set())
   const connectionChecksInFlightRef = useRef(new Set())
   const [showLogin, setShowLogin] = useState(false)
+  // v1.2.264: окно «Добавить источник» (одна кнопка «＋ Добавить» в полосе).
+  const [showAddSource, setShowAddSource] = useState(false)
   // v0.87.88: ПКМ-меню аккаунта { account, x, y } или null
   const [accountMenu, setAccountMenu] = useState(null)
   // v0.87.95: toast после успешного выхода — { message, ts }
@@ -329,39 +344,48 @@ export default function NativeApp({
   return (
     <div className="native-mode">
       <div className="native-content">
-        {/* v1.2.164: блок аккаунтов ВВЕРХУ панели (по просьбе пользователя; раньше был спейсер
-            сверху и аккаунты прижимались вниз). Порядок: «Все» → аватарки → «+».
-            Сохранён HTML5 drag-n-drop для пересортировки порядка. */}
-        <NativeSidebar
-          railWidth={railWidth} railScale={railScale} isRailResizing={isRailResizing}
-          store={store} orderedAccounts={orderedAccounts}
-          dragSrcIdx={dragSrcIdx} dragOverIdx={dragOverIdx}
-          handleAccountDragStart={handleAccountDragStart} handleAccountDragOver={handleAccountDragOver} handleAccountDragEnd={handleAccountDragEnd}
-          unreadByAccount={unreadByAccount} accountHealth={accountHealth}
-          handleAccountContextMenu={handleAccountContextMenu} setHoveredAccountId={setHoveredAccountId}
-          onOpenConnections={onOpenConnections} hideRailLabel={hideRailLabel} openLogin={openLogin} modes={MODES}
-          webSources={webSources} activeMessengerId={activeMessengerId} onSelectSource={onSelectSource}
-          webUnread={webUnread} webHealth={webHealth} webNew={webNew} webLoading={webLoading}
-          onWebContextMenu={onWebContextMenu}
-          onWebDragStart={onWebDragStart} onWebDragOver={onWebDragOver} onWebDrop={onWebDrop} onWebDragEnd={onWebDragEnd}
-          webDragOverId={webDragOverId} onAddWeb={onAddWeb}
-        />
-        {/* v1.2.165: разделитель для изменения ширины рейла (перетаскивание). Двойной клик — сброс. */}
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Изменить ширину панели аккаунтов (двойной клик — сброс)"
-          title="Перетащите чтобы сузить · Двойной клик — сброс"
-          onPointerDown={startRailResize}
-          onPointerMove={onRailPointerMove}
-          onPointerUp={onRailPointerUp}
-          onDoubleClick={resetRailWidth}
-          onMouseEnter={e => { if (!isRailResizing) e.currentTarget.style.backgroundColor = '#2AABEE66' }}
-          onMouseLeave={e => { if (!isRailResizing) e.currentTarget.style.backgroundColor = 'var(--amoled-border)' }}
-          style={{ width: 5, cursor: 'col-resize', flexShrink: 0, zIndex: 6, touchAction: 'none',
-            backgroundColor: isRailResizing ? '#2AABEE88' : 'var(--amoled-border)',
-            transition: isRailResizing ? 'none' : 'background-color 0.15s' }}
-        />
+        {/* v1.2.262: полоса рисуется ПОРТАЛОМ в слот #app-native-rail на уровне App → видна ВСЕГДА
+            (в т.ч. когда справа открыт веб-мессенджер). Пропсы/стор — те же (дерево NativeApp).
+            v1.2.263: обёрнуто в .native-mode — иначе снаружи слоя не заданы --amoled-* переменные
+            и фон, и полоса теряла цвет API-окна. flexDirection:row — полоса + разделитель в ряд.
+            Разделитель перенесён СЮДА (в портал) → ресайз доступен даже когда активен веб. */}
+        {railSlot && createPortal(
+          <div className="native-mode" style={{ flexDirection: 'row', width: 'auto', height: '100%' }}>
+            <NativeSidebar
+              railWidth={railWidth} railScale={railScale} isRailResizing={isRailResizing}
+              store={store} orderedAccounts={orderedAccounts}
+              dragSrcIdx={dragSrcIdx} dragOverIdx={dragOverIdx}
+              handleAccountDragStart={handleAccountDragStart} handleAccountDragOver={handleAccountDragOver} handleAccountDragEnd={handleAccountDragEnd}
+              unreadByAccount={unreadByAccount} accountHealth={accountHealth}
+              handleAccountContextMenu={handleAccountContextMenu} setHoveredAccountId={setHoveredAccountId}
+              onOpenConnections={onOpenConnections} hideRailLabel={hideRailLabel} modes={MODES}
+              webSources={webSources} activeMessengerId={activeMessengerId} onSelectSource={onSelectSource}
+              onActivateNative={onActivateNative}
+              webUnread={webUnread} webHealth={webHealth} webNew={webNew} webLoading={webLoading}
+              webAccountInfo={webAccountInfo}
+              onWebContextMenu={onWebContextMenu}
+              onWebDragStart={onWebDragStart} onWebDragOver={onWebDragOver} onWebDrop={onWebDrop} onWebDragEnd={onWebDragEnd}
+              webDragOverId={webDragOverId} onOpenAddSource={() => setShowAddSource(true)}
+            />
+            {/* v1.2.165: разделитель для изменения ширины рейла (перетаскивание). Двойной клик — сброс. */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Изменить ширину панели аккаунтов (двойной клик — сброс)"
+              title="Перетащите чтобы сузить · Двойной клик — сброс"
+              onPointerDown={startRailResize}
+              onPointerMove={onRailPointerMove}
+              onPointerUp={onRailPointerUp}
+              onDoubleClick={resetRailWidth}
+              onMouseEnter={e => { if (!isRailResizing) e.currentTarget.style.backgroundColor = '#2AABEE66' }}
+              onMouseLeave={e => { if (!isRailResizing) e.currentTarget.style.backgroundColor = 'var(--amoled-border)' }}
+              style={{ width: 5, cursor: 'col-resize', flexShrink: 0, zIndex: 6, touchAction: 'none',
+                backgroundColor: isRailResizing ? '#2AABEE88' : 'var(--amoled-border)',
+                transition: isRailResizing ? 'none' : 'background-color 0.15s' }}
+            />
+          </div>,
+          railSlot
+        )}
 
         {/* v1.2.148: содержимое главной области вынесено в NativeMainContent (разгрузка). */}
         <NativeMainContent
@@ -375,6 +399,20 @@ export default function NativeApp({
           onCloseLogin={() => { setShowLogin(false); store.resetLoginFlow?.() }}
         />
       </div>
+
+      {/* v1.2.264: окно «Добавить источник» (протокол → мессенджер). API→вход Telegram (openLogin),
+          Веб→добавить мессенджер (onAddWeb из App: пресет→новая вкладка, null→ручной ввод URL). */}
+      {showAddSource && (
+        <AddSourceModal
+          onClose={() => setShowAddSource(false)}
+          onAddApi={openLogin}
+          onAddWeb={onAddWeb}
+          // v1.2.266: статус «уже подключён» на плитках — есть ли уже TG-аккаунт / уже добавлен веб.
+          // v1.2.267: сверка веб по URL И имени (custom-вкладка имеет тот же адрес/имя пресета).
+          hasApiTelegram={(store.accounts || []).some(a => (a.messenger || 'telegram') === 'telegram')}
+          connectedWeb={webSources.map(m => ({ url: m.url, name: m.name }))}
+        />
+      )}
 
       {/* v0.87.88: меню аккаунта по ПКМ */}
       {accountMenu && (

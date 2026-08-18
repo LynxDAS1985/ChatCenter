@@ -146,7 +146,8 @@ export default function ContactCardModal({ chat, onClose, onMute, messengerName,
           // v1.2.239 (Вариант «Контур + свечение»): карточка сливалась с почти чёрным фоном.
           // Приподнятый фон + акцентная рамка (--amoled-accent #2AABEE @55%) + свечение-кольцо
           // и мягкое сияние вокруг — чёткая граница на тёмном фоне.
-          background: 'var(--amoled-surface-hover)', border: '1px solid rgba(42,171,238,0.55)',
+          // v1.2.269: фон как у карточки НАШЕГО аккаунта (AccountContextMenu) — единый вид.
+          background: 'linear-gradient(180deg, #1a1f2e 0%, #141823 100%)', border: '1px solid rgba(42,171,238,0.55)',
           borderRadius: 16, color: 'var(--amoled-text)',
           boxShadow: '0 0 0 1px rgba(42,171,238,0.22), 0 0 30px rgba(42,171,238,0.20), 0 22px 55px rgba(0,0,0,0.65)',
         }}

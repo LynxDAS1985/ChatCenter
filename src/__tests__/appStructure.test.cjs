@@ -166,14 +166,61 @@ test('Функции вкладок на веб-значках: правый к�
   assert(code.includes('onWebDragStart={handleDragStart}') && code.includes('onWebDrop={handleDrop}'), 'перетаскивание — обработчики вкладок')
   assert(code.includes('webDragOverId={dragOverId}'), 'подсветка цели перетаскивания')
   assert(code.includes('webLoading={webviewLoading}'), 'полоска загрузки')
-  assert(code.includes('onAddWeb={() => setShowAddModal(true)}'), '«+» добавить веб-мессенджер из полосы')
+  assert(code.includes('onAddWeb={(entry) =>'), 'App: onAddWeb принимает выбранный мессенджер (пресет→вкладка, null→ручной ввод)')
 })
-// v1.2.261: смоук портала УДАЛЁН — портал (v1.2.260) сломал вёрстку, откачен. Полоса снова
-// внутри вкладки «ЦентрЧатов» (NativeApp), как в v1.2.259. Единственность стора всё равно проверяем:
-test('NativeApp: единственный useNativeStore (без дубля стора/IPC)', () => {
-  assert((nativeAppCode.match(/useNativeStore\(\)/g) || []).length === 1, 'useNativeStore — ровно 1 раз')
-  assert(!nativeAppCode.includes('createPortal'), 'портал полосы откачен (ломал вёрстку)')
-  assert(!code.includes('app-native-rail'), 'слот полосы в App убран')
+// v1.2.264: одна кнопка «＋ Добавить» → окно «протокол → мессенджер»; две прежние «+» убраны.
+test('Одна кнопка «Добавить» + окно AddSourceModal (v1.2.264)', () => {
+  const sidebarCode = fs.readFileSync(path.join(__dirname, '..', 'native', 'components', 'NativeSidebar.jsx'), 'utf8')
+  const addModalPath = path.join(__dirname, '..', 'native', 'components', 'AddSourceModal.jsx')
+  assert(fs.existsSync(addModalPath), 'AddSourceModal.jsx существует')
+  // В полосе одна кнопка «Добавить», прежних двух «+» нет
+  assert(sidebarCode.includes('data-testid="native-rail-add"'), 'полоса: одна кнопка «＋ Добавить»')
+  assert(!sidebarCode.includes('native-rail-add-account') && !sidebarCode.includes('native-rail-add-web'), 'прежние две «+» убраны')
+  assert(sidebarCode.includes('onActivateNative?.(); onOpenAddSource?.()'), 'клик «Добавить» → возврат к API + открыть окно')
+  // NativeApp монтирует окно и прокидывает API→вход, Веб→добавить
+  assert(nativeAppCode.includes('AddSourceModal'), 'NativeApp рендерит AddSourceModal')
+  assert(nativeAppCode.includes('onAddApi={openLogin}'), 'API → вход Telegram (openLogin)')
+})
+// v1.2.262: полоса ВСЕГДА видна — портал в слот на уровне App + полоска «← Общий чат» над вебом.
+test('Полоса всегда видна: слот App + портал в NativeApp + «← Общий чат» над вебом (v1.2.262)', () => {
+  assert(code.includes('id="app-native-rail"'), 'App рендерит слот #app-native-rail (полоса всегда слева)')
+  assert(nativeAppCode.includes('createPortal'), 'NativeApp рисует полосу порталом')
+  assert(nativeAppCode.includes("getElementById('app-native-rail')"), 'NativeApp находит слот')
+  assert((nativeAppCode.match(/useNativeStore\(\)/g) || []).length === 1, 'useNativeStore — 1 раз (без дубля стора/IPC)')
+  // полоска «← Общий чат» над активным веб-мессенджером
+  assert(code.includes('Общий чат') && code.includes('handleTabClick(NATIVE_CC_ID)'), 'кнопка «← Общий чат» → возврат к API-чатам')
+})
+// v1.2.263: клик по API-аккаунту/«Все» при вебе → возврат к API; полоса в .native-mode (цвет как у API-окна).
+test('Возврат к API по клику аккаунта + цвет полосы + ресайз в портале (v1.2.263)', () => {
+  const sidebarCode = fs.readFileSync(path.join(__dirname, '..', 'native', 'components', 'NativeSidebar.jsx'), 'utf8')
+  // App даёт колбэк возврата к API-чатам
+  assert(code.includes('onActivateNative={'), 'App передаёт onActivateNative в NativeApp')
+  assert(nativeAppCode.includes('onActivateNative={onActivateNative}'), 'NativeApp пробрасывает onActivateNative в полосу')
+  // «Все» и клик по аккаунту зовут возврат к API
+  assert(sidebarCode.includes('onActivateNative?.(); store.showAllAccounts()'), '«Все» → сперва возврат к API')
+  assert(sidebarCode.includes('onClickCapture={() => onActivateNative?.()}'), 'клик по аккаунту → возврат к API')
+  // цвет: полоса обёрнута в .native-mode (переменные --amoled-* и фон как у API-окна)
+  assert(nativeAppCode.includes('className="native-mode" style={{ flexDirection: \'row\''), 'полоса обёрнута в .native-mode (цвет API-окна)')
+  // разделитель ресайза — внутри портала (после обёртки .native-mode) → доступен и при активном вебе
+  const wrapIdx = nativeAppCode.indexOf("className=\"native-mode\" style={{ flexDirection: 'row'")
+  const sepIdx = nativeAppCode.indexOf('role="separator"')
+  assert(wrapIdx > 0 && sepIdx > wrapIdx, 'разделитель ресайза перенесён в портал (.native-mode)')
+})
+// v1.2.271: подготовка к удалению верхних вкладок — меню правого клика вынесено из TabBar на уровень App.
+test('Меню правого клика вынесено из TabBar в TabContextMenu/App (v1.2.271)', () => {
+  const menuCode = fs.existsSync('src/components/TabContextMenu.jsx') ? fs.readFileSync('src/components/TabContextMenu.jsx', 'utf8') : ''
+  assert(menuCode.includes('buildTabContextMenuItems'), 'TabContextMenu строит пункты меню')
+  assert(code.includes('<TabContextMenu'), 'App рендерит <TabContextMenu> (меню переживёт удаление вкладок)')
+  assert(!tabBarCode.includes('buildTabContextMenuItems'), 'TabBar больше НЕ рендерит меню')
+  assert(tabBarCode.includes('setContextMenuTab({'), 'триггер правого клика (setContextMenuTab) остаётся в TabBar')
+})
+// v1.2.272: ряд верхних вкладок скрывается флагом; тонкая полоска (лого+drag+кнопки+строка) остаётся.
+test('Верхние вкладки скрываются флагом settings.showTopTabs (v1.2.272)', () => {
+  const settingsCode = fs.existsSync('src/components/SettingsPanel.jsx') ? fs.readFileSync('src/components/SettingsPanel.jsx', 'utf8') : ''
+  assert(tabBarCode.includes('settings.showTopTabs === true'), 'TabBar: флаг showTopTabs (по умолчанию скрыто)')
+  assert(tabBarCode.includes('showTopTabs ?'), 'TabBar: ряд вкладок под условием showTopTabs')
+  assert(tabBarCode.includes("WebkitAppRegion: 'drag'"), 'TabBar: перетаскивание окна сохранено (drag-зона)')
+  assert(settingsCode.includes("set('showTopTabs'"), 'Настройки: переключатель верхних вкладок')
 })
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

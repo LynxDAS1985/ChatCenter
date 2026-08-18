@@ -634,7 +634,8 @@
         // Гарантирует final state независимо от backgroundThrottling, cascade
         // delay, keyframe error или race с пакетом одновременных нотификаций.
         forceFinalSlideInState()
-        try { window.notifApi.log('WARN', 'slideIn animationend timeout fallback id=' + data.id + ' transform forced') } catch (_) {}
+        // v1.2.274: WARN→DEBUG — предохранитель штатно ставит уведомление на место, это деталь, не тревога (не спамить журнал).
+        try { window.notifApi.log('DEBUG', 'slideIn animationend timeout fallback id=' + data.id + ' transform forced') } catch (_) {}
         reportHeight()
       }
     }, 600)

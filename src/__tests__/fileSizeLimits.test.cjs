@@ -386,8 +386,10 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v1.2.251: лимит 33920 → 34000 — Этап 2C: значки аккаунтов с аватарами в рейле + проводка.
 // v1.2.252: лимит 34000 → 34050 — вынос проводки рейла в хук useSourceRail.js.
 // v1.2.256: Модель 🅰️ — SourceRail удалён, веб встроен в нативную полосу; renderer упал → знак снижен до 33800.
-test('Общий renderer код (src/ без тестов) < 33830 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 33830, totalSrc + " > 33830")
+// v1.2.263: 33860 → 33880 — проводка возврата к API (onActivateNative) + логи + обёртка .native-mode.
+// v1.2.264→266: 33880→34080 (AddSourceModal). v1.2.271: →34110 (TabContextMenu). v1.2.272: →34140 (скрытие вкладок). v1.2.273: →34160 (имя аккаунта у веб-значка).
+test('Общий renderer код (src/ без тестов) < 34160 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 34160, totalSrc + " > 34160")
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

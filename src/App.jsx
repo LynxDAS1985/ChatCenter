@@ -17,6 +17,7 @@ import {
   selectConnectionHealthJobs,
 } from './utils/connectionHealthScheduler.js'
 import TabBar from './components/TabBar.jsx'
+import TabContextMenu from './components/TabContextMenu.jsx' // v1.2.271: меню правого клика на уровне App
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 // v0.89.42 (Phase 2.2): WebContentsView pilot — условный рендер по settings.useWebContentsView.
 // v0.91.0: WebContentsViewSlot откачен (Issue #44934 Windows 11 crash)
@@ -662,7 +663,7 @@ export default function App() {
         settings={settings} unreadCounts={unreadCounts} unreadSplit={unreadSplit}
         messagePreview={messagePreview} zoomLevels={zoomLevels} connectionHealth={connectionHealth}
         webviewLoading={webviewLoading} newMessageIds={newMessageIds} dragOverId={dragOverId}
-        contextMenuTab={contextMenuTab} showAI={showAI} showTemplates={showTemplates}
+        showAI={showAI} showTemplates={showTemplates}
         showAutoReply={showAutoReply} searchVisible={searchVisible} searchText={searchText}
         theme={theme} currentZoom={currentZoom}
         handleTabClick={handleTabClick} handleDragStart={handleDragStart}
@@ -673,7 +674,6 @@ export default function App() {
         setShowSettings={setShowSettings} handleSettingsChange={handleSettingsChange}
         handleSearch={handleSearch} searchInputRef={searchInputRef}
         webviewRefs={webviewRefs} activeIdRef={activeIdRef}
-        handleTabContextAction={handleTabContextAction}
         changeZoom={changeZoom} zoomEditing={zoomEditing} setZoomEditing={setZoomEditing}
         zoomInputValue={zoomInputValue} setZoomInputValue={setZoomInputValue} zoomInputRef={zoomInputRef}
         statusBarMsg={statusBarMsg} stats={stats} totalUnread={totalUnread}
@@ -685,11 +685,43 @@ export default function App() {
         tasksCount={tasksCount} remindersCount={remindersCount}
       />
 
+      {/* v1.2.271: меню правого клика — на уровне App (вынесено из TabBar). Триггер (правый клик)
+          у вкладок и у значков полосы; после удаления вкладок меню полосы продолжит работать. */}
+      <TabContextMenu contextMenuTab={contextMenuTab} setContextMenuTab={setContextMenuTab}
+        pinnedTabs={settings.pinnedTabs || {}} messengers={messengers} onAction={handleTabContextAction} />
+
       {/* ── Основной layout ── */}
       <div className="flex flex-1 overflow-hidden">
 
+        {/* v1.2.262: слот боковой полосы. NativeApp порталит сюда рейл (аккаунты+веб+разделитель)
+            → полоса ВСЕГДА видна слева, даже когда активен веб-мессенджер (веб открывается ПРАВЕЕ).
+            v1.2.263: ширину задаёт сама полоса (портал вставляется до отрисовки через useLayoutEffect),
+            поэтому фиксированный minWidth убран — иначе полоса не сужалась при перетаскивании. */}
+        <div id="app-native-rail" className="flex shrink-0" />
+
         {/* ── Область WebView ── */}
         <div className="flex-1 relative overflow-hidden" style={{ backgroundColor: 'var(--cc-bg)', cursor: isResizing ? 'col-resize' : undefined }}>
+          {/* v1.2.262: полоска «← Общий чат» над активным веб-мессенджером → возврат к API-чатам
+              (native инбокс). Показывается только когда открыт веб (не нативный/не пусто). */}
+          {(() => {
+            const am = messengers.find(m => m.id === activeId)
+            if (!am || am.isNative || am.id === NATIVE_CC_ID) return null
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  try { window.api?.send?.('app:log', { level: 'INFO', message: `[rail] «← Общий чат»: возврат к API-чатам с веба ${activeId}` }) } catch (_) {}
+                  handleTabClick(NATIVE_CC_ID)
+                }}
+                title="Вернуться к чатам (общий чат / API)"
+                className="absolute top-0 left-0 right-0 flex items-center gap-2 px-3 cursor-pointer"
+                style={{ height: 34, zIndex: 3, backgroundColor: 'rgba(15,20,28,0.96)', borderBottom: '1px solid rgba(42,171,238,0.45)', color: '#e2e8f0', fontSize: 13 }}
+              >
+                <span aria-hidden="true">←</span><span>Общий чат</span>
+                <span style={{ opacity: 0.55 }}>· {am.name}</span>
+              </button>
+            )
+          })()}
           {messengers.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center px-8">
@@ -715,6 +747,9 @@ export default function App() {
                 style={{
                   zIndex: activeId === m.id ? 2 : 0,
                   pointerEvents: activeId === m.id ? 'auto' : 'none',
+                  // v1.2.263: активный веб-слой начинается на 34px ниже — чтобы полоска
+                  // «← Общий чат» не перекрывала верх веб-страницы. Native (без полоски) — top:0.
+                  top: (activeId === m.id && !(m.isNative || m.id === NATIVE_CC_ID)) ? 34 : 0,
                   // НЕ используем visibility:hidden — Chromium останавливает загрузку hidden WebView
                   // Чёрный экран решён через disable-gpu-compositing в main.js
                 }}
@@ -729,12 +764,27 @@ export default function App() {
                       webSources={messengers.filter(m => !m.isNative && m.id !== NATIVE_CC_ID)}
                       activeMessengerId={activeId}
                       onSelectSource={handleTabClick}
+                      onActivateNative={() => {
+                        // v1.2.263: тык в API-аккаунт/«Все» при открытом вебе → показываем API-чаты.
+                        if (activeId === NATIVE_CC_ID) return
+                        try { window.api?.send?.('app:log', { level: 'INFO', message: `[rail] возврат к API-чатам (аккаунт/Все) с веба ${activeId}` }) } catch (_) {}
+                        handleTabClick(NATIVE_CC_ID)
+                      }}
                       webUnread={unreadCounts} webHealth={connectionHealth} webNew={newMessageIds}
+                      webAccountInfo={accountInfo}
                       webLoading={webviewLoading}
                       onWebContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}
                       onWebDragStart={handleDragStart} onWebDragOver={handleDragOver}
                       onWebDrop={handleDrop} onWebDragEnd={handleDragEnd} webDragOverId={dragOverId}
-                      onAddWeb={() => setShowAddModal(true)}
+                      onAddWeb={(entry) => {
+                        // v1.2.264: из окна «Добавить». entry = пресет DEFAULT_MESSENGERS → новая вкладка
+                        // (свежая partition/сессия, как в AddMessengerModal); null → ручной ввод URL.
+                        if (!entry) { setShowAddModal(true); return }
+                        const ts = Date.now()
+                        addMessenger({ id: `custom_${ts}`, name: entry.name, url: entry.url, color: entry.color,
+                          partition: `persist:custom_${ts}`, emoji: entry.emoji, isDefault: false, accountScript: entry.accountScript })
+                        try { window.api?.send?.('app:log', { level: 'INFO', message: `[add-source] добавлен веб-мессенджер: ${entry.name}` }) } catch (_) {}
+                      }}
                       pendingNotify={pendingNativeNotify}
                       clearPendingNotify={clearPendingNativeNotify}
                     />
