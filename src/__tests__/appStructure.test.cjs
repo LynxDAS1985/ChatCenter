@@ -222,6 +222,14 @@ test('Верхние вкладки скрываются флагом settings.s
   assert(tabBarCode.includes("WebkitAppRegion: 'drag'"), 'TabBar: перетаскивание окна сохранено (drag-зона)')
   assert(settingsCode.includes("set('showTopTabs'"), 'Настройки: переключатель верхних вкладок')
 })
+// v1.2.275: аватар веб-аккаунта на значке полосы (сбор в хуке → проброс → рендер фото + угловой значок).
+test('Аватар веб-аккаунта на значке полосы (v1.2.275)', () => {
+  const railCode = fs.readFileSync(path.join(__dirname, '..', 'native', 'components', 'RailWebIcon.jsx'), 'utf8')
+  assert(fs.existsSync(path.join(__dirname, '..', 'hooks', 'useWebAccountAvatars.js')), 'хук useWebAccountAvatars существует')
+  assert(code.includes('useWebAccountAvatars('), 'App использует хук сбора аватарок')
+  assert(code.includes('webAccountAvatars={webAccountAvatars}'), 'App пробрасывает аватарки в NativeApp')
+  assert(railCode.includes('avatar ?') && railCode.includes('url("${avatar}")'), 'RailWebIcon рисует фото аккаунта, если оно есть')
+})
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))
 if (failed > 0) process.exit(1)

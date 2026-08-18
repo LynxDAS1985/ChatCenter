@@ -17,6 +17,7 @@ export default function NativeSidebar({
   webSources = [], activeMessengerId, onSelectSource, webUnread = {}, webHealth = {}, webNew,
   webLoading = {}, onWebContextMenu, onWebDragStart, onWebDragOver, onWebDrop, onWebDragEnd,
   webDragOverId, webAccountInfo = {}, // v1.2.273: имя аккаунта под веб-значком
+  webAccountAvatars = {}, // v1.2.275: аватар веб-аккаунта на значке
   // v1.2.263: тык в API-аккаунт/«Все» при открытом вебе → вернуться к API-чатам (App переключит вкладку).
   onActivateNative,
   // v1.2.264: одна кнопка «＋ Добавить» открывает окно «протокол → мессенджер».
@@ -104,6 +105,7 @@ export default function NativeSidebar({
               onDragStart={onWebDragStart} onDragOver={onWebDragOver} onDrop={onWebDrop} onDragEnd={onWebDragEnd}
               isDragOver={webDragOverId === m.id}
               accountName={webAccountInfo[m.id]} hideLabel={hideRailLabel}
+              avatar={webAccountAvatars[m.id]}
             />
           ))}
         </>

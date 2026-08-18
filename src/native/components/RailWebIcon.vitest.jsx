@@ -53,4 +53,20 @@ describe('RailWebIcon', () => {
     expect(onDragStart).toHaveBeenCalledWith('vk')
     expect(onDrop).toHaveBeenCalledWith('vk')
   })
+
+  // v1.2.280 (ревью #4): покрываем новые ветки — фото аккаунта и круглую форму.
+  it('есть avatar → фон-картинка (url) поверх круглого значка', () => {
+    const av = 'data:image/png;base64,AAAA'
+    const { getByTitle } = render(<RailWebIcon messenger={m} avatar={av} onSelect={() => {}} />)
+    const style = getByTitle('ВКонтакте').getAttribute('style') || ''
+    expect(style).toContain('url(') // фото показано фоном
+    expect(style).toContain('50%')  // круглый (borderRadius:'50%')
+  })
+
+  it('нет avatar → фон без картинки, но значок всё равно круглый', () => {
+    const { getByTitle } = render(<RailWebIcon messenger={m} onSelect={() => {}} />)
+    const style = getByTitle('ВКонтакте').getAttribute('style') || ''
+    expect(style).not.toContain('url(') // логотип, не фото
+    expect(style).toContain('50%')      // круглый
+  })
 })

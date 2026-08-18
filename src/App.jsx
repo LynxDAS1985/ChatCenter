@@ -34,6 +34,7 @@ import useWebViewZoom from './hooks/useWebViewZoom.js'
 import useBadgeSync from './hooks/useBadgeSync.js'
 import useTabManagement from './hooks/useTabManagement.js'
 import useSearch from './hooks/useSearch.js'
+import useWebAccountAvatars from './hooks/useWebAccountAvatars.js' // v1.2.275: аватар веб-аккаунта на значок полосы
 import useTabContextMenu from './hooks/useTabContextMenu.js'
 import useNotifyNavigation from './hooks/useNotifyNavigation.js'
 import useWebViewLifecycle from './hooks/useWebViewLifecycle.js'
@@ -299,6 +300,10 @@ export default function App() {
     setConnectionHealth, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
     setWebviewLoading, setZoomLevels, monitorPreloadUrl,
   })
+
+  // v1.2.275: аватарки залогиненных веб-аккаунтов (для значков боковой полосы). Лёгкий сбор
+  // в отдельном хуке — webviewSetup/App у потолка размера, поэтому не в них. Нет фото → значок логотипом.
+  const webAccountAvatars = useWebAccountAvatars(webviewRefs, messengersRef)
 
   // v1.2.22: Вариант A — флаг useWebContentsView открывает Макс в ОТДЕЛЬНОМ окне Electron
   // (проверка ServiceWorker-уведомлений). Главное окно не трогаем (Макс остаётся в <webview>).
@@ -771,7 +776,7 @@ export default function App() {
                         handleTabClick(NATIVE_CC_ID)
                       }}
                       webUnread={unreadCounts} webHealth={connectionHealth} webNew={newMessageIds}
-                      webAccountInfo={accountInfo}
+                      webAccountInfo={accountInfo} webAccountAvatars={webAccountAvatars}
                       webLoading={webviewLoading}
                       onWebContextMenu={(id, x, y) => setContextMenuTab({ id, x, y })}
                       onWebDragStart={handleDragStart} onWebDragOver={handleDragOver}

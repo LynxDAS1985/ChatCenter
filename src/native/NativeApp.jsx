@@ -62,6 +62,7 @@ export default function NativeApp({
   // v1.2.256 (Модель 🅰️): веб-мессенджеры в этой же полосе (под аккаунтами).
   webSources = [], activeMessengerId, onSelectSource, onActivateNative, webUnread = {}, webHealth = {}, webNew,
   webAccountInfo = {}, // v1.2.273: имя аккаунта под веб-значком полосы
+  webAccountAvatars = {}, // v1.2.275: аватар веб-аккаунта на значке полосы
   // v1.2.257: функции вкладок на веб-значках (правый клик, перетаскивание, загрузка).
   onWebContextMenu, onWebDragStart, onWebDragOver, onWebDrop, onWebDragEnd, webDragOverId, webLoading = {},
   onAddWeb, // v1.2.258: «+» добавить веб-мессенджер
@@ -362,7 +363,7 @@ export default function NativeApp({
               webSources={webSources} activeMessengerId={activeMessengerId} onSelectSource={onSelectSource}
               onActivateNative={onActivateNative}
               webUnread={webUnread} webHealth={webHealth} webNew={webNew} webLoading={webLoading}
-              webAccountInfo={webAccountInfo}
+              webAccountInfo={webAccountInfo} webAccountAvatars={webAccountAvatars}
               onWebContextMenu={onWebContextMenu}
               onWebDragStart={onWebDragStart} onWebDragOver={onWebDragOver} onWebDrop={onWebDrop} onWebDragEnd={onWebDragEnd}
               webDragOverId={webDragOverId} onOpenAddSource={() => setShowAddSource(true)}

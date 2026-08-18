@@ -1,8 +1,8 @@
 // v1.2.256 — значок веб-мессенджера в нативной боковой полосе (под аккаунтами).
 // Модель 🅰️: единая полоса — сверху Telegram-аккаунты, ниже веб-мессенджеры (ВК/WhatsApp/МАКС).
 // Клик → открыть вкладку этого мессенджера (handleTabClick из App). Размеры масштабируются
-// вместе с полосой (railScale), как у AccountAvatar. Форма — скруглённый квадрат (отличать
-// «веб-приложение» от круглого аватара-«человека»).
+// вместе с полосой (railScale), как у AccountAvatar. Форма — КРУГЛАЯ (v1.2.279, как API-аватар),
+// по просьбе пользователя (раньше был скруглённый квадрат).
 // v1.2.273: под значком — подпись имени аккаунта (accountName), как у API-аватаров. Нужно, т.к.
 // после скрытия верхних вкладок (v1.2.272) имя аккаунта веб-мессенджера больше нигде не видно.
 // При узкой полосе (hideLabel) подпись прячется; нет имени → подписи нет (значок как раньше).
@@ -15,6 +15,9 @@ export default function RailWebIcon({
   onContextMenu, onDragStart, onDragOver, onDrop, onDragEnd, isDragOver, isLoading,
   // v1.2.273: имя аккаунта (из accountInfo) + скрытие подписи при узкой полосе.
   accountName, hideLabel,
+  // v1.2.275: аватар залогиненного веб-аккаунта (base64 data-URI). Есть → фото + значок мессенджера
+  // в углу (как у API-аватара); нет → значок логотипом (как раньше).
+  avatar,
 }) {
   const px = (n) => Math.max(1, Math.round(n * scale))
   const color = m.color || '#2AABEE'
@@ -38,27 +41,42 @@ export default function RailWebIcon({
         onDragEnd={() => onDragEnd?.()}
         style={{
           position: 'relative', width: px(48), height: px(48), margin: '0 auto',
-          borderRadius: px(14), display: 'flex', alignItems: 'center', justifyContent: 'center',
+          borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', // v1.2.279: круглые, как API
           fontSize: px(22), lineHeight: 1, cursor: 'pointer',
-          background: isActive ? `${color}22` : 'var(--amoled-surface)',
+          // v1.2.275: есть фото аккаунта → показываем его; иначе фон под логотип.
+          background: avatar ? `url("${avatar}") center/cover no-repeat` : (isActive ? `${color}22` : 'var(--amoled-surface)'),
           outline: isDragOver ? `2px dashed ${color}` : isActive ? `2px solid ${color}` : '1px solid var(--amoled-border)',
         }}
       >
         {/* Пульс при новом сообщении */}
         {isNew && !isActive && (
           <span aria-hidden="true" className="animate-ping" style={{
-            position: 'absolute', inset: px(6), borderRadius: px(12), background: color, opacity: 0.35,
+            position: 'absolute', inset: px(6), borderRadius: '50%', background: color, opacity: 0.35,
           }} />
         )}
-        {/* v1.2.265: Telegram — настоящий логотип (картинка), остальные — эмодзи мессенджера. */}
-        {(m.id === 'telegram' || /telegram/i.test(m.name || ''))
-          ? <MessengerIcon messenger="telegram" size={px(24)} />
-          : <span aria-hidden="true">{m.emoji || (m.name ? m.name[0] : '•')}</span>}
+        {/* v1.2.275: есть фото → значок мессенджера УГЛОМ поверх фото (как у API-аватара);
+            нет фото → значок ПО ЦЕНТРУ (Telegram — настоящий логотип, остальные — эмодзи). */}
+        {avatar ? (
+          <span style={{
+            position: 'absolute', top: -px(2), right: -px(2), width: px(18), height: px(18),
+            borderRadius: '50%', background: 'var(--amoled-bg)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {(m.id === 'telegram' || /telegram/i.test(m.name || ''))
+              ? <MessengerIcon messenger="telegram" size={px(12)} />
+              : <span aria-hidden="true" style={{ fontSize: px(11), lineHeight: 1 }}>{m.emoji || '•'}</span>}
+          </span>
+        ) : (
+          (m.id === 'telegram' || /telegram/i.test(m.name || ''))
+            ? <MessengerIcon messenger="telegram" size={px(24)} />
+            : <span aria-hidden="true">{m.emoji || (m.name ? m.name[0] : '•')}</span>
+        )}
 
-        {/* Бейдж непрочитанных */}
+        {/* Бейдж непрочитанных — v1.2.276: СЛЕВА-сверху, как у API-аватара (и чтобы не налезал
+            на угловой значок мессенджера справа-сверху при наличии фото). */}
         {unread > 0 && (
           <span style={{
-            position: 'absolute', top: -px(3), right: -px(3), minWidth: px(17), height: px(17),
+            position: 'absolute', top: -px(3), left: -px(3), minWidth: px(17), height: px(17),
             padding: `0 ${px(4)}px`, borderRadius: px(9), background: 'var(--amoled-danger)',
             color: '#fff', fontSize: px(10), fontWeight: 700, lineHeight: 1,
             display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--amoled-bg)',
