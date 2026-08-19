@@ -30,14 +30,26 @@ function getPhotoHtmlPath() {
   return path.join(__dirname, '../main/photo-viewer.html')
 }
 
+// v1.2.298: сырой путь файла (C:\… из tg:download-media = file.local.path) → адрес file:///…,
+// иначе <img src> его не грузит (и CSP не разрешает file: без явного адреса). Уже-адреса
+// (cc-media из чата, http/https/data/blob/file) не трогаем. Как в videoPlayerHandler (resolveVideoSrc).
+function resolvePhotoSrc(src) {
+  if (!src || typeof src !== 'string') return src
+  if (/^(cc-media|https?|data|blob|file):/i.test(src)) return src
+  try { return 'file:///' + encodeURI(src.replace(/\\/g, '/')) } catch (_) { return src }
+}
+
 export function registerPhotoViewerHandler() {
   ipcMain.handle('photo:open', async (_, payload) => {
     try {
       // v0.87.31: принимаем либо одиночный { src }, либо массив { srcs, index }
-      const srcs = Array.isArray(payload?.srcs) && payload.srcs.length
+      const raw = Array.isArray(payload?.srcs) && payload.srcs.length
         ? payload.srcs.filter(Boolean)
         : payload?.src ? [payload.src] : []
-      if (!srcs.length) return { ok: false, error: 'no src' }
+      if (!raw.length) return { ok: false, error: 'no src' }
+      const srcs = raw.map(resolvePhotoSrc) // v1.2.298: сырой путь → file:///
+      // v1.2.298: лог (как у видео) — видно, найден ли preload и какой адрес у фото, если снова не откроется.
+      try { console.log('[photo:open] srcs=' + srcs.length + ' preloadOk=' + fs.existsSync(getPhotoPreloadPath()) + ' s0=' + String(srcs[0] || '').slice(0, 70)) } catch (_) {}
       const index = Math.max(0, Math.min(srcs.length - 1, Number(payload?.index) || 0))
       if (photoWindow && !photoWindow.isDestroyed()) {
         photoWindow.webContents.send('photo:set-srcs', { srcs, index })
@@ -62,6 +74,10 @@ export function registerPhotoViewerHandler() {
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,
+          // v1.2.297: sandbox:false — иначе собранный ESM-preload (out/preload/photoViewer.mjs) НЕ грузится
+          // в установленной версии (в песочнице preload обязан быть CommonJS). Без preload нет window.photo:
+          // фото не ставится (виден alt «photo») и окно не закрывается. Все прочие окна проекта тоже sandbox:false.
+          sandbox: false,
           preload: getPhotoPreloadPath(),
         },
       })

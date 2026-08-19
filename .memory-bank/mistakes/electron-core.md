@@ -1,7 +1,22 @@
 # Ловушки: Electron core и WebView инфраструктура
 
 **Извлечено из** `common-mistakes.md` 24 апреля 2026 (v0.87.54).
-**Темы**: ELECTRON_RUN_AS_NODE, WebView (partition, preload, context isolation), IPC, Настройки (SettingsPanel), AI-панель (AISidebar), Авто-ответ, ИИ-интеграция, **сборка/Tailwind**.
+**Темы**: ELECTRON_RUN_AS_NODE, WebView (partition, preload, context isolation), IPC, Настройки (SettingsPanel), AI-панель (AISidebar), Авто-ответ, ИИ-интеграция, **сборка/Tailwind**, **окна BrowserWindow (sandbox/preload/src)**.
+
+---
+
+## 🔴 Новое BrowserWindow: без `sandbox:false` ESM-preload НЕ грузится в установленной версии (dev работает, prod — нет) (2026-08-19, v1.2.297→298)
+
+**Симптом.** Окно просмотра фото: в DEV всё работает, а в УСТАНОВЛЕННОЙ версии — картинка битая (виден `alt` «photo»), и окно НЕ закрывается (кнопки не реагируют). То есть баг виден только после сборки установщика.
+
+**Корень (по коду + офиц. Electron).** Окно фото ([photoViewerHandler.js:62](../../main/handlers/photoViewerHandler.js)) было ЕДИНСТВЕННЫМ окном проекта без `sandbox: false`. `electron-vite` собирает preload как ESM (`out/preload/*.mjs`), а **ESM-preload грузится ТОЛЬКО при `sandbox:false`** (в песочнице preload обязан быть CommonJS — правило Electron уровня 1). В dev preload = исходный `.cjs` → грузится и с песочницей, поэтому в dev дефекта нет. Без preload нет `window.photo` → `img.src` не ставится, `window.photo?.close()` — пустышка. Оба симптома (битое фото + не закрывается) = ОДНА причина.
+
+**Как не повторить.**
+1. **Любое новое `BrowserWindow` с ESM-preload → ставь `sandbox: false`** в `webPreferences` (как у всех прочих окон: `notificationManager`, `windowManager`, `dockPin*`, `aiLogin`, tray). `contextIsolation:true`/`nodeIntegration:false` при этом сохраняются.
+2. **Проверять баги окон в СБОРКЕ, а не только в dev** — путь preload и его формат (`.cjs` vs `.mjs`) в dev и prod РАЗНЫЕ.
+3. Если сырой путь файла (`file.local.path` из TDLib) уходит в `<img src>`/`<video src>` отдельного окна (`loadFile`) — сначала конвертируй в адрес `file:///` + `encodeURI` (`cc-media://` работает только в renderer на localhost) и добавь `file:` в CSP `img-src`/`media-src`. См. `resolvePhotoSrc`/`resolveVideoSrc`.
+
+**Факт уровня 1** (Electron docs, «Process Sandboxing»): sandboxed-preload обязан быть CommonJS; ESM-preload требует `sandbox:false`.
 
 ---
 

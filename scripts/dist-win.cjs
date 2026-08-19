@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Build Windows installer and leave only the installer .exe in dist/.
+// Build Windows installer and leave only installer .exe files in dist/ (all kept, rest cleaned).
 const { spawn } = require('child_process')
 const fs = require('fs')
 const path = require('path')
@@ -47,38 +47,42 @@ function removePath(target) {
   }
 }
 
+// v1.2.299: чистим dist от вспомогательных файлов сборки, но СОХРАНЯЕМ все установщики .exe.
+// Раньше требовался РОВНО ОДИН установщик (throw при нескольких) — после решения хранить
+// прошлые версии (feedback_keep_old_installers) их стало несколько → эта проверка падала
+// ДО очистки → в dist оставался мусор (win-unpacked, latest.yml, builder-debug.yml, *.blockmap).
+// Теперь: оставляем ЛЮБОЕ число .exe-установщиков, удаляем всё остальное. Автообновления в
+// проекте нет (нет electron-updater/autoUpdater), поэтому latest.yml и *.blockmap не нужны.
+function isInstaller(name) {
+  return /^ЦентрЧатов-Setup-.*-x64\.exe$/u.test(name)
+}
+
 function cleanDistribExceptInstaller() {
   assertInsideRoot(distDir)
   if (!fs.existsSync(distDir)) return
   sleep(1500)
 
-  const installers = fs.readdirSync(distDir)
-    .filter(name => /^ЦентрЧатов-Setup-.*-x64\.exe$/u.test(name))
-
-  if (installers.length !== 1) {
-    throw new Error(`Expected exactly one installer in dist, found ${installers.length}: ${installers.join(', ') || 'none'}`)
+  const installers = fs.readdirSync(distDir).filter(isInstaller)
+  if (!installers.length) {
+    throw new Error('No installer .exe found in dist after build')
   }
 
-  for (const entry of fs.readdirSync(distDir)) {
-    if (entry === installers[0]) continue
-    removePath(path.join(distDir, entry))
-  }
-
+  // Удаляем всё, что НЕ установщик (.exe): win-unpacked, latest.yml, builder-debug.yml, *.blockmap.
   let leftovers = []
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    leftovers = fs.readdirSync(distDir).filter(entry => entry !== installers[0])
+    leftovers = fs.readdirSync(distDir).filter(entry => !isInstaller(entry))
     if (!leftovers.length) break
     for (const entry of leftovers) {
       removePath(path.join(distDir, entry))
     }
     sleep(500)
   }
-  leftovers = fs.readdirSync(distDir).filter(entry => entry !== installers[0])
+  leftovers = fs.readdirSync(distDir).filter(entry => !isInstaller(entry))
   if (leftovers.length) {
     throw new Error(`dist cleanup left extra files:\n  ${leftovers.join('\n  ')}`)
   }
 
-  console.log(`[dist-win] kept installer: dist/${installers[0]}`)
+  console.log(`[dist-win] kept installers: ${installers.join(', ')}`)
 }
 
 function verifyPackagedApp() {

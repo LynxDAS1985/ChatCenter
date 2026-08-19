@@ -387,9 +387,9 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v1.2.252: лимит 34000 → 34050 — вынос проводки рейла в хук useSourceRail.js.
 // v1.2.256: Модель 🅰️ — SourceRail удалён, веб встроен в нативную полосу; renderer упал → знак снижен до 33800.
 // v1.2.263: 33860 → 33880 — проводка возврата к API (onActivateNative) + логи + обёртка .native-mode.
-// v1.2.264→273: 33880→34160 (AddSourceModal/TabContextMenu/скрытие вкладок/имя веб-значка). v1.2.275: →34260 (аватарки). v1.2.276-288: →34460 (аватарки Макс/Telegram: сбор+авто-Настройки).
-test('Общий renderer код (src/ без тестов) < 34460 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 34460, totalSrc + " > 34460")
+// v1.2.264→273: 33880→34160 (AddSourceModal/TabContextMenu/скрытие вкладок/имя веб-значка). v1.2.275: →34260 (аватарки). v1.2.276-294: →34490 (аватарки + кнопка-стекло + контейнеры API/Веб). v1.2.300-302: →34550 (единая верхняя панель + линейные значки в TabBar + 3-зонный прокручиваемый рейл в NativeSidebar; комментарии по правилу проекта не режем).
+test('Общий renderer код (src/ без тестов) < 34550 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 34550, totalSrc + " > 34550")
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

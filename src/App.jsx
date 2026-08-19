@@ -718,12 +718,14 @@ export default function App() {
                   try { window.api?.send?.('app:log', { level: 'INFO', message: `[rail] «← Общий чат»: возврат к API-чатам с веба ${activeId}` }) } catch (_) {}
                   handleTabClick(NATIVE_CC_ID)
                 }}
-                title="Вернуться к чатам (общий чат / API)"
-                className="absolute top-0 left-0 right-0 flex items-center gap-2 px-3 cursor-pointer"
-                style={{ height: 34, zIndex: 3, backgroundColor: 'rgba(15,20,28,0.96)', borderBottom: '1px solid rgba(42,171,238,0.45)', color: '#e2e8f0', fontSize: 13 }}
+                title="Вернуться к общему чату (API)"
+                /* v1.2.293: полупрозрачная «таблетка»-стекло (backdrop-blur) вместо полосы; плавает, светлеет при наведении, «прилипает» само (оверлей поверх страницы мессенджера). */
+                className="group absolute top-1 left-2 z-[3] inline-flex items-center gap-1.5 rounded-full px-3 py-1 cursor-pointer border transition-colors backdrop-blur-md bg-[rgba(16,20,28,0.5)] hover:bg-[rgba(44,56,74,0.62)]"
+                style={{ borderColor: 'rgba(255,255,255,0.12)', color: '#e2e8f0', fontSize: 12.5, maxWidth: 'calc(100% - 16px)' }}
               >
-                <span aria-hidden="true">←</span><span>Общий чат</span>
-                <span style={{ opacity: 0.55 }}>· {am.name}</span>
+                <span aria-hidden="true" className="transition-transform group-hover:-translate-x-0.5" style={{ fontSize: 14, lineHeight: 1 }}>←</span>
+                <span style={{ fontWeight: 600, lineHeight: 1 }}>Общий чат</span>
+                <span style={{ opacity: 0.5, lineHeight: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {am.name}</span>
               </button>
             )
           })()}
@@ -752,9 +754,8 @@ export default function App() {
                 style={{
                   zIndex: activeId === m.id ? 2 : 0,
                   pointerEvents: activeId === m.id ? 'auto' : 'none',
-                  // v1.2.263: активный веб-слой начинается на 34px ниже — чтобы полоска
-                  // «← Общий чат» не перекрывала верх веб-страницы. Native (без полоски) — top:0.
-                  top: (activeId === m.id && !(m.isNative || m.id === NATIVE_CC_ID)) ? 34 : 0,
+                  // v1.2.296: убран верхний отступ (30→0) — таблетка «← Общий чат» плавает ПОВЕРХ страницы мессенджера, без чёрной полосы, что ела место.
+                  top: 0,
                   // НЕ используем visibility:hidden — Chromium останавливает загрузку hidden WebView
                   // Чёрный экран решён через disable-gpu-compositing в main.js
                 }}

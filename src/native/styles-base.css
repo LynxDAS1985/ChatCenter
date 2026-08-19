@@ -171,6 +171,16 @@
   flex-shrink: 0;
 }
 
+/* v1.2.302: прокручиваемая середина рейла (аккаунты/веб). Тонкий скроллбар в стиле AMOLED,
+   чтобы в узкой полосе (72px) не появлялся широкий системный ползунок. */
+.native-rail-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--amoled-border) transparent;
+}
+.native-rail-scroll::-webkit-scrollbar { width: 6px; }
+.native-rail-scroll::-webkit-scrollbar-track { background: transparent; }
+.native-rail-scroll::-webkit-scrollbar-thumb { background: var(--amoled-border); border-radius: 3px; }
+
 .native-account {
   width: 48px;
   height: 48px;
