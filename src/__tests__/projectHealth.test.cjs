@@ -43,7 +43,10 @@ test('scripts/dist-win.cjs keeps only installer in dist safely', function() {
   assert(distWin.includes('Refusing to clean outside dist'), 'cleanup must guard dist path')
   assert(distWin.includes('\\\\\\\\?\\\\'), 'Windows cleanup must support Cyrillic paths')
   assert(distWin.includes('fs.unlinkSync'), 'Windows cleanup must unlink files explicitly')
-  assert(distWin.includes('Expected exactly one installer'), 'cleanup must verify installer count before deleting extras')
+  // v1.2.299: чистка хранит ВСЕ установщики .exe и удаляет только мусор сборки. Защита изменена:
+  // раньше требовался ровно один установщик; теперь — не чистить, если НИ ОДНОГО установщика нет.
+  assert(distWin.includes('No installer .exe found'), 'cleanup must verify at least one installer exists before deleting extras')
+  assert(distWin.includes('function isInstaller'), 'cleanup must identify installers by pattern to keep them all')
   assert(distWin.includes('dist cleanup left extra files'), 'cleanup must fail if any non-installer file remains')
   assert(distWin.includes('verifyPackagedApp'), 'must verify packaged app before cleanup')
   assert(distWin.includes('out/renderer/index.html') && distWin.includes('node_modules/telegram/package.json'), 'package verification must cover renderer and production deps')
