@@ -6,6 +6,7 @@
 // v1.2.273: под значком — подпись имени аккаунта (accountName), как у API-аватаров. Нужно, т.к.
 // после скрытия верхних вкладок (v1.2.272) имя аккаунта веб-мессенджера больше нигде не видно.
 // При узкой полосе (hideLabel) подпись прячется; нет имени → подписи нет (значок как раньше).
+import { useState } from 'react'
 import ConnectionStatusDot from '../../components/ConnectionStatusDot.jsx'
 import MessengerIcon from './MessengerIcon.jsx' // v1.2.265: настоящий логотип Telegram (не эмодзи ✈️)
 
@@ -21,6 +22,8 @@ export default function RailWebIcon({
 }) {
   const px = (n) => Math.max(1, Math.round(n * scale))
   const color = m.color || '#2AABEE'
+  // v1.2.303: локальное состояние «этот значок сейчас тащат» → плавное поднятие (scale + тень).
+  const [dragging, setDragging] = useState(false)
   // Подсказка: имя мессенджера + имя аккаунта (если есть) — как было у вкладки.
   const tip = accountName ? `${m.name} · ${accountName}` : m.name
   return (
@@ -35,17 +38,30 @@ export default function RailWebIcon({
         onClick={() => onSelect?.(m.id)}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(m.id) } }}
         onContextMenu={e => { e.preventDefault(); onContextMenu?.(m.id, e.clientX, e.clientY) }}
-        onDragStart={e => { if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; onDragStart?.(m.id) }}
+        onDragStart={e => { if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; setDragging(true); onDragStart?.(m.id) }}
         onDragOver={e => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; onDragOver?.(m.id) }}
         onDrop={e => { e.preventDefault(); onDrop?.(m.id) }}
-        onDragEnd={() => onDragEnd?.()}
+        onDragEnd={() => { setDragging(false); onDragEnd?.() }}
         style={{
           position: 'relative', width: px(48), height: px(48), margin: '0 auto',
           borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', // v1.2.279: круглые, как API
           fontSize: px(22), lineHeight: 1, cursor: 'pointer',
           // v1.2.275: есть фото аккаунта → показываем его; иначе фон под логотип.
           background: avatar ? `url("${avatar}") center/cover no-repeat` : (isActive ? `${color}22` : 'var(--amoled-surface)'),
-          outline: isDragOver ? `2px dashed ${color}` : isActive ? `2px solid ${color}` : '1px solid var(--amoled-border)',
+          // v1.2.303: обводка/подсветка через box-shadow (кольцо по кругу, без «выемок» outline):
+          //   тащим → кольцо + сильная тень (поднятие); цель drop → кольцо + мягкий ореол;
+          //   активный → свечение; обычный → тонкая рамка.
+          boxShadow: dragging
+            ? `0 0 0 2px ${color}, 0 10px 20px rgba(0,0,0,0.55)`
+            : isDragOver
+              ? `0 0 0 2px ${color}, 0 0 0 4px ${color}33`
+              : isActive
+                ? `0 0 0 2px ${color}, 0 0 10px ${color}88`  // v1.2.304: 14→10px — меньше срезается overflow-x рейла
+                : '0 0 0 1px var(--amoled-border)',
+          transform: dragging ? 'scale(1.1)' : isDragOver ? 'scale(1.05)' : 'none',
+          opacity: dragging ? 0.92 : 1,
+          transition: 'transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease',
+          zIndex: dragging ? 3 : undefined,
         }}
       >
         {/* Пульс при новом сообщении */}
@@ -59,7 +75,9 @@ export default function RailWebIcon({
         {avatar ? (
           <span style={{
             position: 'absolute', top: -px(2), right: -px(2), width: px(18), height: px(18),
-            borderRadius: '50%', background: 'var(--amoled-bg)',
+            borderRadius: '50%', background: 'var(--amoled-surface)',
+            // v1.2.303: кольцо цвета коробки + мягкая тень → значок «лежит поверх», не режет круг.
+            boxShadow: '0 0 0 2px var(--amoled-surface), 0 1px 4px rgba(0,0,0,0.55)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             {(m.id === 'telegram' || /telegram/i.test(m.name || ''))
@@ -79,7 +97,9 @@ export default function RailWebIcon({
             position: 'absolute', top: -px(3), left: -px(3), minWidth: px(17), height: px(17),
             padding: `0 ${px(4)}px`, borderRadius: px(9), background: 'var(--amoled-danger)',
             color: '#fff', fontSize: px(10), fontWeight: 700, lineHeight: 1,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--amoled-bg)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            // v1.2.303: кольцо цвета коробки + тень вместо рамки цвета фона (не режет круг).
+            boxShadow: '0 0 0 2px var(--amoled-surface), 0 1px 4px rgba(0,0,0,0.5)',
           }}>{unread > 99 ? '99+' : unread}</span>
         )}
 
@@ -88,7 +108,10 @@ export default function RailWebIcon({
           <ConnectionStatusDot
             health={health} fallbackColor={`${color}66`} fallbackLabel={tip}
             size={px(11)} onClick={onOpenConnections}
-            style={{ border: '2px solid var(--amoled-bg)' }}
+            // v1.2.304 (ревью): только рамка цвета коробки. НЕ передаём boxShadow — иначе он
+            // перезатрёт собственное кольцо точки (ConnectionStatusDot задаёт boxShadow, а `...style`
+            // применяется после него → внешний boxShadow побеждает).
+            style={{ border: '2px solid var(--amoled-surface)' }}
           />
         </span>
 

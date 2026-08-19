@@ -55,17 +55,24 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
           return { b: cv.toDataURL('image/jpeg', 0.92), sz: Math.round(bestSz) };
         } catch (e) { return null; }
       };
-      // (A) фото уже на экране (Настройки открыты)?
+      // (A) фото уже на экране (Настройки открыты)? Кладём в ОТДЕЛЬНЫЙ ключ '__cc_account_avatar_crisp'
+      //     (v1.2.305): раньше чёткое и бледную запаску писали в ОДИН ключ '__cc_account_avatar', и
+      //     запаска из constants.js (stripped_thumb) ЗАТИРАЛА чёткое → значок застревал на бледном.
       var big = __grabBig();
-      if (big && big.b) { try { localStorage.setItem('__cc_account_avatar', big.b); localStorage.setItem('__cc_tg_crisp3', '1'); } catch (e) {}
+      if (big && big.b) { try { localStorage.setItem('__cc_account_avatar_crisp', big.b); } catch (e) {}
         return { avatar: big.b, sel: 'onscreen-big-' + big.sz, err: '' }; }
+      // Чёткое уже добыто (в отдельном ключе)? Отдаём его — Настройки больше не открываем.
+      var crisp = localStorage.getItem('__cc_account_avatar_crisp');
+      if (crisp && crisp.indexOf('data:image') === 0) return { avatar: crisp, sel: 'crisp-stored', err: '' };
       // (B) авто-открытие Настроек с ПОШАГОВОЙ записью в журнал (step пишется СРАЗУ на каждом шаге —
       // видно, до какого шага дошло, даже если дальше зависло). Ключи v3 — старый залипший crisp не блокирует.
       var step = function (s) { try { localStorage.setItem('__cc_avatar_diag', s); } catch (e) {} };
       var tries = parseInt(localStorage.getItem('__cc_tg_open_tries6') || '0', 10);
       var busy = window.__cc_tg_busyTs && (Date.now() - window.__cc_tg_busyTs < 15000); // по времени, не залипает
-      step('gate|c=' + (localStorage.getItem('__cc_tg_crisp3') || '-') + '|t=' + tries + '|busy=' + (busy ? 1 : 0));
-      if (localStorage.getItem('__cc_tg_crisp3') !== '1' && tries < 5 && !busy) {
+      // v1.2.305: гейт по НАЛИЧИЮ чёткого ключа, а не по старому флагу crisp3 (тот залипал на '1' и
+      // блокировал переснятие, пока в кармане лежала бледная запаска). Нет чёткого → идём в Настройки.
+      step('gate|crisp=' + (crisp ? 'Y' : 'N') + '|t=' + tries + '|busy=' + (busy ? 1 : 0));
+      if (!crisp && tries < 5 && !busy) {
         window.__cc_tg_busyTs = Date.now();
         localStorage.setItem('__cc_tg_open_tries6', String(tries + 1));
         var out = null;
@@ -87,7 +94,7 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
               var big2 = __grabBig();
               if (!big2 || big2.blank) { await __delay(1800); big2 = __grabBig(); }
               step('auto|opened|grab=' + (big2 ? (big2.b ? 'OK' + big2.sz : 'blank' + big2.blank) : 'null'));
-              if (big2 && big2.b) { try { localStorage.setItem('__cc_account_avatar', big2.b); localStorage.setItem('__cc_tg_crisp3', '1'); } catch (e) {}
+              if (big2 && big2.b) { try { localStorage.setItem('__cc_account_avatar_crisp', big2.b); } catch (e) {}
                 out = { avatar: big2.b, sel: 'auto-settings-' + big2.sz, err: '' }; }
               __esc(); await __delay(400); __esc();
             } else { __esc(); }
