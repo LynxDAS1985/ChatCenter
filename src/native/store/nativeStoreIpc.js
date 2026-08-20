@@ -18,6 +18,14 @@ import { attachLastMsgHandlers } from './nativeStoreLastMsgIpc.js' // v1.2.133 (
 // импорты из './nativeStoreIpc.js' продолжают работать).
 import { saveChatCache, loadChatCache } from './nativeStoreCache.js'
 export { saveChatCache, loadChatCache }
+
+// v1.2.312: момент старта приложения. Сообщения с датой ОТПРАВКИ раньше него (минус запас 15с) —
+// это offline-бэклог (TDLib отдаёт накопившееся пачкой при коннекте после запуска). Для них НЕ
+// показываем всплывающее уведомление, иначе на старте вываливается «стена» карточек, которую не
+// закрыть (клики теряются при потоке). Бейдж/счётчик непрочитанного обновляются как обычно (в
+// setState выше по коду). Живые сообщения (дата ≈ сейчас) уведомляются нормально; ARM_TS фиксирован
+// в момент старта → правило действует ТОЛЬКО на стартовый бэклог, дальше на живой поток не влияет.
+const NOTIFY_ARM_TS = Date.now()
 // v1.2.12: handlers статуса отправки (tg:typing / tg:send-succeeded / tg:upload-progress)
 // вынесены в nativeStoreSendIpc.js — файл превысил ceiling 730 после диагностических логов.
 // ВАЖНО: tg:send-succeeded — фикс «дубля исходящих» (provisional id → final id).
@@ -408,6 +416,9 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
       // UI рисует 🔕 по тому же полю — поведение синхронизировано с тем что видит юзер.
       // Счётчик unread / превью / source — остаются нетронутыми (как в Telegram Desktop).
       // НЕ закрывает глобальный мьют скоупа (use_default_mute_for=true) — отдельная задача.
+      // v1.2.312: свежесть — offline-бэклог (дата отправки раньше старта) всплывашкой НЕ показываем.
+      const msgTsMs = Number(message.timestamp) || 0
+      const isBacklogMsg = msgTsMs > 0 && msgTsMs < (NOTIFY_ARM_TS - 15000)
       if (chat?.isMuted) {
         // Уровень TRACE — пишется только при включенной диагностике, не спамит при
         // потоке muted-сообщений из активных каналов. См. CLAUDE.md «Логи».
@@ -417,6 +428,10 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             message: '[native-notif] skip muted chatId=' + chatId + ' sender=' + (message.senderName || chat?.title || '?'),
           })
         } catch (_) {}
+      } else if (isBacklogMsg) {
+        // v1.2.312: старьё при старте (offline-бэклог) — всплывашку НЕ показываем, только счётчик.
+        // Заодно «детектор»: по числу таких строк в журнале виден размер стартового завала.
+        try { window.api?.send?.('app:log', { level: 'INFO', message: '[native-notif] skip backlog (pre-start) chatId=' + chatId + ' ageSec=' + Math.round((NOTIFY_ARM_TS - msgTsMs) / 1000) }) } catch (_) {}
       } else {
         // v1.2.12: emit-лог №1 — пара к [notif-ipc] recv в mainIpcHandlers.js.
         try { window.api?.send?.('app:log', { level: 'INFO', message: '[native-notif] emit chatId=' + chatId + ' sender=' + String(message.senderName || chat?.title || '?').slice(0, 30) + ' bodyLen=' + (preview || '').length }) } catch (_) {}

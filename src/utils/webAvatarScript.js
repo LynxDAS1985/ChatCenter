@@ -40,41 +40,56 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
       var __grabBig = function () {
         try {
           var av = document.querySelectorAll('img.avatar-photo, .avatar-photo img, .avatar img, [class*="avatar" i] img');
-          var best = null, bestSz = 79;
+          // v1.2.309: фото грузится СТУПЕНЬКОЙ (серое → через ~2с чёткое). Раньше брали ПРОСТО самый большой
+          // кружок — а им часто была серая заглушка. Теперь проверяем ВСЕ большие кандидаты и берём самый
+          // крупный НАСТОЯЩИЙ (серые/заглушки пропускаем). Пока настоящее не пришло — вернём blank (ждём).
+          var bestEl = null, bestSz = 0, bestProfEl = null, bestProfSz = 0, sawBig = false;
           for (var ai = 0; ai < av.length; ai++) {
-            var ae = av[ai]; if (!ae.src || !ae.complete || ae.naturalWidth < 60) continue; // только ЗАГРУЖЕННОЕ фото
+            var ae = av[ai]; if (!ae.src || !ae.complete || ae.naturalWidth < 60) continue; // только ЗАГРУЖЕННОЕ
             var rc = ae.getBoundingClientRect(); var mn = Math.min(rc.width, rc.height);
-            if (mn > bestSz) { bestSz = mn; best = ae; }
+            if (mn <= 79) continue; // нужен КРУПНЫЙ (фото профиля), мелкие аватарки чатов пропускаем
+            sawBig = true;
+            var cv = document.createElement('canvas'); cv.width = 100; cv.height = 100;
+            var cx = cv.getContext('2d');
+            try { cx.drawImage(ae, 0, 0, 100, 100); } catch (e) { continue; }
+            var mn2 = 255, mx2 = 0, sum2 = 0, cnt2 = 0; // разброс + средняя яркость
+            try { var pd = cx.getImageData(12, 12, 76, 76).data; for (var pi = 0; pi < pd.length; pi += 8) { var vv = pd[pi]; if (vv < mn2) mn2 = vv; if (vv > mx2) mx2 = vv; sum2 += vv; cnt2++; } } catch (e) { try { localStorage.setItem('__cc_avatar_diag', 'grab|skip:' + (e && e.name)); } catch (e2) {} continue; } // v1.2.311 (#3): молчал — теперь в журнал (cross-origin/tainted)
+            var avg2 = cnt2 ? sum2 / cnt2 : 128;
+            // Заглушка загрузки: почти однотонная ИЛИ тёмная+малодетальная (серый кружок ~77). Пропускаем.
+            // Осторожно: тёмное, но ДЕТАЛЬНОЕ (mx-mn>=70) фото проходит — не режем настоящие тёмные аватары.
+            if ((mx2 - mn2 < 18) || (avg2 < 100 && (mx2 - mn2) < 70)) continue;
+            // v1.2.311 (#1): предпочитаем аватар ВНУТРИ Настроек/профиля (точно «свой»); иначе — крупнейший.
+            var inProf = false; try { inProf = !!ae.closest('[class*="settings" i], [class*="profile" i], .sidebar-header'); } catch (e) {}
+            if (inProf && mn > bestProfSz) { bestProfSz = mn; bestProfEl = ae; }
+            if (mn > bestSz) { bestSz = mn; bestEl = ae; }
           }
-          if (!best) return null;
-          var cv = document.createElement('canvas'); cv.width = 100; cv.height = 100;
-          var cx = cv.getContext('2d'); cx.drawImage(best, 0, 0, 100, 100);
-          var mn2 = 255, mx2 = 0; // разброс яркости: почти однотонная = плейсхолдер (белый кружок), не берём
-          try { var pd = cx.getImageData(12, 12, 76, 76).data; for (var pi = 0; pi < pd.length; pi += 8) { var vv = pd[pi]; if (vv < mn2) mn2 = vv; if (vv > mx2) mx2 = vv; } } catch (e) { mx2 = 255; mn2 = 0; }
-          if (mx2 - mn2 < 18) return { blank: Math.round(bestSz) };
-          return { b: cv.toDataURL('image/jpeg', 0.92), sz: Math.round(bestSz) };
+          var winEl = bestProfEl || bestEl, winSz = bestProfEl ? bestProfSz : bestSz;
+          if (winEl) { var cvW = document.createElement('canvas'); cvW.width = 100; cvW.height = 100;
+            try { cvW.getContext('2d').drawImage(winEl, 0, 0, 100, 100); return { b: cvW.toDataURL('image/jpeg', 0.92), sz: Math.round(winSz) }; } catch (e) {} }
+          if (sawBig) return { blank: 1 }; // большие есть, но все — заглушки: ждём следующей попытки
+          return null; // крупных нет (Настройки ещё не открыты)
         } catch (e) { return null; }
       };
-      // (A) фото уже на экране (Настройки открыты)? Кладём в ОТДЕЛЬНЫЙ ключ '__cc_account_avatar_crisp'
+      // (A) фото уже на экране (Настройки открыты)? Кладём в ОТДЕЛЬНЫЙ ключ '__cc_account_avatar_crisp2'
       //     (v1.2.305): раньше чёткое и бледную запаску писали в ОДИН ключ '__cc_account_avatar', и
       //     запаска из constants.js (stripped_thumb) ЗАТИРАЛА чёткое → значок застревал на бледном.
       var big = __grabBig();
-      if (big && big.b) { try { localStorage.setItem('__cc_account_avatar_crisp', big.b); } catch (e) {}
+      if (big && big.b) { try { localStorage.setItem('__cc_account_avatar_crisp2', big.b); } catch (e) {}
         return { avatar: big.b, sel: 'onscreen-big-' + big.sz, err: '' }; }
       // Чёткое уже добыто (в отдельном ключе)? Отдаём его — Настройки больше не открываем.
-      var crisp = localStorage.getItem('__cc_account_avatar_crisp');
+      var crisp = localStorage.getItem('__cc_account_avatar_crisp2');
       if (crisp && crisp.indexOf('data:image') === 0) return { avatar: crisp, sel: 'crisp-stored', err: '' };
       // (B) авто-открытие Настроек с ПОШАГОВОЙ записью в журнал (step пишется СРАЗУ на каждом шаге —
       // видно, до какого шага дошло, даже если дальше зависло). Ключи v3 — старый залипший crisp не блокирует.
       var step = function (s) { try { localStorage.setItem('__cc_avatar_diag', s); } catch (e) {} };
-      var tries = parseInt(localStorage.getItem('__cc_tg_open_tries6') || '0', 10);
+      var tries = parseInt(localStorage.getItem('__cc_tg_open_tries7') || '0', 10);
       var busy = window.__cc_tg_busyTs && (Date.now() - window.__cc_tg_busyTs < 15000); // по времени, не залипает
       // v1.2.305: гейт по НАЛИЧИЮ чёткого ключа, а не по старому флагу crisp3 (тот залипал на '1' и
       // блокировал переснятие, пока в кармане лежала бледная запаска). Нет чёткого → идём в Настройки.
       step('gate|crisp=' + (crisp ? 'Y' : 'N') + '|t=' + tries + '|busy=' + (busy ? 1 : 0));
-      if (!crisp && tries < 5 && !busy) {
+      if (!crisp && tries < 8 && !busy) {  // v1.2.311 (#2): 5→8 попыток — запас на медленный интернет
         window.__cc_tg_busyTs = Date.now();
-        localStorage.setItem('__cc_tg_open_tries6', String(tries + 1));
+        localStorage.setItem('__cc_tg_open_tries7', String(tries + 1));
         var out = null;
         try {
           step('auto|start t' + (tries + 1));
@@ -90,11 +105,13 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
             }
             step('auto|menu=' + cl.length + '|set=' + (settings ? 'Y' : 'N') + '|[' + dd.join(',').slice(0, 90) + ']');
             if (settings) {
-              settings.click(); await __delay(2500);
+              settings.click(); await __delay(2600);
+              // v1.2.308: даём НАСТОЯЩЕМУ фото прогрузиться — до 5 попыток с паузой (пока не пришло —
+              // __grabBig вернёт blank для серой заглушки, ждём следующую). Всего ~9с в Настройках.
               var big2 = __grabBig();
-              if (!big2 || big2.blank) { await __delay(1800); big2 = __grabBig(); }
+              for (var rt = 0; rt < 5 && (!big2 || big2.blank); rt++) { await __delay(1600); big2 = __grabBig(); } // v1.2.311 (#2): 4→5 ретраев
               step('auto|opened|grab=' + (big2 ? (big2.b ? 'OK' + big2.sz : 'blank' + big2.blank) : 'null'));
-              if (big2 && big2.b) { try { localStorage.setItem('__cc_account_avatar_crisp', big2.b); } catch (e) {}
+              if (big2 && big2.b) { try { localStorage.setItem('__cc_account_avatar_crisp2', big2.b); } catch (e) {}
                 out = { avatar: big2.b, sel: 'auto-settings-' + big2.sz, err: '' }; }
               __esc(); await __delay(400); __esc();
             } else { __esc(); }

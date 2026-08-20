@@ -34,7 +34,7 @@ function newMsg(extra = {}) {
   return {
     id: '500',
     isOutgoing: false,
-    timestamp: 1000,
+    timestamp: Date.now(), // v1.2.312: живое сообщение = свежая дата (старое считается offline-бэклогом и всплывашкой не показывается)
     text: 'hello',
     senderName: 'Alice',
     ...extra,
@@ -123,6 +123,21 @@ describe('tg:new-message — muted чат (v1.2.12 регрессия)', () => {
       c => c[0] === 'app:log' && c[1]?.message?.includes('skip muted')
     )
     expect(logCalls).toHaveLength(1)
+  })
+
+  it('старое сообщение (offline-бэклог до старта) → ribbon НЕ вызывается, но счётчик растёт + лог skip backlog (v1.2.312)', () => {
+    const { fire, invokeMock, sendMock, get } = setup({
+      messages: {},
+      chats: [{ id: 'c1', title: 'Двач', unreadCount: 0, isMuted: false }],
+      activeChatId: null,
+    })
+    // дата отправки на минуту раньше старта модуля (NOTIFY_ARM_TS) → offline-бэклог
+    fire('tg:new-message', { chatId: 'c1', message: newMsg({ timestamp: Date.now() - 60000 }) })
+    const notifyCalls = invokeMock.mock.calls.filter(c => c[0] === 'app:custom-notify')
+    expect(notifyCalls).toHaveLength(0) // всплывашки нет — старьё при старте не заваливает
+    const backlogLog = sendMock.mock.calls.filter(c => c[0] === 'app:log' && c[1]?.message?.includes('skip backlog'))
+    expect(backlogLog).toHaveLength(1) // но факт зафиксирован в журнале (детектор завала)
+    expect(get().chats[0].unreadCount).toBe(1) // счётчик непрочитанного растёт даже для бэклога
   })
 
   it('isMuted=true + активный чат → ribbon не вызывается (двойной фильтр)', () => {
