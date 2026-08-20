@@ -59,9 +59,11 @@ export default function AccountAvatar({
         className="account-avatar-circle"
         style={{
           position: 'relative', width: px(48), height: px(48), margin: '0 auto', borderRadius: '50%',
-          background: account.avatar ? `url("${account.avatar}") center/cover no-repeat` : color,
+          // v1.2.313: логотип/фото в кружке крупнее на 20% — зум фона (cover→120%). Круг тот же (48px).
+          // Аватары квадратные (TDLib/захват веб → 100×100) → 120% даёт чистый зум без цветных полей.
+          background: account.avatar ? `url("${account.avatar}") center/120% no-repeat` : color,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontSize: px(16), fontWeight: 600,
+          color: '#fff', fontSize: px(19), fontWeight: 600, // v1.2.313: инициалы (нет фото) +20% (16→19)
           transition: 'transform 0.15s, filter 0.15s, opacity 0.15s',
           boxShadow: solo
             ? `0 0 0 ${px(2)}px var(--amoled-bg), 0 0 0 ${px(4)}px ${accountColor || '#2aabee'}, 0 0 ${px(12)}px ${px(2)}px ${accountColor || '#2aabee'}`

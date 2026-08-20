@@ -45,9 +45,10 @@ export default function RailWebIcon({
         style={{
           position: 'relative', width: px(48), height: px(48), margin: '0 auto',
           borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', // v1.2.279: круглые, как API
-          fontSize: px(22), lineHeight: 1, cursor: 'pointer',
+          fontSize: px(26), lineHeight: 1, cursor: 'pointer', // v1.2.313: эмодзи-логотип (нет фото) +20% (22→26)
           // v1.2.275: есть фото аккаунта → показываем его; иначе фон под логотип.
-          background: avatar ? `url("${avatar}") center/cover no-repeat` : (isActive ? `${color}22` : 'var(--amoled-surface)'),
+          // v1.2.313: фото/логотип в кружке крупнее на 20% — зум фона (cover→120%), круг тот же (48px).
+          background: avatar ? `url("${avatar}") center/120% no-repeat` : (isActive ? `${color}22` : 'var(--amoled-surface)'),
           // v1.2.303: обводка/подсветка через box-shadow (кольцо по кругу, без «выемок» outline):
           //   тащим → кольцо + сильная тень (поднятие); цель drop → кольцо + мягкий ореол;
           //   активный → свечение; обычный → тонкая рамка.
@@ -85,8 +86,9 @@ export default function RailWebIcon({
               : <span aria-hidden="true" style={{ fontSize: px(11), lineHeight: 1 }}>{m.emoji || '•'}</span>}
           </span>
         ) : (
+          // v1.2.313: центральный логотип Telegram (нет фото) +20% — px(24)→px(29)
           (m.id === 'telegram' || /telegram/i.test(m.name || ''))
-            ? <MessengerIcon messenger="telegram" size={px(24)} />
+            ? <MessengerIcon messenger="telegram" size={px(29)} />
             : <span aria-hidden="true">{m.emoji || (m.name ? m.name[0] : '•')}</span>
         )}
 
