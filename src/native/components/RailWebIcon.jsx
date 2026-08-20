@@ -22,6 +22,18 @@ export default function RailWebIcon({
 }) {
   const px = (n) => Math.max(1, Math.round(n * scale))
   const color = m.color || '#2AABEE'
+  // v1.2.314: тип мессенджера для логотипа-картинки. По id ИЛИ имени — id веб-аккаунта бывает
+  // 'custom_…' (напр. Telegram), поэтому дублируем проверку по имени, как было для Telegram.
+  // Есть тип с логотипом → рисуем картинку (MessengerIcon), нет — эмодзи. Пока: Telegram, WhatsApp, ВК, МАКС.
+  // v1.2.315/316: у ВК и МАКС имя мессенджера кириллицей («ВКонтакте», «Макс»); дефолтные ловятся по id
+  // ('vk'/'max'), кастомные (id 'custom_…') — по кириллическому имени.
+  // v1.2.317 (ревью #1): латинские /vk/,/max/ УБРАНЫ из масок — короткая подстрока давала ЧУЖОЙ
+  // логотип (напр. «Vkusvill»→ВК, «MaxBet»→МАКС). Кириллица длинная, ложных срабатываний не даёт.
+  const logoType = (m.id === 'telegram' || /telegram/i.test(m.name || '')) ? 'telegram'
+    : (m.id === 'whatsapp' || /whatsapp/i.test(m.name || '')) ? 'whatsapp'
+    : (m.id === 'vk' || /вконтакте/i.test(m.name || '')) ? 'vk'
+    : (m.id === 'max' || /макс/i.test(m.name || '')) ? 'max'
+    : null
   // v1.2.303: локальное состояние «этот значок сейчас тащат» → плавное поднятие (scale + тень).
   const [dragging, setDragging] = useState(false)
   // Подсказка: имя мессенджера + имя аккаунта (если есть) — как было у вкладки.
@@ -81,14 +93,14 @@ export default function RailWebIcon({
             boxShadow: '0 0 0 2px var(--amoled-surface), 0 1px 4px rgba(0,0,0,0.55)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            {(m.id === 'telegram' || /telegram/i.test(m.name || ''))
-              ? <MessengerIcon messenger="telegram" size={px(12)} />
+            {logoType
+              ? <MessengerIcon messenger={logoType} size={px(12)} />
               : <span aria-hidden="true" style={{ fontSize: px(11), lineHeight: 1 }}>{m.emoji || '•'}</span>}
           </span>
         ) : (
-          // v1.2.313: центральный логотип Telegram (нет фото) +20% — px(24)→px(29)
-          (m.id === 'telegram' || /telegram/i.test(m.name || ''))
-            ? <MessengerIcon messenger="telegram" size={px(29)} />
+          // v1.2.313: центральный логотип +20% (px24→29). v1.2.314: любой с логотипом (Telegram/WhatsApp).
+          logoType
+            ? <MessengerIcon messenger={logoType} size={px(29)} />
             : <span aria-hidden="true">{m.emoji || (m.name ? m.name[0] : '•')}</span>
         )}
 

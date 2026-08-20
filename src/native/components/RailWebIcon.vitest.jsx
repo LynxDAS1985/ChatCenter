@@ -69,4 +69,25 @@ describe('RailWebIcon', () => {
     expect(style).not.toContain('url(') // логотип, не фото
     expect(style).toContain('50%')      // круглый
   })
+
+  // v1.2.317 (ревью #1): распознавание типа по имени НЕ должно ловить чужие слова с подстрокой vk/max.
+  it('кастомная вкладка «Vkusvill» НЕ получает логотип ВК (маска не по подстроке)', () => {
+    const src = { id: 'custom_1', name: 'Vkusvill', emoji: '🛒', color: '#123456' }
+    const { container } = render(<RailWebIcon messenger={src} onSelect={() => {}} />)
+    expect(container.querySelector('img')).toBeNull() // логотипа нет
+    expect(container.textContent).toContain('🛒')      // показан свой эмодзи
+  })
+
+  it('кастомная вкладка «MaxBet» НЕ получает логотип МАКС', () => {
+    const src = { id: 'custom_3', name: 'MaxBet', emoji: '🎲', color: '#123456' }
+    const { container } = render(<RailWebIcon messenger={src} onSelect={() => {}} />)
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.textContent).toContain('🎲')
+  })
+
+  it('кастомный ВК (id custom_, имя «ВКонтакте») всё равно получает логотип', () => {
+    const src = { id: 'custom_2', name: 'ВКонтакте', emoji: '🅥', color: '#0077FF' }
+    const { container } = render(<RailWebIcon messenger={src} onSelect={() => {}} />)
+    expect(container.querySelector('img')).not.toBeNull() // кириллическое имя → логотип есть
+  })
 })

@@ -13,10 +13,25 @@ describe('MessengerIcon (v1.2.183)', () => {
     expect(img.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
   })
 
-  it('whatsapp → без картинки, показывает эмодзи 💬', () => {
+  it('whatsapp → рисует логотип-картинку <img> с data-URI (v1.2.314)', () => {
     const { container } = render(<MessengerIcon messenger="whatsapp" size={14} />)
-    expect(container.querySelector('img')).toBeNull()
-    expect(container.textContent).toContain('💬')
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('vk → рисует логотип-картинку <img> с data-URI (v1.2.315)', () => {
+    const { container } = render(<MessengerIcon messenger="vk" size={14} />)
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('max → рисует логотип-картинку <img> с data-URI (v1.2.316)', () => {
+    const { container } = render(<MessengerIcon messenger="max" size={14} />)
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
   })
 
   it('неизвестный мессенджер → эмодзи-fallback 💬, без картинки', () => {
