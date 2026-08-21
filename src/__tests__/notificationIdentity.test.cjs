@@ -18,7 +18,11 @@ const consoleHandlerCode = fs.readFileSync('src/utils/consoleMessageHandler.js',
 
 test('main dedup uses sender/chat scope', () => {
   assert(notifMgrCode.includes('function buildNotificationScope'))
-  assert(notifMgrCode.includes('const dedupKey = dedupScope +'))
+  // v1.2.318: решение о дубле вынесено в notifDedupDecision.js (decideNotifDedup), а scope
+  // строится тут через buildNotificationScope и передаётся туда. Поведение сохранено + покрыто
+  // отдельным тестом notifDedupDecision.vitest.js.
+  assert(notifMgrCode.includes('decideNotifDedup'))
+  assert(notifMgrCode.includes('dedupScope = buildNotificationScope'))
 })
 
 test('main sends stackKey for sender/chat grouping', () => {

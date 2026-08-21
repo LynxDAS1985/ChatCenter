@@ -3,6 +3,7 @@
 
 import { Notification } from 'electron'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
+import { decideNotifDedup } from './notifDedupDecision.js' // v1.2.318: кросс-детекторный дедуп веб-мессенджеров
 
 let notifWin = null
 let notifItems = [] // [{id, messengerId, ...}]
@@ -225,13 +226,16 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   // Нормализуем body: убираем timestamps (Telegram/SW шлют body с приклеенным временем)
   const normalizedBody = (body || '').replace(/\d{1,2}:\d{2}(:\d{2})?/g, '').trim()
   const dedupScope = buildNotificationScope({ messengerId, senderName, title, chatTag, messageId })
-  const dedupKey = dedupScope + ':' + (normalizedBody || (body || '')).slice(0, 60)
   const now = Date.now()
-  if (notifDedupMap.has(dedupKey) && now - notifDedupMap.get(dedupKey) < 8000) {
-    console.log('[NotifManager] skip dedup messenger=' + (messengerId || '') + ' key=' + dedupKey.slice(0, 90) + ' age=' + (now - notifDedupMap.get(dedupKey)))
+  // v1.2.318: решение о дубле вынесено в чистый notifDedupDecision.js (+тест). Для веб-мессенджеров
+  // добавлен ключ без messageId/chatTag (мессенджер+отправитель+текст) — ловит двойные VK-карточки
+  // от двух детекторов; нативный Telegram (native_cc) не затронут.
+  const dedupDecision = decideNotifDedup({ dedupScope, messengerId, senderName, title, normalizedBody, body, now, dedupMap: notifDedupMap })
+  if (dedupDecision.duplicate) {
+    console.log('[NotifManager] skip dedup messenger=' + (messengerId || '') + ' key=' + dedupDecision.hitKey.slice(0, 90) + ' age=' + dedupDecision.age)
     return null
   }
-  notifDedupMap.set(dedupKey, now)
+  for (const k of dedupDecision.keysToSet) notifDedupMap.set(k, now)
   if (notifDedupMap.size > 50) {
     for (const [k, ts] of notifDedupMap) { if (now - ts > 30000) notifDedupMap.delete(k) }
   }

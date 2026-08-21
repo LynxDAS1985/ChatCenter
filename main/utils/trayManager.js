@@ -14,7 +14,9 @@ let logViewerWin = null
 function getLogViewerPreloadPath() {
   const { isDev, __dirname, path } = _deps
   if (isDev) return path.join(__dirname, '../../main/preloads/log-viewer.preload.cjs')
-  return path.join(__dirname, '../preload/log-viewer.cjs')
+  // v1.2.318 ФИКС: сборка electron-vite кладёт preload как .mjs (как у notification/pin/monitor),
+  // а тут было .cjs → в установленной версии мостик не грузился, окно логов висело «Загрузка …».
+  return path.join(__dirname, '../preload/log-viewer.mjs')
 }
 
 // v0.84.3: Отдельное окно для просмотра логов

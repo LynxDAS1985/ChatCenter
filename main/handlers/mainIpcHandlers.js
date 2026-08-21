@@ -30,6 +30,16 @@ export function registerMainIpcHandlers(deps) {
   // v0.84.2: Чтение лога для модального окна
   ipcMain.handle('app:read-log', () => readLogFile(500))
   ipcMain.handle('app:clear-log', () => { clearLogFile(); return 'ok' })
+  // v1.2.318: открыть Проводник с выделенным файлом chatcenter.log (кнопка «📂 Папка логов»
+  // в окне логов). Путь берётся ТОЛЬКО из getLogFilePath() — извне ничего не принимаем.
+  ipcMain.handle('app:open-logs-folder', () => {
+    try {
+      const lp = getLogFilePath()
+      if (lp && fs.existsSync(lp)) { shell.showItemInFolder(lp); return { ok: true } }
+      if (lp) { shell.openPath(path.dirname(lp)); return { ok: true, note: 'file-missing' } }
+      return { ok: false, error: 'no-log-path' }
+    } catch (e) { return { ok: false, error: e && e.message } }
+  })
   ipcMain.handle('app:diagnostics-snapshot', () => collectSystemDiagnostics({ app, readLogFile, getLogFilePath }))
   ipcMain.handle('app:diagnostics-save-report', (_, report) => saveSystemDiagnosticsReport({ app, report }))
   ipcMain.handle('app:diagnostics-read-report', () => readSystemDiagnosticsReport({ app }))

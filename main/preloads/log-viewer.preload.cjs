@@ -10,6 +10,8 @@
 // Безопасный мост:
 //   window.logViewer.onContent(cb) — подписка на обновления лога (auto refresh)
 //   window.logViewer.clearLog()    — очистить лог
+//   window.logViewer.readLog()     — v1.2.318: разово запросить лог (pull), не ждать push
+//   window.logViewer.openFolder()  — v1.2.318: открыть Проводник с файлом chatcenter.log
 
 const { contextBridge, ipcRenderer } = require('electron')
 
@@ -29,5 +31,13 @@ contextBridge.exposeInMainWorld('logViewer', {
   },
   clearLog() {
     return ipcRenderer.invoke('app:clear-log')
+  },
+  // v1.2.318: разовый запрос лога при открытии окна (страховка, если push задержался).
+  readLog() {
+    return ipcRenderer.invoke('app:read-log')
+  },
+  // v1.2.318: открыть системный Проводник с выделенным файлом chatcenter.log.
+  openFolder() {
+    return ipcRenderer.invoke('app:open-logs-folder')
   },
 })

@@ -30,6 +30,7 @@ body { background:#1a1b2e; color:#e0e0e0; font-family:-apple-system,BlinkMacSyst
   <button id="btnAuto" class="active" onclick="toggleAuto()">● Auto</button>
   <button onclick="clearLog()">🗑 Очистить</button>
   <button onclick="copyAll()">📋 Копировать</button>
+  <button onclick="openLogsFolder()">📂 Папка логов</button>
   <button class="close" onclick="window.close()">✕</button>
 </div>
 <div class="filters" id="filters">
@@ -111,6 +112,11 @@ function clearLog() {
   } else { allLines = []; render() }
 }
 
+function openLogsFolder() {
+  // v1.2.318: открыть Проводник с файлом chatcenter.log (чтобы скопировать и отправить).
+  if (window.logViewer && typeof window.logViewer.openFolder === 'function') window.logViewer.openFolder()
+}
+
 function loadLog() {
   // v0.89.38: содержимое теперь приходит через window.logViewer.onContent
   // (preload subscribes to ipcRenderer 'log-viewer:content'). loadLog() — no-op,
@@ -125,6 +131,16 @@ window.addEventListener('DOMContentLoaded', () => {
       allLines = (content || '').split('\n').map(parseLine).filter(Boolean)
       render()
     })
+    // v1.2.318: сразу запрашиваем лог (pull), не дожидаясь push от main — окно не висит «Загрузка …».
+    if (typeof window.logViewer.readLog === 'function') {
+      window.logViewer.readLog()
+        .then((content) => { allLines = (content || '').split('\n').map(parseLine).filter(Boolean); render() })
+        .catch(() => {})
+    }
+  } else {
+    // v1.2.318: мостик не подключился — честное сообщение вместо вечной «Загрузки …».
+    document.getElementById('logs').innerHTML = '<div class="empty">Не удалось подключить мост логов.<br>Перезапустите приложение; если не помогло — пришлите этот экран разработчику.</div>'
+    document.getElementById('count').textContent = 'мост не подключён'
   }
 })
 </script>

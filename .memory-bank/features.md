@@ -1,6 +1,23 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.317 (20 августа 2026)
+## Текущая версия: v1.2.318 (21 августа 2026)
+
+### v1.2.318 — Фикс: пустые логи в установленной версии + кнопка «Папка логов» + двойные VK-уведомления
+
+Три правки одним релизом (по просьбе пользователя — профессионально, не «коротким путём»).
+
+**1. Пустые логи в установленной версии (🟢 корень найден).** Окно «Логи ChatCenter» (`main/log-viewer.html`, отдельное окно из трея) в УПАКОВАННОЙ версии не могло загрузить свой preload-мостик: путь был `../preload/log-viewer.cjs`, а electron-vite собирает preload как `.mjs` (как у notification/pin/monitor — они работают). Мостик не грузился → `window.logViewer` отсутствовал → окно навсегда «Загрузка …» / «0 записей». В dev не проявлялось (там путь на исходник `.cjs`). Сам файл `chatcenter.log` пишется исправно (логгер `main/utils/logger.js` не затронут). Фикс: `main/utils/trayManager.js:17` `.cjs → .mjs`. Плюс «как часы»: окно теперь при открытии САМО запрашивает лог (`window.logViewer.readLog()` → `app:read-log`), не дожидаясь push, и показывает честное сообщение, если мостик не подключился (вместо вечной «Загрузки …»).
+
+**2. Кнопка «📂 Папка логов»** в шапке окна логов — открывает Проводник с выделенным файлом `chatcenter.log` (чтобы скопировать и отправить разработчику). Новый IPC `app:open-logs-folder` (`main/handlers/mainIpcHandlers.js`) → `shell.showItemInFolder(getLogFilePath())` (путь только из `getLogFilePath()`, извне ничего не принимаем). Метод `openFolder()`/`readLog()` добавлены в мостик `main/preloads/log-viewer.preload.cjs`.
+
+**3. Двойные VK-уведомления (🟢 корень найден).** Одно сообщение ВК ловят ДВА независимых детектора: наблюдатель списка чатов (`vk.hook.js` `_scanVkList`, путь `vk-list`, без messageId) и наблюдатель открытого чата (`vkDiagnostics` → IPC `new-message`, messageId=отпечаток). Дедуп в `notificationManager` завязан на scope, а scope у этих путей РАЗНЫЙ (`sender:vk-list:<hash>` против `mid:<отпечаток>`) → две одинаковые карточки. Фикс (по паттерну проекта — чистый модуль + тест, как `notifResizeDecision.js`): новый `main/handlers/notifDedupDecision.js` (`decideNotifDedup`) добавляет для ВЕБ-мессенджеров ключ склейки БЕЗ messageId/chatTag — «мессенджер+отправитель+текст». **Нативный Telegram (`native_cc`) НЕ затронут** — там реальные messageId, два быстрых одинаковых сообщения показываются оба. `notificationManager.js` использует чистую функцию вместо встроенной логики. Тест `src/__tests__/notifDedupDecision.vitest.js` (6 проверок, включая воспроизведение бага и защиту native). Остаточный край: у очень длинного поста превью в списке и полный текст в чате могут различаться → склейка не сработает (тогда два показа) — редко.
+
+**Проверки:** `node --check` всех файлов OK; `notifDedupDecision` 6/6; `notificationIdentity` 9/9 (проверка-сторож наведена на новый модуль); `ipcChannels` 44/44; `extractedModules` 37/37; `buildContract` 16/16; `notifHooks` 87/87; lint 0; лимиты 586/586. **Требует пересборки + переустановки** (правки в main/preload видны только в установленной версии). **Визуальная проверка:** открыть «Логи» — есть записи + кнопка «Папка логов» работает; в ВК приходит ОДНО уведомление.
+
+**Откат:** `git checkout main/utils/trayManager.js main/preloads/log-viewer.preload.cjs main/log-viewer.html main/handlers/mainIpcHandlers.js main/handlers/notificationManager.js` + удалить `main/handlers/notifDedupDecision.js src/__tests__/notifDedupDecision.vitest.js`.
+
+Файлы: `main/utils/trayManager.js`, `main/preloads/log-viewer.preload.cjs`, `main/log-viewer.html`, `main/handlers/mainIpcHandlers.js`, `main/handlers/notifDedupDecision.js` (new), `main/handlers/notificationManager.js`, `src/__tests__/notifDedupDecision.vitest.js` (new), `src/__tests__/notificationIdentity.test.cjs`. Грабли — в [[common-mistakes]] / mistakes.
+
 
 ### v1.2.317 — Фикс по ревью: логотип ВК/МАКС не «прилипает» к чужим вкладкам
 
