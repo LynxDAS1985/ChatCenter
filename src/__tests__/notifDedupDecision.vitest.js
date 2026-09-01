@@ -32,6 +32,27 @@ describe('notifDedupDecision (v1.2.318)', () => {
     expect(r2.duplicate).toBe(false) // второй «ок» показывается — не глушим нативное
   })
 
+  it('MAX (v1.2.319): два ОДИНАКОВЫХ сообщения с разным max-sidebar messageId — оба показываются', () => {
+    // Регресс v1.2.55: MAX кодирует событие в messageId (max-sidebar:sender:unread), чтобы
+    // одинаковые по тексту сообщения подряд НЕ склеивались. Кросс-ключ не должен их глушить.
+    const map = new Map()
+    const r1 = decideNotifDedup({ dedupScope: 'mid:max-sidebar:ivan:3', messengerId: 'max', senderName: 'Иван', title: '', normalizedBody: 'ок', body: 'ок', messageId: 'max-sidebar:ivan:3', now: 1000, dedupMap: map })
+    expect(r1.duplicate).toBe(false)
+    expect(r1.keysToSet.length).toBe(1) // для MAX кросс-ключ НЕ добавляется
+    for (const k of r1.keysToSet) map.set(k, 1000)
+    const r2 = decideNotifDedup({ dedupScope: 'mid:max-sidebar:ivan:4', messengerId: 'max', senderName: 'Иван', title: '', normalizedBody: 'ок', body: 'ок', messageId: 'max-sidebar:ivan:4', now: 1500, dedupMap: map })
+    expect(r2.duplicate).toBe(false) // второй «ок» показывается — v1.2.55 не сломан
+  })
+
+  it('веб (не MAX): VK с отпечатком-messageId ВСЁ РАВНО склеивается кросс-ключом', () => {
+    // Убеждаемся, что исключение MAX не отключило склейку для VK (у VK messageId — отпечаток).
+    const map = new Map()
+    const r1 = decideNotifDedup({ dedupScope: 'vk:sender:c:alejandro', messengerId: 'vk', senderName: 'Alejandro', title: '', normalizedBody: 'Ёу', body: 'Ёу', messageId: '', now: 1000, dedupMap: map })
+    for (const k of r1.keysToSet) map.set(k, 1000)
+    const r2 = decideNotifDedup({ dedupScope: 'mid:fp777', messengerId: 'vk', senderName: 'Alejandro', title: '', normalizedBody: 'Ёу', body: 'Ёу', messageId: 'fp777', now: 1300, dedupMap: map })
+    expect(r2.duplicate).toBe(true) // отпечаток не начинается с max-sidebar: → склейка работает
+  })
+
   it('веб: разный текст того же отправителя — не дубль', () => {
     const map = new Map()
     const r1 = decideNotifDedup({ dedupScope: 'mid:1', messengerId: 'vk', senderName: 'Alejandro', title: '', normalizedBody: 'Ёу мэээээн', body: 'Ёу', now: 1000, dedupMap: map })

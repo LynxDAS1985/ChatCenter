@@ -11,6 +11,12 @@
 //
 // НАТИВНЫЙ Telegram (messengerId === 'native_cc') НАМЕРЕННО НЕ трогаем: там реальные messageId,
 // и два быстрых ОДИНАКОВЫХ сообщения (например «ок» / «ок») должны показываться ОБА.
+//
+// v1.2.319: MAX ТОЖЕ исключён из кросс-ключа. MAX намеренно кодирует событие в messageId
+// (`max-sidebar:<sender>:<unread>`, см. consoleMessageHandler.js) — так он отличает два ОДИНАКОВЫХ
+// по тексту сообщения подряд (фикс v1.2.55). Кросс-ключ игнорирует messageId, поэтому без этого
+// исключения он снова склеивал бы одинаковые MAX-сообщения (регресс v1.2.55). VK не затронут:
+// у VK messageId — это отпечаток содержимого, он НЕ начинается с `max-sidebar:`.
 
 export function normalizeScopePart(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
@@ -25,16 +31,19 @@ export function normalizeScopePart(value) {
  * @param {string} p.title
  * @param {string} p.normalizedBody — тело без времени
  * @param {string} p.body           — тело как есть (запасной вариант)
+ * @param {string} p.messageId      — id сообщения (у MAX это `max-sidebar:...` — событийный)
  * @param {number} p.now            — Date.now()
  * @param {Map}    p.dedupMap       — Map<key, ts>
  * @param {number} [p.ttlMs=8000]
  * @returns {{duplicate:true, hitKey:string, age:number} | {duplicate:false, keysToSet:string[]}}
  */
-export function decideNotifDedup({ dedupScope, messengerId, senderName, title, normalizedBody, body, now, dedupMap, ttlMs = 8000 }) {
+export function decideNotifDedup({ dedupScope, messengerId, senderName, title, normalizedBody, body, messageId, now, dedupMap, ttlMs = 8000 }) {
   const bodyPart = (normalizedBody || body || '').slice(0, 60)
   const dedupKey = String(dedupScope || '') + ':' + bodyPart
-  // Кросс-детекторный ключ ТОЛЬКО для веб-мессенджеров (не для нативного Telegram).
-  const crossKey = (messengerId && messengerId !== 'native_cc')
+  // Кросс-детекторный ключ ТОЛЬКО для веб-мессенджеров (не native), КРОМЕ MAX:
+  // MAX сам отличает одинаковые сообщения через messageId `max-sidebar:...` (см. коммент выше).
+  const isMaxEventId = String(messageId || '').startsWith('max-sidebar:')
+  const crossKey = (messengerId && messengerId !== 'native_cc' && !isMaxEventId)
     ? messengerId + ':web:' + normalizeScopePart(senderName || title) + ':' + bodyPart
     : null
   for (const k of [dedupKey, crossKey]) {

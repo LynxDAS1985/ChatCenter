@@ -1,6 +1,22 @@
 ﻿# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.318 (21 августа 2026)
+## Текущая версия: v1.2.319 (21 августа 2026)
+
+### v1.2.319 — Фикс по ревью: кросс-дедуп v1.2.318 не должен глушить MAX (регресс v1.2.55)
+
+**Проблема (🔴, найдена ревью, воспроизведена)**: кросс-детекторный дедуп из v1.2.318 (`notifDedupDecision.decideNotifDedup`, ключ «мессенджер+отправитель+текст» без messageId) склеивал НЕ только двойные VK-карточки, но и два ОДИНАКОВЫХ по тексту MAX-сообщения подряд — а MAX специально их различает через `messageId = max-sidebar:<sender>:<unread>` (фикс v1.2.55). Итог: в MAX «ок / ок» подряд второе проглатывалось.
+
+**Корень**: кросс-ключ игнорирует messageId и применялся ко ВСЕМ веб-мессенджерам (кроме `native_cc`), не учтя намеренную логику MAX.
+
+**Фикс**: в `decideNotifDedup` добавлен параметр `messageId`; кросс-ключ НЕ строится, если `messageId` начинается с `max-sidebar:` (метка MAX). `notificationManager.js` передаёт `messageId` в функцию. VK не затронут (у него messageId — отпечаток содержимого, не `max-sidebar:`); native уже исключён.
+
+**Плюс**: обработчик `app:open-logs-folder` больше не «немой» при отказе — пишет `console.warn` (было: только `{ok:false}`).
+
+**Как проверено**: `decideNotifDedup` для двух одинаковых MAX (unread 3→4) теперь даёт второму `duplicate=false` (было `true`). Тест `notifDedupDecision.vitest.js` +2 кейса (MAX не глушится; VK с отпечатком всё ещё склеивается) → 8/8. lint 0. Грабля записана в [[notifications-ribbon]].
+
+**Откат**: `git checkout main/handlers/notifDedupDecision.js main/handlers/notificationManager.js main/handlers/mainIpcHandlers.js src/__tests__/notifDedupDecision.vitest.js`.
+
+Файлы: `main/handlers/notifDedupDecision.js`, `main/handlers/notificationManager.js`, `main/handlers/mainIpcHandlers.js`, `src/__tests__/notifDedupDecision.vitest.js`.
 
 ### v1.2.318 — Фикс: пустые логи в установленной версии + кнопка «Папка логов» + двойные VK-уведомления
 

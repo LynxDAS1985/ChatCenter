@@ -230,7 +230,7 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   // v1.2.318: решение о дубле вынесено в чистый notifDedupDecision.js (+тест). Для веб-мессенджеров
   // добавлен ключ без messageId/chatTag (мессенджер+отправитель+текст) — ловит двойные VK-карточки
   // от двух детекторов; нативный Telegram (native_cc) не затронут.
-  const dedupDecision = decideNotifDedup({ dedupScope, messengerId, senderName, title, normalizedBody, body, now, dedupMap: notifDedupMap })
+  const dedupDecision = decideNotifDedup({ dedupScope, messengerId, senderName, title, normalizedBody, body, messageId, now, dedupMap: notifDedupMap })
   if (dedupDecision.duplicate) {
     console.log('[NotifManager] skip dedup messenger=' + (messengerId || '') + ' key=' + dedupDecision.hitKey.slice(0, 90) + ' age=' + dedupDecision.age)
     return null

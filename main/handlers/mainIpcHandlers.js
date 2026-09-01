@@ -37,8 +37,9 @@ export function registerMainIpcHandlers(deps) {
       const lp = getLogFilePath()
       if (lp && fs.existsSync(lp)) { shell.showItemInFolder(lp); return { ok: true } }
       if (lp) { shell.openPath(path.dirname(lp)); return { ok: true, note: 'file-missing' } }
+      console.warn('[open-logs-folder] нет пути лога (getLogFilePath пуст)') // v1.2.319: не «немой» отказ
       return { ok: false, error: 'no-log-path' }
-    } catch (e) { return { ok: false, error: e && e.message } }
+    } catch (e) { console.warn('[open-logs-folder] ошибка:', e && e.message); return { ok: false, error: e && e.message } }
   })
   ipcMain.handle('app:diagnostics-snapshot', () => collectSystemDiagnostics({ app, readLogFile, getLogFilePath }))
   ipcMain.handle('app:diagnostics-save-report', (_, report) => saveSystemDiagnosticsReport({ app, report }))
