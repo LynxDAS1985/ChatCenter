@@ -17,6 +17,10 @@ describe('detectMessengerType', () => {
     expect(detectMessengerType('https://web.whatsapp.com/')).toBe('whatsapp')
     expect(detectMessengerType('https://web.max.ru/')).toBe('max')
   })
+  it('ozon → ozon (v1.2.325: чтобы executeJS-впрыск грузил ozon.hook.js мимо CSP)', () => {
+    expect(detectMessengerType('https://seller.ozon.ru/app/messenger')).toBe('ozon')
+    expect(detectMessengerType('https://ozon.ru')).toBe('ozon')
+  })
   it('пусто/неизвестное → unknown', () => {
     expect(detectMessengerType('')).toBe('unknown')
     expect(detectMessengerType('https://example.com')).toBe('unknown')

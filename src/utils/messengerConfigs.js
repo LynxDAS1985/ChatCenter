@@ -16,6 +16,7 @@ export function detectMessengerType(url) {
   if (url.includes('web.whatsapp.com')) return 'whatsapp'
   if (url.includes('vk.com') || url.includes('vk.ru')) return 'vk' // v1.2.109: ВК переехал на vk.ru
   if (url.includes('web.max.ru')) return 'max'
+  if (url.includes('ozon.ru')) return 'ozon' // v1.2.325: чтобы executeJS-впрыск (webviewSetup) грузил ozon.hook.js (минуя CSP Ozon)
   if (url.includes('viber.com')) return 'viber'
   return 'unknown'
 }

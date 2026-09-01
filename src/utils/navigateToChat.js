@@ -10,6 +10,7 @@ import { buildTelegramScript } from './navigators/telegramNavigate.js'
 import { buildMaxScript } from './navigators/maxNavigate.js'
 import { buildWhatsAppScript } from './navigators/whatsappNavigate.js'
 import { buildVkScript } from './navigators/vkNavigate.js'
+import { buildOzonScript } from './navigators/ozonNavigate.js'
 import { buildGenericScript } from './navigators/genericNavigate.js'
 
 export function buildChatNavigateScript(url, senderName, chatTag) {
@@ -17,5 +18,6 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
   if (url.includes('max.ru'))       return buildMaxScript(senderName)
   if (url.includes('whatsapp.com')) return buildWhatsAppScript(senderName)
   if (url.includes('vk.com') || url.includes('vk.ru')) return buildVkScript(senderName) // v1.2.109: vk.ru
+  if (url.includes('ozon.ru'))      return buildOzonScript(senderName) // v1.2.330: клик по строке чата покупателя
   return buildGenericScript(senderName)
 }

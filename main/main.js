@@ -255,7 +255,7 @@ app.whenReady().then(() => {
     if (m.partition) {
       try {
         console.log(`[startup-webview] main setupSession id=${m.id} name="${m.name || ''}" partition=${m.partition} url=${m.url || ''}`)
-        setupSession(session.fromPartition(m.partition))
+        setupSession(session.fromPartition(m.partition), { url: m.url }) // v1.2.320: url → строгий режим Ozon
       } catch (e) { console.warn(`[Session] Ошибка для ${m.id}:`, e.message) }
     }
   })

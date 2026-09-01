@@ -60,10 +60,11 @@ describe('AddSourceModal', () => {
     expect(queryByText('ВКонтакте')).toBeNull()
   })
 
-  it('#8 счётчик «доступно»: Веб=4, API=1', () => {
+  it('#8 счётчик «доступно»: Веб=5, API=1', () => {
+    // v1.2.321: веб-каталог вырос на Ozon (было 4 — Telegram/WhatsApp/ВК/МАКС, стало 5).
     const { getByTestId, getByText } = setup()
     fireEvent.click(getByTestId('add-proto-web'))
-    expect(getByText('4 доступно')).toBeTruthy()
+    expect(getByText('5 доступно')).toBeTruthy()
   })
 
   it('#8 API → «1 доступно»', () => {

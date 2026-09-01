@@ -8,6 +8,7 @@ export const MESSENGER_COLORS = {
   vk: '#0077FF',
   max: '#7B3FE4',
   viber: '#7360F2',
+  ozon: '#005BFF', // v1.2.321: Ozon-кабинет (сообщения покупателей)
 }
 
 export const MESSENGER_EMOJI = {
@@ -16,6 +17,7 @@ export const MESSENGER_EMOJI = {
   vk: '🔵',
   max: '💎',
   viber: '🟣',
+  ozon: '📦', // v1.2.321
 }
 
 export const MESSENGER_NAMES = {
@@ -24,6 +26,7 @@ export const MESSENGER_NAMES = {
   vk: 'ВКонтакте',
   max: 'MAX',
   viber: 'Viber',
+  ozon: 'Ozon', // v1.2.321
 }
 
 // Цвет полосы слева для чата по messenger-типу. Если не известен — серый (нейтральный).

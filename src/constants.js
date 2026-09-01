@@ -238,6 +238,19 @@ export const DEFAULT_MESSENGERS = [
       }
       return cached || null;
     })()`
+  },
+  // v1.2.321: Ozon-кабинет (сообщения покупателей) в каталоге «Добавить → веб». Открывается в
+  // строгом режиме сессии (v1.2.320: реальный UA + сохранённый Service Worker — иначе антибот Ozon
+  // блокирует встроенное окно). isDefault:false — в каталоге, но НЕ активная вкладка по умолчанию.
+  // accountScript НЕ задаём: точный DOM Ozon не подтверждён (не гадаем). Хук/уведомления — отдельный шаг.
+  {
+    id: 'ozon',
+    name: 'Ozon',
+    url: 'https://seller.ozon.ru/app/messenger',
+    color: '#005BFF',
+    partition: 'persist:ozon',
+    emoji: '📦',
+    isDefault: false
   }
 ]
 

@@ -17,12 +17,23 @@ const { ipcRenderer } = require('electron')
     if (host.includes('whatsapp')) hookType = 'whatsapp'
     else if (host.includes('vk.com') || host.includes('vk.ru')) hookType = 'vk' // v1.2.109: vk.ru
     else if (host.includes('max.ru')) hookType = 'max'
+    else if (host.includes('ozon.ru')) hookType = 'ozon' // v1.2.323: разведчик Ozon (вместо telegram по умолчанию)
     else if (host.includes('telegram')) hookType = 'telegram'
-    var hookPath = path.join(__dirname, 'hooks', hookType + '.hook.js')
-    var hookCode = ''
-    try { hookCode = fs.readFileSync(hookPath, 'utf8') } catch(e) {
-      try { hookCode = fs.readFileSync(path.join(__dirname, 'hooks', 'telegram.hook.js'), 'utf8') } catch(e2) {}
+    // v1.2.324: хук ищем в НЕСКОЛЬКИХ местах. Причина: сборка кладёт хуки в out/preloads/hooks (с «s»),
+    // а монитор лежит в out/preload/ (без «s») → в dev путь `hooks` не находил файл → впрыск падал в
+    // запасной telegram (у Ozon вообще ничего). Первый кандидат = прежнее поведение (без регресса),
+    // второй — `../preloads/hooks`. Логируем (только для Ozon), какой путь сработал.
+    var hookDirs = ['hooks', path.join('..', 'preloads', 'hooks')]
+    var hookCode = '', usedDir = ''
+    for (var di = 0; di < hookDirs.length && !hookCode; di++) {
+      try { hookCode = fs.readFileSync(path.join(__dirname, hookDirs[di], hookType + '.hook.js'), 'utf8'); usedDir = hookDirs[di] } catch(e) {}
     }
+    if (!hookCode) {
+      for (var dj = 0; dj < hookDirs.length && !hookCode; dj++) {
+        try { hookCode = fs.readFileSync(path.join(__dirname, hookDirs[dj], 'telegram.hook.js'), 'utf8'); usedDir = hookDirs[dj] + '(tg-fallback)' } catch(e2) {}
+      }
+    }
+    if (host.indexOf('ozon.ru') !== -1) { try { console.log('__CC_DIAG__ozon monitor hookType=' + hookType + ' len=' + (hookCode ? hookCode.length : 0) + ' used=' + usedDir) } catch(_e) {} }
     if (hookCode) {
       var s = document.createElement('script')
       s.textContent = hookCode
