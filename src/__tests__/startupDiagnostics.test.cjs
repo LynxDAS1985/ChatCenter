@@ -5,6 +5,10 @@ const mainEntry = fs.readFileSync('src/main.jsx', 'utf8')
 const app = fs.readFileSync('src/App.jsx', 'utf8')
 const nativeApp = fs.readFileSync('src/native/NativeApp.jsx', 'utf8')
 const windowManager = fs.readFileSync('main/utils/windowManager.js', 'utf8')
+// v1.2.336: строки dev-request/ready-to-show переехали в devRequestTiming.js (разбиение windowManager
+// в v1.2.205). Проверяем в ОБОИХ файлах, чтобы тест не устаревал при переносе кода таймингов запросов.
+const devRequestTiming = fs.readFileSync('main/utils/devRequestTiming.js', 'utf8')
+const startupTiming = windowManager + '\n' + devRequestTiming
 
 let passed = 0
 let failed = 0
@@ -27,10 +31,10 @@ function assert(cond, msg) {
 console.log('\n🧪 Startup diagnostics contract\n')
 
 test('main window logs slow and pending Chromium/Vite requests', () => {
-  assert(windowManager.includes('dev-request slow'), 'missing slow request log')
-  assert(windowManager.includes('dev-request pending'), 'missing pending request log')
-  assert(windowManager.includes('dev-request summary'), 'missing request summary log')
-  assert(windowManager.includes('ready-to-show'), 'missing ready-to-show summary hook')
+  assert(startupTiming.includes('dev-request slow'), 'missing slow request log')
+  assert(startupTiming.includes('dev-request pending'), 'missing pending request log')
+  assert(startupTiming.includes('dev-request summary'), 'missing request summary log')
+  assert(startupTiming.includes('ready-to-show'), 'missing ready-to-show summary hook')
 })
 
 test('boot-probe logs browser resource timing and long tasks', () => {

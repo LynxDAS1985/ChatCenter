@@ -116,8 +116,13 @@ export function attachRuntimeErrorCatcher(el) {
       if (window.__ccErrHooked) return;
       window.__ccErrHooked = true;
       window.__ccLastErr = '';
+      // v1.2.332: регистрацию ServiceWorker у веб-мессенджеров мы ГЛУШИМ НАМЕРЕННО (sessionSetup) —
+      // её отказ это НЕ ошибка страницы, а наш же выбор. Не засоряем __ccLastErr/журнал этим
+      // самоинициированным сбоем (иначе health[err] у МАКС/ВК/WhatsApp повторяет его каждые 30с).
+      var _ccSkip = function(m){ return (''+(m||'')).indexOf('ServiceWorker') !== -1; };
       window.addEventListener('error', function(ev){
         var m = (ev && ev.message) || '';
+        if (_ccSkip(m)) return;
         var s = (ev && ev.filename) || '';
         var l = (ev && ev.lineno) || 0;
         window.__ccLastErr = (m+'|'+s+':'+l).slice(0,300);
@@ -125,6 +130,7 @@ export function attachRuntimeErrorCatcher(el) {
       });
       window.addEventListener('unhandledrejection', function(ev){
         var m = (ev && ev.reason && (ev.reason.message || String(ev.reason))) || '';
+        if (_ccSkip(m)) return;
         window.__ccLastErr = ('rej|'+m).slice(0,300);
         try{console.log('__CC_DIAG__wv-runtime: '+window.__ccLastErr);}catch(e){}
       });

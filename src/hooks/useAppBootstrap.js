@@ -84,6 +84,6 @@ export default function useAppBootstrap({
           setMonitorPreloadUrl(url)
         }
       }).catch(() => {})
-    ]).finally(() => { log('Promise.all done → appReady=true'); setAppReady(true) })
+    ]).finally(() => { log('Promise.all done → appReady=true'); setAppReady(true); try { window.__ccHideSplash?.() } catch {} }) // v1.2.337: приложение готово → убрать стартовую заставку
   }, [])
 }

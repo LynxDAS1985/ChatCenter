@@ -3,7 +3,7 @@
 // v0.87.135 — Added Windows installer packaging into root dist/
 // v0.87.134 — Added start:prodlike script for production-like startup comparison
 // v0.87.103 — Refactored: setupIPC вынесен в handlers/mainIpcHandlers.js (~230 строк)
-import { app, BrowserWindow, session, nativeImage, screen, ipcMain, Menu, MenuItem } from 'electron'
+import { app, BrowserWindow, session, nativeImage, screen, ipcMain, Menu, MenuItem, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import https from 'node:https'
@@ -51,6 +51,7 @@ import { initDockPinSystem } from './handlers/dockPinHandlers.js'
 import { initMaxTestWindowHandler } from './handlers/maxTestWindowHandler.js'
 import { initNotificationManager } from './handlers/notificationManager.js'
 import { initBackupNotifHandler } from './handlers/backupNotifHandler.js'
+import { initWebviewNavGuard } from './handlers/webviewNavGuard.js'
 import { createWindow as createWindowFromManager } from './utils/windowManager.js'
 import { createTray as createTrayFromManager, openLogViewer } from './utils/trayManager.js'
 import { registerMainIpcHandlers } from './handlers/mainIpcHandlers.js'
@@ -229,6 +230,17 @@ app.whenReady().then(() => {
   process.on('unhandledRejection', (reason) => {
     try { console.error('[main-unhandled-rejection]', reason?.stack || reason) } catch (_) {}
   })
+  // v1.2.332 (ВРЕМЕННАЯ диагностика): ловим MaxListenersExceededWarning и печатаем ПОЛНЫЙ стек —
+  // он указывает файл:строку, где повесили «лишний» слушатель (напр. did-stop-loading на webContents).
+  // Node docs (process 'warning'): объект Warning несёт .name/.message/.stack, стек = место addListener.
+  // Удалить после того, как в chatcenter.log появится [max-listeners-diag] со стеком-виновником (TODO-34).
+  process.on('warning', (warning) => {
+    try {
+      if (warning && warning.name === 'MaxListenersExceededWarning') {
+        console.warn('[max-listeners-diag]', warning.message, '\n', warning.stack)
+      }
+    } catch (_) {}
+  })
   // v0.91.22: было захардкожено v0.87.135 — теперь читаем актуальную версию из package.json
   // через app.getVersion() (Electron API, источник истины).
   console.log(`=== ChatCenter v${app.getVersion()} start ===`)
@@ -282,6 +294,10 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
     webviewReadySet,
   })
+
+  // v1.2.338: сторож навигации веб-вкладок — клик на чужой сайт (реклама) открываем в системном
+  // браузере, а мессенджер оставляем на месте (не «пропадает» на белой странице).
+  initWebviewNavGuard({ app, shell })
 
   setupIPC()
   setupNotifIPC()

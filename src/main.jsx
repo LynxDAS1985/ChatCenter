@@ -59,7 +59,19 @@ root.render(
   <ErrorBoundary><App /></ErrorBoundary>
 )
 bootLog('render scheduled')
+// v1.2.335/337: заставку (index.html #cc-splash) убираем НЕ на первом кадре React (в dev после него
+// ещё долго догружаются модули и окно пустое БЕЗ заставки), а когда приложение реально готово:
+// App.jsx зовёт window.__ccHideSplash при appReady. Идемпотентно; скрытие через класс → переход → удаление.
+function hideCcSplash() {
+  const sp = document.getElementById('cc-splash')
+  if (!sp) return
+  sp.classList.add('cc-splash--hide')
+  setTimeout(() => { try { sp.remove() } catch (_) {} }, 500)
+}
+window.__ccHideSplash = hideCcSplash
 requestAnimationFrame(() => {
   bootLog('first requestAnimationFrame after render')
   window.__ccStartupSummary?.('after-render-raf')
 })
+// Страховка от «зависшей» заставки — в boot-probe.js (v1.2.336): грузится РАНЬШЕ main.jsx, поэтому
+// уберёт заставку даже если main.jsx не запустится ИЛИ appReady так и не наступит (30с потолок).

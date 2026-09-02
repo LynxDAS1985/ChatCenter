@@ -72,3 +72,16 @@ window.addEventListener('load', () => {
 setTimeout(() => window.__ccStartupSummary('after-5s'), 5000)
 setTimeout(() => window.__ccStartupSummary('after-15s'), 15000)
 setTimeout(() => window.__ccStartupSummary('after-30s'), 30000)
+
+// v1.2.336: страховка от «зависшей» стартовой заставки (index.html #cc-splash). В норме её убирает
+// main.jsx после первого кадра; но если main.jsx не запустится (битый бандл ДО его кода), этот таймер
+// в boot-probe (грузится РАНЬШЕ main.jsx) всё равно уберёт заставку и оставит след в журнале.
+setTimeout(() => {
+  try {
+    const sp = document.getElementById('cc-splash')
+    if (!sp) return // норма: заставку уже убрал main.jsx
+    sp.classList.add('cc-splash--hide')
+    setTimeout(() => { try { sp.remove() } catch {} }, 500)
+    window.__ccStartupMark('splash', 'safety timeout hid splash (main.jsx did not run?)')
+  } catch {}
+}, 30000)

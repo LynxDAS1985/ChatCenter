@@ -5,8 +5,62 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' cc-media: blob: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' cc-media: blob: data: https: http:; media-src 'self' cc-media: blob:; connect-src 'self' cc-media: ws: wss: https:" />
     <title>ЦентрЧатов</title>
+    <!-- v1.2.335: стартовая заставка. Стили встроены (CSP style-src 'unsafe-inline'), чтобы показаться
+         мгновенно, до загрузки React-бандла. Убирается из src/main.jsx после первого кадра. -->
+    <style>
+      #cc-splash {
+        position: fixed; inset: 0; z-index: 99999;
+        display: flex; align-items: center; justify-content: center;
+        background: radial-gradient(120% 90% at 50% 40%, #12203a 0%, #0a0e17 55%, #05070d 100%);
+        color: #eaf1ff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        transition: opacity .45s ease, visibility .45s ease;
+      }
+      #cc-splash.cc-splash--hide { opacity: 0; visibility: hidden; pointer-events: none; }
+      .cc-splash__glow {
+        position: absolute; width: 420px; height: 420px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(42,171,238,.28), transparent 60%);
+        filter: blur(30px); animation: ccPulse 2.4s ease-in-out infinite;
+      }
+      .cc-splash__center {
+        position: relative; text-align: center;
+        display: flex; flex-direction: column; align-items: center; gap: 22px;
+      }
+      .cc-splash__logo {
+        font-size: 38px; font-weight: 800; letter-spacing: .5px;
+        background: linear-gradient(90deg, #7fd0ff, #2aabee, #7f9cff);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        animation: ccBreath 2.4s ease-in-out infinite;
+      }
+      .cc-splash__bar {
+        width: 190px; height: 4px; border-radius: 4px;
+        background: rgba(255,255,255,.08); overflow: hidden;
+      }
+      .cc-splash__bar span {
+        display: block; width: 40%; height: 100%; border-radius: 4px;
+        background: linear-gradient(90deg, transparent, #2aabee, #7fd0ff, transparent);
+        animation: ccSweep 1.25s ease-in-out infinite;
+      }
+      .cc-splash__hint { font-size: 13px; color: rgba(234,241,255,.5); letter-spacing: .4px; }
+      @keyframes ccSweep { 0% { transform: translateX(-120%); } 100% { transform: translateX(360%); } }
+      @keyframes ccPulse { 0%,100% { transform: scale(.9); opacity: .55; } 50% { transform: scale(1.08); opacity: .9; } }
+      @keyframes ccBreath {
+        0%,100% { opacity: .85; text-shadow: 0 0 18px rgba(42,171,238,.3); }
+        50%     { opacity: 1;   text-shadow: 0 0 30px rgba(42,171,238,.55); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .cc-splash__glow, .cc-splash__logo, .cc-splash__bar span { animation: none; }
+      }
+    </style>
   </head>
   <body>
+    <div id="cc-splash" role="status" aria-label="Загрузка приложения">
+      <div class="cc-splash__glow"></div>
+      <div class="cc-splash__center">
+        <div class="cc-splash__logo">ЦентрЧатов</div>
+        <div class="cc-splash__bar"><span></span></div>
+        <div class="cc-splash__hint">Загрузка…</div>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/boot-probe.js"></script>
     <script type="module" src="/src/main.jsx"></script>

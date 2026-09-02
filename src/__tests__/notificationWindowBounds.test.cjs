@@ -55,8 +55,8 @@ assert.match(
 
 assert.match(
   notificationJs,
-  /const MAX_PERSISTENT_ITEMS = 30/,
-  'persistent notifications must keep the full tracked list for scrolling'
+  /const MAX_PERSISTENT_ITEMS = Math\.max\(6, Math\.min\(14, Math\.floor\(.*availHeight.*\/ 180\)\)\)/,
+  'v1.2.340: persistent cap computed from screen height (availHeight/180, clamped 6..14) — 30 cards grew an 8073px wall overnight (v1.2.339 root); the stack must never outgrow the screen'
 )
 
 assert.match(

@@ -3,6 +3,7 @@
 // дедуп → strip-sender → viewing-фильтр → звук + ribbon → preview + history + auto-reply.
 import { buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './messageProcessing.js'
 import { playNotificationSound } from './sound.js'
+import { getMessengerLogo } from '../native/utils/messengerLogos.js' // v1.2.333: нет аватара → логотип мессенджера в уведомлении
 export function createHandleNewMessage(deps) {
   const {
     recentNotifsRef, lastRibbonTsRef, lastSoundTsRef, notifCountRef,
@@ -107,7 +108,8 @@ export function createHandleNewMessage(deps) {
         body: displayText.length > 100 ? displayText.slice(0, 97) + '…' : displayText,
         fullBody: displayText.length > 100 ? displayText : '',
         iconUrl: extra?.iconUrl || undefined,
-        iconDataUrl: extra?.iconDataUrl || undefined,
+        // v1.2.333: аватар отправителя в приоритете; нет его → логотип мессенджера (Ozon/ВК/…) вместо эмодзи-заглушки.
+        iconDataUrl: extra?.iconDataUrl || getMessengerLogo(mInfo?.id) || undefined,
         color: mInfo?.color || '#2AABEE',
         emoji: mInfo?.emoji || '💬',
         messengerName: mInfo?.name || 'ЦентрЧатов',

@@ -34,6 +34,13 @@ describe('MessengerIcon (v1.2.183)', () => {
     expect(img.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
   })
 
+  it('ozon → рисует логотип-картинку <img> с data-URI (v1.2.333)', () => {
+    const { container } = render(<MessengerIcon messenger="ozon" size={14} />)
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
+  })
+
   it('неизвестный мессенджер → эмодзи-fallback 💬, без картинки', () => {
     const { container } = render(<MessengerIcon messenger="zzz" size={14} />)
     expect(container.querySelector('img')).toBeNull()

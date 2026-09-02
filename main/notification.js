@@ -1,5 +1,5 @@
   const MAX_AUTO_DISMISS_ITEMS = 6
-  const MAX_PERSISTENT_ITEMS = 30
+  const MAX_PERSISTENT_ITEMS = Math.max(6, Math.min(14, Math.floor(((window.screen && window.screen.availHeight) || 800) / 180))) // v1.2.340: предел по высоте экрана (карточка ~180px), диапазон 6..14 — не даёт стопке перерасти экран
   const container = document.getElementById('container')
   const items = new Map() // id → { el, timer, expanded, remainingMs, startTs, dismissMs, paused }
   // v0.63.0: стэк — messengerId → hostItemId (id карточки, в которую складываются сообщения)

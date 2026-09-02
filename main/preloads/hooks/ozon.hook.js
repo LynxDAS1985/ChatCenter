@@ -26,7 +26,9 @@
   try {
     if (window.__ccOzonWatch) return; window.__ccOzonWatch = true;
     var _prev = null, _timer = null, _observed = null, _mo = null;
+    var _lastSec = '', _lastShape = ''; // для гейта логов «только при изменении» (без спама в цикле)
 
+    function _diag(msg) { try { console.log('__CC_DIAG__ozon-list ' + msg); } catch (_) {} }
     function _hash(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return h; }
     function _txt(el) { try { return (el.textContent || '').replace(/\s+/g, ' ').trim(); } catch (_) { return ''; } }
 
@@ -72,9 +74,10 @@
     function _scan(reason) {
       try {
         var sec = _section();
+        // Журнал смены раздела (диагностика замка #2): видно, меняет ли Ozon адрес при Покупатели↔Поддержка.
+        if (sec !== _lastSec) { _diag('sec-change from=' + (_lastSec || '?') + ' to=' + sec + ' reason=' + reason); _lastSec = sec; }
         if (sec === 'other') { // #2: явно НЕ раздел покупателей → молчим и сбрасываем базу (без шторма при возврате)
-          _prev = null;
-          console.log('__CC_DIAG__ozon-list reason=' + reason + ' sec=other skip');
+          _prev = null; // лог — только при СМЕНЕ раздела выше (не на каждый скан → без спама в цикле)
           return;
         }
         var rows = _findRows(), cur = {}, cand = [], unreadTotal = 0;
@@ -97,9 +100,14 @@
           }
         }
         if (rows.length > 0) _prev = cur; // базовую линию обновляем только когда список реально виден
-        // Диагностика — ТОЛЬКО счётчики (без имён/текстов покупателей).
-        if (reason === 'initial' || emitted > 0) console.log('__CC_DIAG__ozon-list reason=' + reason + ' sec=' + sec + ' rows=' + rows.length + ' unread=' + unreadTotal + ' emitted=' + emitted);
-      } catch (e) { try { console.log('__CC_DIAG__ozon-list scan-error ' + (e && e.message || e)); } catch (_) {} }
+        // Диагностика — ТОЛЬКО счётчики (без имён/текстов покупателей). Пишем при старте, при отправке
+        // ИЛИ при изменении «формы» (число строк/непрочитанных) → неудачный тест не будет «немым», но без спама.
+        var shape = rows.length + '/' + unreadTotal;
+        if (reason === 'initial' || emitted > 0 || shape !== _lastShape) {
+          _diag('reason=' + reason + ' sec=' + sec + ' rows=' + rows.length + ' unread=' + unreadTotal + ' emitted=' + emitted);
+          _lastShape = shape;
+        }
+      } catch (e) { _diag('scan-error ' + (e && e.message || e)); }
     }
 
     function _schedule(reason) { if (_timer) return; _timer = setTimeout(function () { _timer = null; _scan(reason); }, 500); }
@@ -115,7 +123,7 @@
         _mo = new MutationObserver(function () { _schedule('mutation'); });
         _mo.observe(target, { childList: true, subtree: true });
         _observed = target;
-      } catch (_) {}
+      } catch (e) { _diag('attach-error ' + (e && e.message || e)); } // #2 из ревью: ветка больше не молчит
     }
 
     setTimeout(function () { _attach(); _scan('initial'); }, 2500); // базовая линия после загрузки списка

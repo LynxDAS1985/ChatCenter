@@ -24,15 +24,17 @@ export default function RailWebIcon({
   const color = m.color || '#2AABEE'
   // v1.2.314: тип мессенджера для логотипа-картинки. По id ИЛИ имени — id веб-аккаунта бывает
   // 'custom_…' (напр. Telegram), поэтому дублируем проверку по имени, как было для Telegram.
-  // Есть тип с логотипом → рисуем картинку (MessengerIcon), нет — эмодзи. Пока: Telegram, WhatsApp, ВК, МАКС.
+  // Есть тип с логотипом → рисуем картинку (MessengerIcon), нет — эмодзи. Пока: Telegram, WhatsApp, ВК, МАКС, Ozon.
   // v1.2.315/316: у ВК и МАКС имя мессенджера кириллицей («ВКонтакте», «Макс»); дефолтные ловятся по id
   // ('vk'/'max'), кастомные (id 'custom_…') — по кириллическому имени.
   // v1.2.317 (ревью #1): латинские /vk/,/max/ УБРАНЫ из масок — короткая подстрока давала ЧУЖОЙ
   // логотип (напр. «Vkusvill»→ВК, «MaxBet»→МАКС). Кириллица длинная, ложных срабатываний не даёт.
+  // v1.2.333: Ozon — по id 'ozon' ИЛИ имени; маска `\bozon\b` (границы слова) не ловит «ozone/amazon», плюс кириллица «озон».
   const logoType = (m.id === 'telegram' || /telegram/i.test(m.name || '')) ? 'telegram'
     : (m.id === 'whatsapp' || /whatsapp/i.test(m.name || '')) ? 'whatsapp'
     : (m.id === 'vk' || /вконтакте/i.test(m.name || '')) ? 'vk'
     : (m.id === 'max' || /макс/i.test(m.name || '')) ? 'max'
+    : (m.id === 'ozon' || /\bozon\b|озон/i.test(m.name || '')) ? 'ozon'
     : null
   // v1.2.303: локальное состояние «этот значок сейчас тащат» → плавное поднятие (scale + тень).
   const [dragging, setDragging] = useState(false)
@@ -99,8 +101,11 @@ export default function RailWebIcon({
           </span>
         ) : (
           // v1.2.313: центральный логотип +20% (px24→29). v1.2.314: любой с логотипом (Telegram/WhatsApp).
+          // v1.2.334: логотип заполняет круг (29→46 из 48px) — раньше был мелким с тёмным кольцом вокруг.
+          // Круглые логотипы (Ozon/Telegram/ВК/…) не торчат за круг; у кружка нет overflow:hidden
+          // (иначе обрезало бы бейдж непрочитанных и точку связи по краям), поэтому квадратных логотипов не даём.
           logoType
-            ? <MessengerIcon messenger={logoType} size={px(29)} />
+            ? <MessengerIcon messenger={logoType} size={px(46)} />
             : <span aria-hidden="true">{m.emoji || (m.name ? m.name[0] : '•')}</span>
         )}
 
@@ -145,7 +150,8 @@ export default function RailWebIcon({
 
       {/* v1.2.273: подпись имени аккаунта под значком (как у API-аватаров). Прячется на узкой полосе. */}
       {!hideLabel && accountName && (
-        <div style={{
+        // v1.2.334: title=полное имя аккаунта — при наведении на обрезанную подпись видно имя целиком.
+        <div title={accountName} style={{
           marginTop: px(4), fontSize: px(11), color: 'var(--amoled-text-dim)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px',
         }}>{accountName}</div>
