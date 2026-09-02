@@ -27,6 +27,8 @@
     if (window.__ccOzonWatch) return; window.__ccOzonWatch = true;
     var _prev = null, _timer = null, _observed = null, _mo = null;
     var _lastSec = '', _lastShape = ''; // для гейта логов «только при изменении» (без спама в цикле)
+    var _lastMsgN = -1, _lastQaN = -1;  // v1.2.349: последний ОТПРАВЛЕННЫЙ счётчик разделов (шлём только при изменении)
+    var _qPrev = null, _lastQShape = ''; // v1.2.353: базовая линия «Вопросов» + гейт диаг-лога
 
     function _diag(msg) { try { console.log('__CC_DIAG__ozon-list ' + msg); } catch (_) {} }
     function _hash(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return h; }
@@ -71,8 +73,124 @@
       return { name: parts[0] || '', preview: parts.length > 1 ? parts.slice(1).join(' ') : '', unread: unread };
     }
 
+    // ШАГ 1 (v1.2.341→351, TODO-36): РАЗОВАЯ разведка страницы «Вопросы и ответы» (/app/reviews/questions).
+    // v1.2.351: журнал webview-консоли РЕЖЕТ длинные строки (~55 симв.) — прошлый дамп (`ozon-q`) обрезался
+    // (ловилась только вкладка «Все999+» и дата строки). Теперь дампим КОРОТКИМИ строками, по одному кусочку:
+    // все ярлыки-фильтры сверху (найти «новые/без ответа») + все листья первой строки вопроса (текст/автор/статус).
+    // Только ЧТЕНИЕ. Разово, когда страница загрузилась. Маркер `ozon-q2` (отличать от старого дампа).
+    var _qDone = false;
+    function _reconQ() {
+      try {
+        if (_qDone) return;
+        if ((location.pathname || '').indexOf('/reviews/questions') === -1) return;
+        if (document.querySelectorAll('*').length < 300) return; // страница ещё грузится
+        _qDone = true;
+        console.log('__CC_DIAG__ozon-q2 url=' + (location.pathname || ''));
+        // (1) ярлыки-фильтры вопросов («Все»/«Без ответа»/…). tab0-11 в прошлом заходе = ЛЕВОЕ меню Ozon
+        // (Главная/Товары/…), фильтры шли ПОСЛЕ и не попали (лимит 12). Поднимаем лимит до 24 (дедуп есть).
+        var seen = {}, cnt = 0, all = document.querySelectorAll('button,a,[role="tab"],li');
+        for (var i = 0; i < all.length && i < 6000 && cnt < 24; i++) {
+          var el = all[i]; if (el.children && el.children.length > 3) continue;
+          var t = _txt(el); if (!t || t.length > 24 || seen[t]) continue;
+          seen[t] = 1;
+          console.log('__CC_DIAG__ozon-q2 tab' + cnt + '="' + t.slice(0, 22) + '"'); cnt++;
+        }
+        var rows = document.querySelectorAll('tr, [role="row"]');
+        if (!rows.length) {
+          var best = null, bestN = 0, cont = document.querySelectorAll('div,ul,ol,tbody');
+          for (var j = 0; j < cont.length && j < 6000; j++) { var ch = cont[j].children; if (ch && ch.length >= 4 && ch.length > bestN) { best = cont[j]; bestN = ch.length; } }
+          rows = best ? best.children : [];
+        }
+        console.log('__CC_DIAG__ozon-q2 rows=' + rows.length);
+        // (2) ЗАГОЛОВОК таблицы (th) — названия столбцов: покажет, что значат числовые ячейки («1»/«0»)
+        // → так узнаю столбец «без ответа»/«ответы» = признак НОВОГО вопроса.
+        var hdr = null;
+        for (var h = 0; h < rows.length; h++) { if (rows[h].querySelector && rows[h].querySelector('th')) { hdr = rows[h]; break; } }
+        if (hdr) { var hc = hdr.querySelectorAll('th'); for (var hh = 0; hh < hc.length && hh < 12; hh++) { console.log('__CC_DIAG__ozon-q2 H' + hh + '="' + _txt(hc[hh]).slice(0, 22) + '"'); } }
+        // (3) ПЕРВЫЕ ДВЕ строки-данных — листья по одному (сравнить отвеченный/неотвеченный по числам).
+        var dumped = 0;
+        for (var d = 0; d < rows.length && dumped < 2; d++) {
+          var rr = rows[d]; if (rr.querySelector && rr.querySelector('th')) continue; if (_txt(rr).length <= 5) continue;
+          var pfx = dumped === 0 ? 'L' : 'M';
+          if (dumped === 0) console.log('__CC_DIAG__ozon-q2 rowCls=' + String(rr.className || '').slice(0, 30));
+          var dl = rr.querySelectorAll('*'), k2 = 0;
+          for (var k = 0; k < dl.length && k2 < 18; k++) {
+            var x = dl[k]; if (x.children && x.children.length) continue;
+            var xt = _txt(x); if (!xt) continue;
+            console.log('__CC_DIAG__ozon-q2 ' + pfx + k2 + '=' + x.tagName + '"' + xt.slice(0, 26) + '"'); k2++;
+          }
+          dumped++;
+        }
+      } catch (e) { try { console.log('__CC_DIAG__ozon-q2 err ' + (e && e.message || e)); } catch (_) {} }
+    }
+
+    // v1.2.353 (Шаг 2, TODO-36): сторож раздела «Вопросы и ответы». Новый ВОПРОС БЕЗ ОТВЕТА → уведомление
+    // (как у «Покупателей»). ПРАВИЛО (по разведке ozon-q2 + указанию пользователя): строка = таблица, текст
+    // вопроса — в BUTTON, товар — 2-я ссылка (1-я = магазин), а ПОСЛЕДНЯЯ короткая числовая ячейка = число
+    // ОТВЕТОВ; 0 = без ответа = НОВЫЙ (артикул 10 цифр не считаем — маска \d{1,3}). Первый проход = базовая
+    // линия (старые НЕ шлём), дальше только новые отпечатки «товар|вопрос». Заодно qa-счётчик (без ответа) → виджет.
+    function _qRows() {
+      var rows = document.querySelectorAll('tr, [role="row"]');
+      if (rows && rows.length) return rows;
+      var best = null, bestN = 0, cont = document.querySelectorAll('div,ul,ol,tbody');
+      for (var j = 0; j < cont.length && j < 6000; j++) { var ch = cont[j].children; if (ch && ch.length >= 4 && ch.length > bestN) { best = cont[j]; bestN = ch.length; } }
+      return best ? best.children : [];
+    }
+    // v1.2.354: индекс столбца «Ответы» из заголовка таблицы. Разведка ozon-q2 (H0-H5) подтвердила столбцы:
+    // Дата/Продавец/Товар/Вопрос/ОТВЕТЫ/Полезный. Т.е. «ответы» — НЕ последняя числовая ячейка (последняя =
+    // «Полезный», лайки), поэтому v1.2.353 считал неверно (unans=10). Берём столбец «Ответы» по заголовку.
+    function _qAnsCol(rows) {
+      for (var h = 0; h < rows.length; h++) {
+        var th = rows[h].querySelectorAll ? rows[h].querySelectorAll('th') : null;
+        if (th && th.length) { for (var c = 0; c < th.length; c++) { if (_txt(th[c]).indexOf('Ответ') === 0) return c; } return -1; }
+      }
+      return -1;
+    }
+    function _qRowInfo(row, ansCol) {
+      var tds = row.querySelectorAll('td');
+      var qBtn = row.querySelector('button'); var qText = qBtn ? _txt(qBtn) : (tds[3] ? _txt(tds[3]) : ''); // вопрос — в BUTTON
+      var links = row.querySelectorAll('a'); var product = links[1] ? _txt(links[1]) : (links[0] ? _txt(links[0]) : ''); // 2-я ссылка = товар
+      // «Ответы»: число >0 = отвечен; «0» ИЛИ пусто = без ответа = НОВЫЙ; ячейки нет / не число = -1 (неизвестно, пропуск).
+      var answers = -1;
+      if (ansCol >= 0 && tds[ansCol]) { var a = _txt(tds[ansCol]); answers = a === '' ? 0 : (/^\d{1,4}$/.test(a) ? parseInt(a, 10) : -1); }
+      return { qText: qText, product: product, answers: answers };
+    }
+    function _scanQ(reason) {
+      try {
+        if ((location.pathname || '').indexOf('/reviews/questions') === -1) { _qPrev = null; return; }
+        if (document.querySelectorAll('*').length < 300) return; // страница ещё грузится
+        var rows = _qRows(), ansCol = _qAnsCol(rows), cur = {}, cand = [], unans = 0;
+        if (ansCol < 0) { _diag('ozon-q no-answers-col rows=' + rows.length); return; } // без столбца «Ответы» НЕ гадаем
+        for (var d = 0; d < rows.length; d++) {
+          var rr = rows[d]; if (rr.querySelector && rr.querySelector('th')) continue;  // заголовок таблицы — пропуск
+          var info = _qRowInfo(rr, ansCol);
+          if (!info.qText || info.answers < 0) continue;  // не строка вопроса / нет ячейки ответов
+          if (info.answers !== 0) continue;               // есть ответ → не новый
+          unans++;
+          var fp = _hash((info.product || '') + '|' + info.qText);
+          cur[fp] = true; cand.push({ fp: fp, product: info.product, qText: info.qText });
+        }
+        var emitted = 0, sent = {};
+        if (_qPrev) { // не первый проход → шлём только НОВЫЕ вопросы без ответа
+          for (var k = 0; k < cand.length; k++) {
+            var c = cand[k];
+            if (_qPrev[c.fp] || sent[c.fp]) continue;
+            sent[c.fp] = true; emitted++;
+            console.log('__CC_NOTIF__' + JSON.stringify({ t: c.product || 'Новый вопрос', b: c.qText, i: '', g: 'ozon-q:' + c.fp, src: 'ozon-questions' }));
+          }
+        }
+        if (rows.length > 0) _qPrev = cur;       // базовую линию — только когда таблица реально видна
+        if (unans !== _lastQaN) { _lastQaN = unans; try { console.log('__CC_OZON_COUNT__' + JSON.stringify({ s: 'qa', n: unans })); } catch (_) {} }
+        var qShape = rows.length + '/' + unans;
+        if (reason === 'initial' || emitted > 0 || qShape !== _lastQShape) { _diag('ozon-q scan reason=' + reason + ' rows=' + rows.length + ' unans=' + unans + ' emitted=' + emitted); _lastQShape = qShape; }
+      } catch (e) { _diag('ozon-q scan-error ' + (e && e.message || e)); }
+    }
+
     function _scan(reason) {
       try {
+        // v1.2.353: «Покупатели» работают ТОЛЬКО на странице мессенджера. На «Вопросах» таблицу с числами
+        // «1»/«0» нельзя парсить как чаты (число примет за «непрочитано» → ложные уведомления) — там свой _scanQ.
+        if ((location.pathname || '').indexOf('/app/messenger') === -1) { _prev = null; return; }
         var sec = _section();
         // Журнал смены раздела (диагностика замка #2): видно, меняет ли Ozon адрес при Покупатели↔Поддержка.
         if (sec !== _lastSec) { _diag('sec-change from=' + (_lastSec || '?') + ' to=' + sec + ' reason=' + reason); _lastSec = sec; }
@@ -107,6 +225,9 @@
           _diag('reason=' + reason + ' sec=' + sec + ' rows=' + rows.length + ' unread=' + unreadTotal + ' emitted=' + emitted);
           _lastShape = shape;
         }
+        // v1.2.349: авторитетный счётчик «Покупатели» → виджет (бейдж «число новых»). Шлём ТОЛЬКО при
+        // изменении числа (без спама). Считается по реальному DOM, поэтому САМ сбрасывается в 0 при прочтении.
+        if (unreadTotal !== _lastMsgN) { _lastMsgN = unreadTotal; try { console.log('__CC_OZON_COUNT__' + JSON.stringify({ s: 'msg', n: unreadTotal })); } catch (_) {} }
       } catch (e) { _diag('scan-error ' + (e && e.message || e)); }
     }
 
@@ -126,9 +247,10 @@
       } catch (e) { _diag('attach-error ' + (e && e.message || e)); } // #2 из ревью: ветка больше не молчит
     }
 
-    setTimeout(function () { _attach(); _scan('initial'); }, 2500); // базовая линия после загрузки списка
+    setTimeout(function () { _attach(); _scan('initial'); _reconQ(); _scanQ('initial'); }, 2500); // базовая линия покупателей + разведка + сторож вопросов
     // #3 Подстраховка: список мог пересобраться (SPA) → раз в 5с переце́пим наблюдатель + фоновый досмотр,
     // чтобы ни одно новое сообщение не потерялось даже при пересборке DOM (макс. +5с задержки).
-    setInterval(function () { _attach(); _schedule('backstop'); }, 5000);
+    // Шаг 1: _reconQ() тут же ждёт, пока откроют «Вопросы» (сработает один раз, когда страница загрузится).
+    setInterval(function () { _attach(); _schedule('backstop'); _reconQ(); _scanQ('backstop'); }, 5000);
   } catch (e) { try { console.log('__CC_DIAG__ozon-list init-error ' + (e && e.message || e)); } catch (_) {} }
 })();

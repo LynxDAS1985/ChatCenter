@@ -23,6 +23,8 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 // v0.91.0: WebContentsViewSlot откачен (Issue #44934 Windows 11 crash)
 // import WebContentsViewSlot from './components/WebContentsViewSlot.jsx'
 import UncaughtErrorToast from './components/UncaughtErrorToast.jsx'
+import OzonQuickWidget from './native/components/OzonQuickWidget.jsx' // v1.2.343: плавающий виджет быстрого перехода по разделам Ozon
+import { bindOzonBgWatcher } from './utils/ozonBgWatcher.js' // v1.2.358: фоновая слежка за «Вопросами» Ozon (Шаг 3)
 // v0.89.44 (Совет 1): bridge для подключения webviewSetup к WebContentsView через wcv:* IPC.
 // v0.91.0: WebContentsViewBridge откачен
 // import { createWebContentsViewBridge } from './utils/webContentsViewBridge.js'
@@ -106,6 +108,23 @@ export default function App() {
   const [pendingAiInvocation, setPendingAiInvocation] = useState(null)
   const [unreadCounts, setUnreadCounts] = useState({})
   const [unreadSplit, setUnreadSplit] = useState({})       // { [id]: { personal, channels } }
+  // v1.2.349: авторитетные счётчики разделов Ozon от сторожа (ozon.hook → __CC_OZON_COUNT__):
+  // { [id]: { msg, qa } } — msg=непрочитанные «Покупатели», qa=«Новое» в «Вопросах». Живёт в renderer.
+  const [ozonCounts, setOzonCounts] = useState({})
+  // v1.2.359: ЕДИНЫЙ источник суммы Ozon для значка рейла/трея. Из per-раздел ozonCounts (msg+qa) →
+  // unreadCounts[id]. Так основная вкладка и фоновая страница «Вопросы» дают согласованную цифру
+  // (раньше два пути спорили за unreadCounts → рейл и виджет расходились).
+  useEffect(() => {
+    setUnreadCounts(prev => {
+      let next = prev
+      for (const id in ozonCounts) {
+        const c = ozonCounts[id] || {}
+        const total = (c.msg || 0) + (c.qa || 0)
+        if ((prev[id] || 0) !== total) { if (next === prev) next = { ...prev }; next[id] = total }
+      }
+      return next
+    })
+  }, [ozonCounts])
   const [connectionHealth, setConnectionHealth] = useState({}) // { [id]: connection quality/status }
   const [statusBarMsg, setStatusBarMsg] = useState(null)   // последнее сообщение для статусбара
   const [messagePreview, setMessagePreview] = useState({}) // { [id]: 'текст превью' }
@@ -298,7 +317,7 @@ export default function App() {
     settingsRef, activeIdRef, messengersRef, windowFocusedRef, zoomLevelsRef,
     setAccountInfo, setActiveId, setChatHistory, setLastMessage, setMessagePreview,
     setConnectionHealth, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
-    setWebviewLoading, setZoomLevels, monitorPreloadUrl,
+    setWebviewLoading, setZoomLevels, monitorPreloadUrl, setOzonCounts,
   })
 
   // v1.2.275: аватарки залогиненных веб-аккаунтов (для значков боковой полосы). Лёгкий сбор
@@ -807,6 +826,35 @@ export default function App() {
                     style={{ width: '100%', height: '100%' }}
                     allowpopups="true"
                     webpreferences="backgroundThrottling=no"
+                  />
+                )}
+                {/* v1.2.345: плавающий виджет Ozon — ТОЛЬКО внутри контейнера вкладки Ozon (появляется
+                    лишь на её активной вкладке и ограничен её областью, не над панелью ИИ). */}
+                {(/ozon\.ru/i.test(m.url || '') || m.id === 'ozon') && (
+                  <OzonQuickWidget messengerId={m.id} webviewRefs={webviewRefs}
+                    /* Только per-раздел от сторожа. unreadCounts НЕ используем как запас — там СУММА msg+qa
+                       (для значка рейла), иначе кнопка «Сообщения» показала бы число вопросов (v1.2.357). */
+                    unread={{ msg: (ozonCounts[m.id] && ozonCounts[m.id].msg) || 0, qa: (ozonCounts[m.id] && ozonCounts[m.id].qa) || 0 }}
+                    loading={!!(webviewLoading && webviewLoading[m.id])} />
+                )}
+                {/* v1.2.358 (Шаг 3): СКРЫТАЯ фоновая страница «Вопросы» на той же сессии Ozon — всегда
+                    загружена (offscreen, НЕ display:none, иначе Chromium усыпит), monitor.preload сам
+                    впрыскивает ozon.hook → следит за вопросами, даже когда открыт другой раздел. Её сигналы
+                    маршрутизируются на основной id Ozon (bindOzonBgWatcher). Отключить — убрать этот блок. */}
+                {(/ozon\.ru/i.test(m.url || '') || m.id === 'ozon') && (
+                  <webview
+                    ref={el => bindOzonBgWatcher(el, m.id, {
+                      handleNewMessage, setOzonCounts,
+                      log: (lvl, ms) => { try { window.api?.send?.('app:log', { level: lvl, message: ms }) } catch (_) {} },
+                      // v1.2.362: понятное сообщение пользователю, если Ozon не пустил фоновую страницу.
+                      notify: (title, body) => { try { window.api?.invoke('app:custom-notify', { title, body, messengerId: m.id, messengerName: 'Ozon', emoji: '📦', color: m.color || '#005BFF' }) } catch (_) {} },
+                    })}
+                    src="https://seller.ozon.ru/app/reviews/questions"
+                    partition={m.partition}
+                    preload={monitorPreloadUrl || undefined}
+                    style={{ position: 'absolute', left: -10000, top: 0, width: 1000, height: 800, pointerEvents: 'none' }}
+                    webpreferences="backgroundThrottling=no"
+                    aria-hidden="true"
                   />
                 )}
               </div>

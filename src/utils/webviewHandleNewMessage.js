@@ -70,8 +70,10 @@ export function createHandleNewMessage(deps) {
       traceNotif('viewing', 'pass', messengerId, text, `focused=${windowFocusedRef.current} activeId=${activeIdRef.current}`)
     }
 
-    // Автопереключение на вкладку с новым сообщением (если включено)
-    if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current) {
+    // Автопереключение на вкладку с новым сообщением (если включено).
+    // v1.2.359: extra.background=true (фоновый источник, напр. скрытая страница «Вопросы» Ozon) НЕ крадёт
+    // фокус — иначе новый вопрос выдёргивал бы пользователя из другого мессенджера на Ozon.
+    if (settingsRef.current.autoSwitchOnMessage && messengerId !== activeIdRef.current && !extra?.background) {
       setActiveId(messengerId)
     }
 

@@ -21,6 +21,14 @@ function parseConsoleMessage(msg) {
     try { var d = JSON.parse(msg.slice(12)); return { type: 'notification', title: d.t||'', body: d.b||'', icon: d.i||'', tag: d.g||'', source: d.src||'' } }
     catch(e) { return { type: 'notification_error', error: e.message } }
   }
+  if (msg.startsWith('__CC_OZON_COUNT__')) {
+    try {
+      var oc = JSON.parse(msg.slice(17))
+      var section = oc.s === 'qa' ? 'qa' : 'msg'
+      var n = Number.isFinite(oc.n) ? oc.n : parseInt(oc.n, 10)
+      return { type: 'ozon_count', section: section, n: Number.isFinite(n) ? Math.max(0, n) : 0 }
+    } catch (e) { return { type: 'ozon_count_error', error: e.message } }
+  }
   if (msg.startsWith('__CC_MSG__')) return { type: 'message', text: msg.slice(10).trim() }
   if (msg.startsWith('__CC_DIAG__')) return { type: 'diagnostic', text: msg.slice(11).trim() }
   var prefixEnd = msg.indexOf('__', 4)
@@ -84,6 +92,15 @@ test('traceNotif читает parsed.text (v0.80.9)', function() {
   var allWsCode = wsCode + '\n' + cmhCode
   assert(allWsCode.includes('parsed.text || parsed.body'), 'должен читать parsed.text для диагностики')
 })
+
+// ── OZON_COUNT (v1.2.349) ──
+console.log('\\n── OZON_COUNT: ──')
+test('msg счётчик', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"msg","n":3}'); assert(r.type === 'ozon_count' && r.section === 'msg' && r.n === 3) })
+test('qa счётчик', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"qa","n":5}'); assert(r.type === 'ozon_count' && r.section === 'qa' && r.n === 5) })
+test('ноль новых', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"msg","n":0}'); assert(r.type === 'ozon_count' && r.n === 0) })
+test('неизвестная секция → msg', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"xxx","n":2}'); assert(r.section === 'msg') })
+test('отрицательное → 0', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"qa","n":-4}'); assert(r.n === 0) })
+test('битый JSON → ozon_count_error', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{broken}'); assert(r.type === 'ozon_count_error') })
 
 // ── Специальные ──
 console.log('\\n── Специальные: ──')

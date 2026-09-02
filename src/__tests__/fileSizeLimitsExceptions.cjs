@@ -15,16 +15,16 @@ module.exports = {
   // Разбиение требует архитектурного решения (вынос layout/providers в отдельные компоненты)
   // — отдельный плановый шаг рефактора. Пока exception с обоснованием.
   'src/App.jsx': {
-    ceiling: 1025,
-    reason: 'v1.0.1: 3 Phase 4 модалки (TasksPanel/RemindersPanel/AIActivityDashboard) подключены через PanelModal обёртку + state + handleGoToSource + useAppCounters + props в TabBar (~50 строк). v0.95.25: WhatsNewModal. v0.88.x: Корневой компонент с providers, top-level state, routing между native/webview режимами. Разбиение требует архитектурного рефакторинга. v1.2.244: 960→975 (Этап 1 боковой рейл — вставка <SourceRail> за флагом, ~7 строк). v1.2.251: 975→990 (Этап 2C — состояние nativeAccounts + ref + проводка аккаунтов в NativeApp/SourceRail). v1.2.263: 995→1005 (проводка возврата к API: onActivateNative-колбэк + логи переходов веб↔API + сдвиг веб-слоя на 34px). v1.2.264: 1005→1015 (onAddWeb принимает выбранный мессенджер из окна «Добавить» → сборка новой вкладки). v1.2.271: 1015→1020 (меню правого клика вынесено из TabBar → рендерится на уровне App, чтобы пережить будущее удаление вкладок; при удалении TabBar App резко похудеет и потолок вернём вниз). v1.2.275: 1020→1025 (хук useWebAccountAvatars + проброс аватарок веб-аккаунтов на значки полосы). ВРЕМЕННО: при удалении верхних вкладок (финал миграции side-rail) TabBar со ~30 пропсами уйдёт из App.jsx → потолок вернём вниз. План: .memory-bank/side-rail-migration-plan.md'
+    ceiling: 1075,
+    reason: 'v1.0.1: 3 Phase 4 модалки (TasksPanel/RemindersPanel/AIActivityDashboard) подключены через PanelModal обёртку + state + handleGoToSource + useAppCounters + props в TabBar (~50 строк). v0.95.25: WhatsNewModal. v0.88.x: Корневой компонент с providers, top-level state, routing между native/webview режимами. Разбиение требует архитектурного рефакторинга. v1.2.244: 960→975 (Этап 1 боковой рейл — вставка <SourceRail> за флагом, ~7 строк). v1.2.251: 975→990 (Этап 2C — состояние nativeAccounts + ref + проводка аккаунтов в NativeApp/SourceRail). v1.2.263: 995→1005 (проводка возврата к API: onActivateNative-колбэк + логи переходов веб↔API + сдвиг веб-слоя на 34px). v1.2.264: 1005→1015 (onAddWeb принимает выбранный мессенджер из окна «Добавить» → сборка новой вкладки). v1.2.271: 1015→1020 (меню правого клика вынесено из TabBar → рендерится на уровне App, чтобы пережить будущее удаление вкладок; при удалении TabBar App резко похудеет и потолок вернём вниз). v1.2.275: 1020→1025 (хук useWebAccountAvatars). v1.2.343: 1025→1030 (виджет Ozon). v1.2.348: 1030→1035 (виджет-док: данные unread/loading в монтаж, +2 строки). v1.2.349: 1035→1037 (счётчики Ozon: состояние ozonCounts + проброс setOzonCounts + проп виджета). v1.2.358: 1037→1055 (Шаг 3: скрытая фоновая webview «Вопросы» Ozon + маршрутизатор). v1.2.359: 1055→1070 (эффект: единый источник суммы Ozon в рейл из ozonCounts). v1.2.362: 1070→1075 (проброс notify в фоновую страницу «Вопросы»). ВРЕМЕННО: при удалении верхних вкладок (финал миграции side-rail) TabBar со ~30 пропсами уйдёт из App.jsx → потолок вернём вниз. План: .memory-bank/side-rail-migration-plan.md'
   },
   'src/utils/messengerConfigs.js': {
     ceiling: 400,
     reason: 'Конфиги всех мессенджеров в одном файле. Специально держим вместе.'
   },
   'src/utils/consoleMessageHandler.js': {
-    ceiling: 450,
-    reason: 'Большой парсер console-message. Логически цельный.'
+    ceiling: 458,
+    reason: 'Большой парсер console-message. Логически цельный. v1.2.355-356: маршрут __CC_OZON_COUNT__ (виджет + сумма в бейдж рейла).'
   },
   // v0.87.78: notification разбит на html/css/js. JS превышает default 300.
   // v1.2.12: createPinBtn вынесена 700→686, потом calcHeight/pauseItem/resumeItem/

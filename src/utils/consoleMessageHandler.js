@@ -16,7 +16,7 @@ export function createConsoleMessageHandler(deps) {
     recentNotifsRef, notifReadyRef, notifDedupRef, notifMidTsRef, notifSenderTsRef, senderCacheRef, pendingMsgRef,
     webviewRefs, messengersRef, settingsRef, windowFocusedRef, activeIdRef,
     cleanupSenderCache,
-    setAccountInfo, setUnreadCounts, setConnectionHealth, notifCountRef,
+    setAccountInfo, setUnreadCounts, setConnectionHealth, notifCountRef, setOzonCounts,
   } = deps
 
   const rememberExtraAvatar = (messengerId, extra, text) => {
@@ -87,7 +87,8 @@ export function createConsoleMessageHandler(deps) {
         return
       }
       const ready = !!notifReadyRef.current[messengerId]
-      const diagText = (parsed.text || parsed.body || parsed.value || '').toString()
+      // v1.2.357: у ozon_count нет text/body/value — печатали пустоту. Показываем раздел+число в журнале.
+      const diagText = parsed.type === 'ozon_count' ? `${parsed.section}=${parsed.n}` : (parsed.text || parsed.body || parsed.value || '').toString()
       const diagDetail = `${parsed.prefix || parsed.type} | ready=${ready}${/max-sidebar/i.test(diagText) ? ' | ' + diagText : ''}`
       traceNotif('debug', 'info', messengerId, diagText, diagDetail)
       // Любой __CC_ ответ (кроме badge_blocked) подтверждает, что страница отвечает.
@@ -98,6 +99,21 @@ export function createConsoleMessageHandler(deps) {
     if (parsed && parsed.type === 'account') {
       if (parsed.name && parsed.name.length > 1 && parsed.name.length < 80) {
         setAccountInfo(prev => ({ ...prev, [messengerId]: parsed.name }))
+      }
+      return
+    }
+    // ── __CC_OZON_COUNT__: авторитетный счётчик раздела Ozon от сторожа (v1.2.349) ──
+    // { section: 'msg'|'qa', n } → кладём в ozonCounts[messengerId][section]. Виджет Ozon читает это
+    // для бейджей «число новых». Обновляем только при ИЗМЕНЕНИИ числа (без лишних ре-рендеров).
+    if (parsed && parsed.type === 'ozon_count') {
+      // per-раздел → ozonCounts (виджет). Сумму (msg+qa) в unreadCounts для значка рейла считает ЕДИНЫЙ
+      // эффект в App из ozonCounts (v1.2.359) — так фон и основная вкладка не спорят за общий счётчик.
+      if (setOzonCounts) {
+        setOzonCounts(prev => {
+          const cur = prev[messengerId] || {}
+          if (cur[parsed.section] === parsed.n) return prev
+          return { ...prev, [messengerId]: { ...cur, [parsed.section]: parsed.n } }
+        })
       }
       return
     }

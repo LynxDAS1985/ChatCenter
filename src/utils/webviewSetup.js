@@ -41,7 +41,7 @@ export function createWebviewSetup(deps) {
     settingsRef, activeIdRef, messengersRef, windowFocusedRef, zoomLevelsRef,
     setAccountInfo, setActiveId, setChatHistory, setLastMessage, setMessagePreview,
     setConnectionHealth, setNewMessageIds, setStatusBarMsg, setUnreadCounts, setUnreadSplit,
-    setWebviewLoading, setZoomLevels, monitorPreloadUrl,
+    setWebviewLoading, setZoomLevels, monitorPreloadUrl, setOzonCounts,
   } = deps
   const startupWebviewSeen = new Set()
   const webviewLoadStartedAt = {}
@@ -586,7 +586,7 @@ export function createWebviewSetup(deps) {
         recentNotifsRef, notifReadyRef, notifDedupRef, notifMidTsRef, notifSenderTsRef, senderCacheRef, pendingMsgRef,
         webviewRefs, messengersRef, settingsRef, windowFocusedRef, activeIdRef,
         cleanupSenderCache,
-        setAccountInfo, setUnreadCounts, setConnectionHealth, notifCountRef,
+        setAccountInfo, setUnreadCounts, setConnectionHealth, notifCountRef, setOzonCounts,
       })
       const boundConsoleHandler = consoleHandler(el, messengerId)
       addListener('console-message', (e) => {

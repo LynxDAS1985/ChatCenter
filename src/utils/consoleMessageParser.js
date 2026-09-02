@@ -41,6 +41,19 @@ export function parseConsoleMessage(msg) {
     }
   }
 
+  // __CC_OZON_COUNT__JSON — авторитетный счётчик раздела Ozon от сторожа (ozon.hook).
+  // { s: 'msg'|'qa', n: N } → { type: 'ozon_count', section, n }. section нормализуем к msg/qa.
+  if (msg.startsWith('__CC_OZON_COUNT__')) {
+    try {
+      const data = JSON.parse(msg.slice(17))
+      const section = data.s === 'qa' ? 'qa' : 'msg'
+      const n = Number.isFinite(data.n) ? data.n : parseInt(data.n, 10)
+      return { type: 'ozon_count', section, n: Number.isFinite(n) ? Math.max(0, n) : 0 }
+    } catch (e) {
+      return { type: 'ozon_count_error', error: e.message }
+    }
+  }
+
   // __CC_MSG__text
   if (msg.startsWith('__CC_MSG__')) {
     return { type: 'message', text: msg.slice(10).trim() }

@@ -127,7 +127,20 @@ export function createWindow(deps) {
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, failedUrl, isMainFrame) => {
     wlog(`did-fail-load code=${code} desc="${desc}" url=${failedUrl || ''} main=${isMainFrame}`)
   })
-  mainWindow.once('ready-to-show', () => wlog('ready-to-show'))
+  mainWindow.once('ready-to-show', () => {
+    wlog('ready-to-show')
+    // v1.2.360: НАДЁЖНО применяем «развернуть» ИМЕННО здесь. maximize() при создании (стр. выше) на
+    // Windows не всегда срабатывает — окно ещё не отрисовано (журнал: restore maximized=true, но окно
+    // не развёрнуто). ready-to-show = окно готово к показу (офиц. Electron docs) → maximize() применяется.
+    // Вызов при создании оставлен как первая попытка; если он сработал — здесь maximize() уже no-op.
+    try {
+      if (plan.maximize && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMaximized()) {
+        mainWindow.maximize()
+      }
+    } catch (_) {}
+    // Запись-подтверждение: видно, совпало ли «хотели развернуть» с «реально развёрнуто».
+    try { wlog(`post-ready maximize wanted=${plan.maximize} isMaximized=${mainWindow && !mainWindow.isDestroyed() ? mainWindow.isMaximized() : 'n/a'}`) } catch (_) {}
+  })
 
   if (isDev) {
     const devUrl = 'http://localhost:5173'
@@ -151,6 +164,10 @@ export function createWindow(deps) {
   // а после сворачивания из полноэкранного терялся «обычный» размер.
   const saveBounds = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return
+    // v1.2.346: НЕ сохраняем в свёрнутом/скрытом (трей) состоянии — там isMaximized()=false и границы
+    // искажены; из-за этого терялось «развёрнуто на весь экран» (свернул/спрятал → ложное false
+    // перезатирало сохранённое true). Журнал: restore maximized=true (11:02) → false (12:03).
+    if (mainWindow.isMinimized() || !mainWindow.isVisible()) return
     storage.set('windowBounds', buildSavedBounds({
       isMaximized: mainWindow.isMaximized(),
       normalBounds: mainWindow.getNormalBounds(),
@@ -164,6 +181,9 @@ export function createWindow(deps) {
 
   // Свернуть в трей вместо закрытия
   mainWindow.on('close', (e) => {
+    // v1.2.346: зафиксировать финальное ВИДИМОЕ состояние (развёрнуто/размер/позиция) ДО скрытия/выхода —
+    // окно ещё видимо, поэтому saveBounds сохранит правильный isMaximized (а не ложное false при скрытии).
+    saveBounds()
     const settings = storage.get('settings', { minimizeToTray: true })
     const tray = getTray()
     if (!getForceQuit() && tray && settings.minimizeToTray !== false) {
