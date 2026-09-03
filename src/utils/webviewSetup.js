@@ -159,6 +159,8 @@ export function createWebviewSetup(deps) {
   }
 
   const isVkWebview = (el, messengerId) => detectMessengerType(healthUrl(el, messengerId)) === 'vk'
+  // v1.2.376: Ozon сам ведёт свой счётчик непрочитанного (сторож __CC_OZON_COUNT__), поэтому общие счётчики (title-reset/unread-count) его НЕ трогают.
+  const isOzonWebview = (el, messengerId) => detectMessengerType(healthUrl(el, messengerId)) === 'ozon'
 
   // ── Обработка входящего сообщения (вынесена в webviewHandleNewMessage.js) ──
   const handleNewMessage = createHandleNewMessage({
@@ -434,13 +436,14 @@ export function createWebviewSetup(deps) {
           }))
           scheduleHealthProbe(el, messengerId, 'Проверка после title-update', 250)
         } else if (activeIdRef.current === messengerId && windowFocusedRef.current) {
-          // v0.74.0: Title без числа (например "MAX") — пользователь смотрит и всё прочитал
-          notifCountRef.current[messengerId] = 0
-          try { const u = el?.getURL?.() || ''; if (/web\.max\.ru/.test(u)) traceNotif('debug', 'info', messengerId, '', `MAX title reset skipped | title="${String(e.title || '').slice(0, 120)}" url=${u.slice(0, 120)} kept=true`); else resetMaxTitleUnread(titleUnreadBaselineRef.current, messengerId, u) } catch {}
-          setUnreadCounts(prev => {
-            if ((prev[messengerId] || 0) === 0) return prev
-            return { ...prev, [messengerId]: 0 }
-          })
+          // v0.74.0: Title без числа — пользователь смотрит и всё прочитал. v1.2.374: КРОМЕ Ozon — у него в
+          // заголовке числа НЕТ никогда, а непрочитанное ведёт наш сторож (ozonCounts) → обнуление сбрасывало значок рейла Ozon в 0.
+          const titleResetUrl = (() => { try { return el?.getURL?.() || '' } catch { return '' } })()
+          if (!isOzonWebview(el, messengerId)) {
+            notifCountRef.current[messengerId] = 0
+            try { if (/web\.max\.ru/.test(titleResetUrl)) traceNotif('debug', 'info', messengerId, '', `MAX title reset skipped | url=${titleResetUrl.slice(0, 120)} kept=true`); else resetMaxTitleUnread(titleUnreadBaselineRef.current, messengerId, titleResetUrl) } catch {}
+            setUnreadCounts(prev => ((prev[messengerId] || 0) === 0) ? prev : { ...prev, [messengerId]: 0 })
+          }
         }
       })
 
@@ -470,6 +473,8 @@ export function createWebviewSetup(deps) {
           animateZoom(messengerId, cur, 100)
           return
         } else if (e.channel === 'unread-count') {
+          // v1.2.375/376: Ozon сам ведёт счётчик (сторож __CC_OZON_COUNT__) — общий unread-count его не трогает (иначе 0 затрёт цифру). Единая проверка isOzonWebview (как title-reset выше).
+          if (isOzonWebview(el, messengerId)) return
           // v0.72.8: unread-count IPC может ТОЛЬКО УВЕЛИЧИВАТЬ счётчик (для фоновых вкладок)
           // DOM-парсинг нестабилен — countUnread*() иногда возвращает 0 при ре-рендере DOM
           // v0.74.0: НО если пользователь СМОТРИТ на эту вкладку и DOM=0 — сброс (прочитал)

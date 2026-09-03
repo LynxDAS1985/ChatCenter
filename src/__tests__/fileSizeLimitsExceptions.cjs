@@ -8,8 +8,8 @@ module.exports = {
   // InboxMessageInput, InboxChatListSidebar) — теперь 566 строк, под стандартным лимитом 600.
   // Исключение удалено.
   'src/utils/webviewSetup.js': {
-    ceiling: 600,
-    reason: 'v0.88.x: createWebviewSetup — фабрика с closures (deps→handlers), references shared state. handleNewMessage уже вынесен в webviewHandleNewMessage.js (170 строк) в v0.87.97. Дальнейшее разбиение требует архитектурного рефакторинга (closures → классы или модули) — отдельный шаг.'
+    ceiling: 605,
+    reason: 'v0.88.x: createWebviewSetup — фабрика с closures (deps→handlers), references shared state. handleNewMessage уже вынесен в webviewHandleNewMessage.js (170 строк) в v0.87.97. Дальнейшее разбиение требует архитектурного рефакторинга (closures → классы или модули) — отдельный шаг. v1.2.374: 600→605 (исключение Ozon из обнуления счётчика по заголовку). ВРЕМЕННО — разбить при рефакторинге.'
   },
   // v0.88.x: App.jsx — корневой компонент с providers, top-level state, routing.
   // Разбиение требует архитектурного решения (вынос layout/providers в отдельные компоненты)

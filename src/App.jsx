@@ -847,7 +847,7 @@ export default function App() {
                   <webview
                     key={'ozonbg' + bgI}
                     ref={el => bindOzonBgWatcher(el, m.id, {
-                      handleNewMessage, setOzonCounts,
+                      handleNewMessage, setOzonCounts, periodicReloadMs: bgI === 0 ? 180000 : 0, // v1.2.376: освежать ТОЛЬКО «Вопросы» (bgI=0) раз в 3 мин; «Сообщения» (bgI=1) не трогаем
                       log: (lvl, ms) => { try { window.api?.send?.('app:log', { level: lvl, message: ms }) } catch (_) {} },
                       // v1.2.362: понятное сообщение пользователю, если Ozon не пустил фоновую страницу.
                       notify: (title, body) => { try { window.api?.invoke('app:custom-notify', { title, body, messengerId: m.id, messengerName: 'Ozon', emoji: '📦', color: m.color || '#005BFF' }) } catch (_) {} },

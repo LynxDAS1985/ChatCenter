@@ -6,6 +6,7 @@ import { getPinHtmlPath, createPinBrowserWindow, startTimerForItem, restorePinBo
 import { createDockPinState, DOCK_PREVIEW_RESERVE } from './dockPinState.js'
 import { computeDockTop } from './dockGeometry.js'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
+import { bringWindowToFront } from '../utils/bringWindowToFront.js'
 import { safeSend } from '../utils/safeSend.js' // v1.2.274: гвард от «Render frame disposed» при закрытии окна
 
 export function initDockPinSystem(deps) {
@@ -109,8 +110,7 @@ ipcMain.on('pin:go-to-chat', (event, messengerId) => {
     }
   }
   safeSend(getMainWindow(), 'notify:clicked', { messengerId, senderName })
-  if (!getMainWindow().isVisible()) getMainWindow().show()
-  getMainWindow().focus()
+  bringWindowToFront(getMainWindow()) // v1.2.373: подъём окна с сохранением «на весь экран»
 })
 
 // ── Pin → Dock: свернуть в задачи ──
@@ -196,8 +196,7 @@ ipcMain.on('dock:go-to-chat', (_event, pinId) => {
   if (!getMainWindow() || getMainWindow().isDestroyed()) return
   const senderName = item.data.sender || ''
   safeSend(getMainWindow(), 'notify:clicked', { messengerId: item.data.messengerId, senderName })
-  if (!getMainWindow().isVisible()) getMainWindow().show()
-  getMainWindow().focus()
+  bringWindowToFront(getMainWindow()) // v1.2.373: подъём окна с сохранением «на весь экран»
 })
 
 // ── Dock → Main: установить категорию из dock ──

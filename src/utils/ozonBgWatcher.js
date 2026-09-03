@@ -25,7 +25,7 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
   try {
     if (!el || el.__ccOzonBgBound) return
     el.__ccOzonBgBound = true
-    const { handleNewMessage, setOzonCounts, log, notify } = deps || {}
+    const { handleNewMessage, setOzonCounts, log, notify, periodicReloadMs } = deps || {}
     // v1.2.361 ДИАГНОСТИКА (Шаг 3А молчит — 0 строк [ozon-bg]): лесенка записей, чтобы увидеть, на каком
     // шаге рвётся. Убрать после того, как фоновая страница подтвердится рабочей. Текст вопросов НЕ пишем.
     log && log('INFO', '[ozon-bg] страница создана, слушатель привязан')
@@ -103,5 +103,18 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         }
       } catch (_) {}
     })
+    // v1.2.376: САМО-ОСВЕЖЕНИЕ фоновой «Вопросы» (Ozon SPA не обновляет список после ответа в другом месте →
+    // старый снимок → qa застывает). reload раз в periodicReloadMs. ТОЛЬКО «Вопросы»: их база _qPrev переживает
+    // reload через localStorage __ccOzonQSeen (нет повторных уведомлений); «Сообщения» НЕ трогаем (их база _prev
+    // не персистится → reload проглотил бы новое сообщение). isConnected(false)=размонтирован → таймер стоп (без утечки).
+    const reloadMs = Number(periodicReloadMs) || 0
+    if (reloadMs > 0 && !el.__ccOzonBgReloadTimer) {
+      el.__ccOzonBgReloadTimer = setInterval(() => {
+        try {
+          if (!el.isConnected) { clearInterval(el.__ccOzonBgReloadTimer); el.__ccOzonBgReloadTimer = null; return }
+          if (el.reload) { el.reload(); log && log('INFO', '[ozon-bg] фоновая «Вопросы» освежена (reload)') }
+        } catch (_) {}
+      }, reloadMs)
+    }
   } catch (_) {}
 }

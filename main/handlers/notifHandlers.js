@@ -2,6 +2,7 @@
 // Обработка кликов, mark-read, dismiss, resize для Messenger Ribbon
 import { ipcMain, screen } from 'electron'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
+import { bringWindowToFront } from '../utils/bringWindowToFront.js'
 import { decideNotifResize } from './notifResizeDecision.js'
 import { shouldDismissForRead } from './notifDismissDecision.js'
 
@@ -37,8 +38,8 @@ export function initNotifHandlers(deps) {
     hideIfEmpty()
     const mainWindow = getMainWindow()
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show()
-      mainWindow.focus()
+      // v1.2.373: единый подъём окна с сохранением «на весь экран» (свёрнуто→restore; трей→подстраховка maximize).
+      bringWindowToFront(mainWindow)
       if (item?.messengerId) {
         mainWindow.webContents.send('notify:clicked', {
           messengerId: item.messengerId,
@@ -97,8 +98,7 @@ export function initNotifHandlers(deps) {
     hideIfEmpty()
     const mainWindow = getMainWindow()
     if (!mainWindow || mainWindow.isDestroyed() || !item?.source) return
-    mainWindow.show()
-    mainWindow.focus()
+    bringWindowToFront(mainWindow) // v1.2.373: подъём окна с сохранением «на весь экран»
     mainWindow.webContents.send('ai:agent:invoke-from-notify', {
       source: item.source,
       title: item.title,
