@@ -3,7 +3,7 @@
 // дедуп → strip-sender → viewing-фильтр → звук + ribbon → preview + history + auto-reply.
 import { buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './messageProcessing.js'
 import { playNotificationSound } from './sound.js'
-import { getMessengerLogo } from '../native/utils/messengerLogos.js' // v1.2.333: нет аватара → логотип мессенджера в уведомлении
+import { resolveMessengerLogo } from '../native/utils/messengerLogos.js' // v1.2.333/378/379: логотип мессенджера в уведомлении (по типу из url; id ручного источника = custom_…, поиск по id не сработал бы)
 export function createHandleNewMessage(deps) {
   const {
     recentNotifsRef, lastRibbonTsRef, lastSoundTsRef, notifCountRef,
@@ -110,8 +110,8 @@ export function createHandleNewMessage(deps) {
         body: displayText.length > 100 ? displayText.slice(0, 97) + '…' : displayText,
         fullBody: displayText.length > 100 ? displayText : '',
         iconUrl: extra?.iconUrl || undefined,
-        // v1.2.333: аватар отправителя в приоритете; нет его → логотип мессенджера (Ozon/ВК/…) вместо эмодзи-заглушки.
-        iconDataUrl: extra?.iconDataUrl || getMessengerLogo(mInfo?.id) || undefined,
+        // v1.2.333/379: аватар в приоритете; нет → логотип мессенджера (по типу из url, см. resolveMessengerLogo) вместо эмодзи-заглушки.
+        iconDataUrl: extra?.iconDataUrl || resolveMessengerLogo(mInfo),
         color: mInfo?.color || '#2AABEE',
         emoji: mInfo?.emoji || '💬',
         messengerName: mInfo?.name || 'ЦентрЧатов',
@@ -163,6 +163,7 @@ export function createHandleNewMessage(deps) {
           title: '🤖 Авто-ответ',
           body: `Правило: "${rule.keywords[0]}" — ответ в буфере`,
           color: mInfo?.color || '#2AABEE',
+          iconDataUrl: resolveMessengerLogo(mInfo), // v1.2.379 (#3): логотип источника и в уведомлении авто-ответа (раньше был только эмодзи)
           emoji: mInfo?.emoji || '🤖',
           messengerName: mInfo?.name || 'ЦентрЧатов',
           messengerId: messengerId,

@@ -9,6 +9,7 @@ import path from 'node:path'
 
 const vkSrc = fs.readFileSync(path.join(process.cwd(), 'main/preloads/hooks/vk.hook.js'), 'utf8')
 const tgSrc = fs.readFileSync(path.join(process.cwd(), 'main/preloads/hooks/telegram.hook.js'), 'utf8')
+const ozonSrc = fs.readFileSync(path.join(process.cwd(), 'main/preloads/hooks/ozon.hook.js'), 'utf8')
 
 function grab(src, re, label) {
   const m = src.match(re)
@@ -40,6 +41,11 @@ const tgIsStory = new Function(
 // VK _vkNodeText — собирает текст ЭЛЕМЕНТА, включая эмодзи-картинки (<img alt="🧡">)
 const vkNodeText = new Function(
   grab(vkSrc, /function _vkNodeText\(node\) \{[\s\S]*?\n {2}\}/, '_vkNodeText') + '\nreturn _vkNodeText;'
+)()
+
+// Ozon _isTyping — «Печатает…» (статус набора) не должен уведомлять (v1.2.379)
+const ozonIsTyping = new Function(
+  grab(ozonSrc, /function _isTyping\(s\) \{.*\}/, '_isTyping') + '\nreturn _isTyping;'
 )()
 
 describe('VK _cleanMultiline — сохраняет переносы строк (формат постов не «простыня»)', () => {
@@ -113,5 +119,22 @@ describe('VK _vkNodeText — сохраняет переносы из разме
   })
   it('инлайн-тег (SPAN) НЕ добавляет лишних переносов', () => {
     expect(vkNodeText(TAG('SPAN', [T('а'), TAG('SPAN', [T('б')])]))).toBe('аб')
+  })
+})
+
+// v1.2.379: Ozon — уведомление НЕ должно приходить на статус набора «Печатает…».
+describe('Ozon _isTyping — гасит статус набора, не трогает реальные сообщения', () => {
+  it('гасит чистый статус набора (разные формы и точки)', () => {
+    expect(ozonIsTyping('Печатает…')).toBe(true)
+    expect(ozonIsTyping('Печатает...')).toBe(true)
+    expect(ozonIsTyping('печатает')).toBe(true)
+    expect(ozonIsTyping('Печатают…')).toBe(true)
+    expect(ozonIsTyping('  Печатает…  ')).toBe(true)
+  })
+  it('НЕ трогает реальные сообщения, начинающиеся со слова «печатает»', () => {
+    expect(ozonIsTyping('печатает отчёт')).toBe(false)
+    expect(ozonIsTyping('Принтер не печатает, что делать?')).toBe(false)
+    expect(ozonIsTyping('Здравствуйте, вопрос по товару')).toBe(false)
+    expect(ozonIsTyping('')).toBe(false)
   })
 })

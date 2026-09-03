@@ -31,10 +31,14 @@
     var _lastDiagTs = 0; // v1.2.371 «пульс» покупателей: время последней диаг-записи скана «Сообщения»
     var _qPrev = null, _lastQShape = ''; // v1.2.353: базовая линия «Вопросов» + гейт диаг-лога
     var _lastQDiagTs = 0; // v1.2.370 ДИАГНОСТИКА «пульс»: время последней записи скана вопросов (жив ли фон)
+    var _lastRDiagTs = 0; // v1.2.380 РАЗВЕДКА «Отзывы»: гейт диаг-лога структуры (старт + раз в 60с)
 
     function _diag(msg) { try { console.log('__CC_DIAG__ozon-list ' + msg); } catch (_) {} }
     function _hash(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return h; }
     function _txt(el) { try { return (el.textContent || '').replace(/\s+/g, ' ').trim(); } catch (_) { return ''; } }
+    // v1.2.379: превью — статус набора Ozon («Печатает…»/«Печатают…» с точками/…). Якорь ^…$: только ЧИСТЫЙ
+    // статус, реальные фразы («печатает отчёт») не задеваются. По образцу спам-фильтров ВК/Telegram.
+    function _isTyping(s) { return /^печата(ет|ют)[.…\s]*$/i.test((s || '').trim()); }
 
     // #2 Активный раздел из адреса страницы. Ozon кладёт раздел в query: ?group=customers (Покупатели).
     // 'buyers' — покупатели; 'other' — явно другой раздел (глушим); 'unknown' — нет параметра (не глушим).
@@ -173,6 +177,10 @@
           if (p.unread <= 0) continue;             // только непрочитанные (входящие покупателя)
           if (!p.name || !p.preview) continue;     // неполная строка — пропуск
           unreadTotal++;
+          // v1.2.379: «Печатает…» — статус набора (Ozon заменяет им превью). Считаем чат непрочитанным
+          // (не мигаем счётчиком), но НЕ уведомляем и не пишем в базу отпечатков — иначе приходило уведомление
+          // на набор текста. Маска якорная (^…$): реальное сообщение «печатает отчёт» НЕ гасится (после слова — буквы).
+          if (_isTyping(p.preview)) continue;
           var fp = _hash(p.name + '|' + p.preview); // отпечаток «имя+текст» → меняется на каждое новое сообщение
           cur[fp] = true;
           cand.push({ fp: fp, name: p.name, preview: p.preview });
@@ -218,9 +226,33 @@
       } catch (e) { _diag('attach-error ' + (e && e.message || e)); } // #2 из ревью: ветка больше не молчит
     }
 
-    setTimeout(function () { _attach(); _scan('initial'); _scanQ('initial'); }, 2500); // базовая линия покупателей + сторож вопросов
+    // v1.2.380 РАЗВЕДКА «Отзывы» (Шаг A, TODO-36): точный URL списка отзывов и селектор бейджа «Новый» НЕИЗВЕСТНЫ —
+    // снимаем структуру страницы живьём (как разведка вопросов). ТОЛЬКО лог `__CC_DIAG__ozon-r`; уведомлений и
+    // счётчиков ПОКА НЕТ (по строкам журнала сделаю точный сторож). Гейт: страница отзывов (есть «review» в адресе,
+    // но НЕ «question» — чтобы не пересечься со страницей «Вопросы»).
+    function _scanR(reason) {
+      try {
+        var pth = location.pathname || '';
+        if (pth.indexOf('review') === -1 || pth.indexOf('question') !== -1) return;
+        if (document.querySelectorAll('*').length < 300) return; // ещё грузится
+        var rNow = Date.now();
+        if (reason !== 'initial' && (rNow - _lastRDiagTs) < 60000) return; // без спама
+        _lastRDiagTs = rNow;
+        var ths = document.querySelectorAll('th'), head = [];
+        for (var h = 0; h < ths.length && h < 12; h++) head.push(_txt(ths[h]).slice(0, 18));
+        var rows = document.querySelectorAll('tr, [role="row"]'), novy = 0, sample = '';
+        for (var r = 0; r < rows.length; r++) {
+          var tx = _txt(rows[r]);
+          if (/Новый/.test(tx)) { novy++; if (!sample) sample = tx.slice(0, 70); }
+        }
+        var tab = _txt(document.body).match(/Новые\s+(\d+)/);
+        _diag('ozon-r url=' + (location.href || '').slice(0, 70) + ' rows=' + rows.length + ' heads=[' + head.join('|') + '] novy=' + novy + ' tabNew=' + (tab ? tab[1] : '?') + ' sample=' + sample);
+      } catch (e) { _diag('ozon-r scan-error ' + (e && e.message || e)); }
+    }
+
+    setTimeout(function () { _attach(); _scan('initial'); _scanQ('initial'); _scanR('initial'); }, 2500); // базовая линия покупателей + сторож вопросов + разведка отзывов
     // #3 Подстраховка: список мог пересобраться (SPA) → раз в 5с переце́пим наблюдатель + фоновый досмотр,
     // чтобы ни одно новое сообщение не потерялось даже при пересборке DOM (макс. +5с задержки).
-    setInterval(function () { _attach(); _schedule('backstop'); _scanQ('backstop'); }, 5000);
+    setInterval(function () { _attach(); _schedule('backstop'); _scanQ('backstop'); _scanR('backstop'); }, 5000);
   } catch (e) { try { console.log('__CC_DIAG__ozon-list init-error ' + (e && e.message || e)); } catch (_) {} }
 })();

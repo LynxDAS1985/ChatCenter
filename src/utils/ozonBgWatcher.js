@@ -25,7 +25,7 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
   try {
     if (!el || el.__ccOzonBgBound) return
     el.__ccOzonBgBound = true
-    const { handleNewMessage, setOzonCounts, log, notify, periodicReloadMs } = deps || {}
+    const { handleNewMessage, setOzonCounts, log, notify, periodicReloadMs, suppressFailNotice } = deps || {}
     // v1.2.361 ДИАГНОСТИКА (Шаг 3А молчит — 0 строк [ozon-bg]): лесенка записей, чтобы увидеть, на каком
     // шаге рвётся. Убрать после того, как фоновая страница подтвердится рабочей. Текст вопросов НЕ пишем.
     log && log('INFO', '[ozon-bg] страница создана, слушатель привязан')
@@ -38,7 +38,7 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         const code = e && e.errorCode
         const mainFrame = (!e || e.isMainFrame === undefined) ? true : e.isMainFrame
         log && log('WARN', '[ozon-bg] загрузка НЕ удалась code=' + code + ' ' + (e && e.errorDescription) + ' url=' + (e && e.validatedURL || ''))
-        if (mainFrame && code != null && code !== -3 && !el.__ccOzonBgBlockNotified) {
+        if (mainFrame && code != null && code !== -3 && !el.__ccOzonBgBlockNotified && !suppressFailNotice) { // v1.2.380: страница «Отзывы» на этапе разведки не тревожит пользователя (лог WARN выше остаётся)
           el.__ccOzonBgBlockNotified = true
           // v1.2.363: формулировка НЕЙТРАЛЬНА — did-fail-load бывает и от временного обрыва сети
           // (ERR_NETWORK_CHANGED/ERR_INTERNET_DISCONNECTED), не только от блокировки Ozon. Не винить Ozon зря.
@@ -98,7 +98,7 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         }
         // Диагностика скана из фоновой страницы (подтверждает, что сторож жив и видит список/таблицу).
         // Ловим и «Вопросы» (ozon-q scan), и «Покупатели» (ozon-list reason=), и сигнал сбоя (no-answers-col).
-        if (parsed.type === 'diagnostic' && /ozon-q scan|ozon-list reason=|no-answers-col/.test(parsed.text || '')) {
+        if (parsed.type === 'diagnostic' && /ozon-q scan|ozon-list reason=|no-answers-col|ozon-r /.test(parsed.text || '')) {
           log && log('INFO', `[ozon-bg] ${parsed.text}`)
         }
       } catch (_) {}
@@ -112,8 +112,9 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
       el.__ccOzonBgReloadTimer = setInterval(() => {
         try {
           if (!el.isConnected) { clearInterval(el.__ccOzonBgReloadTimer); el.__ccOzonBgReloadTimer = null; return }
+          if (typeof document !== 'undefined' && document.hidden) return // v1.2.377 (#3): окно свёрнуто/скрыто → не тревожим Ozon; следующий тик освежит по возврату
           if (el.reload) { el.reload(); log && log('INFO', '[ozon-bg] фоновая «Вопросы» освежена (reload)') }
-        } catch (_) {}
+        } catch (e) { log && log('WARN', '[ozon-bg] reload «Вопросы» не удался: ' + ((e && e.message) || e)) } // v1.2.377 (#5): не глотаем сбой молча
       }, reloadMs)
     }
   } catch (_) {}
