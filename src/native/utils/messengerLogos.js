@@ -27,3 +27,13 @@ export function getMessengerLogo(messenger) {
 export function resolveMessengerLogo(mInfo) {
   return getMessengerLogo(detectMessengerType(mInfo?.url || '')) || getMessengerLogo(mInfo?.id) || undefined
 }
+
+// v1.2.381: КАРТИНКА уведомления. ПРИОРИТЕТ — аватар отправителя: готовый data-URL (extra.iconDataUrl) или URL
+// (extra.iconUrl — окно уведомления скачает его само). Логотип мессенджера подставляем ТОЛЬКО когда аватара нет
+// вовсе. Регресс v1.2.378: логотип клали в iconDataUrl всегда → он перекрывал аватар отправителя (ВК показывал
+// логотип вместо лица), т.к. окно рисует iconDataUrl в приоритете, а iconUrl качает лишь при пустом iconDataUrl.
+export function pickNotifIconDataUrl(extra, mInfo) {
+  if (extra && extra.iconDataUrl) return extra.iconDataUrl
+  if (extra && extra.iconUrl) return undefined // есть URL аватара → окно скачает его; логотип НЕ подставляем
+  return resolveMessengerLogo(mInfo)
+}

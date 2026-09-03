@@ -32,6 +32,7 @@
     var _qPrev = null, _lastQShape = ''; // v1.2.353: базовая линия «Вопросов» + гейт диаг-лога
     var _lastQDiagTs = 0; // v1.2.370 ДИАГНОСТИКА «пульс»: время последней записи скана вопросов (жив ли фон)
     var _lastRDiagTs = 0; // v1.2.380 РАЗВЕДКА «Отзывы»: гейт диаг-лога структуры (старт + раз в 60с)
+    var _rPrev = null, _lastRvN = -1, _lastRShape = ''; // v1.2.383 сторож «Отзывы»: база показанных + последний rv-счётчик + гейт лога
 
     function _diag(msg) { try { console.log('__CC_DIAG__ozon-list ' + msg); } catch (_) {} }
     function _hash(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return h; }
@@ -226,27 +227,58 @@
       } catch (e) { _diag('attach-error ' + (e && e.message || e)); } // #2 из ревью: ветка больше не молчит
     }
 
-    // v1.2.380 РАЗВЕДКА «Отзывы» (Шаг A, TODO-36): точный URL списка отзывов и селектор бейджа «Новый» НЕИЗВЕСТНЫ —
-    // снимаем структуру страницы живьём (как разведка вопросов). ТОЛЬКО лог `__CC_DIAG__ozon-r`; уведомлений и
-    // счётчиков ПОКА НЕТ (по строкам журнала сделаю точный сторож). Гейт: страница отзывов (есть «review» в адресе,
-    // но НЕ «question» — чтобы не пересечься со страницей «Вопросы»).
+    // v1.2.383 СТОРОЖ «Отзывы» (Шаг B, TODO-36). По разведке v1.2.380 (журнал `ozon-r`): URL `/app/reviews`,
+    // столбцы `Название товара|Статус|Отзыв|(бейдж)|Оценка|…`; бейдж «Новый/Просмотрен/Обработан» — в колонке БЕЗ
+    // заголовка, ловим ПО СОДЕРЖИМОМУ (ячейка с текстом ровно «Новый»). Новый отзыв (которого ещё не показывали) →
+    // `__CC_NOTIF__ src=ozon-reviews` (товар + текст отзыва) + счётчик `rv`. База `_rPrev` переживает reload через
+    // localStorage `__ccOzonRSeen`. Гейт: адрес содержит «review», но НЕ «question» (не пересечься с «Вопросами»).
     function _scanR(reason) {
       try {
-        var pth = location.pathname || '';
-        if (pth.indexOf('review') === -1 || pth.indexOf('question') !== -1) return;
+        if ((location.pathname || '').indexOf('review') === -1 || (location.pathname || '').indexOf('question') !== -1) { _rPrev = null; return; }
         if (document.querySelectorAll('*').length < 300) return; // ещё грузится
-        var rNow = Date.now();
-        if (reason !== 'initial' && (rNow - _lastRDiagTs) < 60000) return; // без спама
-        _lastRDiagTs = rNow;
-        var ths = document.querySelectorAll('th'), head = [];
-        for (var h = 0; h < ths.length && h < 12; h++) head.push(_txt(ths[h]).slice(0, 18));
-        var rows = document.querySelectorAll('tr, [role="row"]'), novy = 0, sample = '';
-        for (var r = 0; r < rows.length; r++) {
-          var tx = _txt(rows[r]);
-          if (/Новый/.test(tx)) { novy++; if (!sample) sample = tx.slice(0, 70); }
+        if (_rPrev === null) _rPrev = _loadSeen('__ccOzonRSeen');
+        var rows = _qRows(), cur = {}, cand = [], novy = 0;
+        for (var d = 0; d < rows.length; d++) {
+          var rr = rows[d]; if (rr.querySelector && rr.querySelector('th')) continue; // заголовок таблицы
+          var tds = rr.querySelectorAll ? rr.querySelectorAll('td') : []; if (!tds.length) continue;
+          var isNew = false;
+          for (var b = 0; b < tds.length; b++) { if (_txt(tds[b]) === 'Новый') { isNew = true; break; } } // бейдж «Новый» — по содержимому
+          if (!isNew) continue;
+          novy++;
+          var link = rr.querySelector ? rr.querySelector('a') : null;
+          var product = link ? _txt(link) : '';
+          // v1.2.385: текст отзыва — ПО СОДЕРЖИМОМУ. Номера столбцов у заголовка и данных РАЗНЫЕ (в строках есть
+          // картинка товара, в шапке её нет) → индекс по заголовку давал «Получен» из «Статуса». Берём ячейку,
+          // которая НЕ товар / НЕ статус / НЕ бейдж / НЕ число / НЕ пустая.
+          var review = '';
+          for (var t = 0; t < tds.length; t++) {
+            var ct = _txt(tds[t]);
+            if (!ct || /^\d+$/.test(ct)) continue;                                       // пусто / число (оценка/фото/видео)
+            if (/^(Новый|Просмотрен|Обработан)$/.test(ct)) continue;                      // бейдж
+            if (/^(Получен|Отправлен|Отмен|Доставлен|Возврат|Ожидает|Опубликован)/.test(ct)) continue; // статус/публикация
+            if (product && ct.indexOf(product.slice(0, 12)) === 0) continue;              // товар (название)
+            review = ct; break;
+          }
+          if (!product && !review) continue;
+          var fp = _hash(product + '|' + review);
+          cur[fp] = true; cand.push({ fp: fp, product: product, review: review });
         }
-        var tab = _txt(document.body).match(/Новые\s+(\d+)/);
-        _diag('ozon-r url=' + (location.href || '').slice(0, 70) + ' rows=' + rows.length + ' heads=[' + head.join('|') + '] novy=' + novy + ' tabNew=' + (tab ? tab[1] : '?') + ' sample=' + sample);
+        var emitted = 0, sent = {};
+        if (_rPrev) {
+          for (var k = 0; k < cand.length; k++) {
+            var cc = cand[k];
+            if (_rPrev[cc.fp] || sent[cc.fp]) continue;
+            sent[cc.fp] = true; emitted++;
+            console.log('__CC_NOTIF__' + JSON.stringify({ t: cc.product || 'Новый отзыв', b: cc.review || 'Оценка без текста', i: '', g: 'ozon-rv:' + cc.fp, src: 'ozon-reviews' }));
+          }
+        }
+        if (rows.length > 0) { _rPrev = cur; _saveSeen('__ccOzonRSeen', cur); }
+        if (novy !== _lastRvN) { _lastRvN = novy; try { console.log('__CC_OZON_COUNT__' + JSON.stringify({ s: 'rv', n: novy })); } catch (_) {} }
+        var rShape = rows.length + '/' + novy, _rNow = Date.now();
+        if (reason === 'initial' || emitted > 0 || rShape !== _lastRShape || (_rNow - _lastRDiagTs) > 60000) {
+          _diag('ozon-r scan reason=' + reason + ' rows=' + rows.length + ' novy=' + novy + ' emitted=' + emitted);
+          _lastRShape = rShape; _lastRDiagTs = _rNow;
+        }
       } catch (e) { _diag('ozon-r scan-error ' + (e && e.message || e)); }
     }
 

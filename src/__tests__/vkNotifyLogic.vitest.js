@@ -48,6 +48,15 @@ const ozonIsTyping = new Function(
   grab(ozonSrc, /function _isTyping\(s\) \{.*\}/, '_isTyping') + '\nreturn _isTyping;'
 )()
 
+// VK _dupEmit — анти-дубль между путями (перехват Notification + скан списка), v1.2.381; +нормализация v1.2.382
+const vkDupEmit = new Function(
+  'var console = { log: function(){} };\n' + // v1.2.382: _dupEmit логирует при блоке — глушим в тесте
+  grab(vkSrc, /function _hashToast\(v\) \{[\s\S]*?\n {2}\}/, '_hashToast') + '\n' +
+  grab(vkSrc, /var _recentEmit = \{\};/, '_recentEmit') + '\n' +
+  grab(vkSrc, /function _dupNorm\(v\) \{ return[\s\S]*?\}/, '_dupNorm') + '\n' +
+  grab(vkSrc, /function _dupEmit\(sender, text\) \{[\s\S]*?\n {2}\}/, '_dupEmit') + '\nreturn _dupEmit;'
+)()
+
 describe('VK _cleanMultiline — сохраняет переносы строк (формат постов не «простыня»)', () => {
   it('оставляет переносы, схлопывает пробелы, максимум одна пустая строка', () => {
     const out = vkCleanMultiline('Заголовок\n\n\n✅ раз   (моро);  \n✅ два')
@@ -136,5 +145,20 @@ describe('Ozon _isTyping — гасит статус набора, не трог
     expect(ozonIsTyping('Принтер не печатает, что делать?')).toBe(false)
     expect(ozonIsTyping('Здравствуйте, вопрос по товару')).toBe(false)
     expect(ozonIsTyping('')).toBe(false)
+  })
+})
+
+// v1.2.381: одно сообщение ВК ловят ДВА пути (перехват Notification + скан списка) → был дубль.
+describe('VK _dupEmit — один и тот же текст из двух путей не шлётся дважды', () => {
+  it('первый раз пропускает, повтор за 5с — блокирует, другой текст/отправитель — пропускает', () => {
+    expect(vkDupEmit('Елена Дугина', 'Да')).toBe(false) // 1-й путь — шлём
+    expect(vkDupEmit('Елена Дугина', 'Да')).toBe(true)  // 2-й путь, тот же текст — блок (это и есть фикс дубля «Да»)
+    expect(vkDupEmit('Елена Дугина', 'Привет')).toBe(false) // другой текст того же — шлём
+    expect(vkDupEmit('Иван', 'Да')).toBe(false) // другой отправитель — шлём
+  })
+  it('v1.2.382: нормализация — «Да », «да», « Да» считаются ОДНИМ (тексты путей чуть отличаются)', () => {
+    expect(vkDupEmit('Мария', 'Да ')).toBe(false) // 1-й путь
+    expect(vkDupEmit('Мария', 'да')).toBe(true)   // 2-й путь, отличается регистром/пробелом — всё равно блок
+    expect(vkDupEmit('Мария', '  Да')).toBe(true) // и с ведущими пробелами — блок
   })
 })

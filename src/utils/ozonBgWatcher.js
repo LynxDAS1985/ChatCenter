@@ -80,7 +80,7 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         // v1.2.368 (Шаг 3Б): маршрутизатор ОБОБЩЁН на ОБА раздела (вопросы И сообщения покупателей) —
         // один и тот же bindOzonBgWatcher вешается на две фоновые страницы (/reviews/questions и /app/messenger).
         // Счётчик раздела (msg ИЛИ qa) → бейдж виджета (на основном id Ozon)
-        if (parsed.type === 'ozon_count' && (parsed.section === 'msg' || parsed.section === 'qa')) {
+        if (parsed.type === 'ozon_count' && (parsed.section === 'msg' || parsed.section === 'qa' || parsed.section === 'rv')) {
           setOzonCounts && setOzonCounts(prev => {
             const cur = prev[ozonId] || {}
             if (cur[parsed.section] === parsed.n) return prev
@@ -90,9 +90,10 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         }
         // Уведомление о новом (вопрос без ответа ИЛИ сообщение покупателя) → общий конвейер под именем/логотипом Ozon.
         // background:true — НЕ переключать активную вкладку (фоновый источник не крадёт фокус, v1.2.359).
-        if (parsed.type === 'notification' && (parsed.source === 'ozon-questions' || parsed.source === 'ozon-list')) {
+        if (parsed.type === 'notification' && (parsed.source === 'ozon-questions' || parsed.source === 'ozon-list' || parsed.source === 'ozon-reviews')) {
           const extra = { senderName: parsed.title || '', chatTag: parsed.tag || '', notifSource: parsed.source, fromNotifAPI: false, background: true }
-          log && log('INFO', `[ozon-bg] фон: ${parsed.source === 'ozon-list' ? 'сообщение' : 'вопрос'} «${(parsed.body || '').slice(0, 40)}»`)
+          const _kind = parsed.source === 'ozon-list' ? 'сообщение' : parsed.source === 'ozon-reviews' ? 'отзыв' : 'вопрос'
+          log && log('INFO', `[ozon-bg] фон: ${_kind} «${(parsed.body || '').slice(0, 40)}»`)
           handleNewMessage && handleNewMessage(ozonId, parsed.body || '', extra)
           return
         }

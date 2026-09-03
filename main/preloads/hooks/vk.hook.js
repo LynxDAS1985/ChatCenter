@@ -71,6 +71,25 @@
     if (_sysText.test(t)) return 'sysText';
     return '';
   }
+  // v1.2.381: анти-дубль между ДВУМЯ путями ВК (перехват window.Notification/ServiceWorker + скан списка чатов).
+  // Одно и то же сообщение ловят оба пути → два уведомления; общий дедуп в renderer их НЕ склеивает, т.к. у путей
+  // разный chatTag (перехват — тег ВК; список — «vk-list:отпечаток»). Гасим по содержимому «отправитель|текст»
+  // на уровне хука: один и тот же текст не шлём дважды за 5с. _hashToast объявлена ниже (hoisting — доступна).
+  var _recentEmit = {};
+  function _dupNorm(v) { return String(v || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+  function _dupEmit(sender, text) {
+    try {
+      // v1.2.382: НОРМАЛИЗУЕМ (схлопнуть пробелы + trim + lower) — тексты двух путей ВК могут чуть отличаться
+      // (перехват шлёт body уведомления, список — превью строки); без нормализации отпечатки не совпадут и дубль пройдёт.
+      var k = _hashToast(_dupNorm(sender) + '|' + _dupNorm(text)), now = Date.now();
+      for (var kk in _recentEmit) { if (now - _recentEmit[kk] > 5000) delete _recentEmit[kk]; }
+      if (_recentEmit[k] && (now - _recentEmit[k]) < 5000) {
+        try { console.log('__CC_DIAG__vk-dup blocked "' + String(text || '').slice(0, 30) + '"'); } catch (_) {} // v1.2.382: не немой — видно, что дубль погашен
+        return true;
+      }
+      _recentEmit[k] = now; return false;
+    } catch (_) { return false; }
+  }
   // === NOTIFICATION OVERRIDE ===
   var _N = window.Notification;
   window.Notification = function(title, opts) {
@@ -82,7 +101,7 @@
       if (spam) { _log('blocked', title, body, tag, icon, spam, ''); console.log('__CC_DIAG__hook-blocked: ' + spam + ' | "' + (body||'').slice(0,30) + '" t="' + (title||'').slice(0,20) + '"'); return; }
       var enriched = _enrichNotif(title, body, tag, icon);
       _log('passed', title, body, tag, icon, '', enriched.title);
-      console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon, g: tag }));
+      if (!_dupEmit(enriched.title, body)) console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon, g: tag })); // v1.2.381: анти-дубль между путями
     } catch(e) {}
   };
   window.Notification.permission = 'granted';
@@ -98,7 +117,7 @@
         if (spam) { _log('blocked', title, body, tag, icon, spam, ''); console.log('__CC_DIAG__hook-blocked: ' + spam + ' | "' + (body||'').slice(0,30) + '" t="' + (title||'').slice(0,20) + '"'); return Promise.resolve(); }
         var enriched = _enrichNotif(title, body, tag, icon);
         _log('passed', title, body, tag, icon, '', enriched.title);
-        console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon, g: tag }));
+        if (!_dupEmit(enriched.title, body)) console.log('__CC_NOTIF__' + JSON.stringify({ t: enriched.title || '', b: body, i: enriched.icon, g: tag })); // v1.2.381: анти-дубль между путями
       } catch(e) {}
       return Promise.resolve();
     };
@@ -227,6 +246,7 @@
       for (var k = 0; k < cand.length; k++) {
         var f = cand[k].fp;
         if (_vkPrevUnread[f] || sent[f]) continue; // уже было непрочитано ИЛИ уже отправлено в этом проходе
+        if (_dupEmit(cand[k].sender, cand[k].text)) { sent[f] = true; continue; } // v1.2.381: тот же текст уже ушёл другим путём (перехват) за 5с
         sent[f] = true;
         emitted++;
         console.log('__CC_NOTIF__' + JSON.stringify({ t: cand[k].sender, b: cand[k].text, i: cand[k].icon, g: 'vk-list:' + f, src: 'vk-list' }));
@@ -240,15 +260,18 @@
     // v1.2.196: ДИАГНОСТИКА источника счётчика ВК (главный мир → лог доходит), раз в ~15с.
     // Показывает ВСЕ кандидаты «фантомной» 1 + что реально хватает «широкий» поиск счётчика
     // (step3, как в countUnreadVK): значение@класс. Так видно ТОЧНЫЙ источник, без гадания.
+    // v1.2.384 ДИАГНОСТИКА фантома «1» из «Игр»: msgTx = ПОЛНЫЙ текст элемента, где нашли «мессенджер»+число
+    // (если «1» приклеилась от соседа — увидим в тексте); s3ctx = ближайший подписанный предок значка step3
+    // (мессенджер это или «Игры») — покажет, не прихватил ли поиск по /im соседний значок «Игры».
     try { var _n = Date.now(); if (!_scanVkList._srcTs || _n - _scanVkList._srcTs > 15000) { _scanVkList._srcTs = _n;
-      var _mb='нет',_fb='нет',_gb='нет',_nv=document.querySelectorAll('a,[role="link"]');
+      var _mb='нет',_mbTx='',_fb='нет',_gb='нет',_nv=document.querySelectorAll('a,[role="link"]');
       for(var _i=0;_i<_nv.length&&_i<250;_i++){var _tx=(_nv[_i].textContent||'').replace(/\s+/g,' ').trim();
-        if(_mb==='нет'&&/мессенджер|messenger/i.test(_tx)){var _m=_tx.match(/(\d+)/);_mb=_m?_m[1]:'0';}
+        if(_mb==='нет'&&/мессенджер|messenger/i.test(_tx)){var _m=_tx.match(/(\d+)/);_mb=_m?_m[1]:'0';_mbTx=_tx.slice(0,50);}
         if(_fb==='нет'&&/друз|friend/i.test(_tx)){var _f=_tx.match(/(\d+)/);_fb=_f?_f[1]:'0';}
         if(_gb==='нет'&&/игр|game/i.test(_tx)){var _g=_tx.match(/(\d+)/);_gb=_g?_g[1]:'0';}}
-      var _s3='нет';try{var _im=document.querySelectorAll('a[href*="/im"]');for(var _j=0;_j<_im.length&&_j<20;_j++){var _p=_im[_j].closest('li,div,[class*="Item"],[class*="item"]')||_im[_j];var _cs=_p.querySelectorAll('[class*="ounter"],[class*="badge"],[class*="Badge"],[class*="counter"]');for(var _k=0;_k<_cs.length;_k++){var _nn=parseInt((_cs[_k].textContent||'').trim(),10);if(!isNaN(_nn)&&_nn>0){_s3=_nn+'@'+String(_cs[_k].className||'').slice(0,18);break;}}if(_s3!=='нет')break;}}catch(e){}
+      var _s3='нет',_s3ctx='';try{var _im=document.querySelectorAll('a[href*="/im"]');for(var _j=0;_j<_im.length&&_j<20;_j++){var _p=_im[_j].closest('li,div,[class*="Item"],[class*="item"]')||_im[_j];var _cs=_p.querySelectorAll('[class*="ounter"],[class*="badge"],[class*="Badge"],[class*="counter"]');for(var _k=0;_k<_cs.length;_k++){var _nn=parseInt((_cs[_k].textContent||'').trim(),10);if(!isNaN(_nn)&&_nn>0){_s3=_nn+'@'+String(_cs[_k].className||'').slice(0,30);var _anc=_cs[_k].closest('a,li')||_p;_s3ctx=(_anc.textContent||'').replace(/\s+/g,' ').trim().slice(0,40);break;}}if(_s3!=='нет')break;}}catch(e){}
       var _tt=(document.title||'').match(/\((\d+)\)/);
-      console.log('__CC_DIAG__vk-src titleN='+(_tt?_tt[1]:'нет')+' msgBadge='+_mb+' friends='+_fb+' games='+_gb+' step3='+_s3+' listUnread='+unread);
+      console.log('__CC_DIAG__vk-src titleN='+(_tt?_tt[1]:'нет')+' msgBadge='+_mb+' msgTx="'+_mbTx+'" friends='+_fb+' games='+_gb+' step3='+_s3+' s3ctx="'+_s3ctx+'" listUnread='+unread);
     } } catch(e){}
   }
   function _scheduleVkListScan(reason) {

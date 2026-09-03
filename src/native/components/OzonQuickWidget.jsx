@@ -16,6 +16,9 @@ const SECTIONS = [
   // переадресации нет отмены загрузки (ERR_ABORTED). match — по пути, срабатывает и с query.
   { key: 'msg', label: 'Сообщения', icon: '💬', url: 'https://seller.ozon.ru/app/messenger?group=customers_v2', match: '/app/messenger' },
   { key: 'qa', label: 'Вопросы', icon: '❓', url: 'https://seller.ozon.ru/app/reviews/questions', match: '/reviews/questions' },
+  // v1.2.383: «Отзывы». ВАЖЕН ПОРЯДОК: qa (match '/reviews/questions') ДО rv (match '/app/reviews'), иначе rv
+  // поймал бы и URL вопросов (он содержит '/app/reviews'). SECTIONS.find берёт ПЕРВОЕ совпадение → qa победит для вопросов.
+  { key: 'rv', label: 'Отзывы', icon: '⭐', url: 'https://seller.ozon.ru/app/reviews', match: '/app/reviews' },
 ]
 
 export default function OzonQuickWidget({ messengerId, webviewRefs, unread, loading }) {
@@ -98,7 +101,7 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
   if (!pos) return <div ref={rootRef} style={{ position: 'absolute', width: 0, height: 0, left: 0, top: 0 }} />
 
   // Есть ли где-то новые (бейдж>0). Если есть — виджет ЯРКИЙ (не тускнеет), чтобы бросался в глаза.
-  const hasNew = (((unread && unread.msg) || 0) > 0) || (((unread && unread.qa) || 0) > 0)
+  const hasNew = (((unread && unread.msg) || 0) > 0) || (((unread && unread.qa) || 0) > 0) || (((unread && unread.rv) || 0) > 0)
   const dim = !(hovered || dragging || hasNew) // полупрозрачный ТОЛЬКО когда новых нет И мышь не наведена
 
   return (

@@ -119,7 +119,7 @@ export default function App() {
       let next = prev
       for (const id in ozonCounts) {
         const c = ozonCounts[id] || {}
-        const total = (c.msg || 0) + (c.qa || 0)
+        const total = (c.msg || 0) + (c.qa || 0) + (c.rv || 0)
         if ((prev[id] || 0) !== total) { if (next === prev) next = { ...prev }; next[id] = total }
       }
       return next
@@ -834,7 +834,7 @@ export default function App() {
                   <OzonQuickWidget messengerId={m.id} webviewRefs={webviewRefs}
                     /* Только per-раздел от сторожа. unreadCounts НЕ используем как запас — там СУММА msg+qa
                        (для значка рейла), иначе кнопка «Сообщения» показала бы число вопросов (v1.2.357). */
-                    unread={{ msg: (ozonCounts[m.id] && ozonCounts[m.id].msg) || 0, qa: (ozonCounts[m.id] && ozonCounts[m.id].qa) || 0 }}
+                    unread={{ msg: (ozonCounts[m.id] && ozonCounts[m.id].msg) || 0, qa: (ozonCounts[m.id] && ozonCounts[m.id].qa) || 0, rv: (ozonCounts[m.id] && ozonCounts[m.id].rv) || 0 }}
                     loading={!!(webviewLoading && webviewLoading[m.id])} />
                 )}
                 {/* v1.2.358→368 (Шаг 3): ДВЕ СКРЫТЫЕ фоновые страницы Ozon на той же сессии — «Вопросы» и
@@ -847,7 +847,7 @@ export default function App() {
                   <webview
                     key={'ozonbg' + bgI}
                     ref={el => bindOzonBgWatcher(el, m.id, {
-                      handleNewMessage, setOzonCounts, periodicReloadMs: bgI === 0 ? 180000 : 0, suppressFailNotice: bgI === 2, // v1.2.376: reload ТОЛЬКО «Вопросы» (bgI=0); v1.2.380: «Отзывы» (bgI=2) — разведка, без тревог-сообщений при сбое
+                      handleNewMessage, setOzonCounts, periodicReloadMs: (bgI === 0 || bgI === 2) ? 180000 : 0, suppressFailNotice: bgI === 2, // v1.2.376: reload «Вопросы»(0); v1.2.383: и «Отзывы»(2) — база _rPrev персистится, reload безопасен; «Сообщения»(1) НЕ трогаем
                       log: (lvl, ms) => { try { window.api?.send?.('app:log', { level: lvl, message: ms }) } catch (_) {} },
                       // v1.2.362: понятное сообщение пользователю, если Ozon не пустил фоновую страницу.
                       notify: (title, body) => { try { window.api?.invoke('app:custom-notify', { title, body, messengerId: m.id, messengerName: 'Ozon', emoji: '📦', color: m.color || '#005BFF' }) } catch (_) {} },
