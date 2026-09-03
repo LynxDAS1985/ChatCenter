@@ -113,6 +113,18 @@ export function initLogger(userDataPath) {
       return
     }
 
+    // v1.2.363: ERR_ABORTED (-3) при загрузке webview — НЕ сбой, а отмена навигации редиректом
+    // (Ozon редиректит /app/messenger и /app/reviews/questions; страница всё равно грузится). Electron
+    // логирует это как ошибку обработчика GUEST_VIEW_MANAGER_CALL. Переводим в WARN, чтобы не пугать
+    // красным. Нужны ОБА признака — реальные сбои загрузки (другие коды) остаются в «Ошибки».
+    const isAbortedNav =
+      /GUEST_VIEW_MANAGER_CALL/.test(text) &&
+      /ERR_ABORTED|\(-3\)/.test(text)
+    if (isAbortedNav) {
+      writeLog('WARN', ['[webview nav aborted]', ...args])
+      return
+    }
+
     // v0.87.94: если все args — пустые объекты, добавляем stack чтобы найти кто вызвал.
     // Раньше получали [ERROR] {} без указания на источник — невозможно было дебажить.
     const finalArgs = args

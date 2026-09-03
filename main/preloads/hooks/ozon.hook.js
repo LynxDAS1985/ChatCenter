@@ -28,7 +28,9 @@
     var _prev = null, _timer = null, _observed = null, _mo = null;
     var _lastSec = '', _lastShape = ''; // для гейта логов «только при изменении» (без спама в цикле)
     var _lastMsgN = -1, _lastQaN = -1;  // v1.2.349: последний ОТПРАВЛЕННЫЙ счётчик разделов (шлём только при изменении)
+    var _lastDiagTs = 0; // v1.2.371 «пульс» покупателей: время последней диаг-записи скана «Сообщения»
     var _qPrev = null, _lastQShape = ''; // v1.2.353: базовая линия «Вопросов» + гейт диаг-лога
+    var _lastQDiagTs = 0; // v1.2.370 ДИАГНОСТИКА «пульс»: время последней записи скана вопросов (жив ли фон)
 
     function _diag(msg) { try { console.log('__CC_DIAG__ozon-list ' + msg); } catch (_) {} }
     function _hash(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return h; }
@@ -73,56 +75,16 @@
       return { name: parts[0] || '', preview: parts.length > 1 ? parts.slice(1).join(' ') : '', unread: unread };
     }
 
-    // ШАГ 1 (v1.2.341→351, TODO-36): РАЗОВАЯ разведка страницы «Вопросы и ответы» (/app/reviews/questions).
-    // v1.2.351: журнал webview-консоли РЕЖЕТ длинные строки (~55 симв.) — прошлый дамп (`ozon-q`) обрезался
-    // (ловилась только вкладка «Все999+» и дата строки). Теперь дампим КОРОТКИМИ строками, по одному кусочку:
-    // все ярлыки-фильтры сверху (найти «новые/без ответа») + все листья первой строки вопроса (текст/автор/статус).
-    // Только ЧТЕНИЕ. Разово, когда страница загрузилась. Маркер `ozon-q2` (отличать от старого дампа).
-    var _qDone = false;
-    function _reconQ() {
-      try {
-        if (_qDone) return;
-        if ((location.pathname || '').indexOf('/reviews/questions') === -1) return;
-        if (document.querySelectorAll('*').length < 300) return; // страница ещё грузится
-        _qDone = true;
-        console.log('__CC_DIAG__ozon-q2 url=' + (location.pathname || ''));
-        // (1) ярлыки-фильтры вопросов («Все»/«Без ответа»/…). tab0-11 в прошлом заходе = ЛЕВОЕ меню Ozon
-        // (Главная/Товары/…), фильтры шли ПОСЛЕ и не попали (лимит 12). Поднимаем лимит до 24 (дедуп есть).
-        var seen = {}, cnt = 0, all = document.querySelectorAll('button,a,[role="tab"],li');
-        for (var i = 0; i < all.length && i < 6000 && cnt < 24; i++) {
-          var el = all[i]; if (el.children && el.children.length > 3) continue;
-          var t = _txt(el); if (!t || t.length > 24 || seen[t]) continue;
-          seen[t] = 1;
-          console.log('__CC_DIAG__ozon-q2 tab' + cnt + '="' + t.slice(0, 22) + '"'); cnt++;
-        }
-        var rows = document.querySelectorAll('tr, [role="row"]');
-        if (!rows.length) {
-          var best = null, bestN = 0, cont = document.querySelectorAll('div,ul,ol,tbody');
-          for (var j = 0; j < cont.length && j < 6000; j++) { var ch = cont[j].children; if (ch && ch.length >= 4 && ch.length > bestN) { best = cont[j]; bestN = ch.length; } }
-          rows = best ? best.children : [];
-        }
-        console.log('__CC_DIAG__ozon-q2 rows=' + rows.length);
-        // (2) ЗАГОЛОВОК таблицы (th) — названия столбцов: покажет, что значат числовые ячейки («1»/«0»)
-        // → так узнаю столбец «без ответа»/«ответы» = признак НОВОГО вопроса.
-        var hdr = null;
-        for (var h = 0; h < rows.length; h++) { if (rows[h].querySelector && rows[h].querySelector('th')) { hdr = rows[h]; break; } }
-        if (hdr) { var hc = hdr.querySelectorAll('th'); for (var hh = 0; hh < hc.length && hh < 12; hh++) { console.log('__CC_DIAG__ozon-q2 H' + hh + '="' + _txt(hc[hh]).slice(0, 22) + '"'); } }
-        // (3) ПЕРВЫЕ ДВЕ строки-данных — листья по одному (сравнить отвеченный/неотвеченный по числам).
-        var dumped = 0;
-        for (var d = 0; d < rows.length && dumped < 2; d++) {
-          var rr = rows[d]; if (rr.querySelector && rr.querySelector('th')) continue; if (_txt(rr).length <= 5) continue;
-          var pfx = dumped === 0 ? 'L' : 'M';
-          if (dumped === 0) console.log('__CC_DIAG__ozon-q2 rowCls=' + String(rr.className || '').slice(0, 30));
-          var dl = rr.querySelectorAll('*'), k2 = 0;
-          for (var k = 0; k < dl.length && k2 < 18; k++) {
-            var x = dl[k]; if (x.children && x.children.length) continue;
-            var xt = _txt(x); if (!xt) continue;
-            console.log('__CC_DIAG__ozon-q2 ' + pfx + k2 + '=' + x.tagName + '"' + xt.slice(0, 26) + '"'); k2++;
-          }
-          dumped++;
-        }
-      } catch (e) { try { console.log('__CC_DIAG__ozon-q2 err ' + (e && e.message || e)); } catch (_) {} }
-    }
+    // v1.2.371 (#4 разгрузка): разведка страницы «Вопросы» (_reconQ, маркер ozon-q2) УДАЛЕНА — она разово
+    // снимала разметку и подтвердила столбцы таблицы (Дата/Продавец/Товар/Вопрос/ОТВЕТЫ/Полезный), эти знания
+    // зашиты в _qAnsCol (столбец «Ответы» по заголовку). Диагностика больше не нужна → файл разгружен.
+
+    // v1.2.371 (#1 память показанного): базовая линия сторожей переживает перезагрузку страницы через
+    // localStorage (маленькое хранилище браузера на домене seller.ozon.ru). Без этого при обновлении/перезаходе
+    // фон делал НОВУЮ «фотографию» и уже висящие вопросы считал старыми (пропуск), а новые с прошлой сессии
+    // не показывал. Теперь помним отпечатки уже-виденных и шлём только реально новые. Пусто → первый заход = базовая линия.
+    function _loadSeen(key) { try { var raw = localStorage.getItem(key); if (!raw) return null; var o = JSON.parse(raw); return (o && typeof o === 'object') ? o : null; } catch (_) { return null; } }
+    function _saveSeen(key, obj) { try { localStorage.setItem(key, JSON.stringify(obj || {})); } catch (_) {} }
 
     // v1.2.353 (Шаг 2, TODO-36): сторож раздела «Вопросы и ответы». Новый ВОПРОС БЕЗ ОТВЕТА → уведомление
     // (как у «Покупателей»). ПРАВИЛО (по разведке ozon-q2 + указанию пользователя): строка = таблица, текст
@@ -159,6 +121,7 @@
       try {
         if ((location.pathname || '').indexOf('/reviews/questions') === -1) { _qPrev = null; return; }
         if (document.querySelectorAll('*').length < 300) return; // страница ещё грузится
+        if (_qPrev === null) _qPrev = _loadSeen('__ccOzonQSeen'); // v1.2.371: память переживает перезагрузку
         var rows = _qRows(), ansCol = _qAnsCol(rows), cur = {}, cand = [], unans = 0;
         if (ansCol < 0) { _diag('ozon-q no-answers-col rows=' + rows.length); return; } // без столбца «Ответы» НЕ гадаем
         for (var d = 0; d < rows.length; d++) {
@@ -179,10 +142,16 @@
             console.log('__CC_NOTIF__' + JSON.stringify({ t: c.product || 'Новый вопрос', b: c.qText, i: '', g: 'ozon-q:' + c.fp, src: 'ozon-questions' }));
           }
         }
-        if (rows.length > 0) _qPrev = cur;       // базовую линию — только когда таблица реально видна
+        if (rows.length > 0) { _qPrev = cur; _saveSeen('__ccOzonQSeen', cur); } // v1.2.371: сохраняем память (переживёт перезагрузку)
         if (unans !== _lastQaN) { _lastQaN = unans; try { console.log('__CC_OZON_COUNT__' + JSON.stringify({ s: 'qa', n: unans })); } catch (_) {} }
-        var qShape = rows.length + '/' + unans;
-        if (reason === 'initial' || emitted > 0 || qShape !== _lastQShape) { _diag('ozon-q scan reason=' + reason + ' rows=' + rows.length + ' unans=' + unans + ' emitted=' + emitted); _lastQShape = qShape; }
+        // v1.2.370 «пульс»: пишем скан при изменении формы ИЛИ раз в 60с (даже если не менялось) — чтобы по
+        // журналу видеть, ЖИВ ли фоновый сторож и сколько он видит. Отличает «страница заморожена» (пульс есть,
+        // unans застыл) от «сторож уснул» (пульса нет). ДИАГНОСТИКА — убрать после диагноза.
+        var qShape = rows.length + '/' + unans, _qNow = Date.now();
+        if (reason === 'initial' || emitted > 0 || qShape !== _lastQShape || (_qNow - _lastQDiagTs) > 60000) {
+          _diag('ozon-q scan reason=' + reason + ' rows=' + rows.length + ' unans=' + unans + ' emitted=' + emitted);
+          _lastQShape = qShape; _lastQDiagTs = _qNow;
+        }
       } catch (e) { _diag('ozon-q scan-error ' + (e && e.message || e)); }
     }
 
@@ -220,10 +189,12 @@
         if (rows.length > 0) _prev = cur; // базовую линию обновляем только когда список реально виден
         // Диагностика — ТОЛЬКО счётчики (без имён/текстов покупателей). Пишем при старте, при отправке
         // ИЛИ при изменении «формы» (число строк/непрочитанных) → неудачный тест не будет «немым», но без спама.
-        var shape = rows.length + '/' + unreadTotal;
-        if (reason === 'initial' || emitted > 0 || shape !== _lastShape) {
+        // v1.2.371 (#3 «пульс» покупателям, как у вопросов): пишем при изменении формы ИЛИ раз в 60с —
+        // видно, ЖИВ ли фоновый сторож «Сообщения» и сколько непрочитанных видит. ДИАГНОСТИКА.
+        var shape = rows.length + '/' + unreadTotal, _sNow = Date.now();
+        if (reason === 'initial' || emitted > 0 || shape !== _lastShape || (_sNow - _lastDiagTs) > 60000) {
           _diag('reason=' + reason + ' sec=' + sec + ' rows=' + rows.length + ' unread=' + unreadTotal + ' emitted=' + emitted);
-          _lastShape = shape;
+          _lastShape = shape; _lastDiagTs = _sNow;
         }
         // v1.2.349: авторитетный счётчик «Покупатели» → виджет (бейдж «число новых»). Шлём ТОЛЬКО при
         // изменении числа (без спама). Считается по реальному DOM, поэтому САМ сбрасывается в 0 при прочтении.
@@ -247,10 +218,9 @@
       } catch (e) { _diag('attach-error ' + (e && e.message || e)); } // #2 из ревью: ветка больше не молчит
     }
 
-    setTimeout(function () { _attach(); _scan('initial'); _reconQ(); _scanQ('initial'); }, 2500); // базовая линия покупателей + разведка + сторож вопросов
+    setTimeout(function () { _attach(); _scan('initial'); _scanQ('initial'); }, 2500); // базовая линия покупателей + сторож вопросов
     // #3 Подстраховка: список мог пересобраться (SPA) → раз в 5с переце́пим наблюдатель + фоновый досмотр,
     // чтобы ни одно новое сообщение не потерялось даже при пересборке DOM (макс. +5с задержки).
-    // Шаг 1: _reconQ() тут же ждёт, пока откроют «Вопросы» (сработает один раз, когда страница загрузится).
-    setInterval(function () { _attach(); _schedule('backstop'); _reconQ(); _scanQ('backstop'); }, 5000);
+    setInterval(function () { _attach(); _schedule('backstop'); _scanQ('backstop'); }, 5000);
   } catch (e) { try { console.log('__CC_DIAG__ozon-list init-error ' + (e && e.message || e)); } catch (_) {} }
 })();

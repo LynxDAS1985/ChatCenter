@@ -837,26 +837,29 @@ export default function App() {
                     unread={{ msg: (ozonCounts[m.id] && ozonCounts[m.id].msg) || 0, qa: (ozonCounts[m.id] && ozonCounts[m.id].qa) || 0 }}
                     loading={!!(webviewLoading && webviewLoading[m.id])} />
                 )}
-                {/* v1.2.358 (Шаг 3): СКРЫТАЯ фоновая страница «Вопросы» на той же сессии Ozon — всегда
-                    загружена (offscreen, НЕ display:none, иначе Chromium усыпит), monitor.preload сам
-                    впрыскивает ozon.hook → следит за вопросами, даже когда открыт другой раздел. Её сигналы
-                    маршрутизируются на основной id Ozon (bindOzonBgWatcher). Отключить — убрать этот блок. */}
-                {(/ozon\.ru/i.test(m.url || '') || m.id === 'ozon') && (
+                {/* v1.2.358→368 (Шаг 3): ДВЕ СКРЫТЫЕ фоновые страницы Ozon на той же сессии — «Вопросы» и
+                    «Сообщения»/покупатели — всегда загружены (offscreen, НЕ display:none, иначе Chromium
+                    усыпит). Сторож впрыскивается в них через bindOzonBgWatcher (dom-ready → executeJavaScript,
+                    т.к. Ozon CSP блокирует preload-<script>). Так вопросы И сообщения ловятся, даже когда
+                    открыт другой раздел/мессенджер. Их сигналы маршрутизируются на основной id Ozon. Отключить
+                    — убрать эти блоки. */}
+                {(/ozon\.ru/i.test(m.url || '') || m.id === 'ozon') && ['https://seller.ozon.ru/app/reviews/questions', 'https://seller.ozon.ru/app/messenger?group=customers_v2'].map((bgUrl, bgI) => (
                   <webview
+                    key={'ozonbg' + bgI}
                     ref={el => bindOzonBgWatcher(el, m.id, {
                       handleNewMessage, setOzonCounts,
                       log: (lvl, ms) => { try { window.api?.send?.('app:log', { level: lvl, message: ms }) } catch (_) {} },
                       // v1.2.362: понятное сообщение пользователю, если Ozon не пустил фоновую страницу.
                       notify: (title, body) => { try { window.api?.invoke('app:custom-notify', { title, body, messengerId: m.id, messengerName: 'Ozon', emoji: '📦', color: m.color || '#005BFF' }) } catch (_) {} },
                     })}
-                    src="https://seller.ozon.ru/app/reviews/questions"
+                    src={bgUrl}
                     partition={m.partition}
                     preload={monitorPreloadUrl || undefined}
-                    style={{ position: 'absolute', left: -10000, top: 0, width: 1000, height: 800, pointerEvents: 'none' }}
+                    style={{ position: 'absolute', left: -10000 - bgI * 1200, top: 0, width: 1000, height: 800, pointerEvents: 'none' }}
                     webpreferences="backgroundThrottling=no"
                     aria-hidden="true"
                   />
-                )}
+                ))}
               </div>
             ))
           ) : (

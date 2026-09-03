@@ -52,6 +52,27 @@ describe('bindOzonBgWatcher', () => {
     expect(d.handleNewMessage).not.toHaveBeenCalled()
   })
 
+  it('сообщение покупателя (ozon-list) → handleNewMessage на id Ozon (Шаг 3Б)', () => {
+    const el = makeEl(); const d = makeDeps()
+    bindOzonBgWatcher(el, 'ozon', d)
+    el.fire('console-message', { message: '__CC_NOTIF__' + JSON.stringify({ t: 'Алексей Т.', b: 'Понял, спасибо', g: 'ozon-list:7', src: 'ozon-list' }) })
+    expect(d.handleNewMessage).toHaveBeenCalledTimes(1)
+    const [id, body, extra] = d.handleNewMessage.mock.calls[0]
+    expect(id).toBe('ozon')
+    expect(body).toBe('Понял, спасибо')
+    expect(extra.background).toBe(true)
+    expect(extra.notifSource).toBe('ozon-list')
+  })
+
+  it('счётчик msg (Покупатели) → setOzonCounts кладёт в per-раздел', () => {
+    const el = makeEl(); const d = makeDeps()
+    bindOzonBgWatcher(el, 'ozon', d)
+    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'msg', n: 5 }) })
+    expect(d.setOzonCounts).toHaveBeenCalledTimes(1)
+    expect(d.getState().ozon.msg).toBe(5)
+    expect(d.handleNewMessage).not.toHaveBeenCalled()
+  })
+
   it('обычное (не __CC_) сообщение — ничего не маршрутизируется', () => {
     const el = makeEl(); const d = makeDeps()
     bindOzonBgWatcher(el, 'ozon', d)
@@ -66,6 +87,12 @@ describe('bindOzonBgWatcher', () => {
     el.fire('did-fail-load', { errorCode: -20, errorDescription: 'ERR_BLOCKED_BY_CLIENT', isMainFrame: true, validatedURL: 'https://seller.ozon.ru/app/reviews/questions' })
     el.fire('did-fail-load', { errorCode: -21, errorDescription: 'ERR_NETWORK_CHANGED', isMainFrame: true })
     expect(d.notify).toHaveBeenCalledTimes(1)
+    // v1.2.363: формулировка НЕЙТРАЛЬНА (не винит только Ozon) — did-fail-load бывает и от обрыва сети.
+    expect(d.notify.mock.calls[0][1]).toMatch(/интернет/)
+    // v1.2.369: текст НЕ называет раздел (маршрутизатор общий на «Вопросы» И «Сообщения») — иначе врал бы.
+    expect(d.notify.mock.calls[0][1]).not.toMatch(/Вопрос/)
+    // v1.2.363: факт показа сообщения пишется в журнал.
+    expect(d.log.mock.calls.some(c => /показал/.test(c[1] || ''))).toBe(true)
   })
 
   it('ERR_ABORTED (-3, редирект) — НЕ тревожит пользователя', () => {
@@ -87,6 +114,23 @@ describe('bindOzonBgWatcher', () => {
     bindOzonBgWatcher(el, 'ozon', d)
     bindOzonBgWatcher(el, 'ozon', d)
     expect(el.handlersFor('console-message').length).toBe(1)
+  })
+
+  it('впрыск сторожа: на КАЖДЫЙ dom-ready читает хук и выполняет (нет «липкого» флага)', async () => {
+    const el = makeEl(); const d = makeDeps()
+    el.executeJavaScript = vi.fn(() => Promise.resolve())
+    const invoke = vi.fn(() => Promise.resolve('/* ozon hook code */'))
+    const prevApi = window.api
+    window.api = { invoke }
+    try {
+      bindOzonBgWatcher(el, 'ozon', d)
+      el.fire('dom-ready')
+      el.fire('dom-ready') // повторный dom-ready (как после ПЕРЕЗАГРУЗКИ страницы) — впрыск ДОЛЖЕН повториться
+      await Promise.resolve(); await Promise.resolve()
+      expect(invoke).toHaveBeenCalledWith('app:read-hook', 'ozon')
+      expect(invoke.mock.calls.length).toBe(2) // без липкого флага → впрыск на каждый dom-ready
+      expect(el.executeJavaScript).toHaveBeenCalled()
+    } finally { window.api = prevApi }
   })
 
   it('null-элемент (размонтирование) не падает', () => {
