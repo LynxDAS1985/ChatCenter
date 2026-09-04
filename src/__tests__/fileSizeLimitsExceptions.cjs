@@ -100,8 +100,8 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 1116,
-    reason: 'v1.2.393-394: заставка первой загрузки списка чатов — флаг chatsFirstLoadDone, эффект удержания заставки до резолва loadChats со страховкой 15с (+WARN-лог), проброс chatsLoading/chatsLoadDone в сайдбар (~10 строк). v0.95.48: loadMessages aroundId+addOffset=-49 для jump-to-message из notification (target вне окна) — паттерн tdesktop HistoryWidget::showAtMsgId + tweb setInnerPeer (~25 строк). v0.95.47: диагностические логи pending-scroll-effect + scroll-to-message (временные). v0.95.46: useEffect для pendingScrollToMessage. v0.95.43: useFileAttach + handleAttachSend. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. Доменное разбиение — отдельная задача.'
+    ceiling: 1122,
+    reason: 'v1.2.401: заставка первой загрузки перенесена в InboxMode (на ВСЮ область, не в панели списка) — импорт + рендер overlay (~6 строк). v1.2.393-394: заставка первой загрузки списка чатов — флаг chatsFirstLoadDone, эффект удержания заставки до резолва loadChats со страховкой 15с (+WARN-лог), проброс chatsLoading/chatsLoadDone в сайдбар (~10 строк). v0.95.48: loadMessages aroundId+addOffset=-49 для jump-to-message из notification (target вне окна) — паттерн tdesktop HistoryWidget::showAtMsgId + tweb setInnerPeer (~25 строк). v0.95.47: диагностические логи pending-scroll-effect + scroll-to-message (временные). v0.95.46: useEffect для pendingScrollToMessage. v0.95.43: useFileAttach + handleAttachSend. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. Доменное разбиение — отдельная задача.'
   },
   // v0.92.0: useInboxScroll вернулся в стандартный лимит 150 после удаления
   // isRestoringRef guards. Текущий размер 139.

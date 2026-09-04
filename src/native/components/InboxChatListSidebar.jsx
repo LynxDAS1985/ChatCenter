@@ -7,7 +7,6 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { List } from 'react-window'
 import ChatRow from './ChatRow.jsx'
 import MuteMenu from './MuteMenu.jsx'
-import ChatListLoadingSplash from './ChatListLoadingSplash.jsx' // v1.2.393: заставка первой загрузки списка
 import { formatUnreadCount } from '../utils/unreadFormat.js'
 import { loadSearchHistory, removeFromHistory, clearHistory } from '../utils/searchHistory.js'
 import { getAccountColor } from '../../../shared/accountColors.js'
@@ -101,8 +100,6 @@ function ForumTopicIcon({ topic }) {
 export default function InboxChatListSidebar({
   store,
   activeAccountChats,
-  chatsLoading, // v1.2.393: true = идёт первая загрузка → показываем заставку поверх списка
-  chatsLoadDone, // v1.2.394: true = загрузка ЗАВЕРШЕНА (для сохранения «итога», а не по скрытию)
   search, setSearch,
   // v0.95.42: commit при Enter → добавление query в историю
   onSearchCommit,
@@ -377,9 +374,8 @@ export default function InboxChatListSidebar({
         </div>
       )}
       <div ref={containerRef} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-        {/* v1.2.393: заставка первой загрузки — overlay поверх списка (list не размонтируется).
-            Всегда смонтирована: сама гаснет при chatsLoading=false (плавный финал). Не показываем при поиске. */}
-        <ChatListLoadingSplash show={chatsLoading && !search} loadDone={chatsLoadDone} store={store} />
+        {/* v1.2.401: заставка первой загрузки перенесена НА ВСЮ область InboxMode (не в этой панели) —
+            чтобы не было «в три экрана». Здесь остаётся только список чатов. */}
         {activeAccountChats.length === 0 ? (
           <div style={{ padding: 20, color: 'var(--amoled-text-dim)', fontSize: 13, textAlign: 'center' }}>
             {store.accounts.length === 0 ? 'Нет аккаунтов' : search ? 'Ничего не найдено' : 'Загрузка чатов...'}

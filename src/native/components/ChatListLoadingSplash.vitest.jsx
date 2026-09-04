@@ -54,17 +54,19 @@ describe('ChatListLoadingSplash — поведение', () => {
   })
 })
 
-describe('ChatListLoadingSplash — проводка (source guard)', () => {
+describe('ChatListLoadingSplash — проводка (source guard, v1.2.401)', () => {
   const sidebar = fs.readFileSync('src/native/components/InboxChatListSidebar.jsx', 'utf8')
   const inbox = fs.readFileSync('src/native/modes/InboxMode.jsx', 'utf8')
 
-  it('InboxChatListSidebar импортирует и рендерит заставку', () => {
-    expect(sidebar).toMatch(/import ChatListLoadingSplash/)
-    expect(sidebar).toMatch(/<ChatListLoadingSplash\s+show=\{chatsLoading/)
+  it('InboxMode импортирует и рендерит заставку на ВСЮ область (не в панели списка)', () => {
+    expect(inbox).toMatch(/import ChatListLoadingSplash/)
+    expect(inbox).toMatch(/<ChatListLoadingSplash/)
+    expect(inbox).toMatch(/chatsFirstLoadDone/)
+    expect(inbox).toMatch(/loadDone=\{chatsFirstLoadDone\}/)
   })
 
-  it('InboxMode держит флаг chatsFirstLoadDone и передаёт chatsLoading в сайдбар', () => {
-    expect(inbox).toMatch(/chatsFirstLoadDone/)
-    expect(inbox).toMatch(/chatsLoading=\{/)
+  it('InboxChatListSidebar БОЛЬШЕ НЕ рендерит заставку (перенесена в InboxMode)', () => {
+    // Регрессия: если заставку вернут в панель списка — снова получится «в три экрана».
+    expect(sidebar).not.toMatch(/ChatListLoadingSplash/)
   })
 })

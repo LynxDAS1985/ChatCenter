@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback } from 'react'
 import ForwardPicker from '../components/ForwardPicker.jsx'
 import InboxChatListSidebar from '../components/InboxChatListSidebar.jsx'
+import ChatListLoadingSplash from '../components/ChatListLoadingSplash.jsx' // v1.2.401: заставка первой загрузки — на ВСЮ область (не в панели списка)
 import InboxChatPanel from '../components/InboxChatPanel.jsx'
 import { groupMessages, findFirstUnreadId } from '../utils/messageGrouping.js'
 import { useInitialScroll } from '../hooks/useInitialScroll.js'
@@ -1011,13 +1012,19 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   }
 
   return (
-    <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+      {/* v1.2.401: заставка первой загрузки — ОДНА на всю область InboxMode (список чатов + окно чата),
+          с реальными аватарами чатов и счётчиком «Загружено N из M». Раньше была в узкой панели списка —
+          получалось «в три экрана»; теперь единый экран после стартовой заставки. Не показываем при поиске. */}
+      <ChatListLoadingSplash
+        show={store.accounts.length > 0 && !chatsFirstLoadDone && !search}
+        loadDone={chatsFirstLoadDone}
+        store={store}
+      />
       {/* Левая колонка: поиск + список чатов → InboxChatListSidebar (v0.87.83) */}
       <InboxChatListSidebar
         store={store}
         activeAccountChats={activeAccountChats}
-        chatsLoading={store.accounts.length > 0 && !chatsFirstLoadDone}
-        chatsLoadDone={chatsFirstLoadDone}
         search={search} setSearch={setSearch}
         onSearchCommit={handleSearchCommit}
         listHeight={listHeight} setListHeight={setListHeight}
