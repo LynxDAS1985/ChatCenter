@@ -37,8 +37,11 @@ export default function ChatListLoadingSplash({ show, loadDone, store }) {
   const [leaving, setLeaving] = useState(false)
   const [tick, setTick] = useState(0) // крутит подпись «кто сейчас грузится»
   const [totalHint] = useState(readTotalHint) // общее число чатов из прошлого запуска (0 = не знаем)
+  const [progress, setProgress] = useState(0) // v1.2.404: 0→1 за ~3с — гонит и счётчик, и проявление аватарок
+  const [phase, setPhase] = useState('circles') // v1.2.406: 'circles' → 'skeleton' (скелет списка перед реальным списком)
   const timersRef = useRef([])
   const shownAtRef = useRef(0) // v1.2.398: когда заставка стала видимой (для min-времени и записи в журнал)
+  const chatsLen = (store && store.chats && store.chats.length) || 0 // сколько чатов реально загружено
 
   // Показ/скрытие с плавным финалом (fade 420мс). v1.2.398: ГАРАНТИЯ минимального времени видимости —
   // если чаты грузятся быстро (кэш ~<1с), заставка мелькала доли секунды и её не было видно. Теперь держим
@@ -47,7 +50,7 @@ export default function ChatListLoadingSplash({ show, loadDone, store }) {
   useEffect(() => {
     const clear = () => { timersRef.current.forEach(clearTimeout); timersRef.current = [] }
     clear()
-    const MIN_VISIBLE = 2200 // мс — минимум, чтобы заставку успели заметить
+    const MIN_VISIBLE = 3500 // v1.2.404: держим заставку ≥3.5с, чтобы анимация загрузки (счётчик+аватарки, ~3с) успела ПРОЙТИ на глазах, а не мелькнула
     if (show) {
       // v1.2.399: метку времени ставим по shownAtRef (а НЕ по !rendered) — при первом монтировании rendered
       // уже мог быть true (useState(show)), тогда старая проверка не ставила метку → в лог шла мусорная
@@ -55,6 +58,9 @@ export default function ChatListLoadingSplash({ show, loadDone, store }) {
       if (!shownAtRef.current) {
         shownAtRef.current = Date.now()
         try { window.api?.send?.('app:log', { level: 'INFO', message: '[chatload] заставка ПОКАЗАНА' }) } catch (_) {}
+        // v1.2.404: наш экран чатов появился → убираем стартовую заставку (index.html) → сразу видна ЖИВАЯ
+        // анимация загрузки (без промежуточного «третьего» generic-экрана между стартовой и нашим экраном).
+        try { window.__ccHideSplash?.() } catch (_) {}
       }
       setLeaving(false)
       setRendered(true)
@@ -64,8 +70,12 @@ export default function ChatListLoadingSplash({ show, loadDone, store }) {
       timersRef.current.push(setTimeout(() => {
         const wasVisible = shownAtRef.current ? (Date.now() - shownAtRef.current) : 0
         try { window.api?.send?.('app:log', { level: 'INFO', message: '[chatload] заставка скрыта, была видна ~' + wasVisible + 'мс' }) } catch (_) {}
-        setLeaving(true)
-        timersRef.current.push(setTimeout(() => { setRendered(false); setLeaving(false); shownAtRef.current = 0 }, 420)) // сброс метки → повторный показ снова залогируется
+        // v1.2.406: перед скрытием — фаза СКЕЛЕТА (серые строки списка ~1.1с), потом плавный уход → реальный список.
+        setPhase('skeleton')
+        timersRef.current.push(setTimeout(() => {
+          setLeaving(true)
+          timersRef.current.push(setTimeout(() => { setRendered(false); setLeaving(false); setPhase('circles'); shownAtRef.current = 0 }, 420)) // сброс → повторный показ снова с кружков
+        }, 1100))
       }, wait))
     }
     return clear
@@ -91,6 +101,23 @@ export default function ChatListLoadingSplash({ show, loadDone, store }) {
     return () => clearInterval(id)
   }, [rendered])
 
+  // v1.2.404: ВИДИМАЯ загрузка-анимация. Чаты приходят из кэша ОДНИМ пакетом (реального «по одному» нет),
+  // поэтому показываем красивую анимацию: progress 0→1 за ~3с → счётчик растёт 0→total, аватарки проявляются
+  // ПО ОДНОЙ, полоса заполняется. Так пользователь ВИДИТ загрузку, а не «0 из N → мгновенно список».
+  // rAF в useEffect с очисткой (React docs «Synchronizing with Effects»).
+  useEffect(() => {
+    if (!rendered) { setProgress(0); return undefined }
+    let raf, start = null
+    const step = (t) => {
+      if (start === null) start = t
+      const p = Math.min(1, (t - start) / 3000)
+      setProgress(p)
+      if (p < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => { if (raf) cancelAnimationFrame(raf) }
+  }, [rendered])
+
   if (!rendered) return null
 
   // Имена/аватары для кружков: сначала реальные (кэш) чаты, иначе аккаунты, иначе заглушка.
@@ -102,28 +129,50 @@ export default function ChatListLoadingSplash({ show, loadDone, store }) {
   // добиваем до 5 кружков повтором (чтобы ряд был ровный)
   const circles = []
   for (let i = 0; i < 5; i++) circles.push(items[i % items.length])
-  const loaded = chats.length
-  const total = Math.max(totalHint, loaded) // цель: знаем из прошлого запуска или хотя бы «сколько уже»
+  const loaded = chatsLen
+  const total = Math.max(totalHint, loaded) // цель: из прошлого запуска или хотя бы «сколько уже»
   const current = items[tick % items.length]
+  // v1.2.404: всё гонит progress (0→1 за ~3с)
+  const displayCount = Math.round(progress * total) // счётчик растёт 0→total
+  const revealed = Math.round(progress * circles.length) // сколько аватарок уже «проявилось»
+  const pct = Math.round(progress * 100) // полоса
 
   return (
     <div className={'native-chatload' + (leaving ? ' native-chatload--leaving' : '')} aria-hidden="true">
-      <div className="native-chatload-inner">
-        <div className="native-chatload-avatars">
-          {circles.map((c, i) => (
-            <div
-              key={i}
-              className={'native-chatload-av' + (c.avatar ? ' native-chatload-photo' : ' native-chatload-' + GRADS[i % 5])}
-              style={c.avatar ? { backgroundImage: `url("${c.avatar}")` } : undefined}
-            >
-              {!c.avatar && initial(c.name)}
-              <span className="native-chatload-ok">✓</span>
+      {/* v1.2.406: шапка «ЦентрЧатов» сверху (как на стартовой заставке) — единый вид */}
+      <div className="native-chatload-brand">ЦентрЧатов</div>
+      {phase === 'skeleton' ? (
+        /* v1.2.406: скелет списка — серые строки с бегущим бликом, плавный переход к реальному списку */
+        <div className="native-chatload-skel">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="native-chatload-skelrow">
+              <span className="native-chatload-skelav native-chatload-sk" />
+              <div style={{ flex: 1 }}>
+                <div className="native-chatload-skell1 native-chatload-sk" />
+                <div className="native-chatload-skell2 native-chatload-sk" />
+              </div>
             </div>
           ))}
         </div>
-        <div className="native-chatload-name">Загружаем <b>{(current && current.name) || 'чаты'}</b>…</div>
-        <div className="native-chatload-count">{total > 0 ? `Загружено ${loaded} из ${total}` : 'Собираем чаты…'}</div>
-      </div>
+      ) : (
+        <div className="native-chatload-inner">
+          <div className="native-chatload-avatars">
+            {circles.map((c, i) => {
+              const avOn = i < revealed && !!c.avatar // v1.2.404: аватарки проявляются ПО ОДНОЙ по мере прогресса
+              return (
+                <div key={i} className={'native-chatload-av native-chatload-' + GRADS[i % 5]}>
+                  {!avOn && initial(c.name)}
+                  {avOn && <span className="native-chatload-face" style={{ backgroundImage: `url("${c.avatar}")` }} />}
+                  {avOn && <span className="native-chatload-ok">✓</span>}
+                </div>
+              )
+            })}
+          </div>
+          <div className="native-chatload-name">Загружаем <b>{(current && current.name) || 'чаты'}</b>…</div>
+          <div className="native-chatload-count">{total > 0 ? `Загружено ${displayCount} из ${total}` : 'Собираем чаты…'}</div>
+          <div className="native-chatload-bar"><i style={{ width: pct + '%' }} /></div>
+        </div>
+      )}
     </div>
   )
 }

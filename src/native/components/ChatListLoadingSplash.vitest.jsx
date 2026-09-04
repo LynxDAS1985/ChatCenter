@@ -16,7 +16,7 @@ describe('ChatListLoadingSplash — поведение', () => {
     render(<ChatListLoadingSplash show={true} store={{ chats: [{ title: 'Макс', avatar: '' }], accounts: [] }} />)
     expect(screen.getByText(/Загружаем/)).toBeTruthy()
     expect(screen.getByText('Макс')).toBeTruthy()
-    expect(screen.getByText(/Загружено 1 из 1/)).toBeTruthy()
+    expect(screen.getByText(/Загружено \d+ из 1/)).toBeTruthy() // v1.2.403: число теперь анимируется (растёт от 0), поэтому \d+
   })
 
   it('show=false → ничего не рендерит (заставки нет в DOM)', () => {
@@ -68,5 +68,30 @@ describe('ChatListLoadingSplash — проводка (source guard, v1.2.401)', 
   it('InboxChatListSidebar БОЛЬШЕ НЕ рендерит заставку (перенесена в InboxMode)', () => {
     // Регрессия: если заставку вернут в панель списка — снова получится «в три экрана».
     expect(sidebar).not.toMatch(/ChatListLoadingSplash/)
+  })
+})
+
+describe('ChatListLoadingSplash — фаза «скелет» + шапка (source guard, v1.2.406/407)', () => {
+  // Страж «единого экрана»: ЦентрЧатов сверху → кружки → СКЕЛЕТ списка → реальный список.
+  // Ловит регрессию: кто-то убрал фазу скелета (вернётся резкий «прыжок» к списку) или шапку
+  // (пропадёт единый вид со стартовой заставкой index.html). Детерминированно, без таймеров.
+  const jsx = fs.readFileSync('src/native/components/ChatListLoadingSplash.jsx', 'utf8')
+  const css = fs.readFileSync('src/native/styles-chatlist-loading.css', 'utf8')
+
+  it('есть промежуточная фаза СКЕЛЕТА перед реальным списком', () => {
+    expect(jsx).toMatch(/setPhase\(['"]skeleton['"]\)/)        // переход в скелет
+    expect(jsx).toMatch(/phase === ['"]skeleton['"]/)          // ветка рендера скелета
+    expect(jsx).toMatch(/native-chatload-skel/)                // сами строки-скелеты
+  })
+
+  it('есть шапка «ЦентрЧатов» (единый вид со стартовой заставкой)', () => {
+    expect(jsx).toMatch(/native-chatload-brand/)
+    expect(jsx).toMatch(/ЦентрЧатов/)
+  })
+
+  it('CSS: у скелета есть бегущий блик (shimmer) и стиль шапки', () => {
+    expect(css).toMatch(/@keyframes native-chatload-shim/)
+    expect(css).toMatch(/\.native-chatload-brand\s*\{/)
+    expect(css).toMatch(/\.native-chatload-sk\b/)
   })
 })

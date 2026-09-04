@@ -41,6 +41,15 @@
         animation: ccSweep 1.25s ease-in-out infinite;
       }
       .cc-splash__hint { font-size: 13px; color: rgba(234,241,255,.5); letter-spacing: .4px; }
+      /* v1.2.406: кружки на стартовой заставке — те же, что на экране «загрузка чатов» → единый вид (один экран). */
+      .cc-splash__circles { display: flex; gap: 14px; }
+      .cc-splash__circles span { width: 44px; height: 44px; border-radius: 50%; animation: ccBounce 2.4s ease-in-out infinite; }
+      .cc-splash__circles span:nth-child(1) { background: linear-gradient(135deg,#3aa76d,#1f7a4d); animation-delay: 0s; }
+      .cc-splash__circles span:nth-child(2) { background: linear-gradient(135deg,#e0567a,#a5324f); animation-delay: .25s; }
+      .cc-splash__circles span:nth-child(3) { background: linear-gradient(135deg,#3a7bd5,#2456a0); animation-delay: .5s; }
+      .cc-splash__circles span:nth-child(4) { background: linear-gradient(135deg,#7d7bff,#4b49c9); animation-delay: .75s; }
+      .cc-splash__circles span:nth-child(5) { background: linear-gradient(135deg,#e0973a,#a5651f); animation-delay: 1s; }
+      @keyframes ccBounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
       @keyframes ccSweep { 0% { transform: translateX(-120%); } 100% { transform: translateX(360%); } }
       @keyframes ccPulse { 0%,100% { transform: scale(.9); opacity: .55; } 50% { transform: scale(1.08); opacity: .9; } }
       @keyframes ccBreath {
@@ -48,7 +57,7 @@
         50%     { opacity: 1;   text-shadow: 0 0 30px rgba(42,171,238,.55); }
       }
       @media (prefers-reduced-motion: reduce) {
-        .cc-splash__glow, .cc-splash__logo, .cc-splash__bar span { animation: none; }
+        .cc-splash__glow, .cc-splash__logo, .cc-splash__circles span { animation: none; }
       }
     </style>
   </head>
@@ -57,8 +66,8 @@
       <div class="cc-splash__glow"></div>
       <div class="cc-splash__center">
         <div class="cc-splash__logo">ЦентрЧатов</div>
-        <div class="cc-splash__bar"><span></span></div>
-        <div class="cc-splash__hint">Загрузка…</div>
+        <div class="cc-splash__circles"><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="cc-splash__hint">Загрузка чатов…</div>
       </div>
     </div>
     <div id="root"></div>

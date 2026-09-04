@@ -89,6 +89,6 @@ export default function useAppBootstrap({
           setMonitorPreloadUrl(url)
         }
       }).catch(() => {})
-    ]).finally(() => { log('Promise.all done → appReady=true'); setAppReady(true); try { window.__ccHideSplash?.() } catch {} }) // v1.2.337: приложение готово → убрать стартовую заставку
+    ]).finally(() => { log('Promise.all done → appReady=true'); setAppReady(true) }) // v1.2.404: стартовую заставку НЕ снимаем на appReady — её убирает наш экран чатов (ChatListLoadingSplash при показе), чтобы НЕ было промежуточного «третьего» generic-экрана между стартовой и анимацией загрузки. Сразу: «ЦентрЧатов» → анимация загрузки (счётчик растёт + аватарки) → список.
   }, [])
 }

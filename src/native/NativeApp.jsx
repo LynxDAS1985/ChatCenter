@@ -231,6 +231,14 @@ export default function NativeApp({
     setShowLogin(true)
   }, [store.loginFlow, store.resetLoginFlow])
 
+  // v1.2.404: запасное снятие стартовой заставки (index.html #cc-splash). Основной путь — заставка чатов
+  // (ChatListLoadingSplash) при показе сама зовёт __ccHideSplash. Но если аккаунтов нет и заставка чатов не
+  // покажется — всё равно убираем стартовую через 0.8с после монтирования нативного экрана (не застреваем).
+  useEffect(() => {
+    const t = setTimeout(() => { try { window.__ccHideSplash?.() } catch (_) {} }, 800)
+    return () => clearTimeout(t)
+  }, [])
+
   useEffect(() => {
     try {
       window.__ccStartupMark?.(
