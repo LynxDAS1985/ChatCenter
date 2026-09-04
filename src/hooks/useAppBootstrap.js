@@ -51,7 +51,12 @@ export default function useAppBootstrap({
         logWebview(`messengers loaded webview=${cleaned.length} native=1 ids=${cleaned.map(m => `${m.id}:${m.partition || 'no-partition'}`).join(',')}`)
         logWebview(`native tab appended id=${NATIVE_CC_TAB.id} name="${NATIVE_CC_TAB.name}"`)
         setMessengers(withNative)
-        setActiveId(withNative[0]?.id || null)
+        // v1.2.399: на старте открываем НАТИВНЫЙ «ЦентрЧатов» (список чатов + заставка сборки), а НЕ первый
+        // веб-мессенджер. Раньше активной ставился withNative[0] = ПЕРВЫЙ webview (напр. Макс) → приложение
+        // всегда открывалось на Максе, он грузился первым, и лишь потом появлялись чаты. Веб-вкладки всё равно
+        // грузятся в фоне (стоят стопкой, не display:none) → уведомления из них работают; меняется только КАКАЯ
+        // вкладка видна первой. Если native_cc почему-то нет в списке — запасной вариант прежний (первый веб).
+        setActiveId(withNative.some(m => m.id === NATIVE_CC_ID) ? NATIVE_CC_ID : (withNative[0]?.id || null))
       }).catch(() => {
         setMessengers([...DEFAULT_MESSENGERS, NATIVE_CC_TAB])
         setActiveId(DEFAULT_MESSENGERS[0].id)

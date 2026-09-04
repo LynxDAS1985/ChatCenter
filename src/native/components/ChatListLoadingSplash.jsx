@@ -38,17 +38,35 @@ export default function ChatListLoadingSplash({ show, loadDone, store }) {
   const [tick, setTick] = useState(0) // крутит подпись «кто сейчас грузится»
   const [totalHint] = useState(readTotalHint) // общее число чатов из прошлого запуска (0 = не знаем)
   const timersRef = useRef([])
+  const shownAtRef = useRef(0) // v1.2.398: когда заставка стала видимой (для min-времени и записи в журнал)
 
-  // Показ/скрытие с плавным финалом: при show=false держим ещё ~420мс (CSS fade), потом unmount.
+  // Показ/скрытие с плавным финалом (fade 420мс). v1.2.398: ГАРАНТИЯ минимального времени видимости —
+  // если чаты грузятся быстро (кэш ~<1с), заставка мелькала доли секунды и её не было видно. Теперь держим
+  // минимум MIN_VISIBLE, потом гасим. + запись в журнал (показана / скрыта + сколько была видна) — чтобы
+  // ТОЧНО знать по логам, показалась ли заставка и на сколько (раньше видно было только «загрузка завершена»).
   useEffect(() => {
     const clear = () => { timersRef.current.forEach(clearTimeout); timersRef.current = [] }
     clear()
+    const MIN_VISIBLE = 2200 // мс — минимум, чтобы заставку успели заметить
     if (show) {
+      // v1.2.399: метку времени ставим по shownAtRef (а НЕ по !rendered) — при первом монтировании rendered
+      // уже мог быть true (useState(show)), тогда старая проверка не ставила метку → в лог шла мусорная
+      // «длительность» = сам таймстамп. Теперь метка ставится в ПЕРВЫЙ раз, когда show=true.
+      if (!shownAtRef.current) {
+        shownAtRef.current = Date.now()
+        try { window.api?.send?.('app:log', { level: 'INFO', message: '[chatload] заставка ПОКАЗАНА' }) } catch (_) {}
+      }
       setLeaving(false)
       setRendered(true)
     } else if (rendered) {
-      setLeaving(true)
-      timersRef.current.push(setTimeout(() => { setRendered(false); setLeaving(false) }, 420))
+      const elapsed = Date.now() - (shownAtRef.current || Date.now())
+      const wait = Math.max(0, MIN_VISIBLE - elapsed) // додержать до минимума, если загрузка была быстрой
+      timersRef.current.push(setTimeout(() => {
+        const wasVisible = shownAtRef.current ? (Date.now() - shownAtRef.current) : 0
+        try { window.api?.send?.('app:log', { level: 'INFO', message: '[chatload] заставка скрыта, была видна ~' + wasVisible + 'мс' }) } catch (_) {}
+        setLeaving(true)
+        timersRef.current.push(setTimeout(() => { setRendered(false); setLeaving(false); shownAtRef.current = 0 }, 420)) // сброс метки → повторный показ снова залогируется
+      }, wait))
     }
     return clear
   }, [show, rendered])

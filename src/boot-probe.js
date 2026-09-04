@@ -90,14 +90,11 @@ function ccSplashSafety(reason) {
     window.__ccStartupMark('splash', 'safety hid splash: ' + reason)
   } catch {}
 }
-setTimeout(() => {
-  try {
-    // main.jsx жив (медленный dev-старт) — заставку НЕ трогаем, её уберёт appReady; ставим дальний потолок.
-    if (typeof window.__ccHideSplash === 'function') {
-      window.__ccStartupMark('splash', 'safety 30s: main.jsx жив, жду appReady (дальний потолок 120с)')
-      setTimeout(() => ccSplashSafety('дальний потолок 120с (appReady так и не наступил)'), 90000)
-      return
-    }
-    ccSplashSafety('main.jsx не запустился за 30с')
-  } catch {}
-}, 30000)
+// v1.2.397 ФИКС холодного старта: РАНЬШЕ на 30с проверяли `window.__ccHideSplash` (жив ли main.jsx). Но на
+// ХОЛОДНОМ старте (пустой кэш dev-сервера / первый запуск) тело main.jsx выполняется ПОЗЖЕ 30с — по журналу
+// v1.2.396 «main +60738ms react root created», а страховка на 30с (`main.jsx не запустился за 30с`) уже
+// убрала заставку → ~30-105с ПУСТОГО экрана. Проверка была ненадёжной. Теперь страховка — ПРОСТО дальний
+// таймер: в норме заставку убирает appReady (useAppBootstrap → __ccHideSplash) и на холодную (~60с), и на
+// тёплую (быстро); этот таймер — лишь предохранитель на случай реально зависшего запуска (битый бандл /
+// appReady не наступил). 180с > худшего наблюдённого холодного старта (~105с) с запасом.
+setTimeout(() => ccSplashSafety('дальний предохранитель 180с (appReady не наступил)'), 180000)
