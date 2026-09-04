@@ -24,7 +24,7 @@ function parseConsoleMessage(msg) {
   if (msg.startsWith('__CC_OZON_COUNT__')) {
     try {
       var oc = JSON.parse(msg.slice(17))
-      var section = oc.s === 'qa' ? 'qa' : 'msg'
+      var section = (oc.s === 'qa' || oc.s === 'rv') ? oc.s : 'msg' // v1.2.387: сохраняем 'rv' (отзывы), иначе счётчик отзывов попадал на «Сообщения»
       var n = Number.isFinite(oc.n) ? oc.n : parseInt(oc.n, 10)
       return { type: 'ozon_count', section: section, n: Number.isFinite(n) ? Math.max(0, n) : 0 }
     } catch (e) { return { type: 'ozon_count_error', error: e.message } }
@@ -97,6 +97,7 @@ test('traceNotif читает parsed.text (v0.80.9)', function() {
 console.log('\\n── OZON_COUNT: ──')
 test('msg счётчик', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"msg","n":3}'); assert(r.type === 'ozon_count' && r.section === 'msg' && r.n === 3) })
 test('qa счётчик', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"qa","n":5}'); assert(r.type === 'ozon_count' && r.section === 'qa' && r.n === 5) })
+test('rv счётчик (отзывы) — НЕ схлопывается в msg (v1.2.387)', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"rv","n":3}'); assert(r.type === 'ozon_count' && r.section === 'rv' && r.n === 3) })
 test('ноль новых', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"msg","n":0}'); assert(r.type === 'ozon_count' && r.n === 0) })
 test('неизвестная секция → msg', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"xxx","n":2}'); assert(r.section === 'msg') })
 test('отрицательное → 0', function() { var r = parseConsoleMessage('__CC_OZON_COUNT__{"s":"qa","n":-4}'); assert(r.n === 0) })

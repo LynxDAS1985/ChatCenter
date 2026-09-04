@@ -74,14 +74,30 @@ setTimeout(() => window.__ccStartupSummary('after-15s'), 15000)
 setTimeout(() => window.__ccStartupSummary('after-30s'), 30000)
 
 // v1.2.336: страховка от «зависшей» стартовой заставки (index.html #cc-splash). В норме её убирает
-// main.jsx после первого кадра; но если main.jsx не запустится (битый бандл ДО его кода), этот таймер
-// в boot-probe (грузится РАНЬШЕ main.jsx) всё равно уберёт заставку и оставит след в журнале.
-setTimeout(() => {
+// main.jsx при appReady (useAppBootstrap → window.__ccHideSplash).
+// v1.2.395 ФИКС «долгого пустого экрана»: РАНЬШЕ таймер 30с БЕЗУСЛОВНО убирал заставку. Но в dev-режиме
+// приложение честно грузится дольше 30с (сотни модулей по одному через dev-сервер): по журналу appReady
+// наступает ~на 70с, контент — ~на 127с. Заставку убирали на 30с → ~40-90с ПУСТОГО экрана до контента.
+// Теперь на 30с проверяем, ЖИВ ли main.jsx (он выставил window.__ccHideSplash): жив → НЕ убираем (ждём
+// appReady, который сам уберёт), лишь ставим ДАЛЬНИЙ потолок 120с на случай реально зависшего appReady;
+// не запустился (битый бандл до его кода) → убираем, как и раньше.
+function ccSplashSafety(reason) {
   try {
     const sp = document.getElementById('cc-splash')
-    if (!sp) return // норма: заставку уже убрал main.jsx
+    if (!sp) return // норма: заставку уже убрал main.jsx (appReady)
     sp.classList.add('cc-splash--hide')
     setTimeout(() => { try { sp.remove() } catch {} }, 500)
-    window.__ccStartupMark('splash', 'safety timeout hid splash (main.jsx did not run?)')
+    window.__ccStartupMark('splash', 'safety hid splash: ' + reason)
+  } catch {}
+}
+setTimeout(() => {
+  try {
+    // main.jsx жив (медленный dev-старт) — заставку НЕ трогаем, её уберёт appReady; ставим дальний потолок.
+    if (typeof window.__ccHideSplash === 'function') {
+      window.__ccStartupMark('splash', 'safety 30s: main.jsx жив, жду appReady (дальний потолок 120с)')
+      setTimeout(() => ccSplashSafety('дальний потолок 120с (appReady так и не наступил)'), 90000)
+      return
+    }
+    ccSplashSafety('main.jsx не запустился за 30с')
   } catch {}
 }, 30000)

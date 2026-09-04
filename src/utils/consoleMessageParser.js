@@ -42,11 +42,12 @@ export function parseConsoleMessage(msg) {
   }
 
   // __CC_OZON_COUNT__JSON — авторитетный счётчик раздела Ozon от сторожа (ozon.hook).
-  // { s: 'msg'|'qa', n: N } → { type: 'ozon_count', section, n }. section нормализуем к msg/qa.
+  // { s: 'msg'|'qa'|'rv', n: N } → { type: 'ozon_count', section, n }. v1.2.387: секции msg/qa/RV сохраняются
+  // (раньше всё, кроме 'qa', схлопывалось в 'msg' → счётчик ОТЗЫВОВ 'rv' попадал на «Сообщения», а ⭐ был пуст).
   if (msg.startsWith('__CC_OZON_COUNT__')) {
     try {
       const data = JSON.parse(msg.slice(17))
-      const section = data.s === 'qa' ? 'qa' : 'msg'
+      const section = (data.s === 'qa' || data.s === 'rv') ? data.s : 'msg'
       const n = Number.isFinite(data.n) ? data.n : parseInt(data.n, 10)
       return { type: 'ozon_count', section, n: Number.isFinite(n) ? Math.max(0, n) : 0 }
     } catch (e) {

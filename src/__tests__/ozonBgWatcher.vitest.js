@@ -73,6 +73,35 @@ describe('bindOzonBgWatcher', () => {
     expect(d.handleNewMessage).not.toHaveBeenCalled()
   })
 
+  it('счётчик qa из фона пишется в журнал ПРИ ИЗМЕНЕНИИ, но не повторно на ту же цифру (v1.2.396)', () => {
+    const el = makeEl(); const d = makeDeps()
+    bindOzonBgWatcher(el, 'ozon', d)
+    const qaLog = () => d.log.mock.calls.filter(c => /счётчик из фона: qa=/.test(c[1] || ''))
+    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'qa', n: 1 }) })
+    expect(qaLog().length).toBe(1)
+    expect(qaLog()[0][1]).toMatch(/qa=1/)
+    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'qa', n: 1 }) }) // та же цифра (reload переслал) → НЕ логируем повторно
+    expect(qaLog().length).toBe(1)
+    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'qa', n: 0 }) }) // ответили → 0 → лог
+    expect(qaLog().length).toBe(2)
+    expect(qaLog()[1][1]).toMatch(/qa=0/)
+  })
+
+  it('счётчик rv (Отзывы) из фона → ставит СТАРТОВОЕ значение, если rv ещё не задан (v1.2.392)', () => {
+    const el = makeEl(); const d = makeDeps()
+    bindOzonBgWatcher(el, 'ozon', d)
+    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'rv', n: 3 }) })
+    expect(d.getState().ozon.rv).toBe(3)
+  })
+
+  it('счётчик rv из фона НЕ перетирает уже заданное значение (передняя вкладка приоритетна) (v1.2.392)', () => {
+    const el = makeEl(); const d = makeDeps()
+    d.setOzonCounts(prev => ({ ...prev, ozon: { ...(prev.ozon || {}), rv: 1 } })) // передняя вкладка уже поставила rv=1 (прочитал)
+    bindOzonBgWatcher(el, 'ozon', d)
+    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'rv', n: 2 }) }) // фон застрял на 2
+    expect(d.getState().ozon.rv).toBe(1) // фон НЕ перетёр верную цифру передней вкладки
+  })
+
   it('обычное (не __CC_) сообщение — ничего не маршрутизируется', () => {
     const el = makeEl(); const d = makeDeps()
     bindOzonBgWatcher(el, 'ozon', d)

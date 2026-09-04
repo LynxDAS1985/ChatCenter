@@ -72,7 +72,7 @@ describe('AiBridgeCheck — отправка', () => {
     await waitFor(() => {
       expect(screen.getByText(/Привет от AI/)).toBeTruthy()
       expect(screen.getByText(/llama3.1/)).toBeTruthy()
-    })
+    }, { timeout: 3000 }) // v1.2.392: под нагрузкой полного прогона дефолтных 1000мс иногда не хватало (флейк-падение)
     expect(window.api.invoke).toHaveBeenCalledWith('ai-bridge:send', expect.objectContaining({
       mode: 'local',
       question: expect.objectContaining({ version: 1, source: { messengerId: 'native_cc' } }),

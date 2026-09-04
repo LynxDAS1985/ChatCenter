@@ -1,0 +1,130 @@
+/* v1.2.393: Заставка первой загрузки списка чатов (ChatListLoadingSplash).
+   Overlay поверх списка — показывается пока не пришёл полный батч чатов, затем плавно гаснет.
+   Цвета берём из AMOLED-переменных темы (styles-base.css) с запасными значениями. */
+
+.native-chatload {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: var(--amoled-bg, #0a0c14);
+  opacity: 1;
+  transition: opacity .38s ease;
+}
+/* финал: плавно открывается список под заставкой. pointer-events:none (фикс #2) — во время
+   0.42с затухания заставка (ещё в DOM) НЕ перехватывает клики: они доходят до готового списка. */
+.native-chatload--leaving { opacity: 0; pointer-events: none; }
+
+.native-chatload-inner { text-align: center; }
+
+.native-chatload-avatars {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+/* кружок-аватар: буква/фото + перелив цвета (hue) + пульс появления */
+.native-chatload-av {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  animation: native-chatload-pop 2.6s ease-in-out infinite, native-chatload-hue 4.5s linear infinite;
+}
+/* у фото перелив цвета не нужен (не искажаем лицо) — только пульс появления */
+.native-chatload-photo { animation: native-chatload-pop 2.6s ease-in-out infinite; }
+
+.native-chatload-av:nth-child(1) { animation-delay: 0s, 0s; }
+.native-chatload-av:nth-child(2) { animation-delay: .3s, 0s; }
+.native-chatload-av:nth-child(3) { animation-delay: .6s, 0s; }
+.native-chatload-av:nth-child(4) { animation-delay: .9s, 0s; }
+.native-chatload-av:nth-child(5) { animation-delay: 1.2s, 0s; }
+
+.native-chatload-g1 { background-image: linear-gradient(135deg, #3aa76d, #1f7a4d); }
+.native-chatload-g2 { background-image: linear-gradient(135deg, #e0567a, #a5324f); }
+.native-chatload-g3 { background-image: linear-gradient(135deg, #3a7bd5, #2456a0); }
+.native-chatload-g4 { background-image: linear-gradient(135deg, #7d7bff, #4b49c9); }
+.native-chatload-g5 { background-image: linear-gradient(135deg, #e0973a, #a5651f); }
+
+/* кольцо вокруг текущего кружка (пульс по очереди) */
+.native-chatload-av::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 2px solid rgba(125, 123, 255, .7);
+  opacity: 0;
+  animation: native-chatload-ring 2.6s ease-out infinite;
+}
+.native-chatload-av:nth-child(1)::before { animation-delay: 0s; }
+.native-chatload-av:nth-child(2)::before { animation-delay: .3s; }
+.native-chatload-av:nth-child(3)::before { animation-delay: .6s; }
+.native-chatload-av:nth-child(4)::before { animation-delay: .9s; }
+.native-chatload-av:nth-child(5)::before { animation-delay: 1.2s; }
+
+/* галочка «готов» на кружке */
+.native-chatload-ok {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #33d6bd;
+  color: #062018;
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--amoled-bg, #0a0c14);
+  opacity: 0;
+  animation: native-chatload-ok 2.6s ease-in-out infinite;
+}
+.native-chatload-av:nth-child(1) .native-chatload-ok { animation-delay: .2s; }
+.native-chatload-av:nth-child(2) .native-chatload-ok { animation-delay: .5s; }
+.native-chatload-av:nth-child(3) .native-chatload-ok { animation-delay: .8s; }
+.native-chatload-av:nth-child(4) .native-chatload-ok { animation-delay: 1.1s; }
+.native-chatload-av:nth-child(5) .native-chatload-ok { animation-delay: 1.4s; }
+
+.native-chatload-name { font-size: 14px; font-weight: 600; color: var(--amoled-text, #e9ecf5); margin-bottom: 6px; }
+.native-chatload-name b { color: var(--amoled-text, #fff); }
+.native-chatload-count { font-size: 12px; color: var(--amoled-text-dim, #8a90a3); }
+
+@keyframes native-chatload-pop {
+  0% { opacity: 0; transform: scale(.2) translateY(6px); }
+  55% { opacity: 1; transform: scale(1.12); }
+  70% { transform: scale(1); }
+  92% { opacity: 1; }
+  100% { opacity: .28; transform: scale(.9); }
+}
+@keyframes native-chatload-hue { to { filter: hue-rotate(360deg); } }
+@keyframes native-chatload-ring {
+  0%, 8% { opacity: 0; transform: scale(.7); }
+  20% { opacity: .9; transform: scale(1); }
+  45% { opacity: 0; transform: scale(1.5); }
+  100% { opacity: 0; }
+}
+@keyframes native-chatload-ok {
+  0%, 10% { opacity: 0; transform: scale(0); }
+  20% { opacity: 1; transform: scale(1.2); }
+  30% { opacity: 1; transform: scale(1); }
+  92% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* уважение к «отключить анимацию» в системе */
+@media (prefers-reduced-motion: reduce) {
+  .native-chatload-av,
+  .native-chatload-av::before,
+  .native-chatload-ok { animation: none; opacity: 1; }
+  .native-chatload { transition: none; }
+}

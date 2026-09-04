@@ -26,6 +26,9 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
     if (!el || el.__ccOzonBgBound) return
     el.__ccOzonBgBound = true
     const { handleNewMessage, setOzonCounts, log, notify, periodicReloadMs, suppressFailNotice } = deps || {}
+    // v1.2.396: последнее ЗАЛОГИРОВАННОЕ значение счётчика (по разделам) — чтобы писать в журнал только при
+    // РЕАЛЬНОМ изменении, а не на каждый reload (после reload сторож переинжектится и повторно шлёт ту же цифру).
+    const _lastCountLog = {}
     // v1.2.361 ДИАГНОСТИКА (Шаг 3А молчит — 0 строк [ozon-bg]): лесенка записей, чтобы увидеть, на каком
     // шаге рвётся. Убрать после того, как фоновая страница подтвердится рабочей. Текст вопросов НЕ пишем.
     log && log('INFO', '[ozon-bg] страница создана, слушатель привязан')
@@ -79,12 +82,31 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         if (!parsed) return
         // v1.2.368 (Шаг 3Б): маршрутизатор ОБОБЩЁН на ОБА раздела (вопросы И сообщения покупателей) —
         // один и тот же bindOzonBgWatcher вешается на две фоновые страницы (/reviews/questions и /app/messenger).
-        // Счётчик раздела (msg ИЛИ qa) → бейдж виджета (на основном id Ozon)
-        if (parsed.type === 'ozon_count' && (parsed.section === 'msg' || parsed.section === 'qa' || parsed.section === 'rv')) {
+        // Счётчик раздела msg/qa → бейдж виджета. Фон надёжен (мессенджер/вопросы обновляются live) → ведёт всегда.
+        if (parsed.type === 'ozon_count' && (parsed.section === 'msg' || parsed.section === 'qa')) {
+          // v1.2.396: пишем значение счётчика (то, что уходит на бейдж виджета/значок) — только при изменении,
+          // чтобы по журналу видеть, КАК фон обновляет цифру (напр. вопросы после ответа: qa 1→0).
+          if (_lastCountLog[parsed.section] !== parsed.n) {
+            _lastCountLog[parsed.section] = parsed.n
+            log && log('INFO', '[ozon-bg] счётчик из фона: ' + parsed.section + '=' + parsed.n + ' (значение для виджета/значка)')
+          }
           setOzonCounts && setOzonCounts(prev => {
             const cur = prev[ozonId] || {}
             if (cur[parsed.section] === parsed.n) return prev
             return { ...prev, [ozonId]: { ...cur, [parsed.section]: parsed.n } }
+          })
+          return
+        }
+        // v1.2.392: 'rv' (ОТЗЫВЫ) из фона — ТОЛЬКО как СТАРТОВОЕ значение (пока rv не задан), чтобы на старте ⭐
+        // показывала число новых отзывов. Дальше rv ведёт ПЕРЕДНЯЯ вкладка (отражает прочтения); фон НЕ перетирает —
+        // Ozon не обновляет скрытую страницу отзывов при прочтении, её novy застревает (прочитал 2 → перед. novy=1,
+        // фон застрял 2). Итог: старт = цифра есть; чтение = передняя правит; застревание фона по цифре не бьёт.
+        if (parsed.type === 'ozon_count' && parsed.section === 'rv') {
+          log && log('INFO', '[ozon-bg] rv из фона=' + parsed.n + ' (примем как стартовое, только если ⭐ ещё не задана)')
+          setOzonCounts && setOzonCounts(prev => {
+            const cur = prev[ozonId] || {}
+            if (cur.rv !== undefined) return prev // уже задано (передней вкладкой/ранее) → фон НЕ трогает
+            return { ...prev, [ozonId]: { ...cur, rv: parsed.n } }
           })
           return
         }

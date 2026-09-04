@@ -847,7 +847,7 @@ export default function App() {
                   <webview
                     key={'ozonbg' + bgI}
                     ref={el => bindOzonBgWatcher(el, m.id, {
-                      handleNewMessage, setOzonCounts, periodicReloadMs: (bgI === 0 || bgI === 2) ? 180000 : 0, suppressFailNotice: bgI === 2, // v1.2.376: reload «Вопросы»(0); v1.2.383: и «Отзывы»(2) — база _rPrev персистится, reload безопасен; «Сообщения»(1) НЕ трогаем
+                      handleNewMessage, setOzonCounts, periodicReloadMs: bgI === 0 ? 60000 : (bgI === 2 ? 180000 : 0), suppressFailNotice: bgI === 2, // v1.2.396: «Вопросы»(0) 3мин→1мин — цифра «qa» после ответа гасла до ~3 мин (скрытая страница держала старый снимок); __ccOzonQSeen переживает reload → повторных уведомлений НЕТ. «Отзывы»(2) reload СОХРАНЁН 180000 (был в коде с v1.2.383 — база _rPrev персистится; трогаем ТОЛЬКО «Вопросы», чтобы не задеть «Отзывы»). «Сообщения»(1) reload не имеют
                       log: (lvl, ms) => { try { window.api?.send?.('app:log', { level: lvl, message: ms }) } catch (_) {} },
                       // v1.2.362: понятное сообщение пользователю, если Ozon не пустил фоновую страницу.
                       notify: (title, body) => { try { window.api?.invoke('app:custom-notify', { title, body, messengerId: m.id, messengerName: 'Ozon', emoji: '📦', color: m.color || '#005BFF' }) } catch (_) {} },

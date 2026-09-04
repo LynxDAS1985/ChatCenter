@@ -34,10 +34,23 @@ export function AISidebarFallback({ visible, width, panelRef }) {
 }
 
 /**
- * Skeleton main area пока NativeApp lazy() ещё грузится. Чёрный фон —
- * чтобы не было белой вспышки на тёмной теме.
+ * Заглушка главной области, пока NativeApp lazy() ещё грузится.
+ * v1.2.395: РАНЬШЕ был просто чёрный div — между appReady (когда снимается стартовая заставка
+ * «Загрузка…») и монтированием NativeApp (в dev это ~57с) юзер видел ПУСТОЙ экран. Теперь та же
+ * подпись «Загрузка…» на тёмном фоне стартовой заставки — чтобы не было «пустоты» без индикатора.
  */
 export function NativeAppFallback() {
   try { window.__ccStartupMark?.('component:NativeApp', 'fallback render') } catch (_) {}
-  return <div className="w-full h-full" style={{ backgroundColor: '#000' }} />
+  return (
+    <div
+      className="w-full h-full"
+      style={{
+        background: 'radial-gradient(120% 90% at 50% 40%, #12203a 0%, #0a0e17 55%, #05070d 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#8a93b5', fontSize: 14, fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+      }}
+    >
+      Загрузка…
+    </div>
+  )
 }

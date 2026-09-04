@@ -116,6 +116,9 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // scroll-container невидим (opacity 0) + MessageListOverlay (shimmer) показан.
   // v0.87.67: shimmer ТОЛЬКО для чатов открываемых ВПЕРВЫЕ. Повторное открытие — мгновенно.
   const [chatReady, setChatReady] = useState(false)
+  // v1.2.393: заставка первой загрузки списка чатов. false = ещё грузим (показываем заставку),
+  // true = полный батч пришёл (или сработала страховка) → показываем готовый список разом.
+  const [chatsFirstLoadDone, setChatsFirstLoadDone] = useState(false)
   const seenChatsRef = useRef(new Set())
   // v0.87.70: Map<chatId, scrollTop> — своя позиция для каждого чата (как Telegram Desktop).
   // v0.91.8 (Совет 1): инициализируем из localStorage — позиция переживает перезапуск программы.
@@ -139,8 +142,20 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
 
   // v0.87.105 (ADR-016): загружаем чаты ВСЕХ аккаунтов разом (multi-account).
   // Если accountId не передан, backend itерирует по всем зарегистрированным.
+  // v1.2.393: держим заставку до РЕЗОЛВА loadChats (полный батч чатов). Страховка 15с —
+  // если сети нет и loadChats не вернётся, всё равно откроем список (что успело подгрузиться).
   useEffect(() => {
-    if (store.accounts.length > 0) store.loadChats()
+    if (store.accounts.length === 0) return
+    let cancelled = false
+    const safety = setTimeout(() => {
+      if (cancelled) return
+      // v1.2.394: страховка сработала = loadChats не вернулся за 15с (нет сети/завис) — это важное
+      // событие, пишем в журнал, чтобы при жалобе «долго висит заставка» было видно причину.
+      try { window.api?.send?.('app:log', { level: 'WARN', message: '[chatload] страховка 15с — loadChats не завершился, открываю список принудительно' }) } catch (_) {}
+      setChatsFirstLoadDone(true)
+    }, 15000)
+    store.loadChats().finally(() => { if (!cancelled) { clearTimeout(safety); setChatsFirstLoadDone(true) } })
+    return () => { cancelled = true; clearTimeout(safety) }
   }, [store.accounts.length])
 
   useEffect(() => {
@@ -1001,6 +1016,8 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       <InboxChatListSidebar
         store={store}
         activeAccountChats={activeAccountChats}
+        chatsLoading={store.accounts.length > 0 && !chatsFirstLoadDone}
+        chatsLoadDone={chatsFirstLoadDone}
         search={search} setSearch={setSearch}
         onSearchCommit={handleSearchCommit}
         listHeight={listHeight} setListHeight={setListHeight}
