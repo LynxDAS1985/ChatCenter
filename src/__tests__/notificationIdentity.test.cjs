@@ -52,6 +52,14 @@ test('webview passes notification messageId/source to main dedup', () => {
   assert(webviewHandleCode.includes('source: extra?.notifSource || extra?.source || null'))
 })
 
+// v1.2.426: наблюдатель (__CC_MSG__) для МАКС ждёт enriched дольше (1200мс vs 200мс),
+// иначе «список чатов» (карточка с аватаркой) приходит позже 200мс → две карточки на одно сообщение.
+test('MAX __CC_MSG__ ждёт enriched дольше — антидубль наблюдатель+список', () => {
+  assert(consoleHandlerCode.includes('enrichWaitMs'))
+  assert(consoleHandlerCode.includes('? 1200 : 200'))
+  assert(consoleHandlerCode.includes('}, enrichWaitMs)'))
+})
+
 test('console enrichment uses sender-aware avatar cache', () => {
   assert(consoleHandlerCode.includes('rememberSenderAvatar'))
   assert(consoleHandlerCode.includes('applySenderAvatarFallback'))

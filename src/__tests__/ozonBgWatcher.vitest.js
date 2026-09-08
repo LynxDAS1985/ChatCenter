@@ -94,12 +94,20 @@ describe('bindOzonBgWatcher', () => {
     expect(d.getState().ozon.rv).toBe(3)
   })
 
-  it('счётчик rv из фона НЕ перетирает уже заданное значение (передняя вкладка приоритетна) (v1.2.392)', () => {
+  it('счётчик rv из фона ПОДНИМАЕТ ⭐ на новые отзывы (только вверх) (v1.2.419)', () => {
     const el = makeEl(); const d = makeDeps()
-    d.setOzonCounts(prev => ({ ...prev, ozon: { ...(prev.ozon || {}), rv: 1 } })) // передняя вкладка уже поставила rv=1 (прочитал)
+    d.setOzonCounts(prev => ({ ...prev, ozon: { ...(prev.ozon || {}), rv: 4 } })) // было 4 (передняя вкладка / старт)
     bindOzonBgWatcher(el, 'ozon', d)
-    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'rv', n: 2 }) }) // фон застрял на 2
-    expect(d.getState().ozon.rv).toBe(1) // фон НЕ перетёр верную цифру передней вкладки
+    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'rv', n: 10 }) }) // пришли новые отзывы → фон видит 10
+    expect(d.getState().ozon.rv).toBe(10) // ⭐ поднялась без открытия вкладки (жалоба закрыта)
+  })
+
+  it('счётчик rv из фона НЕ понижает ⭐ (уменьшение = прочтения, ведёт передняя вкладка) (v1.2.419)', () => {
+    const el = makeEl(); const d = makeDeps()
+    d.setOzonCounts(prev => ({ ...prev, ozon: { ...(prev.ozon || {}), rv: 5 } })) // передняя вкладка поставила 5
+    bindOzonBgWatcher(el, 'ozon', d)
+    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'rv', n: 2 }) }) // фон застрял/ниже — 2
+    expect(d.getState().ozon.rv).toBe(5) // фон НЕ занижает (max) — не прячет отзывы
   })
 
   it('обычное (не __CC_) сообщение — ничего не маршрутизируется', () => {

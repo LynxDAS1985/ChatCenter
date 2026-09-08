@@ -125,6 +125,7 @@ function countUnread(type) {
 function countUnreadVK() {
   let allTotal = 0
   let source = 'none'
+  countUnreadVK._lastDiag = '' // v1.2.412 ВРЕМЕННО: диагностика первого пункта «Мессенджер» (см. метод 2)
 
   // 1. Title: VK иногда ставит "(N)" в title
   try {
@@ -135,17 +136,36 @@ function countUnreadVK() {
   // 2. Найти пункт "Мессенджер" в боковом меню VK — число в бейдже рядом
   if (allTotal === 0) {
     try {
-      const candidates = document.querySelectorAll('a[href*="/im"], a[href*="im"], [class*="LeftMenu"] a, nav a, [role="navigation"] a, aside a')
+      // v1.2.410: на vk.ru пункт «Мессенджер» — НЕ обязательно <a href*=im> и НЕ обязательно внутри
+      // nav/aside/LeftMenu (узкий селектор его не находил → значок рейла оставался пустым, хотя непрочитанное
+      // было). Берём тот же ШИРОКИЙ проход, что рабочий диагностический vk-src в vk.hook.js
+      // (`a,[role="link"]`), который стабильно находит «Мессенджер N» (лог: msgBadge=1 msgTx="Мессенджер1").
+      const candidates = document.querySelectorAll('a, [role="link"]')
       for (const el of candidates) {
-        const text = (el.textContent || '').trim()
-        if (/мессенджер/i.test(text) || /messenger/i.test(text)) {
+        const text = (el.textContent || '').replace(/\s+/g, ' ').trim()
+        if (!/мессенджер/i.test(text) && !/messenger/i.test(text)) continue
+        // v1.2.412 ВРЕМЕННАЯ ДИАГНОСТИКА: зафиксировать ПЕРВЫЙ найденный пункт «Мессенджер» — чтобы понять,
+        // почему число не берётся (текст/длина/есть ли бейдж/какое число в тексте). Логируется из monitor.preload.
+        if (!countUnreadVK._lastDiag) {
+          const _b = el.querySelector('[class*="ounter"], [class*="badge"], [class*="Badge"]')
+          countUnreadVK._lastDiag = 'el="' + text.slice(0, 45) + '" len=' + text.length +
+            ' badge=' + (_b ? ('«' + (_b.textContent || '').trim() + '»') : 'нет') +
+            ' textNum=' + ((text.match(/(\d+)/) || ['', 'нет'])[1])
+        }
+        // v1.2.411: СНАЧАЛА точный источник — бейдж-счётчик ВНУТРИ пункта. Причина: MDN Node.textContent —
+        // это склейка текста ВСЕХ вложенных узлов, поэтому «первое число из всего текста» у ДЛИННОГО элемента
+        // (превью чата, где слово «мессенджер» встретилось случайно) могло оказаться чужим — временем/номером
+        // заказа. Бейдж-элемент даёт именно счётчик непрочитанных.
+        const badge = el.querySelector('[class*="ounter"], [class*="badge"], [class*="Badge"]')
+        if (badge) {
+          const n = parseInt((badge.textContent || '').trim(), 10)
+          if (!isNaN(n) && n > 0) { allTotal = n; source = 'nav-badge'; break }
+        }
+        // Иначе — число из текста, но ТОЛЬКО если это короткая подпись пункта меню (≤30 симв.), а не длинное
+        // превью чата: подпись пункта = «Мессенджер1» (лог vk-src), превью — длинная фраза со случайным числом.
+        if (text.length <= 30) {
           const nums = text.match(/(\d+)/)
           if (nums) { allTotal = parseInt(nums[1], 10) || 0; source = 'nav-messenger'; break }
-          const badge = el.querySelector('[class*="ounter"], [class*="badge"], [class*="Badge"]')
-          if (badge) {
-            const n = parseInt(badge.textContent?.trim(), 10)
-            if (!isNaN(n) && n > 0) { allTotal = n; source = 'nav-badge'; break }
-          }
         }
       }
     } catch {}

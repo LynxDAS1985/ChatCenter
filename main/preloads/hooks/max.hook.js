@@ -281,9 +281,9 @@
       { var _mzR = rows[i], _mzMuted = (((_mzR.textContent || '').indexOf('🔕')) >= 0); if (!_mzMuted) { try { var _mzE = _mzR.querySelectorAll('[class*="mute" i],[class*="silent" i],use,[aria-label],[title]'); for (var _mz = 0; _mz < _mzE.length && !_mzMuted; _mz++) { var _x = _mzE[_mz], _xc = (typeof _x.className === 'string' ? _x.className : (_x.className && _x.className.baseVal) || ''), _xa = ((_x.getAttribute && (_x.getAttribute('aria-label') || _x.getAttribute('title'))) || ''), _xh = ((_x.getAttribute && (_x.getAttribute('href') || _x.getAttribute('xlink:href'))) || ''); if (!(/mute|silen/i.test(_xc) || /выключ|беззвуч|mute|silen/i.test(_xa) || /mute|silen|bell.?off|notif.?off/i.test(_xh))) continue; var _r = _x.getBoundingClientRect(); if ((_r.width || 0) <= 0 && (_r.height || 0) <= 0) continue; var _s = window.getComputedStyle(_x); if (_s.display === 'none' || _s.visibility === 'hidden' || (parseFloat(_s.opacity) || 1) < 0.1) continue; _mzMuted = true; } } catch (e) {} } if (_mzMuted) { console.log('[Макс] mute-skip заглушённый чат: ' + info.sender); continue; } }
       if ((firstSeen && !titleCorrelatedFirst) || !emit) continue; if (titleCorrelatedFirst) console.log('__CC_DIAG__max-sidebar: title-correlated first unread | sender="' + info.sender + '" unread=' + info.unread + ' body="' + info.body + '"');
       if (!shouldShow) { console.log('__CC_DIAG__max-sidebar: skip no confirmed unread change | sender="' + info.sender + '" unread=' + info.unread + ' prev=' + prevUnread + ' body="' + info.body + '" prevBody="' + (prevBody || '') + '" freshTitleMs=' + freshTitleMs); continue; }
-      var icon = _findAvatarIn(rows[i]);
+      var icon = _findAvatarIn(rows[i]), _oc = 0; try { var _tbO = document.querySelector('.topbar'), _tbOt = _tbO ? (_tbO.textContent || '').trim() : ''; if (_tbOt && info.sender && _tbOt.indexOf(info.sender) >= 0) _oc = 1; } catch (e) {}
       _log('passed', info.sender, info.body, '', icon, '', info.sender);
-      console.log('__CC_NOTIF__' + JSON.stringify({ t: info.sender, b: info.body, i: icon || '', g: '', src: 'max-sidebar', u: info.unread }));
+      console.log('__CC_NOTIF__' + JSON.stringify({ t: info.sender, b: info.body, i: icon || '', g: '', src: 'max-sidebar', u: info.unread, oc: _oc }));
     }
   }
   setTimeout(function() {

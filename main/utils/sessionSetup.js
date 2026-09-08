@@ -21,6 +21,18 @@ function isStrictAntiBotSite(url) {
   }
 }
 
+// v1.2.418: точная проверка «это МАКС?» по ХОСТУ (как isStrictAntiBotSite), а НЕ по подстроке /max\.ru/ —
+// иначе ложно ловились бы домены вроде climax.ru. Нужна, чтобы НЕ глушить ServiceWorker МАКС (см. keepServiceWorker).
+function isMaxSite(url) {
+  const s = String(url || '')
+  try {
+    const host = new URL(s).hostname.toLowerCase()
+    return host === 'max.ru' || host.endsWith('.max.ru')
+  } catch (_) {
+    return /(^|\/\/|\.)max\.ru([/:?#]|$)/i.test(s)
+  }
+}
+
 // v1.2.322: «доводка» — Sec-CH-UA (client hints: заголовки, где браузер сообщает бренд/версию)
 // под ОБЫЧНЫЙ Chrome. Наше окно — настоящий Chromium, но по умолчанию в client hints есть бренд
 // «Electron», который строгий антибот Ozon ловит на глубоких запросах (/api/v2/resolve → 403).
@@ -57,11 +69,20 @@ export function setupSession(ses, opts = {}) {
 
   // v1.2.320: строгий режим для Ozon (реальный UA + НЕ глушить Service Worker).
   const strict = isStrictAntiBotSite(opts.url)
-  ses.setUserAgent(strict ? NATIVE_CHROME_UA : CHROME_UA)
-  // Диагностический лог — чтобы понимать, что применилось к этому окну (Ozon и не только).
+  const isMax = isMaxSite(opts.url)
+  // v1.2.421: МАКС ТОЖЕ получает РЕАЛЬНЫЙ согласованный UA (как Ozon), а НЕ спуф-«Chrome/131». Причина (стек показал
+  // «Socket disconnected»): со старым/несогласованным UA (UA=Chrome/131, а реальные client hints движка новее) сервер
+  // МАКС роняет WebSocket → МАКС переподключается по кругу → свой лимит «Too many requests» → шторм → чёрный экран.
+  // Настоящий согласованный UA = как в браузере, где всё работает. Ниже (realBrowser) выравниваем и Sec-CH-UA.
+  const realBrowser = strict || isMax
+  ses.setUserAgent(realBrowser ? NATIVE_CHROME_UA : CHROME_UA)
+  // v1.2.417: у МАКС ServiceWorker ДОЛЖЕН жить (max.hook.js v1.2.10 разрешает register ради уведомлений). Session-
+  // «сторож» ниже (для НЕ-keepServiceWorker) убивал бы SW при каждом старте → цикл «register↔убийство». Поэтому МАКС
+  // (как и Ozon) исключён из «сторожа».
+  const keepServiceWorker = strict || isMax
   console.log('[Session] setup partition=' + partitionKey + ' url=' + (opts.url || '') +
-    ' strict=' + strict + ' ua=Chrome/' + (strict ? REAL_CHROME_VER : '131.0.0.0') +
-    ' sw=' + (strict ? 'kept' : 'cleared'))
+    ' strict=' + strict + ' max=' + isMax + ' ua=Chrome/' + (realBrowser ? REAL_CHROME_VER : '131.0.0.0') +
+    ' sw=' + (keepServiceWorker ? 'kept' : 'cleared'))
 
   ses.setPermissionRequestHandler((_wc, permission, cb) => {
     if (permission === 'notifications') return cb(false)
@@ -74,7 +95,8 @@ export function setupSession(ses, opts = {}) {
 
   // v1.2.320: Service Worker глушим ТОЛЬКО для обычных мессенджеров. Для Ozon его СОХРАНЯЕМ —
   // его SW держит связь, а без него Ozon-кабинет показывает «Похоже, нет соединения».
-  if (!strict) {
+  // v1.2.417: + для МАКС (keepServiceWorker) — иначе цикл «регистрация↔убийство SW» → 429-шторм → чёрный экран.
+  if (!keepServiceWorker) {
     ses.clearStorageData({ storages: ['serviceworkers', 'cachestorage'] })
       .then(() => console.log('[SW] Service Worker storage очищен для сессии'))
       .catch(e => console.error('[SW] Ошибка очистки SW storage:', e.message))
@@ -86,8 +108,12 @@ export function setupSession(ses, opts = {}) {
         }
       })
     }
-  } else {
-    console.log('[Session] Ozon strict: Service Worker СОХРАНЁН (не глушим) для partition=' + partitionKey)
+  }
+
+  // v1.2.421: выравнивание Sec-CH-UA (убрать бренд Electron, согласовать версию) получают Ozon (strict) И МАКС (isMax) —
+  // им же дан реальный UA (realBrowser). Иначе несогласованный UA/hints роняет соединение: у Ozon был 403, у МАКС — WebSocket.
+  if (realBrowser) {
+    console.log('[Session] realBrowser UA+hints (' + (strict ? 'Ozon' : 'МАКС') + '): partition=' + partitionKey)
     // v1.2.322: «доводка» — на исходящих запросах Ozon приводим Sec-CH-UA к обычному Chrome
     // (убираем бренд Electron) + диагностика: логируем реальные заголовки на api-запросах Ozon
     // (первые 8 раз, чтобы не спамить). Помогает пройти строгую проверку /api/v2/resolve (403).
@@ -110,6 +136,11 @@ export function setupSession(ses, opts = {}) {
     })
   }
 
+  // v1.2.420 ВРЕМЕННАЯ ДИАГНОСТИКА: чёрный экран МАКС = шторм «Too many requests» (~1740/сек), но какой URL
+  // долбит — неизвестно. Ловим 429 у МАКС-сессии, логируем АДРЕС (с троттлом+дедупом по URL, чтобы не спамить).
+  // Так увидим ТОЧНУЮ ручку, которую МАКС зацикливает при открытии чата с фото → фикс без гадания. Удалить после.
+  const _isMaxSession = isMaxSite(opts.url)
+  let _429url = '', _429count = 0, _429ts = 0
   ses.webRequest.onHeadersReceived((details, callback) => {
     const headers = { ...details.responseHeaders }
     delete headers['x-frame-options']
@@ -119,6 +150,18 @@ export function setupSession(ses, opts = {}) {
       const fixed = (Array.isArray(csp) ? csp : [csp]).map(v => v.replace(/frame-ancestors[^;]*(;|$)/gi, ''))
       headers['content-security-policy'] = fixed
     }
+    try {
+      if (_isMaxSession && details.statusCode === 429) {
+        _429count++
+        const now = Date.now()
+        const u = String(details.url || '')
+        // новый URL ИЛИ прошло 10с с прошлого лога → пишем адрес + счётчик
+        if (u !== _429url || now - _429ts > 10000) {
+          console.log('[max-429] ' + (details.method || '') + ' ' + u.slice(0, 140) + ' ×' + _429count + (u !== _429url ? ' [новый URL]' : ' [тот же URL]'))
+          _429url = u; _429ts = now; _429count = 0
+        }
+      }
+    } catch (_) {}
     callback({ responseHeaders: headers })
   })
 }

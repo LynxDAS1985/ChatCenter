@@ -116,23 +116,66 @@ export function attachRuntimeErrorCatcher(el) {
       if (window.__ccErrHooked) return;
       window.__ccErrHooked = true;
       window.__ccLastErr = '';
+      // v1.2.422 ВРЕМЕННАЯ ДИАГНОСТИКА: МАКС рвёт WebSocket по кругу («Socket disconnected»). Оборачиваем WebSocket
+      // и логируем КОД+ПРИЧИНУ закрытия (первые 3) — точно скажет, ПОЧЕМУ сервер/сеть рвёт соединение (1006 сеть,
+      // 1008/4xxx — сервер отбил с причиной). Ловим и close, и error. Дедуп (первые 3), чтобы не спамить в шторме.
+      try {
+        var _OWS = window.WebSocket;
+        if (_OWS && !_OWS.__ccWrapped) {
+          var _wsN = 0;
+          var _WS = function(u, p){
+            var w = (p !== undefined) ? new _OWS(u, p) : new _OWS(u);
+            try {
+              w.addEventListener('close', function(ev){ if (_wsN < 4) { _wsN++; try{console.log('__CC_DIAG__ws-close code='+ev.code+' clean='+ev.wasClean+' reason="'+String(ev.reason||'').slice(0,80)+'" url='+String(u).slice(0,80));}catch(e){} } });
+              w.addEventListener('error', function(){ if (_wsN < 4) { _wsN++; try{console.log('__CC_DIAG__ws-error url='+String(u).slice(0,80));}catch(e){} } });
+            } catch(e){}
+            return w;
+          };
+          _WS.prototype = _OWS.prototype;
+          _WS.CONNECTING = _OWS.CONNECTING; _WS.OPEN = _OWS.OPEN; _WS.CLOSING = _OWS.CLOSING; _WS.CLOSED = _OWS.CLOSED; _WS.__ccWrapped = 1;
+          window.WebSocket = _WS;
+          try{console.log('__CC_DIAG__ws-hook: attached');}catch(e){}
+        }
+      } catch(e){}
       // v1.2.332: регистрацию ServiceWorker у веб-мессенджеров мы ГЛУШИМ НАМЕРЕННО (sessionSetup) —
       // её отказ это НЕ ошибка страницы, а наш же выбор. Не засоряем __ccLastErr/журнал этим
       // самоинициированным сбоем (иначе health[err] у МАКС/ВК/WhatsApp повторяет его каждые 30с).
       var _ccSkip = function(m){ return (''+(m||'')).indexOf('ServiceWorker') !== -1; };
+      // v1.2.418: СВЁРТКА ПОВТОРОВ — одинаковая ошибка в цикле (напр. МАКС «Too many requests» ~7/сек) больше
+      // НЕ засыпает журнал 30к строк: первую пишем сразу, дальше молча копим и раз в 10с — сводка «×N за Nс».
+      // Побочно это делает шторм ПОДСЧИТЫВАЕМЫМ (после фикса SW у МАКС таких строк быть почти не должно).
+      window.__ccErrLast = ''; window.__ccErrCount = 0; window.__ccErrTs = 0;
+      var _ccEmit = function(text, stack){
+        var now = Date.now();
+        if (text === window.__ccErrLast) {
+          window.__ccErrCount++;
+          if (now - window.__ccErrTs >= 10000) {
+            try{console.log('__CC_DIAG__wv-runtime: '+text+' ×'+window.__ccErrCount+' за '+Math.round((now-window.__ccErrTs)/1000)+'с');}catch(e){}
+            window.__ccErrTs = now; window.__ccErrCount = 0;
+          }
+          return;
+        }
+        window.__ccErrLast = text; window.__ccErrCount = 0; window.__ccErrTs = now;
+        try{console.log('__CC_DIAG__wv-runtime: '+text);}catch(e){}
+        // v1.2.421 ВРЕМЕННАЯ ДИАГНОСТИКА: у ПЕРВОГО появления ошибки пишем и СТЕК (откуда кинута) — покажет,
+        // какой код МАКС зацикливается и кидает «Too many requests» (это внутренний лимит страницы, не HTTP 429).
+        if (stack) { try{console.log('__CC_DIAG__wv-stack: '+stack);}catch(e){} }
+      };
       window.addEventListener('error', function(ev){
         var m = (ev && ev.message) || '';
         if (_ccSkip(m)) return;
         var s = (ev && ev.filename) || '';
         var l = (ev && ev.lineno) || 0;
+        var st = (ev && ev.error && ev.error.stack) ? String(ev.error.stack).replace(/\s+/g,' ').slice(0,500) : '';
         window.__ccLastErr = (m+'|'+s+':'+l).slice(0,300);
-        try{console.log('__CC_DIAG__wv-runtime: '+window.__ccLastErr);}catch(e){}
+        _ccEmit(window.__ccLastErr, st);
       });
       window.addEventListener('unhandledrejection', function(ev){
         var m = (ev && ev.reason && (ev.reason.message || String(ev.reason))) || '';
         if (_ccSkip(m)) return;
+        var st = (ev && ev.reason && ev.reason.stack) ? String(ev.reason.stack).replace(/\s+/g,' ').slice(0,500) : '';
         window.__ccLastErr = ('rej|'+m).slice(0,300);
-        try{console.log('__CC_DIAG__wv-runtime: '+window.__ccLastErr);}catch(e){}
+        _ccEmit(window.__ccLastErr, st);
       });
       try{console.log('__CC_DIAG__wv-err-catcher: attached');}catch(e){}
     })();`

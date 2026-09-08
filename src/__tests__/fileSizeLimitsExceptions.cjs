@@ -23,8 +23,8 @@ module.exports = {
     reason: 'Конфиги всех мессенджеров в одном файле. Специально держим вместе.'
   },
   'src/utils/consoleMessageHandler.js': {
-    ceiling: 458,
-    reason: 'Большой парсер console-message. Логически цельный. v1.2.355-356: маршрут __CC_OZON_COUNT__ (виджет + сумма в бейдж рейла).'
+    ceiling: 462,
+    reason: 'Большой парсер console-message. Логически цельный. v1.2.355-356: маршрут __CC_OZON_COUNT__. v1.2.426: enrichWaitMs — МАКС ждёт enriched дольше (антидубль карточек).'
   },
   // v0.87.78: notification разбит на html/css/js. JS превышает default 300.
   // v1.2.12: createPinBtn вынесена 700→686, потом calcHeight/pauseItem/resumeItem/

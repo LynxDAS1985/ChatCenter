@@ -37,11 +37,13 @@ export function AISidebarFallback({ visible, width, panelRef }) {
  * Заглушка главной области, пока NativeApp lazy() ещё грузится.
  * v1.2.395: раньше чёрный div → пусто; сделали подпись «Загрузка…».
  * v1.2.400: показывали кружки, чтобы «наша разработка» была видна с начала.
- * v1.2.407: кружки УБРАНЫ — эту фазу теперь перекрывает стартовая заставка #cc-splash (boot-hold, v1.2.404):
- * заставка держится до показа нашего экрана «загрузка чатов», поэтому NativeAppFallback фактически НЕ виден.
- * Оставлен простой тёмный экран с подписью — как безопасный запас, если заставку по какой-то причине сняли раньше.
- * Кружки теперь заданы только в ДВУХ местах (стартовая заставка index.html + наш экран ChatListLoadingSplash),
- * а не в трёх — меньше рассинхрона при правках вида (совет-ревью v1.2.407).
+ * v1.2.407: БРЕНДОВЫЕ кружки (5 штук, как на нашем экране) УБРАНЫ — эту фазу перекрывает стартовая заставка
+ * #cc-splash (boot-hold, v1.2.404), поэтому брендовую анимацию тут дублировать незачем. Брендовые кружки
+ * теперь только в ДВУХ местах (index.html + ChatListLoadingSplash) — меньше рассинхрона при правках вида.
+ * v1.2.408: оставлен generic-СПИННЕР (одна крутилка, НЕ брендовые кружки) как ЗАПАС — если стартовую заставку
+ * по какой-то причине сняли раньше времени (сбой boot-hold / дальний предохранитель 180с), пользователь всё
+ * равно увидит живой индикатор загрузки, а не статичный текст. Спиннер не завязан на нативный CSS (файл грузится
+ * раньше него) → inline-стиль + inline-keyframes. Reduced-motion не гасит спиннер (стандартное поведение крутилок).
  */
 export function NativeAppFallback() {
   try { window.__ccStartupMark?.('component:NativeApp', 'fallback render') } catch (_) {}
@@ -50,10 +52,12 @@ export function NativeAppFallback() {
       className="w-full h-full"
       style={{
         background: 'radial-gradient(120% 90% at 50% 40%, #12203a 0%, #0a0e17 55%, #05070d 100%)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14,
         color: '#8a93b5', fontSize: 14, fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
       }}
     >
+      <style>{'@keyframes ccNfSpin{to{transform:rotate(360deg)}}'}</style>
+      <div aria-hidden="true" style={{ width: 34, height: 34, borderRadius: '50%', border: '3px solid rgba(255,255,255,.14)', borderTopColor: '#2e8bff', animation: 'ccNfSpin .9s linear infinite' }} />
       Загрузка чатов…
     </div>
   )

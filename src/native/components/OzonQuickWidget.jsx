@@ -31,6 +31,12 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
   const [dragging, setDragging] = useState(false)
   const [hovered, setHovered] = useState(false)
   const [active, setActive] = useState(null) // какой раздел сейчас открыт в webview Ozon
+  // v1.2.409: была ли СОХРАНЁННАЯ позиция на момент монтирования (первый запуск/свежая установка → её нет).
+  // На первом запуске виджет НЕ тускнеет (opacity 1) — иначе полупрозрачный узкий док в углу легко не заметить
+  // (жалоба «в собранной версии виджета нет»: он был, но в правом нижнем углу и полупрозрачный).
+  const [hadSaved] = useState(() => {
+    try { return !!JSON.parse(localStorage.getItem(LS_KEY) || 'null') } catch (_) { return false }
+  })
 
   const parentBox = useCallback(() => {
     const p = rootRef.current && rootRef.current.offsetParent
@@ -58,6 +64,15 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
       if (s) setActive(s.key)
     } catch (_) {}
   }, [messengerId, webviewRefs])
+
+  // v1.2.409: ДИАГНОСТИКА — смонтировался ли виджет и с какими размерами контейнера (жалоба «в собранной версии
+  // виджета нет»). По этой строке в журнале видно: виджет рисуется, есть ли сохранённая позиция, размер области.
+  useEffect(() => {
+    try {
+      const b = parentBox()
+      window.api?.send?.('app:log', { level: 'INFO', message: `[ozon-widget] смонтирован ${messengerId}: box=${b.w}x${b.h} сохранённая-позиция=${hadSaved ? 'да' : 'нет'}` })
+    } catch (_) {}
+  }, [messengerId, parentBox, hadSaved])
 
   const onGrabDown = useCallback((e) => {
     if (!pos) return
@@ -102,7 +117,9 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
 
   // Есть ли где-то новые (бейдж>0). Если есть — виджет ЯРКИЙ (не тускнеет), чтобы бросался в глаза.
   const hasNew = (((unread && unread.msg) || 0) > 0) || (((unread && unread.qa) || 0) > 0) || (((unread && unread.rv) || 0) > 0)
-  const dim = !(hovered || dragging || hasNew) // полупрозрачный ТОЛЬКО когда новых нет И мышь не наведена
+  // v1.2.409: полупрозрачный ТОЛЬКО когда новых нет, мышь не наведена И уже есть сохранённая позиция.
+  // Первый запуск (свежая установка, позиции ещё нет) → НЕ тусклый, чтобы новый пользователь заметил виджет.
+  const dim = hadSaved && !(hovered || dragging || hasNew)
 
   return (
     <>

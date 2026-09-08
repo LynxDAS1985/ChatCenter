@@ -825,7 +825,7 @@ export default function App() {
                     preload={monitorPreloadUrl || undefined}
                     style={{ width: '100%', height: '100%' }}
                     allowpopups="true"
-                    webpreferences="backgroundThrottling=no"
+                    webpreferences={'backgroundThrottling=no' + (/\bmax\.ru/i.test(m.url || '') ? ',sandbox=no' : '')}
                   />
                 )}
                 {/* v1.2.345: плавающий виджет Ozon — ТОЛЬКО внутри контейнера вкладки Ozon (появляется

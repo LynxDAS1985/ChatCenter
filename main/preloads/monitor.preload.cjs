@@ -50,7 +50,7 @@ const { ipcRenderer } = require('electron')
 // Изменение hook для MAX не затрагивает Telegram, и наоборот.
 
 // v0.82.3: Unread counters вынесены в отдельный файл
-const { getMessengerType, isActiveChatMuted, isActiveChatChannel, countUnread } = require('./utils/unreadCounters')
+const { getMessengerType, isActiveChatMuted, isActiveChatChannel, countUnread, countUnreadVK } = require('./utils/unreadCounters')
 
 // v0.84.3: Extracted modules
 const { getActiveChatSender, getActiveChatAvatar } = require('./utils/chatMetadata')
@@ -244,6 +244,20 @@ setTimeout(() => {
 
 function sendUpdate(type) {
   const { personal, channels, total, allTotal } = countUnread(type)
+  // v1.2.412 ВРЕМЕННАЯ ДИАГНОСТИКА ВК: значок рейла пуст, хотя vk-src видит «Мессенджер N». Логируем, ЧТО
+  // реально вернула countUnreadVK (значок = это число) + какой пункт «Мессенджер» она нашла. Раз в ~8с, без спама.
+  // Удалить после того, как найдём причину.
+  if (type === 'vk') {
+    try {
+      const _n = Date.now()
+      if (!sendUpdate._vkDiagTs || _n - sendUpdate._vkDiagTs > 8000) {
+        sendUpdate._vkDiagTs = _n
+        // v1.2.413: шлём на СВОЙ ipc-канал 'vk-diag' (его логирует хост через [IPC-VK]), а НЕ monitor-diag
+        // (тот до файла не доходит). Так увидим реальный результат countUnreadVK + найденный пункт «Мессенджер».
+        ipcRenderer.sendToHost('vk-diag', 'allTotal=' + allTotal + ' src=' + (countUnreadVK._lastSource || '?') + ' ' + (countUnreadVK._lastDiag || 'пункт НЕ найден'))
+      }
+    } catch (e) {}
+  }
   // v0.86.0: диагностика WhatsApp — при КАЖДОМ изменении count (не первые 5)
   if (allTotal !== lastCount) {
     const increased = total > lastCount && lastCount >= 0 && monitorReady

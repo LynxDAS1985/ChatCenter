@@ -41,4 +41,30 @@ export default function useWebViewLifecycle({ activeId, messengers, appReady, we
     const interval = setInterval(runProbe, 30000)
     return () => clearInterval(interval)
   }, [activeId, webviewRefs])
+
+  // v1.2.416 (Ловушка 64): РЕАЛЬНЫЙ пинок размером при активации веб-вкладки — «расклеивает» схлопнутую
+  // раскладку адаптивного SPA (МАКС/др.), который при инициализации в НЕактивной вкладке прочитал неверный
+  // размер и застрял в «мобильном» виде (область чата 0×0 → чёрный экран). Синтетический resize-event
+  // бесполезен — такие сайты слушают ResizeObserver (реальное изменение пикселей). Поэтому на миг сужаем
+  // обёртку webview на 1px и возвращаем через 2×rAF → guest реально видит resize → пересчитывает layout.
+  // Раньше этот фикс был (v0.86.8), но его удалили при переводе Telegram на нативный канал — веб-МАКС остался без него.
+  useEffect(() => {
+    if (!activeId) return undefined
+    const m = (messengers || []).find(x => x.id === activeId)
+    if (!m || m.isNative) return undefined // нативные вкладки (TDLib) — не webview, пинок не нужен
+    let logged = false
+    const nudge = () => {
+      const el = webviewRefs.current[activeId]
+      const wrap = el?.parentElement
+      if (!wrap) return
+      const w = Math.round(wrap.getBoundingClientRect().width)
+      if (w < 5) return
+      wrap.style.width = (w - 1) + 'px'
+      requestAnimationFrame(() => requestAnimationFrame(() => { try { wrap.style.width = '' } catch (_) {} }))
+      if (!logged) { logged = true; try { window.api?.send?.('app:log', { level: 'INFO', message: '[webview-relayout] 1px-пинок раскладки для ' + activeId + ' (Ловушка 64)' }) } catch (_) {} }
+    }
+    const t1 = setTimeout(nudge, 200)  // после показа вкладки
+    const t2 = setTimeout(nudge, 700)  // повтор — поймать SPA, если ещё не был готов
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [activeId, messengers, webviewRefs])
 }

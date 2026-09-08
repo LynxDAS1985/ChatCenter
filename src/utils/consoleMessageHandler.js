@@ -117,6 +117,17 @@ export function createConsoleMessageHandler(deps) {
       }
       return
     }
+    // ── __CC_UNREAD__: счётчик непрочитанных для ЗНАЧКА рейла через console (v1.2.415) ──
+    // Нужен для ВК: его webview НЕ шлёт ipc-message (значок кормился только через preload 'unread-count',
+    // который для ВК как ПОЛЬЗОВАТЕЛЬСКОГО мессенджера (id=custom_…) не доходит). Хук vk.hook.js шлёт сюда
+    // бейдж «Мессенджер N» проверенным console-каналом (тем же, что __CC_NOTIF__/__CC_OZON_COUNT__).
+    if (msg.startsWith('__CC_UNREAD__')) {
+      const n = parseInt(msg.slice(13).trim(), 10) // 13 = длина '__CC_UNREAD__'
+      if (!isNaN(n) && setUnreadCounts) {
+        setUnreadCounts(prev => (prev[messengerId] === n ? prev : { ...prev, [messengerId]: n }))
+      }
+      return
+    }
     // ── __CC_MSG__: backup MutationObserver через console.log (v0.39.5) ──
     // Обогащаем данными отправителя из DOM активного чата (v0.47.0)
     if (msg.startsWith('__CC_MSG__')) {
@@ -142,8 +153,10 @@ export function createConsoleMessageHandler(deps) {
         traceNotif('dedup', 'block', messengerId, text, `mid-dedup __CC_MSG__ | __CC_NOTIF__ от ${messengerId} был ${Date.now()-midTs}мс назад`)
         return
       }
-      traceNotif('source', 'info', messengerId, text, '__CC_MSG__ | ожидание enriched __CC_NOTIF__ 200мс')
-      // Приоритет enriched: ждём 200мс — если __CC_NOTIF__ придёт с enriched данными, он отменит этот таймер
+      // v1.2.426: МАКС ждёт enriched дольше — его «список чатов» (enriched __CC_NOTIF__ с аватаркой) приходит >200мс (сканер троттлится ~350мс), иначе наблюдатель даёт ЛИШНЮЮ карточку без фото раньше enriched → дубль. Прочие — 200мс.
+      const enrichWaitMs = /web\.max\.ru/i.test((messengersRef.current.find(x => x.id === messengerId) || {}).url || '') ? 1200 : 200
+      traceNotif('source', 'info', messengerId, text, `__CC_MSG__ | ожидание enriched __CC_NOTIF__ ${enrichWaitMs}мс`)
+      // Приоритет enriched: ждём enrichWaitMs — если __CC_NOTIF__ придёт с enriched данными, он отменит этот таймер
       // Если не придёт — запускаем собственное enrichment через DOM
       const pendingKey = messengerId + ':' + text.slice(0, 40)
       // Отменяем предыдущий pending для того же текста
@@ -333,7 +346,7 @@ export function createConsoleMessageHandler(deps) {
               handleNewMessage(messengerId, text)
             }
           })
-      }, 200) // 200мс ожидание enriched __CC_NOTIF__
+      }, enrichWaitMs) // ожидание enriched __CC_NOTIF__ (МАКС 1200мс, прочие 200мс) — v1.2.426
       pendingMsgRef.current.set(pendingKey, { timer: pendingTimer, messengerId, text })
       return
     }
@@ -388,7 +401,7 @@ export function createConsoleMessageHandler(deps) {
         const extra = {}
         if (data.t) extra.senderName = data.t
         if (data.g) extra.chatTag = data.g
-        if (data.src) extra.notifSource = data.src; if (maxSidebarUnread) extra.messageId = `max-sidebar:${senderScope || messengerId}:${maxSidebarUnread}`
+        if (data.src) extra.notifSource = data.src; if (maxSidebarUnread) extra.messageId = `max-sidebar:${senderScope || messengerId}:${maxSidebarUnread}`; if (data.oc) extra.openChat = 1
         // v0.77.2: blob icon → конвертируем ПЕРЕД handleNewMessage
         if (data.i && data.i.startsWith('blob:')) {
           const wv = webviewRefs.current[messengerId]

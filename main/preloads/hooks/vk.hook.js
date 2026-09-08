@@ -256,6 +256,12 @@
     // загрузке (первый замер на пустом списке) все уже-непрочитанные при догрузке улетят
     // как «новые» = шторм уведомлений на старте.
     if (rows.length > 0) _vkPrevUnread = current;
+    // v1.2.415: счётчик для ЗНАЧКА рейла = бейдж «Мессенджер N» → в хост через console __CC_UNREAD__ (эмит при изменении).
+    try { var _um=0,_ul=document.querySelectorAll('a,[role="link"]');
+      for(var _ui=0;_ui<_ul.length&&_ui<250;_ui++){var _ut=(_ul[_ui].textContent||'').replace(/\s+/g,' ').trim();
+        if(/мессенджер|messenger/i.test(_ut)){var _um2=_ut.match(/(\d+)/);_um=_um2?(parseInt(_um2[1],10)||0):0;break;}}
+      if(_scanVkList._lastUm!==_um){_scanVkList._lastUm=_um;console.log('__CC_UNREAD__'+_um);}
+    } catch(e){}
     if (reason === 'initial' || emitted > 0) console.log('__CC_DIAG__vk-list reason=' + reason + ' rows=' + rows.length + ' unread=' + unread + ' muted=' + muted + ' emitted=' + emitted);
     // v1.2.196: ДИАГНОСТИКА источника счётчика ВК (главный мир → лог доходит), раз в ~15с.
     // Показывает ВСЕ кандидаты «фантомной» 1 + что реально хватает «широкий» поиск счётчика

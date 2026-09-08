@@ -56,6 +56,16 @@ export function createHandleNewMessage(deps) {
     //    значит текущий чат ≠ чат сообщения → ПРОПУСКАЕМ (не блокируем)
     // Итого: viewing блокирует ТОЛЬКО если НЕТ extra (нет sender, нет source — мусор)
     const isViewingThisTab = windowFocusedRef.current && activeIdRef.current === messengerId
+    // v1.2.424: МАКС — если оператор смотрит на вкладку (окно в фокусе + вкладка активна),
+    // уведомления про ОТКРЫТЫЙ чат не нужны (он и так виден): входящие в открытый чат от наблюдателя,
+    // свои исходящие, sidebar открытого чата (extra.openChat). Sidebar про ДРУГОЙ/фоновый чат
+    // (max-sidebar без openChat) — показываем. Признак «смотрю» — активная вкладка+фокус ОКНА,
+    // а НЕ document.hidden внутри вкладки (у МАКС он врёт: hidden=true при видимой вкладке).
+    // v1.2.425: детект МАКС по /web\.max\.ru/ (как App.jsx:332) — узкий `/max\.ru/` ловил бы climax.ru/formax.ru.
+    if (isViewingThisTab && /web\.max\.ru/i.test((messengersRef.current.find(x => x.id === messengerId) || {}).url || '') && !(extra?.notifSource === 'max-sidebar' && !extra?.openChat)) {
+      traceNotif('viewing', 'block', messengerId, text, 'MAX: вкладка открыта — открытый чат виден, фантом подавлен')
+      return
+    }
     if (isViewingThisTab && extra?.source === 'vk-exec-fallback' && !extra?.vkActiveUnread) { traceNotif('viewing', 'block', messengerId, text, 'VK-EXEC active visible chat: block virtualized old DOM nodes'); return }
     if (isViewingThisTab && extra?.source === 'vk-exec-fallback' && extra?.vkActiveUnread) traceNotif('viewing', 'pass', messengerId, text, 'VK-EXEC active visible chat: pass confirmed unread marker')
     if (isViewingThisTab && !extra) {

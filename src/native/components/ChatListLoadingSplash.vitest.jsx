@@ -3,8 +3,8 @@
 // (2) сломался счётчик «Загружено N из TOTAL»; (3) отвалилась проводка флага в InboxMode.
 // Тесты падают, если кто-то уберёт заставку или её подключение — вернётся «мигание» списка.
 
-import { describe, it, expect, afterEach, beforeEach } from 'vitest'
-import { render, cleanup, screen } from '@testing-library/react'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
+import { render, cleanup, screen, act } from '@testing-library/react'
 import fs from 'node:fs'
 import ChatListLoadingSplash from './ChatListLoadingSplash.jsx'
 
@@ -93,5 +93,37 @@ describe('ChatListLoadingSplash — фаза «скелет» + шапка (sour
     expect(css).toMatch(/@keyframes native-chatload-shim/)
     expect(css).toMatch(/\.native-chatload-brand\s*\{/)
     expect(css).toMatch(/\.native-chatload-sk\b/)
+  })
+})
+
+describe('ChatListLoadingSplash — переход в скелет (поведение, v1.2.408)', () => {
+  // Поведенческий тест (в дополнение к source-guard выше): доказывает, что при завершении загрузки
+  // заставка реально ПОКАЗЫВАЕТ скелет, а затем УХОДИТ из DOM — а не просто «в коде есть слово skeleton».
+  // Факты: фазы идут через setTimeout (ChatListLoadingSplash.jsx:69-78, MIN_VISIBLE=3500 → +1100 скелет → +420 уход),
+  // rAF-прогресс на фазы НЕ влияет → заглушаем rAF для детерминизма (vitest fake timers не мокают rAF).
+  it('загрузка завершилась → появляется СКЕЛЕТ, затем заставка убирается из DOM', () => {
+    const origRaf = global.requestAnimationFrame
+    const origCaf = global.cancelAnimationFrame
+    global.requestAnimationFrame = () => 0        // прогресс-цикл не крутим — проверяем только ФАЗЫ
+    global.cancelAnimationFrame = () => {}
+    vi.useFakeTimers()
+    try {
+      const store = { chats: [{ title: 'Макс', avatar: '' }], accounts: [{ id: 'a', name: 'A' }] }
+      const { container, rerender } = render(<ChatListLoadingSplash show={true} loadDone={false} store={store} />)
+      // фаза кружков: заставка есть, скелета ещё нет
+      expect(container.querySelector('.native-chatload')).toBeTruthy()
+      expect(container.querySelector('.native-chatload-skel')).toBeNull()
+      // загрузка завершилась (show=false, loadDone=true) → ждём минимум показа (MIN_VISIBLE=3500)
+      rerender(<ChatListLoadingSplash show={false} loadDone={true} store={store} />)
+      act(() => { vi.advanceTimersByTime(3600) })
+      expect(container.querySelector('.native-chatload-skel')).toBeTruthy() // ← СКЕЛЕТ появился
+      // +1100 скелет +420 уход → заставка размонтирована (под ней остаётся реальный список)
+      act(() => { vi.advanceTimersByTime(1600) })
+      expect(container.querySelector('.native-chatload')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      global.requestAnimationFrame = origRaf
+      global.cancelAnimationFrame = origCaf
+    }
   })
 })
