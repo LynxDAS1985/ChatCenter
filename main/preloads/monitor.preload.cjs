@@ -58,7 +58,7 @@ const { EXTRACT_SPAM, QUICK_MSG_SELECTORS, extractMsgText } = require('./utils/m
 const { CHAT_CONTAINER_SELECTORS, findChatContainer, isSidebarNode, getChatContainerEl, setChatContainerEl } = require('./utils/domSelectors')
 const { runDiagnostics, resetDiagnostics } = require('./utils/diagnostics')
 const { getLastMessageText, getVKLastIncomingText } = require('./utils/messageRetrieval')
-const { createMaxSnapshotSender, maxNodeLabel, shortText } = require('./utils/maxDiagnostics')
+const { createMaxSnapshotSender, maxNodeLabel, shortText, maxOutgoingReport } = require('./utils/maxDiagnostics')
 const { createVkDiagnostics } = require('./utils/vkDiagnostics')
 
 // v0.83.0: Timing constants (вместо magic numbers)
@@ -115,9 +115,13 @@ function sendMonitorReady(stage) {
 
 let lastQuickMsgText = ''
 let lastQuickMsgTime = 0
+let lastMaxRunTime = 0
 
 function quickNewMsgCheck(mutations, type) {
   const now = Date.now()
+  // v1.2.427: тормоз частоты для МАКС (тяжёлый групповой чат мельтешит картинками-заглушками сотни/сек →
+  // поток уведомлений + нагрузка → чёрный экран). Троттл ~1/300мс; реальные сообщения страхует _maxScanList (350мс).
+  if (type === 'max') { if (now - lastMaxRunTime < 300) return; lastMaxRunTime = now }
   if (type === 'max') sendMonitorDiag('[MAX-QUICK] start mutations=' + mutations.length + ' lastQuick="' + shortText(lastQuickMsgText, 40) + '" lastSent="' + shortText(lastSentText, 40) + '" active="' + shortText(lastActiveMessageText, 40) + '" observer=' + (chatObserverTarget || 'unset'))
   if (type !== 'max' && now - lastQuickMsgTime < COOLDOWN_MSG) return // cooldown — не спамить
 
@@ -193,7 +197,7 @@ function quickNewMsgCheck(mutations, type) {
       if (type !== 'max' && lastQuickMsgText && (lastQuickMsgText.includes(text) || text.includes(lastQuickMsgText))) continue
 
       foundTexts.push(text)
-      if (type === 'max') sendMonitorDiag('[MAX-QUICK] found text="' + shortText(text, 180) + '" node=' + maxNodeLabel(node))
+      if (type === 'max') sendMonitorDiag('[MAX-OUT-DIAG] text="' + shortText(text, 60) + '" node=' + maxNodeLabel(node) + ' | ' + maxOutgoingReport(node))
       if (type !== 'max') break
     }
     if (foundTexts.length && type !== 'max') break

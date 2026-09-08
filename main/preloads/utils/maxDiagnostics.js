@@ -115,4 +115,29 @@ function createMaxSnapshotSender({ sendMonitorDiag, getMessengerType, getChatCon
   }
 }
 
-module.exports = { createMaxSnapshotSender, maxNodeLabel, shortText }
+// v1.2.427 (ВРЕМЕННАЯ ДИАГНОСТИКА): признаки-кандидаты «исходящего» сообщения МАКС.
+// Цель — по разнице между СВОИМ и ЧУЖИМ сообщением найти надёжный маркер (галочки ✓/выравнивание/класс),
+// т.к. координаты и классы строки этого не различают. Удалить после того, как маркер найден и фильтр сделан.
+function maxOutgoingReport(node) {
+  try {
+    var row = node
+    for (var d = 0; d < 8 && row && row.parentElement; d++) {
+      var cn = typeof row.className === 'string' ? row.className : (row.className && row.className.baseVal) || ''
+      if (/\bitem\b|message|bubble|\brow\b/i.test(cn)) break
+      row = row.parentElement
+    }
+    row = row || node
+    var rr = row.getBoundingClientRect ? row.getBoundingClientRect() : null
+    var cs = window.getComputedStyle ? window.getComputedStyle(row) : null
+    // Кандидаты в «галочку прочтения» и статус
+    var ticks = row.querySelectorAll ? row.querySelectorAll('svg, use, [class*="check" i], [class*="tick" i], [class*="status" i], [class*="read" i], [class*="delivered" i], [class*="sent" i]') : []
+    // Внутренний пузырь — где он относительно строки
+    var bubble = row.querySelector ? row.querySelector('[class*="bubble" i], [class*="content" i], p') : null
+    var br = bubble && bubble.getBoundingClientRect ? bubble.getBoundingClientRect() : null
+    var rowCls = typeof row.className === 'string' ? row.className.replace(/\s+/g, '.').slice(0, 40) : ''
+    return 'rowCls=' + rowCls + ' align=' + (cs ? cs.textAlign + '/' + cs.justifyContent + '/self:' + cs.alignSelf + '/ml:' + cs.marginLeft : '?') +
+      ' ticks=' + (ticks ? ticks.length : 0) + ' bubbleL=' + (br ? Math.round(br.left) : '?') + ' rowL=' + (rr ? Math.round(rr.left) : '?') + ' rowW=' + (rr ? Math.round(rr.width) : '?')
+  } catch (e) { return 'outErr=' + shortText(e.message || e, 40) }
+}
+
+module.exports = { createMaxSnapshotSender, maxNodeLabel, shortText, maxOutgoingReport }

@@ -321,6 +321,11 @@ test('MAX diagnostics sends full DOM snapshots through monitor-diag', () => {
 test('MAX quick observer logs found/skipped/sent decisions', () => {
   assert(code.includes('[MAX-QUICK] start') && code.includes('[MAX-QUICK] no text') && code.includes('[MAX-QUICK] send new-message'), 'MAX quick path must log why each mutation was accepted or skipped')
 })
+// v1.2.428: тормоз частоты наблюдателя для МАКС — иначе мельтешение картинок-заглушек в тяжёлом чате
+// (сотни мутаций/сек) даёт поток уведомлений + нагрузку → чёрный экран. Без троттла баг возвращается.
+test('MAX quick observer is throttled (anti-flood on placeholder churn)', () => {
+  assert(code.includes('lastMaxRunTime') && code.includes("if (type === 'max') { if (now - lastMaxRunTime < 300) return; lastMaxRunTime = now }"), 'MAX quick observer must throttle to ~1/300ms to survive image-placeholder churn')
+})
 test('MAX observer logs binding, mutations, snapshot skips, and disabled fallback', () => {
   assert(code.includes('[MAX-OBSERVER] bound') && code.includes('[MAX-OBSERVER] mutation') && code.includes('[MAX-OBSERVER] snapshot-skip') && code.includes('[MAX-OBSERVER] body-fallback-disabled'), 'MAX observer lifecycle must be visible in chatcenter.log')
 })

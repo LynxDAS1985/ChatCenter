@@ -230,17 +230,11 @@ app.whenReady().then(() => {
   process.on('unhandledRejection', (reason) => {
     try { console.error('[main-unhandled-rejection]', reason?.stack || reason) } catch (_) {}
   })
-  // v1.2.332 (ВРЕМЕННАЯ диагностика): ловим MaxListenersExceededWarning и печатаем ПОЛНЫЙ стек —
-  // он указывает файл:строку, где повесили «лишний» слушатель (напр. did-stop-loading на webContents).
-  // Node docs (process 'warning'): объект Warning несёт .name/.message/.stack, стек = место addListener.
-  // Удалить после того, как в chatcenter.log появится [max-listeners-diag] со стеком-виновником (TODO-34).
-  process.on('warning', (warning) => {
-    try {
-      if (warning && warning.name === 'MaxListenersExceededWarning') {
-        console.warn('[max-listeners-diag]', warning.message, '\n', warning.stack)
-      }
-    } catch (_) {}
-  })
+  // v1.2.429 (TODO-34 закрыт): MaxListenersExceededWarning (11 did-stop-loading) — стек-виновник оказался
+  // ЧИСТО внутренним для Electron: executeJavaScript ждёт готовности страницы через once('did-stop-loading'),
+  // и при медленной загрузке несколько параллельных executeJavaScript копят самоснимающиеся once-слушатели.
+  // Утечки НЕТ (они срабатывают и снимаются на did-stop-loading). Поднимаем предел, чтобы не шуметь в журнале.
+  app.on('web-contents-created', (_e, wc) => { try { wc.setMaxListeners(30) } catch (_) {} })
   // v0.91.22: было захардкожено v0.87.135 — теперь читаем актуальную версию из package.json
   // через app.getVersion() (Electron API, источник истины).
   console.log(`=== ChatCenter v${app.getVersion()} start ===`)
