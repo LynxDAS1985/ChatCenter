@@ -60,7 +60,7 @@ const fakeEl = (url) => ({ getURL: () => url })
 describe('Число из заголовка вкладки', () => {
   it('«(3) WhatsApp» → счётчик 3, здоровье отмечено, проверка вкладки назначена', () => {
     const { ctx, calls, unread } = makeCtx()
-    const handle = createTitleUnreadHandler(ctx)
+    const handle = createTitleUnreadHandler(ctx).handleTitleUpdated
     handle(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(3) WhatsApp' })
     expect(unread()).toEqual({ wa: 3 })
     expect(calls.health).toBe(1)
@@ -69,13 +69,13 @@ describe('Число из заголовка вкладки', () => {
 
   it('вид «5 непрочитанных» тоже понимаем', () => {
     const { ctx, unread } = makeCtx()
-    createTitleUnreadHandler(ctx)(fakeEl('https://web.whatsapp.com'), 'wa', { title: '5 непрочитанных сообщений' })
+    createTitleUnreadHandler(ctx).handleTitleUpdated(fakeEl('https://web.whatsapp.com'), 'wa', { title: '5 непрочитанных сообщений' })
     expect(unread()).toEqual({ wa: 5 })
   })
 
   it('то же число второй раз — счётчик не пересоздаём (лишней перерисовки нет)', () => {
     const { ctx, unread } = makeCtx()
-    const handle = createTitleUnreadHandler(ctx)
+    const handle = createTitleUnreadHandler(ctx).handleTitleUpdated
     handle(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(2) WhatsApp' })
     const first = unread()
     handle(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(2) WhatsApp' })
@@ -86,33 +86,33 @@ describe('Число из заголовка вкладки', () => {
 describe('Звук как запасной путь', () => {
   it('счётчик вырос → звук играет и запасной путь назначен', () => {
     const { ctx, calls } = makeCtx()
-    createTitleUnreadHandler(ctx)(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(1) WhatsApp' })
+    createTitleUnreadHandler(ctx).handleTitleUpdated(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(1) WhatsApp' })
     expect(calls.sound).toBe(1)
     expect(calls.fallback).toBe(1)
   })
 
   it('🔴 ЛОВУШКА: у МАКСа звук по заголовку НЕ играем (ждём подтверждённую карточку)', () => {
     const { ctx, calls } = makeCtx({ activeIdRef: { current: 'max' } })
-    createTitleUnreadHandler(ctx)(fakeEl('https://web.max.ru/'), 'max', { title: '(4) MAX' })
+    createTitleUnreadHandler(ctx).handleTitleUpdated(fakeEl('https://web.max.ru/'), 'max', { title: '(4) MAX' })
     expect(calls.sound).toBe(0)     // звука быть НЕ должно
     expect(calls.fallback).toBe(1)  // а запасной путь всё равно назначается
   })
 
   it('звук выключен в настройках → молчим', () => {
     const { ctx, calls } = makeCtx({ settingsRef: { current: { soundEnabled: false, messengerNotifs: {}, mutedMessengers: {} } } })
-    createTitleUnreadHandler(ctx)(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(1) WhatsApp' })
+    createTitleUnreadHandler(ctx).handleTitleUpdated(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(1) WhatsApp' })
     expect(calls.sound).toBe(0)
   })
 
   it('мессенджер заглушён → молчим', () => {
     const { ctx, calls } = makeCtx({ settingsRef: { current: { soundEnabled: true, messengerNotifs: {}, mutedMessengers: { wa: true } } } })
-    createTitleUnreadHandler(ctx)(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(1) WhatsApp' })
+    createTitleUnreadHandler(ctx).handleTitleUpdated(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(1) WhatsApp' })
     expect(calls.sound).toBe(0)
   })
 
   it('два срабатывания подряд → звук один раз (защита от частого писка)', () => {
     const { ctx, calls } = makeCtx()
-    const handle = createTitleUnreadHandler(ctx)
+    const handle = createTitleUnreadHandler(ctx).handleTitleUpdated
     handle(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(1) WhatsApp' })
     handle(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(2) WhatsApp' })
     expect(calls.sound).toBe(1)
@@ -120,7 +120,7 @@ describe('Звук как запасной путь', () => {
 
   it('уведомления вкладки ещё не «прогрелись» → ни звука, ни запасного пути', () => {
     const { ctx, calls } = makeCtx({ notifReadyRef: { current: { wa: false } } })
-    createTitleUnreadHandler(ctx)(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(1) WhatsApp' })
+    createTitleUnreadHandler(ctx).handleTitleUpdated(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(1) WhatsApp' })
     expect(calls.sound).toBe(0)
     expect(calls.fallback).toBe(0)
   })
@@ -129,7 +129,7 @@ describe('Звук как запасной путь', () => {
 describe('Заголовок БЕЗ числа', () => {
   it('вкладка открыта и в фокусе → «всё прочитано», счётчик в ноль', () => {
     const { ctx, unread } = makeCtx()
-    const handle = createTitleUnreadHandler(ctx)
+    const handle = createTitleUnreadHandler(ctx).handleTitleUpdated
     handle(fakeEl('https://web.whatsapp.com'), 'wa', { title: '(3) WhatsApp' })
     handle(fakeEl('https://web.whatsapp.com'), 'wa', { title: 'WhatsApp' })
     expect(unread()).toEqual({ wa: 0 })
@@ -137,7 +137,7 @@ describe('Заголовок БЕЗ числа', () => {
 
   it('🔴 ЛОВУШКА: у Ozon НЕ обнуляем — числа в заголовке нет никогда, счётчик ведёт наш сторож', () => {
     const { ctx, unread } = makeCtx({ activeIdRef: { current: 'ozon' } })
-    const handle = createTitleUnreadHandler(ctx)
+    const handle = createTitleUnreadHandler(ctx).handleTitleUpdated
     handle(fakeEl('https://seller.ozon.ru/app/chats'), 'ozon', { title: '(7) Ozon' })
     expect(unread()).toEqual({ ozon: 7 })
     handle(fakeEl('https://seller.ozon.ru/app/chats'), 'ozon', { title: 'Ozon Seller' })
@@ -146,13 +146,13 @@ describe('Заголовок БЕЗ числа', () => {
 
   it('вкладка не активна или окно не в фокусе → ничего не трогаем', () => {
     const { ctx, unread } = makeCtx({ windowFocusedRef: { current: false } })
-    createTitleUnreadHandler(ctx)(fakeEl('https://web.whatsapp.com'), 'wa', { title: 'WhatsApp' })
+    createTitleUnreadHandler(ctx).handleTitleUpdated(fakeEl('https://web.whatsapp.com'), 'wa', { title: 'WhatsApp' })
     expect(unread()).toEqual({})
   })
 
   it('пустой или отсутствующий заголовок не ломает разбор', () => {
     const { ctx } = makeCtx()
-    const handle = createTitleUnreadHandler(ctx)
+    const handle = createTitleUnreadHandler(ctx).handleTitleUpdated
     expect(() => handle(fakeEl('https://web.whatsapp.com'), 'wa', {})).not.toThrow()
     expect(() => handle(fakeEl('https://web.whatsapp.com'), 'wa', { title: null })).not.toThrow()
   })
@@ -174,6 +174,20 @@ describe('Проводка: список связей не разошёлся', 
     expect(missing, 'НЕ передано из webviewSetup: ' + missing.join(', ')).toEqual([])
     expect(extra, 'передано зря (никто не разбирает): ' + extra.join(', ')).toEqual([])
     expect(t.size).toBeGreaterThan(20)
+  })
+
+
+  it('🔴 ЛОВУШКА: модуль отдаёт РОВНО ТО, что приложение реально зовёт', () => {
+    // Именно этого теста не хватило в v1.2.448: модуль отдавал функцию, а приложение
+    // звало `titleUnread.handleTitleUpdated(...)` → в живом окне сыпалось
+    // «is not a function», а тесты были зелёными, потому что звали модуль по-своему.
+    // Теперь имя метода БЕРЁТСЯ ИЗ КОДА приложения и проверяется на модуле.
+    const { ctx } = makeCtx()
+    const api = createTitleUnreadHandler(ctx)
+    const setup = readFileSync('src/utils/webviewSetup.js', 'utf8')
+    const m = setup.match(/titleUnread\.([A-Za-z0-9_]+)\s*\(/)
+    expect(m, 'в webviewSetup.js не найден вызов titleUnread.<метод>(...)').toBeTruthy()
+    expect(typeof api[m[1]], 'приложение зовёт titleUnread.' + m[1] + '(), а модуль такого не отдаёт').toBe('function')
   })
 
   it('webviewSetup.js действительно зовёт вынесенный разбор', () => {

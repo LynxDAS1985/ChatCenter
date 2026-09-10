@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // scripts/make-app-icon.cjs — v1.2.443
 //
-// Делает файлы иконки приложения из ЕДИНОГО рисунка (shared/appIconMark.js).
+// Делает файлы иконки приложения из ЕДИНОГО рисунка (shared/appIconMark.js),
+// упаковка в PNG/.ico — shared/appIconFiles.js (v1.2.449).
 // Запуск: node scripts/make-app-icon.cjs
 //
 // ЧТО ПИШЕТ:
@@ -37,7 +38,8 @@ const TARGETS = [
 async function main() {
   // shared/appIconMark.js — современный модуль (ESM), этот скрипт — старого формата (CJS),
   // поэтому подключаем через динамический import: так один рисунок используют оба формата.
-  const mark = await import('../shared/appIconMark.js')
+  // v1.2.449: рисование — appIconMark.js, упаковка в файлы — appIconFiles.js
+  const mark = await import('../shared/appIconFiles.js')
 
   // Главный файл — .ico со ВСЕМИ размерами внутри (каждый нарисован отдельно).
   const icoPath = path.join(root, 'build/icon.ico')

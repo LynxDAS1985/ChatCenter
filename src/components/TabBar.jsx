@@ -1,5 +1,6 @@
 // TabBar.jsx — Tab bar with messenger tabs, header buttons, search bar
 import MessengerTab from './MessengerTab.jsx'
+import CcMark from './CcMark.jsx' // v1.2.449: знак приложения в шапке окна
 
 try { window.__ccStartupMark?.('module:TabBar', 'module evaluated') } catch {}
 
@@ -60,17 +61,14 @@ export default function TabBar({
           WebkitAppRegion: 'drag',
         }}
       >
-        {/* Drag handle */}
-        <div className="flex items-center justify-center w-[28px] h-full shrink-0 cursor-grab" title="Перетащить окно">
-          <svg width="10" height="16" viewBox="0 0 10 16" fill="none">
-            {[0, 6].map(x => [2, 6, 10].map(y => (
-              <circle key={`${x}-${y}`} cx={x + 2} cy={y} r={1.2} fill="var(--cc-icon)" />
-            )))}
-          </svg>
-        </div>
+        {/* v1.2.449: шесть точек-«ручка перетаскивания» УБРАНЫ по просьбе пользователя.
+            Окно от этого тащить не разучилось: вся шапка объявлена зоной перетаскивания
+            (WebkitAppRegion: 'drag' у обёртки выше), точки были только подсказкой. */}
 
-        {/* Logo */}
-        <div className="pr-2 text-[13px] font-semibold whitespace-nowrap shrink-0" style={{ color: 'var(--cc-text-dim)' }}>
+        {/* Logo. v1.2.449: рядом с названием — сам знак приложения (тот же, что в панели
+            задач и на заставке). Общий вид лежит в CcMark.jsx, чтобы не расходился с иконкой. */}
+        <div className="flex items-center gap-1.5 pl-2.5 pr-2 text-[13px] font-semibold whitespace-nowrap shrink-0" style={{ color: 'var(--cc-text-dim)' }}>
+          <CcMark size={18} title="ЦентрЧатов" />
           ЦентрЧатов
         </div>
 

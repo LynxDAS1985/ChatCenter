@@ -11,11 +11,9 @@
 //
 // ЗАЧЕМ свой рисовальщик, а не библиотека: в проекте уже есть похожий приём
 // (main/utils/overlayIcon.js рисует бейдж в буфер вручную), новых зависимостей не добавляем.
-// Сжатие берём из встроенного в Node zlib — тоже без установки чего-либо.
 //
 // Лежит в КОРНЕВОЙ shared/ (вне бюджета renderer, как shared/webAvatarGate.js в v1.2.441).
 
-import zlib from 'node:zlib'
 
 /** Цвета выбранного варианта «Лазурь». */
 export const MARK = {
@@ -48,6 +46,38 @@ function weights(px) {
  */
 function defaultPad(px) {
   return px <= 32 ? 0.05 : 0.14
+}
+
+/**
+ * v1.2.449 — насколько знак КРУПНЕЕ, когда плитки нет.
+ *
+ * Плитка задавала знаку поля (14%), и без неё знак выглядел мелким в панели задач.
+ * 1.3 = «крупнее на 30%», как просил пользователь.
+ */
+export const MARK_ZOOM_NO_TILE = 1.3
+
+/**
+ * Предел увеличения: насколько знак можно раздуть, НЕ обрезав его краем картинки.
+ *
+ * 🔴 Считать «по фигурам» недостаточно — у полос и контура есть ТОЛЩИНА, и она разная
+ * на разных размерах (на мелких линия толще, иначе знак не виден). Первая версия этой
+ * правки предел прикинула «на глаз» (1.12) и на 32 px срезала левые концы полос:
+ * полосы начинаются на x=3, а половина толщины там 3.75 — то есть кисть уходит в −0.75.
+ *
+ * Поэтому предел считается честно: берём самые дальние точки знака ВМЕСТЕ с половиной
+ * толщины кисти и требуем, чтобы после увеличения вокруг центра они остались внутри
+ * клетки 64×64. Увеличение идёт вокруг центра (смещение = 32×(1−масштаб)), поэтому
+ * для каждой стороны получается простое условие, из которого и берётся наименьший предел.
+ */
+export function fitScale(px) {
+  const w = weights(px)
+  const bounds = [
+    32 / (32 - (BAR_X0 - w.bar / 2)),                 // слева: концы полос
+    32 / ((BUB.x + BUB.w + w.ring / 2) - 32),          // справа: контур пузыря
+    32 / (32 - (BUB.y - w.ring / 2)),                  // сверху: контур пузыря
+    32 / (Math.max(TAIL[1][1], BARS[BARS.length - 1].y + w.bar / 2) - 32), // снизу: хвостик и нижняя полоса
+  ]
+  return Math.min(...bounds)
 }
 
 // ── Геометрические примитивы (расстояние до фигуры) ──────────────────────────
@@ -89,14 +119,17 @@ function inTriangle(px, py, t) {
  * @param {Object} o
  * @param {number} o.size — сторона картинки в пикселях (16, 32, 256, 512 …)
  * @param {'rgba'|'bgra'} [o.order] — порядок цветов: png хочет rgba, Electron на Windows — bgra
- * @param {boolean} [o.tile] — рисовать тёмную плитку под знаком (по умолчанию да)
+ * @param {boolean} [o.tile] — рисовать тёмную плитку под знаком (по умолчанию НЕТ: фон прозрачный)
+ * @param {number} [o.zoom] — во сколько раз увеличить знак (без плитки по умолчанию 1.3)
  * @param {number} [o.pad] — доля отступа знака внутри плитки (0.14 = 14%)
  * @returns {Buffer}
  */
 export function drawMark(o) {
   const size = o.size
   const order = o.order || 'rgba'
-  const tile = o.tile !== false
+  // v1.2.449: плитка ТОЛЬКО если её попросили явно. По умолчанию фон ПРОЗРАЧНЫЙ —
+  // в панели задач Windows тёмный квадрат выглядел заплаткой на общем фоне.
+  const tile = o.tile === true
   const pad = typeof o.pad === 'number' ? o.pad : defaultPad(size)
   const w = weights(size)
   const buf = Buffer.alloc(size * size * 4)
@@ -107,9 +140,13 @@ export function drawMark(o) {
   const SS = size <= 48 ? 4 : size <= 160 ? 3 : 2
   const SSN = SS * SS
   const tileR = 64 * 0.225              // скругление плитки ≈22.5% — как у иконок Windows 11
-  // знак живёт в клетке 64×64; внутри плитки его уменьшаем и центрируем
-  const scale = tile ? 1 - pad * 2 : 1
-  const off = tile ? 64 * pad : 0
+  // Знак живёт в клетке 64×64. С плиткой его уменьшаем на поля, без плитки —
+  // наоборот увеличиваем (плитка больше не задаёт поля), но не больше предела,
+  // иначе край картинки срежет пузырь. Смещение центрирует знак при любом масштабе:
+  // при scale = 1 - pad*2 формула даёт ровно прежние 64*pad, поведение с плиткой не меняется.
+  const zoom = typeof o.zoom === 'number' ? o.zoom : (tile ? 1 : MARK_ZOOM_NO_TILE)
+  const scale = Math.min((1 - pad * 2) * zoom, fitScale(size))
+  const off = 32 * (1 - scale)
 
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
@@ -133,14 +170,27 @@ export function drawMark(o) {
         }
       }
       const i = (py * size + px) * 4
-      // фон плитки — растяжка сверху вниз
-      const k = py / Math.max(1, size - 1)
-      const bg = [0, 1, 2].map(c => Math.round(MARK.tileTop[c] + (MARK.tileBottom[c] - MARK.tileTop[c]) * k))
-      // смешиваем: плитка → полосы → пузырь (пузырь сверху)
-      let rgb = bg
-      let alpha = tA / SSN
-      if (barA > 0) { const t = barA / SSN; rgb = mix(rgb, MARK.bars, t); alpha = Math.max(alpha, t) }
-      if (bubA > 0) { const t = bubA / SSN; rgb = mix(rgb, MARK.bubble, t); alpha = Math.max(alpha, t) }
+      const tb = barA / SSN, tu = bubA / SSN
+      let rgb, alpha
+      if (tile) {
+        // фон плитки — растяжка сверху вниз
+        const k = py / Math.max(1, size - 1)
+        rgb = [0, 1, 2].map(c => Math.round(MARK.tileTop[c] + (MARK.tileBottom[c] - MARK.tileTop[c]) * k))
+        alpha = tA / SSN
+        // смешиваем: плитка → полосы → пузырь (пузырь сверху)
+        if (tb > 0) { rgb = mix(rgb, MARK.bars, tb); alpha = Math.max(alpha, tb) }
+        if (tu > 0) { rgb = mix(rgb, MARK.bubble, tu); alpha = Math.max(alpha, tu) }
+      } else {
+        // 🔴 БЕЗ ПЛИТКИ ЦВЕТ НЕЛЬЗЯ СМЕШИВАТЬ С ФОНОМ ПЛИТКИ. Раньше вариант `tile:false`
+        // всё равно начинал с тёмного цвета плитки, и по краю знака оставалась тёмная
+        // кромка (на полупрозрачных точках). Теперь на краю меняется ТОЛЬКО прозрачность,
+        // а цвет остаётся своим — так и делают прозрачные значки.
+        alpha = Math.max(tb, tu)
+        if (alpha <= 0) continue
+        rgb = tu >= tb ? MARK.bubble : MARK.bars
+        // ровно на стыке полосы и пузыря берём смесь ИХ ДВУХ цветов, без участия фона
+        if (tu > 0 && tb > 0) rgb = mix(MARK.bars, MARK.bubble, tu / (tu + tb))
+      }
       if (alpha <= 0) continue
       const [r, g, b] = rgb
       if (order === 'bgra') { buf[i] = b; buf[i + 1] = g; buf[i + 2] = r }
@@ -153,106 +203,4 @@ export function drawMark(o) {
 
 function mix(a, b, t) {
   return [0, 1, 2].map(c => Math.round(a[c] + (b[c] - a[c]) * t))
-}
-
-// ── Кодирование PNG (без библиотек: только встроенное сжатие) ────────────────
-
-const CRC_TABLE = (() => {
-  const t = new Int32Array(256)
-  for (let n = 0; n < 256; n++) {
-    let c = n
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1
-    t[n] = c
-  }
-  return t
-})()
-
-function crc32(buf) {
-  let c = -1
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8)
-  return (c ^ -1) >>> 0
-}
-
-function chunk(type, data) {
-  const len = Buffer.alloc(4); len.writeUInt32BE(data.length, 0)
-  const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
-  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body), 0)
-  return Buffer.concat([len, body, crc])
-}
-
-/**
- * Превращает буфер RGBA в готовый файл PNG.
- * Формат по спецификации PNG: подпись + IHDR (8 бит, цвет с прозрачностью) + IDAT + IEND.
- * @param {Buffer} rgba
- * @param {number} size
- * @returns {Buffer}
- */
-export function encodePNG(rgba, size) {
-  const raw = Buffer.alloc((size * 4 + 1) * size)
-  for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0 // фильтр строки: 0 = как есть
-    rgba.copy(raw, y * (size * 4 + 1) + 1, y * size * 4, (y + 1) * size * 4)
-  }
-  const ihdr = Buffer.alloc(13)
-  ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4)
-  ihdr[8] = 8    // бит на канал
-  ihdr[9] = 6    // цвет + прозрачность (RGBA)
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ])
-}
-
-/** Готовый файл PNG со знаком нужного размера — одной строкой. */
-export function markPNG(size, opts) {
-  return encodePNG(drawMark({ size, order: 'rgba', ...(opts || {}) }), size)
-}
-
-// ── Файл иконки Windows (.ico) ───────────────────────────────────────────────
-//
-// v1.2.444 — ЗАЧЕМ СОБИРАЕМ САМИ. Если отдать electron-builder один большой PNG, он
-// сделает .ico УМЕНЬШЕНИЕМ этой картинки. Замер: при уменьшении 512→16 от знака остаётся
-// 1 белый пиксель вместо 41 — в панели задач серое пятно. Поэтому кладём в .ico картинки,
-// НАРИСОВАННЫЕ каждая под свой размер (у мелких линия толще, см. weights()).
-//
-// Готовый .ico electron-builder НЕ перекодирует: по его коду (app-builder-lib,
-// util/iconConverter.js) — «If source already has the target extension … return it
-// directly», проверяются только заголовок и что максимальный размер ≥ 256.
-//
-// Формат .ico (спецификация Microsoft ICO):
-//   заголовок 6 байт: 0,0 | тип=1 | сколько картинок
-//   затем по 16 байт на картинку: ширина, высота (0 = 256), 0, 0, слоёв=1, бит=32,
-//                                 сколько байт данных, с какого места они лежат
-//   затем сами картинки. С Windows Vista внутрь можно кладать PNG — им и пользуемся.
-
-/** Размеры внутри файла иконки: от крупного к мелкому (256 обязателен для electron-builder). */
-export const ICO_SIZES = [256, 128, 64, 48, 32, 16]
-
-/**
- * Собирает файл иконки Windows со знаком, нарисованным отдельно под каждый размер.
- * @param {number[]} [sizes]
- * @returns {Buffer}
- */
-export function buildICO(sizes) {
-  const list = (sizes || ICO_SIZES).map(size => ({ size, png: markPNG(size) }))
-  const dir = Buffer.alloc(6 + list.length * 16)
-  dir.writeUInt16LE(0, 0)             // зарезервировано
-  dir.writeUInt16LE(1, 2)             // тип: 1 = иконка
-  dir.writeUInt16LE(list.length, 4)   // сколько картинок внутри
-  let offset = dir.length
-  list.forEach((img, i) => {
-    const o = 6 + i * 16
-    dir[o] = img.size >= 256 ? 0 : img.size       // 0 означает 256 — так велит формат
-    dir[o + 1] = img.size >= 256 ? 0 : img.size
-    dir[o + 2] = 0                                // цветов в палитре: 0 = палитры нет
-    dir[o + 3] = 0                                // зарезервировано
-    dir.writeUInt16LE(1, o + 4)                   // слоёв
-    dir.writeUInt16LE(32, o + 6)                  // бит на точку (с прозрачностью)
-    dir.writeUInt32LE(img.png.length, o + 8)
-    dir.writeUInt32LE(offset, o + 12)
-    offset += img.png.length
-  })
-  return Buffer.concat([dir, ...list.map(i => i.png)])
 }

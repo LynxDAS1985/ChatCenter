@@ -6,7 +6,9 @@
 // нужного размера, прописан в сборке, знак виден даже на 16 пикселях.
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
-import { drawMark, encodePNG, markPNG, buildICO, ICO_SIZES, MARK } from '../../shared/appIconMark.js'
+import { drawMark, MARK } from '../../shared/appIconMark.js'
+// v1.2.449: упаковка в файлы вынесена в appIconFiles.js (appIconMark.js перерос лимит 300)
+import { encodePNG, markPNG, buildICO, ICO_SIZES } from '../../shared/appIconFiles.js'
 
 /** Читает размер картинки прямо из заголовка PNG (ширина/высота лежат по смещению 16 и 20). */
 function pngSize(buf) {
@@ -74,14 +76,77 @@ describe('Рисунок знака', () => {
     }
   })
 
-  it('плитка закрашена почти целиком, а по углам — прозрачные скругления', () => {
+  // v1.2.449: ПО УМОЛЧАНИЮ плитки БОЛЬШЕ НЕТ — фон прозрачный. В панели задач Windows
+  // тёмный квадрат выглядел заплаткой на общем фоне (жалоба пользователя).
+  it('🔴 ЛОВУШКА: по умолчанию фон ПРОЗРАЧНЫЙ, тёмная плитка не возвращается', () => {
     const s = 64
     const rgba = drawMark({ size: s, order: 'rgba' })
+    const A = (x, y) => rgba[(y * s + x) * 4 + 3]
+    // все четыре угла — полностью прозрачны
+    for (const [x, y] of [[0, 0], [s - 1, 0], [0, s - 1], [s - 1, s - 1]]) {
+      expect(A(x, y), `угол ${x},${y} должен быть прозрачным`).toBe(0)
+    }
+    let opaque = 0
+    for (let i = 3; i < rgba.length; i += 4) if (rgba[i] > 200) opaque++
+    expect(opaque).toBeGreaterThan(0)              // знак нарисован
+    expect(opaque).toBeLessThan(s * s * 0.45)      // но фон НЕ залит
+  })
+
+  it('🔴 ЛОВУШКА: на прозрачном фоне у знака НЕТ тёмной кромки', () => {
+    // Так было до v1.2.449: цвет полупрозрачных точек смешивался с цветом ПЛИТКИ,
+    // и по краю знака оставался тёмный ободок. Теперь на краю меняется только
+    // прозрачность, а цвет остаётся своим — значит тёмных точек быть не должно.
+    const s = 64
+    const rgba = drawMark({ size: s, order: 'rgba' })
+    let dark = 0
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (rgba[i + 3] === 0) continue
+      if (rgba[i] < 45 && rgba[i + 1] < 45 && rgba[i + 2] < 45) dark++
+    }
+    expect(dark, 'найдены тёмные точки — вернулось смешивание с цветом плитки').toBe(0)
+  })
+
+  it('плитку можно попросить явно — тогда она закрашена почти целиком, углы скруглены', () => {
+    const s = 64
+    const rgba = drawMark({ size: s, order: 'rgba', tile: true })
     let opaque = 0
     for (let i = 3; i < rgba.length; i += 4) if (rgba[i] > 200) opaque++
     expect(opaque).toBeGreaterThan(s * s * 0.7)  // плитка есть
     expect(opaque).toBeLessThan(s * s)           // углы скруглены (не квадрат)
-    expect(rgba[3]).toBeLessThan(60)             // самый левый верхний пиксель — прозрачный
+    expect(rgba[3]).toBeLessThan(60)             // левый верхний пиксель — прозрачный
+  })
+
+  it('🔴 ЛОВУШКА: знак увеличен, но НЕ обрезан краем ни на одном размере', () => {
+    // Первая версия этой правки задала предел «на глаз» (1.12) и на 32 px срезала
+    // левые концы полос: у них есть толщина, и половина её уходила за край.
+    for (const size of [256, 128, 64, 48, 32, 16]) {
+      const zoom = size <= 32 ? 1.2 : 1.3
+      const buf = drawMark({ size, order: 'rgba', zoom })
+      // столбец 0 и последний столбец: если знак вылез, кисть залила бы их плотно
+      let leftEdge = 0, rightEdge = 0
+      for (let y = 0; y < size; y++) {
+        if (buf[(y * size + 0) * 4 + 3] > 250) leftEdge++
+        if (buf[(y * size + size - 1) * 4 + 3] > 250) rightEdge++
+      }
+      expect(leftEdge, `size=${size}: знак прижат к левому краю — вероятен обрез`).toBeLessThan(size * 0.5)
+      expect(rightEdge, `size=${size}: знак прижат к правому краю — вероятен обрез`).toBeLessThan(size * 0.5)
+    }
+  })
+
+  it('увеличение реально работает на крупных размерах (+30%)', () => {
+    const bbox = (o) => {
+      const n = o.size
+      const buf = drawMark({ order: 'rgba', ...o })
+      let x0 = n, x1 = -1
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+        if (buf[(y * n + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x }
+      }
+      return x1 - x0 + 1
+    }
+    const was = bbox({ size: 128, zoom: 1 })
+    const now = bbox({ size: 128 })          // по умолчанию 1.3
+    expect(now / was).toBeGreaterThan(1.25)
+    expect(now / was).toBeLessThan(1.35)
   })
 
   it('без плитки знак прозрачный (вид для трея/мест со своим фоном)', () => {
@@ -248,7 +313,10 @@ describe('Проводка: трей, окно, экраны загрузки', 
   it('трей рисует ЗНАК, а не прежний синий круг', () => {
     const src = fs.readFileSync('main/utils/overlayIcon.js', 'utf8')
     expect(src).toContain("import { drawMark } from '../../shared/appIconMark.js'")
-    expect(src).toMatch(/createTrayBadgeIcon[\s\S]{0,300}drawMark\(\{ size, order: 'bgra' \}\)/)
+    // v1.2.449: у трея появился свой множитель размера (zoom), поэтому проверяем
+    // сам вызов и его обязательные части, а не дословную строку.
+    expect(src).toMatch(/createTrayBadgeIcon[\s\S]{0,600}drawMark\(\{[^}]*size[^}]*order: 'bgra'[^}]*\}\)/)
+    expect(src).toMatch(/drawMark\(\{[^}]*zoom: 1\.2[^}]*\}\)/)  // трей просили крупнее на 20%
     // старый круг телеграмного цвета должен уйти
     expect(src).not.toContain('setPixelBGRA(buf, size, x, y, 42, 171, 238)')
   })

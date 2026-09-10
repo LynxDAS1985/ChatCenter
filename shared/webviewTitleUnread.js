@@ -40,7 +40,11 @@ export function createTitleUnreadHandler(ctx) {
     playNotificationSound, markHealthOk,
   } = ctx || {}
 
-  return function handleTitleUpdated(el, messengerId, e) {
+  // 🔴 ВОЗВРАЩАЕМ ОБЪЕКТ, а не функцию: в v1.2.448 модуль отдавал функцию, а webviewSetup
+  // звал её как `titleUnread.handleTitleUpdated(...)` → в живом приложении сыпалось
+  // «titleUnread.handleTitleUpdated is not a function», а тест этого НЕ ловил, потому что
+  // вызывал модуль ИНАЧЕ, чем приложение. Вид единый с createPageFixups (тоже объект).
+  function handleTitleUpdated(el, messengerId, e) {
         const match = e.title?.match(/\((\d+)\)/) || e.title?.match(/^(\d+)\s+непрочитанн/)
         if (match) {
           const count = parseInt(match[1], 10) || 0
@@ -110,4 +114,6 @@ export function createTitleUnreadHandler(ctx) {
           }
         }
   }
+
+  return { handleTitleUpdated }
 }

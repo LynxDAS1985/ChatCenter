@@ -20,7 +20,10 @@ var path = require('path')
 var assert = require('assert')
 
 var ROOT = path.resolve(__dirname, '..', '..')
-var SCAN_DIRS = ['src', 'main', 'shared']
+// v1.2.449: добавлена scripts/ — там живут рабочие скрипты проекта (например
+// scripts/make-app-icon.cjs, единственный, кто зовёт shared/appIconFiles.js).
+// Без этого страж считал бы такой модуль «ничьим» и требовал исключения на пустом месте.
+var SCAN_DIRS = ['src', 'main', 'shared', 'scripts']
 var CODE_EXT = ['.js', '.jsx', '.cjs', '.mjs']
 
 // Файлы, которым живой вызов НЕ нужен, с причиной. Пустой список — норма;
@@ -64,9 +67,8 @@ function test(name, fn) {
 console.log('\n── Проводка вынесенных модулей (shared/*.js): ──')
 
 // Все файлы кода проекта, КРОМЕ тестов — только они считаются «живым вызовом».
-var codeFiles = walk(path.join(ROOT, 'src'), [])
-walk(path.join(ROOT, 'main'), codeFiles)
-walk(path.join(ROOT, 'shared'), codeFiles)
+var codeFiles = []
+SCAN_DIRS.forEach(function (d) { walk(path.join(ROOT, d), codeFiles) })
 
 // v1.2.448: обходим ПОДПАПКИ тоже — после переезда src/shared/ в shared/ появилась
 // вложенная tools/ (инструменты ИИ-агента), и без обхода её проводка осталась бы без присмотра.
@@ -84,8 +86,11 @@ sharedFiles.forEach(function (name) {
   var base = name.split('/').pop()
   test(rel + ' — есть живой вызов из приложения', function () {
     if (ALLOWED_WITHOUT_CALLER[rel]) return
-    // Ищем именно импорт/require, а не упоминание в комментарии.
-    var needle = new RegExp("(from|require\\()\\s*['\"][^'\"]*" + base.replace('.', '\\.') + "['\"]")
+    // Ищем именно подключение модуля, а не упоминание в комментарии.
+    // v1.2.449: добавлен ДИНАМИЧЕСКИЙ import(...) — так модуль подключает
+    // scripts/make-app-icon.cjs (скрипт старого формата). Без этого страж считал
+    // рабочий модуль «ничьим»: дыра нашлась на живом случае, а не придумана.
+    var needle = new RegExp("(from|require\\(|import\\()\\s*['\"][^'\"]*" + base.replace('.', '\\.') + "['\"]")
     var callers = codeFiles.filter(function (f) {
       return f.rel !== rel && needle.test(f.text)
     }).map(function (f) { return f.rel })

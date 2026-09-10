@@ -15,6 +15,9 @@ const notifRendererCode = fs.readFileSync('main/notification.js', 'utf8')
 const webviewHandleCode = fs.readFileSync('src/utils/webviewHandleNewMessage.js', 'utf8')
 const webviewSetupCode = fs.readFileSync('src/utils/webviewSetup.js', 'utf8')
 const consoleHandlerCode = fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8')
+// v1.2.448: разбор «непрочитанное по заголовку вкладки» вынесен из webviewSetup.js
+// в shared/webviewTitleUnread.js — диагностические записи МАКСа теперь ТАМ.
+const titleUnreadCode = fs.readFileSync('shared/webviewTitleUnread.js', 'utf8')
 
 test('main dedup uses sender/chat scope', () => {
   assert(notifMgrCode.includes('function buildNotificationScope'))
@@ -74,10 +77,14 @@ test('MAX IPC active-chat messages bypass old sender/mid dedup', () => {
 })
 
 test('MAX renderer diagnostics log IPC and title deltas', () => {
-  assert(webviewSetupCode.includes('[IPC-MAX] channel='))
-  assert(webviewSetupCode.includes('MAX page-title-updated'))
-  assert(webviewSetupCode.includes('activeId=${activeIdRef.current}'))
-  assert(webviewSetupCode.includes('focused=${windowFocusedRef.current}'))
+  // Проверка НЕ ослаблена, только разведена по двум файлам после выноса блока (v1.2.448):
+  // запись про IPC осталась в webviewSetup, записи про заголовок уехали в модуль.
+  assert(webviewSetupCode.includes('[IPC-MAX] channel='), 'нет записи [IPC-MAX] channel= в webviewSetup.js')
+  assert(titleUnreadCode.includes('MAX page-title-updated'), 'нет записи MAX page-title-updated в shared/webviewTitleUnread.js')
+  assert(titleUnreadCode.includes('activeId=${activeIdRef.current}'), 'в записи МАКСа потерялось activeId')
+  assert(titleUnreadCode.includes('focused=${windowFocusedRef.current}'), 'в записи МАКСа потерялось focused')
+  // И связь между файлами: вынесенный разбор обязан быть подключён, иначе записей не будет вовсе.
+  assert(webviewSetupCode.includes('titleUnread.handleTitleUpdated('), 'webviewSetup.js не зовёт вынесенный разбор заголовка')
 })
 
 console.log('\nResult: ' + passed + ' ok / ' + failed + ' fail')
