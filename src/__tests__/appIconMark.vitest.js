@@ -144,9 +144,11 @@ describe('Рисунок знака', () => {
       return x1 - x0 + 1
     }
     const was = bbox({ size: 128, zoom: 1 })
-    const now = bbox({ size: 128 })          // по умолчанию 1.3
-    expect(now / was).toBeGreaterThan(1.25)
-    expect(now / was).toBeLessThan(1.35)
+    const now = bbox({ size: 128 })          // по умолчанию 1.45, упирается в предел
+    expect(now / was).toBeGreaterThan(1.35)
+    // v1.2.450: знак раздут ДО ПРЕДЕЛА — занимает почти всю ширину картинки
+    expect(now / 128).toBeGreaterThan(0.95)
+    expect(now).toBeLessThanOrEqual(128)     // но не больше картинки
   })
 
   it('без плитки знак прозрачный (вид для трея/мест со своим фоном)', () => {
