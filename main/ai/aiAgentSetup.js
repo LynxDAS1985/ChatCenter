@@ -8,16 +8,16 @@
 // Используется в main.js → initAiToolIpcHandlers(deps).
 // Без этого agent loop возвращает 'no_registry_available' (как в v0.99.0).
 
-import { createToolRegistry } from '../../src/shared/tools/toolRegistry.js'
-import { gotoMessageTool } from '../../src/shared/tools/handlers/gotoMessage.js'
-import { getChatHistoryTool } from '../../src/shared/tools/handlers/getChatHistory.js'
-import { searchMessagesTool } from '../../src/shared/tools/handlers/searchMessages.js'
-import { replyToMessageTool } from '../../src/shared/tools/handlers/replyToMessage.js'
-import { markAsReadTool } from '../../src/shared/tools/handlers/markAsRead.js'
+import { createToolRegistry } from '../../shared/tools/toolRegistry.js'
+import { gotoMessageTool } from '../../shared/tools/handlers/gotoMessage.js'
+import { getChatHistoryTool } from '../../shared/tools/handlers/getChatHistory.js'
+import { searchMessagesTool } from '../../shared/tools/handlers/searchMessages.js'
+import { replyToMessageTool } from '../../shared/tools/handlers/replyToMessage.js'
+import { markAsReadTool } from '../../shared/tools/handlers/markAsRead.js'
 // v1.0.0 (Phase 4): tools для Tasks + Reminders.
-import { createTaskTool } from '../../src/shared/tools/handlers/createTask.js'
-import { listTasksTool } from '../../src/shared/tools/handlers/listTasks.js'
-import { scheduleReminderTool } from '../../src/shared/tools/handlers/scheduleReminder.js'
+import { createTaskTool } from '../../shared/tools/handlers/createTask.js'
+import { listTasksTool } from '../../shared/tools/handlers/listTasks.js'
+import { scheduleReminderTool } from '../../shared/tools/handlers/scheduleReminder.js'
 
 let _registry = null
 let _deps = null

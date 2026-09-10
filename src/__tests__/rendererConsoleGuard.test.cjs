@@ -46,7 +46,15 @@ var BASELINE = {
   // и там переписана на запись в журнал приложения (app:log). Запись baseline удалена.
   'src/utils/messengerConfigs.js':          1,
   'src/utils/consoleMessageHandler.js':     1,
-  'src/shared/tools/toolRegistry.js':       1,
+  'shared/tools/toolRegistry.js':           1,   // v1.2.448: переехал из src/shared/
+  // ── shared/: console.* тут ВНУТРИ СТРОК, которые впрыскиваются в ЧУЖУЮ страницу.
+  // Там нашего window.api нет, и мост через консоль — ЕДИНСТВЕННЫЙ способ доставить
+  // строку в журнал (её ловит consoleMessageParser). Это не нарушение правила, а
+  // принятый в проекте канал; в самом коде интерфейса console.* по-прежнему запрещён.
+  'shared/browserBannerHider.js':           2,
+  'shared/vkExecFallback.js':               2,
+  // shared/changelogData.js в baseline НЕ нужен: там console.* только в тексте «Что нового»,
+  // без вызова — страж такое не считает.
   'src/native/modes/InboxMode.jsx':         1,
   'src/native/hooks/useFileAttach.js':      1,
   'src/hooks/useAppBootstrap.js':           1,
@@ -81,6 +89,10 @@ function listAllRendererFiles() {
     }
   }
   walk('src')
+  // v1.2.448: обходим и shared/ — оттуда код попадает и в интерфейс, и в главный процесс.
+  // Раньше папка была вне присмотра, и переезд src/shared/ → shared/ увёл бы из-под
+  // стража уже существующий файл (toolRegistry.js). Теперь покрытие не теряется.
+  walk('shared')
   return files
 }
 

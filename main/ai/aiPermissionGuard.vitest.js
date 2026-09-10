@@ -6,7 +6,7 @@ import {
   getPermissionTier,
   isUserCustomizable,
 } from './aiPermissionGuard.js'
-import { createNotificationSource } from '../../src/shared/notificationSource.js'
+import { createNotificationSource } from '../../shared/notificationSource.js'
 
 const SOURCE_NATIVE = createNotificationSource({
   messengerId: 'native_cc',

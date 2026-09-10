@@ -8,7 +8,12 @@ export default defineConfig({
     environment: 'happy-dom',
     globals: true,
     // v0.97.0 (Phase 1): main/**/*.vitest.js — для AI adapter тестов в main/ai/
-    include: ['src/**/*.vitest.jsx', 'src/**/*.vitest.js', 'main/**/*.vitest.js'],
+    // v1.2.448: добавлена shared/** — папка была НЕ включена, и тесты в ней МОЛЧА не
+    // запускались (shared/userStatusMap.vitest.js не запускался с момента создания, а при
+    // переезде src/shared/ в shared/ из прогона выпало бы ещё 5 файлов). Страж, который
+    // это ловит, — в src/__tests__/sharedWiring.test.cjs («тесты, которые никто не запускает»).
+    include: ['src/**/*.vitest.jsx', 'src/**/*.vitest.js', 'main/**/*.vitest.js',
+      'shared/**/*.vitest.js', 'shared/**/*.vitest.jsx'],
     css: false,
     // v0.87.32: фиксируем UTC для toLocaleTimeString/DateString в snapshot-тестах
     setupFiles: ['./vitest.setup.js'],

@@ -23,7 +23,7 @@ beforeEach(() => {
 })
 
 import { initAiToolIpcHandlers, _internal } from './aiToolIpcHandlers.js'
-import { createToolRegistry } from '../../src/shared/tools/toolRegistry.js'
+import { createToolRegistry } from '../../shared/tools/toolRegistry.js'
 
 const fakeEvent = {
   sender: { send: vi.fn(), isDestroyed: () => false },

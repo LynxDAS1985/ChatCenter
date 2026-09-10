@@ -2,8 +2,8 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { runAgentLoop, getAdapter } from './aiToolExecutor.js'
-import { createToolRegistry } from '../../src/shared/tools/toolRegistry.js'
-import { createNotificationSource } from '../../src/shared/notificationSource.js'
+import { createToolRegistry } from '../../shared/tools/toolRegistry.js'
+import { createNotificationSource } from '../../shared/notificationSource.js'
 
 const SOURCE = createNotificationSource({
   messengerId: 'native_cc',

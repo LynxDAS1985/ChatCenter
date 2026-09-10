@@ -18,6 +18,8 @@ import { createVkExecFallbackRuntime } from '../../shared/vkExecFallback.js'
 // v1.2.447: доводки чужой страницы (плашки «браузер устарел» + запасной впрыск
 // перехватчика) вынесены в shared/webviewPageFixups.js — файл стоял на 597/605.
 import { createPageFixups } from '../../shared/webviewPageFixups.js'
+// v1.2.448: разбор «непрочитанное по заголовку вкладки» вынесен туда же, в shared/.
+import { createTitleUnreadHandler } from '../../shared/webviewTitleUnread.js'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 import { markHealthError, markHealthOk, markHealthPending, markHealthSlow } from './connectionHealth.js'
 try { window.__ccStartupMark?.('module:webviewSetup', 'module evaluated') } catch {}
@@ -183,6 +185,18 @@ export function createWebviewSetup(deps) {
 
   // ── Инициализация WebView ─────────────────────────────────────────────────
   const vkExecFallback = createVkExecFallbackRuntime({ isVkWebview, traceNotif, handleNewMessage, monitorReadyRef, timersRef: vkFallbackTimers })
+  // v1.2.448: один узел связей на весь модуль — не на каждую вкладку.
+  const titleUnread = createTitleUnreadHandler({
+    notifCountRef, notifReadyRef, lastRibbonTsRef, notifMidTsRef, lastSoundTsRef,
+    recentNotifsRef, senderCacheRef, titleUnreadBaselineRef,
+    maxTitleFallbackTimers, maxTitleFallbackStateRef,
+    settingsRef, messengersRef, activeIdRef, windowFocusedRef,
+    setUnreadCounts, updateHealth, healthLabel, healthUrl, scheduleHealthProbe,
+    traceNotif, handleNewMessage, cleanupSenderCache, isOzonWebview,
+    decideMaxTitleUnread, resetMaxTitleUnread, scheduleMaxTitleFallback,
+    playNotificationSound, markHealthOk,
+  })
+
   const setWebviewRef = (el, messengerId) => {
     if (el && !el._chatcenterInit) {
       el._chatcenterInit = true
@@ -341,76 +355,10 @@ export function createWebviewSetup(deps) {
       })
 
       // ── Page events: title-update → unread count + звук (НЕ ribbon) ──
-      addListener('page-title-updated', (e) => {
-        const match = e.title?.match(/\((\d+)\)/) || e.title?.match(/^(\d+)\s+непрочитанн/)
-        if (match) {
-          const count = parseInt(match[1], 10) || 0
-          notifCountRef.current[messengerId] = Math.min(notifCountRef.current[messengerId] || 0, count)
-          setUnreadCounts(prev => {
-            if (prev[messengerId] === count) return prev
-            const prevCount = prev[messengerId] || 0
-            const titleUpdateUrlForDiag = (() => { try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' } })(); if (/web\.max\.ru/.test(titleUpdateUrlForDiag)) traceNotif('debug', 'info', messengerId, `title-count ${count}`, `MAX page-title-updated raw="${String(e.title || '').slice(0, 120)}" prevUnread=${prevCount} delta=${count - prevCount} notifRef=${notifCountRef.current[messengerId] || 0} activeId=${activeIdRef.current} focused=${windowFocusedRef.current} url=${titleUpdateUrlForDiag.slice(0, 120)}`)
-            // v0.86.0: title-update остаётся звуковым fallback для мессенджеров без rich-event.
-            // v1.2.7: MAX (web.max.ru) исключён — звук играет только после подтверждённого ribbon,
-            // чтобы не было timestamp-фантомов, двойного звука и "пик без уведомления".
-            const titleUpdateUrl = (() => { try { return el?.getURL?.() || messengersRef.current.find(x => x.id === messengerId)?.url || '' } catch { return '' } })()
-            const isMaxTitleFallback = /web\.max\.ru/.test(titleUpdateUrl)
-            const titleDecision = decideMaxTitleUnread({ state: titleUnreadBaselineRef.current, messengerId, messengerUrl: titleUpdateUrl, count })
-            if (isMaxTitleFallback && !titleDecision.schedule) traceNotif('debug', 'info', messengerId, `title-count ${count}`, `MAX title-only no-ribbon | reason=${titleDecision.reason} raw="${String(e.title || '').slice(0, 120)}" count=${count} prevUnread=${prevCount} url=${titleUpdateUrl.slice(0, 120)}`)
-            if (titleDecision.schedule && count > prevCount && notifReadyRef.current[messengerId]) {
-              const titleDelta = isMaxTitleFallback && titleDecision.prevCount !== null ? Math.max(1, count - titleDecision.prevCount) : count - prevCount
-              scheduleMaxTitleFallback({
-                el,
-                messengerId,
-                delta: titleDelta,
-                messengerUrl: titleUpdateUrl,
-                notifReadyRef,
-                lastRibbonTsRef,
-                notifMidTsRef,
-                timersRef: maxTitleFallbackTimers,
-                fallbackStateRef: maxTitleFallbackStateRef,
-                recentNotifsRef,
-                senderCacheRef,
-                cleanupSenderCache,
-                handleNewMessage,
-                traceNotif,
-              })
-              const s = settingsRef.current
-              const mn = (s.messengerNotifs || {})[messengerId] || {}
-              const muted = !!(s.mutedMessengers || {})[messengerId]
-              const sndOn = mn.sound !== undefined ? mn.sound : !muted
-              const lastSnd = lastSoundTsRef.current[messengerId] || 0
-              const sinceLast = Date.now() - lastSnd
-              if (!isMaxTitleFallback && s.soundEnabled !== false && sndOn && sinceLast > 3000) {
-                const mi = messengersRef.current.find(x => x.id === messengerId)
-                playNotificationSound(mi?.color)
-                lastSoundTsRef.current[messengerId] = Date.now()
-                traceNotif('sound', 'pass', messengerId, `title +${titleDelta}`, 'звук title-update')
-              } else if (isMaxTitleFallback) {
-                traceNotif('sound', 'info', messengerId, `title +${titleDelta}`, 'MAX: title-update звук пропущен, ждём подтверждённый ribbon')
-              }
-            }
-            return { ...prev, [messengerId]: count }
-          })
-          updateHealth(messengerId, prev => markHealthOk(prev, {
-            id: messengerId,
-            type: 'webview',
-            label: healthLabel(messengerId),
-            url: healthUrl(el, messengerId),
-            details: 'title-update ответил',
-          }))
-          scheduleHealthProbe(el, messengerId, 'Проверка после title-update', 250)
-        } else if (activeIdRef.current === messengerId && windowFocusedRef.current) {
-          // v0.74.0: Title без числа — пользователь смотрит и всё прочитал. v1.2.374: КРОМЕ Ozon — у него в
-          // заголовке числа НЕТ никогда, а непрочитанное ведёт наш сторож (ozonCounts) → обнуление сбрасывало значок рейла Ozon в 0.
-          const titleResetUrl = (() => { try { return el?.getURL?.() || '' } catch { return '' } })()
-          if (!isOzonWebview(el, messengerId)) {
-            notifCountRef.current[messengerId] = 0
-            try { if (/web\.max\.ru/.test(titleResetUrl)) traceNotif('debug', 'info', messengerId, '', `MAX title reset skipped | url=${titleResetUrl.slice(0, 120)} kept=true`); else resetMaxTitleUnread(titleUnreadBaselineRef.current, messengerId, titleResetUrl) } catch {}
-            setUnreadCounts(prev => ((prev[messengerId] || 0) === 0) ? prev : { ...prev, [messengerId]: 0 })
-          }
-        }
-      })
+      // ── СЕКЦИЯ: непрочитанное по заголовку вкладки ──
+      // Сам разбор живёт в shared/webviewTitleUnread.js (см. комментарий там: вынесено
+      // ради разгрузки файла И чтобы этот путь наконец можно было прогонять тестом).
+      addListener('page-title-updated', (e) => titleUnread.handleTitleUpdated(el, messengerId, e))
 
       // ── СЕКЦИЯ: IPC-message — обработка сообщений от WebView ──
       addListener('ipc-message', (e) => {

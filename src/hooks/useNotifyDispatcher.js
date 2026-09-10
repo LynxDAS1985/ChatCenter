@@ -11,7 +11,7 @@
 // См. .memory-bank/ai-agent-plan/architecture.md (Уровень 2: Action Bus)
 
 import { useRef, useCallback } from 'react'
-import { sourceKey } from '../shared/notificationSource.js'
+import { sourceKey } from '../../shared/notificationSource.js'
 
 const DEBOUNCE_MS = 500
 const MAX_HISTORY_SIZE = 100

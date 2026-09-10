@@ -169,8 +169,17 @@ test('WebView timeout → slow логируется', function() {
 })
 
 // v0.86.0: title-update звук для WhatsApp (ribbon только через __CC_NOTIF__)
+// v1.2.448: сам разбор заголовка переехал в shared/webviewTitleUnread.js (разгрузка
+// webviewSetup.js), поэтому проверка смотрит ТУДА. Проверка НЕ ослаблена: рядом сверяется,
+// что webviewSetup по-прежнему зовёт вынесенный разбор — иначе звук бы просто не сработал.
+// Поведение целиком покрыто src/__tests__/webviewTitleUnread.vitest.js (15 проверок).
+var titleCode = fs.readFileSync('shared/webviewTitleUnread.js', 'utf8')
 test('page-title-updated: звук title-update', function() {
-  assert(appCode.includes('звук title-update'), 'page-title-updated должен играть звук при увеличении count')
+  assert(titleCode.includes('звук title-update'), 'разбор заголовка должен играть звук при увеличении count')
+})
+test('page-title-updated: разбор вынесен, но подключён', function() {
+  assert(appCode.includes("from '../../shared/webviewTitleUnread.js'"), 'webviewSetup должен подключать вынесенный разбор')
+  assert(appCode.includes('titleUnread.handleTitleUpdated('), 'webviewSetup должен ЗВАТЬ вынесенный разбор')
 })
 
 console.log('\\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

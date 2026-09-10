@@ -10,7 +10,7 @@
 import { ipcMain } from 'electron'
 import { runAgentLoop } from '../ai/aiToolExecutor.js'
 import { buildAgentContext } from '../ai/aiContextBuilder.js'
-import { validateNotificationSource } from '../../src/shared/notificationSource.js'
+import { validateNotificationSource } from '../../shared/notificationSource.js'
 
 // Регистр activeRuns — для возможности cancel.
 const activeRuns = new Map()  // requestId → { abortController }

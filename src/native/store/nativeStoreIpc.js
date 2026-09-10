@@ -4,7 +4,7 @@
 // Возвращает функцию-отписку (для useEffect cleanup).
 import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostics.js'
 // v0.96.0 (Phase 0 M0.4): NotificationSource — паспорт сообщения для уведомлений.
-import { createNotificationSource } from '../../shared/notificationSource.js'
+import { createNotificationSource } from '../../../shared/notificationSource.js'
 // v1.2.74 (A1): фоновая догрузка чёткого превью плиток альбома в окно уведомления.
 import { preloadAlbumThumb } from '../utils/albumThumbPreload.js'
 import { buildNotifAlbum } from '../../../shared/notifAlbum.js'

@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { buildAgentContext, DEFAULT_SYSTEM_PROMPT } from './aiContextBuilder.js'
-import { createNotificationSource } from '../../src/shared/notificationSource.js'
+import { createNotificationSource } from '../../shared/notificationSource.js'
 
 const SOURCE = createNotificationSource({
   messengerId: 'native_cc',

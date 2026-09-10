@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useNotifyDispatcher } from './useNotifyDispatcher.js'
-import { createNotificationSource } from '../shared/notificationSource.js'
+import { createNotificationSource } from '../../shared/notificationSource.js'
 
 const SOURCE_1 = createNotificationSource({
   messengerId: 'native_cc',

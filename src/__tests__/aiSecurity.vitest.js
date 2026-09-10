@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest'
 import { checkPermission } from '../../main/ai/aiPermissionGuard.js'
 import { createAuditRecord } from '../stores/auditStore.js'
 import { buildAgentContext } from '../../main/ai/aiContextBuilder.js'
-import { createNotificationSource } from '../shared/notificationSource.js'
+import { createNotificationSource } from '../../shared/notificationSource.js'
 
 const NATIVE_SOURCE = createNotificationSource({
   messengerId: 'native_cc',

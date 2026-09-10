@@ -68,17 +68,24 @@ var codeFiles = walk(path.join(ROOT, 'src'), [])
 walk(path.join(ROOT, 'main'), codeFiles)
 walk(path.join(ROOT, 'shared'), codeFiles)
 
-var sharedFiles = fs.readdirSync(path.join(ROOT, 'shared'))
-  .filter(function (n) { return /\.js$/.test(n) && !/\.vitest\.js$/.test(n) && !/\.test\.js$/.test(n) })
+// v1.2.448: обходим ПОДПАПКИ тоже — после переезда src/shared/ в shared/ появилась
+// вложенная tools/ (инструменты ИИ-агента), и без обхода её проводка осталась бы без присмотра.
+var sharedFiles = walk(path.join(ROOT, 'shared'), [])
+  .map(function (f) { return f.rel.replace(/^shared\//, '') })
+  .filter(function (n) { return /\.js$/.test(n) })
 
 assert(sharedFiles.length > 5, 'ожидали найти модули в shared/, найдено ' + sharedFiles.length)
 
 sharedFiles.forEach(function (name) {
   var rel = 'shared/' + name
+  // v1.2.448: ищем по ИМЕНИ файла, а не по пути от shared/. Внутри подпапки соседи
+  // импортируют друг друга коротко (`'../toolSchemas.js'`), и поиск по полному пути
+  // объявил бы такой модуль «ничьим».
+  var base = name.split('/').pop()
   test(rel + ' — есть живой вызов из приложения', function () {
     if (ALLOWED_WITHOUT_CALLER[rel]) return
     // Ищем именно импорт/require, а не упоминание в комментарии.
-    var needle = new RegExp("(from|require\\()\\s*['\"][^'\"]*" + name.replace('.', '\\.') + "['\"]")
+    var needle = new RegExp("(from|require\\()\\s*['\"][^'\"]*" + base.replace('.', '\\.') + "['\"]")
     var callers = codeFiles.filter(function (f) {
       return f.rel !== rel && needle.test(f.text)
     }).map(function (f) { return f.rel })
@@ -112,6 +119,50 @@ test('доводки страницы зовут безопасный прята
 test('в renderer нет console.* — записи только через журнал приложения', function () {
   assert(!/console\.(log|warn|error)\s*\(/.test(fixups), 'в shared/webviewPageFixups.js не должно быть console.*')
   assert(!/console\.(log|warn|error)\s*\(/.test(setup), 'в src/utils/webviewSetup.js не должно быть console.*')
+})
+
+console.log('\n── Тесты, которые никто не запускает: ──')
+
+// 🔴 РЕАЛЬНЫЙ СЛУЧАЙ (v1.2.448): в настройке прогона (`vitest.config.mjs`) были перечислены
+// только `src/**` и `main/**`. Из-за этого `shared/userStatusMap.vitest.js` НЕ запускался с
+// самого своего создания, а переезд общего кода в `shared/` увёл бы из прогона ещё 5 файлов —
+// и никто бы не заметил: «все тесты зелёные», просто их стало меньше.
+test('🔴 ЛОВУШКА: каждый файл *.vitest.* попадает в прогон (иначе тест есть, а проверки нет)', function () {
+  var cfg = fs.readFileSync(path.join(ROOT, 'vitest.config.mjs'), 'utf8')
+  var inc = cfg.split('include:')[1].split(']')[0]
+  var patterns = (inc.match(/'[^']+'/g) || []).map(function (x) { return x.replace(/'/g, '') })
+  assert(patterns.length > 0, 'не смог прочитать список include из vitest.config.mjs')
+
+  // Из шаблона вида 'shared/**/*.vitest.js' берём корневую папку и расширение.
+  var allowed = patterns.map(function (pat) {
+    return { root: pat.split('/')[0], ext: pat.slice(pat.lastIndexOf('.vitest')) }
+  })
+
+  var found = []
+  SCAN_DIRS.forEach(function (d) {
+    var stack = [path.join(ROOT, d)]
+    while (stack.length) {
+      var dir = stack.pop()
+      var entries = []
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch (e) { continue }
+      entries.forEach(function (e) {
+        var full = path.join(dir, e.name)
+        if (e.isDirectory()) {
+          if (e.name !== 'node_modules') stack.push(full)
+        } else if (/\.vitest\.(js|jsx)$/.test(e.name)) {
+          found.push(path.relative(ROOT, full).split(path.sep).join('/'))
+        }
+      })
+    }
+  })
+  assert(found.length > 50, 'ожидали много файлов *.vitest.*, нашли ' + found.length)
+
+  var orphans = found.filter(function (rel) {
+    return !allowed.some(function (a) { return rel.indexOf(a.root + '/') === 0 && rel.slice(-a.ext.length) === a.ext })
+  })
+  assert(orphans.length === 0,
+    'эти тесты НЕ попадают в прогон (' + orphans.length + '): ' + orphans.join(', ') +
+    '\n     Добавь их папку/расширение в include в vitest.config.mjs.')
 })
 
 console.log('\n📊 Результат: ' + (tests.length - failures) + ' ✅ / ' + failures + ' ❌ из ' + tests.length)
