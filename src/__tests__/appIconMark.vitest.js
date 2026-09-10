@@ -314,11 +314,20 @@ describe('Файлы иконки на диске', () => {
 describe('Проводка: трей, окно, экраны загрузки', () => {
   it('трей рисует ЗНАК, а не прежний синий круг', () => {
     const src = fs.readFileSync('main/utils/overlayIcon.js', 'utf8')
-    expect(src).toContain("import { drawMark } from '../../shared/appIconMark.js'")
-    // v1.2.449: у трея появился свой множитель размера (zoom), поэтому проверяем
-    // сам вызов и его обязательные части, а не дословную строку.
+    // v1.2.451: импорт проверяем ПО ИМЕНАМ, а не дословной строкой — список имён растёт
+    // (добавилась справка markScaleInfo для записи в журнал), и дословная проверка
+    // падала при каждом таком добавлении, ничего полезного не сторожа.
+    expect(src).toMatch(/import \{[^}]*drawMark[^}]*\} from '\.\.\/\.\.\/shared\/appIconMark\.js'/)
+    expect(src).toMatch(/import \{[^}]*markScaleInfo[^}]*\} from '\.\.\/\.\.\/shared\/appIconMark\.js'/)
+    // v1.2.449: у трея свой множитель размера, поэтому проверяем сам вызов и его части.
     expect(src).toMatch(/createTrayBadgeIcon[\s\S]{0,600}drawMark\(\{[^}]*size[^}]*order: 'bgra'[^}]*\}\)/)
-    expect(src).toMatch(/drawMark\(\{[^}]*zoom: 1\.2[^}]*\}\)/)  // трей просили крупнее на 20%
+    // v1.2.451: множитель вынесен в одно имя TRAY_ZOOM — рисование и запись в журнал
+    // обязаны брать ОДНО И ТО ЖЕ число, иначе в журнале будет одно, а на экране другое.
+    expect(src).toMatch(/const TRAY_ZOOM = 1\.2/)                 // трей просили крупнее на 20%
+    expect(src).toMatch(/drawMark\(\{[^}]*zoom: TRAY_ZOOM[^}]*\}\)/)
+    expect(src).toMatch(/markScaleInfo\(size, \{ zoom: TRAY_ZOOM \}\)/)
+    // и сама запись о масштабе должна быть — иначе упор в предел снова станет невидимым
+    expect(src).toContain('УПЁРЛИСЬ в предел')
     // старый круг телеграмного цвета должен уйти
     expect(src).not.toContain('setPixelBGRA(buf, size, x, y, 42, 171, 238)')
   })

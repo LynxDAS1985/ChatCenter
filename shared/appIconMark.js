@@ -34,7 +34,12 @@ const TAIL = [[31, 44], [31, 57], [43, 44]]
  * истончается до серой нитки. Проверено увеличением каждого пикселя: на 16 px при
  * толщине 7 пузырь превращался в пятно, при 9.5 — остаётся кольцом с дыркой.
  */
-function weights(px) {
+/**
+ * v1.2.451: экспортируем — эти же числа продублированы в разметке знака для экрана
+ * (шапка окна, обе заставки), и тест сверяет их с этим единственным источником.
+ * Копии там неизбежны: `index.html` показывается ДО загрузки кода и импортировать не может.
+ */
+export function weights(px) {
   if (px <= 24) return { bar: 9.5, ring: 9.5 }
   if (px <= 48) return { bar: 7.5, ring: 7 }
   return { bar: 5, ring: 4.5 }
@@ -130,6 +135,28 @@ function inTriangle(px, py, t) {
  * @param {number} [o.pad] — доля отступа знака внутри плитки (0.14 = 14%)
  * @returns {Buffer}
  */
+/**
+ * v1.2.451 — СПРАВКА о том, каким получится масштаб знака, БЕЗ его рисования.
+ *
+ * Зачем: увеличение знака ограничено (`fitScale`), и раньше по журналу было НЕ ВИДНО,
+ * упёрлись мы в предел или нет. Если кто-то поменяет геометрию или множитель и знак
+ * начнёт срезаться краем, в журнале не будет ни намёка. Отдельная чистая функция —
+ * потому что `drawMark` зовётся 6 раз за сборку файла иконки, и писать из неё в журнал
+ * значило бы засорять его; а записывать надо ОДИН раз там, где значок реально создают.
+ *
+ * @returns {{scale: number, limit: number, clamped: boolean, zoom: number}}
+ */
+export function markScaleInfo(size, o) {
+  const opts = o || {}
+  const tile = opts.tile === true
+  const pad = typeof opts.pad === 'number' ? opts.pad : defaultPad(size)
+  const zoom = typeof opts.zoom === 'number' ? opts.zoom : (tile ? 1 : MARK_ZOOM_NO_TILE)
+  const wanted = (1 - pad * 2) * zoom
+  const limit = fitScale(size)
+  const scale = Math.min(wanted, limit)
+  return { scale, limit, clamped: wanted > limit, zoom }
+}
+
 export function drawMark(o) {
   const size = o.size
   const order = o.order || 'rgba'

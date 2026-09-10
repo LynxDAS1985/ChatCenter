@@ -14,22 +14,26 @@
 set -u
 
 echo ""
-echo "🛡  pre-push: локальные проверки (та же цепочка что в CI)..."
+echo "🛡  pre-push: локальные проверки (список тестов берётся из package.json — как в CI)..."
 echo ""
 
-# Список cjs-тестов из package.json scripts.test (без vitest run / build / e2e)
-# v0.89.1 / Этап 4: убраны mediaCacheQuota, multiAccount, multiAccountUI, unreadAutoPrefetch —
-# удалены вместе с GramJS-интеграцией.
-TESTS=(
-  isSpamText navigateToChat messengerConfigs monitorPreload overlayIcon
-  handleNewMessage messageProcessing mainProcess systemDiagnosticsUi appStructure projectHealth
-  aiProviders consoleMessageParser ipcChannels fileSizeLimits memoryBankSizeLimits
-  featuresReferences memoryLeaks notifHooks componentScope hookOrder
-  mainImports mainRuntime unitRuntime buildContract
-  storageErrors aiErrors extractedModules smokeTest integration
-  integrationChains messengerBackend transparentWindowGuard modernPatternsGuard
-  rendererConsoleGuard sharedWiring
-)
+# 🔴 v1.2.451: СПИСОК ТЕСТОВ БОЛЬШЕ НЕ ХРАНИТСЯ ЗДЕСЬ. Он читается из package.json —
+# оттуда же, откуда его берёт сборка на сервере (CI). Раньше тут лежала КОПИЯ списка,
+# и она разошлась: хук гонял 36 тестов, CI — 45. Из-за этого 10 сентября 2026 отправка
+# прошла локально «зелёной», а сборка на сервере упала на тесте, которого в хуке не было.
+# Теперь список один, и разойтись ему негде.
+#
+# Берём только обычные тесты (node src/__tests__/*.test.cjs). Всё остальное из цепочки
+# CI — vitest (запускается ниже), сборка и e2e — здесь НЕ запускается: e2e поднимает
+# Electron, а это запрещено правилами проекта.
+TESTS=($(node -e "const p=require('./package.json');const m=(p.scripts&&p.scripts.test||'').match(/src\/__tests__\/[A-Za-z0-9_]+\.test\.cjs/g)||[];console.log([...new Set(m.map(x=>x.split('/').pop().replace('.test.cjs','')))].join(' '))"))
+
+if [ ${#TESTS[@]} -eq 0 ]; then
+  echo "❌ pre-push: не смог прочитать список тестов из package.json (scripts.test)."
+  echo "   Проверь, что package.json на месте и в scripts.test есть node src/__tests__/*.test.cjs"
+  echo "🚫 PUSH ЗАБЛОКИРОВАН (лучше остановиться, чем отправить непроверенное)."
+  exit 1
+fi
 
 TOTAL=${#TESTS[@]}
 i=0

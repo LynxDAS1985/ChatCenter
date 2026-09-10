@@ -170,5 +170,35 @@ test('🔴 ЛОВУШКА: каждый файл *.vitest.* попадает в 
     '\n     Добавь их папку/расширение в include в vitest.config.mjs.')
 })
 
+console.log('\n── Цепочка проверок: один список, а не две копии: ──')
+
+// 🔴 РЕАЛЬНЫЙ СЛУЧАЙ (10 сентября 2026): список тестов лежал ДВАЖДЫ — в package.json
+// (его гоняет сборка на сервере) и копией внутри scripts/hooks/pre-push. Копии разошлись:
+// хук гонял 36 тестов, сервер 45. Отправка прошла «зелёной», сборка на сервере упала.
+// Теперь хук читает список ИЗ package.json, и этот тест следит, чтобы копия не вернулась.
+test('🔴 ЛОВУШКА: хук перед отправкой берёт список тестов из package.json, а не свой', function () {
+  var hook = fs.readFileSync(path.join(ROOT, 'scripts/hooks/pre-push'), 'utf8')
+  assert(hook.indexOf('TESTS=($(node ') !== -1,
+    'в scripts/hooks/pre-push список тестов должен читаться из package.json (TESTS=($(node ...))).\n' +
+    '     Жёсткий список внутри хука уже приводил к красной сборке на сервере.')
+  assert(hook.indexOf('package.json') !== -1, 'хук должен ссылаться на package.json как источник списка')
+  // жёсткого перечисления имён быть не должно
+  assert(!/TESTS=\(\s*\n\s*[a-zA-Z]/.test(hook), 'похоже, в хук вернулся жёсткий список тестов')
+})
+
+test('хук и сборка на сервере видят ОДИН И ТОТ ЖЕ набор тестов', function () {
+  var pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
+  var chain = (pkg.scripts && pkg.scripts.test) || ''
+  var names = (chain.match(/src\/__tests__\/[A-Za-z0-9_]+\.test\.cjs/g) || [])
+    .map(function (x) { return x.split('/').pop().replace('.test.cjs', '') })
+  assert(names.length > 40, 'ожидали больше 40 тестов в цепочке, нашли ' + names.length)
+  // каждый файл из списка обязан существовать — иначе и хук, и сервер упадут «на пустом месте»
+  var missing = names.filter(function (n) { return !fs.existsSync(path.join(ROOT, 'src/__tests__/' + n + '.test.cjs')) })
+  assert(missing.length === 0, 'в цепочке перечислены несуществующие тесты: ' + missing.join(', '))
+  // дублей быть не должно (иначе тест гоняется дважды и цепочка дольше без пользы)
+  var dupes = names.filter(function (n, i) { return names.indexOf(n) !== i })
+  assert(dupes.length === 0, 'в цепочке продублированы тесты: ' + dupes.join(', '))
+})
+
 console.log('\n📊 Результат: ' + (tests.length - failures) + ' ✅ / ' + failures + ' ❌ из ' + tests.length)
 if (failures > 0) process.exit(1)

@@ -10,6 +10,8 @@ import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import CcMark from '../components/CcMark.jsx'
+// v1.2.451: толщина линий тоже берётся из единого источника — сверяем её, а не только геометрию
+import { weights, MARK } from '../../shared/appIconMark.js'
 
 const source = readFileSync('shared/appIconMark.js', 'utf8')
 const num = (re, name) => {
@@ -74,6 +76,43 @@ describe('Знак приложения в шапке окна', () => {
     expect(tabbar).not.toContain('Перетащить окно')
     expect(tabbar).not.toContain('cursor-grab')
     expect(tabbar).toContain("WebkitAppRegion: 'drag'")
+  })
+
+
+  // v1.2.451 (находка №12 из ревью): раньше сверялась только ГЕОМЕТРИЯ, а толщина линий
+  // и цвет в копиях были «своими числами» — их могли поправить в одном месте и разъехаться.
+  it('🔴 ЛОВУШКА: толщина линий во всех копиях = толщина из единого источника', () => {
+    // На крупных размерах источник рисует полосу 5 и контур 4.5 — именно эти числа
+    // и стоят в разметке для экрана (она всегда рисуется крупно и масштабируется CSS).
+    const w = weights(64)
+    expect(w.bar, 'изменилась толщина полосы в источнике — обнови разметку знака').toBe(5)
+    expect(w.ring, 'изменилась толщина контура в источнике — обнови разметку знака').toBe(4.5)
+
+    const copies = {
+      'src/components/CcMark.jsx': readFileSync('src/components/CcMark.jsx', 'utf8'),
+      'src/native/components/ChatListLoadingSplash.jsx': readFileSync('src/native/components/ChatListLoadingSplash.jsx', 'utf8'),
+      'index.html': readFileSync('index.html', 'utf8'),
+    }
+    for (const [name, text] of Object.entries(copies)) {
+      const bar = new RegExp('stroke-?[wW]idth="' + w.bar + '"')
+      const ring = new RegExp('stroke-?[wW]idth="' + w.ring + '"')
+      expect(bar.test(text), name + ': толщина полосы должна быть ' + w.bar).toBe(true)
+      expect(ring.test(text), name + ': толщина контура должна быть ' + w.ring).toBe(true)
+    }
+  })
+
+  it('🔴 ЛОВУШКА: цвет полос во всех копиях = цвет из единого источника', () => {
+    const [r, g, b] = MARK.bars
+    const hex = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+    expect(hex).toBe('#38bdf8')
+    for (const f of ['src/components/CcMark.jsx', 'src/native/components/ChatListLoadingSplash.jsx', 'index.html']) {
+      expect(readFileSync(f, 'utf8').toLowerCase(), f + ': цвет полос должен быть ' + hex).toContain(hex)
+    }
+    // белый цвет пузыря — тоже из источника
+    expect(MARK.bubble).toEqual([255, 255, 255])
+    for (const f of ['src/components/CcMark.jsx', 'src/native/components/ChatListLoadingSplash.jsx', 'index.html']) {
+      expect(readFileSync(f, 'utf8').toLowerCase(), f + ': пузырь должен быть белым').toContain('#ffffff')
+    }
   })
 
   it('шапка окна действительно показывает знак', () => {

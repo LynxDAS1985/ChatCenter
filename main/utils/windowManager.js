@@ -11,7 +11,7 @@ import { screen, nativeImage } from 'electron'
 import { attachSpellcheckContextMenu } from '../handlers/spellcheckHandler.js'
 // v1.2.443: знак приложения рисуем в память из единого источника — не зависим от того,
 // нашёлся ли файл на диске (в разработке и в установленной версии пути разные).
-import { drawMark } from '../../shared/appIconMark.js'
+import { drawMark, markScaleInfo } from '../../shared/appIconMark.js'
 // v1.2.202: чистая логика памяти окна (тестируется без Electron) — см. windowBounds.vitest.js.
 import { buildSavedBounds, restorePlan } from './windowBounds.js'
 // v1.2.205 (TODO-31): слежение за dev-запросами вынесено в отдельный файл (разгрузка windowManager).
@@ -67,7 +67,11 @@ export function createWindow(deps) {
   let appIcon
   try {
     appIcon = nativeImage.createFromBuffer(drawMark({ size: 128, order: 'bgra' }), { width: 128, height: 128 })
-    wlog(`icon drawn 128px in ${Date.now() - iconT0}ms`)
+    const iconInfo = markScaleInfo(128)
+    // v1.2.451: пишем ФАКТИЧЕСКИЙ масштаб знака и упёрлись ли в предел — без этого
+    // обрез знака при будущей правке геометрии остался бы незаметным.
+    wlog(`icon drawn 128px in ${Date.now() - iconT0}ms, масштаб=${iconInfo.scale.toFixed(3)}`
+      + ` (просили ${iconInfo.zoom}, предел ${iconInfo.limit.toFixed(3)}${iconInfo.clamped ? ', УПЁРЛИСЬ в предел' : ''})`)
   } catch (e) {
     wlog(`icon FAILED: ${(e && e.message) || e} — окно откроется со стандартным значком`)
   }

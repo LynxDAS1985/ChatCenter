@@ -4,7 +4,7 @@
  * и иконки трея (system tray).
  */
 import { nativeImage } from 'electron'
-import { drawMark } from '../../shared/appIconMark.js' // v1.2.443: единый знак приложения (трей + файлы иконки)
+import { drawMark, markScaleInfo } from '../../shared/appIconMark.js' // v1.2.443: единый знак приложения (трей + файлы иконки)
 
 // ── Пиксельный шрифт 3×5 (для трея) ────────────────────────────────────
 const PIXEL_FONT = {
@@ -71,15 +71,21 @@ function drawPixelText(buf, bufSize, text, cx, cy, R, G, B) {
 // Порядок цветов bgra: именно его ждёт nativeImage.createFromBuffer на Windows
 // (так же работает соседний createOverlayIcon через setPixelBGRA).
 
+// v1.2.451: множитель размера знака в лотке — одним именем, чтобы рисование
+// и запись в журнал не разъехались (иначе в журнале было бы одно, а на экране другое).
+const TRAY_ZOOM = 1.2
+
 function createTrayBadgeIcon() {
   const size = 32
   const t0 = Date.now()
   let buf
   try {
-    // v1.2.449: фон прозрачный (по умолчанию так теперь у всего знака) + знак крупнее на 20%
-    // — в системном лотке рядом с часами он выглядел мелким. У иконки приложения свой
-    // множитель (30%), поэтому здесь задаём явно.
-    buf = drawMark({ size, order: 'bgra', zoom: 1.2 })
+    // v1.2.449: фон прозрачный (по умолчанию так теперь у всего знака). Множитель размера
+    // просим 1.2, но на 32 точках он УПИРАЕТСЯ В ПРЕДЕЛ (fitScale) — там знак и так от края
+    // до края, и больше нельзя: срежет концы полос. Замер v1.2.450 это подтвердил (прирост 0%).
+    // Поэтому в журнал пишем ФАКТИЧЕСКИЙ масштаб и признак упора — иначе при будущей правке
+    // геометрии никто не поймёт, почему знак не растёт (или почему обрезался).
+    buf = drawMark({ size, order: 'bgra', zoom: TRAY_ZOOM })
   } catch (e) {
     // v1.2.444: значок — украшение, из-за него приложение НЕ должно падать при запуске.
     // Запасной кадр — прозрачный, но правильного размера: nativeImage его принимает,
@@ -87,7 +93,9 @@ function createTrayBadgeIcon() {
     console.warn(`[tray] знак нарисовать не удалось: ${(e && e.message) || e} — значок будет пустым`)
     buf = Buffer.alloc(size * size * 4)
   }
-  console.log(`[tray] значок трея готов: ${size}px за ${Date.now() - t0}мс`)
+  const info = markScaleInfo(size, { zoom: TRAY_ZOOM })
+  console.log(`[tray] значок трея готов: ${size}px за ${Date.now() - t0}мс, масштаб=${info.scale.toFixed(3)}`
+    + ` (просили ${info.zoom}, предел ${info.limit.toFixed(3)}${info.clamped ? ', УПЁРЛИСЬ в предел' : ''})`)
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 
