@@ -89,7 +89,7 @@
     // фон делал НОВУЮ «фотографию» и уже висящие вопросы считал старыми (пропуск), а новые с прошлой сессии
     // не показывал. Теперь помним отпечатки уже-виденных и шлём только реально новые. Пусто → первый заход = базовая линия.
     function _loadSeen(key) { try { var raw = localStorage.getItem(key); if (!raw) return null; var o = JSON.parse(raw); return (o && typeof o === 'object') ? o : null; } catch (_) { return null; } }
-    function _saveSeen(key, obj) { try { localStorage.setItem(key, JSON.stringify(obj || {})); } catch (_) {} }
+    function _saveSeen(key, obj) { try { localStorage.setItem(key, JSON.stringify(obj || {})); } catch (e) { try { console.log('__CC_DIAG__ozon-save-fail ' + key + ' ' + ((e && e.name) || e)) } catch (_) {} } } // v1.2.438: сбой записи НЕ глушим — им объясняются вечные повторы
 
     // v1.2.353 (Шаг 2, TODO-36): сторож раздела «Вопросы и ответы». Новый ВОПРОС БЕЗ ОТВЕТА → уведомление
     // (как у «Покупателей»). ПРАВИЛО (по разведке ozon-q2 + указанию пользователя): строка = таблица, текст
@@ -135,7 +135,12 @@
           if (!info.qText || info.answers < 0) continue;  // не строка вопроса / нет ячейки ответов
           if (info.answers !== 0) continue;               // есть ответ → не новый
           unans++;
-          var fp = _hash((info.product || '') + '|' + info.qText);
+          // v1.2.437: отпечаток ТОЛЬКО по тексту вопроса (он стабилен). Было «товар|вопрос», но товар
+          // берётся позиционно (2-я ссылка строки) и между перезагрузками мог указывать на другой элемент
+          // → отпечаток менялся → вопрос уведомлял КАЖДУЮ минуту. Доказано чтением сохранённой памяти:
+          // 3 отпечатка стояли, 4-й менялся (-240107430 → 2077912008 → -1534851191). Товар остался в
+          // заголовке карточки, но не в отпечатке.
+          var fp = _hash(info.qText);
           cur[fp] = true; cand.push({ fp: fp, product: info.product, qText: info.qText });
         }
         var emitted = 0, sent = {};
@@ -147,14 +152,17 @@
             console.log('__CC_NOTIF__' + JSON.stringify({ t: c.product || 'Новый вопрос', b: c.qText, i: '', g: 'ozon-q:' + c.fp, src: 'ozon-questions' }));
           }
         }
-        if (rows.length > 0) { _qPrev = cur; _saveSeen('__ccOzonQSeen', cur); } // v1.2.371: сохраняем память (переживёт перезагрузку)
+        // v1.2.371: память переживает перезагрузку. v1.2.437: её ДОПОЛНЯЕМ (union), а не заменяем — было
+        // `_qPrev = cur`, и съехавший отпечаток выбрасывал прежний → петля уведомлений без конца. Теперь
+        // повтор возможен ОДИН раз, а не каждую минуту. Потолок 300 записей (без утечки).
+        if (rows.length > 0) { _qPrev = Object.assign(_qPrev || {}, cur); if (Object.keys(_qPrev).length > 300) _qPrev = cur; _saveSeen('__ccOzonQSeen', _qPrev); }
         if (unans !== _lastQaN) { _lastQaN = unans; try { console.log('__CC_OZON_COUNT__' + JSON.stringify({ s: 'qa', n: unans })); } catch (_) {} }
         // v1.2.370 «пульс»: пишем скан при изменении формы ИЛИ раз в 60с (даже если не менялось) — чтобы по
         // журналу видеть, ЖИВ ли фоновый сторож и сколько он видит. Отличает «страница заморожена» (пульс есть,
         // unans застыл) от «сторож уснул» (пульса нет). ДИАГНОСТИКА — убрать после диагноза.
         var qShape = rows.length + '/' + unans, _qNow = Date.now();
         if (reason === 'initial' || emitted > 0 || qShape !== _lastQShape || (_qNow - _lastQDiagTs) > 60000) {
-          _diag('ozon-q scan reason=' + reason + ' rows=' + rows.length + ' unans=' + unans + ' emitted=' + emitted);
+          _diag('ozon-q scan reason=' + reason + ' rows=' + rows.length + ' unans=' + unans + ' emitted=' + emitted + ' mem=' + (_qPrev ? Object.keys(_qPrev).length : 'нет')); // v1.2.438: mem= размер памяти страницы
           _lastQShape = qShape; _lastQDiagTs = _qNow;
         }
       } catch (e) { _diag('ozon-q scan-error ' + (e && e.message || e)); }

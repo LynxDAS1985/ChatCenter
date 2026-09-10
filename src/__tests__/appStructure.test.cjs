@@ -18,7 +18,11 @@ const tabBarCode = fs.existsSync('src/components/TabBar.jsx') ? fs.readFileSync(
 const diagnosticsHostCode = fs.existsSync('src/components/DiagnosticsSessionHost.jsx') ? fs.readFileSync('src/components/DiagnosticsSessionHost.jsx', 'utf8') : ''
 // v1.2.260: NativeApp — для проверки портала боковой полосы.
 const nativeAppCode = fs.existsSync('src/native/NativeApp.jsx') ? fs.readFileSync('src/native/NativeApp.jsx', 'utf8') : ''
-const allAppCode = code + '\n' + webviewCode + '\n' + handleNewMessageCode + '\n' + hooksCode + '\n' + tabBarCode + '\n' + diagnosticsHostCode
+// v1.2.442: модалки переехали из App.jsx в components/AppModals.jsx (App.jsx стоял на потолке 1075 строк).
+// Проверки «модалка грузится лениво и используется» ведутся по СКЛЕЙКЕ файлов оболочки — смысл прежний,
+// изменилось только место, где лежат строки. Если модалку удалят совсем — проверка по-прежнему упадёт.
+const appModalsCode = fs.existsSync('src/components/AppModals.jsx') ? fs.readFileSync('src/components/AppModals.jsx', 'utf8') : ''
+const allAppCode = code + '\n' + webviewCode + '\n' + handleNewMessageCode + '\n' + hooksCode + '\n' + tabBarCode + '\n' + diagnosticsHostCode + '\n' + appModalsCode
 
 let passed = 0, failed = 0
 function test(name, fn) {
@@ -39,8 +43,8 @@ test('messageProcessing', () => assert(allAppCode.includes('messageProcessing.js
 test('sound', () => assert(allAppCode.includes('sound.js')))
 test('navigateToChat', () => assert(allAppCode.includes('navigateToChat.js')))
 test('MessengerTab', () => assert(allAppCode.includes('MessengerTab.jsx')))
-test('NotifLogModal', () => assert(code.includes("import('./components/NotifLogModal.jsx')")))
-test('SettingsPanel', () => assert(code.includes("import('./components/SettingsPanel.jsx')")))
+test('NotifLogModal', () => assert(allAppCode.includes("import('./NotifLogModal.jsx')") || allAppCode.includes("import('./components/NotifLogModal.jsx')")))
+test('SettingsPanel', () => assert(allAppCode.includes("import('./SettingsPanel.jsx')") || allAppCode.includes("import('./components/SettingsPanel.jsx')")))
 test('AISidebar lazy import', () => assert(code.includes("import('./components/AISidebar.jsx')")))
 test('NativeApp controlled lazy import (A1 startup split)', () => {
   assert(code.includes("import('./native/NativeApp.jsx')"), 'NativeApp should load by dynamic import')
@@ -48,9 +52,9 @@ test('NativeApp controlled lazy import (A1 startup split)', () => {
   assert(code.includes('<Suspense fallback={<NativeAppFallback />}>'), 'NativeApp should have an isolated Suspense fallback')
   assert(code.includes('lazy import requested') && code.includes('lazy import resolved'), 'NativeApp lazy import should be visible in startup logs')
 })
-test('LogModal lazy import', () => assert(code.includes("import('./components/LogModal.jsx')")))
-test('DiagnosticsSessionHost lazy import', () => assert(code.includes("import('./components/DiagnosticsSessionHost.jsx')")))
-test('ConfirmCloseModal lazy import', () => assert(code.includes("import('./components/ConfirmCloseModal.jsx')")))
+test('LogModal lazy import', () => assert(allAppCode.includes("import('./LogModal.jsx')") || allAppCode.includes("import('./components/LogModal.jsx')")))
+test('DiagnosticsSessionHost lazy import', () => assert(allAppCode.includes("import('./DiagnosticsSessionHost.jsx')") || allAppCode.includes("import('./components/DiagnosticsSessionHost.jsx')")))
+test('ConfirmCloseModal lazy import', () => assert(allAppCode.includes("import('./ConfirmCloseModal.jsx')") || allAppCode.includes("import('./components/ConfirmCloseModal.jsx')")))
 
 // ── Нет дублирования (inline код удалён) ──
 console.log('\\n── Нет дублирования: ──')
@@ -91,7 +95,7 @@ test('Diagnostics session не стартует сама при открытии
   assert(diagnosticsHostCode.includes('onCloseAll={diagnostics.close}'), 'маленькая панель должна уметь закрыть диагностику полностью')
   assert(diagnosticsHostCode.includes('onStart={() => diagnostics.start(selectedTarget)}'), 'маленькая панель должна уметь снова запустить запись после стопа с выбранной целью')
   assert(!diagnosticsHostCode.includes('onToggleDeep'), 'глубокая WebView-проверка больше не должна быть ручным переключателем')
-  assert(code.includes('runtimeContext={{') && diagnosticsHostCode.includes('buildDiagnosticsTargets'), 'diagnostics host должен получать runtimeContext и строить список целей диагностики')
+  assert(allAppCode.includes('runtimeContext={{') && diagnosticsHostCode.includes('buildDiagnosticsTargets'), 'diagnostics host должен получать runtimeContext и строить список целей диагностики')
 })
 
 // ── Использует модульные функции ──
@@ -133,14 +137,14 @@ test('App.jsx > 300 строк (не пустой)', () => assert(lines > 300, '
 
 // ── Компоненты ──
 console.log('\\n── Компоненты: ──')
-test('NotifLogModal используется', () => assert(code.includes('<NotifLogModal')))
+test('NotifLogModal используется', () => assert(allAppCode.includes('<NotifLogModal')))
 test('MessengerTab используется', () => assert(allAppCode.includes('<MessengerTab')))
-test('SettingsPanel используется', () => assert(code.includes('<SettingsPanel')))
+test('SettingsPanel используется', () => assert(allAppCode.includes('<SettingsPanel')))
 test('SystemDiagnosticsModal используется', () => assert(allAppCode.includes('<SystemDiagnosticsModal')))
 test('DiagnosticsFloatingPanel используется', () => assert(allAppCode.includes('<DiagnosticsFloatingPanel')))
 test('AISidebar используется', () => assert(code.includes('<AISidebar')))
 test('Условные панели грузятся через lazy()', () =>
-  assert(code.includes('lazy(() => import') && code.includes('<Suspense fallback={null}>')))
+  assert(allAppCode.includes('lazy(() => import') && allAppCode.includes('<Suspense fallback={null}>')))
 
 // v0.86.10 Ловушка 64: resize/reload откачены, hook содержит health-check + warm-up
 test('useWebViewLifecycle hook подключён (Ловушка 64)', () =>

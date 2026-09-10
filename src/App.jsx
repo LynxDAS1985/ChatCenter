@@ -19,6 +19,7 @@ import {
 import TabBar from './components/TabBar.jsx'
 import TabContextMenu from './components/TabContextMenu.jsx' // v1.2.271: меню правого клика на уровне App
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import AppModals from './components/AppModals.jsx' // v1.2.442: все модалки одним блоком (App.jsx был на потолке)
 // v0.89.42 (Phase 2.2): WebContentsView pilot — условный рендер по settings.useWebContentsView.
 // v0.91.0: WebContentsViewSlot откачен (Issue #44934 Windows 11 crash)
 // import WebContentsViewSlot from './components/WebContentsViewSlot.jsx'
@@ -37,6 +38,8 @@ import useBadgeSync from './hooks/useBadgeSync.js'
 import useTabManagement from './hooks/useTabManagement.js'
 import useSearch from './hooks/useSearch.js'
 import useWebAccountAvatars from './hooks/useWebAccountAvatars.js' // v1.2.275: аватар веб-аккаунта на значок полосы
+import useWebviewReconnect from './hooks/useWebviewReconnect.js' // v1.2.445: авто-переподключение после обрыва связи
+import WebviewOfflineOverlay from './components/WebviewOfflineOverlay.jsx' // v1.2.445: экран «Нет связи» поверх слоя мессенджера
 import useTabContextMenu from './hooks/useTabContextMenu.js'
 import useNotifyNavigation from './hooks/useNotifyNavigation.js'
 import useWebViewLifecycle from './hooks/useWebViewLifecycle.js'
@@ -60,25 +63,10 @@ const NativeApp = lazy(() => {
   })
 })
 
-const AddMessengerModal = lazy(() => import('./components/AddMessengerModal.jsx'))
 const AISidebar = lazy(() => import('./components/AISidebar.jsx'))
-const SettingsPanel = lazy(() => import('./components/SettingsPanel.jsx'))
-const TemplatesPanel = lazy(() => import('./components/TemplatesPanel.jsx'))
-const AutoReplyPanel = lazy(() => import('./components/AutoReplyPanel.jsx'))
-const NotifLogModal = lazy(() => import('./components/NotifLogModal.jsx'))
-const ConfirmCloseModal = lazy(() => import('./components/ConfirmCloseModal.jsx'))
-const LogModal = lazy(() => import('./components/LogModal.jsx'))
-const ConnectionsPanel = lazy(() => import('./components/ConnectionsPanel.jsx'))
-const DiagnosticsSessionHost = lazy(() => import('./components/DiagnosticsSessionHost.jsx'))
-// v0.95.25: модалка «Что нового» — показывается при первом запуске после обновления.
-const WhatsNewModal = lazy(() => import('./components/WhatsNewModal.jsx'))
-// v1.0.1: 3 панели — Задачи / Напоминания / AI Activity (Phase 4).
-const PanelModal = lazy(() => import('./components/PanelModal.jsx'))
-const TasksPanel = lazy(() => import('./components/TasksPanel.jsx'))
-const RemindersPanel = lazy(() => import('./components/RemindersPanel.jsx'))
-const AIActivityDashboard = lazy(() => import('./components/AIActivityDashboard.jsx'))
-// v1.1.0 (Phase 4.3): AI auto-reply rules.
-const AIAutoReplyRules = lazy(() => import('./components/AIAutoReplyRules.jsx'))
+// v1.2.442: остальные 15 модалок (со своей «ленивой» загрузкой) переехали в
+// components/AppModals.jsx — App.jsx стоял на своём потолке 1075 строк, и в него нельзя
+// было добавить ни строки. Поведение не изменилось, только место.
 
 // v0.87.0: специальный "виртуальный" мессенджер — рендерит NativeApp вместо <webview>
 // v1.1.9: NATIVE_CC_ID/TAB + AISidebarFallback + NativeAppFallback вынесены
@@ -209,7 +197,7 @@ export default function App() {
 
   // Синхронизация рефов
   useEffect(() => { settingsRef.current = settings }, [settings])
-  useEffect(() => { activeIdRef.current = activeId }, [activeId])
+  useEffect(() => { activeIdRef.current = activeId; try { window.api?.send?.('app:log', { level: 'INFO', message: `[tab] активная вкладка: ${activeId}` }) } catch (_) {} }, [activeId])  // v1.2.437: запись о смене вкладки — раньше переключение НИГДЕ не логировалось, и жалобу «сама переключается» нельзя было проверить по журналу (фикс v1.2.436 был не наблюдаем)
   useEffect(() => { messengersRef.current = messengers }, [messengers])
   useEffect(() => { zoomLevelsRef.current = zoomLevels }, [zoomLevels])
   useEffect(() => { connectionHealthRef.current = connectionHealth }, [connectionHealth])
@@ -323,6 +311,10 @@ export default function App() {
   // v1.2.275: аватарки залогиненных веб-аккаунтов (для значков боковой полосы). Лёгкий сбор
   // в отдельном хуке — webviewSetup/App у потолка размера, поэтому не в них. Нет фото → значок логотипом.
   const webAccountAvatars = useWebAccountAvatars(webviewRefs, messengersRef)
+
+  // v1.2.445: после обрыва связи сами поднимаем страницы мессенджеров (паузы 5→10→20→40→60с,
+  // у МАКСа от 15с) и показываем экран с отсчётом. Причина и план — .memory-bank/reconnect-plan.md.
+  const { offlineState, retryNow, bindReconnect } = useWebviewReconnect(webviewRefs, messengersRef)
 
   // v1.2.22: Вариант A — флаг useWebContentsView открывает Макс в ОТДЕЛЬНОМ окне Electron
   // (проверка ServiceWorker-уведомлений). Главное окно не трогаем (Макс остаётся в <webview>).
@@ -819,13 +811,25 @@ export default function App() {
                      Тумблер useWebContentsView теперь открывает Макс в ОТДЕЛЬНОМ окне (main: max-test:*),
                      а не внутри главного — child WebContentsView крашит Electron на Win11 (Issue #44934). */
                   <webview
-                    ref={el => setWebviewRef(el, m.id)}
+                    ref={el => { setWebviewRef(el, m.id); bindReconnect(el, m.id) }}
                     src={m.url}
                     partition={m.partition}
                     preload={monitorPreloadUrl || undefined}
                     style={{ width: '100%', height: '100%' }}
                     allowpopups="true"
                     webpreferences={'backgroundThrottling=no' + (/\bmax\.ru/i.test(m.url || '') ? ',sandbox=no' : '')}
+                  />
+                )}
+                {/* v1.2.445: экран «Нет связи» — ПОВЕРХ страницы (сам webview не прячем: Chromium
+                    усыпляет скрытые). Непрозрачный фон закрывает просвет, из-за которого сквозь
+                    пустой слой были видны чаты «Общего чата» (Telegram API). */}
+                {offlineState[m.id] && (
+                  <WebviewOfflineOverlay
+                    entry={offlineState[m.id]}
+                    name={m.name || m.id}
+                    color={m.color}
+                    onRetry={() => retryNow(m.id)}
+                    onOpenLog={openSystemLog}
                   />
                 )}
                 {/* v1.2.345: плавающий виджет Ozon — ТОЛЬКО внутри контейнера вкладки Ozon (появляется
@@ -911,136 +915,22 @@ export default function App() {
         </ErrorBoundary>
       </div>
 
-      {/* ── Модальные окна ── */}
-      <Suspense fallback={null}>
-        {showConnectionsPanel && <ConnectionsPanel
-          connectionHealth={connectionHealth}
-          messengers={messengers}
-          activeId={activeId}
-          activeNativeAccountId={activeNativeAccountId}
-          webviewLoading={webviewLoading}
-          onClose={() => setShowConnectionsPanel(false)}
-          onRefreshAll={refreshAllConnections}
-          onRefreshProblematic={refreshProblematicConnections}
-          onOpenLog={openSystemLog}
-        />}
-
-        {showAddModal && (
-          <AddMessengerModal onAdd={addMessenger} onClose={() => setShowAddModal(false)} />
-        )}
-
-        {editingMessenger && (
-          <AddMessengerModal editing={editingMessenger} onSave={saveMessenger} onAdd={() => {}} onClose={() => setEditingMessenger(null)} />
-        )}
-
-        {showSettings && (
-          <ErrorBoundary name="Settings"><SettingsPanel
-            messengers={messengers} settings={settings}
-            onMessengersChange={setMessengers} onSettingsChange={handleSettingsChange}
-            onClose={() => setShowSettings(false)}
-            onOpenSystemDiagnostics={openSystemDiagnostics}
-          /></ErrorBoundary>
-        )}
-
-        {showTemplates && (
-          <ErrorBoundary name="Templates"><TemplatesPanel
-            settings={settings} onSettingsChange={handleSettingsChange} onClose={() => setShowTemplates(false)}
-          /></ErrorBoundary>
-        )}
-
-        {showAutoReply && (
-          <ErrorBoundary name="AutoReply"><AutoReplyPanel
-            settings={settings} onSettingsChange={handleSettingsChange} onClose={() => setShowAutoReply(false)}
-          /></ErrorBoundary>
-        )}
-      </Suspense>
-
-      <Suspense fallback={null}>
-        {confirmClose && <ConfirmCloseModal
-          confirmClose={confirmClose}
-          onCancel={() => setConfirmClose(null)}
-          onConfirm={() => removeMessenger(confirmClose.id)}
-        />}
-      </Suspense>
-
-      {/* ── Модальное окно: Лог уведомлений ── */}
-      <Suspense fallback={null}>
-        {notifLogModal && <ErrorBoundary name="NotifLog"><NotifLogModal ctx={{
-          notifLogModal, setNotifLogModal, notifLogTab, setNotifLogTab,
-          traceFilter, setTraceFilter, setCellTooltip,
-          settings, setSettings, webviewRefs,
-          handleTabContextAction_diag,
-          traceNotif, handleNewMessage, pipelineTraceRef
-        }} /></ErrorBoundary>}
-      </Suspense>
-      <Suspense fallback={null}>
-        {diagnosticsHostMounted && <ErrorBoundary name="SystemDiagnostics"><DiagnosticsSessionHost
-          open={showSystemDiagnostics}
-          onOpen={openSystemDiagnostics}
-          runtimeContext={{
-            messengers,
-            activeId,
-            activeNativeAccountId,
-            connectionHealth,
-            webviewLoading,
-            unreadCounts,
-            unreadSplit,
-            pipelineTrace: pipelineTraceRef.current,
-            appReady,
-            showAI,
-            tasksCount,
-            remindersCount,
-          }}
-          onRunDeepCheck={refreshProblematicConnections}
-          onClose={() => setShowSystemDiagnostics(false)}
-        /></ErrorBoundary>}
-      </Suspense>
-
-
-      {/* ── v0.84.2: Модальное окно системного лога ── */}
-      <Suspense fallback={null}>
-        {showLogModal && <LogModal
-          content={logContent}
-          onClose={() => setShowLogModal(false)}
-          onRefresh={() => window.api?.invoke('app:read-log').then(c => setLogContent(c || 'Лог пуст'))}
-        />}
-      </Suspense>
-
-      {/* v0.95.25: «Что нового» — модалка с changelog при первом запуске после
-          обновления версии. Lazy-loaded; не блокирует appReady. */}
-      <Suspense fallback={null}>
-        {whatsNew && <WhatsNewModal
-          prevVersion={whatsNew.prevVersion}
-          currentVersion={whatsNew.currentVersion}
-          onClose={handleWhatsNewClose}
-        />}
-      </Suspense>
-
-      {/* v1.0.1: Phase 4 модалки — Задачи / Напоминания / AI Activity.
-          Открываются по клику на иконки 📝 ⏰ 📊 в шапке. PanelModal — overlay + ✕.
-          onGoToSource (для Tasks/Reminders) переключает на ЦентрЧатов + scroll to message. */}
-      <Suspense fallback={null}>
-        {showTasks && (
-          <PanelModal title="📝 Задачи" onClose={() => setShowTasks(false)} width={760}>
-            <TasksPanel onGoToSource={handleGoToSource} />
-          </PanelModal>
-        )}
-        {showReminders && (
-          <PanelModal title="⏰ Напоминания" onClose={() => setShowReminders(false)} width={680}>
-            <RemindersPanel onGoToSource={handleGoToSource} />
-          </PanelModal>
-        )}
-        {showActivity && (
-          <PanelModal title="📊 AI Activity" onClose={() => setShowActivity(false)} width={900}>
-            <AIActivityDashboard />
-          </PanelModal>
-        )}
-        {showAutoReplyRules && (
-          <PanelModal title="🤖 Правила автоответа" onClose={() => setShowAutoReplyRules(false)} width={760}>
-            <AIAutoReplyRules />
-          </PanelModal>
-        )}
-      </Suspense>
+      {/* ── Модальные окна (v1.2.442: разметка переехала в components/AppModals.jsx) ── */}
+      <AppModals ctx={{
+        showConnectionsPanel, setShowConnectionsPanel, connectionHealth, messengers, activeId,
+        activeNativeAccountId, webviewLoading, refreshAllConnections, refreshProblematicConnections,
+        openSystemLog, showAddModal, setShowAddModal, addMessenger, editingMessenger,
+        setEditingMessenger, saveMessenger, showSettings, setShowSettings, settings, setMessengers,
+        handleSettingsChange, openSystemDiagnostics, showTemplates, setShowTemplates, showAutoReply,
+        setShowAutoReply, confirmClose, setConfirmClose, removeMessenger, notifLogModal,
+        setNotifLogModal, notifLogTab, setNotifLogTab, traceFilter, setTraceFilter, setCellTooltip,
+        setSettings, webviewRefs, handleTabContextAction_diag, traceNotif, handleNewMessage,
+        pipelineTraceRef, diagnosticsHostMounted, showSystemDiagnostics, setShowSystemDiagnostics,
+        unreadCounts, unreadSplit, appReady, showAI, tasksCount, remindersCount, showLogModal,
+        setShowLogModal, logContent, setLogContent, whatsNew, handleWhatsNewClose,
+        showTasks, setShowTasks, showReminders, setShowReminders, showActivity, setShowActivity,
+        showAutoReplyRules, setShowAutoReplyRules, handleGoToSource,
+      }} />
 
       {/* ── Тултип для ячеек таблицы лога ── */}
       {cellTooltip && (

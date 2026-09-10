@@ -15,6 +15,9 @@ import { probeWebviewHealth } from './webviewHealthProbe.js'
 import { scheduleMaxTitleFallback } from './maxTitleFallback.js'
 import { decideMaxTitleUnread, resetMaxTitleUnread } from './titleUnreadBaseline.js'
 import { createVkExecFallbackRuntime } from '../../shared/vkExecFallback.js'
+// v1.2.447: доводки чужой страницы (плашки «браузер устарел» + запасной впрыск
+// перехватчика) вынесены в shared/webviewPageFixups.js — файл стоял на 597/605.
+import { createPageFixups } from '../../shared/webviewPageFixups.js'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 import { markHealthError, markHealthOk, markHealthPending, markHealthSlow } from './connectionHealth.js'
 try { window.__ccStartupMark?.('module:webviewSetup', 'module evaluated') } catch {}
@@ -158,6 +161,12 @@ export function createWebviewSetup(deps) {
     }
   }
 
+  // v1.2.447: доводки страницы — одна фабрика на модуль, не на каждую вкладку.
+  const pageFixups = createPageFixups({
+    detectMessengerType,
+    log: (level, message) => { try { window.api?.send?.('app:log', { level, message }) } catch (_) {} },
+    invoke: (channel, payload) => window.api?.invoke(channel, payload),
+  })
   const isVkWebview = (el, messengerId) => detectMessengerType(healthUrl(el, messengerId)) === 'vk'
   // v1.2.376: Ozon сам ведёт свой счётчик непрочитанного (сторож __CC_OZON_COUNT__), поэтому общие счётчики (title-reset/unread-count) его НЕ трогают.
   const isOzonWebview = (el, messengerId) => detectMessengerType(healthUrl(el, messengerId)) === 'ozon'
@@ -326,53 +335,9 @@ export function createWebviewSetup(deps) {
             try { webviewRefs.current[messengerId]?.setZoomFactor(zoom / 100) } catch (e) { devError('[Zoom]', e.message) }
           }
         }, 600)
-        // Скрываем баннеры "браузер устарел" (VK и др.)
-        try {
-          el.insertCSS(`
-            .BrowserUpdateLayer, .browser_update, .BrowserUpdate,
-            [class*="BrowserUpdate"], [class*="browser_update"],
-            [class*="browserUpdate"], [class*="unsupported-browser"],
-            .UnsupportedBrowser, .stl__banner,
-            .Popup--browserUpdate, .vkuiBanner--browser-update,
-            .TopBrowserUpdateLayer, .BrowserUpdateOffer,
-            [class*="browser-update"], [class*="BrowserOffer"] {
-              display: none !important;
-            }
-          `)
-          // JS-удаление баннеров "браузер устарел" по тексту (VK, MAX и др.)
-          el.executeJavaScript(`
-            (function hideBrowserBanners() {
-              function remove() {
-                document.querySelectorAll('div, span, section, aside, footer, [role="banner"], [role="alert"]').forEach(el => {
-                  var t = (el.textContent || '').toLowerCase()
-                  if ((t.includes('браузер устарел') || t.includes('browser is outdated') ||
-                       (t.includes('обновите') && t.includes('браузер')) ||
-                       (t.includes('update') && t.includes('browser'))) &&
-                      el.children.length < 20) {
-                    el.style.display = 'none'
-                  }
-                })
-              }
-              remove()
-              setTimeout(remove, 2000)
-              setTimeout(remove, 5000)
-              setTimeout(remove, 10000)
-              new MutationObserver(function() { remove() }).observe(document.body || document.documentElement, { childList: true, subtree: true })
-            })()
-          `).catch(() => {})
-          // v0.82.0: Per-messenger notification hooks — загрузка из hooks/{type}.hook.js
-          // Если preload <script> не сработал (CSP блокировал) — инжектим через executeJavaScript
-          setTimeout(() => {
-            const hookType = detectMessengerType(el.getURL?.() || '')
-            window.api?.invoke('app:read-hook', hookType || 'telegram').then(hookCode => {
-              if (!hookCode) return
-              el.executeJavaScript(hookCode).then(() => {
-                console.log('[NotifHook] executeJS hook applied (' + messengerId + ', type=' + hookType + ')')
-              }).catch(() => {})
-            }).catch(() => {})
-          }, 1500)
-          // v0.82.0: старый inline код (330 строк) УДАЛЁН — теперь hooks/{type}.hook.js
-        } catch {}
+        // Плашки «браузер устарел» + запасной впрыск перехватчика уведомлений.
+        // Сам блок живёт в shared/webviewPageFixups.js (см. комментарий у импорта).
+        pageFixups.applyPageFixups(el, messengerId)
       })
 
       // ── Page events: title-update → unread count + звук (НЕ ribbon) ──

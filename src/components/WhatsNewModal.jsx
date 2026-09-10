@@ -8,7 +8,7 @@
 // Стандарт UX как у Slack / VS Code / Discord — простая модалка с changelog.
 
 import { useEffect, useState } from 'react'
-import { getChangelogSince, CHANGELOG } from '../utils/changelogData.js'
+import { getChangelogSince, CHANGELOG } from '../../shared/changelogData.js' // v1.2.442: данные changelog переехали в shared/ (вне бюджета renderer — файл растёт с каждой версией)
 
 export default function WhatsNewModal({ prevVersion, currentVersion, onClose }) {
   // v0.95.34: showAll — переключение между «новые с прошлого запуска» и «вся история».

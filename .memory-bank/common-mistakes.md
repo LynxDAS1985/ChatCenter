@@ -37,6 +37,7 @@
 - `toDataUrl` зависание, context isolation
 - Двойной звук (4 пути воспроизведения)
 - `mark-read` throttling в фоне (Chromium background)
+- 🔴 Экран/вкладка сами меняются; сброс кэша ≠ сброс значка (434, 436, 441)
 
 ### 2b. [`mistakes/webview-navigation-ui.md`](./mistakes/webview-navigation-ui.md)
 **Когда читать**: навигация между чатами + UI-интеграция в WebView.

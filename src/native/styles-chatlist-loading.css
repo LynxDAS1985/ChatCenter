@@ -155,13 +155,21 @@
   transition: width .3s linear;
 }
 
-/* v1.2.406: шапка «ЦентрЧатов» сверху (как на стартовой заставке) — единый вид */
+/* v1.2.406: шапка «ЦентрЧатов» сверху (как на стартовой заставке) — единый вид.
+   v1.2.443: над надписью встал знак приложения, поэтому шапка стала колонкой
+   «знак + надпись». Градиент текста переехал на .native-chatload-brandtext:
+   на самом блоке он делал прозрачным и знак (color: transparent наследуется). */
 .native-chatload-brand {
   position: absolute;
-  top: 20%;
+  top: 16%;
   left: 0;
   right: 0;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.native-chatload-brandtext {
   font-family: 'Golos Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
   font-weight: 800;
   font-size: 30px;
@@ -170,6 +178,25 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+/* v1.2.443: знак приложения на заставке — мягкое лазурное свечение + «влетающие» полосы */
+.native-chatload-mark {
+  display: block;
+  filter: drop-shadow(0 6px 18px rgba(56, 189, 248, .35));
+}
+.native-chatload-bar { animation: ccChatBarIn 1.9s ease-in-out infinite; }
+.native-chatload-bar:nth-child(1) { animation-delay: 0s; }
+.native-chatload-bar:nth-child(2) { animation-delay: .16s; }
+.native-chatload-bar:nth-child(3) { animation-delay: .32s; }
+@keyframes ccChatBarIn {
+  0%   { transform: translateX(-7px); opacity: .15; }
+  35%  { transform: translateX(0);    opacity: 1; }
+  70%  { transform: translateX(0);    opacity: 1; }
+  100% { transform: translateX(-7px); opacity: .15; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .native-chatload-bar { animation: none; opacity: 1; }
 }
 
 /* v1.2.406: скелет списка — серые строки с бегущим бликом (shimmer), плавный переход к реальному списку */

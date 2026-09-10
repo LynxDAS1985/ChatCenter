@@ -25,6 +25,19 @@
         position: relative; text-align: center;
         display: flex; flex-direction: column; align-items: center; gap: 22px;
       }
+      /* v1.2.443: знак приложения на стартовой заставке. Полосы «влетают» слева по очереди —
+         это и есть признак «идёт загрузка», отдельная крутилка не нужна. */
+      .cc-splash__mark { display: block; filter: drop-shadow(0 6px 18px rgba(56,189,248,.35)); }
+      .cc-splash__mark .cc-bar { animation: ccBarIn 1.9s ease-in-out infinite; }
+      .cc-splash__mark .cc-bar:nth-child(1) { animation-delay: 0s; }
+      .cc-splash__mark .cc-bar:nth-child(2) { animation-delay: .16s; }
+      .cc-splash__mark .cc-bar:nth-child(3) { animation-delay: .32s; }
+      @keyframes ccBarIn {
+        0%      { transform: translateX(-7px); opacity: .15; }
+        35%     { transform: translateX(0);    opacity: 1; }
+        70%     { transform: translateX(0);    opacity: 1; }
+        100%    { transform: translateX(-7px); opacity: .15; }
+      }
       .cc-splash__logo {
         font-size: 38px; font-weight: 800; letter-spacing: .5px;
         background: linear-gradient(90deg, #7fd0ff, #2aabee, #7f9cff);
@@ -57,7 +70,8 @@
         50%     { opacity: 1;   text-shadow: 0 0 30px rgba(42,171,238,.55); }
       }
       @media (prefers-reduced-motion: reduce) {
-        .cc-splash__glow, .cc-splash__logo, .cc-splash__circles span { animation: none; }
+        .cc-splash__glow, .cc-splash__logo, .cc-splash__circles span,
+        .cc-splash__mark .cc-bar { animation: none; }
       }
     </style>
   </head>
@@ -65,6 +79,16 @@
     <div id="cc-splash" role="status" aria-label="Загрузка приложения">
       <div class="cc-splash__glow"></div>
       <div class="cc-splash__center">
+        <!-- v1.2.443: знак приложения (тот же, что в трее и на иконке) -->
+        <svg class="cc-splash__mark" width="76" height="76" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="none" stroke="#38bdf8" stroke-width="5" stroke-linecap="round">
+            <path class="cc-bar" d="M3 18 H17" />
+            <path class="cc-bar" d="M3 32 H17" />
+            <path class="cc-bar" d="M3 46 H17" />
+          </g>
+          <rect x="22" y="10" width="38" height="34" rx="11" fill="none" stroke="#ffffff" stroke-width="4.5" />
+          <path d="M31 44 V57 L43 44 Z" fill="#ffffff" />
+        </svg>
         <div class="cc-splash__logo">ЦентрЧатов</div>
         <div class="cc-splash__circles"><span></span><span></span><span></span><span></span><span></span></div>
         <div class="cc-splash__hint">Загрузка чатов…</div>

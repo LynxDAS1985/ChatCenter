@@ -1,7 +1,7 @@
 // v0.95.25: тесты getChangelogSince.
 
 import { describe, it, expect } from 'vitest'
-import { getChangelogSince, CHANGELOG } from './changelogData.js'
+import { getChangelogSince, CHANGELOG } from '../../shared/changelogData.js'
 
 describe('getChangelogSince (v0.95.25)', () => {
   it('первая установка (prevVersion=null) → только последний changelog', () => {

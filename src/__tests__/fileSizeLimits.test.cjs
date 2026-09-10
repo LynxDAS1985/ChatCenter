@@ -39,142 +39,18 @@ function warn(name, msg) {
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || 'fail') }
 
-function countLines(filePath) {
-  try { return fs.readFileSync(filePath, 'utf8').split('\n').length }
-  catch (e) { return -1 }
-}
+// v1.2.442: правила лимитов и обход папок вынесены в fileSizeLimitsRules.cjs
+// (файл теста стоял на своём потолке 399/400 — дописать правило было некуда).
+var rules = require('./fileSizeLimitsRules.cjs')
+var countLines = rules.countLines
+var getLimit = rules.getLimit
+var walk = rules.walk
 
-// v0.87.75: три списка расширений —
-//   KNOWN       = имеют правило лимита (getLimit() их знает)
-//   IGNORED     = бинарники/доки — пропускаем молча, НЕ считаем за нарушение
-//   (всё остальное) → UNKNOWN → тест падает с инструкцией
-var KNOWN_EXT = [
-  '.jsx', '.tsx',                             // React-компоненты
-  '.js', '.ts', '.mjs', '.cts', '.mts',       // JS / TypeScript / ESM
-  '.cjs',                                     // CommonJS (preloads)
-  '.html',                                    // инлайн-страницы BrowserWindow
-  '.css', '.scss',                            // стили
-  '.json',                                    // конфиги (spamPatterns и т.п.)
-]
-var IGNORED_EXT = [
-  '.md', '.txt', '.yml', '.yaml',             // документация/конфиги
-  '.svg', '.png', '.jpg', '.jpeg', '.gif',    // изображения
-  '.ico', '.webp', '.bmp',                    // изображения
-  '.woff', '.woff2', '.ttf', '.otf', '.eot',  // шрифты
-  '.mp3', '.mp4', '.webm', '.wav', '.ogg',    // медиа
-  '.pem', '.crt', '.key',                     // ключи
-  '.map',                                     // source maps
-  '.gitkeep',                                 // маркеры пустых директорий
-]
-
-function getExt(name) {
-  var i = name.lastIndexOf('.')
-  return i < 0 ? '' : name.substring(i).toLowerCase()
-}
-
-// Собираем файлы из src/ и main/. Возвращаем { known, unknown }.
-// known — попадут в size test; unknown — упадёт "тест неизвестных расширений".
-function walk(dir, acc) {
-  acc = acc || { known: [], unknown: [] }
-  var entries
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch (e) { return acc }
-  entries.forEach(function (e) {
-    var full = path.join(dir, e.name).replace(/\\/g, '/')
-    if (e.isDirectory()) {
-      if (e.name === 'node_modules' || e.name === '__snapshots__') return
-      walk(full, acc)
-    } else {
-      var ext = getExt(e.name)
-      if (IGNORED_EXT.indexOf(ext) >= 0) return
-      if (KNOWN_EXT.indexOf(ext) >= 0) acc.known.push(full)
-      else acc.unknown.push(full + '  (расширение "' + ext + '")')
-    }
-  })
-  return acc
-}
-
-// Известные исключения: файлы с индивидуальным (повышенным) потолком
-// Текущий снапшот в .memory-bank/code-limits-status.md
-// Рекомендации по разбиению в .memory-bank/handoff-code-limits.md
-// v0.89.34: KNOWN_EXCEPTIONS вынесены в fileSizeLimitsExceptions.cjs
-// (~65 строк ушло, файл был 345/400). Логика тестов сохранена.
+// Известные исключения: файлы с индивидуальным (повышенным) потолком.
+// Текущий снапшот — .memory-bank/code-limits-status.md; как резать — handoff-code-limits.md.
+// v0.89.34: список вынесен в fileSizeLimitsExceptions.cjs. Остаётся ЗДЕСЬ (а не в правилах):
+// его читают и сами проверки — тест (B) ловит записи про удалённые файлы.
 var KNOWN_EXCEPTIONS = require('./fileSizeLimitsExceptions.cjs')
-
-// v0.87.75: все типы файлов покрыты правилами. Если появится что-то новое
-// (например, файл в новой папке с неожиданным расширением) — тест упадёт
-// через проверку "unknown extensions" или "нет правила для файла".
-
-// Универсальные предикаты
-var isReactFile = function (p) { return /\.(jsx|tsx)$/.test(p) }
-// "JS-like" = код на JS/TS/ESM. Исключая .cjs, .jsx/.tsx (у них свои правила).
-var isJsLike   = function (p) { return /\.(js|ts|mjs|cts|mts)$/.test(p) }
-
-function getLimit(p) {
-  // ── 1. Тесты (.test.* / .vitest.*) — строгие, но крупнее обычных утилит
-  if (p.includes('/__tests__/') || /\.(test|vitest)\.(js|ts|jsx|tsx|cjs|mjs)$/.test(p)) {
-    return { limit: 400, kind: 'тест' }
-  }
-
-  // ── 2. React-компоненты (.jsx / .tsx)
-  if (isReactFile(p)) {
-    if (p.includes('src/components/')) return { limit: 700, kind: 'component .jsx/.tsx' }
-    return { limit: 600, kind: '.jsx/.tsx' }
-  }
-
-  // ── 3. Preload CommonJS (.cjs) — скрипты в WebView
-  if (p.endsWith('.cjs') && p.includes('main/preloads/')) {
-    return { limit: 600, kind: 'preload .cjs' }
-  }
-  // Fallback для .cjs вне preloads (обычно нет, но чтобы не было дыры)
-  if (p.endsWith('.cjs')) {
-    return { limit: 400, kind: 'other .cjs' }
-  }
-
-  // ── 4. JS/TS/ESM — по папке
-  if (isJsLike(p)) {
-    // Preload hooks (инъекции в WebView)
-    if (p.includes('main/preloads/hooks/')) {
-      return { limit: 300, kind: 'preload hook .js/.ts' }
-    }
-    // React hooks (реально маленькие)
-    if (p.includes('/hooks/')) {
-      return { limit: 150, kind: 'React hook .js/.ts' }
-    }
-    // Крупные интеграции
-    if (
-      p.includes('main/handlers/') ||
-      p.includes('main/native/') ||
-      p.includes('src/native/store/') ||
-      p.includes('src/native/utils/') ||
-      p.includes('main/preloads/utils/')
-    ) {
-      return { limit: 500, kind: 'integration .js/.ts' }
-    }
-    // Корневой main
-    if (p === 'main/main.js' || p === 'main/main.ts') {
-      return { limit: 600, kind: 'main .js/.ts' }
-    }
-    // Обычные утилиты
-    return { limit: 300, kind: 'utility .js/.ts' }
-  }
-
-  // ── 5. HTML (инлайн-страницы BrowserWindow в main/)
-  if (p.endsWith('.html')) {
-    return { limit: 800, kind: 'HTML' }
-  }
-
-  // ── 6. CSS / SCSS (стили)
-  if (/\.(css|scss)$/.test(p)) {
-    return { limit: 800, kind: 'CSS/SCSS' }
-  }
-
-  // ── 7. JSON (конфиги spamPatterns и т.п.)
-  if (p.endsWith('.json')) {
-    return { limit: 500, kind: 'JSON конфиг' }
-  }
-
-  return null
-}
 
 console.log('\n🧪 Автоматическая проверка лимитов файлов (v0.87.75)\n')
 
@@ -265,7 +141,13 @@ console.log('')
 // ── Общая статистика ──
 console.log('── Статистика: ──')
 var totalSrc = 0
-var srcFiles = allFiles.filter(function (f) { return f.startsWith('src/') && !/\.(test|vitest)\./.test(f) })
+// v1.2.442: из бюджета исключается ВСЯ папка src/__tests__/ — раньше отсекались только имена
+// с .test./.vitest., поэтому файлы-помощники тестов (fileSizeLimitsExceptions.cjs, а после
+// разбиения ещё и fileSizeLimitsRules.cjs) считались «кодом интерфейса» и съедали бюджет.
+// Это код ПРОВЕРОК, он не попадает в приложение — считать его в бюджете renderer неверно.
+var srcFiles = allFiles.filter(function (f) {
+  return f.startsWith('src/') && !f.startsWith('src/__tests__/') && !/\.(test|vitest)\./.test(f)
+})
 srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v1.2.0-alpha.1 (Этап 1 AI Bridge): лимит 26400 → 27200 — aiBridge/contracts.js (~95 строк) +
 //   aiWebviewConfigs.js (~140 строк) + запас на Этапы 2-3 (Local Bridge, API Bridge wrapper ~200-300 строк).
@@ -387,9 +269,9 @@ srcFiles.forEach(function (f) { totalSrc += countLines(f) })
 // v1.2.252: лимит 34000 → 34050 — вынос проводки рейла в хук useSourceRail.js.
 // v1.2.256: Модель 🅰️ — SourceRail удалён, веб встроен в нативную полосу; renderer упал → знак снижен до 33800.
 // v1.2.263: 33860 → 33880 — проводка возврата к API (onActivateNative) + логи + обёртка .native-mode.
-// v1.2.264→273: 33880→34160 (AddSourceModal/TabContextMenu/скрытие вкладок/имя веб-значка). v1.2.275: →34260 (аватарки). v1.2.276-294: →34490 (аватарки + кнопка-стекло + контейнеры API/Веб). v1.2.300-302: →34550 (единая верхняя панель + линейные значки в TabBar + 3-зонный прокручиваемый рейл в NativeSidebar; комментарии по правилу проекта не режем). v1.2.305-309: диагностики аватара веб-Telegram добавляли/убирали (временно до 34575), удалены; v1.2.309-311: постоянный код фикса аватара веб-Telegram (перебор кандидатов + предпочтение своего профиля + лог tainted в __grabBig) → 34550→34560.
-test('Общий renderer код (src/ без тестов) < 35745 строк (сейчас ' + totalSrc + ')', function () {
-  assert(totalSrc < 35745, totalSrc + " > 35745")  // v1.2.424: подавление фантомов МАКС на общем узле handleNewMessage (openChat-флаг + комментарий-ловушка про document.hidden). v1.2.416: реальный 1px-пинок раскладки веб-вкладки при активации (Ловушка 64 — лечит чёрный экран МАКС). v1.2.406: единый экран загрузки (скелет+шапка). v1.2.403: заставка чатов по макету (рост счётчика + проявление аватарок + прогресс-полоса) + выравнивание раннего экрана. v1.2.400: живая заставка-заглушка NativeAppFallback (кружки). v1.2.398: заставка чатов — min-время видимости + лог показа/скрытия. v1.2.394: фиксы заставки по ревью (loadDone-сохранение «итога» + pointer-events + логи). v1.2.393: заставка первой загрузки списка чатов (ChatListLoadingSplash + флаг chatsFirstLoadDone + проводка). v1.2.392: ozonBgWatcher rv-стартовое (Вариант C). v1.2.385: записи «Что нового» v1.2.383-385 (changelogData). v1.2.381: pickNotifIconDataUrl (аватар>логотип, фикс регресса ВК). v1.2.315-316: логотипы ВК/МАКС; v1.2.321: +пункт Ozon в каталоге; v1.2.330: +ozonNavigate.js; v1.2.333: логотип Ozon (ключ+ветка+импорт); v1.2.349: счётчики Ozon (ozonCounts + проводка + логи виджета); v1.2.350: тихая ловля ERR_ABORTED в виджете; v1.2.376: само-освежение фоновой «Вопросы» (ozonBgWatcher +reload-таймер); v1.2.379: resolveMessengerLogo (логотип уведомления по типу) + логотип в авто-ответе
+// v1.2.264→273: 33880→34160 (AddSourceModal/TabContextMenu/скрытие вкладок/имя веб-значка). v1.2.275: →34260 (аватарки). v1.2.276-294: →34490 (аватарки + кнопка-стекло + контейнеры API/Веб). v1.2.300-302: →34550 (единая верхняя панель + линейные значки в TabBar + 3-зонный прокручиваемый рейл в NativeSidebar; комментарии по правилу проекта не режем). v1.2.305-309: диагностики аватара веб-Telegram добавляли/убирали (временно до 34575), удалены; v1.2.309-311: постоянный код фикса аватара веб-Telegram (перебор кандидатов + предпочтение своего профиля + лог tainted в __grabBig) → 34550→34560. v1.2.438: 35990→36010 — дедуп повторов Ozon (чистая логика в shared/ozonNotifDedup.js, вне бюджета; в renderer только проводка). v1.2.439: 36010→36040 — аватарки веб-аккаунтов: снимок с подписью «чей+когда» (webAvatarScript.js) и флаг «уже пробовали» с датой (constants.js). v1.2.440: 36040→36090 — причина отказа снимка в журнал + проверка размера снимка + пункт «Обновить фото аккаунта» в меню правой кнопки (сброс кэша фото). Логика ЖИВЁТ ВНУТРИ впрыскиваемых строк (их нельзя вынести в shared/ — это код для чужой страницы), комментарии-ловушки резать нельзя.
+test('Общий renderer код (src/ без тестов) < 35540 строк (сейчас ' + totalSrc + ')', function () {
+  assert(totalSrc < 35540, totalSrc + " > 35540")  // v1.2.447: 35480 -> 35540 (+60, факт 35494) — полоса «нет связи» для «Общего чата» (NativeConnectionStrip 88 строк + 4 строки проводки). Поднятие законно по ADR-044 (запрещено поднимать ВМЕСТО разгрузки), и разгрузка в этой же версии СДЕЛАНА: 28 строк ушли из src/utils/webviewSetup.js в shared/webviewPageFixups.js, а вся чистая логика полосы — в shared/connectionStripState.js (108 строк, вне бюджета). ОСТАВШИЙСЯ КАНДИДАТ НА РАЗГРУЗКУ (не делал — структурная правка, нужна отдельная задача): папка src/shared/ (notificationSource.js) лежит ВНУТРИ бюджета, хотя это общий модуль — её место в корневой shared/. // v1.2.445: 35300 -> 35480 (+180, факт 35428) — НОВАЯ функция: экран «Нет связи» (WebviewOfflineOverlay 136 строк) + проводка переподключения (useWebviewReconnect 130). Вся ЧИСТАЯ логика уже вынесена в shared/reconnectPlan.js (193 строки, вне бюджета) — поднимать планку тут законно по ADR-044: она запрещает поднятие ВМЕСТО разгрузки, а разгружать больше нечего. v1.2.442: планка ОПУЩЕНА 36090 -> 35300 (было 36088, стало 35172): данные «Что нового» (changelogData + архив, 917 строк) переехали в shared/ — они растут с каждой версией и в бюджете renderer им не место. Запас 128 строк. Ниже — история прежних поднятий. v1.2.424: подавление фантомов МАКС на общем узле handleNewMessage (openChat-флаг + комментарий-ловушка про document.hidden). v1.2.416: реальный 1px-пинок раскладки веб-вкладки при активации (Ловушка 64 — лечит чёрный экран МАКС). v1.2.406: единый экран загрузки (скелет+шапка). v1.2.403: заставка чатов по макету (рост счётчика + проявление аватарок + прогресс-полоса) + выравнивание раннего экрана. v1.2.400: живая заставка-заглушка NativeAppFallback (кружки). v1.2.398: заставка чатов — min-время видимости + лог показа/скрытия. v1.2.394: фиксы заставки по ревью (loadDone-сохранение «итога» + pointer-events + логи). v1.2.393: заставка первой загрузки списка чатов (ChatListLoadingSplash + флаг chatsFirstLoadDone + проводка). v1.2.392: ozonBgWatcher rv-стартовое (Вариант C). v1.2.385: записи «Что нового» v1.2.383-385 (changelogData). v1.2.381: pickNotifIconDataUrl (аватар>логотип, фикс регресса ВК). v1.2.315-316: логотипы ВК/МАКС; v1.2.321: +пункт Ozon в каталоге; v1.2.330: +ozonNavigate.js; v1.2.333: логотип Ozon (ключ+ветка+импорт); v1.2.349: счётчики Ozon (ozonCounts + проводка + логи виджета); v1.2.350: тихая ловля ERR_ABORTED в виджете; v1.2.376: само-освежение фоновой «Вопросы» (ozonBgWatcher +reload-таймер); v1.2.379: resolveMessengerLogo (логотип уведомления по типу) + логотип в авто-ответе
 })
 
 console.log('\n📊 Результат: ' + passed + ' ✅ / ' + failed + ' ❌ из ' + (passed + failed))

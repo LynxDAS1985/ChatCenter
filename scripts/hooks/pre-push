@@ -28,7 +28,7 @@ TESTS=(
   mainImports mainRuntime unitRuntime buildContract
   storageErrors aiErrors extractedModules smokeTest integration
   integrationChains messengerBackend transparentWindowGuard modernPatternsGuard
-  rendererConsoleGuard
+  rendererConsoleGuard sharedWiring
 )
 
 TOTAL=${#TESTS[@]}

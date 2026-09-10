@@ -145,8 +145,12 @@ module.exports = {
     ceiling: 200,
     reason: 'v1.2.2: добавлена Bridge-ветка (useBridge=true). runViaBridge уже вынесен в agentBridgeRunner.js. Сам hook: state + 2 streaming listeners + start + cancel + confirmStep + cancelStep + reset — целостный узел, дальнейшее разбиение требует архитектурного шага.'
   },
-  'src/utils/changelogData.js': {
+  'shared/changelogData.js': {
     ceiling: 900,
-    reason: 'v1.2.4: 47 entries — за сессию 11.06 добавилось 17 записей AI Bridge (v1.1.7 → v1.2.4). Лимит 700 → 900 с запасом. Архивация старых < v0.95 — отдельная задача после v1.2.0.'
+    reason: 'v1.2.4: 47 entries — за сессию 11.06 добавилось 17 записей AI Bridge (v1.1.7 → v1.2.4). Лимит 700 → 900 с запасом. v1.2.433: файл упёрся в 901 → старые записи вынесены в changelogDataArchive.js (данные НЕ удалены, подставляются через ...CHANGELOG_ARCHIVE), файл стал 537. v1.2.442: файл ПЕРЕЕХАЛ в shared/ — это чистые ДАННЫЕ (текст «Что нового»), которые растут с каждой версией; в бюджете renderer им не место.'
+  },
+  'shared/changelogDataArchive.js': {
+    ceiling: 400,
+    reason: 'v1.2.433: чистый файл-ДАННЫХ — архив старых записей changelog, вынесен из changelogData.js (тот перерос 900). Логики нет, только массив записей; разбивать смысла нет, как и у самого changelogData (там потолок 900). Удалять записи НЕЛЬЗЯ — changelogData.vitest.js проверяет наличие старых версий (0.95.20-25).'
   }
 }

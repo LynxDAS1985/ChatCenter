@@ -32,11 +32,18 @@ var BASELINE = {
   // мессенджера через el.executeJavaScript (диагностика __CC_DIAG__, ловится console-мостом).
   // Это НЕ renderer-логи: внутри чужой страницы (web.telegram.org/vk.com) нашего window.api
   // нет, поэтому app:log неприменим — console единственный канал возврата данных (как в hook-файлах).
-  'src/utils/webviewDiagnostics.js':        6,
+  // v1.2.434: 6→10. Страж стоял «красным» ещё с коммита c012582 (v1.2.409-426): туда
+  // добавили постоянную диагностику веб-МАКС — перехват WebSocket (__CC_DIAG__ws-hook /
+  // ws-close / ws-error) и ловец ошибок страницы (wv-runtime / wv-stack), а базовую линию
+  // не подняли → любой следующий коммит с правкой src/ падал бы на pre-commit.
+  // Все 10 console.* тут — ВНУТРИ строк, впрыскиваемых в чужую страницу мессенджера:
+  // нашего window.api там нет, консоль-мост (consoleMessageParser) — единственный канал.
+  'src/utils/webviewDiagnostics.js':        10,
   'src/hooks/useWebViewLifecycle.js':       3,
   'src/main.jsx':                           2,
   'src/components/NotifLogModal.jsx':       2,
-  'src/utils/webviewSetup.js':              1,
+  // v1.2.447: webviewSetup.js — единственная console.* уехала в shared/webviewPageFixups.js
+  // и там переписана на запись в журнал приложения (app:log). Запись baseline удалена.
   'src/utils/messengerConfigs.js':          1,
   'src/utils/consoleMessageHandler.js':     1,
   'src/shared/tools/toolRegistry.js':       1,

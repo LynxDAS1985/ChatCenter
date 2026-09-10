@@ -46,3 +46,34 @@ describe('buildTabContextMenuItems', () => {
     expect(buildTabContextMenuItems().length).toBeGreaterThan(0)
   })
 })
+
+describe('Пункт «Обновить фото аккаунта» (v1.2.440)', () => {
+  // ЗАЧЕМ пункт: снимок фото аккаунта кэшируется в хранилище страницы мессенджера и обновляется
+  // сам лишь раз в сутки. Если туда попало ЧУЖОЕ фото (взяли аватар собеседника из открытого чата),
+  // ждать сутки неудобно → нужен ручной сброс правой кнопкой по значку источника.
+  it('есть у веб-источника', () => {
+    const items = buildTabContextMenuItems({ isNative: false })
+    expect(items.map(i => i.action)).toContain('refreshAvatar')
+  })
+
+  it('НЕТ у нативного «Общего чата» (у него нет веб-страницы и кэша фото)', () => {
+    const items = buildTabContextMenuItems({ isNative: true })
+    expect(items.map(i => i.action)).not.toContain('refreshAvatar')
+  })
+
+  it('обработчик сбрасывает ТОЛЬКО наши ключи и НЕ трогает вход в аккаунт', async () => {
+    const fs = await import('node:fs')
+    const src = fs.readFileSync('src/hooks/useTabContextMenu.js', 'utf8')
+    expect(src).toMatch(/action === 'refreshAvatar'/)
+    // сбрасываем свой кэш фото
+    for (const k of ['__cc_account_avatar_crisp3', '__cc_account_avatar_crisp2', '__cc_account_avatar', '__cc_avatar_tried']) {
+      expect(src).toContain(k)
+    }
+    // 🔴 ГЛАВНОЕ: ключи авторизации сайта НЕ трогаем — иначе выкинет из аккаунта
+    expect(src).not.toMatch(/localStorage\.clear\(\)/)
+    expect(src).not.toMatch(/user_auth/)
+    // результат сброса виден в журнале (и успех, и сбой)
+    expect(src).toMatch(/сброс фото аккаунта по команде пользователя/)
+    expect(src).toMatch(/сброс фото не удался/)
+  })
+})

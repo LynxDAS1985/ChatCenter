@@ -50,7 +50,16 @@ test('Записывает BGRA (B,G,R,A=255)', () => assert(code.includes('buf[
 // ── createTrayBadgeIcon ──
 console.log('\\n── createTrayBadgeIcon: ──')
 test('Размер 32×32', () => assert(code.includes('const size = 32') && code.includes('createTrayBadgeIcon')))
-test('Синий цвет (#2AABEE)', () => assert(code.includes('42, 171, 238')))
+// v1.2.444: до этого здесь стояла проверка «синий цвет 42,171,238» — сторожила простой синий
+// круг, который был значком трея. В v1.2.443 круг заменён НАСТОЯЩИМ знаком приложения, и та
+// проверка падала (36/37), блокируя `npm test` и отправку кода. Смысл стража сохранён, но
+// теперь он сторожит нужное: трей берёт знак из единого источника и в порядке цветов bgra.
+test('Знак берётся из единого источника (shared/appIconMark.js)', () =>
+  assert(code.includes("from '../../shared/appIconMark.js'") && code.includes('drawMark(')))
+test('Порядок цветов bgra (его ждёт nativeImage на Windows)', () =>
+  assert(code.includes("order: 'bgra'")))
+test('Сбой рисования не валит приложение (есть запасной кадр)', () =>
+  assert(code.includes('catch') && code.includes('Buffer.alloc(size * size * 4)')))
 
 // ── createOverlayIcon ──
 console.log('\\n── createOverlayIcon: ──')

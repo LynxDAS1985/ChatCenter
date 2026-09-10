@@ -21,6 +21,7 @@
 | `CHANGELOG.md` | Журнал изменений структуры Memory Bank | При правках структуры памяти |
 | `STRUCTURE.md` | Авто-список файлов памяти (вынесен из CLAUDE.md в v1.2.19, регенерируется) | Когда нужен полный перечень файлов памяти |
 | `webcontentsview-migration-plan.md` | План миграции на WebContentsView ради ServiceWorker-уведомлений (цель, факты, 6 фаз, откат) | Перед работой по «оживлению ServiceWorker» / переходу с `<webview>` |
+| `reconnect-plan.md` | 📡 Переподключение мессенджеров после обрыва связи (v1.2.445): три причины с доказательствами, лестница пауз, коды ошибок Chromium, что осознанно НЕ вошло, ручная проверка | Перед правками `src/hooks/useWebviewReconnect.js` / `src/components/WebviewOfflineOverlay.jsx` / `shared/reconnectPlan.js` |
 | `startup-load-investigation.md` | Живой документ расследования долгой загрузки Telegram при старте | Пока расследуем старт/загрузку; после фикса уйдёт в архив |
 | `prodlike-webview-investigation.md` | Закрытая памятка: слабый интернет может выглядеть как баг `start:prodlike`/WebView | При подозрении на медленную загрузку VK/MAX/Telegram WebView |
 | ~~`native-scroll-*.md`~~ | ✅ CLOSED 2026-06-09 — заархивированы в `archive/*-CLOSED.md` | НЕ открывать (тема закрыта юзером) |

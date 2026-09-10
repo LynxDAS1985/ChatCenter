@@ -4,6 +4,7 @@
  * и иконки трея (system tray).
  */
 import { nativeImage } from 'electron'
+import { drawMark } from '../../shared/appIconMark.js' // v1.2.443: единый знак приложения (трей + файлы иконки)
 
 // ── Пиксельный шрифт 3×5 (для трея) ────────────────────────────────────
 const PIXEL_FONT = {
@@ -61,19 +62,29 @@ function drawPixelText(buf, bufSize, text, cx, cy, R, G, B) {
   }
 }
 
-// ── Иконка трея 32×32 — чистая синяя без бейджа ────────────────────────
+// ── Иконка трея 32×32 — НАСТОЯЩИЙ знак приложения ──────────────────────
+// v1.2.443: до этого в трее был просто синий круг (никак не связанный с приложением,
+// да ещё и телеграмного цвета). Теперь рисуем выбранный знак «Лазурь» — белая реплика
+// с хвостиком + три лазурные полосы на тёмной плитке. Рисунок берётся из ЕДИНОГО
+// источника shared/appIconMark.js — тот же, из которого делаются файлы иконки
+// (build/icon.png, PNG/chatcenter-icon.png), поэтому трей и панель задач совпадают.
+// Порядок цветов bgra: именно его ждёт nativeImage.createFromBuffer на Windows
+// (так же работает соседний createOverlayIcon через setPixelBGRA).
 
 function createTrayBadgeIcon() {
   const size = 32
-  const buf = Buffer.alloc(size * size * 4)
-  const cx = 15.5, cy = 15.5, r = 11
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) <= r) {
-        setPixelBGRA(buf, size, x, y, 42, 171, 238)
-      }
-    }
+  const t0 = Date.now()
+  let buf
+  try {
+    buf = drawMark({ size, order: 'bgra' })
+  } catch (e) {
+    // v1.2.444: значок — украшение, из-за него приложение НЕ должно падать при запуске.
+    // Запасной кадр — прозрачный, но правильного размера: nativeImage его принимает,
+    // трей просто окажется без картинки, а причина останется в журнале.
+    console.warn(`[tray] знак нарисовать не удалось: ${(e && e.message) || e} — значок будет пустым`)
+    buf = Buffer.alloc(size * size * 4)
   }
+  console.log(`[tray] значок трея готов: ${size}px за ${Date.now() - t0}мс`)
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 

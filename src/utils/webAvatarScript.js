@@ -33,6 +33,51 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
     // (аватарки чатов ~48px, фото в Настройках ~100px+). (A) если Настройки уже открыты — снимаем сразу;
     // (B) иначе программа САМА открывает Настройки (жмёт «три полоски» → пункт РОВНО «Настройки»/«Settings»
     // — «Выйти» исключён точным совпадением), снимает фото и закрывает (Escape). До 3 попыток, потом стоп.
+    // v1.2.439: снимок храним КОНВЕРТОМ {b, who, ts} в ключе v3 — с ИМЕНЕМ аккаунта и ДАТОЙ съёмки.
+    // ПОЧЕМУ: по доке MDN у localStorage «no expiration time», а прежний код доверял ключу crisp2
+    // ВЕЧНО и без проверки, ЧЕЙ это снимок → раз попавшее чужое фото залипало навсегда. Реальный
+    // случай 2026-09-09: в хранилище страницы лежали ДВЕ картинки (чужое лицо и правильный логотип),
+    // а значок показывал чужое. Ключ v3 → старый залипший crisp2 больше не читается и удаляется.
+    var __avWho = function () { try { return (localStorage.getItem('__cc_account_name') || '').trim(); } catch (e) { return ''; } };
+    var __avOk = function (raw, who, now, maxAge) {
+      try {
+        var o = JSON.parse(raw || 'null');
+        if (!o || typeof o !== 'object' || !o.b || String(o.b).indexOf('data:image') !== 0) return { b: '', why: 'нет-конверта' };
+        // v1.2.440: проверяем не только «это картинка», но и РАЗМЕР. Замер реальных снимков:
+        // 4360 и 6556 символов; прозрачная пустышка 1x1 в виде data-URL ~80 символов. Порог 512
+        // безопасно ниже настоящего фото и много выше мусора → пустой квадратик не считается фото.
+        if (String(o.b).length < 512) return { b: '', why: 'мелкий-' + String(o.b).length };
+        if (!((now - (+o.ts || 0)) < maxAge)) return { b: '', why: 'устарел' };
+        if (who && o.who && who !== o.who) return { b: '', why: 'чужой-аккаунт' };
+        return { b: o.b, why: 'ok' };
+      } catch (e) { return { b: '', why: 'битый' }; }
+    };
+    var __avSave = function (b) { try { localStorage.setItem('__cc_account_avatar_crisp3', JSON.stringify({ b: b, who: __avWho(), ts: Date.now() })); localStorage.removeItem('__cc_account_avatar_crisp2'); } catch (e) {} };
+    // v1.2.440: помощники поднялись ВЫШЕ блока «только Telegram» — теперь снимок сохраняется и
+    // переиспользуется для ЛЮБОГО веб-мессенджера. Зачем: у МАКСа фото видно только когда открыты
+    // его Настройки (журнал 2026-09-09 16:32:54 дал sel=[class*="settings" i] img.avatarImage), а
+    // сохранения не было → после каждого перезапуска значок снова пустой. Теперь снимок живёт сутки.
+    // v1.2.442 ЗАМЕР (поведение НЕ меняем): проверяем, встречается ли ИМЯ НАШЕГО аккаунта
+    // в тексте рядом со снимком — поднимаемся до 4 уровней вверх по родителям. Если да,
+    // это почти наверняка наше фото (свой блок в шапке/Настройках), если нет — возможно,
+    // селектор поймал аватар СОБЕСЕДНИКА. Пока только пишем в журнал: отбраковывать по
+    // этому признаку нельзя, не проверив по журналу каждый мессенджер (у МАКС фикс v1.2.440
+    // только что заработал, сломать его догадкой недопустимо).
+    // Текст длиннее 3000 символов не смотрим: у одностраничных приложений в корне лежит
+    // текст ВСЕЙ переписки (это уже ломало нас в v1.2.434), там совпадение ничего не значит.
+    var __avNear = function (el) {
+      try {
+        var who = __avWho(); if (!who) return 'имя-неизвестно';
+        var node = el, lvl = 0;
+        while (node && lvl < 4) {
+          var t = ''; try { t = node.textContent || ''; } catch (e) { t = ''; }
+          if (t.length > 0 && t.length < 3000 && t.indexOf(who) >= 0) return 'да';
+          node = node.parentElement; lvl++;
+        }
+        return 'нет';
+      } catch (e) { return 'сбой'; }
+    };
+    var __avRet = function (b, sel, el) { __avSave(b); return { avatar: b, sel: sel, err: '', avwhy: 'снят-заново', avnear: __avNear(el) }; };
     if (location.host.indexOf('telegram') >= 0) {
       var __delay = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
       var __esc = function () { try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true })); } catch (e) {} };
@@ -73,23 +118,31 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
       // (A) фото уже на экране (Настройки открыты)? Кладём в ОТДЕЛЬНЫЙ ключ '__cc_account_avatar_crisp2'
       //     (v1.2.305): раньше чёткое и бледную запаску писали в ОДИН ключ '__cc_account_avatar', и
       //     запаска из constants.js (stripped_thumb) ЗАТИРАЛА чёткое → значок застревал на бледном.
+      // v1.2.440: годность снимка проверяем ДО съёмки и отдаём причину полем avwhy — чтобы «устарел» /
+      // «чужой-аккаунт» / «мелкий» попали в ЖУРНАЛ в любом случае, в т.ч. когда мы тут же переснимаем.
+      // Раньше причина оставалась только внутри страницы, и наружу выходило лишь sel=crisp-stored.
+      // ВНИМАНИЕ: весь этот скрипт — одна большая строка в обратных кавычках, поэтому в комментариях
+      // внутри неё обратные кавычки ставить НЕЛЬЗЯ (закроют строку → файл перестанет разбираться).
+      var __avChk = __avOk(localStorage.getItem('__cc_account_avatar_crisp3'), __avWho(), Date.now(), 86400000);
       var big = __grabBig();
-      if (big && big.b) { try { localStorage.setItem('__cc_account_avatar_crisp2', big.b); } catch (e) {}
-        return { avatar: big.b, sel: 'onscreen-big-' + big.sz, err: '' }; }
-      // Чёткое уже добыто (в отдельном ключе)? Отдаём его — Настройки больше не открываем.
-      var crisp = localStorage.getItem('__cc_account_avatar_crisp2');
-      if (crisp && crisp.indexOf('data:image') === 0) return { avatar: crisp, sel: 'crisp-stored', err: '' };
+      if (big && big.b) { __avSave(big.b); return { avatar: big.b, sel: 'onscreen-big-' + big.sz, err: '', avwhy: __avChk.why }; }
+      // Снимок годен? (свежий + от ЭТОГО аккаунта + не мусор) → отдаём, Настройки не открываем.
+      var crisp = __avChk.b;
+      if (crisp) return { avatar: crisp, sel: 'crisp-stored', err: '', avwhy: __avChk.why };
       // (B) авто-открытие Настроек с ПОШАГОВОЙ записью в журнал (step пишется СРАЗУ на каждом шаге —
       // видно, до какого шага дошло, даже если дальше зависло). Ключи v3 — старый залипший crisp не блокирует.
       var step = function (s) { try { localStorage.setItem('__cc_avatar_diag', s); } catch (e) {} };
-      var tries = parseInt(localStorage.getItem('__cc_tg_open_tries7') || '0', 10);
+      // v1.2.439: счётчик попыток — ПО ДНЯМ. Прежний вечный ключ tries7 после 8 неудач навсегда
+      // запрещал переснять фото (у localStorage нет срока годности — MDN). Теперь 8 попыток в СУТКИ.
+      var __avDay = new Date().toISOString().slice(0, 10);
+      var tries = parseInt(localStorage.getItem('__cc_tg_open_tries_' + __avDay) || '0', 10);
       var busy = window.__cc_tg_busyTs && (Date.now() - window.__cc_tg_busyTs < 15000); // по времени, не залипает
       // v1.2.305: гейт по НАЛИЧИЮ чёткого ключа, а не по старому флагу crisp3 (тот залипал на '1' и
       // блокировал переснятие, пока в кармане лежала бледная запаска). Нет чёткого → идём в Настройки.
-      step('gate|crisp=' + (crisp ? 'Y' : 'N') + '|t=' + tries + '|busy=' + (busy ? 1 : 0));
+      step('gate|crisp=' + (crisp ? 'Y' : 'N') + '/' + __avChk.why + '|t=' + tries + '|busy=' + (busy ? 1 : 0));
       if (!crisp && tries < 8 && !busy) {  // v1.2.311 (#2): 5→8 попыток — запас на медленный интернет
         window.__cc_tg_busyTs = Date.now();
-        localStorage.setItem('__cc_tg_open_tries7', String(tries + 1));
+        localStorage.setItem('__cc_tg_open_tries_' + __avDay, String(tries + 1));
         var out = null;
         try {
           step('auto|start t' + (tries + 1));
@@ -111,8 +164,8 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
               var big2 = __grabBig();
               for (var rt = 0; rt < 5 && (!big2 || big2.blank); rt++) { await __delay(1600); big2 = __grabBig(); } // v1.2.311 (#2): 4→5 ретраев
               step('auto|opened|grab=' + (big2 ? (big2.b ? 'OK' + big2.sz : 'blank' + big2.blank) : 'null'));
-              if (big2 && big2.b) { try { localStorage.setItem('__cc_account_avatar_crisp2', big2.b); } catch (e) {}
-                out = { avatar: big2.b, sel: 'auto-settings-' + big2.sz, err: '' }; }
+              if (big2 && big2.b) { __avSave(big2.b);
+                out = { avatar: big2.b, sel: 'auto-settings-' + big2.sz, err: '', avwhy: __avChk.why }; }
               __esc(); await __delay(400); __esc();
             } else { __esc(); }
           }
@@ -147,17 +200,22 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
     var soft = '';
     for (var i = 0; i < sels.length; i++) {
       var el = document.querySelector(sels[i]); if (!el) continue;
-      if (el.tagName === 'CANVAS' && el.width > 12) { try { return { avatar: el.toDataURL('image/png'), sel: sels[i], err: '' }; } catch (e) {} }
+      if (el.tagName === 'CANVAS' && el.width > 12) { try { return __avRet(el.toDataURL('image/png'), sels[i], el); } catch (e) {} }
       var url = '';
       var img = el.tagName === 'IMG' ? el : el.querySelector('img');
       if (img && img.src) url = img.src; else url = bgUrl(el);
       if (url) {
-        if (url.indexOf('data:image') === 0) return { avatar: url, sel: sels[i], err: '' };
+        if (url.indexOf('data:image') === 0) return __avRet(url, sels[i], el);
         var b = await grab(url);
-        if (b && b.indexOf('data:image') === 0) return { avatar: b, sel: sels[i], err: '' };
+        if (b && b.indexOf('data:image') === 0) return __avRet(b, sels[i], el);
         soft = 'cors-reload-failed@' + sels[i];
       }
     }
+    // v1.2.440: ничего не нашли на странице → берём СОХРАНЁННЫЙ снимок (годен сутки, от этого же
+    // аккаунта). Именно это возвращает аватарку МАКСу после перезапуска: его фото видно только в
+    // открытых Настройках, а так значок остаётся с фото до следующей съёмки.
+    var __avFb = __avOk(localStorage.getItem('__cc_account_avatar_crisp3'), __avWho(), Date.now(), 86400000);
+    if (__avFb.b) return { avatar: __avFb.b, sel: 'stored-envelope', err: '', avwhy: __avFb.why };
     var dump = [];
     var cand = document.querySelectorAll('[class*="avatar" i], header canvas, header img, [class*="sidebar" i] canvas, [class*="TopNav" i] img, [class*="settings" i] img');
     for (var k = 0; k < cand.length && dump.length < 6; k++) {

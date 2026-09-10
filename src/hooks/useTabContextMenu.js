@@ -89,6 +89,26 @@ export default function useTabContextMenu({
             setNotifLogTab('log')
           })
       }
+    } else if (action === 'refreshAvatar') {
+      // v1.2.440: сбрасываем ТОЛЬКО свои служебные ключи кэша фото (приставка __cc_) в хранилище
+      // страницы мессенджера. Ключи авторизации сайта НЕ трогаем — иначе выкинет из аккаунта.
+      // По доке MDN (Storage.removeItem): «If there is no item associated with the given key, this
+      // method will do nothing» → безопасно вызывать для отсутствующих ключей, проверки не нужны.
+      // Дальше сборщик аватарок (useWebAccountAvatars, раз в 12с) сам переснимет фото.
+      const KEYS = ['__cc_account_avatar_crisp3', '__cc_account_avatar_crisp2', '__cc_account_avatar', '__cc_avatar_tried', '__cc_avatar_diag']
+      const js = '(function(){var n=0;' + KEYS.map(k => `try{if(localStorage.getItem('${k}')!==null)n++;localStorage.removeItem('${k}')}catch(e){}`).join('') +
+        "try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf('__cc_tg_open_tries')===0){localStorage.removeItem(k);n++}}}catch(e){}return n;})()"
+      const logAv = (lvl, msg) => { try { window.api?.send?.('app:log', { level: lvl, message: msg }) } catch (_) {} }
+      // v1.2.441 (находка №1): после сброса говорим значку «забудь старое фото» — иначе ключи
+      // удалены, а на значке прежнее фото → команда выглядит нерабочей. Слушатель: shared/webAvatarGate.js
+      const forgetAvatar = () => { try { window.dispatchEvent(new CustomEvent('cc-avatar-reset', { detail: id })) } catch (_) {} }
+      if (wv && typeof wv.executeJavaScript === 'function') {
+        wv.executeJavaScript(js)
+          .then(n => { forgetAvatar(); logAv('INFO', `[web-avatar] сброс фото аккаунта по команде пользователя: ${id}, удалено ключей=${n}, значок очищен — фото переснимется в течение ~12с`) })
+          .catch(e => logAv('WARN', `[web-avatar] сброс фото не удался: ${id}: ${(e && e.message) || e} — значок НЕ трогали`))
+      } else {
+        logAv('WARN', `[web-avatar] сброс фото невозможен: ${id} — страница не готова`)
+      }
     } else if (action === 'copyUrl') {
       const m = messengers.find(x => x.id === id)
       if (m?.url) navigator.clipboard.writeText(m.url).catch(() => {})

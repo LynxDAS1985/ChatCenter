@@ -124,7 +124,11 @@ const ALLOWED = {
     'onPointerMove', 'onPointerUp', 'events',
     // v1.0.1: prop name TasksPanel/RemindersPanel + destructured-with-rename из useAppCounters.
     // `{tasks: tasksCount, reminders: remindersCount}` парсер не ловит как локальную переменную.
-    'onGoToSource', 'tasksCount', 'remindersCount'],
+    'onGoToSource', 'tasksCount', 'remindersCount',
+    // v1.2.445: из useWebviewReconnect — `const { offlineState, retryNow, bindReconnect } = …`.
+    // Парсер видит только ПЕРВОЕ имя в разборе результата хука (та же его слепота, что у
+    // tasksCount/remindersCount выше), поэтому второе и третье перечисляем здесь.
+    'retryNow', 'bindReconnect'],
 }
 
 for (const comp of components) {

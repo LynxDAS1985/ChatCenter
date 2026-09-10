@@ -4,12 +4,16 @@
 import LoginModal from './LoginModal.jsx'
 import InboxMode from '../modes/InboxMode.jsx'
 import ErrorBoundary from '../../components/ErrorBoundary.jsx'
+// v1.2.447: полоса «нет связи» для «Общего чата» (рисуется ПОВЕРХ, см. её файл).
+import NativeConnectionStrip from './NativeConnectionStrip.jsx'
 
 export default function NativeMainContent({
   showLoginScreen, store, hasAccounts, hoveredAccountId, modes, onOpenLogin, onCloseLogin,
 }) {
   return (
     <div className="native-main">
+      {/* v1.2.447: пока связи нет — понятная полоса вместо молча замершего списка чатов. */}
+      {!showLoginScreen && hasAccounts && <NativeConnectionStrip onCheck={store.checkConnection} />}
       {showLoginScreen ? (
         <LoginModal
           // v1.2.147: onCloseLogin сбрасывает «признак входа» (см. NativeApp) —

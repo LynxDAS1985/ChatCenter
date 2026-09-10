@@ -203,7 +203,13 @@ export const DEFAULT_MESSENGERS = [
       function send(n) { console.log('__CC_ACCOUNT__' + n); localStorage.setItem(CK, n); }
       var cached = localStorage.getItem(CK);
       // v1.2.282: заходим в настройки, если нет ИМЕНИ ИЛИ ещё не пробовали снять АВАТАР (он только там)
-      if (cached && cached.length > 1 && cached.length < 60 && (localStorage.getItem(AK) || localStorage.getItem(TK))) return cached;
+      // v1.2.439: флаг «уже пробовали» теперь с ДАТОЙ. По доке MDN у localStorage нет срока годности,
+      // поэтому прежний вечный TK='1' НАВСЕГДА запрещал повтор: если первая съёмка не удалась (фото
+      // не сохранилось), аватарка не появлялась НИКОГДА. Реальный случай 2026-09-09: у МАКСа имя
+      // есть, TK стоит, а __cc_account_avatar пуст. Теперь: фото есть → не трогаем; фото нет →
+      // пробуем снова, но не чаще раза в СУТКИ (старое TK='1' датой не является → одна попытка будет).
+      var today = new Date().toISOString().slice(0, 10);
+      if (cached && cached.length > 1 && cached.length < 60 && (localStorage.getItem(AK) || localStorage.getItem(TK) === today)) return cached;
       if (!window.__cc_extracting) {
         window.__cc_extracting = true;
         setTimeout(function() {
@@ -220,7 +226,7 @@ export const DEFAULT_MESSENGERS = [
             // v1.2.282: на экране настроек виден СВОЙ аватар — снимаем в base64 (готовый data: берём как есть,
             // иначе перезагрузка с crossOrigin от «испачканного» холста). TK='1' — чтобы не заходить каждый раз.
             try {
-              localStorage.setItem(TK, '1');
+              localStorage.setItem(TK, today);  // v1.2.439: дата, а не '1' — повтор возможен на следующий день
               var av = document.querySelector('button.profile img.avatarImage, [class*="profile" i] img.avatarImage, img.avatarImage');
               if (av && av.src) {
                 if (av.src.indexOf('data:image') === 0) { localStorage.setItem(AK, av.src); }

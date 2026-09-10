@@ -238,6 +238,9 @@
   flex: 1;
   display: flex;
   overflow: hidden;
+  /* v1.2.447: точка отсчёта для полосы «нет связи» — она рисуется ПОВЕРХ (position:absolute),
+     потому что дети .native-main лежат В РЯД и обычный ребёнок уехал бы вбок. */
+  position: relative;
 }
 
 /* Empty state */

@@ -4,6 +4,11 @@
 import { buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './messageProcessing.js'
 import { playNotificationSound } from './sound.js'
 import { pickNotifIconDataUrl } from '../native/utils/messengerLogos.js' // v1.2.333/378/379/381: картинка уведомления (аватар отправителя в приоритете; логотип по типу из url — только если аватара нет)
+// v1.2.430: анти-завал уведомлений. Если из ОДНОГО чата >CHAT_FLOOD_MAX сообщений за CHAT_FLOOD_WINDOW —
+// это лавина (спам/очень активная группа): подавляем карточку+звук+автоответ, но счётчик непрочитанных РАСТЁТ
+// (сообщения не теряются). Порог высокий — обычную переписку (≤5/5с из одного чата) не задевает.
+const CHAT_FLOOD_WINDOW = 5000
+const CHAT_FLOOD_MAX = 5
 export function createHandleNewMessage(deps) {
   const {
     recentNotifsRef, lastRibbonTsRef, lastSoundTsRef, notifCountRef,
@@ -13,6 +18,8 @@ export function createHandleNewMessage(deps) {
     setNewMessageIds, setStatusBarMsg, setUnreadCounts,
     previewTimers, statusBarMsgTimer, bumpStatsRef, traceNotif,
   } = deps
+  // v1.2.430: учёт лавины по чату (ключ messengerId+sender). Живёт в замыкании фабрики между вызовами.
+  const chatFloodMap = new Map()
   // ── Обработка входящего сообщения (общая для ipc-message и console-message) ──
   // extra = { senderName, iconUrl } — опционально, из перехваченного Notification
   // Если extra есть → из __CC_NOTIF__ (Notification API) — надёжный источник
@@ -102,17 +109,36 @@ export function createHandleNewMessage(deps) {
       lastSoundTsRef.current[messengerId] = Date.now()
       traceNotif('sound', 'pass', messengerId, text, reason)
     }
-    if (canPlaySound && !deferSoundUntilRibbon) {
+    // v1.2.430: детект лавины по чату — скользящее окно CHAT_FLOOD_WINDOW; >CHAT_FLOOD_MAX → подавляем карточку/звук/автоответ (счётчик ниже всё равно растёт)
+    const nowMs = Date.now()
+    const floodKey = messengerId + ' ' + (senderName || '')
+    // v1.2.431: состояние лавины {ts,on,sup}. ВХОД → ОДНА сводная карточка + ОДНА строка журнала;
+    // ВНУТРИ → тихо (только счёт подавленных, журнал не спамим); ВЫХОД → ОДНА строка с числом подавленных.
+    const st = chatFloodMap.get(floodKey) || { ts: [], on: false, sup: 0 }
+    st.ts = st.ts.filter(t => nowMs - t < CHAT_FLOOD_WINDOW)
+    st.ts.push(nowMs)
+    const over = st.ts.length > CHAT_FLOOD_MAX
+    let floodSummary = false
+    if (over && !st.on) { st.on = true; st.sup = 0; floodSummary = true; traceNotif('flood', 'info', messengerId, text, `ЗАВАЛ начался: ${st.ts.length} сообщений за ${CHAT_FLOOD_WINDOW}мс — показываю ОДНУ сводку, дальше тихо (счётчик растёт)`) }
+    else if (over) { st.sup++ }
+    else if (st.on) { traceNotif('flood', 'info', messengerId, text, `завал закончился — подавлено карточек: ${st.sup}`); st.on = false; st.sup = 0 }
+    chatFloodMap.set(floodKey, st)
+    if (chatFloodMap.size > 200) { for (const [k, v] of chatFloodMap) { if (!v.ts.length || nowMs - v.ts[v.ts.length - 1] > CHAT_FLOOD_WINDOW) chatFloodMap.delete(k) } }
+    const flooding = st.on && !floodSummary // подавляем ВСЁ, кроме одной сводной карточки на входе
+    if (canPlaySound && !deferSoundUntilRibbon && !flooding) {
       playAcceptedSound('звук воспроизведён')
-    } else if (canPlaySound && deferSoundUntilRibbon) {
+    } else if (canPlaySound && deferSoundUntilRibbon && !flooding) {
       traceNotif('sound', 'info', messengerId, text, 'MAX title-fallback: звук отложен до main-result ok=true')
     } else {
       traceNotif('sound', 'block', messengerId, text, `global=${settingsRef.current.soundEnabled !== false} muted=${messengerMuted} perMsg=${mNotifs.sound}`)
     }
     // v0.61.1: убираем суффикс #N для отображения (dedup уже прошёл)
-    const displayText = text.replace(/ #\d+$/, '')
+    // v1.2.431: на ВХОДЕ в лавину вместо текста сообщения — сводка (одна карточка вместо ливня)
+    const displayText = floodSummary
+      ? `⚡ Лавина сообщений (${st.ts.length}+) — уведомления приостановлены, смотри счётчик`
+      : text.replace(/ #\d+$/, '')
 
-    if (settingsRef.current.notificationsEnabled !== false && ribbonOn) {
+    if (settingsRef.current.notificationsEnabled !== false && ribbonOn && !flooding) {
       lastRibbonTsRef.current[messengerId] = Date.now()
       // v0.80.4: ribbon использует очищенный senderName (без "заходила X назад")
       window.api?.invoke('app:custom-notify', {
@@ -161,8 +187,8 @@ export function createHandleNewMessage(deps) {
     // Добавляем в историю AI
     setChatHistory(prev => [...prev.slice(-19), { messengerId, text, ts: Date.now() }])
 
-    // Авто-ответчик по ключевым словам
-    const rules = settingsRef.current.autoReplyRules || []
+    // Авто-ответчик по ключевым словам (v1.2.430: при лавине не автоотвечаем — иначе спам в буфер/уведомления)
+    const rules = st.on ? [] : (settingsRef.current.autoReplyRules || [])
     let autoReplied = false
     for (const rule of rules) {
       if (!rule.active) continue

@@ -67,6 +67,11 @@ test('navigateToChat: VK URL → VK скрипт с ConvoListItem', function() {
 console.log('\\n── Цепочка: App.jsx ↔ модули: ──')
 
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
+// v1.2.442: модалки переехали из App.jsx в components/AppModals.jsx (App.jsx стоял на потолке
+// 1075 строк). Цепочка «оболочка приложения → модалка → ленивая загрузка» проверяется по СКЛЕЙКЕ
+// двух файлов: смысл проверки тот же, изменилось только место строк.
+var appModalsCode = fs.existsSync('src/components/AppModals.jsx') ? fs.readFileSync('src/components/AppModals.jsx', 'utf8') : ''
+var appShellCode = appCode + '\n' + appModalsCode
 // v0.85.0: include extracted modules
 try { appCode += '\n' + fs.readFileSync('src/utils/webviewSetup.js', 'utf8') } catch(e) {}
 try { appCode += '\n' + fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8') } catch(e) {}
@@ -115,14 +120,16 @@ test('App.jsx → MessengerTab → components', function() {
 })
 
 test('App.jsx → NotifLogModal → components', function() {
-  assert(appCode.includes('<NotifLogModal'))
-  assert(appCode.includes("import('./components/NotifLogModal.jsx')"))
+  assert(appShellCode.includes('<NotifLogModal'))
+  assert(appShellCode.includes("import('./NotifLogModal.jsx')") || appShellCode.includes("import('./components/NotifLogModal.jsx')"))
 })
 
 test('App.jsx → startup-heavy panels lazy imports', function() {
+  // AISidebar — часть основного экрана, остаётся в App.jsx
   assert(appCode.includes("import('./components/AISidebar.jsx')"))
-  assert(appCode.includes("import('./components/LogModal.jsx')"))
-  assert(appCode.includes("import('./components/ConfirmCloseModal.jsx')"))
+  // модалки — в AppModals.jsx (путь стал относительным: './LogModal.jsx')
+  assert(appShellCode.includes("import('./LogModal.jsx')") || appShellCode.includes("import('./components/LogModal.jsx')"))
+  assert(appShellCode.includes("import('./ConfirmCloseModal.jsx')") || appShellCode.includes("import('./components/ConfirmCloseModal.jsx')"))
 })
 
 test('App.jsx → NativeApp controlled lazy import with account snapshot protection', function() {

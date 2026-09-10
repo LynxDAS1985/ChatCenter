@@ -2,6 +2,7 @@
 // Оставлены только: health-check раз в 30 сек (для диагностики) + warm-up вкладок (безопасен, не мешает).
 // Смотри .memory-bank/common-mistakes.md Ловушка 64 — перечень всего что пробовали и почему не помогло.
 import { useEffect, useRef } from 'react'
+import { checkBlackAndRepaint, WATCHDOG_INTERVAL_MS } from '../utils/webviewBlackWatchdog.js' // v1.2.431: сторож чёрного экрана (фото кадра → 1px-пинок перерисовки)
 
 const HEALTH_SCRIPT = `(function(){
   try {
@@ -66,5 +67,21 @@ export default function useWebViewLifecycle({ activeId, messengers, appReady, we
     const t1 = setTimeout(nudge, 200)  // после показа вкладки
     const t2 = setTimeout(nudge, 700)  // повтор — поймать SPA, если ещё не был готов
     return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [activeId, messengers, webviewRefs])
+
+  // v1.2.431: сторож ЧЁРНОГО ЭКРАНА. Пинок выше срабатывает только при АКТИВАЦИИ вкладки, а тяжёлый чат
+  // может почернеть уже ПОСЛЕ (содержимое загружено, пиксели чёрные — не перерисовывается). Поэтому пока
+  // веб-вкладка открыта, раз в WATCHDOG_INTERVAL_MS делаем «фото» кадра (capturePage) и при пустом дёргаем
+  // тот же 1px-пинок. Предохранитель — не больше 3 пинков на одно открытие (см. webviewBlackWatchdog.js).
+  useEffect(() => {
+    if (!activeId) return undefined
+    const m = (messengers || []).find(x => x.id === activeId)
+    if (!m || m.isNative) return undefined
+    const state = { nudges: 0, checks: 0 }
+    const log = (level, message) => { try { window.api?.send?.('app:log', { level, message }) } catch (_) {} }
+    // v1.2.435: интервал вынесен в WATCHDOG_INTERVAL_MS (60с вместо 10с) — настоящая причина чёрного
+    // экрана МАКС была в другом (наш впрыск прятал корень приложения, ADR-042), а снимок кадра дорогой.
+    const iv = setInterval(() => { checkBlackAndRepaint(webviewRefs.current[activeId], log, state) }, WATCHDOG_INTERVAL_MS)
+    return () => clearInterval(iv)
   }, [activeId, messengers, webviewRefs])
 }

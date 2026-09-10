@@ -139,8 +139,21 @@ export default function ChatListLoadingSplash({ show, loadDone, store }) {
 
   return (
     <div className={'native-chatload' + (leaving ? ' native-chatload--leaving' : '')} aria-hidden="true">
-      {/* v1.2.406: шапка «ЦентрЧатов» сверху (как на стартовой заставке) — единый вид */}
-      <div className="native-chatload-brand">ЦентрЧатов</div>
+      {/* v1.2.406: шапка «ЦентрЧатов» сверху (как на стартовой заставке) — единый вид.
+          v1.2.443: над надписью — знак приложения (тот же, что в трее, на иконке и на
+          стартовой заставке). Полосы «влетают» слева по очереди — видимый признак загрузки. */}
+      <div className="native-chatload-brand">
+        <svg className="native-chatload-mark" width="72" height="72" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="none" stroke="#38bdf8" strokeWidth="5" strokeLinecap="round">
+            <path className="native-chatload-bar" d="M3 18 H17" />
+            <path className="native-chatload-bar" d="M3 32 H17" />
+            <path className="native-chatload-bar" d="M3 46 H17" />
+          </g>
+          <rect x="22" y="10" width="38" height="34" rx="11" fill="none" stroke="#ffffff" strokeWidth="4.5" />
+          <path d="M31 44 V57 L43 44 Z" fill="#ffffff" />
+        </svg>
+        <span className="native-chatload-brandtext">ЦентрЧатов</span>
+      </div>
       {phase === 'skeleton' ? (
         /* v1.2.406: скелет списка — серые строки с бегущим бликом, плавный переход к реальному списку */
         <div className="native-chatload-skel">

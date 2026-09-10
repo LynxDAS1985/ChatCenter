@@ -7,8 +7,11 @@
 //   - Issue #44897: preload не загружается в child WebContentsView
 // v0.95.25: spellcheck RU + EN + context-menu suggestions через spellcheckHandler.
 
-import { screen } from 'electron'
+import { screen, nativeImage } from 'electron'
 import { attachSpellcheckContextMenu } from '../handlers/spellcheckHandler.js'
+// v1.2.443: знак приложения рисуем в память из единого источника — не зависим от того,
+// нашёлся ли файл на диске (в разработке и в установленной версии пути разные).
+import { drawMark } from '../../shared/appIconMark.js'
 // v1.2.202: чистая логика памяти окна (тестируется без Electron) — см. windowBounds.vitest.js.
 import { buildSavedBounds, restorePlan } from './windowBounds.js'
 // v1.2.205 (TODO-31): слежение за dev-запросами вынесено в отдельный файл (разгрузка windowManager).
@@ -53,6 +56,22 @@ export function createWindow(deps) {
   // что именно восстановлено, без ручного чтения файла настроек.
   wlog(`restore maximized=${plan.maximize} pos=${plan.x == null ? 'center' : `${plan.x},${plan.y}`} size=${plan.width}x${plan.height}`)
 
+  // v1.2.443: свой значок окна. Раньше не задавался вовсе — в разработке окно и панель
+  // задач показывали стандартный значок Electron (в журнале сборки это же было видно как
+  // «default Electron icon is used»). У СОБРАННОГО приложения значок берётся из
+  // build/icon.ico через electron-builder, здесь — для запуска из терминала.
+  // v1.2.444: рисуем ДО создания окна и под защитой. Раньше вызов стоял прямо в списке
+  // настроек: ошибка рисования означала бы, что окно не создастся ВООБЩЕ (вызов createWindow
+  // в main.js ничем не обёрнут), причём молча. Теперь сбой = окно без своего значка + запись.
+  const iconT0 = Date.now()
+  let appIcon
+  try {
+    appIcon = nativeImage.createFromBuffer(drawMark({ size: 128, order: 'bgra' }), { width: 128, height: 128 })
+    wlog(`icon drawn 128px in ${Date.now() - iconT0}ms`)
+  } catch (e) {
+    wlog(`icon FAILED: ${(e && e.message) || e} — окно откроется со стандартным значком`)
+  }
+
   const mainWindow = new BrowserWindow({
     width: plan.width,
     height: plan.height,
@@ -61,6 +80,7 @@ export function createWindow(deps) {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#1a1a2e',
+    icon: appIcon,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#16213e',

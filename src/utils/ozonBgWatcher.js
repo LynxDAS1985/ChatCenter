@@ -21,6 +21,8 @@ import { parseConsoleMessage } from './consoleMessageParser.js'
  * @param {string} ozonId - id ОСНОВНОГО мессенджера Ozon (для маршрутизации уведомлений/счётчика)
  * @param {{handleNewMessage:Function, setOzonCounts:Function, log:Function}} deps
  */
+import { shouldSkipOzonNotif } from '../../shared/ozonNotifDedup.js'
+
 export function bindOzonBgWatcher(el, ozonId, deps) {
   try {
     if (!el || el.__ccOzonBgBound) return
@@ -120,6 +122,10 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         if (parsed.type === 'notification' && (parsed.source === 'ozon-questions' || parsed.source === 'ozon-list' || parsed.source === 'ozon-reviews')) {
           const extra = { senderName: parsed.title || '', chatTag: parsed.tag || '', notifSource: parsed.source, fromNotifAPI: false, background: true }
           const _kind = parsed.source === 'ozon-list' ? 'сообщение' : parsed.source === 'ozon-reviews' ? 'отзыв' : 'вопрос'
+          // v1.2.438: память «уже показывали» ЖИВЁТ У НАС (переживает перезагрузку фоновой страницы раз в минуту).
+          // Память внутри страницы Ozon НЕ работает: запись в её localStorage не доходит (см. shared/ozonNotifDedup.js).
+          const _dd = shouldSkipOzonNotif(parsed.source, parsed.tag, parsed.body)
+          if (_dd.skip) { log && log('INFO', `[ozon-bg] повтор подавлен (${_kind}, ${Math.round(_dd.ageMs / 1000)}с назад): «${(parsed.body || '').slice(0, 40)}»`); return }
           log && log('INFO', `[ozon-bg] фон: ${_kind} «${(parsed.body || '').slice(0, 40)}»`)
           handleNewMessage && handleNewMessage(ozonId, parsed.body || '', extra)
           return

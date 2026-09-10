@@ -3,6 +3,7 @@
 
 import { useEffect } from 'react'
 import { DEFAULT_MESSENGERS } from '../constants.js'
+import { pickActiveTabId } from '../../shared/activeTabChoice.js'
 
 export default function useAppBootstrap({
   NATIVE_CC_TAB,
@@ -31,7 +32,11 @@ export default function useAppBootstrap({
     if (!window.api?.invoke) {
       console.error('[App] window.api не инициализирован — загружаем DEFAULT_MESSENGERS')
       setMessengers([...DEFAULT_MESSENGERS, NATIVE_CC_TAB])
-      setActiveId(DEFAULT_MESSENGERS[0].id)
+      // v1.2.436: prev || … — не отбираем вкладку, если она уже выбрана (этот путь
+      // срабатывает как раз при горячей перезагрузке, см. комментарий в шапке файла)
+      // v1.2.437: вкладку выбираем той же чистой функцией (не оставим на удалённой) + запись в журнал
+      setActiveId(prev => pickActiveTabId(prev, [...DEFAULT_MESSENGERS, NATIVE_CC_TAB], NATIVE_CC_ID))
+      log('ЗАПАСНОЙ ПУТЬ: window.api недоступен → список по умолчанию')
       setAppReady(true)
       return
     }
@@ -56,10 +61,19 @@ export default function useAppBootstrap({
         // всегда открывалось на Максе, он грузился первым, и лишь потом появлялись чаты. Веб-вкладки всё равно
         // грузятся в фоне (стоят стопкой, не display:none) → уведомления из них работают; меняется только КАКАЯ
         // вкладка видна первой. Если native_cc почему-то нет в списке — запасной вариант прежний (первый веб).
-        setActiveId(withNative.some(m => m.id === NATIVE_CC_ID) ? NATIVE_CC_ID : (withNative[0]?.id || null))
-      }).catch(() => {
+        // v1.2.436 (ФИКС «выкидывает в ЦентрЧатов»): вкладку ставим ТОЛЬКО если она ещё не выбрана.
+        // Было безусловно → на каждое монтирование дерева (в режиме разработки это КАЖДАЯ горячая
+        // перезагрузка от правки файла) активная вкладка отбиралась у пользователя и сбрасывалась
+        // на «ЦентрЧатов». Доказано журналом: 5 лишних `messengers:load` за 70 секунд, каждый через
+        // ~1с после `dev-request /src/App.jsx?t=…`. Стартовое поведение (v1.2.399) сохранено:
+        // при первом запуске активной вкладки нет → откроется «ЦентрЧатов». Функция-обновитель
+        // получает текущее значение (дока React, useState) — зависимости эффекта не нужны.
+        setActiveId(prev => pickActiveTabId(prev, withNative, NATIVE_CC_ID))
+      }).catch((e) => {
+        // v1.2.437: сбой загрузки списка больше НЕ молчит (был пустой catch) + та же чистая функция выбора
+        log('ОШИБКА messengers:load: ' + ((e && e.message) || e) + ' → список по умолчанию')
         setMessengers([...DEFAULT_MESSENGERS, NATIVE_CC_TAB])
-        setActiveId(DEFAULT_MESSENGERS[0].id)
+        setActiveId(prev => pickActiveTabId(prev, [...DEFAULT_MESSENGERS, NATIVE_CC_TAB], NATIVE_CC_ID))
       }),
       window.api?.invoke('settings:get').then(s => {
         // v0.89.49: логируем состояние пилота WebContentsView при старте — раньше
