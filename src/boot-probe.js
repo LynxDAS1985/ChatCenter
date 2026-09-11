@@ -97,4 +97,59 @@ function ccSplashSafety(reason) {
 // таймер: в норме заставку убирает appReady (useAppBootstrap → __ccHideSplash) и на холодную (~60с), и на
 // тёплую (быстро); этот таймер — лишь предохранитель на случай реально зависшего запуска (битый бандл /
 // appReady не наступил). 180с > худшего наблюдённого холодного старта (~105с) с запасом.
-setTimeout(() => ccSplashSafety('дальний предохранитель 180с (appReady не наступил)'), 180000)
+// v1.2.452: раньше этот таймер ПРОСТО убирал заставку → пользователь видел пустое окно
+// (жалоба 11 сентября). Теперь вместо пустоты поднимается окно переподключения из index.html,
+// и приложение пробует запуститься само. Заставку убираем только если окна нет (старый путь).
+setTimeout(() => {
+  try {
+    if (window.__ccBootNet && document.getElementById('cc-splash')) {
+      window.__ccBootNet.show('приложение не запустилось за 3 минуты')
+      window.__ccStartupMark('splash', 'boot-net: окно переподключения показано (appReady не наступил)')
+      return
+    }
+  } catch {}
+  ccSplashSafety('дальний предохранитель 180с (appReady не наступил)')
+}, 180000)
+
+// v1.2.454 — ИЗМЕРИТЕЛЬ РАСКЛАДКИ. Жалоба 11 сентября 2026: «окно чата уехало за границы»
+// (панель ИИ была срезана правым краем окна). Причина найдена и исправлена — растягивающимся
+// блокам разрешили сжиматься (min-w-0 / minWidth: 0). Этот измеритель:
+//   1) подтверждает, что теперь всё влезает (или честно показывает, сколько не влезло);
+//   2) отвечает на второй, НЕ объяснённый симптом — срезано ли содержимое сверху.
+// Считает ТОЛЬКО размеры (ничего не меняет), пишет ОДНУ строку в журнал, работает вне React —
+// поэтому на отрисовку повлиять не может. Приём в проекте принят: так же устроены logGeometry
+// и проба «чёрного экрана» в webviewDiagnostics.js.
+function ccLayoutProbe(reason) {
+  try {
+    const box = (sel) => {
+      const el = document.querySelector(sel)
+      if (!el) return 'нет'
+      const r = el.getBoundingClientRect()
+      const over = el.scrollWidth - el.clientWidth        // >0 = содержимое шире, чем место
+      const overY = el.scrollHeight - el.clientHeight     // >0 = содержимое выше, чем место
+      return `${Math.round(r.width)}x${Math.round(r.height)}@${Math.round(r.left)},${Math.round(r.top)}`
+        + (over > 1 ? ` НЕ ВЛЕЗАЕТ по ширине на ${Math.round(over)}` : '')
+        + (overY > 1 ? ` НЕ ВЛЕЗАЕТ по высоте на ${Math.round(overY)}` : '')
+    }
+    const parts = [
+      'окно=' + window.innerWidth + 'x' + window.innerHeight,
+      'страница=' + document.documentElement.scrollWidth + 'x' + document.documentElement.scrollHeight,
+      'ряд=' + box('[data-cc-layout="row"]'),
+      'середина=' + box('[data-cc-layout="middle"]'),
+      'панельИИ=' + box('[data-cc-layout="ai-panel"]'),
+      'рейл=' + box('#app-native-rail'),
+      'разделы=' + box('.native-sidebar'),
+      'рядЧатов=' + box('[data-cc-layout="inbox-row"]'),
+      'переписка=' + box('[data-cc-layout="messages"]'),
+    ]
+    window.__ccStartupMark('layout', reason + ' :: ' + parts.join(' | '))
+  } catch (e) {
+    try { window.__ccStartupMark('layout', 'измерить не удалось: ' + ((e && e.message) || e)) } catch {}
+  }
+}
+// Доступен вручную: набрать __ccLayoutProbe('проверка') — пригодится, чтобы сравнить «до/после»
+// перетаскивания панелей, не перезапуская приложение.
+window.__ccLayoutProbe = ccLayoutProbe
+// Один раз через 12с после старта: к этому моменту чаты уже нарисованы (по журналу первая
+// загрузка чатов завершается на ~5-8с), а лишнего шума в журнале не создаётся.
+setTimeout(() => ccLayoutProbe('замер через 12с после старта'), 12000)

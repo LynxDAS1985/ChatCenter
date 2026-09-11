@@ -707,7 +707,9 @@ export default function App() {
         pinnedTabs={settings.pinnedTabs || {}} messengers={messengers} onAction={handleTabContextAction} />
 
       {/* ── Основной layout ── */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* v1.2.454: data-cc-layout — метки для измерителя раскладки (boot-probe.js). На вид
+          и размеры не влияют, нужны чтобы в журнале было видно, что именно не влезло. */}
+      <div className="flex flex-1 overflow-hidden" data-cc-layout="row">
 
         {/* v1.2.262: слот боковой полосы. NativeApp порталит сюда рейл (аккаунты+веб+разделитель)
             → полоса ВСЕГДА видна слева, даже когда активен веб-мессенджер (веб открывается ПРАВЕЕ).
@@ -716,7 +718,13 @@ export default function App() {
         <div id="app-native-rail" className="flex shrink-0" />
 
         {/* ── Область WebView ── */}
-        <div className="flex-1 relative overflow-hidden" style={{ backgroundColor: 'var(--cc-bg)', cursor: isResizing ? 'col-resize' : undefined }}>
+        {/* 🔴 v1.2.454 min-w-0 — ЖАЛОБА «окно чата уехало за границы». По правилам вёрстки
+            растягивающийся блок НЕ сжимается меньше своего содержимого, пока ему это прямо не
+            разрешить. Панель ИИ тоже сжиматься не умеет (shrink-0 + жёсткая ширина), а ряд выше
+            помечен «лишнее срезать» — поэтому при сохранённой ширине панели ИИ 458 точек
+            содержимое не влезало, и крайняя правая панель молча уезжала за край окна.
+            min-w-0 = «можно сжиматься» — принятая в проекте идиома (20 мест: ChatListItem и др.). */}
+        <div className="flex-1 min-w-0 relative overflow-hidden" data-cc-layout="middle" style={{ backgroundColor: 'var(--cc-bg)', cursor: isResizing ? 'col-resize' : undefined }}>
           {/* v1.2.262: полоска «← Общий чат» над активным веб-мессенджером → возврат к API-чатам
               (native инбокс). Показывается только когда открыт веб (не нативный/не пусто). */}
           {(() => {

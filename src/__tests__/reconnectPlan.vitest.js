@@ -12,6 +12,7 @@ import {
   RETRY_LADDER_MS, ABORTED_CODE, isNetworkError, errorName, nextPauseMs,
   planAfterFail, planTrying, planAfterRetryFail, dueIds, nextWakeMs, bringAllForward, secondsLeft,
   logFailLine, logSkipLine, logRetryFailLine, logRestoredLine, logManualLine, logNetLine,
+  shouldAcceptLoaded, touchFailedAt, isErrorPageEcho, logEchoLine, ERROR_PAGE_GRACE_MS,
 } from '../../shared/reconnectPlan.js'
 
 const WA = 'https://web.whatsapp.com'
@@ -197,5 +198,48 @@ describe('Записи в журнал', () => {
   it('пустые данные не ломают текст (нечего разбирать — не падаем)', () => {
     expect(typeof logRestoredLine('X', null, now)).toBe('string')
     expect(typeof logRestoredLine('X', {}, now)).toBe('string')
+  })
+})
+
+describe('Верить ли событию «страница загрузилась» (находки ревью v1.2.452)', () => {
+  const now = 1_700_000_000_000
+
+  it('🔴 ЛОВУШКА: сразу после сбоя — НЕ верим (это страница-ошибка)', () => {
+    const e = planAfterFail(null, { code: -106, url: WA, now })
+    expect(isErrorPageEcho(e, now + 30)).toBe(true)
+    expect(shouldAcceptLoaded(e, now + 30)).toBe(false)
+  })
+
+  it('позже окна ожидания — верим (страница поднялась сама)', () => {
+    const e = planAfterFail(null, { code: -106, url: WA, now })
+    expect(shouldAcceptLoaded(e, now + ERROR_PAGE_GRACE_MS + 1)).toBe(true)
+  })
+
+  it('🔴 ЛОВУШКА: пока идёт НАША попытка — НЕ верим, даже если прошло много времени', () => {
+    const e = planTrying(planAfterFail(null, { code: -106, url: WA, now }), now)
+    expect(shouldAcceptLoaded(e, now + 60000)).toBe(false)
+  })
+
+  it('нет записи → верить нечему', () => {
+    expect(shouldAcceptLoaded(null, now)).toBe(false)
+    expect(isErrorPageEcho(null, now)).toBe(false)
+    expect(isErrorPageEcho({}, now)).toBe(false)
+  })
+
+  it('🔴 ЛОВУШКА: новый сбой во время попытки ОСВЕЖАЕТ метку времени', () => {
+    // Без этого метка осталась бы от первого сбоя и через 5 с эхо сошло бы за успех.
+    const first = planAfterFail(null, { code: -106, url: WA, now })
+    const trying = planTrying(first, now + 5000)
+    expect(trying.failedAt, 'метка переносится как есть').toBe(now)
+    const touched = touchFailedAt(trying, now + 5000)
+    expect(touched.failedAt).toBe(now + 5000)
+    expect(touched.attempt, 'остальное не трогаем').toBe(trying.attempt)
+    expect(touched.phase).toBe('trying')
+    expect(touchFailedAt(null, now)).toBe(null)
+  })
+
+  it('запись отказа в журнал понятная', () => {
+    expect(logEchoLine('WhatsApp')).toContain('страница-ошибка')
+    expect(logEchoLine('WhatsApp')).toContain('восстановлением не считаю')
   })
 })

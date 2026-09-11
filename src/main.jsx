@@ -68,7 +68,8 @@ function hideCcSplash() {
   sp.classList.add('cc-splash--hide')
   setTimeout(() => { try { sp.remove() } catch (_) {} }, 500)
 }
-window.__ccHideSplash = hideCcSplash
+// v1.2.452: приложение поднялось — гасим окно переподключения и обнуляем счётчик попыток
+window.__ccHideSplash = () => { try { window.__ccBootNet?.ok?.() } catch (_) {} ; hideCcSplash() }
 requestAnimationFrame(() => {
   bootLog('first requestAnimationFrame after render')
   window.__ccStartupSummary?.('after-render-raf')

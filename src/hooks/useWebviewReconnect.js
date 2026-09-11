@@ -16,6 +16,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   isNetworkError, planAfterFail, planTrying, planAfterRetryFail, dueIds, nextWakeMs, bringAllForward,
   logFailLine, logSkipLine, logRetryFailLine, logRestoredLine, logManualLine, logNetLine,
+  shouldAcceptLoaded, touchFailedAt, logEchoLine, messengerInfo,
 } from '../../shared/reconnectPlan.js'
 
 const log = (level, message) => { try { window.api?.send?.('app:log', { level, message }) } catch (_) {} }
@@ -26,10 +27,7 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
   const timerRef = useRef(null)
   useEffect(() => { stRef.current = state }, [state])
 
-  const info = useCallback((id) => {
-    const m = (messengersRef.current || []).find(x => x && x.id === id)
-    return { name: (m && m.name) || id, url: (m && m.url) || '', color: m && m.color }
-  }, [messengersRef])
+  const info = useCallback((id) => messengerInfo(messengersRef.current, id), [messengersRef])
 
   // Одна попытка: зовём loadURL и по его обещанию решаем — снять экран или ждать дальше.
   const attempt = useCallback((id) => {
@@ -41,7 +39,15 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
       setState(prev => (prev[id] ? { ...prev, [id]: planAfterRetryFail(prev[id], { code: prev[id].code, url, now }) } : prev))
       return
     }
-    setState(prev => (prev[id] ? { ...prev, [id]: planTrying(prev[id], now) } : prev))
+    // 🔴 v1.2.453 (находка ревью): помечаем «идёт попытка» СРАЗУ и в зеркале записей.
+    // Экран перерисовывает setState, но он применяется не мгновенно, а события страницы
+    // (в том числе отчёт её страницы-ошибки) могут прийти раньше — и обработчик «загрузилась»
+    // увидел бы прежнюю фазу и снял экран. Зеркало stRef обработчики читают синхронно,
+    // поэтому порядок перестаёт иметь значение. Нового хранилища не добавляем (stRef уже есть):
+    // добавление хука в работающее приложение ломает горячую перезагрузку.
+    const trying = planTrying(stRef.current[id], now)
+    stRef.current = { ...stRef.current, [id]: trying }
+    setState(prev => (prev[id] ? { ...prev, [id]: trying } : prev))
     el.loadURL(url).then(() => {
       const entry = stRef.current[id]
       log('INFO', logRestoredLine(name, entry, Date.now()))
@@ -67,7 +73,8 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
       return
     }
     setState(prev => {
-      if (prev[id] && prev[id].phase === 'trying') return prev // попытка уже идёт — не плодим вторую
+      // Попытка уже идёт → вторую не плодим, но метку сбоя освежаем (см. touchFailedAt).
+      if (prev[id] && prev[id].phase === 'trying') return { ...prev, [id]: touchFailedAt(prev[id], Date.now()) }
       const next = planAfterFail(prev[id] || null, { code, url, now: Date.now() })
       log('WARN', logFailLine(name, next))
       return { ...prev, [id]: next }
@@ -75,9 +82,14 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
   }, [info])
 
   // Страница поднялась — снимаем экран (сработает и когда мессенджер восстановился сам).
+  // 🔴 Но верить событию можно не всегда: у страницы-ошибки Chromium оно тоже случается.
+  // Когда верить, а когда нет — решает shouldAcceptLoaded в shared/reconnectPlan.js
+  // (там же причины, найденные по живому журналу).
   const onOk = useCallback((id) => {
-    if (!id || !stRef.current[id]) return
-    log('INFO', logRestoredLine(info(id).name, stRef.current[id], Date.now()))
+    const entry = stRef.current[id]
+    if (!id || !entry) return
+    if (!shouldAcceptLoaded(entry, Date.now())) { log('TRACE', logEchoLine(info(id).name)); return }
+    log('INFO', logRestoredLine(info(id).name, entry, Date.now()))
     setState(prev => { const n = { ...prev }; delete n[id]; return n })
   }, [info])
 
@@ -92,7 +104,9 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
     el.__ccReconnectBound = true
     try {
       const addListener = (type, fn) => { el.addEventListener(type, fn); if (Array.isArray(el._chatcenterListeners)) el._chatcenterListeners.push([type, fn]) }
-      addListener('did-fail-load', (e) => onFail(id, e && e.errorCode))
+      // isMainFrame — документированное поле события: у вложенных кадров (реклама, встроенные
+      // окна внутри страницы) сбои случаются постоянно, и экран «Нет связи» на них поднимать НЕЛЬЗЯ.
+      addListener('did-fail-load', (e) => { if (!e || e.isMainFrame !== false) onFail(id, e && e.errorCode) })
       addListener('did-finish-load', () => onOk(id))
     } catch (_) { el.__ccReconnectBound = false }
   }, [onFail, onOk])

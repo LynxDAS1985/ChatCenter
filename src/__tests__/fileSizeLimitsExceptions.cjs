@@ -7,6 +7,16 @@ module.exports = {
   // v0.87.83: InboxMode.jsx разбит на 4 файла (useReadByVisibility, useInboxScroll,
   // InboxMessageInput, InboxChatListSidebar) — теперь 566 строк, под стандартным лимитом 600.
   // Исключение удалено.
+  // v1.2.453: хук переподключения. ЧИСТАЯ логика вынесена в shared/reconnectPlan.js ТРИ раза
+  // (паузы и коды → v1.2.445; «верить ли „загрузилась“», освежение метки сбоя → v1.2.453;
+  // поиск мессенджера по id → v1.2.453) — в файле остались только проводка (слушатели, таймер,
+  // вызов загрузки) и ОБЯЗАТЕЛЬНЫЕ комментарии-ловушки, которые правило проекта резать запрещает:
+  // про учёт слушателей (утечка), про зеркало записей (порядок событий), про isMainFrame.
+  // Поэтому потолок поднят с обоснованием, а не «вместо разгрузки».
+  'src/hooks/useWebviewReconnect.js': {
+    ceiling: 170,
+    reason: 'v1.2.453: проводка переподключения веб-мессенджеров. Вся чистая логика уже в shared/reconnectPlan.js (3 выноса: v1.2.445 паузы/коды, v1.2.453 shouldAcceptLoaded+touchFailedAt+messengerInfo). Остаток — слушатели, один таймер, вызов loadURL и комментарии-ловушки (учёт слушателей = защита от утечки; зеркало stRef = защита от порядка событий; isMainFrame). Комментарии по правилу проекта не режем. При следующем росте выносить attempt() в shared через узел связей, как сделано у webviewTitleUnread.'
+  },
   'src/utils/webviewSetup.js': {
     ceiling: 605,
     reason: 'v0.88.x: createWebviewSetup — фабрика с closures (deps→handlers), references shared state. handleNewMessage уже вынесен в webviewHandleNewMessage.js (170 строк) в v0.87.97. Дальнейшее разбиение требует архитектурного рефакторинга (closures → классы или модули) — отдельный шаг. v1.2.374: 600→605 (исключение Ozon из обнуления счётчика по заголовку). ВРЕМЕННО — разбить при рефакторинге.'
@@ -100,8 +110,13 @@ module.exports = {
   // InboxMode — единый компонент режима inbox с интеграцией всех hooks (scroll/read/typing/forum).
   // Доменное разбиение InboxMode — отдельная плановая задача после стабилизации форум-топиков.
   'src/native/modes/InboxMode.jsx': {
-    ceiling: 1122,
-    reason: 'v1.2.401: заставка первой загрузки перенесена в InboxMode (на ВСЮ область, не в панели списка) — импорт + рендер overlay (~6 строк). v1.2.393-394: заставка первой загрузки списка чатов — флаг chatsFirstLoadDone, эффект удержания заставки до резолва loadChats со страховкой 15с (+WARN-лог), проброс chatsLoading/chatsLoadDone в сайдбар (~10 строк). v0.95.48: loadMessages aroundId+addOffset=-49 для jump-to-message из notification (target вне окна) — паттерн tdesktop HistoryWidget::showAtMsgId + tweb setInnerPeer (~25 строк). v0.95.47: диагностические логи pending-scroll-effect + scroll-to-message (временные). v0.95.46: useEffect для pendingScrollToMessage. v0.95.43: useFileAttach + handleAttachSend. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. Доменное разбиение — отдельная задача.'
+    // 🔴 v1.2.455: потолок ОПУЩЕН 1122 → 1040. Прокрутка «↓ вниз» (111 строк — она же
+    // нарушала правило «одна функция ≤ 100») вынесена в shared/inboxScrollToBottom.js,
+    // файл стал 1018. Потолок опущен СПЕЦИАЛЬНО: иначе освободившееся место молча
+    // зарастёт обратно, и следующая правка снова упрётся в стену (11 сентября 2026
+    // так и вышло — файл стоял 1121/1122 и не принимал даже строку комментария).
+    ceiling: 1040,
+    reason: 'v1.2.455 (потолок опущен 1122→1040 после выноса прокрутки «вниз» в shared/inboxScrollToBottom.js). v1.2.401: заставка первой загрузки перенесена в InboxMode (на ВСЮ область, не в панели списка) — импорт + рендер overlay (~6 строк). v1.2.393-394: заставка первой загрузки списка чатов — флаг chatsFirstLoadDone, эффект удержания заставки до резолва loadChats со страховкой 15с (+WARN-лог), проброс chatsLoading/chatsLoadDone в сайдбар (~10 строк). v0.95.48: loadMessages aroundId+addOffset=-49 для jump-to-message из notification (target вне окна) — паттерн tdesktop HistoryWidget::showAtMsgId + tweb setInnerPeer (~25 строк). v0.95.47: диагностические логи pending-scroll-effect + scroll-to-message (временные). v0.95.46: useEffect для pendingScrollToMessage. v0.95.43: useFileAttach + handleAttachSend. v0.95.42: search persistence. v0.95.40: useStickyBottomOnMedia. Доменное разбиение — отдельная задача.'
   },
   // v0.92.0: useInboxScroll вернулся в стандартный лимит 150 после удаления
   // isRestoringRef guards. Текущий размер 139.

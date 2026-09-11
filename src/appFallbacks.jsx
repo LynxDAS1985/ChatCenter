@@ -1,6 +1,10 @@
 // v1.1.9: вынесено из App.jsx — fallback компоненты для lazy() + константы Native CC.
 // Поведение не изменено.
 
+// v1.2.455: тот же потолок ширины, что у настоящей панели ИИ — иначе заглушка
+// мелькнула бы шире, а потом панель «прыгнула» бы к правильной ширине.
+import { aiPanelWidthCss } from '../shared/panelWidthCap.js'
+
 export const NATIVE_CC_ID = 'native_cc'
 
 export const NATIVE_CC_TAB = {
@@ -25,7 +29,7 @@ export function AISidebarFallback({ visible, width, panelRef }) {
       ref={panelRef}
       className="shrink-0"
       style={{
-        width,
+        width: aiPanelWidthCss(width),
         backgroundColor: 'var(--cc-panel)',
         borderLeft: '1px solid var(--cc-border)',
       }}

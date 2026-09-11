@@ -73,6 +73,27 @@
         .cc-splash__glow, .cc-splash__logo, .cc-splash__circles span,
         .cc-splash__mark .cc-bar { animation: none; }
       }
+      /* v1.2.452 — панель «нет связи» ПОВЕРХ заставки: показывается, если код приложения
+         не догрузился (обрыв интернета в момент запуска). Живёт в index.html специально:
+         ей не нужен ни один загружаемый файл, поэтому она работает даже тогда, когда
+         не загрузилось вообще ничего. */
+      #cc-boot-net {
+        display: none; margin-top: 18px; max-width: 460px; padding: 16px 18px;
+        border: 1px solid #7F3A3A; border-radius: 14px; background: #2A1518;
+        box-shadow: 0 12px 34px rgba(0,0,0,.45); text-align: left;
+      }
+      #cc-boot-net.cc-on { display: block; }
+      .cc-bn__title { font: 600 15px/1.3 system-ui, sans-serif; color: #F1F5F9; margin-bottom: 6px; }
+      .cc-bn__why { font: 400 13px/1.45 system-ui, sans-serif; color: rgba(241,245,249,.72); }
+      .cc-bn__row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+      .cc-bn__left { font: 600 13px/1 system-ui, sans-serif; color: #F1F5F9; font-variant-numeric: tabular-nums; }
+      .cc-bn__btn {
+        margin-left: auto; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+        border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.1);
+        color: #F1F5F9; font: 600 13px system-ui, sans-serif;
+      }
+      .cc-bn__btn:hover { background: rgba(255,255,255,.18); }
+      .cc-bn__try { margin-top: 8px; font: 400 12px system-ui, sans-serif; color: rgba(241,245,249,.5); }
     </style>
   </head>
   <body>
@@ -92,8 +113,125 @@
         <div class="cc-splash__logo">ЦентрЧатов</div>
         <div class="cc-splash__circles"><span></span><span></span><span></span><span></span><span></span></div>
         <div class="cc-splash__hint">Загрузка чатов…</div>
+        <!-- v1.2.452: окно переподключения приложения (скрыто, пока всё хорошо) -->
+        <div id="cc-boot-net" role="alert">
+          <div class="cc-bn__title">Не удалось загрузить приложение</div>
+          <div class="cc-bn__why" id="cc-bn-why"></div>
+          <div class="cc-bn__row">
+            <span class="cc-bn__left" id="cc-bn-left"></span>
+            <button class="cc-bn__btn" id="cc-bn-btn" type="button">Повторить сейчас</button>
+          </div>
+          <div class="cc-bn__try" id="cc-bn-try"></div>
+        </div>
       </div>
     </div>
+    <!-- v1.2.452 — АВТО-ПЕРЕПОДКЛЮЧЕНИЕ САМОГО ПРИЛОЖЕНИЯ.
+         Жалоба (11 сентября 2026): при обрыве интернета в момент запуска приложение
+         навсегда зависало на заставке. По журналу видно ровно это: 14 файлов программы
+         не догрузились с ошибкой ERR_NETWORK_CHANGED (сеть переключилась), а через 3 минуты
+         предохранитель просто убрал заставку → пустое окно.
+         Теперь окно переподключения поднимается САМО — как у мессенджеров.
+         🔴 ПОЧЕМУ КОД ЗДЕСЬ, А НЕ В ОТДЕЛЬНОМ ФАЙЛЕ: среди не догрузившихся файлов был и
+         shared/reconnectPlan.js. Значит этот код не может ничего у себя подключать — иначе
+         упадёт вместе с остальным. index.html — сам документ, ему загружать нечего. -->
+    <script>
+      (function ccBootNet() {
+        // Лестница пауз — те же числа, что у мессенджеров (shared/reconnectPlan.js).
+        // Дублируются ОСОЗНАННО (см. комментарий выше); совпадение сторожит тест bootNet.vitest.js.
+        var LADDER = [5000, 10000, 20000, 40000, 60000]
+        var KEY = 'ccBootAttempt'   // номер попытки переживает перезагрузку окна
+        var shown = false, tick = 0, dueAt = 0
+        var netDown = false        // сеть пропала — не повод показывать окно, но повод уточнить причину
+
+        function attemptNo() { try { return Number(sessionStorage.getItem(KEY)) || 0 } catch (e) { return 0 } }
+        function pauseMs(n) { return LADDER[Math.min(Math.max(n, 0), LADDER.length - 1)] }
+        function el(id) { return document.getElementById(id) }
+        function say(m) { try { window.api && window.api.send && window.api.send('app:log', { level: 'WARN', message: '[boot-net] ' + m }) } catch (e) {} }
+
+        function retryNow() {
+          try { sessionStorage.setItem(KEY, String(attemptNo() + 1)) } catch (e) {}
+          say('перезагружаю окно, попытка ' + (attemptNo() + 1))
+          api.reload()
+        }
+
+        function paint() {
+          var left = Math.max(0, Math.ceil((dueAt - Date.now()) / 1000))
+          var l = el('cc-bn-left'); if (l) l.textContent = 'Повторим через ' + left + ' с'
+          if (left <= 0) { clearInterval(tick); tick = 0; retryNow() }
+        }
+
+        // Причина для человека: если сети нет — скажем прямо, иначе общий текст.
+        function whyLoadFailed() {
+          return netDown || navigator.onLine === false
+            ? 'нет связи с интернетом — часть программы не загрузилась'
+            : 'часть программы не загрузилась — похоже, пропала связь'
+        }
+
+        function show(why) {
+          if (shown) return
+          // 🔴 v1.2.453 (находка ревью): флаг поднимаем ТОЛЬКО если панель реально на экране.
+          // После успешного запуска заставку (вместе с панелью) убирают из окна — раньше флаг
+          // вставал и тут, а потом возврат сети перезагружал РАБОТАЮЩЕЕ приложение.
+          var box = el('cc-boot-net'); if (!box) return
+          shown = true
+          var n = attemptNo()
+          el('cc-bn-why').textContent = why
+          el('cc-bn-try').textContent = n > 0 ? ('Попытка ' + n + ' — программа пробует сама') : 'Программа пробует сама'
+          box.classList.add('cc-on')
+          var hint = document.querySelector('.cc-splash__hint'); if (hint) hint.textContent = 'Не удалось запуститься'
+          dueAt = Date.now() + pauseMs(n)
+          paint()
+          tick = setInterval(paint, 1000)
+          say('окно переподключения показано: ' + why + ' (попытка ' + n + ', пауза ' + pauseMs(n) / 1000 + 'с)')
+        }
+
+        // «Пульт» объявляем ДО слушателей: иначе обработчик мог сослаться на него раньше,
+        // чем он создан (v1.2.453, находка ревью — хрупкое место).
+        // api.reload — отдельным «швом», чтобы тест мог подменить перезагрузку окна.
+        var api = {
+          show: show, retryNow: retryNow, attemptNo: attemptNo, pauseMs: pauseMs, LADDER: LADDER,
+          reload: function () { try { location.reload() } catch (e) {} },
+          // Приложение запустилось — гасим отсчёт, обнуляем счётчик И СБРАСЫВАЕМ ФЛАГ.
+          // 🔴 Флаг обязателен к сбросу: иначе после старта возврат сети перезагружал
+          // РАБОТАЮЩЕЕ приложение (v1.2.453, находка ревью).
+          ok: function () { clearInterval(tick); tick = 0; shown = false; try { sessionStorage.removeItem(KEY) } catch (e) {} },
+        }
+        window.__ccBootNet = api
+        var b = el('cc-bn-btn'); if (b) b.addEventListener('click', function () { clearInterval(tick); tick = 0; retryNow() })
+
+        // Сбой загрузки файла программы. Событие ресурса НЕ всплывает (MDN), поэтому
+        // слушаем в фазе перехвата — третий параметр true.
+        window.addEventListener('error', function (e) {
+          var t = e && e.target
+          if (!t || t === window || !t.tagName) return
+          var tag = String(t.tagName).toUpperCase()
+          if (tag === 'SCRIPT' || tag === 'LINK') show(whyLoadFailed())
+        }, true)
+
+        // Сорванная догрузка части программы приходит отказом обещания.
+        window.addEventListener('unhandledrejection', function (e) {
+          var m = String((e && e.reason && (e.reason.message || e.reason)) || '')
+          if (/dynamically imported|Failed to fetch|Importing a module|NETWORK_CHANGED/i.test(m)) {
+            show(whyLoadFailed())
+          }
+        })
+
+        // 🔴 v1.2.453 (находка ревью): «нет сети» САМА ПО СЕБЕ окно НЕ поднимает.
+        // Оболочка приложения грузится с диска, чаты есть в памяти — без интернета программа
+        // обязана просто запуститься. Раньше отсутствие сети сразу запускало отсчёт до
+        // перезагрузки, и приложение крутило перезагрузки вместо запуска (счётчик рос 1→2→3…).
+        // Теперь отсутствие сети лишь УТОЧНЯЕТ причину, если случится настоящий сбой загрузки.
+        window.addEventListener('offline', function () { netDown = true })
+        window.addEventListener('online', function () {
+          netDown = false
+          // Перезагружаем только если окно ДЕЙСТВИТЕЛЬНО показано (панель на экране).
+          var box = el('cc-boot-net')
+          if (shown && box && box.classList.contains('cc-on')) { clearInterval(tick); tick = 0; retryNow() }
+        })
+        if (navigator.onLine === false) netDown = true
+
+      })()
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/boot-probe.js"></script>
     <script type="module" src="/src/main.jsx"></script>

@@ -16,6 +16,7 @@ import {
 import { createStreamingHandler } from '../utils/aiStreamingHandler.js'
 import { runProviderChecks as runProviderChecksUtil } from '../utils/aiProviderChecker.js'
 import { createLoginHandler } from '../utils/aiLoginHandler.js'
+import { aiPanelWidthCss } from '../../shared/panelWidthCap.js' // v1.2.455: панель не шире половины окна
 import { sendContextToAiWebview as sendContextToAiWebviewUtil } from '../utils/aiWebviewContext.js'
 // v1.1.5: диагностические логи для AI WebView (DeepSeek/ГигаЧат не работают — разбираемся).
 import { attachAiWebviewDiagnostics } from '../utils/aiWebviewDiagnostics.js'
@@ -367,16 +368,25 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
   return (
     <div
       ref={panelRef}
+      data-cc-layout="ai-panel"
       className="flex flex-col shrink-0"
       style={{
-        width: visible ? `${width}px` : '0px',
+        // v1.2.455: не просто «сколько сохранено», а «сколько сохранено, но не больше
+        // половины окна». Пересчитывает сам браузер при изменении размера окна —
+        // без слушателей и без порчи сохранённого числа (см. shared/panelWidthCap.js).
+        width: visible ? aiPanelWidthCss(width) : '0px',
         overflow: 'hidden',
         borderLeft: visible ? '1px solid var(--cc-border)' : 'none',
         backgroundColor: 'var(--cc-surface)',
         transition: 'width 0.15s',
       }}
     >
-      <div style={{ width: `${width}px`, minWidth: `${width}px` }} className="flex flex-col h-full">
+      {/* v1.2.455: внутренний слой держит ТО ЖЕ правило. С жёсткими `${width}px` он при
+          сработавшем потолке вылез бы за внешний слой и был бы обрезан (у внешнего
+          overflow: hidden) — та же беда, что чинили в v1.2.454, только внутри панели.
+          minWidth нужен, чтобы содержимое не переливалось во время сворачивания
+          панели (внешний слой уезжает в 0 за 0.15с). */}
+      <div style={{ width: aiPanelWidthCss(width), minWidth: aiPanelWidthCss(width) }} className="flex flex-col h-full">
 
         {/* v0.99.0 (Phase 3): AI Агент UI — показывается когда юзер кликнул «🤖 AI» в уведомлении. */}
         {pendingAiInvocation && (

@@ -7,7 +7,7 @@ import { renderHook, act, render, screen, fireEvent } from '@testing-library/rea
 import fs from 'node:fs'
 import useWebviewReconnect from './useWebviewReconnect.js'
 import WebviewOfflineOverlay from '../components/WebviewOfflineOverlay.jsx'
-import { planAfterFail } from '../../shared/reconnectPlan.js'
+import { planAfterFail, ERROR_PAGE_GRACE_MS } from '../../shared/reconnectPlan.js'
 
 const WA = 'https://web.whatsapp.com'
 
@@ -20,7 +20,13 @@ function fakeWebview(behaviour) {
     fire(type, ev) { (listeners[type] || []).forEach(fn => fn(ev)) },
     loadURL(url) {
       this.calls.push(url)
-      return behaviour === 'ok' ? Promise.resolve() : Promise.reject(Object.assign(new Error('fail'), { errno: -106 }))
+      if (behaviour === 'ok') return Promise.resolve()
+      // v1.2.453: КАК В ЖИЗНИ — при неудаче Chromium сначала присылает события своей
+      // страницы-ошибки, и только потом отклоняется обещание. Раньше заглушка этого не
+      // делала, поэтому тесты не видели бага «экран исчезает на второй попытке».
+      this.fire('did-fail-load', { errorCode: -106, isMainFrame: true })
+      this.fire('did-finish-load')
+      return Promise.reject(Object.assign(new Error('fail'), { errno: -106 }))
     },
   }
 }
@@ -126,14 +132,86 @@ describe('Переподключение — поведение', () => {
     expect(has(h.logs, 'повтор по кнопке пользователя')).toBe(1)
   })
 
-  it('страница поднялась сама → экран снят без нашей попытки', async () => {
+  // 🔴 ЛОВУШКА, НАЙДЕННАЯ НА ЖИВОМ ОБРЫВЕ ИНТЕРНЕТА (журнал 2026-09-10 18:59).
+  // РАНЬШЕ этот тест утверждал ОБРАТНОЕ («сразу после сбоя экран снят») и был зелёным —
+  // а в жизни это означало: экран «Нет связи» мелькал 30 мс и исчезал, повторы не шли,
+  // мессенджер оставался на странице-ошибке. Причина: у страницы-ошибки Chromium тоже
+  // случается «загрузилась». Теперь проверяем ПРАВИЛЬНОЕ поведение — оба случая.
+  it('🔴 ЛОВУШКА: «загрузилась» СРАЗУ после сбоя — это страница-ошибка, экран НЕ снимаем', async () => {
     const h = harness('fail')
     const { result } = renderHook(() => useWebviewReconnect(h.webviewRefs, h.messengersRef))
     act(() => { result.current.bindReconnect(h.wv, 'wa') })
     await act(async () => { h.wv.fire('did-fail-load', { errorCode: -106 }) })
+    await act(async () => { h.wv.fire('did-finish-load') })   // эхо страницы-ошибки
+    expect(Object.keys(result.current.offlineState).length, 'экран должен остаться').toBe(1)
+    expect(h.wv.calls.length).toBe(0)
+  })
+
+  it('страница поднялась САМА (позже окна ожидания) → экран снят без нашей попытки', async () => {
+    const h = harness('fail')
+    const { result } = renderHook(() => useWebviewReconnect(h.webviewRefs, h.messengersRef))
+    act(() => { result.current.bindReconnect(h.wv, 'wa') })
+    await act(async () => { h.wv.fire('did-fail-load', { errorCode: -106 }) })
+    await act(async () => { vi.advanceTimersByTime(ERROR_PAGE_GRACE_MS + 100) })
     await act(async () => { h.wv.fire('did-finish-load') })
     expect(Object.keys(result.current.offlineState).length).toBe(0)
-    expect(h.wv.calls.length).toBe(0)
+  })
+
+  it('🔴 ЛОВУШКА: сбой ВЛОЖЕННОГО кадра (реклама внутри страницы) экран НЕ поднимает', async () => {
+    // У вложенных кадров сбои случаются постоянно; isMainFrame — документированное поле события.
+    const h = harness('fail')
+    const { result } = renderHook(() => useWebviewReconnect(h.webviewRefs, h.messengersRef))
+    act(() => { result.current.bindReconnect(h.wv, 'wa') })
+    await act(async () => { h.wv.fire('did-fail-load', { errorCode: -106, isMainFrame: false }) })
+    expect(Object.keys(result.current.offlineState).length).toBe(0)
+  })
+
+
+  // 🔴 ЛОВУШКИ, НАЙДЕННЫЕ РЕВЬЮ v1.2.452: защита от «эха страницы-ошибки» работала
+  // только на ПЕРВОМ сбое. На нашей же второй попытке метка времени сбоя оставалась
+  // старой (planTrying переносит её как есть, а обработчик сбоя при идущей попытке
+  // запись не обновлял) → эхо снова принималось за успех: экран исчезал, повторы
+  // прекращались, а в журнал попадала ложная строка «связь восстановлена за 5с».
+  it('🔴 ЛОВУШКА: наша попытка упала → экран ОСТАЛСЯ и повторы продолжаются', async () => {
+    const h = harness('fail')
+    const { result } = renderHook(() => useWebviewReconnect(h.webviewRefs, h.messengersRef))
+    act(() => { result.current.bindReconnect(h.wv, 'wa') })
+    await act(async () => { h.wv.fire('did-fail-load', { errorCode: -106, isMainFrame: true }) })
+    await act(async () => { h.wv.fire('did-finish-load') })          // эхо первого сбоя
+    expect(Object.keys(result.current.offlineState).length).toBe(1)
+
+    await act(async () => { vi.advanceTimersByTime(5100) })           // пора пробовать
+    await act(async () => { await Promise.resolve() })
+    expect(h.wv.calls.length, 'попытка загрузки была').toBe(1)
+    expect(Object.keys(result.current.offlineState).length, 'экран ДОЛЖЕН остаться').toBe(1)
+    expect(has(h.logs, 'связь восстановлена'), 'ложной записи о восстановлении быть НЕ должно').toBe(0)
+    expect(has(h.logs, 'попытка 1 не удалась')).toBe(1)
+
+    await act(async () => { vi.advanceTimersByTime(10100) })          // и вторая попытка идёт
+    await act(async () => { await Promise.resolve() })
+    expect(h.wv.calls.length, 'лестница повторов продолжается').toBe(2)
+  })
+
+  it('🔴 ЛОВУШКА: пока идёт НАША попытка, «загрузилась» экран не снимает', async () => {
+    // В этой фазе истину говорит только обещание loadURL: по доке Electron оно
+    // отклоняется, если страница не загрузилась.
+    const h = harness('fail')
+    const { result } = renderHook(() => useWebviewReconnect(h.webviewRefs, h.messengersRef))
+    act(() => { result.current.bindReconnect(h.wv, 'wa') })
+    await act(async () => { h.wv.fire('did-fail-load', { errorCode: -106, isMainFrame: true }) })
+    await act(async () => { vi.advanceTimersByTime(5100) })
+    // отчёт «загрузилась» приходит, когда попытка ещё в работе
+    await act(async () => { h.wv.fire('did-finish-load') })
+    expect(Object.keys(result.current.offlineState).length, 'экран должен стоять').toBe(1)
+  })
+
+  it('в журнале видно, что ложное «восстановление» отброшено', async () => {
+    const h = harness('fail')
+    const { result } = renderHook(() => useWebviewReconnect(h.webviewRefs, h.messengersRef))
+    act(() => { result.current.bindReconnect(h.wv, 'wa') })
+    await act(async () => { h.wv.fire('did-fail-load', { errorCode: -106, isMainFrame: true }) })
+    await act(async () => { h.wv.fire('did-finish-load') })
+    expect(has(h.logs, 'страница-ошибка'), 'отброшенное эхо должно попадать в журнал').toBe(1)
   })
 
   it('слушатели не вешаются дважды при повторной привязке', async () => {

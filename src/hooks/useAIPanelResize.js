@@ -10,6 +10,7 @@
 // Поэтому в App.jsx дополнительно показывается глобальный fixed overlay над
 // всеми webview во время resize — без него pointerup мог застрять в webview.
 import { useCallback } from 'react'
+import { aiPanelMaxPx, aiPanelWidthCss, AI_PANEL_MIN_PX } from '../../shared/panelWidthCap.js'
 
 /**
  * @param {Object} deps
@@ -29,12 +30,21 @@ export default function useAIPanelResize({
   const onPointerMove = useCallback((e) => {
     if (!isResizingRef.current) return
     const delta = resizeStartRef.current.x - e.clientX
-    const newW = Math.max(240, Math.min(600, resizeStartRef.current.w + delta))
+    // v1.2.455: предел теперь зависит от ОКНА (половина ширины, но не больше 600).
+    // Раньше стоял жёсткий 600 — на узком окне панель «упиралась в невидимую стену»:
+    // тянешь мышкой, число растёт, а на экране ничего не меняется (вёрстка обрезала).
+    // window.innerWidth читаем прямо здесь, в обработчике — это НЕ новый слушатель и
+    // НЕ новое хранилище, поэтому горячая перезагрузка не ломается (см. v1.2.452).
+    const maxW = aiPanelMaxPx(window.innerWidth)
+    const newW = Math.max(AI_PANEL_MIN_PX, Math.min(maxW, resizeStartRef.current.w + delta))
     aiWidthRef.current = newW
     if (aiPanelRef.current) {
-      aiPanelRef.current.style.width = `${newW}px`
+      // Пишем ТО ЖЕ правило, что стоит в вёрстке панели — иначе прямая запись ширины
+      // перебила бы потолок на время перетаскивания.
+      const css = aiPanelWidthCss(newW)
+      aiPanelRef.current.style.width = css
       const inner = aiPanelRef.current.firstChild
-      if (inner) { inner.style.width = `${newW}px`; inner.style.minWidth = `${newW}px` }
+      if (inner) { inner.style.width = css; inner.style.minWidth = css }
     }
   }, [isResizingRef, resizeStartRef, aiWidthRef, aiPanelRef])
 

@@ -20,6 +20,7 @@ import { getUnreadAnchorDebug, logNativeScroll } from '../utils/scrollDiagnostic
 import { computeScrollBehavior } from '../utils/scrollBehavior.js'
 import { smoothScrollTo } from '../utils/smoothScroll.js'
 import { computeJumpToEndGate } from '../utils/jumpToEndGate.js'
+import createScrollToBottom from '../../../shared/inboxScrollToBottom.js'
 import useChatListResize, {
   CHAT_LIST_DEFAULT_WIDTH, clampChatListWidth, isChatListCompact,
 } from '../hooks/useChatListResize.js'
@@ -711,117 +712,13 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
   // - setAtBottom(true), setNewBelow(0), сохранение позиции — как в старом scrollToAbsoluteBottom.
   // Удалены: scrollToAbsoluteBottom, handleScrollButtonClick (220мс double-click timer),
   // handleScrollButtonDoubleClick — больше не нужны (один клик = один результат).
-  const scrollToBottom = () => {
-    const el = msgsScrollRef.current
-    if (!el) return
-    const viewKey = activeViewKey || store.activeChatId
-    const deltaPx = el.scrollHeight - el.scrollTop - el.clientHeight
-    const behavior = computeScrollBehavior(deltaPx, el.clientHeight)
-    // v0.95.11 диагностика: gap между chat.lastMessageId (сервер) и activeMessages[last] (DOM).
-    const loadedIncoming = activeMessages.filter(m => !m.isOutgoing).length
-    const chatObj = store.chats.find(c => c.id === viewKey)
-    const chatLastMessageId = chatObj?.lastMessageId || null
-    const loadedLastMsg = activeMessages[activeMessages.length - 1]
-    const loadedLastId = loadedLastMsg?.id ? String(loadedLastMsg.id) : null
-    const MSG_ID_STEP = 1048576
-    const gapMessages = (chatLastMessageId && loadedLastId)
-      ? Math.round((Number(chatLastMessageId) - Number(loadedLastId)) / MSG_ID_STEP)
-      : null
-    const unreadVsLoaded = activeUnread - loadedIncoming
-    // v0.95.20: гейт «грузить-потом-скроллить» — computeJumpToEndGate.
-    // Раньше (v0.95.12-v0.95.19): `unreadVsLoaded > 50`. Если у юзера 10 непрочитанных
-    // но они в 200 сообщениях от загруженного окна — fallback прыгал сразу, сообщения
-    // дописывались после («эффект появления»). Теперь — любой gap → load-first.
-    // Эталон: Telegram Desktop `_history->isReadyFor()` перед scroll.
-    const isForumTopic = !!(activeChat?.isForum && activeTopic)
-    const topicLastMessageId = isForumTopic ? (activeTopic.lastMessageId || null) : null
-    const effectiveLastMessageId = isForumTopic ? topicLastMessageId : chatLastMessageId
-    const loading = !!store.loadingMessages?.[viewKey]
-    const shouldLoadFirst = computeJumpToEndGate({
-      lastMessageId: effectiveLastMessageId,
-      gapMessages,
-      loading,
-    })
-    scrollDiag.logEvent('button-scroll-bottom', {
-      activeUnread, deltaPx, behavior, messages: activeMessages.length,
-      loadedIncoming, chatLastMessageId, loadedLastId, gapMessages, unreadVsLoaded,
-      branch: shouldLoadFirst ? 'load-first' : 'direct-scroll',
-      isForumTopic, effectiveLastMessageId, loading,
-    })
-
-    // v0.95.12-v0.95.16: JUMP-TO-END через ИТЕРАТИВНЫЙ fetch.
-    // См. .memory-bank/jump-to-end-saga.md — полная история v0.95.12-15 + v0.95.16 форумы.
-    // TDLib `getChatHistory` / `getMessageThreadHistory` возвращают меньше limit
-    // (issue #740, ответ levlam). Решение — итерации до untilMessageId.
-    // v0.95.15: store.loadMessagesUntil для обычных чатов.
-    // v0.95.16: store.loadTopicMessagesUntil для форум-топиков (getMessageThreadHistory)
-    //   + smoothScroll с easeOutCubic для красивого «приземления».
-    if (shouldLoadFirst) {
-      scrollDiag.logEvent('button-scroll-jump-to-end', {
-        chatLastMessageId, topicLastMessageId,
-        effectiveLastMessageId, isForumTopic,
-        loadedLastId, gapMessages, unreadVsLoaded,
-        loadedIncoming, activeUnread,
-      })
-      const loadPromise = isForumTopic
-        ? store.loadTopicMessagesUntil(store.activeChatId, activeTopic, effectiveLastMessageId, 100)
-        : store.loadMessagesUntil(viewKey, effectiveLastMessageId, 100)
-      loadPromise.then((result) => {
-        // rAF×2 — React commit + первый paint завершились → scrollHeight точный.
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            const elNow = msgsScrollRef.current
-            if (!elNow) return
-            // v0.95.16: smoothScroll с easeOutCubic (быстрый разгон + плавное приземление).
-            // v0.95.18: ДВУХФАЗНЫЙ режим (twoPhase:true). При distance > 1 viewport —
-            // instant prelude к (target-viewport) + smooth последний viewport.
-            // Юзер видит «приземление» ленты ВСЕГДА, независимо от distance
-            // (jump-to-end после reload часто даёт 50+ viewport, без twoPhase
-            // smoothScroll fallback на instant и юзер не видит анимацию).
-            smoothScrollTo(elNow, elNow.scrollHeight, {
-              duration: 350,
-              twoPhase: true,
-              onComplete: () => {
-                if (viewKey) scrollPosByChatRef.current.set(viewKey, {
-                  anchorMsgId: null, screenTop: 0, atBottom: true,  // v1.2.186: в конце — якорь не нужен
-                })
-                setAtBottom(true)
-                setNewBelow(0)
-                const lastIdNum = Number(effectiveLastMessageId) || 0
-                if (lastIdNum > 0 && lastIdNum > (maxEverSentRef.current || 0)) {
-                  maxEverSentRef.current = lastIdNum
-                  markReadCurrentView(viewKey, lastIdNum, { source: 'button-scroll' })
-                }
-                scrollDiag.logEvent('button-scroll-jump-to-end-done', {
-                  effectiveLastMessageId, isForumTopic,
-                  iterations: result?.iterations || 0,
-                  messagesLoaded: result?.messages?.length || 0,
-                  scrollTop: elNow.scrollTop, scrollHeight: elNow.scrollHeight,
-                })
-              },
-            })
-          })
-        })
-      }).catch((err) => {
-        scrollDiag.logEvent('button-scroll-jump-to-end-error', {
-          error: String(err?.message || err),
-        })
-      })
-      return  // ранний выход — fallback ниже не запускается
-    }
-
-    // === Обычное поведение (gap маленький ИЛИ нет lastMessageId ИЛИ идёт загрузка) ===
-    el.scrollTo({ top: el.scrollHeight, behavior })
-    if (viewKey) scrollPosByChatRef.current.set(viewKey, { anchorMsgId: null, screenTop: 0, atBottom: true })  // v1.2.186: в конце
-    setAtBottom(true)
-    setNewBelow(0)
-    const lastMsg = activeMessages[activeMessages.length - 1]
-    const lastId = Number(lastMsg?.id) || 0
-    if (lastId > 0 && activeUnread > 0 && lastId > (maxEverSentRef.current || 0)) {
-      maxEverSentRef.current = lastId
-      markReadCurrentView(viewKey, lastId, { source: 'button-scroll' })
-    }
-  }
+  // v1.2.455: сама прокрутка вынесена в shared/inboxScrollToBottom.js (была 111 строк
+  // при лимите 100 и НЕ проверялась тестом). Здесь остаётся только узел зависимостей.
+  const scrollToBottom = createScrollToBottom({
+    msgsScrollRef, activeViewKey, store, activeMessages, activeUnread, activeChat, activeTopic,
+    scrollDiag, scrollPosByChatRef, setAtBottom, setNewBelow, maxEverSentRef, markReadCurrentView,
+    computeScrollBehavior, computeJumpToEndGate, smoothScrollTo,
+  })
 
   // v0.87.27: клик по reply-цитате — скроллим к оригиналу + 1.5с жёлтое мерцание.
   // v0.89.0: при виртуализации reply-target может быть вне видимого DOM →
@@ -1011,8 +908,9 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     } finally { setSending(false) }
   }
 
+  // v1.2.454 minWidth: 0 = «можно сжиматься» — иначе панель ИИ уезжает за край окна (причина: App.jsx, метка middle)
   return (
-    <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+    <div style={{ display: 'flex', flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }} data-cc-layout="inbox-row">
       {/* v1.2.401: заставка первой загрузки — ОДНА на всю область InboxMode (список чатов + окно чата),
           с реальными аватарами чатов и счётчиком «Загружено N из M». Раньше была в узкой панели списка —
           получалось «в три экрана»; теперь единый экран после стартовой заставки. Не показываем при поиске. */}
@@ -1058,7 +956,7 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
       )}
 
       {/* Окно чата → InboxChatPanel (v0.87.103) */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }} data-cc-layout="messages">
         {/* v1.2.176: 48px-полоса сверху с кнопкой 🎨 УБРАНА — кнопка переехала в шапку
             переписки рядом с 🔍 (onOpenThemePicker). Переписка стала выше на 48px. */}
         <InboxChatPanel

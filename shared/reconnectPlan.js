@@ -94,6 +94,7 @@ export function planAfterFail(entry, { code, url, now }) {
     pauseMs,                       // сколько ждём (для полосы на экране)
     code: Number(code),
     since: (entry && entry.since) || now, // когда началась беда — для «восстановлено за N с»
+    failedAt: now,                 // v1.2.452: момент сбоя — см. isErrorPageEcho
   }
 }
 
@@ -114,6 +115,7 @@ export function planAfterRetryFail(entry, { code, url, now }) {
     pauseMs,
     code: Number(code) || (entry && entry.code) || 0,
     since: (entry && entry.since) || now,
+    failedAt: now,                 // v1.2.452: момент сбоя — см. isErrorPageEcho
   }
 }
 
@@ -189,4 +191,73 @@ export function logNetLine(online, waitingCount) {
   return online
     ? `[net] связь появилась — пробуем поднять мессенджеры: ${waitingCount}`
     : '[net] связь пропала'
+}
+
+/**
+ * v1.2.452 — сколько после сбоя НЕ верить событию «страница загрузилась».
+ *
+ * 🔴 НАЙДЕНО ПО ЖИВОМУ ЖУРНАЛУ (2026-09-10 18:59, настоящий обрыв интернета).
+ * Сразу ПОСЛЕ неудачи Chromium показывает свою страницу-ошибку, и у неё тоже случается
+ * событие «загрузилась» (`did-finish-load`). По доке Electron это событие значит лишь
+ * «переход завершён и сработал onload» — ЧТО именно загрузилось, оно не сообщает.
+ * В журнале обрыв и «восстановление» стояли в ОДНУ секунду (30-60 мс друг от друга):
+ *   [reconnect] WhatsApp: обрыв связи, код=-105 ERR_NAME_NOT_RESOLVED, попытка 1 через 5с
+ *   [reconnect] WhatsApp: связь восстановлена за 0с (попыток: 1)
+ * Последствие: экран «Нет связи» мелькал и исчезал, лестница повторов НЕ запускалась,
+ * мессенджер оставался на странице-ошибке — то есть вся функция не работала.
+ *
+ * Две секунды с запасом покрывают страницу-ошибку и не мешают распознать настоящее
+ * «поднялась сама»: такое случается через секунды, а не через миллисекунды.
+ */
+export const ERROR_PAGE_GRACE_MS = 2000
+
+/**
+ * «Это эхо страницы-ошибки, а не успех?» Момент сбоя лежит В САМОЙ ЗАПИСИ (поле failedAt) —
+ * специально, чтобы в хуке не появилось ещё одно хранилище: добавление хука в работающее
+ * приложение ломает горячую перезагрузку («Should have a queue» от React).
+ * @param {object|null} entry — запись мессенджера
+ * @param {number} now — текущее время (мс)
+ */
+export function isErrorPageEcho(entry, now) {
+  const f = Number(entry && entry.failedAt) || 0
+  if (!f) return false
+  const dt = Number(now) - f
+  return dt >= 0 && dt < ERROR_PAGE_GRACE_MS
+}
+
+/** Запись в журнал: отбросили эхо страницы-ошибки (иначе отказ был бы «немым»). */
+export function logEchoLine(name) {
+  return `[reconnect] ${name}: пришла страница-ошибка, а не сама страница — восстановлением не считаю`
+}
+
+/**
+ * v1.2.453 — «Верить ли событию „страница загрузилась“?»
+ *
+ * НЕ верим в двух случаях (оба найдены ревью на живом журнале):
+ *  1) идёт НАША попытка — в этой фазе судьбу решает только обещание loadURL (по доке
+ *     Electron оно отклоняется при неудаче). Отчёт страницы-ошибки приходит РАНЬШЕ отказа
+ *     обещания и успел бы снять экран до того, как мы узнаем о неудаче;
+ *  2) событие пришло в первые ERROR_PAGE_GRACE_MS после сбоя — это эхо страницы-ошибки.
+ * @param {object|null} entry — запись мессенджера
+ * @param {number} now — текущее время (мс)
+ */
+export function shouldAcceptLoaded(entry, now) {
+  if (!entry) return false
+  if (entry.phase === 'trying') return false
+  return !isErrorPageEcho(entry, now)
+}
+
+/**
+ * v1.2.453 — новый сбой, когда попытка УЖЕ идёт: вторую попытку не планируем,
+ * но метку времени сбоя обновляем. Иначе метка осталась бы от первого сбоя, и уже через
+ * 5 секунд эхо страницы-ошибки снова сошло бы за успех (экран исчезал, повторы прекращались).
+ */
+export function touchFailedAt(entry, now) {
+  return entry ? { ...entry, failedAt: now } : entry
+}
+
+/** Имя/адрес/цвет мессенджера по его id — для экрана и записей журнала. */
+export function messengerInfo(list, id) {
+  const m = (list || []).find(x => x && x.id === id)
+  return { name: (m && m.name) || id, url: (m && m.url) || '', color: m && m.color }
 }
