@@ -21,12 +21,9 @@
 
 ### 1. [`mistakes/native-scroll-unread.md`](./mistakes/native-scroll-unread.md)
 **Когда читать**: задача связана с native-режимом Telegram, скроллом, счётчиком непрочитанных.
-- Native InboxMode scroll: initial-scroll, load-older, firstUnread
-- Unread counter: markRead, groupedUnread (удалён в v0.87.51), синхронизация с MTProto
-- IntersectionObserver: ratio≥0.95 недостижим для длинных msg (v0.87.47)
-- Гонка авто-load-older + browser scroll anchoring (v0.87.48)
-- State в InboxMode: сброс по activeChatId (v0.87.52-0.87.53)
-- 🟡 Перетаскивание порядка строк ВНУТРИ react-window — тупик + процессный урок «уточни требование до крупной переделки» (v1.2.156–162)
+- Скролл InboxMode (initial/load-older/firstUnread), счётчик непрочитанных и markRead
+- IntersectionObserver: ratio≥0.95 недостижим для длинных сообщений; гонка авто-load-older
+- 🟡 Перетаскивание строк ВНУТРИ react-window — тупик + урок «уточни требование до переделки»
 - Связанный handoff: [`native-scroll-diagnostics-handoff.md`](./native-scroll-diagnostics-handoff.md)
 
 ### 2. [`mistakes/webview-injection.md`](./mistakes/webview-injection.md)
@@ -45,9 +42,7 @@
 - MAX SvelteKit: `scrollListContent` (sidebar vs чат), `messageWrapper ≠ message`
 - Pipeline text truncation (60 символов), enrichment header MAX
 - Sender-based dedup через 3 пути, dedup-суффикс
-- Ribbon CSS/UI в WebView: `mouseenter/mouseleave` в transparent BrowserWindow,
-  `expandedByDefault` auto-dismiss, fade-out мигание, FIFO deadlock,
-  Emoji regex для modern Unicode
+- Ribbon CSS/UI в WebView: mouse-события в transparent окне, auto-dismiss, fade-out, FIFO
 - CSS `.messenger-name` невидимый
 
 ### 2c. [`mistakes/webview-stack-grouping.md`](./mistakes/webview-stack-grouping.md)
@@ -57,19 +52,21 @@
 - Фантомные элементы (ghost-items) после анимаций
 - Правила очистки устаревших элементов
 
+### 2d. [`mistakes/app-layout.md`](./mistakes/app-layout.md)
+**Когда читать**: раскладка НАШЕГО экрана — «панель уехала за край», «окно чата обрезано»,
+«дёргается при переключении», «панель не той ширины». Не путать с 2b (там UI внутри чужих страниц).
+- 🔴 Нет `min-width: 0` → лишнее уезжает за край МОЛЧА (454); потолок в анимируемом свойстве → панель отстаёт (456); приём, меняющий геометрию, на каждом показе → дёргание (457)
+- 🟡 «Немой страж» (нужен ВЫЗОВ, не имя); почему нельзя слушателем размера окна (455-456)
+
 ### 3. [`mistakes/notifications-ribbon.md`](./mistakes/notifications-ribbon.md)
 **Когда читать**: задача про уведомления, ribbon-окно, кастомные нотификации.
-- Messenger Ribbon: BrowserWindow (transparent, focusable:false, frameless)
-- Notification API перехват: ServiceWorker + backup path + dedup
-- Enrichment addedNodes: timing + селекторы + dedup race
-- CSS fade-out мигание, FIFO deadlock
-- Emoji regex, пустой body = стикер
-- Startup ribbon, "Перейти к чату", ribbonExpandedByDefault
-- Док (полоска задач): вертикаль по стабильному якорю, не из живой `getBounds()`; сползание вниз; на панели задач (v1.2.80–89, см. [[ADR-018]])
+- Ribbon-окно (transparent/frameless), перехват Notification API, enrichment + dedup
+- CSS fade-out мигание, FIFO deadlock, emoji regex, пустой body = стикер
+- Док (полоска задач): вертикаль по стабильному якорю, а не из живой `getBounds()` (v1.2.80–89, [[ADR-018]])
 - Уведомление теряет поля payload (accountName) — добавлять в `showCustomNotification` (v1.2.87)
 - CSS `display:none` в правиле нельзя перекрыть `style.display=''` (v1.2.83)
-- Карточка «Стопка» (аватар+имя сверху) + одиночное фото «размытый фон» (`cover` режет → `contain`+blur двумя слоями); «вечная» крутилка при сбое превью → таймаут (v1.2.96–100, см. [[ADR-020]])
-- «Невидимая стена»: пустое прозрачное окно ловит клики — гасить по ВИДИМОМУ (`calcHeight`), а не по числу записей `items`/`notifItems[]` (копятся фантомы стопки); «поверх всех» через `screen-saver`+reassert (v1.2.106–128)
+- Карточки: «Стопка», одиночное фото `contain`+blur, таймаут на «вечную» крутилку (v1.2.96–100, [[ADR-020]])
+- «Невидимая стена»: гасить по ВИДИМОМУ (`calcHeight`), а не по числу записей; «поверх всех» через `screen-saver`+reassert (v1.2.106–128)
 - 📦 Старые ловушки (#28–#32, v0.89.35–v1.2.7) вынесены в [`mistakes/notifications-ribbon-history.md`](./mistakes/notifications-ribbon-history.md) (v1.2.78, разгрузка)
 
 ### 4. [`mistakes/electron-core.md`](./mistakes/electron-core.md)
@@ -83,14 +80,11 @@
 - 🔴 «Чёрный экран» после добавления аккаунта = залипший `loginFlow=success` держит экран входа поверх чатов (не крэш, данные целы); флаг-процесса нужно сбрасывать в терминальном success (v1.2.147)
 
 ### 5. [`mistakes/tdlib-video-player.md`](./mistakes/tdlib-video-player.md)
-**Когда читать**: задача про воспроизведение видео/фото из TDLib, cc-media protocol, Range requests, MEDIA_ERR_DECODE, прогрессивное воспроизведение, snapshot caches.
-- `HTMLMediaElement.buffered` ≠ файл на диске (это память плеера)
-- TDLib `video.supports_streaming` — обязательно проверять для progressive
-- `net.fetch('file://')` не пробрасывает Range — нужен manual `fs.createReadStream({start, end})`
-- ВСЁ медиа через `cc-media://` scheme (codec privileges)
-- Snapshot API должны возвращать кеш (не только events)
-- НЕ добавлять «защитные кнопки» вместо устранения причины
-- Renderer логи в файл через IPC `app:log`
+**Когда читать**: воспроизведение видео/фото из TDLib, `cc-media` protocol, Range requests, прогрессивное воспроизведение.
+- `HTMLMediaElement.buffered` ≠ файл на диске; `video.supports_streaming` проверять обязательно
+- `net.fetch('file://')` не пробрасывает Range — нужен `fs.createReadStream({start, end})`
+- ВСЁ медиа через `cc-media://`; snapshot API обязаны возвращать кеш, не только события
+- НЕ добавлять «защитные кнопки» вместо устранения причины; логи renderer — через `app:log`
 
 ### 6. [`mistakes/tdlib-forum.md`](./mistakes/tdlib-forum.md)
 **Когда читать**: задача про forum topics в native Telegram, supergroup metadata, `is_forum`, `chatTypeSupergroup`, getSupergroup, updateSupergroup.
@@ -105,9 +99,7 @@
 
 ## 🔄 История файла
 
-**Было до 24 апреля 2026**: один монолитный файл `common-mistakes.md` на 294 КБ (2342 строки, 66 секций). Превышал лимит `Read` (256 КБ), замедлял каждую сессию.
-
-**Разбиение 24 апреля 2026 (v0.87.54)**: разложен по 4 тематическим файлам в `mistakes/` + 1 архивный в `archive/`. Новый индекс (этот файл) — 5 КБ.
+**Было до 24 апреля 2026**: монолит на 294 КБ — превышал лимит `Read` (256 КБ). **24 апреля 2026 (v0.87.54)**: разложен по темам в `mistakes/` + архив; этот файл стал индексом.
 
 **Как добавлять новые ловушки**:
 1. Определить тему: native-scroll / webview / ribbon / electron → выбрать файл из `mistakes/`

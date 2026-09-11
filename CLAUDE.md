@@ -147,6 +147,7 @@
 | Задача про outgoing-сообщения (auto-scroll / edit / dedup) — sending_state различение | `.memory-bank/mistakes/outgoing-two-cases.md` |
 | Задача про WebView injection / DOM-селекторы / спам / звук / mark-read throttling | `.memory-bank/mistakes/webview-injection.md` |
 | Задача про навигацию между чатами / MAX SvelteKit / UI в WebView / ribbon CSS | `.memory-bank/mistakes/webview-navigation-ui.md` |
+| Задача про раскладку НАШЕГО экрана (панель уехала за край, окно чата обрезано, дёргание при переключении, ширина панелей) | `.memory-bank/mistakes/app-layout.md` |
 | Задача про стековую группировку / ghost-items / cleanupStack | `.memory-bank/mistakes/webview-stack-grouping.md` |
 | Задача про уведомления, ribbon, BrowserWindow | `.memory-bank/mistakes/notifications-ribbon.md` (свежие ловушки) + `.memory-bank/mistakes/notifications-ribbon-history.md` (старые #28–#32, v0.89–v1.2.7) |
 | Задача про Electron, IPC, Settings, AI, авто-ответ | `.memory-bank/mistakes/electron-core.md` |
