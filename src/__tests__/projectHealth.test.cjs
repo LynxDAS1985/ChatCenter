@@ -35,7 +35,22 @@ test('dist:win builds installer into dist', function() {
   assert(pkg.scripts['dist:win'] === 'node scripts/dist-win.cjs', 'missing dist:win wrapper script')
   assert(pkg.build && pkg.build.directories && pkg.build.directories.output === 'dist', 'installer output must be dist')
   assert(pkg.build.electronDist === 'node_modules/electron/dist', 'packaging must use local Electron to avoid GitHub download')
-  assert(pkg.build.win && pkg.build.win.signAndEditExecutable === false, 'local unsigned installer must not download winCodeSign')
+  // 🔴 v1.2.458 (жалоба «почему значок старый у программы»). РАНЬШЕ здесь требовалось
+  // signAndEditExecutable === false. Та настройка отключает НЕ ТОЛЬКО подпись, но и правку
+  // ресурсов файла программы — то есть ВШИВАНИЕ ЗНАЧКА. Из-за неё ЦентрЧатов.exe оставался
+  // с родным значком Electron, и ярлык на рабочем столе показывал «атом». Сам сборщик писал
+  // об этом в журнале каждой сборки и подсказывал замену:
+  //   «To skip only code signing while keeping icon and metadata applied, use signExecutable: false»
+  // Теперь требуем именно её: подпись пропускаем (сертификата нет), значок вшивается.
+  assert(pkg.build.win && pkg.build.win.signExecutable === false, 'installer must skip SIGNING only (signExecutable), not executable resource editing — otherwise the app icon is never embedded and the desktop shortcut shows the default Electron icon')
+  assert(pkg.build.win.signAndEditExecutable === undefined, 'do NOT bring back signAndEditExecutable: it also disables icon embedding (v1.2.458)')
+  // Значок обязан быть настроен и существовать — иначе вшивать нечего.
+  assert(pkg.build.win.icon === 'build/icon.ico', 'win.icon must point at build/icon.ico')
+  assert(fs.existsSync('build/icon.ico'), 'build/icon.ico missing — run: node scripts/make-app-icon.cjs')
+  // ⚠️ Правка ресурсов выполняется инструментом rcedit из пакета winCodeSign. На этой машине он
+  // уже в кэше electron-builder (проверено 2026-09-11), поэтому скачивания при сборке нет.
+  // На ЧИСТОЙ машине без интернета первая сборка попробует его скачать — это осознанная плата
+  // за правильный значок. Скачивание самого Electron по-прежнему исключено (electronDist ниже).
   assert(pkg.build.extraMetadata && pkg.build.extraMetadata.main === 'out/main/main.js', 'packaged app must start from built main')
 })
 test('scripts/dist-win.cjs keeps only installer in dist safely', function() {

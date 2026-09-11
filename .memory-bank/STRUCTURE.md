@@ -11,9 +11,9 @@
 
 | Файл | Размер |
 |------|--------|
-| `CHANGELOG.md` | 90 КБ |
+| `CHANGELOG.md` | 93 КБ |
 | `README.md` | 11 КБ |
-| `STRUCTURE.md` | 7 КБ |
+| `STRUCTURE.md` | 9 КБ |
 | `ai-bridge.md` | 16 КБ |
 | `ai-integration.md` | 13 КБ |
 | `api.md` | 37 КБ |
@@ -23,9 +23,9 @@
 | `code-todo.md` | 84 КБ |
 | `coding-rules.md` | 9 КБ |
 | `common-mistakes.md` | 10 КБ |
-| `decisions.md` | 75 КБ |
+| `decisions.md` | 78 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 96 КБ |
+| `features.md` | 80 КБ |
 | `group-topic-investigation.md` | 96 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
@@ -33,11 +33,11 @@
 | `native-mode-plan.md` | 30 КБ |
 | `phase-2-visual-test.md` | 16 КБ |
 | `prodlike-webview-investigation.md` | 4 КБ |
-| `reconnect-plan.md` | 21 КБ |
+| `reconnect-plan.md` | 23 КБ |
 | `side-rail-migration-plan.md` | 34 КБ |
 | `startup-load-investigation.md` | 98 КБ |
 | `tdlib-migration-plan.md` | 27 КБ |
-| `ui-components.md` | 35 КБ |
+| `ui-components.md` | 33 КБ |
 | `virtuoso-migration-plan.md` | 18 КБ |
 | `webcontents-view-pilot-results.md` | 5 КБ |
 | `webcontentsview-migration-plan.md` | 26 КБ |
@@ -47,7 +47,9 @@
 
 | Файл | Размер |
 |------|--------|
-| `mistakes/electron-core.md` | 199 КБ |
+| `mistakes/app-layout.md` | 12 КБ |
+| `mistakes/electron-core-history.md` | 148 КБ |
+| `mistakes/electron-core.md` | 55 КБ |
 | `mistakes/native-scroll-unread.md` | 131 КБ |
 | `mistakes/notifications-ribbon-history.md` | 139 КБ |
 | `mistakes/notifications-ribbon.md` | 104 КБ |
@@ -67,7 +69,7 @@
 | `archive/2026-05-connection-health-plan.md` | 53 КБ |
 | `archive/2026-06-notifications-ribbon-max-title-control.md` | 6 КБ |
 | `archive/2026-07-notifications-ribbon-max-title-fallback-v1.2.24-27.md` | 16 КБ |
-| `archive/README.md` | 64 КБ |
+| `archive/README.md` | 65 КБ |
 | `archive/audit-2026-05-26-scroll-architecture-CLOSED.md` | 19 КБ |
 | `archive/changelog-v0.87.56-68.md` | 18 КБ |
 | `archive/decisions-adr-001-014.md` | 17 КБ |
@@ -191,6 +193,7 @@
 | `archive/features-v1.2.443-444.md` | 19 КБ |
 | `archive/features-v1.2.445-446.md` | 15 КБ |
 | `archive/features-v1.2.447-451.md` | 39 КБ |
+| `archive/features-v1.2.452-453.md` | 23 КБ |
 | `archive/features-v1.2.46-58.md` | 33 КБ |
 | `archive/features-v1.2.59-73.md` | 49 КБ |
 | `archive/features-v1.2.74-89.md` | 40 КБ |

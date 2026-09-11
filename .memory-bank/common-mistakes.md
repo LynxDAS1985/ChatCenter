@@ -79,6 +79,8 @@
 - 🟡 Нельзя выводить «объект удалён» из отсутствия в `store.chats` (список неполный: кэш-подмножество + `tg:chats` замена) — теряет постоянные данные (пример: авто-чистка пинов, v1.2.140)
 - 🔴 «Чёрный экран» после добавления аккаунта = залипший `loginFlow=success` держит экран входа поверх чатов (не крэш, данные целы); флаг-процесса нужно сбрасывать в терминальном success (v1.2.147)
 
+📦 Старые ловушки этой темы (до 2026-06-24) — в [`mistakes/electron-core-history.md`](./mistakes/electron-core-history.md) (v1.2.458, разгрузка)
+
 ### 5. [`mistakes/tdlib-video-player.md`](./mistakes/tdlib-video-player.md)
 **Когда читать**: воспроизведение видео/фото из TDLib, `cc-media` protocol, Range requests, прогрессивное воспроизведение.
 - `HTMLMediaElement.buffered` ≠ файл на диске; `video.supports_streaming` проверять обязательно
