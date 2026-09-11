@@ -16,7 +16,7 @@ import {
 import { createStreamingHandler } from '../utils/aiStreamingHandler.js'
 import { runProviderChecks as runProviderChecksUtil } from '../utils/aiProviderChecker.js'
 import { createLoginHandler } from '../utils/aiLoginHandler.js'
-import { aiPanelWidthCss } from '../../shared/panelWidthCap.js' // v1.2.455: панель не шире половины окна
+import { aiPanelWidthCss, AI_PANEL_MAX_CSS } from '../../shared/panelWidthCap.js' // v1.2.455-456: панель не шире половины окна
 import { sendContextToAiWebview as sendContextToAiWebviewUtil } from '../utils/aiWebviewContext.js'
 // v1.1.5: диагностические логи для AI WebView (DeepSeek/ГигаЧат не работают — разбираемся).
 import { attachAiWebviewDiagnostics } from '../utils/aiWebviewDiagnostics.js'
@@ -369,12 +369,15 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     <div
       ref={panelRef}
       data-cc-layout="ai-panel"
+      data-cc-width-want={width}
       className="flex flex-col shrink-0"
       style={{
-        // v1.2.455: не просто «сколько сохранено», а «сколько сохранено, но не больше
-        // половины окна». Пересчитывает сам браузер при изменении размера окна —
-        // без слушателей и без порчи сохранённого числа (см. shared/panelWidthCap.js).
-        width: visible ? aiPanelWidthCss(width) : '0px',
+        // v1.2.456: ширина — снова ПОСТОЯННОЕ число, а потолок «не больше половины окна»
+        // задан отдельным правилом ниже. В v1.2.455 потолок был вписан прямо сюда, и из-за
+        // перехода `transition: width` край панели ехал за краем окна с отставанием при
+        // изменении размера окна (см. shared/panelWidthCap.js, AI_PANEL_MAX_CSS).
+        width: visible ? `${width}px` : '0px',
+        maxWidth: AI_PANEL_MAX_CSS,
         overflow: 'hidden',
         borderLeft: visible ? '1px solid var(--cc-border)' : 'none',
         backgroundColor: 'var(--cc-surface)',

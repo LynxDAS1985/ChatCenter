@@ -39,12 +39,13 @@ export default function useAIPanelResize({
     const newW = Math.max(AI_PANEL_MIN_PX, Math.min(maxW, resizeStartRef.current.w + delta))
     aiWidthRef.current = newW
     if (aiPanelRef.current) {
-      // Пишем ТО ЖЕ правило, что стоит в вёрстке панели — иначе прямая запись ширины
-      // перебила бы потолок на время перетаскивания.
-      const css = aiPanelWidthCss(newW)
-      aiPanelRef.current.style.width = css
+      // Пишем ровно то же, что пишет отрисовка панели: снаружи — постоянное число
+      // (потолок держит отдельное правило maxWidth, прямая запись ширины его не стирает),
+      // внутри — выражение с потолком (там минимум ширины победил бы отдельный потолок).
+      aiPanelRef.current.style.width = `${newW}px`
+      const innerCss = aiPanelWidthCss(newW)
       const inner = aiPanelRef.current.firstChild
-      if (inner) { inner.style.width = css; inner.style.minWidth = css }
+      if (inner) { inner.style.width = innerCss; inner.style.minWidth = innerCss }
     }
   }, [isResizingRef, resizeStartRef, aiWidthRef, aiPanelRef])
 

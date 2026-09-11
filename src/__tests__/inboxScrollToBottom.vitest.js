@@ -10,6 +10,8 @@
 // Главная ловушка: после ветки 2 обычный прыжок в конец выполняться НЕ должен
 // (ранний выход) — иначе лента дёрнется дважды.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
 import createScrollToBottom from '../../shared/inboxScrollToBottom.js'
 
 // Заглушка области сообщений: настоящий элемент нам не нужен, нужны только размеры
@@ -214,5 +216,37 @@ describe('кнопка «↓ вниз»: крайние случаи', () => {
       gapMessages: 1,
       loading: true,
     })
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.2.456 (находка собственного ревью): СВЕРКА «УЗЛА ВЕЛИЧИН».
+// Модуль достаёт всё нужное из одного узла, который собирает экран переписки.
+// Переименование величины линтер поймает (в узле останется несуществующее имя), а вот
+// ДОБАВЛЕНИЕ новой величины в модуль без добавления её в узел — НЕ поймает ничем:
+// кнопка «↓» упадёт только в момент нажатия, у пользователя. Эта сверка закрывает дыру.
+// ─────────────────────────────────────────────────────────────────────────────
+const readRepo = (p) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
+
+function namesFrom(text, re) {
+  const body = text.match(re)[1]
+  return body.replace(/\/\/.*/g, '').split(',').map(x => x.trim()).filter(Boolean).sort()
+}
+
+describe('узел величин: что модуль достаёт = что экран передаёт', () => {
+  const taken = namesFrom(readRepo('shared/inboxScrollToBottom.js'), /const \{([^}]+)\} = ctx/s)
+  const given = namesFrom(readRepo('src/native/modes/InboxMode.jsx'), /createScrollToBottom\(\{([\s\S]+?)\}\)/)
+
+  it('ни одна нужная величина не потеряна (иначе кнопка «вниз» упадёт при нажатии)', () => {
+    expect(taken.filter(n => !given.includes(n))).toEqual([])
+  })
+
+  it('в узле нет лишнего — не тащим то, чем модуль не пользуется', () => {
+    expect(given.filter(n => !taken.includes(n))).toEqual([])
+  })
+
+  it('списки непустые — сверка действительно что-то сверяет, а не пустоту', () => {
+    expect(taken.length).toBeGreaterThan(10)
+    expect(taken).toEqual(given)
   })
 })

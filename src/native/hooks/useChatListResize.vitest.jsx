@@ -1,7 +1,12 @@
 // v0.95.7: тесты drag-to-resize для chat-list.
 //
+// v1.2.457 (TODO-40): у ширины появился ВТОРОЙ предел — доля окна (40%). Чтобы старые
+// проверки математики перетаскивания остались про математику, а не про окно, они гоняются
+// в заведомо ШИРОКОМ окне (там жёсткий потолок 600 наступает раньше долевого). Сам долевой
+// предел проверяется отдельным блоком внизу файла.
+//
 // Главные контракты:
-// 1. clampChatListWidth — границы [60, 600]
+// 1. clampChatListWidth — границы [60, 600] + не больше 40% окна
 // 2. isChatListCompact — порог < 200
 // 3. startResize → setPointerCapture + cursor + transition:none
 // 4. onPointerMove → обновление style.width напрямую (без re-render)
@@ -12,9 +17,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useRef, useState } from 'react'
 import useChatListResize, {
-  clampChatListWidth, isChatListCompact,
+  clampChatListWidth, isChatListCompact, chatListMaxPx,
   CHAT_LIST_MIN_WIDTH, CHAT_LIST_MAX_WIDTH, CHAT_LIST_DEFAULT_WIDTH, CHAT_LIST_COMPACT_THRESHOLD,
+  CHAT_LIST_MAX_WINDOW_SHARE,
 } from './useChatListResize.js'
+
+// Широкое окно: 40% от 1600 = 640 > 600, значит долевой предел не мешает проверкам
+// математики перетаскивания — работает прежний жёсткий потолок 600.
+const WIDE = 1600
+beforeEach(() => { try { window.innerWidth = WIDE } catch { /* среда не даёт — ок */ } })
 
 describe('clampChatListWidth — границы [60, 600]', () => {
   it('возвращает значение если в диапазоне', () => {
@@ -255,5 +266,56 @@ describe('useChatListResize — startResize / move / up', () => {
       })
     })
     expect(invokeSpy).not.toHaveBeenCalled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.2.457 (TODO-40): ширина списка чатов считается с размером окна.
+// Ограничиваем САМО ЧИСЛО, а не вёрстку: «узкий вид» списка включается по этому же
+// числу, и потолок из вёрстки рассогласовал бы их (панель узкая, строки широкие).
+// ─────────────────────────────────────────────────────────────────────────────
+describe('предел ширины списка чатов от размера окна', () => {
+  it('в широком окне действует прежний жёсткий потолок 600', () => {
+    expect(chatListMaxPx(1600)).toBe(CHAT_LIST_MAX_WIDTH)
+    expect(clampChatListWidth(5000, 1600)).toBe(CHAT_LIST_MAX_WIDTH)
+  })
+
+  it('в окне поуже предел считается от окна — 40%', () => {
+    expect(chatListMaxPx(1000)).toBe(400)
+    expect(clampChatListWidth(600, 1000)).toBe(400)
+  })
+
+  it('на самом узком возможном окне (900 — меньше Windows не даст) это 360', () => {
+    // Факт: minWidth: 900 в main/utils/windowManager.js.
+    expect(chatListMaxPx(900)).toBe(360)
+  })
+
+  it('🔴 потолок НИКОГДА не загоняет список в «узкий вид» сам по себе', () => {
+    // Иначе вышло бы худшее: панель ужалась, а строки внутри остались широкими.
+    // 360 (самое узкое окно) заметно больше порога узкого вида (128).
+    expect(chatListMaxPx(900)).toBeGreaterThan(CHAT_LIST_COMPACT_THRESHOLD)
+    expect(isChatListCompact(chatListMaxPx(900))).toBe(false)
+  })
+
+  it('ширина окна неизвестна — ведём себя как раньше (потолок 600)', () => {
+    expect(chatListMaxPx(undefined)).toBe(CHAT_LIST_MAX_WIDTH)
+    expect(chatListMaxPx(NaN)).toBe(CHAT_LIST_MAX_WIDTH)
+    expect(chatListMaxPx(0)).toBe(CHAT_LIST_MAX_WIDTH)
+  })
+
+  it('доля окна задана одним числом, а не зашита в формулу', () => {
+    expect(CHAT_LIST_MAX_WINDOW_SHARE).toBe(0.4)
+    expect(chatListMaxPx(1000)).toBe(Math.floor(1000 * CHAT_LIST_MAX_WINDOW_SHARE))
+  })
+
+  it('без явной ширины окна берётся текущее окно', () => {
+    window.innerWidth = 1000
+    expect(clampChatListWidth(600)).toBe(400)
+    window.innerWidth = WIDE
+  })
+
+  it('нижняя граница сильнее потолка: узкое окно не делает список уже минимума', () => {
+    expect(chatListMaxPx(100)).toBe(CHAT_LIST_MIN_WIDTH)
+    expect(clampChatListWidth(300, 100)).toBe(CHAT_LIST_MIN_WIDTH)
   })
 })

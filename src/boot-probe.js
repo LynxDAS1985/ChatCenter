@@ -119,6 +119,20 @@ setTimeout(() => {
 // Считает ТОЛЬКО размеры (ничего не меняет), пишет ОДНУ строку в журнал, работает вне React —
 // поэтому на отрисовку повлиять не может. Приём в проекте принят: так же устроены logGeometry
 // и проба «чёрного экрана» в webviewDiagnostics.js.
+// Сколько точек панель ИИ ПРОСИЛА (сохранённая ширина) — её кладёт на элемент сама
+// панель (data-cc-width-want в AISidebar.jsx).
+function ccWantWidth() {
+  try {
+    const el = document.querySelector('[data-cc-layout="ai-panel"]')
+    const want = el && el.getAttribute('data-cc-width-want')
+    if (!want) return ''
+    const shown = Math.round(el.getBoundingClientRect().width)
+    return Math.abs(Number(want) - shown) > 1
+      ? ` (просила ${want}, СРАБОТАЛ ПОТОЛОК «не больше половины окна»)`
+      : ` (просила ${want}, потолок не понадобился)`
+  } catch (_) { return '' }
+}
+
 function ccLayoutProbe(reason) {
   try {
     const box = (sel) => {
@@ -136,7 +150,10 @@ function ccLayoutProbe(reason) {
       'страница=' + document.documentElement.scrollWidth + 'x' + document.documentElement.scrollHeight,
       'ряд=' + box('[data-cc-layout="row"]'),
       'середина=' + box('[data-cc-layout="middle"]'),
-      'панельИИ=' + box('[data-cc-layout="ai-panel"]'),
+      // v1.2.456: рядом с фактической шириной панели печатаем ЗАПРОШЕННУЮ (сохранённую
+      // пользователем). Если они разошлись — значит сработал потолок «не больше половины
+      // окна». Без этого о срабатывании потолка в журнале не было ни слова.
+      'панельИИ=' + box('[data-cc-layout="ai-panel"]') + ccWantWidth(),
       'рейл=' + box('#app-native-rail'),
       'разделы=' + box('.native-sidebar'),
       'рядЧатов=' + box('[data-cc-layout="inbox-row"]'),

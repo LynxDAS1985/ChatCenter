@@ -4,6 +4,7 @@
 import { useEffect } from 'react'
 import { DEFAULT_MESSENGERS } from '../constants.js'
 import { pickActiveTabId } from '../../shared/activeTabChoice.js'
+import { AI_PANEL_MIN_PX, AI_PANEL_MAX_PX } from '../../shared/panelWidthCap.js'
 
 export default function useAppBootstrap({
   NATIVE_CC_TAB,
@@ -81,7 +82,9 @@ export default function useAppBootstrap({
         log('settings:get ok')
         setSettings(s)
         if (s.aiSidebarWidth) {
-          const w = Math.max(240, Math.min(600, s.aiSidebarWidth))
+          // v1.2.456: числа берём из общего файла, а не зашиваем второй раз —
+          // иначе смена потолка в одном месте молча не доехала бы до восстановления.
+          const w = Math.max(AI_PANEL_MIN_PX, Math.min(AI_PANEL_MAX_PX, s.aiSidebarWidth))
           setAiWidth(w); aiWidthRef.current = w
         }
         if (s.zoomLevels && typeof s.zoomLevels === 'object') {

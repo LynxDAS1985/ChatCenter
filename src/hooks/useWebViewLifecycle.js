@@ -53,19 +53,43 @@ export default function useWebViewLifecycle({ activeId, messengers, appReady, we
     if (!activeId) return undefined
     const m = (messengers || []).find(x => x.id === activeId)
     if (!m || m.isNative) return undefined // нативные вкладки (TDLib) — не webview, пинок не нужен
+    // 🔴 v1.2.457 ЖАЛОБА «дёргание при переключении между мессенджерами». Пинок — это РЕАЛЬНОЕ
+    // изменение геометрии (ширина на миг меньше на 1 точку), и делался он на КАЖДОЕ открытие
+    // вкладки, ДВАЖДЫ (через 200 мс и через 700 мс). То есть при каждом переключении страница
+    // дважды за секунду перекладывалась — это и видно глазами как рывок.
+    // Зачем он вообще нужен: «расклеить» раскладку адаптивного сайта, который при первой
+    // отрисовке прочитал неверный размер. Это событие РАЗОВОЕ — оно случается при первом
+    // показе страницы, а не при каждом возврате на уже открытую вкладку.
+    // Поэтому пинаем только ПЕРВОЕ открытие каждой вкладки. Отметку храним на самом элементе
+    // (приём проекта — так же помечены уже подключённые слушатели в useWebviewReconnect и
+    // наблюдатели в хуках мессенджеров), поэтому НОВЫХ хранилищ в приложении не появляется:
+    // добавление хранилища в работающее приложение ломает горячую перезагрузку (см. v1.2.452).
+    // ЧТО ОСТАЁТСЯ ЗАЩИТОЙ, если раскладка всё-таки слипнется позже: сторож чёрного экрана
+    // ниже (v1.2.431) — он делает СВОЙ такой же пинок, когда кадр реально оказался пустым,
+    // и моей отметкой не ограничен (webviewBlackWatchdog.js, своя реализация).
     let logged = false
     const nudge = () => {
       const el = webviewRefs.current[activeId]
       const wrap = el?.parentElement
       if (!wrap) return
+      if (wrap.__ccRelayoutKicked) {
+        if (!logged) { logged = true; try { window.api?.send?.('app:log', { level: 'TRACE', message: '[webview-relayout] пинок НЕ нужен для ' + activeId + ' — вкладка уже открывалась (чтобы не дёргать картинку при переключении)' }) } catch (_) {} }
+        return
+      }
       const w = Math.round(wrap.getBoundingClientRect().width)
       if (w < 5) return
       wrap.style.width = (w - 1) + 'px'
       requestAnimationFrame(() => requestAnimationFrame(() => { try { wrap.style.width = '' } catch (_) {} }))
-      if (!logged) { logged = true; try { window.api?.send?.('app:log', { level: 'INFO', message: '[webview-relayout] 1px-пинок раскладки для ' + activeId + ' (Ловушка 64)' }) } catch (_) {} }
+      if (!logged) { logged = true; try { window.api?.send?.('app:log', { level: 'INFO', message: '[webview-relayout] 1px-пинок раскладки для ' + activeId + ' (первое открытие, Ловушка 64)' }) } catch (_) {} }
     }
     const t1 = setTimeout(nudge, 200)  // после показа вкладки
-    const t2 = setTimeout(nudge, 700)  // повтор — поймать SPA, если ещё не был готов
+    const t2 = setTimeout(() => {
+      nudge()                          // повтор — поймать SPA, если к 200 мс ещё не был готов
+      // Отметку ставим ПОСЛЕ повтора: если пользователь ушёл с вкладки раньше, отметки не
+      // будет и в следующий раз вкладка снова получит оба пинка (значит, первый показ мог
+      // и не состояться — лучше пнуть лишний раз, чем оставить слипшуюся раскладку).
+      try { const wrap = webviewRefs.current[activeId]?.parentElement; if (wrap) wrap.__ccRelayoutKicked = true } catch (_) {}
+    }, 700)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [activeId, messengers, webviewRefs])
 
