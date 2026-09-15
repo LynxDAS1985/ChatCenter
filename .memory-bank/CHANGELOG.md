@@ -1118,6 +1118,10 @@ TDLib JSON-API discriminator `@type` → `_` через `deepRenameKey('@type', 
 
 ### Packaging
 - Uses `electron-builder`, `out/**`, `package.json`, `extraMetadata.main=out/main/main.js`, local `electronDist=node_modules/electron/dist`, `signAndEditExecutable=false` for unsigned local installer.
+  > ⚠️ УСТАРЕЛО с 2026-09-11 (v1.2.458): `signAndEditExecutable=false` заменено на `signExecutable=false`.
+  > Старая настройка отключала не только подпись, но и вшивание значка в `.exe` — ярлык на рабочем столе
+  > показывал стандартный значок Electron. Запись выше оставлена как история; действующее решение —
+  > ADR-057 в [decisions.md](decisions.md), грабля — в [mistakes/electron-core.md](mistakes/electron-core.md).
 
 ## 2026-05-07 — v0.87.134
 

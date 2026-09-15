@@ -122,11 +122,18 @@ export default function useChatListResize({
   }, [isResizingRef, resizeStartRef, chatListWidthRef, chatListRef, setIsResizing])
 
   const resetToDefault = useCallback(() => {
-    chatListWidthRef.current = CHAT_LIST_DEFAULT_WIDTH
-    setChatListWidth(CHAT_LIST_DEFAULT_WIDTH)
-    if (chatListRef.current) chatListRef.current.style.width = `${CHAT_LIST_DEFAULT_WIDTH}px`
+    // v1.2.459: сброс тоже проходит через общую проверку. Раньше он ставил значение по
+    // умолчанию НАПРЯМУЮ и был единственным из трёх путей (загрузка настроек /
+    // перетаскивание / сброс), который не знал про потолок «не шире 40% окна».
+    // Сейчас это недостижимо (окно не уже 900 → потолок 360 больше значения по
+    // умолчанию 340), но правило обязано соблюдаться ВЕЗДЕ: иначе при смене минимума
+    // окна или значения по умолчанию оно сломается молча.
+    const w = clampChatListWidth(CHAT_LIST_DEFAULT_WIDTH)
+    chatListWidthRef.current = w
+    setChatListWidth(w)
+    if (chatListRef.current) chatListRef.current.style.width = `${w}px`
     if (settingsRef?.current) {
-      const updated = { ...settingsRef.current, chatListWidth: CHAT_LIST_DEFAULT_WIDTH }
+      const updated = { ...settingsRef.current, chatListWidth: w }
       settingsRef.current = updated
       try { window.api?.invoke('settings:save', updated) } catch (_) {}
     }

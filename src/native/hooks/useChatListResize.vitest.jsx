@@ -188,6 +188,27 @@ describe('useChatListResize — startResize / move / up', () => {
     expect(releasePointerCapture).toHaveBeenCalledWith(1)
   })
 
+  it('🔴 v1.2.459 ЛОВУШКА: сброс по двойному щелчку тоже считается с окном', () => {
+    // Сброс ставил ширину по умолчанию НАПРЯМУЮ, минуя общую проверку — единственный
+    // из трёх путей (загрузка настроек / перетаскивание / сброс), который не знал про
+    // потолок «не шире 40% окна». Сейчас это недостижимо (окно не уже 900 -> потолок 360
+    // больше значения по умолчанию 340), но правило должно соблюдаться ВЕЗДЕ, иначе при
+    // смене минимума окна или значения по умолчанию оно сломается молча.
+    const invokeSpy = vi.fn(() => Promise.resolve({ ok: true }))
+    globalThis.window.api = { invoke: invokeSpy }
+    window.innerWidth = 700              // потолок = 40% = 280 < 340
+    const { result } = setupHook()
+    act(() => { result.current.api.resetToDefault() })
+    const cap = chatListMaxPx(700)
+    expect(cap).toBe(280)
+    expect(result.current.chatListWidth).toBe(cap)
+    expect(result.current.chatListWidthRef.current).toBe(cap)
+    expect(result.current.chatListRef.current.style.width).toBe(`${cap}px`)
+    expect(invokeSpy).toHaveBeenCalledWith('settings:save',
+      expect.objectContaining({ chatListWidth: cap }))
+    window.innerWidth = WIDE
+  })
+
   it('resetToDefault → 340 + settings:save', () => {
     const invokeSpy = vi.fn(() => Promise.resolve({ ok: true }))
     globalThis.window.api = { invoke: invokeSpy }

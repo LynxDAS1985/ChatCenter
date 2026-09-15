@@ -51,6 +51,21 @@ test('dist:win builds installer into dist', function() {
   // уже в кэше electron-builder (проверено 2026-09-11), поэтому скачивания при сборке нет.
   // На ЧИСТОЙ машине без интернета первая сборка попробует его скачать — это осознанная плата
   // за правильный значок. Скачивание самого Electron по-прежнему исключено (electronDist ниже).
+  // 🔴 v1.2.459: память НЕ должна выдавать снятую настройку за действующую. Правило проекта —
+  // «при расхождении памяти и кода доверяй коду, память обнови». Историю в журналах не
+  // переписываем, но рядом обязана стоять пометка «устарело», иначе тот, кто ищет настройку
+  // по имени, первым найдёт старую запись и примет её за правду.
+  for (const memFile of ['.memory-bank/CHANGELOG.md']) {
+    if (!fs.existsSync(memFile)) continue
+    const lines = fs.readFileSync(memFile, 'utf8').split(/\r?\n/)
+    lines.forEach(function (line, i) {
+      if (line.indexOf('signAndEditExecutable') < 0) return
+      const around = lines.slice(i, i + 6).join(' ')
+      assert(around.indexOf('УСТАРЕЛО') >= 0 || around.indexOf('устарело') >= 0,
+        memFile + ':' + (i + 1) + ' — упоминает снятую настройку signAndEditExecutable без пометки «устарело». ' +
+        'Действующее решение — ADR-057 (signExecutable). Добавь пометку рядом или убери упоминание.')
+    })
+  }
   assert(pkg.build.extraMetadata && pkg.build.extraMetadata.main === 'out/main/main.js', 'packaged app must start from built main')
 })
 test('scripts/dist-win.cjs keeps only installer in dist safely', function() {
