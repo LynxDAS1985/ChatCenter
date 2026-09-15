@@ -58,7 +58,8 @@ const { EXTRACT_SPAM, QUICK_MSG_SELECTORS, extractMsgText } = require('./utils/m
 const { CHAT_CONTAINER_SELECTORS, findChatContainer, isSidebarNode, getChatContainerEl, setChatContainerEl } = require('./utils/domSelectors')
 const { runDiagnostics, resetDiagnostics } = require('./utils/diagnostics')
 const { getLastMessageText, getVKLastIncomingText } = require('./utils/messageRetrieval')
-const { createMaxSnapshotSender, maxNodeLabel, shortText, maxOutgoingReport } = require('./utils/maxDiagnostics')
+const { createMaxSnapshotSender, maxNodeLabel, shortText, maxOutgoingVerdict } = require('./utils/maxDiagnostics')
+const { bindWebviewZoom } = require('./utils/webviewZoom')
 const { createVkDiagnostics } = require('./utils/vkDiagnostics')
 
 // v0.83.0: Timing constants (вместо magic numbers)
@@ -196,8 +197,11 @@ function quickNewMsgCheck(mutations, type) {
       // v0.76.8: Дедуп по подстроке — VK parent содержит "ИмяТекст", child содержит "Текст"
       if (type !== 'max' && lastQuickMsgText && (lastQuickMsgText.includes(text) || text.includes(lastQuickMsgText))) continue
 
+      // v1.2.463: СВОЁ отправленное дальше не пускаем. До этой версии признак исходящего только
+      // ИЗМЕРЯЛСЯ и писался в журнал (с v1.2.427), решения по нему не принимал никто — и свои
+      // сообщения приходили уведомлениями. Сбой замера = «не знаем» → пропускаем (см. maxDiagnostics.js).
+      if (type === 'max') { const mo = maxOutgoingVerdict(node); sendMonitorDiag('[MAX-OUT-DIAG] text="' + shortText(text, 60) + '" node=' + maxNodeLabel(node) + ' | ' + mo.report); if (mo.outgoing) continue }
       foundTexts.push(text)
-      if (type === 'max') sendMonitorDiag('[MAX-OUT-DIAG] text="' + shortText(text, 60) + '" node=' + maxNodeLabel(node) + ' | ' + maxOutgoingReport(node))
       if (type !== 'max') break
     }
     if (foundTexts.length && type !== 'max') break
@@ -576,22 +580,5 @@ ipcRenderer.on('run-diagnostics', () => {
 // См. App.jsx: setWebviewRef() → dom-ready + console-message handlers.
 
 // ── Зум WebView: Ctrl+колёсико и Ctrl+клавиши → IPC к хосту ──────────────
-document.addEventListener('wheel', function(e) {
-  if (!e.ctrlKey) return
-  e.preventDefault()
-  try { ipcRenderer.sendToHost('zoom-change', { delta: e.deltaY < 0 ? 5 : -5 }) } catch(ex) {}
-}, { passive: false })
-
-document.addEventListener('keydown', function(e) {
-  if (!e.ctrlKey) return
-  if (e.key === '=' || e.key === '+') {
-    e.preventDefault()
-    try { ipcRenderer.sendToHost('zoom-change', { delta: 10 }) } catch(ex) {}
-  } else if (e.key === '-' || e.key === '_') {
-    e.preventDefault()
-    try { ipcRenderer.sendToHost('zoom-change', { delta: -10 }) } catch(ex) {}
-  } else if (e.key === '0') {
-    e.preventDefault()
-    try { ipcRenderer.sendToHost('zoom-reset') } catch(ex) {}
-  }
-})
+// v1.2.463: сам код вынесен в utils/webviewZoom.js (файл упёрся в потолок 600 строк).
+bindWebviewZoom(ipcRenderer)

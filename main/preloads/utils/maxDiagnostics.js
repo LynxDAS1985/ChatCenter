@@ -115,29 +115,72 @@ function createMaxSnapshotSender({ sendMonitorDiag, getMessengerType, getChatCon
   }
 }
 
-// v1.2.427 (ВРЕМЕННАЯ ДИАГНОСТИКА): признаки-кандидаты «исходящего» сообщения МАКС.
-// Цель — по разнице между СВОИМ и ЧУЖИМ сообщением найти надёжный маркер (галочки ✓/выравнивание/класс),
-// т.к. координаты и классы строки этого не различают. Удалить после того, как маркер найден и фильтр сделан.
-function maxOutgoingReport(node) {
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.2.463: СВОЁ ОТПРАВЛЕННОЕ сообщение МАКС.
+//
+// История: в v1.2.427 здесь появилась ВРЕМЕННАЯ диагностика `maxOutgoingReport` — она считала
+// признаки исходящего и возвращала СТРОКУ для журнала. Фильтр по ней так и не сделали, а поиском
+// по main/ и src/ видно было ровно два упоминания — объявление и подстановка в текст записи.
+// Из-за этого свои сообщения уходили в уведомления: единственное, что их обычно гасило — соседнее
+// правило «вкладка МАКС открыта, ты и так это видишь» (webviewHandleNewMessage.js), а оно зависит
+// от фокуса ОКНА. Отправил и сразу переключился в другое окно — сообщение проходит.
+// Замер 2026-09-15: быстрый наблюдатель поймал 4 своих сообщения, 2 из них стали карточками.
+//
+// Теперь это РЕШЕНИЕ («да/нет»), а не измерение.
+//
+// ЧЕМ РАЗЛИЧАЕМ (числа из реального журнала, строка чата rowL=471 rowW=524 → правый край 995):
+//   входящее : левый край пузыря ВСЕГДА 487 = край строки + 16 (пузырь прижат ВЛЕВО)
+//   исходящее: 634 / 724 / 791 / 848 (пузырь прижат ВПРАВО)
+// 🔴 По числу значков (`ticks`) различать НЕЛЬЗЯ: у ВХОДЯЩЕГО файла тоже 2 (иконка файла).
+// Значки оставлены только в записи журнала — как справочные, решение по ним НЕ принимается.
+//
+// 🔴 ОСОЗНАННАЯ ОДНОСТОРОННЯЯ ОШИБКА: у очень длинного своего сообщения пузырь занимает почти всю
+// строку и прижат к обоим краям сразу. Такой случай считаем НЕИЗВЕСТНЫМ и ПРОПУСКАЕМ дальше.
+// Лишнее уведомление о своём сообщении дешевле, чем проглоченное чужое.
+const MAX_OUT_MARGIN_PX = 40
+
+/**
+ * Чистое решение по координатам — без DOM, поэтому проверяется тестом.
+ * @returns {{outgoing: boolean, reason: string}}
+ */
+function maxOutgoingDecision(m) {
+  if (!m) return { outgoing: false, reason: 'нет-замера' }
+  var rowW = m.rowRight - m.rowLeft, bubW = m.bubbleRight - m.bubbleLeft
+  if (!(rowW > 0) || !(bubW > 0)) return { outgoing: false, reason: 'нулевой-размер' }
+  var leftGap = m.bubbleLeft - m.rowLeft, rightGap = m.rowRight - m.bubbleRight
+  if (rightGap < leftGap - MAX_OUT_MARGIN_PX) return { outgoing: true, reason: 'прижат-вправо' }
+  if (leftGap < rightGap - MAX_OUT_MARGIN_PX) return { outgoing: false, reason: 'прижат-влево' }
+  return { outgoing: false, reason: 'во-всю-ширину-не-знаем' }
+}
+
+/**
+ * Замер по живому узлу + решение + готовая строка для журнала.
+ * Любой сбой замера = «не знаем» → сообщение проходит дальше (см. одностороннюю ошибку выше).
+ * @returns {{outgoing: boolean, report: string}}
+ */
+function maxOutgoingVerdict(node) {
   try {
     var row = node
     for (var d = 0; d < 8 && row && row.parentElement; d++) {
       var cn = typeof row.className === 'string' ? row.className : (row.className && row.className.baseVal) || ''
-      if (/\bitem\b|message|bubble|\brow\b/i.test(cn)) break
+      if (/item|message|bubble|row/i.test(cn)) break
       row = row.parentElement
     }
     row = row || node
     var rr = row.getBoundingClientRect ? row.getBoundingClientRect() : null
-    var cs = window.getComputedStyle ? window.getComputedStyle(row) : null
-    // Кандидаты в «галочку прочтения» и статус
-    var ticks = row.querySelectorAll ? row.querySelectorAll('svg, use, [class*="check" i], [class*="tick" i], [class*="status" i], [class*="read" i], [class*="delivered" i], [class*="sent" i]') : []
-    // Внутренний пузырь — где он относительно строки
     var bubble = row.querySelector ? row.querySelector('[class*="bubble" i], [class*="content" i], p') : null
     var br = bubble && bubble.getBoundingClientRect ? bubble.getBoundingClientRect() : null
+    // Справочно в журнал: значки в строке. На решение НЕ влияют (см. комментарий выше).
+    var ticks = row.querySelectorAll ? row.querySelectorAll('svg, use, [class*="check" i], [class*="tick" i], [class*="status" i], [class*="read" i], [class*="delivered" i], [class*="sent" i]') : []
     var rowCls = typeof row.className === 'string' ? row.className.replace(/\s+/g, '.').slice(0, 40) : ''
-    return 'rowCls=' + rowCls + ' align=' + (cs ? cs.textAlign + '/' + cs.justifyContent + '/self:' + cs.alignSelf + '/ml:' + cs.marginLeft : '?') +
-      ' ticks=' + (ticks ? ticks.length : 0) + ' bubbleL=' + (br ? Math.round(br.left) : '?') + ' rowL=' + (rr ? Math.round(rr.left) : '?') + ' rowW=' + (rr ? Math.round(rr.width) : '?')
-  } catch (e) { return 'outErr=' + shortText(e.message || e, 40) }
+    var m = rr && br ? { rowLeft: rr.left, rowRight: rr.right, bubbleLeft: br.left, bubbleRight: br.right } : null
+    var verdict = maxOutgoingDecision(m)
+    var report = 'rowCls=' + rowCls + ' ticks=' + (ticks ? ticks.length : 0) +
+      ' rowL=' + (rr ? Math.round(rr.left) : '?') + ' rowR=' + (rr ? Math.round(rr.right) : '?') +
+      ' bubbleL=' + (br ? Math.round(br.left) : '?') + ' bubbleR=' + (br ? Math.round(br.right) : '?') +
+      ' → ' + (verdict.outgoing ? 'СВОЁ (не уведомляем)' : 'не своё/не знаем') + ' [' + verdict.reason + ']'
+    return { outgoing: verdict.outgoing, report: report }
+  } catch (e) { return { outgoing: false, report: 'outErr=' + shortText(e.message || e, 40) } }
 }
 
-module.exports = { createMaxSnapshotSender, maxNodeLabel, shortText, maxOutgoingReport }
+module.exports = { createMaxSnapshotSender, maxNodeLabel, shortText, maxOutgoingVerdict, maxOutgoingDecision }
