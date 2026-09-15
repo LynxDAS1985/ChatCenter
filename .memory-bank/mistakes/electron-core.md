@@ -284,3 +284,30 @@ v1.2.168 чинил только момент удаления, но само у
 Ловушки этого файла за период **до 2026-06-24** переехали в
 [electron-core-history.md](electron-core-history.md) (2026-09-11, разгрузка: файл упёрся
 в лимит 200 КБ). Ищешь старую ловушку и не находишь здесь — смотри там.
+
+## 🟡 Пустое поле `author` → собранная программа представляется «GitHub, Inc.» (v1.2.460, 2026-09-15)
+
+**Симптом**: правый клик по `ЦентрЧатов.exe` → «Свойства» → «Подробно» → «Компания: GitHub, Inc.».
+Программа выдаёт себя за продукт чужой фирмы.
+
+**Корень** (по исходнику установленного сборщика, electron-builder 26.15.3):
+`app-builder-lib/out/appInfo.js` — `get companyName() { const author = ...metadata.author; return
+author == null ? null : author.name }`, и дальше `winPackager.js` — `if (appInfo.companyName != null)
+versionStrings.CompanyName = appInfo.companyName`. В `package.json` поле `author` было **пустой
+строкой** → `author.name` нет → строка не подставляется → в файле остаётся значение Electron
+по умолчанию.
+
+**Лечение**: `"author": { "name": "ЦентрЧатов" }`. Объект с `name`, а не просто строка — сборщик
+читает именно `author.name`. Заодно чинится копирайт: `Copyright © <год> <компания>`.
+
+**Проверка фактом** (без установки): `npx electron-builder --win --dir`, затем в PowerShell
+`(Get-Item 'dist\win-unpacked\ЦентрЧатов.exe').VersionInfo`. Было `GitHub, Inc.`, стало `ЦентрЧатов`.
+⚠️ После такой ручной распаковки удалить `dist/win-unpacked` и `dist/builder-debug.yml` — иначе
+в папке сборки остаётся мусор.
+
+**Видно только после пересборки**: правка `package.json` меняет строки внутри собираемого файла,
+на уже собранные установщики не влияет.
+
+**Страж**: `src/__tests__/projectHealth.test.cjs` — `author.name` обязано быть непустым.
+Решение целиком — [[decisions]] ADR-057 (уточнение v1.2.460).
+

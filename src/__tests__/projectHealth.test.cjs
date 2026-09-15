@@ -66,6 +66,15 @@ test('dist:win builds installer into dist', function() {
         'Действующее решение — ADR-057 (signExecutable). Добавь пометку рядом или убери упоминание.')
     })
   }
+  // 🔴 v1.2.460: «Компания» в свойствах собранного файла берётся из поля author
+  // (app-builder-lib/out/appInfo.js: `get companyName() { ... return author.name }`,
+  // подставляется в winPackager.js: `versionStrings.CompanyName = appInfo.companyName`).
+  // Поле было ПУСТЫМ → имя не подставлялось → в свойствах ЦентрЧатов.exe стояло
+  // «GitHub, Inc.» (значение Electron по умолчанию), то есть программа выдавала себя
+  // за продукт GitHub. Поле обязано быть заполнено ИМЕНЕМ (объект с name или строка).
+  var authorName = pkg.author && (typeof pkg.author === 'string' ? pkg.author : pkg.author.name)
+  assert(authorName && String(authorName).trim().length > 1,
+    'package.json → author.name пуст: «Компания» в свойствах собранного файла снова станет «GitHub, Inc.» (v1.2.460)')
   assert(pkg.build.extraMetadata && pkg.build.extraMetadata.main === 'out/main/main.js', 'packaged app must start from built main')
 })
 test('scripts/dist-win.cjs keeps only installer in dist safely', function() {

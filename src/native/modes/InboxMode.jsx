@@ -21,9 +21,11 @@ import { computeScrollBehavior } from '../utils/scrollBehavior.js'
 import { smoothScrollTo } from '../utils/smoothScroll.js'
 import { computeJumpToEndGate } from '../utils/jumpToEndGate.js'
 import createScrollToBottom from '../../../shared/inboxScrollToBottom.js'
-import useChatListResize, {
+import useChatListResize from '../hooks/useChatListResize.js'
+// v1.2.460: чистые расчёты ширины переехали в общий код (вне планки строк интерфейса).
+import {
   CHAT_LIST_DEFAULT_WIDTH, clampChatListWidth, isChatListCompact,
-} from '../hooks/useChatListResize.js'
+} from '../../../shared/chatListWidth.js'
 import { useStickyBottomOnMedia } from '../hooks/useStickyBottomOnMedia.js'
 import ChatListResizeHandle from '../components/ChatListResizeHandle.jsx'
 import ThemePickerModal from '../components/ThemePickerModal.jsx'

@@ -1,9 +1,11 @@
 {
   "name": "chat-center",
-  "version": "1.2.459",
+  "version": "1.2.460",
   "description": "ЦентрЧатов — единое окно для мессенджеров с ИИ-помощником",
   "main": "out/main/main.js",
-  "author": "",
+  "author": {
+    "name": "ЦентрЧатов"
+  },
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
