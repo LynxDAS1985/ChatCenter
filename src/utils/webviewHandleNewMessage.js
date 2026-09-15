@@ -44,6 +44,11 @@ export function createHandleNewMessage(deps) {
       traceNotif('dedup', 'block', messengerId, text, `substring-dedup | scope=${dedupScope || 'messenger'} prevLen=${subDedup.prevLen} age=${subDedup.age}ms`)
       return
     }
+    // v1.2.462: раньше защита от повторов писала в журнал, ТОЛЬКО когда поймала. Когда ПРОПУСТИЛА —
+    // молчала, и разобрать «почему пришли три карточки на одно сообщение» было не по чему.
+    // Теперь пишем и пропуск: видно ключ сравнения (в нём имя отправителя) и сколько записей рядом.
+    // Ключ обрезаем — он длинный, а важно совпадение начала.
+    traceNotif('dedup', 'pass', messengerId, text, `ПРОПУЩЕНО | scope=${dedupScope || 'messenger'} key="${exactDedup.key.slice(0, 70)}" вМоменте=${recentNotifsRef.current.size}`)
     recentNotifsRef.current.set(exactDedup.key, exactDedup.now)
     cleanupRecentMap(recentNotifsRef.current)
 
