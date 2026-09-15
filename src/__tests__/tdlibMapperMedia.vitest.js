@@ -3,8 +3,9 @@
 // Этот файл — медиа-типы (photo/video/audio/document/voice/location), альбомы,
 // reply, forward. Базовые сценарии (entities, text, mapChat, preview) — см. tdlibMapper.vitest.js.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mapMessage } from '../../main/native/backends/tdlibMapper.js'
+import { noteEmptyMessage } from '../../main/native/backends/tdlibMapperMedia.js'
 
 // Хелпер: базовый message без media, который тесты подменяют через `content` override.
 function tdMsgBase(content, overrides = {}) {
@@ -296,5 +297,96 @@ describe('mapMessage — forwards', () => {
       { '@type': 'messageText', text: { text: 'x', entities: [] } },
     ), 'tg_1:2')
     expect(r.fwdFrom).toBe(null)
+  })
+})
+
+// ──────────────────────────────────────────────────────────────────────
+// v1.2.461: «ПУСТОЕ СООБЩЕНИЕ» ПОПАДАЕТ В ЖУРНАЛ
+//
+// Жалоба 2026-09-15: пришёл вид сообщения, которого нет в разборе → в чате пустой пузырь,
+// в уведомлении «[медиа]». Узнать вид было неоткуда: программа о нём нигде не писала.
+// Такое ловили уже дважды по скриншотам (анимированный эмодзи v0.95.40, стикер v0.95.47).
+// ──────────────────────────────────────────────────────────────────────
+describe('пустое сообщение попадает в журнал (v1.2.461)', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('незнакомый вид без текста → в журнал уходит строка с НАЗВАНИЕМ вида', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mapMessage(tdMsgBase({ '@type': 'messageSomethingBrandNew' }), 'chat1')
+    expect(warn).toHaveBeenCalledTimes(1)
+    const line = String(warn.mock.calls[0][0])
+    expect(line).toContain('messageSomethingBrandNew')
+    expect(line).toContain('[tdlib-empty]')
+  })
+
+  it('🔴 СВЁРТКА: тот же вид второй раз в журнал НЕ пишется (иначе поток = сотни строк)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(noteEmptyMessage('messageDuplicateProbe')).toBe(true)
+    expect(noteEmptyMessage('messageDuplicateProbe')).toBe(false)
+    expect(noteEmptyMessage('messageDuplicateProbe')).toBe(false)
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('🔴 ЛОВУШКА: СТИКЕР в журнал НЕ попадает — он не пустой, у него эмодзи вместо текста', () => {
+    // Стикер тоже даёт mediaType=null. Если бы писали по признаку «незнакомый вид»,
+    // журнал засорялся бы стикерами. Поэтому пишем по факту «ни текста, ни вложения».
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const m = mapMessage(tdMsgBase({ '@type': 'messageSticker', sticker: { emoji: '🔥' } }), 'chat1')
+    expect(m.text).toBe('🔥')
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('кубик 🎲 тоже не попадает — та же причина', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mapMessage(tdMsgBase({ '@type': 'messageDice', emoji: '🎲' }), 'chat1')
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('🔴 НАСТОЯЩАЯ ЛОВУШКА условия: анимированный эмодзи в журнал НЕ попадает', () => {
+    // ⚠️ Почему именно этот вид, а не стикер: свёртка «один раз на вид» живёт на весь
+    // прогон. Стикер и кубик встречаются в тестах ВЫШЕ по файлу, поэтому при сломанном
+    // условии их бы записали те тесты, а сюда бы уже ничего не дошло — ловушка молчала бы.
+    // Проверено прогоном «наоборот»: со стикером поломка НЕ ловилась, с этим видом — ловится.
+    // Имя messageAnimatedEmoji в файле больше нигде не используется, счётчик чист.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const m = mapMessage(tdMsgBase({ '@type': 'messageAnimatedEmoji', emoji: '👍' }), 'chat1')
+    expect(m.text).toBe('👍')          // вложения нет, но текст есть — пустым не выглядит
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('обычный текст — не попадает', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mapMessage(tdMsgBase({ '@type': 'messageText', text: { text: 'привет', entities: [] } }), 'chat1')
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('🔴 ЛОВУШКА второй половины условия: вложение без подписи в журнал НЕ попадает', () => {
+    // Берём messageVenue (место на карте): текста у него нет, зато вложение есть.
+    // ⚠️ Имя выбрано свободным (в файле больше нигде не встречается) — иначе свёртка
+    // «один раз на вид» съела бы запись в тестах выше, и ловушка молчала бы.
+    // Проверено прогоном «наоборот»: с messagePhoto поломка НЕ ловилась, с этим видом — ловится.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const m = mapMessage(tdMsgBase({ '@type': 'messageVenue', venue: { title: 'Кафе' } }), 'chat1')
+    expect(m.text).toBe('')            // подписи нет
+    expect(m.mediaType).toBe('location')  // но вложение есть -> пустым не выглядит
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('служебное сообщение ПОПАДАЕТ в журнал — осознанно: оно тоже рисуется пустым', () => {
+    // MessageBubble.jsx не имеет ветки для служебных сообщений: нет текста и нет вложения
+    // → пузырь пустой. Значит это та же беда, а не ложная тревога.
+    // ⚠️ Берём ИМЕННО messageChatAddMembers, а не messagePinMessage: про второй уже писал
+    // тест выше по файлу («сервисное messagePinMessage — mediaType=null»), и свёртка
+    // «один раз на вид» честно промолчала бы. Это, кстати, живое доказательство, что
+    // свёртка работает на весь запуск программы, а не на одно сообщение.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mapMessage(tdMsgBase({ '@type': 'messageChatAddMembers', member_user_ids: [7] }), 'chat1')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain('messageChatAddMembers')
+  })
+
+  it('сбой записи в журнал не роняет разбор сообщения', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => { throw new Error('журнал недоступен') })
+    expect(() => noteEmptyMessage('messageLogBroken')).not.toThrow()
   })
 })

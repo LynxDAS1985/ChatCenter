@@ -73,7 +73,7 @@ export function mapEntities(tdEntities) {
 // MEDIA — вынесено в tdlibMapperMedia.js (v0.89.34)
 // ──────────────────────────────────────────────────────────────────────────
 
-import { extractMinithumbnail, extractMediaInfo } from './tdlibMapperMedia.js'
+import { extractMinithumbnail, extractMediaInfo, noteEmptyMessage } from './tdlibMapperMedia.js'
 // v1.2.131: единое правило префикса имени автора в превью (см. файл).
 import { lastSenderLabel } from '../../../shared/chatPreviewSender.js'
 import { mapUserStatus } from '../../../shared/userStatusMap.js' // v1.2.171: разбор статуса собеседника
@@ -221,6 +221,11 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
   }
 
   const media = extractMediaInfo(content)
+  // v1.2.461: сообщение вышло ПУСТЫМ (ни текста, ни вложения) — значит пользователь
+  // увидит пустой пузырь. Пишем вид в журнал ОДИН раз, чтобы такие случаи не находились
+  // случайно по скриншотам (так было с анимированным эмодзи и стикером выше).
+  // Проверяем ПОСЛЕ подстановки эмодзи-текста — иначе сюда попали бы стикеры и кубики.
+  if (!text && !media.mediaType) noteEmptyMessage(content['@type'])
   const strippedThumb = extractMinithumbnail(content)
 
   // groupedId: TDLib даёт media_album_id как string. '0' означает «не в альбоме».
