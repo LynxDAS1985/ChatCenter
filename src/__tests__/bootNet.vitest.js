@@ -250,3 +250,71 @@ describe('🔴 Чего окно делать НЕ должно (находки 
       .toBeLessThan(code.indexOf("addEventListener('offline'"))
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.2.464: ЖАЛОБА 2026-09-16 — красный экран «Failed to fetch dynamically imported
+// module: .../src/native/NativeApp.jsx» вместо окна повтора.
+//
+// Что показал журнал: окно повтора НЕ поднялось ни разу (`boot-net` — ноль записей),
+// хотя заставка висела до 08:37:07 (т.е. показать было КУДА), а два ленивых куска
+// (AISidebar 08:36:20 и NativeApp 08:36:57) упали с «Failed to fetch».
+//
+// КОРЕНЬ: React.lazy перехватывает отказ догрузки САМ и превращает его в ошибку
+// отрисовки → до слушателя `unhandledrejection` отказ не доходит → окно молчит.
+// Лечение: перехватчики ошибок отрисовки передают сообщение в `onLoadError`.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('Ошибка ОТРИСОВКИ про недогруженный кусок поднимает окно (v1.2.464)', () => {
+  it('🔴 ГЛАВНОЕ: тот самый текст из жалобы → окно появилось', () => {
+    const net = boot()
+    expect(visible()).toBe(false)
+    const shown = net.onLoadError('Failed to fetch dynamically imported module: http://localhost:5173/src/native/NativeApp.jsx')
+    expect(shown).toBe(true)
+    expect(visible()).toBe(true)
+  })
+
+  it('второй упавший кусок из той же жалобы (AISidebar) тоже поднимает окно', () => {
+    const net = boot()
+    net.onLoadError('Failed to fetch dynamically imported module: http://localhost:5173/src/components/AISidebar.jsx')
+    expect(visible()).toBe(true)
+  })
+
+  it('🔴 ЛОВУШКА: ЧУЖАЯ ошибка отрисовки окно НЕ поднимает (красный экран нужен разработчику)', () => {
+    const net = boot()
+    expect(net.onLoadError('Cannot read properties of undefined (reading map)')).toBe(false)
+    expect(net.onLoadError('x is not a function')).toBe(false)
+    expect(net.onLoadError('')).toBe(false)
+    expect(net.onLoadError(undefined)).toBe(false)
+    expect(visible()).toBe(false)
+  })
+
+  it('🔴 ЛОВУШКА: маска сбоя загрузки ОДНА на всех — не размножена по перехватчикам', () => {
+    const { code } = bootPieces()
+    // Маска объявлена ровно один раз и используется только через onLoadError.
+    expect(code.match(/dynamically imported\|Failed to fetch/g) || []).toHaveLength(1)
+    expect(code).toContain('var LOAD_FAIL =')
+    for (const f of ['src/main.jsx', 'src/components/ErrorBoundary.jsx']) {
+      expect(readFileSync(f, 'utf8'), f + ' не должен содержать своей копии маски')
+        .not.toMatch(/dynamically imported/)
+    }
+  })
+
+  it('проводка: ОБА перехватчика ошибок отрисовки зовут onLoadError', () => {
+    expect(readFileSync('src/main.jsx', 'utf8')).toContain('__ccBootNet?.onLoadError?.(error?.message)')
+    expect(readFileSync('src/components/ErrorBoundary.jsx', 'utf8')).toContain('__ccBootNet?.onLoadError?.(error?.message)')
+  })
+
+  it('старый путь (отказ обещания) продолжает работать через ту же дверь', () => {
+    boot()
+    window.dispatchEvent(Object.assign(new Event('unhandledrejection'), {
+      reason: new Error('Failed to fetch dynamically imported module: /src/App.jsx'),
+    }))
+    expect(visible()).toBe(true)
+  })
+
+  it('🔴 ЛОВУШКА: приложение уже работает (заставки нет) → окно НЕ показывается', () => {
+    const net = boot()
+    document.getElementById('cc-boot-net').remove()     // так бывает после успешного запуска
+    expect(net.onLoadError('Failed to fetch dynamically imported module: /src/x.jsx')).toBe(false)
+    expect(document.getElementById('cc-boot-net')).toBe(null)
+  })
+})

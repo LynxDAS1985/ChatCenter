@@ -21,6 +21,10 @@ export default class ErrorBoundary extends React.Component {
       window.api?.send?.('app:log', { level: 'ERROR',
         message: `[ErrorBoundary] ${this.props.name || 'Unknown'}: ${error?.message || error}${stack}` })
     } catch (_) {}
+    // v1.2.464: если упала именно ДОГРУЗКА куска программы (а не код внутри него) — это сбой
+    // запуска, а не поломка компонента: поднимаем общее окно повтора из index.html. Оно само
+    // проверит текст ошибки и само не покажется, если заставки уже нет (приложение работает).
+    try { window.__ccBootNet?.onLoadError?.(error?.message) } catch (_) {}
   }
 
   render() {
