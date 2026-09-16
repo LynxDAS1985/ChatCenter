@@ -4,8 +4,9 @@
 //   __CC_OZON_COUNT__ qa            → setOzonCounts (кладёт qa в per-раздел)
 //   не-__CC_ сообщение              → ничего не маршрутизируется
 //   did-fail-load (реальная ошибка) → один раз notify; ERR_ABORTED(-3) → notify НЕ вызывается
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { bindOzonBgWatcher } from '../utils/ozonBgWatcher.js'
+import { resetOzonNotifDedup } from '../../shared/ozonNotifDedup.js'
 
 // Заглушка элемента <webview>: копит обработчики, умеет их «выстрелить».
 function makeEl(url = 'https://seller.ozon.ru/app/reviews/questions') {
@@ -28,6 +29,12 @@ function makeDeps() {
     getState: () => ozonState,
   }
 }
+
+// v1.2.467: память «уже сообщали про недоступность» стала ОБЩЕЙ (shared/ozonNotifDedup.js) —
+// она переживает пересоздание страницы, и это же делает её общей МЕЖДУ ТЕСТАМИ. Без сброса
+// проверки начинают зависеть от порядка запуска: один тест «съедает» карточку у следующего.
+// Ровно на эту граблю проект уже наступал (см. .memory-bank/workflow.md).
+beforeEach(() => resetOzonNotifDedup())
 
 describe('bindOzonBgWatcher', () => {
   it('уведомление о вопросе → handleNewMessage на id Ozon с флагом background', () => {
@@ -172,5 +179,73 @@ describe('bindOzonBgWatcher', () => {
 
   it('null-элемент (размонтирование) не падает', () => {
     expect(() => bindOzonBgWatcher(null, 'ozon', makeDeps())).not.toThrow()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.2.467 — ЖАЛОБА 2026-09-16 «часто вижу окно "Не удалось открыть фоновую страницу Ozon"».
+//
+// КОРЕНЬ (доказан журналом + чтением кода): пометка «уже сообщил» жила НА ЭЛЕМЕНТЕ страницы
+// (el.__ccOzonBgBlockNotified) и обнулялась вместе с ним. Журнал 2026-09-16: за ОДИН запуск
+// приложения фоновая страница создавалась 9 раз (три раздела × три пересоздания при горячей
+// перезагрузке в режиме разработки) — значит и чистых пометок было 9.
+//
+// Лечение: память переехала в общий код (shared/ozonNotifDedup.js), где уже жила такая же
+// память для вопросов и отзывов — со сроком молчания 6 часов и потолком записей.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('🔴 ЛОВУШКА: карточка о недоступности не повторяется после пересоздания страницы (v1.2.467)', () => {
+  it('пять РАЗНЫХ элементов страницы подряд → карточка ОДНА', () => {
+    const d = makeDeps()
+    for (let i = 0; i < 5; i++) {
+      const el = makeEl()                                   // каждый раз НОВЫЙ элемент — как при пересоздании
+      bindOzonBgWatcher(el, 'ozon', d)
+      el.fire('did-fail-load', { errorCode: -101, errorDescription: 'ERR_CONNECTION_RESET', isMainFrame: true })
+    }
+    expect(d.notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('три фоновые страницы упали разом → карточка ОДНА, а не три', () => {
+    const d = makeDeps()
+    for (const url of ['questions', 'messenger', 'reviews']) {
+      const el = makeEl()
+      bindOzonBgWatcher(el, 'ozon', d)
+      el.fire('did-fail-load', { errorCode: -101, isMainFrame: true, validatedURL: url })
+    }
+    expect(d.notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('🔴 ЛОВУШКА: молчание НЕ немое — в журнал пишется, что карточку не показали и почему', () => {
+    const d = makeDeps()
+    for (let i = 0; i < 3; i++) {
+      const el = makeEl()
+      bindOzonBgWatcher(el, 'ozon', d)
+      el.fire('did-fail-load', { errorCode: -101, isMainFrame: true })
+    }
+    const lines = d.log.mock.calls.map(c => String(c[1]))
+    expect(lines.filter(l => l.includes('показал пользователю сообщение'))).toHaveLength(1)
+    const silent = lines.filter(l => l.includes('НЕ показываю'))
+    expect(silent.length, 'каждое подавление должно попасть в журнал').toBe(2)
+    expect(silent[0]).toMatch(/уже сообщали/)
+    expect(silent[0]).toMatch(/code=-101/)
+  })
+
+  it('старые правила сохранены: отмена (-3), не главный документ и «Отзывы» не тревожат', () => {
+    const d = makeDeps()
+    const a = makeEl(); bindOzonBgWatcher(a, 'ozon', d)
+    a.fire('did-fail-load', { errorCode: -3, isMainFrame: true })
+    const b = makeEl(); bindOzonBgWatcher(b, 'ozon', d)
+    b.fire('did-fail-load', { errorCode: -101, isMainFrame: false })
+    const c = makeEl(); bindOzonBgWatcher(c, 'ozon', { ...d, suppressFailNotice: true })
+    c.fire('did-fail-load', { errorCode: -101, isMainFrame: true })
+    expect(d.notify).not.toHaveBeenCalled()
+  })
+
+  it('«Отзывы» промолчали, но память НЕ израсходована — обычная страница карточку получит', () => {
+    const d = makeDeps()
+    const c = makeEl(); bindOzonBgWatcher(c, 'ozon', { ...d, suppressFailNotice: true })
+    c.fire('did-fail-load', { errorCode: -101, isMainFrame: true })
+    const q = makeEl(); bindOzonBgWatcher(q, 'ozon', d)
+    q.fire('did-fail-load', { errorCode: -101, isMainFrame: true })
+    expect(d.notify).toHaveBeenCalledTimes(1)
   })
 })

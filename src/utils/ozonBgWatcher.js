@@ -21,7 +21,7 @@ import { parseConsoleMessage } from './consoleMessageParser.js'
  * @param {string} ozonId - id ОСНОВНОГО мессенджера Ozon (для маршрутизации уведомлений/счётчика)
  * @param {{handleNewMessage:Function, setOzonCounts:Function, log:Function}} deps
  */
-import { shouldSkipOzonNotif } from '../../shared/ozonNotifDedup.js'
+import { shouldSkipOzonNotif, decideOzonBgFailNotice } from '../../shared/ozonNotifDedup.js'
 
 export function bindOzonBgWatcher(el, ozonId, deps) {
   try {
@@ -43,14 +43,18 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         const code = e && e.errorCode
         const mainFrame = (!e || e.isMainFrame === undefined) ? true : e.isMainFrame
         log && log('WARN', '[ozon-bg] загрузка НЕ удалась code=' + code + ' ' + (e && e.errorDescription) + ' url=' + (e && e.validatedURL || ''))
-        if (mainFrame && code != null && code !== -3 && !el.__ccOzonBgBlockNotified && !suppressFailNotice) { // v1.2.380: страница «Отзывы» на этапе разведки не тревожит пользователя (лог WARN выше остаётся)
-          el.__ccOzonBgBlockNotified = true
-          // v1.2.363: формулировка НЕЙТРАЛЬНА — did-fail-load бывает и от временного обрыва сети
-          // (ERR_NETWORK_CHANGED/ERR_INTERNET_DISCONNECTED), не только от блокировки Ozon. Не винить Ozon зря.
+        // v1.2.467: всё решение («тревожить ли и почему нет») живёт в общем коде —
+        // shared/ozonNotifDedup.js, decideOzonBgFailNotice. Здесь остаётся только обвязка.
+        // Раньше пометка «уже сообщил» стояла НА ЭЛЕМЕНТЕ и обнулялась при его пересоздании
+        // (журнал 2026-09-16: 9 созданий фоновых страниц за ОДИН запуск) — отсюда «часто вижу».
+        const d = decideOzonBgFailNotice({ code, isMainFrame: e && e.isMainFrame, suppress: suppressFailNotice })
+        if (d.notify) {
           log && log('INFO', '[ozon-bg] показал пользователю сообщение о недоступности фоновой страницы (code=' + code + ')')
-          // v1.2.369: текст БЕЗ названия раздела — маршрутизатор общий на «Вопросы» И «Сообщения», раздел
-          // тут неизвестен, поэтому не называем его (иначе врали бы «Вопросы» и для упавшей «Сообщения»).
-          notify && notify('Ozon', 'Не удалось открыть фоновую страницу Ozon (проблема Ozon или интернета). Уведомления из этого раздела будут приходить, только когда он открыт.')
+          notify && notify('Ozon', d.body)
+        } else if (code != null && code !== -3) {
+          // В ЖУРНАЛ пишем и когда промолчали: иначе не понять, сколько раз Ozon реально подводил.
+          log && log('INFO', '[ozon-bg] карточку о недоступности НЕ показываю (' + d.reason
+            + (d.ageMs ? ', ' + Math.round(d.ageMs / 60000) + ' мин назад' : '') + ', code=' + code + ')')
         }
       } catch (_) {}
     })

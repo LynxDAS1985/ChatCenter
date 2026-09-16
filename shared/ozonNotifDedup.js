@@ -43,8 +43,26 @@
 export const OZON_DEDUP_TTL = 6 * 60 * 60 * 1000
 /** Потолок записей — чтобы память не росла бесконечно */
 export const OZON_DEDUP_MAX = 500
-/** Разделы со СПИСКОВОЙ природой (постоянная личность записи) */
-export const OZON_DEDUP_SOURCES = ['ozon-questions', 'ozon-reviews']
+/**
+ * Источник «фоновая страница Ozon не открылась» (v1.2.467).
+ *
+ * ЖАЛОБА 2026-09-16: карточка «Не удалось открыть фоновую страницу Ozon» приходила ЧАСТО,
+ * хотя код обещал сообщить один раз. КОРЕНЬ тот же, что описан выше: пометка «уже сообщил»
+ * жила НА ЭЛЕМЕНТЕ фоновой страницы (`el.__ccOzonBgBlockNotified` в ozonBgWatcher.js) и
+ * обнулялась вместе с ним. За ОДИН запуск приложения журнал показал 9 созданий фоновых
+ * страниц (три раздела × три пересоздания) — значит и чистых пометок было 9.
+ *
+ * Почему сюда, а не отдельным механизмом: здесь уже есть ровно то, что нужно — память в
+ * НАШЕМ приложении, срок молчания 6 часов и потолок записей. Второй такой механизм рядом
+ * был бы дублем.
+ *
+ * Побочный выигрыш: ключ у всех трёх фоновых страниц ОДИН (раздел + один и тот же текст),
+ * поэтому одна беда даёт ОДНУ карточку, а не по одной на страницу.
+ */
+export const OZON_BG_FAIL_SOURCE = 'ozon-bg-fail'
+
+/** Разделы со СПИСКОВОЙ природой (постоянная личность записи) + сбой фоновой страницы */
+export const OZON_DEDUP_SOURCES = ['ozon-questions', 'ozon-reviews', OZON_BG_FAIL_SOURCE]
 
 /** ключ → когда показывали (мс). Живёт в приложении, переживает перезагрузку страницы. */
 const seen = new Map()
@@ -91,6 +109,40 @@ export function shouldSkipOzonNotif(source, tag, body, now = Date.now(), ttl = O
     while (seen.size > OZON_DEDUP_MAX) { seen.delete(seen.keys().next().value) }
   }
   return { skip: false, reason: at === undefined ? 'впервые' : 'память устарела', ageMs: at === undefined ? 0 : now - at }
+}
+
+/** Текст карточки о недоступности. ОДИН на все три фоновые страницы — раздел тут неизвестен
+ * (маршрутизатор общий на «Вопросы» и «Сообщения»), поэтому его не называем: иначе врали бы. */
+export const OZON_BG_FAIL_BODY = 'Не удалось открыть фоновую страницу Ozon (проблема Ozon или интернета). Уведомления из этого раздела будут приходить, только когда он открыт.'
+
+/**
+ * Решение: показывать ли карточку «фоновая страница Ozon не открылась».
+ *
+ * ЖАЛОБА 2026-09-16 «часто вижу это окно». Корень (доказан журналом + чтением кода): пометка
+ * «уже сообщил» жила НА ЭЛЕМЕНТЕ страницы и обнулялась вместе с ним — за ОДИН запуск приложения
+ * журнал показал 9 созданий фоновых страниц. Теперь память общая (см. shouldSkipOzonNotif выше).
+ *
+ * Что НЕ тревожит пользователя (сохранено из прежнего кода):
+ *  • код -3 (ERR_ABORTED) — это отмена/редирект, Ozon сам редиректит /app/reviews/questions;
+ *  • сбой НЕ главного документа (isMainFrame=false) — упал под-ресурс, страница жива;
+ *  • страница «Отзывы» (suppress=true, с v1.2.380) — она на этапе разведки;
+ *  • нет кода ошибки вообще — нечего сообщать.
+ *
+ * @param {{code:*, isMainFrame:*, suppress:*, now:number}} p
+ * @returns {{notify: boolean, body: string, reason: string, ageMs: number}}
+ *          notify=false + reason — почему промолчали (для журнала: молчание не должно выглядеть
+ *          как «всё хорошо»).
+ */
+export function decideOzonBgFailNotice(p) {
+  const { code, isMainFrame, suppress, now } = p || {}
+  const mainFrame = isMainFrame === undefined ? true : !!isMainFrame
+  if (!mainFrame) return { notify: false, body: '', reason: 'сбой не главного документа', ageMs: 0 }
+  if (code === null || code === undefined) return { notify: false, body: '', reason: 'нет кода ошибки', ageMs: 0 }
+  if (code === -3) return { notify: false, body: '', reason: 'ERR_ABORTED — отмена или редирект', ageMs: 0 }
+  if (suppress) return { notify: false, body: '', reason: 'раздел не тревожит пользователя', ageMs: 0 }
+  const dd = shouldSkipOzonNotif(OZON_BG_FAIL_SOURCE, '', OZON_BG_FAIL_BODY, now || Date.now())
+  if (dd.skip) return { notify: false, body: '', reason: 'уже сообщали', ageMs: dd.ageMs }
+  return { notify: true, body: OZON_BG_FAIL_BODY, reason: 'первый раз за срок молчания', ageMs: 0 }
 }
 
 /** Только для тестов: очистить память. */
