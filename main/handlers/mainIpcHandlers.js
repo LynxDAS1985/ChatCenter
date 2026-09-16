@@ -7,7 +7,7 @@ import { ipcMain, shell, clipboard } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { setupSession } from '../utils/sessionSetup.js'
-import { readLogFile, clearLogFile, getLogFilePath } from '../utils/logger.js'
+import { readLogFile, readPrevLogFile, getPrevLogFilePath, clearLogFile, getLogFilePath } from '../utils/logger.js'
 import { createOverlayIcon } from '../utils/overlayIcon.js'
 import { collectSystemDiagnostics, readSystemDiagnosticsReport, saveSystemDiagnosticsReport } from '../utils/systemDiagnostics.js'
 import { initAILoginHandler } from './aiLoginHandler.js'
@@ -30,6 +30,14 @@ export function registerMainIpcHandlers(deps) {
   // v0.84.2: Чтение лога для модального окна
   ipcMain.handle('app:read-log', () => readLogFile(500))
   ipcMain.handle('app:clear-log', () => { clearLogFile(); return 'ok' })
+  // v1.2.469: ПРОШЛЫЙ журнал (chatcenter.prev.log) — половина, отрезанная при переполнении.
+  // Нужен при разборе жалоб «такое бывает часто»: в основном журнале старые записи уже стёрты.
+  // 🔴 Путь берётся ТОЛЬКО из кода (getPrevLogFilePath), извне ничего не принимаем — та же
+  // защита, что у кнопки «Папка логов» ниже.
+  ipcMain.handle('app:read-prev-log', () => ({
+    exists: !!getPrevLogFilePath(),
+    content: readPrevLogFile(500),
+  }))
   // v1.2.318: открыть Проводник с выделенным файлом chatcenter.log (кнопка «📂 Папка логов»
   // в окне логов). Путь берётся ТОЛЬКО из getLogFilePath() — извне ничего не принимаем.
   ipcMain.handle('app:open-logs-folder', () => {

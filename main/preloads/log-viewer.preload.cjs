@@ -36,6 +36,10 @@ contextBridge.exposeInMainWorld('logViewer', {
   readLog() {
     return ipcRenderer.invoke('app:read-log')
   },
+  // v1.2.469: прочитать ПРОШЛЫЙ журнал (отрезанную при переполнении половину).
+  readPrevLog() {
+    return ipcRenderer.invoke('app:read-prev-log')
+  },
   // v1.2.318: открыть системный Проводник с выделенным файлом chatcenter.log.
   openFolder() {
     return ipcRenderer.invoke('app:open-logs-folder')

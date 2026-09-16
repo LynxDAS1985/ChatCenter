@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { initLogger, getLogFilePath } from '../../main/utils/logger.js'
+import { initLogger, getLogFilePath, readPrevLogFile, getPrevLogFilePath } from '../../main/utils/logger.js'
 
 let dir
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-log-')) })
@@ -61,5 +61,56 @@ describe('журнал: отрезанная половина сохраняет
     // значит ни один символ старого журнала не пропал.
     expect(prev.length + rest.length).toBeGreaterThanOrEqual(whole.length)
     expect(prev.length).toBeGreaterThan(whole.length / 2 - 1)
+  })
+})
+
+// v1.2.469: прошлый журнал можно ПРОЧИТАТЬ — иначе он лежал бы мёртвым грузом.
+// Зачем: при разборе жалоб «такое бывает часто» нужен именно он (в основном журнале старые
+// записи уже стёрты обрезкой). В окне логов появилась кнопка «🕓 Прошлый журнал».
+describe('прошлый журнал доступен для чтения (v1.2.469)', () => {
+  it('🔴 ГЛАВНОЕ: после переполнения прошлый журнал читается', () => {
+    const log = path.join(dir, 'chatcenter.log')
+    fs.writeFileSync(log, 'СТАРОЕ-'.repeat(200000) + 'НОВОЕ-'.repeat(200000))
+    initLogger(dir)
+    expect(getPrevLogFilePath()).toBeTruthy()
+    const prev = readPrevLogFile(500)
+    expect(prev.length).toBeGreaterThan(0)
+    expect(prev).toContain('СТАРОЕ')
+  })
+
+  it('🔴 ЛОВУШКА: журнал ни разу не переполнялся → честное «нет», а не выдумка', () => {
+    fs.writeFileSync(path.join(dir, 'chatcenter.log'), 'мало строк')
+    initLogger(dir)
+    expect(getPrevLogFilePath()).toBe(null)
+    expect(readPrevLogFile()).toBe('')
+  })
+
+  it('читаются ПОСЛЕДНИЕ строки, а не весь файл целиком', () => {
+    const log = path.join(dir, 'chatcenter.log')
+    const many = Array.from({ length: 4000 }, (_, i) => 'строка ' + i).join('\n')
+    fs.writeFileSync(log, many + '\n' + 'X'.repeat(2.2 * MB))
+    initLogger(dir)
+    const prev = readPrevLogFile(10)
+    expect(prev.split('\n').length).toBeLessThanOrEqual(10)
+  })
+})
+
+describe('проводка: окно логов умеет показать прошлый журнал (v1.2.469)', () => {
+  it('канал объявлен в главном процессе, мосте и самом окне', () => {
+    const main = fs.readFileSync('main/handlers/mainIpcHandlers.js', 'utf8')
+    const bridge = fs.readFileSync('main/preloads/log-viewer.preload.cjs', 'utf8')
+    const win = fs.readFileSync('main/log-viewer.html', 'utf8')
+    expect(main).toContain("ipcMain.handle('app:read-prev-log'")
+    expect(bridge).toContain("ipcRenderer.invoke('app:read-prev-log')")
+    expect(win).toContain('togglePrevLog')
+    expect(win).toContain('Прошлый журнал')
+  })
+
+  it('🔴 ЛОВУШКА: путь к прошлому журналу НЕ принимается извне (только из кода)', () => {
+    const main = fs.readFileSync('main/handlers/mainIpcHandlers.js', 'utf8')
+    const block = main.slice(main.indexOf("ipcMain.handle('app:read-prev-log'"), main.indexOf('app:open-logs-folder'))
+    // у обработчика не должно быть аргумента с путём — только вызовы без параметров
+    expect(block).not.toMatch(/\(_?,\s*\w*[Pp]ath/)
+    expect(block).toContain('getPrevLogFilePath()')
   })
 })

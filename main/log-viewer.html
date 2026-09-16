@@ -30,6 +30,7 @@ body { background:#1a1b2e; color:#e0e0e0; font-family:-apple-system,BlinkMacSyst
   <button id="btnAuto" class="active" onclick="toggleAuto()">● Auto</button>
   <button onclick="clearLog()">🗑 Очистить</button>
   <button onclick="copyAll()">📋 Копировать</button>
+  <button id="btnPrev" onclick="togglePrevLog()">🕓 Прошлый журнал</button>
   <button onclick="openLogsFolder()">📂 Папка логов</button>
   <button class="close" onclick="window.close()">✕</button>
 </div>
@@ -125,6 +126,49 @@ function loadLog() {
 
 // v0.89.38: Подписка на обновления лога через безопасный contextBridge API.
 window.addEventListener('DOMContentLoaded', () => {
+  // v1.2.469: переключатель «Прошлый журнал».
+  //
+  // Зачем: при переполнении основной журнал обрезается пополам, и отрезанная половина уходит в
+  // соседний файл `chatcenter.prev.log`. Именно он нужен, чтобы проверить жалобу «такое бывает
+  // часто» — в основном журнале старые записи уже стёрты. Открывать файл вручную неудобно.
+  //
+  // Поведение: нажал — показывается прошлый журнал и автообновление выключается (иначе новые
+  // строки основного журнала затёрли бы показанное); нажал ещё раз — возврат к текущему.
+  // Прошлого журнала ещё нет (не переполнялся ни разу) — честно говорим об этом, а не молчим.
+  let prevMode = false
+  window.togglePrevLog = function () {
+    const btn = document.getElementById('btnPrev')
+    if (prevMode) {                       // возврат к текущему журналу
+      prevMode = false
+      btn.classList.remove('active')
+      if (!autoMode) toggleAuto()
+      if (window.logViewer && window.logViewer.readLog) {
+        window.logViewer.readLog().then((c) => {
+          allLines = (c || '').split('\n').map(parseLine).filter(Boolean); render()
+        }).catch(() => {})
+      }
+      return
+    }
+    if (!window.logViewer || typeof window.logViewer.readPrevLog !== 'function') {
+      document.getElementById('count').textContent = 'прошлый журнал недоступен (старая версия моста)'
+      return
+    }
+    window.logViewer.readPrevLog().then((res) => {
+      if (!res || !res.exists) {
+        document.getElementById('count').textContent = 'прошлого журнала пока нет — он появится, когда текущий переполнится'
+        return
+      }
+      prevMode = true
+      btn.classList.add('active')
+      if (autoMode) toggleAuto()          // замораживаем: иначе свежие строки затрут показанное
+      allLines = (res.content || '').split('\n').map(parseLine).filter(Boolean)
+      render()
+      document.getElementById('count').textContent = 'показан ПРОШЛЫЙ журнал (' + allLines.length + ' строк)'
+    }).catch(() => {
+      document.getElementById('count').textContent = 'не удалось прочитать прошлый журнал'
+    })
+  }
+
   if (window.logViewer && typeof window.logViewer.onContent === 'function') {
     window.logViewer.onContent((content) => {
       if (!autoMode && allLines.length > 0) return // ручной режим — не перезаписываем

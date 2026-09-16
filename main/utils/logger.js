@@ -164,6 +164,32 @@ export function clearLogFile() {
   try { fs.writeFileSync(logFilePath, '') } catch {}
 }
 
+/**
+ * v1.2.469: путь к ПРОШЛОМУ журналу (`chatcenter.prev.log`).
+ * Появляется, когда основной журнал переполнился и его обрезали (см. initLogger выше):
+ * отрезанная половина уходит сюда, чтобы история не пропадала.
+ * @returns {string|null} путь или null, если журнал ещё ни разу не переполнялся
+ */
+export function getPrevLogFilePath() {
+  if (!logFilePath) return null
+  const prev = path.join(path.dirname(logFilePath), 'chatcenter.prev.log')
+  return fs.existsSync(prev) ? prev : null
+}
+
+/**
+ * v1.2.469: прочитать ПРОШЛЫЙ журнал (последние строки).
+ * Зачем: при разборе жалоб вроде «такое бывает часто» нужен именно он — в основном журнале
+ * старые записи уже стёрты обрезкой. Открывать файл вручную в блокноте неудобно.
+ * @returns {string} содержимое или '' — если прошлого журнала нет либо прочитать не вышло
+ */
+export function readPrevLogFile(maxLines = 500) {
+  const prev = getPrevLogFilePath()
+  if (!prev) return ''
+  try {
+    return fs.readFileSync(prev, 'utf8').split('\n').slice(-maxLines).join('\n')
+  } catch { return '' }
+}
+
 export function readLogFile(maxLines = 500) {
   if (!logFilePath || !fs.existsSync(logFilePath)) return ''
   try {
