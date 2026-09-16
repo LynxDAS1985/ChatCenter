@@ -11,7 +11,7 @@
 
 | Файл | Размер |
 |------|--------|
-| `CHANGELOG.md` | 97 КБ |
+| `CHANGELOG.md` | 74 КБ |
 | `README.md` | 12 КБ |
 | `STRUCTURE.md` | 9 КБ |
 | `ai-bridge.md` | 16 КБ |
@@ -23,9 +23,9 @@
 | `code-todo.md` | 69 КБ |
 | `coding-rules.md` | 9 КБ |
 | `common-mistakes.md` | 10 КБ |
-| `decisions.md` | 92 КБ |
+| `decisions.md` | 66 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 70 КБ |
+| `features.md` | 88 КБ |
 | `group-topic-investigation.md` | 96 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
@@ -57,7 +57,7 @@
 | `mistakes/outgoing-two-cases.md` | 14 КБ |
 | `mistakes/tdlib-forum.md` | 19 КБ |
 | `mistakes/tdlib-video-player.md` | 31 КБ |
-| `mistakes/webview-injection.md` | 91 КБ |
+| `mistakes/webview-injection.md` | 94 КБ |
 | `mistakes/webview-navigation-ui.md` | 113 КБ |
 | `mistakes/webview-stack-grouping.md` | 125 КБ |
 
@@ -70,7 +70,7 @@
 | `archive/2026-05-connection-health-plan.md` | 53 КБ |
 | `archive/2026-06-notifications-ribbon-max-title-control.md` | 6 КБ |
 | `archive/2026-07-notifications-ribbon-max-title-fallback-v1.2.24-27.md` | 16 КБ |
-| `archive/README.md` | 68 КБ |
+| `archive/README.md` | 70 КБ |
 | `archive/audit-2026-05-26-scroll-architecture-CLOSED.md` | 19 КБ |
 | `archive/changelog-v0.87.56-68.md` | 18 КБ |
 | `archive/code-todo-journal-and-closed.md` | 32 КБ |
@@ -82,6 +82,7 @@
 | `archive/decisions-adr-037-039.md` | 17 КБ |
 | `archive/decisions-adr-040-041.md` | 11 КБ |
 | `archive/decisions-adr-042-045.md` | 30 КБ |
+| `archive/decisions-adr-046-052.md` | 33 КБ |
 | `archive/features-pre-v0.87.md` | 251 КБ |
 | `archive/features-v0.87-early.md` | 126 КБ |
 | `archive/features-v0.87.106-114.md` | 22 КБ |
@@ -203,6 +204,7 @@
 | `archive/features-v1.2.59-73.md` | 49 КБ |
 | `archive/features-v1.2.74-89.md` | 40 КБ |
 | `archive/features-v1.2.90-100.md` | 29 КБ |
+| `archive/memory-changelog-old.md` | 24 КБ |
 | `archive/native-scroll-diagnostics-handoff-CLOSED.md` | 18 КБ |
 | `archive/native-scroll-restore-saga-CLOSED.md` | 40 КБ |
 
