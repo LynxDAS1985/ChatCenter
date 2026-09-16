@@ -13,19 +13,19 @@
 |------|--------|
 | `CHANGELOG.md` | 74 КБ |
 | `README.md` | 12 КБ |
-| `STRUCTURE.md` | 9 КБ |
+| `STRUCTURE.md` | 10 КБ |
 | `ai-bridge.md` | 16 КБ |
 | `ai-integration.md` | 13 КБ |
-| `api.md` | 37 КБ |
+| `api.md` | 38 КБ |
 | `architecture.md` | 16 КБ |
 | `autoreply.md` | 6 КБ |
 | `code-limits-status.md` | 18 КБ |
-| `code-todo.md` | 70 КБ |
+| `code-todo.md` | 72 КБ |
 | `coding-rules.md` | 9 КБ |
 | `common-mistakes.md` | 7 КБ |
 | `decisions.md` | 66 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 97 КБ |
+| `features.md` | 75 КБ |
 | `group-topic-investigation.md` | 15 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
@@ -50,7 +50,7 @@
 |------|--------|
 | `mistakes/app-layout.md` | 12 КБ |
 | `mistakes/electron-core-history.md` | 148 КБ |
-| `mistakes/electron-core.md` | 70 КБ |
+| `mistakes/electron-core.md` | 72 КБ |
 | `mistakes/native-scroll-unread.md` | 131 КБ |
 | `mistakes/notifications-ribbon-history.md` | 139 КБ |
 | `mistakes/notifications-ribbon.md` | 104 КБ |
@@ -70,7 +70,7 @@
 | `archive/2026-05-connection-health-plan.md` | 53 КБ |
 | `archive/2026-06-notifications-ribbon-max-title-control.md` | 6 КБ |
 | `archive/2026-07-notifications-ribbon-max-title-fallback-v1.2.24-27.md` | 16 КБ |
-| `archive/README.md` | 71 КБ |
+| `archive/README.md` | 72 КБ |
 | `archive/audit-2026-05-26-scroll-architecture-CLOSED.md` | 19 КБ |
 | `archive/changelog-v0.87.56-68.md` | 18 КБ |
 | `archive/code-todo-journal-and-closed.md` | 32 КБ |
@@ -201,6 +201,7 @@
 | `archive/features-v1.2.457-459.md` | 22 КБ |
 | `archive/features-v1.2.46-58.md` | 33 КБ |
 | `archive/features-v1.2.460-462.md` | 24 КБ |
+| `archive/features-v1.2.463-465.md` | 32 КБ |
 | `archive/features-v1.2.59-73.md` | 49 КБ |
 | `archive/features-v1.2.74-89.md` | 40 КБ |
 | `archive/features-v1.2.90-100.md` | 29 КБ |
