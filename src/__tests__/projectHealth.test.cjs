@@ -91,6 +91,35 @@ test('scripts/dist-win.cjs keeps only installer in dist safely', function() {
   assert(distWin.includes('out/renderer/index.html') && distWin.includes('node_modules/telegram/package.json'), 'package verification must cover renderer and production deps')
   assert(distWin.includes("['--win', '--x64']"), 'must build Windows x64 installer')
 })
+test('прогрев Vite указывает на СУЩЕСТВУЮЩИЕ файлы (v1.2.465)', function() {
+  // 🔴 ЖАЛОБА 2026-09-16: красный экран «Failed to fetch dynamically imported module».
+  // Разбор: сервер разработки отдавал файлы волнами с паузами до 116 секунд, ленивая
+  // догрузка не дожидалась. Лекарство — server.warmup (документация Vite, раздел
+  // Performance: «готовит файлы заранее... предотвращает водопад обработки»).
+  //
+  // Страж нужен потому, что Vite на НЕСУЩЕСТВУЮЩИЙ файл в списке прогрева НЕ ругается —
+  // просто молча его не греет. Переименовали файл → прогрев тихо перестал работать,
+  // и жалоба вернулась бы без единого сигнала.
+  var cfg = fs.readFileSync('electron.vite.config.js', 'utf8')
+  // Ищем ИМЕННО объявление `warmup:` — проверка на подстроку 'warmup' пропускала подмену
+  // вида `warmupOFF:` (поймано собственным прогоном «наоборот» при написании этого стража).
+  assert(cfg.indexOf('warmup: {') >= 0, 'electron.vite.config.js: прогрев server.warmup пропал — вернётся долгий первый запуск (v1.2.465)')
+  var block = cfg.slice(cfg.indexOf('clientFiles'), cfg.indexOf(']', cfg.indexOf('clientFiles')))
+  var files = (block.match(/'\.\/[^']+'/g) || []).map(function (q) { return q.slice(1, -1).replace(/^\.\//, '') })
+  assert(files.length >= 3, 'в прогреве должно остаться хотя бы 3 файла, найдено: ' + files.length)
+  // v1.2.466 (находка придирчивого ревью): Vite разрешает в прогреве ШАБЛОНЫ (типы пакета,
+  // ключ clientFiles: «Supports glob patterns»). Прежняя проверка требовала обычный файл и
+  // падала ложной тревогой на законной настройке — блокировала бы коммит. Для шаблона проверяем
+  // только, что существует папка до первой звёздочки: сам шаблон разворачивает Vite.
+  files.forEach(function (f) {
+    if (f.indexOf('*') >= 0) {
+      var dir = f.slice(0, f.indexOf('*')).replace(/\/[^/]*$/, '')
+      assert(!dir || fs.existsSync(dir), 'прогрев Vite: шаблон ' + f + ' указывает на несуществующую папку ' + dir)
+      return
+    }
+    assert(fs.existsSync(f), 'прогрев Vite ссылается на несуществующий файл: ' + f + ' — Vite об этом молчит, поэтому ловим тестом')
+  })
+})
 test('scripts/prodlike.cjs builds before electron-vite preview', function() {
   var prodlike = fs.readFileSync('scripts/prodlike.cjs', 'utf8')
   assert(prodlike.includes("delete env.ELECTRON_RUN_AS_NODE"), 'must avoid inherited ELECTRON_RUN_AS_NODE')

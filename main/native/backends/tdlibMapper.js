@@ -73,7 +73,7 @@ export function mapEntities(tdEntities) {
 // MEDIA — вынесено в tdlibMapperMedia.js (v0.89.34)
 // ──────────────────────────────────────────────────────────────────────────
 
-import { extractMinithumbnail, extractMediaInfo, noteEmptyMessage } from './tdlibMapperMedia.js'
+import { extractMinithumbnail, extractMediaInfo, noteEmptyMessage, emptyMessageFallbackText } from './tdlibMapperMedia.js'
 // v1.2.131: единое правило префикса имени автора в превью (см. файл).
 import { lastSenderLabel } from '../../../shared/chatPreviewSender.js'
 import { mapUserStatus } from '../../../shared/userStatusMap.js' // v1.2.171: разбор статуса собеседника
@@ -199,7 +199,7 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
       formattedText = { text: String(content.emoji || '🎲'), entities: [] }
     }
   }
-  const text = formattedText?.text || ''
+  let text = formattedText?.text || ''
   const entities = mapEntities(formattedText?.entities)
   // v0.95.40: флаг для рендера в MessageBubble.jsx с font-size 56px (Telegram-style).
   // true если messageAnimatedEmoji ИЛИ текст состоит ТОЛЬКО из 1-3 emoji.
@@ -225,7 +225,15 @@ export function mapMessage(tdMsg, chatId, extras = {}) {
   // увидит пустой пузырь. Пишем вид в журнал ОДИН раз, чтобы такие случаи не находились
   // случайно по скриншотам (так было с анимированным эмодзи и стикером выше).
   // Проверяем ПОСЛЕ подстановки эмодзи-текста — иначе сюда попали бы стикеры и кубики.
-  if (!text && !media.mediaType) noteEmptyMessage(content['@type'])
+  if (!text && !media.mediaType) {
+    noteEmptyMessage(content['@type'])
+    // v1.2.465: если про этот вид ТОЧНО известно, что содержимого нет (сейчас — только
+    // messageUnsupported, см. tdlibMapperMedia.js), ставим честную подпись. Она заменяет
+    // сразу три разные заглушки: «[медиа]» в уведомлении, «📎 вложение» в списке чатов и
+    // пустой пузырь в переписке. Про незнакомый вид подписи нет — оставляем как было.
+    // Ставим ПОСЛЕ расчёта isLargeEmoji выше, чтобы подпись не сочли «эмодзи-сообщением».
+    text = emptyMessageFallbackText(content['@type'])
+  }
   const strippedThumb = extractMinithumbnail(content)
 
   // groupedId: TDLib даёт media_album_id как string. '0' означает «не в альбоме».
@@ -442,6 +450,15 @@ export function messagePreview(tdMsg) {
   if (cn === 'messageChatChangeTitle') return '✏️ название чата изменено'
   if (cn === 'messageBasicGroupChatCreate' || cn === 'messageSupergroupChatCreate') return '📢 канал создан'
   if (cn === 'messageCall') return '📞 звонок'
+
+  // v1.2.466 (находка придирчивого ревью v1.2.465): список чатов строится ЗДЕСЬ, а не через
+  // mapMessage — поэтому подпись из общего словаря сюда не доходила, и одно и то же сообщение
+  // выглядело по-разному: в переписке «Сообщение не поддерживается этой версией программы»,
+  // а в списке чатов «⚙️ служебное сообщение» (что ещё и неправда — оно не служебное).
+  // Спрашиваем ТОТ ЖЕ словарь, что и разбор: текст подписи остаётся в одном месте.
+  // Стоит ПЕРЕД запасной заглушкой, чтобы знакомые виды выше отвечали как раньше.
+  const known = emptyMessageFallbackText(cn)
+  if (known) return known
 
   if (cn) return '⚙️ служебное сообщение'
   return ''
