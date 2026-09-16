@@ -20,13 +20,13 @@
 | `architecture.md` | 16 КБ |
 | `autoreply.md` | 6 КБ |
 | `code-limits-status.md` | 18 КБ |
-| `code-todo.md` | 69 КБ |
+| `code-todo.md` | 70 КБ |
 | `coding-rules.md` | 9 КБ |
-| `common-mistakes.md` | 10 КБ |
+| `common-mistakes.md` | 7 КБ |
 | `decisions.md` | 66 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 88 КБ |
-| `group-topic-investigation.md` | 96 КБ |
+| `features.md` | 97 КБ |
+| `group-topic-investigation.md` | 15 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
 | `messengers.md` | 16 КБ |
@@ -36,13 +36,13 @@
 | `prodlike-webview-investigation.md` | 4 КБ |
 | `reconnect-plan.md` | 32 КБ |
 | `side-rail-migration-plan.md` | 34 КБ |
-| `startup-load-investigation.md` | 98 КБ |
+| `startup-load-investigation.md` | 9 КБ |
 | `tdlib-migration-plan.md` | 27 КБ |
 | `ui-components.md` | 33 КБ |
 | `virtuoso-migration-plan.md` | 18 КБ |
 | `webcontents-view-pilot-results.md` | 5 КБ |
 | `webcontentsview-migration-plan.md` | 26 КБ |
-| `workflow.md` | 18 КБ |
+| `workflow.md` | 20 КБ |
 
 ### Подпапка `mistakes/` — детали ловушек
 
@@ -50,7 +50,7 @@
 |------|--------|
 | `mistakes/app-layout.md` | 12 КБ |
 | `mistakes/electron-core-history.md` | 148 КБ |
-| `mistakes/electron-core.md` | 66 КБ |
+| `mistakes/electron-core.md` | 70 КБ |
 | `mistakes/native-scroll-unread.md` | 131 КБ |
 | `mistakes/notifications-ribbon-history.md` | 139 КБ |
 | `mistakes/notifications-ribbon.md` | 104 КБ |
@@ -70,7 +70,7 @@
 | `archive/2026-05-connection-health-plan.md` | 53 КБ |
 | `archive/2026-06-notifications-ribbon-max-title-control.md` | 6 КБ |
 | `archive/2026-07-notifications-ribbon-max-title-fallback-v1.2.24-27.md` | 16 КБ |
-| `archive/README.md` | 70 КБ |
+| `archive/README.md` | 71 КБ |
 | `archive/audit-2026-05-26-scroll-architecture-CLOSED.md` | 19 КБ |
 | `archive/changelog-v0.87.56-68.md` | 18 КБ |
 | `archive/code-todo-journal-and-closed.md` | 32 КБ |
@@ -204,9 +204,11 @@
 | `archive/features-v1.2.59-73.md` | 49 КБ |
 | `archive/features-v1.2.74-89.md` | 40 КБ |
 | `archive/features-v1.2.90-100.md` | 29 КБ |
+| `archive/group-topic-investigation-log.md` | 83 КБ |
 | `archive/memory-changelog-old.md` | 24 КБ |
 | `archive/native-scroll-diagnostics-handoff-CLOSED.md` | 18 КБ |
 | `archive/native-scroll-restore-saga-CLOSED.md` | 40 КБ |
+| `archive/startup-load-investigation-history.md` | 90 КБ |
 
 _Регенерировано: 2026-09-16_
 <!-- STRUCTURE-AUTO-END -->
