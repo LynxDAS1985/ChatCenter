@@ -4,9 +4,9 @@
 //   import { sendQuestion } from '@/utils/aiBridge'
 //   const ans = await sendQuestion({ mode: 'local', question: { text, source } })
 //
-// Возвращает AiBridgeAnswer (см. contracts.js) — даже при network error.
+// Возвращает AiBridgeAnswer (см. shared/aiBridgeContracts.js) — даже при network error.
 
-import { AI_BRIDGE_CONTRACT_VERSION } from './contracts.js'
+import { AI_BRIDGE_CONTRACT_VERSION } from '../../../shared/aiBridgeContracts.js'
 
 const IPC_CHANNEL_SEND = 'ai-bridge:send'
 
@@ -15,9 +15,9 @@ const IPC_CHANNEL_SEND = 'ai-bridge:send'
  *
  * @param {Object} args
  * @param {'api'|'webui'|'local'} args.mode
- * @param {import('./contracts.js').AiBridgeQuestion} args.question
+ * @param {import('../../../shared/aiBridgeContracts.js').AiBridgeQuestion} args.question
  * @param {object} [args.config] — Конфиг bridge (baseUrl/model для local, etc).
- * @returns {Promise<import('./contracts.js').AiBridgeAnswer>}
+ * @returns {Promise<import('../../../shared/aiBridgeContracts.js').AiBridgeAnswer>}
  */
 export async function sendQuestion({ mode, question, config }) {
   if (!mode || !question) {
@@ -72,4 +72,4 @@ export async function sendQuestion({ mode, question, config }) {
   }
 }
 
-export { AI_BRIDGE_CONTRACT_VERSION } from './contracts.js'
+export { AI_BRIDGE_CONTRACT_VERSION } from '../../../shared/aiBridgeContracts.js'

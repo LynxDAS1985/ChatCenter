@@ -13,11 +13,11 @@
 // - НЕ console.* — только app:log (см. logger в main/utils/logger.js).
 // - Возвращать error через AiBridgeAnswer{ ok:false, error:{...} } а не throw.
 
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiBridgeMode} AiBridgeMode */
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiBridgeQuestion} AiBridgeQuestion */
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiBridgeAnswer} AiBridgeAnswer */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiBridgeMode} AiBridgeMode */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiBridgeQuestion} AiBridgeQuestion */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiBridgeAnswer} AiBridgeAnswer */
 
-import { AI_BRIDGE_CONTRACT_VERSION } from '../../../src/utils/aiBridge/contracts.js'
+import { AI_BRIDGE_CONTRACT_VERSION } from '../../../shared/aiBridgeContracts.js'
 
 /**
  * Главный селектор bridge. На Этапе 1 — каркас, реальные ветки добавятся

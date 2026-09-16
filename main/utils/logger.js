@@ -31,10 +31,27 @@ export function getLogFilePath() { return logFilePath }
 
 export function initLogger(userDataPath) {
   logFilePath = path.join(userDataPath, 'chatcenter.log')
+  // v1.2.468: ОТРЕЗАННАЯ ПОЛОВИНА БОЛЬШЕ НЕ ПРОПАДАЕТ.
+  //
+  // Было: при старте файл больше 2 МБ обрезался пополам, и первая половина исчезала НАВСЕГДА.
+  // Чем это мешало (реальный случай 2026-09-16): пользователь пожаловался «часто вижу окно про
+  // Ozon», а в журнале нашлась ровно ОДНА такая запись — остальные уже стёрлись. Подтвердить или
+  // опровергнуть «часто» по журналу было невозможно, и разбор пришлось вести по косвенным следам.
+  //
+  // Стало: отрезанная половина уходит в СОСЕДНИЙ файл `chatcenter.prev.log` (перезаписывается).
+  // Размер под контролем — на диске максимум два файла по 2 МБ, а не бесконечный рост.
+  // Смотреть историю: открыть `chatcenter.prev.log` рядом с основным журналом.
+  //
+  // 🔴 Всё завёрнуто в защиту: нет места, нет прав, файл занят — запуск приложения НЕ падает,
+  // журнал просто продолжится без сохранённой истории (это хуже, но не смертельно).
   try {
     if (fs.existsSync(logFilePath) && fs.statSync(logFilePath).size > LOG_MAX_SIZE) {
       const content = fs.readFileSync(logFilePath, 'utf8')
-      fs.writeFileSync(logFilePath, content.slice(content.length / 2))
+      const cutAt = Math.floor(content.length / 2)
+      try {
+        fs.writeFileSync(path.join(userDataPath, 'chatcenter.prev.log'), content.slice(0, cutAt))
+      } catch { /* не смогли сохранить историю — не повод ронять запуск */ }
+      fs.writeFileSync(logFilePath, content.slice(cutAt))
     }
   } catch {}
   const origLog = console.log.bind(console)

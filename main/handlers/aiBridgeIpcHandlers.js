@@ -1,7 +1,7 @@
 // v1.2.0 (Этап 2 AI Bridge): IPC handlers для AI Bridge.
 //
 // Renderer вызывает: window.api.invoke('ai-bridge:send', { mode, providerId, question, config })
-// Main отвечает: AiBridgeAnswer (см. contracts.js).
+// Main отвечает: AiBridgeAnswer (см. shared/aiBridgeContracts.js).
 //
 // На Этапе 2 поддерживается только mode='local' (Ollama).
 // Этапы 3-6 добавят api/webui bridges.
@@ -19,7 +19,7 @@ import { createWebUiBridge, deliverAnswer, deliverError, registerWebview } from 
 import { createAiBridgeRouter } from '../ai/bridge/router.js'
 // v1.1.18 (Этап 9): fallback chain — авто-переключение на резервный bridge.
 import { createFallbackChain } from '../ai/bridge/fallbackChain.js'
-import { AI_BRIDGE_CONTRACT_VERSION } from '../../src/utils/aiBridge/contracts.js'
+import { AI_BRIDGE_CONTRACT_VERSION } from '../../shared/aiBridgeContracts.js'
 
 const IPC_CHANNEL_SEND = 'ai-bridge:send'
 const IPC_CHANNEL_WEBUI_ANSWER = 'ai-bridge:webui:answer-received'
@@ -164,7 +164,7 @@ export function handleUnregisterWebview(payload, deps = {}) {
  *
  * @param {object} payload — { mode, question, config }
  * @param {object} deps
- * @returns {Promise<import('../../src/utils/aiBridge/contracts.js').AiBridgeAnswer>}
+ * @returns {Promise<import('../../shared/aiBridgeContracts.js').AiBridgeAnswer>}
  */
 export async function handleSend(payload, deps = {}) {
   const t0 = Date.now()

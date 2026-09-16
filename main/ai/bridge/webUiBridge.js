@@ -13,11 +13,11 @@
 // Webview регистрируется через `registerWebview(providerId, webContents)` — обычно
 // делается при mount AISidebar (Этап 7).
 
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiBridgeQuestion} AiBridgeQuestion */
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiBridgeAnswer} AiBridgeAnswer */
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiProviderId} AiProviderId */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiBridgeQuestion} AiBridgeQuestion */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiBridgeAnswer} AiBridgeAnswer */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiProviderId} AiProviderId */
 
-import { AI_BRIDGE_CONTRACT_VERSION } from '../../../src/utils/aiBridge/contracts.js'
+import { AI_BRIDGE_CONTRACT_VERSION } from '../../../shared/aiBridgeContracts.js'
 
 const DEFAULT_TIMEOUT_MS = 90000  // webui медленнее API, по умолчанию 90 сек
 let _questionIdCounter = 1

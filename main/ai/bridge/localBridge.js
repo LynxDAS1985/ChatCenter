@@ -18,11 +18,11 @@
 // - Возвращает AiBridgeAnswer (не throw) — даже при network error.
 // - Поддерживает AbortSignal из question.signal.
 
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiBridgeQuestion} AiBridgeQuestion */
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiBridgeAnswer} AiBridgeAnswer */
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiLocalBridgeConfig} AiLocalBridgeConfig */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiBridgeQuestion} AiBridgeQuestion */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiBridgeAnswer} AiBridgeAnswer */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiLocalBridgeConfig} AiLocalBridgeConfig */
 
-import { AI_BRIDGE_CONTRACT_VERSION } from '../../../src/utils/aiBridge/contracts.js'
+import { AI_BRIDGE_CONTRACT_VERSION } from '../../../shared/aiBridgeContracts.js'
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:11434'
 const DEFAULT_MODEL = 'llama3.1'

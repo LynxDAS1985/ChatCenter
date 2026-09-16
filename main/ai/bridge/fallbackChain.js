@@ -20,12 +20,12 @@
 //   - aborted (юзер сам отменил)
 //   - unsupported_mode (системная ошибка — fallback тоже не поможет)
 
-import { AI_BRIDGE_CONTRACT_VERSION } from '../../../src/utils/aiBridge/contracts.js'
+import { AI_BRIDGE_CONTRACT_VERSION } from '../../../shared/aiBridgeContracts.js'
 
 /**
  * @param {Array<{mode: string, config?: object}>} steps — цепочка попыток
  * @param {object} factories — { createApiBridge, createLocalBridge, createWebUiBridge, callProvider, fetch }
- * @returns {{ ask: (q) => Promise<import('../../../src/utils/aiBridge/contracts.js').AiBridgeAnswer> }}
+ * @returns {{ ask: (q) => Promise<import('../../../shared/aiBridgeContracts.js').AiBridgeAnswer> }}
  */
 export function createFallbackChain(steps, factories) {
   if (!Array.isArray(steps) || steps.length === 0) {

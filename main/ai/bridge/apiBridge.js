@@ -16,11 +16,11 @@
 //   - model (опц — иначе дефолт провайдера)
 //   - timeoutMs (опц, default 60с)
 
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiBridgeQuestion} AiBridgeQuestion */
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiBridgeAnswer} AiBridgeAnswer */
-/** @typedef {import('../../../src/utils/aiBridge/contracts.js').AiProviderId} AiProviderId */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiBridgeQuestion} AiBridgeQuestion */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiBridgeAnswer} AiBridgeAnswer */
+/** @typedef {import('../../../shared/aiBridgeContracts.js').AiProviderId} AiProviderId */
 
-import { AI_BRIDGE_CONTRACT_VERSION } from '../../../src/utils/aiBridge/contracts.js'
+import { AI_BRIDGE_CONTRACT_VERSION } from '../../../shared/aiBridgeContracts.js'
 
 const DEFAULT_TIMEOUT_MS = 60000
 
