@@ -20,21 +20,21 @@
 | `architecture.md` | 16 КБ |
 | `autoreply.md` | 6 КБ |
 | `code-limits-status.md` | 18 КБ |
-| `code-todo.md` | 87 КБ |
+| `code-todo.md` | 69 КБ |
 | `coding-rules.md` | 9 КБ |
 | `common-mistakes.md` | 10 КБ |
-| `decisions.md` | 82 КБ |
+| `decisions.md` | 92 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 62 КБ |
+| `features.md` | 70 КБ |
 | `group-topic-investigation.md` | 96 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
 | `messengers.md` | 16 КБ |
 | `native-mode-plan.md` | 30 КБ |
-| `notifications-debug.md` | 26 КБ |
+| `notifications-debug.md` | 38 КБ |
 | `phase-2-visual-test.md` | 16 КБ |
 | `prodlike-webview-investigation.md` | 4 КБ |
-| `reconnect-plan.md` | 23 КБ |
+| `reconnect-plan.md` | 32 КБ |
 | `side-rail-migration-plan.md` | 34 КБ |
 | `startup-load-investigation.md` | 98 КБ |
 | `tdlib-migration-plan.md` | 27 КБ |
@@ -50,14 +50,14 @@
 |------|--------|
 | `mistakes/app-layout.md` | 12 КБ |
 | `mistakes/electron-core-history.md` | 148 КБ |
-| `mistakes/electron-core.md` | 61 КБ |
+| `mistakes/electron-core.md` | 66 КБ |
 | `mistakes/native-scroll-unread.md` | 131 КБ |
 | `mistakes/notifications-ribbon-history.md` | 139 КБ |
 | `mistakes/notifications-ribbon.md` | 104 КБ |
 | `mistakes/outgoing-two-cases.md` | 14 КБ |
 | `mistakes/tdlib-forum.md` | 19 КБ |
 | `mistakes/tdlib-video-player.md` | 31 КБ |
-| `mistakes/webview-injection.md` | 86 КБ |
+| `mistakes/webview-injection.md` | 91 КБ |
 | `mistakes/webview-navigation-ui.md` | 113 КБ |
 | `mistakes/webview-stack-grouping.md` | 125 КБ |
 
@@ -70,9 +70,10 @@
 | `archive/2026-05-connection-health-plan.md` | 53 КБ |
 | `archive/2026-06-notifications-ribbon-max-title-control.md` | 6 КБ |
 | `archive/2026-07-notifications-ribbon-max-title-fallback-v1.2.24-27.md` | 16 КБ |
-| `archive/README.md` | 67 КБ |
+| `archive/README.md` | 68 КБ |
 | `archive/audit-2026-05-26-scroll-architecture-CLOSED.md` | 19 КБ |
 | `archive/changelog-v0.87.56-68.md` | 18 КБ |
+| `archive/code-todo-journal-and-closed.md` | 32 КБ |
 | `archive/decisions-adr-001-014.md` | 17 КБ |
 | `archive/decisions-adr-015-022.md` | 39 КБ |
 | `archive/decisions-adr-023-027.md` | 23 КБ |
@@ -198,11 +199,12 @@
 | `archive/features-v1.2.454-456.md` | 28 КБ |
 | `archive/features-v1.2.457-459.md` | 22 КБ |
 | `archive/features-v1.2.46-58.md` | 33 КБ |
+| `archive/features-v1.2.460-462.md` | 24 КБ |
 | `archive/features-v1.2.59-73.md` | 49 КБ |
 | `archive/features-v1.2.74-89.md` | 40 КБ |
 | `archive/features-v1.2.90-100.md` | 29 КБ |
 | `archive/native-scroll-diagnostics-handoff-CLOSED.md` | 18 КБ |
 | `archive/native-scroll-restore-saga-CLOSED.md` | 40 КБ |
 
-_Регенерировано: 2026-09-15_
+_Регенерировано: 2026-09-16_
 <!-- STRUCTURE-AUTO-END -->
