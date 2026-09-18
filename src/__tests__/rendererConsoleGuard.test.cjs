@@ -38,7 +38,7 @@ var BASELINE = {
   // не подняли → любой следующий коммит с правкой src/ падал бы на pre-commit.
   // Все 10 console.* тут — ВНУТРИ строк, впрыскиваемых в чужую страницу мессенджера:
   // нашего window.api там нет, консоль-мост (consoleMessageParser) — единственный канал.
-  'src/utils/webviewDiagnostics.js':        10,
+  'src/utils/webviewDiagnostics.js':        11, // v1.2.484: +1 — короткая сводка, когда снимок ВК не влез в потолок
   'src/hooks/useWebViewLifecycle.js':       3,
   'src/main.jsx':                           2,
   'src/components/NotifLogModal.jsx':       2,

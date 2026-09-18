@@ -1,5 +1,6 @@
 // v0.86.6: Диагностические логи для WebView (вынесены из webviewSetup.js для лимита 600 строк).
 // Назначение — собирать причины чёрных экранов, схлопнувшихся layout, runtime-ошибок мессенджеров.
+import { detectMessengerType } from './messengerConfigs.js' // v1.2.484: единый определитель (знает vk.ru и vk.com)
 
 /**
  * Логирует геометрию WebView через 600 мс после навигации.
@@ -68,12 +69,28 @@ export function runDomProbe(el, messengerId, traceNotif) {
   }, 1500)
 }
 
+/** Потолки снимка ВК (v1.2.484): он идёт в журнал целиком, поэтому ограничиваем на источнике. */
+export const VK_FULL_MSGS = 10          // последних сообщений переписки
+export const VK_FULL_ROWS = 12          // строк списка чатов
+export const VK_FULL_MAX_CHARS = 12000  // общий потолок выгрузки: столько же, сколько журнал
+                                        // отводит на подробности диагностики (webviewSetup.js detailLimit)
+export const VK_FULL_MAX_RUNS = 3       // снимков на жизнь страницы
+export const VK_FULL_MIN_GAP_MS = 120000 // и не чаще одного в 2 минуты
+
 export function runVkFullProbe(el, messengerId) {
   if (!el?.executeJavaScript) return
   let url = ''
   try { url = el.getURL?.() || '' } catch (_) {}
-  if (messengerId !== 'vk' && !/vk\.com/i.test(url)) return
+  // v1.2.484: было «имя vk ИЛИ адрес содержит vk.com» → у пользователя мессенджер custom_… и домен
+  // vk.ru (переезд v1.2.109), снимок не собирался НИ РАЗУ (0 записей vkFull за всю историю журнала).
+  if (detectMessengerType(url) !== 'vk' && messengerId !== 'vk') return
+  // v1.2.484: снимок пишется в журнал БЕЗ обрезки (правило «vkFull не резать»), а раньше весил сотни
+  // килобайт (30 сообщений С РАЗМЕТКОЙ). Отсюда потолки ниже + ограничитель частоты. Зачем — ADR-073.
   const script = `(function(){try{
+    if (window.__ccVkFullRuns >= ${VK_FULL_MAX_RUNS}) return 'limit';
+    var nowTs = Date.now();
+    if (window.__ccVkFullTs && nowTs - window.__ccVkFullTs < ${VK_FULL_MIN_GAP_MS}) return 'too-soon';
+    window.__ccVkFullRuns = (window.__ccVkFullRuns || 0) + 1; window.__ccVkFullTs = nowTs;
     function clean(v){return String(v||'').replace(/\\s+/g,' ').trim()}
     function attr(el,n){try{return el&&el.getAttribute&&el.getAttribute(n)||''}catch(e){return ''}}
     function cls(el){return typeof (el&&el.className)==='string'?el.className:''}
@@ -98,10 +115,19 @@ export function runVkFullProbe(el, messengerId) {
     ['[class*="ConvoHeader"] [class*="Title"]','[class*="ConvoHeader"] [class*="title"]','[class*="ConvoHeader"] [class*="name"]','[class*="im-page--title"]','h1','h2'].some(function(s){var n=one(s),t=clean(n&&n.textContent);if(t&&t.length<140){header.sender=t;return true}return false});
     var st=one('[class*="ConvoHeader"] [class*="Status"], [class*="ConvoHeader"] [class*="status"]'); header.status=clean(st&&st.textContent);
     var av=one('[class*="ConvoHeader"] img[src], [class*="ConvoMain"] img[src], img[src*="vkuser"], img[src*="userapi"]'); header.avatar=av&&av.src||'';
-    var rows=messages.slice(-30).map(function(m,idx){var oi=outgoingEvidence(m);return{idx:idx,totalIndex:messages.indexOf(m),id:msgId(m),outgoing:outgoing(m),outgoingEvidence:oi,authorFromMessage:authorFromMessage(m),text:leafText(m),rawText:clean(m.textContent),node:label(m),parentChain:chain(m,container),outerHTML:(m.outerHTML||'').slice(0,12000)}});
-    var side=all('[class*="ConvoListItem"], [class*="im-page--dialogs"] [class*="chat"], [class*="dialog"], [class*="ChatList"] [class*="item"]').slice(0,30).map(function(n,idx){return{idx:idx,text:clean(n.textContent),node:label(n),avatar:(n.querySelector&&n.querySelector('img[src]')||{}).src||'',unread:clean((n.querySelector&&n.querySelector('[class*="unread"], [class*="Unread"], [class*="counter"], [class*="Counter"]')||{}).textContent||'')}});
-    var payload={kind:'vkFull',url:location.href,title:document.title,ready:document.readyState,hidden:document.hidden,containerFound:!!container,containerSelector:containerSelector,container:label(container),messageCount:messages.length,header:header,messages:rows,sidebar:side,activeElement:label(document.activeElement),bodyTextSample:clean(document.body&&document.body.innerText).slice(0,3000)};
-    console.log('__CC_DIAG__vkFull '+JSON.stringify(payload));
+    var rows=messages.slice(-${VK_FULL_MSGS}).map(function(m,idx){var oi=outgoingEvidence(m);return{idx:idx,totalIndex:messages.indexOf(m),id:msgId(m),outgoing:outgoing(m),outgoingEvidence:oi,authorFromMessage:authorFromMessage(m),text:leafText(m).slice(0,200),rawText:clean(m.textContent).slice(0,200),node:label(m).slice(0,160),parentChain:chain(m,container).slice(0,300)}});
+    var side=all('[class*="ConvoListItem"], [class*="im-page--dialogs"] [class*="chat"], [class*="dialog"], [class*="ChatList"] [class*="item"]').slice(0,${VK_FULL_ROWS}).map(function(n,idx){return{idx:idx,text:clean(n.textContent).slice(0,120),node:label(n).slice(0,120),avatar:(n.querySelector&&n.querySelector('img[src]')||{}).src||'',unread:clean((n.querySelector&&n.querySelector('[class*="unread"], [class*="Unread"], [class*="counter"], [class*="Counter"]')||{}).textContent||'')}});
+    var payload={kind:'vkFull',url:location.href,title:document.title,ready:document.readyState,hidden:document.hidden,containerFound:!!container,containerSelector:containerSelector,container:label(container),messageCount:messages.length,header:header,messages:rows,sidebar:side,activeElement:label(document.activeElement),bodyTextSample:clean(document.body&&document.body.innerText).slice(0,400)};
+    var out=JSON.stringify(payload);
+    if(out.length>${VK_FULL_MAX_CHARS}){
+      // Резать JSON посередине нельзя: получится нечитаемый огрызок. Печатаем короткую сводку —
+      // по ней видно, что снимок был и почему его не показали целиком. Собираем её ТОЖЕ через
+      // JSON.stringify: склейка строк ломается, если в адресе страницы попадётся кавычка.
+      console.log('__CC_DIAG__vkFull '+JSON.stringify({kind:'vkFull-short',причина:'выгрузка '+out.length+' знаков > потолка ${VK_FULL_MAX_CHARS}',url:String(location.href).slice(0,80),сообщений:messages.length,строкСписка:side.length,контейнер:containerSelector}));
+      return 'too-big';
+    }
+    console.log('__CC_DIAG__vkFull '+out);
+    return 'ok';
   }catch(e){try{console.log('__CC_DIAG__vkFull-error '+(e&&e.stack||e&&e.message||e))}catch(_){}}})();`
   try { el.executeJavaScript(script, true).catch(() => {}) } catch (_) {}
 }
