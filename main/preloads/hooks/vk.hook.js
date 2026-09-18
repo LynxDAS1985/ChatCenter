@@ -166,7 +166,17 @@
   // выше даёт 0), поэтому ловим появление непрочитанного прямо в списке чатов.
   // Первый проход — базовая линия (не уведомляем о том, что уже непрочитано); дальше шлём
   // только НОВЫЕ строки (или с изменившимся текстом = новое сообщение в том же чате).
-  var _vkPrevUnread = null; // null = базовая линия ещё не снята
+  // v1.2.481: память «уже видели» — отпечаток → ВРЕМЯ, ДОПОЛНЯЕТСЯ и стареет (не заменяется набором
+  // текущего прохода). Иначе выпавшая на миг строка забывалась и сообщение слалось снова: одно «Угуу»
+  // ушло 4 раза за 37 секунд (2026-09-18). Тот же корень чинили у Ozon в v1.2.437. Цена — ADR-072.
+  var _vkSeen = null; // null = базовая линия ещё не снята
+  var _VK_SEEN_TTL = 600000; // 10 минут: после этого одинаковый текст снова считается новым сообщением
+  function _vkRemember(fps, now) {
+    var s = _vkSeen || {};
+    for (var i = 0; i < fps.length; i++) s[fps[i]] = now;
+    for (var k in s) { if (now - s[k] > _VK_SEEN_TTL) delete s[k]; }
+    _vkSeen = s;
+  }
   var _vkListTimer = null;
   function _vkRowUnread(row) {
     try {
@@ -233,23 +243,24 @@
   }
   function _scanVkList(reason) {
     var rows = document.querySelectorAll('[class*="ConvoListItem" i]');
-    var current = {}, cand = [], unread = 0, muted = 0;
+    var current = {}, cand = [], unread = 0, muted = 0, skipTx = 0, skipSpam = 0; // v1.2.481: skip* — почему строка выпала (видно в журнале)
     for (var i = 0; i < rows.length && i < 200; i++) {
       if (!_vkRowUnread(rows[i])) continue;
       unread++;
       if (_vkRowMuted(rows[i])) { muted++; continue; } // v1.2.120: заглушённый чат (🔕) — не уведомляем
       var sender = _vkRowSender(rows[i]);
       var text = _vkRowText(rows[i], sender);
-      if (!sender || !text || _isSpam(text)) continue;
+      if (!sender || !text) { skipTx++; continue; }
+      if (_isSpam(text)) { skipSpam++; continue; }
       var fp = _hashToast(sender + '|' + text);
       current[fp] = true;
       cand.push({ fp: fp, sender: sender, text: text, icon: _vkRowAvatar(rows[i]), ph: _vkRowPhoto(rows[i]) });
     }
     var emitted = 0, sent = {};
-    if (_vkPrevUnread) {
+    if (_vkSeen) {
       for (var k = 0; k < cand.length; k++) {
         var f = cand[k].fp;
-        if (_vkPrevUnread[f] || sent[f]) continue; // уже было непрочитано ИЛИ уже отправлено в этом проходе
+        if (_vkSeen[f] || sent[f]) continue; // уже было непрочитано ИЛИ уже отправлено в этом проходе
         if (_dupEmit(cand[k].sender, cand[k].text)) { sent[f] = true; continue; } // v1.2.381: тот же текст уже ушёл другим путём (перехват) за 5с
         sent[f] = true;
         emitted++;
@@ -259,14 +270,14 @@
     // v1.2.115: базовую линию фиксируем ТОЛЬКО на непустом списке — иначе при медленной
     // загрузке (первый замер на пустом списке) все уже-непрочитанные при догрузке улетят
     // как «новые» = шторм уведомлений на старте.
-    if (rows.length > 0) _vkPrevUnread = current;
+    if (rows.length > 0) _vkRemember(Object.keys(current), Date.now());
     // v1.2.415: счётчик для ЗНАЧКА рейла = бейдж «Мессенджер N» → в хост через console __CC_UNREAD__ (эмит при изменении).
     try { var _um=0,_ul=document.querySelectorAll('a,[role="link"]');
       for(var _ui=0;_ui<_ul.length&&_ui<250;_ui++){var _ut=(_ul[_ui].textContent||'').replace(/\s+/g,' ').trim();
         if(/мессенджер|messenger/i.test(_ut)){var _um2=_ut.match(/(\d+)/);_um=_um2?(parseInt(_um2[1],10)||0):0;break;}}
       if(_scanVkList._lastUm!==_um){_scanVkList._lastUm=_um;console.log('__CC_UNREAD__'+_um);}
     } catch(e){}
-    if (reason === 'initial' || emitted > 0) console.log('__CC_DIAG__vk-list reason=' + reason + ' rows=' + rows.length + ' unread=' + unread + ' muted=' + muted + ' emitted=' + emitted);
+    if (reason === 'initial' || emitted > 0) console.log('__CC_DIAG__vk-list reason=' + reason + ' rows=' + rows.length + ' unread=' + unread + ' muted=' + muted + ' emitted=' + emitted + ' skipTx=' + skipTx + ' skipSpam=' + skipSpam + ' память=' + (_vkSeen ? Object.keys(_vkSeen).length : 0));
     // v1.2.479: здесь была постоянная диагностика счётчика ВК (метка vk-src, раз в 15с) — убрана,
     // расследование закрыто; вернуть можно из истории правок (v1.2.478). Подробности — ADR-071.
   }

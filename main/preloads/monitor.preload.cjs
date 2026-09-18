@@ -53,7 +53,7 @@ const { ipcRenderer } = require('electron')
 // Изменение hook для MAX не затрагивает Telegram, и наоборот.
 
 // v0.82.3: Unread counters вынесены в отдельный файл
-const { getMessengerType, isActiveChatMuted, isActiveChatChannel, countUnread, countUnreadVK } = require('./utils/unreadCounters')
+const { getMessengerType, isActiveChatMuted, isActiveChatChannel, countUnread } = require('./utils/unreadCounters')
 
 // v0.84.3: Extracted modules
 const { getActiveChatSender, getActiveChatAvatar } = require('./utils/chatMetadata')
@@ -64,6 +64,9 @@ const { getLastMessageText, getVKLastIncomingText } = require('./utils/messageRe
 const { createMaxSnapshotSender, maxNodeLabel, shortText, maxOutgoingVerdict } = require('./utils/maxDiagnostics')
 const { bindWebviewZoom } = require('./utils/webviewZoom')
 const { createVkDiagnostics } = require('./utils/vkDiagnostics')
+// v1.2.482: отправка служебных сообщений хосту вынесена (файл упирался в потолок 600 строк)
+const { createMonitorSend } = require('./utils/monitorSend')
+const { sendMonitorDiag, sendMonitorReady } = createMonitorSend({ ipcRenderer, getMessengerType })
 
 // v0.83.0: Timing constants (вместо magic numbers)
 const GRACE_PERIOD = 15000        // Grace period после навигации (VK Virtual Scroll медленный)
@@ -84,38 +87,11 @@ let lastActiveMessageText = null  // для детекции сообщений 
 let lastActiveMessageTime = 0     // cooldown: не спамить уведомлениями
 let observer = null
 
-function sendMonitorDiag(message) {
-  const text = String(message || '')
-  const chunkSize = 12000
-  try {
-    if (text.length <= chunkSize) {
-      ipcRenderer.sendToHost('monitor-diag', text)
-      return
-    }
-    const total = Math.ceil(text.length / chunkSize)
-    for (let i = 0; i < total; i++) {
-      ipcRenderer.sendToHost('monitor-diag', `[DIAG-CHUNK ${i + 1}/${total}] ${text.slice(i * chunkSize, (i + 1) * chunkSize)}`)
-    }
-  } catch(e) {}
-}
-
-
 // ── Quick addedNodes detection (v0.46.3) ─────────────────────────────────────
 // MAX и другие мессенджеры НЕ вызывают Notification для каждого сообщения,
 // И unread count НЕ растёт когда чат открыт в WebView.
 // Решение: наблюдаем addedNodes в MutationObserver — при появлении нового
 // DOM-элемента с текстом → считаем как новое сообщение → new-message IPC.
-function sendMonitorReady(stage) {
-  try {
-    ipcRenderer.sendToHost('monitor-ready', {
-      stage,
-      type: getMessengerType(),
-      url: location.href,
-      ready: document.readyState,
-      ts: Date.now(),
-    })
-  } catch(e) {}
-}
 
 let lastQuickMsgText = ''
 let lastQuickMsgTime = 0
@@ -255,20 +231,6 @@ setTimeout(() => {
 
 function sendUpdate(type) {
   const { personal, channels, total, allTotal } = countUnread(type)
-  // v1.2.412 ВРЕМЕННАЯ ДИАГНОСТИКА ВК: значок рейла пуст, хотя vk-src видит «Мессенджер N». Логируем, ЧТО
-  // реально вернула countUnreadVK (значок = это число) + какой пункт «Мессенджер» она нашла. Раз в ~8с, без спама.
-  // Удалить после того, как найдём причину.
-  if (type === 'vk') {
-    try {
-      const _n = Date.now()
-      if (!sendUpdate._vkDiagTs || _n - sendUpdate._vkDiagTs > 8000) {
-        sendUpdate._vkDiagTs = _n
-        // v1.2.413: шлём на СВОЙ ipc-канал 'vk-diag' (его логирует хост через [IPC-VK]), а НЕ monitor-diag
-        // (тот до файла не доходит). Так увидим реальный результат countUnreadVK + найденный пункт «Мессенджер».
-        ipcRenderer.sendToHost('vk-diag', 'allTotal=' + allTotal + ' src=' + (countUnreadVK._lastSource || '?') + ' ' + (countUnreadVK._lastDiag || 'пункт НЕ найден'))
-      }
-    } catch (e) {}
-  }
   // v0.86.0: диагностика WhatsApp — при КАЖДОМ изменении count (не первые 5)
   if (allTotal !== lastCount) {
     const increased = total > lastCount && lastCount >= 0 && monitorReady

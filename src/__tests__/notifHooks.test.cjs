@@ -164,5 +164,27 @@ test('[!] ЛОВУШКА: в отчёте есть ЧИСЛО частей вп�
   assert(monitorCode.includes("' len=' + (hookCode ? hookCode.length : 0)"), 'длина впрыска должна попадать в отчёт')
 })
 
+// v1.2.482: разгрузка монитора (588 -> 550 строк) и уборка мёртвого кода.
+test('отправка служебных сообщений вынесена, монитор её подключает', () => {
+  const sendPath = path.join(__dirname, '../../main/preloads/utils/monitorSend.js')
+  assert(fs.existsSync(sendPath), 'файл отправки monitorSend.js должен существовать')
+  const sendCode = fs.readFileSync(sendPath, 'utf8')
+  assert(sendCode.includes('function sendMonitorDiag(message)') && sendCode.includes('DIAG-CHUNK'), 'резка длинных сообщений должна жить в вынесенном файле')
+  assert(monitorCode.includes("require('./utils/monitorSend')"), 'монитор должен подключать вынесенный отправщик')
+})
+
+test('[!] ЛОВУШКА: мёртвая отправка на канал vk-diag убрана вместе с осиротевшим импортом', () => {
+  // Канал vk-diag НИКТО не слушает (проверено поиском по src/) — отправка была немой,
+  // а вместе с ней в мониторе висел ненужный импорт countUnreadVK.
+  assert(!monitorCode.includes("'vk-diag'"), 'мёртвая отправка на vk-diag должна быть убрана')
+  assert(!monitorCode.includes('countUnreadVK'), 'осиротевший импорт countUnreadVK должен быть убран')
+})
+
+test('[!] ЛОВУШКА: WhatsApp не принимает статус («печатает») за новое сообщение', () => {
+  const wa = fs.readFileSync(path.join(hooksDir, 'whatsapp.hook.js'), 'utf8')
+  assert(/var _waStatusOnly = \/\^\(/.test(wa), 'маска статусов должна проверять строку целиком')
+  assert(wa.indexOf('_waStatusOnly.test(') < wa.indexOf('var prev = _lastSidebarTexts[chatName]'), 'проверка обязана стоять ДО записи в память')
+})
+
 console.log(`\n📊 Результат: ${passed} ✅ / ${failed} ❌ из ${passed + failed}`)
 if (failed > 0) process.exit(1)

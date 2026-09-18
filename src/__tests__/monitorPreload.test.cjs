@@ -197,8 +197,12 @@ test('VK outgoing helper accepts parent ConvoStack--out marker (v1.2.44)', () =>
   assert(isVKOutgoingMessage(node), 'real outgoing VK message must be detected through parent ConvoStack--out')
 })
 test('monitor preload sends heartbeat so host can detect a broken VK live observer (v1.2.46)', () => {
-  assert(code.includes("function sendMonitorReady(stage)"), 'monitor-ready helper is missing')
-  assert(code.includes("ipcRenderer.sendToHost('monitor-ready'"), 'monitor-ready IPC is missing')
+  // v1.2.482: сами отправки переехали в main/preloads/utils/monitorSend.js (монитор упирался в
+  // потолок 600 строк). Проверка НЕ ослаблена: сторожим и проводку в мониторе, и сам отправщик.
+  const sendCode = fs.readFileSync(path.join(__dirname, '../../main/preloads/utils/monitorSend.js'), 'utf8')
+  assert(sendCode.includes('function sendMonitorReady(stage)'), 'monitor-ready helper is missing')
+  assert(sendCode.includes("ipcRenderer.sendToHost('monitor-ready'"), 'monitor-ready IPC is missing')
+  assert(code.includes("createMonitorSend({ ipcRenderer, getMessengerType })"), 'монитор должен подключать отправщик')
   assert(code.includes("sendMonitorReady('start')"), 'start heartbeat is missing')
   assert(code.includes("sendMonitorReady('started')"), 'started heartbeat is missing')
 })
