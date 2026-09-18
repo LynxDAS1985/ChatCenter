@@ -10,6 +10,7 @@ import { devLog, devError } from './devLog.js'
 import { playNotificationSound } from './sound.js'
 import { createConsoleMessageHandler } from './consoleMessageHandler.js'
 import { logGeometry, runDomProbe, attachRuntimeErrorCatcher, probeBlackScreen } from './webviewDiagnostics.js'
+import { runVkRowProbe } from '../../shared/vkRowProbe.js' // v1.2.483: ВРЕМЕННО — разовый осмотр строки списка ВК (есть ли там картинка вложения), удалить после разбора
 import { createHandleNewMessage } from './webviewHandleNewMessage.js'
 import { probeWebviewHealth } from './webviewHealthProbe.js'
 import { scheduleMaxTitleFallback } from './maxTitleFallback.js'
@@ -145,7 +146,7 @@ export function createWebviewSetup(deps) {
 
   const traceNotif = (step, type, messengerId, text, detail) => {
     const mName = messengerId ? (messengersRef.current.find(x => x.id === messengerId)?.name || '') : ''
-    const rawTraceText = text || '', keepFullTraceText = /max-sidebar|VK-DIAG|vkFull|VK-EXEC/i.test(`${rawTraceText} ${detail || ''}`)
+    const rawTraceText = text || '', keepFullTraceText = /max-sidebar|VK-DIAG|vkFull|VK-EXEC|vk-list/i.test(`${rawTraceText} ${detail || ''}`)
     pipelineTraceRef.current.push({ ts: Date.now(), step, type, mid: messengerId || '', mName, text: keepFullTraceText ? rawTraceText : rawTraceText.slice(0, 200), detail: detail || '' })
     // v1.2.9: буфер трассировки в памяти увеличен 300→5000 (выкидываем 1000 старых при переполнении).
     // Причина: maxFallbackEvents для диагностики строится ИЗ этого буфера, а не из лога. При 300 шагах
@@ -156,7 +157,7 @@ export function createWebviewSetup(deps) {
     if (!_skipDetail) {
       const icon = _traceTypeLabels[type] || '·'
       const label = _traceLabels[step] || step
-      const fullLogText = /max-sidebar|VK-DIAG|vkFull|VK-EXEC/i.test(`${text || ''} ${detail || ''}`)
+      const fullLogText = /max-sidebar|VK-DIAG|vkFull|VK-EXEC|vk-list/i.test(`${text || ''} ${detail || ''}`)
       const shortText = fullLogText ? (text || '') : (text || '').slice(0, 60)
       const detailLimit = detail && (/MAX title-fallback|max-title-|max-sidebar|topRows=|chosenLeafs=|\[MAX-|MAX page-title-updated|\[IPC-MAX\]|VK-DIAG|vkFull|VK-EXEC/.test(detail)) ? 12000 : 250
       const msg = `[TRACE] ${icon} [${mName || messengerId || '?'}] ${label}: ${shortText}${detail ? ' | ' + detail.slice(0, detailLimit) : ''}`
@@ -277,6 +278,7 @@ export function createWebviewSetup(deps) {
           traceNotif('nav', 'info', messengerId, hash.slice(0, 120), `inpage url=${url.slice(0, 80)}`)
           logGeometry(el, messengerId, traceNotif)
           runDomProbe(el, messengerId, traceNotif)
+          runVkRowProbe(el, url, (m) => { try { window.api?.send?.('app:log', { level: 'INFO', message: m }) } catch (_) {} })
         } catch(_) {}
       })
       addListener('did-frame-finish-load', (e) => {

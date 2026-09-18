@@ -53,6 +53,9 @@ var BASELINE = {
   // принятый в проекте канал; в самом коде интерфейса console.* по-прежнему запрещён.
   'shared/browserBannerHider.js':           2,
   'shared/vkExecFallback.js':               2,
+  // v1.2.483: ВРЕМЕННЫЙ осмотр строки списка ВК — те же 2 console.* внутри впрыскиваемой строки.
+  // Удалить вместе с файлом после разбора (TODO-53).
+  'shared/vkRowProbe.js':                    2,
   // shared/changelogData.js в baseline НЕ нужен: там console.* только в тексте «Что нового»,
   // без вызова — страж такое не считает.
   'src/native/modes/InboxMode.jsx':         1,
