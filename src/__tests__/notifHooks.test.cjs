@@ -148,5 +148,21 @@ const mainCode = fs.readFileSync(path.join(__dirname, '../../main/main.js'), 'ut
   fs.readFileSync(path.join(__dirname, '../../main/handlers/mainIpcHandlers.js'), 'utf8')
 test('main.js: app:read-hook handler', () => assert(mainCode.includes("app:read-hook"), 'main.js должен иметь app:read-hook handler'))
 
+// v1.2.480: ОТЧЁТ О ВПРЫСКЕ должен доходить до журнала. Факт, из-за которого это важно:
+// прежняя строка про Ozon писалась через console.log из мира preload и за всю историю НЕ дала
+// НИ ОДНОЙ записи в журнале (проверено поиском по chatcenter.log), а канал monitor-diag — даёт
+// (12 записей monitor-start за 2026-09-18). Потеря части впрыска обязана быть видимой (ADR-071).
+test('впрыск отчитывается через monitor-diag (console.log из preload в журнал НЕ доходит)', () => {
+  assert(monitorCode.includes("sendToHost('monitor-diag', 'hook-inject:"), 'отчёт о впрыске должен идти через monitor-diag')
+  assert(!monitorCode.includes('__CC_DIAG__ozon monitor hookType'), 'старый немой console.log должен быть убран')
+})
+
+test('[!] ЛОВУШКА: в отчёте есть ЧИСЛО частей впрыска и длина', () => {
+  assert(/hookParts = 0/.test(monitorCode), 'счётчик частей должен объявляться')
+  assert((monitorCode.match(/hookParts = 1/g) || []).length >= 2, 'счётчик должен ставиться на обоих путях чтения хука')
+  assert(monitorCode.includes("' parts=' + hookParts"), 'число частей должно попадать в отчёт')
+  assert(monitorCode.includes("' len=' + (hookCode ? hookCode.length : 0)"), 'длина впрыска должна попадать в отчёт')
+})
+
 console.log(`\n📊 Результат: ${passed} ✅ / ${failed} ❌ из ${passed + failed}`)
 if (failed > 0) process.exit(1)

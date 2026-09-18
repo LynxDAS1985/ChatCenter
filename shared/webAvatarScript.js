@@ -1,5 +1,8 @@
 // Скрипт-инъекция для сбора аватарки залогиненного веб-аккаунта (ВК/WhatsApp/Макс/Telegram-web).
 // Вынесен из useWebAccountAvatars.js в v1.2.287 (хук дорос до лимита 150 строк).
+// v1.2.478: переехал из src/utils/ в корневой shared/ — это ТЕКСТ скрипта для ЧУЖОЙ страницы,
+//   а не код интерфейса, поэтому в общем бюджете строк интерфейса ему не место. Прецедент —
+//   shared/browserBannerHider.js (такой же впрыск) и сосед shared/webAvatarGate.js.
 // История правок сбора — в .memory-bank/features.md (v1.2.275–287) и decisions.md ADR-034/035.
 //
 // Порядок внутри скрипта:
@@ -84,14 +87,25 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
       // Берём самый большой ЗАГРУЖЕННЫЙ и НЕ пустой (не белый плейсхолдер) аватар >=80px = фото аккаунта.
       var __grabBig = function () {
         try {
-          var av = document.querySelectorAll('img.avatar-photo, .avatar-photo img, .avatar img, [class*="avatar" i] img');
+          // v1.2.478: добавлен поиск по ТЕГУ avatar-element — Telegram Web рисует аватар внутри
+          // собственного тега, у которого может не быть класса со словом avatar, и прежние
+          // селекторы (все по КЛАССУ) его не видели. Расширение безопасно: ниже к каждому
+          // кандидату применяются те же проверки (загружен, крупный, не серая заглушка).
+          var av = document.querySelectorAll('img.avatar-photo, .avatar-photo img, .avatar img, [class*="avatar" i] img, avatar-element img');
           // v1.2.309: фото грузится СТУПЕНЬКОЙ (серое → через ~2с чёткое). Раньше брали ПРОСТО самый большой
           // кружок — а им часто была серая заглушка. Теперь проверяем ВСЕ большие кандидаты и берём самый
           // крупный НАСТОЯЩИЙ (серые/заглушки пропускаем). Пока настоящее не пришло — вернём blank (ждём).
           var bestEl = null, bestSz = 0, bestProfEl = null, bestProfSz = 0, sawBig = false;
+          // v1.2.478: счётчики для журнала. Прежде при неудаче наружу уходило голое grab=null, и
+          // разобрать было НЕЧЕГО: то ли картинок нет совсем, то ли они не догрузились, то ли
+          // не прошли порог размера. Теперь отдаём числа: сколько нашли / сколько загружено /
+          // какой самый крупный. Поведение не меняется — только отчётность.
+          var nLoaded = 0, maxMn = 0;
           for (var ai = 0; ai < av.length; ai++) {
             var ae = av[ai]; if (!ae.src || !ae.complete || ae.naturalWidth < 60) continue; // только ЗАГРУЖЕННОЕ
+            nLoaded++;
             var rc = ae.getBoundingClientRect(); var mn = Math.min(rc.width, rc.height);
+            if (mn > maxMn) maxMn = Math.round(mn);
             if (mn <= 79) continue; // нужен КРУПНЫЙ (фото профиля), мелкие аватарки чатов пропускаем
             sawBig = true;
             var cv = document.createElement('canvas'); cv.width = 100; cv.height = 100;
@@ -111,8 +125,8 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
           var winEl = bestProfEl || bestEl, winSz = bestProfEl ? bestProfSz : bestSz;
           if (winEl) { var cvW = document.createElement('canvas'); cvW.width = 100; cvW.height = 100;
             try { cvW.getContext('2d').drawImage(winEl, 0, 0, 100, 100); return { b: cvW.toDataURL('image/jpeg', 0.92), sz: Math.round(winSz) }; } catch (e) {} }
-          if (sawBig) return { blank: 1 }; // большие есть, но все — заглушки: ждём следующей попытки
-          return null; // крупных нет (Настройки ещё не открыты)
+          if (sawBig) return { blank: 1, seen: av.length, loaded: nLoaded, maxMn: maxMn }; // большие есть, но все — заглушки: ждём следующей попытки
+          return { none: 1, seen: av.length, loaded: nLoaded, maxMn: maxMn }; // крупных нет (Настройки ещё не открыты)
         } catch (e) { return null; }
       };
       // (A) фото уже на экране (Настройки открыты)? Кладём в ОТДЕЛЬНЫЙ ключ '__cc_account_avatar_crisp2'
@@ -162,8 +176,14 @@ export const WEB_ACCOUNT_AVATAR_SCRIPT = `(async () => {
               // v1.2.308: даём НАСТОЯЩЕМУ фото прогрузиться — до 5 попыток с паузой (пока не пришло —
               // __grabBig вернёт blank для серой заглушки, ждём следующую). Всего ~9с в Настройках.
               var big2 = __grabBig();
-              for (var rt = 0; rt < 5 && (!big2 || big2.blank); rt++) { await __delay(1600); big2 = __grabBig(); } // v1.2.311 (#2): 4→5 ретраев
-              step('auto|opened|grab=' + (big2 ? (big2.b ? 'OK' + big2.sz : 'blank' + big2.blank) : 'null'));
+              // v1.2.478: условие повтора — «фото ещё нет» (!big2.b). Прежнее (!big2 || big2.blank)
+              // после появления отчёта с числами перестало бы повторять попытки: у отчёта «нет крупных»
+              // поля blank нет, и цикл вышел бы сразу. Ловушка на это стоит в webAvatarFreshness.vitest.js.
+              for (var rt = 0; rt < 5 && (!big2 || !big2.b); rt++) { await __delay(1600); big2 = __grabBig(); } // v1.2.311 (#2): 4→5 ретраев
+              step('auto|opened|grab=' + (big2 && big2.b ? 'OK' + big2.sz
+                : big2 && big2.blank ? 'все-заглушки: видел=' + big2.seen + ' загруж=' + big2.loaded + ' макс=' + big2.maxMn
+                : big2 ? 'нет-крупных: видел=' + big2.seen + ' загруж=' + big2.loaded + ' макс=' + big2.maxMn
+                : 'null'));
               if (big2 && big2.b) { __avSave(big2.b);
                 out = { avatar: big2.b, sel: 'auto-settings-' + big2.sz, err: '', avwhy: __avChk.why }; }
               __esc(); await __delay(400); __esc();

@@ -128,7 +128,14 @@ export const OZON_BG_FAIL_BODY = 'Не удалось открыть фонов�
  *  • страница «Отзывы» (suppress=true, с v1.2.380) — она на этапе разведки;
  *  • нет кода ошибки вообще — нечего сообщать.
  *
- * @param {{code:*, isMainFrame:*, suppress:*, now:number}} p
+ * v1.2.470 - ДОБАВЛЕН `dryRun`. Зачем: теперь мы сначала спрашиваем «эта беда вообще стоит
+ * карточки?», а САМУ карточку показываем только через OZON_BG_FAIL_WAIT_MS, если страница так и
+ * не ожила. Без `dryRun` предварительный вопрос СЪЕЛ БЫ память «уже сообщали» - и настоящая
+ * проверка через 45 секунд всегда отвечала бы «уже сообщали», то есть карточка не пришла бы
+ * НИКОГДА. При `dryRun` память не трогаем: проверяем только «вечные» правила молчания
+ * (не главный документ / нет кода ошибки / отмена / раздел не тревожит).
+ *
+ * @param {{code:*, isMainFrame:*, suppress:*, now:number, dryRun:boolean}} p
  * @returns {{notify: boolean, body: string, reason: string, ageMs: number}}
  *          notify=false + reason — почему промолчали (для журнала: молчание не должно выглядеть
  *          как «всё хорошо»).
@@ -140,10 +147,15 @@ export function decideOzonBgFailNotice(p) {
   if (code === null || code === undefined) return { notify: false, body: '', reason: 'нет кода ошибки', ageMs: 0 }
   if (code === -3) return { notify: false, body: '', reason: 'ERR_ABORTED — отмена или редирект', ageMs: 0 }
   if (suppress) return { notify: false, body: '', reason: 'раздел не тревожит пользователя', ageMs: 0 }
+  if (p.dryRun) return { notify: true, body: OZON_BG_FAIL_BODY, reason: 'предварительная проверка (память не тронута)', ageMs: 0 }
   const dd = shouldSkipOzonNotif(OZON_BG_FAIL_SOURCE, '', OZON_BG_FAIL_BODY, now || Date.now())
   if (dd.skip) return { notify: false, body: '', reason: 'уже сообщали', ageMs: dd.ageMs }
   return { notify: true, body: OZON_BG_FAIL_BODY, reason: 'первый раз за срок молчания', ageMs: 0 }
 }
+
+// v1.2.471: сам сторож «подожди и посмотри» (ожидание, повторы загрузки, доказательства
+// «страница жива») переехал в отдельный файл shared/ozonBgFailWatch.js — здесь он упирался в
+// потолок 300 строк, да и тема другая: тут ПАМЯТЬ о показанном, там РЕШЕНИЕ о тревоге.
 
 /** Только для тестов: очистить память. */
 export function resetOzonNotifDedup() { seen.clear() }

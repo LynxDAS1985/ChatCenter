@@ -24,16 +24,19 @@ const { ipcRenderer } = require('electron')
     // запасной telegram (у Ozon вообще ничего). Первый кандидат = прежнее поведение (без регресса),
     // второй — `../preloads/hooks`. Логируем (только для Ozon), какой путь сработал.
     var hookDirs = ['hooks', path.join('..', 'preloads', 'hooks')]
-    var hookCode = '', usedDir = ''
+    var hookCode = '', usedDir = '', hookParts = 0 // v1.2.480: hookParts — сколько ФАЙЛОВ склеено во впрыск (см. отчёт ниже)
     for (var di = 0; di < hookDirs.length && !hookCode; di++) {
-      try { hookCode = fs.readFileSync(path.join(__dirname, hookDirs[di], hookType + '.hook.js'), 'utf8'); usedDir = hookDirs[di] } catch(e) {}
+      try { hookCode = fs.readFileSync(path.join(__dirname, hookDirs[di], hookType + '.hook.js'), 'utf8'); usedDir = hookDirs[di]; hookParts = 1 } catch(e) {}
     }
     if (!hookCode) {
       for (var dj = 0; dj < hookDirs.length && !hookCode; dj++) {
-        try { hookCode = fs.readFileSync(path.join(__dirname, hookDirs[dj], 'telegram.hook.js'), 'utf8'); usedDir = hookDirs[dj] + '(tg-fallback)' } catch(e2) {}
+        try { hookCode = fs.readFileSync(path.join(__dirname, hookDirs[dj], 'telegram.hook.js'), 'utf8'); usedDir = hookDirs[dj] + '(tg-fallback)'; hookParts = 1 } catch(e2) {}
       }
     }
-    if (host.indexOf('ozon.ru') !== -1) { try { console.log('__CC_DIAG__ozon monitor hookType=' + hookType + ' len=' + (hookCode ? hookCode.length : 0) + ' used=' + usedDir) } catch(_e) {} }
+    // v1.2.480: ОТЧЁТ О ВПРЫСКЕ (тип хука, сколько ФАЙЛОВ склеено, длина, откуда читали). Зачем и
+    // почему канал именно monitor-diag, а не console.log из preload — ADR-071. Кто будет разбивать
+    // хук на части, обязан увеличивать hookParts, иначе потеря куска снова станет невидимой.
+    try { ipcRenderer.sendToHost('monitor-diag', 'hook-inject: type=' + hookType + ' parts=' + hookParts + ' len=' + (hookCode ? hookCode.length : 0) + ' dir=' + (usedDir || 'НЕ НАЙДЕН')) } catch(_e) {}
     if (hookCode) {
       var s = document.createElement('script')
       s.textContent = hookCode

@@ -1,11 +1,13 @@
 // v1.2.275: сбор аватарки ЗАЛОГИНЕННОГО аккаунта из веб-мессенджеров (ВК/WhatsApp/Макс/Telegram-web),
 // чтобы показать её на боковом значке — как у API-аккаунтов (фото вместо голого логотипа).
-// v1.2.287: скрипт-инъекция вынесена в src/utils/webAvatarScript.js (хук был у лимита 150 строк).
+// v1.2.287: скрипт-инъекция вынесена в отдельный файл (хук был у лимита 150 строк).
+// v1.2.478: файл переехал src/utils/ → shared/webAvatarScript.js — это ТЕКСТ скрипта для чужой
+//   страницы, а не интерфейс; в бюджете строк интерфейса ему не место (как shared/browserBannerHider.js).
 // v1.2.441: «память» гейтов журнала, сброс фото и ТЕКСТЫ записей вынесены в shared/webAvatarGate.js
 //   (вне бюджета renderer, как shared/notifAlbum.js) — там же расписаны три находки ревью.
 // Здесь — только проводка: раз в ~12с гоняем скрипт в каждом веб-webview и кладём результат в состояние.
 import { useState, useEffect, useRef } from 'react'
-import { WEB_ACCOUNT_AVATAR_SCRIPT } from '../utils/webAvatarScript.js'
+import { WEB_ACCOUNT_AVATAR_SCRIPT } from '../../shared/webAvatarScript.js'
 import { AVATAR_RESET_EVENT, avatarLogGateKey, applyAvatarReset, avatarOkLine, avatarReplacedLine, avatarFailLine } from '../../shared/webAvatarGate.js'
 
 export { WEB_ACCOUNT_AVATAR_SCRIPT } // ре-экспорт для существующих импортов/тестов

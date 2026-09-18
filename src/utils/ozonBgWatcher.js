@@ -21,7 +21,8 @@ import { parseConsoleMessage } from './consoleMessageParser.js'
  * @param {string} ozonId - id ОСНОВНОГО мессенджера Ozon (для маршрутизации уведомлений/счётчика)
  * @param {{handleNewMessage:Function, setOzonCounts:Function, log:Function}} deps
  */
-import { shouldSkipOzonNotif, decideOzonBgFailNotice } from '../../shared/ozonNotifDedup.js'
+import { shouldSkipOzonNotif } from '../../shared/ozonNotifDedup.js'
+import { createOzonBgFailWatch, isOzonAliveProof } from '../../shared/ozonBgFailWatch.js'
 
 export function bindOzonBgWatcher(el, ozonId, deps) {
   try {
@@ -31,31 +32,34 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
     // v1.2.396: последнее ЗАЛОГИРОВАННОЕ значение счётчика (по разделам) — чтобы писать в журнал только при
     // РЕАЛЬНОМ изменении, а не на каждый reload (после reload сторож переинжектится и повторно шлёт ту же цифру).
     const _lastCountLog = {}
+    // v1.2.470→471: сбой больше не даёт карточку СРАЗУ — ждём, не поднимется ли страница сама
+    // (обе карточки за 2026-09-16 были ложной тревогой: страница вставала за 0-1 секунду).
+    // Вся логика ожидания, повторов и ДОКАЗАТЕЛЬСТВ «страница жива» — в shared/ozonBgFailWatch.js.
+    // `probe` спрашивает у самой страницы, сколько в ней элементов: страница-ошибка Chromium
+    // почти пустая, настоящий Ozon — тысячи. Без этого вопроса отличить их нечем (v1.2.471).
+    const _failWatch = createOzonBgFailWatch({
+      log, notify, suppress: suppressFailNotice,
+      reload: () => { if (el.reload) el.reload() },
+      alive: () => el.isConnected,
+      probe: () => el.executeJavaScript && el.executeJavaScript('document.querySelectorAll("*").length'),
+    })
     // v1.2.361 ДИАГНОСТИКА (Шаг 3А молчит — 0 строк [ozon-bg]): лесенка записей, чтобы увидеть, на каком
     // шаге рвётся. Убрать после того, как фоновая страница подтвердится рабочей. Текст вопросов НЕ пишем.
     log && log('INFO', '[ozon-bg] страница создана, слушатель привязан')
-    el.addEventListener('did-finish-load', () => { try { log && log('INFO', '[ozon-bg] страница загрузилась URL=' + (el.getURL ? el.getURL() : '?')) } catch (_) {} })
-    // v1.2.362: при РЕАЛЬНОЙ неудаче загрузки главной страницы (Ozon не пустил в фоне) — один раз мягко
-    // сообщить пользователю понятной фразой. ERR_ABORTED (-3) = отмена/редирект (Ozon сам редиректит
-    // /app/reviews/questions), это НЕ блокировка → не тревожим. isMainFrame: только главный документ, не под-ресурсы.
+    el.addEventListener('did-finish-load', () => { try { log && log('INFO', '[ozon-bg] страница загрузилась URL=' + (el.getURL ? el.getURL() : '?')); _failWatch.onLoaded() } catch (_) {} })
+    // Загрузка не удалась. САМ СБОЙ пишем в журнал всегда — по этим строкам и было доказано, что
+    // карточки приходили зря. А тревожить ли человека, решает сторож «подожди и посмотри»:
+    // сначала он даёт странице время подняться и один раз пробует загрузить её заново.
     el.addEventListener('did-fail-load', (e) => {
       try {
         const code = e && e.errorCode
-        const mainFrame = (!e || e.isMainFrame === undefined) ? true : e.isMainFrame
         log && log('WARN', '[ozon-bg] загрузка НЕ удалась code=' + code + ' ' + (e && e.errorDescription) + ' url=' + (e && e.validatedURL || ''))
-        // v1.2.467: всё решение («тревожить ли и почему нет») живёт в общем коде —
-        // shared/ozonNotifDedup.js, decideOzonBgFailNotice. Здесь остаётся только обвязка.
-        // Раньше пометка «уже сообщил» стояла НА ЭЛЕМЕНТЕ и обнулялась при его пересоздании
-        // (журнал 2026-09-16: 9 созданий фоновых страниц за ОДИН запуск) — отсюда «часто вижу».
-        const d = decideOzonBgFailNotice({ code, isMainFrame: e && e.isMainFrame, suppress: suppressFailNotice })
-        if (d.notify) {
-          log && log('INFO', '[ozon-bg] показал пользователю сообщение о недоступности фоновой страницы (code=' + code + ')')
-          notify && notify('Ozon', d.body)
-        } else if (code != null && code !== -3) {
-          // В ЖУРНАЛ пишем и когда промолчали: иначе не понять, сколько раз Ozon реально подводил.
-          log && log('INFO', '[ozon-bg] карточку о недоступности НЕ показываю (' + d.reason
-            + (d.ageMs ? ', ' + Math.round(d.ageMs / 60000) + ' мин назад' : '') + ', code=' + code + ')')
-        }
+        // Всё решение («тревожить ли, когда и почему нет») живёт в общем коде —
+        // shared/ozonNotifDedup.js. Здесь остаётся только обвязка. Так лечились обе жалобы:
+        // v1.2.467 — пометка «уже сообщил» жила НА ЭЛЕМЕНТЕ и обнулялась при его пересоздании
+        //            (журнал 2026-09-16: 9 созданий фоновых страниц за ОДИН запуск);
+        // v1.2.470 — карточка приходила раньше, чем страница успевала подняться сама.
+        _failWatch.onFail(code, e && e.isMainFrame)
       } catch (_) {}
     })
     // v1.2.365: ВПРЫСК сторожа через executeJavaScript (в обход CSP Ozon) — как для основной вкладки
@@ -86,6 +90,11 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         if (!msg || msg.indexOf('__CC_') !== 0) return
         const parsed = parseConsoleMessage(msg)
         if (!parsed) return
+        // v1.2.471: 🔴 засчитываем как «страница жива» ТОЛЬКО то, чего на пустой странице-ошибке
+        // Chromium быть не может (уведомление или счётчик > 0). В v1.2.470 засчитывалось ЛЮБОЕ
+        // сообщение сторожа — а он впрыскивается и в страницу-ошибку и пишет там диагностику
+        // с rows=0, из-за чего настоящая беда оставалась незамеченной.
+        if (isOzonAliveProof(parsed)) _failWatch.onHookProof()
         // v1.2.368 (Шаг 3Б): маршрутизатор ОБОБЩЁН на ОБА раздела (вопросы И сообщения покупателей) —
         // один и тот же bindOzonBgWatcher вешается на две фоновые страницы (/reviews/questions и /app/messenger).
         // Счётчик раздела msg/qa → бейдж виджета. Фон надёжен (мессенджер/вопросы обновляются live) → ведёт всегда.

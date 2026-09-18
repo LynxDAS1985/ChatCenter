@@ -57,10 +57,16 @@ test('webview passes notification messageId/source to main dedup', () => {
 
 // v1.2.426: наблюдатель (__CC_MSG__) для МАКС ждёт enriched дольше (1200мс vs 200мс),
 // иначе «список чатов» (карточка с аватаркой) приходит позже 200мс → две карточки на одно сообщение.
+// v1.2.478 (почему проверка переписана): в v1.2.475 срок перестал быть зашитым числом в этом файле —
+// он один на ОБА пути ожидания и живёт в shared/notifEnrichWait.js (ADR-066). Проверка искала
+// строку '? 1200 : 200' и с тех пор ПАДАЛА, хотя поведение верное. Теперь сторожим суть:
+// срок берётся из общего файла, а само число 1200 задано там.
 test('MAX __CC_MSG__ ждёт enriched дольше — антидубль наблюдатель+список', () => {
   assert(consoleHandlerCode.includes('enrichWaitMs'))
-  assert(consoleHandlerCode.includes('? 1200 : 200'))
+  assert(consoleHandlerCode.includes("enrichWaitMsFor(") && consoleHandlerCode.includes(", 200)"))
   assert(consoleHandlerCode.includes('}, enrichWaitMs)'))
+  var waitSrc = fs.readFileSync('shared/notifEnrichWait.js', 'utf8')
+  assert(/MAX_ENRICH_WAIT_MS = 1200/.test(waitSrc), 'срок ожидания МАКСа должен остаться 1200мс')
 })
 
 test('console enrichment uses sender-aware avatar cache', () => {

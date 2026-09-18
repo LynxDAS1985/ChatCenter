@@ -43,7 +43,7 @@ module.exports = {
   // локальный state (items/stacks/container/window.notifApi).
   'main/notification.js': {
     ceiling: 730,
-    reason: 'v1.2.66: «живая карточка» альбома (media group) — albumHosts Map + ветка группировки по album.id + albumState + очистка в dismiss/forceRemove (~35 строк). Тяжёлые функции (extendHostLife, addAlbumTileToHost, renderAlbumGrid) вынесены в notification-helpers.js. v1.2.12: createPinBtn/calcHeight/pauseItem/resumeItem/forceFinalSlideInState тоже вынесены туда. Дальнейшее разбиение dismissItem/stackMessageIntoHost требует параметризации (замыкают items/stacks/albumHosts/container).'
+    reason: 'v1.2.66: «живая карточка» альбома (media group) — albumHosts Map + ветка группировки по album.id + albumState + очистка в dismiss/forceRemove (~35 строк). Тяжёлые функции вынесены: createPinBtn/calcHeight/pauseItem/resumeItem/forceFinalSlideInState — в notification-helpers.js, а отрисовка альбома (renderAlbumGrid, applyAlbumSharp, extendHostLife, addAlbumTileToHost) — в notification-album.js (v1.2.479). v1.2.12: createPinBtn/calcHeight/pauseItem/resumeItem/forceFinalSlideInState тоже вынесены туда. Дальнейшее разбиение dismissItem/stackMessageIntoHost требует параметризации (замыкают items/stacks/albumHosts/container).'
   },
   // v0.87.97: pin-dock разбит на html/css/js. JS превышает default 300.
   'main/pin-dock.js': {

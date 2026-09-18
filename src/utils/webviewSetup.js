@@ -15,6 +15,7 @@ import { probeWebviewHealth } from './webviewHealthProbe.js'
 import { scheduleMaxTitleFallback } from './maxTitleFallback.js'
 import { decideMaxTitleUnread, resetMaxTitleUnread } from './titleUnreadBaseline.js'
 import { createVkExecFallbackRuntime } from '../../shared/vkExecFallback.js'
+import { enrichWaitMsFor, alreadyHandledWindowMs } from '../../shared/notifEnrichWait.js'
 // v1.2.447: доводки чужой страницы (плашки «браузер устарел» + запасной впрыск
 // перехватчика) вынесены в shared/webviewPageFixups.js — файл стоял на 597/605.
 import { createPageFixups } from '../../shared/webviewPageFixups.js'
@@ -468,13 +469,19 @@ export function createWebviewSetup(deps) {
             traceNotif('dedup', 'block', messengerId, msgText, `mid-dedup IPC | __CC_NOTIF__ от ${messengerId} был ${Date.now()-midTsIpc}мс назад`)
             return
           }
-          traceNotif('source', 'info', messengerId, msgText, 'IPC new-message | ожидание 500мс для __CC_NOTIF__')
+          // v1.2.475: срок ожидания «богатой» версии — общий для обоих путей (shared/notifEnrichWait.js).
+          // Раньше здесь было 500 мс, а у запасного пути 1200 мс для МАКСа: богатая версия МАКСа
+          // приходит примерно через секунду, поэтому быстрый путь сдавался первым и показывал свою
+          // карточку, а следом приходила богатая — получалось ДВЕ карточки на одно сообщение.
+          const ipcWaitMs = enrichWaitMsFor(ipcUrl, 500)
+          traceNotif('source', 'info', messengerId, msgText, `IPC new-message | ожидание ${ipcWaitMs}мс для __CC_NOTIF__`)
           setTimeout(() => {
             const dedupText = msgText.slice(0, 60)
             const nowIpcFallback = Date.now()
-            const alreadyHandled = Array.from(recentNotifsRef.current).some(([k, ts]) => nowIpcFallback - ts <= 1500 && k.startsWith(messengerId + ':') && k.endsWith(':' + dedupText))
+            // v1.2.477: окно считается ОТ срока ожидания, а не зашитым 1500 — почему, см. shared/notifEnrichWait.js
+            const alreadyHandled = Array.from(recentNotifsRef.current).some(([k, ts]) => nowIpcFallback - ts <= alreadyHandledWindowMs(ipcWaitMs) && k.startsWith(messengerId + ':') && k.endsWith(':' + dedupText))
             if (!alreadyHandled) {
-              traceNotif('source', 'warn', messengerId, msgText, 'IPC fallback | __CC_NOTIF__ не пришёл за 500мс')
+              traceNotif('source', 'warn', messengerId, msgText, `IPC fallback | __CC_NOTIF__ не пришёл за ${ipcWaitMs}мс`)
               // Кэш sender fallback для IPC path
               const ipcExtra = e.args[1] && typeof e.args[1] === 'object' ? e.args[1] : null, cached = senderCacheRef.current[messengerId]
               const extra = ipcExtra || (cached && Date.now() - cached.ts < 300000
@@ -494,7 +501,7 @@ export function createWebviewSetup(deps) {
             } else {
               traceNotif('source', 'info', messengerId, msgText, 'IPC skip | уже обработан через __CC_NOTIF__')
             }
-          }, 500)
+          }, ipcWaitMs)
         }
       })
       // ── СЕКЦИЯ: Console-message — перехват Notification/Badge/MutationObserver ──

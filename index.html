@@ -83,6 +83,13 @@
         box-shadow: 0 12px 34px rgba(0,0,0,.45); text-align: left;
       }
       #cc-boot-net.cc-on { display: block; }
+      /* v1.2.472: после запуска заставку УДАЛЯЮТ, а окно повтора жило внутри неё — при обрыве во
+         время РАБОТЫ показать его было негде, и оставался голый красный экран (жалоба 2026-09-16).
+         Теперь окно переезжает в документ и стоит по центру экрана само по себе. */
+      #cc-boot-net.cc-bn--float {
+        position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        margin-top: 0; z-index: 2147483000;
+      }
       .cc-bn__title { font: 600 15px/1.3 system-ui, sans-serif; color: #F1F5F9; margin-bottom: 6px; }
       .cc-bn__why { font: 400 13px/1.45 system-ui, sans-serif; color: rgba(241,245,249,.72); }
       .cc-bn__row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
@@ -175,7 +182,20 @@
 
         // v1.2.464: возвращает, ЕСТЬ ЛИ окно на экране после вызова. Раньше не возвращала ничего,
         // и вызывающий не мог отличить «показал» от «показывать было негде» (поймал тест).
-        function show(why) {
+        // v1.2.472: вынуть окно из заставки ДО того, как заставку удалят. Зовут оба места, которые
+        // её убирают: main.jsx (обычный путь) и boot-probe.js (предохранитель 3 минуты).
+        // Идемпотентно: второй вызов ничего не делает; окна нет — просто «нет».
+        function detach() {
+          var box = el('cc-boot-net')
+          if (!box || box.parentNode === document.body) return false
+          document.body.appendChild(box)
+          box.classList.add('cc-bn--float')
+          return true
+        }
+
+        // soft=true — упала ОТДЕЛЬНАЯ часть (панель), сама программа жива: окно показываем, но
+        // САМИ не перезагружаем — иначе вырвали бы из-под рук работающее приложение.
+        function show(why, soft) {
           // 🔴 v1.2.453 (находка ревью): флаг поднимаем ТОЛЬКО если панель реально на экране.
           // После успешного запуска заставку (вместе с панелью) убирают из окна — раньше флаг
           // вставал и тут, а потом возврат сети перезагружал РАБОТАЮЩЕЕ приложение.
@@ -187,6 +207,11 @@
           el('cc-bn-try').textContent = n > 0 ? ('Попытка ' + n + ' — программа пробует сама') : 'Программа пробует сама'
           box.classList.add('cc-on')
           var hint = document.querySelector('.cc-splash__hint'); if (hint) hint.textContent = 'Не удалось запуститься'
+          if (soft) {
+            el('cc-bn-left').textContent = 'Нажмите «Повторить сейчас»'
+            say('окно показано БЕЗ авто-перезагрузки (упала отдельная часть, программа работает): ' + why)
+            return true
+          }
           dueAt = Date.now() + pauseMs(n)
           paint()
           tick = setInterval(paint, 1000)
@@ -205,17 +230,19 @@
         // «позвали, но текст не про загрузку» и от «позвали, но показывать негде». Это ровно та
         // болезнь, которую чинили в v1.2.462 у защиты от повторов — «пишет, только когда поймала».
         // Пишем коротко: длинный текст ошибки в журнал не тащим, хватает начала.
-        function onLoadError(message) {
+        // v1.2.472: второй довод `opts.soft` — сбой в ОТДЕЛЬНОЙ панели (её перехватчик показывает
+        // свою рамку и программа продолжает работать). Тогда окно есть, а авто-перезагрузки нет.
+        function onLoadError(message, opts) {
           var m = String(message || '')
           if (!LOAD_FAIL.test(m)) { say('ошибка отрисовки НЕ про загрузку — окно не поднимаю: "' + m.slice(0, 60) + '"'); return false }
-          var ok = show(whyLoadFailed())
+          var ok = show(whyLoadFailed(), opts && opts.soft)
           if (!ok) say('сбой загрузки есть, но окно показывать НЕГДЕ (заставки уже нет): "' + m.slice(0, 60) + '"')
           return ok
         }
 
         var api = {
           show: show, retryNow: retryNow, attemptNo: attemptNo, pauseMs: pauseMs, LADDER: LADDER,
-          onLoadError: onLoadError,
+          onLoadError: onLoadError, detach: detach,
           reload: function () { try { location.reload() } catch (e) {} },
           // Приложение запустилось — гасим отсчёт, обнуляем счётчик И СБРАСЫВАЕМ ФЛАГ.
           // 🔴 Флаг обязателен к сбросу: иначе после старта возврат сети перезагружал

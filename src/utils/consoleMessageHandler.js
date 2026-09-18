@@ -1,6 +1,7 @@
 // v0.84.3: Extracted from webviewSetup.js — console-message event handler
 // Contains: __CC_BADGE_BLOCKED__, __CC_ACCOUNT__, __CC_MSG__ (with DOM enrichment), __CC_NOTIF__ (with blob icon conversion)
 import { markHealthOk } from './connectionHealth.js'
+import { enrichWaitMsFor } from '../../shared/notifEnrichWait.js'
 import { applySenderAvatarFallback, rememberSenderAvatar } from './maxTitleFallback.js'
 
 try { window.__ccStartupMark?.('module:consoleMessageHandler', 'module evaluated') } catch {}
@@ -154,7 +155,8 @@ export function createConsoleMessageHandler(deps) {
         return
       }
       // v1.2.426: МАКС ждёт enriched дольше — его «список чатов» (enriched __CC_NOTIF__ с аватаркой) приходит >200мс (сканер троттлится ~350мс), иначе наблюдатель даёт ЛИШНЮЮ карточку без фото раньше enriched → дубль. Прочие — 200мс.
-      const enrichWaitMs = /web\.max\.ru/i.test((messengersRef.current.find(x => x.id === messengerId) || {}).url || '') ? 1200 : 200
+      // v1.2.475: срок ожидания задан ОДИН раз — пояснение целиком в shared/notifEnrichWait.js.
+      const enrichWaitMs = enrichWaitMsFor((messengersRef.current.find(x => x.id === messengerId) || {}).url, 200)
       traceNotif('source', 'info', messengerId, text, `__CC_MSG__ | ожидание enriched __CC_NOTIF__ ${enrichWaitMs}мс`)
       // Приоритет enriched: ждём enrichWaitMs — если __CC_NOTIF__ придёт с enriched данными, он отменит этот таймер
       // Если не придёт — запускаем собственное enrichment через DOM
@@ -346,7 +348,7 @@ export function createConsoleMessageHandler(deps) {
               handleNewMessage(messengerId, text)
             }
           })
-      }, enrichWaitMs) // ожидание enriched __CC_NOTIF__ (МАКС 1200мс, прочие 200мс) — v1.2.426
+      }, enrichWaitMs) // ожидание богатой версии; срок — shared/notifEnrichWait.js (v1.2.426 → v1.2.475)
       pendingMsgRef.current.set(pendingKey, { timer: pendingTimer, messengerId, text })
       return
     }
@@ -401,7 +403,7 @@ export function createConsoleMessageHandler(deps) {
         const extra = {}
         if (data.t) extra.senderName = data.t
         if (data.g) extra.chatTag = data.g
-        if (data.src) extra.notifSource = data.src; if (maxSidebarUnread) extra.messageId = `max-sidebar:${senderScope || messengerId}:${maxSidebarUnread}`; if (data.oc) extra.openChat = 1
+        if (data.src) extra.notifSource = data.src; if (data.p) extra.photoUrl = data.p; if (maxSidebarUnread) extra.messageId = `max-sidebar:${senderScope || messengerId}:${maxSidebarUnread}`; if (data.oc) extra.openChat = 1 // data.p (v1.2.478) — ссылка на фото вложения ВК; комментарий ТОЛЬКО в конце строки, иначе съест код справа
         // v0.77.2: blob icon → конвертируем ПЕРЕД handleNewMessage
         if (data.i && data.i.startsWith('blob:')) {
           const wv = webviewRefs.current[messengerId]

@@ -86,6 +86,8 @@ function ccSplashSafety(reason) {
     const sp = document.getElementById('cc-splash')
     if (!sp) return // норма: заставку уже убрал main.jsx (appReady)
     sp.classList.add('cc-splash--hide')
+    // v1.2.472: см. main.jsx — окно повтора вынимаем из заставки, чтобы оно пережило её удаление.
+    try { window.__ccBootNet?.detach?.() } catch {}
     setTimeout(() => { try { sp.remove() } catch {} }, 500)
     window.__ccStartupMark('splash', 'safety hid splash: ' + reason)
   } catch {}

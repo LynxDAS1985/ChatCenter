@@ -227,6 +227,10 @@
     try { var img = row.querySelector('img[src^="http"]'); return (img && !/emoji/i.test(img.src || '')) ? img.src : ''; }
     catch(e) { return ''; }
   }
+  // v1.2.478: картинка вложения — ищем ТОЛЬКО внутри блока превью (аватар лежит в другом блоке строки, перепутать нельзя). Зачем, границы и почему пусто — норма: shared/webPhotoAlbum.js.
+  function _vkRowPhoto(row) {
+    try { var pv = row.querySelector('[class*="PostPreview" i], [class*="preview" i], [class*="snippet" i]'); var im = pv && pv.querySelector('img[src^="http"]'); return (im && !/emoji/i.test(im.src || '') && (im.naturalWidth || 0) >= 40) ? im.src : ''; } catch(e) { return ''; }
+  }
   function _scanVkList(reason) {
     var rows = document.querySelectorAll('[class*="ConvoListItem" i]');
     var current = {}, cand = [], unread = 0, muted = 0;
@@ -239,7 +243,7 @@
       if (!sender || !text || _isSpam(text)) continue;
       var fp = _hashToast(sender + '|' + text);
       current[fp] = true;
-      cand.push({ fp: fp, sender: sender, text: text, icon: _vkRowAvatar(rows[i]) });
+      cand.push({ fp: fp, sender: sender, text: text, icon: _vkRowAvatar(rows[i]), ph: _vkRowPhoto(rows[i]) });
     }
     var emitted = 0, sent = {};
     if (_vkPrevUnread) {
@@ -249,7 +253,7 @@
         if (_dupEmit(cand[k].sender, cand[k].text)) { sent[f] = true; continue; } // v1.2.381: тот же текст уже ушёл другим путём (перехват) за 5с
         sent[f] = true;
         emitted++;
-        console.log('__CC_NOTIF__' + JSON.stringify({ t: cand[k].sender, b: cand[k].text, i: cand[k].icon, g: 'vk-list:' + f, src: 'vk-list' }));
+        console.log('__CC_NOTIF__' + JSON.stringify({ t: cand[k].sender, b: cand[k].text, i: cand[k].icon, p: cand[k].ph, g: 'vk-list:' + f, src: 'vk-list' }));
       }
     }
     // v1.2.115: базовую линию фиксируем ТОЛЬКО на непустом списке — иначе при медленной
@@ -263,22 +267,8 @@
       if(_scanVkList._lastUm!==_um){_scanVkList._lastUm=_um;console.log('__CC_UNREAD__'+_um);}
     } catch(e){}
     if (reason === 'initial' || emitted > 0) console.log('__CC_DIAG__vk-list reason=' + reason + ' rows=' + rows.length + ' unread=' + unread + ' muted=' + muted + ' emitted=' + emitted);
-    // v1.2.196: ДИАГНОСТИКА источника счётчика ВК (главный мир → лог доходит), раз в ~15с.
-    // Показывает ВСЕ кандидаты «фантомной» 1 + что реально хватает «широкий» поиск счётчика
-    // (step3, как в countUnreadVK): значение@класс. Так видно ТОЧНЫЙ источник, без гадания.
-    // v1.2.384 ДИАГНОСТИКА фантома «1» из «Игр»: msgTx = ПОЛНЫЙ текст элемента, где нашли «мессенджер»+число
-    // (если «1» приклеилась от соседа — увидим в тексте); s3ctx = ближайший подписанный предок значка step3
-    // (мессенджер это или «Игры») — покажет, не прихватил ли поиск по /im соседний значок «Игры».
-    try { var _n = Date.now(); if (!_scanVkList._srcTs || _n - _scanVkList._srcTs > 15000) { _scanVkList._srcTs = _n;
-      var _mb='нет',_mbTx='',_fb='нет',_gb='нет',_nv=document.querySelectorAll('a,[role="link"]');
-      for(var _i=0;_i<_nv.length&&_i<250;_i++){var _tx=(_nv[_i].textContent||'').replace(/\s+/g,' ').trim();
-        if(_mb==='нет'&&/мессенджер|messenger/i.test(_tx)){var _m=_tx.match(/(\d+)/);_mb=_m?_m[1]:'0';_mbTx=_tx.slice(0,50);}
-        if(_fb==='нет'&&/друз|friend/i.test(_tx)){var _f=_tx.match(/(\d+)/);_fb=_f?_f[1]:'0';}
-        if(_gb==='нет'&&/игр|game/i.test(_tx)){var _g=_tx.match(/(\d+)/);_gb=_g?_g[1]:'0';}}
-      var _s3='нет',_s3ctx='';try{var _im=document.querySelectorAll('a[href*="/im"]');for(var _j=0;_j<_im.length&&_j<20;_j++){var _p=_im[_j].closest('li,div,[class*="Item"],[class*="item"]')||_im[_j];var _cs=_p.querySelectorAll('[class*="ounter"],[class*="badge"],[class*="Badge"],[class*="counter"]');for(var _k=0;_k<_cs.length;_k++){var _nn=parseInt((_cs[_k].textContent||'').trim(),10);if(!isNaN(_nn)&&_nn>0){_s3=_nn+'@'+String(_cs[_k].className||'').slice(0,30);var _anc=_cs[_k].closest('a,li')||_p;_s3ctx=(_anc.textContent||'').replace(/\s+/g,' ').trim().slice(0,40);break;}}if(_s3!=='нет')break;}}catch(e){}
-      var _tt=(document.title||'').match(/\((\d+)\)/);
-      console.log('__CC_DIAG__vk-src titleN='+(_tt?_tt[1]:'нет')+' msgBadge='+_mb+' msgTx="'+_mbTx+'" friends='+_fb+' games='+_gb+' step3='+_s3+' s3ctx="'+_s3ctx+'" listUnread='+unread);
-    } } catch(e){}
+    // v1.2.479: здесь была постоянная диагностика счётчика ВК (метка vk-src, раз в 15с) — убрана,
+    // расследование закрыто; вернуть можно из истории правок (v1.2.478). Подробности — ADR-071.
   }
   function _scheduleVkListScan(reason) {
     if (_vkListTimer) return;

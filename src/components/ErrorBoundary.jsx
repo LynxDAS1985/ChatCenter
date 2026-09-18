@@ -1,6 +1,7 @@
 // v0.84.1: ErrorBoundary для изоляции ошибок в компонентах
 // Если один компонент крашится — остальное приложение работает
 import React from 'react'
+import { reportBootNetOutcome } from '../../shared/bootNetOutcome.js'
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -22,9 +23,12 @@ export default class ErrorBoundary extends React.Component {
         message: `[ErrorBoundary] ${this.props.name || 'Unknown'}: ${error?.message || error}${stack}` })
     } catch (_) {}
     // v1.2.464: если упала именно ДОГРУЗКА куска программы (а не код внутри него) — это сбой
-    // запуска, а не поломка компонента: поднимаем общее окно повтора из index.html. Оно само
-    // проверит текст ошибки и само не покажется, если заставки уже нет (приложение работает).
-    try { window.__ccBootNet?.onLoadError?.(error?.message) } catch (_) {}
+    // загрузки, а не поломка компонента: поднимаем общее окно повтора из index.html (оно само
+    // проверит текст ошибки). v1.2.472: режим «мягкий» — здесь упала ОТДЕЛЬНАЯ панель, а сама
+    // программа работает, поэтому окно показываем, но САМИ страницу не перезагружаем: рядом уже
+    // есть своя кнопка «Попробовать снова», а внезапная перезагрузка вырвала бы работу из-под рук.
+    // v1.2.473: итог обращения пишется ВСЕГДА — иначе отказ выглядит как «всё хорошо».
+    reportBootNetOutcome(window, error?.message, { soft: true, where: this.props.name || 'панель' })
   }
 
   render() {

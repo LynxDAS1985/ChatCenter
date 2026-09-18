@@ -267,6 +267,11 @@
 
 ## 🟡 `console.log` из preload-УТИЛИТЫ webview НЕ попадает в `chatcenter.log` (v1.2.393)
 
+**ПОДТВЕРЖДЕНО ЧИСЛАМИ 2026-09-18 (v1.2.480)**: поиск по `chatcenter.log` — записей от `console.log`
+из мира preload (строка `__CC_DIAG__ozon monitor hookType…`, живёт с v1.2.324) **0 за всю историю**,
+а от канала `sendToHost('monitor-diag', …)` — **12 записей за сутки**. Вывод закреплён в ADR-071:
+служебные сообщения из `*.preload.cjs` слать ТОЛЬКО каналом `monitor-diag`.
+
 **Симптом**: добавил временный лог `console.log('__CC_DIAG__unread_vk …')` внутрь `countUnreadVK` ([unreadCounters.js](../../main/preloads/utils/unreadCounters.js)), перезапустил — в журнале строки НЕТ (и никогда не было аналогичного давнего `__CC_DIAG__unread_max` из `countUnreadMAX`). При этом `vk-src` из `vk.hook.js` в журнал попадает исправно.
 
 **Причина (по коду + журналу 2026-09-03)**: webview-логгер перехватывает `console` только из **главного мира** страницы (туда инъектится `*.hook.js` через `<script>`). `unreadCounters.js` подключается в **preload-мире** webview (`monitor.preload.cjs` → `require('./utils/unreadCounters')`) — его `console.log` идёт в отдельный контекст и в `chatcenter.log` НЕ пишется. Отсюда «немая» диагностика: строки нет, хотя код выполняется.

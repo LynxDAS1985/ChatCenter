@@ -298,9 +298,12 @@ describe('Ошибка ОТРИСОВКИ про недогруженный ку
     }
   })
 
-  it('проводка: ОБА перехватчика ошибок отрисовки зовут onLoadError', () => {
-    expect(readFileSync('src/main.jsx', 'utf8')).toContain('__ccBootNet?.onLoadError?.(error?.message)')
-    expect(readFileSync('src/components/ErrorBoundary.jsx', 'utf8')).toContain('__ccBootNet?.onLoadError?.(error?.message)')
+  // v1.2.473: оба перехватчика зовут окно ЧЕРЕЗ общую запись итога (shared/bootNetOutcome.js) —
+  // она и дёргает пульт, и обязательно пишет в журнал, чем дело кончилось.
+  it('проводка: ОБА перехватчика ошибок отрисовки зовут окно через запись итога', () => {
+    expect(readFileSync('src/main.jsx', 'utf8')).toContain('reportBootNetOutcome(window, error?.message')
+    // у вложенного перехватчика — «мягкий» режим (упала отдельная панель, программа жива)
+    expect(readFileSync('src/components/ErrorBoundary.jsx', 'utf8')).toContain('reportBootNetOutcome(window, error?.message, { soft: true')
   })
 
   it('старый путь (отказ обещания) продолжает работать через ту же дверь', () => {
@@ -311,9 +314,13 @@ describe('Ошибка ОТРИСОВКИ про недогруженный ку
     expect(visible()).toBe(true)
   })
 
-  it('🔴 ЛОВУШКА: приложение уже работает (заставки нет) → окно НЕ показывается', () => {
+  // v1.2.472: смысл ловушки УТОЧНЁН. Раньше она означала «после запуска окна не будет» — это и
+  // было бедой (жалоба 2026-09-16: обрыв связи через 2,5 минуты работы дал голый красный экран).
+  // Теперь она проверяет только крайний случай: узел окна физически удалён — показывать негде,
+  // и мы честно говорим об этом в журнал, а не молчим.
+  it('🔴 ЛОВУШКА: узла окна нет вовсе → показывать негде, и это видно в журнале', () => {
     const net = boot()
-    document.getElementById('cc-boot-net').remove()     // так бывает после успешного запуска
+    document.getElementById('cc-boot-net').remove()
     expect(net.onLoadError('Failed to fetch dynamically imported module: /src/x.jsx')).toBe(false)
     expect(document.getElementById('cc-boot-net')).toBe(null)
   })

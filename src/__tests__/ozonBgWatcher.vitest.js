@@ -4,7 +4,7 @@
 //   __CC_OZON_COUNT__ qa            → setOzonCounts (кладёт qa в per-раздел)
 //   не-__CC_ сообщение              → ничего не маршрутизируется
 //   did-fail-load (реальная ошибка) → один раз notify; ERR_ABORTED(-3) → notify НЕ вызывается
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { bindOzonBgWatcher } from '../utils/ozonBgWatcher.js'
 import { resetOzonNotifDedup } from '../../shared/ozonNotifDedup.js'
 
@@ -14,6 +14,8 @@ function makeEl(url = 'https://seller.ozon.ru/app/reviews/questions') {
   return {
     addEventListener: (t, fn) => { (handlers[t] = handlers[t] || []).push(fn) },
     getURL: () => url,
+    isConnected: true,          // v1.2.470: страница на экране (false = её убрали)
+    reload: vi.fn(),            // v1.2.470: разовый повтор загрузки после сбоя
     fire: (t, ev) => (handlers[t] || []).forEach((fn) => fn(ev)),
     handlersFor: (t) => handlers[t] || [],
   }
@@ -34,7 +36,15 @@ function makeDeps() {
 // она переживает пересоздание страницы, и это же делает её общей МЕЖДУ ТЕСТАМИ. Без сброса
 // проверки начинают зависеть от порядка запуска: один тест «съедает» карточку у следующего.
 // Ровно на эту граблю проект уже наступал (см. .memory-bank/workflow.md).
-beforeEach(() => resetOzonNotifDedup())
+// v1.2.470: карточка о недоступности приходит НЕ СРАЗУ - сторож сначала даёт странице время
+// подняться (обе карточки 2026-09-16 были ложной тревогой: страница вставала за 0-1 секунду).
+// Поэтому время здесь ПОДДЕЛЬНОЕ и прокручивается вручную: иначе проверки зависели бы от
+// скорости машины - на эту граблю проект уже наступал (см. .memory-bank/workflow.md).
+beforeEach(() => { resetOzonNotifDedup(); vi.useFakeTimers() })
+afterEach(() => vi.useRealTimers())
+
+/** Прокрутить время так, чтобы сторож успел сдаться и показать карточку. */
+const waitOut = () => vi.advanceTimersByTime(60000)
 
 describe('bindOzonBgWatcher', () => {
   it('уведомление о вопросе → handleNewMessage на id Ozon с флагом background', () => {
@@ -130,6 +140,8 @@ describe('bindOzonBgWatcher', () => {
     bindOzonBgWatcher(el, 'ozon', d)
     el.fire('did-fail-load', { errorCode: -20, errorDescription: 'ERR_BLOCKED_BY_CLIENT', isMainFrame: true, validatedURL: 'https://seller.ozon.ru/app/reviews/questions' })
     el.fire('did-fail-load', { errorCode: -21, errorDescription: 'ERR_NETWORK_CHANGED', isMainFrame: true })
+    expect(d.notify, 'сразу карточки быть не должно - сторож ещё ждёт').not.toHaveBeenCalled()
+    waitOut()
     expect(d.notify).toHaveBeenCalledTimes(1)
     // v1.2.363: формулировка НЕЙТРАЛЬНА (не винит только Ozon) — did-fail-load бывает и от обрыва сети.
     expect(d.notify.mock.calls[0][1]).toMatch(/интернет/)
@@ -143,6 +155,7 @@ describe('bindOzonBgWatcher', () => {
     const el = makeEl(); const d = makeDeps()
     bindOzonBgWatcher(el, 'ozon', d)
     el.fire('did-fail-load', { errorCode: -3, errorDescription: 'ERR_ABORTED', isMainFrame: true })
+    waitOut()
     expect(d.notify).not.toHaveBeenCalled()
   })
 
@@ -150,6 +163,7 @@ describe('bindOzonBgWatcher', () => {
     const el = makeEl(); const d = makeDeps()
     bindOzonBgWatcher(el, 'ozon', d)
     el.fire('did-fail-load', { errorCode: -20, isMainFrame: false })
+    waitOut()
     expect(d.notify).not.toHaveBeenCalled()
   })
 
@@ -201,6 +215,7 @@ describe('🔴 ЛОВУШКА: карточка о недоступности н
       bindOzonBgWatcher(el, 'ozon', d)
       el.fire('did-fail-load', { errorCode: -101, errorDescription: 'ERR_CONNECTION_RESET', isMainFrame: true })
     }
+    waitOut()
     expect(d.notify).toHaveBeenCalledTimes(1)
   })
 
@@ -211,6 +226,7 @@ describe('🔴 ЛОВУШКА: карточка о недоступности н
       bindOzonBgWatcher(el, 'ozon', d)
       el.fire('did-fail-load', { errorCode: -101, isMainFrame: true, validatedURL: url })
     }
+    waitOut()
     expect(d.notify).toHaveBeenCalledTimes(1)
   })
 
@@ -221,6 +237,7 @@ describe('🔴 ЛОВУШКА: карточка о недоступности н
       bindOzonBgWatcher(el, 'ozon', d)
       el.fire('did-fail-load', { errorCode: -101, isMainFrame: true })
     }
+    waitOut()
     const lines = d.log.mock.calls.map(c => String(c[1]))
     expect(lines.filter(l => l.includes('показал пользователю сообщение'))).toHaveLength(1)
     const silent = lines.filter(l => l.includes('НЕ показываю'))
@@ -237,6 +254,7 @@ describe('🔴 ЛОВУШКА: карточка о недоступности н
     b.fire('did-fail-load', { errorCode: -101, isMainFrame: false })
     const c = makeEl(); bindOzonBgWatcher(c, 'ozon', { ...d, suppressFailNotice: true })
     c.fire('did-fail-load', { errorCode: -101, isMainFrame: true })
+    waitOut()
     expect(d.notify).not.toHaveBeenCalled()
   })
 
@@ -246,6 +264,7 @@ describe('🔴 ЛОВУШКА: карточка о недоступности н
     c.fire('did-fail-load', { errorCode: -101, isMainFrame: true })
     const q = makeEl(); bindOzonBgWatcher(q, 'ozon', d)
     q.fire('did-fail-load', { errorCode: -101, isMainFrame: true })
+    waitOut()
     expect(d.notify).toHaveBeenCalledTimes(1)
   })
 })

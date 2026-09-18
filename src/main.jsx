@@ -1,3 +1,8 @@
+// v1.2.473: единственный обычный импорт в этом файле - запись итога обращения к окну
+// переподключения. Файл крошечный и ничего не тянет за собой; остальные части программы
+// по-прежнему догружаются по требованию (см. ниже).
+import { reportBootNetOutcome } from '../shared/bootNetOutcome.js'
+
 const rendererBootT0 = window.__ccStartupT0 || performance.now()
 
 function bootLog(message) {
@@ -43,7 +48,9 @@ class ErrorBoundary extends React.Component {
   static getDerivedStateFromError(error) { return { error } }
   // v1.2.464: сбой ДОГРУЗКИ куска программы → поднимаем окно повтора из index.html.
   // React.lazy перехватывает отказ сам, поэтому до слушателя отказов он не доходит (см. LOAD_FAIL там).
-  componentDidCatch(error, info) { console.error('[BOOT] RENDER ERROR:', error.message, '\n', error.stack); try { window.__ccBootNet?.onLoadError?.(error?.message) } catch (_) {} }
+  // v1.2.473: ИТОГ обращения к окну переподключения пишется ВСЕГДА (см. shared/bootNetOutcome.js):
+  // 2026-09-16 красный экран был, а в журнале — ни одной строки про окно, и разобрать было нечем.
+  componentDidCatch(error, info) { console.error('[BOOT] RENDER ERROR:', error.message, '\n', error.stack); reportBootNetOutcome(window, error?.message, { where: 'корень' }) }
   render() {
     if (this.state.error) return <div style={{color:'#ff4444',padding:20,fontSize:13,whiteSpace:'pre-wrap',fontFamily:'monospace'}}>
       {'⚠ Ошибка рендера:\n' + this.state.error.message + '\n\nStack:\n' + (this.state.error.stack || '')}
@@ -68,6 +75,9 @@ function hideCcSplash() {
   const sp = document.getElementById('cc-splash')
   if (!sp) return
   sp.classList.add('cc-splash--hide')
+  // v1.2.472: окно повтора живёт ВНУТРИ заставки — вынимаем его, иначе при обрыве во время работы
+  // показать его будет негде и останется голый красный экран (жалоба 2026-09-16).
+  try { window.__ccBootNet?.detach?.() } catch (_) {}
   setTimeout(() => { try { sp.remove() } catch (_) {} }, 500)
 }
 // v1.2.452: приложение поднялось — гасим окно переподключения и обнуляем счётчик попыток

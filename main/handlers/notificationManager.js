@@ -3,7 +3,8 @@
 
 import { Notification } from 'electron'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
-import { decideNotifDedup } from './notifDedupDecision.js' // v1.2.318: кросс-детекторный дедуп веб-мессенджеров
+import { decideNotifDedup, findCardToImproveIcon } from './notifDedupDecision.js' // v1.2.318: кросс-детекторный дедуп веб-мессенджеров
+import { buildWebPhotoAlbum, WEB_PHOTO_MAX_WIDTH } from '../../shared/webPhotoAlbum.js' // v1.2.478: фото вложения веб-мессенджера в карточке
 
 let notifWin = null
 let notifItems = [] // [{id, messengerId, ...}]
@@ -42,6 +43,9 @@ function getNotifHtmlPath() {
   }
   return path.join(__dirname, '../main/notification.html')
 }
+
+/** Сколько ждать фото по ссылке ПЕРЕД показом карточки (v1.2.475). Дальше — показываем без него. */
+const ICON_PREWAIT_MS = 300
 
 function downloadIcon(url) {
   const { http, https, nativeImage } = _deps
@@ -82,16 +86,98 @@ function downloadIcon(url) {
   })
 }
 
-function updateNotificationIconLater(id, iconUrl) {
-  if (!iconUrl || (!iconUrl.startsWith('https://') && !iconUrl.startsWith('http://'))) return
-  downloadIcon(iconUrl).then((icon) => {
-    if (!icon || !notifWin || notifWin.isDestroyed()) return
-    const iconDataUrl = icon.toDataURL()
-    if (!iconDataUrl) return
-    notifWin.webContents.send('notif:update-icon', { id, iconDataUrl })
-  }).catch((e) => {
-    console.warn('[NotifManager] Icon async update error:', e.message)
+/**
+ * v1.2.475: КОРОТКОЕ ожидание фото перед показом карточки.
+ *
+ * Зачем: когда мессенджер даёт не саму картинку, а ССЫЛКУ на неё, карточка
+ * показывалась мгновенно с логотипом, а фото подставлялось уже потом — было видно,
+ * как логотип сменяется фотографией (жалоба 2026-09-17). Ждём совсем недолго: успели
+ * скачать — показываем сразу с фото, не успели — показываем как раньше, а фото
+ * догрузится в фоне (`updateNotificationIconLater`). Повторная загрузка бесплатна:
+ * скачанное лежит в кэше `iconCache`.
+ *
+ * @returns {Promise<string|null>} картинку строкой data:… либо null
+ */
+function waitIconBriefly(iconUrl, ms = ICON_PREWAIT_MS) {
+  if (!iconUrl || (!iconUrl.startsWith('https://') && !iconUrl.startsWith('http://'))) return Promise.resolve(null)
+  const started = Date.now()
+  return Promise.race([
+    downloadIcon(iconUrl).then((icon) => {
+      if (!icon) return null
+      try { return icon.isEmpty && icon.isEmpty() ? null : icon.toDataURL() } catch (_) { return null }
+    }).catch(() => null),
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ]).then((dataUrl) => {
+    console.log('[notif-icon] фото до показа: ' + (dataUrl ? 'успели за ' + (Date.now() - started) + ' мс' : 'не успели за ' + ms + ' мс — покажу без фото, догружу в фоне'))
+    return dataUrl
   })
+}
+
+// v1.2.474: каждая ветка ПИШЕТ в журнал. Раньше отказ загрузки был НЕМЫМ — карточка молча
+// оставалась с логотипом вместо фото, и понять почему было не по чему (разбор 2026-09-17).
+function updateNotificationIconLater(id, iconUrl) {
+  if (!iconUrl || (!iconUrl.startsWith('https://') && !iconUrl.startsWith('http://'))) {
+    if (iconUrl) console.log('[notif-icon] не качаю id=' + id + ': ссылка не http(s) — ' + String(iconUrl).slice(0, 40))
+    return
+  }
+  downloadIcon(iconUrl).then((icon) => {
+    if (!icon) { console.warn('[notif-icon] фото НЕ загрузилось id=' + id + ' url=' + String(iconUrl).slice(0, 60)); return }
+    if (!notifWin || notifWin.isDestroyed()) { console.warn('[notif-icon] фото загрузилось, но окна уведомлений уже нет id=' + id); return }
+    const iconDataUrl = icon.toDataURL()
+    if (!iconDataUrl) { console.warn('[notif-icon] фото загрузилось, но картинка пустая id=' + id); return }
+    const it = notifItems.find(x => x.id === id)
+    if (it) it.iconDataUrl = iconDataUrl        // чтобы закреп и повторные попытки знали: фото уже есть
+    notifWin.webContents.send('notif:update-icon', { id, iconDataUrl })
+    console.log('[notif-icon] фото подставлено в карточку id=' + id)
+  }).catch((e) => {
+    console.warn('[notif-icon] ошибка загрузки фото id=' + id + ': ' + e.message)
+  })
+}
+
+// v1.2.478: ФОТО ВЛОЖЕНИЯ для карточки веб-мессенджера (ВК).
+// Ссылку даёт перехватчик страницы; здесь качаем картинку ТЕМ ЖЕ проверенным способом, что и
+// фото отправителя (downloadIcon + общий кэш iconCache), ужимаем до ширины карточки и собираем
+// объект album (чистая сборка — shared/webPhotoAlbum.js).
+// Ждём недолго: карточка важнее картинки. Не успели/не скачалось — показываем карточку как
+// раньше (текст «📷 Фото»), а в журнал пишем причину. Оба исхода видны в журнале.
+const PHOTO_PREWAIT_MS = 900
+function loadWebPhotoAlbum(photoUrl, key) {
+  if (!photoUrl || (!photoUrl.startsWith('https://') && !photoUrl.startsWith('http://'))) return Promise.resolve(null)
+  const started = Date.now()
+  const loading = downloadIcon(photoUrl).then((img) => {
+    if (!img || img.isEmpty()) { console.log('[notif-photo] фото НЕ скачалось за ' + (Date.now() - started) + 'мс url=' + String(photoUrl).slice(0, 60)); return null }
+    // Ужимаем: в карточке плитка ~480px, тащить оригинал в окно незачем (payload раздувается).
+    const size = img.getSize()
+    const small = size.width > WEB_PHOTO_MAX_WIDTH ? img.resize({ width: WEB_PHOTO_MAX_WIDTH }) : img
+    const album = buildWebPhotoAlbum(small.toDataURL(), key)
+    console.log('[notif-photo] фото скачано за ' + (Date.now() - started) + 'мс ' + size.width + 'x' + size.height + (album ? '' : ' — но картинка пустая'))
+    return album
+  }).catch((e) => { console.warn('[notif-photo] сбой загрузки фото: ' + ((e && e.message) || e)); return null })
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), PHOTO_PREWAIT_MS))
+  return Promise.race([loading, timeout]).then((album) => {
+    console.log('[notif-photo] фото в карточке: ' + (album ? 'да' : 'нет — не успели за ' + PHOTO_PREWAIT_MS + 'мс или не скачалось'))
+    return album
+  })
+}
+
+/**
+ * v1.2.474: дослать фото в УЖЕ ПОКАЗАННУЮ карточку, когда вторую копию гасим как дубль.
+ * Жалоба 2026-09-17: двойная карточка МАКСа — на одной фото, на другой логотип. Склеив их,
+ * фото потеряли бы совсем; теперь оно доезжает до оставшейся карточки.
+ */
+function improveIconOnExistingCard({ messengerId, senderName, title, body, iconUrl, iconDataUrl }) {
+  if (!iconUrl && !iconDataUrl) return
+  const id = findCardToImproveIcon(notifItems, { messengerId, senderName, title, body })
+  if (!id) { console.log('[notif-icon] фото не дослал: карточки без фото под это сообщение нет'); return }
+  if (iconDataUrl) {
+    const it = notifItems.find(x => x.id === id)
+    if (it) it.iconDataUrl = iconDataUrl
+    if (notifWin && !notifWin.isDestroyed()) notifWin.webContents.send('notif:update-icon', { id, iconDataUrl })
+    console.log('[notif-icon] фото дослано в карточку id=' + id + ' (готовая картинка)')
+    return
+  }
+  console.log('[notif-icon] у карточки id=' + id + ' фото нет — качаю по ссылке')
+  updateNotificationIconLater(id, iconUrl)
 }
 
 function createNotifWindow() {
@@ -210,7 +296,7 @@ function repositionNotifWin() {
   if (!notifWin.isVisible()) notifWin.showInactive()
 }
 
-async function showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl: preDataUrl, color, accountColor, emoji, messengerName, messengerId, accountName, dismissMs: overrideDismissMs, senderName, chatTag, messageId, source, album }) {
+async function showCustomNotification({ title, body, fullBody, iconUrl, iconDataUrl: preDataUrl, color, accountColor, emoji, messengerName, messengerId, accountName, dismissMs: overrideDismissMs, senderName, chatTag, messageId, source, album, photoUrl }) {
   const { storage, screen } = _deps
   // Защита: пустой, невидимый или timestamp-only body → не показываем ribbon
   let cleanBody = (body || '').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim()
@@ -232,7 +318,16 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   // от двух детекторов; нативный Telegram (native_cc) не затронут.
   const dedupDecision = decideNotifDedup({ dedupScope, messengerId, senderName, title, normalizedBody, body, messageId, now, dedupMap: notifDedupMap })
   if (dedupDecision.duplicate) {
-    console.log('[NotifManager] skip dedup messenger=' + (messengerId || '') + ' key=' + dedupDecision.hitKey.slice(0, 90) + ' age=' + dedupDecision.age)
+    console.log('[NotifManager] skip dedup messenger=' + (messengerId || '') + ' key=' + dedupDecision.hitKey.slice(0, 90)
+      + ' age=' + dedupDecision.age + ' причина=' + (dedupDecision.reason || '?'))
+    // v1.2.474: одноразовый кросс-ключ MAX — съедаем, чтобы СЛЕДУЮЩЕЕ такое же сообщение
+    // снова показалось (иначе вернулся бы регресс v1.2.55 «два одинаковых подряд слиплись»).
+    if (dedupDecision.consumeKey) {
+      notifDedupMap.delete(dedupDecision.consumeKey)
+      console.log('[NotifManager] склейка MAX: пара найдена, ключ съеден — следующее такое же сообщение покажется')
+    }
+    // Гасим копию, но НЕ её фото: если у оставшейся карточки фото нет, дошлём.
+    improveIconOnExistingCard({ messengerId, senderName, title, body, iconUrl, iconDataUrl: preDataUrl })
     return null
   }
   for (const k of dedupDecision.keysToSet) notifDedupMap.set(k, now)
@@ -258,8 +353,9 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
 
   const id = String(++notifIdCounter)
 
-  // Аватарка: если уже data URL — используем напрямую, иначе скачиваем
-  const iconDataUrl = preDataUrl || null
+  // Аватарка: если уже data URL — используем напрямую; если ссылка — ждём её совсем недолго,
+  // чтобы карточка сразу вышла с фото, а не с логотипом (v1.2.475).
+  const iconDataUrl = preDataUrl || await waitIconBriefly(iconUrl)
 
   // Время показа уведомления из настроек (по умолчанию 5 сек, 0 = бесконечно)
   const settings = storage.get('settings', {})
@@ -281,7 +377,11 @@ async function showCustomNotification({ title, body, fullBody, iconUrl, iconData
   const stackKey = buildNotificationScope({ messengerId, senderName, title, chatTag, messageId: null })
   // v1.2.66: album — метка «живой карточки» альбома (media group). Проброс без
   // изменений: окно уведомления группирует части по album.id. null для обычных.
-  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, accountColor: accountColor || '', emoji, messengerName, messengerId, accountName: accountName || '', stackKey, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null, source: source || null, album: album || null }
+  // v1.2.478: у веб-мессенджеров альбома нет, зато может быть ссылка на фото вложения —
+  // качаем и делаем карточку из одной плитки. Готовый album (нативный Telegram) главнее:
+  // там настоящая медиа-группа с рабочей смотрелкой, подменять её нельзя.
+  const finalAlbum = album || (photoUrl ? await loadWebPhotoAlbum(photoUrl, (messengerId || 'web') + '_' + id) : null)
+  const data = { id, title, body, fullBody: fullBody || '', iconDataUrl, color, accountColor: accountColor || '', emoji, messengerName, messengerId, accountName: accountName || '', stackKey, dismissMs, expandedByDefault, grouping, showMessageTime, senderName: senderName || title || '', chatTag: chatTag || '', messageId: messageId || null, source: source || null, album: finalAlbum || null }
 
   // FIFO — удаляем старые из трекинга (v0.63.2: увеличен до 30, стэк может иметь 10+ сообщений)
   if (notifItems.length >= 30) {

@@ -3,6 +3,7 @@
 // дедуп → strip-sender → viewing-фильтр → звук + ribbon → preview + history + auto-reply.
 import { buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './messageProcessing.js'
 import { playNotificationSound } from './sound.js'
+import { stripVkAttachLabel } from '../../shared/vkPreviewText.js' // v1.2.477: ВК дописывает в конец подписи свою пометку вложения («Фотография», «Сообщение» у ответа) — чистим её; правила и ограничители там
 import { pickNotifIconDataUrl } from '../native/utils/messengerLogos.js' // v1.2.333/378/379/381: картинка уведомления (аватар отправителя в приоритете; логотип по типу из url — только если аватара нет)
 // v1.2.430: анти-завал уведомлений. Если из ОДНОГО чата >CHAT_FLOOD_MAX сообщений за CHAT_FLOOD_WINDOW —
 // это лавина (спам/очень активная группа): подавляем карточку+звук+автоответ, но счётчик непрочитанных РАСТЁТ
@@ -26,6 +27,9 @@ export function createHandleNewMessage(deps) {
   // Если extra нет → из MutationObserver (new-message IPC) — может быть ложным
   return function handleNewMessage(messengerId, text, extra) {
     if (!text) return
+    // v1.2.477: чистим пометку вложения ВК ДО дедупа и показа — иначе она едет и в карточку, и в превью, и в историю.
+    const vkClean = extra?.notifSource === 'vk-list' ? stripVkAttachLabel(text) : null
+    if (vkClean && vkClean.text !== text) { traceNotif('handle', 'info', messengerId, vkClean.text, `VK: снята пометка вложения "${vkClean.label}"${vkClean.photo ? ` (фото) ссылка-на-фото=${extra?.photoUrl ? 'есть' : 'НЕТ — ВК её в списке чатов не даёт'}` : ''}`); text = vkClean.text }
     traceNotif('handle', 'info', messengerId, text, `extra=${extra ? `{s:"${(extra.senderName||'').slice(0,20)}",icon:${!!(extra.iconUrl||extra.iconDataUrl)}}` : 'нет'}`)
 
     // v0.80.2: Sender clean + strip + own-msg
@@ -151,6 +155,7 @@ export function createHandleNewMessage(deps) {
         body: displayText.length > 100 ? displayText.slice(0, 97) + '…' : displayText,
         fullBody: displayText.length > 100 ? displayText : '',
         iconUrl: extra?.iconUrl || undefined,
+        photoUrl: extra?.photoUrl || undefined, // v1.2.478: фото вложения (ВК) — главный процесс скачает и положит в карточку
         // v1.2.381: аватар отправителя в приоритете (data-URL или URL на скачивание окном); логотип — только если аватара нет (см. pickNotifIconDataUrl). Регресс v1.2.378: логотип перекрывал аватар ВК.
         iconDataUrl: pickNotifIconDataUrl(extra, mInfo),
         color: mInfo?.color || '#2AABEE',

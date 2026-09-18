@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest'
 beforeAll(async () => {
   window.notifApi = { openPhoto: vi.fn(), openVideo: vi.fn() }
   await import('../../main/notification-helpers.js')
+  await import('../../main/notification-album.js') // v1.2.479: альбом вынесен в свой файл (оба кладут функции в один набор)
 })
 
 function makeAlbum(n, extra) {
@@ -246,5 +247,44 @@ describe('computeRendererPure — сигнал «в окне пусто» (v1.2.
 
   it('пустой вызов не падает и не считает «пусто» ошибочно', () => {
     expect(P()).toBe(true) // всё undefined → empty=true (0===0 && 0===0) — безопасно (окно и так закрыто)
+  })
+})
+
+// v1.2.478: фотография из веб-мессенджера (ВК) — «готовая» плитка.
+// Отличие от Telegram: картинка уже целиком у нас (догружать нечего), а полноразмерной
+// смотрелки нет — её умеет только TDLib по номеру сообщения.
+describe('фото из веб-мессенджера в карточке (v1.2.478)', () => {
+  const H = () => window.__ccNotifHelpers
+  const PNG = 'data:image/png;base64,iVBORw0KGgo='
+  const webAlbum = () => ({ id: 'single_web_custom_1_7', chatId: '', thumbs: [PNG], messageIds: [null], count: 1, page: 0, sharpThumbs: {} })
+
+  it('картинка видна сразу и без крутилки ожидания', () => {
+    const grid = H().renderAlbumGrid(webAlbum())
+    const tile = grid.querySelector('.album-tile')
+    expect(tile.className).not.toContain('loading')
+    expect(tile.querySelector('.sp-main').style.backgroundImage).toContain('data:image/png')
+  })
+
+  it('[!] ЛОВУШКА: клик по фото НЕ зовёт смотрелку и НЕ мешает переходу в чат', () => {
+    window.notifApi.openPhoto.mockClear()
+    const parent = document.createElement('div')
+    let bubbled = 0
+    parent.addEventListener('click', () => { bubbled++ })
+    parent.appendChild(H().renderAlbumGrid(webAlbum()))
+    parent.querySelector('.album-tile').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(window.notifApi.openPhoto).not.toHaveBeenCalled()
+    expect(bubbled).toBe(1) // клик дошёл до карточки → обычный переход в чат работает
+  })
+
+  it('[!] ЛОВУШКА: у Telegram всё по-прежнему — смотрелка открывается', () => {
+    window.notifApi.openPhoto.mockClear()
+    const grid = H().renderAlbumGrid(makeAlbum(2))
+    grid.querySelector('.album-tile').dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    expect(window.notifApi.openPhoto).toHaveBeenCalledTimes(1)
+  })
+
+  it('[!] ЛОВУШКА: одиночное фото Telegram крутилку ЖДЁТ (её сняли только веб-фото)', () => {
+    const grid = H().renderAlbumGrid(Object.assign(makeAlbum(1), { id: 'single_42' }))
+    expect(grid.querySelector('.album-tile').className).toContain('loading')
   })
 })

@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 
-const AV_SRC = fs.readFileSync('src/utils/webAvatarScript.js', 'utf8')
+const AV_SRC = fs.readFileSync('shared/webAvatarScript.js', 'utf8')
 const CONST_SRC = fs.readFileSync('src/constants.js', 'utf8')
 const DAY = 86400000
 
@@ -152,5 +152,39 @@ describe('Строки фикса на месте (сторож исходник
         expect(() => new Function(`return function(){ return ${body} }`)).not.toThrow()
       }
     }
+  })
+})
+
+// v1.2.478: почему фото аккаунта НЕ находится — раньше по журналу было не понять.
+// Реальный случай 2026-09-18 09:43:59: строка `auto|opened|grab=null` — Настройки открылись,
+// а фото не взяли, и ПОЧЕМУ (картинок нет / не догрузились / мелкие) журнал не сказал.
+// Эти проверки сторожат отчёт с числами и повтор попыток.
+describe('отчёт о поиске фото аккаунта', () => {
+  it('при неудаче отдаются ЧИСЛА, а не голое null', () => {
+    expect(AV_SRC).toMatch(/return \{ none: 1, seen: av\.length, loaded: nLoaded, maxMn: maxMn \}/)
+    expect(AV_SRC).toMatch(/blank: 1, seen: av\.length/)
+    expect(AV_SRC).toContain('нет-крупных: видел=')
+    expect(AV_SRC).toContain('все-заглушки: видел=')
+  })
+
+  it('[!] ЛОВУШКА: повтор попыток срабатывает и когда крупных НЕ нашли', () => {
+    // Старое условие цикла (!big2 || big2.blank) после отчёта с числами перестало бы повторять:
+    // у отчёта «нет крупных» поля blank нет → цикл вышел бы сразу и фото не дождались бы никогда.
+    expect(AV_SRC).toContain('rt < 5 && (!big2 || !big2.b)')
+    expect(AV_SRC).not.toContain('rt < 5 && (!big2 || big2.blank)')
+  })
+
+  it('круг поиска шире (тег avatar-element), но порог «крупная картинка» НЕ ослаблен', () => {
+    expect(AV_SRC).toContain('avatar-element img')
+    // порог оставлен: иначе вместо фото профиля взяли бы мелкую аватарку чата
+    expect(AV_SRC).toContain('if (mn <= 79) continue;')
+  })
+
+  it('счётчик крупнейшего размера считается ДО отбраковки по порогу', () => {
+    // иначе в журнале всегда было бы макс=0 и по нему нельзя понять, насколько мы промахнулись
+    const iMax = AV_SRC.indexOf('if (mn > maxMn) maxMn = Math.round(mn);')
+    const iCut = AV_SRC.indexOf('if (mn <= 79) continue;')
+    expect(iMax).toBeGreaterThan(0)
+    expect(iMax).toBeLessThan(iCut)
   })
 })
