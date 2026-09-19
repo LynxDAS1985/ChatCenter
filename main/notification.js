@@ -376,6 +376,11 @@
       const firstKey = items.keys().next().value
       forceRemoveItem(firstKey)
     }
+    // v1.2.488: «вечные» карточки — ещё и по РЕАЛЬНОЙ высоте (число выше считает карточку в 180 точек,
+    // раскрытая бывает до 420 → стопка втрое выше экрана). Правило и журнал — notification-helpers.js.
+    while (data.dismissMs === 0 && items.size > 1 && window.__ccNotifHelpers.shouldTrimOldest(container, window.screen)) {
+      forceRemoveItem(items.keys().next().value)
+    }
 
     const hasFullBody = data.fullBody && data.fullBody.length > (data.body || '').length
 

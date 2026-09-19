@@ -228,6 +228,64 @@ function installNotifMouseProbe() {
 }
 installNotifMouseProbe()
 
+// ── v1.2.488: предел «вечных» карточек по РЕАЛЬНОЙ высоте ──
+// Число MAX_PERSISTENT_ITEMS (notification.js) считает карточку в 180 точек. Раскрытая карточка
+// (настройка «раскрывать сразу») бывает 130…420 в зависимости от текста → 6 карточек = 1083…2516
+// точек при экране 796 (журнал 19.09.2026, дело notif-window-input-loss-case.md). Поэтому перед
+// добавлением новой считаем ФАКТИЧЕСКИЕ высоты карточек и убираем старейшие, пока стопка + место
+// под новую не влезет в экран. Число-предел остаётся внешним потолком (его требует страж
+// notificationWindowBounds.test.cjs) — это второй, более точный предел ВНУТРИ первого.
+// Касается ТОЛЬКО «вечных» (dismissMs=0): гаснущие сами уходят, их предел 6 не трогаем.
+const NOTIF_SCREEN_MARGIN_PX = 10 // как NOTIF_SCREEN_MARGIN в main/handlers/notifHandlers.js
+const PERSISTENT_MIN_KEEP = 1     // одну карточку оставляем всегда, даже если она сама выше экрана
+const NEW_CARD_FALLBACK_PX = 160  // место под новую, если оценить нечем (свёрнутая ≈141 по журналу)
+const CARD_GAP_PX = 4             // зазор между карточками — как в calcHeight
+
+/** Сколько точек main отводит окну: рабочая область экрана минус поля сверху и снизу. */
+function persistentBudgetPx(screen) {
+  const h = Number(screen && screen.availHeight) || 800
+  return h - NOTIF_SCREEN_MARGIN_PX * 2
+}
+
+/** Высоты карточек в окне от старой к новой; 0 (не отрисована) пропускаем. */
+function cardHeights(container) {
+  const out = []
+  for (const c of container.children) { const h = c.offsetHeight; if (h > 0) out.push(h) }
+  return out
+}
+
+/**
+ * ЧИСТО: сколько СТАРЕЙШИХ карточек убрать, чтобы стопка + место под новую влезли в budgetPx.
+ * Место под новую = высота самой свежей карточки (она того же вида), но не меньше NEW_CARD_FALLBACK_PX.
+ * @param {number[]} heights высоты от старой к новой
+ * @param {number} budgetPx сколько точек доступно
+ */
+function decidePersistentTrim(heights, budgetPx) {
+  if (!heights || heights.length === 0) return 0
+  const reserve = Math.max(NEW_CARD_FALLBACK_PX, heights[heights.length - 1]) + CARD_GAP_PX
+  let sum = heights.reduce((a, h) => a + h + CARD_GAP_PX, 0)
+  let drop = 0
+  while (heights.length - drop > PERSISTENT_MIN_KEEP && sum + reserve > budgetPx) {
+    sum -= heights[drop] + CARD_GAP_PX
+    drop++
+  }
+  return drop
+}
+
+/** Нужно ли убрать старейшую «вечную» карточку перед добавлением новой. Пишет в журнал, почему. */
+function shouldTrimOldest(container, screen) {
+  const heights = cardHeights(container)
+  const budget = persistentBudgetPx(screen)
+  const drop = decidePersistentTrim(heights, budget)
+  if (drop > 0) {
+    try {
+      window.notifApi.log('INFO', 'trim-by-height: карточек=' + heights.length + ' высота=' + heights.reduce((a, h) => a + h + CARD_GAP_PX, 0)
+        + ' бюджет=' + budget + ' → убираю старейшую (всего к снятию ' + drop + ')')
+    } catch (_) {}
+  }
+  return drop > 0
+}
+
 // v1.2.479: набор ДОПОЛНЯЕТСЯ, а не создаётся заново — рядом лежит notification-album.js,
 // который кладёт сюда же свои четыре функции; порядок подключения файлов при этом не важен.
-Object.assign(window.__ccNotifHelpers = window.__ccNotifHelpers || {}, { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, buildStackHeader, computeRendererPure, shouldAutoScroll, logCloseClick, logDismissSkip, logDomSnapshot, installNotifErrorReporter, installNotifMouseProbe })
+Object.assign(window.__ccNotifHelpers = window.__ccNotifHelpers || {}, { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, buildStackHeader, computeRendererPure, shouldAutoScroll, logCloseClick, logDismissSkip, logDomSnapshot, installNotifErrorReporter, installNotifMouseProbe, decidePersistentTrim, persistentBudgetPx, shouldTrimOldest })
