@@ -237,3 +237,65 @@ describe('useChatListResize — startResize / move / up', () => {
 // Ограничиваем САМО ЧИСЛО, а не вёрстку: «узкий вид» списка включается по этому же
 // числу, и потолок из вёрстки рассогласовал бы их (панель узкая, строки широкие).
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── v1.2.486 (TODO-40): окно меняют мышкой — ширина списка подстраивается на лету ──
+//
+// Раньше потолок «не шире 40% окна» считался только при загрузке настроек, при
+// перетаскивании и при сбросе: сузил окно во время работы — список оставался широким.
+// Главное, что проверяем: показанная ширина слушается окна, а СОХРАНЁННАЯ (желаемая)
+// при этом не портится — иначе ширина пользователя терялась бы после каждого сужения.
+describe('ширина списка чатов слушается размера окна (TODO-40)', () => {
+  beforeEach(() => {
+    globalThis.window.api = { invoke: vi.fn(() => Promise.resolve({ ok: true })) }
+  })
+
+  function resizeWindowTo(px) {
+    act(() => {
+      window.innerWidth = px
+      window.dispatchEvent(new Event('resize'))
+    })
+  }
+
+  it('сузили окно → список ужимается до 40% окна', () => {
+    const { result } = setupHook()
+    result.current.chatListWidthRef.current = 340
+    resizeWindowTo(700) // 40% = 280
+    expect(result.current.chatListWidthRef.current).toBe(280)
+    expect(result.current.chatListRef.current.style.width).toBe('280px')
+  })
+
+  it('[!] ЛОВУШКА: сохранённая ширина при этом НЕ портится', () => {
+    const { result } = setupHook()
+    resizeWindowTo(700)
+    expect(result.current.settingsRef.current.chatListWidth).toBe(340) // осталась желаемая
+    expect(window.api.invoke).not.toHaveBeenCalled()                   // в настройки не писали
+  })
+
+  it('вернули окно широким → список сам вернулся к своей ширине', () => {
+    const { result } = setupHook()
+    resizeWindowTo(700)
+    expect(result.current.chatListWidthRef.current).toBe(280)
+    resizeWindowTo(WIDE)
+    expect(result.current.chatListWidthRef.current).toBe(340) // из сохранённой, а не 280
+  })
+
+  it('[!] ЛОВУШКА: во время перетаскивания разделителя окно не вмешивается', () => {
+    const { result } = setupHook()
+    result.current.isResizingRef.current = true
+    result.current.chatListWidthRef.current = 500
+    resizeWindowTo(700)
+    expect(result.current.chatListWidthRef.current).toBe(500) // тащит человек — не трогаем
+  })
+
+  it('«узкий вид» пересчитывается после того, как окно перестали тянуть', () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = setupHook()
+      result.current.settingsRef.current.chatListWidth = 600
+      resizeWindowTo(300) // 40% = 120 → это уже узкий вид (порог 128)
+      expect(result.current.chatListWidthRef.current).toBe(120)
+      act(() => { vi.advanceTimersByTime(200) })
+      expect(result.current.chatListWidth).toBe(120) // состояние догнало → вид переключится
+    } finally { vi.useRealTimers() }
+  })
+})

@@ -15,7 +15,7 @@
 //
 // Double-click на handle → reset к default (340px).
 
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 
 // v1.2.460: чистые расчёты (границы, потолок от окна, порог «узкого вида») вынесены в
 // shared/chatListWidth.js — файл стоял 144/150, а у интерфейса оставалось 4 строки общей
@@ -97,6 +97,39 @@ export default function useChatListResize({
       try { window.api?.invoke('settings:save', updated) } catch (_) {}
     }
   }, [chatListWidthRef, chatListRef, settingsRef, setChatListWidth])
+
+  // ── v1.2.486 (TODO-40): окно меняют мышкой — ширина списка чатов подстраивается СРАЗУ ──
+  //
+  // Было: потолок «не шире 40% окна» считался только при загрузке настроек, при
+  // перетаскивании и при сбросе. Сузил окно во время работы — список оставался прежней
+  // ширины и съедал место у самой переписки до следующего запуска.
+  //
+  // 🔴 ПОЧЕМУ НЕ ПРАВИЛОМ ВЁРСТКИ (как у панели ИИ): «узкий вид» списка (одни аватарки)
+  // решается по ЭТОМУ ЖЕ числу. Уменьши мы только показанную ширину — панель стала бы
+  // узкой, а строки внутри рисовались бы широкими и обрезались. Поэтому правим число.
+  //
+  // 🔴 ПОЧЕМУ НЕ ТРОГАЕМ СОХРАНЁННОЕ: считаем ПОКАЗАННУЮ ширину от ЖЕЛАЕМОЙ (из настроек),
+  // а в настройки ничего не пишем. Сузил окно — список ужался; вернул окно — список сам
+  // вернулся к своей ширине. Если бы записали ужатое число в настройки, ширина пользователя
+  // терялась бы навсегда после каждого сужения окна.
+  useEffect(() => {
+    let settle = null
+    const apply = () => {
+      if (isResizingRef.current) return // тащат разделитель — там свой расчёт
+      const saved = Number(settingsRef?.current?.chatListWidth)
+      const desired = Number.isFinite(saved) ? saved : chatListWidthRef.current
+      const next = clampChatListWidth(desired)
+      if (next === chatListWidthRef.current) return
+      chatListWidthRef.current = next
+      if (chatListRef.current) chatListRef.current.style.width = `${next}px`
+      // Ширину на экране меняем сразу, а React-состояние (от него зависит «узкий вид») —
+      // когда тянуть окно перестали: иначе перерисовка шла бы на каждый пиксель.
+      clearTimeout(settle)
+      settle = setTimeout(() => setChatListWidth(next), 120)
+    }
+    window.addEventListener('resize', apply)
+    return () => { window.removeEventListener('resize', apply); clearTimeout(settle) }
+  }, [isResizingRef, chatListWidthRef, chatListRef, settingsRef, setChatListWidth])
 
   return { startResize, onPointerMove, onPointerUp, resetToDefault }
 }

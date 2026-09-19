@@ -127,6 +127,85 @@ function shouldAutoScroll({ scrollHeight, scrollTop, clientHeight } = {}) {
   return ((Number(scrollHeight) || 0) - (Number(scrollTop) || 0) - (Number(clientHeight) || 0)) <= 90
 }
 
+// ── v1.2.486: ДИАГНОСТИКА ЖАЛОБЫ «крестик у карточки не реагирует» ──
+//
+// ЧТО ИЗВЕСТНО ТОЧНО (по журналу chatcenter.log за 19.09.2026):
+//   • 18 сентября карточки закрывались — 25 записей «dismiss start … fromMain=false»;
+//   • 19 сентября за ВЕСЬ день (12:22 → 13:58, стопка из 6 карточек) — НИ ОДНОЙ такой
+//     записи, при этом «items=6 containerChildren=6» не менялось ни разу;
+//   • после перезапуска в 14:02 первое же закрытие прошло («dismiss start id=1»).
+// Значит dismissItem даже не начинался. Отличить «нажатие не дошло до кнопки» от
+// «кнопка сработала, а функция вышла сразу» было НЕЧЕМ: оба ранних выхода
+// (!item, item.dismissing) стоят ДО первой записи в журнал.
+//
+// Ниже три записи, которых раньше не было. Поведение они не меняют — только
+// рассказывают, что произошло.
+
+// Нажали крестик: дошло ли нажатие и в каком состоянии карточка и окно.
+// Прокрутка нужна, потому что стопка бывает выше окна (1083 точки при окне 796) —
+// тогда часть карточек физически за краем.
+function logCloseClick(id, items, container) {
+  try {
+    const item = items && items.get ? items.get(id) : null
+    window.notifApi.log('INFO', 'close-click id=' + id
+      + ' естьВСписке=' + !!item
+      + ' ужеЗакрывается=' + !!(item && item.dismissing)
+      + ' карточек=' + (items && items.size) + ' вОкне=' + (container ? container.children.length : '?')
+      + ' прокрутка=' + (container ? Math.round(container.scrollTop) + '/' + container.clientHeight + '/' + container.scrollHeight : '?'))
+  } catch (_) {}
+}
+
+// Закрытие отказалось начинаться. Раньше это был молчаливый выход без следа.
+function logDismissSkip(id, reason) {
+  try { window.notifApi.log('WARN', 'закрытие НЕ началось id=' + id + ' причина=' + reason) } catch (_) {}
+}
+
+// v1.2.486: падения кода ВНУТРИ окна уведомлений раньше не попадали в журнал вообще
+// (console.* окна туда не пишет, перехвата ошибок не было). Если обработчик кнопки
+// не навесился из-за ошибки выше по коду — теперь это будет видно строкой в журнале.
+function installNotifErrorReporter() {
+  if (window.__ccNotifErrHooked) return
+  window.__ccNotifErrHooked = true
+  window.addEventListener('error', (e) => {
+    try {
+      window.notifApi.log('ERROR', 'ОШИБКА В ОКНЕ УВЕДОМЛЕНИЙ: ' + String((e && e.message) || '?').slice(0, 200)
+        + ' @' + String((e && e.filename) || '?').split('/').pop() + ':' + ((e && e.lineno) || 0))
+    } catch (_) {}
+  })
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e && e.reason
+    try { window.notifApi.log('ERROR', 'ОШИБКА В ОКНЕ УВЕДОМЛЕНИЙ (обещание): ' + String((r && r.message) || r || '?').slice(0, 200)) } catch (_) {}
+  })
+}
+
+// v1.2.486: подробный снимок карточек в окне — перенесён СЮДА из notification.js
+// (тот стоял 729/730, и без переноса не влезала ни одна новая строка).
+// Показывает, почему карточка не считается видимой: прозрачность, «сквозная» для мыши,
+// незаконченный выезд.
+function logDomSnapshot(container) {
+  try {
+    const details = []
+    for (let i = 0; i < container.children.length; i++) {
+      const c = container.children[i]
+      const cs = c.style
+      let computedTf = 'none'
+      try { computedTf = window.getComputedStyle(c).transform || 'none' } catch (_) {}
+      details.push('[' + i + ' id=' + ((c.dataset && c.dataset.id) || '?') +
+        ' h=' + c.offsetHeight +
+        ' op=' + (cs.opacity || '1') +
+        ' pe=' + (cs.pointerEvents || 'auto') +
+        ' inlineTf=' + (cs.transform || 'none').replace(/\s+/g, '') +
+        ' realTf=' + computedTf.replace(/\s+/g, '').slice(0, 40) +
+        ' slid=' + ((c.dataset && c.dataset.slideInDone) || '?') + ']')
+    }
+    if (details.length) window.notifApi.log('TRACE', 'DOM snapshot ' + details.join(' '))
+  } catch (_) {}
+}
+
+// Ставим перехват сразу: этот файл подключается ПЕРВЫМ (notification.html), до
+// notification.js — значит поймаем и ошибку при его загрузке.
+installNotifErrorReporter()
+
 // v1.2.479: набор ДОПОЛНЯЕТСЯ, а не создаётся заново — рядом лежит notification-album.js,
 // который кладёт сюда же свои четыре функции; порядок подключения файлов при этом не важен.
-Object.assign(window.__ccNotifHelpers = window.__ccNotifHelpers || {}, { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, buildStackHeader, computeRendererPure, shouldAutoScroll })
+Object.assign(window.__ccNotifHelpers = window.__ccNotifHelpers || {}, { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, buildStackHeader, computeRendererPure, shouldAutoScroll, logCloseClick, logDismissSkip, logDomSnapshot, installNotifErrorReporter })

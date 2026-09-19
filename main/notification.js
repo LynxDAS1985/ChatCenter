@@ -39,27 +39,9 @@
       if (heartbeat) { window.notifApi.resize(h, { rendererPure: window.__ccNotifHelpers.computeRendererPure({ itemsCount, containerCount }), heartbeat: true }); return }
       // v0.89.20: diagnostic — что ИМЕННО уходит в main для setBounds.
       try { window.notifApi.log('INFO', 'reportHeight→resize(' + h + ') items=' + itemsCount + ' containerChildren=' + containerCount) } catch (_) {}
-      // v0.89.21: ДЕТАЛЬНЫЙ снэпшот ВСЕХ DOM-элементов для диагностики stale state.
-      // v0.89.23: добавлен computed transform (CSS animation НЕ пишется в
-      // el.style.transform — только в getComputedStyle, см. MDN).
-      // Также добавлен slideInDone флаг — пропускается ли элемент в calcHeight.
-      try {
-        const details = []
-        for (let i = 0; i < container.children.length; i++) {
-          const c = container.children[i]
-          const cs = c.style
-          let computedTf = 'none'
-          try { computedTf = window.getComputedStyle(c).transform || 'none' } catch (_) {}
-          details.push('[' + i + ' id=' + (c.dataset?.id || '?') +
-            ' h=' + c.offsetHeight +
-            ' op=' + (cs.opacity || '1') +
-            ' pe=' + (cs.pointerEvents || 'auto') +
-            ' inlineTf=' + (cs.transform || 'none').replace(/\s+/g, '') +
-            ' realTf=' + computedTf.replace(/\s+/g, '').slice(0, 40) +
-            ' slid=' + (c.dataset?.slideInDone || '?') + ']')
-        }
-        if (details.length) window.notifApi.log('TRACE', 'DOM snapshot ' + details.join(' '))
-      } catch (_) {}
+      // v1.2.486: подробный снимок карточек переехал в notification-helpers.js —
+      // этот файл стоял 729/730, и место понадобилось под записи о нажатии крестика.
+      window.__ccNotifHelpers.logDomSnapshot(container)
       // v0.89.27: rendererPure — terminal signal для main (ловушка #26).
       // v1.2.128: считаем через чистую computeRendererPure (тестируется). dismissFinal →
       // «пусто» также по видимой высоте (h===0), см. notification-helpers.js.
@@ -99,8 +81,10 @@
   // ── v0.60.5: Dismiss через inline transitions — БЕЗ мигания ──
   function dismissItem(id, fromMain) {
     const item = items.get(id)
-    if (!item) return
-    if (item.dismissing) return
+    // v1.2.486: раньше оба отказа были молчаливыми — по журналу нельзя было понять,
+    // почему нажатие «ничего не сделало». См. logDismissSkip в notification-helpers.js.
+    if (!item) { window.__ccNotifHelpers.logDismissSkip(id, 'карточки нет в списке'); return }
+    if (item.dismissing) { window.__ccNotifHelpers.logDismissSkip(id, 'уже закрывается'); return }
     item.dismissing = true
     clearTimeout(item.timer)
     if (hoveredItemId === id) hoveredItemId = null
@@ -583,6 +567,7 @@
     closeBtn.textContent = '\u00d7'
     closeBtn.title = '\u0417\u0430\u043A\u0440\u044B\u0442\u044C'
     closeBtn.addEventListener('click', (e) => {
+      window.__ccNotifHelpers.logCloseClick(data.id, items, container) // v1.2.486: дошло ли нажатие
       e.stopPropagation()
       dismissItem(data.id, false)
     })
