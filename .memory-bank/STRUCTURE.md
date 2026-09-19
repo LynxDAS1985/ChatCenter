@@ -23,15 +23,15 @@
 | `code-todo.md` | 76 КБ |
 | `coding-rules.md` | 9 КБ |
 | `common-mistakes.md` | 7 КБ |
-| `decisions.md` | 100 КБ |
+| `decisions.md` | 83 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 97 КБ |
+| `features.md` | 89 КБ |
 | `group-topic-investigation.md` | 15 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
 | `messengers.md` | 16 КБ |
 | `native-mode-plan.md` | 30 КБ |
-| `notif-window-input-loss-case.md` | 24 КБ |
+| `notif-window-input-loss-case.md` | 25 КБ |
 | `notifications-debug.md` | 51 КБ |
 | `phase-2-visual-test.md` | 16 КБ |
 | `prodlike-webview-investigation.md` | 4 КБ |
@@ -54,7 +54,7 @@
 | `mistakes/electron-core.md` | 80 КБ |
 | `mistakes/native-scroll-unread.md` | 131 КБ |
 | `mistakes/notifications-ribbon-history.md` | 139 КБ |
-| `mistakes/notifications-ribbon.md` | 112 КБ |
+| `mistakes/notifications-ribbon.md` | 115 КБ |
 | `mistakes/outgoing-two-cases.md` | 14 КБ |
 | `mistakes/tdlib-forum.md` | 19 КБ |
 | `mistakes/tdlib-video-player.md` | 31 КБ |
@@ -71,7 +71,7 @@
 | `archive/2026-05-connection-health-plan.md` | 53 КБ |
 | `archive/2026-06-notifications-ribbon-max-title-control.md` | 6 КБ |
 | `archive/2026-07-notifications-ribbon-max-title-fallback-v1.2.24-27.md` | 16 КБ |
-| `archive/README.md` | 75 КБ |
+| `archive/README.md` | 77 КБ |
 | `archive/audit-2026-05-26-scroll-architecture-CLOSED.md` | 19 КБ |
 | `archive/changelog-v0.87.56-68.md` | 18 КБ |
 | `archive/code-todo-journal-and-closed.md` | 32 КБ |
@@ -84,6 +84,7 @@
 | `archive/decisions-adr-040-041.md` | 11 КБ |
 | `archive/decisions-adr-042-045.md` | 30 КБ |
 | `archive/decisions-adr-046-052.md` | 33 КБ |
+| `archive/decisions-adr-053-057.md` | 21 КБ |
 | `archive/features-pre-v0.87.md` | 251 КБ |
 | `archive/features-v0.87-early.md` | 126 КБ |
 | `archive/features-v0.87.106-114.md` | 22 КБ |
@@ -207,6 +208,7 @@
 | `archive/features-v1.2.470-473.md` | 32 КБ |
 | `archive/features-v1.2.474-476.md` | 23 КБ |
 | `archive/features-v1.2.477-479.md` | 30 КБ |
+| `archive/features-v1.2.480-482.md` | 20 КБ |
 | `archive/features-v1.2.59-73.md` | 49 КБ |
 | `archive/features-v1.2.74-89.md` | 40 КБ |
 | `archive/features-v1.2.90-100.md` | 29 КБ |

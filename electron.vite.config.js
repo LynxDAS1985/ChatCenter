@@ -24,6 +24,8 @@ function copyStaticPlugin() {
         { from: 'main/notification-helpers.js', to: 'out/main/notification-helpers.js' },
         // v1.2.479: альбом карточки вынесен из notification-helpers.js (тот упёрся в потолок 300 строк)
         { from: 'main/notification-album.js', to: 'out/main/notification-album.js' },
+        // v1.2.489: предел «вечных» карточек по реальной высоте — свой файл (helpers стоял 291/300)
+        { from: 'main/notification-limits.js', to: 'out/main/notification-limits.js' },
         // v1.2.222: пузырь «↓ N новых» — независимый модуль
         { from: 'main/notificationNewPill.js', to: 'out/main/notificationNewPill.js' },
         // v0.87.97: pin-dock.html разбит на html/css/js

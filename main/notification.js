@@ -377,7 +377,7 @@
       forceRemoveItem(firstKey)
     }
     // v1.2.488: «вечные» карточки — ещё и по РЕАЛЬНОЙ высоте (число выше считает карточку в 180 точек,
-    // раскрытая бывает до 420 → стопка втрое выше экрана). Правило и журнал — notification-helpers.js.
+    // раскрытая бывает до 420 → стопка втрое выше экрана). Правило и журнал — notification-limits.js.
     while (data.dismissMs === 0 && items.size > 1 && window.__ccNotifHelpers.shouldTrimOldest(container, window.screen)) {
       forceRemoveItem(items.keys().next().value)
     }
