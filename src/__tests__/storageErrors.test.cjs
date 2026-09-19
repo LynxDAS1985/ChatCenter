@@ -69,7 +69,7 @@ test('JSON.parse вызовов (' + parseMatches.length + ') <= try-catch бл�
 // ═══════════════════════════════════════════════════════════════════════
 console.log('\n── Защита сессий (persist): ──')
 
-var constantsCode = fs.readFileSync('src/constants.js', 'utf8')
+var constantsCode = fs.readFileSync('shared/messengerPresets.js', 'utf8')
 var sessionCode = fs.existsSync('main/utils/sessionSetup.js') ? fs.readFileSync('main/utils/sessionSetup.js', 'utf8') : ''
 var appCode = fs.readFileSync('src/App.jsx', 'utf8')
 

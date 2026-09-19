@@ -23,7 +23,7 @@ export function detectMessengerType(url) {
 
 // ── Спам-фильтр сообщений ────────────────────────────────────────────────
 // v0.79.4: Паттерны из shared/spamPatterns.json (общие для preload + renderer)
-import spamPatternsRaw from '../../shared/spamPatterns.json'
+import spamPatternsRaw from './spamPatterns.json'
 
 // Компилируем regex один раз при загрузке модуля
 const SP = {}

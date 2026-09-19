@@ -17,7 +17,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 
 const AV_SRC = fs.readFileSync('shared/webAvatarScript.js', 'utf8')
-const CONST_SRC = fs.readFileSync('src/constants.js', 'utf8')
+const CONST_SRC = fs.readFileSync('shared/messengerPresets.js', 'utf8')
 const DAY = 86400000
 
 /** Достаём НАСТОЯЩУЮ функцию проверки конверта из впрыскиваемого скрипта */

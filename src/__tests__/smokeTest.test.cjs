@@ -97,7 +97,7 @@ test('app:log IPC handler (renderer → chatcenter.log)', function() {
 
 // v0.85.8: Telegram accountScript использует user_auth.id (не pFlags.self)
 console.log('\n── AccountScript: ──')
-var constantsCode = fs.readFileSync('src/constants.js', 'utf8')
+var constantsCode = fs.readFileSync('shared/messengerPresets.js', 'utf8')
 test('TG accountScript: читает user_auth из localStorage', function() {
   assert(constantsCode.includes('user_auth'), 'accountScript должен читать user_auth для точного ID аккаунта')
 })

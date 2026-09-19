@@ -1,6 +1,6 @@
 // v1.2.321: Ozon добавлен в каталог «Добавить → веб» (DEFAULT_MESSENGERS) + брендинг.
 import { describe, it, expect } from 'vitest'
-import { DEFAULT_MESSENGERS } from '../constants.js'
+import { DEFAULT_MESSENGERS } from '../../shared/messengerPresets.js'
 import { getMessengerEmoji, getMessengerName, getMessengerColor } from '../native/utils/messengerBranding.js'
 
 describe('Ozon в каталоге веб-мессенджеров (v1.2.321)', () => {

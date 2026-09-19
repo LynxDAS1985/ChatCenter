@@ -1,6 +1,6 @@
 // v0.41.0 — Панель настроек: preview ribbon при изменении ползунка, бесконечный режим
 import { useEffect, useRef, useState } from 'react'
-import { DEFAULT_MESSENGERS } from '../constants.js'
+import { DEFAULT_MESSENGERS } from '../../shared/messengerPresets.js'
 
 function Toggle({ value, onChange, color = '#2AABEE' }) {
   return (

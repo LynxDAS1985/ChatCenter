@@ -8,7 +8,7 @@ import {
   listRules, createRule, updateRule, deleteRule, toggleRule,
 } from '../stores/autoReplyRulesStore.js'
 // v1.2.5: импорт/экспорт правил.
-import { exportRulesToJson, parseImportJson } from '../utils/rulesImportExport.js'
+import { exportRulesToJson, parseImportJson } from '../../shared/rulesImportExport.js'
 
 const ACTION_LABELS = {
   ai_reply: '🤖 AI отвечает',

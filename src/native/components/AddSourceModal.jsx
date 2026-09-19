@@ -8,7 +8,7 @@
 // v1.2.266 — 10 улучшений: шаги-точки, ⚡ в заголовке, поиск, статус «подключён», подсказка,
 //            ховер бренд-цветом, фокус-кольцо, счётчик «N доступно», «скоро», плавное появление.
 import { useState, useEffect, useRef } from 'react'
-import { DEFAULT_MESSENGERS } from '../../constants.js'
+import { DEFAULT_MESSENGERS } from '../../../shared/messengerPresets.js'
 import MessengerIcon from './MessengerIcon.jsx' // настоящий логотип (Telegram — картинка), не эмодзи
 
 // По API сейчас поддержан только Telegram; остальные значки — «скоро» (заблокированы).

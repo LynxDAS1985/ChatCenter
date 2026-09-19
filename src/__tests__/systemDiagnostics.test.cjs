@@ -2,7 +2,7 @@
 const { pathToFileURL } = require('url')
 
 async function main() {
-  const mod = await import(pathToFileURL('src/utils/systemDiagnostics.js').href)
+  const mod = await import(pathToFileURL('shared/diagnosticsAnalysis.js').href)
 
   const log = [
     '[2026-06-19 15:00:00] [INFO] [NotifManager] custom-notify messenger=max sender=Ivan text=hello token=abc123',

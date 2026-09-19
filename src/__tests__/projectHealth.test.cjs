@@ -147,8 +147,8 @@ test('Нет DEAD_DELETE_ME', function() { assert(!appCode.includes('DEAD_DELETE
 // ── Структура проекта ──
 console.log('\\n── Структура: ──')
 test('shared/spamPatterns.json существует', function() { assert(fs.existsSync('shared/spamPatterns.json')) })
-test('src/utils/messengerConfigs.js существует', function() { assert(fs.existsSync('src/utils/messengerConfigs.js')) })
-test('src/utils/messageProcessing.js существует', function() { assert(fs.existsSync('src/utils/messageProcessing.js')) })
+test('shared/messengerConfigs.js существует', function() { assert(fs.existsSync('shared/messengerConfigs.js')) })
+test('shared/messageProcessing.js существует', function() { assert(fs.existsSync('shared/messageProcessing.js')) })
 test('src/utils/sound.js существует', function() { assert(fs.existsSync('src/utils/sound.js')) })
 test('src/utils/navigateToChat.js существует', function() { assert(fs.existsSync('src/utils/navigateToChat.js')) })
 test('main/utils/overlayIcon.js существует', function() { assert(fs.existsSync('main/utils/overlayIcon.js')) })

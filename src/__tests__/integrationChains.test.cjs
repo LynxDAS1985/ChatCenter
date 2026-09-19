@@ -29,7 +29,7 @@ console.log('\\n🧪 Интеграционные тесты — модульн�
 // ═══════════════════════════════════════════════════════════════════════
 console.log('── Цепочка: URL → detectType → config: ──')
 
-var configCode = fs.readFileSync('src/utils/messengerConfigs.js', 'utf8')
+var configCode = fs.readFileSync('shared/messengerConfigs.js', 'utf8')
 // v0.87.77: navigateToChat.js разбит на роутер + navigators/. Склеиваем
 // все файлы для проверки паттернов (.chatlist-chat / ConvoListItem
 // теперь в navigators/telegramNavigate.js и navigators/vkNavigate.js).

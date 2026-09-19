@@ -9,7 +9,7 @@
 //
 // Проверки берут НАСТОЯЩУЮ функцию из кода (не копию) — копии расходятся с кодом молча.
 import { describe, it, expect } from 'vitest'
-import { cleanSenderStatus, buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring } from '../utils/messageProcessing.js'
+import { cleanSenderStatus, buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring } from '../../shared/messageProcessing.js'
 
 const DOUBLED = 'Бузов Алексей Николаевич Бузов Алексей Николаевич'
 const CLEAN = 'Бузов Алексей Николаевич'

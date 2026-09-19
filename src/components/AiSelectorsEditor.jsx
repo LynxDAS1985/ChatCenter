@@ -16,7 +16,7 @@
 // Пустые поля = используются defaults из hook. Можно переопределить только нужные.
 
 import { useState, useEffect } from 'react'
-import { getDefaultSelectors, listProviderIds, getProviderConfig } from '../utils/aiWebviewConfigs.js'
+import { getDefaultSelectors, listProviderIds, getProviderConfig } from '../../shared/aiWebviewConfigs.js'
 
 const SELECTOR_FIELDS = [
   { key: 'input',                label: 'Поле ввода (input/textarea)',  hint: 'CSS селектор для textarea или contenteditable div' },

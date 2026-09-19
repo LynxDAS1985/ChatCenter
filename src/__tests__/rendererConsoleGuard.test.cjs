@@ -25,7 +25,7 @@ var path = require('node:path')
 var BASELINE = {
   // Legacy: эти файлы используют console.* — постепенно перевести в app:log.
   // Каждое значение = МАКСИМУМ допустимый count. Уменьшение OK, рост = fail.
-  'src/constants.js':                       8,
+  'shared/messengerPresets.js':                       8,
   'src/native/components/VideoTile.jsx':    6,
   'src/hooks/useNotifyDispatcher.js':       5,
   // v1.2.131: 4→6. Все console.* тут — ВНУТРИ строк-скриптов, впрыскиваемых в WebView
@@ -38,13 +38,13 @@ var BASELINE = {
   // не подняли → любой следующий коммит с правкой src/ падал бы на pre-commit.
   // Все 10 console.* тут — ВНУТРИ строк, впрыскиваемых в чужую страницу мессенджера:
   // нашего window.api там нет, консоль-мост (consoleMessageParser) — единственный канал.
-  'src/utils/webviewDiagnostics.js':        11, // v1.2.484: +1 — короткая сводка, когда снимок ВК не влез в потолок
+  'shared/webviewDiagnostics.js':           11, // v1.2.484: +1 — короткая сводка, когда снимок ВК не влез в потолок
   'src/hooks/useWebViewLifecycle.js':       3,
   'src/main.jsx':                           2,
   'src/components/NotifLogModal.jsx':       2,
   // v1.2.447: webviewSetup.js — единственная console.* уехала в shared/webviewPageFixups.js
   // и там переписана на запись в журнал приложения (app:log). Запись baseline удалена.
-  'src/utils/messengerConfigs.js':          1,
+  'shared/messengerConfigs.js':          1,
   'src/utils/consoleMessageHandler.js':     1,
   'shared/tools/toolRegistry.js':           1,   // v1.2.448: переехал из src/shared/
   // ── shared/: console.* тут ВНУТРИ СТРОК, которые впрыскиваются в ЧУЖУЮ страницу.

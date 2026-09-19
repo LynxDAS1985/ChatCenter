@@ -2,7 +2,7 @@
 // Оставлены только: health-check раз в 30 сек (для диагностики) + warm-up вкладок (безопасен, не мешает).
 // Смотри .memory-bank/common-mistakes.md Ловушка 64 — перечень всего что пробовали и почему не помогло.
 import { useEffect, useRef } from 'react'
-import { checkBlackAndRepaint, WATCHDOG_INTERVAL_MS } from '../utils/webviewBlackWatchdog.js' // v1.2.431: сторож чёрного экрана (фото кадра → 1px-пинок перерисовки)
+import { checkBlackAndRepaint, WATCHDOG_INTERVAL_MS } from '../../shared/webviewBlackWatchdog.js' // v1.2.431: сторож чёрного экрана (фото кадра → 1px-пинок перерисовки)
 
 const HEALTH_SCRIPT = `(function(){
   try {

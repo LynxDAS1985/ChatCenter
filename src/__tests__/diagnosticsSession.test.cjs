@@ -2,8 +2,8 @@ const assert = require('assert')
 const { pathToFileURL } = require('url')
 
 async function main() {
-  const mod = await import(pathToFileURL('src/utils/diagnosticsSession.js').href)
-  const targetsMod = await import(pathToFileURL('src/utils/diagnosticsTargets.js').href)
+  const mod = await import(pathToFileURL('shared/diagnosticsSession.js').href)
+  const targetsMod = await import(pathToFileURL('shared/diagnosticsTargets.js').href)
 
   let s = mod.createInitialDiagnosticsSession()
   assert.strictEqual(s.active, false)

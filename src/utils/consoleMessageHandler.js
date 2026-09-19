@@ -1,6 +1,6 @@
 // v0.84.3: Extracted from webviewSetup.js — console-message event handler
 // Contains: __CC_BADGE_BLOCKED__, __CC_ACCOUNT__, __CC_MSG__ (with DOM enrichment), __CC_NOTIF__ (with blob icon conversion)
-import { markHealthOk } from './connectionHealth.js'
+import { markHealthOk } from '../../shared/connectionHealth.js'
 import { enrichWaitMsFor } from '../../shared/notifEnrichWait.js'
 import { applySenderAvatarFallback, rememberSenderAvatar } from './maxTitleFallback.js'
 

@@ -12,7 +12,7 @@ import {
   markHealthByDuration,
   markHealthError,
   markHealthPending,
-} from '../../utils/connectionHealth.js'
+} from '../../../shared/connectionHealth.js'
 
 // v1.1.9: pure helpers + константы вынесены в nativeStoreHelpers.js (1326 → ~1180 строк).
 import {

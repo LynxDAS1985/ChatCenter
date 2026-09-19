@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import SystemDiagnosticsModal from './SystemDiagnosticsModal.jsx'
 import DiagnosticsFloatingPanel from './DiagnosticsFloatingPanel.jsx'
 import useDiagnosticsSession from '../hooks/useDiagnosticsSession.js'
-import { buildDiagnosticsTargets } from '../utils/diagnosticsTargets.js'
+import { buildDiagnosticsTargets } from '../../shared/diagnosticsTargets.js'
 
 export default function DiagnosticsSessionHost({ open, onOpen, onClose, runtimeContext, onRunDeepCheck, onStatusChange }) {
   const diagnostics = useDiagnosticsSession({

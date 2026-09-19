@@ -2,7 +2,7 @@
 // Без этого вкладку ВК не считали за ВК → хук/наблюдатель не грузился → не было наших уведомлений.
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
-import { detectMessengerType } from '../utils/messengerConfigs.js'
+import { detectMessengerType } from '../../shared/messengerConfigs.js'
 
 describe('detectMessengerType', () => {
   it('vk.ru → vk (ВК переехал на vk.ru)', () => {

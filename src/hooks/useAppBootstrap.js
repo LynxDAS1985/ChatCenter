@@ -2,7 +2,7 @@
 // Защита от HMR (window.api может быть undefined). При ошибке IPC — fallback на DEFAULT_MESSENGERS.
 
 import { useEffect } from 'react'
-import { DEFAULT_MESSENGERS } from '../constants.js'
+import { DEFAULT_MESSENGERS } from '../../shared/messengerPresets.js'
 import { pickActiveTabId } from '../../shared/activeTabChoice.js'
 import { AI_PANEL_MIN_PX, AI_PANEL_MAX_PX } from '../../shared/panelWidthCap.js'
 

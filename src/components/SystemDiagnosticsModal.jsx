@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { diagnosticsTargetTitle } from '../utils/diagnosticsTargets.js'
+import { diagnosticsTargetTitle } from '../../shared/diagnosticsTargets.js'
 
 const css = {
   overlay: { position: 'fixed', inset: 0, zIndex: 1000001, background: 'rgba(0,0,0,0.58)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 },

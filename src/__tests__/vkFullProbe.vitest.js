@@ -17,9 +17,9 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import fs from 'node:fs'
 import {
   runVkFullProbe, VK_FULL_MSGS, VK_FULL_ROWS, VK_FULL_MAX_CHARS, VK_FULL_MAX_RUNS, VK_FULL_MIN_GAP_MS,
-} from '../utils/webviewDiagnostics.js'
+} from '../../shared/webviewDiagnostics.js'
 
-const SRC = fs.readFileSync('src/utils/webviewDiagnostics.js', 'utf8')
+const SRC = fs.readFileSync('shared/webviewDiagnostics.js', 'utf8')
 
 /** Поддельная страница ВК: переписка из 25 сообщений и список из 20 чатов. */
 function buildPage() {

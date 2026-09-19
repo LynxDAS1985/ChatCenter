@@ -7,7 +7,7 @@
 //     экран МАКС: фон rgb(23,24,28)) ОБЯЗАНА считаться пустым кадром и давать пинок
 //     (раньше порог яркости стоял 12 → 32 проходило как «не чёрный» и пинка не было).
 import { describe, it, expect } from 'vitest'
-import { frameStats, isBlankFrame, readFramePixels, checkBlackAndRepaint, BLACK_LUM, FLAT_STDEV, WATCHDOG_INTERVAL_MS } from '../utils/webviewBlackWatchdog.js'
+import { frameStats, isBlankFrame, readFramePixels, checkBlackAndRepaint, BLACK_LUM, FLAT_STDEV, WATCHDOG_INTERVAL_MS } from '../../shared/webviewBlackWatchdog.js'
 
 // v1.2.435 ТЕСТ-ЛОВУШКА: снимок кадра — дорогая операция (полный кадр вкладки + getBitmap).
 // Теория «чёрный экран лечится принудительной перерисовкой» ОПРОВЕРГНУТА опытом: пинок

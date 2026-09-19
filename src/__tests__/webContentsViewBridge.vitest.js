@@ -5,7 +5,7 @@
 // removeEventListener должны корректно работать с моком window.api.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createWebContentsViewBridge } from '../utils/webContentsViewBridge.js'
+import { createWebContentsViewBridge } from '../../shared/webContentsViewBridge.js'
 
 describe('webContentsViewBridge v0.89.43', () => {
   let invokeMock, onMock, eventCallback

@@ -1,4 +1,4 @@
-import { getHealthColor, getHealthTooltip } from '../utils/connectionHealth.js'
+import { getHealthColor, getHealthTooltip } from '../../shared/connectionHealth.js'
 
 export default function ConnectionStatusDot({
   health,

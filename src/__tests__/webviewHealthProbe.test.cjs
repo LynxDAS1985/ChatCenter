@@ -17,7 +17,7 @@ function test(name, fn) {
 
 console.log('\n🧪 webviewHealthProbe\n')
 
-const code = fs.readFileSync('src/utils/webviewHealthProbe.js', 'utf8')
+const code = fs.readFileSync('shared/webviewHealthProbe.js', 'utf8')
 
 test('WebView probe делает сетевой fetch, а не только DOM-readiness', () => {
   assert(code.includes('await fetch('), 'probe должен делать сетевой fetch')

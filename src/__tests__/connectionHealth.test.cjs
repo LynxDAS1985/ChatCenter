@@ -17,7 +17,7 @@ function test(name, fn) {
 console.log('\n🧪 connectionHealth\n')
 
 async function run() {
-  const mod = await import('../utils/connectionHealth.js')
+  const mod = await import('../../shared/connectionHealth.js')
 
   test('createPendingHealth создаёт ожидание проверки', function() {
     const h = mod.createPendingHealth({ id: 'vk', label: 'ВКонтакте', now: 1000 })

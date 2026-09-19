@@ -1,7 +1,7 @@
 // useTabContextMenu.js — Context menu logic.
 // v0.87.133: heavy tabContextMenuDiag is disabled and no longer imported during startup.
 import { useState, useCallback } from 'react'
-import { markHealthPending } from '../utils/connectionHealth.js'
+import { markHealthPending } from '../../shared/connectionHealth.js'
 
 /**
  * @param {Object} deps

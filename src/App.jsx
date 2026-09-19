@@ -1,16 +1,16 @@
 // v0.39.0 — Кастомные уведомления Messenger Ribbon
 // v0.87.82 — Refactored: 3 useEffect вынесены в useAppBootstrap / useConsoleErrorLogger / useAppIPCListeners
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
-import { DEFAULT_MESSENGERS } from './constants.js'
+import { DEFAULT_MESSENGERS } from '../shared/messengerPresets.js'
 import { devLog, devError } from './utils/devLog.js'
 import { playNotificationSound } from './utils/sound.js'
 import { buildChatNavigateScript } from './utils/navigateToChat.js'
 import { createWebviewSetup } from './utils/webviewSetup.js'
 // v1.2.22: Вариант A — тумблер useWebContentsView открывает Макс в ОТДЕЛЬНОМ окне (main: max-test:*),
 // а не WebContentsView внутри главного окна (тот крашил Electron на Win11 — Issue #44934/#47247).
-import { markHealthPending } from './utils/connectionHealth.js'
-import { probeWebviewHealth } from './utils/webviewHealthProbe.js'
-import { probeBlackScreen } from './utils/webviewDiagnostics.js'
+import { markHealthPending } from '../shared/connectionHealth.js'
+import { probeWebviewHealth } from '../shared/webviewHealthProbe.js'
+import { probeBlackScreen } from '../shared/webviewDiagnostics.js'
 import { runSelectedDiagnosticsDeepCheck } from './utils/runSelectedDiagnosticsDeepCheck.js'
 import {
   HEALTH_SCHEDULER_TICK_MS,
@@ -28,7 +28,7 @@ import OzonQuickWidget from './native/components/OzonQuickWidget.jsx' // v1.2.34
 import { bindOzonBgWatcher } from './utils/ozonBgWatcher.js' // v1.2.358: фоновая слежка за «Вопросами» Ozon (Шаг 3)
 // v0.89.44 (Совет 1): bridge для подключения webviewSetup к WebContentsView через wcv:* IPC.
 // v0.91.0: WebContentsViewBridge откачен
-// import { createWebContentsViewBridge } from './utils/webContentsViewBridge.js'
+// import { createWebContentsViewBridge } from '../shared/webContentsViewBridge.js'
 
 // Hooks
 import useKeyboardShortcuts from './hooks/useKeyboardShortcuts.js'

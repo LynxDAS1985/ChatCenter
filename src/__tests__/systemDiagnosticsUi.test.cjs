@@ -5,12 +5,12 @@ const floating = fs.readFileSync('src/components/DiagnosticsFloatingPanel.jsx', 
 const settings = fs.readFileSync('src/components/SettingsPanel.jsx', 'utf8')
 const webviewSetup = fs.readFileSync('src/utils/webviewSetup.js', 'utf8')
 const consoleHandler = fs.readFileSync('src/utils/consoleMessageHandler.js', 'utf8')
-const diagnosticsSession = fs.readFileSync('src/utils/diagnosticsSession.js', 'utf8')
-const diagnosticsTargets = fs.readFileSync('src/utils/diagnosticsTargets.js', 'utf8')
+const diagnosticsSession = fs.readFileSync('shared/diagnosticsSession.js', 'utf8')
+const diagnosticsTargets = fs.readFileSync('shared/diagnosticsTargets.js', 'utf8')
 const diagnosticsHook = fs.readFileSync('src/hooks/useDiagnosticsSession.js', 'utf8')
-const webviewDiagnostics = fs.readFileSync('src/utils/webviewDiagnostics.js', 'utf8')
+const webviewDiagnostics = fs.readFileSync('shared/webviewDiagnostics.js', 'utf8')
 const app = fs.readFileSync('src/App.jsx', 'utf8')
-const systemDiagnostics = fs.readFileSync('src/utils/systemDiagnostics.js', 'utf8')
+const systemDiagnostics = fs.readFileSync('shared/diagnosticsAnalysis.js', 'utf8')
 const selectedDeepCheck = fs.readFileSync('src/utils/runSelectedDiagnosticsDeepCheck.js', 'utf8')
 
 let passed = 0, failed = 0

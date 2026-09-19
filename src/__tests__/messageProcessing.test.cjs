@@ -254,7 +254,7 @@ test('Scoped substring dedup keeps similar text from another sender', function()
 })
 
 var fs = require('fs')
-var code = fs.readFileSync('src/utils/messageProcessing.js', 'utf8')
+var code = fs.readFileSync('shared/messageProcessing.js', 'utf8')
 test('Файл существует', function() { assert(code.length > 100) })
 test('export isDuplicateExact', function() { assert(code.includes('export function isDuplicateExact')) })
 test('export buildMessageDedupScope', function() { assert(code.includes('export function buildMessageDedupScope')) })

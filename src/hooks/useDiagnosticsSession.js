@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { analyzeSystemDiagnostics } from '../utils/systemDiagnostics.js'
+import { analyzeSystemDiagnostics } from '../../shared/diagnosticsAnalysis.js'
 import {
   appendDiagnosticsReport,
   buildDiagnosticsSessionReport,
@@ -13,8 +13,8 @@ import {
   resumeDiagnosticsSession,
   startDiagnosticsSession,
   stopDiagnosticsSession,
-} from '../utils/diagnosticsSession.js'
-import { normalizeDiagnosticsTarget } from '../utils/diagnosticsTargets.js'
+} from '../../shared/diagnosticsSession.js'
+import { normalizeDiagnosticsTarget } from '../../shared/diagnosticsTargets.js'
 
 const DIAGNOSTICS_TICK_MS = 3000
 

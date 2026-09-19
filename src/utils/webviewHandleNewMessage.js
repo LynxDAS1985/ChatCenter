@@ -1,7 +1,7 @@
 // v0.87.97: вынесено из webviewSetup.js при разбиении.
 // Функция handleNewMessage — обработка ОДНОГО входящего сообщения:
 // дедуп → strip-sender → viewing-фильтр → звук + ribbon → preview + history + auto-reply.
-import { buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from './messageProcessing.js'
+import { buildMessageDedupScope, isDuplicateExact, isDuplicateSubstring, stripSenderFromText, isOwnMessage, cleanupRecentMap, cleanSenderStatus } from '../../shared/messageProcessing.js'
 import { playNotificationSound } from './sound.js'
 import { stripVkAttachLabel } from '../../shared/vkPreviewText.js' // v1.2.477: ВК дописывает в конец подписи свою пометку вложения («Фотография», «Сообщение» у ответа) — чистим её; правила и ограничители там
 import { pickNotifIconDataUrl } from '../native/utils/messengerLogos.js' // v1.2.333/378/379/381: картинка уведомления (аватар отправителя в приоритете; логотип по типу из url — только если аватара нет)

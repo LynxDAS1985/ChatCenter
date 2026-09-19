@@ -8,7 +8,7 @@ import {
   formatHealthTime,
   getHealthColor,
   getHealthLabel,
-} from '../utils/connectionHealth.js'
+} from '../../shared/connectionHealth.js'
 import { HEALTH_SCHEDULER_TICK_MS, nextHealthDelay } from '../utils/connectionHealthScheduler.js'
 
 function splitItems(items) {

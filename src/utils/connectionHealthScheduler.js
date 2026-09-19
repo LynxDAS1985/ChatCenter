@@ -1,4 +1,4 @@
-import { HEALTH_ERROR, HEALTH_PENDING, HEALTH_SLOW } from './connectionHealth.js'
+import { HEALTH_ERROR, HEALTH_PENDING, HEALTH_SLOW } from '../../shared/connectionHealth.js'
 
 export const HEALTH_SCHEDULER_TICK_MS = 5000
 export const HEALTH_ACTIVE_MS = 30000

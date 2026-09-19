@@ -11,7 +11,7 @@
 // — hook не активируется. WebUI Bridge не сможет инжектировать через preload.
 
 import { useEffect } from 'react'
-import { detectAiProvider } from '../../utils/aiWebviewConfigs.js'
+import { detectAiProvider } from '../../../shared/aiWebviewConfigs.js'
 
 function log(level, message) {
   try {

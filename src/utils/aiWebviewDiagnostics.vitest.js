@@ -2,7 +2,7 @@
 // v1.1.6: ИСПРАВЛЕНО — логи через window.api.send('app:log'), не console.*.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { attachAiWebviewDiagnostics } from './aiWebviewDiagnostics.js'
+import { attachAiWebviewDiagnostics } from '../../shared/aiWebviewDiagnostics.js'
 
 function makeWebviewMock() {
   const listeners = {}

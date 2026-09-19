@@ -13,9 +13,9 @@
 // - Только ЧИСТЫЕ функции и константы. Никаких side-effects на импорт.
 // - НЕ зависит от Electron API. Можно тестировать в jsdom.
 
-/** @typedef {import('../../shared/aiBridgeContracts.js').AiWebviewProviderConfig} AiWebviewProviderConfig */
-/** @typedef {import('../../shared/aiBridgeContracts.js').AiProviderId} AiProviderId */
-/** @typedef {import('../../shared/aiBridgeContracts.js').AiWebviewSelectors} AiWebviewSelectors */
+/** @typedef {import('./aiBridgeContracts.js').AiWebviewProviderConfig} AiWebviewProviderConfig */
+/** @typedef {import('./aiBridgeContracts.js').AiProviderId} AiProviderId */
+/** @typedef {import('./aiBridgeContracts.js').AiWebviewSelectors} AiWebviewSelectors */
 
 /** @type {readonly AiWebviewProviderConfig[]} */
 export const DEFAULT_WEBVIEW_PROVIDERS = Object.freeze([

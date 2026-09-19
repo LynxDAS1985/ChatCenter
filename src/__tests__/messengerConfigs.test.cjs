@@ -6,7 +6,7 @@
  */
 
 const fs = require('fs')
-const code = fs.readFileSync('src/utils/messengerConfigs.js', 'utf8')
+const code = fs.readFileSync('shared/messengerConfigs.js', 'utf8')
 
 let passed = 0, failed = 0
 

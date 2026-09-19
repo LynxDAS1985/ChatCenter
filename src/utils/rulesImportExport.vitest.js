@@ -1,7 +1,7 @@
 // v1.2.5: тесты импорта/экспорта правил.
 
 import { describe, it, expect } from 'vitest'
-import { exportRulesToJson, parseImportJson } from './rulesImportExport.js'
+import { exportRulesToJson, parseImportJson } from '../../shared/rulesImportExport.js'
 
 const sampleRule = {
   id: 'r1',

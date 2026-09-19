@@ -1,4 +1,4 @@
-import { runDomProbe } from './webviewDiagnostics.js'
+import { runDomProbe } from '../../shared/webviewDiagnostics.js'
 
 export function runSelectedDiagnosticsDeepCheck({
   target, webviewRefs, messengersRef, runWebviewHealthProbe, traceNotif,

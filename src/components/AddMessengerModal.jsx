@@ -1,6 +1,6 @@
 // v0.30.1 — Только настроенные мессенджеры, убрана секция иконок
 import { useState, useEffect } from 'react'
-import { PRESET_COLORS, POPULAR_MESSENGERS, DEFAULT_MESSENGERS } from '../constants.js'
+import { PRESET_COLORS, POPULAR_MESSENGERS, DEFAULT_MESSENGERS } from '../../shared/messengerPresets.js'
 
 // accountScript для дефолтных мессенджеров, добавленных через Quick Add
 const DEFAULT_SCRIPTS = Object.fromEntries(

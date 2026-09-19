@@ -4,15 +4,15 @@
 // Все event listeners для WebView (dom-ready, page-title-updated, ipc-message, console-message)
 // v0.83.3: НЕ используем useRef — createWebviewSetup это обычная функция, не React hook
 // Вместо useRef используем plain objects { current: ... } — работает аналогично в closure scope
-import { detectMessengerType, isSpamText } from './messengerConfigs.js'
+import { detectMessengerType, isSpamText } from '../../shared/messengerConfigs.js'
 import { parseConsoleMessage } from './consoleMessageParser.js'
 import { devLog, devError } from './devLog.js'
 import { playNotificationSound } from './sound.js'
 import { createConsoleMessageHandler } from './consoleMessageHandler.js'
-import { logGeometry, runDomProbe, attachRuntimeErrorCatcher, probeBlackScreen } from './webviewDiagnostics.js'
+import { logGeometry, runDomProbe, attachRuntimeErrorCatcher, probeBlackScreen } from '../../shared/webviewDiagnostics.js'
 import { runVkRowProbe } from '../../shared/vkRowProbe.js' // v1.2.483: ВРЕМЕННО — разовый осмотр строки списка ВК (есть ли там картинка вложения), удалить после разбора
 import { createHandleNewMessage } from './webviewHandleNewMessage.js'
-import { probeWebviewHealth } from './webviewHealthProbe.js'
+import { probeWebviewHealth } from '../../shared/webviewHealthProbe.js'
 import { scheduleMaxTitleFallback } from './maxTitleFallback.js'
 import { decideMaxTitleUnread, resetMaxTitleUnread } from './titleUnreadBaseline.js'
 import { createVkExecFallbackRuntime } from '../../shared/vkExecFallback.js'
@@ -22,8 +22,8 @@ import { enrichWaitMsFor, alreadyHandledWindowMs } from '../../shared/notifEnric
 import { createPageFixups } from '../../shared/webviewPageFixups.js'
 // v1.2.448: разбор «непрочитанное по заголовку вкладки» вынесен туда же, в shared/.
 import { createTitleUnreadHandler } from '../../shared/webviewTitleUnread.js'
-import { DEFAULT_MESSENGERS } from '../constants.js'
-import { markHealthError, markHealthOk, markHealthPending, markHealthSlow } from './connectionHealth.js'
+import { DEFAULT_MESSENGERS } from '../../shared/messengerPresets.js'
+import { markHealthError, markHealthOk, markHealthPending, markHealthSlow } from '../../shared/connectionHealth.js'
 try { window.__ccStartupMark?.('module:webviewSetup', 'module evaluated') } catch {}
 
 // v0.83.1: Sender cache cleanup — удаляем записи старше 5 мин, лимит 50 записей
@@ -84,7 +84,7 @@ export function createWebviewSetup(deps) {
   const tryExtractAccount = (messengerId, attempt = 0) => {
     if (attempt > 12) return
     const wv = webviewRefs.current[messengerId]
-    // Для дефолтных мессенджеров — accountScript ТОЛЬКО из constants.js (не из сохранённых данных!)
+    // Для дефолтных мессенджеров — accountScript ТОЛЬКО из shared/messengerPresets.js (не из сохранённых данных!)
     // Матчим по ID или по URL (custom-мессенджер с URL дефолтного → используем дефолтный скрипт)
     const messenger = messengersRef.current.find(m => m.id === messengerId)
     const defaultM = DEFAULT_MESSENGERS.find(m => m.id === messengerId)

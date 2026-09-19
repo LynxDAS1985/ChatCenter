@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { diagnosticsTargetTitle } from '../utils/diagnosticsTargets.js'
+import { diagnosticsTargetTitle } from '../../shared/diagnosticsTargets.js'
 
 const css = {
   panel: {

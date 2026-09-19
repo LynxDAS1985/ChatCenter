@@ -20,7 +20,7 @@ import { getDisplayUnreadCount } from './utils/displayUnread.js'
 import {
   createPendingHealth,
   markHealthError,
-} from '../utils/connectionHealth.js'
+} from '../../shared/connectionHealth.js'
 import { loadTheme, applyTheme } from './utils/themeColor.js'
 import {
   loadAccountOrder, saveAccountOrder, applyAccountOrder, moveAccount,

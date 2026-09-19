@@ -8,7 +8,7 @@ import {
   getDefaultSelectors,
   getProviderConfig,
   listProviderIds,
-} from './aiWebviewConfigs.js'
+} from '../../shared/aiWebviewConfigs.js'
 
 describe('extractHost (Этап 1)', () => {
   it('полный URL → host без www', () => {

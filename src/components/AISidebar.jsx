@@ -17,9 +17,9 @@ import { createStreamingHandler } from '../utils/aiStreamingHandler.js'
 import { runProviderChecks as runProviderChecksUtil } from '../utils/aiProviderChecker.js'
 import { createLoginHandler } from '../utils/aiLoginHandler.js'
 import { aiPanelWidthCss, AI_PANEL_MAX_CSS } from '../../shared/panelWidthCap.js' // v1.2.455-456: панель не шире половины окна
-import { sendContextToAiWebview as sendContextToAiWebviewUtil } from '../utils/aiWebviewContext.js'
+import { sendContextToAiWebview as sendContextToAiWebviewUtil } from '../../shared/aiWebviewContext.js'
 // v1.1.5: диагностические логи для AI WebView (DeepSeek/ГигаЧат не работают — разбираемся).
-import { attachAiWebviewDiagnostics } from '../utils/aiWebviewDiagnostics.js'
+import { attachAiWebviewDiagnostics } from '../../shared/aiWebviewDiagnostics.js'
 
 // Вспомогательный компонент — заголовок шага
 function StepRow({ num, title, extra, numDone }) {

@@ -3,8 +3,8 @@
 
 export const MAX_TITLE_FALLBACK_DELAY = 700
 
-import { buildMaxTitleFallbackScript } from './maxTitleFallbackScript.js'
-import { buildMessageDedupScope } from './messageProcessing.js'
+import { buildMaxTitleFallbackScript } from '../../shared/maxTitleFallbackScript.js'
+import { buildMessageDedupScope } from '../../shared/messageProcessing.js'
 
 export { buildMaxTitleFallbackScript }
 

@@ -1,7 +1,7 @@
 // v0.87.103: вынесено из useTabContextMenu.js — диагностические скрипты для context menu.
 // Три действия: diagDOM (DOM-скан), diagFull (полная диагностика), diagAccount (имя аккаунта).
 // Каждое выполняет executeJavaScript в WebView и пишет результат в notifLogModal + clipboard.
-import { detectMessengerType, ACCOUNT_SCRIPTS, DOM_SCAN_SCRIPTS, DIAG_FULL_SCRIPTS } from '../utils/messengerConfigs.js'
+import { detectMessengerType, ACCOUNT_SCRIPTS, DOM_SCAN_SCRIPTS, DIAG_FULL_SCRIPTS } from '../../shared/messengerConfigs.js'
 import { devError } from '../utils/devLog.js'
 
 export function runTabDiag(action, mid, wv, deps) {
