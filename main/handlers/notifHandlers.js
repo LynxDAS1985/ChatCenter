@@ -5,6 +5,7 @@ import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 import { bringWindowToFront } from '../utils/bringWindowToFront.js'
 import { decideNotifResize } from './notifResizeDecision.js'
 import { shouldDismissForRead } from './notifDismissDecision.js'
+import { notifInputProbeTick } from './notifInputProbe.js' // v1.2.487: «наблюдатель мыши» едет на этом же стороже
 
 const NOTIF_WINDOW_WIDTH = 370
 const NOTIF_RIGHT_OFFSET = 380
@@ -238,6 +239,7 @@ export function initNotifHandlers(deps) {
       notifEmptySeen = emptyVisible
       const b = w.getBounds()
       if (!(b.x > -10000 && b.y > -10000)) return // офскрин (safeHide) — не трогаем
+      notifInputProbeTick(w) // v1.2.487: курсор над окном, а мыши нет? → подозрение + самопроверка (см. notifInputProbe.js)
       const msSinceResize = lastNotifResizeTs ? Date.now() - lastNotifResizeTs : -1
       // v1.2.127: если недавно просили переотчёт, а renderer НЕ ответил (нет свежего resize) —
       // окно «зависло» (застрявшая стена / мёртвый renderer). Пишем РЕДКО (не спам).

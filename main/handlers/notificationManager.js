@@ -5,6 +5,7 @@ import { Notification } from 'electron'
 import { safeHideTransparentWindow } from '../utils/transparentWindowGuard.js'
 import { decideNotifDedup, findCardToImproveIcon } from './notifDedupDecision.js' // v1.2.318: кросс-детекторный дедуп веб-мессенджеров
 import { buildWebPhotoAlbum, WEB_PHOTO_MAX_WIDTH } from '../../shared/webPhotoAlbum.js' // v1.2.478: фото вложения веб-мессенджера в карточке
+import { attachNotifInputProbe } from './notifInputProbe.js' // v1.2.487: «наблюдатель мыши» — дело notif-window-input-loss-case.md
 
 let notifWin = null
 let notifItems = [] // [{id, messengerId, ...}]
@@ -214,6 +215,11 @@ function createNotifWindow() {
       backgroundThrottling: false,
     }
   })
+
+  // v1.2.487: окно трижды переставало принимать мышь целиком (19.08, 02.09, 19.09), а журнал о мыши
+  // молчал. Наблюдатель пишет нажатия от Windows, подозрение «курсор над окном, событий нет» и
+  // пробует два безвредных шага. Дело: .memory-bank/notif-window-input-loss-case.md
+  attachNotifInputProbe(notifWin)
 
   notifWin.loadFile(getNotifHtmlPath()).catch(err => {
     console.error('[NotifManager] Failed to load notification.html:', err)

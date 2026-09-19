@@ -11,7 +11,7 @@
 
 | Файл | Размер |
 |------|--------|
-| `CHANGELOG.md` | 74 КБ |
+| `CHANGELOG.md` | 75 КБ |
 | `README.md` | 12 КБ |
 | `STRUCTURE.md` | 10 КБ |
 | `ai-bridge.md` | 16 КБ |
@@ -19,19 +19,20 @@
 | `api.md` | 38 КБ |
 | `architecture.md` | 16 КБ |
 | `autoreply.md` | 6 КБ |
-| `code-limits-status.md` | 18 КБ |
-| `code-todo.md` | 72 КБ |
+| `code-limits-status.md` | 21 КБ |
+| `code-todo.md` | 76 КБ |
 | `coding-rules.md` | 9 КБ |
 | `common-mistakes.md` | 7 КБ |
-| `decisions.md` | 66 КБ |
+| `decisions.md` | 100 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 75 КБ |
+| `features.md` | 97 КБ |
 | `group-topic-investigation.md` | 15 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
 | `messengers.md` | 16 КБ |
 | `native-mode-plan.md` | 30 КБ |
-| `notifications-debug.md` | 38 КБ |
+| `notif-window-input-loss-case.md` | 24 КБ |
+| `notifications-debug.md` | 51 КБ |
 | `phase-2-visual-test.md` | 16 КБ |
 | `prodlike-webview-investigation.md` | 4 КБ |
 | `reconnect-plan.md` | 32 КБ |
@@ -50,14 +51,14 @@
 |------|--------|
 | `mistakes/app-layout.md` | 12 КБ |
 | `mistakes/electron-core-history.md` | 148 КБ |
-| `mistakes/electron-core.md` | 72 КБ |
+| `mistakes/electron-core.md` | 80 КБ |
 | `mistakes/native-scroll-unread.md` | 131 КБ |
 | `mistakes/notifications-ribbon-history.md` | 139 КБ |
-| `mistakes/notifications-ribbon.md` | 104 КБ |
+| `mistakes/notifications-ribbon.md` | 112 КБ |
 | `mistakes/outgoing-two-cases.md` | 14 КБ |
 | `mistakes/tdlib-forum.md` | 19 КБ |
 | `mistakes/tdlib-video-player.md` | 31 КБ |
-| `mistakes/webview-injection.md` | 94 КБ |
+| `mistakes/webview-injection.md` | 109 КБ |
 | `mistakes/webview-navigation-ui.md` | 113 КБ |
 | `mistakes/webview-stack-grouping.md` | 125 КБ |
 
@@ -70,7 +71,7 @@
 | `archive/2026-05-connection-health-plan.md` | 53 КБ |
 | `archive/2026-06-notifications-ribbon-max-title-control.md` | 6 КБ |
 | `archive/2026-07-notifications-ribbon-max-title-fallback-v1.2.24-27.md` | 16 КБ |
-| `archive/README.md` | 72 КБ |
+| `archive/README.md` | 75 КБ |
 | `archive/audit-2026-05-26-scroll-architecture-CLOSED.md` | 19 КБ |
 | `archive/changelog-v0.87.56-68.md` | 18 КБ |
 | `archive/code-todo-journal-and-closed.md` | 32 КБ |
@@ -202,6 +203,10 @@
 | `archive/features-v1.2.46-58.md` | 33 КБ |
 | `archive/features-v1.2.460-462.md` | 24 КБ |
 | `archive/features-v1.2.463-465.md` | 32 КБ |
+| `archive/features-v1.2.466-469.md` | 36 КБ |
+| `archive/features-v1.2.470-473.md` | 32 КБ |
+| `archive/features-v1.2.474-476.md` | 23 КБ |
+| `archive/features-v1.2.477-479.md` | 30 КБ |
 | `archive/features-v1.2.59-73.md` | 49 КБ |
 | `archive/features-v1.2.74-89.md` | 40 КБ |
 | `archive/features-v1.2.90-100.md` | 29 КБ |
@@ -211,5 +216,5 @@
 | `archive/native-scroll-restore-saga-CLOSED.md` | 40 КБ |
 | `archive/startup-load-investigation-history.md` | 90 КБ |
 
-_Регенерировано: 2026-09-16_
+_Регенерировано: 2026-09-19_
 <!-- STRUCTURE-AUTO-END -->

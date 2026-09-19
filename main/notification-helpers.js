@@ -206,6 +206,28 @@ function logDomSnapshot(container) {
 // notification.js — значит поймаем и ошибку при его загрузке.
 installNotifErrorReporter()
 
+// v1.2.487: мышь СО СТОРОНЫ СТРАНИЦЫ (уровень 2 наблюдателя; уровень 1 — оболочка окна,
+// main/handlers/notifInputProbe.js). Нажатие пишем каждое, движение — не чаще раза в 10 с.
+// Сопоставление по времени с «[notif-input] оболочка: mouseDown» даёт диагноз:
+//   оболочка есть, страницы нет → обрыв внутри окна; нет ни того, ни другого → Windows не отдаёт.
+function installNotifMouseProbe() {
+  if (window.__ccNotifMouseHooked) return
+  window.__ccNotifMouseHooked = true
+  let lastMoveLog = 0
+  document.addEventListener('mousemove', () => {
+    const now = Date.now()
+    if (now - lastMoveLog < 10000) return
+    lastMoveLog = now
+    try { window.notifApi.log('TRACE', 'page: мышь над окном (движение)') } catch (_) {}
+  }, true)
+  document.addEventListener('mousedown', (e) => {
+    const t = e && e.target
+    const name = t && t.tagName ? (t.tagName + '.' + String(t.className || '').split(' ')[0]).slice(0, 40) : '?'
+    try { window.notifApi.log('INFO', 'page: mousedown x=' + e.clientX + ' y=' + e.clientY + ' цель=' + name) } catch (_) {}
+  }, true)
+}
+installNotifMouseProbe()
+
 // v1.2.479: набор ДОПОЛНЯЕТСЯ, а не создаётся заново — рядом лежит notification-album.js,
 // который кладёт сюда же свои четыре функции; порядок подключения файлов при этом не важен.
-Object.assign(window.__ccNotifHelpers = window.__ccNotifHelpers || {}, { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, buildStackHeader, computeRendererPure, shouldAutoScroll, logCloseClick, logDismissSkip, logDomSnapshot, installNotifErrorReporter })
+Object.assign(window.__ccNotifHelpers = window.__ccNotifHelpers || {}, { calcHeight, pauseItem, resumeItem, forceFinalSlideInState, buildStackHeader, computeRendererPure, shouldAutoScroll, logCloseClick, logDismissSkip, logDomSnapshot, installNotifErrorReporter, installNotifMouseProbe })
