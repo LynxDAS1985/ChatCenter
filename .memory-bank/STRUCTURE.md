@@ -19,13 +19,13 @@
 | `api.md` | 38 КБ |
 | `architecture.md` | 16 КБ |
 | `autoreply.md` | 6 КБ |
-| `code-limits-status.md` | 21 КБ |
+| `code-limits-status.md` | 22 КБ |
 | `code-todo.md` | 76 КБ |
 | `coding-rules.md` | 9 КБ |
 | `common-mistakes.md` | 7 КБ |
 | `decisions.md` | 83 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 89 КБ |
+| `features.md` | 75 КБ |
 | `group-topic-investigation.md` | 15 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
@@ -209,6 +209,7 @@
 | `archive/features-v1.2.474-476.md` | 23 КБ |
 | `archive/features-v1.2.477-479.md` | 30 КБ |
 | `archive/features-v1.2.480-482.md` | 20 КБ |
+| `archive/features-v1.2.483-485.md` | 20 КБ |
 | `archive/features-v1.2.59-73.md` | 49 КБ |
 | `archive/features-v1.2.74-89.md` | 40 КБ |
 | `archive/features-v1.2.90-100.md` | 29 КБ |

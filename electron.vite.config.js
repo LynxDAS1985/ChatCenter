@@ -28,6 +28,8 @@ function copyStaticPlugin() {
         { from: 'main/notification-limits.js', to: 'out/main/notification-limits.js' },
         // v1.2.222: пузырь «↓ N новых» — независимый модуль
         { from: 'main/notificationNewPill.js', to: 'out/main/notificationNewPill.js' },
+        // v1.2.490: кнопка «Закрыть все» над стопкой — независимый модуль
+        { from: 'main/notificationCloseAll.js', to: 'out/main/notificationCloseAll.js' },
         // v0.87.97: pin-dock.html разбит на html/css/js
         { from: 'main/pin-dock.css', to: 'out/main/pin-dock.css' },
         { from: 'main/pin-dock.js', to: 'out/main/pin-dock.js' },

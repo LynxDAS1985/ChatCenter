@@ -37,6 +37,11 @@ function createPinBtn(senderName, fullText, time, color, messengerId, iconDataUr
 // v0.89.23 (Баг #1): calcHeight игнорирует элементы в процессе slideIn animation
 // (transform: translateX(380px) до окончания анимации) — иначе видна «пустая полоса».
 // Принимает container (один глобал в notification.js — передаётся как параметр).
+// v1.2.490: полоса «✕ Закрыть все» над стопкой (notificationCloseAll.js) — контейнер получает класс
+// has-toolbar и padding-top 32 (= 4 обычных + 28). Линейка обязана добавить те же 28, иначе окно
+// окажется ниже содержимого на полосу. Без карточек полосу НЕ считаем — «пусто» остаётся нулём
+// (иначе пустое окно не спряталось бы: computeRendererPure смотрит на visibleHeight===0).
+const CLOSE_ALL_BAR_PX = 28
 function calcHeight(container) {
   let h = 0
   for (const child of container.children) {
@@ -45,6 +50,7 @@ function calcHeight(container) {
     const ch = child.offsetHeight
     if (ch > 0) h += ch + 4
   }
+  if (h > 0 && container.classList && container.classList.contains('has-toolbar')) h += CLOSE_ALL_BAR_PX
   return h > 0 ? h + 4 : 0
 }
 
