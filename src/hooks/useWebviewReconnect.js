@@ -17,7 +17,7 @@ import {
   isNetworkError, planAfterFail, dueIds, nextWakeMs, bringAllForward,
   shouldAcceptLoaded, touchFailedAt, messengerInfo, PROBE_FAIL_CODE,
 } from '../../shared/reconnectPlan.js'
-import { logFailLine, logSkipLine, logRestoredLine, logManualLine, logNetLine, logEchoLine, shouldLogEcho } from '../../shared/reconnectTexts.js'
+import { logFailLine, logSkipLine, logRestoredLine, logManualLine, logNetLine, logEchoLine, shouldLogEcho, retryButtonLabel } from '../../shared/reconnectTexts.js'
 import { createAttemptRunner } from '../../shared/reconnectAttempt.js' // v1.2.491
 import { quickProbe } from '../../shared/webviewHealthProbe.js'          // v1.2.491
 import { noteOutcome } from '../../shared/netRecoverySummary.js'         // v1.2.492: сводка «ожили сами / перезагружены»
@@ -124,7 +124,7 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
 
   const retryNow = useCallback((id) => {
     log('INFO', logManualLine(info(id).name))
-    try { window.api?.send?.('net:pulse-now', { reason: 'кнопка «Повторить сейчас»' }) } catch (_) {} // v1.2.491
+    try { window.api?.send?.('net:pulse-now', { reason: 'кнопка «' + retryButtonLabel(null, netVerdict()) + '»' }) } catch (_) {} // v1.2.491, надпись — v1.2.494
     attempt(id)
   }, [attempt, info])
 

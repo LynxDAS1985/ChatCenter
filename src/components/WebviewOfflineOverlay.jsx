@@ -2,7 +2,7 @@
 //
 // Экран «Нет связи» ПОВЕРХ слоя мессенджера. Сделан по согласованному с пользователем макету:
 // значок, причина обрыва, обратный отсчёт до следующей попытки, полоса, кнопки
-// «Повторить сейчас» и «Журнал», строка с номером попытки.
+// «Повторить сейчас» / «Проверить интернет» (v1.2.494) и «Журнал», строка с номером попытки.
 //
 // ЗАЧЕМ НЕПРОЗРАЧНЫЙ ФОН (важно, это половина решения жалобы): мессенджеры в App.jsx лежат
 // слоями друг на друге (активный поднимается наверх), и у слоя НЕТ своего фона. Пока страница
@@ -16,7 +16,7 @@
 // перерисовывалось всё окно приложения: хук просыпается только на реальные события.
 import { useEffect, useState } from 'react'
 import { errorName, secondsLeft } from '../../shared/reconnectPlan.js'
-import { reasonTitle, pulseStatusLine } from '../../shared/reconnectTexts.js'
+import { reasonTitle, pulseStatusLine, retryButtonLabel } from '../../shared/reconnectTexts.js'
 import { netVerdict } from '../hooks/useOpenPageWatch.js' // v1.2.491: вердикт пульса интернета
 
 /**
@@ -31,12 +31,14 @@ export default function WebviewOfflineOverlay({ entry, name, color, onRetry, onO
   const [now, setNow] = useState(() => Date.now())
   const trying = entry?.phase === 'trying'
 
-  // Тикаем раз в секунду ТОЛЬКО пока идёт отсчёт. Идёт попытка — таймер не нужен.
+  // Тикаем раз в секунду ВСЕГДА, пока экран на виду. v1.2.494: раньше во время попытки таймер
+  // выключался — и строка «Интернет: … проверено N с назад» (v1.2.492) замирала на все секунды
+  // перезагрузки, что выглядело как зависший экран. Цена постоянного тика — одна перерисовка
+  // ЭТОГО экрана в секунду (весь интерфейс не трогается: у экрана своё состояние времени).
   useEffect(() => {
-    if (trying) return undefined
     const iv = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(iv)
-  }, [trying])
+  }, [])
 
   if (!entry) return null
 
@@ -108,7 +110,7 @@ export default function WebviewOfflineOverlay({ entry, name, color, onRetry, onO
               border: '1px solid transparent',
               background: trying ? '#1E2A35' : '#38BDF8', color: trying ? '#8695A5' : '#06202D',
             }}
-          >{trying ? 'Подождите…' : 'Повторить сейчас'}</button>
+          >{retryButtonLabel(entry, netVerdict())}</button>
           {onOpenLog && (
             <button
               type="button"

@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import fs from 'node:fs'
-import { pulseStatusLine } from '../../shared/reconnectTexts.js'
+import { pulseStatusLine, retryButtonLabel } from '../../shared/reconnectTexts.js'
 import { resolveTargets, PULSE_TARGETS, PULSE_TARGETS_MAX } from '../../shared/netPulsePlan.js'
 import { startRecoveryWindow, noteOutcome, summaryLine, _resetRecoverySummary, RECOVERY_WINDOW_MS } from '../../shared/netRecoverySummary.js'
 import { applyResult, createPulseState } from '../../shared/netPulsePlan.js'
@@ -160,5 +160,27 @@ describe('v1.2.493 — находки ревью и советы', () => {
     expect(hook).toContain('window.__ccReconnectWaiting = Object.keys(state).length')
     const lim = fs.readFileSync('src/__tests__/fileSizeLimits.test.cjs', 'utf8')
     expect(lim).toContain('assert(totalSrc < 31200') // планка опущена в самом числе, не в комментарии
+  })
+})
+
+describe('v1.2.494 — честная надпись кнопки и живой счётчик секунд', () => {
+  it('идёт попытка → «Подождите…» (даже если интернета нет — сейчас всё равно ждём)', () => {
+    expect(retryButtonLabel({ phase: 'trying' }, false)).toBe('Подождите…')
+    expect(retryButtonLabel({ phase: 'trying' }, true)).toBe('Подождите…')
+  })
+  it('[!] интернета нет → «Проверить интернет» (страницу всё равно не перезагрузим)', () => {
+    expect(retryButtonLabel({ phase: 'wait' }, false)).toBe('Проверить интернет')
+    expect(retryButtonLabel(null, false)).toBe('Проверить интернет')
+  })
+  it('интернет есть или вердикта ещё нет → прежняя «Повторить сейчас» (старые тесты экрана не ломаются)', () => {
+    expect(retryButtonLabel({ phase: 'wait' }, true)).toBe('Повторить сейчас')
+    expect(retryButtonLabel({ phase: 'wait' }, null)).toBe('Повторить сейчас')
+  })
+  it('[!] ЛОВУШКА: счётчик секунд на экране больше НЕ замирает во время попытки', () => {
+    const overlay = fs.readFileSync('src/components/WebviewOfflineOverlay.jsx', 'utf8')
+    expect(overlay).not.toContain('if (trying) return undefined')
+    expect(overlay).toContain('{retryButtonLabel(entry, netVerdict())}')
+    const hook = fs.readFileSync('src/hooks/useWebviewReconnect.js', 'utf8')
+    expect(hook).toContain("'кнопка «' + retryButtonLabel(null, netVerdict()) + '»'") // в журнале — та же надпись
   })
 })
