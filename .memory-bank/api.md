@@ -136,7 +136,7 @@
 | `tg:account-update` | `{ id, messenger, status, name?, phone?, username?, userId? }` + `{removed:true, wipeStats:{totalFiles,totalBytes,isLast}}` для logout | ✅ |
 | `tg:account-renamed` | `{ oldId, newId }` (v1.2.146: переименование временного аккаунта `tg_pending_X → tg_<userId>`; renderer убирает осиротевшую запись `oldId`, иначе призрак-метка) | ✅ |
 | `tg:account-connection` | `{ accountId, state }` | ⚠️ orphan |
-| `net:pulse` | `{ online, since, checkedAt, host, latencyMs, ageMs }` | v1.2.491: ТОЛЬКО на переходе интернет есть/нет; слушает `useOpenPageWatch` → синтетическое `window` `online`/`offline` |
+| `net:pulse` | `{ online, since, checkedAt, host, latencyMs, ageMs }` | v1.2.492: на КАЖДУЮ проверку (для «проверено N с назад»); слушает `useOpenPageWatch.applyPulse` → `window.__ccNetPulse`, событие окна `cc-net-pulse` (панель), и ТОЛЬКО при смене вердикта — синтетическое `window` `online`/`offline` |
 | `tg:user-status` | `{ accountId, userId, online: boolean }` | ⚠️ orphan |
 | **`tg:typing`** (v0.89.4) | `{ chatId, userId, typing }` — TDLib `updateChatAction → chatActionTyping/Cancel` | ✅ |
 | **`tg:read`** (v0.89.4) | `{ chatId, outgoing: true, maxId }` — TDLib `updateChatReadOutbox` (двойная галочка) | ✅ |

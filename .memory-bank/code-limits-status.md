@@ -1,6 +1,6 @@
 # Статус лимитов файлов кода — текущий снапшот
 
-**Версия**: v1.2.491 (2026-09-18)
+**Версия**: v1.2.492 (2026-09-18)
 
 **v1.2.463 — разгрузка `main/preloads/monitor.preload.cjs`**: проверка «своё отправленное» для МАКС
 упёрла файл в 601/600. По правилу проекта комментарии не резали — вынесли самодостаточный блок зума
@@ -190,3 +190,9 @@ WebView (Ctrl+колесо, Ctrl +/−/0) в новый `main/preloads/utils/web
 - `shared/reconnectPlan.js` 247/300 (тексты → `shared/reconnectTexts.js` 75); `shared/netPulsePlan.js` 104; `shared/openPageWatch.js` 46.
 - `main/handlers/netPulseHandlers.js` 128/500; `main/native/backends/tdlibBackend.js` **929/930** — следующая правка бэкенда только через
   вынос в `tdlibBackendHelpers.js` (81/500), как `networkChangedRaw`.
+
+## Снимок v1.2.492 (2026-09-22)
+
+- Бюджет `src/`: **31 179 / 31 200** (планка 31270 → 31200) — вынесен `autoReplyStats.js` (101, чистый) в `shared/`; его тест — в `src/__tests__/`.
+- `useOpenPageWatch.js` 86/150 (+`useNetPulse`, сводка); `WebviewOfflineOverlay.jsx` 140; `ConnectionsPanel.jsx` 226/700.
+- Новый `shared/netRecoverySummary.js` 46. Правило прежнее: новое для окна уведомлений/пульса — в `shared/` и модули-помощники.

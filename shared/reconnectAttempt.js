@@ -30,12 +30,13 @@ import { logRestoredLine, logRetryFailLine, logNetDownSkipLine, logSelfHealedLin
  * @param {() => boolean|null} d.isNetOnline — вердикт пульса (null = неизвестно → считаем, что есть)
  * @param {(el:object) => Promise<boolean>} [d.quickProbe] — «страница отвечает?» для записей от пробы
  * @param {() => number} [d.now]
+ * @param {(id:string, result:string) => void} [d.onOutcome] — исход каждой попытки (v1.2.492: сводка возврата сети)
  */
-export function createAttemptRunner({ getEl, info, stRef, setState, log, isNetOnline, quickProbe, now = () => Date.now() }) {
+export function createAttemptRunner({ getEl, info, stRef, setState, log, isNetOnline, quickProbe, now = () => Date.now(), onOutcome }) {
   const clear = (id) => setState(prev => { if (!prev[id]) return prev; const n = { ...prev }; delete n[id]; return n })
   const postpone = (id, code, url) => setState(prev => (prev[id] ? { ...prev, [id]: planAfterRetryFail(prev[id], { code, url, now: now(), netOnline: isNetOnline() }) } : prev))
 
-  return async function attempt(id) {
+  async function run(id) {
     const { name, url } = info(id)
     const el = getEl(id)
     const entry = stRef.current[id]
@@ -75,5 +76,10 @@ export function createAttemptRunner({ getEl, info, stRef, setState, log, isNetOn
       })
       return 'failed'
     }
+  }
+  return async function attempt(id) {
+    const result = await run(id)
+    try { if (typeof onOutcome === 'function') onOutcome(id, result) } catch (_) {}
+    return result
   }
 }

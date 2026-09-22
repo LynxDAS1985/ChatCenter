@@ -73,3 +73,15 @@ export function shouldLogEcho(entry) {
 export function logEchoLine(name) {
   return `[reconnect] ${name}: пришла страница-ошибка, а не сама страница — восстановлением не считаю`
 }
+
+/**
+ * v1.2.492: строка про пульс для экрана «Нет связи» и панели связи.
+ * @param {{online:boolean|null, checkedAt:number}|null} pulse — последний пакет `net:pulse`
+ * @param {number} now
+ */
+export function pulseStatusLine(pulse, now = Date.now()) {
+  if (!pulse || typeof pulse.online !== 'boolean' || !pulse.checkedAt) return 'Интернет: ещё не проверяли'
+  const sec = Math.max(0, Math.round((now - pulse.checkedAt) / 1000))
+  const ago = sec < 60 ? `${sec} с назад` : `${Math.floor(sec / 60)} мин назад`
+  return `Интернет: ${pulse.online ? 'есть' : 'нет'} · проверено ${ago}`
+}

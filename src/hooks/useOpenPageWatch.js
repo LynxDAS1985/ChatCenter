@@ -12,7 +12,8 @@
 //      (при живом интернете — перезагрузка по лестнице; при мёртвом — экран «Нет интернета» без
 //      перезагрузки, пока пульс не скажет «появился»).
 // План и причины — .memory-bank/reconnect-plan.md, раздел 4e.
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
+import { startRecoveryWindow, summaryLine, RECOVERY_WINDOW_MS } from '../../shared/netRecoverySummary.js' // v1.2.492
 import { decideProbe, logWatchLine, logStuckLine, logNetDownLine, logRecoveredLine } from '../../shared/openPageWatch.js'
 import { PROBE_FAIL_CODE, messengerInfo } from '../../shared/reconnectPlan.js'
 
@@ -29,9 +30,24 @@ export function applyPulse(p) {
   if (!p || typeof p.online !== 'boolean') return
   const prev = netVerdict()
   window.__ccNetOnline = p.online
+  window.__ccNetPulse = p // v1.2.492: весь пакет (checkedAt, host) — для «проверено N с назад» на экране и в панели
+  try { window.dispatchEvent(new CustomEvent('cc-net-pulse', { detail: p })) } catch (_) {} // v1.2.492: панель связи перерисуется
   if (prev === p.online) return
   log('INFO', '[net-pulse→окно] интернет ' + (p.online ? 'появился' : 'пропал') + (p.host ? ' (ответил ' + p.host + ')' : ''))
   try { window.dispatchEvent(new Event(p.online ? 'online' : 'offline')) } catch (_) {}
+  // v1.2.492: 30 секунд после «появился» считаем исходы попыток и пишем одну сводную строку.
+  if (p.online && prev === false) { startRecoveryWindow(Date.now()); setTimeout(() => { const l = summaryLine(Date.now()); if (l) log('INFO', l) }, RECOVERY_WINDOW_MS) }
+}
+
+/** v1.2.492: последний пакет пульса как состояние React — для панели связи (кружок «Интернет»). */
+export function useNetPulse() {
+  const [pulse, setPulse] = useState(() => (typeof window !== 'undefined' ? window.__ccNetPulse || null : null))
+  useEffect(() => {
+    const on = (e) => setPulse(e && e.detail ? e.detail : (window.__ccNetPulse || null))
+    window.addEventListener('cc-net-pulse', on)
+    return () => window.removeEventListener('cc-net-pulse', on)
+  }, [])
+  return pulse
 }
 
 /** Проба прошла? outcome — то, что возвращает probeWebviewHealth: {result} | {error} | {timeout}. */

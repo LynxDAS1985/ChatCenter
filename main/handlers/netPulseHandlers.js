@@ -20,7 +20,7 @@
 //
 // Таймер один (setTimeout-цепочка), останавливается в stop() по before-quit — memoryLeaks.
 import {
-  PULSE_TARGETS, PULSE_TIMEOUT_MS, createPulseState, nextDelayMs, canCheckNow, applyResult, pulsePayload, setWaiting,
+  PULSE_TIMEOUT_MS, createPulseState, nextDelayMs, canCheckNow, applyResult, pulsePayload, setWaiting, resolveTargets,
 } from '../../shared/netPulsePlan.js'
 
 /**
@@ -40,6 +40,9 @@ export function initNetPulse({ net, powerMonitor, ipcMain, getMainWindow, storag
     return { stop() {}, checkNow() {}, getState: () => null }
   }
   const doFetch = fetchImpl || ((url, init) => net.fetch(url, init))
+  // v1.2.492: адреса можно сменить в настройках (netPulseTargets) без пересборки; ошибка формата → по умолчанию + запись.
+  const { targets, source, reason: targetsReason } = resolveTargets(settings)
+  if (targetsReason) console.warn('[net-pulse] адреса из настроек отвергнуты (' + targetsReason + ') — беру адреса по умолчанию')
   let state = createPulseState()
   let timer = null
   let stopped = false
@@ -70,15 +73,18 @@ export function initNetPulse({ net, powerMonitor, ipcMain, getMainWindow, storag
     if (!canCheckNow(state, now)) return
     state = { ...state, checking: true }
     let result = { ok: false, host: '', latencyMs: 0 }
-    for (const url of PULSE_TARGETS) {
+    for (const url of targets) {
       const r = await probeOne(url)
       if (r.ok) { result = { ok: true, host: hostOf(url), latencyMs: r.latencyMs }; break }
     }
     const applied = applyResult(state, { ...result, now: Date.now(), reason })
     state = applied.state
     if (applied.line) console.log(applied.line)
+    // v1.2.492: пакет окну — на КАЖДУЮ проверку, чтобы экран показывал «проверено N с назад» честно.
+    // Окно превращает его в событие online/offline ТОЛЬКО на переходе (applyPulse, тест) — лестница
+    // повторов от ежеминутных пакетов не дёргается. TDLib зовём по-прежнему только на переход.
+    sendToWindow('net:pulse', pulsePayload(state))
     if (applied.transition) {
-      sendToWindow('net:pulse', pulsePayload(state))
       if (applied.transition === 'online' && typeof onOnline === 'function') {
         try { await onOnline() } catch (e) { console.warn('[net-pulse] обработчик «интернет появился» упал: ' + ((e && e.message) || e)) }
       }
@@ -115,7 +121,7 @@ export function initNetPulse({ net, powerMonitor, ipcMain, getMainWindow, storag
     console.warn('[net-pulse] powerMonitor недоступен: ' + ((e && e.message) || e))
   }
 
-  console.log('[net-pulse] запущен: адресов=' + PULSE_TARGETS.length + ', в покое каждые ' + (nextDelayMs(state) / 1000) + ' с')
+  console.log('[net-pulse] запущен: адресов=' + targets.length + ' (' + (source === 'settings' ? 'из настроек netPulseTargets' : 'по умолчанию') + '), в покое каждые ' + (nextDelayMs(state) / 1000) + ' с')
   checkNow('старт')
 
   return {

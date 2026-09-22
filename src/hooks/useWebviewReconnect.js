@@ -20,6 +20,7 @@ import {
 import { logFailLine, logSkipLine, logRestoredLine, logManualLine, logNetLine, logEchoLine, shouldLogEcho } from '../../shared/reconnectTexts.js'
 import { createAttemptRunner } from '../../shared/reconnectAttempt.js' // v1.2.491
 import { quickProbe } from '../../shared/webviewHealthProbe.js'          // v1.2.491
+import { noteOutcome } from '../../shared/netRecoverySummary.js'         // v1.2.492: сводка «ожили сами / перезагружены»
 import { netVerdict } from './useOpenPageWatch.js'                       // v1.2.491: вердикт пульса
 
 const log = (level, message) => { try { window.api?.send?.('app:log', { level, message }) } catch (_) {} }
@@ -37,7 +38,7 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
   // от пробы → сначала спросить страницу, ожила ли сама». Вердикт пульса — window.__ccNetOnline
   // (ставит useOpenPageWatch по событию net:pulse из главного процесса).
   const attempt = useCallback((id) => createAttemptRunner({
-    getEl: (i) => webviewRefs.current?.[i], info, stRef, setState, log, isNetOnline: netVerdict, quickProbe,
+    getEl: (i) => webviewRefs.current?.[i], info, stRef, setState, log, isNetOnline: netVerdict, quickProbe, onOutcome: noteOutcome,
   })(id), [info, webviewRefs])
 
   // Страница упала. Повторяем ТОЛЬКО на сетевых кодах: перезагрузка стирает недописанное

@@ -16,7 +16,7 @@
 // перерисовывалось всё окно приложения: хук просыпается только на реальные события.
 import { useEffect, useState } from 'react'
 import { errorName, secondsLeft } from '../../shared/reconnectPlan.js'
-import { reasonTitle } from '../../shared/reconnectTexts.js'
+import { reasonTitle, pulseStatusLine } from '../../shared/reconnectTexts.js'
 import { netVerdict } from '../hooks/useOpenPageWatch.js' // v1.2.491: вердикт пульса интернета
 
 /**
@@ -129,6 +129,8 @@ export default function WebviewOfflineOverlay({ entry, name, color, onRetry, onO
           {trying
             ? `попытка ${entry.attempt} · идёт`
             : `попытка ${entry.attempt} · следующая пауза ${Math.round((entry.pauseMs || 0) / 1000)} с`}
+          {/* v1.2.492: честно про интернет — вердикт пульса и его возраст (пакет приходит на каждую проверку) */}
+          <br />{pulseStatusLine(typeof window !== 'undefined' ? window.__ccNetPulse : null, now)}
         </p>
 
         {color && <div style={{ height: 3, width: 42, borderRadius: 2, background: color, margin: '16px auto 0', opacity: .8 }} />}

@@ -1,7 +1,7 @@
 // v1.2.7: тесты pure-функций статистики авто-ответов.
 
 import { describe, it, expect } from 'vitest'
-import { groupAutoReplyByDay, summarizeStats, shortDayLabel } from './autoReplyStats.js'
+import { groupAutoReplyByDay, summarizeStats, shortDayLabel } from '../../shared/autoReplyStats.js'
 
 describe('groupAutoReplyByDay', () => {
   it('не-массив → []', () => {

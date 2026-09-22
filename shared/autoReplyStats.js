@@ -1,4 +1,5 @@
-// v1.2.5: pure helpers для статистики авто-ответов из audit log.
+// shared/autoReplyStats.js — v1.2.5: pure helpers для статистики авто-ответов из audit log.
+// v1.2.492: переехал из src/utils (чистые расчёты без React) ради бюджета строк интерфейса (ADR-044).
 //
 // Используется в AIActivityDashboard для отображения графика «AI ответил N раз в день».
 // Группирует audit записи actor='ai_auto' по дням за последние N дней.

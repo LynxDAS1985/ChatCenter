@@ -30,6 +30,27 @@ export const PULSE_TARGETS = [
   'https://yandex.ru/favicon.ico',
 ]
 
+/** Сколько адресов можно задать в настройках (защита от списка на сто строк). */
+export const PULSE_TARGETS_MAX = 6
+
+/**
+ * v1.2.492: адреса пульса можно сменить БЕЗ пересборки — ключ `netPulseTargets` в settings
+ * (chatcenter.json): массив из 1…6 строк, каждая начинается с https://. Любая ошибка формата → адреса
+ * по умолчанию (и запись в журнал, чтобы опечатка в настройках не осталась немой).
+ * Зачем: если в сети пользователя закроют все три адреса, пульс скажет «интернета нет», хотя он есть;
+ * лечится сменой адресов, а не логики.
+ * @returns {{targets:string[], source:'settings'|'default', reason?:string}}
+ */
+export function resolveTargets(settings) {
+  const raw = settings && settings.netPulseTargets
+  if (raw === undefined || raw === null) return { targets: PULSE_TARGETS, source: 'default' }
+  if (!Array.isArray(raw) || raw.length === 0) return { targets: PULSE_TARGETS, source: 'default', reason: 'netPulseTargets должен быть непустым списком' }
+  if (raw.length > PULSE_TARGETS_MAX) return { targets: PULSE_TARGETS, source: 'default', reason: `netPulseTargets: больше ${PULSE_TARGETS_MAX} адресов` }
+  const bad = raw.find(u => typeof u !== 'string' || !/^https:\/\/\S+$/.test(u.trim()))
+  if (bad !== undefined) return { targets: PULSE_TARGETS, source: 'default', reason: 'netPulseTargets: адрес должен начинаться с https:// — ' + String(bad).slice(0, 60) }
+  return { targets: raw.map(u => u.trim()), source: 'settings' }
+}
+
 export const PULSE_OK_MS = 60000        // пауза между проверками, когда всё хорошо и никто не ждёт
 export const PULSE_PROBLEM_MS = 15000   // пауза, когда интернета нет или мессенджеры ждут повтора
 export const PULSE_TIMEOUT_MS = 5000    // сколько ждём ответ одного адреса

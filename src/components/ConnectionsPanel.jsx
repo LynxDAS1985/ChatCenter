@@ -9,6 +9,8 @@ import {
   getHealthColor,
   getHealthLabel,
 } from '../../shared/connectionHealth.js'
+import { pulseStatusLine } from '../../shared/reconnectTexts.js' // v1.2.492
+import { useNetPulse } from '../hooks/useOpenPageWatch.js'    // v1.2.492: кружок «Интернет» по пульсу
 import { HEALTH_SCHEDULER_TICK_MS, nextHealthDelay } from '../../shared/connectionHealthScheduler.js' // v1.2.491: планировщик переехал в shared/
 
 function splitItems(items) {
@@ -91,6 +93,7 @@ export default function ConnectionsPanel({
   onOpenLog,
 }) {
   const [now, setNow] = useState(Date.now())
+  const pulse = useNetPulse() // v1.2.492
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), HEALTH_SCHEDULER_TICK_MS)
     return () => clearInterval(timer)
@@ -141,6 +144,11 @@ export default function ConnectionsPanel({
 
         <div className="grid grid-cols-[1fr_300px] gap-0 min-h-[420px]">
           <div className="p-4 overflow-auto" style={{ borderRight: '1px solid var(--cc-border)' }}>
+            {/* v1.2.492: «Интернет» — вердикт пульса (main/handlers/netPulseHandlers.js): зелёный есть / красный нет / серый не проверяли */}
+            <div className="flex items-center gap-2 mb-3 text-sm" title="Программа сама щупает интернет: раз в минуту, при беде — раз в 15 с">
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: getHealthColor({ state: pulse && typeof pulse.online === 'boolean' ? (pulse.online ? HEALTH_OK : HEALTH_ERROR) : HEALTH_PENDING }) }} />
+              <span className="text-xs" style={{ color: 'var(--cc-text-dim)' }}>{pulseStatusLine(pulse, now)}</span>
+            </div>
             <Section title="WebView вкладки" items={webview} selectedItem={selectedItem} onSelect={setSelectedId} />
             <Section title="Native/API аккаунты" items={native} selectedItem={selectedItem} onSelect={setSelectedId} />
           </div>

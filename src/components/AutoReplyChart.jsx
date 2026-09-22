@@ -8,7 +8,7 @@
 //
 // Используется в AIActivityDashboard когда выбрана категория «AI авто».
 
-import { groupAutoReplyByDay, summarizeStats, shortDayLabel } from '../utils/autoReplyStats.js'
+import { groupAutoReplyByDay, summarizeStats, shortDayLabel } from '../../shared/autoReplyStats.js' // v1.2.492: переехал в shared/
 
 const BAR_WIDTH = 32
 const BAR_GAP = 8
