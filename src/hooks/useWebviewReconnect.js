@@ -112,7 +112,7 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
   useEffect(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     // v1.2.491: сколько мессенджеров ждёт — главному процессу: пока ждут, пульс интернета чаще (15 с).
-    try { window.api?.send?.('net:pulse-waiting', { count: Object.keys(state).length }) } catch (_) {}
+    try { window.__ccReconnectWaiting = Object.keys(state).length; window.api?.send?.('net:pulse-waiting', { count: Object.keys(state).length }) } catch (_) {} // v1.2.493: число ждущих — и сводке
     const ms = nextWakeMs(state, Date.now())
     if (ms === null) return undefined
     timerRef.current = setTimeout(() => {

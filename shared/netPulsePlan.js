@@ -87,10 +87,10 @@ export function canCheckNow(state, now = Date.now()) {
 /**
  * Применить результат проверки.
  * @param {object} state
- * @param {{ok:boolean, host?:string, latencyMs?:number, now?:number, reason?:string}} r
+ * @param {{ok:boolean, host?:string, latencyMs?:number, now?:number, reason?:string, targetsCount?:number}} r — targetsCount: сколько адресов реально опрошено (v1.2.493)
  * @returns {{state:object, transition:'online'|'offline'|null, line:string|null}}
  */
-export function applyResult(state, { ok, host = '', latencyMs = 0, now = Date.now(), reason = '' }) {
+export function applyResult(state, { ok, host = '', latencyMs = 0, now = Date.now(), reason = '', targetsCount = 0 }) {
   const prev = state.online
   const next = { ...state, checking: false, lastCheckAt: now, lastHost: ok ? host : state.lastHost, lastLatencyMs: ok ? latencyMs : state.lastLatencyMs }
   let transition = null
@@ -104,7 +104,7 @@ export function applyResult(state, { ok, host = '', latencyMs = 0, now = Date.no
     next.online = true; next.since = now; next.lastStillLogAt = 0
   } else if (!ok && prev !== false) {
     transition = 'offline'
-    line = `[net-pulse] интернет ПРОПАЛ — ни один из ${PULSE_TARGETS.length} адресов не ответил${reason ? ' · причина проверки: ' + reason : ''}`
+    line = `[net-pulse] интернет ПРОПАЛ — ни один из ${targetsCount || PULSE_TARGETS.length} адресов не ответил${reason ? ' · причина проверки: ' + reason : ''}`
     next.online = false; next.since = now; next.lastStillLogAt = now
   } else if (!ok && prev === false && now - (state.lastStillLogAt || 0) >= STILL_OFFLINE_LOG_MS) {
     line = `[net-pulse] интернета всё ещё нет (уже ${Math.round((now - state.since) / 60000)} мин)`

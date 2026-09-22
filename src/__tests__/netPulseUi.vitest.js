@@ -6,6 +6,8 @@ import fs from 'node:fs'
 import { pulseStatusLine } from '../../shared/reconnectTexts.js'
 import { resolveTargets, PULSE_TARGETS, PULSE_TARGETS_MAX } from '../../shared/netPulsePlan.js'
 import { startRecoveryWindow, noteOutcome, summaryLine, _resetRecoverySummary, RECOVERY_WINDOW_MS } from '../../shared/netRecoverySummary.js'
+import { applyResult, createPulseState } from '../../shared/netPulsePlan.js'
+import { applyPulse } from '../hooks/useOpenPageWatch.js'
 import { initNetPulse } from '../../main/handlers/netPulseHandlers.js'
 
 const T0 = 1_700_000_000_000
@@ -104,10 +106,59 @@ describe('[!] ЛОВУШКИ подключения', () => {
     expect(panel).toContain('pulseStatusLine(pulse, now)')
     const watch = fs.readFileSync('src/hooks/useOpenPageWatch.js', 'utf8')
     expect(watch).toContain("new CustomEvent('cc-net-pulse'")
-    expect(watch).toContain('startRecoveryWindow(Date.now())')
+    expect(watch).toContain('startRecoveryWindow(Date.now(), window.__ccReconnectWaiting || 0)')
     const hook = fs.readFileSync('src/hooks/useWebviewReconnect.js', 'utf8')
     expect(hook).toContain('onOutcome: noteOutcome')
     expect(fs.existsSync('src/utils/autoReplyStats.js')).toBe(false) // переехал в shared ради бюджета
     expect(fs.readFileSync('src/components/AutoReplyChart.jsx', 'utf8')).toContain("from '../../shared/autoReplyStats.js'")
+  })
+})
+
+describe('v1.2.493 — находки ревью и советы', () => {
+  beforeEach(() => { _resetRecoverySummary(); delete window.__ccNetOnline; delete window.__ccNetPulse; delete window.__ccReconnectWaiting })
+
+  it('[!] находка #1: строка «ПРОПАЛ» называет РЕАЛЬНОЕ число адресов', () => {
+    const { state } = applyResult(createPulseState(T0), { ok: true, host: 'a', latencyMs: 1, now: T0 })
+    expect(applyResult(state, { ok: false, now: T0 + 60_000, targetsCount: 1 }).line).toContain('ни один из 1 адресов')
+    expect(applyResult(state, { ok: false, now: T0 + 60_000 }).line).toContain('ни один из 3 адресов') // без параметра — по умолчанию
+  })
+
+  it('[!] находка #2 (репродукция): два возврата сети за 10 с → ОДНА сводка, первый исход не потерян, «ждали N»', () => {
+    vi.useFakeTimers()
+    try {
+      const logs = []; window.api = { send: (c, p) => { if (c === 'app:log') logs.push(p.message) } }
+      window.__ccReconnectWaiting = 2
+      applyPulse({ online: false }); applyPulse({ online: true })
+      noteOutcome('a', 'restored')
+      vi.advanceTimersByTime(10_000)
+      applyPulse({ online: false }); applyPulse({ online: true })
+      vi.advanceTimersByTime(31_000)
+      const s = logs.filter(l => l.includes('итог возврата сети'))
+      expect(s.length).toBe(1)
+      expect(s[0]).toContain('перезагружены 1')
+      expect(s[0]).toContain('ждали повтора 2')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('окно подсчёта: новое → true, продление → false; после 30 с — новое', () => {
+    expect(startRecoveryWindow(T0, 1)).toBe(true)
+    noteOutcome('a', 'self-healed', T0 + 100)
+    expect(startRecoveryWindow(T0 + 5000, 3)).toBe(false)
+    expect(summaryLine(T0 + 6000)).toContain('ожили сами 1')
+    expect(summaryLine(T0 + 6000)).toContain('ждали повтора 3')
+    expect(startRecoveryWindow(T0 + 5000 + RECOVERY_WINDOW_MS + 1, 0)).toBe(true)
+    expect(summaryLine(T0 + 5000 + RECOVERY_WINDOW_MS + 2)).toContain('попыток не было')
+  })
+
+  it('[!] ЛОВУШКИ проводки советов: полоса показывает «нет сети» только при обрыве; «Проверить все» щупает интернет', () => {
+    const rail = fs.readFileSync('src/native/components/NativeSidebar.jsx', 'utf8')
+    expect(rail).toContain("useNetPulse()?.online === false")
+    expect(rail).toContain('нет сети')
+    const app = fs.readFileSync('src/App.jsx', 'utf8')
+    expect(app).toContain("send?.('net:pulse-now', { reason: 'кнопка «Проверить все»' })")
+    const hook = fs.readFileSync('src/hooks/useWebviewReconnect.js', 'utf8')
+    expect(hook).toContain('window.__ccReconnectWaiting = Object.keys(state).length')
+    const lim = fs.readFileSync('src/__tests__/fileSizeLimits.test.cjs', 'utf8')
+    expect(lim).toContain('assert(totalSrc < 31200') // планка опущена в самом числе, не в комментарии
   })
 })

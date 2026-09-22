@@ -18,6 +18,7 @@ import { decideProbe, logWatchLine, logStuckLine, logNetDownLine, logRecoveredLi
 import { PROBE_FAIL_CODE, messengerInfo } from '../../shared/reconnectPlan.js'
 
 const log = (level, message) => { try { window.api?.send?.('app:log', { level, message }) } catch (_) {} }
+let summaryTimer = null // v1.2.493: один таймер сводки — при «дребезге» сети окно продлевается, а не задваивается
 
 /** Вердикт пульса: true / false / null (ещё не знаем). */
 export function netVerdict() {
@@ -36,7 +37,11 @@ export function applyPulse(p) {
   log('INFO', '[net-pulse→окно] интернет ' + (p.online ? 'появился' : 'пропал') + (p.host ? ' (ответил ' + p.host + ')' : ''))
   try { window.dispatchEvent(new Event(p.online ? 'online' : 'offline')) } catch (_) {}
   // v1.2.492: 30 секунд после «появился» считаем исходы попыток и пишем одну сводную строку.
-  if (p.online && prev === false) { startRecoveryWindow(Date.now()); setTimeout(() => { const l = summaryLine(Date.now()); if (l) log('INFO', l) }, RECOVERY_WINDOW_MS) }
+  if (p.online && prev === false) {
+    startRecoveryWindow(Date.now(), window.__ccReconnectWaiting || 0)
+    if (summaryTimer) clearTimeout(summaryTimer)
+    summaryTimer = setTimeout(() => { summaryTimer = null; const l = summaryLine(Date.now()); if (l) log('INFO', l) }, RECOVERY_WINDOW_MS)
+  }
 }
 
 /** v1.2.492: последний пакет пульса как состояние React — для панели связи (кружок «Интернет»). */

@@ -5,6 +5,7 @@
 // v1.2.294 — API-аккаунты и веб-вкладки разделены КОНТЕЙНЕРАМИ («коробочки» с подписью «API» / «Веб»)
 // вместо тонкой линии. Показываются только когда есть веб (иначе просто список аккаунтов, как раньше).
 import { isAllVisible, visibleAccountCount } from '../../../shared/accountFilter.js'
+import { useNetPulse } from '../../hooks/useOpenPageWatch.js' // v1.2.493: метка «нет сети» по пульсу интернета
 import { getAccountColor } from '../../../shared/accountColors.js'
 import AccountAvatar from './AccountAvatar.jsx'
 import RailWebIcon from './RailWebIcon.jsx'
@@ -79,6 +80,8 @@ export default function NativeSidebar({
     </div>
   ))
 
+  const netDown = useNetPulse()?.online === false // v1.2.493: показываем метку ТОЛЬКО при обрыве — не плодим кружки
+
   // Веб-мессенджеры (ВК/WhatsApp/МАКС).
   const webNodes = webSources.map(m => (
     <RailWebIcon
@@ -103,6 +106,13 @@ export default function NativeSidebar({
       style={{ width: railWidth, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', flexShrink: 0,
         gap: Math.round(4 * railScale), transition: isRailResizing ? 'none' : 'width 0.1s' }}
     >
+      {/* v1.2.493: «нет сети» — вердикт пульса интернета (main/handlers/netPulseHandlers.js). Пока интернет есть — ничего:
+          здоровье каждого мессенджера уже показывают их кружки. Пропал — красная метка над всеми, чтобы не гадать по одному. */}
+      {netDown && (
+        <div title="Интернета нет — программа проверяет каждые 15 секунд и сама поднимет чаты, когда он вернётся"
+          style={{ flexShrink: 0, textAlign: 'center', fontSize: Math.max(9, Math.round(10 * railScale)), lineHeight: 1.4,
+            color: '#F87171', background: 'rgba(248,113,113,0.14)', borderRadius: 6, padding: '2px 0', margin: '0 2px' }}>нет сети</div>
+      )}
       {/* ── ВЕРХ (закреплён): кнопка «Все». Горит при показе всех; иначе счётчик N/M. Только при ≥2. ── */}
       {store.accounts.length >= 2 && (
         <div

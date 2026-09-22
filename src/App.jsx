@@ -553,6 +553,7 @@ export default function App() {
   }, [])
 
   const refreshAllConnections = useCallback(() => {
+    try { window.api?.send?.('net:pulse-now', { reason: 'кнопка «Проверить все»' }) } catch (_) {} // v1.2.493: заодно щупаем интернет
     const webviewChecks = []
     setConnectionHealth(prev => {
       const next = { ...prev }

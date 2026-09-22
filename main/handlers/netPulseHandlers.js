@@ -77,7 +77,7 @@ export function initNetPulse({ net, powerMonitor, ipcMain, getMainWindow, storag
       const r = await probeOne(url)
       if (r.ok) { result = { ok: true, host: hostOf(url), latencyMs: r.latencyMs }; break }
     }
-    const applied = applyResult(state, { ...result, now: Date.now(), reason })
+    const applied = applyResult(state, { ...result, now: Date.now(), reason, targetsCount: targets.length })
     state = applied.state
     if (applied.line) console.log(applied.line)
     // v1.2.492: пакет окну — на КАЖДУЮ проверку, чтобы экран показывал «проверено N с назад» честно.
