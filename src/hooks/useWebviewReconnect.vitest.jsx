@@ -283,7 +283,7 @@ describe('Экран «Нет связи»', () => {
   it('видно причину, отсчёт и кнопку', () => {
     const entry = planAfterFail(null, { code: -106, url: WA, now })
     render(<WebviewOfflineOverlay entry={entry} name="WhatsApp" onRetry={() => {}} />)
-    expect(screen.getByText(/Нет связи с WhatsApp/)).toBeTruthy()
+    expect(screen.getByText(/Сайт WhatsApp недоступен/)).toBeTruthy()
     expect(screen.getByText('ERR_INTERNET_DISCONNECTED')).toBeTruthy()
     expect(screen.getByText('5')).toBeTruthy()
     expect(screen.getByText('Повторить сейчас')).toBeTruthy()

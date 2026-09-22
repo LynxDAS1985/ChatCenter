@@ -1,0 +1,127 @@
+// v1.2.491 — одна попытка поднять страницу (shared/reconnectAttempt.js) на поддельной странице
+// + новые правила reconnectPlan/reconnectTexts (долгая неудача, код пробы, причины для экрана).
+import { describe, it, expect, vi } from 'vitest'
+import fs from 'node:fs'
+import { createAttemptRunner } from '../../shared/reconnectAttempt.js'
+import {
+  nextPauseMs, planAfterFail, errorName, LONG_FAIL_ATTEMPTS, LONG_FAIL_PAUSE_MS, PROBE_FAIL_CODE, RETRY_LADDER_MS,
+} from '../../shared/reconnectPlan.js'
+import { reasonTitle, shouldLogEcho, logNetDownSkipLine, logSelfHealedLine } from '../../shared/reconnectTexts.js'
+
+const T0 = 1_700_000_000_000
+
+/** Подделка: состояние React + зеркало + страница. */
+function rig({ entry, el, netOnline = true, quickProbe } = {}) {
+  let state = entry ? { wa: entry } : {}
+  const stRef = { current: state }
+  const setState = (fn) => { state = fn(state); stRef.current = state }
+  const logs = []
+  const attempt = createAttemptRunner({
+    getEl: () => el, info: () => ({ name: 'WhatsApp', url: 'https://web.whatsapp.com/' }),
+    stRef, setState, log: (l, m) => logs.push(l + ' ' + m), isNetOnline: () => netOnline, quickProbe, now: () => T0,
+  })
+  return { attempt, get state() { return state }, stRef, logs }
+}
+const waitEntry = (extra) => ({ attempt: 1, phase: 'wait', dueAt: T0, pauseMs: 5000, code: -105, since: T0 - 30_000, failedAt: T0 - 5000, origin: 'load', ...extra })
+
+describe('одна попытка', () => {
+  it('страницы ещё нет → запись не теряем, ждём дальше', async () => {
+    const r = rig({ entry: waitEntry(), el: null })
+    expect(await r.attempt('wa')).toBe('no-element')
+    expect(r.state.wa.phase).toBe('wait')
+  })
+
+  it('[!] ЛОВУШКА: интернета нет (пульс) → loadURL НЕ зовём, пишем почему, ждём', async () => {
+    const el = { loadURL: vi.fn(() => Promise.resolve()) }
+    const r = rig({ entry: waitEntry(), el, netOnline: false })
+    expect(await r.attempt('wa')).toBe('net-down')
+    expect(el.loadURL).not.toHaveBeenCalled()
+    expect(r.logs.join('\n')).toContain('интернета нет (по пульсу) — страницу не дёргаем')
+    expect(r.state.wa.phase).toBe('wait')
+  })
+
+  it('загрузка удалась → запись снята, строка «восстановлена»', async () => {
+    const el = { loadURL: vi.fn(() => Promise.resolve()) }
+    const r = rig({ entry: waitEntry(), el })
+    expect(await r.attempt('wa')).toBe('restored')
+    expect(r.state.wa).toBeUndefined()
+    expect(r.logs.join('\n')).toContain('связь восстановлена')
+  })
+
+  it('[!] фаза «идёт попытка» стоит в зеркале СИНХРОННО до ответа loadURL (ловушка v1.2.453)', async () => {
+    let seen = null
+    const r0 = { current: null }
+    const el = { loadURL: vi.fn(() => { seen = r0.current.stRef.current.wa.phase; return new Promise(() => {}) }) }
+    const r = rig({ entry: waitEntry(), el }); r0.current = r
+    r.attempt('wa')
+    expect(seen).toBe('trying')
+    expect(r.state.wa.attempt).toBe(2)
+  })
+
+  it('загрузка не удалась → следующая пауза по лестнице, WARN', async () => {
+    const el = { loadURL: vi.fn(() => Promise.reject(Object.assign(new Error('x'), { errno: -105 }))) }
+    const r = rig({ entry: waitEntry(), el })
+    expect(await r.attempt('wa')).toBe('failed')
+    expect(r.state.wa.phase).toBe('wait')
+    expect(r.state.wa.pauseMs).toBe(RETRY_LADDER_MS[2]) // после 2-й попытки
+    expect(r.logs.join('\n')).toContain('WARN [reconnect] WhatsApp: попытка 2 не удалась')
+  })
+
+  it('[!] запись от пробы, страница ожила сама → снимаем экран БЕЗ перезагрузки', async () => {
+    const el = { loadURL: vi.fn(() => Promise.resolve()) }
+    const r = rig({ entry: waitEntry({ origin: 'probe', code: PROBE_FAIL_CODE }), el, quickProbe: async () => true })
+    expect(await r.attempt('wa')).toBe('self-healed')
+    expect(el.loadURL).not.toHaveBeenCalled()
+    expect(r.state.wa).toBeUndefined()
+    expect(r.logs.join('\n')).toContain('страница ожила сама')
+  })
+
+  it('запись от пробы, страница молчит → перезагружаем', async () => {
+    const el = { loadURL: vi.fn(() => Promise.resolve()) }
+    const r = rig({ entry: waitEntry({ origin: 'probe', code: PROBE_FAIL_CODE }), el, quickProbe: async () => false })
+    expect(await r.attempt('wa')).toBe('restored')
+    expect(el.loadURL).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('новые правила плана (v1.2.491)', () => {
+  it('[!] долгая неудача при ПОДТВЕРЖДЁННОМ интернете → пауза 5 минут; без пульса или без интернета — обычная лестница', () => {
+    expect(nextPauseMs(LONG_FAIL_ATTEMPTS, 'https://web.whatsapp.com/', true)).toBe(LONG_FAIL_PAUSE_MS)
+    expect(nextPauseMs(LONG_FAIL_ATTEMPTS, 'https://web.whatsapp.com/', null)).toBe(RETRY_LADDER_MS.at(-1)) // пульс неизвестен — лестница
+    expect(nextPauseMs(LONG_FAIL_ATTEMPTS, 'https://web.whatsapp.com/', false)).toBe(RETRY_LADDER_MS.at(-1))
+    expect(nextPauseMs(3, 'https://web.whatsapp.com/', true)).toBe(RETRY_LADDER_MS[3]) // до 10 — как было
+  })
+  it('код пробы — не сетевой, но именованный; origin переживает перепланирование', () => {
+    expect(errorName(PROBE_FAIL_CODE)).toBe('PAGE_UNRESPONSIVE')
+    const e = planAfterFail(null, { code: PROBE_FAIL_CODE, url: 'u', now: T0, origin: 'probe' })
+    expect(e.origin).toBe('probe')
+    expect(planAfterFail(null, { code: -105, url: 'u', now: T0 }).origin).toBe('load')
+  })
+  it('причины для экрана: три разные', () => {
+    expect(reasonTitle(waitEntry(), false, 'WhatsApp').title).toBe('Нет интернета')
+    expect(reasonTitle(waitEntry({ origin: 'probe' }), true, 'WhatsApp').title).toContain('страница не отвечает')
+    const r = reasonTitle(waitEntry({ attempt: 12 }), true, 'WhatsApp')
+    expect(r.title).toBe('Сайт WhatsApp недоступен')
+    expect(r.hint).toContain('интернет есть')
+    expect(r.hint).toContain('раз в 5 минут')
+  })
+  it('эхо страницы-ошибки пишем с 3-й попытки только каждую 10-ю', () => {
+    expect(shouldLogEcho({ attempt: 1 })).toBe(true)
+    expect(shouldLogEcho({ attempt: 5 })).toBe(false)
+    expect(shouldLogEcho({ attempt: 10 })).toBe(true)
+  })
+  it('строки журнала', () => {
+    expect(logNetDownSkipLine('X')).toContain('интернета нет')
+    expect(logSelfHealedLine('X', { since: T0 - 12_000 }, T0)).toContain('ожила сама за 12с')
+  })
+  it('[!] ЛОВУШКИ подключения: хук зовёт runner и вердикт пульса, экран берёт причину', () => {
+    const hook = fs.readFileSync('src/hooks/useWebviewReconnect.js', 'utf8')
+    expect(hook).toContain('createAttemptRunner({')
+    expect(hook).toContain('isNetOnline: netVerdict')
+    expect(hook).toContain("window.api?.send?.('net:pulse-waiting'")
+    expect(hook).toContain('reportFail: onFail, stateRef: stRef')
+    expect((hook.match(/useRef\(/g) || []).length).toBe(2) // страж памяти: новых хранилищ в хуке нет
+    const overlay = fs.readFileSync('src/components/WebviewOfflineOverlay.jsx', 'utf8')
+    expect(overlay).toContain('reasonTitle(entry, netVerdict(), name)')
+  })
+})

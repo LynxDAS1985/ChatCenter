@@ -14,10 +14,13 @@
 // Плюс слушаем стандартные события `online`/`offline` — по возврату сети пробуем сразу.
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  isNetworkError, planAfterFail, planTrying, planAfterRetryFail, dueIds, nextWakeMs, bringAllForward,
-  logFailLine, logSkipLine, logRetryFailLine, logRestoredLine, logManualLine, logNetLine,
-  shouldAcceptLoaded, touchFailedAt, logEchoLine, messengerInfo,
+  isNetworkError, planAfterFail, dueIds, nextWakeMs, bringAllForward,
+  shouldAcceptLoaded, touchFailedAt, messengerInfo, PROBE_FAIL_CODE,
 } from '../../shared/reconnectPlan.js'
+import { logFailLine, logSkipLine, logRestoredLine, logManualLine, logNetLine, logEchoLine, shouldLogEcho } from '../../shared/reconnectTexts.js'
+import { createAttemptRunner } from '../../shared/reconnectAttempt.js' // v1.2.491
+import { quickProbe } from '../../shared/webviewHealthProbe.js'          // v1.2.491
+import { netVerdict } from './useOpenPageWatch.js'                       // v1.2.491: вердикт пульса
 
 const log = (level, message) => { try { window.api?.send?.('app:log', { level, message }) } catch (_) {} }
 
@@ -29,53 +32,29 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
 
   const info = useCallback((id) => messengerInfo(messengersRef.current, id), [messengersRef])
 
-  // Одна попытка: зовём loadURL и по его обещанию решаем — снять экран или ждать дальше.
-  const attempt = useCallback((id) => {
-    const { name, url } = info(id)
-    const el = webviewRefs.current?.[id]
-    const now = Date.now()
-    if (!el || typeof el.loadURL !== 'function' || !url) {
-      // Страницы ещё нет в окне (или адрес пуст) — не теряем запись, попробуем позже.
-      setState(prev => (prev[id] ? { ...prev, [id]: planAfterRetryFail(prev[id], { code: prev[id].code, url, now }) } : prev))
-      return
-    }
-    // 🔴 v1.2.453 (находка ревью): помечаем «идёт попытка» СРАЗУ и в зеркале записей.
-    // Экран перерисовывает setState, но он применяется не мгновенно, а события страницы
-    // (в том числе отчёт её страницы-ошибки) могут прийти раньше — и обработчик «загрузилась»
-    // увидел бы прежнюю фазу и снял экран. Зеркало stRef обработчики читают синхронно,
-    // поэтому порядок перестаёт иметь значение. Нового хранилища не добавляем (stRef уже есть):
-    // добавление хука в работающее приложение ломает горячую перезагрузку.
-    const trying = planTrying(stRef.current[id], now)
-    stRef.current = { ...stRef.current, [id]: trying }
-    setState(prev => (prev[id] ? { ...prev, [id]: trying } : prev))
-    el.loadURL(url).then(() => {
-      const entry = stRef.current[id]
-      log('INFO', logRestoredLine(name, entry, Date.now()))
-      setState(prev => { const n = { ...prev }; delete n[id]; return n })
-    }).catch((e) => {
-      const code = (e && e.errno) || (stRef.current[id] && stRef.current[id].code) || 0
-      setState(prev => {
-        if (!prev[id]) return prev
-        const next = planAfterRetryFail(prev[id], { code, url, now: Date.now() })
-        log('WARN', logRetryFailLine(name, next))
-        return { ...prev, [id]: next }
-      })
-    })
-  }, [info, webviewRefs])
+  // Одна попытка — в shared/reconnectAttempt.js (v1.2.491, вынос по правилу памяти «attempt() —
+  // узлом связей, а не поднимать потолок»). Там же: «интернета нет → страницу не дёргаем» и «запись
+  // от пробы → сначала спросить страницу, ожила ли сама». Вердикт пульса — window.__ccNetOnline
+  // (ставит useOpenPageWatch по событию net:pulse из главного процесса).
+  const attempt = useCallback((id) => createAttemptRunner({
+    getEl: (i) => webviewRefs.current?.[i], info, stRef, setState, log, isNetOnline: netVerdict, quickProbe,
+  })(id), [info, webviewRefs])
 
   // Страница упала. Повторяем ТОЛЬКО на сетевых кодах: перезагрузка стирает недописанное
   // сообщение, поэтому дёргать живую страницу «на всякий случай» нельзя.
-  const onFail = useCallback((id, code) => {
+  // v1.2.491: третий параметр origin — 'probe', когда сюда пришёл присмотр за открытой страницей
+  // (useOpenPageWatch); код PROBE_FAIL_CODE не сетевой, поэтому пропускаем его явно.
+  const onFail = useCallback((id, code, origin) => {
     if (!id) return
     const { name, url } = info(id)
-    if (!isNetworkError(code)) {
+    if (!isNetworkError(code) && Number(code) !== PROBE_FAIL_CODE) {
       if (Number(code) !== -3) log('INFO', logSkipLine(name, code)) // -3 = обычная отмена, не шумим
       return
     }
     setState(prev => {
       // Попытка уже идёт → вторую не плодим, но метку сбоя освежаем (см. touchFailedAt).
       if (prev[id] && prev[id].phase === 'trying') return { ...prev, [id]: touchFailedAt(prev[id], Date.now()) }
-      const next = planAfterFail(prev[id] || null, { code, url, now: Date.now() })
+      const next = planAfterFail(prev[id] || null, { code, url, now: Date.now(), netOnline: netVerdict(), origin })
       log('WARN', logFailLine(name, next))
       return { ...prev, [id]: next }
     })
@@ -88,7 +67,7 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
   const onOk = useCallback((id) => {
     const entry = stRef.current[id]
     if (!id || !entry) return
-    if (!shouldAcceptLoaded(entry, Date.now())) { log('TRACE', logEchoLine(info(id).name)); return }
+    if (!shouldAcceptLoaded(entry, Date.now())) { if (shouldLogEcho(entry)) log('TRACE', logEchoLine(info(id).name)); return }
     log('INFO', logRestoredLine(info(id).name, entry, Date.now()))
     setState(prev => { const n = { ...prev }; delete n[id]; return n })
   }, [info])
@@ -131,6 +110,8 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
   // Один таймер на всех: просыпаемся ровно к ближайшей попытке (а не тикаем каждую секунду).
   useEffect(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    // v1.2.491: сколько мессенджеров ждёт — главному процессу: пока ждут, пульс интернета чаще (15 с).
+    try { window.api?.send?.('net:pulse-waiting', { count: Object.keys(state).length }) } catch (_) {}
     const ms = nextWakeMs(state, Date.now())
     if (ms === null) return undefined
     timerRef.current = setTimeout(() => {
@@ -142,8 +123,10 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
 
   const retryNow = useCallback((id) => {
     log('INFO', logManualLine(info(id).name))
+    try { window.api?.send?.('net:pulse-now', { reason: 'кнопка «Повторить сейчас»' }) } catch (_) {} // v1.2.491
     attempt(id)
   }, [attempt, info])
 
-  return { offlineState: state, retryNow, bindReconnect }
+  // v1.2.491: reportFail — вход для присмотра за открытой страницей; stateRef — её зеркало записей.
+  return { offlineState: state, retryNow, bindReconnect, reportFail: onFail, stateRef: stRef }
 }

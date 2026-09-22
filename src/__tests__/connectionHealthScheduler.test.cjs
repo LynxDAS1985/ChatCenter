@@ -16,7 +16,7 @@ function test(name, fn) {
 
 ;(async () => {
   console.log('\n🧪 connectionHealthScheduler\n')
-  const mod = await import('../utils/connectionHealthScheduler.js')
+  const mod = await import('../../shared/connectionHealthScheduler.js')
   const now = 1000000
 
   test('активное подключение проверяется чаще неактивного', () => {

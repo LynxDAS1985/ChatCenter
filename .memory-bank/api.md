@@ -69,6 +69,7 @@
 | `tg:get-cached-chats` | `{ accountId? }` | `{ ok, chats: Chat[] }` + эмитит `tg:chats` event |
 | `tg:rescan-unread` | — | `{ ok, accountStats: [{accountId, chats, unreadTotal, ms}] }` |
 | `tg:health-check` | — | `{ ok, accountStats: [{accountId, ms, ok, error?}] }` |
+| `net:pulse-state` | — | `{ online: true\|false\|null, since, checkedAt, host, latencyMs, ageMs }` — текущий вердикт «пульса интернета» (v1.2.491, `main/handlers/netPulseHandlers.js`) |
 | `tg:set-mute` | `{ chatId, muteUntil }` | `{ ok, error? }` |
 | `tg:get-contact-info` (v1.2.232) | `{ chatId }` | `{ ok, phone, username, bio }` — профиль собеседника для «Карточки контакта». Только личный чат (иначе `{ ok:false }`). Телефон/username/bio приходят НЕ всегда (приватность/сеть) → пустые строки. Источник: TDLib `getUser` + `getUserFullInfo`. Клиентский буфер — канал `clipboard:write-text` (`text` → `{ ok }`, Electron `clipboard.writeText`, mainIpcHandlers.js). |
 | `tg:get-cleanup-stats` | — | `{ ok, totalFiles, totalBytes, byCategory: { session, avatars, cache, media, tmp } }` |
@@ -135,6 +136,7 @@
 | `tg:account-update` | `{ id, messenger, status, name?, phone?, username?, userId? }` + `{removed:true, wipeStats:{totalFiles,totalBytes,isLast}}` для logout | ✅ |
 | `tg:account-renamed` | `{ oldId, newId }` (v1.2.146: переименование временного аккаунта `tg_pending_X → tg_<userId>`; renderer убирает осиротевшую запись `oldId`, иначе призрак-метка) | ✅ |
 | `tg:account-connection` | `{ accountId, state }` | ⚠️ orphan |
+| `net:pulse` | `{ online, since, checkedAt, host, latencyMs, ageMs }` | v1.2.491: ТОЛЬКО на переходе интернет есть/нет; слушает `useOpenPageWatch` → синтетическое `window` `online`/`offline` |
 | `tg:user-status` | `{ accountId, userId, online: boolean }` | ⚠️ orphan |
 | **`tg:typing`** (v0.89.4) | `{ chatId, userId, typing }` — TDLib `updateChatAction → chatActionTyping/Cancel` | ✅ |
 | **`tg:read`** (v0.89.4) | `{ chatId, outgoing: true, maxId }` — TDLib `updateChatReadOutbox` (двойная галочка) | ✅ |
@@ -589,3 +591,9 @@ NotificationSource = {
   sidebarPosition: 'left' | 'right'
 }
 ```
+
+### Окно → main без ответа (send), пульс интернета (v1.2.491)
+| Канал | Данные | Кто шлёт | Что делает main |
+|---|---|---|---|
+| `net:pulse-now` | `{ reason }` | `useWebviewReconnect.retryNow` (кнопка «Повторить сейчас») | проверка интернета сразу (не чаще раза в 3 с) |
+| `net:pulse-waiting` | `{ count }` | `useWebviewReconnect` при каждом изменении списка ожидающих | `count > 0` → пульс раз в 15 с (и проверка сразу при переходе 0→N); `0` → раз в 60 с |

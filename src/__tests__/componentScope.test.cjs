@@ -128,7 +128,7 @@ const ALLOWED = {
     // v1.2.445: из useWebviewReconnect — `const { offlineState, retryNow, bindReconnect } = …`.
     // Парсер видит только ПЕРВОЕ имя в разборе результата хука (та же его слепота, что у
     // tasksCount/remindersCount выше), поэтому второе и третье перечисляем здесь.
-    'retryNow', 'bindReconnect'],
+    'retryNow', 'bindReconnect', 'reportFail', 'offlineStateRef', 'onProbeOutcome' /* v1.2.491: useWebviewReconnect/useOpenPageWatch */],
 }
 
 for (const comp of components) {

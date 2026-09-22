@@ -153,6 +153,21 @@ export function probeWebviewHealth({
   })
 }
 
+/**
+ * v1.2.491: короткий вопрос странице «ты отвечаешь?» — для механизма переподключения (запись от
+ * пробы перед перезагрузкой). Тот же PROBE_SCRIPT, что у панели связи — один способ мерить, не два.
+ * @returns {Promise<boolean>} true = страница сама сходила в сеть и получила ответ
+ */
+export function quickProbe(webview, timeoutMs = DEFAULT_SLOW_MS) {
+  if (!webview || typeof webview.executeJavaScript !== 'function') return Promise.resolve(false)
+  const timeout = new Promise(resolve => setTimeout(() => resolve(false), timeoutMs))
+  const probe = Promise.resolve()
+    .then(() => webview.executeJavaScript(PROBE_SCRIPT, true))
+    .then(result => !!(result && result.ok !== false))
+    .catch(() => false)
+  return Promise.race([probe, timeout])
+}
+
 function readWebviewUrl(webview, fallback = '') {
   try {
     return webview?.getURL?.() || fallback || ''

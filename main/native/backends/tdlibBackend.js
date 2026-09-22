@@ -33,7 +33,7 @@ async function safeInvoke(client, request) {
 
 // v1.1.9: SEARCH_FILTER_MAP / mapSearchFilter / parseChatId вынесены
 // в tdlibBackendHelpers.js (pure helpers, легко тестируемые без TDLib мока).
-import { mapSearchFilter, parseChatId } from './tdlibBackendHelpers.js'
+import { mapSearchFilter, parseChatId, networkChangedRaw } from './tdlibBackendHelpers.js'
 
 /**
  * Возвращает client для chatId или null + готовый error-ответ.
@@ -243,6 +243,7 @@ export function createTdlibBackend(opts = {}) {
         })
         return { ok: true, accountStats }
       },
+      async networkChanged() { return networkChangedRaw(manager) }, // v1.2.491: пульс интернета → TDLib setNetworkType (см. helpers)
       async healthCheck() {
         // Лёгкий probe: getOption('version') — TDLib обычно отвечает за единицы мс.
         // UI ожидает { ok, accountStats: [{ accountId, ms, ok, error? }] }

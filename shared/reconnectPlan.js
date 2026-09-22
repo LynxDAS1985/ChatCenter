@@ -1,7 +1,8 @@
 // shared/reconnectPlan.js — v1.2.445
 //
 // ЧИСТАЯ логика автоматического переподключения веб-мессенджеров после обрыва связи.
-// Проводка (слушатели, таймеры, сам вызов загрузки) — в src/hooks/useWebviewReconnect.js;
+// Проводка (слушатели, таймеры) — в src/hooks/useWebviewReconnect.js; сама попытка — shared/reconnectAttempt.js;
+// тексты записей в журнал и причины для экрана — shared/reconnectTexts.js (v1.2.491, файл упёрся в 300 строк);
 // экран для пользователя — src/components/WebviewOfflineOverlay.jsx.
 // Подробный план и причины — .memory-bank/reconnect-plan.md.
 //
@@ -17,6 +18,19 @@ export const RETRY_LADDER_MS = [5000, 10000, 20000, 40000, 60000]
 
 /** Минимальная пауза для отдельных сайтов (защита от шторма запросов). */
 export const MIN_PAUSE_BY_HOST = [{ test: /max\.ru/i, minMs: 15000 }]
+
+/**
+ * v1.2.491: «долгая неудача». 21.09.2026 WhatsApp и веб-Telegram не открывались 3,5 часа при живом
+ * интернете (остальные сайты работали) — механизм перезагружал их раз в минуту 160+ раз и засорил
+ * журнал 431 строкой. После LONG_FAIL_ATTEMPTS неудач ПРИ ЖИВОМ пульсе пауза становится 5 минут:
+ * сайт недоступен сам по себе, чаще стучаться бессмысленно. При мёртвом пульсе лестница обычная —
+ * там всё решает возврат интернета, а не наши повторы.
+ */
+export const LONG_FAIL_ATTEMPTS = 10
+export const LONG_FAIL_PAUSE_MS = 300000
+
+/** v1.2.491: «код» записи, рождённой ПРОБОЙ открытой страницы (не сетевой код Chromium). */
+export const PROBE_FAIL_CODE = -1000
 
 /**
  * Коды ошибок Chromium, которые означают «связь оборвалась» → повторять стоит.
@@ -55,6 +69,7 @@ export function isNetworkError(code) {
 export function errorName(code) {
   const n = Number(code)
   if (n === ABORTED_CODE) return 'ERR_ABORTED'
+  if (n === PROBE_FAIL_CODE) return 'PAGE_UNRESPONSIVE'
   return NETWORK_ERROR_CODES[String(n)] || ('код ' + code)
 }
 
@@ -62,10 +77,13 @@ export function errorName(code) {
  * Сколько ждать перед следующей попыткой.
  * @param {number} attempt — сколько попыток уже сделано (0 = ещё ни одной)
  * @param {string} [url] — адрес мессенджера (для минимума по сайту)
+ * @param {boolean|null} [netOnline] — вердикт пульса; долгая пауза только при true (интернет подтверждён)
  * @returns {number} миллисекунды
  */
-export function nextPauseMs(attempt, url) {
-  const i = Math.max(0, Math.min(Number(attempt) || 0, RETRY_LADDER_MS.length - 1))
+export function nextPauseMs(attempt, url, netOnline) {
+  const a = Number(attempt) || 0
+  if (a >= LONG_FAIL_ATTEMPTS && netOnline === true) return LONG_FAIL_PAUSE_MS // только когда пульс ПОДТВЕРДИЛ интернет
+  const i = Math.max(0, Math.min(a, RETRY_LADDER_MS.length - 1))
   let ms = RETRY_LADDER_MS[i]
   for (const rule of MIN_PAUSE_BY_HOST) {
     if (url && rule.test.test(String(url)) && ms < rule.minMs) ms = rule.minMs
@@ -83,10 +101,10 @@ export function nextPauseMs(attempt, url) {
  * @param {number} o.now — текущее время (Date.now())
  * @returns {Object|null} новая запись или null, если планировать не нужно
  */
-export function planAfterFail(entry, { code, url, now }) {
+export function planAfterFail(entry, { code, url, now, netOnline, origin }) {
   if (entry && entry.phase === 'trying') return entry
   const attempt = (entry && entry.attempt) || 0
-  const pauseMs = nextPauseMs(attempt, url)
+  const pauseMs = nextPauseMs(attempt, url, netOnline)
   return {
     attempt,                       // сколько попыток уже сделано
     phase: 'wait',                 // ждём следующей попытки
@@ -95,6 +113,7 @@ export function planAfterFail(entry, { code, url, now }) {
     code: Number(code),
     since: (entry && entry.since) || now, // когда началась беда — для «восстановлено за N с»
     failedAt: now,                 // v1.2.452: момент сбоя — см. isErrorPageEcho
+    origin: origin || (entry && entry.origin) || 'load', // v1.2.491: 'load' — сорвалась загрузка; 'probe' — открытая страница перестала отвечать
   }
 }
 
@@ -105,9 +124,9 @@ export function planTrying(entry, now) {
 }
 
 /** Запись после неудачной попытки: снова ждём, пауза больше. */
-export function planAfterRetryFail(entry, { code, url, now }) {
+export function planAfterRetryFail(entry, { code, url, now, netOnline }) {
   const attempt = (entry && entry.attempt) || 1
-  const pauseMs = nextPauseMs(attempt, url)
+  const pauseMs = nextPauseMs(attempt, url, netOnline)
   return {
     attempt,
     phase: 'wait',
@@ -116,6 +135,7 @@ export function planAfterRetryFail(entry, { code, url, now }) {
     code: Number(code) || (entry && entry.code) || 0,
     since: (entry && entry.since) || now,
     failedAt: now,                 // v1.2.452: момент сбоя — см. isErrorPageEcho
+    origin: (entry && entry.origin) || 'load',
   }
 }
 
@@ -162,37 +182,6 @@ export function secondsLeft(entry, now) {
   return Math.max(0, Math.ceil((entry.dueAt - now) / 1000))
 }
 
-// ── Тексты записей в журнал (в одном месте, чтобы проверялись тестом) ────────
-
-export function logFailLine(name, entry) {
-  return `[reconnect] ${name}: обрыв связи, код=${entry.code} ${errorName(entry.code)}, ` +
-    `попытка ${entry.attempt + 1} через ${Math.round(entry.pauseMs / 1000)}с`
-}
-
-export function logSkipLine(name, code) {
-  return `[reconnect] ${name}: код=${code} (${errorName(code)}) — повтор не нужен`
-}
-
-export function logRetryFailLine(name, entry) {
-  return `[reconnect] ${name}: попытка ${entry.attempt} не удалась (код=${entry.code} ` +
-    `${errorName(entry.code)}), следующая через ${Math.round(entry.pauseMs / 1000)}с`
-}
-
-export function logRestoredLine(name, entry, now) {
-  const sec = Math.max(0, Math.round((now - ((entry && entry.since) || now)) / 1000))
-  return `[reconnect] ${name}: связь восстановлена за ${sec}с (попыток: ${(entry && entry.attempt) || 1})`
-}
-
-export function logManualLine(name) {
-  return `[reconnect] ${name}: повтор по кнопке пользователя`
-}
-
-export function logNetLine(online, waitingCount) {
-  return online
-    ? `[net] связь появилась — пробуем поднять мессенджеры: ${waitingCount}`
-    : '[net] связь пропала'
-}
-
 /**
  * v1.2.452 — сколько после сбоя НЕ верить событию «страница загрузилась».
  *
@@ -223,11 +212,6 @@ export function isErrorPageEcho(entry, now) {
   if (!f) return false
   const dt = Number(now) - f
   return dt >= 0 && dt < ERROR_PAGE_GRACE_MS
-}
-
-/** Запись в журнал: отбросили эхо страницы-ошибки (иначе отказ был бы «немым»). */
-export function logEchoLine(name) {
-  return `[reconnect] ${name}: пришла страница-ошибка, а не сама страница — восстановлением не считаю`
 }
 
 /**

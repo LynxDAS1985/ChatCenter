@@ -9,11 +9,9 @@
 //   3) пауза обязана РАСТИ и упираться в 60 с, а не сбрасываться в 5 с по кругу.
 import { describe, it, expect } from 'vitest'
 import {
-  RETRY_LADDER_MS, ABORTED_CODE, isNetworkError, errorName, nextPauseMs,
-  planAfterFail, planTrying, planAfterRetryFail, dueIds, nextWakeMs, bringAllForward, secondsLeft,
-  logFailLine, logSkipLine, logRetryFailLine, logRestoredLine, logManualLine, logNetLine,
-  shouldAcceptLoaded, touchFailedAt, isErrorPageEcho, logEchoLine, ERROR_PAGE_GRACE_MS,
+  RETRY_LADDER_MS, ABORTED_CODE, isNetworkError, errorName, nextPauseMs, planAfterFail, planTrying, planAfterRetryFail, dueIds, nextWakeMs, bringAllForward, secondsLeft, shouldAcceptLoaded, touchFailedAt, isErrorPageEcho, ERROR_PAGE_GRACE_MS,
 } from '../../shared/reconnectPlan.js'
+import { logFailLine, logSkipLine, logRetryFailLine, logRestoredLine, logManualLine, logNetLine, logEchoLine } from '../../shared/reconnectTexts.js' // v1.2.491: тексты вынесены
 
 const WA = 'https://web.whatsapp.com'
 const MAX = 'https://web.max.ru'

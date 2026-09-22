@@ -1,4 +1,6 @@
-import { HEALTH_ERROR, HEALTH_PENDING, HEALTH_SLOW } from '../../shared/connectionHealth.js'
+// shared/connectionHealthScheduler.js — v1.2.491: переехал из src/utils (чистые расчёты без React;
+// бюджет строк интерфейса стоял 31 289/31 300). Кто пользуется: src/App.jsx (тик планировщика проб).
+import { HEALTH_ERROR, HEALTH_PENDING, HEALTH_SLOW } from './connectionHealth.js'
 
 export const HEALTH_SCHEDULER_TICK_MS = 5000
 export const HEALTH_ACTIVE_MS = 30000

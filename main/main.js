@@ -3,7 +3,7 @@
 // v0.87.135 — Added Windows installer packaging into root dist/
 // v0.87.134 — Added start:prodlike script for production-like startup comparison
 // v0.87.103 — Refactored: setupIPC вынесен в handlers/mainIpcHandlers.js (~230 строк)
-import { app, BrowserWindow, session, nativeImage, screen, ipcMain, Menu, MenuItem, shell } from 'electron'
+import { app, BrowserWindow, session, nativeImage, screen, ipcMain, Menu, MenuItem, shell, net, powerMonitor } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import https from 'node:https'
@@ -21,6 +21,7 @@ import { ruError } from './utils/ruError.js'
 import { initTdlibBackendStartup } from './native/backends/tdlibStartup.js'
 import { registerCcMediaScheme, registerCcMediaHandler } from './native/ccMediaProtocol.js'
 import { initNotifHandlers } from './handlers/notifHandlers.js'
+import { initNetPulse } from './handlers/netPulseHandlers.js' // v1.2.491: «пульс интернета»
 // v0.99.0 (Phase 3): IPC handlers для AI-агента (ai:agent:run / cancel / confirm-response).
 import { initAiToolIpcHandlers } from './handlers/aiToolIpcHandlers.js'
 // v1.2.0 (Этап 2 AI Bridge): IPC handler для bridge — Local Bridge (Ollama) подключен,
@@ -89,6 +90,7 @@ const DEFAULT_MESSENGERS = [
 let tray = null
 let forceQuit = false
 let mainWindow = null
+let netPulse = null // v1.2.491
 
 // v0.78.9: Overlay и шрифты вынесены в main/utils/overlayIcon.js
 
@@ -343,6 +345,13 @@ app.whenReady().then(() => {
     } else {
       console.error('[main] TDLib startup failed:', r.error)
     }
+    // v1.2.491: «пульс интернета» — главный процесс сам щупает сеть и по переходу «появился»
+    // будит веб-страницы (через окно) и TDLib (setNetworkType). Причины — reconnect-plan.md, 4e.
+    netPulse = initNetPulse({
+      net, powerMonitor, ipcMain, storage,
+      getMainWindow: () => mainWindow,
+      onOnline: () => (r.ok && r.backend?.chats?.networkChanged ? r.backend.chats.networkChanged() : null),
+    })
     // v1.0.2: AI agent handlerContext получает ПЛОСКИЙ адаптер вместо домен-объекта.
     // tdlibBackend (r.backend) имеет structure {messages: {get/send/markRead}, ...},
     // а AI tool handlers ждут плоский {getMessages, sendMessage, markAsRead, searchMessages}.
@@ -504,3 +513,6 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
+
+// v1.2.491: остановить пульс интернета при выходе (таймер не должен пережить приложение)
+app.on('before-quit', () => { try { netPulse && netPulse.stop() } catch (_) {} })

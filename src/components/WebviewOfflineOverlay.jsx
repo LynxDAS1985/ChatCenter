@@ -16,6 +16,8 @@
 // перерисовывалось всё окно приложения: хук просыпается только на реальные события.
 import { useEffect, useState } from 'react'
 import { errorName, secondsLeft } from '../../shared/reconnectPlan.js'
+import { reasonTitle } from '../../shared/reconnectTexts.js'
+import { netVerdict } from '../hooks/useOpenPageWatch.js' // v1.2.491: вердикт пульса интернета
 
 /**
  * @param {Object} props
@@ -42,6 +44,7 @@ export default function WebviewOfflineOverlay({ entry, name, color, onRetry, onO
   const total = Math.max(1, Math.round((entry.pauseMs || 1000) / 1000))
   const progress = trying ? 100 : Math.round(((total - left) / total) * 100)
   const accent = trying ? '#38BDF8' : '#F5A524'
+  const reason = reasonTitle(entry, netVerdict(), name) // v1.2.491: «Нет интернета» / «Сайт недоступен» / «Страница не отвечает»
 
   return (
     <div style={{
@@ -63,11 +66,11 @@ export default function WebviewOfflineOverlay({ entry, name, color, onRetry, onO
         }}>{trying ? '🔄' : '📡'}</div>
 
         <h3 style={{ margin: '0 0 6px', fontSize: 19, fontWeight: 700 }}>
-          {trying ? `Подключаемся к ${name}…` : `Нет связи с ${name}`}
+          {trying ? `Подключаемся к ${name}…` : reason.title}
         </h3>
 
         <p style={{ margin: '0 0 18px', fontSize: 13.5, color: '#8695A5' }}>
-          {trying ? 'Загружаем страницу заново' : <>Интернет пропал. Причина:{' '}
+          {trying ? 'Загружаем страницу заново' : <>{reason.hint}. Код:{' '}
             <code style={{
               fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 12,
               background: '#0E141B', padding: '1px 5px', borderRadius: 3, color: '#A9B7C6',

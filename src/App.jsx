@@ -15,7 +15,7 @@ import { runSelectedDiagnosticsDeepCheck } from './utils/runSelectedDiagnosticsD
 import {
   HEALTH_SCHEDULER_TICK_MS,
   selectConnectionHealthJobs,
-} from './utils/connectionHealthScheduler.js'
+} from '../shared/connectionHealthScheduler.js' // v1.2.491: чистый планировщик — в shared/ (вне бюджета интерфейса)
 import TabBar from './components/TabBar.jsx'
 import TabContextMenu from './components/TabContextMenu.jsx' // v1.2.271: меню правого клика на уровне App
 import ErrorBoundary from './components/ErrorBoundary.jsx'
@@ -39,6 +39,7 @@ import useTabManagement from './hooks/useTabManagement.js'
 import useSearch from './hooks/useSearch.js'
 import useWebAccountAvatars from './hooks/useWebAccountAvatars.js' // v1.2.275: аватар веб-аккаунта на значок полосы
 import useWebviewReconnect from './hooks/useWebviewReconnect.js' // v1.2.445: авто-переподключение после обрыва связи
+import useOpenPageWatch from './hooks/useOpenPageWatch.js' // v1.2.491: пульс интернета + присмотр за открытой страницей
 import WebviewOfflineOverlay from './components/WebviewOfflineOverlay.jsx' // v1.2.445: экран «Нет связи» поверх слоя мессенджера
 import useTabContextMenu from './hooks/useTabContextMenu.js'
 import useNotifyNavigation from './hooks/useNotifyNavigation.js'
@@ -314,7 +315,9 @@ export default function App() {
 
   // v1.2.445: после обрыва связи сами поднимаем страницы мессенджеров (паузы 5→10→20→40→60с,
   // у МАКСа от 15с) и показываем экран с отсчётом. Причина и план — .memory-bank/reconnect-plan.md.
-  const { offlineState, retryNow, bindReconnect } = useWebviewReconnect(webviewRefs, messengersRef)
+  const { offlineState, retryNow, bindReconnect, reportFail, stateRef: offlineStateRef } = useWebviewReconnect(webviewRefs, messengersRef)
+  // v1.2.491: «пульс интернета» из главного процесса + присмотр за ОТКРЫТОЙ страницей (reconnect-plan.md, 4e)
+  const { onProbeOutcome } = useOpenPageWatch({ reportFail, offlineStateRef, messengersRef })
 
   // v1.2.22: Вариант A — флаг useWebContentsView открывает Макс в ОТДЕЛЬНОМ окне Electron
   // (проверка ServiceWorker-уведомлений). Главное окно не трогаем (Макс остаётся в <webview>).
@@ -534,10 +537,11 @@ export default function App() {
       url: check.url,
       setConnectionHealth,
       details: check.details,
-    }).finally(() => {
-      healthInFlightWebviewRef.current.delete(id)
-    })
-  }, [])
+    }).then((outcome) => { onProbeOutcome(id, outcome); return outcome }) // v1.2.491: исход пробы → присмотр за открытой страницей
+      .finally(() => {
+        healthInFlightWebviewRef.current.delete(id)
+      })
+  }, [onProbeOutcome])
 
   const runNativeHealthCheck = useCallback((id) => {
     if (!id || healthInFlightNativeRef.current.has(id)) return Promise.resolve(null)

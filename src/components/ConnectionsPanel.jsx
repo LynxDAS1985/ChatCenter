@@ -9,7 +9,7 @@ import {
   getHealthColor,
   getHealthLabel,
 } from '../../shared/connectionHealth.js'
-import { HEALTH_SCHEDULER_TICK_MS, nextHealthDelay } from '../utils/connectionHealthScheduler.js'
+import { HEALTH_SCHEDULER_TICK_MS, nextHealthDelay } from '../../shared/connectionHealthScheduler.js' // v1.2.491: планировщик переехал в shared/
 
 function splitItems(items) {
   const webview = []

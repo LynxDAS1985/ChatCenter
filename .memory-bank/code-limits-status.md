@@ -1,6 +1,6 @@
 # Статус лимитов файлов кода — текущий снапшот
 
-**Версия**: v1.2.490 (2026-09-18)
+**Версия**: v1.2.491 (2026-09-18)
 
 **v1.2.463 — разгрузка `main/preloads/monitor.preload.cjs`**: проверка «своё отправленное» для МАКС
 упёрла файл в 601/600. По правилу проекта комментарии не резали — вынесли самодостаточный блок зума
@@ -182,3 +182,11 @@ WebView (Ctrl+колесо, Ctrl +/−/0) в новый `main/preloads/utils/web
 - отрисовка альбома → `main/notification-album.js`.
 В `notification.js` — только вызов в одну строку. Если и одна строка не влезает — сначала вынос (правило «не резать
 комментарии, разделять файл»), потом правка.
+
+## Снимок v1.2.491 (2026-09-22) — бюджет интерфейса и файлы переподключения
+
+- Бюджет `src/`: **31 254 / 31 270** (планка опущена 31300 → 31270 после выноса `connectionHealthScheduler.js` в `shared/`).
+- `src/hooks/useWebviewReconnect.js` 132/170 (attempt() → `shared/reconnectAttempt.js`); `useOpenPageWatch.js` 62/150 (new).
+- `shared/reconnectPlan.js` 247/300 (тексты → `shared/reconnectTexts.js` 75); `shared/netPulsePlan.js` 104; `shared/openPageWatch.js` 46.
+- `main/handlers/netPulseHandlers.js` 128/500; `main/native/backends/tdlibBackend.js` **929/930** — следующая правка бэкенда только через
+  вынос в `tdlibBackendHelpers.js` (81/500), как `networkChangedRaw`.

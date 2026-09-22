@@ -16,16 +16,16 @@
 | `STRUCTURE.md` | 10 КБ |
 | `ai-bridge.md` | 16 КБ |
 | `ai-integration.md` | 13 КБ |
-| `api.md` | 38 КБ |
+| `api.md` | 39 КБ |
 | `architecture.md` | 16 КБ |
 | `autoreply.md` | 6 КБ |
-| `code-limits-status.md` | 22 КБ |
-| `code-todo.md` | 76 КБ |
+| `code-limits-status.md` | 23 КБ |
+| `code-todo.md` | 77 КБ |
 | `coding-rules.md` | 9 КБ |
 | `common-mistakes.md` | 7 КБ |
-| `decisions.md` | 83 КБ |
+| `decisions.md` | 86 КБ |
 | `electron-breaking-changes.md` | 14 КБ |
-| `features.md` | 75 КБ |
+| `features.md` | 87 КБ |
 | `group-topic-investigation.md` | 15 КБ |
 | `handoff-code-limits.md` | 9 КБ |
 | `jump-to-end-saga.md` | 23 КБ |
@@ -35,7 +35,7 @@
 | `notifications-debug.md` | 51 КБ |
 | `phase-2-visual-test.md` | 16 КБ |
 | `prodlike-webview-investigation.md` | 4 КБ |
-| `reconnect-plan.md` | 32 КБ |
+| `reconnect-plan.md` | 39 КБ |
 | `side-rail-migration-plan.md` | 34 КБ |
 | `startup-load-investigation.md` | 9 КБ |
 | `tdlib-migration-plan.md` | 27 КБ |
@@ -51,7 +51,7 @@
 |------|--------|
 | `mistakes/app-layout.md` | 12 КБ |
 | `mistakes/electron-core-history.md` | 148 КБ |
-| `mistakes/electron-core.md` | 80 КБ |
+| `mistakes/electron-core.md` | 82 КБ |
 | `mistakes/native-scroll-unread.md` | 131 КБ |
 | `mistakes/notifications-ribbon-history.md` | 139 КБ |
 | `mistakes/notifications-ribbon.md` | 115 КБ |
@@ -219,5 +219,5 @@
 | `archive/native-scroll-restore-saga-CLOSED.md` | 40 КБ |
 | `archive/startup-load-investigation-history.md` | 90 КБ |
 
-_Регенерировано: 2026-09-19_
+_Регенерировано: 2026-09-22_
 <!-- STRUCTURE-AUTO-END -->

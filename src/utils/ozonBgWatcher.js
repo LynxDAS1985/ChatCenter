@@ -39,7 +39,7 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
     // почти пустая, настоящий Ozon — тысячи. Без этого вопроса отличить их нечем (v1.2.471).
     const _failWatch = createOzonBgFailWatch({
       log, notify, suppress: suppressFailNotice,
-      reload: () => { if (el.reload) el.reload() },
+      reload: () => { if (el.reload && window.__ccNetOnline !== false) el.reload() }, // v1.2.491: без интернета не долбим
       alive: () => el.isConnected,
       probe: () => el.executeJavaScript && el.executeJavaScript('document.querySelectorAll("*").length'),
     })
@@ -159,6 +159,7 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
       el.__ccOzonBgReloadTimer = setInterval(() => {
         try {
           if (!el.isConnected) { clearInterval(el.__ccOzonBgReloadTimer); el.__ccOzonBgReloadTimer = null; return }
+          if (window.__ccNetOnline === false) return // v1.2.491: интернета нет (пульс) — освежать нечем
           if (typeof document !== 'undefined' && document.hidden) return // v1.2.377 (#3): окно свёрнуто/скрыто → не тревожим Ozon; следующий тик освежит по возврату
           if (el.reload) { el.reload(); log && log('INFO', '[ozon-bg] фоновая «Вопросы» освежена (reload)') }
         } catch (e) { log && log('WARN', '[ozon-bg] reload «Вопросы» не удался: ' + ((e && e.message) || e)) } // v1.2.377 (#5): не глотаем сбой молча

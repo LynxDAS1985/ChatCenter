@@ -52,3 +52,30 @@ export function parseChatId(chatId) {
   if (colon < 0) return { accountId: null, rawId: null }
   return { accountId: s.slice(0, colon), rawId: Number(s.slice(colon + 1)) }
 }
+
+/**
+ * v1.2.491: «сеть сменилась» → TDLib setNetworkType для всех аккаунтов.
+ * По документации TDLib (типы установленного @prebuilt-tdlib): setNetworkType «forces all network
+ * connections to reopen, mitigating the delay in switching between different networks, so it must
+ * be called whenever the network is changed, even if the network type remains the same».
+ * Зовёт «пульс интернета» (main/handlers/netPulseHandlers.js) при переходе «интернет появился»:
+ * 22.09.2026 веб-страницы поднялись в 10:13, а TDLib сам дошёл до «связь есть» лишь в 10:15.
+ * Тип networkTypeOther — точный тип сети нам не важен, важен сам вызов.
+ * 🔴 networkTypeNone НЕ шлём никогда: так мы бы САМИ отключили TDLib от сети по ложному пульсу.
+ * @param {{listAccounts:()=>string[], getClient:(id:string)=>object|null}} manager
+ */
+export async function networkChangedRaw(manager) {
+  const accountStats = []
+  for (const accountId of manager.listAccounts()) {
+    const client = manager.getClient(accountId)
+    if (!client?.invoke) { accountStats.push({ accountId, ok: false, error: 'no client' }); continue }
+    try {
+      await client.invoke({ '@type': 'setNetworkType', type: { '@type': 'networkTypeOther' } })
+      accountStats.push({ accountId, ok: true })
+    } catch (e) {
+      accountStats.push({ accountId, ok: false, error: e?.message || String(e) })
+    }
+  }
+  console.log('[net-pulse] TDLib setNetworkType: ' + (accountStats.map(s => s.accountId + (s.ok ? ' ok' : ' ОШИБКА ' + s.error)).join(', ') || 'аккаунтов нет'))
+  return { ok: true, accountStats }
+}
