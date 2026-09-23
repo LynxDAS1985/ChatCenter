@@ -13,7 +13,7 @@
 // Поэтому вешаем ЛЁГКИЙ слушатель console-message прямо на элемент и переводим её сигналы на ОСНОВНОЙ id
 // Ozon: уведомление → handleNewMessage(ozonId) (имя/логотип Ozon, дедуп от двойных — если основная вкладка
 // тоже на «Вопросах», один и тот же отпечаток `ozon-q:fp` гасится общим дедупом за 5с); qa-счётчик → виджет.
-import { parseConsoleMessage } from './consoleMessageParser.js'
+import { parseConsoleMessage } from '../../shared/consoleMessageParser.js'
 
 /**
  * Привязать слушатель к скрытому фоновому webview Ozon. Идемпотентно (флаг на элементе).

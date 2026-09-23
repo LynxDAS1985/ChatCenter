@@ -14,12 +14,24 @@
 var fs = require('fs')
 var path = require('path')
 
-var passed = 0, failed = 0
+var passed = 0, failed = 0, warnings = 0
 function test(name, fn) {
   try { fn(); passed++; console.log('  ✅ ' + name) }
   catch (e) { failed++; console.log('  ❌ ' + name + ': ' + e.message) }
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || 'fail') }
+
+// v1.2.495: ЖЁЛТОЕ предупреждение при 80% лимита — как в fileSizeLimits.test.cjs.
+// Зачем: раньше файл памяти рос молча до самого потолка, и разбивать приходилось СРОЧНО, посреди
+// чужой задачи. Предупреждение заранее (features.md 83/100 КБ на момент правки) даёт время
+// заархивировать спокойно. Тест от предупреждения НЕ падает.
+function warnIfNear(filePath, sizeKb, limitKb) {
+  if (sizeKb >= 0 && sizeKb >= Math.floor(limitKb * 0.8) && sizeKb <= limitKb) {
+    warnings++
+    console.log('  ⚠️  ' + filePath + ' — ' + sizeKb + ' КБ, ' + Math.round(sizeKb * 100 / limitKb) +
+      '% от лимита ' + limitKb + ' КБ. Пора архивировать старые записи (archive/ + запись в archive/README.md).')
+  }
+}
 
 function fileSizeKb(filePath) {
   try { return Math.round(fs.statSync(filePath).size / 1024) }
@@ -47,6 +59,7 @@ listFiles('.memory-bank').forEach(function (f) {
   var size = fileSizeKb(f)
 
   if (name === 'common-mistakes.md') {
+    warnIfNear(f, size, INDEX_LIMIT_KB)
     test(name + ' ≤ ' + INDEX_LIMIT_KB + ' КБ — индекс (сейчас ' + size + ' КБ)', function () {
       assert(size >= 0, 'файл не найден')
       assert(size <= INDEX_LIMIT_KB,
@@ -55,6 +68,7 @@ listFiles('.memory-bank').forEach(function (f) {
     return
   }
 
+  warnIfNear(f, size, ROOT_LIMIT_KB)
   test(name + ' ≤ ' + ROOT_LIMIT_KB + ' КБ (сейчас ' + size + ' КБ)', function () {
     assert(size >= 0, 'файл не найден')
     assert(size <= ROOT_LIMIT_KB,
@@ -71,6 +85,7 @@ listFiles('.memory-bank/mistakes').forEach(function (f) {
   var name = 'mistakes/' + path.basename(f)
   var size = fileSizeKb(f)
 
+  warnIfNear(name, size, MISTAKES_LIMIT_KB)
   test(name + ' ≤ ' + MISTAKES_LIMIT_KB + ' КБ (сейчас ' + size + ' КБ)', function () {
     assert(size >= 0, 'файл не найден')
     assert(size <= MISTAKES_LIMIT_KB,
@@ -125,7 +140,7 @@ test('все .memory-bank/* ссылки в CLAUDE.md также tracked в git'
 
 // ── Итог ──
 console.log('\n' + (failed === 0
-  ? '✅ Все проверки пройдены (' + passed + '/' + (passed + failed) + ')'
+  ? '✅ Все проверки пройдены (' + passed + '/' + (passed + failed) + ')' + (warnings ? ' · предупреждений: ' + warnings : '')
   : '❌ ' + failed + ' из ' + (passed + failed) + ' проверок упали'))
 
 process.exit(failed === 0 ? 0 : 1)

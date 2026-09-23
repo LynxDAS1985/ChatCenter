@@ -5,7 +5,7 @@
  */
 
 var fs = require('fs')
-var code = fs.readFileSync('src/utils/consoleMessageParser.js', 'utf8')
+var code = fs.readFileSync('shared/consoleMessageParser.js', 'utf8')
 
 // Копия функции
 function parseConsoleMessage(msg) {

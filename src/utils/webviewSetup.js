@@ -5,7 +5,7 @@
 // v0.83.3: НЕ используем useRef — createWebviewSetup это обычная функция, не React hook
 // Вместо useRef используем plain objects { current: ... } — работает аналогично в closure scope
 import { detectMessengerType, isSpamText } from '../../shared/messengerConfigs.js'
-import { parseConsoleMessage } from './consoleMessageParser.js'
+import { parseConsoleMessage } from '../../shared/consoleMessageParser.js'
 import { devLog, devError } from './devLog.js'
 import { playNotificationSound } from './sound.js'
 import { createConsoleMessageHandler } from './consoleMessageHandler.js'

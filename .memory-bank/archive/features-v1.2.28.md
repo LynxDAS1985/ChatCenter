@@ -17,7 +17,7 @@
 - `main/preloads/hooks/max.hook.js`: добавлен `_maxSearchState()`;
 - `max-sidebar` при активном поиске больше не отправляет уведомление, а только обновляет baseline `_maxLastList`;
 - в диагностике появляется `__CC_DIAG__max-sidebar: search active skip emit`;
-- `src/utils/consoleMessageParser.js` теперь сохраняет `source`;
+- `shared/consoleMessageParser.js` теперь сохраняет `source`;
 - `src/utils/consoleMessageHandler.js` пишет `src` в trace и передаёт `extra.notifSource`.
 
 Почему так: проблема не в словах, PDF или имени клиента. Старый DOM preview становится похож на новое событие из-за перестройки списка. Поэтому блокировка сделана по источнику и состоянию UI: только `max-sidebar` + активный поиск. Основные пути MAX notification/showNotification не отключались.

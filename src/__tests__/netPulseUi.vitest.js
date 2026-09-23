@@ -159,7 +159,13 @@ describe('v1.2.493 — находки ревью и советы', () => {
     const hook = fs.readFileSync('src/hooks/useWebviewReconnect.js', 'utf8')
     expect(hook).toContain('window.__ccReconnectWaiting = Object.keys(state).length')
     const lim = fs.readFileSync('src/__tests__/fileSizeLimits.test.cjs', 'utf8')
-    expect(lim).toContain('assert(totalSrc < 31200') // планка опущена в самом числе, не в комментарии
+    // v1.2.495: страж больше не привязан к КОНКРЕТНОМУ числу (оно опускается при каждой разгрузке —
+    // 31270 → 31200 → 31150 …). Ловится ИСХОДНАЯ ошибка v1.2.492: замена попала в комментарий, а число
+    // в `assert` и в названии проверки разъехались — тест был зелёным, планка стояла старая.
+    const inAssert = /assert\(totalSrc < (\d+)/.exec(lim)
+    const inTitle = /без тестов\) < (\d+) строк/.exec(lim)
+    expect(inAssert, 'планка обязана стоять в самом assert').not.toBeNull()
+    expect(inTitle && inTitle[1], 'число в названии проверки = число в assert').toBe(inAssert[1])
   })
 })
 

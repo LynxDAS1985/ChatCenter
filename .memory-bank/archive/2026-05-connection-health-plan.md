@@ -344,7 +344,7 @@ account.status === 'connected'
 - `main/preloads/hooks/vk.hook.js`;
 - `main/preloads/hooks/whatsapp.hook.js`;
 - `main/preloads/hooks/max.hook.js`;
-- `src/utils/consoleMessageParser.js`;
+- `shared/consoleMessageParser.js`;
 - `src/utils/consoleMessageHandler.js`;
 - `src/utils/webviewSetup.js` listeners;
 - `__CC_NOTIF__`;
