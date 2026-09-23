@@ -9,7 +9,7 @@
 //   3) пауза обязана РАСТИ и упираться в 60 с, а не сбрасываться в 5 с по кругу.
 import { describe, it, expect } from 'vitest'
 import {
-  RETRY_LADDER_MS, ABORTED_CODE, isNetworkError, errorName, nextPauseMs, planAfterFail, planTrying, planAfterRetryFail, dueIds, nextWakeMs, bringAllForward, secondsLeft, shouldAcceptLoaded, touchFailedAt, isErrorPageEcho, ERROR_PAGE_GRACE_MS,
+  RETRY_LADDER_MS, ABORTED_CODE, isNetworkError, isProxyError, errorName, nextPauseMs, planAfterFail, planTrying, planAfterRetryFail, dueIds, nextWakeMs, bringAllForward, secondsLeft, shouldAcceptLoaded, touchFailedAt, isErrorPageEcho, ERROR_PAGE_GRACE_MS,
 } from '../../shared/reconnectPlan.js'
 import { logFailLine, logSkipLine, logRetryFailLine, logRestoredLine, logManualLine, logNetLine, logEchoLine } from '../../shared/reconnectTexts.js' // v1.2.491: тексты вынесены
 
@@ -32,6 +32,27 @@ describe('Какие ошибки считаем обрывом связи', () 
     for (const c of [-20, -300, 0, 200, undefined, null, '', 'abc', NaN]) {
       expect(isNetworkError(c), 'код ' + c + ' НЕ должен запускать повтор').toBe(false)
     }
+  })
+
+  it('v1.2.496: «молчит посредник» (VPN/прокси) — ОБРЫВ, повторять стоит', () => {
+    for (const c of [-111, -120, -121, -130]) {
+      expect(isNetworkError(c), 'код ' + c + ' (посредник) должен считаться обрывом').toBe(true)
+      expect(isProxyError(c), 'код ' + c + ' должен опознаваться как «посредник»').toBe(true)
+    }
+    expect(errorName(-130)).toBe('ERR_PROXY_CONNECTION_FAILED')
+    expect(errorName(-111)).toBe('ERR_TUNNEL_CONNECTION_FAILED')
+  })
+
+  it('🔴 ЛОВУШКА v1.2.496: беды прокси, которые повторами НЕ лечатся, — НЕ обрыв', () => {
+    // По перечню Chromium net_error_list.h: -115 неподдерживаемый способ входа, -127 нужен логин,
+    // -131 битый PAC-скрипт, -136 плохой сертификат. Тут нужен человек, а не повтор.
+    for (const c of [-115, -127, -131, -136]) {
+      expect(isNetworkError(c), 'код ' + c + ' НЕ должен запускать повтор').toBe(false)
+      expect(isProxyError(c), 'код ' + c + ' не в семействе «посредник молчит»').toBe(false)
+    }
+    expect(isProxyError(-106), 'обычный обрыв интернета — не посредник').toBe(false)
+    expect(isProxyError(undefined)).toBe(false)
+    expect(isProxyError('abc')).toBe(false)
   })
 
   it('имя кода понятное, а неизвестный не ломает текст', () => {

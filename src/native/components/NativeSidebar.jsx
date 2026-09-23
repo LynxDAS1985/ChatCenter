@@ -80,7 +80,8 @@ export default function NativeSidebar({
     </div>
   ))
 
-  const netDown = useNetPulse()?.online === false // v1.2.493: показываем метку ТОЛЬКО при обрыве — не плодим кружки
+  const netPulse = useNetPulse() // v1.2.496: нужен весь пакет — у него есть признак «молчит посредник (VPN/прокси)»
+  const netDown = netPulse?.online === false // v1.2.493: показываем метку ТОЛЬКО при обрыве — не плодим кружки
 
   // Веб-мессенджеры (ВК/WhatsApp/МАКС).
   const webNodes = webSources.map(m => (
@@ -109,9 +110,9 @@ export default function NativeSidebar({
       {/* v1.2.493: «нет сети» — вердикт пульса интернета (main/handlers/netPulseHandlers.js). Пока интернет есть — ничего:
           здоровье каждого мессенджера уже показывают их кружки. Пропал — красная метка над всеми, чтобы не гадать по одному. */}
       {netDown && (
-        <div title="Интернета нет — программа проверяет каждые 15 секунд и сама поднимет чаты, когда он вернётся"
+        <div title={netPulse?.proxyDown ? 'Похоже, молчит посредник (VPN или прокси) — включите его или выключите прокси в настройках Windows' : 'Интернета нет — программа проверяет каждые 15 секунд и сама поднимет чаты, когда он вернётся'}
           style={{ flexShrink: 0, textAlign: 'center', fontSize: Math.max(9, Math.round(10 * railScale)), lineHeight: 1.4,
-            color: '#F87171', background: 'rgba(248,113,113,0.14)', borderRadius: 6, padding: '2px 0', margin: '0 2px' }}>нет сети</div>
+            color: '#F87171', background: 'rgba(248,113,113,0.14)', borderRadius: 6, padding: '2px 0', margin: '0 2px' }}>{netPulse?.proxyDown ? 'нет сети · VPN?' : 'нет сети'}</div>
       )}
       {/* ── ВЕРХ (закреплён): кнопка «Все». Горит при показе всех; иначе счётчик N/M. Только при ≥2. ── */}
       {store.accounts.length >= 2 && (

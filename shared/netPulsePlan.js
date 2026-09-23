@@ -60,6 +60,7 @@ export const STILL_OFFLINE_LOG_MS = 300000 // пока интернета нет
 export function createPulseState(now = Date.now()) {
   return {
     online: null,        // null = ещё не проверяли; true/false — последний вердикт
+    proxyDown: false,    // v1.2.496: молчит ПОСРЕДНИК (VPN/прокси), а не сам интернет
     since: 0,            // когда наступило текущее состояние
     lastCheckAt: 0,
     lastHost: '',        // кто ответил
@@ -90,7 +91,23 @@ export function canCheckNow(state, now = Date.now()) {
  * @param {{ok:boolean, host?:string, latencyMs?:number, now?:number, reason?:string, targetsCount?:number}} r — targetsCount: сколько адресов реально опрошено (v1.2.493)
  * @returns {{state:object, transition:'online'|'offline'|null, line:string|null}}
  */
-export function applyResult(state, { ok, host = '', latencyMs = 0, now = Date.now(), reason = '', targetsCount = 0 }) {
+/**
+ * v1.2.496: похоже ли, что молчит ПОСРЕДНИК (VPN/прокси), а не интернет?
+ *
+ * Смотрим текст ошибки net.fetch. Подстроки взяты из официального перечня Chromium
+ * net_error_list.h: ERR_PROXY_CONNECTION_FAILED (-130), ERR_TUNNEL_CONNECTION_FAILED (-111),
+ * ERR_SOCKS_CONNECTION_FAILED (-120). Точная ОБЁРТКА текста у net.fetch не закреплена
+ * документацией, поэтому распознавание МЯГКОЕ: не узнали — просто не уточняем причину
+ * (поведение как раньше). Надёжный путь у нас другой — код ошибки самой страницы
+ * (shared/reconnectPlan.js isProxyError), он от текста не зависит.
+ * @param {string} text
+ */
+export function looksLikeProxyDown(text) {
+  const t = String(text || '').toUpperCase()
+  return t.includes('PROXY') || t.includes('TUNNEL') || t.includes('SOCKS')
+}
+
+export function applyResult(state, { ok, host = '', latencyMs = 0, now = Date.now(), reason = '', targetsCount = 0, lastError = '' }) {
   const prev = state.online
   const next = { ...state, checking: false, lastCheckAt: now, lastHost: ok ? host : state.lastHost, lastLatencyMs: ok ? latencyMs : state.lastLatencyMs }
   let transition = null
@@ -101,11 +118,14 @@ export function applyResult(state, { ok, host = '', latencyMs = 0, now = Date.no
     line = prev === null
       ? `[net-pulse] интернет есть (ответил ${host} за ${latencyMs} мс)${reason ? ' · причина проверки: ' + reason : ''}`
       : `[net-pulse] интернет ПОЯВИЛСЯ через ${downSec} с (ответил ${host} за ${latencyMs} мс)${reason ? ' · причина проверки: ' + reason : ''}`
-    next.online = true; next.since = now; next.lastStillLogAt = 0
+    next.online = true; next.since = now; next.lastStillLogAt = 0; next.proxyDown = false
   } else if (!ok && prev !== false) {
     transition = 'offline'
-    line = `[net-pulse] интернет ПРОПАЛ — ни один из ${targetsCount || PULSE_TARGETS.length} адресов не ответил${reason ? ' · причина проверки: ' + reason : ''}`
-    next.online = false; next.since = now; next.lastStillLogAt = now
+    const viaProxy = looksLikeProxyDown(lastError) // v1.2.496: мёртв посредник, а не интернет
+    line = `[net-pulse] интернет ПРОПАЛ — ни один из ${targetsCount || PULSE_TARGETS.length} адресов не ответил` +
+      (viaProxy ? ' · похоже, молчит ПОСРЕДНИК (VPN/прокси), а не сам интернет' : '') +
+      (reason ? ' · причина проверки: ' + reason : '')
+    next.online = false; next.since = now; next.lastStillLogAt = now; next.proxyDown = viaProxy
   } else if (!ok && prev === false && now - (state.lastStillLogAt || 0) >= STILL_OFFLINE_LOG_MS) {
     line = `[net-pulse] интернета всё ещё нет (уже ${Math.round((now - state.since) / 60000)} мин)`
     next.lastStillLogAt = now
@@ -121,6 +141,7 @@ export function pulsePayload(state, now = Date.now()) {
     checkedAt: state ? state.lastCheckAt : 0,
     host: state ? state.lastHost : '',
     latencyMs: state ? state.lastLatencyMs : 0,
+    proxyDown: !!(state && state.proxyDown), // v1.2.496: «молчит посредник» — для экрана, метки и панели
     ageMs: state && state.lastCheckAt ? now - state.lastCheckAt : -1,
   }
 }

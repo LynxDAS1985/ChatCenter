@@ -73,11 +73,13 @@ export function initNetPulse({ net, powerMonitor, ipcMain, getMainWindow, storag
     if (!canCheckNow(state, now)) return
     state = { ...state, checking: true }
     let result = { ok: false, host: '', latencyMs: 0 }
+    let lastError = '' // v1.2.496: текст последней ошибки — по нему видно «молчит посредник (VPN/прокси)»
     for (const url of targets) {
       const r = await probeOne(url)
       if (r.ok) { result = { ok: true, host: hostOf(url), latencyMs: r.latencyMs }; break }
+      if (r.error) lastError = r.error
     }
-    const applied = applyResult(state, { ...result, now: Date.now(), reason, targetsCount: targets.length })
+    const applied = applyResult(state, { ...result, now: Date.now(), reason, targetsCount: targets.length, lastError })
     state = applied.state
     if (applied.line) console.log(applied.line)
     // v1.2.492: пакет окну — на КАЖДУЮ проверку, чтобы экран показывал «проверено N с назад» честно.

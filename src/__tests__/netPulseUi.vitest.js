@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import { pulseStatusLine, retryButtonLabel } from '../../shared/reconnectTexts.js'
 import { resolveTargets, PULSE_TARGETS, PULSE_TARGETS_MAX } from '../../shared/netPulsePlan.js'
 import { startRecoveryWindow, noteOutcome, summaryLine, _resetRecoverySummary, RECOVERY_WINDOW_MS } from '../../shared/netRecoverySummary.js'
-import { applyResult, createPulseState } from '../../shared/netPulsePlan.js'
+import { applyResult, createPulseState, looksLikeProxyDown, pulsePayload } from '../../shared/netPulsePlan.js'
 import { applyPulse } from '../hooks/useOpenPageWatch.js'
 import { initNetPulse } from '../../main/handlers/netPulseHandlers.js'
 
@@ -152,7 +152,10 @@ describe('v1.2.493 — находки ревью и советы', () => {
 
   it('[!] ЛОВУШКИ проводки советов: полоса показывает «нет сети» только при обрыве; «Проверить все» щупает интернет', () => {
     const rail = fs.readFileSync('src/native/components/NativeSidebar.jsx', 'utf8')
-    expect(rail).toContain("useNetPulse()?.online === false")
+    // v1.2.496: пакет пульса теперь берётся в отдельную переменную (нужен признак proxyDown), смысл тот же —
+    // метка показывается ТОЛЬКО при обрыве.
+    expect(rail).toContain('const netPulse = useNetPulse()')
+    expect(rail).toContain('netPulse?.online === false')
     expect(rail).toContain('нет сети')
     const app = fs.readFileSync('src/App.jsx', 'utf8')
     expect(app).toContain("send?.('net:pulse-now', { reason: 'кнопка «Проверить все»' })")
@@ -188,5 +191,53 @@ describe('v1.2.494 — честная надпись кнопки и живой 
     expect(overlay).toContain('{retryButtonLabel(entry, netVerdict())}')
     const hook = fs.readFileSync('src/hooks/useWebviewReconnect.js', 'utf8')
     expect(hook).toContain("'кнопка «' + retryButtonLabel(null, netVerdict()) + '»'") // в журнале — та же надпись
+  })
+})
+
+describe('v1.2.496 — «молчит посредник (VPN/прокси)», а не интернет', () => {
+  it('распознавание текста ошибки: мягкое, регистр не важен, мусор не ломает', () => {
+    expect(looksLikeProxyDown('net::ERR_PROXY_CONNECTION_FAILED')).toBe(true)
+    expect(looksLikeProxyDown('err_tunnel_connection_failed')).toBe(true)
+    expect(looksLikeProxyDown('ERR_SOCKS_CONNECTION_FAILED')).toBe(true)
+    expect(looksLikeProxyDown('net::ERR_INTERNET_DISCONNECTED')).toBe(false)
+    expect(looksLikeProxyDown('')).toBe(false)
+    expect(looksLikeProxyDown(null)).toBe(false)
+    expect(looksLikeProxyDown(undefined)).toBe(false)
+  })
+
+  it('[!] строка журнала и пакет окну уточняют причину; при возврате сети признак СНИМАЕТСЯ', () => {
+    const start = createPulseState(T0)
+    const down = applyResult(start, { ok: false, now: T0, targetsCount: 3, lastError: 'net::ERR_PROXY_CONNECTION_FAILED' })
+    expect(down.line).toContain('молчит ПОСРЕДНИК')
+    expect(down.state.proxyDown).toBe(true)
+    expect(pulsePayload(down.state, T0).proxyDown).toBe(true)
+    const up = applyResult(down.state, { ok: true, host: 'a', latencyMs: 5, now: T0 + 1000 })
+    expect(up.state.proxyDown, 'сеть вернулась — признак обязан погаснуть').toBe(false)
+    expect(pulsePayload(up.state, T0 + 1000).proxyDown).toBe(false)
+  })
+
+  it('обычный обрыв (не посредник) строку НЕ уточняет — лишнего не пишем', () => {
+    const r = applyResult(createPulseState(T0), { ok: false, now: T0, targetsCount: 3, lastError: 'net::ERR_INTERNET_DISCONNECTED' })
+    expect(r.line).toContain('ни один из 3 адресов')
+    expect(r.line).not.toContain('ПОСРЕДНИК')
+    expect(r.state.proxyDown).toBe(false)
+  })
+
+  it('строка состояния: «молчит посредник» видно человеку, при живом интернете — нет', () => {
+    expect(pulseStatusLine({ online: false, proxyDown: true, checkedAt: T0 - 5000 }, T0))
+      .toBe('Интернет: нет · молчит посредник (VPN/прокси) · проверено 5 с назад')
+    expect(pulseStatusLine({ online: true, proxyDown: true, checkedAt: T0 - 5000 }, T0))
+      .toBe('Интернет: есть · проверено 5 с назад')
+  })
+
+  it('[!] проводка: метка полосы и экран берут причину из пульса и кода ошибки', () => {
+    const rail = fs.readFileSync('src/native/components/NativeSidebar.jsx', 'utf8')
+    expect(rail).toContain("netPulse?.proxyDown ? 'нет сети · VPN?' : 'нет сети'")
+    const plan = fs.readFileSync('shared/reconnectPlan.js', 'utf8')
+    expect(plan).toContain("'-130': 'ERR_PROXY_CONNECTION_FAILED'")
+    const texts = fs.readFileSync('shared/reconnectTexts.js', 'utf8')
+    expect(texts).toContain('isProxyError(entry.code)')
+    const handlers = fs.readFileSync('main/handlers/netPulseHandlers.js', 'utf8')
+    expect(handlers, 'текст ошибки обязан доходить до разбора').toContain('lastError')
   })
 })

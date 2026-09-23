@@ -49,6 +49,34 @@ export const NETWORK_ERROR_CODES = {
   '-118': 'ERR_CONNECTION_TIMED_OUT',
   '-137': 'ERR_NAME_RESOLUTION_FAILED',
   '-324': 'ERR_EMPTY_RESPONSE',
+  // v1.2.496: семейство «мёртв ПОСРЕДНИК» — не сайт и не интернет, а VPN/прокси между нами и сетью.
+  // Реальный случай 2026-09-23: в Windows включён прокси 127.0.0.1:2080 (Liberty VPN), туннель не поднят →
+  // ВСЕ пять веб-мессенджеров получили -130, но списка не было → «повтор не нужен» → ни экрана, ни повторов,
+  // и после возврата VPN страницы не поднялись бы сами. Повторять здесь ОСМЫСЛЕННО: посредник оживает.
+  '-111': 'ERR_TUNNEL_CONNECTION_FAILED',
+  '-120': 'ERR_SOCKS_CONNECTION_FAILED',
+  '-121': 'ERR_SOCKS_CONNECTION_HOST_UNREACHABLE',
+  '-130': 'ERR_PROXY_CONNECTION_FAILED',
+}
+
+/**
+ * Коды из NETWORK_ERROR_CODES, которые означают именно «не отвечает ПОСРЕДНИК» (VPN/прокси/туннель).
+ * Нужны, чтобы экран говорил правду: интернет может быть жив, мёртв посредник.
+ *
+ * 🔴 ЛОВУШКА: сюда НЕЛЬЗЯ класть родственные коды, которые повторами НЕ лечатся (их нет и в
+ * NETWORK_ERROR_CODES) — по официальному перечню Chromium net_error_list.h:
+ *   -115 ERR_PROXY_AUTH_UNSUPPORTED  — прокси просит неподдерживаемый способ входа;
+ *   -127 ERR_PROXY_AUTH_REQUESTED    — нужен логин/пароль;
+ *   -131 ERR_MANDATORY_PROXY_CONFIGURATION_FAILED — не скачался/не разобрался PAC-скрипт;
+ *   -136 ERR_PROXY_CERTIFICATE_INVALID — плохой сертификат прокси.
+ * Добавить их = бесконечно дёргать страницу там, где нужен человек.
+ */
+export const PROXY_ERROR_CODES = ['-111', '-120', '-121', '-130']
+
+/** Это «посредник не отвечает»? (для заголовка экрана и записи в журнал) */
+export function isProxyError(code) {
+  const n = Number(code)
+  return Number.isFinite(n) && PROXY_ERROR_CODES.indexOf(String(n)) !== -1
 }
 
 /** Код -3 = ERR_ABORTED: обычная отмена перехода, приходит при НОРМАЛЬНОЙ работе. */

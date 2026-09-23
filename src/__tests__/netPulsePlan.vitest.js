@@ -59,7 +59,7 @@ describe('чистая логика пульса', () => {
 
   it('что уходит окну', () => {
     const { state } = applyResult(createPulseState(T0), { ok: true, host: 'a', latencyMs: 7, now: T0 })
-    expect(pulsePayload(state, T0 + 500)).toEqual({ online: true, since: T0, checkedAt: T0, host: 'a', latencyMs: 7, ageMs: 500 })
+    expect(pulsePayload(state, T0 + 500)).toEqual({ online: true, since: T0, checkedAt: T0, host: 'a', latencyMs: 7, ageMs: 500, proxyDown: false })
     expect(pulsePayload(null).online).toBeNull()
   })
 

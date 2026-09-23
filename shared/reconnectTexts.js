@@ -3,7 +3,7 @@
 // Тексты записей в журнал и причины для экрана «Нет связи» — вынесены из shared/reconnectPlan.js
 // (тот упёрся в 300 строк). В одном месте, чтобы проверялись тестом и не расходились между
 // хуком, попыткой (reconnectAttempt.js) и экраном (WebviewOfflineOverlay.jsx).
-import { errorName, LONG_FAIL_ATTEMPTS } from './reconnectPlan.js'
+import { errorName, isProxyError, LONG_FAIL_ATTEMPTS } from './reconnectPlan.js'
 
 export function logFailLine(name, entry) {
   return `[reconnect] ${name}: обрыв связи, код=${entry.code} ${errorName(entry.code)}, ` +
@@ -50,6 +50,15 @@ export function logSelfHealedLine(name, entry, now) {
  * @param {boolean|null} netOnline — вердикт пульса (null = неизвестно)
  */
 export function reasonTitle(entry, netOnline, name) {
+  // v1.2.496: ПЕРВОЙ веткой — «мёртв посредник». Иначе при мёртвом пульсе (а он при мёртвом прокси
+  // честно говорит «нет»: net.fetch идёт тем же путём) экран сказал бы «Нет интернета» и увёл бы
+  // человека искать беду не там. Реальный случай 2026-09-23 — см. mistakes/electron-core.md.
+  if (entry && isProxyError(entry.code)) {
+    return {
+      title: 'Не отвечает посредник (VPN или прокси)',
+      hint: 'интернет, скорее всего, есть: весь веб идёт через программу-посредника, а она сейчас молчит — включите VPN либо выключите прокси в настройках Windows',
+    }
+  }
   if (netOnline === false) {
     return { title: `Нет интернета`, hint: 'проверяем связь каждые 15 секунд; страницу не трогаем, чтобы не потерять написанное' }
   }
@@ -83,7 +92,9 @@ export function pulseStatusLine(pulse, now = Date.now()) {
   if (!pulse || typeof pulse.online !== 'boolean' || !pulse.checkedAt) return 'Интернет: ещё не проверяли'
   const sec = Math.max(0, Math.round((now - pulse.checkedAt) / 1000))
   const ago = sec < 60 ? `${sec} с назад` : `${Math.floor(sec / 60)} мин назад`
-  return `Интернет: ${pulse.online ? 'есть' : 'нет'} · проверено ${ago}`
+  // v1.2.496: если молчит посредник (VPN/прокси) — говорим это прямо, иначе человек ищет беду в интернете.
+  const why = !pulse.online && pulse.proxyDown ? ' · молчит посредник (VPN/прокси)' : ''
+  return `Интернет: ${pulse.online ? 'есть' : 'нет'}${why} · проверено ${ago}`
 }
 
 /**

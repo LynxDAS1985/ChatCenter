@@ -38,6 +38,12 @@ describe('одна попытка', () => {
     expect(el.loadURL).not.toHaveBeenCalled()
     expect(r.logs.join('\n')).toContain('интернета нет (по пульсу) — страницу не дёргаем')
     expect(r.state.wa.phase).toBe('wait')
+    // 🔴 v1.2.496: та же защита обязана держать и НОВОЕ семейство кодов (молчит посредник) — иначе
+    // добавление -130 в список повторов начало бы перезагружать страницы и стирать недописанное.
+    const el2 = { loadURL: vi.fn(() => Promise.resolve()) }
+    const r2 = rig({ entry: waitEntry({ code: -130 }), el: el2, netOnline: false })
+    expect(await r2.attempt('wa')).toBe('net-down')
+    expect(el2.loadURL, 'мёртвый посредник: страницу тоже не трогаем').not.toHaveBeenCalled()
   })
 
   it('загрузка удалась → запись снята, строка «восстановлена»', async () => {
@@ -99,6 +105,12 @@ describe('новые правила плана (v1.2.491)', () => {
   })
   it('причины для экрана: три разные', () => {
     expect(reasonTitle(waitEntry(), false, 'WhatsApp').title).toBe('Нет интернета')
+    // 🔴 ЛОВУШКА v1.2.496: при мёртвом посреднике пульс ЧЕСТНО говорит «нет» (net.fetch идёт тем же путём),
+    // поэтому ветка про посредника обязана стоять ПЕРВОЙ — иначе экран скажет «Нет интернета» и уведёт не туда.
+    const prox = reasonTitle(waitEntry({ code: -130 }), false, 'WhatsApp')
+    expect(prox.title).toBe('Не отвечает посредник (VPN или прокси)')
+    expect(prox.hint).toContain('Windows')
+    expect(reasonTitle(waitEntry({ code: -111 }), true, 'WhatsApp').title).toContain('посредник')
     expect(reasonTitle(waitEntry({ origin: 'probe' }), true, 'WhatsApp').title).toContain('страница не отвечает')
     const r = reasonTitle(waitEntry({ attempt: 12 }), true, 'WhatsApp')
     expect(r.title).toBe('Сайт WhatsApp недоступен')
