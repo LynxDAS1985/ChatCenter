@@ -38,6 +38,7 @@ import { EventEmitter } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
 import { tryWithTimeout } from '../../shared/withTimeout.js' // v1.2.499: «жди не дольше»
+import { attachViewEvents } from './webContentsViewEvents.js' // v1.2.500: подписки вынесены
 
 // v0.89.46: WebContentsView требует абсолютный path (Electron docs), а <webview>
 // тег принимает file:// URL. Нормализуем file:// → path. Handle unicode + пробелы.
@@ -123,38 +124,9 @@ export class WebContentsViewManager extends EventEmitter {
       return null
     }
     console.log(`[wcv-mgr] new WebContentsView ok (wc.id=${view.webContents?.id})`)
-    const wc = view.webContents
-    wc.on('render-process-gone', (_e, d) => console.error(`[wcv-mgr] RPG id=${id} reason=${d?.reason} exit=${d?.exitCode}`))
-    wc.on('did-fail-load', (_e, c, d, u, m) => console.error(`[wcv-mgr] fail-load id=${id} c=${c} "${d}" url=${u} main=${m}`))
-    wc.on('did-start-loading', () => console.log(`[wcv-mgr] start-loading id=${id}`))
-
-    // v0.89.52: вместо forwarding каждого события — обёрнем в try и логируем
-    // ровно те, что свалились (если такое случится).
-    console.log(`[wcv-mgr] forwarding events...`)
-    try {
-      const forwardEvent = (eventName) => {
-        wc.on(eventName, (...args) => {
-          try { this.emit(eventName, { viewId: id, args }) } catch (_) {}
-        })
-      }
-      forwardEvent('did-finish-load')
-      forwardEvent('dom-ready')
-      forwardEvent('did-fail-load')
-      forwardEvent('did-navigate-in-page')
-      forwardEvent('did-frame-finish-load')
-      forwardEvent('did-start-loading')
-      forwardEvent('did-stop-loading')
-      forwardEvent('render-process-gone')
-      forwardEvent('unresponsive')
-      forwardEvent('page-title-updated')
-      forwardEvent('console-message')
-      wc.on('ipc-message', (event, channel, ...args) => {
-        try { this.emit('ipc-message', { viewId: id, channel, args }) } catch (_) {}
-      })
-    } catch (e) {
-      console.error(`[wcv-mgr] forwarding events FAILED: ${e?.message || e}`)
-    }
-    console.log(`[wcv-mgr] events forwarded`)
+    // v1.2.500: подписки вынесены в main/utils/webContentsViewEvents.js — файл упёрся в 300 строк,
+    // а правило проекта требует разделять файл, а не резать комментарии (CLAUDE.md, ADR-044).
+    attachViewEvents(view.webContents, id, (event, payload) => this.emit(event, payload))
 
     // v0.89.52: BrowserWindow.contentView — это primary view (HTML рендерер),
     // добавление дочернего view через addChildView возможно с Electron v30+.
@@ -207,7 +179,13 @@ export class WebContentsViewManager extends EventEmitter {
     const entry = this.views.get(id)
     if (!entry?.view) return { ok: false, error: 'view not found' }
     const r = await tryWithTimeout(entry.view.webContents.loadURL(url), WCV_LOAD_TIMEOUT_MS, 'загрузка страницы')
-    if (!r.ok) console.warn('[wcv] loadURL ' + id + ': ' + r.error + (r.timedOut ? ' (предел ожидания)' : ''))
+    // v1.2.500 (находка ревью): по пределу ГАСИМ зависшую загрузку — иначе следующая пойдёт поверх
+    // первой и получатся две живые загрузки одной страницы (в shared/reconnectAttempt.js уже так).
+    if (r.timedOut) { try { entry.view.webContents.stop() } catch (_) {} }
+    // рядовую отмену навигации (-3 ERR_ABORTED) не пишем — она бывает при каждом переключении вкладки
+    if (!r.ok && !/ERR_ABORTED/i.test(r.error || '')) {
+      console.warn('[wcv-mgr] loadURL ' + id + ': ' + r.error + (r.timedOut ? ' (предел ожидания)' : ''))
+    }
     return r.ok ? { ok: true } : { ok: false, error: r.error, timedOut: r.timedOut }
   }
 
@@ -215,7 +193,7 @@ export class WebContentsViewManager extends EventEmitter {
     const entry = this.views.get(id)
     if (!entry?.view) return { ok: false, error: 'view not found' }
     const r = await tryWithTimeout(entry.view.webContents.executeJavaScript(code, true), WCV_EXEC_TIMEOUT_MS, 'выполнение скрипта')
-    if (!r.ok) console.warn('[wcv] executeJavaScript ' + id + ': ' + r.error + (r.timedOut ? ' (предел ожидания)' : ''))
+    if (!r.ok) console.warn('[wcv-mgr] executeJavaScript ' + id + ': ' + r.error + (r.timedOut ? ' (предел ожидания)' : ''))
     return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error, timedOut: r.timedOut }
   }
 

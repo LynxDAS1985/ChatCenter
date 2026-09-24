@@ -13,13 +13,13 @@ import { buildVkScript } from './navigators/vkNavigate.js'
 import { buildOzonScript } from './navigators/ozonNavigate.js'
 import { buildGenericScript } from './navigators/genericNavigate.js'
 
-export function buildChatNavigateScript(url, senderName, chatTag) {
+export function buildChatNavigateScript(url, senderName, chatTag, opts) {
   if (url.includes('telegram.org')) return buildTelegramScript(senderName, chatTag)
   if (url.includes('max.ru'))       return buildMaxScript(senderName)
   if (url.includes('whatsapp.com')) return buildWhatsAppScript(senderName)
   if (url.includes('vk.com') || url.includes('vk.ru')) return buildVkScript(senderName) // v1.2.109: vk.ru
   // v1.2.499: Ozon получает и метку уведомления — по ней видно раздел (вопрос / отзыв / чат покупателя),
   // иначе вопрос искался среди чатов, где его нет, и переход всегда заканчивался «не найден».
-  if (url.includes('ozon.ru'))      return buildOzonScript(senderName, chatTag) // v1.2.330: клик по строке
+  if (url.includes('ozon.ru'))      return buildOzonScript(senderName, chatTag, opts) // v1.2.330: клик по строке; v1.2.500: opts.markReadOnly запрещает смену адреса
   return buildGenericScript(senderName)
 }

@@ -325,3 +325,40 @@ describe('v1.2.498 — находки ревью: пульс не умирает
     expect(handlers).toContain('[net-pulse] ошибки адресов: ')
   })
 })
+
+describe('v1.2.500 — проверка связи: первый успех выигрывает', () => {
+  it('[!] закончили по ПЕРВОМУ успеху, остальных не ждём (раньше ждали самый медленный)', async () => {
+    const t0 = Date.now()
+    const f = fakeDeps({}, (url) => url.includes('msftconnecttest')
+      ? Promise.resolve({ status: 204 })                                  // отвечает сразу
+      : new Promise(r => setTimeout(() => r({ status: 204 }), 3000)))     // «думают» 3 секунды
+    const pulse = initNetPulse(f.deps)
+    await new Promise(r => setTimeout(r, 300))
+    expect(pulse.getState().online, 'вердикт уже есть').toBe(true)
+    expect(Date.now() - t0, 'ждать самый медленный адрес больше не надо').toBeLessThan(2000)
+    pulse.stop(); f.restore()
+  })
+
+  it('[!] залипший адрес НЕ вешает проверку навсегда (иначе пульс замолкает)', async () => {
+    const f = fakeDeps({}, (url) => url.includes('yandex')
+      ? new Promise(() => {})                 // этот не ответит никогда
+      : Promise.resolve({ status: 204 }))
+    const pulse = initNetPulse(f.deps)
+    await new Promise(r => setTimeout(r, 300))
+    const st = pulse.getState()
+    expect(st.checking, 'состояние «проверка идёт» обязано сняться').toBe(false)
+    expect(f.sent.length, 'окно получило вердикт').toBeGreaterThan(0)
+    pulse.stop(); f.restore()
+  })
+
+  it('[!] в журнал попадает тот адрес, который ответил ПЕРВЫМ', async () => {
+    const f = fakeDeps({}, (url) => url.includes('gstatic')
+      ? Promise.resolve({ status: 204 })
+      : new Promise(r => setTimeout(() => r({ status: 204 }), 500)))
+    const pulse = initNetPulse(f.deps)
+    await new Promise(r => setTimeout(r, 250))
+    expect(pulse.getState().lastHost, 'раньше записывался первый по списку, а не самый быстрый').toBe('www.gstatic.com')
+    pulse.stop(); f.restore()
+  })
+})
+

@@ -6,7 +6,7 @@
 // что три собственные копии одного приёма расходятся при правках.
 import { describe, it, expect, vi } from 'vitest'
 import fs from 'node:fs'
-import { withTimeout, tryWithTimeout } from '../../shared/withTimeout.js'
+import { withTimeout, tryWithTimeout, MAX_TIMEOUT_MS, FALLBACK_TIMEOUT_MS } from '../../shared/withTimeout.js'
 
 describe('жди не дольше', () => {
   it('успел вовремя → отдаёт результат', async () => {
@@ -60,3 +60,39 @@ describe('жди не дольше', () => {
     expect(attempt).toContain("from './withTimeout.js'")
   })
 })
+
+describe('v1.2.500 — ловушки, найденные ревью', () => {
+  it('[!] мусорный или нулевой предел НЕ означает «жду вечно» — берётся запасной', async () => {
+    vi.useFakeTimers()
+    try {
+      for (const bad of [0, -5, NaN, null, undefined, 'abc']) {
+        const p = withTimeout(new Promise(() => {}), bad, () => new Error('предел')).catch(e => e.message)
+        await vi.advanceTimersByTimeAsync(FALLBACK_TIMEOUT_MS + 10)
+        expect(await p, 'предел ' + String(bad) + ' обязан закончиться отказом').toBe('предел')
+      }
+    } finally { vi.useRealTimers() }
+  })
+
+  it('[!] слишком большой предел не срабатывает мгновенно (таймеры режут его до 1 мс)', async () => {
+    const res = await Promise.race([
+      withTimeout(new Promise(() => {}), 3_000_000_000, () => new Error('предел')).catch(() => 'ОТКАЗ СРАЗУ'),
+      new Promise(r => setTimeout(() => r('ждём дальше'), 60)),
+    ])
+    expect(res, 'раньше отказ приходил через несколько миллисекунд').toBe('ждём дальше')
+    expect(MAX_TIMEOUT_MS).toBe(2147483647)
+  })
+
+  it('[!] если создание ошибки само упадёт — ждущий всё равно получает управление', async () => {
+    const res = await Promise.race([
+      withTimeout(new Promise(() => {}), 20, () => { throw new Error('сам упал') }).catch(e => 'отказ: ' + e.message),
+      new Promise(r => setTimeout(() => r('ЗАВИСЛИ'), 300)),
+    ])
+    expect(res).toBe('отказ: сам упал')
+  })
+
+  it('текст ошибки честный при пределе меньше секунды', async () => {
+    const r = await tryWithTimeout(new Promise(() => {}), 20, 'дело')
+    expect(r.error, 'раньше писалось «за 0 с»').toContain('за 20 мс')
+  })
+})
+

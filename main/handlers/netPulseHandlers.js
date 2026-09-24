@@ -19,6 +19,7 @@
 // интерфейсе нет намеренно — это аварийный рычаг на случай, если пульс начнёт мешать.
 //
 // Таймер один (setTimeout-цепочка), останавливается в stop() по before-quit — memoryLeaks.
+import { withTimeout } from '../../shared/withTimeout.js' // v1.2.500: свой предел у всей проверки
 import {
   PULSE_TIMEOUT_MS, PULSE_MIN_GAP_MS, createPulseState, nextDelayMs, canCheckNow, applyResult, pulsePayload, setWaiting, resolveTargets,
 } from '../../shared/netPulsePlan.js'
@@ -54,11 +55,18 @@ export function initNetPulse({ net, powerMonitor, ipcMain, getMainWindow, storag
     } catch (_) {}
   }
 
-  /** Один адрес: любой HTTP-ответ = интернет есть; исключение/таймаут = нет. */
-  async function probeOne(url) {
+  /**
+   * Один адрес: любой HTTP-ответ = интернет есть; исключение/таймаут = нет.
+   * v1.2.500: принимает общий сигнал отмены — как только ОДИН адрес ответил успехом, остальные
+   * гасим, чтобы не доедать сеть (находка ревью: при живой сети уходило втрое больше запросов).
+   */
+  async function probeOne(url, extraSignal) {
     const t0 = Date.now()
     const init = { method: 'GET', cache: 'no-store', redirect: 'follow' }
-    try { init.signal = AbortSignal.timeout(PULSE_TIMEOUT_MS) } catch (_) {}
+    try {
+      const own = AbortSignal.timeout(PULSE_TIMEOUT_MS)
+      init.signal = extraSignal && typeof AbortSignal.any === 'function' ? AbortSignal.any([own, extraSignal]) : own
+    } catch (_) {}
     try {
       const res = await doFetch(url, init)
       return { ok: !!res, latencyMs: Date.now() - t0 }
@@ -85,23 +93,41 @@ export function initNetPulse({ net, powerMonitor, ipcMain, getMainWindow, storag
     }
     state = { ...state, checking: true }
     let result = { ok: false, host: '', latencyMs: 0 }
-    // v1.2.498 (находка ревью #10): собираем ошибки ВСЕХ адресов, а не только последнего. Раньше
-    // два ответа «прокси не отвечает» и один свой таймаут давали вердикт по таймауту — признак
-    // «молчит посредник» мигал. Сырой текст уходит в журнал: иначе распознавание нечем проверить.
-    // v1.2.499 (ускорение по итогам ревью): адреса щупаем ОДНОВРЕМЕННО, а не по очереди. Раньше при
-    // мёртвой сети одна проверка занимала до 15 с (три адреса × 5 с предела) — столько же человек ждал
-    // после нажатия «Проверить связь», а при частоте «раз в 15 с» проверки шли почти непрерывно.
-    // Теперь ответ приходит за время самого быстрого адреса, а при полном провале — максимум за 5 с.
-    // Ошибки собираем по ВСЕМ адресам (нужно для признака «молчит посредник», находка ревью #10).
-    const settled = await Promise.all(targets.map(async (url) => {
-      const r = await probeOne(url)
-      return { url, ...r }
-    }))
+    // v1.2.500 — три починки по итогам ревью, каждая доказана прогоном:
+    //  • ЖДЁМ ПЕРВЫЙ УСПЕХ, а не всех. Promise.all ждал самый МЕДЛЕННЫЙ адрес, и при живой сети
+    //    проверка стала ДОЛЬШЕ, чем была до «ускорения» (замер: 2074 мс вместо 10 мс);
+    //  • остальные запросы ГАСИМ общим сигналом отмены — при живой сети уходило три запроса
+    //    вместо одного (4320 в сутки вместо 1440);
+    //  • у всей проверки есть СВОЙ предел: если адрес завис, а сигнал отмены не сработал, состояние
+    //    «проверка идёт» оставалось навсегда и пульс замолкал (та же беда, что чинили в v1.2.498).
+    // Ошибки собираем по ВСЕМ ответившим отказом адресам — это нужно признаку «молчит посредник».
+    const ac = new AbortController()
     const errors = []
-    for (const r of settled) {
-      if (r.ok && !result.ok) result = { ok: true, host: hostOf(r.url), latencyMs: r.latencyMs }
-      else if (!r.ok && r.error) errors.push(hostOf(r.url) + ': ' + r.error)
+    let winner = null
+    let announceFirst = null
+    const firstOk = new Promise((resolve) => { announceFirst = resolve })
+    const probes = targets.map(async (url) => {
+      const r = await probeOne(url, ac.signal)
+      if (r.ok) {
+        if (!winner) {
+          winner = { ok: true, host: hostOf(url), latencyMs: r.latencyMs }
+          try { ac.abort() } catch (_) {} // остальные запросы гасим — не доедаем сеть
+          announceFirst(true)             // и НЕ ждём их: вердикт уже есть
+        }
+        return
+      }
+      if (r.error && !ac.signal.aborted) errors.push(hostOf(url) + ': ' + r.error)
+    })
+    // Выходим по первому из трёх событий: кто-то ответил успехом / все ответили отказом / общий предел.
+    // 🔴 Ждать Promise.all НЕЛЬЗЯ: один залипший адрес оставлял бы «проверка идёт» навсегда, и пульс
+    // замолкал бы (проверено прогоном: за 2 с окно не получало ни одного пакета).
+    try {
+      await withTimeout(Promise.race([firstOk, Promise.all(probes)]), PULSE_TIMEOUT_MS + 2000,
+        () => Object.assign(new Error('проверка связи не уложилась в предел'), { ccTimeout: true }))
+    } catch (e) {
+      console.warn('[net-pulse] проверка оборвана по своему пределу: ' + ((e && e.message) || e))
     }
+    if (winner) result = winner
     const lastError = errors.join(' | ')
     const applied = applyResult(state, { ...result, now: Date.now(), reason, targetsCount: targets.length, lastError })
     state = applied.state

@@ -13,7 +13,10 @@ export default function useNotifyNavigation({
     const el = webviewRefs.current[messengerId]
     if (!el) { traceNotif('mark-read', 'warn', messengerId, senderName || '', 'webview ref не найден'); return }
     const url = el.getURL?.() || ''
-    const script = buildChatNavigateScript(url, senderName, chatTag)
+    // v1.2.500 (находка ревью): «Прочитано» НЕ должна уводить вкладку. До этого обе кнопки звали
+    // один скрипт, и нажатие «Прочитано» на уведомлении Ozon перебрасывало открытую страницу
+    // в другой раздел — вместе с недописанным ответом покупателю.
+    const script = buildChatNavigateScript(url, senderName, chatTag, { markReadOnly: true })
     if (script) {
       el.executeJavaScript(script).then(result => {
         const ok = result === true || (result && result.ok)
