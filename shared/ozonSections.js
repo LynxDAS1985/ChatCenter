@@ -72,3 +72,11 @@ export const OZON_MATCH_LEN = 40
 export function ozonNeedleShort(senderName) {
   return ozonNeedle(senderName).slice(0, OZON_MATCH_LEN)
 }
+
+/**
+ * Адреса ФОНОВЫХ страниц Ozon в том порядке, в котором их открывает src/App.jsx.
+ * 🔴 ПОРЯДОК ВАЖЕН: по номеру страницы там выбирается частота обновления и признак «не шуметь
+ * об ошибке» (0 — вопросы раз в минуту, 2 — отзывы раз в три минуты). Менять порядок нельзя,
+ * не поправив те настройки.
+ */
+export const OZON_BG_URLS = [OZON_SECTION_URL.q, OZON_SECTION_URL.list, OZON_SECTION_URL.rv]

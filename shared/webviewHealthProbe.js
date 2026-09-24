@@ -4,6 +4,7 @@ import {
   markHealthError,
   markHealthPending,
 } from './connectionHealth.js'
+import { withTimeout } from './withTimeout.js' // v1.2.501: общий «жди не дольше»
 
 const PROBE_SCRIPT = `(async () => {
   try {
@@ -158,14 +159,20 @@ export function probeWebviewHealth({
  * пробы перед перезагрузкой). Тот же PROBE_SCRIPT, что у панели связи — один способ мерить, не два.
  * @returns {Promise<boolean>} true = страница сама сходила в сеть и получила ответ
  */
+// 🔴 ПЯТУЮ копию приёма «жди не дольше» НЕ ЗАВОДИТЬ: общий помощник — shared/withTimeout.js.
+// Большая проверка выше оставлена со СВОЕЙ реализацией НАМЕРЕННО: там истечение срока — обычное
+// значение ({ timeout: true }), которое разбирается дальше, а общий помощник возвращает истечение
+// срока ОШИБКОЙ. Переписывать ради единообразия дороже, чем польза.
 export function quickProbe(webview, timeoutMs = DEFAULT_SLOW_MS) {
   if (!webview || typeof webview.executeJavaScript !== 'function') return Promise.resolve(false)
-  const timeout = new Promise(resolve => setTimeout(() => resolve(false), timeoutMs))
+  // v1.2.501: свой Promise.race заменён общим помощником shared/withTimeout.js — копий приёма
+  // «жди не дольше» в проекте стало четыре, а расходятся они молча (в v1.2.499 такая копия уже
+  // отличалась поведением при нулевом пределе). Смысл прежний: не дождались — считаем «не жива».
   const probe = Promise.resolve()
     .then(() => webview.executeJavaScript(PROBE_SCRIPT, true))
     .then(result => !!(result && result.ok !== false))
     .catch(() => false)
-  return Promise.race([probe, timeout])
+  return withTimeout(probe, timeoutMs, () => new Error('проба здоровья: нет ответа')).catch(() => false)
 }
 
 function readWebviewUrl(webview, fallback = '') {

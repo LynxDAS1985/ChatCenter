@@ -39,6 +39,7 @@ import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
 import { tryWithTimeout } from '../../shared/withTimeout.js' // v1.2.499: «жди не дольше»
 import { attachViewEvents } from './webContentsViewEvents.js' // v1.2.500: подписки вынесены
+import { buildViewPreferences } from './webContentsViewOptions.js' // v1.2.501: настройки вынесены
 
 // v0.89.46: WebContentsView требует абсолютный path (Electron docs), а <webview>
 // тег принимает file:// URL. Нормализуем file:// → path. Handle unicode + пробелы.
@@ -92,28 +93,9 @@ export class WebContentsViewManager extends EventEmitter {
     const WebContentsView = getWebContentsView()
     if (!WebContentsView) return null
 
-    // v0.89.55: sandbox:false — monitor.preload.cjs использует Node APIs.
-    const webPreferences = {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      backgroundThrottling: false, // v0.89.35 — гарантия работы CSS animations в hidden state
-    }
-    if (partition) webPreferences.partition = partition
-    // v0.89.51: fs.existsSync(preload) перед `new WebContentsView` — невалидный
-    // путь может крашить main нативно.
-    if (preload) {
-      const preloadPath = normalizePreloadPath(preload)
-      console.log(`[wcv-mgr] createView id=${id} preload=${preloadPath} partition=${partition || '(none)'}`)
-      if (!fs.existsSync(preloadPath)) {
-        console.error(`[wcv-mgr] preload file NOT FOUND: ${preloadPath} — пропускаем preload`)
-        // НЕ передаём preload — лучше создать view без него, чем убить main.
-      } else {
-        webPreferences.preload = preloadPath
-      }
-    } else {
-      console.log(`[wcv-mgr] createView id=${id} preload=(none) partition=${partition || '(none)'}`)
-    }
+    // v1.2.501: сборка настроек вынесена в main/utils/webContentsViewOptions.js — файл подошёл
+    // к потолку 300 строк, а правило проекта требует разделять, а не поднимать планку.
+    const webPreferences = buildViewPreferences({ id, partition, preload }, normalizePreloadPath)
 
     console.log(`[wcv-mgr] new WebContentsView starting...`)
     let view

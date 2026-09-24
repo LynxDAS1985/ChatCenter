@@ -73,6 +73,7 @@ const AISidebar = lazy(() => import('./components/AISidebar.jsx'))
 // v1.1.9: NATIVE_CC_ID/TAB + AISidebarFallback + NativeAppFallback вынесены
 // в appFallbacks.jsx (App.jsx был на пределе exception 940).
 import { NATIVE_CC_ID, NATIVE_CC_TAB, AISidebarFallback, NativeAppFallback } from './appFallbacks.jsx'
+import { OZON_BG_URLS } from '../shared/ozonSections.js' // v1.2.501: адреса фоновых страниц — из одного места
 
 // Навигация → src/utils/navigateToChat.js | Звук → src/utils/sound.js | Вкладка → components/MessengerTab.jsx
 // ─── Главный компонент ────────────────────────────────────────────────────
@@ -860,7 +861,7 @@ export default function App() {
                     т.к. Ozon CSP блокирует preload-<script>). Так вопросы И сообщения ловятся, даже когда
                     открыт другой раздел/мессенджер. Их сигналы маршрутизируются на основной id Ozon. Отключить
                     — убрать эти блоки. */}
-                {(/ozon\.ru/i.test(m.url || '') || m.id === 'ozon') && ['https://seller.ozon.ru/app/reviews/questions', 'https://seller.ozon.ru/app/messenger?group=customers_v2', 'https://seller.ozon.ru/app/reviews'].map((bgUrl, bgI) => (
+                {(/ozon\.ru/i.test(m.url || '') || m.id === 'ozon') && OZON_BG_URLS.map((bgUrl, bgI) => (
                   <webview
                     key={'ozonbg' + bgI}
                     ref={el => bindOzonBgWatcher(el, m.id, {

@@ -6,6 +6,7 @@
 // localStorage относительна контейнера. Цвета заданы ЯВНО (виджет вне .native-mode). Пульс/точка —
 // tailwind-классы animate-ping/animate-pulse (уже используются в проекте, RailWebIcon/App).
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
+import { OZON_SECTION_URL, OZON_SECTION_PATH } from '../../../shared/ozonSections.js' // v1.2.501: адреса разделов — из одного места
 
 const LS_KEY = 'ccOzonWidgetPos3'
 const SIZE = { w: 74, h: 150 } // вертикальный док — узкий и высокий (для клампа по контейнеру)
@@ -14,11 +15,11 @@ const SIZE = { w: 74, h: 150 } // вертикальный док — узкий
 const SECTIONS = [
   // url ведём СРАЗУ на ?group=customers_v2 (куда Ozon и так переадресует «/app/messenger»): без
   // переадресации нет отмены загрузки (ERR_ABORTED). match — по пути, срабатывает и с query.
-  { key: 'msg', label: 'Сообщения', icon: '💬', url: 'https://seller.ozon.ru/app/messenger?group=customers_v2', match: '/app/messenger' },
-  { key: 'qa', label: 'Вопросы', icon: '❓', url: 'https://seller.ozon.ru/app/reviews/questions', match: '/reviews/questions' },
+  { key: 'msg', label: 'Сообщения', icon: '💬', url: OZON_SECTION_URL.list, match: OZON_SECTION_PATH.list },
+  { key: 'qa', label: 'Вопросы', icon: '❓', url: OZON_SECTION_URL.q, match: '/reviews/questions' },
   // v1.2.383: «Отзывы». ВАЖЕН ПОРЯДОК: qa (match '/reviews/questions') ДО rv (match '/app/reviews'), иначе rv
   // поймал бы и URL вопросов (он содержит '/app/reviews'). SECTIONS.find берёт ПЕРВОЕ совпадение → qa победит для вопросов.
-  { key: 'rv', label: 'Отзывы', icon: '⭐', url: 'https://seller.ozon.ru/app/reviews', match: '/app/reviews' },
+  { key: 'rv', label: 'Отзывы', icon: '⭐', url: OZON_SECTION_URL.rv, match: OZON_SECTION_PATH.rv },
 ]
 
 export default function OzonQuickWidget({ messengerId, webviewRefs, unread, loading }) {
