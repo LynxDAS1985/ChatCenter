@@ -79,13 +79,15 @@ export default function WebviewOfflineOverlay({ entry, name, color, onRetry, onO
             }}>{errorName(entry.code)}</code></>}
         </p>
 
+        {/* v1.2.498 (находка ревью #15): при долгой паузе показываем «5 мин», а не «300 с» —
+            трёхзначные секунды человек не соотносит со временем. */}
         {!trying && (
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{
               fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontVariantNumeric: 'tabular-nums',
               fontSize: 42, fontWeight: 600, lineHeight: 1, color: accent,
-            }}>{left}</span>
-            <span style={{ fontSize: 15, color: '#8695A5' }}>с</span>
+            }}>{left >= 100 ? Math.round(left / 60) : left}</span>
+            <span style={{ fontSize: 15, color: '#8695A5' }}>{left >= 100 ? 'мин' : 'с'}</span>
           </div>
         )}
         <p style={{ fontSize: 12.5, color: '#8695A5', margin: '0 0 16px' }}>

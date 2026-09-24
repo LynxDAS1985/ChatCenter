@@ -17,7 +17,7 @@ import {
   isNetworkError, planAfterFail, dueIds, nextWakeMs, bringAllForward,
   shouldAcceptLoaded, touchFailedAt, messengerInfo, PROBE_FAIL_CODE,
 } from '../../shared/reconnectPlan.js'
-import { logFailLine, logSkipLine, logRestoredLine, logManualLine, logNetLine, logEchoLine, shouldLogEcho, retryButtonLabel } from '../../shared/reconnectTexts.js'
+import { logFailLine, logSkipLine, logRestoredLine, logManualLine, logNetLine, logEchoLine, logLateLoadLine, shouldLogEcho, retryButtonLabel } from '../../shared/reconnectTexts.js'
 import { createAttemptRunner } from '../../shared/reconnectAttempt.js' // v1.2.491
 import { quickProbe } from '../../shared/webviewHealthProbe.js'          // v1.2.491
 import { noteOutcome } from '../../shared/netRecoverySummary.js'         // v1.2.492: сводка «ожили сами / перезагружены»
@@ -69,6 +69,7 @@ export default function useWebviewReconnect(webviewRefs, messengersRef) {
     const entry = stRef.current[id]
     if (!id || !entry) return
     if (!shouldAcceptLoaded(entry, Date.now())) { if (shouldLogEcho(entry)) log('TRACE', logEchoLine(info(id).name)); return }
+    if (entry.timedOut) log('INFO', logLateLoadLine(info(id).name)) // v1.2.498: догрузилась после предела
     log('INFO', logRestoredLine(info(id).name, entry, Date.now()))
     setState(prev => { const n = { ...prev }; delete n[id]; return n })
   }, [info])

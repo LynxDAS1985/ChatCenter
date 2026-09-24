@@ -3,20 +3,42 @@
 // Тексты записей в журнал и причины для экрана «Нет связи» — вынесены из shared/reconnectPlan.js
 // (тот упёрся в 300 строк). В одном месте, чтобы проверялись тестом и не расходились между
 // хуком, попыткой (reconnectAttempt.js) и экраном (WebviewOfflineOverlay.jsx).
-import { errorName, isProxyError, LONG_FAIL_ATTEMPTS, ATTEMPT_TIMEOUT_MS } from './reconnectPlan.js'
+import { errorName, isProxyError, LONG_FAIL_ATTEMPTS, ATTEMPT_TIMEOUT_MS, PROBE_TIMEOUT_MS } from './reconnectPlan.js'
 
 /**
  * v1.2.497: начало попытки. Раньше журнал молчал между «обрыв связи» и ответом страницы —
  * зависшая попытка выглядела так же, как её отсутствие, и разобрать случай было нечем.
  */
-export function logAttemptStartLine(name, entry) {
-  return `[reconnect] ${name}: попытка ${entry.attempt} — загружаю страницу`
+export function logAttemptStartLine(name, entry, limitMs = ATTEMPT_TIMEOUT_MS) {
+  return `[reconnect] ${name}: попытка ${entry.attempt} — загружаю страницу (жду до ${Math.round(limitMs / 1000)}с)`
+}
+
+/** v1.2.498: вторую попытку поверх идущей не начинаем — пишем об этом, иначе «ничего не произошло». */
+export function logBusySkipLine(name) {
+  return `[reconnect] ${name}: попытка уже идёт — второй запуск пропущен`
+}
+
+/** v1.2.498: проба «жива ли страница» сама не ответила за предел. */
+export function logProbeTimeoutLine(name, limitMs = PROBE_TIMEOUT_MS) {
+  return `[reconnect] ${name}: проверка «жива ли страница» не ответила за ${Math.round(limitMs / 1000)}с — считаю, что не жива`
+}
+
+/** v1.2.498: перед новой попыткой глушим прошлую загрузку, которую бросили по пределу. */
+export function logStopPrevLine(name) {
+  return `[reconnect] ${name}: глушу прошлую зависшую загрузку перед новой попыткой`
+}
+
+/** v1.2.498: страница догрузилась ПОСЛЕ того, как мы прекратили ждать — засчитываем, не перезагружаем. */
+export function logLateLoadLine(name) {
+  return `[reconnect] ${name}: страница догрузилась уже после предела — засчитываю, перезагружать не буду`
 }
 
 /** v1.2.497: страница не ответила за предел ожидания (ATTEMPT_TIMEOUT_MS) — не молчим об этом. */
-export function logAttemptTimeoutLine(name, entry) {
-  return `[reconnect] ${name}: страница НЕ ОТВЕТИЛА за ${Math.round(ATTEMPT_TIMEOUT_MS / 1000)}с — прекращаю ждать, ` +
-    `следующая попытка через ${Math.round(entry.pauseMs / 1000)}с`
+export function logAttemptTimeoutLine(name, entry, limitMs = ATTEMPT_TIMEOUT_MS) {
+  // v1.2.498: срок берём ФАКТИЧЕСКИЙ (он растёт с попытками), а не константу — иначе журнал врёт.
+  const code = entry && entry.code ? ` (причина осталась прежней: код=${entry.code} ${errorName(entry.code)})` : ''
+  return `[reconnect] ${name}: страница НЕ ОТВЕТИЛА за ${Math.round(limitMs / 1000)}с — прекращаю ждать${code}, ` +
+    `следующая попытка через ${Math.round((entry && entry.pauseMs) || 0) / 1000}с`
 }
 
 export function logFailLine(name, entry) {
@@ -85,7 +107,13 @@ export function reasonTitle(entry, netOnline, name) {
   const long = entry && entry.attempt >= LONG_FAIL_ATTEMPTS
   return {
     title: `Сайт ${name} недоступен`,
-    hint: (netOnline === true ? 'интернет есть, не отвечает сам сайт' : 'интернет пропал') + (long ? ' · долго не отвечает, проверяем раз в 5 минут' : ''),
+    // v1.2.498 (находка ревью #14): три состояния вместо двух. Раньше при НЕИЗВЕСТНОМ вердикте
+    // (пульс выключен настройкой или ещё не ответил) экран уверенно писал «интернет пропал» —
+    // то есть утверждал то, чего никто не проверял.
+    hint: (netOnline === true ? 'интернет есть, не отвечает сам сайт'
+      : netOnline === false ? 'интернет пропал'
+        : 'связь не проверялась — проверка интернета выключена или ещё не ответила')
+      + (long ? ' · долго не отвечает, проверяем раз в 5 минут' : ''),
   }
 }
 

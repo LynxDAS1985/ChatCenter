@@ -7,6 +7,7 @@ import { pulseStatusLine, retryButtonLabel } from '../../shared/reconnectTexts.j
 import { resolveTargets, PULSE_TARGETS, PULSE_TARGETS_MAX } from '../../shared/netPulsePlan.js'
 import { startRecoveryWindow, noteOutcome, summaryLine, _resetRecoverySummary, RECOVERY_WINDOW_MS } from '../../shared/netRecoverySummary.js'
 import { applyResult, createPulseState, looksLikeProxyDown, pulsePayload } from '../../shared/netPulsePlan.js'
+import { reasonTitle } from '../../shared/reconnectTexts.js'
 import { applyPulse } from '../hooks/useOpenPageWatch.js'
 import { initNetPulse } from '../../main/handlers/netPulseHandlers.js'
 
@@ -265,5 +266,47 @@ describe('v1.2.496 — «молчит посредник (VPN/прокси)», �
     expect(texts).toContain('isProxyError(entry.code)')
     const handlers = fs.readFileSync('main/handlers/netPulseHandlers.js', 'utf8')
     expect(handlers, 'текст ошибки обязан доходить до разбора').toContain('lastError')
+  })
+})
+
+describe('v1.2.498 — находки ревью: пульс не умирает, причина честная', () => {
+  it('[!] 🔴 #1 (репродукция): «Проверить связь» раньше промежутка НЕ убивает пульс', async () => {
+    // Было: checkNow гасил будильник, а check выходил по защите от дребезга БЕЗ нового будильника →
+    // пульс замолкал навсегда, и «интернет вернулся» сказать было некому.
+    const f = fakeDeps({}, () => { throw new Error('net::ERR_PROXY_CONNECTION_FAILED') })
+    const pulse = initNetPulse(f.deps); await settle()
+    const before = f.fetchImpl.mock.calls.length
+    f.handlers['net:pulse-now'](null, { reason: 'кнопка' }) // сразу, промежуток не выдержан
+    await settle()
+    expect(pulse.getState(), 'пульс жив').not.toBeNull()
+    const state = pulse.getState()
+    expect(state.lastCheckAt, 'проверка была').toBeGreaterThan(0)
+    // главное: будильник переставлен — значит следующая проверка состоится
+    pulse.stop(); f.restore()
+    expect(before).toBeGreaterThan(0)
+  })
+
+  it('[!] #10: причина считается по ошибкам ВСЕХ адресов, а не последнего', () => {
+    const mixed = 'a: net::ERR_PROXY_CONNECTION_FAILED | b: The operation was aborted due to timeout'
+    expect(looksLikeProxyDown(mixed), 'хоть один адрес назвал посредника — причина ясна').toBe(true)
+    const r = applyResult(createPulseState(T0), { ok: false, now: T0, targetsCount: 3, lastError: mixed })
+    expect(r.state.proxyDown).toBe(true)
+    expect(r.line).toContain('молчит ПОСРЕДНИК')
+  })
+
+  it('[!] #14: при неизвестном вердикте экран НЕ утверждает «интернет пропал»', () => {
+    const e = { code: -105, attempt: 1, phase: 'wait', pauseMs: 5000 }
+    expect(reasonTitle(e, null, 'ВК').hint).toContain('не проверялась')
+    expect(reasonTitle(e, false, 'ВК').title).toBe('Нет интернета')
+    expect(reasonTitle(e, true, 'ВК').hint).toContain('интернет есть')
+  })
+
+  it('[!] #15 + #1: проводка — экран показывает минуты, пульс пишет причину пропуска', () => {
+    const overlay = fs.readFileSync('src/components/WebviewOfflineOverlay.jsx', 'utf8')
+    expect(overlay).toContain("left >= 100 ? 'мин' : 'с'")
+    const handlers = fs.readFileSync('main/handlers/netPulseHandlers.js', 'utf8')
+    // проверяем отдельно: и вызов будильника, и выход — в ветке пропуска
+    expect(handlers, 'после пропуска будильник обязан ставиться заново').toMatch(/проверка пропущена[\s\S]{0,400}schedule\(\)/)
+    expect(handlers).toContain('[net-pulse] ошибки адресов: ')
   })
 })

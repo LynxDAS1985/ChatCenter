@@ -5,20 +5,21 @@ import fs from 'node:fs'
 import { createAttemptRunner } from '../../shared/reconnectAttempt.js'
 import {
   nextPauseMs, planAfterFail, errorName, LONG_FAIL_ATTEMPTS, LONG_FAIL_PAUSE_MS, PROBE_FAIL_CODE, RETRY_LADDER_MS, ATTEMPT_TIMEOUT_MS, ATTEMPT_TIMEOUT_CODE,
+  ATTEMPT_TIMEOUT_MAX_MS, attemptTimeoutFor, shouldAcceptLoaded,
 } from '../../shared/reconnectPlan.js'
 import { reasonTitle, shouldLogEcho, logNetDownSkipLine, logSelfHealedLine } from '../../shared/reconnectTexts.js'
 
 const T0 = 1_700_000_000_000
 
 /** Подделка: состояние React + зеркало + страница. */
-function rig({ entry, el, netOnline = true, quickProbe, attemptTimeoutMs } = {}) {
+function rig({ entry, el, netOnline = true, quickProbe, attemptTimeoutMs, probeTimeoutMs } = {}) {
   let state = entry ? { wa: entry } : {}
   const stRef = { current: state }
   const setState = (fn) => { state = fn(state); stRef.current = state }
   const logs = []
   const attempt = createAttemptRunner({
     getEl: () => el, info: () => ({ name: 'WhatsApp', url: 'https://web.whatsapp.com/' }),
-    stRef, setState, log: (l, m) => logs.push(l + ' ' + m), isNetOnline: () => netOnline, quickProbe, now: () => T0, attemptTimeoutMs,
+    stRef, setState, log: (l, m) => logs.push(l + ' ' + m), isNetOnline: () => netOnline, quickProbe, now: () => T0, attemptTimeoutMs, probeTimeoutMs,
   })
   return { attempt, get state() { return state }, stRef, logs }
 }
@@ -47,6 +48,63 @@ describe('[!] v1.2.497 — предел ожидания попытки (нах�
   it('предел по умолчанию — 45 секунд (число живёт в одном месте)', () => {
     expect(ATTEMPT_TIMEOUT_MS).toBe(45000)
     expect(errorName(ATTEMPT_TIMEOUT_CODE)).toBe('ATTEMPT_TIMEOUT')
+  })
+})
+
+describe('[!] v1.2.498 — находки ревью: причина, поздний успех, замок, предел пробы', () => {
+  it('[!] #3: предел НЕ затирает настоящую причину (код -130 «молчит посредник» остаётся)', async () => {
+    const el = { loadURL: vi.fn(() => new Promise(() => {})) }
+    const r = rig({ entry: waitEntry({ code: -130 }), el, netOnline: true, attemptTimeoutMs: 20 })
+    await r.attempt('wa')
+    expect(r.state.wa.code, 'код беды обязан уцелеть').toBe(-130)
+    expect(r.state.wa.timedOut, 'факт «не дождались» — отдельным полем').toBe(true)
+    expect(reasonTitle(r.state.wa, false, 'ВК').title, 'экран продолжает винить посредника').toContain('посредник')
+    expect(r.logs.join(' | ')).toContain('причина осталась прежней')
+  })
+
+  it('[!] #2: страница догрузилась ПОСЛЕ предела → успех засчитываем, не перезагружаем', () => {
+    const timedOutEntry = { attempt: 2, phase: 'wait', code: -130, timedOut: true, failedAt: T0, dueAt: T0 + 20000, pauseMs: 20000 }
+    expect(shouldAcceptLoaded(timedOutEntry, T0 + 500), 'поздняя загрузка — это успех, а не эхо').toBe(true)
+    // обычная запись (упала с ошибкой) по-прежнему защищена окном эха — защиту не сломали
+    const failedEntry = { attempt: 2, phase: 'wait', code: -105, failedAt: T0, dueAt: T0 + 20000, pauseMs: 20000 }
+    expect(shouldAcceptLoaded(failedEntry, T0 + 500), 'эхо страницы-ошибки по-прежнему отбрасываем').toBe(false)
+  })
+
+  it('[!] #5: вторая попытка поверх идущей не начинается', async () => {
+    let unlock
+    const el = { loadURL: vi.fn(() => new Promise(r => { unlock = r })) }
+    const r = rig({ entry: waitEntry(), el, netOnline: true, attemptTimeoutMs: 5000 })
+    const first = r.attempt('wa')
+    const second = await r.attempt('wa')
+    expect(second, 'второй запуск отклонён').toBe('busy')
+    expect(el.loadURL, 'загрузка ровно одна').toHaveBeenCalledTimes(1)
+    expect(r.logs.join(' | ')).toContain('попытка уже идёт')
+    unlock(); await first
+  })
+
+  it('[!] #4: зависшая проверка «жива ли страница» больше не вешает попытку навсегда', async () => {
+    const el = { loadURL: vi.fn(() => Promise.resolve()), stop: vi.fn() }
+    const r = rig({ entry: waitEntry({ origin: 'probe' }), el, netOnline: true, quickProbe: () => new Promise(() => {}), probeTimeoutMs: 20 })
+    const res = await Promise.race([r.attempt('wa'), new Promise(rr => setTimeout(() => rr('ЗАВИСЛА'), 500))])
+    expect(res, 'попытка обязана завершиться').not.toBe('ЗАВИСЛА')
+    expect(r.logs.join(' | ')).toContain('не ответила за')
+    expect(el.loadURL, 'проба не ответила → перезагружаем').toHaveBeenCalled()
+  })
+
+  it('[!] #2: перед новой попыткой глушим прошлую зависшую загрузку', async () => {
+    const el = { loadURL: vi.fn(() => Promise.resolve()), stop: vi.fn() }
+    const r = rig({ entry: waitEntry({ timedOut: true }), el, netOnline: true, attemptTimeoutMs: 5000 })
+    await r.attempt('wa')
+    expect(el.stop, 'иначе получим две загрузки одной страницы').toHaveBeenCalledTimes(1)
+    expect(r.logs.join(' | ')).toContain('глушу прошлую зависшую загрузку')
+  })
+
+  it('[!] #11: предел растёт с попытками 45 → 90 → 135 → 180 с (потолок)', () => {
+    expect(attemptTimeoutFor(1)).toBe(45000)
+    expect(attemptTimeoutFor(2)).toBe(90000)
+    expect(attemptTimeoutFor(3)).toBe(135000)
+    expect(attemptTimeoutFor(99), 'потолок').toBe(ATTEMPT_TIMEOUT_MAX_MS)
+    expect(attemptTimeoutFor(0), 'мусор → как первая попытка').toBe(45000)
   })
 })
 

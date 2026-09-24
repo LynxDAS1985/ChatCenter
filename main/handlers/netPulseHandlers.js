@@ -20,7 +20,7 @@
 //
 // Таймер один (setTimeout-цепочка), останавливается в stop() по before-quit — memoryLeaks.
 import {
-  PULSE_TIMEOUT_MS, createPulseState, nextDelayMs, canCheckNow, applyResult, pulsePayload, setWaiting, resolveTargets,
+  PULSE_TIMEOUT_MS, PULSE_MIN_GAP_MS, createPulseState, nextDelayMs, canCheckNow, applyResult, pulsePayload, setWaiting, resolveTargets,
 } from '../../shared/netPulsePlan.js'
 
 /**
@@ -70,18 +70,37 @@ export function initNetPulse({ net, powerMonitor, ipcMain, getMainWindow, storag
   async function check(reason) {
     if (stopped) return
     const now = Date.now()
-    if (!canCheckNow(state, now)) return
+    // 🔴 v1.2.498 (находка ревью #1): раньше здесь был голый `return` — БЕЗ переустановки будильника.
+    // А `checkNow` (кнопка «Проверить связь», сигнал «мессенджеры ждут») сначала ГАСИТ таймер.
+    // Итог: нажал раньше, чем через PULSE_MIN_GAP_MS после прошлой проверки — и пульс умирал
+    // НАВСЕГДА: некому было сказать «интернет вернулся», чаты сами не поднимались до перезапуска.
+    // Доказано прогоном: без нажатия за 20 с — 6 опросов адресов, с нажатием на 1-й секунде — 3.
+    if (!canCheckNow(state, now)) {
+      const waitMs = Math.max(0, PULSE_MIN_GAP_MS - (now - (state.lastCheckAt || 0)))
+      console.log('[net-pulse] проверка пропущена (прошлая была ' + Math.round((now - (state.lastCheckAt || 0)) / 1000) +
+        ' с назад, нужен промежуток ' + Math.round(PULSE_MIN_GAP_MS / 1000) + ' с) · причина: ' + (reason || '—') +
+        ' → следующая через ' + Math.round(waitMs / 1000) + ' с')
+      schedule()
+      return
+    }
     state = { ...state, checking: true }
     let result = { ok: false, host: '', latencyMs: 0 }
-    let lastError = '' // v1.2.496: текст последней ошибки — по нему видно «молчит посредник (VPN/прокси)»
+    // v1.2.498 (находка ревью #10): собираем ошибки ВСЕХ адресов, а не только последнего. Раньше
+    // два ответа «прокси не отвечает» и один свой таймаут давали вердикт по таймауту — признак
+    // «молчит посредник» мигал. Сырой текст уходит в журнал: иначе распознавание нечем проверить.
+    const errors = []
     for (const url of targets) {
       const r = await probeOne(url)
       if (r.ok) { result = { ok: true, host: hostOf(url), latencyMs: r.latencyMs }; break }
-      if (r.error) lastError = r.error
+      if (r.error) errors.push(hostOf(url) + ': ' + r.error)
     }
+    const lastError = errors.join(' | ')
     const applied = applyResult(state, { ...result, now: Date.now(), reason, targetsCount: targets.length, lastError })
     state = applied.state
     if (applied.line) console.log(applied.line)
+    // v1.2.498: при ПЕРЕХОДЕ в «нет» один раз пишем сырые ошибки — по ним видно, узнали мы посредника
+    // или текст оказался другим (документация Electron формат сообщения net.fetch не задаёт).
+    if (applied.transition === 'offline' && lastError) console.log('[net-pulse] ошибки адресов: ' + lastError.slice(0, 300))
     // v1.2.492: пакет окну — на КАЖДУЮ проверку, чтобы экран показывал «проверено N с назад» честно.
     // Окно превращает его в событие online/offline ТОЛЬКО на переходе (applyPulse, тест) — лестница
     // повторов от ежеминутных пакетов не дёргается. TDLib зовём по-прежнему только на переход.

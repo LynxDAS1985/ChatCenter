@@ -17,12 +17,15 @@
 //
 // ЛОВУШКА v1.2.453 сохранена: фаза «идёт попытка» пишется в зеркало записей СИНХРОННО до loadURL,
 // иначе отчёт страницы-ошибки успевает снять экран раньше, чем мы узнаем о неудаче.
-import { planTrying, planAfterRetryFail, ATTEMPT_TIMEOUT_MS, ATTEMPT_TIMEOUT_CODE } from './reconnectPlan.js'
-import { logRestoredLine, logRetryFailLine, logNetDownSkipLine, logSelfHealedLine, logAttemptStartLine, logAttemptTimeoutLine } from './reconnectTexts.js'
+import { planTrying, planAfterRetryFail, ATTEMPT_TIMEOUT_CODE, PROBE_TIMEOUT_MS, attemptTimeoutFor } from './reconnectPlan.js'
+import {
+  logRestoredLine, logRetryFailLine, logNetDownSkipLine, logSelfHealedLine, logAttemptStartLine,
+  logAttemptTimeoutLine, logBusySkipLine, logProbeTimeoutLine, logStopPrevLine,
+} from './reconnectTexts.js'
 
 /**
  * v1.2.497: ждать ответа страницы не дольше предела. Без этого запись навсегда застревала в фазе
- * «идёт», из которой закрыты все выходы (см. ATTEMPT_TIMEOUT_MS в reconnectPlan.js).
+ * «идёт», из которой закрыты все выходы (см. ATTEMPT_TIMEOUT_MS и attemptTimeoutFor в reconnectErrorCodes.js).
  * Таймер гасится в любом случае (finally) — иначе он бы жил до конца срока после успеха.
  */
 function raceWithTimeout(promise, ms, mkError) {
@@ -43,9 +46,15 @@ function raceWithTimeout(promise, ms, mkError) {
  * @param {() => number} [d.now]
  * @param {(id:string, result:string) => void} [d.onOutcome] — исход каждой попытки (v1.2.492: сводка возврата сети)
  * @param {number} [d.attemptTimeoutMs] — предел ожидания ответа страницы (v1.2.497; параметром — чтобы тест
- *   проверял поведение за миллисекунды, а не подменял часы всему окружению)
+ *   проверял поведение за миллисекунды, а не подменял часы всему окружению). Не задан — растёт с номером
+ *   попытки: 45 → 90 → 135 → 180 с (v1.2.498, attemptTimeoutFor)
+ * @param {number} [d.probeTimeoutMs] — предел ожидания пробы «жива ли страница» (v1.2.498)
  */
-export function createAttemptRunner({ getEl, info, stRef, setState, log, isNetOnline, quickProbe, now = () => Date.now(), onOutcome, attemptTimeoutMs = ATTEMPT_TIMEOUT_MS }) {
+export function createAttemptRunner({ getEl, info, stRef, setState, log, isNetOnline, quickProbe, now = () => Date.now(), onOutcome, attemptTimeoutMs, probeTimeoutMs = PROBE_TIMEOUT_MS }) {
+  // v1.2.498 (находка ревью #5): замок «попытка уже идёт». Раньше два запуска подряд давали ДВЕ
+  // загрузки одной страницы и счётчик попыток прыгал через одну (1 → 3). После появления предела
+  // это стало обычным делом: брошенная загрузка ещё жива, а лестница уже зовёт следующую.
+  const inFlight = new Set()
   const clear = (id) => setState(prev => { if (!prev[id]) return prev; const n = { ...prev }; delete n[id]; return n })
   const postpone = (id, code, url) => setState(prev => (prev[id] ? { ...prev, [id]: planAfterRetryFail(prev[id], { code, url, now: now(), netOnline: isNetOnline() }) } : prev))
 
@@ -67,34 +76,56 @@ export function createAttemptRunner({ getEl, info, stRef, setState, log, isNetOn
     setState(prev => (prev[id] ? { ...prev, [id]: trying } : prev))
 
     // 3. Запись от пробы: спросить страницу, не ожила ли она сама.
+    //    v1.2.498 (#4): проба тоже под ПРЕДЕЛОМ — зависшая проба раньше оставляла запись в фазе
+    //    «идёт» навсегда, то есть исходная беда воспроизводилась другим путём.
     if (trying.origin === 'probe' && typeof quickProbe === 'function') {
       let alive = false
-      try { alive = await quickProbe(el) } catch (_) { alive = false }
+      try {
+        alive = await raceWithTimeout(Promise.resolve(quickProbe(el)), probeTimeoutMs,
+          () => Object.assign(new Error('probe timeout'), { ccProbeTimeout: true }))
+      } catch (e) {
+        alive = false
+        if (e && e.ccProbeTimeout) log('WARN', logProbeTimeoutLine(name, probeTimeoutMs))
+      }
       if (alive) { log('INFO', logSelfHealedLine(name, trying, now())); clear(id); return 'self-healed' }
     }
 
-    // 4. Перезагрузка (не дольше предела ожидания — v1.2.497).
-    log('INFO', logAttemptStartLine(name, trying))
+    // 4. Перезагрузка (не дольше предела ожидания — v1.2.497; предел растёт по попыткам — v1.2.498).
+    //    Если прошлая попытка ушла по пределу, её загрузка МОЖЕТ БЫТЬ ЖИВА — глушим её перед новой,
+    //    иначе получим две загрузки одной страницы (находка ревью #2).
+    if (entry && entry.timedOut && typeof el.stop === 'function') {
+      try { el.stop(); log('INFO', logStopPrevLine(name)) } catch (_) {}
+    }
+    const limitMs = Number(attemptTimeoutMs) > 0 ? Number(attemptTimeoutMs) : attemptTimeoutFor(trying.attempt)
+    log('INFO', logAttemptStartLine(name, trying, limitMs))
     try {
-      await raceWithTimeout(el.loadURL(url), attemptTimeoutMs,
+      await raceWithTimeout(el.loadURL(url), limitMs,
         () => Object.assign(new Error('attempt timeout'), { errno: ATTEMPT_TIMEOUT_CODE, ccTimeout: true }))
       log('INFO', logRestoredLine(name, stRef.current[id], now()))
       clear(id)
       return 'restored'
     } catch (e) {
-      const timedOut = !!(e && e.ccTimeout) // v1.2.497: страница не ответила за ATTEMPT_TIMEOUT_MS
-      const code = (e && e.errno) || (stRef.current[id] && stRef.current[id].code) || 0
+      const timedOut = !!(e && e.ccTimeout) // v1.2.497: страница не ответила за предел
+      // v1.2.498 (#3): при пределе НЕ подменяем код настоящей беды — передаём 0, и planAfterRetryFail
+      // берёт прежний код из записи. Факт «не дождались» едет отдельным полем timedOut.
+      const code = timedOut ? 0 : ((e && e.errno) || (stRef.current[id] && stRef.current[id].code) || 0)
       setState(prev => {
         if (!prev[id]) return prev
-        const next = planAfterRetryFail(prev[id], { code, url, now: now(), netOnline: isNetOnline() })
-        log('WARN', timedOut ? logAttemptTimeoutLine(name, next) : logRetryFailLine(name, next))
+        const next = planAfterRetryFail(prev[id], { code, url, now: now(), netOnline: isNetOnline(), timedOut })
+        log('WARN', timedOut ? logAttemptTimeoutLine(name, next, limitMs) : logRetryFailLine(name, next))
         return { ...prev, [id]: next }
       })
       return 'failed'
     }
   }
   return async function attempt(id) {
-    const result = await run(id)
+    if (inFlight.has(id)) { // v1.2.498 (#5): вторая попытка поверх идущей — не начинаем
+      try { log('INFO', logBusySkipLine(info(id).name)) } catch (_) {}
+      return 'busy'
+    }
+    inFlight.add(id)
+    let result = 'failed'
+    try { result = await run(id) } finally { inFlight.delete(id) }
     try { if (typeof onOutcome === 'function') onOutcome(id, result) } catch (_) {}
     return result
   }

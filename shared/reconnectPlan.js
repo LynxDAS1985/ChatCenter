@@ -32,15 +32,16 @@ export const LONG_FAIL_PAUSE_MS = 300000
 // v1.2.497: коды ошибок переехали в shared/reconnectErrorCodes.js (файл упёрся в 298/300 строк).
 // Реэкспорт оставлен НАМЕРЕННО: восемь мест уже берут эти имена отсюда, и менять их всех ради
 // переезда — лишний риск без пользы. Новый код пусть импортирует из reconnectErrorCodes.js напрямую.
-import { NETWORK_ERROR_CODES, PROXY_ERROR_CODES, ABORTED_CODE, PROBE_FAIL_CODE, ATTEMPT_TIMEOUT_CODE, ATTEMPT_TIMEOUT_MS, isNetworkError, isProxyError, errorName } from './reconnectErrorCodes.js'
-export { NETWORK_ERROR_CODES, PROXY_ERROR_CODES, ABORTED_CODE, PROBE_FAIL_CODE, ATTEMPT_TIMEOUT_CODE, ATTEMPT_TIMEOUT_MS, isNetworkError, isProxyError, errorName }
+import { NETWORK_ERROR_CODES, PROXY_ERROR_CODES, ABORTED_CODE, PROBE_FAIL_CODE, ATTEMPT_TIMEOUT_CODE, ATTEMPT_TIMEOUT_MS, ATTEMPT_TIMEOUT_MAX_MS, PROBE_TIMEOUT_MS, attemptTimeoutFor, isNetworkError, isProxyError, errorName } from './reconnectErrorCodes.js'
+export { NETWORK_ERROR_CODES, PROXY_ERROR_CODES, ABORTED_CODE, PROBE_FAIL_CODE, ATTEMPT_TIMEOUT_CODE, ATTEMPT_TIMEOUT_MS, ATTEMPT_TIMEOUT_MAX_MS, PROBE_TIMEOUT_MS, attemptTimeoutFor, isNetworkError, isProxyError, errorName }
 
 
 /**
  * Сколько ждать перед следующей попыткой.
  * @param {number} attempt — сколько попыток уже сделано (0 = ещё ни одной)
  * @param {string} [url] — адрес мессенджера (для минимума по сайту)
- * @param {boolean|null} [netOnline] — вердикт пульса; долгая пауза только при true (интернет подтверждён)
+ * @param {boolean|null} [netOnline] — вердикт пульса; долгая пауза при ЛЮБОМ, кроме false (v1.2.497: при
+ *   выключенном пульсе вердикт всегда null, и прежнее правило «только true» давало перезагрузки раз в минуту)
  * @returns {number} миллисекунды
  */
 export function nextPauseMs(attempt, url, netOnline) {
@@ -91,7 +92,7 @@ export function planTrying(entry, now) {
 }
 
 /** Запись после неудачной попытки: снова ждём, пауза больше. */
-export function planAfterRetryFail(entry, { code, url, now, netOnline }) {
+export function planAfterRetryFail(entry, { code, url, now, netOnline, timedOut }) {
   const attempt = (entry && entry.attempt) || 1
   const pauseMs = nextPauseMs(attempt, url, netOnline)
   return {
@@ -103,6 +104,11 @@ export function planAfterRetryFail(entry, { code, url, now, netOnline }) {
     since: (entry && entry.since) || now,
     failedAt: now,                 // v1.2.452: момент сбоя — см. isErrorPageEcho
     origin: (entry && entry.origin) || 'load',
+    // v1.2.498 (находка ревью #3): «не дождались ответа» — ОТДЕЛЬНОЕ поле, а не подмена кода.
+    // Раньше предел писал в code свой -1001 и затирал настоящую причину (например -130
+    // «молчит посредник»), из-за чего экран переставал говорить про VPN — ровно в том случае,
+    // ради которого всё и делалось. Теперь code остаётся прежним, а факт ожидания виден здесь.
+    timedOut: !!timedOut,
   }
 }
 
@@ -195,6 +201,12 @@ export function isErrorPageEcho(entry, now) {
 export function shouldAcceptLoaded(entry, now) {
   if (!entry) return false
   if (entry.phase === 'trying') return false
+  // v1.2.498 (находка ревью #2): запись, которая ждала по ПРЕДЕЛУ, а не упала с ошибкой, —
+  // особый случай. Страница-ошибка тут не появлялась (отказа загрузки не было вовсе), значит
+  // «страница загрузилась» в ближайшие секунды — это честная поздняя загрузка, а не эхо.
+  // Раньше её выбрасывали, экран висел над рабочей страницей, и через паузу её перезагружали
+  // заново — то самое «стирает недописанное сообщение», от которого механизм и берёгся.
+  if (entry.timedOut) return true
   return !isErrorPageEcho(entry, now)
 }
 
