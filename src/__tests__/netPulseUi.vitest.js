@@ -177,9 +177,9 @@ describe('v1.2.494 — честная надпись кнопки и живой 
     expect(retryButtonLabel({ phase: 'trying' }, false)).toBe('Подождите…')
     expect(retryButtonLabel({ phase: 'trying' }, true)).toBe('Подождите…')
   })
-  it('[!] интернета нет → «Проверить интернет» (страницу всё равно не перезагрузим)', () => {
-    expect(retryButtonLabel({ phase: 'wait' }, false)).toBe('Проверить интернет')
-    expect(retryButtonLabel(null, false)).toBe('Проверить интернет')
+  it('[!] интернета нет → «Проверить связь» (v1.2.497: не «интернет» — беда может быть в посреднике)', () => {
+    expect(retryButtonLabel({ phase: 'wait' }, false)).toBe('Проверить связь')
+    expect(retryButtonLabel(null, false)).toBe('Проверить связь')
   })
   it('интернет есть или вердикта ещё нет → прежняя «Повторить сейчас» (старые тесты экрана не ломаются)', () => {
     expect(retryButtonLabel({ phase: 'wait' }, true)).toBe('Повторить сейчас')
@@ -191,6 +191,31 @@ describe('v1.2.494 — честная надпись кнопки и живой 
     expect(overlay).toContain('{retryButtonLabel(entry, netVerdict())}')
     const hook = fs.readFileSync('src/hooks/useWebviewReconnect.js', 'utf8')
     expect(hook).toContain("'кнопка «' + retryButtonLabel(null, netVerdict()) + '»'") // в журнале — та же надпись
+  })
+})
+
+describe('v1.2.497 — доводки по ревью', () => {
+  it('[!] #7: узнаём ИМЯ ошибки, а не слово — адрес со словом proxy больше не даёт ложной причины', () => {
+    expect(looksLikeProxyDown('net::ERR_PROXY_CONNECTION_FAILED')).toBe(true)
+    expect(looksLikeProxyDown('err_tunnel_connection_failed')).toBe(true)
+    expect(looksLikeProxyDown('failed to fetch https://proxy.example/ping'), 'слово в адресе — не причина').toBe(false)
+    expect(looksLikeProxyDown('socks5 сервер настроен'), 'слово без имени ошибки — не причина').toBe(false)
+  })
+
+  it('[!] #2 (репродукция): беда сменилась БЕЗ возврата связи → признак обязан обновиться', () => {
+    let st = createPulseState(T0)
+    let r = applyResult(st, { ok: false, now: T0 + 1000, targetsCount: 3, lastError: 'net::ERR_INTERNET_DISCONNECTED' })
+    expect(r.state.proxyDown).toBe(false)
+    r = applyResult(r.state, { ok: false, now: T0 + 2000, targetsCount: 3, lastError: 'net::ERR_PROXY_CONNECTION_FAILED' })
+    expect(r.state.proxyDown, 'умер посредник — метка обязана это показать сразу').toBe(true)
+    r = applyResult(r.state, { ok: false, now: T0 + 3000, targetsCount: 3, lastError: 'net::ERR_INTERNET_DISCONNECTED' })
+    expect(r.state.proxyDown, 'посредник ожил, интернета нет — метка «VPN?» обязана погаснуть').toBe(false)
+  })
+
+  it('[!] #6: надпись кнопки не врёт при мёртвом посреднике', () => {
+    expect(retryButtonLabel(null, false)).toBe('Проверить связь')
+    expect(retryButtonLabel(null, true)).toBe('Повторить сейчас')
+    expect(retryButtonLabel({ phase: 'trying' }, false)).toBe('Подождите…')
   })
 })
 
@@ -233,7 +258,8 @@ describe('v1.2.496 — «молчит посредник (VPN/прокси)», �
   it('[!] проводка: метка полосы и экран берут причину из пульса и кода ошибки', () => {
     const rail = fs.readFileSync('src/native/components/NativeSidebar.jsx', 'utf8')
     expect(rail).toContain("netPulse?.proxyDown ? 'нет сети · VPN?' : 'нет сети'")
-    const plan = fs.readFileSync('shared/reconnectPlan.js', 'utf8')
+    // v1.2.497: коды ошибок переехали в отдельный файл (reconnectPlan.js упёрся в 298/300).
+    const plan = fs.readFileSync('shared/reconnectErrorCodes.js', 'utf8')
     expect(plan).toContain("'-130': 'ERR_PROXY_CONNECTION_FAILED'")
     const texts = fs.readFileSync('shared/reconnectTexts.js', 'utf8')
     expect(texts).toContain('isProxyError(entry.code)')

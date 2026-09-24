@@ -9,7 +9,7 @@
 //   3) пауза обязана РАСТИ и упираться в 60 с, а не сбрасываться в 5 с по кругу.
 import { describe, it, expect } from 'vitest'
 import {
-  RETRY_LADDER_MS, ABORTED_CODE, isNetworkError, isProxyError, errorName, nextPauseMs, planAfterFail, planTrying, planAfterRetryFail, dueIds, nextWakeMs, bringAllForward, secondsLeft, shouldAcceptLoaded, touchFailedAt, isErrorPageEcho, ERROR_PAGE_GRACE_MS,
+  RETRY_LADDER_MS, ABORTED_CODE, isNetworkError, isProxyError, errorName, ATTEMPT_TIMEOUT_CODE, LONG_FAIL_PAUSE_MS, nextPauseMs, planAfterFail, planTrying, planAfterRetryFail, dueIds, nextWakeMs, bringAllForward, secondsLeft, shouldAcceptLoaded, touchFailedAt, isErrorPageEcho, ERROR_PAGE_GRACE_MS,
 } from '../../shared/reconnectPlan.js'
 import { logFailLine, logSkipLine, logRetryFailLine, logRestoredLine, logManualLine, logNetLine, logEchoLine } from '../../shared/reconnectTexts.js' // v1.2.491: тексты вынесены
 
@@ -55,6 +55,13 @@ describe('Какие ошибки считаем обрывом связи', () 
     expect(isProxyError('abc')).toBe(false)
   })
 
+  it('[!] v1.2.497 (#3): долгая пауза и при ВЫКЛЮЧЕННОМ пульсе — не дёргаем страницу раз в минуту вечно', () => {
+    expect(nextPauseMs(12, WA, null), 'пульс молчит → всё равно 5 минут').toBe(LONG_FAIL_PAUSE_MS)
+    expect(nextPauseMs(12, WA, true)).toBe(LONG_FAIL_PAUSE_MS)
+    expect(nextPauseMs(12, WA, false), 'интернета точно нет → до загрузки не дойдёт, лестница прежняя').toBe(60000)
+    expect(errorName(ATTEMPT_TIMEOUT_CODE)).toBe('ATTEMPT_TIMEOUT')
+  })
+
   it('имя кода понятное, а неизвестный не ломает текст', () => {
     expect(errorName(-106)).toBe('ERR_INTERNET_DISCONNECTED')
     expect(errorName(-3)).toBe('ERR_ABORTED')
@@ -69,7 +76,9 @@ describe('Растущая пауза', () => {
   })
 
   it('🔴 ЛОВУШКА: после лестницы пауза ОСТАЁТСЯ 60 с, а не сбрасывается', () => {
-    for (const a of [5, 9, 40, 1000]) expect(nextPauseMs(a, WA)).toBe(60000)
+    // v1.2.497: третьим параметром теперь ОБЯЗАТЕЛЬНО передавать вердикт пульса. Без интернета (false)
+    // лестница прежняя — до 60 с; «пульс молчит/интернет есть» после 10 неудач даёт 5 минут (см. тест #3).
+    for (const a of [5, 9, 40, 1000]) expect(nextPauseMs(a, WA, false)).toBe(60000)
   })
 
   it('🔴 ЛОВУШКА: у МАКСа пауза не меньше 15 с (защита от шторма запросов)', () => {

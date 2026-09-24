@@ -29,77 +29,12 @@ export const MIN_PAUSE_BY_HOST = [{ test: /max\.ru/i, minMs: 15000 }]
 export const LONG_FAIL_ATTEMPTS = 10
 export const LONG_FAIL_PAUSE_MS = 300000
 
-/** v1.2.491: «код» записи, рождённой ПРОБОЙ открытой страницы (не сетевой код Chromium). */
-export const PROBE_FAIL_CODE = -1000
+// v1.2.497: коды ошибок переехали в shared/reconnectErrorCodes.js (файл упёрся в 298/300 строк).
+// Реэкспорт оставлен НАМЕРЕННО: восемь мест уже берут эти имена отсюда, и менять их всех ради
+// переезда — лишний риск без пользы. Новый код пусть импортирует из reconnectErrorCodes.js напрямую.
+import { NETWORK_ERROR_CODES, PROXY_ERROR_CODES, ABORTED_CODE, PROBE_FAIL_CODE, ATTEMPT_TIMEOUT_CODE, ATTEMPT_TIMEOUT_MS, isNetworkError, isProxyError, errorName } from './reconnectErrorCodes.js'
+export { NETWORK_ERROR_CODES, PROXY_ERROR_CODES, ABORTED_CODE, PROBE_FAIL_CODE, ATTEMPT_TIMEOUT_CODE, ATTEMPT_TIMEOUT_MS, isNetworkError, isProxyError, errorName }
 
-/**
- * Коды ошибок Chromium, которые означают «связь оборвалась» → повторять стоит.
- * Список сознательно узкий: повторять «страница запрещена» или «нет прав» бессмысленно.
- */
-export const NETWORK_ERROR_CODES = {
-  '-2': 'ERR_FAILED',
-  '-7': 'ERR_TIMED_OUT',
-  '-21': 'ERR_NETWORK_CHANGED',
-  '-100': 'ERR_CONNECTION_CLOSED',
-  '-101': 'ERR_CONNECTION_RESET',
-  '-102': 'ERR_CONNECTION_REFUSED',
-  '-105': 'ERR_NAME_NOT_RESOLVED',
-  '-106': 'ERR_INTERNET_DISCONNECTED',
-  '-109': 'ERR_ADDRESS_UNREACHABLE',
-  '-118': 'ERR_CONNECTION_TIMED_OUT',
-  '-137': 'ERR_NAME_RESOLUTION_FAILED',
-  '-324': 'ERR_EMPTY_RESPONSE',
-  // v1.2.496: семейство «мёртв ПОСРЕДНИК» — не сайт и не интернет, а VPN/прокси между нами и сетью.
-  // Реальный случай 2026-09-23: в Windows включён прокси 127.0.0.1:2080 (Liberty VPN), туннель не поднят →
-  // ВСЕ пять веб-мессенджеров получили -130, но списка не было → «повтор не нужен» → ни экрана, ни повторов,
-  // и после возврата VPN страницы не поднялись бы сами. Повторять здесь ОСМЫСЛЕННО: посредник оживает.
-  '-111': 'ERR_TUNNEL_CONNECTION_FAILED',
-  '-120': 'ERR_SOCKS_CONNECTION_FAILED',
-  '-121': 'ERR_SOCKS_CONNECTION_HOST_UNREACHABLE',
-  '-130': 'ERR_PROXY_CONNECTION_FAILED',
-}
-
-/**
- * Коды из NETWORK_ERROR_CODES, которые означают именно «не отвечает ПОСРЕДНИК» (VPN/прокси/туннель).
- * Нужны, чтобы экран говорил правду: интернет может быть жив, мёртв посредник.
- *
- * 🔴 ЛОВУШКА: сюда НЕЛЬЗЯ класть родственные коды, которые повторами НЕ лечатся (их нет и в
- * NETWORK_ERROR_CODES) — по официальному перечню Chromium net_error_list.h:
- *   -115 ERR_PROXY_AUTH_UNSUPPORTED  — прокси просит неподдерживаемый способ входа;
- *   -127 ERR_PROXY_AUTH_REQUESTED    — нужен логин/пароль;
- *   -131 ERR_MANDATORY_PROXY_CONFIGURATION_FAILED — не скачался/не разобрался PAC-скрипт;
- *   -136 ERR_PROXY_CERTIFICATE_INVALID — плохой сертификат прокси.
- * Добавить их = бесконечно дёргать страницу там, где нужен человек.
- */
-export const PROXY_ERROR_CODES = ['-111', '-120', '-121', '-130']
-
-/** Это «посредник не отвечает»? (для заголовка экрана и записи в журнал) */
-export function isProxyError(code) {
-  const n = Number(code)
-  return Number.isFinite(n) && PROXY_ERROR_CODES.indexOf(String(n)) !== -1
-}
-
-/** Код -3 = ERR_ABORTED: обычная отмена перехода, приходит при НОРМАЛЬНОЙ работе. */
-export const ABORTED_CODE = -3
-
-/**
- * Это обрыв связи (стоит повторять) или другая ошибка (повтор не поможет)?
- * @param {number|string} code
- * @returns {boolean}
- */
-export function isNetworkError(code) {
-  const n = Number(code)
-  if (!Number.isFinite(n) || n === ABORTED_CODE) return false
-  return Object.prototype.hasOwnProperty.call(NETWORK_ERROR_CODES, String(n))
-}
-
-/** Человеческое имя кода ошибки — для журнала и экрана. */
-export function errorName(code) {
-  const n = Number(code)
-  if (n === ABORTED_CODE) return 'ERR_ABORTED'
-  if (n === PROBE_FAIL_CODE) return 'PAGE_UNRESPONSIVE'
-  return NETWORK_ERROR_CODES[String(n)] || ('код ' + code)
-}
 
 /**
  * Сколько ждать перед следующей попыткой.
@@ -110,7 +45,11 @@ export function errorName(code) {
  */
 export function nextPauseMs(attempt, url, netOnline) {
   const a = Number(attempt) || 0
-  if (a >= LONG_FAIL_ATTEMPTS && netOnline === true) return LONG_FAIL_PAUSE_MS // только когда пульс ПОДТВЕРДИЛ интернет
+  // v1.2.497: долгая пауза теперь и при НЕИЗВЕСТНОМ пульсе (null). Раньше было строго `=== true`,
+  // и при выключенном пульсе (settings.netPulse=false) страница дёргалась раз в минуту ВЕЧНО —
+  // это стирает недописанное сообщение. При `false` попытка вообще не доходит до загрузки
+  // (ветка net-down в reconnectAttempt.js), поэтому запрет оставлен только на него.
+  if (a >= LONG_FAIL_ATTEMPTS && netOnline !== false) return LONG_FAIL_PAUSE_MS
   const i = Math.max(0, Math.min(a, RETRY_LADDER_MS.length - 1))
   let ms = RETRY_LADDER_MS[i]
   for (const rule of MIN_PAUSE_BY_HOST) {

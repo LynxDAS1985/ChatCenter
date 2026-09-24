@@ -4,25 +4,51 @@ import { describe, it, expect, vi } from 'vitest'
 import fs from 'node:fs'
 import { createAttemptRunner } from '../../shared/reconnectAttempt.js'
 import {
-  nextPauseMs, planAfterFail, errorName, LONG_FAIL_ATTEMPTS, LONG_FAIL_PAUSE_MS, PROBE_FAIL_CODE, RETRY_LADDER_MS,
+  nextPauseMs, planAfterFail, errorName, LONG_FAIL_ATTEMPTS, LONG_FAIL_PAUSE_MS, PROBE_FAIL_CODE, RETRY_LADDER_MS, ATTEMPT_TIMEOUT_MS, ATTEMPT_TIMEOUT_CODE,
 } from '../../shared/reconnectPlan.js'
 import { reasonTitle, shouldLogEcho, logNetDownSkipLine, logSelfHealedLine } from '../../shared/reconnectTexts.js'
 
 const T0 = 1_700_000_000_000
 
 /** Подделка: состояние React + зеркало + страница. */
-function rig({ entry, el, netOnline = true, quickProbe } = {}) {
+function rig({ entry, el, netOnline = true, quickProbe, attemptTimeoutMs } = {}) {
   let state = entry ? { wa: entry } : {}
   const stRef = { current: state }
   const setState = (fn) => { state = fn(state); stRef.current = state }
   const logs = []
   const attempt = createAttemptRunner({
     getEl: () => el, info: () => ({ name: 'WhatsApp', url: 'https://web.whatsapp.com/' }),
-    stRef, setState, log: (l, m) => logs.push(l + ' ' + m), isNetOnline: () => netOnline, quickProbe, now: () => T0,
+    stRef, setState, log: (l, m) => logs.push(l + ' ' + m), isNetOnline: () => netOnline, quickProbe, now: () => T0, attemptTimeoutMs,
   })
   return { attempt, get state() { return state }, stRef, logs }
 }
 const waitEntry = (extra) => ({ attempt: 1, phase: 'wait', dueAt: T0, pauseMs: 5000, code: -105, since: T0 - 30_000, failedAt: T0 - 5000, origin: 'load', ...extra })
+
+describe('[!] v1.2.497 — предел ожидания попытки (находка ревью #1)', () => {
+  it('страница НЕ отвечает → через предел запись возвращается в «ждём», а не висит вечно', async () => {
+    // loadURL, который никогда не завершится — ровно случай мёртвого посредника (VPN/прокси).
+    // Предел передаём параметром (20 мс), поэтому тест не трогает часы всему окружению и не зависит
+    // от порядка файлов в общем прогоне.
+    const el = { loadURL: vi.fn(() => new Promise(() => {})) }
+    const r = rig({ entry: waitEntry(), el, netOnline: true, attemptTimeoutMs: 20 })
+    expect(await r.attempt('wa')).toBe('failed')
+    expect(r.state.wa.phase, 'из «идёт» обязаны выйти — иначе экран не снять ничем').toBe('wait')
+    expect(r.logs.join(' | ')).toContain('загружаю страницу')
+    expect(r.logs.join(' | ')).toContain('НЕ ОТВЕТИЛА за')
+  })
+
+  it('обычная загрузка внутри предела — успех, предел не мешает', async () => {
+    const el = { loadURL: vi.fn(() => Promise.resolve()) }
+    const r = rig({ entry: waitEntry(), el, netOnline: true, attemptTimeoutMs: 5000 })
+    expect(await r.attempt('wa')).toBe('restored')
+    expect(r.state.wa, 'запись снята — экран уходит').toBeUndefined()
+  })
+
+  it('предел по умолчанию — 45 секунд (число живёт в одном месте)', () => {
+    expect(ATTEMPT_TIMEOUT_MS).toBe(45000)
+    expect(errorName(ATTEMPT_TIMEOUT_CODE)).toBe('ATTEMPT_TIMEOUT')
+  })
+})
 
 describe('одна попытка', () => {
   it('страницы ещё нет → запись не теряем, ждём дальше', async () => {
@@ -36,7 +62,7 @@ describe('одна попытка', () => {
     const r = rig({ entry: waitEntry(), el, netOnline: false })
     expect(await r.attempt('wa')).toBe('net-down')
     expect(el.loadURL).not.toHaveBeenCalled()
-    expect(r.logs.join('\n')).toContain('интернета нет (по пульсу) — страницу не дёргаем')
+    expect(r.logs.join(' | ')).toContain('интернета нет (по пульсу) — страницу не дёргаем')
     expect(r.state.wa.phase).toBe('wait')
     // 🔴 v1.2.496: та же защита обязана держать и НОВОЕ семейство кодов (молчит посредник) — иначе
     // добавление -130 в список повторов начало бы перезагружать страницы и стирать недописанное.
@@ -51,7 +77,7 @@ describe('одна попытка', () => {
     const r = rig({ entry: waitEntry(), el })
     expect(await r.attempt('wa')).toBe('restored')
     expect(r.state.wa).toBeUndefined()
-    expect(r.logs.join('\n')).toContain('связь восстановлена')
+    expect(r.logs.join(' | ')).toContain('связь восстановлена')
   })
 
   it('[!] фаза «идёт попытка» стоит в зеркале СИНХРОННО до ответа loadURL (ловушка v1.2.453)', async () => {
@@ -70,7 +96,7 @@ describe('одна попытка', () => {
     expect(await r.attempt('wa')).toBe('failed')
     expect(r.state.wa.phase).toBe('wait')
     expect(r.state.wa.pauseMs).toBe(RETRY_LADDER_MS[2]) // после 2-й попытки
-    expect(r.logs.join('\n')).toContain('WARN [reconnect] WhatsApp: попытка 2 не удалась')
+    expect(r.logs.join(' | ')).toContain('WARN [reconnect] WhatsApp: попытка 2 не удалась')
   })
 
   it('[!] запись от пробы, страница ожила сама → снимаем экран БЕЗ перезагрузки', async () => {
@@ -79,7 +105,7 @@ describe('одна попытка', () => {
     expect(await r.attempt('wa')).toBe('self-healed')
     expect(el.loadURL).not.toHaveBeenCalled()
     expect(r.state.wa).toBeUndefined()
-    expect(r.logs.join('\n')).toContain('страница ожила сама')
+    expect(r.logs.join(' | ')).toContain('страница ожила сама')
   })
 
   it('запись от пробы, страница молчит → перезагружаем', async () => {
@@ -91,9 +117,12 @@ describe('одна попытка', () => {
 })
 
 describe('новые правила плана (v1.2.491)', () => {
-  it('[!] долгая неудача при ПОДТВЕРЖДЁННОМ интернете → пауза 5 минут; без пульса или без интернета — обычная лестница', () => {
+  it('[!] долгая неудача → пауза 5 минут; ТОЛЬКО при подтверждённом «интернета нет» лестница прежняя', () => {
+    // v1.2.497 (находка ревью #3): раньше долгая пауза включалась строго при netOnline===true, и при
+    // ВЫКЛЮЧЕННОМ пульсе (null) страница дёргалась раз в минуту вечно — это стирает недописанное сообщение.
+    // При false до загрузки дело вообще не доходит (ветка net-down), поэтому там лестница осталась прежней.
     expect(nextPauseMs(LONG_FAIL_ATTEMPTS, 'https://web.whatsapp.com/', true)).toBe(LONG_FAIL_PAUSE_MS)
-    expect(nextPauseMs(LONG_FAIL_ATTEMPTS, 'https://web.whatsapp.com/', null)).toBe(RETRY_LADDER_MS.at(-1)) // пульс неизвестен — лестница
+    expect(nextPauseMs(LONG_FAIL_ATTEMPTS, 'https://web.whatsapp.com/', null)).toBe(LONG_FAIL_PAUSE_MS)
     expect(nextPauseMs(LONG_FAIL_ATTEMPTS, 'https://web.whatsapp.com/', false)).toBe(RETRY_LADDER_MS.at(-1))
     expect(nextPauseMs(3, 'https://web.whatsapp.com/', true)).toBe(RETRY_LADDER_MS[3]) // до 10 — как было
   })
@@ -110,7 +139,10 @@ describe('новые правила плана (v1.2.491)', () => {
     const prox = reasonTitle(waitEntry({ code: -130 }), false, 'WhatsApp')
     expect(prox.title).toBe('Не отвечает посредник (VPN или прокси)')
     expect(prox.hint).toContain('Windows')
-    expect(reasonTitle(waitEntry({ code: -111 }), true, 'WhatsApp').title).toContain('посредник')
+    // [!] v1.2.497 (#5): пульс ПОДТВЕРДИЛ интернет → посредник жив, старый код ошибки больше не повод
+    // винить VPN; экран должен говорить про сайт.
+    expect(reasonTitle(waitEntry({ code: -111 }), true, 'WhatsApp').title).toBe('Сайт WhatsApp недоступен')
+    expect(reasonTitle(waitEntry({ code: -130 }), null, 'WhatsApp').title, 'пульс молчит → причина остаётся').toContain('посредник')
     expect(reasonTitle(waitEntry({ origin: 'probe' }), true, 'WhatsApp').title).toContain('страница не отвечает')
     const r = reasonTitle(waitEntry({ attempt: 12 }), true, 'WhatsApp')
     expect(r.title).toBe('Сайт WhatsApp недоступен')

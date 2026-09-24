@@ -3,7 +3,21 @@
 // Тексты записей в журнал и причины для экрана «Нет связи» — вынесены из shared/reconnectPlan.js
 // (тот упёрся в 300 строк). В одном месте, чтобы проверялись тестом и не расходились между
 // хуком, попыткой (reconnectAttempt.js) и экраном (WebviewOfflineOverlay.jsx).
-import { errorName, isProxyError, LONG_FAIL_ATTEMPTS } from './reconnectPlan.js'
+import { errorName, isProxyError, LONG_FAIL_ATTEMPTS, ATTEMPT_TIMEOUT_MS } from './reconnectPlan.js'
+
+/**
+ * v1.2.497: начало попытки. Раньше журнал молчал между «обрыв связи» и ответом страницы —
+ * зависшая попытка выглядела так же, как её отсутствие, и разобрать случай было нечем.
+ */
+export function logAttemptStartLine(name, entry) {
+  return `[reconnect] ${name}: попытка ${entry.attempt} — загружаю страницу`
+}
+
+/** v1.2.497: страница не ответила за предел ожидания (ATTEMPT_TIMEOUT_MS) — не молчим об этом. */
+export function logAttemptTimeoutLine(name, entry) {
+  return `[reconnect] ${name}: страница НЕ ОТВЕТИЛА за ${Math.round(ATTEMPT_TIMEOUT_MS / 1000)}с — прекращаю ждать, ` +
+    `следующая попытка через ${Math.round(entry.pauseMs / 1000)}с`
+}
 
 export function logFailLine(name, entry) {
   return `[reconnect] ${name}: обрыв связи, код=${entry.code} ${errorName(entry.code)}, ` +
@@ -53,7 +67,10 @@ export function reasonTitle(entry, netOnline, name) {
   // v1.2.496: ПЕРВОЙ веткой — «мёртв посредник». Иначе при мёртвом пульсе (а он при мёртвом прокси
   // честно говорит «нет»: net.fetch идёт тем же путём) экран сказал бы «Нет интернета» и увёл бы
   // человека искать беду не там. Реальный случай 2026-09-23 — см. mistakes/electron-core.md.
-  if (entry && isProxyError(entry.code)) {
+  // v1.2.497 (#5 ревью): ветка работает, только пока пульс НЕ подтвердил интернет. Если пульс говорит
+  // «есть», значит посредник ЖИВ (пульс ходит через него же) — и старый код ошибки уже неактуален,
+  // беда в самом сайте. Иначе экран продолжал бы винить VPN после его починки.
+  if (entry && isProxyError(entry.code) && netOnline !== true) {
     return {
       title: 'Не отвечает посредник (VPN или прокси)',
       hint: 'интернет, скорее всего, есть: весь веб идёт через программу-посредника, а она сейчас молчит — включите VPN либо выключите прокси в настройках Windows',
@@ -111,5 +128,7 @@ export function pulseStatusLine(pulse, now = Date.now()) {
  */
 export function retryButtonLabel(entry, netOnline) {
   if (entry && entry.phase === 'trying') return 'Подождите…'
-  return netOnline === false ? 'Проверить интернет' : 'Повторить сейчас'
+  // v1.2.497 (#6 ревью): «Проверить связь», а не «Проверить интернет» — при мёртвом посреднике
+  // (VPN/прокси) интернет-то есть, и прежняя надпись противоречила заголовку экрана.
+  return netOnline === false ? 'Проверить связь' : 'Повторить сейчас'
 }

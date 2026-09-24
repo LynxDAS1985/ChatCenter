@@ -86,12 +86,6 @@ export function canCheckNow(state, now = Date.now()) {
 }
 
 /**
- * Применить результат проверки.
- * @param {object} state
- * @param {{ok:boolean, host?:string, latencyMs?:number, now?:number, reason?:string, targetsCount?:number}} r — targetsCount: сколько адресов реально опрошено (v1.2.493)
- * @returns {{state:object, transition:'online'|'offline'|null, line:string|null}}
- */
-/**
  * v1.2.496: похоже ли, что молчит ПОСРЕДНИК (VPN/прокси), а не интернет?
  *
  * Смотрим текст ошибки net.fetch. Подстроки взяты из официального перечня Chromium
@@ -104,28 +98,41 @@ export function canCheckNow(state, now = Date.now()) {
  */
 export function looksLikeProxyDown(text) {
   const t = String(text || '').toUpperCase()
-  return t.includes('PROXY') || t.includes('TUNNEL') || t.includes('SOCKS')
+  // v1.2.497 (#7 ревью): ищем ИМЕНА ОШИБОК, а не слова. Раньше хватало слова «PROXY» где угодно —
+  // адрес проверки вида https://proxy.example/ping в тексте ошибки давал ложное «молчит посредник».
+  return t.includes('ERR_PROXY') || t.includes('ERR_TUNNEL') || t.includes('ERR_SOCKS')
 }
 
+/**
+ * Применить результат проверки.
+ * @param {object} state
+ * @param {{ok:boolean, host?:string, latencyMs?:number, now?:number, reason?:string, targetsCount?:number, lastError?:string}} r
+ *   targetsCount — сколько адресов реально опрошено (v1.2.493); lastError — текст последней ошибки (v1.2.496)
+ * @returns {{state:object, transition:'online'|'offline'|null, line:string|null}}
+ */
 export function applyResult(state, { ok, host = '', latencyMs = 0, now = Date.now(), reason = '', targetsCount = 0, lastError = '' }) {
   const prev = state.online
   const next = { ...state, checking: false, lastCheckAt: now, lastHost: ok ? host : state.lastHost, lastLatencyMs: ok ? latencyMs : state.lastLatencyMs }
   let transition = null
   let line = null
+  // v1.2.497 (#2 ревью): признак «молчит посредник» считаем на КАЖДОЙ неудачной проверке, а не только
+  // в момент перехода «была связь → пропала». Иначе при смене беды без возврата связи (сначала обычный
+  // обрыв, потом умер VPN — и наоборот) метка «VPN?» показывала устаревшую причину до самого возврата сети.
+  const viaProxy = !ok && looksLikeProxyDown(lastError)
+  next.proxyDown = viaProxy
   if (ok && prev !== true) {
     transition = 'online'
     const downSec = prev === false && state.since ? Math.round((now - state.since) / 1000) : 0
     line = prev === null
       ? `[net-pulse] интернет есть (ответил ${host} за ${latencyMs} мс)${reason ? ' · причина проверки: ' + reason : ''}`
       : `[net-pulse] интернет ПОЯВИЛСЯ через ${downSec} с (ответил ${host} за ${latencyMs} мс)${reason ? ' · причина проверки: ' + reason : ''}`
-    next.online = true; next.since = now; next.lastStillLogAt = 0; next.proxyDown = false
+    next.online = true; next.since = now; next.lastStillLogAt = 0
   } else if (!ok && prev !== false) {
     transition = 'offline'
-    const viaProxy = looksLikeProxyDown(lastError) // v1.2.496: мёртв посредник, а не интернет
     line = `[net-pulse] интернет ПРОПАЛ — ни один из ${targetsCount || PULSE_TARGETS.length} адресов не ответил` +
       (viaProxy ? ' · похоже, молчит ПОСРЕДНИК (VPN/прокси), а не сам интернет' : '') +
       (reason ? ' · причина проверки: ' + reason : '')
-    next.online = false; next.since = now; next.lastStillLogAt = now; next.proxyDown = viaProxy
+    next.online = false; next.since = now; next.lastStillLogAt = now
   } else if (!ok && prev === false && now - (state.lastStillLogAt || 0) >= STILL_OFFLINE_LOG_MS) {
     line = `[net-pulse] интернета всё ещё нет (уже ${Math.round((now - state.since) / 60000)} мин)`
     next.lastStillLogAt = now
