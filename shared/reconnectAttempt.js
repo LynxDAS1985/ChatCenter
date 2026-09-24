@@ -22,17 +22,10 @@ import {
   logRestoredLine, logRetryFailLine, logNetDownSkipLine, logSelfHealedLine, logAttemptStartLine,
   logAttemptTimeoutLine, logBusySkipLine, logProbeTimeoutLine, logStopPrevLine,
 } from './reconnectTexts.js'
+import { withTimeout } from './withTimeout.js' // v1.2.499: общий «жди не дольше»
 
-/**
- * v1.2.497: ждать ответа страницы не дольше предела. Без этого запись навсегда застревала в фазе
- * «идёт», из которой закрыты все выходы (см. ATTEMPT_TIMEOUT_MS и attemptTimeoutFor в reconnectErrorCodes.js).
- * Таймер гасится в любом случае (finally) — иначе он бы жил до конца срока после успеха.
- */
-function raceWithTimeout(promise, ms, mkError) {
-  let timer = null
-  const guard = new Promise((_, reject) => { timer = setTimeout(() => reject(mkError()), ms) })
-  return Promise.race([promise, guard]).finally(() => { if (timer) { clearTimeout(timer); timer = null } })
-}
+// v1.2.499: своя копия «жди не дольше» убрана — теперь общий помощник shared/withTimeout.js
+// (в проекте таких обёрток стало три, а дубли расходятся при правках).
 
 /**
  * @param {object} d
@@ -81,7 +74,7 @@ export function createAttemptRunner({ getEl, info, stRef, setState, log, isNetOn
     if (trying.origin === 'probe' && typeof quickProbe === 'function') {
       let alive = false
       try {
-        alive = await raceWithTimeout(Promise.resolve(quickProbe(el)), probeTimeoutMs,
+        alive = await withTimeout(Promise.resolve(quickProbe(el)), probeTimeoutMs,
           () => Object.assign(new Error('probe timeout'), { ccProbeTimeout: true }))
       } catch (e) {
         alive = false
@@ -99,7 +92,7 @@ export function createAttemptRunner({ getEl, info, stRef, setState, log, isNetOn
     const limitMs = Number(attemptTimeoutMs) > 0 ? Number(attemptTimeoutMs) : attemptTimeoutFor(trying.attempt)
     log('INFO', logAttemptStartLine(name, trying, limitMs))
     try {
-      await raceWithTimeout(el.loadURL(url), limitMs,
+      await withTimeout(el.loadURL(url), limitMs,
         () => Object.assign(new Error('attempt timeout'), { errno: ATTEMPT_TIMEOUT_CODE, ccTimeout: true }))
       log('INFO', logRestoredLine(name, stRef.current[id], now()))
       clear(id)

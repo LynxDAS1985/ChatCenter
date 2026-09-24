@@ -88,11 +88,19 @@ export function initNetPulse({ net, powerMonitor, ipcMain, getMainWindow, storag
     // v1.2.498 (находка ревью #10): собираем ошибки ВСЕХ адресов, а не только последнего. Раньше
     // два ответа «прокси не отвечает» и один свой таймаут давали вердикт по таймауту — признак
     // «молчит посредник» мигал. Сырой текст уходит в журнал: иначе распознавание нечем проверить.
-    const errors = []
-    for (const url of targets) {
+    // v1.2.499 (ускорение по итогам ревью): адреса щупаем ОДНОВРЕМЕННО, а не по очереди. Раньше при
+    // мёртвой сети одна проверка занимала до 15 с (три адреса × 5 с предела) — столько же человек ждал
+    // после нажатия «Проверить связь», а при частоте «раз в 15 с» проверки шли почти непрерывно.
+    // Теперь ответ приходит за время самого быстрого адреса, а при полном провале — максимум за 5 с.
+    // Ошибки собираем по ВСЕМ адресам (нужно для признака «молчит посредник», находка ревью #10).
+    const settled = await Promise.all(targets.map(async (url) => {
       const r = await probeOne(url)
-      if (r.ok) { result = { ok: true, host: hostOf(url), latencyMs: r.latencyMs }; break }
-      if (r.error) errors.push(hostOf(url) + ': ' + r.error)
+      return { url, ...r }
+    }))
+    const errors = []
+    for (const r of settled) {
+      if (r.ok && !result.ok) result = { ok: true, host: hostOf(r.url), latencyMs: r.latencyMs }
+      else if (!r.ok && r.error) errors.push(hostOf(r.url) + ': ' + r.error)
     }
     const lastError = errors.join(' | ')
     const applied = applyResult(state, { ...result, now: Date.now(), reason, targetsCount: targets.length, lastError })

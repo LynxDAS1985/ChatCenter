@@ -93,7 +93,10 @@ describe('обвязка пульса (подделки Electron)', () => {
     const { deps, sent, fetchImpl, onOnline } = fakeDeps((url) => { if (url.includes('msftconnecttest')) throw new Error('down'); return { status: 204 } })
     const pulse = initNetPulse(deps)
     await settle()
-    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    // v1.2.499 (ускорение): адреса щупаются ОДНОВРЕМЕННО, поэтому запрашиваются ВСЕ три, а не
+    // «первый, потом второй». Цена ускорения: при мёртвой сети три запроса вместо одного-двух;
+    // выигрыш: одна проверка занимает время самого медленного адреса, а не их сумму (15 с → 5 с).
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
     expect(sent.length).toBe(1)
     expect(sent[0][0]).toBe('net:pulse')
     expect(sent[0][1].online).toBe(true)

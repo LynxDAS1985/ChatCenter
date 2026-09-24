@@ -18,6 +18,8 @@ export function buildChatNavigateScript(url, senderName, chatTag) {
   if (url.includes('max.ru'))       return buildMaxScript(senderName)
   if (url.includes('whatsapp.com')) return buildWhatsAppScript(senderName)
   if (url.includes('vk.com') || url.includes('vk.ru')) return buildVkScript(senderName) // v1.2.109: vk.ru
-  if (url.includes('ozon.ru'))      return buildOzonScript(senderName) // v1.2.330: клик по строке чата покупателя
+  // v1.2.499: Ozon получает и метку уведомления — по ней видно раздел (вопрос / отзыв / чат покупателя),
+  // иначе вопрос искался среди чатов, где его нет, и переход всегда заканчивался «не найден».
+  if (url.includes('ozon.ru'))      return buildOzonScript(senderName, chatTag) // v1.2.330: клик по строке
   return buildGenericScript(senderName)
 }

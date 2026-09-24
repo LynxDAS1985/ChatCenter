@@ -301,6 +301,21 @@ describe('v1.2.498 — находки ревью: пульс не умирает
     expect(reasonTitle(e, true, 'ВК').hint).toContain('интернет есть')
   })
 
+  it('[!] v1.2.499 (ускорение): адреса щупаются ОДНОВРЕМЕННО, а не по очереди', async () => {
+    // Раньше три адреса по 5 с предела = до 15 с на одну проверку (столько же человек ждал после
+    // нажатия «Проверить связь»). Теперь ответ приходит за время самого медленного из трёх, а не суммы.
+    let running = 0; let maxRunning = 0
+    const f = fakeDeps({}, () => new Promise((_, rej) => {
+      running++; maxRunning = Math.max(maxRunning, running)
+      setTimeout(() => { running--; rej(new Error('net::ERR_PROXY_CONNECTION_FAILED')) }, 30)
+    }))
+    const pulse = initNetPulse(f.deps)
+    await new Promise(r => setTimeout(r, 200))
+    expect(maxRunning, 'все три адреса опрашивались разом').toBeGreaterThan(1)
+    expect(pulse.getState().online, 'вердикт получен').toBe(false)
+    pulse.stop(); f.restore()
+  })
+
   it('[!] #15 + #1: проводка — экран показывает минуты, пульс пишет причину пропуска', () => {
     const overlay = fs.readFileSync('src/components/WebviewOfflineOverlay.jsx', 'utf8')
     expect(overlay).toContain("left >= 100 ? 'мин' : 'с'")

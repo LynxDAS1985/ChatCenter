@@ -37,6 +37,7 @@
 import { EventEmitter } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
+import { tryWithTimeout } from '../../shared/withTimeout.js' // v1.2.499: «жди не дольше»
 
 // v0.89.46: WebContentsView требует абсолютный path (Electron docs), а <webview>
 // тег принимает file:// URL. Нормализуем file:// → path. Handle unicode + пробелы.
@@ -60,6 +61,10 @@ function getWebContentsView() {
     return null
   }
 }
+
+// v1.2.499: пределы ожидания — 45 с на загрузку (как ATTEMPT_TIMEOUT_MS у переподключения), 10 с на скрипт (как у пробы здоровья).
+const WCV_LOAD_TIMEOUT_MS = 45000
+const WCV_EXEC_TIMEOUT_MS = 10000
 
 export class WebContentsViewManager extends EventEmitter {
   constructor() {
@@ -196,20 +201,22 @@ export class WebContentsViewManager extends EventEmitter {
     return true
   }
 
+  // v1.2.499: оба вызова раньше ждали ответа БЕЗ ПРЕДЕЛА — зависшая страница означала вечное
+  // ожидание без успеха и без ошибки (та же беда, что чинили в переподключении, v1.2.497-498).
   async loadURL(id, url) {
     const entry = this.views.get(id)
     if (!entry?.view) return { ok: false, error: 'view not found' }
-    try { await entry.view.webContents.loadURL(url); return { ok: true } }
-    catch (e) { return { ok: false, error: e?.message || String(e) } }
+    const r = await tryWithTimeout(entry.view.webContents.loadURL(url), WCV_LOAD_TIMEOUT_MS, 'загрузка страницы')
+    if (!r.ok) console.warn('[wcv] loadURL ' + id + ': ' + r.error + (r.timedOut ? ' (предел ожидания)' : ''))
+    return r.ok ? { ok: true } : { ok: false, error: r.error, timedOut: r.timedOut }
   }
 
   async executeJavaScript(id, code) {
     const entry = this.views.get(id)
     if (!entry?.view) return { ok: false, error: 'view not found' }
-    try {
-      const result = await entry.view.webContents.executeJavaScript(code, true)
-      return { ok: true, result }
-    } catch (e) { return { ok: false, error: e?.message || String(e) } }
+    const r = await tryWithTimeout(entry.view.webContents.executeJavaScript(code, true), WCV_EXEC_TIMEOUT_MS, 'выполнение скрипта')
+    if (!r.ok) console.warn('[wcv] executeJavaScript ' + id + ': ' + r.error + (r.timedOut ? ' (предел ожидания)' : ''))
+    return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error, timedOut: r.timedOut }
   }
 
   sendToView(id, channel, ...args) {

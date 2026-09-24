@@ -1,3 +1,7 @@
+import { withTimeout } from './withTimeout.js' // v1.2.499: «жди не дольше»
+
+// v1.2.499: предел ожидания ответа вкладки ИИ — как у пробы здоровья страницы (10 с).
+const AI_EXEC_TIMEOUT_MS = 10000
 // v0.84.4: Extracted from AISidebar.jsx — send context to AI webview
 // deps: aiWebviewRef, contextMode, lastMessage, chatHistory, setContextSendStatus
 
@@ -70,7 +74,10 @@ export async function sendContextToAiWebview(deps) {
         }
         return diag;
       })()`
-      const result = await wv.executeJavaScript(script)
+      // v1.2.499 (находка ревью #12): ждём ответ страницы ИИ не дольше предела. Раньше зависшая
+      // вкладка ИИ означала вечное ожидание — кнопка «отправить в ИИ» молчала навсегда.
+      const result = await withTimeout(wv.executeJavaScript(script), AI_EXEC_TIMEOUT_MS,
+        () => Object.assign(new Error('вкладка ИИ не ответила за ' + Math.round(AI_EXEC_TIMEOUT_MS / 1000) + ' с'), { ccTimeout: true }))
       if (result && typeof result === 'object') {
         diagInfo.matched = result.matched
         diagInfo.dom = result.dom || diagInfo.dom
