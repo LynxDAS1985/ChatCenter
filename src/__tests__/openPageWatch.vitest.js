@@ -64,7 +64,13 @@ describe('[!] ЛОВУШКИ подключения', () => {
     expect(app).toContain('.then((outcome) => { onProbeOutcome(id, outcome); return outcome })')
     expect(app).toContain("from '../shared/connectionHealthScheduler.js'")
     const ozon = fs.readFileSync('src/utils/ozonBgWatcher.js', 'utf8')
-    expect((ozon.match(/window\.__ccNetOnline (===|!==) false/g) || []).length).toBe(2)
+    // Сколько мест в фоновом сторожe Ozon спрашивают «а интернет-то есть?». Страж следит, чтобы эти
+    // проверки не пропали при правках: без них программа долбила бы Ozon вхолостую при обрыве связи.
+    // Мест ТРИ (v1.2.504): повторная загрузка после сбоя (строка ~48), опрос готового числа со
+    // вкладки (~60) и периодическое освежение страницы «Вопросы» (~202). Было два — третье добавилось
+    // вместе с чтением числа со страницы. Число здесь поднимают ТОЛЬКО когда добавили новое место,
+    // которое реально ходит в сеть; понижать его без удаления такого места нельзя.
+    expect((ozon.match(/window\.__ccNetOnline (===|!==) false/g) || []).length).toBe(3)
     expect(fs.existsSync('src/utils/connectionHealthScheduler.js')).toBe(false) // переехал в shared
   })
 })

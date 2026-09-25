@@ -24,29 +24,11 @@ import { parseConsoleMessage } from '../../shared/consoleMessageParser.js'
 import { shouldSkipOzonNotif } from '../../shared/ozonNotifDedup.js'
 import { createOzonBgFailWatch, isOzonAliveProof } from '../../shared/ozonBgFailWatch.js'
 // v1.2.502 ВРЕМЕННАЯ РАЗВЕДКА (удалить после диагноза): почему фоновая страница «Отзывы» видит
-// только первую порцию строк. Подробности и три проверяемые версии — в shared/ozonRecon.js.
-import { OZON_RECON_SCRIPT, RECON_TIMEOUT_MS, formatOzonRecon } from '../../shared/ozonRecon.js'
-import { withTimeout } from '../../shared/withTimeout.js' // общий «жди не дольше» (пятую копию не заводим)
-
-/**
- * v1.2.502 ВРЕМЕННО. Один раз за запуск программы спросить у страницы, дорисовывает ли Ozon список
- * при прокрутке. Ответ пишется в журнал строками `[ozon-recon] …`. УДАЛИТЬ вместе с shared/ozonRecon.js
- * после того, как причина будет названа.
- * Пауза перед стартом — та же, что у сторожа (2,5 с): раньше таблицы на странице ещё нет.
- */
-function _reconOnce(el, log) {
-  try {
-    if (!el || el.__ccOzonReconDone || typeof el.executeJavaScript !== 'function') return
-    el.__ccOzonReconDone = true
-    setTimeout(() => {
-      if (!el.isConnected) return // страницу уже закрыли — разведывать нечего
-      withTimeout(Promise.resolve(el.executeJavaScript(OZON_RECON_SCRIPT)), RECON_TIMEOUT_MS,
-        () => new Error('разведка Ozon: страница не ответила'))
-        .then((res) => { formatOzonRecon(res).forEach(line => { try { log && log('INFO', line) } catch (_) {} }) })
-        .catch((e) => { try { log && log('WARN', '[ozon-recon] не удалась: ' + ((e && e.message) || e)) } catch (_) {} })
-    }, 3000)
-  } catch (_) {}
-}
+// только первую порцию строк. Сам скрипт, разбор ответа и запуск — в shared/ozonRecon.js.
+import { runOzonReconOnce } from '../../shared/ozonRecon.js'
+// v1.2.504: ГОТОВОЕ число новых со вкладки страницы вместо подсчёта нарисованных строк.
+// Когда спрашивать, чему верить и когда вернуться к подсчёту — в shared/ozonTabPoll.js.
+import { createOzonTabPoll } from '../../shared/ozonTabPoll.js'
 
 export function bindOzonBgWatcher(el, ozonId, deps) {
   try {
@@ -67,10 +49,34 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
       alive: () => el.isConnected,
       probe: () => el.executeJavaScript && el.executeJavaScript('document.querySelectorAll("*").length'),
     })
+    // v1.2.504: ТОЧНОЕ число новых берём со вкладки самой страницы, а не из подсчёта строк.
+    // Раньше считались строки, которые Ozon успел нарисовать, а список он отдаёт порциями (внизу
+    // кнопка «Показать ещё») — невидимую страницу никто не листает, и счёт навсегда застревал на
+    // первой порции: 5 вместо 13. Всё решение — в shared/ozonTabPoll.js, здесь только обвязка.
+    const _tabs = createOzonTabPoll({
+      exec: (code) => el.executeJavaScript(code),
+      getUrl: () => (el.getURL ? el.getURL() : ''),
+      isAlive: () => el.isConnected && typeof el.executeJavaScript === 'function',
+      isOnline: () => window.__ccNetOnline !== false, // v1.2.491: без интернета спрашивать нечего
+      setCount: (n) => setOzonCounts && setOzonCounts(prev => {
+        const cur = prev[ozonId] || {}
+        if (cur.rv === n) return prev
+        return { ...prev, [ozonId]: { ...cur, rv: n } }
+      }),
+      log,
+    })
     // v1.2.361 ДИАГНОСТИКА (Шаг 3А молчит — 0 строк [ozon-bg]): лесенка записей, чтобы увидеть, на каком
     // шаге рвётся. Убрать после того, как фоновая страница подтвердится рабочей. Текст вопросов НЕ пишем.
     log && log('INFO', '[ozon-bg] страница создана, слушатель привязан')
-    el.addEventListener('did-finish-load', () => { try { log && log('INFO', '[ozon-bg] страница загрузилась URL=' + (el.getURL ? el.getURL() : '?')); _failWatch.onLoaded(); _reconOnce(el, log) } catch (_) {} })
+    el.addEventListener('did-finish-load', () => {
+      try {
+        log && log('INFO', '[ozon-bg] страница загрузилась URL=' + (el.getURL ? el.getURL() : '?'))
+        _failWatch.onLoaded()
+        runOzonReconOnce(el, log, _tabs.ask)
+        setTimeout(_tabs.ask, 4000) // страница только что загрузилась — вкладки появляются не мгновенно
+        _tabs.start()               // дальше переспрашиваем сами; опрос гаснет, когда страницу убрали
+      } catch (_) {}
+    })
     // Загрузка не удалась. САМ СБОЙ пишем в журнал всегда — по этим строкам и было доказано, что
     // карточки приходили зря. А тревожить ли человека, решает сторож «подожди и посмотри»:
     // сначала он даёт странице время подняться и один раз пробует загрузить её заново.
@@ -144,6 +150,16 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         // фон понижал/перетирал, он занижал/дёргал бы честное число передней вкладки. «Только вверх» безопасно для
         // счётчика отзывов: лучше показать чуть больше, чем ПРОПУСТИТЬ отзыв; завышение чинит открытая вкладка.
         if (parsed.type === 'ozon_count' && parsed.section === 'rv') {
+          // v1.2.504: есть ТОЧНОЕ число со вкладки страницы — подсчёту нарисованных строк не верим
+          // вовсе. Иначе он бы тянул счётчик обратно вверх после прочтения отзывов: правило «только
+          // вверх» ниже не даёт понизить, а подсчёт всегда видит первую порцию (5) и держал бы её.
+          if (_tabs.isExact()) {
+            if (_lastCountLog.rvIgnored !== parsed.n) {
+              _lastCountLog.rvIgnored = parsed.n
+              log && log('INFO', '[ozon-bg] подсчёт строк дал rv=' + parsed.n + ' — не берём, есть точное число со вкладки')
+            }
+            return
+          }
           setOzonCounts && setOzonCounts(prev => {
             const cur = prev[ozonId] || {}
             const prevRv = cur.rv

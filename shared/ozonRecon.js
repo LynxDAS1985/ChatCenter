@@ -22,6 +22,8 @@
 // делает до трёх прокруток — обычное для человека действие, никаких запросов к серверам Ozon
 // напрямую мы не шлём.
 
+import { withTimeout } from './withTimeout.js' // общий «жди не дольше» — пятую копию не заводим
+
 /** Сколько ждать после каждой прокрутки, чтобы Ozon успел дорисовать (мс). */
 export const RECON_SETTLE_MS = 2000
 
@@ -124,6 +126,41 @@ export function formatOzonRecon(res) {
     lines.push(`[ozon-recon] надписи вне таблицы: ${res.texts.join(' | ')}`)
   }
   return lines
+}
+
+/**
+ * v1.2.502 ВРЕМЕННО. Один раз за запуск программы спросить у страницы, дорисовывает ли Ozon список
+ * при прокрутке. Ответ пишется в журнал строками `[ozon-recon] …`.
+ *
+ * v1.2.504: перед разведкой ЖДЁМ, пока страница наполнится. Причина — прогон 2026-09-25: на странице
+ * «Сообщения» разведка сработала через 3 с после загрузки и увидела 151 элемент и ноль строк, то есть
+ * мерила пустоту. Порог 300 элементов — тот же, что у сторожа страницы (main/preloads/hooks/ozon.hook.js),
+ * до него разметки ещё нет. Ждём до пяти попыток, дальше меряем как есть и честно пишем, что застали.
+ *
+ * v1.2.504: живёт в shared/, а не в src/utils/ozonBgWatcher.js — бюджет строк экранов (ADR-044).
+ *
+ * @param {object} el — фоновая страница (webview): нужны executeJavaScript и isConnected
+ * @param {(level: string, message: string) => void} log
+ * @param {() => void} [afterDone] — что сделать, когда разведка отчиталась (например, опросить вкладки)
+ */
+export function runOzonReconOnce(el, log, afterDone) {
+  try {
+    if (!el || el.__ccOzonReconDone || typeof el.executeJavaScript !== 'function') return
+    el.__ccOzonReconDone = true
+    const run = (attempt) => {
+      if (!el.isConnected) return // страницу уже закрыли — разведывать нечего
+      withTimeout(Promise.resolve(el.executeJavaScript(OZON_RECON_SCRIPT)), RECON_TIMEOUT_MS,
+        () => new Error('разведка Ozon: страница не ответила'))
+        .then((res) => {
+          const empty = !res || Number(res.total || 0) < 300
+          if (empty && attempt < 5) { setTimeout(() => run(attempt + 1), 3000); return } // страница ещё пустая
+          formatOzonRecon(res).forEach(line => { try { log && log('INFO', line) } catch (_) {} })
+          try { afterDone && afterDone() } catch (_) {}
+        })
+        .catch((e) => { try { log && log('WARN', '[ozon-recon] не удалась: ' + ((e && e.message) || e)) } catch (_) {} })
+    }
+    setTimeout(() => run(1), 3000)
+  } catch (_) {}
 }
 
 /** Короткий вывод: какая из трёх версий подтвердилась. */
