@@ -852,7 +852,7 @@ export default function App() {
                   <OzonQuickWidget messengerId={m.id} webviewRefs={webviewRefs}
                     /* Только per-раздел от сторожа. unreadCounts НЕ используем как запас — там СУММА msg+qa
                        (для значка рейла), иначе кнопка «Сообщения» показала бы число вопросов (v1.2.357). */
-                    unread={{ msg: (ozonCounts[m.id] && ozonCounts[m.id].msg) || 0, qa: (ozonCounts[m.id] && ozonCounts[m.id].qa) || 0, rv: (ozonCounts[m.id] && ozonCounts[m.id].rv) || 0, qaUnans: (ozonCounts[m.id] && ozonCounts[m.id].qaUnans) || 0 }}
+                    unread={{ msg: (ozonCounts[m.id] && ozonCounts[m.id].msg) || 0, qa: (ozonCounts[m.id] && ozonCounts[m.id].qa) || 0, rv: (ozonCounts[m.id] && ozonCounts[m.id].rv) || 0, qaUnans: (ozonCounts[m.id] && ozonCounts[m.id].qaUnans) || 0, qaNew: (ozonCounts[m.id] && ozonCounts[m.id].qaNew) || 0, qaTotal: (ozonCounts[m.id] && ozonCounts[m.id].qaTotal) || 0 }}
                     loading={!!(webviewLoading && webviewLoading[m.id])} />
                 )}
                 {/* v1.2.358→368 (Шаг 3): ДВЕ СКРЫТЫЕ фоновые страницы Ozon на той же сессии — «Вопросы» и

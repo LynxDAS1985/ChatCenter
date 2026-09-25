@@ -6,7 +6,7 @@
 // переход открывал не тот список. Тест ловит возврат такого расхождения.
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
-import { OZON_SECTION_URL, OZON_SECTION_PATH, OZON_BG_URLS, OZON_BADGE_MAX, ozonBadgeText } from '../../shared/ozonSections.js'
+import { OZON_SECTION_URL, OZON_SECTION_PATH, OZON_BG_URLS, OZON_BADGE_MAX, OZON_QA_PAGE, ozonBadgeText, ozonQaBadgeText } from '../../shared/ozonSections.js'
 
 describe('Ozon: адреса разделов — один источник', () => {
   it('[!] в коде экранов не осталось вписанных руками адресов кабинета', () => {
@@ -72,5 +72,32 @@ describe('Ozon: «жди не дольше» — одна общая реали�
     const quick = probe.slice(probe.indexOf('export function quickProbe'))
     expect(quick).not.toContain('return Promise.race(')
     expect(quick).toContain('withTimeout(')
+  })
+})
+
+// v1.2.507: значок «Вопросы» показывает, сколько вопросов БЕЗ ОТВЕТА (жалоба пользователя: «почему
+// стоит 1, если 4 вопроса без ответа?»). Считается по видимым строкам, поэтому при длинном списке
+// к числу добавляется «+» — «минимум четыре, возможно больше».
+describe('Ozon: значок «Вопросы» — без ответа, с честным плюсом', () => {
+  it('[!] реальный случай пользователя: 4 без ответа, всего 999+ → «4+», а не «4» и не «1»', () => {
+    expect(ozonQaBadgeText(4, 999)).toBe('4+')
+  })
+
+  it('[!] список помещается целиком (вопросов меньше порции) → плюса нет', () => {
+    expect(ozonQaBadgeText(4, 7)).toBe('4')
+    expect(ozonQaBadgeText(2, OZON_QA_PAGE)).toBe('2')
+  })
+
+  it('[!] сколько всего — неизвестно → плюс СТАВИМ (мы заведомо видим не весь список)', () => {
+    expect(ozonQaBadgeText(4, 0)).toBe('4+')
+    expect(ozonQaBadgeText(4, null)).toBe('4+')
+  })
+
+  it('больше полусотни без ответа → «50+», как у остальных значков', () => {
+    expect(ozonQaBadgeText(80, 999)).toBe('50+')
+  })
+
+  it('без ответа ноль или мусор → «0», значок не рисуется', () => {
+    for (const bad of [0, -1, null, undefined, NaN, 'три']) expect(ozonQaBadgeText(bad, 999), String(bad)).toBe('0')
   })
 })

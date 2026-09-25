@@ -6,7 +6,7 @@
 // localStorage относительна контейнера. Цвета заданы ЯВНО (виджет вне .native-mode). Пульс/точка —
 // tailwind-классы animate-ping/animate-pulse (уже используются в проекте, RailWebIcon/App).
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
-import { OZON_SECTION_URL, OZON_SECTION_PATH, ozonBadgeText } from '../../../shared/ozonSections.js' // v1.2.501: адреса разделов — из одного места
+import { OZON_SECTION_URL, OZON_SECTION_PATH, ozonBadgeText, ozonQaBadgeText, ozonTipText } from '../../../shared/ozonSections.js' // v1.2.501: адреса разделов — из одного места
 
 const LS_KEY = 'ccOzonWidgetPos3'
 const SIZE = { w: 74, h: 150 } // вертикальный док — узкий и высокий (для клампа по контейнеру)
@@ -21,20 +21,6 @@ const SECTIONS = [
   // поймал бы и URL вопросов (он содержит '/app/reviews'). SECTIONS.find берёт ПЕРВОЕ совпадение → qa победит для вопросов.
   { key: 'rv', label: 'Отзывы', icon: '⭐', url: OZON_SECTION_URL.rv, match: OZON_SECTION_PATH.rv },
 ]
-
-/**
- * Подсказка при наведении. У «Вопросов» два числа: значок показывает «не открытые» (их считает сам
- * Ozon на вкладке «Новое»), а «без ответа» приходит из подсчёта видимых строк нашим сторожем — у
- * Ozon такого счётчика нет. Показываем оба, иначе второе нигде не видно.
- */
-function tipFor(key, n, unread) {
-  const label = SECTIONS.find(x => x.key === key)?.label || ''
-  const parts = []
-  if (n > 0) parts.push(n + (key === 'qa' ? ' новых (не открыты)' : ' новых'))
-  const unans = (unread && unread.qaUnans) || 0
-  if (key === 'qa' && unans > 0) parts.push('без ответа: ' + unans)
-  return label + (parts.length ? ' · ' + parts.join(' · ') : '')
-}
 
 export default function OzonQuickWidget({ messengerId, webviewRefs, unread, loading }) {
   const rootRef = useRef(null)
@@ -111,8 +97,16 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
   const openSection = useCallback((s) => {
     setActive(s.key)
     const wv = webviewRefs?.current?.[messengerId]
+    // v1.2.507 (по жалобе «нажимаю — не реагирует»): раньше запись «переход →» делалась БЕЗУСЛОВНО,
+    // даже когда ссылки на вкладку нет (после перезагрузки окна она теряется) или когда у неё нет
+    // метода загрузки. Журнал тогда уверял, что переход был, хотя не происходило ничего — и разобрать
+    // жалобу по нему было нельзя. Теперь этот случай виден отдельной строкой уровня «внимание».
+    if (!wv || typeof wv.loadURL !== 'function') {
+      try { window.api?.send?.('app:log', { level: 'WARN', message: `[ozon-widget] нажали "${s.label}", но вкладка Ozon не отвечает (ссылки нет) — переход НЕ выполнен` }) } catch (_) {}
+      return
+    }
     try {
-      const p = wv?.loadURL?.(s.url)
+      const p = wv.loadURL(s.url)
       // Лог в файл-вьюер (не console — его юзер не видит). Видно, что клик принят и куда ведём.
       try { window.api?.send?.('app:log', { level: 'INFO', message: `[ozon-widget] переход → "${s.label}" (${s.url})` }) } catch (_) {}
       // loadURL возвращает Promise. При быстром повторном клике или переадресации Ozon предыдущий
@@ -177,7 +171,7 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
                      v1.2.506: у «Вопросов» в подсказке ещё и «без ответа» — значок показывает, сколько
                      вопросов не открывали (это число даёт сам Ozon), а сколько из них без ответа,
                      считает наш сторож по видимым строкам. Числа разные, и оба нужны в работе. */
-                  title={tipFor(s.key, n, unread)}
+                  title={ozonTipText(s.key, s.label, n, unread)}
                   style={{
                     position: 'relative', width: 46, height: 46, borderRadius: '50%',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
@@ -202,7 +196,7 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
                   />
                   {/* Число новых */}
                   {n > 0 && (
-                    <span style={{ position: 'absolute', top: -4, right: -5, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: '#ef4444', color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #0c0c11' }}>{ozonBadgeText(n)}</span>
+                    <span style={{ position: 'absolute', top: -4, right: -5, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: '#ef4444', color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #0c0c11' }}>{s.key === 'qa' ? ozonQaBadgeText(n, (unread && unread.qaTotal) || 0) : ozonBadgeText(n)}</span>
                   )}
                 </button>
               </div>

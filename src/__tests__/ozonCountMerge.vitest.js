@@ -8,7 +8,7 @@
 //    нельзя было понизить ничем, и значок залипал навсегда;
 //  • оба пути писали число по-своему, поэтому починить в одном месте было нельзя.
 import { describe, it, expect } from 'vitest'
-import { applyOzonExact, applyOzonRowCount, applyOzonSectionCount, clearOzonExact, RV_SRC } from '../../shared/ozonCountMerge.js'
+import { applyOzonExact, applyOzonRowCount, applyOzonSectionCount, applyOzonQaTotal, clearOzonExact, RV_SRC } from '../../shared/ozonCountMerge.js'
 
 describe('Ozon: точное число со вкладки', () => {
   it('[!] точное число побеждает и вверх, и ВНИЗ (иначе значок не погаснет)', () => {
@@ -83,32 +83,38 @@ describe('Ozon: число от ОТКРЫТОЙ вкладки идёт по т
 // v1.2.506: у «Вопросов» тоже появилось точное число со страницы — вкладка «Новое». Но смысл у
 // двух чисел РАЗНЫЙ: «Новое» = сколько не открывали (считает Ozon), а подсчёт строк = сколько без
 // ответа среди видимых (такого счётчика у Ozon нет). Оба нужны: первое на значке, второе в подсказке.
-describe('Ozon: вопросы — два числа рядом', () => {
-  it('[!] точное «Новое» идёт на значок, подсчёт без ответа ложится РЯДОМ, а не поверх', () => {
-    const exact = applyOzonExact({}, 1, 'qa')
-    expect(exact.next).toEqual({ qa: 1, qaSrc: RV_SRC.TAB })
-    const rows = applyOzonSectionCount(exact.next, 'qa', 4)
-    expect(rows.next.qa).toBe(1)        // значок по-прежнему показывает «не открытые»
-    expect(rows.next.qaUnans).toBe(4)   // а «без ответа» сохранено для подсказки
+describe('Ozon: вопросы — на значке «без ответа», рядом второе число', () => {
+  it('[!] значок ведёт «без ответа», а «Новое» со страницы его НЕ перебивает (v1.2.507)', () => {
+    // Жалоба пользователя: «почему стоит 1, если 4 вопроса без ответа?». Раньше на значок шло
+    // точное «Новое» (сколько не открывали) — оно точное, но отвечать надо на неотвеченные.
+    const rows = applyOzonSectionCount({}, 'qa', 4)
+    expect(rows.next.qa).toBe(4)
+    const exact = applyOzonExact(rows.next, 1, 'qa')
+    expect(exact.next.qa).toBe(4)     // значок не тронут
+    expect(exact.next.qaNew).toBe(1)  // «не открыто» лежит рядом, для подсказки
   })
 
-  it('[!] точного числа нет → значок ведёт подсчёт строк, как раньше', () => {
-    const r = applyOzonSectionCount({}, 'qa', 4)
-    expect(r.next.qa).toBe(4)
-    expect(r.next.qaUnans).toBe(4)
+  it('[!] «без ответа» обновляется в обе стороны — ответили, и значок упал', () => {
+    const a = applyOzonSectionCount({ qa: 4, qaUnans: 4 }, 'qa', 1)
+    expect(a.next.qa).toBe(1)
+    const b = applyOzonSectionCount(a.next, 'qa', 0)
+    expect(b.next.qa).toBe(0)
   })
 
-  it('[!] точное число вопросов потерялось → значок снова идёт по подсчёту строк', () => {
-    const lost = clearOzonExact({ qa: 1, qaSrc: RV_SRC.TAB, qaUnans: 4 }, 'qa')
-    expect(lost.next.qaSrc).toBe(RV_SRC.ROWS)
-    const back = applyOzonSectionCount(lost.next, 'qa', 4)
-    expect(back.next.qa).toBe(4)
+  it('[!] сколько вопросов ВСЕГО запоминается — по нему ставится «+»', () => {
+    const r = applyOzonQaTotal({ qa: 4 }, 999)
+    expect(r.next.qaTotal).toBe(999)
+    expect(applyOzonQaTotal(r.next, 999).next).toBeNull() // то же число второй раз не дёргает
+    expect(applyOzonQaTotal({}, null).next).toBeNull()
   })
 
   it('точное число отзывов и вопросов не путаются между собой', () => {
     const a = applyOzonExact({}, 16, 'rv')
     const b = applyOzonExact(a.next, 1, 'qa')
-    expect(b.next).toEqual({ rv: 16, rvSrc: RV_SRC.TAB, qa: 1, qaSrc: RV_SRC.TAB })
+    expect(b.next.rv).toBe(16)
+    expect(b.next.rvSrc).toBe(RV_SRC.TAB)
+    expect(b.next.qaNew).toBe(1)
+    expect(b.next.qa).toBeUndefined() // значок вопросов этим числом НЕ управляется
   })
 
   it('«Сообщения» точного числа не имеют — пишутся напрямую', () => {

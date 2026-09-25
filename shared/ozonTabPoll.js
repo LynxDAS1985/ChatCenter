@@ -20,7 +20,7 @@
 //     находилось». Если вкладка не находилась С САМОГО НАЧАЛА — в журнале не было ни строки, и
 //     отличить «Ozon поменял вид» от «код не запустился» было нечем.
 
-import { OZON_TAB_COUNT_SCRIPT, TAB_COUNT_TIMEOUT_MS, pickOzonTabCount, formatOzonTabs } from './ozonTabCount.js'
+import { OZON_TAB_COUNT_SCRIPT, TAB_COUNT_TIMEOUT_MS, pickOzonTabCount, pickOzonTabTotal, formatOzonTabs } from './ozonTabCount.js'
 import { withTimeout } from './withTimeout.js'
 import { ozonHereAlready } from './ozonSections.js'
 
@@ -54,11 +54,12 @@ export function ozonTabSectionOf(url) {
  * @param {() => boolean} io.isOnline — есть ли интернет (без него спрашивать нечего)
  * @param {(n: number, section: 'rv'|'qa') => void} io.setCount — положить ТОЧНОЕ число в счётчик раздела
  * @param {(section: 'rv'|'qa') => void} io.onLost — точное число больше не читается (разрешить подсчёт строк заново)
+ * @param {(total: number|null, section: 'rv'|'qa') => void} io.onTotal — сколько записей в разделе всего (вкладка «Все»)
  * @param {(level: string, message: string) => void} io.log
  * @returns {{ ask: () => void, start: () => void, stop: () => void, isExact: () => boolean }}
  */
 export function createOzonTabPoll(io) {
-  const { exec, getUrl, isAlive, isOnline, setCount, onLost, log } = io || {}
+  const { exec, getUrl, isAlive, isOnline, setCount, onLost, onTotal, log } = io || {}
   let exact = false      // получено ли точное число со страницы
   let lastSection = 'rv' // раздел, для которого это число было получено (нужен при его потере)
   let miss = 0           // сколько опросов подряд число не нашлось
@@ -116,6 +117,9 @@ export function createOzonTabPoll(io) {
     }
     withTimeout(started, TAB_COUNT_TIMEOUT_MS, () => new Error('опрос вкладок Ozon: страница не ответила'))
       .then((res) => {
+        // v1.2.507: у вопросов заодно запоминаем, сколько их ВСЕГО — по этому числу видно, показывает
+        // ли Ozon весь список или только первую порцию (тогда к «без ответа» на значке ставится «+»).
+        try { onTotal && onTotal(pickOzonTabTotal(res), section) } catch (_) {}
         const got = pickOzonTabCount(res)
         if (!got) { onMiss(formatOzonTabs(res)); return }
         miss = 0

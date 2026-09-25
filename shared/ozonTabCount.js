@@ -164,6 +164,25 @@ export function pickOzonTabCount(res) {
   return { n: n === null ? 0 : n, label: hit.label }
 }
 
+/**
+ * Сколько записей в разделе ВСЕГО — по вкладке «Все».
+ *
+ * v1.2.507. Зачем: значок «Вопросы» показывает, сколько вопросов БЕЗ ОТВЕТА, но сторож видит только
+ * первую порцию списка (Ozon отдаёт по десять, дальше кнопка «Показать ещё»). Чтобы честно сказать
+ * «их как минимум столько», нужно знать, длиннее ли список видимого куска. Это и говорит «Все».
+ * Ozon при большом количестве пишет заглушку «999+» — она разбирается как 999, и этого достаточно.
+ *
+ * @returns {number|null} null = вкладки «Все» нет или полоса вкладок не найдена
+ */
+export function pickOzonTabTotal(res) {
+  if (!res || res.strip !== true) return null
+  const tabs = Array.isArray(res.tabs) ? res.tabs : null
+  if (!tabs || !tabs.length) return null
+  const hit = tabs.find(t => t && typeof t.label === 'string' && t.label.toLowerCase() === 'все')
+  if (!hit) return null
+  return parseCount(hit.raw)
+}
+
 /** Короткая строка для журнала: что именно прочитали со страницы. */
 export function formatOzonTabs(res) {
   if (!res || typeof res !== 'object') return 'страница ничего не вернула'

@@ -21,7 +21,7 @@ import { shouldSkipOzonNotif } from '../../shared/ozonNotifDedup.js'
 import { createOzonBgFailWatch, isOzonAliveProof } from '../../shared/ozonBgFailWatch.js'
 // v1.2.504→505: ТОЧНОЕ число новых отзывов — со вкладки самой страницы, а не из подсчёта строк.
 import { createOzonTabPoll } from '../../shared/ozonTabPoll.js'
-import { applyOzonRowCount, applyOzonExact, clearOzonExact, applyOzonSectionCount } from '../../shared/ozonCountMerge.js'
+import { applyOzonRowCount, applyOzonExact, clearOzonExact, applyOzonSectionCount, applyOzonQaTotal } from '../../shared/ozonCountMerge.js'
 
 /** Впрыск сторожа страницы. Ozon блокирует preload-скрипты, поэтому только через executeJavaScript. */
 function _injectHook(el, log) {
@@ -124,6 +124,13 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         const r = applyOzonExact(prev[ozonId], n, section)
         return r.next ? { ...prev, [ozonId]: r.next } : prev
       }),
+      onTotal: (total, section) => { // v1.2.507: сколько вопросов всего — чтобы честно ставить «+»
+        if (section !== 'qa') return
+        setOzonCounts && setOzonCounts(prev => {
+          const r = applyOzonQaTotal(prev[ozonId], total)
+          return r.next ? { ...prev, [ozonId]: r.next } : prev
+        })
+      },
       onLost: (section) => setOzonCounts && setOzonCounts(prev => {
         const r = clearOzonExact(prev[ozonId], section)
         return r.next ? { ...prev, [ozonId]: r.next } : prev

@@ -54,6 +54,12 @@ export function applyOzonExact(cur, n, section = 'rv') {
   const c = cur || {}
   const v = toCount(n)
   if (v === null) return { next: null, changed: false }
+  // v1.2.507: у ВОПРОСОВ точное число со вкладки («Новое» — сколько не открывали) на значок больше
+  // не идёт. Значок показывает «без ответа», а это число хранится рядом и видно в подсказке.
+  if (section === 'qa') {
+    if (c.qaNew === v) return { next: null, changed: false }
+    return { next: { ...c, qaNew: v }, changed: false }
+  }
   const src = srcKeyOf(section)
   if (c[section] === v && c[src] === RV_SRC.TAB) return { next: null, changed: false }
   return { next: { ...c, [section]: v, [src]: RV_SRC.TAB }, changed: c[section] !== v }
@@ -107,11 +113,10 @@ export function applyOzonQaCount(cur, n) {
   const c = cur || {}
   const v = toCount(n)
   if (v === null) return { next: null, changed: false, reason: 'ignored' }
-  const exact = c.qaSrc === RV_SRC.TAB
-  const next = { ...c, qaUnans: v }
-  if (!exact) next.qa = v
-  if (c.qaUnans === v && (exact || c.qa === v)) return { next: null, changed: false, reason: 'kept' }
-  return { next, changed: !exact && c.qa !== v, reason: exact ? 'ignored' : 'first' }
+  // v1.2.507: на значке «Вопросы» теперь именно ЭТО число — сколько без ответа. Число со вкладки
+  // «Новое» (сколько не открывали) точное, но в работе бесполезно: отвечать надо на неотвеченные.
+  if (c.qa === v && c.qaUnans === v) return { next: null, changed: false, reason: 'kept' }
+  return { next: { ...c, qa: v, qaUnans: v }, changed: c.qa !== v, reason: 'first' }
 }
 
 /**
@@ -128,4 +133,12 @@ export function applyOzonSectionCount(cur, section, n) {
   const c = cur || {}
   if (c[section] === n) return { next: null, changed: false, reason: 'kept' }
   return { next: { ...c, [section]: n }, changed: true, reason: 'first' }
+}
+
+/** Сколько вопросов в разделе ВСЕГО (вкладка «Все»). Нужно, чтобы понять, видим ли мы список целиком. */
+export function applyOzonQaTotal(cur, total) {
+  const c = cur || {}
+  const v = toCount(total)
+  if (v === null || c.qaTotal === v) return { next: null, changed: false }
+  return { next: { ...c, qaTotal: v }, changed: false }
 }

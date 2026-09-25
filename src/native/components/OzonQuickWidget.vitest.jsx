@@ -7,7 +7,7 @@
 // с 3 разделами (не остаётся невидимым); (2) на первом запуске он НЕ тусклый; (3) при сохранённой позиции и
 // отсутствии новых — тусклый, как и раньше (поведение существующих пользователей не сломали).
 
-import { describe, it, expect, afterEach, beforeEach } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import OzonQuickWidget from './OzonQuickWidget.jsx'
 
@@ -96,5 +96,39 @@ describe('OzonQuickWidget — предел числа на значке: 50, д�
     const { container } = renderWidget({ msg: 77, qa: 12, rv: 0 })
     expect(container.textContent).toContain('50+')  // Сообщения
     expect(container.textContent).toContain('12')   // Вопросы — точное число
+  })
+})
+
+// v1.2.507: жалоба «нажимаю — не реагирует». Раньше запись «переход →» делалась безусловно, даже
+// когда ссылки на вкладку нет, — журнал уверял, что переход был. Теперь такой случай виден отдельно.
+describe('OzonQuickWidget — нажатие на значок честно отчитывается (v1.2.507)', () => {
+  it('[!] вкладки нет → пишем ПРЕДУПРЕЖДЕНИЕ, а не «переход выполнен»', () => {
+    const sent = []
+    const prevApi = window.api
+    window.api = { send: (ch, p) => sent.push(p) }
+    try {
+      const { container } = render(
+        <OzonQuickWidget messengerId="ozon" webviewRefs={{ current: {} }} unread={{ msg: 0, qa: 0, rv: 0 }} loading={false} />
+      )
+      container.querySelectorAll('button')[0].click()
+      const warns = sent.filter(p => p && p.level === 'WARN' && /не отвечает/.test(p.message || ''))
+      expect(warns.length).toBe(1)
+      expect(sent.some(p => /переход →/.test((p && p.message) || ''))).toBe(false)
+    } finally { window.api = prevApi }
+  })
+
+  it('[!] вкладка есть → грузим адрес и пишем «переход»', () => {
+    const sent = []
+    const loadURL = vi.fn(() => Promise.resolve())
+    const prevApi = window.api
+    window.api = { send: (ch, p) => sent.push(p) }
+    try {
+      const { container } = render(
+        <OzonQuickWidget messengerId="ozon" webviewRefs={{ current: { ozon: { loadURL } } }} unread={{ msg: 0, qa: 0, rv: 0 }} loading={false} />
+      )
+      container.querySelectorAll('button')[0].click()
+      expect(loadURL).toHaveBeenCalledTimes(1)
+      expect(sent.some(p => /переход →/.test((p && p.message) || ''))).toBe(true)
+    } finally { window.api = prevApi }
   })
 })
