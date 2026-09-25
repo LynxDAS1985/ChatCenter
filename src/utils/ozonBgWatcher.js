@@ -23,6 +23,30 @@ import { parseConsoleMessage } from '../../shared/consoleMessageParser.js'
  */
 import { shouldSkipOzonNotif } from '../../shared/ozonNotifDedup.js'
 import { createOzonBgFailWatch, isOzonAliveProof } from '../../shared/ozonBgFailWatch.js'
+// v1.2.502 ВРЕМЕННАЯ РАЗВЕДКА (удалить после диагноза): почему фоновая страница «Отзывы» видит
+// только первую порцию строк. Подробности и три проверяемые версии — в shared/ozonRecon.js.
+import { OZON_RECON_SCRIPT, RECON_TIMEOUT_MS, formatOzonRecon } from '../../shared/ozonRecon.js'
+import { withTimeout } from '../../shared/withTimeout.js' // общий «жди не дольше» (пятую копию не заводим)
+
+/**
+ * v1.2.502 ВРЕМЕННО. Один раз за запуск программы спросить у страницы, дорисовывает ли Ozon список
+ * при прокрутке. Ответ пишется в журнал строками `[ozon-recon] …`. УДАЛИТЬ вместе с shared/ozonRecon.js
+ * после того, как причина будет названа.
+ * Пауза перед стартом — та же, что у сторожа (2,5 с): раньше таблицы на странице ещё нет.
+ */
+function _reconOnce(el, log) {
+  try {
+    if (!el || el.__ccOzonReconDone || typeof el.executeJavaScript !== 'function') return
+    el.__ccOzonReconDone = true
+    setTimeout(() => {
+      if (!el.isConnected) return // страницу уже закрыли — разведывать нечего
+      withTimeout(Promise.resolve(el.executeJavaScript(OZON_RECON_SCRIPT)), RECON_TIMEOUT_MS,
+        () => new Error('разведка Ozon: страница не ответила'))
+        .then((res) => { formatOzonRecon(res).forEach(line => { try { log && log('INFO', line) } catch (_) {} }) })
+        .catch((e) => { try { log && log('WARN', '[ozon-recon] не удалась: ' + ((e && e.message) || e)) } catch (_) {} })
+    }, 3000)
+  } catch (_) {}
+}
 
 export function bindOzonBgWatcher(el, ozonId, deps) {
   try {
@@ -46,7 +70,7 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
     // v1.2.361 ДИАГНОСТИКА (Шаг 3А молчит — 0 строк [ozon-bg]): лесенка записей, чтобы увидеть, на каком
     // шаге рвётся. Убрать после того, как фоновая страница подтвердится рабочей. Текст вопросов НЕ пишем.
     log && log('INFO', '[ozon-bg] страница создана, слушатель привязан')
-    el.addEventListener('did-finish-load', () => { try { log && log('INFO', '[ozon-bg] страница загрузилась URL=' + (el.getURL ? el.getURL() : '?')); _failWatch.onLoaded() } catch (_) {} })
+    el.addEventListener('did-finish-load', () => { try { log && log('INFO', '[ozon-bg] страница загрузилась URL=' + (el.getURL ? el.getURL() : '?')); _failWatch.onLoaded(); _reconOnce(el, log) } catch (_) {} })
     // Загрузка не удалась. САМ СБОЙ пишем в журнал всегда — по этим строкам и было доказано, что
     // карточки приходили зря. А тревожить ли человека, решает сторож «подожди и посмотри»:
     // сначала он даёт странице время подняться и один раз пробует загрузить её заново.
