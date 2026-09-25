@@ -73,7 +73,7 @@ const AISidebar = lazy(() => import('./components/AISidebar.jsx'))
 // v1.1.9: NATIVE_CC_ID/TAB + AISidebarFallback + NativeAppFallback вынесены
 // в appFallbacks.jsx (App.jsx был на пределе exception 940).
 import { NATIVE_CC_ID, NATIVE_CC_TAB, AISidebarFallback, NativeAppFallback } from './appFallbacks.jsx'
-import { OZON_BG_URLS } from '../shared/ozonSections.js' // v1.2.501: адреса фоновых страниц — из одного места
+import { OZON_BG_URLS, ozonWidgetCounts } from '../shared/ozonSections.js' // v1.2.501: адреса фоновых страниц — из одного места
 
 // Навигация → src/utils/navigateToChat.js | Звук → src/utils/sound.js | Вкладка → components/MessengerTab.jsx
 // ─── Главный компонент ────────────────────────────────────────────────────
@@ -852,7 +852,7 @@ export default function App() {
                   <OzonQuickWidget messengerId={m.id} webviewRefs={webviewRefs}
                     /* Только per-раздел от сторожа. unreadCounts НЕ используем как запас — там СУММА msg+qa
                        (для значка рейла), иначе кнопка «Сообщения» показала бы число вопросов (v1.2.357). */
-                    unread={{ msg: (ozonCounts[m.id] && ozonCounts[m.id].msg) || 0, qa: (ozonCounts[m.id] && ozonCounts[m.id].qa) || 0, rv: (ozonCounts[m.id] && ozonCounts[m.id].rv) || 0, qaUnans: (ozonCounts[m.id] && ozonCounts[m.id].qaUnans) || 0, qaNew: (ozonCounts[m.id] && ozonCounts[m.id].qaNew) || 0, qaTotal: (ozonCounts[m.id] && ozonCounts[m.id].qaTotal) || 0 }}
+                    unread={ozonWidgetCounts(ozonCounts[m.id])}
                     loading={!!(webviewLoading && webviewLoading[m.id])} />
                 )}
                 {/* v1.2.358→368 (Шаг 3): ДВЕ СКРЫТЫЕ фоновые страницы Ozon на той же сессии — «Вопросы» и

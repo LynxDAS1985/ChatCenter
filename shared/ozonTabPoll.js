@@ -77,13 +77,7 @@ export function createOzonTabPoll(io) {
   const onMiss = (why) => {
     miss++
     if (miss < TAB_MISS_LIMIT) return
-    if (exact) {
-      exact = false
-      try { onLost && onLost(lastSection) } catch (_) {}
-      say('lost', 'WARN', '[ozon-tab] число со вкладки пропало (' + why + ') → снова считаем строки')
-      told = true
-      return
-    }
+    if (exact) { forget(why); told = true; return }
     // Ревью v1.2.505: раньше этот случай молчал. Самый вероятный сценарий — Ozon поменял вид
     // страницы, и вкладка не находится С САМОГО НАЧАЛА: в журнале не было ни строки, и отличить
     // это от «код не запустился» было нечем.
@@ -94,7 +88,10 @@ export function createOzonTabPoll(io) {
   }
 
   const ask = () => {
-    if (!isAlive || !isAlive()) { stop(); return }
+    // Ревью v1.2.508: раньше при исчезновении страницы опрос просто останавливался, а признак «есть
+    // точное число» оставался поднятым — и подсчёт строк был заблокирован до перезапуска программы
+    // (значок замирал на старом числе). Теперь отпускаем счёт обратно.
+    if (!isAlive || !isAlive()) { forget('страница исчезла'); stop(); return }
     if (typeof exec !== 'function') return
     if (isOnline && !isOnline()) return
     // Ревью v1.2.505: проверяем адрес ДО запроса. Раньше тяжёлый обход страницы выполнялся и на
@@ -137,6 +134,14 @@ export function createOzonTabPoll(io) {
   }
 
   function stop() { if (timer) { clearInterval(timer); timer = null } }
+
+  /** Отпустить счёт обратно подсчёту строк: точного числа у нас больше нет. */
+  function forget(why) {
+    if (!exact) return
+    exact = false
+    try { onLost && onLost(lastSection) } catch (_) {}
+    say('forget', 'WARN', '[ozon-tab] точное число со страницы больше не читается (' + why + ') → счёт идёт по строкам')
+  }
 
   return {
     ask,

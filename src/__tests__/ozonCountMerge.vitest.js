@@ -95,7 +95,7 @@ describe('Ozon: вопросы — на значке «без ответа», р
   })
 
   it('[!] «без ответа» обновляется в обе стороны — ответили, и значок упал', () => {
-    const a = applyOzonSectionCount({ qa: 4, qaUnans: 4 }, 'qa', 1)
+    const a = applyOzonSectionCount({ qa: 4 }, 'qa', 1)
     expect(a.next.qa).toBe(1)
     const b = applyOzonSectionCount(a.next, 'qa', 0)
     expect(b.next.qa).toBe(0)
@@ -119,5 +119,41 @@ describe('Ozon: вопросы — на значке «без ответа», р
 
   it('«Сообщения» точного числа не имеют — пишутся напрямую', () => {
     expect(applyOzonSectionCount({ msg: 1 }, 'msg', 0).next.msg).toBe(0)
+  })
+})
+
+// v1.2.508 (по ревью): открытая вкладка главнее невидимой, «всего» забывается, мусор не проходит.
+describe('Ozon: открытая вкладка главнее фоновой (v1.2.508)', () => {
+  it('[!] ОТЗЫВЫ: человек прочитал в открытой вкладке → значок ПАДАЕТ (регресс фикса v1.2.388)', () => {
+    // Раньше правило «только вверх» применялось и к открытой вкладке — значок не гас никогда.
+    const cur = { rv: 13, rvSrc: RV_SRC.ROWS }
+    const r = applyOzonSectionCount(cur, 'rv', 2, true)
+    expect(r.next.rv).toBe(2)
+    expect(r.reason).toBe('front')
+  })
+
+  it('[!] ОТЗЫВЫ: фоновая страница по-прежнему НЕ понижает (ADR-038 цел)', () => {
+    expect(applyOzonSectionCount({ rv: 13, rvSrc: RV_SRC.ROWS }, 'rv', 2, false).next).toBeNull()
+  })
+
+  it('[!] ВОПРОСЫ: открытая вкладка ставит своё число, фон его не перебивает вниз', () => {
+    // Человек нажал «Показать ещё» и видит 9 без ответа; фон через пять секунд шлёт свои 4.
+    const front = applyOzonSectionCount({}, 'qa', 9, true)
+    expect(front.next.qa).toBe(9)
+    expect(applyOzonSectionCount(front.next, 'qa', 4, false).next).toBeNull()
+    // а вот рост фон передать обязан — новые вопросы не должны потеряться
+    expect(applyOzonSectionCount(front.next, 'qa', 12, false).next.qa).toBe(12)
+  })
+
+  it('[!] «всего» ЗАБЫВАЕТСЯ, когда Ozon перестал его печатать', () => {
+    // Иначе устаревшее 999 жило вечно и значок показывал «+» при уже коротком списке.
+    const r = applyOzonQaTotal({ qa: 4, qaTotal: 999 }, null)
+    expect(r.next.qaTotal).toBeUndefined()
+  })
+
+  it('[!] «Сообщения» тоже проверяются строго — мусор в состояние не попадает', () => {
+    expect(applyOzonSectionCount({ msg: 3 }, 'msg', NaN).next).toBeNull()
+    expect(applyOzonSectionCount({ msg: 3 }, 'msg', '5').next).toBeNull()
+    expect(applyOzonSectionCount({ msg: 3 }, 'msg', 5).next.msg).toBe(5)
   })
 })

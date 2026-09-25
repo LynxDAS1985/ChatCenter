@@ -20,7 +20,7 @@ import { parseConsoleMessage } from '../../shared/consoleMessageParser.js'
 import { shouldSkipOzonNotif } from '../../shared/ozonNotifDedup.js'
 import { createOzonBgFailWatch, isOzonAliveProof } from '../../shared/ozonBgFailWatch.js'
 // v1.2.504→505: ТОЧНОЕ число новых отзывов — со вкладки самой страницы, а не из подсчёта строк.
-import { createOzonTabPoll } from '../../shared/ozonTabPoll.js'
+import { createOzonTabPoll, ozonTabSectionOf } from '../../shared/ozonTabPoll.js'
 import { applyOzonRowCount, applyOzonExact, clearOzonExact, applyOzonSectionCount, applyOzonQaTotal } from '../../shared/ozonCountMerge.js'
 
 /** Впрыск сторожа страницы. Ozon блокирует preload-скрипты, поэтому только через executeJavaScript. */
@@ -77,17 +77,18 @@ function _routeCount(parsed, ozonId, setOzonCounts, log, seenLog) {
   // Отзывы: подсчёт строк ВСЕГДА занижен (Ozon отдаёт список порциями, фоновую страницу никто не
   // листает). Что с ним делать — решает общее правило: при точном числе со вкладки игнорируем, после
   // его потери принимаем как есть (иначе значок не сможет упасть), иначе «только вверх» (ADR-038).
-  let why = ''
+  // 🔴 Ревью v1.2.508: раньше причина бралась ВНУТРИ функции-обновителя состояния и читалась сразу
+  // после вызова. React выполняет обновитель не в тот же миг, поэтому в журнал уходила причина от
+  // ПРЕДЫДУЩЕГО события (а на первом — пустая). Считаем заранее: правило чистое, его можно спросить
+  // до записи, и тогда журнал говорит правду.
+  let why = 'приняли'
   setOzonCounts && setOzonCounts(prev => {
     const r = applyOzonRowCount(prev[ozonId], parsed.n)
     why = r.reason
     return r.next ? { ...prev, [ozonId]: r.next } : prev
   })
-  const line = '[ozon-bg] подсчёт строк дал rv=' + parsed.n + ' — ' + (
-    why === 'ignored' ? 'не берём, есть точное число со вкладки'
-      : why === 'rebase' ? 'приняли как есть (точное число потерялось)'
-        : why === 'kept' ? 'не выше текущего, не трогаем'
-          : 'приняли')
+  const names = { ignored: 'не берём, есть точное число со вкладки', rebase: 'приняли как есть (точное число потерялось)', kept: 'не выше текущего, не трогаем', front: 'приняли (от открытой вкладки)', up: 'подняли', first: 'приняли' }
+  const line = '[ozon-bg] подсчёт строк дал rv=' + parsed.n + ' — ' + (names[why] || 'приняли')
   if (seenLog.rvRows !== line) { seenLog.rvRows = line; log && log('INFO', line) }
 }
 
@@ -142,8 +143,12 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
       try {
         log && log('INFO', '[ozon-bg] страница загрузилась URL=' + (el.getURL ? el.getURL() : '?'))
         _failWatch.onLoaded()
-        setTimeout(_tabs.ask, 4000) // страница только что загрузилась — вкладки появляются не мгновенно
-        _tabs.start()               // дальше переспрашиваем сами; опрос гаснет, когда страницу убрали
+        // v1.2.508: опрос заводим ТОЛЬКО там, где вкладки со счётчиками бывают — иначе страница
+        // переписки писала в журнал ложную тревогу «счёт занижен» (ревью).
+        if (ozonTabSectionOf(el.getURL ? el.getURL() : '')) {
+          setTimeout(_tabs.ask, 4000) // страница только что загрузилась — вкладки появляются не мгновенно
+          _tabs.start()               // дальше переспрашиваем сами; опрос гаснет, когда страницу убрали
+        }
       } catch (_) {}
     })
     // Загрузка не удалась. САМ СБОЙ пишем в журнал всегда. А тревожить ли человека, решает сторож
@@ -193,6 +198,7 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
         }
       } catch (_) {}
     })
+    // v1.2.508: остановку опроса передаём всегда — раньше у страницы без таймера она не подключалась.
     _startReloadTimer(el, log, Number(periodicReloadMs) || 0, _tabs.stop)
   } catch (_) {}
 }

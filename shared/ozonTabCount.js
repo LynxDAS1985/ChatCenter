@@ -47,9 +47,11 @@ const SCAN_LIMIT = 12000
 
 /**
  * Скрипт, читающий полосу вкладок ВНУТРИ страницы Ozon.
- * Возвращает `{ path, strip, tabs: [{ label, raw }], truncated }`, где
- *   strip — найдена ли сама полоса вкладок (без неё числу верить нельзя),
- *   raw   — текст числа у вкладки («13», «999+») либо null, если счётчика нет.
+ * Возвращает `{ path, strip, tabs: [{ label, raw, digits }], truncated }`, где
+ *   strip  — найдена ли сама полоса вкладок (без неё числу верить нельзя),
+ *   raw    — текст числа у вкладки («13», «999+») либо null, если счётчика нет,
+ *   digits — были ли в ячейке цифры вообще. Нужен, чтобы отличить «счётчика нет» (честный ноль)
+ *            от «счётчик есть, но записан не так, как мы ждём» (тогда верить нельзя).
  *
  * Как ищет:
  *  1) кандидаты — элементы, чей СОБСТВЕННЫЙ текст (без текста вложенных) равен подписи вкладки.
@@ -98,8 +100,15 @@ export const OZON_TAB_COUNT_SCRIPT = `(function () {
       var p = cand[c].el.parentElement;
       for (var up = 0; up < 8 && p; up++) {
         if (uniqInside(p) >= 2) {
-          var len = txt(p).length;
-          if (len < stripLen) { stripLen = len; strip = p; }
+          // 🔴 Ревью v1.2.508: одной короткости мало. Компактный блок, где рядом стоят фильтр «Все»
+          // и строка ТАБЛИЦЫ с бейджем «Новый», проходил как полоса вкладок — и на значок уходило
+          // чужое число (воспроизведено). Полоса вкладок таблицы внутри себя не содержит никогда.
+          var hasTable = false;
+          try { hasTable = !!p.querySelector('table, tr, tbody, thead'); } catch (_) {}
+          if (!hasTable) {
+            var len = txt(p).length;
+            if (len < stripLen) { stripLen = len; strip = p; }
+          }
           break;
         }
         p = p.parentElement;
@@ -117,7 +126,19 @@ export const OZON_TAB_COUNT_SCRIPT = `(function () {
       var cell = it.el, q = it.el.parentElement, depth = 0;
       while (q && q !== strip && depth < 8 && uniqInside(q) === 1) { cell = q; q = q.parentElement; depth++; }
       var t = txt(cell), raw = null;
-      if (t.length <= 40) {
+      // 🔴 Ревью v1.2.508: отдельно сообщаем, БЫЛИ ЛИ в ячейке цифры. Без этого «счётчика нет»
+      // (честный ноль) и «счётчик есть, но записан иначе» выглядели одинаково, и второй случай
+      // тихо выдавался за ноль: значок гас при живых новых отзывах и блокировал запасной счёт.
+      var digits = /\\d/.test(t.replace(it.label, ''));
+      // Плоская полоса: подпись и её счётчик стоят СОСЕДЯМИ прямо в полосе, подняться выше нельзя —
+      // там уже другие вкладки. Тогда смотрим на следующего соседа: если в нём ровно число, это и есть
+      // счётчик. Сосед с текстом (например, «Просмотренные») не подойдёт. Найдено ревью v1.2.508.
+      if (cell === it.el) {
+        var sib = it.el.nextElementSibling;
+        var st = sib ? txt(sib) : '';
+        if (st && /^\\d[\\d\\s]*\\+?$/.test(st)) { raw = st.replace(/\\s+/g, ''); digits = true; }
+      }
+      if (raw === null && t.length <= 40) {
         var m = t.match(/^(.+?)\\s*(\\d[\\d\\s]*\\+?)$/);
         if (m && norm(m[1]).toLowerCase() === it.key) raw = m[2].replace(/\\s+/g, '');
         if (raw === null) {
@@ -125,7 +146,7 @@ export const OZON_TAB_COUNT_SCRIPT = `(function () {
           if (m2 && norm(m2[2]).toLowerCase() === it.key) raw = m2[1].replace(/\\s+/g, '');
         }
       }
-      out.tabs.push({ label: it.label, raw: raw });
+      out.tabs.push({ label: it.label, raw: raw, digits: digits });
     }
   } catch (e) { out.error = (e && e.message) || String(e); }
   return out;
@@ -161,7 +182,13 @@ export function pickOzonTabCount(res) {
   const hit = tabs.find(t => t && typeof t.label === 'string' && NEW_LABELS.indexOf(t.label.toLowerCase()) >= 0)
   if (!hit) return null
   const n = parseCount(hit.raw)
-  return { n: n === null ? 0 : n, label: hit.label }
+  if (n !== null) return { n, label: hit.label }
+  // 🔴 ГЛАВНАЯ ЛОВУШКА, найденная ревью v1.2.508 и воспроизведённая на трёх вёрстках: если в ячейке
+  // ЦИФРЫ ЕСТЬ, а разобрать их не вышло (другой разделитель, «(13)», лишнее слово), то это НЕ ноль,
+  // а «мы не поняли». Прежняя версия отдавала ноль — значок гас при живых новых отзывах И блокировал
+  // запасной подсчёт строк навсегда, причём молча: опрос считался успешным.
+  if (hit.digits === true) return null
+  return { n: 0, label: hit.label }
 }
 
 /**

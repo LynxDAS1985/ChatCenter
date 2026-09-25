@@ -6,7 +6,7 @@
 // переход открывал не тот список. Тест ловит возврат такого расхождения.
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
-import { OZON_SECTION_URL, OZON_SECTION_PATH, OZON_BG_URLS, OZON_BADGE_MAX, OZON_QA_PAGE, ozonBadgeText, ozonQaBadgeText } from '../../shared/ozonSections.js'
+import { OZON_SECTION_URL, OZON_SECTION_PATH, OZON_BG_URLS, OZON_BADGE_MAX, OZON_QA_PAGE, ozonBadgeText, ozonQaPartial, ozonTipText, ozonWidgetCounts } from '../../shared/ozonSections.js'
 
 describe('Ozon: адреса разделов — один источник', () => {
   it('[!] в коде экранов не осталось вписанных руками адресов кабинета', () => {
@@ -41,27 +41,6 @@ describe('Ozon: адреса разделов — один источник', ()
   })
 })
 
-// v1.2.503: предел числа на значке виджета Ozon — 50, дальше «50+» (просьба пользователя 2026-09-25).
-describe('Ozon: что писать на значке', () => {
-  it('[!] граница ровно 50 — точное число, 51 — уже «50+»', () => {
-    expect(OZON_BADGE_MAX).toBe(50)
-    expect(ozonBadgeText(49)).toBe('49')
-    expect(ozonBadgeText(50)).toBe('50')
-    expect(ozonBadgeText(51)).toBe('50+')
-    expect(ozonBadgeText(1200)).toBe('50+')
-  })
-
-  it('мусор вместо числа не рисует «NaN» на значке', () => {
-    for (const bad of [undefined, null, NaN, 'пять', {}, -7, Infinity]) {
-      expect(ozonBadgeText(bad), String(bad)).toBe('0')
-    }
-  })
-
-  it('дробное число округляется вниз (значок не показывает «3.7»)', () => {
-    expect(ozonBadgeText(3.7)).toBe('3')
-  })
-})
-
 describe('Ozon: «жди не дольше» — одна общая реализация', () => {
   it('[!] быстрая проба использует общий помощник, пятой копии нет', () => {
     const probe = fs.readFileSync('shared/webviewHealthProbe.js', 'utf8')
@@ -75,29 +54,66 @@ describe('Ozon: «жди не дольше» — одна общая реали�
   })
 })
 
-// v1.2.507: значок «Вопросы» показывает, сколько вопросов БЕЗ ОТВЕТА (жалоба пользователя: «почему
-// стоит 1, если 4 вопроса без ответа?»). Считается по видимым строкам, поэтому при длинном списке
-// к числу добавляется «+» — «минимум четыре, возможно больше».
-describe('Ozon: значок «Вопросы» — без ответа, с честным плюсом', () => {
-  it('[!] реальный случай пользователя: 4 без ответа, всего 999+ → «4+», а не «4» и не «1»', () => {
-    expect(ozonQaBadgeText(4, 999)).toBe('4+')
+// v1.2.508, по прямому указанию пользователя: «если вопросов или отзывов больше 30, писать вместо
+// 31 или 32 — 30+». Прежнее правило (плюс, когда список виден не весь) давало «3+» при трёх
+// вопросах — человек читал это как «их больше трёх», что неверно.
+describe('Ozon: предел числа на значке — 30, дальше «30+»', () => {
+  it('[!] граница: 30 — точное число, 31 — уже «30+»', () => {
+    expect(OZON_BADGE_MAX).toBe(30)
+    expect(ozonBadgeText(29)).toBe('29')
+    expect(ozonBadgeText(30)).toBe('30')
+    expect(ozonBadgeText(31)).toBe('30+')
+    expect(ozonBadgeText(999)).toBe('30+')
   })
 
-  it('[!] список помещается целиком (вопросов меньше порции) → плюса нет', () => {
-    expect(ozonQaBadgeText(4, 7)).toBe('4')
-    expect(ozonQaBadgeText(2, OZON_QA_PAGE)).toBe('2')
+  it('[!] три вопроса показываются как «3», а НЕ «3+»', () => {
+    expect(ozonBadgeText(3)).toBe('3')
   })
 
-  it('[!] сколько всего — неизвестно → плюс СТАВИМ (мы заведомо видим не весь список)', () => {
-    expect(ozonQaBadgeText(4, 0)).toBe('4+')
-    expect(ozonQaBadgeText(4, null)).toBe('4+')
+  it('мусор вместо числа не рисует «NaN»', () => {
+    for (const bad of [undefined, null, NaN, 'пять', {}, -7, Infinity]) {
+      expect(ozonBadgeText(bad), String(bad)).toBe('0')
+    }
+  })
+})
+
+// v1.2.508 (по ревью): значок и подсказка говорят ОДНО И ТО ЖЕ; значок вопросов не пропадает.
+describe('Ozon: неполнота списка объясняется СЛОВАМИ в подсказке (v1.2.508)', () => {
+  it('[!] список виден не весь → подсказка честно об этом говорит', () => {
+    expect(ozonQaPartial(999)).toBe(true)
+    expect(ozonTipText('qa', 'Вопросы', 4, { qaTotal: 999 })).toMatch(/среди первых|не весь список/)
   })
 
-  it('больше полусотни без ответа → «50+», как у остальных значков', () => {
-    expect(ozonQaBadgeText(80, 999)).toBe('50+')
+  it('[!] список виден целиком → никакой оговорки, и на значке просто «3»', () => {
+    expect(ozonQaPartial(3)).toBe(false)
+    expect(ozonTipText('qa', 'Вопросы', 3, { qaTotal: 3 })).toBe('Вопросы · 3 без ответа')
+    expect(ozonBadgeText(3)).toBe('3')
   })
 
-  it('без ответа ноль или мусор → «0», значок не рисуется', () => {
-    for (const bad of [0, -1, null, undefined, NaN, 'три']) expect(ozonQaBadgeText(bad, 999), String(bad)).toBe('0')
+  it('сколько всего неизвестно → считаем список неполным и говорим это словами', () => {
+    expect(ozonQaPartial(0)).toBe(true)
+    expect(ozonTipText('qa', 'Вопросы', 4, { qaTotal: 0 })).toContain('не весь список')
+  })
+
+  it('заглушку «999+» в подсказке не выдаём за точное число', () => {
+    expect(ozonTipText('qa', 'Вопросы', 4, { qaTotal: 999 })).toContain('с лишним')
+  })
+})
+
+describe('Ozon: значок «Вопросы» не пропадает (v1.2.508)', () => {
+  it('[!] сторож молчит (нет столбца «Ответы») → показываем «Новое» со вкладки, а не пустоту', () => {
+    expect(ozonWidgetCounts({ qaNew: 1, qaTotal: 999 }).qa).toBe(1)
+  })
+
+  it('[!] честный ноль сохраняется: «без ответа» пришло и равно нулю', () => {
+    expect(ozonWidgetCounts({ qa: 0, qaNew: 1 }).qa).toBe(0)
+  })
+
+  it('обычный случай: показываем «без ответа»', () => {
+    expect(ozonWidgetCounts({ qa: 4, qaNew: 1 }).qa).toBe(4)
+  })
+
+  it('пустое состояние не падает', () => {
+    expect(ozonWidgetCounts(null)).toEqual({ msg: 0, qa: 0, rv: 0, qaNew: 0, qaTotal: 0 })
   })
 })

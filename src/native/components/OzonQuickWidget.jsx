@@ -6,7 +6,7 @@
 // localStorage относительна контейнера. Цвета заданы ЯВНО (виджет вне .native-mode). Пульс/точка —
 // tailwind-классы animate-ping/animate-pulse (уже используются в проекте, RailWebIcon/App).
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
-import { OZON_SECTION_URL, OZON_SECTION_PATH, ozonBadgeText, ozonQaBadgeText, ozonTipText } from '../../../shared/ozonSections.js' // v1.2.501: адреса разделов — из одного места
+import { OZON_SECTION_URL, OZON_SECTION_PATH, ozonBadgeText, ozonTipText } from '../../../shared/ozonSections.js' // v1.2.501: адреса разделов — из одного места
 
 const LS_KEY = 'ccOzonWidgetPos3'
 const SIZE = { w: 74, h: 150 } // вертикальный док — узкий и высокий (для клампа по контейнеру)
@@ -95,7 +95,6 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
   }, [dragging, clampP])
 
   const openSection = useCallback((s) => {
-    setActive(s.key)
     const wv = webviewRefs?.current?.[messengerId]
     // v1.2.507 (по жалобе «нажимаю — не реагирует»): раньше запись «переход →» делалась БЕЗУСЛОВНО,
     // даже когда ссылки на вкладку нет (после перезагрузки окна она теряется) или когда у неё нет
@@ -105,6 +104,9 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
       try { window.api?.send?.('app:log', { level: 'WARN', message: `[ozon-widget] нажали "${s.label}", но вкладка Ozon не отвечает (ссылки нет) — переход НЕ выполнен` }) } catch (_) {}
       return
     }
+    // Ревью v1.2.508: подсветку «этот раздел открыт» ставим ПОСЛЕ проверки. Раньше значок
+    // загорался даже тогда, когда переход не состоялся и в журнал уходило предупреждение.
+    setActive(s.key)
     try {
       const p = wv.loadURL(s.url)
       // Лог в файл-вьюер (не console — его юзер не видит). Видно, что клик принят и куда ведём.
@@ -168,9 +170,9 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
                 <button
                   onClick={() => openSection(s)}
                   /* v1.2.505: на значке — короткое «50+», а в подсказке ТОЧНОЕ число.
-                     v1.2.506: у «Вопросов» в подсказке ещё и «без ответа» — значок показывает, сколько
-                     вопросов не открывали (это число даёт сам Ozon), а сколько из них без ответа,
-                     считает наш сторож по видимым строкам. Числа разные, и оба нужны в работе. */
+                     v1.2.507: значок «Вопросов» показывает, на сколько вопросов НЕТ ОТВЕТА (это
+                     считает наш сторож по видимым строкам), а число Ozon «Новое» — сколько вопросов
+                     не открывали — ушло в подсказку. Числа разные, и оба нужны в работе. */
                   title={ozonTipText(s.key, s.label, n, unread)}
                   style={{
                     position: 'relative', width: 46, height: 46, borderRadius: '50%',
@@ -196,7 +198,7 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
                   />
                   {/* Число новых */}
                   {n > 0 && (
-                    <span style={{ position: 'absolute', top: -4, right: -5, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: '#ef4444', color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #0c0c11' }}>{s.key === 'qa' ? ozonQaBadgeText(n, (unread && unread.qaTotal) || 0) : ozonBadgeText(n)}</span>
+                    <span style={{ position: 'absolute', top: -4, right: -5, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: '#ef4444', color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #0c0c11' }}>{ozonBadgeText(n)}</span>
                   )}
                 </button>
               </div>

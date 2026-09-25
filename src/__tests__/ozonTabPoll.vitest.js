@@ -89,7 +89,7 @@ describe('Ozon: опрос вкладки — пути отказа', () => {
     for (let i = 0; i < TAB_MISS_LIMIT; i++) { t.poll.ask(); await vi.advanceTimersByTimeAsync(10) }
     expect(t.poll.isExact()).toBe(false)
     expect(t.lost.length).toBe(1)                           // счётчику разрешено идти по строкам
-    expect(t.log.some(l => /WARN.*число со вкладки пропало/.test(l))).toBe(true)
+    expect(t.log.some(l => /WARN.*больше не читается/.test(l))).toBe(true)
   })
 
   it('[!] число не нашлось НИ РАЗУ → в журнале всё равно есть запись (раньше была тишина)', async () => {
@@ -149,5 +149,21 @@ describe('Ozon: опрос вкладки — пути отказа', () => {
     await vi.advanceTimersByTimeAsync(31000)
     expect(exec.mock.calls.length).toBe(1)
     t.poll.stop()
+  })
+})
+
+// v1.2.508 (по ревью): страница исчезла — признак «есть точное число» надо ОТПУСТИТЬ, иначе подсчёт
+// строк заблокирован до перезапуска программы и значок замирает на старом числе.
+describe('Ozon: опрос вкладки — страница исчезла (v1.2.508)', () => {
+  it('[!] страницу убрали → счёт отдаётся обратно подсчёту строк', async () => {
+    let alive = true
+    const t = make({ isAlive: () => alive })
+    t.poll.ask(); await vi.advanceTimersByTimeAsync(10)
+    expect(t.poll.isExact()).toBe(true)
+    alive = false
+    t.poll.ask(); await vi.advanceTimersByTimeAsync(10)
+    expect(t.poll.isExact()).toBe(false)
+    expect(t.lost.length).toBe(1)
+    expect(t.log.some(l => /WARN.*страница исчезла/.test(l))).toBe(true)
   })
 })

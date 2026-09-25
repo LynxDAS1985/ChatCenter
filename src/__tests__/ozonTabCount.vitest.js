@@ -140,3 +140,46 @@ describe('Ozon: сам скрипт на живой странице', () => {
     expect(pickOzonTabCount(run())).toBeNull()
   })
 })
+
+// v1.2.508 (по ревью) — три способа обмануть чтение, каждый воспроизведён до починки.
+describe('Ozon: «ноль» и «не разобрал» — это РАЗНОЕ (v1.2.508)', () => {
+  const run = () => new Function('return ' + OZON_TAB_COUNT_SCRIPT)()
+  afterEach(() => { document.body.innerHTML = '' })
+
+  it('[!] счётчик есть, но записан иначе → «не знаю», а НЕ ноль', () => {
+    // Раньше отдавался честный ноль: значок гас при живых новых отзывах И блокировал запасной счёт.
+    document.body.innerHTML = `
+      <div class="tabs">
+        <div class="tab"><span>Новые</span><span> · </span><span>13</span></div>
+        <div class="tab"><span>Все</span></div>
+      </div>`
+    expect(pickOzonTabCount(run())).toBeNull()
+  })
+
+  it('[!] лишнее слово в ячейке («Новые 13 шт») → «не знаю», а НЕ ноль', () => {
+    document.body.innerHTML = `
+      <div class="tabs"><div class="tab"><span>Новые</span><span>13</span><span>шт</span></div><div class="tab"><span>Все</span></div></div>`
+    expect(pickOzonTabCount(run())).toBeNull()
+  })
+
+  it('[!] счётчика нет вовсе, цифр в ячейке нет → честный НОЛЬ (значок должен гаснуть)', () => {
+    document.body.innerHTML = `
+      <div class="tabs"><div class="tab"><span>Все</span></div><div class="tab"><span>Новые</span></div><div class="tab"><span>Просмотренные</span></div></div>`
+    expect(pickOzonTabCount(run())).toEqual({ n: 0, label: 'Новые' })
+  })
+
+  it('[!] подпись и счётчик — соседи в плоской полосе → число читается', () => {
+    document.body.innerHTML = `
+      <div class="tabs"><span>Все</span><span>Новые</span><span>13</span><span>Просмотренные</span></div>`
+    expect(pickOzonTabCount(run())).toEqual({ n: 13, label: 'Новые' })
+  })
+
+  it('[!] блок с ТАБЛИЦЕЙ внутри за полосу вкладок не принимается', () => {
+    // Иначе бейдж «Новый» из строки товара уходил бы на значок вместо счётчика вкладки.
+    document.body.innerHTML = `
+      <div class="panel"><span>Все</span><table><tbody><tr><td>Товар</td><td><span>Новый</span></td><td>0</td></tr></tbody></table></div>`
+    const res = run()
+    expect(res.strip).toBe(false)
+    expect(pickOzonTabCount(res)).toBeNull()
+  })
+})

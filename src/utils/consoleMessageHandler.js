@@ -112,7 +112,8 @@ export function createConsoleMessageHandler(deps) {
     // v1.2.505: правило «кто главнее» — общее для ОБОИХ путей счётчика Ozon (shared/ozonCountMerge.js).
     if (parsed && parsed.type === 'ozon_count') {
       setOzonCounts && setOzonCounts(prev => {
-        const r = applyOzonSectionCount(prev[messengerId], parsed.section, parsed.n)
+        // true = от ОТКРЫТОЙ вкладки: её человек листает сам, поэтому её число главнее и может понижать.
+        const r = applyOzonSectionCount(prev[messengerId], parsed.section, parsed.n, true)
         return r.next ? { ...prev, [messengerId]: r.next } : prev
       })
       return
