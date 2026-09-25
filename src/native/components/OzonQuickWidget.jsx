@@ -22,6 +22,20 @@ const SECTIONS = [
   { key: 'rv', label: 'Отзывы', icon: '⭐', url: OZON_SECTION_URL.rv, match: OZON_SECTION_PATH.rv },
 ]
 
+/**
+ * Подсказка при наведении. У «Вопросов» два числа: значок показывает «не открытые» (их считает сам
+ * Ozon на вкладке «Новое»), а «без ответа» приходит из подсчёта видимых строк нашим сторожем — у
+ * Ozon такого счётчика нет. Показываем оба, иначе второе нигде не видно.
+ */
+function tipFor(key, n, unread) {
+  const label = SECTIONS.find(x => x.key === key)?.label || ''
+  const parts = []
+  if (n > 0) parts.push(n + (key === 'qa' ? ' новых (не открыты)' : ' новых'))
+  const unans = (unread && unread.qaUnans) || 0
+  if (key === 'qa' && unans > 0) parts.push('без ответа: ' + unans)
+  return label + (parts.length ? ' · ' + parts.join(' · ') : '')
+}
+
 export default function OzonQuickWidget({ messengerId, webviewRefs, unread, loading }) {
   const rootRef = useRef(null)
   const dragOff = useRef({ dx: 0, dy: 0 })
@@ -159,9 +173,11 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
                 {n > 0 && <span aria-hidden="true" className="animate-ping" style={{ position: 'absolute', inset: 4, borderRadius: '50%', background: '#3b82f6', opacity: 0.35 }} />}
                 <button
                   onClick={() => openSection(s)}
-                  /* v1.2.505 (по ревью): на значке — короткое «50+», а в подсказке ТОЧНОЕ число.
-                     Иначе точного числа не было видно нигде, а подсказка — как раз то место, где оно уместно. */
-                  title={`${s.label}${n > 0 ? ' · ' + n + ' новых' : ''}`}
+                  /* v1.2.505: на значке — короткое «50+», а в подсказке ТОЧНОЕ число.
+                     v1.2.506: у «Вопросов» в подсказке ещё и «без ответа» — значок показывает, сколько
+                     вопросов не открывали (это число даёт сам Ozon), а сколько из них без ответа,
+                     считает наш сторож по видимым строкам. Числа разные, и оба нужны в работе. */
+                  title={tipFor(s.key, n, unread)}
                   style={{
                     position: 'relative', width: 46, height: 46, borderRadius: '50%',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,

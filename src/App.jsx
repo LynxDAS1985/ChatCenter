@@ -852,7 +852,7 @@ export default function App() {
                   <OzonQuickWidget messengerId={m.id} webviewRefs={webviewRefs}
                     /* Только per-раздел от сторожа. unreadCounts НЕ используем как запас — там СУММА msg+qa
                        (для значка рейла), иначе кнопка «Сообщения» показала бы число вопросов (v1.2.357). */
-                    unread={{ msg: (ozonCounts[m.id] && ozonCounts[m.id].msg) || 0, qa: (ozonCounts[m.id] && ozonCounts[m.id].qa) || 0, rv: (ozonCounts[m.id] && ozonCounts[m.id].rv) || 0 }}
+                    unread={{ msg: (ozonCounts[m.id] && ozonCounts[m.id].msg) || 0, qa: (ozonCounts[m.id] && ozonCounts[m.id].qa) || 0, rv: (ozonCounts[m.id] && ozonCounts[m.id].rv) || 0, qaUnans: (ozonCounts[m.id] && ozonCounts[m.id].qaUnans) || 0 }}
                     loading={!!(webviewLoading && webviewLoading[m.id])} />
                 )}
                 {/* v1.2.358→368 (Шаг 3): ДВЕ СКРЫТЫЕ фоновые страницы Ozon на той же сессии — «Вопросы» и
@@ -865,7 +865,7 @@ export default function App() {
                   <webview
                     key={'ozonbg' + bgI}
                     ref={el => bindOzonBgWatcher(el, m.id, {
-                      handleNewMessage, setOzonCounts, periodicReloadMs: bgI === 0 ? 60000 : (bgI === 2 ? 180000 : 0), suppressFailNotice: bgI === 2, // v1.2.396: «Вопросы»(0) 3мин→1мин — цифра «qa» после ответа гасла до ~3 мин (скрытая страница держала старый снимок); __ccOzonQSeen переживает reload → повторных уведомлений НЕТ. «Отзывы»(2) reload СОХРАНЁН 180000 (был в коде с v1.2.383 — база _rPrev персистится; трогаем ТОЛЬКО «Вопросы», чтобы не задеть «Отзывы»). «Сообщения»(1) reload не имеют
+                      handleNewMessage, setOzonCounts, periodicReloadMs: bgI === 0 ? 60000 : (bgI === 2 ? 60000 : 0), suppressFailNotice: bgI === 2, // v1.2.396: «Вопросы»(0) 3мин→1мин — цифра «qa» после ответа гасла до ~3 мин (скрытая страница держала старый снимок); __ccOzonQSeen переживает reload → повторных уведомлений НЕТ. v1.2.506: «Отзывы»(2) 3мин→1мин ПО ТОЙ ЖЕ ПРИЧИНЕ — жалоба 2026-09-25 «цифра не меняется после прочтения»: точное число читается со вкладки живой страницы, но невидимая страница держит СТАРЫЙ снимок до перезагрузки, поэтому ⭐ гасла с опозданием до трёх минут. Память показанных отзывов (_rPrev) хранится в самой странице Ozon и переживает перезагрузку, поэтому повторных уведомлений об отзывах она НЕ даёт. «Сообщения»(1) reload не имеют
                       log: (lvl, ms) => { try { window.api?.send?.('app:log', { level: lvl, message: ms }) } catch (_) {} },
                       // v1.2.362: понятное сообщение пользователю, если Ozon не пустил фоновую страницу.
                       notify: (title, body) => { try { window.api?.invoke('app:custom-notify', { title, body, messengerId: m.id, messengerName: 'Ozon', emoji: '📦', color: m.color || '#005BFF' }) } catch (_) {} },

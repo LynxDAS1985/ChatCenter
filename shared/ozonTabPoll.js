@@ -31,12 +31,17 @@ export const TAB_POLL_MS = 30000
 export const TAB_MISS_LIMIT = 3
 
 /**
- * Это страница «Отзывы»?
+ * Какой раздел открыт на этой странице: «Отзывы» (rv), «Вопросы» (qa) или чужой (null)?
  * 🔴 Путь разбираем общей `ozonHereAlready`, а не подстрокой: `/app/reviews` целиком входит в
  * `/app/reviews/questions`, и наивная проверка приняла бы «Вопросы» за «Отзывы» (ловушка v1.2.500).
  */
-export function isOzonReviewsPage(url) {
-  try { return ozonHereAlready(new URL(String(url)).pathname, 'rv') } catch (_) { return false }
+export function ozonTabSectionOf(url) {
+  try {
+    const path = new URL(String(url)).pathname
+    if (ozonHereAlready(path, 'rv')) return 'rv'
+    if (ozonHereAlready(path, 'q')) return 'qa'
+    return null
+  } catch (_) { return null }
 }
 
 /**
@@ -47,14 +52,15 @@ export function isOzonReviewsPage(url) {
  * @param {() => string} io.getUrl — адрес страницы сейчас
  * @param {() => boolean} io.isAlive — страница ещё на месте
  * @param {() => boolean} io.isOnline — есть ли интернет (без него спрашивать нечего)
- * @param {(n: number) => void} io.setCount — положить ТОЧНОЕ число в счётчик «Отзывы»
- * @param {() => void} io.onLost — точное число больше не читается (разрешить подсчёт строк заново)
+ * @param {(n: number, section: 'rv'|'qa') => void} io.setCount — положить ТОЧНОЕ число в счётчик раздела
+ * @param {(section: 'rv'|'qa') => void} io.onLost — точное число больше не читается (разрешить подсчёт строк заново)
  * @param {(level: string, message: string) => void} io.log
  * @returns {{ ask: () => void, start: () => void, stop: () => void, isExact: () => boolean }}
  */
 export function createOzonTabPoll(io) {
   const { exec, getUrl, isAlive, isOnline, setCount, onLost, log } = io || {}
   let exact = false      // получено ли точное число со страницы
+  let lastSection = 'rv' // раздел, для которого это число было получено (нужен при его потере)
   let miss = 0           // сколько опросов подряд число не нашлось
   let told = false       // сообщали ли уже, что число не читается (чтобы не писать это каждые 30 с)
   let timer = null
@@ -72,7 +78,7 @@ export function createOzonTabPoll(io) {
     if (miss < TAB_MISS_LIMIT) return
     if (exact) {
       exact = false
-      try { onLost && onLost() } catch (_) {}
+      try { onLost && onLost(lastSection) } catch (_) {}
       say('lost', 'WARN', '[ozon-tab] число со вкладки пропало (' + why + ') → снова считаем строки')
       told = true
       return
@@ -93,10 +99,11 @@ export function createOzonTabPoll(io) {
     // Ревью v1.2.505: проверяем адрес ДО запроса. Раньше тяжёлый обход страницы выполнялся и на
     // «Вопросах», и на «Сообщениях» каждые 30 секунд, а результат выбрасывался.
     const url = getUrl ? getUrl() : ''
-    if (!isOzonReviewsPage(url)) {
-      // Страница не про отзывы: могла уйти на вход или в другой раздел. Это тоже промах — иначе
-      // признак «есть точное число» застревал навсегда и блокировал подсчёт строк (беда №2).
-      onMiss('страница не на разделе «Отзывы»: ' + url)
+    const section = ozonTabSectionOf(url)
+    if (!section) {
+      // Страница ушла с раздела со вкладками (Ozon выкинул на вход, сессия протухла). Это тоже
+      // промах — иначе признак «есть точное число» застревал навсегда и блокировал подсчёт строк.
+      onMiss('страница не на разделе со вкладками: ' + url)
       return
     }
     let started
@@ -114,8 +121,10 @@ export function createOzonTabPoll(io) {
         miss = 0
         exact = true
         told = false
-        try { setCount && setCount(got.n) } catch (_) {}
-        say('got', 'INFO', '[ozon-tab] точное число со страницы: «' + got.label + '» = ' + got.n + ' → ⭐')
+        lastSection = section
+        try { setCount && setCount(got.n, section) } catch (_) {}
+        say('got', 'INFO', '[ozon-tab] ' + (section === 'qa' ? 'Вопросы' : 'Отзывы')
+          + ': точное число со страницы «' + got.label + '» = ' + got.n)
       })
       .catch((e) => {
         say('err', 'WARN', '[ozon-tab] опрос не удался: ' + ((e && e.message) || e))

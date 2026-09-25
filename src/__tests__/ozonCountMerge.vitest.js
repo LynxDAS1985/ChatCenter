@@ -74,10 +74,44 @@ describe('Ozon: число от ОТКРЫТОЙ вкладки идёт по т
     expect(r.next).toBeNull()
   })
 
-  it('«Сообщения» и «Вопросы» пишутся напрямую — у них точного числа не бывает', () => {
-    // У них вкладка Ozon считает «не просмотрено», а значок показывает «без ответа» (TODO-63).
+  it('«Сообщения» пишутся напрямую — вкладок со счётчиками у переписки нет', () => {
     expect(applyOzonSectionCount({ msg: 1 }, 'msg', 0).next.msg).toBe(0)
-    expect(applyOzonSectionCount({ qa: 0 }, 'qa', 3).next.qa).toBe(3)
-    expect(applyOzonSectionCount({ qa: 3 }, 'qa', 3).next).toBeNull()
+    expect(applyOzonSectionCount({ msg: 3 }, 'msg', 3).next).toBeNull()
+  })
+})
+
+// v1.2.506: у «Вопросов» тоже появилось точное число со страницы — вкладка «Новое». Но смысл у
+// двух чисел РАЗНЫЙ: «Новое» = сколько не открывали (считает Ozon), а подсчёт строк = сколько без
+// ответа среди видимых (такого счётчика у Ozon нет). Оба нужны: первое на значке, второе в подсказке.
+describe('Ozon: вопросы — два числа рядом', () => {
+  it('[!] точное «Новое» идёт на значок, подсчёт без ответа ложится РЯДОМ, а не поверх', () => {
+    const exact = applyOzonExact({}, 1, 'qa')
+    expect(exact.next).toEqual({ qa: 1, qaSrc: RV_SRC.TAB })
+    const rows = applyOzonSectionCount(exact.next, 'qa', 4)
+    expect(rows.next.qa).toBe(1)        // значок по-прежнему показывает «не открытые»
+    expect(rows.next.qaUnans).toBe(4)   // а «без ответа» сохранено для подсказки
+  })
+
+  it('[!] точного числа нет → значок ведёт подсчёт строк, как раньше', () => {
+    const r = applyOzonSectionCount({}, 'qa', 4)
+    expect(r.next.qa).toBe(4)
+    expect(r.next.qaUnans).toBe(4)
+  })
+
+  it('[!] точное число вопросов потерялось → значок снова идёт по подсчёту строк', () => {
+    const lost = clearOzonExact({ qa: 1, qaSrc: RV_SRC.TAB, qaUnans: 4 }, 'qa')
+    expect(lost.next.qaSrc).toBe(RV_SRC.ROWS)
+    const back = applyOzonSectionCount(lost.next, 'qa', 4)
+    expect(back.next.qa).toBe(4)
+  })
+
+  it('точное число отзывов и вопросов не путаются между собой', () => {
+    const a = applyOzonExact({}, 16, 'rv')
+    const b = applyOzonExact(a.next, 1, 'qa')
+    expect(b.next).toEqual({ rv: 16, rvSrc: RV_SRC.TAB, qa: 1, qaSrc: RV_SRC.TAB })
+  })
+
+  it('«Сообщения» точного числа не имеют — пишутся напрямую', () => {
+    expect(applyOzonSectionCount({ msg: 1 }, 'msg', 0).next.msg).toBe(0)
   })
 })

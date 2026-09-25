@@ -38,6 +38,9 @@ function toCount(n) {
   return Math.floor(n)
 }
 
+/** Имя поля «откуда пришло число» для раздела: rv → rvSrc, qa → qaSrc. */
+function srcKeyOf(section) { return section === 'qa' ? 'qaSrc' : 'rvSrc' }
+
 /** Откуда пришло текущее значение счётчика отзывов. */
 export const RV_SRC = { TAB: 'tab', REBASE: 'rebase', ROWS: 'rows' }
 
@@ -47,22 +50,26 @@ export const RV_SRC = { TAB: 'tab', REBASE: 'rebase', ROWS: 'rows' }
  * @param {number} n
  * @returns {{ next: object|null, changed: boolean }} next=null → менять нечего
  */
-export function applyOzonExact(cur, n) {
+export function applyOzonExact(cur, n, section = 'rv') {
   const c = cur || {}
   const v = toCount(n)
   if (v === null) return { next: null, changed: false }
-  if (c.rv === v && c.rvSrc === RV_SRC.TAB) return { next: null, changed: false }
-  return { next: { ...c, rv: v, rvSrc: RV_SRC.TAB }, changed: c.rv !== v }
+  const src = srcKeyOf(section)
+  if (c[section] === v && c[src] === RV_SRC.TAB) return { next: null, changed: false }
+  return { next: { ...c, [section]: v, [src]: RV_SRC.TAB }, changed: c[section] !== v }
 }
 
 /**
  * Точное число со страницы прочитать больше не удаётся (Ozon поменял вид, ушли с раздела).
  * Само значение НЕ трогаем — просто разрешаем следующему подсчёту строк задать его заново.
  */
-export function clearOzonExact(cur) {
+export function clearOzonExact(cur, section = 'rv') {
   const c = cur || {}
-  if (c.rvSrc !== RV_SRC.TAB) return { next: null, changed: false }
-  return { next: { ...c, rvSrc: RV_SRC.REBASE }, changed: false }
+  const src = srcKeyOf(section)
+  if (c[src] !== RV_SRC.TAB) return { next: null, changed: false }
+  // У вопросов «только вверх» не действует (их сторож обновляется сам), поэтому там просто
+  // снимаем пометку — следующее число подсчёта встанет как есть.
+  return { next: { ...c, [src]: section === 'rv' ? RV_SRC.REBASE : RV_SRC.ROWS }, changed: false }
 }
 
 /**
@@ -87,19 +94,38 @@ export function applyOzonRowCount(cur, n) {
 }
 
 /**
+ * Число из подсчёта строк для раздела «Вопросы».
+ *
+ * v1.2.506: у вопросов ТОЖЕ появилось точное число со страницы — вкладка «Новое». Но смысл у
+ * этих двух чисел РАЗНЫЙ, и оба нужны:
+ *   • вкладка «Новое» = сколько вопросов человек ещё не открывал. Это и показывает значок;
+ *   • подсчёт строк   = сколько вопросов БЕЗ ОТВЕТА среди видимых (Ozon такого счётчика не даёт).
+ * Поэтому подсчёт строк не выбрасываем: пока есть точное число, он ложится рядом, в `qaUnans`,
+ * и виден в подсказке при наведении. Без точного числа он, как и раньше, ведёт сам значок.
+ */
+export function applyOzonQaCount(cur, n) {
+  const c = cur || {}
+  const v = toCount(n)
+  if (v === null) return { next: null, changed: false, reason: 'ignored' }
+  const exact = c.qaSrc === RV_SRC.TAB
+  const next = { ...c, qaUnans: v }
+  if (!exact) next.qa = v
+  if (c.qaUnans === v && (exact || c.qa === v)) return { next: null, changed: false, reason: 'kept' }
+  return { next, changed: !exact && c.qa !== v, reason: exact ? 'ignored' : 'first' }
+}
+
+/**
  * Число из ОТКРЫТОЙ вкладки. Она видит то же, что и невидимая страница (первую порцию), но
  * человек в ней листает — поэтому её число бывает честнее. Правило то же самое: точное со
- * вкладки-фильтра сильнее, всё остальное идёт через applyOzonRowCount.
+ * вкладки-фильтра сильнее, всё остальное идёт через подсчёт строк.
  *
- * ВАЖНО: это касается ТОЛЬКО отзывов (`rv`). Разделы «Сообщения» и «Вопросы» точного числа не
- * имеют (у них вкладка считает «не просмотрено», а не «без ответа» — см. TODO-63), поэтому их
- * значения пишутся напрямую, как и раньше.
+ * ВАЖНО: «Сообщения» (`msg`) точного числа не имеют — это переписка с покупателями, вкладок со
+ * счётчиками там нет вовсе. Их значение пишется напрямую, как и раньше.
  */
 export function applyOzonSectionCount(cur, section, n) {
-  if (section !== 'rv') {
-    const c = cur || {}
-    if (c[section] === n) return { next: null, changed: false, reason: 'kept' }
-    return { next: { ...c, [section]: n }, changed: true, reason: 'first' }
-  }
-  return applyOzonRowCount(cur, n)
+  if (section === 'rv') return applyOzonRowCount(cur, n)
+  if (section === 'qa') return applyOzonQaCount(cur, n)
+  const c = cur || {}
+  if (c[section] === n) return { next: null, changed: false, reason: 'kept' }
+  return { next: { ...c, [section]: n }, changed: true, reason: 'first' }
 }

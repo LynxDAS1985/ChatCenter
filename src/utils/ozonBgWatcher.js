@@ -21,7 +21,7 @@ import { shouldSkipOzonNotif } from '../../shared/ozonNotifDedup.js'
 import { createOzonBgFailWatch, isOzonAliveProof } from '../../shared/ozonBgFailWatch.js'
 // v1.2.504→505: ТОЧНОЕ число новых отзывов — со вкладки самой страницы, а не из подсчёта строк.
 import { createOzonTabPoll } from '../../shared/ozonTabPoll.js'
-import { applyOzonRowCount, applyOzonExact, clearOzonExact } from '../../shared/ozonCountMerge.js'
+import { applyOzonRowCount, applyOzonExact, clearOzonExact, applyOzonSectionCount } from '../../shared/ozonCountMerge.js'
 
 /** Впрыск сторожа страницы. Ozon блокирует preload-скрипты, поэтому только через executeJavaScript. */
 function _injectHook(el, log) {
@@ -62,12 +62,14 @@ function _routeCount(parsed, ozonId, setOzonCounts, log, seenLog) {
   if (parsed.section === 'msg' || parsed.section === 'qa') {
     if (seenLog[parsed.section] !== parsed.n) {
       seenLog[parsed.section] = parsed.n
-      log && log('INFO', '[ozon-bg] счётчик из фона: ' + parsed.section + '=' + parsed.n + ' (значение для виджета/значка)')
+      // v1.2.506: у «Вопросов» это число = сколько БЕЗ ОТВЕТА среди видимых строк. Сам значок
+      // показывает точное «Новое» со страницы, а это число ложится рядом и видно в подсказке.
+      log && log('INFO', '[ozon-bg] счётчик из фона: ' + parsed.section + '=' + parsed.n
+        + (parsed.section === 'qa' ? ' (вопросов без ответа среди видимых)' : ' (значение для виджета/значка)'))
     }
     setOzonCounts && setOzonCounts(prev => {
-      const cur = prev[ozonId] || {}
-      if (cur[parsed.section] === parsed.n) return prev
-      return { ...prev, [ozonId]: { ...cur, [parsed.section]: parsed.n } }
+      const r = applyOzonSectionCount(prev[ozonId], parsed.section, parsed.n)
+      return r.next ? { ...prev, [ozonId]: r.next } : prev
     })
     return
   }
@@ -118,12 +120,12 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
       getUrl: () => (el.getURL ? el.getURL() : ''),
       isAlive: () => el.isConnected && typeof el.executeJavaScript === 'function',
       isOnline: () => window.__ccNetOnline !== false, // v1.2.491: без интернета спрашивать нечего
-      setCount: (n) => setOzonCounts && setOzonCounts(prev => {
-        const r = applyOzonExact(prev[ozonId], n)
+      setCount: (n, section) => setOzonCounts && setOzonCounts(prev => {
+        const r = applyOzonExact(prev[ozonId], n, section)
         return r.next ? { ...prev, [ozonId]: r.next } : prev
       }),
-      onLost: () => setOzonCounts && setOzonCounts(prev => {
-        const r = clearOzonExact(prev[ozonId])
+      onLost: (section) => setOzonCounts && setOzonCounts(prev => {
+        const r = clearOzonExact(prev[ozonId], section)
         return r.next ? { ...prev, [ozonId]: r.next } : prev
       }),
       log,

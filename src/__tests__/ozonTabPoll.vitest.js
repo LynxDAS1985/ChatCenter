@@ -8,7 +8,7 @@
 //  3. полный отказ молчал: запись «не читается» стояла под условием «раньше находилось», поэтому
 //     самый вероятный случай (Ozon поменял вид страницы) не давал в журнале ни строки.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createOzonTabPoll, isOzonReviewsPage, TAB_MISS_LIMIT } from '../../shared/ozonTabPoll.js'
+import { createOzonTabPoll, ozonTabSectionOf, TAB_MISS_LIMIT } from '../../shared/ozonTabPoll.js'
 
 const REVIEWS = 'https://seller.ozon.ru/app/reviews'
 const TABS_13 = { strip: true, tabs: [{ label: 'Все', raw: null }, { label: 'Новые', raw: '13' }] }
@@ -43,20 +43,32 @@ describe('Ozon: опрос вкладки — обычная работа', () =
     expect(t.log.some(l => /точное число со страницы/.test(l))).toBe(true)
   })
 
-  it('[!] страница не на разделе «Отзывы» → запрос вообще НЕ отправляем', async () => {
-    // Раньше тяжёлый обход страницы выполнялся и на «Вопросах», и на «Сообщениях» каждые 30 с,
-    // а результат выбрасывался.
+  it('[!] страница «Сообщения» вкладок не имеет → запрос вообще НЕ отправляем', async () => {
+    // Тяжёлый обход страницы не должен выполняться там, где вкладок со счётчиками нет.
     const exec = vi.fn(() => Promise.resolve(TABS_13))
-    const t = make({ exec, getUrl: () => 'https://seller.ozon.ru/app/reviews/questions' })
+    const t = make({ exec, getUrl: () => 'https://seller.ozon.ru/app/messenger?group=customers_v2' })
     t.poll.ask()
     await vi.advanceTimersByTimeAsync(10)
     expect(exec).not.toHaveBeenCalled()
   })
 
-  it('«Вопросы» не принимаются за «Отзывы» (один путь входит в другой)', () => {
-    expect(isOzonReviewsPage(REVIEWS)).toBe(true)
-    expect(isOzonReviewsPage('https://seller.ozon.ru/app/reviews/questions')).toBe(false)
-    expect(isOzonReviewsPage('мусор')).toBe(false)
+  it('[!] «Вопросы» не принимаются за «Отзывы» (один путь входит в другой)', () => {
+    expect(ozonTabSectionOf(REVIEWS)).toBe('rv')
+    expect(ozonTabSectionOf('https://seller.ozon.ru/app/reviews/questions')).toBe('qa')
+    expect(ozonTabSectionOf('https://seller.ozon.ru/app/messenger')).toBeNull()
+    expect(ozonTabSectionOf('мусор')).toBeNull()
+  })
+
+  it('[!] на странице «Вопросы» число кладётся в СВОЙ счётчик, а не в отзывы (v1.2.506)', async () => {
+    const got = []
+    const t = make({
+      getUrl: () => 'https://seller.ozon.ru/app/reviews/questions',
+      exec: () => Promise.resolve({ strip: true, tabs: [{ label: 'Все', raw: '999+' }, { label: 'Новое', raw: '1' }, { label: 'Просмотрено', raw: '13' }] }),
+      setCount: (n, section) => got.push([n, section]),
+    })
+    t.poll.ask()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(got).toEqual([[1, 'qa']])   // ровно то, что на экране: «Новое 1», а не «Просмотрено 13»
   })
 })
 
