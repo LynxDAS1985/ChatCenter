@@ -59,3 +59,39 @@ describe('OzonQuickWidget — виден на свежей установке (v
     expect(container.textContent).toContain('3')
   })
 })
+
+// v1.2.503: просьба пользователя (2026-09-25) — «видеть последние 50, а если больше, писать 50+».
+// У остальных значков программы (вкладки мессенджеров, боковой рейл) предел остаётся 99 — в кабинете
+// продавца счёт идёт не по чатам, а по отзывам и вопросам, там сотни, и точная цифра выше полусотни
+// работе не помогает. Предел и правило — в shared/ozonSections.js (ozonBadgeText).
+describe('OzonQuickWidget — предел числа на значке: 50, дальше «50+» (v1.2.503)', () => {
+  it('[!] ровно 50 → точное число (граница НЕ должна превращаться в «50+»)', () => {
+    const { container } = renderWidget({ msg: 0, qa: 0, rv: 50 })
+    expect(container.textContent).toContain('50')
+    expect(container.textContent).not.toContain('50+')
+  })
+
+  it('[!] 51 и больше → «50+», а не точное число', () => {
+    const { container } = renderWidget({ msg: 0, qa: 0, rv: 51 })
+    expect(container.textContent).toContain('50+')
+    expect(container.textContent).not.toContain('51')
+  })
+
+  it('[!] старый предел 99 на значках Ozon больше не действует', () => {
+    const { container } = renderWidget({ msg: 0, qa: 0, rv: 120 })
+    expect(container.textContent).toContain('50+')
+    expect(container.textContent).not.toContain('99+')
+  })
+
+  it('подпись при наведении говорит то же, что значок', () => {
+    const { container } = renderWidget({ msg: 0, qa: 0, rv: 120 })
+    const titles = Array.from(container.querySelectorAll('button')).map(b => b.getAttribute('title') || '')
+    expect(titles.some(t => /Отзывы · 50\+ новых/.test(t))).toBe(true)
+  })
+
+  it('значки Сообщений и Вопросов живут по тому же правилу', () => {
+    const { container } = renderWidget({ msg: 77, qa: 12, rv: 0 })
+    expect(container.textContent).toContain('50+')  // Сообщения
+    expect(container.textContent).toContain('12')   // Вопросы — точное число
+  })
+})

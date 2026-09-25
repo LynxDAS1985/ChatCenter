@@ -6,7 +6,7 @@
 // localStorage относительна контейнера. Цвета заданы ЯВНО (виджет вне .native-mode). Пульс/точка —
 // tailwind-классы animate-ping/animate-pulse (уже используются в проекте, RailWebIcon/App).
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
-import { OZON_SECTION_URL, OZON_SECTION_PATH } from '../../../shared/ozonSections.js' // v1.2.501: адреса разделов — из одного места
+import { OZON_SECTION_URL, OZON_SECTION_PATH, ozonBadgeText } from '../../../shared/ozonSections.js' // v1.2.501: адреса разделов — из одного места
 
 const LS_KEY = 'ccOzonWidgetPos3'
 const SIZE = { w: 74, h: 150 } // вертикальный док — узкий и высокий (для клампа по контейнеру)
@@ -159,7 +159,7 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
                 {n > 0 && <span aria-hidden="true" className="animate-ping" style={{ position: 'absolute', inset: 4, borderRadius: '50%', background: '#3b82f6', opacity: 0.35 }} />}
                 <button
                   onClick={() => openSection(s)}
-                  title={`${s.label}${n > 0 ? ' · ' + n + ' новых' : ''}`}
+                  title={`${s.label}${n > 0 ? ' · ' + ozonBadgeText(n) + ' новых' : ''}`}
                   style={{
                     position: 'relative', width: 46, height: 46, borderRadius: '50%',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
@@ -184,7 +184,7 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
                   />
                   {/* Число новых */}
                   {n > 0 && (
-                    <span style={{ position: 'absolute', top: -4, right: -5, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: '#ef4444', color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #0c0c11' }}>{n > 99 ? '99+' : n}</span>
+                    <span style={{ position: 'absolute', top: -4, right: -5, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: '#ef4444', color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #0c0c11' }}>{ozonBadgeText(n)}</span>
                   )}
                 </button>
               </div>

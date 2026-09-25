@@ -6,7 +6,7 @@
 // переход открывал не тот список. Тест ловит возврат такого расхождения.
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
-import { OZON_SECTION_URL, OZON_SECTION_PATH, OZON_BG_URLS } from '../../shared/ozonSections.js'
+import { OZON_SECTION_URL, OZON_SECTION_PATH, OZON_BG_URLS, OZON_BADGE_MAX, ozonBadgeText } from '../../shared/ozonSections.js'
 
 describe('Ozon: адреса разделов — один источник', () => {
   it('[!] в коде экранов не осталось вписанных руками адресов кабинета', () => {
@@ -38,6 +38,27 @@ describe('Ozon: адреса разделов — один источник', ()
     for (const key of ['q', 'rv', 'list']) {
       expect(OZON_SECTION_URL[key], key).toContain(OZON_SECTION_PATH[key])
     }
+  })
+})
+
+// v1.2.503: предел числа на значке виджета Ozon — 50, дальше «50+» (просьба пользователя 2026-09-25).
+describe('Ozon: что писать на значке', () => {
+  it('[!] граница ровно 50 — точное число, 51 — уже «50+»', () => {
+    expect(OZON_BADGE_MAX).toBe(50)
+    expect(ozonBadgeText(49)).toBe('49')
+    expect(ozonBadgeText(50)).toBe('50')
+    expect(ozonBadgeText(51)).toBe('50+')
+    expect(ozonBadgeText(1200)).toBe('50+')
+  })
+
+  it('мусор вместо числа не рисует «NaN» на значке', () => {
+    for (const bad of [undefined, null, NaN, 'пять', {}, -7, Infinity]) {
+      expect(ozonBadgeText(bad), String(bad)).toBe('0')
+    }
+  })
+
+  it('дробное число округляется вниз (значок не показывает «3.7»)', () => {
+    expect(ozonBadgeText(3.7)).toBe('3')
   })
 })
 
