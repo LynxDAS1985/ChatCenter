@@ -33,6 +33,19 @@ const { ipcRenderer } = require('electron')
         try { hookCode = fs.readFileSync(path.join(__dirname, hookDirs[dj], 'telegram.hook.js'), 'utf8'); usedDir = hookDirs[dj] + '(tg-fallback)'; hookParts = 1 } catch(e2) {}
       }
     }
+    // v1.2.509 (TODO-64): НЕОБЯЗАТЕЛЬНАЯ вторая часть сторожа — `<тип>.part2.hook.js`. Сторож
+    // впрыскивается в чужую страницу ОДНИМ куском и импортов иметь не может, поэтому разбить его
+    // на модули нельзя — только склеить. Части складываются ВТОРАЯ ВПЕРЁД: она объявляет
+    // вспомогательные функции (кладёт их в window), а основная часть ими пользуется.
+    // Второй части нет — поведение ровно прежнее, поэтому механизм безопасен сам по себе.
+    if (hookCode) {
+      for (var dp = 0; dp < hookDirs.length; dp++) {
+        try {
+          var part2 = fs.readFileSync(path.join(__dirname, hookDirs[dp], hookType + '.part2.hook.js'), 'utf8')
+          if (part2) { hookCode = part2 + '\n;\n' + hookCode; hookParts = 2; break }
+        } catch(e3) {}
+      }
+    }
     // v1.2.480: ОТЧЁТ О ВПРЫСКЕ (тип хука, сколько ФАЙЛОВ склеено, длина, откуда читали). Зачем и
     // почему канал именно monitor-diag, а не console.log из preload — ADR-071. Кто будет разбивать
     // хук на части, обязан увеличивать hookParts, иначе потеря куска снова станет невидимой.

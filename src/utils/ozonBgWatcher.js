@@ -93,6 +93,29 @@ function _routeCount(parsed, ozonId, setOzonCounts, log, seenLog) {
 }
 
 /**
+ * Опрос вкладок страницы Ozon для одной фоновой страницы: обвязка вокруг общего решения
+ * (shared/ozonTabPoll.js). Вынесено из bindOzonBgWatcher — та подошла к потолку функции в 100 строк
+ * (правило проекта, CLAUDE.md «Лимиты на функции»), и следующая правка упёрлась бы.
+ */
+function _makeTabPoll(el, ozonId, setOzonCounts, log) {
+  const put = (fn) => setOzonCounts && setOzonCounts(prev => {
+    const r = fn(prev[ozonId])
+    return r.next ? { ...prev, [ozonId]: r.next } : prev
+  })
+  return createOzonTabPoll({
+    exec: (code) => el.executeJavaScript(code),
+    getUrl: () => (el.getURL ? el.getURL() : ''),
+    isAlive: () => el.isConnected && typeof el.executeJavaScript === 'function',
+    isOnline: () => window.__ccNetOnline !== false, // v1.2.491: без интернета спрашивать нечего
+    setCount: (n, section) => put(cur => applyOzonExact(cur, n, section)),
+    // v1.2.507: сколько вопросов всего — по этому числу в подсказке видно, весь ли список показан
+    onTotal: (total, section) => { if (section === 'qa') put(cur => applyOzonQaTotal(cur, total)) },
+    onLost: () => put(cur => clearOzonExact(cur)),
+    log,
+  })
+}
+
+/**
  * Привязать слушатель к скрытому фоновому webview Ozon. Идемпотентно (флаг на элементе).
  * @param {HTMLElement|null} el - элемент <webview> (или null при размонтировании)
  * @param {string} ozonId - id ОСНОВНОГО мессенджера Ozon (для маршрутизации уведомлений/счётчика)
@@ -114,30 +137,8 @@ export function bindOzonBgWatcher(el, ozonId, deps) {
       alive: () => el.isConnected,
       probe: () => el.executeJavaScript && el.executeJavaScript('document.querySelectorAll("*").length'),
     })
-    // v1.2.504: ТОЧНОЕ число новых отзывов берём со вкладки самой страницы. Всё решение (когда
-    // спрашивать, чему верить, когда вернуться к подсчёту строк) — в shared/ozonTabPoll.js.
-    const _tabs = createOzonTabPoll({
-      exec: (code) => el.executeJavaScript(code),
-      getUrl: () => (el.getURL ? el.getURL() : ''),
-      isAlive: () => el.isConnected && typeof el.executeJavaScript === 'function',
-      isOnline: () => window.__ccNetOnline !== false, // v1.2.491: без интернета спрашивать нечего
-      setCount: (n, section) => setOzonCounts && setOzonCounts(prev => {
-        const r = applyOzonExact(prev[ozonId], n, section)
-        return r.next ? { ...prev, [ozonId]: r.next } : prev
-      }),
-      onTotal: (total, section) => { // v1.2.507: сколько вопросов всего — чтобы честно ставить «+»
-        if (section !== 'qa') return
-        setOzonCounts && setOzonCounts(prev => {
-          const r = applyOzonQaTotal(prev[ozonId], total)
-          return r.next ? { ...prev, [ozonId]: r.next } : prev
-        })
-      },
-      onLost: (section) => setOzonCounts && setOzonCounts(prev => {
-        const r = clearOzonExact(prev[ozonId], section)
-        return r.next ? { ...prev, [ozonId]: r.next } : prev
-      }),
-      log,
-    })
+    // v1.2.504: точное число новых отзывов — со вкладки страницы (решение в shared/ozonTabPoll.js).
+    const _tabs = _makeTabPoll(el, ozonId, setOzonCounts, log)
     log && log('INFO', '[ozon-bg] страница создана, слушатель привязан')
     el.addEventListener('did-finish-load', () => {
       try {

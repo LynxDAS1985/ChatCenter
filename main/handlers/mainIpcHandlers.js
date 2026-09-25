@@ -68,7 +68,16 @@ export function registerMainIpcHandlers(deps) {
       const hooksDir = isDev
         ? path.join(__dirname, '../../main/preloads/hooks')
         : path.join(__dirname, '../preloads/hooks')
-      return fs.readFileSync(path.join(hooksDir, safe + '.hook.js'), 'utf8')
+      const main = fs.readFileSync(path.join(hooksDir, safe + '.hook.js'), 'utf8')
+      // v1.2.509 (TODO-64): НЕОБЯЗАТЕЛЬНАЯ вторая часть сторожа. Тот же механизм, что в
+      // main/preloads/monitor.preload.cjs — оба пути обязаны читать части одинаково, иначе
+      // страница получит разный код в зависимости от того, каким путём её впрыснули.
+      // Части складываются ВТОРАЯ ВПЕРЁД: она объявляет вспомогательные функции, основная их зовёт.
+      let part2 = ''
+      try { part2 = fs.readFileSync(path.join(hooksDir, safe + '.part2.hook.js'), 'utf8') } catch(_) {}
+      const parts = part2 ? 2 : 1
+      console.log(`[read-hook] ${safe}: частей=${parts} длина=${(part2 ? part2.length : 0) + main.length}`)
+      return part2 ? part2 + '\n;\n' + main : main
     } catch(e) { return '' }
   })
 
