@@ -3,6 +3,7 @@
 import { markHealthOk } from '../../shared/connectionHealth.js'
 import { enrichWaitMsFor } from '../../shared/notifEnrichWait.js'
 import { applySenderAvatarFallback, rememberSenderAvatar } from './maxTitleFallback.js'
+import { applyOzonSectionCount } from '../../shared/ozonCountMerge.js' // v1.2.505: одно правило для обоих путей счётчика Ozon
 
 try { window.__ccStartupMark?.('module:consoleMessageHandler', 'module evaluated') } catch {}
 
@@ -108,14 +109,12 @@ export function createConsoleMessageHandler(deps) {
     // v1.2.388: ведёт и ПЕРЕДНЯЯ вкладка (не только фон). Иначе при прочтении отзыва/сообщения В ПЕРЕДНЕЙ вкладке
     // цифра не обновляется мгновенно — скрытая фоновая страница держит СТАРЫЙ снимок до перезагрузки (~3 мин).
     // Прошлый «застрявший msg=3» был НЕ дрейфом передней вкладки, а багом парсера (rv→msg), исправлен в v1.2.387.
+    // v1.2.505: правило «кто главнее» — общее для ОБОИХ путей счётчика Ozon (shared/ozonCountMerge.js).
     if (parsed && parsed.type === 'ozon_count') {
-      if (setOzonCounts) {
-        setOzonCounts(prev => {
-          const cur = prev[messengerId] || {}
-          if (cur[parsed.section] === parsed.n) return prev
-          return { ...prev, [messengerId]: { ...cur, [parsed.section]: parsed.n } }
-        })
-      }
+      setOzonCounts && setOzonCounts(prev => {
+        const r = applyOzonSectionCount(prev[messengerId], parsed.section, parsed.n)
+        return r.next ? { ...prev, [messengerId]: r.next } : prev
+      })
       return
     }
     // ── __CC_UNREAD__: счётчик непрочитанных для ЗНАЧКА рейла через console (v1.2.415) ──

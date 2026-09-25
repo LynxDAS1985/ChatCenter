@@ -1,21 +1,22 @@
-// v1.2.504 — точное число новых со вкладки страницы Ozon (shared/ozonTabCount.js).
+// v1.2.504→505 — точное число новых со вкладки страницы Ozon (shared/ozonTabCount.js).
 //
 // ЗАЧЕМ ЭТИ ПРОВЕРКИ. Счётчик «Отзывы» показывал 5, когда новых 13: программа считала строки,
 // которые Ozon успел нарисовать, а список он отдаёт порциями (внизу «Показать ещё»), и невидимую
 // страницу никто не листает. Разведка 2026-09-25 нашла на странице готовый счётчик вкладки
-// «Все · Новые 13 · Просмотренные · Обработанные» — число 13 сошлось и с подсчётом открытой
-// вкладки, и с тем, что человек видел на значке. Теперь читаем его.
+// «Все · Новые 13 · Просмотренные · Обработанные».
 //
-// Главная ловушка, ради которой тут столько проверок: Ozon НЕ рисует счётчик при нуле, поэтому
-// «подпись есть, числа нет» — это либо честный ноль, либо «счётчиков на странице не видно вовсе».
-// Перепутать нельзя: в первом случае надо показать 0, во втором — не трогать счётчик.
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// 🔴 ПЕРЕПИСАНО ПОСЛЕ РЕВЬЮ v1.2.505. Первая версия искала подпись ГДЕ УГОДНО на странице, и её
+// обманывали двумя способами (оба воспроизведены):
+//   • бейдж статуса «Новый» из таблицы отзывов — в журнале пользователя он стоит рядом с «0»,
+//     и при другом порядке блоков на значок ушёл бы 0 при 13 новых;
+//   • соседний элемент с одним только числом склеивался с подписью в тексте общего предка.
+// Плюс «честный ноль» определялся по числам у соседних вкладок — а на настоящей странице число
+// есть ТОЛЬКО у «Новые», поэтому при прочтении всех отзывов значок НИКОГДА не гас.
+import { describe, it, expect, afterEach } from 'vitest'
 import { OZON_TAB_COUNT_SCRIPT, pickOzonTabCount, formatOzonTabs } from '../../shared/ozonTabCount.js'
-import { bindOzonBgWatcher } from '../utils/ozonBgWatcher.js'
-import { resetOzonNotifDedup } from '../../shared/ozonNotifDedup.js'
 
-/** Ровно то, что разведка сняла с настоящей страницы «Отзывы» 2026-09-25. */
-const REAL_REVIEWS = { path: '/app/reviews', tabs: [
+/** Ровно то, что разведка сняла с настоящей страницы «Отзывы» 2026-09-25: число ТОЛЬКО у «Новые». */
+const REAL_REVIEWS = { path: '/app/reviews', strip: true, tabs: [
   { label: 'Все', raw: null },
   { label: 'Новые', raw: '13' },
   { label: 'Просмотренные', raw: null },
@@ -27,33 +28,44 @@ describe('Ozon: выбор числа со вкладки', () => {
     expect(pickOzonTabCount(REAL_REVIEWS)).toEqual({ n: 13, label: 'Новые' })
   })
 
-  it('[!] у «Новых» числа нет, но у соседей есть → это честный НОЛЬ (Ozon не рисует нулевой счётчик)', () => {
-    const res = { tabs: [{ label: 'Все', raw: '999+' }, { label: 'Новые', raw: null }, { label: 'Просмотренные', raw: '12' }] }
-    expect(pickOzonTabCount(res)).toEqual({ n: 0, label: 'Новые' })
+  it('[!] всё прочитано, Ozon убрал счётчик → ЧЕСТНЫЙ НОЛЬ (иначе значок не погаснет никогда)', () => {
+    // Главный баг v1.2.504: ноль засчитывался только при числе у соседей, а на настоящей странице
+    // число есть ТОЛЬКО у «Новые» — значит при нуле чисел не остаётся ни у кого.
+    const readAll = { ...REAL_REVIEWS, tabs: REAL_REVIEWS.tabs.map(t => ({ ...t, raw: null })) }
+    expect(pickOzonTabCount(readAll)).toEqual({ n: 0, label: 'Новые' })
   })
 
-  it('[!] чисел нет НИ У ОДНОЙ вкладки → «не знаю», счётчик не трогаем (иначе показали бы ложный ноль)', () => {
-    const res = { tabs: [{ label: 'Все', raw: null }, { label: 'Новые', raw: null }] }
-    expect(pickOzonTabCount(res)).toBeNull()
+  it('[!] полоса вкладок НЕ найдена → «не знаю», счётчик не трогаем', () => {
+    // Без полосы верить числу нельзя: оно могло прийти откуда угодно со страницы.
+    expect(pickOzonTabCount({ strip: false, tabs: [{ label: 'Новые', raw: '7' }] })).toBeNull()
+    expect(pickOzonTabCount({ tabs: [{ label: 'Новые', raw: '7' }] })).toBeNull()
   })
 
-  it('вкладки «Новые» на странице нет → «не знаю»', () => {
-    expect(pickOzonTabCount({ tabs: [{ label: 'Все', raw: '5' }] })).toBeNull()
+  it('[!] вкладка «Новое» (так подписан раздел «Вопросы») тоже выбирается', () => {
+    // В v1.2.504 выбор шёл по /^Новы/i, под который «Новое» не подходит — фича молча выключилась бы.
+    expect(pickOzonTabCount({ strip: true, tabs: [{ label: 'Новое', raw: '7' }] })).toEqual({ n: 7, label: 'Новое' })
   })
 
-  it('«999+» разбирается как 999, а не как ноль', () => {
-    expect(pickOzonTabCount({ tabs: [{ label: 'Новые', raw: '999+' }] })).toEqual({ n: 999, label: 'Новые' })
+  it('вкладки «новых» в полосе нет → «не знаю»', () => {
+    expect(pickOzonTabCount({ strip: true, tabs: [{ label: 'Все', raw: '5' }] })).toBeNull()
+  })
+
+  it('«999+» разбирается как 999; отрицательное — как отсутствие числа, а не как 3', () => {
+    expect(pickOzonTabCount({ strip: true, tabs: [{ label: 'Новые', raw: '999+' }] })).toEqual({ n: 999, label: 'Новые' })
+    expect(pickOzonTabCount({ strip: true, tabs: [{ label: 'Новые', raw: '-3' }] })).toEqual({ n: 0, label: 'Новые' })
   })
 
   it('страница не ответила / ответила мусором → «не знаю», без падения', () => {
-    for (const bad of [null, undefined, {}, { tabs: [] }, { tabs: 'нет' }, 42]) {
+    for (const bad of [null, undefined, {}, { strip: true, tabs: [] }, { tabs: 'нет' }, 42]) {
       expect(pickOzonTabCount(bad), String(bad)).toBeNull()
     }
   })
 
-  it('строка для журнала читаема и показывает пустой счётчик прочерком', () => {
+  it('строка для журнала читаема и не падает на битом списке', () => {
     expect(formatOzonTabs(REAL_REVIEWS)).toBe('Все=— | Новые=13 | Просмотренные=— | Обработанные=—')
-    expect(formatOzonTabs(null)).toBe('вкладок не нашлось')
+    expect(formatOzonTabs({ strip: false })).toContain('полоса вкладок не найдена')
+    expect(formatOzonTabs(null)).toContain('ничего не вернула')
+    expect(() => formatOzonTabs({ strip: true, tabs: [null, { label: 'Новые', raw: '1' }] })).not.toThrow()
   })
 })
 
@@ -63,107 +75,68 @@ describe('Ozon: сам скрипт на живой странице', () => {
   /** Выполнить настоящий скрипт так же, как его выполняет страница Ozon. */
   const run = () => new Function('return ' + OZON_TAB_COUNT_SCRIPT)()
 
-  it('[!] находит «Новые 13» в вёрстке, где подпись и число — соседние элементы', () => {
+  it('[!] находит «Новые 13» в полосе вкладок', () => {
     document.body.innerHTML = `
       <div class="tabs">
         <div class="tab"><span>Все</span></div>
         <div class="tab"><span>Новые</span><span class="cnt">13</span></div>
         <div class="tab"><span>Просмотренные</span></div>
       </div>`
-    const res = run()
-    expect(pickOzonTabCount(res)).toEqual({ n: 13, label: 'Новые' })
+    expect(pickOzonTabCount(run())).toEqual({ n: 13, label: 'Новые' })
   })
 
-  it('[!] чужое число рядом с подписью НЕ подхватывается', () => {
-    // «13» лежит в соседней вкладке, а не внутри «Новые» — брать его нельзя.
+  it('[!] бейдж «Новый 5» из ТАБЛИЦЫ не подменяет вкладку, даже стоя выше неё', () => {
+    // Ровно этот случай воспроизведён при ревью: в журнале пользователя бейдж «Новый» стоит
+    // рядом с «0», и старая версия отдала бы 0 при 13 новых.
     document.body.innerHTML = `
-      <div><div class="tab"><span>Новые</span></div><div class="tab"><span>Просмотренные</span><span>13</span></div></div>`
-    const res = run()
-    expect(pickOzonTabCount(res)).toEqual({ n: 0, label: 'Новые' }) // у «Новых» счётчика нет = ноль
+      <table><tbody>
+        <tr><td><span>Подшипник 6001</span></td><td><span>Новый</span><span>5</span></td></tr>
+      </tbody></table>
+      <div class="tabs">
+        <div class="tab"><span>Все</span></div>
+        <div class="tab"><span>Новые</span><span>13</span></div>
+        <div class="tab"><span>Просмотренные</span></div>
+      </div>`
+    expect(pickOzonTabCount(run())).toEqual({ n: 13, label: 'Новые' })
   })
 
-  it('вкладок на странице нет → пустой список, а не выдуманное число', () => {
+  it('[!] чужое число из СОСЕДНЕЙ вкладки не приписывается «Новым»', () => {
+    document.body.innerHTML = `
+      <div class="tabs">
+        <div class="tab"><span>Новые</span></div>
+        <div class="tab"><span>Просмотренные</span><span>13</span></div>
+        <div class="tab"><span>Обработанные</span></div>
+      </div>`
+    expect(pickOzonTabCount(run())).toEqual({ n: 0, label: 'Новые' }) // у «Новых» счётчика нет = ноль
+  })
+
+  it('[!] подпись как обычный текст (без своего элемента) тоже находится', () => {
+    // Частая вёрстка: <div class="tab">Новые<span>13</span></div> — подписи-листа нет вовсе,
+    // старая версия такую вкладку не видела и молча выключалась.
+    document.body.innerHTML = `
+      <div class="tabs">
+        <div class="tab">Все</div>
+        <div class="tab">Новые<span>13</span></div>
+        <div class="tab">Просмотренные</div>
+      </div>`
+    expect(pickOzonTabCount(run())).toEqual({ n: 13, label: 'Новые' })
+  })
+
+  it('число слева от подписи тоже читается', () => {
+    document.body.innerHTML = `
+      <div class="tabs"><div class="tab"><b>7</b><span>Новые</span></div><div class="tab"><span>Все</span></div></div>`
+    expect(pickOzonTabCount(run())).toEqual({ n: 7, label: 'Новые' })
+  })
+
+  it('одна подпись без соседей — это не полоса вкладок, числу не верим', () => {
+    document.body.innerHTML = '<div><span>Новые</span><span>13</span></div>'
+    const res = run()
+    expect(res.strip).toBe(false)
+    expect(pickOzonTabCount(res)).toBeNull()
+  })
+
+  it('вкладок на странице нет → пустой ответ, а не выдуманное число', () => {
     document.body.innerHTML = '<div><p>Отзывы покупателей</p></div>'
     expect(pickOzonTabCount(run())).toBeNull()
-  })
-})
-
-describe('Ozon: точное число доходит до значка', () => {
-  beforeEach(() => { resetOzonNotifDedup(); vi.useFakeTimers() })
-  afterEach(() => vi.useRealTimers())
-
-  function makeEl(url = 'https://seller.ozon.ru/app/reviews', tabs = REAL_REVIEWS) {
-    const handlers = {}
-    return {
-      addEventListener: (t, fn) => { (handlers[t] = handlers[t] || []).push(fn) },
-      getURL: () => url,
-      isConnected: true,
-      reload: vi.fn(),
-      // разведка спрашивает число элементов, опрос вкладок — подписи; отвечаем по содержимому запроса
-      executeJavaScript: vi.fn((code) => {
-        if (String(code).includes('querySelectorAll("*").length')) return Promise.resolve(5200)
-        if (String(code).includes('afterScroll')) return Promise.resolve({ total: 5200, rows0: 6, afterScroll: [6, 6, 6], innerH: 1000, docH: 1165, docH2: 1165, texts: [] })
-        return Promise.resolve(tabs)
-      }),
-      fire: (t, ev) => (handlers[t] || []).forEach((fn) => fn(ev)),
-    }
-  }
-
-  function makeDeps() {
-    let state = {}
-    return {
-      handleNewMessage: vi.fn(),
-      setOzonCounts: vi.fn((fn) => { state = fn(state) }),
-      log: vi.fn(),
-      getState: () => state,
-    }
-  }
-
-  it('[!] со вкладки пришло 13 → на значке 13, а не 5 из подсчёта строк', async () => {
-    const el = makeEl(); const d = makeDeps()
-    bindOzonBgWatcher(el, 'ozon', d)
-    el.fire('did-finish-load')
-    await vi.advanceTimersByTimeAsync(6000)
-    expect(d.getState().ozon.rv).toBe(13)
-  })
-
-  it('[!] после точного числа подсчёт строк (5) его НЕ перебивает', async () => {
-    const el = makeEl(); const d = makeDeps()
-    bindOzonBgWatcher(el, 'ozon', d)
-    el.fire('did-finish-load')
-    await vi.advanceTimersByTimeAsync(6000)
-    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'rv', n: 5 }) })
-    expect(d.getState().ozon.rv).toBe(13)
-    expect(d.log.mock.calls.some(c => /не берём, есть точное число/.test(String(c[1])))).toBe(true)
-  })
-
-  it('[!] точного числа нет → работает прежний подсчёт строк (запасной путь цел)', async () => {
-    const el = makeEl('https://seller.ozon.ru/app/reviews', { tabs: [] }); const d = makeDeps()
-    bindOzonBgWatcher(el, 'ozon', d)
-    el.fire('did-finish-load')
-    await vi.advanceTimersByTimeAsync(6000)
-    el.fire('console-message', { message: '__CC_OZON_COUNT__' + JSON.stringify({ s: 'rv', n: 5 }) })
-    expect(d.getState().ozon.rv).toBe(5)
-  })
-
-  it('[!] на странице «Вопросы» число со вкладки в счётчик НЕ идёт (там «Новое» ≠ «без ответа»)', async () => {
-    const qTabs = { path: '/app/reviews/questions', tabs: [{ label: 'Все', raw: '999+' }, { label: 'Новое', raw: null }, { label: 'Просмотрено', raw: '12' }] }
-    const el = makeEl('https://seller.ozon.ru/app/reviews/questions', qTabs); const d = makeDeps()
-    bindOzonBgWatcher(el, 'ozon', d)
-    el.fire('did-finish-load')
-    await vi.advanceTimersByTimeAsync(6000)
-    expect(d.getState().ozon).toBeUndefined()  // счётчик не трогали
-    expect(d.log.mock.calls.some(c => /\[ozon-tab\].*Просмотрено=12/.test(String(c[1])))).toBe(true)
-  })
-
-  it('страницу закрыли → опрос прекращается, в мёртвое окно не лезем', async () => {
-    const el = makeEl(); const d = makeDeps()
-    bindOzonBgWatcher(el, 'ozon', d)
-    el.fire('did-finish-load')
-    await vi.advanceTimersByTimeAsync(6000)
-    const before = el.executeJavaScript.mock.calls.length
-    el.isConnected = false
-    await vi.advanceTimersByTimeAsync(120000)
-    expect(el.executeJavaScript.mock.calls.length).toBe(before)
   })
 })

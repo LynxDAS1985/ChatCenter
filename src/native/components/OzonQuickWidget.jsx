@@ -159,7 +159,9 @@ export default function OzonQuickWidget({ messengerId, webviewRefs, unread, load
                 {n > 0 && <span aria-hidden="true" className="animate-ping" style={{ position: 'absolute', inset: 4, borderRadius: '50%', background: '#3b82f6', opacity: 0.35 }} />}
                 <button
                   onClick={() => openSection(s)}
-                  title={`${s.label}${n > 0 ? ' · ' + ozonBadgeText(n) + ' новых' : ''}`}
+                  /* v1.2.505 (по ревью): на значке — короткое «50+», а в подсказке ТОЧНОЕ число.
+                     Иначе точного числа не было видно нигде, а подсказка — как раз то место, где оно уместно. */
+                  title={`${s.label}${n > 0 ? ' · ' + n + ' новых' : ''}`}
                   style={{
                     position: 'relative', width: 46, height: 46, borderRadius: '50%',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,

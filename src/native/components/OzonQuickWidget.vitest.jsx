@@ -83,10 +83,13 @@ describe('OzonQuickWidget — предел числа на значке: 50, д�
     expect(container.textContent).not.toContain('99+')
   })
 
-  it('подпись при наведении говорит то же, что значок', () => {
+  it('[!] на значке «50+», а в подсказке — ТОЧНОЕ число (v1.2.505, по ревью)', () => {
+    // Значок узкий, поэтому там короткое «50+». Но точное число должно быть доступно хоть где-то,
+    // иначе оно пропадает из программы совсем — подсказка при наведении как раз для этого.
     const { container } = renderWidget({ msg: 0, qa: 0, rv: 120 })
+    expect(container.textContent).toContain('50+')
     const titles = Array.from(container.querySelectorAll('button')).map(b => b.getAttribute('title') || '')
-    expect(titles.some(t => /Отзывы · 50\+ новых/.test(t))).toBe(true)
+    expect(titles.some(t => /Отзывы · 120 новых/.test(t))).toBe(true)
   })
 
   it('значки Сообщений и Вопросов живут по тому же правилу', () => {
