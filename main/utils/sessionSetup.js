@@ -6,7 +6,7 @@ const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 // защита сайта видит нестыковку «UA ≠ client hints» и блокирует встроенное окно
 // («Похоже, нет соединения», код fab_chlg). Реальная версия совпадает с client hints → нестыковки нет.
 const REAL_CHROME_VER = (process.versions && process.versions.chrome) || '131.0.0.0'
-const NATIVE_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/' + REAL_CHROME_VER + ' Safari/537.36'
+export const NATIVE_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/' + REAL_CHROME_VER + ' Safari/537.36'
 
 // v1.2.320: сайты со строгой антибот-защитой, которым НЕ подходит наш стандартный режим
 // (подделанный UA + глушение Service Worker). Пока — только Ozon-кабинет.

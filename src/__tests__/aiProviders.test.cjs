@@ -5,7 +5,10 @@
  */
 
 var fs = require('fs')
-var code = fs.readFileSync('src/utils/aiProviders.js', 'utf8')
+// v1.2.510: сами данные и функции переехали в shared/aiProvidersData.js (бюджет строк экранной
+// части упёрся в потолок, ADR-044). src/utils/aiProviders.js — тонкое перенаправление,
+// поэтому проверяем исходник по новому месту.
+var code = fs.readFileSync('shared/aiProvidersData.js', 'utf8')
 
 var passed = 0, failed = 0
 function test(name, fn) {

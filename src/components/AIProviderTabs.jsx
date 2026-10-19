@@ -1,11 +1,32 @@
 // v0.84.4: Вынесено из AISidebar.jsx — панель вкладок провайдеров
+// v1.2.510: меню по ПРАВОЙ кнопке на вкладке провайдера — «Перезапустить страницу».
+import { useState, useEffect } from 'react'
 import { getProviderCfg } from '../utils/aiProviders.js'
 
 export default function AIProviderTabs({
   connectedProviders, unconnectedProviders, provider, settings,
   providerStatuses, providerCheckTimes, hoveredStatus, setHoveredStatus,
   showAddProvider, setShowAddProvider, setShowConfig, switchProvider,
+  reloadProviderPage,
 }) {
+  // v1.2.510: { x, y, pid } — где открыть меню и для какой вкладки. null = меню закрыто.
+  // Меню предлагаем ТОЛЬКО для провайдеров в режиме «Веб-интерфейс»: у режима «API-ключ»
+  // страницы нет, перезапускать нечего (иначе пункт вводил бы в заблуждение).
+  const [ctxMenu, setCtxMenu] = useState(null)
+  useEffect(() => {
+    if (!ctxMenu) return undefined
+    const close = () => setCtxMenu(null)
+    const onKey = (e) => { if (e.key === 'Escape') setCtxMenu(null) }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('blur', close)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('blur', close)
+    }
+  }, [ctxMenu])
+
   return (
     <div className="px-2 pt-2 pb-1.5 shrink-0" style={{ borderBottom: '1px solid var(--cc-border)' }}>
       {connectedProviders.length > 0 ? (
@@ -17,7 +38,14 @@ export default function AIProviderTabs({
               <button
                 key={p.id}
                 onClick={() => { switchProvider(p.id); setShowConfig(false) }}
-                title={`${p.label} (${pCfg.mode === 'webview' ? 'Веб-интерфейс' : 'API-ключ'})${pSt === 'ok' ? ' — работает' : pSt === 'fail' ? ' — ошибка' : ''}`}
+                onContextMenu={e => {
+                  e.preventDefault()
+                  if (pCfg.mode !== 'webview') return   // у режима «API-ключ» страницы нет
+                  const safeX = typeof window !== 'undefined' ? Math.max(8, Math.min(e.clientX, window.innerWidth - 195)) : e.clientX
+                  const safeY = typeof window !== 'undefined' ? Math.max(8, Math.min(e.clientY, window.innerHeight - 60)) : e.clientY
+                  setCtxMenu({ x: safeX, y: safeY, pid: p.id })
+                }}
+                title={`${p.label} (${pCfg.mode === 'webview' ? 'Веб-интерфейс' : 'API-ключ'})${pSt === 'ok' ? ' — работает' : pSt === 'fail' ? ' — ошибка' : ''}${pCfg.mode === 'webview' ? ' · правая кнопка — перезапустить страницу' : ''}`}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all"
                 style={{
                   backgroundColor: provider === p.id ? '#2AABEE22' : 'var(--cc-hover)',
@@ -83,6 +111,40 @@ export default function AIProviderTabs({
           <span className="text-base">+</span>
           <span>Добавить ИИ-провайдер</span>
         </button>
+      )}
+
+      {/* v1.2.510: меню по правой кнопке с безопасным позиционированием и подложкой.
+          Подложка fixed inset-0 перехватывает клики над webview и гарантированно закрывает меню. */}
+      {ctxMenu && (
+        <>
+          <div
+            data-testid="ctx-menu-backdrop"
+            className="fixed inset-0"
+            style={{ zIndex: 195 }}
+            onClick={() => setCtxMenu(null)}
+            onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }}
+          />
+          <div
+            className="fixed rounded-lg py-1 text-xs"
+            style={{
+              left: ctxMenu.x, top: ctxMenu.y, zIndex: 200,
+              backgroundColor: 'var(--cc-surface)',
+              border: '1px solid var(--cc-border)',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+            }}
+            onMouseDown={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => { const pid = ctxMenu.pid; setCtxMenu(null); reloadProviderPage?.(pid) }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 whitespace-nowrap cursor-pointer text-left rounded"
+              style={{ color: 'var(--cc-text-dim)', backgroundColor: 'transparent', border: 'none' }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--cc-hover)'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <span>🔄</span><span>Перезапустить страницу</span>
+            </button>
+          </div>
+        </>
       )}
 
       {showAddProvider && (

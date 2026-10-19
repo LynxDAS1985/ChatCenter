@@ -153,6 +153,30 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
     setShowConfig(!newIsConfigured)
   }
 
+  // v1.2.510: «Перезапустить страницу» из меню по правой кнопке на вкладке провайдера.
+  // reloadIgnoringCache обходит кэш CloudFront (ответы 403 кэшируются).
+  // Закрывает настройки (если открыты), а при неактивной вкладке переключает и перезапускает.
+  const reloadProviderPage = (pid) => {
+    setShowConfig(false)
+    if (pid && pid !== provider) {
+      switchProvider(pid)
+      setTimeout(() => { try { aiWebviewRef.current?.reloadIgnoringCache?.() } catch (_) {} }, 150)
+      return
+    }
+    const el = aiWebviewRef.current
+    if (!el) {
+      window.api?.send?.('app:log', { level: 'WARN', message: '[ai-webview] [reload] провайдер=' + provider + ' webview не смонтирован' })
+      return
+    }
+    try {
+      if (typeof el.reloadIgnoringCache === 'function') el.reloadIgnoringCache()
+      else el.reload?.()
+      window.api?.send?.('app:log', { level: 'INFO', message: '[ai-webview] [reload] провайдер=' + provider + ' — перезапуск страницы по правой кнопке' })
+    } catch (e) {
+      window.api?.send?.('app:log', { level: 'WARN', message: '[ai-webview] [reload] провайдер=' + provider + ' не перезапустилась: ' + (e?.message || e) })
+    }
+  }
+
   const set = (key, val) => {
     const updated = { ...settings, [key]: val }
     const pid = updated.aiProvider || 'openai'
@@ -469,6 +493,7 @@ export default function AISidebar({ settings, onSettingsChange, lastMessage, vis
           hoveredStatus={hoveredStatus} setHoveredStatus={setHoveredStatus}
           showAddProvider={showAddProvider} setShowAddProvider={setShowAddProvider}
           setShowConfig={setShowConfig} switchProvider={switchProvider}
+          reloadProviderPage={reloadProviderPage}
         />
 
         {/* v0.83.2: Конфиг-панель вынесена в AIConfigPanel.jsx */}

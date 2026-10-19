@@ -11,7 +11,7 @@ import http from 'node:http'
 import { fileURLToPath } from 'url'
 
 import { initLogger, readLogFile, setLogViewerOpener } from './utils/logger.js'
-import { setupSession } from './utils/sessionSetup.js'
+import { setupSession, NATIVE_CHROME_UA } from './utils/sessionSetup.js'
 import { initStorage, migrateSettings } from './utils/storage.js'
 import { httpsPostSkipSsl, getGigaChatToken, GIGACHAT_CHAT_URL } from './utils/gigachat.js'
 import { ruError } from './utils/ruError.js'
@@ -70,6 +70,20 @@ app.setName('ЦентрЧатов')
 if (process.platform === 'win32') {
   app.setAppUserModelId('ЦентрЧатов')
 }
+
+// v1.2.510 🔴 ВАЖНО, НЕ УДАЛЯТЬ. Electron строит представление окна для сайтов (заголовок User-Agent)
+// из имени приложения ДОСЛОВНО (официальный исходник Electron, shell/common/application_info.cc,
+// BuildApplicationUserAgent: имя из app.setName подставляется в строку как есть). Имя у нас русское
+// («ЦентрЧатов»), а в заголовке запроса допустимы только латинские символы → строгие защиты сайтов
+// такой запрос отбрасывают. Проверено живым запросом к chat.deepseek.com: с русским именем — 403
+// Forbidden от CloudFront (ровно та страница «403 ERROR / The request could not be satisfied»,
+// что видел пользователь), с латинским — 202, 3 раза из 3.
+// Мессенджеры это не задевало: им представление задаёт setupSession. А вкладке ИИ
+// (partition persist:ai-webview) его никто не задавал — она брала это запасное значение.
+// Ставим обычное браузерное представление с РЕАЛЬНОЙ версией движка (как для Ozon/МАКС — чтобы
+// версия в заголовке совпадала с версией движка, иначе строгие защиты видят нестыковку, ADR v1.2.320).
+// Сессии, которым представление задано явно (мессенджеры, окно входа в ИИ), это НЕ меняет.
+app.userAgentFallback = NATIVE_CHROME_UA
 
 // v0.84.4: Logger, session — вынесены в main/utils/logger.js, main/utils/sessionSetup.js
 // v0.87.81: SETTINGS_VERSION, migrateSettings, initStorage — вынесены в main/utils/storage.js

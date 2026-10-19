@@ -68,7 +68,7 @@ WebView (Ctrl+колесо, Ctrl +/−/0) в новый `main/preloads/utils/web
 | `main/preloads/hooks/vk.hook.js` | 296 / 300 (99%) |
 | `main/utils/webContentsViewManager.js` | 293 / 300 (98%) |
 | `src/hooks/useAppIPCListeners.js` | 142 / 150 (95%) |
-| `src/components/AISidebar.jsx` | 652 / 700 (93%) |
+| `src/components/AISidebar.jsx` | 689 / 700 (98%) |
 | `src/constants.js` | 277 / 300 (92%) |
 | `main/native/backends/tdlibMapper.js` | 460 / 500 (92%) |
 | `src/native/components/PhotoSendModal.jsx` | 543 / 600 (91%) |

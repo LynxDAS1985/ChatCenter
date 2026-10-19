@@ -1,6 +1,59 @@
-﻿# Реализованные функции — ChatCenter
+# Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.509 (25 сентября 2026)
+## Текущая версия: v1.2.510 (25 сентября 2026)
+
+### v1.2.510 — DeepSeek снова открывается (русское имя приложения ломало запрос); правая кнопка на вкладке ИИ
+
+Жалоба: вкладка **DeepSeek** показывала «403 ERROR — The request could not be satisfied» (страница
+CloudFront) вместо чата. Плюс просьба: меню по правой кнопке на вкладке ИИ — «Перезапустить страницу».
+
+#### 1. КОРЕНЬ 403 у DeepSeek — русское имя приложения в заголовке представления (User-Agent)
+
+**Факты (3, один — уровня 1):**
+
+1. 🥇 **Уровень 1** — официальный исходник Electron `shell/common/application_info.cc`,
+   функция `BuildApplicationUserAgent()`: имя из `browser->GetName()` (его ставит `app.setName`)
+   подставляется в строку представления **дословно** (`absl::StrFormat("%s/%s Chrome/%s …", name, …)`).
+   Очистки от не-латиницы нет.
+2. 🥈 **Код проекта**: [main.js](../main/main.js) — `app.setName('ЦентрЧатов')` (кириллица);
+   `setupSession` ([sessionSetup.js](../main/utils/sessionSetup.js)) зовётся ТОЛЬКО для партиций
+   мессенджеров и `defaultSession` ([mainIpcHandlers.js](../main/handlers/mainIpcHandlers.js)),
+   а вкладка ИИ — `partition="persist:ai-webview"` ([AISidebar.jsx](../src/components/AISidebar.jsx)),
+   атрибута `useragent` у неё нет → представление ей не задавал НИКТО.
+3. 🧪 **Живой опыт против реального сервера** (3 прогона, стабильно):
+   `ЦентрЧатов/… Chrome/142 …` → **403 Forbidden, Server: CloudFront, X-Cache: Error from cloudfront**;
+   `ChatCenter/… Chrome/142 Electron/42.5.0 …` → **202**; пустое представление → 403.
+   Слово `Electron` блокировку **НЕ** вызывает — проверено отдельно, версия опровергнута.
+
+**Почему остальные ИИ работали**: `giga.chat` → 200 и `chat.openai.com` → 308 с тем же русским именем
+(их защита не придирается). Симптом видел только DeepSeek — он за CloudFront.
+
+**Журнал подтвердил**: `[ai-webview] [did-finish-load] provider=deepseek current=https://chat.deepseek.com/`
+без `did-fail-load` — сети хватило, 403 прислал сам сервер (страница-ошибка «грузится успешно»).
+
+**ФИКС** ([main.js](../main/main.js)): `app.userAgentFallback = NATIVE_CHROME_UA` — запасное представление
+для ВСЕХ сессий, которым его не задали явно (вкладка ИИ + любые будущие). Берём тот же согласованный
+UA с реальной версией движка, что Ozon и МАКС (версия в заголовке обязана совпадать с версией движка —
+ADR v1.2.320). `NATIVE_CHROME_UA` открыт наружу из [sessionSetup.js](../main/utils/sessionSetup.js), строка
+НЕ дублируется. Сессии с явным представлением (мессенджеры, окно входа в ИИ) не затронуты.
+
+**Страж** [appUserAgent.vitest.js](../src/__tests__/appUserAgent.vitest.js) (4 проверки): представление
+только из латиницы; выглядит браузером; `main.js` реально задаёт запасное. Прогон наоборот: убрал
+строку — покраснел.
+
+#### 2. Правая кнопка на вкладке ИИ → «Перезапустить страницу»
+
+[AIProviderTabs.jsx](../src/components/AIProviderTabs.jsx): `onContextMenu` открывает меню
+`position:fixed` по безопасным координатам с ограничением по границам окна (`safeX/safeY`,
+не уезжает за правый край экрана), закрывается кликом по прозрачной подложке (перехватывает клики над `<webview>`),
+кликом мимо и по Escape.
+[AISidebar.jsx](../src/components/AISidebar.jsx) `reloadProviderPage`: закрывает настройки (`setShowConfig(false)`),
+для НЕактивной вкладки переключает и отложенно сбрасывает кэш через `reloadIgnoringCache` (ответ-ошибка CloudFront
+кэшируется, обычный `reload` мог отдать ту же 403), для активной — немедленный `reloadIgnoringCache`,
+пишет в журнал `[ai-webview] [reload]`.
+
+🔴 **Меню НЕ показываем для режима «API-ключ»** — у него страницы нет, пункт врал бы (`preventDefault()` подавляет нативное меню).
+Страж [AIProviderTabs.vitest.jsx](../src/components/AIProviderTabs.vitest.jsx) (8 проверок) сторожит показ меню, блокировку для API, закрытие по Escape, клик по подложке и безопасные координаты.
 
 ### v1.2.509 — Прогон проверок стал честным; сторожа страниц можно собирать из частей
 
