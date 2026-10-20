@@ -150,4 +150,54 @@ describe('tg:new-message — muted чат (v1.2.12 регрессия)', () => {
     const notifyCalls = invokeMock.mock.calls.filter(c => c[0] === 'app:custom-notify')
     expect(notifyCalls).toHaveLength(0)
   })
+
+  // v1.2.511 (BUG-005): юзер выключил аккаунт на панели (галочка снята, hiddenAccountIds) → всплывашка и звук глушатся
+  it('аккаунт скрыт пользователем (hiddenAccountIds) → ribbon НЕ вызывается, пишется лог (v1.2.511 BUG-005)', () => {
+    const { fire, invokeMock, sendMock, get } = setup({
+      messages: {},
+      accounts: [{ id: 'tg_a', name: 'Автолиберти' }, { id: 'tg_b', name: 'БНК' }],
+      hiddenAccountIds: ['tg_a'],
+      soloAccountId: null,
+      chats: [{ id: 'c1', accountId: 'tg_a', title: 'Клиент', unreadCount: 0, isMuted: false }],
+      activeChatId: null,
+    })
+    fire('tg:new-message', { chatId: 'c1', message: newMsg() })
+    const notifyCalls = invokeMock.mock.calls.filter(c => c[0] === 'app:custom-notify')
+    expect(notifyCalls).toHaveLength(0)
+    const skipLog = sendMock.mock.calls.filter(c => c[0] === 'app:log' && c[1]?.message?.includes('skip hidden/inactive'))
+    expect(skipLog).toHaveLength(1)
+    expect(skipLog[0][1].level).toBe('TRACE')
+    expect(get().chats[0].unreadCount).toBe(1) // счётчик всё равно учитывается!
+  })
+
+  it('аккаунт скрыт, но чат отсутствует в state.chats (новый диалог) → ribbon НЕ вызывается благодаря парсингу chatId (v1.2.511 BUG-005)', () => {
+    const { fire, invokeMock, sendMock } = setup({
+      messages: {},
+      accounts: [{ id: 'tg_a', name: 'Автолиберти' }],
+      hiddenAccountIds: ['tg_a'],
+      soloAccountId: null,
+      chats: [], // чата ещё нет в кэше!
+      activeChatId: null,
+    })
+    fire('tg:new-message', { chatId: 'tg_a:new_dialog_123', message: newMsg() })
+    const notifyCalls = invokeMock.mock.calls.filter(c => c[0] === 'app:custom-notify')
+    expect(notifyCalls).toHaveLength(0)
+    const skipLog = sendMock.mock.calls.filter(c => c[0] === 'app:log' && c[1]?.message?.includes('skip hidden/inactive'))
+    expect(skipLog).toHaveLength(1)
+    expect(skipLog[0][1].level).toBe('TRACE')
+  })
+
+  it('аккаунт видим (не в hiddenAccountIds) → ribbon вызывается (v1.2.511 BUG-005)', () => {
+    const { fire, invokeMock } = setup({
+      messages: {},
+      accounts: [{ id: 'tg_a', name: 'Автолиберти' }, { id: 'tg_b', name: 'БНК' }],
+      hiddenAccountIds: ['tg_a'],
+      soloAccountId: null,
+      chats: [{ id: 'c2', accountId: 'tg_b', title: 'Клиент БНК', unreadCount: 0, isMuted: false }],
+      activeChatId: null,
+    })
+    fire('tg:new-message', { chatId: 'c2', message: newMsg() })
+    const notifyCalls = invokeMock.mock.calls.filter(c => c[0] === 'app:custom-notify')
+    expect(notifyCalls).toHaveLength(1)
+  })
 })

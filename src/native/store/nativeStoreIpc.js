@@ -9,7 +9,7 @@ import { createNotificationSource } from '../../../shared/notificationSource.js'
 import { preloadAlbumThumb } from '../utils/albumThumbPreload.js'
 import { buildNotifAlbum } from '../../../shared/notifAlbum.js'
 import { getAccountColor } from './accountColors.js' // v1.2.155: цвет-метка аккаунта для грани уведомления
-import { saveHiddenAccounts } from './accountFilter.js' // v1.2.163: держим скрытые аккаунты в localStorage синхронно
+import { saveHiddenAccounts, isAccountVisible } from './accountFilter.js' // v1.2.163: держим скрытые аккаунты в localStorage синхронно; v1.2.511: видимость для гейта уведомлений
 import { lastSenderLabel } from '../../../shared/chatPreviewSender.js' // v1.2.133: единое правило префикса имени
 import { attachLastMsgHandlers } from './nativeStoreLastMsgIpc.js' // v1.2.133 (TODO-14): вынесенный блок превью
 
@@ -390,14 +390,14 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
       //
       // chatId имеет формат 'accountId:rawId' (например 'tg_611696632:-1001229486988').
       let source = null
+      const colonIdx = String(chatId).indexOf(':')
+      const msgAccId = chat?.accountId || (colonIdx > 0 ? String(chatId).slice(0, colonIdx) : '')
       try {
-        const colonIdx = String(chatId).indexOf(':')
-        const accountId = colonIdx > 0 ? String(chatId).slice(0, colonIdx) : ''
         const rawChatId = colonIdx > 0 ? String(chatId).slice(colonIdx + 1) : String(chatId)
-        if (accountId && rawChatId && message?.id != null) {
+        if (msgAccId && rawChatId && message?.id != null) {
           source = createNotificationSource({
             messengerId: 'native_cc',
-            accountId,
+            accountId: msgAccId,
             chatId: rawChatId,
             messageId: String(message.id),
             threadId: message.threadId || null,
@@ -419,6 +419,8 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
       // v1.2.312: свежесть — offline-бэклог (дата отправки раньше старта) всплывашкой НЕ показываем.
       const msgTsMs = Number(message.timestamp) || 0
       const isBacklogMsg = msgTsMs > 0 && msgTsMs < (NOTIFY_ARM_TS - 15000)
+      const isAccountHidden = msgAccId
+        && !isAccountVisible(msgAccId, stateRef.current.hiddenAccountIds, stateRef.current.soloAccountId)
       if (chat?.isMuted) {
         // Уровень TRACE — пишется только при включенной диагностике, не спамит при
         // потоке muted-сообщений из активных каналов. См. CLAUDE.md «Логи».
@@ -428,6 +430,9 @@ export function attachTelegramIpcListeners({ setState, stateRef }) {
             message: '[native-notif] skip muted chatId=' + chatId + ' sender=' + (message.senderName || chat?.title || '?'),
           })
         } catch (_) {}
+      } else if (isAccountHidden) {
+        // v1.2.511 (BUG-005): юзер выключил аккаунт на панели (аккаунт в hiddenAccountIds) → не спамим всплывашками и звуком
+        try { window.api?.send?.('app:log', { level: 'TRACE', message: '[native-notif] skip hidden/inactive accountId=' + msgAccId + ' chatId=' + chatId }) } catch (_) {}
       } else if (isBacklogMsg) {
         // v1.2.312: старьё при старте (offline-бэклог) — всплывашку НЕ показываем, только счётчик.
         // Заодно «детектор»: по числу таких строк в журнале виден размер стартового завала.

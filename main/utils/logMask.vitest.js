@@ -1,6 +1,6 @@
 // v1.2.144: тест маскировки кодов входа в файле логов (maskLogSecrets).
 import { describe, it, expect } from 'vitest'
-import { maskLogSecrets } from './logger.js'
+import { maskLogSecrets, isAutoOpenOnError, setAutoOpenOnError } from './logger.js'
 
 describe('maskLogSecrets — маскировка кодов входа в логах', () => {
   it('маскирует код входа Telegram', () => {
@@ -34,3 +34,23 @@ describe('maskLogSecrets — маскировка кодов входа в ло�
     expect(maskLogSecrets(undefined)).toBe(undefined)
   })
 })
+
+describe('autoOpenLogOnError toggle (v1.2.512)', () => {
+  it('по умолчанию включено', () => {
+    setAutoOpenOnError(true)
+    expect(isAutoOpenOnError()).toBe(true)
+  })
+
+  it('переключается в выключенное состояние', () => {
+    setAutoOpenOnError(false)
+    expect(isAutoOpenOnError()).toBe(false)
+  })
+
+  it('приводит значение к boolean', () => {
+    setAutoOpenOnError(0)
+    expect(isAutoOpenOnError()).toBe(false)
+    setAutoOpenOnError('true')
+    expect(isAutoOpenOnError()).toBe(true)
+  })
+})
+

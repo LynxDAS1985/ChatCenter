@@ -7,7 +7,7 @@ import { ipcMain, shell, clipboard } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { setupSession } from '../utils/sessionSetup.js'
-import { readLogFile, readPrevLogFile, getPrevLogFilePath, clearLogFile, getLogFilePath } from '../utils/logger.js'
+import { readLogFile, readPrevLogFile, getPrevLogFilePath, clearLogFile, getLogFilePath, isAutoOpenOnError, setAutoOpenOnError } from '../utils/logger.js'
 import { createOverlayIcon } from '../utils/overlayIcon.js'
 import { collectSystemDiagnostics, readSystemDiagnosticsReport, saveSystemDiagnosticsReport } from '../utils/systemDiagnostics.js'
 import { initAILoginHandler } from './aiLoginHandler.js'
@@ -48,6 +48,18 @@ export function registerMainIpcHandlers(deps) {
       console.warn('[open-logs-folder] нет пути лога (getLogFilePath пуст)') // v1.2.319: не «немой» отказ
       return { ok: false, error: 'no-log-path' }
     } catch (e) { console.warn('[open-logs-folder] ошибка:', e && e.message); return { ok: false, error: e && e.message } }
+  })
+  // v1.2.512: чтение и переключение авто-открытия окна логов при ошибках (рубильник пользователя)
+  ipcMain.handle('app:get-auto-open-log', () => ({ enabled: isAutoOpenOnError() }))
+  ipcMain.handle('app:set-auto-open-log', (_, val) => {
+    const enabled = !!val
+    setAutoOpenOnError(enabled)
+    try {
+      const s = storage.get('settings', {})
+      s.autoOpenLogOnError = enabled
+      storage.set('settings', s)
+    } catch (_) {}
+    return { ok: true, enabled }
   })
   ipcMain.handle('app:diagnostics-snapshot', () => collectSystemDiagnostics({ app, readLogFile, getLogFilePath }))
   ipcMain.handle('app:diagnostics-save-report', (_, report) => saveSystemDiagnosticsReport({ app, report }))
@@ -139,6 +151,9 @@ export function registerMainIpcHandlers(deps) {
   // Настройки — сохранение
   ipcMain.handle('settings:save', (event, settings) => {
     storage.set('settings', settings)
+    if (settings && typeof settings.autoOpenLogOnError === 'boolean') {
+      setAutoOpenOnError(settings.autoOpenLogOnError)
+    }
     return { ok: true }
   })
 

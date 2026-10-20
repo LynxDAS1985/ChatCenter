@@ -8,6 +8,10 @@ const LOG_MAX_SIZE = 2 * 1024 * 1024
 let logFilePath = null
 let _openLogViewer = null // будет установлена из main.js
 let _lastAutoLogOpen = 0
+let _autoOpenOnError = true // v1.2.512: рубильник авто-открытия окна лога при ERROR (по запросу пользователя)
+
+export function setAutoOpenOnError(enabled) { _autoOpenOnError = !!enabled }
+export function isAutoOpenOnError() { return _autoOpenOnError }
 
 // v1.2.144: маскируем коды подтверждения/входа В ФАЙЛЕ логов. Утечка: веб-Telegram
 // трейсил тело уведомления «Код для входа в Telegram: 51519» → код попадал в chatcenter.log.
@@ -98,6 +102,7 @@ export function initLogger(userDataPath) {
     try { fs.appendFileSync(logFilePath, msg) } catch (e) { origError('[Logger] Write failed:', e.code, logFilePath) }
   }
   function autoOpenLogOnError() {
+    if (!_autoOpenOnError) return
     const now = Date.now()
     if (now - _lastAutoLogOpen < 30000) return
     _lastAutoLogOpen = now

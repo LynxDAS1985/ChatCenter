@@ -1,6 +1,34 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.510 (25 сентября 2026)
+## Текущая версия: v1.2.512 (19 октября 2026)
+
+### v1.2.512 — Переключатель авто-всплытия окна логов при ошибках (рубильник пользователя)
+
+Подробная карточка бага / фичи: [bugs/v1.2.512.md](bugs/v1.2.512.md).
+
+#### 1. Кнопка-рубильник прямо в шапке окна логов (BUG-007)
+- **Симптом**: окно логов неожиданно выскакивало поверх всех окон при любой сетевой ошибке или сбое (например, при DNS-сбое Ozon). Отключить это поведение было невозможно.
+- **Фикс**:
+  - В [main/log-viewer.html](../main/log-viewer.html) добавлена кнопка `🔔 Всплывать: ВКЛ` / `🔕 Всплывать: ВЫКЛ`.
+  - Кнопка автообновления ленты логов переименована в `● Авто-лента` / `○ Авто-лента`, устраняя путаницу.
+  - Состояние передаётся через безопасный contextBridge в [log-viewer.preload.cjs](../main/preloads/log-viewer.preload.cjs).
+  - В [main/utils/logger.js](../main/utils/logger.js) добавлен флаг `_autoOpenOnError` и функции `setAutoOpenOnError(enabled)` / `isAutoOpenOnError()`. При выключенном флаге `autoOpenLogOnError()` завершается без открытия окна.
+  - Настройка сохраняется в `settings.autoOpenLogOnError` через IPC-обработчики в [mainIpcHandlers.js](../main/handlers/mainIpcHandlers.js) и восстанавливается при запуске приложения в [main.js](../main/main.js).
+- **Тесты**: [main/utils/logMask.vitest.js](../main/utils/logMask.vitest.js) (+3 теста).
+
+### v1.2.511 — Фикс уведомлений скрытых аккаунтов (BUG-005) и срезания верха веб-страниц (BUG-006); папка учёта багов
+
+Подробные карточки багов вынесены в [bugs/v1.2.511.md](bugs/v1.2.511.md) и [bugs/README.md](bugs/README.md).
+
+#### 1. Уведомления выключенных API-аккаунтов больше не приходят (BUG-005)
+- **Корень**: при снятии галочки/клике по аватарке аккаунт попадал в `hiddenAccountIds`, но в [nativeStoreIpc.js](../src/native/store/nativeStoreIpc.js) обработчик `tg:new-message` проверял только `chat?.isMuted` и backlog, игнорируя скрытость аккаунта.
+- **Фикс**: добавлен вызов `isAccountVisible(chat.accountId, hiddenAccountIds, soloAccountId)` перед отправкой `app:custom-notify`. При скрытом аккаунте уведомление и звук пропускаются с логом, счётчик чата обновляется.
+- **Тесты**: [nativeStoreMutedNotify.vitest.jsx](../src/native/store/nativeStoreMutedNotify.vitest.jsx) (+2 теста).
+
+#### 2. Окно веб-подключений больше не срезает верх и кнопку «← Общий чат» (BUG-006)
+- **Корень**: в [App.jsx](../src/App.jsx) центральный блок `[data-cc-layout="middle"]` имел `overflow: hidden`, но браузер прокручивал его программно (при фокусе поля ввода/iframe), из-за чего `scrollTop` становился >0 и контент уезжал вверх за край.
+- **Фикс**: добавлен `middleContainerRef`, слушатель `onScroll` со сбросом `scrollTop = 0, scrollLeft = 0` в реальном времени, сброс скролла при смене вкладки `activeId`, и `overflow-hidden` на контейнере webview.
+- **Документация**: Ловушка 6 в [mistakes/app-layout.md](mistakes/app-layout.md).
 
 ### v1.2.510 — DeepSeek снова открывается (русское имя приложения ломало запрос); правая кнопка на вкладке ИИ
 

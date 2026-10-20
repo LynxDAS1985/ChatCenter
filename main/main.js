@@ -10,7 +10,7 @@ import https from 'node:https'
 import http from 'node:http'
 import { fileURLToPath } from 'url'
 
-import { initLogger, readLogFile, setLogViewerOpener } from './utils/logger.js'
+import { initLogger, readLogFile, setLogViewerOpener, setAutoOpenOnError } from './utils/logger.js'
 import { setupSession, NATIVE_CHROME_UA } from './utils/sessionSetup.js'
 import { initStorage, migrateSettings } from './utils/storage.js'
 import { httpsPostSkipSsl, getGigaChatToken, GIGACHAT_CHAT_URL } from './utils/gigachat.js'
@@ -262,6 +262,7 @@ app.whenReady().then(() => {
 
   // v0.84.1: Миграция settings
   const settings = storage.get('settings', {})
+  setAutoOpenOnError(settings.autoOpenLogOnError !== false)
   const storagePath = path.join(app.getPath('userData'), 'chatcenter.json')
   const migrated = migrateSettings(settings, storagePath)
   if (migrated._version !== settings._version) {

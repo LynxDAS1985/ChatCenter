@@ -44,4 +44,11 @@ contextBridge.exposeInMainWorld('logViewer', {
   openFolder() {
     return ipcRenderer.invoke('app:open-logs-folder')
   },
+  // v1.2.512: чтение и переключение авто-открытия окна логов при сбоях (рубильник пользователя)
+  getAutoOpenOnError() {
+    return ipcRenderer.invoke('app:get-auto-open-log')
+  },
+  setAutoOpenOnError(val) {
+    return ipcRenderer.invoke('app:set-auto-open-log', val)
+  },
 })

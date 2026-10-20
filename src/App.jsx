@@ -196,6 +196,7 @@ export default function App() {
   const activeNativeAccountIdRef = useRef(null)
   const healthInFlightWebviewRef = useRef(new Set())
   const healthInFlightNativeRef = useRef(new Set())
+  const middleContainerRef = useRef(null)
 
   // Синхронизация рефов
   useEffect(() => { settingsRef.current = settings }, [settings])
@@ -205,6 +206,8 @@ export default function App() {
   useEffect(() => { connectionHealthRef.current = connectionHealth }, [connectionHealth])
   useEffect(() => { webviewLoadingRef.current = webviewLoading }, [webviewLoading])
   useEffect(() => { activeNativeAccountIdRef.current = activeNativeAccountId }, [activeNativeAccountId])
+  // v1.2.511: сброс scroll у middle-контейнера при смене вкладки (защита от срезания верха веб-страниц)
+  useEffect(() => { const el = middleContainerRef.current; if (el) { if (el.scrollTop) el.scrollTop = 0; if (el.scrollLeft) el.scrollLeft = 0 } }, [activeId])
   // v1.2.12: при переключении на webview-вкладку — снимок состояния отрисовки в лог (диагностика чёрного экрана)
   useEffect(() => {
     if (!activeId) return undefined
@@ -730,7 +733,14 @@ export default function App() {
             помечен «лишнее срезать» — поэтому при сохранённой ширине панели ИИ 458 точек
             содержимое не влезало, и крайняя правая панель молча уезжала за край окна.
             min-w-0 = «можно сжиматься» — принятая в проекте идиома (20 мест: ChatListItem и др.). */}
-        <div className="flex-1 min-w-0 relative overflow-hidden" data-cc-layout="middle" style={{ backgroundColor: 'var(--cc-bg)', cursor: isResizing ? 'col-resize' : undefined }}>
+        {/* v1.2.511: onScroll моментально сбрасывает сдвиг в 0 (защита от programmatic scroll / focus scrollIntoView / срезания верха) */}
+        <div
+          data-cc-layout="middle"
+          ref={middleContainerRef}
+          className="flex-1 min-w-0 relative overflow-hidden"
+          onScroll={function(e) { if (e.currentTarget.scrollTop) e.currentTarget.scrollTop = 0; if (e.currentTarget.scrollLeft) e.currentTarget.scrollLeft = 0 }}
+          style={{ backgroundColor: 'var(--cc-bg)', cursor: isResizing ? 'col-resize' : undefined }}
+        >
           {/* v1.2.262: полоска «← Общий чат» над активным веб-мессенджером → возврат к API-чатам
               (native инбокс). Показывается только когда открыт веб (не нативный/не пусто). */}
           {(() => {
@@ -775,7 +785,7 @@ export default function App() {
             messengers.map(m => (
               <div
                 key={m.id}
-                className="absolute inset-0"
+                className="absolute inset-0 overflow-hidden"
                 style={{
                   zIndex: activeId === m.id ? 2 : 0,
                   pointerEvents: activeId === m.id ? 'auto' : 'none',
