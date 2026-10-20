@@ -140,8 +140,10 @@ function verifyPackagedApp() {
 
 async function main() {
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  const builderCmd = path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder')
   await run(npmCmd, ['run', 'build'])
-  await run('electron-builder', ['--win', '--x64'])
+  try { removePath(path.join(distDir, 'win-unpacked')) } catch (_) {}
+  await run(builderCmd, ['--win', '--x64'])
   verifyPackagedApp()
   cleanDistribExceptInstaller()
 }
