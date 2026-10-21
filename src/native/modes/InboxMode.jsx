@@ -144,21 +144,23 @@ export default function InboxMode({ store, hoveredAccountId, modes }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  // v0.87.105 (ADR-016): загружаем чаты ВСЕХ аккаунтов разом (multi-account).
-  // Если accountId не передан, backend itерирует по всем зарегистрированным.
-  // v1.2.393: держим заставку до РЕЗОЛВА loadChats (полный батч чатов). Страховка 15с —
-  // если сети нет и loadChats не вернётся, всё равно откроем список (что успело подгрузиться).
+  // v0.87.105 / v1.2.513: при добавлении аккаунта подгружаем только его, при старте — все разом.
+  // v1.2.393: держим заставку до РЕЗОЛВА loadChats. Страховка 15с при зависании/отсутствии сети.
+  const prevAccountsLenRef = useRef(0)
   useEffect(() => {
-    if (store.accounts.length === 0) return
+    if (store.accounts.length === 0) { prevAccountsLenRef.current = 0; return }
+    const prev = prevAccountsLenRef.current
+    prevAccountsLenRef.current = store.accounts.length
+    if (prev > 0 && store.accounts.length <= prev) return // удаление: чаты уже убраны из памяти
     let cancelled = false
     const safety = setTimeout(() => {
       if (cancelled) return
-      // v1.2.394: страховка сработала = loadChats не вернулся за 15с (нет сети/завис) — это важное
-      // событие, пишем в журнал, чтобы при жалобе «долго висит заставка» было видно причину.
       try { window.api?.send?.('app:log', { level: 'WARN', message: '[chatload] страховка 15с — loadChats не завершился, открываю список принудительно' }) } catch (_) {}
       setChatsFirstLoadDone(true)
     }, 15000)
-    store.loadChats().finally(() => { if (!cancelled) { clearTimeout(safety); setChatsFirstLoadDone(true) } })
+    // v1.2.513: точечная загрузка ТОЛЬКО при добавлении строго одного аккаунта (+1); при пакетном добавлении (>+1) — грузим все разом (undefined)
+    const targetId = (prev > 0 && store.accounts.length === prev + 1) ? store.accounts[store.accounts.length - 1]?.id : undefined
+    store.loadChats(targetId).finally(() => { if (!cancelled) { clearTimeout(safety); setChatsFirstLoadDone(true) } })
     return () => { cancelled = true; clearTimeout(safety) }
   }, [store.accounts.length])
 

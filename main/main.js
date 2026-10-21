@@ -26,7 +26,7 @@ import { initNetPulse } from './handlers/netPulseHandlers.js' // v1.2.491: «п�
 import { initAiToolIpcHandlers } from './handlers/aiToolIpcHandlers.js'
 // v1.2.0 (Этап 2 AI Bridge): IPC handler для bridge — Local Bridge (Ollama) подключен,
 // API/WebUI bridges подключатся на Этапах 3-6.
-import { registerAiBridgeIpcHandlers } from './handlers/aiBridgeIpcHandlers.js'
+import { registerAiBridgeIpcHandlers, handleSend } from './handlers/aiBridgeIpcHandlers.js'
 // v0.98.0 (Phase 2): IPC handlers для audit log (JSONL persistent storage).
 import { initAuditIpcHandlers } from './handlers/auditIpcHandlers.js'
 // v0.99.1 (Phase 3.5): полная инициализация AI агента (registry + context + callProvider).
@@ -439,7 +439,6 @@ app.whenReady().then(() => {
           // v1.2.3: bridgeSend для ai_reply через AI Bridge.
           //   payload = { mode, chain, config, question } (см. handleSend в aiBridgeIpcHandlers).
           bridgeSend: async (payload) => {
-            const { handleSend } = await import('./handlers/aiBridgeIpcHandlers.js')
             return handleSend(payload, { callProvider: callProviderFn })
           },
           // v1.2.3: getRecentMessages — опционально, для контекста в Bridge.

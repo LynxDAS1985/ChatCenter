@@ -33,7 +33,8 @@ async function safeInvoke(client, request) {
 
 // v1.1.9: SEARCH_FILTER_MAP / mapSearchFilter / parseChatId вынесены
 // в tdlibBackendHelpers.js (pure helpers, легко тестируемые без TDLib мока).
-import { mapSearchFilter, parseChatId, networkChangedRaw } from './tdlibBackendHelpers.js'
+// v1.2.513: fetchChatsRaw вынесен в tdlibBackendHelpers.js (дедупликация параллельных запросов чатов).
+import { mapSearchFilter, parseChatId, networkChangedRaw, fetchChatsRaw } from './tdlibBackendHelpers.js'
 
 /**
  * Возвращает client для chatId или null + готовый error-ответ.
@@ -93,6 +94,7 @@ export function createTdlibBackend(opts = {}) {
   // Состояние одного активного login (TDLib линейный). dispose() после завершения.
   let _authFlow = null
   let _pendingAccountId = null
+  const _inFlightGetChats = new Map() // v1.2.513: дедупликация параллельных запросов чатов
 
   // v0.89.2: единая точка финализации — manager.finalizeAccount (tdlibClient.js).
   const _finalizePending = async () => {
@@ -201,34 +203,8 @@ export function createTdlibBackend(opts = {}) {
 
     chats: {
       async getChats(accountId) {
-        // v0.89.0 / Этап 3.11: правильная пагинация TDLib loadChats.
-        // loadChats({limit:N}) — это команда «загрузи следующие N чатов». TDLib
-        // строит список через updateNewChat events АСИНХРОННО. invoke резолвится
-        // сразу с Ok или с error code=404 когда чатов больше нет.
-        // Чтобы получить ВСЕ чаты (у юзера 600+), вызываем loadChats в цикле
-        // пока не получим 404. Между вызовами даём TDLib время на updateNewChat.
-        const accountIds = accountId ? [accountId] : manager.listAccounts()
-        for (const aid of accountIds) {
-          const client = manager.getClient(aid)
-          if (!client?.invoke) continue
-          // Загружаем Main + Archive lists (юзер может иметь архивные тоже)
-          for (const chatList of [
-            { '@type': 'chatListMain' },
-            { '@type': 'chatListArchive' },
-          ]) {
-            for (let i = 0; i < 20; i++) {  // макс 20 страниц x 100 = 2000 чатов
-              const r = await safeInvoke(client, { '@type': 'loadChats', chat_list: chatList, limit: 100 })
-              if (!r.ok) break  // 404 «end of list» или ошибка — выходим
-              // Маленькая пауза чтобы updateNewChat events успели прийти
-              await new Promise((res) => setTimeout(res, 80))
-            }
-          }
-        }
-        // Возвращаем то что накопилось в cache
-        if (accountId) return { ok: true, chats: manager.getAccountChats(accountId) }
-        const all = []
-        for (const aid of manager.listAccounts()) all.push(...manager.getAccountChats(aid))
-        return { ok: true, chats: all }
+        // v0.89.0: пагинация TDLib loadChats; v1.2.513: вынесено в fetchChatsRaw с защитой от дублей.
+        return fetchChatsRaw(manager, safeInvoke, accountId, _inFlightGetChats)
       },
       async getCachedChats(accountId) {
         return { ok: true, chats: manager.getAccountChats(accountId) }

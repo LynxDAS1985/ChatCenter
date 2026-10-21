@@ -1,6 +1,24 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.512 (19 октября 2026)
+## Текущая версия: v1.2.513 (21 октября 2026)
+
+### v1.2.513 — Оптимизация запуска и очередей TDLib, разгрузка PhotoSendModal, удаление input, фикс дедупликации чатов (BUG-008)
+
+Подробная карточка: [bugs/v1.2.513.md](bugs/v1.2.513.md).
+
+#### 1. Дедупликация и устранение утечки очереди чатов TDLib (BUG-008)
+- **Корень**: частые повторные вызовы `getChats` запускали параллельные тяжелые опросы TDLib (main + archive по 20 итераций). Первая версия дедупликации через `inFlightMap` оставляла застрявшие ключи в Map: при синхронном выходе `finally` опережал `set`, а ветка `pAll` не имела `.finally(delete)`.
+- **Фикс**: чистая функция `fetchChatsRaw` в [tdlibBackendHelpers.js](../main/native/backends/tdlibBackendHelpers.js) с гарантированным удалением ключей через `.finally()`. В [tdlibBackend.js](../main/native/backends/tdlibBackend.js) метод `getChats` делегирует в хелпер, сократив размер файла с 930 до 906 строк.
+- **Тесты**: [tdlibBackendHelpers.vitest.js](../main/native/backends/tdlibBackendHelpers.vitest.js) (17 тестов).
+
+#### 2. Точечная загрузка чатов нового аккаунта в InboxMode
+- **Фикс**: в [InboxMode.jsx](../src/native/modes/InboxMode.jsx) при старте загружаются чаты всех аккаунтов разом (`undefined`), а при добавлении ровно 1 аккаунта — точечно `loadChats(targetId)`. При пакетном добавлении (>+1) чаты загружаются для всех сразу. Удаление аккаунта не вызывает повторный запрос.
+
+#### 3. Разгрузка PhotoSendModal.jsx и бюджет строк
+- **Фикс**: статичные стили `photoModalStyles` и чистые функции `buildRotatedFile`, `autosize` вынесены в [photoSendUtils.js](../src/native/utils/photoSendUtils.js). Размер `PhotoSendModal.jsx` снижен с 543 до 427 строк (порог 600, снято предупреждение 80%+). Суммарный объем `src/` снижен до 31 092 строк (запас 58 строк).
+
+#### 4. Чистка неиспользуемого пакета input и оптимизация импортов
+- **Фикс**: пакет `input` удален из `package.json`, `package-lock.json`, `dist-win.cjs`, `mainImports.test.cjs`. Удален дублирующий динамический импорт в `tdlibClient.js` (649/650 строк). В `main.js` объединен импорт `handleSend` с `aiBridgeIpcHandlers.js`, убрав предупреждение Rollup. Диск освобожден от 3.86 ГБ устаревших инсталляторов и HAR-дампа.
 
 ### v1.2.512 — Переключатель авто-всплытия окна логов при ошибках (рубильник пользователя)
 

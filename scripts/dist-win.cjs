@@ -112,9 +112,8 @@ function verifyPackagedApp() {
     'out/preloads/hooks/vk.hook.js',
     // v1.2.191: GramJS ('telegram') удалён при миграции на TDLib — раньше здесь была запись
     // 'node_modules/telegram/package.json', проверка требовала несуществующий модуль и валила
-    // сборку. TDLib-бэкенд — main/native/backends/tdlib*.js. ('input' — тоже остаток GramJS,
-    // пока в deps, не используется; оставлен в проверке, т.к. установлен и не валит.)
-    'node_modules/input/package.json',
+    // сборку. TDLib-бэкенд — main/native/backends/tdlib*.js.
+    // v1.2.513: остаток 'input' также удалён из зависимостей.
     'node_modules/libphonenumber-js/package.json',
   ]
   const missing = required.filter(p => !entries.has(p))

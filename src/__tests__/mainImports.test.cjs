@@ -15,7 +15,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || 'fail') }
 console.log('\n🧪 Проверка named imports из CommonJS пакетов\n')
 
 // Пакеты которые ПРОВЕРЯЕМ (electron исключён — работает по-особому)
-const CHECK_PKGS = ['telegram', 'baileys', 'vk-io', 'input']
+const CHECK_PKGS = ['telegram', 'baileys', 'vk-io']
 
 function walk(dir) {
   const results = []

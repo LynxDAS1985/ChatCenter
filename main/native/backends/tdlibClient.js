@@ -181,7 +181,6 @@ export class TdlibClientManager extends EventEmitter {
         record.userCache.set(Number(userId), me)
         record.ownUserId = Number(userId)  // v0.89.6: для snapshot и own-avatar detection
         try {
-          const { scheduleAvatarDownload } = await import('./tdlibAvatars.js')
           scheduleAvatarDownload(this, record, 'user', userId, me.profile_photo?.small)
         } catch (_) {}
       }
