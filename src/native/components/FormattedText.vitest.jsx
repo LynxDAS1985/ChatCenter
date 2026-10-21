@@ -1,6 +1,6 @@
 // v0.87.31: render-smoke для FormattedText (entities / autolinks / спойлеры).
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, fireEvent, act } from '@testing-library/react'
 import FormattedText from './FormattedText.jsx'
 
 beforeEach(() => {
@@ -65,6 +65,85 @@ describe('FormattedText render', () => {
     ]
     const { container } = render(<FormattedText text="@abc text" entities={entities} />)
     expect(container.textContent).toContain('@abc')
+    cleanup()
+  })
+
+  // v1.2.514: ссылки в исходящих сообщениях белые (#ffffff) с подчеркиванием
+  it('v1.2.514: ссылки в исходящих сообщениях белые с подчеркиванием (не сливаются с фоном)', () => {
+    const { container } = render(<FormattedText text="Сайт https://test.ru и почта support@chatcenter.ru" isOutgoing={true} />)
+    const links = container.querySelectorAll('a')
+    expect(links.length).toBe(2)
+    for (const a of links) {
+      expect(['#ffffff', 'rgb(255, 255, 255)']).toContain(a.style.color)
+      expect(a.style.textDecoration).toBe('underline')
+    }
+    cleanup()
+  })
+
+  it('v1.2.514: entity email в исходящих сообщениях белый с подчеркиванием', () => {
+    const entities = [{ type: 'email', offset: 0, length: 22 }]
+    const { container } = render(<FormattedText text="alexdugin818@gmail.com" entities={entities} isOutgoing={true} />)
+    const a = container.querySelector('a')
+    expect(a).toBeTruthy()
+    expect(a.getAttribute('href')).toBe('mailto:alexdugin818@gmail.com')
+    expect(['#ffffff', 'rgb(255, 255, 255)']).toContain(a.style.color)
+    expect(a.style.textDecoration).toBe('underline')
+    cleanup()
+  })
+
+  it('v1.2.514: ссылки имеют всплывающую подсказку title с полным адресом', () => {
+    const entities = [{ type: 'texturl', offset: 0, length: 5, url: 'https://secret.target.org/page' }]
+    const { container } = render(<FormattedText text="Тыкни сюда" entities={entities} />)
+    const a = container.querySelector('a')
+    expect(a.getAttribute('title')).toBe('https://secret.target.org/page')
+    cleanup()
+  })
+
+  it('v1.2.514: правый клик по ссылке открывает меню копирования адреса', () => {
+    const { container } = render(<FormattedText text="Смотри https://example.com/item" />)
+    const a = container.querySelector('a')
+    expect(a).toBeTruthy()
+    act(() => {
+      fireEvent.contextMenu(a, { clientX: 100, clientY: 100 })
+    })
+    expect(container.textContent).toContain('Копировать адрес ссылки')
+    cleanup()
+  })
+
+  it('v1.2.514: entities=null не приводит к ошибке', () => {
+    const { container } = render(<FormattedText text="Тестовый текст" entities={null} />)
+    expect(container.textContent).toContain('Тестовый текст')
+    cleanup()
+  })
+
+  it('v1.2.514: авто-детект email с плюсом (+tag) корректно сохраняет полный адрес', () => {
+    const { container } = render(<FormattedText text="Пишите на client+support@chatcenter.ru" />)
+    const a = container.querySelector('a')
+    expect(a).toBeTruthy()
+    expect(a.getAttribute('href')).toBe('mailto:client+support@chatcenter.ru')
+    cleanup()
+  })
+
+  it('v1.2.514: контекстное меню ссылки закрывается по Escape', () => {
+    const { container } = render(<FormattedText text="Ссылка https://example.com" />)
+    const a = container.querySelector('a')
+    act(() => {
+      fireEvent.contextMenu(a, { clientX: 100, clientY: 100 })
+    })
+    expect(container.textContent).toContain('Копировать адрес ссылки')
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' })
+    })
+    expect(container.textContent).not.toContain('Копировать адрес ссылки')
+    cleanup()
+  })
+
+  it('v1.2.514: t.me ссылки нормализуются с префиксом https://', () => {
+    const { container } = render(<FormattedText text="Канал t.me/durov" />)
+    const a = container.querySelector('a')
+    expect(a).toBeTruthy()
+    expect(a.getAttribute('href')).toBe('https://t.me/durov')
+    expect(a.getAttribute('title')).toBe('https://t.me/durov')
     cleanup()
   })
 })

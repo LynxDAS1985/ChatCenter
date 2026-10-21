@@ -52,19 +52,20 @@ export const THEMES = [
   },
 ]
 
-export const DEFAULT_THEME_ID = 'telegram-blue'
+export const DEFAULT_THEME_ID = 'premium'
 const STORAGE_KEY = 'cc-native-theme'
 
 export function getThemeById(id) {
-  return THEMES.find(t => t.id === id) || THEMES[0]
+  return THEMES.find(t => t.id === id) || THEMES.find(t => t.id === DEFAULT_THEME_ID) || THEMES[0]
 }
 
 export function loadTheme() {
   try {
-    if (typeof localStorage === 'undefined') return THEMES[0]
+    const defaultTheme = getThemeById(DEFAULT_THEME_ID)
+    if (typeof localStorage === 'undefined') return defaultTheme
     const id = localStorage.getItem(STORAGE_KEY)
-    return getThemeById(id)
-  } catch (_) { return THEMES[0] }
+    return id ? getThemeById(id) : defaultTheme
+  } catch (_) { return getThemeById(DEFAULT_THEME_ID) }
 }
 
 export function saveTheme(id) {

@@ -19,9 +19,9 @@ describe('themeColor (v0.95.30)', () => {
     }
   })
 
-  it('DEFAULT_THEME_ID = telegram-blue (совместимость с прежними версиями)', () => {
-    expect(DEFAULT_THEME_ID).toBe('telegram-blue')
-    expect(getThemeById(DEFAULT_THEME_ID).accent).toBe('#2AABEE')
+  it('DEFAULT_THEME_ID = premium (v1.2.514: яркий Telegram-blue Premium)', () => {
+    expect(DEFAULT_THEME_ID).toBe('premium')
+    expect(getThemeById(DEFAULT_THEME_ID).accent).toBe('#229ED9')
   })
 
   it('getThemeById — известный id → нужная тема', () => {
@@ -30,9 +30,10 @@ describe('themeColor (v0.95.30)', () => {
   })
 
   it('getThemeById — неизвестный/null → default', () => {
-    expect(getThemeById('unknown')).toBe(THEMES[0])
-    expect(getThemeById(null)).toBe(THEMES[0])
-    expect(getThemeById(undefined)).toBe(THEMES[0])
+    const defaultTheme = getThemeById(DEFAULT_THEME_ID)
+    expect(getThemeById('unknown')).toBe(defaultTheme)
+    expect(getThemeById(null)).toBe(defaultTheme)
+    expect(getThemeById(undefined)).toBe(defaultTheme)
   })
 
   it('loadTheme — пусто в storage → default', () => {
@@ -105,5 +106,28 @@ describe('themeColor (v0.95.30)', () => {
   it('saveTheme — defensive (null/undefined → DEFAULT_THEME_ID)', () => {
     saveTheme(null)
     expect(loadTheme().id).toBe(DEFAULT_THEME_ID)
+  })
+
+  // v1.2.514: проверка контрастности ссылок против цвета фона bubble во всех темах
+  it('v1.2.514: контрастность белых ссылок (#ffffff) против accent цвета всех 5 тем безопасна', () => {
+    const getLuminance = (hex) => {
+      const rgb = hex.replace('#', '').match(/.{2}/g).map(x => {
+        const v = parseInt(x, 16) / 255
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+      })
+      return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+    }
+    const getContrast = (h1, h2) => {
+      const l1 = getLuminance(h1)
+      const l2 = getLuminance(h2)
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
+    }
+
+    for (const theme of THEMES) {
+      // Белый текст ссылки на фоне темы должен иметь видимый контраст (>2.0:1) и не совпадать с фоном
+      const ratio = getContrast('#ffffff', theme.accent)
+      expect(ratio).toBeGreaterThan(2.0)
+      expect(theme.accent.toLowerCase()).not.toBe('#ffffff')
+    }
   })
 })

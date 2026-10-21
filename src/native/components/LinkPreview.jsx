@@ -7,6 +7,7 @@ export default function LinkPreview({ wp, isOutgoing }) {
     <a
       href={wp.url}
       onClick={onClick}
+      className="native-msg-link-preview"
       style={{
         display: 'block',
         marginTop: 6,

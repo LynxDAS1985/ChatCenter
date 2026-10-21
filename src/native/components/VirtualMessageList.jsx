@@ -234,7 +234,9 @@ export default function VirtualMessageList({
         ...style,
       }}
     >
-      <div ref={innerRef}>
+      {/* v1.2.514: paddingTop 20px гарантирует, что верхние hover-кнопки (top: -14px)
+          не срезаются верхней границей overflow-контейнера при scrollTop=0 */}
+      <div ref={innerRef} style={{ paddingTop: 20 }}>
         {renderItems.map((item, idx) => (
           <MessageRow key={item?.key || idx} item={item} rowContext={rowContext} />
         ))}

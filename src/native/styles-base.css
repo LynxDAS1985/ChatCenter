@@ -9,9 +9,9 @@
    ПЕРЕБИВАЛ inline-стиль на html → выбор цвета не применялся (см. v0.95.33).
    Defaults — Telegram blue. WhatsNewModal (вне .native-mode) тоже подхватит. */
 :root {
-  --amoled-accent: #2AABEE;
-  --amoled-accent-hover: #1e8fc7;
-  --amoled-accent-shadow: rgba(42,171,238,0.15);
+  --amoled-accent: #229ED9;
+  --amoled-accent-hover: #0088CC;
+  --amoled-accent-shadow: rgba(34,158,217,0.22);
   --bubble-opacity: 0.95;
 }
 
@@ -47,9 +47,9 @@
    на 500мс — короткая пульсация рамки текущим accent-цветом. Юзер сразу видит
    что выбранная тема применилась. Эталон: Telegram при изменении wallpaper. */
 @keyframes cc-theme-flash {
-  0%   { box-shadow: 0 0 0 0 var(--amoled-accent-shadow, rgba(42,171,238,0.15)); }
-  40%  { box-shadow: 0 0 0 4px var(--amoled-accent, #2AABEE); }
-  100% { box-shadow: 0 0 12px var(--amoled-accent-shadow, rgba(42,171,238,0.15)); }
+  0%   { box-shadow: 0 0 0 0 var(--amoled-accent-shadow, rgba(34,158,217,0.15)); }
+  40%  { box-shadow: 0 0 0 4px var(--amoled-accent, #229ED9); }
+  100% { box-shadow: 0 0 12px var(--amoled-accent-shadow, rgba(34,158,217,0.15)); }
 }
 .cc-theme-flash {
   animation: cc-theme-flash 500ms ease-out;

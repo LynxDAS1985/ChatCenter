@@ -87,6 +87,21 @@ export default function MessageBubble({
   // Cleanup при unmount — защита от утечки таймера.
   useEffect(() => () => cancelMenuHide(), [])
 
+  // v1.2.514: моментальное закрытие панели действий и реакции по Escape
+  useEffect(() => {
+    if (!menu) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        cancelMenuHide()
+        setMenu(false)
+        setReactionPickerOpen(false)
+        setReplyHover(false)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [menu])
+
   // v0.87.43: Вариант 5 — Msg помечается прочитанным ТОЛЬКО когда:
   //   1. Полностью виден (≥95%) → помечен seen
   //   2. Потом ушёл ВЫШЕ viewport → onRead
@@ -145,17 +160,16 @@ export default function MessageBubble({
       onMouseEnter={() => { cancelMenuHide(); setMenu(true) }}
       onMouseLeave={scheduleMenuHide}
     >
-      {/* v0.95.25: кнопки ПОД сообщением (top: calc(100% + 3px)) — не закрывают
-          имя отправителя сверху, как просил юзер. Mouse-handlers на самом баре
-          (cancelMenuHide / scheduleMenuHide) гарантируют что юзер успеет до них
-          дотянуться при переходе с bubble — задержка 250мс перед скрытием
-          (стандарт Discord/Slack). */}
+      {/* v1.2.514: Вариант 1 (Telegram Desktop standard) — кнопки СВЕРХУ.
+          Исходящие: top: -14px, right: 0. Входящие: top: -14px, left: 0.
+          Никогда не уходят под поле ввода внизу чата и не обрезаются на коротких сообщениях.
+          Задержка 250мс перед скрытием сохранена. */}
       {menu && (onReply || onEdit || onDelete) && (
         <div
           onMouseEnter={cancelMenuHide}
           onMouseLeave={scheduleMenuHide}
           style={{
-            position: 'absolute', top: 'calc(100% + 3px)',
+            position: 'absolute', top: -14,
             [m.isOutgoing ? 'right' : 'left']: 0,
             display: 'flex', gap: 2, zIndex: 20,
             background: 'rgba(18,18,18,0.92)',
@@ -185,6 +199,12 @@ export default function MessageBubble({
       {menu && reactionPickerOpen && onSetReaction && (
         <ReactionPicker
           isOutgoing={m.isOutgoing}
+          style={{
+            top: -56,
+            bottom: 'auto',
+            [m.isOutgoing ? 'right' : 'left']: 0,
+            [m.isOutgoing ? 'left' : 'right']: 'auto',
+          }}
           onSelect={(emoji) => {
             const existing = m.reactions?.find(r => r.emoji === emoji)
             onSetReaction(m.id, emoji, existing?.chosen ? 'remove' : 'add')
@@ -360,7 +380,7 @@ export default function MessageBubble({
                   size={64}
                 />
               ) : (
-                <FormattedText text={m.text} entities={m.entities} />
+                <FormattedText text={m.text} entities={m.entities} isOutgoing={m.isOutgoing} />
               )}
             </div>
             <div style={{ fontSize: 10, opacity: 0.7, flexShrink: 0, whiteSpace: 'nowrap', marginBottom: 1 }}>
@@ -377,7 +397,7 @@ export default function MessageBubble({
           </div>
         ) : (
           m.text && <div style={{ whiteSpace: 'pre-wrap', padding: '4px 8px 0' }}>
-            <FormattedText text={m.text} entities={m.entities} />
+            <FormattedText text={m.text} entities={m.entities} isOutgoing={m.isOutgoing} />
           </div>
         )}
 

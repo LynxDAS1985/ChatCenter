@@ -81,9 +81,23 @@ export function ReactionsList({ reactions, onToggle, isOutgoing, customEmojiCach
 
 // Picker — popup со списком быстрых реакций при hover/click.
 // Telegram-style: появляется над action-bar, выбираешь emoji → toggle.
-export function ReactionPicker({ onSelect, onClose, isOutgoing }) {
+// v1.2.514: flipBelow — если сверху нет места (верхнее сообщение), открывается снизу.
+export function ReactionPicker({ onSelect, onClose, isOutgoing, style }) {
+  const [flipBelow, setFlipBelow] = useState(false)
+  const pickerRef = useRef(null)
+
+  useEffect(() => {
+    if (pickerRef.current) {
+      const rect = pickerRef.current.getBoundingClientRect()
+      if (rect.top < 35) {
+        setFlipBelow(true)
+      }
+    }
+  }, [])
+
   return (
     <div
+      ref={pickerRef}
       onMouseLeave={onClose}
       style={{
         position: 'absolute',
@@ -96,6 +110,8 @@ export function ReactionPicker({ onSelect, onClose, isOutgoing }) {
         borderRadius: 24,
         padding: '4px 6px',
         boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+        ...style,
+        ...(flipBelow ? { top: 'calc(100% + 18px)', bottom: 'auto' } : {}),
       }}
     >
       {QUICK_REACTIONS.map((emoji) => (

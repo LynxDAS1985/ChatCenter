@@ -269,6 +269,32 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
   const isOutgoing = album.isOutgoing
   const replyToMsg = album.replyToId && getMessage ? getMessage(chatId, album.replyToId) : null
   const ref = useRef(null)
+  const hideTimerRef = useRef(null)
+
+  const cancelMenuHide = () => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+  }
+  const scheduleMenuHide = () => {
+    cancelMenuHide()
+    hideTimerRef.current = setTimeout(() => setMenu(false), 250)
+  }
+  useEffect(() => () => cancelMenuHide(), [])
+
+  // v1.2.514: закрытие панели альбома по Escape
+  useEffect(() => {
+    if (!menu) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        cancelMenuHide()
+        setMenu(false)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [menu])
 
   // v0.87.43: Вариант 5 — альбом помечаем прочитанным только когда:
   // 1. Альбом полностью виден (95%) → seen
@@ -293,16 +319,18 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
         minWidth: 280,
         position: 'relative',
       }}
-      onMouseEnter={() => setMenu(true)}
-      onMouseLeave={() => setMenu(false)}
+      onMouseEnter={() => { cancelMenuHide(); setMenu(true) }}
+      onMouseLeave={scheduleMenuHide}
     >
-      <div style={{
+      <div
+        data-cc-outgoing={isOutgoing ? 'true' : undefined}
+        style={{
         padding: 4, borderRadius: 12,
         background: isOutgoing ? 'var(--amoled-accent)' : 'var(--amoled-surface-hover)',
         color: isOutgoing ? '#fff' : 'var(--amoled-text)',
         fontSize: 14, wordBreak: 'break-word',
         border: isOutgoing ? 'none' : '1px solid rgba(255,255,255,0.06)',
-        boxShadow: isOutgoing ? '0 0 12px rgba(42,171,238,0.15)' : 'none',
+        boxShadow: isOutgoing ? '0 0 12px var(--amoled-accent-shadow)' : 'none',
       }}>
         {replyToMsg && (
           <div
@@ -322,7 +350,7 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
         <MediaAlbum album={album} chatId={chatId} downloadMedia={downloadMedia} onPhotoOpen={onPhotoOpen} />
         {text && (
           <div style={{ whiteSpace: 'pre-wrap', padding: '4px 8px 0' }}>
-            <FormattedText text={text} entities={firstMsg.entities} />
+            <FormattedText text={text} entities={firstMsg.entities} isOutgoing={isOutgoing} />
           </div>
         )}
         <div style={{
@@ -338,14 +366,19 @@ export function AlbumBubble({ album, chatId, downloadMedia, onPhotoOpen, onReply
         </div>
       </div>
       {menu && (onReply || onForward) && (
-        <div style={{
-          position: 'absolute', top: -4,
-          [isOutgoing ? 'left' : 'right']: -4,
-          display: 'flex', gap: 2,
-          background: 'var(--amoled-surface)',
-          border: '1px solid var(--amoled-border)',
-          borderRadius: 6, padding: 2,
-        }}>
+        <div
+          onMouseEnter={cancelMenuHide}
+          onMouseLeave={scheduleMenuHide}
+          style={{
+            position: 'absolute', top: -14,
+            [isOutgoing ? 'right' : 'left']: 0,
+            display: 'flex', gap: 2,
+            background: 'rgba(18,18,18,0.92)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 8, padding: '3px 4px',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+            zIndex: 20,
+          }}>
           <button onClick={() => onReply?.(firstMsg)} title="Ответить" style={miniBtn}>↪</button>
           {onForward && <button onClick={() => onForward(firstMsg)} title="Переслать" style={miniBtn}>➥</button>}
           {onPin && <button onClick={() => onPin(firstMsg)} title="Закрепить" style={miniBtn}>📌</button>}

@@ -1,7 +1,7 @@
 // v0.87.31: render-smoke + snapshot для MessageBubble.
 // Ловит TDZ / hook-order / битые импорты. Snapshot фиксирует вёрстку.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, fireEvent, act } from '@testing-library/react'
 import MessageBubble from './MessageBubble.jsx'
 
 beforeEach(() => {
@@ -133,6 +133,27 @@ describe('MessageBubble render', () => {
       <MessageBubble m={m} chatId="c1" downloadMedia={() => Promise.resolve({ ok: false })} />
     )
     expect(container.innerHTML).toMatchSnapshot()
+    cleanup()
+  })
+
+  // v1.2.514: нажатие Escape мгновенно закрывает панель действий
+  it('v1.2.514: Escape мгновенно закрывает панель действий сообщения', () => {
+    const { container } = render(
+      <MessageBubble m={baseMsg} chatId="c1" onReply={() => {}} />
+    )
+    const bubbleRoot = container.querySelector('[data-msg-id="1"]')
+    expect(bubbleRoot).toBeTruthy()
+    // mouseenter открывает меню
+    act(() => {
+      fireEvent.mouseEnter(bubbleRoot)
+    })
+    expect(container.querySelector('button[title="Ответить"]')).toBeTruthy()
+
+    // Escape закрывает меню мгновенно
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' })
+    })
+    expect(container.querySelector('button[title="Ответить"]')).toBeNull()
     cleanup()
   })
 })

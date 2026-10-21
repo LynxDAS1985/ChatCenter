@@ -1,6 +1,38 @@
 # Реализованные функции — ChatCenter
 
-## Текущая версия: v1.2.513 (21 октября 2026)
+## Текущая версия: v1.2.514 (21 октября 2026)
+
+### v1.2.514 — Кнопки действий над сообщением (BUG-011), контрастные ссылки в исходящих, title и контекстное меню ПКМ (BUG-012), тема Premium по умолчанию (BUG-013), синхронизация версий и лимитов (BUG-014)
+
+Подробная карточка: [bugs/v1.2.514.md](bugs/v1.2.514.md).
+
+#### 1. Панель действий сообщения и пикер реакций (BUG-011)
+- **Корень**: в v0.95.25 панель кнопок (`top: calc(100% + 3px)`) рендерилась снизу, из-за чего для фото и нижних сообщений ленты обрезалась полем ввода сообщения или границей скролла. Перенос наверх с фиксированным `right: 0` приводил к вылету влево на коротких входящих сообщениях и срезу сверху на самом первом сообщении (`scrollTop = 0`).
+- **Фикс**:
+  - В [MessageBubble.jsx](../src/native/components/MessageBubble.jsx) и [MediaAlbum.jsx](../src/native/components/MediaAlbum.jsx) панель перенесена наверх: для исходящих `top: -14px, right: 0`, для входящих `top: -14px, left: 0` (кнопки раскрываются внутрь экрана, не наезжая на аватар и автора).
+  - В [MessageReactions.jsx](../src/native/components/MessageReactions.jsx) `ReactionPicker` поддержал авто-разворот вниз (`top: calc(100% + 18px)`), если сверху нет свободного места (`rect.top < 35px`).
+  - В [VirtualMessageList.jsx](../src/native/components/VirtualMessageList.jsx) добавлен `paddingTop: 20px` — верхнее сообщение имеет пространство, исключающее срез кнопок.
+  - Добавлено моментальное закрытие панели действий и окна реакций по клавише `Escape` и debounce 250мс в `MessageBubble.jsx` и `MediaAlbum.jsx`.
+- **Тесты**: [MessageBubble.vitest.jsx](../src/native/components/MessageBubble.vitest.jsx) (11 тестов).
+
+#### 2. Читаемые ссылки, контекстное меню ПКМ, подсказка title и безопасность entities (BUG-012)
+- **Корень**: исходящие сообщения имеют синий фон `var(--amoled-accent)`. В `FormattedText.jsx` все ссылки, email и @упоминания имели жестко прописанный `color: var(--amoled-accent)`, из-за чего цвет совпал с фоном пузыря и текст был невидим до выделения мышкой. TDLib при `entities: null` вызывал краш. Селектор `[data-cc-outgoing="true"] a` подчеркивал превью-карточки.
+- **Фикс**:
+  - В [FormattedText.jsx](../src/native/components/FormattedText.jsx) добавлен проброс `isOutgoing`. В исходящих сообщениях ссылки и упоминания выводятся белым (`#ffffff`) с подчеркиванием.
+  - Защита от краха: `const safeEntities = Array.isArray(entities) ? entities : []`.
+  - Авто-детект email расширен регуляркой с поддержкой знака `+` (`client+support@domain.com`).
+  - Все ссылки получили атрибут `title` с полным адресом и нормализацию протокола `https://`.
+  - Добавлено контекстное меню ссылки по ПКМ («Копировать адрес ссылки» / «Копировать email», «Открыть ссылку» / «Написать письмо»). Закрывается по клику вне, повторному ПКМ, скроллу/колесику, клавише `Escape` и сигналу `cc-close-link-menu`.
+  - В [LinkPreview.jsx](../src/native/components/LinkPreview.jsx) добавлен класс `native-msg-link-preview`, а селектор в [styles-messages.css](../src/native/styles-messages.css) ограничен через `a:not(.native-msg-link-preview)`.
+- **Тесты**: [FormattedText.vitest.jsx](../src/native/components/FormattedText.vitest.jsx) (16 тестов).
+
+#### 3. Тема по умолчанию переключена на Telegram Premium + WCAG (BUG-013)
+- **Фикс**: в [themeColor.js](../src/native/utils/themeColor.js) `DEFAULT_THEME_ID` переключен на `'premium'` (`#229ED9`). В [styles-base.css](../src/native/styles-base.css) fallback-переменные приведены в соответствие. Добавлен тест коэффициента контрастности WCAG для ссылок на фоне тем.
+- **Тесты**: [themeColor.vitest.js](../src/native/utils/themeColor.vitest.js) (13 тестов).
+
+#### 4. Синхронизация версий и бюджет строк (BUG-014)
+- **Фикс**: версия `1.2.514` синхронизирована во всех 4 обязательных местах (`package.json`, `package-lock.json`, `CLAUDE.md`, `.memory-bank/features.md`). Планка общего renderer-кода в [fileSizeLimits.test.cjs](../src/__tests__/fileSizeLimits.test.cjs) обновлена до `< 31360` (факт 31328) по правилу ADR-044 для легитимных компонентов UI.
+- **Тесты**: `fileSizeLimits.test.cjs` (712/712).
 
 ### v1.2.513 — Оптимизация запуска и очередей TDLib, разгрузка PhotoSendModal, удаление input, фикс дедупликации чатов (BUG-008)
 
@@ -630,44 +662,10 @@ webview=5`), по одной почти на каждое сохранение �
 
 Полная запись перенесена в [archive/features-v1.2.28.md](./archive/features-v1.2.28.md), чтобы активный features.md оставался меньше лимита memory-bank. Суть: `max-sidebar` при активном поиске MAX обновляет baseline, но не создаёт ribbon из старого preview; реальные `max-notification-api` и `max-sw-showNotification` не отключались.
 
-**Структура файла**: этот features.md содержит только **последние активные версии**. Старое — в архиве:
+**Структура файла**: этот features.md содержит только **последние активные версии**.
+Полный каталог архивных changelog (v0.1.0 – v1.2.288) вынесен в [`.memory-bank/archive/README.md`](./archive/README.md).
 
-| Архив | Содержимое | Размер |
-|---|---|---|
-| [`archive/features-v0.95.39.md`](./archive/features-v0.95.39.md) | v0.95.39 (убран twoPhase + RAF×2 + 350мс easeOutCubic; стабилизировано v0.95.40+) | ~2 КБ |
-| [`archive/features-v0.95.40.md`](./archive/features-v0.95.40.md) | v0.95.40 (большие emoji + a11y reduced-motion + sticky bottom on media; стабилизировано v0.95.41+) | ~3 КБ |
-| [`archive/features-v0.95.41.md`](./archive/features-v0.95.41.md) | v0.95.41 (Custom emoji premium WebM/WebP + reduced-motion интеграционные тесты; стабилизировано v0.95.42+) | ~3 КБ |
-| [`archive/features-v0.95.42.md`](./archive/features-v0.95.42.md) | v0.95.42 (сохранение поиска + история + ✕ + подсветка совпадений; стабилизировано v0.95.43+) | ~2 КБ |
-| [`archive/features-v0.95.38.md`](./archive/features-v0.95.38.md) | v0.95.38 (фикс дубля сообщений через updateMessageSendSucceeded, ⏳ индикатор, mistakes static guard) | ~2 КБ |
-| [`archive/features-v0.95.35-37.md`](./archive/features-v0.95.35-37.md) | v0.95.35-37 (fade-in changelog, auto-scroll outgoing-other-device, sending_state polish, mistakes/outgoing-two-cases.md; стабилизировано v0.95.38+) | ~3 КБ |
-| [`archive/features-v0.95.34.md`](./archive/features-v0.95.34.md) | v0.95.34 (темовые vars в :root, вспышка bubble, WhatsNewModal UX; стабилизировано v0.95.40+) | ~2 КБ |
-| [`archive/features-v0.95.33.md`](./archive/features-v0.95.33.md) | v0.95.33 (фикс «цвет не применяется» через querySelectorAll, регресс-тест blur, деловой стиль; финал в v0.95.34) | ~2 КБ |
-| [`archive/features-v0.95.32.md`](./archive/features-v0.95.32.md) | v0.95.32 (производительность WhatsNewModal: убран backdrop-filter + contain + деловой стиль changelog) | ~2 КБ |
-| [`archive/features-v0.95.31.md`](./archive/features-v0.95.31.md) | v0.95.31 (аккаунты вниз + drag-n-drop + multi-user typing + throttle реакций; стабилизировано v0.95.34+) | ~3 КБ |
-| [`archive/features-v0.95.30.md`](./archive/features-v0.95.30.md) | v0.95.30 (плавная auto-scroll + 5 цветовых тем + dropdown + opacity 0.95; стабилизировано v0.95.33-34) | ~3 КБ |
-| [`archive/features-v0.95.29.md`](./archive/features-v0.95.29.md) | v0.95.29 (реакции 👍❤️🔥 + Telegram-style header + General 📢 + render-counter; стабилизировано v0.95.31-34) | ~5 КБ |
-| [`archive/features-v0.95.28.md`](./archive/features-v0.95.28.md) | v0.95.28 (Telegram-style auto-scroll к новому + ↓N без «слепой зоны» Schmitt; стабилизировано v0.95.31) | ~4 КБ |
-| [`archive/features-v0.95.27.md`](./archive/features-v0.95.27.md) | v0.95.27 (расширенная диагностика send pipeline; стабилизировано v0.95.29) | ~3 КБ |
-| [`archive/features-v0.95.23-26.md`](./archive/features-v0.95.23-26.md) | v0.95.23 – v0.95.26 (курсор в input, initial backfill, voice/spellcheck/action-bar/WhatsNew, фикс 47-дневного бага unreadCount; стабилизировано) | ~15 КБ |
-| [`archive/features-v0.95.19-22.md`](./archive/features-v0.95.19-22.md) | v0.95.19 – v0.95.22 (диагностика tg-new-message, финал jump-to-end, бейдж форум-группы, форум-overlay; стабилизировано) | ~6 КБ |
-| [`archive/features-v0.95.15-18.md`](./archive/features-v0.95.15-18.md) | v0.95.15 – v0.95.18 (итеративный fetch + форум-топики + двухфазный scroll + ForumTopicEmptyState; стабилизировано v0.95.20-21) | ~8 КБ |
-| [`archive/features-v0.95.12-14.md`](./archive/features-v0.95.12-14.md) | v0.95.12 – v0.95.14 (3 итерации jump-to-end до итеративного fetch v0.95.15, полная сага в jump-to-end-saga.md) | ~32 КБ |
-| [`archive/features-v0.95.8-9.md`](./archive/features-v0.95.8-9.md) | v0.95.8 – v0.95.9 (счётчик ↓ обнуляется + анимация + live compact + порог 128) | ~14 КБ |
-| [`archive/features-v0.95.5-7.md`](./archive/features-v0.95.5-7.md) | v0.95.5 – v0.95.7 (sticky pinned overlay, кнопка ↓ Telegram-style, drag-to-resize) | ~24 КБ |
-| [`archive/features-v0.95.0-3.md`](./archive/features-v0.95.0-3.md) | v0.95.0 – v0.95.3 (контигуити-фикс, afterId load-newer, мигание ↓ Schmitt trigger, диагностика «дёрг») | ~13 КБ |
-| [`archive/features-v0.94.1-7.md`](./archive/features-v0.94.1-7.md) | v0.94.1 – v0.94.7 (TDLib listener leak, scroll caskade, спокойная загрузка, пилюля прогресса — стабилизированы v0.95.0-2) | ~24 КБ |
-| [`archive/features-v0.93.0.md`](./archive/features-v0.93.0.md) | v0.93.0 (pixel-perfect scroll restore через LocationOptions.offset, superseded v0.94.0) | ~7 КБ |
-| [`archive/features-v0.92.0-6.md`](./archive/features-v0.92.0-6.md) | v0.92.0 – v0.92.6 (сага Virtuoso scroll restore, superseded v0.94.0) | ~37 КБ |
-| [`archive/features-v0.91.11-24.md`](./archive/features-v0.91.11-24.md) | v0.91.11 – v0.91.24 (сага scroll restore: 13 версий → миграция на virtuoso) | ~47 КБ |
-| [`archive/features-v0.91.1-10.md`](./archive/features-v0.91.1-10.md) | v0.91.1 – v0.91.10 (initial-load, scroll-jump, newBelow, forum topics, updateChatLastMessage) | ~12 КБ |
-| [`archive/features-v0.87.106-114.md`](./archive/features-v0.87.106-114.md) | v0.87.106 – v0.87.114 (multi-account UI финал, кнопки режимов, мьют чата, аватарки отправителей в группах) | ~22 КБ |
-| [`archive/features-v0.87.93-105.md`](./archive/features-v0.87.93-105.md) | v0.87.93 – v0.87.105 (multi-account native, login flow, разбиения, cc-media://) | ~30 КБ |
-| [`archive/features-v0.87.80-92.md`](./archive/features-v0.87.80-92.md) | v0.87.80 – v0.87.92 (pre-push hook, разбиения 4-7, AccountContextMenu) | ~16 КБ |
-| [`archive/features-v0.87.65-79.md`](./archive/features-v0.87.65-79.md) | v0.87.65 – v0.87.79 (план разбиения 1-3, pre-push hook, bubble UI) | ~54 КБ |
-| [`archive/features-v0.87.51-64.md`](./archive/features-v0.87.51-64.md) | v0.87.51 – v0.87.64 (groupedUnread удалён, pre-commit hook) | ~54 КБ |
-| [`archive/features-v0.87.40-50.md`](./archive/features-v0.87.40-50.md) | v0.87.40 – v0.87.50 (итерации native scroll + unread) | ~40 КБ |
-| [`archive/features-v0.87-early.md`](./archive/features-v0.87-early.md) | v0.87.0 – v0.87.39 (запуск native + ранние фиксы) | ~140 КБ |
-| [`archive/features-pre-v0.87.md`](./archive/features-pre-v0.87.md) | v0.1.0 – v0.86.10 (до native-режима, 3 марта – 14 апреля 2026) | ~210 КБ |
+**Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 
 **Архив не читается по умолчанию.** Запрос к нему — только при явной просьбе («что было в v0.85», «покажи старый changelog»).
 

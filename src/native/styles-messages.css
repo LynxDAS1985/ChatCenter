@@ -289,3 +289,11 @@
   animation: native-last-read-glow 3.5s ease-out;
   border-radius: 12px;
 }
+
+/* v1.2.514: ссылки внутри исходящих сообщений гарантированно белые с подчеркиванием,
+   чтобы не сливаться с синим акцентным фоном (--amoled-accent). Исключаем карточки LinkPreview */
+[data-cc-outgoing="true"] a:not(.native-msg-link-preview) {
+  color: #ffffff !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+}
